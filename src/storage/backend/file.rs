@@ -110,8 +110,13 @@ impl StorageBackend for FileBackend {
         self.file.seek(SeekFrom::Start(offset))?;
         self.file.write_all(data)?;
 
-        // Update page count if this is a new page
-        if page_id >= self.header.page_count {
+        // If writing page 0 (header), update our in-memory header
+        if page_id == 0 {
+            // Page 0 is the header itself, parse it to update our cached copy
+            self.header = FileHeader::from_bytes(data)?;
+            eprintln!("FileBackend::write_page(0) - updated in-memory header to page_count={}", self.header.page_count);
+        } else if page_id >= self.header.page_count {
+            // Update page count if this is a new page (but not page 0)
             self.header.page_count = page_id + 1;
             Self::write_header(&mut self.file, &self.header)?;
         }
@@ -148,7 +153,11 @@ impl StorageBackend for FileBackend {
     }
 
     fn close(&mut self) -> Result<()> {
+        eprintln!("FileBackend::close() - final sync and close");
         self.sync()?;
+        // Re-read the header to verify it was written correctly
+        let final_header = Self::read_header(&mut self.file)?;
+        eprintln!("FileBackend::close() - verified page_count={}", final_header.page_count);
         Ok(())
     }
 
