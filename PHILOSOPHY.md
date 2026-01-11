@@ -354,24 +354,25 @@ The `.graph` file format must be:
 
 ## Evolution Strategy
 
-**Phase 1 (Current)**: Prove the concept
+**Phase 1**: ✅ Prove the concept (COMPLETE)
 - Basic graph model, simple queries, in-memory storage
 
-**Phase 2**: Establish reliability
-- Single-file storage, ACID transactions, WAL, crash recovery
+**Phase 2**: ✅ Embeddability (COMPLETE)
+- Single-file storage, persistent graph database, embedded API
 
-**Phase 3**: Build performance
-- Indexes, query optimization, efficient I/O
+**Phase 3**: ⏳ Establish reliability (NEXT)
+- WAL, ACID transactions, crash recovery, indexes, query optimization
 
-**Phase 4**: Expand reach
+**Phase 4**: ⏳ Expand reach
 - WASM support, mobile bindings, multiple backends
 
-**Phase 5**: Mature the ecosystem
+**Phase 5**: ⏳ Mature the ecosystem
 - Full documentation, tooling, ecosystem libraries
 
-**Phase 6+**: Long-term maintenance
+**Phase 6+**: ⏳ Long-term maintenance
 - Bug fixes, security patches, conservative improvements
 
+See ROADMAP.md for detailed feature breakdown.
 ## When to Say "No"
 
 It's important to say "no" to preserve the project's focus:

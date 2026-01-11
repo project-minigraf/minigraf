@@ -9,6 +9,12 @@ pub struct GraphStorage {
     edges: Arc<RwLock<HashMap<EdgeId, Edge>>>,
 }
 
+impl Default for GraphStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GraphStorage {
     pub fn new() -> Self {
         GraphStorage {
@@ -91,7 +97,7 @@ impl GraphStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::types::{Property, PropertyValue};
+    use crate::graph::types::PropertyValue;
     use std::collections::HashMap;
 
     #[test]
