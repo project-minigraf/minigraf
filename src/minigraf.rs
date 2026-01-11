@@ -256,6 +256,9 @@ mod tests {
         // Verify file exists
         assert!(std::path::Path::new(path).exists(), "Database file should exist after close");
 
+        // Small delay to ensure file system sync (CI timing issue)
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
         // Reopen and verify
         {
             let mut db = Minigraf::open(path).unwrap();
