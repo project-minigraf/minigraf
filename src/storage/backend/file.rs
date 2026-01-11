@@ -37,18 +37,26 @@ impl FileBackend {
             .create(true)
             .open(&path)?;
 
-        // Try to read existing header. If file is empty/new, this will fail.
-        let header = match Self::read_header(&mut file) {
-            Ok(header) => {
-                // Existing file with valid header
-                header
+        // Check file size using the open file handle's metadata.
+        // This is more reliable than checking path metadata separately,
+        // as it uses the same file descriptor we'll be reading from.
+        let file_len = file.metadata()?.len();
+
+        // Determine if this is an existing file with data or a new/empty one.
+        let header = if file_len >= PAGE_SIZE as u64 {
+            // File has at least one page - try to read the header
+            match Self::read_header(&mut file) {
+                Ok(header) => header,
+                Err(e) => {
+                    // File has content but header is invalid - this is a real error
+                    anyhow::bail!("Failed to read header from existing file (size={}): {}", file_len, e);
+                }
             }
-            Err(_) => {
-                // New file or empty file: write initial header
-                let header = FileHeader::new();
-                Self::write_header(&mut file, &header)?;
-                header
-            }
+        } else {
+            // New file or empty file: write initial header
+            let header = FileHeader::new();
+            Self::write_header(&mut file, &header)?;
+            header
         };
 
         Ok(FileBackend { path, file, header })
@@ -64,7 +72,6 @@ impl FileBackend {
         let header = FileHeader::from_bytes(&header_bytes)?;
         header.validate()?;
 
-        eprintln!("FileBackend::read_header - read page_count={}", header.page_count);
         Ok(header)
     }
 
@@ -76,17 +83,9 @@ impl FileBackend {
         let mut page = vec![0u8; PAGE_SIZE];
         page[..header_bytes.len()].copy_from_slice(&header_bytes);
 
-        eprintln!("FileBackend::write_header - writing page_count={}", header.page_count);
         file.write_all(&page)?;
         file.sync_all()?;
 
-        Ok(())
-    }
-
-    /// Update the header in memory and on disk.
-    fn update_header(&mut self, header: FileHeader) -> Result<()> {
-        Self::write_header(&mut self.file, &header)?;
-        self.header = header;
         Ok(())
     }
 
@@ -114,7 +113,6 @@ impl StorageBackend for FileBackend {
         if page_id == 0 {
             // Page 0 is the header itself, parse it to update our cached copy
             self.header = FileHeader::from_bytes(data)?;
-            eprintln!("FileBackend::write_page(0) - updated in-memory header to page_count={}", self.header.page_count);
         } else if page_id >= self.header.page_count {
             // Update page count if this is a new page (but not page 0)
             self.header.page_count = page_id + 1;
@@ -153,12 +151,7 @@ impl StorageBackend for FileBackend {
     }
 
     fn close(&mut self) -> Result<()> {
-        eprintln!("FileBackend::close() - final sync and close");
-        self.sync()?;
-        // Re-read the header to verify it was written correctly
-        let final_header = Self::read_header(&mut self.file)?;
-        eprintln!("FileBackend::close() - verified page_count={}", final_header.page_count);
-        Ok(())
+        self.sync()
     }
 
     fn backend_name(&self) -> &'static str {
@@ -205,7 +198,7 @@ mod tests {
 
     #[test]
     fn test_file_backend_persistence() {
-        let temp_path = "/tmp/test_minigraf_persistence.graph";
+        let temp_path = "/tmp/test_file_backend_persistence.graph";
         let _ = fs::remove_file(temp_path);
 
         // Write data

@@ -43,13 +43,8 @@ impl<B: StorageBackend> PersistentGraphStorage<B> {
 
         // Try to load existing data
         let page_count = storage.backend.page_count()?;
-        eprintln!("PersistentGraphStorage::new - page_count: {}", page_count);
         if page_count > 1 {
-            eprintln!("Loading existing data from {} pages", page_count);
             storage.load()?;
-            eprintln!("Loaded {} nodes, {} edges", storage.nodes.len(), storage.edges.len());
-        } else {
-            eprintln!("No existing data to load (page_count <= 1)");
         }
 
         Ok(storage)
@@ -163,9 +158,6 @@ impl<B: StorageBackend> PersistentGraphStorage<B> {
         // Sync to disk
         self.backend.sync()?;
         self.dirty = false;
-
-        eprintln!("Saved {} nodes, {} edges to {} pages",
-                 self.nodes.len(), self.edges.len(), next_page);
 
         Ok(())
     }
