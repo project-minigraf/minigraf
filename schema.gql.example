@@ -1,0 +1,4 @@
+# Example GQL schema (currently using GraphQL-like syntax for placeholder)
+type Query {
+    hello: String
+}
