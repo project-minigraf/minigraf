@@ -13,6 +13,59 @@ Minigraf is a tiny, portable GQL (Graph Query Language) engine written in Rust. 
 
 **Important**: This is a GQL-inspired implementation (~2-5% of ISO/IEC 39075:2024 spec). It is NOT fully spec-compliant and prioritizes learning over conformance. See README.md's "GQL Spec Compliance" section for detailed feature coverage and roadmap.
 
+## Core Philosophy - CRITICAL
+
+**Before implementing ANY feature or change, you MUST assess it against the design philosophy in PHILOSOPHY.md.**
+
+Minigraf follows the "SQLite for graph databases" philosophy:
+- **Zero-configuration** - No setup, no config files, just works
+- **Embedded-first** - Library not server, in-process execution
+- **Single-file database** - One portable `.graph` file
+- **Self-contained** - Minimal dependencies, small binary (<1MB goal)
+- **Cross-platform** - Native, WASM, mobile, embedded
+- **Reliability over features** - Do less, do it perfectly
+- **Stability** - Backwards compatibility, stable file format
+- **Long-term support** - Decades-long commitment
+
+### Philosophy Compliance Check
+
+**CRITICAL INSTRUCTION**: When the user requests a feature or change, you MUST:
+
+1. **First**, assess whether it aligns with the philosophy in PHILOSOPHY.md
+2. **If it violates the philosophy**, WARN the user BEFORE implementing:
+   - Explain which principle(s) it violates
+   - Explain why it's problematic
+   - Suggest alternatives that align with the philosophy
+   - Ask for explicit confirmation to proceed despite the violation
+3. **If it aligns**, proceed with implementation
+
+**Examples of philosophy violations to warn about**:
+- Adding client-server architecture (violates embedded-first)
+- Requiring external services or complex setup (violates zero-configuration)
+- Large dependencies that bloat binary size (violates self-contained)
+- Features only useful for distributed systems (violates target use cases)
+- Breaking changes to API or file format (violates stability)
+- Complex features before basics are reliable (violates reliability-first)
+
+**Your response format when detecting a violation**:
+```
+⚠️ PHILOSOPHY WARNING ⚠️
+
+The requested feature/change may violate Minigraf's core philosophy:
+
+**Violated Principle**: [principle name from PHILOSOPHY.md]
+
+**Why this is problematic**: [explanation]
+
+**Philosophy-aligned alternatives**:
+- [alternative 1]
+- [alternative 2]
+
+Do you want to proceed anyway? This would be a deviation from the "SQLite for graph databases" philosophy.
+```
+
+See PHILOSOPHY.md for complete design principles and decision framework.
+
 ## Build and Run Commands
 
 ```bash
