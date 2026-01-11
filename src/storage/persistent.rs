@@ -239,10 +239,8 @@ impl<B: StorageBackend> PersistentGraphStorage<B> {
 impl<B: StorageBackend> Drop for PersistentGraphStorage<B> {
     /// Automatically save on drop if there are unsaved changes.
     fn drop(&mut self) {
-        if self.dirty {
-            if let Err(e) = self.save() {
-                eprintln!("Warning: Failed to save graph on drop: {}", e);
-            }
+        if self.dirty && let Err(e) = self.save() {
+            eprintln!("Warning: Failed to save graph on drop: {}", e);
         }
     }
 }
