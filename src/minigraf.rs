@@ -250,6 +250,11 @@ mod tests {
             db.save().unwrap();
             assert!(!db.is_dirty(), "Database should not be dirty after save");
 
+            // Debug: check stats before closing
+            let stats = db.stats();
+            eprintln!("Before close: node_count={}, edge_count={}, dirty={}",
+                     stats.node_count, stats.edge_count, stats.dirty);
+
             db.close().unwrap();
         }
 
@@ -262,9 +267,16 @@ mod tests {
         // Reopen and verify
         {
             let mut db = Minigraf::open(path).unwrap();
+
+            // Debug: check stats after opening
+            let stats = db.stats();
+            eprintln!("After reopen: node_count={}, edge_count={}, dirty={}",
+                     stats.node_count, stats.edge_count, stats.dirty);
+
             let result = db.execute("SHOW NODES").unwrap();
 
             if let QueryResult::Nodes(nodes) = result {
+                eprintln!("Found {} nodes: {:?}", nodes.len(), nodes.iter().map(|n| &n.labels).collect::<Vec<_>>());
                 assert_eq!(nodes.len(), 1, "Should find 1 node after reopening");
                 assert_eq!(nodes[0].labels, vec!["Person"]);
             } else {
