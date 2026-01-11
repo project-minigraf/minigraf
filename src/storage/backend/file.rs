@@ -61,6 +61,7 @@ impl FileBackend {
         let header = FileHeader::from_bytes(&header_bytes)?;
         header.validate()?;
 
+        eprintln!("FileBackend::read_header - read page_count={}", header.page_count);
         Ok(header)
     }
 
@@ -72,6 +73,7 @@ impl FileBackend {
         let mut page = vec![0u8; PAGE_SIZE];
         page[..header_bytes.len()].copy_from_slice(&header_bytes);
 
+        eprintln!("FileBackend::write_header - writing page_count={}", header.page_count);
         file.write_all(&page)?;
         file.sync_all()?;
 
