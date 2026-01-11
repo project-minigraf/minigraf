@@ -402,7 +402,7 @@ See each phase for specific tasks. Good starting points:
 - ⏳ Phase 6: Ongoing
 - ⏳ v1.0.0: 12-18 months from now
 
-**Note**: This is a learning project. Timeline is flexible.
+**Note**: This is a hobby project. Timeline is flexible.
 
 ---
 

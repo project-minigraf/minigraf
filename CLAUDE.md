@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Minigraf is a tiny, portable GQL (Graph Query Language) engine written in Rust. It's a work-in-progress learning project designed to run as a standalone binary, library, or WebAssembly module.
+Minigraf is a tiny, portable GQL (Graph Query Language) engine written in Rust. It's a work-in-progress project designed to run as a standalone binary, library, or WebAssembly module.
 
 **Current Status: Phase 2 Complete** - Fully embeddable graph database with persistent storage:
 - Property graph data model (nodes, edges, properties)
@@ -16,7 +16,7 @@ Minigraf is a tiny, portable GQL (Graph Query Language) engine written in Rust. 
 - Interactive REPL console
 - 35+ tests, all passing
 
-**Important**: This is a GQL-inspired implementation (~2-5% of ISO/IEC 39075:2024 spec). It is NOT fully spec-compliant and prioritizes learning over conformance. See README.md's "GQL Spec Compliance" section for detailed feature coverage and roadmap.
+**Important**: This is a GQL-inspired implementation (~2-5% of ISO/IEC 39075:2024 spec). It is NOT fully spec-compliant and prioritizes usability over conformance. See README.md's "GQL Spec Compliance" section for detailed feature coverage and roadmap.
 
 ## Core Philosophy - CRITICAL
 

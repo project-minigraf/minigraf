@@ -10,14 +10,6 @@ A tiny, portable GQL (Graph Query Language) engine written in Rust. **W.I.P.**
 
 GQL stands for Graph Query Language, which has been standardized in [ISO/IEC 39075:2024](https://www.iso.org/standard/76120.html).
 
-## Purpose
-
-This project was started to (in order):
-- Learn Rust,
-- Learn how to write a parser,
-- Learn GQL,
-- Possibly create a borderline useful tool in the process.
-
 ## Current Status - Phase 2
 
 Minigraf is now a **fully embeddable graph database** with persistent storage:
@@ -255,7 +247,7 @@ The file-based backend uses a simple, stable page-based format:
 
 **Current Status: ~2-5% of ISO/IEC 39075:2024**
 
-This is a learning project implementing a GQL-inspired query language. It is **not fully compliant** with the GQL standard and does not aim for complete compliance in the near term.
+This is a hobby project implementing a GQL-inspired query language. It is **not fully compliant** with the GQL standard and does not aim for complete compliance in the near term.
 
 ### ✅ Implemented (PoC Level)
 
@@ -335,7 +327,7 @@ This is a learning project implementing a GQL-inspired query language. It is **n
 
 ### Roadmap to Compliance
 
-This project prioritizes learning over spec compliance. See [ROADMAP.md](ROADMAP.md) for the complete development roadmap.
+This project prioritizes usability over spec compliance. See [ROADMAP.md](ROADMAP.md) for the complete development roadmap.
 
 **GQL Spec Feature Milestones**:
 
