@@ -329,16 +329,18 @@ This is a learning project implementing a GQL-inspired query language. It is **n
 
 ### Roadmap to Compliance
 
-This project prioritizes learning over spec compliance. Future milestones:
+This project prioritizes learning over spec compliance. See [ROADMAP.md](ROADMAP.md) for the complete development roadmap.
 
-1. **Phase 1 (Current)**: Basic PoC - simple CRUD and queries ✅
-2. **Phase 2**: Complex patterns - multi-hop paths, variable-length
-3. **Phase 3**: RETURN clause, projections, ORDER BY/LIMIT
-4. **Phase 4**: UPDATE/DELETE operations
-5. **Phase 5**: Aggregations and GROUP BY
-6. **Phase 6**: Advanced expressions and operators
-7. **Phase 7**: Schema, constraints, indexes
-8. **Phase 8+**: Advanced types, multiple graphs, full spec compliance
+**GQL Spec Feature Milestones**:
+
+1. ✅ **Basic PoC**: Simple CRUD and queries
+2. ⏳ **Complex patterns**: Multi-hop paths, variable-length
+3. ⏳ **RETURN clause**: Projections, ORDER BY/LIMIT
+4. ⏳ **Data manipulation**: UPDATE/DELETE operations
+5. ⏳ **Aggregations**: COUNT, SUM, AVG, GROUP BY
+6. ⏳ **Advanced expressions**: Operators, functions
+7. ⏳ **Schema**: Constraints, indexes
+8. ⏳ **Full compliance**: Advanced types, multiple graphs
 
 For official GQL resources, see: [ISO/IEC 39075:2024](https://www.iso.org/standard/76120.html)
 
