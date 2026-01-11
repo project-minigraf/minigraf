@@ -89,7 +89,7 @@ impl Minigraf {
         match parsed {
             crate::query::Query::CreateNode { labels, properties } => {
                 let node = Node::new(labels, properties);
-                let id = self.storage.add_node(node.clone())?;
+                let _id = self.storage.add_node(node.clone())?;
                 Ok(QueryResult::NodeCreated(node))
             }
             crate::query::Query::CreateEdge {
@@ -191,6 +191,17 @@ impl Minigraf {
     pub fn edges(&self) -> Vec<&Edge> {
         self.storage.get_all_edges()
     }
+
+    /// Explicitly close the database.
+    ///
+    /// This saves any unsaved changes and closes the backend.
+    /// After calling this, the Minigraf instance should not be used.
+    pub fn close(mut self) -> Result<()> {
+        if self.storage.is_dirty() {
+            self.storage.save()?;
+        }
+        self.storage.close()
+    }
 }
 
 #[cfg(test)]
@@ -222,7 +233,7 @@ mod tests {
 
         // Clean up
         drop(db);
-        fs::remove_file(path).unwrap();
+        let _ = fs::remove_file(path);
     }
 
     #[test]
@@ -235,6 +246,7 @@ mod tests {
             let mut db = Minigraf::open(path).unwrap();
             db.execute("CREATE NODE (:Person) {name: \"Bob\"}").unwrap();
             db.save().unwrap();
+            db.close().unwrap();
         }
 
         // Reopen and verify
@@ -251,7 +263,7 @@ mod tests {
         }
 
         // Clean up
-        fs::remove_file(path).unwrap();
+        let _ = fs::remove_file(path);
     }
 
     #[test]
@@ -268,12 +280,12 @@ mod tests {
 
         // Reopen and verify
         {
-            let mut db = Minigraf::open(path).unwrap();
+            let db = Minigraf::open(path).unwrap();
             let stats = db.stats();
             assert_eq!(stats.node_count, 1);
         }
 
         // Clean up
-        fs::remove_file(path).unwrap();
+        let _ = fs::remove_file(path);
     }
 }

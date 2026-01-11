@@ -226,6 +226,14 @@ impl<B: StorageBackend> PersistentGraphStorage<B> {
             dirty: self.dirty,
         }
     }
+
+    /// Close the storage and underlying backend.
+    pub fn close(mut self) -> Result<()> {
+        if self.dirty {
+            self.save()?;
+        }
+        self.backend.close()
+    }
 }
 
 impl<B: StorageBackend> Drop for PersistentGraphStorage<B> {
