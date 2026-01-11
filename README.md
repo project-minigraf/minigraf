@@ -175,6 +175,103 @@ Minigraf will support multiple backends to store its data, including:
 - SQLite ⏳
 - One or more embedded KV stores (such as LevelDB or RocksDB) ⏳
 
+## GQL Spec Compliance
+
+**Current Status: ~2-5% of ISO/IEC 39075:2024**
+
+This is a learning project implementing a GQL-inspired query language. It is **not fully compliant** with the GQL standard and does not aim for complete compliance in the near term.
+
+### ✅ Implemented (PoC Level)
+
+**Basic Graph Model:**
+- ✅ Nodes with multiple labels
+- ✅ Directed edges with single label
+- ✅ Properties on nodes and edges
+- ✅ Property types: String, Integer, Float, Boolean, Null
+
+**Basic Query Operations:**
+- ✅ CREATE NODE with labels and properties
+- ✅ CREATE EDGE between existing nodes
+- ✅ Simple MATCH by label: `MATCH (:Label)`
+- ✅ Single property equality filter: `WHERE prop = value`
+- ✅ SHOW NODES / SHOW EDGES (non-standard convenience commands)
+
+### ❌ Not Yet Implemented (Majority of GQL Spec)
+
+**Graph Pattern Matching:**
+- ❌ Complex path patterns: `(a)-[:REL]->(b)-[:REL2]->(c)`
+- ❌ Variable-length paths: `(a)-[:REL*1..5]->(b)`
+- ❌ Shortest path queries
+- ❌ Optional patterns (OPTIONAL MATCH)
+- ❌ Pattern alternatives/disjunction
+- ❌ Quantified path patterns
+
+**Query Clauses:**
+- ❌ RETURN clause (projections, expressions)
+- ❌ WITH clause (intermediate results)
+- ❌ ORDER BY, LIMIT, SKIP
+- ❌ DISTINCT
+- ❌ OPTIONAL MATCH
+- ❌ UNION, INTERSECT, EXCEPT
+
+**Data Manipulation:**
+- ❌ INSERT (vs. CREATE)
+- ❌ SET (update properties/labels)
+- ❌ REMOVE (remove properties/labels)
+- ❌ DELETE (delete nodes/edges)
+- ❌ MERGE (upsert semantics)
+
+**Expressions & Operators:**
+- ❌ Arithmetic operations (+, -, *, /, %)
+- ❌ Comparison operators (<, >, <=, >=, <>)
+- ❌ Logical operators (AND, OR, NOT) in WHERE
+- ❌ String operations (CONTAINS, STARTS WITH, ENDS WITH)
+- ❌ List operations
+- ❌ Map/record operations
+- ❌ CASE expressions
+- ❌ NULL handling (IS NULL, COALESCE)
+
+**Aggregations & Grouping:**
+- ❌ Aggregation functions (COUNT, SUM, AVG, MIN, MAX)
+- ❌ GROUP BY
+- ❌ HAVING
+
+**Advanced Data Types:**
+- ❌ Lists/Arrays
+- ❌ Maps/Records
+- ❌ Path type
+- ❌ Temporal types (Date, Time, DateTime, Duration)
+- ❌ Spatial types (Point, Geography)
+
+**Advanced Features:**
+- ❌ Multiple named graphs
+- ❌ Graph constructors
+- ❌ Schema definitions and validation
+- ❌ Constraints and indexes
+- ❌ Functions (string, math, temporal, etc.)
+- ❌ Subqueries
+- ❌ Transactions
+
+**Conformance:**
+- ❌ No formal conformance testing
+- ❌ Not validated against official GQL test suite
+- ❌ Syntax may differ from official spec
+
+### Roadmap to Compliance
+
+This project prioritizes learning over spec compliance. Future milestones:
+
+1. **Phase 1 (Current)**: Basic PoC - simple CRUD and queries ✅
+2. **Phase 2**: Complex patterns - multi-hop paths, variable-length
+3. **Phase 3**: RETURN clause, projections, ORDER BY/LIMIT
+4. **Phase 4**: UPDATE/DELETE operations
+5. **Phase 5**: Aggregations and GROUP BY
+6. **Phase 6**: Advanced expressions and operators
+7. **Phase 7**: Schema, constraints, indexes
+8. **Phase 8+**: Advanced types, multiple graphs, full spec compliance
+
+For official GQL resources, see: [ISO/IEC 39075:2024](https://www.iso.org/standard/76120.html)
+
 ## Testing
 
 The project includes comprehensive test coverage:
