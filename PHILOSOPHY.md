@@ -373,7 +373,6 @@ The `.graph` file format must be:
 - Bug fixes, security patches, conservative improvements
 
 See ROADMAP.md for detailed feature breakdown.
-
 ## When to Say "No"
 
 It's important to say "no" to preserve the project's focus:
