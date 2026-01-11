@@ -5,7 +5,6 @@
 /// and in-memory (testing/embedded).
 ///
 /// Inspired by SQLite's VFS (Virtual File System) architecture.
-
 pub mod backend;
 pub mod persistent;
 

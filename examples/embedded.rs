@@ -2,7 +2,6 @@
 ///
 /// This example shows how to use Minigraf like SQLite - as an embedded
 /// database with a single `.graph` file that persists across restarts.
-
 use minigraf::Minigraf;
 
 fn main() -> anyhow::Result<()> {
@@ -129,7 +128,7 @@ fn main() -> anyhow::Result<()> {
     // Final verification
     println!("\nFinal verification:");
     {
-        let mut db = Minigraf::open(db_path)?;
+        let db = Minigraf::open(db_path)?;
         let stats = db.stats();
         println!(
             "✓ Final database state: {} nodes, {} edges",

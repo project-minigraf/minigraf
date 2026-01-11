@@ -2,7 +2,6 @@
 ///
 /// This module provides the main entry point for using Minigraf as an
 /// embedded graph database, following the "SQLite for graphs" philosophy.
-
 use crate::graph::types::{Edge, Node};
 use crate::query::executor::QueryResult;
 use crate::query::parser::parse_query;

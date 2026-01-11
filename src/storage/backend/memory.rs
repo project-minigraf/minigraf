@@ -1,5 +1,4 @@
 /// In-memory storage backend for testing and embedded use.
-
 use crate::storage::{StorageBackend, PAGE_SIZE};
 use anyhow::Result;
 use std::collections::HashMap;

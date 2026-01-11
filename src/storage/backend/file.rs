@@ -1,5 +1,4 @@
 /// File-based storage backend for native platforms.
-
 use crate::storage::{FileHeader, StorageBackend, PAGE_SIZE};
 use anyhow::Result;
 use std::fs::{File, OpenOptions};
@@ -35,6 +34,7 @@ impl FileBackend {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(false)
             .open(&path)?;
 
         // Check file size using the open file handle's metadata.

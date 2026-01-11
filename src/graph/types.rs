@@ -165,8 +165,8 @@ mod tests {
         assert_eq!(int_val.as_integer(), Some(42));
         assert_eq!(int_val.as_string(), None);
 
-        let float_val = PropertyValue::Float(3.14);
-        assert_eq!(float_val.as_float(), Some(3.14));
+        let float_val = PropertyValue::Float(42.5);
+        assert_eq!(float_val.as_float(), Some(42.5));
 
         let bool_val = PropertyValue::Boolean(true);
         assert_eq!(bool_val.as_boolean(), Some(true));

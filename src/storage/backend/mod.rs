@@ -1,5 +1,4 @@
 /// Backend implementations for different platforms.
-
 pub mod memory;
 
 #[cfg(not(target_arch = "wasm32"))]

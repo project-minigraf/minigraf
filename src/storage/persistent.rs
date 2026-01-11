@@ -2,7 +2,6 @@
 ///
 /// This module bridges the gap between high-level graph operations (nodes, edges)
 /// and low-level page-based storage backends.
-
 use crate::graph::types::{Edge, EdgeId, Node, NodeId};
 use crate::storage::{FileHeader, StorageBackend, PAGE_SIZE};
 use anyhow::Result;
@@ -268,7 +267,7 @@ pub struct StorageStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::types::{Property, PropertyValue};
+    use crate::graph::types::PropertyValue;
     use crate::storage::backend::MemoryBackend;
 
     #[test]

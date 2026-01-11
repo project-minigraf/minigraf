@@ -1,5 +1,4 @@
 /// Thread safety and concurrency tests.
-
 use minigraf::GraphStorage;
 use std::sync::Arc;
 use std::thread;
@@ -25,7 +24,7 @@ fn test_concurrent_reads() {
         let handle = thread::spawn(move || {
             for _ in 0..100 {
                 let nodes = storage_clone.get_all_nodes().unwrap();
-                assert!(nodes.len() > 0, "Thread {} found empty storage", i);
+                assert!(!nodes.is_empty(), "Thread {} found empty storage", i);
             }
         });
         handles.push(handle);

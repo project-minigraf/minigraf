@@ -1,7 +1,5 @@
 /// Comprehensive edge case and error handling tests.
-
-use minigraf::{Minigraf, GraphStorage, Node, Edge, PropertyValue};
-use std::collections::HashMap;
+use minigraf::{Minigraf, PropertyValue};
 use std::fs;
 
 #[test]

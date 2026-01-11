@@ -2,9 +2,8 @@
 ///
 /// This example shows how to use the low-level storage backend API
 /// to read and write pages to a .graph file.
-
 use minigraf::storage::backend::{FileBackend, MemoryBackend};
-use minigraf::storage::{FileHeader, StorageBackend, PAGE_SIZE};
+use minigraf::storage::{StorageBackend, PAGE_SIZE};
 
 fn main() -> anyhow::Result<()> {
     println!("Minigraf Storage Backend Example\n");

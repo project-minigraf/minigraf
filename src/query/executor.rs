@@ -240,7 +240,7 @@ fn format_property_value(value: &crate::graph::types::PropertyValue) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::types::{Property, PropertyValue};
+    use crate::graph::types::PropertyValue;
     use crate::query::parser::parse_query;
     use std::collections::HashMap;
 
