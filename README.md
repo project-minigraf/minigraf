@@ -216,7 +216,7 @@ Minigraf uses a **platform-abstraction layer** inspired by SQLite's VFS architec
 
 ### Future Backends
 
-- **IndexedDB** ⏳ - Browser storage for WASM (Phase 4)
+- **IndexedDB** ⏳ - Browser storage for WASM (Phase 5)
   - Same API, different implementation
   - Enables Minigraf in web applications
 

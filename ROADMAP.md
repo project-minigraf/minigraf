@@ -258,20 +258,20 @@ WAL: Append-only log at end of file
 
 ## GQL Spec Compliance Roadmap
 
-Separate from architecture phases, here's GQL spec feature coverage:
+**Note**: Separate from architecture phases above. These are **feature milestones** for GQL spec coverage, not project phases.
 
 **Current**: ~2-5% of ISO/IEC 39075:2024
 
-1. ✅ **Phase 1**: Basic PoC - simple CRUD and queries
-2. ⏳ **Phase 2**: Complex patterns - multi-hop paths, variable-length
-3. ⏳ **Phase 3**: RETURN clause, projections, ORDER BY/LIMIT
-4. ⏳ **Phase 4**: UPDATE/DELETE operations
-5. ⏳ **Phase 5**: Aggregations and GROUP BY
-6. ⏳ **Phase 6**: Advanced expressions and operators
-7. ⏳ **Phase 7**: Schema, constraints, indexes
-8. ⏳ **Phase 8+**: Advanced types, multiple graphs, full spec compliance
+1. ✅ **Milestone 1**: Basic PoC - simple CRUD and queries
+2. ⏳ **Milestone 2**: Complex patterns - multi-hop paths, variable-length
+3. ⏳ **Milestone 3**: RETURN clause, projections, ORDER BY/LIMIT
+4. ⏳ **Milestone 4**: UPDATE/DELETE operations
+5. ⏳ **Milestone 5**: Aggregations and GROUP BY
+6. ⏳ **Milestone 6**: Advanced expressions and operators
+7. ⏳ **Milestone 7**: Schema, constraints, indexes
+8. ⏳ **Milestone 8+**: Advanced types, multiple graphs, full spec compliance
 
-**Note**: We prioritize practical usefulness over spec compliance. A 20% compliant implementation that's reliable is better than 100% compliance that's buggy.
+**Important**: We prioritize practical usefulness over spec compliance. A 20% compliant implementation that's reliable is better than 100% compliance that's buggy.
 
 ---
 
