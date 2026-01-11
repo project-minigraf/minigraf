@@ -359,4 +359,4 @@ Tests cover:
 
 ## License
 
-This project is open source and available under the MIT License.
+This project is open source and available under the [Mozilla Public License Version 2.0](https://opensource.org/licenses/MPL-2.0).
