@@ -11,6 +11,8 @@ Minigraf is a tiny, portable GQL (Graph Query Language) engine written in Rust. 
 - Query executor
 - Interactive REPL console
 
+**Important**: This is a GQL-inspired implementation (~2-5% of ISO/IEC 39075:2024 spec). It is NOT fully spec-compliant and prioritizes learning over conformance. See README.md's "GQL Spec Compliance" section for detailed feature coverage and roadmap.
+
 ## Build and Run Commands
 
 ```bash
