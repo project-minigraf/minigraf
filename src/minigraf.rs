@@ -245,18 +245,10 @@ mod tests {
         {
             let mut db = Minigraf::open(path).unwrap();
             db.execute("CREATE NODE (:Person) {name: \"Bob\"}").unwrap();
-
-            // Verify node was created
-            let nodes = db.nodes();
-            eprintln!("After create: {} nodes", nodes.len());
-            assert_eq!(nodes.len(), 1, "Node should be created in memory");
+            assert_eq!(db.nodes().len(), 1, "Node should be created in memory");
 
             db.save().unwrap();
-
-            // Verify stats after save
-            let stats = db.stats();
-            eprintln!("After save: node_count={}, dirty={}", stats.node_count, stats.dirty);
-            assert!(!stats.dirty, "Database should not be dirty after save");
+            assert!(!db.is_dirty(), "Database should not be dirty after save");
 
             db.close().unwrap();
         }
@@ -267,15 +259,9 @@ mod tests {
         // Reopen and verify
         {
             let mut db = Minigraf::open(path).unwrap();
-
-            // Check stats
-            let stats = db.stats();
-            eprintln!("After reopen: node_count={}, dirty={}", stats.node_count, stats.dirty);
-
             let result = db.execute("SHOW NODES").unwrap();
 
             if let QueryResult::Nodes(nodes) = result {
-                eprintln!("Found {} nodes after reopen", nodes.len());
                 assert_eq!(nodes.len(), 1, "Should find 1 node after reopening");
                 assert_eq!(nodes[0].labels, vec!["Person"]);
             } else {
