@@ -4,12 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Minigraf is a tiny, portable GQL (Graph Query Language) engine written in Rust. It's a work-in-progress learning project designed to run as a standalone binary, library, or WebAssembly module. The project currently implements a working PoC with:
+Minigraf is a tiny, portable GQL (Graph Query Language) engine written in Rust. It's a work-in-progress learning project designed to run as a standalone binary, library, or WebAssembly module.
+
+**Current Status: Phase 2 Complete** - Fully embeddable graph database with persistent storage:
 - Property graph data model (nodes, edges, properties)
-- In-memory storage engine
+- **Persistent storage engine** (`.graph` file format) - NEW!
+- **Embedded database API** (`Minigraf::open()`) - NEW!
+- Storage backend abstraction (File, Memory, future IndexedDB)
 - Custom GQL query parser
-- Query executor
+- Query executor with persistence integration
 - Interactive REPL console
+- 35+ tests, all passing
 
 **Important**: This is a GQL-inspired implementation (~2-5% of ISO/IEC 39075:2024 spec). It is NOT fully spec-compliant and prioritizes learning over conformance. See README.md's "GQL Spec Compliance" section for detailed feature coverage and roadmap.
 
@@ -100,7 +105,20 @@ The codebase is organized into the following modules:
      - CRUD operations for nodes and edges
      - Query helpers: filter by labels, properties, get edges from/to nodes
 
-2. **Query Module (`src/query/`)**:
+2. **Storage Module (`src/storage/`)**: Backend abstraction layer (Phase 2)
+   - `mod.rs`: StorageBackend trait and file format definitions
+     - `StorageBackend` trait: Platform-agnostic storage interface
+     - `FileHeader`: Metadata structure for .graph files
+     - Page size: 4KB, Magic number: "MGRF"
+   - `backend/file.rs`: File-based backend for native platforms
+     - Single `.graph` file with page-based storage
+     - Supports Linux, macOS, Windows, iOS, Android
+     - Cross-platform format (endian-safe)
+   - `backend/memory.rs`: In-memory backend
+     - Fast, non-persistent storage for testing/embedded
+   - `backend/indexeddb.rs`: Future WASM browser backend
+
+3. **Query Module (`src/query/`)**:
    - `parser.rs`: Text-based query parser supporting:
      - `CREATE NODE (:Label1:Label2) {prop: value}` - Create nodes
      - `CREATE EDGE (id1)-[LABEL]->(id2) {prop: value}` - Create edges
@@ -113,30 +131,44 @@ The codebase is organized into the following modules:
      - Validates edge creation (source/target existence)
      - Returns formatted results
 
-3. **REPL Module (`src/repl.rs`)**: Interactive console
+4. **REPL Module (`src/repl.rs`)**: Interactive console
    - Prompt-based interface (`minigraf>`)
    - Reads user input, parses queries, executes, and displays results
    - Handles EOF gracefully (src/repl.rs:27-30) for piped input
    - Error handling for parse/execution errors
 
-4. **Library (`src/lib.rs`)**: Public API
+5. **Library (`src/lib.rs`)**: Public API
    - Exports all core types: `Node`, `Edge`, `PropertyValue`, `GraphStorage`
    - Exports query functions: `parse_query`, `QueryExecutor`, `QueryResult`
+   - Exports storage: `StorageBackend`, `FileHeader`, `PAGE_SIZE`
    - Exports REPL: `Repl`
 
-5. **Binary (`src/main.rs`)**: Standalone executable
+6. **Binary (`src/main.rs`)**: Standalone executable
    - Creates in-memory storage
    - Launches interactive REPL
 
 ### Storage Implementation
 
-The current implementation uses **in-memory storage** with:
+Minigraf uses a **layered storage architecture**:
+
+**High-level** (`src/graph/storage.rs`):
+- `GraphStorage`: In-memory graph operations (Phase 1 PoC)
 - `Arc<RwLock<HashMap<NodeId, Node>>>` for nodes
 - `Arc<RwLock<HashMap<EdgeId, Edge>>>` for edges
 - Thread-safe concurrent access via read/write locks
 - UUIDs for automatic ID generation
 
-Note: RocksDB was initially considered but switched to in-memory storage for the PoC due to compilation issues.
+**Low-level** (`src/storage/`): Backend abstraction (Phase 2)
+- `StorageBackend` trait: Platform-agnostic storage interface
+- `FileBackend`: Single `.graph` file with page-based storage
+  - 4KB pages, cross-platform format
+  - Magic number "MGRF", versioned header
+- `MemoryBackend`: In-memory page storage for testing
+- Future: `IndexedDbBackend` for WASM
+
+**Philosophy**: Following SQLite's VFS model, enabling cross-platform support (native, mobile, WASM) with the same API.
+
+Note: RocksDB was considered but rejected in favor of a custom implementation that aligns with the "SQLite for graphs" philosophy (single-file, self-contained, cross-platform).
 
 ### Query Language Syntax
 

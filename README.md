@@ -12,29 +12,55 @@ This project was started to (in order):
 - Learn GQL,
 - Possibly create a borderline useful tool in the process.
 
-## Current Status - PoC
+## Current Status - Phase 2
 
-This is a proof-of-concept implementation featuring:
-- ✅ Basic property graph model (nodes, edges with properties)
-- ✅ In-memory storage
-- ✅ Interactive REPL console
-- ✅ Simple GQL-like query language
-- ✅ Test coverage
+Minigraf is now a **fully embeddable graph database** with persistent storage:
 
-## Build and Run
+- ✅ **Property graph model** - Nodes and edges with typed properties
+- ✅ **Persistent storage** - Single `.graph` file format (Phase 2 NEW!)
+- ✅ **Embedded database API** - Use like SQLite (Phase 2 NEW!)
+- ✅ **Cross-platform** - Works on Linux, macOS, Windows, iOS, Android
+- ✅ **Auto-persistence** - Changes auto-save when database is dropped
+- ✅ **Interactive REPL** - Query console for exploration
+- ✅ **Query language** - GQL-inspired syntax
+- ✅ **Test coverage** - 35+ tests, all passing
+
+## Quick Start
+
+### As an Embedded Database
+
+```rust
+use minigraf::Minigraf;
+
+// Open or create a database
+let mut db = Minigraf::open("myapp.graph")?;
+
+// Execute queries
+db.execute("CREATE NODE (:Person) {name: \"Alice\", age: 30}")?;
+db.execute("MATCH (:Person)")?;
+
+// Auto-saves on drop
+drop(db);
+
+// Later - data is still there!
+let db = Minigraf::open("myapp.graph")?;
+```
+
+### As an Interactive Console
 
 ```bash
-# Build the project
-cargo build
-
-# Build release version
-cargo build --release
-
-# Run the interactive console
+# Build and run the REPL
 cargo run
+
+# Or build release version
+cargo build --release
+./target/release/minigraf
 
 # Run tests
 cargo test
+
+# Run examples
+cargo run --example embedded
 ```
 
 ## Query Language
@@ -127,6 +153,11 @@ Goodbye!
 
 - **`src/graph/types.rs`**: Core property graph data structures (Node, Edge, Property, PropertyValue)
 - **`src/graph/storage.rs`**: In-memory storage layer with thread-safe operations
+- **`src/storage/`**: Storage backend abstraction (NEW in Phase 2)
+  - **`mod.rs`**: StorageBackend trait and file format definitions
+  - **`backend/file.rs`**: File-based backend for native platforms (.graph files)
+  - **`backend/memory.rs`**: In-memory backend for testing/embedded
+  - **`backend/indexeddb.rs`**: Browser backend (future, WASM only)
 - **`src/query/parser.rs`**: Query language parser
 - **`src/query/executor.rs`**: Query execution engine
 - **`src/repl.rs`**: Interactive REPL console
@@ -167,13 +198,52 @@ Minigraf will **NOT** be designed to be (for now):
 - Fault-tolerant,
 - ACID-compliant.
 
-## Future Features
+## Storage Backends
 
-Minigraf will support multiple backends to store its data, including:
-- In-memory ✅ (PoC done)
-- IndexedDB (browser only) ⏳
-- SQLite ⏳
-- One or more embedded KV stores (such as LevelDB or RocksDB) ⏳
+Minigraf uses a **platform-abstraction layer** inspired by SQLite's VFS architecture. Different storage backends enable cross-platform support:
+
+### Available Backends
+
+- **In-memory** ✅ - Fast, non-persistent storage (Phase 1 PoC)
+  - Perfect for testing and embedded systems
+  - Currently used by the REPL
+
+- **File-based (`.graph` files)** ✅ - Single-file persistent storage (Phase 2)
+  - Page-based storage with 4KB pages
+  - Cross-platform file format (endian-safe)
+  - Supports native platforms: Linux, macOS, Windows, iOS, Android
+  - See `examples/file_storage.rs` for usage
+
+### Future Backends
+
+- **IndexedDB** ⏳ - Browser storage for WASM (Phase 4)
+  - Same API, different implementation
+  - Enables Minigraf in web applications
+
+- **Optional: Custom implementations** ⏳
+  - Users can implement `StorageBackend` trait for custom needs
+  - Example: SQLite, RocksDB (via feature flags)
+
+### `.graph` File Format
+
+The file-based backend uses a simple, stable page-based format:
+
+```
++----------------+
+| Page 0: Header | <- Magic "MGRF", version, page count, node/edge counts
++----------------+
+| Page 1: Data   | <- Future: Nodes, edges, indexes
++----------------+
+| Page 2: Data   |
++----------------+
+| ...            |
++----------------+
+```
+
+- **Page size**: 4KB (like SQLite)
+- **Endian-safe**: Works across all platforms
+- **Single file**: Easy to backup, share, version control
+- **Stable format**: Once v1.0 ships, backwards compatible forever
 
 ## GQL Spec Compliance
 
