@@ -24,7 +24,12 @@ impl Repl {
 
             let mut input = String::new();
             match io::stdin().read_line(&mut input) {
-                Ok(_) => {
+                Ok(n) => {
+                    // EOF reached (stdin closed)
+                    if n == 0 {
+                        break;
+                    }
+
                     let input = input.trim();
 
                     if input.is_empty() {
