@@ -1,0 +1,10 @@
+HELP
+CREATE NODE (:Person) {name: "Alice", age: 30}
+CREATE NODE (:Person) {name: "Bob", age: 25}
+CREATE NODE (:Company) {name: "TechCorp"}
+SHOW NODES
+CREATE EDGE (REPLACE_WITH_ALICE_ID)-[KNOWS]->(REPLACE_WITH_BOB_ID) {since: 2020}
+SHOW EDGES
+MATCH (:Person)
+MATCH (:Person) WHERE name = "Alice"
+EXIT
