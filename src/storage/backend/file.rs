@@ -30,7 +30,6 @@ impl FileBackend {
     /// If it exists, validates and loads the header.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
-        let file_exists = path.exists();
 
         let mut file = OpenOptions::new()
             .read(true)
@@ -38,14 +37,18 @@ impl FileBackend {
             .create(true)
             .open(&path)?;
 
-        let header = if file_exists {
-            // Read and validate existing header
-            Self::read_header(&mut file)?
-        } else {
-            // New file: write initial header
-            let header = FileHeader::new();
-            Self::write_header(&mut file, &header)?;
-            header
+        // Try to read existing header. If file is empty/new, this will fail.
+        let header = match Self::read_header(&mut file) {
+            Ok(header) => {
+                // Existing file with valid header
+                header
+            }
+            Err(_) => {
+                // New file or empty file: write initial header
+                let header = FileHeader::new();
+                Self::write_header(&mut file, &header)?;
+                header
+            }
         };
 
         Ok(FileBackend { path, file, header })
