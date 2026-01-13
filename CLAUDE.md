@@ -257,6 +257,13 @@ Page 1+: Data
   - Future: EAV facts with temporal dimensions
 ```
 
+**Serialization Format** (Phase 3+):
+- Using **postcard** (v1.0+) for fact serialization
+- Replaced bincode (unmaintained as of 2024/2025)
+- postcard: Lightweight, embedded-focused, better size than bincode
+- Future consideration: Evaluate **rkyv** in Phase 5/6 for zero-copy
+  deserialization when implementing WAL or memory-mapped access
+
 ### Query Language
 
 **Current (Phase 1-2, GQL-inspired)** - Archived:
@@ -391,6 +398,10 @@ When implementing features, always ask:
 - Indexes (EAVT, AEVT, AVET, VAET)
 - Query optimization
 - Benchmarking
+- **Evaluate rkyv**: Consider switching from postcard to rkyv for zero-copy
+  deserialization. rkyv offers 2x better performance for reads/writes but adds
+  complexity. Worth evaluating when implementing memory-mapped database access
+  or when WAL performance becomes critical.
 
 **Phase 7** (3-4 months): Cross-platform
 - WASM (IndexedDB backend)
