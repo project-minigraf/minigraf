@@ -1,0 +1,468 @@
+use super::types::{EdnValue, Pattern};
+use crate::graph::types::{EntityId, Fact, Value};
+use crate::graph::FactStorage;
+use std::collections::HashMap;
+use uuid::Uuid;
+
+/// Variable bindings for query execution
+/// Maps variable names (e.g., "?name") to their bound values
+pub type Bindings = HashMap<String, Value>;
+
+/// Pattern matcher that finds facts matching a pattern and produces bindings
+pub struct PatternMatcher {
+    storage: FactStorage,
+}
+
+impl PatternMatcher {
+    pub fn new(storage: FactStorage) -> Self {
+        PatternMatcher { storage }
+    }
+
+    /// Match a single pattern against all facts in storage
+    /// Returns a list of bindings, one for each matching fact
+    pub fn match_pattern(&self, pattern: &Pattern) -> Vec<Bindings> {
+        let mut results = Vec::new();
+
+        // Get all currently asserted facts
+        let facts = self.storage.get_asserted_facts().unwrap_or_default();
+
+        for fact in facts {
+            if let Some(bindings) = self.match_fact_against_pattern(&fact, pattern) {
+                results.push(bindings);
+            }
+        }
+
+        results
+    }
+
+    /// Try to match a single fact against a pattern
+    /// Returns Some(bindings) if successful, None otherwise
+    fn match_fact_against_pattern(&self, fact: &Fact, pattern: &Pattern) -> Option<Bindings> {
+        let mut bindings = HashMap::new();
+
+        // Match entity
+        if !self.match_component(&pattern.entity, &Value::Ref(fact.entity), &mut bindings) {
+            return None;
+        }
+
+        // Match attribute
+        if !self.match_component(
+            &pattern.attribute,
+            &Value::Keyword(fact.attribute.clone()),
+            &mut bindings,
+        ) {
+            return None;
+        }
+
+        // Match value
+        if !self.match_component(&pattern.value, &fact.value, &mut bindings) {
+            return None;
+        }
+
+        Some(bindings)
+    }
+
+    /// Match a pattern component (entity, attribute, or value) against a fact value
+    /// Returns true if match succeeds, updating bindings for variables
+    fn match_component(
+        &self,
+        pattern_component: &EdnValue,
+        fact_value: &Value,
+        bindings: &mut Bindings,
+    ) -> bool {
+        match pattern_component {
+            // Variable: bind it or check consistency
+            EdnValue::Symbol(var) if var.starts_with('?') => {
+                if let Some(existing) = bindings.get(var) {
+                    // Variable already bound, check consistency
+                    existing == fact_value
+                } else {
+                    // Bind the variable
+                    bindings.insert(var.clone(), fact_value.clone());
+                    true
+                }
+            }
+
+            // Constant: must match exactly
+            EdnValue::Keyword(k) => {
+                if let Value::Keyword(fk) = fact_value {
+                    k == fk
+                } else {
+                    false
+                }
+            }
+
+            EdnValue::String(s) => {
+                if let Value::String(fs) = fact_value {
+                    s == fs
+                } else {
+                    false
+                }
+            }
+
+            EdnValue::Integer(i) => {
+                if let Value::Integer(fi) = fact_value {
+                    i == fi
+                } else {
+                    false
+                }
+            }
+
+            EdnValue::Float(f) => {
+                if let Value::Float(ff) = fact_value {
+                    (f - ff).abs() < f64::EPSILON
+                } else {
+                    false
+                }
+            }
+
+            EdnValue::Boolean(b) => {
+                if let Value::Boolean(fb) = fact_value {
+                    b == fb
+                } else {
+                    false
+                }
+            }
+
+            EdnValue::Uuid(u) => {
+                if let Value::Ref(entity_id) = fact_value {
+                    u == entity_id
+                } else {
+                    false
+                }
+            }
+
+            EdnValue::Nil => matches!(fact_value, Value::Null),
+
+            // Symbols (non-variables) or other types are not supported in patterns
+            _ => false,
+        }
+    }
+
+    /// Match multiple patterns with variable unification
+    /// Returns bindings that satisfy all patterns simultaneously
+    pub fn match_patterns(&self, patterns: &[Pattern]) -> Vec<Bindings> {
+        if patterns.is_empty() {
+            return vec![HashMap::new()];
+        }
+
+        // Start with the first pattern
+        let mut results = self.match_pattern(&patterns[0]);
+
+        // Join with each subsequent pattern
+        for pattern in &patterns[1..] {
+            results = self.join_with_pattern(results, pattern);
+        }
+
+        results
+    }
+
+    /// Join existing bindings with a new pattern
+    /// Only keeps bindings that are consistent with the new pattern
+    fn join_with_pattern(
+        &self,
+        existing_bindings: Vec<Bindings>,
+        pattern: &Pattern,
+    ) -> Vec<Bindings> {
+        let mut results = Vec::new();
+
+        for existing in existing_bindings {
+            // Try to match the pattern with existing bindings
+            let new_matches = self.match_pattern_with_bindings(pattern, &existing);
+            results.extend(new_matches);
+        }
+
+        results
+    }
+
+    /// Match a pattern given existing variable bindings
+    /// Returns new bindings that extend the existing ones
+    fn match_pattern_with_bindings(
+        &self,
+        pattern: &Pattern,
+        existing: &Bindings,
+    ) -> Vec<Bindings> {
+        let mut results = Vec::new();
+
+        let facts = self.storage.get_asserted_facts().unwrap_or_default();
+
+        for fact in facts {
+            // Try to match with existing bindings
+            let mut new_bindings = existing.clone();
+
+            // Apply existing bindings to pattern before matching
+            let resolved_pattern = self.apply_bindings_to_pattern(pattern, existing);
+
+            if let Some(additional_bindings) =
+                self.match_fact_against_pattern(&fact, &resolved_pattern)
+            {
+                // Check that additional bindings are consistent with existing
+                let mut consistent = true;
+                for (var, val) in &additional_bindings {
+                    if matches!(existing.get(var), Some(existing_val) if existing_val != val) {
+                        consistent = false;
+                        break;
+                    }
+                }
+
+                if consistent {
+                    // Merge bindings
+                    new_bindings.extend(additional_bindings);
+                    results.push(new_bindings);
+                }
+            }
+        }
+
+        results
+    }
+
+    /// Apply existing bindings to a pattern, replacing bound variables with their values
+    fn apply_bindings_to_pattern(&self, pattern: &Pattern, bindings: &Bindings) -> Pattern {
+        Pattern {
+            entity: self.apply_binding_to_component(&pattern.entity, bindings),
+            attribute: self.apply_binding_to_component(&pattern.attribute, bindings),
+            value: self.apply_binding_to_component(&pattern.value, bindings),
+        }
+    }
+
+    /// Apply bindings to a single pattern component
+    fn apply_binding_to_component(
+        &self,
+        component: &EdnValue,
+        bindings: &Bindings,
+    ) -> EdnValue {
+        match component {
+            EdnValue::Symbol(var) if var.starts_with('?') => {
+                if let Some(value) = bindings.get(var) {
+                    // Convert Value to EdnValue
+                    self.value_to_edn(value)
+                } else {
+                    component.clone()
+                }
+            }
+            _ => component.clone(),
+        }
+    }
+
+    /// Convert a Value to EdnValue for pattern matching
+    fn value_to_edn(&self, value: &Value) -> EdnValue {
+        match value {
+            Value::String(s) => EdnValue::String(s.clone()),
+            Value::Integer(i) => EdnValue::Integer(*i),
+            Value::Float(f) => EdnValue::Float(*f),
+            Value::Boolean(b) => EdnValue::Boolean(*b),
+            Value::Ref(entity_id) => EdnValue::Uuid(*entity_id),
+            Value::Keyword(k) => EdnValue::Keyword(k.clone()),
+            Value::Null => EdnValue::Nil,
+        }
+    }
+}
+
+/// Convert EdnValue to Value for storage
+pub fn edn_to_value(edn: &EdnValue) -> Result<Value, String> {
+    match edn {
+        EdnValue::String(s) => Ok(Value::String(s.clone())),
+        EdnValue::Integer(i) => Ok(Value::Integer(*i)),
+        EdnValue::Float(f) => Ok(Value::Float(*f)),
+        EdnValue::Boolean(b) => Ok(Value::Boolean(*b)),
+        EdnValue::Keyword(k) => Ok(Value::Keyword(k.clone())),
+        EdnValue::Uuid(u) => Ok(Value::Ref(*u)),
+        EdnValue::Nil => Ok(Value::Null),
+        EdnValue::Symbol(s) if s.starts_with('?') => {
+            Err(format!("Cannot convert unbound variable {} to value", s))
+        }
+        _ => Err(format!("Cannot convert {:?} to Value", edn)),
+    }
+}
+
+/// Convert EdnValue to EntityId (must be a keyword or UUID)
+pub fn edn_to_entity_id(edn: &EdnValue) -> Result<EntityId, String> {
+    match edn {
+        EdnValue::Keyword(k) => {
+            // Convert keyword to deterministic UUID
+            // For now, we'll use a simple hash-based approach
+            // In production, you might want a more sophisticated method
+            let hash = k.as_bytes();
+            // Create a UUID from the keyword string
+            // This is deterministic: same keyword always gives same UUID
+            if let Ok(uuid) = Uuid::parse_str(k.trim_start_matches(':')) {
+                Ok(uuid)
+            } else {
+                // Generate UUID from keyword name
+                Ok(Uuid::new_v5(&Uuid::NAMESPACE_OID, hash))
+            }
+        }
+        EdnValue::Uuid(u) => Ok(*u),
+        _ => Err(format!("Expected keyword or UUID for entity, got {:?}", edn)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_match_simple_pattern() {
+        let storage = FactStorage::new();
+        let alice_id = Uuid::new_v4();
+
+        // Add some facts
+        storage
+            .transact(vec![
+                (
+                    alice_id,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                ),
+                (alice_id, ":person/age".to_string(), Value::Integer(30)),
+            ])
+            .unwrap();
+
+        let matcher = PatternMatcher::new(storage);
+
+        // Pattern: [?e :person/name "Alice"]
+        let pattern = Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":person/name".to_string()),
+            EdnValue::String("Alice".to_string()),
+        );
+
+        let results = matcher.match_pattern(&pattern);
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].get("?e"),
+            Some(&Value::Ref(alice_id))
+        );
+    }
+
+    #[test]
+    fn test_match_pattern_with_variable_value() {
+        let storage = FactStorage::new();
+        let alice_id = Uuid::new_v4();
+
+        storage
+            .transact(vec![(
+                alice_id,
+                ":person/name".to_string(),
+                Value::String("Alice".to_string()),
+            )])
+            .unwrap();
+
+        let matcher = PatternMatcher::new(storage);
+
+        // Pattern: [?e :person/name ?name]
+        let pattern = Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":person/name".to_string()),
+            EdnValue::Symbol("?name".to_string()),
+        );
+
+        let results = matcher.match_pattern(&pattern);
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].get("?name"),
+            Some(&Value::String("Alice".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_match_multiple_patterns() {
+        let storage = FactStorage::new();
+        let alice_id = Uuid::new_v4();
+
+        storage
+            .transact(vec![
+                (
+                    alice_id,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                ),
+                (alice_id, ":person/age".to_string(), Value::Integer(30)),
+            ])
+            .unwrap();
+
+        let matcher = PatternMatcher::new(storage);
+
+        // Patterns: [?e :person/name ?name] [?e :person/age ?age]
+        let patterns = vec![
+            Pattern::new(
+                EdnValue::Symbol("?e".to_string()),
+                EdnValue::Keyword(":person/name".to_string()),
+                EdnValue::Symbol("?name".to_string()),
+            ),
+            Pattern::new(
+                EdnValue::Symbol("?e".to_string()),
+                EdnValue::Keyword(":person/age".to_string()),
+                EdnValue::Symbol("?age".to_string()),
+            ),
+        ];
+
+        let results = matcher.match_patterns(&patterns);
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].get("?name"),
+            Some(&Value::String("Alice".to_string()))
+        );
+        assert_eq!(results[0].get("?age"), Some(&Value::Integer(30)));
+    }
+
+    #[test]
+    fn test_match_patterns_no_match() {
+        let storage = FactStorage::new();
+        let alice_id = Uuid::new_v4();
+
+        storage
+            .transact(vec![(
+                alice_id,
+                ":person/name".to_string(),
+                Value::String("Alice".to_string()),
+            )])
+            .unwrap();
+
+        let matcher = PatternMatcher::new(storage);
+
+        // Pattern asks for Bob, but we only have Alice
+        let pattern = Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":person/name".to_string()),
+            EdnValue::String("Bob".to_string()),
+        );
+
+        let results = matcher.match_pattern(&pattern);
+        assert_eq!(results.len(), 0);
+    }
+
+    #[test]
+    fn test_edn_to_value() {
+        assert_eq!(
+            edn_to_value(&EdnValue::String("test".to_string())).unwrap(),
+            Value::String("test".to_string())
+        );
+        assert_eq!(
+            edn_to_value(&EdnValue::Integer(42)).unwrap(),
+            Value::Integer(42)
+        );
+        assert_eq!(
+            edn_to_value(&EdnValue::Boolean(true)).unwrap(),
+            Value::Boolean(true)
+        );
+
+        // Variables should fail
+        let result = edn_to_value(&EdnValue::Symbol("?x".to_string()));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_edn_to_entity_id() {
+        let uuid = Uuid::new_v4();
+        assert_eq!(
+            edn_to_entity_id(&EdnValue::Uuid(uuid)).unwrap(),
+            uuid
+        );
+
+        // Keywords should generate deterministic UUIDs
+        let result1 = edn_to_entity_id(&EdnValue::Keyword(":alice".to_string())).unwrap();
+        let result2 = edn_to_entity_id(&EdnValue::Keyword(":alice".to_string())).unwrap();
+        assert_eq!(result1, result2); // Same keyword = same UUID
+    }
+}
