@@ -13,12 +13,36 @@ use anyhow::Result;
 /// - Page 0: File header (metadata)
 /// - Page 1+: Serialized facts (one fact per page, for simplicity)
 ///
+/// # Storage Strategy (Phase 3-5)
+///
 /// Current implementation uses a simple "load all, save all" approach:
-/// - On open: Deserialize all facts into memory
+/// - On open: Deserialize all facts into memory (FactStorage)
+/// - All operations: Work on in-memory Vec<Fact>
 /// - On save: Serialize all facts back to disk
 ///
-/// This works well for small-to-medium databases (<100K facts) and provides
-/// a complete embedded database experience.
+/// **Trade-offs:**
+/// - ✅ Simple, correct, easy to reason about
+/// - ✅ Fast queries (no disk I/O)
+/// - ✅ Good for embedded use cases with small-medium datasets
+/// - ❌ Memory usage = entire database size
+/// - ❌ Not scalable to very large datasets
+///
+/// **Scalability:**
+/// - Works well for <100K facts (typical use case)
+/// - Memory footprint: ~100-200 bytes per fact
+/// - Example: 100K facts ≈ 10-20MB memory (acceptable for embedded)
+///
+/// # Future: Phase 6 (Performance)
+///
+/// Phase 6 will introduce page-based access with indexes:
+/// - EAVT, AEVT, AVET, VAET indexes (in-memory B-trees)
+/// - On-demand fact loading from disk
+/// - LRU cache for hot pages
+/// - Memory-mapped file access (optional)
+/// - Target: Scale to millions of facts with bounded memory
+///
+/// The page-based backend (StorageBackend) is designed to support this
+/// future architecture without breaking changes.
 pub struct PersistentFactStorage<B: StorageBackend> {
     backend: B,
     storage: FactStorage,

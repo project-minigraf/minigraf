@@ -14,6 +14,17 @@ use std::sync::{Arc, RwLock};
 /// - Time travel queries (Phase 4)
 /// - Audit trails
 ///
+/// # Storage Model (Phase 3-5)
+///
+/// This is a simple in-memory store using `Vec<Fact>`. All facts are kept in
+/// memory for fast access. For persistence, see `PersistentFactStorage` which
+/// wraps this with a "load all, save all" strategy.
+///
+/// **This is intentionally simple for Phase 3-5.** Phase 6 will add:
+/// - Index-based access (EAVT, AEVT, AVET, VAET)
+/// - On-demand loading from disk
+/// - Bounded memory usage
+///
 /// # Examples
 /// ```
 /// use minigraf::{FactStorage, Value};
