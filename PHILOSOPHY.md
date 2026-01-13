@@ -461,6 +461,7 @@ It's important to say "no" to preserve the project's focus:
 - Features that only serve enterprise/distributed use cases
 - Complexity that compromises reliability
 - Dependencies that increase binary size significantly
+
 - Breaking changes without overwhelming justification
 - Features that should be separate libraries
 - Premature optimization
