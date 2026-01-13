@@ -376,7 +376,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
         .ok_or("Query argument must be a vector")?;
 
     let mut find_vars = Vec::new();
-    let mut patterns = Vec::new();
+    let mut where_clauses = Vec::new();
     let mut current_clause = None;
 
     let mut i = 0;
@@ -400,12 +400,35 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                 }
             }
             Some(":where") => {
-                // Parse patterns
+                // Parse both patterns (vectors) and rule invocations (lists)
                 if let Some(pattern_vec) = query_vector[i].as_vector() {
-                    patterns.push(Pattern::from_edn(pattern_vec)?);
+                    // This is a pattern: [?e :attr ?v]
+                    let pattern = Pattern::from_edn(pattern_vec)?;
+                    where_clauses.push(WhereClause::Pattern(pattern));
+                } else if let Some(rule_list) = query_vector[i].as_list() {
+                    // This is a rule invocation: (predicate ?arg1 ?arg2)
+                    if rule_list.is_empty() {
+                        return Err("Rule invocation cannot be empty".to_string());
+                    }
+
+                    // First element should be the predicate name (symbol)
+                    let predicate = match &rule_list[0] {
+                        EdnValue::Symbol(s) => s.clone(),
+                        _ => {
+                            return Err(
+                                "Rule invocation must start with predicate name (symbol)"
+                                    .to_string(),
+                            )
+                        }
+                    };
+
+                    // Rest are arguments
+                    let args = rule_list[1..].to_vec();
+
+                    where_clauses.push(WhereClause::RuleInvocation { predicate, args });
                 } else {
                     return Err(format!(
-                        "Expected pattern vector in :where clause, got {:?}",
+                        "Expected pattern vector or rule invocation in :where clause, got {:?}",
                         query_vector[i]
                     ));
                 }
@@ -419,7 +442,8 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
     }
 
     Ok(DatalogCommand::Query(DatalogQuery::new(
-        find_vars, patterns,
+        find_vars,
+        where_clauses,
     )))
 }
 
@@ -465,9 +489,49 @@ fn parse_retract(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
     Ok(DatalogCommand::Retract(Transaction::new(patterns)))
 }
 
-fn parse_rule(_elements: &[EdnValue]) -> Result<DatalogCommand, String> {
-    // TODO: Implement rule parsing in later phase
-    Err("Rule parsing not yet implemented".to_string())
+fn parse_rule(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
+    // Rule syntax: (rule [(predicate ?args) [pattern1] [pattern2] ...])
+    // elements[0] = Vector with head (list) + body (patterns/rule calls)
+
+    if elements.is_empty() {
+        return Err("Rule must have a body".to_string());
+    }
+
+    // Parse the rule body (single vector containing head + body patterns)
+    let body_vec = elements[0]
+        .as_vector()
+        .ok_or("Rule body must be a vector")?;
+
+    if body_vec.is_empty() {
+        return Err("Rule body cannot be empty".to_string());
+    }
+
+    // First element is the head (must be a list)
+    let head_list = body_vec[0]
+        .as_list()
+        .ok_or("Rule head must be a list: (predicate ?args)")?;
+
+    if head_list.is_empty() {
+        return Err("Rule head cannot be empty".to_string());
+    }
+
+    // Verify head starts with a symbol (predicate name)
+    match &head_list[0] {
+        EdnValue::Symbol(_) => {}
+        _ => return Err("Rule head must start with a symbol (predicate name)".to_string()),
+    }
+
+    // Rest of body_vec are patterns or rule invocations
+    let body_clauses = body_vec[1..].to_vec();
+
+    if body_clauses.is_empty() {
+        return Err("Rule must have at least one pattern or rule invocation in body".to_string());
+    }
+
+    Ok(DatalogCommand::Rule(Rule {
+        head: head_list.clone(),
+        body: body_clauses,
+    }))
 }
 
 #[cfg(test)]
@@ -489,9 +553,9 @@ mod tests {
 
     #[test]
     fn test_tokenize_numbers() {
-        let tokens = tokenize("42 3.14 -5 -2.5").unwrap();
+        let tokens = tokenize("42 4.5 -5 -2.5").unwrap();
         assert_eq!(tokens[0], Token::Integer(42));
-        assert_eq!(tokens[1], Token::Float(3.14));
+        assert_eq!(tokens[1], Token::Float(4.5));
         assert_eq!(tokens[2], Token::Integer(-5));
         assert_eq!(tokens[3], Token::Float(-2.5));
     }
@@ -544,9 +608,10 @@ mod tests {
         match cmd {
             DatalogCommand::Query(q) => {
                 assert_eq!(q.find, vec!["?name"]);
-                assert_eq!(q.patterns.len(), 1);
+                let patterns = q.get_patterns();
+                assert_eq!(patterns.len(), 1);
                 assert_eq!(
-                    q.patterns[0].attribute,
+                    patterns[0].attribute,
                     EdnValue::Keyword(":person/name".to_string())
                 );
             }
@@ -598,7 +663,7 @@ mod tests {
         match cmd {
             DatalogCommand::Query(q) => {
                 assert_eq!(q.find, vec!["?name", "?age"]);
-                assert_eq!(q.patterns.len(), 2);
+                assert_eq!(q.get_patterns().len(), 2);
             }
             _ => panic!("Expected Query command"),
         }
@@ -615,5 +680,160 @@ mod tests {
             }
             _ => panic!("Expected Retract command"),
         }
+    }
+
+    #[test]
+    fn test_parse_simple_rule() {
+        let input = r#"(rule [(reachable ?x ?y) [?x :connected ?y]])"#;
+        let cmd = parse_datalog_command(input).unwrap();
+
+        match cmd {
+            DatalogCommand::Rule(rule) => {
+                // Verify head: (reachable ?x ?y)
+                assert_eq!(rule.head.len(), 3);
+                assert_eq!(rule.head[0], EdnValue::Symbol("reachable".to_string()));
+                assert_eq!(rule.head[1], EdnValue::Symbol("?x".to_string()));
+                assert_eq!(rule.head[2], EdnValue::Symbol("?y".to_string()));
+
+                // Verify body has one pattern
+                assert_eq!(rule.body.len(), 1);
+            }
+            _ => panic!("Expected Rule command"),
+        }
+    }
+
+    #[test]
+    fn test_parse_recursive_rule() {
+        let input = r#"(rule [(reachable ?x ?y) [?x :connected ?z] (reachable ?z ?y)])"#;
+        let cmd = parse_datalog_command(input).unwrap();
+
+        match cmd {
+            DatalogCommand::Rule(rule) => {
+                // Verify head
+                assert_eq!(rule.head.len(), 3);
+                assert_eq!(rule.head[0], EdnValue::Symbol("reachable".to_string()));
+
+                // Verify body has two clauses: pattern + rule invocation
+                assert_eq!(rule.body.len(), 2);
+
+                // First clause should be a vector (pattern)
+                assert!(rule.body[0].as_vector().is_some());
+
+                // Second clause should be a list (rule invocation)
+                assert!(rule.body[1].as_list().is_some());
+            }
+            _ => panic!("Expected Rule command"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rule_with_multiple_patterns() {
+        let input = r#"(rule [(ancestor ?a ?d) [?a :parent ?p] [?p :parent ?d]])"#;
+        let cmd = parse_datalog_command(input).unwrap();
+
+        match cmd {
+            DatalogCommand::Rule(rule) => {
+                assert_eq!(rule.head[0], EdnValue::Symbol("ancestor".to_string()));
+                // Two patterns in body
+                assert_eq!(rule.body.len(), 2);
+                assert!(rule.body[0].as_vector().is_some());
+                assert!(rule.body[1].as_vector().is_some());
+            }
+            _ => panic!("Expected Rule command"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rule_empty_body_fails() {
+        let input = r#"(rule [(reachable ?x ?y)])"#;
+        let result = parse_datalog_command(input);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_rule_invalid_head_fails() {
+        // Head must be a list, not a vector
+        let input = r#"(rule [[reachable ?x ?y] [?x :connected ?y]])"#;
+        let result = parse_datalog_command(input);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_query_with_rule_invocation() {
+        let input = r#"(query [:find ?to :where (reachable :alice ?to)])"#;
+        let cmd = parse_datalog_command(input).unwrap();
+
+        match cmd {
+            DatalogCommand::Query(q) => {
+                assert_eq!(q.find, vec!["?to"]);
+                assert_eq!(q.where_clauses.len(), 1);
+
+                // Check it's a rule invocation
+                assert!(q.uses_rules());
+
+                let rule_invocations = q.get_rule_invocations();
+                assert_eq!(rule_invocations.len(), 1);
+                assert_eq!(rule_invocations[0].0, "reachable");
+                assert_eq!(rule_invocations[0].1.len(), 2);
+            }
+            _ => panic!("Expected Query command"),
+        }
+    }
+
+    #[test]
+    fn test_parse_query_mixed_pattern_and_rule() {
+        let input =
+            r#"(query [:find ?name :where (reachable :alice ?person) [?person :person/name ?name]])"#;
+        let cmd = parse_datalog_command(input).unwrap();
+
+        match cmd {
+            DatalogCommand::Query(q) => {
+                assert_eq!(q.find, vec!["?name"]);
+                assert_eq!(q.where_clauses.len(), 2);
+
+                // Should have both rule and pattern
+                assert!(q.uses_rules());
+                assert_eq!(q.get_rule_invocations().len(), 1);
+                assert_eq!(q.get_patterns().len(), 1);
+            }
+            _ => panic!("Expected Query command"),
+        }
+    }
+
+    #[test]
+    fn test_parse_query_multiple_rule_invocations() {
+        let input = r#"(query [:find ?z :where (reachable :alice ?x) (reachable ?x ?z)])"#;
+        let cmd = parse_datalog_command(input).unwrap();
+
+        match cmd {
+            DatalogCommand::Query(q) => {
+                assert_eq!(q.find, vec!["?z"]);
+                assert_eq!(q.where_clauses.len(), 2);
+                assert_eq!(q.get_rule_invocations().len(), 2);
+            }
+            _ => panic!("Expected Query command"),
+        }
+    }
+
+    #[test]
+    fn test_parse_query_pattern_only_no_rules() {
+        let input = r#"(query [:find ?name :where [?e :person/name ?name]])"#;
+        let cmd = parse_datalog_command(input).unwrap();
+
+        match cmd {
+            DatalogCommand::Query(q) => {
+                assert!(!q.uses_rules());
+                assert_eq!(q.get_rule_invocations().len(), 0);
+                assert_eq!(q.get_patterns().len(), 1);
+            }
+            _ => panic!("Expected Query command"),
+        }
+    }
+
+    #[test]
+    fn test_parse_rule_invocation_empty_fails() {
+        let input = r#"(query [:find ?x :where ()])"#;
+        let result = parse_datalog_command(input);
+        assert!(result.is_err());
     }
 }

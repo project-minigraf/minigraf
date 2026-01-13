@@ -6,7 +6,7 @@
 ///
 /// Inspired by SQLite's VFS (Virtual File System) architecture.
 pub mod backend;
-pub mod persistent;
+pub mod persistent_facts;
 
 use anyhow::Result;
 

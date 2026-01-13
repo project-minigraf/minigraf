@@ -120,25 +120,96 @@ impl Pattern {
     }
 }
 
+/// A clause in the :where section of a query
+///
+/// Can be either a fact pattern or a rule invocation.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WhereClause {
+    /// A fact pattern: [?e :person/name ?name]
+    Pattern(Pattern),
+    /// A rule invocation: (reachable ?from ?to)
+    RuleInvocation {
+        /// Predicate name (e.g., "reachable")
+        predicate: String,
+        /// Arguments (variables, constants, or UUIDs)
+        args: Vec<EdnValue>,
+    },
+}
+
 /// A Datalog query with :find and :where clauses
 ///
-/// Example:
+/// Example with patterns:
 /// ```datalog
 /// (query [:find ?name ?age
 ///         :where [?e :person/name ?name]
 ///                [?e :person/age ?age]])
 /// ```
+///
+/// Example with rule invocation:
+/// ```datalog
+/// (query [:find ?to
+///         :where (reachable :alice ?to)])
+/// ```
+///
+/// Mixed example:
+/// ```datalog
+/// (query [:find ?name
+///         :where (reachable :alice ?person)
+///                [?person :person/name ?name]])
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct DatalogQuery {
     /// Variables to return (from :find clause)
     pub find: Vec<String>,
-    /// Patterns to match (from :where clause)
-    pub patterns: Vec<Pattern>,
+    /// Where clauses: patterns and rule invocations
+    pub where_clauses: Vec<WhereClause>,
 }
 
 impl DatalogQuery {
-    pub fn new(find: Vec<String>, patterns: Vec<Pattern>) -> Self {
-        DatalogQuery { find, patterns }
+    pub fn new(find: Vec<String>, where_clauses: Vec<WhereClause>) -> Self {
+        DatalogQuery {
+            find,
+            where_clauses,
+        }
+    }
+
+    /// Helper: Create a query with only patterns (for backward compatibility)
+    pub fn from_patterns(find: Vec<String>, patterns: Vec<Pattern>) -> Self {
+        DatalogQuery {
+            find,
+            where_clauses: patterns.into_iter().map(WhereClause::Pattern).collect(),
+        }
+    }
+
+    /// Helper: Get all patterns from where clauses
+    pub fn get_patterns(&self) -> Vec<Pattern> {
+        self.where_clauses
+            .iter()
+            .filter_map(|clause| match clause {
+                WhereClause::Pattern(p) => Some(p.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Helper: Get all rule invocations from where clauses
+    pub fn get_rule_invocations(&self) -> Vec<(String, Vec<EdnValue>)> {
+        self.where_clauses
+            .iter()
+            .filter_map(|clause| match clause {
+                WhereClause::RuleInvocation { predicate, args } => {
+                    Some((predicate.clone(), args.clone()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Check if this query uses any rules
+    pub fn uses_rules(&self) -> bool {
+        self.where_clauses
+            .iter()
+            .any(|clause| matches!(clause, WhereClause::RuleInvocation { .. }))
     }
 }
 
@@ -271,21 +342,22 @@ mod tests {
         let query = DatalogQuery::new(
             vec!["?name".to_string(), "?age".to_string()],
             vec![
-                Pattern::new(
+                WhereClause::Pattern(Pattern::new(
                     EdnValue::Symbol("?e".to_string()),
                     EdnValue::Keyword(":person/name".to_string()),
                     EdnValue::Symbol("?name".to_string()),
-                ),
-                Pattern::new(
+                )),
+                WhereClause::Pattern(Pattern::new(
                     EdnValue::Symbol("?e".to_string()),
                     EdnValue::Keyword(":person/age".to_string()),
                     EdnValue::Symbol("?age".to_string()),
-                ),
+                )),
             ],
         );
 
         assert_eq!(query.find.len(), 2);
-        assert_eq!(query.patterns.len(), 2);
+        assert_eq!(query.where_clauses.len(), 2);
+        assert_eq!(query.get_patterns().len(), 2);
     }
 
     #[test]

@@ -1,33 +1,32 @@
-use crate::graph::storage::GraphStorage;
 use crate::graph::FactStorage;
 use crate::query::datalog::{parse_datalog_command, DatalogExecutor};
-use crate::query::executor::{QueryExecutor, QueryResult};
-use crate::query::parser::parse_query;
 use std::io::{self, Write};
 
 pub struct Repl {
-    graph_storage: GraphStorage,
     fact_storage: FactStorage,
 }
 
 impl Repl {
-    pub fn new(graph_storage: GraphStorage) -> Self {
-        Repl {
-            graph_storage,
-            fact_storage: FactStorage::new(),
-        }
+    pub fn new(fact_storage: FactStorage) -> Self {
+        Repl { fact_storage }
     }
 
     pub fn run(&self) {
         println!("Minigraf v0.1.0 - Interactive Datalog Console");
-        println!("Datalog commands: (transact [...]), (query [...]), (retract [...])");
+        println!("Commands: (transact [...]), (query [...]), (retract [...])");
         println!("Type EXIT to quit.\n");
 
-        let gql_executor = QueryExecutor::new(&self.graph_storage);
         let datalog_executor = DatalogExecutor::new(self.fact_storage.clone());
+        let mut command_buffer = String::new();
+        let mut is_multiline = false;
 
         loop {
-            print!("minigraf> ");
+            // Show appropriate prompt
+            if is_multiline {
+                print!("       .> ");
+            } else {
+                print!("minigraf> ");
+            }
             io::stdout().flush().unwrap();
 
             let mut input = String::new();
@@ -38,23 +37,31 @@ impl Repl {
                         break;
                     }
 
-                    let input = input.trim();
+                    let line = input.trim();
 
-                    if input.is_empty() {
+                    // Skip empty lines and comment lines
+                    if line.is_empty() || line.starts_with('#') {
                         continue;
                     }
 
                     // Check for EXIT command
-                    if input.to_uppercase() == "EXIT" {
+                    if line.to_uppercase() == "EXIT" {
                         break;
                     }
 
-                    // Try Datalog syntax first (starts with parenthesis)
-                    if input.starts_with('(') {
-                        match parse_datalog_command(input) {
+                    // Accumulate input for multi-line commands
+                    if !command_buffer.is_empty() {
+                        command_buffer.push(' ');
+                    }
+                    command_buffer.push_str(line);
+
+                    // Check if we have a complete command (balanced parentheses)
+                    if self.is_command_complete(&command_buffer) {
+                        // Parse and execute the complete command
+                        match parse_datalog_command(&command_buffer) {
                             Ok(command) => match datalog_executor.execute(command) {
                                 Ok(result) => {
-                                    self.print_datalog_result(result);
+                                    self.print_result(result);
                                 }
                                 Err(e) => {
                                     eprintln!("Execution error: {}", e);
@@ -64,29 +71,15 @@ impl Repl {
                                 eprintln!("Parse error: {}", e);
                             }
                         }
+
+                        // Reset buffer
+                        command_buffer.clear();
+                        is_multiline = false;
+                        println!();
                     } else {
-                        // Fall back to GQL syntax (backward compatibility)
-                        match parse_query(input) {
-                            Ok(query) => match gql_executor.execute(query) {
-                                Ok(result) => {
-                                    let formatted = result.format();
-                                    println!("{}", formatted);
-
-                                    if matches!(result, QueryResult::Exit) {
-                                        break;
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!("Execution error: {}", e);
-                                }
-                            },
-                            Err(e) => {
-                                eprintln!("Parse error: {}", e);
-                            }
-                        }
+                        // Command is incomplete, continue reading
+                        is_multiline = true;
                     }
-
-                    println!();
                 }
                 Err(e) => {
                     eprintln!("Error reading input: {}", e);
@@ -96,7 +89,40 @@ impl Repl {
         }
     }
 
-    fn print_datalog_result(&self, result: crate::query::datalog::QueryResult) {
+    /// Check if a command has balanced parentheses (is complete)
+    fn is_command_complete(&self, input: &str) -> bool {
+        let mut depth = 0;
+        let mut in_string = false;
+        let mut escape_next = false;
+
+        for ch in input.chars() {
+            if escape_next {
+                escape_next = false;
+                continue;
+            }
+
+            match ch {
+                '\\' if in_string => {
+                    escape_next = true;
+                }
+                '"' => {
+                    in_string = !in_string;
+                }
+                '(' if !in_string => {
+                    depth += 1;
+                }
+                ')' if !in_string => {
+                    depth -= 1;
+                }
+                _ => {}
+            }
+        }
+
+        // Command is complete if we have balanced parens and at least one opening paren
+        depth == 0 && input.contains('(')
+    }
+
+    fn print_result(&self, result: crate::query::datalog::QueryResult) {
         use crate::query::datalog::QueryResult as DResult;
 
         match result {
@@ -116,10 +142,8 @@ impl Repl {
 
                     // Print rows
                     for row in &results {
-                        let formatted_row: Vec<String> = row
-                            .iter()
-                            .map(|v| self.format_value(v))
-                            .collect();
+                        let formatted_row: Vec<String> =
+                            row.iter().map(|v| self.format_value(v)).collect();
                         println!("{}", formatted_row.join("\t"));
                     }
 
