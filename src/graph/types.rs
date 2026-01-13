@@ -273,8 +273,8 @@ mod tests {
         assert_eq!(int_val.as_string(), None);
 
         // Float value
-        let float_val = Value::Float(3.14);
-        assert_eq!(float_val.as_float(), Some(3.14));
+        let float_val = Value::Float(4.5);
+        assert_eq!(float_val.as_float(), Some(4.5));
 
         // Boolean value
         let bool_val = Value::Boolean(true);
@@ -381,7 +381,7 @@ mod tests {
         let values = vec![
             Value::String("test".to_string()),
             Value::Integer(42),
-            Value::Float(3.14),
+            Value::Float(4.5),
             Value::Boolean(true),
             Value::Ref(Uuid::new_v4()),
             Value::Keyword(":status/active".to_string()),
