@@ -2,7 +2,7 @@ use clap::Parser;
 use minigraf::{FactStorage, FileBackend, PersistentFactStorage, Repl};
 use std::path::PathBuf;
 
-/// Minigraf - A tiny, portable bi-temporal graph database with Datalog queries
+/// Minigraf - A tiny, portable, bi-temporal graph database with Datalog queries
 #[derive(Parser, Debug)]
 #[command(name = "minigraf")]
 #[command(version = "0.1.0")]
