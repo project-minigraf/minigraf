@@ -17,9 +17,16 @@ impl Repl {
         println!("Type EXIT to quit.\n");
 
         let datalog_executor = DatalogExecutor::new(self.fact_storage.clone());
+        let mut command_buffer = String::new();
+        let mut is_multiline = false;
 
         loop {
-            print!("minigraf> ");
+            // Show appropriate prompt
+            if is_multiline {
+                print!("       .> ");
+            } else {
+                print!("minigraf> ");
+            }
             io::stdout().flush().unwrap();
 
             let mut input = String::new();
@@ -30,33 +37,49 @@ impl Repl {
                         break;
                     }
 
-                    let input = input.trim();
+                    let line = input.trim();
 
-                    if input.is_empty() {
+                    // Skip empty lines and comment lines
+                    if line.is_empty() || line.starts_with('#') {
                         continue;
                     }
 
                     // Check for EXIT command
-                    if input.to_uppercase() == "EXIT" {
+                    if line.to_uppercase() == "EXIT" {
                         break;
                     }
 
-                    // Parse and execute Datalog command
-                    match parse_datalog_command(input) {
-                        Ok(command) => match datalog_executor.execute(command) {
-                            Ok(result) => {
-                                self.print_result(result);
-                            }
-                            Err(e) => {
-                                eprintln!("Execution error: {}", e);
-                            }
-                        },
-                        Err(e) => {
-                            eprintln!("Parse error: {}", e);
-                        }
+                    // Accumulate input for multi-line commands
+                    if !command_buffer.is_empty() {
+                        command_buffer.push(' ');
                     }
+                    command_buffer.push_str(line);
 
-                    println!();
+                    // Check if we have a complete command (balanced parentheses)
+                    if self.is_command_complete(&command_buffer) {
+                        // Parse and execute the complete command
+                        match parse_datalog_command(&command_buffer) {
+                            Ok(command) => match datalog_executor.execute(command) {
+                                Ok(result) => {
+                                    self.print_result(result);
+                                }
+                                Err(e) => {
+                                    eprintln!("Execution error: {}", e);
+                                }
+                            },
+                            Err(e) => {
+                                eprintln!("Parse error: {}", e);
+                            }
+                        }
+
+                        // Reset buffer
+                        command_buffer.clear();
+                        is_multiline = false;
+                        println!();
+                    } else {
+                        // Command is incomplete, continue reading
+                        is_multiline = true;
+                    }
                 }
                 Err(e) => {
                     eprintln!("Error reading input: {}", e);
@@ -64,6 +87,39 @@ impl Repl {
                 }
             }
         }
+    }
+
+    /// Check if a command has balanced parentheses (is complete)
+    fn is_command_complete(&self, input: &str) -> bool {
+        let mut depth = 0;
+        let mut in_string = false;
+        let mut escape_next = false;
+
+        for ch in input.chars() {
+            if escape_next {
+                escape_next = false;
+                continue;
+            }
+
+            match ch {
+                '\\' if in_string => {
+                    escape_next = true;
+                }
+                '"' => {
+                    in_string = !in_string;
+                }
+                '(' if !in_string => {
+                    depth += 1;
+                }
+                ')' if !in_string => {
+                    depth -= 1;
+                }
+                _ => {}
+            }
+        }
+
+        // Command is complete if we have balanced parens and at least one opening paren
+        depth == 0 && input.contains('(')
     }
 
     fn print_result(&self, result: crate::query::datalog::QueryResult) {
