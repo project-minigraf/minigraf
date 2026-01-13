@@ -377,7 +377,6 @@ To maintain focus, these are explicitly NOT goals:
 - ❌ Distributed consensus algorithms
 - ❌ Multi-master replication
 - ❌ Built-in authentication/authorization
-- ❌ Full GQL standard compliance (implement useful subset)
 - ❌ Competing with Neo4j/TigerGraph on their turf
 - ❌ Real-time analytics (OLAP workloads)
 - ❌ Graph visualization (provide data, let others visualize)
@@ -472,12 +471,10 @@ It's important to say "no" to preserve the project's focus:
 
 Beyond SQLite, we draw inspiration from:
 
-- **SQLite**: Embedded database philosophy, single-file format
 - **Datomic**: Immutable facts, temporal queries, Datalog
 - **XTDB**: Bi-temporal database, time travel
 - **Cozo**: Embedded Datalog, graph algorithms
 - **Redis**: Simple, focused, well-documented
-- **Rust**: Memory safety, zero-cost abstractions
 - **Git**: Single-file stores (packfiles), content-addressed storage
 - **DuckDB**: Modern analytics, SQLite-style
 - **Local-first software**: Offline-capable, user-owned data
