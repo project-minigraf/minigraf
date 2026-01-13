@@ -6,11 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries** written in Rust. It's designed to be the "SQLite of graph databases" - embedded, single-file, reliable, with time travel capabilities.
 
-**Current Status: Phase 2 Complete → Phase 3 Starting** - Pivoting from GQL to Datalog:
+**Current Status: Phase 3 COMPLETE ✅ → Phase 4 Starting** - Datalog with Recursive Rules:
 - ✅ Phase 1: Property graph PoC (in-memory)
 - ✅ Phase 2: Persistent storage (`.graph` file format, embedded API)
-- 🎯 Phase 3: Datalog core (EAV model, recursive rules) - **NEXT**
-- 🎯 Phase 4: Bi-temporal support (transaction time + valid time)
+- ✅ **Phase 3: Datalog core (EAV model, recursive rules) - COMPLETE!**
+- 🎯 Phase 4: Bi-temporal support (transaction time + valid time) - **NEXT**
 - 🎯 Phase 5: ACID + WAL (crash safety, transactions)
 - 🎯 Phase 6: Performance (indexes, query optimization)
 - 🎯 v1.0.0: 12-15 months
@@ -309,60 +309,83 @@ SHOW NODES
 
 ## Test Coverage
 
-**Current Tests (Phase 1-2)**: 54 tests passing ✅
-- Unit tests:
-  - `src/graph/types.rs`: Node/Edge creation, PropertyValue
-  - `src/graph/storage.rs`: CRUD, queries, edge relationships
-  - `src/query/parser.rs`: GQL syntax parsing
-  - `src/query/executor.rs`: Query execution, validation
-  - `src/storage/`: Backend operations, persistence
-  - `src/minigraf.rs`: Embedded API
-- Integration tests:
-  - `tests/integration_test.rs`: Complete workflow
-  - `tests/concurrency_test.rs`: Thread safety
-  - `tests/edge_cases_test.rs`: Edge cases, dirty flags
+**Current Tests (Phase 3)**: 123 tests passing ✅
+- **Unit tests** (94 tests):
+  - `src/graph/types.rs`: Fact types, Value types, EAV model
+  - `src/graph/storage.rs`: FactStorage, CRUD, history tracking
+  - `src/query/datalog/parser.rs`: EDN/Datalog syntax parsing, rules
+  - `src/query/datalog/types.rs`: Pattern, WhereClause, DatalogQuery
+  - `src/query/datalog/matcher.rs`: Pattern matching, variable unification
+  - `src/query/datalog/executor.rs`: Query execution, rule registration
+  - `src/query/datalog/rules.rs`: RuleRegistry, rule management
+  - `src/query/datalog/evaluator.rs`: Semi-naive evaluation, transitive closure
+  - `src/storage/`: Backend operations, persistence (postcard)
 
-**Future Tests (Phase 3+)**:
-- Datalog parser (EDN syntax)
-- Pattern matching and unification
-- Recursive rule evaluation
-- Transitive closure
-- Bi-temporal queries (Phase 4)
-- WAL and crash recovery (Phase 5)
-- Index performance (Phase 6)
+- **Integration tests** (26 tests):
+  - `tests/complex_queries_test.rs` (10 tests): Multi-pattern joins, self-joins, edge cases
+  - `tests/recursive_rules_test.rs` (9 tests): Transitive closure, cycles, long chains, family trees
+  - `tests/concurrency_test.rs` (7 tests): Thread safety, concurrent rule registration/queries
+
+- **Doc tests** (3 tests): Inline documentation examples
+
+**Comprehensive Coverage**:
+- ✅ Datalog parser (EDN syntax) - 15 tests
+- ✅ Pattern matching and unification - 16 tests
+- ✅ **Recursive rule evaluation** - 15 tests (NEW!)
+- ✅ **Transitive closure** - 9 tests (NEW!)
+- ✅ **Concurrency** - 7 tests (NEW!)
+- ✅ Complex queries (3+ patterns, self-joins) - 10 tests (NEW!)
+
+**Demo Scripts**:
+- `demo_recursive.txt`: Comprehensive recursive rules examples (transitive closure, cycles, family trees)
 
 Run tests with: `cargo test`
+See `TEST_COVERAGE.md` for detailed coverage report.
+
+**Future Tests (Phase 4+)**:
+- Bi-temporal queries (:as-of, :valid-at) - Phase 4
+- WAL and crash recovery - Phase 5
+- Index performance - Phase 6
 
 ## Development Notes
 
-### Phase 2 (Current) - Foundation Complete ✅
+### Phase 2 (Complete) - Foundation ✅
 
 - **Storage backend abstraction** - Solid foundation for Phase 3+
 - **Single `.graph` file** - Philosophy-aligned persistent storage
 - **Embedded API** - `Minigraf::open()` works like SQLite
-- **UUID-based IDs** - Will continue in EAV model
+- **UUID-based IDs** - Continues in EAV model
 - **Thread-safe** - Concurrent read/write via RwLock
-- **Property types** - Will map to Value enum in Phase 3
 - **Auto-save** - On drop, works reliably
 - **Cross-platform** - Endian-safe file format
 
-### Phase 3 (Next) - Datalog Core 🎯
+### Phase 3 (Complete) - Datalog Core ✅
 
-**Migration Strategy**:
-1. Add EAV types alongside existing property graph types
-2. Implement Datalog parser (new module)
-3. Build query executor with pattern matching
-4. Add recursive rule evaluation
-5. Update REPL to support both syntaxes temporarily
-6. Gradually migrate tests
-7. Eventually deprecate property graph types
+**Implemented Features**:
+- ✅ EAV data model with Facts (entity, attribute, value, tx_id, asserted)
+- ✅ Datalog parser (EDN syntax, lists, vectors, UUIDs, keywords)
+- ✅ Pattern matching engine with variable unification
+- ✅ Query executor (transact, retract, query, rule commands)
+- ✅ **Recursive rules with semi-naive evaluation** (fixed-point iteration)
+- ✅ **Transitive closure queries** (multi-hop reachability)
+- ✅ **Cycle handling** (graphs with cycles converge correctly)
+- ✅ RuleRegistry (thread-safe rule management)
+- ✅ RecursiveEvaluator (delta-based fixed-point iteration)
+- ✅ REPL with multi-line support and comments
+- ✅ Persistent storage with postcard serialization
 
-**Key Implementation Tasks**:
-- EDN parser for Datalog syntax
-- Pattern matching engine
-- Variable unification
-- Semi-naive evaluation for recursion
-- Stratification for safe recursion
+**Test Coverage**: 123 tests (94 unit + 26 integration + 3 doc)
+
+**Demo**: `demo_recursive.txt` - Working examples of recursive rules
+
+### Phase 4 (Next) - Bi-temporal Support 🎯
+
+**Planned Features**:
+- Transaction time queries (`:as-of tx-id`)
+- Valid time dimensions (`valid_from`, `valid_to`)
+- Time travel queries (`:valid-at timestamp`)
+- History tracking and audit trails
+- Bi-temporal joins
 
 ### Philosophy-Aligned Development
 
@@ -375,14 +398,16 @@ When implementing features, always ask:
 
 ## Future Work (Roadmap)
 
-**Phase 3** (3-4 months): Datalog Core
-- EAV data model
-- Datalog parser (EDN syntax)
-- Pattern matching and unification
-- Recursive rules (semi-naive evaluation)
-- Updated REPL
+**Phase 3** ✅ **COMPLETE** - Datalog Core
+- ✅ EAV data model with Facts
+- ✅ Datalog parser (EDN syntax)
+- ✅ Pattern matching and unification
+- ✅ Recursive rules (semi-naive evaluation)
+- ✅ Transitive closure and cycle handling
+- ✅ Updated REPL with multi-line and comments
+- ✅ 123 comprehensive tests
 
-**Phase 4** (3-4 months): Bi-temporal Support
+**Phase 4** (3-4 months): Bi-temporal Support - **NEXT**
 - Transaction time (tx_id, tx_time)
 - Valid time (valid_from, valid_to)
 - Time travel queries (:as-of, :valid-at)

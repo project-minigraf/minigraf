@@ -1,0 +1,115 @@
+# ========================================
+# Minigraf: Recursive Rules Demo
+# ========================================
+# This file demonstrates recursive Datalog rules
+# including transitive closure, cycle handling,
+# and multi-hop graph reachability.
+#
+# Run with: cargo run < demo_recursive.txt
+# ========================================
+
+# ========================================
+# 1. SIMPLE TRANSITIVE CLOSURE
+# ========================================
+# Create a chain: A -> B -> C -> D
+
+(transact [[:a :connected :b]
+           [:b :connected :c]
+           [:c :connected :d]])
+
+# Define recursive reachability rules:
+# - Base case: directly connected nodes are reachable
+# - Recursive case: if X connects to Z, and Z reaches Y, then X reaches Y
+
+(rule [(reach ?x ?y) [?x :connected ?y]])
+(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])
+
+# Query: What can A reach?
+# Expected: B, C, D (all nodes in the chain)
+(query [:find ?to :where (reach :a ?to)])
+
+# Query: What can B reach?
+# Expected: C, D (nodes after B)
+(query [:find ?to :where (reach :b ?to)])
+
+# ========================================
+# 2. CYCLE HANDLING
+# ========================================
+# Create a cycle: X -> Y -> Z -> X
+# This tests that the evaluator converges correctly
+# without infinite loops
+
+(transact [[:x :link :y]
+           [:y :link :z]
+           [:z :link :x]])
+
+# Define reachability via links
+(rule [(via-link ?from ?to) [?from :link ?to]])
+(rule [(via-link ?from ?to) [?from :link ?mid] (via-link ?mid ?to)])
+
+# Query: What can X reach?
+# Expected: Y, Z, and X itself (cycle completes back)
+# This verifies convergence and cycle detection
+(query [:find ?to :where (via-link :x ?to)])
+
+# ========================================
+# 3. LONG CHAIN (6 nodes)
+# ========================================
+# Create a longer chain to demonstrate scalability:
+# n1 -> n2 -> n3 -> n4 -> n5 -> n6
+
+(transact [[:n1 :next :n2]
+           [:n2 :next :n3]
+           [:n3 :next :n4]
+           [:n4 :next :n5]
+           [:n5 :next :n6]])
+
+# Define sequence reachability
+(rule [(seq ?x ?y) [?x :next ?y]])
+(rule [(seq ?x ?y) [?x :next ?z] (seq ?z ?y)])
+
+# Query: What can n1 reach?
+# Expected: n2, n3, n4, n5, n6 (all 5 nodes ahead)
+(query [:find ?to :where (seq :n1 ?to)])
+
+# Query: What can n3 reach?
+# Expected: n4, n5, n6 (3 nodes ahead)
+(query [:find ?to :where (seq :n3 ?to)])
+
+# ========================================
+# 4. ANCESTRY / FAMILY TREE
+# ========================================
+# Demonstrate hierarchical relationships
+
+(transact [[:alice :parent :bob]
+           [:alice :parent :charlie]
+           [:bob :parent :diana]
+           [:bob :parent :eve]
+           [:charlie :parent :frank]])
+
+# Define ancestor relationship (transitive parent)
+(rule [(ancestor ?a ?d) [?a :parent ?d]])
+(rule [(ancestor ?a ?d) [?a :parent ?p] (ancestor ?p ?d)])
+
+# Query: Who are Alice's descendants?
+# Expected: Bob, Charlie (children), Diana, Eve, Frank (grandchildren)
+(query [:find ?descendant :where (ancestor :alice ?descendant)])
+
+# Query: Who are Bob's descendants?
+# Expected: Diana, Eve (Bob's children)
+(query [:find ?descendant :where (ancestor :bob ?descendant)])
+
+# ========================================
+# Summary
+# ========================================
+# Recursive rules enable powerful graph queries:
+# - Transitive closure (reachability)
+# - Cycle handling with convergence
+# - Arbitrary-depth traversals
+# - Hierarchical relationships (ancestors, descendants)
+#
+# The semi-naive evaluation algorithm ensures:
+# - Efficient computation (only processes new facts)
+# - Guaranteed termination (max iteration limit)
+# - Correct results even with cycles
+# ========================================
