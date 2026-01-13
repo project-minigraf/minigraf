@@ -16,7 +16,9 @@ pub use graph::types::{
 pub use repl::Repl;
 
 // Storage backend (Phase 2+)
-pub use storage::{StorageBackend, FileHeader, PAGE_SIZE};
+pub use storage::backend::file::FileBackend;
+pub use storage::persistent_facts::PersistentFactStorage;
+pub use storage::{FileHeader, StorageBackend, PAGE_SIZE};
 
 // Datalog query API (Phase 3+)
 pub use query::{
