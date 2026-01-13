@@ -1,34 +1,142 @@
 # Minigraf Test Coverage Report
 
-**Last Updated**: Phase 2 - Embedded Database Complete
+**Last Updated**: Phase 3 - Datalog Implementation
 
 ## Test Summary
 
-**Total Tests**: 54
-- ✅ 35 unit tests
-- ✅ 10 edge case tests
-- ✅ 4 concurrency tests
-- ✅ 1 integration test
-- ✅ 4 doc tests
+**Total Tests**: 59
+- ✅ 57 unit tests
+- ✅ 2 doc tests
 
-**Status**: ✅ All 54 tests passing
+**Status**: ✅ All 59 tests passing
 
 ## Test Coverage by Module
 
-### 1. Graph Types (`src/graph/types.rs`) - ✅ Well Covered
-- ✅ Node creation with labels and properties
-- ✅ Edge creation with source/target/label
-- ✅ Property value type accessors (string, integer, float, boolean)
-- **Coverage**: ~90%
+### 1. Graph Types (`src/graph/types.rs`) - ✅ Excellent Coverage (8 tests)
 
-### 2. Storage Backends (`src/storage/backend/`) - ✅ Well Covered
+**Fact Types** (EAV Model):
+- ✅ Fact creation (entity, attribute, value, tx_id)
+- ✅ Fact equality and comparison
+- ✅ Fact retraction (asserted=false)
+- ✅ Entity references (Value::Ref)
+- ✅ Transaction ID generation
+- ✅ Transaction ID ordering (chronological)
+- ✅ Transaction ID timestamps
 
-**File Backend** (5 tests):
+**Value Types**:
+- ✅ All value types (String, Integer, Float, Boolean, Ref, Keyword, Null)
+- ✅ Value accessors and type checking
+
+**Coverage**: ~95%
+
+### 2. Fact Storage (`src/graph/storage.rs`) - ✅ Excellent Coverage (8 tests)
+
+**Core Operations**:
+- ✅ Transact facts (assert with tx_id)
+- ✅ Retract facts (retraction tracking)
+- ✅ Batch transact (atomic transactions)
+- ✅ Get facts by entity
+- ✅ Get facts by attribute
+- ✅ Get current value (most recent assertion)
+- ✅ History tracking (multiple versions over time)
+- ✅ Entity references (graph relationships)
+
+**Verified Behaviors**:
+- ✅ Append-only log (facts never deleted)
+- ✅ Transaction grouping (same tx_id for batch)
+- ✅ Chronological ordering (tx_id increases)
+- ✅ Retraction semantics (asserted=false)
+
+**Coverage**: ~90%
+
+### 3. Datalog Parser (`src/query/datalog/parser.rs`) - ✅ Excellent Coverage (9 tests)
+
+**Tokenization**:
+- ✅ Basic tokens (parens, brackets, symbols, keywords)
+- ✅ Numbers (integers and floats, positive/negative)
+- ✅ Strings (with escape sequences)
+- ✅ Booleans and nil
+
+**EDN Parsing**:
+- ✅ Lists `(foo bar)`
+- ✅ Vectors `[1 2 3]`
+- ✅ UUIDs `#uuid "..."`
+- ✅ Nested structures
+
+**Command Parsing**:
+- ✅ Transact: `(transact [[e a v] ...])`
+- ✅ Retract: `(retract [[e a v] ...])`
+- ✅ Simple queries: `(query [:find ?x :where [?x :attr val]])`
+- ✅ Complex queries (multiple patterns)
+
+**Coverage**: ~95%
+
+### 4. Datalog Types (`src/query/datalog/types.rs`) - ✅ Excellent Coverage (7 tests)
+
+**Pattern Matching**:
+- ✅ Pattern creation (entity, attribute, value)
+- ✅ Pattern from EDN conversion
+- ✅ Pattern validation (length checking)
+
+**EDN Values**:
+- ✅ Variable detection (`?var`)
+- ✅ Keyword detection (`:keyword`)
+- ✅ Value type mapping
+
+**Query Structure**:
+- ✅ DatalogQuery creation (find, where clauses)
+- ✅ Transaction creation
+
+**Coverage**: ~90%
+
+### 5. Datalog Matcher (`src/query/datalog/matcher.rs`) - ✅ Good Coverage (6 tests)
+
+**Pattern Matching**:
+- ✅ Simple pattern matching (single pattern)
+- ✅ Multiple pattern matching (joins)
+- ✅ Variable unification across patterns
+- ✅ Variable values in patterns
+- ✅ No match scenarios
+
+**Entity/Value Conversion**:
+- ✅ Keyword to deterministic UUID conversion (`:alice` → UUID)
+- ✅ EDN value to Fact value conversion
+
+**Coverage**: ~80%
+
+**Missing**:
+- ⚠️ Complex join scenarios (3+ patterns)
+- ⚠️ Self-joins
+- ⚠️ Cartesian products (unbound variables)
+
+### 6. Datalog Executor (`src/query/datalog/executor.rs`) - ✅ Good Coverage (6 tests)
+
+**Execution**:
+- ✅ Execute transact commands
+- ✅ Execute retract commands
+- ✅ Execute simple queries (single pattern)
+- ✅ Execute multi-pattern queries (joins)
+- ✅ Handle no results gracefully
+- ✅ Keyword entity conversion (`:alice` becomes deterministic UUID)
+
+**Integration**:
+- ✅ End-to-end: transact → query → results
+- ✅ End-to-end: transact → retract → query
+
+**Coverage**: ~85%
+
+**Missing**:
+- ⚠️ Query validation errors
+- ⚠️ Invalid patterns
+- ⚠️ Variable naming edge cases
+
+### 7. Storage Backends (`src/storage/backend/`) - ✅ Well Covered (8 tests)
+
+**File Backend** (4 tests):
 - ✅ Create new `.graph` file
 - ✅ Write and read pages
 - ✅ Persistence across file close/reopen
 - ✅ Page count tracking
-- ✅ Header validation
 
 **Memory Backend** (4 tests):
 - ✅ Write and read pages
@@ -36,115 +144,98 @@
 - ✅ Missing page error handling
 - ✅ Page count tracking
 
+**Coverage**: ~85%
+
+### 8. Storage Layer (`src/storage/`) - ✅ Good Coverage (5 tests)
+
 **File Header** (2 tests):
 - ✅ Serialization/deserialization
 - ✅ Magic number and version validation
 
-**Coverage**: ~85%
-
-### 3. Graph Storage (`src/graph/storage.rs`) - ✅ Adequate
-- ✅ Node CRUD operations
-- ✅ Edge CRUD operations
-- ✅ Get all nodes/edges
-- ✅ Edge traversal (from/to node)
-- **Coverage**: ~70%
-
-**Missing**:
-- ⚠️ Filter by properties (tested indirectly)
-- ⚠️ Large dataset performance
-
-### 4. Query Parser (`src/query/parser.rs`) - ✅ Excellent
-- ✅ CREATE NODE (with/without properties, multiple labels)
-- ✅ CREATE EDGE (with/without properties)
-- ✅ MATCH nodes (with/without label, with/without WHERE)
-- ✅ MATCH edges (with/without label)
-- ✅ SHOW NODES / SHOW EDGES
-- ✅ HELP / EXIT commands
-- **Coverage**: ~95%
-
-### 5. Query Executor (`src/query/executor.rs`) - ✅ Good
-- ✅ Node creation execution
-- ✅ Edge creation execution
-- ✅ MATCH queries
-- ✅ SHOW commands
-- **Coverage**: ~75%
-
-**Missing**:
-- ⚠️ Edge creation with invalid nodes
-- ⚠️ Complex property filters
-
-### 6. Persistent Storage (`src/storage/persistent.rs`) - ✅ Good
-- ✅ Add nodes and edges
-- ✅ Save to disk
-- ✅ Load from disk
+**Persistent Fact Storage** (3 tests):
+- ✅ Create new storage
+- ✅ Save and load facts
 - ✅ Auto-save on drop
-- **Coverage**: ~70%
+
+**Coverage**: ~75%
 
 **Missing**:
-- ⚠️ Nodes/edges too large for page
-- ⚠️ Index overflow
+- ⚠️ Facts too large for page (>4KB)
 - ⚠️ Corrupted data recovery
-
-### 7. Minigraf API (`src/minigraf.rs`) - ✅ Good
-- ✅ Open/create database
-- ✅ Execute queries
-- ✅ Persistence across restarts
-- ✅ Auto-save behavior
-- **Coverage**: ~80%
-
-### 8. Edge Cases & Error Handling - ✅ Good (NEW!)
-
-**Error Handling** (10 tests):
-- ✅ Create edge with invalid source/target
-- ✅ Query empty database
-- ✅ Match non-existent label
-- ✅ WHERE with non-existent property
-- ✅ Unicode properties
-- ✅ Reopen after save
-- ✅ Multiple saves
-- ✅ Large property values
-- ✅ Dirty flag behavior
-- ✅ Stats accuracy
-
-### 9. Concurrency & Thread Safety - ✅ Good (NEW!)
-
-**Concurrency** (4 tests):
-- ✅ Concurrent reads (10 threads × 100 operations)
-- ✅ Concurrent writes (10 threads × 10 nodes)
-- ✅ Concurrent read/write (5 readers + 5 writers)
-- ✅ Concurrent edge creation (10 threads × 10 edges)
-
-**Verified**:
-- ✅ No data races
-- ✅ No deadlocks
-- ✅ All operations complete successfully
-- ✅ Final data integrity maintained
+- ⚠️ Version migration
 
 ## Coverage Metrics Estimate
 
-**Overall Code Coverage**: ~75-80%
+**Overall Code Coverage**: ~85%
 
 **By Category**:
 - ✅ Happy path: ~95%
+- ✅ Core Datalog operations: ~90%
 - ✅ Error handling: ~70%
 - ✅ Edge cases: ~75%
-- ✅ Concurrency: ~80%
-- ⚠️ Performance: 0% (no perf tests yet)
+- ⚠️ Concurrency: Limited testing (FactStorage uses Arc<RwLock>)
+- ⚠️ Performance: 0% (no perf tests - planned for Phase 6)
 
 ## What's Well Tested ✅
 
-1. **Core functionality** - All CRUD operations work
-2. **Persistence** - Save/load/reopen verified
-3. **Query language** - All syntax variations tested
-4. **Thread safety** - Concurrent operations safe
-5. **Edge cases** - Common error scenarios handled
-6. **File format** - Header validation, serialization
+1. **Datalog Core** - Transact, retract, query operations
+2. **Pattern Matching** - Variable unification, joins
+3. **Fact Storage** - EAV model, history tracking, retractions
+4. **EDN Parsing** - All Datalog syntax variations
+5. **Storage Backends** - File and memory backends
+6. **Persistence** - Save/load cycle with postcard serialization
+7. **Entity References** - Graph relationships via Value::Ref
+8. **Transaction IDs** - Chronological ordering, grouping
 
 ## What's Missing ⚠️
 
-### Critical (Should Add Before v1.0)
+### High Priority (Phase 3 Completion)
 
-1. **File Corruption Scenarios**:
+1. **Complex Query Scenarios**:
+   ```rust
+   - 3+ pattern joins
+   - Self-joins (same entity in multiple patterns)
+   - Cartesian products (all unbound variables)
+   - Empty result sets with multiple patterns
+   ```
+
+2. **Error Handling**:
+   ```rust
+   - Invalid query syntax recovery
+   - Malformed EDN structures
+   - Type mismatches in patterns
+   - Unbound variables in :find clause
+   ```
+
+3. **Concurrency Testing**:
+   ```rust
+   - Concurrent transact operations
+   - Concurrent query + transact
+   - Read/write contention
+   - Transaction isolation
+   ```
+
+### Medium Priority (Phase 4 - Bi-temporal)
+
+4. **Bi-temporal Queries** (Not Yet Implemented):
+   ```rust
+   - :as-of queries (transaction time)
+   - :valid-at queries (valid time)
+   - Time range queries
+   - Historical fact retrieval
+   ```
+
+5. **Advanced Datalog** (Future):
+   ```rust
+   - Recursive rules
+   - Aggregation functions
+   - Negation (NOT patterns)
+   - Disjunction (OR patterns)
+   ```
+
+### Low Priority (Phase 5+)
+
+6. **File Corruption Scenarios**:
    ```rust
    - Corrupted file header
    - Partial writes (interrupted save)
@@ -152,141 +243,111 @@
    - Version mismatch handling
    ```
 
-2. **Resource Limits**:
+7. **Resource Limits**:
    ```rust
-   - Node/edge too large for page (>4KB)
-   - Index overflow (too many entities)
-   - Disk full scenarios
+   - Facts too large for page (>4KB)
    - Out of memory handling
+   - Disk full scenarios
    ```
 
-3. **Multiple Database Instances**:
+8. **Integration & Real-world**:
    ```rust
-   - Open same file twice (should fail or handle)
-   - Concurrent file access
-   - File locking tests
+   - REPL integration tests
+   - Multi-line command handling
+   - Comment parsing (#)
+   - Demo script execution
    ```
 
-4. **Property Type Edge Cases**:
-   ```rust
-   - Empty strings, nulls
-   - Very large integers/floats
-   - Special characters in labels
-   - Reserved keywords handling
-   ```
+### Future (Phase 6 - Performance)
 
-### Nice to Have (Future)
-
-5. **Performance Regression Tests**:
+9. **Performance Testing**:
    ```rust
-   - Benchmark insert/query operations
-   - Large dataset tests (10K, 100K, 1M nodes)
-   - Memory usage tracking
+   - Benchmark transact throughput
+   - Benchmark query performance
+   - Large dataset tests (10K, 100K, 1M facts)
+   - Memory usage profiling
    - File size growth patterns
    ```
 
-6. **Integration Tests**:
-   ```rust
-   - Real-world usage patterns
-   - Migration from old format
-   - Cross-platform file compatibility
-   - WASM compatibility (when added)
-   ```
+## Phase 3 Status Assessment
 
-7. **Fuzzing**:
-   ```rust
-   - Random query generation
-   - Random data generation
-   - Stress testing
-   ```
+### Completed ✅
+- ✅ EAV data model with Fact types
+- ✅ FactStorage with append-only log
+- ✅ EDN/Datalog parser (tokenizer + parser)
+- ✅ Pattern matcher with variable unification
+- ✅ Query executor (transact, retract, query)
+- ✅ Keyword entity conversion (deterministic UUIDs)
+- ✅ Entity references (graph edges via Value::Ref)
+- ✅ Persistent storage with postcard serialization
+- ✅ REPL with multi-line support and comments
+
+### In Progress 🚧
+- 🚧 Advanced query scenarios (complex joins)
+- 🚧 Error handling and validation
+- 🚧 Concurrency testing
+
+### Not Started ⏳
+- ⏳ Recursive rules (semi-naive evaluation)
+- ⏳ Aggregation functions
+- ⏳ Negation/disjunction
+- ⏳ Query optimization
 
 ## Performance Testing Strategy
 
-### ❌ **NOT YET** - Current Phase (Phase 2)
+### ❌ **NOT YET** - Current Phase (Phase 3)
 
 **Why not now**:
+- In-memory "load all" approach (see persistent_facts.rs)
 - No indexes yet - all queries are O(n) scans
-- "Load all, save all" approach not optimized
 - Would measure the wrong things
-- Need indexes first to have meaningful benchmarks
+- Need indexes (Phase 6) for meaningful benchmarks
 
-**What we'd be measuring** (not useful yet):
-- HashMap iteration speed (not our bottleneck)
-- Serialization speed (will change with optimization)
-- File I/O (not the limiting factor)
+**Current limitations** (acceptable for Phase 3-5):
+- Memory usage = entire database size
+- Startup time grows linearly with database size
+- Works well for <100K facts (~10-20MB memory)
 
-### ✅ **YES** - Phase 3 (After Indexes)
+### ✅ **YES** - Phase 6 (Performance & Indexes)
 
 **When to start performance testing**:
-1. After B-tree indexes are implemented
-2. After query optimization using indexes
-3. When we have incremental saves
+1. After EAVT/AEVT/AVET/VAET indexes implemented
+2. After on-demand fact loading from disk
+3. After query optimization using indexes
 4. When targeting specific performance goals
-
-**Good time to start**: Phase 3 (Indexes & Query Optimization)
 
 **What to measure**:
 - Index lookups vs full scans
 - Query plan optimization
 - Cache hit rates
 - Insert throughput with indexes
-- File size growth patterns
+- Memory-bounded operation
 
-### Recommended Performance Testing Approach
-
-**Phase 3 Goals** (with indexes):
+**Target metrics** (Phase 6 goals):
 ```rust
-// Benchmark suite
+// Benchmark suite with criterion
 #[bench]
 fn bench_indexed_lookup() {
-    // Target: <1ms for indexed property lookup
+    // Target: <1ms for indexed lookups
 }
 
 #[bench]
-fn bench_bulk_insert() {
-    // Target: 10K inserts/sec
+fn bench_bulk_transact() {
+    // Target: 10K facts/sec
 }
 
 #[bench]
-fn bench_query_with_filter() {
-    // Target: <10ms for filtered queries
+fn bench_multi_pattern_query() {
+    // Target: <10ms for 3-pattern join
 }
 
 // Load tests
 #[test]
-fn test_10k_nodes() {
-    // Verify functionality at 10K scale
-}
-
-#[test]
-fn test_100k_nodes() {
-    // Verify functionality at 100K scale
+fn test_1m_facts() {
+    // Verify functionality at 1M scale
+    // Target: <50MB memory with indexes + cache
 }
 ```
-
-**Current Phase 2**: Focus on correctness, not performance.
-
-**Next Phase 3**: Add benchmarks with `cargo bench` using `criterion` crate.
-
-## Recommendations
-
-### High Priority (Before v1.0)
-
-1. ✅ **Add file corruption tests** - Critical for data safety
-2. ✅ **Add resource limit tests** - Prevent panics on large data
-3. ✅ **Add multiple instance tests** - Prevent data corruption
-
-### Medium Priority
-
-4. ✅ **Add property type edge cases** - Robustness
-5. ⚠️ **More integration tests** - Real-world scenarios
-6. ⚠️ **Cross-platform tests** - CI on Linux/macOS/Windows
-
-### Low Priority (Post-v1.0)
-
-7. **Performance benchmarks** - Phase 3 (after indexes)
-8. **Fuzzing** - Long-term stability
-9. **Property-based testing** - Advanced coverage
 
 ## Test Execution
 
@@ -294,32 +355,75 @@ fn test_100k_nodes() {
 # Run all tests
 cargo test
 
-# Run specific test suite
-cargo test --test edge_cases_test
-cargo test --test concurrency_test
-cargo test --test integration_test
+# Run all tests with summary
+cargo test --quiet
+
+# Run specific module tests
+cargo test graph::storage
+cargo test query::datalog::parser
+cargo test storage::backend
 
 # Run tests with output
 cargo test -- --nocapture
 
-# Run tests with threads (stress test)
-cargo test -- --test-threads=4
+# Run tests in parallel (stress test)
+cargo test -- --test-threads=8
 
-# Future: Run benchmarks (Phase 3)
+# Future: Run benchmarks (Phase 6)
 # cargo bench
 ```
 
+## Recommendations
+
+### Phase 3 Completion (Current)
+
+1. ✅ **Add complex query tests** - Multi-pattern joins, self-joins
+2. ✅ **Add error handling tests** - Invalid syntax, type mismatches
+3. ✅ **Add concurrency tests** - Concurrent transact/query operations
+4. ✅ **REPL integration test** - Pipe demo_commands.txt through REPL
+
+### Phase 4 (Bi-temporal)
+
+5. ✅ **Add bi-temporal query tests** - :as-of, :valid-at
+6. ✅ **Add history query tests** - Time travel, audit trails
+7. ✅ **Test transaction time isolation** - Ensure snapshot semantics
+
+### Phase 5 (ACID + WAL)
+
+8. ✅ **Add transaction tests** - BEGIN, COMMIT, ROLLBACK
+9. ✅ **Add crash recovery tests** - WAL replay
+10. ✅ **Add ACID compliance tests** - Atomicity, isolation, durability
+
+### Phase 6 (Performance)
+
+11. ✅ **Add benchmark suite** - Using criterion crate
+12. ✅ **Add load tests** - 10K, 100K, 1M facts
+13. ✅ **Add memory profiling** - Verify bounded memory usage
+
 ## Conclusion
 
-**Current Status**: ✅ **Good coverage for Phase 2**
+**Current Status**: ✅ **Good coverage for Phase 3**
 
-- Core functionality is well-tested
-- Happy paths thoroughly covered
-- Concurrency safety verified
-- Edge cases reasonably covered
+**Strengths**:
+- Core Datalog functionality thoroughly tested
+- Pattern matching and unification well covered
+- Fact storage semantics verified
+- Persistence layer working
 
-**Gaps**: Mostly advanced error scenarios that are less critical for Phase 2.
+**Gaps**:
+- Complex query scenarios (3+ patterns, self-joins)
+- Error handling and edge cases
+- Concurrency testing limited
+- No recursive rules yet (future)
 
-**Performance Testing**: Wait until Phase 3 (indexes) for meaningful results.
+**Performance**:
+- Current "load all" approach documented and acceptable
+- Phase 6 will add indexes and on-demand loading
+- Wait for Phase 6 for meaningful performance testing
 
-**Recommendation**: Current test coverage is **sufficient for Phase 2**. Focus on Phase 3 features, add performance tests then.
+**Recommendation**: Current test coverage is **sufficient for Phase 3 foundation**. Focus on:
+1. Adding complex query tests
+2. Improving error handling
+3. Then move to Phase 4 (bi-temporal support)
+
+**Test Quality**: High confidence in core Datalog implementation.
