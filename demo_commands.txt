@@ -82,29 +82,10 @@
 EXIT
 
 # ============================================================================
-# BACKWARD COMPATIBILITY: GQL SYNTAX (Phase 1-2)
-# ============================================================================
-# The following GQL commands still work for property graph operations:
-#
-# HELP
-# CREATE NODE (:Person) {name: "Alice", age: 30}
-# CREATE NODE (:Person) {name: "Bob", age: 25}
-# SHOW NODES
-# CREATE EDGE (alice-id)-[KNOWS]->(bob-id) {since: 2020}
-# SHOW EDGES
-# MATCH (:Person)
-# MATCH (:Person) WHERE name = "Alice"
-# EXIT
-#
-# Note: GQL and Datalog use separate storage layers in Phase 3.
-# They do not share data.
-# ============================================================================
-
-# ============================================================================
-# KEY DIFFERENCES: Datalog vs GQL
+# KEY FEATURES
 # ============================================================================
 #
-# DATALOG (Phase 3+):
+# DATALOG (Phase 3):
 # - Facts: [Entity Attribute Value] triples
 # - Immutable history: Facts never deleted, only retracted
 # - Keyword entities: :alice, :bob (converted to deterministic UUIDs)
@@ -112,16 +93,10 @@ EXIT
 # - Variable unification: ?e matches same entity across patterns
 # - Bi-temporal ready: Built-in transaction IDs and history tracking
 #
-# GQL (Phase 1-2):
-# - Nodes and edges with properties
-# - Mutable: Updates modify existing data
-# - UUID-based IDs
-# - Explicit edge creation syntax
-# - Pattern matching with WHERE clauses
-#
-# FUTURE (Phase 4+):
+# COMING SOON (Phase 4+):
 # - Bi-temporal queries: :as-of and :valid-at
 # - Recursive rules: (rule [(ancestor ?a ?d) ...])
 # - Time travel: Query historical state
 # - Rule-based inference
+# - Persistent storage: Save to .graph file
 # ============================================================================
