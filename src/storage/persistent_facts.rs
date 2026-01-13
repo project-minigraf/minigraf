@@ -66,7 +66,7 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
 
             // Try to deserialize a fact from this page
             // Empty pages are skipped
-            if let Ok(fact) = bincode::deserialize::<Fact>(&page) {
+            if let Ok(fact) = postcard::from_bytes::<Fact>(&page) {
                 // Reconstruct the fact storage by transacting or retracting
                 if fact.asserted {
                     self.storage
@@ -104,7 +104,7 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
 
         // Write facts (one per page)
         for (i, fact) in facts.iter().enumerate() {
-            let data = bincode::serialize(fact)?;
+            let data = postcard::to_allocvec(fact)?;
             if data.len() > PAGE_SIZE {
                 anyhow::bail!(
                     "Fact too large: {} bytes (max {})",
