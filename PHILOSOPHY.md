@@ -432,8 +432,8 @@ The `.graph` file format must be:
 - Single-file storage, persistent graph database, embedded API
 - GQL-inspired PoC (archived at `archive/gql-phase-2`)
 
-**Phase 3**: 🎯 Datalog Core (NEXT - 3-4 months)
-- EAV data model, basic facts and queries, recursive rules
+**Phase 3**: ✅ Datalog Core (COMPLETE)
+- EAV data model, basic facts and queries, recursive rules, semi-naive evaluation
 
 **Phase 4**: 🎯 Bi-temporal Support (3-4 months)
 - Transaction time + valid time, time travel queries, history

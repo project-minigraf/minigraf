@@ -55,23 +55,23 @@
 
 ---
 
-## Phase 3: Datalog Core 🎯 NEXT
+## Phase 3: Datalog Core ✅ COMPLETE
 
 **Goal**: Implement core Datalog query engine
 
-**Status**: 🎯 In Progress (Expected: 3-4 months)
+**Status**: ✅ Completed (January 2026)
 
 **Priority**: 🔴 Critical - Foundation for everything else
 
-### 3.1 EAV Data Model
+### 3.1 EAV Data Model ✅
 
 **Features**:
-- 🎯 Migrate from property graph to Entity-Attribute-Value model
-- 🎯 Fact representation: `(Entity, Attribute, Value)`
-- 🎯 Entities as UUIDs (keep existing ID system)
-- 🎯 Attributes as keywords (`:person/name`, `:friend`)
-- 🎯 Values: primitives or entity references
-- 🎯 Update storage format to support EAV tuples
+- ✅ Migrate from property graph to Entity-Attribute-Value model
+- ✅ Fact representation: `(Entity, Attribute, Value)`
+- ✅ Entities as UUIDs (keep existing ID system)
+- ✅ Attributes as keywords (`:person/name`, `:friend`)
+- ✅ Values: primitives or entity references
+- ✅ Update storage format to support EAV tuples
 
 **Technical Approach**:
 ```rust
@@ -100,14 +100,14 @@ enum Value {
 - Gradually migrate tests
 - Eventually deprecate property graph types
 
-### 3.2 Datalog Parser
+### 3.2 Datalog Parser ✅
 
 **Features**:
-- 🎯 Parse basic Datalog queries (EDN syntax)
-- 🎯 Query structure: `[:find ?vars :where [clauses]]`
-- 🎯 Pattern matching: `[?e :attr ?v]`
-- 🎯 Variable binding
-- 🎯 Constants and entity references
+- ✅ Parse basic Datalog queries (EDN syntax)
+- ✅ Query structure: `[:find ?vars :where [clauses]]`
+- ✅ Pattern matching: `[?e :attr ?v]`
+- ✅ Variable binding
+- ✅ Constants and entity references
 
 **Example Queries**:
 ```datalog
@@ -135,13 +135,13 @@ enum Value {
 - Variable extraction
 - Pattern recognition
 
-### 3.3 Query Executor (Basic)
+### 3.3 Query Executor (Basic) ✅
 
 **Features**:
-- 🎯 Pattern matching against fact database
-- 🎯 Variable unification
-- 🎯 Join multiple patterns
-- 🎯 Return results as tuples
+- ✅ Pattern matching against fact database
+- ✅ Variable unification
+- ✅ Join multiple patterns
+- ✅ Return results as tuples
 
 **Implementation**:
 - Naive evaluation initially (optimize in Phase 6)
@@ -149,13 +149,13 @@ enum Value {
 - Cartesian product + filter (like nested loops)
 - Return binding sets
 
-### 3.4 Recursive Rules
+### 3.4 Recursive Rules ✅
 
 **Features**:
-- 🎯 Define rules: `[(rule-name ?args) [body]]`
-- 🎯 Stratified recursion (safe subset)
-- 🎯 Rule evaluation via semi-naive evaluation
-- 🎯 Transitive closure queries
+- ✅ Define rules: `[(rule-name ?args) [body]]`
+- ✅ Stratified recursion (safe subset)
+- ✅ Rule evaluation via semi-naive evaluation
+- ✅ Transitive closure queries
 
 **Example Rules**:
 ```datalog
@@ -179,13 +179,13 @@ enum Value {
 - Stop when no new facts produced
 - Detect cycles, prevent infinite loops
 
-### 3.5 REPL for Datalog
+### 3.5 REPL for Datalog ✅
 
 **Features**:
-- 🎯 Interactive Datalog console
-- 🎯 Transact facts
-- 🎯 Query with Datalog
-- 🎯 Pretty-print results
+- ✅ Interactive Datalog console
+- ✅ Transact facts
+- ✅ Query with Datalog
+- ✅ Pretty-print results
 
 **Commands**:
 ```clojure
@@ -206,20 +206,23 @@ enum Value {
 (exit)
 ```
 
-### 3.6 Tests
+### 3.6 Tests ✅
 
 **Test Coverage**:
-- EAV data model CRUD
-- Datalog parser (all query forms)
-- Pattern matching
-- Variable unification
-- Multi-pattern joins
-- Recursive rule evaluation
-- Transitive closure queries
+- ✅ EAV data model CRUD (8 tests)
+- ✅ Datalog parser (all query forms) (15 tests)
+- ✅ Pattern matching (6 tests)
+- ✅ Variable unification (included in matcher tests)
+- ✅ Multi-pattern joins (10 integration tests)
+- ✅ Recursive rule evaluation (15 tests)
+- ✅ Transitive closure queries (9 integration tests)
+- ✅ Concurrency (7 integration tests)
 
-**Deliverable**: Working Datalog query engine with recursion
+**Total: 123 tests passing** ✅
 
-**Timeline**: 3-4 months
+**Deliverable**: ✅ Working Datalog query engine with recursion (Complete!)
+
+**Timeline**: ✅ Completed in ~3 weeks (January 2026)
 
 ---
 
@@ -588,11 +591,13 @@ tx.commit()?;  // or tx.rollback()?
 
 **GQL Archive**: `archive/gql-phase-2` branch, `gql-phase-2-complete` tag
 
-### v0.3.0 - 🎯 Phase 3 (Datalog Core)
-- EAV data model
-- Datalog queries
-- Recursive rules
-- Pattern matching
+### v0.3.0 - ✅ Phase 3 Complete (Datalog Core)
+- ✅ EAV data model
+- ✅ Datalog queries
+- ✅ Recursive rules
+- ✅ Pattern matching
+- ✅ Semi-naive evaluation
+- ✅ 123 tests passing
 
 ### v0.4.0 - 🎯 Phase 4 (Bi-temporal)
 - Transaction time
@@ -663,13 +668,13 @@ When evaluating features, ask:
 
 - ✅ Phase 1: Complete (December 2025)
 - ✅ Phase 2: Complete (January 2026)
-- 🎯 Phase 3: 3-4 months (Datalog core)
-- 🎯 Phase 4: 3-4 months (Bi-temporal)
+- ✅ Phase 3: Complete (January 2026) - Datalog core with recursive rules
+- 🎯 Phase 4: 3-4 months (Bi-temporal) - **NEXT**
 - 🎯 Phase 5: 2-3 months (ACID + WAL)
 - 🎯 Phase 6: 2-3 months (Performance)
 - 🎯 Phase 7: 3-4 months (Cross-platform)
 - 🎯 Phase 8: Ongoing (Ecosystem)
-- 🎯 **v1.0.0: 12-15 months** from now (vs. 24-30 months with GQL)
+- 🎯 **v1.0.0: 11-14 months** from now (Phase 3 completed faster than expected!)
 
 **Note**: This is a hobby project. Timeline is flexible but realistic.
 
@@ -681,21 +686,30 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: Planning Phase 3 - Datalog Core
+**Right Now**: ✅ Phase 3 Complete! Planning Phase 4 - Bi-temporal Support
 
-**Immediate Next Steps**:
-1. Design EAV data model
-2. Implement Datalog parser (EDN syntax)
-3. Build basic query executor
-4. Add recursive rules
-5. Update REPL for Datalog
-6. Migrate tests
+**Phase 3 Achievements**:
+1. ✅ Designed and implemented EAV data model
+2. ✅ Implemented Datalog parser (EDN syntax)
+3. ✅ Built query executor with pattern matching
+4. ✅ Added recursive rules with semi-naive evaluation
+5. ✅ Updated REPL for Datalog with multi-line support
+6. ✅ Comprehensive test coverage (123 tests)
+
+**Immediate Next Steps (Phase 4)**:
+1. Add transaction time tracking (tx_id, tx_time)
+2. Implement :as-of queries
+3. Add valid time dimensions (valid_from, valid_to)
+4. Implement :valid-at queries
+5. Support bi-temporal queries
+6. Test time travel and history features
 
 **Key Decisions Made**:
 - ✅ Pivot to Datalog (simpler, better for temporal)
 - ✅ Bi-temporal as first-class feature (not afterthought)
 - ✅ Keep single-file philosophy
-- ✅ Target 12-15 months to v1.0
+- ✅ Recursive rules with semi-naive evaluation
+- ✅ Target 11-14 months to v1.0 (ahead of schedule!)
 
 See [GitHub Issues](https://github.com/adityamukho/minigraf/issues) for specific tasks.
 
@@ -726,4 +740,4 @@ We're not competing with GraphLite anymore. We're creating a new category.
 
 ---
 
-Last Updated: Phase 2 Complete, Datalog Pivot (January 2026)
+Last Updated: Phase 3 Complete - Datalog with Recursive Rules (January 2026)
