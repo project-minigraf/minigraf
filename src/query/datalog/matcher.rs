@@ -85,10 +85,19 @@ impl PatternMatcher {
 
             // Constant: must match exactly
             EdnValue::Keyword(k) => {
-                if let Value::Keyword(fk) = fact_value {
-                    k == fk
-                } else {
-                    false
+                // Keywords can match either Value::Keyword (for attributes)
+                // or Value::Ref (for entities - need to convert keyword to UUID)
+                match fact_value {
+                    Value::Keyword(fk) => k == fk,
+                    Value::Ref(entity_id) => {
+                        // Convert keyword to UUID and compare
+                        if let Ok(expected_id) = edn_to_entity_id(&EdnValue::Keyword(k.clone())) {
+                            expected_id == *entity_id
+                        } else {
+                            false
+                        }
+                    }
+                    _ => false,
                 }
             }
 
