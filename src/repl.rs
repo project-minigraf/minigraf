@@ -1,29 +1,21 @@
-use crate::graph::storage::GraphStorage;
 use crate::graph::FactStorage;
 use crate::query::datalog::{parse_datalog_command, DatalogExecutor};
-use crate::query::executor::{QueryExecutor, QueryResult};
-use crate::query::parser::parse_query;
 use std::io::{self, Write};
 
 pub struct Repl {
-    graph_storage: GraphStorage,
     fact_storage: FactStorage,
 }
 
 impl Repl {
-    pub fn new(graph_storage: GraphStorage) -> Self {
-        Repl {
-            graph_storage,
-            fact_storage: FactStorage::new(),
-        }
+    pub fn new(fact_storage: FactStorage) -> Self {
+        Repl { fact_storage }
     }
 
     pub fn run(&self) {
         println!("Minigraf v0.1.0 - Interactive Datalog Console");
-        println!("Datalog commands: (transact [...]), (query [...]), (retract [...])");
+        println!("Commands: (transact [...]), (query [...]), (retract [...])");
         println!("Type EXIT to quit.\n");
 
-        let gql_executor = QueryExecutor::new(&self.graph_storage);
         let datalog_executor = DatalogExecutor::new(self.fact_storage.clone());
 
         loop {
@@ -49,40 +41,18 @@ impl Repl {
                         break;
                     }
 
-                    // Try Datalog syntax first (starts with parenthesis)
-                    if input.starts_with('(') {
-                        match parse_datalog_command(input) {
-                            Ok(command) => match datalog_executor.execute(command) {
-                                Ok(result) => {
-                                    self.print_datalog_result(result);
-                                }
-                                Err(e) => {
-                                    eprintln!("Execution error: {}", e);
-                                }
-                            },
-                            Err(e) => {
-                                eprintln!("Parse error: {}", e);
+                    // Parse and execute Datalog command
+                    match parse_datalog_command(input) {
+                        Ok(command) => match datalog_executor.execute(command) {
+                            Ok(result) => {
+                                self.print_result(result);
                             }
-                        }
-                    } else {
-                        // Fall back to GQL syntax (backward compatibility)
-                        match parse_query(input) {
-                            Ok(query) => match gql_executor.execute(query) {
-                                Ok(result) => {
-                                    let formatted = result.format();
-                                    println!("{}", formatted);
-
-                                    if matches!(result, QueryResult::Exit) {
-                                        break;
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!("Execution error: {}", e);
-                                }
-                            },
                             Err(e) => {
-                                eprintln!("Parse error: {}", e);
+                                eprintln!("Execution error: {}", e);
                             }
+                        },
+                        Err(e) => {
+                            eprintln!("Parse error: {}", e);
                         }
                     }
 
@@ -96,7 +66,7 @@ impl Repl {
         }
     }
 
-    fn print_datalog_result(&self, result: crate::query::datalog::QueryResult) {
+    fn print_result(&self, result: crate::query::datalog::QueryResult) {
         use crate::query::datalog::QueryResult as DResult;
 
         match result {
@@ -116,10 +86,8 @@ impl Repl {
 
                     // Print rows
                     for row in &results {
-                        let formatted_row: Vec<String> = row
-                            .iter()
-                            .map(|v| self.format_value(v))
-                            .collect();
+                        let formatted_row: Vec<String> =
+                            row.iter().map(|v| self.format_value(v)).collect();
                         println!("{}", formatted_row.join("\t"));
                     }
 
