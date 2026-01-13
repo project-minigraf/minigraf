@@ -44,8 +44,6 @@ Minigraf has **working Datalog query engine with recursive rules**:
 - ✅ **123 tests passing** - Comprehensive test coverage
 - 🎯 **Next: Bi-temporal support** - Transaction time + valid time (Phase 4)
 
-**GQL Archive**: Previous GQL implementation preserved at `archive/gql-phase-2` branch and `gql-phase-2-complete` tag.
-
 ## Quick Start
 
 ### Embedded Datalog Database (Working!)
