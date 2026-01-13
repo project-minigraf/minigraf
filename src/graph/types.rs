@@ -112,8 +112,34 @@ impl Edge {
 // Datalog EAV Model (Phase 3+)
 // ============================================================================
 
-/// Transaction ID type for tracking when facts were asserted/retracted
+use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Transaction ID type - milliseconds since UNIX epoch
+///
+/// We use timestamps as transaction IDs for natural chronological ordering
+/// and consistency with bi-temporal valid_time (Phase 4). Millisecond precision
+/// is sufficient for Phase 3's single-threaded usage.
 pub type TxId = u64;
+
+/// Get current timestamp as transaction ID (milliseconds since UNIX epoch)
+pub fn tx_id_now() -> TxId {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("System time before UNIX epoch")
+        .as_millis() as u64
+}
+
+/// Create a TxId from a SystemTime
+pub fn tx_id_from_system_time(time: SystemTime) -> TxId {
+    time.duration_since(UNIX_EPOCH)
+        .expect("System time before UNIX epoch")
+        .as_millis() as u64
+}
+
+/// Convert a TxId back to a SystemTime
+pub fn tx_id_to_system_time(tx_id: TxId) -> SystemTime {
+    UNIX_EPOCH + std::time::Duration::from_millis(tx_id)
+}
 
 /// Entity ID type - using UUID for consistency with existing Node/Edge IDs
 pub type EntityId = Uuid;
@@ -357,6 +383,49 @@ mod tests {
     // ========================================================================
     // EAV Model Tests (Phase 3+)
     // ========================================================================
+
+    #[test]
+    fn test_tx_id_timestamp() {
+        use std::time::SystemTime;
+
+        // Test tx_id_now() returns a reasonable timestamp
+        let tx1 = tx_id_now();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let tx2 = tx_id_now();
+
+        // tx2 should be after tx1
+        assert!(tx2 > tx1, "Transaction IDs should be chronologically ordered");
+
+        // Difference should be at least 5ms (we slept for 5ms)
+        assert!(tx2 - tx1 >= 5, "Expected at least 5ms difference");
+
+        // Test round-trip conversion
+        let now = SystemTime::now();
+        let tx_id = tx_id_from_system_time(now);
+        let recovered = tx_id_to_system_time(tx_id);
+
+        // Should be within 1ms (we lose precision converting to millis)
+        let diff = recovered.duration_since(now).unwrap_or_else(|e| e.duration());
+        assert!(diff.as_millis() < 1, "Round-trip conversion should preserve timestamp within 1ms");
+    }
+
+    #[test]
+    fn test_tx_id_ordering() {
+        // TxIds created sequentially should be ordered
+        let mut tx_ids = vec![];
+        for _ in 0..5 {
+            tx_ids.push(tx_id_now());
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+
+        // Verify chronological order
+        for i in 1..tx_ids.len() {
+            assert!(
+                tx_ids[i] > tx_ids[i - 1],
+                "TxIds should be strictly increasing"
+            );
+        }
+    }
 
     #[test]
     fn test_value_creation_and_accessors() {
