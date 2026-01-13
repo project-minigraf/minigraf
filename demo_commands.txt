@@ -1,10 +1,127 @@
-HELP
-CREATE NODE (:Person) {name: "Alice", age: 30}
-CREATE NODE (:Person) {name: "Bob", age: 25}
-CREATE NODE (:Company) {name: "TechCorp"}
-SHOW NODES
-CREATE EDGE (REPLACE_WITH_ALICE_ID)-[KNOWS]->(REPLACE_WITH_BOB_ID) {since: 2020}
-SHOW EDGES
-MATCH (:Person)
-MATCH (:Person) WHERE name = "Alice"
+# Minigraf Demo Commands - Phase 3 (Datalog)
+# Copy and paste these commands into the REPL to see Datalog in action
+
+# ============================================================================
+# DATALOG SYNTAX (Phase 3 - Current)
+# ============================================================================
+
+# Add facts about Alice
+(transact [[:alice :person/name "Alice"]
+           [:alice :person/age 30]
+           [:alice :person/city "San Francisco"]])
+
+# Add facts about Bob
+(transact [[:bob :person/name "Bob"]
+           [:bob :person/age 25]
+           [:bob :person/city "New York"]])
+
+# Add facts about Carol
+(transact [[:carol :person/name "Carol"]
+           [:carol :person/age 28]
+           [:carol :person/city "San Francisco"]])
+
+# Create friendships (graph edges using entity references)
+(transact [[:alice :friend :bob]
+           [:alice :friend :carol]
+           [:bob :friend :carol]])
+
+# Query: Find all person names
+(query [:find ?name
+        :where [?e :person/name ?name]])
+
+# Query: Find people and their ages
+(query [:find ?name ?age
+        :where [?e :person/name ?name]
+               [?e :person/age ?age]])
+
+# Query: Find people in San Francisco
+(query [:find ?name
+        :where [?e :person/name ?name]
+               [?e :person/city "San Francisco"]])
+
+# Query: Find Alice's friends
+(query [:find ?friend-name
+        :where [:alice :friend ?friend]
+               [?friend :person/name ?friend-name]])
+
+# Query: Find people older than 26
+# Note: Currently no comparison operators, would need all ages and filter externally
+
+# Update: Alice had a birthday (retract old age, assert new age)
+(retract [[:alice :person/age 30]])
+(transact [[:alice :person/age 31]])
+
+# Verify the update
+(query [:find ?age
+        :where [:alice :person/age ?age]])
+
+# Add company information
+(transact [[:techcorp :company/name "TechCorp"]
+           [:techcorp :company/founded 2015]])
+
+# Add employment relationships
+(transact [[:alice :works-at :techcorp]
+           [:bob :works-at :techcorp]])
+
+# Query: Find who works at TechCorp
+(query [:find ?name
+        :where [?person :works-at :techcorp]
+               [?person :person/name ?name]])
+
+# Query: Find all facts about Alice
+# Note: Would require a special query form not yet implemented
+
+# Retract a friendship
+(retract [[:alice :friend :carol]])
+
+# Query: Find Alice's remaining friends
+(query [:find ?friend-name
+        :where [:alice :friend ?friend]
+               [?friend :person/name ?friend-name]])
+
 EXIT
+
+# ============================================================================
+# BACKWARD COMPATIBILITY: GQL SYNTAX (Phase 1-2)
+# ============================================================================
+# The following GQL commands still work for property graph operations:
+#
+# HELP
+# CREATE NODE (:Person) {name: "Alice", age: 30}
+# CREATE NODE (:Person) {name: "Bob", age: 25}
+# SHOW NODES
+# CREATE EDGE (alice-id)-[KNOWS]->(bob-id) {since: 2020}
+# SHOW EDGES
+# MATCH (:Person)
+# MATCH (:Person) WHERE name = "Alice"
+# EXIT
+#
+# Note: GQL and Datalog use separate storage layers in Phase 3.
+# They do not share data.
+# ============================================================================
+
+# ============================================================================
+# KEY DIFFERENCES: Datalog vs GQL
+# ============================================================================
+#
+# DATALOG (Phase 3+):
+# - Facts: [Entity Attribute Value] triples
+# - Immutable history: Facts never deleted, only retracted
+# - Keyword entities: :alice, :bob (converted to deterministic UUIDs)
+# - Entity references: [?e :friend ?friend] creates graph relationships
+# - Variable unification: ?e matches same entity across patterns
+# - Bi-temporal ready: Built-in transaction IDs and history tracking
+#
+# GQL (Phase 1-2):
+# - Nodes and edges with properties
+# - Mutable: Updates modify existing data
+# - UUID-based IDs
+# - Explicit edge creation syntax
+# - Pattern matching with WHERE clauses
+#
+# FUTURE (Phase 4+):
+# - Bi-temporal queries: :as-of and :valid-at
+# - Recursive rules: (rule [(ancestor ?a ?d) ...])
+# - Time travel: Query historical state
+# - Rule-based inference
+# ============================================================================
