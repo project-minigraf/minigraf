@@ -88,9 +88,6 @@ cargo test
 
 # Try the recursive rules demo
 cargo run < demo_recursive.txt
-
-# Run examples
-cargo run --example embedded
 ```
 
 ## Datalog Query Language (Phase 3 - Working!)
