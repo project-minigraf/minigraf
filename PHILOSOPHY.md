@@ -2,7 +2,62 @@
 
 > "Minigraf is not trying to replace Neo4j. It's trying to replace `serde_json` for graph data."
 
-Minigraf aims to be **the SQLite of graph databases** - a small, fast, reliable, embedded graph database engine that runs in-process with your application.
+Minigraf aims to be **the SQLite of bi-temporal graph databases** - a small, fast, reliable, embedded graph database with Datalog queries and time travel capabilities.
+
+## Why Datalog?
+
+**Strategic Decision** (January 2026): After completing Phase 2 with a GQL-inspired implementation, we pivoted to Datalog. Here's why:
+
+### 1. Better Philosophy Alignment
+
+**Datalog is simpler** → Aligns with "do less, do it perfectly":
+- Datalog spec: ~50 pages of core concepts
+- GQL spec: 600+ pages (ISO/IEC 39075:2024)
+- Smaller surface area = fewer bugs, faster to production
+
+**Datalog is proven** → 40+ years of production use (Datomic since 2012, XTDB, LogicBlox)
+**Datalog is reliable** → Well-understood semantics, extensive research
+
+### 2. Natural Fit for Temporal Databases
+
+**Bi-temporal support was always the plan.** Datalog makes it natural:
+- Facts are tuples: `(Entity, Attribute, Value, ValidFrom, ValidTo, TxTime)`
+- Time is just another dimension in relations
+- Temporal queries use simple predicates: `[(<= ?valid-from ?query-time)]`
+- No special temporal syntax needed - it's just data
+
+**With GQL**: Bi-temporal would be 12+ months of novel implementation (unclear semantics)
+**With Datalog**: Bi-temporal is 3-4 months of proven patterns (Datomic/XTDB model)
+
+### 3. Graph Traversal is MORE Powerful
+
+**Recursive rules are first-class in Datalog:**
+```datalog
+[(reachable ?from ?to)
+ [?from :connected ?to]]
+
+[(reachable ?from ?to)
+ [?from :connected ?intermediate]
+ (reachable ?intermediate ?to)]
+```
+
+This is cleaner and more powerful than GQL's path patterns. Transitive closure is native, not bolted on.
+
+### 4. Faster Path to Production
+
+**GQL roadmap**: 24-30 months to production (catch up to GraphLite)
+**Datalog roadmap**: 12-15 months to production (proven implementation patterns)
+
+We can ship a useful, reliable database faster with Datalog.
+
+### 5. Unique Market Position
+
+**GQL space**: GraphLite already won (full spec, ACID, mature)
+**Datalog space**: Gap exists for single-file embedded bi-temporal DB
+
+Minigraf = SQLite + Datomic + single file (no one else offers this)
+
+---
 
 ## Core Inspiration: SQLite
 
@@ -177,6 +232,18 @@ SQLite's success comes from a clear philosophy: be a library, not a server. Be s
 - Direct function calls, no network overhead
 - Runs in-process with your app
 
+✅ **A bi-temporal database**
+- Track when facts were recorded (transaction time)
+- Track when facts were valid in the real world (valid time)
+- Time travel queries: see any point in history
+- Audit trails and compliance built-in
+
+✅ **A Datalog query engine**
+- Recursive rules for graph traversal
+- Logic programming paradigm
+- Simpler than SQL, more powerful for graphs
+- Proven semantics (40+ years of research)
+
 ✅ **A local-first storage solution**
 - Perfect for desktop applications
 - Ideal for mobile apps
@@ -188,7 +255,7 @@ SQLite's success comes from a clear philosophy: be a library, not a server. Be s
 - Portable across platforms
 - Simple backup and versioning
 
-✅ **A reliable, ACID-compliant database**
+✅ **A reliable, ACID-compliant database** (Phase 5)
 - Transactions with rollback support
 - Crash recovery via WAL
 - Data integrity guarantees
@@ -226,27 +293,32 @@ SQLite's success comes from a clear philosophy: be a library, not a server. Be s
 - Different scale (millions vs. billions of nodes)
 - Different philosophy (library vs. service)
 
-❌ **Not chasing full GQL spec compliance**
-- Implement what's useful, not what's in the spec
-- Pragmatic subset of GQL
-- Extensions for common patterns
+❌ **Not chasing feature parity with XTDB/Datomic**
+- Simpler scope: single-file only
+- No distributed features
+- No vector search (separate crate if needed)
+- Focus on reliability over features
 
 ## Target Use Cases
 
 **Primary use cases** (optimize for these):
 
-1. **Mobile applications** - Local graph storage on phones/tablets
-2. **Desktop applications** - Apps that need relationship data (IDEs, note-taking, etc.)
-3. **Web applications (WASM)** - Client-side graph storage in browsers
-4. **Embedded devices** - IoT, edge computing with graph data
-5. **Development/testing** - Local graph database for testing
-6. **Small to medium production apps** - Where embedded DB is sufficient
+1. **Audit-heavy applications** - Finance, healthcare, legal (bi-temporal = compliance)
+2. **Event sourcing** - Full history, time travel debugging
+3. **Personal knowledge bases** - Obsidian, Logseq, Roam-like apps with provenance
+4. **Mobile applications** - Local graph storage on phones/tablets
+5. **Desktop applications** - Apps that need relationship data (IDEs, note-taking, etc.)
+6. **Web applications (WASM)** - Client-side graph storage in browsers
+7. **AI/RAG systems** - Knowledge graphs with temporal provenance
+8. **Embedded devices** - IoT, edge computing with graph data
+9. **Development/testing** - Local graph database for testing
+10. **Small to medium production apps** - Where embedded DB is sufficient
 
 **Secondary use cases** (should work, but not optimized for):
 
-7. **Server applications** - Using Minigraf as an embedded component
-8. **Data analysis** - Exploring graph datasets locally
-9. **Education** - Learning graph databases and algorithms
+11. **Server applications** - Using Minigraf as an embedded component
+12. **Data analysis** - Exploring graph datasets locally
+13. **Education** - Learning Datalog and temporal databases
 
 **Non-use cases** (explicitly out of scope):
 
@@ -359,18 +431,27 @@ The `.graph` file format must be:
 
 **Phase 2**: ✅ Embeddability (COMPLETE)
 - Single-file storage, persistent graph database, embedded API
+- GQL-inspired PoC (archived at `archive/gql-phase-2`)
 
-**Phase 3**: ⏳ Establish reliability (NEXT)
-- WAL, ACID transactions, crash recovery, indexes, query optimization
+**Phase 3**: 🎯 Datalog Core (NEXT - 3-4 months)
+- EAV data model, basic facts and queries, recursive rules
 
-**Phase 4**: ⏳ Expand reach
-- WASM support, mobile bindings, multiple backends
+**Phase 4**: 🎯 Bi-temporal Support (3-4 months)
+- Transaction time + valid time, time travel queries, history
 
-**Phase 5**: ⏳ Mature the ecosystem
-- Full documentation, tooling, ecosystem libraries
+**Phase 5**: 🎯 ACID + WAL (2-3 months)
+- Write-ahead logging, transactions, crash recovery
 
-**Phase 6+**: ⏳ Long-term maintenance
+**Phase 6**: 🎯 Performance (2-3 months)
+- Indexes (EAVT, AEVT, AVET, VAET), query optimization
+
+**Phase 7**: 🎯 Cross-platform (3-4 months)
+- WASM support, mobile bindings, language bindings
+
+**Phase 8+**: 🎯 Long-term maintenance
 - Bug fixes, security patches, conservative improvements
+
+**v1.0.0**: 12-15 months (vs. 24-30 months with GQL)
 
 See ROADMAP.md for detailed feature breakdown.
 ## When to Say "No"
@@ -391,7 +472,10 @@ It's important to say "no" to preserve the project's focus:
 
 Beyond SQLite, we draw inspiration from:
 
-- **SQLite**: Embedded database philosophy
+- **SQLite**: Embedded database philosophy, single-file format
+- **Datomic**: Immutable facts, temporal queries, Datalog
+- **XTDB**: Bi-temporal database, time travel
+- **Cozo**: Embedded Datalog, graph algorithms
 - **Redis**: Simple, focused, well-documented
 - **Rust**: Memory safety, zero-cost abstractions
 - **Git**: Single-file stores (packfiles), content-addressed storage
