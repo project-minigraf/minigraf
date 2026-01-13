@@ -199,11 +199,9 @@ impl PatternMatcher {
                 // Check that additional bindings are consistent with existing
                 let mut consistent = true;
                 for (var, val) in &additional_bindings {
-                    if let Some(existing_val) = existing.get(var) {
-                        if existing_val != val {
-                            consistent = false;
-                            break;
-                        }
+                    if matches!(existing.get(var), Some(existing_val) if existing_val != val) {
+                        consistent = false;
+                        break;
                     }
                 }
 
