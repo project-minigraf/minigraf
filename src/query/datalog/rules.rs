@@ -60,7 +60,7 @@ impl RuleRegistry {
     pub fn register_rule(&mut self, predicate: String, rule: Rule) -> Result<()> {
         self.rules
             .entry(predicate)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(rule);
         Ok(())
     }
