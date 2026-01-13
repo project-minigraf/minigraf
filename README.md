@@ -6,26 +6,47 @@
 [![Rust Edition](https://img.shields.io/badge/rust-2024-orange.svg)](https://blog.rust-lang.org/2024/10/17/Rust-1.82.0.html)
 [![Phase](https://img.shields.io/badge/phase-2%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
 
-A tiny, portable GQL (Graph Query Language) engine written in Rust. **W.I.P.**
+> **The SQLite of bi-temporal graph databases** - Embedded Datalog engine written in Rust
 
-GQL stands for Graph Query Language, which has been standardized in [ISO/IEC 39075:2024](https://www.iso.org/standard/76120.html).
+A tiny, self-contained graph database with **Datalog queries** and **bi-temporal time travel**. Think SQLite, but for connected data with full history.
+
+## Vision
+
+Minigraf is a **single-file embedded graph database** that lets you:
+- ✅ **Query relationships with Datalog** - Recursive rules, natural graph traversal
+- 🎯 **Time travel through history** - Bi-temporal queries (transaction time + valid time)
+- ✅ **Embed anywhere** - Native, WASM, mobile, IoT - one `.graph` file
+- ✅ **Zero configuration** - Just `Minigraf::open("data.graph")` and you're done
+
+**Status**: Early development. Phase 2 complete (persistent storage). Now pivoting from GQL to Datalog for better temporal semantics.
+
+## Why Datalog?
+
+**Datalog is fundamentally better for graphs than SQL-like languages:**
+
+1. **Recursive by design** - Multi-hop traversals are natural, not an afterthought
+2. **Simpler to implement** - Smaller spec = more reliable, faster to production
+3. **Perfect for temporal** - Time is just another dimension in relations
+4. **Proven at scale** - 40+ years of research, production use (Datomic, XTDB)
+5. **Graph-native** - Facts (Entity-Attribute-Value) are literally edges
 
 ## Current Status - Phase 2
 
-Minigraf is now a **fully embeddable graph database** with persistent storage:
+Minigraf has **persistent storage foundation** ready for Datalog:
 
-- ✅ **Property graph model** - Nodes and edges with typed properties
-- ✅ **Persistent storage** - Single `.graph` file format (Phase 2 NEW!)
-- ✅ **Embedded database API** - Use like SQLite (Phase 2 NEW!)
+- ✅ **Single `.graph` file** - Page-based storage (4KB pages)
+- ✅ **Embedded database API** - Use like SQLite (`Minigraf::open()`)
 - ✅ **Cross-platform** - Works on Linux, macOS, Windows, iOS, Android
 - ✅ **Auto-persistence** - Changes auto-save when database is dropped
-- ✅ **Interactive REPL** - Query console for exploration
-- ✅ **Query language** - GQL-inspired syntax
-- ✅ **Test coverage** - 35+ tests, all passing
+- ✅ **Storage abstraction** - File, Memory backends (IndexedDB future)
+- ✅ **54 tests passing** - Comprehensive test coverage
+- 🎯 **Query language** - Transitioning from GQL to Datalog (Phase 3)
 
-## Quick Start
+**GQL Archive**: Previous GQL implementation preserved at `archive/gql-phase-2` branch and `gql-phase-2-complete` tag.
 
-### As an Embedded Database
+## Quick Start (Future API)
+
+### Embedded Datalog Database
 
 ```rust
 use minigraf::Minigraf;
@@ -33,26 +54,32 @@ use minigraf::Minigraf;
 // Open or create a database
 let mut db = Minigraf::open("myapp.graph")?;
 
-// Execute queries
-db.execute("CREATE NODE (:Person) {name: \"Alice\", age: 30}")?;
-db.execute("MATCH (:Person)")?;
+// Add facts (Entity-Attribute-Value triples)
+db.transact(vec![
+    [:alice, :person/name, "Alice"],
+    [:alice, :person/age, 30],
+    [:alice, :friend, :bob],
+    [:bob, :person/name, "Bob"],
+])?;
 
-// Auto-saves on drop
-drop(db);
+// Query with Datalog
+let results = db.query("
+    [:find ?friend-name
+     :where
+       [:alice :friend ?friend]
+       [?friend :person/name ?friend-name]]
+")?;
 
-// Later - data is still there!
-let db = Minigraf::open("myapp.graph")?;
+// Time travel - query as of past transaction
+let past_db = db.as_of(tx_100);
+let old_results = past_db.query(...)?;
 ```
 
-### As an Interactive Console
+### Interactive Console (Current - In-memory)
 
 ```bash
-# Build and run the REPL
+# Build and run the REPL (currently supports basic graph operations)
 cargo run
-
-# Or build release version
-cargo build --release
-./target/release/minigraf
 
 # Run tests
 cargo test
@@ -61,301 +88,279 @@ cargo test
 cargo run --example embedded
 ```
 
-## Query Language
+## Datalog Query Language (Planned - Phase 3)
 
-The PoC implements a simple GQL-like query language:
+### Basic Facts
 
-### Create a Node
-
-```gql
-CREATE NODE (:Person) {name: "Alice", age: 30}
-CREATE NODE (:Person:Employee) {name: "Bob"}
-CREATE NODE (:Company)
+```datalog
+;; Add facts about entities
+[:alice :person/name "Alice"]
+[:alice :person/age 30]
+[:alice :friend :bob]
+[:bob :person/name "Bob"]
 ```
 
-### Create an Edge
+### Simple Queries
 
-```gql
-CREATE EDGE (node-id-1)-[KNOWS]->(node-id-2) {since: 2020}
-CREATE EDGE (alice-id)-[WORKS_AT]->(company-id)
+```datalog
+;; Find all friends of Alice
+[:find ?friend
+ :where
+   [:alice :friend ?friend]]
+
+;; Find names of Alice's friends
+[:find ?name
+ :where
+   [:alice :friend ?friend]
+   [?friend :person/name ?name]]
 ```
 
-### Match/Query Nodes
+### Recursive Rules (The Power of Datalog)
 
-```gql
-MATCH (:Person)
-MATCH (:Person) WHERE name = "Alice"
-MATCH (:Employee)
+```datalog
+;; Define transitive friendship
+[(friends-network ?person ?reachable)
+ [?person :friend ?reachable]]
+
+[(friends-network ?person ?reachable)
+ [?person :friend ?intermediate]
+ (friends-network ?intermediate ?reachable)]
+
+;; Find everyone in Alice's network
+[:find ?person
+ :where
+   (friends-network :alice ?person)]
 ```
 
-### Match/Query Edges
+### Bi-temporal Queries (Phase 4)
 
-```gql
-MATCH -[:KNOWS]->
-MATCH -[:WORKS_AT]->
-```
+```datalog
+;; Query valid at a specific time
+[:find ?name
+ :valid-at "2023-06-01"
+ :where
+   [:alice :person/name ?name]]
 
-### Show All Data
+;; Query as of past transaction
+[:find ?friend
+ :as-of tx-100
+ :where
+   [:alice :friend ?friend]]
 
-```gql
-SHOW NODES
-SHOW EDGES
-```
-
-### Help and Exit
-
-```gql
-HELP    # Show available commands
-EXIT    # Exit the console (or use QUIT)
-```
-
-## Example Session
-
-```
-$ cargo run
-Minigraf v0.1.0 - Graph Query Language Engine
-Using in-memory storage
-
-Minigraf v0.1.0 - Interactive Graph Query Console
-Type HELP for available commands, EXIT to quit.
-
-minigraf> CREATE NODE (:Person) {name: "Alice", age: 30}
-Node created: <uuid> (labels: Person, properties: {age: 30, name: "Alice"})
-
-minigraf> CREATE NODE (:Person) {name: "Bob", age: 25}
-Node created: <uuid> (labels: Person, properties: {age: 25, name: "Bob"})
-
-minigraf> CREATE EDGE (<alice-uuid>)-[KNOWS]->(<bob-uuid>) {since: 2020}
-Edge created: <edge-uuid> (<alice-uuid> -[KNOWS]-> <bob-uuid>, properties: {since: 2020})
-
-minigraf> MATCH (:Person)
-Found 2 node(s):
-  - <alice-uuid> (labels: Person, properties: {age: 30, name: "Alice"})
-  - <bob-uuid> (labels: Person, properties: {age: 25, name: "Bob"})
-
-minigraf> MATCH (:Person) WHERE name = "Alice"
-Found 1 node(s):
-  - <alice-uuid> (labels: Person, properties: {age: 30, name: "Alice"})
-
-minigraf> SHOW EDGES
-Found 1 edge(s):
-  - <edge-uuid> (<alice-uuid> -[KNOWS]-> <bob-uuid>, properties: {since: 2020})
-
-minigraf> EXIT
-Goodbye!
+;; Full bi-temporal query
+[:find ?status
+ :valid-at "2023-06-01"
+ :as-of tx-100
+ :where
+   [:alice :employment/status ?status]]
 ```
 
 ## Architecture
 
 ### Module Structure
 
-- **`src/graph/types.rs`**: Core property graph data structures (Node, Edge, Property, PropertyValue)
-- **`src/graph/storage.rs`**: In-memory storage layer with thread-safe operations
-- **`src/storage/`**: Storage backend abstraction (NEW in Phase 2)
-  - **`mod.rs`**: StorageBackend trait and file format definitions
-  - **`backend/file.rs`**: File-based backend for native platforms (.graph files)
-  - **`backend/memory.rs`**: In-memory backend for testing/embedded
-  - **`backend/indexeddb.rs`**: Browser backend (future, WASM only)
-- **`src/query/parser.rs`**: Query language parser
-- **`src/query/executor.rs`**: Query execution engine
+- **`src/graph/types.rs`**: Core graph data structures (will evolve to EAV model)
+- **`src/graph/storage.rs`**: In-memory storage layer (Phase 1)
+- **`src/storage/`**: Storage backend abstraction (Phase 2) ✅
+  - **`mod.rs`**: StorageBackend trait, file format
+  - **`backend/file.rs`**: Single-file persistent backend
+  - **`backend/memory.rs`**: In-memory backend for testing
+  - **`backend/indexeddb.rs`**: Future WASM backend
+- **`src/query/parser.rs`**: Query parser (will become Datalog parser in Phase 3)
+- **`src/query/executor.rs`**: Query executor (will become Datalog engine)
 - **`src/repl.rs`**: Interactive REPL console
-- **`src/lib.rs`**: Library exports
+- **`src/lib.rs`**: Public API
 - **`src/main.rs`**: Binary entry point
 
-### Property Graph Model
+### Data Model
 
-**Nodes**:
-- Unique UUID identifier
-- Multiple labels (e.g., `Person`, `Employee`)
-- Properties as key-value pairs
+**Current** (Property Graph - Phase 1-2):
+- Nodes with labels and properties
+- Edges with source, target, label, properties
 
-**Edges**:
-- Unique UUID identifier
-- Source and target node IDs
-- Single label/type (e.g., `KNOWS`, `WORKS_AT`)
-- Properties as key-value pairs
+**Future** (Datalog Triple Store - Phase 3+):
+- Facts: `(Entity, Attribute, Value, ValidFrom, ValidTo, TxTime)`
+- Entities are just UUIDs
+- Attributes are keywords (`:person/name`, `:friend`)
+- Values can be primitives or entity references
+- Time dimensions for bi-temporal support
 
-**Property Values**:
-- String
-- Integer (i64)
-- Float (f64)
-- Boolean
-- Null
+### Storage Format
 
-## Scope
-
-Minigraf will be designed to run in multiple environments, including:
-- As a standalone binary ✅ (PoC done)
-- As a library ✅ (PoC done)
-- As a WebAssembly module (for browsers) ⏳ (future)
-
-## Unscope
-
-Minigraf will **NOT** be designed to be (for now):
-- Distributed,
-- Fault-tolerant,
-- ACID-compliant.
-
-## Storage Backends
-
-Minigraf uses a **platform-abstraction layer** inspired by SQLite's VFS architecture. Different storage backends enable cross-platform support:
-
-### Available Backends
-
-- **In-memory** ✅ - Fast, non-persistent storage (Phase 1 PoC)
-  - Perfect for testing and embedded systems
-  - Currently used by the REPL
-
-- **File-based (`.graph` files)** ✅ - Single-file persistent storage (Phase 2)
-  - Page-based storage with 4KB pages
-  - Cross-platform file format (endian-safe)
-  - Supports native platforms: Linux, macOS, Windows, iOS, Android
-  - See `examples/file_storage.rs` for usage
-
-### Future Backends
-
-- **IndexedDB** ⏳ - Browser storage for WASM (Phase 5)
-  - Same API, different implementation
-  - Enables Minigraf in web applications
-
-- **Optional: Custom implementations** ⏳
-  - Users can implement `StorageBackend` trait for custom needs
-  - Example: SQLite, RocksDB (via feature flags)
-
-### `.graph` File Format
-
-The file-based backend uses a simple, stable page-based format:
+The `.graph` file uses a page-based format (like SQLite):
 
 ```
 +----------------+
-| Page 0: Header | <- Magic "MGRF", version, page count, node/edge counts
+| Page 0: Header | <- Magic "MGRF", version, page count
 +----------------+
-| Page 1: Data   | <- Future: Nodes, edges, indexes
+| Page 1: Facts  | <- (E, A, V, ValidFrom, ValidTo, TxTime)
 +----------------+
-| Page 2: Data   |
+| Page 2: Indexes| <- EAVT, AEVT, AVET, VAET indexes
 +----------------+
-| ...            |
+| Page 3+: Data  |
 +----------------+
 ```
 
 - **Page size**: 4KB (like SQLite)
 - **Endian-safe**: Works across all platforms
 - **Single file**: Easy to backup, share, version control
-- **Stable format**: Once v1.0 ships, backwards compatible forever
+- **Stable format**: Backwards compatible once v1.0 ships
 
-## GQL Spec Compliance
+## Roadmap
 
-**Current Status: ~2-5% of ISO/IEC 39075:2024**
+**Phase 1**: ✅ Property graph PoC (Complete)
+**Phase 2**: ✅ Persistent storage (Complete)
+**Phase 3**: 🎯 Datalog core (3-4 months)
+- Basic facts and queries
+- Recursive rules
+- Pattern matching
 
-This is a hobby project implementing a GQL-inspired query language. It is **not fully compliant** with the GQL standard and does not aim for complete compliance in the near term.
+**Phase 4**: 🎯 Bi-temporal support (3-4 months)
+- Valid time + transaction time
+- Time travel queries
+- Historical analysis
 
-### ✅ Implemented (PoC Level)
+**Phase 5**: 🎯 ACID + WAL (2-3 months)
+- Write-ahead logging
+- Transactions
+- Crash recovery
 
-**Basic Graph Model:**
-- ✅ Nodes with multiple labels
-- ✅ Directed edges with single label
-- ✅ Properties on nodes and edges
-- ✅ Property types: String, Integer, Float, Boolean, Null
+**Phase 6**: 🎯 Performance (2-3 months)
+- Indexes (EAVT, AEVT, AVET, VAET)
+- Query optimization
+- Benchmarking
 
-**Basic Query Operations:**
-- ✅ CREATE NODE with labels and properties
-- ✅ CREATE EDGE between existing nodes
-- ✅ Simple MATCH by label: `MATCH (:Label)`
-- ✅ Single property equality filter: `WHERE prop = value`
-- ✅ SHOW NODES / SHOW EDGES (non-standard convenience commands)
+**Phase 7**: 🎯 Cross-platform (3-4 months)
+- WASM (IndexedDB backend)
+- Mobile bindings
+- Language bindings
 
-### ❌ Not Yet Implemented (Majority of GQL Spec)
+**v1.0.0**: 12-15 months (vs. 24-30 months with GQL)
 
-**Graph Pattern Matching:**
-- ❌ Complex path patterns: `(a)-[:REL]->(b)-[:REL2]->(c)`
-- ❌ Variable-length paths: `(a)-[:REL*1..5]->(b)`
-- ❌ Shortest path queries
-- ❌ Optional patterns (OPTIONAL MATCH)
-- ❌ Pattern alternatives/disjunction
-- ❌ Quantified path patterns
+See [ROADMAP.md](ROADMAP.md) for detailed breakdown.
 
-**Query Clauses:**
-- ❌ RETURN clause (projections, expressions)
-- ❌ WITH clause (intermediate results)
-- ❌ ORDER BY, LIMIT, SKIP
-- ❌ DISTINCT
-- ❌ OPTIONAL MATCH
-- ❌ UNION, INTERSECT, EXCEPT
+## Why Minigraf?
 
-**Data Manipulation:**
-- ❌ INSERT (vs. CREATE)
-- ❌ SET (update properties/labels)
-- ❌ REMOVE (remove properties/labels)
-- ❌ DELETE (delete nodes/edges)
-- ❌ MERGE (upsert semantics)
+### Unique Positioning
 
-**Expressions & Operators:**
-- ❌ Arithmetic operations (+, -, *, /, %)
-- ❌ Comparison operators (<, >, <=, >=, <>)
-- ❌ Logical operators (AND, OR, NOT) in WHERE
-- ❌ String operations (CONTAINS, STARTS WITH, ENDS WITH)
-- ❌ List operations
-- ❌ Map/record operations
-- ❌ CASE expressions
-- ❌ NULL handling (IS NULL, COALESCE)
+No other database offers this combination:
 
-**Aggregations & Grouping:**
-- ❌ Aggregation functions (COUNT, SUM, AVG, MIN, MAX)
-- ❌ GROUP BY
-- ❌ HAVING
+| Feature | Minigraf | XTDB | Cozo | Neo4j | SQLite |
+|---------|----------|------|------|-------|--------|
+| **Query Language** | Datalog | Datalog | Datalog | Cypher | SQL |
+| **Single File** | ✅ Yes | ❌ No | ❌ No | ❌ No | ✅ Yes |
+| **Bi-temporal** | 🎯 Goal | ✅ Yes | ⚠️ Time travel | ❌ No | ❌ No |
+| **Embedded** | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No | ✅ Yes |
+| **Graph Native** | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No |
+| **Rust** | ✅ Yes | ❌ Clojure | ✅ Yes | ❌ Java | ❌ C |
+| **WASM Ready** | 🎯 Goal | ❌ No | ⚠️ Limited | ❌ No | ✅ Yes |
 
-**Advanced Data Types:**
-- ❌ Lists/Arrays
-- ❌ Maps/Records
-- ❌ Path type
-- ❌ Temporal types (Date, Time, DateTime, Duration)
-- ❌ Spatial types (Point, Geography)
+**Minigraf = SQLite + Datomic + single file**
 
-**Advanced Features:**
-- ❌ Multiple named graphs
-- ❌ Graph constructors
-- ❌ Schema definitions and validation
-- ❌ Constraints and indexes
-- ❌ Functions (string, math, temporal, etc.)
-- ❌ Subqueries
-- ❌ Transactions
+### Target Use Cases
 
-**Conformance:**
-- ❌ No formal conformance testing
-- ❌ Not validated against official GQL test suite
-- ❌ Syntax may differ from official spec
+1. **Audit-heavy applications** - Finance, healthcare, legal (bi-temporal = compliance)
+2. **Event sourcing** - Full history, time travel debugging
+3. **Personal knowledge bases** - Obsidian, Logseq, Roam-like apps
+4. **Local-first applications** - Offline-capable, user-owned data
+5. **AI/RAG systems** - Knowledge graphs with provenance
+6. **Mobile apps** - Embedded graph database on devices
+7. **WASM applications** - Graph database in the browser
+8. **Development/testing** - Local graph DB like SQLite
 
-### Roadmap to Compliance
+### Philosophy: The SQLite of Graph Databases
 
-This project prioritizes usability over spec compliance. See [ROADMAP.md](ROADMAP.md) for the complete development roadmap.
+- **Zero-configuration** - No setup, just works
+- **Embedded-first** - Library, not server
+- **Single-file database** - Easy backup, share, version control
+- **Self-contained** - <1MB binary, minimal dependencies
+- **Cross-platform** - Native, WASM, mobile, embedded
+- **Reliability over features** - Do less, do it perfectly
+- **Long-term support** - Decades-long commitment
 
-**GQL Spec Feature Milestones**:
+See [PHILOSOPHY.md](PHILOSOPHY.md) for complete design principles.
 
-1. ✅ **Basic PoC**: Simple CRUD and queries
-2. ⏳ **Complex patterns**: Multi-hop paths, variable-length
-3. ⏳ **RETURN clause**: Projections, ORDER BY/LIMIT
-4. ⏳ **Data manipulation**: UPDATE/DELETE operations
-5. ⏳ **Aggregations**: COUNT, SUM, AVG, GROUP BY
-6. ⏳ **Advanced expressions**: Operators, functions
-7. ⏳ **Schema**: Constraints, indexes
-8. ⏳ **Full compliance**: Advanced types, multiple graphs
+## Scope
 
-For official GQL resources, see: [ISO/IEC 39075:2024](https://www.iso.org/standard/76120.html)
+Minigraf is designed to run in multiple environments:
+- ✅ As a standalone binary (PoC done)
+- ✅ As an embedded library (PoC done)
+- 🎯 As a WebAssembly module (future - Phase 7)
+
+## Unscope
+
+Minigraf will **NOT** be (by design):
+- **Distributed** - No clustering, no sharding, no replication
+- **Client-server** - No network protocol in core
+- **Enterprise-focused** - No RBAC, no HA, no multi-datacenter
+- **Billion-node scale** - Optimized for <1M nodes (like SQLite)
+
+If you need these, use Neo4j, TigerGraph, or similar.
 
 ## Testing
 
-The project includes comprehensive test coverage:
+Comprehensive test coverage:
 
 ```bash
 cargo test
 ```
 
-Tests cover:
-- Property graph data structures
-- Storage operations (CRUD for nodes and edges)
-- Query parser
-- Query executor
-- Edge traversal operations
+Current tests (54 total):
+- Property graph operations (Phase 1-2 foundation)
+- Storage backend operations
+- Persistence and recovery
+- Concurrency and edge cases
+
+Future tests (Phase 3+):
+- Datalog parser
+- Recursive rule evaluation
+- Bi-temporal queries
+- Transaction isolation
+
+## Comparison to Similar Projects
+
+### vs. XTDB (formerly Crux)
+- ✅ **Minigraf**: Single `.graph` file, simpler scope
+- ✅ **XTDB**: More mature, production-ready, but Clojure + multi-file storage
+
+### vs. Cozo
+- ✅ **Minigraf**: Single file, bi-temporal first-class
+- ✅ **Cozo**: More features (vector search, time travel), but multi-file storage
+
+### vs. GraphLite
+- ✅ **Minigraf**: Datalog (recursive rules), bi-temporal
+- ✅ **GraphLite**: Full GQL compliance, but multi-file (Sled directories)
+
+### vs. Datomic
+- ✅ **Minigraf**: Single file, embedded, Rust
+- ✅ **Datomic**: Production-proven, but client-server, Clojure, proprietary
+
+**Minigraf aims to be the simplest, most portable option: SQLite's simplicity + Datomic's temporal model.**
+
+## Contributing
+
+This is a hobby project with a long-term vision. Contributions welcome, but we prioritize:
+1. Reliability over features
+2. Simplicity over flexibility
+3. Philosophy alignment
+
+See [ROADMAP.md](ROADMAP.md) and [PHILOSOPHY.md](PHILOSOPHY.md) before proposing features.
+
+## Learning Resources
+
+### Datalog
+- [Learn Datalog Today](http://www.learndatalogtoday.org/)
+- [Datomic Query Tutorial](https://docs.datomic.com/query/query-tutorial.html)
+- [XTDB Datalog Queries](https://xtdb.com/docs/)
+
+### Temporal Databases
+- [Temporal Database Wikipedia](https://en.wikipedia.org/wiki/Temporal_database)
+- [XTDB Bitemporality](https://v1-docs.xtdb.com/concepts/bitemporality/)
+- [Datomic Time Model](https://docs.datomic.com/time/time-model.html)
+
+### SQLite's VFS
+- [SQLite OS Interface](https://www.sqlite.org/vfs.html)
+- [SQLite File Format](https://www.sqlite.org/fileformat.html)
 
 ## License
 

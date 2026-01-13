@@ -4,33 +4,49 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Minigraf is a tiny, portable GQL (Graph Query Language) engine written in Rust. It's a work-in-progress project designed to run as a standalone binary, library, or WebAssembly module.
+Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries** written in Rust. It's designed to be the "SQLite of graph databases" - embedded, single-file, reliable, with time travel capabilities.
 
-**Current Status: Phase 2 Complete** - Fully embeddable graph database with persistent storage:
-- Property graph data model (nodes, edges, properties)
-- **Persistent storage engine** (`.graph` file format) - NEW!
-- **Embedded database API** (`Minigraf::open()`) - NEW!
-- Storage backend abstraction (File, Memory, future IndexedDB)
-- Custom GQL query parser
-- Query executor with persistence integration
-- Interactive REPL console
-- 35+ tests, all passing
+**Current Status: Phase 2 Complete → Phase 3 Starting** - Pivoting from GQL to Datalog:
+- ✅ Phase 1: Property graph PoC (in-memory)
+- ✅ Phase 2: Persistent storage (`.graph` file format, embedded API)
+- 🎯 Phase 3: Datalog core (EAV model, recursive rules) - **NEXT**
+- 🎯 Phase 4: Bi-temporal support (transaction time + valid time)
+- 🎯 Phase 5: ACID + WAL (crash safety, transactions)
+- 🎯 Phase 6: Performance (indexes, query optimization)
+- 🎯 v1.0.0: 12-15 months
 
-**Important**: This is a GQL-inspired implementation (~2-5% of ISO/IEC 39075:2024 spec). It is NOT fully spec-compliant and prioritizes usability over conformance. See README.md's "GQL Spec Compliance" section for detailed feature coverage and roadmap.
+**Important Strategic Pivot** (January 2026): After completing Phase 2 with a GQL-inspired implementation, we pivoted to Datalog for:
+1. Simpler implementation (proven patterns vs. novel GQL spec)
+2. Better temporal semantics (bi-temporal is natural in Datalog)
+3. Faster time-to-production (12-15 months vs. 24-30 months)
+4. Unique market positioning (single-file bi-temporal Datalog doesn't exist)
+
+**GQL Archive**: Previous GQL implementation preserved at `archive/gql-phase-2` branch and `gql-phase-2-complete` tag.
 
 ## Core Philosophy - CRITICAL
 
 **Before implementing ANY feature or change, you MUST assess it against the design philosophy in PHILOSOPHY.md.**
 
-Minigraf follows the "SQLite for graph databases" philosophy:
+Minigraf follows the "SQLite for bi-temporal graph databases" philosophy:
 - **Zero-configuration** - No setup, no config files, just works
 - **Embedded-first** - Library not server, in-process execution
 - **Single-file database** - One portable `.graph` file
 - **Self-contained** - Minimal dependencies, small binary (<1MB goal)
 - **Cross-platform** - Native, WASM, mobile, embedded
 - **Reliability over features** - Do less, do it perfectly
+- **Bi-temporal first-class** - Time travel is a core feature, not addon
+- **Datalog queries** - Simpler, more powerful for graphs than SQL/GQL
 - **Stability** - Backwards compatibility, stable file format
 - **Long-term support** - Decades-long commitment
+
+### Why Datalog?
+
+**Critical Context**: We chose Datalog over GQL because:
+1. **Simpler** - 50 pages vs. 600-page spec
+2. **Proven** - 40+ years, Datomic/XTDB production use
+3. **Better for temporal** - Time is just another dimension
+4. **Recursive rules** - First-class graph traversal
+5. **Faster to production** - 12-15 months vs. 24-30 months
 
 ### Philosophy Compliance Check
 
@@ -51,6 +67,7 @@ Minigraf follows the "SQLite for graph databases" philosophy:
 - Features only useful for distributed systems (violates target use cases)
 - Breaking changes to API or file format (violates stability)
 - Complex features before basics are reliable (violates reliability-first)
+- Multi-file storage (violates single-file philosophy)
 
 **Your response format when detecting a violation**:
 ```
@@ -80,14 +97,20 @@ cargo build
 # Build release version (with panic=abort optimization)
 cargo build --release
 
-# Run the REPL
+# Run the REPL (currently GQL, will become Datalog in Phase 3)
 cargo run
 
 # Run tests
 cargo test
 
-# Run integration tests with output
+# Run specific test suite
 cargo test --test integration_test -- --nocapture
+cargo test --test concurrency_test
+cargo test --test edge_cases_test
+
+# Run examples
+cargo run --example embedded
+cargo run --example file_storage
 ```
 
 ## Architecture
@@ -96,142 +119,370 @@ cargo test --test integration_test -- --nocapture
 
 The codebase is organized into the following modules:
 
-1. **Graph Module (`src/graph/`)**:
-   - `types.rs`: Core property graph types
-     - `Node`: Vertices with UUID IDs, multiple labels, and typed properties
-     - `Edge`: Directed edges with UUID IDs, source/target nodes, label, and properties
-     - `PropertyValue`: Enum supporting String, Integer, Float, Boolean, and Null types
-   - `storage.rs`: Thread-safe in-memory storage using `Arc<RwLock<HashMap>>`
-     - CRUD operations for nodes and edges
-     - Query helpers: filter by labels, properties, get edges from/to nodes
+1. **Graph Module (`src/graph/`)** - Phase 1-2 (will evolve in Phase 3):
+   - `types.rs`: Core graph types (will become EAV model)
+     - Current: `Node`, `Edge`, `PropertyValue` (property graph)
+     - Future: `Fact`, `Entity`, `Attribute`, `Value` (EAV model)
+   - `storage.rs`: Thread-safe in-memory storage (Phase 1)
+     - Uses `Arc<RwLock<HashMap>>` for nodes/edges
+     - Will migrate to fact-based storage in Phase 3
 
-2. **Storage Module (`src/storage/`)**: Backend abstraction layer (Phase 2)
-   - `mod.rs`: StorageBackend trait and file format definitions
+2. **Storage Module (`src/storage/`)** - Phase 2 (stable foundation) ✅:
+   - `mod.rs`: StorageBackend trait and file format
      - `StorageBackend` trait: Platform-agnostic storage interface
-     - `FileHeader`: Metadata structure for .graph files
+     - `FileHeader`: Metadata for `.graph` files
      - Page size: 4KB, Magic number: "MGRF"
-   - `backend/file.rs`: File-based backend for native platforms
-     - Single `.graph` file with page-based storage
+   - `backend/file.rs`: File-based backend (single `.graph` file)
+     - Page-based storage, cross-platform format
      - Supports Linux, macOS, Windows, iOS, Android
-     - Cross-platform format (endian-safe)
-   - `backend/memory.rs`: In-memory backend
-     - Fast, non-persistent storage for testing/embedded
-   - `backend/indexeddb.rs`: Future WASM browser backend
+   - `backend/memory.rs`: In-memory backend for testing
+   - `backend/indexeddb.rs`: Future WASM browser backend (Phase 7)
+   - `persistent.rs`: Persistent graph storage layer
+     - Serialization/deserialization of property graph
+     - Will evolve to support EAV facts in Phase 3
 
-3. **Query Module (`src/query/`)**:
-   - `parser.rs`: Text-based query parser supporting:
-     - `CREATE NODE (:Label1:Label2) {prop: value}` - Create nodes
-     - `CREATE EDGE (id1)-[LABEL]->(id2) {prop: value}` - Create edges
-     - `MATCH (:Label) [WHERE prop = value]` - Find nodes
-     - `MATCH -[:LABEL]->` - Find edges
-     - `SHOW NODES` / `SHOW EDGES` - List all entities
-     - `HELP` / `EXIT` - Console commands
+3. **Query Module (`src/query/`)** - Phase 1-2 (will be rewritten in Phase 3):
+   - `parser.rs`: Query parser
+     - Current: GQL-inspired syntax (Phase 1-2, archived)
+     - Future: Datalog EDN syntax (Phase 3)
    - `executor.rs`: Query execution engine
-     - Executes parsed queries against storage
-     - Validates edge creation (source/target existence)
-     - Returns formatted results
+     - Current: Property graph executor
+     - Future: Datalog pattern matcher with recursive rules
 
-4. **REPL Module (`src/repl.rs`)**: Interactive console
+4. **REPL Module (`src/repl.rs`)** - Phase 1-2 (will be updated in Phase 3):
+   - Interactive console
    - Prompt-based interface (`minigraf>`)
-   - Reads user input, parses queries, executes, and displays results
-   - Handles EOF gracefully (src/repl.rs:27-30) for piped input
-   - Error handling for parse/execution errors
+   - Handles EOF gracefully (src/repl.rs:27-30)
+   - Will support Datalog syntax in Phase 3
 
-5. **Library (`src/lib.rs`)**: Public API
-   - Exports all core types: `Node`, `Edge`, `PropertyValue`, `GraphStorage`
-   - Exports query functions: `parse_query`, `QueryExecutor`, `QueryResult`
-   - Exports storage: `StorageBackend`, `FileHeader`, `PAGE_SIZE`
-   - Exports REPL: `Repl`
+5. **Minigraf Module (`src/minigraf.rs`)** - Phase 2 (stable) ✅:
+   - Public embedded database API
+   - `Minigraf::open()` - Opens or creates database
+   - `Minigraf::execute()` - Executes queries
+   - `Minigraf::save()` - Explicit save
+   - Auto-save on drop
 
-6. **Binary (`src/main.rs`)**: Standalone executable
-   - Creates in-memory storage
+6. **Library (`src/lib.rs`)**: Public API
+   - Exports core types and functions
+   - Stable foundation for Phase 3 evolution
+
+7. **Binary (`src/main.rs`)**: Standalone executable
    - Launches interactive REPL
+   - Uses in-memory storage currently
+
+### Current Data Model (Phase 1-2)
+
+**Property Graph** (will be replaced with EAV in Phase 3):
+```rust
+struct Node {
+    id: Uuid,
+    labels: Vec<String>,
+    properties: HashMap<String, PropertyValue>,
+}
+
+struct Edge {
+    id: Uuid,
+    source: Uuid,
+    target: Uuid,
+    label: String,
+    properties: HashMap<String, PropertyValue>,
+}
+```
+
+### Future Data Model (Phase 3+)
+
+**Entity-Attribute-Value (Datalog Triple Store)**:
+```rust
+struct Fact {
+    entity: Uuid,
+    attribute: String,  // e.g., ":person/name", ":friend"
+    value: Value,
+    tx_id: TxId,        // Transaction that asserted this
+    asserted: bool,     // true = assert, false = retract
+}
+
+enum Value {
+    String(String),
+    Integer(i64),
+    Float(f64),
+    Boolean(bool),
+    Ref(Uuid),          // Reference to another entity
+    Keyword(String),    // e.g., ":person", ":status/active"
+    Null,
+}
+```
+
+**Bi-temporal Extension (Phase 4)**:
+```rust
+struct Fact {
+    entity: Uuid,
+    attribute: String,
+    value: Value,
+    valid_from: DateTime,   // When fact became valid in real world
+    valid_to: DateTime,     // When fact stopped being valid
+    tx_id: TxId,            // Transaction ID
+    tx_time: SystemTime,    // When fact was recorded
+    asserted: bool,
+}
+```
 
 ### Storage Implementation
 
-Minigraf uses a **layered storage architecture**:
+**Layered Architecture**:
 
-**High-level** (`src/graph/storage.rs`):
-- `GraphStorage`: In-memory graph operations (Phase 1 PoC)
-- `Arc<RwLock<HashMap<NodeId, Node>>>` for nodes
-- `Arc<RwLock<HashMap<EdgeId, Edge>>>` for edges
-- Thread-safe concurrent access via read/write locks
-- UUIDs for automatic ID generation
+**High-level** (Phase 1-2, will evolve):
+- `GraphStorage`: In-memory property graph operations
+- `PersistentGraphStorage`: Serialization layer
+- Will become fact-based storage in Phase 3
 
-**Low-level** (`src/storage/`): Backend abstraction (Phase 2)
-- `StorageBackend` trait: Platform-agnostic storage interface
-- `FileBackend`: Single `.graph` file with page-based storage
-  - 4KB pages, cross-platform format
-  - Magic number "MGRF", versioned header
-- `MemoryBackend`: In-memory page storage for testing
+**Low-level** (Phase 2, stable foundation) ✅:
+- `StorageBackend` trait: Platform-agnostic interface
+- `FileBackend`: Single `.graph` file (4KB pages)
+- `MemoryBackend`: In-memory for testing
 - Future: `IndexedDbBackend` for WASM
 
-**Philosophy**: Following SQLite's VFS model, enabling cross-platform support (native, mobile, WASM) with the same API.
-
-Note: RocksDB was considered but rejected in favor of a custom implementation that aligns with the "SQLite for graphs" philosophy (single-file, self-contained, cross-platform).
-
-### Query Language Syntax
-
-The query language is inspired by GQL (ISO/IEC 39075:2024) but simplified for the PoC:
-
+**File Format**:
 ```
-# Create nodes with labels and properties
+Page 0: Header
+  - Magic: "MGRF"
+  - Version: u32
+  - Page count: u64
+  - Node count: u64 (Phase 1-2)
+  - Edge count: u64 (Phase 1-2)
+  - Fact count: u64 (Phase 3+)
+  - Tx counter: u64 (Phase 4+)
+
+Page 1+: Data
+  - Current: Serialized nodes/edges
+  - Future: EAV facts with temporal dimensions
+```
+
+### Query Language
+
+**Current (Phase 1-2, GQL-inspired)** - Archived:
+```gql
 CREATE NODE (:Person) {name: "Alice", age: 30}
-CREATE NODE (:Person:Employee) {name: "Bob", age: 25}
-
-# Create edges between existing nodes (use node IDs)
-CREATE EDGE (node-id-1)-[KNOWS]->(node-id-2) {since: 2020}
-
-# Match nodes by label
-MATCH (:Person)
-
-# Match nodes with property filter
+CREATE EDGE (id1)-[KNOWS]->(id2) {since: 2020}
 MATCH (:Person) WHERE name = "Alice"
-
-# Match edges by label
-MATCH -[:KNOWS]->
-
-# Show all nodes or edges
 SHOW NODES
-SHOW EDGES
+```
+
+**Future (Phase 3+, Datalog)** - Target syntax:
+```datalog
+;; Transact facts
+(transact [[:alice :person/name "Alice"]
+           [:alice :person/age 30]
+           [:alice :friend :bob]])
+
+;; Simple query
+(query [:find ?name
+        :where [?e :person/name ?name]])
+
+;; Recursive rule
+(rule [(reachable ?from ?to)
+       [?from :connected ?to]])
+
+(rule [(reachable ?from ?to)
+       [?from :connected ?intermediate]
+       (reachable ?intermediate ?to)])
+
+;; Bi-temporal query (Phase 4)
+(query [:find ?status
+        :valid-at "2023-06-01"
+        :as-of tx-100
+        :where [:alice :employment/status ?status]])
 ```
 
 ### Error Handling
 
-- Parse errors: Reported with descriptive messages, REPL continues
-- Execution errors: Validated before execution (e.g., edge endpoints must exist)
-- EOF handling: REPL exits gracefully when stdin closes (for piped input/scripts)
+- Parse errors: Descriptive messages, REPL continues
+- Execution errors: Validated before execution
+- EOF handling: REPL exits gracefully (for piped input)
+- Storage errors: Result<T, Error> with context
 
 ## Test Coverage
 
-The project has comprehensive test coverage:
-
-- **Unit tests** (19 tests):
-  - `src/graph/types.rs`: Node/Edge creation, PropertyValue accessors
-  - `src/graph/storage.rs`: CRUD operations, queries, edge relationships
-  - `src/query/parser.rs`: All query syntax variations
+**Current Tests (Phase 1-2)**: 54 tests passing ✅
+- Unit tests:
+  - `src/graph/types.rs`: Node/Edge creation, PropertyValue
+  - `src/graph/storage.rs`: CRUD, queries, edge relationships
+  - `src/query/parser.rs`: GQL syntax parsing
   - `src/query/executor.rs`: Query execution, validation
+  - `src/storage/`: Backend operations, persistence
+  - `src/minigraf.rs`: Embedded API
+- Integration tests:
+  - `tests/integration_test.rs`: Complete workflow
+  - `tests/concurrency_test.rs`: Thread safety
+  - `tests/edge_cases_test.rs`: Edge cases, dirty flags
 
-- **Integration tests** (`tests/integration_test.rs`):
-  - Complete workflow: create nodes, create edges, query, filter
+**Future Tests (Phase 3+)**:
+- Datalog parser (EDN syntax)
+- Pattern matching and unification
+- Recursive rule evaluation
+- Transitive closure
+- Bi-temporal queries (Phase 4)
+- WAL and crash recovery (Phase 5)
+- Index performance (Phase 6)
 
 Run tests with: `cargo test`
 
 ## Development Notes
 
-- **No schema file required**: The engine uses in-memory storage and doesn't require a schema on startup
-- **UUID-based IDs**: All nodes and edges get automatic UUID identifiers
-- **Thread-safe**: Storage can be safely shared across threads
-- **Property types**: Supports String, Integer, Float, Boolean, and Null values
-- **EOF handling**: REPL properly exits when stdin closes (fixed in src/repl.rs:27-30)
+### Phase 2 (Current) - Foundation Complete ✅
 
-## Future Work
+- **Storage backend abstraction** - Solid foundation for Phase 3+
+- **Single `.graph` file** - Philosophy-aligned persistent storage
+- **Embedded API** - `Minigraf::open()` works like SQLite
+- **UUID-based IDs** - Will continue in EAV model
+- **Thread-safe** - Concurrent read/write via RwLock
+- **Property types** - Will map to Value enum in Phase 3
+- **Auto-save** - On drop, works reliably
+- **Cross-platform** - Endian-safe file format
 
-- Persistent storage (RocksDB integration)
-- Indexes for fast property lookups
-- Complex graph traversals (multi-hop paths)
-- Aggregations and analytics
-- Library embedding support
-- WebAssembly compilation
-- Transaction support
-- Schema validation
+### Phase 3 (Next) - Datalog Core 🎯
+
+**Migration Strategy**:
+1. Add EAV types alongside existing property graph types
+2. Implement Datalog parser (new module)
+3. Build query executor with pattern matching
+4. Add recursive rule evaluation
+5. Update REPL to support both syntaxes temporarily
+6. Gradually migrate tests
+7. Eventually deprecate property graph types
+
+**Key Implementation Tasks**:
+- EDN parser for Datalog syntax
+- Pattern matching engine
+- Variable unification
+- Semi-naive evaluation for recursion
+- Stratification for safe recursion
+
+### Philosophy-Aligned Development
+
+When implementing features, always ask:
+1. Does this keep the single-file philosophy?
+2. Does this maintain zero-configuration?
+3. Does this add unnecessary complexity?
+4. Is this needed for embedded use cases?
+5. Does this compromise reliability?
+
+## Future Work (Roadmap)
+
+**Phase 3** (3-4 months): Datalog Core
+- EAV data model
+- Datalog parser (EDN syntax)
+- Pattern matching and unification
+- Recursive rules (semi-naive evaluation)
+- Updated REPL
+
+**Phase 4** (3-4 months): Bi-temporal Support
+- Transaction time (tx_id, tx_time)
+- Valid time (valid_from, valid_to)
+- Time travel queries (:as-of, :valid-at)
+- History queries
+
+**Phase 5** (2-3 months): ACID + WAL
+- Write-ahead logging (embedded in .graph file)
+- Transaction API (BEGIN, COMMIT, ROLLBACK)
+- Crash recovery
+- ACID compliance
+
+**Phase 6** (2-3 months): Performance
+- Indexes (EAVT, AEVT, AVET, VAET)
+- Query optimization
+- Benchmarking
+
+**Phase 7** (3-4 months): Cross-platform
+- WASM (IndexedDB backend)
+- Mobile bindings (iOS, Android)
+- Language bindings (Python, JavaScript)
+
+**v1.0.0** (12-15 months): Production Ready
+- Stable API
+- Stable file format
+- Comprehensive docs
+- Backwards compatibility promise
+
+## Comparison to Similar Projects
+
+**XTDB** (formerly Crux):
+- ✅ Bi-temporal Datalog database (inspiration)
+- ✅ Production-ready
+- ❌ Clojure, multi-file storage (directories)
+- Minigraf: Single file, Rust, simpler scope
+
+**Cozo**:
+- ✅ Embedded Datalog, Rust
+- ✅ Graph algorithms, vector search
+- ❌ Multi-file storage (RocksDB/Sled)
+- Minigraf: Single file, bi-temporal first-class
+
+**Datomic**:
+- ✅ Temporal Datalog database (major inspiration)
+- ✅ Production-proven since 2012
+- ❌ Client-server, Clojure, proprietary
+- Minigraf: Embedded, single file, open source
+
+**GraphLite**:
+- ✅ Full GQL spec compliance
+- ✅ Embedded, ACID, mature
+- ❌ Multi-file storage (Sled), no bi-temporal
+- Minigraf: Datalog (not GQL), single file, bi-temporal
+
+**Positioning**: Minigraf = SQLite + Datomic + single file
+
+## Contributing Guidelines
+
+This is a hobby project with a decades-long vision. When contributing:
+
+1. **Read PHILOSOPHY.md first** - Understand the core principles
+2. **Check ROADMAP.md** - See where we are and where we're going
+3. **Align with philosophy** - Simplicity, reliability, embedded-first
+4. **Write tests** - All features must be tested
+5. **Keep it simple** - Prefer boring, proven solutions
+6. **Think long-term** - We're building for decades, not months
+
+**Say NO to**:
+- Features that break single-file philosophy
+- Client-server architecture
+- Complex configuration
+- Features only for distributed systems
+- Breaking changes without overwhelming justification
+
+**Say YES to**:
+- Crash safety and data integrity
+- Query performance improvements
+- Better error messages
+- Documentation improvements
+- Cross-platform support
+
+## Key Files to Understand
+
+**For Phase 3 work (Datalog implementation)**:
+1. `PHILOSOPHY.md` - Why Datalog, why bi-temporal
+2. `ROADMAP.md` - Detailed Phase 3 plan
+3. `src/storage/mod.rs` - Storage abstraction (stable foundation)
+4. `src/graph/types.rs` - Current types (will evolve to EAV)
+5. `src/query/parser.rs` - Current parser (will be rewritten)
+6. `src/query/executor.rs` - Current executor (will be rewritten)
+
+**For understanding storage (stable)**:
+1. `src/storage/backend/file.rs` - File format implementation
+2. `src/storage/persistent.rs` - Persistence layer
+3. `src/minigraf.rs` - Public API
+
+## Important Reminders
+
+1. **We pivoted to Datalog** - Don't implement GQL features
+2. **Bi-temporal is first-class** - Not an afterthought
+3. **Single file is sacred** - Never break this
+4. **Simplicity over features** - Do less, do it perfectly
+5. **Test everything** - No untested code
+6. **Think SQLite** - Would SQLite do this?
+7. **Long-term vision** - Building for decades
+
+---
+
+*When in doubt, refer to PHILOSOPHY.md and ROADMAP.md. The goal is not to be the most feature-complete graph database. The goal is to be the one that's always there when you need it, works reliably, and never gets in your way.*
+
+*Be boring. Be reliable. Be Minigraf.*
