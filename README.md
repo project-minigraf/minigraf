@@ -4,7 +4,7 @@
 [![Clippy Status](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml/badge.svg)](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Rust Edition](https://img.shields.io/badge/rust-2024-orange.svg)](https://blog.rust-lang.org/2024/10/17/Rust-1.82.0.html)
-[![Phase](https://img.shields.io/badge/phase-2%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
+[![Phase](https://img.shields.io/badge/phase-3%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
 
 > **The SQLite of bi-temporal graph databases** - Embedded Datalog engine written in Rust
 
@@ -18,7 +18,7 @@ Minigraf is a **single-file embedded graph database** that lets you:
 - ✅ **Embed anywhere** - Native, WASM, mobile, IoT - one `.graph` file
 - ✅ **Zero configuration** - Just `Minigraf::open("data.graph")` and you're done
 
-**Status**: Early development. Phase 2 complete (persistent storage). Now pivoting from GQL to Datalog for better temporal semantics.
+**Status**: Early development. Phase 3 complete (Datalog with recursive rules). Now starting Phase 4 (bi-temporal support).
 
 ## Why Datalog?
 
@@ -30,23 +30,25 @@ Minigraf is a **single-file embedded graph database** that lets you:
 4. **Proven at scale** - 40+ years of research, production use (Datomic, XTDB)
 5. **Graph-native** - Facts (Entity-Attribute-Value) are literally edges
 
-## Current Status - Phase 2
+## Current Status - Phase 3 Complete
 
-Minigraf has **persistent storage foundation** ready for Datalog:
+Minigraf has **working Datalog query engine with recursive rules**:
 
+- ✅ **EAV data model** - Entity-Attribute-Value facts with transaction IDs
+- ✅ **Datalog queries** - Pattern matching with variable unification
+- ✅ **Recursive rules** - Semi-naive evaluation, transitive closure
 - ✅ **Single `.graph` file** - Page-based storage (4KB pages)
 - ✅ **Embedded database API** - Use like SQLite (`Minigraf::open()`)
 - ✅ **Cross-platform** - Works on Linux, macOS, Windows, iOS, Android
 - ✅ **Auto-persistence** - Changes auto-save when database is dropped
-- ✅ **Storage abstraction** - File, Memory backends (IndexedDB future)
-- ✅ **54 tests passing** - Comprehensive test coverage
-- 🎯 **Query language** - Transitioning from GQL to Datalog (Phase 3)
+- ✅ **123 tests passing** - Comprehensive test coverage
+- 🎯 **Next: Bi-temporal support** - Transaction time + valid time (Phase 4)
 
 **GQL Archive**: Previous GQL implementation preserved at `archive/gql-phase-2` branch and `gql-phase-2-complete` tag.
 
-## Quick Start (Future API)
+## Quick Start
 
-### Embedded Datalog Database
+### Embedded Datalog Database (Working!)
 
 ```rust
 use minigraf::Minigraf;
@@ -75,20 +77,23 @@ let past_db = db.as_of(tx_100);
 let old_results = past_db.query(...)?;
 ```
 
-### Interactive Console (Current - In-memory)
+### Interactive Console (Datalog REPL)
 
 ```bash
-# Build and run the REPL (currently supports basic graph operations)
+# Build and run the Datalog REPL
 cargo run
 
 # Run tests
 cargo test
 
+# Try the recursive rules demo
+cargo run < demo_recursive.txt
+
 # Run examples
 cargo run --example embedded
 ```
 
-## Datalog Query Language (Planned - Phase 3)
+## Datalog Query Language (Phase 3 - Working!)
 
 ### Basic Facts
 
@@ -210,10 +215,10 @@ The `.graph` file uses a page-based format (like SQLite):
 
 **Phase 1**: ✅ Property graph PoC (Complete)
 **Phase 2**: ✅ Persistent storage (Complete)
-**Phase 3**: 🎯 Datalog core (3-4 months)
-- Basic facts and queries
-- Recursive rules
-- Pattern matching
+**Phase 3**: ✅ Datalog core (Complete)
+- ✅ Basic facts and queries
+- ✅ Recursive rules
+- ✅ Pattern matching
 
 **Phase 4**: 🎯 Bi-temporal support (3-4 months)
 - Valid time + transaction time
@@ -305,17 +310,23 @@ Comprehensive test coverage:
 cargo test
 ```
 
-Current tests (54 total):
-- Property graph operations (Phase 1-2 foundation)
-- Storage backend operations
-- Persistence and recovery
-- Concurrency and edge cases
+Current tests (123 total):
+- ✅ **94 unit tests** - Core Datalog, EAV model, parser, matcher, executor
+- ✅ **26 integration tests** - Complex queries, recursive rules, concurrency
+- ✅ **3 doc tests** - Inline documentation examples
 
-Future tests (Phase 3+):
-- Datalog parser
-- Recursive rule evaluation
-- Bi-temporal queries
-- Transaction isolation
+**Phase 3 Coverage** (Complete):
+- ✅ Datalog parser (EDN syntax)
+- ✅ Recursive rule evaluation (semi-naive)
+- ✅ Transitive closure queries
+- ✅ Pattern matching and unification
+- ✅ Storage backend operations
+- ✅ Concurrency and thread safety
+
+**Future tests** (Phase 4+):
+- ⏳ Bi-temporal queries (:as-of, :valid-at)
+- ⏳ Transaction isolation (ACID)
+- ⏳ Crash recovery (WAL)
 
 ## Comparison to Similar Projects
 
