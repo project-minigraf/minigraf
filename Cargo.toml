@@ -3,6 +3,8 @@ name = "minigraf"
 version = "0.1.0"
 edition = "2024"
 description = "Zero-config, single-file, embedded graph database with bi-temporal Datalog queries"
+license = "MIT OR Apache-2.0"
+authors = ["Aditya Mukhopadhyay"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
