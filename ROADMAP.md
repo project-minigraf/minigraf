@@ -4,7 +4,7 @@
 
 **Philosophy**: "SQLite for bi-temporal graph databases" - Be boring, be reliable, be embeddable.
 
-**Strategic Pivot** (January 2026): After completing Phase 2, we pivoted from GQL to Datalog for better temporal semantics, simpler implementation, and faster time-to-production.
+**Strategic Pivot** (January 2026): After completing Phase 2, we pivoted from GQL (property graph) to Datalog (EAV) for better temporal semantics, simpler implementation, and faster time-to-production.
 
 ---
 

@@ -2,7 +2,7 @@
 
 [![Build Status](https://github.com/adityamukho/minigraf/actions/workflows/rust.yml/badge.svg)](https://github.com/adityamukho/minigraf/actions/workflows/rust.yml)
 [![Clippy Status](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml/badge.svg)](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml)
-[![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/adityamukho/minigraf#license)
 [![Rust Edition](https://img.shields.io/badge/rust-2024-orange.svg)](https://blog.rust-lang.org/2024/10/17/Rust-1.82.0.html)
 [![Phase](https://img.shields.io/badge/phase-3%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
 
@@ -159,26 +159,21 @@ cargo run < demo_recursive.txt
 
 ### Module Structure
 
-- **`src/graph/types.rs`**: Core graph data structures (will evolve to EAV model)
-- **`src/graph/storage.rs`**: In-memory storage layer (Phase 1)
-- **`src/storage/`**: Storage backend abstraction (Phase 2) ✅
+- **`src/graph/types.rs`**: Core graph data structures (EAV model)
+- **`src/graph/storage.rs`**: In-memory storage layer
+- **`src/storage/`**: Storage backend abstraction
   - **`mod.rs`**: StorageBackend trait, file format
   - **`backend/file.rs`**: Single-file persistent backend
   - **`backend/memory.rs`**: In-memory backend for testing
   - **`backend/indexeddb.rs`**: Future WASM backend
-- **`src/query/parser.rs`**: Query parser (will become Datalog parser in Phase 3)
-- **`src/query/executor.rs`**: Query executor (will become Datalog engine)
+- **`src/query/datalog/parser.rs`**: Query parser
+- **`src/query/datalog/executor.rs`**: Query executor
 - **`src/repl.rs`**: Interactive REPL console
 - **`src/lib.rs`**: Public API
 - **`src/main.rs`**: Binary entry point
 
 ### Data Model
 
-**Current** (Property Graph - Phase 1-2):
-- Nodes with labels and properties
-- Edges with source, target, label, properties
-
-**Future** (Datalog Triple Store - Phase 3+):
 - Facts: `(Entity, Attribute, Value, ValidFrom, ValidTo, TxTime)`
 - Entities are just UUIDs
 - Attributes are keywords (`:person/name`, `:friend`)
@@ -215,27 +210,27 @@ The `.graph` file uses a page-based format (like SQLite):
 - ✅ Recursive rules
 - ✅ Pattern matching
 
-**Phase 4**: 🎯 Bi-temporal support (3-4 months)
+**Phase 4**: 🎯 Bi-temporal support
 - Valid time + transaction time
 - Time travel queries
 - Historical analysis
 
-**Phase 5**: 🎯 ACID + WAL (2-3 months)
+**Phase 5**: 🎯 ACID + WAL
 - Write-ahead logging
 - Transactions
 - Crash recovery
 
-**Phase 6**: 🎯 Performance (2-3 months)
+**Phase 6**: 🎯 Performance
 - Indexes (EAVT, AEVT, AVET, VAET)
 - Query optimization
 - Benchmarking
 
-**Phase 7**: 🎯 Cross-platform (3-4 months)
+**Phase 7**: 🎯 Cross-platform
 - WASM (IndexedDB backend)
 - Mobile bindings
 - Language bindings
 
-**v1.0.0**: 12-15 months (vs. 24-30 months with GQL)
+**v1.0.0**: Phase 7 complete
 
 See [ROADMAP.md](ROADMAP.md) for detailed breakdown.
 
@@ -255,7 +250,7 @@ No other database offers this combination:
 | **Rust** | ✅ Yes | ❌ Clojure | ✅ Yes | ❌ Java | ❌ C |
 | **WASM Ready** | 🎯 Goal | ❌ No | ⚠️ Limited | ❌ No | ✅ Yes |
 
-**Minigraf = SQLite + Datomic + single file**
+**Minigraf = SQLite's simplicity + Datomic's temporal model**
 
 ### Target Use Cases
 
@@ -273,7 +268,7 @@ No other database offers this combination:
 - **Zero-configuration** - No setup, just works
 - **Embedded-first** - Library, not server
 - **Single-file database** - Easy backup, share, version control
-- **Self-contained** - <1MB binary, minimal dependencies
+- **Self-contained** - <1MB binary, minimal dependencies (targetted)
 - **Cross-platform** - Native, WASM, mobile, embedded
 - **Reliability over features** - Do less, do it perfectly
 - **Long-term support** - Decades-long commitment
@@ -283,8 +278,8 @@ See [PHILOSOPHY.md](PHILOSOPHY.md) for complete design principles.
 ## Scope
 
 Minigraf is designed to run in multiple environments:
-- ✅ As a standalone binary (PoC done)
-- ✅ As an embedded library (PoC done)
+- ✅ As a standalone binary
+- ✅ As an embedded library
 - 🎯 As a WebAssembly module (future - Phase 7)
 
 ## Unscope
@@ -370,4 +365,13 @@ See [ROADMAP.md](ROADMAP.md) and [PHILOSOPHY.md](PHILOSOPHY.md) before proposing
 
 ## License
 
-This project is open source and available under the [Mozilla Public License Version 2.0](https://opensource.org/licenses/MPL-2.0).
+Licensed under either of:
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
