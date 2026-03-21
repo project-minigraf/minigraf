@@ -155,6 +155,21 @@ impl FactStorage {
         Ok(())
     }
 
+    /// Return the current value of the monotonic tx counter.
+    ///
+    /// Useful for persisting `last_checkpointed_tx_count` into the file header.
+    pub fn current_tx_count(&self) -> u64 {
+        self.tx_counter.load(Ordering::SeqCst)
+    }
+
+    /// Atomically increment the tx counter and return the new value.
+    ///
+    /// Used by explicit transactions to claim a tx_count at commit time,
+    /// without creating any facts in FactStorage.
+    pub fn allocate_tx_count(&self) -> u64 {
+        self.tx_counter.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
     /// Return all facts visible as of the given transaction point.
     ///
     /// * `AsOf::Counter(n)` — include facts whose `tx_count <= n`
@@ -756,5 +771,37 @@ mod tests {
         let facts = storage.get_all_facts().unwrap();
         let b_fact = facts.iter().find(|f| f.attribute == ":b").unwrap();
         assert_eq!(b_fact.tx_count, 6);
+    }
+
+    // =========================================================================
+    // Phase 5: current_tx_count, allocate_tx_count helpers
+    // =========================================================================
+
+    #[test]
+    fn test_current_tx_count_starts_at_zero() {
+        let storage = FactStorage::new();
+        assert_eq!(storage.current_tx_count(), 0);
+    }
+
+    #[test]
+    fn test_current_tx_count_reflects_transacts() {
+        use uuid::Uuid;
+
+        let storage = FactStorage::new();
+        let alice = Uuid::new_v4();
+        storage.transact(vec![(alice, ":name".to_string(), Value::String("Alice".to_string()))], None).unwrap();
+        assert_eq!(storage.current_tx_count(), 1);
+        storage.transact(vec![(alice, ":age".to_string(), Value::Integer(30))], None).unwrap();
+        assert_eq!(storage.current_tx_count(), 2);
+    }
+
+    #[test]
+    fn test_allocate_tx_count_increments() {
+        let storage = FactStorage::new();
+        let c1 = storage.allocate_tx_count();
+        let c2 = storage.allocate_tx_count();
+        assert_eq!(c1, 1);
+        assert_eq!(c2, 2);
+        assert_eq!(storage.current_tx_count(), 2);
     }
 }

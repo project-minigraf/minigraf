@@ -6,14 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries** written in Rust. It's designed to be the "SQLite of graph databases" - embedded, single-file, reliable, with time travel capabilities.
 
-**Current Status: Phase 4 COMPLETE ✅ → Phase 5 Starting** - Bi-temporal Support:
+**Current Status: Phase 5 COMPLETE ✅ → Phase 6 Starting** - ACID + WAL:
 - ✅ Phase 1: Property graph PoC (in-memory)
 - ✅ Phase 2: Persistent storage (`.graph` file format, embedded API)
 - ✅ Phase 3: Datalog core (EAV model, recursive rules) - COMPLETE!
 - ✅ **Phase 4: Bi-temporal support (transaction time + valid time) - COMPLETE!**
-- 🎯 Phase 5: ACID + WAL (crash safety, transactions) - **NEXT**
-- 🎯 Phase 6: Performance (indexes, query optimization)
-- 🎯 v1.0.0: 10-13 months
+- ✅ **Phase 5: ACID + WAL (crash safety, explicit transactions) - COMPLETE!**
+- 🎯 Phase 6: Performance (indexes, query optimization) - **NEXT**
+- 🎯 v1.0.0: 9-12 months
 
 **Important Strategic Pivot** (January 2026): After completing Phase 2 with a GQL-inspired implementation, we pivoted to Datalog for:
 1. Simpler implementation (proven patterns vs. novel GQL spec)
@@ -170,16 +170,25 @@ The codebase is organized into the following modules:
    - Prompt-based interface (`minigraf>`)
    - Handles EOF gracefully
 
-6. **Minigraf Module (`src/minigraf.rs`)** - Phase 2+ (stable) ✅:
+6. **Database Module (`src/db.rs`)** - Phase 2-5 (stable) ✅:
    - Public embedded database API
    - `Minigraf::open()` - Opens or creates database
    - `Minigraf::execute()` - Executes Datalog queries
+   - `Minigraf::begin_write()` - Starts an exclusive write transaction
+   - `Minigraf::checkpoint()` - Flushes WAL to `.graph` data pages
    - `Minigraf::save()` - Explicit save
+   - `WriteTransaction` - ACID write transaction (commit/rollback)
    - Auto-save on drop
 
-7. **Library (`src/lib.rs`)**: Public API exports
+7. **WAL Module (`src/wal.rs`)** - Phase 5 ✅:
+   - Fact-level write-ahead log
+   - CRC32-protected WAL entries
+   - Append, replay, and clear operations
+   - Crash recovery support
 
-8. **Binary (`src/main.rs`)**: Standalone executable
+8. **Library (`src/lib.rs`)**: Public API exports
+
+9. **Binary (`src/main.rs`)**: Standalone executable
    - Launches interactive Datalog REPL
    - Supports both file-backed and in-memory storage
 
@@ -225,17 +234,22 @@ const VALID_TIME_FOREVER: i64 = i64::MAX; // Sentinel for open-ended valid time
 - `MemoryBackend`: In-memory for testing
 - Future: `IndexedDbBackend` for WASM
 
-**File Format** (v2):
+**File Format** (v3):
 ```
 Page 0: Header
   - Magic: "MGRF"
-  - Version: u32 (currently 2)
+  - Version: u32 (currently 3)
   - Page count: u64
   - Fact count: u64
   - Tx counter: u64
+  - Last checkpointed tx count: u64  (Phase 5, WAL checkpoint marker)
 
 Page 1+: Data
   - EAV facts with full bi-temporal fields (postcard serialization)
+
+WAL section (appended after data pages):
+  - CRC32-protected fact-level WAL entries
+  - Replayed on open if uncommitted entries exist
 ```
 
 **Serialization Format**:
@@ -302,8 +316,8 @@ MATCH (:Person) WHERE name = "Alice"
 
 ## Test Coverage
 
-**Current Tests (Phase 4)**: 172 tests passing ✅
-- **Unit tests** (133 tests):
+**Current Tests (Phase 5)**: 212 tests passing ✅
+- **Unit tests** (159 tests):
   - `src/graph/types.rs`: Fact types, Value types, EAV model, temporal fields
   - `src/graph/storage.rs`: FactStorage, CRUD, history, tx_count, temporal methods
   - `src/temporal.rs`: UTC timestamp parsing and formatting
@@ -314,14 +328,17 @@ MATCH (:Person) WHERE name = "Alice"
   - `src/query/datalog/rules.rs`: RuleRegistry, rule management
   - `src/query/datalog/evaluator.rs`: Semi-naive evaluation, transitive closure
   - `src/storage/`: Backend operations, persistence (postcard)
+  - `src/wal.rs`: WAL entry serialization, CRC32, replay logic
+  - `src/db.rs`: WriteTransaction, checkpoint, crash recovery
 
-- **Integration tests** (36 tests):
+- **Integration tests** (47 tests):
   - `tests/bitemporal_test.rs` (10 tests): Bi-temporal queries, time travel, valid time
   - `tests/complex_queries_test.rs` (10 tests): Multi-pattern joins, self-joins, edge cases
   - `tests/recursive_rules_test.rs` (9 tests): Transitive closure, cycles, long chains, family trees
   - `tests/concurrency_test.rs` (7 tests): Thread safety, concurrent rule registration/queries
+  - `tests/wal_test.rs` (11 tests): WAL write/read, commit/rollback, crash recovery, checkpoint
 
-- **Doc tests** (3 tests): Inline documentation examples
+- **Doc tests** (6 tests): Inline documentation examples
 
 **Comprehensive Coverage**:
 - ✅ Datalog parser (EDN syntax)
@@ -331,7 +348,8 @@ MATCH (:Person) WHERE name = "Alice"
 - ✅ Concurrency - 7 tests
 - ✅ Complex queries (3+ patterns, self-joins) - 10 tests
 - ✅ **Bi-temporal queries** (`:as-of`, `:valid-at`) - 10 integration + 39 unit tests
-- ✅ **File format migration** (v1→v2)
+- ✅ **File format migration** (v1→v2→v3)
+- ✅ **WAL and crash recovery** - 11 integration tests
 
 **Demo Scripts**:
 - `demo_recursive.txt`: Comprehensive recursive rules examples (transitive closure, cycles, family trees)
@@ -339,9 +357,9 @@ MATCH (:Person) WHERE name = "Alice"
 Run tests with: `cargo test`
 See `TEST_COVERAGE.md` for detailed coverage report.
 
-**Future Tests (Phase 5+)**:
-- WAL and crash recovery - Phase 5
+**Future Tests (Phase 6+)**:
 - Index performance - Phase 6
+- Query optimization benchmarks - Phase 6
 
 ## Development Notes
 
@@ -390,12 +408,18 @@ See `TEST_COVERAGE.md` for detailed coverage report.
 
 **Test Coverage**: 172 tests (133 unit + 36 integration + 3 doc)
 
-### Phase 5 (Next) - ACID + WAL 🎯
+### Phase 5 (Complete) - ACID + WAL ✅
 
-**Planned Features**:
-- Write-ahead logging (embedded in `.graph` file)
-- Transaction API (BEGIN, COMMIT, ROLLBACK)
-- Crash recovery
+**Implemented Features**:
+- ✅ Fact-level sidecar WAL with CRC32-protected entries
+- ✅ `FileHeader` v3 with `last_checkpointed_tx_count` field
+- ✅ `WriteTransaction` API (`begin_write`, `commit`, `rollback`)
+- ✅ Crash recovery: WAL replay on open, corrupt/incomplete entries discarded
+- ✅ Checkpoint: WAL flushed to `.graph` data pages, then WAL cleared
+- ✅ Thread-safe: concurrent readers + exclusive writer (RwLock)
+- ✅ File format v2→v3 migration on open
+
+**Test Coverage**: 212 tests (159 unit + 47 integration + 6 doc)
 
 ### Philosophy-Aligned Development
 
@@ -424,13 +448,16 @@ When implementing features, always ask:
 - ✅ File format v2 with migration
 - ✅ 172 comprehensive tests
 
-**Phase 5** (2-3 months): ACID + WAL - **NEXT**
-- Write-ahead logging (embedded in .graph file)
-- Transaction API (BEGIN, COMMIT, ROLLBACK)
-- Crash recovery
-- ACID compliance
+**Phase 5** ✅ **COMPLETE** - ACID + WAL
+- ✅ Write-ahead logging (fact-level sidecar WAL, CRC32-protected)
+- ✅ FileHeader v3 (last_checkpointed_tx_count field)
+- ✅ WriteTransaction API (begin_write, commit, rollback)
+- ✅ Crash recovery (WAL replay on open)
+- ✅ Checkpoint (WAL → .graph, then WAL deleted)
+- ✅ Thread-safe: concurrent readers + exclusive writer
+- ✅ 212 comprehensive tests
 
-**Phase 6** (2-3 months): Performance
+**Phase 6** (2-3 months): Performance - **NEXT**
 - Indexes (EAVT, AEVT, AVET, VAET)
 - Query optimization
 - Benchmarking
@@ -505,13 +532,19 @@ This is a hobby project with a decades-long vision. When contributing:
 
 ## Key Files to Understand
 
-**For Phase 5 work (ACID + WAL)**:
+**For Phase 6 work (Performance & Indexes)**:
 1. `PHILOSOPHY.md` - Why single-file, reliability-first
-2. `ROADMAP.md` - Detailed Phase 5 plan
+2. `ROADMAP.md` - Detailed Phase 6 plan
 3. `src/storage/mod.rs` - StorageBackend trait (stable foundation)
-4. `src/storage/backend/file.rs` - File format implementation (extend for WAL)
+4. `src/storage/backend/file.rs` - File format implementation (extend for indexes)
 5. `src/storage/persistent_facts.rs` - Persistence layer (postcard serialization)
-6. `src/minigraf.rs` - Public API
+6. `src/db.rs` - Public embedded database API (Minigraf, WriteTransaction)
+7. `src/wal.rs` - WAL implementation (Phase 5, stable)
+
+**For Phase 5 work (ACID + WAL, complete)**:
+1. `src/wal.rs` - WAL entry format, CRC32, replay logic
+2. `src/db.rs` - WriteTransaction, checkpoint, crash recovery
+3. `src/storage/persistent_facts.rs` - v3 file format with WAL offset
 
 **For understanding the Datalog engine (Phase 3-4, stable)**:
 1. `src/graph/types.rs` - EAV model: `Fact`, `Value`, bi-temporal fields

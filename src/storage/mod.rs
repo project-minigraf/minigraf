@@ -17,7 +17,7 @@ pub const PAGE_SIZE: usize = 4096;
 pub const MAGIC_NUMBER: [u8; 4] = *b"MGRF";
 
 /// Current file format version
-pub const FORMAT_VERSION: u32 = 2;
+pub const FORMAT_VERSION: u32 = 3;
 
 /// Storage backend trait.
 ///
@@ -72,8 +72,8 @@ pub struct FileHeader {
     /// Number of nodes in the graph
     pub node_count: u64,
 
-    /// Number of edges in the graph
-    pub edge_count: u64,
+    /// Tx count of the last WAL checkpoint (0 = never checkpointed)
+    pub last_checkpointed_tx_count: u64,
 
     /// Reserved for future use (padding to 64 bytes)
     pub reserved: [u8; 32],
@@ -87,7 +87,7 @@ impl FileHeader {
             version: FORMAT_VERSION,
             page_count: 1, // Just the header page initially
             node_count: 0,
-            edge_count: 0,
+            last_checkpointed_tx_count: 0,
             reserved: [0; 32],
         }
     }
@@ -99,7 +99,7 @@ impl FileHeader {
         bytes.extend_from_slice(&self.version.to_le_bytes());
         bytes.extend_from_slice(&self.page_count.to_le_bytes());
         bytes.extend_from_slice(&self.node_count.to_le_bytes());
-        bytes.extend_from_slice(&self.edge_count.to_le_bytes());
+        bytes.extend_from_slice(&self.last_checkpointed_tx_count.to_le_bytes());
         bytes.extend_from_slice(&self.reserved);
         bytes
     }
@@ -126,7 +126,7 @@ impl FileHeader {
             bytes[16], bytes[17], bytes[18], bytes[19],
             bytes[20], bytes[21], bytes[22], bytes[23],
         ]);
-        let edge_count = u64::from_le_bytes([
+        let last_checkpointed_tx_count = u64::from_le_bytes([
             bytes[24], bytes[25], bytes[26], bytes[27],
             bytes[28], bytes[29], bytes[30], bytes[31],
         ]);
@@ -139,7 +139,7 @@ impl FileHeader {
             version,
             page_count,
             node_count,
-            edge_count,
+            last_checkpointed_tx_count,
             reserved,
         })
     }
@@ -152,7 +152,8 @@ impl FileHeader {
         if self.version < 1 || self.version > FORMAT_VERSION {
             anyhow::bail!(
                 "Unsupported format version: {} (supported: 1-{})",
-                self.version, FORMAT_VERSION
+                self.version,
+                FORMAT_VERSION
             );
         }
         Ok(())
@@ -194,34 +195,33 @@ mod tests {
     }
 
     #[test]
-    fn test_format_version_is_2() {
-        assert_eq!(FORMAT_VERSION, 2);
+    fn test_format_version_is_3() {
+        assert_eq!(FORMAT_VERSION, 3);
     }
 
     #[test]
-    fn test_validate_accepts_version_1_and_2() {
+    fn test_validate_accepts_versions_1_to_3() {
         let mut header = FileHeader::new();
-        header.version = 1;
-        assert!(header.validate().is_ok());
-
-        header.version = 2;
-        assert!(header.validate().is_ok());
+        for v in 1u32..=3 {
+            header.version = v;
+            assert!(header.validate().is_ok(), "version {} should be accepted", v);
+        }
     }
 
     #[test]
-    fn test_validate_rejects_version_0_and_3() {
+    fn test_validate_rejects_version_0_and_4() {
         let mut header = FileHeader::new();
         header.version = 0;
         assert!(header.validate().is_err());
 
-        header.version = 3;
+        header.version = 4;
         assert!(header.validate().is_err());
     }
 
     #[test]
-    fn test_new_header_has_version_2() {
+    fn test_new_header_has_version_3() {
         let header = FileHeader::new();
         assert_eq!(header.version, FORMAT_VERSION);
-        assert_eq!(header.version, 2);
+        assert_eq!(header.version, 3);
     }
 }
