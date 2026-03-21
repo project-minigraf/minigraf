@@ -97,16 +97,17 @@ cargo build
 # Build release version (with panic=abort optimization)
 cargo build --release
 
-# Run the REPL (currently GQL, will become Datalog in Phase 3)
+# Run the REPL (Datalog with bi-temporal support)
 cargo run
 
 # Run tests
 cargo test
 
 # Run specific test suite
-cargo test --test integration_test -- --nocapture
+cargo test --test bitemporal_test -- --nocapture
+cargo test --test complex_queries_test -- --nocapture
+cargo test --test recursive_rules_test -- --nocapture
 cargo test --test concurrency_test
-cargo test --test edge_cases_test
 
 # Run examples
 cargo run --example embedded
@@ -119,86 +120,82 @@ cargo run --example file_storage
 
 The codebase is organized into the following modules:
 
-1. **Graph Module (`src/graph/`)** - Phase 1-2 (will evolve in Phase 3):
-   - `types.rs`: Core graph types (will become EAV model)
-     - Current: `Node`, `Edge`, `PropertyValue` (property graph)
-     - Future: `Fact`, `Entity`, `Attribute`, `Value` (EAV model)
-   - `storage.rs`: Thread-safe in-memory storage (Phase 1)
-     - Uses `Arc<RwLock<HashMap>>` for nodes/edges
-     - Will migrate to fact-based storage in Phase 3
+1. **Graph Module (`src/graph/`)** - Phase 3-4 (EAV with bi-temporal) ✅:
+   - `types.rs`: EAV model types
+     - `Fact`: entity, attribute, value, tx_id, tx_count, valid_from, valid_to, asserted
+     - `Value`: String, Integer, Float, Boolean, Ref(Uuid), Keyword, Null
+     - `EntityId`, `TxId`, `Attribute` type aliases
+     - `VALID_TIME_FOREVER = i64::MAX` sentinel
+   - `storage.rs`: `FactStorage` - fact-based in-memory storage
+     - `tx_counter` (AtomicU64), transact/retract operations
+     - `get_facts_as_of()`, `get_facts_valid_at()` for time travel
+     - Thread-safe via `Arc<RwLock<...>>`
 
-2. **Storage Module (`src/storage/`)** - Phase 2 (stable foundation) ✅:
-   - `mod.rs`: StorageBackend trait and file format
+2. **Storage Module (`src/storage/`)** - Phase 2-4 (stable foundation) ✅:
+   - `mod.rs`: `StorageBackend` trait and file format
      - `StorageBackend` trait: Platform-agnostic storage interface
-     - `FileHeader`: Metadata for `.graph` files
+     - `FileHeader`: Metadata for `.graph` files (v2 format)
      - Page size: 4KB, Magic number: "MGRF"
    - `backend/file.rs`: File-based backend (single `.graph` file)
      - Page-based storage, cross-platform format
      - Supports Linux, macOS, Windows, iOS, Android
    - `backend/memory.rs`: In-memory backend for testing
    - `backend/indexeddb.rs`: Future WASM browser backend (Phase 7)
-   - `persistent.rs`: Persistent graph storage layer
-     - Serialization/deserialization of property graph
-     - Will evolve to support EAV facts in Phase 3
+   - `persistent_facts.rs`: Persistent EAV fact storage layer
+     - postcard serialization of facts with temporal fields
+     - `migrate_v1_to_v2()` for file format migration
 
-3. **Query Module (`src/query/`)** - Phase 1-2 (will be rewritten in Phase 3):
-   - `parser.rs`: Query parser
-     - Current: GQL-inspired syntax (Phase 1-2, archived)
-     - Future: Datalog EDN syntax (Phase 3)
-   - `executor.rs`: Query execution engine
-     - Current: Property graph executor
-     - Future: Datalog pattern matcher with recursive rules
+3. **Query Module (`src/query/datalog/`)** - Phase 3-4 (Datalog + bi-temporal) ✅:
+   - `parser.rs`: EDN/Datalog parser
+     - Parses `transact`, `retract`, `query`, `rule` commands
+     - Supports `:as-of` (tx counter or ISO 8601 timestamp), `:valid-at`
+     - EDN maps `{:key val}` for transaction-level valid time options
+     - Per-fact 4-element vector override for valid time
+   - `executor.rs`: Datalog query executor
+     - Pattern matching with variable unification
+     - Rule registration and invocation
+     - 3-step temporal filter: tx-time → asserted exclusion → valid-time
+   - `matcher.rs`: Pattern matching engine with variable binding
+   - `evaluator.rs`: `RecursiveEvaluator` - semi-naive fixed-point iteration
+   - `rules.rs`: `RuleRegistry` - thread-safe rule management
+   - `types.rs`: `EdnValue`, `Pattern`, `DatalogQuery`, `AsOf`, `ValidAt`
 
-4. **REPL Module (`src/repl.rs`)** - Phase 1-2 (will be updated in Phase 3):
-   - Interactive console
+4. **Temporal Module (`src/temporal.rs`)** - Phase 4 ✅:
+   - UTC-only timestamp parsing and formatting
+   - Avoids chrono CVE GHSA-wcg3-cvx6-7396
+
+5. **REPL Module (`src/repl.rs`)** - Phase 3-4 ✅:
+   - Interactive Datalog console with bi-temporal support
+   - Multi-line input, comment support
    - Prompt-based interface (`minigraf>`)
-   - Handles EOF gracefully (src/repl.rs:27-30)
-   - Will support Datalog syntax in Phase 3
+   - Handles EOF gracefully
 
-5. **Minigraf Module (`src/minigraf.rs`)** - Phase 2 (stable) ✅:
+6. **Minigraf Module (`src/minigraf.rs`)** - Phase 2+ (stable) ✅:
    - Public embedded database API
    - `Minigraf::open()` - Opens or creates database
-   - `Minigraf::execute()` - Executes queries
+   - `Minigraf::execute()` - Executes Datalog queries
    - `Minigraf::save()` - Explicit save
    - Auto-save on drop
 
-6. **Library (`src/lib.rs`)**: Public API
-   - Exports core types and functions
-   - Stable foundation for Phase 3 evolution
+7. **Library (`src/lib.rs`)**: Public API exports
 
-7. **Binary (`src/main.rs`)**: Standalone executable
-   - Launches interactive REPL
-   - Uses in-memory storage currently
+8. **Binary (`src/main.rs`)**: Standalone executable
+   - Launches interactive Datalog REPL
+   - Supports both file-backed and in-memory storage
 
-### Current Data Model (Phase 1-2)
+### Current Data Model (Phase 3-4)
 
-**Property Graph** (will be replaced with EAV in Phase 3):
-```rust
-struct Node {
-    id: Uuid,
-    labels: Vec<String>,
-    properties: HashMap<String, PropertyValue>,
-}
-
-struct Edge {
-    id: Uuid,
-    source: Uuid,
-    target: Uuid,
-    label: String,
-    properties: HashMap<String, PropertyValue>,
-}
-```
-
-### Future Data Model (Phase 3+)
-
-**Entity-Attribute-Value (Datalog Triple Store)**:
+**Entity-Attribute-Value with Bi-temporal Support**:
 ```rust
 struct Fact {
-    entity: Uuid,
-    attribute: String,  // e.g., ":person/name", ":friend"
+    entity: EntityId,     // Uuid - entity being described
+    attribute: Attribute, // String, e.g., ":person/name", ":friend"
     value: Value,
-    tx_id: TxId,        // Transaction that asserted this
-    asserted: bool,     // true = assert, false = retract
+    tx_id: TxId,          // Uuid - transaction that asserted this
+    tx_count: u64,        // Monotonic transaction counter (for :as-of queries)
+    valid_from: i64,      // Unix ms - when fact became valid in real world
+    valid_to: i64,        // Unix ms - when fact stopped being valid (i64::MAX = forever)
+    asserted: bool,       // true = assert, false = retract
 }
 
 enum Value {
@@ -210,30 +207,17 @@ enum Value {
     Keyword(String),    // e.g., ":person", ":status/active"
     Null,
 }
-```
 
-**Bi-temporal Extension (Phase 4)**:
-```rust
-struct Fact {
-    entity: Uuid,
-    attribute: String,
-    value: Value,
-    valid_from: DateTime,   // When fact became valid in real world
-    valid_to: DateTime,     // When fact stopped being valid
-    tx_id: TxId,            // Transaction ID
-    tx_time: SystemTime,    // When fact was recorded
-    asserted: bool,
-}
+const VALID_TIME_FOREVER: i64 = i64::MAX; // Sentinel for open-ended valid time
 ```
 
 ### Storage Implementation
 
 **Layered Architecture**:
 
-**High-level** (Phase 1-2, will evolve):
-- `GraphStorage`: In-memory property graph operations
-- `PersistentGraphStorage`: Serialization layer
-- Will become fact-based storage in Phase 3
+**High-level** (Phase 3-4) ✅:
+- `FactStorage`: In-memory EAV fact store with temporal query methods
+- `PersistentFactStorage`: Serialization layer (postcard, v2 file format)
 
 **Low-level** (Phase 2, stable foundation) ✅:
 - `StorageBackend` trait: Platform-agnostic interface
@@ -241,23 +225,20 @@ struct Fact {
 - `MemoryBackend`: In-memory for testing
 - Future: `IndexedDbBackend` for WASM
 
-**File Format**:
+**File Format** (v2):
 ```
 Page 0: Header
   - Magic: "MGRF"
-  - Version: u32
+  - Version: u32 (currently 2)
   - Page count: u64
-  - Node count: u64 (Phase 1-2)
-  - Edge count: u64 (Phase 1-2)
-  - Fact count: u64 (Phase 3+)
-  - Tx counter: u64 (Phase 4+)
+  - Fact count: u64
+  - Tx counter: u64
 
 Page 1+: Data
-  - Current: Serialized nodes/edges
-  - Future: EAV facts with temporal dimensions
+  - EAV facts with full bi-temporal fields (postcard serialization)
 ```
 
-**Serialization Format** (Phase 3+):
+**Serialization Format**:
 - Using **postcard** (v1.0+) for fact serialization
 - Replaced bincode (unmaintained as of 2024/2025)
 - postcard: Lightweight, embedded-focused, better size than bincode
@@ -266,20 +247,16 @@ Page 1+: Data
 
 ### Query Language
 
-**Current (Phase 1-2, GQL-inspired)** - Archived:
-```gql
-CREATE NODE (:Person) {name: "Alice", age: 30}
-CREATE EDGE (id1)-[KNOWS]->(id2) {since: 2020}
-MATCH (:Person) WHERE name = "Alice"
-SHOW NODES
-```
-
-**Future (Phase 3+, Datalog)** - Target syntax:
+**Current: Datalog with bi-temporal support (Phase 3-4)** ✅:
 ```datalog
 ;; Transact facts
 (transact [[:alice :person/name "Alice"]
            [:alice :person/age 30]
            [:alice :friend :bob]])
+
+;; Transact with transaction-level valid time
+(transact {:valid-from "2023-01-01" :valid-to "2024-01-01"}
+          [[:alice :employment/status :employed]])
 
 ;; Simple query
 (query [:find ?name
@@ -293,11 +270,27 @@ SHOW NODES
        [?from :connected ?intermediate]
        (reachable ?intermediate ?to)])
 
-;; Bi-temporal query (Phase 4)
+;; Time travel: as-of tx counter
+(query [:find ?status
+        :as-of 50
+        :where [?e :employment/status ?status]])
+
+;; Time travel: as-of ISO 8601 timestamp
+(query [:find ?status
+        :as-of "2024-01-15T10:00:00Z"
+        :where [?e :employment/status ?status]])
+
+;; Valid-time query
 (query [:find ?status
         :valid-at "2023-06-01"
-        :as-of tx-100
         :where [:alice :employment/status ?status]])
+```
+
+**Archived: GQL-inspired syntax (Phase 1-2)** - see `archive/gql-phase-2` branch:
+```gql
+CREATE NODE (:Person) {name: "Alice", age: 30}
+CREATE EDGE (id1)-[KNOWS]->(id2) {since: 2020}
+MATCH (:Person) WHERE name = "Alice"
 ```
 
 ### Error Handling
@@ -512,18 +505,21 @@ This is a hobby project with a decades-long vision. When contributing:
 
 ## Key Files to Understand
 
-**For Phase 3 work (Datalog implementation)**:
-1. `PHILOSOPHY.md` - Why Datalog, why bi-temporal
-2. `ROADMAP.md` - Detailed Phase 3 plan
-3. `src/storage/mod.rs` - Storage abstraction (stable foundation)
-4. `src/graph/types.rs` - Current types (will evolve to EAV)
-5. `src/query/parser.rs` - Current parser (will be rewritten)
-6. `src/query/executor.rs` - Current executor (will be rewritten)
+**For Phase 5 work (ACID + WAL)**:
+1. `PHILOSOPHY.md` - Why single-file, reliability-first
+2. `ROADMAP.md` - Detailed Phase 5 plan
+3. `src/storage/mod.rs` - StorageBackend trait (stable foundation)
+4. `src/storage/backend/file.rs` - File format implementation (extend for WAL)
+5. `src/storage/persistent_facts.rs` - Persistence layer (postcard serialization)
+6. `src/minigraf.rs` - Public API
 
-**For understanding storage (stable)**:
-1. `src/storage/backend/file.rs` - File format implementation
-2. `src/storage/persistent.rs` - Persistence layer
-3. `src/minigraf.rs` - Public API
+**For understanding the Datalog engine (Phase 3-4, stable)**:
+1. `src/graph/types.rs` - EAV model: `Fact`, `Value`, bi-temporal fields
+2. `src/graph/storage.rs` - `FactStorage` with temporal query methods
+3. `src/query/datalog/parser.rs` - EDN/Datalog parser
+4. `src/query/datalog/executor.rs` - Query executor with temporal filtering
+5. `src/query/datalog/evaluator.rs` - Semi-naive recursive rule evaluation
+6. `src/temporal.rs` - UTC timestamp parsing
 
 ## Important Reminders
 
