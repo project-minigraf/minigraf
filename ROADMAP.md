@@ -542,7 +542,7 @@ tx.commit()?;  // or tx.rollback()?
 - ✅ Crash recovery (WAL replay on open)
 - ✅ FileHeader v3 (`last_checkpointed_tx_count`)
 - ✅ Thread-safe: concurrent readers + exclusive writer
-- ✅ 212 tests passing
+- ✅ 213 tests passing
 
 ### v0.6.0 - 🎯 Phase 6 (Performance)
 - Indexes (EAVT, AEVT, AVET, VAET)

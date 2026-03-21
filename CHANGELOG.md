@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-03-21
+
+### Added
+- Write-ahead log (WAL): fact-level sidecar `<db>.wal` with CRC32-protected binary entries
+- `WriteTransaction` API: `begin_write()` / `commit()` / `rollback()` for explicit ACID transactions
+- Crash recovery: WAL entries replayed on open; corrupt/partial entries discarded at first bad CRC32
+- Checkpoint: `checkpoint()` flushes WAL facts to `.graph` and deletes the WAL; auto-checkpoint on configurable threshold
+- `FileHeader` v3: `last_checkpointed_tx_count` field (repurposes unused `edge_count` slot)
+- `FactStorage` helpers: `get_all_facts()`, `restore_tx_counter()`, `allocate_tx_count()`
+- `OpenOptions` builder: `OpenOptions::new().path("db.graph").open()` or `Minigraf::in_memory()`
+- `--file <path>` CLI flag for the REPL binary
+- 41 new tests covering WAL, crash recovery, transactions, and checkpoint
+
+### Changed
+- `src/minigraf.rs` replaced by `src/db.rs` — `Minigraf`, `OpenOptions`, `WriteTransaction` public API
+- File format version bumped 2→3; automatic v1/v2→v3 migration on first checkpoint
+- REPL version string now tracks `CARGO_PKG_VERSION` automatically
+
+### Fixed
+- WAL-before-apply ordering: facts are now applied to in-memory state only after the WAL entry is fsynced, ensuring crash safety for both implicit (`execute()`) and explicit (`WriteTransaction`) write paths
+
 ## [0.4.0] - 2026-03-21
 
 ### Added
