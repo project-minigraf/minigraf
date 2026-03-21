@@ -41,7 +41,8 @@ fn test_file_backed_basic_persistence() {
     // Session 1: write and close (drop triggers checkpoint)
     {
         let db = Minigraf::open(&db_path).unwrap();
-        db.execute(r#"(transact [[:alice :name "Alice"]])"#).unwrap();
+        db.execute(r#"(transact [[:alice :name "Alice"]])"#)
+            .unwrap();
     }
 
     // Session 2: reopen and verify
@@ -73,7 +74,8 @@ fn test_wal_recovery_after_simulated_crash() {
             },
         )
         .unwrap();
-        db.execute(r#"(transact [[:alice :name "Alice"]])"#).unwrap();
+        db.execute(r#"(transact [[:alice :name "Alice"]])"#)
+            .unwrap();
 
         // Simulate a crash: drop Inner without running Drop logic.
         // mem::forget on the Arc-backed Minigraf drops the Arc but leaves
@@ -92,7 +94,10 @@ fn test_wal_recovery_after_simulated_crash() {
         db2.execute("(query [:find ?name :where [?e :name ?name]])")
             .unwrap(),
     );
-    assert_eq!(n, 1, "Alice must be recovered from WAL after simulated crash");
+    assert_eq!(
+        n, 1,
+        "Alice must be recovered from WAL after simulated crash"
+    );
 }
 
 // ── 3. No duplicate facts after post-checkpoint crash ────────────────────────
@@ -116,7 +121,8 @@ fn test_no_duplicate_facts_after_post_checkpoint_crash() {
             },
         )
         .unwrap();
-        db.execute(r#"(transact [[:alice :name "Alice"]])"#).unwrap();
+        db.execute(r#"(transact [[:alice :name "Alice"]])"#)
+            .unwrap();
         std::mem::forget(db);
     }
 
@@ -148,7 +154,10 @@ fn test_no_duplicate_facts_after_post_checkpoint_crash() {
         db3.execute("(query [:find ?name :where [?e :name ?name]])")
             .unwrap(),
     );
-    assert_eq!(n, 1, "must have exactly 1 Alice — no duplicates after stale WAL replay");
+    assert_eq!(
+        n, 1,
+        "must have exactly 1 Alice — no duplicates after stale WAL replay"
+    );
 }
 
 // ── 4. Partial WAL entry is discarded; earlier entries intact ─────────────────
@@ -170,7 +179,8 @@ fn test_partial_wal_entry_discarded_earlier_entries_intact() {
             },
         )
         .unwrap();
-        db.execute(r#"(transact [[:alice :name "Alice"]])"#).unwrap();
+        db.execute(r#"(transact [[:alice :name "Alice"]])"#)
+            .unwrap();
         std::mem::forget(db);
     }
 
@@ -192,7 +202,10 @@ fn test_partial_wal_entry_discarded_earlier_entries_intact() {
         db2.execute("(query [:find ?name :where [?e :name ?name]])")
             .unwrap(),
     );
-    assert_eq!(n, 1, "exactly 1 fact (Alice) must survive despite partial WAL entry");
+    assert_eq!(
+        n, 1,
+        "exactly 1 fact (Alice) must survive despite partial WAL entry"
+    );
 }
 
 // ── 5. Manual checkpoint deletes WAL ─────────────────────────────────────────
@@ -213,16 +226,23 @@ fn test_manual_checkpoint_deletes_wal() {
     )
     .unwrap();
 
-    db.execute(r#"(transact [[:alice :name "Alice"]])"#).unwrap();
+    db.execute(r#"(transact [[:alice :name "Alice"]])"#)
+        .unwrap();
 
     // WAL must exist (no auto-checkpoint fired)
-    assert!(wal_path.exists(), "WAL must exist after write with high threshold");
+    assert!(
+        wal_path.exists(),
+        "WAL must exist after write with high threshold"
+    );
 
     // Manual checkpoint
     db.checkpoint().unwrap();
 
     // WAL must be gone
-    assert!(!wal_path.exists(), "WAL must be deleted after manual checkpoint");
+    assert!(
+        !wal_path.exists(),
+        "WAL must be deleted after manual checkpoint"
+    );
 
     // Fact must still be visible
     let n = count_results(
@@ -253,7 +273,10 @@ fn test_manual_checkpoint_deletes_wal() {
         db2.execute("(query [:find ?name :where [?e :name ?name]])")
             .unwrap(),
     );
-    assert_eq!(n2, 1, "Alice must be present after crash-reopen when already checkpointed");
+    assert_eq!(
+        n2, 1,
+        "Alice must be present after crash-reopen when already checkpointed"
+    );
 }
 
 // ── 6. Auto-checkpoint fires at threshold ─────────────────────────────────────
@@ -276,7 +299,8 @@ fn test_auto_checkpoint_fires_at_threshold() {
             },
         )
         .unwrap();
-        db.execute(r#"(transact [[:alice :name "Alice"]])"#).unwrap();
+        db.execute(r#"(transact [[:alice :name "Alice"]])"#)
+            .unwrap();
         db.execute(r#"(transact [[:bob :name "Bob"]])"#).unwrap();
         // After 2nd write the auto-checkpoint should have fired and deleted the WAL.
         assert!(
@@ -288,7 +312,10 @@ fn test_auto_checkpoint_fires_at_threshold() {
     }
 
     // No WAL after crash
-    assert!(!wal_path.exists(), "WAL must not exist after auto-checkpoint crash");
+    assert!(
+        !wal_path.exists(),
+        "WAL must not exist after auto-checkpoint crash"
+    );
 
     // Session 2: facts must be in main file (no WAL replay needed)
     let db2 = Minigraf::open(&db_path).unwrap();
@@ -296,7 +323,10 @@ fn test_auto_checkpoint_fires_at_threshold() {
         db2.execute("(query [:find ?name :where [?e :name ?name]])")
             .unwrap(),
     );
-    assert_eq!(n, 2, "both Alice and Bob must survive via main file after auto-checkpoint");
+    assert_eq!(
+        n, 2,
+        "both Alice and Bob must survive via main file after auto-checkpoint"
+    );
 }
 
 // ── 7. Explicit tx: all-or-nothing commit ─────────────────────────────────────
@@ -319,7 +349,8 @@ fn test_explicit_tx_all_or_nothing_commit() {
         .unwrap();
 
         let mut tx = db.begin_write().unwrap();
-        tx.execute(r#"(transact [[:alice :name "Alice"]])"#).unwrap();
+        tx.execute(r#"(transact [[:alice :name "Alice"]])"#)
+            .unwrap();
         tx.execute(r#"(transact [[:bob :name "Bob"]])"#).unwrap();
         tx.commit().unwrap();
 
@@ -333,7 +364,10 @@ fn test_explicit_tx_all_or_nothing_commit() {
         db2.execute("(query [:find ?name :where [?e :name ?name]])")
             .unwrap(),
     );
-    assert_eq!(n, 2, "both Alice and Bob must survive explicit commit + crash");
+    assert_eq!(
+        n, 2,
+        "both Alice and Bob must survive explicit commit + crash"
+    );
 }
 
 // ── 8. Explicit tx: rollback not persisted ────────────────────────────────────
@@ -349,7 +383,8 @@ fn test_explicit_tx_rollback_not_persisted() {
     {
         let db = Minigraf::open(&db_path).unwrap();
         let mut tx = db.begin_write().unwrap();
-        tx.execute(r#"(transact [[:alice :name "Alice"]])"#).unwrap();
+        tx.execute(r#"(transact [[:alice :name "Alice"]])"#)
+            .unwrap();
         tx.rollback();
         // Normal close (Drop checkpoints — nothing to checkpoint since rollback
         // means no WAL entry was written).
@@ -379,7 +414,8 @@ fn test_explicit_tx_multiple_transacts_rollback_not_persisted() {
     {
         let db = Minigraf::open_with_options(&db_path, opts).unwrap();
         let mut tx = db.begin_write().unwrap();
-        tx.execute(r#"(transact [[:alice :name "Alice"]])"#).unwrap();
+        tx.execute(r#"(transact [[:alice :name "Alice"]])"#)
+            .unwrap();
         tx.execute(r#"(transact [[:bob :name "Bob"]])"#).unwrap();
         tx.rollback();
         // db drops here → checkpoint (nothing to checkpoint since both facts were rolled back)
@@ -420,13 +456,17 @@ fn test_concurrent_reads_while_writer_holds_lock() {
     let reader = std::thread::spawn(move || {
         barrier2.wait(); // synchronize: write lock is held at this point
         count_results(
-            db2.execute("(query [:find ?name :where [?e :name ?name]])").unwrap()
+            db2.execute("(query [:find ?name :where [?e :name ?name]])")
+                .unwrap(),
         )
     });
 
     barrier.wait(); // signal: write lock is now held, reader may proceed
     let n = reader.join().unwrap();
-    assert_eq!(n, 1, "reader must see committed state while writer holds the lock");
+    assert_eq!(
+        n, 1,
+        "reader must see committed state while writer holds the lock"
+    );
     // _tx drops here (implicit rollback)
 }
 
@@ -458,7 +498,8 @@ fn test_implicit_tx_execute_survives_replay() {
         )
         .unwrap();
 
-        db.execute(r#"(transact [[:alice :name "Alice"]])"#).unwrap();
+        db.execute(r#"(transact [[:alice :name "Alice"]])"#)
+            .unwrap();
 
         // Simulate crash: skip Drop (and its checkpoint).
         std::mem::forget(db);
@@ -522,7 +563,8 @@ fn test_v2_file_opens_and_upgrades_to_v3_on_checkpoint() {
     // ── Open, write a fact, and checkpoint ────────────────────────────────
     {
         let db = Minigraf::open(&db_path).unwrap();
-        db.execute(r#"(transact [[:alice :name "Alice"]])"#).unwrap();
+        db.execute(r#"(transact [[:alice :name "Alice"]])"#)
+            .unwrap();
         db.checkpoint().unwrap();
         // Drop runs another checkpoint, but that's idempotent.
     }
@@ -534,14 +576,13 @@ fn test_v2_file_opens_and_upgrades_to_v3_on_checkpoint() {
         "file must be at least one page after checkpoint"
     );
     let header = FileHeader::from_bytes(&raw[..PAGE_SIZE]).unwrap();
-    assert_eq!(header.version, 3, "file must be upgraded to v3 on checkpoint");
     assert_eq!(
-        header.magic,
-        *b"MGRF",
-        "magic number must be preserved"
+        header.version, 4,
+        "file must be upgraded to v4 on checkpoint"
     );
+    assert_eq!(header.magic, *b"MGRF", "magic number must be preserved");
     assert!(
         header.last_checkpointed_tx_count > 0,
-        "last_checkpointed_tx_count must be set after checkpoint on v2→v3 upgrade"
+        "last_checkpointed_tx_count must be set after checkpoint on v2→v4 upgrade"
     );
 }

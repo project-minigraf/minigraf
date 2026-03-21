@@ -1,6 +1,6 @@
 use minigraf::graph::FactStorage;
-use minigraf::{parse_datalog_command, DatalogExecutor, QueryResult};
 use minigraf::graph::types::Value;
+use minigraf::{DatalogExecutor, QueryResult, parse_datalog_command};
 use uuid::Uuid;
 
 /// Helper: parse and execute a Datalog command string, panicking on error
@@ -30,16 +30,10 @@ fn test_tx_time_travel_via_counter() {
     let executor = DatalogExecutor::new(storage);
 
     // tx_count=1: assert Alice's name
-    exec(
-        &executor,
-        r#"(transact [[:alice :person/name "Alice"]])"#,
-    );
+    exec(&executor, r#"(transact [[:alice :person/name "Alice"]])"#);
 
     // tx_count=2: assert Alice's age
-    exec(
-        &executor,
-        r#"(transact [[:alice :person/age "30"]])"#,
-    );
+    exec(&executor, r#"(transact [[:alice :person/age "30"]])"#);
 
     // :as-of 1 → only the name fact was asserted at tx_count=1
     // Use :valid-at :any-valid-time so the forever-valid fact passes the valid-time filter
@@ -67,15 +61,9 @@ fn test_tx_time_travel_as_of_all() {
     let executor = DatalogExecutor::new(storage);
 
     // tx_count=1
-    exec(
-        &executor,
-        r#"(transact [[:alice :person/name "Alice"]])"#,
-    );
+    exec(&executor, r#"(transact [[:alice :person/name "Alice"]])"#);
     // tx_count=2
-    exec(
-        &executor,
-        r#"(transact [[:alice :person/age "30"]])"#,
-    );
+    exec(&executor, r#"(transact [[:alice :person/age "30"]])"#);
 
     // :as-of 2 (or higher) → both facts visible
     let result = exec(
@@ -107,7 +95,11 @@ fn test_valid_at_inside_range() {
         r#"(query [:find ?s :valid-at "2023-03-01" :where [:alice :employment/status ?s]])"#,
     );
     let rows = result_rows(result);
-    assert_eq!(rows.len(), 1, "2023-03-01 is inside the valid range, should return 1 result");
+    assert_eq!(
+        rows.len(),
+        1,
+        "2023-03-01 is inside the valid range, should return 1 result"
+    );
     match &rows[0][0] {
         Value::Keyword(k) => assert_eq!(k, ":active"),
         other => panic!("expected :active, got {:?}", other),
@@ -134,7 +126,11 @@ fn test_valid_at_outside_range() {
         r#"(query [:find ?s :valid-at "2024-01-01" :where [:alice :employment/status ?s]])"#,
     );
     let rows = result_rows(result);
-    assert_eq!(rows.len(), 0, "2024-01-01 is outside the valid range, should return 0 results");
+    assert_eq!(
+        rows.len(),
+        0,
+        "2024-01-01 is outside the valid range, should return 0 results"
+    );
 }
 
 // ============================================================================
@@ -153,10 +149,7 @@ fn test_no_valid_at_returns_only_current() {
     );
 
     // Forever fact (default valid time: now to far future)
-    exec(
-        &executor,
-        r#"(transact [[:alice :person/name "Alice"]])"#,
-    );
+    exec(&executor, r#"(transact [[:alice :person/name "Alice"]])"#);
 
     // Default query (no :valid-at) → only the forever-valid name fact
     let result = exec(
@@ -164,7 +157,11 @@ fn test_no_valid_at_returns_only_current() {
         r#"(query [:find ?attr :where [:alice ?attr ?v]])"#,
     );
     let rows = result_rows(result);
-    assert_eq!(rows.len(), 1, "default query should return only currently valid facts");
+    assert_eq!(
+        rows.len(),
+        1,
+        "default query should return only currently valid facts"
+    );
     match &rows[0][0] {
         Value::Keyword(k) => assert_eq!(k, ":person/name"),
         other => panic!("expected :person/name, got {:?}", other),
@@ -187,10 +184,7 @@ fn test_valid_at_any_valid_time_returns_all() {
     );
 
     // Forever valid fact
-    exec(
-        &executor,
-        r#"(transact [[:alice :person/name "Alice"]])"#,
-    );
+    exec(&executor, r#"(transact [[:alice :person/name "Alice"]])"#);
 
     // :any-valid-time → both facts returned
     let result = exec(
@@ -198,7 +192,11 @@ fn test_valid_at_any_valid_time_returns_all() {
         r#"(query [:find ?attr :valid-at :any-valid-time :where [:alice ?attr ?v]])"#,
     );
     let rows = result_rows(result);
-    assert_eq!(rows.len(), 2, ":any-valid-time should return both expired and current facts");
+    assert_eq!(
+        rows.len(),
+        2,
+        ":any-valid-time should return both expired and current facts"
+    );
 }
 
 // ============================================================================
@@ -228,7 +226,11 @@ fn test_bitemporal_combined_query() {
         r#"(query [:find ?s :as-of 1 :valid-at "2023-03-01" :where [:alice :employment/status ?s]])"#,
     );
     let rows = result_rows(result);
-    assert_eq!(rows.len(), 1, "as-of tx 1 should see only the original :active fact");
+    assert_eq!(
+        rows.len(),
+        1,
+        "as-of tx 1 should see only the original :active fact"
+    );
     match &rows[0][0] {
         Value::Keyword(k) => assert_eq!(k, ":active", "expected :active at tx_count=1"),
         other => panic!("expected keyword, got {:?}", other),
@@ -256,7 +258,11 @@ fn test_valid_at_boundary_exclusive() {
         r#"(query [:find ?s :valid-at "2023-06-30" :where [:alice :employment/status ?s]])"#,
     );
     let rows = result_rows(result);
-    assert_eq!(rows.len(), 0, "valid_to is exclusive: querying at exactly valid_to should return no results");
+    assert_eq!(
+        rows.len(),
+        0,
+        "valid_to is exclusive: querying at exactly valid_to should return no results"
+    );
 
     // Query one day before valid_to boundary → should match
     let result2 = exec(
@@ -264,7 +270,11 @@ fn test_valid_at_boundary_exclusive() {
         r#"(query [:find ?s :valid-at "2023-06-29" :where [:alice :employment/status ?s]])"#,
     );
     let rows2 = result_rows(result2);
-    assert_eq!(rows2.len(), 1, "one day before valid_to should still be in range");
+    assert_eq!(
+        rows2.len(),
+        1,
+        "one day before valid_to should still be in range"
+    );
 }
 
 // ============================================================================
@@ -293,8 +303,16 @@ fn test_bitemporal_multi_entity() {
     storage
         .transact(
             vec![
-                (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
-                (bob, ":person/name".to_string(), Value::String("Bob".to_string())),
+                (
+                    alice,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                ),
+                (
+                    bob,
+                    ":person/name".to_string(),
+                    Value::String("Bob".to_string()),
+                ),
             ],
             None,
         )
@@ -318,7 +336,11 @@ fn test_bitemporal_multi_entity() {
         r#"(query [:find ?who :valid-at "2023-03-01" :where [?who :employment/org ?org]])"#,
     );
     let rows = result_rows(result);
-    assert_eq!(rows.len(), 1, "only alice-kw should be employed at 2023-03-01");
+    assert_eq!(
+        rows.len(),
+        1,
+        "only alice-kw should be employed at 2023-03-01"
+    );
 
     // Query at 2023-09-01: only :bob-kw is employed
     let result2 = exec(
@@ -326,7 +348,11 @@ fn test_bitemporal_multi_entity() {
         r#"(query [:find ?who :valid-at "2023-09-01" :where [?who :employment/org ?org]])"#,
     );
     let rows2 = result_rows(result2);
-    assert_eq!(rows2.len(), 1, "only bob-kw should be employed at 2023-09-01");
+    assert_eq!(
+        rows2.len(),
+        1,
+        "only bob-kw should be employed at 2023-09-01"
+    );
 }
 
 // ============================================================================
@@ -339,22 +365,13 @@ fn test_as_of_counter_time_travel() {
     let executor = DatalogExecutor::new(storage);
 
     // tx_count=1: name
-    exec(
-        &executor,
-        r#"(transact [[:alice :person/name "Alice"]])"#,
-    );
+    exec(&executor, r#"(transact [[:alice :person/name "Alice"]])"#);
 
     // tx_count=2: age
-    exec(
-        &executor,
-        r#"(transact [[:alice :person/age "30"]])"#,
-    );
+    exec(&executor, r#"(transact [[:alice :person/age "30"]])"#);
 
     // tx_count=3: city
-    exec(
-        &executor,
-        r#"(transact [[:alice :person/city "NYC"]])"#,
-    );
+    exec(&executor, r#"(transact [[:alice :person/city "NYC"]])"#);
 
     // :as-of 1 → only name
     let result1 = exec(

@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-03-21
+
+### Added
+- Four Datomic-style covering indexes (EAVT, AEVT, AVET, VAET) with bi-temporal keys (`valid_from`, `valid_to` in all key tuples)
+- `FactRef { page_id: u64, slot_index: u16 }` — forward-compatible disk location pointer (slot_index=0 in 6.1)
+- Canonical value encoding (`encode_value`) with sort-order-preserving byte representation
+- B+tree page serialization for index persistence (`src/storage/btree.rs`)
+- `FileHeader` v4 (72 bytes): adds `eavt_root_page`, `aevt_root_page`, `avet_root_page`, `vaet_root_page` (4×8=32 bytes), `index_checksum` (u32), replacing the `reserved` field
+- CRC32 sync check on open: index mismatch triggers automatic rebuild
+- `FactStorage::replace_indexes()` and `index_counts()` for index lifecycle management
+- Query optimizer (`src/query/datalog/optimizer.rs`): `IndexHint` enum, `select_index()`, `plan()` with selectivity-based join reordering
+- Join reordering skipped under `wasm` feature flag
+- `Cargo.toml` `[features]` section with `default = []` and `wasm = []`
+- 6 integration tests in `tests/index_test.rs` for save/reload, bi-temporal, recursive rules regression
+
+### Changed
+- `FactStorage` internal structure: `FactData { facts, indexes }` under single `Arc<RwLock<FactData>>` for consistent snapshots
+- `PersistentFactStorage::save()` writes index B+tree pages and updates header checksum
+- `PersistentFactStorage::load()` performs sync check and fast-path index load
+- `executor::execute_query()` now calls `optimizer::plan()` before pattern matching
+- File format version bumped 3→4; automatic v1/v2/v3→v4 migration on first save
+- `FORMAT_VERSION` constant updated to 4
+
+### Fixed
+- NaN values in `Value::Float` now canonicalize to a single bit pattern in index encoding (deterministic sort order)
+
 ## [0.5.0] - 2026-03-21
 
 ### Added

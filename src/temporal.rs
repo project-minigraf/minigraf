@@ -3,7 +3,7 @@
 //! Supports UTC ISO 8601 strings only. Timezone offsets are rejected
 //! to avoid chrono's local timezone handling (GHSA-wcg3-cvx6-7396).
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 
 /// Parse an ISO 8601 UTC string to milliseconds since UNIX epoch.
@@ -25,13 +25,15 @@ pub fn parse_timestamp(s: &str) -> Result<i64> {
 
     // Try full datetime first
     if s.contains('T') {
-        let dt = s.parse::<DateTime<Utc>>()
+        let dt = s
+            .parse::<DateTime<Utc>>()
             .map_err(|e| anyhow!("invalid UTC timestamp '{}': {}", s, e))?;
         return Ok(dt.timestamp_millis());
     }
 
     // Try date-only (YYYY-MM-DD)
-    let date = s.parse::<NaiveDate>()
+    let date = s
+        .parse::<NaiveDate>()
         .map_err(|e| anyhow!("invalid date '{}': {}", s, e))?;
     let dt = Utc.from_utc_datetime(&date.and_hms_opt(0, 0, 0).unwrap());
     Ok(dt.timestamp_millis())
@@ -43,8 +45,12 @@ pub fn parse_timestamp(s: &str) -> Result<i64> {
 /// Note: `i64::MAX` (VALID_TIME_FOREVER) should never be passed to this function;
 /// callers should check for the sentinel before formatting.
 pub fn millis_to_timestamp_string(millis: i64) -> Result<String> {
-    let dt = DateTime::<Utc>::from_timestamp_millis(millis)
-        .ok_or_else(|| anyhow!("millisecond value {} is outside the supported datetime range", millis))?;
+    let dt = DateTime::<Utc>::from_timestamp_millis(millis).ok_or_else(|| {
+        anyhow!(
+            "millisecond value {} is outside the supported datetime range",
+            millis
+        )
+    })?;
     Ok(dt.format("%Y-%m-%dT%H:%M:%SZ").to_string())
 }
 
@@ -68,7 +74,10 @@ mod tests {
     #[test]
     fn test_reject_timezone_offset() {
         let err = parse_timestamp("2024-01-15T10:00:00+05:30").unwrap_err();
-        assert!(err.to_string().contains("timezone offsets are not supported"));
+        assert!(
+            err.to_string()
+                .contains("timezone offsets are not supported")
+        );
         assert!(err.to_string().contains("GHSA-wcg3-cvx6-7396"));
     }
 

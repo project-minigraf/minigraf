@@ -1,11 +1,53 @@
+use crate::graph::FactStorage;
 /// Persistent fact storage that integrates StorageBackend with Datalog facts.
 ///
 /// This module bridges the gap between high-level fact operations and
 /// low-level page-based storage backends.
 use crate::graph::types::Fact;
-use crate::graph::FactStorage;
-use crate::storage::{FileHeader, StorageBackend, PAGE_SIZE};
+use crate::storage::btree::{
+    read_aevt_index, read_avet_index, read_eavt_index, read_vaet_index, write_all_indexes,
+};
+use crate::storage::index::Indexes;
+use crate::storage::{FileHeader, PAGE_SIZE, StorageBackend};
 use anyhow::Result;
+use crc32fast::Hasher;
+
+/// Compute the CRC32 sync checksum over all facts.
+///
+/// Sorts facts by `(tx_count, entity_bytes, attribute)` before hashing to
+/// produce a stable total order independent of Vec insertion order.
+pub(crate) fn compute_index_checksum(facts: &[Fact]) -> u32 {
+    let mut sorted: Vec<&Fact> = facts.iter().collect();
+    sorted.sort_by(|a, b| {
+        a.tx_count
+            .cmp(&b.tx_count)
+            .then_with(|| a.entity.as_bytes().cmp(b.entity.as_bytes()))
+            .then_with(|| a.attribute.as_str().cmp(b.attribute.as_str()))
+    });
+    let mut hasher = Hasher::new();
+    for fact in sorted {
+        let bytes = postcard::to_allocvec(fact)
+            .expect("BUG: failed to serialize Fact for index checksum; this should never happen");
+        hasher.update(&bytes);
+    }
+    hasher.finalize()
+}
+
+/// Rebuild all four indexes from a fact slice.
+fn reindex_from_facts(facts: &[Fact]) -> Indexes {
+    let mut indexes = Indexes::new();
+    for (i, fact) in facts.iter().enumerate() {
+        // Page 1-based: page 0 is the header, pages 1..=N are facts.
+        indexes.insert(
+            fact,
+            crate::storage::index::FactRef {
+                page_id: (i + 1) as u64,
+                slot_index: 0,
+            },
+        );
+    }
+    indexes
+}
 
 /// V1 fact format (Phase 3, before bi-temporal fields were added).
 ///
@@ -121,6 +163,37 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
         // Re-synchronise tx_counter to max(tx_count) of loaded facts
         self.storage.restore_tx_counter()?;
 
+        // ── Sync check ───────────────────────────────────────────────────────────
+        let facts = self.storage.get_all_facts().unwrap_or_default();
+        let computed_checksum = compute_index_checksum(&facts);
+        let stored_checksum = header.index_checksum;
+
+        // Mismatch, or no index ever written (eavt_root_page == 0 but facts exist).
+        // Note: CRC32 of empty bytes = 0x00000000, so stored=0 on a fresh DB.
+        // We only trigger rebuild when there are actually facts to index.
+        let needs_rebuild = computed_checksum != stored_checksum
+            || (header.eavt_root_page == 0 && computed_checksum != 0);
+
+        if needs_rebuild {
+            let new_indexes = reindex_from_facts(&facts);
+            self.storage.replace_indexes(new_indexes);
+            self.dirty = true;
+            self.save()?;
+        } else if header.eavt_root_page != 0 {
+            // Fast path: load indexes from existing B+tree pages on disk.
+            let eavt = read_eavt_index(header.eavt_root_page, &self.backend)?;
+            let aevt = read_aevt_index(header.aevt_root_page, &self.backend)?;
+            let avet = read_avet_index(header.avet_root_page, &self.backend)?;
+            let vaet = read_vaet_index(header.vaet_root_page, &self.backend)?;
+            self.storage.replace_indexes(Indexes {
+                eavt,
+                aevt,
+                avet,
+                vaet,
+            });
+        }
+        // else: empty DB — indexes are empty by default, nothing to do.
+
         self.dirty = false;
         Ok(())
     }
@@ -216,34 +289,48 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
 
         let facts = self.storage.get_all_facts()?;
 
-        // Calculate page count (header + one page per fact)
-        let page_count = 1 + facts.len() as u64;
-
-        // Create and write header
-        let mut header = FileHeader::new(); // sets version = FORMAT_VERSION = 3
-        header.page_count = page_count;
-        header.node_count = facts.len() as u64; // Reuse node_count field for fact count
-        header.last_checkpointed_tx_count = self.storage.current_tx_count();
-
-        let mut header_page = header.to_bytes();
-        header_page.resize(PAGE_SIZE, 0);
-        self.backend.write_page(0, &header_page)?;
-
-        // Write facts (one per page)
+        // Write facts (one per page, starting at page 1)
         for (i, fact) in facts.iter().enumerate() {
             let data = postcard::to_allocvec(fact)?;
             if data.len() > PAGE_SIZE {
-                anyhow::bail!(
-                    "Fact too large: {} bytes (max {})",
-                    data.len(),
-                    PAGE_SIZE
-                );
+                anyhow::bail!("Fact too large: {} bytes (max {})", data.len(), PAGE_SIZE);
             }
 
             let mut page = vec![0u8; PAGE_SIZE];
             page[..data.len()].copy_from_slice(&data);
             self.backend.write_page((i + 1) as u64, &page)?;
         }
+
+        // ── Write index pages ────────────────────────────────────────────────────
+        let start_page = 1 + facts.len() as u64;
+        let rebuilt = reindex_from_facts(&facts);
+        let (eavt_root, aevt_root, avet_root, vaet_root) = write_all_indexes(
+            &rebuilt.eavt,
+            &rebuilt.aevt,
+            &rebuilt.avet,
+            &rebuilt.vaet,
+            &mut self.backend,
+            start_page,
+        )?;
+        let checksum = compute_index_checksum(&facts);
+
+        // Calculate page count (header + facts + index pages)
+        let total_page_count = self.backend.page_count()?;
+
+        // Create and write header
+        let mut header = FileHeader::new(); // sets version = FORMAT_VERSION = 4
+        header.page_count = total_page_count;
+        header.node_count = facts.len() as u64; // Reuse node_count field for fact count
+        header.last_checkpointed_tx_count = self.storage.current_tx_count();
+        header.eavt_root_page = eavt_root;
+        header.aevt_root_page = aevt_root;
+        header.avet_root_page = avet_root;
+        header.vaet_root_page = vaet_root;
+        header.index_checksum = checksum;
+
+        let mut header_page = header.to_bytes();
+        header_page.resize(PAGE_SIZE, 0);
+        self.backend.write_page(0, &header_page)?;
 
         // Sync to ensure durability
         self.backend.sync()?;
@@ -319,11 +406,19 @@ mod tests {
             let backend = MemoryBackend::new();
             let mut storage = PersistentFactStorage::new(backend).unwrap();
 
-            storage.storage()
-                .transact(vec![
-                    (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
-                    (alice, ":person/age".to_string(), Value::Integer(30)),
-                ], None)
+            storage
+                .storage()
+                .transact(
+                    vec![
+                        (
+                            alice,
+                            ":person/name".to_string(),
+                            Value::String("Alice".to_string()),
+                        ),
+                        (alice, ":person/age".to_string(), Value::Integer(30)),
+                    ],
+                    None,
+                )
                 .unwrap();
 
             storage.mark_dirty();
@@ -347,10 +442,16 @@ mod tests {
         // Create storage in a scope so it drops
         {
             let mut storage = PersistentFactStorage::new(backend).unwrap();
-            storage.storage()
-                .transact(vec![
-                    (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
-                ], None)
+            storage
+                .storage()
+                .transact(
+                    vec![(
+                        alice,
+                        ":person/name".to_string(),
+                        Value::String("Alice".to_string()),
+                    )],
+                    None,
+                )
                 .unwrap();
             storage.mark_dirty();
             // Drop happens here, should auto-save
@@ -471,14 +572,21 @@ mod tests {
     }
 
     #[test]
-    fn test_save_writes_v3_header() {
+    fn test_save_writes_v4_header() {
         use crate::storage::FORMAT_VERSION;
 
         let backend = MemoryBackend::new();
         let mut pfs = PersistentFactStorage::new(backend).unwrap();
         let alice = Uuid::new_v4();
         pfs.storage()
-            .transact(vec![(alice, ":name".to_string(), crate::graph::types::Value::String("Alice".to_string()))], None)
+            .transact(
+                vec![(
+                    alice,
+                    ":name".to_string(),
+                    crate::graph::types::Value::String("Alice".to_string()),
+                )],
+                None,
+            )
             .unwrap();
         pfs.mark_dirty();
         pfs.save().unwrap();
@@ -487,7 +595,7 @@ mod tests {
         let backend = pfs.into_backend();
         let header_page = backend.read_page(0).unwrap();
         let header = crate::storage::FileHeader::from_bytes(&header_page).unwrap();
-        assert_eq!(header.version, FORMAT_VERSION);  // must be 3
+        assert_eq!(header.version, FORMAT_VERSION); // must be 4
         assert_eq!(header.last_checkpointed_tx_count, 1); // one transact call
     }
 
@@ -500,6 +608,126 @@ mod tests {
     }
 
     #[test]
+    fn test_indexes_survive_save_load_roundtrip() {
+        use crate::graph::types::Value;
+        use crate::storage::backend::FileBackend;
+        use tempfile::NamedTempFile;
+        use uuid::Uuid;
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        let alice = Uuid::new_v4();
+        let bob = Uuid::new_v4();
+
+        // Save phase
+        {
+            let mut pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap()).unwrap();
+            pfs.storage()
+                .transact(
+                    vec![
+                        (
+                            alice,
+                            ":name".to_string(),
+                            Value::String("Alice".to_string()),
+                        ),
+                        (alice, ":friend".to_string(), Value::Ref(bob)),
+                    ],
+                    None,
+                )
+                .unwrap();
+            pfs.dirty = true;
+            pfs.save().unwrap();
+        }
+
+        // Load phase — indexes must be populated from disk
+        {
+            let pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap()).unwrap();
+            let (eavt, _, _, vaet) = pfs.storage().index_counts();
+            assert_eq!(eavt, 2, "EAVT must have 2 entries after reload");
+            assert_eq!(vaet, 1, "VAET must have 1 entry (Ref fact) after reload");
+        }
+    }
+
+    #[test]
+    fn test_sync_check_detects_mismatch_and_rebuilds() {
+        use crate::graph::types::Value;
+        use crate::storage::StorageBackend;
+        use crate::storage::backend::FileBackend;
+        use tempfile::NamedTempFile;
+        use uuid::Uuid;
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        let alice = Uuid::new_v4();
+
+        // Write a database with 1 fact
+        {
+            let mut pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap()).unwrap();
+            pfs.storage()
+                .transact(
+                    vec![(
+                        alice,
+                        ":name".to_string(),
+                        Value::String("Alice".to_string()),
+                    )],
+                    None,
+                )
+                .unwrap();
+            pfs.dirty = true;
+            pfs.save().unwrap();
+        }
+
+        // Corrupt the index_checksum (bytes 64..68 of page 0)
+        {
+            let mut backend = FileBackend::open(&path).unwrap();
+            let mut page = backend.read_page(0).unwrap();
+            page[64] ^= 0xFF;
+            backend.write_page(0, &page).unwrap();
+            backend.sync().unwrap();
+        }
+
+        // Re-open — new() should detect mismatch, rebuild, and succeed
+        {
+            let pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap()).unwrap();
+            let (eavt, _, _, _) = pfs.storage().index_counts();
+            assert_eq!(eavt, 1, "After rebuild, EAVT must contain 1 fact");
+        }
+    }
+
+    #[test]
+    fn test_compute_index_checksum_stable() {
+        use crate::graph::types::{Fact, VALID_TIME_FOREVER, Value};
+        use uuid::Uuid;
+
+        let e = Uuid::new_v4();
+        let facts = vec![
+            Fact::with_valid_time(
+                e,
+                ":a".to_string(),
+                Value::Integer(1),
+                100,
+                2,
+                0,
+                VALID_TIME_FOREVER,
+            ),
+            Fact::with_valid_time(
+                e,
+                ":b".to_string(),
+                Value::Integer(2),
+                200,
+                1,
+                0,
+                VALID_TIME_FOREVER,
+            ),
+        ];
+        let c1 = compute_index_checksum(&facts);
+        // Reversed order — same checksum (deterministic sort applied inside)
+        let facts_reversed = vec![facts[1].clone(), facts[0].clone()];
+        let c2 = compute_index_checksum(&facts_reversed);
+        assert_eq!(c1, c2, "Checksum must be order-independent");
+    }
+
+    #[test]
     fn test_migrate_v1_tx_counter_set_correctly() {
         let backend = make_v1_backend();
         let pfs = PersistentFactStorage::new(backend).unwrap();
@@ -507,11 +735,7 @@ mod tests {
         let alice = Uuid::new_v4();
         pfs.storage()
             .transact(
-                vec![(
-                    alice,
-                    ":new/fact".to_string(),
-                    Value::Boolean(true),
-                )],
+                vec![(alice, ":new/fact".to_string(), Value::Boolean(true))],
                 None,
             )
             .unwrap();

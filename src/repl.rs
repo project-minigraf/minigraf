@@ -1,5 +1,5 @@
 use crate::graph::FactStorage;
-use crate::query::datalog::{parse_datalog_command, DatalogExecutor};
+use crate::query::datalog::{DatalogExecutor, parse_datalog_command};
 use std::io::{self, Write};
 
 pub struct Repl {
@@ -12,7 +12,10 @@ impl Repl {
     }
 
     pub fn run(&self) {
-        println!("Minigraf v{} - Interactive Datalog Console", env!("CARGO_PKG_VERSION"));
+        println!(
+            "Minigraf v{} - Interactive Datalog Console",
+            env!("CARGO_PKG_VERSION")
+        );
         println!();
         println!("Data operations:");
         println!("  (transact [...])                    - assert facts");
@@ -24,10 +27,18 @@ impl Repl {
         println!("  (rule [(name ?a ?b) [?a :attr ?b]]) - define a rule");
         println!();
         println!("Temporal queries:");
-        println!("  (query [:find ?x :as-of 50 :where ...])                     - state as of tx counter 50");
-        println!("  (query [:find ?x :as-of \"2024-01-15T10:00:00Z\" :where ...]) - state as of UTC timestamp");
-        println!("  (query [:find ?x :valid-at \"2023-06-01\" :where ...])        - facts valid on date");
-        println!("  (query [:find ?x :valid-at :any-valid-time :where ...])     - all facts, ignoring validity");
+        println!(
+            "  (query [:find ?x :as-of 50 :where ...])                     - state as of tx counter 50"
+        );
+        println!(
+            "  (query [:find ?x :as-of \"2024-01-15T10:00:00Z\" :where ...]) - state as of UTC timestamp"
+        );
+        println!(
+            "  (query [:find ?x :valid-at \"2023-06-01\" :where ...])        - facts valid on date"
+        );
+        println!(
+            "  (query [:find ?x :valid-at :any-valid-time :where ...])     - all facts, ignoring validity"
+        );
         println!();
         println!("Note: queries without :valid-at return only currently valid facts.");
         println!();

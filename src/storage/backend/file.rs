@@ -1,5 +1,5 @@
 /// File-based storage backend for native platforms.
-use crate::storage::{FileHeader, StorageBackend, PAGE_SIZE};
+use crate::storage::{FileHeader, PAGE_SIZE, StorageBackend};
 use anyhow::Result;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -49,7 +49,11 @@ impl FileBackend {
                 Ok(header) => header,
                 Err(e) => {
                     // File has content but header is invalid - this is a real error
-                    anyhow::bail!("Failed to read header from existing file (size={}): {}", file_len, e);
+                    anyhow::bail!(
+                        "Failed to read header from existing file (size={}): {}",
+                        file_len,
+                        e
+                    );
                 }
             }
         } else {

@@ -478,7 +478,10 @@ mod tests {
         };
 
         assert!(matches!(query_with_time.as_of, Some(AsOf::Counter(5))));
-        assert!(matches!(query_with_time.valid_at, Some(ValidAt::AnyValidTime)));
+        assert!(matches!(
+            query_with_time.valid_at,
+            Some(ValidAt::AnyValidTime)
+        ));
     }
 
     #[test]

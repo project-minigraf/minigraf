@@ -17,15 +17,15 @@ use crate::graph::types::{Fact, VALID_TIME_FOREVER};
 const VALID_FROM_USE_TX_TIME: i64 = i64::MIN;
 use crate::graph::FactStorage;
 use crate::query::datalog::executor::DatalogExecutor;
+use crate::query::datalog::executor::QueryResult;
 use crate::query::datalog::parser::parse_datalog_command;
 use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::types::{DatalogCommand, Transaction};
-use crate::query::datalog::executor::QueryResult;
-use crate::storage::backend::file::FileBackend;
 use crate::storage::backend::MemoryBackend;
+use crate::storage::backend::file::FileBackend;
 use crate::storage::persistent_facts::PersistentFactStorage;
 use crate::wal::WalWriter;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
@@ -304,17 +304,23 @@ impl Minigraf {
     pub fn execute(&self, input: &str) -> Result<QueryResult> {
         // Detect same-thread reentrant write (would deadlock on the Mutex).
         if is_write_tx_active() {
-            bail!("a WriteTransaction is already in progress on this thread; use tx.execute() instead");
+            bail!(
+                "a WriteTransaction is already in progress on this thread; use tx.execute() instead"
+            );
         }
 
         let cmd = parse_datalog_command(input).map_err(|e| anyhow::anyhow!("{}", e))?;
 
         // Determine if this is a read-only command (query / rule registration).
-        let is_write = matches!(cmd, DatalogCommand::Transact(_) | DatalogCommand::Retract(_));
+        let is_write = matches!(
+            cmd,
+            DatalogCommand::Transact(_) | DatalogCommand::Retract(_)
+        );
 
         if is_write {
-            let mut ctx = self.inner.write_lock.lock()
-                .map_err(|_| anyhow::anyhow!("write lock is poisoned; database may be in an inconsistent state"))?;
+            let mut ctx = self.inner.write_lock.lock().map_err(|_| {
+                anyhow::anyhow!("write lock is poisoned; database may be in an inconsistent state")
+            })?;
 
             // Handle write commands with correct WAL-first ordering:
             // 1. Materialize facts (no storage mutation yet)
@@ -322,12 +328,8 @@ impl Minigraf {
             // 3. Write WAL entry FIRST — if this fails, FactStorage is unchanged
             // 4. Apply facts to shared FactStorage
             let (stamped, is_retract) = match &cmd {
-                DatalogCommand::Transact(tx) => {
-                    (Minigraf::materialize_transaction(tx)?, false)
-                }
-                DatalogCommand::Retract(tx) => {
-                    (Minigraf::materialize_retraction(tx)?, true)
-                }
+                DatalogCommand::Transact(tx) => (Minigraf::materialize_transaction(tx)?, false),
+                DatalogCommand::Retract(tx) => (Minigraf::materialize_retraction(tx)?, true),
                 _ => unreachable!("is_write guarantees Transact or Retract"),
             };
 
@@ -394,11 +396,14 @@ impl Minigraf {
     /// Returns an error if a `WriteTransaction` is already active on **this thread**.
     pub fn begin_write(&self) -> Result<WriteTransaction<'_>> {
         if is_write_tx_active() {
-            bail!("a WriteTransaction is already in progress on this thread; use tx.execute() instead");
+            bail!(
+                "a WriteTransaction is already in progress on this thread; use tx.execute() instead"
+            );
         }
         set_write_tx_active(true);
-        let guard = self.inner.write_lock.lock()
-            .map_err(|_| anyhow::anyhow!("write lock is poisoned; database may be in an inconsistent state"))?;
+        let guard = self.inner.write_lock.lock().map_err(|_| {
+            anyhow::anyhow!("write lock is poisoned; database may be in an inconsistent state")
+        })?;
         Ok(WriteTransaction {
             guard,
             inner: &self.inner,
@@ -414,8 +419,9 @@ impl Minigraf {
     ///
     /// No-op for in-memory databases.
     pub fn checkpoint(&self) -> Result<()> {
-        let mut ctx = self.inner.write_lock.lock()
-            .map_err(|_| anyhow::anyhow!("write lock is poisoned; database may be in an inconsistent state"))?;
+        let mut ctx = self.inner.write_lock.lock().map_err(|_| {
+            anyhow::anyhow!("write lock is poisoned; database may be in an inconsistent state")
+        })?;
         Self::do_checkpoint(&self.inner.fact_storage, &mut ctx)
     }
 
@@ -504,7 +510,10 @@ impl Minigraf {
             let value = edn_to_value(&pattern.value)
                 .map_err(|e| anyhow::anyhow!("invalid value: {}", e))?;
 
-            let valid_from = pattern.valid_from.or(tx_valid_from).unwrap_or(VALID_FROM_USE_TX_TIME);
+            let valid_from = pattern
+                .valid_from
+                .or(tx_valid_from)
+                .unwrap_or(VALID_FROM_USE_TX_TIME);
             let valid_to = pattern
                 .valid_to
                 .or(tx_valid_to)
@@ -848,7 +857,8 @@ mod tests {
             .unwrap_err();
 
         assert!(
-            err.to_string().contains("WriteTransaction is already in progress"),
+            err.to_string()
+                .contains("WriteTransaction is already in progress"),
             "expected reentrant-write error, got: {}",
             err
         );
@@ -869,7 +879,10 @@ mod tests {
 
         // After commit, begin_write should succeed again on the same thread.
         let result = db.begin_write();
-        assert!(result.is_ok(), "begin_write must succeed after commit clears the flag");
+        assert!(
+            result.is_ok(),
+            "begin_write must succeed after commit clears the flag"
+        );
         result.unwrap().rollback();
     }
 
@@ -946,7 +959,6 @@ mod tests {
     #[test]
     #[cfg(unix)] // directory-as-WAL trick is Unix-specific; skipped on Windows
     fn test_failed_commit_leaves_database_unchanged() {
-
         fn count_results(result: QueryResult) -> usize {
             match result {
                 QueryResult::QueryResults { results, .. } => results.len(),
@@ -986,15 +998,18 @@ mod tests {
         // Restore the directory so tempdir cleanup works
         std::fs::remove_dir(&wal_path).unwrap();
 
-        assert!(result.is_err(), "commit should fail when WAL path is a directory");
+        assert!(
+            result.is_err(),
+            "commit should fail when WAL path is a directory"
+        );
 
         // Bob must NOT be visible (failed commit must not apply facts)
         let n = count_results(
-            db.execute("(query [:find ?name :where [?e :name ?name]])").unwrap(),
+            db.execute("(query [:find ?name :where [?e :name ?name]])")
+                .unwrap(),
         );
         assert_eq!(
-            n,
-            1,
+            n, 1,
             "only Alice should be visible; Bob's failed commit must be rolled back"
         );
     }
