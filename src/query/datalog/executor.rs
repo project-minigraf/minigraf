@@ -1,8 +1,8 @@
 use super::evaluator::RecursiveEvaluator;
 use super::matcher::{edn_to_entity_id, edn_to_value, PatternMatcher};
 use super::rules::RuleRegistry;
-use super::types::{DatalogCommand, DatalogQuery, EdnValue, Pattern, Rule, Transaction};
-use crate::graph::types::{TxId, Value};
+use super::types::{DatalogCommand, DatalogQuery, EdnValue, Pattern, Rule, Transaction, ValidAt};
+use crate::graph::types::{Fact, TransactOptions, TxId, Value, tx_id_now};
 use crate::graph::FactStorage;
 use anyhow::{anyhow, Result};
 use std::sync::{Arc, RwLock};
@@ -49,7 +49,14 @@ impl DatalogExecutor {
 
     /// Execute a transact command: add facts to storage
     fn execute_transact(&self, tx: Transaction) -> Result<QueryResult> {
-        let mut fact_tuples = Vec::new();
+        // Transaction-level valid-time options (used when pattern has no per-fact override)
+        let tx_opts = if tx.valid_from.is_some() || tx.valid_to.is_some() {
+            Some(TransactOptions::new(tx.valid_from, tx.valid_to))
+        } else {
+            None
+        };
+
+        let mut last_tx_id: TxId = 0;
 
         for pattern in tx.facts {
             let entity_id = edn_to_entity_id(&pattern.entity)
@@ -63,15 +70,20 @@ impl DatalogExecutor {
             let value =
                 edn_to_value(&pattern.value).map_err(|e| anyhow!("Invalid value: {}", e))?;
 
-            fact_tuples.push((entity_id, attribute, value));
+            // Determine per-fact opts: per-fact override takes precedence over tx-level
+            let opts = if pattern.valid_from.is_some() || pattern.valid_to.is_some() {
+                Some(TransactOptions::new(pattern.valid_from, pattern.valid_to))
+            } else {
+                tx_opts.clone()
+            };
+
+            last_tx_id = self
+                .storage
+                .transact(vec![(entity_id, attribute, value)], opts)
+                .map_err(|e| anyhow!("Transaction failed: {}", e))?;
         }
 
-        let tx_id = self
-            .storage
-            .transact(fact_tuples)
-            .map_err(|e| anyhow!("Transaction failed: {}", e))?;
-
-        Ok(QueryResult::Transacted(tx_id))
+        Ok(QueryResult::Transacted(last_tx_id))
     }
 
     /// Execute a retract command: retract facts from storage
@@ -101,6 +113,47 @@ impl DatalogExecutor {
         Ok(QueryResult::Retracted(tx_id))
     }
 
+    /// Build a filtered FactStorage for a query's temporal constraints.
+    ///
+    /// Step 1: apply transaction-time filter (`:as-of`) — defaults to all facts.
+    /// Step 2: discard retracted facts within the tx window.
+    /// Step 3: apply valid-time filter (`:valid-at`) — defaults to "currently valid".
+    fn filter_facts_for_query(&self, query: &DatalogQuery) -> Result<FactStorage> {
+        let now = tx_id_now() as i64;
+
+        // Step 1: transaction-time filter
+        let tx_filtered: Vec<Fact> = match &query.as_of {
+            Some(as_of) => self.storage.get_facts_as_of(as_of)?,
+            None => self.storage.get_all_facts()?,
+        };
+
+        // Step 2: keep only asserted facts
+        let asserted: Vec<Fact> = tx_filtered
+            .into_iter()
+            .filter(|f| f.is_asserted())
+            .collect();
+
+        // Step 3: valid-time filter
+        let valid_filtered: Vec<Fact> = match &query.valid_at {
+            Some(ValidAt::Timestamp(t)) => asserted
+                .into_iter()
+                .filter(|f| f.valid_from <= *t && *t < f.valid_to)
+                .collect(),
+            Some(ValidAt::AnyValidTime) => asserted,
+            None => asserted
+                .into_iter()
+                .filter(|f| f.valid_from <= now && now < f.valid_to)
+                .collect(),
+        };
+
+        // Build a temporary FactStorage with the filtered facts
+        let filtered_storage = FactStorage::new();
+        for fact in valid_filtered {
+            filtered_storage.load_fact(fact)?;
+        }
+        Ok(filtered_storage)
+    }
+
     /// Execute a query: find matching facts and return specified variables
     fn execute_query(&self, query: DatalogQuery) -> Result<QueryResult> {
         // Check if query uses rules
@@ -109,8 +162,9 @@ impl DatalogExecutor {
             return self.execute_query_with_rules(query);
         }
 
-        // Simple pattern-only query
-        let matcher = PatternMatcher::new(self.storage.clone());
+        // Apply temporal filters before pattern matching
+        let filtered_storage = self.filter_facts_for_query(&query)?;
+        let matcher = PatternMatcher::new(filtered_storage);
         let patterns = query.get_patterns();
 
         // Match all patterns and get bindings
@@ -149,9 +203,12 @@ impl DatalogExecutor {
             .map(|(pred, _)| pred.clone())
             .collect();
 
+        // Apply temporal filters before evaluating recursive rules
+        let filtered_storage = self.filter_facts_for_query(&query)?;
+
         // Create evaluator and derive all facts for these predicates
         let evaluator = RecursiveEvaluator::new(
-            self.storage.clone(),
+            filtered_storage,
             self.rules.clone(),
             1000, // max iterations
         );
@@ -251,6 +308,7 @@ impl DatalogExecutor {
 mod tests {
     use super::*;
     use crate::query::datalog::parser::parse_datalog_command;
+    use crate::query::datalog::types::WhereClause;
     use uuid::Uuid;
 
     #[test]
@@ -292,7 +350,7 @@ mod tests {
                     Value::String("Alice".to_string()),
                 ),
                 (alice_id, ":person/age".to_string(), Value::Integer(30)),
-            ])
+            ], None)
             .unwrap();
 
         // Query for name
@@ -326,7 +384,7 @@ mod tests {
                     Value::String("Alice".to_string()),
                 ),
                 (alice_id, ":person/age".to_string(), Value::Integer(30)),
-            ])
+            ], None)
             .unwrap();
 
         // Query for both name and age
@@ -381,7 +439,7 @@ mod tests {
                 alice_id,
                 ":person/age".to_string(),
                 Value::Integer(30),
-            )])
+            )], None)
             .unwrap();
 
         // Verify it exists
@@ -541,7 +599,7 @@ mod tests {
             .transact(vec![
                 (a, ":connected".to_string(), Value::Ref(b)),
                 (a, ":connected".to_string(), Value::Ref(c)),
-            ])
+            ], None)
             .unwrap();
 
         // Register reachable rule (base case only - no recursion yet)
@@ -600,7 +658,7 @@ mod tests {
                     ":person/name".to_string(),
                     Value::String("Bob".to_string()),
                 ),
-            ])
+            ], None)
             .unwrap();
 
         // Register reachable rule (base case only - no recursion yet)
@@ -640,7 +698,7 @@ mod tests {
             .transact(vec![
                 (a, ":connected".to_string(), Value::Ref(b)),
                 (b, ":connected".to_string(), Value::Ref(c)),
-            ])
+            ], None)
             .unwrap();
 
         // Register reachable rules (base + recursive)
@@ -685,6 +743,147 @@ mod tests {
     }
 
     #[test]
+    fn test_default_query_filters_to_currently_valid() {
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage.clone());
+        let alice = Uuid::new_v4();
+
+        // Fact valid forever (default) - tx_count=1
+        executor.execute(DatalogCommand::Transact(Transaction {
+            facts: vec![Pattern::new(
+                EdnValue::Uuid(alice),
+                EdnValue::Keyword(":person/name".to_string()),
+                EdnValue::String("Alice".to_string()),
+            )],
+            valid_from: None,
+            valid_to: None,
+        })).unwrap();
+
+        // Fact with valid_to in the past (expired) - tx_count=2
+        executor.execute(DatalogCommand::Transact(Transaction {
+            facts: vec![Pattern::new(
+                EdnValue::Uuid(alice),
+                EdnValue::Keyword(":employment/status".to_string()),
+                EdnValue::Keyword(":active".to_string()),
+            )],
+            valid_from: Some(1000_i64),
+            valid_to: Some(2000_i64),  // expired long ago
+        })).unwrap();
+
+        // Default query (no :valid-at) should only return the forever-valid fact
+        let result = executor.execute(DatalogCommand::Query(DatalogQuery::new(
+            vec!["?attr".to_string()],
+            vec![WhereClause::Pattern(Pattern::new(
+                EdnValue::Uuid(alice),
+                EdnValue::Symbol("?attr".to_string()),
+                EdnValue::Symbol("?v".to_string()),
+            ))],
+        ))).unwrap();
+
+        let rows = match result {
+            QueryResult::QueryResults { results, .. } => results,
+            _ => panic!("expected query results"),
+        };
+        assert_eq!(rows.len(), 1); // only the name fact
+    }
+
+    #[test]
+    fn test_as_of_counter_shows_past_state() {
+        use crate::query::datalog::types::AsOf;
+        use crate::query::datalog::types::ValidAt;
+
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage);
+        let alice = Uuid::new_v4();
+
+        // tx_count=1: assert name
+        executor.execute(DatalogCommand::Transact(Transaction {
+            facts: vec![Pattern::new(
+                EdnValue::Uuid(alice),
+                EdnValue::Keyword(":person/name".to_string()),
+                EdnValue::String("Alice".to_string()),
+            )],
+            valid_from: None, valid_to: None,
+        })).unwrap();
+
+        // tx_count=2: assert age
+        executor.execute(DatalogCommand::Transact(Transaction {
+            facts: vec![Pattern::new(
+                EdnValue::Uuid(alice),
+                EdnValue::Keyword(":person/age".to_string()),
+                EdnValue::Integer(30),
+            )],
+            valid_from: None, valid_to: None,
+        })).unwrap();
+
+        // :as-of 1 → only name fact visible (age was added at tx_count=2)
+        let result = executor.execute(DatalogCommand::Query(DatalogQuery {
+            find: vec!["?attr".to_string()],
+            where_clauses: vec![WhereClause::Pattern(Pattern::new(
+                EdnValue::Uuid(alice),
+                EdnValue::Symbol("?attr".to_string()),
+                EdnValue::Symbol("?v".to_string()),
+            ))],
+            as_of: Some(AsOf::Counter(1)),
+            valid_at: Some(ValidAt::AnyValidTime),
+        })).unwrap();
+
+        let rows = match result {
+            QueryResult::QueryResults { results, .. } => results,
+            _ => panic!("expected query results"),
+        };
+        assert_eq!(rows.len(), 1);
+    }
+
+    #[test]
+    fn test_valid_at_any_valid_time_shows_all() {
+        use crate::query::datalog::types::ValidAt;
+
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage);
+        let alice = Uuid::new_v4();
+
+        // Fact valid forever (default)
+        executor.execute(DatalogCommand::Transact(Transaction {
+            facts: vec![Pattern::new(
+                EdnValue::Uuid(alice),
+                EdnValue::Keyword(":person/name".to_string()),
+                EdnValue::String("Alice".to_string()),
+            )],
+            valid_from: None, valid_to: None,
+        })).unwrap();
+
+        // Fact with valid_to already in the past
+        executor.execute(DatalogCommand::Transact(Transaction {
+            facts: vec![Pattern::new(
+                EdnValue::Uuid(alice),
+                EdnValue::Keyword(":employment/status".to_string()),
+                EdnValue::Keyword(":active".to_string()),
+            )],
+            valid_from: Some(1000_i64),
+            valid_to: Some(2000_i64),  // expired
+        })).unwrap();
+
+        // :valid-at :any-valid-time → both facts returned
+        let result = executor.execute(DatalogCommand::Query(DatalogQuery {
+            find: vec!["?attr".to_string()],
+            where_clauses: vec![WhereClause::Pattern(Pattern::new(
+                EdnValue::Uuid(alice),
+                EdnValue::Symbol("?attr".to_string()),
+                EdnValue::Symbol("?v".to_string()),
+            ))],
+            as_of: None,
+            valid_at: Some(ValidAt::AnyValidTime),
+        })).unwrap();
+
+        let rows = match result {
+            QueryResult::QueryResults { results, .. } => results,
+            _ => panic!("expected query results"),
+        };
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
     fn test_query_recursive_with_mixed_patterns() {
         let storage = FactStorage::new();
         let executor = DatalogExecutor::new(storage.clone());
@@ -703,7 +902,7 @@ mod tests {
                     ":person/name".to_string(),
                     Value::String("Charlie".to_string()),
                 ),
-            ])
+            ], None)
             .unwrap();
 
         // Register recursive reachable rules

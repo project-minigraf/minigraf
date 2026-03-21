@@ -12,8 +12,25 @@ impl Repl {
     }
 
     pub fn run(&self) {
-        println!("Minigraf v0.1.0 - Interactive Datalog Console");
-        println!("Commands: (transact [...]), (query [...]), (retract [...])");
+        println!("Minigraf v0.4.0 - Interactive Datalog Console");
+        println!();
+        println!("Data operations:");
+        println!("  (transact [...])                    - assert facts");
+        println!("  (transact {{:valid-from ... :valid-to ...}} [...]) - with valid time");
+        println!("  (retract [...])                     - retract facts");
+        println!();
+        println!("Queries:");
+        println!("  (query [:find ?x :where ...])       - basic query");
+        println!("  (rule [(name ?a ?b) [?a :attr ?b]]) - define a rule");
+        println!();
+        println!("Temporal queries:");
+        println!("  (query [:find ?x :as-of 50 :where ...])                     - state as of tx counter 50");
+        println!("  (query [:find ?x :as-of \"2024-01-15T10:00:00Z\" :where ...]) - state as of UTC timestamp");
+        println!("  (query [:find ?x :valid-at \"2023-06-01\" :where ...])        - facts valid on date");
+        println!("  (query [:find ?x :valid-at :any-valid-time :where ...])     - all facts, ignoring validity");
+        println!();
+        println!("Note: queries without :valid-at return only currently valid facts.");
+        println!();
         println!("Type EXIT to quit.\n");
 
         let datalog_executor = DatalogExecutor::new(self.fact_storage.clone());

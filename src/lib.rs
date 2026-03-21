@@ -2,6 +2,7 @@ pub mod graph;
 pub mod query;
 pub mod repl;
 pub mod storage;
+pub mod temporal;
 
 // Datalog EAV storage (Phase 3+)
 pub use graph::FactStorage;
@@ -10,6 +11,7 @@ pub use graph::FactStorage;
 pub use graph::types::{
     Fact, Value, EntityId, TxId, Attribute,
     tx_id_now, tx_id_from_system_time, tx_id_to_system_time,
+    TransactOptions, VALID_TIME_FOREVER,
 };
 
 // REPL
@@ -33,3 +35,6 @@ pub use query::{
     QueryResult,
     Transaction,
 };
+
+// Bi-temporal query types (Phase 4+)
+pub use query::datalog::types::{AsOf, ValidAt};

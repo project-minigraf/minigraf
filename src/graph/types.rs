@@ -115,10 +115,19 @@ impl Value {
     }
 }
 
+/// Sentinel value for open-ended valid time (a fact is valid "forever").
+/// Used as the default `valid_to` when no end time is specified.
+pub const VALID_TIME_FOREVER: i64 = i64::MAX;
+
 /// A Datalog fact: (Entity, Attribute, Value) triple with transaction metadata
 ///
 /// This is the core data structure for Phase 3+. Facts are immutable and versioned
 /// by transaction ID. Facts are never deleted, only retracted (asserted=false).
+///
+/// Phase 4 adds bi-temporal fields:
+/// - `tx_count`: monotonically incrementing batch counter within a transaction
+/// - `valid_from`: when the fact became valid in the real world (millis since epoch)
+/// - `valid_to`: when the fact stopped being valid (`VALID_TIME_FOREVER` = open-ended)
 ///
 /// # Examples
 /// ```
@@ -153,35 +162,71 @@ pub struct Fact {
     pub value: Value,
     /// Transaction ID that asserted or retracted this fact
     pub tx_id: TxId,
-    /// True if this fact is asserted, false if retracted
-    /// Retractions are used instead of deletions to maintain history
+    /// Monotonically incrementing batch counter within a transaction (Phase 4)
+    pub tx_count: u64,
+    /// Valid-time start: when the fact became valid in the real world (millis since epoch).
+    /// Defaults to `tx_id as i64` (wall-clock time of the transaction).
+    pub valid_from: i64,
+    /// Valid-time end: when the fact stopped being valid (millis since epoch).
+    /// `VALID_TIME_FOREVER` means the fact is open-ended (still valid).
+    pub valid_to: i64,
+    /// True if this fact is asserted, false if retracted.
+    /// Retractions are used instead of deletions to maintain history.
     pub asserted: bool,
 }
 
 impl Fact {
-    /// Create a new asserted fact
+    /// Create a new asserted fact with default valid time (valid_from=tx_id, valid_to=FOREVER).
     pub fn new(entity: EntityId, attribute: Attribute, value: Value, tx_id: TxId) -> Self {
         Fact {
             entity,
             attribute,
             value,
             tx_id,
+            tx_count: 0,
+            valid_from: tx_id as i64,
+            valid_to: VALID_TIME_FOREVER,
             asserted: true,
         }
     }
 
-    /// Create a retraction of a fact
+    /// Create an asserted fact with explicit valid time and tx_count.
+    pub fn with_valid_time(
+        entity: EntityId,
+        attribute: Attribute,
+        value: Value,
+        tx_id: TxId,
+        tx_count: u64,
+        valid_from: i64,
+        valid_to: i64,
+    ) -> Self {
+        Fact {
+            entity,
+            attribute,
+            value,
+            tx_id,
+            tx_count,
+            valid_from,
+            valid_to,
+            asserted: true,
+        }
+    }
+
+    /// Create a retraction with default valid time.
     pub fn retract(entity: EntityId, attribute: Attribute, value: Value, tx_id: TxId) -> Self {
         Fact {
             entity,
             attribute,
             value,
             tx_id,
+            tx_count: 0,
+            valid_from: tx_id as i64,
+            valid_to: VALID_TIME_FOREVER,
             asserted: false,
         }
     }
 
-    /// Create a fact with explicit asserted flag
+    /// Create a fact with explicit asserted flag and default valid time.
     pub fn with_asserted(
         entity: EntityId,
         attribute: Attribute,
@@ -194,6 +239,9 @@ impl Fact {
             attribute,
             value,
             tx_id,
+            tx_count: 0,
+            valid_from: tx_id as i64,
+            valid_to: VALID_TIME_FOREVER,
             asserted,
         }
     }
@@ -206,6 +254,24 @@ impl Fact {
     /// Check if this is a retraction
     pub fn is_retracted(&self) -> bool {
         !self.asserted
+    }
+}
+
+/// Options for controlling valid time on a transact/retract call.
+///
+/// When `valid_from` is `None`, defaults to the transaction timestamp.
+/// When `valid_to` is `None`, defaults to `VALID_TIME_FOREVER` (open-ended).
+#[derive(Debug, Clone, Default)]
+pub struct TransactOptions {
+    /// Override the valid-time start (millis since epoch). `None` = use tx timestamp.
+    pub valid_from: Option<i64>,
+    /// Override the valid-time end (millis since epoch). `None` = open-ended (FOREVER).
+    pub valid_to: Option<i64>,
+}
+
+impl TransactOptions {
+    pub fn new(valid_from: Option<i64>, valid_to: Option<i64>) -> Self {
+        TransactOptions { valid_from, valid_to }
     }
 }
 
@@ -374,6 +440,45 @@ mod tests {
         );
 
         assert_ne!(fact1, fact3);
+
+        // Different tx_count = different fact
+        let fact4 = Fact::with_valid_time(
+            entity,
+            ":person/name".to_string(),
+            Value::String("Alice".to_string()),
+            1,
+            99, // tx_count differs from fact1 (which has tx_count=0)
+            1,
+            VALID_TIME_FOREVER,
+        );
+
+        assert_ne!(fact1, fact4);
+
+        // Different valid_from = different fact
+        let fact5 = Fact::with_valid_time(
+            entity,
+            ":person/name".to_string(),
+            Value::String("Alice".to_string()),
+            1,
+            0,
+            9999, // valid_from differs from fact1 (which has valid_from=tx_id=1)
+            VALID_TIME_FOREVER,
+        );
+
+        assert_ne!(fact1, fact5);
+
+        // Different valid_to = different fact
+        let fact6 = Fact::with_valid_time(
+            entity,
+            ":person/name".to_string(),
+            Value::String("Alice".to_string()),
+            1,
+            0,
+            1,
+            12345, // valid_to differs from fact1 (which has valid_to=VALID_TIME_FOREVER)
+        );
+
+        assert_ne!(fact1, fact6);
     }
 
     #[test]
@@ -394,5 +499,49 @@ mod tests {
             let deserialized: Value = serde_json::from_str(&serialized).unwrap();
             assert_eq!(value, deserialized);
         }
+    }
+
+    #[test]
+    fn test_fact_has_valid_time_fields() {
+        let entity = Uuid::new_v4();
+        let fact = Fact::new(
+            entity,
+            ":person/name".to_string(),
+            Value::String("Alice".to_string()),
+            1000,
+        );
+        // Defaults: valid_from = tx_id as i64, valid_to = FOREVER, tx_count = 0
+        assert_eq!(fact.valid_from, 1000_i64);
+        assert_eq!(fact.valid_to, VALID_TIME_FOREVER);
+        assert_eq!(fact.tx_count, 0);
+    }
+
+    #[test]
+    fn test_fact_with_explicit_valid_time() {
+        let entity = Uuid::new_v4();
+        let fact = Fact::with_valid_time(
+            entity,
+            ":employment/status".to_string(),
+            Value::Keyword(":active".to_string()),
+            1000,
+            1,
+            1672531200000_i64, // 2023-01-01
+            1685577600000_i64, // 2023-06-01
+        );
+        assert_eq!(fact.valid_from, 1672531200000_i64);
+        assert_eq!(fact.valid_to, 1685577600000_i64);
+        assert_eq!(fact.tx_count, 1);
+    }
+
+    #[test]
+    fn test_valid_time_forever_constant() {
+        assert_eq!(VALID_TIME_FOREVER, i64::MAX);
+    }
+
+    #[test]
+    fn test_transact_options_defaults() {
+        let opts = TransactOptions::default();
+        assert!(opts.valid_from.is_none());
+        assert!(opts.valid_to.is_none());
     }
 }
