@@ -178,6 +178,10 @@ pub struct DatalogQuery {
     pub find: Vec<String>,
     /// Where clauses: patterns and rule invocations
     pub where_clauses: Vec<WhereClause>,
+    /// Optional transaction-time snapshot (:as-of)
+    pub as_of: Option<AsOf>,
+    /// Optional valid-time filter (:valid-at)
+    pub valid_at: Option<ValidAt>,
 }
 
 impl DatalogQuery {
@@ -185,6 +189,8 @@ impl DatalogQuery {
         DatalogQuery {
             find,
             where_clauses,
+            as_of: None,
+            valid_at: None,
         }
     }
 
@@ -193,6 +199,8 @@ impl DatalogQuery {
         DatalogQuery {
             find,
             where_clauses: patterns.into_iter().map(WhereClause::Pattern).collect(),
+            as_of: None,
+            valid_at: None,
         }
     }
 
@@ -265,11 +273,19 @@ impl Rule {
 pub struct Transaction {
     /// List of fact triples to assert
     pub facts: Vec<Pattern>,
+    /// Optional transaction-level default valid_from (millis since epoch)
+    pub valid_from: Option<i64>,
+    /// Optional transaction-level default valid_to (millis since epoch)
+    pub valid_to: Option<i64>,
 }
 
 impl Transaction {
     pub fn new(facts: Vec<Pattern>) -> Self {
-        Transaction { facts }
+        Transaction {
+            facts,
+            valid_from: None,
+            valid_to: None,
+        }
     }
 }
 
@@ -414,5 +430,40 @@ mod tests {
         ]);
 
         assert_eq!(tx.facts.len(), 2);
+    }
+
+    #[test]
+    fn test_datalog_query_with_temporal_fields() {
+        let query = DatalogQuery::new(
+            vec!["?name".to_string()],
+            vec![WhereClause::Pattern(Pattern::new(
+                EdnValue::Symbol("?e".to_string()),
+                EdnValue::Keyword(":person/name".to_string()),
+                EdnValue::Symbol("?name".to_string()),
+            ))],
+        );
+
+        assert!(query.as_of.is_none());
+        assert!(query.valid_at.is_none());
+
+        let query_with_time = DatalogQuery {
+            as_of: Some(AsOf::Counter(5)),
+            valid_at: Some(ValidAt::AnyValidTime),
+            ..query
+        };
+
+        assert!(matches!(query_with_time.as_of, Some(AsOf::Counter(5))));
+        assert!(matches!(query_with_time.valid_at, Some(ValidAt::AnyValidTime)));
+    }
+
+    #[test]
+    fn test_transaction_with_valid_time() {
+        let tx = Transaction {
+            facts: vec![],
+            valid_from: Some(1672531200000_i64),
+            valid_to: None,
+        };
+        assert_eq!(tx.valid_from, Some(1672531200000_i64));
+        assert!(tx.valid_to.is_none());
     }
 }
