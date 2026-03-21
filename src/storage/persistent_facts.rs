@@ -471,7 +471,7 @@ mod tests {
     }
 
     #[test]
-    fn test_save_writes_v3_header() {
+    fn test_save_writes_v4_header() {
         use crate::storage::FORMAT_VERSION;
 
         let backend = MemoryBackend::new();
@@ -487,7 +487,7 @@ mod tests {
         let backend = pfs.into_backend();
         let header_page = backend.read_page(0).unwrap();
         let header = crate::storage::FileHeader::from_bytes(&header_page).unwrap();
-        assert_eq!(header.version, FORMAT_VERSION);  // must be 3
+        assert_eq!(header.version, FORMAT_VERSION);  // must be 4
         assert_eq!(header.last_checkpointed_tx_count, 1); // one transact call
     }
 
