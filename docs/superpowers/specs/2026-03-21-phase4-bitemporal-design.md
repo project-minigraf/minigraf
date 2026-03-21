@@ -75,7 +75,8 @@ On open, if file format version == 1:
 3. Assign `tx_count` sequentially, **grouping by `tx_id`**: all facts sharing the same `tx_id` receive the same `tx_count` value (preserving the batch-atomicity invariant). Each unique `tx_id` increments the counter by 1.
 4. Set `valid_from = tx_id as i64`, `valid_to = VALID_TIME_FOREVER`
 5. Rewrite all facts in new format using `load_fact()`
-6. Update header to version 2 and save
+6. Set `tx_counter` to the highest `tx_count` assigned in step 3, so subsequent transactions start from `N+1` and do not collide with migrated facts
+7. Update header to version 2 and save
 
 ```rust
 // Used only during migration, not exported
@@ -269,6 +270,7 @@ impl TransactOptions {
 ### `PersistentFactStorage`
 
 - Load path updated to use `load_fact()` instead of `transact()`/`retract()`
+- After all facts are loaded (v2 path), set `tx_counter` to `max(tx_count)` across all loaded facts, so new transactions start from `max+1` and do not collide with stored facts
 - Migration logic added as `migrate_v1_to_v2()` called during `open()` when version == 1
 
 ---
