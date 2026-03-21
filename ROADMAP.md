@@ -4,8 +4,6 @@
 
 **Philosophy**: "SQLite for bi-temporal graph databases" - Be boring, be reliable, be embeddable.
 
-**Strategic Pivot** (January 2026): After completing Phase 2, we pivoted from GQL (property graph) to Datalog (EAV) for better temporal semantics, simpler implementation, and faster time-to-production.
-
 ---
 
 ## Phase 1: Property Graph PoC ✅ COMPLETE
@@ -17,14 +15,12 @@
 **What Was Built**:
 - ✅ Property graph model (nodes, edges, properties)
 - ✅ In-memory storage engine
-- ✅ GQL-inspired query parser
+- ✅ Query parser
 - ✅ Query executor
 - ✅ Interactive REPL console
 - ✅ Basic test coverage
 
 **Deliverable**: Working in-memory graph database with REPL
-
-**Learnings**: Property graphs work well, but GQL spec is too large. Need simpler query language.
 
 ---
 
@@ -49,9 +45,7 @@
 
 **Philosophy Alignment**: ✅ Single-file, self-contained, embedded-first
 
-**Archive**: GQL implementation preserved at `archive/gql-phase-2` branch
-
-**Learnings**: Storage layer is solid. Pivot to Datalog for better temporal support.
+**Learnings**: Storage layer is solid. Datalog chosen for better temporal support.
 
 ---
 
@@ -510,7 +504,6 @@ tx.commit()?;  // or tx.rollback()?
 
 ### v0.1.0 - ✅ Phase 1 Complete (PoC)
 - In-memory property graph
-- GQL-inspired queries
 - REPL console
 
 ### v0.2.0 - ✅ Phase 2 Complete (Embeddable)
@@ -518,8 +511,6 @@ tx.commit()?;  // or tx.rollback()?
 - Embedded database API
 - Cross-platform file format
 - Auto-save
-
-**GQL Archive**: `archive/gql-phase-2` branch, `gql-phase-2-complete` tag
 
 ### v0.3.0 - ✅ Phase 3 Complete (Datalog Core)
 - ✅ EAV data model
@@ -611,10 +602,6 @@ When evaluating features, ask:
 
 **Note**: This is a hobby project. Timeline is flexible but realistic.
 
-**Comparison**:
-- **GQL path**: 24-30 months to v1.0 (catching up to GraphLite)
-- **Datalog path**: 12-15 months to v1.0 (proven patterns from Datomic/XTDB)
-
 ---
 
 ## Current Focus
@@ -637,7 +624,7 @@ When evaluating features, ask:
 4. Benchmark suite (insert throughput, query latency)
 
 **Key Decisions Made**:
-- ✅ Pivot to Datalog (simpler, better for temporal)
+- ✅ Datalog query language (simpler, better for temporal)
 - ✅ Bi-temporal as first-class feature (not afterthought)
 - ✅ Keep single-file philosophy
 - ✅ Recursive rules with semi-naive evaluation
@@ -647,29 +634,6 @@ When evaluating features, ask:
 See [GitHub Issues](https://github.com/adityamukho/minigraf/issues) for specific tasks.
 
 ---
-
-## Why This Roadmap is Better
-
-**Compared to GQL roadmap:**
-
-1. **Faster**: 12-15 months vs. 24-30 months
-2. **Simpler**: Proven Datalog patterns vs. novel GQL implementation
-3. **More unique**: Single-file bi-temporal Datalog (no competitor)
-4. **Better fit**: Temporal semantics natural in Datalog
-5. **More reliable**: 40+ years of Datalog research vs. new GQL spec
-
-**Trade-offs accepted:**
-- ❌ Lose familiarity of SQL-like syntax
-- ❌ Smaller developer audience (fewer know Datalog)
-- ✅ Gain simplicity and power of logic programming
-- ✅ Gain natural temporal queries
-- ✅ Gain recursive rules without pain
-
-**Market positioning:**
-- **GQL space**: GraphLite won (full spec, mature, ACID)
-- **Datalog space**: Gap for single-file embedded bi-temporal DB
-
-We're not competing with GraphLite anymore. We're creating a new category.
 
 ---
 

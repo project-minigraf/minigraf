@@ -6,13 +6,12 @@ Minigraf aims to be **the SQLite of bi-temporal graph databases** - a small, fas
 
 ## Why Datalog?
 
-**Strategic Decision** (January 2026): After completing Phase 2 with a GQL-inspired implementation, we pivoted to Datalog. Here's why:
+Minigraf uses Datalog as its query language. Here's why it's the right choice:
 
 ### 1. Better Philosophy Alignment
 
 **Datalog is simpler** → Aligns with "do less, do it perfectly":
 - Datalog spec: ~50 pages of core concepts
-- GQL spec: 600+ pages (ISO/IEC 39075:2024)
 - Smaller surface area = fewer bugs, faster to production
 
 **Datalog is proven** → 40+ years of production use (Datomic since 2012, XTDB, LogicBlox)
@@ -26,8 +25,7 @@ Minigraf aims to be **the SQLite of bi-temporal graph databases** - a small, fas
 - Temporal queries use simple predicates: `[(<= ?valid-from ?query-time)]`
 - No special temporal syntax needed - it's just data
 
-**With GQL**: Bi-temporal would be 12+ months of novel implementation (unclear semantics)
-**With Datalog**: Bi-temporal is 3-4 months of proven patterns (Datomic/XTDB model)
+Bi-temporal is 3-4 months of proven patterns (Datomic/XTDB model).
 
 ### 3. Graph Traversal is MORE Powerful
 
@@ -41,18 +39,16 @@ Minigraf aims to be **the SQLite of bi-temporal graph databases** - a small, fas
  (reachable ?intermediate ?to)]
 ```
 
-This is cleaner and more powerful than GQL's path patterns. Transitive closure is native, not bolted on.
+Transitive closure is native, not bolted on.
 
 ### 4. Faster Path to Production
 
-**GQL roadmap**: 24-30 months to production (catch up to GraphLite)
 **Datalog roadmap**: 12-15 months to production (proven implementation patterns)
 
 We can ship a useful, reliable database faster with Datalog.
 
 ### 5. Unique Market Position
 
-**GQL space**: GraphLite already won (full spec, ACID, mature)
 **Datalog space**: Gap exists for single-file embedded bi-temporal DB
 
 Minigraf = SQLite + Datomic + single file (no one else offers this)
@@ -430,7 +426,6 @@ The `.graph` file format must be:
 
 **Phase 2**: ✅ Embeddability (COMPLETE)
 - Single-file storage, persistent graph database, embedded API
-- GQL-inspired PoC (archived at `archive/gql-phase-2`)
 
 **Phase 3**: ✅ Datalog Core (COMPLETE)
 - EAV data model, basic facts and queries, recursive rules, semi-naive evaluation
@@ -439,7 +434,7 @@ The `.graph` file format must be:
 - Transaction time (`tx_id`, `tx_count`) + valid time (`valid_from`, `valid_to`)
 - `:as-of` and `:valid-at` time travel queries, file format v2
 
-**Phase 5**: 🎯 ACID + WAL (2-3 months)
+**Phase 5**: ✅ ACID + WAL (COMPLETE)
 - Write-ahead logging, transactions, crash recovery
 
 **Phase 6**: 🎯 Performance (2-3 months)
@@ -451,7 +446,7 @@ The `.graph` file format must be:
 **Phase 8+**: 🎯 Long-term maintenance
 - Bug fixes, security patches, conservative improvements
 
-**v1.0.0**: 12-15 months (vs. 24-30 months with GQL)
+**v1.0.0**: 12-15 months
 
 See ROADMAP.md for detailed feature breakdown.
 ## When to Say "No"

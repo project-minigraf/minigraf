@@ -15,14 +15,6 @@ Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries**
 - 🎯 Phase 6: Performance (indexes, query optimization) - **NEXT**
 - 🎯 v1.0.0: 9-12 months
 
-**Important Strategic Pivot** (January 2026): After completing Phase 2 with a GQL-inspired implementation, we pivoted to Datalog for:
-1. Simpler implementation (proven patterns vs. novel GQL spec)
-2. Better temporal semantics (bi-temporal is natural in Datalog)
-3. Faster time-to-production (12-15 months vs. 24-30 months)
-4. Unique market positioning (single-file bi-temporal Datalog doesn't exist)
-
-**GQL Archive**: Previous GQL implementation preserved at `archive/gql-phase-2` branch and `gql-phase-2-complete` tag.
-
 ## Core Philosophy - CRITICAL
 
 **Before implementing ANY feature or change, you MUST assess it against the design philosophy in PHILOSOPHY.md.**
@@ -41,12 +33,12 @@ Minigraf follows the "SQLite for bi-temporal graph databases" philosophy:
 
 ### Why Datalog?
 
-**Critical Context**: We chose Datalog over GQL because:
-1. **Simpler** - 50 pages vs. 600-page spec
+Datalog is the right choice for Minigraf:
+1. **Simpler** - ~50 pages of core concepts
 2. **Proven** - 40+ years, Datomic/XTDB production use
 3. **Better for temporal** - Time is just another dimension
 4. **Recursive rules** - First-class graph traversal
-5. **Faster to production** - 12-15 months vs. 24-30 months
+5. **Faster to production** - 12-15 months
 
 ### Philosophy Compliance Check
 
@@ -300,13 +292,6 @@ WAL section (appended after data pages):
         :where [:alice :employment/status ?status]])
 ```
 
-**Archived: GQL-inspired syntax (Phase 1-2)** - see `archive/gql-phase-2` branch:
-```gql
-CREATE NODE (:Person) {name: "Alice", age: 30}
-CREATE EDGE (id1)-[KNOWS]->(id2) {since: 2020}
-MATCH (:Person) WHERE name = "Alice"
-```
-
 ### Error Handling
 
 - Parse errors: Descriptive messages, REPL continues
@@ -556,7 +541,7 @@ This is a hobby project with a decades-long vision. When contributing:
 
 ## Important Reminders
 
-1. **We pivoted to Datalog** - Don't implement GQL features
+1. **Datalog is the query language** - No other query language
 2. **Bi-temporal is first-class** - Not an afterthought
 3. **Single file is sacred** - Never break this
 4. **Simplicity over features** - Do less, do it perfectly
