@@ -73,7 +73,7 @@ pub struct FileHeader {
     pub node_count: u64,
 
     /// Tx count of the last WAL checkpoint (0 = never checkpointed)
-    pub last_checkpointed_tx_count: u64,  // was edge_count
+    pub last_checkpointed_tx_count: u64,
 
     /// Reserved for future use (padding to 64 bytes)
     pub reserved: [u8; 32],
