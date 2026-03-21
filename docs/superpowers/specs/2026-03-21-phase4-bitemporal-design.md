@@ -56,6 +56,8 @@ pub const VALID_TIME_FOREVER: i64 = i64::MAX;
 
 `FactStorage` gains a `tx_counter: Arc<AtomicU64>`, starting at 0 and incrementing by 1 on each `transact()` or `retract()` call. All facts in a single batch share the same `tx_count`.
 
+**Note on contention**: Under heavy concurrent load, a single `AtomicU64` can become a hot cache-line bottleneck as threads compete for exclusive ownership. This is not a concern in Phase 4 because `FactStorage` already serializes all writes through `Arc<RwLock<Vec<Fact>>>` — the write lock is the true serialization point and no two concurrent writes can be in flight simultaneously. If Phase 5 introduces finer-grained locking (e.g., per-entity locks) that enables true concurrent writes, the `tx_counter` approach should be revisited — options include a per-thread counter with a merge step, or a lock-free sequence based on `tx_id` (wall-clock) alone.
+
 ### Role of `asserted`
 
 `asserted=false` (retraction) and `valid_to` serve different purposes:
