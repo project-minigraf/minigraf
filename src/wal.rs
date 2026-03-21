@@ -335,6 +335,32 @@ mod tests {
     }
 
     #[test]
+    fn test_wal_reopen_and_append() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.wal");
+
+        let alice = Uuid::new_v4();
+        let bob = Uuid::new_v4();
+
+        // First open: create WAL and write entry with tx_count=1
+        let mut writer = WalWriter::open_or_create(&path).unwrap();
+        writer.append_entry(1, &[make_fact(alice, ":name", Value::String("Alice".to_string()), 1)]).unwrap();
+        drop(writer);
+
+        // Second open: exercises the fallback branch (file already exists)
+        let mut writer = WalWriter::open_or_create(&path).unwrap();
+        writer.append_entry(2, &[make_fact(bob, ":name", Value::String("Bob".to_string()), 2)]).unwrap();
+        drop(writer);
+
+        // Read back and verify both entries are present with correct tx_count values
+        let mut reader = WalReader::open(&path).unwrap();
+        let entries = reader.read_entries().unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].tx_count, 1);
+        assert_eq!(entries[1].tx_count, 2);
+    }
+
+    #[test]
     fn test_wal_bad_magic_rejected() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("bad.wal");
