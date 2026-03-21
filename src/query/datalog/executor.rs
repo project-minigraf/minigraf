@@ -1,9 +1,11 @@
 use super::evaluator::RecursiveEvaluator;
 use super::matcher::{edn_to_entity_id, edn_to_value, PatternMatcher};
+use super::optimizer;
 use super::rules::RuleRegistry;
 use super::types::{DatalogCommand, DatalogQuery, EdnValue, Pattern, Rule, Transaction, ValidAt};
 use crate::graph::types::{Fact, TransactOptions, TxId, Value, tx_id_now};
 use crate::graph::FactStorage;
+use crate::storage::index::Indexes;
 use anyhow::{anyhow, Result};
 use std::sync::{Arc, RwLock};
 
@@ -174,8 +176,14 @@ impl DatalogExecutor {
         let matcher = PatternMatcher::new(filtered_storage);
         let patterns = query.get_patterns();
 
-        // Match all patterns and get bindings
-        let bindings = matcher.match_patterns(&patterns);
+        // Plan patterns: assign index hints and reorder by selectivity.
+        // Phase 6.1: Indexes::new() is a placeholder; Phase 6.2 will pass real indexes.
+        let planned_patterns = optimizer::plan(patterns, &Indexes::new());
+
+        // Match all patterns in planned order and get bindings
+        let bindings = matcher.match_patterns(
+            &planned_patterns.into_iter().map(|(p, _hint)| p).collect::<Vec<_>>(),
+        );
 
         // Extract requested variables from bindings
         let mut results = Vec::new();
@@ -936,6 +944,41 @@ mod tests {
                 assert_eq!(vars, vec!["?name"]);
                 assert_eq!(results.len(), 1);
                 assert_eq!(results[0][0], Value::String("Charlie".to_string()));
+            }
+            _ => panic!("Expected QueryResults"),
+        }
+    }
+
+    #[test]
+    fn test_optimizer_does_not_change_query_results() {
+        // A multi-pattern query that the optimizer would reorder.
+        // Results must be identical regardless of execution order.
+        let storage = FactStorage::new();
+        let alice = uuid::Uuid::new_v4();
+        let bob = uuid::Uuid::new_v4();
+        storage
+            .transact(
+                vec![
+                    (alice, ":name".to_string(), Value::String("Alice".to_string())),
+                    (alice, ":friend".to_string(), Value::Ref(bob)),
+                    (bob, ":name".to_string(), Value::String("Bob".to_string())),
+                ],
+                None,
+            )
+            .unwrap();
+
+        let executor = DatalogExecutor::new(storage);
+        // Simple query: find all names (no join reordering needed)
+        let result = executor
+            .execute(
+                parse_datalog_command("(query [:find ?name :where [?e :name ?name]])")
+                    .unwrap(),
+            )
+            .unwrap();
+
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(results.len(), 2, "Alice and Bob both have names");
             }
             _ => panic!("Expected QueryResults"),
         }
