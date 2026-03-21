@@ -200,7 +200,7 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
         // trivially dropped (FactStorage is heap-allocated, bool is Copy).
         let mut md = std::mem::ManuallyDrop::new(self);
         // SAFETY: `md` will not be dropped, so reading `backend` is safe.
-        unsafe { std::ptr::read(&mut md.backend) }
+        unsafe { std::ptr::read(&md.backend) }
     }
 
     /// Save all facts from memory to the backend.
