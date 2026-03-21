@@ -6,6 +6,7 @@
 ///
 /// Inspired by SQLite's VFS (Virtual File System) architecture.
 pub mod backend;
+pub mod btree;
 pub mod index;
 pub mod persistent_facts;
 

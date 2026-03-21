@@ -6,6 +6,7 @@
 //! identifies the record slot within a packed page.
 
 use crate::graph::types::{Attribute, EntityId, Fact, Value};
+use serde::{Deserialize, Serialize};
 
 // ─── FactRef ────────────────────────────────────────────────────────────────
 
@@ -13,7 +14,7 @@ use crate::graph::types::{Attribute, EntityId, Fact, Value};
 ///
 /// `slot_index` is always `0` in Phase 6.1 (one fact per page).
 /// In Phase 6.2 it identifies the record within a packed page.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FactRef {
     pub page_id: u64,
     pub slot_index: u16,
@@ -84,7 +85,7 @@ pub fn encode_value(v: &Value) -> Vec<u8> {
 // ─── Index Key Types ─────────────────────────────────────────────────────────
 
 /// EAVT: sort by (Entity, Attribute, ValidFrom, ValidTo, TxCount)
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct EavtKey {
     pub entity: EntityId,
     pub attribute: Attribute,
@@ -94,7 +95,7 @@ pub struct EavtKey {
 }
 
 /// AEVT: sort by (Attribute, Entity, ValidFrom, ValidTo, TxCount)
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct AevtKey {
     pub attribute: Attribute,
     pub entity: EntityId,
@@ -106,7 +107,7 @@ pub struct AevtKey {
 /// AVET: sort by (Attribute, ValueBytes, ValidFrom, ValidTo, Entity, TxCount)
 ///
 /// `value_bytes` is the canonical encoding from `encode_value`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct AvetKey {
     pub attribute: Attribute,
     pub value_bytes: Vec<u8>,
@@ -119,7 +120,7 @@ pub struct AvetKey {
 /// VAET: sort by (RefTarget, Attribute, ValidFrom, ValidTo, SourceEntity, TxCount)
 ///
 /// Only facts with `Value::Ref` are indexed here.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct VaetKey {
     pub ref_target: EntityId,
     pub attribute: Attribute,
