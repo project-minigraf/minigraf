@@ -23,7 +23,8 @@ pub(crate) fn compute_index_checksum(facts: &[Fact]) -> u32 {
     });
     let mut hasher = Hasher::new();
     for fact in sorted {
-        let bytes = postcard::to_allocvec(fact).unwrap_or_default();
+        let bytes = postcard::to_allocvec(fact)
+            .expect("BUG: failed to serialize Fact for index checksum; this should never happen");
         hasher.update(&bytes);
     }
     hasher.finalize()

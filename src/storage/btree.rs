@@ -35,9 +35,11 @@ use crate::storage::{StorageBackend, PAGE_SIZE};
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-/// Maximum entries per leaf page (used in tests to force multi-page paths).
+/// Maximum entries per leaf page (reserved for Phase 6.2 true B+tree layout).
+#[allow(dead_code)]
 pub const LEAF_CAPACITY: usize = 50;
-/// Maximum children per internal node (unused in blob strategy, kept for API compat).
+/// Maximum children per internal page (reserved for Phase 6.2 true B+tree layout).
+#[allow(dead_code)]
 pub const INTERNAL_CAPACITY: usize = 50;
 
 /// Page type byte: index data page.
@@ -57,6 +59,12 @@ fn write_blob(
     backend: &mut dyn StorageBackend,
     start_page_id: u64,
 ) -> Result<u64> {
+    if blob.len() > u32::MAX as usize {
+        anyhow::bail!(
+            "index blob too large to serialize: {} bytes (max {})",
+            blob.len(), u32::MAX
+        );
+    }
     let total_len = blob.len() as u32;
     let num_pages = if blob.is_empty() {
         1 // always write at least one page
