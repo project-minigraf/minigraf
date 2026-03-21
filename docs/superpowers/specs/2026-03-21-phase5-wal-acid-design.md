@@ -103,9 +103,14 @@ tx.commit()?;                      // single WAL entry for entire batch, fsync
 
 The write lock is held for the lifetime of `WriteTransaction`. This enforces serializable isolation — one writer at a time; readers always see committed in-memory state.
 
+**`db.execute()` vs `tx.execute()`**: `db.execute()` always runs as a self-contained implicit transaction (acquires and releases its own write lock). `tx.execute()` participates in the open explicit transaction using the already-held write lock. These are the only two write paths; there are no nested sub-transactions.
+
+- `db.execute()` called from a **different thread** while a `WriteTransaction` is active: blocks on the write lock until the transaction commits or rolls back. Correct behavior.
+- `db.execute()` called from the **same thread** that holds a `WriteTransaction`: detected via a `thread_local!` boolean flag set by `begin_write()` and cleared by `commit()`/`rollback()`/`Drop`. Returns `Err("a WriteTransaction is already in progress on this thread; use tx.execute() instead")` immediately, without attempting to acquire the lock. Prevents deadlock and gives a clear error.
+
 **Queries inside `WriteTransaction::execute()`** see committed state plus all facts buffered in the current transaction (read-your-own-writes). The in-transaction `FactStorage` snapshot is extended with the buffered facts for query purposes only; buffered facts are not committed to the main `FactStorage` until `commit()`.
 
-**Failed `commit()`**: If writing or fsyncing the WAL entry fails, all buffered facts are rolled back from `FactStorage` (as if `rollback()` had been called), the write lock is released, and the error is returned. After a failed `commit()`, the database is in the same state as before `begin_write()` was called.
+**Failed `commit()`**: If writing or fsyncing the WAL entry fails, all buffered facts are rolled back from `FactStorage` (as if `rollback()` had been called), the thread-local flag is cleared, the write lock is released, and the error is returned. After a failed `commit()`, the database is in the same state as before `begin_write()` was called.
 
 ---
 
@@ -258,6 +263,8 @@ All other files are untouched: `StorageBackend`, `FactStorage`, and the Datalog 
 - `open_with_options()`: custom threshold respected.
 - `WriteTransaction::execute()` with query: sees committed + buffered facts.
 - Failed `commit()`: in-memory state unchanged after failure.
+- Same-thread reentrant `db.execute()` while `WriteTransaction` active: returns clear error, no deadlock.
+- Thread-local flag cleared on commit, rollback, and drop.
 
 ### Integration tests (`tests/wal_test.rs`) — new file
 - **WAL recovery**: write facts, skip checkpoint, reopen → facts present.
