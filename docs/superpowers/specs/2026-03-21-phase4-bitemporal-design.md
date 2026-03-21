@@ -186,7 +186,7 @@ Temporal filtering happens in the executor **before** pattern matching. The exec
 | `:valid-at` value | Filter |
 |---|---|
 | `Timestamp(t)` | include facts where `valid_from <= t < valid_to` |
-| `AllTimes` | no valid time filter |
+| `AnyValidTime` | no valid time filter |
 | absent (default) | include facts where `valid_from <= now < valid_to` |
 
 **Current time source**: the executor uses `tx_id_now() as i64` (from `graph::types`) as the reference timestamp for the "no `:valid-at` = currently valid" default filter. No second time source is introduced.
@@ -212,7 +212,7 @@ pub enum AsOf {
 
 pub enum ValidAt {
     Timestamp(i64),  // millis since epoch
-    AllTimes,
+    AnyValidTime,
 }
 ```
 
