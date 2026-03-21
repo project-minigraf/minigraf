@@ -126,22 +126,48 @@ The four `*_root_page` fields in the header point to the root of each B+tree; th
 
 ### Sync Check on Load
 
-Performed before the database is made available to the caller. The checksum covers the **logical fact set** (a CRC32 over all fact byte representations after deserialisation and WAL replay), not raw page bytes. This ensures that after WAL replay the in-memory fact set is consistent and the checksum comparison works correctly — WAL replay advances the in-memory state ahead of the data pages, so checking raw pages would always mismatch after a crash.
+The sync check mechanism differs between 6.1 and 6.2 because 6.2 eliminates load-all. Both variants are performed before the database is made available to the caller.
 
-1. Replay WAL into `FactStorage` (existing Phase 5 logic, unchanged)
-2. Compute CRC32 over all in-memory facts (serialised with postcard, sorted by `(tx_count, entity_uuid_bytes, attribute_string)` — a total order that is stable across save/load/replay cycles, including when multiple facts share the same `tx_count`)
-3. Read `index_checksum` from the file header
-4. **Mismatch:** discard the index section, rebuild all four indexes from in-memory facts, re-persist (write new B+tree pages + updated header checksum), then hand DB to caller
-5. **Match:** deserialise indexes from B+tree pages directly (fast path)
+**6.1 — checksum over in-memory facts (load-all still applies):**
 
-**Post-crash recovery:** after WAL replay the in-memory fact set is ahead of the on-disk data pages, so the logical-fact checksum will mismatch the stored checksum and a full index rebuild is triggered. This is correct and safe, though it means the fast path is not taken after a crash. This is an accepted trade-off: correctness over startup speed in the recovery case.
+1. Load all facts into `FactStorage` (existing load-all path)
+2. Replay WAL into `FactStorage` (existing Phase 5 logic, unchanged)
+3. Compute CRC32 over all in-memory facts (serialised with postcard, sorted by `(tx_count, entity_uuid_bytes, attribute_string)` — a total order stable across save/load/replay cycles, including when multiple facts share the same `tx_count`)
+4. Read `index_checksum` from the file header
+5. **Mismatch:** discard the index section, rebuild all four indexes from in-memory facts, re-persist (write new B+tree pages + updated header checksum), then hand DB to caller
+6. **Match:** deserialise indexes from B+tree pages directly (fast path)
+
+**Post-crash recovery (6.1):** after WAL replay the in-memory fact set is ahead of the on-disk data pages, so the checksum will mismatch and a full rebuild is triggered. This is correct and accepted.
+
+**6.2 — checksum over raw fact page bytes (on-demand loading, O(1) memory):**
+
+In 6.2, not all facts are loaded at startup, so the in-memory checksum approach no longer applies. The checksum source changes to **raw fact data page bytes**, computed by streaming sequentially through all fact pages — O(1) memory, O(pages) sequential reads. Page bytes are already deterministic; no sort order is needed.
+
+WAL replay in 6.2 updates indexes **incrementally** (one fact at a time as each WAL entry is deserialised) rather than triggering a bulk rebuild, since a bulk rebuild would require loading all facts.
+
+Startup sequence in 6.2:
+1. Stream through all committed fact data pages, computing CRC32 over raw page bytes (O(1) memory)
+2. Read `index_checksum` from the file header
+3. **Mismatch:** rebuild all four indexes by streaming fact pages sequentially (O(1) memory, O(pages) reads); re-persist indexes and updated checksum; then proceed to step 4
+4. **Match:** load indexes from B+tree pages directly (fast path)
+5. Replay WAL: for each WAL entry, deserialise the fact and update all four in-memory indexes incrementally; do not recompute the page-based checksum (WAL facts are not yet on committed pages)
+6. Hand DB to caller
+
+**`index_checksum` semantics across versions:**
+- v4 (6.1): CRC32 over all in-memory facts serialised in `(tx_count, entity_uuid_bytes, attribute_string)` order
+- v5 (6.2): CRC32 over raw committed fact data page bytes, streamed sequentially
+
+The checksum field and its position in the header are unchanged; only what it covers changes. The migration from v4 to v5 recomputes and stores the checksum in the new v5 semantics.
+
+**Post-crash recovery (6.2):** WAL-replayed facts are not yet on committed pages, so the page-based checksum covers only the pre-crash committed state. The mismatch between committed pages and the WAL-updated index is handled by step 5 (incremental WAL replay into indexes), not by the checksum check. This is correct.
 
 ### Write Maintenance
 
 When `transact()` or `retract()` adds facts:
 - All four in-memory `BTreeMap` indexes are updated immediately
 - Indexes marked dirty
-- On `save()` / `checkpoint()`: dirty indexes serialised to B+tree pages, `index_checksum` recomputed over the full in-memory fact set and written to header
+- On `save()` / `checkpoint()` in 6.1: dirty indexes serialised to B+tree pages, `index_checksum` recomputed over the full in-memory fact set and written to header
+- On `save()` / `checkpoint()` in 6.2: dirty indexes serialised to B+tree pages, `index_checksum` recomputed by streaming all committed fact pages and written to header
 
 ### Query Optimizer
 
@@ -236,7 +262,7 @@ In 6.2, `FactStorage`'s internal `Vec<Fact>` is replaced by a `PageCache` refere
 | `get_facts_by_entity()`, `get_facts_by_attribute()`, `get_facts_by_entity_attribute()` | Replaced by index-driven lookups via EAVT/AEVT |
 | `get_facts_as_of()`, `get_facts_valid_at()` | Replaced by index range scans with temporal bounds |
 | `get_current_value()` | Replaced by EAVT lookup |
-| `get_all_facts()` | Retained as a full-scan method, documented as "avoid in hot paths — use index-driven queries instead"; used internally for sync check and migration only |
+| `get_all_facts()` | Retained as a full-scan method, documented as "avoid in hot paths — use index-driven queries instead"; used internally for migration only (sync check in 6.2 streams raw pages, not in-memory facts) |
 | `get_asserted_facts()` | Deprecated; callers use index-driven queries with implicit assertion filter |
 
 The `get_all_facts()` method materialises the full fact set and is explicitly marked as a non-hot-path operation in rustdoc.
@@ -367,4 +393,7 @@ All 212 existing query, storage, WAL, and concurrency tests must pass unchanged 
 | PageCache concurrency | Interior mutability (`RwLock`), `&self` interface | Preserves Phase 5 concurrent-reader guarantee |
 | Serialization | Keep postcard; evaluate rkyv only if benchmarks justify | YAGNI, postcard is proven |
 | File format bumps | v3→v4 (indexes, 72-byte header), v4→v5 (packed pages) | Incremental, each migration independently testable |
-| Post-crash index rebuild | Always triggered (logical checksum will mismatch) | Correct; fast path applies only to clean shutdown |
+| Index checksum (6.1) | CRC32 over in-memory facts in deterministic sort order | Load-all still applies in 6.1; sort order ensures stability |
+| Index checksum (6.2) | CRC32 over raw committed fact page bytes (streaming, O(1) memory) | On-demand loading means all-facts-in-memory is gone; page bytes are deterministic without sorting |
+| WAL replay into indexes (6.2) | Incremental (one fact at a time), not bulk rebuild | Bulk rebuild would require loading all facts; incremental replay is O(WAL entries) |
+| Post-crash index rebuild | Triggered by checksum mismatch (6.1) or handled by incremental WAL replay (6.2) | Correct in both cases; fast path applies only to clean shutdown |
