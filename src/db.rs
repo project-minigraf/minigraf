@@ -282,14 +282,14 @@ impl Minigraf {
 
     /// Execute a Datalog command as a self-contained implicit transaction.
     ///
-    /// For file-backed databases, facts are written to the WAL sidecar immediately
-    /// after being applied in memory. A successful return means the facts are in
-    /// both the in-memory store and the WAL; a crash after this call returns will
+    /// For file-backed databases, the WAL entry is written **before** facts are
+    /// applied to the in-memory store. A successful return means the facts are in
+    /// both the WAL and the in-memory store; a crash after this call returns will
     /// replay the facts on next open.
     ///
-    /// If the WAL write fails, an error is returned. The in-memory store may
-    /// contain the facts, but they will not survive a crash. The database remains
-    /// consistent for subsequent in-process operations.
+    /// If the WAL write fails, an error is returned and the in-memory store is
+    /// left unchanged. The database remains consistent for subsequent in-process
+    /// operations.
     ///
     /// Returns `Err` if called from the same thread that holds an active
     /// `WriteTransaction` (use `tx.execute()` instead).
@@ -315,18 +315,64 @@ impl Minigraf {
         if is_write {
             let mut ctx = self.inner.write_lock.lock()
                 .map_err(|_| anyhow::anyhow!("write lock is poisoned; database may be in an inconsistent state"))?;
-            let executor = DatalogExecutor::new_with_rules(
-                self.inner.fact_storage.clone(),
-                self.inner.rules.clone(),
-            );
-            let result = executor.execute(cmd)?;
-            // WAL write + optional checkpoint
-            Self::maybe_wal_write_and_checkpoint(
-                &self.inner.fact_storage,
+
+            // Handle write commands with correct WAL-first ordering:
+            // 1. Materialize facts (no storage mutation yet)
+            // 2. Allocate tx_count + tx_id and stamp facts
+            // 3. Write WAL entry FIRST — if this fails, FactStorage is unchanged
+            // 4. Apply facts to shared FactStorage
+            let (stamped, is_retract) = match &cmd {
+                DatalogCommand::Transact(tx) => {
+                    (Minigraf::materialize_transaction(tx)?, false)
+                }
+                DatalogCommand::Retract(tx) => {
+                    (Minigraf::materialize_retraction(tx)?, true)
+                }
+                _ => unreachable!("is_write guarantees Transact or Retract"),
+            };
+
+            let tx_count = self.inner.fact_storage.allocate_tx_count();
+            let tx_id = crate::graph::types::tx_id_now();
+
+            let stamped: Vec<Fact> = stamped
+                .into_iter()
+                .map(|mut f| {
+                    f.tx_id = tx_id;
+                    f.tx_count = tx_count;
+                    // Fix valid_from if it was left as the sentinel
+                    if f.asserted && f.valid_from == VALID_FROM_USE_TX_TIME {
+                        f.valid_from = tx_id as i64;
+                    }
+                    f
+                })
+                .collect();
+
+            // Write WAL BEFORE applying to shared FactStorage.
+            // If this fails, FactStorage is still unchanged — clean rollback.
+            let should_checkpoint = WriteTransaction::wal_write_stamped_batch(
                 &mut ctx,
                 &self.inner.options,
+                tx_count,
+                &stamped,
             )?;
-            Ok(result)
+
+            // WAL succeeded — now apply facts to shared FactStorage.
+            for fact in &stamped {
+                self.inner.fact_storage.load_fact(fact.clone())?;
+            }
+
+            // Trigger auto-checkpoint AFTER facts are in FactStorage so the
+            // checkpoint captures the newly written facts.
+            if should_checkpoint {
+                Minigraf::do_checkpoint(&self.inner.fact_storage, &mut ctx)?;
+            }
+
+            // Return the same QueryResult the executor would have returned.
+            if is_retract {
+                Ok(QueryResult::Retracted(tx_id))
+            } else {
+                Ok(QueryResult::Transacted(tx_id))
+            }
         } else {
             // Read-only: no lock needed
             let executor = DatalogExecutor::new_with_rules(
@@ -403,58 +449,6 @@ impl Minigraf {
                 *wal_entry_count = 0;
             }
         }
-        Ok(())
-    }
-
-    // ── WAL write + auto-checkpoint helper ───────────────────────────────────
-
-    /// Write the most recent transaction batch to the WAL sidecar and optionally
-    /// trigger an automatic checkpoint.
-    ///
-    /// Called while the write lock is held.
-    fn maybe_wal_write_and_checkpoint(
-        fact_storage: &FactStorage,
-        ctx: &mut WriteContext,
-        opts: &OpenOptions,
-    ) -> Result<()> {
-        let should_checkpoint = match ctx {
-            WriteContext::Memory => {
-                // Nothing to do for in-memory databases.
-                false
-            }
-            WriteContext::File {
-                pfs,
-                wal,
-                db_path,
-                wal_entry_count,
-            } => {
-                let tx_count = pfs.storage().current_tx_count();
-                let batch: Vec<Fact> = pfs
-                    .storage()
-                    .get_all_facts()?
-                    .into_iter()
-                    .filter(|f| f.tx_count == tx_count)
-                    .collect();
-
-                // Lazily open the WAL writer if not already open.
-                if wal.is_none() {
-                    let wal_path = Self::wal_path_for(db_path);
-                    *wal = Some(WalWriter::open_or_create(&wal_path)?);
-                }
-
-                let wal_writer = wal.as_mut().unwrap();
-                wal_writer.append_entry(tx_count, &batch)?;
-                pfs.mark_dirty();
-                *wal_entry_count += 1;
-
-                *wal_entry_count >= opts.wal_checkpoint_threshold
-            }
-        };
-
-        if should_checkpoint {
-            Minigraf::do_checkpoint(fact_storage, ctx)?;
-        }
-
         Ok(())
     }
 
@@ -638,10 +632,9 @@ impl<'a> WriteTransaction<'a> {
 
             // Write WAL entry FIRST — if this fails, no facts have been applied
             // to shared FactStorage, so the database remains in a clean state.
-            Self::wal_write_stamped_batch(
+            let should_checkpoint = Self::wal_write_stamped_batch(
                 &mut self.guard,
                 &self.inner.options,
-                &self.inner.fact_storage,
                 tx_count,
                 &stamped,
             )?;
@@ -650,6 +643,12 @@ impl<'a> WriteTransaction<'a> {
             for fact in stamped {
                 self.inner.fact_storage.load_fact(fact)?;
             }
+
+            // Trigger auto-checkpoint AFTER facts are in FactStorage so the
+            // checkpoint captures the newly written facts.
+            if should_checkpoint {
+                Minigraf::do_checkpoint(&self.inner.fact_storage, &mut self.guard)?;
+            }
         }
 
         self.committed = true;
@@ -657,20 +656,22 @@ impl<'a> WriteTransaction<'a> {
         Ok(())
     }
 
-    /// Write a pre-stamped batch of facts to the WAL (explicit-transaction path).
+    /// Write a pre-stamped batch of facts to the WAL.
     ///
-    /// Unlike `maybe_wal_write_and_checkpoint`, this method accepts an already-
-    /// computed `tx_count` and `facts` slice rather than reading them from
-    /// `FactStorage`.  It is called while the write lock is held.
+    /// Accepts an already-computed `tx_count` and `facts` slice.
+    /// Called while the write lock is held.
+    ///
+    /// Returns `true` if an auto-checkpoint should be triggered.  The caller is
+    /// responsible for applying facts to `FactStorage` **before** triggering the
+    /// checkpoint, so that the checkpoint captures the newly written facts.
     fn wal_write_stamped_batch(
         ctx: &mut WriteContext,
         opts: &OpenOptions,
-        fact_storage: &FactStorage,
         tx_count: u64,
         facts: &[Fact],
-    ) -> Result<()> {
-        let should_checkpoint = match ctx {
-            WriteContext::Memory => false,
+    ) -> Result<bool> {
+        match ctx {
+            WriteContext::Memory => Ok(false),
             WriteContext::File {
                 pfs,
                 wal,
@@ -688,15 +689,9 @@ impl<'a> WriteTransaction<'a> {
                 pfs.mark_dirty();
                 *wal_entry_count += 1;
 
-                *wal_entry_count >= opts.wal_checkpoint_threshold
+                Ok(*wal_entry_count >= opts.wal_checkpoint_threshold)
             }
-        };
-
-        if should_checkpoint {
-            Minigraf::do_checkpoint(fact_storage, ctx)?;
         }
-
-        Ok(())
     }
 
     /// Explicitly roll back the transaction. Also happens implicitly on drop.

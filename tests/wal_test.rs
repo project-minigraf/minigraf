@@ -430,7 +430,56 @@ fn test_concurrent_reads_while_writer_holds_lock() {
     // _tx drops here (implicit rollback)
 }
 
-// ── 11. V2 file upgrades to V3 on checkpoint ─────────────────────────────────
+// ── 11. Implicit execute() write survives WAL replay ─────────────────────────
+
+/// Verifies that `Minigraf::execute("(transact ...)")` writes to the WAL
+/// *before* applying facts to in-memory FactStorage, so that WAL replay on
+/// reopen returns the correct facts.
+///
+/// Test strategy:
+/// 1. Open a file-backed database with a very high checkpoint threshold.
+/// 2. Call `execute("(transact ...)")` — the implicit-transaction path.
+/// 3. `mem::forget` the database to simulate a crash (no Drop checkpoint).
+/// 4. Reopen the database (triggers WAL replay).
+/// 5. Assert the fact is present — proving the WAL was written during step 2.
+#[test]
+fn test_implicit_tx_execute_survives_replay() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("implicit_tx.graph");
+    let wal_path = wal_path_for(&db_path);
+
+    // Session 1: write via implicit execute() then crash (skip Drop)
+    {
+        let db = Minigraf::open_with_options(
+            &db_path,
+            OpenOptions {
+                wal_checkpoint_threshold: usize::MAX,
+            },
+        )
+        .unwrap();
+
+        db.execute(r#"(transact [[:alice :name "Alice"]])"#).unwrap();
+
+        // Simulate crash: skip Drop (and its checkpoint).
+        std::mem::forget(db);
+    }
+
+    // WAL must exist — no checkpoint fired.
+    assert!(wal_path.exists(), "WAL must exist after simulated crash");
+
+    // Session 2: reopen triggers WAL replay.
+    let db2 = Minigraf::open(&db_path).unwrap();
+    let n = count_results(
+        db2.execute("(query [:find ?name :where [?e :name ?name]])")
+            .unwrap(),
+    );
+    assert_eq!(
+        n, 1,
+        "Alice must be recovered via WAL replay after implicit execute() crash"
+    );
+}
+
+// ── 12. V2 file upgrades to V3 on checkpoint ─────────────────────────────────
 
 /// Create a v2-format `.graph` file manually (version field = 2, no
 /// `last_checkpointed_tx_count`), open it with `Minigraf`, write a fact,
