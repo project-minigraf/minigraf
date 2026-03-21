@@ -440,6 +440,45 @@ mod tests {
         );
 
         assert_ne!(fact1, fact3);
+
+        // Different tx_count = different fact
+        let fact4 = Fact::with_valid_time(
+            entity,
+            ":person/name".to_string(),
+            Value::String("Alice".to_string()),
+            1,
+            99, // tx_count differs from fact1 (which has tx_count=0)
+            1,
+            VALID_TIME_FOREVER,
+        );
+
+        assert_ne!(fact1, fact4);
+
+        // Different valid_from = different fact
+        let fact5 = Fact::with_valid_time(
+            entity,
+            ":person/name".to_string(),
+            Value::String("Alice".to_string()),
+            1,
+            0,
+            9999, // valid_from differs from fact1 (which has valid_from=tx_id=1)
+            VALID_TIME_FOREVER,
+        );
+
+        assert_ne!(fact1, fact5);
+
+        // Different valid_to = different fact
+        let fact6 = Fact::with_valid_time(
+            entity,
+            ":person/name".to_string(),
+            Value::String("Alice".to_string()),
+            1,
+            0,
+            1,
+            12345, // valid_to differs from fact1 (which has valid_to=VALID_TIME_FOREVER)
+        );
+
+        assert_ne!(fact1, fact6);
     }
 
     #[test]

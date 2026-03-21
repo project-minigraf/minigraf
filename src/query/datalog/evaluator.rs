@@ -288,16 +288,7 @@ impl RecursiveEvaluator {
         let attribute = format!(":{}", predicate);
 
         // Create the fact (no tx_id yet, will be added when transacted)
-        Ok(Fact {
-            entity,
-            attribute,
-            value,
-            tx_id: 0, // Will be assigned when added to storage
-            tx_count: 0,
-            valid_from: 0,
-            valid_to: crate::graph::types::VALID_TIME_FOREVER,
-            asserted: true,
-        })
+        Ok(Fact::new(entity, attribute, value, 0))
     }
 
     /// Substitute a variable with its binding, or return as-is if not a variable.
