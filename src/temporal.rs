@@ -38,14 +38,14 @@ pub fn parse_timestamp(s: &str) -> Result<i64> {
 }
 
 /// Convert milliseconds since UNIX epoch back to a UTC ISO 8601 string.
-pub fn millis_to_timestamp_string(millis: i64) -> String {
-    // from_timestamp_millis only fails for out-of-range values (far future/past).
-    // Fall back to epoch (1970-01-01T00:00:00Z) on overflow — cannot happen
-    // with any timestamp representable in a 64-bit signed integer within the
-    // chrono-supported range.
+///
+/// Returns an error if `millis` is outside chrono's supported range.
+/// Note: `i64::MAX` (VALID_TIME_FOREVER) should never be passed to this function;
+/// callers should check for the sentinel before formatting.
+pub fn millis_to_timestamp_string(millis: i64) -> Result<String> {
     let dt = DateTime::<Utc>::from_timestamp_millis(millis)
-        .unwrap_or_else(|| DateTime::<Utc>::from_timestamp_millis(0).unwrap());
-    dt.format("%Y-%m-%dT%H:%M:%SZ").to_string()
+        .ok_or_else(|| anyhow!("millisecond value {} is outside the supported datetime range", millis))?;
+    Ok(dt.format("%Y-%m-%dT%H:%M:%SZ").to_string())
 }
 
 #[cfg(test)]
@@ -81,7 +81,7 @@ mod tests {
     fn test_millis_to_timestamp_roundtrip() {
         let original = "2024-01-15T10:00:00Z";
         let millis = parse_timestamp(original).unwrap();
-        let back = millis_to_timestamp_string(millis);
+        let back = millis_to_timestamp_string(millis).unwrap();
         assert_eq!(back, original);
     }
 }
