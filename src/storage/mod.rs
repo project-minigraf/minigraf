@@ -17,7 +17,7 @@ pub const PAGE_SIZE: usize = 4096;
 pub const MAGIC_NUMBER: [u8; 4] = *b"MGRF";
 
 /// Current file format version
-pub const FORMAT_VERSION: u32 = 1;
+pub const FORMAT_VERSION: u32 = 2;
 
 /// Storage backend trait.
 ///
@@ -149,11 +149,10 @@ impl FileHeader {
         if self.magic != MAGIC_NUMBER {
             anyhow::bail!("Invalid magic number");
         }
-        if self.version != FORMAT_VERSION {
+        if self.version < 1 || self.version > FORMAT_VERSION {
             anyhow::bail!(
-                "Unsupported format version: {} (expected {})",
-                self.version,
-                FORMAT_VERSION
+                "Unsupported format version: {} (supported: 1-{})",
+                self.version, FORMAT_VERSION
             );
         }
         Ok(())
@@ -192,5 +191,37 @@ mod tests {
         let mut invalid = header;
         invalid.magic = *b"XXXX";
         assert!(invalid.validate().is_err());
+    }
+
+    #[test]
+    fn test_format_version_is_2() {
+        assert_eq!(FORMAT_VERSION, 2);
+    }
+
+    #[test]
+    fn test_validate_accepts_version_1_and_2() {
+        let mut header = FileHeader::new();
+        header.version = 1;
+        assert!(header.validate().is_ok());
+
+        header.version = 2;
+        assert!(header.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_rejects_version_0_and_3() {
+        let mut header = FileHeader::new();
+        header.version = 0;
+        assert!(header.validate().is_err());
+
+        header.version = 3;
+        assert!(header.validate().is_err());
+    }
+
+    #[test]
+    fn test_new_header_has_version_2() {
+        let header = FileHeader::new();
+        assert_eq!(header.version, FORMAT_VERSION);
+        assert_eq!(header.version, 2);
     }
 }

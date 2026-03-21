@@ -231,6 +231,8 @@ impl PatternMatcher {
             entity: self.apply_binding_to_component(&pattern.entity, bindings),
             attribute: self.apply_binding_to_component(&pattern.attribute, bindings),
             value: self.apply_binding_to_component(&pattern.value, bindings),
+            valid_from: pattern.valid_from,
+            valid_to: pattern.valid_to,
         }
     }
 
@@ -324,7 +326,7 @@ mod tests {
                     Value::String("Alice".to_string()),
                 ),
                 (alice_id, ":person/age".to_string(), Value::Integer(30)),
-            ])
+            ], None)
             .unwrap();
 
         let matcher = PatternMatcher::new(storage);
@@ -354,7 +356,7 @@ mod tests {
                 alice_id,
                 ":person/name".to_string(),
                 Value::String("Alice".to_string()),
-            )])
+            )], None)
             .unwrap();
 
         let matcher = PatternMatcher::new(storage);
@@ -387,7 +389,7 @@ mod tests {
                     Value::String("Alice".to_string()),
                 ),
                 (alice_id, ":person/age".to_string(), Value::Integer(30)),
-            ])
+            ], None)
             .unwrap();
 
         let matcher = PatternMatcher::new(storage);
@@ -425,7 +427,7 @@ mod tests {
                 alice_id,
                 ":person/name".to_string(),
                 Value::String("Alice".to_string()),
-            )])
+            )], None)
             .unwrap();
 
         let matcher = PatternMatcher::new(storage);

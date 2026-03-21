@@ -22,6 +22,8 @@ pub enum EdnValue {
     Vector(Vec<EdnValue>),
     /// List: (...)
     List(Vec<EdnValue>),
+    /// Map: {:key val ...}
+    Map(Vec<(EdnValue, EdnValue)>),
     /// Null/nil
     Nil,
 }
@@ -78,6 +80,19 @@ impl EdnValue {
             _ => None,
         }
     }
+
+    /// Check if this is a map
+    pub fn is_map(&self) -> bool {
+        matches!(self, EdnValue::Map(_))
+    }
+
+    /// Get the map contents if this is a map
+    pub fn as_map(&self) -> Option<&Vec<(EdnValue, EdnValue)>> {
+        match self {
+            EdnValue::Map(m) => Some(m),
+            _ => None,
+        }
+    }
 }
 
 /// A Datalog pattern: [Entity Attribute Value]
@@ -92,6 +107,10 @@ pub struct Pattern {
     pub entity: EdnValue,
     pub attribute: EdnValue,
     pub value: EdnValue,
+    /// Per-fact valid-time override (millis since epoch). None = use transaction-level default.
+    pub valid_from: Option<i64>,
+    /// Per-fact valid-time override (millis since epoch). None = use transaction-level default.
+    pub valid_to: Option<i64>,
 }
 
 impl Pattern {
@@ -100,10 +119,29 @@ impl Pattern {
             entity,
             attribute,
             value,
+            valid_from: None,
+            valid_to: None,
         }
     }
 
-    /// Parse a pattern from an EDN vector
+    /// Create a pattern with explicit per-fact valid-time overrides.
+    pub fn with_valid_time(
+        entity: EdnValue,
+        attribute: EdnValue,
+        value: EdnValue,
+        valid_from: Option<i64>,
+        valid_to: Option<i64>,
+    ) -> Self {
+        Pattern {
+            entity,
+            attribute,
+            value,
+            valid_from,
+            valid_to,
+        }
+    }
+
+    /// Parse a pattern from an EDN vector (exactly 3 elements, no per-fact map).
     pub fn from_edn(vector: &[EdnValue]) -> Result<Self, String> {
         if vector.len() != 3 {
             return Err(format!(
@@ -116,6 +154,8 @@ impl Pattern {
             entity: vector[0].clone(),
             attribute: vector[1].clone(),
             value: vector[2].clone(),
+            valid_from: None,
+            valid_to: None,
         })
     }
 }
@@ -163,6 +203,10 @@ pub struct DatalogQuery {
     pub find: Vec<String>,
     /// Where clauses: patterns and rule invocations
     pub where_clauses: Vec<WhereClause>,
+    /// Optional transaction-time snapshot (:as-of)
+    pub as_of: Option<AsOf>,
+    /// Optional valid-time filter (:valid-at)
+    pub valid_at: Option<ValidAt>,
 }
 
 impl DatalogQuery {
@@ -170,6 +214,8 @@ impl DatalogQuery {
         DatalogQuery {
             find,
             where_clauses,
+            as_of: None,
+            valid_at: None,
         }
     }
 
@@ -178,6 +224,8 @@ impl DatalogQuery {
         DatalogQuery {
             find,
             where_clauses: patterns.into_iter().map(WhereClause::Pattern).collect(),
+            as_of: None,
+            valid_at: None,
         }
     }
 
@@ -250,12 +298,43 @@ impl Rule {
 pub struct Transaction {
     /// List of fact triples to assert
     pub facts: Vec<Pattern>,
+    /// Optional transaction-level default valid_from (millis since epoch)
+    pub valid_from: Option<i64>,
+    /// Optional transaction-level default valid_to (millis since epoch)
+    pub valid_to: Option<i64>,
 }
 
 impl Transaction {
     pub fn new(facts: Vec<Pattern>) -> Self {
-        Transaction { facts }
+        Transaction {
+            facts,
+            valid_from: None,
+            valid_to: None,
+        }
     }
+}
+
+/// A point-in-time selector for transaction-time travel queries.
+///
+/// Used with `get_facts_as_of()` to snapshot the database at a past point.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AsOf {
+    /// Select facts whose `tx_count` is ≤ n (monotonic batch counter).
+    Counter(u64),
+    /// Select facts whose `tx_id` (wall-clock millis since epoch) is ≤ t.
+    Timestamp(i64),
+}
+
+/// A point-in-time selector for valid-time travel queries.
+///
+/// Used with `get_facts_valid_at()` to see which facts were valid at a
+/// specific moment in the real world.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ValidAt {
+    /// Return facts where `valid_from <= ts < valid_to`.
+    Timestamp(i64),
+    /// Return all facts regardless of valid time (no valid-time filter).
+    AnyValidTime,
 }
 
 /// A Datalog command (top-level form)
@@ -376,5 +455,40 @@ mod tests {
         ]);
 
         assert_eq!(tx.facts.len(), 2);
+    }
+
+    #[test]
+    fn test_datalog_query_with_temporal_fields() {
+        let query = DatalogQuery::new(
+            vec!["?name".to_string()],
+            vec![WhereClause::Pattern(Pattern::new(
+                EdnValue::Symbol("?e".to_string()),
+                EdnValue::Keyword(":person/name".to_string()),
+                EdnValue::Symbol("?name".to_string()),
+            ))],
+        );
+
+        assert!(query.as_of.is_none());
+        assert!(query.valid_at.is_none());
+
+        let query_with_time = DatalogQuery {
+            as_of: Some(AsOf::Counter(5)),
+            valid_at: Some(ValidAt::AnyValidTime),
+            ..query
+        };
+
+        assert!(matches!(query_with_time.as_of, Some(AsOf::Counter(5))));
+        assert!(matches!(query_with_time.valid_at, Some(ValidAt::AnyValidTime)));
+    }
+
+    #[test]
+    fn test_transaction_with_valid_time() {
+        let tx = Transaction {
+            facts: vec![],
+            valid_from: Some(1672531200000_i64),
+            valid_to: None,
+        };
+        assert_eq!(tx.valid_from, Some(1672531200000_i64));
+        assert!(tx.valid_to.is_none());
     }
 }

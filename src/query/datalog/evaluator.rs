@@ -95,7 +95,7 @@ impl RecursiveEvaluator {
                 fact.entity,
                 fact.attribute.clone(),
                 fact.value.clone(),
-            )])?;
+            )], None)?;
         }
 
         // Track facts we've seen (for delta computation)
@@ -142,7 +142,7 @@ impl RecursiveEvaluator {
                     fact.entity,
                     fact.attribute.clone(),
                     fact.value.clone(),
-                )])?;
+                )], None)?;
             }
         }
 
@@ -288,13 +288,7 @@ impl RecursiveEvaluator {
         let attribute = format!(":{}", predicate);
 
         // Create the fact (no tx_id yet, will be added when transacted)
-        Ok(Fact {
-            entity,
-            attribute,
-            value,
-            tx_id: 0, // Will be assigned when added to storage
-            asserted: true,
-        })
+        Ok(Fact::new(entity, attribute, value, 0))
     }
 
     /// Substitute a variable with its binding, or return as-is if not a variable.
@@ -359,7 +353,7 @@ mod tests {
             .transact(vec![
                 (a, ":connected".to_string(), Value::Ref(b)),
                 (b, ":connected".to_string(), Value::Ref(c)),
-            ])
+            ], None)
             .unwrap();
 
         storage
@@ -512,7 +506,7 @@ mod tests {
                 (n2, ":connected".to_string(), Value::Ref(n3)),
                 (n3, ":connected".to_string(), Value::Ref(n4)),
                 (n4, ":connected".to_string(), Value::Ref(n5)),
-            ])
+            ], None)
             .unwrap();
 
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
@@ -559,7 +553,7 @@ mod tests {
                 (a, ":connected".to_string(), Value::Ref(b)),
                 (b, ":connected".to_string(), Value::Ref(c)),
                 (c, ":connected".to_string(), Value::Ref(a)),
-            ])
+            ], None)
             .unwrap();
 
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
@@ -603,7 +597,7 @@ mod tests {
         let b = Uuid::new_v4();
 
         storage
-            .transact(vec![(a, ":connected".to_string(), Value::Ref(b))])
+            .transact(vec![(a, ":connected".to_string(), Value::Ref(b))], None)
             .unwrap();
 
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));

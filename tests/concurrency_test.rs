@@ -57,7 +57,7 @@ fn test_concurrent_rule_queries() {
     for i in 0..9 {
         facts.push((nodes[i], ":connected".to_string(), Value::Ref(nodes[i + 1])));
     }
-    storage.transact(facts).unwrap();
+    storage.transact(facts, None).unwrap();
 
     // Register reachable rules
     executor
@@ -117,7 +117,7 @@ fn test_concurrent_transact_and_rules() {
                     let a = Uuid::new_v4();
                     let b = Uuid::new_v4();
                     storage
-                        .transact(vec![(a, format!(":attr{}", i), Value::Ref(b))])
+                        .transact(vec![(a, format!(":attr{}", i), Value::Ref(b))], None)
                         .unwrap();
                 } else {
                     // Odd threads: register rules
@@ -161,7 +161,7 @@ fn test_concurrent_read_heavy() {
         .transact(vec![
             (a, ":connected".to_string(), Value::Ref(b)),
             (b, ":connected".to_string(), Value::Ref(c)),
-        ])
+        ], None)
         .unwrap();
 
     // Register rules
@@ -227,7 +227,7 @@ fn test_concurrent_recursive_evaluation() {
         }
     }
 
-    storage.transact(facts).unwrap();
+    storage.transact(facts, None).unwrap();
 
     // Register recursive rules
     executor
@@ -280,7 +280,7 @@ fn test_no_deadlocks_mixed_operations() {
     let a = Uuid::new_v4();
     let b = Uuid::new_v4();
     storage
-        .transact(vec![(a, ":connected".to_string(), Value::Ref(b))])
+        .transact(vec![(a, ":connected".to_string(), Value::Ref(b))], None)
         .unwrap();
 
     executor
@@ -301,7 +301,7 @@ fn test_no_deadlocks_mixed_operations() {
                         let x = Uuid::new_v4();
                         let y = Uuid::new_v4();
                         storage
-                            .transact(vec![(x, ":attr".to_string(), Value::Ref(y))])
+                            .transact(vec![(x, ":attr".to_string(), Value::Ref(y))], None)
                             .unwrap();
                     }
                     1 => {
