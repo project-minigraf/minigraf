@@ -70,7 +70,7 @@ They are independent. A fact may be valid in the real world (`valid_to = MAX`) b
 On open, if file format version == 1:
 1. Deserialize old facts using a `FactV1` struct (no `tx_count`, `valid_from`, `valid_to`) — pages that fail to deserialize as `FactV1` are skipped
 2. Sort facts by `tx_id` ascending
-3. Assign `tx_count` sequentially in that order (1, 2, 3…)
+3. Assign `tx_count` sequentially, **grouping by `tx_id`**: all facts sharing the same `tx_id` receive the same `tx_count` value (preserving the batch-atomicity invariant). Each unique `tx_id` increments the counter by 1.
 4. Set `valid_from = tx_id as i64`, `valid_to = VALID_TIME_FOREVER`
 5. Rewrite all facts in new format using `load_fact()`
 6. Update header to version 2 and save
@@ -187,6 +187,8 @@ Temporal filtering happens in the executor **before** pattern matching. The exec
 | `AllTimes` | no valid time filter |
 | absent (default) | include facts where `valid_from <= now < valid_to` |
 
+**Current time source**: the executor uses `tx_id_now() as i64` (from `graph::types`) as the reference timestamp for the "no `:valid-at` = currently valid" default filter. No second time source is introduced.
+
 **Default behaviour change**: queries without any temporal modifier automatically filter to currently valid facts. All migrated Phase 3 facts have `valid_to = MAX`, so this is safe for existing data. However, Phase 4 databases with facts carrying explicit `valid_to` in the past will silently omit those facts from unqualified queries — this is correct semantics but is a user-visible behaviour change. Add a note to the REPL help text and CHANGELOG.
 
 **Ordering of filters**: the transaction time filter (`:as-of`) is applied first, producing a time-bounded fact set. The `asserted=false` exclusion is then applied within that window. This means `:as-of N` correctly surfaces facts that had not yet been retracted at transaction N — the retraction record (with its later `tx_count`) is simply not in the window.
@@ -237,6 +239,30 @@ The current `PersistentFactStorage::load()` reconstructs facts by calling `self.
 - New method: `load_fact(fact: Fact) -> Result<()>` — inserts a fact with original `tx_id`/`tx_count` preserved (used by load path only)
 - New method: `get_facts_as_of(as_of: &AsOf) -> Vec<Fact>` — facts visible at a given transaction time
 - New method: `get_facts_valid_at(ts: i64) -> Vec<Fact>` — facts valid at a given timestamp
+
+**`Transaction` struct gains valid-time fields:**
+```rust
+pub struct Transaction {
+    pub facts: Vec<Pattern>,
+    pub valid_from: Option<i64>,  // NEW: transaction-level default
+    pub valid_to: Option<i64>,    // NEW: transaction-level default
+}
+```
+`execute_transact()` maps these into `TransactOptions` before calling `storage.transact()`. Per-fact overrides (parsed from the 4-element vector) take precedence over transaction-level defaults.
+
+**`TransactOptions` struct:**
+```rust
+pub struct TransactOptions {
+    pub valid_from: Option<i64>,
+    pub valid_to: Option<i64>,
+}
+
+impl TransactOptions {
+    pub fn new(valid_from: Option<i64>, valid_to: Option<i64>) -> Self { ... }
+}
+```
+
+**`FileHeader::validate()` updated** to accept version 1 (migrated) and version 2 (current). Versions outside `[1, 2]` return an error. The migration path reads the raw version before calling `validate()`, so version-1 files proceed to `migrate_v1_to_v2()` rather than being rejected.
 
 ### `PersistentFactStorage`
 
