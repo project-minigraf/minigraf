@@ -421,7 +421,13 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                         return Err(":as-of requires a value".to_string());
                     }
                     let as_of = match &query_vector[i] {
-                        EdnValue::Integer(n) => AsOf::Counter(*n as u64),
+                        EdnValue::Integer(n) if *n >= 0 => AsOf::Counter(*n as u64),
+                        EdnValue::Integer(n) => {
+                            return Err(format!(
+                                ":as-of counter must be non-negative, got {}",
+                                n
+                            ))
+                        }
                         EdnValue::String(s) => {
                             let ts = parse_timestamp(s).map_err(|e| e.to_string())?;
                             AsOf::Timestamp(ts)
@@ -1058,6 +1064,15 @@ mod tests {
             _ => panic!("expected Query"),
         };
         assert!(matches!(query.as_of, Some(AsOf::Timestamp(_))));
+    }
+
+    #[test]
+    fn test_parse_as_of_negative_counter_is_error() {
+        let result = parse_datalog_command(
+            "(query [:find ?n :as-of -1 :where [?e :person/name ?n]])"
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("non-negative"));
     }
 
     #[test]
