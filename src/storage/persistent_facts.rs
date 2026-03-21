@@ -220,7 +220,7 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
         let page_count = 1 + facts.len() as u64;
 
         // Create and write header
-        let mut header = FileHeader::new(); // sets version = FORMAT_VERSION = 3
+        let mut header = FileHeader::new(); // sets version = FORMAT_VERSION = 4
         header.page_count = page_count;
         header.node_count = facts.len() as u64; // Reuse node_count field for fact count
         header.last_checkpointed_tx_count = self.storage.current_tx_count();

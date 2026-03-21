@@ -81,7 +81,7 @@ pub struct FileHeader {
     pub avet_root_page: u64,
     pub vaet_root_page: u64,
     pub index_checksum: u32,
-    pub _padding: u32,
+    pub(crate) _padding: u32,
 }
 
 impl FileHeader {
@@ -232,7 +232,9 @@ mod tests {
         let bytes = header.to_bytes();
         let parsed = FileHeader::from_bytes(&bytes).unwrap();
         assert_eq!(parsed.eavt_root_page, 10);
+        assert_eq!(parsed.aevt_root_page, 20);
         assert_eq!(parsed.avet_root_page, 30);
+        assert_eq!(parsed.vaet_root_page, 40);
         assert_eq!(parsed.index_checksum, 0xDEAD_BEEF);
     }
 
@@ -289,5 +291,15 @@ mod tests {
         let header = FileHeader::new();
         assert_eq!(header.version, FORMAT_VERSION);
         assert_eq!(header.version, 4);
+    }
+
+    #[test]
+    fn test_file_header_from_bytes_truncated_v4_rejected() {
+        // A header that claims version=4 but has fewer than 72 bytes must be rejected.
+        let mut bytes = vec![0u8; 68]; // only 68 bytes, not 72
+        bytes[0..4].copy_from_slice(b"MGRF");
+        bytes[4..8].copy_from_slice(&4u32.to_le_bytes()); // version = 4
+        let result = FileHeader::from_bytes(&bytes);
+        assert!(result.is_err(), "truncated v4 header must be rejected");
     }
 }
