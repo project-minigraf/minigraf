@@ -2,6 +2,7 @@ pub mod graph;
 pub mod query;
 pub mod repl;
 pub mod storage;
+pub mod temporal;
 
 // Datalog EAV storage (Phase 3+)
 pub use graph::FactStorage;
