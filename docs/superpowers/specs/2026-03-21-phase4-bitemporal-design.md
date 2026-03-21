@@ -115,7 +115,7 @@ These are non-trivial parser additions and must be included in the implementatio
 
 Supports both a symbolic counter and a wall-clock timestamp:
 
-```clojure
+```datalog
 ;; As of the 50th transaction (symbolic counter)
 [:find ?name :as-of 50 :where [?e :person/name ?name]]
 
@@ -127,7 +127,7 @@ Supports both a symbolic counter and a wall-clock timestamp:
 
 Point-in-time filter only (range queries deferred to a future phase):
 
-```clojure
+```datalog
 ;; Facts valid on a specific date
 [:find ?status :valid-at "2023-06-01" :where [:alice :employment/status ?status]]
 
@@ -139,7 +139,7 @@ Point-in-time filter only (range queries deferred to a future phase):
 
 ### Combined bi-temporal
 
-```clojure
+```datalog
 [:find ?status
  :valid-at "2023-06-01"
  :as-of "2024-01-15T10:00:00Z"
@@ -150,7 +150,7 @@ Point-in-time filter only (range queries deferred to a future phase):
 
 Transaction-level default with optional per-fact override:
 
-```clojure
+```datalog
 ;; Transaction-level valid time (applies to all facts in the batch)
 (transact {:valid-from "2023-01-01" :valid-to "2023-06-30"}
           [[:alice :employment/status :active]
