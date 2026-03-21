@@ -37,6 +37,13 @@ impl DatalogExecutor {
         }
     }
 
+    /// Create a `DatalogExecutor` with a shared rule registry.
+    ///
+    /// Used by `Minigraf` to share rules across all `execute()` calls.
+    pub fn new_with_rules(storage: FactStorage, rules: Arc<RwLock<RuleRegistry>>) -> Self {
+        DatalogExecutor { storage, rules }
+    }
+
     /// Execute a Datalog command
     pub fn execute(&self, command: DatalogCommand) -> Result<QueryResult> {
         match command {
