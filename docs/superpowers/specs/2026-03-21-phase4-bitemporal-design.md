@@ -97,7 +97,7 @@ struct FactV1 {
 
 Timestamp strings (`:as-of "2024-01-15T10:00:00Z"`, `:valid-at "2023-06-01"`) are parsed using the **`chrono`** crate (UTC only — no local timezone handling, avoiding the `GHSA-wcg3-cvx6-7396` advisory). `chrono` adds ~150-200KB to the binary; this is acceptable given the `<1MB` philosophy target. If WASM support becomes a concern in Phase 7, evaluate switching to the `time` crate which has better WASM support.
 
-Only UTC timestamps and date-only strings (`YYYY-MM-DD`, interpreted as midnight UTC) are supported. Timezone-offset strings are rejected with a parse error.
+Only UTC timestamps and date-only strings (`YYYY-MM-DD`, interpreted as midnight UTC) are supported. Timezone-offset strings (e.g., `+05:30`) are rejected with a descriptive error message referencing the UTC-only policy — e.g.: `"timezone offsets are not supported; use UTC (Z) timestamps only. chrono's local timezone handling (GHSA-wcg3-cvx6-7396) is avoided by design."`
 
 ### Parser extensions required
 
