@@ -7,6 +7,18 @@ use crate::graph::FactStorage;
 use crate::storage::{FileHeader, StorageBackend, PAGE_SIZE};
 use anyhow::Result;
 
+/// V1 fact format (Phase 3, before bi-temporal fields were added).
+///
+/// Used only during migration from v1 → v2 file format.
+#[derive(Debug, serde::Deserialize)]
+struct FactV1 {
+    entity: crate::graph::types::EntityId,
+    attribute: crate::graph::types::Attribute,
+    value: crate::graph::types::Value,
+    tx_id: crate::graph::types::TxId,
+    asserted: bool,
+}
+
 /// Persistent fact storage with serialization support.
 ///
 /// Architecture:
@@ -80,6 +92,11 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
         let header = FileHeader::from_bytes(&header_page)?;
         header.validate()?;
 
+        // Migrate v1 → v2 if needed
+        if header.version == 1 {
+            return self.migrate_v1_to_v2();
+        }
+
         // Clear existing storage
         self.storage.clear()?;
 
@@ -101,6 +118,89 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
 
         self.dirty = false;
         Ok(())
+    }
+
+    /// Migrate a v1 file (Phase 3 format, no bi-temporal fields) to v2.
+    ///
+    /// V1 facts only have (entity, attribute, value, tx_id, asserted).
+    /// V2 facts add tx_count, valid_from, valid_to.
+    ///
+    /// Migration strategy:
+    /// - Sort v1 facts by tx_id ascending
+    /// - Group facts with the same tx_id into the same tx_count (monotonic counter)
+    /// - Set valid_from = tx_id as i64 (wall-clock approximation)
+    /// - Set valid_to = VALID_TIME_FOREVER (open-ended)
+    /// - Write the migrated data back in v2 format
+    fn migrate_v1_to_v2(&mut self) -> Result<()> {
+        use crate::graph::types::VALID_TIME_FOREVER;
+
+        let header_page = self.backend.read_page(0)?;
+        let header = FileHeader::from_bytes(&header_page)?;
+        let page_count = header.page_count;
+
+        // Read all v1 facts (skip pages that don't deserialize)
+        let mut v1_facts: Vec<FactV1> = Vec::new();
+        for page_id in 1..page_count {
+            let page = self.backend.read_page(page_id)?;
+            if let Ok(fact) = postcard::from_bytes::<FactV1>(&page) {
+                v1_facts.push(fact);
+            }
+        }
+
+        // Sort by tx_id ascending so we can group them
+        v1_facts.sort_by_key(|f| f.tx_id);
+
+        // Assign tx_count, grouping facts with the same tx_id into the same tx_count
+        let mut tx_count: u64 = 0;
+        let mut prev_tx_id: Option<crate::graph::types::TxId> = None;
+        let mut migrated: Vec<Fact> = Vec::new();
+
+        for v1 in v1_facts {
+            if prev_tx_id != Some(v1.tx_id) {
+                tx_count += 1;
+                prev_tx_id = Some(v1.tx_id);
+            }
+            let mut fact = Fact::with_valid_time(
+                v1.entity,
+                v1.attribute,
+                v1.value,
+                v1.tx_id,
+                tx_count,
+                v1.tx_id as i64,
+                VALID_TIME_FOREVER,
+            );
+            // Preserve the asserted flag (with_valid_time sets asserted=true by default)
+            fact.asserted = v1.asserted;
+            migrated.push(fact);
+        }
+
+        self.storage.clear()?;
+        for fact in migrated {
+            self.storage.load_fact(fact)?;
+        }
+        self.storage.restore_tx_counter()?;
+
+        // Persist in v2 format immediately
+        self.dirty = true;
+        self.save()?;
+        Ok(())
+    }
+
+    /// Consume this storage and return the underlying backend.
+    ///
+    /// Useful in tests to inspect or reuse the backend after saving.
+    /// Any dirty (unsaved) changes are saved before the backend is returned.
+    pub fn into_backend(mut self) -> B {
+        // Save pending changes before giving up ownership
+        if self.dirty {
+            let _ = self.save();
+        }
+        // SAFETY: We use ManuallyDrop to suppress the Drop impl so we can
+        // move the backend field out.  The storage and dirty fields are
+        // trivially dropped (FactStorage is heap-allocated, bool is Copy).
+        let mut md = std::mem::ManuallyDrop::new(self);
+        // SAFETY: `md` will not be dropped, so reading `backend` is safe.
+        unsafe { std::ptr::read(&mut md.backend) }
     }
 
     /// Save all facts from memory to the backend.
@@ -236,5 +336,147 @@ mod tests {
 
         // Load into new storage - backend is consumed, need to create a new test
         // This test verifies the pattern, actual persistence is tested above
+    }
+
+    // -----------------------------------------------------------------------
+    // Migration helpers
+    // -----------------------------------------------------------------------
+
+    /// Build a MemoryBackend that contains a v1-format file with two FactV1 facts.
+    fn make_v1_backend() -> MemoryBackend {
+        use crate::storage::{MAGIC_NUMBER, PAGE_SIZE};
+
+        let alice = Uuid::new_v4();
+
+        #[derive(serde::Serialize)]
+        struct FactV1Ser {
+            entity: Uuid,
+            attribute: String,
+            value: Value,
+            tx_id: u64,
+            asserted: bool,
+        }
+
+        let fact1 = FactV1Ser {
+            entity: alice,
+            attribute: ":person/name".to_string(),
+            value: Value::String("Alice".to_string()),
+            tx_id: 1000,
+            asserted: true,
+        };
+        let fact2 = FactV1Ser {
+            entity: alice,
+            attribute: ":person/age".to_string(),
+            value: Value::Integer(30),
+            tx_id: 1000,
+            asserted: true,
+        };
+
+        let mut backend = MemoryBackend::new();
+
+        // Write v1 header (version=1, page_count=3)
+        let mut header_bytes = vec![0u8; PAGE_SIZE];
+        header_bytes[0..4].copy_from_slice(&MAGIC_NUMBER);
+        header_bytes[4..8].copy_from_slice(&1u32.to_le_bytes()); // version = 1
+        header_bytes[8..16].copy_from_slice(&3u64.to_le_bytes()); // page_count = 3
+        backend.write_page(0, &header_bytes).unwrap();
+
+        // Write facts (one per page)
+        for (i, fact) in [&fact1, &fact2].iter().enumerate() {
+            let data = postcard::to_allocvec(*fact).unwrap();
+            let mut page = vec![0u8; PAGE_SIZE];
+            page[..data.len()].copy_from_slice(&data);
+            backend.write_page((i + 1) as u64, &page).unwrap();
+        }
+
+        backend
+    }
+
+    #[test]
+    fn test_load_preserves_original_tx_id() {
+        let mut pfs = PersistentFactStorage::new(MemoryBackend::new()).unwrap();
+
+        let alice = Uuid::new_v4();
+        pfs.storage()
+            .transact(
+                vec![(
+                    alice,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                )],
+                None,
+            )
+            .unwrap();
+
+        let original_tx_id = pfs.storage().get_all_facts().unwrap()[0].tx_id;
+
+        pfs.mark_dirty();
+        pfs.save().unwrap();
+
+        // Reload from the same backend
+        let backend = pfs.into_backend();
+        let pfs2 = PersistentFactStorage::new(backend).unwrap();
+        let loaded_tx_id = pfs2.storage().get_all_facts().unwrap()[0].tx_id;
+
+        assert_eq!(
+            original_tx_id, loaded_tx_id,
+            "tx_id must survive save/load round-trip"
+        );
+    }
+
+    #[test]
+    fn test_migrate_v1_to_v2_assigns_defaults() {
+        use crate::graph::types::VALID_TIME_FOREVER;
+
+        let backend = make_v1_backend();
+        let pfs = PersistentFactStorage::new(backend).unwrap();
+        let facts = pfs.storage().get_all_facts().unwrap();
+
+        assert_eq!(facts.len(), 2);
+        // Both facts share tx_id=1000 → same tx_count
+        assert_eq!(
+            facts[0].tx_count, facts[1].tx_count,
+            "facts from the same tx_id batch must get the same tx_count"
+        );
+        assert_eq!(
+            facts[0].valid_to, VALID_TIME_FOREVER,
+            "migrated fact must have open-ended valid_to"
+        );
+        assert_eq!(
+            facts[0].valid_from, 1000_i64,
+            "migrated fact valid_from must equal original tx_id"
+        );
+    }
+
+    #[test]
+    fn test_migrate_v1_tx_counter_set_correctly() {
+        let backend = make_v1_backend();
+        let pfs = PersistentFactStorage::new(backend).unwrap();
+
+        let alice = Uuid::new_v4();
+        pfs.storage()
+            .transact(
+                vec![(
+                    alice,
+                    ":new/fact".to_string(),
+                    Value::Boolean(true),
+                )],
+                None,
+            )
+            .unwrap();
+
+        let new_fact = pfs
+            .storage()
+            .get_all_facts()
+            .unwrap()
+            .into_iter()
+            .find(|f| f.attribute == ":new/fact")
+            .unwrap();
+
+        // After migrating 1 unique tx_id (tx_count=1), next tx should get tx_count=2
+        assert_eq!(
+            new_fact.tx_count, 2,
+            "first new transaction after migration must get tx_count=2"
+        );
     }
 }
