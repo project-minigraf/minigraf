@@ -1,4 +1,5 @@
 use super::types::*;
+use crate::temporal::parse_timestamp;
 use uuid::Uuid;
 
 /// Tokenizer for EDN syntax
@@ -394,7 +395,7 @@ pub fn parse_datalog_command(input: &str) -> Result<DatalogCommand, String> {
 }
 
 fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
-    // Parse (query [:find ?x ?y :where [patterns...]])
+    // Parse (query [:find ?x ?y :as-of N :valid-at "ts" :where [patterns...]])
     if elements.is_empty() {
         return Err("Query requires a map argument".to_string());
     }
@@ -405,14 +406,65 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
 
     let mut find_vars = Vec::new();
     let mut where_clauses = Vec::new();
-    let mut current_clause = None;
+    let mut current_clause: Option<&str> = None;
+    let mut query_as_of: Option<AsOf> = None;
+    let mut query_valid_at: Option<ValidAt> = None;
 
     let mut i = 0;
     while i < query_vector.len() {
         if let Some(keyword) = query_vector[i].as_keyword() {
-            current_clause = Some(keyword);
-            i += 1;
-            continue;
+            match keyword {
+                ":as-of" => {
+                    // Next element is the value
+                    i += 1;
+                    if i >= query_vector.len() {
+                        return Err(":as-of requires a value".to_string());
+                    }
+                    let as_of = match &query_vector[i] {
+                        EdnValue::Integer(n) => AsOf::Counter(*n as u64),
+                        EdnValue::String(s) => {
+                            let ts = parse_timestamp(s).map_err(|e| e.to_string())?;
+                            AsOf::Timestamp(ts)
+                        }
+                        other => {
+                            return Err(format!(
+                                ":as-of must be an integer (counter) or ISO 8601 string, got {:?}",
+                                other
+                            ))
+                        }
+                    };
+                    query_as_of = Some(as_of);
+                    i += 1;
+                    continue;
+                }
+                ":valid-at" => {
+                    i += 1;
+                    if i >= query_vector.len() {
+                        return Err(":valid-at requires a value".to_string());
+                    }
+                    let valid_at = match &query_vector[i] {
+                        EdnValue::String(s) => {
+                            let ts = parse_timestamp(s).map_err(|e| e.to_string())?;
+                            ValidAt::Timestamp(ts)
+                        }
+                        EdnValue::Keyword(k) if k == ":any-valid-time" => ValidAt::AnyValidTime,
+                        other => {
+                            return Err(format!(
+                                ":valid-at must be an ISO 8601 string or :any-valid-time, got {:?}",
+                                other
+                            ))
+                        }
+                    };
+                    query_valid_at = Some(valid_at);
+                    i += 1;
+                    continue;
+                }
+                _ => {
+                    current_clause = Some(keyword);
+                    i += 1;
+                    continue;
+                }
+            }
         }
 
         match current_clause {
@@ -469,31 +521,128 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
         i += 1;
     }
 
-    Ok(DatalogCommand::Query(DatalogQuery::new(
-        find_vars,
-        where_clauses,
-    )))
+    let mut query = DatalogQuery::new(find_vars, where_clauses);
+    query.as_of = query_as_of;
+    query.valid_at = query_valid_at;
+    Ok(DatalogCommand::Query(query))
 }
 
 fn parse_transact(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
-    // Parse (transact [[e a v] [e a v] ...])
+    // Parse (transact [facts]) or (transact {opts} [facts])
     if elements.is_empty() {
         return Err("Transact requires a vector of facts".to_string());
     }
 
-    let facts_vector = elements[0]
+    // Check if the first element is a map (transaction-level options)
+    let (tx_valid_from, tx_valid_to, facts_element) = if elements[0].is_map() {
+        let map = elements[0].as_map().unwrap();
+        let (from, to) = parse_valid_time_map(map)?;
+        if elements.len() < 2 {
+            return Err("Transact with options requires a facts vector after the map".to_string());
+        }
+        (from, to, &elements[1])
+    } else {
+        (None, None, &elements[0])
+    };
+
+    let facts_vector = facts_element
         .as_vector()
-        .ok_or("Transact argument must be a vector")?;
+        .ok_or("Transact argument must be a vector of facts")?;
 
     let mut patterns = Vec::new();
     for fact in facts_vector {
         let fact_vec = fact
             .as_vector()
-            .ok_or("Each fact must be a vector [e a v]")?;
-        patterns.push(Pattern::from_edn(fact_vec)?);
+            .ok_or("Each fact must be a vector [e a v] or [e a v {opts}]")?;
+
+        // A fact is [e a v] or [e a v {opts}]
+        if fact_vec.len() < 3 {
+            return Err(format!(
+                "Fact must have at least 3 elements (E A V), got {}",
+                fact_vec.len()
+            ));
+        }
+
+        let entity = fact_vec[0].clone();
+        let attribute = fact_vec[1].clone();
+        let value = fact_vec[2].clone();
+
+        // Check for optional per-fact map at position 3
+        let (fact_valid_from, fact_valid_to) = if fact_vec.len() >= 4 {
+            match &fact_vec[3] {
+                EdnValue::Map(pairs) => parse_valid_time_map(pairs)?,
+                other => {
+                    return Err(format!(
+                        "Optional 4th element of a fact must be a map {{:valid-from ... :valid-to ...}}, got {:?}",
+                        other
+                    ))
+                }
+            }
+        } else {
+            (None, None)
+        };
+
+        // Per-fact overrides take precedence over transaction-level defaults
+        let effective_from = fact_valid_from.or(tx_valid_from);
+        let effective_to = fact_valid_to.or(tx_valid_to);
+
+        patterns.push(Pattern::with_valid_time(
+            entity,
+            attribute,
+            value,
+            effective_from,
+            effective_to,
+        ));
     }
 
-    Ok(DatalogCommand::Transact(Transaction::new(patterns)))
+    let mut tx = Transaction::new(patterns);
+    tx.valid_from = tx_valid_from;
+    tx.valid_to = tx_valid_to;
+    Ok(DatalogCommand::Transact(tx))
+}
+
+/// Parse a valid-time map `{:valid-from "ts" :valid-to "ts"}` into millisecond timestamps.
+/// Both keys are optional.
+fn parse_valid_time_map(pairs: &[(EdnValue, EdnValue)]) -> Result<(Option<i64>, Option<i64>), String> {
+    let mut valid_from = None;
+    let mut valid_to = None;
+
+    for (key, val) in pairs {
+        match key.as_keyword() {
+            Some(":valid-from") => {
+                let s = match val {
+                    EdnValue::String(s) => s,
+                    other => {
+                        return Err(format!(
+                            ":valid-from must be an ISO 8601 string, got {:?}",
+                            other
+                        ))
+                    }
+                };
+                valid_from = Some(parse_timestamp(s).map_err(|e| e.to_string())?);
+            }
+            Some(":valid-to") => {
+                let s = match val {
+                    EdnValue::String(s) => s,
+                    other => {
+                        return Err(format!(
+                            ":valid-to must be an ISO 8601 string, got {:?}",
+                            other
+                        ))
+                    }
+                };
+                valid_to = Some(parse_timestamp(s).map_err(|e| e.to_string())?);
+            }
+            _ => {
+                return Err(format!(
+                    "Unknown key in valid-time map: {:?}; expected :valid-from or :valid-to",
+                    key
+                ))
+            }
+        }
+    }
+
+    Ok((valid_from, valid_to))
 }
 
 fn parse_retract(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
@@ -881,5 +1030,136 @@ mod tests {
     fn test_parse_empty_map() {
         let result = parse_edn("{}");
         assert!(matches!(result.unwrap(), EdnValue::Map(pairs) if pairs.is_empty()));
+    }
+
+    // --- Task 8: Temporal parsing tests ---
+
+    #[test]
+    fn test_parse_as_of_counter() {
+        let cmd = parse_datalog_command(
+            "(query [:find ?name :as-of 50 :where [?e :person/name ?name]])",
+        )
+        .unwrap();
+        let query = match cmd {
+            DatalogCommand::Query(q) => q,
+            _ => panic!("expected Query"),
+        };
+        assert_eq!(query.as_of, Some(AsOf::Counter(50)));
+    }
+
+    #[test]
+    fn test_parse_as_of_timestamp() {
+        let cmd = parse_datalog_command(
+            r#"(query [:find ?name :as-of "2024-01-15T10:00:00Z" :where [?e :person/name ?name]])"#,
+        )
+        .unwrap();
+        let query = match cmd {
+            DatalogCommand::Query(q) => q,
+            _ => panic!("expected Query"),
+        };
+        assert!(matches!(query.as_of, Some(AsOf::Timestamp(_))));
+    }
+
+    #[test]
+    fn test_parse_valid_at_timestamp() {
+        let cmd = parse_datalog_command(
+            r#"(query [:find ?s :valid-at "2023-06-01" :where [:alice :employment/status ?s]])"#,
+        )
+        .unwrap();
+        let query = match cmd {
+            DatalogCommand::Query(q) => q,
+            _ => panic!("expected Query"),
+        };
+        assert!(matches!(query.valid_at, Some(ValidAt::Timestamp(_))));
+    }
+
+    #[test]
+    fn test_parse_valid_at_any() {
+        let cmd = parse_datalog_command(
+            "(query [:find ?name :valid-at :any-valid-time :where [?e :person/name ?name]])",
+        )
+        .unwrap();
+        let query = match cmd {
+            DatalogCommand::Query(q) => q,
+            _ => panic!("expected Query"),
+        };
+        assert_eq!(query.valid_at, Some(ValidAt::AnyValidTime));
+    }
+
+    #[test]
+    fn test_parse_transact_with_tx_level_valid_time() {
+        let cmd = parse_datalog_command(
+            r#"(transact {:valid-from "2023-01-01" :valid-to "2023-06-30"} [[:alice :employment/status :active]])"#,
+        )
+        .unwrap();
+        let tx = match cmd {
+            DatalogCommand::Transact(t) => t,
+            _ => panic!("expected Transact"),
+        };
+        assert!(tx.valid_from.is_some());
+        assert!(tx.valid_to.is_some());
+    }
+
+    #[test]
+    fn test_parse_transact_with_per_fact_valid_time() {
+        let cmd = parse_datalog_command(
+            r#"(transact {:valid-from "2023-01-01"} [[:alice :employment/status :active {:valid-to "2023-06-30"}] [:alice :person/name "Alice"]])"#,
+        )
+        .unwrap();
+        let tx = match cmd {
+            DatalogCommand::Transact(t) => t,
+            _ => panic!("expected Transact"),
+        };
+        assert_eq!(tx.facts.len(), 2);
+        // First fact has per-fact valid_to + tx-level valid_from
+        assert!(tx.facts[0].valid_from.is_some());
+        assert!(tx.facts[0].valid_to.is_some());
+        // Second fact inherits tx-level valid_from only
+        assert!(tx.facts[1].valid_from.is_some());
+        assert!(tx.facts[1].valid_to.is_none());
+    }
+
+    #[test]
+    fn test_parse_reject_timezone_offset_in_as_of() {
+        let result = parse_datalog_command(
+            r#"(query [:find ?n :as-of "2024-01-15T10:00:00+05:30" :where [?e :person/name ?n]])"#,
+        );
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("timezone offsets are not supported"),
+            "error was: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_parse_transact_no_map_backward_compatible() {
+        // Old syntax without map should still work
+        let cmd = parse_datalog_command(
+            r#"(transact [[:alice :person/name "Alice"] [:alice :person/age 30]])"#,
+        )
+        .unwrap();
+        let tx = match cmd {
+            DatalogCommand::Transact(t) => t,
+            _ => panic!("expected Transact"),
+        };
+        assert_eq!(tx.facts.len(), 2);
+        assert!(tx.valid_from.is_none());
+        assert!(tx.valid_to.is_none());
+    }
+
+    #[test]
+    fn test_parse_as_of_and_valid_at_together() {
+        let cmd = parse_datalog_command(
+            r#"(query [:find ?status :as-of 100 :valid-at "2023-06-01" :where [:alice :employment/status ?status]])"#,
+        )
+        .unwrap();
+        let query = match cmd {
+            DatalogCommand::Query(q) => q,
+            _ => panic!("expected Query"),
+        };
+        assert!(matches!(query.as_of, Some(AsOf::Counter(100))));
+        assert!(matches!(query.valid_at, Some(ValidAt::Timestamp(_))));
     }
 }

@@ -231,6 +231,8 @@ impl PatternMatcher {
             entity: self.apply_binding_to_component(&pattern.entity, bindings),
             attribute: self.apply_binding_to_component(&pattern.attribute, bindings),
             value: self.apply_binding_to_component(&pattern.value, bindings),
+            valid_from: pattern.valid_from,
+            valid_to: pattern.valid_to,
         }
     }
 

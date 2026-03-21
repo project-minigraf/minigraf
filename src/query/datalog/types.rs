@@ -107,6 +107,10 @@ pub struct Pattern {
     pub entity: EdnValue,
     pub attribute: EdnValue,
     pub value: EdnValue,
+    /// Per-fact valid-time override (millis since epoch). None = use transaction-level default.
+    pub valid_from: Option<i64>,
+    /// Per-fact valid-time override (millis since epoch). None = use transaction-level default.
+    pub valid_to: Option<i64>,
 }
 
 impl Pattern {
@@ -115,10 +119,29 @@ impl Pattern {
             entity,
             attribute,
             value,
+            valid_from: None,
+            valid_to: None,
         }
     }
 
-    /// Parse a pattern from an EDN vector
+    /// Create a pattern with explicit per-fact valid-time overrides.
+    pub fn with_valid_time(
+        entity: EdnValue,
+        attribute: EdnValue,
+        value: EdnValue,
+        valid_from: Option<i64>,
+        valid_to: Option<i64>,
+    ) -> Self {
+        Pattern {
+            entity,
+            attribute,
+            value,
+            valid_from,
+            valid_to,
+        }
+    }
+
+    /// Parse a pattern from an EDN vector (exactly 3 elements, no per-fact map).
     pub fn from_edn(vector: &[EdnValue]) -> Result<Self, String> {
         if vector.len() != 3 {
             return Err(format!(
@@ -131,6 +154,8 @@ impl Pattern {
             entity: vector[0].clone(),
             attribute: vector[1].clone(),
             value: vector[2].clone(),
+            valid_from: None,
+            valid_to: None,
         })
     }
 }
