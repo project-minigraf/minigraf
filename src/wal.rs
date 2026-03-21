@@ -302,6 +302,12 @@ mod tests {
         let entries = reader.read_entries().unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].facts.len(), 2);
+        assert_eq!(entries[0].facts[0].entity, facts[0].entity);
+        assert_eq!(entries[0].facts[0].attribute, facts[0].attribute);
+        assert_eq!(entries[0].facts[0].value, facts[0].value);
+        assert_eq!(entries[0].facts[1].entity, facts[1].entity);
+        assert_eq!(entries[0].facts[1].attribute, facts[1].attribute);
+        assert_eq!(entries[0].facts[1].value, facts[1].value);
     }
 
     #[test]
