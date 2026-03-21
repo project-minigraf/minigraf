@@ -88,7 +88,7 @@ Page type values (unified namespace, no overlaps):
 Leaf nodes are linked via `next_leaf` pointers, enabling sequential range scans without re-traversing the tree.
 
 **Node capacity:** EAVT and VAET index keys contain two UUIDs (16 bytes each) plus two i64 and one u64 — approximately 56 bytes per key. AVET keys are similar. With a 4KB page and the header overhead:
-- **Leaf node:** `(56 + 10) × N ≤ 4096 - 11` → approximately 61 entries per leaf (10 bytes for `FactRef`: 8 for `page_id` + 2 for `slot_index`; 11 bytes for the leaf header)
+- **Leaf node:** `(56 + 10) × N ≤ 4096 - 11` → approximately 61 entries per leaf (10 bytes for `FactRef`: 8 for `page_id` + 2 for `slot_index`; 11-byte leaf node header: `page_type` u8 + `entry_count` u16 + `next_leaf` u64 = 1+2+8; note this is distinct from the 12-byte packed fact data page header)
 - **Internal node:** `56k + 8(k+1) ≤ 4096 - 3` → approximately 62 keys and 63 child pointers per internal node
 
 Individual keys are always smaller than one page so there is no key-level overflow.
@@ -250,7 +250,7 @@ The executor uses `optimizer::plan()` to get `(Pattern, IndexHint)` pairs, resol
 
 ### File Format v5
 
-Same section layout as v4. Header gains one new field at offset 68 (replacing the padding byte):
+Same section layout as v4. Header gains one new field, replacing the 4-byte reserved block at offsets 68–71:
 
 ```
 Offset  Size  Field
