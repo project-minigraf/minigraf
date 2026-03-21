@@ -1,5 +1,6 @@
 use crate::graph::types::{Attribute, EntityId, Fact, TxId, Value, TransactOptions, tx_id_now, VALID_TIME_FOREVER};
 use crate::query::datalog::types::AsOf;
+use crate::storage::index::{FactRef, Indexes};
 use anyhow::Result;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
@@ -7,6 +8,14 @@ use std::sync::{Arc, RwLock};
 // ============================================================================
 // Datalog Fact Storage (Phase 3+)
 // ============================================================================
+
+/// Private container that co-locates the fact list and all four indexes under
+/// a single `RwLock`. This ensures facts and indexes are always updated together
+/// without needing a second lock.
+struct FactData {
+    facts: Vec<Fact>,
+    indexes: Indexes,
+}
 
 /// In-memory storage for Datalog facts with transaction support
 ///
@@ -16,16 +25,11 @@ use std::sync::{Arc, RwLock};
 /// - Time travel queries (Phase 4)
 /// - Audit trails
 ///
-/// # Storage Model (Phase 3-5)
+/// # Storage Model (Phase 3-6)
 ///
-/// This is a simple in-memory store using `Vec<Fact>`. All facts are kept in
-/// memory for fast access. For persistence, see `PersistentFactStorage` which
-/// wraps this with a "load all, save all" strategy.
-///
-/// **This is intentionally simple for Phase 3-5.** Phase 6 will add:
-/// - Index-based access (EAVT, AEVT, AVET, VAET)
-/// - On-demand loading from disk
-/// - Bounded memory usage
+/// This is a simple in-memory store using `Vec<Fact>` plus four covering
+/// indexes (EAVT, AEVT, AVET, VAET). For persistence, see `PersistentFactStorage`
+/// which wraps this with a "load all, save all" strategy.
 ///
 /// # Examples
 /// ```
@@ -47,8 +51,8 @@ use std::sync::{Arc, RwLock};
 /// ```
 #[derive(Clone)]
 pub struct FactStorage {
-    /// Append-only log of all facts (assertions and retractions)
-    facts: Arc<RwLock<Vec<Fact>>>,
+    /// Append-only log of all facts (assertions and retractions) plus indexes.
+    data: Arc<RwLock<FactData>>,
     /// Monotonically incrementing batch counter — increments once per transact/retract call.
     tx_counter: Arc<AtomicU64>,
 }
@@ -63,7 +67,10 @@ impl FactStorage {
     /// Create a new empty fact storage
     pub fn new() -> Self {
         FactStorage {
-            facts: Arc::new(RwLock::new(Vec::new())),
+            data: Arc::new(RwLock::new(FactData {
+                facts: Vec::new(),
+                indexes: Indexes::new(),
+            })),
             tx_counter: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -98,8 +105,11 @@ impl FactStorage {
             })
             .collect();
 
-        let mut storage = self.facts.write().unwrap();
-        storage.extend(facts);
+        let mut d = self.data.write().unwrap();
+        for fact in &facts {
+            d.indexes.insert(fact, FactRef { page_id: 0, slot_index: 0 });
+        }
+        d.facts.extend(facts);
 
         Ok(tx_id)
     }
@@ -127,8 +137,11 @@ impl FactStorage {
             })
             .collect();
 
-        let mut storage = self.facts.write().unwrap();
-        storage.extend(retractions);
+        let mut d = self.data.write().unwrap();
+        for fact in &retractions {
+            d.indexes.insert(fact, FactRef { page_id: 0, slot_index: 0 });
+        }
+        d.facts.extend(retractions);
 
         Ok(tx_id)
     }
@@ -139,8 +152,9 @@ impl FactStorage {
     /// After loading all facts, call `restore_tx_counter()` to re-synchronise the
     /// counter so subsequent `transact()` calls get correct tx_count values.
     pub fn load_fact(&self, fact: Fact) -> Result<()> {
-        let mut storage = self.facts.write().unwrap();
-        storage.push(fact);
+        let mut d = self.data.write().unwrap();
+        d.indexes.insert(&fact, FactRef { page_id: 0, slot_index: 0 });
+        d.facts.push(fact);
         Ok(())
     }
 
@@ -149,8 +163,8 @@ impl FactStorage {
     /// Must be called after all `load_fact()` calls complete so that the next
     /// `transact()` call picks up from the right sequence number.
     pub fn restore_tx_counter(&self) -> Result<()> {
-        let storage = self.facts.read().unwrap();
-        let max = storage.iter().map(|f| f.tx_count).max().unwrap_or(0);
+        let d = self.data.read().unwrap();
+        let max = d.facts.iter().map(|f| f.tx_count).max().unwrap_or(0);
         self.tx_counter.store(max, Ordering::SeqCst);
         Ok(())
     }
@@ -175,8 +189,8 @@ impl FactStorage {
     /// * `AsOf::Counter(n)` — include facts whose `tx_count <= n`
     /// * `AsOf::Timestamp(t)` — include facts whose `tx_id <= t as u64`
     pub fn get_facts_as_of(&self, as_of: &AsOf) -> Result<Vec<Fact>> {
-        let storage = self.facts.read().unwrap();
-        let filtered = storage
+        let d = self.data.read().unwrap();
+        let filtered = d.facts
             .iter()
             .filter(|f| match as_of {
                 AsOf::Counter(n) => f.tx_count <= *n,
@@ -191,8 +205,8 @@ impl FactStorage {
     ///
     /// A fact is valid at `ts` when `valid_from <= ts < valid_to` and it is asserted.
     pub fn get_facts_valid_at(&self, ts: i64) -> Result<Vec<Fact>> {
-        let storage = self.facts.read().unwrap();
-        let filtered = storage
+        let d = self.data.read().unwrap();
+        let filtered = d.facts
             .iter()
             .filter(|f| f.is_asserted() && f.valid_from <= ts && ts < f.valid_to)
             .cloned()
@@ -205,8 +219,8 @@ impl FactStorage {
     /// Returns the complete append-only log. For current state, filter by
     /// asserted=true and take the most recent fact for each (E, A) pair.
     pub fn get_all_facts(&self) -> Result<Vec<Fact>> {
-        let storage = self.facts.read().unwrap();
-        Ok(storage.clone())
+        let d = self.data.read().unwrap();
+        Ok(d.facts.clone())
     }
 
     /// Get all asserted facts (filters out retractions)
@@ -214,8 +228,8 @@ impl FactStorage {
     /// Returns only facts where asserted=true. This gives you the currently
     /// valid facts, but includes all historical versions.
     pub fn get_asserted_facts(&self) -> Result<Vec<Fact>> {
-        let storage = self.facts.read().unwrap();
-        Ok(storage
+        let d = self.data.read().unwrap();
+        Ok(d.facts
             .iter()
             .filter(|f| f.is_asserted())
             .cloned()
@@ -230,8 +244,8 @@ impl FactStorage {
     /// # Returns
     /// All facts (assertions and retractions) about this entity
     pub fn get_facts_by_entity(&self, entity_id: &EntityId) -> Result<Vec<Fact>> {
-        let storage = self.facts.read().unwrap();
-        Ok(storage
+        let d = self.data.read().unwrap();
+        Ok(d.facts
             .iter()
             .filter(|f| &f.entity == entity_id)
             .cloned()
@@ -246,8 +260,8 @@ impl FactStorage {
     /// # Returns
     /// All facts with this attribute
     pub fn get_facts_by_attribute(&self, attribute: &Attribute) -> Result<Vec<Fact>> {
-        let storage = self.facts.read().unwrap();
-        Ok(storage
+        let d = self.data.read().unwrap();
+        Ok(d.facts
             .iter()
             .filter(|f| &f.attribute == attribute)
             .cloned()
@@ -267,8 +281,8 @@ impl FactStorage {
         entity_id: &EntityId,
         attribute: &Attribute,
     ) -> Result<Vec<Fact>> {
-        let storage = self.facts.read().unwrap();
-        Ok(storage
+        let d = self.data.read().unwrap();
+        Ok(d.facts
             .iter()
             .filter(|f| &f.entity == entity_id && &f.attribute == attribute)
             .cloned()
@@ -291,10 +305,10 @@ impl FactStorage {
         entity_id: &EntityId,
         attribute: &Attribute,
     ) -> Result<Option<Value>> {
-        let storage = self.facts.read().unwrap();
+        let d = self.data.read().unwrap();
 
         // Find the most recent fact for this (entity, attribute) pair
-        let mut relevant_facts: Vec<&Fact> = storage
+        let mut relevant_facts: Vec<&Fact> = d.facts
             .iter()
             .filter(|f| &f.entity == entity_id && &f.attribute == attribute)
             .collect();
@@ -310,22 +324,39 @@ impl FactStorage {
 
     /// Get the count of all facts in storage
     pub fn fact_count(&self) -> usize {
-        let storage = self.facts.read().unwrap();
-        storage.len()
+        let d = self.data.read().unwrap();
+        d.facts.len()
     }
 
     /// Get the count of currently asserted facts
     pub fn asserted_fact_count(&self) -> usize {
-        let storage = self.facts.read().unwrap();
-        storage.iter().filter(|f| f.is_asserted()).count()
+        let d = self.data.read().unwrap();
+        d.facts.iter().filter(|f| f.is_asserted()).count()
     }
 
     /// Clear all facts (for testing)
     pub fn clear(&self) -> Result<()> {
-        let mut storage = self.facts.write().unwrap();
-        storage.clear();
+        let mut d = self.data.write().unwrap();
+        d.facts.clear();
+        d.indexes = Indexes::new();
         self.tx_counter.store(0, Ordering::SeqCst);
         Ok(())
+    }
+
+    /// Returns (eavt_len, aevt_len, avet_len, vaet_len) for testing.
+    pub fn index_counts(&self) -> (usize, usize, usize, usize) {
+        let d = self.data.read().unwrap();
+        (d.indexes.eavt.len(), d.indexes.aevt.len(),
+         d.indexes.avet.len(), d.indexes.vaet.len())
+    }
+
+    /// Replace the in-memory indexes with a freshly rebuilt set.
+    ///
+    /// Used by `PersistentFactStorage` after detecting an index checksum
+    /// mismatch (e.g. after crash recovery).
+    pub fn replace_indexes(&self, indexes: Indexes) {
+        let mut d = self.data.write().unwrap();
+        d.indexes = indexes;
     }
 }
 
@@ -803,5 +834,54 @@ mod tests {
         assert_eq!(c1, 1);
         assert_eq!(c2, 2);
         assert_eq!(storage.current_tx_count(), 2);
+    }
+
+    // =========================================================================
+    // Phase 6.1: index population tests
+    // =========================================================================
+
+    #[test]
+    fn test_indexes_populated_on_transact() {
+        use uuid::Uuid;
+
+        let storage = FactStorage::new();
+        let alice = Uuid::new_v4();
+        let bob = Uuid::new_v4();
+        storage.transact(vec![
+            (alice, ":name".to_string(), Value::String("Alice".to_string())),
+            (alice, ":friend".to_string(), Value::Ref(bob)),
+        ], None).unwrap();
+        let (eavt, aevt, avet, vaet) = storage.index_counts();
+        assert_eq!(eavt, 2);
+        assert_eq!(aevt, 2);
+        assert_eq!(avet, 2);
+        assert_eq!(vaet, 1, "Only Ref values go into VAET");
+    }
+
+    #[test]
+    fn test_slot_index_is_zero_in_6_1() {
+        use uuid::Uuid;
+
+        let storage = FactStorage::new();
+        let e = Uuid::new_v4();
+        storage.transact(vec![(e, ":x".to_string(), Value::Integer(1))], None).unwrap();
+        let (eavt, _, _, _) = storage.index_counts();
+        assert_eq!(eavt, 1);
+    }
+
+    #[test]
+    fn test_load_fact_populates_indexes() {
+        use uuid::Uuid;
+
+        let storage = FactStorage::new();
+        let e = Uuid::new_v4();
+        let fact = crate::graph::types::Fact::with_valid_time(
+            e, ":name".to_string(), Value::String("Test".to_string()),
+            0, 1, 0, crate::graph::types::VALID_TIME_FOREVER,
+        );
+        storage.load_fact(fact).unwrap();
+        storage.restore_tx_counter().unwrap();
+        let (eavt, _, _, _) = storage.index_counts();
+        assert_eq!(eavt, 1);
     }
 }
