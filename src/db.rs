@@ -80,7 +80,10 @@ impl OpenOptions {
         }
     }
 
-    /// Open an in-memory database with the current options.
+    /// Open an in-memory (non-persistent) database.
+    ///
+    /// Note: any builder options set before calling this method are ignored for
+    /// in-memory databases, which have no WAL or persistent file.
     pub fn open_memory(self) -> Result<Minigraf> {
         Minigraf::in_memory()
     }
@@ -458,6 +461,12 @@ impl Minigraf {
     /// Returns a clone of the underlying `FactStorage` for use by the REPL.
     ///
     /// Cloning is cheap — `FactStorage` is `Arc`-backed.
+    ///
+    /// # Warning
+    /// This method bypasses the WAL and the write lock. It is intended **only** for
+    /// the built-in REPL (`src/main.rs`). External callers should use
+    /// [`Minigraf::execute`] or [`Minigraf::begin_write`] to ensure crash safety.
+    #[doc(hidden)]
     pub fn inner_fact_storage(&self) -> crate::graph::FactStorage {
         self.inner.fact_storage.clone()
     }
