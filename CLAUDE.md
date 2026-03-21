@@ -539,6 +539,40 @@ This is a hobby project with a decades-long vision. When contributing:
 5. `src/query/datalog/evaluator.rs` - Semi-naive recursive rule evaluation
 6. `src/temporal.rs` - UTC timestamp parsing
 
+## Pre-Publishing Checklist (crates.io)
+
+Before publishing the crate, verify all of the following:
+
+### Minimum Bar (do not publish before Phase 6)
+- [ ] **Phase 6 complete** — Indexes (EAVT, AEVT, AVET, VAET) and query optimization in place. Without indexes, full table scans degrade badly past a few thousand facts and invite justified bad first impressions.
+
+### API Cleanup
+- [ ] **Narrow `lib.rs` exports** — Only expose what users need: `Minigraf`, `WriteTransaction`, and the query/result types. Internal types (`PersistentFactStorage`, `FileHeader`, `PAGE_SIZE`, `Repl`, `Wal`, etc.) should not be part of the public API.
+- [ ] **Move `clap` out of library dependencies** — `clap` is a binary-only dep and must not leak into the library. Move it to the `[[bin]]` section or behind a feature flag.
+
+### Crate Metadata (`Cargo.toml`)
+- [ ] Add `repository` field (GitHub URL)
+- [ ] Add `keywords` (e.g. `graph`, `datalog`, `bitemporal`, `embedded`, `database`)
+- [ ] Add `categories` (e.g. `database`, `embedded`)
+- [ ] Add `readme = "README.md"`
+- [ ] Add `documentation` field (docs.rs URL or custom)
+- [ ] Verify `description` is accurate and compelling
+
+### Documentation
+- [ ] All public API items have rustdoc comments with examples
+- [ ] `README.md` has a quick-start example that compiles and runs
+- [ ] `CHANGELOG.md` is up to date
+
+### Quality Gates
+- [ ] `cargo test` passes on Linux, macOS, Windows
+- [ ] `cargo clippy -- -D warnings` passes
+- [ ] `cargo doc --no-deps` builds without warnings
+- [ ] No `unwrap()`/`expect()` in library code paths (only in tests/binary)
+
+### Versioning
+- [ ] Publish as `0.x` — no backwards-compat promise until v1.0.0
+- [ ] Stable API target is v1.0.0 (after Phase 7 cross-platform work)
+
 ## Important Reminders
 
 1. **Datalog is the query language** - No other query language
