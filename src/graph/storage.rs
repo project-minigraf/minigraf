@@ -309,6 +309,7 @@ impl FactStorage {
     pub fn clear(&self) -> Result<()> {
         let mut storage = self.facts.write().unwrap();
         storage.clear();
+        self.tx_counter.store(0, Ordering::SeqCst);
         Ok(())
     }
 }
