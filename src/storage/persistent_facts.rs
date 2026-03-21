@@ -198,7 +198,7 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
         // SAFETY: We use ManuallyDrop to suppress the Drop impl so we can
         // move the backend field out.  The storage and dirty fields are
         // trivially dropped (FactStorage is heap-allocated, bool is Copy).
-        let mut md = std::mem::ManuallyDrop::new(self);
+        let md = std::mem::ManuallyDrop::new(self);
         // SAFETY: `md` will not be dropped, so reading `backend` is safe.
         unsafe { std::ptr::read(&md.backend) }
     }
