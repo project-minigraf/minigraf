@@ -1,7 +1,7 @@
-use minigraf::graph::types::Value;
 use minigraf::graph::FactStorage;
-use minigraf::query::datalog::{DatalogExecutor, QueryResult};
+use minigraf::graph::types::Value;
 use minigraf::query::datalog::parser::parse_datalog_command;
+use minigraf::query::datalog::{DatalogExecutor, QueryResult};
 use uuid::Uuid;
 
 /// Test 3-pattern join: find entities with name, age, and city
@@ -13,19 +13,22 @@ fn test_three_pattern_join() {
     // Create entity with 3 attributes
     let alice_id = Uuid::new_v4();
     storage
-        .transact(vec![
-            (
-                alice_id,
-                ":person/name".to_string(),
-                Value::String("Alice".to_string()),
-            ),
-            (alice_id, ":person/age".to_string(), Value::Integer(30)),
-            (
-                alice_id,
-                ":person/city".to_string(),
-                Value::String("NYC".to_string()),
-            ),
-        ], None)
+        .transact(
+            vec![
+                (
+                    alice_id,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                ),
+                (alice_id, ":person/age".to_string(), Value::Integer(30)),
+                (
+                    alice_id,
+                    ":person/city".to_string(),
+                    Value::String("NYC".to_string()),
+                ),
+            ],
+            None,
+        )
         .unwrap();
 
     let query = parse_datalog_command(
@@ -59,13 +62,24 @@ fn test_four_pattern_join() {
     let bob = Uuid::new_v4();
 
     storage
-        .transact(vec![
-            (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
-            (alice, ":person/age".to_string(), Value::Integer(30)),
-            (bob, ":person/name".to_string(), Value::String("Bob".to_string())),
-            (bob, ":person/age".to_string(), Value::Integer(25)),
-            (alice, ":friend".to_string(), Value::Ref(bob)),
-        ], None)
+        .transact(
+            vec![
+                (
+                    alice,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                ),
+                (alice, ":person/age".to_string(), Value::Integer(30)),
+                (
+                    bob,
+                    ":person/name".to_string(),
+                    Value::String("Bob".to_string()),
+                ),
+                (bob, ":person/age".to_string(), Value::Integer(25)),
+                (alice, ":friend".to_string(), Value::Ref(bob)),
+            ],
+            None,
+        )
         .unwrap();
 
     // Find pairs where person1 is older than 28 and friends with person2
@@ -104,13 +118,28 @@ fn test_self_join_friends_of_friends() {
     let charlie = Uuid::new_v4();
 
     storage
-        .transact(vec![
-            (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
-            (bob, ":person/name".to_string(), Value::String("Bob".to_string())),
-            (charlie, ":person/name".to_string(), Value::String("Charlie".to_string())),
-            (alice, ":friend".to_string(), Value::Ref(bob)),
-            (bob, ":friend".to_string(), Value::Ref(charlie)),
-        ], None)
+        .transact(
+            vec![
+                (
+                    alice,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                ),
+                (
+                    bob,
+                    ":person/name".to_string(),
+                    Value::String("Bob".to_string()),
+                ),
+                (
+                    charlie,
+                    ":person/name".to_string(),
+                    Value::String("Charlie".to_string()),
+                ),
+                (alice, ":friend".to_string(), Value::Ref(bob)),
+                (bob, ":friend".to_string(), Value::Ref(charlie)),
+            ],
+            None,
+        )
         .unwrap();
 
     // Find friends of Alice's friends (Bob's friends)
@@ -145,13 +174,28 @@ fn test_entity_reference_join() {
     let company = Uuid::new_v4();
 
     storage
-        .transact(vec![
-            (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
-            (bob, ":person/name".to_string(), Value::String("Bob".to_string())),
-            (company, ":company/name".to_string(), Value::String("TechCorp".to_string())),
-            (alice, ":works-at".to_string(), Value::Ref(company)),
-            (bob, ":works-at".to_string(), Value::Ref(company)),
-        ], None)
+        .transact(
+            vec![
+                (
+                    alice,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                ),
+                (
+                    bob,
+                    ":person/name".to_string(),
+                    Value::String("Bob".to_string()),
+                ),
+                (
+                    company,
+                    ":company/name".to_string(),
+                    Value::String("TechCorp".to_string()),
+                ),
+                (alice, ":works-at".to_string(), Value::Ref(company)),
+                (bob, ":works-at".to_string(), Value::Ref(company)),
+            ],
+            None,
+        )
         .unwrap();
 
     // Find people working at TechCorp
@@ -193,18 +237,19 @@ fn test_query_no_results() {
     // Add some facts
     let alice = Uuid::new_v4();
     storage
-        .transact(vec![(
-            alice,
-            ":person/name".to_string(),
-            Value::String("Alice".to_string()),
-        )], None)
+        .transact(
+            vec![(
+                alice,
+                ":person/name".to_string(),
+                Value::String("Alice".to_string()),
+            )],
+            None,
+        )
         .unwrap();
 
     // Query for non-existent attribute
-    let query = parse_datalog_command(
-        r#"(query [:find ?email :where [?e :person/email ?email]])"#,
-    )
-    .unwrap();
+    let query = parse_datalog_command(r#"(query [:find ?email :where [?e :person/email ?email]])"#)
+        .unwrap();
 
     let result = executor.execute(query).unwrap();
     match result {
@@ -226,12 +271,23 @@ fn test_query_partial_matches() {
     let bob = Uuid::new_v4();
 
     storage
-        .transact(vec![
-            (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
-            (alice, ":person/age".to_string(), Value::Integer(30)),
-            (bob, ":person/name".to_string(), Value::String("Bob".to_string())),
-            // Bob has no age
-        ], None)
+        .transact(
+            vec![
+                (
+                    alice,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                ),
+                (alice, ":person/age".to_string(), Value::Integer(30)),
+                (
+                    bob,
+                    ":person/name".to_string(),
+                    Value::String("Bob".to_string()),
+                ),
+                // Bob has no age
+            ],
+            None,
+        )
         .unwrap();
 
     // Query for name AND age - should only return Alice
@@ -262,10 +318,21 @@ fn test_query_variable_reuse() {
     let alice = Uuid::new_v4();
 
     storage
-        .transact(vec![
-            (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
-            (alice, ":person/nickname".to_string(), Value::String("Alice".to_string())),
-        ], None)
+        .transact(
+            vec![
+                (
+                    alice,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                ),
+                (
+                    alice,
+                    ":person/nickname".to_string(),
+                    Value::String("Alice".to_string()),
+                ),
+            ],
+            None,
+        )
         .unwrap();
 
     // Find people whose name equals their nickname
@@ -300,17 +367,40 @@ fn test_complex_multi_entity_query() {
     let project2 = Uuid::new_v4();
 
     storage
-        .transact(vec![
-            (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
-            (bob, ":person/name".to_string(), Value::String("Bob".to_string())),
-            (charlie, ":person/name".to_string(), Value::String("Charlie".to_string())),
-            (project1, ":project/name".to_string(), Value::String("Project X".to_string())),
-            (project2, ":project/name".to_string(), Value::String("Project Y".to_string())),
-            (alice, ":works-on".to_string(), Value::Ref(project1)),
-            (bob, ":works-on".to_string(), Value::Ref(project1)),
-            (charlie, ":works-on".to_string(), Value::Ref(project2)),
-            (alice, ":manages".to_string(), Value::Ref(project1)),
-        ], None)
+        .transact(
+            vec![
+                (
+                    alice,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                ),
+                (
+                    bob,
+                    ":person/name".to_string(),
+                    Value::String("Bob".to_string()),
+                ),
+                (
+                    charlie,
+                    ":person/name".to_string(),
+                    Value::String("Charlie".to_string()),
+                ),
+                (
+                    project1,
+                    ":project/name".to_string(),
+                    Value::String("Project X".to_string()),
+                ),
+                (
+                    project2,
+                    ":project/name".to_string(),
+                    Value::String("Project Y".to_string()),
+                ),
+                (alice, ":works-on".to_string(), Value::Ref(project1)),
+                (bob, ":works-on".to_string(), Value::Ref(project1)),
+                (charlie, ":works-on".to_string(), Value::Ref(project2)),
+                (alice, ":manages".to_string(), Value::Ref(project1)),
+            ],
+            None,
+        )
         .unwrap();
 
     // Find projects that Alice manages, along with other people working on them
@@ -354,22 +444,43 @@ fn test_multiple_values_same_attribute() {
     let alice = Uuid::new_v4();
 
     storage
-        .transact(vec![
-            (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
-            (alice, ":hobby".to_string(), Value::String("Reading".to_string())),
-        ], None)
+        .transact(
+            vec![
+                (
+                    alice,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                ),
+                (
+                    alice,
+                    ":hobby".to_string(),
+                    Value::String("Reading".to_string()),
+                ),
+            ],
+            None,
+        )
         .unwrap();
 
     storage
-        .transact(vec![
-            (alice, ":hobby".to_string(), Value::String("Hiking".to_string())),
-        ], None)
+        .transact(
+            vec![(
+                alice,
+                ":hobby".to_string(),
+                Value::String("Hiking".to_string()),
+            )],
+            None,
+        )
         .unwrap();
 
     storage
-        .transact(vec![
-            (alice, ":hobby".to_string(), Value::String("Coding".to_string())),
-        ], None)
+        .transact(
+            vec![(
+                alice,
+                ":hobby".to_string(),
+                Value::String("Coding".to_string()),
+            )],
+            None,
+        )
         .unwrap();
 
     // Find all hobbies (should get 3 separate results)
@@ -408,10 +519,8 @@ fn test_query_empty_database() {
     let storage = FactStorage::new();
     let executor = DatalogExecutor::new(storage);
 
-    let query = parse_datalog_command(
-        r#"(query [:find ?name :where [?e :person/name ?name]])"#,
-    )
-    .unwrap();
+    let query =
+        parse_datalog_command(r#"(query [:find ?name :where [?e :person/name ?name]])"#).unwrap();
 
     let result = executor.execute(query).unwrap();
     match result {

@@ -1,4 +1,6 @@
-use crate::graph::types::{Attribute, EntityId, Fact, TxId, Value, TransactOptions, tx_id_now, VALID_TIME_FOREVER};
+use crate::graph::types::{
+    Attribute, EntityId, Fact, TransactOptions, TxId, VALID_TIME_FOREVER, Value, tx_id_now,
+};
 use crate::query::datalog::types::AsOf;
 use crate::storage::index::{FactRef, Indexes};
 use anyhow::Result;
@@ -101,13 +103,21 @@ impl FactStorage {
             .map(|(entity, attribute, value)| {
                 let valid_from = opts.valid_from.unwrap_or(tx_id as i64);
                 let valid_to = opts.valid_to.unwrap_or(VALID_TIME_FOREVER);
-                Fact::with_valid_time(entity, attribute, value, tx_id, tx_count, valid_from, valid_to)
+                Fact::with_valid_time(
+                    entity, attribute, value, tx_id, tx_count, valid_from, valid_to,
+                )
             })
             .collect();
 
         let mut d = self.data.write().unwrap();
         for fact in &facts {
-            d.indexes.insert(fact, FactRef { page_id: 0, slot_index: 0 });
+            d.indexes.insert(
+                fact,
+                FactRef {
+                    page_id: 0,
+                    slot_index: 0,
+                },
+            );
         }
         d.facts.extend(facts);
 
@@ -139,7 +149,13 @@ impl FactStorage {
 
         let mut d = self.data.write().unwrap();
         for fact in &retractions {
-            d.indexes.insert(fact, FactRef { page_id: 0, slot_index: 0 });
+            d.indexes.insert(
+                fact,
+                FactRef {
+                    page_id: 0,
+                    slot_index: 0,
+                },
+            );
         }
         d.facts.extend(retractions);
 
@@ -153,7 +169,13 @@ impl FactStorage {
     /// counter so subsequent `transact()` calls get correct tx_count values.
     pub fn load_fact(&self, fact: Fact) -> Result<()> {
         let mut d = self.data.write().unwrap();
-        d.indexes.insert(&fact, FactRef { page_id: 0, slot_index: 0 });
+        d.indexes.insert(
+            &fact,
+            FactRef {
+                page_id: 0,
+                slot_index: 0,
+            },
+        );
         d.facts.push(fact);
         Ok(())
     }
@@ -190,7 +212,8 @@ impl FactStorage {
     /// * `AsOf::Timestamp(t)` — include facts whose `tx_id <= t as u64`
     pub fn get_facts_as_of(&self, as_of: &AsOf) -> Result<Vec<Fact>> {
         let d = self.data.read().unwrap();
-        let filtered = d.facts
+        let filtered = d
+            .facts
             .iter()
             .filter(|f| match as_of {
                 AsOf::Counter(n) => f.tx_count <= *n,
@@ -206,7 +229,8 @@ impl FactStorage {
     /// A fact is valid at `ts` when `valid_from <= ts < valid_to` and it is asserted.
     pub fn get_facts_valid_at(&self, ts: i64) -> Result<Vec<Fact>> {
         let d = self.data.read().unwrap();
-        let filtered = d.facts
+        let filtered = d
+            .facts
             .iter()
             .filter(|f| f.is_asserted() && f.valid_from <= ts && ts < f.valid_to)
             .cloned()
@@ -308,7 +332,8 @@ impl FactStorage {
         let d = self.data.read().unwrap();
 
         // Find the most recent fact for this (entity, attribute) pair
-        let mut relevant_facts: Vec<&Fact> = d.facts
+        let mut relevant_facts: Vec<&Fact> = d
+            .facts
             .iter()
             .filter(|f| &f.entity == entity_id && &f.attribute == attribute)
             .collect();
@@ -317,9 +342,13 @@ impl FactStorage {
         relevant_facts.sort_by(|a, b| b.tx_id.cmp(&a.tx_id));
 
         // Return the value if the most recent fact is an assertion
-        Ok(relevant_facts
-            .first()
-            .and_then(|f| if f.is_asserted() { Some(f.value.clone()) } else { None }))
+        Ok(relevant_facts.first().and_then(|f| {
+            if f.is_asserted() {
+                Some(f.value.clone())
+            } else {
+                None
+            }
+        }))
     }
 
     /// Get the count of all facts in storage
@@ -346,8 +375,12 @@ impl FactStorage {
     /// Returns (eavt_len, aevt_len, avet_len, vaet_len) for testing.
     pub fn index_counts(&self) -> (usize, usize, usize, usize) {
         let d = self.data.read().unwrap();
-        (d.indexes.eavt.len(), d.indexes.aevt.len(),
-         d.indexes.avet.len(), d.indexes.vaet.len())
+        (
+            d.indexes.eavt.len(),
+            d.indexes.aevt.len(),
+            d.indexes.avet.len(),
+            d.indexes.vaet.len(),
+        )
     }
 
     /// Replace the in-memory indexes with a freshly rebuilt set.
@@ -373,14 +406,17 @@ mod tests {
 
         // Transact facts
         let tx_id = storage
-            .transact(vec![
-                (
-                    alice,
-                    ":person/name".to_string(),
-                    Value::String("Alice".to_string()),
-                ),
-                (alice, ":person/age".to_string(), Value::Integer(30)),
-            ], None)
+            .transact(
+                vec![
+                    (
+                        alice,
+                        ":person/name".to_string(),
+                        Value::String("Alice".to_string()),
+                    ),
+                    (alice, ":person/age".to_string(), Value::Integer(30)),
+                ],
+                None,
+            )
             .unwrap();
 
         // Verify facts were stored
@@ -403,11 +439,14 @@ mod tests {
 
         // Assert a fact
         let _tx1 = storage
-            .transact(vec![(
-                alice,
-                ":person/name".to_string(),
-                Value::String("Alice".to_string()),
-            )], None)
+            .transact(
+                vec![(
+                    alice,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                )],
+                None,
+            )
             .unwrap();
 
         std::thread::sleep(std::time::Duration::from_millis(2));
@@ -443,18 +482,21 @@ mod tests {
         let bob = Uuid::new_v4();
 
         storage
-            .transact(vec![
-                (
-                    alice,
-                    ":person/name".to_string(),
-                    Value::String("Alice".to_string()),
-                ),
-                (
-                    bob,
-                    ":person/name".to_string(),
-                    Value::String("Bob".to_string()),
-                ),
-            ], None)
+            .transact(
+                vec![
+                    (
+                        alice,
+                        ":person/name".to_string(),
+                        Value::String("Alice".to_string()),
+                    ),
+                    (
+                        bob,
+                        ":person/name".to_string(),
+                        Value::String("Bob".to_string()),
+                    ),
+                ],
+                None,
+            )
             .unwrap();
 
         let alice_facts = storage.get_facts_by_entity(&alice).unwrap();
@@ -475,19 +517,22 @@ mod tests {
         let bob = Uuid::new_v4();
 
         storage
-            .transact(vec![
-                (
-                    alice,
-                    ":person/name".to_string(),
-                    Value::String("Alice".to_string()),
-                ),
-                (alice, ":person/age".to_string(), Value::Integer(30)),
-                (
-                    bob,
-                    ":person/name".to_string(),
-                    Value::String("Bob".to_string()),
-                ),
-            ], None)
+            .transact(
+                vec![
+                    (
+                        alice,
+                        ":person/name".to_string(),
+                        Value::String("Alice".to_string()),
+                    ),
+                    (alice, ":person/age".to_string(), Value::Integer(30)),
+                    (
+                        bob,
+                        ":person/name".to_string(),
+                        Value::String("Bob".to_string()),
+                    ),
+                ],
+                None,
+            )
             .unwrap();
 
         // Get all :person/name facts
@@ -512,22 +557,28 @@ mod tests {
 
         // Set initial value
         storage
-            .transact(vec![(
-                alice,
-                ":person/name".to_string(),
-                Value::String("Alice".to_string()),
-            )], None)
+            .transact(
+                vec![(
+                    alice,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                )],
+                None,
+            )
             .unwrap();
 
         std::thread::sleep(std::time::Duration::from_millis(2));
 
         // Update value
         storage
-            .transact(vec![(
-                alice,
-                ":person/name".to_string(),
-                Value::String("Alice Smith".to_string()),
-            )], None)
+            .transact(
+                vec![(
+                    alice,
+                    ":person/name".to_string(),
+                    Value::String("Alice Smith".to_string()),
+                )],
+                None,
+            )
             .unwrap();
 
         // Current value should be the most recent
@@ -564,19 +615,22 @@ mod tests {
 
         // Alice is friends with Bob (using Ref)
         storage
-            .transact(vec![
-                (
-                    alice,
-                    ":person/name".to_string(),
-                    Value::String("Alice".to_string()),
-                ),
-                (alice, ":friend".to_string(), Value::Ref(bob)),
-                (
-                    bob,
-                    ":person/name".to_string(),
-                    Value::String("Bob".to_string()),
-                ),
-            ], None)
+            .transact(
+                vec![
+                    (
+                        alice,
+                        ":person/name".to_string(),
+                        Value::String("Alice".to_string()),
+                    ),
+                    (alice, ":friend".to_string(), Value::Ref(bob)),
+                    (
+                        bob,
+                        ":person/name".to_string(),
+                        Value::String("Bob".to_string()),
+                    ),
+                ],
+                None,
+            )
             .unwrap();
 
         // Get friendship
@@ -596,19 +650,28 @@ mod tests {
 
         // Create multiple versions over time
         let tx1 = storage
-            .transact(vec![(alice, ":person/age".to_string(), Value::Integer(30))], None)
+            .transact(
+                vec![(alice, ":person/age".to_string(), Value::Integer(30))],
+                None,
+            )
             .unwrap();
 
         std::thread::sleep(std::time::Duration::from_millis(2));
 
         let tx2 = storage
-            .transact(vec![(alice, ":person/age".to_string(), Value::Integer(31))], None)
+            .transact(
+                vec![(alice, ":person/age".to_string(), Value::Integer(31))],
+                None,
+            )
             .unwrap();
 
         std::thread::sleep(std::time::Duration::from_millis(2));
 
         let tx3 = storage
-            .transact(vec![(alice, ":person/age".to_string(), Value::Integer(32))], None)
+            .transact(
+                vec![(alice, ":person/age".to_string(), Value::Integer(32))],
+                None,
+            )
             .unwrap();
 
         // All versions are in history
@@ -637,19 +700,22 @@ mod tests {
 
         // Transact multiple facts at once
         let tx_id = storage
-            .transact(vec![
-                (
-                    alice,
-                    ":person/name".to_string(),
-                    Value::String("Alice".to_string()),
-                ),
-                (alice, ":person/age".to_string(), Value::Integer(30)),
-                (
-                    alice,
-                    ":person/email".to_string(),
-                    Value::String("alice@example.com".to_string()),
-                ),
-            ], None)
+            .transact(
+                vec![
+                    (
+                        alice,
+                        ":person/name".to_string(),
+                        Value::String("Alice".to_string()),
+                    ),
+                    (alice, ":person/age".to_string(), Value::Integer(30)),
+                    (
+                        alice,
+                        ":person/email".to_string(),
+                        Value::String("alice@example.com".to_string()),
+                    ),
+                ],
+                None,
+            )
             .unwrap();
 
         // All facts should have same tx_id (atomic batch)
@@ -669,18 +735,31 @@ mod tests {
         let storage = FactStorage::new();
         let alice = Uuid::new_v4();
 
-        storage.transact(vec![
-            (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
-        ], None).unwrap();
+        storage
+            .transact(
+                vec![(
+                    alice,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                )],
+                None,
+            )
+            .unwrap();
 
         std::thread::sleep(std::time::Duration::from_millis(2));
 
-        storage.transact(vec![
-            (alice, ":person/age".to_string(), Value::Integer(30)),
-        ], None).unwrap();
+        storage
+            .transact(
+                vec![(alice, ":person/age".to_string(), Value::Integer(30))],
+                None,
+            )
+            .unwrap();
 
         let facts = storage.get_all_facts().unwrap();
-        let name_fact = facts.iter().find(|f| f.attribute == ":person/name").unwrap();
+        let name_fact = facts
+            .iter()
+            .find(|f| f.attribute == ":person/name")
+            .unwrap();
         let age_fact = facts.iter().find(|f| f.attribute == ":person/age").unwrap();
 
         assert_eq!(name_fact.tx_count, 1);
@@ -694,10 +773,19 @@ mod tests {
         let storage = FactStorage::new();
         let alice = Uuid::new_v4();
 
-        storage.transact(vec![
-            (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
-            (alice, ":person/age".to_string(), Value::Integer(30)),
-        ], None).unwrap();
+        storage
+            .transact(
+                vec![
+                    (
+                        alice,
+                        ":person/name".to_string(),
+                        Value::String("Alice".to_string()),
+                    ),
+                    (alice, ":person/age".to_string(), Value::Integer(30)),
+                ],
+                None,
+            )
+            .unwrap();
 
         let facts = storage.get_all_facts().unwrap();
         assert!(facts.iter().all(|f| f.tx_count == 1));
@@ -714,8 +802,8 @@ mod tests {
             entity,
             ":person/name".to_string(),
             Value::String("Alice".to_string()),
-            12345_u64,  // original tx_id
-            7,          // original tx_count
+            12345_u64, // original tx_id
+            7,         // original tx_count
             12345_i64,
             VALID_TIME_FOREVER,
         );
@@ -737,16 +825,26 @@ mod tests {
         let alice = Uuid::new_v4();
 
         // tx_count = 1
-        storage.transact(vec![
-            (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
-        ], None).unwrap();
+        storage
+            .transact(
+                vec![(
+                    alice,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                )],
+                None,
+            )
+            .unwrap();
 
         std::thread::sleep(std::time::Duration::from_millis(2));
 
         // tx_count = 2
-        storage.transact(vec![
-            (alice, ":person/age".to_string(), Value::Integer(30)),
-        ], None).unwrap();
+        storage
+            .transact(
+                vec![(alice, ":person/age".to_string(), Value::Integer(30))],
+                None,
+            )
+            .unwrap();
 
         // as-of tx 1: only name fact visible
         let snapshot = storage.get_facts_as_of(&AsOf::Counter(1)).unwrap();
@@ -766,9 +864,16 @@ mod tests {
             Some(1685577600000_i64), // 2023-06-01
         );
 
-        storage.transact(vec![
-            (alice, ":employment/status".to_string(), Value::Keyword(":active".to_string())),
-        ], Some(opts)).unwrap();
+        storage
+            .transact(
+                vec![(
+                    alice,
+                    ":employment/status".to_string(),
+                    Value::Keyword(":active".to_string()),
+                )],
+                Some(opts),
+            )
+            .unwrap();
 
         // Valid on 2023-03-01 (inside range)
         let inside = storage.get_facts_valid_at(1677628800000_i64).unwrap();
@@ -788,16 +893,21 @@ mod tests {
 
         // Load a fact with tx_count = 5 (simulating migration/load)
         let fact = Fact::with_valid_time(
-            entity, ":a".to_string(), Value::Integer(1),
-            1000, 5, 1000_i64, VALID_TIME_FOREVER,
+            entity,
+            ":a".to_string(),
+            Value::Integer(1),
+            1000,
+            5,
+            1000_i64,
+            VALID_TIME_FOREVER,
         );
         storage.load_fact(fact).unwrap();
         storage.restore_tx_counter().unwrap();
 
         // Next transact should get tx_count = 6
-        storage.transact(vec![
-            (entity, ":b".to_string(), Value::Integer(2)),
-        ], None).unwrap();
+        storage
+            .transact(vec![(entity, ":b".to_string(), Value::Integer(2))], None)
+            .unwrap();
 
         let facts = storage.get_all_facts().unwrap();
         let b_fact = facts.iter().find(|f| f.attribute == ":b").unwrap();
@@ -820,9 +930,20 @@ mod tests {
 
         let storage = FactStorage::new();
         let alice = Uuid::new_v4();
-        storage.transact(vec![(alice, ":name".to_string(), Value::String("Alice".to_string()))], None).unwrap();
+        storage
+            .transact(
+                vec![(
+                    alice,
+                    ":name".to_string(),
+                    Value::String("Alice".to_string()),
+                )],
+                None,
+            )
+            .unwrap();
         assert_eq!(storage.current_tx_count(), 1);
-        storage.transact(vec![(alice, ":age".to_string(), Value::Integer(30))], None).unwrap();
+        storage
+            .transact(vec![(alice, ":age".to_string(), Value::Integer(30))], None)
+            .unwrap();
         assert_eq!(storage.current_tx_count(), 2);
     }
 
@@ -847,10 +968,19 @@ mod tests {
         let storage = FactStorage::new();
         let alice = Uuid::new_v4();
         let bob = Uuid::new_v4();
-        storage.transact(vec![
-            (alice, ":name".to_string(), Value::String("Alice".to_string())),
-            (alice, ":friend".to_string(), Value::Ref(bob)),
-        ], None).unwrap();
+        storage
+            .transact(
+                vec![
+                    (
+                        alice,
+                        ":name".to_string(),
+                        Value::String("Alice".to_string()),
+                    ),
+                    (alice, ":friend".to_string(), Value::Ref(bob)),
+                ],
+                None,
+            )
+            .unwrap();
         let (eavt, aevt, avet, vaet) = storage.index_counts();
         assert_eq!(eavt, 2);
         assert_eq!(aevt, 2);
@@ -864,7 +994,9 @@ mod tests {
 
         let storage = FactStorage::new();
         let e = Uuid::new_v4();
-        storage.transact(vec![(e, ":x".to_string(), Value::Integer(1))], None).unwrap();
+        storage
+            .transact(vec![(e, ":x".to_string(), Value::Integer(1))], None)
+            .unwrap();
         let (eavt, _, _, _) = storage.index_counts();
         assert_eq!(eavt, 1);
     }
@@ -876,8 +1008,13 @@ mod tests {
         let storage = FactStorage::new();
         let e = Uuid::new_v4();
         let fact = crate::graph::types::Fact::with_valid_time(
-            e, ":name".to_string(), Value::String("Test".to_string()),
-            0, 1, 0, crate::graph::types::VALID_TIME_FOREVER,
+            e,
+            ":name".to_string(),
+            Value::String("Test".to_string()),
+            0,
+            1,
+            0,
+            crate::graph::types::VALID_TIME_FOREVER,
         );
         storage.load_fact(fact).unwrap();
         storage.restore_tx_counter().unwrap();

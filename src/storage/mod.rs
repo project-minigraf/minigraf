@@ -129,7 +129,10 @@ impl FileHeader {
         // Both v3 (64 bytes) and v4 (72 bytes) must pass at least 64-byte
         // validation before the version field is read.
         if bytes.len() < 64 {
-            anyhow::bail!("Invalid header: too short (got {} bytes, need 64)", bytes.len());
+            anyhow::bail!(
+                "Invalid header: too short (got {} bytes, need 64)",
+                bytes.len()
+            );
         }
 
         let mut magic = [0u8; 4];
@@ -273,7 +276,11 @@ mod tests {
         let mut header = FileHeader::new();
         for v in 1u32..=4 {
             header.version = v;
-            assert!(header.validate().is_ok(), "version {} should be accepted", v);
+            assert!(
+                header.validate().is_ok(),
+                "version {} should be accepted",
+                v
+            );
         }
     }
 

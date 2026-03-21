@@ -1,7 +1,7 @@
-use minigraf::graph::types::Value;
 use minigraf::graph::FactStorage;
-use minigraf::query::datalog::{DatalogExecutor, QueryResult};
+use minigraf::graph::types::Value;
 use minigraf::query::datalog::parser::parse_datalog_command;
+use minigraf::query::datalog::{DatalogExecutor, QueryResult};
 use std::sync::Arc;
 use std::thread;
 use uuid::Uuid;
@@ -18,10 +18,7 @@ fn test_concurrent_rule_registration() {
             let executor = Arc::clone(&executor);
             thread::spawn(move || {
                 let predicate = format!("rule{}", i);
-                let rule_cmd = format!(
-                    r#"(rule [({} ?x ?y) [?x :connected{} ?y]])"#,
-                    predicate, i
-                );
+                let rule_cmd = format!(r#"(rule [({} ?x ?y) [?x :connected{} ?y]])"#, predicate, i);
                 executor
                     .execute(parse_datalog_command(&rule_cmd).unwrap())
                     .unwrap();
@@ -37,10 +34,7 @@ fn test_concurrent_rule_registration() {
     // Verify rules work by querying (indirect verification)
     // If rules weren't registered correctly, queries would fail
     for i in 0..5 {
-        let query_cmd = format!(
-            r#"(query [:find ?y :where (rule{} :test ?y)])"#,
-            i
-        );
+        let query_cmd = format!(r#"(query [:find ?y :where (rule{} :test ?y)])"#, i);
         let _ = executor.execute(parse_datalog_command(&query_cmd).unwrap());
     }
 }
@@ -65,9 +59,10 @@ fn test_concurrent_rule_queries() {
         .unwrap();
 
     executor
-        .execute(parse_datalog_command(
-            r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#,
-        ).unwrap())
+        .execute(
+            parse_datalog_command(r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#)
+                .unwrap(),
+        )
         .unwrap();
 
     // Spawn 10 threads, each querying from a different starting node
@@ -76,10 +71,8 @@ fn test_concurrent_rule_queries() {
             let executor = Arc::clone(&executor);
             let node = nodes[i];
             thread::spawn(move || {
-                let query_str = format!(
-                    r#"(query [:find ?to :where (reach #uuid "{}" ?to)])"#,
-                    node
-                );
+                let query_str =
+                    format!(r#"(query [:find ?to :where (reach #uuid "{}" ?to)])"#, node);
                 let query = parse_datalog_command(&query_str).unwrap();
                 let result = executor.execute(query).unwrap();
 
@@ -121,10 +114,7 @@ fn test_concurrent_transact_and_rules() {
                         .unwrap();
                 } else {
                     // Odd threads: register rules
-                    let rule_cmd = format!(
-                        r#"(rule [(pred{} ?x ?y) [?x :attr{} ?y]])"#,
-                        i, i
-                    );
+                    let rule_cmd = format!(r#"(rule [(pred{} ?x ?y) [?x :attr{} ?y]])"#, i, i);
                     executor
                         .execute(parse_datalog_command(&rule_cmd).unwrap())
                         .unwrap();
@@ -158,10 +148,13 @@ fn test_concurrent_read_heavy() {
     let c = Uuid::new_v4();
 
     storage
-        .transact(vec![
-            (a, ":connected".to_string(), Value::Ref(b)),
-            (b, ":connected".to_string(), Value::Ref(c)),
-        ], None)
+        .transact(
+            vec![
+                (a, ":connected".to_string(), Value::Ref(b)),
+                (b, ":connected".to_string(), Value::Ref(c)),
+            ],
+            None,
+        )
         .unwrap();
 
     // Register rules
@@ -170,9 +163,10 @@ fn test_concurrent_read_heavy() {
         .unwrap();
 
     executor
-        .execute(parse_datalog_command(
-            r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#,
-        ).unwrap())
+        .execute(
+            parse_datalog_command(r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#)
+                .unwrap(),
+        )
         .unwrap();
 
     // Spawn 50 reader threads
@@ -181,10 +175,8 @@ fn test_concurrent_read_heavy() {
             let executor = Arc::clone(&executor);
             let node = a;
             thread::spawn(move || {
-                let query_str = format!(
-                    r#"(query [:find ?to :where (reach #uuid "{}" ?to)])"#,
-                    node
-                );
+                let query_str =
+                    format!(r#"(query [:find ?to :where (reach #uuid "{}" ?to)])"#, node);
                 let query = parse_datalog_command(&query_str).unwrap();
                 let result = executor.execute(query).unwrap();
 
@@ -219,11 +211,7 @@ fn test_concurrent_recursive_evaluation() {
         chains.push(nodes.clone());
 
         for i in 0..4 {
-            facts.push((
-                nodes[i],
-                ":connected".to_string(),
-                Value::Ref(nodes[i + 1]),
-            ));
+            facts.push((nodes[i], ":connected".to_string(), Value::Ref(nodes[i + 1])));
         }
     }
 
@@ -235,9 +223,10 @@ fn test_concurrent_recursive_evaluation() {
         .unwrap();
 
     executor
-        .execute(parse_datalog_command(
-            r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#,
-        ).unwrap())
+        .execute(
+            parse_datalog_command(r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#)
+                .unwrap(),
+        )
         .unwrap();
 
     // Spawn threads to query each chain
@@ -306,10 +295,7 @@ fn test_no_deadlocks_mixed_operations() {
                     }
                     1 => {
                         // Register rule
-                        let rule_cmd = format!(
-                            r#"(rule [(rule{} ?x ?y) [?x :attr ?y]])"#,
-                            i
-                        );
+                        let rule_cmd = format!(r#"(rule [(rule{} ?x ?y) [?x :attr ?y]])"#, i);
                         executor
                             .execute(parse_datalog_command(&rule_cmd).unwrap())
                             .unwrap();
@@ -326,8 +312,9 @@ fn test_no_deadlocks_mixed_operations() {
                     3 => {
                         // Query without rule
                         let query = parse_datalog_command(
-                            r#"(query [:find ?to :where [?from :attr ?to]])"#
-                        ).unwrap();
+                            r#"(query [:find ?to :where [?from :attr ?to]])"#,
+                        )
+                        .unwrap();
                         let _ = executor.execute(query);
                     }
                     _ => unreachable!(),
@@ -354,10 +341,8 @@ fn test_rwlock_consistency() {
             let executor = Arc::clone(&executor);
             thread::spawn(move || {
                 for j in 0..5 {
-                    let rule_cmd = format!(
-                        r#"(rule [(pred{}-{} ?x ?y) [?x :attr{} ?y]])"#,
-                        i, j, i
-                    );
+                    let rule_cmd =
+                        format!(r#"(rule [(pred{}-{} ?x ?y) [?x :attr{} ?y]])"#, i, j, i);
                     executor
                         .execute(parse_datalog_command(&rule_cmd).unwrap())
                         .unwrap();
@@ -373,9 +358,10 @@ fn test_rwlock_consistency() {
             thread::spawn(move || {
                 for _ in 0..10 {
                     // Query to ensure rules are accessible (indirect read)
-                    let _ = executor.execute(parse_datalog_command(
-                        r#"(query [:find ?x :where [?x :attr0 ?y]])"#
-                    ).unwrap());
+                    let _ = executor.execute(
+                        parse_datalog_command(r#"(query [:find ?x :where [?x :attr0 ?y]])"#)
+                            .unwrap(),
+                    );
                 }
             })
         })
@@ -393,10 +379,7 @@ fn test_rwlock_consistency() {
     // If 50 rules weren't registered, this would fail
     for i in 0..10 {
         for j in 0..5 {
-            let query_cmd = format!(
-                r#"(query [:find ?y :where (pred{}-{} :test ?y)])"#,
-                i, j
-            );
+            let query_cmd = format!(r#"(query [:find ?y :where (pred{}-{} :test ?y)])"#, i, j);
             let _ = executor.execute(parse_datalog_command(&query_cmd).unwrap());
         }
     }

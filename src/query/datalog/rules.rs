@@ -58,10 +58,7 @@ impl RuleRegistry {
     /// registry.register_rule("reachable".to_string(), recursive_rule)?;
     /// ```
     pub fn register_rule(&mut self, predicate: String, rule: Rule) -> Result<()> {
-        self.rules
-            .entry(predicate)
-            .or_default()
-            .push(rule);
+        self.rules.entry(predicate).or_default().push(rule);
         Ok(())
     }
 

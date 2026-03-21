@@ -20,7 +20,7 @@
 //! ```
 
 use crate::graph::types::Fact;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -52,7 +52,11 @@ fn validate_wal_header(file: &mut File) -> Result<()> {
     }
     let version = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
     if version != WAL_VERSION {
-        bail!("Unsupported WAL version: {} (expected {})", version, WAL_VERSION);
+        bail!(
+            "Unsupported WAL version: {} (expected {})",
+            version,
+            WAL_VERSION
+        );
     }
     Ok(())
 }
@@ -105,7 +109,12 @@ impl WalWriter {
     /// If opening, validates the header and seeks to the end for appending.
     pub fn open_or_create(path: &Path) -> Result<Self> {
         // Try atomic create-new first (no TOCTOU window)
-        match OpenOptions::new().read(true).write(true).create_new(true).open(path) {
+        match OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(path)
+        {
             Ok(mut file) => {
                 write_wal_header(&mut file)?;
                 file.seek(SeekFrom::End(0))?;
@@ -249,11 +258,19 @@ impl WalReader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::types::{Value, VALID_TIME_FOREVER};
+    use crate::graph::types::{VALID_TIME_FOREVER, Value};
     use uuid::Uuid;
 
     fn make_fact(entity: Uuid, attr: &str, value: Value, tx_count: u64) -> Fact {
-        Fact::with_valid_time(entity, attr.to_string(), value, 1000, tx_count, 0, VALID_TIME_FOREVER)
+        Fact::with_valid_time(
+            entity,
+            attr.to_string(),
+            value,
+            1000,
+            tx_count,
+            0,
+            VALID_TIME_FOREVER,
+        )
     }
 
     #[test]
@@ -324,8 +341,23 @@ mod tests {
         let bob = Uuid::new_v4();
 
         let mut writer = WalWriter::open_or_create(&path).unwrap();
-        writer.append_entry(1, &[make_fact(alice, ":name", Value::String("Alice".to_string()), 1)]).unwrap();
-        writer.append_entry(2, &[make_fact(bob, ":name", Value::String("Bob".to_string()), 2)]).unwrap();
+        writer
+            .append_entry(
+                1,
+                &[make_fact(
+                    alice,
+                    ":name",
+                    Value::String("Alice".to_string()),
+                    1,
+                )],
+            )
+            .unwrap();
+        writer
+            .append_entry(
+                2,
+                &[make_fact(bob, ":name", Value::String("Bob".to_string()), 2)],
+            )
+            .unwrap();
 
         let mut reader = WalReader::open(&path).unwrap();
         let entries = reader.read_entries().unwrap();
@@ -344,12 +376,27 @@ mod tests {
 
         // First open: create WAL and write entry with tx_count=1
         let mut writer = WalWriter::open_or_create(&path).unwrap();
-        writer.append_entry(1, &[make_fact(alice, ":name", Value::String("Alice".to_string()), 1)]).unwrap();
+        writer
+            .append_entry(
+                1,
+                &[make_fact(
+                    alice,
+                    ":name",
+                    Value::String("Alice".to_string()),
+                    1,
+                )],
+            )
+            .unwrap();
         drop(writer);
 
         // Second open: exercises the fallback branch (file already exists)
         let mut writer = WalWriter::open_or_create(&path).unwrap();
-        writer.append_entry(2, &[make_fact(bob, ":name", Value::String("Bob".to_string()), 2)]).unwrap();
+        writer
+            .append_entry(
+                2,
+                &[make_fact(bob, ":name", Value::String("Bob".to_string()), 2)],
+            )
+            .unwrap();
         drop(writer);
 
         // Read back and verify both entries are present with correct tx_count values

@@ -31,7 +31,7 @@ use anyhow::Result;
 use std::collections::BTreeMap;
 
 use crate::storage::index::{AevtKey, AvetKey, EavtKey, FactRef, VaetKey};
-use crate::storage::{StorageBackend, PAGE_SIZE};
+use crate::storage::{PAGE_SIZE, StorageBackend};
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -51,18 +51,14 @@ const PAGE_HEADER_SIZE: usize = 10;
 /// Number of data bytes available per page.
 const DATA_BYTES_PER_PAGE: usize = PAGE_SIZE - PAGE_HEADER_SIZE;
 
-
 // ─── Low-level page I/O ───────────────────────────────────────────────────────
 
-fn write_blob(
-    blob: &[u8],
-    backend: &mut dyn StorageBackend,
-    start_page_id: u64,
-) -> Result<u64> {
+fn write_blob(blob: &[u8], backend: &mut dyn StorageBackend, start_page_id: u64) -> Result<u64> {
     if blob.len() > u32::MAX as usize {
         anyhow::bail!(
             "index blob too large to serialize: {} bytes (max {})",
-            blob.len(), u32::MAX
+            blob.len(),
+            u32::MAX
         );
     }
     let total_len = blob.len() as u32;

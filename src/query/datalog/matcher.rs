@@ -1,6 +1,6 @@
 use super::types::{EdnValue, Pattern};
-use crate::graph::types::{EntityId, Fact, Value};
 use crate::graph::FactStorage;
+use crate::graph::types::{EntityId, Fact, Value};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -186,11 +186,7 @@ impl PatternMatcher {
 
     /// Match a pattern given existing variable bindings
     /// Returns new bindings that extend the existing ones
-    fn match_pattern_with_bindings(
-        &self,
-        pattern: &Pattern,
-        existing: &Bindings,
-    ) -> Vec<Bindings> {
+    fn match_pattern_with_bindings(&self, pattern: &Pattern, existing: &Bindings) -> Vec<Bindings> {
         let mut results = Vec::new();
 
         let facts = self.storage.get_asserted_facts().unwrap_or_default();
@@ -237,11 +233,7 @@ impl PatternMatcher {
     }
 
     /// Apply bindings to a single pattern component
-    fn apply_binding_to_component(
-        &self,
-        component: &EdnValue,
-        bindings: &Bindings,
-    ) -> EdnValue {
+    fn apply_binding_to_component(&self, component: &EdnValue, bindings: &Bindings) -> EdnValue {
         match component {
             EdnValue::Symbol(var) if var.starts_with('?') => {
                 if let Some(value) = bindings.get(var) {
@@ -304,7 +296,10 @@ pub fn edn_to_entity_id(edn: &EdnValue) -> Result<EntityId, String> {
             }
         }
         EdnValue::Uuid(u) => Ok(*u),
-        _ => Err(format!("Expected keyword or UUID for entity, got {:?}", edn)),
+        _ => Err(format!(
+            "Expected keyword or UUID for entity, got {:?}",
+            edn
+        )),
     }
 }
 
@@ -319,14 +314,17 @@ mod tests {
 
         // Add some facts
         storage
-            .transact(vec![
-                (
-                    alice_id,
-                    ":person/name".to_string(),
-                    Value::String("Alice".to_string()),
-                ),
-                (alice_id, ":person/age".to_string(), Value::Integer(30)),
-            ], None)
+            .transact(
+                vec![
+                    (
+                        alice_id,
+                        ":person/name".to_string(),
+                        Value::String("Alice".to_string()),
+                    ),
+                    (alice_id, ":person/age".to_string(), Value::Integer(30)),
+                ],
+                None,
+            )
             .unwrap();
 
         let matcher = PatternMatcher::new(storage);
@@ -340,10 +338,7 @@ mod tests {
 
         let results = matcher.match_pattern(&pattern);
         assert_eq!(results.len(), 1);
-        assert_eq!(
-            results[0].get("?e"),
-            Some(&Value::Ref(alice_id))
-        );
+        assert_eq!(results[0].get("?e"), Some(&Value::Ref(alice_id)));
     }
 
     #[test]
@@ -352,11 +347,14 @@ mod tests {
         let alice_id = Uuid::new_v4();
 
         storage
-            .transact(vec![(
-                alice_id,
-                ":person/name".to_string(),
-                Value::String("Alice".to_string()),
-            )], None)
+            .transact(
+                vec![(
+                    alice_id,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                )],
+                None,
+            )
             .unwrap();
 
         let matcher = PatternMatcher::new(storage);
@@ -382,14 +380,17 @@ mod tests {
         let alice_id = Uuid::new_v4();
 
         storage
-            .transact(vec![
-                (
-                    alice_id,
-                    ":person/name".to_string(),
-                    Value::String("Alice".to_string()),
-                ),
-                (alice_id, ":person/age".to_string(), Value::Integer(30)),
-            ], None)
+            .transact(
+                vec![
+                    (
+                        alice_id,
+                        ":person/name".to_string(),
+                        Value::String("Alice".to_string()),
+                    ),
+                    (alice_id, ":person/age".to_string(), Value::Integer(30)),
+                ],
+                None,
+            )
             .unwrap();
 
         let matcher = PatternMatcher::new(storage);
@@ -423,11 +424,14 @@ mod tests {
         let alice_id = Uuid::new_v4();
 
         storage
-            .transact(vec![(
-                alice_id,
-                ":person/name".to_string(),
-                Value::String("Alice".to_string()),
-            )], None)
+            .transact(
+                vec![(
+                    alice_id,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                )],
+                None,
+            )
             .unwrap();
 
         let matcher = PatternMatcher::new(storage);
@@ -466,10 +470,7 @@ mod tests {
     #[test]
     fn test_edn_to_entity_id() {
         let uuid = Uuid::new_v4();
-        assert_eq!(
-            edn_to_entity_id(&EdnValue::Uuid(uuid)).unwrap(),
-            uuid
-        );
+        assert_eq!(edn_to_entity_id(&EdnValue::Uuid(uuid)).unwrap(), uuid);
 
         // Keywords should generate deterministic UUIDs
         let result1 = edn_to_entity_id(&EdnValue::Keyword(":alice".to_string())).unwrap();

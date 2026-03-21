@@ -23,12 +23,12 @@
 /// // Iteration 1: Apply rules, derive {A->C}, delta = {A->C}
 /// // Iteration 2: No new facts, delta = {}, STOP
 /// ```
-use super::matcher::{edn_to_entity_id, edn_to_value, Bindings, PatternMatcher};
+use super::matcher::{Bindings, PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::rules::RuleRegistry;
 use super::types::{EdnValue, Pattern, Rule};
-use crate::graph::types::{Fact, Value};
 use crate::graph::FactStorage;
-use anyhow::{anyhow, Result};
+use crate::graph::types::{Fact, Value};
+use anyhow::{Result, anyhow};
 use std::sync::{Arc, RwLock};
 
 /// Recursive evaluator for Datalog rules using semi-naive evaluation.
@@ -91,11 +91,10 @@ impl RecursiveEvaluator {
 
         // Add base facts to derived storage
         for fact in &base_facts {
-            derived.transact(vec![(
-                fact.entity,
-                fact.attribute.clone(),
-                fact.value.clone(),
-            )], None)?;
+            derived.transact(
+                vec![(fact.entity, fact.attribute.clone(), fact.value.clone())],
+                None,
+            )?;
         }
 
         // Track facts we've seen (for delta computation)
@@ -138,11 +137,10 @@ impl RecursiveEvaluator {
 
             // Add delta facts to derived storage
             for fact in delta {
-                derived.transact(vec![(
-                    fact.entity,
-                    fact.attribute.clone(),
-                    fact.value.clone(),
-                )], None)?;
+                derived.transact(
+                    vec![(fact.entity, fact.attribute.clone(), fact.value.clone())],
+                    None,
+                )?;
             }
         }
 
@@ -232,7 +230,11 @@ impl RecursiveEvaluator {
         // First element is predicate name
         let predicate = match &list[0] {
             EdnValue::Symbol(s) => s.clone(),
-            _ => return Err(anyhow!("Rule invocation must start with predicate name (symbol)")),
+            _ => {
+                return Err(anyhow!(
+                    "Rule invocation must start with predicate name (symbol)"
+                ));
+            }
         };
 
         // Must have exactly 2 arguments (entity and value)
@@ -280,8 +282,8 @@ impl RecursiveEvaluator {
 
         // head[2] is value (usually a variable or constant)
         let value_edn = self.substitute_variable(&head[2], binding)?;
-        let value = edn_to_value(&value_edn)
-            .map_err(|e| anyhow!("Failed to convert value: {}", e))?;
+        let value =
+            edn_to_value(&value_edn).map_err(|e| anyhow!("Failed to convert value: {}", e))?;
 
         // Create fact with derived predicate as attribute
         // Use ":predicate-name" as the attribute for derived facts
@@ -350,10 +352,13 @@ mod tests {
         let c = Uuid::new_v4();
 
         storage
-            .transact(vec![
-                (a, ":connected".to_string(), Value::Ref(b)),
-                (b, ":connected".to_string(), Value::Ref(c)),
-            ], None)
+            .transact(
+                vec![
+                    (a, ":connected".to_string(), Value::Ref(b)),
+                    (b, ":connected".to_string(), Value::Ref(c)),
+                ],
+                None,
+            )
             .unwrap();
 
         storage
@@ -366,7 +371,11 @@ mod tests {
                 EdnValue::Symbol(s) => s.clone(),
                 _ => panic!("Expected symbol as predicate name"),
             };
-            rules.write().unwrap().register_rule(predicate, rule).unwrap();
+            rules
+                .write()
+                .unwrap()
+                .register_rule(predicate, rule)
+                .unwrap();
         } else {
             panic!("Expected Rule command");
         }
@@ -501,12 +510,15 @@ mod tests {
         let n5 = Uuid::new_v4();
 
         storage
-            .transact(vec![
-                (n1, ":connected".to_string(), Value::Ref(n2)),
-                (n2, ":connected".to_string(), Value::Ref(n3)),
-                (n3, ":connected".to_string(), Value::Ref(n4)),
-                (n4, ":connected".to_string(), Value::Ref(n5)),
-            ], None)
+            .transact(
+                vec![
+                    (n1, ":connected".to_string(), Value::Ref(n2)),
+                    (n2, ":connected".to_string(), Value::Ref(n3)),
+                    (n3, ":connected".to_string(), Value::Ref(n4)),
+                    (n4, ":connected".to_string(), Value::Ref(n5)),
+                ],
+                None,
+            )
             .unwrap();
 
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
@@ -549,11 +561,14 @@ mod tests {
         let c = Uuid::new_v4();
 
         storage
-            .transact(vec![
-                (a, ":connected".to_string(), Value::Ref(b)),
-                (b, ":connected".to_string(), Value::Ref(c)),
-                (c, ":connected".to_string(), Value::Ref(a)),
-            ], None)
+            .transact(
+                vec![
+                    (a, ":connected".to_string(), Value::Ref(b)),
+                    (b, ":connected".to_string(), Value::Ref(c)),
+                    (c, ":connected".to_string(), Value::Ref(a)),
+                ],
+                None,
+            )
             .unwrap();
 
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));

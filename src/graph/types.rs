@@ -271,7 +271,10 @@ pub struct TransactOptions {
 
 impl TransactOptions {
     pub fn new(valid_from: Option<i64>, valid_to: Option<i64>) -> Self {
-        TransactOptions { valid_from, valid_to }
+        TransactOptions {
+            valid_from,
+            valid_to,
+        }
     }
 }
 
@@ -289,7 +292,10 @@ mod tests {
         let tx2 = tx_id_now();
 
         // tx2 should be after tx1
-        assert!(tx2 > tx1, "Transaction IDs should be chronologically ordered");
+        assert!(
+            tx2 > tx1,
+            "Transaction IDs should be chronologically ordered"
+        );
 
         // Difference should be at least 5ms (we slept for 5ms)
         assert!(tx2 - tx1 >= 5, "Expected at least 5ms difference");
@@ -300,7 +306,9 @@ mod tests {
         let recovered = tx_id_to_system_time(tx_id);
 
         // Should be within 1ms (we lose precision converting to millis)
-        let diff = recovered.duration_since(now).unwrap_or_else(|e| e.duration());
+        let diff = recovered
+            .duration_since(now)
+            .unwrap_or_else(|e| e.duration());
         assert!(
             diff.as_millis() < 1,
             "Round-trip conversion should preserve timestamp within 1ms"

@@ -423,10 +423,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                     let as_of = match &query_vector[i] {
                         EdnValue::Integer(n) if *n >= 0 => AsOf::Counter(*n as u64),
                         EdnValue::Integer(n) => {
-                            return Err(format!(
-                                ":as-of counter must be non-negative, got {}",
-                                n
-                            ))
+                            return Err(format!(":as-of counter must be non-negative, got {}", n));
                         }
                         EdnValue::String(s) => {
                             let ts = parse_timestamp(s).map_err(|e| e.to_string())?;
@@ -436,7 +433,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                             return Err(format!(
                                 ":as-of must be an integer (counter) or ISO 8601 string, got {:?}",
                                 other
-                            ))
+                            ));
                         }
                     };
                     query_as_of = Some(as_of);
@@ -458,7 +455,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                             return Err(format!(
                                 ":valid-at must be an ISO 8601 string or :any-valid-time, got {:?}",
                                 other
-                            ))
+                            ));
                         }
                     };
                     query_valid_at = Some(valid_at);
@@ -501,10 +498,8 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                     let predicate = match &rule_list[0] {
                         EdnValue::Symbol(s) => s.clone(),
                         _ => {
-                            return Err(
-                                "Rule invocation must start with predicate name (symbol)"
-                                    .to_string(),
-                            )
+                            return Err("Rule invocation must start with predicate name (symbol)"
+                                .to_string());
                         }
                     };
 
@@ -520,7 +515,10 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                 }
             }
             _ => {
-                return Err(format!("Unexpected element in query: {:?}", query_vector[i]));
+                return Err(format!(
+                    "Unexpected element in query: {:?}",
+                    query_vector[i]
+                ));
             }
         }
 
@@ -581,7 +579,7 @@ fn parse_transact(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                     return Err(format!(
                         "Optional 4th element of a fact must be a map {{:valid-from ... :valid-to ...}}, got {:?}",
                         other
-                    ))
+                    ));
                 }
             }
         } else {
@@ -609,7 +607,9 @@ fn parse_transact(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
 
 /// Parse a valid-time map `{:valid-from "ts" :valid-to "ts"}` into millisecond timestamps.
 /// Both keys are optional.
-fn parse_valid_time_map(pairs: &[(EdnValue, EdnValue)]) -> Result<(Option<i64>, Option<i64>), String> {
+fn parse_valid_time_map(
+    pairs: &[(EdnValue, EdnValue)],
+) -> Result<(Option<i64>, Option<i64>), String> {
     let mut valid_from = None;
     let mut valid_to = None;
 
@@ -622,7 +622,7 @@ fn parse_valid_time_map(pairs: &[(EdnValue, EdnValue)]) -> Result<(Option<i64>, 
                         return Err(format!(
                             ":valid-from must be an ISO 8601 string, got {:?}",
                             other
-                        ))
+                        ));
                     }
                 };
                 valid_from = Some(parse_timestamp(s).map_err(|e| e.to_string())?);
@@ -634,7 +634,7 @@ fn parse_valid_time_map(pairs: &[(EdnValue, EdnValue)]) -> Result<(Option<i64>, 
                         return Err(format!(
                             ":valid-to must be an ISO 8601 string, got {:?}",
                             other
-                        ))
+                        ));
                     }
                 };
                 valid_to = Some(parse_timestamp(s).map_err(|e| e.to_string())?);
@@ -643,7 +643,7 @@ fn parse_valid_time_map(pairs: &[(EdnValue, EdnValue)]) -> Result<(Option<i64>, 
                 return Err(format!(
                     "Unknown key in valid-time map: {:?}; expected :valid-from or :valid-to",
                     key
-                ))
+                ));
             }
         }
     }
@@ -810,14 +810,8 @@ mod tests {
         match cmd {
             DatalogCommand::Transact(tx) => {
                 assert_eq!(tx.facts.len(), 2);
-                assert_eq!(
-                    tx.facts[0].entity,
-                    EdnValue::Keyword(":alice".to_string())
-                );
-                assert_eq!(
-                    tx.facts[0].value,
-                    EdnValue::String("Alice".to_string())
-                );
+                assert_eq!(tx.facts[0].entity, EdnValue::Keyword(":alice".to_string()));
+                assert_eq!(tx.facts[0].value, EdnValue::String("Alice".to_string()));
                 assert_eq!(tx.facts[1].value, EdnValue::Integer(30));
             }
             _ => panic!("Expected Transact command"),
@@ -840,7 +834,8 @@ mod tests {
 
     #[test]
     fn test_parse_complex_query() {
-        let input = r#"(query [:find ?name ?age :where [?e :person/name ?name] [?e :person/age ?age]])"#;
+        let input =
+            r#"(query [:find ?name ?age :where [?e :person/name ?name] [?e :person/age ?age]])"#;
         let cmd = parse_datalog_command(input).unwrap();
 
         match cmd {
@@ -965,8 +960,7 @@ mod tests {
 
     #[test]
     fn test_parse_query_mixed_pattern_and_rule() {
-        let input =
-            r#"(query [:find ?name :where (reachable :alice ?person) [?person :person/name ?name]])"#;
+        let input = r#"(query [:find ?name :where (reachable :alice ?person) [?person :person/name ?name]])"#;
         let cmd = parse_datalog_command(input).unwrap();
 
         match cmd {
@@ -1042,10 +1036,9 @@ mod tests {
 
     #[test]
     fn test_parse_as_of_counter() {
-        let cmd = parse_datalog_command(
-            "(query [:find ?name :as-of 50 :where [?e :person/name ?name]])",
-        )
-        .unwrap();
+        let cmd =
+            parse_datalog_command("(query [:find ?name :as-of 50 :where [?e :person/name ?name]])")
+                .unwrap();
         let query = match cmd {
             DatalogCommand::Query(q) => q,
             _ => panic!("expected Query"),
@@ -1068,9 +1061,8 @@ mod tests {
 
     #[test]
     fn test_parse_as_of_negative_counter_is_error() {
-        let result = parse_datalog_command(
-            "(query [:find ?n :as-of -1 :where [?e :person/name ?n]])"
-        );
+        let result =
+            parse_datalog_command("(query [:find ?n :as-of -1 :where [?e :person/name ?n]])");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("non-negative"));
     }

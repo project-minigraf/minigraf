@@ -1,7 +1,7 @@
-use minigraf::graph::types::Value;
 use minigraf::graph::FactStorage;
-use minigraf::query::datalog::{DatalogExecutor, QueryResult};
+use minigraf::graph::types::Value;
 use minigraf::query::datalog::parser::parse_datalog_command;
+use minigraf::query::datalog::{DatalogExecutor, QueryResult};
 use uuid::Uuid;
 
 /// Test simple transitive closure: A -> B -> C
@@ -16,10 +16,13 @@ fn test_simple_transitive_closure() {
     let c = Uuid::new_v4();
 
     storage
-        .transact(vec![
-            (a, ":connected".to_string(), Value::Ref(b)),
-            (b, ":connected".to_string(), Value::Ref(c)),
-        ], None)
+        .transact(
+            vec![
+                (a, ":connected".to_string(), Value::Ref(b)),
+                (b, ":connected".to_string(), Value::Ref(c)),
+            ],
+            None,
+        )
         .unwrap();
 
     // Register reachable rules
@@ -28,9 +31,12 @@ fn test_simple_transitive_closure() {
         .unwrap();
 
     executor
-        .execute(parse_datalog_command(
-            r#"(rule [(reachable ?x ?y) [?x :connected ?z] (reachable ?z ?y)])"#,
-        ).unwrap())
+        .execute(
+            parse_datalog_command(
+                r#"(rule [(reachable ?x ?y) [?x :connected ?z] (reachable ?z ?y)])"#,
+            )
+            .unwrap(),
+        )
         .unwrap();
 
     // Query: what can A reach?
@@ -73,11 +79,14 @@ fn test_transitive_closure_with_cycle() {
     let c = Uuid::new_v4();
 
     storage
-        .transact(vec![
-            (a, ":connected".to_string(), Value::Ref(b)),
-            (b, ":connected".to_string(), Value::Ref(c)),
-            (c, ":connected".to_string(), Value::Ref(a)),
-        ], None)
+        .transact(
+            vec![
+                (a, ":connected".to_string(), Value::Ref(b)),
+                (b, ":connected".to_string(), Value::Ref(c)),
+                (c, ":connected".to_string(), Value::Ref(a)),
+            ],
+            None,
+        )
         .unwrap();
 
     // Register reachable rules
@@ -86,9 +95,12 @@ fn test_transitive_closure_with_cycle() {
         .unwrap();
 
     executor
-        .execute(parse_datalog_command(
-            r#"(rule [(reachable ?x ?y) [?x :connected ?z] (reachable ?z ?y)])"#,
-        ).unwrap())
+        .execute(
+            parse_datalog_command(
+                r#"(rule [(reachable ?x ?y) [?x :connected ?z] (reachable ?z ?y)])"#,
+            )
+            .unwrap(),
+        )
         .unwrap();
 
     // Query: what can A reach? (should be B, C, and A itself)
@@ -141,9 +153,10 @@ fn test_long_chain_transitive_closure() {
         .unwrap();
 
     executor
-        .execute(parse_datalog_command(
-            r#"(rule [(reachable ?x ?y) [?x :next ?z] (reachable ?z ?y)])"#,
-        ).unwrap())
+        .execute(
+            parse_datalog_command(r#"(rule [(reachable ?x ?y) [?x :next ?z] (reachable ?z ?y)])"#)
+                .unwrap(),
+        )
         .unwrap();
 
     // Query: what can n0 reach? (should be all 9 others)
@@ -190,12 +203,15 @@ fn test_ancestor_relationship() {
     let eve = Uuid::new_v4();
 
     storage
-        .transact(vec![
-            (alice, ":parent".to_string(), Value::Ref(bob)),
-            (alice, ":parent".to_string(), Value::Ref(charlie)),
-            (bob, ":parent".to_string(), Value::Ref(diana)),
-            (bob, ":parent".to_string(), Value::Ref(eve)),
-        ], None)
+        .transact(
+            vec![
+                (alice, ":parent".to_string(), Value::Ref(bob)),
+                (alice, ":parent".to_string(), Value::Ref(charlie)),
+                (bob, ":parent".to_string(), Value::Ref(diana)),
+                (bob, ":parent".to_string(), Value::Ref(eve)),
+            ],
+            None,
+        )
         .unwrap();
 
     // Register ancestor rules
@@ -204,9 +220,10 @@ fn test_ancestor_relationship() {
         .unwrap();
 
     executor
-        .execute(parse_datalog_command(
-            r#"(rule [(ancestor ?a ?d) [?a :parent ?p] (ancestor ?p ?d)])"#,
-        ).unwrap())
+        .execute(
+            parse_datalog_command(r#"(rule [(ancestor ?a ?d) [?a :parent ?p] (ancestor ?p ?d)])"#)
+                .unwrap(),
+        )
         .unwrap();
 
     // Query: who are Alice's descendants?
@@ -250,11 +267,14 @@ fn test_multiple_recursive_predicates() {
     let c = Uuid::new_v4();
 
     storage
-        .transact(vec![
-            (a, ":friend".to_string(), Value::Ref(b)),
-            (b, ":friend".to_string(), Value::Ref(c)),
-            (a, ":coworker".to_string(), Value::Ref(c)),
-        ], None)
+        .transact(
+            vec![
+                (a, ":friend".to_string(), Value::Ref(b)),
+                (b, ":friend".to_string(), Value::Ref(c)),
+                (a, ":coworker".to_string(), Value::Ref(c)),
+            ],
+            None,
+        )
         .unwrap();
 
     // Register friend-reachable rules
@@ -263,20 +283,28 @@ fn test_multiple_recursive_predicates() {
         .unwrap();
 
     executor
-        .execute(parse_datalog_command(
-            r#"(rule [(friend-reach ?x ?y) [?x :friend ?z] (friend-reach ?z ?y)])"#,
-        ).unwrap())
+        .execute(
+            parse_datalog_command(
+                r#"(rule [(friend-reach ?x ?y) [?x :friend ?z] (friend-reach ?z ?y)])"#,
+            )
+            .unwrap(),
+        )
         .unwrap();
 
     // Register coworker-reachable rules
     executor
-        .execute(parse_datalog_command(r#"(rule [(coworker-reach ?x ?y) [?x :coworker ?y]])"#).unwrap())
+        .execute(
+            parse_datalog_command(r#"(rule [(coworker-reach ?x ?y) [?x :coworker ?y]])"#).unwrap(),
+        )
         .unwrap();
 
     executor
-        .execute(parse_datalog_command(
-            r#"(rule [(coworker-reach ?x ?y) [?x :coworker ?z] (coworker-reach ?z ?y)])"#,
-        ).unwrap())
+        .execute(
+            parse_datalog_command(
+                r#"(rule [(coworker-reach ?x ?y) [?x :coworker ?z] (coworker-reach ?z ?y)])"#,
+            )
+            .unwrap(),
+        )
         .unwrap();
 
     // Query: who can A reach via friends?
@@ -342,10 +370,13 @@ fn test_recursive_rule_with_constants() {
     let c = Uuid::new_v4();
 
     storage
-        .transact(vec![
-            (a, ":connected".to_string(), Value::Ref(b)),
-            (b, ":connected".to_string(), Value::Ref(c)),
-        ], None)
+        .transact(
+            vec![
+                (a, ":connected".to_string(), Value::Ref(b)),
+                (b, ":connected".to_string(), Value::Ref(c)),
+            ],
+            None,
+        )
         .unwrap();
 
     // Register reachable rules
@@ -354,9 +385,10 @@ fn test_recursive_rule_with_constants() {
         .unwrap();
 
     executor
-        .execute(parse_datalog_command(
-            r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#,
-        ).unwrap())
+        .execute(
+            parse_datalog_command(r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#)
+                .unwrap(),
+        )
         .unwrap();
 
     // Query with both constants: can A reach C?
@@ -390,12 +422,15 @@ fn test_diamond_pattern_reachability() {
     let d = Uuid::new_v4();
 
     storage
-        .transact(vec![
-            (a, ":connected".to_string(), Value::Ref(b)),
-            (a, ":connected".to_string(), Value::Ref(c)),
-            (b, ":connected".to_string(), Value::Ref(d)),
-            (c, ":connected".to_string(), Value::Ref(d)),
-        ], None)
+        .transact(
+            vec![
+                (a, ":connected".to_string(), Value::Ref(b)),
+                (a, ":connected".to_string(), Value::Ref(c)),
+                (b, ":connected".to_string(), Value::Ref(d)),
+                (c, ":connected".to_string(), Value::Ref(d)),
+            ],
+            None,
+        )
         .unwrap();
 
     // Register reachable rules
@@ -404,16 +439,14 @@ fn test_diamond_pattern_reachability() {
         .unwrap();
 
     executor
-        .execute(parse_datalog_command(
-            r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#,
-        ).unwrap())
+        .execute(
+            parse_datalog_command(r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#)
+                .unwrap(),
+        )
         .unwrap();
 
     // Query: what can A reach?
-    let query_str = format!(
-        r#"(query [:find ?to :where (reach #uuid "{}" ?to)])"#,
-        a
-    );
+    let query_str = format!(r#"(query [:find ?to :where (reach #uuid "{}" ?to)])"#, a);
     let query = parse_datalog_command(&query_str).unwrap();
 
     let result = executor.execute(query).unwrap();
@@ -449,17 +482,15 @@ fn test_recursive_rule_no_base_facts() {
         .unwrap();
 
     executor
-        .execute(parse_datalog_command(
-            r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#,
-        ).unwrap())
+        .execute(
+            parse_datalog_command(r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#)
+                .unwrap(),
+        )
         .unwrap();
 
     // Query with no matching facts
     let a = Uuid::new_v4();
-    let query_str = format!(
-        r#"(query [:find ?to :where (reach #uuid "{}" ?to)])"#,
-        a
-    );
+    let query_str = format!(r#"(query [:find ?to :where (reach #uuid "{}" ?to)])"#, a);
     let query = parse_datalog_command(&query_str).unwrap();
 
     let result = executor.execute(query).unwrap();
@@ -491,16 +522,14 @@ fn test_convergence_simple_graph() {
         .unwrap();
 
     executor
-        .execute(parse_datalog_command(
-            r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#,
-        ).unwrap())
+        .execute(
+            parse_datalog_command(r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#)
+                .unwrap(),
+        )
         .unwrap();
 
     // Query should converge quickly
-    let query_str = format!(
-        r#"(query [:find ?to :where (reach #uuid "{}" ?to)])"#,
-        a
-    );
+    let query_str = format!(r#"(query [:find ?to :where (reach #uuid "{}" ?to)])"#, a);
     let query = parse_datalog_command(&query_str).unwrap();
 
     let result = executor.execute(query).unwrap();

@@ -47,9 +47,11 @@ fn test_query_correct_after_transact_and_reload() {
     // First session: write facts, then drop (triggers auto-checkpoint)
     {
         let db = Minigraf::open(&db_path).unwrap();
-        db.execute(r#"(transact [[:alice :person/name "Alice"]
-                                  [:bob :person/name "Bob"]])"#)
-            .unwrap();
+        db.execute(
+            r#"(transact [[:alice :person/name "Alice"]
+                                  [:bob :person/name "Bob"]])"#,
+        )
+        .unwrap();
     }
 
     // Second session: reopen and query — indexes rebuilt from disk
@@ -99,10 +101,8 @@ fn test_bitemporal_valid_at_query_still_correct() {
     .unwrap();
 
     let rows = extract_rows(
-        db.execute(
-            r#"(query [:find ?s :valid-at "2023-06-01" :where [:alice :status ?s]])"#,
-        )
-        .unwrap(),
+        db.execute(r#"(query [:find ?s :valid-at "2023-06-01" :where [:alice :status ?s]])"#)
+            .unwrap(),
     );
     assert_eq!(rows.len(), 1, "Should find exactly one status in mid-2023");
     assert_eq!(
@@ -128,11 +128,7 @@ fn test_as_of_query_still_correct() {
             .unwrap(),
     );
     assert_eq!(rows.len(), 1, ":as-of 1 should return exactly one age");
-    assert_eq!(
-        rows[0][0],
-        Value::Integer(30),
-        "Age at tx 1 should be 30"
-    );
+    assert_eq!(rows[0][0], Value::Integer(30), "Age at tx 1 should be 30");
 }
 
 // ── 5. Recursive rules regression ────────────────────────────────────────────
@@ -142,16 +138,12 @@ fn test_as_of_query_still_correct() {
 #[test]
 fn test_recursive_rules_unchanged_after_6_1() {
     let (db, _dir) = open_temp_db();
-    db.execute(
-        r#"(transact [[:a :connected :b] [:b :connected :c] [:c :connected :d]])"#,
-    )
-    .unwrap();
+    db.execute(r#"(transact [[:a :connected :b] [:b :connected :c] [:c :connected :d]])"#)
+        .unwrap();
     db.execute(r#"(rule [(reachable ?from ?to) [?from :connected ?to]])"#)
         .unwrap();
-    db.execute(
-        r#"(rule [(reachable ?from ?to) [?from :connected ?mid] (reachable ?mid ?to)])"#,
-    )
-    .unwrap();
+    db.execute(r#"(rule [(reachable ?from ?to) [?from :connected ?mid] (reachable ?mid ?to)])"#)
+        .unwrap();
 
     let n = count_results(
         db.execute(r#"(query [:find ?to :where (reachable :a ?to)])"#)
