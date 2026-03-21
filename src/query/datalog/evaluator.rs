@@ -95,7 +95,7 @@ impl RecursiveEvaluator {
                 fact.entity,
                 fact.attribute.clone(),
                 fact.value.clone(),
-            )])?;
+            )], None)?;
         }
 
         // Track facts we've seen (for delta computation)
@@ -142,7 +142,7 @@ impl RecursiveEvaluator {
                     fact.entity,
                     fact.attribute.clone(),
                     fact.value.clone(),
-                )])?;
+                )], None)?;
             }
         }
 
@@ -353,7 +353,7 @@ mod tests {
             .transact(vec![
                 (a, ":connected".to_string(), Value::Ref(b)),
                 (b, ":connected".to_string(), Value::Ref(c)),
-            ])
+            ], None)
             .unwrap();
 
         storage
@@ -506,7 +506,7 @@ mod tests {
                 (n2, ":connected".to_string(), Value::Ref(n3)),
                 (n3, ":connected".to_string(), Value::Ref(n4)),
                 (n4, ":connected".to_string(), Value::Ref(n5)),
-            ])
+            ], None)
             .unwrap();
 
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
@@ -553,7 +553,7 @@ mod tests {
                 (a, ":connected".to_string(), Value::Ref(b)),
                 (b, ":connected".to_string(), Value::Ref(c)),
                 (c, ":connected".to_string(), Value::Ref(a)),
-            ])
+            ], None)
             .unwrap();
 
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
@@ -597,7 +597,7 @@ mod tests {
         let b = Uuid::new_v4();
 
         storage
-            .transact(vec![(a, ":connected".to_string(), Value::Ref(b))])
+            .transact(vec![(a, ":connected".to_string(), Value::Ref(b))], None)
             .unwrap();
 
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));

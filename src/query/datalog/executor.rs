@@ -68,7 +68,7 @@ impl DatalogExecutor {
 
         let tx_id = self
             .storage
-            .transact(fact_tuples)
+            .transact(fact_tuples, None)
             .map_err(|e| anyhow!("Transaction failed: {}", e))?;
 
         Ok(QueryResult::Transacted(tx_id))
@@ -292,7 +292,7 @@ mod tests {
                     Value::String("Alice".to_string()),
                 ),
                 (alice_id, ":person/age".to_string(), Value::Integer(30)),
-            ])
+            ], None)
             .unwrap();
 
         // Query for name
@@ -326,7 +326,7 @@ mod tests {
                     Value::String("Alice".to_string()),
                 ),
                 (alice_id, ":person/age".to_string(), Value::Integer(30)),
-            ])
+            ], None)
             .unwrap();
 
         // Query for both name and age
@@ -381,7 +381,7 @@ mod tests {
                 alice_id,
                 ":person/age".to_string(),
                 Value::Integer(30),
-            )])
+            )], None)
             .unwrap();
 
         // Verify it exists
@@ -541,7 +541,7 @@ mod tests {
             .transact(vec![
                 (a, ":connected".to_string(), Value::Ref(b)),
                 (a, ":connected".to_string(), Value::Ref(c)),
-            ])
+            ], None)
             .unwrap();
 
         // Register reachable rule (base case only - no recursion yet)
@@ -600,7 +600,7 @@ mod tests {
                     ":person/name".to_string(),
                     Value::String("Bob".to_string()),
                 ),
-            ])
+            ], None)
             .unwrap();
 
         // Register reachable rule (base case only - no recursion yet)
@@ -640,7 +640,7 @@ mod tests {
             .transact(vec![
                 (a, ":connected".to_string(), Value::Ref(b)),
                 (b, ":connected".to_string(), Value::Ref(c)),
-            ])
+            ], None)
             .unwrap();
 
         // Register reachable rules (base + recursive)
@@ -703,7 +703,7 @@ mod tests {
                     ":person/name".to_string(),
                     Value::String("Charlie".to_string()),
                 ),
-            ])
+            ], None)
             .unwrap();
 
         // Register recursive reachable rules

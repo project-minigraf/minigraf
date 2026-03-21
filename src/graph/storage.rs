@@ -1,5 +1,7 @@
-use crate::graph::types::{Attribute, EntityId, Fact, TxId, Value, tx_id_now};
+use crate::graph::types::{Attribute, EntityId, Fact, TxId, Value, TransactOptions, tx_id_now, VALID_TIME_FOREVER};
+use crate::query::datalog::types::AsOf;
 use anyhow::Result;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 // ============================================================================
@@ -37,7 +39,7 @@ use std::sync::{Arc, RwLock};
 /// storage.transact(vec![
 ///     (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
 ///     (alice, ":person/age".to_string(), Value::Integer(30)),
-/// ]).unwrap();
+/// ], None).unwrap();
 ///
 /// // Query facts
 /// let facts = storage.get_facts_by_entity(&alice).unwrap();
@@ -47,6 +49,8 @@ use std::sync::{Arc, RwLock};
 pub struct FactStorage {
     /// Append-only log of all facts (assertions and retractions)
     facts: Arc<RwLock<Vec<Fact>>>,
+    /// Monotonically incrementing batch counter — increments once per transact/retract call.
+    tx_counter: Arc<AtomicU64>,
 }
 
 impl Default for FactStorage {
@@ -60,25 +64,38 @@ impl FactStorage {
     pub fn new() -> Self {
         FactStorage {
             facts: Arc::new(RwLock::new(Vec::new())),
+            tx_counter: Arc::new(AtomicU64::new(0)),
         }
     }
 
     /// Transact a batch of facts with automatic timestamping
     ///
-    /// All facts in a single transaction get the same timestamp (TxId).
-    /// This groups related facts together for atomicity.
+    /// All facts in a single transaction get the same timestamp (TxId) and the same
+    /// `tx_count`. The `tx_count` increments once per call (not per fact), so all
+    /// facts in a batch share the same counter value.
     ///
     /// # Arguments
     /// * `fact_tuples` - Vec of (EntityId, Attribute, Value) tuples to assert
+    /// * `opts` - Optional TransactOptions to override valid_from / valid_to
     ///
     /// # Returns
     /// The TxId (timestamp) assigned to these facts
-    pub fn transact(&self, fact_tuples: Vec<(EntityId, Attribute, Value)>) -> Result<TxId> {
+    pub fn transact(
+        &self,
+        fact_tuples: Vec<(EntityId, Attribute, Value)>,
+        opts: Option<TransactOptions>,
+    ) -> Result<TxId> {
         let tx_id = tx_id_now();
+        let tx_count = self.tx_counter.fetch_add(1, Ordering::SeqCst) + 1;
+        let opts = opts.unwrap_or_default();
 
         let facts: Vec<Fact> = fact_tuples
             .into_iter()
-            .map(|(entity, attribute, value)| Fact::new(entity, attribute, value, tx_id))
+            .map(|(entity, attribute, value)| {
+                let valid_from = opts.valid_from.unwrap_or(tx_id as i64);
+                let valid_to = opts.valid_to.unwrap_or(VALID_TIME_FOREVER);
+                Fact::with_valid_time(entity, attribute, value, tx_id, tx_count, valid_from, valid_to)
+            })
             .collect();
 
         let mut storage = self.facts.write().unwrap();
@@ -99,16 +116,73 @@ impl FactStorage {
     /// The TxId (timestamp) assigned to these retractions
     pub fn retract(&self, fact_tuples: Vec<(EntityId, Attribute, Value)>) -> Result<TxId> {
         let tx_id = tx_id_now();
+        let tx_count = self.tx_counter.fetch_add(1, Ordering::SeqCst) + 1;
 
         let retractions: Vec<Fact> = fact_tuples
             .into_iter()
-            .map(|(entity, attribute, value)| Fact::retract(entity, attribute, value, tx_id))
+            .map(|(entity, attribute, value)| {
+                let mut f = Fact::retract(entity, attribute, value, tx_id);
+                f.tx_count = tx_count;
+                f
+            })
             .collect();
 
         let mut storage = self.facts.write().unwrap();
         storage.extend(retractions);
 
         Ok(tx_id)
+    }
+
+    /// Insert a fact with its original tx_id and tx_count preserved.
+    ///
+    /// Used by the load and migration paths only — bypasses tx_counter entirely.
+    /// After loading all facts, call `restore_tx_counter()` to re-synchronise the
+    /// counter so subsequent `transact()` calls get correct tx_count values.
+    pub fn load_fact(&self, fact: Fact) -> Result<()> {
+        let mut storage = self.facts.write().unwrap();
+        storage.push(fact);
+        Ok(())
+    }
+
+    /// Set tx_counter to max(tx_count) across all loaded facts.
+    ///
+    /// Must be called after all `load_fact()` calls complete so that the next
+    /// `transact()` call picks up from the right sequence number.
+    pub fn restore_tx_counter(&self) -> Result<()> {
+        let storage = self.facts.read().unwrap();
+        let max = storage.iter().map(|f| f.tx_count).max().unwrap_or(0);
+        self.tx_counter.store(max, Ordering::SeqCst);
+        Ok(())
+    }
+
+    /// Return all facts visible as of the given transaction point.
+    ///
+    /// * `AsOf::Counter(n)` — include facts whose `tx_count <= n`
+    /// * `AsOf::Timestamp(t)` — include facts whose `tx_id <= t as u64`
+    pub fn get_facts_as_of(&self, as_of: &AsOf) -> Result<Vec<Fact>> {
+        let storage = self.facts.read().unwrap();
+        let filtered = storage
+            .iter()
+            .filter(|f| match as_of {
+                AsOf::Counter(n) => f.tx_count <= *n,
+                AsOf::Timestamp(t) => f.tx_id <= *t as u64,
+            })
+            .cloned()
+            .collect();
+        Ok(filtered)
+    }
+
+    /// Return all asserted facts valid at the given timestamp.
+    ///
+    /// A fact is valid at `ts` when `valid_from <= ts < valid_to` and it is asserted.
+    pub fn get_facts_valid_at(&self, ts: i64) -> Result<Vec<Fact>> {
+        let storage = self.facts.read().unwrap();
+        let filtered = storage
+            .iter()
+            .filter(|f| f.is_asserted() && f.valid_from <= ts && ts < f.valid_to)
+            .cloned()
+            .collect();
+        Ok(filtered)
     }
 
     /// Get all facts (including retractions)
@@ -259,7 +333,7 @@ mod tests {
                     Value::String("Alice".to_string()),
                 ),
                 (alice, ":person/age".to_string(), Value::Integer(30)),
-            ])
+            ], None)
             .unwrap();
 
         // Verify facts were stored
@@ -286,7 +360,7 @@ mod tests {
                 alice,
                 ":person/name".to_string(),
                 Value::String("Alice".to_string()),
-            )])
+            )], None)
             .unwrap();
 
         std::thread::sleep(std::time::Duration::from_millis(2));
@@ -333,7 +407,7 @@ mod tests {
                     ":person/name".to_string(),
                     Value::String("Bob".to_string()),
                 ),
-            ])
+            ], None)
             .unwrap();
 
         let alice_facts = storage.get_facts_by_entity(&alice).unwrap();
@@ -366,7 +440,7 @@ mod tests {
                     ":person/name".to_string(),
                     Value::String("Bob".to_string()),
                 ),
-            ])
+            ], None)
             .unwrap();
 
         // Get all :person/name facts
@@ -395,7 +469,7 @@ mod tests {
                 alice,
                 ":person/name".to_string(),
                 Value::String("Alice".to_string()),
-            )])
+            )], None)
             .unwrap();
 
         std::thread::sleep(std::time::Duration::from_millis(2));
@@ -406,7 +480,7 @@ mod tests {
                 alice,
                 ":person/name".to_string(),
                 Value::String("Alice Smith".to_string()),
-            )])
+            )], None)
             .unwrap();
 
         // Current value should be the most recent
@@ -455,7 +529,7 @@ mod tests {
                     ":person/name".to_string(),
                     Value::String("Bob".to_string()),
                 ),
-            ])
+            ], None)
             .unwrap();
 
         // Get friendship
@@ -475,19 +549,19 @@ mod tests {
 
         // Create multiple versions over time
         let tx1 = storage
-            .transact(vec![(alice, ":person/age".to_string(), Value::Integer(30))])
+            .transact(vec![(alice, ":person/age".to_string(), Value::Integer(30))], None)
             .unwrap();
 
         std::thread::sleep(std::time::Duration::from_millis(2));
 
         let tx2 = storage
-            .transact(vec![(alice, ":person/age".to_string(), Value::Integer(31))])
+            .transact(vec![(alice, ":person/age".to_string(), Value::Integer(31))], None)
             .unwrap();
 
         std::thread::sleep(std::time::Duration::from_millis(2));
 
         let tx3 = storage
-            .transact(vec![(alice, ":person/age".to_string(), Value::Integer(32))])
+            .transact(vec![(alice, ":person/age".to_string(), Value::Integer(32))], None)
             .unwrap();
 
         // All versions are in history
@@ -528,12 +602,158 @@ mod tests {
                     ":person/email".to_string(),
                     Value::String("alice@example.com".to_string()),
                 ),
-            ])
+            ], None)
             .unwrap();
 
         // All facts should have same tx_id (atomic batch)
         let facts = storage.get_facts_by_entity(&alice).unwrap();
         assert_eq!(facts.len(), 3);
         assert!(facts.iter().all(|f| f.tx_id == tx_id));
+    }
+
+    // =========================================================================
+    // Phase 4: tx_counter, load_fact, temporal query tests
+    // =========================================================================
+
+    #[test]
+    fn test_tx_count_increments_per_call() {
+        use uuid::Uuid;
+
+        let storage = FactStorage::new();
+        let alice = Uuid::new_v4();
+
+        storage.transact(vec![
+            (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
+        ], None).unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(2));
+
+        storage.transact(vec![
+            (alice, ":person/age".to_string(), Value::Integer(30)),
+        ], None).unwrap();
+
+        let facts = storage.get_all_facts().unwrap();
+        let name_fact = facts.iter().find(|f| f.attribute == ":person/name").unwrap();
+        let age_fact = facts.iter().find(|f| f.attribute == ":person/age").unwrap();
+
+        assert_eq!(name_fact.tx_count, 1);
+        assert_eq!(age_fact.tx_count, 2);
+    }
+
+    #[test]
+    fn test_batch_facts_share_tx_count() {
+        use uuid::Uuid;
+
+        let storage = FactStorage::new();
+        let alice = Uuid::new_v4();
+
+        storage.transact(vec![
+            (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
+            (alice, ":person/age".to_string(), Value::Integer(30)),
+        ], None).unwrap();
+
+        let facts = storage.get_all_facts().unwrap();
+        assert!(facts.iter().all(|f| f.tx_count == 1));
+    }
+
+    #[test]
+    fn test_load_fact_preserves_tx_id_and_tx_count() {
+        use uuid::Uuid;
+
+        let storage = FactStorage::new();
+        let entity = Uuid::new_v4();
+
+        let original_fact = Fact::with_valid_time(
+            entity,
+            ":person/name".to_string(),
+            Value::String("Alice".to_string()),
+            12345_u64,  // original tx_id
+            7,          // original tx_count
+            12345_i64,
+            VALID_TIME_FOREVER,
+        );
+
+        storage.load_fact(original_fact.clone()).unwrap();
+
+        let facts = storage.get_all_facts().unwrap();
+        assert_eq!(facts.len(), 1);
+        assert_eq!(facts[0].tx_id, 12345);
+        assert_eq!(facts[0].tx_count, 7);
+    }
+
+    #[test]
+    fn test_get_facts_as_of_counter() {
+        use crate::query::datalog::types::AsOf;
+        use uuid::Uuid;
+
+        let storage = FactStorage::new();
+        let alice = Uuid::new_v4();
+
+        // tx_count = 1
+        storage.transact(vec![
+            (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
+        ], None).unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(2));
+
+        // tx_count = 2
+        storage.transact(vec![
+            (alice, ":person/age".to_string(), Value::Integer(30)),
+        ], None).unwrap();
+
+        // as-of tx 1: only name fact visible
+        let snapshot = storage.get_facts_as_of(&AsOf::Counter(1)).unwrap();
+        assert_eq!(snapshot.len(), 1);
+        assert_eq!(snapshot[0].attribute, ":person/name");
+    }
+
+    #[test]
+    fn test_get_facts_valid_at() {
+        use uuid::Uuid;
+
+        let storage = FactStorage::new();
+        let alice = Uuid::new_v4();
+
+        let opts = TransactOptions::new(
+            Some(1672531200000_i64), // 2023-01-01
+            Some(1685577600000_i64), // 2023-06-01
+        );
+
+        storage.transact(vec![
+            (alice, ":employment/status".to_string(), Value::Keyword(":active".to_string())),
+        ], Some(opts)).unwrap();
+
+        // Valid on 2023-03-01 (inside range)
+        let inside = storage.get_facts_valid_at(1677628800000_i64).unwrap();
+        assert_eq!(inside.len(), 1);
+
+        // Valid on 2024-01-01 (outside range)
+        let outside = storage.get_facts_valid_at(1704067200000_i64).unwrap();
+        assert_eq!(outside.len(), 0);
+    }
+
+    #[test]
+    fn test_tx_counter_restored_after_load_fact() {
+        use uuid::Uuid;
+
+        let storage = FactStorage::new();
+        let entity = Uuid::new_v4();
+
+        // Load a fact with tx_count = 5 (simulating migration/load)
+        let fact = Fact::with_valid_time(
+            entity, ":a".to_string(), Value::Integer(1),
+            1000, 5, 1000_i64, VALID_TIME_FOREVER,
+        );
+        storage.load_fact(fact).unwrap();
+        storage.restore_tx_counter().unwrap();
+
+        // Next transact should get tx_count = 6
+        storage.transact(vec![
+            (entity, ":b".to_string(), Value::Integer(2)),
+        ], None).unwrap();
+
+        let facts = storage.get_all_facts().unwrap();
+        let b_fact = facts.iter().find(|f| f.attribute == ":b").unwrap();
+        assert_eq!(b_fact.tx_count, 6);
     }
 }

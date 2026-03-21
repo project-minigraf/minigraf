@@ -258,6 +258,29 @@ impl Transaction {
     }
 }
 
+/// A point-in-time selector for transaction-time travel queries.
+///
+/// Used with `get_facts_as_of()` to snapshot the database at a past point.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AsOf {
+    /// Select facts whose `tx_count` is ≤ n (monotonic batch counter).
+    Counter(u64),
+    /// Select facts whose `tx_id` (wall-clock millis since epoch) is ≤ t.
+    Timestamp(i64),
+}
+
+/// A point-in-time selector for valid-time travel queries.
+///
+/// Used with `get_facts_valid_at()` to see which facts were valid at a
+/// specific moment in the real world.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ValidAt {
+    /// Return facts where `valid_from <= ts < valid_to`.
+    Timestamp(i64),
+    /// Return all facts regardless of valid time (no valid-time filter).
+    AnyValidTime,
+}
+
 /// A Datalog command (top-level form)
 #[derive(Debug, Clone, PartialEq)]
 pub enum DatalogCommand {

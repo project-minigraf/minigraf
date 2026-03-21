@@ -25,7 +25,7 @@ fn test_three_pattern_join() {
                 ":person/city".to_string(),
                 Value::String("NYC".to_string()),
             ),
-        ])
+        ], None)
         .unwrap();
 
     let query = parse_datalog_command(
@@ -65,7 +65,7 @@ fn test_four_pattern_join() {
             (bob, ":person/name".to_string(), Value::String("Bob".to_string())),
             (bob, ":person/age".to_string(), Value::Integer(25)),
             (alice, ":friend".to_string(), Value::Ref(bob)),
-        ])
+        ], None)
         .unwrap();
 
     // Find pairs where person1 is older than 28 and friends with person2
@@ -110,7 +110,7 @@ fn test_self_join_friends_of_friends() {
             (charlie, ":person/name".to_string(), Value::String("Charlie".to_string())),
             (alice, ":friend".to_string(), Value::Ref(bob)),
             (bob, ":friend".to_string(), Value::Ref(charlie)),
-        ])
+        ], None)
         .unwrap();
 
     // Find friends of Alice's friends (Bob's friends)
@@ -151,7 +151,7 @@ fn test_entity_reference_join() {
             (company, ":company/name".to_string(), Value::String("TechCorp".to_string())),
             (alice, ":works-at".to_string(), Value::Ref(company)),
             (bob, ":works-at".to_string(), Value::Ref(company)),
-        ])
+        ], None)
         .unwrap();
 
     // Find people working at TechCorp
@@ -197,7 +197,7 @@ fn test_query_no_results() {
             alice,
             ":person/name".to_string(),
             Value::String("Alice".to_string()),
-        )])
+        )], None)
         .unwrap();
 
     // Query for non-existent attribute
@@ -231,7 +231,7 @@ fn test_query_partial_matches() {
             (alice, ":person/age".to_string(), Value::Integer(30)),
             (bob, ":person/name".to_string(), Value::String("Bob".to_string())),
             // Bob has no age
-        ])
+        ], None)
         .unwrap();
 
     // Query for name AND age - should only return Alice
@@ -265,7 +265,7 @@ fn test_query_variable_reuse() {
         .transact(vec![
             (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
             (alice, ":person/nickname".to_string(), Value::String("Alice".to_string())),
-        ])
+        ], None)
         .unwrap();
 
     // Find people whose name equals their nickname
@@ -310,7 +310,7 @@ fn test_complex_multi_entity_query() {
             (bob, ":works-on".to_string(), Value::Ref(project1)),
             (charlie, ":works-on".to_string(), Value::Ref(project2)),
             (alice, ":manages".to_string(), Value::Ref(project1)),
-        ])
+        ], None)
         .unwrap();
 
     // Find projects that Alice manages, along with other people working on them
@@ -357,19 +357,19 @@ fn test_multiple_values_same_attribute() {
         .transact(vec![
             (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
             (alice, ":hobby".to_string(), Value::String("Reading".to_string())),
-        ])
+        ], None)
         .unwrap();
 
     storage
         .transact(vec![
             (alice, ":hobby".to_string(), Value::String("Hiking".to_string())),
-        ])
+        ], None)
         .unwrap();
 
     storage
         .transact(vec![
             (alice, ":hobby".to_string(), Value::String("Coding".to_string())),
-        ])
+        ], None)
         .unwrap();
 
     // Find all hobbies (should get 3 separate results)

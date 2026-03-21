@@ -91,16 +91,13 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
             // Try to deserialize a fact from this page
             // Empty pages are skipped
             if let Ok(fact) = postcard::from_bytes::<Fact>(&page) {
-                // Reconstruct the fact storage by transacting or retracting
-                if fact.asserted {
-                    self.storage
-                        .transact(vec![(fact.entity, fact.attribute, fact.value)])?;
-                } else {
-                    self.storage
-                        .retract(vec![(fact.entity, fact.attribute, fact.value)])?;
-                }
+                // Preserve original tx_id and tx_count via load_fact()
+                self.storage.load_fact(fact)?;
             }
         }
+
+        // Re-synchronise tx_counter to max(tx_count) of loaded facts
+        self.storage.restore_tx_counter()?;
 
         self.dirty = false;
         Ok(())
@@ -204,7 +201,7 @@ mod tests {
                 .transact(vec![
                     (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
                     (alice, ":person/age".to_string(), Value::Integer(30)),
-                ])
+                ], None)
                 .unwrap();
 
             storage.mark_dirty();
@@ -231,7 +228,7 @@ mod tests {
             storage.storage()
                 .transact(vec![
                     (alice, ":person/name".to_string(), Value::String("Alice".to_string())),
-                ])
+                ], None)
                 .unwrap();
             storage.mark_dirty();
             // Drop happens here, should auto-save

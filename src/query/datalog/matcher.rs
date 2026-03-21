@@ -324,7 +324,7 @@ mod tests {
                     Value::String("Alice".to_string()),
                 ),
                 (alice_id, ":person/age".to_string(), Value::Integer(30)),
-            ])
+            ], None)
             .unwrap();
 
         let matcher = PatternMatcher::new(storage);
@@ -354,7 +354,7 @@ mod tests {
                 alice_id,
                 ":person/name".to_string(),
                 Value::String("Alice".to_string()),
-            )])
+            )], None)
             .unwrap();
 
         let matcher = PatternMatcher::new(storage);
@@ -387,7 +387,7 @@ mod tests {
                     Value::String("Alice".to_string()),
                 ),
                 (alice_id, ":person/age".to_string(), Value::Integer(30)),
-            ])
+            ], None)
             .unwrap();
 
         let matcher = PatternMatcher::new(storage);
@@ -425,7 +425,7 @@ mod tests {
                 alice_id,
                 ":person/name".to_string(),
                 Value::String("Alice".to_string()),
-            )])
+            )], None)
             .unwrap();
 
         let matcher = PatternMatcher::new(storage);

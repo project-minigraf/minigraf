@@ -35,3 +35,6 @@ pub use query::{
     QueryResult,
     Transaction,
 };
+
+// Bi-temporal query types (Phase 4+)
+pub use query::datalog::types::{AsOf, ValidAt};

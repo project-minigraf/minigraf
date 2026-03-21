@@ -19,7 +19,7 @@ fn test_simple_transitive_closure() {
         .transact(vec![
             (a, ":connected".to_string(), Value::Ref(b)),
             (b, ":connected".to_string(), Value::Ref(c)),
-        ])
+        ], None)
         .unwrap();
 
     // Register reachable rules
@@ -77,7 +77,7 @@ fn test_transitive_closure_with_cycle() {
             (a, ":connected".to_string(), Value::Ref(b)),
             (b, ":connected".to_string(), Value::Ref(c)),
             (c, ":connected".to_string(), Value::Ref(a)),
-        ])
+        ], None)
         .unwrap();
 
     // Register reachable rules
@@ -133,7 +133,7 @@ fn test_long_chain_transitive_closure() {
     for i in 0..9 {
         facts.push((nodes[i], ":next".to_string(), Value::Ref(nodes[i + 1])));
     }
-    storage.transact(facts).unwrap();
+    storage.transact(facts, None).unwrap();
 
     // Register reachable rules
     executor
@@ -195,7 +195,7 @@ fn test_ancestor_relationship() {
             (alice, ":parent".to_string(), Value::Ref(charlie)),
             (bob, ":parent".to_string(), Value::Ref(diana)),
             (bob, ":parent".to_string(), Value::Ref(eve)),
-        ])
+        ], None)
         .unwrap();
 
     // Register ancestor rules
@@ -254,7 +254,7 @@ fn test_multiple_recursive_predicates() {
             (a, ":friend".to_string(), Value::Ref(b)),
             (b, ":friend".to_string(), Value::Ref(c)),
             (a, ":coworker".to_string(), Value::Ref(c)),
-        ])
+        ], None)
         .unwrap();
 
     // Register friend-reachable rules
@@ -345,7 +345,7 @@ fn test_recursive_rule_with_constants() {
         .transact(vec![
             (a, ":connected".to_string(), Value::Ref(b)),
             (b, ":connected".to_string(), Value::Ref(c)),
-        ])
+        ], None)
         .unwrap();
 
     // Register reachable rules
@@ -395,7 +395,7 @@ fn test_diamond_pattern_reachability() {
             (a, ":connected".to_string(), Value::Ref(c)),
             (b, ":connected".to_string(), Value::Ref(d)),
             (c, ":connected".to_string(), Value::Ref(d)),
-        ])
+        ], None)
         .unwrap();
 
     // Register reachable rules
@@ -482,7 +482,7 @@ fn test_convergence_simple_graph() {
     let b = Uuid::new_v4();
 
     storage
-        .transact(vec![(a, ":connected".to_string(), Value::Ref(b))])
+        .transact(vec![(a, ":connected".to_string(), Value::Ref(b))], None)
         .unwrap();
 
     // Register rules
