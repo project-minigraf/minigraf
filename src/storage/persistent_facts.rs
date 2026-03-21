@@ -275,7 +275,7 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
     /// Used by checkpoint to ensure save() always writes even if no new
     /// facts have been added since the last save.
     pub fn force_dirty(&mut self) {
-        self.dirty = true;
+        self.mark_dirty();
     }
 
     /// Check if storage has unsaved changes
