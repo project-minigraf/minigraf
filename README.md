@@ -4,7 +4,7 @@
 [![Clippy Status](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml/badge.svg)](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/adityamukho/minigraf#license)
 [![Rust Edition](https://img.shields.io/badge/rust-2024-orange.svg)](https://blog.rust-lang.org/2024/10/17/Rust-1.82.0.html)
-[![Phase](https://img.shields.io/badge/phase-3%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
+[![Phase](https://img.shields.io/badge/phase-4%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
 
 > **The SQLite of bi-temporal graph databases** - Embedded Datalog engine written in Rust
 
@@ -14,11 +14,11 @@ A tiny, self-contained graph database with **Datalog queries** and **bi-temporal
 
 Minigraf is a **single-file embedded graph database** that lets you:
 - ✅ **Query relationships with Datalog** - Recursive rules, natural graph traversal
-- 🎯 **Time travel through history** - Bi-temporal queries (transaction time + valid time)
+- ✅ **Time travel through history** - Bi-temporal queries (transaction time + valid time)
 - ✅ **Embed anywhere** - Native, WASM, mobile, IoT - one `.graph` file
 - ✅ **Zero configuration** - Just `Minigraf::open("data.graph")` and you're done
 
-**Status**: Early development. Phase 3 complete (Datalog with recursive rules). Now starting Phase 4 (bi-temporal support).
+**Status**: Early development. Phase 4 complete (bi-temporal support). Now starting Phase 5 (ACID + WAL).
 
 ## Why Datalog?
 
@@ -30,19 +30,23 @@ Minigraf is a **single-file embedded graph database** that lets you:
 4. **Proven at scale** - 40+ years of research, production use (Datomic, XTDB)
 5. **Graph-native** - Facts (Entity-Attribute-Value) are literally edges
 
-## Current Status - Phase 3 Complete
+## Current Status - Phase 4 Complete
 
-Minigraf has **working Datalog query engine with recursive rules**:
+Minigraf has **full bi-temporal Datalog query engine**:
 
 - ✅ **EAV data model** - Entity-Attribute-Value facts with transaction IDs
 - ✅ **Datalog queries** - Pattern matching with variable unification
 - ✅ **Recursive rules** - Semi-naive evaluation, transitive closure
+- ✅ **Bi-temporal support** - Transaction time (`tx_id`, `tx_count`) + valid time (`valid_from`, `valid_to`)
+- ✅ **Time travel queries** - `:as-of` (transaction counter or timestamp) + `:valid-at` (point-in-time)
+- ✅ **Transact with valid time** - Per-transaction and per-fact valid time overrides
+- ✅ **File format v2** - Automatic migration from v1 with correct temporal defaults
 - ✅ **Single `.graph` file** - Page-based storage (4KB pages)
 - ✅ **Embedded database API** - Use like SQLite (`Minigraf::open()`)
 - ✅ **Cross-platform** - Works on Linux, macOS, Windows, iOS, Android
 - ✅ **Auto-persistence** - Changes auto-save when database is dropped
-- ✅ **123 tests passing** - Comprehensive test coverage
-- 🎯 **Next: Bi-temporal support** - Transaction time + valid time (Phase 4)
+- ✅ **172 tests passing** - Comprehensive test coverage
+- 🎯 **Next: ACID + WAL** - Crash safety and transactions (Phase 5)
 
 ## Quick Start
 
@@ -132,27 +136,34 @@ cargo run < demo_recursive.txt
    (friends-network :alice ?person)]
 ```
 
-### Bi-temporal Queries (Phase 4)
+### Bi-temporal Queries (Phase 4 - Working!)
 
 ```datalog
-;; Query valid at a specific time
+;; Query valid at a specific date
 [:find ?name
  :valid-at "2023-06-01"
  :where
    [:alice :person/name ?name]]
 
-;; Query as of past transaction
+;; Query as of past transaction (counter or timestamp)
 [:find ?friend
- :as-of tx-100
+ :as-of 50
  :where
    [:alice :friend ?friend]]
 
 ;; Full bi-temporal query
 [:find ?status
  :valid-at "2023-06-01"
- :as-of tx-100
+ :as-of "2024-01-15T10:00:00Z"
  :where
    [:alice :employment/status ?status]]
+
+;; Transact with explicit valid time
+(transact {:valid-from "2023-01-01" :valid-to "2023-06-30"}
+          [[:alice :employment/status :active]])
+
+;; Include all facts regardless of valid time
+[:find ?name :valid-at :any-valid-time :where [?e :person/name ?name]]
 ```
 
 ## Architecture
@@ -210,10 +221,10 @@ The `.graph` file uses a page-based format (like SQLite):
 - ✅ Recursive rules
 - ✅ Pattern matching
 
-**Phase 4**: 🎯 Bi-temporal support
-- Valid time + transaction time
-- Time travel queries
-- Historical analysis
+**Phase 4**: ✅ Bi-temporal support (Complete)
+- Transaction time + valid time
+- Time travel queries (`:as-of`, `:valid-at`)
+- File format v2 with migration
 
 **Phase 5**: 🎯 ACID + WAL
 - Write-ahead logging
@@ -244,7 +255,7 @@ No other database offers this combination:
 |---------|----------|------|------|-------|--------|
 | **Query Language** | Datalog | Datalog | Datalog | Cypher | SQL |
 | **Single File** | ✅ Yes | ❌ No | ❌ No | ❌ No | ✅ Yes |
-| **Bi-temporal** | 🎯 Goal | ✅ Yes | ⚠️ Time travel | ❌ No | ❌ No |
+| **Bi-temporal** | ✅ Yes | ✅ Yes | ⚠️ Time travel | ❌ No | ❌ No |
 | **Embedded** | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No | ✅ Yes |
 | **Graph Native** | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No |
 | **Rust** | ✅ Yes | ❌ Clojure | ✅ Yes | ❌ Java | ❌ C |
@@ -300,9 +311,9 @@ Comprehensive test coverage:
 cargo test
 ```
 
-Current tests (123 total):
-- ✅ **94 unit tests** - Core Datalog, EAV model, parser, matcher, executor
-- ✅ **26 integration tests** - Complex queries, recursive rules, concurrency
+Current tests (172 total):
+- ✅ **133 unit tests** - Core Datalog, EAV model, parser, matcher, executor, bi-temporal
+- ✅ **36 integration tests** - Complex queries, recursive rules, concurrency, bi-temporal
 - ✅ **3 doc tests** - Inline documentation examples
 
 **Phase 3 Coverage** (Complete):
@@ -313,8 +324,14 @@ Current tests (123 total):
 - ✅ Storage backend operations
 - ✅ Concurrency and thread safety
 
-**Future tests** (Phase 4+):
-- ⏳ Bi-temporal queries (:as-of, :valid-at)
+**Phase 4 Coverage** (Complete):
+- ✅ Bi-temporal queries (`:as-of` counter + timestamp, `:valid-at`)
+- ✅ Valid time filtering (inside/outside range, boundary, default)
+- ✅ Transaction with valid time (batch + per-fact override)
+- ✅ File format v1→v2 migration
+- ✅ tx_count increment and snapshot correctness
+
+**Future tests** (Phase 5+):
 - ⏳ Transaction isolation (ACID)
 - ⏳ Crash recovery (WAL)
 

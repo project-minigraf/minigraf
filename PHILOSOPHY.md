@@ -435,8 +435,9 @@ The `.graph` file format must be:
 **Phase 3**: ✅ Datalog Core (COMPLETE)
 - EAV data model, basic facts and queries, recursive rules, semi-naive evaluation
 
-**Phase 4**: 🎯 Bi-temporal Support (3-4 months)
-- Transaction time + valid time, time travel queries, history
+**Phase 4**: ✅ Bi-temporal Support (COMPLETE - March 2026)
+- Transaction time (`tx_id`, `tx_count`) + valid time (`valid_from`, `valid_to`)
+- `:as-of` and `:valid-at` time travel queries, file format v2
 
 **Phase 5**: 🎯 ACID + WAL (2-3 months)
 - Write-ahead logging, transactions, crash recovery

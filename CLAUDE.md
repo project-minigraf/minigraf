@@ -6,14 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries** written in Rust. It's designed to be the "SQLite of graph databases" - embedded, single-file, reliable, with time travel capabilities.
 
-**Current Status: Phase 3 COMPLETE ✅ → Phase 4 Starting** - Datalog with Recursive Rules:
+**Current Status: Phase 4 COMPLETE ✅ → Phase 5 Starting** - Bi-temporal Support:
 - ✅ Phase 1: Property graph PoC (in-memory)
 - ✅ Phase 2: Persistent storage (`.graph` file format, embedded API)
-- ✅ **Phase 3: Datalog core (EAV model, recursive rules) - COMPLETE!**
-- 🎯 Phase 4: Bi-temporal support (transaction time + valid time) - **NEXT**
-- 🎯 Phase 5: ACID + WAL (crash safety, transactions)
+- ✅ Phase 3: Datalog core (EAV model, recursive rules) - COMPLETE!
+- ✅ **Phase 4: Bi-temporal support (transaction time + valid time) - COMPLETE!**
+- 🎯 Phase 5: ACID + WAL (crash safety, transactions) - **NEXT**
 - 🎯 Phase 6: Performance (indexes, query optimization)
-- 🎯 v1.0.0: 12-15 months
+- 🎯 v1.0.0: 10-13 months
 
 **Important Strategic Pivot** (January 2026): After completing Phase 2 with a GQL-inspired implementation, we pivoted to Datalog for:
 1. Simpler implementation (proven patterns vs. novel GQL spec)
@@ -309,19 +309,21 @@ SHOW NODES
 
 ## Test Coverage
 
-**Current Tests (Phase 3)**: 123 tests passing ✅
-- **Unit tests** (94 tests):
-  - `src/graph/types.rs`: Fact types, Value types, EAV model
-  - `src/graph/storage.rs`: FactStorage, CRUD, history tracking
-  - `src/query/datalog/parser.rs`: EDN/Datalog syntax parsing, rules
-  - `src/query/datalog/types.rs`: Pattern, WhereClause, DatalogQuery
+**Current Tests (Phase 4)**: 172 tests passing ✅
+- **Unit tests** (133 tests):
+  - `src/graph/types.rs`: Fact types, Value types, EAV model, temporal fields
+  - `src/graph/storage.rs`: FactStorage, CRUD, history, tx_count, temporal methods
+  - `src/temporal.rs`: UTC timestamp parsing and formatting
+  - `src/query/datalog/parser.rs`: EDN/Datalog syntax, rules, `:as-of`, `:valid-at`, EDN maps
+  - `src/query/datalog/types.rs`: Pattern, WhereClause, DatalogQuery, AsOf, ValidAt
   - `src/query/datalog/matcher.rs`: Pattern matching, variable unification
-  - `src/query/datalog/executor.rs`: Query execution, rule registration
+  - `src/query/datalog/executor.rs`: Query execution, rule registration, temporal filtering
   - `src/query/datalog/rules.rs`: RuleRegistry, rule management
   - `src/query/datalog/evaluator.rs`: Semi-naive evaluation, transitive closure
   - `src/storage/`: Backend operations, persistence (postcard)
 
-- **Integration tests** (26 tests):
+- **Integration tests** (36 tests):
+  - `tests/bitemporal_test.rs` (10 tests): Bi-temporal queries, time travel, valid time
   - `tests/complex_queries_test.rs` (10 tests): Multi-pattern joins, self-joins, edge cases
   - `tests/recursive_rules_test.rs` (9 tests): Transitive closure, cycles, long chains, family trees
   - `tests/concurrency_test.rs` (7 tests): Thread safety, concurrent rule registration/queries
@@ -329,12 +331,14 @@ SHOW NODES
 - **Doc tests** (3 tests): Inline documentation examples
 
 **Comprehensive Coverage**:
-- ✅ Datalog parser (EDN syntax) - 15 tests
-- ✅ Pattern matching and unification - 16 tests
-- ✅ **Recursive rule evaluation** - 15 tests (NEW!)
-- ✅ **Transitive closure** - 9 tests (NEW!)
-- ✅ **Concurrency** - 7 tests (NEW!)
-- ✅ Complex queries (3+ patterns, self-joins) - 10 tests (NEW!)
+- ✅ Datalog parser (EDN syntax)
+- ✅ Pattern matching and unification
+- ✅ Recursive rule evaluation (semi-naive)
+- ✅ Transitive closure - 9 tests
+- ✅ Concurrency - 7 tests
+- ✅ Complex queries (3+ patterns, self-joins) - 10 tests
+- ✅ **Bi-temporal queries** (`:as-of`, `:valid-at`) - 10 integration + 39 unit tests
+- ✅ **File format migration** (v1→v2)
 
 **Demo Scripts**:
 - `demo_recursive.txt`: Comprehensive recursive rules examples (transitive closure, cycles, family trees)
@@ -342,8 +346,7 @@ SHOW NODES
 Run tests with: `cargo test`
 See `TEST_COVERAGE.md` for detailed coverage report.
 
-**Future Tests (Phase 4+)**:
-- Bi-temporal queries (:as-of, :valid-at) - Phase 4
+**Future Tests (Phase 5+)**:
 - WAL and crash recovery - Phase 5
 - Index performance - Phase 6
 
@@ -378,14 +381,28 @@ See `TEST_COVERAGE.md` for detailed coverage report.
 
 **Demo**: `demo_recursive.txt` - Working examples of recursive rules
 
-### Phase 4 (Next) - Bi-temporal Support 🎯
+### Phase 4 (Complete) - Bi-temporal Support ✅
+
+**Implemented Features**:
+- ✅ Extended `Fact` struct: `tx_count`, `valid_from`, `valid_to`
+- ✅ `VALID_TIME_FOREVER = i64::MAX` sentinel
+- ✅ `FactStorage`: `tx_counter` (AtomicU64), `load_fact()`, `get_facts_as_of()`, `get_facts_valid_at()`
+- ✅ `TransactOptions { valid_from, valid_to }` for batch-level valid time
+- ✅ Parser: EDN maps (`{:key val}`), `:as-of` (counter + ISO 8601), `:valid-at` (timestamp + `:any-valid-time`)
+- ✅ Parser: `(transact {...} [...])` with transaction-level valid time; per-fact 4-element vector override
+- ✅ Executor: 3-step temporal filter (tx-time → asserted exclusion → valid-time)
+- ✅ File format v1→v2 migration in `migrate_v1_to_v2()`
+- ✅ Fixed latent Phase 3 bug: `tx_id` preserved on load via `load_fact()`
+- ✅ UTC-only timestamp parsing (`src/temporal.rs`, chrono, avoids GHSA-wcg3-cvx6-7396)
+
+**Test Coverage**: 172 tests (133 unit + 36 integration + 3 doc)
+
+### Phase 5 (Next) - ACID + WAL 🎯
 
 **Planned Features**:
-- Transaction time queries (`:as-of tx-id`)
-- Valid time dimensions (`valid_from`, `valid_to`)
-- Time travel queries (`:valid-at timestamp`)
-- History tracking and audit trails
-- Bi-temporal joins
+- Write-ahead logging (embedded in `.graph` file)
+- Transaction API (BEGIN, COMMIT, ROLLBACK)
+- Crash recovery
 
 ### Philosophy-Aligned Development
 
@@ -407,13 +424,14 @@ When implementing features, always ask:
 - ✅ Updated REPL with multi-line and comments
 - ✅ 123 comprehensive tests
 
-**Phase 4** (3-4 months): Bi-temporal Support - **NEXT**
-- Transaction time (tx_id, tx_time)
-- Valid time (valid_from, valid_to)
-- Time travel queries (:as-of, :valid-at)
-- History queries
+**Phase 4** ✅ **COMPLETE** - Bi-temporal Support
+- ✅ Transaction time (tx_id, tx_count)
+- ✅ Valid time (valid_from, valid_to)
+- ✅ Time travel queries (:as-of, :valid-at)
+- ✅ File format v2 with migration
+- ✅ 172 comprehensive tests
 
-**Phase 5** (2-3 months): ACID + WAL
+**Phase 5** (2-3 months): ACID + WAL - **NEXT**
 - Write-ahead logging (embedded in .graph file)
 - Transaction API (BEGIN, COMMIT, ROLLBACK)
 - Crash recovery

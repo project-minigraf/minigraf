@@ -226,140 +226,78 @@ enum Value {
 
 ---
 
-## Phase 4: Bi-temporal Support 🎯 FUTURE
+## Phase 4: Bi-temporal Support ✅ COMPLETE
 
 **Goal**: Add transaction time and valid time
 
-**Status**: 🎯 Planned (After Phase 3)
+**Status**: ✅ Completed (March 2026)
 
 **Priority**: 🔴 Critical - Core differentiator
 
-### 4.1 Transaction Time
+### 4.1 Transaction Time ✅
 
 **Features**:
-- 🎯 Every fact records when it was added (`tx_id`, `tx_time`)
-- 🎯 Facts are never deleted, only retracted
-- 🎯 Query as of past transaction: `[:as-of tx-100]`
-- 🎯 History of an entity/attribute
+- ✅ Every fact records when it was added (`tx_id` wall-clock millis, `tx_count` monotonic counter)
+- ✅ Facts are never deleted, only retracted (`asserted=false`)
+- ✅ Query as of past transaction counter: `[:as-of 50]`
+- ✅ Query as of past wall-clock time: `[:as-of "2024-01-15T10:00:00Z"]`
 
 **Data Model**:
 ```rust
 struct Fact {
-    entity: Uuid,
-    attribute: String,
+    entity: EntityId,
+    attribute: Attribute,
     value: Value,
-    tx_id: TxId,           // NEW: Transaction ID
-    tx_time: SystemTime,   // NEW: Wall-clock time
-    asserted: bool,        // true = assert, false = retract
-}
-```
-
-**Queries**:
-```datalog
-;; Current state (default)
-[:find ?name :where [?e :person/name ?name]]
-
-;; State as of transaction 100
-[:find ?name
- :as-of 100
- :where [?e :person/name ?name]]
-
-;; History of Alice's name
-[:find ?name ?tx
- :where
-   [?alice :person/name "Alice"]
-   [?alice :person/name ?name ?tx]]
-```
-
-### 4.2 Valid Time
-
-**Features**:
-- 🎯 Facts can have validity period (when true in real world)
-- 🎯 `valid_from` and `valid_to` timestamps
-- 🎯 Query valid at specific time: `[:valid-at "2023-06-01"]`
-- 🎯 Separate from transaction time
-
-**Data Model**:
-```rust
-struct Fact {
-    entity: Uuid,
-    attribute: String,
-    value: Value,
-    valid_from: DateTime,  // NEW: When valid starts
-    valid_to: DateTime,    // NEW: When valid ends (MAX for open)
-    tx_id: TxId,
-    tx_time: SystemTime,
+    tx_id: TxId,       // wall-clock millis since epoch (u64)
+    tx_count: u64,     // monotonically incrementing counter (1, 2, 3…)
+    valid_from: i64,   // millis since epoch (i64)
+    valid_to: i64,     // millis since epoch; i64::MAX = "forever"
     asserted: bool,
 }
 ```
 
-**Queries**:
-```datalog
-;; Valid on specific date
-[:find ?status
- :valid-at "2023-06-01"
- :where
-   [:alice :employment/status ?status]]
-
-;; Valid during range
-[:find ?status
- :valid-from "2023-01-01"
- :valid-to "2023-12-31"
- :where
-   [:alice :employment/status ?status]]
-```
-
-### 4.3 Bi-temporal Queries
+### 4.2 Valid Time ✅
 
 **Features**:
-- 🎯 Combine both time dimensions
-- 🎯 "What did we believe on date X about facts valid on date Y?"
-- 🎯 Audit trails and compliance queries
+- ✅ Facts carry validity period (`valid_from`, `valid_to`)
+- ✅ `VALID_TIME_FOREVER = i64::MAX` sentinel for open-ended facts
+- ✅ Query valid at specific time: `[:valid-at "2023-06-01"]`
+- ✅ Default (no `:valid-at`): currently valid facts only
+- ✅ `:any-valid-time` disables the valid time filter entirely
+- ✅ Per-transaction and per-fact valid time overrides
 
-**Queries**:
+### 4.3 Bi-temporal Queries ✅
+
 ```datalog
 ;; Full bi-temporal query
 [:find ?status
- :valid-at "2023-06-01"      ;; Valid time
- :as-of tx-100               ;; Transaction time
- :where
-   [:alice :employment/status ?status]]
+ :valid-at "2023-06-01"
+ :as-of "2024-01-15T10:00:00Z"
+ :where [:alice :employment/status ?status]]
 
-;; History of corrections
-[:find ?value ?tx ?valid-at
- :where
-   [:alice :account/balance ?value ?tx ?valid-at]]
+;; Transact with valid time
+(transact {:valid-from "2023-01-01" :valid-to "2023-06-30"}
+          [[:alice :employment/status :active]])
 ```
 
-### 4.4 Storage Format
+### 4.4 Storage Format ✅
 
-**File Structure**:
-```
-Page 0: Header (includes tx counter)
-Page 1+: Facts with (E, A, V, ValidFrom, ValidTo, TxTime, Asserted)
-```
+- **File format version** bumped 1→2
+- Automatic v1→v2 migration on open (assigns `tx_count`, sets temporal defaults)
+- Fixed latent Phase 3 bug: `tx_id` now preserved on load via `load_fact()`
 
-**Indexes for Temporal Queries**:
-- EAVT: Entity, Attribute, Value, Transaction
-- AEVT: Attribute, Entity, Value, Transaction
-- AVET: Attribute, Value, Entity, Transaction
-- VAET: Value, Attribute, Entity, Transaction
-- ValidTime index: (ValidFrom, ValidTo) for range queries
+### 4.5 Tests ✅
 
-### 4.5 Tests
+- ✅ 10 new integration tests (`tests/bitemporal_test.rs`)
+- ✅ 39 new unit tests (types, storage, parser, executor)
+- Transaction time travel (counter + timestamp)
+- Valid time filtering (inside/outside range, boundary, default)
+- Combined bi-temporal queries
+- File format migration
 
-**Test Coverage**:
-- Transaction time recording
-- As-of queries
-- Valid time periods
-- Valid-at queries
-- Bi-temporal queries
-- History queries
-- Time travel edge cases
+**Deliverable**: ✅ Full bi-temporal Datalog database (Complete!)
 
-**Deliverable**: Full bi-temporal Datalog database
-
-**Timeline**: 3-4 months
+**Timeline**: ✅ Completed in ~3 weeks (March 2026)
 
 ---
 
@@ -599,11 +537,12 @@ tx.commit()?;  // or tx.rollback()?
 - ✅ Semi-naive evaluation
 - ✅ 123 tests passing
 
-### v0.4.0 - 🎯 Phase 4 (Bi-temporal)
-- Transaction time
-- Valid time
-- Time travel queries
-- History queries
+### v0.4.0 - ✅ Phase 4 Complete (Bi-temporal)
+- ✅ Transaction time (`tx_id`, `tx_count`)
+- ✅ Valid time (`valid_from`, `valid_to`)
+- ✅ Time travel queries (`:as-of`, `:valid-at`)
+- ✅ File format v2 with v1 migration
+- ✅ 172 tests passing
 
 ### v0.5.0 - 🎯 Phase 5 (ACID)
 - Write-ahead logging
@@ -669,8 +608,8 @@ When evaluating features, ask:
 - ✅ Phase 1: Complete (December 2025)
 - ✅ Phase 2: Complete (January 2026)
 - ✅ Phase 3: Complete (January 2026) - Datalog core with recursive rules
-- 🎯 Phase 4: 3-4 months (Bi-temporal) - **NEXT**
-- 🎯 Phase 5: 2-3 months (ACID + WAL)
+- ✅ Phase 4: Complete (March 2026) - Bi-temporal support
+- 🎯 Phase 5: 2-3 months (ACID + WAL) - **NEXT**
 - 🎯 Phase 6: 2-3 months (Performance)
 - 🎯 Phase 7: 3-4 months (Cross-platform)
 - 🎯 Phase 8: Ongoing (Ecosystem)
@@ -686,30 +625,30 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: ✅ Phase 3 Complete! Planning Phase 4 - Bi-temporal Support
+**Right Now**: ✅ Phase 4 Complete! Planning Phase 5 - ACID + WAL
 
-**Phase 3 Achievements**:
-1. ✅ Designed and implemented EAV data model
-2. ✅ Implemented Datalog parser (EDN syntax)
-3. ✅ Built query executor with pattern matching
-4. ✅ Added recursive rules with semi-naive evaluation
-5. ✅ Updated REPL for Datalog with multi-line support
-6. ✅ Comprehensive test coverage (123 tests)
+**Phase 4 Achievements**:
+1. ✅ Extended `Fact` struct with `tx_count`, `valid_from`, `valid_to`
+2. ✅ `FactStorage` gains `tx_counter` (AtomicU64), `load_fact()`, `get_facts_as_of()`, `get_facts_valid_at()`
+3. ✅ Parser extended: EDN maps, `:as-of`, `:valid-at`, per-fact valid time overrides
+4. ✅ Executor applies 3-step temporal filter before pattern matching
+5. ✅ File format v2 with automatic v1→v2 migration
+6. ✅ Fixed latent Phase 3 bug: `tx_id` preserved on load
+7. ✅ 172 tests passing (49 new tests)
 
-**Immediate Next Steps (Phase 4)**:
-1. Add transaction time tracking (tx_id, tx_time)
-2. Implement :as-of queries
-3. Add valid time dimensions (valid_from, valid_to)
-4. Implement :valid-at queries
-5. Support bi-temporal queries
-6. Test time travel and history features
+**Immediate Next Steps (Phase 5)**:
+1. Design WAL format (embedded in `.graph` file)
+2. Implement transaction API (BEGIN/COMMIT/ROLLBACK)
+3. Add crash recovery (replay WAL on open)
+4. ACID compliance testing
 
 **Key Decisions Made**:
 - ✅ Pivot to Datalog (simpler, better for temporal)
 - ✅ Bi-temporal as first-class feature (not afterthought)
 - ✅ Keep single-file philosophy
 - ✅ Recursive rules with semi-naive evaluation
-- ✅ Target 11-14 months to v1.0 (ahead of schedule!)
+- ✅ UTC-only timestamps (avoids chrono GHSA-wcg3-cvx6-7396)
+- ✅ Target 10-13 months to v1.0 (ahead of schedule!)
 
 See [GitHub Issues](https://github.com/adityamukho/minigraf/issues) for specific tasks.
 
@@ -740,4 +679,4 @@ We're not competing with GraphLite anymore. We're creating a new category.
 
 ---
 
-Last Updated: Phase 3 Complete - Datalog with Recursive Rules (January 2026)
+Last Updated: Phase 4 Complete - Bi-temporal Support (March 2026)
