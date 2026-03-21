@@ -8,6 +8,8 @@ enum Token {
     RightParen,
     LeftBracket,
     RightBracket,
+    LeftBrace,
+    RightBrace,
     Keyword(String),
     Symbol(String),
     String(String),
@@ -44,6 +46,14 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
             }
             ']' => {
                 tokens.push(Token::RightBracket);
+                chars.next();
+            }
+            '{' => {
+                tokens.push(Token::LeftBrace);
+                chars.next();
+            }
+            '}' => {
+                tokens.push(Token::RightBrace);
                 chars.next();
             }
             // String literals
@@ -228,10 +238,28 @@ impl Parser {
         }
     }
 
+    fn parse_map(&mut self) -> Result<EdnValue, String> {
+        self.advance(); // consume '{'
+        let mut pairs = Vec::new();
+
+        while let Some(token) = self.peek() {
+            if token == &Token::RightBrace {
+                self.advance(); // consume '}'
+                return Ok(EdnValue::Map(pairs));
+            }
+            let key = self.parse_value()?;
+            let val = self.parse_value()?;
+            pairs.push((key, val));
+        }
+
+        Err("Unterminated map: missing '}'".to_string())
+    }
+
     fn parse_value(&mut self) -> Result<EdnValue, String> {
         match self.peek() {
             Some(Token::LeftParen) => self.parse_list(),
             Some(Token::LeftBracket) => self.parse_vector(),
+            Some(Token::LeftBrace) => self.parse_map(),
             Some(Token::Keyword(_)) => {
                 if let Some(Token::Keyword(k)) = self.advance() {
                     Ok(EdnValue::Keyword(k))
@@ -835,5 +863,23 @@ mod tests {
         let input = r#"(query [:find ?x :where ()])"#;
         let result = parse_datalog_command(input);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_edn_map() {
+        let result = parse_edn(r#"{:valid-from "2023-01-01" :valid-to "2023-06-30"}"#);
+        let map = match result.unwrap() {
+            EdnValue::Map(pairs) => pairs,
+            _ => panic!("expected map"),
+        };
+        assert_eq!(map.len(), 2);
+        assert_eq!(map[0].0, EdnValue::Keyword(":valid-from".to_string()));
+        assert_eq!(map[0].1, EdnValue::String("2023-01-01".to_string()));
+    }
+
+    #[test]
+    fn test_parse_empty_map() {
+        let result = parse_edn("{}");
+        assert!(matches!(result.unwrap(), EdnValue::Map(pairs) if pairs.is_empty()));
     }
 }

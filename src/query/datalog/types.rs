@@ -22,6 +22,8 @@ pub enum EdnValue {
     Vector(Vec<EdnValue>),
     /// List: (...)
     List(Vec<EdnValue>),
+    /// Map: {:key val ...}
+    Map(Vec<(EdnValue, EdnValue)>),
     /// Null/nil
     Nil,
 }
@@ -75,6 +77,19 @@ impl EdnValue {
     pub fn as_list(&self) -> Option<&Vec<EdnValue>> {
         match self {
             EdnValue::List(l) => Some(l),
+            _ => None,
+        }
+    }
+
+    /// Check if this is a map
+    pub fn is_map(&self) -> bool {
+        matches!(self, EdnValue::Map(_))
+    }
+
+    /// Get the map contents if this is a map
+    pub fn as_map(&self) -> Option<&Vec<(EdnValue, EdnValue)>> {
+        match self {
+            EdnValue::Map(m) => Some(m),
             _ => None,
         }
     }
