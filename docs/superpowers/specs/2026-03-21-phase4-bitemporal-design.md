@@ -132,10 +132,10 @@ Point-in-time filter only (range queries deferred to a future phase):
 [:find ?status :valid-at "2023-06-01" :where [:alice :employment/status ?status]]
 
 ;; No valid time filter — include facts across all valid times
-[:find ?name :valid-at :alltimes :where [?e :person/name ?name]]
+[:find ?name :valid-at :any-valid-time :where [?e :person/name ?name]]
 ```
 
-`:alltimes` disables the valid time filter entirely.
+`:any-valid-time` disables the valid time filter entirely.
 
 ### Combined bi-temporal
 
@@ -292,7 +292,7 @@ impl TransactOptions {
 - Parse `:as-of` with counter
 - Parse `:as-of` with ISO 8601 timestamp string
 - Parse `:valid-at` with timestamp
-- Parse `:valid-at :alltimes`
+- Parse `:valid-at :any-valid-time`
 - Parse EDN map `{:key val ...}` — new `EdnValue::Map` variant
 - Parse `(transact {...} [...])` with transaction-level valid time
 - Parse per-fact valid time override (4-element fact vector)
@@ -309,7 +309,7 @@ impl TransactOptions {
 - Transaction time travel via timestamp: assert facts, query `:as-of "date"` → see past state
 - Valid time range: transact with explicit range; query `:valid-at` inside → match; outside → no match
 - Valid time default: no `:valid-at` → only currently valid facts returned
-- Valid time `:alltimes`: all facts returned regardless of valid time
+- Valid time `:any-valid-time`: all facts returned regardless of valid time
 - Bi-temporal: combine `:as-of` and `:valid-at` in one query
 - Migration: open a V1 file, verify migrated facts have correct defaults (`valid_from = tx_id as i64`, `valid_to = MAX`, `tx_count` assigned sequentially)
 
