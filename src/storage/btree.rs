@@ -225,6 +225,34 @@ pub fn read_vaet_index(
     read_index_generic(root_page_id, backend)
 }
 
+/// Write all four indexes to pages starting at `start_page_id`.
+///
+/// Returns `(eavt_root, aevt_root, avet_root, vaet_root)` — the start page ID
+/// of each index blob. Each `*_root` value is the first page of that index's
+/// blob; subsequent pages follow contiguously.
+pub fn write_all_indexes(
+    eavt: &std::collections::BTreeMap<crate::storage::index::EavtKey, FactRef>,
+    aevt: &std::collections::BTreeMap<crate::storage::index::AevtKey, FactRef>,
+    avet: &std::collections::BTreeMap<crate::storage::index::AvetKey, FactRef>,
+    vaet: &std::collections::BTreeMap<crate::storage::index::VaetKey, FactRef>,
+    backend: &mut dyn StorageBackend,
+    start_page_id: u64,
+) -> Result<(u64, u64, u64, u64)> {
+    let eavt_root = start_page_id;
+    let after_eavt = write_eavt_index(eavt, backend, eavt_root)?;
+
+    let aevt_root = after_eavt;
+    let after_aevt = write_aevt_index(aevt, backend, aevt_root)?;
+
+    let avet_root = after_aevt;
+    let after_avet = write_avet_index(avet, backend, avet_root)?;
+
+    let vaet_root = after_avet;
+    write_vaet_index(vaet, backend, vaet_root)?;
+
+    Ok((eavt_root, aevt_root, avet_root, vaet_root))
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
