@@ -230,6 +230,30 @@ fn test_manual_checkpoint_deletes_wal() {
             .unwrap(),
     );
     assert_eq!(n, 1, "Alice must still be visible after checkpoint");
+
+    // Main file header must reflect the checkpoint
+    {
+        use std::io::Read;
+        let mut f = std::fs::File::open(&db_path).unwrap();
+        let mut page = vec![0u8; PAGE_SIZE];
+        f.read_exact(&mut page).unwrap();
+        let header = FileHeader::from_bytes(&page).unwrap();
+        assert!(
+            header.last_checkpointed_tx_count > 0,
+            "last_checkpointed_tx_count must be set after checkpoint"
+        );
+    }
+
+    // Simulate crash: skip Drop (checkpoint already happened, no WAL to write)
+    std::mem::forget(db);
+
+    // Reopen: must recover the fact from the main file alone (no WAL needed)
+    let db2 = Minigraf::open(&db_path).unwrap();
+    let n2 = count_results(
+        db2.execute("(query [:find ?name :where [?e :name ?name]])")
+            .unwrap(),
+    );
+    assert_eq!(n2, 1, "Alice must be present after crash-reopen when already checkpointed");
 }
 
 // ── 6. Auto-checkpoint fires at threshold ─────────────────────────────────────
@@ -340,7 +364,36 @@ fn test_explicit_tx_rollback_not_persisted() {
     assert_eq!(n, 0, "rolled-back facts must not survive reopen");
 }
 
-// ── 9. Concurrent reads while writer holds lock ───────────────────────────────
+// ── 9. Explicit tx: multiple transacts then rollback ─────────────────────────
+
+/// begin_write → 2 transacts → rollback → close normally → reopen.
+/// Zero facts must be present (both transacts were inside the rolled-back tx).
+#[test]
+fn test_explicit_tx_multiple_transacts_rollback_not_persisted() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("multi_rollback.graph");
+    let opts = OpenOptions {
+        wal_checkpoint_threshold: usize::MAX,
+    };
+
+    {
+        let db = Minigraf::open_with_options(&db_path, opts).unwrap();
+        let mut tx = db.begin_write().unwrap();
+        tx.execute(r#"(transact [[:alice :name "Alice"]])"#).unwrap();
+        tx.execute(r#"(transact [[:bob :name "Bob"]])"#).unwrap();
+        tx.rollback();
+        // db drops here → checkpoint (nothing to checkpoint since both facts were rolled back)
+    }
+
+    let db2 = Minigraf::open(&db_path).unwrap();
+    let n = count_results(
+        db2.execute("(query [:find ?name :where [?e :name ?name]])")
+            .unwrap(),
+    );
+    assert_eq!(n, 0, "both rolled-back facts must not persist after reopen");
+}
+
+// ── 10. Concurrent reads while writer holds lock ─────────────────────────────
 
 /// Commit a fact, then begin_write on the main thread (holds write lock).
 /// Spawn a reader thread — it should be able to execute a query concurrently
@@ -371,7 +424,7 @@ fn test_concurrent_reads_while_writer_holds_lock() {
     _tx.rollback();
 }
 
-// ── 10. V2 file upgrades to V3 on checkpoint ─────────────────────────────────
+// ── 11. V2 file upgrades to V3 on checkpoint ─────────────────────────────────
 
 /// Create a v2-format `.graph` file manually (version field = 2, no
 /// `last_checkpointed_tx_count`), open it with `Minigraf`, write a fact,
@@ -431,5 +484,9 @@ fn test_v2_file_opens_and_upgrades_to_v3_on_checkpoint() {
         header.magic,
         *b"MGRF",
         "magic number must be preserved"
+    );
+    assert!(
+        header.last_checkpointed_tx_count > 0,
+        "last_checkpointed_tx_count must be set after checkpoint on v2→v3 upgrade"
     );
 }
