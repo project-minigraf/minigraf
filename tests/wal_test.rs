@@ -400,28 +400,34 @@ fn test_explicit_tx_multiple_transacts_rollback_not_persisted() {
 /// because read-only `execute()` does not acquire the write lock.
 #[test]
 fn test_concurrent_reads_while_writer_holds_lock() {
-    let db = Minigraf::in_memory().unwrap();
+    use std::sync::{Arc, Barrier};
 
-    // Pre-commit a fact so the reader has something to find
-    db.execute(r#"(transact [[:alice :name "Alice"]])"#).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("test.graph");
 
-    // Begin write on the main thread — holds the write Mutex
+    let db = Minigraf::open(&db_path).unwrap();
+    db.execute("(transact [[:alice :name \"Alice\"]])").unwrap();
+    db.checkpoint().unwrap();
+
+    let db2 = db.clone();
+    let barrier = Arc::new(Barrier::new(2));
+    let barrier2 = Arc::clone(&barrier);
+
+    // Hold write lock on main thread
     let _tx = db.begin_write().unwrap();
 
-    // Clone for the reader thread
-    let db2 = db.clone();
+    // Spawn reader — must wait at barrier (guaranteeing write lock is held), then query
     let reader = std::thread::spawn(move || {
+        barrier2.wait(); // synchronize: write lock is held at this point
         count_results(
-            db2.execute("(query [:find ?name :where [?e :name ?name]])")
-                .unwrap(),
+            db2.execute("(query [:find ?name :where [?e :name ?name]])").unwrap()
         )
     });
 
+    barrier.wait(); // signal: write lock is now held, reader may proceed
     let n = reader.join().unwrap();
-    assert_eq!(n, 1, "reader thread must see committed fact even while write lock is held");
-
-    // Explicit rollback to release the write lock cleanly
-    _tx.rollback();
+    assert_eq!(n, 1, "reader must see committed state while writer holds the lock");
+    // _tx drops here (implicit rollback)
 }
 
 // ── 11. V2 file upgrades to V3 on checkpoint ─────────────────────────────────
@@ -438,13 +444,13 @@ fn test_v2_file_opens_and_upgrades_to_v3_on_checkpoint() {
 
     // ── Build a minimal v2 `.graph` file ──────────────────────────────────
     //
-    // V2 header layout (64 bytes):
-    //   magic:      [u8; 4]  = b"MGRF"
-    //   version:    u32 LE   = 2
-    //   page_count: u64 LE   = 1  (header page only, no facts)
-    //   node_count: u64 LE   = 0
-    //   last_checkpointed_tx_count: u64 LE = 0
-    //   reserved:   [u8; 32] = 0
+    // V2 and V3 have identical binary layouts.
+    // The only difference is the version field (bytes 4-7): 2 vs 3.
+    // In V2, bytes 24-31 were the unused `edge_count` field (always 0).
+    // Phase 5 repurposed that slot as `last_checkpointed_tx_count` without
+    // changing the wire layout. Opening a V2 file with Phase 5 code works
+    // transparently because `last_checkpointed_tx_count` reads as 0 from
+    // the old `edge_count` slot.
     //
     // The file contains exactly 1 page (the header page, 4096 bytes).
     {
