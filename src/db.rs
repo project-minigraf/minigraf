@@ -876,6 +876,64 @@ mod tests {
         assert_eq!(db.inner.options.wal_checkpoint_threshold, 5);
     }
 
+    // ── failed commit leaves database unchanged ───────────────────────────────
+
+    #[test]
+    #[cfg(unix)] // directory-as-WAL trick is Unix-specific; skipped on Windows
+    fn test_failed_commit_leaves_database_unchanged() {
+
+        fn count_results(result: QueryResult) -> usize {
+            match result {
+                QueryResult::QueryResults { results, .. } => results.len(),
+                _ => 0,
+            }
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.graph");
+        let wal_path = {
+            let mut p = db_path.as_os_str().to_owned();
+            p.push(".wal");
+            std::path::PathBuf::from(p)
+        };
+
+        // Open file-backed db and commit one fact so the main file + WAL both exist
+        let db = Minigraf::open(&db_path).unwrap();
+        db.execute("(transact [[:alice :name \"Alice\"]])").unwrap();
+
+        // Checkpoint: flushes Alice to the main file, closes and deletes the WAL.
+        // After this, WriteContext::File { wal: None } so the next commit will
+        // try to create a new WAL file at wal_path.
+        db.checkpoint().unwrap();
+        assert!(!wal_path.exists(), "WAL must be gone after checkpoint");
+
+        // Place a directory at the WAL path so WalWriter::open_or_create() fails
+        // with EISDIR when it tries to open the path for writing.
+        std::fs::create_dir(&wal_path).unwrap();
+
+        // Begin a transaction and buffer a fact
+        let mut tx = db.begin_write().unwrap();
+        tx.execute("(transact [[:bob :name \"Bob\"]])").unwrap();
+
+        // Commit should fail because the WAL path is now a directory
+        let result = tx.commit();
+
+        // Restore the directory so tempdir cleanup works
+        std::fs::remove_dir(&wal_path).unwrap();
+
+        assert!(result.is_err(), "commit should fail when WAL path is a directory");
+
+        // Bob must NOT be visible (failed commit must not apply facts)
+        let n = count_results(
+            db.execute("(query [:find ?name :where [?e :name ?name]])").unwrap(),
+        );
+        assert_eq!(
+            n,
+            1,
+            "only Alice should be visible; Bob's failed commit must be rolled back"
+        );
+    }
+
     // ── file-backed: checkpoint deletes WAL and updates main file ─────────────
 
     #[test]
