@@ -11,6 +11,7 @@ pub use graph::FactStorage;
 pub use graph::types::{
     Fact, Value, EntityId, TxId, Attribute,
     tx_id_now, tx_id_from_system_time, tx_id_to_system_time,
+    TransactOptions, VALID_TIME_FOREVER,
 };
 
 // REPL

@@ -293,6 +293,9 @@ impl RecursiveEvaluator {
             attribute,
             value,
             tx_id: 0, // Will be assigned when added to storage
+            tx_count: 0,
+            valid_from: 0,
+            valid_to: crate::graph::types::VALID_TIME_FOREVER,
             asserted: true,
         })
     }
