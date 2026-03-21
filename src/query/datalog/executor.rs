@@ -203,9 +203,12 @@ impl DatalogExecutor {
             .map(|(pred, _)| pred.clone())
             .collect();
 
+        // Apply temporal filters before evaluating recursive rules
+        let filtered_storage = self.filter_facts_for_query(&query)?;
+
         // Create evaluator and derive all facts for these predicates
         let evaluator = RecursiveEvaluator::new(
-            self.storage.clone(),
+            filtered_storage,
             self.rules.clone(),
             1000, // max iterations
         );
