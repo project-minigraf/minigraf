@@ -59,6 +59,7 @@ pub struct PersistentFactStorage<B: StorageBackend> {
     backend: B,
     storage: FactStorage,
     dirty: bool,
+    last_checkpointed_tx_count: u64,
 }
 
 impl<B: StorageBackend> PersistentFactStorage<B> {
@@ -71,6 +72,7 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
             backend,
             storage: FactStorage::new(),
             dirty: false,
+            last_checkpointed_tx_count: 0,
         };
 
         // Try to load existing data
@@ -93,9 +95,12 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
         header.validate()?;
 
         // Migrate v1 → v2 if needed
-        if header.version == 1 {
+        if header.version < 2 {
             return self.migrate_v1_to_v2();
         }
+
+        // Store last_checkpointed_tx_count from header (0 for v2 files)
+        self.last_checkpointed_tx_count = header.last_checkpointed_tx_count;
 
         // Clear existing storage
         self.storage.clear()?;
@@ -215,9 +220,10 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
         let page_count = 1 + facts.len() as u64;
 
         // Create and write header
-        let mut header = FileHeader::new();
+        let mut header = FileHeader::new(); // sets version = FORMAT_VERSION = 3
         header.page_count = page_count;
         header.node_count = facts.len() as u64; // Reuse node_count field for fact count
+        header.last_checkpointed_tx_count = self.storage.current_tx_count();
 
         let mut header_page = header.to_bytes();
         header_page.resize(PAGE_SIZE, 0);
@@ -241,6 +247,7 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
 
         // Sync to ensure durability
         self.backend.sync()?;
+        self.last_checkpointed_tx_count = self.storage.current_tx_count();
         self.dirty = false;
 
         Ok(())
@@ -251,8 +258,23 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
         &self.storage
     }
 
+    /// The `last_checkpointed_tx_count` recorded in the on-disk header.
+    ///
+    /// Used by WAL replay to skip entries already present in the main file.
+    pub fn last_checkpointed_tx_count(&self) -> u64 {
+        self.last_checkpointed_tx_count
+    }
+
     /// Mark storage as dirty (needs saving)
     pub fn mark_dirty(&mut self) {
+        self.dirty = true;
+    }
+
+    /// Force the dirty flag to true regardless of current state.
+    ///
+    /// Used by checkpoint to ensure save() always writes even if no new
+    /// facts have been added since the last save.
+    pub fn force_dirty(&mut self) {
         self.dirty = true;
     }
 
@@ -446,6 +468,35 @@ mod tests {
             facts[0].valid_from, 1000_i64,
             "migrated fact valid_from must equal original tx_id"
         );
+    }
+
+    #[test]
+    fn test_save_writes_v3_header() {
+        use crate::storage::FORMAT_VERSION;
+
+        let backend = MemoryBackend::new();
+        let mut pfs = PersistentFactStorage::new(backend).unwrap();
+        let alice = Uuid::new_v4();
+        pfs.storage()
+            .transact(vec![(alice, ":name".to_string(), crate::graph::types::Value::String("Alice".to_string()))], None)
+            .unwrap();
+        pfs.mark_dirty();
+        pfs.save().unwrap();
+
+        // Read back the header and verify version and last_checkpointed_tx_count
+        let backend = pfs.into_backend();
+        let header_page = backend.read_page(0).unwrap();
+        let header = crate::storage::FileHeader::from_bytes(&header_page).unwrap();
+        assert_eq!(header.version, FORMAT_VERSION);  // must be 3
+        assert_eq!(header.last_checkpointed_tx_count, 1); // one transact call
+    }
+
+    #[test]
+    fn test_last_checkpointed_tx_count_getter() {
+        let backend = MemoryBackend::new();
+        let pfs = PersistentFactStorage::new(backend).unwrap();
+        // Fresh database: no checkpoint yet
+        assert_eq!(pfs.last_checkpointed_tx_count(), 0);
     }
 
     #[test]
