@@ -7,6 +7,14 @@
 //! - `Minigraf::checkpoint()` for manual WAL compaction
 
 use crate::graph::types::{Fact, VALID_TIME_FOREVER};
+
+/// Sentinel value used in `materialize_transaction` to signal "no explicit `valid_from`
+/// was provided; use the transaction timestamp at commit time."
+///
+/// `i64::MIN` is chosen because it is not a representable Unix millisecond timestamp
+/// in any practical context, avoiding the collision that `0` would have with the Unix
+/// epoch (1970-01-01T00:00:00Z), which is a legitimate `valid_from` value.
+const VALID_FROM_USE_TX_TIME: i64 = i64::MIN;
 use crate::graph::FactStorage;
 use crate::query::datalog::executor::DatalogExecutor;
 use crate::query::datalog::parser::parse_datalog_command;
@@ -236,9 +244,19 @@ impl Minigraf {
 
     // ── Execute ──────────────────────────────────────────────────────────────
 
-    /// Execute a Datalog command as an implicit (self-contained) transaction.
+    /// Execute a Datalog command as a self-contained implicit transaction.
     ///
-    /// For file-backed databases, writes are WAL-durable before this method returns.
+    /// For file-backed databases, facts are written to the WAL sidecar immediately
+    /// after being applied in memory. A successful return means the facts are in
+    /// both the in-memory store and the WAL; a crash after this call returns will
+    /// replay the facts on next open.
+    ///
+    /// If the WAL write fails, an error is returned. The in-memory store may
+    /// contain the facts, but they will not survive a crash. The database remains
+    /// consistent for subsequent in-process operations.
+    ///
+    /// Returns `Err` if called from the same thread that holds an active
+    /// `WriteTransaction` (use `tx.execute()` instead).
     ///
     /// # Errors
     ///
@@ -259,7 +277,8 @@ impl Minigraf {
         let is_write = matches!(cmd, DatalogCommand::Transact(_) | DatalogCommand::Retract(_));
 
         if is_write {
-            let mut ctx = self.inner.write_lock.lock().unwrap();
+            let mut ctx = self.inner.write_lock.lock()
+                .map_err(|_| anyhow::anyhow!("write lock is poisoned; database may be in an inconsistent state"))?;
             let executor = DatalogExecutor::new_with_rules(
                 self.inner.fact_storage.clone(),
                 self.inner.rules.clone(),
@@ -296,7 +315,8 @@ impl Minigraf {
             bail!("a WriteTransaction is already in progress on this thread; use tx.execute() instead");
         }
         set_write_tx_active(true);
-        let guard = self.inner.write_lock.lock().unwrap();
+        let guard = self.inner.write_lock.lock()
+            .map_err(|_| anyhow::anyhow!("write lock is poisoned; database may be in an inconsistent state"))?;
         Ok(WriteTransaction {
             guard,
             inner: &self.inner,
@@ -312,7 +332,8 @@ impl Minigraf {
     ///
     /// No-op for in-memory databases.
     pub fn checkpoint(&self) -> Result<()> {
-        let mut ctx = self.inner.write_lock.lock().unwrap();
+        let mut ctx = self.inner.write_lock.lock()
+            .map_err(|_| anyhow::anyhow!("write lock is poisoned; database may be in an inconsistent state"))?;
         Self::do_checkpoint(&self.inner.fact_storage, &mut ctx)
     }
 
@@ -440,7 +461,7 @@ impl Minigraf {
             let value = edn_to_value(&pattern.value)
                 .map_err(|e| anyhow::anyhow!("invalid value: {}", e))?;
 
-            let valid_from = pattern.valid_from.or(tx_valid_from).unwrap_or(0);
+            let valid_from = pattern.valid_from.or(tx_valid_from).unwrap_or(VALID_FROM_USE_TX_TIME);
             let valid_to = pattern
                 .valid_to
                 .or(tx_valid_to)
@@ -558,8 +579,8 @@ impl<'a> WriteTransaction<'a> {
                 .map(|mut f| {
                     f.tx_id = tx_id;
                     f.tx_count = tx_count;
-                    // Fix valid_from if it was left as 0 (placeholder for "use tx time")
-                    if f.valid_from == 0 && f.asserted {
+                    // Fix valid_from if it was left as the sentinel (placeholder for "use tx time")
+                    if f.valid_from == VALID_FROM_USE_TX_TIME && f.asserted {
                         f.valid_from = tx_id as i64;
                     }
                     f
