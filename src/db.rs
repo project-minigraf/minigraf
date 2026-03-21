@@ -541,41 +541,91 @@ impl<'a> WriteTransaction<'a> {
 
     /// Commit this transaction atomically.
     ///
-    /// All buffered facts are applied to the shared `FactStorage` in a single
-    /// batch (one `tx_count`), then a WAL entry is written and fsynced.
-    ///
-    /// On failure, buffered facts are rolled back and the database is left
-    /// in the same state as before `begin_write()` was called.
+    /// All buffered facts are stamped with a single `tx_count` / `tx_id`, then
+    /// the WAL entry is written and fsynced **before** any fact is applied to the
+    /// shared `FactStorage`.  This guarantees that if the WAL write fails the
+    /// database is left completely unchanged (clean rollback — no cleanup needed).
     pub fn commit(mut self) -> Result<()> {
-        // Apply buffered facts to shared FactStorage
         let facts_to_commit = std::mem::take(&mut self.pending_facts);
 
         if !facts_to_commit.is_empty() {
-            // Assign a single tx_count for the entire batch
             let tx_count = self.inner.fact_storage.allocate_tx_count();
             let tx_id = crate::graph::types::tx_id_now();
 
-            // Load each fact with the assigned tx_id and tx_count
-            for mut fact in facts_to_commit {
-                fact.tx_id = tx_id;
-                fact.tx_count = tx_count;
-                // Fix valid_from if it was left as 0 (placeholder for "use tx time")
-                if fact.valid_from == 0 && fact.asserted {
-                    fact.valid_from = tx_id as i64;
-                }
-                self.inner.fact_storage.load_fact(fact)?;
-            }
+            // Stamp facts with tx_id and tx_count
+            let stamped: Vec<Fact> = facts_to_commit
+                .into_iter()
+                .map(|mut f| {
+                    f.tx_id = tx_id;
+                    f.tx_count = tx_count;
+                    // Fix valid_from if it was left as 0 (placeholder for "use tx time")
+                    if f.valid_from == 0 && f.asserted {
+                        f.valid_from = tx_id as i64;
+                    }
+                    f
+                })
+                .collect();
 
-            // WAL write + optional auto-checkpoint
-            Minigraf::maybe_wal_write_and_checkpoint(
-                &self.inner.fact_storage,
+            // Write WAL entry FIRST — if this fails, no facts have been applied
+            // to shared FactStorage, so the database remains in a clean state.
+            Self::wal_write_stamped_batch(
                 &mut self.guard,
                 &self.inner.options,
+                &self.inner.fact_storage,
+                tx_count,
+                &stamped,
             )?;
+
+            // WAL succeeded — now apply facts to shared FactStorage.
+            for fact in stamped {
+                self.inner.fact_storage.load_fact(fact)?;
+            }
         }
 
         self.committed = true;
         set_write_tx_active(false);
+        Ok(())
+    }
+
+    /// Write a pre-stamped batch of facts to the WAL (explicit-transaction path).
+    ///
+    /// Unlike `maybe_wal_write_and_checkpoint`, this method accepts an already-
+    /// computed `tx_count` and `facts` slice rather than reading them from
+    /// `FactStorage`.  It is called while the write lock is held.
+    fn wal_write_stamped_batch(
+        ctx: &mut WriteContext,
+        opts: &OpenOptions,
+        fact_storage: &FactStorage,
+        tx_count: u64,
+        facts: &[Fact],
+    ) -> Result<()> {
+        let should_checkpoint = match ctx {
+            WriteContext::Memory => false,
+            WriteContext::File {
+                pfs,
+                wal,
+                db_path,
+                wal_entry_count,
+            } => {
+                // Lazily open the WAL writer if not already open.
+                if wal.is_none() {
+                    let wal_path = Minigraf::wal_path_for(db_path);
+                    *wal = Some(WalWriter::open_or_create(&wal_path)?);
+                }
+
+                let wal_writer = wal.as_mut().unwrap();
+                wal_writer.append_entry(tx_count, facts)?;
+                pfs.mark_dirty();
+                *wal_entry_count += 1;
+
+                *wal_entry_count >= opts.wal_checkpoint_threshold
+            }
+        };
+
+        if should_checkpoint {
+            Minigraf::do_checkpoint(fact_storage, ctx)?;
+        }
+
         Ok(())
     }
 
@@ -589,15 +639,21 @@ impl<'a> WriteTransaction<'a> {
     /// Build a temporary `FactStorage` that merges committed facts with pending ones.
     ///
     /// Used to implement read-your-own-writes semantics during a transaction.
+    ///
+    /// This performs a **deep copy**: a brand-new `FactStorage` is created and
+    /// populated with all committed facts followed by the pending buffered facts.
+    /// Using `self.inner.fact_storage.clone()` would be an Arc-based shallow clone
+    /// that shares the underlying storage, causing `load_fact()` calls to mutate
+    /// the shared store and expose uncommitted facts to concurrent readers.
     fn build_query_view(&self) -> Result<FactStorage> {
-        // The shared FactStorage already has all committed facts (Arc-based clone).
-        // We just need to add the pending (buffered) facts on top.
-        let view = self.inner.fact_storage.clone();
-
+        let view = FactStorage::new();
+        for fact in self.inner.fact_storage.get_all_facts()? {
+            view.load_fact(fact)?;
+        }
         for fact in &self.pending_facts {
             view.load_fact(fact.clone())?;
         }
-
+        view.restore_tx_counter()?;
         Ok(view)
     }
 }
