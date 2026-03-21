@@ -6,7 +6,7 @@ pub mod storage;
 pub mod temporal;
 pub mod wal;
 
-pub use db::{Minigraf, OpenOptions, WriteTransaction};
+pub use db::{Minigraf, OpenOptions, OpenOptionsWithPath, WriteTransaction};
 
 // Datalog EAV storage (Phase 3+)
 pub use graph::FactStorage;

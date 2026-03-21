@@ -66,6 +66,39 @@ impl Default for OpenOptions {
     }
 }
 
+impl OpenOptions {
+    /// Create a new `OpenOptions` with default settings.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the path for a file-backed database.
+    pub fn path(self, path: impl AsRef<Path>) -> OpenOptionsWithPath {
+        OpenOptionsWithPath {
+            opts: self,
+            path: path.as_ref().to_path_buf(),
+        }
+    }
+
+    /// Open an in-memory database with the current options.
+    pub fn open_memory(self) -> Result<Minigraf> {
+        Minigraf::in_memory()
+    }
+}
+
+/// `OpenOptions` combined with a file path, ready to open.
+pub struct OpenOptionsWithPath {
+    opts: OpenOptions,
+    path: PathBuf,
+}
+
+impl OpenOptionsWithPath {
+    /// Open or create the file-backed database.
+    pub fn open(self) -> Result<Minigraf> {
+        Minigraf::open_with_options(self.path, self.opts)
+    }
+}
+
 // ─── WriteContext ─────────────────────────────────────────────────────────────
 
 /// Internal write context: distinguishes in-memory from file-backed databases.
@@ -420,6 +453,13 @@ impl Minigraf {
         }
 
         Ok(())
+    }
+
+    /// Returns a clone of the underlying `FactStorage` for use by the REPL.
+    ///
+    /// Cloning is cheap — `FactStorage` is `Arc`-backed.
+    pub fn inner_fact_storage(&self) -> crate::graph::FactStorage {
+        self.inner.fact_storage.clone()
     }
 
     /// Compute the WAL sidecar path for a given database path.

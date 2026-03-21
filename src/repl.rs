@@ -12,7 +12,7 @@ impl Repl {
     }
 
     pub fn run(&self) {
-        println!("Minigraf v0.4.0 - Interactive Datalog Console");
+        println!("Minigraf v0.5.0 - Interactive Datalog Console");
         println!();
         println!("Data operations:");
         println!("  (transact [...])                    - assert facts");
