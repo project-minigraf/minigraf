@@ -50,7 +50,7 @@ fn validate_wal_header(file: &mut File) -> Result<()> {
     if buf[0..4] != WAL_MAGIC {
         bail!("Invalid WAL magic number: not a .wal file");
     }
-    let version = u32::from_le_bytes(buf[4..8].try_into().unwrap());
+    let version = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
     if version != WAL_VERSION {
         bail!("Unsupported WAL version: {} (expected {})", version, WAL_VERSION);
     }
@@ -104,21 +104,20 @@ impl WalWriter {
     /// If creating, writes the WAL header.
     /// If opening, validates the header and seeks to the end for appending.
     pub fn open_or_create(path: &Path) -> Result<Self> {
-        let exists = path.exists();
-        let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(path)?;
-
-        if !exists {
-            write_wal_header(&mut file)?;
-        } else {
-            validate_wal_header(&mut file)?;
+        // Try atomic create-new first (no TOCTOU window)
+        match OpenOptions::new().read(true).write(true).create_new(true).open(path) {
+            Ok(mut file) => {
+                write_wal_header(&mut file)?;
+                file.seek(SeekFrom::End(0))?;
+                return Ok(WalWriter { file });
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e.into()),
         }
 
-        // Seek to end so subsequent writes append
+        // File exists — validate its header and seek to end for appending
+        let mut file = OpenOptions::new().read(true).write(true).open(path)?;
+        validate_wal_header(&mut file)?;
         file.seek(SeekFrom::End(0))?;
         Ok(WalWriter { file })
     }
@@ -188,6 +187,12 @@ impl WalReader {
                 break; // truncated
             }
             let num_facts = u64::from_le_bytes(num_facts_buf) as usize;
+
+            // Sanity cap: no legitimate entry has more than 1M facts
+            const MAX_FACTS_PER_ENTRY: usize = 1_000_000;
+            if num_facts > MAX_FACTS_PER_ENTRY {
+                break; // treat as corrupt entry
+            }
 
             // Build payload for CRC32 verification
             let mut payload = Vec::new();
