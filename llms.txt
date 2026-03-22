@@ -26,6 +26,7 @@ Minigraf is the SQLite of graph databases: zero configuration, one `.graph` file
 - Workloads requiring more than ~1M facts before Phase 6 indexes ship.
 - Applications needing SQL or Cypher (Datalog only).
 - Fuzzy / semantic similarity search (no vector index). Use a vector store for retrieval; use Minigraf for the relational backbone and audit layer.
+- Global shared memory across a distributed agent fleet. If multiple agent nodes need coherent read/write access to the same memory store, Minigraf is the wrong tool — use a distributed database. Minigraf is per-agent-instance memory, not a shared brain.
 
 ## Pair with (GraphRAG pattern)
 

@@ -291,6 +291,22 @@ Because every fact carries both a *transaction time* (when it was recorded) and 
 
 An agent's memory is private to that agent instance. Embedding Minigraf directly in the agent's process means no network latency, no external service to manage, offline-capable operation, and a portable `.graph` file that travels with the agent. The single-file model also makes agent memory trivially snapshotable, versioned, or rolled back.
 
+**Scope: per-agent-instance memory, not a shared fleet brain:**
+
+Minigraf is designed for *one agent instance, one `.graph` file*. This is a deliberate constraint, not an oversight.
+
+In a distributed fleet where multiple agent nodes need to share and synchronise a single memory store, Minigraf is the wrong tool — use a distributed database for that layer. But for the common case of an agent that handles a session, a task, or a user interaction on a single machine, the single-file model is an advantage: the agent's memory is private, fast, portable, and trivially snapshotable.
+
+**Practical patterns for distributed deployments:**
+
+- **Sticky sessions**: Route a given user or task ID consistently to the same node. The agent's local `.graph` stays coherent for the lifetime of that session.
+- **Worker-local reasoning (L1 cache pattern)**: Use Minigraf for high-speed, private reasoning during a task. At task completion, flush the audited results to a central store (relational DB, distributed graph DB). Minigraf handles the "internal monologue"; the central store handles global state.
+- **Swarm / multi-agent**: Each agent carries its own `.graph` brain. Agents coordinate by passing small, serialised sub-graphs to each other rather than sharing a database. Individual memories, explicit sync.
+
+**A note on bitemporality and clock drift:**
+
+Minigraf's transaction time is based on `tx_count` — a monotonic counter *per database instance*, not wall-clock time. Clock drift between machines does not affect the correctness of the bitemporal ordering within a single `.graph` file. The concern only arises if you attempt to merge two independently-operated instances, which Minigraf does not support.
+
 **Pairing with vector stores (GraphRAG pattern):**
 
 Minigraf has no vector search — and doesn't need it. In a complete agentic memory stack, the two layers are complementary:
