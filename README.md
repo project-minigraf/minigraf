@@ -399,6 +399,10 @@ Mobile data is inherently eventually consistent. A user records a fact offline, 
 - **Local AI context** — On-device LLMs need structured facts to reason over. Minigraf acts as the relational backbone: store entities and relationships that the model can query instead of re-deriving from unstructured text.
 - **Offline-first productivity apps** — Task managers, CRMs, project trackers where the device is the source of truth and sync is a background process. Each device carries its own `.graph`; sync at the application layer when connectivity is available.
 
+**How integration works (Phase 7):**
+
+Rust compiles to native machine code for each mobile architecture — the same binary performance as C or C++. Phase 7 will ship a `minigraf-ffi` crate using [UniFFI](https://github.com/mozilla/uniffi-rs) (Mozilla's binding generator) to auto-generate Kotlin and Swift wrappers. Release artifacts will be pre-built: a `.xcframework` for iOS (add to Xcode or import via Swift Package Manager) and a `.aar` for Android (drop into `libs/` or import via Gradle). Mobile developers will not need to touch Rust. See `ROADMAP.md` Phase 7.2 for the full integration plan.
+
 **Practical note on sync:**
 
 Minigraf does not provide built-in sync — this is intentional. Sync strategies are application-specific and often require domain knowledge about conflict resolution. The recommended pattern is: use Minigraf for high-speed local reasoning; at sync points, export the facts you want to share and merge them into a central store using your application's conflict resolution logic. The bitemporal timestamps make conflict detection straightforward: compare `tx_count` values to determine which device recorded a fact first.
@@ -439,6 +443,10 @@ Browser apps built on a local-first architecture face the same eventual-consiste
 ```
 
 - **Collaborative local-first tools** — Each browser tab or user session carries its own `.graph` file as the local replica. The application layer handles sync and conflict resolution; Minigraf handles fast, structured local queries. This is the same pattern as the mobile sync note above — Minigraf as the local reasoning layer, not the sync layer.
+
+**How integration works (Phase 7):**
+
+The planned WASM backend compiles Minigraf to `wasm32-unknown-unknown` and uses `wasm-bindgen` to expose a TypeScript/JavaScript API. The `.graph` file is stored as a single blob in IndexedDB — consistent with the single-file philosophy and portable to native if the user exports it. The `wasm` feature flag already gates the query optimizer (which uses `std`-only code) to keep the binary lean. See `ROADMAP.md` Phase 7.1 for the full plan.
 
 **The single-file advantage in a browser context:**
 
