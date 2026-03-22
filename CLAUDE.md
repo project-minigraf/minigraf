@@ -683,6 +683,7 @@ Before publishing the crate, verify all of the following:
 5. **Test everything** - No untested code
 6. **Think SQLite** - Would SQLite do this?
 7. **Long-term vision** - Building for decades
+8. **Sync all docs at phase completion** - When a phase is marked complete, update and cross-check ALL of the following for mutual consistency: `CLAUDE.md` (status list, test counts, architecture notes), `ROADMAP.md`, `README.md`, `TEST_COVERAGE.md`, `CHANGELOG.md`. No doc should contradict another.
 
 ---
 
