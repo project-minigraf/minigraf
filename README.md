@@ -409,7 +409,7 @@ Minigraf does not provide built-in sync — this is intentional. Sync strategies
 
 ### For WASM / Browser
 
-Minigraf's single-file, zero-configuration design maps cleanly onto the browser environment. The planned Phase 7 WASM backend stores the `.graph` file as a single blob in IndexedDB, giving browser applications a persistent, queryable graph database with no server required.
+Minigraf's single-file, zero-configuration design maps cleanly onto the browser environment. The planned Phase 7 WASM backend persists data in IndexedDB using page-granular records (one IndexedDB entry per 4KB page), giving browser applications a persistent, queryable graph database with no server required. The LRU page cache sits in front of IndexedDB, so hot pages are served from memory and only dirty pages are written back on checkpoint — write cost scales with what changed, not the total database size.
 
 **Why a graph database in the browser:**
 
@@ -448,15 +448,15 @@ Browser apps built on a local-first architecture face the same eventual-consiste
 
 There are two distinct WASM targets, each with different requirements:
 
-- **Browser (`wasm32-unknown-unknown`)**: Compiled and packaged with `wasm-pack`, which generates a `.wasm` binary, JavaScript glue code, and TypeScript `.d.ts` definitions automatically. Public API is annotated with `#[wasm_bindgen]`. Storage goes through IndexedDB (no filesystem in browser WASM). Published to npm as `@minigraf/core` — consumable like any npm package, with full TypeScript auto-complete.
+- **Browser (`wasm32-unknown-unknown`)**: Compiled and packaged with `wasm-pack`, which generates a `.wasm` binary, JavaScript glue code, and TypeScript `.d.ts` definitions automatically. Public API is annotated with `#[wasm_bindgen]`. Storage uses IndexedDB with **page-granular records** (`page_id → 4KB bytes`) — not a single blob — so only dirty pages are written back on checkpoint, keeping write amplification proportional to actual changes regardless of database size. Published to npm as `@minigraf/core` — consumable like any npm package, with full TypeScript auto-complete.
 
 - **Server-side WASM (`wasm32-wasip1` / WASI)**: Standard `cargo build` to a WASI target — no `wasm-bindgen` or JavaScript bindings needed. Runs inside sandboxed runtimes like Wasmtime, Wasmer, or Cloudflare Workers (WASI mode). `FileBackend` works as-is because WASI exposes a capability-based filesystem API. More secure than Docker for agent sandboxing.
 
 The `wasm` feature flag already gates `optimizer.rs` (which uses `std`-only code) to keep the browser binary lean. See `ROADMAP.md` Phase 7.1 for the full plan.
 
-**The single-file advantage in a browser context:**
+**Portability: export and import as a `.graph` file:**
 
-A `.graph` file is a single blob. Exporting a user's data is one read; importing it is one write. Backup is a file download. This is significantly simpler than managing IndexedDB object stores directly, and it means the same `.graph` file a user creates on desktop can be loaded in the browser (or vice versa) once Phase 7 is complete.
+Although the browser backend stores data as page-granular IndexedDB records internally, the `.graph` binary format is preserved for portability. Export (download a `.graph` file) reconstructs the file by reading pages in order; import (upload a `.graph` file) writes each page to IndexedDB. A database created on desktop can be loaded in the browser, and vice versa. This is a deliberate operation, not transparent — the right model for a browser environment where "files" are an explicit user action.
 
 ### Target Use Cases
 
