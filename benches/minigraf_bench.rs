@@ -156,6 +156,7 @@ fn bench_query(c: &mut Criterion) {
     // point_entity: EAVT range scan on a known entity
     {
         let mut group = c.benchmark_group("query/point_entity");
+        group.sample_size(10); // 1m scale takes ~2s/iter
         for &(label, n) in SCALES {
             let db = helpers::populate_in_memory(n);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
@@ -168,6 +169,7 @@ fn bench_query(c: &mut Criterion) {
     // point_attribute: AEVT scan — all entities with :val attribute
     {
         let mut group = c.benchmark_group("query/point_attribute");
+        group.sample_size(10); // 1m scale returns all N results — slow
         for &(label, n) in SCALES {
             let db = helpers::populate_in_memory(n);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
@@ -182,6 +184,7 @@ fn bench_query(c: &mut Criterion) {
     // Query: e0 -> e1 -> e2, return e2's :val
     {
         let mut group = c.benchmark_group("query/join_3pattern");
+        group.sample_size(10); // 1m scale may be slow
         for &(label, n) in SCALES {
             let db = helpers::populate_for_join(n);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
@@ -212,6 +215,7 @@ fn bench_time_travel(c: &mut Criterion) {
     // Using 999999 ensures all real tx counts are <= this.
     {
         let mut group = c.benchmark_group("time_travel/as_of_counter");
+        group.sample_size(10); // 1m scale takes ~2s/iter; 10 samples suffices
         for &(label, n) in SCALES {
             let db = helpers::populate_in_memory(n);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
@@ -229,6 +233,7 @@ fn bench_time_travel(c: &mut Criterion) {
     // valid-to defaults to MAX (forever). "2099-01-01T00:00:00Z" is within that window.
     {
         let mut group = c.benchmark_group("time_travel/valid_at");
+        group.sample_size(10); // 1m scale takes ~2s/iter; 10 samples suffices
         for &(label, n) in SCALES {
             let db = helpers::populate_in_memory(n);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
@@ -247,14 +252,13 @@ fn bench_time_travel(c: &mut Criterion) {
 // ── Task 7: recursion/ ────────────────────────────────────────────────────────
 
 fn bench_recursion(c: &mut Criterion) {
-    // chain: linear chain of depth N — worst case for iteration depth
+    // chain: linear chain of depth N — worst case for iteration depth.
+    // depth_100 already takes ~16s/iter (semi-naive is O(depth²) on chains).
+    // depth_1k is excluded as it would take hours. sample_size(10) keeps total time manageable.
     {
         let mut group = c.benchmark_group("recursion/chain");
-        for &(label, depth) in &[
-            ("depth_10", 10usize),
-            ("depth_100", 100),
-            ("depth_1k", 1_000),
-        ] {
+        group.sample_size(10);
+        for &(label, depth) in &[("depth_10", 10usize), ("depth_100", 100)] {
             let db = helpers::chain_graph(depth);
             group.bench_with_input(BenchmarkId::from_parameter(label), &depth, |b, _| {
                 b.iter(|| {
@@ -269,6 +273,7 @@ fn bench_recursion(c: &mut Criterion) {
     // fanout: fan-out tree — tests delta size per semi-naive iteration
     {
         let mut group = c.benchmark_group("recursion/fanout");
+        group.sample_size(10);
         // (width, depth) pairs: (5,5) ~3905 nodes; (10,3) ~1110 nodes
         for &(label, width, depth) in &[("w5_d5", 5usize, 5usize), ("w10_d3", 10usize, 3usize)] {
             let db = helpers::fanout_graph(width, depth);
