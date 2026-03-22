@@ -30,6 +30,7 @@ fn is_entity_literal(v: &EdnValue) -> bool {
 
 /// Count the number of non-variable components in a pattern.
 /// Higher score = more selective.
+#[cfg(not(feature = "wasm"))]
 fn selectivity_score(p: &Pattern) -> u8 {
     let e = !is_variable(&p.entity);
     let a = !is_variable(&p.attribute);
@@ -77,7 +78,7 @@ pub fn plan(
     patterns: Vec<Pattern>,
     _indexes: &crate::storage::index::Indexes,
 ) -> Vec<(Pattern, IndexHint)> {
-    let mut planned: Vec<(Pattern, IndexHint)> = patterns
+    let planned: Vec<(Pattern, IndexHint)> = patterns
         .into_iter()
         .map(|p| {
             let h = select_index(&p);
@@ -85,11 +86,14 @@ pub fn plan(
         })
         .collect();
 
+    // Stable sort preserves original order for ties.
+    // Under `wasm`, patterns execute in user-written order (join reordering skipped).
     #[cfg(not(feature = "wasm"))]
-    {
-        // Stable sort preserves original order for ties.
-        planned.sort_by_key(|(p, _)| std::cmp::Reverse(selectivity_score(p)));
-    }
+    let planned = {
+        let mut v = planned;
+        v.sort_by_key(|(p, _)| std::cmp::Reverse(selectivity_score(p)));
+        v
+    };
 
     planned
 }
