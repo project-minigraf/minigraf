@@ -424,6 +424,11 @@ tx.commit()?;  // or tx.rollback()?
 
 **Community Infrastructure** (do before publish):
 - 🎯 Enable GitHub Discussions — minimum viable channel for questions, feedback, and contributor coordination before external users arrive via crates.io
+- ✅ `CONTRIBUTING.md` — dedicated contributing guide (extracted and expanded from README); shown by GitHub automatically when a PR or issue is opened
+- ✅ `CODE_OF_CONDUCT.md` — Contributor Covenant reference
+- ✅ Issue templates — bug report and feature request (`.github/ISSUE_TEMPLATE/`)
+- ✅ PR template — checklist enforcing test/clippy/fmt/philosophy checks (`.github/pull_request_template.md`)
+- ✅ `CODEOWNERS` — auto-assigns maintainer as reviewer on every PR
 
 **crates.io Publish Gate**:
 

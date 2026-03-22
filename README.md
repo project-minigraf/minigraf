@@ -593,7 +593,7 @@ This is a hobby project with a long-term vision. Contributions welcome, but we p
 2. Simplicity over flexibility
 3. Philosophy alignment
 
-See [ROADMAP.md](ROADMAP.md) and [PHILOSOPHY.md](PHILOSOPHY.md) before proposing features.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code standards, and the PR process. Read [PHILOSOPHY.md](PHILOSOPHY.md) and [ROADMAP.md](ROADMAP.md) before proposing features.
 
 ## Learning Resources
 
