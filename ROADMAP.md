@@ -418,49 +418,36 @@ tx.commit()?;  // or tx.rollback()?
 
 ---
 
-### 6.4b Benchmarks + crates.io Publish 🎯 NEXT
+### 6.4b Benchmarks + Light Publish Prep 🎯 NEXT
 
 **Benchmark Suite**:
-- 🎯 Criterion benchmarks: insert throughput, query latency (indexed/unindexed)
-- 🎯 Memory profiling (various dataset sizes)
-- 🎯 File size growth tracking
-- 🎯 Transaction throughput
-- 🎯 Time travel query performance
+- 🎯 Run existing Criterion suite (9 groups already implemented in `benches/`)
+- 🎯 Memory profiling via heaptrack at 10K / 100K / 1M facts
+- 🎯 Document results in `BENCHMARKS.md` (full tables + machine specs + interpretation)
+- 🎯 Add "Performance" summary section to `README.md`
 
 **Target Scales**:
 - Small: 10K facts (personal knowledge base)
 - Medium: 100K facts (small business app)
 - Large: 1M facts (production single-machine)
 
-**Remaining Edge Case Tests**:
-- 🎯 Checkpoint-during-crash — simulate a crash mid-checkpoint (partial page writes to `.graph` while WAL is being cleared) and verify recovery correctness
-- 🎯 Error handling coverage — raise error-path coverage from ~82% toward the same bar as happy-path coverage; prioritise storage and WAL error paths
+**Light Publish Prep** (low-risk, no API changes):
+- 🎯 Move `clap` out of library deps into `[[bin]]` only
+- 🎯 Complete `Cargo.toml` metadata (`repository`, `keywords`, `categories`, `readme`, `documentation`)
 
-**Community Infrastructure** (do before publish):
-- 🎯 Enable GitHub Discussions — minimum viable channel for questions, feedback, and contributor coordination before external users arrive via crates.io
-- ✅ `CONTRIBUTING.md` — dedicated contributing guide (extracted and expanded from README); shown by GitHub automatically when a PR or issue is opened
+**Community Infrastructure**:
+- 🎯 Enable GitHub Discussions — minimum viable channel for questions and feedback
+- ✅ `CONTRIBUTING.md` — dedicated contributing guide (extracted and expanded from README)
 - ✅ `CODE_OF_CONDUCT.md` — Contributor Covenant reference
 - ✅ Issue templates — bug report and feature request (`.github/ISSUE_TEMPLATE/`)
 - ✅ PR template — checklist enforcing test/clippy/fmt/philosophy checks (`.github/pull_request_template.md`)
 - ✅ `CODEOWNERS` — auto-assigns maintainer as reviewer on every PR
 
-**crates.io Publish Gate**:
+**Note**: crates.io publish deferred to after Phase 6.5. The file format will change (v6) in 6.5; publishing before that would expose early users to an immediate forced migration. The full pre-publishing checklist (API narrowing, rustdoc, clippy, `unwrap()` sweep) is a Phase 6.5 gate item.
 
-v0.8.0 is the first public release. All items on the pre-publishing checklist in CLAUDE.md must pass before tagging:
-- `cargo test` green on Linux, macOS, Windows
-- `cargo clippy -- -D warnings` clean
-- `cargo doc --no-deps` builds without warnings
-- No `unwrap()`/`expect()` in library code paths
-- `lib.rs` exports narrowed to public API only
-- `clap` moved to `[[bin]]` deps only
-- `Cargo.toml` metadata complete (`repository`, `keywords`, `categories`, `readme`, `documentation`)
-- All doc examples compile and run
+**Deliverable**: Validated performance numbers documented in `BENCHMARKS.md` and `README.md`; crate metadata and deps cleaned up and ready for eventual publish
 
-Publishing to crates.io at v0.8.0 is a **hard gate** — the project is invisible to the ecosystem until this happens. docs.rs auto-populates on publish, making the API reference available for free.
-
-**Deliverable**: Validated performance numbers, strengthened crash-safety test coverage, and Minigraf published to crates.io as v0.8.0
-
-**Timeline**: ~2-3 weeks
+**Timeline**: ~1-2 weeks
 
 ---
 
@@ -1152,19 +1139,20 @@ branched_db.execute("(transact [[:x :y 1]])")?;
 - ✅ `tests/edge_cases_test.rs` — 4 new edge case integration tests
 - ✅ 298 tests passing
 
-### v0.8.0 - 🎯 Phase 6.4b (Criterion Benchmarks + **crates.io publish**)
-- Criterion benchmark suite; validated performance at 10K / 100K / 1M facts
-- Checkpoint-during-crash edge case test
-- Error-path coverage raised from ~82%
+### v0.8.0 - 🎯 Phase 6.4b (Criterion Benchmarks + Light Publish Prep)
+- Run existing Criterion suite; validated performance numbers at 10K / 100K / 1M facts
+- Memory profiling via heaptrack
+- `BENCHMARKS.md` with full result tables; "Performance" section in README
+- `clap` moved to binary-only dep; `Cargo.toml` metadata completed
 - GitHub Discussions enabled
-- **First public release on crates.io** — API reference auto-published to docs.rs
 
-### v0.8.5 - 🎯 Phase 6.5 (On-Disk B+Tree Indexes)
+### v0.9.0 - 🎯 Phase 6.5 (On-Disk B+Tree Indexes + **crates.io publish**)
 - Proper on-disk B+tree for all four covering indexes (EAVT, AEVT, AVET, VAET)
 - Index memory usage proportional to cache size, not database size
 - File format v6 with automatic v5 migration
+- **First public release on crates.io** — API reference auto-published to docs.rs; full pre-publishing checklist passes
 
-### v0.9.0 - 🎯 Phase 7 (Datalog Completeness)
+### v1.0.0 - 🎯 Phase 7 (Datalog Completeness)
 - Stratified negation (`not` / `not-join`)
 - Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`) + arithmetic filter predicates
 - Disjunction (`or` / `or-join`)
@@ -1174,7 +1162,7 @@ branched_db.execute("(transact [[:x :y 1]])")?;
 - Full four-class temporal query taxonomy (point-in-time, time interval, time-point lookup, time-interval lookup)
 - ≥90% branch coverage
 
-### v0.10.0 - 🎯 Phase 8 (Cross-platform)
+### v1.1.0 - 🎯 Phase 8 (Cross-platform)
 - WASM support (browser + WASI)
 - Mobile bindings (iOS + Android)
 - Language bindings (Python, C, Node.js)
@@ -1231,8 +1219,9 @@ When evaluating features, ask:
 - ✅ Phase 5: Complete (March 2026) - ACID + WAL
 - ✅ Phase 6.1: Complete (March 2026) - Covering Indexes + Query Optimizer
 - ✅ Phase 6.2: Complete (March 2026) - Packed Pages + LRU Cache
-- 🎯 Phase 6.4: 2-3 weeks (Benchmarks + edge case tests + **crates.io publish**) - **NEXT** (Phase 6.3 query optimization completed in Phase 6.1)
-- 🎯 Phase 6.5: 4-6 weeks (On-disk B+tree indexes, file format v6 — conditional on Phase 6.4 benchmark findings)
+- ✅ Phase 6.4a: Complete (March 2026) - Retraction semantics fix + edge case tests
+- 🎯 Phase 6.4b: 1-2 weeks (Benchmarks + light publish prep) - **NEXT**
+- 🎯 Phase 6.5: 4-6 weeks (On-disk B+tree indexes, file format v6 + **crates.io publish** — conditional on Phase 6.4b benchmark findings)
 - 🎯 Phase 7: 8-12 weeks (Datalog Completeness — negation, aggregation, disjunction, prepared statements, temporal metadata bindings; ≥90% branch coverage)
 - 🎯 Phase 8: 3-4 months (Cross-platform — WASM, mobile, language bindings)
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)
@@ -1244,7 +1233,7 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: ✅ Phase 6.4a Complete! Planning Phase 6.4b - Criterion Benchmarks + crates.io publish
+**Right Now**: Planning Phase 6.4b — Criterion Benchmarks + Light Publish Prep
 
 **Phase 6.4a Achievements**:
 1. ✅ Fixed retraction semantics in Datalog queries (`net_asserted_facts` helper)
@@ -1254,11 +1243,12 @@ When evaluating features, ask:
 5. ✅ 298 tests passing (18 new tests since Phase 6.2)
 
 **Immediate Next Steps (Phase 6.4b)**:
-1. Add Criterion as a dev-dependency
-2. Write benchmarks: insert throughput, point-lookup, range scan, time travel
-3. Profile memory usage at 10K / 100K / 1M facts
-4. Document performance characteristics in README
-5. Publish to crates.io as v0.8.0
+1. Run existing Criterion suite; capture results at 10K / 100K / 1M facts
+2. Profile memory usage with heaptrack at each scale
+3. Write `BENCHMARKS.md` (full tables + machine specs + interpretation)
+4. Add "Performance" section to README
+5. Move `clap` to binary-only dep; complete `Cargo.toml` metadata
+6. Enable GitHub Discussions
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)
@@ -1274,4 +1264,4 @@ See [GitHub Issues](https://github.com/adityamukho/minigraf/issues) for specific
 
 ---
 
-Last Updated: Phase 6.2 Complete - Packed Pages + LRU Cache (March 2026)
+Last Updated: Phase 6.4a Complete - Retraction Semantics Fix + Edge Case Tests (March 2026)
