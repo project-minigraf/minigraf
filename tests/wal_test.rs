@@ -577,12 +577,12 @@ fn test_v2_file_opens_and_upgrades_to_v3_on_checkpoint() {
     );
     let header = FileHeader::from_bytes(&raw[..PAGE_SIZE]).unwrap();
     assert_eq!(
-        header.version, 4,
-        "file must be upgraded to v4 on checkpoint"
+        header.version, 5,
+        "file must be upgraded to v5 on checkpoint"
     );
     assert_eq!(header.magic, *b"MGRF", "magic number must be preserved");
     assert!(
         header.last_checkpointed_tx_count > 0,
-        "last_checkpointed_tx_count must be set after checkpoint on v2→v4 upgrade"
+        "last_checkpointed_tx_count must be set after checkpoint on v2→v5 upgrade"
     );
 }
