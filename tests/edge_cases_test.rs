@@ -13,13 +13,19 @@ use minigraf::{Minigraf, OpenOptions, QueryResult};
 fn test_oversized_fact_rejected_at_insertion_file_backed() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("test.graph");
-    let db = OpenOptions::new().path(path.to_str().unwrap()).open().unwrap();
+    let db = OpenOptions::new()
+        .path(path.to_str().unwrap())
+        .open()
+        .unwrap();
 
     let large_value = "x".repeat(8192); // well above MAX_FACT_BYTES = 4080
     let cmd = format!("(transact [[:e :attr \"{}\"]])", large_value);
     let result = db.execute(&cmd);
 
-    assert!(result.is_err(), "oversized fact must be rejected at insertion for file-backed DB");
+    assert!(
+        result.is_err(),
+        "oversized fact must be rejected at insertion for file-backed DB"
+    );
     let msg = format!("{}", result.unwrap_err());
     assert!(
         msg.contains("4080"),
@@ -34,16 +40,22 @@ fn test_oversized_fact_rejected_at_insertion_file_backed() {
 fn test_oversized_fact_rejected_via_write_transaction() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("test.graph");
-    let db = OpenOptions::new().path(path.to_str().unwrap()).open().unwrap();
+    let db = OpenOptions::new()
+        .path(path.to_str().unwrap())
+        .open()
+        .unwrap();
 
     let large_value = "x".repeat(8192);
     let cmd = format!("(transact [[:e :attr \"{}\"]])", large_value);
 
     let mut tx = db.begin_write().unwrap();
     tx.execute(&cmd).unwrap(); // buffered in-memory — not yet validated
-    let result = tx.commit();  // size check fires here
+    let result = tx.commit(); // size check fires here
 
-    assert!(result.is_err(), "oversized fact must be rejected at commit for file-backed DB");
+    assert!(
+        result.is_err(),
+        "oversized fact must be rejected at commit for file-backed DB"
+    );
     let msg = format!("{}", result.unwrap_err());
     assert!(
         msg.contains("4080"),
@@ -110,7 +122,7 @@ fn test_stale_wal_after_checkpoint_is_idempotent() {
         .unwrap();
     let alice_rows = match alice_result {
         QueryResult::QueryResults { results, .. } => results,
-        other => panic!("expected QueryResults, got {:?}", other),
+        _ => panic!("expected QueryResults variant"),
     };
     assert_eq!(
         alice_rows.len(),
@@ -123,7 +135,7 @@ fn test_stale_wal_after_checkpoint_is_idempotent() {
         .unwrap();
     let bob_rows = match bob_result {
         QueryResult::QueryResults { results, .. } => results,
-        other => panic!("expected QueryResults, got {:?}", other),
+        _ => panic!("expected QueryResults variant"),
     };
     assert_eq!(bob_rows.len(), 1, "bob:age must survive the checkpoint");
 }

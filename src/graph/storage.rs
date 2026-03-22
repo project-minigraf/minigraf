@@ -529,7 +529,11 @@ pub(crate) fn net_asserted_facts(facts: Vec<Fact>) -> Vec<Fact> {
     // key: (entity, attribute, canonical value bytes) → fact with highest tx_count
     let mut latest: HashMap<(EntityId, Attribute, Vec<u8>), Fact> = HashMap::new();
     for fact in facts {
-        let key = (fact.entity, fact.attribute.clone(), encode_value(&fact.value));
+        let key = (
+            fact.entity,
+            fact.attribute.clone(),
+            encode_value(&fact.value),
+        );
         match latest.get(&key) {
             None => {
                 latest.insert(key, fact);
