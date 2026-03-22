@@ -687,6 +687,7 @@ Before publishing the crate, verify all of the following:
 6. **Think SQLite** - Would SQLite do this?
 7. **Long-term vision** - Building for decades
 8. **Sync all docs at phase completion** - When a phase is marked complete, update and cross-check ALL of the following for mutual consistency: `CLAUDE.md` (status list, test counts, architecture notes), `ROADMAP.md`, `README.md`, `TEST_COVERAGE.md`, `CHANGELOG.md`. No doc should contradict another.
+   Also update the affected wiki pages in `.wiki/`: `Architecture.md` if the module structure, file format, data model, or query pipeline changed; `Datalog-Reference.md` if the query language gained new syntax or operators; `Comparison.md` if the feature matrix changed; `Use-Cases.md` if deployment targets or integration guidance changed. Commit and push the wiki repo separately (`cd .wiki && git add -A && git commit -m "..." && git push`).
 9. **Tag every version bump** - Whenever `Cargo.toml` version is incremented, create an annotated git tag immediately after the final doc-sync commit for that version: `git tag -a v<x.y.z> -m "<phase> complete — <one-line summary>"`. Push the tag with `git push origin v<x.y.z>`.
 
 ---
