@@ -446,7 +446,13 @@ Browser apps built on a local-first architecture face the same eventual-consiste
 
 **How integration works (Phase 7):**
 
-The planned WASM backend compiles Minigraf to `wasm32-unknown-unknown` and uses `wasm-bindgen` to expose a TypeScript/JavaScript API. The `.graph` file is stored as a single blob in IndexedDB — consistent with the single-file philosophy and portable to native if the user exports it. The `wasm` feature flag already gates the query optimizer (which uses `std`-only code) to keep the binary lean. See `ROADMAP.md` Phase 7.1 for the full plan.
+There are two distinct WASM targets, each with different requirements:
+
+- **Browser (`wasm32-unknown-unknown`)**: Compiled and packaged with `wasm-pack`, which generates a `.wasm` binary, JavaScript glue code, and TypeScript `.d.ts` definitions automatically. Public API is annotated with `#[wasm_bindgen]`. Storage goes through IndexedDB (no filesystem in browser WASM). Published to npm as `@minigraf/core` — consumable like any npm package, with full TypeScript auto-complete.
+
+- **Server-side WASM (`wasm32-wasip1` / WASI)**: Standard `cargo build` to a WASI target — no `wasm-bindgen` or JavaScript bindings needed. Runs inside sandboxed runtimes like Wasmtime, Wasmer, or Cloudflare Workers (WASI mode). `FileBackend` works as-is because WASI exposes a capability-based filesystem API. More secure than Docker for agent sandboxing.
+
+The `wasm` feature flag already gates `optimizer.rs` (which uses `std`-only code) to keep the browser binary lean. See `ROADMAP.md` Phase 7.1 for the full plan.
 
 **The single-file advantage in a browser context:**
 
