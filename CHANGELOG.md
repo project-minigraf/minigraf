@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-03-22
+
+### Added
+- Packed fact pages (`page_type = 0x02`): ~25 facts per 4KB page, ~25× disk space reduction vs v4
+- LRU page cache (`src/storage/cache.rs`): configurable capacity (default 256 pages = 1MB)
+- `OpenOptions::page_cache_size(usize)` — tune page cache capacity
+- `CommittedFactReader` trait: index-driven fact resolution via page cache (no startup load-all)
+- File format v5: `fact_page_format` header field; auto-migration from v4 on first open
+- Page-based CRC32 checksum (v5): streams raw committed pages instead of all facts
+
+### Changed
+- `PersistentFactStorage::new()` takes `page_cache_capacity: usize` as second argument
+- Committed facts no longer loaded into `Vec<Fact>` at startup; only pending facts held in memory
+- `FactStorage::get_facts_by_entity`, `get_facts_by_attribute` use EAVT/AEVT index range scans
+
+### Fixed
+- v4 databases auto-migrated to v5 packed format on first open (no data loss)
+
 ## [0.6.0] - 2026-03-21
 
 ### Added

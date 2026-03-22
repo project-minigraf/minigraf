@@ -7,7 +7,9 @@
 /// Inspired by SQLite's VFS (Virtual File System) architecture.
 pub mod backend;
 pub mod btree;
+pub mod cache;
 pub mod index;
+pub mod packed_pages;
 pub mod persistent_facts;
 
 use anyhow::Result;
@@ -19,7 +21,12 @@ pub const PAGE_SIZE: usize = 4096;
 pub const MAGIC_NUMBER: [u8; 4] = *b"MGRF";
 
 /// Current file format version
-pub const FORMAT_VERSION: u32 = 4;
+pub const FORMAT_VERSION: u32 = 5;
+
+/// fact_page_format: legacy one-per-page (v4 and earlier, or unset byte = 0x00).
+pub const FACT_PAGE_FORMAT_ONE_PER_PAGE: u8 = 0x01;
+/// fact_page_format: packed pages (v5+).
+pub const FACT_PAGE_FORMAT_PACKED: u8 = 0x02;
 
 /// Storage backend trait.
 ///
@@ -56,7 +63,7 @@ pub trait StorageBackend: Send + Sync {
     fn backend_name(&self) -> &'static str;
 }
 
-/// File header for .graph files — 72 bytes in v4.
+/// File header for .graph files — 72 bytes in v5.
 ///
 /// Layout (all fields little-endian):
 ///   0..4    magic ("MGRF")
@@ -69,7 +76,8 @@ pub trait StorageBackend: Send + Sync {
 ///   48..56  avet_root_page (u64)      — new in v4
 ///   56..64  vaet_root_page (u64)      — new in v4
 ///   64..68  index_checksum (u32)      — new in v4
-///   68..72  _padding (u32)
+///   68      fact_page_format (u8)     — new in v5; 0x00=unset/legacy, 0x01=one-per-page, 0x02=packed
+///   69..72  _padding ([u8; 3])
 #[derive(Debug, Clone, Copy)]
 pub struct FileHeader {
     pub magic: [u8; 4],
@@ -82,7 +90,9 @@ pub struct FileHeader {
     pub avet_root_page: u64,
     pub vaet_root_page: u64,
     pub index_checksum: u32,
-    pub(crate) _padding: u32,
+    /// fact_page_format (v5): 0x00 = unset/legacy, 0x01 = one-per-page, 0x02 = packed.
+    pub fact_page_format: u8,
+    pub(crate) _padding: [u8; 3],
 }
 
 impl FileHeader {
@@ -99,7 +109,8 @@ impl FileHeader {
             avet_root_page: 0,
             vaet_root_page: 0,
             index_checksum: 0,
-            _padding: 0,
+            fact_page_format: FACT_PAGE_FORMAT_PACKED,
+            _padding: [0; 3],
         }
     }
 
@@ -116,17 +127,19 @@ impl FileHeader {
         b.extend_from_slice(&self.avet_root_page.to_le_bytes());
         b.extend_from_slice(&self.vaet_root_page.to_le_bytes());
         b.extend_from_slice(&self.index_checksum.to_le_bytes());
-        b.extend_from_slice(&self._padding.to_le_bytes());
+        b.push(self.fact_page_format);
+        b.extend_from_slice(&self._padding);
         b
     }
 
     /// Deserialize the header from bytes.
     ///
-    /// Accepts both v3 (64-byte) and v4 (72-byte) headers.
+    /// Accepts v3 (64-byte), v4 (72-byte), and v5 (72-byte) headers.
     /// v3 headers are returned with zero-filled index fields; the
     /// v3→v4 migration in persistent_facts.rs upgrades them on next save.
+    /// v4 headers have fact_page_format = 0x00 (legacy/unset).
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        // Both v3 (64 bytes) and v4 (72 bytes) must pass at least 64-byte
+        // Both v3 (64 bytes) and v4/v5 (72 bytes) must pass at least 64-byte
         // validation before the version field is read.
         if bytes.len() < 64 {
             anyhow::bail!(
@@ -161,13 +174,17 @@ impl FileHeader {
                 avet_root_page: 0,
                 vaet_root_page: 0,
                 index_checksum: 0,
-                _padding: 0,
+                fact_page_format: 0,
+                _padding: [0; 3],
             });
         }
 
-        // v4: need full 72 bytes.
+        // v4 and v5: need full 72 bytes.
         if bytes.len() < 72 {
-            anyhow::bail!("Invalid v4 header: expected 72 bytes, got {}", bytes.len());
+            anyhow::bail!(
+                "Invalid v4/v5 header: expected 72 bytes, got {}",
+                bytes.len()
+            );
         }
 
         Ok(FileHeader {
@@ -181,7 +198,8 @@ impl FileHeader {
             avet_root_page: u64::from_le_bytes(bytes[48..56].try_into().unwrap()),
             vaet_root_page: u64::from_le_bytes(bytes[56..64].try_into().unwrap()),
             index_checksum: u32::from_le_bytes(bytes[64..68].try_into().unwrap()),
-            _padding: u32::from_le_bytes(bytes[68..72].try_into().unwrap()),
+            fact_page_format: bytes[68],
+            _padding: [bytes[69], bytes[70], bytes[71]],
         })
     }
 
@@ -207,22 +225,41 @@ impl Default for FileHeader {
     }
 }
 
+/// Reads committed (checkpointed) facts from persistent storage.
+///
+/// Implemented by `CommittedFactLoaderImpl` in `persistent_facts.rs` and set on
+/// `FactStorage` after load, so index-driven reads resolve `FactRef`s to `Fact`
+/// objects via the page cache without keeping the entire fact list in memory.
+pub trait CommittedFactReader: Send + Sync {
+    /// Resolve a single committed fact by its disk reference.
+    fn resolve(
+        &self,
+        fact_ref: crate::storage::index::FactRef,
+    ) -> Result<crate::graph::types::Fact>;
+    /// Stream all committed facts (for full scans, checksum verification, migration).
+    fn stream_all(&self) -> Result<Vec<crate::graph::types::Fact>>;
+    /// Number of committed fact pages (used for checksum + iteration bounds).
+    fn committed_page_count(&self) -> u64;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_file_header_serialization_v4() {
+    fn test_file_header_serialization_v5() {
         let header = FileHeader::new();
         let bytes = header.to_bytes();
         assert_eq!(bytes.len(), 72);
         assert_eq!(&bytes[0..4], b"MGRF");
         // version field at bytes 4..8
-        assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), 4);
+        assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), 5);
         // eavt_root_page at bytes 32..40: zero on fresh header
         assert_eq!(u64::from_le_bytes(bytes[32..40].try_into().unwrap()), 0);
         // index_checksum at bytes 64..68: zero on fresh header
         assert_eq!(u32::from_le_bytes(bytes[64..68].try_into().unwrap()), 0);
+        // fact_page_format at byte 68: FACT_PAGE_FORMAT_PACKED on fresh header
+        assert_eq!(bytes[68], FACT_PAGE_FORMAT_PACKED);
     }
 
     #[test]
@@ -267,14 +304,14 @@ mod tests {
     }
 
     #[test]
-    fn test_format_version_is_4() {
-        assert_eq!(FORMAT_VERSION, 4);
+    fn test_format_version_is_5() {
+        assert_eq!(FORMAT_VERSION, 5);
     }
 
     #[test]
-    fn test_validate_accepts_versions_1_to_4() {
+    fn test_validate_accepts_versions_1_to_5() {
         let mut header = FileHeader::new();
-        for v in 1u32..=4 {
+        for v in 1u32..=5 {
             header.version = v;
             assert!(
                 header.validate().is_ok(),
@@ -285,20 +322,20 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_rejects_version_0_and_5() {
+    fn test_validate_rejects_version_0_and_6() {
         let mut header = FileHeader::new();
         header.version = 0;
         assert!(header.validate().is_err());
 
-        header.version = 5;
+        header.version = 6;
         assert!(header.validate().is_err());
     }
 
     #[test]
-    fn test_new_header_has_version_4() {
+    fn test_new_header_has_version_5() {
         let header = FileHeader::new();
         assert_eq!(header.version, FORMAT_VERSION);
-        assert_eq!(header.version, 4);
+        assert_eq!(header.version, 5);
     }
 
     #[test]
@@ -309,5 +346,32 @@ mod tests {
         bytes[4..8].copy_from_slice(&4u32.to_le_bytes()); // version = 4
         let result = FileHeader::from_bytes(&bytes);
         assert!(result.is_err(), "truncated v4 header must be rejected");
+    }
+
+    #[test]
+    fn test_file_header_v5_fact_page_format_roundtrip() {
+        let mut h = FileHeader::new();
+        h.fact_page_format = FACT_PAGE_FORMAT_PACKED;
+        let bytes = h.to_bytes();
+        let parsed = FileHeader::from_bytes(&bytes).unwrap();
+        assert_eq!(parsed.fact_page_format, FACT_PAGE_FORMAT_PACKED);
+    }
+
+    #[test]
+    fn test_v4_header_reads_fact_page_format_zero() {
+        // v4 header has _padding = 0, so fact_page_format must come back as 0
+        let mut bytes = vec![0u8; 72];
+        bytes[0..4].copy_from_slice(b"MGRF");
+        bytes[4..8].copy_from_slice(&4u32.to_le_bytes()); // version = 4
+        bytes[8..16].copy_from_slice(&2u64.to_le_bytes()); // page_count = 2
+        let h = FileHeader::from_bytes(&bytes).unwrap();
+        assert_eq!(h.fact_page_format, 0);
+    }
+
+    #[test]
+    fn test_validate_accepts_version_5() {
+        let mut h = FileHeader::new();
+        h.version = 5;
+        assert!(h.validate().is_ok());
     }
 }

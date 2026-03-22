@@ -56,12 +56,15 @@ pub struct OpenOptions {
     /// Defaults to 1000. Lower values mean more frequent checkpoints (smaller WAL,
     /// more I/O). Higher values mean less frequent checkpoints (larger WAL, less I/O).
     pub wal_checkpoint_threshold: usize,
+    /// Number of pages to hold in the LRU page cache. Default: 256 (= 1MB at 4KB pages).
+    pub page_cache_size: usize,
 }
 
 impl Default for OpenOptions {
     fn default() -> Self {
         OpenOptions {
             wal_checkpoint_threshold: 1000,
+            page_cache_size: 256,
         }
     }
 }
@@ -70,6 +73,14 @@ impl OpenOptions {
     /// Create a new `OpenOptions` with default settings.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Set the number of pages to hold in the LRU page cache.
+    ///
+    /// Each page is 4KB, so the default of 256 pages uses ~1MB of memory.
+    pub fn page_cache_size(mut self, size: usize) -> Self {
+        self.page_cache_size = size;
+        self
     }
 
     /// Set the path for a file-backed database.
@@ -186,7 +197,7 @@ impl Minigraf {
 
         // Open the main .graph file
         let backend = FileBackend::open(&db_path)?;
-        let pfs = PersistentFactStorage::new(backend)?;
+        let pfs = PersistentFactStorage::new(backend, opts.page_cache_size)?;
 
         // Share the fact storage
         let fact_storage = pfs.storage().clone();
@@ -225,7 +236,7 @@ impl Minigraf {
     /// Create an in-memory database (no WAL, no persistence). Suitable for tests and REPL.
     pub fn in_memory() -> Result<Self> {
         let backend = MemoryBackend::new();
-        let pfs = PersistentFactStorage::new(backend)?;
+        let pfs = PersistentFactStorage::new(backend, 8)?;
         let fact_storage = pfs.storage().clone();
 
         // For in-memory databases we don't need the PFS beyond initialisation;
@@ -949,6 +960,7 @@ mod tests {
 
         let opts = OpenOptions {
             wal_checkpoint_threshold: 5,
+            page_cache_size: 256,
         };
         let db = Minigraf::open_with_options(&path, opts).unwrap();
         assert_eq!(db.inner.options.wal_checkpoint_threshold, 5);

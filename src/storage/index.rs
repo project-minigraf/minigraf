@@ -135,7 +135,7 @@ pub struct VaetKey {
 /// All four covering indexes held in memory alongside the fact list.
 ///
 /// Populated on every `transact`, `retract`, and `load_fact`.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Indexes {
     pub(crate) eavt: std::collections::BTreeMap<EavtKey, FactRef>,
     pub(crate) aevt: std::collections::BTreeMap<AevtKey, FactRef>,

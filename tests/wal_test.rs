@@ -71,6 +71,7 @@ fn test_wal_recovery_after_simulated_crash() {
             &db_path,
             OpenOptions {
                 wal_checkpoint_threshold: usize::MAX,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -118,6 +119,7 @@ fn test_no_duplicate_facts_after_post_checkpoint_crash() {
             &db_path,
             OpenOptions {
                 wal_checkpoint_threshold: usize::MAX,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -176,6 +178,7 @@ fn test_partial_wal_entry_discarded_earlier_entries_intact() {
             &db_path,
             OpenOptions {
                 wal_checkpoint_threshold: usize::MAX,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -222,6 +225,7 @@ fn test_manual_checkpoint_deletes_wal() {
         &db_path,
         OpenOptions {
             wal_checkpoint_threshold: usize::MAX,
+            ..Default::default()
         },
     )
     .unwrap();
@@ -296,6 +300,7 @@ fn test_auto_checkpoint_fires_at_threshold() {
             &db_path,
             OpenOptions {
                 wal_checkpoint_threshold: 2,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -344,6 +349,7 @@ fn test_explicit_tx_all_or_nothing_commit() {
             &db_path,
             OpenOptions {
                 wal_checkpoint_threshold: usize::MAX,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -409,6 +415,7 @@ fn test_explicit_tx_multiple_transacts_rollback_not_persisted() {
     let db_path = dir.path().join("multi_rollback.graph");
     let opts = OpenOptions {
         wal_checkpoint_threshold: usize::MAX,
+        ..Default::default()
     };
 
     {
@@ -494,6 +501,7 @@ fn test_implicit_tx_execute_survives_replay() {
             &db_path,
             OpenOptions {
                 wal_checkpoint_threshold: usize::MAX,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -577,12 +585,12 @@ fn test_v2_file_opens_and_upgrades_to_v3_on_checkpoint() {
     );
     let header = FileHeader::from_bytes(&raw[..PAGE_SIZE]).unwrap();
     assert_eq!(
-        header.version, 4,
-        "file must be upgraded to v4 on checkpoint"
+        header.version, 5,
+        "file must be upgraded to v5 on checkpoint"
     );
     assert_eq!(header.magic, *b"MGRF", "magic number must be preserved");
     assert!(
         header.last_checkpointed_tx_count > 0,
-        "last_checkpointed_tx_count must be set after checkpoint on v2→v4 upgrade"
+        "last_checkpointed_tx_count must be set after checkpoint on v2→v5 upgrade"
     );
 }
