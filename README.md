@@ -54,7 +54,7 @@ Minigraf has a **crash-safe bi-temporal Datalog query engine with covering index
 - ✅ **Embedded database API** - Use like SQLite (`Minigraf::open()`)
 - ✅ **Cross-platform** - Works on Linux, macOS, Windows, iOS, Android
 - ✅ **280 tests passing** - Comprehensive test coverage
-- 🎯 **Next: Benchmarks** - Criterion suite, performance at scale (Phase 6.3)
+- 🎯 **Next: Benchmarks** - Criterion suite, performance at scale (Phase 6.4)
 
 ## Quick Start
 
