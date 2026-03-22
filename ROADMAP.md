@@ -422,6 +422,29 @@ tx.commit()?;  // or tx.rollback()?
 - 🎯 Checkpoint-during-crash — simulate a crash mid-checkpoint (partial page writes to `.graph` while WAL is being cleared) and verify recovery correctness
 - 🎯 Error handling coverage — raise error-path coverage from ~82% toward the same bar as happy-path coverage; prioritise storage and WAL error paths
 
+**Known Bug — Retraction semantics in Datalog queries** (`executor.rs:filter_facts_for_query`):
+
+`filter_facts_for_query` Step 2 naively filters the tx window to `asserted=true` facts without applying the net effect of retractions. A retraction at tx_count=N creates a fact record with `asserted=false`, but the original assertion record (with `asserted=true`) remains in the append-only log and is still returned by Step 2.
+
+**Broken scenarios**:
+- Current-time query (no `:as-of`) after retraction → retracted fact still appears in results
+- `:as-of N` query where N ≥ retraction tx_count → same
+
+**Working scenario**:
+- `:as-of N` where N < retraction tx_count → correct (retraction record is not yet in the tx window)
+
+**Root cause**: Step 2 should compute the *net view* per `(entity, attribute, value)` triple: for each triple in the tx window, keep it only if the record with the highest `tx_count` is an assertion. Currently it discards retraction records without checking whether they cancel an earlier assertion within the same window.
+
+**Note**: `get_current_value()` (internal API, not the Datalog path) handles this correctly by sorting by `tx_id` and checking the most recent record. The Datalog query path needs the same logic applied.
+
+**Tests to add**:
+- Assert a fact, retract it, run a Datalog query (no `:as-of`) → fact must NOT appear
+- Assert a fact at tx=1, retract at tx=3; query `:as-of 2` → fact must appear; query `:as-of 4` → fact must NOT appear
+- Assert, retract, re-assert; query → fact must appear again
+- Retraction + `:any-valid-time` combo
+- Retraction at tx=N, historical query at `:as-of N-1` via recursive rule → fact visible in rule derivation
+- Retraction at tx=N, historical query at `:as-of N+1` via recursive rule → fact NOT visible in rule derivation
+
 **Community Infrastructure** (do before publish):
 - 🎯 Enable GitHub Discussions — minimum viable channel for questions, feedback, and contributor coordination before external users arrive via crates.io
 - ✅ `CONTRIBUTING.md` — dedicated contributing guide (extracted and expanded from README); shown by GitHub automatically when a PR or issue is opened
