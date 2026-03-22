@@ -152,3 +152,7 @@ See [BENCHMARKS.md](https://github.com/adityamukho/minigraf/blob/main/BENCHMARKS
 - [BENCHMARKS](https://github.com/adityamukho/minigraf/blob/main/BENCHMARKS.md) — Criterion results at 1K–1M facts
 - [Philosophy](https://github.com/adityamukho/minigraf/blob/main/PHILOSOPHY.md)
 - [Security Policy](https://github.com/adityamukho/minigraf/security/policy)
+- [Wiki: Architecture](https://github.com/adityamukho/minigraf/wiki/Architecture) — module structure, data model, file format, query pipeline
+- [Wiki: Datalog Reference](https://github.com/adityamukho/minigraf/wiki/Datalog-Reference) — complete syntax reference
+- [Wiki: Use Cases](https://github.com/adityamukho/minigraf/wiki/Use-Cases) — AI agents, mobile apps, WASM/browser
+- [Wiki: Comparison](https://github.com/adityamukho/minigraf/wiki/Comparison) — vs XTDB, Cozo, Datomic, Neo4j, SQLite and others

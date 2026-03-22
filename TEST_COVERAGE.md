@@ -1,11 +1,11 @@
 # Minigraf Test Coverage Report
 
-**Last Updated**: Phase 6.4a COMPLETE - Retraction Semantics Fix + Edge Case Tests ✅
+**Last Updated**: Phase 6.4b COMPLETE - Criterion Benchmarks + Byte-Layout Tests ✅
 
 ## Test Summary
 
-**Total Tests**: 298 ✅
-- ✅ 213 unit tests (lib)
+**Total Tests**: 301 ✅
+- ✅ 216 unit tests (lib)
 - ✅ 10 bi-temporal tests (integration)
 - ✅ 10 complex query tests (integration)
 - ✅ 9 recursive rules tests (integration)
@@ -17,9 +17,9 @@
 - ✅ 4 edge case tests (integration, Phase 6.4a)
 - ✅ 6 doc tests
 
-**Status**: ✅ **All 298 tests passing**
+**Status**: ✅ **All 301 tests passing**
 
-## Phase 6.4a Completion Status: ✅ COMPLETE
+## Phase 6.4b Completion Status: ✅ COMPLETE
 
 **Core Features Implemented**:
 - ✅ Packed fact pages (`page_type = 0x02`): ~25 facts per 4KB page (~25× space reduction)
@@ -57,6 +57,14 @@
 - ✅ Executor: 3-step temporal filter (tx-time → asserted → valid-time)
 - ✅ File format v1→v2 migration
 - ✅ UTC-only timestamp parsing (chrono, avoids GHSA-wcg3-cvx6-7396)
+
+**Phase 6.4b Features** (also complete):
+- ✅ Criterion benchmark suite at 1K–1M facts; results documented in `BENCHMARKS.md`
+- ✅ heaptrack memory profiles: 10K=14.4MB / 100K=136MB / 1M=1.33GB peak heap
+- ✅ Byte-layout unit tests pin all FileHeader v5 field offsets (`src/storage/mod.rs`)
+- ✅ Byte-layout unit tests pin packed page header + record directory offsets (`src/storage/packed_pages.rs`)
+- ✅ Dead `clap` dependency removed; `Cargo.toml` metadata complete; version bumped to v0.8.0
+- ✅ README trimmed (794 → 166 lines); detail offloaded to GitHub wiki
 
 **Phase 6.4a Features** (also complete):
 - ✅ Retraction semantics fix: `net_asserted_facts()` computes net view per EAV triple in `filter_facts_for_query`
@@ -164,7 +172,7 @@
 
 **Coverage**: ~92%
 
-### 8. Packed Pages (`src/storage/packed_pages.rs`) - ✅ Good (6 tests)
+### 8. Packed Pages (`src/storage/packed_pages.rs`) - ✅ Good (8 tests)
 
 - ✅ Single fact pack/unpack roundtrip
 - ✅ Multiple facts pack/unpack roundtrip
@@ -172,10 +180,12 @@
 - ✅ Oversized fact returns `Err` (not panic)
 - ✅ `read_all_from_pages` with known page IDs
 - ✅ Wrong page type returns `Err`
+- ✅ **Byte-layout pin**: page header (bytes 0–11) field positions verified (Phase 6.4b)
+- ✅ **Byte-layout pin**: record directory entries at byte 12+ verified (Phase 6.4b)
 
-**Coverage**: ~90%
+**Coverage**: ~93%
 
-### 9. FileHeader (`src/storage/mod.rs`) - ✅ Excellent (9 tests)
+### 9. FileHeader (`src/storage/mod.rs`) - ✅ Excellent (10 tests)
 
 - ✅ v4 serialisation: 72 bytes, correct field offsets
 - ✅ v4 roundtrip with all index root pages and checksum
@@ -184,8 +194,9 @@
 - ✅ Header validation (magic, version range 1-5)
 - ✅ Version 0 and 6 rejected
 - ✅ `FORMAT_VERSION == 5`
+- ✅ **Byte-layout pin**: all 10 fields at exact offsets with LE encoding verified (Phase 6.4b)
 
-**Coverage**: ~97%
+**Coverage**: ~98%
 
 ### 10. Datalog Parser (`src/query/datalog/parser.rs`) - ✅ Excellent (25 tests)
 
@@ -376,6 +387,11 @@
 43. Oversized-Fact Early Validation — `check_fact_sizes()` rejects before WAL write
 44. `MAX_FACT_BYTES` Boundary — Exact-size accepted, +1 rejected with clear error
 
+### Phase 6.4b Byte-Layout Pins
+45. FileHeader v5 Field Offsets — All 10 fields pinned at exact byte positions (big-endian detection coverage)
+46. Packed Page Header Layout — page_type, reserved, record_count u16 LE, next_page u64 LE at bytes 0–11
+47. Packed Page Record Directory — (offset u16 LE, length u16 LE) per slot, starting at byte 12
+
 ---
 
 ## What's Not Tested Yet ⏳
@@ -401,7 +417,7 @@ cargo test
 cargo test --quiet
 
 # Run specific test suites
-cargo test --lib                       # Unit tests (213)
+cargo test --lib                       # Unit tests (216)
 cargo test --test bitemporal           # Bi-temporal (10)
 cargo test --test complex_queries      # Complex queries (10)
 cargo test --test recursive_rules      # Recursive rules (9)
@@ -434,7 +450,8 @@ cargo test -- --nocapture
 - Retraction semantics verified across current-time, as-of, and recursive-rule queries
 - Oversized-fact early rejection verified for file-backed databases
 - Criterion benchmarks validated performance at 1K–1M facts
-- 298 tests covering all Phase 3-6.4b features
+- Byte-layout tests pin FileHeader v5 and packed page header field offsets
+- 301 tests covering all Phase 3-6.4b features
 
 **Confidence Level**: ✅ **Production-ready for Phase 6.4b scope**
 

@@ -334,8 +334,8 @@ WAL sidecar <db>.wal (present while uncommitted writes exist):
 
 ## Test Coverage
 
-**Current Tests (Phase 6.4a)**: 298 tests passing ✅
-- **Unit tests** (213 tests):
+**Current Tests (Phase 6.4b)**: 301 tests passing ✅
+- **Unit tests** (216 tests):
   - `src/graph/types.rs`: Fact types, Value types, EAV model, temporal fields
   - `src/graph/storage.rs`: FactStorage, CRUD, history, tx_count, temporal methods, CommittedFactReader integration
   - `src/temporal.rs`: UTC timestamp parsing and formatting
@@ -348,8 +348,8 @@ WAL sidecar <db>.wal (present while uncommitted writes exist):
   - `src/storage/index.rs`: EAVT/AEVT/AVET/VAET keys, FactRef, encode_value sort order
   - `src/storage/btree.rs`: B+tree roundtrip, multi-page, sort order preservation
   - `src/storage/cache.rs`: LRU eviction, read-lock hits, Arc cloning
-  - `src/storage/packed_pages.rs`: Pack/unpack roundtrip, oversized fact error (`MAX_FACT_BYTES`)
-  - `src/storage/mod.rs`: FileHeader v5 serialization, v3/v4 acceptance
+  - `src/storage/packed_pages.rs`: Pack/unpack roundtrip, oversized fact error (`MAX_FACT_BYTES`), byte-layout pin (Phase 6.4b)
+  - `src/storage/mod.rs`: FileHeader v5 serialization, v3/v4 acceptance, byte-layout pin (Phase 6.4b)
   - `src/wal.rs`: WAL entry serialization, CRC32, replay logic
   - `src/db.rs`: WriteTransaction, checkpoint, crash recovery, `check_fact_sizes` early validation
 
@@ -380,6 +380,7 @@ WAL sidecar <db>.wal (present while uncommitted writes exist):
 - ✅ **Packed pages + LRU cache** - 7 integration tests
 - ✅ **Retraction semantics** - 7 integration tests (Phase 6.4a)
 - ✅ **Edge cases** (oversized facts, MAX_FACT_BYTES) - 4 integration tests (Phase 6.4a)
+- ✅ **Byte-layout pins** (FileHeader v5, packed page header) - 3 unit tests (Phase 6.4b)
 
 **Demo Scripts**:
 - `demo_recursive.txt`: Comprehensive recursive rules examples (transitive closure, cycles, family trees)
@@ -578,29 +579,7 @@ When implementing features, always ask:
 
 ## Comparison to Similar Projects
 
-**XTDB** (formerly Crux):
-- ✅ Bi-temporal Datalog database (inspiration)
-- ✅ Production-ready
-- ❌ Clojure, multi-file storage (directories)
-- Minigraf: Single file, Rust, simpler scope
-
-**Cozo**:
-- ✅ Embedded Datalog, Rust
-- ✅ Graph algorithms, vector search
-- ❌ Multi-file storage (RocksDB/Sled)
-- Minigraf: Single file, bi-temporal first-class
-
-**Datomic**:
-- ✅ Temporal Datalog database (major inspiration)
-- ✅ Production-proven since 2012
-- ❌ Client-server, Clojure, proprietary
-- Minigraf: Embedded, single file, open source
-
-**GraphLite**:
-- ✅ Full GQL spec compliance
-- ✅ Embedded, ACID, mature
-- ❌ Multi-file storage (Sled), no bi-temporal
-- Minigraf: Datalog (not GQL), single file, bi-temporal
+See the [Comparison](https://github.com/adityamukho/minigraf/wiki/Comparison) wiki page for detailed per-project comparisons (XTDB, Cozo, Datomic, GraphLite, petgraph, IndraDB, SurrealDB) and a temporal vs. time-series database breakdown.
 
 **Positioning**: Minigraf = SQLite + Datomic + single file
 
@@ -631,13 +610,13 @@ This is a hobby project with a decades-long vision. When contributing:
 
 ## Key Files to Understand
 
-**For Phase 6.3 work (Benchmarks)**:
+**For Phase 6.5 work (On-Disk B+Tree Indexes)**:
 1. `PHILOSOPHY.md` - Why single-file, reliability-first
-2. `ROADMAP.md` - Detailed Phase 6 plan
-3. `src/storage/cache.rs` - LRU page cache (tune for benchmark workloads)
-4. `src/storage/packed_pages.rs` - Packed page format (understand layout)
-5. `src/query/datalog/optimizer.rs` - Query plan selection
-6. `src/db.rs` - Public API (`OpenOptions::page_cache_size`)
+2. `ROADMAP.md` - Detailed Phase 6.5 plan
+3. `src/storage/index.rs` - EAVT/AEVT/AVET/VAET key types, FactRef, encode_value
+4. `src/storage/btree.rs` - B+tree page serialisation (current paged-blob; v6 will replace with proper per-page nodes)
+5. `src/storage/cache.rs` - LRU page cache (PageCache)
+6. `src/storage/mod.rs` - FileHeader v5, CommittedFactReader trait (v6 will update header)
 
 **For Phase 6.1-6.2 work (Indexes + Packed Pages, complete)**:
 1. `src/storage/index.rs` - EAVT/AEVT/AVET/VAET key types, FactRef, encode_value
@@ -708,6 +687,7 @@ Before publishing the crate, verify all of the following:
 6. **Think SQLite** - Would SQLite do this?
 7. **Long-term vision** - Building for decades
 8. **Sync all docs at phase completion** - When a phase is marked complete, update and cross-check ALL of the following for mutual consistency: `CLAUDE.md` (status list, test counts, architecture notes), `ROADMAP.md`, `README.md`, `TEST_COVERAGE.md`, `CHANGELOG.md`. No doc should contradict another.
+9. **Tag every version bump** - Whenever `Cargo.toml` version is incremented, create an annotated git tag immediately after the final doc-sync commit for that version: `git tag -a v<x.y.z> -m "<phase> complete — <one-line summary>"`. Push the tag with `git push origin v<x.y.z>`.
 
 ---
 
