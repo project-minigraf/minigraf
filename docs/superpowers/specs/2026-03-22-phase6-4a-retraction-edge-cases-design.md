@@ -47,6 +47,8 @@ The fix promotes `tx_count` as the canonical ordering key for both call sites, w
 |---|---|
 | `src/graph/storage.rs` | Extract `net_asserted_facts` helper; update `get_current_value` to use it; remove `sleep` from affected unit test |
 | `src/query/datalog/executor.rs` | Replace Step 2 `retain(asserted)` with `net_asserted_facts` call |
+| `src/storage/packed_pages.rs` | Export `MAX_FACT_BYTES` constant; no logic changes |
+| `src/db.rs` | Add early size validation in the file-backed transact path |
 | `tests/retraction_test.rs` | New — 6 retraction scenario integration tests |
 | `tests/edge_cases_test.rs` | New — oversized-fact and checkpoint-during-crash tests |
 
@@ -93,7 +95,119 @@ pub(crate) fn net_asserted_facts(facts: Vec<Fact>) -> Vec<Fact> {
 
 ---
 
-## Piece 2 — Fix `filter_facts_for_query`
+## Piece 2 — Fact size limit: constant, early validation, and documentation
+
+### 2a — Export `MAX_FACT_BYTES` constant
+
+**File:** `src/storage/packed_pages.rs`
+
+The existing check computes `max_slot_size` inline. Promote it to a named public constant so callers can reference it:
+
+```rust
+/// Maximum serialised size (postcard bytes) for a single fact stored in a packed page.
+///
+/// Derived from the page layout: `PAGE_SIZE (4096) - PACKED_HEADER_SIZE (12) - 4` (one
+/// directory entry). Facts whose postcard serialisation exceeds this limit cannot be
+/// persisted to a `.graph` file and will be rejected at insertion time.
+///
+/// In practice the usable space for `Value` content is roughly 3900–4000 bytes,
+/// after accounting for the fixed overhead of the other `Fact` fields (two UUIDs,
+/// attribute string, counters, timestamps, boolean).
+pub const MAX_FACT_BYTES: usize = PAGE_SIZE - PACKED_HEADER_SIZE - 4; // 4080
+```
+
+Update the existing `bail!` in `pack_facts` to reference this constant rather than recomputing it inline.
+
+### 2b — Early size validation in `db.rs`
+
+**File:** `src/db.rs`
+
+For file-backed databases, validate the serialised fact size before writing to the WAL. Facts are serialised in **two separate code paths** that must both be guarded:
+
+**Path 1 — implicit `execute()` transactions** (the common path): after facts are stamped and before `wal_write_stamped_batch` is called, iterate over the stamped batch and check each fact.
+
+**Path 2 — explicit `WriteTransaction::commit()`**: after the stamping loop inside `commit()` and before the `wal_write_stamped_batch` call in that path, apply the same check.
+
+Both paths use the same helper:
+
+```rust
+use crate::storage::packed_pages::MAX_FACT_BYTES;
+
+fn check_fact_sizes(facts: &[Fact]) -> anyhow::Result<()> {
+    for fact in facts {
+        let bytes = postcard::to_allocvec(fact)
+            .map_err(|e| anyhow::anyhow!("Failed to serialise fact: {}", e))?;
+        if bytes.len() > MAX_FACT_BYTES {
+            anyhow::bail!(
+                "Fact serialised size {} bytes exceeds maximum {} bytes. \
+                 Store large payloads externally and reference them with a \
+                 Value::String URL/path or Value::Ref entity ID.",
+                bytes.len(),
+                MAX_FACT_BYTES
+            );
+        }
+    }
+    Ok(())
+}
+```
+
+Call `check_fact_sizes(&stamped)?` in both paths, before the WAL write.
+
+This check applies to **file-backed databases only**. In-memory databases (`Minigraf::in_memory()`) have no page size constraint and do not enforce this limit — large facts are accepted without error. The guard is implemented by checking `WriteContext` (or equivalent) before invoking `check_fact_sizes`.
+
+**Note on double serialisation:** `check_fact_sizes` serialises each fact once for validation; `pack_facts` serialises again during checkpoint. This redundancy is acceptable — the check only fires on the error path (oversized facts are rare), and the fast path (normal-sized facts) pays no extra cost at checkpoint time since `pack_facts` was always going to serialise them.
+
+### 2c — Documentation
+
+**Rustdoc on `Minigraf::execute` / `OpenOptions`** (`src/db.rs`):
+
+Add a `# Fact Size Limit` section to the rustdoc of `Minigraf` (or a top-level doc comment visible from `cargo doc`):
+
+```
+# Fact Size Limit (file-backed databases only)
+
+Each fact stored in a `.graph` file must serialise to at most
+[`MAX_FACT_BYTES`] bytes (currently 4080). This limit applies to the
+postcard-encoded representation of the full [`Fact`] struct, including
+entity ID, attribute name, value, and all temporal fields.
+
+In practice, `Value::String` and `Value::Keyword` content is limited to
+roughly **3900–4000 bytes** depending on entity and attribute name lengths.
+
+**Workarounds for large payloads:**
+
+- **External blob reference**: store the large payload in a file or object
+  store and record its path, URL, or content-addressed hash as a
+  `Value::String`. Example:
+  ```
+  (transact [[:doc123 :blob/sha256 "a3f5..."]])
+  ```
+- **Entity decomposition**: split the large value across multiple facts
+  using a continuation-entity pattern.
+- **In-memory database**: `Minigraf::in_memory()` has no fact size limit
+  and is suitable for workloads that do not require persistence.
+
+This limit does not apply to recursive rule derivations or query results —
+only to facts written via `transact`.
+```
+
+**`README.md`** (`## Limitations` section, or append to `## Performance`):
+
+Add a brief note:
+
+```
+### Fact Size Limit
+
+File-backed databases enforce a maximum fact size of 4080 serialised bytes
+per fact (roughly 3900–4000 bytes of string content after fixed overhead).
+Facts that exceed this are rejected at insertion time with a clear error
+message. Use `Value::String` to store a reference to an external blob for
+large payloads. In-memory databases have no size limit.
+```
+
+---
+
+## Piece 3 — Fix `filter_facts_for_query`
 
 **File:** `src/query/datalog/executor.rs`
 
@@ -108,7 +222,7 @@ The surrounding Steps 1 and 3 (tx-time window and valid-time window) are unchang
 
 ---
 
-## Piece 3 — Tests
+## Piece 4 — Tests
 
 ### `tests/retraction_test.rs` — 6 scenarios
 
@@ -171,25 +285,59 @@ query [:find ?to :as-of 2 :where (reach :a ?to)]
 
 ---
 
-### `tests/edge_cases_test.rs` — 2 scenarios
+### `tests/edge_cases_test.rs` — 4 scenarios
 
-**Test: oversized fact returns `Err` on checkpoint, not panic**
+**Test: oversized fact rejected at insertion time (file-backed)**
 
-A packed page slot must fit within a 4 KB page. `pack_facts` is called during checkpoint/save, not during in-memory insert — so this test requires a **file-backed** database and must trigger a checkpoint to reach the error path. (A unit test for `pack_facts` directly already exists in `src/storage/packed_pages.rs`; this is the integration-level complement.)
-
-Generate a string value of ~8 KB, transact it (which succeeds in-memory), then checkpoint and expect the error:
+With the early size validation in Piece 2b, `execute()` must return `Err` immediately for a file-backed database when the fact exceeds `MAX_FACT_BYTES`. No checkpoint call is needed.
 
 ```rust
 #[test]
-fn test_oversized_fact_returns_err_on_checkpoint_not_panic() {
+fn test_oversized_fact_rejected_at_insertion_file_backed() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("test.graph");
     let db = OpenOptions::new().path(path.to_str().unwrap()).open().unwrap();
     let large_value = "x".repeat(8192);
     let cmd = format!("(transact [[:e :attr \"{}\"]])", large_value);
-    db.execute(&cmd).unwrap(); // insert succeeds in-memory
-    let result = db.checkpoint();
-    assert!(result.is_err(), "oversized fact must return Err on checkpoint, not panic");
+    let result = db.execute(&cmd);
+    assert!(result.is_err(), "oversized fact must be rejected at insertion for file-backed DB");
+    let msg = format!("{}", result.unwrap_err());
+    assert!(msg.contains("4080"), "error message must cite the byte limit");
+}
+```
+
+**Test: oversized fact rejected via `WriteTransaction::commit()` (file-backed)**
+
+Covers the explicit write transaction code path — the validation must also fire here:
+
+```rust
+#[test]
+fn test_oversized_fact_rejected_via_write_transaction() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("test.graph");
+    let db = OpenOptions::new().path(path.to_str().unwrap()).open().unwrap();
+    let large_value = "x".repeat(8192);
+    let cmd = format!("(transact [[:e :attr \"{}\"]])", large_value);
+    let mut tx = db.begin_write().unwrap();
+    tx.execute(&cmd).unwrap(); // buffered, not yet validated
+    let result = tx.commit();
+    assert!(result.is_err(), "oversized fact must be rejected at commit for file-backed DB");
+    let msg = format!("{}", result.unwrap_err());
+    assert!(msg.contains("4080"), "error message must cite the byte limit");
+}
+```
+
+**Test: oversized fact accepted in-memory (no page size constraint)**
+
+In-memory databases have no fact size limit — the same large fact must be accepted:
+
+```rust
+#[test]
+fn test_oversized_fact_accepted_in_memory() {
+    let db = Minigraf::in_memory().unwrap();
+    let large_value = "x".repeat(8192);
+    let cmd = format!("(transact [[:e :attr \"{}\"]])", large_value);
+    assert!(db.execute(&cmd).is_ok(), "oversized fact must be accepted in in-memory DB");
 }
 ```
 
@@ -263,8 +411,10 @@ fn test_stale_wal_after_checkpoint_is_idempotent() {
 
 - All new tests use `Minigraf::in_memory()` or `OpenOptions::new().path(...)`.
 - Run `cargo test` after each piece is implemented.
-- Verify Tests 1–6 **fail** before the fix is applied and **pass** after (TDD).
-- Verify the edge case tests pass independently of the retraction fix.
+- Verify Tests 1–6 **fail** before the retraction fix is applied and **pass** after (TDD).
+- Verify edge case tests pass independently of the retraction fix.
+- Verify the oversized-fact file-backed test fails before Piece 2b (early validation) is added and passes after.
+- Verify the oversized-fact in-memory test passes before and after Piece 2b (no regression).
 
 ---
 
@@ -272,4 +422,6 @@ fn test_stale_wal_after_checkpoint_is_idempotent() {
 
 1. `test(retraction): add 6 failing retraction scenario tests` — tests first (TDD)
 2. `fix(executor): extract net_asserted_facts, fix filter_facts_for_query Step 2, update get_current_value`
-3. `test(edge): add oversized-fact and checkpoint-during-crash tests`
+3. `feat(storage): export MAX_FACT_BYTES, add early size validation for file-backed inserts`
+4. `docs: document fact size limit and external blob workarounds`
+5. `test(edge): add oversized-fact (file-backed + in-memory) and checkpoint-during-crash tests`
