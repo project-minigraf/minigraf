@@ -206,6 +206,29 @@ fn check_fact_sizes(facts: &[Fact]) -> anyhow::Result<()> {
 /// let db = Minigraf::in_memory().unwrap();
 /// db.execute(r#"(transact [[:alice :person/name "Alice"]])"#).unwrap();
 /// ```
+///
+/// # Fact Size Limit (file-backed databases only)
+///
+/// Each fact persisted to a `.graph` file must serialise to at most
+/// [`crate::storage::packed_pages::MAX_FACT_BYTES`] bytes (currently 4 080).
+///
+/// In practice, `Value::String` content is limited to roughly **3 900–4 000 bytes**
+/// depending on entity and attribute name lengths.
+///
+/// Facts that exceed this limit are rejected at insertion time with a descriptive
+/// error. This check does **not** apply to `Minigraf::in_memory()`.
+///
+/// ## Workarounds for large payloads
+///
+/// - **External blob reference** — store the payload in a file or object store
+///   and record its path, URL, or content-addressed hash as a `Value::String`:
+///   ```text
+///   (transact [[:doc123 :blob/sha256 "a3f5c9..."]])
+///   ```
+/// - **Entity decomposition** — split large values across multiple facts using
+///   a continuation-entity pattern.
+/// - **In-memory database** — `Minigraf::in_memory()` has no fact size limit
+///   and is suitable for workloads that do not require persistence.
 #[derive(Clone)]
 pub struct Minigraf {
     inner: Arc<Inner>,

@@ -437,6 +437,17 @@ cost under contention (~9 µs vs ~5 µs at 2 threads).
 | Open time O(N) | 3.2 s at 1M facts | O(1) header + lazy page loading |
 | No explicit WAL fsync | Durability gap | Configurable sync mode |
 
+### Fact Size Limit
+
+File-backed databases enforce a maximum fact size of **4 080 serialised bytes**
+per fact (roughly 3 900–4 000 bytes of string content after fixed overhead).
+Facts that exceed this limit are rejected at insertion time with a clear error
+message.
+
+For large payloads, store a reference to the external data as a `Value::String`
+(e.g. a file path, URL, or content hash) and keep the payload outside Minigraf.
+In-memory databases have no size limit.
+
 ## Why Minigraf?
 
 ### Unique Positioning
