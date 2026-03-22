@@ -7,10 +7,15 @@ use crate::graph::types::Fact;
 use crate::storage::btree::{
     read_aevt_index, read_avet_index, read_eavt_index, read_vaet_index, write_all_indexes,
 };
+use crate::storage::cache::PageCache;
 use crate::storage::index::Indexes;
+use crate::storage::packed_pages::pack_facts;
+use crate::storage::FACT_PAGE_FORMAT_PACKED;
 use crate::storage::{FileHeader, PAGE_SIZE, StorageBackend};
 use anyhow::Result;
 use crc32fast::Hasher;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 /// Compute the CRC32 sync checksum over all facts.
 ///
@@ -98,10 +103,12 @@ struct FactV1 {
 /// The page-based backend (StorageBackend) is designed to support this
 /// future architecture without breaking changes.
 pub struct PersistentFactStorage<B: StorageBackend> {
-    backend: B,
+    backend: Arc<Mutex<B>>,
+    page_cache: Arc<PageCache>,
     storage: FactStorage,
     dirty: bool,
     last_checkpointed_tx_count: u64,
+    committed_fact_pages: Arc<AtomicU64>,
 }
 
 impl<B: StorageBackend> PersistentFactStorage<B> {
@@ -109,16 +116,24 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
     ///
     /// If the backend already contains data, loads it.
     /// Otherwise, initializes a new empty fact storage.
-    pub fn new(backend: B) -> Result<Self> {
+    ///
+    /// `page_cache_capacity` controls the LRU page cache size (in pages).
+    /// A value of 256 means at most 256 x 4KB = 1MB of cached pages.
+    pub fn new(backend: B, page_cache_capacity: usize) -> Result<Self> {
+        let backend = Arc::new(Mutex::new(backend));
+        let page_cache = Arc::new(PageCache::new(page_cache_capacity));
+        let committed_fact_pages = Arc::new(AtomicU64::new(0));
         let mut persistent = PersistentFactStorage {
             backend,
+            page_cache,
             storage: FactStorage::new(),
             dirty: false,
             last_checkpointed_tx_count: 0,
+            committed_fact_pages,
         };
 
         // Try to load existing data
-        let page_count = persistent.backend.page_count()?;
+        let page_count = persistent.backend.lock().unwrap().page_count()?;
         if page_count > 1 {
             persistent.load()?;
         } else {
@@ -131,13 +146,16 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
 
     /// Load all facts from the backend into memory.
     fn load(&mut self) -> Result<()> {
+        let backend = self.backend.lock().unwrap();
+
         // Read header from page 0
-        let header_page = self.backend.read_page(0)?;
+        let header_page = backend.read_page(0)?;
         let header = FileHeader::from_bytes(&header_page)?;
         header.validate()?;
 
         // Migrate v1 → v2 if needed
         if header.version < 2 {
+            drop(backend);
             return self.migrate_v1_to_v2();
         }
 
@@ -149,14 +167,44 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
 
         // Load facts from pages 1..page_count
         let page_count = header.page_count;
-        for page_id in 1..page_count {
-            let page = self.backend.read_page(page_id)?;
+        let is_packed = header.fact_page_format == FACT_PAGE_FORMAT_PACKED;
 
-            // Try to deserialize a fact from this page
-            // Empty pages are skipped
-            if let Ok(fact) = postcard::from_bytes::<Fact>(&page) {
-                // Preserve original tx_id and tx_count via load_fact()
+        if is_packed {
+            // v5 packed format: read all packed fact pages using packed_pages module.
+            // Determine how many fact pages there are (before index pages start).
+            let first_index_page = [
+                header.eavt_root_page,
+                header.aevt_root_page,
+                header.avet_root_page,
+                header.vaet_root_page,
+            ]
+            .iter()
+            .filter(|&&p| p > 0)
+            .copied()
+            .min()
+            .unwrap_or(page_count);
+            let num_fact_pages = if first_index_page > 1 {
+                first_index_page - 1
+            } else {
+                0
+            };
+            let facts =
+                crate::storage::packed_pages::read_all_from_pages(&*backend, 1, num_fact_pages)?;
+            for fact in facts {
                 self.storage.load_fact(fact)?;
+            }
+            self.committed_fact_pages
+                .store(num_fact_pages, Ordering::SeqCst);
+        } else {
+            // Legacy one-per-page format (v4 and earlier)
+            for page_id in 1..page_count {
+                let page = backend.read_page(page_id)?;
+                // Try to deserialize a fact from this page
+                // Empty pages are skipped
+                if let Ok(fact) = postcard::from_bytes::<Fact>(&page) {
+                    // Preserve original tx_id and tx_count via load_fact()
+                    self.storage.load_fact(fact)?;
+                }
             }
         }
 
@@ -164,27 +212,34 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
         self.storage.restore_tx_counter()?;
 
         // ── Sync check ───────────────────────────────────────────────────────────
-        let facts = self.storage.get_all_facts().unwrap_or_default();
-        let computed_checksum = compute_index_checksum(&facts);
-        let stored_checksum = header.index_checksum;
-
-        // Mismatch, or no index ever written (eavt_root_page == 0 but facts exist).
-        // Note: CRC32 of empty bytes = 0x00000000, so stored=0 on a fresh DB.
-        // We only trigger rebuild when there are actually facts to index.
-        let needs_rebuild = computed_checksum != stored_checksum
-            || (header.eavt_root_page == 0 && computed_checksum != 0);
+        let (computed_checksum, needs_rebuild) = if is_packed {
+            let num_fact_pages = self.committed_fact_pages.load(Ordering::SeqCst);
+            let computed = compute_page_checksum(&*backend, 1, num_fact_pages)?;
+            let needs = computed != header.index_checksum
+                || (header.eavt_root_page == 0 && num_fact_pages > 0);
+            (computed, needs)
+        } else {
+            let facts = self.storage.get_all_facts().unwrap_or_default();
+            let computed = compute_index_checksum(&facts);
+            let needs = computed != header.index_checksum
+                || (header.eavt_root_page == 0 && computed != 0);
+            (computed, needs)
+        };
+        let _ = computed_checksum; // used in both branches above
 
         if needs_rebuild {
+            let facts = self.storage.get_all_facts().unwrap_or_default();
             let new_indexes = reindex_from_facts(&facts);
             self.storage.replace_indexes(new_indexes);
             self.dirty = true;
+            drop(backend);
             self.save()?;
         } else if header.eavt_root_page != 0 {
             // Fast path: load indexes from existing B+tree pages on disk.
-            let eavt = read_eavt_index(header.eavt_root_page, &self.backend)?;
-            let aevt = read_aevt_index(header.aevt_root_page, &self.backend)?;
-            let avet = read_avet_index(header.avet_root_page, &self.backend)?;
-            let vaet = read_vaet_index(header.vaet_root_page, &self.backend)?;
+            let eavt = read_eavt_index(header.eavt_root_page, &*backend)?;
+            let aevt = read_aevt_index(header.aevt_root_page, &*backend)?;
+            let avet = read_avet_index(header.avet_root_page, &*backend)?;
+            let vaet = read_vaet_index(header.vaet_root_page, &*backend)?;
             self.storage.replace_indexes(Indexes {
                 eavt,
                 aevt,
@@ -212,18 +267,20 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
     fn migrate_v1_to_v2(&mut self) -> Result<()> {
         use crate::graph::types::VALID_TIME_FOREVER;
 
-        let header_page = self.backend.read_page(0)?;
+        let backend = self.backend.lock().unwrap();
+        let header_page = backend.read_page(0)?;
         let header = FileHeader::from_bytes(&header_page)?;
         let page_count = header.page_count;
 
         // Read all v1 facts (skip pages that don't deserialize)
         let mut v1_facts: Vec<FactV1> = Vec::new();
         for page_id in 1..page_count {
-            let page = self.backend.read_page(page_id)?;
+            let page = backend.read_page(page_id)?;
             if let Ok(fact) = postcard::from_bytes::<FactV1>(&page) {
                 v1_facts.push(fact);
             }
         }
+        drop(backend);
 
         // Sort by tx_id ascending so we can group them
         v1_facts.sort_by_key(|f| f.tx_id);
@@ -273,70 +330,77 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
         if self.dirty {
             let _ = self.save();
         }
-        // SAFETY: We use ManuallyDrop to suppress the Drop impl so we can
-        // move the backend field out.  The storage and dirty fields are
-        // trivially dropped (FactStorage is heap-allocated, bool is Copy).
-        let md = std::mem::ManuallyDrop::new(self);
-        // SAFETY: `md` will not be dropped, so reading `backend` is safe.
-        unsafe { std::ptr::read(&md.backend) }
+        let backend_arc = self.backend.clone();
+        // Suppress the Drop impl so we don't double-save.
+        self.dirty = false;
+        drop(self);
+        match Arc::try_unwrap(backend_arc) {
+            Ok(mutex) => mutex.into_inner().unwrap(),
+            Err(_) => panic!("into_backend: backend Arc has multiple owners"),
+        }
     }
 
-    /// Save all facts from memory to the backend.
+    /// Save all facts from memory to the backend using packed pages.
     pub fn save(&mut self) -> Result<()> {
         if !self.dirty {
             return Ok(()); // No changes to save
         }
 
-        let facts = self.storage.get_all_facts()?;
+        let facts = self.storage.get_pending_facts();
+        let mut backend = self.backend.lock().unwrap();
 
-        // Write facts (one per page, starting at page 1)
-        for (i, fact) in facts.iter().enumerate() {
-            let data = postcard::to_allocvec(fact)?;
-            if data.len() > PAGE_SIZE {
-                anyhow::bail!("Fact too large: {} bytes (max {})", data.len(), PAGE_SIZE);
-            }
-
-            let mut page = vec![0u8; PAGE_SIZE];
-            page[..data.len()].copy_from_slice(&data);
-            self.backend.write_page((i + 1) as u64, &page)?;
+        // Write packed fact pages starting at page 1
+        let start_page_id: u64 = 1;
+        let (pages, fact_refs) = pack_facts(&facts, start_page_id)?;
+        for (i, page) in pages.iter().enumerate() {
+            backend.write_page(start_page_id + i as u64, page)?;
         }
+        let num_fact_pages = pages.len() as u64;
+        self.committed_fact_pages.store(num_fact_pages, Ordering::SeqCst);
 
-        // ── Write index pages ────────────────────────────────────────────────────
-        let start_page = 1 + facts.len() as u64;
-        let rebuilt = reindex_from_facts(&facts);
+        // Compute page-based CRC32 checksum
+        let checksum = compute_page_checksum(&*backend, start_page_id, num_fact_pages)?;
+
+        // Rebuild indexes with correct FactRefs from packing
+        let new_indexes = reindex_with_refs(&facts, &fact_refs);
+        self.storage.replace_indexes(new_indexes);
+
+        // Write index B+tree pages
+        let indexes = self.storage.indexes_snapshot();
+        let index_start = start_page_id + num_fact_pages;
         let (eavt_root, aevt_root, avet_root, vaet_root) = write_all_indexes(
-            &rebuilt.eavt,
-            &rebuilt.aevt,
-            &rebuilt.avet,
-            &rebuilt.vaet,
-            &mut self.backend,
-            start_page,
+            &indexes.eavt,
+            &indexes.aevt,
+            &indexes.avet,
+            &indexes.vaet,
+            &mut *backend,
+            index_start,
         )?;
-        let checksum = compute_index_checksum(&facts);
 
-        // Calculate page count (header + facts + index pages)
-        let total_page_count = self.backend.page_count()?;
-
-        // Create and write header
-        let mut header = FileHeader::new(); // sets version = FORMAT_VERSION = 4
-        header.page_count = total_page_count;
-        header.node_count = facts.len() as u64; // Reuse node_count field for fact count
+        let total_pages = backend.page_count()?;
+        let mut header = FileHeader::new(); // version=5, fact_page_format=PACKED
+        header.page_count = total_pages;
+        header.node_count = facts.len() as u64;
         header.last_checkpointed_tx_count = self.storage.current_tx_count();
         header.eavt_root_page = eavt_root;
         header.aevt_root_page = aevt_root;
         header.avet_root_page = avet_root;
         header.vaet_root_page = vaet_root;
         header.index_checksum = checksum;
+        header.fact_page_format = FACT_PAGE_FORMAT_PACKED;
 
         let mut header_page = header.to_bytes();
         header_page.resize(PAGE_SIZE, 0);
-        self.backend.write_page(0, &header_page)?;
+        backend.write_page(0, &header_page)?;
+        backend.sync()?;
 
-        // Sync to ensure durability
-        self.backend.sync()?;
         self.last_checkpointed_tx_count = self.storage.current_tx_count();
         self.dirty = false;
 
+        // Note: We do NOT call clear_pending_facts() here because there is
+        // no CommittedFactReader yet (Task 5). Facts remain in memory so that
+        // get_all_facts() continues to work. Once the committed reader is
+        // integrated (Task 6), save() will clear pending facts.
         Ok(())
     }
 
@@ -380,6 +444,32 @@ impl<B: StorageBackend> Drop for PersistentFactStorage<B> {
     }
 }
 
+/// Compute CRC32 checksum over a range of pages on the backend.
+fn compute_page_checksum(
+    backend: &dyn StorageBackend,
+    first_page: u64,
+    num_pages: u64,
+) -> Result<u32> {
+    let mut hasher = Hasher::new();
+    for i in 0..num_pages {
+        let page = backend.read_page(first_page + i)?;
+        hasher.update(&page);
+    }
+    Ok(hasher.finalize())
+}
+
+/// Rebuild all four indexes using the FactRefs produced by `pack_facts`.
+fn reindex_with_refs(
+    facts: &[Fact],
+    refs: &[crate::storage::index::FactRef],
+) -> Indexes {
+    let mut indexes = Indexes::new();
+    for (fact, &fact_ref) in facts.iter().zip(refs.iter()) {
+        indexes.insert(fact, fact_ref);
+    }
+    indexes
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -390,7 +480,7 @@ mod tests {
     #[test]
     fn test_persistent_fact_storage_new() {
         let backend = MemoryBackend::new();
-        let storage = PersistentFactStorage::new(backend).unwrap();
+        let storage = PersistentFactStorage::new(backend, 256).unwrap();
 
         // Should be able to create new storage
         assert_eq!(storage.storage().fact_count(), 0);
@@ -404,7 +494,7 @@ mod tests {
         // First session: create and save facts
         {
             let backend = MemoryBackend::new();
-            let mut storage = PersistentFactStorage::new(backend).unwrap();
+            let mut storage = PersistentFactStorage::new(backend, 256).unwrap();
 
             storage
                 .storage()
@@ -441,7 +531,7 @@ mod tests {
 
         // Create storage in a scope so it drops
         {
-            let mut storage = PersistentFactStorage::new(backend).unwrap();
+            let mut storage = PersistentFactStorage::new(backend, 256).unwrap();
             storage
                 .storage()
                 .transact(
@@ -517,7 +607,7 @@ mod tests {
 
     #[test]
     fn test_load_preserves_original_tx_id() {
-        let mut pfs = PersistentFactStorage::new(MemoryBackend::new()).unwrap();
+        let mut pfs = PersistentFactStorage::new(MemoryBackend::new(), 256).unwrap();
 
         let alice = Uuid::new_v4();
         pfs.storage()
@@ -538,7 +628,7 @@ mod tests {
 
         // Reload from the same backend
         let backend = pfs.into_backend();
-        let pfs2 = PersistentFactStorage::new(backend).unwrap();
+        let pfs2 = PersistentFactStorage::new(backend, 256).unwrap();
         let loaded_tx_id = pfs2.storage().get_all_facts().unwrap()[0].tx_id;
 
         assert_eq!(
@@ -552,7 +642,7 @@ mod tests {
         use crate::graph::types::VALID_TIME_FOREVER;
 
         let backend = make_v1_backend();
-        let pfs = PersistentFactStorage::new(backend).unwrap();
+        let pfs = PersistentFactStorage::new(backend, 256).unwrap();
         let facts = pfs.storage().get_all_facts().unwrap();
 
         assert_eq!(facts.len(), 2);
@@ -576,7 +666,7 @@ mod tests {
         use crate::storage::FORMAT_VERSION;
 
         let backend = MemoryBackend::new();
-        let mut pfs = PersistentFactStorage::new(backend).unwrap();
+        let mut pfs = PersistentFactStorage::new(backend, 256).unwrap();
         let alice = Uuid::new_v4();
         pfs.storage()
             .transact(
@@ -602,7 +692,7 @@ mod tests {
     #[test]
     fn test_last_checkpointed_tx_count_getter() {
         let backend = MemoryBackend::new();
-        let pfs = PersistentFactStorage::new(backend).unwrap();
+        let pfs = PersistentFactStorage::new(backend, 256).unwrap();
         // Fresh database: no checkpoint yet
         assert_eq!(pfs.last_checkpointed_tx_count(), 0);
     }
@@ -621,7 +711,7 @@ mod tests {
 
         // Save phase
         {
-            let mut pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap()).unwrap();
+            let mut pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
             pfs.storage()
                 .transact(
                     vec![
@@ -641,7 +731,7 @@ mod tests {
 
         // Load phase — indexes must be populated from disk
         {
-            let pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap()).unwrap();
+            let pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
             let (eavt, _, _, vaet) = pfs.storage().index_counts();
             assert_eq!(eavt, 2, "EAVT must have 2 entries after reload");
             assert_eq!(vaet, 1, "VAET must have 1 entry (Ref fact) after reload");
@@ -662,7 +752,7 @@ mod tests {
 
         // Write a database with 1 fact
         {
-            let mut pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap()).unwrap();
+            let mut pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
             pfs.storage()
                 .transact(
                     vec![(
@@ -688,7 +778,7 @@ mod tests {
 
         // Re-open — new() should detect mismatch, rebuild, and succeed
         {
-            let pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap()).unwrap();
+            let pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
             let (eavt, _, _, _) = pfs.storage().index_counts();
             assert_eq!(eavt, 1, "After rebuild, EAVT must contain 1 fact");
         }
@@ -730,7 +820,7 @@ mod tests {
     #[test]
     fn test_migrate_v1_tx_counter_set_correctly() {
         let backend = make_v1_backend();
-        let pfs = PersistentFactStorage::new(backend).unwrap();
+        let pfs = PersistentFactStorage::new(backend, 256).unwrap();
 
         let alice = Uuid::new_v4();
         pfs.storage()
@@ -753,5 +843,93 @@ mod tests {
             new_fact.tx_count, 2,
             "first new transaction after migration must get tx_count=2"
         );
+    }
+
+    #[test]
+    fn test_save_writes_packed_pages() {
+        use crate::storage::backend::FileBackend;
+        use tempfile::NamedTempFile;
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        let alice = Uuid::new_v4();
+        let bob = Uuid::new_v4();
+
+        {
+            let mut pfs = PersistentFactStorage::new(
+                FileBackend::open(&path).unwrap(),
+                256,
+            )
+            .unwrap();
+            let mut tuples = Vec::new();
+            for i in 0u64..50 {
+                tuples.push((alice, format!(":attr{}", i), Value::Integer(i as i64)));
+            }
+            tuples.push((alice, ":friend".to_string(), Value::Ref(bob)));
+            pfs.storage().transact(tuples, None).unwrap();
+            pfs.mark_dirty();
+            pfs.save().unwrap();
+        }
+
+        // Verify: header says v5, fact_page_format = PACKED
+        {
+            let backend = FileBackend::open(&path).unwrap();
+            let header_bytes = backend.read_page(0).unwrap();
+            let header = crate::storage::FileHeader::from_bytes(&header_bytes).unwrap();
+            assert_eq!(header.version, 5);
+            assert_eq!(
+                header.fact_page_format,
+                crate::storage::FACT_PAGE_FORMAT_PACKED
+            );
+            // 51 facts @ ~25/page = ~3 pages (far fewer than 51)
+            let fact_page_count = if header.eavt_root_page > 1 {
+                header.eavt_root_page - 1
+            } else {
+                0
+            };
+            assert!(
+                fact_page_count <= 5,
+                "got {} fact pages (expected <=5)",
+                fact_page_count
+            );
+        }
+    }
+
+    #[test]
+    fn test_save_v5_checksum_stored() {
+        use crate::storage::backend::FileBackend;
+        use tempfile::NamedTempFile;
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        let alice = Uuid::new_v4();
+
+        {
+            let mut pfs = PersistentFactStorage::new(
+                FileBackend::open(&path).unwrap(),
+                256,
+            )
+            .unwrap();
+            pfs.storage()
+                .transact(
+                    vec![(
+                        alice,
+                        ":name".to_string(),
+                        Value::String("Alice".to_string()),
+                    )],
+                    None,
+                )
+                .unwrap();
+            pfs.mark_dirty();
+            pfs.save().unwrap();
+        }
+
+        {
+            let backend = FileBackend::open(&path).unwrap();
+            let header_bytes = backend.read_page(0).unwrap();
+            let header = crate::storage::FileHeader::from_bytes(&header_bytes).unwrap();
+            // Checksum should be non-zero for a non-empty DB
+            assert_ne!(header.index_checksum, 0, "checksum must be set");
+        }
     }
 }

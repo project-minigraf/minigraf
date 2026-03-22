@@ -391,6 +391,38 @@ impl FactStorage {
         let mut d = self.data.write().unwrap();
         d.indexes = indexes;
     }
+
+    /// Return the pending (uncommitted) facts held in memory.
+    pub fn get_pending_facts(&self) -> Vec<Fact> {
+        let d = self.data.read().unwrap();
+        d.facts.clone()
+    }
+
+    /// Clear the pending fact buffer after a successful checkpoint.
+    /// All pending facts are now committed (on-disk packed pages).
+    pub fn clear_pending_facts(&self) {
+        let mut d = self.data.write().unwrap();
+        d.facts.clear();
+    }
+
+    /// Set the tx_counter to `max` (used on load to restore from persisted state).
+    pub fn restore_tx_counter_from(&self, max: u64) {
+        self.tx_counter.store(max, Ordering::SeqCst);
+    }
+
+    /// Return a snapshot (clone) of the current in-memory indexes.
+    ///
+    /// Used by `PersistentFactStorage::save()` to write index B+tree pages.
+    /// Clones the BTreeMaps — acceptable since `save()` is not on the hot path.
+    pub fn indexes_snapshot(&self) -> Indexes {
+        let d = self.data.read().unwrap();
+        Indexes {
+            eavt: d.indexes.eavt.clone(),
+            aevt: d.indexes.aevt.clone(),
+            avet: d.indexes.avet.clone(),
+            vaet: d.indexes.vaet.clone(),
+        }
+    }
 }
 
 #[cfg(test)]

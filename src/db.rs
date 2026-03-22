@@ -186,7 +186,7 @@ impl Minigraf {
 
         // Open the main .graph file
         let backend = FileBackend::open(&db_path)?;
-        let pfs = PersistentFactStorage::new(backend)?;
+        let pfs = PersistentFactStorage::new(backend, 256)?;
 
         // Share the fact storage
         let fact_storage = pfs.storage().clone();
@@ -225,7 +225,7 @@ impl Minigraf {
     /// Create an in-memory database (no WAL, no persistence). Suitable for tests and REPL.
     pub fn in_memory() -> Result<Self> {
         let backend = MemoryBackend::new();
-        let pfs = PersistentFactStorage::new(backend)?;
+        let pfs = PersistentFactStorage::new(backend, 256)?;
         let fact_storage = pfs.storage().clone();
 
         // For in-memory databases we don't need the PFS beyond initialisation;
