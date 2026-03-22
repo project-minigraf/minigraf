@@ -148,6 +148,11 @@ impl Drop for Inner {
     fn drop(&mut self) {
         // On clean close, perform a best-effort checkpoint to reduce WAL size.
         // Errors are silently ignored (can't propagate from Drop).
+        // Skip if wal_checkpoint_threshold is usize::MAX — that sentinel suppresses
+        // all checkpointing (used by benchmarks to keep WAL entries pending).
+        if self.options.wal_checkpoint_threshold == usize::MAX {
+            return;
+        }
         if let Ok(mut ctx) = self.write_lock.lock() {
             let _ = Minigraf::do_checkpoint(&self.fact_storage, &mut ctx);
         }

@@ -54,7 +54,7 @@ Minigraf has a **crash-safe bi-temporal Datalog query engine with covering index
 - ✅ **Embedded database API** - Use like SQLite (`Minigraf::open()`)
 - ✅ **Cross-platform** - Works on Linux, macOS, Windows, iOS, Android
 - ✅ **280 tests passing** - Comprehensive test coverage
-- 🎯 **Next: Benchmarks** - Criterion suite, performance at scale (Phase 6.3)
+- 🎯 **Next: Benchmarks** - Criterion suite, performance at scale (Phase 6.4)
 
 ## Quick Start
 
@@ -291,6 +291,151 @@ The `.graph` file uses a page-based format (like SQLite), with an optional WAL s
 **v1.0.0**: Phase 8 complete
 
 See [ROADMAP.md](ROADMAP.md) for detailed breakdown.
+
+## Performance
+
+Benchmarks run with `cargo bench` on Intel i7-1065G7 (1.3 GHz base, Linux). Full HTML
+reports generated in `target/criterion/` after running `cargo bench`.
+
+### Insert throughput (in-memory)
+
+Steady-state cost of inserting into a pre-populated in-memory database. All three
+write modes cost essentially the same — ~2.3 µs/fact, flat across scales.
+
+| Pre-populated | Single fact | Batch (100) | Explicit tx |
+|---|---|---|---|
+| 1K  | 2.4 µs | 282 µs (~2.8 µs/fact) | 2.4 µs |
+| 10K | 2.4 µs | 273 µs (~2.7 µs/fact) | 2.3 µs |
+| 100K | 2.4 µs | 285 µs (~2.9 µs/fact) | 2.3 µs |
+
+### Insert throughput (file-backed, WAL-appended)
+
+Same workloads with a file-backed database. WAL entries are OS-buffered (no explicit
+fsync in the current implementation), adding only ~0.8 µs overhead vs in-memory.
+
+| Pre-populated | Single fact | Batch (100) | Explicit tx |
+|---|---|---|---|
+| 1K  | 3.2 µs | 190 µs (~1.9 µs/fact) | 3.1 µs |
+| 10K | 3.2 µs | 195 µs (~2.0 µs/fact) | 3.2 µs |
+| 100K | 3.2 µs | 198 µs (~2.0 µs/fact) | 3.2 µs |
+
+> **Finding:** In-memory and file-backed inserts cost virtually the same.
+> The WAL writer uses OS-buffered writes; adding explicit fsync would add
+> ~500 µs/write on real hardware but provides stronger durability guarantees.
+
+### Query latency (in-memory)
+
+Queries run against a pre-populated in-memory database. All three query types show
+**O(N) scaling** — the query executor currently does a full linear scan of facts
+rather than using the covering indexes (known limitation; Phase 6.5 optimization target).
+
+| DB size | Point entity | Point attribute | 3-pattern join |
+|---|---|---|---|
+| 1K  | 0.9 ms | 0.8 ms | 3.6 ms |
+| 10K | 10.8 ms | 10.0 ms | 41.7 ms |
+| 100K | 158 ms | 148 ms | 520 ms |
+| 1M | 2.2 s | 2.1 s | 6.7 s |
+
+> **Finding:** Query latency scales linearly with DB size — ~2.2 µs/fact scanned.
+> The covering indexes (EAVT, AEVT, AVET, VAET) are persisted to disk but not yet
+> used for in-memory query execution. Using them would reduce point lookups to
+> O(log N) and joins dramatically.
+
+### Time-travel overhead
+
+Temporal filtering (`:as-of` tx counter or `:valid-at` timestamp) adds negligible
+overhead on top of the base query cost.
+
+| DB size | Base query | `:as-of` | `:valid-at` | Overhead |
+|---|---|---|---|---|
+| 1K  | 0.88 ms | 0.90 ms | 0.88 ms | <3% |
+| 10K | 10.8 ms | 11.1 ms | 11.0 ms | <3% |
+| 100K | 158 ms | 160 ms | 159 ms | <2% |
+| 1M | 2.2 s | 2.2 s | 2.3 s | <5% |
+
+### Transitive closure (recursive rules)
+
+Semi-naive evaluation on two graph shapes. The chain benchmark exposes a **quadratic
+scaling problem** in the current evaluator — a major Phase 6.5 optimization target.
+
+| Scenario | Time |
+|---|---|
+| chain, depth 10 | 2.7 ms |
+| chain, depth 100 | 15.6 s (**O(depth²)** — optimization target) |
+| fanout, width 10 depth 3 (~1,110 nodes) | 5.0 s |
+
+> **Finding:** The semi-naive evaluator rebuilds the full result set on each iteration
+> rather than diffing only new tuples, causing O(depth²) behavior on chain graphs.
+> This is the single biggest performance issue; fixing it is the primary goal of
+> Phase 6.5.
+
+### Database open time
+
+Time to open an existing database, including header read, fact page loading, and
+index reconstruction. Scales linearly with fact count (O(N)).
+
+| DB size | Checkpointed (clean) | WAL replay (uncommitted) |
+|---|---|---|
+| 1K  | 1.8 ms | 1.7 ms |
+| 10K | 23 ms | 20 ms |
+| 100K | 280 ms | — |
+| 1M | 3.2 s | — |
+
+WAL replay is slightly faster than clean open at 10K (20 ms vs 23 ms) because replaying
+WAL entries skips some packed-page processing. Phase 6.5 on-disk B+tree indexes will
+reduce open time to O(1) for most databases.
+
+### Checkpoint cost
+
+Time to flush WAL entries to packed pages and delete the WAL sidecar.
+
+| WAL size | Checkpoint time |
+|---|---|
+| 1K facts | 1.5 ms |
+| 10K facts | 16.8 ms |
+
+### Concurrent throughput (in-memory, 10K-fact DB)
+
+Multi-threaded performance via `std::sync::RwLock` (reads) and `Mutex` (writes).
+Numbers represent maximum per-thread elapsed time across N threads each performing
+the same number of operations.
+
+| Scenario | 4 threads | 8 threads | 16 threads |
+|---|---|---|---|
+| readers only | 22 ms | 44 ms | 81 ms |
+| readers + 1 writer | 19 ms | 39 ms | 77 ms |
+
+| Scenario | 2 threads | 4 threads | 8 threads | 16 threads |
+|---|---|---|---|---|
+| serialized writers | 5.2 µs | 15.4 µs | 34.4 µs | 68.3 µs |
+
+> Read throughput scales linearly with thread count (expected — RwLock allows
+> parallel reads). A single writer does not significantly degrade reader latency.
+> Serialized writes show linear contention growth — each additional thread doubles
+> the wait time, as expected for an exclusive Mutex.
+
+### Concurrent throughput (file-backed, 10K-fact DB)
+
+Same workloads with a file-backed database. WAL-append overhead is ~2× the in-memory
+cost under contention (~9 µs vs ~5 µs at 2 threads).
+
+| Scenario | 4 threads | 8 threads | 16 threads |
+|---|---|---|---|
+| readers only | 23 ms | 44 ms | 90 ms |
+| readers + 1 writer | 20 ms | 41 ms | 84 ms |
+
+| Scenario | 2 threads | 4 threads | 8 threads | 16 threads |
+|---|---|---|---|---|
+| serialized writers | 9.4 µs | 22.1 µs | 48.2 µs | 94.4 µs |
+
+### Summary of optimization targets
+
+| Issue | Current | Phase 6.5 Target |
+|---|---|---|
+| Query O(N) linear scan | 2.2 s at 1M facts | O(log N) via in-memory index lookup |
+| Recursive evaluator O(depth²) | 15.6 s at depth 100 | O(depth × delta) semi-naive |
+| Open time O(N) | 3.2 s at 1M facts | O(1) header + lazy page loading |
+| No explicit WAL fsync | Durability gap | Configurable sync mode |
 
 ## Why Minigraf?
 
