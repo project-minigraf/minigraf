@@ -4,7 +4,7 @@
 [![Clippy Status](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml/badge.svg)](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/adityamukho/minigraf#license)
 [![Rust Edition](https://img.shields.io/badge/rust-2024-orange.svg)](https://blog.rust-lang.org/2024/10/17/Rust-1.82.0.html)
-[![Phase](https://img.shields.io/badge/phase-6.2%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
+[![Phase](https://img.shields.io/badge/phase-6.4a%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
 
 > **Embedded graph memory for AI agents, mobile apps, and the browser** — the SQLite of bi-temporal graph databases
 
@@ -18,7 +18,7 @@ Minigraf is a **single-file embedded graph database** that lets you:
 - ✅ **Embed anywhere** - Native, WASM, mobile, IoT - one `.graph` file
 - ✅ **Zero configuration** - Just `Minigraf::open("data.graph")` and you're done
 
-**Status**: Early development. Phase 6.2 complete (Packed Pages + LRU Cache). Now starting Phase 6.4 (Benchmarks + edge cases + crates.io publish). Note: Phase 6.3 (query optimization) was completed as part of Phase 6.1.
+**Status**: Early development. Phase 6.4a complete (Retraction semantics fix + edge case tests). Now starting Phase 6.4b (Criterion benchmarks + crates.io publish). Note: Phase 6.3 (query optimization) was completed as part of Phase 6.1.
 
 ## Why Datalog?
 
@@ -30,9 +30,9 @@ Minigraf is a **single-file embedded graph database** that lets you:
 4. **Proven at scale** - 40+ years of research, production use (Datomic, XTDB)
 5. **Graph-native** - Facts (Entity-Attribute-Value) are literally edges
 
-## Current Status - Phase 6.2 Complete
+## Current Status - Phase 6.4a Complete
 
-Minigraf has a **crash-safe bi-temporal Datalog query engine with covering indexes, packed storage, and LRU page cache**:
+Minigraf has a **crash-safe bi-temporal Datalog query engine with covering indexes, packed storage, LRU page cache, and correct retraction semantics**:
 
 - ✅ **EAV data model** - Entity-Attribute-Value facts with transaction IDs
 - ✅ **Datalog queries** - Pattern matching with variable unification
@@ -53,8 +53,10 @@ Minigraf has a **crash-safe bi-temporal Datalog query engine with covering index
 - ✅ **Single `.graph` file** - Page-based storage (4KB pages), WAL as sidecar
 - ✅ **Embedded database API** - Use like SQLite (`Minigraf::open()`)
 - ✅ **Cross-platform** - Works on Linux, macOS, Windows, iOS, Android
-- ✅ **280 tests passing** - Comprehensive test coverage
-- 🎯 **Next: Benchmarks** - Criterion suite, performance at scale (Phase 6.4)
+- ✅ **Correct retraction semantics** - Retracted facts no longer appear in Datalog queries; `net_asserted_facts` computes the net view per EAV triple
+- ✅ **Oversized-fact validation** - Facts exceeding `MAX_FACT_BYTES` (4 080 bytes) are rejected at insertion with a clear error
+- ✅ **298 tests passing** - Comprehensive test coverage
+- 🎯 **Next: Criterion benchmarks** - Performance at scale + crates.io publish (Phase 6.4b)
 
 ## Quick Start
 
@@ -267,9 +269,13 @@ The `.graph` file uses a page-based format (like SQLite), with an optional WAL s
 **Phase 6.2**: ✅ Packed Pages + LRU Cache (Complete)
 - ~25 facts/page, LRU page cache, on-demand fact loading, file format v5
 
-**Phase 6.4**: 🎯 Benchmarks + Edge Cases + **crates.io publish** (Next)
+**Phase 6.4a**: ✅ Retraction Semantics Fix + Edge Case Tests (Complete)
+- Fixed retraction semantics in Datalog queries (`net_asserted_facts`)
+- `MAX_FACT_BYTES` early validation; oversized-fact and retraction tests
+
+**Phase 6.4b**: 🎯 Criterion Benchmarks + **crates.io publish** (Next)
 - Criterion suite, performance at 10K/100K/1M facts
-- Oversized-fact and checkpoint-during-crash edge case tests
+- Checkpoint-during-crash edge case test
 - Error-path coverage raised from ~82%
 - GitHub Discussions enabled; first public crates.io release (v0.8.0)
 
@@ -700,9 +706,9 @@ Comprehensive test coverage:
 cargo test
 ```
 
-Current tests (280 total):
+Current tests (298 total):
 - ✅ **213 unit tests** - Core Datalog, EAV model, parser, matcher, executor, bi-temporal, WAL, indexes, cache, packed pages
-- ✅ **61 integration tests** - Complex queries, recursive rules, concurrency, bi-temporal, WAL crash recovery, indexes, packed pages
+- ✅ **79 integration tests** - Complex queries, recursive rules, concurrency, bi-temporal, WAL crash recovery, indexes, packed pages, retractions, edge cases
 - ✅ **6 doc tests** - Inline documentation examples
 
 **Phase 3-4 Coverage** (Complete):
@@ -729,7 +735,15 @@ Current tests (280 total):
 - ✅ Explicit transaction survives packed reload
 - ✅ `page_cache_size` option accepted
 
-**Future tests** (Phase 6.4+):
+**Phase 6.4a Coverage** (Complete):
+- ✅ Retraction semantics: retracted facts absent from Datalog query results
+- ✅ As-of snapshots: retraction visible/invisible at correct tx boundary
+- ✅ Re-assert after retract: fact reappears correctly
+- ✅ Recursive rules with retraction: retracted edges not traversed
+- ✅ Oversized-fact file-backed: error returned, not panic
+- ✅ `MAX_FACT_BYTES` boundary: exact-size fact accepted, +1 byte rejected
+
+**Future tests** (Phase 6.4b+):
 - ⏳ Criterion benchmarks (insert throughput, query latency at scale)
 
 ## Comparison to Similar Projects

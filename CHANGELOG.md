@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-03-22
+
+### Fixed
+- Retraction semantics in Datalog queries: `filter_facts_for_query` Step 2 now computes the *net view* per `(entity, attribute, value)` triple via `net_asserted_facts()`. Previously, retracted facts continued to appear in query results because the original assertion record remained in the append-only log. Now, for each EAV triple in the tx window, only the record with the highest `tx_count` is considered — if it is a retraction, the triple is excluded from results.
+- Oversized facts are now rejected early in `db.rs` (`check_fact_sizes`) before any WAL write, using the `MAX_FACT_BYTES` constant (4 080 bytes) exported from `packed_pages.rs`. Previously, oversized facts could cause a panic deep in the page-packing path.
+
+### Added
+- `net_asserted_facts(facts: Vec<Fact>) -> Vec<Fact>` helper in `src/graph/storage.rs`: groups facts by EAV triple, keeps the record with the highest `tx_count`, and discards the triple if that record is a retraction. Used by both `executor.rs` and `storage.rs`.
+- `check_fact_sizes(facts: &[Fact])` in `src/db.rs`: validates all facts against `MAX_FACT_BYTES` and returns a descriptive `Err` before writing to the WAL.
+- `MAX_FACT_BYTES: usize` constant in `src/storage/packed_pages.rs`: `PAGE_SIZE - PACKED_HEADER_SIZE - 4` = 4 080 bytes.
+- `tests/retraction_test.rs` — 7 integration tests covering: assert/retract with no `:as-of`, as-of snapshot before/after retraction boundary, re-assert after retract, `:any-valid-time` with retraction, recursive rule retraction visibility at and before the retraction boundary.
+- `tests/edge_cases_test.rs` — 4 integration tests covering: oversized-fact file-backed error path, `MAX_FACT_BYTES` exact boundary (accepted), `MAX_FACT_BYTES + 1` (rejected), in-memory database has no size limit.
+
 ## [0.7.0] - 2026-03-22
 
 ### Added

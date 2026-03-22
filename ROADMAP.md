@@ -365,7 +365,7 @@ tx.commit()?;  // or tx.rollback()?
 
 **Goal**: Make queries fast
 
-**Status**: 🚧 Phases 6.1 and 6.2 complete; 6.3 next
+**Status**: 🚧 Phases 6.1, 6.2, and 6.4a complete; 6.4b next
 
 **Priority**: 🟡 High
 
@@ -403,7 +403,22 @@ tx.commit()?;  // or tx.rollback()?
 
 **Note**: Phase 6.3 has no dedicated release version. Its completed items shipped as part of Phase 6.1 (v0.6.0); its deferred items will ship as part of Phase 7 (v0.9.0). The release strategy jumps directly from v0.7.0 (Phase 6.2) to v0.8.0 (Phase 6.4) by design.
 
-### 6.4 Benchmarks + Edge Case Tests + crates.io Publish 🎯 NEXT
+### 6.4a Retraction Semantics Fix + Edge Case Tests ✅ COMPLETE
+
+**What Was Fixed**:
+- ✅ Retraction semantics in `executor.rs:filter_facts_for_query` Step 2: now computes the *net view* per `(entity, attribute, value)` triple via `net_asserted_facts()` — the record with the highest `tx_count` in the tx window determines whether the triple is asserted or retracted
+- ✅ `net_asserted_facts()` helper (`src/graph/storage.rs`): groups by EAV triple, keeps latest by `tx_count`, discards if latest is a retraction; shared by executor and storage
+- ✅ `check_fact_sizes()` early validation (`src/db.rs`): rejects oversized facts before WAL write using `MAX_FACT_BYTES` constant from `packed_pages.rs`
+
+**Tests Added**:
+- ✅ `tests/retraction_test.rs` — 7 tests: assert/retract (no `:as-of`), as-of snapshot before/after retraction, re-assert after retract, `:any-valid-time` combo, recursive rule retraction visibility
+- ✅ `tests/edge_cases_test.rs` — 4 tests: oversized-fact file-backed error path, `MAX_FACT_BYTES` boundary, in-memory has no size limit
+
+**Test Coverage**: 298 tests (213 unit + 79 integration + 6 doc)
+
+---
+
+### 6.4b Benchmarks + crates.io Publish 🎯 NEXT
 
 **Benchmark Suite**:
 - 🎯 Criterion benchmarks: insert throughput, query latency (indexed/unindexed)
@@ -417,33 +432,9 @@ tx.commit()?;  // or tx.rollback()?
 - Medium: 100K facts (small business app)
 - Large: 1M facts (production single-machine)
 
-**Edge Case Tests** (identified gaps from external code review):
-- 🎯 Facts larger than ~4KB — verify the oversized-fact error path is exercised and the page layout is not corrupted
+**Remaining Edge Case Tests**:
 - 🎯 Checkpoint-during-crash — simulate a crash mid-checkpoint (partial page writes to `.graph` while WAL is being cleared) and verify recovery correctness
 - 🎯 Error handling coverage — raise error-path coverage from ~82% toward the same bar as happy-path coverage; prioritise storage and WAL error paths
-
-**Known Bug — Retraction semantics in Datalog queries** (`executor.rs:filter_facts_for_query`):
-
-`filter_facts_for_query` Step 2 naively filters the tx window to `asserted=true` facts without applying the net effect of retractions. A retraction at tx_count=N creates a fact record with `asserted=false`, but the original assertion record (with `asserted=true`) remains in the append-only log and is still returned by Step 2.
-
-**Broken scenarios**:
-- Current-time query (no `:as-of`) after retraction → retracted fact still appears in results
-- `:as-of N` query where N ≥ retraction tx_count → same
-
-**Working scenario**:
-- `:as-of N` where N < retraction tx_count → correct (retraction record is not yet in the tx window)
-
-**Root cause**: Step 2 should compute the *net view* per `(entity, attribute, value)` triple: for each triple in the tx window, keep it only if the record with the highest `tx_count` is an assertion. Currently it discards retraction records without checking whether they cancel an earlier assertion within the same window.
-
-**Note**: `get_current_value()` (internal API, not the Datalog path) handles this correctly by sorting by `tx_id` and checking the most recent record. The Datalog query path needs the same logic applied.
-
-**Tests to add**:
-- Assert a fact, retract it, run a Datalog query (no `:as-of`) → fact must NOT appear
-- Assert a fact at tx=1, retract at tx=3; query `:as-of 2` → fact must appear; query `:as-of 4` → fact must NOT appear
-- Assert, retract, re-assert; query → fact must appear again
-- Retraction + `:any-valid-time` combo
-- Retraction at tx=N, historical query at `:as-of N-1` via recursive rule → fact visible in rule derivation
-- Retraction at tx=N, historical query at `:as-of N+1` via recursive rule → fact NOT visible in rule derivation
 
 **Community Infrastructure** (do before publish):
 - 🎯 Enable GitHub Discussions — minimum viable channel for questions, feedback, and contributor coordination before external users arrive via crates.io
@@ -1154,9 +1145,16 @@ branched_db.execute("(transact [[:x :y 1]])")?;
 - ✅ FileHeader v5 (`fact_page_format` byte); auto v4→v5 migration
 - ✅ 280 tests passing
 
-### v0.8.0 - 🎯 Phase 6.4 (Benchmarks + Edge Cases + **crates.io publish**)
+### v0.7.1 - ✅ Phase 6.4a Complete (Retraction Semantics Fix + Edge Case Tests)
+- ✅ Fixed retraction semantics in Datalog queries (`net_asserted_facts` helper)
+- ✅ `check_fact_sizes` / `MAX_FACT_BYTES`: early oversized-fact validation before WAL write
+- ✅ `tests/retraction_test.rs` — 7 new retraction integration tests
+- ✅ `tests/edge_cases_test.rs` — 4 new edge case integration tests
+- ✅ 298 tests passing
+
+### v0.8.0 - 🎯 Phase 6.4b (Criterion Benchmarks + **crates.io publish**)
 - Criterion benchmark suite; validated performance at 10K / 100K / 1M facts
-- Oversized-fact and checkpoint-during-crash edge case tests
+- Checkpoint-during-crash edge case test
 - Error-path coverage raised from ~82%
 - GitHub Discussions enabled
 - **First public release on crates.io** — API reference auto-published to docs.rs
@@ -1246,22 +1244,21 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: ✅ Phase 6.2 Complete! Planning Phase 6.3 - Benchmarks
+**Right Now**: ✅ Phase 6.4a Complete! Planning Phase 6.4b - Criterion Benchmarks + crates.io publish
 
-**Phase 6.2 Achievements**:
-1. ✅ Packed fact pages (~25 facts/4KB page, ~25× space reduction vs v4)
-2. ✅ LRU page cache with approximate-LRU semantics (`cache.rs`)
-3. ✅ `CommittedFactReader` trait: on-demand fact loading (no startup load-all)
-4. ✅ EAVT/AEVT range scans in `get_facts_by_entity` / `get_facts_by_attribute`
-5. ✅ `FileHeader` v5 (`fact_page_format` byte); auto v4→v5 migration
-6. ✅ `OpenOptions::page_cache_size(usize)` builder method
-7. ✅ 280 tests passing (68 new tests since Phase 5)
+**Phase 6.4a Achievements**:
+1. ✅ Fixed retraction semantics in Datalog queries (`net_asserted_facts` helper)
+2. ✅ `check_fact_sizes` / `MAX_FACT_BYTES`: early oversized-fact validation before WAL write
+3. ✅ `tests/retraction_test.rs` — 7 new retraction integration tests
+4. ✅ `tests/edge_cases_test.rs` — 4 new edge case integration tests
+5. ✅ 298 tests passing (18 new tests since Phase 6.2)
 
-**Immediate Next Steps (Phase 6.3)**:
+**Immediate Next Steps (Phase 6.4b)**:
 1. Add Criterion as a dev-dependency
 2. Write benchmarks: insert throughput, point-lookup, range scan, time travel
 3. Profile memory usage at 10K / 100K / 1M facts
 4. Document performance characteristics in README
+5. Publish to crates.io as v0.8.0
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)

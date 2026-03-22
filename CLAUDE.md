@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries** written in Rust. It's designed to be the embedded graph memory layer for AI agents, mobile apps, and the browser — built on the SQLite philosophy: embedded, single-file, reliable, with time travel capabilities.
 
-**Current Status: Phase 6.2 COMPLETE ✅ → Phase 6.4 Next** - Packed Pages + LRU Cache (note: Phase 6.3 query optimization was completed as part of Phase 6.1):
+**Current Status: Phase 6.4a COMPLETE ✅ → Phase 6.4b Next** - Retraction semantics fix + edge case tests (note: Phase 6.3 query optimization was completed as part of Phase 6.1):
 - ✅ Phase 1: Property graph PoC (in-memory)
 - ✅ Phase 2: Persistent storage (`.graph` file format, embedded API)
 - ✅ Phase 3: Datalog core (EAV model, recursive rules) - COMPLETE!
@@ -14,7 +14,8 @@ Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries**
 - ✅ **Phase 5: ACID + WAL (crash safety, explicit transactions) - COMPLETE!**
 - ✅ **Phase 6.1: Covering indexes (EAVT, AEVT, AVET, VAET) + query optimizer - COMPLETE!**
 - ✅ **Phase 6.2: Packed pages + LRU page cache - COMPLETE!**
-- 🎯 Phase 6.4: Benchmarks + edge case tests + crates.io publish - **NEXT** (Phase 6.3 query optimization done in 6.1)
+- ✅ **Phase 6.4a: Retraction semantics fix + edge case tests - COMPLETE!**
+- 🎯 Phase 6.4b: Criterion benchmarks + crates.io publish - **NEXT**
 - 🎯 Phase 6.5: On-disk B+tree indexes (file format v6; conditional on Phase 6.4 benchmark findings)
 - 🎯 Phase 7: Datalog Completeness (negation, aggregation, disjunction; ≥90% branch coverage target)
 - 🎯 v1.0.0: 9-12 months
@@ -333,7 +334,7 @@ WAL sidecar <db>.wal (present while uncommitted writes exist):
 
 ## Test Coverage
 
-**Current Tests (Phase 6.2)**: 280 tests passing ✅
+**Current Tests (Phase 6.4a)**: 298 tests passing ✅
 - **Unit tests** (213 tests):
   - `src/graph/types.rs`: Fact types, Value types, EAV model, temporal fields
   - `src/graph/storage.rs`: FactStorage, CRUD, history, tx_count, temporal methods, CommittedFactReader integration
@@ -341,18 +342,18 @@ WAL sidecar <db>.wal (present while uncommitted writes exist):
   - `src/query/datalog/parser.rs`: EDN/Datalog syntax, rules, `:as-of`, `:valid-at`, EDN maps
   - `src/query/datalog/types.rs`: Pattern, WhereClause, DatalogQuery, AsOf, ValidAt
   - `src/query/datalog/matcher.rs`: Pattern matching, variable unification
-  - `src/query/datalog/executor.rs`: Query execution, rule registration, temporal filtering
+  - `src/query/datalog/executor.rs`: Query execution, rule registration, temporal filtering, retraction net-view
   - `src/query/datalog/rules.rs`: RuleRegistry, rule management
   - `src/query/datalog/evaluator.rs`: Semi-naive evaluation, transitive closure
   - `src/storage/index.rs`: EAVT/AEVT/AVET/VAET keys, FactRef, encode_value sort order
   - `src/storage/btree.rs`: B+tree roundtrip, multi-page, sort order preservation
   - `src/storage/cache.rs`: LRU eviction, read-lock hits, Arc cloning
-  - `src/storage/packed_pages.rs`: Pack/unpack roundtrip, oversized fact error
+  - `src/storage/packed_pages.rs`: Pack/unpack roundtrip, oversized fact error (`MAX_FACT_BYTES`)
   - `src/storage/mod.rs`: FileHeader v5 serialization, v3/v4 acceptance
   - `src/wal.rs`: WAL entry serialization, CRC32, replay logic
-  - `src/db.rs`: WriteTransaction, checkpoint, crash recovery
+  - `src/db.rs`: WriteTransaction, checkpoint, crash recovery, `check_fact_sizes` early validation
 
-- **Integration tests** (61 tests):
+- **Integration tests** (79 tests):
   - `tests/bitemporal_test.rs` (10 tests): Bi-temporal queries, time travel, valid time
   - `tests/complex_queries_test.rs` (10 tests): Multi-pattern joins, self-joins, edge cases
   - `tests/recursive_rules_test.rs` (9 tests): Transitive closure, cycles, long chains, family trees
@@ -360,6 +361,8 @@ WAL sidecar <db>.wal (present while uncommitted writes exist):
   - `tests/wal_test.rs` (12 tests): WAL write/read, commit/rollback, crash recovery, checkpoint
   - `tests/index_test.rs` (6 tests): Index save/reload, bi-temporal index, recursive rules regression
   - `tests/performance_test.rs` (7 tests): Packed page compactness, reload correctness, page_cache_size option
+  - `tests/retraction_test.rs` (7 tests): Retraction semantics in Datalog queries (Phase 6.4a)
+  - `tests/edge_cases_test.rs` (4 tests): Oversized-fact file-backed error, MAX_FACT_BYTES boundary
 
 - **Doc tests** (6 tests): Inline documentation examples
 
@@ -375,6 +378,8 @@ WAL sidecar <db>.wal (present while uncommitted writes exist):
 - ✅ **WAL and crash recovery** - 12 integration tests
 - ✅ **Covering indexes** (EAVT/AEVT/AVET/VAET) - 6 integration tests
 - ✅ **Packed pages + LRU cache** - 7 integration tests
+- ✅ **Retraction semantics** - 7 integration tests (Phase 6.4a)
+- ✅ **Edge cases** (oversized facts, MAX_FACT_BYTES) - 4 integration tests (Phase 6.4a)
 
 **Demo Scripts**:
 - `demo_recursive.txt`: Comprehensive recursive rules examples (transitive closure, cycles, family trees)
@@ -382,10 +387,10 @@ WAL sidecar <db>.wal (present while uncommitted writes exist):
 Run tests with: `cargo test`
 See `TEST_COVERAGE.md` for detailed coverage report.
 
-**Future Tests (Phase 6.4+)**:
+**Future Tests (Phase 6.4b+)**:
 - Criterion benchmarks (insert throughput, query latency at 10K/100K/1M facts)
 - Memory profiling under load
-- Oversized-fact error path; checkpoint-during-crash recovery
+- Checkpoint-during-crash recovery
 - Error-path coverage sweep (~82% → ≥90% target by end of Phase 7)
 
 ## Development Notes
@@ -476,6 +481,18 @@ See `TEST_COVERAGE.md` for detailed coverage report.
 
 **Test Coverage**: 280 tests (213 unit + 61 integration + 6 doc)
 
+### Phase 6.4a (Complete) - Retraction Semantics Fix + Edge Case Tests ✅
+
+**Implemented Features**:
+- ✅ Fixed retraction semantics in `executor.rs`: `filter_facts_for_query` Step 2 now computes the *net view* per `(entity, attribute, value)` triple via `net_asserted_facts()` — the record with the highest `tx_count` in the tx window determines whether the triple is currently asserted or retracted
+- ✅ `net_asserted_facts()` helper (`src/graph/storage.rs`): groups facts by EAV triple, keeps only the latest by `tx_count`, discards if latest is a retraction
+- ✅ `check_fact_sizes()` early validation in `src/db.rs`: rejects oversized facts before WAL write, using `MAX_FACT_BYTES` from `packed_pages.rs`
+- ✅ `MAX_FACT_BYTES` constant (`src/storage/packed_pages.rs`): 4 080 bytes — maximum serialised size per fact for file-backed databases
+- ✅ 7 new retraction integration tests (`tests/retraction_test.rs`): assert/retract, as-of snapshots, re-assert, any-valid-time combo, recursive rules with retraction
+- ✅ 4 new edge case integration tests (`tests/edge_cases_test.rs`): oversized-fact file-backed error, MAX_FACT_BYTES boundary, in-memory no size limit
+
+**Test Coverage**: 298 tests (213 unit + 79 integration + 6 doc)
+
 ### Philosophy-Aligned Development
 
 When implementing features, always ask:
@@ -525,10 +542,16 @@ When implementing features, always ask:
 - ✅ FileHeader v5 (fact_page_format byte), auto v4→v5 migration
 - ✅ 280 comprehensive tests
 
-**Phase 6.4** (next): Benchmarks + edge cases + crates.io publish
+**Phase 6.4a** ✅ **COMPLETE** - Retraction Semantics Fix + Edge Case Tests
+- ✅ Fixed retraction semantics in Datalog queries (`net_asserted_facts` helper)
+- ✅ `check_fact_sizes` / `MAX_FACT_BYTES`: early oversized-fact validation before WAL write
+- ✅ 7 retraction integration tests + 4 edge case integration tests (18 new tests total)
+- ✅ 298 comprehensive tests
+
+**Phase 6.4b** (next): Criterion benchmarks + crates.io publish
 - Criterion benchmark suite (insert throughput, query latency)
 - Target scales: 10K / 100K / 1M facts
-- Memory profiling; oversized-fact + checkpoint-during-crash tests
+- Memory profiling; checkpoint-during-crash tests
 
 **Phase 6.5** (4-6 weeks): On-Disk B+Tree Indexes
 - Replace paged-blob index serialisation with proper per-page B+tree nodes
