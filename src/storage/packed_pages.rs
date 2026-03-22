@@ -54,6 +54,16 @@ pub fn pack_facts(facts: &[Fact], start_page_id: u64) -> Result<(Vec<Vec<u8>>, V
         let len = serialised.len();
         let dir_entry_size = 4usize;
 
+        // Check if this fact exceeds the maximum slot size.
+        let max_slot_size = PAGE_SIZE - PACKED_HEADER_SIZE - 4; // 4 = one directory entry
+        if len > max_slot_size {
+            anyhow::bail!(
+                "Fact serialised size {} bytes exceeds maximum slot size {} bytes",
+                len,
+                max_slot_size
+            );
+        }
+
         // Check if this fact fits on the current page.
         // Free space = data_offset - dir_offset - dir_entry_size (for the new dir entry).
         let free = data_offset.saturating_sub(dir_offset + dir_entry_size);
@@ -238,5 +248,22 @@ mod tests {
         for (orig, rec) in facts.iter().zip(recovered.iter()) {
             assert_eq!(orig.entity, rec.entity);
         }
+    }
+
+    #[test]
+    fn test_oversized_fact_returns_error() {
+        // Create a fact with a very large string value (>4080 bytes)
+        let big_string = "x".repeat(5000);
+        let fact = Fact::with_valid_time(
+            Uuid::from_u128(999),
+            ":big".to_string(),
+            Value::String(big_string),
+            1,
+            1,
+            0,
+            VALID_TIME_FOREVER,
+        );
+        let result = pack_facts(&[fact], 1);
+        assert!(result.is_err(), "oversized fact must return Err, not panic");
     }
 }
