@@ -508,8 +508,24 @@ Minigraf will **NOT** be (by design):
 - **Client-server** - No network protocol in core
 - **Enterprise-focused** - No RBAC, no HA, no multi-datacenter
 - **Billion-node scale** - Optimized for <1M nodes (like SQLite)
+- **A time-series database** - Minigraf is a *temporal* database, not a *time-series* database. These are different tools for different questions (see below).
 
 If you need a distributed graph database, use Neo4j, TigerGraph, or similar.
+
+### Temporal vs. Time-Series: Different Tools, Different Questions
+
+Both types of database deal in timestamped data, which causes confusion. The distinction is semantic:
+
+| | **Temporal database** (Minigraf) | **Time-series database** (InfluxDB, Prometheus, TimescaleDB) |
+|---|---|---|
+| **Primary question** | "What was the state of entity X at time T?" | "What was the reading of metric M during window [T1, T2]?" |
+| **Data unit** | Version-controlled entity history (like Git commits) | High-frequency measurement or event stream |
+| **Time model** | Bi-temporal: valid time + transaction time, per entity | Append-only log, optimised for recency |
+| **Query style** | Datalog time-travel across linked entity histories | Aggregation, downsampling, windowed statistics |
+| **Strengths** | Referential integrity across history, audit trails, point-in-time snapshots | Fire-hose ingestion, alerting, dashboards, metric rollups |
+| **Not suited for** | High-frequency sensor/metric ingestion | Entity history, time travel, graph traversal |
+
+Use Minigraf when you need to ask *"what did my data look like at a point in the past?"* across linked entities — agent beliefs, audit records, knowledge graphs, correction histories. Use InfluxDB or Prometheus when you need to ingest thousands of IoT readings per second and visualise trends or set alerts.
 
 ## Testing
 
@@ -583,6 +599,11 @@ Current tests (280 total):
 - ✅ **Minigraf**: Embedded library, single file, zero configuration, bi-temporal
 - ✅ **SurrealDB**: Multi-model database (graph, document, relational), distributed, client-server, SQL-like query language (SurrealQL)
 - **Not competing tools.** SurrealDB targets teams that need a full-featured distributed database. Minigraf targets developers who want to embed a lightweight bi-temporal graph store directly in their application — no server, no configuration, one file.
+
+### vs. InfluxDB / Prometheus / TimescaleDB (time-series databases)
+- ✅ **Minigraf**: Bi-temporal entity history, Datalog time-travel queries, graph traversal, referential integrity
+- ✅ **InfluxDB / Prometheus / TimescaleDB**: High-frequency metric ingestion, aggregation, downsampling, alerting, dashboards
+- **Not the same category.** These are time-series databases optimised for ingesting and analysing streams of measurements. Minigraf is a temporal database optimised for version-controlled entity history and point-in-time queries across linked data. See [Temporal vs. Time-Series](#temporal-vs-time-series-different-tools-different-questions) above.
 
 **Minigraf aims to be the simplest, most portable option: embedded graph memory for agents, mobile, and the browser — built on SQLite's simplicity and Datomic's temporal model.**
 
