@@ -246,6 +246,65 @@ mod tests {
         assert_eq!(pages[0][0], PAGE_TYPE_PACKED);
     }
 
+    /// Pin every field in the 12-byte page header to its canonical byte offset.
+    ///
+    /// Like the FileHeader layout test, a roundtrip would not catch accidental
+    /// field swaps or `to_ne_bytes()` use on big-endian platforms.  We assert
+    /// the raw bytes directly against the spec in the module doc comment.
+    #[test]
+    fn test_packed_page_header_byte_layout() {
+        let facts: Vec<Fact> = (0..3).map(make_fact).collect();
+        let (pages, _) = pack_facts(&facts, 1).unwrap();
+        let page = &pages[0];
+
+        // byte 0: page_type = 0x02
+        assert_eq!(page[0], 0x02, "byte 0 must be PAGE_TYPE_PACKED (0x02)");
+
+        // byte 1: _reserved = 0x00
+        assert_eq!(page[1], 0x00, "byte 1 must be reserved zero");
+
+        // bytes 2..4: record_count (u16 LE) — 3 facts, all fit in one page
+        let record_count = u16::from_le_bytes([page[2], page[3]]);
+        assert_eq!(record_count, 3, "record_count at bytes 2-3 must be 3");
+        // Also verify raw LE encoding: low byte first
+        assert_eq!(page[2], 3, "record_count low byte at offset 2");
+        assert_eq!(page[3], 0, "record_count high byte at offset 3");
+
+        // bytes 4..12: next_page (u64 LE) = 0 (no overflow in Phase 6.2)
+        let next_page = u64::from_le_bytes(page[4..12].try_into().unwrap());
+        assert_eq!(next_page, 0, "next_page at bytes 4-11 must be 0");
+        assert_eq!(&page[4..12], &0u64.to_le_bytes(), "next_page raw LE bytes");
+    }
+
+    /// Verify the record directory entry layout: each entry is 4 bytes,
+    /// (offset: u16 LE, length: u16 LE), starting at byte 12.
+    #[test]
+    fn test_packed_page_record_directory_layout() {
+        let facts = vec![make_fact(1)];
+        let (pages, _) = pack_facts(&facts, 1).unwrap();
+        let page = &pages[0];
+
+        // With 1 fact, record_count = 1; directory entry at bytes 12..16.
+        let record_count = u16::from_le_bytes([page[2], page[3]]);
+        assert_eq!(record_count, 1);
+
+        // Directory entry 0: offset (u16 LE) at bytes 12-13, length (u16 LE) at 14-15.
+        let offset = u16::from_le_bytes([page[12], page[13]]) as usize;
+        let length = u16::from_le_bytes([page[14], page[15]]) as usize;
+
+        // Offset must be within the page and after the header + directory.
+        assert!(offset >= PACKED_HEADER_SIZE + 4, "data offset must be past header+directory");
+        assert!(offset < PAGE_SIZE, "data offset must be within page");
+
+        // Length must be nonzero and the data must fit within the page.
+        assert!(length > 0, "record length must be nonzero");
+        assert!(offset + length <= PAGE_SIZE, "record must fit within page");
+
+        // Verify the bytes at the directory offset are the LE encoding of those values.
+        assert_eq!(&page[12..14], &(offset as u16).to_le_bytes(), "directory offset LE");
+        assert_eq!(&page[14..16], &(length as u16).to_le_bytes(), "directory length LE");
+    }
+
     #[test]
     fn test_read_all_from_pages_roundtrip() {
         use crate::storage::backend::MemoryBackend;

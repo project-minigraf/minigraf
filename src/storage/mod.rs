@@ -374,4 +374,67 @@ mod tests {
         h.version = 5;
         assert!(h.validate().is_ok());
     }
+
+    /// Pin every field to a distinct non-zero value and assert the raw byte
+    /// pattern at each exact offset matches the little-endian encoding.
+    ///
+    /// A roundtrip test (to_bytes → from_bytes → field value) would pass even
+    /// if two adjacent fields were accidentally swapped, because both ends of
+    /// the roundtrip use the same (potentially wrong) offsets.  This test
+    /// compares against the *canonical* byte positions documented in the layout
+    /// comment above `FileHeader`, so it catches offset drift and also detects
+    /// accidental `to_ne_bytes()` use on big-endian platforms.
+    #[test]
+    fn test_file_header_byte_layout_all_fields() {
+        let mut h = FileHeader::new();
+        h.page_count = 0x0102_0304_0506_0708_u64;
+        h.node_count = 0x1112_1314_1516_1718_u64;
+        h.last_checkpointed_tx_count = 0x2122_2324_2526_2728_u64;
+        h.eavt_root_page = 0x3132_3334_3536_3738_u64;
+        h.aevt_root_page = 0x4142_4344_4546_4748_u64;
+        h.avet_root_page = 0x5152_5354_5556_5758_u64;
+        h.vaet_root_page = 0x6162_6364_6566_6768_u64;
+        h.index_checksum = 0x7172_7374_u32;
+        h.fact_page_format = 0x02;
+        h._padding = [0x00, 0x00, 0x00];
+
+        let b = h.to_bytes();
+        assert_eq!(b.len(), 72, "header must be exactly 72 bytes");
+
+        // bytes 0..4: magic "MGRF"
+        assert_eq!(&b[0..4], b"MGRF");
+
+        // bytes 4..8: version = 5 (u32 LE)
+        assert_eq!(&b[4..8], &5u32.to_le_bytes());
+
+        // bytes 8..16: page_count (u64 LE)
+        assert_eq!(&b[8..16], &0x0102_0304_0506_0708_u64.to_le_bytes());
+
+        // bytes 16..24: node_count (u64 LE)
+        assert_eq!(&b[16..24], &0x1112_1314_1516_1718_u64.to_le_bytes());
+
+        // bytes 24..32: last_checkpointed_tx_count (u64 LE)
+        assert_eq!(&b[24..32], &0x2122_2324_2526_2728_u64.to_le_bytes());
+
+        // bytes 32..40: eavt_root_page (u64 LE)
+        assert_eq!(&b[32..40], &0x3132_3334_3536_3738_u64.to_le_bytes());
+
+        // bytes 40..48: aevt_root_page (u64 LE)
+        assert_eq!(&b[40..48], &0x4142_4344_4546_4748_u64.to_le_bytes());
+
+        // bytes 48..56: avet_root_page (u64 LE)
+        assert_eq!(&b[48..56], &0x5152_5354_5556_5758_u64.to_le_bytes());
+
+        // bytes 56..64: vaet_root_page (u64 LE)
+        assert_eq!(&b[56..64], &0x6162_6364_6566_6768_u64.to_le_bytes());
+
+        // bytes 64..68: index_checksum (u32 LE)
+        assert_eq!(&b[64..68], &0x7172_7374_u32.to_le_bytes());
+
+        // byte 68: fact_page_format
+        assert_eq!(b[68], 0x02);
+
+        // bytes 69..72: _padding (must be zero)
+        assert_eq!(&b[69..72], &[0x00, 0x00, 0x00]);
+    }
 }

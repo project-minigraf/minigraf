@@ -1144,6 +1144,11 @@ branched_db.execute("(transact [[:x :y 1]])")?;
 - Index memory usage proportional to cache size, not database size
 - File format v6 with automatic v5 migration
 - **First public release on crates.io** — API reference auto-published to docs.rs; full pre-publishing checklist passes
+- Add `cross test --target s390x-unknown-linux-gnu` to CI — verifies little-endian byte layout
+  tests also pass on a big-endian target, catching any accidental `to_ne_bytes()` use in the
+  file format serialisation code. Deferred to here (rather than earlier) because the file
+  format changes again in Phase 6.5 (v6); pinning a big-endian CI job to an unstable format
+  adds noise without adding safety.
 
 ### v1.0.0 - 🎯 Phase 7 (Datalog Completeness)
 - Stratified negation (`not` / `not-join`)
