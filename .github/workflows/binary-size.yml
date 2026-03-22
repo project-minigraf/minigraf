@@ -1,0 +1,39 @@
+name: Binary Size
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  binary-size:
+    name: Check release binary size
+    runs-on: ubuntu-latest
+    env:
+      SIZE_LIMIT_BYTES: 1048576  # 1 MiB — project goal is <1MB
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Check binary size
+        run: |
+          BINARY=target/release/minigraf
+          SIZE=$(stat -c %s "$BINARY")
+          SIZE_KB=$(( SIZE / 1024 ))
+          LIMIT_KB=$(( SIZE_LIMIT_BYTES / 1024 ))
+          echo "Binary size: ${SIZE_KB} KiB (limit: ${LIMIT_KB} KiB)"
+          if [ "$SIZE" -gt "$SIZE_LIMIT_BYTES" ]; then
+            echo "FAIL: binary size ${SIZE_KB} KiB exceeds limit of ${LIMIT_KB} KiB"
+            exit 1
+          fi
+          echo "OK: binary is within size limit"
