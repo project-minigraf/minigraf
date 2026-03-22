@@ -18,7 +18,13 @@ fn main() -> anyhow::Result<()> {
     let path = dir.path().join("profile.graph");
     let path_str = path.to_str().unwrap();
 
-    let db = OpenOptions::new().path(path_str).open()?;
+    let db = OpenOptions {
+        wal_checkpoint_threshold: usize::MAX,
+        ..Default::default()
+    }
+    .page_cache_size(256)
+    .path(path_str)
+    .open()?;
 
     // Insert in batches of 100, matching the bench helper pattern
     const BATCH: usize = 100;
