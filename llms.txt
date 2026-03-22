@@ -9,7 +9,10 @@ Minigraf is the SQLite of graph databases: zero configuration, one `.graph` file
 
 ## Use for
 
-- **Agent memory with provenance**: Store facts an agent asserted, when it asserted them, and query any past state. Retract and correct beliefs without losing history.
+- **Agent memory with provenance**: Store facts an agent asserted, when it asserted them, and query any past state. Retract and correct beliefs without losing history. Rewind to the exact knowledge state at the moment of a bad decision for root cause analysis.
+- **Verifiable agent reasoning**: Preserve an agent's full decision-making lineage. Post-hoc audits can reconstruct what the agent believed at any transaction counter or timestamp.
+- **Task planning agents**: Model sub-task DAGs as a graph. Update dependencies and status over time. Query historical task states with `:as-of`.
+- **Code dependency / debugging agents**: Embed call graphs or module dependency graphs; traverse with recursive Datalog rules.
 - **Audit-trail applications**: Compliance-grade history where both "what was recorded when" (transaction time) and "what was true when" (valid time) matter independently.
 - **Knowledge graphs**: Interconnected entity-relationship data with recursive traversal (e.g. reachability, ancestry, dependency chains).
 - **Event sourcing / temporal debugging**: Replay past states exactly as they existed at any transaction counter or wall-clock timestamp.

@@ -260,13 +260,44 @@ No other database offers this combination:
 
 **Minigraf = SQLite's simplicity + Datomic's temporal model**
 
+### For AI Agents
+
+Minigraf is a natural fit for agents that need **verifiable reasoning** — the ability to reconstruct exactly what the agent knew at the moment it made a decision, even after its beliefs have been updated or corrected.
+
+Because every fact carries both a *transaction time* (when it was recorded) and a *valid time* (when it was true in the world), an agent's entire decision-making lineage is preserved and queryable:
+
+```datalog
+;; Agent records a belief
+(transact [[:agent :belief/sky-color "blue"]])
+
+;; Belief is later corrected
+(retract [[:agent :belief/sky-color "blue"]])
+(transact [[:agent :belief/sky-color "red"]])
+
+;; Reconstruct what the agent believed at tx 1 — before the correction
+(query [:find ?color :as-of 1 :where [:agent :belief/sky-color ?color]])
+;; => "blue"
+```
+
+**Agentic use cases:**
+
+- **Agent memory with provenance** - Store what an agent believes, retract and correct without losing history, replay past states to audit decisions
+- **Verifiable reasoning** - Post-hoc root cause analysis: rewind to the exact knowledge state at the moment of a mistake
+- **Task planning graphs** - Model a DAG of sub-tasks as a graph; update dependencies over time; query historical task states
+- **Code dependency agents** - Embed call graphs or module dependency graphs; traverse them with recursive Datalog rules
+- **Multi-agent coordination** - Each agent carries its own `.graph` file as a private, embedded memory store — no shared server required
+
+**Why embedded (no server) is a feature for agents, not a limitation:**
+
+An agent's memory is private to that agent instance. Embedding Minigraf directly in the agent's process means no network latency, no external service to manage, offline-capable operation, and a portable `.graph` file that travels with the agent. The single-file model also makes agent memory trivially snapshotable, versioned, or rolled back.
+
 ### Target Use Cases
 
-1. **Audit-heavy applications** - Finance, healthcare, legal (bi-temporal = compliance)
-2. **Event sourcing** - Full history, time travel debugging
-3. **Personal knowledge bases** - Obsidian, Logseq, Roam-like apps
-4. **Local-first applications** - Offline-capable, user-owned data
-5. **AI/RAG systems** - Knowledge graphs with provenance
+1. **AI agents** - Verifiable reasoning, agent memory with provenance, task planning
+2. **Audit-heavy applications** - Finance, healthcare, legal (bi-temporal = compliance)
+3. **Event sourcing** - Full history, time travel debugging
+4. **Personal knowledge bases** - Obsidian, Logseq, Roam-like apps
+5. **Local-first applications** - Offline-capable, user-owned data
 6. **Mobile apps** - Embedded graph database on devices
 7. **WASM applications** - Graph database in the browser
 8. **Development/testing** - Local graph DB like SQLite
@@ -293,12 +324,12 @@ Minigraf is designed to run in multiple environments:
 ## Unscope
 
 Minigraf will **NOT** be (by design):
-- **Distributed** - No clustering, no sharding, no replication
+- **Distributed** - No clustering, no sharding, no replication. For agents, this is intentional: each agent instance owns its own private `.graph` file. No shared server, no network calls, no contention.
 - **Client-server** - No network protocol in core
 - **Enterprise-focused** - No RBAC, no HA, no multi-datacenter
 - **Billion-node scale** - Optimized for <1M nodes (like SQLite)
 
-If you need these, use Neo4j, TigerGraph, or similar.
+If you need a distributed graph database, use Neo4j, TigerGraph, or similar.
 
 ## Testing
 
