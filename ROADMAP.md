@@ -842,7 +842,7 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 - ✅ FileHeader v5 (`fact_page_format` byte); auto v4→v5 migration
 - ✅ 280 tests passing
 
-### v0.8.0 - 🎯 Phase 6.3/6.4 (Benchmarks + Edge Cases + **crates.io publish**)
+### v0.8.0 - 🎯 Phase 6.4 (Benchmarks + Edge Cases + **crates.io publish**)
 - Criterion benchmark suite; validated performance at 10K / 100K / 1M facts
 - Oversized-fact and checkpoint-during-crash edge case tests
 - Error-path coverage raised from ~82%
@@ -911,7 +911,7 @@ When evaluating features, ask:
 - ✅ Phase 5: Complete (March 2026) - ACID + WAL
 - ✅ Phase 6.1: Complete (March 2026) - Covering Indexes + Query Optimizer
 - ✅ Phase 6.2: Complete (March 2026) - Packed Pages + LRU Cache
-- 🎯 Phase 6.3/6.4: 2-3 weeks (Benchmarks + edge case tests + **crates.io publish**) - **NEXT**
+- 🎯 Phase 6.4: 2-3 weeks (Benchmarks + edge case tests + **crates.io publish**) - **NEXT** (Phase 6.3 query optimization completed in Phase 6.1)
 - 🎯 Phase 7: 6-8 weeks (Datalog Completeness — negation, aggregation, disjunction; ≥90% branch coverage)
 - 🎯 Phase 8: 3-4 months (Cross-platform — WASM, mobile, language bindings)
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)

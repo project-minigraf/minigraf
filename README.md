@@ -18,7 +18,7 @@ Minigraf is a **single-file embedded graph database** that lets you:
 - ✅ **Embed anywhere** - Native, WASM, mobile, IoT - one `.graph` file
 - ✅ **Zero configuration** - Just `Minigraf::open("data.graph")` and you're done
 
-**Status**: Early development. Phase 6.2 complete (Packed Pages + LRU Cache). Now starting Phase 6.3 (Benchmarks).
+**Status**: Early development. Phase 6.2 complete (Packed Pages + LRU Cache). Now starting Phase 6.4 (Benchmarks + edge cases + crates.io publish). Note: Phase 6.3 (query optimization) was completed as part of Phase 6.1.
 
 ## Why Datalog?
 
@@ -258,9 +258,10 @@ The `.graph` file uses a page-based format (like SQLite), with an optional WAL s
 **Phase 6.2**: ✅ Packed Pages + LRU Cache (Complete)
 - ~25 facts/page, LRU page cache, on-demand fact loading, file format v5
 
-**Phase 6.3/6.4**: 🎯 Benchmarks + Edge Cases + **crates.io publish** (Next)
+**Phase 6.4**: 🎯 Benchmarks + Edge Cases + **crates.io publish** (Next)
 - Criterion suite, performance at 10K/100K/1M facts
 - Oversized-fact and checkpoint-during-crash edge case tests
+- Error-path coverage raised from ~82%
 - GitHub Discussions enabled; first public crates.io release (v0.8.0)
 
 **Phase 7**: 🎯 Datalog Completeness

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries** written in Rust. It's designed to be the embedded graph memory layer for AI agents, mobile apps, and the browser — built on the SQLite philosophy: embedded, single-file, reliable, with time travel capabilities.
 
-**Current Status: Phase 6.2 COMPLETE ✅ → Phase 6.3 Next** - Packed Pages + LRU Cache:
+**Current Status: Phase 6.2 COMPLETE ✅ → Phase 6.4 Next** - Packed Pages + LRU Cache (note: Phase 6.3 query optimization was completed as part of Phase 6.1):
 - ✅ Phase 1: Property graph PoC (in-memory)
 - ✅ Phase 2: Persistent storage (`.graph` file format, embedded API)
 - ✅ Phase 3: Datalog core (EAV model, recursive rules) - COMPLETE!
@@ -14,8 +14,8 @@ Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries**
 - ✅ **Phase 5: ACID + WAL (crash safety, explicit transactions) - COMPLETE!**
 - ✅ **Phase 6.1: Covering indexes (EAVT, AEVT, AVET, VAET) + query optimizer - COMPLETE!**
 - ✅ **Phase 6.2: Packed pages + LRU page cache - COMPLETE!**
-- 🎯 Phase 6.3: Benchmarks + remaining query optimization - **NEXT**
-- 🎯 Phase 7: Datalog Completeness (negation, aggregation, disjunction)
+- 🎯 Phase 6.4: Benchmarks + edge case tests + crates.io publish - **NEXT** (Phase 6.3 query optimization done in 6.1)
+- 🎯 Phase 7: Datalog Completeness (negation, aggregation, disjunction; ≥90% branch coverage target)
 - 🎯 v1.0.0: 9-12 months
 
 ## Core Philosophy - CRITICAL
@@ -381,9 +381,11 @@ WAL sidecar <db>.wal (present while uncommitted writes exist):
 Run tests with: `cargo test`
 See `TEST_COVERAGE.md` for detailed coverage report.
 
-**Future Tests (Phase 6.3+)**:
+**Future Tests (Phase 6.4+)**:
 - Criterion benchmarks (insert throughput, query latency at 10K/100K/1M facts)
 - Memory profiling under load
+- Oversized-fact error path; checkpoint-during-crash recovery
+- Error-path coverage sweep (~82% → ≥90% target by end of Phase 7)
 
 ## Development Notes
 
