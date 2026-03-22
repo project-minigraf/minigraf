@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 authors = ["Aditya Mukhopadhyay"]
 repository = "https://github.com/adityamukho/minigraf"
 keywords = ["graph", "datalog", "bitemporal", "embedded", "database"]
-categories = ["database", "embedded"]
+categories = ["database-implementations", "embedded"]
 readme = "README.md"
 documentation = "https://docs.rs/minigraf"
 
