@@ -1,0 +1,122 @@
+# Minigraf
+
+> Embedded, single-file, bi-temporal graph database with Datalog queries — written in Rust.
+
+Minigraf is the SQLite of graph databases: zero configuration, one `.graph` file, embedded as a library. It stores facts in an Entity-Attribute-Value (EAV) model and queries them with Datalog, including recursive rules for graph traversal. Every fact carries two independent time dimensions (transaction time and valid time), enabling full bi-temporal time travel.
+
+**Current version**: 0.6.0 (pre-1.0 — API and file format may change)
+**Maturity**: Phase 5 of 7 complete. ACID + WAL are production-quality. Covering indexes land in Phase 6 (in progress). Not recommended for write-heavy workloads exceeding ~100k facts until Phase 6 ships.
+
+## Use for
+
+- **Agent memory with provenance**: Store facts an agent asserted, when it asserted them, and query any past state. Retract and correct beliefs without losing history.
+- **Audit-trail applications**: Compliance-grade history where both "what was recorded when" (transaction time) and "what was true when" (valid time) matter independently.
+- **Knowledge graphs**: Interconnected entity-relationship data with recursive traversal (e.g. reachability, ancestry, dependency chains).
+- **Event sourcing / temporal debugging**: Replay past states exactly as they existed at any transaction counter or wall-clock timestamp.
+- **Local-first / offline applications**: One portable `.graph` file, no server, no setup.
+- **Embedded Rust applications**: Link as a library; no daemon, no network socket.
+
+## Do not use for
+
+- Distributed or replicated databases (no clustering by design).
+- Client-server deployments (embedded-only by design).
+- Workloads requiring more than ~1M facts before Phase 6 indexes ship.
+- Applications needing SQL or Cypher (Datalog only).
+
+## Key concepts
+
+**Bi-temporal model**
+Every fact has two independent time axes:
+- *Transaction time* (`tx_count`): when the fact was recorded in the database. Immutable — set by the system.
+- *Valid time* (`valid_from` / `valid_to`): when the fact was true in the real world. Set by the caller.
+
+Query either axis independently or together:
+- `:as-of <tx_count|timestamp>` — time-travel to a past database state
+- `:valid-at <timestamp>` — query facts valid at a real-world point in time
+
+**EAV facts**
+The unit of storage is `(entity, attribute, value, valid_from, valid_to, tx_id, tx_count, asserted)`. Entities are UUIDs. Attributes are keywords (`:person/name`). Values are strings, integers, floats, booleans, entity refs, keywords, or null.
+
+**Datalog queries**
+Pattern matching with variable unification. Recursive rules use semi-naive fixed-point evaluation. Transitive closure and cycle-safe graph traversal are first-class.
+
+**ACID transactions**
+`begin_write()` → `commit()` / `rollback()`. Fact-level WAL with CRC32 protection. Crash recovery on open.
+
+**Single-file storage**
+Page-based `.graph` file (4 KB pages, magic `MGRF`, format v3). WAL sidecar (`.wal`) deleted on clean close. Endian-safe, cross-platform.
+
+## API (Rust)
+
+```rust
+use minigraf::OpenOptions;
+
+// Open or create
+let db = OpenOptions::new().path("memory.graph").open()?;
+
+// Transact facts
+db.execute(r#"(transact [[:agent-1 :belief/fact "Paris is in France"]
+                          [:agent-1 :belief/confidence 0.98]])"#)?;
+
+// Transact with explicit valid time
+db.execute(r#"(transact {:valid-from "2024-01-01" :valid-to "2025-01-01"}
+                        [[:agent-1 :employment/status :active]])"#)?;
+
+// Recursive rule: reachability
+db.execute(r#"(rule [(reachable ?a ?b) [?a :knows ?b]])
+              (rule [(reachable ?a ?b) [?a :knows ?m] (reachable ?m ?b)])"#)?;
+
+// Query
+db.execute(r#"(query [:find ?fact :where [:agent-1 :belief/fact ?fact]])"#)?;
+
+// Time travel — as of past transaction counter
+db.execute("(query [:find ?status :as-of 10 :where [:agent-1 :employment/status ?status]])")?;
+
+// Time travel — valid at real-world date
+db.execute(r#"(query [:find ?status :valid-at "2024-06-01"
+                      :where [:agent-1 :employment/status ?status]])"#)?;
+
+// Explicit transaction
+let mut tx = db.begin_write()?;
+tx.execute(r#"(retract [[:agent-1 :belief/fact "Paris is in France"]])"#)?;
+tx.commit()?;
+```
+
+## Datalog syntax reference
+
+```
+;; Transact
+(transact [[ <entity> <attribute> <value> ] ...])
+
+;; Transact with valid time
+(transact {:valid-from "ISO8601" :valid-to "ISO8601"} [[ ... ]])
+
+;; Retract
+(retract [[ <entity> <attribute> <value> ] ...])
+
+;; Query
+(query [:find ?var ...
+        :as-of <tx_count|"ISO8601">          ;; optional, transaction time
+        :valid-at <"ISO8601"|:any-valid-time> ;; optional, valid time
+        :where [<e> <a> <v>] ...])
+
+;; Recursive rule
+(rule [(<rule-name> ?arg ...) <body-clauses> ...])
+```
+
+## Source layout
+
+- `src/db.rs` — public API: `Minigraf`, `OpenOptions`, `WriteTransaction`
+- `src/graph/types.rs` — `Fact`, `Value`, EAV types, bi-temporal fields
+- `src/graph/storage.rs` — in-memory fact store with temporal query methods
+- `src/query/datalog/` — parser, executor, matcher, evaluator, optimizer
+- `src/storage/` — `StorageBackend` trait, file backend, WAL
+- `src/wal.rs` — write-ahead log, CRC32 entries, crash recovery
+- `src/temporal.rs` — UTC timestamp parsing (avoids chrono CVE GHSA-wcg3-cvx6-7396)
+
+## Links
+
+- [Repository](https://github.com/adityamukho/minigraf)
+- [Roadmap](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
+- [Philosophy](https://github.com/adityamukho/minigraf/blob/main/PHILOSOPHY.md)
+- [Security Policy](https://github.com/adityamukho/minigraf/security/policy)
