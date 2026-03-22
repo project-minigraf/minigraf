@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-03-22
+
+### Added
+- `BENCHMARKS.md` — full Criterion benchmark results at 1K/10K/100K/1M facts with machine spec, HTML report references, and heaptrack memory profiles
+- `examples/memory_profile.rs` — heaptrack profiling binary; accepts fact count as positional arg
+- `Cargo.toml` metadata: `repository`, `keywords`, `categories`, `readme`, `documentation` fields
+- Memory profile table in `README.md` "Performance" section
+
+### Changed
+- `README.md` Performance section now links to `BENCHMARKS.md` for full benchmark details
+- Phase badge and status text updated to reflect Phase 6.4b completion
+- crates.io publish deferred to Phase 6.5 (after file format v6 lands)
+
+### Removed
+- Dead `clap` dependency from `[dependencies]` — `clap` was listed but never imported in library or binary code
+
 ## [0.7.1] - 2026-03-22
 
 ### Fixed
