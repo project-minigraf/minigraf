@@ -293,7 +293,10 @@ mod tests {
         let length = u16::from_le_bytes([page[14], page[15]]) as usize;
 
         // Offset must be within the page and after the header + directory.
-        assert!(offset >= PACKED_HEADER_SIZE + 4, "data offset must be past header+directory");
+        assert!(
+            offset >= PACKED_HEADER_SIZE + 4,
+            "data offset must be past header+directory"
+        );
         assert!(offset < PAGE_SIZE, "data offset must be within page");
 
         // Length must be nonzero and the data must fit within the page.
@@ -301,8 +304,16 @@ mod tests {
         assert!(offset + length <= PAGE_SIZE, "record must fit within page");
 
         // Verify the bytes at the directory offset are the LE encoding of those values.
-        assert_eq!(&page[12..14], &(offset as u16).to_le_bytes(), "directory offset LE");
-        assert_eq!(&page[14..16], &(length as u16).to_le_bytes(), "directory length LE");
+        assert_eq!(
+            &page[12..14],
+            &(offset as u16).to_le_bytes(),
+            "directory offset LE"
+        );
+        assert_eq!(
+            &page[14..16],
+            &(length as u16).to_le_bytes(),
+            "directory length LE"
+        );
     }
 
     #[test]
