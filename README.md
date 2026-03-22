@@ -291,6 +291,29 @@ Because every fact carries both a *transaction time* (when it was recorded) and 
 
 An agent's memory is private to that agent instance. Embedding Minigraf directly in the agent's process means no network latency, no external service to manage, offline-capable operation, and a portable `.graph` file that travels with the agent. The single-file model also makes agent memory trivially snapshotable, versioned, or rolled back.
 
+**Pairing with vector stores (GraphRAG pattern):**
+
+Minigraf has no vector search — and doesn't need it. In a complete agentic memory stack, the two layers are complementary:
+
+| Layer | Tool | Job |
+|-------|------|-----|
+| Fuzzy retrieval | Vector store (Chroma, Pinecone, etc.) | "Find things similar to this prompt" |
+| Relational backbone | Minigraf | "Follow this relationship, audit this fact, rewind to this moment" |
+
+The recommended pattern: the vector store holds embeddings alongside an entity UUID; that UUID is the entry point into Minigraf where the bitemporal history and relationships live. Vectors find the starting node; Minigraf navigates and audits from there.
+
+```
+Vector store:  embedding → entity_uuid
+                                │
+                                ▼
+Minigraf:      entity_uuid ── :approved-by ──▶ approver
+                    │
+                    └── :approved-at "2025-01-14T14:00:00Z"
+                    └── tx history (who recorded this, when)
+```
+
+This keeps Minigraf lean (no vector index bloat) while giving agents both fuzzy discovery and deterministic, auditable relationship traversal.
+
 ### Target Use Cases
 
 1. **AI agents** - Verifiable reasoning, agent memory with provenance, task planning

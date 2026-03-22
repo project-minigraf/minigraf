@@ -25,6 +25,16 @@ Minigraf is the SQLite of graph databases: zero configuration, one `.graph` file
 - Client-server deployments (embedded-only by design).
 - Workloads requiring more than ~1M facts before Phase 6 indexes ship.
 - Applications needing SQL or Cypher (Datalog only).
+- Fuzzy / semantic similarity search (no vector index). Use a vector store for retrieval; use Minigraf for the relational backbone and audit layer.
+
+## Pair with (GraphRAG pattern)
+
+Minigraf has no vector search by design. In agentic stacks that need both fuzzy retrieval and auditable relationships, the recommended split is:
+
+- **Vector store** (Chroma, Pinecone, Qdrant, etc.) — holds embeddings + an entity UUID per document
+- **Minigraf** — holds the graph of relationships and full bitemporal history keyed on those UUIDs
+
+The vector store answers "what is similar to this prompt?"; Minigraf answers "given this entity, what are its exact relationships, who recorded them, and what did we believe at time T?" Each layer does what it's good at; neither duplicates the other.
 
 ## Key concepts
 
