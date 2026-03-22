@@ -12,7 +12,7 @@
 
 ## Benchmark Categories
 
-Seven benchmark groups, all using Criterion's `BenchmarkGroup` API for structured HTML output.
+Eight benchmark groups, all using Criterion's `BenchmarkGroup` API for structured HTML output.
 
 ### 1. `insert/` — Write throughput
 
@@ -25,7 +25,21 @@ Scenarios:
 - `batch_100/{1k,10k,100k}` — 100 facts in a single transact
 - `explicit_tx/{1k,10k,100k}` — single fact via `begin_write()` / `commit()`
 
-### 2. `query/` — Read latency
+### 2. `insert_file/` — Write throughput with file I/O
+
+Measures real-world write cost including WAL fsync. Uses a file-backed DB (via `tempfile::NamedTempFile`) pre-populated to N facts. The DB is opened once per group with `wal_checkpoint_threshold: usize::MAX` to suppress auto-checkpointing during the benchmark — this isolates the per-write WAL-append cost from occasional checkpoint spikes.
+
+Uses `b.iter(|| db.execute("(transact [...])"))` — the DB state mutates across iterations (it grows), which is acceptable and realistic. The WAL fsync cost dominates and is approximately constant per write regardless of DB size.
+
+Scenarios:
+- `single_fact/{1k,10k,100k}` — one fact per `execute()` call, file-backed + WAL fsync
+- `batch_100/{1k,10k,100k}` — 100 facts in a single transact, file-backed + WAL fsync
+- `explicit_tx/{1k,10k,100k}` — single fact via `begin_write()` / `commit()`, file-backed + WAL fsync
+
+The delta between `insert/` and `insert_file/` at each scale directly quantifies WAL fsync overhead.
+
+### 3. `query/` — Read latency
+
 
 DB pre-populated once per scale (outside the benchmark loop); queries run in tight Criterion `b.iter(|| ...)` loop.
 
@@ -38,7 +52,7 @@ Scenarios:
   `[:find ?name :where [:e0 :attr ?mid] [?mid :attr ?v] [?v :attr ?name]]`
   (exercises optimizer join reordering)
 
-### 3. `time_travel/` — Temporal query performance
+### 4. `time_travel/` — Temporal query performance
 
 Measures overhead of temporal filtering on top of base query cost. Includes 1M scale to allow direct comparison against `query/` at the same size and to fully characterize the temporal overhead curve.
 
@@ -46,7 +60,7 @@ Scenarios:
 - `as_of_counter/{1k,10k,100k,1m}` — `:as-of N` (tx counter snapshot)
 - `valid_at/{1k,10k,100k,1m}` — `:valid-at "TIMESTAMP"` (valid time filter)
 
-### 4. `recursion/` — Rule evaluation
+### 5. `recursion/` — Rule evaluation
 
 Measures semi-naive fixed-point iteration cost for transitive closure queries. All scenarios use in-memory DBs created by graph fixtures.
 
@@ -54,7 +68,7 @@ Scenarios:
 - `chain/{depth_10,depth_100,depth_1k}` — linear chain graph (worst case for recursion depth)
 - `fanout/{width_5_depth_5,width_10_depth_3}` — fan-out graph (tests delta size per iteration)
 
-### 5. `open/` — Database open time
+### 6. `open/` — Database open time
 
 Two sub-scenarios:
 
@@ -66,14 +80,14 @@ Scenarios:
 - `checkpointed/{1k,10k,100k,1m}` — clean open with no WAL
 - `wal_replay/{1k,10k}` — open with N committed WAL entries pending replay (1M excluded; setup at that scale is impractical with iter_batched)
 
-### 6. `checkpoint/` — WAL flush cost
+### 7. `checkpoint/` — WAL flush cost
 
 Measures `db.checkpoint()` cost as a function of facts committed to the WAL sidecar but not yet flushed to packed pages. The setup phase opens the DB with `wal_checkpoint_threshold: usize::MAX` to suppress auto-checkpointing during the N-fact population phase. Facts in the WAL at checkpoint time are committed (durably written) — the checkpoint flushes them to packed pages and then deletes the WAL file.
 
 Scenarios:
 - `{1k,10k}` — checkpoint after N committed facts pending in WAL sidecar
 
-### 7. `concurrent/` — Concurrency throughput
+### 8. `concurrent/` — Concurrency throughput
 
 Uses `std::thread::spawn` + `Arc<Minigraf>` with `std::sync::Barrier` synchronization to start all threads simultaneously. Measures total ops/sec under contention. Uses `b.iter_custom(...)` — Criterion's standard `iter` cannot express multi-thread workloads.
 
@@ -92,7 +106,7 @@ Scenarios:
 
 ```
 benches/
-  minigraf_bench.rs      # single entry point; all 7 groups via BenchmarkGroup
+  minigraf_bench.rs      # single entry point; all 8 groups via BenchmarkGroup
   helpers/
     mod.rs               # shared fixtures; included via `mod helpers;` in minigraf_bench.rs
 ```
@@ -106,6 +120,7 @@ Cargo treats each file directly under `benches/` as a bench entry point. Subdire
 | `populate_in_memory(n: usize)` | `Arc<Minigraf>` | query, time_travel, recursion, concurrent, insert |
 | `populate_file(n: usize, path: &str)` | `()` | open/checkpointed |
 | `populate_file_no_checkpoint(n: usize, path: &str)` | `()` | open/wal_replay, checkpoint (opens with `wal_checkpoint_threshold: usize::MAX`) |
+| `open_file_no_checkpoint(path: &str)` | `Arc<Minigraf>` | insert_file (returns open file-backed DB with `wal_checkpoint_threshold: usize::MAX`) |
 | `chain_graph(depth: usize)` | `Arc<Minigraf>` | recursion/chain |
 | `fanout_graph(width: usize, depth: usize)` | `Arc<Minigraf>` | recursion/fanout |
 
@@ -147,7 +162,14 @@ A new `## Performance` section added to `README.md` after the benchmark suite ru
 
 Benchmarks run with `cargo bench` on [hardware summary]. Full HTML reports: `target/criterion/`.
 
-### Insert throughput
+### Insert throughput (in-memory)
+| Pre-populated | Single fact | Batch (100) | Explicit tx |
+|---|---|---|---|
+| 1K  | X µs | X µs | X µs |
+| 10K | X µs | X µs | X µs |
+| 100K| X µs | X µs | X µs |
+
+### Insert throughput (file-backed, includes WAL fsync)
 | Pre-populated | Single fact | Batch (100) | Explicit tx |
 |---|---|---|---|
 | 1K  | X µs | X µs | X µs |
@@ -179,6 +201,6 @@ Values filled in after running the suite on the development machine. Prose summa
 
 - `cargo bench` completes without panics or Criterion errors
 - HTML reports generated in `target/criterion/` with stable measurements (Criterion noise < 5% for most benchmarks)
-- All 7 groups produce plausible numbers across all defined scales
+- All 8 groups produce plausible numbers across all defined scales
 - `README.md` has a populated `## Performance` section with actual numbers from the run
 - A written Phase 6.3b plan document referencing specific benchmark numbers identifies concrete optimization targets (e.g. "join_3pattern at 1M shows 50ms — optimizer improvement target")
