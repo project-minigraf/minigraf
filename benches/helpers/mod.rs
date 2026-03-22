@@ -152,13 +152,3 @@ fn insert_val_facts(db: &Minigraf, n: usize) {
     }
 }
 
-/// Human-readable scale label: 1_000 → "1k", 10_000 → "10k", etc.
-pub fn scale_label(n: usize) -> &'static str {
-    match n {
-        1_000 => "1k",
-        10_000 => "10k",
-        100_000 => "100k",
-        1_000_000 => "1m",
-        _ => "?",
-    }
-}
