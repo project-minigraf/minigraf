@@ -441,6 +441,60 @@ Publishing to crates.io at v0.8.0 is a **hard gate** — the project is invisibl
 
 ---
 
+## Phase 6.5: On-Disk B+Tree Indexes 🎯 FUTURE
+
+**Goal**: Replace the current paged-blob index serialisation with proper on-disk B+tree pages, so index lookups and range scans never require loading the full index into memory
+
+**Status**: 🎯 Planned — proceed after Phase 6.4 benchmarks confirm the need (or after confirming mobile memory budgets require it regardless)
+
+**Priority**: 🟡 High — required before Phase 8 (mobile); conditional on Phase 6.4 findings
+
+**Rationale**:
+
+The current index implementation (`btree.rs`) is a paged blob serialiser, not a true on-disk B+tree. The full round-trip is:
+
+- **Open**: load all index pages → deserialize entire `BTreeMap` into memory
+- **Query**: use in-memory `BTreeMap` (fast for small indexes)
+- **Checkpoint**: serialize entire `BTreeMap` → rewrite all index pages (100% write amplification)
+
+This works well at small scale. At 100K–1M facts — or on a mobile device with constrained RAM shared across all apps — the full in-memory index becomes a hard constraint. Phase 6.4 benchmarks will quantify the memory cost; this phase addresses it.
+
+A proper on-disk B+tree maps directly onto the existing `StorageBackend` trait:
+- Each B+tree node is one 4KB page (internal node or leaf node)
+- **Open**: read root page only
+- **Lookup**: traverse pages on demand — the LRU cache already handles page-level caching
+- **Range scan**: follow leaf-node chain pages
+- **Insert**: write only the path from root to modified leaf (typically 2–4 pages)
+
+The LRU page cache (`cache.rs`) already abstracts page-level I/O correctly; this phase plugs a proper B+tree into that abstraction.
+
+**File format**: v6
+
+Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces proper B+tree node pages (internal nodes + leaf nodes, new page type). The four index root page pointers in `FileHeader` already exist (`eavt_root_page`, `aevt_root_page`, `avet_root_page`, `vaet_root_page`) — they just point to paged blobs today and will point to B+tree roots after this phase.
+
+**Migration**: v5→v6 reads the old paged-blob indexes, rebuilds them into proper B+tree pages, writes new root pointers to the header. Automatic on first open, same pattern as all prior migrations.
+
+**Implementation plan**:
+
+1. **B+tree node page format**: Define internal node layout (keys + child page IDs) and leaf node layout (keys + `FactRef` values) within a 4KB page. Fill factor ~75% to leave room for insertions without immediate splits.
+2. **B+tree operations**: `search(key)`, `range_scan(start, end)`, `insert(key, value)`, `split_node()`. These operate on pages via `StorageBackend` + LRU cache.
+3. **Index integration**: Replace `write_all_indexes` / `read_*_index` in `btree.rs` with the new B+tree backed by pages. Update `persistent_facts.rs` to use page-level index operations instead of full-BTreeMap serialisation.
+4. **Remove load-all-at-startup**: Index no longer needs to be loaded into memory on open. `FactStorage` index lookups go through the page cache.
+5. **File format v6 + migration**: New `FileHeader` version, v5→v6 migration on first checkpoint after open.
+6. **Tests**: B+tree node split/merge correctness, range scan across multiple leaf pages, index rebuild from fact pages, v5→v6 migration roundtrip, concurrent read/write correctness.
+
+**Expected impact**:
+- Memory: index memory usage drops from O(facts) to O(cache_pages) — same bound as fact pages
+- Write amplification: checkpoint writes O(changed_paths) pages instead of O(all_index_pages)
+- Startup: open time drops from O(index_size) to O(1)
+- Mobile: makes Minigraf viable on memory-constrained devices without special tuning
+
+**Deliverable**: All four covering indexes (EAVT, AEVT, AVET, VAET) backed by proper on-disk B+tree pages; file format v6 with automatic v5 migration; index memory usage proportional to cache size, not database size
+
+**Timeline**: 4-6 weeks
+
+---
+
 ## Phase 7: Datalog Completeness 🎯 FUTURE
 
 **Goal**: Negation, aggregation, and disjunction — the three features required for production-grade query workloads
@@ -849,6 +903,11 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 - GitHub Discussions enabled
 - **First public release on crates.io** — API reference auto-published to docs.rs
 
+### v0.8.5 - 🎯 Phase 6.5 (On-Disk B+Tree Indexes)
+- Proper on-disk B+tree for all four covering indexes (EAVT, AEVT, AVET, VAET)
+- Index memory usage proportional to cache size, not database size
+- File format v6 with automatic v5 migration
+
 ### v0.9.0 - 🎯 Phase 7 (Datalog Completeness)
 - Stratified negation (`not` / `not-join`)
 - Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`)
@@ -912,6 +971,7 @@ When evaluating features, ask:
 - ✅ Phase 6.1: Complete (March 2026) - Covering Indexes + Query Optimizer
 - ✅ Phase 6.2: Complete (March 2026) - Packed Pages + LRU Cache
 - 🎯 Phase 6.4: 2-3 weeks (Benchmarks + edge case tests + **crates.io publish**) - **NEXT** (Phase 6.3 query optimization completed in Phase 6.1)
+- 🎯 Phase 6.5: 4-6 weeks (On-disk B+tree indexes, file format v6 — conditional on Phase 6.4 benchmark findings)
 - 🎯 Phase 7: 6-8 weeks (Datalog Completeness — negation, aggregation, disjunction; ≥90% branch coverage)
 - 🎯 Phase 8: 3-4 months (Cross-platform — WASM, mobile, language bindings)
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)

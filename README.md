@@ -264,6 +264,11 @@ The `.graph` file uses a page-based format (like SQLite), with an optional WAL s
 - Error-path coverage raised from ~82%
 - GitHub Discussions enabled; first public crates.io release (v0.8.0)
 
+**Phase 6.5**: 🎯 On-Disk B+Tree Indexes
+- Replace paged-blob index serialisation with proper on-disk B+tree pages
+- Index memory usage proportional to cache size, not database size
+- File format v6 with automatic v5 migration
+
 **Phase 7**: 🎯 Datalog Completeness
 - Stratified negation (`not` / `not-join`)
 - Aggregation (`count`, `sum`, `min`, `max`, `:with`)

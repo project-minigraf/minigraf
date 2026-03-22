@@ -15,6 +15,7 @@ Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries**
 - ✅ **Phase 6.1: Covering indexes (EAVT, AEVT, AVET, VAET) + query optimizer - COMPLETE!**
 - ✅ **Phase 6.2: Packed pages + LRU page cache - COMPLETE!**
 - 🎯 Phase 6.4: Benchmarks + edge case tests + crates.io publish - **NEXT** (Phase 6.3 query optimization done in 6.1)
+- 🎯 Phase 6.5: On-disk B+tree indexes (file format v6; conditional on Phase 6.4 benchmark findings)
 - 🎯 Phase 7: Datalog Completeness (negation, aggregation, disjunction; ≥90% branch coverage target)
 - 🎯 v1.0.0: 9-12 months
 
@@ -524,10 +525,16 @@ When implementing features, always ask:
 - ✅ FileHeader v5 (fact_page_format byte), auto v4→v5 migration
 - ✅ 280 comprehensive tests
 
-**Phase 6.3** (next): Benchmarks
+**Phase 6.4** (next): Benchmarks + edge cases + crates.io publish
 - Criterion benchmark suite (insert throughput, query latency)
 - Target scales: 10K / 100K / 1M facts
-- Memory profiling
+- Memory profiling; oversized-fact + checkpoint-during-crash tests
+
+**Phase 6.5** (4-6 weeks): On-Disk B+Tree Indexes
+- Replace paged-blob index serialisation with proper per-page B+tree nodes
+- All four covering indexes: EAVT, AEVT, AVET, VAET
+- Index memory usage O(cache_pages) instead of O(facts)
+- File format v6, automatic v5 migration
 
 **Phase 7** (6-8 weeks): Datalog Completeness
 - Stratified negation (`not` / `not-join`)
