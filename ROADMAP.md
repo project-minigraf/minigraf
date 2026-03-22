@@ -506,13 +506,22 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 ## Phase 7: Datalog Completeness 🎯 FUTURE
 
-**Goal**: Negation, aggregation, and disjunction — the three features required for production-grade query workloads
+**Goal**: Complete the Datalog query engine — negation, aggregation, disjunction, temporal range queries, and prepared statements
 
 **Status**: 🎯 Planned
 
 **Priority**: 🔴 Critical — without these, realistic production queries cannot be expressed in Datalog
 
-**Rationale**: The highlighted use cases (agentic memory, audit, mobile, browser) all require at minimum negation and aggregation. Expanding to mobile and WASM platforms before the query engine can express production-grade queries means shipping an incomplete product to more places. All three features are additive — existing queries continue to work unchanged. Semantics are well-established (Datomic and XTDB are production references for all three).
+**Rationale**: The highlighted use cases (agentic memory, audit, mobile, browser) all require at minimum negation and aggregation. Expanding to mobile and WASM platforms before the query engine can express production-grade queries means shipping an incomplete product to more places. All features are additive — existing queries continue to work unchanged. Semantics are well-established (Datomic and XTDB are production references for all three).
+
+**Sub-phases**:
+- **7.1** Stratified Negation (`not` / `not-join`)
+- **7.2** Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`) — includes arithmetic filter predicates
+- **7.3** Disjunction (`or` / `or-join`)
+- **7.4** Query Optimizer Improvements (deferred from Phase 6.3)
+- **7.5** Tests + Error Coverage (≥90% branch coverage target)
+- **7.6** Prepared Statements (parse + plan once, execute many times, temporal bind slots)
+- **7.7** Temporal Metadata Bindings + Range Queries (`:db/valid-from`, `:db/valid-to`, `:db/tx-count` as queryable pseudo-attributes; unlocks Time Interval, Time-Point Lookup, Time-Interval Lookup query classes)
 
 ### 7.1 Stratified Negation (`not` / `not-join`)
 
@@ -734,6 +743,87 @@ The query optimizer uses selectivity estimates to pick join order. Different `:a
 - Error: missing bind value at execute time
 - Error: type mismatch (e.g., `Val` supplied for an `:as-of` slot)
 - Attribute position rejected as a bind slot at prepare time
+
+**Estimated complexity**: 2-3 weeks
+
+---
+
+### 7.7 Temporal Metadata Bindings + Range Queries
+
+**Goal**: Expose `valid_from`, `valid_to`, and `tx_count` as first-class bindable values in Datalog `:where` clauses, unlocking the full four-class taxonomy of temporal queries described in the bi-temporal literature.
+
+**Background — the four temporal query classes**:
+
+Most people are familiar with point-in-time queries (`:as-of`, `:valid-at`), but a complete bi-temporal query model covers four classes:
+
+| Class | Description | Minigraf before 7.7 |
+|---|---|---|
+| **Point-in-Time** | Snapshot of state at a specific moment | ✅ `:as-of` / `:valid-at` |
+| **Time Interval** | Facts alive at any point during [T1, T2] | ⚠️ `:any-valid-time` only (no range predicate) |
+| **Time-Point Lookup** | Given objects + criteria, find *when* those states existed | ❌ temporal metadata not queryable |
+| **Time-Interval Lookup** | Find interval(s) where object states matched criteria | ❌ temporal metadata not queryable |
+
+The root gap: `valid_from`, `valid_to`, and `tx_count` are stored per-fact but are invisible to the Datalog query engine. Classes 3 and 4 are entirely unreachable, and class 2 is a blunt instrument.
+
+**Pseudo-attributes** (built-in, read-only, never stored as facts):
+
+| Pseudo-attribute | Type | Meaning |
+|---|---|---|
+| `:db/valid-from` | `i64` (Unix ms) | Fact's valid-time start |
+| `:db/valid-to` | `i64` (Unix ms) | Fact's valid-time end (`i64::MAX` = forever) |
+| `:db/tx-count` | `u64` | Transaction counter at which fact was written |
+| `:db/tx-id` | `Uuid` | Transaction UUID |
+
+These bind as ordinary `?var` in patterns alongside `:any-valid-time`, which disables the engine's automatic valid-time filter so that temporal metadata is accessible:
+
+```datalog
+;; Time Interval — facts alive at any point during [T1, T2]
+;; (valid_from <= T2 AND valid_to >= T1)
+(query [:find ?e ?name
+        :any-valid-time
+        :where [?e :person/name ?name]
+               [?e :db/valid-from ?vf]
+               [?e :db/valid-to ?vt]
+               [(<= ?vf 1704067200000)]   ;; vf <= T2
+               [(>= ?vt 1696118400000)]]) ;; vt >= T1
+
+;; Time-Point Lookup — find all moments when Alice's salary exceeded 100k
+(query [:find ?vf
+        :any-valid-time
+        :where [:alice :person/salary ?s]
+               [:alice :db/valid-from ?vf]
+               [(> ?s 100000)]])
+
+;; Time-Interval Lookup — find intervals when Alice was employed
+(query [:find ?vf ?vt
+        :any-valid-time
+        :where [:alice :employment/status :employed]
+               [:alice :db/valid-from ?vf]
+               [:alice :db/valid-to ?vt]])
+```
+
+**Dependency on Phase 7.2**:
+
+Arithmetic filter predicates — `[(op ?var literal)]` — are required for Time Interval and Time-Point Lookup queries. These predicates are also needed for aggregation (Phase 7.2). Phase 7.2 should implement the predicate evaluation infrastructure; Phase 7.7 then applies it to temporal metadata bindings.
+
+**Implementation**:
+
+- Parser: recognise `:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id` as `PseudoAttribute` tokens in attribute position
+- Executor: when a `PseudoAttribute` appears, bind the corresponding field from the matched fact instead of filtering on a stored attribute value
+- `FactStorage`: ensure `get_facts_by_*` scan paths return temporal metadata alongside matched facts when pseudo-attributes are present in the query plan
+- Optimizer: pseudo-attribute patterns do not drive index selection (no AVET entry exists for pseudo-attributes); they are applied as post-scan filters
+- `:any-valid-time` required in query to suppress automatic valid-time filtering when `:db/valid-from` / `:db/valid-to` are used in patterns
+
+**Tests**:
+
+- Time Interval query: facts alive during a half-open interval
+- Time Interval query: facts alive for the *entire* interval (stricter predicate)
+- Time-Point Lookup: find historic time points matching a value threshold
+- Time-Interval Lookup: enumerate all validity intervals for an entity-attribute pair
+- Bind `:db/tx-count` in `:where` and join it with a tx-time `:as-of` query
+- `:db/tx-id` binding and join across two entities written in the same transaction
+- Pseudo-attribute in entity or value position is rejected at parse time (parse error)
+- Pseudo-attribute without `:any-valid-time` emits a warning (or returns an empty result set with a diagnostic, TBD)
 
 **Estimated complexity**: 2-3 weeks
 
@@ -1021,8 +1111,13 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 
 ### v0.9.0 - 🎯 Phase 7 (Datalog Completeness)
 - Stratified negation (`not` / `not-join`)
-- Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`)
+- Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`) + arithmetic filter predicates
 - Disjunction (`or` / `or-join`)
+- Query optimizer improvements (cost-based, rule evaluation)
+- Prepared statements with temporal bind slots
+- Temporal metadata pseudo-attributes (`:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`)
+- Full four-class temporal query taxonomy (point-in-time, time interval, time-point lookup, time-interval lookup)
+- ≥90% branch coverage
 
 ### v0.10.0 - 🎯 Phase 8 (Cross-platform)
 - WASM support (browser + WASI)
@@ -1083,7 +1178,7 @@ When evaluating features, ask:
 - ✅ Phase 6.2: Complete (March 2026) - Packed Pages + LRU Cache
 - 🎯 Phase 6.4: 2-3 weeks (Benchmarks + edge case tests + **crates.io publish**) - **NEXT** (Phase 6.3 query optimization completed in Phase 6.1)
 - 🎯 Phase 6.5: 4-6 weeks (On-disk B+tree indexes, file format v6 — conditional on Phase 6.4 benchmark findings)
-- 🎯 Phase 7: 6-8 weeks (Datalog Completeness — negation, aggregation, disjunction; ≥90% branch coverage)
+- 🎯 Phase 7: 8-12 weeks (Datalog Completeness — negation, aggregation, disjunction, prepared statements, temporal metadata bindings; ≥90% branch coverage)
 - 🎯 Phase 8: 3-4 months (Cross-platform — WASM, mobile, language bindings)
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)
 - 🎯 **v1.0.0: 9-12 months**
