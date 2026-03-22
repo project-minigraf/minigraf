@@ -2,7 +2,7 @@
 
 > "Minigraf is not trying to replace Neo4j. It's trying to replace `serde_json` for graph data."
 
-Minigraf aims to be **the SQLite of bi-temporal graph databases** - a small, fast, reliable, embedded graph database with Datalog queries and time travel capabilities.
+Minigraf aims to be **the embedded graph memory layer for AI agents, mobile apps, and the browser** — built on the SQLite philosophy: small, fast, reliable, zero-configuration, single-file.
 
 ## Why Datalog?
 
@@ -51,7 +51,7 @@ We can ship a useful, reliable database faster with Datalog.
 
 **Datalog space**: Gap exists for single-file embedded bi-temporal DB
 
-Minigraf = SQLite + Datomic + single file (no one else offers this)
+Minigraf = embedded graph memory for agents/mobile/browser + SQLite's simplicity + Datomic's temporal model (no one else offers this combination)
 
 ---
 

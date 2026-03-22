@@ -6,7 +6,7 @@
 [![Rust Edition](https://img.shields.io/badge/rust-2024-orange.svg)](https://blog.rust-lang.org/2024/10/17/Rust-1.82.0.html)
 [![Phase](https://img.shields.io/badge/phase-6.2%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
 
-> **The SQLite of bi-temporal graph databases** - Embedded Datalog engine written in Rust
+> **Embedded graph memory for AI agents, mobile apps, and the browser** — the SQLite of bi-temporal graph databases
 
 A tiny, self-contained graph database with **Datalog queries** and **bi-temporal time travel**. Think SQLite, but for connected data with full history.
 
@@ -286,7 +286,7 @@ No other database offers this combination:
 | **Rust** | ✅ Yes | ❌ Clojure | ✅ Yes | ❌ Java | ❌ C |
 | **WASM Ready** | 🎯 Goal | ❌ No | ⚠️ Limited | ❌ No | ✅ Yes |
 
-**Minigraf = SQLite's simplicity + Datomic's temporal model**
+**Embedded graph memory for agents, mobile, and the browser — SQLite's simplicity + Datomic's temporal model**
 
 ### For AI Agents
 
@@ -469,7 +469,7 @@ A `.graph` file is a single blob. Exporting a user's data is one read; importing
 7. **Local-first applications** - Offline-capable, user-owned data
 8. **Development/testing** - Local graph DB like SQLite
 
-### Philosophy: The SQLite of Graph Databases
+### Philosophy: The SQLite Approach
 
 - **Zero-configuration** - No setup, just works
 - **Embedded-first** - Library, not server
@@ -556,7 +556,7 @@ Current tests (280 total):
 - ✅ **Minigraf**: Single file, embedded, Rust
 - ✅ **Datomic**: Production-proven, but client-server, Clojure, proprietary
 
-**Minigraf aims to be the simplest, most portable option: SQLite's simplicity + Datomic's temporal model.**
+**Minigraf aims to be the simplest, most portable option: embedded graph memory for agents, mobile, and the browser — built on SQLite's simplicity and Datomic's temporal model.**
 
 ## Contributing
 

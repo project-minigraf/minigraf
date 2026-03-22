@@ -2,7 +2,7 @@
 
 > The path from property graph PoC to production-ready bi-temporal Datalog database
 
-**Philosophy**: "SQLite for bi-temporal graph databases" - Be boring, be reliable, be embeddable.
+**Philosophy**: Embedded graph memory for agents, mobile, and the browser — built on the SQLite approach: be boring, be reliable, be embeddable.
 
 ---
 

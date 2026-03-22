@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries** written in Rust. It's designed to be the "SQLite of graph databases" - embedded, single-file, reliable, with time travel capabilities.
+Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries** written in Rust. It's designed to be the embedded graph memory layer for AI agents, mobile apps, and the browser — built on the SQLite philosophy: embedded, single-file, reliable, with time travel capabilities.
 
 **Current Status: Phase 6.2 COMPLETE ✅ → Phase 6.3 Next** - Packed Pages + LRU Cache:
 - ✅ Phase 1: Property graph PoC (in-memory)
