@@ -419,7 +419,138 @@ tx.commit()?;  // or tx.rollback()?
 
 ---
 
-## Phase 7: Cross-Platform Expansion 🎯 FUTURE
+## Phase 7: Datalog Completeness 🎯 FUTURE
+
+**Goal**: Negation, aggregation, and disjunction — the three features required for production-grade query workloads
+
+**Status**: 🎯 Planned
+
+**Priority**: 🔴 Critical — without these, realistic production queries cannot be expressed in Datalog
+
+**Rationale**: The highlighted use cases (agentic memory, audit, mobile, browser) all require at minimum negation and aggregation. Expanding to mobile and WASM platforms before the query engine can express production-grade queries means shipping an incomplete product to more places. All three features are additive — existing queries continue to work unchanged. Semantics are well-established (Datomic and XTDB are production references for all three).
+
+### 7.1 Stratified Negation (`not` / `not-join`)
+
+**Goal**: Express "find entities where attribute X is absent" and similar absence queries.
+
+**Why it's load-bearing**:
+- Agentic memory: "what has the agent not verified?", "beliefs with no supporting evidence"
+- Audit: "contracts without a sign-off event", "records missing a required field"
+- Developer tooling: "modules with no dependents", "entities never retracted"
+- Without negation these queries require pulling results into application memory and filtering — defeating the query engine
+
+**Semantics**: Stratified negation (Datalog^¬) — the standard safe subset. The rule dependency graph is analysed at query time; programs where negation creates a recursive cycle are rejected with a clear error (unstable semantics). Non-recursive negation is always safe.
+
+**Syntax** (Datomic-inspired):
+```datalog
+;; not — exclude bindings where sub-clause matches
+(query [:find ?e
+        :where [?e :person/name _]
+               (not [?e :person/age _])])
+
+;; not-join — exclude with shared variables from outer scope
+(query [:find ?e
+        :where [?e :task/status :pending]
+               (not-join [?e]
+                 [?e :task/blocked-by _])])
+```
+
+**Implementation**:
+- Parser: add `not` and `not-join` clause types to `WhereClause` enum
+- Stratification analysis: build rule dependency graph, detect negation cycles, return error if unstable
+- Executor: evaluate negative sub-query against current binding set, subtract matching bindings
+- All changes additive; existing queries unaffected
+
+**Estimated complexity**: 2-4 weeks
+
+### 7.2 Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`)
+
+**Goal**: Express counting, summing, and extremes directly in queries rather than post-processing in application code.
+
+**Why it's load-bearing**:
+- Audit / compliance: "how many transactions in this time window?", "total value asserted per entity"
+- Agentic memory: "how many beliefs does the agent hold about entity X?"
+- Analytics: "most-referenced entity", "earliest valid-from per attribute"
+- Without aggregation, every app that needs a count writes its own post-processing loop
+
+**Syntax** (Datomic-inspired):
+```datalog
+;; count
+(query [:find (count ?e)
+        :where [?e :person/name _]])
+
+;; sum with grouping (:with specifies grouping variables)
+(query [:find ?dept (sum ?salary)
+        :with ?e
+        :where [?e :employee/dept ?dept]
+               [?e :employee/salary ?salary]])
+
+;; min / max
+(query [:find (min ?ts)
+        :where [?e :event/timestamp ?ts]])
+
+;; distinct collect
+(query [:find (distinct ?tag)
+        :where [?e :note/tag ?tag]])
+```
+
+**Implementation**:
+- Parser: add aggregate expression variants to the `:find` clause; add `:with` clause
+- Types: `FindSpec::Aggregate { func, var }`, `AggregateFunc` enum
+- Executor: post-process binding sets — group by non-aggregate find variables, apply aggregate functions; no changes to core evaluation engine
+- All changes additive
+
+**Estimated complexity**: 2-3 weeks
+
+### 7.3 Disjunction (`or` / `or-join`)
+
+**Goal**: Express "match condition A or condition B" without running two queries and unioning in application code.
+
+**Why it's useful** (lower urgency than 7.1 and 7.2 — can be worked around, but becomes painful in complex rules):
+- "Find notes tagged :work or :urgent"
+- "Find entities where :status is :active or :pending"
+- Recursive rules with branching reachability conditions
+
+**Syntax** (Datomic-inspired):
+```datalog
+;; or — all branches must bind the same variables
+(query [:find ?e
+        :where (or [?e :task/status :active]
+                   [?e :task/status :pending])])
+
+;; or-join — branches may bind different variables, explicit join vars declared
+(query [:find ?e
+        :where (or-join [?e]
+                 [?e :employee/dept :engineering]
+                 (and [?e :employee/role :contractor]
+                      [?e :employee/dept :product]))])
+```
+
+**Implementation**:
+- Parser: add `or` and `or-join` clause types; add `and` grouping clause
+- Executor: evaluate each branch independently against current binding set, union results, deduplicate
+- `or-join`: validate that declared join variables appear in all branches
+- All changes additive
+
+**Estimated complexity**: 2-3 weeks
+
+### 7.4 Tests
+
+- Unit tests for each new clause type (parser, types, matcher)
+- Integration tests covering realistic production query patterns:
+  - Absence queries with `not` / `not-join`
+  - Aggregation with grouping, bi-temporal filters, and recursive rules
+  - Disjunction in flat queries and rules
+- Stratification rejection tests: programs with negation cycles must produce clear errors, not incorrect results
+- Regression suite: all 280 existing tests continue to pass
+
+**Deliverable**: A Datalog engine that can express any query a production workload is likely to require — negation, aggregation, disjunction, and recursion, composable with bi-temporal filters
+
+**Timeline**: 6-8 weeks
+
+---
+
+## Phase 8: Cross-Platform Expansion 🎯 FUTURE
 
 **Goal**: WASM, mobile, language bindings
 
@@ -427,13 +558,15 @@ tx.commit()?;  // or tx.rollback()?
 
 **Priority**: 🟢 Medium
 
-### 7.1 WebAssembly Support
+**Rationale**: Cross-platform expansion delivers a complete query engine (Phase 7) to more environments — not an incomplete one. Phase 7 ships first.
+
+### 8.1 WebAssembly Support
 
 **Goal**: Run Minigraf as a WASM module in two distinct environments: browser (JavaScript/TypeScript) and server-side WASM runtimes (WASI).
 
 There are two separate compilation targets with different requirements:
 
-#### 7.1a Browser (`wasm32-unknown-unknown` + `wasm-bindgen`)
+#### 8.1a Browser (`wasm32-unknown-unknown` + `wasm-bindgen`)
 
 **Features**:
 - 🎯 `IndexedDbBackend`: stub already exists in `src/storage/backend/indexeddb.rs`; implement using `web-sys` + `wasm-bindgen`
@@ -492,7 +625,7 @@ wasm-pack publish
 
 **Deliverable**: npm package `@minigraf/core` — browser apps can `import { Minigraf } from '@minigraf/core'` and get full TypeScript types; page-granular IndexedDB backend keeps write amplification proportional to actual changes
 
-#### 7.1b Server-side WASM (`wasm32-wasip1` / WASI)
+#### 8.1b Server-side WASM (`wasm32-wasip1` / WASI)
 
 **Goal**: Run Minigraf inside server-side WASM runtimes (Wasmtime, Wasmer, Cloudflare Workers with WASI, Fastly Compute).
 
@@ -513,7 +646,7 @@ cargo build --target wasm32-wasip1 --release
 
 **Deliverable**: Minigraf `.wasm` binary runs under Wasmtime/Wasmer with file-backed storage; suitable for use in Cloudflare Workers (WASI) and similar edge runtimes
 
-### 7.2 Mobile Bindings
+### 8.2 Mobile Bindings
 
 **Goal**: Ship Minigraf as a drop-in native library for Android (Kotlin/Java) and iOS (Swift), with pre-built artifacts so mobile developers don't need to touch Rust.
 
@@ -567,7 +700,7 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 - 🎯 Android Gradle integration example
 - 🎯 Memory/resource management: ensure `Minigraf` handle lifecycle is safe across FFI boundary
 
-### 7.3 Language Bindings
+### 8.3 Language Bindings
 
 **Goal**: Python and C FFI as the highest-priority non-mobile targets (covers scripting, agent frameworks, and "any other language via C").
 
@@ -577,7 +710,7 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 - 🎯 Node.js / TypeScript bindings via `neon` or `napi-rs`
 - 🎯 Published to PyPI (`minigraf`), npm (`@minigraf/core`)
 
-**Note**: Python and C bindings share the UniFFI / cbindgen work done for mobile — the incremental cost is small once Phase 7.2 is complete.
+**Note**: Python and C bindings share the UniFFI / cbindgen work done for mobile — the incremental cost is small once Phase 8.2 is complete.
 
 **Deliverable**: Run anywhere - desktop, mobile, web, embedded; official packages on crates.io, PyPI, npm, Maven, Swift Package Index
 
@@ -585,7 +718,7 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 
 ---
 
-## Phase 8: Ecosystem & Tooling 🎯 FUTURE
+## Phase 9: Ecosystem & Tooling 🎯 FUTURE
 
 **Goal**: Developer experience and ecosystem
 
@@ -593,7 +726,7 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 
 **Priority**: 🟢 Medium
 
-### 8.1 Developer Tools
+### 9.1 Developer Tools
 
 **Features**:
 - 🎯 Database inspector/debugger
@@ -601,7 +734,7 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 - 🎯 Time travel visualizer
 - 🎯 Migration tools
 
-### 8.2 Documentation
+### 9.2 Documentation
 
 **Features**:
 - 🎯 Complete API reference
@@ -610,7 +743,7 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 - 🎯 Performance tuning guide
 - 🎯 Real-world examples
 
-### 8.3 Ecosystem Libraries
+### 9.3 Ecosystem Libraries
 
 **Features**:
 - 🎯 Graph algorithms (as separate crate)
@@ -677,10 +810,15 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 - Criterion benchmark suite
 - Validated performance at 10K / 100K / 1M facts
 
-### v0.9.0 - 🎯 Phase 7 (Cross-platform)
-- WASM support
-- Mobile bindings
-- Language bindings
+### v0.9.0 - 🎯 Phase 7 (Datalog Completeness)
+- Stratified negation (`not` / `not-join`)
+- Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`)
+- Disjunction (`or` / `or-join`)
+
+### v0.10.0 - 🎯 Phase 8 (Cross-platform)
+- WASM support (browser + WASI)
+- Mobile bindings (iOS + Android)
+- Language bindings (Python, C, Node.js)
 
 ### v1.0.0 - 🎯 Production Ready (12-15 months)
 - Stable API
@@ -735,9 +873,10 @@ When evaluating features, ask:
 - ✅ Phase 6.1: Complete (March 2026) - Covering Indexes + Query Optimizer
 - ✅ Phase 6.2: Complete (March 2026) - Packed Pages + LRU Cache
 - 🎯 Phase 6.3: 1-2 weeks (Benchmarks) - **NEXT**
-- 🎯 Phase 7: 3-4 months (Cross-platform)
-- 🎯 Phase 8: Ongoing (Ecosystem)
-- 🎯 **v1.0.0: 9-12 months** (ahead of schedule)
+- 🎯 Phase 7: 6-8 weeks (Datalog Completeness — negation, aggregation, disjunction)
+- 🎯 Phase 8: 3-4 months (Cross-platform — WASM, mobile, language bindings)
+- 🎯 Phase 9: Ongoing (Ecosystem)
+- 🎯 **v1.0.0: 9-12 months**
 
 **Note**: This is a hobby project. Timeline is flexible but realistic.
 

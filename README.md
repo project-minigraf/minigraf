@@ -261,12 +261,17 @@ The `.graph` file uses a page-based format (like SQLite), with an optional WAL s
 **Phase 6.3**: 🎯 Benchmarks (Next)
 - Criterion suite, performance at 10K/100K/1M facts
 
-**Phase 7**: 🎯 Cross-platform
-- WASM (IndexedDB backend)
-- Mobile bindings
-- Language bindings
+**Phase 7**: 🎯 Datalog Completeness
+- Stratified negation (`not` / `not-join`)
+- Aggregation (`count`, `sum`, `min`, `max`, `:with`)
+- Disjunction (`or` / `or-join`)
 
-**v1.0.0**: Phase 7 complete
+**Phase 8**: 🎯 Cross-platform
+- WASM (browser via `wasm-pack` + npm; server-side via WASI)
+- Mobile bindings (iOS `.xcframework`, Android `.aar` via UniFFI)
+- Language bindings (Python, C, Node.js)
+
+**v1.0.0**: Phase 8 complete
 
 See [ROADMAP.md](ROADMAP.md) for detailed breakdown.
 

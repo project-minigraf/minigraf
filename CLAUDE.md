@@ -15,6 +15,7 @@ Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries**
 - ✅ **Phase 6.1: Covering indexes (EAVT, AEVT, AVET, VAET) + query optimizer - COMPLETE!**
 - ✅ **Phase 6.2: Packed pages + LRU page cache - COMPLETE!**
 - 🎯 Phase 6.3: Benchmarks + remaining query optimization - **NEXT**
+- 🎯 Phase 7: Datalog Completeness (negation, aggregation, disjunction)
 - 🎯 v1.0.0: 9-12 months
 
 ## Core Philosophy - CRITICAL
@@ -135,7 +136,7 @@ The codebase is organized into the following modules:
      - Page-based storage, cross-platform format
      - Supports Linux, macOS, Windows, iOS, Android
    - `backend/memory.rs`: In-memory backend for testing
-   - `backend/indexeddb.rs`: Future WASM browser backend (Phase 7)
+   - `backend/indexeddb.rs`: Future WASM browser backend (Phase 8)
    - `index.rs`: Index key types (EAVT, AEVT, AVET, VAET), `FactRef`, `encode_value`
      - `FactRef { page_id, slot_index }`: disk location pointer for committed facts
      - Canonical value encoding for sort-order-preserving byte comparison
@@ -526,10 +527,15 @@ When implementing features, always ask:
 - Target scales: 10K / 100K / 1M facts
 - Memory profiling
 
-**Phase 7** (3-4 months): Cross-platform
-- WASM (IndexedDB backend)
-- Mobile bindings (iOS, Android)
-- Language bindings (Python, JavaScript)
+**Phase 7** (6-8 weeks): Datalog Completeness
+- Stratified negation (`not` / `not-join`)
+- Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`)
+- Disjunction (`or` / `or-join`)
+
+**Phase 8** (3-4 months): Cross-platform
+- WASM (browser via wasm-pack + npm; server-side via WASI)
+- Mobile bindings (iOS `.xcframework`, Android `.aar` via UniFFI)
+- Language bindings (Python, JavaScript, C)
 
 **v1.0.0** (12-15 months): Production Ready
 - Stable API
@@ -654,7 +660,7 @@ Before publishing the crate, verify all of the following:
 
 ### Versioning
 - [ ] Publish as `0.x` — no backwards-compat promise until v1.0.0
-- [ ] Stable API target is v1.0.0 (after Phase 7 cross-platform work)
+- [ ] Stable API target is v1.0.0 (after Phase 8 cross-platform work)
 
 ## Important Reminders
 
