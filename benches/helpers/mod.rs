@@ -22,7 +22,11 @@ pub fn populate_in_memory(n: usize) -> Arc<Minigraf> {
 
 /// File-backed DB with `n` value facts, fully checkpointed (no WAL sidecar).
 pub fn populate_file(n: usize, path: &str) {
-    let db = OpenOptions::new().page_cache_size(256).path(path).open().unwrap();
+    let db = OpenOptions::new()
+        .page_cache_size(256)
+        .path(path)
+        .open()
+        .unwrap();
     insert_val_facts(&db, n);
     db.checkpoint().unwrap();
 }
@@ -75,8 +79,10 @@ pub fn chain_graph(depth: usize) -> Arc<Minigraf> {
         cmd.push_str("])");
         db.execute(&cmd).unwrap();
     }
-    db.execute("(rule [(reach ?from ?to) [?from :next ?to]])").unwrap();
-    db.execute("(rule [(reach ?from ?to) [?from :next ?mid] (reach ?mid ?to)])").unwrap();
+    db.execute("(rule [(reach ?from ?to) [?from :next ?to]])")
+        .unwrap();
+    db.execute("(rule [(reach ?from ?to) [?from :next ?mid] (reach ?mid ?to)])")
+        .unwrap();
     Arc::new(db)
 }
 
@@ -108,8 +114,10 @@ pub fn fanout_graph(width: usize, depth: usize) -> Arc<Minigraf> {
         cmd.push_str("])");
         db.execute(&cmd).unwrap();
     }
-    db.execute("(rule [(reach ?from ?to) [?from :next ?to]])").unwrap();
-    db.execute("(rule [(reach ?from ?to) [?from :next ?mid] (reach ?mid ?to)])").unwrap();
+    db.execute("(rule [(reach ?from ?to) [?from :next ?to]])")
+        .unwrap();
+    db.execute("(rule [(reach ?from ?to) [?from :next ?mid] (reach ?mid ?to)])")
+        .unwrap();
     Arc::new(db)
 }
 
@@ -151,4 +159,3 @@ fn insert_val_facts(db: &Minigraf, n: usize) {
         db.execute(&cmd).unwrap();
     }
 }
-

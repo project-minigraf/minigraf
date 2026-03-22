@@ -147,7 +147,10 @@ fn bench_query(c: &mut Criterion) {
         for &(label, n) in SCALES {
             let db = helpers::populate_in_memory(n);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
-                b.iter(|| db.execute("(query [:find ?v :where [:e0 :val ?v]])").unwrap());
+                b.iter(|| {
+                    db.execute("(query [:find ?v :where [:e0 :val ?v]])")
+                        .unwrap()
+                });
             });
         }
         group.finish();
@@ -409,7 +412,11 @@ fn bench_concurrent(c: &mut Criterion) {
                             }));
                         }
                         barrier.wait(); // release all threads simultaneously
-                        handles.into_iter().map(|h| h.join().unwrap()).max().unwrap()
+                        handles
+                            .into_iter()
+                            .map(|h| h.join().unwrap())
+                            .max()
+                            .unwrap()
                     });
                 },
             );
@@ -459,7 +466,11 @@ fn bench_concurrent(c: &mut Criterion) {
                             }));
                         }
                         barrier.wait();
-                        handles.into_iter().map(|h| h.join().unwrap()).max().unwrap()
+                        handles
+                            .into_iter()
+                            .map(|h| h.join().unwrap())
+                            .max()
+                            .unwrap()
                     });
                 },
             );
@@ -495,7 +506,11 @@ fn bench_concurrent(c: &mut Criterion) {
                             }));
                         }
                         barrier.wait();
-                        handles.into_iter().map(|h| h.join().unwrap()).max().unwrap()
+                        handles
+                            .into_iter()
+                            .map(|h| h.join().unwrap())
+                            .max()
+                            .unwrap()
                     });
                 },
             );
@@ -543,7 +558,11 @@ fn bench_concurrent_file(c: &mut Criterion) {
                             }));
                         }
                         barrier.wait();
-                        handles.into_iter().map(|h| h.join().unwrap()).max().unwrap()
+                        handles
+                            .into_iter()
+                            .map(|h| h.join().unwrap())
+                            .max()
+                            .unwrap()
                     });
                 },
             );
@@ -594,7 +613,11 @@ fn bench_concurrent_file(c: &mut Criterion) {
                             }));
                         }
                         barrier.wait();
-                        handles.into_iter().map(|h| h.join().unwrap()).max().unwrap()
+                        handles
+                            .into_iter()
+                            .map(|h| h.join().unwrap())
+                            .max()
+                            .unwrap()
                     });
                 },
             );
@@ -631,7 +654,11 @@ fn bench_concurrent_file(c: &mut Criterion) {
                             }));
                         }
                         barrier.wait();
-                        handles.into_iter().map(|h| h.join().unwrap()).max().unwrap()
+                        handles
+                            .into_iter()
+                            .map(|h| h.join().unwrap())
+                            .max()
+                            .unwrap()
                     });
                 },
             );
