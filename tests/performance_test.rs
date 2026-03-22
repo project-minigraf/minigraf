@@ -79,8 +79,7 @@ fn test_bitemporal_query_after_packed_reload() {
         .unwrap();
     assert!(
         format!("{:?}", result).contains("active"),
-        "should find :active at 2023-06-01, got: {:?}",
-        result
+        "should find :active at 2023-06-01"
     );
 }
 
@@ -101,8 +100,7 @@ fn test_as_of_query_after_packed_reload() {
         .unwrap();
     assert!(
         format!("{:?}", result).contains("30"),
-        "as-of 1 should return age 30, got: {:?}",
-        result
+        "as-of 1 should return age 30"
     );
 }
 
@@ -121,8 +119,7 @@ fn test_recursive_rules_unchanged_after_6_2() {
     let s = format!("{:?}", result);
     assert!(
         s.contains("b") && s.contains("c") && s.contains("d"),
-        "transitive closure must still work: {:?}",
-        result
+        "transitive closure must still work"
     );
 }
 
@@ -144,8 +141,7 @@ fn test_explicit_tx_survives_packed_reload() {
         .unwrap();
     assert!(
         format!("{:?}", result).contains("Alice"),
-        "Alice must survive packed reload: {:?}",
-        result
+        "Alice must survive packed reload"
     );
 }
 
