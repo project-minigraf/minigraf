@@ -21,7 +21,7 @@
 
 use crate::graph::types::Fact;
 use crate::storage::index::FactRef;
-use crate::storage::{StorageBackend, PAGE_SIZE};
+use crate::storage::{PAGE_SIZE, StorageBackend};
 use anyhow::Result;
 
 /// Page type byte for packed fact pages.

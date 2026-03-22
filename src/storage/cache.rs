@@ -88,7 +88,13 @@ impl PageCache {
                 break; // order/entries out of sync — avoid infinite loop
             }
         }
-        inner.entries.insert(page_id, CacheEntry { data: data.clone(), dirty: false });
+        inner.entries.insert(
+            page_id,
+            CacheEntry {
+                data: data.clone(),
+                dirty: false,
+            },
+        );
         inner.order.push_back(page_id);
         Ok(data)
     }
@@ -111,7 +117,9 @@ impl PageCache {
                     break; // order/entries out of sync — avoid infinite loop
                 }
             }
-            inner.entries.insert(page_id, CacheEntry { data, dirty: true });
+            inner
+                .entries
+                .insert(page_id, CacheEntry { data, dirty: true });
             inner.order.push_back(page_id);
         }
     }
@@ -144,8 +152,8 @@ impl PageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::backend::MemoryBackend;
     use crate::storage::PAGE_SIZE;
+    use crate::storage::backend::MemoryBackend;
 
     fn make_page(byte: u8) -> Vec<u8> {
         vec![byte; PAGE_SIZE]
@@ -204,15 +212,19 @@ mod tests {
         let mut backend = MemoryBackend::new();
         backend.write_page(1, &make_page(0x42)).unwrap();
         let cache = Arc::new(PageCache::new(8));
-        let handles: Vec<_> = (0..4).map(|_| {
-            let c = cache.clone();
-            let b = backend.clone();
-            thread::spawn(move || {
-                let page = c.get_or_load(1, &b).unwrap();
-                assert_eq!(page[0], 0x42);
+        let handles: Vec<_> = (0..4)
+            .map(|_| {
+                let c = cache.clone();
+                let b = backend.clone();
+                thread::spawn(move || {
+                    let page = c.get_or_load(1, &b).unwrap();
+                    assert_eq!(page[0], 0x42);
+                })
             })
-        }).collect();
-        for h in handles { h.join().unwrap(); }
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
     }
 
     #[test]

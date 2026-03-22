@@ -181,7 +181,10 @@ impl FileHeader {
 
         // v4 and v5: need full 72 bytes.
         if bytes.len() < 72 {
-            anyhow::bail!("Invalid v4/v5 header: expected 72 bytes, got {}", bytes.len());
+            anyhow::bail!(
+                "Invalid v4/v5 header: expected 72 bytes, got {}",
+                bytes.len()
+            );
         }
 
         Ok(FileHeader {
@@ -229,7 +232,10 @@ impl Default for FileHeader {
 /// objects via the page cache without keeping the entire fact list in memory.
 pub trait CommittedFactReader: Send + Sync {
     /// Resolve a single committed fact by its disk reference.
-    fn resolve(&self, fact_ref: crate::storage::index::FactRef) -> Result<crate::graph::types::Fact>;
+    fn resolve(
+        &self,
+        fact_ref: crate::storage::index::FactRef,
+    ) -> Result<crate::graph::types::Fact>;
     /// Stream all committed facts (for full scans, checksum verification, migration).
     fn stream_all(&self) -> Result<Vec<crate::graph::types::Fact>>;
     /// Number of committed fact pages (used for checksum + iteration bounds).

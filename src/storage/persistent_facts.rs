@@ -4,13 +4,13 @@ use crate::graph::FactStorage;
 /// This module bridges the gap between high-level fact operations and
 /// low-level page-based storage backends.
 use crate::graph::types::Fact;
+use crate::storage::FACT_PAGE_FORMAT_PACKED;
 use crate::storage::btree::{
     read_aevt_index, read_avet_index, read_eavt_index, read_vaet_index, write_all_indexes,
 };
 use crate::storage::cache::PageCache;
 use crate::storage::index::Indexes;
 use crate::storage::packed_pages::pack_facts;
-use crate::storage::FACT_PAGE_FORMAT_PACKED;
 use crate::storage::{FileHeader, PAGE_SIZE, StorageBackend};
 use anyhow::Result;
 use crc32fast::Hasher;
@@ -38,7 +38,6 @@ fn compute_index_checksum(facts: &[Fact]) -> u32 {
     }
     hasher.finalize()
 }
-
 
 /// CommittedFactReader backed by a PageCache + shared backend.
 ///
@@ -189,7 +188,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
 
         let fact_page_format = header.fact_page_format;
 
-        if fact_page_format == 0 || fact_page_format == crate::storage::FACT_PAGE_FORMAT_ONE_PER_PAGE
+        if fact_page_format == 0
+            || fact_page_format == crate::storage::FACT_PAGE_FORMAT_ONE_PER_PAGE
         {
             // Legacy one-per-page format (v4 or earlier): load all facts, then migrate to v5.
             self.load_one_per_page_legacy(&header)?;
@@ -394,7 +394,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             backend.write_page(start_page_id + i as u64, page)?;
         }
         let num_fact_pages = pages.len() as u64;
-        self.committed_fact_pages.store(num_fact_pages, Ordering::SeqCst);
+        self.committed_fact_pages
+            .store(num_fact_pages, Ordering::SeqCst);
 
         // Compute page-based CRC32 checksum
         let checksum = compute_page_checksum(&*backend, start_page_id, num_fact_pages)?;
@@ -506,10 +507,7 @@ fn compute_page_checksum(
 }
 
 /// Rebuild all four indexes using the FactRefs produced by `pack_facts`.
-fn reindex_with_refs(
-    facts: &[Fact],
-    refs: &[crate::storage::index::FactRef],
-) -> Indexes {
+fn reindex_with_refs(facts: &[Fact], refs: &[crate::storage::index::FactRef]) -> Indexes {
     let mut indexes = Indexes::new();
     for (fact, &fact_ref) in facts.iter().zip(refs.iter()) {
         indexes.insert(fact, fact_ref);
@@ -758,7 +756,8 @@ mod tests {
 
         // Save phase
         {
-            let mut pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
+            let mut pfs =
+                PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
             pfs.storage()
                 .transact(
                     vec![
@@ -799,7 +798,8 @@ mod tests {
 
         // Write a database with 1 fact
         {
-            let mut pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
+            let mut pfs =
+                PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
             pfs.storage()
                 .transact(
                     vec![(
@@ -903,11 +903,8 @@ mod tests {
         let bob = Uuid::new_v4();
 
         {
-            let mut pfs = PersistentFactStorage::new(
-                FileBackend::open(&path).unwrap(),
-                256,
-            )
-            .unwrap();
+            let mut pfs =
+                PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
             let mut tuples = Vec::new();
             for i in 0u64..50 {
                 tuples.push((alice, format!(":attr{}", i), Value::Integer(i as i64)));
@@ -952,11 +949,8 @@ mod tests {
         let alice = Uuid::new_v4();
 
         {
-            let mut pfs = PersistentFactStorage::new(
-                FileBackend::open(&path).unwrap(),
-                256,
-            )
-            .unwrap();
+            let mut pfs =
+                PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
             pfs.storage()
                 .transact(
                     vec![(
@@ -1055,8 +1049,8 @@ mod tests {
 
         // Save in v5 format
         {
-            let mut pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256)
-                .unwrap();
+            let mut pfs =
+                PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
             pfs.storage()
                 .transact(
                     vec![(

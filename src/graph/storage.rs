@@ -24,10 +24,7 @@ struct FactData {
 
 /// Resolve a FactRef to a Fact using the committed reader (for on-disk facts)
 /// or the pending facts vector (for in-memory facts with page_id=0).
-fn resolve_fact_ref(
-    d: &FactData,
-    fr: FactRef,
-) -> Result<Fact> {
+fn resolve_fact_ref(d: &FactData, fr: FactRef) -> Result<Fact> {
     if fr.page_id == 0 {
         // Pending fact: page_id=0, slot_index is index into d.facts
         d.facts
@@ -515,10 +512,7 @@ impl FactStorage {
 
     /// Set the committed fact reader. Called by PersistentFactStorage::load() after
     /// opening a v5 file so index-driven reads can resolve FactRefs via page cache.
-    pub fn set_committed_reader(
-        &self,
-        reader: Arc<dyn crate::storage::CommittedFactReader>,
-    ) {
+    pub fn set_committed_reader(&self, reader: Arc<dyn crate::storage::CommittedFactReader>) {
         let mut d = self.data.write().unwrap();
         d.committed = Some(reader);
     }
@@ -1173,9 +1167,7 @@ mod tests {
                 self.facts
                     .get(fr.slot_index as usize)
                     .cloned()
-                    .ok_or_else(|| {
-                        anyhow::anyhow!("MockLoader: no fact at slot {}", fr.slot_index)
-                    })
+                    .ok_or_else(|| anyhow::anyhow!("MockLoader: no fact at slot {}", fr.slot_index))
             }
             fn stream_all(&self) -> anyhow::Result<Vec<Fact>> {
                 Ok(self.facts.clone())
@@ -1214,7 +1206,11 @@ mod tests {
 
         // get_facts_by_entity must resolve via CommittedFactReader (EAVT range scan).
         let entity_facts = storage.get_facts_by_entity(&alice).unwrap();
-        assert_eq!(entity_facts.len(), 1, "EAVT range scan should resolve committed fact");
+        assert_eq!(
+            entity_facts.len(),
+            1,
+            "EAVT range scan should resolve committed fact"
+        );
         assert_eq!(entity_facts[0].entity, alice);
         assert_eq!(entity_facts[0].attribute, ":name");
 
@@ -1222,7 +1218,11 @@ mod tests {
         let attr_facts = storage
             .get_facts_by_attribute(&":name".to_string())
             .unwrap();
-        assert_eq!(attr_facts.len(), 1, "AEVT range scan should resolve committed fact");
+        assert_eq!(
+            attr_facts.len(),
+            1,
+            "AEVT range scan should resolve committed fact"
+        );
         assert_eq!(attr_facts[0].value, Value::String("Alice".to_string()));
 
         // get_all_facts must include committed facts via stream_all().
@@ -1234,7 +1234,11 @@ mod tests {
         let as_of = storage
             .get_facts_as_of(&crate::query::datalog::types::AsOf::Counter(10))
             .unwrap();
-        assert_eq!(as_of.len(), 1, "get_facts_as_of should include committed facts");
+        assert_eq!(
+            as_of.len(),
+            1,
+            "get_facts_as_of should include committed facts"
+        );
 
         // get_facts_valid_at should see committed facts valid at time 0.
         let valid_at = storage.get_facts_valid_at(0).unwrap();
@@ -1288,7 +1292,13 @@ mod tests {
             facts: vec![alice_fact.clone()],
         });
         let mut indexes = Indexes::new();
-        indexes.insert(&alice_fact, FactRef { page_id: 1, slot_index: 0 });
+        indexes.insert(
+            &alice_fact,
+            FactRef {
+                page_id: 1,
+                slot_index: 0,
+            },
+        );
         storage.replace_indexes(indexes);
         storage.set_committed_reader(loader);
 
@@ -1305,7 +1315,11 @@ mod tests {
 
         // get_all_facts should see both
         let all = storage.get_all_facts().unwrap();
-        assert_eq!(all.len(), 2, "Both committed and pending facts must be visible");
+        assert_eq!(
+            all.len(),
+            2,
+            "Both committed and pending facts must be visible"
+        );
 
         // get_facts_by_attribute uses AEVT — must also see both
         let name_facts = storage

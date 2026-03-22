@@ -225,7 +225,7 @@ fn test_manual_checkpoint_deletes_wal() {
         &db_path,
         OpenOptions {
             wal_checkpoint_threshold: usize::MAX,
-                ..Default::default()
+            ..Default::default()
         },
     )
     .unwrap();
@@ -415,7 +415,7 @@ fn test_explicit_tx_multiple_transacts_rollback_not_persisted() {
     let db_path = dir.path().join("multi_rollback.graph");
     let opts = OpenOptions {
         wal_checkpoint_threshold: usize::MAX,
-                ..Default::default()
+        ..Default::default()
     };
 
     {

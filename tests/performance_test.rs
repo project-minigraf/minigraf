@@ -24,8 +24,13 @@ fn test_1k_facts_correct_after_packed_save_reload() {
 
     // Reload and verify
     let db = OpenOptions::new().path(path).open().unwrap();
-    let result = db.execute("(query [:find ?v :where [:e0 :val ?v]])").unwrap();
-    assert!(!format!("{:?}", result).is_empty(), "e0 must have val after reload");
+    let result = db
+        .execute("(query [:find ?v :where [:e0 :val ?v]])")
+        .unwrap();
+    assert!(
+        !format!("{:?}", result).is_empty(),
+        "e0 must have val after reload"
+    );
 }
 
 #[test]
@@ -36,7 +41,8 @@ fn test_packed_pages_use_fewer_pages_than_one_per_page() {
     {
         let db = OpenOptions::new().path(path).open().unwrap();
         for i in 0..200u64 {
-            db.execute(&format!("(transact [[:e{} :val {}]])", i, i)).unwrap();
+            db.execute(&format!("(transact [[:e{} :val {}]])", i, i))
+                .unwrap();
         }
     }
 
@@ -107,10 +113,8 @@ fn test_recursive_rules_unchanged_after_6_2() {
         .unwrap();
     db.execute("(rule [(reachable ?from ?to) [?from :next ?to]])")
         .unwrap();
-    db.execute(
-        "(rule [(reachable ?from ?to) [?from :next ?mid] (reachable ?mid ?to)])",
-    )
-    .unwrap();
+    db.execute("(rule [(reachable ?from ?to) [?from :next ?mid] (reachable ?mid ?to)])")
+        .unwrap();
     let result = db
         .execute("(query [:find ?to :where (reachable :a ?to)])")
         .unwrap();
