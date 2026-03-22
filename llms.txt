@@ -4,8 +4,8 @@
 
 Minigraf is the SQLite of graph databases: zero configuration, one `.graph` file, embedded as a library. It stores facts in an Entity-Attribute-Value (EAV) model and queries them with Datalog, including recursive rules for graph traversal. Every fact carries two independent time dimensions (transaction time and valid time), enabling full bi-temporal time travel.
 
-**Current version**: 0.6.0 (pre-1.0 — API and file format may change)
-**Maturity**: Phase 5 of 7 complete. ACID + WAL are production-quality. Covering indexes land in Phase 6 (in progress). Not recommended for write-heavy workloads exceeding ~100k facts until Phase 6 ships.
+**Current version**: 0.8.0 (pre-1.0 — API and file format may change before v1.0)
+**Maturity**: Phase 6.4b of 8 complete (see [README](https://github.com/adityamukho/minigraf/blob/main/README.md) and [ROADMAP](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md) for the current status). ACID + WAL are production-quality. Covering indexes (EAVT/AEVT/AVET/VAET), packed page storage, and LRU page cache are complete. Validated at 1M facts via Criterion benchmarks. Not recommended for production use until v1.0 (file format stability guaranteed only after Phase 8).
 
 ## Use for
 
@@ -23,7 +23,7 @@ Minigraf is the SQLite of graph databases: zero configuration, one `.graph` file
 
 - Distributed or replicated databases (no clustering by design).
 - Client-server deployments (embedded-only by design).
-- Workloads requiring more than ~1M facts before Phase 6 indexes ship.
+- Workloads requiring more than ~1M facts with sub-second query latency (Phase 6.5 on-disk B+tree indexes will address this; current query is O(N) full scan).
 - Applications needing SQL or Cypher (Datalog only).
 - Fuzzy / semantic similarity search (no vector index). Use a vector store for retrieval; use Minigraf for the relational backbone and audit layer.
 - Global shared memory across a distributed agent fleet. If multiple agent nodes need coherent read/write access to the same memory store, Minigraf is the wrong tool — use a distributed database. Minigraf is per-agent-instance memory, not a shared brain.
@@ -58,7 +58,7 @@ Pattern matching with variable unification. Recursive rules use semi-naive fixed
 `begin_write()` → `commit()` / `rollback()`. Fact-level WAL with CRC32 protection. Crash recovery on open.
 
 **Single-file storage**
-Page-based `.graph` file (4 KB pages, magic `MGRF`, format v3). WAL sidecar (`.wal`) deleted on clean close. Endian-safe, cross-platform.
+Page-based `.graph` file (4 KB pages, magic `MGRF`, format v5). Packed fact pages (~25 facts/page). WAL sidecar (`.wal`) deleted on clean close. Automatic migration from v1/v2/v3/v4. Endian-safe, cross-platform.
 
 ## API (Rust)
 
@@ -122,15 +122,33 @@ tx.commit()?;
 
 - `src/db.rs` — public API: `Minigraf`, `OpenOptions`, `WriteTransaction`
 - `src/graph/types.rs` — `Fact`, `Value`, EAV types, bi-temporal fields
-- `src/graph/storage.rs` — in-memory fact store with temporal query methods
+- `src/graph/storage.rs` — in-memory fact store with temporal query methods and `net_asserted_facts`
 - `src/query/datalog/` — parser, executor, matcher, evaluator, optimizer
-- `src/storage/` — `StorageBackend` trait, file backend, WAL
+- `src/storage/mod.rs` — `StorageBackend` trait, `FileHeader` v5, `CommittedFactReader` trait
+- `src/storage/backend/` — file, memory, and (future) IndexedDB backends
+- `src/storage/index.rs` — EAVT/AEVT/AVET/VAET index key types, `FactRef`, `encode_value`
+- `src/storage/btree.rs` — B+tree page serialisation for index persistence
+- `src/storage/cache.rs` — LRU page cache (approximate-LRU, configurable capacity)
+- `src/storage/packed_pages.rs` — packed fact page format (~25 facts/4KB page), `MAX_FACT_BYTES`
+- `src/storage/persistent_facts.rs` — v5 save/load, `CommittedFactLoaderImpl`
 - `src/wal.rs` — write-ahead log, CRC32 entries, crash recovery
 - `src/temporal.rs` — UTC timestamp parsing (avoids chrono CVE GHSA-wcg3-cvx6-7396)
+
+## Performance summary (v0.8.0)
+
+See [BENCHMARKS.md](https://github.com/adityamukho/minigraf/blob/main/BENCHMARKS.md) for full tables and methodology.
+
+- **Insert**: ~2.4 µs/fact (in-memory), ~3.4 µs/fact (file-backed WAL). Flat across 1K–100K facts.
+- **Query (point lookup)**: O(N) full scan — 1.2 ms at 1K, 15 ms at 10K, 257 ms at 100K, 4.3 s at 1M.
+- **Time-travel overhead**: <5% on top of base query cost.
+- **Open**: 1.8 ms at 1K, 22 ms at 10K, 3.1 s at 1M. O(N) — Phase 6.5 target.
+- **Peak heap**: 14 MB at 10K facts, 136 MB at 100K, 1.33 GB at 1M.
 
 ## Links
 
 - [Repository](https://github.com/adityamukho/minigraf)
-- [Roadmap](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
+- [README](https://github.com/adityamukho/minigraf/blob/main/README.md) — current status and quick start
+- [ROADMAP](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md) — phase-by-phase plan
+- [BENCHMARKS](https://github.com/adityamukho/minigraf/blob/main/BENCHMARKS.md) — Criterion results at 1K–1M facts
 - [Philosophy](https://github.com/adityamukho/minigraf/blob/main/PHILOSOPHY.md)
 - [Security Policy](https://github.com/adityamukho/minigraf/security/policy)

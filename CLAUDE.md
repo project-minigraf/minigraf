@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries** written in Rust. It's designed to be the embedded graph memory layer for AI agents, mobile apps, and the browser — built on the SQLite philosophy: embedded, single-file, reliable, with time travel capabilities.
 
-**Current Status: Phase 6.4a COMPLETE ✅ → Phase 6.4b Next** - Retraction semantics fix + edge case tests (note: Phase 6.3 query optimization was completed as part of Phase 6.1):
+**Current Status: Phase 6.4b COMPLETE ✅ → Phase 6.5 Next** - Criterion benchmarks + light publish prep (note: Phase 6.3 query optimization was completed as part of Phase 6.1):
 - ✅ Phase 1: Property graph PoC (in-memory)
 - ✅ Phase 2: Persistent storage (`.graph` file format, embedded API)
 - ✅ Phase 3: Datalog core (EAV model, recursive rules) - COMPLETE!
@@ -15,8 +15,8 @@ Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries**
 - ✅ **Phase 6.1: Covering indexes (EAVT, AEVT, AVET, VAET) + query optimizer - COMPLETE!**
 - ✅ **Phase 6.2: Packed pages + LRU page cache - COMPLETE!**
 - ✅ **Phase 6.4a: Retraction semantics fix + edge case tests - COMPLETE!**
-- 🎯 Phase 6.4b: Criterion benchmarks + crates.io publish - **NEXT**
-- 🎯 Phase 6.5: On-disk B+tree indexes (file format v6; conditional on Phase 6.4 benchmark findings)
+- ✅ **Phase 6.4b: Criterion benchmarks + light publish prep - COMPLETE!**
+- 🎯 Phase 6.5: On-disk B+tree indexes (file format v6) - **NEXT**
 - 🎯 Phase 7: Datalog Completeness (negation, aggregation, disjunction; ≥90% branch coverage target)
 - 🎯 v1.0.0: 9-12 months
 
@@ -387,11 +387,10 @@ WAL sidecar <db>.wal (present while uncommitted writes exist):
 Run tests with: `cargo test`
 See `TEST_COVERAGE.md` for detailed coverage report.
 
-**Future Tests (Phase 6.4b+)**:
-- Criterion benchmarks (insert throughput, query latency at 10K/100K/1M facts)
-- Memory profiling under load
+**Future Tests (Phase 6.5+)**:
 - Checkpoint-during-crash recovery
 - Error-path coverage sweep (~82% → ≥90% target by end of Phase 7)
+- Phase 6.5: on-disk B+tree index correctness and performance tests
 
 ## Development Notes
 
@@ -548,12 +547,14 @@ When implementing features, always ask:
 - ✅ 7 retraction integration tests + 4 edge case integration tests (18 new tests total)
 - ✅ 298 comprehensive tests
 
-**Phase 6.4b** (next): Criterion benchmarks + crates.io publish
-- Criterion benchmark suite (insert throughput, query latency)
-- Target scales: 10K / 100K / 1M facts
-- Memory profiling; checkpoint-during-crash tests
+**Phase 6.4b** ✅ **COMPLETE** - Criterion Benchmarks + Light Publish Prep
+- ✅ Criterion suite run at 1K–1M facts; `BENCHMARKS.md` documents results
+- ✅ heaptrack memory profiling (10K=14.4MB, 100K=136MB, 1M=1.33GB peak heap)
+- ✅ `examples/memory_profile.rs` profiling binary
+- ✅ Dead `clap` dep removed; `Cargo.toml` metadata complete; version bumped to v0.8.0
+- ✅ GitHub Discussions enabled
 
-**Phase 6.5** (4-6 weeks): On-Disk B+Tree Indexes
+**Phase 6.5** (next): On-Disk B+Tree Indexes
 - Replace paged-blob index serialisation with proper per-page B+tree nodes
 - All four covering indexes: EAVT, AEVT, AVET, VAET
 - Index memory usage O(cache_pages) instead of O(facts)
@@ -664,22 +665,22 @@ This is a hobby project with a decades-long vision. When contributing:
 
 Before publishing the crate, verify all of the following:
 
-### Minimum Bar (do not publish before Phase 6.4)
-- [ ] **Phase 6.4 benchmarks complete** — Criterion benchmarks at 10K/100K/1M facts. Phase 6.1 (indexes) and 6.2 (packed pages) are already done. Without validated performance numbers, we can't make claims about scaling.
-- [ ] **Edge case tests passing** — Oversized-fact error path exercised; checkpoint-during-crash recovery verified.
-- [ ] **Error-path coverage** — Raised from ~82%; storage and WAL error paths prioritised.
-- [ ] **GitHub Discussions enabled** — Minimum community channel in place before external users arrive via crates.io.
+### Minimum Bar (do not publish before Phase 6.5)
+- [x] **Phase 6.4 benchmarks complete** — Criterion benchmarks at 10K/100K/1M facts documented in `BENCHMARKS.md`. ✅ Phase 6.4b complete.
+- [ ] **Edge case tests passing** — Oversized-fact error path exercised ✅; checkpoint-during-crash recovery not yet verified.
+- [ ] **Error-path coverage** — Still ~82%; storage and WAL error paths to be prioritised in Phase 7.
+- [x] **GitHub Discussions enabled** — ✅ Done in Phase 6.4b.
 
 ### API Cleanup
 - [ ] **Narrow `lib.rs` exports** — Only expose what users need: `Minigraf`, `WriteTransaction`, and the query/result types. Internal types (`PersistentFactStorage`, `FileHeader`, `PAGE_SIZE`, `Repl`, `Wal`, etc.) should not be part of the public API.
-- [ ] **Move `clap` out of library dependencies** — `clap` is a binary-only dep and must not leak into the library. Move it to the `[[bin]]` section or behind a feature flag.
+- [x] **Remove dead `clap` dependency** — ✅ Removed in Phase 6.4b. (`src/main.rs` uses `std::env::args()` directly.)
 
 ### Crate Metadata (`Cargo.toml`)
-- [ ] Add `repository` field (GitHub URL)
-- [ ] Add `keywords` (e.g. `graph`, `datalog`, `bitemporal`, `embedded`, `database`)
-- [ ] Add `categories` (e.g. `database`, `embedded`)
-- [ ] Add `readme = "README.md"`
-- [ ] Add `documentation` field (docs.rs URL or custom)
+- [x] Add `repository` field (GitHub URL) — ✅ Done in Phase 6.4b
+- [x] Add `keywords` (e.g. `graph`, `datalog`, `bitemporal`, `embedded`, `database`) — ✅ Done
+- [x] Add `categories` (`database-implementations`, `embedded`) — ✅ Done
+- [x] Add `readme = "README.md"` — ✅ Done
+- [x] Add `documentation` field (docs.rs URL or custom) — ✅ Done
 - [ ] Verify `description` is accurate and compelling
 
 ### Documentation

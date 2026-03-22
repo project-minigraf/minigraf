@@ -365,7 +365,7 @@ tx.commit()?;  // or tx.rollback()?
 
 **Goal**: Make queries fast
 
-**Status**: 🚧 Phases 6.1, 6.2, and 6.4a complete; 6.4b next
+**Status**: 🚧 Phases 6.1, 6.2, 6.4a, and 6.4b complete; 6.5 next
 
 **Priority**: 🟡 High
 
@@ -418,25 +418,22 @@ tx.commit()?;  // or tx.rollback()?
 
 ---
 
-### 6.4b Benchmarks + Light Publish Prep 🎯 NEXT
+### 6.4b Benchmarks + Light Publish Prep ✅ COMPLETE
 
 **Benchmark Suite**:
-- 🎯 Run existing Criterion suite (9 groups already implemented in `benches/`)
-- 🎯 Memory profiling via heaptrack at 10K / 100K / 1M facts
-- 🎯 Document results in `BENCHMARKS.md` (full tables + machine specs + interpretation)
-- 🎯 Add "Performance" summary section to `README.md`
-
-**Target Scales**:
-- Small: 10K facts (personal knowledge base)
-- Medium: 100K facts (small business app)
-- Large: 1M facts (production single-machine)
+- ✅ Full Criterion suite run (9 groups; insert, query, time-travel, recursion, open, checkpoint, concurrency)
+- ✅ Memory profiling via heaptrack at 10K / 100K / 1M facts (peak heap 14 MB → 136 MB → 1.33 GB)
+- ✅ `BENCHMARKS.md` — full tables + machine spec + known limitations + reproduction instructions
+- ✅ `README.md` Performance section updated with Phase 6.4b numbers and link to `BENCHMARKS.md`
+- ✅ `examples/memory_profile.rs` — heaptrack profiling binary
 
 **Light Publish Prep** (low-risk, no API changes):
-- 🎯 Move `clap` out of library deps into `[[bin]]` only
-- 🎯 Complete `Cargo.toml` metadata (`repository`, `keywords`, `categories`, `readme`, `documentation`)
+- ✅ Removed dead `clap` dependency from library `[dependencies]`
+- ✅ Complete `Cargo.toml` metadata (`repository`, `keywords`, `categories`, `readme`, `documentation`)
+- ✅ Version bumped to v0.8.0
 
 **Community Infrastructure**:
-- 🎯 Enable GitHub Discussions — minimum viable channel for questions and feedback
+- ✅ GitHub Discussions enabled — minimum viable channel for questions and feedback
 - ✅ `CONTRIBUTING.md` — dedicated contributing guide (extracted and expanded from README)
 - ✅ `CODE_OF_CONDUCT.md` — Contributor Covenant reference
 - ✅ Issue templates — bug report and feature request (`.github/ISSUE_TEMPLATE/`)
@@ -444,10 +441,6 @@ tx.commit()?;  // or tx.rollback()?
 - ✅ `CODEOWNERS` — auto-assigns maintainer as reviewer on every PR
 
 **Note**: crates.io publish deferred to after Phase 6.5. The file format will change (v6) in 6.5; publishing before that would expose early users to an immediate forced migration. The full pre-publishing checklist (API narrowing, rustdoc, clippy, `unwrap()` sweep) is a Phase 6.5 gate item.
-
-**Deliverable**: Validated performance numbers documented in `BENCHMARKS.md` and `README.md`; crate metadata and deps cleaned up and ready for eventual publish
-
-**Timeline**: ~1-2 weeks
 
 ---
 
@@ -1220,8 +1213,8 @@ When evaluating features, ask:
 - ✅ Phase 6.1: Complete (March 2026) - Covering Indexes + Query Optimizer
 - ✅ Phase 6.2: Complete (March 2026) - Packed Pages + LRU Cache
 - ✅ Phase 6.4a: Complete (March 2026) - Retraction semantics fix + edge case tests
-- 🎯 Phase 6.4b: 1-2 weeks (Benchmarks + light publish prep) - **NEXT**
-- 🎯 Phase 6.5: 4-6 weeks (On-disk B+tree indexes, file format v6 + **crates.io publish** — conditional on Phase 6.4b benchmark findings)
+- ✅ Phase 6.4b: Complete (March 2026) - Benchmarks + light publish prep
+- 🎯 Phase 6.5: 4-6 weeks (On-disk B+tree indexes, file format v6 + **crates.io publish**) - **NEXT**
 - 🎯 Phase 7: 8-12 weeks (Datalog Completeness — negation, aggregation, disjunction, prepared statements, temporal metadata bindings; ≥90% branch coverage)
 - 🎯 Phase 8: 3-4 months (Cross-platform — WASM, mobile, language bindings)
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)
@@ -1233,22 +1226,22 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: Planning Phase 6.4b — Criterion Benchmarks + Light Publish Prep
+**Right Now**: Phase 6.4b Complete — Starting Phase 6.5 (On-Disk B+Tree Indexes)
 
-**Phase 6.4a Achievements**:
-1. ✅ Fixed retraction semantics in Datalog queries (`net_asserted_facts` helper)
-2. ✅ `check_fact_sizes` / `MAX_FACT_BYTES`: early oversized-fact validation before WAL write
-3. ✅ `tests/retraction_test.rs` — 7 new retraction integration tests
-4. ✅ `tests/edge_cases_test.rs` — 4 new edge case integration tests
-5. ✅ 298 tests passing (18 new tests since Phase 6.2)
+**Phase 6.4b Achievements**:
+1. ✅ Full Criterion benchmark suite run; results documented in `BENCHMARKS.md`
+2. ✅ heaptrack memory profiling at 10K/100K/1M (14 MB / 136 MB / 1.33 GB peak heap)
+3. ✅ `examples/memory_profile.rs` profiling binary
+4. ✅ Dead `clap` dependency removed; `Cargo.toml` metadata complete
+5. ✅ GitHub Discussions enabled
+6. ✅ Version bumped to v0.8.0
 
-**Immediate Next Steps (Phase 6.4b)**:
-1. Run existing Criterion suite; capture results at 10K / 100K / 1M facts
-2. Profile memory usage with heaptrack at each scale
-3. Write `BENCHMARKS.md` (full tables + machine specs + interpretation)
-4. Add "Performance" section to README
-5. Move `clap` to binary-only dep; complete `Cargo.toml` metadata
-6. Enable GitHub Discussions
+**Immediate Next Steps (Phase 6.5)**:
+1. Design on-disk B+tree index pages (one node per 4KB page)
+2. Implement EAVT, AEVT, AVET, VAET B+tree persistence (file format v6)
+3. Wire B+tree lookups into query executor (replace full scan for point/range queries)
+4. Add automatic v5→v6 migration on first save
+5. Validate: open time and query latency become O(cache_pages), not O(facts)
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)
@@ -1264,4 +1257,4 @@ See [GitHub Issues](https://github.com/adityamukho/minigraf/issues) for specific
 
 ---
 
-Last Updated: Phase 6.4a Complete - Retraction Semantics Fix + Edge Case Tests (March 2026)
+Last Updated: Phase 6.4b Complete - Benchmarks + Light Publish Prep (March 2026)
