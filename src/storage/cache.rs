@@ -6,6 +6,14 @@
 //!
 //! Interior mutability: all methods take `&self` so the cache can be shared
 //! across readers without requiring `&mut`.
+//!
+//! ## LRU accuracy
+//!
+//! `get_or_load` uses a read lock on cache hits for concurrent-reader throughput.
+//! As a result, hit pages are **not** promoted to MRU position on each access —
+//! only first-load (miss) positions them as MRU. This gives approximate-LRU
+//! semantics: frequently accessed pages are unlikely to be evicted but not
+//! strictly guaranteed MRU. For a 256-page cache this is an excellent tradeoff.
 
 use crate::storage::StorageBackend;
 use anyhow::Result;
@@ -57,6 +65,8 @@ impl PageCache {
     /// Get a page from the cache, loading from `backend` on a miss.
     pub fn get_or_load(&self, page_id: u64, backend: &dyn StorageBackend) -> Result<Arc<Vec<u8>>> {
         // Fast path: read lock for cache hits (concurrent readers don't block each other)
+        // Approximate LRU: return without promoting to MRU to avoid a write lock
+        // on every read. Pages loaded recently (on miss) are already near MRU.
         {
             let inner = self.inner.read().unwrap();
             if let Some(entry) = inner.entries.get(&page_id) {
