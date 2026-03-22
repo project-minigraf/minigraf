@@ -358,15 +358,101 @@ Minigraf:      entity_uuid ── :approved-by ──▶ approver
 
 This keeps Minigraf lean (no vector index bloat) while giving agents both fuzzy discovery and deterministic, auditable relationship traversal.
 
+### For Mobile Apps
+
+Minigraf is a natural fit for mobile applications that need to store and query relational or graph-structured data locally, without a network call.
+
+**Why embedded (no server) is the right model for mobile:**
+
+Mobile apps operate in environments where connectivity is intermittent and latency is unacceptable. Embedding Minigraf directly in the app process means queries are local, the `.graph` file travels with the app's data directory, and there is no server to provision or authenticate against. It's the same reason SQLite dominates mobile relational storage.
+
+**Why bitemporality matters especially on mobile:**
+
+Mobile data is inherently eventually consistent. A user records a fact offline, syncs later, and then discovers the fact was wrong — they need to correct it retroactively. A uni-temporal database forces you to delete and re-insert, losing the original record. Minigraf's bi-temporal model lets you retract the incorrect fact and assert the corrected one while preserving the full history of what the app believed and when:
+
+```datalog
+;; User logs a health measurement offline
+(transact {:valid-from "2025-06-01"}
+          [[:user :health/weight-kg 82.5]])
+
+;; Later corrects a mis-entered value — old record is preserved in history
+(retract [[:user :health/weight-kg 82.5]])
+(transact {:valid-from "2025-06-01"}
+          [[:user :health/weight-kg 80.5]])
+
+;; Reconstruct what the app recorded before the correction
+(query [:find ?weight :as-of 1 :where [:user :health/weight-kg ?weight]])
+;; => 82.5  (the original, uncorrected entry is still there)
+
+;; Query what was actually true on 2025-06-01
+(query [:find ?weight
+        :valid-at "2025-06-01"
+        :where [:user :health/weight-kg ?weight]])
+;; => 80.5  (the corrected value)
+```
+
+**Mobile use cases:**
+
+- **Health and fitness tracking** — Weight, nutrition, exercise logs with retroactive corrections. Bi-temporal means the app can distinguish "what I recorded" from "what was actually true" — useful for syncing corrections from a doctor or wearable after the fact.
+- **Personal knowledge management** — Notes, tags, and links stored as a graph. Obsidian-like apps on mobile where offline-first is a requirement, not an option.
+- **Game state** — RPG character graphs, quest dependency DAGs, world state with rollback. Bitemporality gives you cheap save states: record what the world looked like at each checkpoint, query it back without storing copies.
+- **Local AI context** — On-device LLMs need structured facts to reason over. Minigraf acts as the relational backbone: store entities and relationships that the model can query instead of re-deriving from unstructured text.
+- **Offline-first productivity apps** — Task managers, CRMs, project trackers where the device is the source of truth and sync is a background process. Each device carries its own `.graph`; sync at the application layer when connectivity is available.
+
+**Practical note on sync:**
+
+Minigraf does not provide built-in sync — this is intentional. Sync strategies are application-specific and often require domain knowledge about conflict resolution. The recommended pattern is: use Minigraf for high-speed local reasoning; at sync points, export the facts you want to share and merge them into a central store using your application's conflict resolution logic. The bitemporal timestamps make conflict detection straightforward: compare `tx_count` values to determine which device recorded a fact first.
+
+### For WASM / Browser
+
+Minigraf's single-file, zero-configuration design maps cleanly onto the browser environment. The planned Phase 7 WASM backend stores the `.graph` file as a single blob in IndexedDB, giving browser applications a persistent, queryable graph database with no server required.
+
+**Why a graph database in the browser:**
+
+Most browser-side storage APIs (localStorage, IndexedDB raw) are key-value stores. They work for simple caching but are awkward for relational or graph-structured data — you end up maintaining foreign keys and join logic in JavaScript. Minigraf brings structured graph queries to the client, reducing the need for round-trips to a backend API.
+
+**Why bitemporality matters for local-first web apps:**
+
+Browser apps built on a local-first architecture face the same eventual-consistency problem as mobile: users make changes offline, and those changes may need to be corrected or reconciled later. The bitemporal model gives you a principled way to record corrections without destroying history — the same correction pattern shown in the mobile section applies here.
+
+**WASM use cases:**
+
+- **Offline PWAs** — A Progressive Web App that keeps its relational state in a `.graph` file in IndexedDB survives page reloads, browser restarts, and network outages. The app queries Minigraf directly from WASM; no fetch calls needed for local data.
+
+- **Privacy-sensitive applications** — Medical records, financial data, personal journals. Process sensitive data entirely client-side: the data never leaves the browser, nothing is sent to a server, and the `.graph` file lives under the user's control. GDPR compliance becomes simpler when there is no server storing personal data.
+
+- **In-browser analytics and exploration** — Load a dataset into Minigraf in the browser and run Datalog queries against it. Think Datasette or Observable notebooks, but for graph-structured data, with no backend required. Useful for data journalism, research tools, and interactive documentation.
+
+- **Developer tooling** — Dependency graphs, call graphs, module relationship maps. A web-based IDE or code analysis tool can load a project's dependency graph into Minigraf and run recursive Datalog rules to find cycles, transitive dependencies, or impact analysis — all client-side, all queryable without a server round-trip:
+
+```datalog
+;; Find all transitive dependencies of a module
+(rule [(depends-on ?a ?b)
+       [?a :module/depends-directly ?b]])
+
+(rule [(depends-on ?a ?b)
+       [?a :module/depends-directly ?intermediate]
+       (depends-on ?intermediate ?b)])
+
+(query [:find ?dep
+        :where (depends-on :my-module ?dep)])
+```
+
+- **Collaborative local-first tools** — Each browser tab or user session carries its own `.graph` file as the local replica. The application layer handles sync and conflict resolution; Minigraf handles fast, structured local queries. This is the same pattern as the mobile sync note above — Minigraf as the local reasoning layer, not the sync layer.
+
+**The single-file advantage in a browser context:**
+
+A `.graph` file is a single blob. Exporting a user's data is one read; importing it is one write. Backup is a file download. This is significantly simpler than managing IndexedDB object stores directly, and it means the same `.graph` file a user creates on desktop can be loaded in the browser (or vice versa) once Phase 7 is complete.
+
 ### Target Use Cases
 
-1. **AI agents** - Verifiable reasoning, agent memory with provenance, task planning
-2. **Audit-heavy applications** - Finance, healthcare, legal (bi-temporal = compliance)
-3. **Event sourcing** - Full history, time travel debugging
-4. **Personal knowledge bases** - Obsidian, Logseq, Roam-like apps
-5. **Local-first applications** - Offline-capable, user-owned data
-6. **Mobile apps** - Embedded graph database on devices
-7. **WASM applications** - Graph database in the browser
+1. **AI agents** - Verifiable reasoning, agent memory with provenance, task planning (see above)
+2. **Mobile apps** - Offline-first, health/fitness tracking, game state, local AI context (see above)
+3. **WASM / browser** - Offline PWAs, privacy-sensitive client-side apps, in-browser analytics (see above)
+4. **Audit-heavy applications** - Finance, healthcare, legal (bi-temporal = compliance)
+5. **Event sourcing** - Full history, time travel debugging
+6. **Personal knowledge bases** - Obsidian, Logseq, Roam-like apps
+7. **Local-first applications** - Offline-capable, user-owned data
 8. **Development/testing** - Local graph DB like SQLite
 
 ### Philosophy: The SQLite of Graph Databases
