@@ -9,6 +9,7 @@ pub mod backend;
 pub mod btree;
 pub mod cache;
 pub mod index;
+pub mod packed_pages;
 pub mod persistent_facts;
 
 use anyhow::Result;
