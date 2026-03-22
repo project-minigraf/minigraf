@@ -212,11 +212,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             .copied()
             .min()
             .unwrap_or(header.page_count);
-            if first_index_page > 1 {
-                first_index_page - 1
-            } else {
-                0
-            }
+            first_index_page.saturating_sub(1)
         };
         self.committed_fact_pages
             .store(num_fact_pages, Ordering::SeqCst);

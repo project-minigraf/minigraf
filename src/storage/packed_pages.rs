@@ -168,7 +168,7 @@ fn new_packed_page() -> Vec<u8> {
     page
 }
 
-fn write_record_count(page: &mut Vec<u8>, count: u16) {
+fn write_record_count(page: &mut [u8], count: u16) {
     page[2..4].copy_from_slice(&count.to_le_bytes());
 }
 
