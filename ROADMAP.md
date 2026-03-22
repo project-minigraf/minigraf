@@ -399,7 +399,7 @@ tx.commit()?;  // or tx.rollback()?
 - 🎯 Cost-based optimization improvements
 - 🎯 Rule evaluation optimization
 
-### 6.4 Benchmarks 🎯 NEXT
+### 6.4 Benchmarks + Edge Case Tests + crates.io Publish 🎯 NEXT
 
 **Benchmark Suite**:
 - 🎯 Criterion benchmarks: insert throughput, query latency (indexed/unindexed)
@@ -413,9 +413,31 @@ tx.commit()?;  // or tx.rollback()?
 - Medium: 100K facts (small business app)
 - Large: 1M facts (production single-machine)
 
-**Deliverable**: Fast, indexed query engine with validated performance numbers
+**Edge Case Tests** (identified gaps from external code review):
+- 🎯 Facts larger than ~4KB — verify the oversized-fact error path is exercised and the page layout is not corrupted
+- 🎯 Checkpoint-during-crash — simulate a crash mid-checkpoint (partial page writes to `.graph` while WAL is being cleared) and verify recovery correctness
+- 🎯 Error handling coverage — raise error-path coverage from ~82% toward the same bar as happy-path coverage; prioritise storage and WAL error paths
 
-**Timeline**: 6.3 (benchmarks) ~1-2 weeks
+**Community Infrastructure** (do before publish):
+- 🎯 Enable GitHub Discussions — minimum viable channel for questions, feedback, and contributor coordination before external users arrive via crates.io
+
+**crates.io Publish Gate**:
+
+v0.8.0 is the first public release. All items on the pre-publishing checklist in CLAUDE.md must pass before tagging:
+- `cargo test` green on Linux, macOS, Windows
+- `cargo clippy -- -D warnings` clean
+- `cargo doc --no-deps` builds without warnings
+- No `unwrap()`/`expect()` in library code paths
+- `lib.rs` exports narrowed to public API only
+- `clap` moved to `[[bin]]` deps only
+- `Cargo.toml` metadata complete (`repository`, `keywords`, `categories`, `readme`, `documentation`)
+- All doc examples compile and run
+
+Publishing to crates.io at v0.8.0 is a **hard gate** — the project is invisible to the ecosystem until this happens. docs.rs auto-populates on publish, making the API reference available for free.
+
+**Deliverable**: Validated performance numbers, strengthened crash-safety test coverage, and Minigraf published to crates.io as v0.8.0
+
+**Timeline**: ~2-3 weeks
 
 ---
 
@@ -534,7 +556,7 @@ tx.commit()?;  // or tx.rollback()?
 
 **Estimated complexity**: 2-3 weeks
 
-### 7.4 Tests
+### 7.4 Tests + Error Coverage
 
 - Unit tests for each new clause type (parser, types, matcher)
 - Integration tests covering realistic production query patterns:
@@ -542,9 +564,11 @@ tx.commit()?;  // or tx.rollback()?
   - Aggregation with grouping, bi-temporal filters, and recursive rules
   - Disjunction in flat queries and rules
 - Stratification rejection tests: programs with negation cycles must produce clear errors, not incorrect results
-- Regression suite: all 280 existing tests continue to pass
+- Regression suite: all existing tests continue to pass
 
-**Deliverable**: A Datalog engine that can express any query a production workload is likely to require — negation, aggregation, disjunction, and recursion, composable with bi-temporal filters
+**Error handling coverage sweep**: Phase 7 adds significant new code paths (stratification analysis, aggregate post-processing, branch evaluation). Bring error-path coverage for new code to parity with happy-path coverage from the start, rather than letting it lag. Target: ≥90% overall branch coverage by end of Phase 7.
+
+**Deliverable**: A Datalog engine that can express any query a production workload is likely to require — negation, aggregation, disjunction, and recursion, composable with bi-temporal filters; ≥90% branch coverage
 
 **Timeline**: 6-8 weeks
 
@@ -737,13 +761,25 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 ### 9.2 Documentation
 
 **Features**:
-- 🎯 Complete API reference
+- 🎯 Complete API reference (auto-generated via docs.rs; supplement with narrative guides)
 - 🎯 Datalog language specification
-- 🎯 Cookbook (common patterns)
+- 🎯 Cookbook: common patterns (graph traversal, audit queries, time travel idioms)
 - 🎯 Performance tuning guide
-- 🎯 Real-world examples
+- 🎯 Error message guide — every user-facing error has a documented cause and resolution
 
-### 9.3 Ecosystem Libraries
+### 9.3 Integration Examples
+
+**Goal**: Close the gap between "interesting concept" and "I can use this today" for the agent and mobile audiences.
+
+**Features**:
+- 🎯 GraphRAG pattern: runnable example wiring Minigraf to a vector store (entity UUID as the bridge between fuzzy retrieval and structured graph traversal)
+- 🎯 LangChain / LangChain.js integration example — agent memory backed by Minigraf
+- 🎯 LlamaIndex integration example — Minigraf as a knowledge graph store
+- 🎯 Standalone `examples/` crate with annotated end-to-end scenarios (agentic memory, offline-first mobile, audit log)
+
+**Note**: These are documentation and example artifacts, not library features. They are the difference between "technically impressive" and "I can adopt this." Prioritise before or alongside the Phase 8 platform launch so the new audiences arriving via npm/PyPI/Swift Package Index have something runnable to start from.
+
+### 9.4 Ecosystem Libraries
 
 **Features**:
 - 🎯 Graph algorithms (as separate crate)
@@ -806,9 +842,12 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 - ✅ FileHeader v5 (`fact_page_format` byte); auto v4→v5 migration
 - ✅ 280 tests passing
 
-### v0.8.0 - 🎯 Phase 6.3 (Benchmarks)
-- Criterion benchmark suite
-- Validated performance at 10K / 100K / 1M facts
+### v0.8.0 - 🎯 Phase 6.3/6.4 (Benchmarks + Edge Cases + **crates.io publish**)
+- Criterion benchmark suite; validated performance at 10K / 100K / 1M facts
+- Oversized-fact and checkpoint-during-crash edge case tests
+- Error-path coverage raised from ~82%
+- GitHub Discussions enabled
+- **First public release on crates.io** — API reference auto-published to docs.rs
 
 ### v0.9.0 - 🎯 Phase 7 (Datalog Completeness)
 - Stratified negation (`not` / `not-join`)
@@ -872,10 +911,10 @@ When evaluating features, ask:
 - ✅ Phase 5: Complete (March 2026) - ACID + WAL
 - ✅ Phase 6.1: Complete (March 2026) - Covering Indexes + Query Optimizer
 - ✅ Phase 6.2: Complete (March 2026) - Packed Pages + LRU Cache
-- 🎯 Phase 6.3: 1-2 weeks (Benchmarks) - **NEXT**
-- 🎯 Phase 7: 6-8 weeks (Datalog Completeness — negation, aggregation, disjunction)
+- 🎯 Phase 6.3/6.4: 2-3 weeks (Benchmarks + edge case tests + **crates.io publish**) - **NEXT**
+- 🎯 Phase 7: 6-8 weeks (Datalog Completeness — negation, aggregation, disjunction; ≥90% branch coverage)
 - 🎯 Phase 8: 3-4 months (Cross-platform — WASM, mobile, language bindings)
-- 🎯 Phase 9: Ongoing (Ecosystem)
+- 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)
 - 🎯 **v1.0.0: 9-12 months**
 
 **Note**: This is a hobby project. Timeline is flexible but realistic.

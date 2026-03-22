@@ -632,8 +632,11 @@ This is a hobby project with a decades-long vision. When contributing:
 
 Before publishing the crate, verify all of the following:
 
-### Minimum Bar (do not publish before Phase 6.3)
-- [ ] **Phase 6.3 benchmarks complete** — Criterion benchmarks at 10K/100K/1M facts. Phase 6.1 (indexes) and 6.2 (packed pages) are already done. Without validated performance numbers, we can't make claims about scaling.
+### Minimum Bar (do not publish before Phase 6.4)
+- [ ] **Phase 6.4 benchmarks complete** — Criterion benchmarks at 10K/100K/1M facts. Phase 6.1 (indexes) and 6.2 (packed pages) are already done. Without validated performance numbers, we can't make claims about scaling.
+- [ ] **Edge case tests passing** — Oversized-fact error path exercised; checkpoint-during-crash recovery verified.
+- [ ] **Error-path coverage** — Raised from ~82%; storage and WAL error paths prioritised.
+- [ ] **GitHub Discussions enabled** — Minimum community channel in place before external users arrive via crates.io.
 
 ### API Cleanup
 - [ ] **Narrow `lib.rs` exports** — Only expose what users need: `Minigraf`, `WriteTransaction`, and the query/result types. Internal types (`PersistentFactStorage`, `FileHeader`, `PAGE_SIZE`, `Repl`, `Wal`, etc.) should not be part of the public API.

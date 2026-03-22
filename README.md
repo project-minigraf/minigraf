@@ -258,8 +258,10 @@ The `.graph` file uses a page-based format (like SQLite), with an optional WAL s
 **Phase 6.2**: ✅ Packed Pages + LRU Cache (Complete)
 - ~25 facts/page, LRU page cache, on-demand fact loading, file format v5
 
-**Phase 6.3**: 🎯 Benchmarks (Next)
+**Phase 6.3/6.4**: 🎯 Benchmarks + Edge Cases + **crates.io publish** (Next)
 - Criterion suite, performance at 10K/100K/1M facts
+- Oversized-fact and checkpoint-during-crash edge case tests
+- GitHub Discussions enabled; first public crates.io release (v0.8.0)
 
 **Phase 7**: 🎯 Datalog Completeness
 - Stratified negation (`not` / `not-join`)
