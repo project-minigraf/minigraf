@@ -147,6 +147,15 @@ cargo run < demo_recursive.txt
 
 ### Bi-temporal Queries (Phase 4 - Working!)
 
+Minigraf tracks two independent time dimensions per fact:
+
+- **Transaction time** (`tx_count`) — when the fact was *recorded* in the database; auto-managed, immutable, always monotonic. Represents *"what the system knew at the time of record."*
+- **Valid time** (`valid_from` / `valid_to`) — when the fact was *true in the real world*; can be set in advance (before the fact) or retroactively (after the fact).
+
+> **Actual-time systems**: If you never backdate or pre-date facts — events are recorded as they happen — you can omit `valid-from`/`valid-to` entirely. Minigraf degenerates gracefully to a transaction-time-only database with no valid-time overhead.
+
+> **Modeling tip**: Not every date field in your data is a temporal dimension. An entity's flight date may be part of its immutable identifier, not a valid-time marker. Store it as a plain attribute (`:flight/date "2024-06-15"`) and let Minigraf manage the temporal dimensions.
+
 ```datalog
 ;; Query valid at a specific date
 [:find ?name
@@ -624,6 +633,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code standards, an
 - [XTDB Datalog Queries](https://xtdb.com/docs/)
 
 ### Temporal Databases
+- [Exploring Temporality in Databases](https://adityamukho.com/exploring-temporality-in-databases) — conceptual deep-dive into transaction time, valid time, bi-temporal models, and beyond; includes an [interactive 3D visualisation](https://www.geogebra.org/m/ey3sky2s) of the bi-temporal state space
+- [Temporal Query Types](https://recallgraph.hashnode.dev/temporal-query-types) — taxonomy of point-in-time, time-interval, time-point lookup, and time-interval lookup query classes; maps to Minigraf's `:as-of`, `:valid-at`, `:any-valid-time`, and (Phase 7.7) `:db/valid-from`/`:db/valid-to` pseudo-attributes
 - [Temporal Database Wikipedia](https://en.wikipedia.org/wiki/Temporal_database)
 - [XTDB Bitemporality](https://v1-docs.xtdb.com/concepts/bitemporality/)
 - [Datomic Time Model](https://docs.datomic.com/time/time-model.html)

@@ -1048,6 +1048,40 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 
 ---
 
+### 9.5 Database Branching / Forking (Exploratory)
+
+**Goal**: Allow a Minigraf database to be forked into an independent copy — a new `.graph` file pre-populated with all facts from the parent at a given transaction count.
+
+**Conceptual basis**:
+
+In the bi-temporal model, all temporal dimensions and fact versions together represent *one version of reality*. A branch is a child reality pre-populated from a parent reality. This maps naturally to Minigraf's single-file philosophy: one file = one reality; `db.branch()` produces a new, independent `.graph` file.
+
+```rust
+// Fork the database at its current state
+let branched_db = db.branch("branch.graph")?;
+
+// Or fork at a specific past transaction
+let branched_db = db.branch_as_of("branch.graph", tx_count)?;
+
+// The branch is a fully independent Minigraf database
+branched_db.execute("(transact [[:x :y 1]])")?;
+// — does not affect the parent
+```
+
+**Use cases**:
+- Speculative writes: fork, experiment, discard or merge back
+- Snapshot distribution: ship a read-only fork to a client
+- Test isolation: fork a production-seeded database for testing
+- Agent sandboxing: fork the shared knowledge base into a private per-agent copy
+
+**Philosophy alignment**: Single-file, zero-configuration, no server. A fork is just a file copy + replay, consistent with the embedded philosophy.
+
+**Status**: Exploratory — depends on Phase 8 (stable public API) being complete. Implementation complexity is low (checkpoint + file copy + optional tx-count truncation); the main work is API design and ensuring the WAL is fully flushed before the fork.
+
+**Timeline**: Phase 9 or later, conditional on user demand
+
+---
+
 ## Release Strategy
 
 ### v0.1.0 - ✅ Phase 1 Complete (PoC)
