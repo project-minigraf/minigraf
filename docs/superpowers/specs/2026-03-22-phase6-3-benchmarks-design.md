@@ -12,7 +12,7 @@
 
 ## Benchmark Categories
 
-Eight benchmark groups, all using Criterion's `BenchmarkGroup` API for structured HTML output.
+Nine benchmark groups, all using Criterion's `BenchmarkGroup` API for structured HTML output.
 
 ### 1. `insert/` — Write throughput
 
@@ -87,11 +87,11 @@ Measures `db.checkpoint()` cost as a function of facts committed to the WAL side
 Scenarios:
 - `{1k,10k}` — checkpoint after N committed facts pending in WAL sidecar
 
-### 8. `concurrent/` — Concurrency throughput
+### 8. `concurrent/` — Concurrency throughput (in-memory)
 
 Uses `std::thread::spawn` + `Arc<Minigraf>` with `std::sync::Barrier` synchronization to start all threads simultaneously. Measures total ops/sec under contention. Uses `b.iter_custom(...)` — Criterion's standard `iter` cannot express multi-thread workloads.
 
-The shared DB is pre-populated with 10K facts before threads are spawned. An empty DB would measure only parser overhead; 10K gives a realistic working set where index scans and lock contention are meaningful.
+The shared DB is pre-populated with 10K facts (in-memory) before threads are spawned. An empty DB would measure only parser overhead; 10K gives a realistic working set where index scans and lock contention are meaningful.
 
 **Note on `serialized_writers`:** Minigraf serializes writes via an exclusive `Mutex`. The `serialized_writers` scenario does not measure parallel write throughput (there is none by design — only one writer proceeds at a time). It measures lock-contention overhead and scheduling cost as writer thread count increases. Expect total throughput to remain flat or decrease slightly with more threads; this is correct behavior, not a bug.
 
@@ -100,13 +100,22 @@ Scenarios:
 - `readers_plus_writer/{4,8,16}` — N-1 reader threads + 1 writer (mixed workload, RwLock vs Mutex interaction)
 - `serialized_writers/{2,4,8,16}` — N threads competing for the write Mutex; measures serialization overhead, not write parallelism
 
+### 9. `concurrent_file/` — Concurrency throughput (file-backed)
+
+Mirrors `concurrent/` but uses a file-backed DB (pre-populated with 10K facts, opened with `wal_checkpoint_threshold: usize::MAX`). The write scenarios now include WAL fsync under lock contention, which is the realistic production path. The delta between `concurrent/` and `concurrent_file/` for write-heavy scenarios quantifies fsync cost under concurrent load.
+
+Scenarios:
+- `readers/{4,8,16}` — concurrent reads against file-backed DB (page cache hit/miss under contention)
+- `readers_plus_writer/{4,8,16}` — mixed workload with WAL writes
+- `serialized_writers/{2,4,8,16}` — serialized WAL fsyncs under thread contention
+
 ---
 
 ## File Structure
 
 ```
 benches/
-  minigraf_bench.rs      # single entry point; all 8 groups via BenchmarkGroup
+  minigraf_bench.rs      # single entry point; all 9 groups via BenchmarkGroup
   helpers/
     mod.rs               # shared fixtures; included via `mod helpers;` in minigraf_bench.rs
 ```
@@ -120,7 +129,7 @@ Cargo treats each file directly under `benches/` as a bench entry point. Subdire
 | `populate_in_memory(n: usize)` | `Arc<Minigraf>` | query, time_travel, recursion, concurrent, insert |
 | `populate_file(n: usize, path: &str)` | `()` | open/checkpointed |
 | `populate_file_no_checkpoint(n: usize, path: &str)` | `()` | open/wal_replay, checkpoint (opens with `wal_checkpoint_threshold: usize::MAX`) |
-| `open_file_no_checkpoint(path: &str)` | `Arc<Minigraf>` | insert_file (returns open file-backed DB with `wal_checkpoint_threshold: usize::MAX`) |
+| `open_file_no_checkpoint(path: &str)` | `Arc<Minigraf>` | insert_file, concurrent_file (returns open file-backed DB with `wal_checkpoint_threshold: usize::MAX`) |
 | `chain_graph(depth: usize)` | `Arc<Minigraf>` | recursion/chain |
 | `fanout_graph(width: usize, depth: usize)` | `Arc<Minigraf>` | recursion/fanout |
 
@@ -186,7 +195,10 @@ Benchmarks run with `cargo bench` on [hardware summary]. Full HTML reports: `tar
 ### Transitive closure
 ...
 
-### Concurrent throughput
+### Concurrent throughput (in-memory)
+...
+
+### Concurrent throughput (file-backed)
 ...
 
 ### Database open time
@@ -201,6 +213,6 @@ Values filled in after running the suite on the development machine. Prose summa
 
 - `cargo bench` completes without panics or Criterion errors
 - HTML reports generated in `target/criterion/` with stable measurements (Criterion noise < 5% for most benchmarks)
-- All 8 groups produce plausible numbers across all defined scales
+- All 9 groups produce plausible numbers across all defined scales
 - `README.md` has a populated `## Performance` section with actual numbers from the run
 - A written Phase 6.3b plan document referencing specific benchmark numbers identifies concrete optimization targets (e.g. "join_3pattern at 1M shows 50ms — optimizer improvement target")
