@@ -4,7 +4,7 @@
 [![Clippy Status](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml/badge.svg)](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/adityamukho/minigraf#license)
 [![Rust Edition](https://img.shields.io/badge/rust-2024-orange.svg)](https://blog.rust-lang.org/2024/10/17/Rust-1.82.0.html)
-[![Phase](https://img.shields.io/badge/phase-6.4a%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
+[![Phase](https://img.shields.io/badge/phase-6.4b%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
 
 > **Embedded graph memory for AI agents, mobile apps, and the browser** — the SQLite of bi-temporal graph databases
 
@@ -18,7 +18,7 @@ Minigraf is a **single-file embedded graph database** that lets you:
 - ✅ **Embed anywhere** - Native, WASM, mobile, IoT - one `.graph` file
 - ✅ **Zero configuration** - Just `Minigraf::open("data.graph")` and you're done
 
-**Status**: Early development. Phase 6.4a complete (Retraction semantics fix + edge case tests). Now starting Phase 6.4b (Criterion benchmarks + crates.io publish). Note: Phase 6.3 (query optimization) was completed as part of Phase 6.1.
+**Status**: Early development. Phase 6.4b complete (Criterion benchmarks + light publish prep). Note: Phase 6.3 (query optimization) was completed as part of Phase 6.1. Next: Phase 6.5 (on-disk B+tree indexes).
 
 ## Why Datalog?
 
@@ -30,9 +30,9 @@ Minigraf is a **single-file embedded graph database** that lets you:
 4. **Proven at scale** - 40+ years of research, production use (Datomic, XTDB)
 5. **Graph-native** - Facts (Entity-Attribute-Value) are literally edges
 
-## Current Status - Phase 6.4a Complete
+## Current Status - Phase 6.4b Complete
 
-Minigraf has a **crash-safe bi-temporal Datalog query engine with covering indexes, packed storage, LRU page cache, and correct retraction semantics**:
+Minigraf has a **crash-safe bi-temporal Datalog query engine with covering indexes, packed storage, LRU page cache, correct retraction semantics, and validated performance benchmarks**:
 
 - ✅ **EAV data model** - Entity-Attribute-Value facts with transaction IDs
 - ✅ **Datalog queries** - Pattern matching with variable unification
@@ -56,7 +56,8 @@ Minigraf has a **crash-safe bi-temporal Datalog query engine with covering index
 - ✅ **Correct retraction semantics** - Retracted facts no longer appear in Datalog queries; `net_asserted_facts` computes the net view per EAV triple
 - ✅ **Oversized-fact validation** - Facts exceeding `MAX_FACT_BYTES` (4 080 bytes) are rejected at insertion with a clear error
 - ✅ **298 tests passing** - Comprehensive test coverage
-- 🎯 **Next: Criterion benchmarks** - Performance at scale + crates.io publish (Phase 6.4b)
+- ✅ **Criterion benchmarks** - Validated performance at 1K–1M facts; see [BENCHMARKS.md](BENCHMARKS.md)
+- 🎯 **Next: On-disk B+tree indexes** - Sub-linear queries, O(cache) index memory (Phase 6.5)
 
 ## Quick Start
 
@@ -273,13 +274,13 @@ The `.graph` file uses a page-based format (like SQLite), with an optional WAL s
 - Fixed retraction semantics in Datalog queries (`net_asserted_facts`)
 - `MAX_FACT_BYTES` early validation; oversized-fact and retraction tests
 
-**Phase 6.4b**: 🎯 Criterion Benchmarks + **crates.io publish** (Next)
-- Criterion suite, performance at 10K/100K/1M facts
-- Checkpoint-during-crash edge case test
-- Error-path coverage raised from ~82%
-- GitHub Discussions enabled; first public crates.io release (v0.8.0)
+**Phase 6.4b**: ✅ Criterion Benchmarks + Light Publish Prep (Complete)
+- Criterion suite run at 1K–1M facts; BENCHMARKS.md documents results
+- `examples/memory_profile.rs` + heaptrack profiling (peak 14 MB at 10K → 1.33 GB at 1M)
+- Cargo.toml metadata (`repository`, `keywords`, `categories`); dead `clap` dep removed
+- GitHub Discussions enabled; version bumped to v0.8.0
 
-**Phase 6.5**: 🎯 On-Disk B+Tree Indexes
+**Phase 6.5**: 🎯 On-Disk B+Tree Indexes (Next)
 - Replace paged-blob index serialisation with proper on-disk B+tree pages
 - Index memory usage proportional to cache size, not database size
 - File format v6 with automatic v5 migration
@@ -300,148 +301,114 @@ See [ROADMAP.md](ROADMAP.md) for detailed breakdown.
 
 ## Performance
 
-Benchmarks run with `cargo bench` on Intel i7-1065G7 (1.3 GHz base, Linux). Full HTML
-reports generated in `target/criterion/` after running `cargo bench`.
+Benchmarks run with `cargo bench` on Intel Core i7-1065G7 @ 1.30GHz, 16 GB RAM, Manjaro Linux 6.12.73-1, Rust 1.92.0. Full HTML reports generated in `target/criterion/` after running `cargo bench`. See [BENCHMARKS.md](BENCHMARKS.md) for complete results and methodology.
 
 ### Insert throughput (in-memory)
 
-Steady-state cost of inserting into a pre-populated in-memory database. All three
-write modes cost essentially the same — ~2.3 µs/fact, flat across scales.
+Steady-state cost of inserting into a pre-populated in-memory database. Flat across scales — WAL writes go to OS buffers, not the `.graph` file.
 
 | Pre-populated | Single fact | Batch (100) | Explicit tx |
 |---|---|---|---|
-| 1K  | 2.4 µs | 282 µs (~2.8 µs/fact) | 2.4 µs |
-| 10K | 2.4 µs | 273 µs (~2.7 µs/fact) | 2.3 µs |
-| 100K | 2.4 µs | 285 µs (~2.9 µs/fact) | 2.3 µs |
+| 1K  | 2.39 µs | 268 µs (~2.7 µs/fact) | 2.28 µs |
+| 10K | 2.38 µs | 260 µs (~2.6 µs/fact) | 2.24 µs |
+| 100K | 2.35 µs | 275 µs (~2.8 µs/fact) | 2.24 µs |
 
 ### Insert throughput (file-backed, WAL-appended)
 
-Same workloads with a file-backed database. WAL entries are OS-buffered (no explicit
-fsync in the current implementation), adding only ~0.8 µs overhead vs in-memory.
+WAL entries are OS-buffered (no explicit fsync), adding only ~1 µs overhead vs in-memory.
 
 | Pre-populated | Single fact | Batch (100) | Explicit tx |
 |---|---|---|---|
-| 1K  | 3.2 µs | 190 µs (~1.9 µs/fact) | 3.1 µs |
-| 10K | 3.2 µs | 195 µs (~2.0 µs/fact) | 3.2 µs |
-| 100K | 3.2 µs | 198 µs (~2.0 µs/fact) | 3.2 µs |
+| 1K  | 3.34 µs | 207 µs (~2.1 µs/fact) | 3.35 µs |
+| 10K | 3.36 µs | 210 µs (~2.1 µs/fact) | 3.36 µs |
+| 100K | 3.36 µs | 214 µs (~2.1 µs/fact) | 3.39 µs |
 
-> **Finding:** In-memory and file-backed inserts cost virtually the same.
-> The WAL writer uses OS-buffered writes; adding explicit fsync would add
-> ~500 µs/write on real hardware but provides stronger durability guarantees.
+### Query latency
 
-### Query latency (in-memory)
-
-Queries run against a pre-populated in-memory database. All three query types show
-**O(N) scaling** — the query executor currently does a full linear scan of facts
-rather than using the covering indexes (known limitation; Phase 6.5 optimization target).
+All three query types show **O(N) scaling** — the executor does a full scan of the in-memory index. Phase 6.5 will bring point lookups to O(log N).
 
 | DB size | Point entity | Point attribute | 3-pattern join |
 |---|---|---|---|
-| 1K  | 0.9 ms | 0.8 ms | 3.6 ms |
-| 10K | 10.8 ms | 10.0 ms | 41.7 ms |
-| 100K | 158 ms | 148 ms | 520 ms |
-| 1M | 2.2 s | 2.1 s | 6.7 s |
-
-> **Finding:** Query latency scales linearly with DB size — ~2.2 µs/fact scanned.
-> The covering indexes (EAVT, AEVT, AVET, VAET) are persisted to disk but not yet
-> used for in-memory query execution. Using them would reduce point lookups to
-> O(log N) and joins dramatically.
+| 1K  | 1.17 ms | 1.06 ms | 4.05 ms |
+| 10K | 14.9 ms | 13.8 ms | 50.5 ms |
+| 100K | 257 ms | 243 ms | 815 ms |
+| 1M | 4.30 s | 4.11 s | 12.3 s |
 
 ### Time-travel overhead
 
-Temporal filtering (`:as-of` tx counter or `:valid-at` timestamp) adds negligible
-overhead on top of the base query cost.
+`:as-of` and `:valid-at` filtering add negligible overhead on top of base query cost.
 
-| DB size | Base query | `:as-of` | `:valid-at` | Overhead |
-|---|---|---|---|---|
-| 1K  | 0.88 ms | 0.90 ms | 0.88 ms | <3% |
-| 10K | 10.8 ms | 11.1 ms | 11.0 ms | <3% |
-| 100K | 158 ms | 160 ms | 159 ms | <2% |
-| 1M | 2.2 s | 2.2 s | 2.3 s | <5% |
+| DB size | Point entity | `:as-of` | `:valid-at` |
+|---|---|---|---|
+| 1K  | 1.17 ms | 1.16 ms | 1.16 ms |
+| 10K | 14.9 ms | 14.7 ms | 14.6 ms |
+| 100K | 257 ms | 254 ms | 250 ms |
+| 1M | 4.30 s | 4.27 s | 4.20 s |
 
 ### Transitive closure (recursive rules)
 
-Semi-naive evaluation on two graph shapes. The chain benchmark exposes a **quadratic
-scaling problem** in the current evaluator — a major Phase 6.5 optimization target.
-
 | Scenario | Time |
 |---|---|
-| chain, depth 10 | 2.7 ms |
-| chain, depth 100 | 15.6 s (**O(depth²)** — optimization target) |
-| fanout, width 10 depth 3 (~1,110 nodes) | 5.0 s |
+| chain, depth 10 | 2.53 ms |
+| chain, depth 100 | 15.7 s (**O(depth²)** — optimization target) |
+| fanout, width 10 depth 3 (~1,110 nodes) | 4.84 s |
 
-> **Finding:** The semi-naive evaluator rebuilds the full result set on each iteration
-> rather than diffing only new tuples, causing O(depth²) behavior on chain graphs.
-> This is the single biggest performance issue; fixing it is the primary goal of
-> Phase 6.5.
+Deep chains expose a quadratic scaling issue in the semi-naive evaluator. Phase 6.5 target: true delta-based semi-naive to restore O(depth × delta) behavior.
 
 ### Database open time
 
-Time to open an existing database, including header read, fact page loading, and
-index reconstruction. Scales linearly with fact count (O(N)).
-
-| DB size | Checkpointed (clean) | WAL replay (uncommitted) |
+| DB size | Checkpointed (clean) | WAL replay |
 |---|---|---|
-| 1K  | 1.8 ms | 1.7 ms |
-| 10K | 23 ms | 20 ms |
-| 100K | 280 ms | — |
-| 1M | 3.2 s | — |
-
-WAL replay is slightly faster than clean open at 10K (20 ms vs 23 ms) because replaying
-WAL entries skips some packed-page processing. Phase 6.5 on-disk B+tree indexes will
-reduce open time to O(1) for most databases.
+| 1K  | 1.83 ms | 1.66 ms |
+| 10K | 21.8 ms | 19.6 ms |
+| 100K | 259 ms | — |
+| 1M | 3.14 s | — |
 
 ### Checkpoint cost
 
-Time to flush WAL entries to packed pages and delete the WAL sidecar.
-
 | WAL size | Checkpoint time |
 |---|---|
-| 1K facts | 1.5 ms |
-| 10K facts | 16.8 ms |
+| 1K facts | 1.40 ms |
+| 10K facts | 16.5 ms |
 
 ### Concurrent throughput (in-memory, 10K-fact DB)
 
-Multi-threaded performance via `std::sync::RwLock` (reads) and `Mutex` (writes).
-Numbers represent maximum per-thread elapsed time across N threads each performing
-the same number of operations.
-
 | Scenario | 4 threads | 8 threads | 16 threads |
 |---|---|---|---|
-| readers only | 22 ms | 44 ms | 81 ms |
-| readers + 1 writer | 19 ms | 39 ms | 77 ms |
-
-| Scenario | 2 threads | 4 threads | 8 threads | 16 threads |
-|---|---|---|---|---|
-| serialized writers | 5.2 µs | 15.4 µs | 34.4 µs | 68.3 µs |
-
-> Read throughput scales linearly with thread count (expected — RwLock allows
-> parallel reads). A single writer does not significantly degrade reader latency.
-> Serialized writes show linear contention growth — each additional thread doubles
-> the wait time, as expected for an exclusive Mutex.
+| readers only | 32.2 ms | 67.3 ms | 125 ms |
+| readers + 1 writer | 26.4 ms | 58.2 ms | 120 ms |
+| serialized writers | 4.76 µs (2 threads only†) | — | — |
 
 ### Concurrent throughput (file-backed, 10K-fact DB)
 
-Same workloads with a file-backed database. WAL-append overhead is ~2× the in-memory
-cost under contention (~9 µs vs ~5 µs at 2 threads).
-
 | Scenario | 4 threads | 8 threads | 16 threads |
 |---|---|---|---|
-| readers only | 23 ms | 44 ms | 90 ms |
-| readers + 1 writer | 20 ms | 41 ms | 84 ms |
+| readers only | 31.8 ms | 64.4 ms | 126 ms |
+| readers + 1 writer | 25.6 ms | 57.2 ms | 119 ms |
+| serialized writers | 9.66 µs (2 threads only†) | — | — |
 
-| Scenario | 2 threads | 4 threads | 8 threads | 16 threads |
-|---|---|---|---|---|
-| serialized writers | 9.4 µs | 22.1 µs | 48.2 µs | 94.4 µs |
+† `serialized_writers` at ≥4 threads OOM-kills on this machine (no swap). See [BENCHMARKS.md](BENCHMARKS.md#known-limitations).
+
+### Memory usage (heaptrack)
+
+Peak heap consumption for insert-N + checkpoint + one query.
+
+| Facts | Peak Heap | Peak RSS |
+|---|---|---|
+| 10K | 14.4 MB | 22.5 MB |
+| 100K | 136 MB | 195 MB |
+| 1M | 1.33 GB | 2.04 GB |
+
+Memory scales linearly with fact count (~135 bytes/fact at 100K). Phase 6.5 on-disk B+tree indexes will bring index memory to O(cache_pages).
 
 ### Summary of optimization targets
 
 | Issue | Current | Phase 6.5 Target |
 |---|---|---|
-| Query O(N) linear scan | 2.2 s at 1M facts | O(log N) via in-memory index lookup |
-| Recursive evaluator O(depth²) | 15.6 s at depth 100 | O(depth × delta) semi-naive |
-| Open time O(N) | 3.2 s at 1M facts | O(1) header + lazy page loading |
-| No explicit WAL fsync | Durability gap | Configurable sync mode |
+| Query O(N) linear scan | 4.3 s at 1M facts | O(log N) via index lookup |
+| Recursive evaluator O(depth²) | 15.7 s at depth 100 | O(depth × delta) semi-naive |
+| Open time O(N) | 3.1 s at 1M facts | O(1) header + lazy page loading |
+| Index memory O(facts) | 1.33 GB at 1M facts | O(cache_pages) |
 
 ### Fact Size Limit
 
