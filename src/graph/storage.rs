@@ -17,6 +17,33 @@ use std::sync::{Arc, RwLock};
 struct FactData {
     facts: Vec<Fact>,
     indexes: Indexes,
+    /// Resolves committed (on-disk) FactRefs to Fact objects.
+    /// None for in-memory databases or before load() is called.
+    committed: Option<Arc<dyn crate::storage::CommittedFactReader>>,
+}
+
+/// Resolve a FactRef to a Fact using the committed reader (for on-disk facts)
+/// or the pending facts vector (for in-memory facts with page_id=0).
+fn resolve_fact_ref(
+    d: &FactData,
+    fr: FactRef,
+) -> Result<Fact> {
+    if fr.page_id == 0 {
+        // Pending fact: page_id=0, slot_index is index into d.facts
+        d.facts
+            .get(fr.slot_index as usize)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("pending fact index {} out of bounds", fr.slot_index))
+    } else {
+        // Committed fact: resolve via CommittedFactReader
+        match &d.committed {
+            Some(loader) => loader.resolve(fr),
+            None => anyhow::bail!(
+                "no CommittedFactReader but got committed FactRef (page_id={})",
+                fr.page_id
+            ),
+        }
+    }
 }
 
 /// In-memory storage for Datalog facts with transaction support
@@ -72,6 +99,7 @@ impl FactStorage {
             data: Arc::new(RwLock::new(FactData {
                 facts: Vec::new(),
                 indexes: Indexes::new(),
+                committed: None,
             })),
             tx_counter: Arc::new(AtomicU64::new(0)),
         }
@@ -110,14 +138,16 @@ impl FactStorage {
             .collect();
 
         let mut d = self.data.write().unwrap();
+        let mut slot = d.facts.len() as u16;
         for fact in &facts {
             d.indexes.insert(
                 fact,
                 FactRef {
                     page_id: 0,
-                    slot_index: 0,
+                    slot_index: slot,
                 },
             );
+            slot += 1;
         }
         d.facts.extend(facts);
 
@@ -148,14 +178,16 @@ impl FactStorage {
             .collect();
 
         let mut d = self.data.write().unwrap();
+        let mut slot = d.facts.len() as u16;
         for fact in &retractions {
             d.indexes.insert(
                 fact,
                 FactRef {
                     page_id: 0,
-                    slot_index: 0,
+                    slot_index: slot,
                 },
             );
+            slot += 1;
         }
         d.facts.extend(retractions);
 
@@ -169,11 +201,12 @@ impl FactStorage {
     /// counter so subsequent `transact()` calls get correct tx_count values.
     pub fn load_fact(&self, fact: Fact) -> Result<()> {
         let mut d = self.data.write().unwrap();
+        let slot = d.facts.len() as u16;
         d.indexes.insert(
             &fact,
             FactRef {
                 page_id: 0,
-                slot_index: 0,
+                slot_index: slot,
             },
         );
         d.facts.push(fact);
@@ -211,15 +244,13 @@ impl FactStorage {
     /// * `AsOf::Counter(n)` — include facts whose `tx_count <= n`
     /// * `AsOf::Timestamp(t)` — include facts whose `tx_id <= t as u64`
     pub fn get_facts_as_of(&self, as_of: &AsOf) -> Result<Vec<Fact>> {
-        let d = self.data.read().unwrap();
-        let filtered = d
-            .facts
-            .iter()
+        let all = self.get_all_facts()?;
+        let filtered = all
+            .into_iter()
             .filter(|f| match as_of {
                 AsOf::Counter(n) => f.tx_count <= *n,
                 AsOf::Timestamp(t) => f.tx_id <= *t as u64,
             })
-            .cloned()
             .collect();
         Ok(filtered)
     }
@@ -228,12 +259,10 @@ impl FactStorage {
     ///
     /// A fact is valid at `ts` when `valid_from <= ts < valid_to` and it is asserted.
     pub fn get_facts_valid_at(&self, ts: i64) -> Result<Vec<Fact>> {
-        let d = self.data.read().unwrap();
-        let filtered = d
-            .facts
-            .iter()
+        let all = self.get_all_facts()?;
+        let filtered = all
+            .into_iter()
             .filter(|f| f.is_asserted() && f.valid_from <= ts && ts < f.valid_to)
-            .cloned()
             .collect();
         Ok(filtered)
     }
@@ -242,9 +271,17 @@ impl FactStorage {
     ///
     /// Returns the complete append-only log. For current state, filter by
     /// asserted=true and take the most recent fact for each (E, A) pair.
+    /// Includes both committed (on-disk) facts and pending (in-memory) facts.
     pub fn get_all_facts(&self) -> Result<Vec<Fact>> {
         let d = self.data.read().unwrap();
-        Ok(d.facts.clone())
+        let mut all = Vec::new();
+        // Committed facts first (on disk, via CommittedFactReader)
+        if let Some(loader) = &d.committed {
+            all.extend(loader.stream_all()?);
+        }
+        // Then pending facts (post-checkpoint, in memory)
+        all.extend(d.facts.iter().cloned());
+        Ok(all)
     }
 
     /// Get all asserted facts (filters out retractions)
@@ -252,15 +289,15 @@ impl FactStorage {
     /// Returns only facts where asserted=true. This gives you the currently
     /// valid facts, but includes all historical versions.
     pub fn get_asserted_facts(&self) -> Result<Vec<Fact>> {
-        let d = self.data.read().unwrap();
-        Ok(d.facts
-            .iter()
-            .filter(|f| f.is_asserted())
-            .cloned()
-            .collect())
+        let all = self.get_all_facts()?;
+        Ok(all.into_iter().filter(|f| f.is_asserted()).collect())
     }
 
     /// Get all facts for a specific entity
+    ///
+    /// Uses the EAVT index to find facts by entity, resolving FactRefs
+    /// via the CommittedFactReader (for on-disk facts) or the pending
+    /// facts vector (for in-memory facts).
     ///
     /// # Arguments
     /// * `entity_id` - The entity to query
@@ -268,12 +305,43 @@ impl FactStorage {
     /// # Returns
     /// All facts (assertions and retractions) about this entity
     pub fn get_facts_by_entity(&self, entity_id: &EntityId) -> Result<Vec<Fact>> {
+        use crate::storage::index::EavtKey;
         let d = self.data.read().unwrap();
-        Ok(d.facts
-            .iter()
-            .filter(|f| &f.entity == entity_id)
-            .cloned()
-            .collect())
+
+        // If indexes are empty but facts exist (pre-index code path), fall back to scan
+        if d.indexes.eavt.is_empty() && (!d.facts.is_empty() || d.committed.is_some()) {
+            // Fallback: linear scan (for backwards compatibility)
+            let mut result: Vec<Fact> = d
+                .facts
+                .iter()
+                .filter(|f| &f.entity == entity_id)
+                .cloned()
+                .collect();
+            if let Some(loader) = &d.committed {
+                for fact in loader.stream_all()? {
+                    if &fact.entity == entity_id {
+                        result.push(fact);
+                    }
+                }
+            }
+            return Ok(result);
+        }
+
+        let start = EavtKey {
+            entity: *entity_id,
+            attribute: String::new(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
+        let mut facts = Vec::new();
+        for (key, &fr) in d.indexes.eavt.range(start..) {
+            if key.entity != *entity_id {
+                break;
+            }
+            facts.push(resolve_fact_ref(&d, fr)?);
+        }
+        Ok(facts)
     }
 
     /// Get all facts for a specific attribute
@@ -284,12 +352,8 @@ impl FactStorage {
     /// # Returns
     /// All facts with this attribute
     pub fn get_facts_by_attribute(&self, attribute: &Attribute) -> Result<Vec<Fact>> {
-        let d = self.data.read().unwrap();
-        Ok(d.facts
-            .iter()
-            .filter(|f| &f.attribute == attribute)
-            .cloned()
-            .collect())
+        let all = self.get_all_facts()?;
+        Ok(all.into_iter().filter(|f| &f.attribute == attribute).collect())
     }
 
     /// Get all facts for a specific entity and attribute
@@ -305,11 +369,10 @@ impl FactStorage {
         entity_id: &EntityId,
         attribute: &Attribute,
     ) -> Result<Vec<Fact>> {
-        let d = self.data.read().unwrap();
-        Ok(d.facts
-            .iter()
+        let all = self.get_all_facts()?;
+        Ok(all
+            .into_iter()
             .filter(|f| &f.entity == entity_id && &f.attribute == attribute)
-            .cloned()
             .collect())
     }
 
@@ -329,14 +392,7 @@ impl FactStorage {
         entity_id: &EntityId,
         attribute: &Attribute,
     ) -> Result<Option<Value>> {
-        let d = self.data.read().unwrap();
-
-        // Find the most recent fact for this (entity, attribute) pair
-        let mut relevant_facts: Vec<&Fact> = d
-            .facts
-            .iter()
-            .filter(|f| &f.entity == entity_id && &f.attribute == attribute)
-            .collect();
+        let mut relevant_facts = self.get_facts_by_entity_attribute(entity_id, attribute)?;
 
         // Sort by transaction ID (timestamp) descending
         relevant_facts.sort_by(|a, b| b.tx_id.cmp(&a.tx_id));
@@ -351,16 +407,21 @@ impl FactStorage {
         }))
     }
 
-    /// Get the count of all facts in storage
+    /// Get the count of all facts in storage (committed + pending).
     pub fn fact_count(&self) -> usize {
         let d = self.data.read().unwrap();
-        d.facts.len()
+        let committed_count = d
+            .committed
+            .as_ref()
+            .and_then(|l| l.stream_all().ok())
+            .map(|v| v.len())
+            .unwrap_or(0);
+        committed_count + d.facts.len()
     }
 
     /// Get the count of currently asserted facts
     pub fn asserted_fact_count(&self) -> usize {
-        let d = self.data.read().unwrap();
-        d.facts.iter().filter(|f| f.is_asserted()).count()
+        self.get_asserted_facts().map(|v| v.len()).unwrap_or(0)
     }
 
     /// Clear all facts (for testing)
@@ -368,6 +429,7 @@ impl FactStorage {
         let mut d = self.data.write().unwrap();
         d.facts.clear();
         d.indexes = Indexes::new();
+        d.committed = None;
         self.tx_counter.store(0, Ordering::SeqCst);
         Ok(())
     }
@@ -422,6 +484,16 @@ impl FactStorage {
             avet: d.indexes.avet.clone(),
             vaet: d.indexes.vaet.clone(),
         }
+    }
+
+    /// Set the committed fact reader. Called by PersistentFactStorage::load() after
+    /// opening a v5 file so index-driven reads can resolve FactRefs via page cache.
+    pub fn set_committed_reader(
+        &self,
+        reader: Arc<dyn crate::storage::CommittedFactReader>,
+    ) {
+        let mut d = self.data.write().unwrap();
+        d.committed = Some(reader);
     }
 }
 

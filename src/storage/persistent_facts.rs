@@ -17,11 +17,12 @@ use crc32fast::Hasher;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-/// Compute the CRC32 sync checksum over all facts.
+/// Compute the CRC32 sync checksum over all facts (used in tests only).
 ///
 /// Sorts facts by `(tx_count, entity_bytes, attribute)` before hashing to
 /// produce a stable total order independent of Vec insertion order.
-pub(crate) fn compute_index_checksum(facts: &[Fact]) -> u32 {
+#[cfg(test)]
+fn compute_index_checksum(facts: &[Fact]) -> u32 {
     let mut sorted: Vec<&Fact> = facts.iter().collect();
     sorted.sort_by(|a, b| {
         a.tx_count
@@ -38,20 +39,41 @@ pub(crate) fn compute_index_checksum(facts: &[Fact]) -> u32 {
     hasher.finalize()
 }
 
-/// Rebuild all four indexes from a fact slice.
-fn reindex_from_facts(facts: &[Fact]) -> Indexes {
-    let mut indexes = Indexes::new();
-    for (i, fact) in facts.iter().enumerate() {
-        // Page 1-based: page 0 is the header, pages 1..=N are facts.
-        indexes.insert(
-            fact,
-            crate::storage::index::FactRef {
-                page_id: (i + 1) as u64,
-                slot_index: 0,
-            },
-        );
+
+/// CommittedFactReader backed by a PageCache + shared backend.
+///
+/// Resolves FactRefs to Fact objects by reading packed pages from the backend
+/// through the page cache. Used after loading a v5 file so that indexes can
+/// resolve committed facts without keeping the entire fact list in memory.
+struct CommittedFactLoaderImpl<B: StorageBackend> {
+    backend: Arc<Mutex<B>>,
+    page_cache: Arc<PageCache>,
+    committed_fact_pages: Arc<AtomicU64>,
+    #[allow(dead_code)]
+    first_fact_page: u64, // always 1 in current layout
+}
+
+impl<B: StorageBackend + 'static> crate::storage::CommittedFactReader
+    for CommittedFactLoaderImpl<B>
+{
+    fn resolve(
+        &self,
+        fact_ref: crate::storage::index::FactRef,
+    ) -> anyhow::Result<crate::graph::types::Fact> {
+        let backend = self.backend.lock().unwrap();
+        let page = self.page_cache.get_or_load(fact_ref.page_id, &*backend)?;
+        crate::storage::packed_pages::read_slot(&page, fact_ref.slot_index)
     }
-    indexes
+
+    fn stream_all(&self) -> anyhow::Result<Vec<crate::graph::types::Fact>> {
+        let n = self.committed_fact_pages.load(Ordering::SeqCst);
+        let backend = self.backend.lock().unwrap();
+        crate::storage::packed_pages::read_all_from_pages(&*backend, 1, n)
+    }
+
+    fn committed_page_count(&self) -> u64 {
+        self.committed_fact_pages.load(Ordering::SeqCst)
+    }
 }
 
 /// V1 fact format (Phase 3, before bi-temporal fields were added).
@@ -102,7 +124,7 @@ struct FactV1 {
 ///
 /// The page-based backend (StorageBackend) is designed to support this
 /// future architecture without breaking changes.
-pub struct PersistentFactStorage<B: StorageBackend> {
+pub struct PersistentFactStorage<B: StorageBackend + 'static> {
     backend: Arc<Mutex<B>>,
     page_cache: Arc<PageCache>,
     storage: FactStorage,
@@ -111,7 +133,7 @@ pub struct PersistentFactStorage<B: StorageBackend> {
     committed_fact_pages: Arc<AtomicU64>,
 }
 
-impl<B: StorageBackend> PersistentFactStorage<B> {
+impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     /// Create a new persistent storage with the given backend.
     ///
     /// If the backend already contains data, loads it.
@@ -146,16 +168,16 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
 
     /// Load all facts from the backend into memory.
     fn load(&mut self) -> Result<()> {
-        let backend = self.backend.lock().unwrap();
-
-        // Read header from page 0
-        let header_page = backend.read_page(0)?;
-        let header = FileHeader::from_bytes(&header_page)?;
-        header.validate()?;
+        let header = {
+            let backend = self.backend.lock().unwrap();
+            let header_page = backend.read_page(0)?;
+            let h = FileHeader::from_bytes(&header_page)?;
+            h.validate()?;
+            h
+        };
 
         // Migrate v1 → v2 if needed
         if header.version < 2 {
-            drop(backend);
             return self.migrate_v1_to_v2();
         }
 
@@ -165,13 +187,20 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
         // Clear existing storage
         self.storage.clear()?;
 
-        // Load facts from pages 1..page_count
-        let page_count = header.page_count;
-        let is_packed = header.fact_page_format == FACT_PAGE_FORMAT_PACKED;
+        let fact_page_format = header.fact_page_format;
 
-        if is_packed {
-            // v5 packed format: read all packed fact pages using packed_pages module.
-            // Determine how many fact pages there are (before index pages start).
+        if fact_page_format == 0 || fact_page_format == crate::storage::FACT_PAGE_FORMAT_ONE_PER_PAGE
+        {
+            // Legacy one-per-page format (v4 or earlier): load all facts, then migrate to v5.
+            self.load_one_per_page_legacy(&header)?;
+            self.storage.restore_tx_counter()?;
+            self.dirty = true;
+            self.save()?;
+            return Ok(());
+        }
+
+        // v5 packed format
+        let num_fact_pages = {
             let first_index_page = [
                 header.eavt_root_page,
                 header.aevt_root_page,
@@ -182,64 +211,63 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
             .filter(|&&p| p > 0)
             .copied()
             .min()
-            .unwrap_or(page_count);
-            let num_fact_pages = if first_index_page > 1 {
+            .unwrap_or(header.page_count);
+            if first_index_page > 1 {
                 first_index_page - 1
             } else {
                 0
-            };
-            let facts =
-                crate::storage::packed_pages::read_all_from_pages(&*backend, 1, num_fact_pages)?;
-            for fact in facts {
-                self.storage.load_fact(fact)?;
             }
-            self.committed_fact_pages
-                .store(num_fact_pages, Ordering::SeqCst);
-        } else {
-            // Legacy one-per-page format (v4 and earlier)
-            for page_id in 1..page_count {
-                let page = backend.read_page(page_id)?;
-                // Try to deserialize a fact from this page
-                // Empty pages are skipped
-                if let Ok(fact) = postcard::from_bytes::<Fact>(&page) {
-                    // Preserve original tx_id and tx_count via load_fact()
-                    self.storage.load_fact(fact)?;
-                }
-            }
-        }
-
-        // Re-synchronise tx_counter to max(tx_count) of loaded facts
-        self.storage.restore_tx_counter()?;
-
-        // ── Sync check ───────────────────────────────────────────────────────────
-        let (computed_checksum, needs_rebuild) = if is_packed {
-            let num_fact_pages = self.committed_fact_pages.load(Ordering::SeqCst);
-            let computed = compute_page_checksum(&*backend, 1, num_fact_pages)?;
-            let needs = computed != header.index_checksum
-                || (header.eavt_root_page == 0 && num_fact_pages > 0);
-            (computed, needs)
-        } else {
-            let facts = self.storage.get_all_facts().unwrap_or_default();
-            let computed = compute_index_checksum(&facts);
-            let needs = computed != header.index_checksum
-                || (header.eavt_root_page == 0 && computed != 0);
-            (computed, needs)
         };
-        let _ = computed_checksum; // used in both branches above
+        self.committed_fact_pages
+            .store(num_fact_pages, Ordering::SeqCst);
+
+        // Compute page-based checksum to verify indexes are valid
+        let computed = {
+            let backend = self.backend.lock().unwrap();
+            compute_page_checksum(&*backend, 1, num_fact_pages)?
+        };
+        let stored = header.index_checksum;
+        let needs_rebuild =
+            num_fact_pages > 0 && (computed != stored || header.eavt_root_page == 0);
+
+        // Register CommittedFactReader on FactStorage (before WAL replay)
+        let loader: std::sync::Arc<dyn crate::storage::CommittedFactReader> =
+            std::sync::Arc::new(CommittedFactLoaderImpl {
+                backend: self.backend.clone(),
+                page_cache: self.page_cache.clone(),
+                committed_fact_pages: self.committed_fact_pages.clone(),
+                first_fact_page: 1,
+            });
+        self.storage.set_committed_reader(loader);
+
+        // Restore tx_counter from header
+        self.storage
+            .restore_tx_counter_from(header.last_checkpointed_tx_count);
 
         if needs_rebuild {
-            let facts = self.storage.get_all_facts().unwrap_or_default();
-            let new_indexes = reindex_from_facts(&facts);
-            self.storage.replace_indexes(new_indexes);
+            // Checksum mismatch: rebuild indexes by re-reading all packed facts
+            let all_facts = {
+                let backend = self.backend.lock().unwrap();
+                crate::storage::packed_pages::read_all_from_pages(&*backend, 1, num_fact_pages)?
+            };
+            // Re-pack to derive correct FactRefs (same deterministic layout as on disk)
+            let (_, real_refs) = pack_facts(&all_facts, 1)?;
+            let indexes = reindex_with_refs(&all_facts, &real_refs);
+            self.storage.replace_indexes(indexes);
+            // Fix up tx_counter from actual facts
+            let max_tx = all_facts.iter().map(|f| f.tx_count).max().unwrap_or(0);
+            self.storage.restore_tx_counter_from(max_tx);
+            // Persist the rebuilt indexes
             self.dirty = true;
-            drop(backend);
             self.save()?;
         } else if header.eavt_root_page != 0 {
-            // Fast path: load indexes from existing B+tree pages on disk.
+            // Fast path: load indexes from B+tree pages
+            let backend = self.backend.lock().unwrap();
             let eavt = read_eavt_index(header.eavt_root_page, &*backend)?;
             let aevt = read_aevt_index(header.aevt_root_page, &*backend)?;
             let avet = read_avet_index(header.avet_root_page, &*backend)?;
             let vaet = read_vaet_index(header.vaet_root_page, &*backend)?;
+            drop(backend);
             self.storage.replace_indexes(Indexes {
                 eavt,
                 aevt,
@@ -250,6 +278,20 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
         // else: empty DB — indexes are empty by default, nothing to do.
 
         self.dirty = false;
+        Ok(())
+    }
+
+    /// Load facts from legacy one-per-page format (v4 and earlier).
+    fn load_one_per_page_legacy(&mut self, header: &FileHeader) -> Result<()> {
+        let page_count = header.page_count;
+        let backend = self.backend.lock().unwrap();
+        for page_id in 1..page_count {
+            let page = backend.read_page(page_id)?;
+            // Try to deserialize a fact from this page (legacy format: raw postcard bytes)
+            if let Ok(fact) = postcard::from_bytes::<Fact>(&page) {
+                self.storage.load_fact(fact)?;
+            }
+        }
         Ok(())
     }
 
@@ -346,7 +388,7 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
             return Ok(()); // No changes to save
         }
 
-        let facts = self.storage.get_pending_facts();
+        let facts = self.storage.get_all_facts()?;
         let mut backend = self.backend.lock().unwrap();
 
         // Write packed fact pages starting at page 1
@@ -393,14 +435,23 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
         header_page.resize(PAGE_SIZE, 0);
         backend.write_page(0, &header_page)?;
         backend.sync()?;
+        drop(backend); // Release lock before wiring committed reader
 
         self.last_checkpointed_tx_count = self.storage.current_tx_count();
         self.dirty = false;
 
-        // Note: We do NOT call clear_pending_facts() here because there is
-        // no CommittedFactReader yet (Task 5). Facts remain in memory so that
-        // get_all_facts() continues to work. Once the committed reader is
-        // integrated (Task 6), save() will clear pending facts.
+        // Wire CommittedFactReader so facts can be resolved from disk
+        let loader: std::sync::Arc<dyn crate::storage::CommittedFactReader> =
+            std::sync::Arc::new(CommittedFactLoaderImpl {
+                backend: self.backend.clone(),
+                page_cache: self.page_cache.clone(),
+                committed_fact_pages: self.committed_fact_pages.clone(),
+                first_fact_page: 1,
+            });
+        self.storage.set_committed_reader(loader);
+        // Clear pending facts — they are now committed on disk
+        self.storage.clear_pending_facts();
+
         Ok(())
     }
 
@@ -435,7 +486,7 @@ impl<B: StorageBackend> PersistentFactStorage<B> {
     }
 }
 
-impl<B: StorageBackend> Drop for PersistentFactStorage<B> {
+impl<B: StorageBackend + 'static> Drop for PersistentFactStorage<B> {
     fn drop(&mut self) {
         // Auto-save on drop
         if self.dirty {
@@ -930,6 +981,108 @@ mod tests {
             let header = crate::storage::FileHeader::from_bytes(&header_bytes).unwrap();
             // Checksum should be non-zero for a non-empty DB
             assert_ne!(header.index_checksum, 0, "checksum must be set");
+        }
+    }
+
+    #[test]
+    fn test_v4_database_migrates_to_v5_on_open() {
+        use crate::storage::backend::FileBackend;
+        use crate::storage::{FACT_PAGE_FORMAT_PACKED, PAGE_SIZE};
+        use tempfile::NamedTempFile;
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        let alice = Uuid::new_v4();
+
+        // Write a "v4-style" file: version=4, fact_page_format byte = 0 (legacy padding)
+        {
+            use crate::storage::FileHeader;
+            let fact = crate::graph::types::Fact::with_valid_time(
+                alice,
+                ":name".to_string(),
+                Value::String("Alice".to_string()),
+                1u64,
+                1u64,
+                0i64,
+                i64::MAX,
+            );
+            let mut backend = FileBackend::open(&path).unwrap();
+
+            // Write fact at page 1 (one-per-page format)
+            let data = postcard::to_allocvec(&fact).unwrap();
+            let mut page = vec![0u8; PAGE_SIZE];
+            page[..data.len()].copy_from_slice(&data);
+            backend.write_page(1, &page).unwrap();
+
+            // Write v4 header (fact_page_format byte will be 0)
+            let mut header = FileHeader::new();
+            header.page_count = 2;
+            header.node_count = 1;
+            let mut hbytes = header.to_bytes();
+            // Force version to 4
+            hbytes[4..8].copy_from_slice(&4u32.to_le_bytes());
+            // Force fact_page_format byte (offset 68) to 0
+            hbytes[68] = 0;
+            hbytes.resize(PAGE_SIZE, 0);
+            backend.write_page(0, &hbytes).unwrap();
+            backend.sync().unwrap();
+        }
+
+        // Open — should auto-migrate to v5
+        {
+            let pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
+            assert_eq!(
+                pfs.storage().fact_count(),
+                1,
+                "migrated fact must be loaded"
+            );
+        }
+
+        // Verify file is now v5
+        {
+            let backend = FileBackend::open(&path).unwrap();
+            let header_bytes = backend.read_page(0).unwrap();
+            let header = crate::storage::FileHeader::from_bytes(&header_bytes).unwrap();
+            assert_eq!(header.version, 5, "file must be upgraded to v5");
+            assert_eq!(header.fact_page_format, FACT_PAGE_FORMAT_PACKED);
+        }
+    }
+
+    #[test]
+    fn test_v5_load_fast_path_indexes_loaded() {
+        use crate::storage::backend::FileBackend;
+        use tempfile::NamedTempFile;
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        let alice = Uuid::new_v4();
+
+        // Save in v5 format
+        {
+            let mut pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256)
+                .unwrap();
+            pfs.storage()
+                .transact(
+                    vec![(
+                        alice,
+                        ":name".to_string(),
+                        Value::String("Alice".to_string()),
+                    )],
+                    None,
+                )
+                .unwrap();
+            pfs.mark_dirty();
+            pfs.save().unwrap();
+        }
+
+        // Reload — CommittedFactReader should be wired, fact accessible
+        {
+            let pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
+            assert_eq!(pfs.storage().fact_count(), 1);
+            // Query by entity should work via index
+            let facts = pfs.storage().get_facts_by_entity(&alice).unwrap();
+            assert_eq!(facts.len(), 1);
+            assert_eq!(facts[0].entity, alice);
         }
     }
 }
