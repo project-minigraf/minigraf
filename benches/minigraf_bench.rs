@@ -270,12 +270,14 @@ fn bench_recursion(c: &mut Criterion) {
         group.finish();
     }
 
-    // fanout: fan-out tree — tests delta size per semi-naive iteration
+    // fanout: fan-out tree — tests delta size per semi-naive iteration.
+    // w5_d5 (~3905 nodes) is excluded: produces ~7.6M transitive-closure tuples,
+    // takes ~140s/iter and causes OOM. w10_d3 (~1110 nodes) is sufficient.
     {
         let mut group = c.benchmark_group("recursion/fanout");
         group.sample_size(10);
-        // (width, depth) pairs: (5,5) ~3905 nodes; (10,3) ~1110 nodes
-        for &(label, width, depth) in &[("w5_d5", 5usize, 5usize), ("w10_d3", 10usize, 3usize)] {
+        // (width, depth): (10,3) ~1110 nodes — manageable transitive closure
+        for &(label, width, depth) in &[("w10_d3", 10usize, 3usize)] {
             let db = helpers::fanout_graph(width, depth);
             group.bench_with_input(
                 BenchmarkId::from_parameter(label),
