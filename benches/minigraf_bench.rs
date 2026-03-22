@@ -6,21 +6,17 @@ use minigraf::OpenOptions;
 // ── Task 3: insert/ ───────────────────────────────────────────────────────────
 
 fn bench_insert(c: &mut Criterion) {
-    use criterion::BatchSize;
     const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
 
-    // single_fact: insert one fact into a pre-populated in-memory DB
+    // single_fact: insert one fact into a pre-populated in-memory DB.
+    // DB created once per scale; b.iter() accumulates facts across iterations
+    // (realistic steady-state: insert into a DB of approximately scale N).
     {
         let mut group = c.benchmark_group("insert/single_fact");
         for &(label, n) in SCALES {
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
-                b.iter_batched(
-                    || helpers::populate_in_memory(n),
-                    |db| {
-                        db.execute("(transact [[:ebench :val 0]])").unwrap();
-                    },
-                    BatchSize::LargeInput,
-                );
+            let db = helpers::populate_in_memory(n);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| db.execute("(transact [[:ebench :val 0]])").unwrap());
             });
         }
         group.finish();
@@ -39,16 +35,10 @@ fn bench_insert(c: &mut Criterion) {
             s
         };
         for &(label, n) in SCALES {
+            let db = helpers::populate_in_memory(n);
             let cmd = batch_cmd.clone();
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
-                let cmd = cmd.clone();
-                b.iter_batched(
-                    || helpers::populate_in_memory(n),
-                    move |db| {
-                        db.execute(&cmd).unwrap();
-                    },
-                    BatchSize::LargeInput,
-                );
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| db.execute(&cmd).unwrap());
             });
         }
         group.finish();
@@ -58,16 +48,13 @@ fn bench_insert(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("insert/explicit_tx");
         for &(label, n) in SCALES {
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
-                b.iter_batched(
-                    || helpers::populate_in_memory(n),
-                    |db| {
-                        let mut tx = db.begin_write().unwrap();
-                        tx.execute("(transact [[:ebench :val 0]])").unwrap();
-                        tx.commit().unwrap();
-                    },
-                    BatchSize::LargeInput,
-                );
+            let db = helpers::populate_in_memory(n);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    let mut tx = db.begin_write().unwrap();
+                    tx.execute("(transact [[:ebench :val 0]])").unwrap();
+                    tx.commit().unwrap();
+                });
             });
         }
         group.finish();
@@ -392,13 +379,14 @@ fn bench_concurrent(c: &mut Criterion) {
     use std::sync::{Arc as StdArc, Barrier};
     use std::time::Instant;
 
-    // DB pre-populated with 10K facts (in-memory).
-    let db = helpers::populate_in_memory(10_000);
+    // Fresh DB per scenario to prevent unbounded fact accumulation across benchmarks.
+    // (Sharing one DB caused OOM as write scenarios accumulate millions of facts.)
 
     // readers: N threads all querying simultaneously
     {
         let mut group = c.benchmark_group("concurrent/readers");
         for &(label, n_threads) in &[("4", 4usize), ("8", 8), ("16", 16)] {
+            let db = helpers::populate_in_memory(10_000);
             let db = StdArc::clone(&db);
             group.bench_with_input(
                 BenchmarkId::from_parameter(label),
@@ -433,6 +421,7 @@ fn bench_concurrent(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("concurrent/readers_plus_writer");
         for &(label, n_threads) in &[("4", 4usize), ("8", 8), ("16", 16)] {
+            let db = helpers::populate_in_memory(10_000);
             let db = StdArc::clone(&db);
             group.bench_with_input(
                 BenchmarkId::from_parameter(label),
@@ -484,6 +473,7 @@ fn bench_concurrent(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("concurrent/serialized_writers");
         for &(label, n_threads) in &[("2", 2usize), ("4", 4), ("8", 8), ("16", 16)] {
+            let db = helpers::populate_in_memory(10_000);
             let db = StdArc::clone(&db);
             group.bench_with_input(
                 BenchmarkId::from_parameter(label),
@@ -521,16 +511,16 @@ fn bench_concurrent_file(c: &mut Criterion) {
     use std::time::Instant;
     use tempfile::NamedTempFile;
 
-    // Pre-create the file-backed DB once for all concurrent_file benchmarks.
-    let tmp = Box::new(NamedTempFile::new().unwrap()); // Box to keep alive
-    let path = tmp.path().to_str().unwrap().to_string();
-    helpers::populate_file(10_000, &path);
-    let db = helpers::open_file_no_checkpoint(&path);
+    // Fresh file-backed DB per scenario to prevent unbounded WAL growth and OOM.
 
     // readers (file-backed): concurrent page-cache reads under RwLock
     {
         let mut group = c.benchmark_group("concurrent_file/readers");
         for &(label, n_threads) in &[("4", 4usize), ("8", 8), ("16", 16)] {
+            let tmp = Box::new(NamedTempFile::new().unwrap());
+            let path = tmp.path().to_str().unwrap().to_string();
+            helpers::populate_file(10_000, &path);
+            let db = helpers::open_file_no_checkpoint(&path);
             let db = StdArc::clone(&db);
             group.bench_with_input(
                 BenchmarkId::from_parameter(label),
@@ -565,6 +555,10 @@ fn bench_concurrent_file(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("concurrent_file/readers_plus_writer");
         for &(label, n_threads) in &[("4", 4usize), ("8", 8), ("16", 16)] {
+            let tmp = Box::new(NamedTempFile::new().unwrap());
+            let path = tmp.path().to_str().unwrap().to_string();
+            helpers::populate_file(10_000, &path);
+            let db = helpers::open_file_no_checkpoint(&path);
             let db = StdArc::clone(&db);
             group.bench_with_input(
                 BenchmarkId::from_parameter(label),
@@ -612,6 +606,10 @@ fn bench_concurrent_file(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("concurrent_file/serialized_writers");
         for &(label, n_threads) in &[("2", 2usize), ("4", 4), ("8", 8), ("16", 16)] {
+            let tmp = Box::new(NamedTempFile::new().unwrap());
+            let path = tmp.path().to_str().unwrap().to_string();
+            helpers::populate_file(10_000, &path);
+            let db = helpers::open_file_no_checkpoint(&path);
             let db = StdArc::clone(&db);
             group.bench_with_input(
                 BenchmarkId::from_parameter(label),
@@ -640,8 +638,6 @@ fn bench_concurrent_file(c: &mut Criterion) {
         }
         group.finish();
     }
-
-    drop(tmp); // clean up temp file
 }
 
 criterion_group!(
