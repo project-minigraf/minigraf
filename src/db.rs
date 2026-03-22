@@ -7,7 +7,6 @@
 //! - `Minigraf::checkpoint()` for manual WAL compaction
 
 use crate::graph::types::{Fact, VALID_TIME_FOREVER};
-use postcard;
 
 /// Sentinel value used in `materialize_transaction` to signal "no explicit `valid_from`
 /// was provided; use the transaction timestamp at commit time."
