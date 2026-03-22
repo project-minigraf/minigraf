@@ -548,7 +548,7 @@ Current tests (280 total):
 - ✅ Explicit transaction survives packed reload
 - ✅ `page_cache_size` option accepted
 
-**Future tests** (Phase 6.3+):
+**Future tests** (Phase 6.4+):
 - ⏳ Criterion benchmarks (insert throughput, query latency at scale)
 
 ## Comparison to Similar Projects
@@ -568,6 +568,21 @@ Current tests (280 total):
 ### vs. Datomic
 - ✅ **Minigraf**: Single file, embedded, Rust
 - ✅ **Datomic**: Production-proven, but client-server, Clojure, proprietary
+
+### vs. petgraph
+- ✅ **Minigraf**: Persistent database with Datalog queries, bi-temporal time travel, ACID transactions
+- ✅ **petgraph**: Dominant Rust graph *algorithms* library (BFS, DFS, Dijkstra, etc.) — in-memory only, no persistence, no query language, no time travel
+- **These are not competing tools.** petgraph is the right choice when you need graph algorithms over an in-memory structure. Minigraf is the right choice when you need a persistent, queryable, time-aware graph store. They can be used together: load a subgraph from Minigraf into petgraph for algorithm execution, then write results back.
+
+### vs. IndraDB
+- ✅ **Minigraf**: Single `.graph` file, bi-temporal first-class, Datalog queries, WAL crash recovery
+- ✅ **IndraDB**: Rust embedded graph database with pluggable backends (in-memory, RocksDB), property graph model
+- **Key differences**: IndraDB uses a property graph model with its own query protocol; Minigraf uses EAV + Datalog. IndraDB has no bi-temporal support. Minigraf is single-file; IndraDB's RocksDB backend is multi-file.
+
+### vs. SurrealDB
+- ✅ **Minigraf**: Embedded library, single file, zero configuration, bi-temporal
+- ✅ **SurrealDB**: Multi-model database (graph, document, relational), distributed, client-server, SQL-like query language (SurrealQL)
+- **Not competing tools.** SurrealDB targets teams that need a full-featured distributed database. Minigraf targets developers who want to embed a lightweight bi-temporal graph store directly in their application — no server, no configuration, one file.
 
 **Minigraf aims to be the simplest, most portable option: embedded graph memory for agents, mobile, and the browser — built on SQLite's simplicity and Datomic's temporal model.**
 
