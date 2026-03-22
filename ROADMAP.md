@@ -391,13 +391,17 @@ tx.commit()?;  // or tx.rollback()?
 - ✅ `FileHeader` v5 (`fact_page_format` byte); auto v4→v5 migration on open
 - ✅ `OpenOptions::page_cache_size(usize)` — tune cache capacity (default 256 pages = 1MB)
 
-### 6.3 Query Optimization
+### 6.3 Query Optimization ✅ COMPLETE
 
 **Features**:
 - ✅ Selectivity-based join reordering (Phase 6.1, `optimizer.rs`)
 - ✅ Index selection per pattern (`IndexHint` enum)
-- 🎯 Cost-based optimization improvements
-- 🎯 Rule evaluation optimization
+
+**Deferred to Phase 7**:
+- Cost-based optimization improvements — better informed once negation, aggregation, and disjunction are implemented; the optimizer needs to cost-estimate query shapes that don't exist yet
+- Rule evaluation optimization — same rationale; recursive rule evaluation interacts with the new clause types
+
+**Note**: Phase 6.3 has no dedicated release version. Its completed items shipped as part of Phase 6.1 (v0.6.0); its deferred items will ship as part of Phase 7 (v0.9.0). The release strategy jumps directly from v0.7.0 (Phase 6.2) to v0.8.0 (Phase 6.4) by design.
 
 ### 6.4 Benchmarks + Edge Case Tests + crates.io Publish 🎯 NEXT
 
@@ -610,7 +614,14 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 **Estimated complexity**: 2-3 weeks
 
-### 7.4 Tests + Error Coverage
+### 7.4 Query Optimizer Improvements (deferred from Phase 6.3)
+
+- 🎯 Cost-based optimization improvements — extend `optimizer.rs` with cost estimates for the new clause types (negation sub-queries, aggregate post-processing, disjunction branch selection)
+- 🎯 Rule evaluation optimization — improve semi-naive evaluation for rules that include `not`, `or`, and aggregate expressions
+
+**Note**: These items were originally scoped in Phase 6.3 but deferred here because meaningful cost estimates require the new clause types to exist first.
+
+### 7.5 Tests + Error Coverage
 
 - Unit tests for each new clause type (parser, types, matcher)
 - Integration tests covering realistic production query patterns:
@@ -622,7 +633,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 **Error handling coverage sweep**: Phase 7 adds significant new code paths (stratification analysis, aggregate post-processing, branch evaluation). Bring error-path coverage for new code to parity with happy-path coverage from the start, rather than letting it lag. Target: ≥90% overall branch coverage by end of Phase 7.
 
-**Deliverable**: A Datalog engine that can express any query a production workload is likely to require — negation, aggregation, disjunction, and recursion, composable with bi-temporal filters; ≥90% branch coverage
+**Deliverable**: A Datalog engine that can express any query a production workload is likely to require — negation, aggregation, disjunction, and recursion, composable with bi-temporal filters; query optimizer extended to cost the new clause types; ≥90% branch coverage
 
 **Timeline**: 6-8 weeks
 
