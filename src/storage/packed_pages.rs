@@ -32,6 +32,19 @@ pub const PAGE_TYPE_OVERFLOW: u8 = 0x03;
 /// Packed page header size in bytes.
 pub const PACKED_HEADER_SIZE: usize = 12;
 
+/// Maximum serialised size (postcard bytes) for a single fact in a packed page.
+///
+/// Derived from the page layout: `PAGE_SIZE (4096) - PACKED_HEADER_SIZE (12) - 4`
+/// (4 bytes for one record-directory entry).
+///
+/// In practice the usable space for a `Value::String` is roughly 3 900–4 000 bytes
+/// after accounting for the fixed overhead of the other `Fact` fields (two UUIDs,
+/// attribute string, counters, timestamps, boolean flag).
+///
+/// File-backed databases reject facts that exceed this limit at insertion time.
+/// In-memory databases (`Minigraf::in_memory()`) have no size constraint.
+pub const MAX_FACT_BYTES: usize = PAGE_SIZE - PACKED_HEADER_SIZE - 4;
+
 /// Pack a slice of facts into packed pages.
 ///
 /// Returns `(pages, fact_refs)` where:
@@ -55,12 +68,11 @@ pub fn pack_facts(facts: &[Fact], start_page_id: u64) -> Result<(Vec<Vec<u8>>, V
         let dir_entry_size = 4usize;
 
         // Check if this fact exceeds the maximum slot size.
-        let max_slot_size = PAGE_SIZE - PACKED_HEADER_SIZE - 4; // 4 = one directory entry
-        if len > max_slot_size {
+        if len > MAX_FACT_BYTES {
             anyhow::bail!(
                 "Fact serialised size {} bytes exceeds maximum slot size {} bytes",
                 len,
-                max_slot_size
+                MAX_FACT_BYTES
             );
         }
 

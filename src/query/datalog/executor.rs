@@ -136,11 +136,10 @@ impl DatalogExecutor {
             None => self.storage.get_all_facts()?,
         };
 
-        // Step 2: keep only asserted facts
-        let asserted: Vec<Fact> = tx_filtered
-            .into_iter()
-            .filter(|f| f.is_asserted())
-            .collect();
+        // Step 2: compute net-asserted view — for each (entity, attribute, value) triple,
+        // keep it only if the record with the highest tx_count is an assertion.
+        // This correctly hides facts that have been retracted.
+        let asserted = crate::graph::storage::net_asserted_facts(tx_filtered);
 
         // Step 3: valid-time filter
         let valid_filtered: Vec<Fact> = match &query.valid_at {

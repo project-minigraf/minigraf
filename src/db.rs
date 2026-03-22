@@ -159,6 +159,31 @@ impl Drop for Inner {
     }
 }
 
+// ─── Fact size validation ─────────────────────────────────────────────────────
+
+/// Validate that every fact in `facts` can fit in a single packed-page slot.
+///
+/// Called before writing to the WAL so that oversized facts are rejected at
+/// insertion time rather than at checkpoint time.  Only invoked for file-backed
+/// databases — in-memory databases have no page size constraint.
+fn check_fact_sizes(facts: &[Fact]) -> anyhow::Result<()> {
+    use crate::storage::packed_pages::MAX_FACT_BYTES;
+    for fact in facts {
+        let bytes = postcard::to_allocvec(fact)
+            .map_err(|e| anyhow::anyhow!("Failed to serialise fact for size check: {}", e))?;
+        if bytes.len() > MAX_FACT_BYTES {
+            anyhow::bail!(
+                "Fact serialised size {} bytes exceeds maximum {} bytes. \
+                 Store large payloads externally and reference them with a \
+                 Value::String URL/path or Value::Ref entity ID.",
+                bytes.len(),
+                MAX_FACT_BYTES
+            );
+        }
+    }
+    Ok(())
+}
+
 // ─── Minigraf ─────────────────────────────────────────────────────────────────
 
 /// The primary embedded graph database handle.
@@ -180,6 +205,29 @@ impl Drop for Inner {
 /// let db = Minigraf::in_memory().unwrap();
 /// db.execute(r#"(transact [[:alice :person/name "Alice"]])"#).unwrap();
 /// ```
+///
+/// # Fact Size Limit (file-backed databases only)
+///
+/// Each fact persisted to a `.graph` file must serialise to at most
+/// [`crate::storage::packed_pages::MAX_FACT_BYTES`] bytes (currently 4 080).
+///
+/// In practice, `Value::String` content is limited to roughly **3 900–4 000 bytes**
+/// depending on entity and attribute name lengths.
+///
+/// Facts that exceed this limit are rejected at insertion time with a descriptive
+/// error. This check does **not** apply to `Minigraf::in_memory()`.
+///
+/// ## Workarounds for large payloads
+///
+/// - **External blob reference** — store the payload in a file or object store
+///   and record its path, URL, or content-addressed hash as a `Value::String`:
+///   ```text
+///   (transact [[:doc123 :blob/sha256 "a3f5c9..."]])
+///   ```
+/// - **Entity decomposition** — split large values across multiple facts using
+///   a continuation-entity pattern.
+/// - **In-memory database** — `Minigraf::in_memory()` has no fact size limit
+///   and is suitable for workloads that do not require persistence.
 #[derive(Clone)]
 pub struct Minigraf {
     inner: Arc<Inner>,
@@ -364,6 +412,11 @@ impl Minigraf {
                     f
                 })
                 .collect();
+
+            // For file-backed databases, reject oversized facts before touching the WAL.
+            if matches!(*ctx, WriteContext::File { .. }) {
+                check_fact_sizes(&stamped)?;
+            }
 
             // Write WAL BEFORE applying to shared FactStorage.
             // If this fails, FactStorage is still unchanged — clean rollback.
@@ -654,6 +707,11 @@ impl<'a> WriteTransaction<'a> {
                     f
                 })
                 .collect();
+
+            // For file-backed databases, reject oversized facts before touching the WAL.
+            if matches!(*self.guard, WriteContext::File { .. }) {
+                check_fact_sizes(&stamped)?;
+            }
 
             // Write WAL entry FIRST — if this fails, no facts have been applied
             // to shared FactStorage, so the database remains in a clean state.

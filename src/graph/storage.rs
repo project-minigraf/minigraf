@@ -2,7 +2,7 @@ use crate::graph::types::{
     Attribute, EntityId, Fact, TransactOptions, TxId, VALID_TIME_FOREVER, Value, tx_id_now,
 };
 use crate::query::datalog::types::AsOf;
-use crate::storage::index::{FactRef, Indexes};
+use crate::storage::index::{FactRef, Indexes, encode_value};
 use anyhow::Result;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
@@ -416,19 +416,13 @@ impl FactStorage {
         entity_id: &EntityId,
         attribute: &Attribute,
     ) -> Result<Option<Value>> {
-        let mut relevant_facts = self.get_facts_by_entity_attribute(entity_id, attribute)?;
-
-        // Sort by transaction ID (timestamp) descending
-        relevant_facts.sort_by(|a, b| b.tx_id.cmp(&a.tx_id));
-
-        // Return the value if the most recent fact is an assertion
-        Ok(relevant_facts.first().and_then(|f| {
-            if f.is_asserted() {
-                Some(f.value.clone())
-            } else {
-                None
-            }
-        }))
+        let relevant_facts = self.get_facts_by_entity_attribute(entity_id, attribute)?;
+        // net_asserted_facts groups by (entity, attribute, value) triple and keeps
+        // only triples whose most-recent record (by tx_count) is an assertion.
+        // Sort the survivors by tx_count descending to return the latest value.
+        let mut net = net_asserted_facts(relevant_facts);
+        net.sort_by(|a, b| b.tx_count.cmp(&a.tx_count));
+        Ok(net.first().map(|f| f.value.clone()))
     }
 
     /// Get the count of all facts in storage (committed + pending).
@@ -516,6 +510,41 @@ impl FactStorage {
         let mut d = self.data.write().unwrap();
         d.committed = Some(reader);
     }
+}
+
+/// Compute the net-asserted view of a fact set.
+///
+/// For each unique `(entity, attribute, value)` triple, keeps the fact only if
+/// the record with the highest `tx_count` for that triple has `asserted=true`.
+/// Facts whose most recent record is a retraction are excluded entirely.
+///
+/// Uses [`encode_value`] for the value key to handle floating-point edge cases
+/// (NaN canonicalisation, ±0.0 disambiguation) consistently with the rest of
+/// the storage layer.
+///
+/// This is the single source of truth for retraction semantics, shared by
+/// `get_current_value` and `filter_facts_for_query`.
+pub(crate) fn net_asserted_facts(facts: Vec<Fact>) -> Vec<Fact> {
+    use std::collections::HashMap;
+    // key: (entity, attribute, canonical value bytes) → fact with highest tx_count
+    let mut latest: HashMap<(EntityId, Attribute, Vec<u8>), Fact> = HashMap::new();
+    for fact in facts {
+        let key = (
+            fact.entity,
+            fact.attribute.clone(),
+            encode_value(&fact.value),
+        );
+        match latest.get(&key) {
+            None => {
+                latest.insert(key, fact);
+            }
+            Some(existing) if fact.tx_count > existing.tx_count => {
+                latest.insert(key, fact);
+            }
+            _ => {}
+        }
+    }
+    latest.into_values().filter(|f| f.asserted).collect()
 }
 
 #[cfg(test)]
@@ -692,8 +721,6 @@ mod tests {
             )
             .unwrap();
 
-        std::thread::sleep(std::time::Duration::from_millis(2));
-
         // Update value
         storage
             .transact(
@@ -712,9 +739,7 @@ mod tests {
             .unwrap();
         assert_eq!(current, Some(Value::String("Alice Smith".to_string())));
 
-        std::thread::sleep(std::time::Duration::from_millis(2));
-
-        // Retract the value
+        // Retract "Alice Smith" specifically
         storage
             .retract(vec![(
                 alice,
@@ -723,7 +748,23 @@ mod tests {
             )])
             .unwrap();
 
-        // Current value should now be None (retracted)
+        // "Alice Smith" was retracted, but "Alice" is still asserted (value-level
+        // retraction semantics: each distinct value is tracked independently).
+        // get_current_value returns the highest-tx_count surviving asserted fact.
+        let current = storage
+            .get_current_value(&alice, &":person/name".to_string())
+            .unwrap();
+        assert_eq!(current, Some(Value::String("Alice".to_string())));
+
+        // Now retract "Alice" as well — the attribute should have no asserted value.
+        storage
+            .retract(vec![(
+                alice,
+                ":person/name".to_string(),
+                Value::String("Alice".to_string()),
+            )])
+            .unwrap();
+
         let current = storage
             .get_current_value(&alice, &":person/name".to_string())
             .unwrap();
