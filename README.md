@@ -4,7 +4,7 @@
 [![Clippy Status](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml/badge.svg)](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/adityamukho/minigraf#license)
 [![Rust Edition](https://img.shields.io/badge/rust-2024-orange.svg)](https://blog.rust-lang.org/2024/10/17/Rust-1.82.0.html)
-[![Phase](https://img.shields.io/badge/phase-5%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
+[![Phase](https://img.shields.io/badge/phase-6.2%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
 
 > **The SQLite of bi-temporal graph databases** - Embedded Datalog engine written in Rust
 
@@ -18,7 +18,7 @@ Minigraf is a **single-file embedded graph database** that lets you:
 - ✅ **Embed anywhere** - Native, WASM, mobile, IoT - one `.graph` file
 - ✅ **Zero configuration** - Just `Minigraf::open("data.graph")` and you're done
 
-**Status**: Early development. Phase 5 complete (ACID + WAL). Now starting Phase 6 (Performance).
+**Status**: Early development. Phase 6.2 complete (Packed Pages + LRU Cache). Now starting Phase 6.3 (Benchmarks).
 
 ## Why Datalog?
 
@@ -30,9 +30,9 @@ Minigraf is a **single-file embedded graph database** that lets you:
 4. **Proven at scale** - 40+ years of research, production use (Datomic, XTDB)
 5. **Graph-native** - Facts (Entity-Attribute-Value) are literally edges
 
-## Current Status - Phase 5 Complete
+## Current Status - Phase 6.2 Complete
 
-Minigraf has a **crash-safe bi-temporal Datalog query engine with explicit transactions**:
+Minigraf has a **crash-safe bi-temporal Datalog query engine with covering indexes, packed storage, and LRU page cache**:
 
 - ✅ **EAV data model** - Entity-Attribute-Value facts with transaction IDs
 - ✅ **Datalog queries** - Pattern matching with variable unification
@@ -44,12 +44,17 @@ Minigraf has a **crash-safe bi-temporal Datalog query engine with explicit trans
 - ✅ **Crash recovery** - WAL replay on open; partial writes safely discarded
 - ✅ **Explicit transactions** - `begin_write()` / `commit()` / `rollback()` API
 - ✅ **Checkpoint** - WAL flushed to `.graph` file on demand or automatically
-- ✅ **File format v3** - Automatic migration from v1/v2
+- ✅ **Covering indexes** - EAVT, AEVT, AVET, VAET with bi-temporal keys; B+tree persistence
+- ✅ **Query optimizer** - Selectivity-based join reordering, index selection
+- ✅ **Packed pages** - ~25 facts per 4KB page (~25× space reduction vs Phase 5)
+- ✅ **LRU page cache** - Configurable bounded memory (`page_cache_size`, default 256 pages = 1MB)
+- ✅ **On-demand fact loading** - No load-all at startup; committed facts resolved via page cache
+- ✅ **File format v5** - Automatic migration from v1/v2/v3/v4
 - ✅ **Single `.graph` file** - Page-based storage (4KB pages), WAL as sidecar
 - ✅ **Embedded database API** - Use like SQLite (`Minigraf::open()`)
 - ✅ **Cross-platform** - Works on Linux, macOS, Windows, iOS, Android
-- ✅ **213 tests passing** - Comprehensive test coverage
-- 🎯 **Next: Performance** - Indexes and query optimization (Phase 6)
+- ✅ **280 tests passing** - Comprehensive test coverage
+- 🎯 **Next: Benchmarks** - Criterion suite, performance at scale (Phase 6.3)
 
 ## Quick Start
 
@@ -175,16 +180,22 @@ cargo run < demo_recursive.txt
 ### Module Structure
 
 - **`src/graph/types.rs`**: Core EAV data structures (`Fact`, `Value`, bi-temporal fields)
-- **`src/graph/storage.rs`**: In-memory fact store with temporal query methods
+- **`src/graph/storage.rs`**: In-memory fact store with temporal query methods and index-driven range scans
 - **`src/storage/`**: Storage backend abstraction
-  - **`mod.rs`**: `StorageBackend` trait, `FileHeader` v3
+  - **`mod.rs`**: `StorageBackend` trait, `FileHeader` v5, `CommittedFactReader` trait
   - **`backend/file.rs`**: Single-file persistent backend
   - **`backend/memory.rs`**: In-memory backend for testing
   - **`backend/indexeddb.rs`**: Future WASM backend
+  - **`index.rs`**: EAVT/AEVT/AVET/VAET key types, `FactRef`, `encode_value`
+  - **`btree.rs`**: B+tree page serialisation for index persistence
+  - **`cache.rs`**: LRU page cache (`PageCache`, approximate-LRU)
+  - **`packed_pages.rs`**: Packed fact page format (~25 facts/page)
+  - **`persistent_facts.rs`**: v5 save/load, `CommittedFactLoaderImpl`
 - **`src/wal.rs`**: Write-ahead log (`WalWriter`, `WalReader`, CRC32 entries)
 - **`src/db.rs`**: Public API — `Minigraf`, `OpenOptions`, `WriteTransaction`
 - **`src/query/datalog/parser.rs`**: EDN/Datalog parser
 - **`src/query/datalog/executor.rs`**: Query executor with temporal filtering
+- **`src/query/datalog/optimizer.rs`**: Selectivity-based query plan optimizer
 - **`src/repl.rs`**: Interactive REPL console
 - **`src/lib.rs`**: Public API exports
 - **`src/main.rs`**: Binary entry point (`--file <path>` or in-memory)
@@ -203,19 +214,32 @@ The `.graph` file uses a page-based format (like SQLite), with an optional WAL s
 
 ```
 .graph file:
-  Page 0: Header  <- Magic "MGRF", version 3, last_checkpointed_tx_count
-  Page 1+: Data   <- EAV facts (postcard serialization)
+  Page 0: Header (72 bytes)
+    - Magic "MGRF", version 5, page_count, fact_count
+    - last_checkpointed_tx_count (WAL marker)
+    - eavt/aevt/avet/vaet_root_page (covering index roots)
+    - index_checksum (CRC32 of committed fact pages)
+    - fact_page_format (0x02 = packed)
 
-.wal sidecar (present when there are unckeckpointed writes):
-  Header (32 bytes): Magic "MWAL", version
+  Page 1+: Packed fact data pages (type 0x02)
+    - 12-byte header: type, reserved, record_count, next_page
+    - Record directory: (offset, length) per slot
+    - Variable-length postcard-encoded facts
+
+  Index pages (after fact data):
+    - Serialised EAVT, AEVT, AVET, VAET BTreeMaps (type 0x11)
+
+.wal sidecar (present when there are uncheckpointed writes):
+  Header: Magic "MWAL", version
   Entries: checksum u32 | tx_count u64 | num_facts u64 | [len u32 | bytes]*
 ```
 
 - **Page size**: 4KB (like SQLite)
 - **Endian-safe**: Works across all platforms
+- **~25 facts per page**: Packed format, ~25× smaller than Phase 5
 - **Single `.graph` file**: WAL sidecar is deleted on clean close
 - **CRC32-protected WAL**: Partial writes safely discarded on recovery
-- **Stable format**: Automatic v1/v2→v3 migration; backwards compatible
+- **Stable format**: Automatic v1/v2/v3/v4→v5 migration; backwards compatible
 
 ## Roadmap
 
@@ -228,10 +252,14 @@ The `.graph` file uses a page-based format (like SQLite), with an optional WAL s
 **Phase 5**: ✅ ACID + WAL (Complete)
 - Write-ahead logging, explicit transactions, crash recovery, file format v3
 
-**Phase 6**: 🎯 Performance (Next)
-- Indexes (EAVT, AEVT, AVET, VAET)
-- Query optimization
-- Benchmarking
+**Phase 6.1**: ✅ Covering Indexes + Query Optimizer (Complete)
+- EAVT/AEVT/AVET/VAET indexes, B+tree persistence, selectivity-based optimizer, file format v4
+
+**Phase 6.2**: ✅ Packed Pages + LRU Cache (Complete)
+- ~25 facts/page, LRU page cache, on-demand fact loading, file format v5
+
+**Phase 6.3**: 🎯 Benchmarks (Next)
+- Criterion suite, performance at 10K/100K/1M facts
 
 **Phase 7**: 🎯 Cross-platform
 - WASM (IndexedDB backend)
@@ -378,9 +406,9 @@ Comprehensive test coverage:
 cargo test
 ```
 
-Current tests (213 total):
-- ✅ **159 unit tests** - Core Datalog, EAV model, parser, matcher, executor, bi-temporal, WAL, transactions
-- ✅ **48 integration tests** - Complex queries, recursive rules, concurrency, bi-temporal, WAL crash recovery
+Current tests (280 total):
+- ✅ **213 unit tests** - Core Datalog, EAV model, parser, matcher, executor, bi-temporal, WAL, indexes, cache, packed pages
+- ✅ **61 integration tests** - Complex queries, recursive rules, concurrency, bi-temporal, WAL crash recovery, indexes, packed pages
 - ✅ **6 doc tests** - Inline documentation examples
 
 **Phase 3-4 Coverage** (Complete):
@@ -395,11 +423,20 @@ Current tests (213 total):
 - ✅ Explicit transaction commit + rollback
 - ✅ Checkpoint: WAL flushed to `.graph`, WAL deleted
 - ✅ File format v2→v3 upgrade on checkpoint
-- ✅ Concurrent reads during exclusive write
 
-**Future tests** (Phase 6+):
-- ⏳ Index performance benchmarks
-- ⏳ Query optimization verification
+**Phase 6.1 Coverage** (Complete):
+- ✅ EAVT/AEVT/AVET/VAET index save/reload roundtrip
+- ✅ B+tree multi-page spanning, sort order preservation
+- ✅ Bi-temporal index keys, recursive rules regression
+
+**Phase 6.2 Coverage** (Complete):
+- ✅ Packed page compactness (1K facts fit in ≤50 pages)
+- ✅ Bitemporal and as-of queries survive packed reload
+- ✅ Explicit transaction survives packed reload
+- ✅ `page_cache_size` option accepted
+
+**Future tests** (Phase 6.3+):
+- ⏳ Criterion benchmarks (insert throughput, query latency at scale)
 
 ## Comparison to Similar Projects
 

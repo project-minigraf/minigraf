@@ -361,67 +361,61 @@ tx.commit()?;  // or tx.rollback()?
 
 ---
 
-## Phase 6: Performance & Indexes 🎯 FUTURE
+## Phase 6: Performance & Indexes 🚧 IN PROGRESS
 
 **Goal**: Make queries fast
 
-**Status**: 🎯 Planned
+**Status**: 🚧 Phases 6.1 and 6.2 complete; 6.3 next
 
 **Priority**: 🟡 High
 
-### 6.1 Indexes
+### 6.1 Covering Indexes ✅ COMPLETE
+
+**What Was Built**:
+- ✅ EAVT, AEVT, AVET, VAET covering indexes (Datomic-style, bi-temporal keys)
+- ✅ `FactRef { page_id, slot_index }` — forward-compatible disk location pointer
+- ✅ Canonical value encoding with sort-order-preserving byte comparison
+- ✅ B+tree page serialisation for index persistence (`btree.rs`)
+- ✅ `FileHeader` v4: `eavt/aevt/avet/vaet_root_page` + `index_checksum` (CRC32)
+- ✅ Auto-rebuild on checksum mismatch
+- ✅ File format v1/v2/v3→v4 migration on first save
+
+### 6.2 Packed Pages + LRU Page Cache ✅ COMPLETE
+
+**What Was Built**:
+- ✅ Packed fact pages (`page_type = 0x02`): ~25 facts per 4KB page (~25× space reduction)
+- ✅ LRU page cache with approximate-LRU semantics (read-lock on hits)
+- ✅ `CommittedFactReader` trait: index-driven on-demand fact resolution
+- ✅ Eliminated "load all facts at startup" — only pending facts in memory
+- ✅ EAVT/AEVT range scans for `get_facts_by_entity` / `get_facts_by_attribute`
+- ✅ `FileHeader` v5 (`fact_page_format` byte); auto v4→v5 migration on open
+- ✅ `OpenOptions::page_cache_size(usize)` — tune cache capacity (default 256 pages = 1MB)
+
+### 6.3 Query Optimization
 
 **Features**:
-- 🎯 EAVT, AEVT, AVET, VAET covering indexes
-- 🎯 B-tree or sorted page indexes
-- 🎯 Index maintenance (auto-update on changes)
-- 🎯 Temporal index (ValidFrom, ValidTo ranges)
-
-**Performance Targets**:
-- Indexed fact lookup: <1ms
-- Pattern match with index: <10ms for 100K facts
-- Transitive closure: <100ms for typical graphs
-
-### 6.2 Query Optimization
-
-**Features**:
-- 🎯 Query plan generation
-- 🎯 Cost-based optimization
-- 🎯 Index selection
-- 🎯 Join order optimization
+- ✅ Selectivity-based join reordering (Phase 6.1, `optimizer.rs`)
+- ✅ Index selection per pattern (`IndexHint` enum)
+- 🎯 Cost-based optimization improvements
 - 🎯 Rule evaluation optimization
 
-**Optimizer**:
-- Choose best index for each pattern
-- Reorder patterns by selectivity
-- Push filters down
-- Eliminate redundant patterns
-
-### 6.3 Caching
-
-**Features**:
-- 🎯 Query result caching
-- 🎯 Rule evaluation caching
-- 🎯 Page cache (LRU)
-
-### 6.4 Benchmarks
+### 6.4 Benchmarks 🎯 NEXT
 
 **Benchmark Suite**:
-- Insert throughput (facts/sec)
-- Query latency (indexed, unindexed)
-- Memory usage (various dataset sizes)
-- File size growth
-- Transaction throughput
-- Time travel query performance
+- 🎯 Criterion benchmarks: insert throughput, query latency (indexed/unindexed)
+- 🎯 Memory profiling (various dataset sizes)
+- 🎯 File size growth tracking
+- 🎯 Transaction throughput
+- 🎯 Time travel query performance
 
 **Target Scales**:
 - Small: 10K facts (personal knowledge base)
 - Medium: 100K facts (small business app)
 - Large: 1M facts (production single-machine)
 
-**Deliverable**: Fast, indexed query engine
+**Deliverable**: Fast, indexed query engine with validated performance numbers
 
-**Timeline**: 2-3 months
+**Timeline**: 6.3 (benchmarks) ~1-2 weeks
 
 ---
 
@@ -533,14 +527,27 @@ tx.commit()?;  // or tx.rollback()?
 - ✅ Crash recovery (WAL replay on open)
 - ✅ FileHeader v3 (`last_checkpointed_tx_count`)
 - ✅ Thread-safe: concurrent readers + exclusive writer
-- ✅ 213 tests passing
+- ✅ 212 tests passing
 
-### v0.6.0 - 🎯 Phase 6 (Performance)
-- Indexes (EAVT, AEVT, AVET, VAET)
-- Query optimization
-- Performance benchmarks
+### v0.6.0 - ✅ Phase 6.1 Complete (Covering Indexes + Query Optimizer)
+- ✅ EAVT, AEVT, AVET, VAET covering indexes with bi-temporal keys
+- ✅ B+tree index persistence (FileHeader v4)
+- ✅ Selectivity-based query plan optimizer (`optimizer.rs`)
+- ✅ CRC32 index sync check; auto-rebuild on mismatch
+- ✅ File format v1/v2/v3→v4 migration
 
-### v0.7.0 - 🎯 Phase 7 (Cross-platform)
+### v0.7.0 - ✅ Phase 6.2 Complete (Packed Pages + LRU Cache)
+- ✅ Packed fact pages (~25 facts/page, ~25× disk space reduction)
+- ✅ LRU page cache (configurable, default 256 pages = 1MB)
+- ✅ `CommittedFactReader` trait: on-demand fact loading (no startup load-all)
+- ✅ FileHeader v5 (`fact_page_format` byte); auto v4→v5 migration
+- ✅ 280 tests passing
+
+### v0.8.0 - 🎯 Phase 6.3 (Benchmarks)
+- Criterion benchmark suite
+- Validated performance at 10K / 100K / 1M facts
+
+### v0.9.0 - 🎯 Phase 7 (Cross-platform)
 - WASM support
 - Mobile bindings
 - Language bindings
@@ -595,10 +602,12 @@ When evaluating features, ask:
 - ✅ Phase 3: Complete (January 2026) - Datalog core with recursive rules
 - ✅ Phase 4: Complete (March 2026) - Bi-temporal support
 - ✅ Phase 5: Complete (March 2026) - ACID + WAL
-- 🎯 Phase 6: 2-3 months (Performance) - **NEXT**
+- ✅ Phase 6.1: Complete (March 2026) - Covering Indexes + Query Optimizer
+- ✅ Phase 6.2: Complete (March 2026) - Packed Pages + LRU Cache
+- 🎯 Phase 6.3: 1-2 weeks (Benchmarks) - **NEXT**
 - 🎯 Phase 7: 3-4 months (Cross-platform)
 - 🎯 Phase 8: Ongoing (Ecosystem)
-- 🎯 **v1.0.0: 11-14 months** from now (Phase 3 completed faster than expected!)
+- 🎯 **v1.0.0: 9-12 months** (ahead of schedule)
 
 **Note**: This is a hobby project. Timeline is flexible but realistic.
 
@@ -606,22 +615,22 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: ✅ Phase 5 Complete! Planning Phase 6 - Performance & Indexes
+**Right Now**: ✅ Phase 6.2 Complete! Planning Phase 6.3 - Benchmarks
 
-**Phase 5 Achievements**:
-1. ✅ Fact-level sidecar WAL with CRC32-protected entries
-2. ✅ `FileHeader` v3 with `last_checkpointed_tx_count` field
-3. ✅ `WriteTransaction` API (`begin_write`, `commit`, `rollback`)
-4. ✅ Crash recovery: WAL replay on open, corrupt entries discarded
-5. ✅ Checkpoint: WAL flushed to `.graph`, then WAL cleared
-6. ✅ Thread-safe: concurrent readers + exclusive writer
-7. ✅ 212 tests passing (40 new tests)
+**Phase 6.2 Achievements**:
+1. ✅ Packed fact pages (~25 facts/4KB page, ~25× space reduction vs v4)
+2. ✅ LRU page cache with approximate-LRU semantics (`cache.rs`)
+3. ✅ `CommittedFactReader` trait: on-demand fact loading (no startup load-all)
+4. ✅ EAVT/AEVT range scans in `get_facts_by_entity` / `get_facts_by_attribute`
+5. ✅ `FileHeader` v5 (`fact_page_format` byte); auto v4→v5 migration
+6. ✅ `OpenOptions::page_cache_size(usize)` builder method
+7. ✅ 280 tests passing (68 new tests since Phase 5)
 
-**Immediate Next Steps (Phase 6)**:
-1. Design index format (EAVT, AEVT, AVET, VAET covering indexes)
-2. Implement B-tree or sorted page indexes
-3. Query optimizer (cost-based, index selection)
-4. Benchmark suite (insert throughput, query latency)
+**Immediate Next Steps (Phase 6.3)**:
+1. Add Criterion as a dev-dependency
+2. Write benchmarks: insert throughput, point-lookup, range scan, time travel
+3. Profile memory usage at 10K / 100K / 1M facts
+4. Document performance characteristics in README
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)
@@ -629,12 +638,12 @@ When evaluating features, ask:
 - ✅ Keep single-file philosophy
 - ✅ Recursive rules with semi-naive evaluation
 - ✅ UTC-only timestamps (avoids chrono GHSA-wcg3-cvx6-7396)
-- ✅ Target 10-13 months to v1.0 (ahead of schedule!)
+- ✅ Packed pages over one-per-page (philosophy: small binary, efficient storage)
+- ✅ Approximate LRU (read-lock on hits — avoids write-lock contention)
+- ✅ Target 9-12 months to v1.0 (ahead of schedule!)
 
 See [GitHub Issues](https://github.com/adityamukho/minigraf/issues) for specific tasks.
 
 ---
 
----
-
-Last Updated: Phase 5 Complete - ACID + WAL (March 2026)
+Last Updated: Phase 6.2 Complete - Packed Pages + LRU Cache (March 2026)
