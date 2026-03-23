@@ -166,7 +166,7 @@ impl DatalogExecutor {
     fn execute_query(&self, query: DatalogQuery) -> Result<QueryResult> {
         // Check if query uses rules
         if query.uses_rules() {
-            // Use RecursiveEvaluator for queries with rule invocations
+            // Use StratifiedEvaluator for queries with rule invocations (handles negation and strata)
             return self.execute_query_with_rules(query);
         }
 
@@ -294,12 +294,53 @@ impl DatalogExecutor {
         }
 
         // Match all patterns against derived facts
-        let matcher = PatternMatcher::new(derived_storage);
+        let matcher = PatternMatcher::new(derived_storage.clone());
         let bindings = matcher.match_patterns(&all_patterns);
+
+        // Apply not-post-filter for WhereClause::Not clauses in the query body.
+        // (The StratifiedEvaluator handles `not` in rule bodies; this handles `not`
+        // appearing directly in the query body alongside rule invocations.)
+        let not_clauses: Vec<&Vec<WhereClause>> = query
+            .where_clauses
+            .iter()
+            .filter_map(|c| match c {
+                WhereClause::Not(inner) => Some(inner),
+                _ => None,
+            })
+            .collect();
+
+        let filtered_bindings: Vec<_> = if not_clauses.is_empty() {
+            bindings
+        } else {
+            let not_storage = derived_storage.clone();
+            bindings
+                .into_iter()
+                .filter(|binding| {
+                    for not_body in &not_clauses {
+                        let substituted: Vec<Pattern> = not_body
+                            .iter()
+                            .filter_map(|c| match c {
+                                WhereClause::Pattern(p) => Some(
+                                    crate::query::datalog::evaluator::substitute_pattern(
+                                        p, binding,
+                                    ),
+                                ),
+                                _ => None,
+                            })
+                            .collect();
+                        let m = PatternMatcher::new(not_storage.clone());
+                        if !m.match_patterns(&substituted).is_empty() {
+                            return false; // not condition violated
+                        }
+                    }
+                    true
+                })
+                .collect()
+        };
 
         // Extract requested variables from bindings
         let mut results = Vec::new();
-        for binding in bindings {
+        for binding in filtered_bindings {
             let mut row = Vec::new();
             for var in &query.find {
                 if let Some(value) = binding.get(var) {
@@ -1068,6 +1109,81 @@ mod tests {
         match result {
             QueryResult::QueryResults { results, .. } => {
                 assert_eq!(results.len(), 1, "only bob should pass (alice is rejected)");
+            }
+            _ => panic!("Expected QueryResults"),
+        }
+    }
+
+    #[test]
+    fn test_execute_query_with_rules_not_in_query_body() {
+        // Query: [:find ?x :where (reachable ?_a ?x) (not [?x :blocked true])]
+        // rule invocation + pattern-not in same query body
+        use crate::graph::types::Fact;
+        use crate::query::datalog::types::{Pattern, WhereClause};
+        let storage = FactStorage::new();
+        let a = uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+        let b = uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap();
+        let c = uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap();
+        storage
+            .transact(
+                vec![
+                    (a, ":connected".to_string(), Value::Ref(b)),
+                    (a, ":connected".to_string(), Value::Ref(c)),
+                    (c, ":blocked".to_string(), Value::Boolean(true)),
+                ],
+                None,
+            )
+            .unwrap();
+
+        let rules = Arc::new(RwLock::new(RuleRegistry::new()));
+        // reachable(?from ?to) :- [?from :connected ?to]
+        {
+            use crate::query::datalog::types::{Rule, WhereClause as WC};
+            let rule = Rule {
+                head: vec![
+                    EdnValue::Symbol("reachable".to_string()),
+                    EdnValue::Symbol("?from".to_string()),
+                    EdnValue::Symbol("?to".to_string()),
+                ],
+                body: vec![WC::Pattern(Pattern::new(
+                    EdnValue::Symbol("?from".to_string()),
+                    EdnValue::Keyword(":connected".to_string()),
+                    EdnValue::Symbol("?to".to_string()),
+                ))],
+            };
+            rules
+                .write()
+                .unwrap()
+                .register_rule("reachable".to_string(), rule)
+                .unwrap();
+        }
+
+        let query = DatalogQuery::new(
+            vec!["?x".to_string()],
+            vec![
+                WhereClause::RuleInvocation {
+                    predicate: "reachable".to_string(),
+                    args: vec![
+                        EdnValue::Symbol("?_a".to_string()),
+                        EdnValue::Symbol("?x".to_string()),
+                    ],
+                },
+                WhereClause::Not(vec![WhereClause::Pattern(Pattern::new(
+                    EdnValue::Symbol("?x".to_string()),
+                    EdnValue::Keyword(":blocked".to_string()),
+                    EdnValue::Boolean(true),
+                ))]),
+            ],
+        );
+
+        let executor = DatalogExecutor::new_with_rules(storage, rules);
+        let result = executor
+            .execute(crate::query::datalog::types::DatalogCommand::Query(query))
+            .unwrap();
+
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(results.len(), 1, "c should be excluded (blocked), only b passes");
             }
             _ => panic!("Expected QueryResults"),
         }
