@@ -342,7 +342,10 @@ impl FactStorage {
 
         let mut facts = Vec::new();
 
-        // Pending: in-memory BTreeMap bounded range
+        // Pending: in-memory BTreeMap bounded range.
+        // The `end` key uses wrapping_add(1) on entity_id, which wraps to nil at u128::MAX —
+        // an astronomically rare edge case where the range becomes empty. The entity check
+        // below is a safety net for that edge case; it's redundant for all normal UUIDs.
         for (key, &fr) in d.pending_indexes.eavt.range(start.clone()..end.clone()) {
             if key.entity != *entity_id { break; }
             facts.push(resolve_fact_ref(&d, fr)?);
@@ -1470,7 +1473,24 @@ mod tests {
 
     #[test]
     fn test_set_committed_index_reader_accepted() {
+        use std::sync::Arc;
+        use crate::storage::CommittedIndexReader;
+        use crate::storage::index::{EavtKey, AevtKey, AvetKey, VaetKey, FactRef};
+
+        struct NoopReader;
+        impl CommittedIndexReader for NoopReader {
+            fn range_scan_eavt(&self, _: &EavtKey, _: Option<&EavtKey>) -> anyhow::Result<Vec<FactRef>> { Ok(vec![]) }
+            fn range_scan_aevt(&self, _: &AevtKey, _: Option<&AevtKey>) -> anyhow::Result<Vec<FactRef>> { Ok(vec![]) }
+            fn range_scan_avet(&self, _: &AvetKey, _: Option<&AvetKey>) -> anyhow::Result<Vec<FactRef>> { Ok(vec![]) }
+            fn range_scan_vaet(&self, _: &VaetKey, _: Option<&VaetKey>) -> anyhow::Result<Vec<FactRef>> { Ok(vec![]) }
+        }
+
         let storage = FactStorage::new();
-        let _ = storage.pending_index_counts();
+        // Verify set_committed_index_reader wires the reader (no panic, usable storage)
+        storage.set_committed_index_reader(Arc::new(NoopReader));
+        // After setting, get_facts_by_entity should use the index path without panicking
+        let result = storage.get_facts_by_entity(&uuid::Uuid::nil());
+        assert!(result.is_ok(), "storage should be usable after setting committed index reader");
+        assert_eq!(result.unwrap().len(), 0);
     }
 }
