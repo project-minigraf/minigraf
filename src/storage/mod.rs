@@ -198,10 +198,7 @@ impl FileHeader {
 
         let fact_page_count = if version >= 6 {
             if bytes.len() < 80 {
-                anyhow::bail!(
-                    "Invalid v6 header: expected 80 bytes, got {}",
-                    bytes.len()
-                );
+                anyhow::bail!("Invalid v6 header: expected 80 bytes, got {}", bytes.len());
             }
             u64::from_le_bytes(bytes[72..80].try_into().unwrap())
         } else {
@@ -509,24 +506,24 @@ mod tests {
     #[test]
     fn test_file_header_v6_byte_layout_all_fields() {
         let mut h = FileHeader::new();
-        h.page_count                  = 0x0102_0304_0506_0708_u64;
-        h.node_count                  = 0x1112_1314_1516_1718_u64;
-        h.last_checkpointed_tx_count  = 0x2122_2324_2526_2728_u64;
-        h.eavt_root_page              = 0x3132_3334_3536_3738_u64;
-        h.aevt_root_page              = 0x4142_4344_4546_4748_u64;
-        h.avet_root_page              = 0x5152_5354_5556_5758_u64;
-        h.vaet_root_page              = 0x6162_6364_6566_6768_u64;
-        h.index_checksum              = 0x7172_7374_u32;
-        h.fact_page_format            = 0x02;
-        h._padding                    = [0x00; 3];
-        h.fact_page_count             = 0xA1A2_A3A4_A5A6_A7A8_u64;
+        h.page_count = 0x0102_0304_0506_0708_u64;
+        h.node_count = 0x1112_1314_1516_1718_u64;
+        h.last_checkpointed_tx_count = 0x2122_2324_2526_2728_u64;
+        h.eavt_root_page = 0x3132_3334_3536_3738_u64;
+        h.aevt_root_page = 0x4142_4344_4546_4748_u64;
+        h.avet_root_page = 0x5152_5354_5556_5758_u64;
+        h.vaet_root_page = 0x6162_6364_6566_6768_u64;
+        h.index_checksum = 0x7172_7374_u32;
+        h.fact_page_format = 0x02;
+        h._padding = [0x00; 3];
+        h.fact_page_count = 0xA1A2_A3A4_A5A6_A7A8_u64;
 
         let b = h.to_bytes();
         assert_eq!(b.len(), 80, "v6 header must be exactly 80 bytes");
 
-        assert_eq!(&b[0..4],   b"MGRF");
-        assert_eq!(&b[4..8],   &6u32.to_le_bytes());
-        assert_eq!(&b[8..16],  &0x0102_0304_0506_0708_u64.to_le_bytes());
+        assert_eq!(&b[0..4], b"MGRF");
+        assert_eq!(&b[4..8], &6u32.to_le_bytes());
+        assert_eq!(&b[8..16], &0x0102_0304_0506_0708_u64.to_le_bytes());
         assert_eq!(&b[16..24], &0x1112_1314_1516_1718_u64.to_le_bytes());
         assert_eq!(&b[24..32], &0x2122_2324_2526_2728_u64.to_le_bytes());
         assert_eq!(&b[32..40], &0x3132_3334_3536_3738_u64.to_le_bytes());
@@ -534,7 +531,7 @@ mod tests {
         assert_eq!(&b[48..56], &0x5152_5354_5556_5758_u64.to_le_bytes());
         assert_eq!(&b[56..64], &0x6162_6364_6566_6768_u64.to_le_bytes());
         assert_eq!(&b[64..68], &0x7172_7374_u32.to_le_bytes());
-        assert_eq!(b[68],        0x02);
+        assert_eq!(b[68], 0x02);
         assert_eq!(&b[69..72], &[0x00u8; 3]);
         assert_eq!(&b[72..80], &0xA1A2_A3A4_A5A6_A7A8_u64.to_le_bytes());
     }

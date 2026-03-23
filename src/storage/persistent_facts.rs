@@ -5,10 +5,10 @@ use crate::graph::FactStorage;
 /// low-level page-based storage backends.
 use crate::graph::types::Fact;
 use crate::storage::FACT_PAGE_FORMAT_PACKED;
-use crate::storage::btree::{
-    read_aevt_index, read_avet_index, read_eavt_index, read_vaet_index,
+use crate::storage::btree::{read_aevt_index, read_avet_index, read_eavt_index, read_vaet_index};
+use crate::storage::btree_v6::{
+    OnDiskIndexReader, build_btree, merge_sorted_vecs, stream_all_entries,
 };
-use crate::storage::btree_v6::{build_btree, merge_sorted_vecs, stream_all_entries, OnDiskIndexReader};
 use crate::storage::cache::PageCache;
 use crate::storage::index::{AevtKey, AvetKey, EavtKey, FactRef, VaetKey, encode_value};
 use crate::storage::packed_pages::pack_facts;
@@ -268,10 +268,30 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             // Build v6 B+tree indexes directly
             let index_start = 1 + num_fact_pages;
             let mut backend = self.backend.lock().unwrap();
-            let (eavt_root, next1) = build_btree(eavt_entries.into_iter(), &mut *backend, &self.page_cache, index_start)?;
-            let (aevt_root, next2) = build_btree(aevt_entries.into_iter(), &mut *backend, &self.page_cache, next1)?;
-            let (avet_root, next3) = build_btree(avet_entries.into_iter(), &mut *backend, &self.page_cache, next2)?;
-            let (vaet_root, next4) = build_btree(vaet_entries.into_iter(), &mut *backend, &self.page_cache, next3)?;
+            let (eavt_root, next1) = build_btree(
+                eavt_entries.into_iter(),
+                &mut *backend,
+                &self.page_cache,
+                index_start,
+            )?;
+            let (aevt_root, next2) = build_btree(
+                aevt_entries.into_iter(),
+                &mut *backend,
+                &self.page_cache,
+                next1,
+            )?;
+            let (avet_root, next3) = build_btree(
+                avet_entries.into_iter(),
+                &mut *backend,
+                &self.page_cache,
+                next2,
+            )?;
+            let (vaet_root, next4) = build_btree(
+                vaet_entries.into_iter(),
+                &mut *backend,
+                &self.page_cache,
+                next3,
+            )?;
 
             // Write v6 header
             let mut new_header = FileHeader::new();
@@ -299,7 +319,10 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
                 Arc::new(OnDiskIndexReader::new(
                     self.backend.clone(),
                     self.page_cache.clone(),
-                    eavt_root, aevt_root, avet_root, vaet_root,
+                    eavt_root,
+                    aevt_root,
+                    avet_root,
+                    vaet_root,
                 ));
             self.storage.set_committed_index_reader(index_reader);
         } else if header.eavt_root_page != 0 {
@@ -419,7 +442,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             .unwrap_or(header.page_count);
             first_index_page.saturating_sub(1)
         };
-        self.committed_fact_pages.store(num_fact_pages, Ordering::SeqCst);
+        self.committed_fact_pages
+            .store(num_fact_pages, Ordering::SeqCst);
 
         let (eavt, aevt, avet, vaet) = {
             let backend = self.backend.lock().unwrap();
@@ -451,12 +475,24 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
 
         let (eavt_root, next_free2) =
             build_btree(eavt.into_iter(), &mut *backend, &self.page_cache, next_free)?;
-        let (aevt_root, next_free3) =
-            build_btree(aevt.into_iter(), &mut *backend, &self.page_cache, next_free2)?;
-        let (avet_root, next_free4) =
-            build_btree(avet.into_iter(), &mut *backend, &self.page_cache, next_free3)?;
-        let (vaet_root, final_next_free) =
-            build_btree(vaet.into_iter(), &mut *backend, &self.page_cache, next_free4)?;
+        let (aevt_root, next_free3) = build_btree(
+            aevt.into_iter(),
+            &mut *backend,
+            &self.page_cache,
+            next_free2,
+        )?;
+        let (avet_root, next_free4) = build_btree(
+            avet.into_iter(),
+            &mut *backend,
+            &self.page_cache,
+            next_free3,
+        )?;
+        let (vaet_root, final_next_free) = build_btree(
+            vaet.into_iter(),
+            &mut *backend,
+            &self.page_cache,
+            next_free4,
+        )?;
 
         let mut new_header = FileHeader::new(); // version=6
         new_header.page_count = final_next_free;
@@ -491,11 +527,15 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             Arc::new(OnDiskIndexReader::new(
                 self.backend.clone(),
                 self.page_cache.clone(),
-                eavt_root, aevt_root, avet_root, vaet_root,
+                eavt_root,
+                aevt_root,
+                avet_root,
+                vaet_root,
             ));
         self.storage.set_committed_index_reader(index_reader);
 
-        self.storage.restore_tx_counter_from(header.last_checkpointed_tx_count);
+        self.storage
+            .restore_tx_counter_from(header.last_checkpointed_tx_count);
         self.dirty = false;
         Ok(())
     }
@@ -540,16 +580,24 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         // Stream committed B+tree entries BEFORE writing new pages that may overlap
         let committed_eavt: Vec<(EavtKey, FactRef)> = if curr_header.eavt_root_page != 0 {
             stream_all_entries(curr_header.eavt_root_page, &*backend, &self.page_cache)?
-        } else { Vec::new() };
+        } else {
+            Vec::new()
+        };
         let committed_aevt: Vec<(AevtKey, FactRef)> = if curr_header.aevt_root_page != 0 {
             stream_all_entries(curr_header.aevt_root_page, &*backend, &self.page_cache)?
-        } else { Vec::new() };
+        } else {
+            Vec::new()
+        };
         let committed_avet: Vec<(AvetKey, FactRef)> = if curr_header.avet_root_page != 0 {
             stream_all_entries(curr_header.avet_root_page, &*backend, &self.page_cache)?
-        } else { Vec::new() };
+        } else {
+            Vec::new()
+        };
         let committed_vaet: Vec<(VaetKey, FactRef)> = if curr_header.vaet_root_page != 0 {
             stream_all_entries(curr_header.vaet_root_page, &*backend, &self.page_cache)?
-        } else { Vec::new() };
+        } else {
+            Vec::new()
+        };
 
         // Invalidate cached pages that will be overwritten (old index pages)
         self.page_cache.invalidate_from(new_fact_start);
@@ -572,27 +620,67 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let index_start = 1 + new_total_fact_pages;
 
         let (eavt_root, next1) = if !committed_eavt.is_empty() {
-            build_btree(merge_sorted_vecs(committed_eavt, pending_eavt), &mut *backend, &self.page_cache, index_start)?
+            build_btree(
+                merge_sorted_vecs(committed_eavt, pending_eavt),
+                &mut *backend,
+                &self.page_cache,
+                index_start,
+            )?
         } else {
-            build_btree(pending_eavt.into_iter(), &mut *backend, &self.page_cache, index_start)?
+            build_btree(
+                pending_eavt.into_iter(),
+                &mut *backend,
+                &self.page_cache,
+                index_start,
+            )?
         };
 
         let (aevt_root, next2) = if !committed_aevt.is_empty() {
-            build_btree(merge_sorted_vecs(committed_aevt, pending_aevt), &mut *backend, &self.page_cache, next1)?
+            build_btree(
+                merge_sorted_vecs(committed_aevt, pending_aevt),
+                &mut *backend,
+                &self.page_cache,
+                next1,
+            )?
         } else {
-            build_btree(pending_aevt.into_iter(), &mut *backend, &self.page_cache, next1)?
+            build_btree(
+                pending_aevt.into_iter(),
+                &mut *backend,
+                &self.page_cache,
+                next1,
+            )?
         };
 
         let (avet_root, next3) = if !committed_avet.is_empty() {
-            build_btree(merge_sorted_vecs(committed_avet, pending_avet), &mut *backend, &self.page_cache, next2)?
+            build_btree(
+                merge_sorted_vecs(committed_avet, pending_avet),
+                &mut *backend,
+                &self.page_cache,
+                next2,
+            )?
         } else {
-            build_btree(pending_avet.into_iter(), &mut *backend, &self.page_cache, next2)?
+            build_btree(
+                pending_avet.into_iter(),
+                &mut *backend,
+                &self.page_cache,
+                next2,
+            )?
         };
 
         let (vaet_root, next4) = if !committed_vaet.is_empty() {
-            build_btree(merge_sorted_vecs(committed_vaet, pending_vaet), &mut *backend, &self.page_cache, next3)?
+            build_btree(
+                merge_sorted_vecs(committed_vaet, pending_vaet),
+                &mut *backend,
+                &self.page_cache,
+                next3,
+            )?
         } else {
-            build_btree(pending_vaet.into_iter(), &mut *backend, &self.page_cache, next3)?
+            build_btree(
+                pending_vaet.into_iter(),
+                &mut *backend,
+                &self.page_cache,
+                next3,
+            )?
         };
 
         // ── Step E: write v6 header (last write = crash-safe boundary) ──────────
@@ -614,7 +702,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         backend.sync()?;
         drop(backend);
 
-        self.committed_fact_pages.store(new_total_fact_pages, Ordering::SeqCst);
+        self.committed_fact_pages
+            .store(new_total_fact_pages, Ordering::SeqCst);
         self.last_checkpointed_tx_count = self.storage.current_tx_count();
         self.dirty = false;
 
@@ -632,7 +721,10 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             Arc::new(OnDiskIndexReader::new(
                 self.backend.clone(),
                 self.page_cache.clone(),
-                eavt_root, aevt_root, avet_root, vaet_root,
+                eavt_root,
+                aevt_root,
+                avet_root,
+                vaet_root,
             ));
         self.storage.set_committed_index_reader(index_reader);
 
@@ -1056,12 +1148,21 @@ mod tests {
             let pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
             // v6: indexes live on disk via CommittedIndexReader, not in pending RAM
             let alice_facts = pfs.storage().get_facts_by_entity(&alice).unwrap();
-            assert_eq!(alice_facts.len(), 2, "EAVT must resolve 2 entries after reload");
+            assert_eq!(
+                alice_facts.len(),
+                2,
+                "EAVT must resolve 2 entries after reload"
+            );
             // Check that Ref-valued fact is accessible
-            let ref_facts: Vec<_> = alice_facts.iter()
+            let ref_facts: Vec<_> = alice_facts
+                .iter()
                 .filter(|f| matches!(&f.value, crate::graph::types::Value::Ref(_)))
                 .collect();
-            assert_eq!(ref_facts.len(), 1, "Ref fact must be accessible after reload");
+            assert_eq!(
+                ref_facts.len(),
+                1,
+                "Ref fact must be accessible after reload"
+            );
         }
     }
 
@@ -1109,7 +1210,11 @@ mod tests {
             let pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
             // v6: after rebuild, indexes are on disk; verify fact accessibility
             let alice_facts = pfs.storage().get_facts_by_entity(&alice).unwrap();
-            assert_eq!(alice_facts.len(), 1, "After rebuild, fact must be accessible via index");
+            assert_eq!(
+                alice_facts.len(),
+                1,
+                "After rebuild, fact must be accessible via index"
+            );
         }
     }
 
@@ -1364,10 +1469,17 @@ mod tests {
     fn test_save_writes_v6_header() {
         let backend = MemoryBackend::new();
         let mut storage = PersistentFactStorage::new(backend, 256).unwrap();
-        storage.storage().transact(
-            vec![(Uuid::new_v4(), ":name".to_string(), Value::String("x".to_string()))],
-            None,
-        ).unwrap();
+        storage
+            .storage()
+            .transact(
+                vec![(
+                    Uuid::new_v4(),
+                    ":name".to_string(),
+                    Value::String("x".to_string()),
+                )],
+                None,
+            )
+            .unwrap();
         storage.mark_dirty();
         storage.save().unwrap();
 
@@ -1377,7 +1489,10 @@ mod tests {
         assert_eq!(header.version, 6, "save() must write v6 header");
         assert_eq!(header.to_bytes().len(), 80, "v6 header must be 80 bytes");
         assert!(header.fact_page_count > 0, "fact_page_count must be set");
-        assert!(header.eavt_root_page > 0, "eavt_root must be set after save");
+        assert!(
+            header.eavt_root_page > 0,
+            "eavt_root must be set after save"
+        );
     }
 
     #[test]
@@ -1386,10 +1501,16 @@ mod tests {
         let backend = {
             let backend = MemoryBackend::new();
             let mut s = PersistentFactStorage::new(backend, 256).unwrap();
-            s.storage().transact(
-                vec![(alice, ":name".to_string(), Value::String("Alice".to_string()))],
-                None,
-            ).unwrap();
+            s.storage()
+                .transact(
+                    vec![(
+                        alice,
+                        ":name".to_string(),
+                        Value::String("Alice".to_string()),
+                    )],
+                    None,
+                )
+                .unwrap();
             s.mark_dirty();
             s.save().unwrap();
             s.into_backend()
@@ -1397,7 +1518,11 @@ mod tests {
 
         let s2 = PersistentFactStorage::new(backend, 256).unwrap();
         let facts = s2.storage().get_facts_by_entity(&alice).unwrap();
-        assert_eq!(facts.len(), 1, "committed fact must be visible after reopen");
+        assert_eq!(
+            facts.len(),
+            1,
+            "committed fact must be visible after reopen"
+        );
     }
 
     #[test]
@@ -1408,18 +1533,24 @@ mod tests {
         let e2 = Uuid::new_v4();
 
         // First checkpoint (e1 committed)
-        storage.storage().transact(
-            vec![(e1, ":name".to_string(), Value::String("Alice".to_string()))],
-            None,
-        ).unwrap();
+        storage
+            .storage()
+            .transact(
+                vec![(e1, ":name".to_string(), Value::String("Alice".to_string()))],
+                None,
+            )
+            .unwrap();
         storage.mark_dirty();
         storage.save().unwrap();
 
         // Second checkpoint (e2 pending → committed)
-        storage.storage().transact(
-            vec![(e2, ":name".to_string(), Value::String("Bob".to_string()))],
-            None,
-        ).unwrap();
+        storage
+            .storage()
+            .transact(
+                vec![(e2, ":name".to_string(), Value::String("Bob".to_string()))],
+                None,
+            )
+            .unwrap();
         storage.mark_dirty();
         storage.save().unwrap();
 
@@ -1427,8 +1558,16 @@ mod tests {
         let s2 = PersistentFactStorage::new(backend, 256).unwrap();
         let e1_facts = s2.storage().get_facts_by_entity(&e1).unwrap();
         let e2_facts = s2.storage().get_facts_by_entity(&e2).unwrap();
-        assert_eq!(e1_facts.len(), 1, "e1 from first checkpoint must survive second checkpoint");
-        assert_eq!(e2_facts.len(), 1, "e2 from second checkpoint must be visible");
+        assert_eq!(
+            e1_facts.len(),
+            1,
+            "e1 from first checkpoint must survive second checkpoint"
+        );
+        assert_eq!(
+            e2_facts.len(),
+            1,
+            "e2 from second checkpoint must be visible"
+        );
     }
 
     #[test]
@@ -1436,7 +1575,7 @@ mod tests {
         let mut backend = MemoryBackend::new();
         let mut page = vec![0u8; PAGE_SIZE];
         page[0..4].copy_from_slice(b"MGRF");
-        page[4..8].copy_from_slice(&5u32.to_le_bytes());  // version = 5
+        page[4..8].copy_from_slice(&5u32.to_le_bytes()); // version = 5
         page[8..16].copy_from_slice(&2u64.to_le_bytes()); // page_count = 2 (header + 1 empty page)
         page[68] = 0x02; // fact_page_format = PACKED
         backend.write_page(0, &page).unwrap();
@@ -1450,7 +1589,10 @@ mod tests {
         assert_eq!(header.version, 6, "migration must upgrade header to v6");
         assert_eq!(header.to_bytes().len(), 80, "v6 header must be 80 bytes");
         // page_count=2 means 1 fact page (page 1), even if empty
-        assert_eq!(header.fact_page_count, 1, "fact_page_count must reflect page layout");
+        assert_eq!(
+            header.fact_page_count, 1,
+            "fact_page_count must reflect page layout"
+        );
     }
 
     #[test]
@@ -1469,6 +1611,9 @@ mod tests {
         let b = s.into_backend();
         let header_bytes = b.read_page(0).unwrap();
         let header = crate::storage::FileHeader::from_bytes(&header_bytes).unwrap();
-        assert_eq!(header.version, 6, "migration must complete despite prior partial run");
+        assert_eq!(
+            header.version, 6,
+            "migration must complete despite prior partial run"
+        );
     }
 }

@@ -30,10 +30,14 @@ fn test_v6_roundtrip_basic() {
     populate_and_checkpoint(10, &path);
 
     let db = OpenOptions::new().path(&path).open().unwrap();
-    let result = db.execute("(query [:find ?v :where [:e0 :val ?v]])").unwrap();
+    let result = db
+        .execute("(query [:find ?v :where [:e0 :val ?v]])")
+        .unwrap();
     if let minigraf::QueryResult::QueryResults { results, .. } = result {
         assert!(
-            results.iter().any(|row| row.iter().any(|v| format!("{:?}", v).contains('0'))),
+            results
+                .iter()
+                .any(|row| row.iter().any(|v| format!("{:?}", v).contains('0'))),
             "entity e0 should have val 0"
         );
     } else {
@@ -48,10 +52,14 @@ fn test_v6_range_scan_across_leaves() {
     populate_and_checkpoint(500, &path);
 
     let db = OpenOptions::new().path(&path).open().unwrap();
-    let result = db.execute("(query [:find ?v :where [:e100 :val ?v]])").unwrap();
+    let result = db
+        .execute("(query [:find ?v :where [:e100 :val ?v]])")
+        .unwrap();
     if let minigraf::QueryResult::QueryResults { results, .. } = result {
         assert!(
-            results.iter().any(|row| row.iter().any(|v| format!("{:?}", v).contains("100"))),
+            results
+                .iter()
+                .any(|row| row.iter().any(|v| format!("{:?}", v).contains("100"))),
             "entity e100 should have val 100"
         );
     } else {
@@ -67,23 +75,32 @@ fn test_v6_pending_plus_committed_merge() {
 
     // Add 5 more (pending, in WAL)
     let db = OpenOptions::new().path(&path).open().unwrap();
-    db.execute("(transact [[:e10 :val 10][:e11 :val 11][:e12 :val 12]])").unwrap();
+    db.execute("(transact [[:e10 :val 10][:e11 :val 11][:e12 :val 12]])")
+        .unwrap();
 
     // Query must see both committed (e0) and pending (e10)
-    let r0 = db.execute("(query [:find ?v :where [:e0 :val ?v]])").unwrap();
+    let r0 = db
+        .execute("(query [:find ?v :where [:e0 :val ?v]])")
+        .unwrap();
     if let minigraf::QueryResult::QueryResults { results, .. } = r0 {
         assert!(
-            results.iter().any(|row| row.iter().any(|v| format!("{:?}", v).contains('0'))),
+            results
+                .iter()
+                .any(|row| row.iter().any(|v| format!("{:?}", v).contains('0'))),
             "committed e0 missing"
         );
     } else {
         panic!("expected QueryResults for committed e0 in test_v6_pending_plus_committed_merge");
     }
 
-    let r10 = db.execute("(query [:find ?v :where [:e10 :val ?v]])").unwrap();
+    let r10 = db
+        .execute("(query [:find ?v :where [:e10 :val ?v]])")
+        .unwrap();
     if let minigraf::QueryResult::QueryResults { results, .. } = r10 {
         assert!(
-            results.iter().any(|row| row.iter().any(|v| format!("{:?}", v).contains("10"))),
+            results
+                .iter()
+                .any(|row| row.iter().any(|v| format!("{:?}", v).contains("10"))),
             "pending e10 missing"
         );
     } else {
@@ -101,7 +118,12 @@ fn test_v6_migration_from_v5_eager() {
 
     // Create an empty v5 .graph file with only a header (no facts, no index pages)
     {
-        let mut f = std::fs::OpenOptions::new().create(true).write(true).truncate(true).open(&path).unwrap();
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&path)
+            .unwrap();
         let mut page = vec![0u8; 4096]; // PAGE_SIZE
         page[0..4].copy_from_slice(b"MGRF");
         page[4..8].copy_from_slice(&5u32.to_le_bytes()); // version = 5
@@ -115,7 +137,9 @@ fn test_v6_migration_from_v5_eager() {
     let db = OpenOptions::new().path(&path).open().unwrap();
 
     // Query on empty DB must return empty result (not an error)
-    let _result = db.execute("(query [:find ?e :where [?e :any :any]])").unwrap();
+    let _result = db
+        .execute("(query [:find ?e :where [?e :any :any]])")
+        .unwrap();
     drop(db);
 
     // Re-open and verify header was upgraded to v6
@@ -124,7 +148,11 @@ fn test_v6_migration_from_v5_eager() {
     use std::io::Read;
     f.read_exact(&mut header_bytes).unwrap();
     let version = u32::from_le_bytes(header_bytes[4..8].try_into().unwrap());
-    assert_eq!(version, 6, "header must be upgraded from v5 to v6; got version={}", version);
+    assert_eq!(
+        version, 6,
+        "header must be upgraded from v5 to v6; got version={}",
+        version
+    );
 }
 
 #[test]
@@ -139,7 +167,8 @@ fn test_v6_explicit_checkpoint_clears_wal() {
     // Write 10 facts then explicitly checkpoint
     for i in 0..10 {
         let mut tx = db.begin_write().unwrap();
-        tx.execute(&format!("(transact [[:e{} :val {}]])", i, i)).unwrap();
+        tx.execute(&format!("(transact [[:e{} :val {}]])", i, i))
+            .unwrap();
         tx.commit().unwrap();
     }
     db.checkpoint().unwrap();
@@ -147,7 +176,9 @@ fn test_v6_explicit_checkpoint_clears_wal() {
     // WAL sidecar is named <db_path>.wal (per CLAUDE.md "WAL sidecar <db>.wal")
     let wal_path = format!("{}.wal", path);
     let wal_absent = !Path::new(&wal_path).exists();
-    let wal_empty = std::fs::metadata(&wal_path).map(|m| m.len() == 0).unwrap_or(true);
+    let wal_empty = std::fs::metadata(&wal_path)
+        .map(|m| m.len() == 0)
+        .unwrap_or(true);
     assert!(
         wal_absent || wal_empty,
         "WAL must be absent or empty after explicit checkpoint; path={} size={}",
@@ -156,7 +187,9 @@ fn test_v6_explicit_checkpoint_clears_wal() {
     );
 
     // Queries still return correct results
-    let result = db.execute("(query [:find ?v :where [:e0 :val ?v]])").unwrap();
+    let result = db
+        .execute("(query [:find ?v :where [:e0 :val ?v]])")
+        .unwrap();
     let s = format!("{:?}", result);
     assert!(s.contains('0'), "query must work after checkpoint");
 }
@@ -170,15 +203,23 @@ fn test_v6_dead_pages_queries_correct_after_two_checkpoints() {
 
     // Second checkpoint (adds new facts + new B+tree; old index pages are dead)
     let db = OpenOptions::new().path(&path).open().unwrap();
-    db.execute("(transact [[:e20 :val 20][:e21 :val 21]])").unwrap();
+    db.execute("(transact [[:e20 :val 20][:e21 :val 21]])")
+        .unwrap();
     db.checkpoint().unwrap();
 
     // Re-open and verify queries are correct
     let db2 = OpenOptions::new().path(&path).open().unwrap();
-    let r = db2.execute("(query [:find ?v :where [:e20 :val ?v]])").unwrap();
+    let r = db2
+        .execute("(query [:find ?v :where [:e20 :val ?v]])")
+        .unwrap();
     let sr = format!("{:?}", r);
-    assert!(sr.contains("20"), "e20 should be queryable after second checkpoint");
-    let r0 = db2.execute("(query [:find ?v :where [:e0 :val ?v]])").unwrap();
+    assert!(
+        sr.contains("20"),
+        "e20 should be queryable after second checkpoint"
+    );
+    let r0 = db2
+        .execute("(query [:find ?v :where [:e0 :val ?v]])")
+        .unwrap();
     let s0 = format!("{:?}", r0);
     assert!(s0.contains('0'), "original e0 should still be visible");
 }
@@ -192,14 +233,20 @@ fn test_v6_checksum_mismatch_triggers_rebuild() {
 
     // Corrupt the index_checksum field in the header (bytes 64..68)
     {
-        let mut f = std::fs::OpenOptions::new().read(true).write(true).open(&path).unwrap();
+        let mut f = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .unwrap();
         f.seek(SeekFrom::Start(64)).unwrap();
         f.write_all(&[0xFF, 0xFF, 0xFF, 0xFF]).unwrap();
     }
 
     // Re-open: checksum mismatch must trigger v6 rebuild path
     let db = OpenOptions::new().path(&path).open().unwrap();
-    let result = db.execute("(query [:find ?v :where [:e0 :val ?v]])").unwrap();
+    let result = db
+        .execute("(query [:find ?v :where [:e0 :val ?v]])")
+        .unwrap();
     let s = format!("{:?}", result);
     assert!(s.contains('0'), "queries must work after rebuild");
 }
@@ -212,13 +259,17 @@ fn test_v6_reopen_close_reopen() {
     // Open, query, close, reopen, query again
     {
         let db = OpenOptions::new().path(&path).open().unwrap();
-        let r = db.execute("(query [:find ?v :where [:e50 :val ?v]])").unwrap();
+        let r = db
+            .execute("(query [:find ?v :where [:e50 :val ?v]])")
+            .unwrap();
         let s = format!("{:?}", r);
         assert!(s.contains("50"), "first open");
     }
     {
         let db = OpenOptions::new().path(&path).open().unwrap();
-        let r = db.execute("(query [:find ?v :where [:e50 :val ?v]])").unwrap();
+        let r = db
+            .execute("(query [:find ?v :where [:e50 :val ?v]])")
+            .unwrap();
         let s = format!("{:?}", r);
         assert!(s.contains("50"), "after reopen");
     }

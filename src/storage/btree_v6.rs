@@ -6,7 +6,7 @@
 
 use crate::storage::cache::PageCache;
 use crate::storage::index::FactRef;
-use crate::storage::{StorageBackend, PAGE_SIZE};
+use crate::storage::{PAGE_SIZE, StorageBackend};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -266,19 +266,14 @@ pub fn merge_sorted_vecs<T: Ord>(a: Vec<T>, b: Vec<T>) -> impl Iterator<Item = T
 // ─── Leaf traversal helpers ───────────────────────────────────────────────────
 
 /// Traverse internal nodes from `root` to find the leftmost (first) leaf page.
-fn find_leftmost_leaf(
-    root: u64,
-    backend: &dyn StorageBackend,
-    cache: &PageCache,
-) -> Result<u64> {
+fn find_leftmost_leaf(root: u64, backend: &dyn StorageBackend, cache: &PageCache) -> Result<u64> {
     let mut page_id = root;
     loop {
         let page = cache.get_or_load(page_id, backend)?;
         match page[0] {
             PAGE_TYPE_LEAF => return Ok(page_id),
             PAGE_TYPE_INTERNAL => {
-                let key_count =
-                    u16::from_le_bytes(page[2..4].try_into().unwrap()) as usize;
+                let key_count = u16::from_le_bytes(page[2..4].try_into().unwrap()) as usize;
                 if key_count == 0 {
                     page_id = u64::from_le_bytes(page[4..12].try_into().unwrap());
                 } else {
@@ -314,30 +309,27 @@ where
         match page[0] {
             PAGE_TYPE_LEAF => return Ok(page_id),
             PAGE_TYPE_INTERNAL => {
-                let key_count =
-                    u16::from_le_bytes(page[2..4].try_into().unwrap()) as usize;
-                let rightmost_child =
-                    u64::from_le_bytes(page[4..12].try_into().unwrap());
+                let key_count = u16::from_le_bytes(page[2..4].try_into().unwrap()) as usize;
+                let rightmost_child = u64::from_le_bytes(page[4..12].try_into().unwrap());
                 let child_arr_start = INTERNAL_HEADER_SIZE;
                 let slot_dir_start = INTERNAL_HEADER_SIZE + key_count * 8;
 
                 let mut descended = false;
                 for i in 0..key_count {
                     let slot_off = slot_dir_start + i * SLOT_SIZE;
-                    let sep_offset = u16::from_le_bytes(
-                        page[slot_off..slot_off + 2].try_into().unwrap(),
-                    ) as usize;
-                    let sep_length = u16::from_le_bytes(
-                        page[slot_off + 2..slot_off + 4].try_into().unwrap(),
-                    ) as usize;
+                    let sep_offset =
+                        u16::from_le_bytes(page[slot_off..slot_off + 2].try_into().unwrap())
+                            as usize;
+                    let sep_length =
+                        u16::from_le_bytes(page[slot_off + 2..slot_off + 4].try_into().unwrap())
+                            as usize;
                     let sep_key: K =
                         postcard::from_bytes(&page[sep_offset..sep_offset + sep_length])?;
 
                     if *key < sep_key {
                         let child_off = child_arr_start + i * 8;
-                        page_id = u64::from_le_bytes(
-                            page[child_off..child_off + 8].try_into().unwrap(),
-                        );
+                        page_id =
+                            u64::from_le_bytes(page[child_off..child_off + 8].try_into().unwrap());
                         descended = true;
                         break;
                     }
@@ -364,8 +356,7 @@ where
     let mut entries = Vec::with_capacity(entry_count);
     for i in 0..entry_count {
         let slot_off = LEAF_HEADER_SIZE + i * SLOT_SIZE;
-        let offset =
-            u16::from_le_bytes(page[slot_off..slot_off + 2].try_into().unwrap()) as usize;
+        let offset = u16::from_le_bytes(page[slot_off..slot_off + 2].try_into().unwrap()) as usize;
         let length =
             u16::from_le_bytes(page[slot_off + 2..slot_off + 4].try_into().unwrap()) as usize;
         let (k, fr): (K, FactRef) = postcard::from_bytes(&page[offset..offset + length])?;
@@ -517,19 +508,26 @@ impl<B: StorageBackend + 'static> OnDiskIndexReader<B> {
         avet_root: u64,
         vaet_root: u64,
     ) -> Self {
-        OnDiskIndexReader { backend, cache, eavt_root, aevt_root, avet_root, vaet_root }
+        OnDiskIndexReader {
+            backend,
+            cache,
+            eavt_root,
+            aevt_root,
+            avet_root,
+            vaet_root,
+        }
     }
 }
 
-impl<B: StorageBackend + 'static> crate::storage::CommittedIndexReader
-    for OnDiskIndexReader<B>
-{
+impl<B: StorageBackend + 'static> crate::storage::CommittedIndexReader for OnDiskIndexReader<B> {
     fn range_scan_eavt(
         &self,
         start: &crate::storage::index::EavtKey,
         end: Option<&crate::storage::index::EavtKey>,
     ) -> anyhow::Result<Vec<crate::storage::index::FactRef>> {
-        if self.eavt_root == 0 { return Ok(vec![]); }
+        if self.eavt_root == 0 {
+            return Ok(vec![]);
+        }
         let adapter = MutexStorageBackend(Arc::clone(&self.backend));
         range_scan(self.eavt_root, start, end, &adapter, &self.cache)
     }
@@ -539,7 +537,9 @@ impl<B: StorageBackend + 'static> crate::storage::CommittedIndexReader
         start: &crate::storage::index::AevtKey,
         end: Option<&crate::storage::index::AevtKey>,
     ) -> anyhow::Result<Vec<crate::storage::index::FactRef>> {
-        if self.aevt_root == 0 { return Ok(vec![]); }
+        if self.aevt_root == 0 {
+            return Ok(vec![]);
+        }
         let adapter = MutexStorageBackend(Arc::clone(&self.backend));
         range_scan(self.aevt_root, start, end, &adapter, &self.cache)
     }
@@ -549,7 +549,9 @@ impl<B: StorageBackend + 'static> crate::storage::CommittedIndexReader
         start: &crate::storage::index::AvetKey,
         end: Option<&crate::storage::index::AvetKey>,
     ) -> anyhow::Result<Vec<crate::storage::index::FactRef>> {
-        if self.avet_root == 0 { return Ok(vec![]); }
+        if self.avet_root == 0 {
+            return Ok(vec![]);
+        }
         let adapter = MutexStorageBackend(Arc::clone(&self.backend));
         range_scan(self.avet_root, start, end, &adapter, &self.cache)
     }
@@ -559,7 +561,9 @@ impl<B: StorageBackend + 'static> crate::storage::CommittedIndexReader
         start: &crate::storage::index::VaetKey,
         end: Option<&crate::storage::index::VaetKey>,
     ) -> anyhow::Result<Vec<crate::storage::index::FactRef>> {
-        if self.vaet_root == 0 { return Ok(vec![]); }
+        if self.vaet_root == 0 {
+            return Ok(vec![]);
+        }
         let adapter = MutexStorageBackend(Arc::clone(&self.backend));
         range_scan(self.vaet_root, start, end, &adapter, &self.cache)
     }
@@ -581,7 +585,10 @@ mod tests {
                 valid_to: i64::MAX,
                 tx_count: tx,
             },
-            FactRef { page_id: tx + 1, slot_index: 0 },
+            FactRef {
+                page_id: tx + 1,
+                slot_index: 0,
+            },
         )
     }
 
@@ -653,7 +660,11 @@ mod tests {
 
         for page_id in root..next_free {
             let page = cache.get_or_load(page_id, &backend).unwrap();
-            assert_eq!(page.len(), PAGE_SIZE, "every page must be exactly PAGE_SIZE");
+            assert_eq!(
+                page.len(),
+                PAGE_SIZE,
+                "every page must be exactly PAGE_SIZE"
+            );
         }
     }
 
@@ -667,12 +678,17 @@ mod tests {
 
         let root_page = cache.get_or_load(root, &backend).unwrap();
         let pages_written = next_free - 1;
-        assert!(pages_written >= 2, "300 entries must need multiple pages; got {}", pages_written);
+        assert!(
+            pages_written >= 2,
+            "300 entries must need multiple pages; got {}",
+            pages_written
+        );
         // With 300 entries at 75% fill factor (~3072 bytes/leaf), we always get multiple
         // leaf pages, so the root MUST be an internal node.
         assert_eq!(
             root_page[0], PAGE_TYPE_INTERNAL,
-            "300 entries should produce an internal node root, got page type 0x{:02x}", root_page[0]
+            "300 entries should produce an internal node root, got page type 0x{:02x}",
+            root_page[0]
         );
     }
 
@@ -731,16 +747,28 @@ mod tests {
             leaf_pid = next;
         }
 
-        assert!(chain.len() >= 2, "100 long-key entries should span multiple leaves; got {} leaves", chain.len());
+        assert!(
+            chain.len() >= 2,
+            "100 long-key entries should span multiple leaves; got {} leaves",
+            chain.len()
+        );
         // Total entries across all leaves must equal 100
-        let total_entries: u64 = chain.iter().map(|&pid| {
-            let p = cache.get_or_load(pid, &backend).unwrap();
-            u16::from_le_bytes(p[2..4].try_into().unwrap()) as u64
-        }).sum();
+        let total_entries: u64 = chain
+            .iter()
+            .map(|&pid| {
+                let p = cache.get_or_load(pid, &backend).unwrap();
+                u16::from_le_bytes(p[2..4].try_into().unwrap()) as u64
+            })
+            .sum();
         assert_eq!(total_entries, 100);
         // next_free must be > all leaf page IDs
         for &pid in &chain {
-            assert!(pid < next_free, "leaf {} must be < next_free {}", pid, next_free);
+            assert!(
+                pid < next_free,
+                "leaf {} must be < next_free {}",
+                pid,
+                next_free
+            );
         }
     }
 
@@ -756,12 +784,12 @@ mod tests {
     fn test_stream_all_entries_roundtrip() {
         let mut backend = MemoryBackend::new();
         let cache = PageCache::new(256);
-        let input: Vec<(EavtKey, FactRef)> =
-            (0u128..50).map(|n| make_eavt(n, ":name", n as u64 + 1)).collect();
+        let input: Vec<(EavtKey, FactRef)> = (0u128..50)
+            .map(|n| make_eavt(n, ":name", n as u64 + 1))
+            .collect();
         let (root, _) = build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
 
-        let output: Vec<(EavtKey, FactRef)> =
-            stream_all_entries(root, &backend, &cache).unwrap();
+        let output: Vec<(EavtKey, FactRef)> = stream_all_entries(root, &backend, &cache).unwrap();
 
         assert_eq!(output.len(), 50);
         for w in output.windows(2) {
@@ -786,33 +814,56 @@ mod tests {
     fn test_range_scan_exact_match() {
         let mut backend = MemoryBackend::new();
         let cache = PageCache::new(256);
-        let input: Vec<(EavtKey, FactRef)> =
-            (0u128..100).map(|n| make_eavt(n, ":v", n as u64 + 1)).collect();
+        let input: Vec<(EavtKey, FactRef)> = (0u128..100)
+            .map(|n| make_eavt(n, ":v", n as u64 + 1))
+            .collect();
         let (root, _) = build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
 
         let target_entity = Uuid::from_u128(42);
-        let start = EavtKey { entity: target_entity, attribute: String::new(),
-                               valid_from: i64::MIN, valid_to: i64::MIN, tx_count: 0 };
+        let start = EavtKey {
+            entity: target_entity,
+            attribute: String::new(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
         let next_entity = Uuid::from_u128(43);
-        let end = EavtKey { entity: next_entity, attribute: String::new(),
-                             valid_from: i64::MIN, valid_to: i64::MIN, tx_count: 0 };
+        let end = EavtKey {
+            entity: next_entity,
+            attribute: String::new(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
 
         let refs = range_scan(root, &start, Some(&end), &backend, &cache).unwrap();
         assert_eq!(refs.len(), 1, "exactly one entry for entity 42");
         // make_eavt(42, ":v", 43) → FactRef { page_id: 43+1=44, slot_index: 0 }
-        assert_eq!(refs[0], FactRef { page_id: 44, slot_index: 0 });
+        assert_eq!(
+            refs[0],
+            FactRef {
+                page_id: 44,
+                slot_index: 0
+            }
+        );
     }
 
     #[test]
     fn test_range_scan_empty_range() {
         let mut backend = MemoryBackend::new();
         let cache = PageCache::new(256);
-        let input: Vec<(EavtKey, FactRef)> =
-            (0u128..50).map(|n| make_eavt(n, ":v", n as u64 + 1)).collect();
+        let input: Vec<(EavtKey, FactRef)> = (0u128..50)
+            .map(|n| make_eavt(n, ":v", n as u64 + 1))
+            .collect();
         let (root, _) = build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
 
-        let start = EavtKey { entity: Uuid::from_u128(999),
-                               attribute: String::new(), valid_from: 0, valid_to: 0, tx_count: 0 };
+        let start = EavtKey {
+            entity: Uuid::from_u128(999),
+            attribute: String::new(),
+            valid_from: 0,
+            valid_to: 0,
+            tx_count: 0,
+        };
         let refs = range_scan::<EavtKey>(root, &start, None, &backend, &cache).unwrap();
         assert_eq!(refs.len(), 0);
     }
@@ -821,12 +872,18 @@ mod tests {
     fn test_range_scan_unbounded_end() {
         let mut backend = MemoryBackend::new();
         let cache = PageCache::new(256);
-        let input: Vec<(EavtKey, FactRef)> =
-            (0u128..10).map(|n| make_eavt(n, ":v", n as u64 + 1)).collect();
+        let input: Vec<(EavtKey, FactRef)> = (0u128..10)
+            .map(|n| make_eavt(n, ":v", n as u64 + 1))
+            .collect();
         let (root, _) = build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
 
-        let start = EavtKey { entity: Uuid::from_u128(5), attribute: String::new(),
-                               valid_from: i64::MIN, valid_to: i64::MIN, tx_count: 0 };
+        let start = EavtKey {
+            entity: Uuid::from_u128(5),
+            attribute: String::new(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
         let refs = range_scan::<EavtKey>(root, &start, None, &backend, &cache).unwrap();
         assert_eq!(refs.len(), 5, "entities 5..9 = 5 entries");
     }
@@ -835,19 +892,34 @@ mod tests {
     fn test_range_scan_multi_leaf_span() {
         let mut backend = MemoryBackend::new();
         let cache = PageCache::new(512);
-        let input: Vec<(EavtKey, FactRef)> =
-            (0u128..500).map(|n| make_eavt(n, ":a", n as u64 + 1)).collect();
+        let input: Vec<(EavtKey, FactRef)> = (0u128..500)
+            .map(|n| make_eavt(n, ":a", n as u64 + 1))
+            .collect();
         let (root, _) = build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
 
-        let start = EavtKey { entity: Uuid::from_u128(100), attribute: String::new(),
-                               valid_from: i64::MIN, valid_to: i64::MIN, tx_count: 0 };
-        let end = EavtKey { entity: Uuid::from_u128(200), attribute: String::new(),
-                             valid_from: i64::MIN, valid_to: i64::MIN, tx_count: 0 };
+        let start = EavtKey {
+            entity: Uuid::from_u128(100),
+            attribute: String::new(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
+        let end = EavtKey {
+            entity: Uuid::from_u128(200),
+            attribute: String::new(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
         let refs = range_scan(root, &start, Some(&end), &backend, &cache).unwrap();
         // NOTE: The end key has attribute="" which sorts BEFORE ":a". So entity 200's
         // actual entry {200, ":a", ...} sorts AFTER the end key and is EXCLUDED.
         // Result: entities 100..199 = 100 entries.
-        assert_eq!(refs.len(), 100, "entities 100..199 (end key excludes entity 200's entry since its attr ':a' > '')");
+        assert_eq!(
+            refs.len(),
+            100,
+            "entities 100..199 (end key excludes entity 200's entry since its attr ':a' > '')"
+        );
     }
 
     #[test]
@@ -857,20 +929,28 @@ mod tests {
 
         let mut backend = MemoryBackend::new();
         let cache = Arc::new(PageCache::new(256));
-        let input: Vec<(EavtKey, FactRef)> =
-            (0u128..20).map(|n| make_eavt(n, ":x", n as u64 + 1)).collect();
+        let input: Vec<(EavtKey, FactRef)> = (0u128..20)
+            .map(|n| make_eavt(n, ":x", n as u64 + 1))
+            .collect();
         let (eavt_root, _) = build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
 
-        let reader = OnDiskIndexReader::new(
-            Arc::new(Mutex::new(backend)),
-            cache,
-            eavt_root, 0, 0, 0,
-        );
+        let reader =
+            OnDiskIndexReader::new(Arc::new(Mutex::new(backend)), cache, eavt_root, 0, 0, 0);
 
-        let start = EavtKey { entity: Uuid::from_u128(5), attribute: String::new(),
-                               valid_from: i64::MIN, valid_to: i64::MIN, tx_count: 0 };
-        let end = EavtKey { entity: Uuid::from_u128(10), attribute: String::new(),
-                             valid_from: i64::MIN, valid_to: i64::MIN, tx_count: 0 };
+        let start = EavtKey {
+            entity: Uuid::from_u128(5),
+            attribute: String::new(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
+        let end = EavtKey {
+            entity: Uuid::from_u128(10),
+            attribute: String::new(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
         let refs = reader.range_scan_eavt(&start, Some(&end)).unwrap();
         // Same exclusion logic: entity 10's entry {10, ":x", ...} > end {10, "", ...}
         // So entities 5..9 = 5 entries
@@ -887,10 +967,10 @@ mod tests {
         // build_btree takes &PageCache (not Arc), so construct without Arc first
         let cache = PageCache::new(256);
         // 50 entries — enough to span multiple leaf pages
-        let input: Vec<(EavtKey, FactRef)> =
-            (0u128..50).map(|n| make_eavt(n, ":x", n as u64 + 1)).collect();
-        let (eavt_root, _) =
-            build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
+        let input: Vec<(EavtKey, FactRef)> = (0u128..50)
+            .map(|n| make_eavt(n, ":x", n as u64 + 1))
+            .collect();
+        let (eavt_root, _) = build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
 
         // Wrap in Arc after build_btree is done — OnDiskIndexReader requires Arc<PageCache>
         let reader = Arc::new(OnDiskIndexReader::new(
