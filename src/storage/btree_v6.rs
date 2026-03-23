@@ -10,6 +10,7 @@ use crate::storage::{StorageBackend, PAGE_SIZE};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::Mutex;
 
 // ─── Page type constants ───────────────────────────────────────────────────────
 
@@ -464,7 +465,8 @@ where
 /// Used exclusively by [`OnDiskIndexReader::range_scan_*`] so that the backend
 /// mutex is held only while reading one cold page from disk, rather than for the
 /// entire range scan. On a cache hit [`PageCache::get_or_load`] never calls
-/// `read_page`, so no lock is acquired at all.
+/// `read_page`, so no lock is acquired at all. All methods other than `read_page`
+/// are unimplemented and will panic if called.
 struct MutexStorageBackend<B>(Arc<Mutex<B>>);
 
 impl<B: StorageBackend> StorageBackend for MutexStorageBackend<B> {
@@ -473,29 +475,27 @@ impl<B: StorageBackend> StorageBackend for MutexStorageBackend<B> {
     }
 
     fn write_page(&mut self, _page_id: u64, _data: &[u8]) -> anyhow::Result<()> {
-        unreachable!("MutexStorageBackend is read-only; write_page must not be called")
+        unimplemented!("MutexStorageBackend is read-only; write_page must not be called")
     }
 
     fn sync(&mut self) -> anyhow::Result<()> {
-        unreachable!("MutexStorageBackend is read-only; sync must not be called")
+        unimplemented!("MutexStorageBackend is read-only; sync must not be called")
     }
 
     fn page_count(&self) -> anyhow::Result<u64> {
-        unreachable!("MutexStorageBackend is read-only; page_count must not be called")
+        unimplemented!("MutexStorageBackend is read-only; page_count must not be called")
     }
 
     fn close(&mut self) -> anyhow::Result<()> {
-        unreachable!("MutexStorageBackend is read-only; close must not be called")
+        unimplemented!("MutexStorageBackend is read-only; close must not be called")
     }
 
     fn backend_name(&self) -> &'static str {
-        unreachable!("MutexStorageBackend is read-only; backend_name must not be called")
+        unimplemented!("MutexStorageBackend is read-only; backend_name must not be called")
     }
 }
 
 // ─── OnDiskIndexReader ────────────────────────────────────────────────────────
-
-use std::sync::Mutex;
 
 /// Implements `CommittedIndexReader` by delegating to `range_scan` on
 /// on-disk B+tree pages via the page cache.
@@ -934,7 +934,7 @@ mod tests {
 
         let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
         let expected_len = results[0].len();
-        assert!(expected_len > 0, "expected non-empty scan results");
+        assert_eq!(expected_len, 10, "expected 10 entries for entities 10..19");
         for (i, res) in results.iter().enumerate() {
             assert_eq!(
                 res.len(),
