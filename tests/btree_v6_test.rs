@@ -31,8 +31,14 @@ fn test_v6_roundtrip_basic() {
 
     let db = OpenOptions::new().path(&path).open().unwrap();
     let result = db.execute("(query [:find ?v :where [:e0 :val ?v]])").unwrap();
-    let s = format!("{:?}", result);
-    assert!(s.contains('0'), "entity e0 should have val 0; got: {}", s);
+    if let minigraf::QueryResult::QueryResults { results, .. } = result {
+        assert!(
+            results.iter().any(|row| row.iter().any(|v| v.to_string().contains('0'))),
+            "entity e0 should have val 0"
+        );
+    } else {
+        panic!("expected QueryResults for test_v6_roundtrip_basic");
+    }
 }
 
 #[test]
@@ -43,8 +49,14 @@ fn test_v6_range_scan_across_leaves() {
 
     let db = OpenOptions::new().path(&path).open().unwrap();
     let result = db.execute("(query [:find ?v :where [:e100 :val ?v]])").unwrap();
-    let s = format!("{:?}", result);
-    assert!(s.contains("100"), "entity e100 should have val 100; got: {}", s);
+    if let minigraf::QueryResult::QueryResults { results, .. } = result {
+        assert!(
+            results.iter().any(|row| row.iter().any(|v| v.to_string().contains("100"))),
+            "entity e100 should have val 100"
+        );
+    } else {
+        panic!("expected QueryResults for test_v6_range_scan_across_leaves");
+    }
 }
 
 #[test]
@@ -59,12 +71,24 @@ fn test_v6_pending_plus_committed_merge() {
 
     // Query must see both committed (e0) and pending (e10)
     let r0 = db.execute("(query [:find ?v :where [:e0 :val ?v]])").unwrap();
-    let s0 = format!("{:?}", r0);
-    assert!(s0.contains('0'), "committed e0 missing; got: {}", s0);
+    if let minigraf::QueryResult::QueryResults { results, .. } = r0 {
+        assert!(
+            results.iter().any(|row| row.iter().any(|v| v.to_string().contains('0'))),
+            "committed e0 missing"
+        );
+    } else {
+        panic!("expected QueryResults for committed e0 in test_v6_pending_plus_committed_merge");
+    }
 
     let r10 = db.execute("(query [:find ?v :where [:e10 :val ?v]])").unwrap();
-    let s10 = format!("{:?}", r10);
-    assert!(s10.contains("10"), "pending e10 missing; got: {}", s10);
+    if let minigraf::QueryResult::QueryResults { results, .. } = r10 {
+        assert!(
+            results.iter().any(|row| row.iter().any(|v| v.to_string().contains("10"))),
+            "pending e10 missing"
+        );
+    } else {
+        panic!("expected QueryResults for pending e10 in test_v6_pending_plus_committed_merge");
+    }
 }
 
 #[test]
