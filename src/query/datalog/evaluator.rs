@@ -481,6 +481,7 @@ impl StratifiedEvaluator {
                 for fact in derived.get_asserted_facts()? {
                     let _ = accumulated.load_fact(fact);
                 }
+                accumulated.restore_tx_counter()?;
             }
 
             // Evaluate mixed rules (with not-filter)
@@ -519,6 +520,14 @@ impl StratifiedEvaluator {
                 let matcher = PatternMatcher::new(accumulated.clone());
                 let candidates = matcher.match_patterns(&positive_patterns);
 
+                // Build temp_eval once per rule (outside the binding loop);
+                // instantiate_head_public only uses storage, not the registry.
+                let temp_eval = RecursiveEvaluator::new(
+                    accumulated.clone(),
+                    Arc::clone(&self.rules),
+                    1,
+                );
+
                 'binding: for binding in candidates {
                     for not_body in &not_clauses {
                         let substituted: Vec<Pattern> = not_body
@@ -556,13 +565,6 @@ impl StratifiedEvaluator {
                     }
 
                     // All Not conditions held -> derive head fact
-                    let registry = self.rules.read().unwrap();
-                    let temp_eval = RecursiveEvaluator::new(
-                        accumulated.clone(),
-                        Arc::new(RwLock::new(registry.clone())),
-                        1,
-                    );
-                    drop(registry);
                     if let Ok(fact) = temp_eval.instantiate_head_public(&rule.head, &binding) {
                         // Use transact (not load_fact) so derived facts get a proper
                         // tx_id and incremented tx_count, matching spec step (d).
@@ -1093,6 +1095,66 @@ mod tests {
                 .filter(|f| f.asserted)
                 .collect();
             assert_eq!(eligible_facts.len(), 1, "alice should be eligible");
+        }
+
+        #[test]
+        fn test_not_filter_with_multiple_not_clauses() {
+            // eligible :- [?x :status "active"], not([?x :role "admin"]), not([?x :banned true])
+            // alice: status="active"                         -> eligible (passes both not-clauses)
+            // bob:   status="active", role="admin"           -> NOT eligible (fails first not-clause)
+            let storage = FactStorage::new();
+            storage
+                .transact(
+                    vec![
+                        (alice(), ":status".to_string(), Value::String("active".to_string())),
+                        (bob(), ":status".to_string(), Value::String("active".to_string())),
+                        (bob(), ":role".to_string(), Value::String("admin".to_string())),
+                    ],
+                    None,
+                )
+                .unwrap();
+
+            let rule = Rule {
+                head: vec![
+                    EdnValue::Symbol("eligible".to_string()),
+                    EdnValue::Symbol("?x".to_string()),
+                ],
+                body: vec![
+                    WhereClause::Pattern(Pattern::new(
+                        EdnValue::Symbol("?x".to_string()),
+                        EdnValue::Keyword(":status".to_string()),
+                        EdnValue::String("active".to_string()),
+                    )),
+                    WhereClause::Not(vec![WhereClause::Pattern(Pattern::new(
+                        EdnValue::Symbol("?x".to_string()),
+                        EdnValue::Keyword(":role".to_string()),
+                        EdnValue::String("admin".to_string()),
+                    ))]),
+                    WhereClause::Not(vec![WhereClause::Pattern(Pattern::new(
+                        EdnValue::Symbol("?x".to_string()),
+                        EdnValue::Keyword(":banned".to_string()),
+                        EdnValue::Boolean(true),
+                    ))]),
+                ],
+            };
+            let mut registry = RuleRegistry::new();
+            registry.register_rule_unchecked("eligible".to_string(), rule);
+            let rules = Arc::new(RwLock::new(registry));
+
+            let evaluator = StratifiedEvaluator::new(storage, rules, 100);
+            let result = evaluator.evaluate(&["eligible".to_string()]).unwrap();
+            let eligible_facts: Vec<_> = result
+                .get_facts_by_attribute(&":eligible".to_string())
+                .unwrap()
+                .into_iter()
+                .filter(|f| f.asserted)
+                .collect();
+            assert_eq!(eligible_facts.len(), 1, "only alice should be eligible");
+            assert_eq!(
+                eligible_facts[0].entity,
+                alice(),
+                "the eligible entity should be alice"
+            );
         }
     }
 }
