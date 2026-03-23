@@ -141,11 +141,11 @@ Measures wall-clock latency of N simultaneous EAVT range scans against a committ
 
 | Threads | Median latency |
 |---|---|
-| 2 | 24.3 ms |
-| 4 | 33.3 ms |
-| 8 | 73.1 ms |
+| 2 | 22.4 ms |
+| 4 | 33.1 ms |
+| 8 | 63.9 ms |
 
-Scaling: 2→4 threads is ~1.4× (good), 4→8 threads is ~2.2× (contention visible). The backend `Mutex` is held for the duration of each range scan, which serialises concurrent page reads on cache misses. Per-page locking is a candidate optimisation for Phase 8 if concurrent read throughput becomes a bottleneck.
+Scaling: 2→4 threads is ~1.5× (good), 4→8 threads is ~1.9× (improved from 2.2× before per-page locking). The backend `Mutex` is now held only for the duration of a single `read_page` call on a cache miss — on cache-warm pages no lock is acquired at all, allowing concurrent readers to proceed in parallel. Remaining contention at 8 threads reflects cold-page I/O serialisation, which is unavoidable and correct.
 
 ---
 
@@ -176,7 +176,7 @@ Peak heap consumption during `examples/memory_profile` (insert N facts + one que
 ## Known Limitations
 
 - **Query scan is O(facts)**: Queries resolve all facts matching the range scan, then filter in memory. Phase 7 will enable index-based predicate pushdown for sub-linear lookups.
-- **Backend mutex held during range scan**: Concurrent B+tree scans serialise on page reads for cache-cold pages. Per-page locking is deferred to Phase 8.
+- **Backend mutex held on cache-cold page reads**: Concurrent B+tree scans serialise only when a page must be loaded from disk (cache miss). Cache-warm reads are fully parallel. Further per-page I/O parallelism is deferred to Phase 8.
 - **1M recursion not benchmarked**: `chain/depth_100` takes 16 s; `chain/depth_1000` was not run.
 - **Memory profile not re-run for v6**: heaptrack numbers above are from Phase 6.4b (v5). Phase 6.5's post-checkpoint RAM reduction is expected but not yet measured.
 
