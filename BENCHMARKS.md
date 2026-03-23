@@ -15,7 +15,23 @@ Benchmark results for Minigraf v0.8.0 (Phase 6.5 — on-disk B+tree indexes, fil
 | Profile | `release` (`opt-level = 3`, `lto = "thin"`, `panic = "abort"`) |
 | Swap | None |
 
-Benchmarks were run with [Criterion 0.5](https://bheisler.github.io/criterion.rs/book/). Each benchmark group is described below. Times shown are the median of 100 samples unless noted otherwise.
+Benchmarks were run with [Criterion 0.5](https://bheisler.github.io/criterion.rs/book/). Each benchmark group is described below.
+
+### How to read these numbers
+
+**All times are per-call latency** — the time for a single operation (one insert, one query, one open, etc.), not a total or cumulative time.
+
+Criterion measures this by running each operation repeatedly and computing a median:
+
+1. **Warm-up** (3 s): the operation is run and discarded to let CPU caches and OS buffers reach steady state.
+2. **Measurement**: Criterion collects N *samples*. For each sample it runs the operation M times (chosen automatically so the sample takes long enough to time accurately), records the total elapsed time, then divides by M to get a single per-call estimate.
+3. **Reported time**: the **median** across all N samples. The median is used rather than the mean because it is robust to occasional slow outliers (GC pauses, OS scheduler jitter, etc.).
+
+Sample counts vary by benchmark speed:
+- Fast operations (inserts, ~µs): **100 samples** (default) — thousands of iterations per sample.
+- Slow operations (queries at large scale, recursion, concurrent scans): **10 samples** — only a handful of iterations are feasible per sample.
+
+The column headers (e.g. "1K facts", "10K facts") indicate the **size of the database at the time the operation was measured**, not how many operations were performed.
 
 ---
 
