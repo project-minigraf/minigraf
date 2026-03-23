@@ -509,7 +509,8 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 **Rationale**: The highlighted use cases (agentic memory, audit, mobile, browser) all require at minimum negation and aggregation. Expanding to mobile and WASM platforms before the query engine can express production-grade queries means shipping an incomplete product to more places. All features are additive — existing queries continue to work unchanged. Semantics are well-established (Datomic and XTDB are production references for all three).
 
 **Sub-phases**:
-- **7.1** Stratified Negation (`not` / `not-join`)
+- **7.1a** Stratified Negation — `not`
+- **7.1b** Stratified Negation — `not-join`
 - **7.2** Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`) — includes arithmetic filter predicates
 - **7.3** Disjunction (`or` / `or-join`)
 - **7.4** Query Optimizer Improvements (deferred from Phase 6.3)
@@ -517,7 +518,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 - **7.6** Prepared Statements (parse + plan once, execute many times, temporal bind slots)
 - **7.7** Temporal Metadata Bindings + Range Queries (`:db/valid-from`, `:db/valid-to`, `:db/tx-count` as queryable pseudo-attributes; unlocks Time Interval, Time-Point Lookup, Time-Interval Lookup query classes)
 
-### 7.1 Stratified Negation (`not` / `not-join`)
+### 7.1a Stratified Negation — `not`
 
 **Goal**: Express "find entities where attribute X is absent" and similar absence queries.
 
@@ -527,7 +528,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 - Developer tooling: "modules with no dependents", "entities never retracted"
 - Without negation these queries require pulling results into application memory and filtering — defeating the query engine
 
-**Semantics**: Stratified negation (Datalog^¬) — the standard safe subset. The rule dependency graph is analysed at query time; programs where negation creates a recursive cycle are rejected with a clear error (unstable semantics). Non-recursive negation is always safe.
+**Semantics**: Stratified negation (Datalog^¬) — the standard safe subset. The rule dependency graph is analysed at registration time; programs where negation creates a recursive cycle are rejected immediately with a clear error. Non-recursive negation is always safe. All variables in a `not` body must be bound by outer clauses (safety / range-restriction constraint, checked at parse time).
 
 **Syntax** (Datomic-inspired):
 ```datalog
@@ -536,20 +537,46 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
         :where [?e :person/name _]
                (not [?e :person/age _])])
 
-;; not-join — exclude with shared variables from outer scope
+;; not with rule invocation (requires stratification)
+(query [:find ?person
+        :where [?person :person/name ?name]
+               (not (blocked ?person))])
+
+;; not in a rule body
+(rule [(eligible ?x)
+       [?x :applied true]
+       (not (rejected ?x))])
+```
+
+**Implementation**:
+- `types.rs`: add `WhereClause::Not(Vec<WhereClause>)`; change `Rule.body` from `Vec<EdnValue>` to `Vec<WhereClause>`
+- `parser.rs`: parse `(not ...)` in `:where` clauses and rule bodies; safety check at parse time; reject nested `not`
+- `stratification.rs` (new): `DependencyGraph`, `stratify()` — Bellman-Ford constraint propagation, cycle detection at `>= N` strata
+- `rules.rs`: call `stratify()` on `register_rule`; reject rule on negative cycle
+- `evaluator.rs`: add `StratifiedEvaluator` (orchestrates strata); update `RecursiveEvaluator::evaluate_rule` to branch on `WhereClause` variants
+- `executor.rs`: `execute_query_with_rules` uses `StratifiedEvaluator`; `execute_query` handles `not`-only queries as post-filters
+- All changes additive; existing queries unaffected
+
+**Spec**: `docs/superpowers/specs/2026-03-23-phase-7-1a-stratified-negation-design.md`
+
+**Estimated complexity**: 2-3 weeks
+
+### 7.1b Stratified Negation — `not-join`
+
+**Goal**: Express negation with explicit variable sharing from the outer scope — necessary when the `not` body introduces variables that should be correlated with the outer query but are not mentioned in shared patterns.
+
+**Syntax**:
+```datalog
+;; not-join — exclude with explicitly shared variables from outer scope
 (query [:find ?e
         :where [?e :task/status :pending]
                (not-join [?e]
                  [?e :task/blocked-by _])])
 ```
 
-**Implementation**:
-- Parser: add `not` and `not-join` clause types to `WhereClause` enum
-- Stratification analysis: build rule dependency graph, detect negation cycles, return error if unstable
-- Executor: evaluate negative sub-query against current binding set, subtract matching bindings
-- All changes additive; existing queries unaffected
+**Implementation**: Builds directly on 7.1a infrastructure (stratification, `StratifiedEvaluator`). Adds `WhereClause::NotJoin { vars: Vec<String>, clauses: Vec<WhereClause> }`, parser support, and executor handling for the explicit variable binding list.
 
-**Estimated complexity**: 2-4 weeks
+**Estimated complexity**: 1 week (reuses all 7.1a infrastructure)
 
 ### 7.2 Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`)
 
