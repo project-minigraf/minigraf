@@ -36,21 +36,24 @@ jobs:
           set -o pipefail
           CARGO_TERM_COLOR=never cargo bench 2>&1 | tee bench_output.txt
 
+      - name: Install Bencher CLI
+        uses: bencherdev/bencher@v0.4.25
+
       - name: Upload to Bencher
         id: bencher
         continue-on-error: true
-        uses: bencherdev/bencher@v0.4.25
-        with:
-          project: minigraf
-          token: ${{ secrets.BENCHER_API_TOKEN }}
-          branch: main
-          testbed: ubuntu-latest
-          threshold-measure: latency
-          threshold-test: t_test
-          threshold-upper-boundary: "0.99"
-          err: true
-          adapter: rust_criterion
-          file: bench_output.txt
+        run: |
+          bencher run \
+            --project minigraf \
+            --token "${{ secrets.BENCHER_API_TOKEN }}" \
+            --branch main \
+            --testbed ubuntu-latest \
+            --threshold-measure latency \
+            --threshold-test t_test \
+            --threshold-upper-boundary 0.99 \
+            --err \
+            --adapter rust_criterion \
+            --file bench_output.txt
 
       - name: Open regression issue
         if: steps.bencher.outcome == 'failure'
