@@ -440,7 +440,7 @@ tx.commit()?;  // or tx.rollback()?
 - ✅ PR template — checklist enforcing test/clippy/fmt/philosophy checks (`.github/pull_request_template.md`)
 - ✅ `CODEOWNERS` — auto-assigns maintainer as reviewer on every PR
 
-**Note**: crates.io publish deferred to after Phase 6.5. The file format will change (v6) in 6.5; publishing before that would expose early users to an immediate forced migration. The full pre-publishing checklist (API narrowing, rustdoc, clippy, `unwrap()` sweep) is a Phase 6.5 gate item.
+**Note**: crates.io publish deferred to after Phase 7 API cleanup (narrowing `lib.rs` exports, rustdoc sweep, clippy, `unwrap()` audit). Phase 6.5 (file format v6) is complete — the format is now stable enough to publish.
 
 ---
 
