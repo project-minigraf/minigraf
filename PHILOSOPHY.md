@@ -437,16 +437,26 @@ The `.graph` file format must be:
 **Phase 5**: ✅ ACID + WAL (COMPLETE)
 - Write-ahead logging, transactions, crash recovery
 
-**Phase 6**: 🎯 Performance (COMPLETE)
-- Indexes (EAVT, AEVT, AVET, VAET), query optimization
+**Phase 6**: ✅ Performance (COMPLETE — March 2026)
+- Covering indexes (EAVT, AEVT, AVET, VAET), packed pages, LRU page cache, on-disk B+tree (file format v6), query optimizer
 
-**Phase 7**: 🎯 Cross-platform (3-4 months)
-- WASM support, mobile bindings, language bindings
+**Phase 7**: 🎯 Datalog Completeness (next — 6-8 weeks)
+- Stratified negation (`not` / `not-join`), aggregation (`count`, `sum`, `min`, `max`), disjunction (`or` / `or-join`)
+- ≥90% branch coverage target
 
-**Phase 8+**: 🎯 Long-term maintenance
-- Bug fixes, security patches, conservative improvements
+**Phase 8**: 🎯 Cross-platform (3-4 months)
+- WASM (browser via wasm-pack + npm; server-side via WASI)
+- Mobile bindings (iOS `.xcframework`, Android `.aar` via UniFFI)
+- Language bindings (Python, JavaScript, C)
 
-**v1.0.0**: 12-15 months
+**Phase 9**: 🎯 Ecosystem & Tooling (ongoing)
+- Developer tools: database inspector, query profiler, time travel visualizer
+- Documentation: Datalog language spec, cookbook, performance tuning guide
+- Integration examples: GraphRAG pattern, LangChain/LlamaIndex agent memory, annotated end-to-end scenarios
+- Ecosystem libraries: graph algorithms crate, schema validation, import/export, backup utilities
+- Exploratory: database branching (`db.branch()` → independent `.graph` fork for speculative writes, agent sandboxing, test isolation)
+
+**v1.0.0**: 9-12 months
 
 See ROADMAP.md for detailed feature breakdown.
 ## When to Say "No"
