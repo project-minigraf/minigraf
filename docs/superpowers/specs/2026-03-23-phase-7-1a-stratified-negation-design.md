@@ -307,6 +307,7 @@ let derived_storage = evaluator.evaluate(&predicates)?;
 - `(not (blocked ?x))` → `WhereClause::Not([RuleInvocation])`
 - Unbound variable in `not` → parse error
 - Empty `not` → parse error
+- Nested `not`: `(not (not [?x :banned true]))` → parse error: `(not ...) cannot appear inside another (not ...)`
 
 **`evaluator.rs`:**
 - `StratifiedEvaluator` with no negation → same results as `RecursiveEvaluator`
