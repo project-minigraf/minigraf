@@ -9,6 +9,7 @@ use crate::storage::index::FactRef;
 use crate::storage::{StorageBackend, PAGE_SIZE};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 // ─── Page type constants ───────────────────────────────────────────────────────
 
@@ -261,29 +262,270 @@ pub fn merge_sorted_vecs<T: Ord>(a: Vec<T>, b: Vec<T>) -> impl Iterator<Item = T
     })
 }
 
-// Leave stream_all_entries and range_scan as stubs — implemented in Task 3
+// ─── Leaf traversal helpers ───────────────────────────────────────────────────
+
+/// Traverse internal nodes from `root` to find the leftmost (first) leaf page.
+fn find_leftmost_leaf(
+    root: u64,
+    backend: &dyn StorageBackend,
+    cache: &PageCache,
+) -> Result<u64> {
+    let mut page_id = root;
+    loop {
+        let page = cache.get_or_load(page_id, backend)?;
+        match page[0] {
+            PAGE_TYPE_LEAF => return Ok(page_id),
+            PAGE_TYPE_INTERNAL => {
+                let key_count =
+                    u16::from_le_bytes(page[2..4].try_into().unwrap()) as usize;
+                if key_count == 0 {
+                    page_id = u64::from_le_bytes(page[4..12].try_into().unwrap());
+                } else {
+                    page_id = u64::from_le_bytes(
+                        page[INTERNAL_HEADER_SIZE..INTERNAL_HEADER_SIZE + 8]
+                            .try_into()
+                            .unwrap(),
+                    );
+                }
+            }
+            t => anyhow::bail!(
+                "find_leftmost_leaf: unexpected page type 0x{:02x} at page_id={}",
+                t,
+                page_id
+            ),
+        }
+    }
+}
+
+/// Traverse from `root` to the leaf that would contain `key`.
+fn find_leaf_for_key<K>(
+    root: u64,
+    key: &K,
+    backend: &dyn StorageBackend,
+    cache: &PageCache,
+) -> Result<u64>
+where
+    K: for<'de> Deserialize<'de> + Ord,
+{
+    let mut page_id = root;
+    loop {
+        let page = cache.get_or_load(page_id, backend)?;
+        match page[0] {
+            PAGE_TYPE_LEAF => return Ok(page_id),
+            PAGE_TYPE_INTERNAL => {
+                let key_count =
+                    u16::from_le_bytes(page[2..4].try_into().unwrap()) as usize;
+                let rightmost_child =
+                    u64::from_le_bytes(page[4..12].try_into().unwrap());
+                let child_arr_start = INTERNAL_HEADER_SIZE;
+                let slot_dir_start = INTERNAL_HEADER_SIZE + key_count * 8;
+
+                let mut descended = false;
+                for i in 0..key_count {
+                    let slot_off = slot_dir_start + i * SLOT_SIZE;
+                    let sep_offset = u16::from_le_bytes(
+                        page[slot_off..slot_off + 2].try_into().unwrap(),
+                    ) as usize;
+                    let sep_length = u16::from_le_bytes(
+                        page[slot_off + 2..slot_off + 4].try_into().unwrap(),
+                    ) as usize;
+                    let sep_key: K =
+                        postcard::from_bytes(&page[sep_offset..sep_offset + sep_length])?;
+
+                    if *key < sep_key {
+                        let child_off = child_arr_start + i * 8;
+                        page_id = u64::from_le_bytes(
+                            page[child_off..child_off + 8].try_into().unwrap(),
+                        );
+                        descended = true;
+                        break;
+                    }
+                }
+                if !descended {
+                    page_id = rightmost_child;
+                }
+            }
+            t => anyhow::bail!(
+                "find_leaf_for_key: unexpected page type 0x{:02x} at page_id={}",
+                t,
+                page_id
+            ),
+        }
+    }
+}
+
+/// Read all `(K, FactRef)` entries from a leaf page's slot directory.
+fn read_leaf_entries<K>(page: &[u8]) -> Result<Vec<(K, FactRef)>>
+where
+    K: for<'de> Deserialize<'de>,
+{
+    let entry_count = u16::from_le_bytes(page[2..4].try_into().unwrap()) as usize;
+    let mut entries = Vec::with_capacity(entry_count);
+    for i in 0..entry_count {
+        let slot_off = LEAF_HEADER_SIZE + i * SLOT_SIZE;
+        let offset =
+            u16::from_le_bytes(page[slot_off..slot_off + 2].try_into().unwrap()) as usize;
+        let length =
+            u16::from_le_bytes(page[slot_off + 2..slot_off + 4].try_into().unwrap()) as usize;
+        let (k, fr): (K, FactRef) = postcard::from_bytes(&page[offset..offset + length])?;
+        entries.push((k, fr));
+    }
+    Ok(entries)
+}
+
+// ─── stream_all_entries ───────────────────────────────────────────────────────
+
+/// Stream all `(K, FactRef)` entries from a B+tree in sorted order.
 pub fn stream_all_entries<K>(
-    _root_page_id: u64,
-    _backend: &dyn StorageBackend,
-    _cache: &PageCache,
+    root_page_id: u64,
+    backend: &dyn StorageBackend,
+    cache: &PageCache,
 ) -> Result<Vec<(K, FactRef)>>
 where
     K: for<'de> Deserialize<'de> + Ord,
 {
-    unimplemented!("implemented in Task 3")
+    let first_leaf = find_leftmost_leaf(root_page_id, backend, cache)?;
+    let mut result = Vec::new();
+    let mut leaf_id = first_leaf;
+
+    loop {
+        let page = cache.get_or_load(leaf_id, backend)?;
+        if page[0] != PAGE_TYPE_LEAF {
+            anyhow::bail!(
+                "stream_all_entries: expected leaf page at page_id={}",
+                leaf_id
+            );
+        }
+        let next_leaf = u64::from_le_bytes(page[4..12].try_into().unwrap());
+        result.extend(read_leaf_entries::<K>(&page)?);
+
+        if next_leaf == 0 {
+            break;
+        }
+        leaf_id = next_leaf;
+    }
+
+    Ok(result)
 }
 
+// ─── range_scan ───────────────────────────────────────────────────────────────
+
+/// Scan the B+tree for all `FactRef`s whose key is in `[start, end]`.
+///
+/// `end: None` means unbounded (scan to last leaf).
 pub fn range_scan<K>(
-    _root_page_id: u64,
-    _start: &K,
-    _end: Option<&K>,
-    _backend: &dyn StorageBackend,
-    _cache: &PageCache,
+    root_page_id: u64,
+    start: &K,
+    end: Option<&K>,
+    backend: &dyn StorageBackend,
+    cache: &PageCache,
 ) -> Result<Vec<FactRef>>
 where
     K: Serialize + for<'de> Deserialize<'de> + Ord,
 {
-    unimplemented!("implemented in Task 3")
+    let start_leaf = find_leaf_for_key(root_page_id, start, backend, cache)?;
+    let mut result = Vec::new();
+    let mut leaf_id = start_leaf;
+
+    'outer: loop {
+        let page = cache.get_or_load(leaf_id, backend)?;
+        if page[0] != PAGE_TYPE_LEAF {
+            anyhow::bail!("range_scan: expected leaf at page_id={}", leaf_id);
+        }
+        let next_leaf = u64::from_le_bytes(page[4..12].try_into().unwrap());
+        let entries: Vec<(K, FactRef)> = read_leaf_entries(&page)?;
+
+        for (k, fr) in entries {
+            if k < *start {
+                continue;
+            }
+            if let Some(e) = end {
+                if k > *e {
+                    break 'outer;
+                }
+            }
+            result.push(fr);
+        }
+
+        if next_leaf == 0 {
+            break;
+        }
+        leaf_id = next_leaf;
+    }
+
+    Ok(result)
+}
+
+// ─── OnDiskIndexReader ────────────────────────────────────────────────────────
+
+use std::sync::Mutex;
+
+/// Implements `CommittedIndexReader` by delegating to `range_scan` on
+/// on-disk B+tree pages via the page cache.
+pub struct OnDiskIndexReader<B: StorageBackend + 'static> {
+    backend: Arc<Mutex<B>>,
+    cache: Arc<PageCache>,
+    pub eavt_root: u64,
+    pub aevt_root: u64,
+    pub avet_root: u64,
+    pub vaet_root: u64,
+}
+
+impl<B: StorageBackend + 'static> OnDiskIndexReader<B> {
+    pub fn new(
+        backend: Arc<Mutex<B>>,
+        cache: Arc<PageCache>,
+        eavt_root: u64,
+        aevt_root: u64,
+        avet_root: u64,
+        vaet_root: u64,
+    ) -> Self {
+        OnDiskIndexReader { backend, cache, eavt_root, aevt_root, avet_root, vaet_root }
+    }
+}
+
+impl<B: StorageBackend + 'static> crate::storage::CommittedIndexReader
+    for OnDiskIndexReader<B>
+{
+    fn range_scan_eavt(
+        &self,
+        start: &crate::storage::index::EavtKey,
+        end: Option<&crate::storage::index::EavtKey>,
+    ) -> anyhow::Result<Vec<crate::storage::index::FactRef>> {
+        if self.eavt_root == 0 { return Ok(vec![]); }
+        let backend = self.backend.lock().unwrap();
+        range_scan(self.eavt_root, start, end, &*backend, &self.cache)
+    }
+
+    fn range_scan_aevt(
+        &self,
+        start: &crate::storage::index::AevtKey,
+        end: Option<&crate::storage::index::AevtKey>,
+    ) -> anyhow::Result<Vec<crate::storage::index::FactRef>> {
+        if self.aevt_root == 0 { return Ok(vec![]); }
+        let backend = self.backend.lock().unwrap();
+        range_scan(self.aevt_root, start, end, &*backend, &self.cache)
+    }
+
+    fn range_scan_avet(
+        &self,
+        start: &crate::storage::index::AvetKey,
+        end: Option<&crate::storage::index::AvetKey>,
+    ) -> anyhow::Result<Vec<crate::storage::index::FactRef>> {
+        if self.avet_root == 0 { return Ok(vec![]); }
+        let backend = self.backend.lock().unwrap();
+        range_scan(self.avet_root, start, end, &*backend, &self.cache)
+    }
+
+    fn range_scan_vaet(
+        &self,
+        start: &crate::storage::index::VaetKey,
+        end: Option<&crate::storage::index::VaetKey>,
+    ) -> anyhow::Result<Vec<crate::storage::index::FactRef>> {
+        if self.vaet_root == 0 { return Ok(vec![]); }
+        let backend = self.backend.lock().unwrap();
+        range_scan(self.vaet_root, start, end, &*backend, &self.cache)
+    }
 }
 
 #[cfg(test)]
@@ -469,5 +711,130 @@ mod tests {
         let b = vec![2u32, 3, 4];
         let merged: Vec<u32> = merge_sorted_vecs(a, b).collect();
         assert_eq!(merged, vec![1, 2, 3, 3, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_stream_all_entries_roundtrip() {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(256);
+        let input: Vec<(EavtKey, FactRef)> =
+            (0u128..50).map(|n| make_eavt(n, ":name", n as u64 + 1)).collect();
+        let (root, _) = build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
+
+        let output: Vec<(EavtKey, FactRef)> =
+            stream_all_entries(root, &backend, &cache).unwrap();
+
+        assert_eq!(output.len(), 50);
+        for w in output.windows(2) {
+            assert!(w[0].0 <= w[1].0, "entries must be in sorted order");
+        }
+        for (original, recovered) in input.iter().zip(output.iter()) {
+            assert_eq!(original.1, recovered.1);
+        }
+    }
+
+    #[test]
+    fn test_stream_all_entries_empty_tree() {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(16);
+        let entries: Vec<(EavtKey, FactRef)> = vec![];
+        let (root, _) = build_btree(entries.into_iter(), &mut backend, &cache, 1).unwrap();
+        let out: Vec<(EavtKey, FactRef)> = stream_all_entries(root, &backend, &cache).unwrap();
+        assert_eq!(out.len(), 0);
+    }
+
+    #[test]
+    fn test_range_scan_exact_match() {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(256);
+        let input: Vec<(EavtKey, FactRef)> =
+            (0u128..100).map(|n| make_eavt(n, ":v", n as u64 + 1)).collect();
+        let (root, _) = build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
+
+        let target_entity = Uuid::from_u128(42);
+        let start = EavtKey { entity: target_entity, attribute: String::new(),
+                               valid_from: i64::MIN, valid_to: i64::MIN, tx_count: 0 };
+        let next_entity = Uuid::from_u128(43);
+        let end = EavtKey { entity: next_entity, attribute: String::new(),
+                             valid_from: i64::MIN, valid_to: i64::MIN, tx_count: 0 };
+
+        let refs = range_scan(root, &start, Some(&end), &backend, &cache).unwrap();
+        assert_eq!(refs.len(), 1, "exactly one entry for entity 42");
+        // make_eavt(42, ":v", 43) → FactRef { page_id: 43+1=44, slot_index: 0 }
+        assert_eq!(refs[0], FactRef { page_id: 44, slot_index: 0 });
+    }
+
+    #[test]
+    fn test_range_scan_empty_range() {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(256);
+        let input: Vec<(EavtKey, FactRef)> =
+            (0u128..50).map(|n| make_eavt(n, ":v", n as u64 + 1)).collect();
+        let (root, _) = build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
+
+        let start = EavtKey { entity: Uuid::from_u128(999),
+                               attribute: String::new(), valid_from: 0, valid_to: 0, tx_count: 0 };
+        let refs = range_scan::<EavtKey>(root, &start, None, &backend, &cache).unwrap();
+        assert_eq!(refs.len(), 0);
+    }
+
+    #[test]
+    fn test_range_scan_unbounded_end() {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(256);
+        let input: Vec<(EavtKey, FactRef)> =
+            (0u128..10).map(|n| make_eavt(n, ":v", n as u64 + 1)).collect();
+        let (root, _) = build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
+
+        let start = EavtKey { entity: Uuid::from_u128(5), attribute: String::new(),
+                               valid_from: i64::MIN, valid_to: i64::MIN, tx_count: 0 };
+        let refs = range_scan::<EavtKey>(root, &start, None, &backend, &cache).unwrap();
+        assert_eq!(refs.len(), 5, "entities 5..9 = 5 entries");
+    }
+
+    #[test]
+    fn test_range_scan_multi_leaf_span() {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(512);
+        let input: Vec<(EavtKey, FactRef)> =
+            (0u128..500).map(|n| make_eavt(n, ":a", n as u64 + 1)).collect();
+        let (root, _) = build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
+
+        let start = EavtKey { entity: Uuid::from_u128(100), attribute: String::new(),
+                               valid_from: i64::MIN, valid_to: i64::MIN, tx_count: 0 };
+        let end = EavtKey { entity: Uuid::from_u128(200), attribute: String::new(),
+                             valid_from: i64::MIN, valid_to: i64::MIN, tx_count: 0 };
+        let refs = range_scan(root, &start, Some(&end), &backend, &cache).unwrap();
+        // NOTE: The end key has attribute="" which sorts BEFORE ":a". So entity 200's
+        // actual entry {200, ":a", ...} sorts AFTER the end key and is EXCLUDED.
+        // Result: entities 100..199 = 100 entries.
+        assert_eq!(refs.len(), 100, "entities 100..199 (end key excludes entity 200's entry since its attr ':a' > '')");
+    }
+
+    #[test]
+    fn test_on_disk_index_reader_range_scan_eavt() {
+        use crate::storage::CommittedIndexReader;
+        use std::sync::Arc;
+
+        let mut backend = MemoryBackend::new();
+        let cache = Arc::new(PageCache::new(256));
+        let input: Vec<(EavtKey, FactRef)> =
+            (0u128..20).map(|n| make_eavt(n, ":x", n as u64 + 1)).collect();
+        let (eavt_root, _) = build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
+
+        let reader = OnDiskIndexReader::new(
+            Arc::new(Mutex::new(backend)),
+            cache,
+            eavt_root, 0, 0, 0,
+        );
+
+        let start = EavtKey { entity: Uuid::from_u128(5), attribute: String::new(),
+                               valid_from: i64::MIN, valid_to: i64::MIN, tx_count: 0 };
+        let end = EavtKey { entity: Uuid::from_u128(10), attribute: String::new(),
+                             valid_from: i64::MIN, valid_to: i64::MIN, tx_count: 0 };
+        let refs = reader.range_scan_eavt(&start, Some(&end)).unwrap();
+        // Same exclusion logic: entity 10's entry {10, ":x", ...} > end {10, "", ...}
+        // So entities 5..9 = 5 entries
+        assert_eq!(refs.len(), 5, "entities 5..9 (end excludes entity 10)");
     }
 }
