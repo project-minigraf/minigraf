@@ -26,7 +26,7 @@ const INTERNAL_HEADER_SIZE: usize = 12;
 /// Slot directory entry: offset(u16) + length(u16) = 4 bytes.
 const SLOT_SIZE: usize = 4;
 /// Fill-factor threshold: stop packing once total used bytes exceed this (~75% of PAGE_SIZE).
-const PAGE_FILL_BYTES: usize = 3072;
+const PAGE_FILL_BYTES: usize = PAGE_SIZE * 3 / 4;
 
 // ─── Low-level page writers ───────────────────────────────────────────────────
 
@@ -78,7 +78,7 @@ fn write_internal_page(
     child_ids: &[u64],
     sep_bytes: &[Vec<u8>],
 ) -> Result<()> {
-    assert_eq!(child_ids.len(), sep_bytes.len() + 1);
+    debug_assert_eq!(child_ids.len(), sep_bytes.len() + 1);
     let key_count = sep_bytes.len() as u16;
     let rightmost_child = *child_ids.last().unwrap();
 
@@ -180,7 +180,7 @@ where
     for i in 0..leaf_infos.len() - 1 {
         let pid = leaf_infos[i].0;
         let next_lid = leaf_infos[i + 1].0;
-        let cached = cache.get_or_load(pid, backend as &dyn StorageBackend)?;
+        let cached = cache.get_or_load(pid, backend)?;
         let mut page = (*cached).clone();
         page[4..12].copy_from_slice(&next_lid.to_le_bytes());
         backend.write_page(pid, &page)?;
@@ -213,7 +213,7 @@ where
             while i < current_level.len() {
                 let sep = current_level[i].1.clone();
                 let projected = INTERNAL_HEADER_SIZE
-                    + child_ids.len() * 8
+                    + (child_ids.len() - 1) * 8
                     + (sep_bytes.len() + 1) * SLOT_SIZE
                     + sep_data_bytes
                     + sep.len();
@@ -407,5 +407,67 @@ mod tests {
     fn test_merge_sorted_vecs_empty_left() {
         let merged: Vec<u32> = merge_sorted_vecs(vec![], vec![1u32, 2, 3]).collect();
         assert_eq!(merged, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_build_btree_leaf_next_pointers_form_chain() {
+        // Build a tree with enough entries to require multiple leaf pages,
+        // then verify leaf[i].next_leaf == leaf[i+1].page_id
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(256);
+        // ~100 entries with long keys should span 4-6 leaf pages
+        let entries = (0u128..100).map(|n| make_eavt(n, ":verylongattributename", n as u64 + 1));
+        let (root, next_free) = build_btree(entries, &mut backend, &cache, 1).unwrap();
+
+        // Collect leaf page IDs by following the chain from the leftmost leaf
+        // The root may be an internal node; find the leftmost leaf first
+        let root_page = cache.get_or_load(root, &backend).unwrap();
+        let mut leaf_pid = if root_page[0] == PAGE_TYPE_LEAF {
+            root
+        } else {
+            // leftmost leaf: follow first child of each internal node down
+            let mut pid = root;
+            loop {
+                let p = cache.get_or_load(pid, &backend).unwrap();
+                if p[0] == PAGE_TYPE_LEAF {
+                    break pid;
+                }
+                // first child is at child_array[0] = bytes 12..20
+                pid = u64::from_le_bytes(p[12..20].try_into().unwrap());
+            }
+        };
+
+        // Walk the chain and verify it's contiguous and terminates
+        let mut chain: Vec<u64> = vec![leaf_pid];
+        loop {
+            let p = cache.get_or_load(leaf_pid, &backend).unwrap();
+            assert_eq!(p[0], PAGE_TYPE_LEAF, "page {} should be leaf", leaf_pid);
+            let next = u64::from_le_bytes(p[4..12].try_into().unwrap());
+            if next == 0 {
+                break;
+            }
+            chain.push(next);
+            leaf_pid = next;
+        }
+
+        assert!(chain.len() >= 2, "100 long-key entries should span multiple leaves; got {} leaves", chain.len());
+        // Total entries across all leaves must equal 100
+        let total_entries: u64 = chain.iter().map(|&pid| {
+            let p = cache.get_or_load(pid, &backend).unwrap();
+            u16::from_le_bytes(p[2..4].try_into().unwrap()) as u64
+        }).sum();
+        assert_eq!(total_entries, 100);
+        // next_free must be > all leaf page IDs
+        for &pid in &chain {
+            assert!(pid < next_free, "leaf {} must be < next_free {}", pid, next_free);
+        }
+    }
+
+    #[test]
+    fn test_merge_sorted_vecs_duplicates() {
+        let a = vec![1u32, 3, 3, 5];
+        let b = vec![2u32, 3, 4];
+        let merged: Vec<u32> = merge_sorted_vecs(a, b).collect();
+        assert_eq!(merged, vec![1, 2, 3, 3, 3, 4, 5]);
     }
 }
