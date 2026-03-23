@@ -16,10 +16,13 @@ use std::sync::{Arc, RwLock};
 /// without needing a second lock.
 struct FactData {
     facts: Vec<Fact>,
-    indexes: Indexes,
+    pending_indexes: Indexes,
     /// Resolves committed (on-disk) FactRefs to Fact objects.
     /// None for in-memory databases or before load() is called.
     committed: Option<Arc<dyn crate::storage::CommittedFactReader>>,
+    /// Provides bounded range scans over the four committed (on-disk) covering indexes.
+    /// Set by `set_committed_index_reader()` after open/migration/checkpoint.
+    committed_index_reader: Option<Arc<dyn crate::storage::CommittedIndexReader>>,
 }
 
 /// Resolve a FactRef to a Fact using the committed reader (for on-disk facts)
@@ -95,8 +98,9 @@ impl FactStorage {
         FactStorage {
             data: Arc::new(RwLock::new(FactData {
                 facts: Vec::new(),
-                indexes: Indexes::new(),
+                pending_indexes: Indexes::new(),
                 committed: None,
+                committed_index_reader: None,
             })),
             tx_counter: Arc::new(AtomicU64::new(0)),
         }
@@ -137,7 +141,7 @@ impl FactStorage {
         let mut d = self.data.write().unwrap();
         let mut slot = d.facts.len() as u16;
         for fact in &facts {
-            d.indexes.insert(
+            d.pending_indexes.insert(
                 fact,
                 FactRef {
                     page_id: 0,
@@ -177,7 +181,7 @@ impl FactStorage {
         let mut d = self.data.write().unwrap();
         let mut slot = d.facts.len() as u16;
         for fact in &retractions {
-            d.indexes.insert(
+            d.pending_indexes.insert(
                 fact,
                 FactRef {
                     page_id: 0,
@@ -199,7 +203,7 @@ impl FactStorage {
     pub fn load_fact(&self, fact: Fact) -> Result<()> {
         let mut d = self.data.write().unwrap();
         let slot = d.facts.len() as u16;
-        d.indexes.insert(
+        d.pending_indexes.insert(
             &fact,
             FactRef {
                 page_id: 0,
@@ -305,9 +309,32 @@ impl FactStorage {
         use crate::storage::index::EavtKey;
         let d = self.data.read().unwrap();
 
-        // If indexes are empty but facts exist (pre-index code path), fall back to scan
-        if d.indexes.eavt.is_empty() && (!d.facts.is_empty() || d.committed.is_some()) {
-            // Fallback: linear scan (for backwards compatibility)
+        let start = EavtKey {
+            entity: *entity_id,
+            attribute: String::new(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
+        let next_entity = uuid::Uuid::from_u128(entity_id.as_u128().wrapping_add(1));
+        let end = EavtKey {
+            entity: next_entity,
+            attribute: String::new(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
+
+        // Fallback: no indexes built yet
+        if d.pending_indexes.eavt.is_empty() && d.committed_index_reader.is_none() {
+            if d.committed.is_none() {
+                return Ok(d
+                    .facts
+                    .iter()
+                    .filter(|f| &f.entity == entity_id)
+                    .cloned()
+                    .collect());
+            }
             let mut result: Vec<Fact> = d
                 .facts
                 .iter()
@@ -324,20 +351,27 @@ impl FactStorage {
             return Ok(result);
         }
 
-        let start = EavtKey {
-            entity: *entity_id,
-            attribute: String::new(),
-            valid_from: i64::MIN,
-            valid_to: i64::MIN,
-            tx_count: 0,
-        };
         let mut facts = Vec::new();
-        for (key, &fr) in d.indexes.eavt.range(start..) {
+
+        // Pending: in-memory BTreeMap bounded range.
+        // The `end` key uses wrapping_add(1) on entity_id, which wraps to nil at u128::MAX —
+        // an astronomically rare edge case where the range becomes empty. The entity check
+        // below is a safety net for that edge case; it's redundant for all normal UUIDs.
+        for (key, &fr) in d.pending_indexes.eavt.range(start.clone()..end.clone()) {
             if key.entity != *entity_id {
                 break;
             }
             facts.push(resolve_fact_ref(&d, fr)?);
         }
+
+        // Committed: on-disk B+tree range scan
+        if let Some(reader) = &d.committed_index_reader {
+            let committed_refs = reader.range_scan_eavt(&start, Some(&end))?;
+            for fr in committed_refs {
+                facts.push(resolve_fact_ref(&d, fr)?);
+            }
+        }
+
         Ok(facts)
     }
 
@@ -354,30 +388,67 @@ impl FactStorage {
     pub fn get_facts_by_attribute(&self, attribute: &Attribute) -> Result<Vec<Fact>> {
         use crate::storage::index::AevtKey;
         let d = self.data.read().unwrap();
-        if !d.indexes.aevt.is_empty() {
-            let start = AevtKey {
-                attribute: attribute.clone(),
-                entity: uuid::Uuid::nil(),
-                valid_from: i64::MIN,
-                valid_to: i64::MIN,
-                tx_count: 0,
-            };
-            let mut facts = Vec::new();
-            for (key, &fr) in d.indexes.aevt.range(start..) {
-                if &key.attribute != attribute {
-                    break;
-                }
-                facts.push(resolve_fact_ref(&d, fr)?);
-            }
-            return Ok(facts);
+
+        // Fallback: no index
+        if d.pending_indexes.aevt.is_empty() && d.committed_index_reader.is_none() {
+            drop(d);
+            return Ok(self
+                .get_all_facts()?
+                .into_iter()
+                .filter(|f| &f.attribute == attribute)
+                .collect());
         }
-        // Fallback: full scan (pre-index code path or empty storage)
-        drop(d);
-        Ok(self
-            .get_all_facts()?
-            .into_iter()
-            .filter(|f| &f.attribute == attribute)
-            .collect())
+
+        let start = AevtKey {
+            attribute: attribute.clone(),
+            entity: uuid::Uuid::nil(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
+        let end_opt: Option<AevtKey> = next_string_prefix(attribute).map(|next_attr| AevtKey {
+            attribute: next_attr,
+            entity: uuid::Uuid::nil(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        });
+
+        let mut facts = Vec::new();
+
+        // Pending
+        let pending_range: Vec<FactRef> = match &end_opt {
+            Some(end) => d
+                .pending_indexes
+                .aevt
+                .range(start.clone()..end.clone())
+                .filter(|(k, _)| k.attribute == *attribute)
+                .map(|(_, &r)| r)
+                .collect(),
+            None => d
+                .pending_indexes
+                .aevt
+                .range(start.clone()..)
+                .take_while(|(k, _)| k.attribute == *attribute)
+                .map(|(_, &r)| r)
+                .collect(),
+        };
+        for fr in pending_range {
+            facts.push(resolve_fact_ref(&d, fr)?);
+        }
+
+        // Committed
+        if let Some(reader) = &d.committed_index_reader {
+            let committed_refs = reader.range_scan_aevt(&start, end_opt.as_ref())?;
+            for fr in committed_refs {
+                let fact = resolve_fact_ref(&d, fr)?;
+                if &fact.attribute == attribute {
+                    facts.push(fact);
+                }
+            }
+        }
+
+        Ok(facts)
     }
 
     /// Get all facts for a specific entity and attribute
@@ -446,8 +517,9 @@ impl FactStorage {
     pub fn clear(&self) -> Result<()> {
         let mut d = self.data.write().unwrap();
         d.facts.clear();
-        d.indexes = Indexes::new();
+        d.pending_indexes = Indexes::new();
         d.committed = None;
+        d.committed_index_reader = None;
         self.tx_counter.store(0, Ordering::SeqCst);
         Ok(())
     }
@@ -456,20 +528,20 @@ impl FactStorage {
     pub fn index_counts(&self) -> (usize, usize, usize, usize) {
         let d = self.data.read().unwrap();
         (
-            d.indexes.eavt.len(),
-            d.indexes.aevt.len(),
-            d.indexes.avet.len(),
-            d.indexes.vaet.len(),
+            d.pending_indexes.eavt.len(),
+            d.pending_indexes.aevt.len(),
+            d.pending_indexes.avet.len(),
+            d.pending_indexes.vaet.len(),
         )
     }
 
-    /// Replace the in-memory indexes with a freshly rebuilt set.
+    /// Replace the pending in-memory indexes with a freshly rebuilt set.
     ///
     /// Used by `PersistentFactStorage` after detecting an index checksum
     /// mismatch (e.g. after crash recovery).
-    pub fn replace_indexes(&self, indexes: Indexes) {
+    pub fn replace_pending_indexes(&self, indexes: Indexes) {
         let mut d = self.data.write().unwrap();
-        d.indexes = indexes;
+        d.pending_indexes = indexes;
     }
 
     /// Return the pending (uncommitted) facts held in memory.
@@ -478,11 +550,11 @@ impl FactStorage {
         d.facts.clone()
     }
 
-    /// Clear the pending fact buffer after a successful checkpoint.
-    /// All pending facts are now committed (on-disk packed pages).
-    pub fn clear_pending_facts(&self) {
+    /// Clear pending facts and pending indexes after a successful checkpoint.
+    pub fn post_checkpoint_clear(&self) {
         let mut d = self.data.write().unwrap();
         d.facts.clear();
+        d.pending_indexes = Indexes::new();
     }
 
     /// Set the tx_counter to `max` (used on load to restore from persisted state).
@@ -490,17 +562,17 @@ impl FactStorage {
         self.tx_counter.store(max, Ordering::SeqCst);
     }
 
-    /// Return a snapshot (clone) of the current in-memory indexes.
+    /// Return a snapshot (clone) of the current pending in-memory indexes.
     ///
     /// Used by `PersistentFactStorage::save()` to write index B+tree pages.
     /// Clones the BTreeMaps — acceptable since `save()` is not on the hot path.
-    pub fn indexes_snapshot(&self) -> Indexes {
+    pub fn pending_indexes_snapshot(&self) -> Indexes {
         let d = self.data.read().unwrap();
         Indexes {
-            eavt: d.indexes.eavt.clone(),
-            aevt: d.indexes.aevt.clone(),
-            avet: d.indexes.avet.clone(),
-            vaet: d.indexes.vaet.clone(),
+            eavt: d.pending_indexes.eavt.clone(),
+            aevt: d.pending_indexes.aevt.clone(),
+            avet: d.pending_indexes.avet.clone(),
+            vaet: d.pending_indexes.vaet.clone(),
         }
     }
 
@@ -510,6 +582,42 @@ impl FactStorage {
         let mut d = self.data.write().unwrap();
         d.committed = Some(reader);
     }
+
+    /// Set the committed index reader. Called by PersistentFactStorage after
+    /// each open/migration/checkpoint so queries can range-scan the on-disk B+tree.
+    pub fn set_committed_index_reader(
+        &self,
+        reader: Arc<dyn crate::storage::CommittedIndexReader>,
+    ) {
+        let mut d = self.data.write().unwrap();
+        d.committed_index_reader = Some(reader);
+    }
+
+    /// Returns (eavt_len, aevt_len, avet_len, vaet_len) for the pending indexes.
+    /// Used in tests to verify pending index state.
+    pub fn pending_index_counts(&self) -> (usize, usize, usize, usize) {
+        let d = self.data.read().unwrap();
+        (
+            d.pending_indexes.eavt.len(),
+            d.pending_indexes.aevt.len(),
+            d.pending_indexes.avet.len(),
+            d.pending_indexes.vaet.len(),
+        )
+    }
+}
+
+/// Increment the last byte of a string for prefix upper-bound construction.
+/// Returns `None` if all bytes are 0xFF (true unbounded scan needed).
+fn next_string_prefix(s: &str) -> Option<String> {
+    let mut bytes = s.as_bytes().to_vec();
+    for i in (0..bytes.len()).rev() {
+        if bytes[i] < 0xFF {
+            bytes[i] += 1;
+            bytes.truncate(i + 1);
+            return String::from_utf8(bytes).ok();
+        }
+    }
+    None
 }
 
 /// Compute the net-asserted view of a fact set.
@@ -1242,7 +1350,7 @@ mod tests {
                 slot_index: 0,
             },
         );
-        storage.replace_indexes(indexes);
+        storage.replace_pending_indexes(indexes);
         storage.set_committed_reader(loader);
 
         // get_facts_by_entity must resolve via CommittedFactReader (EAVT range scan).
@@ -1340,7 +1448,7 @@ mod tests {
                 slot_index: 0,
             },
         );
-        storage.replace_indexes(indexes);
+        storage.replace_pending_indexes(indexes);
         storage.set_committed_reader(loader);
 
         // Restore tx_counter so pending transact gets tx_count = 2
@@ -1371,5 +1479,85 @@ mod tests {
             2,
             "AEVT scan must return both committed and pending facts"
         );
+    }
+
+    #[test]
+    fn test_post_checkpoint_clear_clears_indexes() {
+        use uuid::Uuid;
+        let storage = FactStorage::new();
+        let e = Uuid::new_v4();
+        storage
+            .transact(
+                vec![(e, ":name".to_string(), Value::String("Alice".to_string()))],
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(
+            storage.pending_index_counts().0,
+            1,
+            "one pending EAVT entry"
+        );
+        storage.post_checkpoint_clear();
+        assert_eq!(
+            storage.pending_index_counts().0,
+            0,
+            "pending indexes cleared"
+        );
+        assert_eq!(
+            storage.get_pending_facts().len(),
+            0,
+            "pending facts cleared"
+        );
+    }
+
+    #[test]
+    fn test_set_committed_index_reader_accepted() {
+        use crate::storage::CommittedIndexReader;
+        use crate::storage::index::{AevtKey, AvetKey, EavtKey, FactRef, VaetKey};
+        use std::sync::Arc;
+
+        struct NoopReader;
+        impl CommittedIndexReader for NoopReader {
+            fn range_scan_eavt(
+                &self,
+                _: &EavtKey,
+                _: Option<&EavtKey>,
+            ) -> anyhow::Result<Vec<FactRef>> {
+                Ok(vec![])
+            }
+            fn range_scan_aevt(
+                &self,
+                _: &AevtKey,
+                _: Option<&AevtKey>,
+            ) -> anyhow::Result<Vec<FactRef>> {
+                Ok(vec![])
+            }
+            fn range_scan_avet(
+                &self,
+                _: &AvetKey,
+                _: Option<&AvetKey>,
+            ) -> anyhow::Result<Vec<FactRef>> {
+                Ok(vec![])
+            }
+            fn range_scan_vaet(
+                &self,
+                _: &VaetKey,
+                _: Option<&VaetKey>,
+            ) -> anyhow::Result<Vec<FactRef>> {
+                Ok(vec![])
+            }
+        }
+
+        let storage = FactStorage::new();
+        // Verify set_committed_index_reader wires the reader (no panic, usable storage)
+        storage.set_committed_index_reader(Arc::new(NoopReader));
+        // After setting, get_facts_by_entity should use the index path without panicking
+        let result = storage.get_facts_by_entity(&uuid::Uuid::nil());
+        assert!(
+            result.is_ok(),
+            "storage should be usable after setting committed index reader"
+        );
+        assert_eq!(result.unwrap().len(), 0);
     }
 }

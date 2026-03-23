@@ -667,6 +667,63 @@ fn bench_concurrent_file(c: &mut Criterion) {
     }
 }
 
+// ── Task 7: concurrent_btree_scan/ ────────────────────────────────────────
+// Measures throughput of simultaneous EAVT range scans against committed B+tree.
+// A near-linear drop in per-thread throughput as N grows signals backend mutex
+// contention and would trigger the per-page locking revisit noted in the spec.
+
+fn bench_concurrent_btree_scan(c: &mut Criterion) {
+    use std::sync::{Arc as StdArc, Barrier};
+    use std::time::Instant;
+    use tempfile::NamedTempFile;
+
+    let mut group = c.benchmark_group("concurrent_btree_scan");
+    group.sample_size(10);
+
+    for &(label, n_threads) in &[("2", 2usize), ("4", 4), ("8", 8)] {
+        // Pre-populate and checkpoint file DB so all facts are in committed B+tree.
+        let tmp = Box::new(NamedTempFile::new().unwrap());
+        let path = tmp.path().to_str().unwrap().to_string();
+        helpers::populate_file(10_000, &path);
+        // Open a handle shared by all threads
+        let db = helpers::open_file_no_checkpoint(&path);
+        let db = StdArc::clone(&db);
+
+        group.bench_with_input(
+            BenchmarkId::from_parameter(label),
+            &n_threads,
+            |b, &n_threads| {
+                b.iter_custom(|iters| {
+                    let barrier = StdArc::new(Barrier::new(n_threads + 1));
+                    let mut handles = Vec::new();
+                    for _ in 0..n_threads {
+                        let db = StdArc::clone(&db);
+                        let barrier = StdArc::clone(&barrier);
+                        handles.push(std::thread::spawn(move || {
+                            barrier.wait();
+                            let start = Instant::now();
+                            for _ in 0..iters {
+                                // EAVT range scan: entity :e0 with attribute :val
+                                db.execute("(query [:find ?v :where [:e0 :val ?v]])")
+                                    .unwrap();
+                            }
+                            start.elapsed()
+                        }));
+                    }
+                    barrier.wait();
+                    handles
+                        .into_iter()
+                        .map(|h| h.join().unwrap())
+                        .max()
+                        .unwrap()
+                });
+            },
+        );
+        drop(tmp);
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_insert,
@@ -678,5 +735,6 @@ criterion_group!(
     bench_checkpoint,
     bench_concurrent,
     bench_concurrent_file,
+    bench_concurrent_btree_scan,
 );
 criterion_main!(benches);
