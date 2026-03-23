@@ -444,11 +444,11 @@ tx.commit()?;  // or tx.rollback()?
 
 ---
 
-## Phase 6.5: On-Disk B+Tree Indexes 🎯 FUTURE
+## Phase 6.5: On-Disk B+Tree Indexes ✅ COMPLETE
 
 **Goal**: Replace the current paged-blob index serialisation with proper on-disk B+tree pages, so index lookups and range scans never require loading the full index into memory
 
-**Status**: 🎯 Planned — proceed after Phase 6.4 benchmarks confirm the need (or after confirming mobile memory budgets require it regardless)
+**Status**: ✅ Completed (March 2026)
 
 **Priority**: 🟡 High — required before Phase 8 (mobile); conditional on Phase 6.4 findings
 
@@ -1139,16 +1139,13 @@ branched_db.execute("(transact [[:x :y 1]])")?;
 - `clap` moved to binary-only dep; `Cargo.toml` metadata completed
 - GitHub Discussions enabled
 
-### v0.9.0 - 🎯 Phase 6.5 (On-Disk B+Tree Indexes + **crates.io publish**)
-- Proper on-disk B+tree for all four covering indexes (EAVT, AEVT, AVET, VAET)
-- Index memory usage proportional to cache size, not database size
-- File format v6 with automatic v5 migration
-- **First public release on crates.io** — API reference auto-published to docs.rs; full pre-publishing checklist passes
-- Add `cross test --target s390x-unknown-linux-gnu` to CI — verifies little-endian byte layout
-  tests also pass on a big-endian target, catching any accidental `to_ne_bytes()` use in the
-  file format serialisation code. Deferred to here (rather than earlier) because the file
-  format changes again in Phase 6.5 (v6); pinning a big-endian CI job to an unstable format
-  adds noise without adding safety.
+### v0.9.0 - ✅ Phase 6.5 (On-Disk B+Tree Indexes + **crates.io publish gate**)
+- ✅ Proper on-disk B+tree for all four covering indexes (EAVT, AEVT, AVET, VAET)
+- ✅ Index memory usage proportional to cache size, not database size (2.4× open-time speedup at 1M facts)
+- ✅ File format v6 (80 bytes) with automatic v5 migration
+- ✅ `MutexStorageBackend<B>`: per-page locking for concurrent range scans; cache-warm pages lock-free
+- ✅ 331 tests passing; `tests/btree_v6_test.rs` covers B+tree correctness and concurrency
+- crates.io publish deferred to after Phase 7 API cleanup (narrowing lib.rs exports, rustdoc sweep)
 
 ### v1.0.0 - 🎯 Phase 7 (Datalog Completeness)
 - Stratified negation (`not` / `not-join`)
@@ -1219,8 +1216,8 @@ When evaluating features, ask:
 - ✅ Phase 6.2: Complete (March 2026) - Packed Pages + LRU Cache
 - ✅ Phase 6.4a: Complete (March 2026) - Retraction semantics fix + edge case tests
 - ✅ Phase 6.4b: Complete (March 2026) - Benchmarks + light publish prep
-- 🎯 Phase 6.5: 4-6 weeks (On-disk B+tree indexes, file format v6 + **crates.io publish**) - **NEXT**
-- 🎯 Phase 7: 8-12 weeks (Datalog Completeness — negation, aggregation, disjunction, prepared statements, temporal metadata bindings; ≥90% branch coverage)
+- ✅ Phase 6.5: Complete (March 2026) - On-disk B+tree indexes, file format v6, concurrent scan per-page locking
+- 🎯 Phase 7: 8-12 weeks (Datalog Completeness — negation, aggregation, disjunction, prepared statements, temporal metadata bindings; ≥90% branch coverage) - **NEXT**
 - 🎯 Phase 8: 3-4 months (Cross-platform — WASM, mobile, language bindings)
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)
 - 🎯 **v1.0.0: 9-12 months**
@@ -1231,22 +1228,21 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: Phase 6.4b Complete — Starting Phase 6.5 (On-Disk B+Tree Indexes)
+**Right Now**: Phase 6.5 Complete — Starting Phase 7 (Datalog Completeness)
 
-**Phase 6.4b Achievements**:
-1. ✅ Full Criterion benchmark suite run; results documented in `BENCHMARKS.md`
-2. ✅ heaptrack memory profiling at 10K/100K/1M (14 MB / 136 MB / 1.33 GB peak heap)
-3. ✅ `examples/memory_profile.rs` profiling binary
-4. ✅ Dead `clap` dependency removed; `Cargo.toml` metadata complete
-5. ✅ GitHub Discussions enabled
-6. ✅ Version bumped to v0.8.0
+**Phase 6.5 Achievements**:
+1. ✅ `src/storage/btree_v6.rs`: proper on-disk B+tree with `build_btree`, `OnDiskIndexReader`, `CommittedIndexReader` trait
+2. ✅ `MutexStorageBackend<B>`: backend mutex held per page read; cache-warm scans acquire no lock
+3. ✅ FileHeader v6 (80 bytes): adds `fact_page_count` field; auto v5→v6 migration on checkpoint
+4. ✅ 331 tests; `tests/btree_v6_test.rs` with 8 integration tests + concurrent correctness unit test
+5. ✅ BENCHMARKS.md updated: open-time 2.4× faster at 1M, peak heap 21% lower, concurrent scan scaling improved
+6. ✅ Version bumped to v0.9.0; crates.io publish checklist unblocked
 
-**Immediate Next Steps (Phase 6.5)**:
-1. Design on-disk B+tree index pages (one node per 4KB page)
-2. Implement EAVT, AEVT, AVET, VAET B+tree persistence (file format v6)
-3. Wire B+tree lookups into query executor (replace full scan for point/range queries)
-4. Add automatic v5→v6 migration on first save
-5. Validate: open time and query latency become O(cache_pages), not O(facts)
+**Immediate Next Steps (Phase 7)**:
+1. Implement stratified negation (`not` / `not-join`)
+2. Add aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`)
+3. Add disjunction (`or` / `or-join`)
+4. Push error-path coverage from ~82% toward ≥90% target
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)

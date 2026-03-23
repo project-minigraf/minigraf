@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-03-23
+
+### Added
+- `src/storage/btree_v6.rs` — proper on-disk B+tree for all four covering indexes (EAVT, AEVT, AVET, VAET); each B+tree node is one 4KB page (internal + leaf), with `build_btree` for bulk-load and `range_scan` for leaf-chain traversal
+- `OnDiskIndexReader` struct + `CommittedIndexReader` trait — page-cache-backed index lookup replacing the full in-memory BTreeMap; index memory usage is now O(cache_pages), not O(facts)
+- `MutexStorageBackend<B>` adapter — holds backend mutex only for the duration of a single `read_page` call on a cache miss; cache-warm pages require no lock, enabling concurrent range scans to proceed in parallel
+- `tests/btree_v6_test.rs` — 8 integration tests covering B+tree insert/range-scan, multi-page leaf chains, concurrent scan correctness with Barrier-synchronised threads, and v5→v6 migration roundtrip
+- `test_concurrent_range_scans_correctness` unit test in `btree_v6.rs` — verifies all 8 concurrent threads return identical non-empty scan results
+- `bench_concurrent_btree_scan` Criterion benchmark — measures wall-clock latency at 2/4/8 concurrent EAVT range scans; results updated in `BENCHMARKS.md`
+- `FileHeader` v6 (80 bytes): adds `fact_page_count u64` field at bytes 72–80; automatic v5→v6 migration on first checkpoint
+
+### Changed
+- `FORMAT_VERSION` bumped 5→6; v5 databases auto-migrated on first save
+- `BENCHMARKS.md` updated with v6 open/memory improvements, concurrent B+tree scan results, heaptrack v6 numbers, and a "How to read these numbers" methodology section
+- `README.md` and `BENCHMARKS.md`: performance table updated to reflect v6 open-time reduction (~2.4×) and peak-heap reduction (~21%)
+
+### Fixed
+- Concurrent B+tree range scans no longer serialise on cache-warm pages — `4→8 thread` scaling ratio improved from ~2.2× to ~1.9×
+
 ## [0.8.0] - 2026-03-22
 
 ### Added

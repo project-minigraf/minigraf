@@ -4,7 +4,7 @@
 [![Clippy Status](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml/badge.svg)](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/adityamukho/minigraf#license)
 [![Rust Edition](https://img.shields.io/badge/rust-2024-orange.svg)](https://blog.rust-lang.org/2024/10/17/Rust-1.82.0.html)
-[![Phase](https://img.shields.io/badge/phase-6.4b%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
+[![Phase](https://img.shields.io/badge/phase-6.5%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
 
 > **Embedded graph memory for AI agents, mobile apps, and the browser** — the SQLite of bi-temporal graph databases
 
@@ -18,7 +18,7 @@ Minigraf is a **single-file embedded graph database** that lets you:
 - ✅ **Embed anywhere** - Native, WASM, mobile, IoT - one `.graph` file
 - ✅ **Zero configuration** - Just `Minigraf::open("data.graph")` and you're done
 
-**Status**: Phase 6.4b complete — crash-safe bi-temporal Datalog engine with covering indexes, packed storage, LRU page cache, and validated performance at 1K–1M facts (301 tests). Next: Phase 6.5 (on-disk B+tree indexes).
+**Status**: Phase 6.5 complete — crash-safe bi-temporal Datalog engine with on-disk B+tree indexes, packed storage, LRU page cache, and validated performance at 1K–1M facts (331 tests). Next: Phase 7 (Datalog completeness — negation, aggregation, disjunction).
 
 ## Why Datalog?
 
@@ -66,7 +66,7 @@ db.execute(r#"(rule [(reachable ?a ?b) [?a :friend ?b]])
 
 ```bash
 cargo run          # interactive Datalog REPL
-cargo test         # run 301 tests
+cargo test         # run 331 tests
 cargo run < demo_recursive.txt   # recursive rules demo
 ```
 
@@ -124,9 +124,8 @@ Minigraf will **not** be (by design):
 | Phase | Status | Summary |
 |---|---|---|
 | 1–5 | ✅ Complete | Property graph, persistent storage, Datalog core, bi-temporal, ACID + WAL |
-| 6.1–6.4b | ✅ Complete | Covering indexes, packed pages, LRU cache, retraction fix, benchmarks |
-| **6.5** | 🎯 Next | On-disk B+tree indexes — O(log N) queries, O(cache) index memory, file format v6 |
-| 7 | 🎯 Planned | Datalog completeness — negation, aggregation, disjunction |
+| 6.1–6.5 | ✅ Complete | Covering indexes, packed pages, LRU cache, retraction fix, benchmarks, on-disk B+tree (v6) |
+| **7** | 🎯 Next | Datalog completeness — negation, aggregation, disjunction |
 | 8 | 🎯 Planned | Cross-platform — WASM, iOS, Android, language bindings |
 | v1.0 | 🎯 ~12 months | Stable API + file format |
 
@@ -138,11 +137,11 @@ Benchmarks on Intel Core i7-1065G7 @ 1.30GHz, 16 GB RAM, Rust 1.92.0. See [BENCH
 
 | Metric | Result |
 |---|---|
-| Insert (in-memory, single fact) | ~2.4 µs — flat across 1K–100K facts |
-| Insert (file-backed, WAL) | ~3.4 µs — flat across 1K–100K facts |
-| Point query at 1M facts | 4.1–4.3 s (O(N) scan; Phase 6.5 target: O(log N)) |
-| Open time at 1M facts | 3.1 s (O(N); Phase 6.5 target: O(1)) |
-| Peak heap at 1M facts | 1.33 GB (~135 bytes/fact; Phase 6.5 target: O(cache_pages)) |
+| Insert (in-memory, single fact) | ~2.7 µs — flat across 1K–100K facts |
+| Insert (file-backed, WAL) | ~3.6 µs — flat across 1K–100K facts |
+| Point query at 1M facts | 4.3–4.5 s (O(N) scan; Phase 7 target: predicate pushdown) |
+| Open time at 1M facts | 1.31 s (2.4× faster than v5 — indexes no longer loaded into RAM) |
+| Peak heap at 1M facts | 1.05 GB (~21% less than v5 — indexes paged in on demand) |
 
 File-backed databases enforce a maximum fact size of **4 080 serialised bytes** per fact. In-memory databases have no limit.
 

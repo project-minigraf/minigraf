@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries** written in Rust. It's designed to be the embedded graph memory layer for AI agents, mobile apps, and the browser — built on the SQLite philosophy: embedded, single-file, reliable, with time travel capabilities.
 
-**Current Status: Phase 6.4b COMPLETE ✅ → Phase 6.5 Next** - Criterion benchmarks + light publish prep (note: Phase 6.3 query optimization was completed as part of Phase 6.1):
+**Current Status: Phase 6.5 COMPLETE ✅ → Phase 7 Next** - On-disk B+tree indexes (file format v6) (note: Phase 6.3 query optimization was completed as part of Phase 6.1):
 - ✅ Phase 1: Property graph PoC (in-memory)
 - ✅ Phase 2: Persistent storage (`.graph` file format, embedded API)
 - ✅ Phase 3: Datalog core (EAV model, recursive rules) - COMPLETE!
@@ -16,7 +16,7 @@ Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries**
 - ✅ **Phase 6.2: Packed pages + LRU page cache - COMPLETE!**
 - ✅ **Phase 6.4a: Retraction semantics fix + edge case tests - COMPLETE!**
 - ✅ **Phase 6.4b: Criterion benchmarks + light publish prep - COMPLETE!**
-- 🎯 Phase 6.5: On-disk B+tree indexes (file format v6) - **NEXT**
+- ✅ **Phase 6.5: On-disk B+tree indexes (file format v6) - COMPLETE!**
 - 🎯 Phase 7: Datalog Completeness (negation, aggregation, disjunction; ≥90% branch coverage target)
 - 🎯 v1.0.0: 9-12 months
 
@@ -128,12 +128,12 @@ The codebase is organized into the following modules:
      - `get_facts_as_of()`, `get_facts_valid_at()` for time travel
      - Thread-safe via `Arc<RwLock<...>>`
 
-2. **Storage Module (`src/storage/`)** - Phase 2-6.2 (stable foundation) ✅:
-   - `mod.rs`: `StorageBackend` trait, `FileHeader` v5, `CommittedFactReader` trait
+2. **Storage Module (`src/storage/`)** - Phase 2-6.5 (stable foundation) ✅:
+   - `mod.rs`: `StorageBackend` trait, `FileHeader` v6, `CommittedFactReader` trait
      - `StorageBackend` trait: Platform-agnostic storage interface
-     - `FileHeader`: Metadata for `.graph` files (v5 format, 72 bytes)
-     - `CommittedFactReader` trait: on-demand fact resolution via page cache
-     - Page size: 4KB, Magic number: "MGRF", `FORMAT_VERSION = 5`
+     - `FileHeader`: Metadata for `.graph` files (v6 format, 80 bytes)
+     - `CommittedFactReader` / `CommittedIndexReader` traits: on-demand fact/index resolution via page cache
+     - Page size: 4KB, Magic number: "MGRF", `FORMAT_VERSION = 6`
    - `backend/file.rs`: File-based backend (single `.graph` file)
      - Page-based storage, cross-platform format
      - Supports Linux, macOS, Windows, iOS, Android
@@ -142,8 +142,12 @@ The codebase is organized into the following modules:
    - `index.rs`: Index key types (EAVT, AEVT, AVET, VAET), `FactRef`, `encode_value`
      - `FactRef { page_id, slot_index }`: disk location pointer for committed facts
      - Canonical value encoding for sort-order-preserving byte comparison
-   - `btree.rs`: B+tree page serialisation for index persistence
-     - `write_all_indexes` / `read_*_index` functions using paged blob strategy
+   - `btree.rs`: Legacy paged-blob B+tree serialisation (v5 format, kept for migration)
+     - `write_all_indexes` / `read_*_index` functions used during v5→v6 migration only
+   - `btree_v6.rs`: Proper on-disk B+tree for all four covering indexes (Phase 6.5) ✅
+     - `build_btree`: bulk-load builder; each B+tree node is one 4KB page
+     - `OnDiskIndexReader` + `CommittedIndexReader` trait: page-cache-backed range scans
+     - `MutexStorageBackend<B>`: adapter that holds backend mutex per page read (not per scan)
    - `cache.rs`: LRU page cache with approximate-LRU semantics
      - `PageCache`: read-lock on hits, write-lock on misses only
      - Stores `Arc<Vec<u8>>` to avoid copies on cache hits
@@ -151,9 +155,9 @@ The codebase is organized into the following modules:
      - `pack_facts`: ~25 facts per 4KB page (~25× space reduction vs v4)
      - `read_slot`, `read_all_from_pages` for on-demand fact loading
    - `persistent_facts.rs`: Persistent EAV fact storage layer
-     - v5 format: packed pages + index B+tree persistence
+     - v6 format: packed pages + on-disk B+tree index persistence
      - `CommittedFactLoaderImpl`: resolves `FactRef` via page cache
-     - Auto-migrates v1/v2/v3/v4 on open
+     - Auto-migrates v1/v2/v3/v4/v5 on open
 
 3. **Query Module (`src/query/datalog/`)** - Phase 3-6.1 (Datalog + optimizer) ✅:
    - `parser.rs`: EDN/Datalog parser
@@ -238,11 +242,11 @@ const VALID_TIME_FOREVER: i64 = i64::MAX; // Sentinel for open-ended valid time
 
 **Layered Architecture**:
 
-**High-level** (Phase 3-6.2) ✅:
+**High-level** (Phase 3-6.5) ✅:
 - `FactStorage`: In-memory EAV fact store with temporal query methods and index-driven scans
   - Pending facts stored in-memory; committed facts resolved via `CommittedFactReader`
   - `FactRef { page_id: 0 }` = pending; `page_id >= 1` = committed (resolved via page cache)
-- `PersistentFactStorage`: Persistence layer (packed pages, B+tree indexes, v5 format)
+- `PersistentFactStorage`: Persistence layer (packed pages, on-disk B+tree indexes, v6 format)
 
 **Low-level** (Phase 2, stable foundation) ✅:
 - `StorageBackend` trait: Platform-agnostic interface
@@ -251,29 +255,32 @@ const VALID_TIME_FOREVER: i64 = i64::MAX; // Sentinel for open-ended valid time
 - `PageCache`: LRU page cache (default 256 pages = 1MB)
 - Future: `IndexedDbBackend` for WASM
 
-**File Format** (v5):
+**File Format** (v6):
 ```
-Page 0: Header (72 bytes)
+Page 0: Header (80 bytes)
   - Magic: "MGRF" (4 bytes)
-  - Version: u32 (currently 5)
+  - Version: u32 (currently 6)
   - Page count: u64
   - Fact count: u64
   - Last checkpointed tx count: u64  (WAL checkpoint marker)
-  - eavt_root_page: u64              (covering index roots)
+  - eavt_root_page: u64              (B+tree root pages for each covering index)
   - aevt_root_page: u64
   - avet_root_page: u64
   - vaet_root_page: u64
   - index_checksum: u32              (CRC32 of committed fact pages)
-  - fact_page_format: u8             (0x02 = packed; was _padding in v4)
+  - fact_page_format: u8             (0x02 = packed)
   - _padding: [u8; 3]
+  - fact_page_count: u64             (new in v6: number of fact data pages)
 
 Page 1+: Fact data pages (page_type = 0x02, packed format)
   - 12-byte header: type(1), reserved(1), record_count(2), next_page(8)
   - Record directory: (offset u16, length u16) per slot
   - Variable-length postcard-encoded facts (written end-to-start)
 
-Index pages (after fact pages):
-  - Serialized EAVT, AEVT, AVET, VAET BTreeMaps (paged blob, type 0x11)
+Index pages (after fact pages): page_type = 0x01 (internal) or 0x02 (leaf)
+  - Proper on-disk B+tree nodes; one node per 4KB page
+  - Leaf pages: sorted (key, FactRef) pairs with next-leaf pointer
+  - Internal pages: sorted keys with child page IDs
 
 WAL sidecar <db>.wal (present while uncommitted writes exist):
   - CRC32-protected fact-level entries; replayed on open; deleted on checkpoint
@@ -334,8 +341,8 @@ WAL sidecar <db>.wal (present while uncommitted writes exist):
 
 ## Test Coverage
 
-**Current Tests (Phase 6.4b)**: 301 tests passing ✅
-- **Unit tests** (216 tests):
+**Current Tests (Phase 6.5)**: 331 tests passing ✅
+- **Unit tests** (222 tests):
   - `src/graph/types.rs`: Fact types, Value types, EAV model, temporal fields
   - `src/graph/storage.rs`: FactStorage, CRUD, history, tx_count, temporal methods, CommittedFactReader integration
   - `src/temporal.rs`: UTC timestamp parsing and formatting
@@ -347,13 +354,14 @@ WAL sidecar <db>.wal (present while uncommitted writes exist):
   - `src/query/datalog/evaluator.rs`: Semi-naive evaluation, transitive closure
   - `src/storage/index.rs`: EAVT/AEVT/AVET/VAET keys, FactRef, encode_value sort order
   - `src/storage/btree.rs`: B+tree roundtrip, multi-page, sort order preservation
+  - `src/storage/btree_v6.rs`: On-disk B+tree insert/range-scan, concurrent range scan correctness (Phase 6.5)
   - `src/storage/cache.rs`: LRU eviction, read-lock hits, Arc cloning
   - `src/storage/packed_pages.rs`: Pack/unpack roundtrip, oversized fact error (`MAX_FACT_BYTES`), byte-layout pin (Phase 6.4b)
-  - `src/storage/mod.rs`: FileHeader v5 serialization, v3/v4 acceptance, byte-layout pin (Phase 6.4b)
+  - `src/storage/mod.rs`: FileHeader v6 serialization, v3/v4/v5 acceptance, byte-layout pin (Phase 6.4b)
   - `src/wal.rs`: WAL entry serialization, CRC32, replay logic
   - `src/db.rs`: WriteTransaction, checkpoint, crash recovery, `check_fact_sizes` early validation
 
-- **Integration tests** (79 tests):
+- **Integration tests** (103 tests):
   - `tests/bitemporal_test.rs` (10 tests): Bi-temporal queries, time travel, valid time
   - `tests/complex_queries_test.rs` (10 tests): Multi-pattern joins, self-joins, edge cases
   - `tests/recursive_rules_test.rs` (9 tests): Transitive closure, cycles, long chains, family trees
@@ -363,6 +371,7 @@ WAL sidecar <db>.wal (present while uncommitted writes exist):
   - `tests/performance_test.rs` (7 tests): Packed page compactness, reload correctness, page_cache_size option
   - `tests/retraction_test.rs` (7 tests): Retraction semantics in Datalog queries (Phase 6.4a)
   - `tests/edge_cases_test.rs` (4 tests): Oversized-fact file-backed error, MAX_FACT_BYTES boundary
+  - `tests/btree_v6_test.rs` (8 tests): B+tree insert/scan, concurrent range scan, v5→v6 migration (Phase 6.5)
 
 - **Doc tests** (6 tests): Inline documentation examples
 
@@ -381,6 +390,7 @@ WAL sidecar <db>.wal (present while uncommitted writes exist):
 - ✅ **Retraction semantics** - 7 integration tests (Phase 6.4a)
 - ✅ **Edge cases** (oversized facts, MAX_FACT_BYTES) - 4 integration tests (Phase 6.4a)
 - ✅ **Byte-layout pins** (FileHeader v5, packed page header) - 3 unit tests (Phase 6.4b)
+- ✅ **On-disk B+tree indexes** (btree_v6.rs, concurrent range scans) - 8 integration + 1 unit test (Phase 6.5)
 
 **Demo Scripts**:
 - `demo_recursive.txt`: Comprehensive recursive rules examples (transitive closure, cycles, family trees)
@@ -555,11 +565,15 @@ When implementing features, always ask:
 - ✅ Dead `clap` dep removed; `Cargo.toml` metadata complete; version bumped to v0.8.0
 - ✅ GitHub Discussions enabled
 
-**Phase 6.5** (next): On-Disk B+Tree Indexes
-- Replace paged-blob index serialisation with proper per-page B+tree nodes
-- All four covering indexes: EAVT, AEVT, AVET, VAET
-- Index memory usage O(cache_pages) instead of O(facts)
-- File format v6, automatic v5 migration
+**Phase 6.5** ✅ **COMPLETE** - On-Disk B+Tree Indexes
+- ✅ `src/storage/btree_v6.rs`: proper on-disk B+tree with `build_btree` bulk-load and `range_scan`
+- ✅ `OnDiskIndexReader` + `CommittedIndexReader` trait: page-cache-backed index lookup
+- ✅ `MutexStorageBackend<B>`: backend mutex held per page read only; cache-warm scans acquire no lock
+- ✅ FileHeader v6 (80 bytes): adds `fact_page_count` field; auto v5→v6 migration on checkpoint
+- ✅ `tests/btree_v6_test.rs`: 8 integration tests; concurrent range scan correctness unit test
+- ✅ BENCHMARKS.md updated: v6 open-time 2.4× faster, peak heap 21% lower, concurrent scan scaling improved
+- ✅ Version bumped to v0.9.0
+- ✅ 331 comprehensive tests
 
 **Phase 7** (6-8 weeks): Datalog Completeness
 - Stratified negation (`not` / `not-join`)
@@ -610,27 +624,33 @@ This is a hobby project with a decades-long vision. When contributing:
 
 ## Key Files to Understand
 
-**For Phase 6.5 work (On-Disk B+Tree Indexes)**:
+**For Phase 7 work (Datalog Completeness — next)**:
 1. `PHILOSOPHY.md` - Why single-file, reliability-first
-2. `ROADMAP.md` - Detailed Phase 6.5 plan
-3. `src/storage/index.rs` - EAVT/AEVT/AVET/VAET key types, FactRef, encode_value
-4. `src/storage/btree.rs` - B+tree page serialisation (current paged-blob; v6 will replace with proper per-page nodes)
-5. `src/storage/cache.rs` - LRU page cache (PageCache)
-6. `src/storage/mod.rs` - FileHeader v5, CommittedFactReader trait (v6 will update header)
+2. `ROADMAP.md` - Detailed Phase 7 plan (negation, aggregation, disjunction)
+3. `src/query/datalog/parser.rs` - EDN/Datalog parser (add `not`, `or`, aggregate clauses here)
+4. `src/query/datalog/executor.rs` - Query executor (add negation/aggregation evaluation here)
+5. `src/query/datalog/evaluator.rs` - Semi-naive evaluator (stratification for negation)
+6. `src/query/datalog/types.rs` - `WhereClause`, `FindSpec` types (extend for new clauses)
+
+**For Phase 6.5 work (On-Disk B+Tree Indexes, complete)**:
+1. `src/storage/btree_v6.rs` - Proper on-disk B+tree: `build_btree`, `OnDiskIndexReader`, `MutexStorageBackend`
+2. `src/storage/index.rs` - EAVT/AEVT/AVET/VAET key types, FactRef, encode_value
+3. `src/storage/cache.rs` - LRU page cache (PageCache)
+4. `src/storage/mod.rs` - FileHeader v6 (80 bytes), CommittedFactReader / CommittedIndexReader traits
 
 **For Phase 6.1-6.2 work (Indexes + Packed Pages, complete)**:
 1. `src/storage/index.rs` - EAVT/AEVT/AVET/VAET key types, FactRef, encode_value
-2. `src/storage/btree.rs` - B+tree page serialisation
+2. `src/storage/btree.rs` - Legacy paged-blob serialisation (migration only)
 3. `src/storage/cache.rs` - LRU page cache (PageCache)
 4. `src/storage/packed_pages.rs` - Packed page format
-5. `src/storage/persistent_facts.rs` - v5 save/load, CommittedFactLoaderImpl
+5. `src/storage/persistent_facts.rs` - v6 save/load, CommittedFactLoaderImpl
 6. `src/graph/storage.rs` - FactStorage with CommittedFactReader integration
-7. `src/storage/mod.rs` - FileHeader v5, CommittedFactReader trait
+7. `src/storage/mod.rs` - FileHeader v6, CommittedFactReader trait
 
 **For Phase 5 work (ACID + WAL, complete)**:
 1. `src/wal.rs` - WAL entry format, CRC32, replay logic
 2. `src/db.rs` - WriteTransaction, checkpoint, crash recovery
-3. `src/storage/persistent_facts.rs` - v5 file format with WAL
+3. `src/storage/persistent_facts.rs` - v6 file format with WAL
 
 **For understanding the Datalog engine (Phase 3-4, stable)**:
 1. `src/graph/types.rs` - EAV model: `Fact`, `Value`, bi-temporal fields
@@ -646,6 +666,7 @@ Before publishing the crate, verify all of the following:
 
 ### Minimum Bar (do not publish before Phase 6.5)
 - [x] **Phase 6.4 benchmarks complete** — Criterion benchmarks at 10K/100K/1M facts documented in `BENCHMARKS.md`. ✅ Phase 6.4b complete.
+- [x] **Phase 6.5 complete** — On-disk B+tree indexes, file format v6, 331 tests passing. ✅ Phase 6.5 complete.
 - [ ] **Edge case tests passing** — Oversized-fact error path exercised ✅; checkpoint-during-crash recovery not yet verified.
 - [ ] **Error-path coverage** — Still ~82%; storage and WAL error paths to be prioritised in Phase 7.
 - [x] **GitHub Discussions enabled** — ✅ Done in Phase 6.4b.
