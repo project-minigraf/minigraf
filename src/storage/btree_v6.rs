@@ -456,6 +456,43 @@ where
     Ok(result)
 }
 
+// ─── MutexStorageBackend ──────────────────────────────────────────────────────
+
+/// Read-only [`StorageBackend`] adapter that locks `Arc<Mutex<B>>` only for the
+/// duration of a single [`StorageBackend::read_page`] call.
+///
+/// Used exclusively by [`OnDiskIndexReader::range_scan_*`] so that the backend
+/// mutex is held only while reading one cold page from disk, rather than for the
+/// entire range scan. On a cache hit [`PageCache::get_or_load`] never calls
+/// `read_page`, so no lock is acquired at all.
+struct MutexStorageBackend<B>(Arc<Mutex<B>>);
+
+impl<B: StorageBackend> StorageBackend for MutexStorageBackend<B> {
+    fn read_page(&self, page_id: u64) -> anyhow::Result<Vec<u8>> {
+        self.0.lock().unwrap().read_page(page_id)
+    }
+
+    fn write_page(&mut self, _page_id: u64, _data: &[u8]) -> anyhow::Result<()> {
+        unreachable!("MutexStorageBackend is read-only; write_page must not be called")
+    }
+
+    fn sync(&mut self) -> anyhow::Result<()> {
+        unreachable!("MutexStorageBackend is read-only; sync must not be called")
+    }
+
+    fn page_count(&self) -> anyhow::Result<u64> {
+        unreachable!("MutexStorageBackend is read-only; page_count must not be called")
+    }
+
+    fn close(&mut self) -> anyhow::Result<()> {
+        unreachable!("MutexStorageBackend is read-only; close must not be called")
+    }
+
+    fn backend_name(&self) -> &'static str {
+        unreachable!("MutexStorageBackend is read-only; backend_name must not be called")
+    }
+}
+
 // ─── OnDiskIndexReader ────────────────────────────────────────────────────────
 
 use std::sync::Mutex;
@@ -493,8 +530,8 @@ impl<B: StorageBackend + 'static> crate::storage::CommittedIndexReader
         end: Option<&crate::storage::index::EavtKey>,
     ) -> anyhow::Result<Vec<crate::storage::index::FactRef>> {
         if self.eavt_root == 0 { return Ok(vec![]); }
-        let backend = self.backend.lock().unwrap();
-        range_scan(self.eavt_root, start, end, &*backend, &self.cache)
+        let adapter = MutexStorageBackend(Arc::clone(&self.backend));
+        range_scan(self.eavt_root, start, end, &adapter, &self.cache)
     }
 
     fn range_scan_aevt(
@@ -503,8 +540,8 @@ impl<B: StorageBackend + 'static> crate::storage::CommittedIndexReader
         end: Option<&crate::storage::index::AevtKey>,
     ) -> anyhow::Result<Vec<crate::storage::index::FactRef>> {
         if self.aevt_root == 0 { return Ok(vec![]); }
-        let backend = self.backend.lock().unwrap();
-        range_scan(self.aevt_root, start, end, &*backend, &self.cache)
+        let adapter = MutexStorageBackend(Arc::clone(&self.backend));
+        range_scan(self.aevt_root, start, end, &adapter, &self.cache)
     }
 
     fn range_scan_avet(
@@ -513,8 +550,8 @@ impl<B: StorageBackend + 'static> crate::storage::CommittedIndexReader
         end: Option<&crate::storage::index::AvetKey>,
     ) -> anyhow::Result<Vec<crate::storage::index::FactRef>> {
         if self.avet_root == 0 { return Ok(vec![]); }
-        let backend = self.backend.lock().unwrap();
-        range_scan(self.avet_root, start, end, &*backend, &self.cache)
+        let adapter = MutexStorageBackend(Arc::clone(&self.backend));
+        range_scan(self.avet_root, start, end, &adapter, &self.cache)
     }
 
     fn range_scan_vaet(
@@ -523,8 +560,8 @@ impl<B: StorageBackend + 'static> crate::storage::CommittedIndexReader
         end: Option<&crate::storage::index::VaetKey>,
     ) -> anyhow::Result<Vec<crate::storage::index::FactRef>> {
         if self.vaet_root == 0 { return Ok(vec![]); }
-        let backend = self.backend.lock().unwrap();
-        range_scan(self.vaet_root, start, end, &*backend, &self.cache)
+        let adapter = MutexStorageBackend(Arc::clone(&self.backend));
+        range_scan(self.vaet_root, start, end, &adapter, &self.cache)
     }
 }
 
@@ -838,5 +875,75 @@ mod tests {
         // Same exclusion logic: entity 10's entry {10, ":x", ...} > end {10, "", ...}
         // So entities 5..9 = 5 entries
         assert_eq!(refs.len(), 5, "entities 5..9 (end excludes entity 10)");
+    }
+
+    #[test]
+    fn test_concurrent_range_scans_correctness() {
+        use crate::storage::CommittedIndexReader;
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        let mut backend = MemoryBackend::new();
+        // build_btree takes &PageCache (not Arc), so construct without Arc first
+        let cache = PageCache::new(256);
+        // 50 entries — enough to span multiple leaf pages
+        let input: Vec<(EavtKey, FactRef)> =
+            (0u128..50).map(|n| make_eavt(n, ":x", n as u64 + 1)).collect();
+        let (eavt_root, _) =
+            build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
+
+        // Wrap in Arc after build_btree is done — OnDiskIndexReader requires Arc<PageCache>
+        let reader = Arc::new(OnDiskIndexReader::new(
+            Arc::new(Mutex::new(backend)),
+            Arc::new(cache),
+            eavt_root,
+            0,
+            0,
+            0,
+        ));
+
+        // Scan entities 10..19 (10 entries expected)
+        let start = EavtKey {
+            entity: Uuid::from_u128(10),
+            attribute: String::new(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
+        let end = EavtKey {
+            entity: Uuid::from_u128(20),
+            attribute: String::new(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
+
+        let barrier = Arc::new(Barrier::new(8));
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let r = Arc::clone(&reader);
+                let b = Arc::clone(&barrier);
+                let s = start.clone();
+                let e = end.clone();
+                thread::spawn(move || {
+                    b.wait(); // all 8 threads start simultaneously
+                    r.range_scan_eavt(&s, Some(&e)).unwrap()
+                })
+            })
+            .collect();
+
+        let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        let expected_len = results[0].len();
+        assert!(expected_len > 0, "expected non-empty scan results");
+        for (i, res) in results.iter().enumerate() {
+            assert_eq!(
+                res.len(),
+                expected_len,
+                "thread {} returned {} refs, expected {}",
+                i,
+                res.len(),
+                expected_len
+            );
+        }
     }
 }
