@@ -110,7 +110,8 @@ impl RuleRegistry {
 
     /// Register a rule without stratification checks.
     /// Used only in tests and internally before the stratification module is wired.
-    pub fn register_rule_unchecked(&mut self, predicate: String, rule: Rule) {
+    #[allow(dead_code)]
+    pub(crate) fn register_rule_unchecked(&mut self, predicate: String, rule: Rule) {
         self.rules.entry(predicate).or_default().push(rule);
     }
 

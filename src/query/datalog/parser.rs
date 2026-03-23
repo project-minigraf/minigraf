@@ -720,7 +720,9 @@ fn outer_vars_from_clause(clause: &WhereClause) -> Vec<String> {
         WhereClause::Pattern(p) => {
             let mut vars = Vec::new();
             for v in [&p.entity, &p.attribute, &p.value] {
-                if let Some(name) = v.as_variable() {
+                if let Some(name) = v.as_variable()
+                    && !name.starts_with("?_")
+                {
                     vars.push(name.to_string());
                 }
             }
@@ -728,7 +730,15 @@ fn outer_vars_from_clause(clause: &WhereClause) -> Vec<String> {
         }
         WhereClause::RuleInvocation { args, .. } => args
             .iter()
-            .filter_map(|a| a.as_variable().map(|s| s.to_string()))
+            .filter_map(|a| {
+                a.as_variable().and_then(|s| {
+                    if !s.starts_with("?_") {
+                        Some(s.to_string())
+                    } else {
+                        None
+                    }
+                })
+            })
             .collect(),
         WhereClause::Not(_) => vec![], // not counted as "outer"
     }
@@ -739,7 +749,7 @@ fn vars_in_not(clause: &WhereClause) -> Vec<String> {
     match clause {
         WhereClause::Not(inner) => inner
             .iter()
-            .flat_map(|c| outer_vars_from_clause(c))
+            .flat_map(outer_vars_from_clause)
             .collect(),
         _ => vec![],
     }
@@ -1380,5 +1390,25 @@ mod tests {
         assert!(result.is_err());
         let msg = result.unwrap_err();
         assert!(msg.contains("not bound"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_parse_not_with_multiple_clauses() {
+        // (not [?person :role :admin] [?person :active false])
+        let input = r#"(query [:find ?person :where [?person :name ?n] (not [?person :role :admin] [?person :active false])])"#;
+        let cmd = parse_datalog_command(input).unwrap();
+        match cmd {
+            DatalogCommand::Query(q) => {
+                match &q.where_clauses[1] {
+                    WhereClause::Not(inner) => {
+                        assert_eq!(inner.len(), 2);
+                        assert!(matches!(inner[0], WhereClause::Pattern(_)));
+                        assert!(matches!(inner[1], WhereClause::Pattern(_)));
+                    }
+                    other => panic!("Expected Not with 2 clauses, got {:?}", other),
+                }
+            }
+            _ => panic!("Expected Query"),
+        }
     }
 }
