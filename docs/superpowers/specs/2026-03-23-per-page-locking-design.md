@@ -63,8 +63,20 @@ impl<B: StorageBackend> StorageBackend for MutexStorageBackend<B> {
         unreachable!("MutexStorageBackend is read-only; write_page must not be called")
     }
 
+    fn sync(&mut self) -> Result<()> {
+        unreachable!("MutexStorageBackend is read-only; sync must not be called")
+    }
+
     fn page_count(&self) -> Result<u64> {
-        self.0.lock().unwrap().page_count()
+        unreachable!("MutexStorageBackend is read-only; page_count must not be called")
+    }
+
+    fn close(&mut self) -> Result<()> {
+        unreachable!("MutexStorageBackend is read-only; close must not be called")
+    }
+
+    fn backend_name(&self) -> &'static str {
+        unreachable!("MutexStorageBackend is read-only; backend_name must not be called")
     }
 }
 ```
@@ -131,7 +143,7 @@ Outline:
 4. Each thread calls `reader.range_scan_eavt(&start, Some(&end))`.
 5. Assert all threads return the same non-empty `Vec<FactRef>` and no thread panics.
 
-This test would deadlock or panic before the fix (if the mutex were re-acquired recursively) and passes after.
+This test exposes the pre-fix contention: with the old whole-scan lock, all 8 threads queue on the mutex and execute serially (correct but slow). With the fix, cache-warm pages are served concurrently with no mutex at all. The test validates correctness under concurrency, not deadlock prevention (the old code did not deadlock — it just serialised).
 
 ### Existing Benchmark
 
@@ -145,4 +157,5 @@ This test would deadlock or panic before the fix (if the mutex were re-acquired 
 |---|---|
 | `write_page` called unexpectedly | `unreachable!()` panics immediately — detectable in tests, not a silent failure |
 | Cache miss storm on first open (many misses in rapid succession) | Individual page reads are still serialised by the mutex; this is correct and safe — it only means cold-cache concurrent performance is bounded by I/O throughput, which is the right bottleneck |
+| Two threads race on the same cold page simultaneously | `PageCache::get_or_load` calls `backend.read_page` before acquiring the cache write-lock (double-check pattern). Both threads will call `read_page` and thus each briefly hold the backend mutex in sequence. The second result is discarded. This is safe because committed pages are immutable; the only cost is one redundant I/O per racing pair. |
 | Deadlock if `read_page` internally re-acquires the same mutex | `StorageBackend` implementations (`FileBackend`, `MemoryBackend`) do not use the outer `Mutex` — no re-entrancy risk |
