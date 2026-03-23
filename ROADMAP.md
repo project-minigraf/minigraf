@@ -1132,7 +1132,7 @@ branched_db.execute("(transact [[:x :y 1]])")?;
 - ✅ `tests/edge_cases_test.rs` — 4 new edge case integration tests
 - ✅ 298 tests passing
 
-### v0.8.0 - 🎯 Phase 6.4b (Criterion Benchmarks + Light Publish Prep)
+### v0.8.0 - ✅ Phase 6.4b (Criterion Benchmarks + Light Publish Prep)
 - Run existing Criterion suite; validated performance numbers at 10K / 100K / 1M facts
 - Memory profiling via heaptrack
 - `BENCHMARKS.md` with full result tables; "Performance" section in README
