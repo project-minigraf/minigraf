@@ -4,6 +4,7 @@ pub mod matcher;
 pub mod optimizer;
 pub mod parser;
 pub mod rules;
+pub mod stratification;
 pub mod types;
 
 pub use evaluator::RecursiveEvaluator;

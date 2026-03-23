@@ -107,6 +107,17 @@ impl RuleRegistry {
     pub fn predicate_names(&self) -> Vec<String> {
         self.rules.keys().cloned().collect()
     }
+
+    /// Register a rule without stratification checks.
+    /// Used only in tests and internally before the stratification module is wired.
+    pub fn register_rule_unchecked(&mut self, predicate: String, rule: Rule) {
+        self.rules.entry(predicate).or_default().push(rule);
+    }
+
+    /// Iterate all (predicate, rules) pairs.
+    pub fn all_rules(&self) -> impl Iterator<Item = (&str, &[Rule])> {
+        self.rules.iter().map(|(k, v)| (k.as_str(), v.as_slice()))
+    }
 }
 
 #[cfg(test)]
