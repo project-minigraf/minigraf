@@ -177,10 +177,10 @@ fn test_v6_dead_pages_queries_correct_after_two_checkpoints() {
     let db2 = OpenOptions::new().path(&path).open().unwrap();
     let r = db2.execute("(query [:find ?v :where [:e20 :val ?v]])").unwrap();
     let sr = format!("{:?}", r);
-    assert!(sr.contains("20"), "e20 should be queryable after second checkpoint; got: {}", sr);
+    assert!(sr.contains("20"), "e20 should be queryable after second checkpoint");
     let r0 = db2.execute("(query [:find ?v :where [:e0 :val ?v]])").unwrap();
     let s0 = format!("{:?}", r0);
-    assert!(s0.contains('0'), "original e0 should still be visible; got: {}", s0);
+    assert!(s0.contains('0'), "original e0 should still be visible");
 }
 
 #[test]
@@ -201,7 +201,7 @@ fn test_v6_checksum_mismatch_triggers_rebuild() {
     let db = OpenOptions::new().path(&path).open().unwrap();
     let result = db.execute("(query [:find ?v :where [:e0 :val ?v]])").unwrap();
     let s = format!("{:?}", result);
-    assert!(s.contains('0'), "queries must work after rebuild; got: {}", s);
+    assert!(s.contains('0'), "queries must work after rebuild");
 }
 
 #[test]
@@ -214,12 +214,12 @@ fn test_v6_reopen_close_reopen() {
         let db = OpenOptions::new().path(&path).open().unwrap();
         let r = db.execute("(query [:find ?v :where [:e50 :val ?v]])").unwrap();
         let s = format!("{:?}", r);
-        assert!(s.contains("50"), "first open; got: {}", s);
+        assert!(s.contains("50"), "first open");
     }
     {
         let db = OpenOptions::new().path(&path).open().unwrap();
         let r = db.execute("(query [:find ?v :where [:e50 :val ?v]])").unwrap();
         let s = format!("{:?}", r);
-        assert!(s.contains("50"), "after reopen; got: {}", s);
+        assert!(s.contains("50"), "after reopen");
     }
 }
