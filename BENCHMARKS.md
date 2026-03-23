@@ -167,13 +167,15 @@ Scaling: 2→4 threads is ~1.5× (good), 4→8 threads is ~1.9× (improved from 
 
 ## Memory Usage (heaptrack)
 
-Peak heap consumption during `examples/memory_profile` (insert N facts + one query + checkpoint). Measured with [heaptrack](https://github.com/KDE/heaptrack). These numbers reflect **v5** (Phase 6.4b); Phase 6.5 is expected to reduce peak heap by eliminating the in-memory index copy after checkpoint, but has not yet been re-profiled.
+Peak heap consumption during `examples/memory_profile` (insert N facts + one query + checkpoint). Measured with [heaptrack](https://github.com/KDE/heaptrack).
 
 | Facts | Peak Heap | Peak RSS | Runtime |
 |---|---|---|---|
-| 10K | 14.4 MB | 22.5 MB | 0.26 s |
-| 100K | 135.7 MB | 194.6 MB | 2.33 s |
-| 1M | 1.33 GB | 2.04 GB | 26.8 s |
+| 10K | 11.9 MB | 19.2 MB | 0.26 s |
+| 100K | 109.4 MB | 145.7 MB | 2.44 s |
+| 1M | 1.05 GB | 1.60 GB | 27.9 s |
+
+**Phase 6.5 improvement:** v6 no longer holds the full index in RAM after checkpoint — indexes live on disk and are paged in on demand via the LRU cache. At 1M facts, peak heap dropped from **1.33 GB → 1.05 GB** (~21%). At 100K: **135.7 MB → 109.4 MB** (~19%).
 
 ---
 
@@ -186,6 +188,8 @@ Peak heap consumption during `examples/memory_profile` (insert N facts + one que
 | Checkpoint 10K | 16.5 ms | 11.8 ms | 1.4× faster |
 | Query 1M (point) | 4.30 s | 4.33 s | ~same |
 | `serialized_writers` ≥4T | OOM-killed | 17–78 µs | fixed |
+| Peak heap 1M facts | 1.33 GB | 1.05 GB | **~21% less** |
+| Peak RSS 1M facts | 2.04 GB | 1.60 GB | **~22% less** |
 
 ---
 
@@ -194,7 +198,6 @@ Peak heap consumption during `examples/memory_profile` (insert N facts + one que
 - **Query scan is O(facts)**: Queries resolve all facts matching the range scan, then filter in memory. Phase 7 will enable index-based predicate pushdown for sub-linear lookups.
 - **Backend mutex held on cache-cold page reads**: Concurrent B+tree scans serialise only when a page must be loaded from disk (cache miss). Cache-warm reads are fully parallel. Further per-page I/O parallelism is deferred to Phase 8.
 - **1M recursion not benchmarked**: `chain/depth_100` takes 16 s; `chain/depth_1000` was not run.
-- **Memory profile not re-run for v6**: heaptrack numbers above are from Phase 6.4b (v5). Phase 6.5's post-checkpoint RAM reduction is expected but not yet measured.
 
 ---
 
