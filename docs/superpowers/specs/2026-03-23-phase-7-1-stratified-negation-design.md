@@ -45,12 +45,13 @@ src/query/datalog/types.rs           — add WhereClause::Not; Rule.body Vec<Edn
 src/query/datalog/parser.rs          — parse (not ...) in :where clauses and rule bodies
 src/query/datalog/stratification.rs  — NEW: DependencyGraph, stratify()
 src/query/datalog/rules.rs           — call stratify() on register_rule; reject on negative cycle
-src/query/datalog/evaluator.rs       — add StratifiedEvaluator (RecursiveEvaluator unchanged)
+src/query/datalog/evaluator.rs       — add StratifiedEvaluator; update RecursiveEvaluator::evaluate_rule
+                                       to branch on WhereClause variants (was branching on EdnValue)
 src/query/datalog/executor.rs        — execute_query_with_rules uses StratifiedEvaluator;
                                        execute_query handles not-only queries as filters
 ```
 
-**Key invariant**: `RecursiveEvaluator` is not modified. It continues to evaluate one stratum of positive rules to fixed-point, exactly as today.
+**Note on `RecursiveEvaluator`**: `evaluate_recursive_rules` (the public entry point and fixed-point loop) is unchanged. `evaluate_rule` (the private per-rule method) must be updated: it currently inspects raw `EdnValue` items in `rule.body` via `.as_vector()` / `.as_list()`. Since `Rule.body` changes to `Vec<WhereClause>`, `evaluate_rule` is updated to branch on `WhereClause::Pattern`, `WhereClause::RuleInvocation`, and — for mixed rules passed to it by `StratifiedEvaluator` — `WhereClause::Not` is handled outside `RecursiveEvaluator` (see §5). `RecursiveEvaluator` receives only positive-only rules; `WhereClause::Not` in a body passed to `evaluate_rule` returns an error.
 
 ### Data flow
 
@@ -98,15 +99,24 @@ This removes ad-hoc EDN inspection from `RecursiveEvaluator.evaluate_rule` and m
 
 ```rust
 impl WhereClause {
-    /// Collect all rule invocation predicate names, recursively (including inside Not bodies)
+    /// Collect all rule invocation predicate names, recursively (including inside Not bodies).
+    /// Used by stratification graph construction and executor routing.
     pub fn rule_invocations(&self) -> Vec<&str>;
 
-    /// True if this is a Not clause containing at least one RuleInvocation
+    /// True if this clause contains at least one RuleInvocation anywhere (including inside Not).
     pub fn has_negated_invocation(&self) -> bool;
 }
 ```
 
-Update `DatalogQuery::uses_rules()` and `get_rule_invocations()` to recurse into `Not` bodies.
+**Update `DatalogQuery::uses_rules()` and `get_rule_invocations()`:**
+
+`uses_rules()` must recurse into `Not` bodies so that queries like `(not (blocked ?x))` — where the rule invocation is nested inside `Not` — route to `execute_query_with_rules` (and thus `StratifiedEvaluator`) rather than the simple `execute_query` path.
+
+`get_rule_invocations()` must likewise collect predicates from inside `Not` bodies, so that `StratifiedEvaluator` evaluates the negated predicate (`blocked`) as part of a lower stratum.
+
+Routing rule (in `execute_query`):
+- If any `WhereClause` in `where_clauses` (recursively including inside `Not`) contains a `RuleInvocation` → route to `execute_query_with_rules`
+- Otherwise → handle `Not` as a pure post-filter in `execute_query` (no stratification needed)
 
 ---
 
@@ -125,7 +135,18 @@ When parsing a `(list ...)` in a `:where` clause or rule body, check the first t
 
 **Safety validation at parse time:**
 
-After parsing a `not` body, verify that every variable appearing in it is also mentioned in at least one non-`not` clause in the same scope (query `:where` or rule body). If not:
+After parsing a `not` body, verify that every variable appearing in it is also mentioned in at least one non-`not` clause in the same scope. For queries, "same scope" means the `:where` clause list. For rule bodies, "same scope" includes both the non-`Not` body clauses **and** the rule head arguments — a variable bound by the head is considered bound for safety purposes:
+
+```datalog
+;; SAFE: ?x is bound by the head and by [?x :applied true]
+(rule [(eligible ?x) [?x :applied true] (not (rejected ?x))])
+
+;; UNSAFE: ?y appears only in (not ...), never in a non-not clause or head
+(rule [(eligible ?x) [?x :applied true] (not [?y :banned true])])
+;;                                             ^^ error: ?y is unbound
+```
+
+If the safety check fails:
 
 ```
 error: variable ?y in (not ...) is not bound by any outer clause
@@ -165,19 +186,22 @@ impl DependencyGraph {
 **Graph construction** — for each rule `head_pred :- body`:
 
 - `WhereClause::RuleInvocation { predicate, .. }` → positive edge: `head_pred →⁺ predicate`
-- `WhereClause::Not(clauses)` → for each `RuleInvocation` inside: negative edge: `head_pred →⁻ predicate`
+- `WhereClause::Not(clauses)` → for each `RuleInvocation` inside (one level only — see note below): negative edge: `head_pred →⁻ predicate`
 - `WhereClause::Pattern` → no edges (base facts carry no predicate dependency)
+
+**Note on nested `Not`**: `WhereClause::Not(Vec<WhereClause>)` could syntactically contain another `Not`. The parser **must reject nested `not`** with a parse error (`(not ...) cannot appear inside another (not ...)`). This keeps the stratification algorithm simple (one level of negation per clause) and avoids semantically ambiguous double-negation.
 
 **Stratification algorithm:**
 
-Initialise all predicates at stratum 0. Propagate constraints:
+Initialise all predicates at stratum 0. Propagate constraints iteratively:
 
-- Positive edge `P →⁺ Q`: `stratum[P] >= stratum[Q]`
-- Negative edge `P →⁻ Q`: `stratum[P] > stratum[Q]` (strictly greater)
+- Positive edge `P →⁺ Q`: if `stratum[Q] > stratum[P]`, set `stratum[P] = stratum[Q]`
+- Negative edge `P →⁻ Q`: if `stratum[Q] >= stratum[P]`, set `stratum[P] = stratum[Q] + 1`
 
-Iterate until stable. A negative cycle is detected when any predicate's stratum would need to exceed `n_predicates` (the theoretical maximum for a stratifiable program):
+Repeat until no stratum changes. A negative cycle is detected when any predicate's stratum reaches `>= N` (where `N` = number of distinct predicates in the graph) — because a stratifiable program with N predicates needs at most N-1 strata (0-indexed):
 
 ```rust
+// Cycle detection: if stratum[P] >= n_predicates after propagation → unstratifiable
 // Error message format:
 "unstratifiable: predicate 'p' is involved in a negative cycle through 'q'"
 ```
@@ -219,9 +243,9 @@ impl StratifiedEvaluator {
 4. For each stratum in ascending order:
    a. Collect rules for predicates in this stratum.
    b. Partition rules into **positive-only** (no `WhereClause::Not` in body) and **mixed** (contain `Not`).
-   c. Run `RecursiveEvaluator::new(accumulated.clone(), rules, max_iterations).evaluate_recursive_rules(&stratum_predicates)` for positive-only rules.
-   d. For mixed rules: match all non-`Not` body clauses via `PatternMatcher` against `accumulated` to get candidate bindings; apply not-filter (see below); instantiate rule head from surviving bindings; add to derived facts.
-   e. Merge new derived facts into `accumulated`.
+   c. Run `RecursiveEvaluator::new(accumulated.clone(), rules_subset, max_iterations).evaluate_recursive_rules(&stratum_predicates)` for positive-only rules. The returned `FactStorage` contains all base + newly derived facts for this stratum.
+   d. For mixed rules: match all non-`Not` body clauses via `PatternMatcher` against `accumulated` to get candidate bindings; apply not-filter (see below); instantiate rule head from surviving bindings; collect derived facts.
+   e. **Merge new derived facts into `accumulated`**: call `get_asserted_facts()` on the `FactStorage` returned from step (c), then for each fact not already in `accumulated`, call `accumulated.load_fact(fact)`. For mixed-rule derived facts (step d), call `accumulated.transact(...)` for each newly derived head fact. No dedicated `merge` API is needed.
 5. Return `accumulated`.
 
 **`not` filter (step 4d):**
