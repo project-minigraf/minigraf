@@ -143,6 +143,16 @@ impl PageCache {
         inner.order.retain(|&id| id != page_id);
     }
 
+    /// Invalidate all cached pages with `page_id >= from_page`.
+    ///
+    /// Used during save to discard stale B+tree index pages before
+    /// overwriting them with new fact and index pages.
+    pub fn invalidate_from(&self, from_page: u64) {
+        let mut inner = self.inner.write().unwrap();
+        inner.entries.retain(|&id, _| id < from_page);
+        inner.order.retain(|&id| id < from_page);
+    }
+
     /// Number of pages currently cached (for testing).
     pub fn cached_page_count(&self) -> usize {
         self.inner.read().unwrap().entries.len()

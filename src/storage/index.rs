@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// `slot_index` is always `0` in Phase 6.1 (one fact per page).
 /// In Phase 6.2 it identifies the record within a packed page.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct FactRef {
     pub page_id: u64,
     pub slot_index: u16,
