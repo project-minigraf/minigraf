@@ -365,7 +365,7 @@ tx.commit()?;  // or tx.rollback()?
 
 **Goal**: Make queries fast
 
-**Status**: 🚧 Phases 6.1, 6.2, 6.4a, and 6.4b complete; 6.5 next
+**Status**: ✅ Completed (March 2026)
 
 **Priority**: 🟡 High
 
@@ -1258,4 +1258,4 @@ See [GitHub Issues](https://github.com/adityamukho/minigraf/issues) for specific
 
 ---
 
-Last Updated: Phase 6.4b Complete - Benchmarks + Light Publish Prep (March 2026)
+Last Updated: Phase 6.5 Complete - On-disk B+tree indexes, file format v6, concurrent scan per-page locking (March 2026)
