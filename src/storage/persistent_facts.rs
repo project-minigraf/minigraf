@@ -249,7 +249,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             // Re-pack to derive correct FactRefs (same deterministic layout as on disk)
             let (_, real_refs) = pack_facts(&all_facts, 1)?;
             let indexes = reindex_with_refs(&all_facts, &real_refs);
-            self.storage.replace_indexes(indexes);
+            self.storage.replace_pending_indexes(indexes);
             // Fix up tx_counter from actual facts
             let max_tx = all_facts.iter().map(|f| f.tx_count).max().unwrap_or(0);
             self.storage.restore_tx_counter_from(max_tx);
@@ -264,7 +264,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             let avet = read_avet_index(header.avet_root_page, &*backend)?;
             let vaet = read_vaet_index(header.vaet_root_page, &*backend)?;
             drop(backend);
-            self.storage.replace_indexes(Indexes {
+            self.storage.replace_pending_indexes(Indexes {
                 eavt,
                 aevt,
                 avet,
@@ -402,10 +402,10 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
 
         // Rebuild indexes with correct FactRefs from packing
         let new_indexes = reindex_with_refs(&facts, &fact_refs);
-        self.storage.replace_indexes(new_indexes);
+        self.storage.replace_pending_indexes(new_indexes);
 
         // Write index B+tree pages
-        let indexes = self.storage.indexes_snapshot();
+        let indexes = self.storage.pending_indexes_snapshot();
         let index_start = start_page_id + num_fact_pages;
         let (eavt_root, aevt_root, avet_root, vaet_root) = write_all_indexes(
             &indexes.eavt,
@@ -447,7 +447,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             });
         self.storage.set_committed_reader(loader);
         // Clear pending facts — they are now committed on disk
-        self.storage.clear_pending_facts();
+        self.storage.post_checkpoint_clear();
 
         Ok(())
     }
