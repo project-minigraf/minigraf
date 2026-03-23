@@ -2,6 +2,7 @@
 ///
 /// Rules are indexed by their predicate name (head). Multiple rules can share
 /// the same predicate (for defining base cases and recursive cases separately).
+use crate::query::datalog::stratification::DependencyGraph;
 use crate::query::datalog::types::Rule;
 use anyhow::Result;
 use std::collections::HashMap;
@@ -58,7 +59,20 @@ impl RuleRegistry {
     /// registry.register_rule("reachable".to_string(), recursive_rule)?;
     /// ```
     pub fn register_rule(&mut self, predicate: String, rule: Rule) -> Result<()> {
-        self.rules.entry(predicate).or_default().push(rule);
+        self.rules.entry(predicate.clone()).or_default().push(rule);
+
+        // Check that the updated registry is still stratifiable
+        let graph = DependencyGraph::from_rules(self);
+        if let Err(e) = graph.stratify() {
+            // Roll back: remove the rule we just added
+            let rules = self.rules.get_mut(&predicate).unwrap();
+            rules.pop();
+            if rules.is_empty() {
+                self.rules.remove(&predicate);
+            }
+            return Err(e);
+        }
+
         Ok(())
     }
 
@@ -270,6 +284,62 @@ mod tests {
         assert_eq!(registry.predicate_count(), 0);
         assert!(!registry.has_rule("reachable"));
         assert!(!registry.has_rule("ancestor"));
+    }
+
+    #[test]
+    fn test_register_rule_rejects_negative_cycle() {
+        use crate::query::datalog::types::{Pattern, WhereClause};
+        let mut registry = RuleRegistry::new();
+
+        // p :- not(q)   — p negatively depends on q
+        let rule_p = Rule {
+            head: vec![EdnValue::Symbol("p".to_string()), EdnValue::Symbol("?x".to_string())],
+            body: vec![WhereClause::Not(vec![WhereClause::RuleInvocation {
+                predicate: "q".to_string(),
+                args: vec![EdnValue::Symbol("?x".to_string())],
+            }])],
+        };
+        // q :- not(p)   — q negatively depends on p  →  cycle
+        let rule_q = Rule {
+            head: vec![EdnValue::Symbol("q".to_string()), EdnValue::Symbol("?x".to_string())],
+            body: vec![WhereClause::Not(vec![WhereClause::RuleInvocation {
+                predicate: "p".to_string(),
+                args: vec![EdnValue::Symbol("?x".to_string())],
+            }])],
+        };
+
+        // First rule registers fine
+        registry.register_rule("p".to_string(), rule_p).unwrap();
+        // Second rule creates a negative cycle → must fail
+        let result = registry.register_rule("q".to_string(), rule_q);
+        assert!(result.is_err(), "Expected stratification error for negative cycle");
+        // The registry should NOT have stored the second rule
+        assert!(registry.get_rules("q").is_empty());
+    }
+
+    #[test]
+    fn test_register_rule_accepts_stratifiable_negation() {
+        use crate::query::datalog::types::{Pattern, WhereClause};
+        let mut registry = RuleRegistry::new();
+
+        // eligible :- not(rejected) — OK, one-way negative dependency
+        let rule_eligible = Rule {
+            head: vec![EdnValue::Symbol("eligible".to_string()), EdnValue::Symbol("?x".to_string())],
+            body: vec![
+                WhereClause::Pattern(Pattern::new(
+                    EdnValue::Symbol("?x".to_string()),
+                    EdnValue::Keyword(":applied".to_string()),
+                    EdnValue::Boolean(true),
+                )),
+                WhereClause::Not(vec![WhereClause::RuleInvocation {
+                    predicate: "rejected".to_string(),
+                    args: vec![EdnValue::Symbol("?x".to_string())],
+                }]),
+            ],
+        };
+
+        registry.register_rule("eligible".to_string(), rule_eligible).unwrap();
+        assert_eq!(registry.get_rules("eligible").len(), 1);
     }
 
     #[test]
