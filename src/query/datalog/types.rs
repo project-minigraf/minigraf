@@ -308,12 +308,12 @@ impl DatalogQuery {
 pub struct Rule {
     /// The rule head: (predicate ?var1 ?var2)
     pub head: Vec<EdnValue>,
-    /// The rule body: list of patterns and rule invocations
-    pub body: Vec<EdnValue>,
+    /// The rule body: typed where clauses (patterns, rule invocations, not)
+    pub body: Vec<WhereClause>,
 }
 
 impl Rule {
-    pub fn new(head: Vec<EdnValue>, body: Vec<EdnValue>) -> Self {
+    pub fn new(head: Vec<EdnValue>, body: Vec<WhereClause>) -> Self {
         Rule { head, body }
     }
 }

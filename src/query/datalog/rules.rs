@@ -116,17 +116,18 @@ mod tests {
 
     fn create_test_rule(predicate: &str) -> Rule {
         // Create a simple test rule: (predicate ?x ?y) <- [?x :connected ?y]
+        use crate::query::datalog::types::{Pattern, WhereClause};
         Rule {
             head: vec![
                 EdnValue::Symbol(predicate.to_string()),
                 EdnValue::Symbol("?x".to_string()),
                 EdnValue::Symbol("?y".to_string()),
             ],
-            body: vec![EdnValue::Vector(vec![
+            body: vec![WhereClause::Pattern(Pattern::new(
                 EdnValue::Symbol("?x".to_string()),
                 EdnValue::Keyword(":connected".to_string()),
                 EdnValue::Symbol("?y".to_string()),
-            ])],
+            ))],
         }
     }
 

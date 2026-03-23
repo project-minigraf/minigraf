@@ -704,8 +704,29 @@ fn parse_rule(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
         _ => return Err("Rule head must start with a symbol (predicate name)".to_string()),
     }
 
-    // Rest of body_vec are patterns or rule invocations
-    let body_clauses = body_vec[1..].to_vec();
+    // Rest of body_vec are patterns or rule invocations (not `not` yet — that comes in Task 5)
+    let mut body_clauses: Vec<WhereClause> = Vec::new();
+    for item in &body_vec[1..] {
+        if let Some(vec) = item.as_vector() {
+            let pattern = Pattern::from_edn(vec)?;
+            body_clauses.push(WhereClause::Pattern(pattern));
+        } else if let Some(list) = item.as_list() {
+            if list.is_empty() {
+                return Err("Rule invocation cannot be empty".to_string());
+            }
+            let predicate = match &list[0] {
+                EdnValue::Symbol(s) => s.clone(),
+                _ => return Err("Rule invocation must start with predicate name (symbol)".to_string()),
+            };
+            let args = list[1..].to_vec();
+            body_clauses.push(WhereClause::RuleInvocation { predicate, args });
+        } else {
+            return Err(format!(
+                "Rule body clause must be a vector (pattern) or list (rule invocation), got {:?}",
+                item
+            ));
+        }
+    }
 
     if body_clauses.is_empty() {
         return Err("Rule must have at least one pattern or rule invocation in body".to_string());
@@ -894,11 +915,11 @@ mod tests {
                 // Verify body has two clauses: pattern + rule invocation
                 assert_eq!(rule.body.len(), 2);
 
-                // First clause should be a vector (pattern)
-                assert!(rule.body[0].as_vector().is_some());
+                // First clause should be a Pattern
+                assert!(matches!(rule.body[0], WhereClause::Pattern(_)));
 
-                // Second clause should be a list (rule invocation)
-                assert!(rule.body[1].as_list().is_some());
+                // Second clause should be a RuleInvocation
+                assert!(matches!(rule.body[1], WhereClause::RuleInvocation { .. }));
             }
             _ => panic!("Expected Rule command"),
         }
@@ -914,8 +935,8 @@ mod tests {
                 assert_eq!(rule.head[0], EdnValue::Symbol("ancestor".to_string()));
                 // Two patterns in body
                 assert_eq!(rule.body.len(), 2);
-                assert!(rule.body[0].as_vector().is_some());
-                assert!(rule.body[1].as_vector().is_some());
+                assert!(matches!(rule.body[0], WhereClause::Pattern(_)));
+                assert!(matches!(rule.body[1], WhereClause::Pattern(_)));
             }
             _ => panic!("Expected Rule command"),
         }
