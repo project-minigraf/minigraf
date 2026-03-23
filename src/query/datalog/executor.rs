@@ -1,8 +1,8 @@
-use super::evaluator::RecursiveEvaluator;
+use super::evaluator::StratifiedEvaluator;
 use super::matcher::{PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::optimizer;
 use super::rules::RuleRegistry;
-use super::types::{DatalogCommand, DatalogQuery, EdnValue, Pattern, Rule, Transaction, ValidAt};
+use super::types::{DatalogCommand, DatalogQuery, EdnValue, Pattern, Rule, Transaction, ValidAt, WhereClause};
 use crate::graph::FactStorage;
 use crate::graph::types::{Fact, TransactOptions, TxId, Value, tx_id_now};
 use crate::storage::index::Indexes;
@@ -172,7 +172,7 @@ impl DatalogExecutor {
 
         // Apply temporal filters before pattern matching
         let filtered_storage = self.filter_facts_for_query(&query)?;
-        let matcher = PatternMatcher::new(filtered_storage);
+        let matcher = PatternMatcher::new(filtered_storage.clone()); // keep filtered_storage for not-filter
         let patterns = query.get_patterns();
 
         // Plan patterns: assign index hints and reorder by selectivity.
@@ -187,9 +187,48 @@ impl DatalogExecutor {
                 .collect::<Vec<_>>(),
         );
 
+        // Apply not-filter for WhereClause::Not clauses (no rules involved — pure post-filter)
+        let not_clauses: Vec<&Vec<WhereClause>> = query
+            .where_clauses
+            .iter()
+            .filter_map(|c| match c {
+                WhereClause::Not(inner) => Some(inner),
+                _ => None,
+            })
+            .collect();
+
+        let filtered_bindings: Vec<_> = if not_clauses.is_empty() {
+            bindings
+        } else {
+            let not_storage = filtered_storage.clone();
+            bindings
+                .into_iter()
+                .filter(|binding| {
+                    for not_body in &not_clauses {
+                        let substituted: Vec<Pattern> = not_body
+                            .iter()
+                            .filter_map(|c| match c {
+                                WhereClause::Pattern(p) => Some(
+                                    crate::query::datalog::evaluator::substitute_pattern(
+                                        p, binding,
+                                    ),
+                                ),
+                                _ => None,
+                            })
+                            .collect();
+                        let m = PatternMatcher::new(not_storage.clone());
+                        if !m.match_patterns(&substituted).is_empty() {
+                            return false; // not condition violated
+                        }
+                    }
+                    true
+                })
+                .collect()
+        };
+
         // Extract requested variables from bindings
         let mut results = Vec::new();
-        for binding in bindings {
+        for binding in filtered_bindings {
             let mut row = Vec::new();
             for var in &query.find {
                 if let Some(value) = binding.get(var) {
@@ -223,14 +262,14 @@ impl DatalogExecutor {
         // Apply temporal filters before evaluating recursive rules
         let filtered_storage = self.filter_facts_for_query(&query)?;
 
-        // Create evaluator and derive all facts for these predicates
-        let evaluator = RecursiveEvaluator::new(
+        // Create StratifiedEvaluator — handles negation, stratification, and positive-only rules
+        let evaluator = StratifiedEvaluator::new(
             filtered_storage,
             self.rules.clone(),
             1000, // max iterations
         );
 
-        let derived_storage = evaluator.evaluate_recursive_rules(&predicates)?;
+        let derived_storage = evaluator.evaluate(&predicates)?;
 
         // Convert rule invocations to patterns
         // (reachable ?x ?y) becomes [?x :reachable ?y]
@@ -980,6 +1019,55 @@ mod tests {
                 assert_eq!(vars, vec!["?name"]);
                 assert_eq!(results.len(), 1);
                 assert_eq!(results[0][0], Value::String("Charlie".to_string()));
+            }
+            _ => panic!("Expected QueryResults"),
+        }
+    }
+
+    #[test]
+    fn test_execute_query_not_as_pure_filter() {
+        // Query: [:find ?e :where [?e :applied true] (not [?e :rejected true])]
+        // No rule invocations — pure not-filter path in execute_query.
+        use crate::query::datalog::types::WhereClause;
+        let storage = FactStorage::new();
+        let alice = uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+        let bob   = uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap();
+        // alice: applied + rejected
+        storage.transact(
+            vec![
+                (alice, ":applied".to_string(), Value::Boolean(true)),
+                (alice, ":rejected".to_string(), Value::Boolean(true)),
+            ],
+            None,
+        ).unwrap();
+        // bob: applied only
+        storage.transact(
+            vec![(bob, ":applied".to_string(), Value::Boolean(true))],
+            None,
+        ).unwrap();
+
+        let query = DatalogQuery::new(
+            vec!["?e".to_string()],
+            vec![
+                WhereClause::Pattern(Pattern::new(
+                    EdnValue::Symbol("?e".to_string()),
+                    EdnValue::Keyword(":applied".to_string()),
+                    EdnValue::Boolean(true),
+                )),
+                WhereClause::Not(vec![WhereClause::Pattern(Pattern::new(
+                    EdnValue::Symbol("?e".to_string()),
+                    EdnValue::Keyword(":rejected".to_string()),
+                    EdnValue::Boolean(true),
+                ))]),
+            ],
+        );
+
+        let executor = DatalogExecutor::new(storage);
+        let result = executor.execute(crate::query::datalog::types::DatalogCommand::Query(query)).unwrap();
+
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(results.len(), 1, "only bob should pass (alice is rejected)");
             }
             _ => panic!("Expected QueryResults"),
         }
