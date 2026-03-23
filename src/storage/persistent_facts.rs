@@ -417,7 +417,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         )?;
 
         let total_pages = backend.page_count()?;
-        let mut header = FileHeader::new(); // version=5, fact_page_format=PACKED
+        let mut header = FileHeader::new(); // version=6, fact_page_format=PACKED
         header.page_count = total_pages;
         header.node_count = facts.len() as u64;
         header.last_checkpointed_tx_count = self.storage.current_tx_count();
@@ -915,12 +915,12 @@ mod tests {
             pfs.save().unwrap();
         }
 
-        // Verify: header says v5, fact_page_format = PACKED
+        // Verify: header says v6, fact_page_format = PACKED
         {
             let backend = FileBackend::open(&path).unwrap();
             let header_bytes = backend.read_page(0).unwrap();
             let header = crate::storage::FileHeader::from_bytes(&header_bytes).unwrap();
-            assert_eq!(header.version, 5);
+            assert_eq!(header.version, 6);
             assert_eq!(
                 header.fact_page_format,
                 crate::storage::FACT_PAGE_FORMAT_PACKED
@@ -1018,7 +1018,7 @@ mod tests {
             backend.sync().unwrap();
         }
 
-        // Open — should auto-migrate to v5
+        // Open — should auto-migrate to v6
         {
             let pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
             assert_eq!(
@@ -1028,12 +1028,12 @@ mod tests {
             );
         }
 
-        // Verify file is now v5
+        // Verify file is now v6
         {
             let backend = FileBackend::open(&path).unwrap();
             let header_bytes = backend.read_page(0).unwrap();
             let header = crate::storage::FileHeader::from_bytes(&header_bytes).unwrap();
-            assert_eq!(header.version, 5, "file must be upgraded to v5");
+            assert_eq!(header.version, 6, "file must be upgraded to v6");
             assert_eq!(header.fact_page_format, FACT_PAGE_FORMAT_PACKED);
         }
     }
