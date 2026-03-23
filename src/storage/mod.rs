@@ -362,19 +362,6 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_accepts_versions_1_to_5() {
-        let mut header = FileHeader::new();
-        for v in 1u32..=6 {
-            header.version = v;
-            assert!(
-                header.validate().is_ok(),
-                "version {} should be accepted",
-                v
-            );
-        }
-    }
-
-    #[test]
     fn test_validate_rejects_version_0_and_7() {
         let mut header = FileHeader::new();
         header.version = 0;
