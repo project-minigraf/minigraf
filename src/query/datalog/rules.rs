@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn test_register_rule_rejects_negative_cycle() {
-        use crate::query::datalog::types::{Pattern, WhereClause};
+        use crate::query::datalog::types::WhereClause;
         let mut registry = RuleRegistry::new();
 
         // p :- not(q)   — p negatively depends on q
