@@ -643,13 +643,27 @@ mod tests {
         };
 
         let registry = Arc::new(RwLock::new(RuleRegistry::new()));
+        // Register the rule so evaluate_recursive_rules actually calls evaluate_rule
+        registry
+            .write()
+            .unwrap()
+            .register_rule("reachable".to_string(), rule)
+            .unwrap();
+
         let evaluator = RecursiveEvaluator::new(storage, registry, 10);
-        // evaluate_rule is private; test via evaluate_recursive_rules
         let derived = evaluator
             .evaluate_recursive_rules(&["reachable".to_string()])
             .unwrap();
-        // rule was not registered so result is just base facts, but the key check is no panic
-        let _ = derived;
+
+        // The rule [?x :connected ?y] -> (reachable ?x ?y) should derive a :reachable fact
+        // entity 1 has :connected ref(entity 2), so (reachable entity1 entity2) should be derived
+        let entity1 =
+            uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+        let reachable_facts = derived.get_facts_by_entity(&entity1).unwrap();
+        assert!(
+            reachable_facts.iter().any(|f| f.attribute == ":reachable"),
+            "Expected :reachable fact to be derived from :connected base fact"
+        );
     }
 
     #[test]
