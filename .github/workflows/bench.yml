@@ -66,6 +66,7 @@ jobs:
               repo: context.repo.repo,
               labels: 'performance',
               state: 'open',
+              per_page: 100,
             });
             const existing = openIssues.filter(i =>
               i.title.startsWith('Benchmark regression -')
