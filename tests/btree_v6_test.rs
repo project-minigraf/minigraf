@@ -33,7 +33,7 @@ fn test_v6_roundtrip_basic() {
     let result = db.execute("(query [:find ?v :where [:e0 :val ?v]])").unwrap();
     if let minigraf::QueryResult::QueryResults { results, .. } = result {
         assert!(
-            results.iter().any(|row| row.iter().any(|v| v.to_string().contains('0'))),
+            results.iter().any(|row| row.iter().any(|v| format!("{:?}", v).contains('0'))),
             "entity e0 should have val 0"
         );
     } else {
@@ -51,7 +51,7 @@ fn test_v6_range_scan_across_leaves() {
     let result = db.execute("(query [:find ?v :where [:e100 :val ?v]])").unwrap();
     if let minigraf::QueryResult::QueryResults { results, .. } = result {
         assert!(
-            results.iter().any(|row| row.iter().any(|v| v.to_string().contains("100"))),
+            results.iter().any(|row| row.iter().any(|v| format!("{:?}", v).contains("100"))),
             "entity e100 should have val 100"
         );
     } else {
@@ -73,7 +73,7 @@ fn test_v6_pending_plus_committed_merge() {
     let r0 = db.execute("(query [:find ?v :where [:e0 :val ?v]])").unwrap();
     if let minigraf::QueryResult::QueryResults { results, .. } = r0 {
         assert!(
-            results.iter().any(|row| row.iter().any(|v| v.to_string().contains('0'))),
+            results.iter().any(|row| row.iter().any(|v| format!("{:?}", v).contains('0'))),
             "committed e0 missing"
         );
     } else {
@@ -83,7 +83,7 @@ fn test_v6_pending_plus_committed_merge() {
     let r10 = db.execute("(query [:find ?v :where [:e10 :val ?v]])").unwrap();
     if let minigraf::QueryResult::QueryResults { results, .. } = r10 {
         assert!(
-            results.iter().any(|row| row.iter().any(|v| v.to_string().contains("10"))),
+            results.iter().any(|row| row.iter().any(|v| format!("{:?}", v).contains("10"))),
             "pending e10 missing"
         );
     } else {
