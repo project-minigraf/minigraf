@@ -564,7 +564,12 @@ impl StratifiedEvaluator {
                     );
                     drop(registry);
                     if let Ok(fact) = temp_eval.instantiate_head_public(&rule.head, &binding) {
-                        let _ = accumulated.load_fact(fact);
+                        // Use transact (not load_fact) so derived facts get a proper
+                        // tx_id and incremented tx_count, matching spec step (d).
+                        let _ = accumulated.transact(
+                            vec![(fact.entity, fact.attribute, fact.value)],
+                            None,
+                        );
                     }
                 }
             }
