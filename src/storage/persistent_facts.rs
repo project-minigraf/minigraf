@@ -98,7 +98,7 @@ struct FactV1 {
 ///
 /// Current implementation uses a simple "load all, save all" approach:
 /// - On open: Deserialize all facts into memory (FactStorage)
-/// - All operations: Work on in-memory Vec<Fact>
+/// - All operations: Work on in-memory `Vec<Fact>`
 /// - On save: Serialize all facts back to disk
 ///
 /// **Trade-offs:**
@@ -700,6 +700,7 @@ fn compute_page_checksum(
 ///
 /// Returns `(eavt_entries, aevt_entries, avet_entries, vaet_entries)`, each sorted by their
 /// respective key type. The `vaet` vec only contains entries whose value is a `Value::Ref`.
+#[allow(clippy::type_complexity)]
 fn build_sorted_index_entries(
     facts: &[Fact],
     refs: &[FactRef],

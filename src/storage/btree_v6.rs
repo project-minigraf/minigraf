@@ -439,10 +439,10 @@ where
             if k < *start {
                 continue;
             }
-            if let Some(e) = end {
-                if k >= *e {
-                    break 'outer;
-                }
+            if let Some(e) = end
+                && k >= *e
+            {
+                break 'outer;
             }
             result.push(fr);
         }
