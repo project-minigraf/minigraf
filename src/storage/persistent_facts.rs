@@ -43,7 +43,7 @@ fn compute_index_checksum(facts: &[Fact]) -> u32 {
 /// CommittedFactReader backed by a PageCache + shared backend.
 ///
 /// Resolves FactRefs to Fact objects by reading packed pages from the backend
-/// through the page cache. Used after loading a v5 file so that indexes can
+/// through the page cache. Used after loading (or migrating) a v5/v6 file so that indexes can
 /// resolve committed facts without keeping the entire fact list in memory.
 struct CommittedFactLoaderImpl<B: StorageBackend> {
     backend: Arc<Mutex<B>>,
@@ -258,43 +258,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             let (_, real_refs) = pack_facts(&all_facts, 1)?;
 
             // Build sorted index entries
-            let mut eavt_entries: Vec<(EavtKey, FactRef)> = all_facts.iter().zip(real_refs.iter())
-                .map(|(f, &fr)| (EavtKey {
-                    entity: f.entity, attribute: f.attribute.clone(),
-                    valid_from: f.valid_from, valid_to: f.valid_to, tx_count: f.tx_count,
-                }, fr))
-                .collect();
-            eavt_entries.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-
-            let mut aevt_entries: Vec<(AevtKey, FactRef)> = all_facts.iter().zip(real_refs.iter())
-                .map(|(f, &fr)| (AevtKey {
-                    attribute: f.attribute.clone(), entity: f.entity,
-                    valid_from: f.valid_from, valid_to: f.valid_to, tx_count: f.tx_count,
-                }, fr))
-                .collect();
-            aevt_entries.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-
-            let mut avet_entries: Vec<(AvetKey, FactRef)> = all_facts.iter().zip(real_refs.iter())
-                .map(|(f, &fr)| (AvetKey {
-                    attribute: f.attribute.clone(), value_bytes: encode_value(&f.value),
-                    valid_from: f.valid_from, valid_to: f.valid_to,
-                    entity: f.entity, tx_count: f.tx_count,
-                }, fr))
-                .collect();
-            avet_entries.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-
-            let mut vaet_entries: Vec<(VaetKey, FactRef)> = all_facts.iter().zip(real_refs.iter())
-                .filter_map(|(f, &fr)| {
-                    if let crate::graph::types::Value::Ref(target) = &f.value {
-                        Some((VaetKey {
-                            ref_target: *target, attribute: f.attribute.clone(),
-                            valid_from: f.valid_from, valid_to: f.valid_to,
-                            source_entity: f.entity, tx_count: f.tx_count,
-                        }, fr))
-                    } else { None }
-                })
-                .collect();
-            vaet_entries.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+            let (eavt_entries, aevt_entries, avet_entries, vaet_entries) =
+                build_sorted_index_entries(&all_facts, &real_refs);
 
             // Fix up tx_counter from actual facts
             let max_tx = all_facts.iter().map(|f| f.tx_count).max().unwrap_or(0);
@@ -568,8 +533,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let new_fact_start = 1 + old_fact_page_count;
 
         let curr_header = match backend.read_page(0) {
-            Ok(bytes) => FileHeader::from_bytes(&bytes).unwrap_or_else(|_| FileHeader::new()),
-            Err(_) => FileHeader::new(), // first save — no header page yet
+            Ok(bytes) => FileHeader::from_bytes(&bytes)?,
+            Err(_) => FileHeader::new(), // fresh database: page 0 not yet written
         };
 
         // Stream committed B+tree entries BEFORE writing new pages that may overlap
@@ -600,43 +565,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let checksum = compute_page_checksum(&*backend, 1, new_total_fact_pages)?;
 
         // ── Step C: build sorted index entries for pending facts ────────────────
-        let mut pending_eavt: Vec<(EavtKey, FactRef)> = pending_facts.iter().zip(new_fact_refs.iter())
-            .map(|(f, &fr)| (EavtKey {
-                entity: f.entity, attribute: f.attribute.clone(),
-                valid_from: f.valid_from, valid_to: f.valid_to, tx_count: f.tx_count,
-            }, fr))
-            .collect();
-        pending_eavt.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-
-        let mut pending_aevt: Vec<(AevtKey, FactRef)> = pending_facts.iter().zip(new_fact_refs.iter())
-            .map(|(f, &fr)| (AevtKey {
-                attribute: f.attribute.clone(), entity: f.entity,
-                valid_from: f.valid_from, valid_to: f.valid_to, tx_count: f.tx_count,
-            }, fr))
-            .collect();
-        pending_aevt.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-
-        let mut pending_avet: Vec<(AvetKey, FactRef)> = pending_facts.iter().zip(new_fact_refs.iter())
-            .map(|(f, &fr)| (AvetKey {
-                attribute: f.attribute.clone(), value_bytes: encode_value(&f.value),
-                valid_from: f.valid_from, valid_to: f.valid_to,
-                entity: f.entity, tx_count: f.tx_count,
-            }, fr))
-            .collect();
-        pending_avet.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-
-        let mut pending_vaet: Vec<(VaetKey, FactRef)> = pending_facts.iter().zip(new_fact_refs.iter())
-            .filter_map(|(f, &fr)| {
-                if let crate::graph::types::Value::Ref(target) = &f.value {
-                    Some((VaetKey {
-                        ref_target: *target, attribute: f.attribute.clone(),
-                        valid_from: f.valid_from, valid_to: f.valid_to,
-                        source_entity: f.entity, tx_count: f.tx_count,
-                    }, fr))
-                } else { None }
-            })
-            .collect();
-        pending_vaet.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+        let (pending_eavt, pending_aevt, pending_avet, pending_vaet) =
+            build_sorted_index_entries(&pending_facts, &new_fact_refs);
 
         // ── Step D: merge committed + pending entries, build new B+trees ─────────
         let index_start = 1 + new_total_fact_pages;
@@ -764,6 +694,100 @@ fn compute_page_checksum(
         hasher.update(&page);
     }
     Ok(hasher.finalize())
+}
+
+/// Build sorted index entry vecs for a slice of facts and their corresponding FactRefs.
+///
+/// Returns `(eavt_entries, aevt_entries, avet_entries, vaet_entries)`, each sorted by their
+/// respective key type. The `vaet` vec only contains entries whose value is a `Value::Ref`.
+fn build_sorted_index_entries(
+    facts: &[Fact],
+    refs: &[FactRef],
+) -> (
+    Vec<(EavtKey, FactRef)>,
+    Vec<(AevtKey, FactRef)>,
+    Vec<(AvetKey, FactRef)>,
+    Vec<(VaetKey, FactRef)>,
+) {
+    let mut eavt: Vec<(EavtKey, FactRef)> = facts
+        .iter()
+        .zip(refs.iter())
+        .map(|(f, &fr)| {
+            (
+                EavtKey {
+                    entity: f.entity,
+                    attribute: f.attribute.clone(),
+                    valid_from: f.valid_from,
+                    valid_to: f.valid_to,
+                    tx_count: f.tx_count,
+                },
+                fr,
+            )
+        })
+        .collect();
+    eavt.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+
+    let mut aevt: Vec<(AevtKey, FactRef)> = facts
+        .iter()
+        .zip(refs.iter())
+        .map(|(f, &fr)| {
+            (
+                AevtKey {
+                    attribute: f.attribute.clone(),
+                    entity: f.entity,
+                    valid_from: f.valid_from,
+                    valid_to: f.valid_to,
+                    tx_count: f.tx_count,
+                },
+                fr,
+            )
+        })
+        .collect();
+    aevt.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+
+    let mut avet: Vec<(AvetKey, FactRef)> = facts
+        .iter()
+        .zip(refs.iter())
+        .map(|(f, &fr)| {
+            (
+                AvetKey {
+                    attribute: f.attribute.clone(),
+                    value_bytes: encode_value(&f.value),
+                    valid_from: f.valid_from,
+                    valid_to: f.valid_to,
+                    entity: f.entity,
+                    tx_count: f.tx_count,
+                },
+                fr,
+            )
+        })
+        .collect();
+    avet.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+
+    let mut vaet: Vec<(VaetKey, FactRef)> = facts
+        .iter()
+        .zip(refs.iter())
+        .filter_map(|(f, &fr)| {
+            if let crate::graph::types::Value::Ref(target) = &f.value {
+                Some((
+                    VaetKey {
+                        ref_target: *target,
+                        attribute: f.attribute.clone(),
+                        valid_from: f.valid_from,
+                        valid_to: f.valid_to,
+                        source_entity: f.entity,
+                        tx_count: f.tx_count,
+                    },
+                    fr,
+                ))
+            } else {
+                None
+            }
+        })
+        .collect();
+    vaet.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+
+    (eavt, aevt, avet, vaet)
 }
 
 #[cfg(test)]
