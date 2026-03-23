@@ -130,7 +130,7 @@ No other files change.
 
 ## Testing
 
-### New Unit Test: `test_concurrent_range_scans_no_deadlock`
+### New Unit Test: `test_concurrent_range_scans_correctness`
 
 Location: `src/storage/btree_v6.rs` (inside `#[cfg(test)]` block)
 
