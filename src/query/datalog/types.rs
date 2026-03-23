@@ -262,20 +262,17 @@ impl DatalogQuery {
             .collect()
     }
 
-    /// Helper: Get all rule invocations from where clauses, including inside Not bodies
-    pub fn get_rule_invocations(&self) -> Vec<(String, Vec<EdnValue>)> {
+    /// Recursively collect all (predicate, args) pairs from rule invocations,
+    /// including those nested inside Not bodies at any depth.
+    fn collect_rule_invocations_recursive(clauses: &[WhereClause]) -> Vec<(String, Vec<EdnValue>)> {
         let mut result = Vec::new();
-        for clause in &self.where_clauses {
+        for clause in clauses {
             match clause {
                 WhereClause::RuleInvocation { predicate, args } => {
                     result.push((predicate.clone(), args.clone()));
                 }
                 WhereClause::Not(inner) => {
-                    for inner_clause in inner {
-                        if let WhereClause::RuleInvocation { predicate, args } = inner_clause {
-                            result.push((predicate.clone(), args.clone()));
-                        }
-                    }
+                    result.extend(Self::collect_rule_invocations_recursive(inner));
                 }
                 WhereClause::Pattern(_) => {}
             }
@@ -283,15 +280,16 @@ impl DatalogQuery {
         result
     }
 
-    /// Check if this query uses any rules (including inside Not bodies)
+    /// Helper: Get all rule invocations from where clauses, including inside Not bodies
+    pub fn get_rule_invocations(&self) -> Vec<(String, Vec<EdnValue>)> {
+        Self::collect_rule_invocations_recursive(&self.where_clauses)
+    }
+
+    /// Check if this query uses any rules (including inside Not bodies at any depth)
     pub fn uses_rules(&self) -> bool {
-        self.where_clauses.iter().any(|clause| match clause {
-            WhereClause::RuleInvocation { .. } => true,
-            WhereClause::Not(inner) => inner
-                .iter()
-                .any(|c| matches!(c, WhereClause::RuleInvocation { .. })),
-            WhereClause::Pattern(_) => false,
-        })
+        self.where_clauses
+            .iter()
+            .any(|c| !c.rule_invocations().is_empty())
     }
 }
 
