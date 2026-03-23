@@ -270,24 +270,28 @@ pub trait CommittedFactReader: Send + Sync {
 /// after load/migration/checkpoint so query methods can merge committed and
 /// pending index entries without loading the full index into RAM.
 pub trait CommittedIndexReader: Send + Sync {
+    /// Returns all committed EAVT entries in `[start, end)`. `end: None` means unbounded upper.
     fn range_scan_eavt(
         &self,
         start: &crate::storage::index::EavtKey,
         end: Option<&crate::storage::index::EavtKey>,
     ) -> anyhow::Result<Vec<crate::storage::index::FactRef>>;
 
+    /// Returns all committed AEVT entries in `[start, end)`. `end: None` means unbounded upper.
     fn range_scan_aevt(
         &self,
         start: &crate::storage::index::AevtKey,
         end: Option<&crate::storage::index::AevtKey>,
     ) -> anyhow::Result<Vec<crate::storage::index::FactRef>>;
 
+    /// Returns all committed AVET entries in `[start, end)`. `end: None` means unbounded upper.
     fn range_scan_avet(
         &self,
         start: &crate::storage::index::AvetKey,
         end: Option<&crate::storage::index::AvetKey>,
     ) -> anyhow::Result<Vec<crate::storage::index::FactRef>>;
 
+    /// Returns all committed VAET entries in `[start, end)`. `end: None` means unbounded upper.
     fn range_scan_vaet(
         &self,
         start: &crate::storage::index::VaetKey,
@@ -300,7 +304,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_file_header_serialization_v5() {
+    fn test_file_header_serialization_v6() {
         let header = FileHeader::new();
         let bytes = header.to_bytes();
         assert_eq!(bytes.len(), 80);
@@ -316,7 +320,7 @@ mod tests {
     }
 
     #[test]
-    fn test_file_header_roundtrip_v4() {
+    fn test_file_header_roundtrip_v6() {
         let mut header = FileHeader::new();
         header.eavt_root_page = 10;
         header.aevt_root_page = 20;

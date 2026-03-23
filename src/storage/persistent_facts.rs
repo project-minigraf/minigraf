@@ -730,7 +730,7 @@ mod tests {
         let backend = pfs.into_backend();
         let header_page = backend.read_page(0).unwrap();
         let header = crate::storage::FileHeader::from_bytes(&header_page).unwrap();
-        assert_eq!(header.version, FORMAT_VERSION); // must be 4
+        assert_eq!(header.version, FORMAT_VERSION);
         assert_eq!(header.last_checkpointed_tx_count, 1); // one transact call
     }
 
