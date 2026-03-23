@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::collections::HashMap;
 
 use crate::query::datalog::rules::RuleRegistry;
-use crate::query::datalog::types::{EdnValue, Pattern, Rule, WhereClause};
+use crate::query::datalog::types::WhereClause;
 
 // ── Structs ───────────────────────────────────────────────────────────────────
 
@@ -93,6 +93,7 @@ impl DependencyGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::query::datalog::types::{EdnValue, Pattern, Rule};
 
     fn make_registry_with_rules(rules: Vec<(&str, Rule)>) -> RuleRegistry {
         let mut registry = RuleRegistry::new();
