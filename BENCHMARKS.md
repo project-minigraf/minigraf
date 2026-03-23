@@ -1,5 +1,7 @@
 # Minigraf Benchmarks
 
+**Live benchmark history**: [bencher.dev/console/projects/minigraf/perf](https://bencher.dev/console/projects/minigraf/perf)
+
 Benchmark results for Minigraf v0.8.0 (Phase 6.5 — on-disk B+tree indexes, file format v6).
 
 ## Environment
