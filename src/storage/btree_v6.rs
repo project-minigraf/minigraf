@@ -440,7 +440,7 @@ where
                 continue;
             }
             if let Some(e) = end {
-                if k > *e {
+                if k >= *e {
                     break 'outer;
                 }
             }
@@ -465,10 +465,10 @@ use std::sync::Mutex;
 pub struct OnDiskIndexReader<B: StorageBackend + 'static> {
     backend: Arc<Mutex<B>>,
     cache: Arc<PageCache>,
-    pub eavt_root: u64,
-    pub aevt_root: u64,
-    pub avet_root: u64,
-    pub vaet_root: u64,
+    pub(crate) eavt_root: u64,
+    pub(crate) aevt_root: u64,
+    pub(crate) avet_root: u64,
+    pub(crate) vaet_root: u64,
 }
 
 impl<B: StorageBackend + 'static> OnDiskIndexReader<B> {
@@ -631,9 +631,11 @@ mod tests {
         let root_page = cache.get_or_load(root, &backend).unwrap();
         let pages_written = next_free - 1;
         assert!(pages_written >= 2, "300 entries must need multiple pages; got {}", pages_written);
-        assert!(
-            root_page[0] == PAGE_TYPE_LEAF || root_page[0] == PAGE_TYPE_INTERNAL,
-            "root page type 0x{:02x} is not leaf or internal", root_page[0]
+        // With 300 entries at 75% fill factor (~3072 bytes/leaf), we always get multiple
+        // leaf pages, so the root MUST be an internal node.
+        assert_eq!(
+            root_page[0], PAGE_TYPE_INTERNAL,
+            "300 entries should produce an internal node root, got page type 0x{:02x}", root_page[0]
         );
     }
 
