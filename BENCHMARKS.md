@@ -25,7 +25,7 @@ Criterion measures this by running each operation repeatedly and computing a med
 
 1. **Warm-up** (3 s): the operation is run and discarded to let CPU caches and OS buffers reach steady state.
 2. **Measurement**: Criterion collects N *samples*. For each sample it runs the operation M times (chosen automatically so the sample takes long enough to time accurately), records the total elapsed time, then divides by M to get a single per-call estimate.
-3. **Reported time**: the **median** across all N samples. The median is used rather than the mean because it is robust to occasional slow outliers (GC pauses, OS scheduler jitter, etc.).
+3. **Reported time**: the **median** across all N samples. The median is used rather than the mean because it is robust to occasional slow outliers (OS scheduler jitter, CPU frequency scaling, etc.).
 
 Sample counts vary by benchmark speed:
 - Fast operations (inserts, ~µs): **100 samples** (default) — thousands of iterations per sample.
