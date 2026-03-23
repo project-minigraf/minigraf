@@ -158,7 +158,7 @@ fn test_v6_explicit_checkpoint_clears_wal() {
     // Queries still return correct results
     let result = db.execute("(query [:find ?v :where [:e0 :val ?v]])").unwrap();
     let s = format!("{:?}", result);
-    assert!(s.contains('0'), "query must work after checkpoint; got: {}", s);
+    assert!(s.contains('0'), "query must work after checkpoint");
 }
 
 #[test]
