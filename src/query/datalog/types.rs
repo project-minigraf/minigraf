@@ -204,9 +204,9 @@ impl WhereClause {
     /// True if this clause is a Not or NotJoin containing at least one RuleInvocation.
     pub fn has_negated_invocation(&self) -> bool {
         match self {
-            WhereClause::Not(clauses) | WhereClause::NotJoin { clauses, .. } => {
-                clauses.iter().any(|c| matches!(c, WhereClause::RuleInvocation { .. }))
-            }
+            WhereClause::Not(clauses) | WhereClause::NotJoin { clauses, .. } => clauses
+                .iter()
+                .any(|c| matches!(c, WhereClause::RuleInvocation { .. })),
             _ => false,
         }
     }

@@ -1401,10 +1401,7 @@ mod tests {
             vec![
                 WhereClause::RuleInvocation {
                     predicate: "reachable".to_string(),
-                    args: vec![
-                        EdnValue::Uuid(root),
-                        EdnValue::Symbol("?y".to_string()),
-                    ],
+                    args: vec![EdnValue::Uuid(root), EdnValue::Symbol("?y".to_string())],
                 },
                 WhereClause::NotJoin {
                     join_vars: vec!["?y".to_string()],

@@ -714,7 +714,7 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
                 _ => {
                     return Err(
                         "(not-join) first argument must be a vector of join variables".to_string(),
-                    )
+                    );
                 }
             };
             let join_vars: Vec<String> = join_var_vec
@@ -788,7 +788,7 @@ fn outer_vars_from_clause(clause: &WhereClause) -> Vec<String> {
                 })
             })
             .collect(),
-        WhereClause::Not(_) => vec![],        // not counted as "outer"
+        WhereClause::Not(_) => vec![], // not counted as "outer"
         WhereClause::NotJoin { .. } => vec![], // not counted as "outer"
     }
 }
@@ -1592,8 +1592,10 @@ mod tests {
         );
         if let Ok(DatalogCommand::Rule(rule)) = result {
             assert_eq!(rule.body.len(), 2);
-            assert!(matches!(&rule.body[1], WhereClause::NotJoin { join_vars, .. }
-                if join_vars == &["?x".to_string()]));
+            assert!(
+                matches!(&rule.body[1], WhereClause::NotJoin { join_vars, .. }
+                if join_vars == &["?x".to_string()])
+            );
         }
     }
 
