@@ -545,13 +545,11 @@ mod tests {
 
     #[test]
     fn test_where_clause_not_variant_exists() {
-        let not_clause = WhereClause::Not(vec![
-            WhereClause::Pattern(Pattern::new(
-                EdnValue::Symbol("?x".to_string()),
-                EdnValue::Keyword(":banned".to_string()),
-                EdnValue::Boolean(true),
-            )),
-        ]);
+        let not_clause = WhereClause::Not(vec![WhereClause::Pattern(Pattern::new(
+            EdnValue::Symbol("?x".to_string()),
+            EdnValue::Keyword(":banned".to_string()),
+            EdnValue::Boolean(true),
+        ))]);
         assert!(matches!(not_clause, WhereClause::Not(_)));
     }
 
@@ -625,12 +623,10 @@ mod tests {
     fn test_get_rule_invocations_recurses_into_not_body() {
         let query = DatalogQuery::new(
             vec!["?person".to_string()],
-            vec![
-                WhereClause::Not(vec![WhereClause::RuleInvocation {
-                    predicate: "blocked".to_string(),
-                    args: vec![EdnValue::Symbol("?person".to_string())],
-                }]),
-            ],
+            vec![WhereClause::Not(vec![WhereClause::RuleInvocation {
+                predicate: "blocked".to_string(),
+                args: vec![EdnValue::Symbol("?person".to_string())],
+            }])],
         );
         let invocations = query.get_rule_invocations();
         assert_eq!(invocations.len(), 1);

@@ -293,7 +293,10 @@ mod tests {
 
         // p :- not(q)   — p negatively depends on q
         let rule_p = Rule {
-            head: vec![EdnValue::Symbol("p".to_string()), EdnValue::Symbol("?x".to_string())],
+            head: vec![
+                EdnValue::Symbol("p".to_string()),
+                EdnValue::Symbol("?x".to_string()),
+            ],
             body: vec![WhereClause::Not(vec![WhereClause::RuleInvocation {
                 predicate: "q".to_string(),
                 args: vec![EdnValue::Symbol("?x".to_string())],
@@ -301,7 +304,10 @@ mod tests {
         };
         // q :- not(p)   — q negatively depends on p  →  cycle
         let rule_q = Rule {
-            head: vec![EdnValue::Symbol("q".to_string()), EdnValue::Symbol("?x".to_string())],
+            head: vec![
+                EdnValue::Symbol("q".to_string()),
+                EdnValue::Symbol("?x".to_string()),
+            ],
             body: vec![WhereClause::Not(vec![WhereClause::RuleInvocation {
                 predicate: "p".to_string(),
                 args: vec![EdnValue::Symbol("?x".to_string())],
@@ -312,7 +318,10 @@ mod tests {
         registry.register_rule("p".to_string(), rule_p).unwrap();
         // Second rule creates a negative cycle → must fail
         let result = registry.register_rule("q".to_string(), rule_q);
-        assert!(result.is_err(), "Expected stratification error for negative cycle");
+        assert!(
+            result.is_err(),
+            "Expected stratification error for negative cycle"
+        );
         // The registry should NOT have stored the second rule
         assert!(registry.get_rules("q").is_empty());
     }
@@ -324,7 +333,10 @@ mod tests {
 
         // eligible :- not(rejected) — OK, one-way negative dependency
         let rule_eligible = Rule {
-            head: vec![EdnValue::Symbol("eligible".to_string()), EdnValue::Symbol("?x".to_string())],
+            head: vec![
+                EdnValue::Symbol("eligible".to_string()),
+                EdnValue::Symbol("?x".to_string()),
+            ],
             body: vec![
                 WhereClause::Pattern(Pattern::new(
                     EdnValue::Symbol("?x".to_string()),
@@ -338,7 +350,9 @@ mod tests {
             ],
         };
 
-        registry.register_rule("eligible".to_string(), rule_eligible).unwrap();
+        registry
+            .register_rule("eligible".to_string(), rule_eligible)
+            .unwrap();
         assert_eq!(registry.get_rules("eligible").len(), 1);
     }
 

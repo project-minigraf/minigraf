@@ -113,7 +113,10 @@ mod tests {
             predicate: dep_pred.to_string(),
             args: vec![EdnValue::Symbol("?x".to_string())],
         }];
-        (Box::leak(head_pred.to_string().into_boxed_str()), Rule { head, body })
+        (
+            Box::leak(head_pred.to_string().into_boxed_str()),
+            Rule { head, body },
+        )
     }
 
     fn negative_rule(head_pred: &str, dep_pred: &str) -> (&'static str, Rule) {
@@ -125,7 +128,10 @@ mod tests {
             predicate: dep_pred.to_string(),
             args: vec![EdnValue::Symbol("?x".to_string())],
         }])];
-        (Box::leak(head_pred.to_string().into_boxed_str()), Rule { head, body })
+        (
+            Box::leak(head_pred.to_string().into_boxed_str()),
+            Rule { head, body },
+        )
     }
 
     fn base_rule(head_pred: &str) -> (&'static str, Rule) {
@@ -138,7 +144,10 @@ mod tests {
             EdnValue::Keyword(":base".to_string()),
             EdnValue::Boolean(true),
         ))];
-        (Box::leak(head_pred.to_string().into_boxed_str()), Rule { head, body })
+        (
+            Box::leak(head_pred.to_string().into_boxed_str()),
+            Rule { head, body },
+        )
     }
 
     #[test]
@@ -184,10 +193,8 @@ mod tests {
     #[test]
     fn test_negative_cycle_returns_error() {
         // p →⁻ q, q →⁻ p
-        let registry = make_registry_with_rules(vec![
-            negative_rule("p", "q"),
-            negative_rule("q", "p"),
-        ]);
+        let registry =
+            make_registry_with_rules(vec![negative_rule("p", "q"), negative_rule("q", "p")]);
         let graph = DependencyGraph::from_rules(&registry);
         assert!(graph.stratify().is_err());
     }
@@ -202,8 +209,7 @@ mod tests {
 
     #[test]
     fn test_disconnected_predicates_stratum_zero() {
-        let registry =
-            make_registry_with_rules(vec![base_rule("foo"), base_rule("bar")]);
+        let registry = make_registry_with_rules(vec![base_rule("foo"), base_rule("bar")]);
         let graph = DependencyGraph::from_rules(&registry);
         let strata = graph.stratify().unwrap();
         assert_eq!(*strata.get("foo").unwrap_or(&0), 0);

@@ -648,8 +648,10 @@ mod tests {
         let entries1 = btree_entries((0u128..5).map(|n| make_eavt(n, ":a", n as u64 + 1))).unwrap();
         let (_, next1) = build_btree(entries1.into_iter(), &mut backend, &cache, 1).unwrap();
 
-        let entries2 = btree_entries((5u128..10).map(|n| make_eavt(n, ":b", n as u64 + 1))).unwrap();
-        let (root2, next2) = build_btree(entries2.into_iter(), &mut backend, &cache, next1).unwrap();
+        let entries2 =
+            btree_entries((5u128..10).map(|n| make_eavt(n, ":b", n as u64 + 1))).unwrap();
+        let (root2, next2) =
+            build_btree(entries2.into_iter(), &mut backend, &cache, next1).unwrap();
 
         assert!(root2 >= next1, "second tree must not overlap with first");
         assert!(next2 > root2);
@@ -660,7 +662,8 @@ mod tests {
         // All written pages must be retrievable from cache without backend read
         let mut backend = MemoryBackend::new();
         let cache = PageCache::new(256);
-        let entries = btree_entries((0u128..100).map(|n| make_eavt(n, ":x", n as u64 + 1))).unwrap();
+        let entries =
+            btree_entries((0u128..100).map(|n| make_eavt(n, ":x", n as u64 + 1))).unwrap();
         let (root, next_free) = build_btree(entries.into_iter(), &mut backend, &cache, 1).unwrap();
 
         let empty_backend = MemoryBackend::new();
@@ -675,7 +678,10 @@ mod tests {
         // With many entries, leaf pages must not exceed PAGE_SIZE
         let mut backend = MemoryBackend::new();
         let cache = PageCache::new(256);
-        let entries = btree_entries((0u128..200).map(|n| make_eavt(n, ":verylongattributename", n as u64 + 1))).unwrap();
+        let entries = btree_entries(
+            (0u128..200).map(|n| make_eavt(n, ":verylongattributename", n as u64 + 1)),
+        )
+        .unwrap();
         let (root, next_free) = build_btree(entries.into_iter(), &mut backend, &cache, 1).unwrap();
 
         for page_id in root..next_free {

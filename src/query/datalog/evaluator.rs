@@ -232,7 +232,11 @@ impl RecursiveEvaluator {
 
         let predicate = match &list[0] {
             EdnValue::Symbol(s) => s.clone(),
-            _ => return Err(anyhow!("Rule invocation must start with predicate name (symbol)")),
+            _ => {
+                return Err(anyhow!(
+                    "Rule invocation must start with predicate name (symbol)"
+                ));
+            }
         };
 
         match list.len() {
@@ -269,7 +273,9 @@ impl RecursiveEvaluator {
     /// Result: Fact(alice_uuid, ":reachable", Ref(bob_uuid))
     fn instantiate_head(&self, head: &[EdnValue], binding: &Bindings) -> Result<Fact> {
         if head.len() < 2 {
-            return Err(anyhow!("Rule head must have at least 2 elements: (predicate ?arg1)"));
+            return Err(anyhow!(
+                "Rule head must have at least 2 elements: (predicate ?arg1)"
+            ));
         }
 
         // head[0] is predicate name
@@ -317,11 +323,7 @@ impl RecursiveEvaluator {
     }
 
     /// Public version of instantiate_head for use by StratifiedEvaluator.
-    pub fn instantiate_head_public(
-        &self,
-        head: &[EdnValue],
-        binding: &Bindings,
-    ) -> Result<Fact> {
+    pub fn instantiate_head_public(&self, head: &[EdnValue], binding: &Bindings) -> Result<Fact> {
         self.instantiate_head(head, binding)
     }
 
@@ -472,11 +474,8 @@ impl StratifiedEvaluator {
                     sub_registry.register_rule_unchecked(pred.clone(), rule.clone());
                 }
                 let sub_rules = Arc::new(RwLock::new(sub_registry));
-                let sub_eval = RecursiveEvaluator::new(
-                    accumulated.clone(),
-                    sub_rules,
-                    self.max_iterations,
-                );
+                let sub_eval =
+                    RecursiveEvaluator::new(accumulated.clone(), sub_rules, self.max_iterations);
                 let derived = sub_eval.evaluate_recursive_rules(&stratum_preds)?;
                 // Snapshot existing fact keys so we only load truly new (derived) facts
                 let existing: Vec<(uuid::Uuid, String, Value)> = accumulated
@@ -531,11 +530,8 @@ impl StratifiedEvaluator {
 
                 // Build temp_eval once per rule (outside the binding loop);
                 // instantiate_head_public only uses storage, not the registry.
-                let temp_eval = RecursiveEvaluator::new(
-                    accumulated.clone(),
-                    Arc::clone(&self.rules),
-                    1,
-                );
+                let temp_eval =
+                    RecursiveEvaluator::new(accumulated.clone(), Arc::clone(&self.rules), 1);
 
                 'binding: for binding in candidates {
                     for not_body in &not_clauses {
@@ -577,10 +573,8 @@ impl StratifiedEvaluator {
                     if let Ok(fact) = temp_eval.instantiate_head_public(&rule.head, &binding) {
                         // Use transact (not load_fact) so derived facts get a proper
                         // tx_id and incremented tx_count, matching spec step (d).
-                        let _ = accumulated.transact(
-                            vec![(fact.entity, fact.attribute, fact.value)],
-                            None,
-                        );
+                        let _ = accumulated
+                            .transact(vec![(fact.entity, fact.attribute, fact.value)], None);
                     }
                 }
             }
@@ -904,8 +898,7 @@ mod tests {
 
         // The rule [?x :connected ?y] -> (reachable ?x ?y) should derive a :reachable fact
         // entity 1 has :connected ref(entity 2), so (reachable entity1 entity2) should be derived
-        let entity1 =
-            uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+        let entity1 = uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
         let reachable_facts = derived.get_facts_by_entity(&entity1).unwrap();
         assert!(
             reachable_facts.iter().any(|f| f.attribute == ":reachable"),
@@ -971,11 +964,7 @@ mod tests {
             let storage = FactStorage::new();
             storage
                 .transact(
-                    vec![(
-                        alice(),
-                        ":connected".to_string(),
-                        Value::Ref(bob()),
-                    )],
+                    vec![(alice(), ":connected".to_string(), Value::Ref(bob()))],
                     None,
                 )
                 .unwrap();
@@ -1115,9 +1104,21 @@ mod tests {
             storage
                 .transact(
                     vec![
-                        (alice(), ":status".to_string(), Value::String("active".to_string())),
-                        (bob(), ":status".to_string(), Value::String("active".to_string())),
-                        (bob(), ":role".to_string(), Value::String("admin".to_string())),
+                        (
+                            alice(),
+                            ":status".to_string(),
+                            Value::String("active".to_string()),
+                        ),
+                        (
+                            bob(),
+                            ":status".to_string(),
+                            Value::String("active".to_string()),
+                        ),
+                        (
+                            bob(),
+                            ":role".to_string(),
+                            Value::String("admin".to_string()),
+                        ),
                     ],
                     None,
                 )

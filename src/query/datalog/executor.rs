@@ -2,7 +2,9 @@ use super::evaluator::StratifiedEvaluator;
 use super::matcher::{PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::optimizer;
 use super::rules::RuleRegistry;
-use super::types::{DatalogCommand, DatalogQuery, EdnValue, Pattern, Rule, Transaction, ValidAt, WhereClause};
+use super::types::{
+    DatalogCommand, DatalogQuery, EdnValue, Pattern, Rule, Transaction, ValidAt, WhereClause,
+};
 use crate::graph::FactStorage;
 use crate::graph::types::{Fact, TransactOptions, TxId, Value, tx_id_now};
 use crate::storage::index::Indexes;
@@ -208,11 +210,11 @@ impl DatalogExecutor {
                         let substituted: Vec<Pattern> = not_body
                             .iter()
                             .filter_map(|c| match c {
-                                WhereClause::Pattern(p) => Some(
-                                    crate::query::datalog::evaluator::substitute_pattern(
+                                WhereClause::Pattern(p) => {
+                                    Some(crate::query::datalog::evaluator::substitute_pattern(
                                         p, binding,
-                                    ),
-                                ),
+                                    ))
+                                }
                                 _ => None,
                             })
                             .collect();
@@ -333,11 +335,11 @@ impl DatalogExecutor {
                         let substituted: Vec<Pattern> = not_body
                             .iter()
                             .filter_map(|c| match c {
-                                WhereClause::Pattern(p) => Some(
-                                    crate::query::datalog::evaluator::substitute_pattern(
+                                WhereClause::Pattern(p) => {
+                                    Some(crate::query::datalog::evaluator::substitute_pattern(
                                         p, binding,
-                                    ),
-                                ),
+                                    ))
+                                }
                                 WhereClause::RuleInvocation { predicate, args } => {
                                     // Convert rule invocation to a pattern against derived storage.
                                     // Apply the current binding to any variables in args first.
@@ -346,15 +348,22 @@ impl DatalogExecutor {
                                         .map(|a| match a {
                                             EdnValue::Symbol(s) if s.starts_with('?') => {
                                                 // Look up the bound value and convert back to EdnValue
-                                                binding.get(s).map(|v| match v {
-                                                    Value::Keyword(k) => EdnValue::Keyword(k.clone()),
-                                                    Value::String(s) => EdnValue::String(s.clone()),
-                                                    Value::Integer(i) => EdnValue::Integer(*i),
-                                                    Value::Float(f) => EdnValue::Float(*f),
-                                                    Value::Boolean(b) => EdnValue::Boolean(*b),
-                                                    Value::Ref(u) => EdnValue::Uuid(*u),
-                                                    Value::Null => EdnValue::Nil,
-                                                }).unwrap_or_else(|| a.clone())
+                                                binding
+                                                    .get(s)
+                                                    .map(|v| match v {
+                                                        Value::Keyword(k) => {
+                                                            EdnValue::Keyword(k.clone())
+                                                        }
+                                                        Value::String(s) => {
+                                                            EdnValue::String(s.clone())
+                                                        }
+                                                        Value::Integer(i) => EdnValue::Integer(*i),
+                                                        Value::Float(f) => EdnValue::Float(*f),
+                                                        Value::Boolean(b) => EdnValue::Boolean(*b),
+                                                        Value::Ref(u) => EdnValue::Uuid(*u),
+                                                        Value::Null => EdnValue::Nil,
+                                                    })
+                                                    .unwrap_or_else(|| a.clone())
                                             }
                                             other => other.clone(),
                                         })
@@ -1123,20 +1132,24 @@ mod tests {
         use crate::query::datalog::types::WhereClause;
         let storage = FactStorage::new();
         let alice = uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
-        let bob   = uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap();
+        let bob = uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap();
         // alice: applied + rejected
-        storage.transact(
-            vec![
-                (alice, ":applied".to_string(), Value::Boolean(true)),
-                (alice, ":rejected".to_string(), Value::Boolean(true)),
-            ],
-            None,
-        ).unwrap();
+        storage
+            .transact(
+                vec![
+                    (alice, ":applied".to_string(), Value::Boolean(true)),
+                    (alice, ":rejected".to_string(), Value::Boolean(true)),
+                ],
+                None,
+            )
+            .unwrap();
         // bob: applied only
-        storage.transact(
-            vec![(bob, ":applied".to_string(), Value::Boolean(true))],
-            None,
-        ).unwrap();
+        storage
+            .transact(
+                vec![(bob, ":applied".to_string(), Value::Boolean(true))],
+                None,
+            )
+            .unwrap();
 
         let query = DatalogQuery::new(
             vec!["?e".to_string()],
@@ -1155,7 +1168,9 @@ mod tests {
         );
 
         let executor = DatalogExecutor::new(storage);
-        let result = executor.execute(crate::query::datalog::types::DatalogCommand::Query(query)).unwrap();
+        let result = executor
+            .execute(crate::query::datalog::types::DatalogCommand::Query(query))
+            .unwrap();
 
         match result {
             QueryResult::QueryResults { results, .. } => {
@@ -1234,7 +1249,11 @@ mod tests {
 
         match result {
             QueryResult::QueryResults { results, .. } => {
-                assert_eq!(results.len(), 1, "c should be excluded (blocked), only b passes");
+                assert_eq!(
+                    results.len(),
+                    1,
+                    "c should be excluded (blocked), only b passes"
+                );
             }
             _ => panic!("Expected QueryResults"),
         }

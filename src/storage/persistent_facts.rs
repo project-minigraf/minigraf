@@ -628,8 +628,12 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         } else {
             btree_entries(pending_eavt.into_iter())?
         };
-        let (eavt_root, next1) =
-            build_btree(eavt_ser.into_iter(), &mut *backend, &self.page_cache, index_start)?;
+        let (eavt_root, next1) = build_btree(
+            eavt_ser.into_iter(),
+            &mut *backend,
+            &self.page_cache,
+            index_start,
+        )?;
 
         let aevt_ser = if !committed_aevt.is_empty() {
             btree_entries(merge_sorted_vecs(committed_aevt, pending_aevt))?

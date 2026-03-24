@@ -665,19 +665,14 @@ fn parse_retract(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
 
 /// Parse a list item (EDN List) appearing in a :where clause or rule body.
 /// Returns Err if the list is empty, has an unknown form, or contains nested `not`.
-fn parse_list_as_where_clause(
-    list: &[EdnValue],
-    allow_not: bool,
-) -> Result<WhereClause, String> {
+fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<WhereClause, String> {
     if list.is_empty() {
         return Err("Empty list in :where clause".to_string());
     }
     match &list[0] {
         EdnValue::Symbol(s) if s == "not" => {
             if !allow_not {
-                return Err(
-                    "(not ...) cannot appear inside another (not ...)".to_string(),
-                );
+                return Err("(not ...) cannot appear inside another (not ...)".to_string());
             }
             if list.len() < 2 {
                 return Err("(not) requires at least one clause".to_string());
@@ -747,10 +742,7 @@ fn outer_vars_from_clause(clause: &WhereClause) -> Vec<String> {
 /// Collect all variable names that appear inside a Not clause.
 fn vars_in_not(clause: &WhereClause) -> Vec<String> {
     match clause {
-        WhereClause::Not(inner) => inner
-            .iter()
-            .flat_map(outer_vars_from_clause)
-            .collect(),
+        WhereClause::Not(inner) => inner.iter().flat_map(outer_vars_from_clause).collect(),
         _ => vec![],
     }
 }
@@ -1305,7 +1297,8 @@ mod tests {
 
     #[test]
     fn test_parse_not_with_pattern_in_query() {
-        let input = r#"(query [:find ?person :where [?person :name ?n] (not [?person :banned true])])"#;
+        let input =
+            r#"(query [:find ?person :where [?person :name ?n] (not [?person :banned true])])"#;
         let cmd = parse_datalog_command(input).unwrap();
         match cmd {
             DatalogCommand::Query(q) => {
@@ -1328,14 +1321,12 @@ mod tests {
         let input = r#"(query [:find ?person :where [?person :name ?n] (not (blocked ?person))])"#;
         let cmd = parse_datalog_command(input).unwrap();
         match cmd {
-            DatalogCommand::Query(q) => {
-                match &q.where_clauses[1] {
-                    WhereClause::Not(inner) => {
-                        assert!(matches!(inner[0], WhereClause::RuleInvocation { .. }));
-                    }
-                    other => panic!("Expected Not, got {:?}", other),
+            DatalogCommand::Query(q) => match &q.where_clauses[1] {
+                WhereClause::Not(inner) => {
+                    assert!(matches!(inner[0], WhereClause::RuleInvocation { .. }));
                 }
-            }
+                other => panic!("Expected Not, got {:?}", other),
+            },
             _ => panic!("Expected Query"),
         }
     }
@@ -1398,16 +1389,14 @@ mod tests {
         let input = r#"(query [:find ?person :where [?person :name ?n] (not [?person :role :admin] [?person :active false])])"#;
         let cmd = parse_datalog_command(input).unwrap();
         match cmd {
-            DatalogCommand::Query(q) => {
-                match &q.where_clauses[1] {
-                    WhereClause::Not(inner) => {
-                        assert_eq!(inner.len(), 2);
-                        assert!(matches!(inner[0], WhereClause::Pattern(_)));
-                        assert!(matches!(inner[1], WhereClause::Pattern(_)));
-                    }
-                    other => panic!("Expected Not with 2 clauses, got {:?}", other),
+            DatalogCommand::Query(q) => match &q.where_clauses[1] {
+                WhereClause::Not(inner) => {
+                    assert_eq!(inner.len(), 2);
+                    assert!(matches!(inner[0], WhereClause::Pattern(_)));
+                    assert!(matches!(inner[1], WhereClause::Pattern(_)));
                 }
-            }
+                other => panic!("Expected Not with 2 clauses, got {:?}", other),
+            },
             _ => panic!("Expected Query"),
         }
     }
