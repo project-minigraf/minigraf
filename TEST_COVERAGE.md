@@ -490,7 +490,7 @@
 - ⏳ Temporal metadata pseudo-attributes (`:db/valid-from`, `:db/valid-to`, `:db/tx-count`) — Phase 7.7
 
 ### Known Limitations (Acceptable for Phase 3-7.1)
-- ⏳ Crash during checkpoint write (safe by construction — WAL not deleted until save succeeds; explicit test deferred)
+- ⏳ Crash during checkpoint write (safe by construction — WAL not deleted until save succeeds; explicit test deferred to Phase 7.5)
 - ⏳ Aggregation and disjunction — Phase 7.2 / 7.3
 - ⏳ Known `not-join` limitation: when a rule B positively invokes rule A and both are stratum 0, single-pass mixed-rule evaluation means B may not see A's derived facts unless rules are declared in dependency order
 

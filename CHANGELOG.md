@@ -56,7 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `README.md` Performance section now links to `BENCHMARKS.md` for full benchmark details
 - Phase badge and status text updated to reflect Phase 6.4b completion
-- crates.io publish deferred to Phase 6.5 (after file format v6 lands)
+- crates.io publish deferred to Phase 7.8 (API cleanup + publish prep; file format v6 now complete)
 
 ### Removed
 - Dead `clap` dependency from `[dependencies]` — `clap` was listed but never imported in library or binary code

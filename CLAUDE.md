@@ -686,16 +686,16 @@ This is a hobby project with a decades-long vision. When contributing:
 
 Before publishing the crate, verify all of the following:
 
-### Minimum Bar (do not publish before Phase 6.5)
+### Minimum Bar (do not publish before Phase 7.8)
 - [x] **Phase 6.4 benchmarks complete** — Criterion benchmarks at 10K/100K/1M facts documented in `BENCHMARKS.md`. ✅ Phase 6.4b complete.
 - [x] **Phase 6.5 complete** — On-disk B+tree indexes, file format v6. ✅ Complete.
 - [x] **Phase 7.1 complete** — Stratified negation (`not` / `not-join`), 407 tests passing. ✅ Complete.
-- [ ] **Edge case tests passing** — Oversized-fact error path exercised ✅; checkpoint-during-crash recovery not yet verified.
-- [ ] **Error-path coverage** — Still ~82%; storage and WAL error paths to be prioritised in Phase 7.
+- [ ] **Edge case tests passing** — Oversized-fact error path exercised ✅; checkpoint-during-crash recovery not yet verified. Phase 7.5.
+- [ ] **Error-path coverage** — Still ~82%; storage and WAL error paths to be prioritised. Phase 7.5 target: ≥90% branch coverage.
 - [x] **GitHub Discussions enabled** — ✅ Done in Phase 6.4b.
 
-### API Cleanup
-- [ ] **Narrow `lib.rs` exports** — Only expose what users need: `Minigraf`, `WriteTransaction`, and the query/result types. Internal types (`PersistentFactStorage`, `FileHeader`, `PAGE_SIZE`, `Repl`, `Wal`, etc.) should not be part of the public API.
+### API Cleanup (Phase 7.8)
+- [ ] **Narrow `lib.rs` exports** — Only expose what users need: `Minigraf`, `WriteTransaction`, and the query/result types. Internal types (`PersistentFactStorage`, `FileHeader`, `PAGE_SIZE`, `Repl`, `Wal`, etc.) should not be part of the public API. Phase 7.8.
 - [x] **Remove dead `clap` dependency** — ✅ Removed in Phase 6.4b. (`src/main.rs` uses `std::env::args()` directly.)
 
 ### Crate Metadata (`Cargo.toml`)
@@ -704,18 +704,18 @@ Before publishing the crate, verify all of the following:
 - [x] Add `categories` (`database-implementations`, `embedded`) — ✅ Done
 - [x] Add `readme = "README.md"` — ✅ Done
 - [x] Add `documentation` field (docs.rs URL or custom) — ✅ Done
-- [ ] Verify `description` is accurate and compelling
+- [ ] Verify `description` is accurate and compelling — Phase 7.8.
 
-### Documentation
-- [ ] All public API items have rustdoc comments with examples
-- [ ] `README.md` has a quick-start example that compiles and runs
-- [ ] `CHANGELOG.md` is up to date
+### Documentation (Phase 7.8)
+- [ ] All public API items have rustdoc comments with examples — Phase 7.8.
+- [ ] `README.md` has a quick-start example that compiles and runs — Phase 7.8.
+- [ ] `CHANGELOG.md` is up to date — Phase 7.8.
 
-### Quality Gates
-- [ ] `cargo test` passes on Linux, macOS, Windows
-- [ ] `cargo clippy -- -D warnings` passes
-- [ ] `cargo doc --no-deps` builds without warnings
-- [ ] No `unwrap()`/`expect()` in library code paths (only in tests/binary)
+### Quality Gates (Phase 7.8)
+- [ ] `cargo test` passes on Linux, macOS, Windows — Phase 7.8 (CI matrix).
+- [ ] `cargo clippy -- -D warnings` passes — Phase 7.8.
+- [ ] `cargo doc --no-deps` builds without warnings — Phase 7.8.
+- [ ] No `unwrap()`/`expect()` in library code paths (only in tests/binary) — Phase 7.8.
 
 ### Testing Conventions
 
@@ -741,8 +741,8 @@ assert_eq!(results.len(), 3, "expected 3 results");
 This applies to all inline `#[cfg(test)]` modules and all `tests/*.rs` integration test files.
 
 ### Versioning
-- [ ] Publish as `0.x` — no backwards-compat promise until v1.0.0
-- [ ] Stable API target is v1.0.0 (after Phase 8 cross-platform work)
+- [ ] Publish as `0.x` — no backwards-compat promise until v1.0.0. Phase 7.8.
+- [ ] Stable API target is v1.0.0 — after Phase 8 cross-platform work. Phase 8.
 
 ## Important Reminders
 

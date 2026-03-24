@@ -440,7 +440,7 @@ tx.commit()?;  // or tx.rollback()?
 - ✅ PR template — checklist enforcing test/clippy/fmt/philosophy checks (`.github/pull_request_template.md`)
 - ✅ `CODEOWNERS` — auto-assigns maintainer as reviewer on every PR
 
-**Note**: crates.io publish deferred to after Phase 7 API cleanup (narrowing `lib.rs` exports, rustdoc sweep, clippy, `unwrap()` audit). Phase 6.5 (file format v6) is complete — the format is now stable enough to publish.
+**Note**: crates.io publish deferred to Phase 7.8 (API cleanup + publish prep: narrowing `lib.rs` exports, rustdoc sweep, clippy, `unwrap()` audit). Phase 6.5 (file format v6) is complete — the format is now stable enough to publish.
 
 ---
 
@@ -844,9 +844,30 @@ Arithmetic filter predicates — `[(op ?var literal)]` — are required for Time
 - Bind `:db/tx-count` in `:where` and join it with a tx-time `:as-of` query
 - `:db/tx-id` binding and join across two entities written in the same transaction
 - Pseudo-attribute in entity or value position is rejected at parse time (parse error)
-- Pseudo-attribute without `:any-valid-time` emits a warning (or returns an empty result set with a diagnostic, TBD)
+- Pseudo-attribute without `:any-valid-time` returns an empty result set and surfaces a diagnostic error message (consistent with the "explicit errors over silent wrong answers" principle)
 
 **Estimated complexity**: 2-3 weeks
+
+---
+
+### 7.8 Publish Prep (crates.io)
+
+**Goal**: Make the public API clean, documented, and safe before publishing to crates.io.
+
+**Scope**:
+- Narrow `lib.rs` exports — expose only `Minigraf`, `WriteTransaction`, and the query/result types; mark internal types (`PersistentFactStorage`, `FileHeader`, `PAGE_SIZE`, `Repl`, `Wal`, etc.) as `pub(crate)` or remove re-exports
+- Rustdoc sweep — add doc comments with examples to all public API items
+- Clippy clean — `cargo clippy -- -D warnings` passes with zero warnings
+- `cargo doc --no-deps` builds without warnings
+- `unwrap()`/`expect()` audit — remove from all library code paths (tests and binary are exempt)
+- Verify `Cargo.toml` description is accurate and compelling
+- Confirm `README.md` quick-start example compiles and runs
+- `cargo test` verified on Linux, macOS, and Windows (CI matrix)
+- Publish `0.x` to crates.io
+
+**Note**: No breaking changes to the `execute()`/`query` string API. Internal visibility tightening only.
+
+**Estimated complexity**: 1-2 weeks
 
 ---
 
@@ -1180,7 +1201,7 @@ branched_db.execute("(transact [[:x :y 1]])")?;
 - ✅ File format v6 (80 bytes) with automatic v5 migration
 - ✅ `MutexStorageBackend<B>`: per-page locking for concurrent range scans; cache-warm pages lock-free
 - ✅ 331 tests passing; `tests/btree_v6_test.rs` covers B+tree correctness and concurrency
-- crates.io publish deferred to after Phase 7 API cleanup (narrowing lib.rs exports, rustdoc sweep)
+- crates.io publish deferred to Phase 7.8 (API cleanup + publish prep)
 
 ### v1.0.0 - 🎯 Phase 7 (Datalog Completeness)
 - Stratified negation (`not` / `not-join`)
