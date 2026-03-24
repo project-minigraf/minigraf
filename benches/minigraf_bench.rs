@@ -667,6 +667,97 @@ fn bench_concurrent_file(c: &mut Criterion) {
     }
 }
 
+// ── Negation: not / not-join ──────────────────────────────────────────────────
+
+fn bench_negation(c: &mut Criterion) {
+    // 100k excluded: returning O(N) results makes --test mode too slow even for one run.
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+
+    // not/scale: overhead of the `not` post-filter at different DB sizes.
+    // 10% of entities are excluded (`:banned true`).
+    // Query: all entities that have :val and are NOT banned.
+    {
+        let mut group = c.benchmark_group("negation/not_scale");
+        for &(label, n) in SCALES {
+            let excluded = n / 10;
+            let db = helpers::populate_with_not_exclusion(n, excluded);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute(
+                        "(query [:find ?e :where [?e :val ?v] (not [?e :banned true])])",
+                    )
+                    .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+
+    // not-join/scale: overhead of the `not-join` post-filter at different DB sizes.
+    // 10% of entities have a dep on a "bad" dependency.
+    // Query: all entities that have :val and have no :dep whose :status is :bad.
+    {
+        let mut group = c.benchmark_group("negation/not_join_scale");
+        for &(label, n) in SCALES {
+            let excluded = n / 10;
+            let db = helpers::populate_with_not_join_exclusion(n, excluded);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute(
+                        "(query [:find ?e :where [?e :val ?v] \
+                         (not-join [?e] [?e :dep ?d] [?d :status :bad])])",
+                    )
+                    .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+
+    // not/selectivity: fixed 10k DB, vary the excluded fraction.
+    // Shows how the exclusion ratio affects query latency.
+    {
+        let mut group = c.benchmark_group("negation/not_selectivity");
+        let n = 10_000;
+        for &(label, pct) in &[
+            ("excl_0pct", 0usize),
+            ("excl_25pct", 25),
+            ("excl_50pct", 50),
+            ("excl_75pct", 75),
+            ("excl_100pct", 100),
+        ] {
+            let excluded = n * pct / 100;
+            let db = helpers::populate_with_not_exclusion(n, excluded);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &excluded, |b, _| {
+                b.iter(|| {
+                    db.execute(
+                        "(query [:find ?e :where [?e :val ?v] (not [?e :banned true])])",
+                    )
+                    .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+
+    // not/rule_body: `not` inside a rule body (StratifiedEvaluator overhead).
+    // Rule: `(eligible ?x) :- [?x :val ?v] (not [?x :blocked true])`
+    // 10% of entities are blocked.
+    {
+        let mut group = c.benchmark_group("negation/not_rule_body");
+        for &(label, n) in &[("1k", 1_000usize), ("10k", 10_000)] {
+            let excluded = n / 10;
+            let db = helpers::populate_with_not_rule(n, excluded);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute("(query [:find ?e :where (eligible ?e)])").unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+}
+
 // ── Task 7: concurrent_btree_scan/ ────────────────────────────────────────
 // Measures throughput of simultaneous EAVT range scans against committed B+tree.
 // A near-linear drop in per-thread throughput as N grows signals backend mutex
@@ -731,6 +822,7 @@ criterion_group!(
     bench_query,
     bench_time_travel,
     bench_recursion,
+    bench_negation,
     bench_open,
     bench_checkpoint,
     bench_concurrent,

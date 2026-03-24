@@ -145,6 +145,88 @@ pub fn populate_for_join(n: usize) -> Arc<Minigraf> {
     Arc::new(db)
 }
 
+// ── Negation fixtures ─────────────────────────────────────────────────────────
+
+/// In-memory DB with `n` value facts plus `excluded` banned entities.
+///
+/// Schema:
+///   `:e{i} :val {i}` for i in 0..n
+///   `:e{i} :banned true` for i in 0..excluded  (first `excluded` entities are banned)
+///
+/// Used for `not` benchmarks:
+///   `(query [:find ?e :where [?e :val ?v] (not [?e :banned true])])`
+pub fn populate_with_not_exclusion(n: usize, excluded: usize) -> Arc<Minigraf> {
+    let db = Minigraf::in_memory().unwrap();
+    insert_val_facts(&db, n);
+    // Insert banned markers in batches of 100
+    for batch_start in (0..excluded).step_by(100) {
+        let batch_end = (batch_start + 100).min(excluded);
+        let mut cmd = String::from("(transact [");
+        for i in batch_start..batch_end {
+            cmd.push_str(&format!("[:e{} :banned true]", i));
+        }
+        cmd.push_str("])");
+        db.execute(&cmd).unwrap();
+    }
+    Arc::new(db)
+}
+
+/// In-memory DB with `n` value facts plus `excluded` entities that have a
+/// dependency on a "bad" dependency entity.
+///
+/// Schema:
+///   `:e{i} :val {i}` for i in 0..n
+///   `:e{i} :dep :d-bad` for i in 0..excluded
+///   `:d-bad :status :bad`
+///
+/// Used for `not-join` benchmarks:
+///   `(query [:find ?e :where [?e :val ?v] (not-join [?e] [?e :dep ?d] [?d :status :bad])])`
+pub fn populate_with_not_join_exclusion(n: usize, excluded: usize) -> Arc<Minigraf> {
+    let db = Minigraf::in_memory().unwrap();
+    insert_val_facts(&db, n);
+    // Mark the "bad" dependency
+    db.execute("(transact [[:d-bad :status :bad]])").unwrap();
+    // Insert dep edges in batches of 100
+    for batch_start in (0..excluded).step_by(100) {
+        let batch_end = (batch_start + 100).min(excluded);
+        let mut cmd = String::from("(transact [");
+        for i in batch_start..batch_end {
+            cmd.push_str(&format!("[:e{} :dep :d-bad]", i));
+        }
+        cmd.push_str("])");
+        db.execute(&cmd).unwrap();
+    }
+    Arc::new(db)
+}
+
+/// In-memory DB with `n` value facts, `excluded` blocked entities, and a
+/// `(eligible ?x)` rule that uses `not` to exclude blocked entities.
+///
+/// Schema:
+///   `:e{i} :val {i}` for i in 0..n
+///   `:e{i} :blocked true` for i in 0..excluded
+/// Rule:
+///   `(eligible ?x) :- [?x :val ?v] (not [?x :blocked true])`
+///
+/// Used for rule-body negation benchmarks:
+///   `(query [:find ?e :where (eligible ?e)])`
+pub fn populate_with_not_rule(n: usize, excluded: usize) -> Arc<Minigraf> {
+    let db = Minigraf::in_memory().unwrap();
+    insert_val_facts(&db, n);
+    for batch_start in (0..excluded).step_by(100) {
+        let batch_end = (batch_start + 100).min(excluded);
+        let mut cmd = String::from("(transact [");
+        for i in batch_start..batch_end {
+            cmd.push_str(&format!("[:e{} :blocked true]", i));
+        }
+        cmd.push_str("])");
+        db.execute(&cmd).unwrap();
+    }
+    db.execute("(rule [(eligible ?x) [?x :val ?v] (not [?x :blocked true])])")
+        .unwrap();
+    Arc::new(db)
+}
+
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 fn insert_val_facts(db: &Minigraf, n: usize) {
