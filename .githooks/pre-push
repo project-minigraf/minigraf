@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Pre-push sanity checks — mirrors the fast CI jobs (rustfmt, clippy, tests).
+# Runs in the repo root. Exit non-zero to abort the push.
+
+set -euo pipefail
+
+echo ">>> pre-push: cargo fmt --check"
+cargo fmt -- --check
+
+echo ">>> pre-push: cargo clippy"
+cargo clippy -- -D warnings
+
+echo ">>> pre-push: cargo test"
+cargo test --quiet
+
+echo ">>> pre-push: all checks passed"

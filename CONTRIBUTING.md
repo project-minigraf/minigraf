@@ -35,6 +35,9 @@ git clone https://github.com/adityamukho/minigraf.git
 cd minigraf
 cargo build
 
+# Activate the pre-push hook (runs fmt, clippy, and tests before every push)
+git config core.hooksPath .githooks
+
 # Run all tests
 cargo test
 
