@@ -25,7 +25,7 @@
 /// ```
 use super::matcher::{Bindings, PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::rules::RuleRegistry;
-use super::types::{EdnValue, Pattern, Rule};
+use super::types::{EdnValue, Pattern, Rule, WhereClause};
 use crate::graph::FactStorage;
 use crate::graph::types::{Fact, Value};
 use anyhow::{Result, anyhow};
@@ -182,23 +182,27 @@ impl RecursiveEvaluator {
     fn evaluate_rule(&self, rule: &Rule, current_facts: &FactStorage) -> Result<Vec<Fact>> {
         let mut derived = Vec::new();
 
-        // Parse body clauses: patterns and rule invocations
+        // Build the list of patterns to match against, from WhereClause body
         let mut patterns = Vec::new();
-        for body_clause in &rule.body {
-            if let Some(vec) = body_clause.as_vector() {
-                // This is a pattern [?e :attr ?v]
-                let pattern = Pattern::from_edn(vec)
-                    .map_err(|e| anyhow!("Failed to parse pattern: {}", e))?;
-                patterns.push(pattern);
-            } else if let Some(list) = body_clause.as_list() {
-                // This is a rule invocation (predicate ?arg1 ?arg2)
-                // Convert to pattern: [?arg1 :predicate ?arg2]
-                let pattern = self.rule_invocation_to_pattern(list)?;
-                patterns.push(pattern);
-            } else {
-                return Err(anyhow!(
-                    "Rule body clause must be a vector (pattern) or list (rule invocation)"
-                ));
+        for clause in &rule.body {
+            match clause {
+                WhereClause::Pattern(p) => {
+                    patterns.push(p.clone());
+                }
+                WhereClause::RuleInvocation { predicate, args } => {
+                    // Convert (predicate arg0 arg1) → [arg0 :predicate arg1]
+                    let list: Vec<EdnValue> = std::iter::once(EdnValue::Symbol(predicate.clone()))
+                        .chain(args.iter().cloned())
+                        .collect();
+                    let pattern = self.rule_invocation_to_pattern(&list)?;
+                    patterns.push(pattern);
+                }
+                WhereClause::Not(_) => {
+                    // Not clauses are handled by StratifiedEvaluator, not here.
+                    return Err(anyhow!(
+                        "WhereClause::Not in evaluate_rule: use StratifiedEvaluator for rules with negation"
+                    ));
+                }
             }
         }
 
@@ -206,11 +210,9 @@ impl RecursiveEvaluator {
             return Ok(derived);
         }
 
-        // Match patterns against current facts
         let matcher = PatternMatcher::new(current_facts.clone());
         let bindings = matcher.match_patterns(&patterns);
 
-        // For each binding, instantiate rule head to create derived fact
         for binding in bindings {
             let fact = self.instantiate_head(&rule.head, &binding)?;
             derived.push(fact);
@@ -222,38 +224,41 @@ impl RecursiveEvaluator {
     /// Convert a rule invocation to a pattern.
     ///
     /// Example: (reachable ?x ?y) -> [?x :reachable ?y]
+    /// Example: (blocked ?x) -> [?x :blocked ?_rule_value]
     fn rule_invocation_to_pattern(&self, list: &[EdnValue]) -> Result<Pattern> {
         if list.is_empty() {
             return Err(anyhow!("Rule invocation cannot be empty"));
         }
 
-        // First element is predicate name
         let predicate = match &list[0] {
             EdnValue::Symbol(s) => s.clone(),
-            _ => {
-                return Err(anyhow!(
-                    "Rule invocation must start with predicate name (symbol)"
-                ));
-            }
+            _ => return Err(anyhow!("Rule invocation must start with predicate name (symbol)")),
         };
 
-        // Must have exactly 2 arguments (entity and value)
-        if list.len() != 3 {
-            return Err(anyhow!(
-                "Rule invocation '{}' must have exactly 2 arguments (entity and value), got {}",
+        match list.len() {
+            2 => {
+                // 1-arg: (blocked ?x)  →  [?x :blocked ?_rule_value]
+                // ?_rule_value is a wildcard that matches any stored sentinel value.
+                Ok(Pattern::new(
+                    list[1].clone(),
+                    EdnValue::Keyword(format!(":{}", predicate)),
+                    EdnValue::Symbol("?_rule_value".to_string()),
+                ))
+            }
+            3 => {
+                // 2-arg: (reachable ?from ?to)  →  [?from :reachable ?to]
+                Ok(Pattern::new(
+                    list[1].clone(),
+                    EdnValue::Keyword(format!(":{}", predicate)),
+                    list[2].clone(),
+                ))
+            }
+            n => Err(anyhow!(
+                "Rule invocation '{}' must have 1 or 2 arguments, got {}",
                 predicate,
-                list.len() - 1
-            ));
+                n - 1
+            )),
         }
-
-        // Create pattern: [entity :predicate value]
-        let pattern = Pattern::new(
-            list[1].clone(),
-            EdnValue::Keyword(format!(":{}", predicate)),
-            list[2].clone(),
-        );
-
-        Ok(pattern)
     }
 
     /// Instantiate rule head with variable bindings to create a derived fact.
@@ -263,10 +268,8 @@ impl RecursiveEvaluator {
     /// Bindings: {?x -> alice_uuid, ?y -> bob_uuid}
     /// Result: Fact(alice_uuid, ":reachable", Ref(bob_uuid))
     fn instantiate_head(&self, head: &[EdnValue], binding: &Bindings) -> Result<Fact> {
-        if head.len() < 3 {
-            return Err(anyhow!(
-                "Rule head must have at least 3 elements: (predicate ?arg1 ?arg2)"
-            ));
+        if head.len() < 2 {
+            return Err(anyhow!("Rule head must have at least 2 elements: (predicate ?arg1)"));
         }
 
         // head[0] is predicate name
@@ -280,10 +283,14 @@ impl RecursiveEvaluator {
         let entity = edn_to_entity_id(&entity_edn)
             .map_err(|e| anyhow!("Failed to convert entity: {}", e))?;
 
-        // head[2] is value (usually a variable or constant)
-        let value_edn = self.substitute_variable(&head[2], binding)?;
-        let value =
-            edn_to_value(&value_edn).map_err(|e| anyhow!("Failed to convert value: {}", e))?;
+        let value = if head.len() >= 3 {
+            // 2-arg head: (reachable ?from ?to) — value is head[2]
+            let value_edn = self.substitute_variable(&head[2], binding)?;
+            edn_to_value(&value_edn).map_err(|e| anyhow!("Failed to convert value: {}", e))?
+        } else {
+            // 1-arg head: (blocked ?x) — store a Boolean(true) sentinel
+            crate::graph::types::Value::Boolean(true)
+        };
 
         // Create fact with derived predicate as attribute
         // Use ":predicate-name" as the attribute for derived facts
@@ -300,7 +307,7 @@ impl RecursiveEvaluator {
                 // This is a variable
                 if let Some(value) = binding.get(s) {
                     // Convert Value back to EdnValue for entity/value conversion
-                    Ok(self.value_to_edn(value))
+                    Ok(value_to_edn(value))
                 } else {
                     Err(anyhow!("Unbound variable in rule head: {}", s))
                 }
@@ -309,17 +316,13 @@ impl RecursiveEvaluator {
         }
     }
 
-    /// Convert a Value back to EdnValue for rule head instantiation.
-    fn value_to_edn(&self, value: &Value) -> EdnValue {
-        match value {
-            Value::String(s) => EdnValue::String(s.clone()),
-            Value::Integer(i) => EdnValue::Integer(*i),
-            Value::Float(f) => EdnValue::Float(*f),
-            Value::Boolean(b) => EdnValue::Boolean(*b),
-            Value::Ref(uuid) => EdnValue::Uuid(*uuid),
-            Value::Keyword(k) => EdnValue::Keyword(k.clone()),
-            Value::Null => EdnValue::Symbol("nil".to_string()),
-        }
+    /// Public version of instantiate_head for use by StratifiedEvaluator.
+    pub fn instantiate_head_public(
+        &self,
+        head: &[EdnValue],
+        binding: &Bindings,
+    ) -> Result<Fact> {
+        self.instantiate_head(head, binding)
     }
 
     /// Check if a fact tuple exists in the seen_facts vector.
@@ -333,6 +336,257 @@ impl RecursiveEvaluator {
         seen_facts
             .iter()
             .any(|(e, a, v)| e == &key.0 && a == &key.1 && v == &key.2)
+    }
+}
+
+/// Convert a stored Value back to EdnValue.
+pub fn value_to_edn(value: &Value) -> EdnValue {
+    match value {
+        Value::String(s) => EdnValue::String(s.clone()),
+        Value::Integer(i) => EdnValue::Integer(*i),
+        Value::Float(f) => EdnValue::Float(*f),
+        Value::Boolean(b) => EdnValue::Boolean(*b),
+        Value::Ref(uuid) => EdnValue::Uuid(*uuid),
+        Value::Keyword(k) => EdnValue::Keyword(k.clone()),
+        Value::Null => EdnValue::Symbol("nil".to_string()),
+    }
+}
+
+/// Substitute bound variables in a Pattern, returning a new Pattern with concrete values.
+pub fn substitute_pattern(pattern: &Pattern, binding: &Bindings) -> Pattern {
+    Pattern::new(
+        substitute_value(&pattern.entity, binding),
+        substitute_value(&pattern.attribute, binding),
+        substitute_value(&pattern.value, binding),
+    )
+}
+
+/// Substitute a single value: if it's a bound variable, replace it; otherwise clone.
+pub fn substitute_value(value: &EdnValue, binding: &Bindings) -> EdnValue {
+    if let Some(var) = value.as_variable() {
+        binding
+            .get(var)
+            .map(value_to_edn)
+            .unwrap_or_else(|| value.clone())
+    } else {
+        value.clone()
+    }
+}
+
+/// Evaluates Datalog rules with stratified negation support.
+///
+/// Strata are evaluated in ascending order. Within each stratum, positive-only
+/// rules are handled by RecursiveEvaluator; rules containing `not` clauses are
+/// handled by an inner loop that applies `not` filters to candidate bindings.
+pub struct StratifiedEvaluator {
+    storage: FactStorage,
+    rules: Arc<RwLock<RuleRegistry>>,
+    max_iterations: usize,
+}
+
+impl StratifiedEvaluator {
+    pub fn new(
+        storage: FactStorage,
+        rules: Arc<RwLock<RuleRegistry>>,
+        max_iterations: usize,
+    ) -> Self {
+        StratifiedEvaluator {
+            storage,
+            rules,
+            max_iterations,
+        }
+    }
+
+    /// Derive all facts for the given predicates, respecting stratification order.
+    pub fn evaluate(&self, predicates: &[String]) -> Result<FactStorage> {
+        use crate::query::datalog::stratification::DependencyGraph;
+
+        let registry = self.rules.read().unwrap();
+
+        // Build dependency graph and stratify
+        let graph = DependencyGraph::from_rules(&registry);
+        let strata = graph.stratify()?;
+
+        // Collect transitive dependencies of requested predicates
+        let mut all_preds: Vec<String> = predicates.to_vec();
+        {
+            let mut i = 0;
+            while i < all_preds.len() {
+                let pred = all_preds[i].clone();
+                for rule in registry.get_rules(&pred) {
+                    for clause in &rule.body {
+                        for dep in clause.rule_invocations() {
+                            if !all_preds.contains(&dep.to_string()) {
+                                all_preds.push(dep.to_string());
+                            }
+                        }
+                    }
+                }
+                i += 1;
+            }
+        }
+
+        // Group predicates by stratum
+        let max_stratum = all_preds
+            .iter()
+            .map(|p| *strata.get(p).unwrap_or(&0))
+            .max()
+            .unwrap_or(0);
+
+        drop(registry); // release read lock before recursive calls
+
+        let accumulated = self.storage.clone();
+
+        for stratum in 0..=max_stratum {
+            let registry = self.rules.read().unwrap();
+            let stratum_preds: Vec<String> = all_preds
+                .iter()
+                .filter(|p| *strata.get(*p).unwrap_or(&0) == stratum)
+                .cloned()
+                .collect();
+
+            if stratum_preds.is_empty() {
+                continue;
+            }
+
+            // Partition rules into positive-only and mixed (containing Not)
+            let mut positive_rules: Vec<(String, Rule)> = Vec::new();
+            let mut mixed_rules: Vec<(String, Rule)> = Vec::new();
+
+            for pred in &stratum_preds {
+                for rule in registry.get_rules(pred) {
+                    let has_not = rule.body.iter().any(|c| matches!(c, WhereClause::Not(_)));
+                    if has_not {
+                        mixed_rules.push((pred.clone(), rule));
+                    } else {
+                        positive_rules.push((pred.clone(), rule));
+                    }
+                }
+            }
+            drop(registry);
+
+            // Evaluate positive-only rules via RecursiveEvaluator
+            if !positive_rules.is_empty() {
+                let mut sub_registry = RuleRegistry::new();
+                for (pred, rule) in &positive_rules {
+                    sub_registry.register_rule_unchecked(pred.clone(), rule.clone());
+                }
+                let sub_rules = Arc::new(RwLock::new(sub_registry));
+                let sub_eval = RecursiveEvaluator::new(
+                    accumulated.clone(),
+                    sub_rules,
+                    self.max_iterations,
+                );
+                let derived = sub_eval.evaluate_recursive_rules(&stratum_preds)?;
+                // Snapshot existing fact keys so we only load truly new (derived) facts
+                let existing: Vec<(uuid::Uuid, String, Value)> = accumulated
+                    .get_asserted_facts()?
+                    .into_iter()
+                    .map(|f| (f.entity, f.attribute, f.value))
+                    .collect();
+                for fact in derived.get_asserted_facts()? {
+                    let key = (fact.entity, fact.attribute.clone(), fact.value.clone());
+                    if !existing.iter().any(|e| e == &key) {
+                        let _ = accumulated.load_fact(fact);
+                    }
+                }
+                accumulated.restore_tx_counter()?;
+            }
+
+            // Evaluate mixed rules (with not-filter)
+            for (_pred, rule) in &mixed_rules {
+                let positive_patterns: Vec<Pattern> = rule
+                    .body
+                    .iter()
+                    .filter_map(|c| match c {
+                        WhereClause::Pattern(p) => Some(p.clone()),
+                        WhereClause::RuleInvocation { predicate, args } => match args.len() {
+                            1 => Some(Pattern::new(
+                                args[0].clone(),
+                                EdnValue::Keyword(format!(":{}", predicate)),
+                                EdnValue::Symbol("?_rule_value".to_string()),
+                            )),
+                            2 => Some(Pattern::new(
+                                args[0].clone(),
+                                EdnValue::Keyword(format!(":{}", predicate)),
+                                args[1].clone(),
+                            )),
+                            _ => None,
+                        },
+                        WhereClause::Not(_) => None,
+                    })
+                    .collect();
+
+                let not_clauses: Vec<Vec<WhereClause>> = rule
+                    .body
+                    .iter()
+                    .filter_map(|c| match c {
+                        WhereClause::Not(inner) => Some(inner.clone()),
+                        _ => None,
+                    })
+                    .collect();
+
+                let matcher = PatternMatcher::new(accumulated.clone());
+                let candidates = matcher.match_patterns(&positive_patterns);
+
+                // Build temp_eval once per rule (outside the binding loop);
+                // instantiate_head_public only uses storage, not the registry.
+                let temp_eval = RecursiveEvaluator::new(
+                    accumulated.clone(),
+                    Arc::clone(&self.rules),
+                    1,
+                );
+
+                'binding: for binding in candidates {
+                    for not_body in &not_clauses {
+                        let substituted: Vec<Pattern> = not_body
+                            .iter()
+                            .filter_map(|c| match c {
+                                WhereClause::Pattern(p) => Some(substitute_pattern(p, &binding)),
+                                WhereClause::RuleInvocation { predicate, args } => {
+                                    let subst_args: Vec<EdnValue> = args
+                                        .iter()
+                                        .map(|a| substitute_value(a, &binding))
+                                        .collect();
+                                    match subst_args.len() {
+                                        1 => Some(Pattern::new(
+                                            subst_args[0].clone(),
+                                            EdnValue::Keyword(format!(":{}", predicate)),
+                                            EdnValue::Symbol("?_rule_value".to_string()),
+                                        )),
+                                        2 => Some(Pattern::new(
+                                            subst_args[0].clone(),
+                                            EdnValue::Keyword(format!(":{}", predicate)),
+                                            subst_args[1].clone(),
+                                        )),
+                                        _ => None,
+                                    }
+                                }
+                                WhereClause::Not(_) => None,
+                            })
+                            .collect();
+
+                        let not_matcher = PatternMatcher::new(accumulated.clone());
+                        let not_matches = not_matcher.match_patterns(&substituted);
+                        if !not_matches.is_empty() {
+                            continue 'binding; // not condition violated -> discard binding
+                        }
+                    }
+
+                    // All Not conditions held -> derive head fact
+                    if let Ok(fact) = temp_eval.instantiate_head_public(&rule.head, &binding) {
+                        // Use transact (not load_fact) so derived facts get a proper
+                        // tx_id and incremented tx_count, matching spec step (d).
+                        let _ = accumulated.transact(
+                            vec![(fact.entity, fact.attribute, fact.value)],
+                            None,
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok(accumulated)
     }
 }
 
@@ -604,6 +858,62 @@ mod tests {
     }
 
     #[test]
+    fn test_evaluate_rule_with_where_clause_body() {
+        // Build a rule: (reachable ?x ?y) :- [?x :connected ?y]
+        // using Vec<WhereClause> body (post-migration shape)
+        use crate::query::datalog::types::{Pattern, WhereClause};
+        let storage = FactStorage::new();
+        storage
+            .transact(
+                vec![(
+                    uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap(),
+                    ":connected".to_string(),
+                    crate::graph::types::Value::Ref(
+                        uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap(),
+                    ),
+                )],
+                None,
+            )
+            .unwrap();
+
+        let rule = Rule {
+            head: vec![
+                EdnValue::Symbol("reachable".to_string()),
+                EdnValue::Symbol("?x".to_string()),
+                EdnValue::Symbol("?y".to_string()),
+            ],
+            body: vec![WhereClause::Pattern(Pattern::new(
+                EdnValue::Symbol("?x".to_string()),
+                EdnValue::Keyword(":connected".to_string()),
+                EdnValue::Symbol("?y".to_string()),
+            ))],
+        };
+
+        let registry = Arc::new(RwLock::new(RuleRegistry::new()));
+        // Register the rule so evaluate_recursive_rules actually calls evaluate_rule
+        registry
+            .write()
+            .unwrap()
+            .register_rule("reachable".to_string(), rule)
+            .unwrap();
+
+        let evaluator = RecursiveEvaluator::new(storage, registry, 10);
+        let derived = evaluator
+            .evaluate_recursive_rules(&["reachable".to_string()])
+            .unwrap();
+
+        // The rule [?x :connected ?y] -> (reachable ?x ?y) should derive a :reachable fact
+        // entity 1 has :connected ref(entity 2), so (reachable entity1 entity2) should be derived
+        let entity1 =
+            uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+        let reachable_facts = derived.get_facts_by_entity(&entity1).unwrap();
+        assert!(
+            reachable_facts.iter().any(|f| f.attribute == ":reachable"),
+            "Expected :reachable fact to be derived from :connected base fact"
+        );
+    }
+
+    #[test]
     fn test_recursive_convergence_iterations() {
         let storage = FactStorage::new();
 
@@ -639,5 +949,221 @@ mod tests {
 
         // Should have 1 reachable fact: A->B
         assert_eq!(reachable_facts.len(), 1);
+    }
+
+    mod stratified_tests {
+        use super::*;
+        use crate::graph::types::Value;
+        use crate::query::datalog::types::{Pattern, WhereClause};
+        use uuid::Uuid;
+
+        fn alice() -> Uuid {
+            Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap()
+        }
+        fn bob() -> Uuid {
+            Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap()
+        }
+
+        #[test]
+        fn test_stratified_no_negation_same_as_recursive() {
+            // StratifiedEvaluator with only positive rules must produce the same result
+            // as RecursiveEvaluator.
+            let storage = FactStorage::new();
+            storage
+                .transact(
+                    vec![(
+                        alice(),
+                        ":connected".to_string(),
+                        Value::Ref(bob()),
+                    )],
+                    None,
+                )
+                .unwrap();
+
+            let rule = Rule {
+                head: vec![
+                    EdnValue::Symbol("reachable".to_string()),
+                    EdnValue::Symbol("?x".to_string()),
+                    EdnValue::Symbol("?y".to_string()),
+                ],
+                body: vec![WhereClause::Pattern(Pattern::new(
+                    EdnValue::Symbol("?x".to_string()),
+                    EdnValue::Keyword(":connected".to_string()),
+                    EdnValue::Symbol("?y".to_string()),
+                ))],
+            };
+            let mut registry = RuleRegistry::new();
+            registry
+                .register_rule("reachable".to_string(), rule)
+                .unwrap();
+            let rules = Arc::new(RwLock::new(registry));
+
+            let evaluator = StratifiedEvaluator::new(storage, rules, 100);
+            let result = evaluator.evaluate(&["reachable".to_string()]).unwrap();
+            let reachable_facts: Vec<_> = result
+                .get_facts_by_attribute(&":reachable".to_string())
+                .unwrap()
+                .into_iter()
+                .filter(|f| f.asserted)
+                .collect();
+            assert_eq!(reachable_facts.len(), 1);
+        }
+
+        #[test]
+        fn test_not_filter_removes_binding_when_body_satisfied() {
+            // eligible :- [?x :applied true], not([?x :rejected true])
+            // alice applied=true, rejected=true -> NOT eligible
+            let storage = FactStorage::new();
+            storage
+                .transact(
+                    vec![
+                        (alice(), ":applied".to_string(), Value::Boolean(true)),
+                        (alice(), ":rejected".to_string(), Value::Boolean(true)),
+                    ],
+                    None,
+                )
+                .unwrap();
+
+            let rule = Rule {
+                head: vec![
+                    EdnValue::Symbol("eligible".to_string()),
+                    EdnValue::Symbol("?x".to_string()),
+                ],
+                body: vec![
+                    WhereClause::Pattern(Pattern::new(
+                        EdnValue::Symbol("?x".to_string()),
+                        EdnValue::Keyword(":applied".to_string()),
+                        EdnValue::Boolean(true),
+                    )),
+                    WhereClause::Not(vec![WhereClause::Pattern(Pattern::new(
+                        EdnValue::Symbol("?x".to_string()),
+                        EdnValue::Keyword(":rejected".to_string()),
+                        EdnValue::Boolean(true),
+                    ))]),
+                ],
+            };
+            let mut registry = RuleRegistry::new();
+            registry
+                .register_rule("eligible".to_string(), rule)
+                .unwrap();
+            let rules = Arc::new(RwLock::new(registry));
+
+            let evaluator = StratifiedEvaluator::new(storage, rules, 100);
+            let result = evaluator.evaluate(&["eligible".to_string()]).unwrap();
+            let eligible_facts: Vec<_> = result
+                .get_facts_by_attribute(&":eligible".to_string())
+                .unwrap()
+                .into_iter()
+                .filter(|f| f.asserted)
+                .collect();
+            assert_eq!(eligible_facts.len(), 0, "alice should NOT be eligible");
+        }
+
+        #[test]
+        fn test_not_filter_keeps_binding_when_body_not_satisfied() {
+            // eligible :- [?x :applied true], not([?x :rejected true])
+            // alice applied=true only -> eligible
+            let storage = FactStorage::new();
+            storage
+                .transact(
+                    vec![(alice(), ":applied".to_string(), Value::Boolean(true))],
+                    None,
+                )
+                .unwrap();
+
+            let rule = Rule {
+                head: vec![
+                    EdnValue::Symbol("eligible".to_string()),
+                    EdnValue::Symbol("?x".to_string()),
+                ],
+                body: vec![
+                    WhereClause::Pattern(Pattern::new(
+                        EdnValue::Symbol("?x".to_string()),
+                        EdnValue::Keyword(":applied".to_string()),
+                        EdnValue::Boolean(true),
+                    )),
+                    WhereClause::Not(vec![WhereClause::Pattern(Pattern::new(
+                        EdnValue::Symbol("?x".to_string()),
+                        EdnValue::Keyword(":rejected".to_string()),
+                        EdnValue::Boolean(true),
+                    ))]),
+                ],
+            };
+            let mut registry = RuleRegistry::new();
+            registry
+                .register_rule("eligible".to_string(), rule)
+                .unwrap();
+            let rules = Arc::new(RwLock::new(registry));
+
+            let evaluator = StratifiedEvaluator::new(storage, rules, 100);
+            let result = evaluator.evaluate(&["eligible".to_string()]).unwrap();
+            let eligible_facts: Vec<_> = result
+                .get_facts_by_attribute(&":eligible".to_string())
+                .unwrap()
+                .into_iter()
+                .filter(|f| f.asserted)
+                .collect();
+            assert_eq!(eligible_facts.len(), 1, "alice should be eligible");
+        }
+
+        #[test]
+        fn test_not_filter_with_multiple_not_clauses() {
+            // eligible :- [?x :status "active"], not([?x :role "admin"]), not([?x :banned true])
+            // alice: status="active"                         -> eligible (passes both not-clauses)
+            // bob:   status="active", role="admin"           -> NOT eligible (fails first not-clause)
+            let storage = FactStorage::new();
+            storage
+                .transact(
+                    vec![
+                        (alice(), ":status".to_string(), Value::String("active".to_string())),
+                        (bob(), ":status".to_string(), Value::String("active".to_string())),
+                        (bob(), ":role".to_string(), Value::String("admin".to_string())),
+                    ],
+                    None,
+                )
+                .unwrap();
+
+            let rule = Rule {
+                head: vec![
+                    EdnValue::Symbol("eligible".to_string()),
+                    EdnValue::Symbol("?x".to_string()),
+                ],
+                body: vec![
+                    WhereClause::Pattern(Pattern::new(
+                        EdnValue::Symbol("?x".to_string()),
+                        EdnValue::Keyword(":status".to_string()),
+                        EdnValue::String("active".to_string()),
+                    )),
+                    WhereClause::Not(vec![WhereClause::Pattern(Pattern::new(
+                        EdnValue::Symbol("?x".to_string()),
+                        EdnValue::Keyword(":role".to_string()),
+                        EdnValue::String("admin".to_string()),
+                    ))]),
+                    WhereClause::Not(vec![WhereClause::Pattern(Pattern::new(
+                        EdnValue::Symbol("?x".to_string()),
+                        EdnValue::Keyword(":banned".to_string()),
+                        EdnValue::Boolean(true),
+                    ))]),
+                ],
+            };
+            let mut registry = RuleRegistry::new();
+            registry.register_rule_unchecked("eligible".to_string(), rule);
+            let rules = Arc::new(RwLock::new(registry));
+
+            let evaluator = StratifiedEvaluator::new(storage, rules, 100);
+            let result = evaluator.evaluate(&["eligible".to_string()]).unwrap();
+            let eligible_facts: Vec<_> = result
+                .get_facts_by_attribute(&":eligible".to_string())
+                .unwrap()
+                .into_iter()
+                .filter(|f| f.asserted)
+                .collect();
+            assert_eq!(eligible_facts.len(), 1, "only alice should be eligible");
+            assert_eq!(
+                eligible_facts[0].entity,
+                alice(),
+                "the eligible entity should be alice"
+            );
+        }
     }
 }

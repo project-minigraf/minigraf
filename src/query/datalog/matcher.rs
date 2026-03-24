@@ -71,6 +71,9 @@ impl PatternMatcher {
         bindings: &mut Bindings,
     ) -> bool {
         match pattern_component {
+            // Wildcard variable (starts with ?_): match any value without binding
+            EdnValue::Symbol(var) if var.starts_with("?_") => true,
+
             // Variable: bind it or check consistency
             EdnValue::Symbol(var) if var.starts_with('?') => {
                 if let Some(existing) = bindings.get(var) {

@@ -162,7 +162,7 @@ impl Pattern {
 
 /// A clause in the :where section of a query
 ///
-/// Can be either a fact pattern or a rule invocation.
+/// Can be either a fact pattern, a rule invocation, or a negation.
 #[derive(Debug, Clone, PartialEq)]
 pub enum WhereClause {
     /// A fact pattern: [?e :person/name ?name]
@@ -174,6 +174,28 @@ pub enum WhereClause {
         /// Arguments (variables, constants, or UUIDs)
         args: Vec<EdnValue>,
     },
+    /// Negation as failure: (not clause1 clause2 ...)
+    /// Succeeds when none of the inner clauses match.
+    Not(Vec<WhereClause>),
+}
+
+impl WhereClause {
+    /// Collect all rule invocation predicate names, recursively (including inside Not bodies).
+    pub fn rule_invocations(&self) -> Vec<&str> {
+        match self {
+            WhereClause::Pattern(_) => vec![],
+            WhereClause::RuleInvocation { predicate, .. } => vec![predicate.as_str()],
+            WhereClause::Not(clauses) => {
+                clauses.iter().flat_map(|c| c.rule_invocations()).collect()
+            }
+        }
+    }
+
+    /// True if this clause is a Not containing at least one RuleInvocation.
+    pub fn has_negated_invocation(&self) -> bool {
+        matches!(self, WhereClause::Not(clauses) if
+            clauses.iter().any(|c| matches!(c, WhereClause::RuleInvocation { .. })))
+    }
 }
 
 /// A Datalog query with :find and :where clauses
@@ -240,11 +262,37 @@ impl DatalogQuery {
             .collect()
     }
 
-    /// Helper: Get all rule invocations from where clauses
+    /// Recursively collect all (predicate, args) pairs from rule invocations,
+    /// including those nested inside Not bodies at any depth.
+    fn collect_rule_invocations_recursive(clauses: &[WhereClause]) -> Vec<(String, Vec<EdnValue>)> {
+        let mut result = Vec::new();
+        for clause in clauses {
+            match clause {
+                WhereClause::RuleInvocation { predicate, args } => {
+                    result.push((predicate.clone(), args.clone()));
+                }
+                WhereClause::Not(inner) => {
+                    result.extend(Self::collect_rule_invocations_recursive(inner));
+                }
+                WhereClause::Pattern(_) => {}
+            }
+        }
+        result
+    }
+
+    /// Helper: Get all rule invocations from where clauses, including inside Not bodies
     pub fn get_rule_invocations(&self) -> Vec<(String, Vec<EdnValue>)> {
+        Self::collect_rule_invocations_recursive(&self.where_clauses)
+    }
+
+    /// Get only top-level rule invocations — those NOT nested inside a Not body.
+    ///
+    /// Used by execute_query_with_rules to build positive patterns from rule heads;
+    /// rule invocations inside `not` are handled by the not-post-filter, not here.
+    pub fn get_top_level_rule_invocations(&self) -> Vec<(String, Vec<EdnValue>)> {
         self.where_clauses
             .iter()
-            .filter_map(|clause| match clause {
+            .filter_map(|c| match c {
                 WhereClause::RuleInvocation { predicate, args } => {
                     Some((predicate.clone(), args.clone()))
                 }
@@ -253,11 +301,11 @@ impl DatalogQuery {
             .collect()
     }
 
-    /// Check if this query uses any rules
+    /// Check if this query uses any rules (including inside Not bodies at any depth)
     pub fn uses_rules(&self) -> bool {
         self.where_clauses
             .iter()
-            .any(|clause| matches!(clause, WhereClause::RuleInvocation { .. }))
+            .any(|c| !c.rule_invocations().is_empty())
     }
 }
 
@@ -276,12 +324,12 @@ impl DatalogQuery {
 pub struct Rule {
     /// The rule head: (predicate ?var1 ?var2)
     pub head: Vec<EdnValue>,
-    /// The rule body: list of patterns and rule invocations
-    pub body: Vec<EdnValue>,
+    /// The rule body: typed where clauses (patterns, rule invocations, not)
+    pub body: Vec<WhereClause>,
 }
 
 impl Rule {
-    pub fn new(head: Vec<EdnValue>, body: Vec<EdnValue>) -> Self {
+    pub fn new(head: Vec<EdnValue>, body: Vec<WhereClause>) -> Self {
         Rule { head, body }
     }
 }
@@ -493,5 +541,99 @@ mod tests {
         };
         assert_eq!(tx.valid_from, Some(1672531200000_i64));
         assert!(tx.valid_to.is_none());
+    }
+
+    #[test]
+    fn test_where_clause_not_variant_exists() {
+        let not_clause = WhereClause::Not(vec![
+            WhereClause::Pattern(Pattern::new(
+                EdnValue::Symbol("?x".to_string()),
+                EdnValue::Keyword(":banned".to_string()),
+                EdnValue::Boolean(true),
+            )),
+        ]);
+        assert!(matches!(not_clause, WhereClause::Not(_)));
+    }
+
+    #[test]
+    fn test_rule_invocations_pattern_returns_empty() {
+        let clause = WhereClause::Pattern(Pattern::new(
+            EdnValue::Symbol("?x".to_string()),
+            EdnValue::Keyword(":a".to_string()),
+            EdnValue::Symbol("?v".to_string()),
+        ));
+        assert!(clause.rule_invocations().is_empty());
+    }
+
+    #[test]
+    fn test_rule_invocations_rule_invocation_returns_predicate() {
+        let clause = WhereClause::RuleInvocation {
+            predicate: "blocked".to_string(),
+            args: vec![EdnValue::Symbol("?x".to_string())],
+        };
+        assert_eq!(clause.rule_invocations(), vec!["blocked"]);
+    }
+
+    #[test]
+    fn test_rule_invocations_recurses_into_not() {
+        let clause = WhereClause::Not(vec![WhereClause::RuleInvocation {
+            predicate: "blocked".to_string(),
+            args: vec![EdnValue::Symbol("?x".to_string())],
+        }]);
+        assert_eq!(clause.rule_invocations(), vec!["blocked"]);
+    }
+
+    #[test]
+    fn test_has_negated_invocation_true_when_not_contains_rule_invocation() {
+        let clause = WhereClause::Not(vec![WhereClause::RuleInvocation {
+            predicate: "blocked".to_string(),
+            args: vec![EdnValue::Symbol("?x".to_string())],
+        }]);
+        assert!(clause.has_negated_invocation());
+    }
+
+    #[test]
+    fn test_has_negated_invocation_false_when_not_contains_only_pattern() {
+        let clause = WhereClause::Not(vec![WhereClause::Pattern(Pattern::new(
+            EdnValue::Symbol("?x".to_string()),
+            EdnValue::Keyword(":banned".to_string()),
+            EdnValue::Boolean(true),
+        ))]);
+        assert!(!clause.has_negated_invocation());
+    }
+
+    #[test]
+    fn test_uses_rules_recurses_into_not_body() {
+        let query = DatalogQuery::new(
+            vec!["?person".to_string()],
+            vec![
+                WhereClause::Pattern(Pattern::new(
+                    EdnValue::Symbol("?person".to_string()),
+                    EdnValue::Keyword(":person/name".to_string()),
+                    EdnValue::Symbol("?name".to_string()),
+                )),
+                WhereClause::Not(vec![WhereClause::RuleInvocation {
+                    predicate: "blocked".to_string(),
+                    args: vec![EdnValue::Symbol("?person".to_string())],
+                }]),
+            ],
+        );
+        assert!(query.uses_rules());
+    }
+
+    #[test]
+    fn test_get_rule_invocations_recurses_into_not_body() {
+        let query = DatalogQuery::new(
+            vec!["?person".to_string()],
+            vec![
+                WhereClause::Not(vec![WhereClause::RuleInvocation {
+                    predicate: "blocked".to_string(),
+                    args: vec![EdnValue::Symbol("?person".to_string())],
+                }]),
+            ],
+        );
+        let invocations = query.get_rule_invocations();
+        assert_eq!(invocations.len(), 1);
+        assert_eq!(invocations[0].0, "blocked");
     }
 }

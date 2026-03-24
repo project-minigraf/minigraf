@@ -489,24 +489,8 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                     let pattern = Pattern::from_edn(pattern_vec)?;
                     where_clauses.push(WhereClause::Pattern(pattern));
                 } else if let Some(rule_list) = query_vector[i].as_list() {
-                    // This is a rule invocation: (predicate ?arg1 ?arg2)
-                    if rule_list.is_empty() {
-                        return Err("Rule invocation cannot be empty".to_string());
-                    }
-
-                    // First element should be the predicate name (symbol)
-                    let predicate = match &rule_list[0] {
-                        EdnValue::Symbol(s) => s.clone(),
-                        _ => {
-                            return Err("Rule invocation must start with predicate name (symbol)"
-                                .to_string());
-                        }
-                    };
-
-                    // Rest are arguments
-                    let args = rule_list[1..].to_vec();
-
-                    where_clauses.push(WhereClause::RuleInvocation { predicate, args });
+                    let clause = parse_list_as_where_clause(rule_list, true)?;
+                    where_clauses.push(clause);
                 } else {
                     return Err(format!(
                         "Expected pattern vector or rule invocation in :where clause, got {:?}",
@@ -524,6 +508,13 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
 
         i += 1;
     }
+
+    // Safety check: all variables in (not ...) must be bound by outer clauses
+    let outer_bound: std::collections::HashSet<String> = where_clauses
+        .iter()
+        .flat_map(outer_vars_from_clause)
+        .collect();
+    check_not_safety(&where_clauses, &outer_bound)?;
 
     let mut query = DatalogQuery::new(find_vars, where_clauses);
     query.as_of = query_as_of;
@@ -672,6 +663,118 @@ fn parse_retract(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
     Ok(DatalogCommand::Retract(Transaction::new(patterns)))
 }
 
+/// Parse a list item (EDN List) appearing in a :where clause or rule body.
+/// Returns Err if the list is empty, has an unknown form, or contains nested `not`.
+fn parse_list_as_where_clause(
+    list: &[EdnValue],
+    allow_not: bool,
+) -> Result<WhereClause, String> {
+    if list.is_empty() {
+        return Err("Empty list in :where clause".to_string());
+    }
+    match &list[0] {
+        EdnValue::Symbol(s) if s == "not" => {
+            if !allow_not {
+                return Err(
+                    "(not ...) cannot appear inside another (not ...)".to_string(),
+                );
+            }
+            if list.len() < 2 {
+                return Err("(not) requires at least one clause".to_string());
+            }
+            let mut inner = Vec::new();
+            for item in &list[1..] {
+                if let Some(vec) = item.as_vector() {
+                    let pattern = Pattern::from_edn(vec)?;
+                    inner.push(WhereClause::Pattern(pattern));
+                } else if let Some(inner_list) = item.as_list() {
+                    // Recurse with allow_not=false to reject nested not
+                    let clause = parse_list_as_where_clause(inner_list, false)?;
+                    inner.push(clause);
+                } else {
+                    return Err(format!(
+                        "expected pattern or rule invocation inside (not), got {:?}",
+                        item
+                    ));
+                }
+            }
+            Ok(WhereClause::Not(inner))
+        }
+        EdnValue::Symbol(predicate) => {
+            let args = list[1..].to_vec();
+            Ok(WhereClause::RuleInvocation {
+                predicate: predicate.clone(),
+                args,
+            })
+        }
+        _ => Err(format!(
+            "Rule invocation must start with predicate name (symbol), got {:?}",
+            list[0]
+        )),
+    }
+}
+
+/// Collect all variable names that appear in a where clause (non-recursively into Not).
+fn outer_vars_from_clause(clause: &WhereClause) -> Vec<String> {
+    match clause {
+        WhereClause::Pattern(p) => {
+            let mut vars = Vec::new();
+            for v in [&p.entity, &p.attribute, &p.value] {
+                if let Some(name) = v.as_variable()
+                    && !name.starts_with("?_")
+                {
+                    vars.push(name.to_string());
+                }
+            }
+            vars
+        }
+        WhereClause::RuleInvocation { args, .. } => args
+            .iter()
+            .filter_map(|a| {
+                a.as_variable().and_then(|s| {
+                    if !s.starts_with("?_") {
+                        Some(s.to_string())
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect(),
+        WhereClause::Not(_) => vec![], // not counted as "outer"
+    }
+}
+
+/// Collect all variable names that appear inside a Not clause.
+fn vars_in_not(clause: &WhereClause) -> Vec<String> {
+    match clause {
+        WhereClause::Not(inner) => inner
+            .iter()
+            .flat_map(outer_vars_from_clause)
+            .collect(),
+        _ => vec![],
+    }
+}
+
+/// Validate safety: every variable in a (not ...) body must be bound by an outer clause.
+fn check_not_safety(
+    clauses: &[WhereClause],
+    outer_bound: &std::collections::HashSet<String>,
+) -> Result<(), String> {
+    for clause in clauses {
+        if let WhereClause::Not(_) = clause {
+            for var in vars_in_not(clause) {
+                if !outer_bound.contains(&var) {
+                    return Err(format!(
+                        "variable {} in (not ...) is not bound by any outer clause",
+                        var
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn parse_rule(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
     // Rule syntax: (rule [(predicate ?args) [pattern1] [pattern2] ...])
     // elements[0] = Vector with head (list) + body (patterns/rule calls)
@@ -704,12 +807,42 @@ fn parse_rule(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
         _ => return Err("Rule head must start with a symbol (predicate name)".to_string()),
     }
 
-    // Rest of body_vec are patterns or rule invocations
-    let body_clauses = body_vec[1..].to_vec();
+    // Rest of body_vec are patterns, rule invocations, or (not ...) clauses
+    let mut body_clauses: Vec<WhereClause> = Vec::new();
+    for item in &body_vec[1..] {
+        if let Some(vec) = item.as_vector() {
+            let pattern = Pattern::from_edn(vec)?;
+            body_clauses.push(WhereClause::Pattern(pattern));
+        } else if let Some(list) = item.as_list() {
+            let clause = parse_list_as_where_clause(list, true)?;
+            body_clauses.push(clause);
+        } else {
+            return Err(format!(
+                "Rule body clause must be a vector (pattern) or list (rule invocation / not), got {:?}",
+                item
+            ));
+        }
+    }
 
     if body_clauses.is_empty() {
         return Err("Rule must have at least one pattern or rule invocation in body".to_string());
     }
+
+    // Safety check: variables in (not ...) must be bound by the rule head or outer body clauses
+    let mut outer_bound: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // Head args count as binding sites
+    for v in &head_list[1..] {
+        if let Some(name) = v.as_variable() {
+            outer_bound.insert(name.to_string());
+        }
+    }
+    // Non-not body clauses
+    for clause in &body_clauses {
+        for var in outer_vars_from_clause(clause) {
+            outer_bound.insert(var);
+        }
+    }
+    check_not_safety(&body_clauses, &outer_bound)?;
 
     Ok(DatalogCommand::Rule(Rule {
         head: head_list.clone(),
@@ -894,11 +1027,11 @@ mod tests {
                 // Verify body has two clauses: pattern + rule invocation
                 assert_eq!(rule.body.len(), 2);
 
-                // First clause should be a vector (pattern)
-                assert!(rule.body[0].as_vector().is_some());
+                // First clause should be a Pattern
+                assert!(matches!(rule.body[0], WhereClause::Pattern(_)));
 
-                // Second clause should be a list (rule invocation)
-                assert!(rule.body[1].as_list().is_some());
+                // Second clause should be a RuleInvocation
+                assert!(matches!(rule.body[1], WhereClause::RuleInvocation { .. }));
             }
             _ => panic!("Expected Rule command"),
         }
@@ -914,8 +1047,8 @@ mod tests {
                 assert_eq!(rule.head[0], EdnValue::Symbol("ancestor".to_string()));
                 // Two patterns in body
                 assert_eq!(rule.body.len(), 2);
-                assert!(rule.body[0].as_vector().is_some());
-                assert!(rule.body[1].as_vector().is_some());
+                assert!(matches!(rule.body[0], WhereClause::Pattern(_)));
+                assert!(matches!(rule.body[1], WhereClause::Pattern(_)));
             }
             _ => panic!("Expected Rule command"),
         }
@@ -1168,5 +1301,114 @@ mod tests {
         };
         assert!(matches!(query.as_of, Some(AsOf::Counter(100))));
         assert!(matches!(query.valid_at, Some(ValidAt::Timestamp(_))));
+    }
+
+    #[test]
+    fn test_parse_not_with_pattern_in_query() {
+        let input = r#"(query [:find ?person :where [?person :name ?n] (not [?person :banned true])])"#;
+        let cmd = parse_datalog_command(input).unwrap();
+        match cmd {
+            DatalogCommand::Query(q) => {
+                assert_eq!(q.where_clauses.len(), 2);
+                assert!(matches!(q.where_clauses[0], WhereClause::Pattern(_)));
+                match &q.where_clauses[1] {
+                    WhereClause::Not(inner) => {
+                        assert_eq!(inner.len(), 1);
+                        assert!(matches!(inner[0], WhereClause::Pattern(_)));
+                    }
+                    other => panic!("Expected Not, got {:?}", other),
+                }
+            }
+            _ => panic!("Expected Query"),
+        }
+    }
+
+    #[test]
+    fn test_parse_not_with_rule_invocation_in_query() {
+        let input = r#"(query [:find ?person :where [?person :name ?n] (not (blocked ?person))])"#;
+        let cmd = parse_datalog_command(input).unwrap();
+        match cmd {
+            DatalogCommand::Query(q) => {
+                match &q.where_clauses[1] {
+                    WhereClause::Not(inner) => {
+                        assert!(matches!(inner[0], WhereClause::RuleInvocation { .. }));
+                    }
+                    other => panic!("Expected Not, got {:?}", other),
+                }
+            }
+            _ => panic!("Expected Query"),
+        }
+    }
+
+    #[test]
+    fn test_parse_not_in_rule_body() {
+        let input = r#"(rule [(eligible ?x) [?x :applied true] (not (rejected ?x))])"#;
+        let cmd = parse_datalog_command(input).unwrap();
+        match cmd {
+            DatalogCommand::Rule(rule) => {
+                assert_eq!(rule.body.len(), 2);
+                assert!(matches!(rule.body[0], WhereClause::Pattern(_)));
+                assert!(matches!(rule.body[1], WhereClause::Not(_)));
+            }
+            _ => panic!("Expected Rule"),
+        }
+    }
+
+    #[test]
+    fn test_parse_not_empty_body_is_error() {
+        let input = r#"(query [:find ?x :where [?x :a ?v] (not)])"#;
+        let result = parse_datalog_command(input);
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("requires at least one clause"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_parse_nested_not_is_error() {
+        let input = r#"(query [:find ?x :where [?x :a ?v] (not (not [?x :banned true]))])"#;
+        let result = parse_datalog_command(input);
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("cannot appear inside another"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_parse_not_unbound_variable_is_error() {
+        // ?y is only in the not body, not in any outer clause
+        let input = r#"(query [:find ?x :where [?x :a ?v] (not [?y :banned true])])"#;
+        let result = parse_datalog_command(input);
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("not bound"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_parse_not_unbound_variable_in_rule_body_is_error() {
+        // ?y only in not, not in head or non-not body
+        let input = r#"(rule [(eligible ?x) [?x :applied true] (not [?y :banned true])])"#;
+        let result = parse_datalog_command(input);
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("not bound"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_parse_not_with_multiple_clauses() {
+        // (not [?person :role :admin] [?person :active false])
+        let input = r#"(query [:find ?person :where [?person :name ?n] (not [?person :role :admin] [?person :active false])])"#;
+        let cmd = parse_datalog_command(input).unwrap();
+        match cmd {
+            DatalogCommand::Query(q) => {
+                match &q.where_clauses[1] {
+                    WhereClause::Not(inner) => {
+                        assert_eq!(inner.len(), 2);
+                        assert!(matches!(inner[0], WhereClause::Pattern(_)));
+                        assert!(matches!(inner[1], WhereClause::Pattern(_)));
+                    }
+                    other => panic!("Expected Not with 2 clauses, got {:?}", other),
+                }
+            }
+            _ => panic!("Expected Query"),
+        }
     }
 }
