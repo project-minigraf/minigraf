@@ -358,3 +358,84 @@ fn test_not_join_body_with_rule_invocation_end_to_end() {
         "bob must be eligible; alice excluded via banned rule in not-join body"
     );
 }
+
+/// 11. not-join where no entities match the body — all outer bindings survive.
+#[test]
+fn test_not_join_body_no_matches_all_survive() {
+    let db = in_memory_db();
+    // Three entities with :active true, but none have :banned true
+    db.execute("(transact [[:e1 :active true] [:e2 :active true] [:e3 :active true]])")
+        .unwrap();
+    let result = db
+        .execute(
+            "(query [:find ?x :where [?x :active true] (not-join [?x] [?x :banned true])])",
+        )
+        .unwrap();
+    // All three survive because the not-join body matches nothing.
+    // Entity IDs are UUIDs in the result, not keyword strings, so we count results.
+    assert_eq!(
+        result_count(&result),
+        3,
+        "all three entities must survive when not-join body matches nothing"
+    );
+}
+
+/// 12. not-join combined with :valid-at valid-time query.
+#[test]
+fn test_not_join_with_valid_at() {
+    let db = in_memory_db();
+    // alice: active during 2023, restricted during 2024
+    // bob: active during 2023, no restrictions
+    db.execute(
+        "(transact {:valid-from \"2023-01-01\" :valid-to \"2024-01-01\"} [[:alice :active true] [:bob :active true]])",
+    )
+    .unwrap();
+    db.execute("(transact {:valid-from \"2024-01-01\"} [[:alice :restricted true]])").unwrap();
+    // At 2023-06-01: both active, neither restricted -> both pass.
+    // Entity IDs are UUIDs in the result, not keyword strings, so we count results.
+    let result_2023 = db
+        .execute("(query [:find ?x :valid-at \"2023-06-01\" :where [?x :active true] (not-join [?x] [?x :restricted true])])")
+        .unwrap();
+    assert_eq!(
+        result_count(&result_2023),
+        2,
+        "both alice and bob must pass not-join at 2023-06-01 (neither is restricted then)"
+    );
+}
+
+/// 13. Negative cycle via not-join at rule registration is rejected.
+#[test]
+fn test_not_join_negative_cycle_at_registration_rejected() {
+    let db = in_memory_db();
+    // p :- (not-join [?x] (q ?x))
+    // q :- (not-join [?x] (p ?x))
+    // This is a negative cycle; the second rule registration should fail.
+    let r1 = db.execute("(rule [(p ?x) (not-join [?x] (q ?x))])");
+    let r2 = db.execute("(rule [(q ?x) (not-join [?x] (p ?x))])");
+    // At least one of the registrations must fail with a stratification error
+    assert!(
+        r1.is_err() || r2.is_err(),
+        "negative cycle via not-join must be rejected at rule registration"
+    );
+}
+
+/// 14. not and not-join coexist in the same query body.
+#[test]
+fn test_not_join_coexists_with_not_in_query() {
+    let db = in_memory_db();
+    // Find active entities that are not globally-blocked AND have no blocked dependency
+    // alice: active, globally-blocked -> excluded by (not)
+    // bob: active, has blocked dep -> excluded by (not-join)
+    // charlie: active, no restrictions -> passes both
+    db.execute("(transact [[:alice :active true] [:alice :blocked true] [:bob :active true] [:bob :dep :dep1] [:dep1 :severity :high] [:charlie :active true]])").unwrap();
+    let result = db
+        .execute("(query [:find ?x :where [?x :active true] (not [?x :blocked true]) (not-join [?x] [?x :dep ?d] [?d :severity :high])])")
+        .unwrap();
+    // Entity IDs are UUIDs in the result, not keyword strings, so we count results.
+    // Only charlie passes both (not) and (not-join) filters.
+    assert_eq!(
+        result_count(&result),
+        1,
+        "only charlie must pass: alice excluded by (not), bob excluded by (not-join)"
+    );
+}
