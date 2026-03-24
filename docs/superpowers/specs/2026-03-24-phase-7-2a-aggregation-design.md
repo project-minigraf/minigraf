@@ -188,14 +188,18 @@ The conditional split is: if `query.find` contains any `FindSpec::Aggregate`, ca
 4. `:with` variables are **not** included in output rows — they affect grouping only and do not appear in `QueryResult::QueryResults.vars` or any result row
 5. Return rows in group-insertion order
 
-**Zero bindings:** if the `:where` clause produces zero bindings, there are zero groups and zero rows in the result — an empty `Vec`. There is no special-case row like `[[0]]`. This is consistent with Datomic/XTDB behavior.
+**Zero bindings — `count`/`count-distinct` special case:** if the `:where` clause produces zero bindings and `:find` contains only `count` or `count-distinct` aggregates with no grouping variables (`FindSpec::Variable` in `:find`), return a single row with `Value::Integer(0)` for each aggregate. This matches SQL `COUNT` behavior and is always meaningful — "how many matched" has a well-defined answer of 0.
+
+**Zero bindings — all other aggregates:** if the `:where` clause produces zero bindings, return an empty result set. This applies to `sum`, `sum-distinct`, `min`, and `max`. An empty set preserves the distinction between "no facts matched" and "facts matched but summed/min/max to zero."
+
+If `:find` mixes `count`/`count-distinct` with grouping variables (e.g., `[:find ?dept (count ?e)]`), zero total bindings also yields an empty result — groups only form when bindings exist, so no group for `?dept` is created.
 
 **Aggregate function semantics:**
 
 | Function | Accepted types | Result type | Zero-binding result | Type mismatch |
 |---|---|---|---|---|
-| `count` | any | `Value::Integer` | empty result set | n/a |
-| `count-distinct` | any | `Value::Integer` | empty result set | n/a |
+| `count` | any | `Value::Integer` | `[[0]]` if no grouping vars; else empty | n/a |
+| `count-distinct` | any | `Value::Integer` | `[[0]]` if no grouping vars; else empty | n/a |
 | `sum` | `Integer`, `Float` | see widening rule | empty result set | `Err` |
 | `sum-distinct` | `Integer`, `Float` | see widening rule | empty result set | `Err` |
 | `min` | `Integer`, `Float`, `String` | same as input type | empty result set | `Err` |
@@ -260,9 +264,10 @@ New test file. All assertions follow the no-`{:?}`-on-Result/Fact/Value conventi
 | `min_max_integers` | boundary values correct |
 | `min_max_strings` | lexicographic ordering |
 | `with_prevents_overcollapse` | `sum` without `:with` vs with `:with ?e` differ when entity duplicates exist |
-| `count_empty_result` | zero bindings → empty result set (not `[[0]]`) |
-| `count_distinct_empty_result` | zero bindings with `count-distinct` → empty result set |
-| `sum_empty_result` | zero bindings → empty result set (not `[[0]]`) |
+| `count_empty_result` | zero bindings, no grouping vars → `[[0]]` |
+| `count_empty_with_grouping_var` | zero bindings, grouping var present → empty result set |
+| `count_distinct_empty_result` | zero bindings, no grouping vars → `[[0]]` |
+| `sum_empty_result` | zero bindings → empty result set |
 | `sum_type_error` | `Err` when summing strings |
 | `min_type_error` | `Err` on Boolean type |
 | `min_mixed_int_float_error` | `Err` when Integer and Float in same group |
@@ -284,7 +289,7 @@ New test file. All assertions follow the no-`{:?}`-on-Result/Fact/Value conventi
 | `src/query/datalog/parser.rs` | Parse aggregate lists in `:find`; parse `:with` clause; new validations |
 | `src/query/datalog/executor.rs` | Add `apply_aggregation`; update variable-extraction loops; update `vars:` assignments |
 | `src/query/datalog/evaluator.rs` | Type propagation only (3–5 call sites) |
-| `tests/aggregation_test.rs` | New — ~23 tests |
+| `tests/aggregation_test.rs` | New — ~24 tests |
 
 No changes to: `matcher.rs`, `optimizer.rs`, `stratification.rs`, `rules.rs`, `storage/`, `graph/`, `db.rs`, `wal.rs`, public API.
 
