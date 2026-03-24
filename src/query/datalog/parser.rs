@@ -509,12 +509,13 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
         i += 1;
     }
 
-    // Safety check: all variables in (not ...) must be bound by outer clauses
+    // Safety check: all variables in (not ...) and (not-join ...) must be bound by outer clauses
     let outer_bound: std::collections::HashSet<String> = where_clauses
         .iter()
         .flat_map(outer_vars_from_clause)
         .collect();
     check_not_safety(&where_clauses, &outer_bound)?;
+    check_not_join_safety(&where_clauses, &outer_bound)?;
 
     let mut query = DatalogQuery::new(find_vars, where_clauses);
     query.as_of = query_as_of;
@@ -695,6 +696,58 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
             }
             Ok(WhereClause::Not(inner))
         }
+        EdnValue::Symbol(s) if s == "not-join" => {
+            if !allow_not {
+                return Err(
+                    "(not-join ...) cannot appear inside another (not ...) or (not-join ...)"
+                        .to_string(),
+                );
+            }
+            // Syntax: (not-join [?v1 ?v2 ...] clause1 clause2 ...)
+            if list.len() < 3 {
+                return Err(
+                    "(not-join) requires a join-vars vector and at least one clause".to_string(),
+                );
+            }
+            let join_var_vec = match &list[1] {
+                EdnValue::Vector(v) => v,
+                _ => {
+                    return Err(
+                        "(not-join) first argument must be a vector of join variables".to_string(),
+                    );
+                }
+            };
+            let join_vars: Vec<String> = join_var_vec
+                .iter()
+                .map(|v| match v {
+                    EdnValue::Symbol(s) if s.starts_with('?') => Ok(s.clone()),
+                    _ => Err(format!(
+                        "(not-join) join variables must be logic variables, got {:?}",
+                        v
+                    )),
+                })
+                .collect::<Result<_, _>>()?;
+            let mut inner = Vec::new();
+            for item in &list[2..] {
+                if let Some(vec) = item.as_vector() {
+                    let pattern = Pattern::from_edn(vec)?;
+                    inner.push(WhereClause::Pattern(pattern));
+                } else if let Some(inner_list) = item.as_list() {
+                    // allow_not=false to reject nested (not ...) or (not-join ...)
+                    let clause = parse_list_as_where_clause(inner_list, false)?;
+                    inner.push(clause);
+                } else {
+                    return Err(format!(
+                        "expected pattern or rule invocation inside (not-join), got {:?}",
+                        item
+                    ));
+                }
+            }
+            Ok(WhereClause::NotJoin {
+                join_vars,
+                clauses: inner,
+            })
+        }
         EdnValue::Symbol(predicate) => {
             let args = list[1..].to_vec();
             Ok(WhereClause::RuleInvocation {
@@ -736,6 +789,7 @@ fn outer_vars_from_clause(clause: &WhereClause) -> Vec<String> {
             })
             .collect(),
         WhereClause::Not(_) => vec![], // not counted as "outer"
+        WhereClause::NotJoin { .. } => vec![], // not counted as "outer"
     }
 }
 
@@ -758,6 +812,28 @@ fn check_not_safety(
                 if !outer_bound.contains(&var) {
                     return Err(format!(
                         "variable {} in (not ...) is not bound by any outer clause",
+                        var
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Validate not-join safety: every variable listed in join_vars must be bound
+/// by an outer clause. Variables that appear only in the not-join body but are
+/// NOT in join_vars are existentially quantified — no error.
+fn check_not_join_safety(
+    clauses: &[WhereClause],
+    outer_bound: &std::collections::HashSet<String>,
+) -> Result<(), String> {
+    for clause in clauses {
+        if let WhereClause::NotJoin { join_vars, .. } = clause {
+            for var in join_vars {
+                if !var.starts_with("?_") && !outer_bound.contains(var) {
+                    return Err(format!(
+                        "join variable {} in (not-join ...) is not bound by any outer clause",
                         var
                     ));
                 }
@@ -835,6 +911,7 @@ fn parse_rule(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
         }
     }
     check_not_safety(&body_clauses, &outer_bound)?;
+    check_not_join_safety(&body_clauses, &outer_bound)?;
 
     Ok(DatalogCommand::Rule(Rule {
         head: head_list.clone(),
@@ -1399,5 +1476,126 @@ mod tests {
             },
             _ => panic!("Expected Query"),
         }
+    }
+
+    #[test]
+    fn test_parse_not_join_basic() {
+        // (query [:find ?e :where [?e :name ?n] (not-join [?e] [?e :banned true])])
+        let result = parse_datalog_command(
+            "(query [:find ?e :where [?e :name ?n] (not-join [?e] [?e :banned true])])",
+        );
+        assert!(result.is_ok(), "basic not-join must parse OK");
+        if let Ok(DatalogCommand::Query(q)) = result {
+            assert_eq!(q.where_clauses.len(), 2);
+            assert!(matches!(
+                &q.where_clauses[1],
+                WhereClause::NotJoin { join_vars, clauses }
+                if join_vars == &["?e".to_string()] && clauses.len() == 1
+            ));
+        } else {
+            panic!("expected Query");
+        }
+    }
+
+    #[test]
+    fn test_parse_not_join_multiple_join_vars() {
+        let result = parse_datalog_command(
+            "(query [:find ?e :where [?e :name ?n] [?e :role ?r] \
+             (not-join [?e ?r] [?e :has-role ?r] [?r :is-admin true])])",
+        );
+        assert!(result.is_ok(), "multi-join-var not-join must parse");
+        if let Ok(DatalogCommand::Query(q)) = result {
+            if let WhereClause::NotJoin { join_vars, clauses } = &q.where_clauses[2] {
+                assert_eq!(join_vars.len(), 2);
+                assert_eq!(clauses.len(), 2);
+            } else {
+                panic!("expected NotJoin");
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_not_join_inner_var_need_not_be_outer_bound() {
+        // ?tag appears only in the not-join body — this is legal
+        let result = parse_datalog_command(
+            "(query [:find ?e :where [?e :name ?n] \
+             (not-join [?e] [?e :has-tag ?tag] [?tag :is-bad true])])",
+        );
+        assert!(
+            result.is_ok(),
+            "inner-only var ?tag must be allowed in not-join"
+        );
+    }
+
+    #[test]
+    fn test_parse_not_join_unbound_join_var_rejected() {
+        // ?role is in join_vars but not bound by any outer clause
+        let result = parse_datalog_command(
+            "(query [:find ?e :where [?e :name ?n] \
+             (not-join [?role] [?e :has-role ?role])])",
+        );
+        assert!(result.is_err(), "unbound join var must be rejected");
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("?role") && msg.contains("not bound"),
+            "error must name the offending variable"
+        );
+    }
+
+    #[test]
+    fn test_parse_not_join_missing_join_vars_vector_rejected() {
+        // First arg is not a vector
+        let result = parse_datalog_command(
+            "(query [:find ?e :where [?e :name ?n] (not-join ?e [?e :banned true])])",
+        );
+        assert!(result.is_err(), "non-vector first arg must fail");
+    }
+
+    #[test]
+    fn test_parse_not_join_too_few_args_rejected() {
+        // Only join-vars vector, no body clauses
+        let result =
+            parse_datalog_command("(query [:find ?e :where [?e :name ?n] (not-join [?e])])");
+        assert!(result.is_err(), "not-join with no clauses must fail");
+    }
+
+    #[test]
+    fn test_parse_not_join_nested_inside_not_rejected() {
+        let result = parse_datalog_command(
+            "(query [:find ?e :where [?e :name ?n] \
+             (not (not-join [?e] [?e :banned true]))])",
+        );
+        assert!(result.is_err(), "not-join nested inside not must fail");
+    }
+
+    #[test]
+    fn test_parse_not_join_in_rule_body() {
+        let result = parse_datalog_command(
+            "(rule [(eligible ?x) \
+             [?x :applied true] \
+             (not-join [?x] [?x :dep ?d] [?d :status :rejected])])",
+        );
+        assert!(result.is_ok(), "not-join in rule body must parse");
+        if let Ok(DatalogCommand::Rule(rule)) = result {
+            assert_eq!(rule.body.len(), 2);
+            assert!(
+                matches!(&rule.body[1], WhereClause::NotJoin { join_vars, .. }
+                if join_vars == &["?x".to_string()])
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_not_join_rule_body_unbound_join_var_rejected() {
+        // ?dep is in join_vars but never bound by outer body
+        let result = parse_datalog_command(
+            "(rule [(eligible ?x) \
+             [?x :applied true] \
+             (not-join [?dep] [?x :dep ?dep])])",
+        );
+        assert!(
+            result.is_err(),
+            "unbound join var in rule body not-join must fail"
+        );
     }
 }
