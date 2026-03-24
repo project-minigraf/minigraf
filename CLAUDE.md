@@ -6,9 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries** written in Rust. Designed as the embedded graph memory layer for AI agents, mobile apps, and the browser — built on the SQLite philosophy: embedded, single-file, reliable, with time travel.
 
-**Current status**: Phase 7.1 complete (stratified negation — `not` / `not-join`) → **Phase 7.2 next** (aggregation).
-**Do not publish to crates.io before Phase 7.8** (API cleanup + publish prep).
-See `ROADMAP.md` for the full phase plan and `CHANGELOG.md` for per-phase implementation history.
+See `ROADMAP.md` for the current phase, full plan, and publish gate. See `CHANGELOG.md` for per-phase implementation history.
 
 ## Core Philosophy - CRITICAL
 
@@ -172,13 +170,9 @@ See `TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
 
-## Key Files for Phase 7.2 (Aggregation — next)
+## Key Files for the Next Phase
 
-1. `src/query/datalog/types.rs` — add `FindSpec` aggregation variants (`count`, `sum`, `min`, `max`, `distinct`) and `:with` clause
-2. `src/query/datalog/parser.rs` — parse aggregate find specs and `:with`
-3. `src/query/datalog/executor.rs` — apply aggregation after pattern matching
-4. `src/query/datalog/evaluator.rs` — aggregation in rule-query path
-5. `ROADMAP.md` — detailed spec for Phase 7.2
+See `ROADMAP.md` for the current next phase spec, including the relevant files and implementation details.
 
 ## Testing Conventions
 
