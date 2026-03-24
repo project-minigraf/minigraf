@@ -1386,7 +1386,7 @@ mod tests {
                         assert_eq!(inner.len(), 1);
                         assert!(matches!(inner[0], WhereClause::Pattern(_)));
                     }
-                    other => panic!("Expected Not, got {:?}", other),
+                    _ => panic!("Expected Not clause"),
                 }
             }
             _ => panic!("Expected Query"),
@@ -1402,7 +1402,7 @@ mod tests {
                 WhereClause::Not(inner) => {
                     assert!(matches!(inner[0], WhereClause::RuleInvocation { .. }));
                 }
-                other => panic!("Expected Not, got {:?}", other),
+                _ => panic!("Expected Not clause"),
             },
             _ => panic!("Expected Query"),
         }
@@ -1428,7 +1428,7 @@ mod tests {
         let result = parse_datalog_command(input);
         assert!(result.is_err());
         let msg = result.unwrap_err();
-        assert!(msg.contains("requires at least one clause"), "got: {msg}");
+        assert!(msg.contains("requires at least one clause"));
     }
 
     #[test]
@@ -1437,7 +1437,7 @@ mod tests {
         let result = parse_datalog_command(input);
         assert!(result.is_err());
         let msg = result.unwrap_err();
-        assert!(msg.contains("cannot appear inside another"), "got: {msg}");
+        assert!(msg.contains("cannot appear inside another"));
     }
 
     #[test]
@@ -1447,7 +1447,7 @@ mod tests {
         let result = parse_datalog_command(input);
         assert!(result.is_err());
         let msg = result.unwrap_err();
-        assert!(msg.contains("not bound"), "got: {msg}");
+        assert!(msg.contains("not bound"));
     }
 
     #[test]
@@ -1457,7 +1457,7 @@ mod tests {
         let result = parse_datalog_command(input);
         assert!(result.is_err());
         let msg = result.unwrap_err();
-        assert!(msg.contains("not bound"), "got: {msg}");
+        assert!(msg.contains("not bound"));
     }
 
     #[test]
@@ -1472,7 +1472,7 @@ mod tests {
                     assert!(matches!(inner[0], WhereClause::Pattern(_)));
                     assert!(matches!(inner[1], WhereClause::Pattern(_)));
                 }
-                other => panic!("Expected Not with 2 clauses, got {:?}", other),
+                _ => panic!("Expected Not clause with 2 items"),
             },
             _ => panic!("Expected Query"),
         }
