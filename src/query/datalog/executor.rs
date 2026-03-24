@@ -1429,7 +1429,7 @@ mod tests {
         match result {
             QueryResult::QueryResults { results, .. } => {
                 // a is excluded (has a blocked dep); b passes
-                assert_eq!(results.len(), 1, "only b should pass: {}", results.len());
+                assert_eq!(results.len(), 1, "only b should pass");
             }
             _ => panic!("Expected QueryResults"),
         }

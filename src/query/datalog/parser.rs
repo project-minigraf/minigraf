@@ -1538,8 +1538,7 @@ mod tests {
         let msg = result.unwrap_err();
         assert!(
             msg.contains("?role") && msg.contains("not bound"),
-            "error must name the offending variable: {}",
-            msg
+            "error must name the offending variable"
         );
     }
 
