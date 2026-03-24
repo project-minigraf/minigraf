@@ -235,7 +235,6 @@ impl RecursiveEvaluator {
         if list.is_empty() {
             return Err(anyhow!("Rule invocation cannot be empty"));
         }
-
         let predicate = match &list[0] {
             EdnValue::Symbol(s) => s.clone(),
             _ => {
@@ -244,31 +243,8 @@ impl RecursiveEvaluator {
                 ));
             }
         };
-
-        match list.len() {
-            2 => {
-                // 1-arg: (blocked ?x)  →  [?x :blocked ?_rule_value]
-                // ?_rule_value is a wildcard that matches any stored sentinel value.
-                Ok(Pattern::new(
-                    list[1].clone(),
-                    EdnValue::Keyword(format!(":{}", predicate)),
-                    EdnValue::Symbol("?_rule_value".to_string()),
-                ))
-            }
-            3 => {
-                // 2-arg: (reachable ?from ?to)  →  [?from :reachable ?to]
-                Ok(Pattern::new(
-                    list[1].clone(),
-                    EdnValue::Keyword(format!(":{}", predicate)),
-                    list[2].clone(),
-                ))
-            }
-            n => Err(anyhow!(
-                "Rule invocation '{}' must have 1 or 2 arguments, got {}",
-                predicate,
-                n - 1
-            )),
-        }
+        let args: Vec<EdnValue> = list[1..].to_vec();
+        rule_invocation_to_pattern(&predicate, &args)
     }
 
     /// Instantiate rule head with variable bindings to create a derived fact.
@@ -381,6 +357,77 @@ pub fn substitute_value(value: &EdnValue, binding: &Bindings) -> EdnValue {
     }
 }
 
+/// Convert a predicate name + argument list to a Pattern.
+///
+/// 1-arg: `(blocked ?x)` → `[?x :blocked ?_rule_value]`
+/// 2-arg: `(reachable ?from ?to)` → `[?from :reachable ?to]`
+pub(super) fn rule_invocation_to_pattern(predicate: &str, args: &[EdnValue]) -> Result<Pattern> {
+    match args.len() {
+        1 => Ok(Pattern::new(
+            args[0].clone(),
+            EdnValue::Keyword(format!(":{}", predicate)),
+            EdnValue::Symbol("?_rule_value".to_string()),
+        )),
+        2 => Ok(Pattern::new(
+            args[0].clone(),
+            EdnValue::Keyword(format!(":{}", predicate)),
+            args[1].clone(),
+        )),
+        n => Err(anyhow!(
+            "Rule invocation '{}' must have 1 or 2 arguments, got {}",
+            predicate,
+            n
+        )),
+    }
+}
+
+/// Test whether a `not-join` body is satisfiable given a current binding.
+///
+/// Returns `true` if the body IS satisfiable → outer binding should be **rejected**.
+/// Returns `false` if the body cannot be satisfied → outer binding survives.
+///
+/// Algorithm:
+/// 1. Build a partial binding containing only the join_vars entries.
+/// 2. For each clause:
+///    - Pattern → substitute join_vars via substitute_pattern.
+///    - RuleInvocation → convert to Pattern via rule_invocation_to_pattern, then substitute.
+///      Rule-derived facts are already present in `storage` (accumulated) from lower strata.
+/// 3. Run PatternMatcher::match_patterns on all resulting patterns against `storage`.
+/// 4. Any complete match → body is satisfiable → return true (reject outer binding).
+pub fn evaluate_not_join(
+    join_vars: &[String],
+    clauses: &[WhereClause],
+    binding: &Bindings,
+    storage: &FactStorage,
+) -> bool {
+    // Build a partial binding containing only the join variables
+    let partial: Bindings = join_vars
+        .iter()
+        .filter_map(|v| binding.get(v.as_str()).map(|val| (v.clone(), val.clone())))
+        .collect();
+
+    // Convert all clauses to patterns
+    let substituted: Vec<Pattern> = clauses
+        .iter()
+        .filter_map(|c| match c {
+            WhereClause::Pattern(p) => Some(substitute_pattern(p, &partial)),
+            WhereClause::RuleInvocation { predicate, args } => {
+                rule_invocation_to_pattern(predicate, args)
+                    .ok()
+                    .map(|p| substitute_pattern(&p, &partial))
+            }
+            _ => None,
+        })
+        .collect();
+
+    if substituted.is_empty() {
+        return false;
+    }
+
+    let matcher = PatternMatcher::new(storage.clone());
+    !matcher.match_patterns(&substituted).is_empty()
+}
+
 /// Evaluates Datalog rules with stratified negation support.
 ///
 /// Strata are evaluated in ascending order. Within each stratum, positive-only
@@ -463,7 +510,10 @@ impl StratifiedEvaluator {
 
             for pred in &stratum_preds {
                 for rule in registry.get_rules(pred) {
-                    let has_not = rule.body.iter().any(|c| matches!(c, WhereClause::Not(_)));
+                    let has_not = rule
+                        .body
+                        .iter()
+                        .any(|c| matches!(c, WhereClause::Not(_) | WhereClause::NotJoin { .. }));
                     if has_not {
                         mixed_rules.push((pred.clone(), rule));
                     } else {
@@ -531,6 +581,17 @@ impl StratifiedEvaluator {
                     })
                     .collect();
 
+                let not_join_clauses: Vec<(Vec<String>, Vec<WhereClause>)> = rule
+                    .body
+                    .iter()
+                    .filter_map(|c| match c {
+                        WhereClause::NotJoin { join_vars, clauses } => {
+                            Some((join_vars.clone(), clauses.clone()))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+
                 let matcher = PatternMatcher::new(accumulated.clone());
                 let candidates = matcher.match_patterns(&positive_patterns);
 
@@ -575,7 +636,13 @@ impl StratifiedEvaluator {
                         }
                     }
 
-                    // All Not conditions held -> derive head fact
+                    for (join_vars, nj_clauses) in &not_join_clauses {
+                        if evaluate_not_join(join_vars, nj_clauses, &binding, &accumulated) {
+                            continue 'binding;
+                        }
+                    }
+
+                    // All Not / NotJoin conditions held -> derive head fact
                     if let Ok(fact) = temp_eval.instantiate_head_public(&rule.head, &binding) {
                         // Use transact (not load_fact) so derived facts get a proper
                         // tx_id and incremented tx_count, matching spec step (d).
@@ -1099,6 +1166,194 @@ mod tests {
                 .filter(|f| f.asserted)
                 .collect();
             assert_eq!(eligible_facts.len(), 1, "alice should be eligible");
+        }
+
+        #[test]
+        fn test_not_join_rejects_entity_with_matching_inner_var() {
+            // Rule: (clean ?x) :- [?x :submitted true], (not-join [?x] [?x :has-dep ?d] [?d :blocked true])
+            // alice: submitted=true, has-dep=dep1, dep1:blocked=true  -> NOT clean
+            // bob:   submitted=true                                    -> clean
+            let storage = FactStorage::new();
+            let alice = Uuid::new_v4();
+            let bob = Uuid::new_v4();
+            let dep1 = Uuid::new_v4();
+            storage
+                .transact(
+                    vec![
+                        (alice, ":submitted".to_string(), Value::Boolean(true)),
+                        (alice, ":has-dep".to_string(), Value::Ref(dep1)),
+                        (dep1, ":blocked".to_string(), Value::Boolean(true)),
+                        (bob, ":submitted".to_string(), Value::Boolean(true)),
+                    ],
+                    None,
+                )
+                .unwrap();
+
+            let rule = Rule::new(
+                vec![
+                    EdnValue::Symbol("clean".to_string()),
+                    EdnValue::Symbol("?x".to_string()),
+                ],
+                vec![
+                    WhereClause::Pattern(Pattern::new(
+                        EdnValue::Symbol("?x".to_string()),
+                        EdnValue::Keyword(":submitted".to_string()),
+                        EdnValue::Boolean(true),
+                    )),
+                    WhereClause::NotJoin {
+                        join_vars: vec!["?x".to_string()],
+                        clauses: vec![
+                            WhereClause::Pattern(Pattern::new(
+                                EdnValue::Symbol("?x".to_string()),
+                                EdnValue::Keyword(":has-dep".to_string()),
+                                EdnValue::Symbol("?d".to_string()),
+                            )),
+                            WhereClause::Pattern(Pattern::new(
+                                EdnValue::Symbol("?d".to_string()),
+                                EdnValue::Keyword(":blocked".to_string()),
+                                EdnValue::Boolean(true),
+                            )),
+                        ],
+                    },
+                ],
+            );
+
+            let mut registry = RuleRegistry::new();
+            registry.register_rule_unchecked("clean".to_string(), rule);
+            let rules = Arc::new(RwLock::new(registry));
+            let evaluator = StratifiedEvaluator::new(storage, rules, 100);
+            let result = evaluator.evaluate(&["clean".to_string()]).unwrap();
+            let clean_facts: Vec<_> = result
+                .get_facts_by_attribute(&":clean".to_string())
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|f| f.asserted)
+                .collect();
+            assert_eq!(clean_facts.len(), 1, "only bob should be clean");
+            assert_eq!(clean_facts[0].entity, bob, "the clean entity must be bob");
+        }
+
+        #[test]
+        fn test_not_join_keeps_entity_when_inner_var_has_no_match() {
+            // Only alice has submitted=true and NO has-dep at all -> clean
+            let storage = FactStorage::new();
+            let alice = Uuid::new_v4();
+            storage
+                .transact(
+                    vec![(alice, ":submitted".to_string(), Value::Boolean(true))],
+                    None,
+                )
+                .unwrap();
+
+            let rule = Rule::new(
+                vec![
+                    EdnValue::Symbol("clean".to_string()),
+                    EdnValue::Symbol("?x".to_string()),
+                ],
+                vec![
+                    WhereClause::Pattern(Pattern::new(
+                        EdnValue::Symbol("?x".to_string()),
+                        EdnValue::Keyword(":submitted".to_string()),
+                        EdnValue::Boolean(true),
+                    )),
+                    WhereClause::NotJoin {
+                        join_vars: vec!["?x".to_string()],
+                        clauses: vec![WhereClause::Pattern(Pattern::new(
+                            EdnValue::Symbol("?x".to_string()),
+                            EdnValue::Keyword(":has-dep".to_string()),
+                            EdnValue::Symbol("?d".to_string()),
+                        ))],
+                    },
+                ],
+            );
+
+            let mut registry = RuleRegistry::new();
+            registry.register_rule_unchecked("clean".to_string(), rule);
+            let rules = Arc::new(RwLock::new(registry));
+            let evaluator = StratifiedEvaluator::new(storage, rules, 100);
+            let result = evaluator.evaluate(&["clean".to_string()]).unwrap();
+            let clean_facts: Vec<_> = result
+                .get_facts_by_attribute(&":clean".to_string())
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|f| f.asserted)
+                .collect();
+            assert_eq!(
+                clean_facts.len(),
+                1,
+                "alice must be clean when no deps exist"
+            );
+        }
+
+        #[test]
+        fn test_not_join_body_with_rule_invocation() {
+            // Rule: (blocked ?x) :- [?x :status :banned]
+            // Rule: (clean ?x) :- [?x :submitted true], (not-join [?x] (blocked ?x))
+            // alice: submitted, banned -> NOT clean
+            // bob: submitted, not banned -> clean
+            let storage = FactStorage::new();
+            let alice = Uuid::new_v4();
+            let bob = Uuid::new_v4();
+            storage
+                .transact(
+                    vec![
+                        (alice, ":submitted".to_string(), Value::Boolean(true)),
+                        (
+                            alice,
+                            ":status".to_string(),
+                            Value::Keyword(":banned".to_string()),
+                        ),
+                        (bob, ":submitted".to_string(), Value::Boolean(true)),
+                    ],
+                    None,
+                )
+                .unwrap();
+
+            let rule_blocked = Rule::new(
+                vec![
+                    EdnValue::Symbol("blocked".to_string()),
+                    EdnValue::Symbol("?x".to_string()),
+                ],
+                vec![WhereClause::Pattern(Pattern::new(
+                    EdnValue::Symbol("?x".to_string()),
+                    EdnValue::Keyword(":status".to_string()),
+                    EdnValue::Keyword(":banned".to_string()),
+                ))],
+            );
+            let rule_clean = Rule::new(
+                vec![
+                    EdnValue::Symbol("clean".to_string()),
+                    EdnValue::Symbol("?x".to_string()),
+                ],
+                vec![
+                    WhereClause::Pattern(Pattern::new(
+                        EdnValue::Symbol("?x".to_string()),
+                        EdnValue::Keyword(":submitted".to_string()),
+                        EdnValue::Boolean(true),
+                    )),
+                    WhereClause::NotJoin {
+                        join_vars: vec!["?x".to_string()],
+                        clauses: vec![WhereClause::RuleInvocation {
+                            predicate: "blocked".to_string(),
+                            args: vec![EdnValue::Symbol("?x".to_string())],
+                        }],
+                    },
+                ],
+            );
+            let mut registry = RuleRegistry::new();
+            registry.register_rule_unchecked("blocked".to_string(), rule_blocked);
+            registry.register_rule_unchecked("clean".to_string(), rule_clean);
+            let rules = Arc::new(RwLock::new(registry));
+            let evaluator = StratifiedEvaluator::new(storage, rules, 100);
+            let result = evaluator.evaluate(&["clean".to_string()]).unwrap();
+            let clean_facts: Vec<_> = result
+                .get_facts_by_attribute(&":clean".to_string())
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|f| f.asserted)
+                .collect();
+            assert_eq!(clean_facts.len(), 1, "only bob should be clean");
+            assert_eq!(clean_facts[0].entity, bob, "the clean entity must be bob");
         }
 
         #[test]
