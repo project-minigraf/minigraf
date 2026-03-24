@@ -85,6 +85,41 @@ Before submitting, ask yourself:
 
 If you answer "yes" to the last two questions, reconsider. If in doubt, open an issue and discuss first.
 
+## Pre-Publishing Checklist (crates.io)
+
+**Do not publish before Phase 7.8.** Before publishing, verify all of the following:
+
+### Minimum Bar
+- [x] Phase 6.4 benchmarks complete (`BENCHMARKS.md`)
+- [x] Phase 6.5 complete — on-disk B+tree, file format v6
+- [x] Phase 7.1 complete — stratified negation, 407 tests passing
+- [ ] Checkpoint-during-crash recovery exercised (Phase 7.5)
+- [ ] Error-path coverage ≥90% (currently ~82%) (Phase 7.5)
+- [x] GitHub Discussions enabled
+
+### API Cleanup (Phase 7.8)
+- [ ] Narrow `lib.rs` exports — expose only `Minigraf`, `WriteTransaction`, and query/result types; hide `PersistentFactStorage`, `FileHeader`, `PAGE_SIZE`, `Repl`, `Wal`, etc.
+- [x] Remove dead `clap` dependency ✅
+
+### Crate Metadata (`Cargo.toml`)
+- [x] `repository`, `keywords`, `categories`, `readme`, `documentation` fields set
+- [ ] Verify `description` is accurate and compelling (Phase 7.8)
+
+### Documentation (Phase 7.8)
+- [ ] All public API items have rustdoc comments with examples
+- [ ] `README.md` quick-start example compiles and runs
+- [ ] `CHANGELOG.md` up to date
+
+### Quality Gates (Phase 7.8)
+- [ ] `cargo test` passes on Linux, macOS, Windows (CI matrix)
+- [ ] `cargo clippy -- -D warnings` passes
+- [ ] `cargo doc --no-deps` builds without warnings
+- [ ] No `unwrap()`/`expect()` in library code paths (tests and binary are fine)
+
+### Versioning
+- [ ] Publish as `0.x` — no backwards-compat promise until v1.0.0 (Phase 7.8)
+- [ ] Stable API target is v1.0.0 — after Phase 8 cross-platform work
+
 ## Code of Conduct
 
 This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). By participating, you agree to uphold it.
