@@ -1218,7 +1218,6 @@ mod tests {
     fn test_execute_query_with_rules_not_in_query_body() {
         // Query: [:find ?x :where (reachable ?_a ?x) (not [?x :blocked true])]
         // rule invocation + pattern-not in same query body
-        use crate::graph::types::Fact;
         use crate::query::datalog::types::{Pattern, WhereClause};
         let storage = FactStorage::new();
         let a = uuid::Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
