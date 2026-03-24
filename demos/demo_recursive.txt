@@ -5,7 +5,7 @@
 # including transitive closure, cycle handling,
 # and multi-hop graph reachability.
 #
-# Run with: cargo run < demo_recursive.txt
+# Run with: cargo run < demos/demo_recursive.txt
 # ========================================
 
 # ========================================

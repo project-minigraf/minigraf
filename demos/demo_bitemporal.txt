@@ -6,7 +6,7 @@
 # :as-of, retraction history, and combined
 # bi-temporal queries.
 #
-# Run with: cargo run < demo_bitemporal.txt
+# Run with: cargo run < demos/demo_bitemporal.txt
 # ========================================
 
 # ========================================

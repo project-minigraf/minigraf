@@ -404,7 +404,7 @@ WAL sidecar <db>.wal (present while uncommitted writes exist):
 - ✅ **On-disk B+tree indexes** (btree_v6.rs, concurrent range scans) - 8 integration + 1 unit test (Phase 6.5)
 
 **Demo Scripts**:
-- `demo_recursive.txt`: Comprehensive recursive rules examples (transitive closure, cycles, family trees)
+- `demos/demo_recursive.txt`: Comprehensive recursive rules examples (transitive closure, cycles, family trees)
 
 Run tests with: `cargo test`
 See `TEST_COVERAGE.md` for detailed coverage report.
@@ -443,7 +443,7 @@ See `TEST_COVERAGE.md` for detailed coverage report.
 
 **Test Coverage**: 123 tests (94 unit + 26 integration + 3 doc)
 
-**Demo**: `demo_recursive.txt` - Working examples of recursive rules
+**Demo**: `demos/demo_recursive.txt` - Working examples of recursive rules
 
 ### Phase 4 (Complete) - Bi-temporal Support ✅
 

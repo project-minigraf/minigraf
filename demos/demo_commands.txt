@@ -1,6 +1,6 @@
 # Minigraf Demo Commands
 # Copy and paste these commands into the REPL, or pipe them in:
-#   cargo run < demo_commands.txt
+#   cargo run < demos/demo_commands.txt
 
 # ============================================================================
 # BASIC DATALOG

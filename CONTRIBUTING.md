@@ -52,7 +52,7 @@ cargo clippy -- -D warnings
 cargo run
 
 # Try the recursive rules demo
-cargo run < demo_recursive.txt
+cargo run < demos/demo_recursive.txt
 ```
 
 ## Code Standards

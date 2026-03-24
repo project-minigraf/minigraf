@@ -67,7 +67,7 @@ db.execute(r#"(rule [(reachable ?a ?b) [?a :friend ?b]])
 ```bash
 cargo run          # interactive Datalog REPL
 cargo test         # run 407 tests
-cargo run < demo_recursive.txt   # recursive rules demo
+cargo run < demos/demo_recursive.txt   # recursive rules demo
 ```
 
 See the [Datalog Reference](https://github.com/adityamukho/minigraf/wiki/Datalog-Reference) wiki page for the complete syntax.

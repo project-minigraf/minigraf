@@ -4,7 +4,7 @@
 # Demonstrates not and not-join in query bodies
 # and rule bodies, plus negative cycle rejection.
 #
-# Run with: cargo run < demo_negation.txt
+# Run with: cargo run < demos/demo_negation.txt
 # ========================================
 
 # ========================================
