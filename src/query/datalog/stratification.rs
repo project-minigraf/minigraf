@@ -215,4 +215,90 @@ mod tests {
         assert_eq!(*strata.get("foo").unwrap_or(&0), 0);
         assert_eq!(*strata.get("bar").unwrap_or(&0), 0);
     }
+
+    #[test]
+    fn test_not_join_creates_negative_dependency_edge() {
+        // Rule: (eligible ?x) :- [?x :applied true], (not-join [?x] (blocked ?x))
+        // => negative edge: eligible -> blocked
+        use crate::query::datalog::types::{EdnValue, Pattern, Rule, WhereClause};
+
+        let rule = Rule::new(
+            vec![
+                EdnValue::Symbol("eligible".to_string()),
+                EdnValue::Symbol("?x".to_string()),
+            ],
+            vec![
+                WhereClause::Pattern(Pattern::new(
+                    EdnValue::Symbol("?x".to_string()),
+                    EdnValue::Keyword(":applied".to_string()),
+                    EdnValue::Boolean(true),
+                )),
+                WhereClause::NotJoin {
+                    join_vars: vec!["?x".to_string()],
+                    clauses: vec![WhereClause::RuleInvocation {
+                        predicate: "blocked".to_string(),
+                        args: vec![EdnValue::Symbol("?x".to_string())],
+                    }],
+                },
+            ],
+        );
+
+        let mut registry = RuleRegistry::new();
+        registry.register_rule_unchecked("eligible".to_string(), rule);
+        let graph = DependencyGraph::from_rules(&registry);
+        let strata = graph.stratify().unwrap();
+
+        // "eligible" must be in a higher stratum than "blocked"
+        let eligible_stratum = *strata.get("eligible").unwrap_or(&0);
+        let blocked_stratum = *strata.get("blocked").unwrap_or(&0);
+        assert!(
+            eligible_stratum > blocked_stratum,
+            "eligible (stratum {}) must be above blocked (stratum {})",
+            eligible_stratum,
+            blocked_stratum
+        );
+    }
+
+    #[test]
+    fn test_not_join_negative_cycle_rejected() {
+        // p :- (not-join [?x] (q ?x))
+        // q :- (not-join [?x] (p ?x))
+        // This is a negative cycle and must be rejected.
+        use crate::query::datalog::types::{EdnValue, Rule, WhereClause};
+
+        let rule_p = Rule::new(
+            vec![
+                EdnValue::Symbol("p".to_string()),
+                EdnValue::Symbol("?x".to_string()),
+            ],
+            vec![WhereClause::NotJoin {
+                join_vars: vec!["?x".to_string()],
+                clauses: vec![WhereClause::RuleInvocation {
+                    predicate: "q".to_string(),
+                    args: vec![EdnValue::Symbol("?x".to_string())],
+                }],
+            }],
+        );
+        let rule_q = Rule::new(
+            vec![
+                EdnValue::Symbol("q".to_string()),
+                EdnValue::Symbol("?x".to_string()),
+            ],
+            vec![WhereClause::NotJoin {
+                join_vars: vec!["?x".to_string()],
+                clauses: vec![WhereClause::RuleInvocation {
+                    predicate: "p".to_string(),
+                    args: vec![EdnValue::Symbol("?x".to_string())],
+                }],
+            }],
+        );
+        let mut registry = RuleRegistry::new();
+        registry.register_rule_unchecked("p".to_string(), rule_p);
+        registry.register_rule_unchecked("q".to_string(), rule_q);
+        let graph = DependencyGraph::from_rules(&registry);
+        assert!(
+            graph.stratify().is_err(),
+            "negative cycle via not-join must be rejected"
+        );
+    }
 }
