@@ -100,8 +100,8 @@ impl Repl {
                                     eprintln!("Execution error: {}", e);
                                 }
                             },
-                            Err(e) => {
-                                eprintln!("Parse error: {}", e);
+                            Err(_e) => {
+                                eprintln!("Parse error");
                             }
                         }
 
