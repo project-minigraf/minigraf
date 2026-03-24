@@ -1,6 +1,6 @@
 use crate::graph::FactStorage;
 use crate::query::datalog::{DatalogExecutor, parse_datalog_command};
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 
 pub struct Repl {
     fact_storage: FactStorage,
@@ -12,50 +12,55 @@ impl Repl {
     }
 
     pub fn run(&self) {
-        println!(
-            "Minigraf v{} - Interactive Datalog Console",
-            env!("CARGO_PKG_VERSION")
-        );
-        println!();
-        println!("Data operations:");
-        println!("  (transact [...])                    - assert facts");
-        println!("  (transact {{:valid-from ... :valid-to ...}} [...]) - with valid time");
-        println!("  (retract [...])                     - retract facts");
-        println!();
-        println!("Queries:");
-        println!("  (query [:find ?x :where ...])       - basic query");
-        println!("  (rule [(name ?a ?b) [?a :attr ?b]]) - define a rule");
-        println!();
-        println!("Temporal queries:");
-        println!(
-            "  (query [:find ?x :as-of 50 :where ...])                     - state as of tx counter 50"
-        );
-        println!(
-            "  (query [:find ?x :as-of \"2024-01-15T10:00:00Z\" :where ...]) - state as of UTC timestamp"
-        );
-        println!(
-            "  (query [:find ?x :valid-at \"2023-06-01\" :where ...])        - facts valid on date"
-        );
-        println!(
-            "  (query [:find ?x :valid-at :any-valid-time :where ...])     - all facts, ignoring validity"
-        );
-        println!();
-        println!("Note: queries without :valid-at return only currently valid facts.");
-        println!();
-        println!("Type EXIT to quit.\n");
+        if io::stdin().is_terminal() {
+            println!(
+                "Minigraf v{} - Interactive Datalog Console",
+                env!("CARGO_PKG_VERSION")
+            );
+            println!();
+            println!("Data operations:");
+            println!("  (transact [...])                    - assert facts");
+            println!("  (transact {{:valid-from ... :valid-to ...}} [...]) - with valid time");
+            println!("  (retract [...])                     - retract facts");
+            println!();
+            println!("Queries:");
+            println!("  (query [:find ?x :where ...])       - basic query");
+            println!("  (rule [(name ?a ?b) [?a :attr ?b]]) - define a rule");
+            println!();
+            println!("Temporal queries:");
+            println!(
+                "  (query [:find ?x :as-of 50 :where ...])                     - state as of tx counter 50"
+            );
+            println!(
+                "  (query [:find ?x :as-of \"2024-01-15T10:00:00Z\" :where ...]) - state as of UTC timestamp"
+            );
+            println!(
+                "  (query [:find ?x :valid-at \"2023-06-01\" :where ...])        - facts valid on date"
+            );
+            println!(
+                "  (query [:find ?x :valid-at :any-valid-time :where ...])     - all facts, ignoring validity"
+            );
+            println!();
+            println!("Note: queries without :valid-at return only currently valid facts.");
+            println!();
+            println!("Type EXIT to quit.\n");
+        }
 
         let datalog_executor = DatalogExecutor::new(self.fact_storage.clone());
         let mut command_buffer = String::new();
         let mut is_multiline = false;
+        let interactive = io::stdin().is_terminal();
 
         loop {
-            // Show appropriate prompt
-            if is_multiline {
-                print!("       .> ");
-            } else {
-                print!("minigraf> ");
+            // Show appropriate prompt only when running interactively
+            if interactive {
+                if is_multiline {
+                    print!("       .> ");
+                } else {
+                    print!("minigraf> ");
+                }
+                io::stdout().flush().unwrap();
             }
-            io::stdout().flush().unwrap();
 
             let mut input = String::new();
             match io::stdin().read_line(&mut input) {
@@ -103,7 +108,9 @@ impl Repl {
                         // Reset buffer
                         command_buffer.clear();
                         is_multiline = false;
-                        println!();
+                        if interactive {
+                            println!();
+                        }
                     } else {
                         // Command is incomplete, continue reading
                         is_multiline = true;
