@@ -1,4 +1,4 @@
-use super::evaluator::StratifiedEvaluator;
+use super::evaluator::{StratifiedEvaluator, evaluate_not_join};
 use super::matcher::{PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::optimizer;
 use super::rules::RuleRegistry;
@@ -189,7 +189,8 @@ impl DatalogExecutor {
                 .collect::<Vec<_>>(),
         );
 
-        // Apply not-filter for WhereClause::Not clauses (no rules involved — pure post-filter)
+        // Apply not-filter for WhereClause::Not and WhereClause::NotJoin clauses
+        // (no rules involved — pure post-filter)
         let not_clauses: Vec<&Vec<WhereClause>> = query
             .where_clauses
             .iter()
@@ -199,7 +200,18 @@ impl DatalogExecutor {
             })
             .collect();
 
-        let filtered_bindings: Vec<_> = if not_clauses.is_empty() {
+        let not_join_clauses: Vec<(Vec<String>, Vec<WhereClause>)> = query
+            .where_clauses
+            .iter()
+            .filter_map(|c| match c {
+                WhereClause::NotJoin { join_vars, clauses } => {
+                    Some((join_vars.clone(), clauses.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+
+        let filtered_bindings: Vec<_> = if not_clauses.is_empty() && not_join_clauses.is_empty() {
             bindings
         } else {
             let not_storage = filtered_storage.clone();
@@ -221,6 +233,11 @@ impl DatalogExecutor {
                         let m = PatternMatcher::new(not_storage.clone());
                         if !m.match_patterns(&substituted).is_empty() {
                             return false; // not condition violated
+                        }
+                    }
+                    for (join_vars, nj_clauses) in &not_join_clauses {
+                        if evaluate_not_join(join_vars, nj_clauses, binding, &not_storage) {
+                            return false;
                         }
                     }
                     true
@@ -312,9 +329,10 @@ impl DatalogExecutor {
         let matcher = PatternMatcher::new(derived_storage.clone());
         let bindings = matcher.match_patterns(&all_patterns);
 
-        // Apply not-post-filter for WhereClause::Not clauses in the query body.
-        // (The StratifiedEvaluator handles `not` in rule bodies; this handles `not`
-        // appearing directly in the query body alongside rule invocations.)
+        // Apply not-post-filter for WhereClause::Not and WhereClause::NotJoin clauses
+        // in the query body. (The StratifiedEvaluator handles `not`/`not-join` in rule
+        // bodies; this handles them appearing directly in the query body alongside rule
+        // invocations.)
         let not_clauses: Vec<&Vec<WhereClause>> = query
             .where_clauses
             .iter()
@@ -324,7 +342,18 @@ impl DatalogExecutor {
             })
             .collect();
 
-        let filtered_bindings: Vec<_> = if not_clauses.is_empty() {
+        let not_join_clauses: Vec<(Vec<String>, Vec<WhereClause>)> = query
+            .where_clauses
+            .iter()
+            .filter_map(|c| match c {
+                WhereClause::NotJoin { join_vars, clauses } => {
+                    Some((join_vars.clone(), clauses.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+
+        let filtered_bindings: Vec<_> = if not_clauses.is_empty() && not_join_clauses.is_empty() {
             bindings
         } else {
             let not_storage = derived_storage.clone();
@@ -391,6 +420,11 @@ impl DatalogExecutor {
                         let m = PatternMatcher::new(not_storage.clone());
                         if !m.match_patterns(&substituted).is_empty() {
                             return false; // not condition violated
+                        }
+                    }
+                    for (join_vars, nj_clauses) in &not_join_clauses {
+                        if evaluate_not_join(join_vars, nj_clauses, binding, &not_storage) {
+                            return false;
                         }
                     }
                     true
@@ -1254,6 +1288,151 @@ mod tests {
                     1,
                     "c should be excluded (blocked), only b passes"
                 );
+            }
+            _ => panic!("Expected QueryResults"),
+        }
+    }
+
+    #[test]
+    fn test_execute_query_not_join_basic() {
+        // Query: find entities that have :submitted but NO blocked dependency
+        // alice: submitted, has-dep dep1, dep1:blocked=true  -> excluded
+        // bob:   submitted, no deps                          -> included
+        let storage = FactStorage::new();
+        let alice = Uuid::new_v4();
+        let bob = Uuid::new_v4();
+        let dep1 = Uuid::new_v4();
+        storage
+            .transact(
+                vec![
+                    (alice, ":submitted".to_string(), Value::Boolean(true)),
+                    (alice, ":has-dep".to_string(), Value::Ref(dep1)),
+                    (dep1, ":blocked".to_string(), Value::Boolean(true)),
+                    (bob, ":submitted".to_string(), Value::Boolean(true)),
+                ],
+                None,
+            )
+            .unwrap();
+
+        let query = DatalogQuery::new(
+            vec!["?x".to_string()],
+            vec![
+                WhereClause::Pattern(Pattern::new(
+                    EdnValue::Symbol("?x".to_string()),
+                    EdnValue::Keyword(":submitted".to_string()),
+                    EdnValue::Boolean(true),
+                )),
+                WhereClause::NotJoin {
+                    join_vars: vec!["?x".to_string()],
+                    clauses: vec![
+                        WhereClause::Pattern(Pattern::new(
+                            EdnValue::Symbol("?x".to_string()),
+                            EdnValue::Keyword(":has-dep".to_string()),
+                            EdnValue::Symbol("?d".to_string()),
+                        )),
+                        WhereClause::Pattern(Pattern::new(
+                            EdnValue::Symbol("?d".to_string()),
+                            EdnValue::Keyword(":blocked".to_string()),
+                            EdnValue::Boolean(true),
+                        )),
+                    ],
+                },
+            ],
+        );
+
+        let executor = DatalogExecutor::new(storage);
+        let result = executor
+            .execute(crate::query::datalog::types::DatalogCommand::Query(query))
+            .unwrap();
+
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(results.len(), 1, "only bob should be returned");
+            }
+            _ => panic!("Expected QueryResults"),
+        }
+    }
+
+    #[test]
+    fn test_execute_query_with_rules_not_join_in_query_body() {
+        // Rule: (reachable ?x ?y) :- [?x :edge ?y]
+        // Query: find ?y reachable from root that do NOT have a blocked dep
+        let storage = FactStorage::new();
+        let root = Uuid::new_v4();
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        let dep1 = Uuid::new_v4();
+        storage
+            .transact(
+                vec![
+                    (root, ":edge".to_string(), Value::Ref(a)),
+                    (root, ":edge".to_string(), Value::Ref(b)),
+                    (a, ":has-dep".to_string(), Value::Ref(dep1)),
+                    (dep1, ":blocked".to_string(), Value::Boolean(true)),
+                ],
+                None,
+            )
+            .unwrap();
+
+        let rules = Arc::new(RwLock::new(RuleRegistry::new()));
+        {
+            use crate::query::datalog::types::{Rule, WhereClause as WC};
+            let rule = Rule {
+                head: vec![
+                    EdnValue::Symbol("reachable".to_string()),
+                    EdnValue::Symbol("?x".to_string()),
+                    EdnValue::Symbol("?y".to_string()),
+                ],
+                body: vec![WC::Pattern(Pattern::new(
+                    EdnValue::Symbol("?x".to_string()),
+                    EdnValue::Keyword(":edge".to_string()),
+                    EdnValue::Symbol("?y".to_string()),
+                ))],
+            };
+            rules
+                .write()
+                .unwrap()
+                .register_rule("reachable".to_string(), rule)
+                .unwrap();
+        }
+
+        let query = DatalogQuery::new(
+            vec!["?y".to_string()],
+            vec![
+                WhereClause::RuleInvocation {
+                    predicate: "reachable".to_string(),
+                    args: vec![
+                        EdnValue::Uuid(root),
+                        EdnValue::Symbol("?y".to_string()),
+                    ],
+                },
+                WhereClause::NotJoin {
+                    join_vars: vec!["?y".to_string()],
+                    clauses: vec![
+                        WhereClause::Pattern(Pattern::new(
+                            EdnValue::Symbol("?y".to_string()),
+                            EdnValue::Keyword(":has-dep".to_string()),
+                            EdnValue::Symbol("?d".to_string()),
+                        )),
+                        WhereClause::Pattern(Pattern::new(
+                            EdnValue::Symbol("?d".to_string()),
+                            EdnValue::Keyword(":blocked".to_string()),
+                            EdnValue::Boolean(true),
+                        )),
+                    ],
+                },
+            ],
+        );
+
+        let executor = DatalogExecutor::new_with_rules(storage, rules);
+        let result = executor
+            .execute(crate::query::datalog::types::DatalogCommand::Query(query))
+            .unwrap();
+
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                // a is excluded (has a blocked dep); b passes
+                assert_eq!(results.len(), 1, "only b should pass: {}", results.len());
             }
             _ => panic!("Expected QueryResults"),
         }
