@@ -137,8 +137,21 @@ fn test_not_join_in_rule_body() {
     );
 }
 
-/// 5. not-join in a two-stage rule chain (two not-join rules, each directly
-/// over base facts so they can each be evaluated in a dedicated stratum).
+/// 5. not-join in a two-stage rule chain.
+///
+/// LIMITATION: When rule B positively invokes rule A (both in the same stratum)
+/// and rule A contains a not-join, the StratifiedEvaluator processes all mixed
+/// rules within a stratum in a single pass in declaration order.  Because
+/// `approved` is declared before `eligible`, its positive-pattern match for
+/// `[?x :eligible ?_rule_value]` finds no facts yet, producing an empty result.
+///
+/// A proper fix would require either:
+///   (a) iterating mixed rules to a fixed-point within each stratum, or
+///   (b) giving `approved` a higher stratum via a negative edge (which isn't
+///       present here — only a positive dep exists).
+///
+/// What DOES work: two independent not-join rules that each operate directly on
+/// base facts (no positive dependency between the two rules).
 ///
 /// Stage-1 rule: (stage1-ok ?x) :- [?x :applied true],
 ///                                  (not-join [?x] [?x :dep ?d] [?d :blocked true])
@@ -146,8 +159,8 @@ fn test_not_join_in_rule_body() {
 ///                                  (not-join [?x] [?x :dep ?d] [?d :blocked true]),
 ///                                  (not-join [?x] [?x :on-hold true])
 ///
-/// alice: has blocked dep → excluded at stage 2
-/// bob:   on-hold → excluded by the second not-join at stage 2
+/// alice: has blocked dep → excluded at both stages
+/// bob:   on-hold → excluded only at stage 2
 /// charlie: neither → passes both
 #[test]
 fn test_not_join_multi_stratum_chain() {
