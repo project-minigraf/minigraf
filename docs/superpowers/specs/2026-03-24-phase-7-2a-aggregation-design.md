@@ -194,24 +194,26 @@ The conditional split is: if `query.find` contains any `FindSpec::Aggregate`, ca
 
 If `:find` mixes `count`/`count-distinct` with grouping variables (e.g., `[:find ?dept (count ?e)]`), zero total bindings also yields an empty result — groups only form when bindings exist, so no group for `?dept` is created.
 
+**Null handling:** `Value::Null` is silently skipped by all aggregate functions (SQL behavior). Each function operates only on non-null values in the group. If all values in a group are null: `count`/`count-distinct` return `0`; `sum`/`sum-distinct` return `0`; `min`/`max` return empty for that group (the group itself disappears from the result).
+
 **Aggregate function semantics:**
 
-| Function | Accepted types | Result type | Zero-binding result | Type mismatch |
-|---|---|---|---|---|
-| `count` | any | `Value::Integer` | `[[0]]` if no grouping vars; else empty | n/a |
-| `count-distinct` | any | `Value::Integer` | `[[0]]` if no grouping vars; else empty | n/a |
-| `sum` | `Integer`, `Float` | see widening rule | empty result set | `Err` |
-| `sum-distinct` | `Integer`, `Float` | see widening rule | empty result set | `Err` |
-| `min` | `Integer`, `Float`, `String` | same as input type | empty result set | `Err` |
-| `max` | `Integer`, `Float`, `String` | same as input type | empty result set | `Err` |
+| Function | Accepted types | Null values | Result type | Zero-binding result | Type mismatch |
+|---|---|---|---|---|---|
+| `count` | any | skipped | `Value::Integer` | `[[0]]` if no grouping vars; else empty | n/a |
+| `count-distinct` | any | skipped | `Value::Integer` | `[[0]]` if no grouping vars; else empty | n/a |
+| `sum` | `Integer`, `Float` | skipped | see widening rule | empty result set | `Err` |
+| `sum-distinct` | `Integer`, `Float` | skipped | see widening rule | empty result set | `Err` |
+| `min` | `Integer`, `Float`, `String` | skipped | same as input type | empty result set | `Err` |
+| `max` | `Integer`, `Float`, `String` | skipped | same as input type | empty result set | `Err` |
 
-**`sum`/`sum-distinct` widening rule:** if any value in the group is `Value::Float`, the result is `Value::Float`; otherwise `Value::Integer`. An empty sum group cannot occur (groups only form when bindings exist).
+**`sum`/`sum-distinct` widening rule:** if any non-null value in the group is `Value::Float`, the result is `Value::Float`; otherwise `Value::Integer`.
 
-**`min`/`max` with mixed `Integer` and `Float` in the same group:** this is a type error (`Err`). Callers must ensure the aggregated variable is uniformly typed across the group.
+**`min`/`max` with mixed `Integer` and `Float` in the same group:** type error (`Err`). Callers must ensure the aggregated variable is uniformly typed across non-null values in the group.
 
 **`min`/`max` on empty groups** cannot occur — groups only exist when at least one binding is present.
 
-Type errors return `Err` immediately (fail fast, no silent skipping).
+Non-null type errors return `Err` immediately (fail fast).
 
 ### 4. Evaluator (`src/query/datalog/evaluator.rs`)
 
@@ -242,8 +244,8 @@ The `find: Vec<String>` → `find: Vec<FindSpec>` change affects:
 | Aggregate var not bound in `:where` | Parse error | `"Aggregate variable ?x not bound in :where"` |
 | `:with` var not bound in `:where` | Parse error | `"':with' variable ?x not bound in :where"` |
 | `:with` without aggregate in `:find` | Parse error | `"':with' clause requires at least one aggregate in :find"` |
-| `sum`/`sum-distinct` on non-numeric | Runtime error | `"sum: expected Integer or Float, got String"` |
-| `min`/`max` on incompatible type | Runtime error | `"min: expected Integer, Float, or String, got Boolean"` |
+| `sum`/`sum-distinct` on non-numeric, non-null | Runtime error | `"sum: expected Integer, Float, or Null, got String"` |
+| `min`/`max` on incompatible type | Runtime error | `"min: expected Integer, Float, String, or Null, got Boolean"` |
 | `min`/`max` on mixed Integer/Float | Runtime error | `"min: cannot compare Integer and Float values"` |
 
 ---
@@ -268,7 +270,9 @@ New test file. All assertions follow the no-`{:?}`-on-Result/Fact/Value conventi
 | `count_empty_with_grouping_var` | zero bindings, grouping var present → empty result set |
 | `count_distinct_empty_result` | zero bindings, no grouping vars → `[[0]]` |
 | `sum_empty_result` | zero bindings → empty result set |
-| `sum_type_error` | `Err` when summing strings |
+| `sum_skips_nulls` | null values excluded from sum; non-null values summed correctly |
+| `count_skips_nulls` | null values excluded from count |
+| `sum_type_error` | `Err` when summing non-numeric non-null values (e.g., String) |
 | `min_type_error` | `Err` on Boolean type |
 | `min_mixed_int_float_error` | `Err` when Integer and Float in same group |
 | `aggregate_after_nonrecursive_rule` | aggregation after simple rule evaluation |
@@ -289,7 +293,7 @@ New test file. All assertions follow the no-`{:?}`-on-Result/Fact/Value conventi
 | `src/query/datalog/parser.rs` | Parse aggregate lists in `:find`; parse `:with` clause; new validations |
 | `src/query/datalog/executor.rs` | Add `apply_aggregation`; update variable-extraction loops; update `vars:` assignments |
 | `src/query/datalog/evaluator.rs` | Type propagation only (3–5 call sites) |
-| `tests/aggregation_test.rs` | New — ~24 tests |
+| `tests/aggregation_test.rs` | New — ~26 tests |
 
 No changes to: `matcher.rs`, `optimizer.rs`, `stratification.rs`, `rules.rs`, `storage/`, `graph/`, `db.rs`, `wal.rs`, public API.
 
