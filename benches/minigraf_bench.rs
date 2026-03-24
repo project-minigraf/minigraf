@@ -683,10 +683,8 @@ fn bench_negation(c: &mut Criterion) {
             let db = helpers::populate_with_not_exclusion(n, excluded);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
                 b.iter(|| {
-                    db.execute(
-                        "(query [:find ?e :where [?e :val ?v] (not [?e :banned true])])",
-                    )
-                    .unwrap()
+                    db.execute("(query [:find ?e :where [?e :val ?v] (not [?e :banned true])])")
+                        .unwrap()
                 });
             });
         }
@@ -730,10 +728,8 @@ fn bench_negation(c: &mut Criterion) {
             let db = helpers::populate_with_not_exclusion(n, excluded);
             group.bench_with_input(BenchmarkId::from_parameter(label), &excluded, |b, _| {
                 b.iter(|| {
-                    db.execute(
-                        "(query [:find ?e :where [?e :val ?v] (not [?e :banned true])])",
-                    )
-                    .unwrap()
+                    db.execute("(query [:find ?e :where [?e :val ?v] (not [?e :banned true])])")
+                        .unwrap()
                 });
             });
         }
@@ -750,7 +746,8 @@ fn bench_negation(c: &mut Criterion) {
             let db = helpers::populate_with_not_rule(n, excluded);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
                 b.iter(|| {
-                    db.execute("(query [:find ?e :where (eligible ?e)])").unwrap()
+                    db.execute("(query [:find ?e :where (eligible ?e)])")
+                        .unwrap()
                 });
             });
         }
