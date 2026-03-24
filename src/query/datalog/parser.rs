@@ -1484,7 +1484,7 @@ mod tests {
         let result = parse_datalog_command(
             "(query [:find ?e :where [?e :name ?n] (not-join [?e] [?e :banned true])])",
         );
-        assert!(result.is_ok(), "basic not-join must parse OK: {:?}", result);
+        assert!(result.is_ok(), "basic not-join must parse OK");
         if let Ok(DatalogCommand::Query(q)) = result {
             assert_eq!(q.where_clauses.len(), 2);
             assert!(matches!(
@@ -1503,11 +1503,7 @@ mod tests {
             "(query [:find ?e :where [?e :name ?n] [?e :role ?r] \
              (not-join [?e ?r] [?e :has-role ?r] [?r :is-admin true])])",
         );
-        assert!(
-            result.is_ok(),
-            "multi-join-var not-join must parse: {:?}",
-            result
-        );
+        assert!(result.is_ok(), "multi-join-var not-join must parse");
         if let Ok(DatalogCommand::Query(q)) = result {
             if let WhereClause::NotJoin { join_vars, clauses } = &q.where_clauses[2] {
                 assert_eq!(join_vars.len(), 2);
@@ -1527,8 +1523,7 @@ mod tests {
         );
         assert!(
             result.is_ok(),
-            "inner-only var ?tag must be allowed in not-join: {:?}",
-            result
+            "inner-only var ?tag must be allowed in not-join"
         );
     }
 
@@ -1539,11 +1534,7 @@ mod tests {
             "(query [:find ?e :where [?e :name ?n] \
              (not-join [?role] [?e :has-role ?role])])",
         );
-        assert!(
-            result.is_err(),
-            "unbound join var must be rejected: {:?}",
-            result
-        );
+        assert!(result.is_err(), "unbound join var must be rejected");
         let msg = result.unwrap_err();
         assert!(
             msg.contains("?role") && msg.contains("not bound"),
@@ -1585,11 +1576,7 @@ mod tests {
              [?x :applied true] \
              (not-join [?x] [?x :dep ?d] [?d :status :rejected])])",
         );
-        assert!(
-            result.is_ok(),
-            "not-join in rule body must parse: {:?}",
-            result
-        );
+        assert!(result.is_ok(), "not-join in rule body must parse");
         if let Ok(DatalogCommand::Rule(rule)) = result {
             assert_eq!(rule.body.len(), 2);
             assert!(
