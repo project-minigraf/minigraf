@@ -1,8 +1,9 @@
-# Minigraf Demo Commands - Phase 3 (Datalog)
-# Copy and paste these commands into the REPL to see Datalog in action
+# Minigraf Demo Commands
+# Copy and paste these commands into the REPL, or pipe them in:
+#   cargo run < demo_commands.txt
 
 # ============================================================================
-# DATALOG SYNTAX (Phase 3 - Current)
+# BASIC DATALOG
 # ============================================================================
 
 # Add facts about Alice
@@ -45,7 +46,7 @@
                [?friend :person/name ?friend-name]])
 
 # Query: Find people older than 26
-# Note: Currently no comparison operators, would need all ages and filter externally
+# Note: Arithmetic comparison predicates are planned for Phase 7.2 (aggregation).
 
 # Update: Alice had a birthday (retract old age, assert new age)
 (retract [[:alice :person/age 30]])
@@ -69,7 +70,7 @@
                [?person :person/name ?name]])
 
 # Query: Find all facts about Alice
-# Note: Would require a special query form not yet implemented
+# Note: Wildcard entity scan requires iterating all attributes — use targeted patterns instead.
 
 # Retract a friendship
 (retract [[:alice :friend :carol]])
@@ -82,21 +83,39 @@
 EXIT
 
 # ============================================================================
-# KEY FEATURES
+# KEY FEATURES (v0.10.0)
 # ============================================================================
 #
-# DATALOG (Phase 3):
+# FACTS AND QUERIES:
 # - Facts: [Entity Attribute Value] triples
-# - Immutable history: Facts never deleted, only retracted
-# - Keyword entities: :alice, :bob (converted to deterministic UUIDs)
-# - Entity references: [?e :friend ?friend] creates graph relationships
-# - Variable unification: ?e matches same entity across patterns
-# - Bi-temporal ready: Built-in transaction IDs and history tracking
+# - Immutable history: facts never deleted, only retracted
+# - Keyword entities: :alice, :bob (resolved to stable UUIDs)
+# - Entity references: [:alice :friend :bob] creates graph relationships
+# - Variable unification: ?e binds the same entity across all patterns
 #
-# COMING SOON (Phase 4+):
-# - Bi-temporal queries: :as-of and :valid-at
-# - Recursive rules: (rule [(ancestor ?a ?d) ...])
-# - Time travel: Query historical state
-# - Rule-based inference
-# - Persistent storage: Save to .graph file
+# RECURSIVE RULES (see demo_recursive.txt for full examples):
+# - (rule [(reachable ?a ?b) [?a :connected ?b]])
+# - (rule [(reachable ?a ?b) [?a :connected ?m] (reachable ?m ?b)])
+# - Semi-naive fixed-point evaluation; handles cycles correctly
+#
+# STRATIFIED NEGATION:
+# - (not [?e :banned true])              — exclude matching entities
+# - (not-join [?e] [?e :dep ?d] [?d :status :bad]) — existential negation
+# - Negation in rule bodies; negative cycles rejected at registration time
+#
+# BI-TEMPORAL QUERIES:
+# - (query [:find ?x :as-of 50 :where ...])             — tx-time snapshot
+# - (query [:find ?x :as-of "2024-01-15T10:00:00Z" ...]) — wall-clock snapshot
+# - (query [:find ?x :valid-at "2023-06-01" ...])        — valid-time query
+# - (query [:find ?x :valid-at :any-valid-time ...])     — ignore valid-time filter
+#
+# PERSISTENT STORAGE:
+# - Single .graph file; open with OpenOptions::new().path("mydb.graph").open()
+# - WAL crash safety; explicit transactions via begin_write()/commit()
+# - On-disk B+tree indexes (EAVT, AEVT, AVET, VAET) with LRU page cache
+#
+# COMING IN PHASE 7.2+:
+# - Aggregation: (count ?e), (sum ?v), (min ?v), (max ?v)
+# - Arithmetic filter predicates: [(> ?age 26)]
+# - Disjunction: (or ...) / (or-join [...] ...)
 # ============================================================================
