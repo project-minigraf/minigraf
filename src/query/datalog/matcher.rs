@@ -142,7 +142,7 @@ impl PatternMatcher {
                 // Convert it to its canonical UUID and compare — symmetric with
                 // the EdnValue::Keyword arm above that handles Value::Ref.
                 Value::Keyword(k) => {
-                    edn_to_entity_id(&EdnValue::Keyword(k.clone())).map_or(false, |id| u == &id)
+                    edn_to_entity_id(&EdnValue::Keyword(k.clone())).is_ok_and(|id| u == &id)
                 }
                 _ => false,
             },
