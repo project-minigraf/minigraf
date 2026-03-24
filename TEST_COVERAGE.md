@@ -1,11 +1,11 @@
 # Minigraf Test Coverage Report
 
-**Last Updated**: Phase 6.5 COMPLETE - On-Disk B+Tree Indexes (file format v6) ✅
+**Last Updated**: Phase 7.1 COMPLETE - Stratified Negation (`not` / `not-join`) ✅
 
 ## Test Summary
 
-**Total Tests**: 331 ✅
-- ✅ 222 unit tests (lib)
+**Total Tests**: 407 ✅
+- ✅ 297 unit tests (lib)
 - ✅ 10 bi-temporal tests (integration)
 - ✅ 10 complex query tests (integration)
 - ✅ 9 recursive rules tests (integration)
@@ -16,11 +16,13 @@
 - ✅ 7 retraction tests (integration, Phase 6.4a)
 - ✅ 4 edge case tests (integration, Phase 6.4a)
 - ✅ 8 B+tree v6 tests (integration, Phase 6.5)
+- ✅ 10 negation (`not`) tests (integration, Phase 7.1a)
+- ✅ 14 not-join tests (integration, Phase 7.1b)
 - ✅ 6 doc tests
 
-**Status**: ✅ **All 331 tests passing**
+**Status**: ✅ **All 407 tests passing**
 
-## Phase 6.5 Completion Status: ✅ COMPLETE
+## Phase 7.1 Completion Status: ✅ COMPLETE
 
 **Core Features Implemented**:
 - ✅ Packed fact pages (`page_type = 0x02`): ~25 facts per 4KB page (~25× space reduction)
@@ -58,6 +60,18 @@
 - ✅ Executor: 3-step temporal filter (tx-time → asserted → valid-time)
 - ✅ File format v1→v2 migration
 - ✅ UTC-only timestamp parsing (chrono, avoids GHSA-wcg3-cvx6-7396)
+
+**Phase 7.1 Features** (current, complete):
+- ✅ `src/query/datalog/stratification.rs`: `DependencyGraph`, `stratify()` — negative dependency edges + Bellman-Ford cycle detection; negative cycles rejected at rule registration time
+- ✅ `WhereClause::Not(Vec<WhereClause>)` and `WhereClause::NotJoin { join_vars, clauses }` variants; all match arms updated
+- ✅ `(not clause…)` — stratified negation; all body variables must be pre-bound by outer clauses
+- ✅ `(not-join [?v…] clause…)` — existentially-quantified negation; only `join_vars` are shared from outer scope; remaining body variables are fresh
+- ✅ Safety validation at parse time (unbound join vars → parse error; nesting constraint enforced)
+- ✅ `StratifiedEvaluator`: stratifies rules, evaluates strata in order; `not`/`not-join` filters applied per binding in mixed-rule strata
+- ✅ `evaluate_not_join` free function: handles both `Pattern` and `RuleInvocation` body clauses
+- ✅ `tests/negation_test.rs`: 10 integration tests (Phase 7.1a)
+- ✅ `tests/not_join_test.rs`: 14 integration tests (Phase 7.1b)
+- ✅ Version bumped to v0.10.0
 
 **Phase 6.5 Features** (also complete):
 - ✅ `src/storage/btree_v6.rs`: proper on-disk B+tree with `build_btree` bulk-load and `range_scan` leaf-chain traversal
@@ -328,6 +342,36 @@
 - ✅ v6 database survives close/reopen with correct fact count
 - ✅ Index lookup via `OnDiskIndexReader` returns correct `FactRef`s
 
+### Negation — `not` (`tests/negation_test.rs`) - ✅ 10 tests (Phase 7.1a)
+
+- ✅ Basic `not` — exclude entities where a pattern matches
+- ✅ `not` with multi-clause body
+- ✅ `not` in a rule body (stratification + derived negation)
+- ✅ `not` with `:as-of` time travel
+- ✅ `not` with `:valid-at`
+- ✅ Negative cycle via `not` at rule registration → `Err`, rule not registered
+- ✅ `not` where no entities match the body — all outer bindings survive
+- ✅ Safety check: unbound variable in `not` body → parse error
+- ✅ Nested `not` rejected at parse time
+- ✅ `not` with `RuleInvocation` in body — derived rule facts correctly negated end-to-end
+
+### Not-Join (`tests/not_join_test.rs`) - ✅ 14 tests (Phase 7.1b)
+
+- ✅ Basic `not-join` — exclude entities where existentially-quantified dependency exists
+- ✅ Multiple join variables in `not-join`
+- ✅ Multi-clause body with a local variable linking inner patterns
+- ✅ `not-join` in a rule body
+- ✅ Multi-stage filtering chain (two independent `not-join` rules applied progressively)
+- ✅ `not-join` vs `not` semantic difference (inner-only variable)
+- ✅ `not-join` with `:as-of` time travel
+- ✅ Unbound join variable → parse error naming the variable
+- ✅ Nested `not-join` rejected at parse time
+- ✅ `RuleInvocation` in `not-join` body — derived facts correctly negated end-to-end
+- ✅ No-match survival — when no entity satisfies the body, all outer bindings survive
+- ✅ `not-join` with `:valid-at`
+- ✅ Negative cycle via `not-join` at rule registration → `Err`, rule not registered
+- ✅ `not` and `not-join` coexist in the same query
+
 ---
 
 ## Coverage Metrics
@@ -421,19 +465,34 @@
 52. `OnDiskIndexReader` FactRef Lookup — committed facts resolved correctly via page cache
 53. `MutexStorageBackend` — cache-warm pages acquire no backend lock; cache-cold pages lock briefly
 
+### Phase 7.1 Stratified Negation
+54. `not` — basic absence query excludes entities where pattern matches
+55. `not` in rule body — stratified mixed-rule evaluation applies negation per binding
+56. `not-join` — existentially-quantified exclusion with explicit join variables
+57. `not-join` multi-clause body — inner variables link patterns without escaping to outer scope
+58. `not-join` in rule body — negation inside derived rules
+59. Negative cycle rejection — `not` / `not-join` creating a dependency cycle → `Err` at registration, rule not added
+60. Safety validation — unbound variables in `not` body or `join_vars` → parse error with variable name
+61. Nesting constraint — `not-join` inside `not` or `not-join` → parse error
+62. `RuleInvocation` in `not-join` body — derived facts in accumulated store correctly negated
+63. Time travel with negation — `not-join` respects `:as-of` and `:valid-at` temporal filters
+64. `not` and `not-join` coexistence in the same query
+
 ---
 
 ## What's Not Tested Yet ⏳
 
-### Phase 7+ (Datalog Completeness)
-- ⏳ Stratified negation (`not` / `not-join`) — Phase 7
-- ⏳ Aggregation (`count`, `sum`, `min`, `max`, `distinct`) — Phase 7
-- ⏳ Disjunction (`or` / `or-join`) — Phase 7
+### Phase 7.2+ (Remaining Datalog Completeness)
+- ⏳ Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`) — Phase 7.2
+- ⏳ Disjunction (`or` / `or-join`) — Phase 7.3
+- ⏳ Query optimizer improvements for negation/aggregation/disjunction clause types — Phase 7.4
+- ⏳ Prepared statements with temporal bind slots — Phase 7.6
+- ⏳ Temporal metadata pseudo-attributes (`:db/valid-from`, `:db/valid-to`, `:db/tx-count`) — Phase 7.7
 
-### Known Limitations (Acceptable for Phase 3-6.4b)
-- ⏳ Crash during checkpoint write (safe by construction — WAL not deleted until save succeeds; explicit test deferred to Phase 6.5)
-- ⏳ Negation and aggregation
-- ⏳ Disjunction (OR patterns)
+### Known Limitations (Acceptable for Phase 3-7.1)
+- ⏳ Crash during checkpoint write (safe by construction — WAL not deleted until save succeeds; explicit test deferred)
+- ⏳ Aggregation and disjunction — Phase 7.2 / 7.3
+- ⏳ Known `not-join` limitation: when a rule B positively invokes rule A and both are stratum 0, single-pass mixed-rule evaluation means B may not see A's derived facts unless rules are declared in dependency order
 
 ---
 
@@ -458,6 +517,8 @@ cargo test --test performance_test     # Packed pages (7)
 cargo test --test retraction_test      # Retraction semantics (7)
 cargo test --test edge_cases_test      # Edge cases (4)
 cargo test --test btree_v6_test        # B+tree v6 (8)
+cargo test --test negation_test        # stratified not (10)
+cargo test --test not_join_test        # not-join (14)
 
 # Run with output
 cargo test -- --nocapture
@@ -467,9 +528,9 @@ cargo test -- --nocapture
 
 ## Conclusion
 
-**Phase 6.5 Status**: ✅ **COMPLETE**
+**Phase 7.1 Status**: ✅ **COMPLETE**
 
-**Test Quality**: ✅ **Excellent** — High confidence in all Phase 3-6.5 features
+**Test Quality**: ✅ **Excellent** — High confidence in all Phase 3-7.1 features
 
 **Strengths**:
 - WAL crash safety verified with real `mem::forget` simulation
@@ -483,14 +544,15 @@ cargo test -- --nocapture
 - Criterion benchmarks validated performance at 1K–1M facts
 - Byte-layout tests pin FileHeader v5/v6 and packed page header field offsets
 - On-disk B+tree correctness and concurrent scan safety verified (Phase 6.5)
-- 331 tests covering all Phase 3-6.5 features
+- Stratified negation (`not` / `not-join`) verified: safety validation, stratification, negative cycle rejection, time-travel integration (Phase 7.1)
+- 407 tests covering all Phase 3-7.1 features
 
-**Confidence Level**: ✅ **Production-ready for Phase 6.5 scope**
+**Confidence Level**: ✅ **Production-ready for Phase 7.1 scope**
 
-**Readiness for Phase 7**: ✅ **Ready to proceed**
+**Readiness for Phase 7.2**: ✅ **Ready to proceed**
 
-The on-disk B+tree indexed, packed, cached bi-temporal Datalog engine is **solid, well-tested, and benchmarked**.
+The stratified-negation-capable, on-disk B+tree indexed, packed, cached bi-temporal Datalog engine is **solid, well-tested, and benchmarked**.
 
 ---
 
-**Next Steps**: Begin Phase 7 (Datalog Completeness — negation, aggregation, disjunction) 🚀
+**Next Steps**: Begin Phase 7.2 (Aggregation — `count`, `sum`, `min`, `max`, `distinct`, `:with`) 🚀

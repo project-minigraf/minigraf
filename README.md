@@ -4,7 +4,7 @@
 [![Clippy Status](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml/badge.svg)](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/adityamukho/minigraf#license)
 [![Rust Edition](https://img.shields.io/badge/rust-2024-orange.svg)](https://blog.rust-lang.org/2024/10/17/Rust-1.82.0.html)
-[![Phase](https://img.shields.io/badge/phase-6.5%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
+[![Phase](https://img.shields.io/badge/phase-7.1%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
 
 > **Embedded graph memory for AI agents, mobile apps, and the browser** — the SQLite of bi-temporal graph databases
 
@@ -18,7 +18,7 @@ Minigraf is a **single-file embedded graph database** that lets you:
 - ✅ **Embed anywhere** - Native, WASM, mobile, IoT - one `.graph` file
 - ✅ **Zero configuration** - Just `Minigraf::open("data.graph")` and you're done
 
-**Status**: Phase 6.5 complete — crash-safe bi-temporal Datalog engine with on-disk B+tree indexes, packed storage, LRU page cache, and validated performance at 1K–1M facts (331 tests). Next: Phase 7 (Datalog completeness — negation, aggregation, disjunction).
+**Status**: Phase 7.1 complete — stratified negation (`not` / `not-join`) added to the bi-temporal Datalog engine (407 tests). Next: Phase 7.2 (aggregation — `count`, `sum`, `min`, `max`, `distinct`).
 
 ## Why Datalog?
 
@@ -66,7 +66,7 @@ db.execute(r#"(rule [(reachable ?a ?b) [?a :friend ?b]])
 
 ```bash
 cargo run          # interactive Datalog REPL
-cargo test         # run 331 tests
+cargo test         # run 407 tests
 cargo run < demo_recursive.txt   # recursive rules demo
 ```
 
@@ -125,7 +125,8 @@ Minigraf will **not** be (by design):
 |---|---|---|
 | 1–5 | ✅ Complete | Property graph, persistent storage, Datalog core, bi-temporal, ACID + WAL |
 | 6.1–6.5 | ✅ Complete | Covering indexes, packed pages, LRU cache, retraction fix, benchmarks, on-disk B+tree (v6) |
-| **7** | 🎯 Next | Datalog completeness — negation, aggregation, disjunction |
+| 7.1 | ✅ Complete | Stratified negation — `not` and `not-join` |
+| **7.2–7.7** | 🎯 Next | Aggregation, disjunction, optimizer, prepared statements, temporal metadata |
 | 8 | 🎯 Planned | Cross-platform — WASM, iOS, Android, language bindings |
 | v1.0 | 🎯 ~12 months | Stable API + file format |
 

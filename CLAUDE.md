@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries** written in Rust. It's designed to be the embedded graph memory layer for AI agents, mobile apps, and the browser — built on the SQLite philosophy: embedded, single-file, reliable, with time travel capabilities.
 
-**Current Status: Phase 6.5 COMPLETE ✅ → Phase 7 Next** - On-disk B+tree indexes (file format v6) (note: Phase 6.3 query optimization was completed as part of Phase 6.1):
+**Current Status: Phase 7.1 COMPLETE ✅ → Phase 7.2 Next** - Stratified negation (`not` / `not-join`) (note: Phase 6.3 query optimization was completed as part of Phase 6.1):
 - ✅ Phase 1: Property graph PoC (in-memory)
 - ✅ Phase 2: Persistent storage (`.graph` file format, embedded API)
 - ✅ Phase 3: Datalog core (EAV model, recursive rules) - COMPLETE!
@@ -17,7 +17,10 @@ Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries**
 - ✅ **Phase 6.4a: Retraction semantics fix + edge case tests - COMPLETE!**
 - ✅ **Phase 6.4b: Criterion benchmarks + light publish prep - COMPLETE!**
 - ✅ **Phase 6.5: On-disk B+tree indexes (file format v6) - COMPLETE!**
-- 🎯 Phase 7: Datalog Completeness (negation, aggregation, disjunction; ≥90% branch coverage target)
+- ✅ **Phase 7.1a: Stratified negation — `not` - COMPLETE!**
+- ✅ **Phase 7.1b: Stratified negation — `not-join` - COMPLETE!**
+- 🎯 Phase 7.2: Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`)
+- 🎯 Phase 7.3–7.7: Disjunction, optimizer improvements, prepared statements, temporal metadata
 - 🎯 v1.0.0: 9-12 months
 
 ## Core Philosophy - CRITICAL
@@ -159,20 +162,25 @@ The codebase is organized into the following modules:
      - `CommittedFactLoaderImpl`: resolves `FactRef` via page cache
      - Auto-migrates v1/v2/v3/v4/v5 on open
 
-3. **Query Module (`src/query/datalog/`)** - Phase 3-6.1 (Datalog + optimizer) ✅:
+3. **Query Module (`src/query/datalog/`)** - Phase 3-7.1 (Datalog + optimizer + negation) ✅:
    - `parser.rs`: EDN/Datalog parser
      - Parses `transact`, `retract`, `query`, `rule` commands
      - Supports `:as-of` (tx counter or ISO 8601 timestamp), `:valid-at`
      - EDN maps `{:key val}` for transaction-level valid time options
      - Per-fact 4-element vector override for valid time
+     - `(not …)` and `(not-join [?v…] …)` clauses with safety checks (Phase 7.1)
    - `executor.rs`: Datalog query executor
      - Pattern matching with variable unification
      - Rule registration and invocation
      - 3-step temporal filter: tx-time → asserted exclusion → valid-time
+     - not/not-join post-filter sites in both pure-query and rule-query paths (Phase 7.1)
    - `matcher.rs`: Pattern matching engine with variable binding
-   - `evaluator.rs`: `RecursiveEvaluator` - semi-naive fixed-point iteration
-   - `rules.rs`: `RuleRegistry` - thread-safe rule management
-   - `types.rs`: `EdnValue`, `Pattern`, `DatalogQuery`, `AsOf`, `ValidAt`
+   - `evaluator.rs`: `RecursiveEvaluator` + `StratifiedEvaluator` + `evaluate_not_join` (Phase 7.1)
+     - Semi-naive fixed-point iteration for positive rules
+     - Stratification: evaluates strata in order; applies not/not-join filters per binding in mixed strata
+   - `stratification.rs`: `DependencyGraph`, `stratify()` — negative dependency edges + cycle detection (Phase 7.1)
+   - `rules.rs`: `RuleRegistry` - thread-safe rule management; calls `stratify()` on registration
+   - `types.rs`: `EdnValue`, `Pattern`, `DatalogQuery`, `AsOf`, `ValidAt`, `WhereClause` (incl. `Not`, `NotJoin`)
    - `optimizer.rs`: Query plan optimizer (Phase 6.1)
      - `IndexHint` enum, `select_index()`, `plan()` with selectivity-based join reordering
      - Disabled under `wasm` feature flag
@@ -341,17 +349,18 @@ WAL sidecar <db>.wal (present while uncommitted writes exist):
 
 ## Test Coverage
 
-**Current Tests (Phase 6.5)**: 331 tests passing ✅
-- **Unit tests** (222 tests):
+**Current Tests (Phase 7.1)**: 407 tests passing ✅
+- **Unit tests** (297 tests):
   - `src/graph/types.rs`: Fact types, Value types, EAV model, temporal fields
   - `src/graph/storage.rs`: FactStorage, CRUD, history, tx_count, temporal methods, CommittedFactReader integration
   - `src/temporal.rs`: UTC timestamp parsing and formatting
-  - `src/query/datalog/parser.rs`: EDN/Datalog syntax, rules, `:as-of`, `:valid-at`, EDN maps
-  - `src/query/datalog/types.rs`: Pattern, WhereClause, DatalogQuery, AsOf, ValidAt
+  - `src/query/datalog/parser.rs`: EDN/Datalog syntax, rules, `:as-of`, `:valid-at`, EDN maps, `not`, `not-join` (Phase 7.1)
+  - `src/query/datalog/types.rs`: Pattern, WhereClause (incl. Not, NotJoin), DatalogQuery, AsOf, ValidAt
   - `src/query/datalog/matcher.rs`: Pattern matching, variable unification
-  - `src/query/datalog/executor.rs`: Query execution, rule registration, temporal filtering, retraction net-view
+  - `src/query/datalog/executor.rs`: Query execution, rule registration, temporal filtering, retraction net-view, not/not-join post-filter
   - `src/query/datalog/rules.rs`: RuleRegistry, rule management
-  - `src/query/datalog/evaluator.rs`: Semi-naive evaluation, transitive closure
+  - `src/query/datalog/evaluator.rs`: Semi-naive evaluation, transitive closure, StratifiedEvaluator, evaluate_not_join (Phase 7.1)
+  - `src/query/datalog/stratification.rs`: DependencyGraph, stratify(), negative cycle detection (Phase 7.1)
   - `src/storage/index.rs`: EAVT/AEVT/AVET/VAET keys, FactRef, encode_value sort order
   - `src/storage/btree.rs`: B+tree roundtrip, multi-page, sort order preservation
   - `src/storage/btree_v6.rs`: On-disk B+tree insert/range-scan, concurrent range scan correctness (Phase 6.5)
@@ -361,7 +370,7 @@ WAL sidecar <db>.wal (present while uncommitted writes exist):
   - `src/wal.rs`: WAL entry serialization, CRC32, replay logic
   - `src/db.rs`: WriteTransaction, checkpoint, crash recovery, `check_fact_sizes` early validation
 
-- **Integration tests** (103 tests):
+- **Integration tests** (104 tests):
   - `tests/bitemporal_test.rs` (10 tests): Bi-temporal queries, time travel, valid time
   - `tests/complex_queries_test.rs` (10 tests): Multi-pattern joins, self-joins, edge cases
   - `tests/recursive_rules_test.rs` (9 tests): Transitive closure, cycles, long chains, family trees
@@ -372,6 +381,8 @@ WAL sidecar <db>.wal (present while uncommitted writes exist):
   - `tests/retraction_test.rs` (7 tests): Retraction semantics in Datalog queries (Phase 6.4a)
   - `tests/edge_cases_test.rs` (4 tests): Oversized-fact file-backed error, MAX_FACT_BYTES boundary
   - `tests/btree_v6_test.rs` (8 tests): B+tree insert/scan, concurrent range scan, v5→v6 migration (Phase 6.5)
+  - `tests/negation_test.rs` (10 tests): `not` — basic absence, multi-clause, rule body, time-travel, negative cycle rejection (Phase 7.1a)
+  - `tests/not_join_test.rs` (14 tests): `not-join` — existential negation, join vars, rule body, time-travel, cycle rejection (Phase 7.1b)
 
 - **Doc tests** (6 tests): Inline documentation examples
 
@@ -575,10 +586,21 @@ When implementing features, always ask:
 - ✅ Version bumped to v0.9.0
 - ✅ 331 comprehensive tests
 
-**Phase 7** (6-8 weeks): Datalog Completeness
-- Stratified negation (`not` / `not-join`)
-- Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`)
-- Disjunction (`or` / `or-join`)
+**Phase 7.1** ✅ **COMPLETE** - Stratified Negation (`not` / `not-join`)
+- ✅ `src/query/datalog/stratification.rs`: `DependencyGraph`, `stratify()` — negative dependency edges + cycle detection
+- ✅ `WhereClause::Not` + `WhereClause::NotJoin { join_vars, clauses }` variants; all match arms updated
+- ✅ Parser: `(not …)` and `(not-join [?v…] …)`, safety validation, nesting constraint
+- ✅ `StratifiedEvaluator` + `evaluate_not_join` (handles `Pattern` and `RuleInvocation` body clauses)
+- ✅ `tests/negation_test.rs` (10) + `tests/not_join_test.rs` (14) — 24 new integration tests
+- ✅ Version bumped to v0.10.0
+- ✅ 407 comprehensive tests
+
+**Phase 7** (in progress): Datalog Completeness
+- ✅ Phase 7.1a: Stratified negation — `not`
+- ✅ Phase 7.1b: Stratified negation — `not-join`
+- 🎯 Phase 7.2: Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`)
+- 🎯 Phase 7.3: Disjunction (`or` / `or-join`)
+- 🎯 Phase 7.4–7.7: Optimizer improvements, prepared statements, temporal metadata
 
 **Phase 8** (3-4 months): Cross-platform
 - WASM (browser via wasm-pack + npm; server-side via WASI)
@@ -666,7 +688,8 @@ Before publishing the crate, verify all of the following:
 
 ### Minimum Bar (do not publish before Phase 6.5)
 - [x] **Phase 6.4 benchmarks complete** — Criterion benchmarks at 10K/100K/1M facts documented in `BENCHMARKS.md`. ✅ Phase 6.4b complete.
-- [x] **Phase 6.5 complete** — On-disk B+tree indexes, file format v6, 331 tests passing. ✅ Phase 6.5 complete.
+- [x] **Phase 6.5 complete** — On-disk B+tree indexes, file format v6. ✅ Complete.
+- [x] **Phase 7.1 complete** — Stratified negation (`not` / `not-join`), 407 tests passing. ✅ Complete.
 - [ ] **Edge case tests passing** — Oversized-fact error path exercised ✅; checkpoint-during-crash recovery not yet verified.
 - [ ] **Error-path coverage** — Still ~82%; storage and WAL error paths to be prioritised in Phase 7.
 - [x] **GitHub Discussions enabled** — ✅ Done in Phase 6.4b.
@@ -693,6 +716,29 @@ Before publishing the crate, verify all of the following:
 - [ ] `cargo clippy -- -D warnings` passes
 - [ ] `cargo doc --no-deps` builds without warnings
 - [ ] No `unwrap()`/`expect()` in library code paths (only in tests/binary)
+
+### Testing Conventions
+
+**Never use `{:?}` debug format of `Result`, `Fact`, `Value`, `EdnValue`, or any type that may transitively contain `Uuid` in `assert!`/`assert_eq!` message strings.**
+
+CodeQL flags this as `rust/cleartext-logging` (alert `rust/cleartext-logging`). It is a false positive in tests, but it pollutes the security scan and blocks CI.
+
+```rust
+// BAD — triggers CodeQL:
+assert!(result.is_ok(), "parse failed: {:?}", result);
+
+// GOOD — plain string message:
+assert!(result.is_ok(), "parse failed");
+
+// GOOD — use unwrap/expect instead (panic message not flagged):
+result.unwrap();
+result.expect("parse failed");
+
+// GOOD — assert on count/bool only:
+assert_eq!(results.len(), 3, "expected 3 results");
+```
+
+This applies to all inline `#[cfg(test)]` modules and all `tests/*.rs` integration test files.
 
 ### Versioning
 - [ ] Publish as `0.x` — no backwards-compat promise until v1.0.0

@@ -498,19 +498,19 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 ---
 
-## Phase 7: Datalog Completeness 🎯 FUTURE
+## Phase 7: Datalog Completeness 🔄 IN PROGRESS
 
 **Goal**: Complete the Datalog query engine — negation, aggregation, disjunction, temporal range queries, and prepared statements
 
-**Status**: 🎯 Planned
+**Status**: 🔄 In Progress (7.1a + 7.1b complete ✅)
 
 **Priority**: 🔴 Critical — without these, realistic production queries cannot be expressed in Datalog
 
 **Rationale**: The highlighted use cases (agentic memory, audit, mobile, browser) all require at minimum negation and aggregation. Expanding to mobile and WASM platforms before the query engine can express production-grade queries means shipping an incomplete product to more places. All features are additive — existing queries continue to work unchanged. Semantics are well-established (Datomic and XTDB are production references for all three).
 
 **Sub-phases**:
-- **7.1a** Stratified Negation — `not`
-- **7.1b** Stratified Negation — `not-join`
+- **7.1a** ✅ Stratified Negation — `not`
+- **7.1b** ✅ Stratified Negation — `not-join`
 - **7.2** Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`) — includes arithmetic filter predicates
 - **7.3** Disjunction (`or` / `or-join`)
 - **7.4** Query Optimizer Improvements (deferred from Phase 6.3)
@@ -518,7 +518,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 - **7.6** Prepared Statements (parse + plan once, execute many times, temporal bind slots)
 - **7.7** Temporal Metadata Bindings + Range Queries (`:db/valid-from`, `:db/valid-to`, `:db/tx-count` as queryable pseudo-attributes; unlocks Time Interval, Time-Point Lookup, Time-Interval Lookup query classes)
 
-### 7.1a Stratified Negation — `not`
+### 7.1a Stratified Negation — `not` ✅ COMPLETE
 
 **Goal**: Express "find entities where attribute X is absent" and similar absence queries.
 
@@ -561,7 +561,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 **Estimated complexity**: 2-3 weeks
 
-### 7.1b Stratified Negation — `not-join`
+### 7.1b Stratified Negation — `not-join` ✅ COMPLETE
 
 **Goal**: Express negation with explicit variable sharing from the outer scope — necessary when the `not` body introduces variables that should be correlated with the outer query but are not mentioned in shared patterns.
 
@@ -1166,6 +1166,14 @@ branched_db.execute("(transact [[:x :y 1]])")?;
 - `clap` moved to binary-only dep; `Cargo.toml` metadata completed
 - GitHub Discussions enabled
 
+### v0.10.0 - ✅ Phase 7.1 (Stratified Negation — `not` + `not-join`)
+- ✅ `src/query/datalog/stratification.rs`: `DependencyGraph`, `stratify()` — Bellman-Ford cycle detection; negative cycles rejected at rule registration time with a clear error
+- ✅ `(not clause…)` in queries and rule bodies — safety check requires all body vars bound by outer clauses
+- ✅ `(not-join [?v…] clause…)` — existential negation with explicit join-variable sharing; body-only variables are fresh/unbound
+- ✅ `StratifiedEvaluator`: stratifies rules, applies `not`/`not-join` per-binding filters in mixed-rule strata
+- ✅ `evaluate_not_join`: handles `Pattern` and `RuleInvocation` body clauses; queries accumulated derived facts
+- ✅ 407 tests passing; `tests/negation_test.rs` (10) + `tests/not_join_test.rs` (14) added
+
 ### v0.9.0 - ✅ Phase 6.5 (On-Disk B+Tree Indexes + **crates.io publish gate**)
 - ✅ Proper on-disk B+tree for all four covering indexes (EAVT, AEVT, AVET, VAET)
 - ✅ Index memory usage proportional to cache size, not database size (2.4× open-time speedup at 1M facts)
@@ -1244,7 +1252,8 @@ When evaluating features, ask:
 - ✅ Phase 6.4a: Complete (March 2026) - Retraction semantics fix + edge case tests
 - ✅ Phase 6.4b: Complete (March 2026) - Benchmarks + light publish prep
 - ✅ Phase 6.5: Complete (March 2026) - On-disk B+tree indexes, file format v6, concurrent scan per-page locking
-- 🎯 Phase 7: 8-12 weeks (Datalog Completeness — negation, aggregation, disjunction, prepared statements, temporal metadata bindings; ≥90% branch coverage) - **NEXT**
+- ✅ Phase 7.1: Complete (March 2026) - Stratified negation (`not` / `not-join`), 407 tests
+- 🎯 Phase 7.2–7.7: 6-10 weeks (aggregation, disjunction, optimizer, prepared statements, temporal metadata bindings; ≥90% branch coverage) - **NEXT**
 - 🎯 Phase 8: 3-4 months (Cross-platform — WASM, mobile, language bindings)
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)
 - 🎯 **v1.0.0: 9-12 months**
@@ -1255,21 +1264,20 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: Phase 6.5 Complete — Starting Phase 7 (Datalog Completeness)
+**Right Now**: Phase 7.1 Complete — Phase 7.2 Next (Aggregation)
 
-**Phase 6.5 Achievements**:
-1. ✅ `src/storage/btree_v6.rs`: proper on-disk B+tree with `build_btree`, `OnDiskIndexReader`, `CommittedIndexReader` trait
-2. ✅ `MutexStorageBackend<B>`: backend mutex held per page read; cache-warm scans acquire no lock
-3. ✅ FileHeader v6 (80 bytes): adds `fact_page_count` field; auto v5→v6 migration on checkpoint
-4. ✅ 331 tests; `tests/btree_v6_test.rs` with 8 integration tests + concurrent correctness unit test
-5. ✅ BENCHMARKS.md updated: open-time 2.4× faster at 1M, peak heap 21% lower, concurrent scan scaling improved
-6. ✅ Version bumped to v0.9.0; crates.io publish checklist unblocked
+**Phase 7.1 Achievements**:
+1. ✅ `src/query/datalog/stratification.rs`: `DependencyGraph`, `stratify()` — cycle detection; negative cycles rejected at registration
+2. ✅ `WhereClause::Not` + `WhereClause::NotJoin`: full type system support with all match arms updated
+3. ✅ Parser: `(not …)` and `(not-join [?v…] …)` syntax, safety validation, nesting constraint
+4. ✅ `StratifiedEvaluator` + `evaluate_not_join`: handles `Pattern` and `RuleInvocation` body clauses
+5. ✅ Both executor not-post-filter sites extended for `NotJoin`
+6. ✅ 407 tests; `tests/negation_test.rs` (10) + `tests/not_join_test.rs` (14) added; version bumped to v0.10.0
 
-**Immediate Next Steps (Phase 7)**:
-1. Implement stratified negation (`not` / `not-join`)
-2. Add aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`)
-3. Add disjunction (`or` / `or-join`)
-4. Push error-path coverage from ~82% toward ≥90% target
+**Immediate Next Steps (Phase 7.2)**:
+1. Add aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`) + arithmetic filter predicates
+2. Add disjunction (`or` / `or-join`) — Phase 7.3
+3. Push error-path coverage toward ≥90% target
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)

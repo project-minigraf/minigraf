@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-03-24
+
+### Added
+- `src/query/datalog/stratification.rs` — `DependencyGraph` and `stratify()`: analyse rule dependency graphs at registration time; programs with negative cycles are rejected with a clear error
+- `WhereClause::Not(Vec<WhereClause>)` and `WhereClause::NotJoin { join_vars, clauses }` variants in `types.rs`; all exhaustive matches updated
+- `(not clause…)` in `:where` and rule bodies — stratified negation where all body variables must be pre-bound by outer clauses
+- `(not-join [?v…] clause…)` — existentially-quantified negation with explicit join-variable declaration; body variables not in `join_vars` are fresh/unbound
+- Safety check at parse time: every `not` body variable must be bound by an outer clause; every `join_vars` variable in `not-join` must be bound by an outer clause
+- Nesting constraint: `not-join` cannot appear inside `not` or another `not-join` — rejected at parse time
+- `StratifiedEvaluator` in `evaluator.rs`: stratifies rules, runs positive rules first, then applies `not`/`not-join` filters per binding for mixed rules
+- `evaluate_not_join` free function in `evaluator.rs`: builds partial binding from `join_vars`, converts `Pattern` and `RuleInvocation` body clauses to patterns, runs `PatternMatcher`; returns `true` if body is satisfiable (reject outer binding)
+- `rule_invocation_to_pattern` extracted as `pub(super)` free function from `RecursiveEvaluator`
+- Two not-post-filter sites in `executor.rs` now handle both `Not` and `NotJoin` via `evaluate_not_join`
+- `tests/negation_test.rs` — 10 integration tests for `not` (Phase 7.1a): basic absence, multi-clause, rule body, time-travel, negative cycle rejection
+- `tests/not_join_test.rs` — 14 integration tests for `not-join` (Phase 7.1b): basic exclusion, multiple join vars, multi-clause body, rule body, `:as-of`, `:valid-at`, negative cycle at registration, `not`+`not-join` coexistence, `RuleInvocation` in body end-to-end
+
+### Changed
+- `Rule.body` changed from `Vec<EdnValue>` to `Vec<WhereClause>` to support negation clauses alongside patterns
+- `executor.rs` `execute_query_with_rules` now delegates to `StratifiedEvaluator` instead of `RecursiveEvaluator` directly
+- `rules.rs` `register_rule` runs `stratify()` after each registration; returns `Err` on negative cycle (rules are not registered on error)
+
 ## [0.9.0] - 2026-03-23
 
 ### Added
