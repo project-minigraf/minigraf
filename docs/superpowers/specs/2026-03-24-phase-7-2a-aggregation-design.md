@@ -77,18 +77,32 @@ pub enum FindSpec {
 }
 
 impl FindSpec {
-    /// Column header for QueryResults.vars
-    pub fn display_name(&self) -> String;
-    /// The logic variable this spec references
-    pub fn var(&self) -> &str;
+    /// Column header for QueryResults.vars.
+    /// Variable("?name") → "?name"
+    /// Aggregate { func: CountDistinct, var: "?e" } → "(count-distinct ?e)"
+    /// Uses the hyphenated function name (e.g., "count-distinct", "sum-distinct").
+    pub fn display_name(&self) -> String { ... }
+
+    /// The logic variable this spec depends on.
+    /// Variable("?name") → "?name"
+    /// Aggregate { var: "?e", .. } → "?e"
+    pub fn var(&self) -> &str { ... }
 }
 ```
+
+`display_name()` format for aggregates: `format!("({} {})", func_str, var)` where `func_str` is the hyphenated lowercase name (`"count"`, `"count-distinct"`, `"sum"`, `"sum-distinct"`, `"min"`, `"max"`).
 
 Changes to `DatalogQuery`:
 - `find: Vec<String>` → `find: Vec<FindSpec>`
 - Add `with_vars: Vec<String>` (empty = no `:with` clause)
+- `DatalogQuery::new` signature changes to accept `Vec<FindSpec>`; `with_vars` defaults to `Vec::new()`
+- Struct literal construction sites (currently ~5) need `with_vars: Vec::new()` added
 
-`QueryResult::QueryResults.vars` stays `Vec<String>`, populated from `FindSpec::display_name()` (e.g., `"?dept"`, `"(count ?e)"`).
+`QueryResult::QueryResults.vars` stays `Vec<String>`, populated from `FindSpec::display_name()`:
+```rust
+// executor.rs — at both QueryResult::QueryResults construction sites (lines ~269, ~454)
+vars: query.find.iter().map(|s| s.display_name()).collect(),
+```
 
 No changes to `WhereClause`, `Pattern`, `Rule`, `Transaction`, `AsOf`, or `ValidAt`.
 
@@ -102,22 +116,42 @@ aggregate-list = ( func-name variable )
 func-name = "count" | "count-distinct" | "sum" | "sum-distinct" | "min" | "max"
 ```
 
-When the parser sees an `EdnValue::List` in the `:find` position, it delegates to `parse_aggregate(elems)` which validates:
-1. Exactly 2 elements
-2. First element is a known function name symbol
-3. Second element is a logic variable (`?`-prefixed symbol)
+Current `:find` arm (lines 474–483) changes from variable-only to:
+```rust
+match &query_vector[i] {
+    EdnValue::Symbol(s) if s.starts_with('?') =>
+        find_specs.push(FindSpec::Variable(s.clone())),
+    EdnValue::List(elems) =>
+        find_specs.push(parse_aggregate(elems)?),
+    other => return Err(format!("Expected variable or aggregate in :find, got ...")),
+}
+```
 
-**`:with` clause** — new keyword arm in the query vector parser:
-- Collects plain variables only (aggregate in `:with` → parse error)
+`parse_aggregate(elems)` validates:
+1. Exactly 2 elements
+2. First element is a known function name symbol (`"count"`, `"count-distinct"`, etc.)
+3. Second element is a `?`-prefixed symbol (logic variable)
+
+The local `find_vars: Vec<String>` (line 407) becomes `find_specs: Vec<FindSpec>`.
+
+**`:with` clause** — new `":with"` arm in the keyword match, before the catch-all `_` arm:
+- After seeing `:with`, advance `i` and loop while the next element is a `?`-prefixed symbol, collecting each into `with_vars: Vec<String>` and advancing `i` each time. Stop at the next keyword or end of vector.
+- Multiple `:with` variables are allowed: `:with ?e ?f` collects both `"?e"` and `"?f"`
+- `:with` may appear in any order relative to `:find`, `:where`, `:as-of`, `:valid-at`
+- Aggregate expression in `:with` → parse error
 
 **Validation at parse time:**
-- Aggregate vars must appear in `:where` (same safety check as `not`/`not-join`)
-- `:with` vars must appear in `:where`
-- `:with` without any aggregate in `:find` → parse error (meaningless combination)
+
+The existing `outer_vars_from_clause` function already includes variables from `WhereClause::RuleInvocation` args (parser.rs lines 779–790). So the safety check correctly handles variables bound by rule invocations — queries like `(query [:find (count ?x) :where (reachable :a ?x)])` are valid.
+
+Checks added:
+- Each `FindSpec::Aggregate` var must be in `outer_bound` (via `outer_vars_from_clause`)
+- Each `:with` var must be in `outer_bound`
+- `:with` present but no `FindSpec::Aggregate` in `:find` → parse error
 
 ### 3. Executor (`src/query/datalog/executor.rs`)
 
-Aggregation is a post-processing step applied **after** bindings are collected and not-filtered. It is extracted into a private function shared by both execution paths:
+Aggregation is a post-processing step applied **after** bindings are collected and not-filtered. It is extracted into a private function shared by both execution paths (`execute_query` and `execute_query_with_rules`):
 
 ```rust
 fn apply_aggregation(
@@ -127,36 +161,71 @@ fn apply_aggregation(
 ) -> Result<Vec<Vec<Value>>>
 ```
 
-**Algorithm:**
+**The variable-extraction loop also changes (both paths).** Currently:
+```rust
+for var in &query.find {  // find: Vec<String>
+    binding.get(var) ...
+}
+```
+After the type change, even the non-aggregate path becomes:
+```rust
+for spec in &query.find {  // find: Vec<FindSpec>
+    binding.get(spec.var()) ...
+}
+```
+The conditional split is: if `query.find` contains any `FindSpec::Aggregate`, call `apply_aggregation`; otherwise use the updated variable-extraction loop.
 
-1. Determine grouping key = values of all `FindSpec::Variable` vars + `:with` vars, in order
-2. Group bindings by grouping key (preserve insertion order of first occurrence)
-3. For each group, for each `FindSpec` in order:
-   - `Variable` → take the group key value directly
-   - `Aggregate` → collect values of `agg.var` across all bindings in the group, apply `agg.func`
-4. Return rows in group-insertion order
+**`apply_aggregation` algorithm:**
+
+**Grouping implementation:** use a `Vec<(Vec<Value>, Vec<HashMap<String, Value>>)>` where each entry is `(grouping_key_values, bindings_in_group)`. Membership check uses `PartialEq` linear scan — `O(n)` in the number of groups but correct and dependency-free (consistent with the evaluator's existing `seen_facts` approach, and with the fact that `Value::Float(f64)` does not implement `Hash`). Float values in grouping variables are compared with `PartialEq`; NaN values will each form their own group (NaN != NaN), which is the expected IEEE 754 behavior.
+
+1. Determine grouping key = values of all `FindSpec::Variable` vars in `:find` order, followed by `:with` vars — used for grouping only, not for output
+2. Group bindings into the `Vec` structure above, preserving insertion order of first occurrence
+3. For each group, build one output row:
+   - For each `FindSpec` in `:find` order:
+     - `Variable(v)` → take value of `v` from the grouping key
+     - `Aggregate { func, var }` → collect values of `var` across the group's bindings, apply `func`
+4. `:with` variables are **not** included in output rows — they affect grouping only and do not appear in `QueryResult::QueryResults.vars` or any result row
+5. Return rows in group-insertion order
+
+**Zero bindings:** if the `:where` clause produces zero bindings, there are zero groups and zero rows in the result — an empty `Vec`. There is no special-case row like `[[0]]`. This is consistent with Datomic/XTDB behavior.
 
 **Aggregate function semantics:**
 
-| Function | Accepted types | Result type | Empty group result | Type mismatch |
+| Function | Accepted types | Result type | Zero-binding result | Type mismatch |
 |---|---|---|---|---|
-| `count` | any | `Value::Integer` | `0` | n/a |
-| `count-distinct` | any | `Value::Integer` | `0` | n/a |
-| `sum` | `Integer`, `Float` | `Integer` or `Float` (widening if mixed) | `0` | `Err` |
-| `sum-distinct` | `Integer`, `Float` | same | `0` | `Err` |
-| `min` | `Integer`, `Float`, `String` | same as input | cannot occur | `Err` |
-| `max` | `Integer`, `Float`, `String` | same as input | cannot occur | `Err` |
+| `count` | any | `Value::Integer` | empty result set | n/a |
+| `count-distinct` | any | `Value::Integer` | empty result set | n/a |
+| `sum` | `Integer`, `Float` | see widening rule | empty result set | `Err` |
+| `sum-distinct` | `Integer`, `Float` | see widening rule | empty result set | `Err` |
+| `min` | `Integer`, `Float`, `String` | same as input type | empty result set | `Err` |
+| `max` | `Integer`, `Float`, `String` | same as input type | empty result set | `Err` |
 
-Notes:
-- `sum`/`sum-distinct` with mixed `Integer`/`Float` values widens to `Float`
-- `min`/`max` on empty groups cannot occur — groups only exist when there is at least one binding
-- Type errors return `Err` immediately (fail fast, no silent skipping)
+**`sum`/`sum-distinct` widening rule:** if any value in the group is `Value::Float`, the result is `Value::Float`; otherwise `Value::Integer`. An empty sum group cannot occur (groups only form when bindings exist).
 
-The existing variable-extraction loop (no aggregates) is unchanged — `apply_aggregation` is only called when `find_specs` contains at least one `FindSpec::Aggregate`.
+**`min`/`max` with mixed `Integer` and `Float` in the same group:** this is a type error (`Err`). Callers must ensure the aggregated variable is uniformly typed across the group.
+
+**`min`/`max` on empty groups** cannot occur — groups only exist when at least one binding is present.
+
+Type errors return `Err` immediately (fail fast, no silent skipping).
 
 ### 4. Evaluator (`src/query/datalog/evaluator.rs`)
 
-Type propagation only — no logic changes. Anywhere `DatalogQuery.find` is accessed as `Vec<String>`, update to call `.var()` or `.display_name()` on `FindSpec` as appropriate. Estimated 3–5 call sites.
+No changes required. The evaluator operates on `Rule`, `WhereClause`, and `FactStorage` — it never receives a `DatalogQuery` and therefore never accesses `DatalogQuery.find`. The optimizer (`optimizer.rs`) likewise reads only `:where` patterns — no changes needed there.
+
+---
+
+## Migration Scope
+
+The `find: Vec<String>` → `find: Vec<FindSpec>` change affects:
+
+| Location | Change |
+|---|---|
+| `src/query/datalog/types.rs` | `DatalogQuery` struct field; `DatalogQuery::new` signature and body; `DatalogQuery::from_patterns`; ~15 unit test call sites using `DatalogQuery::new` or struct literal (add `with_vars: Vec::new()` to struct literals) |
+| `src/query/datalog/parser.rs` | `find_vars: Vec<String>` local → `find_specs: Vec<FindSpec>`; `:find` arm extended; new `:with` arm; `DatalogQuery::new(find_specs, ...)` call at line ~520. Parser test sites asserting `q.find == vec!["?name"]` etc. (lines ~995, ~1045, ~1148, ~1170, ~1189) must change to compare against `vec![FindSpec::Variable("?name".to_string())]` etc. |
+| `src/query/datalog/executor.rs` | Two `vars: query.find` assignments (lines ~269, ~454) → `vars: query.find.iter().map(|s| s.display_name()).collect()`; two variable-extraction loops → iterate over `&query.find` as `FindSpec` calling `.var()`; struct literal tests at lines ~1031 and ~1086 need `with_vars: Vec::new()` added |
+| `src/query/datalog/evaluator.rs` | No changes — evaluator does not access `DatalogQuery.find` |
+| All other `DatalogQuery { ... }` struct literal sites | Add `with_vars: Vec::new()` field |
 
 ---
 
@@ -166,11 +235,12 @@ Type propagation only — no logic changes. Anywhere `DatalogQuery.find` is acce
 |---|---|---|
 | Unknown aggregate function | Parse error | `"Unknown aggregate function: 'foo'"` |
 | Non-variable as aggregate argument | Parse error | `"Aggregate argument must be a variable"` |
-| Aggregate var not bound in :where | Parse error | `"Aggregate variable ?x not bound in :where"` |
-| `:with` var not bound in :where | Parse error | `"':with' variable ?x not bound in :where"` |
-| `:with` without aggregate in :find | Parse error | `"':with' clause requires at least one aggregate in :find"` |
+| Aggregate var not bound in `:where` | Parse error | `"Aggregate variable ?x not bound in :where"` |
+| `:with` var not bound in `:where` | Parse error | `"':with' variable ?x not bound in :where"` |
+| `:with` without aggregate in `:find` | Parse error | `"':with' clause requires at least one aggregate in :find"` |
 | `sum`/`sum-distinct` on non-numeric | Runtime error | `"sum: expected Integer or Float, got String"` |
 | `min`/`max` on incompatible type | Runtime error | `"min: expected Integer, Float, or String, got Boolean"` |
+| `min`/`max` on mixed Integer/Float | Runtime error | `"min: cannot compare Integer and Float values"` |
 
 ---
 
@@ -185,16 +255,19 @@ New test file. All assertions follow the no-`{:?}`-on-Result/Fact/Value conventi
 | `count_distinct_deduplicates` | `count-distinct` vs `count` differ when values repeat |
 | `sum_integers` | integer sum across group |
 | `sum_floats` | float sum |
-| `sum_mixed_widens_to_float` | `Integer` + `Float` → `Float` result |
+| `sum_mixed_widens_to_float` | `Integer` + `Float` in same group → `Float` result |
 | `sum_distinct_deduplicates` | duplicate values excluded before summing |
 | `min_max_integers` | boundary values correct |
 | `min_max_strings` | lexicographic ordering |
-| `with_prevents_overcollapse` | `sum` without `:with` vs with `:with ?e` differ |
-| `count_empty_result` | returns `0` when no bindings |
-| `sum_empty_result` | returns `0` when no bindings |
+| `with_prevents_overcollapse` | `sum` without `:with` vs with `:with ?e` differ when entity duplicates exist |
+| `count_empty_result` | zero bindings → empty result set (not `[[0]]`) |
+| `count_distinct_empty_result` | zero bindings with `count-distinct` → empty result set |
+| `sum_empty_result` | zero bindings → empty result set (not `[[0]]`) |
 | `sum_type_error` | `Err` when summing strings |
-| `min_type_error` | `Err` on incompatible type |
-| `aggregate_with_rules` | aggregation after recursive rule evaluation |
+| `min_type_error` | `Err` on Boolean type |
+| `min_mixed_int_float_error` | `Err` when Integer and Float in same group |
+| `aggregate_after_nonrecursive_rule` | aggregation after simple rule evaluation |
+| `aggregate_after_recursive_rule` | aggregation after recursive rule (e.g., count reachable nodes) |
 | `aggregate_with_negation` | aggregation after `not`/`not-join` filtering |
 | `aggregate_with_as_of` | aggregation on time-travel snapshot |
 | `parse_error_with_without_aggregate` | `:with` without aggregate → parse error |
@@ -209,9 +282,9 @@ New test file. All assertions follow the no-`{:?}`-on-Result/Fact/Value conventi
 |---|---|
 | `src/query/datalog/types.rs` | Add `AggFunc`, `FindSpec`; change `DatalogQuery.find`; add `DatalogQuery.with_vars` |
 | `src/query/datalog/parser.rs` | Parse aggregate lists in `:find`; parse `:with` clause; new validations |
-| `src/query/datalog/executor.rs` | Add `apply_aggregation`; call it from both execution paths |
+| `src/query/datalog/executor.rs` | Add `apply_aggregation`; update variable-extraction loops; update `vars:` assignments |
 | `src/query/datalog/evaluator.rs` | Type propagation only (3–5 call sites) |
-| `tests/aggregation_test.rs` | New — ~20 tests |
+| `tests/aggregation_test.rs` | New — ~23 tests |
 
 No changes to: `matcher.rs`, `optimizer.rs`, `stratification.rs`, `rules.rs`, `storage/`, `graph/`, `db.rs`, `wal.rs`, public API.
 
