@@ -285,6 +285,22 @@ impl DatalogQuery {
         Self::collect_rule_invocations_recursive(&self.where_clauses)
     }
 
+    /// Get only top-level rule invocations — those NOT nested inside a Not body.
+    ///
+    /// Used by execute_query_with_rules to build positive patterns from rule heads;
+    /// rule invocations inside `not` are handled by the not-post-filter, not here.
+    pub fn get_top_level_rule_invocations(&self) -> Vec<(String, Vec<EdnValue>)> {
+        self.where_clauses
+            .iter()
+            .filter_map(|c| match c {
+                WhereClause::RuleInvocation { predicate, args } => {
+                    Some((predicate.clone(), args.clone()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Check if this query uses any rules (including inside Not bodies at any depth)
     pub fn uses_rules(&self) -> bool {
         self.where_clauses

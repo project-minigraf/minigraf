@@ -252,9 +252,10 @@ impl DatalogExecutor {
 
     /// Execute a query that uses recursive rules
     fn execute_query_with_rules(&self, query: DatalogQuery) -> Result<QueryResult> {
-        // Extract predicates from rule invocations
-        let rule_invocations = query.get_rule_invocations();
-        let predicates: Vec<String> = rule_invocations
+        // Extract ALL predicates (including inside not bodies) so the StratifiedEvaluator
+        // evaluates every referenced rule. This is needed for not-post-filter to work.
+        let all_rule_invocations = query.get_rule_invocations();
+        let predicates: Vec<String> = all_rule_invocations
             .iter()
             .map(|(pred, _)| pred.clone())
             .collect();
@@ -271,25 +272,37 @@ impl DatalogExecutor {
 
         let derived_storage = evaluator.evaluate(&predicates)?;
 
-        // Convert rule invocations to patterns
+        // Convert ONLY top-level rule invocations to positive-match patterns.
+        // Rule invocations inside `not` bodies are handled by the not-post-filter below.
         // (reachable ?x ?y) becomes [?x :reachable ?y]
         let mut all_patterns = query.get_patterns();
 
-        for (predicate, args) in rule_invocations {
-            if args.len() != 2 {
-                return Err(anyhow!(
-                    "Rule invocation '{}' must have exactly 2 arguments (entity and value), got {}",
-                    predicate,
-                    args.len()
-                ));
-            }
-
-            // Create pattern: [entity :predicate value]
-            let pattern = Pattern::new(
-                args[0].clone(),
-                EdnValue::Keyword(format!(":{}", predicate)),
-                args[1].clone(),
-            );
+        for (predicate, args) in query.get_top_level_rule_invocations() {
+            let pattern = match args.len() {
+                1 => {
+                    // 1-arg: (blocked ?x)  →  [?x :blocked ?_rule_value]
+                    Pattern::new(
+                        args[0].clone(),
+                        EdnValue::Keyword(format!(":{}", predicate)),
+                        EdnValue::Symbol("?_rule_value".to_string()),
+                    )
+                }
+                2 => {
+                    // 2-arg: (reachable ?x ?y)  →  [?x :reachable ?y]
+                    Pattern::new(
+                        args[0].clone(),
+                        EdnValue::Keyword(format!(":{}", predicate)),
+                        args[1].clone(),
+                    )
+                }
+                n => {
+                    return Err(anyhow!(
+                        "Rule invocation '{}' must have 1 or 2 arguments, got {}",
+                        predicate,
+                        n
+                    ));
+                }
+            };
             all_patterns.push(pattern);
         }
 
@@ -325,6 +338,44 @@ impl DatalogExecutor {
                                         p, binding,
                                     ),
                                 ),
+                                WhereClause::RuleInvocation { predicate, args } => {
+                                    // Convert rule invocation to a pattern against derived storage.
+                                    // Apply the current binding to any variables in args first.
+                                    let resolved_args: Vec<EdnValue> = args
+                                        .iter()
+                                        .map(|a| match a {
+                                            EdnValue::Symbol(s) if s.starts_with('?') => {
+                                                // Look up the bound value and convert back to EdnValue
+                                                binding.get(s).map(|v| match v {
+                                                    Value::Keyword(k) => EdnValue::Keyword(k.clone()),
+                                                    Value::String(s) => EdnValue::String(s.clone()),
+                                                    Value::Integer(i) => EdnValue::Integer(*i),
+                                                    Value::Float(f) => EdnValue::Float(*f),
+                                                    Value::Boolean(b) => EdnValue::Boolean(*b),
+                                                    Value::Ref(u) => EdnValue::Uuid(*u),
+                                                    Value::Null => EdnValue::Nil,
+                                                }).unwrap_or_else(|| a.clone())
+                                            }
+                                            other => other.clone(),
+                                        })
+                                        .collect();
+                                    let pattern = match resolved_args.len() {
+                                        1 => Pattern::new(
+                                            resolved_args[0].clone(),
+                                            EdnValue::Keyword(format!(":{}", predicate)),
+                                            EdnValue::Symbol("?_rule_value".to_string()),
+                                        ),
+                                        2 => Pattern::new(
+                                            resolved_args[0].clone(),
+                                            EdnValue::Keyword(format!(":{}", predicate)),
+                                            resolved_args[1].clone(),
+                                        ),
+                                        _ => return None,
+                                    };
+                                    Some(crate::query::datalog::evaluator::substitute_pattern(
+                                        &pattern, binding,
+                                    ))
+                                }
                                 _ => None,
                             })
                             .collect();
