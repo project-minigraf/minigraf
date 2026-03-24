@@ -367,9 +367,7 @@ fn test_not_join_body_no_matches_all_survive() {
     db.execute("(transact [[:e1 :active true] [:e2 :active true] [:e3 :active true]])")
         .unwrap();
     let result = db
-        .execute(
-            "(query [:find ?x :where [?x :active true] (not-join [?x] [?x :banned true])])",
-        )
+        .execute("(query [:find ?x :where [?x :active true] (not-join [?x] [?x :banned true])])")
         .unwrap();
     // All three survive because the not-join body matches nothing.
     // Entity IDs are UUIDs in the result, not keyword strings, so we count results.
@@ -390,7 +388,8 @@ fn test_not_join_with_valid_at() {
         "(transact {:valid-from \"2023-01-01\" :valid-to \"2024-01-01\"} [[:alice :active true] [:bob :active true]])",
     )
     .unwrap();
-    db.execute("(transact {:valid-from \"2024-01-01\"} [[:alice :restricted true]])").unwrap();
+    db.execute("(transact {:valid-from \"2024-01-01\"} [[:alice :restricted true]])")
+        .unwrap();
     // At 2023-06-01: both active, neither restricted -> both pass.
     // Entity IDs are UUIDs in the result, not keyword strings, so we count results.
     let result_2023 = db
