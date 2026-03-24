@@ -23,7 +23,7 @@ impl DependencyGraph {
                         WhereClause::RuleInvocation { predicate, .. } => {
                             entry.push((predicate.clone(), false)); // positive edge
                         }
-                        WhereClause::Not(inner) => {
+                        WhereClause::Not(inner) | WhereClause::NotJoin { clauses: inner, .. } => {
                             for inner_clause in inner {
                                 if let WhereClause::RuleInvocation { predicate, .. } = inner_clause
                                 {

@@ -203,6 +203,12 @@ impl RecursiveEvaluator {
                         "WhereClause::Not in evaluate_rule: use StratifiedEvaluator for rules with negation"
                     ));
                 }
+                WhereClause::NotJoin { .. } => {
+                    // NotJoin clauses are handled by StratifiedEvaluator, not here.
+                    return Err(anyhow!(
+                        "WhereClause::NotJoin in evaluate_rule: use StratifiedEvaluator for rules with negation"
+                    ));
+                }
             }
         }
 
@@ -512,7 +518,7 @@ impl StratifiedEvaluator {
                             )),
                             _ => None,
                         },
-                        WhereClause::Not(_) => None,
+                        WhereClause::Not(_) | WhereClause::NotJoin { .. } => None,
                     })
                     .collect();
 
@@ -558,7 +564,7 @@ impl StratifiedEvaluator {
                                         _ => None,
                                     }
                                 }
-                                WhereClause::Not(_) => None,
+                                WhereClause::Not(_) | WhereClause::NotJoin { .. } => None,
                             })
                             .collect();
 

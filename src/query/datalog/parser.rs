@@ -735,7 +735,8 @@ fn outer_vars_from_clause(clause: &WhereClause) -> Vec<String> {
                 })
             })
             .collect(),
-        WhereClause::Not(_) => vec![], // not counted as "outer"
+        WhereClause::Not(_) => vec![],        // not counted as "outer"
+        WhereClause::NotJoin { .. } => vec![], // not counted as "outer"
     }
 }
 

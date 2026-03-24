@@ -177,6 +177,13 @@ pub enum WhereClause {
     /// Negation as failure: (not clause1 clause2 ...)
     /// Succeeds when none of the inner clauses match.
     Not(Vec<WhereClause>),
+    /// not-join: explicit join variables + existentially quantified body.
+    /// Succeeds when no assignment to non-join variables satisfies all inner clauses
+    /// when join variables are substituted from the outer binding.
+    NotJoin {
+        join_vars: Vec<String>,
+        clauses: Vec<WhereClause>,
+    },
 }
 
 impl WhereClause {
@@ -188,13 +195,20 @@ impl WhereClause {
             WhereClause::Not(clauses) => {
                 clauses.iter().flat_map(|c| c.rule_invocations()).collect()
             }
+            WhereClause::NotJoin { clauses, .. } => {
+                clauses.iter().flat_map(|c| c.rule_invocations()).collect()
+            }
         }
     }
 
-    /// True if this clause is a Not containing at least one RuleInvocation.
+    /// True if this clause is a Not or NotJoin containing at least one RuleInvocation.
     pub fn has_negated_invocation(&self) -> bool {
-        matches!(self, WhereClause::Not(clauses) if
-            clauses.iter().any(|c| matches!(c, WhereClause::RuleInvocation { .. })))
+        match self {
+            WhereClause::Not(clauses) | WhereClause::NotJoin { clauses, .. } => {
+                clauses.iter().any(|c| matches!(c, WhereClause::RuleInvocation { .. }))
+            }
+            _ => false,
+        }
     }
 }
 
@@ -271,7 +285,7 @@ impl DatalogQuery {
                 WhereClause::RuleInvocation { predicate, args } => {
                     result.push((predicate.clone(), args.clone()));
                 }
-                WhereClause::Not(inner) => {
+                WhereClause::Not(inner) | WhereClause::NotJoin { clauses: inner, .. } => {
                     result.extend(Self::collect_rule_invocations_recursive(inner));
                 }
                 WhereClause::Pattern(_) => {}
@@ -631,5 +645,88 @@ mod tests {
         let invocations = query.get_rule_invocations();
         assert_eq!(invocations.len(), 1);
         assert_eq!(invocations[0].0, "blocked");
+    }
+
+    #[test]
+    fn test_where_clause_not_join_variant_exists() {
+        let nj = WhereClause::NotJoin {
+            join_vars: vec!["?e".to_string()],
+            clauses: vec![WhereClause::Pattern(Pattern::new(
+                EdnValue::Symbol("?e".to_string()),
+                EdnValue::Keyword(":tag".to_string()),
+                EdnValue::Symbol("?tag".to_string()),
+            ))],
+        };
+        assert!(matches!(nj, WhereClause::NotJoin { .. }));
+    }
+
+    #[test]
+    fn test_rule_invocations_recurses_into_not_join() {
+        let nj = WhereClause::NotJoin {
+            join_vars: vec!["?e".to_string()],
+            clauses: vec![WhereClause::RuleInvocation {
+                predicate: "blocked".to_string(),
+                args: vec![EdnValue::Symbol("?e".to_string())],
+            }],
+        };
+        let invocations = nj.rule_invocations();
+        assert_eq!(invocations, vec!["blocked"]);
+    }
+
+    #[test]
+    fn test_has_negated_invocation_true_for_not_join_with_rule_invocation() {
+        let nj = WhereClause::NotJoin {
+            join_vars: vec!["?e".to_string()],
+            clauses: vec![WhereClause::RuleInvocation {
+                predicate: "blocked".to_string(),
+                args: vec![EdnValue::Symbol("?e".to_string())],
+            }],
+        };
+        assert!(nj.has_negated_invocation());
+    }
+
+    #[test]
+    fn test_collect_rule_invocations_recurses_into_not_join() {
+        let query = DatalogQuery::new(
+            vec!["?e".to_string()],
+            vec![WhereClause::NotJoin {
+                join_vars: vec!["?e".to_string()],
+                clauses: vec![WhereClause::RuleInvocation {
+                    predicate: "blocked".to_string(),
+                    args: vec![EdnValue::Symbol("?e".to_string())],
+                }],
+            }],
+        );
+        let invocations = query.get_rule_invocations();
+        assert_eq!(invocations.len(), 1);
+        assert_eq!(invocations[0].0, "blocked");
+    }
+
+    #[test]
+    fn test_get_top_level_rule_invocations_excludes_not_join_body() {
+        // not-join body rule invocations are NOT top-level
+        let query = DatalogQuery::new(
+            vec!["?e".to_string()],
+            vec![
+                WhereClause::RuleInvocation {
+                    predicate: "reachable".to_string(),
+                    args: vec![
+                        EdnValue::Symbol("?e".to_string()),
+                        EdnValue::Symbol("?x".to_string()),
+                    ],
+                },
+                WhereClause::NotJoin {
+                    join_vars: vec!["?e".to_string()],
+                    clauses: vec![WhereClause::RuleInvocation {
+                        predicate: "blocked".to_string(),
+                        args: vec![EdnValue::Symbol("?e".to_string())],
+                    }],
+                },
+            ],
+        );
+        let top_level = query.get_top_level_rule_invocations();
+        // Only "reachable" is top-level; "blocked" is inside not-join
+        assert_eq!(top_level.len(), 1);
+        assert_eq!(top_level[0].0, "reachable");
     }
 }
