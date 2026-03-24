@@ -155,6 +155,57 @@ impl FactStorage {
         Ok(tx_id)
     }
 
+    /// Transact a batch of facts where each fact may carry its own valid-time opts.
+    ///
+    /// All facts share **one** `tx_count` (incremented once for the whole batch),
+    /// matching the semantics of a single user-level `(transact [...])` command.
+    /// Per-fact opts override `default_opts` for that individual fact only.
+    ///
+    /// # Arguments
+    /// * `fact_tuples` - Vec of `(entity, attribute, value, per_fact_opts)`
+    /// * `default_opts` - Transaction-level valid-time opts applied when a fact
+    ///   has no per-fact override
+    ///
+    /// # Returns
+    /// The TxId (timestamp) assigned to all facts in this batch
+    pub fn transact_batch(
+        &self,
+        fact_tuples: Vec<(EntityId, Attribute, Value, Option<TransactOptions>)>,
+        default_opts: Option<TransactOptions>,
+    ) -> Result<TxId> {
+        let tx_id = tx_id_now();
+        let tx_count = self.tx_counter.fetch_add(1, Ordering::SeqCst) + 1;
+        let default_opts = default_opts.unwrap_or_default();
+
+        let facts: Vec<Fact> = fact_tuples
+            .into_iter()
+            .map(|(entity, attribute, value, per_fact_opts)| {
+                let opts = per_fact_opts.unwrap_or_else(|| default_opts.clone());
+                let valid_from = opts.valid_from.unwrap_or(tx_id as i64);
+                let valid_to = opts.valid_to.unwrap_or(VALID_TIME_FOREVER);
+                Fact::with_valid_time(
+                    entity, attribute, value, tx_id, tx_count, valid_from, valid_to,
+                )
+            })
+            .collect();
+
+        let mut d = self.data.write().unwrap();
+        let mut slot = d.facts.len() as u16;
+        for fact in &facts {
+            d.pending_indexes.insert(
+                fact,
+                FactRef {
+                    page_id: 0,
+                    slot_index: slot,
+                },
+            );
+            slot += 1;
+        }
+        d.facts.extend(facts);
+
+        Ok(tx_id)
+    }
+
     /// Retract a batch of facts with automatic timestamping
     ///
     /// Retractions are new facts with asserted=false. The original facts remain

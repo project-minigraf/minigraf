@@ -60,15 +60,16 @@ impl DatalogExecutor {
 
     /// Execute a transact command: add facts to storage
     fn execute_transact(&self, tx: Transaction) -> Result<QueryResult> {
-        // Transaction-level valid-time options (used when pattern has no per-fact override)
+        // Transaction-level valid-time options (fallback when no per-fact override)
         let tx_opts = if tx.valid_from.is_some() || tx.valid_to.is_some() {
             Some(TransactOptions::new(tx.valid_from, tx.valid_to))
         } else {
             None
         };
 
-        let mut last_tx_id: TxId = 0;
-
+        // Collect all facts into a single batch so they share one tx_count.
+        // Each fact carries its own per-fact opts (or None to fall back to tx_opts).
+        let mut fact_tuples = Vec::new();
         for pattern in tx.facts {
             let entity_id =
                 edn_to_entity_id(&pattern.entity).map_err(|e| anyhow!("Invalid entity: {}", e))?;
@@ -81,20 +82,21 @@ impl DatalogExecutor {
             let value =
                 edn_to_value(&pattern.value).map_err(|e| anyhow!("Invalid value: {}", e))?;
 
-            // Determine per-fact opts: per-fact override takes precedence over tx-level
-            let opts = if pattern.valid_from.is_some() || pattern.valid_to.is_some() {
+            let per_fact_opts = if pattern.valid_from.is_some() || pattern.valid_to.is_some() {
                 Some(TransactOptions::new(pattern.valid_from, pattern.valid_to))
             } else {
-                tx_opts.clone()
+                None
             };
 
-            last_tx_id = self
-                .storage
-                .transact(vec![(entity_id, attribute, value)], opts)
-                .map_err(|e| anyhow!("Transaction failed: {}", e))?;
+            fact_tuples.push((entity_id, attribute, value, per_fact_opts));
         }
 
-        Ok(QueryResult::Transacted(last_tx_id))
+        let tx_id = self
+            .storage
+            .transact_batch(fact_tuples, tx_opts)
+            .map_err(|e| anyhow!("Transaction failed: {}", e))?;
+
+        Ok(QueryResult::Transacted(tx_id))
     }
 
     /// Execute a retract command: retract facts from storage

@@ -1,0 +1,158 @@
+# ========================================
+# Minigraf: Bi-temporal Queries Demo
+# ========================================
+# Demonstrates valid-time and transaction-time
+# queries, including :valid-at, :any-valid-time,
+# :as-of, retraction history, and combined
+# bi-temporal queries.
+#
+# Run with: cargo run < demo_bitemporal.txt
+# ========================================
+
+# ========================================
+# 1. VALID-TIME QUERIES
+# ========================================
+# Model employment history with explicit valid-time ranges.
+# Alice worked at TechCorp from 2020 to mid-2023, then
+# moved to StartupCo (open-ended from 2023-06-01).
+#
+# tx 1: Alice at TechCorp (valid 2020-01-01 → 2023-06-01)
+# tx 2: Alice at StartupCo (valid 2023-06-01 → forever)
+
+(transact {:valid-from "2020-01-01" :valid-to "2023-06-01"}
+          [[:alice :employment/company :techcorp]])
+
+(transact {:valid-from "2023-06-01"}
+          [[:alice :employment/company :startupco]])
+
+# Query: Where was Alice employed in mid-2021?
+# Expected: :techcorp (valid 2020–2023)
+(query [:find ?company
+        :valid-at "2021-06-01"
+        :where [:alice :employment/company ?company]])
+
+# Query: Where is Alice employed in 2024?
+# Expected: :startupco (valid from 2023-06-01 onwards)
+(query [:find ?company
+        :valid-at "2024-01-01"
+        :where [:alice :employment/company ?company]])
+
+# Query: Show Alice's full employment history (ignore valid-time filter)
+# Expected: both :techcorp and :startupco
+(query [:find ?company
+        :valid-at :any-valid-time
+        :where [:alice :employment/company ?company]])
+
+# ========================================
+# 2. TRANSACTION-TIME QUERIES (:as-of)
+# ========================================
+# The :as-of clause queries the database as it existed
+# at a given transaction count.
+# Note: the number shown in "Transacted (tx: N)" is the
+# tx_id (Unix ms timestamp). For :as-of N, use the
+# sequential tx counter: first transact = 1, second = 2, …
+#
+# tx 3: record names for Alice and Bob
+# tx 4: record their departments
+
+(transact [[:alice :person/name "Alice"]
+           [:bob   :person/name "Bob"]])
+
+(transact [[:alice :person/dept "Engineering"]
+           [:bob   :person/dept "Design"]])
+
+# Query: What names were recorded after tx 3 (before dept facts)?
+# Uses :any-valid-time because names were transacted "now" (no explicit valid-from).
+# Expected: "Alice", "Bob" — names are visible, dept facts are not yet recorded
+(query [:find ?name
+        :as-of 3
+        :valid-at :any-valid-time
+        :where [?e :person/name ?name]])
+
+# Query: What names and departments exist now (no :as-of = latest state)?
+# Expected: "Alice"/"Engineering" and "Bob"/"Design"
+(query [:find ?name ?dept
+        :valid-at :any-valid-time
+        :where [?e :person/name ?name]
+               [?e :person/dept ?dept]])
+
+# ========================================
+# 3. RETRACTION AND HISTORY
+# ========================================
+# Retracting a fact marks it as no longer current.
+# :as-of lets you see the state before the retraction.
+#
+# tx 5: Carol's office is "Room 42"
+# tx 6: retract that (she moved)
+
+(transact [[:carol :person/office "Room 42"]])
+
+(retract [[:carol :person/office "Room 42"]])
+
+# Query: What is Carol's current office?
+# Expected: no results (retracted)
+(query [:find ?room
+        :valid-at :any-valid-time
+        :where [:carol :person/office ?room]])
+
+# Query: What was Carol's office as of tx 5 (before the retraction)?
+# Expected: "Room 42"
+(query [:find ?room
+        :as-of 5
+        :valid-at :any-valid-time
+        :where [:carol :person/office ?room]])
+
+# ========================================
+# 4. COMBINED BI-TEMPORAL QUERIES
+# ========================================
+# Both :as-of and :valid-at can be combined to ask:
+# "What did we *know* (tx time) about what was *true* (valid time)?"
+#
+# Alice's employment facts are still in the DB from Section 1:
+#   tx 1 → TechCorp  (valid 2020-01-01 → 2023-06-01)
+#   tx 2 → StartupCo (valid 2023-06-01 → forever)
+
+# Query: As of tx 1 (only TechCorp recorded), was Alice at TechCorp in 2021?
+# Expected: :techcorp — fact was recorded AND was valid at that time
+(query [:find ?company
+        :as-of 1
+        :valid-at "2021-06-01"
+        :where [:alice :employment/company ?company]])
+
+# Query: As of tx 1 (only TechCorp recorded), where was Alice in 2024?
+# Expected: no results — TechCorp had expired by 2024; StartupCo not recorded yet at tx 1
+(query [:find ?company
+        :as-of 1
+        :valid-at "2024-01-01"
+        :where [:alice :employment/company ?company]])
+
+# Query: As of tx 2 (both companies recorded), where was Alice in 2024?
+# Expected: :startupco — StartupCo is now in the DB and is valid in 2024
+(query [:find ?company
+        :as-of 2
+        :valid-at "2024-01-01"
+        :where [:alice :employment/company ?company]])
+
+EXIT
+
+# ========================================
+# Summary
+# ========================================
+# Bi-temporal queries operate on two independent time axes:
+#
+# VALID TIME (:valid-at)
+#   When was the fact true in the real world?
+#   Set by the caller; can be backdated or future-dated.
+#   Default (no :valid-at): return only currently valid facts.
+#   :any-valid-time: disable the valid-time filter entirely.
+#
+# TRANSACTION TIME (:as-of)
+#   When was the fact recorded in the database?
+#   Managed automatically; monotonic; immutable.
+#   :as-of N: see the database as it existed after the Nth transact.
+#   :as-of "2024-01-15T10:00:00Z": see state as of a wall-clock time.
+#
+# COMBINED
+#   "What did we know (tx N) about what was true (valid date)?"
+#   Useful for auditing, corrections, and counterfactual queries.
+# ========================================

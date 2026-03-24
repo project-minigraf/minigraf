@@ -136,13 +136,16 @@ impl PatternMatcher {
                 }
             }
 
-            EdnValue::Uuid(u) => {
-                if let Value::Ref(entity_id) = fact_value {
-                    u == entity_id
-                } else {
-                    false
+            EdnValue::Uuid(u) => match fact_value {
+                Value::Ref(entity_id) => u == entity_id,
+                // A keyword stored as a value may represent an entity reference.
+                // Convert it to its canonical UUID and compare — symmetric with
+                // the EdnValue::Keyword arm above that handles Value::Ref.
+                Value::Keyword(k) => {
+                    edn_to_entity_id(&EdnValue::Keyword(k.clone())).map_or(false, |id| u == &id)
                 }
-            }
+                _ => false,
+            },
 
             EdnValue::Nil => matches!(fact_value, Value::Null),
 

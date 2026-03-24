@@ -1,0 +1,166 @@
+# ========================================
+# Minigraf: Stratified Negation Demo
+# ========================================
+# Demonstrates not and not-join in query bodies
+# and rule bodies, plus negative cycle rejection.
+#
+# Run with: cargo run < demo_negation.txt
+# ========================================
+
+# ========================================
+# 1. BASIC not
+# ========================================
+# (not pattern...) excludes bindings where ALL
+# body patterns match. All variables in a not body
+# must already be bound by outer clauses.
+
+(transact [[:alice :person/name "Alice"]
+           [:bob   :person/name "Bob"]
+           [:carol :person/name "Carol"]
+           [:alice :person/banned true]])
+
+# Query: All people (no filter)
+# Expected: "Alice", "Bob", "Carol"
+(query [:find ?name
+        :where [?e :person/name ?name]])
+
+# Query: People who are not banned
+# Expected: "Bob", "Carol"  (Alice is excluded by the not clause)
+(query [:find ?name
+        :where [?e :person/name ?name]
+               (not [?e :person/banned true])])
+
+# ========================================
+# 2. MULTI-CLAUSE not
+# ========================================
+# A not body with multiple clauses excludes bindings
+# where ALL clauses simultaneously match.
+# Bindings where only some clauses match are kept.
+
+(transact [[:task-a :task/name "Task A"] [:task-a :task/urgent true] [:task-a :task/blocked true]
+           [:task-b :task/name "Task B"] [:task-b :task/urgent true]
+           [:task-c :task/name "Task C"] [:task-c :task/blocked true]
+           [:task-d :task/name "Task D"]])
+
+# Query: Urgent tasks that are not also blocked
+# (not [?t :task/blocked true]) — single clause
+# Expected: "Task B"  (urgent but not blocked)
+(query [:find ?name
+        :where [?t :task/name ?name]
+               [?t :task/urgent true]
+               (not [?t :task/blocked true])])
+
+# Query: Tasks that are NOT (both urgent AND blocked simultaneously)
+# (not [?t :task/urgent true] [?t :task/blocked true]) — both must hold to exclude
+# Expected: "Task B", "Task C", "Task D"  (Task A is excluded; it is both urgent AND blocked)
+(query [:find ?name
+        :where [?t :task/name ?name]
+               (not [?t :task/urgent true]
+                    [?t :task/blocked true])])
+
+# ========================================
+# 3. not-join — EXISTENTIAL NEGATION
+# ========================================
+# (not-join [join-vars] body...) excludes bindings
+# where there EXISTS any assignment to the body-only
+# variables that satisfies the body.
+# Only the variables listed in [join-vars] are shared
+# from the outer binding; other body variables are fresh.
+
+(transact [[:svc-a :service/name "Service A"] [:svc-a :depends-on :lib-old]
+           [:svc-b :service/name "Service B"] [:svc-b :depends-on :lib-new]
+           [:svc-c :service/name "Service C"]
+           [:lib-old :lib/deprecated true]])
+
+# Query: Services that have no dependency on any deprecated library
+# not-join binds ?svc from outer; ?lib is a fresh inner variable
+# Expected: "Service B" (lib-new is not deprecated), "Service C" (no dependencies)
+(query [:find ?name
+        :where [?svc :service/name ?name]
+               (not-join [?svc]
+                         [?svc :depends-on ?lib]
+                         [?lib :lib/deprecated true])])
+
+# ========================================
+# 4. not IN A RULE BODY
+# ========================================
+# not and not-join can appear inside rule bodies.
+# The rule is evaluated by the StratifiedEvaluator:
+# positive patterns run first, then not filters are applied.
+
+(transact [[:alice :applicant/name "Alice"] [:alice :applied true] [:alice :rejected true]
+           [:bob   :applicant/name "Bob"]   [:bob   :applied true]
+           [:carol :applicant/name "Carol"] [:carol :applied true] [:carol :rejected true]])
+
+# Rule: an applicant is eligible if they applied and have not been rejected
+(rule [(eligible ?x) [?x :applied true] (not [?x :rejected true])])
+
+# Query: Names of eligible applicants
+# Expected: "Bob"  (Alice and Carol were rejected)
+(query [:find ?name
+        :where (eligible ?e)
+               [?e :applicant/name ?name]])
+
+# ========================================
+# 5. not-join IN A RULE BODY
+# ========================================
+
+(transact [[:widget :item/name "Widget"] [:widget :item/stock 10]
+           [:gadget :item/name "Gadget"] [:gadget :item/stock 5]
+           [:gizmo  :item/name "Gizmo"]  [:gizmo  :item/stock 3]
+           [:order-1 :reserves :widget]  [:order-1 :confirmed true]
+           [:order-2 :reserves :gadget]])
+
+# Rule: an item is available if it has stock and no confirmed reservation
+(rule [(available ?item)
+       [?item :item/stock ?n]
+       (not-join [?item]
+                 [?order :reserves ?item]
+                 [?order :confirmed true])])
+
+# Query: Names of available items
+# Expected: "Gadget" (reserved by order-2 but unconfirmed), "Gizmo" (no reservation)
+# "Widget" is excluded — it has a confirmed reservation via order-1
+(query [:find ?name
+        :where (available ?item)
+               [?item :item/name ?name]])
+
+# ========================================
+# 6. NEGATIVE CYCLE REJECTION
+# ========================================
+# Rules that form a negative cycle are rejected at
+# registration time. The rule below would create:
+#   p not-depends-on q, q not-depends-on p
+# which is an unstratifiable program.
+#
+# Attempting to register them produces an error on stderr:
+#   Execution error: unstratifiable: predicate 'p' is involved
+#   in a negative cycle through 'q'
+#
+# Uncomment to observe (error goes to stderr, not stdout):
+#
+# (rule [(p ?x) (not (q ?x))])
+# (rule [(q ?x) (not (p ?x))])
+
+EXIT
+
+# ========================================
+# Summary
+# ========================================
+# STRATIFIED NEGATION:
+#   - not and not-join use stratified evaluation
+#     (Datalog^neg): positive strata are fully computed
+#     before negation filters are applied.
+#   - Non-recursive negation is always safe.
+#   - Negative cycles are rejected at rule registration time.
+#
+# not vs not-join:
+#   (not [?e :attr val])
+#     All body variables must be bound by outer clauses.
+#     Excludes when the pattern matches the outer binding.
+#
+#   (not-join [?e] [?e :attr ?x] [?x :other val])
+#     Only join-vars (?e) come from the outer binding.
+#     Body-only vars (?x) are fresh / existentially quantified.
+#     Excludes when there EXISTS any ?x satisfying the body.
+# ========================================
