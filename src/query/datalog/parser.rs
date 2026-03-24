@@ -310,7 +310,7 @@ impl Parser {
                         if let Some(Token::String(uuid_str)) = self.advance() {
                             match Uuid::parse_str(&uuid_str) {
                                 Ok(uuid) => Ok(EdnValue::Uuid(uuid)),
-                                Err(_) => Err(format!("Invalid UUID: {}", uuid_str)),
+                                Err(_) => Err("Invalid UUID".to_string()),
                             }
                         } else {
                             Err("Expected UUID string after #uuid tag".to_string())
