@@ -7,7 +7,7 @@ use crate::graph::types::Fact;
 use crate::storage::FACT_PAGE_FORMAT_PACKED;
 use crate::storage::btree::{read_aevt_index, read_avet_index, read_eavt_index, read_vaet_index};
 use crate::storage::btree_v6::{
-    OnDiskIndexReader, build_btree, merge_sorted_vecs, stream_all_entries,
+    OnDiskIndexReader, btree_entries, build_btree, merge_sorted_vecs, stream_all_entries,
 };
 use crate::storage::cache::PageCache;
 use crate::storage::index::{AevtKey, AvetKey, EavtKey, FactRef, VaetKey, encode_value};
@@ -269,25 +269,25 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             let index_start = 1 + num_fact_pages;
             let mut backend = self.backend.lock().unwrap();
             let (eavt_root, next1) = build_btree(
-                eavt_entries.into_iter(),
+                btree_entries(eavt_entries.into_iter())?.into_iter(),
                 &mut *backend,
                 &self.page_cache,
                 index_start,
             )?;
             let (aevt_root, next2) = build_btree(
-                aevt_entries.into_iter(),
+                btree_entries(aevt_entries.into_iter())?.into_iter(),
                 &mut *backend,
                 &self.page_cache,
                 next1,
             )?;
             let (avet_root, next3) = build_btree(
-                avet_entries.into_iter(),
+                btree_entries(avet_entries.into_iter())?.into_iter(),
                 &mut *backend,
                 &self.page_cache,
                 next2,
             )?;
             let (vaet_root, next4) = build_btree(
-                vaet_entries.into_iter(),
+                btree_entries(vaet_entries.into_iter())?.into_iter(),
                 &mut *backend,
                 &self.page_cache,
                 next3,
@@ -473,22 +473,26 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let mut backend = self.backend.lock().unwrap();
         let next_free = header.page_count;
 
-        let (eavt_root, next_free2) =
-            build_btree(eavt.into_iter(), &mut *backend, &self.page_cache, next_free)?;
+        let (eavt_root, next_free2) = build_btree(
+            btree_entries(eavt.into_iter())?.into_iter(),
+            &mut *backend,
+            &self.page_cache,
+            next_free,
+        )?;
         let (aevt_root, next_free3) = build_btree(
-            aevt.into_iter(),
+            btree_entries(aevt.into_iter())?.into_iter(),
             &mut *backend,
             &self.page_cache,
             next_free2,
         )?;
         let (avet_root, next_free4) = build_btree(
-            avet.into_iter(),
+            btree_entries(avet.into_iter())?.into_iter(),
             &mut *backend,
             &self.page_cache,
             next_free3,
         )?;
         let (vaet_root, final_next_free) = build_btree(
-            vaet.into_iter(),
+            btree_entries(vaet.into_iter())?.into_iter(),
             &mut *backend,
             &self.page_cache,
             next_free4,
@@ -619,69 +623,37 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         // ── Step D: merge committed + pending entries, build new B+trees ─────────
         let index_start = 1 + new_total_fact_pages;
 
-        let (eavt_root, next1) = if !committed_eavt.is_empty() {
-            build_btree(
-                merge_sorted_vecs(committed_eavt, pending_eavt),
-                &mut *backend,
-                &self.page_cache,
-                index_start,
-            )?
+        let eavt_ser = if !committed_eavt.is_empty() {
+            btree_entries(merge_sorted_vecs(committed_eavt, pending_eavt))?
         } else {
-            build_btree(
-                pending_eavt.into_iter(),
-                &mut *backend,
-                &self.page_cache,
-                index_start,
-            )?
+            btree_entries(pending_eavt.into_iter())?
         };
+        let (eavt_root, next1) =
+            build_btree(eavt_ser.into_iter(), &mut *backend, &self.page_cache, index_start)?;
 
-        let (aevt_root, next2) = if !committed_aevt.is_empty() {
-            build_btree(
-                merge_sorted_vecs(committed_aevt, pending_aevt),
-                &mut *backend,
-                &self.page_cache,
-                next1,
-            )?
+        let aevt_ser = if !committed_aevt.is_empty() {
+            btree_entries(merge_sorted_vecs(committed_aevt, pending_aevt))?
         } else {
-            build_btree(
-                pending_aevt.into_iter(),
-                &mut *backend,
-                &self.page_cache,
-                next1,
-            )?
+            btree_entries(pending_aevt.into_iter())?
         };
+        let (aevt_root, next2) =
+            build_btree(aevt_ser.into_iter(), &mut *backend, &self.page_cache, next1)?;
 
-        let (avet_root, next3) = if !committed_avet.is_empty() {
-            build_btree(
-                merge_sorted_vecs(committed_avet, pending_avet),
-                &mut *backend,
-                &self.page_cache,
-                next2,
-            )?
+        let avet_ser = if !committed_avet.is_empty() {
+            btree_entries(merge_sorted_vecs(committed_avet, pending_avet))?
         } else {
-            build_btree(
-                pending_avet.into_iter(),
-                &mut *backend,
-                &self.page_cache,
-                next2,
-            )?
+            btree_entries(pending_avet.into_iter())?
         };
+        let (avet_root, next3) =
+            build_btree(avet_ser.into_iter(), &mut *backend, &self.page_cache, next2)?;
 
-        let (vaet_root, next4) = if !committed_vaet.is_empty() {
-            build_btree(
-                merge_sorted_vecs(committed_vaet, pending_vaet),
-                &mut *backend,
-                &self.page_cache,
-                next3,
-            )?
+        let vaet_ser = if !committed_vaet.is_empty() {
+            btree_entries(merge_sorted_vecs(committed_vaet, pending_vaet))?
         } else {
-            build_btree(
-                pending_vaet.into_iter(),
-                &mut *backend,
-                &self.page_cache,
-                next3,
-            )?
+            btree_entries(pending_vaet.into_iter())?
         };
+        let (vaet_root, next4) =
+            build_btree(vaet_ser.into_iter(), &mut *backend, &self.page_cache, next3)?;
 
         // ── Step E: write v6 header (last write = crash-safe boundary) ──────────
         let mut header = FileHeader::new(); // version=6

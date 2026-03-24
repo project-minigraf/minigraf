@@ -119,21 +119,41 @@ fn write_internal_page(
 
 // ─── build_btree ──────────────────────────────────────────────────────────────
 
-/// Build a B+tree from sorted entries and write it to the backend.
+/// Serialize `(key, fact_ref)` pairs into the byte format expected by [`build_btree`].
+///
+/// Each item produces `(entry_bytes, key_bytes)` where:
+/// - `entry_bytes` = postcard encoding of `(&key, &fact_ref)` — stored in leaf nodes
+/// - `key_bytes`   = postcard encoding of `&key` alone — used as separator in internal nodes
+///
+/// Callers **must sort** entries before calling; this function preserves order.
+/// Keeping serialisation in this small generic helper means `build_btree` itself
+/// is monomorphised only once.
+pub fn btree_entries<K: Serialize>(
+    iter: impl Iterator<Item = (K, FactRef)>,
+) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    iter.map(|(key, fact_ref)| {
+        let entry_bytes = postcard::to_allocvec(&(&key, &fact_ref))?;
+        let key_bytes = postcard::to_allocvec(&key)?;
+        Ok((entry_bytes, key_bytes))
+    })
+    .collect()
+}
+
+/// Build a B+tree from pre-serialised sorted entries and write it to the backend.
+///
+/// Each item in `sorted_entries` is `(entry_bytes, key_bytes)` as produced by
+/// [`btree_entries`]. Entries **must already be sorted** by key.
 ///
 /// Returns `(root_page_id, next_free_page_id)`. Chain multiple calls:
 /// pass the returned `next_free_page_id` as `start_page_id` for the next index.
 ///
 /// All written pages are inserted into `cache` via `put_dirty`.
-pub fn build_btree<K>(
-    sorted_entries: impl Iterator<Item = (K, FactRef)>,
+pub fn build_btree(
+    sorted_entries: impl Iterator<Item = (Vec<u8>, Vec<u8>)>,
     backend: &mut dyn StorageBackend,
     cache: &PageCache,
     start_page_id: u64,
-) -> Result<(u64, u64)>
-where
-    K: Serialize + Ord,
-{
+) -> Result<(u64, u64)> {
     // ── Phase 1: pack entries into leaf pages ─────────────────────────────────
     let mut leaf_infos: Vec<(u64, Vec<u8>)> = Vec::new();
 
@@ -142,9 +162,7 @@ where
     let mut cur_first_key: Option<Vec<u8>> = None;
     let mut next_page = start_page_id;
 
-    for (key, fact_ref) in sorted_entries {
-        let entry_bytes = postcard::to_allocvec(&(&key, &fact_ref))?;
-
+    for (entry_bytes, key_bytes) in sorted_entries {
         let projected = LEAF_HEADER_SIZE
             + (cur_entries.len() + 1) * SLOT_SIZE
             + cur_data_bytes
@@ -160,7 +178,7 @@ where
         }
 
         if cur_first_key.is_none() {
-            cur_first_key = Some(postcard::to_allocvec(&key)?);
+            cur_first_key = Some(key_bytes);
         }
         cur_data_bytes += entry_bytes.len();
         cur_entries.push(entry_bytes);
@@ -597,7 +615,8 @@ mod tests {
         let mut backend = MemoryBackend::new();
         let cache = PageCache::new(64);
         let entries: Vec<(EavtKey, FactRef)> = vec![];
-        let (root, next_free) = build_btree(entries.into_iter(), &mut backend, &cache, 1).unwrap();
+        let ser = btree_entries(entries.into_iter()).unwrap();
+        let (root, next_free) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
         assert_eq!(root, 1, "root must be at start_page_id");
         assert_eq!(next_free, 2, "single empty leaf = 1 page");
         // Verify it is a leaf page
@@ -612,7 +631,8 @@ mod tests {
         let mut backend = MemoryBackend::new();
         let cache = PageCache::new(64);
         let entries = vec![make_eavt(1, ":name", 1)];
-        let (root, next_free) = build_btree(entries.into_iter(), &mut backend, &cache, 5).unwrap();
+        let ser = btree_entries(entries.into_iter()).unwrap();
+        let (root, next_free) = build_btree(ser.into_iter(), &mut backend, &cache, 5).unwrap();
         assert_eq!(root, 5);
         assert_eq!(next_free, 6);
         let page = cache.get_or_load(5, &backend).unwrap();
@@ -625,11 +645,11 @@ mod tests {
         // Two sequential build_btree calls: second must start where first ended.
         let mut backend = MemoryBackend::new();
         let cache = PageCache::new(128);
-        let entries1 = (0u128..5).map(|n| make_eavt(n, ":a", n as u64 + 1));
-        let (_, next1) = build_btree(entries1, &mut backend, &cache, 1).unwrap();
+        let entries1 = btree_entries((0u128..5).map(|n| make_eavt(n, ":a", n as u64 + 1))).unwrap();
+        let (_, next1) = build_btree(entries1.into_iter(), &mut backend, &cache, 1).unwrap();
 
-        let entries2 = (5u128..10).map(|n| make_eavt(n, ":b", n as u64 + 1));
-        let (root2, next2) = build_btree(entries2, &mut backend, &cache, next1).unwrap();
+        let entries2 = btree_entries((5u128..10).map(|n| make_eavt(n, ":b", n as u64 + 1))).unwrap();
+        let (root2, next2) = build_btree(entries2.into_iter(), &mut backend, &cache, next1).unwrap();
 
         assert!(root2 >= next1, "second tree must not overlap with first");
         assert!(next2 > root2);
@@ -640,8 +660,8 @@ mod tests {
         // All written pages must be retrievable from cache without backend read
         let mut backend = MemoryBackend::new();
         let cache = PageCache::new(256);
-        let entries = (0u128..100).map(|n| make_eavt(n, ":x", n as u64 + 1));
-        let (root, next_free) = build_btree(entries, &mut backend, &cache, 1).unwrap();
+        let entries = btree_entries((0u128..100).map(|n| make_eavt(n, ":x", n as u64 + 1))).unwrap();
+        let (root, next_free) = build_btree(entries.into_iter(), &mut backend, &cache, 1).unwrap();
 
         let empty_backend = MemoryBackend::new();
         for page_id in root..next_free {
@@ -655,8 +675,8 @@ mod tests {
         // With many entries, leaf pages must not exceed PAGE_SIZE
         let mut backend = MemoryBackend::new();
         let cache = PageCache::new(256);
-        let entries = (0u128..200).map(|n| make_eavt(n, ":verylongattributename", n as u64 + 1));
-        let (root, next_free) = build_btree(entries, &mut backend, &cache, 1).unwrap();
+        let entries = btree_entries((0u128..200).map(|n| make_eavt(n, ":verylongattributename", n as u64 + 1))).unwrap();
+        let (root, next_free) = build_btree(entries.into_iter(), &mut backend, &cache, 1).unwrap();
 
         for page_id in root..next_free {
             let page = cache.get_or_load(page_id, &backend).unwrap();
@@ -674,7 +694,8 @@ mod tests {
         let cache = PageCache::new(512);
         // ~300 entries should force at least 2 leaf pages and 1 internal node
         let entries = (0u128..300).map(|n| make_eavt(n, ":attr", n as u64 + 1));
-        let (root, next_free) = build_btree(entries, &mut backend, &cache, 1).unwrap();
+        let ser = btree_entries(entries).unwrap();
+        let (root, next_free) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
 
         let root_page = cache.get_or_load(root, &backend).unwrap();
         let pages_written = next_free - 1;
@@ -714,7 +735,8 @@ mod tests {
         let cache = PageCache::new(256);
         // ~100 entries with long keys should span 4-6 leaf pages
         let entries = (0u128..100).map(|n| make_eavt(n, ":verylongattributename", n as u64 + 1));
-        let (root, next_free) = build_btree(entries, &mut backend, &cache, 1).unwrap();
+        let ser = btree_entries(entries).unwrap();
+        let (root, next_free) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
 
         // Collect leaf page IDs by following the chain from the leftmost leaf
         // The root may be an internal node; find the leftmost leaf first
@@ -787,7 +809,8 @@ mod tests {
         let input: Vec<(EavtKey, FactRef)> = (0u128..50)
             .map(|n| make_eavt(n, ":name", n as u64 + 1))
             .collect();
-        let (root, _) = build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
+        let ser = btree_entries(input.iter().cloned()).unwrap();
+        let (root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
 
         let output: Vec<(EavtKey, FactRef)> = stream_all_entries(root, &backend, &cache).unwrap();
 
@@ -805,7 +828,8 @@ mod tests {
         let mut backend = MemoryBackend::new();
         let cache = PageCache::new(16);
         let entries: Vec<(EavtKey, FactRef)> = vec![];
-        let (root, _) = build_btree(entries.into_iter(), &mut backend, &cache, 1).unwrap();
+        let ser = btree_entries(entries.into_iter()).unwrap();
+        let (root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
         let out: Vec<(EavtKey, FactRef)> = stream_all_entries(root, &backend, &cache).unwrap();
         assert_eq!(out.len(), 0);
     }
@@ -817,7 +841,8 @@ mod tests {
         let input: Vec<(EavtKey, FactRef)> = (0u128..100)
             .map(|n| make_eavt(n, ":v", n as u64 + 1))
             .collect();
-        let (root, _) = build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
+        let ser = btree_entries(input.iter().cloned()).unwrap();
+        let (root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
 
         let target_entity = Uuid::from_u128(42);
         let start = EavtKey {
@@ -855,7 +880,8 @@ mod tests {
         let input: Vec<(EavtKey, FactRef)> = (0u128..50)
             .map(|n| make_eavt(n, ":v", n as u64 + 1))
             .collect();
-        let (root, _) = build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
+        let ser = btree_entries(input.iter().cloned()).unwrap();
+        let (root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
 
         let start = EavtKey {
             entity: Uuid::from_u128(999),
@@ -875,7 +901,8 @@ mod tests {
         let input: Vec<(EavtKey, FactRef)> = (0u128..10)
             .map(|n| make_eavt(n, ":v", n as u64 + 1))
             .collect();
-        let (root, _) = build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
+        let ser = btree_entries(input.iter().cloned()).unwrap();
+        let (root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
 
         let start = EavtKey {
             entity: Uuid::from_u128(5),
@@ -895,7 +922,8 @@ mod tests {
         let input: Vec<(EavtKey, FactRef)> = (0u128..500)
             .map(|n| make_eavt(n, ":a", n as u64 + 1))
             .collect();
-        let (root, _) = build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
+        let ser = btree_entries(input.iter().cloned()).unwrap();
+        let (root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
 
         let start = EavtKey {
             entity: Uuid::from_u128(100),
@@ -932,7 +960,8 @@ mod tests {
         let input: Vec<(EavtKey, FactRef)> = (0u128..20)
             .map(|n| make_eavt(n, ":x", n as u64 + 1))
             .collect();
-        let (eavt_root, _) = build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
+        let ser = btree_entries(input.iter().cloned()).unwrap();
+        let (eavt_root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
 
         let reader =
             OnDiskIndexReader::new(Arc::new(Mutex::new(backend)), cache, eavt_root, 0, 0, 0);
@@ -970,7 +999,8 @@ mod tests {
         let input: Vec<(EavtKey, FactRef)> = (0u128..50)
             .map(|n| make_eavt(n, ":x", n as u64 + 1))
             .collect();
-        let (eavt_root, _) = build_btree(input.iter().cloned(), &mut backend, &cache, 1).unwrap();
+        let ser = btree_entries(input.iter().cloned()).unwrap();
+        let (eavt_root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
 
         // Wrap in Arc after build_btree is done — OnDiskIndexReader requires Arc<PageCache>
         let reader = Arc::new(OnDiskIndexReader::new(
