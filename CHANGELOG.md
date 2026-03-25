@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-03-25
+
+### Added
+- Aggregation in `:find` clause: `count`, `count-distinct`, `sum`, `sum-distinct`, `min`, `max`
+- `:with` grouping clause — variables that participate in grouping but are excluded from output rows
+- `AggFunc` enum and `FindSpec` enum in `src/query/datalog/types.rs`; `DatalogQuery.find` migrated from `Vec<String>` to `Vec<FindSpec>`; `DatalogQuery.with_vars: Vec<String>` field added
+- `apply_aggregation` post-processing step in `executor.rs` — runs after binding collection when any aggregate is present
+- `extract_variables` helper in `executor.rs` — non-aggregate extraction path (replaces inline loops)
+- `apply_agg_func` and `value_type_name` helpers in `executor.rs`
+- `parse_aggregate` helper in `parser.rs`; `:find` arm extended to accept `EdnValue::List` (aggregate expressions); `:with` keyword arm added
+- Parse-time validation: aggregate variables must be bound in `:where`; `:with` without any aggregate is rejected
+- `tests/aggregation_test.rs` — 24 integration tests covering all aggregates, `:with`, rules, negation, temporal filters
+
+### Semantics
+- `count`/`count-distinct` with no grouping vars on zero bindings → `[[0]]` (SQL behavior)
+- All other aggregates on zero bindings → empty result set
+- All aggregates skip `Value::Null` silently (SQL behavior)
+- Type mismatches (e.g. `sum` on `String`) fail fast with a runtime error
+- `min`/`max` on mixed `Integer`/`Float` is a runtime error
+- `:with ?v` adds `?v` to the grouping key without adding it to output columns
+
+### Tests
+- Added `tests/aggregation_test.rs` (24 integration tests)
+- Total: 461 tests passing (327 unit + 128 integration + 6 doc)
+
 ## [0.10.0] - 2026-03-24
 
 ### Added

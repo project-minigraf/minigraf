@@ -4,8 +4,8 @@
 
 Minigraf is the SQLite of graph databases: zero configuration, one `.graph` file, embedded as a library. It stores facts in an Entity-Attribute-Value (EAV) model and queries them with Datalog, including recursive rules for graph traversal and stratified negation (`not` / `not-join`). Every fact carries two independent time dimensions (transaction time and valid time), enabling full bi-temporal time travel.
 
-**Current version**: 0.10.0 (pre-1.0 — API and file format may change before v1.0)
-**Maturity**: See [README](https://github.com/adityamukho/minigraf/blob/main/README.md) for current phase and [ROADMAP](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md) for the full plan. ACID + WAL are production-quality. Covering indexes (EAVT/AEVT/AVET/VAET), packed page storage, LRU page cache, and on-disk B+tree indexes are complete. Stratified negation is complete. Not recommended for production use until v1.0 (file format stability guaranteed only after Phase 8).
+**Current version**: 0.11.0 (pre-1.0 — API and file format may change before v1.0)
+**Maturity**: See [README](https://github.com/adityamukho/minigraf/blob/main/README.md) for current phase and [ROADMAP](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md) for the full plan. ACID + WAL are production-quality. Covering indexes (EAVT/AEVT/AVET/VAET), packed page storage, LRU page cache, and on-disk B+tree indexes are complete. Stratified negation and scalar aggregation are complete. Not recommended for production use until v1.0 (file format stability guaranteed only after Phase 8).
 
 ## Use for
 
@@ -121,8 +121,11 @@ tx.commit()?;
 (retract [[ <entity> <attribute> <value> ] ...])
 
 ;; Query
-(query [:find ?var ...
-        :as-of <tx_count|"ISO8601">          ;; optional, transaction time
+(query [:find ?var ...                        ;; plain variable
+              (count ?e)                      ;; aggregate: count, count-distinct,
+              (sum ?salary)                   ;;   sum, sum-distinct, min, max
+        :with ?grouping-var ...               ;; optional, extra grouping variables
+        :as-of <tx_count|"ISO8601">           ;; optional, transaction time
         :valid-at <"ISO8601"|:any-valid-time> ;; optional, valid time
         :where [<e> <a> <v>] ...
                (not [<e> <a> <v>] ...)       ;; optional, negation
@@ -157,7 +160,7 @@ tx.commit()?;
 - `src/wal.rs` — write-ahead log, CRC32 entries, crash recovery
 - `src/temporal.rs` — UTC timestamp parsing (avoids chrono CVE GHSA-wcg3-cvx6-7396)
 
-## Performance summary (v0.10.0)
+## Performance summary (v0.11.0)
 
 See [BENCHMARKS.md](https://github.com/adityamukho/minigraf/blob/main/BENCHMARKS.md) for full tables and methodology.
 

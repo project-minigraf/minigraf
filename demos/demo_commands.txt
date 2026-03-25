@@ -114,8 +114,11 @@ EXIT
 # - WAL crash safety; explicit transactions via begin_write()/commit()
 # - On-disk B+tree indexes (EAVT, AEVT, AVET, VAET) with LRU page cache
 #
+# AVAILABLE (Phase 7.2a):
+# - Aggregation: (count ?e), (count-distinct ?e), (sum ?v), (sum-distinct ?v), (min ?v), (max ?v)
+# - :with clause for grouping: [:find ?dept (sum ?salary) :with ?e :where ...]
+#
 # PLANNED (see ROADMAP.md for current status):
-# - Aggregation: (count ?e), (sum ?v), (min ?v), (max ?v)
 # - Arithmetic filter predicates: [(> ?age 26)]
 # - Disjunction: (or ...) / (or-join [...] ...)
 # ============================================================================
