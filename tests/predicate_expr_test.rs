@@ -228,9 +228,56 @@ fn test_expr_in_rule_body() {
 #[test]
 fn test_expr_with_as_of() {
     let db = open();
-    db.execute("(transact [[:a :age 25] [:b :age 35]])").expect("transact");
-    let r = db.execute("(query [:find ?e :as-of 1 :where [?e :age ?age] [(< ?age 30)]])").expect("query");
+    // Transact :a at tx_count=1
+    db.execute("(transact [[:a :age 25]])").expect("transact 1");
+    // Transact :b at tx_count=2
+    db.execute("(transact [[:b :age 35]])").expect("transact 2");
+    // :as-of 1 sees only :a (tx_count=1); [(< ?age 30)] keeps it → 1 result
+    let r1 = db.execute("(query [:find ?e :as-of 1 :where [?e :age ?age] [(< ?age 30)]])").expect("query as-of 1");
+    assert_eq!(count(r1), 1, "as-of 1 with expr filter should return 1");
+    // :as-of 2 sees both :a and :b; [(< ?age 30)] keeps only :a → still 1 result
+    let r2 = db.execute("(query [:find ?e :as-of 2 :where [?e :age ?age] [(< ?age 30)]])").expect("query as-of 2");
+    assert_eq!(count(r2), 1, "as-of 2 with expr filter should return 1");
+}
+
+// ── Additional operator / predicate coverage ──────────────────────────────────
+
+#[test]
+fn test_sub_binding() {
+    let db = open();
+    db.execute("(transact [[:a :x 10] [:a :y 3]])").expect("transact");
+    let r = db.execute("(query [:find ?r :where [:a :x ?x] [:a :y ?y] [(- ?x ?y) ?r]])").expect("query");
+    let rs = rows(r);
+    assert_eq!(rs.len(), 1);
+    assert_eq!(rs[0][0], MgValue::Integer(7));
+}
+
+#[test]
+fn test_float_predicate_filter() {
+    let db = open();
+    db.execute("(transact [[:a :v 1.5] [:b :v 42]])").expect("transact");
+    let r = db.execute("(query [:find ?e :where [?e :v ?v] [(float? ?v)]])").expect("query");
     assert_eq!(count(r), 1);
+}
+
+#[test]
+fn test_eq_cross_type_is_false_not_error() {
+    // (= 1 1.0) → false (different Value variants), not a row drop
+    let db = open();
+    db.execute("(transact [[:a :n 1]])").expect("transact");
+    // Bind ?is-eq to (= ?n 1.0) — should be false (int != float structurally), not a drop
+    let r = db.execute("(query [:find ?is-eq :where [:a :n ?n] [(= ?n 1.0) ?is-eq]])").expect("query");
+    let rs = rows(r);
+    assert_eq!(rs.len(), 1);
+    assert_eq!(rs[0][0], MgValue::Boolean(false));
+}
+
+#[test]
+fn test_matches_invalid_regex_is_parse_error() {
+    let db = open();
+    // Invalid regex must be rejected at parse time, not at query time
+    let result = db.execute("(query [:find ?e :where [?e :v ?v] [(matches? ?v \"[unclosed\")]])");
+    assert!(result.is_err(), "invalid regex must be a parse error");
 }
 
 // ── Arithmetic binding into aggregate ────────────────────────────────────────
