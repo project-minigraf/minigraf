@@ -727,6 +727,7 @@ type Binding = std::collections::HashMap<String, Value>;
 
 /// Returns true for Boolean(true), non-zero Integer, non-zero Float.
 /// All other Value variants (String, Keyword, Ref, Null, Float(0.0)) → false.
+/// Note: `Float(-0.0)` is falsy because `-0.0 == 0.0` in IEEE 754.
 pub(crate) fn is_truthy(v: &Value) -> bool {
     match v {
         Value::Boolean(b) => *b,
@@ -788,11 +789,11 @@ fn eval_binop(op: &BinOp, l: Value, r: Value) -> Result<Value, ()> {
                 _ => {
                     let (lf, rf) = to_float_pair(&l, &r)?;
                     match op {
-                        BinOp::Add => Ok(Value::Float(lf + rf)),
-                        BinOp::Sub => Ok(Value::Float(lf - rf)),
-                        BinOp::Mul => Ok(Value::Float(lf * rf)),
+                        BinOp::Add => { let r = lf + rf; if r.is_nan() { Err(()) } else { Ok(Value::Float(r)) } },
+                        BinOp::Sub => { let r = lf - rf; if r.is_nan() { Err(()) } else { Ok(Value::Float(r)) } },
+                        BinOp::Mul => { let r = lf * rf; if r.is_nan() { Err(()) } else { Ok(Value::Float(r)) } },
                         BinOp::Div => {
-                            if rf == 0.0 { Err(()) } else { Ok(Value::Float(lf / rf)) }
+                            if rf == 0.0 || rf.is_nan() { Err(()) } else { Ok(Value::Float(lf / rf)) }
                         }
                         _ => unreachable!(),
                     }
@@ -2295,5 +2296,55 @@ mod expr_eval_tests {
         assert!(!is_truthy(&Value::Float(0.0)));
         assert!(!is_truthy(&Value::Null));
         assert!(!is_truthy(&Value::String("hi".to_string())));
+    }
+
+    #[test]
+    fn test_apply_expr_filter_keeps_truthy() {
+        // [(< ?v 100)] — keeps row where ?v < 100
+        use crate::query::datalog::types::WhereClause;
+        let expr = Expr::BinOp(
+            BinOp::Lt,
+            Box::new(Expr::Var("?v".to_string())),
+            Box::new(Expr::Lit(Value::Integer(100))),
+        );
+        let clauses = vec![WhereClause::Expr { expr, binding: None }];
+        let bindings = vec![
+            b(&[("?v", Value::Integer(50))]),
+            b(&[("?v", Value::Integer(150))]),
+        ];
+        let result = apply_expr_clauses(bindings, &clauses);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].get("?v"), Some(&Value::Integer(50)));
+    }
+
+    #[test]
+    fn test_apply_expr_binding_extends_row() {
+        // [(+ ?a ?b) ?sum] — binds ?sum
+        use crate::query::datalog::types::WhereClause;
+        let expr = Expr::BinOp(
+            BinOp::Add,
+            Box::new(Expr::Var("?a".to_string())),
+            Box::new(Expr::Var("?b".to_string())),
+        );
+        let clauses = vec![WhereClause::Expr { expr, binding: Some("?sum".to_string()) }];
+        let bindings = vec![b(&[("?a", Value::Integer(3)), ("?b", Value::Integer(4))])];
+        let result = apply_expr_clauses(bindings, &clauses);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].get("?sum"), Some(&Value::Integer(7)));
+    }
+
+    #[test]
+    fn test_apply_expr_type_mismatch_drops_row() {
+        // [(< ?v 100)] where ?v = "hello" — type mismatch silently drops row
+        use crate::query::datalog::types::WhereClause;
+        let expr = Expr::BinOp(
+            BinOp::Lt,
+            Box::new(Expr::Var("?v".to_string())),
+            Box::new(Expr::Lit(Value::Integer(100))),
+        );
+        let clauses = vec![WhereClause::Expr { expr, binding: None }];
+        let bindings = vec![b(&[("?v", Value::String("hello".to_string()))])];
+        let result = apply_expr_clauses(bindings, &clauses);
+        assert_eq!(result.len(), 0);
     }
 }
