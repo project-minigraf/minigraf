@@ -502,7 +502,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 **Goal**: Complete the Datalog query engine — negation, aggregation, disjunction, temporal range queries, and prepared statements
 
-**Status**: 🔄 In Progress (7.1a + 7.1b complete ✅)
+**Status**: 🔄 In Progress (7.1a + 7.1b + 7.2a complete ✅)
 
 **Priority**: 🔴 Critical — without these, realistic production queries cannot be expressed in Datalog
 
@@ -511,12 +511,15 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 **Sub-phases**:
 - **7.1a** ✅ Stratified Negation — `not`
 - **7.1b** ✅ Stratified Negation — `not-join`
-- **7.2** Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`) — includes arithmetic filter predicates
+- **7.2a** ✅ Aggregation (`count`, `count-distinct`, `sum`, `sum-distinct`, `min`, `max`, `:with`)
+- **7.2b** Arithmetic filter predicates (`[(< ?v 100)]`, `[(> ?a ?b)]`, etc.)
+- **7.2** ~~Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`) — includes arithmetic filter predicates~~ → split into 7.2a + 7.2b
 - **7.3** Disjunction (`or` / `or-join`)
 - **7.4** Query Optimizer Improvements (deferred from Phase 6.3)
 - **7.5** Tests + Error Coverage (≥90% branch coverage target)
 - **7.6** Prepared Statements (parse + plan once, execute many times, temporal bind slots)
 - **7.7** Temporal Metadata Bindings + Range Queries (`:db/valid-from`, `:db/valid-to`, `:db/tx-count` as queryable pseudo-attributes; unlocks Time Interval, Time-Point Lookup, Time-Interval Lookup query classes)
+- **7.9** Window Functions + UDFs (`sum/count/rank/lag/lead :over (partition-by … :order-by …)`; embedder-registered aggregate and predicate UDFs via `FunctionRegistry`)
 
 ### 7.1a Stratified Negation — `not` ✅ COMPLETE
 
@@ -578,9 +581,11 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 **Estimated complexity**: 1 week (reuses all 7.1a infrastructure)
 
-### 7.2 Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`)
+### 7.2a Aggregation ✅ COMPLETE
 
 **Goal**: Express counting, summing, and extremes directly in queries rather than post-processing in application code.
+
+**Status**: ✅ Complete (v0.11.0, 2026-03-25)
 
 **Why it's load-bearing**:
 - Audit / compliance: "how many transactions in this time window?", "total value asserted per entity"
@@ -847,6 +852,163 @@ Arithmetic filter predicates — `[(op ?var literal)]` — are required for Time
 - Pseudo-attribute without `:any-valid-time` returns an empty result set and surfaces a diagnostic error message (consistent with the "explicit errors over silent wrong answers" principle)
 
 **Estimated complexity**: 2-3 weeks
+
+---
+
+### 7.9 Window Functions + UDFs
+
+**Goal**: Expose `SUM OVER`–style window computations natively in Datalog `:find` clauses, and let embedders register custom aggregate and predicate functions at runtime.
+
+**Why here (after 7.7, before 7.8 publish prep)**:
+
+Phase 7.2 aggregation provides the grouping and accumulation infrastructure; Phase 7.7 pseudo-attributes expose `valid_from` / `valid_to` / `tx_count` as bindable values. Window functions are a direct extension: they apply aggregate semantics *over a partition of the current result set* while preserving per-row output — useful for ranked temporal queries and sliding-window analytics without a second query and application-side join.
+
+UDFs are the natural generalisation: if the engine can call built-in aggregates via a `FunctionRegistry`, embedders can register their own functions against the same registry. Designing both behind a single `FunctionRegistry` abstraction means neither feature needs to be retrofitted onto the other.
+
+Both must land before Phase 7.8 (Publish Prep) so the public API (`register_aggregate`, `register_predicate`) is part of the initial crates.io surface rather than a bolt-on.
+
+**Dependency on Phase 7.2**: Phase 7.2 grouping and accumulation logic is the implementation substrate for window functions. Phase 7.2 must be complete before this phase begins.
+
+**Dependency on Phase 7.7**: `:db/valid-from` / `:db/valid-to` / `:db/tx-count` as bindable values are the primary ordering/partitioning keys for bi-temporal window queries. Phase 7.7 should be complete or in progress.
+
+---
+
+#### 7.9a Window Functions
+
+**Syntax** (Datomic-inspired, Datalog-native):
+
+```datalog
+;; Running sum of salary ordered by hire date, partitioned by dept
+(query [:find ?e (sum ?salary :over (partition-by ?dept :order-by ?hire-date))
+        :where [?e :employee/dept ?dept]
+               [?e :employee/salary ?salary]
+               [?e :employee/hire-date ?hire-date]])
+
+;; Rank entities within a group by score
+(query [:find ?e (rank :over (partition-by ?category :order-by ?score :desc))
+        :where [?e :item/category ?category]
+               [?e :item/score ?score]])
+
+;; Cumulative fact count ordered by tx-count (bi-temporal use case)
+(query [:find ?e (count ?e :over (order-by ?tx))
+        :any-valid-time
+        :where [?e :event/type :login]
+               [?e :db/tx-count ?tx]])
+```
+
+**Supported window functions** (initial set):
+
+| Function | Semantics |
+|---|---|
+| `sum ?v :over (…)` | Cumulative/partition sum |
+| `count ?v :over (…)` | Cumulative/partition count |
+| `min ?v :over (…)` | Running minimum |
+| `max ?v :over (…)` | Running maximum |
+| `avg ?v :over (…)` | Running average |
+| `rank :over (…)` | Rank within partition |
+| `row-number :over (…)` | Sequential row number within partition |
+| `lag ?v :over (…)` | Previous row value in partition |
+| `lead ?v :over (…)` | Next row value in partition |
+
+**`:over` clause sub-options**:
+
+| Option | Description |
+|---|---|
+| `:partition-by ?var` | Reset accumulation per unique value of `?var` (like SQL `PARTITION BY`) |
+| `:order-by ?var` (`:asc` / `:desc`) | Determines row order within each partition |
+| Frame: `:rows-unbounded-preceding` (default) | Accumulate from first row in partition to current |
+| Frame: `:rows N preceding` | Sliding window of N preceding rows |
+
+**Implementation**:
+- Parser: add `WindowExpr` variant to the `:find` clause AST; parse `(func ?v :over (...))` forms
+- Types: `FindSpec::Window { func: WindowFunc, var: Option<String>, partition_by: Option<String>, order_by: Option<String>, order: Order, frame: WindowFrame }`
+- Executor: post-process binding set in three steps:
+  1. Sort rows within each partition by the `order-by` key
+  2. Walk sorted rows, accumulating the window function state per partition
+  3. Annotate each binding with the computed window value
+- No changes to the core evaluation engine — window computation is a purely post-evaluation pass, same as Phase 7.2 aggregation
+
+**Estimated complexity**: 2-3 weeks
+
+---
+
+#### 7.9b User-Defined Functions (UDFs)
+
+**Goal**: Allow embedders to extend the query engine with custom aggregate functions and filter predicates registered at runtime, using the same `FunctionRegistry` that built-in aggregates and window functions use.
+
+**Why UDFs are safe for an embedded database**:
+
+UDFs are registered as Rust closures or function pointers — they run in-process at the same trust level as the application. There is no sandbox boundary to cross and no serialization overhead. This is identical to SQLite's `sqlite3_create_function` — a well-proven pattern for embedded database extensibility that does not compromise the embedded-first, self-contained philosophy.
+
+**API**:
+
+```rust
+// Register a custom aggregate function: geometric mean
+db.register_aggregate(
+    "geomean",
+    // initialise accumulator
+    || 0.0_f64,
+    // step: (accumulator, next_value) -> accumulator
+    |acc: f64, v: &Value| match v {
+        Value::Float(f) => acc + f.ln(),
+        Value::Integer(i) => acc + (*i as f64).ln(),
+        _ => acc,
+    },
+    // finalise: (accumulator, count) -> Value
+    |acc: f64, n: usize| Value::Float((acc / n as f64).exp()),
+)?;
+
+// Register a custom filter predicate
+db.register_predicate(
+    "email?",
+    |v: &Value| matches!(v, Value::String(s) if s.contains('@')),
+)?;
+```
+
+**Use in queries**:
+
+```datalog
+;; Custom aggregate
+(query [:find ?dept (geomean ?score)
+        :where [?e :employee/dept ?dept]
+               [?e :employee/score ?score]])
+
+;; Custom predicate
+(query [:find ?e
+        :where [?e :person/email ?addr]
+               (email? ?addr)])
+
+;; Custom aggregate as window function
+(query [:find ?e (geomean ?score :over (partition-by ?dept :order-by ?score))
+        :where [?e :employee/dept ?dept]
+               [?e :employee/score ?score]])
+```
+
+**Implementation**:
+- `FunctionRegistry` struct (new, in `src/query/datalog/functions.rs`): `HashMap<String, AggregateDesc>` + `HashMap<String, PredicateDesc>`
+  - `AggregateDesc`: init closure + step closure + finalise closure + optional window-compatible flag
+  - `PredicateDesc`: one-argument `Fn(&Value) -> bool` closure
+- All built-in aggregates (Phase 7.2) and window functions (Phase 7.9a) are registered into `FunctionRegistry` at startup — UDFs use exactly the same path
+- Parser: recognise registered function names in `:find` aggregate positions and `:where` predicate call positions at parse time (registry consulted at parse time for validation)
+- `Minigraf::register_aggregate(name, init, step, finalise)` and `Minigraf::register_predicate(name, fn)` — new public API methods, callable before or after `open()`
+- Functions are not persisted to the `.graph` file — they must be re-registered on each open, exactly as SQLite requires (this is correct: executable code is never stored in the data file)
+
+**Tests**:
+- Custom aggregate: compute geometric mean over a result set
+- Custom aggregate: empty result set returns `Null` (consistent with Phase 7.2 `count` empty-result semantics)
+- Custom predicate: filter binding set using an embedder-provided function
+- UDF as window function: custom aggregate used in `:over` clause
+- Name collision: registering a name that shadows a built-in returns a clear error
+- Unknown function name in `:find` at parse time: clear parse error, not a runtime panic
+- Thread safety: registry is `Arc<RwLock<FunctionRegistry>>`; concurrent reads + rare writes
+
+**Estimated complexity**: 2-3 weeks
+
+---
+
+**Phase 7.9 deliverable**: Window aggregates (`sum over`, `rank`, `lag`, `lead`, etc.) expressible natively in Datalog `:find`; embedder-registered aggregate and predicate UDFs callable from any query; all built-in aggregates and window functions unified under `FunctionRegistry`; new public API methods included in Phase 7.8 publish surface
+
+**Estimated total Phase 7.9 complexity**: 4-6 weeks
 
 ---
 
@@ -1211,6 +1373,8 @@ branched_db.execute("(transact [[:x :y 1]])")?;
 - Prepared statements with temporal bind slots
 - Temporal metadata pseudo-attributes (`:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`)
 - Full four-class temporal query taxonomy (point-in-time, time interval, time-point lookup, time-interval lookup)
+- Window functions (`sum/count/rank/lag/lead :over (partition-by … :order-by …)`) — `SUM OVER`–style analytics in Datalog `:find`
+- UDFs: embedder-registered aggregate and predicate functions via `FunctionRegistry`
 - ≥90% branch coverage
 
 ### v1.1.0 - 🎯 Phase 8 (Cross-platform)
