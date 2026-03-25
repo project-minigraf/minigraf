@@ -1382,20 +1382,13 @@ branched_db.execute("(transact [[:x :y 1]])")?;
 - `clap` moved to binary-only dep; `Cargo.toml` metadata completed
 - GitHub Discussions enabled
 
-### v0.12.0 - ✅ Phase 7.2b (Arithmetic & Predicate Expression Clauses)
-- ✅ `BinOp` (14 variants), `UnaryOp` (5 variants), `Expr` AST, `WhereClause::Expr { expr, binding }` in `types.rs`
-- ✅ Filter predicates: `[(< ?age 30)]`, `[(string? ?v)]`, `[(starts-with? ?tag "work")]`, `[(matches? ?email "...")]`
-- ✅ Arithmetic bindings: `[(+ ?price ?tax) ?total]`, `[(* ?a ?b) ?r]`, nested `[(+ (* ?a 2) ?b) ?result]`
-- ✅ `parse_expr` with parse-time regex validation; forward-pass safety check at all 4 dispatch sites (`:where`, rule body, `not`, `not-join`)
-- ✅ `eval_expr` / `is_truthy`: int/float promotion, integer division truncation, NaN guard, type mismatch → row drop, div/0 → row drop
-- ✅ `tests/predicate_expr_test.rs` — 28 integration tests; 527 tests passing (365 unit + 156 integration + 6 doc)
-
-### v0.11.0 - ✅ Phase 7.2a (Aggregation)
-- ✅ `count`, `count-distinct`, `sum`, `sum-distinct`, `min`, `max` in `:find` clause
-- ✅ `:with` grouping clause — variables that participate in grouping but are excluded from output
-- ✅ `AggFunc` enum, `FindSpec` enum; `DatalogQuery.find` migrated from `Vec<String>` to `Vec<FindSpec>`
-- ✅ `apply_aggregation` post-processing in `executor.rs`; parse-time validation (aggregate vars must be bound)
-- ✅ `tests/aggregation_test.rs` — 24 integration tests; 461 tests passing
+### v0.9.0 - ✅ Phase 6.5 (On-Disk B+Tree Indexes + **crates.io publish gate**)
+- ✅ Proper on-disk B+tree for all four covering indexes (EAVT, AEVT, AVET, VAET)
+- ✅ Index memory usage proportional to cache size, not database size (2.4× open-time speedup at 1M facts)
+- ✅ File format v6 (80 bytes) with automatic v5 migration
+- ✅ `MutexStorageBackend<B>`: per-page locking for concurrent range scans; cache-warm pages lock-free
+- ✅ 331 tests passing; `tests/btree_v6_test.rs` covers B+tree correctness and concurrency
+- crates.io publish deferred to Phase 7.9 (API cleanup + publish prep)
 
 ### v0.10.0 - ✅ Phase 7.1 (Stratified Negation — `not` + `not-join`)
 - ✅ `src/query/datalog/stratification.rs`: `DependencyGraph`, `stratify()` — Bellman-Ford cycle detection; negative cycles rejected at rule registration time with a clear error
@@ -1405,13 +1398,20 @@ branched_db.execute("(transact [[:x :y 1]])")?;
 - ✅ `evaluate_not_join`: handles `Pattern` and `RuleInvocation` body clauses; queries accumulated derived facts
 - ✅ 407 tests passing; `tests/negation_test.rs` (10) + `tests/not_join_test.rs` (14) added
 
-### v0.9.0 - ✅ Phase 6.5 (On-Disk B+Tree Indexes + **crates.io publish gate**)
-- ✅ Proper on-disk B+tree for all four covering indexes (EAVT, AEVT, AVET, VAET)
-- ✅ Index memory usage proportional to cache size, not database size (2.4× open-time speedup at 1M facts)
-- ✅ File format v6 (80 bytes) with automatic v5 migration
-- ✅ `MutexStorageBackend<B>`: per-page locking for concurrent range scans; cache-warm pages lock-free
-- ✅ 331 tests passing; `tests/btree_v6_test.rs` covers B+tree correctness and concurrency
-- crates.io publish deferred to Phase 7.9 (API cleanup + publish prep)
+### v0.11.0 - ✅ Phase 7.2a (Aggregation)
+- ✅ `count`, `count-distinct`, `sum`, `sum-distinct`, `min`, `max` in `:find` clause
+- ✅ `:with` grouping clause — variables that participate in grouping but are excluded from output
+- ✅ `AggFunc` enum, `FindSpec` enum; `DatalogQuery.find` migrated from `Vec<String>` to `Vec<FindSpec>`
+- ✅ `apply_aggregation` post-processing in `executor.rs`; parse-time validation (aggregate vars must be bound)
+- ✅ `tests/aggregation_test.rs` — 24 integration tests; 461 tests passing
+
+### v0.12.0 - ✅ Phase 7.2b (Arithmetic & Predicate Expression Clauses)
+- ✅ `BinOp` (14 variants), `UnaryOp` (5 variants), `Expr` AST, `WhereClause::Expr { expr, binding }` in `types.rs`
+- ✅ Filter predicates: `[(< ?age 30)]`, `[(string? ?v)]`, `[(starts-with? ?tag "work")]`, `[(matches? ?email "...")]`
+- ✅ Arithmetic bindings: `[(+ ?price ?tax) ?total]`, `[(* ?a ?b) ?r]`, nested `[(+ (* ?a 2) ?b) ?result]`
+- ✅ `parse_expr` with parse-time regex validation; forward-pass safety check at all 4 dispatch sites (`:where`, rule body, `not`, `not-join`)
+- ✅ `eval_expr` / `is_truthy`: int/float promotion, integer division truncation, NaN guard, type mismatch → row drop, div/0 → row drop
+- ✅ `tests/predicate_expr_test.rs` — 28 integration tests; 527 tests passing (365 unit + 156 integration + 6 doc)
 
 ### v1.0.0 - 🎯 Phase 7 (Datalog Completeness)
 - Stratified negation (`not` / `not-join`)
