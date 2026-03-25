@@ -182,8 +182,9 @@ impl RecursiveEvaluator {
     fn evaluate_rule(&self, rule: &Rule, current_facts: &FactStorage) -> Result<Vec<Fact>> {
         let mut derived = Vec::new();
 
-        // Build the list of patterns to match against, from WhereClause body
+        // Separate Pattern/RuleInvocation clauses from Expr clauses
         let mut patterns = Vec::new();
+        let mut expr_clauses: Vec<&WhereClause> = Vec::new();
         for clause in &rule.body {
             match clause {
                 WhereClause::Pattern(p) => {
@@ -209,15 +210,26 @@ impl RecursiveEvaluator {
                         "WhereClause::NotJoin in evaluate_rule: use StratifiedEvaluator for rules with negation"
                     ));
                 }
+                WhereClause::Expr { .. } => {
+                    expr_clauses.push(clause);
+                }
             }
         }
 
-        if patterns.is_empty() {
+        if patterns.is_empty() && expr_clauses.is_empty() {
             return Ok(derived);
         }
 
         let matcher = PatternMatcher::new(current_facts.clone());
-        let bindings = matcher.match_patterns(&patterns);
+        let bindings = if patterns.is_empty() {
+            // Expr-only rule body: seed with empty binding
+            vec![Bindings::new()]
+        } else {
+            matcher.match_patterns(&patterns)
+        };
+
+        // Apply Expr clauses to filter/extend bindings
+        let bindings = apply_expr_clauses_in_evaluator(bindings, &expr_clauses);
 
         for binding in bindings {
             let fact = self.instantiate_head(&rule.head, &binding)?;
@@ -406,7 +418,7 @@ pub fn evaluate_not_join(
         .filter_map(|v| binding.get(v.as_str()).map(|val| (v.clone(), val.clone())))
         .collect();
 
-    // Convert all clauses to patterns
+    // Convert Pattern and RuleInvocation clauses to patterns (excluding Expr)
     let substituted: Vec<Pattern> = clauses
         .iter()
         .filter_map(|c| match c {
@@ -420,12 +432,71 @@ pub fn evaluate_not_join(
         })
         .collect();
 
-    if substituted.is_empty() {
-        return false;
-    }
+    // Collect Expr clauses from the not-join body
+    let expr_clauses: Vec<&WhereClause> = clauses
+        .iter()
+        .filter(|c| matches!(c, WhereClause::Expr { .. }))
+        .collect();
 
     let matcher = PatternMatcher::new(storage.clone());
-    !matcher.match_patterns(&substituted).is_empty()
+    let mut not_bindings: Vec<Bindings> = if substituted.is_empty() {
+        // Expr-only not-join body: seed with the partial binding so variables resolve.
+        vec![partial.clone()]
+    } else {
+        matcher
+            .match_patterns(&substituted)
+            .into_iter()
+            .map(|mut nb| {
+                for (k, v) in &partial {
+                    nb.entry(k.clone()).or_insert_with(|| v.clone());
+                }
+                nb
+            })
+            .collect()
+    };
+
+    // Apply Expr clauses to filter not_bindings
+    not_bindings = apply_expr_clauses_in_evaluator(not_bindings, &expr_clauses);
+    !not_bindings.is_empty()
+}
+
+// NOTE: This mirrors apply_expr_clauses in executor.rs but uses the evaluator's
+// Bindings type alias (HashMap<String, Value> from matcher.rs). The duplication
+// is structural — both type aliases resolve to the same concrete type but are
+// defined separately. If expression evaluation semantics change, both must be
+// updated in sync. TODO: unify into a shared module (e.g., expr.rs) in a future cleanup.
+/// Apply WhereClause::Expr clauses to a list of bindings.
+///
+/// Filter-form (`binding: None`) drops rows where the expr is not truthy or errors.
+/// Binding-form (`binding: Some(var)`) extends the row with the computed value.
+fn apply_expr_clauses_in_evaluator(
+    bindings: Vec<Bindings>,
+    expr_clauses: &[&WhereClause],
+) -> Vec<Bindings> {
+    use crate::query::datalog::executor::{eval_expr, is_truthy};
+    bindings
+        .into_iter()
+        .filter_map(|mut b| {
+            for clause in expr_clauses {
+                if let WhereClause::Expr { expr, binding: out } = clause {
+                    match eval_expr(expr, &b) {
+                        Ok(value) => match out {
+                            None => {
+                                if !is_truthy(&value) {
+                                    return None;
+                                }
+                            }
+                            Some(var) => {
+                                b.insert(var.clone(), value);
+                            }
+                        },
+                        Err(_) => return None,
+                    }
+                }
+            }
+            Some(b)
+        })
+        .collect()
 }
 
 /// Evaluates Datalog rules with stratified negation support.
@@ -569,6 +640,7 @@ impl StratifiedEvaluator {
                             _ => None,
                         },
                         WhereClause::Not(_) | WhereClause::NotJoin { .. } => None,
+                        WhereClause::Expr { .. } => None,
                     })
                     .collect();
 
@@ -592,8 +664,19 @@ impl StratifiedEvaluator {
                     })
                     .collect();
 
+                // Collect top-level Expr clauses from the rule body
+                let body_expr_clauses: Vec<&WhereClause> = rule
+                    .body
+                    .iter()
+                    .filter(|c| matches!(c, WhereClause::Expr { .. }))
+                    .collect();
+
                 let matcher = PatternMatcher::new(accumulated.clone());
-                let candidates = matcher.match_patterns(&positive_patterns);
+                let raw_candidates = matcher.match_patterns(&positive_patterns);
+
+                // Apply top-level Expr clauses to filter/extend candidates
+                let candidates =
+                    apply_expr_clauses_in_evaluator(raw_candidates, &body_expr_clauses);
 
                 // Build temp_eval once per rule (outside the binding loop);
                 // instantiate_head_public only uses storage, not the registry.
@@ -626,12 +709,34 @@ impl StratifiedEvaluator {
                                     }
                                 }
                                 WhereClause::Not(_) | WhereClause::NotJoin { .. } => None,
+                                WhereClause::Expr { .. } => None,
                             })
                             .collect();
 
                         let not_matcher = PatternMatcher::new(accumulated.clone());
-                        let not_matches = not_matcher.match_patterns(&substituted);
-                        if !not_matches.is_empty() {
+                        let mut not_bindings: Vec<Bindings> = if substituted.is_empty() {
+                            vec![binding.clone()]
+                        } else {
+                            not_matcher
+                                .match_patterns(&substituted)
+                                .into_iter()
+                                .map(|mut nb| {
+                                    for (k, v) in &binding {
+                                        nb.entry(k.clone()).or_insert_with(|| v.clone());
+                                    }
+                                    nb
+                                })
+                                .collect()
+                        };
+
+                        // Apply Expr clauses from the not body
+                        let not_body_expr_clauses: Vec<&WhereClause> = not_body
+                            .iter()
+                            .filter(|c| matches!(c, WhereClause::Expr { .. }))
+                            .collect();
+                        not_bindings =
+                            apply_expr_clauses_in_evaluator(not_bindings, &not_body_expr_clauses);
+                        if !not_bindings.is_empty() {
                             continue 'binding; // not condition violated -> discard binding
                         }
                     }

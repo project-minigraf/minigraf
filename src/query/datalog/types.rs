@@ -1,3 +1,4 @@
+use crate::graph::types::Value;
 use uuid::Uuid;
 
 /// EDN (Extensible Data Notation) value types
@@ -120,6 +121,50 @@ impl AggFunc {
     }
 }
 
+/// Binary operators for expression clauses.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum BinOp {
+    // Comparisons — return Boolean
+    Lt,
+    Gt,
+    Lte,
+    Gte,
+    Eq,
+    Neq,
+    // Arithmetic — return numeric Value (Integer or Float, with int/float promotion)
+    Add,
+    Sub,
+    Mul,
+    Div,
+    // String predicates — return Boolean
+    StartsWith,
+    EndsWith,
+    Contains,
+    /// Pattern must be a string literal validated at parse time via regex-lite.
+    Matches,
+}
+
+/// Unary type-predicate operators — always return Boolean.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum UnaryOp {
+    StringQ,
+    IntegerQ,
+    FloatQ,
+    BooleanQ,
+    NilQ,
+}
+
+/// Composable expression tree for `WhereClause::Expr`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Expr {
+    /// Logic variable reference: `?v`
+    Var(String),
+    /// Literal value: `100`, `"foo"`, `true`
+    Lit(Value),
+    BinOp(BinOp, Box<Expr>, Box<Expr>),
+    UnaryOp(UnaryOp, Box<Expr>),
+}
+
 /// A single element in the :find clause: either a plain variable or an aggregate.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FindSpec {
@@ -238,6 +283,13 @@ pub enum WhereClause {
         join_vars: Vec<String>,
         clauses: Vec<WhereClause>,
     },
+    /// Expression clause: `[(expr) ?out?]`
+    ///
+    /// `binding = None`  → filter: keep binding iff `expr` evaluates to truthy.
+    /// `binding = Some`  → bind the result `Value` to the named variable.
+    ///
+    /// Type mismatches and division by zero silently drop the row.
+    Expr { expr: Expr, binding: Option<String> },
 }
 
 impl WhereClause {
@@ -252,6 +304,7 @@ impl WhereClause {
             WhereClause::NotJoin { clauses, .. } => {
                 clauses.iter().flat_map(|c| c.rule_invocations()).collect()
             }
+            WhereClause::Expr { .. } => vec![],
         }
     }
 
@@ -261,7 +314,9 @@ impl WhereClause {
             WhereClause::Not(clauses) | WhereClause::NotJoin { clauses, .. } => clauses
                 .iter()
                 .any(|c| matches!(c, WhereClause::RuleInvocation { .. })),
-            _ => false,
+            WhereClause::Pattern(_)
+            | WhereClause::RuleInvocation { .. }
+            | WhereClause::Expr { .. } => false,
         }
     }
 }
@@ -347,6 +402,7 @@ impl DatalogQuery {
                     result.extend(Self::collect_rule_invocations_recursive(inner));
                 }
                 WhereClause::Pattern(_) => {}
+                WhereClause::Expr { .. } => {}
             }
         }
         result
@@ -835,5 +891,97 @@ mod tests {
             };
             assert_eq!(spec.display_name(), expected);
         }
+    }
+
+    #[test]
+    fn test_binop_variants_exist() {
+        let _ = BinOp::Lt;
+        let _ = BinOp::Gt;
+        let _ = BinOp::Lte;
+        let _ = BinOp::Gte;
+        let _ = BinOp::Eq;
+        let _ = BinOp::Neq;
+        let _ = BinOp::Add;
+        let _ = BinOp::Sub;
+        let _ = BinOp::Mul;
+        let _ = BinOp::Div;
+        let _ = BinOp::StartsWith;
+        let _ = BinOp::EndsWith;
+        let _ = BinOp::Contains;
+        let _ = BinOp::Matches;
+    }
+
+    #[test]
+    fn test_unary_op_variants_exist() {
+        let _ = UnaryOp::StringQ;
+        let _ = UnaryOp::IntegerQ;
+        let _ = UnaryOp::FloatQ;
+        let _ = UnaryOp::BooleanQ;
+        let _ = UnaryOp::NilQ;
+    }
+
+    #[test]
+    fn test_expr_var_and_lit() {
+        use crate::graph::types::Value;
+        let e = Expr::Var("?x".to_string());
+        assert!(matches!(e, Expr::Var(_)));
+        let l = Expr::Lit(Value::Integer(42));
+        assert!(matches!(l, Expr::Lit(_)));
+    }
+
+    #[test]
+    fn test_expr_binop_nested() {
+        use crate::graph::types::Value;
+        let e = Expr::BinOp(
+            BinOp::Add,
+            Box::new(Expr::Var("?a".to_string())),
+            Box::new(Expr::Lit(Value::Integer(1))),
+        );
+        assert!(matches!(e, Expr::BinOp(BinOp::Add, _, _)));
+    }
+
+    #[test]
+    fn test_where_clause_expr_filter_variant() {
+        use crate::graph::types::Value;
+        let clause = WhereClause::Expr {
+            expr: Expr::BinOp(
+                BinOp::Lt,
+                Box::new(Expr::Var("?v".to_string())),
+                Box::new(Expr::Lit(Value::Integer(100))),
+            ),
+            binding: None,
+        };
+        assert!(matches!(clause, WhereClause::Expr { binding: None, .. }));
+    }
+
+    #[test]
+    fn test_where_clause_expr_binding_variant() {
+        use crate::graph::types::Value;
+        let clause = WhereClause::Expr {
+            expr: Expr::BinOp(
+                BinOp::Add,
+                Box::new(Expr::Var("?a".to_string())),
+                Box::new(Expr::Var("?b".to_string())),
+            ),
+            binding: Some("?sum".to_string()),
+        };
+        assert!(matches!(
+            clause,
+            WhereClause::Expr {
+                binding: Some(_),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn test_expr_clause_rule_invocations_empty() {
+        use crate::graph::types::Value;
+        let clause = WhereClause::Expr {
+            expr: Expr::Lit(Value::Boolean(true)),
+            binding: None,
+        };
+        assert!(clause.rule_invocations().is_empty());
+        assert!(!clause.has_negated_invocation());
     }
 }
