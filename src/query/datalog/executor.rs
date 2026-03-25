@@ -248,23 +248,13 @@ impl DatalogExecutor {
                 .collect()
         };
 
-        // Extract requested variables from bindings
-        let mut results = Vec::new();
-        for binding in filtered_bindings {
-            let mut row = Vec::new();
-            for spec in &query.find {
-                if let Some(value) = binding.get(spec.var()) {
-                    row.push(value.clone());
-                } else {
-                    // Variable not bound in this result - skip this result
-                    // (This can happen if the variable wasn't mentioned in patterns)
-                    continue;
-                }
-            }
-            if row.len() == query.find.len() {
-                results.push(row);
-            }
-        }
+        // Extract requested variables from bindings (or aggregate)
+        let has_aggregates = query.find.iter().any(|s| matches!(s, FindSpec::Aggregate { .. }));
+        let results = if has_aggregates {
+            apply_aggregation(filtered_bindings, &query.find, &query.with_vars)?
+        } else {
+            extract_variables(filtered_bindings, &query.find)
+        };
 
         Ok(QueryResult::QueryResults {
             vars: query.find.iter().map(|s| s.display_name()).collect(),
@@ -435,21 +425,13 @@ impl DatalogExecutor {
                 .collect()
         };
 
-        // Extract requested variables from bindings
-        let mut results = Vec::new();
-        for binding in filtered_bindings {
-            let mut row = Vec::new();
-            for spec in &query.find {
-                if let Some(value) = binding.get(spec.var()) {
-                    row.push(value.clone());
-                } else {
-                    continue;
-                }
-            }
-            if row.len() == query.find.len() {
-                results.push(row);
-            }
-        }
+        // Extract requested variables from bindings (or aggregate)
+        let has_aggregates = query.find.iter().any(|s| matches!(s, FindSpec::Aggregate { .. }));
+        let results = if has_aggregates {
+            apply_aggregation(filtered_bindings, &query.find, &query.with_vars)?
+        } else {
+            extract_variables(filtered_bindings, &query.find)
+        };
 
         Ok(QueryResult::QueryResults {
             vars: query.find.iter().map(|s| s.display_name()).collect(),
@@ -492,6 +474,252 @@ impl DatalogExecutor {
     #[cfg(test)]
     pub fn rules(&self) -> Arc<RwLock<RuleRegistry>> {
         self.rules.clone()
+    }
+}
+
+/// Extract plain variable values from bindings (non-aggregate path).
+fn extract_variables(
+    bindings: Vec<std::collections::HashMap<String, Value>>,
+    find_specs: &[FindSpec],
+) -> Vec<Vec<Value>> {
+    let mut results = Vec::new();
+    for binding in bindings {
+        let mut row = Vec::new();
+        for spec in find_specs {
+            if let Some(value) = binding.get(spec.var()) {
+                row.push(value.clone());
+            } else {
+                break;
+            }
+        }
+        if row.len() == find_specs.len() {
+            results.push(row);
+        }
+    }
+    results
+}
+
+/// Post-process bindings through aggregation.
+/// Called only when find_specs contains at least one FindSpec::Aggregate.
+fn apply_aggregation(
+    bindings: Vec<std::collections::HashMap<String, Value>>,
+    find_specs: &[FindSpec],
+    with_vars: &[String],
+) -> Result<Vec<Vec<Value>>> {
+    let has_grouping_vars = find_specs.iter().any(|s| matches!(s, FindSpec::Variable(_)));
+
+    // Zero bindings: special case for pure count/count-distinct (no grouping vars)
+    if bindings.is_empty() {
+        let all_count = !has_grouping_vars
+            && find_specs.iter().all(|s| {
+                matches!(
+                    s,
+                    FindSpec::Aggregate { func: AggFunc::Count | AggFunc::CountDistinct, .. }
+                )
+            });
+        if all_count {
+            let row = find_specs.iter().map(|_| Value::Integer(0)).collect();
+            return Ok(vec![row]);
+        }
+        return Ok(vec![]);
+    }
+
+    // Grouping key = FindSpec::Variable vars (in find order) + with_vars
+    let group_var_names: Vec<&str> = find_specs
+        .iter()
+        .filter_map(|s| match s {
+            FindSpec::Variable(v) => Some(v.as_str()),
+            FindSpec::Aggregate { .. } => None,
+        })
+        .chain(with_vars.iter().map(|s| s.as_str()))
+        .collect();
+
+    // Group using Vec + PartialEq scan (Value::Float doesn't implement Hash)
+    let mut groups: Vec<(Vec<Value>, Vec<std::collections::HashMap<String, Value>>)> = Vec::new();
+    for b in bindings {
+        let key: Vec<Value> = group_var_names
+            .iter()
+            .map(|v| b.get(*v).cloned().unwrap_or(Value::Null))
+            .collect();
+        if let Some(pos) = groups.iter().position(|(k, _)| k == &key) {
+            groups[pos].1.push(b);
+        } else {
+            groups.push((key.clone(), vec![b]));
+        }
+    }
+
+    // Map of Variable spec name → its index in the group key Vec (only Variable specs, in order)
+    let mut group_key_idx_for_var: std::collections::HashMap<&str, usize> =
+        std::collections::HashMap::new();
+    {
+        let mut var_pos = 0usize;
+        for spec in find_specs {
+            if let FindSpec::Variable(v) = spec {
+                group_key_idx_for_var.insert(v.as_str(), var_pos);
+                var_pos += 1;
+            }
+        }
+    }
+
+    // Build output rows (one per group)
+    let mut results = Vec::new();
+    for (key, group_bindings) in &groups {
+        let mut row = Vec::new();
+        let mut skip_row = false;
+        for spec in find_specs {
+            match spec {
+                FindSpec::Variable(v) => {
+                    let pos = *group_key_idx_for_var.get(v.as_str()).unwrap();
+                    row.push(key[pos].clone());
+                }
+                FindSpec::Aggregate { func, var } => {
+                    let non_null_values: Vec<&Value> = group_bindings
+                        .iter()
+                        .filter_map(|b| b.get(var.as_str()))
+                        .filter(|v| !matches!(v, Value::Null))
+                        .collect();
+                    match apply_agg_func(func, &non_null_values) {
+                        Ok(v) => row.push(v),
+                        Err(e) => {
+                            // min/max on all-null group: skip this group
+                            let msg = e.to_string();
+                            if msg.contains("no non-null values in group") {
+                                skip_row = true;
+                                break;
+                            }
+                            return Err(e);
+                        }
+                    }
+                }
+            }
+        }
+        if !skip_row {
+            results.push(row);
+        }
+    }
+
+    Ok(results)
+}
+
+/// Apply a single aggregate function to a slice of non-null values.
+fn apply_agg_func(func: &AggFunc, values: &[&Value]) -> Result<Value> {
+    match func {
+        AggFunc::Count => Ok(Value::Integer(values.len() as i64)),
+
+        AggFunc::CountDistinct => {
+            let mut seen: Vec<&Value> = Vec::new();
+            for v in values {
+                if !seen.iter().any(|s| *s == *v) {
+                    seen.push(v);
+                }
+            }
+            Ok(Value::Integer(seen.len() as i64))
+        }
+
+        AggFunc::Sum | AggFunc::SumDistinct => {
+            let deduped: Vec<&Value> = if matches!(func, AggFunc::SumDistinct) {
+                let mut seen: Vec<&Value> = Vec::new();
+                for v in values {
+                    if !seen.iter().any(|s| *s == *v) {
+                        seen.push(v);
+                    }
+                }
+                seen
+            } else {
+                values.to_vec()
+            };
+
+            if deduped.is_empty() {
+                return Ok(Value::Integer(0));
+            }
+
+            let has_float = deduped.iter().any(|v| matches!(v, Value::Float(_)));
+            if has_float {
+                let mut sum = 0.0_f64;
+                for v in &deduped {
+                    match v {
+                        Value::Float(f) => sum += f,
+                        Value::Integer(i) => sum += *i as f64,
+                        other => {
+                            return Err(anyhow!(
+                                "sum: expected Integer, Float, or Null, got {}",
+                                value_type_name(other)
+                            ))
+                        }
+                    }
+                }
+                Ok(Value::Float(sum))
+            } else {
+                let mut sum = 0_i64;
+                for v in &deduped {
+                    match v {
+                        Value::Integer(i) => sum += i,
+                        other => {
+                            return Err(anyhow!(
+                                "sum: expected Integer, Float, or Null, got {}",
+                                value_type_name(other)
+                            ))
+                        }
+                    }
+                }
+                Ok(Value::Integer(sum))
+            }
+        }
+
+        AggFunc::Min | AggFunc::Max => {
+            if values.is_empty() {
+                return Err(anyhow!("min/max: no non-null values in group"));
+            }
+            // Check all same type (no mixing Integer and Float)
+            let first = values[0];
+            for v in &values[1..] {
+                if std::mem::discriminant(*v) != std::mem::discriminant(first) {
+                    return Err(anyhow!(
+                        "{}: cannot compare {} and {} values",
+                        func.as_str(),
+                        value_type_name(first),
+                        value_type_name(v)
+                    ));
+                }
+            }
+            // Find min or max using PartialOrd
+            let result = values.iter().try_fold((*values[0]).clone(), |acc, v| {
+                let ordering = match (&acc, v) {
+                    (Value::Integer(a), Value::Integer(b)) => a.cmp(b),
+                    (Value::Float(a), Value::Float(b)) => {
+                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                    (Value::String(a), Value::String(b)) => a.cmp(b),
+                    (_, other) => {
+                        return Err(anyhow!(
+                            "{}: expected Integer, Float, String, or Null, got {}",
+                            func.as_str(),
+                            value_type_name(other)
+                        ))
+                    }
+                };
+                let replace = match func {
+                    AggFunc::Min => ordering == std::cmp::Ordering::Greater,
+                    AggFunc::Max => ordering == std::cmp::Ordering::Less,
+                    _ => unreachable!(),
+                };
+                Ok::<Value, anyhow::Error>(if replace { (*v).clone() } else { acc })
+            })?;
+            Ok(result)
+        }
+    }
+}
+
+/// Human-readable type name for error messages.
+fn value_type_name(v: &Value) -> &'static str {
+    match v {
+        Value::String(_) => "String",
+        Value::Integer(_) => "Integer",
+        Value::Float(_) => "Float",
+        Value::Boolean(_) => "Boolean",
+        Value::Ref(_) => "Ref",
+        Value::Keyword(_) => "Keyword",
+        Value::Null => "Null",
     }
 }
 
@@ -1475,5 +1703,82 @@ mod tests {
             }
             _ => panic!("Expected QueryResults"),
         }
+    }
+
+    // Helper: build a binding map from key-value pairs
+    fn binding(pairs: &[(&str, Value)]) -> std::collections::HashMap<String, Value> {
+        pairs.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()
+    }
+
+    #[test]
+    fn test_apply_aggregation_count_basic() {
+        let bindings = vec![
+            binding(&[("?e", Value::Integer(1))]),
+            binding(&[("?e", Value::Integer(2))]),
+            binding(&[("?e", Value::Integer(3))]),
+        ];
+        let find_specs = vec![FindSpec::Aggregate {
+            func: AggFunc::Count,
+            var: "?e".to_string(),
+        }];
+        let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0][0], Value::Integer(3));
+    }
+
+    #[test]
+    fn test_apply_aggregation_count_with_grouping() {
+        let bindings = vec![
+            binding(&[("?dept", Value::String("eng".to_string())), ("?e", Value::Integer(1))]),
+            binding(&[("?dept", Value::String("eng".to_string())), ("?e", Value::Integer(2))]),
+            binding(&[("?dept", Value::String("hr".to_string())),  ("?e", Value::Integer(3))]),
+        ];
+        let find_specs = vec![
+            FindSpec::Variable("?dept".to_string()),
+            FindSpec::Aggregate { func: AggFunc::Count, var: "?e".to_string() },
+        ];
+        let mut results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
+        results.sort_by_key(|r| match &r[0] { Value::String(s) => s.clone(), _ => String::new() });
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0], vec![Value::String("eng".to_string()), Value::Integer(2)]);
+        assert_eq!(results[1], vec![Value::String("hr".to_string()), Value::Integer(1)]);
+    }
+
+    #[test]
+    fn test_apply_aggregation_count_distinct() {
+        let bindings = vec![
+            binding(&[("?v", Value::Integer(1))]),
+            binding(&[("?v", Value::Integer(1))]),  // duplicate
+            binding(&[("?v", Value::Integer(2))]),
+        ];
+        let find_specs = vec![FindSpec::Aggregate {
+            func: AggFunc::CountDistinct,
+            var: "?v".to_string(),
+        }];
+        let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
+        assert_eq!(results[0][0], Value::Integer(2));
+    }
+
+    #[test]
+    fn test_apply_aggregation_count_empty_no_grouping_vars() {
+        // count with no grouping vars + zero bindings → [[0]]
+        let find_specs = vec![FindSpec::Aggregate {
+            func: AggFunc::Count,
+            var: "?e".to_string(),
+        }];
+        let results = apply_aggregation(vec![], &find_specs, &[]).unwrap();
+        assert_eq!(results.len(), 1, "should return one row with 0");
+        assert_eq!(results[0][0], Value::Integer(0));
+    }
+
+    #[test]
+    fn test_apply_aggregation_count_empty_with_grouping_var() {
+        // count with grouping var + zero bindings → empty result
+        let find_specs = vec![
+            FindSpec::Variable("?dept".to_string()),
+            FindSpec::Aggregate { func: AggFunc::Count, var: "?e".to_string() },
+        ];
+        let results = apply_aggregation(vec![], &find_specs, &[]).unwrap();
+        assert_eq!(results.len(), 0, "should return empty set");
     }
 }
