@@ -502,7 +502,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 **Goal**: Complete the Datalog query engine — negation, aggregation, disjunction, temporal range queries, and prepared statements
 
-**Status**: 🔄 In Progress (7.1a + 7.1b + 7.2a complete ✅)
+**Status**: 🔄 In Progress (7.1a + 7.1b + 7.2a + 7.2b complete ✅)
 
 **Priority**: 🔴 Critical — without these, realistic production queries cannot be expressed in Datalog
 
@@ -512,7 +512,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 - **7.1a** ✅ Stratified Negation — `not`
 - **7.1b** ✅ Stratified Negation — `not-join`
 - **7.2a** ✅ Aggregation (`count`, `count-distinct`, `sum`, `sum-distinct`, `min`, `max`, `:with`)
-- **7.2b** Arithmetic filter predicates (`[(< ?v 100)]`, `[(> ?a ?b)]`, etc.)
+- **7.2b** ✅ Arithmetic & predicate expression clauses (`[(< ?v 100)]`, `[(+ ?a ?b) ?c]`, string predicates, type predicates)
 - **7.2** ~~Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`) — includes arithmetic filter predicates~~ → split into 7.2a + 7.2b
 - **7.3** Disjunction (`or` / `or-join`)
 - **7.4** Query Optimizer Improvements (deferred from Phase 6.3)
@@ -621,6 +621,40 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 - All changes additive
 
 **Estimated complexity**: 2-3 weeks
+
+### 7.2b Arithmetic & Predicate Expressions ✅ COMPLETE
+
+**Goal**: Express filter predicates and arithmetic bindings directly in `:where` clauses — without application-side post-processing.
+
+**Status**: ✅ Complete (v0.12.0, 2026-03-25)
+
+**Why it's load-bearing**: Required by Phase 7.7 (temporal range queries via `:db/valid-from` / `:db/valid-to`) and Phase 7.9b (UDF predicates via `FunctionRegistry`).
+
+**Syntax**:
+```datalog
+;; Filter predicates — keep row if truthy
+[(< ?age 30)]
+[(>= ?salary ?min-salary)]
+[(string? ?name)]
+[(starts-with? ?tag "work")]
+[(matches? ?email "^[^@]+@[^@]+$")]
+
+;; Arithmetic bindings — bind result to output variable
+[(+ ?price ?tax) ?total]
+[(* ?price ?qty) ?subtotal]
+[(integer? ?v) ?is-int]
+
+;; Nested arithmetic
+[(+ (* ?a 2) ?b) ?result]
+```
+
+**Implementation**:
+- Types: `BinOp` (14 variants: Lt/Gt/Lte/Gte/Eq/Neq/Add/Sub/Mul/Div/StartsWith/EndsWith/Contains/Matches), `UnaryOp` (5 variants: StringQ/IntegerQ/FloatQ/BooleanQ/NilQ), `Expr` enum (Var/Lit/BinOp/UnaryOp), `WhereClause::Expr { expr, binding }` variant
+- Parser: `parse_expr` / `parse_expr_clause`; dispatch at all 4 clause sites (`:where`, rule body, `not`, `not-join`); parse-time regex validation; forward-pass safety check (unbound variables rejected)
+- Executor: `eval_expr`, `eval_binop`, `is_truthy`, `apply_expr_clauses`; type mismatches and div/0 silently drop the row; int/float promotion; NaN guard
+- Optimizer: pass-through (`Expr` clauses not reordered — ordering guaranteed by safety check)
+
+**Spec**: `docs/superpowers/specs/2026-03-25-phase-7-2b-arithmetic-predicates-design.md`
 
 ### 7.3 Disjunction (`or` / `or-join`)
 
@@ -1349,6 +1383,21 @@ branched_db.execute("(transact [[:x :y 1]])")?;
 - `clap` moved to binary-only dep; `Cargo.toml` metadata completed
 - GitHub Discussions enabled
 
+### v0.12.0 - ✅ Phase 7.2b (Arithmetic & Predicate Expression Clauses)
+- ✅ `BinOp` (14 variants), `UnaryOp` (5 variants), `Expr` AST, `WhereClause::Expr { expr, binding }` in `types.rs`
+- ✅ Filter predicates: `[(< ?age 30)]`, `[(string? ?v)]`, `[(starts-with? ?tag "work")]`, `[(matches? ?email "...")]`
+- ✅ Arithmetic bindings: `[(+ ?price ?tax) ?total]`, `[(* ?a ?b) ?r]`, nested `[(+ (* ?a 2) ?b) ?result]`
+- ✅ `parse_expr` with parse-time regex validation; forward-pass safety check at all 4 dispatch sites (`:where`, rule body, `not`, `not-join`)
+- ✅ `eval_expr` / `is_truthy`: int/float promotion, integer division truncation, NaN guard, type mismatch → row drop, div/0 → row drop
+- ✅ `tests/predicate_expr_test.rs` — 28 integration tests; 527 tests passing (365 unit + 156 integration + 6 doc)
+
+### v0.11.0 - ✅ Phase 7.2a (Aggregation)
+- ✅ `count`, `count-distinct`, `sum`, `sum-distinct`, `min`, `max` in `:find` clause
+- ✅ `:with` grouping clause — variables that participate in grouping but are excluded from output
+- ✅ `AggFunc` enum, `FindSpec` enum; `DatalogQuery.find` migrated from `Vec<String>` to `Vec<FindSpec>`
+- ✅ `apply_aggregation` post-processing in `executor.rs`; parse-time validation (aggregate vars must be bound)
+- ✅ `tests/aggregation_test.rs` — 24 integration tests; 461 tests passing
+
 ### v0.10.0 - ✅ Phase 7.1 (Stratified Negation — `not` + `not-join`)
 - ✅ `src/query/datalog/stratification.rs`: `DependencyGraph`, `stratify()` — Bellman-Ford cycle detection; negative cycles rejected at rule registration time with a clear error
 - ✅ `(not clause…)` in queries and rule bodies — safety check requires all body vars bound by outer clauses
@@ -1438,7 +1487,9 @@ When evaluating features, ask:
 - ✅ Phase 6.4b: Complete (March 2026) - Benchmarks + light publish prep
 - ✅ Phase 6.5: Complete (March 2026) - On-disk B+tree indexes, file format v6, concurrent scan per-page locking
 - ✅ Phase 7.1: Complete (March 2026) - Stratified negation (`not` / `not-join`), 407 tests
-- 🎯 Phase 7.2–7.7: 6-10 weeks (aggregation, disjunction, optimizer, prepared statements, temporal metadata bindings; ≥90% branch coverage) - **NEXT**
+- ✅ Phase 7.2a: Complete (March 2026) - Aggregation (`count`/`sum`/`min`/`max`/`distinct`/`:with`), 461 tests
+- ✅ Phase 7.2b: Complete (March 2026) - Arithmetic & predicate expression clauses, 527 tests
+- 🎯 Phase 7.3–7.7: disjunction, optimizer, prepared statements, temporal metadata bindings; ≥90% branch coverage - **NEXT**
 - 🎯 Phase 8: 3-4 months (Cross-platform — WASM, mobile, language bindings)
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)
 - 🎯 **v1.0.0: 9-12 months**
@@ -1449,19 +1500,18 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: Phase 7.1 Complete — Phase 7.2 Next (Aggregation)
+**Right Now**: Phase 7.2b Complete — Phase 7.3 Next (Disjunction)
 
-**Phase 7.1 Achievements**:
-1. ✅ `src/query/datalog/stratification.rs`: `DependencyGraph`, `stratify()` — cycle detection; negative cycles rejected at registration
-2. ✅ `WhereClause::Not` + `WhereClause::NotJoin`: full type system support with all match arms updated
-3. ✅ Parser: `(not …)` and `(not-join [?v…] …)` syntax, safety validation, nesting constraint
-4. ✅ `StratifiedEvaluator` + `evaluate_not_join`: handles `Pattern` and `RuleInvocation` body clauses
-5. ✅ Both executor not-post-filter sites extended for `NotJoin`
-6. ✅ 407 tests; `tests/negation_test.rs` (10) + `tests/not_join_test.rs` (14) added; version bumped to v0.10.0
+**Phase 7.2b Achievements**:
+1. ✅ `BinOp` (14 variants), `UnaryOp` (5 variants), `Expr` AST, `WhereClause::Expr { expr, binding }` in `types.rs`
+2. ✅ `parse_expr` / `parse_expr_clause`; dispatch at all 4 clause sites; parse-time regex validation; forward-pass safety check recursing into `not`/`not-join` bodies
+3. ✅ `eval_expr` / `eval_binop` / `is_truthy` / `apply_expr_clauses` in `executor.rs`; type-safe with silent row drop on mismatch/div-by-zero/NaN
+4. ✅ `apply_expr_clauses_in_evaluator` in `evaluator.rs` for rule body and `not-join` evaluation
+5. ✅ 28 integration tests in `tests/predicate_expr_test.rs`; 527 total tests; version bumped to v0.12.0
 
-**Immediate Next Steps (Phase 7.2)**:
-1. Add aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`) + arithmetic filter predicates
-2. Add disjunction (`or` / `or-join`) — Phase 7.3
+**Immediate Next Steps (Phase 7.3)**:
+1. Add disjunction (`or` / `or-join`)
+2. Query optimizer improvements for new clause types — Phase 7.4
 3. Push error-path coverage toward ≥90% target
 
 **Key Decisions Made**:

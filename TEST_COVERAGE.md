@@ -1,11 +1,11 @@
 # Minigraf Test Coverage Report
 
-**Last Updated**: Phase 7.1 COMPLETE - Stratified Negation (`not` / `not-join`) ✅
+**Last Updated**: Phase 7.2b COMPLETE - Arithmetic & Predicate Expression Clauses ✅
 
 ## Test Summary
 
-**Total Tests**: 407 ✅
-- ✅ 297 unit tests (lib)
+**Total Tests**: 527 ✅
+- ✅ 365 unit tests (lib)
 - ✅ 10 bi-temporal tests (integration)
 - ✅ 10 complex query tests (integration)
 - ✅ 9 recursive rules tests (integration)
@@ -18,11 +18,13 @@
 - ✅ 8 B+tree v6 tests (integration, Phase 6.5)
 - ✅ 10 negation (`not`) tests (integration, Phase 7.1a)
 - ✅ 14 not-join tests (integration, Phase 7.1b)
+- ✅ 24 aggregation tests (integration, Phase 7.2a)
+- ✅ 28 predicate expression tests (integration, Phase 7.2b)
 - ✅ 6 doc tests
 
-**Status**: ✅ **All 407 tests passing**
+**Status**: ✅ **All 527 tests passing**
 
-## Phase 7.1 Completion Status: ✅ COMPLETE
+## Phase 7.2b Completion Status: ✅ COMPLETE
 
 **Core Features Implemented**:
 - ✅ Packed fact pages (`page_type = 0x02`): ~25 facts per 4KB page (~25× space reduction)
@@ -61,7 +63,25 @@
 - ✅ File format v1→v2 migration
 - ✅ UTC-only timestamp parsing (chrono, avoids GHSA-wcg3-cvx6-7396)
 
-**Phase 7.1 Features** (current, complete):
+**Phase 7.2b Features** (current, complete):
+- ✅ `BinOp` (14 variants), `UnaryOp` (5 variants), `Expr` AST, `WhereClause::Expr { expr, binding }` in `types.rs`
+- ✅ Filter predicates: `[(< ?age 30)]`, `[(string? ?v)]`, `[(starts-with? ?tag "work")]`, `[(matches? ?email "...")]`
+- ✅ Arithmetic bindings: `[(+ ?price ?tax) ?total]`, nested `[(+ (* ?a 2) ?b) ?result]`, type-predicate binding `[(integer? ?v) ?is-int]`
+- ✅ `parse_expr` / `parse_expr_clause` with parse-time regex validation; `check_expr_safety` recurses into `not`/`not-join` bodies
+- ✅ Dispatch at all 4 clause sites; `outer_vars_from_clause` updated for binding variable scope
+- ✅ `eval_expr` / `eval_binop` / `is_truthy` / `apply_expr_clauses` in `executor.rs`; `apply_expr_clauses_in_evaluator` in `evaluator.rs`
+- ✅ `tests/predicate_expr_test.rs`: 28 integration tests (Phase 7.2b)
+- ✅ Version bumped to v0.12.0
+
+**Phase 7.2a Features** (also complete):
+- ✅ `count`, `count-distinct`, `sum`, `sum-distinct`, `min`, `max` aggregate functions in `:find` clause
+- ✅ `:with` grouping clause — variables that participate in grouping but are excluded from output rows
+- ✅ `AggFunc` enum, `FindSpec` enum; `DatalogQuery.find` migrated from `Vec<String>` to `Vec<FindSpec>`
+- ✅ `apply_aggregation` post-processing in `executor.rs`; parse-time validation
+- ✅ `tests/aggregation_test.rs`: 24 integration tests (Phase 7.2a)
+- ✅ Version bumped to v0.11.0
+
+**Phase 7.1 Features** (also complete):
 - ✅ `src/query/datalog/stratification.rs`: `DependencyGraph`, `stratify()` — negative dependency edges + Bellman-Ford cycle detection; negative cycles rejected at rule registration time
 - ✅ `WhereClause::Not(Vec<WhereClause>)` and `WhereClause::NotJoin { join_vars, clauses }` variants; all match arms updated
 - ✅ `(not clause…)` — stratified negation; all body variables must be pre-bound by outer clauses
@@ -482,17 +502,17 @@
 
 ## What's Not Tested Yet ⏳
 
-### Phase 7.2+ (Remaining Datalog Completeness)
-- ⏳ Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`) — Phase 7.2
+### Phase 7.3+ (Remaining Datalog Completeness)
 - ⏳ Disjunction (`or` / `or-join`) — Phase 7.3
-- ⏳ Query optimizer improvements for negation/aggregation/disjunction clause types — Phase 7.4
+- ⏳ Query optimizer improvements for new clause types (aggregation, expr, disjunction) — Phase 7.4
 - ⏳ Prepared statements with temporal bind slots — Phase 7.6
 - ⏳ Temporal metadata pseudo-attributes (`:db/valid-from`, `:db/valid-to`, `:db/tx-count`) — Phase 7.7
 
-### Known Limitations (Acceptable for Phase 3-7.1)
+### Known Limitations (Acceptable for Phase 3-7.2b)
 - ⏳ Crash during checkpoint write (safe by construction — WAL not deleted until save succeeds; explicit test deferred to Phase 7.5)
-- ⏳ Aggregation and disjunction — Phase 7.2 / 7.3
+- ⏳ Disjunction — Phase 7.3
 - ⏳ Known `not-join` limitation: when a rule B positively invokes rule A and both are stratum 0, single-pass mixed-rule evaluation means B may not see A's derived facts unless rules are declared in dependency order
+- ⏳ `matches?` pattern compiled per-row (no caching); will be optimised in Phase 7.9b (`FunctionRegistry`)
 
 ---
 
@@ -519,6 +539,8 @@ cargo test --test edge_cases_test      # Edge cases (4)
 cargo test --test btree_v6_test        # B+tree v6 (8)
 cargo test --test negation_test        # stratified not (10)
 cargo test --test not_join_test        # not-join (14)
+cargo test --test aggregation_test     # aggregation (24)
+cargo test --test predicate_expr_test  # arithmetic & predicate expr (28)
 
 # Run with output
 cargo test -- --nocapture
@@ -528,9 +550,9 @@ cargo test -- --nocapture
 
 ## Conclusion
 
-**Phase 7.1 Status**: ✅ **COMPLETE**
+**Phase 7.2b Status**: ✅ **COMPLETE**
 
-**Test Quality**: ✅ **Excellent** — High confidence in all Phase 3-7.1 features
+**Test Quality**: ✅ **Excellent** — High confidence in all Phase 3-7.2b features
 
 **Strengths**:
 - WAL crash safety verified with real `mem::forget` simulation
@@ -545,14 +567,16 @@ cargo test -- --nocapture
 - Byte-layout tests pin FileHeader v5/v6 and packed page header field offsets
 - On-disk B+tree correctness and concurrent scan safety verified (Phase 6.5)
 - Stratified negation (`not` / `not-join`) verified: safety validation, stratification, negative cycle rejection, time-travel integration (Phase 7.1)
-- 407 tests covering all Phase 3-7.1 features
+- Aggregation verified: all 6 aggregate functions, `:with` grouping, bi-temporal + aggregate, rule + aggregate (Phase 7.2a)
+- Arithmetic & predicate expressions verified: all operators, silent-drop semantics, int/float promotion, regex validation, expr in not/rule body, bi-temporal + expr (Phase 7.2b)
+- 527 tests covering all Phase 3-7.2b features
 
 **Confidence Level**: ✅ **Production-ready for Phase 7.1 scope**
 
-**Readiness for Phase 7.2**: ✅ **Ready to proceed**
+**Readiness for Phase 7.3**: ✅ **Ready to proceed**
 
-The stratified-negation-capable, on-disk B+tree indexed, packed, cached bi-temporal Datalog engine is **solid, well-tested, and benchmarked**.
+The aggregation + arithmetic/predicate expression capable, stratified-negation-capable, on-disk B+tree indexed, packed, cached bi-temporal Datalog engine is **solid, well-tested, and benchmarked**.
 
 ---
 
-**Next Steps**: Begin Phase 7.2 (Aggregation — `count`, `sum`, `min`, `max`, `distinct`, `:with`) 🚀
+**Next Steps**: Begin Phase 7.3 (Disjunction — `or` / `or-join`) 🚀

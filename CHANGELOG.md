@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-03-25
+
+### Added
+- `BinOp` enum (14 variants: `Lt`, `Gt`, `Lte`, `Gte`, `Eq`, `Neq`, `Add`, `Sub`, `Mul`, `Div`, `StartsWith`, `EndsWith`, `Contains`, `Matches`) in `types.rs`
+- `UnaryOp` enum (5 variants: `StringQ`, `IntegerQ`, `FloatQ`, `BooleanQ`, `NilQ`) in `types.rs`
+- `Expr` enum (`Var`, `Lit`, `BinOp`, `UnaryOp`) — composable expression AST in `types.rs`
+- `WhereClause::Expr { expr: Expr, binding: Option<String> }` variant — `None` = filter, `Some(var)` = arithmetic binding
+- `parse_expr_arg` / `parse_expr` / `parse_expr_clause` in `parser.rs`; dispatch at all 4 clause sites (query `:where`, rule body, `not` body, `not-join` body)
+- Parse-time regex validation for `matches?` patterns via `regex-lite`; invalid patterns are rejected with a clear error
+- `check_expr_safety` + `check_expr_safety_with_bound` in `parser.rs` — forward-pass safety check; recurses into `not`/`not-join` bodies; unbound `Expr::Var` references are rejected at parse time
+- `outer_vars_from_clause` updated for `WhereClause::Expr` — binding variable contributes to scope for subsequent clauses
+- `eval_expr`, `eval_binop`, `is_truthy`, `apply_expr_clauses` in `executor.rs` — evaluate expression trees against a binding; type mismatches and div/0 silently drop the row
+- `apply_expr_clauses_in_evaluator` in `evaluator.rs` — sibling helper for rule body and `not-join` evaluation paths
+- `not_body_matches` in `executor.rs` updated to seed with outer binding for expr-only `not` bodies
+- `tests/predicate_expr_test.rs` — 28 integration tests covering all operators, silent-drop semantics, integer division, NaN, int/float promotion, string predicates, regex, expr in `not` body, expr in rule body, bi-temporal + expr, arithmetic into aggregate
+
+### Semantics
+- Comparison operators (`<`, `>`, `<=`, `>=`) require both operands to be numeric (`Integer` or `Float`); type mismatch → row dropped
+- `=` / `!=` use structural equality on `Value` — type mismatch returns `false`/`true`, not an error
+- Integer `+` `Float` promotes to `Float`; integer division truncates; division by zero → row dropped; NaN result → row dropped
+- `is_truthy`: `Boolean(true)` → true; non-zero `Integer` or `Float` → true; everything else (including `Keyword`, `Ref`, `Null`, zero, empty string, `Boolean(false)`, `-0.0`) → false
+- `matches?` pattern compiled at eval time via `regex-lite`; pattern must be a string literal validated at parse time
+
+### Tests
+- Added `tests/predicate_expr_test.rs` (28 integration tests)
+- Total: 527 tests passing (365 unit + 156 integration + 6 doc)
+
 ## [0.11.0] - 2026-03-25
 
 ### Added
