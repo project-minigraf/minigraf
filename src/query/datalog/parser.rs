@@ -1095,14 +1095,20 @@ fn expr_vars(expr: &Expr) -> Vec<String> {
 ///
 /// Called for both query `:where` clauses and rule body clauses.
 fn check_expr_safety(clauses: &[WhereClause]) -> Result<(), String> {
-    let mut bound: std::collections::HashSet<String> = std::collections::HashSet::new();
+    check_expr_safety_with_bound(clauses, &mut std::collections::HashSet::new())
+}
+
+fn check_expr_safety_with_bound(
+    clauses: &[WhereClause],
+    bound: &mut std::collections::HashSet<String>,
+) -> Result<(), String> {
     for clause in clauses {
         match clause {
             WhereClause::Expr { expr, binding } => {
                 for var in expr_vars(expr) {
                     if !bound.contains(&var) {
                         return Err(format!(
-                            "variable {} in expression clause is not bound by any earlier :where clause",
+                            "variable {} in expression clause is not bound by any earlier clause",
                             var
                         ));
                     }
@@ -1110,6 +1116,17 @@ fn check_expr_safety(clauses: &[WhereClause]) -> Result<(), String> {
                 if let Some(out) = binding {
                     bound.insert(out.clone());
                 }
+            }
+            WhereClause::Not(inner) => {
+                // Recurse into not body with a clone of the current bound set.
+                // Not bodies can reference outer-bound variables, but cannot
+                // extend the outer bound (negation doesn't introduce new bindings).
+                let mut inner_bound = bound.clone();
+                check_expr_safety_with_bound(inner, &mut inner_bound)?;
+            }
+            WhereClause::NotJoin { clauses: inner, .. } => {
+                let mut inner_bound = bound.clone();
+                check_expr_safety_with_bound(inner, &mut inner_bound)?;
             }
             other => {
                 for var in outer_vars_from_clause(other) {
