@@ -1781,4 +1781,143 @@ mod tests {
         let results = apply_aggregation(vec![], &find_specs, &[]).unwrap();
         assert_eq!(results.len(), 0, "should return empty set");
     }
+
+    #[test]
+    fn test_apply_aggregation_sum_integers() {
+        let bindings = vec![
+            binding(&[("?v", Value::Integer(10))]),
+            binding(&[("?v", Value::Integer(20))]),
+            binding(&[("?v", Value::Integer(30))]),
+        ];
+        let find_specs = vec![FindSpec::Aggregate { func: AggFunc::Sum, var: "?v".to_string() }];
+        let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
+        assert_eq!(results[0][0], Value::Integer(60));
+    }
+
+    #[test]
+    fn test_apply_aggregation_sum_widens_to_float() {
+        let bindings = vec![
+            binding(&[("?v", Value::Integer(10))]),
+            binding(&[("?v", Value::Float(0.5))]),
+        ];
+        let find_specs = vec![FindSpec::Aggregate { func: AggFunc::Sum, var: "?v".to_string() }];
+        let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
+        assert_eq!(results[0][0], Value::Float(10.5));
+    }
+
+    #[test]
+    fn test_apply_aggregation_sum_distinct_deduplicates() {
+        let bindings = vec![
+            binding(&[("?v", Value::Integer(5))]),
+            binding(&[("?v", Value::Integer(5))]),  // duplicate
+            binding(&[("?v", Value::Integer(10))]),
+        ];
+        let find_specs = vec![FindSpec::Aggregate { func: AggFunc::SumDistinct, var: "?v".to_string() }];
+        let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
+        assert_eq!(results[0][0], Value::Integer(15)); // 5 + 10, not 5 + 5 + 10
+    }
+
+    #[test]
+    fn test_apply_aggregation_sum_type_error() {
+        let bindings = vec![binding(&[("?v", Value::String("bad".to_string()))])];
+        let find_specs = vec![FindSpec::Aggregate { func: AggFunc::Sum, var: "?v".to_string() }];
+        let result = apply_aggregation(bindings, &find_specs, &[]);
+        assert!(result.is_err(), "sum of string should fail");
+    }
+
+    #[test]
+    fn test_apply_aggregation_min_integers() {
+        let bindings = vec![
+            binding(&[("?v", Value::Integer(30))]),
+            binding(&[("?v", Value::Integer(10))]),
+            binding(&[("?v", Value::Integer(20))]),
+        ];
+        let find_specs = vec![FindSpec::Aggregate { func: AggFunc::Min, var: "?v".to_string() }];
+        let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
+        assert_eq!(results[0][0], Value::Integer(10));
+    }
+
+    #[test]
+    fn test_apply_aggregation_max_strings() {
+        let bindings = vec![
+            binding(&[("?v", Value::String("apple".to_string()))]),
+            binding(&[("?v", Value::String("zebra".to_string()))]),
+            binding(&[("?v", Value::String("mango".to_string()))]),
+        ];
+        let find_specs = vec![FindSpec::Aggregate { func: AggFunc::Max, var: "?v".to_string() }];
+        let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
+        assert_eq!(results[0][0], Value::String("zebra".to_string()));
+    }
+
+    #[test]
+    fn test_apply_aggregation_min_type_error_boolean() {
+        let bindings = vec![binding(&[("?v", Value::Boolean(true))])];
+        let find_specs = vec![FindSpec::Aggregate { func: AggFunc::Min, var: "?v".to_string() }];
+        let result = apply_aggregation(bindings, &find_specs, &[]);
+        assert!(result.is_err(), "min of boolean should fail");
+    }
+
+    #[test]
+    fn test_apply_aggregation_min_mixed_int_float_error() {
+        let bindings = vec![
+            binding(&[("?v", Value::Integer(1))]),
+            binding(&[("?v", Value::Float(2.0))]),
+        ];
+        let find_specs = vec![FindSpec::Aggregate { func: AggFunc::Min, var: "?v".to_string() }];
+        let result = apply_aggregation(bindings, &find_specs, &[]);
+        assert!(result.is_err(), "min of mixed Integer/Float should fail");
+    }
+
+    #[test]
+    fn test_apply_aggregation_skips_nulls_in_sum() {
+        let bindings = vec![
+            binding(&[("?v", Value::Integer(10))]),
+            binding(&[("?v", Value::Null)]),
+            binding(&[("?v", Value::Integer(20))]),
+        ];
+        let find_specs = vec![FindSpec::Aggregate { func: AggFunc::Sum, var: "?v".to_string() }];
+        let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
+        assert_eq!(results[0][0], Value::Integer(30));
+    }
+
+    #[test]
+    fn test_apply_aggregation_skips_nulls_in_count() {
+        let bindings = vec![
+            binding(&[("?v", Value::Integer(1))]),
+            binding(&[("?v", Value::Null)]),
+            binding(&[("?v", Value::Integer(2))]),
+        ];
+        let find_specs = vec![FindSpec::Aggregate { func: AggFunc::Count, var: "?v".to_string() }];
+        let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
+        assert_eq!(results[0][0], Value::Integer(2)); // null not counted
+    }
+
+    #[test]
+    fn test_apply_aggregation_sum_empty_bindings() {
+        let find_specs = vec![FindSpec::Aggregate { func: AggFunc::Sum, var: "?v".to_string() }];
+        let results = apply_aggregation(vec![], &find_specs, &[]).unwrap();
+        assert_eq!(results.len(), 0, "sum on empty should return empty set");
+    }
+
+    #[test]
+    fn test_apply_aggregation_with_var_grouping() {
+        // :with ?e adds ?e to the group key. Two entities with same dept but different ?e
+        // form separate groups.
+        let bindings = vec![
+            binding(&[("?dept", Value::String("eng".to_string())), ("?salary", Value::Integer(50)), ("?e", Value::Integer(1))]),
+            binding(&[("?dept", Value::String("eng".to_string())), ("?salary", Value::Integer(50)), ("?e", Value::Integer(2))]),
+        ];
+        let find_specs = vec![
+            FindSpec::Variable("?dept".to_string()),
+            FindSpec::Aggregate { func: AggFunc::Sum, var: "?salary".to_string() },
+        ];
+        // Without :with: group key = ("eng",). Both bindings in one group → sum = 100.
+        let results_no_with = apply_aggregation(bindings.clone(), &find_specs, &[]).unwrap();
+        assert_eq!(results_no_with.len(), 1);
+        assert_eq!(results_no_with[0][1], Value::Integer(100));
+        // With :with ?e: group key = ("eng", e). Two separate groups → two rows, each sum = 50.
+        let results_with = apply_aggregation(bindings, &find_specs, &["?e".to_string()]).unwrap();
+        assert_eq!(results_with.len(), 2);
+        assert_eq!(results_with[0][1], Value::Integer(50));
+    }
 }
