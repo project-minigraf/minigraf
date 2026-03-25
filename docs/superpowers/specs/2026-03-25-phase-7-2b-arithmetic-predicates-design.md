@@ -20,33 +20,57 @@ This is a load-bearing dependency for Phase 7.7 (temporal range queries via `:db
 
 **Binary operators** (two-argument, written as `(op lhs rhs)`):
 
-| Operator | Form | Returns |
-|---|---|---|
-| `<` | `(< ?a ?b)` | `bool` |
-| `>` | `(> ?a ?b)` | `bool` |
-| `<=` | `(<= ?a ?b)` | `bool` |
-| `>=` | `(>= ?a ?b)` | `bool` |
-| `=` | `(= ?a ?b)` | `bool` |
-| `!=` | `(!= ?a ?b)` | `bool` |
-| `+` | `(+ ?a ?b)` | numeric |
-| `-` | `(- ?a ?b)` | numeric |
-| `*` | `(* ?a ?b)` | numeric |
-| `/` | `(/ ?a ?b)` | numeric |
-| `starts-with?` | `(starts-with? ?s "prefix")` | `bool` |
+**Comparisons** — return `bool`:
 
-**Unary operators** (one-argument type predicates):
+| Operator | Form |
+|---|---|
+| `<` | `(< ?a ?b)` |
+| `>` | `(> ?a ?b)` |
+| `<=` | `(<= ?a ?b)` |
+| `>=` | `(>= ?a ?b)` |
+| `=` | `(= ?a ?b)` |
+| `!=` | `(!= ?a ?b)` |
 
-| Operator | Form | Returns |
-|---|---|---|
-| `string?` | `(string? ?v)` | `bool` |
-| `integer?` | `(integer? ?v)` | `bool` |
-| `float?` | `(float? ?v)` | `bool` |
-| `boolean?` | `(boolean? ?v)` | `bool` |
-| `nil?` | `(nil? ?v)` | `bool` |
+**Arithmetic** — return numeric `Value`:
+
+| Operator | Form |
+|---|---|
+| `+` | `(+ ?a ?b)` |
+| `-` | `(- ?a ?b)` |
+| `*` | `(* ?a ?b)` |
+| `/` | `(/ ?a ?b)` |
+
+**String predicates** — return `bool`:
+
+| Operator | Form |
+|---|---|
+| `starts-with?` | `(starts-with? ?s "prefix")` |
+
+**Unary operators** (one-argument type predicates, return `bool`):
+
+| Operator | Form |
+|---|---|
+| `string?` | `(string? ?v)` |
+| `integer?` | `(integer? ?v)` |
+| `float?` | `(float? ?v)` |
+| `boolean?` | `(boolean? ?v)` |
+| `nil?` | `(nil? ?v)` |
 
 ### Error semantics
 
 Type mismatches and division by zero **silently drop the row** — consistent with Datomic's approach and the principle that predicates are filters, not error sources.
+
+### Numeric type semantics
+
+**Mixed integer/float arithmetic**: When one operand is `Integer` and the other is `Float`, the `Integer` is promoted to `Float` and the result is `Float`. This matches Datomic's promotion behaviour.
+
+**Integer division**: `(/ ?a ?b)` where both are `Integer` performs integer truncation (e.g., `5 / 2 = 2`). If `?b = 0`, the row is silently dropped.
+
+**Comparison across types**: `<`, `>`, `<=`, `>=` require both operands to be numeric (`Integer` or `Float`); a string compared to an integer is a type mismatch → row dropped.
+
+**`=` and `!=` semantics**: Structural equality on `Value` — works for `String`, `Integer`, `Float`, `Boolean`, `Keyword`, `Ref`, and `Null`. `(= "Alice" "Alice")` → true; `(= 1 1.0)` → false (different variant). Type mismatch does not drop the row for `=` / `!=` — they return `false` / `true` respectively (same as Datomic: `(= :a "a")` = false, not an error).
+
+**`is_truthy` definition**: `Boolean(true)` → true; non-zero `Integer` or `Float` → true; everything else (including `Keyword`, `Ref`, `Null`, zero, empty string) → false.
 
 ---
 
@@ -78,7 +102,11 @@ Two clause forms inside `:where`, both written as an EDN vector:
                [(< ?age 30)]])
 ```
 
-**Shape disambiguation**: A vector clause is a `Pattern` if element 0 is a symbol/keyword/uuid. It is an `Expr` clause if element 0 is a list (expression). No overlap.
+**Shape disambiguation**: The vector-clause dispatcher checks element 0 before routing:
+- Element 0 is a list (EDN `(...)`) → `Expr` clause path
+- Otherwise → existing `Pattern` / `RuleInvocation` / `Not` / `NotJoin` paths
+
+The existing `Pattern::from_edn` (which hard-fails on non-3-element vectors) is not called for `Expr` clauses — the dispatcher branches before reaching it.
 
 ---
 
@@ -94,13 +122,13 @@ Three new enums, one new `WhereClause` variant:
 pub enum BinOp {
     // Comparisons — return bool
     Lt, Gt, Lte, Gte, Eq, Neq,
-    // Arithmetic — return numeric Value
+    // Arithmetic — return numeric Value (Integer/Float with promotion)
     Add, Sub, Mul, Div,
-    // String predicate — return bool
+    // String predicates — return bool
     StartsWith,
 }
 
-/// Unary type-predicate operators — return bool
+/// Unary type-predicate operators — always return Boolean
 #[derive(Debug, Clone, PartialEq)]
 pub enum UnaryOp {
     StringQ,
@@ -132,34 +160,51 @@ pub enum WhereClause {
 }
 ```
 
-**`WhereClause::rule_invocations` and `has_negated_invocation`** require no changes — `Expr` contains no rule invocations.
+**Required updates to existing exhaustive matches in `types.rs`**:
+
+- `WhereClause::rule_invocations()` — add arm `WhereClause::Expr { .. } => vec![]`
+- `WhereClause::has_negated_invocation()` — add arm `WhereClause::Expr { .. } => false`
+- `collect_rule_invocations_recursive()` — add arm for `WhereClause::Expr { .. }` (no-op)
+
+All three are trivial — `Expr` clauses contain no rule invocations.
 
 ### Parser (`src/query/datalog/parser.rs`)
 
-Recognition rule inside `:where` clause parsing:
-
-- Vector with 1 element, element 0 is a list → `WhereClause::Expr { expr: parse_expr(list), binding: None }`
-- Vector with 2 elements, element 0 is a list, element 1 is `?var` symbol → `WhereClause::Expr { expr: parse_expr(list), binding: Some(var) }`
-- Otherwise → existing `Pattern` / `RuleInvocation` / `Not` / `NotJoin` paths
-
-`parse_expr` recurses:
+**Two dispatch sites** must be updated: the query `:where` clause parser and the rule-body clause parser. Both currently dispatch vector clauses directly to `Pattern::from_edn`. Both must be updated to check element 0 first:
 
 ```
-head symbol "+"  → BinOp::Add
-head symbol "<"  → BinOp::Lt
-head symbol "string?" → UnaryOp::StringQ
-integer literal  → Expr::Lit(Value::Integer(_))
-?var symbol      → Expr::Var(_)
-list element     → recurse
+if vec[0] is a List:
+    parse as Expr clause
+else:
+    existing Pattern / Not / NotJoin / RuleInvocation dispatch
 ```
 
-**Safety check (parse time):** All `Expr::Var` references inside an expression clause must be bound by earlier `:where` clauses. Violation → `Err("variable ?x in expression clause is unbound")`. The output variable (in `binding: Some`) is exempt — it is the new binding produced.
+`parse_expr` recurses on the inner list:
 
-**Applies inside `not` / `not-join` bodies** — `parse_expr_clause` is called from the same clause-parsing helper used for `Not` body parsing.
+```
+head symbol "+"        → BinOp(Add, parse_expr(arg0), parse_expr(arg1))
+head symbol "<"        → BinOp(Lt,  parse_expr(arg0), parse_expr(arg1))
+head symbol "string?"  → UnaryOp(StringQ, parse_expr(arg0))
+integer literal        → Expr::Lit(Value::Integer(_))
+string literal         → Expr::Lit(Value::String(_))
+?var symbol            → Expr::Var(_)
+nested list            → recurse
+```
+
+**Safety check (parse-time, post-hoc pass)**: After all `:where` clauses are parsed, the existing `outer_bound` set is built from `outer_vars_from_clause`. **`outer_vars_from_clause` must handle `WhereClause::Expr`**:
+
+- `binding: None` → contributes no new variables to `outer_bound`
+- `binding: Some(var)` → contributes `var` to `outer_bound` (the new variable is now in scope for subsequent clauses)
+
+The safety check then verifies that all `Expr::Var` references in each `Expr` clause are present in `outer_bound` at the point that clause is processed. Because `outer_bound` is built as a forward pass, a variable used before it is bound will correctly fail the check.
+
+**Note**: The safety check is post-hoc (full parse → then check), consistent with how the existing `not` safety check works. The check does correctly enforce ordering because `outer_vars_from_clause` accumulates variables in `:where` clause order.
+
+**Applies inside `not` / `not-join` bodies** — the same clause-parsing helper is used for Not body parsing; the element-0 check applies there too.
 
 ### Executor (`src/query/datalog/executor.rs`)
 
-`WhereClause::Expr` is dispatched in the same per-clause loop as `Pattern`, `Not`, and `NotJoin`. It is always applied **after** the patterns that produced its bound variables (guaranteed by the parse-time safety check).
+`WhereClause::Expr` is dispatched in the same per-clause loop as `Pattern`, `Not`, and `NotJoin`. It is always applied after the patterns that produced its bound variables (guaranteed by the parse-time safety check).
 
 ```rust
 fn apply_expr_clause(
@@ -182,10 +227,10 @@ fn apply_expr_clause(
 `eval_expr` recurses the `Expr` tree:
 - `Expr::Var(v)` → look up `v` in current binding; `Err` if absent
 - `Expr::Lit(val)` → return `val.clone()`
-- `Expr::BinOp(op, lhs, rhs)` → evaluate both sides, apply `op`; `Err` on type mismatch or div/0
-- `Expr::UnaryOp(op, arg)` → evaluate arg, apply type test; always succeeds (returns `Boolean`)
+- `Expr::BinOp(op, lhs, rhs)` → evaluate both sides, apply `op` with numeric promotion where applicable; `Err` on type mismatch or div/0
+- `Expr::UnaryOp(op, arg)` → evaluate arg, apply type test; always returns `Value::Boolean(_)` (never errors)
 
-**`is_truthy`**: `Boolean(true)` → true; non-zero `Integer`/`Float` → true; everything else → false.
+**`is_truthy`**: `Boolean(true)` → true; non-zero `Integer` or `Float` → true; everything else (`Keyword`, `Ref`, `Null`, zero, `String`, `Boolean(false)`) → false.
 
 **Interaction with `Not` / `NotJoin`**: `Expr` clauses inside negation bodies are evaluated by the same `apply_expr_clause` helper — no special handling needed.
 
@@ -204,8 +249,8 @@ fn apply_expr_clause(
 
 ### Unit tests
 
-- **`types.rs`**: `Expr` / `BinOp` / `UnaryOp` construction; `WhereClause::Expr` variant round-trip; `rule_invocations()` returns empty for `Expr` variant
-- **`parser.rs`**: each operator parsed correctly; nested expression `(+ (* ?a 2) ?b)`; filter vs binding shape; ambiguity guard (3-element vector stays a `Pattern`); unbound variable rejected with clear error
+- **`types.rs`**: `Expr` / `BinOp` / `UnaryOp` construction; `WhereClause::Expr` variant; `rule_invocations()` returns empty for `Expr` variant; `has_negated_invocation()` returns false
+- **`parser.rs`**: each operator parsed correctly; nested expression `(+ (* ?a 2) ?b)`; filter vs binding shape; ambiguity guard (3-element vector stays a `Pattern`); unbound variable rejected with clear error; `outer_vars_from_clause` correctly contributes binding variable to scope
 
 ### Integration tests (`tests/predicate_expr_test.rs`)
 
@@ -215,13 +260,18 @@ fn apply_expr_clause(
 | Two-variable comparison | `[(>= ?a ?b)]` |
 | Arithmetic binding | `[(* ?price ?qty) ?total]` |
 | Nested arithmetic | `[(+ (* ?a 2) ?b) ?result]` |
+| Integer division truncation | `[(/ ?a ?b) ?r]` where both are integers; `5 / 2 = 2` |
+| Integer/float promotion | `[(+ ?int ?float) ?r]` returns `Float` |
 | Type predicate filter | `[(string? ?v)]` |
 | `starts-with?` filter | `[(starts-with? ?tag "work")]` |
 | Predicate binding | `[(integer? ?v) ?is-int]` binds `true`/`false` |
+| `=` across types | `(= ?name "Alice")` string equality works; `(= 1 1.0)` false |
 | Type mismatch → drop | `[(< ?v 100)]` where `?v = "hello"` → row silently dropped |
 | Division by zero → drop | `[(/ ?a ?b) ?r]` where `?b = 0` → row silently dropped |
 | Expr inside `not` body | valid and evaluated correctly |
+| Expr in rule body | `[(< ?a ?b)]` inside a rule body clause |
 | Bi-temporal filter | `[(< ?age 30)]` combined with `:as-of` |
+| Arithmetic binding into aggregate | `[(* ?price ?qty) ?total]` followed by `(sum ?total)` in `:find` |
 
 ---
 
@@ -229,8 +279,8 @@ fn apply_expr_clause(
 
 | File | Change |
 |---|---|
-| `src/query/datalog/types.rs` | Add `BinOp`, `UnaryOp`, `Expr`; add `WhereClause::Expr` variant |
-| `src/query/datalog/parser.rs` | Parse `[(expr) ?out?]` clause shape; add `parse_expr`; safety check |
+| `src/query/datalog/types.rs` | Add `BinOp`, `UnaryOp`, `Expr`; add `WhereClause::Expr` variant; add arms to exhaustive matches |
+| `src/query/datalog/parser.rs` | Update both where-clause dispatch sites (query + rule body); add `parse_expr`; update `outer_vars_from_clause` for `Expr`; safety check |
 | `src/query/datalog/executor.rs` | Dispatch `WhereClause::Expr`; add `apply_expr_clause`, `eval_expr`, `is_truthy` |
 | `src/query/datalog/optimizer.rs` | Pass-through `WhereClause::Expr` unchanged |
 | `tests/predicate_expr_test.rs` | New integration test file |
