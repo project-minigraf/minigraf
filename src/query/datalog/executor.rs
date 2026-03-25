@@ -3,7 +3,8 @@ use super::matcher::{PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::optimizer;
 use super::rules::RuleRegistry;
 use super::types::{
-    DatalogCommand, DatalogQuery, EdnValue, Pattern, Rule, Transaction, ValidAt, WhereClause,
+    AggFunc, DatalogCommand, DatalogQuery, EdnValue, FindSpec, Pattern, Rule, Transaction, ValidAt,
+    WhereClause,
 };
 use crate::graph::FactStorage;
 use crate::graph::types::{Fact, TransactOptions, TxId, Value, tx_id_now};
@@ -251,8 +252,8 @@ impl DatalogExecutor {
         let mut results = Vec::new();
         for binding in filtered_bindings {
             let mut row = Vec::new();
-            for var in &query.find {
-                if let Some(value) = binding.get(var) {
+            for spec in &query.find {
+                if let Some(value) = binding.get(spec.var()) {
                     row.push(value.clone());
                 } else {
                     // Variable not bound in this result - skip this result
@@ -266,7 +267,7 @@ impl DatalogExecutor {
         }
 
         Ok(QueryResult::QueryResults {
-            vars: query.find,
+            vars: query.find.iter().map(|s| s.display_name()).collect(),
             results,
         })
     }
@@ -438,8 +439,8 @@ impl DatalogExecutor {
         let mut results = Vec::new();
         for binding in filtered_bindings {
             let mut row = Vec::new();
-            for var in &query.find {
-                if let Some(value) = binding.get(var) {
+            for spec in &query.find {
+                if let Some(value) = binding.get(spec.var()) {
                     row.push(value.clone());
                 } else {
                     continue;
@@ -451,7 +452,7 @@ impl DatalogExecutor {
         }
 
         Ok(QueryResult::QueryResults {
-            vars: query.find,
+            vars: query.find.iter().map(|s| s.display_name()).collect(),
             results,
         })
     }
@@ -975,7 +976,7 @@ mod tests {
         // Default query (no :valid-at) should only return the forever-valid fact
         let result = executor
             .execute(DatalogCommand::Query(DatalogQuery::new(
-                vec!["?attr".to_string()],
+                vec![FindSpec::Variable("?attr".to_string())],
                 vec![WhereClause::Pattern(Pattern::new(
                     EdnValue::Uuid(alice),
                     EdnValue::Symbol("?attr".to_string()),
@@ -1029,7 +1030,7 @@ mod tests {
         // :as-of 1 → only name fact visible (age was added at tx_count=2)
         let result = executor
             .execute(DatalogCommand::Query(DatalogQuery {
-                find: vec!["?attr".to_string()],
+                find: vec![FindSpec::Variable("?attr".to_string())],
                 where_clauses: vec![WhereClause::Pattern(Pattern::new(
                     EdnValue::Uuid(alice),
                     EdnValue::Symbol("?attr".to_string()),
@@ -1037,6 +1038,7 @@ mod tests {
                 ))],
                 as_of: Some(AsOf::Counter(1)),
                 valid_at: Some(ValidAt::AnyValidTime),
+                with_vars: Vec::new(),
             }))
             .unwrap();
 
@@ -1084,7 +1086,7 @@ mod tests {
         // :valid-at :any-valid-time → both facts returned
         let result = executor
             .execute(DatalogCommand::Query(DatalogQuery {
-                find: vec!["?attr".to_string()],
+                find: vec![FindSpec::Variable("?attr".to_string())],
                 where_clauses: vec![WhereClause::Pattern(Pattern::new(
                     EdnValue::Uuid(alice),
                     EdnValue::Symbol("?attr".to_string()),
@@ -1092,6 +1094,7 @@ mod tests {
                 ))],
                 as_of: None,
                 valid_at: Some(ValidAt::AnyValidTime),
+                with_vars: Vec::new(),
             }))
             .unwrap();
 
@@ -1188,7 +1191,7 @@ mod tests {
             .unwrap();
 
         let query = DatalogQuery::new(
-            vec!["?e".to_string()],
+            vec![FindSpec::Variable("?e".to_string())],
             vec![
                 WhereClause::Pattern(Pattern::new(
                     EdnValue::Symbol("?e".to_string()),
@@ -1260,7 +1263,7 @@ mod tests {
         }
 
         let query = DatalogQuery::new(
-            vec!["?x".to_string()],
+            vec![FindSpec::Variable("?x".to_string())],
             vec![
                 WhereClause::RuleInvocation {
                     predicate: "reachable".to_string(),
@@ -1316,7 +1319,7 @@ mod tests {
             .unwrap();
 
         let query = DatalogQuery::new(
-            vec!["?x".to_string()],
+            vec![FindSpec::Variable("?x".to_string())],
             vec![
                 WhereClause::Pattern(Pattern::new(
                     EdnValue::Symbol("?x".to_string()),
@@ -1398,7 +1401,7 @@ mod tests {
         }
 
         let query = DatalogQuery::new(
-            vec!["?y".to_string()],
+            vec![FindSpec::Variable("?y".to_string())],
             vec![
                 WhereClause::RuleInvocation {
                     predicate: "reachable".to_string(),

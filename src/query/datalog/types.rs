@@ -290,32 +290,36 @@ impl WhereClause {
 #[derive(Debug, Clone, PartialEq)]
 pub struct DatalogQuery {
     /// Variables to return (from :find clause)
-    pub find: Vec<String>,
+    pub find: Vec<FindSpec>,
     /// Where clauses: patterns and rule invocations
     pub where_clauses: Vec<WhereClause>,
     /// Optional transaction-time snapshot (:as-of)
     pub as_of: Option<AsOf>,
     /// Optional valid-time filter (:valid-at)
     pub valid_at: Option<ValidAt>,
+    /// Grouping variables that participate in grouping but are excluded from output rows.
+    pub with_vars: Vec<String>,
 }
 
 impl DatalogQuery {
-    pub fn new(find: Vec<String>, where_clauses: Vec<WhereClause>) -> Self {
+    pub fn new(find: Vec<FindSpec>, where_clauses: Vec<WhereClause>) -> Self {
         DatalogQuery {
             find,
             where_clauses,
             as_of: None,
             valid_at: None,
+            with_vars: Vec::new(),
         }
     }
 
     /// Helper: Create a query with only patterns (for backward compatibility)
-    pub fn from_patterns(find: Vec<String>, patterns: Vec<Pattern>) -> Self {
+    pub fn from_patterns(find: Vec<FindSpec>, patterns: Vec<Pattern>) -> Self {
         DatalogQuery {
             find,
             where_clauses: patterns.into_iter().map(WhereClause::Pattern).collect(),
             as_of: None,
             valid_at: None,
+            with_vars: Vec::new(),
         }
     }
 
@@ -535,7 +539,10 @@ mod tests {
     #[test]
     fn test_datalog_query_creation() {
         let query = DatalogQuery::new(
-            vec!["?name".to_string(), "?age".to_string()],
+            vec![
+                FindSpec::Variable("?name".to_string()),
+                FindSpec::Variable("?age".to_string()),
+            ],
             vec![
                 WhereClause::Pattern(Pattern::new(
                     EdnValue::Symbol("?e".to_string()),
@@ -576,7 +583,7 @@ mod tests {
     #[test]
     fn test_datalog_query_with_temporal_fields() {
         let query = DatalogQuery::new(
-            vec!["?name".to_string()],
+            vec![FindSpec::Variable("?name".to_string())],
             vec![WhereClause::Pattern(Pattern::new(
                 EdnValue::Symbol("?e".to_string()),
                 EdnValue::Keyword(":person/name".to_string()),
@@ -671,7 +678,7 @@ mod tests {
     #[test]
     fn test_uses_rules_recurses_into_not_body() {
         let query = DatalogQuery::new(
-            vec!["?person".to_string()],
+            vec![FindSpec::Variable("?person".to_string())],
             vec![
                 WhereClause::Pattern(Pattern::new(
                     EdnValue::Symbol("?person".to_string()),
@@ -690,7 +697,7 @@ mod tests {
     #[test]
     fn test_get_rule_invocations_recurses_into_not_body() {
         let query = DatalogQuery::new(
-            vec!["?person".to_string()],
+            vec![FindSpec::Variable("?person".to_string())],
             vec![WhereClause::Not(vec![WhereClause::RuleInvocation {
                 predicate: "blocked".to_string(),
                 args: vec![EdnValue::Symbol("?person".to_string())],
@@ -742,7 +749,7 @@ mod tests {
     #[test]
     fn test_collect_rule_invocations_recurses_into_not_join() {
         let query = DatalogQuery::new(
-            vec!["?e".to_string()],
+            vec![FindSpec::Variable("?e".to_string())],
             vec![WhereClause::NotJoin {
                 join_vars: vec!["?e".to_string()],
                 clauses: vec![WhereClause::RuleInvocation {
@@ -760,7 +767,7 @@ mod tests {
     fn test_get_top_level_rule_invocations_excludes_not_join_body() {
         // not-join body rule invocations are NOT top-level
         let query = DatalogQuery::new(
-            vec!["?e".to_string()],
+            vec![FindSpec::Variable("?e".to_string())],
             vec![
                 WhereClause::RuleInvocation {
                     predicate: "reachable".to_string(),

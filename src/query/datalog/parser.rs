@@ -404,7 +404,8 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
         .as_vector()
         .ok_or("Query argument must be a vector")?;
 
-    let mut find_vars = Vec::new();
+    let mut find_specs: Vec<FindSpec> = Vec::new();
+    let mut with_vars: Vec<String> = Vec::new();
     let mut where_clauses = Vec::new();
     let mut current_clause: Option<&str> = None;
     let mut query_as_of: Option<AsOf> = None;
@@ -472,9 +473,9 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
 
         match current_clause {
             Some(":find") => {
-                // Collect find variables
+                // Collect find variables (temporary: only variables; aggregates added in Task 3)
                 if let Some(var) = query_vector[i].as_variable() {
-                    find_vars.push(var.to_string());
+                    find_specs.push(FindSpec::Variable(var.to_string()));
                 } else {
                     return Err(format!(
                         "Expected variable in :find clause, got {:?}",
@@ -517,9 +518,10 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
     check_not_safety(&where_clauses, &outer_bound)?;
     check_not_join_safety(&where_clauses, &outer_bound)?;
 
-    let mut query = DatalogQuery::new(find_vars, where_clauses);
+    let mut query = DatalogQuery::new(find_specs, where_clauses);
     query.as_of = query_as_of;
     query.valid_at = query_valid_at;
+    query.with_vars = with_vars;
     Ok(DatalogCommand::Query(query))
 }
 
@@ -992,7 +994,7 @@ mod tests {
 
         match cmd {
             DatalogCommand::Query(q) => {
-                assert_eq!(q.find, vec!["?name"]);
+                assert_eq!(q.find, vec![FindSpec::Variable("?name".to_string())]);
                 let patterns = q.get_patterns();
                 assert_eq!(patterns.len(), 1);
                 assert_eq!(
@@ -1042,7 +1044,10 @@ mod tests {
 
         match cmd {
             DatalogCommand::Query(q) => {
-                assert_eq!(q.find, vec!["?name", "?age"]);
+                assert_eq!(q.find, vec![
+                    FindSpec::Variable("?name".to_string()),
+                    FindSpec::Variable("?age".to_string()),
+                ]);
                 assert_eq!(q.get_patterns().len(), 2);
             }
             _ => panic!("Expected Query command"),
@@ -1145,7 +1150,7 @@ mod tests {
 
         match cmd {
             DatalogCommand::Query(q) => {
-                assert_eq!(q.find, vec!["?to"]);
+                assert_eq!(q.find, vec![FindSpec::Variable("?to".to_string())]);
                 assert_eq!(q.where_clauses.len(), 1);
 
                 // Check it's a rule invocation
@@ -1167,7 +1172,7 @@ mod tests {
 
         match cmd {
             DatalogCommand::Query(q) => {
-                assert_eq!(q.find, vec!["?name"]);
+                assert_eq!(q.find, vec![FindSpec::Variable("?name".to_string())]);
                 assert_eq!(q.where_clauses.len(), 2);
 
                 // Should have both rule and pattern
@@ -1186,7 +1191,7 @@ mod tests {
 
         match cmd {
             DatalogCommand::Query(q) => {
-                assert_eq!(q.find, vec!["?z"]);
+                assert_eq!(q.find, vec![FindSpec::Variable("?z".to_string())]);
                 assert_eq!(q.where_clauses.len(), 2);
                 assert_eq!(q.get_rule_invocations().len(), 2);
             }
