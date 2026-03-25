@@ -440,7 +440,7 @@ tx.commit()?;  // or tx.rollback()?
 - ✅ PR template — checklist enforcing test/clippy/fmt/philosophy checks (`.github/pull_request_template.md`)
 - ✅ `CODEOWNERS` — auto-assigns maintainer as reviewer on every PR
 
-**Note**: crates.io publish deferred to Phase 7.8 (API cleanup + publish prep: narrowing `lib.rs` exports, rustdoc sweep, clippy, `unwrap()` audit). Phase 6.5 (file format v6) is complete — the format is now stable enough to publish.
+**Note**: crates.io publish deferred to Phase 7.9 (API cleanup + publish prep: narrowing `lib.rs` exports, rustdoc sweep, clippy, `unwrap()` audit). Phase 6.5 (file format v6) is complete — the format is now stable enough to publish.
 
 ---
 
@@ -519,8 +519,8 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 - **7.5** Tests + Error Coverage (≥90% branch coverage target)
 - **7.6** Prepared Statements (parse + plan once, execute many times, temporal bind slots)
 - **7.7** Temporal Metadata Bindings + Range Queries (`:db/valid-from`, `:db/valid-to`, `:db/tx-count` as queryable pseudo-attributes; unlocks Time Interval, Time-Point Lookup, Time-Interval Lookup query classes)
-- **7.8** Publish Prep (crates.io — API cleanup, rustdoc, clippy, `unwrap` audit, CI matrix)
-- **7.9** Window Functions + UDFs (`sum/count/rank/lag/lead :over (partition-by … :order-by …)`; embedder-registered aggregate and predicate UDFs via `FunctionRegistry`)
+- **7.9** Publish Prep (crates.io — API cleanup, rustdoc, clippy, `unwrap` audit, CI matrix)
+- **7.8** Window Functions + UDFs (`sum/count/rank/lag/lead :over (partition-by … :order-by …)`; embedder-registered aggregate and predicate UDFs via `FunctionRegistry`)
 
 ### 7.1a Stratified Negation — `not` ✅ COMPLETE
 
@@ -629,7 +629,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 **Status**: ✅ Complete (v0.12.0, 2026-03-25)
 
-**Why it's load-bearing**: Required by Phase 7.7 (temporal range queries via `:db/valid-from` / `:db/valid-to`) and Phase 7.9b (UDF predicates via `FunctionRegistry`).
+**Why it's load-bearing**: Required by Phase 7.7 (temporal range queries via `:db/valid-from` / `:db/valid-to`) and Phase 7.8b (UDF predicates via `FunctionRegistry`).
 
 **Syntax**:
 ```datalog
@@ -890,32 +890,11 @@ Arithmetic filter predicates — `[(op ?var literal)]` — are required for Time
 
 ---
 
-### 7.8 Publish Prep (crates.io)
-
-**Goal**: Make the public API clean, documented, and safe before publishing to crates.io.
-
-**Scope**:
-- Narrow `lib.rs` exports — expose only `Minigraf`, `WriteTransaction`, and the query/result types; mark internal types (`PersistentFactStorage`, `FileHeader`, `PAGE_SIZE`, `Repl`, `Wal`, etc.) as `pub(crate)` or remove re-exports
-- Rustdoc sweep — add doc comments with examples to all public API items
-- Clippy clean — `cargo clippy -- -D warnings` passes with zero warnings
-- `cargo doc --no-deps` builds without warnings
-- `unwrap()`/`expect()` audit — remove from all library code paths (tests and binary are exempt)
-- Verify `Cargo.toml` description is accurate and compelling
-- Confirm `README.md` quick-start example compiles and runs
-- `cargo test` verified on Linux, macOS, and Windows (CI matrix)
-- Publish `0.x` to crates.io
-
-**Note**: No breaking changes to the `execute()`/`query` string API. Internal visibility tightening only.
-
-**Estimated complexity**: 1-2 weeks
-
----
-
-### 7.9 Window Functions + UDFs
+### 7.8 Window Functions + UDFs
 
 **Goal**: Expose `SUM OVER`–style window computations natively in Datalog `:find` clauses, and let embedders register custom aggregate and predicate functions at runtime.
 
-**Why here (after 7.8 publish prep)**:
+**Why here (before 7.9 publish prep)**:
 
 Phase 7.2 aggregation provides the grouping and accumulation infrastructure; Phase 7.7 pseudo-attributes expose `valid_from` / `valid_to` / `tx_count` as bindable values. Window functions are a direct extension: they apply aggregate semantics *over a partition of the current result set* while preserving per-row output — useful for ranked temporal queries and sliding-window analytics without a second query and application-side join.
 
@@ -927,7 +906,7 @@ UDFs are the natural generalisation: if the engine can call built-in aggregates 
 
 ---
 
-#### 7.9a Window Functions
+#### 7.8a Window Functions
 
 **Syntax** (Datomic-inspired, Datalog-native):
 
@@ -986,7 +965,7 @@ UDFs are the natural generalisation: if the engine can call built-in aggregates 
 
 ---
 
-#### 7.9b User-Defined Functions (UDFs)
+#### 7.8b User-Defined Functions (UDFs)
 
 **Goal**: Allow embedders to extend the query engine with custom aggregate functions and filter predicates registered at runtime, using the same `FunctionRegistry` that built-in aggregates and window functions use.
 
@@ -1042,7 +1021,7 @@ db.register_predicate(
 - `FunctionRegistry` struct (new, in `src/query/datalog/functions.rs`): `HashMap<String, AggregateDesc>` + `HashMap<String, PredicateDesc>`
   - `AggregateDesc`: init closure + step closure + finalise closure + optional window-compatible flag
   - `PredicateDesc`: one-argument `Fn(&Value) -> bool` closure
-- All built-in aggregates (Phase 7.2) and window functions (Phase 7.9a) are registered into `FunctionRegistry` at startup — UDFs use exactly the same path
+- All built-in aggregates (Phase 7.2) and window functions (Phase 7.8a) are registered into `FunctionRegistry` at startup — UDFs use exactly the same path
 - Parser: recognise registered function names in `:find` aggregate positions and `:where` predicate call positions at parse time (registry consulted at parse time for validation)
 - `Minigraf::register_aggregate(name, init, step, finalise)` and `Minigraf::register_predicate(name, fn)` — new public API methods, callable before or after `open()`
 - Functions are not persisted to the `.graph` file — they must be re-registered on each open, exactly as SQLite requires (this is correct: executable code is never stored in the data file)
@@ -1060,9 +1039,30 @@ db.register_predicate(
 
 ---
 
-**Phase 7.9 deliverable**: Window aggregates (`sum over`, `rank`, `lag`, `lead`, etc.) expressible natively in Datalog `:find`; embedder-registered aggregate and predicate UDFs callable from any query; all built-in aggregates and window functions unified under `FunctionRegistry`; new public API methods included in Phase 7.8 publish surface
+**Phase 7.8 deliverable**: Window aggregates (`sum over`, `rank`, `lag`, `lead`, etc.) expressible natively in Datalog `:find`; embedder-registered aggregate and predicate UDFs callable from any query; all built-in aggregates and window functions unified under `FunctionRegistry`; new public API methods included in Phase 7.9 publish surface
 
-**Estimated total Phase 7.9 complexity**: 4-6 weeks
+**Estimated total Phase 7.8 complexity**: 4-6 weeks
+
+---
+
+### 7.9 Publish Prep (crates.io)
+
+**Goal**: Make the public API clean, documented, and safe before publishing to crates.io.
+
+**Scope**:
+- Narrow `lib.rs` exports — expose only `Minigraf`, `WriteTransaction`, and the query/result types; mark internal types (`PersistentFactStorage`, `FileHeader`, `PAGE_SIZE`, `Repl`, `Wal`, etc.) as `pub(crate)` or remove re-exports
+- Rustdoc sweep — add doc comments with examples to all public API items
+- Clippy clean — `cargo clippy -- -D warnings` passes with zero warnings
+- `cargo doc --no-deps` builds without warnings
+- `unwrap()`/`expect()` audit — remove from all library code paths (tests and binary are exempt)
+- Verify `Cargo.toml` description is accurate and compelling
+- Confirm `README.md` quick-start example compiles and runs
+- `cargo test` verified on Linux, macOS, and Windows (CI matrix)
+- Publish `0.x` to crates.io
+
+**Note**: No breaking changes to the `execute()`/`query` string API. Internal visibility tightening only.
+
+**Estimated complexity**: 1-2 weeks
 
 ---
 
@@ -1411,7 +1411,7 @@ branched_db.execute("(transact [[:x :y 1]])")?;
 - ✅ File format v6 (80 bytes) with automatic v5 migration
 - ✅ `MutexStorageBackend<B>`: per-page locking for concurrent range scans; cache-warm pages lock-free
 - ✅ 331 tests passing; `tests/btree_v6_test.rs` covers B+tree correctness and concurrency
-- crates.io publish deferred to Phase 7.8 (API cleanup + publish prep)
+- crates.io publish deferred to Phase 7.9 (API cleanup + publish prep)
 
 ### v1.0.0 - 🎯 Phase 7 (Datalog Completeness)
 - Stratified negation (`not` / `not-join`)
