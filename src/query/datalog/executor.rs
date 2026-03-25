@@ -546,6 +546,7 @@ fn apply_aggregation(
         .collect();
 
     // Group using Vec + PartialEq scan (Value::Float doesn't implement Hash)
+    #[allow(clippy::type_complexity)]
     let mut groups: Vec<(Vec<Value>, Vec<std::collections::HashMap<String, Value>>)> = Vec::new();
     for b in bindings {
         let key: Vec<Value> = group_var_names
@@ -620,7 +621,7 @@ fn apply_agg_func(func: &AggFunc, values: &[&Value]) -> Result<Value> {
         AggFunc::CountDistinct => {
             let mut seen: Vec<&Value> = Vec::new();
             for v in values {
-                if !seen.iter().any(|s| *s == *v) {
+                if !seen.contains(v) {
                     seen.push(v);
                 }
             }
@@ -631,7 +632,7 @@ fn apply_agg_func(func: &AggFunc, values: &[&Value]) -> Result<Value> {
             let deduped: Vec<&Value> = if matches!(func, AggFunc::SumDistinct) {
                 let mut seen: Vec<&Value> = Vec::new();
                 for v in values {
-                    if !seen.iter().any(|s| *s == *v) {
+                    if !seen.contains(v) {
                         seen.push(v);
                     }
                 }

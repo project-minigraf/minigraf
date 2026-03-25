@@ -576,10 +576,10 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
 
     // Validate aggregate and :with vars are bound in :where
     for spec in &find_specs {
-        if let FindSpec::Aggregate { var, .. } = spec {
-            if !outer_bound.contains(var) {
-                return Err(format!("Aggregate variable {} not bound in :where", var));
-            }
+        if let FindSpec::Aggregate { var, .. } = spec
+            && !outer_bound.contains(var)
+        {
+            return Err(format!("Aggregate variable {} not bound in :where", var));
         }
     }
     for var in &with_vars {
