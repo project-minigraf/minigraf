@@ -519,6 +519,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 - **7.5** Tests + Error Coverage (≥90% branch coverage target)
 - **7.6** Prepared Statements (parse + plan once, execute many times, temporal bind slots)
 - **7.7** Temporal Metadata Bindings + Range Queries (`:db/valid-from`, `:db/valid-to`, `:db/tx-count` as queryable pseudo-attributes; unlocks Time Interval, Time-Point Lookup, Time-Interval Lookup query classes)
+- **7.8** Publish Prep (crates.io — API cleanup, rustdoc, clippy, `unwrap` audit, CI matrix)
 - **7.9** Window Functions + UDFs (`sum/count/rank/lag/lead :over (partition-by … :order-by …)`; embedder-registered aggregate and predicate UDFs via `FunctionRegistry`)
 
 ### 7.1a Stratified Negation — `not` ✅ COMPLETE
@@ -889,17 +890,36 @@ Arithmetic filter predicates — `[(op ?var literal)]` — are required for Time
 
 ---
 
+### 7.8 Publish Prep (crates.io)
+
+**Goal**: Make the public API clean, documented, and safe before publishing to crates.io.
+
+**Scope**:
+- Narrow `lib.rs` exports — expose only `Minigraf`, `WriteTransaction`, and the query/result types; mark internal types (`PersistentFactStorage`, `FileHeader`, `PAGE_SIZE`, `Repl`, `Wal`, etc.) as `pub(crate)` or remove re-exports
+- Rustdoc sweep — add doc comments with examples to all public API items
+- Clippy clean — `cargo clippy -- -D warnings` passes with zero warnings
+- `cargo doc --no-deps` builds without warnings
+- `unwrap()`/`expect()` audit — remove from all library code paths (tests and binary are exempt)
+- Verify `Cargo.toml` description is accurate and compelling
+- Confirm `README.md` quick-start example compiles and runs
+- `cargo test` verified on Linux, macOS, and Windows (CI matrix)
+- Publish `0.x` to crates.io
+
+**Note**: No breaking changes to the `execute()`/`query` string API. Internal visibility tightening only.
+
+**Estimated complexity**: 1-2 weeks
+
+---
+
 ### 7.9 Window Functions + UDFs
 
 **Goal**: Expose `SUM OVER`–style window computations natively in Datalog `:find` clauses, and let embedders register custom aggregate and predicate functions at runtime.
 
-**Why here (after 7.7, before 7.8 publish prep)**:
+**Why here (after 7.8 publish prep)**:
 
 Phase 7.2 aggregation provides the grouping and accumulation infrastructure; Phase 7.7 pseudo-attributes expose `valid_from` / `valid_to` / `tx_count` as bindable values. Window functions are a direct extension: they apply aggregate semantics *over a partition of the current result set* while preserving per-row output — useful for ranked temporal queries and sliding-window analytics without a second query and application-side join.
 
 UDFs are the natural generalisation: if the engine can call built-in aggregates via a `FunctionRegistry`, embedders can register their own functions against the same registry. Designing both behind a single `FunctionRegistry` abstraction means neither feature needs to be retrofitted onto the other.
-
-Both must land before Phase 7.8 (Publish Prep) so the public API (`register_aggregate`, `register_predicate`) is part of the initial crates.io surface rather than a bolt-on.
 
 **Dependency on Phase 7.2**: Phase 7.2 grouping and accumulation logic is the implementation substrate for window functions. Phase 7.2 must be complete before this phase begins.
 
@@ -1043,27 +1063,6 @@ db.register_predicate(
 **Phase 7.9 deliverable**: Window aggregates (`sum over`, `rank`, `lag`, `lead`, etc.) expressible natively in Datalog `:find`; embedder-registered aggregate and predicate UDFs callable from any query; all built-in aggregates and window functions unified under `FunctionRegistry`; new public API methods included in Phase 7.8 publish surface
 
 **Estimated total Phase 7.9 complexity**: 4-6 weeks
-
----
-
-### 7.8 Publish Prep (crates.io)
-
-**Goal**: Make the public API clean, documented, and safe before publishing to crates.io.
-
-**Scope**:
-- Narrow `lib.rs` exports — expose only `Minigraf`, `WriteTransaction`, and the query/result types; mark internal types (`PersistentFactStorage`, `FileHeader`, `PAGE_SIZE`, `Repl`, `Wal`, etc.) as `pub(crate)` or remove re-exports
-- Rustdoc sweep — add doc comments with examples to all public API items
-- Clippy clean — `cargo clippy -- -D warnings` passes with zero warnings
-- `cargo doc --no-deps` builds without warnings
-- `unwrap()`/`expect()` audit — remove from all library code paths (tests and binary are exempt)
-- Verify `Cargo.toml` description is accurate and compelling
-- Confirm `README.md` quick-start example compiles and runs
-- `cargo test` verified on Linux, macOS, and Windows (CI matrix)
-- Publish `0.x` to crates.io
-
-**Note**: No breaking changes to the `execute()`/`query` string API. Internal visibility tightening only.
-
-**Estimated complexity**: 1-2 weeks
 
 ---
 
