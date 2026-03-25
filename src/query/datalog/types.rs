@@ -95,6 +95,60 @@ impl EdnValue {
     }
 }
 
+/// Aggregate function applied to a logic variable in the :find clause.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AggFunc {
+    Count,
+    CountDistinct,
+    Sum,
+    SumDistinct,
+    Min,
+    Max,
+}
+
+impl AggFunc {
+    /// Hyphenated lowercase name used in display and parsing.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AggFunc::Count => "count",
+            AggFunc::CountDistinct => "count-distinct",
+            AggFunc::Sum => "sum",
+            AggFunc::SumDistinct => "sum-distinct",
+            AggFunc::Min => "min",
+            AggFunc::Max => "max",
+        }
+    }
+}
+
+/// A single element in the :find clause: either a plain variable or an aggregate.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FindSpec {
+    /// A plain logic variable: ?name
+    Variable(String),
+    /// An aggregate expression: (count ?e), (sum ?salary), etc.
+    Aggregate { func: AggFunc, var: String },
+}
+
+impl FindSpec {
+    /// Column header string used in QueryResult::QueryResults.vars.
+    /// Variable("?name") → "?name"
+    /// Aggregate { CountDistinct, "?e" } → "(count-distinct ?e)"
+    pub fn display_name(&self) -> String {
+        match self {
+            FindSpec::Variable(v) => v.clone(),
+            FindSpec::Aggregate { func, var } => format!("({} {})", func.as_str(), var),
+        }
+    }
+
+    /// The logic variable this spec references.
+    pub fn var(&self) -> &str {
+        match self {
+            FindSpec::Variable(v) => v.as_str(),
+            FindSpec::Aggregate { var, .. } => var.as_str(),
+        }
+    }
+}
+
 /// A Datalog pattern: [Entity Attribute Value]
 /// Variables start with ?, constants are literal values
 ///
@@ -728,5 +782,48 @@ mod tests {
         // Only "reachable" is top-level; "blocked" is inside not-join
         assert_eq!(top_level.len(), 1);
         assert_eq!(top_level[0].0, "reachable");
+    }
+
+    #[test]
+    fn test_agg_func_as_str() {
+        assert_eq!(AggFunc::Count.as_str(), "count");
+        assert_eq!(AggFunc::CountDistinct.as_str(), "count-distinct");
+        assert_eq!(AggFunc::Sum.as_str(), "sum");
+        assert_eq!(AggFunc::SumDistinct.as_str(), "sum-distinct");
+        assert_eq!(AggFunc::Min.as_str(), "min");
+        assert_eq!(AggFunc::Max.as_str(), "max");
+    }
+
+    #[test]
+    fn test_find_spec_variable_display_and_var() {
+        let spec = FindSpec::Variable("?name".to_string());
+        assert_eq!(spec.display_name(), "?name");
+        assert_eq!(spec.var(), "?name");
+    }
+
+    #[test]
+    fn test_find_spec_aggregate_display_and_var() {
+        let spec = FindSpec::Aggregate {
+            func: AggFunc::CountDistinct,
+            var: "?e".to_string(),
+        };
+        assert_eq!(spec.display_name(), "(count-distinct ?e)");
+        assert_eq!(spec.var(), "?e");
+    }
+
+    #[test]
+    fn test_find_spec_all_agg_display_names() {
+        let cases = [
+            (AggFunc::Count, "?e", "(count ?e)"),
+            (AggFunc::CountDistinct, "?e", "(count-distinct ?e)"),
+            (AggFunc::Sum, "?v", "(sum ?v)"),
+            (AggFunc::SumDistinct, "?v", "(sum-distinct ?v)"),
+            (AggFunc::Min, "?x", "(min ?x)"),
+            (AggFunc::Max, "?x", "(max ?x)"),
+        ];
+        for (func, var, expected) in cases {
+            let spec = FindSpec::Aggregate { func, var: var.to_string() };
+            assert_eq!(spec.display_name(), expected);
+        }
     }
 }
