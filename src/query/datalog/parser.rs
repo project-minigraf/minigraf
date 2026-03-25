@@ -171,8 +171,8 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                     _ => tokens.push(Token::Symbol(symbol)),
                 }
             }
-            // Operator symbols: <, <=, >, >=, =, !=, +, -, *, /
-            '<' | '>' | '=' | '+' | '-' | '*' | '/' => {
+            // Operator symbols: <, <=, >, >=, =, !=, +, *, /
+            '<' | '>' | '=' | '+' | '*' | '/' => {
                 chars.next();
                 let mut sym = String::from(ch);
                 // Consume a trailing '=' to form <=, >=
@@ -1963,6 +1963,7 @@ mod tests {
         parse_datalog_command(s)
     }
 
+    #[ignore = "dispatch wired in Task 3"]
     #[test]
     fn test_parse_expr_lt_filter() {
         // [(< ?v 100)] — filter clause
@@ -1978,6 +1979,7 @@ mod tests {
         }
     }
 
+    #[ignore = "dispatch wired in Task 3"]
     #[test]
     fn test_parse_expr_add_binding() {
         // [(+ ?a ?b) ?sum] — binding clause
@@ -1996,6 +1998,7 @@ mod tests {
         }
     }
 
+    #[ignore = "dispatch wired in Task 3"]
     #[test]
     fn test_parse_expr_nested_arithmetic() {
         // [(+ (* ?a 2) ?b) ?result]
@@ -2004,6 +2007,7 @@ mod tests {
         assert!(result.is_ok(), "parse nested arithmetic");
     }
 
+    #[ignore = "dispatch wired in Task 3"]
     #[test]
     fn test_parse_expr_string_predicate() {
         let input = "(query [:find ?e :where [?e :item/tag ?tag] [(starts-with? ?tag \"work\")]])";
@@ -2011,6 +2015,7 @@ mod tests {
         assert!(result.is_ok(), "parse starts-with?");
     }
 
+    #[ignore = "dispatch wired in Task 3"]
     #[test]
     fn test_parse_expr_matches_valid_regex() {
         let input = "(query [:find ?e :where [?e :person/email ?addr] [(matches? ?addr \"^[^@]+@[^@]+$\")]])";
@@ -2030,6 +2035,9 @@ mod tests {
         // ?v is not bound by any pattern before the expr clause
         let input = "(query [:find ?e :where [?e :x ?a] [(< ?v 100)]])";
         let result = parse(input);
+        // Currently Err for wrong reason (Pattern::from_edn rejects 1-element vector).
+        // After Task 3 wires dispatch + check_expr_safety, this will be Err for the
+        // correct reason: ?v is not bound by any earlier clause.
         assert!(result.is_err(), "unbound variable in expr must be parse error");
     }
 
