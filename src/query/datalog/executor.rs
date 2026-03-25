@@ -215,7 +215,7 @@ impl DatalogExecutor {
             })
             .collect();
 
-        let filtered_bindings: Vec<_> = if not_clauses.is_empty() && not_join_clauses.is_empty() {
+        let not_filtered: Vec<_> = if not_clauses.is_empty() && not_join_clauses.is_empty() {
             bindings
         } else {
             let not_storage = filtered_storage.clone();
@@ -223,20 +223,8 @@ impl DatalogExecutor {
                 .into_iter()
                 .filter(|binding| {
                     for not_body in &not_clauses {
-                        let substituted: Vec<Pattern> = not_body
-                            .iter()
-                            .filter_map(|c| match c {
-                                WhereClause::Pattern(p) => {
-                                    Some(crate::query::datalog::evaluator::substitute_pattern(
-                                        p, binding,
-                                    ))
-                                }
-                                _ => None,
-                            })
-                            .collect();
-                        let m = PatternMatcher::new(not_storage.clone());
-                        if !m.match_patterns(&substituted).is_empty() {
-                            return false; // not condition violated
+                        if not_body_matches(not_body, binding, &not_storage) {
+                            return false;
                         }
                     }
                     for (join_vars, nj_clauses) in &not_join_clauses {
@@ -248,6 +236,9 @@ impl DatalogExecutor {
                 })
                 .collect()
         };
+
+        // Apply WhereClause::Expr clauses (filter and binding predicates)
+        let filtered_bindings = apply_expr_clauses(not_filtered, &query.where_clauses);
 
         // Extract requested variables from bindings (or aggregate)
         let has_aggregates = query
@@ -350,7 +341,7 @@ impl DatalogExecutor {
             })
             .collect();
 
-        let filtered_bindings: Vec<_> = if not_clauses.is_empty() && not_join_clauses.is_empty() {
+        let not_filtered: Vec<_> = if not_clauses.is_empty() && not_join_clauses.is_empty() {
             bindings
         } else {
             let not_storage = derived_storage.clone();
@@ -358,6 +349,7 @@ impl DatalogExecutor {
                 .into_iter()
                 .filter(|binding| {
                     for not_body in &not_clauses {
+                        // Collect pattern and rule-invocation clauses into patterns.
                         let substituted: Vec<Pattern> = not_body
                             .iter()
                             .filter_map(|c| match c {
@@ -414,8 +406,26 @@ impl DatalogExecutor {
                                 _ => None,
                             })
                             .collect();
+
+                        // Compute not_bindings: if no patterns, seed with current binding.
                         let m = PatternMatcher::new(not_storage.clone());
-                        if !m.match_patterns(&substituted).is_empty() {
+                        let mut not_bindings: Vec<Binding> = if substituted.is_empty() {
+                            vec![binding.clone()]
+                        } else {
+                            m.match_patterns(&substituted)
+                                .into_iter()
+                                .map(|mut nb| {
+                                    for (k, v) in binding {
+                                        nb.entry(k.clone()).or_insert_with(|| v.clone());
+                                    }
+                                    nb
+                                })
+                                .collect()
+                        };
+
+                        // Apply Expr clauses from the not body.
+                        not_bindings = apply_expr_clauses(not_bindings, not_body);
+                        if !not_bindings.is_empty() {
                             return false; // not condition violated
                         }
                     }
@@ -428,6 +438,9 @@ impl DatalogExecutor {
                 })
                 .collect()
         };
+
+        // Apply WhereClause::Expr clauses (filter and binding predicates)
+        let filtered_bindings = apply_expr_clauses(not_filtered, &query.where_clauses);
 
         // Extract requested variables from bindings (or aggregate)
         let has_aggregates = query
@@ -482,6 +495,47 @@ impl DatalogExecutor {
     pub fn rules(&self) -> Arc<RwLock<RuleRegistry>> {
         self.rules.clone()
     }
+}
+
+/// Evaluate a `not` body against the current outer binding.
+///
+/// Returns true if the body "matches" (i.e., the outer binding should be excluded).
+fn not_body_matches(
+    not_body: &[WhereClause],
+    outer: &Binding,
+    storage: &crate::graph::FactStorage,
+) -> bool {
+    use crate::query::datalog::evaluator::substitute_pattern;
+
+    let patterns: Vec<_> = not_body
+        .iter()
+        .filter_map(|c| match c {
+            WhereClause::Pattern(p) => Some(substitute_pattern(p, outer)),
+            _ => None,
+        })
+        .collect();
+
+    let matcher = crate::query::datalog::matcher::PatternMatcher::new(storage.clone());
+    let mut not_bindings: Vec<Binding> = if patterns.is_empty() {
+        // Expr-only not body: start with the outer binding so variables resolve.
+        vec![outer.clone()]
+    } else {
+        // Merge outer binding with pattern-match results.
+        matcher
+            .match_patterns(&patterns)
+            .into_iter()
+            .map(|mut nb| {
+                for (k, v) in outer {
+                    nb.entry(k.clone()).or_insert_with(|| v.clone());
+                }
+                nb
+            })
+            .collect()
+    };
+
+    // Apply Expr clauses from the not body.
+    not_bindings = apply_expr_clauses(not_bindings, not_body);
+    !not_bindings.is_empty()
 }
 
 /// Extract plain variable values from bindings (non-aggregate path).
@@ -2346,5 +2400,34 @@ mod expr_eval_tests {
         let bindings = vec![b(&[("?v", Value::String("hello".to_string()))])];
         let result = apply_expr_clauses(bindings, &clauses);
         assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_execute_expr_filter_lt() {
+        use crate::graph::storage::FactStorage;
+        use std::sync::{Arc, RwLock};
+        use crate::query::datalog::rules::RuleRegistry;
+
+        let storage = FactStorage::new();
+        let rules = Arc::new(RwLock::new(RuleRegistry::new()));
+        let executor = DatalogExecutor::new_with_rules(storage.clone(), rules);
+
+        // Transact two items with different prices
+        executor.execute(crate::query::datalog::parser::parse_datalog_command(
+            "(transact [[:item1 :item/price 50] [:item2 :item/price 150]])"
+        ).unwrap()).unwrap();
+
+        // Query: find items where price < 100
+        let result = executor.execute(crate::query::datalog::parser::parse_datalog_command(
+            "(query [:find ?e :where [?e :item/price ?p] [(< ?p 100)]])"
+        ).unwrap());
+
+        assert!(result.is_ok(), "expr filter query failed");
+        match result.unwrap() {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(results.len(), 1, "expected exactly one result");
+            }
+            _ => panic!("expected QueryResults"),
+        }
     }
 }
