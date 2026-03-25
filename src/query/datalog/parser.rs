@@ -563,9 +563,14 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
             Some(":where") => {
                 // Parse both patterns (vectors) and rule invocations (lists)
                 if let Some(pattern_vec) = query_vector[i].as_vector() {
-                    // This is a pattern: [?e :attr ?v]
-                    let pattern = Pattern::from_edn(pattern_vec)?;
-                    where_clauses.push(WhereClause::Pattern(pattern));
+                    // Expr clause: [(list-expr) ?out?] — element 0 is a List
+                    if matches!(pattern_vec.first(), Some(EdnValue::List(_))) {
+                        let clause = parse_expr_clause(pattern_vec)?;
+                        where_clauses.push(clause);
+                    } else {
+                        let pattern = Pattern::from_edn(pattern_vec)?;
+                        where_clauses.push(WhereClause::Pattern(pattern));
+                    }
                 } else if let Some(rule_list) = query_vector[i].as_list() {
                     let clause = parse_list_as_where_clause(rule_list, true)?;
                     where_clauses.push(clause);
@@ -594,6 +599,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
         .collect();
     check_not_safety(&where_clauses, &outer_bound)?;
     check_not_join_safety(&where_clauses, &outer_bound)?;
+    check_expr_safety(&where_clauses)?;
 
     // Validate aggregate and :with vars are bound in :where
     for spec in &find_specs {
@@ -766,7 +772,6 @@ fn parse_retract(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
 }
 
 /// Convert a single EDN token to an Expr leaf, or recurse for a nested list.
-#[allow(dead_code)] // called by parse_expr; both wired in Task 3 dispatch
 fn parse_expr_arg(edn: &EdnValue) -> Result<Expr, String> {
     match edn {
         EdnValue::Symbol(s) if s.starts_with('?') => Ok(Expr::Var(s.clone())),
@@ -785,7 +790,6 @@ fn parse_expr_arg(edn: &EdnValue) -> Result<Expr, String> {
 ///
 /// For `matches?`, the second argument must be a string literal and is
 /// validated as a valid regex pattern at parse time.
-#[allow(dead_code)] // called by parse_expr_clause; wired in Task 3 dispatch
 fn parse_expr(list: &[EdnValue]) -> Result<Expr, String> {
     if list.is_empty() {
         return Err("expression list cannot be empty".to_string());
@@ -858,7 +862,6 @@ fn parse_expr(list: &[EdnValue]) -> Result<Expr, String> {
 /// Parse a vector clause whose first element is a list: `[(expr)]` or `[(expr) ?out]`.
 ///
 /// Called from `:where` dispatch when `vec[0]` is an `EdnValue::List`.
-#[allow(dead_code)] // wired in Task 3 dispatch
 fn parse_expr_clause(vec: &[EdnValue]) -> Result<WhereClause, String> {
     let inner_list = match &vec[0] {
         EdnValue::List(l) => l.as_slice(),
@@ -897,8 +900,13 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
             let mut inner = Vec::new();
             for item in &list[1..] {
                 if let Some(vec) = item.as_vector() {
-                    let pattern = Pattern::from_edn(vec)?;
-                    inner.push(WhereClause::Pattern(pattern));
+                    if matches!(vec.first(), Some(EdnValue::List(_))) {
+                        let clause = parse_expr_clause(vec)?;
+                        inner.push(clause);
+                    } else {
+                        let pattern = Pattern::from_edn(vec)?;
+                        inner.push(WhereClause::Pattern(pattern));
+                    }
                 } else if let Some(inner_list) = item.as_list() {
                     // Recurse with allow_not=false to reject nested not
                     let clause = parse_list_as_where_clause(inner_list, false)?;
@@ -946,8 +954,13 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
             let mut inner = Vec::new();
             for item in &list[2..] {
                 if let Some(vec) = item.as_vector() {
-                    let pattern = Pattern::from_edn(vec)?;
-                    inner.push(WhereClause::Pattern(pattern));
+                    if matches!(vec.first(), Some(EdnValue::List(_))) {
+                        let clause = parse_expr_clause(vec)?;
+                        inner.push(clause);
+                    } else {
+                        let pattern = Pattern::from_edn(vec)?;
+                        inner.push(WhereClause::Pattern(pattern));
+                    }
                 } else if let Some(inner_list) = item.as_list() {
                     // allow_not=false to reject nested (not ...) or (not-join ...)
                     let clause = parse_list_as_where_clause(inner_list, false)?;
@@ -1006,7 +1019,10 @@ fn outer_vars_from_clause(clause: &WhereClause) -> Vec<String> {
             .collect(),
         WhereClause::Not(_) => vec![], // not counted as "outer"
         WhereClause::NotJoin { .. } => vec![], // not counted as "outer"
-        WhereClause::Expr { .. } => vec![], // TODO(Task 3): return binding var when Some(_)
+        WhereClause::Expr { binding, .. } => match binding {
+            Some(var) => vec![var.clone()],
+            None => vec![],
+        },
     }
 }
 
@@ -1060,6 +1076,51 @@ fn check_not_join_safety(
     Ok(())
 }
 
+/// Collect all Var names referenced in an Expr tree.
+fn expr_vars(expr: &Expr) -> Vec<String> {
+    match expr {
+        Expr::Var(v) => vec![v.clone()],
+        Expr::Lit(_) => vec![],
+        Expr::BinOp(_, lhs, rhs) => {
+            let mut v = expr_vars(lhs);
+            v.extend(expr_vars(rhs));
+            v
+        }
+        Expr::UnaryOp(_, arg) => expr_vars(arg),
+    }
+}
+
+/// Forward-pass safety check: every Var in an Expr clause must be bound by
+/// an earlier clause. Binding-form Expr clauses add their output var to scope.
+///
+/// Called for both query `:where` clauses and rule body clauses.
+fn check_expr_safety(clauses: &[WhereClause]) -> Result<(), String> {
+    let mut bound: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for clause in clauses {
+        match clause {
+            WhereClause::Expr { expr, binding } => {
+                for var in expr_vars(expr) {
+                    if !bound.contains(&var) {
+                        return Err(format!(
+                            "variable {} in expression clause is not bound by any earlier :where clause",
+                            var
+                        ));
+                    }
+                }
+                if let Some(out) = binding {
+                    bound.insert(out.clone());
+                }
+            }
+            other => {
+                for var in outer_vars_from_clause(other) {
+                    bound.insert(var);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn parse_rule(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
     // Rule syntax: (rule [(predicate ?args) [pattern1] [pattern2] ...])
     // elements[0] = Vector with head (list) + body (patterns/rule calls)
@@ -1096,8 +1157,13 @@ fn parse_rule(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
     let mut body_clauses: Vec<WhereClause> = Vec::new();
     for item in &body_vec[1..] {
         if let Some(vec) = item.as_vector() {
-            let pattern = Pattern::from_edn(vec)?;
-            body_clauses.push(WhereClause::Pattern(pattern));
+            if matches!(vec.first(), Some(EdnValue::List(_))) {
+                let clause = parse_expr_clause(vec)?;
+                body_clauses.push(clause);
+            } else {
+                let pattern = Pattern::from_edn(vec)?;
+                body_clauses.push(WhereClause::Pattern(pattern));
+            }
         } else if let Some(list) = item.as_list() {
             let clause = parse_list_as_where_clause(list, true)?;
             body_clauses.push(clause);
@@ -1129,6 +1195,7 @@ fn parse_rule(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
     }
     check_not_safety(&body_clauses, &outer_bound)?;
     check_not_join_safety(&body_clauses, &outer_bound)?;
+    check_expr_safety(&body_clauses)?;
 
     Ok(DatalogCommand::Rule(Rule {
         head: head_list.clone(),
@@ -1963,7 +2030,6 @@ mod tests {
         parse_datalog_command(s)
     }
 
-    #[ignore = "dispatch wired in Task 3"]
     #[test]
     fn test_parse_expr_lt_filter() {
         // [(< ?v 100)] — filter clause
@@ -1979,7 +2045,6 @@ mod tests {
         }
     }
 
-    #[ignore = "dispatch wired in Task 3"]
     #[test]
     fn test_parse_expr_add_binding() {
         // [(+ ?a ?b) ?sum] — binding clause
@@ -1998,7 +2063,6 @@ mod tests {
         }
     }
 
-    #[ignore = "dispatch wired in Task 3"]
     #[test]
     fn test_parse_expr_nested_arithmetic() {
         // [(+ (* ?a 2) ?b) ?result]
@@ -2007,7 +2071,6 @@ mod tests {
         assert!(result.is_ok(), "parse nested arithmetic");
     }
 
-    #[ignore = "dispatch wired in Task 3"]
     #[test]
     fn test_parse_expr_string_predicate() {
         let input = "(query [:find ?e :where [?e :item/tag ?tag] [(starts-with? ?tag \"work\")]])";
@@ -2015,7 +2078,6 @@ mod tests {
         assert!(result.is_ok(), "parse starts-with?");
     }
 
-    #[ignore = "dispatch wired in Task 3"]
     #[test]
     fn test_parse_expr_matches_valid_regex() {
         let input = "(query [:find ?e :where [?e :person/email ?addr] [(matches? ?addr \"^[^@]+@[^@]+$\")]])";
@@ -2035,9 +2097,7 @@ mod tests {
         // ?v is not bound by any pattern before the expr clause
         let input = "(query [:find ?e :where [?e :x ?a] [(< ?v 100)]])";
         let result = parse(input);
-        // Currently Err for wrong reason (Pattern::from_edn rejects 1-element vector).
-        // After Task 3 wires dispatch + check_expr_safety, this will be Err for the
-        // correct reason: ?v is not bound by any earlier clause.
+        // check_expr_safety rejects this: ?v is not bound by any earlier clause
         assert!(result.is_err(), "unbound variable in expr must be parse error");
     }
 
