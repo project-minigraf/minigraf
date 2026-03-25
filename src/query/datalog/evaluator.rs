@@ -460,6 +460,11 @@ pub fn evaluate_not_join(
     !not_bindings.is_empty()
 }
 
+// NOTE: This mirrors apply_expr_clauses in executor.rs but uses the evaluator's
+// Bindings type alias (HashMap<String, Value> from matcher.rs). The duplication
+// is structural — both type aliases resolve to the same concrete type but are
+// defined separately. If expression evaluation semantics change, both must be
+// updated in sync. TODO: unify into a shared module (e.g., expr.rs) in a future cleanup.
 /// Apply WhereClause::Expr clauses to a list of bindings.
 ///
 /// Filter-form (`binding: None`) drops rows where the expr is not truthy or errors.

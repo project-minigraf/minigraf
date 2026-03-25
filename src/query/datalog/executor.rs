@@ -511,6 +511,11 @@ fn not_body_matches(
         .iter()
         .filter_map(|c| match c {
             WhereClause::Pattern(p) => Some(substitute_pattern(p, outer)),
+            // INVARIANT: not_body_matches is only called from execute_query, which is
+            // only reached when query.uses_rules() is false. uses_rules() descends into
+            // Not bodies via rule_invocations(), so any not body containing a
+            // RuleInvocation is routed to execute_query_with_rules instead.
+            // WhereClause::Expr clauses are handled by apply_expr_clauses below.
             _ => None,
         })
         .collect();
