@@ -45,6 +45,7 @@ This is a load-bearing dependency for Phase 7.7 (temporal range queries via `:db
 | Operator | Form |
 |---|---|
 | `starts-with?` | `(starts-with? ?s "prefix")` |
+| `ends-with?` | `(ends-with? ?s "suffix")` |
 | `contains?` | `(contains? ?s "needle")` |
 | `matches?` | `(matches? ?s "^\\d{4}-\\d{2}-\\d{2}$")` |
 
@@ -130,6 +131,7 @@ pub enum BinOp {
     Add, Sub, Mul, Div,
     // String predicates — return bool
     StartsWith,
+    EndsWith,
     Contains,
     Matches,  // regex via regex-lite; pattern compiled at parse time
 }
@@ -191,6 +193,7 @@ else:
 head symbol "+"        → BinOp(Add, parse_expr(arg0), parse_expr(arg1))
 head symbol "<"        → BinOp(Lt,  parse_expr(arg0), parse_expr(arg1))
 head symbol "string?"     → UnaryOp(StringQ, parse_expr(arg0))
+head symbol "ends-with?"  → BinOp(EndsWith, parse_expr(arg0), parse_expr(arg1))
 head symbol "contains?"   → BinOp(Contains, parse_expr(arg0), parse_expr(arg1))
 head symbol "matches?"    → BinOp(Matches, parse_expr(arg0), parse_expr(arg1))
                             (second arg must resolve to a string literal; regex compiled at parse time — invalid pattern → parse error)
@@ -273,6 +276,7 @@ fn apply_expr_clause(
 | Integer/float promotion | `[(+ ?int ?float) ?r]` returns `Float` |
 | Type predicate filter | `[(string? ?v)]` |
 | `starts-with?` filter | `[(starts-with? ?tag "work")]` |
+| `ends-with?` filter | `[(ends-with? ?file ".rs")]` |
 | `contains?` filter | `[(contains? ?bio "engineer")]` |
 | `matches?` filter | `[(matches? ?email "^[^@]+@[^@]+$")]` |
 | `matches?` invalid regex → parse error | `[(matches? ?v "[unclosed")]` rejected at parse time |
@@ -305,5 +309,5 @@ fn apply_expr_clause(
 - Window functions (Phase 7.9a)
 - UDF registration via `FunctionRegistry` (Phase 7.9b)
 - Pseudo-attribute bindings (`:db/valid-from` etc.) — Phase 7.7
-- String functions beyond `starts-with?`, `contains?`, `matches?` (e.g., `ends-with?`, `upper-case`) — can be added incrementally
+- String functions beyond `starts-with?`, `ends-with?`, `contains?`, `matches?` (e.g., `upper-case`) — can be added incrementally
 - Three-or-more-argument expressions
