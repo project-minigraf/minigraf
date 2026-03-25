@@ -675,7 +675,8 @@ impl StratifiedEvaluator {
                 let raw_candidates = matcher.match_patterns(&positive_patterns);
 
                 // Apply top-level Expr clauses to filter/extend candidates
-                let candidates = apply_expr_clauses_in_evaluator(raw_candidates, &body_expr_clauses);
+                let candidates =
+                    apply_expr_clauses_in_evaluator(raw_candidates, &body_expr_clauses);
 
                 // Build temp_eval once per rule (outside the binding loop);
                 // instantiate_head_public only uses storage, not the registry.
@@ -733,7 +734,8 @@ impl StratifiedEvaluator {
                             .iter()
                             .filter(|c| matches!(c, WhereClause::Expr { .. }))
                             .collect();
-                        not_bindings = apply_expr_clauses_in_evaluator(not_bindings, &not_body_expr_clauses);
+                        not_bindings =
+                            apply_expr_clauses_in_evaluator(not_bindings, &not_body_expr_clauses);
                         if !not_bindings.is_empty() {
                             continue 'binding; // not condition violated -> discard binding
                         }

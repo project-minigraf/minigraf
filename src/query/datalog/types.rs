@@ -125,11 +125,21 @@ impl AggFunc {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BinOp {
     // Comparisons — return Boolean
-    Lt, Gt, Lte, Gte, Eq, Neq,
+    Lt,
+    Gt,
+    Lte,
+    Gte,
+    Eq,
+    Neq,
     // Arithmetic — return numeric Value (Integer or Float, with int/float promotion)
-    Add, Sub, Mul, Div,
+    Add,
+    Sub,
+    Mul,
+    Div,
     // String predicates — return Boolean
-    StartsWith, EndsWith, Contains,
+    StartsWith,
+    EndsWith,
+    Contains,
     /// Pattern must be a string literal validated at parse time via regex-lite.
     Matches,
 }
@@ -137,7 +147,11 @@ pub enum BinOp {
 /// Unary type-predicate operators — always return Boolean.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum UnaryOp {
-    StringQ, IntegerQ, FloatQ, BooleanQ, NilQ,
+    StringQ,
+    IntegerQ,
+    FloatQ,
+    BooleanQ,
+    NilQ,
 }
 
 /// Composable expression tree for `WhereClause::Expr`.
@@ -951,7 +965,13 @@ mod tests {
             ),
             binding: Some("?sum".to_string()),
         };
-        assert!(matches!(clause, WhereClause::Expr { binding: Some(_), .. }));
+        assert!(matches!(
+            clause,
+            WhereClause::Expr {
+                binding: Some(_),
+                ..
+            }
+        ));
     }
 
     #[test]

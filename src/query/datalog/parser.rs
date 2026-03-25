@@ -818,22 +818,26 @@ fn parse_expr(list: &[EdnValue]) -> Result<Expr, String> {
         }
 
         // Binary operators
-        "<" | ">" | "<=" | ">=" | "=" | "!="
-        | "+" | "-" | "*" | "/"
-        | "starts-with?" | "ends-with?" | "contains?" | "matches?" => {
+        "<" | ">" | "<=" | ">=" | "=" | "!=" | "+" | "-" | "*" | "/" | "starts-with?"
+        | "ends-with?" | "contains?" | "matches?" => {
             if list.len() != 3 {
                 return Err(format!("{} takes exactly 2 arguments", head));
             }
             let op = match head {
-                "<"  => BinOp::Lt,  ">"  => BinOp::Gt,
-                "<=" => BinOp::Lte, ">=" => BinOp::Gte,
-                "="  => BinOp::Eq,  "!=" => BinOp::Neq,
-                "+"  => BinOp::Add, "-"  => BinOp::Sub,
-                "*"  => BinOp::Mul, "/"  => BinOp::Div,
+                "<" => BinOp::Lt,
+                ">" => BinOp::Gt,
+                "<=" => BinOp::Lte,
+                ">=" => BinOp::Gte,
+                "=" => BinOp::Eq,
+                "!=" => BinOp::Neq,
+                "+" => BinOp::Add,
+                "-" => BinOp::Sub,
+                "*" => BinOp::Mul,
+                "/" => BinOp::Div,
                 "starts-with?" => BinOp::StartsWith,
-                "ends-with?"   => BinOp::EndsWith,
-                "contains?"    => BinOp::Contains,
-                "matches?"     => BinOp::Matches,
+                "ends-with?" => BinOp::EndsWith,
+                "contains?" => BinOp::Contains,
+                "matches?" => BinOp::Matches,
                 _ => unreachable!(),
             };
             let lhs = parse_expr_arg(&list[1])?;
@@ -843,13 +847,12 @@ fn parse_expr(list: &[EdnValue]) -> Result<Expr, String> {
             if op == BinOp::Matches {
                 match &rhs {
                     Expr::Lit(Value::String(pattern)) => {
-                        regex_lite::Regex::new(pattern).map_err(|e| {
-                            format!("invalid regex pattern {:?}: {}", pattern, e)
-                        })?;
+                        regex_lite::Regex::new(pattern)
+                            .map_err(|e| format!("invalid regex pattern {:?}: {}", pattern, e))?;
                     }
-                    _ => return Err(
-                        "matches? second argument must be a string literal".to_string()
-                    ),
+                    _ => {
+                        return Err("matches? second argument must be a string literal".to_string());
+                    }
                 }
             }
             Ok(Expr::BinOp(op, Box::new(lhs), Box::new(rhs)))
@@ -872,13 +875,19 @@ fn parse_expr_clause(vec: &[EdnValue]) -> Result<WhereClause, String> {
         1 => None,
         2 => match &vec[1] {
             EdnValue::Symbol(s) if s.starts_with('?') => Some(s.clone()),
-            other => return Err(format!(
-                "expression output must be a ?variable, got {:?}", other
-            )),
+            other => {
+                return Err(format!(
+                    "expression output must be a ?variable, got {:?}",
+                    other
+                ));
+            }
         },
-        n => return Err(format!(
-            "expression clause must be [(expr)] or [(expr) ?out], got {} elements", n
-        )),
+        n => {
+            return Err(format!(
+                "expression clause must be [(expr)] or [(expr) ?out], got {} elements",
+                n
+            ));
+        }
     };
     Ok(WhereClause::Expr { expr, binding })
 }
@@ -2056,7 +2065,10 @@ mod tests {
         match result.unwrap() {
             DatalogCommand::Query(q) => {
                 assert_eq!(q.where_clauses.len(), 2);
-                assert!(matches!(q.where_clauses[1], WhereClause::Expr { binding: None, .. }));
+                assert!(matches!(
+                    q.where_clauses[1],
+                    WhereClause::Expr { binding: None, .. }
+                ));
             }
             _ => panic!("expected query"),
         }
@@ -2073,7 +2085,10 @@ mod tests {
                 assert_eq!(q.where_clauses.len(), 3);
                 assert!(matches!(
                     q.where_clauses[2],
-                    WhereClause::Expr { binding: Some(_), .. }
+                    WhereClause::Expr {
+                        binding: Some(_),
+                        ..
+                    }
                 ));
             }
             _ => panic!("expected query"),
@@ -2083,7 +2098,8 @@ mod tests {
     #[test]
     fn test_parse_expr_nested_arithmetic() {
         // [(+ (* ?a 2) ?b) ?result]
-        let input = "(query [:find ?result :where [?e :x ?a] [?e :y ?b] [(+ (* ?a 2) ?b) ?result]])";
+        let input =
+            "(query [:find ?result :where [?e :x ?a] [?e :y ?b] [(+ (* ?a 2) ?b) ?result]])";
         let result = parse(input);
         assert!(result.is_ok(), "parse nested arithmetic");
     }
@@ -2115,7 +2131,10 @@ mod tests {
         let input = "(query [:find ?e :where [?e :x ?a] [(< ?v 100)]])";
         let result = parse(input);
         // check_expr_safety rejects this: ?v is not bound by any earlier clause
-        assert!(result.is_err(), "unbound variable in expr must be parse error");
+        assert!(
+            result.is_err(),
+            "unbound variable in expr must be parse error"
+        );
     }
 
     #[test]
