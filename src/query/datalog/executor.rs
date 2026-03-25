@@ -3,9 +3,10 @@ use super::matcher::{PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::optimizer;
 use super::rules::RuleRegistry;
 use super::types::{
-    AggFunc, DatalogCommand, DatalogQuery, EdnValue, FindSpec, Pattern, Rule, Transaction, ValidAt,
-    WhereClause,
+    AggFunc, BinOp, DatalogCommand, DatalogQuery, EdnValue, Expr, FindSpec, Pattern, Rule,
+    Transaction, UnaryOp, ValidAt, WhereClause,
 };
+use regex_lite::Regex;
 use crate::graph::FactStorage;
 use crate::graph::types::{Fact, TransactOptions, TxId, Value, tx_id_now};
 use crate::storage::index::Indexes;
@@ -720,6 +721,161 @@ fn apply_agg_func(func: &AggFunc, values: &[&Value]) -> Result<Value> {
             Ok(result)
         }
     }
+}
+
+type Binding = std::collections::HashMap<String, Value>;
+
+/// Returns true for Boolean(true), non-zero Integer, non-zero Float.
+/// All other Value variants (String, Keyword, Ref, Null, Float(0.0)) → false.
+pub(crate) fn is_truthy(v: &Value) -> bool {
+    match v {
+        Value::Boolean(b) => *b,
+        Value::Integer(i) => *i != 0,
+        Value::Float(f) => *f != 0.0,
+        _ => false,
+    }
+}
+
+/// Promote both values to f64 for numeric comparison / float arithmetic.
+/// Returns Err(()) if either operand is not Integer or Float.
+fn to_float_pair(l: &Value, r: &Value) -> Result<(f64, f64), ()> {
+    let lf = match l {
+        Value::Integer(i) => *i as f64,
+        Value::Float(f) => *f,
+        _ => return Err(()),
+    };
+    let rf = match r {
+        Value::Integer(i) => *i as f64,
+        Value::Float(f) => *f,
+        _ => return Err(()),
+    };
+    Ok((lf, rf))
+}
+
+fn eval_binop(op: &BinOp, l: Value, r: Value) -> Result<Value, ()> {
+    match op {
+        // Structural equality — works for all Value variants; no type mismatch error.
+        BinOp::Eq  => return Ok(Value::Boolean(l == r)),
+        BinOp::Neq => return Ok(Value::Boolean(l != r)),
+        _ => {}
+    }
+
+    match op {
+        // Numeric comparisons — require both numeric; int/float promotion via to_float_pair.
+        BinOp::Lt | BinOp::Gt | BinOp::Lte | BinOp::Gte => {
+            let (lf, rf) = to_float_pair(&l, &r)?;
+            Ok(Value::Boolean(match op {
+                BinOp::Lt  => lf < rf,
+                BinOp::Gt  => lf > rf,
+                BinOp::Lte => lf <= rf,
+                BinOp::Gte => lf >= rf,
+                _ => unreachable!(),
+            }))
+        }
+
+        // Arithmetic: integer-integer stays integer; any float promotes result to float.
+        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
+            match (&l, &r) {
+                (Value::Integer(a), Value::Integer(b)) => match op {
+                    BinOp::Add => Ok(Value::Integer(a.wrapping_add(*b))),
+                    BinOp::Sub => Ok(Value::Integer(a.wrapping_sub(*b))),
+                    BinOp::Mul => Ok(Value::Integer(a.wrapping_mul(*b))),
+                    BinOp::Div => {
+                        if *b == 0 { Err(()) } else { Ok(Value::Integer(a / b)) }
+                    }
+                    _ => unreachable!(),
+                },
+                _ => {
+                    let (lf, rf) = to_float_pair(&l, &r)?;
+                    match op {
+                        BinOp::Add => Ok(Value::Float(lf + rf)),
+                        BinOp::Sub => Ok(Value::Float(lf - rf)),
+                        BinOp::Mul => Ok(Value::Float(lf * rf)),
+                        BinOp::Div => {
+                            if rf == 0.0 { Err(()) } else { Ok(Value::Float(lf / rf)) }
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            }
+        }
+
+        // String predicates — both operands must be String.
+        BinOp::StartsWith => match (l, r) {
+            (Value::String(s), Value::String(prefix)) => Ok(Value::Boolean(s.starts_with(prefix.as_str()))),
+            _ => Err(()),
+        },
+        BinOp::EndsWith => match (l, r) {
+            (Value::String(s), Value::String(suffix)) => Ok(Value::Boolean(s.ends_with(suffix.as_str()))),
+            _ => Err(()),
+        },
+        BinOp::Contains => match (l, r) {
+            (Value::String(s), Value::String(needle)) => Ok(Value::Boolean(s.contains(needle.as_str()))),
+            _ => Err(()),
+        },
+        BinOp::Matches => match (l, r) {
+            (Value::String(s), Value::String(pattern)) => {
+                // Pattern was validated at parse time; compile here.
+                let re = Regex::new(&pattern).map_err(|_| ())?;
+                Ok(Value::Boolean(re.is_match(&s)))
+            }
+            _ => Err(()),
+        },
+
+        // Eq/Neq handled above
+        BinOp::Eq | BinOp::Neq => unreachable!(),
+    }
+}
+
+/// Evaluate an Expr against a binding map.
+///
+/// Returns `Err(())` on: unbound variable, type mismatch, division by zero.
+pub(crate) fn eval_expr(
+    expr: &Expr,
+    binding: &std::collections::HashMap<String, Value>,
+) -> Result<Value, ()> {
+    match expr {
+        Expr::Var(v) => binding.get(v).cloned().ok_or(()),
+        Expr::Lit(val) => Ok(val.clone()),
+        Expr::UnaryOp(op, arg) => {
+            let v = eval_expr(arg, binding)?;
+            Ok(Value::Boolean(match op {
+                UnaryOp::StringQ  => matches!(v, Value::String(_)),
+                UnaryOp::IntegerQ => matches!(v, Value::Integer(_)),
+                UnaryOp::FloatQ   => matches!(v, Value::Float(_)),
+                UnaryOp::BooleanQ => matches!(v, Value::Boolean(_)),
+                UnaryOp::NilQ     => matches!(v, Value::Null),
+            }))
+        }
+        Expr::BinOp(op, lhs, rhs) => {
+            let l = eval_expr(lhs, binding)?;
+            let r = eval_expr(rhs, binding)?;
+            eval_binop(op, l, r)
+        }
+    }
+}
+
+/// Apply all WhereClause::Expr clauses from `where_clauses` to `bindings`.
+///
+/// Filter-form (`binding: None`) drops the row if the expr is not truthy or errors.
+/// Binding-form (`binding: Some(var)`) extends the row with the computed value.
+/// Type mismatches and errors silently drop the row.
+pub(crate) fn apply_expr_clauses(mut bindings: Vec<Binding>, where_clauses: &[WhereClause]) -> Vec<Binding> {
+    for clause in where_clauses {
+        if let WhereClause::Expr { expr, binding: out } = clause {
+            bindings = bindings
+                .into_iter()
+                .filter_map(|mut b| match eval_expr(expr, &b) {
+                    Ok(value) => match out {
+                        None => if is_truthy(&value) { Some(b) } else { None },
+                        Some(var) => { b.insert(var.clone(), value); Some(b) }
+                    },
+                    Err(_) => None,
+                })
+                .collect();
+        }
+    }
+    bindings
 }
 
 /// Human-readable type name for error messages.
@@ -2002,5 +2158,142 @@ mod tests {
         let results_with = apply_aggregation(bindings, &find_specs, &["?e".to_string()]).unwrap();
         assert_eq!(results_with.len(), 2);
         assert_eq!(results_with[0][1], Value::Integer(50));
+    }
+}
+
+#[cfg(test)]
+mod expr_eval_tests {
+    use super::*;
+    use crate::graph::types::Value;
+    use crate::query::datalog::types::{BinOp, Expr, UnaryOp};
+    use std::collections::HashMap;
+
+    fn b(pairs: &[(&str, Value)]) -> HashMap<String, Value> {
+        pairs.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()
+    }
+
+    #[test]
+    fn test_eval_lit() {
+        let e = Expr::Lit(Value::Integer(42));
+        assert_eq!(eval_expr(&e, &HashMap::new()), Ok(Value::Integer(42)));
+    }
+
+    #[test]
+    fn test_eval_var_bound() {
+        let e = Expr::Var("?x".to_string());
+        let binding = b(&[("?x", Value::Integer(10))]);
+        assert_eq!(eval_expr(&e, &binding), Ok(Value::Integer(10)));
+    }
+
+    #[test]
+    fn test_eval_var_unbound_is_err() {
+        let e = Expr::Var("?x".to_string());
+        assert_eq!(eval_expr(&e, &HashMap::new()), Err(()));
+    }
+
+    #[test]
+    fn test_eval_lt_true() {
+        let e = Expr::BinOp(BinOp::Lt, Box::new(Expr::Var("?v".to_string())), Box::new(Expr::Lit(Value::Integer(100))));
+        let binding = b(&[("?v", Value::Integer(50))]);
+        assert_eq!(eval_expr(&e, &binding), Ok(Value::Boolean(true)));
+    }
+
+    #[test]
+    fn test_eval_lt_false() {
+        let e = Expr::BinOp(BinOp::Lt, Box::new(Expr::Var("?v".to_string())), Box::new(Expr::Lit(Value::Integer(100))));
+        let binding = b(&[("?v", Value::Integer(150))]);
+        assert_eq!(eval_expr(&e, &binding), Ok(Value::Boolean(false)));
+    }
+
+    #[test]
+    fn test_eval_add_integers() {
+        let e = Expr::BinOp(BinOp::Add, Box::new(Expr::Var("?a".to_string())), Box::new(Expr::Var("?b".to_string())));
+        let binding = b(&[("?a", Value::Integer(3)), ("?b", Value::Integer(4))]);
+        assert_eq!(eval_expr(&e, &binding), Ok(Value::Integer(7)));
+    }
+
+    #[test]
+    fn test_eval_add_int_float_promotes() {
+        let e = Expr::BinOp(BinOp::Add, Box::new(Expr::Lit(Value::Integer(1))), Box::new(Expr::Lit(Value::Float(1.5))));
+        assert_eq!(eval_expr(&e, &HashMap::new()), Ok(Value::Float(2.5)));
+    }
+
+    #[test]
+    fn test_eval_div_integer_truncates() {
+        let e = Expr::BinOp(BinOp::Div, Box::new(Expr::Lit(Value::Integer(5))), Box::new(Expr::Lit(Value::Integer(2))));
+        assert_eq!(eval_expr(&e, &HashMap::new()), Ok(Value::Integer(2)));
+    }
+
+    #[test]
+    fn test_eval_div_by_zero_is_err() {
+        let e = Expr::BinOp(BinOp::Div, Box::new(Expr::Lit(Value::Integer(5))), Box::new(Expr::Lit(Value::Integer(0))));
+        assert_eq!(eval_expr(&e, &HashMap::new()), Err(()));
+    }
+
+    #[test]
+    fn test_eval_eq_strings() {
+        let e = Expr::BinOp(BinOp::Eq, Box::new(Expr::Lit(Value::String("Alice".to_string()))), Box::new(Expr::Lit(Value::String("Alice".to_string()))));
+        assert_eq!(eval_expr(&e, &HashMap::new()), Ok(Value::Boolean(true)));
+    }
+
+    #[test]
+    fn test_eval_eq_int_float_false() {
+        // Different Value variants → structural inequality
+        let e = Expr::BinOp(BinOp::Eq, Box::new(Expr::Lit(Value::Integer(1))), Box::new(Expr::Lit(Value::Float(1.0))));
+        assert_eq!(eval_expr(&e, &HashMap::new()), Ok(Value::Boolean(false)));
+    }
+
+    #[test]
+    fn test_eval_type_mismatch_comparison_is_err() {
+        let e = Expr::BinOp(BinOp::Lt, Box::new(Expr::Lit(Value::String("hello".to_string()))), Box::new(Expr::Lit(Value::Integer(100))));
+        assert_eq!(eval_expr(&e, &HashMap::new()), Err(()));
+    }
+
+    #[test]
+    fn test_eval_string_q_true() {
+        let e = Expr::UnaryOp(UnaryOp::StringQ, Box::new(Expr::Lit(Value::String("hi".to_string()))));
+        assert_eq!(eval_expr(&e, &HashMap::new()), Ok(Value::Boolean(true)));
+    }
+
+    #[test]
+    fn test_eval_string_q_false() {
+        let e = Expr::UnaryOp(UnaryOp::StringQ, Box::new(Expr::Lit(Value::Integer(1))));
+        assert_eq!(eval_expr(&e, &HashMap::new()), Ok(Value::Boolean(false)));
+    }
+
+    #[test]
+    fn test_eval_starts_with_true() {
+        let e = Expr::BinOp(BinOp::StartsWith, Box::new(Expr::Lit(Value::String("foobar".to_string()))), Box::new(Expr::Lit(Value::String("foo".to_string()))));
+        assert_eq!(eval_expr(&e, &HashMap::new()), Ok(Value::Boolean(true)));
+    }
+
+    #[test]
+    fn test_eval_ends_with_true() {
+        let e = Expr::BinOp(BinOp::EndsWith, Box::new(Expr::Lit(Value::String("foobar".to_string()))), Box::new(Expr::Lit(Value::String("bar".to_string()))));
+        assert_eq!(eval_expr(&e, &HashMap::new()), Ok(Value::Boolean(true)));
+    }
+
+    #[test]
+    fn test_eval_contains_true() {
+        let e = Expr::BinOp(BinOp::Contains, Box::new(Expr::Lit(Value::String("engineer at co".to_string()))), Box::new(Expr::Lit(Value::String("engineer".to_string()))));
+        assert_eq!(eval_expr(&e, &HashMap::new()), Ok(Value::Boolean(true)));
+    }
+
+    #[test]
+    fn test_eval_matches_true() {
+        let e = Expr::BinOp(BinOp::Matches, Box::new(Expr::Lit(Value::String("test@example.com".to_string()))), Box::new(Expr::Lit(Value::String("^[^@]+@[^@]+$".to_string()))));
+        assert_eq!(eval_expr(&e, &HashMap::new()), Ok(Value::Boolean(true)));
+    }
+
+    #[test]
+    fn test_is_truthy() {
+        assert!(is_truthy(&Value::Boolean(true)));
+        assert!(!is_truthy(&Value::Boolean(false)));
+        assert!(is_truthy(&Value::Integer(1)));
+        assert!(!is_truthy(&Value::Integer(0)));
+        assert!(is_truthy(&Value::Float(0.1)));
+        assert!(!is_truthy(&Value::Float(0.0)));
+        assert!(!is_truthy(&Value::Null));
+        assert!(!is_truthy(&Value::String("hi".to_string())));
     }
 }
