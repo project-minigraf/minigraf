@@ -413,10 +413,12 @@ fn parse_aggregate(elems: &[EdnValue]) -> Result<FindSpec, String> {
             "max" => AggFunc::Max,
             other => return Err(format!("Unknown aggregate function: '{}'", other)),
         },
-        other => return Err(format!(
-            "Aggregate function name must be a symbol, got {:?}",
-            other
-        )),
+        other => {
+            return Err(format!(
+                "Aggregate function name must be a symbol, got {:?}",
+                other
+            ));
+        }
     };
     let var = match &elems[1] {
         EdnValue::Symbol(s) if s.starts_with('?') => s.clone(),
@@ -523,22 +525,20 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
         }
 
         match current_clause {
-            Some(":find") => {
-                match &query_vector[i] {
-                    EdnValue::Symbol(s) if s.starts_with('?') => {
-                        find_specs.push(FindSpec::Variable(s.clone()));
-                    }
-                    EdnValue::List(elems) => {
-                        find_specs.push(parse_aggregate(elems)?);
-                    }
-                    other => {
-                        return Err(format!(
-                            "Expected variable or aggregate expression in :find clause, got {:?}",
-                            other
-                        ));
-                    }
+            Some(":find") => match &query_vector[i] {
+                EdnValue::Symbol(s) if s.starts_with('?') => {
+                    find_specs.push(FindSpec::Variable(s.clone()));
                 }
-            }
+                EdnValue::List(elems) => {
+                    find_specs.push(parse_aggregate(elems)?);
+                }
+                other => {
+                    return Err(format!(
+                        "Expected variable or aggregate expression in :find clause, got {:?}",
+                        other
+                    ));
+                }
+            },
             Some(":where") => {
                 // Parse both patterns (vectors) and rule invocations (lists)
                 if let Some(pattern_vec) = query_vector[i].as_vector() {
@@ -578,23 +578,21 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
     for spec in &find_specs {
         if let FindSpec::Aggregate { var, .. } = spec {
             if !outer_bound.contains(var) {
-                return Err(format!(
-                    "Aggregate variable {} not bound in :where",
-                    var
-                ));
+                return Err(format!("Aggregate variable {} not bound in :where", var));
             }
         }
     }
     for var in &with_vars {
         if !outer_bound.contains(var) {
-            return Err(format!(
-                "':with' variable {} not bound in :where",
-                var
-            ));
+            return Err(format!("':with' variable {} not bound in :where", var));
         }
     }
     // :with without any aggregate is an error
-    if !with_vars.is_empty() && !find_specs.iter().any(|s| matches!(s, FindSpec::Aggregate { .. })) {
+    if !with_vars.is_empty()
+        && !find_specs
+            .iter()
+            .any(|s| matches!(s, FindSpec::Aggregate { .. }))
+    {
         return Err("':with' clause requires at least one aggregate in :find".to_string());
     }
 
@@ -1124,10 +1122,13 @@ mod tests {
 
         match cmd {
             DatalogCommand::Query(q) => {
-                assert_eq!(q.find, vec![
-                    FindSpec::Variable("?name".to_string()),
-                    FindSpec::Variable("?age".to_string()),
-                ]);
+                assert_eq!(
+                    q.find,
+                    vec![
+                        FindSpec::Variable("?name".to_string()),
+                        FindSpec::Variable("?age".to_string()),
+                    ]
+                );
                 assert_eq!(q.get_patterns().len(), 2);
             }
             _ => panic!("Expected Query command"),
@@ -1686,14 +1687,18 @@ mod tests {
 
     #[test]
     fn test_parse_count_in_find() {
-        let result = parse_datalog_command("(query [:find (count ?e) :where [?e :person/name ?n]])");
+        let result =
+            parse_datalog_command("(query [:find (count ?e) :where [?e :person/name ?n]])");
         let cmd = result.expect("parse failed");
         match cmd {
             DatalogCommand::Query(q) => {
                 assert_eq!(q.find.len(), 1);
                 assert_eq!(
                     q.find[0],
-                    FindSpec::Aggregate { func: AggFunc::Count, var: "?e".to_string() }
+                    FindSpec::Aggregate {
+                        func: AggFunc::Count,
+                        var: "?e".to_string()
+                    }
                 );
             }
             _ => panic!("expected Query"),
@@ -1712,7 +1717,10 @@ mod tests {
                 assert_eq!(q.find[0], FindSpec::Variable("?dept".to_string()));
                 assert_eq!(
                     q.find[1],
-                    FindSpec::Aggregate { func: AggFunc::CountDistinct, var: "?e".to_string() }
+                    FindSpec::Aggregate {
+                        func: AggFunc::CountDistinct,
+                        var: "?e".to_string()
+                    }
                 );
             }
             _ => panic!("expected Query"),
@@ -1736,7 +1744,10 @@ mod tests {
                 DatalogCommand::Query(q) => {
                     assert_eq!(
                         q.find[0],
-                        FindSpec::Aggregate { func: expected_func, var: "?v".to_string() }
+                        FindSpec::Aggregate {
+                            func: expected_func,
+                            var: "?v".to_string()
+                        }
                     );
                 }
                 _ => panic!("expected Query"),
@@ -1790,21 +1801,19 @@ mod tests {
 
     #[test]
     fn test_parse_error_with_without_aggregate() {
-        let result = parse_datalog_command(
-            r#"(query [:find ?e :with ?x :where [?e :a ?x]])"#,
-        );
+        let result = parse_datalog_command(r#"(query [:find ?e :with ?x :where [?e :a ?x]])"#);
         assert!(result.is_err(), ":with without aggregate should fail");
         assert!(
-            result.unwrap_err().contains("requires at least one aggregate"),
+            result
+                .unwrap_err()
+                .contains("requires at least one aggregate"),
             "wrong error message"
         );
     }
 
     #[test]
     fn test_parse_error_aggregate_var_unbound() {
-        let result = parse_datalog_command(
-            r#"(query [:find (count ?unbound) :where [?e :a ?v]])"#,
-        );
+        let result = parse_datalog_command(r#"(query [:find (count ?unbound) :where [?e :a ?v]])"#);
         assert!(result.is_err(), "unbound aggregate var should fail");
         assert!(
             result.unwrap_err().contains("not bound in :where"),

@@ -829,7 +829,10 @@ mod tests {
             (AggFunc::Max, "?x", "(max ?x)"),
         ];
         for (func, var, expected) in cases {
-            let spec = FindSpec::Aggregate { func, var: var.to_string() };
+            let spec = FindSpec::Aggregate {
+                func,
+                var: var.to_string(),
+            };
             assert_eq!(spec.display_name(), expected);
         }
     }
