@@ -171,8 +171,8 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                     _ => tokens.push(Token::Symbol(symbol)),
                 }
             }
-            // Operator symbols: <, <=, >, >=, =, !=, +, *, /
-            '<' | '>' | '=' | '+' | '*' | '/' => {
+            // Operator symbols: <, <=, >, >=, =, !=, +, -, *, /
+            '<' | '>' | '=' | '+' | '-' | '*' | '/' => {
                 chars.next();
                 let mut sym = String::from(ch);
                 // Consume a trailing '=' to form <=, >=
