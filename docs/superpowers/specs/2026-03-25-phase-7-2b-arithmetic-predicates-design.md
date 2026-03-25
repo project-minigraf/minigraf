@@ -45,6 +45,8 @@ This is a load-bearing dependency for Phase 7.7 (temporal range queries via `:db
 | Operator | Form |
 |---|---|
 | `starts-with?` | `(starts-with? ?s "prefix")` |
+| `contains?` | `(contains? ?s "needle")` |
+| `matches?` | `(matches? ?s "^\\d{4}-\\d{2}-\\d{2}$")` |
 
 **Unary operators** (one-argument type predicates, return `bool`):
 
@@ -84,6 +86,8 @@ Two clause forms inside `:where`, both written as an EDN vector:
 [(>= ?salary ?min-salary)]
 [(string? ?name)]
 [(starts-with? ?tag "work")]
+[(contains? ?bio "engineer")]
+[(matches? ?email "^[^@]+@[^@]+$")]
 
 ;; Binding — evaluates expression, binds result to output variable
 [(+ ?price ?tax) ?total]
@@ -126,6 +130,8 @@ pub enum BinOp {
     Add, Sub, Mul, Div,
     // String predicates — return bool
     StartsWith,
+    Contains,
+    Matches,  // regex via regex-lite; pattern compiled at parse time
 }
 
 /// Unary type-predicate operators — always return Boolean
@@ -184,7 +190,10 @@ else:
 ```
 head symbol "+"        → BinOp(Add, parse_expr(arg0), parse_expr(arg1))
 head symbol "<"        → BinOp(Lt,  parse_expr(arg0), parse_expr(arg1))
-head symbol "string?"  → UnaryOp(StringQ, parse_expr(arg0))
+head symbol "string?"     → UnaryOp(StringQ, parse_expr(arg0))
+head symbol "contains?"   → BinOp(Contains, parse_expr(arg0), parse_expr(arg1))
+head symbol "matches?"    → BinOp(Matches, parse_expr(arg0), parse_expr(arg1))
+                            (second arg must resolve to a string literal; regex compiled at parse time — invalid pattern → parse error)
 integer literal        → Expr::Lit(Value::Integer(_))
 string literal         → Expr::Lit(Value::String(_))
 ?var symbol            → Expr::Var(_)
@@ -264,6 +273,9 @@ fn apply_expr_clause(
 | Integer/float promotion | `[(+ ?int ?float) ?r]` returns `Float` |
 | Type predicate filter | `[(string? ?v)]` |
 | `starts-with?` filter | `[(starts-with? ?tag "work")]` |
+| `contains?` filter | `[(contains? ?bio "engineer")]` |
+| `matches?` filter | `[(matches? ?email "^[^@]+@[^@]+$")]` |
+| `matches?` invalid regex → parse error | `[(matches? ?v "[unclosed")]` rejected at parse time |
 | Predicate binding | `[(integer? ?v) ?is-int]` binds `true`/`false` |
 | `=` across types | `(= ?name "Alice")` string equality works; `(= 1 1.0)` false |
 | Type mismatch → drop | `[(< ?v 100)]` where `?v = "hello"` → row silently dropped |
@@ -279,6 +291,7 @@ fn apply_expr_clause(
 
 | File | Change |
 |---|---|
+| `Cargo.toml` | Add `regex-lite = "0.1"` dependency (~68K incremental binary cost; estimated total 812K, under 1MB goal) |
 | `src/query/datalog/types.rs` | Add `BinOp`, `UnaryOp`, `Expr`; add `WhereClause::Expr` variant; add arms to exhaustive matches |
 | `src/query/datalog/parser.rs` | Update both where-clause dispatch sites (query + rule body); add `parse_expr`; update `outer_vars_from_clause` for `Expr`; safety check |
 | `src/query/datalog/executor.rs` | Dispatch `WhereClause::Expr`; add `apply_expr_clause`, `eval_expr`, `is_truthy` |
@@ -292,5 +305,5 @@ fn apply_expr_clause(
 - Window functions (Phase 7.9a)
 - UDF registration via `FunctionRegistry` (Phase 7.9b)
 - Pseudo-attribute bindings (`:db/valid-from` etc.) — Phase 7.7
-- String functions beyond `starts-with?` (e.g., `ends-with?`, `contains?`, `upper-case`) — can be added incrementally
+- String functions beyond `starts-with?`, `contains?`, `matches?` (e.g., `ends-with?`, `upper-case`) — can be added incrementally
 - Three-or-more-argument expressions
