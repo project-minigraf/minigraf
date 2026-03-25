@@ -122,7 +122,7 @@ impl AggFunc {
 }
 
 /// Binary operators for expression clauses.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BinOp {
     // Comparisons — return Boolean
     Lt, Gt, Lte, Gte, Eq, Neq,
@@ -135,7 +135,7 @@ pub enum BinOp {
 }
 
 /// Unary type-predicate operators — always return Boolean.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum UnaryOp {
     StringQ, IntegerQ, FloatQ, BooleanQ, NilQ,
 }
