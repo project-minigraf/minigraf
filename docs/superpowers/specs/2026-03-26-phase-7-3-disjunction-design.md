@@ -74,8 +74,11 @@ Each branch is `Vec<WhereClause>`, permitting full nesting — any `WhereClause`
 
 **Adding these variants makes existing exhaustive matches fail to compile.** The following locations need `Or`/`OrJoin` arms added:
 
-- `WhereClause::rule_invocations()` — recurse into each branch, collect all `RuleInvocation`s
-- `DatalogQuery::collect_rule_invocations_recursive()` — same treatment
+- `WhereClause::rule_invocations()` — recurse into each branch, collect all `RuleInvocation`s:
+  `WhereClause::Or(branches) | WhereClause::OrJoin { branches, .. } => branches.iter().flat_map(|b| b.iter().flat_map(|c| c.rule_invocations())).collect()`
+- `WhereClause::has_negated_invocation()` — `Or`/`OrJoin` are not themselves negation, add:
+  `WhereClause::Or(_) | WhereClause::OrJoin { .. } => false`
+- `DatalogQuery::collect_rule_invocations_recursive()` — recurse into each branch collecting all `RuleInvocation`s (same treatment as `rule_invocations()` above)
 - `DependencyGraph::from_rules` in `stratification.rs` — see Stratification section
 - The mixed-rules `positive_patterns` filter_map in `evaluator.rs` (lines 624–645) — add `WhereClause::Or(_) | WhereClause::OrJoin { .. } => None` (or-expansion is handled separately)
 - The mixed-rules `not_clauses` and `not_join_clauses` collectors in `evaluator.rs` (lines 647–665) — add `_ => None` already present; no change needed
