@@ -227,6 +227,110 @@ pub fn populate_with_not_rule(n: usize, excluded: usize) -> Arc<Minigraf> {
     Arc::new(db)
 }
 
+// ── Disjunction fixtures ──────────────────────────────────────────────────────
+
+/// In-memory DB with `n` value facts plus `a_count` entities with `:tag-a` and
+/// `b_count` entities with `:tag-b` (counts from opposite ends; some may overlap).
+///
+/// Schema:
+///   `:e{i} :val {i}` for i in 0..n
+///   `:e{i} :tag-a true` for i in 0..a_count
+///   `:e{i} :tag-b true` for i in (n-b_count)..n
+///
+/// Used for `or` benchmarks:
+///   `(query [:find ?e :where [?e :val ?v] (or [?e :tag-a true] [?e :tag-b true])])`
+pub fn populate_with_or_tags(n: usize, a_count: usize, b_count: usize) -> Arc<Minigraf> {
+    let db = Minigraf::in_memory().unwrap();
+    insert_val_facts(&db, n);
+    // Insert :tag-a for first a_count entities
+    for batch_start in (0..a_count).step_by(100) {
+        let batch_end = (batch_start + 100).min(a_count);
+        let mut cmd = String::from("(transact [");
+        for i in batch_start..batch_end {
+            cmd.push_str(&format!("[:e{} :tag-a true]", i));
+        }
+        cmd.push_str("])");
+        db.execute(&cmd).unwrap();
+    }
+    // Insert :tag-b for last b_count entities
+    let b_start = n.saturating_sub(b_count);
+    for batch_start in (b_start..n).step_by(100) {
+        let batch_end = (batch_start + 100).min(n);
+        let mut cmd = String::from("(transact [");
+        for i in batch_start..batch_end {
+            cmd.push_str(&format!("[:e{} :tag-b true]", i));
+        }
+        cmd.push_str("])");
+        db.execute(&cmd).unwrap();
+    }
+    Arc::new(db)
+}
+
+/// In-memory DB with `n` value facts and a `(tagged ?x)` rule using `or` in its body.
+///
+/// Schema:
+///   `:e{i} :val {i}` for i in 0..n
+///   `:e{i} :tag-a true` for i in 0..n/2
+///   `:e{i} :tag-b true` for i in n/2..n
+/// Rule:
+///   `(tagged ?x) :- (or [?x :tag-a true] [?x :tag-b true])`
+///
+/// Used for rule-body `or` benchmarks:
+///   `(query [:find ?e :where (tagged ?e)])`
+pub fn populate_with_or_rule(n: usize) -> Arc<Minigraf> {
+    let db = Minigraf::in_memory().unwrap();
+    insert_val_facts(&db, n);
+    let half = n / 2;
+    for batch_start in (0..half).step_by(100) {
+        let batch_end = (batch_start + 100).min(half);
+        let mut cmd = String::from("(transact [");
+        for i in batch_start..batch_end {
+            cmd.push_str(&format!("[:e{} :tag-a true]", i));
+        }
+        cmd.push_str("])");
+        db.execute(&cmd).unwrap();
+    }
+    for batch_start in (half..n).step_by(100) {
+        let batch_end = (batch_start + 100).min(n);
+        let mut cmd = String::from("(transact [");
+        for i in batch_start..batch_end {
+            cmd.push_str(&format!("[:e{} :tag-b true]", i));
+        }
+        cmd.push_str("])");
+        db.execute(&cmd).unwrap();
+    }
+    db.execute("(rule [(tagged ?x) (or [?x :tag-a true] [?x :tag-b true])])")
+        .unwrap();
+    Arc::new(db)
+}
+
+// ── Aggregation fixtures ──────────────────────────────────────────────────────
+
+/// In-memory DB with `n` value facts, each entity having a `:dept` keyword cycling
+/// over `dept_count` departments.
+///
+/// Schema:
+///   `:e{i} :val {i}` for i in 0..n
+///   `:e{i} :dept :d{i % dept_count}` for i in 0..n
+///
+/// Used for aggregation benchmarks, e.g.:
+///   `(query [:find (count ?e) :where [?e :val ?v]])`
+///   `(query [:find ?dept (count ?e) :where [?e :dept ?dept]])`
+pub fn populate_with_dept(n: usize, dept_count: usize) -> Arc<Minigraf> {
+    let db = Minigraf::in_memory().unwrap();
+    for batch_start in (0..n).step_by(50) {
+        let batch_end = (batch_start + 50).min(n);
+        let mut cmd = String::from("(transact [");
+        for i in batch_start..batch_end {
+            cmd.push_str(&format!("[:e{} :val {}]", i, i));
+            cmd.push_str(&format!("[:e{} :dept :d{}]", i, i % dept_count));
+        }
+        cmd.push_str("])");
+        db.execute(&cmd).unwrap();
+    }
+    Arc::new(db)
+}
+
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 fn insert_val_facts(db: &Minigraf, n: usize) {

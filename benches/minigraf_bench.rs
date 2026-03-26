@@ -812,6 +812,229 @@ fn bench_concurrent_btree_scan(c: &mut Criterion) {
     group.finish();
 }
 
+// ── Disjunction: or / or-join ─────────────────────────────────────────────────
+
+fn bench_disjunction(c: &mut Criterion) {
+    // 100k excluded: O(N) results make --test mode too slow.
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+
+    // or/scale: overhead of the `or` expansion at different DB sizes.
+    // 25% tagged-a (first quarter), 25% tagged-b (last quarter), 50% untagged.
+    // Query returns the 50% that have either tag.
+    {
+        let mut group = c.benchmark_group("disjunction/or_scale");
+        for &(label, n) in SCALES {
+            let a_count = n / 4;
+            let b_count = n / 4;
+            let db = helpers::populate_with_or_tags(n, a_count, b_count);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute(
+                        "(query [:find ?e :where [?e :val ?v] \
+                         (or [?e :tag-a true] [?e :tag-b true])])",
+                    )
+                    .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+
+    // or-join/scale: same data, using `or-join` with explicit join variable.
+    // Semantically equivalent to or/scale but exercises the or-join projection path.
+    {
+        let mut group = c.benchmark_group("disjunction/or_join_scale");
+        for &(label, n) in SCALES {
+            let a_count = n / 4;
+            let b_count = n / 4;
+            let db = helpers::populate_with_or_tags(n, a_count, b_count);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute(
+                        "(query [:find ?e :where [?e :val ?v] \
+                         (or-join [?e] [?e :tag-a true] [?e :tag-b true])])",
+                    )
+                    .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+
+    // or/selectivity: fixed 10k DB, vary the fraction matching either branch.
+    // Shows how match density affects or-expansion cost.
+    {
+        let mut group = c.benchmark_group("disjunction/or_selectivity");
+        let n = 10_000;
+        for &(label, pct) in &[
+            ("match_0pct", 0usize),
+            ("match_25pct", 25),
+            ("match_50pct", 50),
+            ("match_75pct", 75),
+            ("match_100pct", 100),
+        ] {
+            let a_count = n * pct / 100;
+            let b_count = 0; // only tag-a varies; tag-b absent
+            let db = helpers::populate_with_or_tags(n, a_count, b_count);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &pct, |b, _| {
+                b.iter(|| {
+                    db.execute(
+                        "(query [:find ?e :where [?e :val ?v] \
+                         (or [?e :tag-a true] [?e :tag-b true])])",
+                    )
+                    .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+
+    // or/rule_body: `or` inside a rule body (mixed-rules path overhead).
+    // Rule: `(tagged ?x) :- (or [?x :tag-a true] [?x :tag-b true])`
+    // Half have tag-a, half have tag-b → all entities match.
+    {
+        let mut group = c.benchmark_group("disjunction/or_rule_body");
+        for &(label, n) in SCALES {
+            let db = helpers::populate_with_or_rule(n);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| db.execute("(query [:find ?e :where (tagged ?e)])").unwrap());
+            });
+        }
+        group.finish();
+    }
+}
+
+// ── Aggregation ───────────────────────────────────────────────────────────────
+
+fn bench_aggregation(c: &mut Criterion) {
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+
+    // count/scale: scalar `count` aggregate — measures aggregation post-processing overhead.
+    // Single output row regardless of DB size; cost is dominated by binding collection.
+    {
+        let mut group = c.benchmark_group("aggregation/count_scale");
+        for &(label, n) in SCALES {
+            let db = helpers::populate_in_memory(n);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute("(query [:find (count ?e) :where [?e :val ?v]])")
+                        .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+
+    // grouped_count/scale: `count` grouped by department — one output row per dept.
+    // 10 departments → 10 output rows. Measures grouping + per-group aggregation.
+    {
+        let mut group = c.benchmark_group("aggregation/grouped_count_scale");
+        for &(label, n) in SCALES {
+            let db = helpers::populate_with_dept(n, 10);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute("(query [:find ?dept (count ?e) :where [?e :dept ?dept]])")
+                        .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+
+    // sum/scale: `sum` aggregate over integer :val — measures numeric accumulation.
+    {
+        let mut group = c.benchmark_group("aggregation/sum_scale");
+        for &(label, n) in SCALES {
+            let db = helpers::populate_in_memory(n);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute("(query [:find (sum ?v) :where [?e :val ?v]])")
+                        .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+
+    // with/grouped_sum: `:with` clause prevents row collapse before aggregation.
+    // Each entity has a unique :val, so `:with ?e` keeps individual rows distinct.
+    {
+        let mut group = c.benchmark_group("aggregation/with_grouped_sum");
+        for &(label, n) in SCALES {
+            let db = helpers::populate_with_dept(n, 10);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute(
+                        "(query [:find ?dept (sum ?v) :with ?e \
+                         :where [?e :dept ?dept] [?e :val ?v]])",
+                    )
+                    .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+}
+
+// ── Expression clauses ────────────────────────────────────────────────────────
+
+fn bench_expr(c: &mut Criterion) {
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+
+    // filter/scale: `[(< ?v N)]` comparison filter — measures expr post-filter pass overhead.
+    // Keeps entities with :val < half of n; drops the other half.
+    {
+        let mut group = c.benchmark_group("expr/filter_scale");
+        for &(label, n) in SCALES {
+            let db = helpers::populate_in_memory(n);
+            let threshold = n / 2;
+            let query = format!(
+                "(query [:find ?e :where [?e :val ?v] [(< ?v {})]])",
+                threshold
+            );
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| db.execute(&query).unwrap());
+            });
+        }
+        group.finish();
+    }
+
+    // binding/scale: `[(+ ?v 1) ?result]` arithmetic binding — measures expr eval + bind overhead.
+    // Binds ?result = ?v + 1 for every row; all rows survive.
+    {
+        let mut group = c.benchmark_group("expr/binding_scale");
+        for &(label, n) in SCALES {
+            let db = helpers::populate_in_memory(n);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute("(query [:find ?result :where [?e :val ?v] [(+ ?v 1) ?result]])")
+                        .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+
+    // binding_into_agg: `[(* ?v 2) ?doubled]` feeding `(sum ?doubled)`.
+    // Measures expr bind + aggregation pipeline together.
+    {
+        let mut group = c.benchmark_group("expr/binding_into_agg");
+        for &(label, n) in SCALES {
+            let db = helpers::populate_in_memory(n);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute(
+                        "(query [:find (sum ?doubled) \
+                         :where [?e :val ?v] [(* ?v 2) ?doubled]])",
+                    )
+                    .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+}
+
 criterion_group!(
     benches,
     bench_insert,
@@ -820,6 +1043,9 @@ criterion_group!(
     bench_time_travel,
     bench_recursion,
     bench_negation,
+    bench_disjunction,
+    bench_aggregation,
+    bench_expr,
     bench_open,
     bench_checkpoint,
     bench_concurrent,
