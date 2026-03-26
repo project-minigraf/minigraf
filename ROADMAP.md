@@ -514,7 +514,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 - **7.2a** ✅ Aggregation (`count`, `count-distinct`, `sum`, `sum-distinct`, `min`, `max`, `:with`)
 - **7.2b** ✅ Arithmetic & predicate expression clauses (`[(< ?v 100)]`, `[(+ ?a ?b) ?c]`, string predicates, type predicates)
 - **7.2** ~~Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`) — includes arithmetic filter predicates~~ → split into 7.2a + 7.2b
-- **7.3** Disjunction (`or` / `or-join`)
+- **7.3** ✅ Disjunction (`or` / `or-join`)
 - **7.4** Query Optimizer Improvements (deferred from Phase 6.3)
 - **7.5** Tests + Error Coverage (≥90% branch coverage target)
 - **7.6** Prepared Statements (parse + plan once, execute many times, temporal bind slots)
@@ -657,7 +657,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 **Spec**: `docs/superpowers/specs/2026-03-25-phase-7-2b-arithmetic-predicates-design.md`
 
-### 7.3 Disjunction (`or` / `or-join`)
+### 7.3 Disjunction (`or` / `or-join`) ✅ COMPLETE
 
 **Goal**: Express "match condition A or condition B" without running two queries and unioning in application code.
 
@@ -1488,7 +1488,8 @@ When evaluating features, ask:
 - ✅ Phase 7.1: Complete (March 2026) - Stratified negation (`not` / `not-join`), 407 tests
 - ✅ Phase 7.2a: Complete (March 2026) - Aggregation (`count`/`sum`/`min`/`max`/`distinct`/`:with`), 461 tests
 - ✅ Phase 7.2b: Complete (March 2026) - Arithmetic & predicate expression clauses, 527 tests
-- 🎯 Phase 7.3–7.7: disjunction, optimizer, prepared statements, temporal metadata bindings; ≥90% branch coverage - **NEXT**
+- ✅ Phase 7.3: Complete (March 2026) - Disjunction (`or` / `or-join`), 0.13.0
+- 🎯 Phase 7.4–7.7: optimizer, prepared statements, temporal metadata bindings; ≥90% branch coverage - **NEXT**
 - 🎯 Phase 8: 3-4 months (Cross-platform — WASM, mobile, language bindings)
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)
 - 🎯 **v1.0.0: 9-12 months**
@@ -1499,19 +1500,20 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: Phase 7.2b Complete — Phase 7.3 Next (Disjunction)
+**Right Now**: Phase 7.3 Complete — Phase 7.4 Next (Query Optimizer Improvements)
 
-**Phase 7.2b Achievements**:
-1. ✅ `BinOp` (14 variants), `UnaryOp` (5 variants), `Expr` AST, `WhereClause::Expr { expr, binding }` in `types.rs`
-2. ✅ `parse_expr` / `parse_expr_clause`; dispatch at all 4 clause sites; parse-time regex validation; forward-pass safety check recursing into `not`/`not-join` bodies
-3. ✅ `eval_expr` / `eval_binop` / `is_truthy` / `apply_expr_clauses` in `executor.rs`; type-safe with silent row drop on mismatch/div-by-zero/NaN
-4. ✅ `apply_expr_clauses_in_evaluator` in `evaluator.rs` for rule body and `not-join` evaluation
-5. ✅ 28 integration tests in `tests/predicate_expr_test.rs`; 527 total tests; version bumped to v0.12.0
+**Phase 7.3 Achievements**:
+1. ✅ `WhereClause::Or(Vec<Vec<WhereClause>>)` and `WhereClause::OrJoin { join_vars, branches }` variants in `types.rs`
+2. ✅ `parse_or` / `parse_or_join` / `(and ...)` grouping in `parser.rs`; safety checks at all 4 clause sites
+3. ✅ `match_patterns_seeded` on `PatternMatcher` for seeded branch evaluation
+4. ✅ `evaluate_branch` / `apply_or_clauses` in `executor.rs`; union + deduplication across branches
+5. ✅ `DependencyGraph::from_rules` refactored with `collect_clause_deps`; `Or`/`OrJoin` contribute positive edges
+6. ✅ Rules with `or`/`or-join` route to `mixed_rules` path in `StratifiedEvaluator`
+7. ✅ Integration tests in `tests/or_test.rs` and `tests/or_join_test.rs`; version bumped to v0.13.0
 
-**Immediate Next Steps (Phase 7.3)**:
-1. Add disjunction (`or` / `or-join`)
-2. Query optimizer improvements for new clause types — Phase 7.4
-3. Push error-path coverage toward ≥90% target
+**Immediate Next Steps (Phase 7.4)**:
+1. Query optimizer improvements for new clause types
+2. Push error-path coverage toward ≥90% target
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)
