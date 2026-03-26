@@ -1,3 +1,22 @@
+// TODO (Phase 7.4): Add profiling integration before optimizing the query path.
+//
+// Integrate `pprof` as a Criterion profiler (via the `pprof` crate's Criterion
+// feature or `criterion-pprof`) so that `cargo bench` can emit flamegraphs.
+// Run the query/negation/aggregation/disjunction groups at 10K and 100K facts
+// to confirm that `filter_facts_for_query` (index rebuild) and
+// `net_asserted_facts` are the dominant costs before making structural changes.
+//
+// Example setup (Cargo.toml):
+//   [dev-dependencies]
+//   pprof = { version = "...", features = ["flamegraph", "criterion"] }
+//
+//   [[bench]]
+//   name = "minigraf_bench"
+//   harness = false
+//
+// Then wrap criterion_group! with a PProfProfiler and run:
+//   cargo bench -- --profile-time 10
+
 mod helpers;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
