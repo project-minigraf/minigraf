@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] — 2026-03-26
+
+### Added
+- **Disjunction (`or` / `or-join`)**: queries and rule bodies can now use `(or branch1 branch2 ...)` and `(or-join [?v...] branch1 branch2 ...)` where-clauses. Branches support all other clause types including `not`, `not-join`, `Expr`, and nested `or`/`or-join`. `(and ...)` groups multiple clauses into a single branch.
+- `match_patterns_seeded` on `PatternMatcher` for seeded branch evaluation.
+- `evaluate_branch` and `apply_or_clauses` as `pub(crate)` helpers in `executor.rs`.
+
+### Technical
+- `WhereClause` enum gains `Or(Vec<Vec<WhereClause>>)` and `OrJoin { join_vars, branches }` variants.
+- `DependencyGraph::from_rules` refactored with recursive `collect_clause_deps` helper; `Or`/`OrJoin` branches contribute positive dependency edges.
+- Rules with `or`/`or-join` in their bodies route to the `mixed_rules` path in `StratifiedEvaluator`.
+
 ## [0.12.0] - 2026-03-25
 
 ### Added

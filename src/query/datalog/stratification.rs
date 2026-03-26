@@ -4,6 +4,39 @@ use std::collections::HashMap;
 use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::types::WhereClause;
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+fn collect_clause_deps(clause: &WhereClause, entry: &mut Vec<(String, bool)>) {
+    match clause {
+        WhereClause::RuleInvocation { predicate, .. } => {
+            entry.push((predicate.clone(), false)); // positive edge
+        }
+        WhereClause::Not(inner) => {
+            for inner_clause in inner {
+                if let WhereClause::RuleInvocation { predicate, .. } = inner_clause {
+                    entry.push((predicate.clone(), true)); // negative edge
+                }
+            }
+        }
+        WhereClause::NotJoin { clauses: inner, .. } => {
+            for inner_clause in inner {
+                if let WhereClause::RuleInvocation { predicate, .. } = inner_clause {
+                    entry.push((predicate.clone(), true)); // negative edge
+                }
+            }
+        }
+        WhereClause::Or(branches) | WhereClause::OrJoin { branches, .. } => {
+            for branch in branches {
+                for inner_clause in branch {
+                    collect_clause_deps(inner_clause, entry); // recurse
+                }
+            }
+        }
+        WhereClause::Pattern(_) => {}
+        WhereClause::Expr { .. } => {}
+    }
+}
+
 // ── Structs ───────────────────────────────────────────────────────────────────
 
 pub struct DependencyGraph {
@@ -19,21 +52,7 @@ impl DependencyGraph {
             for rule in rules {
                 let entry = edges.entry(head_pred.to_string()).or_default();
                 for clause in &rule.body {
-                    match clause {
-                        WhereClause::RuleInvocation { predicate, .. } => {
-                            entry.push((predicate.clone(), false)); // positive edge
-                        }
-                        WhereClause::Not(inner) | WhereClause::NotJoin { clauses: inner, .. } => {
-                            for inner_clause in inner {
-                                if let WhereClause::RuleInvocation { predicate, .. } = inner_clause
-                                {
-                                    entry.push((predicate.clone(), true)); // negative edge
-                                }
-                            }
-                        }
-                        WhereClause::Pattern(_) => {} // base facts: no predicate dependency
-                        WhereClause::Expr { .. } => {} // expression clauses: no predicate dependency
-                    }
+                    collect_clause_deps(clause, entry);
                 }
             }
         }
@@ -301,5 +320,65 @@ mod tests {
             graph.stratify().is_err(),
             "negative cycle via not-join must be rejected"
         );
+    }
+}
+
+#[cfg(test)]
+mod stratification_or_tests {
+    use super::*;
+    use crate::query::datalog::rules::RuleRegistry;
+    use crate::query::datalog::types::{EdnValue, Pattern, Rule, WhereClause};
+
+    #[test]
+    fn test_from_rules_records_positive_dep_inside_or_branch() {
+        // Rule: (p ?x) :- (or (active ?x) (pending ?x))
+        // Should record positive edges: p → active, p → pending
+        let mut registry = RuleRegistry::new();
+        let rule = Rule::new(
+            vec![
+                EdnValue::Symbol("p".to_string()),
+                EdnValue::Symbol("?x".to_string()),
+            ],
+            vec![WhereClause::Or(vec![
+                vec![WhereClause::RuleInvocation {
+                    predicate: "active".to_string(),
+                    args: vec![EdnValue::Symbol("?x".to_string())],
+                }],
+                vec![WhereClause::RuleInvocation {
+                    predicate: "pending".to_string(),
+                    args: vec![EdnValue::Symbol("?x".to_string())],
+                }],
+            ])],
+        );
+        registry.register_rule_unchecked("p".to_string(), rule);
+        let graph = DependencyGraph::from_rules(&registry);
+        // Must stratify without error (positive-only: no negative cycle)
+        let strata = graph.stratify();
+        assert!(
+            strata.is_ok(),
+            "or with positive rule invocations should stratify"
+        );
+    }
+
+    #[test]
+    fn test_from_rules_or_pattern_only_no_neg_dep() {
+        // Or branch with only a Pattern — no rule invocations → no deps
+        let mut registry = RuleRegistry::new();
+        let rule = Rule::new(
+            vec![
+                EdnValue::Symbol("p".to_string()),
+                EdnValue::Symbol("?x".to_string()),
+            ],
+            vec![WhereClause::Or(vec![vec![WhereClause::Pattern(
+                Pattern::new(
+                    EdnValue::Symbol("?x".to_string()),
+                    EdnValue::Keyword(":status".to_string()),
+                    EdnValue::Keyword(":active".to_string()),
+                ),
+            )]])],
+        );
+        registry.register_rule_unchecked("p".to_string(), rule);
+        let graph = DependencyGraph::from_rules(&registry);
+        assert!(graph.stratify().is_ok());
     }
 }

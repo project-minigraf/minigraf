@@ -172,6 +172,30 @@ impl PatternMatcher {
         results
     }
 
+    /// Match multiple patterns starting from existing seed bindings.
+    ///
+    /// For each seed binding, extends it by matching all patterns in sequence.
+    /// Returns all extended bindings that satisfy every pattern.
+    /// If `seed` is empty, returns empty. If `patterns` is empty, returns `seed` unchanged.
+    pub(crate) fn match_patterns_seeded(
+        &self,
+        patterns: &[Pattern],
+        seed: Vec<Bindings>,
+    ) -> Vec<Bindings> {
+        if seed.is_empty() {
+            return vec![];
+        }
+        if patterns.is_empty() {
+            return seed;
+        }
+
+        let mut results = seed;
+        for pattern in patterns {
+            results = self.join_with_pattern(results, pattern);
+        }
+        results
+    }
+
     /// Join existing bindings with a new pattern
     /// Only keeps bindings that are consistent with the new pattern
     fn join_with_pattern(
@@ -482,5 +506,76 @@ mod tests {
         let result1 = edn_to_entity_id(&EdnValue::Keyword(":alice".to_string())).unwrap();
         let result2 = edn_to_entity_id(&EdnValue::Keyword(":alice".to_string())).unwrap();
         assert_eq!(result1, result2); // Same keyword = same UUID
+    }
+
+    #[test]
+    fn test_match_patterns_seeded_with_existing_bindings() {
+        use uuid::Uuid;
+        let storage = FactStorage::new();
+        let alice_id = Uuid::new_v4();
+        let bob_id = Uuid::new_v4();
+
+        storage
+            .transact(
+                vec![
+                    (alice_id, ":person/age".to_string(), Value::Integer(30)),
+                    (bob_id, ":person/age".to_string(), Value::Integer(25)),
+                ],
+                None,
+            )
+            .unwrap();
+
+        let matcher = PatternMatcher::new(storage);
+
+        // Seed: ?e is already bound to alice_id
+        let seed = vec![{
+            let mut m = HashMap::new();
+            m.insert("?e".to_string(), Value::Ref(alice_id));
+            m
+        }];
+
+        // Pattern: [?e :person/age ?age]
+        let pattern = Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":person/age".to_string()),
+            EdnValue::Symbol("?age".to_string()),
+        );
+
+        let results = matcher.match_patterns_seeded(&[pattern], seed);
+        // Should find age=30 for alice only (bob is not in seed)
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].get("?age"), Some(&Value::Integer(30)));
+    }
+
+    #[test]
+    fn test_match_patterns_seeded_empty_seed_returns_empty() {
+        use uuid::Uuid;
+        let storage = FactStorage::new();
+        let alice_id = Uuid::new_v4();
+        storage
+            .transact(vec![(alice_id, ":a".to_string(), Value::Integer(1))], None)
+            .unwrap();
+        let matcher = PatternMatcher::new(storage);
+        let pattern = Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":a".to_string()),
+            EdnValue::Symbol("?v".to_string()),
+        );
+        let results = matcher.match_patterns_seeded(&[pattern], vec![]);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_match_patterns_seeded_empty_patterns_returns_seed() {
+        let storage = FactStorage::new();
+        let matcher = PatternMatcher::new(storage);
+        let seed = vec![{
+            let mut m = HashMap::new();
+            m.insert("?x".to_string(), Value::Integer(42));
+            m
+        }];
+        let results = matcher.match_patterns_seeded(&[], seed.clone());
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].get("?x"), Some(&Value::Integer(42)));
     }
 }
