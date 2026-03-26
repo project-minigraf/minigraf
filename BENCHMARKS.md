@@ -2,7 +2,7 @@
 
 **Live benchmark history**: [bencher.dev/console/projects/minigraf/perf](https://bencher.dev/console/projects/minigraf/perf)
 
-Benchmark results for Minigraf v0.8.0 (Phase 6.5 — on-disk B+tree indexes, file format v6).
+Benchmark results for Minigraf v0.8.0 (Phase 6.5 — on-disk B+tree indexes, file format v6). Benchmark groups for negation, disjunction, aggregation, and expression clauses were added in v0.13.0; timing data for those sections will be populated after the next scheduled run.
 
 ## Environment
 
@@ -148,6 +148,69 @@ Pre-loaded 10K-fact database.
 | `readers` | — | 41.5 ms | 87.7 ms | 152.8 ms |
 | `readers_plus_writer` | — | 34.0 ms | 73.9 ms | 146.8 ms |
 | `serialized_writers` | 10.98 µs | 25.9 µs | 56.4 µs | 112 µs |
+
+---
+
+## Negation (`not` / `not-join`)
+
+Measures the post-filter pass overhead at different dataset sizes. 10% of entities are excluded.
+
+| Benchmark | 1K | 10K |
+|---|---|---|
+| `not_scale` | — | — |
+| `not_join_scale` | — | — |
+| `not_rule_body` | — | — |
+
+`not_selectivity` — fixed 10K DB, exclusion fraction swept from 0% to 100%:
+
+| Selectivity | 0% excl. | 25% excl. | 50% excl. | 75% excl. | 100% excl. |
+|---|---|---|---|---|---|
+| `not_selectivity` | — | — | — | — | — |
+
+---
+
+## Disjunction (`or` / `or-join`)
+
+Measures `or`-expansion and `or-join` projection overhead. 25% of entities have `:tag-a`, 25% have `:tag-b`, 50% are untagged.
+
+| Benchmark | 1K | 10K |
+|---|---|---|
+| `or_scale` | — | — |
+| `or_join_scale` | — | — |
+| `or_rule_body` | — | — |
+
+`or_selectivity` — fixed 10K DB, fraction matching either branch swept from 0% to 100%:
+
+| Selectivity | 0% | 25% | 50% | 75% | 100% |
+|---|---|---|---|---|---|
+| `or_selectivity` | — | — | — | — | — |
+
+---
+
+## Aggregation
+
+Measures aggregation post-processing overhead. `count_scale`/`sum_scale` use the value-only fixture; `grouped_count_scale`/`with_grouped_sum` use a 10-department fixture.
+
+| Benchmark | 1K | 10K |
+|---|---|---|
+| `count_scale` (scalar `count`) | — | — |
+| `sum_scale` (scalar `sum`) | — | — |
+| `grouped_count_scale` (grouped by dept, 10 groups) | — | — |
+| `with_grouped_sum` (`:with` clause, grouped sum) | — | — |
+
+---
+
+## Expression Clauses
+
+Measures the expression evaluation pass overhead. `filter_scale` keeps half of entities; `binding_scale` binds a new variable for every row; `binding_into_agg` pipes through a scalar aggregate.
+
+| Benchmark | 1K | 10K |
+|---|---|---|
+| `filter_scale` (`[(< ?v N)]`) | — | — |
+| `binding_scale` (`[(+ ?v 1) ?result]`) | — | — |
+| `binding_into_agg` (`[(* ?v 2) ?doubled]` → `(sum ?doubled)`) | — | — |
+
+> **Note:** Timing data for the above four sections will be populated after the next scheduled benchmark run (`cargo bench`). The `—` entries are placeholders.
 
 ---
 
