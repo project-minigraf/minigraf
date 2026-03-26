@@ -1028,6 +1028,7 @@ fn outer_vars_from_clause(clause: &WhereClause) -> Vec<String> {
             .collect(),
         WhereClause::Not(_) => vec![], // not counted as "outer"
         WhereClause::NotJoin { .. } => vec![], // not counted as "outer"
+        WhereClause::Or(_) | WhereClause::OrJoin { .. } => vec![], // TODO: phase-7-3
         WhereClause::Expr { binding, .. } => match binding {
             Some(var) => vec![var.clone()],
             None => vec![],

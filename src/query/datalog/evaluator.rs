@@ -213,6 +213,12 @@ impl RecursiveEvaluator {
                 WhereClause::Expr { .. } => {
                     expr_clauses.push(clause);
                 }
+                WhereClause::Or(_) | WhereClause::OrJoin { .. } => {
+                    // TODO: phase-7-3 — or/or-join in rules not yet supported
+                    return Err(anyhow!(
+                        "WhereClause::Or/OrJoin in evaluate_rule: not yet implemented"
+                    ));
+                }
             }
         }
 
@@ -641,6 +647,7 @@ impl StratifiedEvaluator {
                         },
                         WhereClause::Not(_) | WhereClause::NotJoin { .. } => None,
                         WhereClause::Expr { .. } => None,
+                        WhereClause::Or(_) | WhereClause::OrJoin { .. } => None, // TODO: phase-7-3
                     })
                     .collect();
 
@@ -710,6 +717,7 @@ impl StratifiedEvaluator {
                                 }
                                 WhereClause::Not(_) | WhereClause::NotJoin { .. } => None,
                                 WhereClause::Expr { .. } => None,
+                                WhereClause::Or(_) | WhereClause::OrJoin { .. } => None, // TODO: phase-7-3
                             })
                             .collect();
 

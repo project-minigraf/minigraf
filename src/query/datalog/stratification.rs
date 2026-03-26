@@ -33,6 +33,7 @@ impl DependencyGraph {
                         }
                         WhereClause::Pattern(_) => {} // base facts: no predicate dependency
                         WhereClause::Expr { .. } => {} // expression clauses: no predicate dependency
+                        WhereClause::Or(_) | WhereClause::OrJoin { .. } => {} // TODO: phase-7-3
                     }
                 }
             }

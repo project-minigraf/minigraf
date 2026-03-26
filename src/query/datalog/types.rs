@@ -290,6 +290,15 @@ pub enum WhereClause {
     ///
     /// Type mismatches and division by zero silently drop the row.
     Expr { expr: Expr, binding: Option<String> },
+    /// Disjunction: (or branch1 branch2 ...) — succeeds if any branch matches.
+    /// Each branch is a Vec<WhereClause>. A single clause is a one-element branch.
+    Or(Vec<Vec<WhereClause>>),
+    /// or-join: (or-join [?v1 ?v2] branch1 branch2 ...)
+    /// join_vars are visible to the outer query; branch-private vars are existential.
+    OrJoin {
+        join_vars: Vec<String>,
+        branches: Vec<Vec<WhereClause>>,
+    },
 }
 
 impl WhereClause {
@@ -305,6 +314,10 @@ impl WhereClause {
                 clauses.iter().flat_map(|c| c.rule_invocations()).collect()
             }
             WhereClause::Expr { .. } => vec![],
+            WhereClause::Or(branches) | WhereClause::OrJoin { branches, .. } => branches
+                .iter()
+                .flat_map(|b| b.iter().flat_map(|c| c.rule_invocations()))
+                .collect(),
         }
     }
 
@@ -316,7 +329,9 @@ impl WhereClause {
                 .any(|c| matches!(c, WhereClause::RuleInvocation { .. })),
             WhereClause::Pattern(_)
             | WhereClause::RuleInvocation { .. }
-            | WhereClause::Expr { .. } => false,
+            | WhereClause::Expr { .. }
+            | WhereClause::Or(_)
+            | WhereClause::OrJoin { .. } => false,
         }
     }
 }
@@ -403,6 +418,11 @@ impl DatalogQuery {
                 }
                 WhereClause::Pattern(_) => {}
                 WhereClause::Expr { .. } => {}
+                WhereClause::Or(branches) | WhereClause::OrJoin { branches, .. } => {
+                    for branch in branches {
+                        result.extend(Self::collect_rule_invocations_recursive(branch));
+                    }
+                }
             }
         }
         result
@@ -983,5 +1003,78 @@ mod tests {
         };
         assert!(clause.rule_invocations().is_empty());
         assert!(!clause.has_negated_invocation());
+    }
+
+    #[test]
+    fn test_where_clause_or_variant_exists() {
+        let branch1 = vec![WhereClause::Pattern(Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":a".to_string()),
+            EdnValue::Symbol("?v".to_string()),
+        ))];
+        let branch2 = vec![WhereClause::Pattern(Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":b".to_string()),
+            EdnValue::Symbol("?v".to_string()),
+        ))];
+        let or_clause = WhereClause::Or(vec![branch1, branch2]);
+        assert!(matches!(or_clause, WhereClause::Or(_)));
+    }
+
+    #[test]
+    fn test_where_clause_or_join_variant_exists() {
+        let branch = vec![WhereClause::Pattern(Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":tag".to_string()),
+            EdnValue::Symbol("?tag".to_string()),
+        ))];
+        let oj = WhereClause::OrJoin {
+            join_vars: vec!["?e".to_string()],
+            branches: vec![branch],
+        };
+        assert!(matches!(oj, WhereClause::OrJoin { .. }));
+    }
+
+    #[test]
+    fn test_rule_invocations_recurses_into_or_branches() {
+        let branch = vec![WhereClause::RuleInvocation {
+            predicate: "active".to_string(),
+            args: vec![EdnValue::Symbol("?e".to_string())],
+        }];
+        let or_clause = WhereClause::Or(vec![branch]);
+        assert_eq!(or_clause.rule_invocations(), vec!["active"]);
+    }
+
+    #[test]
+    fn test_has_negated_invocation_false_for_or() {
+        let branch = vec![WhereClause::Pattern(Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":a".to_string()),
+            EdnValue::Boolean(true),
+        ))];
+        let or_clause = WhereClause::Or(vec![branch]);
+        assert!(!or_clause.has_negated_invocation());
+    }
+
+    #[test]
+    fn test_collect_rule_invocations_recurses_into_or_branches() {
+        let query = DatalogQuery::new(
+            vec![FindSpec::Variable("?e".to_string())],
+            vec![WhereClause::Or(vec![
+                vec![WhereClause::RuleInvocation {
+                    predicate: "active".to_string(),
+                    args: vec![EdnValue::Symbol("?e".to_string())],
+                }],
+                vec![WhereClause::RuleInvocation {
+                    predicate: "pending".to_string(),
+                    args: vec![EdnValue::Symbol("?e".to_string())],
+                }],
+            ])],
+        );
+        let invocations = query.get_rule_invocations();
+        assert_eq!(invocations.len(), 2);
+        let pred_names: Vec<&str> = invocations.iter().map(|(p, _)| p.as_str()).collect();
+        assert!(pred_names.contains(&"active"));
+        assert!(pred_names.contains(&"pending"));
     }
 }
