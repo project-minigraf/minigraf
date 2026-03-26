@@ -40,7 +40,18 @@ Add `or` and `or-join` disjunction to Minigraf's Datalog query language. These a
 
 ### Rules path (mixed-rules loop in `StratifiedEvaluator`)
 
-Same relative position: after `matcher.match_patterns(&positive_patterns)` returns `raw_candidates`, `apply_or_clauses` is applied to expand them, then `apply_expr_clauses_in_evaluator`, then not/not-join post-filters.
+The current mixed-rules loop order is: `match_patterns` → `apply_expr_clauses_in_evaluator` → not/not-join filters.
+
+With this change, `apply_or_clauses` is inserted **before** `apply_expr_clauses_in_evaluator`:
+
+```
+raw_candidates = matcher.match_patterns(&positive_patterns)
+or_expanded    = apply_or_clauses(&rule.body, raw_candidates, ...)   ← new
+candidates     = apply_expr_clauses_in_evaluator(or_expanded, ...)
+// then existing not/not-join filters as before
+```
+
+This keeps `or`-expansion before `Expr` filtering in both paths, which is consistent: a branch cannot depend on a variable bound by a top-level `Expr` clause in the same rule body, mirroring the top-level non-rules path order.
 
 This produces the same results as sequential evaluation for valid (safe) queries and is simpler to implement.
 
@@ -102,9 +113,9 @@ pub(crate) fn match_patterns_seeded(
 ) -> Vec<Bindings>
 ```
 
-Starts from `seed` bindings instead of a single empty binding. Iterates over each seed binding and joins each pattern in sequence, collecting all results. The existing `match_patterns` is left unchanged as its own implementation — both coexist.
+`Bindings` is `pub type Bindings = HashMap<String, Value>` from `matcher.rs` (already exported). Callers in `executor.rs` use the module-private `type Binding = HashMap<String, Value>` alias — this is the same concrete type, so passing `Vec<Binding>` to a `Vec<Bindings>` parameter compiles cleanly with no conversion.
 
-`Bindings` here is `pub type Bindings = HashMap<String, Value>` from `matcher.rs` (already exported).
+Starts from `seed` bindings instead of a single empty binding. Iterates over each seed binding and joins each pattern in sequence, collecting all results. The existing `match_patterns` is left unchanged as its own implementation — both coexist.
 
 ---
 
@@ -131,11 +142,13 @@ pub(crate) fn evaluate_branch(
 ) -> anyhow::Result<Vec<Binding>>
 ```
 
-Processing order within a branch:
+Processing order within a branch mirrors the top-level non-rules path order:
 1. `Pattern` / `RuleInvocation` clauses → `match_patterns_seeded`
 2. Nested `Or`/`OrJoin` → recursive `apply_or_clauses`
 3. `Not`/`NotJoin` clauses → existing post-filter logic
 4. `Expr` clauses → `apply_expr_clauses`
+
+`Not` comes before `Expr` in both branch and top-level processing. This means a `Not` inside a branch cannot rely on variables bound by an `Expr` clause in the same branch — the same constraint that exists at the top level.
 
 `evaluate_branch` does not call back into `evaluator.rs` — it uses only functions in `executor.rs` and `matcher.rs`. No circular module dependency.
 
@@ -157,7 +170,10 @@ pub(crate) fn apply_or_clauses(
 For each `Or(branches)` or `OrJoin { join_vars, branches }` encountered in `clauses`:
 - Runs `evaluate_branch` on each branch with the current bindings
 - Unions the results (deduplicating by full binding map)
-- For `or-join`: projects each result down to `join_vars` + outer-bound vars, stripping branch-private vars. **Outer-bound vars** are the set of variable names already present as keys in the incoming binding before this `or-join` clause is processed. Projection keeps any key that is either in `join_vars` or was already a key in the incoming binding; removes any key introduced by a branch that is not in `join_vars`.
+- For `or-join`:
+  - **Outer-bound vars** are the set of variable names already present as keys in the incoming binding before this `or-join` clause is processed.
+  - **Partial bindings**: if a branch result does not have all `join_vars` bound (i.e., a `join_var` key is absent from the result map), that result binding is silently dropped. This is consistent with how pattern matching drops non-matching bindings.
+  - **Projection**: for each retained result, keep only keys that are either in `join_vars` or were already in the incoming binding (outer-bound vars); remove any branch-private key not in `join_vars`.
 - Passes the merged bindings forward to the next clause in `clauses`
 
 In `execute_query`: called after `matcher.match_patterns(...)` and before the `not_clauses`/`not_join_clauses` post-filter pass.
@@ -210,22 +226,49 @@ After `matcher.match_patterns(&positive_patterns)` returns `raw_candidates`, cal
 
 ## Stratification — `src/query/datalog/stratification.rs`
 
-`DependencyGraph::from_rules` has an exhaustive match on `WhereClause` (lines 22–36). Adding `Or`/`OrJoin` variants will cause a **compile error** — non-exhaustive match. New arms must be added:
+`DependencyGraph::from_rules` has an exhaustive match on `WhereClause` (lines 22–36). Adding `Or`/`OrJoin` variants will cause a **compile error** — non-exhaustive match.
+
+To handle arbitrary nesting (nested `or` inside `or`, `not` inside `or`, etc.), refactor the inner clause processing into a recursive helper and call it from both the existing `Not`/`NotJoin` arms and the new `Or`/`OrJoin` arms:
 
 ```rust
-WhereClause::Or(branches) | WhereClause::OrJoin { branches, .. } => {
-    for branch in branches {
-        for inner_clause in branch {
-            if let WhereClause::RuleInvocation { predicate, .. } = inner_clause {
-                entry.push((predicate.clone(), false)); // positive edge
-            }
-            // recurse into nested Or/OrJoin within branches
+fn collect_clause_deps(
+    clause: &WhereClause,
+    entry: &mut Vec<(String, bool)>,
+) {
+    match clause {
+        WhereClause::RuleInvocation { predicate, .. } => {
+            entry.push((predicate.clone(), false)); // positive edge
         }
+        WhereClause::Not(inner) => {
+            for inner_clause in inner {
+                if let WhereClause::RuleInvocation { predicate, .. } = inner_clause {
+                    entry.push((predicate.clone(), true)); // negative edge
+                }
+            }
+        }
+        WhereClause::NotJoin { clauses: inner, .. } => {
+            for inner_clause in inner {
+                if let WhereClause::RuleInvocation { predicate, .. } = inner_clause {
+                    entry.push((predicate.clone(), true)); // negative edge
+                }
+            }
+        }
+        WhereClause::Or(branches) | WhereClause::OrJoin { branches, .. } => {
+            for branch in branches {
+                for inner_clause in branch {
+                    collect_clause_deps(inner_clause, entry); // recurse
+                }
+            }
+        }
+        WhereClause::Pattern(_) => {}
+        WhereClause::Expr { .. } => {}
     }
 }
 ```
 
-`Or`/`OrJoin` never create negative edges directly. Any `Not`/`NotJoin` nested inside a branch creates its own negative edge when recursion reaches it. Full recursion into branches (not just one level) is needed to handle nested `or`.
+Replace the existing inner loop body in `from_rules` with calls to `collect_clause_deps(clause, entry)`.
+
+`Or`/`OrJoin` clauses contribute only positive edges. `Not`/`NotJoin` nested inside a branch contribute negative edges when the recursion reaches them.
 
 ---
 
