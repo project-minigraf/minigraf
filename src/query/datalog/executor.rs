@@ -3,7 +3,7 @@ use super::matcher::{PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::optimizer;
 use super::rules::RuleRegistry;
 use super::types::{
-    AggFunc, BinOp, DatalogCommand, DatalogQuery, EdnValue, Expr, FindSpec, Pattern, Rule,
+    AggFunc, AsOf, BinOp, DatalogCommand, DatalogQuery, EdnValue, Expr, FindSpec, Pattern, Rule,
     Transaction, UnaryOp, ValidAt, WhereClause,
 };
 use crate::graph::FactStorage;
@@ -193,6 +193,18 @@ impl DatalogExecutor {
                 .collect::<Vec<_>>(),
         );
 
+        // Apply Or/OrJoin clauses (post-pass: after pattern matching, before not/expr)
+        let rules_guard = self.rules.read().unwrap();
+        let bindings = apply_or_clauses(
+            &query.where_clauses,
+            bindings,
+            &filtered_storage,
+            &rules_guard,
+            query.as_of.clone(),
+            query.valid_at.clone(),
+        )?;
+        drop(rules_guard);
+
         // Apply not-filter for WhereClause::Not and WhereClause::NotJoin clauses
         // (no rules involved — pure post-filter)
         let not_clauses: Vec<&Vec<WhereClause>> = query
@@ -316,6 +328,18 @@ impl DatalogExecutor {
         // Match all patterns against derived facts
         let matcher = PatternMatcher::new(derived_storage.clone());
         let bindings = matcher.match_patterns(&all_patterns);
+
+        // Apply Or/OrJoin clauses against derived_storage (rules already evaluated)
+        let rules_guard = self.rules.read().unwrap();
+        let bindings = apply_or_clauses(
+            &query.where_clauses,
+            bindings,
+            &derived_storage,
+            &rules_guard,
+            query.as_of.clone(),
+            query.valid_at.clone(),
+        )?;
+        drop(rules_guard);
 
         // Apply not-post-filter for WhereClause::Not and WhereClause::NotJoin clauses
         // in the query body. (The StratifiedEvaluator handles `not`/`not-join` in rule
@@ -783,6 +807,175 @@ fn apply_agg_func(func: &AggFunc, values: &[&Value]) -> Result<Value> {
 }
 
 type Binding = std::collections::HashMap<String, Value>;
+
+/// Evaluate a single branch of an `or`/`or-join` against incoming bindings.
+///
+/// Processing order (mirrors top-level execute_query order):
+/// 1. Pattern/RuleInvocation → match_patterns_seeded
+/// 2. Nested Or/OrJoin → apply_or_clauses (recursive)
+/// 3. Not/NotJoin → post-filter
+/// 4. Expr → apply_expr_clauses
+pub(crate) fn evaluate_branch(
+    branch: &[WhereClause],
+    incoming: Vec<Binding>,
+    storage: &FactStorage,
+    rules: &crate::query::datalog::rules::RuleRegistry,
+    as_of: Option<AsOf>,
+    valid_at: Option<ValidAt>,
+) -> anyhow::Result<Vec<Binding>> {
+    use crate::query::datalog::evaluator::rule_invocation_to_pattern;
+    use crate::query::datalog::matcher::PatternMatcher;
+
+    if incoming.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Step 1: Collect Pattern and RuleInvocation clauses
+    let patterns: Vec<Pattern> = branch
+        .iter()
+        .filter_map(|c| match c {
+            WhereClause::Pattern(p) => Some(p.clone()),
+            WhereClause::RuleInvocation { predicate, args } => {
+                rule_invocation_to_pattern(predicate, args).ok()
+            }
+            _ => None,
+        })
+        .collect();
+
+    let matcher = PatternMatcher::new(storage.clone());
+    let bindings = if patterns.is_empty() {
+        incoming
+    } else {
+        matcher.match_patterns_seeded(&patterns, incoming)
+    };
+
+    if bindings.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Step 2: Nested Or/OrJoin
+    let bindings = apply_or_clauses(branch, bindings, storage, rules, as_of.clone(), valid_at.clone())?;
+
+    if bindings.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Step 3: Not/NotJoin post-filter
+    let not_clauses: Vec<&Vec<WhereClause>> = branch
+        .iter()
+        .filter_map(|c| match c {
+            WhereClause::Not(inner) => Some(inner),
+            _ => None,
+        })
+        .collect();
+
+    let not_join_clauses: Vec<(Vec<String>, Vec<WhereClause>)> = branch
+        .iter()
+        .filter_map(|c| match c {
+            WhereClause::NotJoin { join_vars, clauses } => {
+                Some((join_vars.clone(), clauses.clone()))
+            }
+            _ => None,
+        })
+        .collect();
+
+    let bindings = if not_clauses.is_empty() && not_join_clauses.is_empty() {
+        bindings
+    } else {
+        bindings
+            .into_iter()
+            .filter(|binding| {
+                for not_body in &not_clauses {
+                    if not_body_matches(not_body, binding, storage) {
+                        return false;
+                    }
+                }
+                for (join_vars, nj_clauses) in &not_join_clauses {
+                    if evaluate_not_join(join_vars, nj_clauses, binding, storage) {
+                        return false;
+                    }
+                }
+                true
+            })
+            .collect()
+    };
+
+    // Step 4: Expr clauses
+    let bindings = apply_expr_clauses(bindings, branch);
+
+    Ok(bindings)
+}
+
+/// Apply all Or/OrJoin clauses from `clauses` to `bindings` in sequence.
+///
+/// Non-Or/OrJoin clauses are ignored (handled elsewhere).
+/// For `Or`: union results from all branches (deduplicated by full binding map).
+/// For `OrJoin`: union results, then project out branch-private variables.
+pub(crate) fn apply_or_clauses(
+    clauses: &[WhereClause],
+    mut bindings: Vec<Binding>,
+    storage: &FactStorage,
+    rules: &crate::query::datalog::rules::RuleRegistry,
+    as_of: Option<AsOf>,
+    valid_at: Option<ValidAt>,
+) -> anyhow::Result<Vec<Binding>> {
+    for clause in clauses {
+        match clause {
+            WhereClause::Or(branches) => {
+                let mut result: Vec<Binding> = Vec::new();
+                for branch in branches {
+                    let branch_result = evaluate_branch(
+                        branch,
+                        bindings.clone(),
+                        storage,
+                        rules,
+                        as_of.clone(),
+                        valid_at.clone(),
+                    )?;
+                    for b in branch_result {
+                        if !result.contains(&b) {
+                            result.push(b);
+                        }
+                    }
+                }
+                bindings = result;
+            }
+            WhereClause::OrJoin { join_vars, branches } => {
+                // outer_keys: all variable names present in the incoming bindings
+                let outer_keys: std::collections::HashSet<String> = bindings
+                    .iter()
+                    .flat_map(|b| b.keys().cloned())
+                    .collect();
+
+                let mut result: Vec<Binding> = Vec::new();
+                for branch in branches {
+                    let branch_result = evaluate_branch(
+                        branch,
+                        bindings.clone(),
+                        storage,
+                        rules,
+                        as_of.clone(),
+                        valid_at.clone(),
+                    )?;
+                    for mut b in branch_result {
+                        // Drop partial bindings (missing any join_var)
+                        if !join_vars.iter().all(|v| b.contains_key(v)) {
+                            continue;
+                        }
+                        // Project: keep only outer_keys (strips branch-private vars)
+                        b.retain(|k, _| outer_keys.contains(k));
+                        if !result.contains(&b) {
+                            result.push(b);
+                        }
+                    }
+                }
+                bindings = result;
+            }
+            _ => {} // Other clause types handled elsewhere
+        }
+    }
+    Ok(bindings)
+}
 
 /// Returns true for Boolean(true), non-zero Integer, non-zero Float.
 /// All other Value variants (String, Keyword, Ref, Null, Float(0.0)) → false.
@@ -2551,6 +2744,64 @@ mod expr_eval_tests {
         match result.unwrap() {
             QueryResult::QueryResults { results, .. } => {
                 assert_eq!(results.len(), 1, "expected exactly one result");
+            }
+            _ => panic!("expected QueryResults"),
+        }
+    }
+
+    #[test]
+    fn test_apply_or_clauses_union_from_two_branches() {
+        // e1 has :color :red, e2 has :color :blue.
+        // or-only where clause: (or [?e :color :red] [?e :color :blue])
+        // Without apply_or_clauses, get_patterns() returns [] → match_patterns returns
+        // [{}] (one empty binding) → extract_variables finds no ?e binding → 0 results.
+        // With apply_or_clauses, both entities are returned → 2 results.
+        use uuid::Uuid;
+        let storage = FactStorage::new();
+        let e1 = Uuid::new_v4();
+        let e2 = Uuid::new_v4();
+        storage.transact(vec![
+            (e1, ":color".to_string(), Value::Keyword(":red".to_string())),
+            (e2, ":color".to_string(), Value::Keyword(":blue".to_string())),
+        ], None).unwrap();
+
+        let executor = DatalogExecutor::new(storage.clone());
+        let cmd = crate::query::datalog::parser::parse_datalog_command(
+            r#"(query [:find ?e
+                       :where (or [?e :color :red] [?e :color :blue])])"#,
+        ).unwrap();
+        let result = executor.execute(cmd).unwrap();
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(results.len(), 2, "both entities should match via or");
+            }
+            _ => panic!("expected QueryResults"),
+        }
+    }
+
+    #[test]
+    fn test_apply_or_clauses_deduplication() {
+        // e1 has :color :red AND :shape :circle.
+        // or clause: (or [?e :color :red] [?e :shape :circle])
+        // Without apply_or_clauses: or is skipped → 0 results (no non-or patterns).
+        // With apply_or_clauses: e1 is returned by both branches → deduplicated to 1 result.
+        use uuid::Uuid;
+        let storage = FactStorage::new();
+        let e1 = Uuid::new_v4();
+        storage.transact(vec![
+            (e1, ":color".to_string(), Value::Keyword(":red".to_string())),
+            (e1, ":shape".to_string(), Value::Keyword(":circle".to_string())),
+        ], None).unwrap();
+
+        let executor = DatalogExecutor::new(storage.clone());
+        let cmd = crate::query::datalog::parser::parse_datalog_command(
+            r#"(query [:find ?e
+                       :where (or [?e :color :red] [?e :shape :circle])])"#,
+        ).unwrap();
+        let result = executor.execute(cmd).unwrap();
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(results.len(), 1, "one entity matched by both branches → deduplicated");
             }
             _ => panic!("expected QueryResults"),
         }
