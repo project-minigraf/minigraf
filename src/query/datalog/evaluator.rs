@@ -590,7 +590,13 @@ impl StratifiedEvaluator {
                     let has_not = rule
                         .body
                         .iter()
-                        .any(|c| matches!(c, WhereClause::Not(_) | WhereClause::NotJoin { .. }));
+                        .any(|c| matches!(
+                            c,
+                            WhereClause::Not(_)
+                                | WhereClause::NotJoin { .. }
+                                | WhereClause::Or(_)
+                                | WhereClause::OrJoin { .. }
+                        ));
                     if has_not {
                         mixed_rules.push((pred.clone(), rule));
                     } else {
@@ -681,9 +687,25 @@ impl StratifiedEvaluator {
                 let matcher = PatternMatcher::new(accumulated.clone());
                 let raw_candidates = matcher.match_patterns(&positive_patterns);
 
+                // Apply Or/OrJoin clauses before Expr (mirrors top-level execute_query order)
+                let or_expanded = {
+                    use crate::query::datalog::executor::apply_or_clauses;
+                    let registry_guard = self.rules.read().unwrap();
+                    let expanded = apply_or_clauses(
+                        &rule.body,
+                        raw_candidates,
+                        &accumulated,
+                        &registry_guard,
+                        None,
+                        None,
+                    )?;
+                    drop(registry_guard);
+                    expanded
+                };
+
                 // Apply top-level Expr clauses to filter/extend candidates
                 let candidates =
-                    apply_expr_clauses_in_evaluator(raw_candidates, &body_expr_clauses);
+                    apply_expr_clauses_in_evaluator(or_expanded, &body_expr_clauses);
 
                 // Build temp_eval once per rule (outside the binding loop);
                 // instantiate_head_public only uses storage, not the registry.
@@ -1540,5 +1562,49 @@ mod tests {
                 "the eligible entity should be alice"
             );
         }
+    }
+
+    #[test]
+    fn test_stratified_evaluator_routes_or_rule_to_mixed_path() {
+        use std::sync::{Arc, RwLock};
+        use crate::query::datalog::rules::RuleRegistry;
+        use crate::query::datalog::types::{EdnValue, Pattern, Rule, WhereClause};
+        use crate::graph::types::Value;
+
+        let storage = FactStorage::new();
+        let e1 = uuid::Uuid::new_v4();
+        let e2 = uuid::Uuid::new_v4();
+        storage.transact(vec![
+            (e1, ":a".to_string(), Value::Boolean(true)),
+            (e2, ":b".to_string(), Value::Boolean(true)),
+        ], None).unwrap();
+
+        let mut registry = RuleRegistry::new();
+        // Rule: (p ?x) :- (or [?x :a true] [?x :b true])
+        let rule = Rule::new(
+            vec![
+                EdnValue::Symbol("p".to_string()),
+                EdnValue::Symbol("?x".to_string()),
+            ],
+            vec![WhereClause::Or(vec![
+                vec![WhereClause::Pattern(Pattern::new(
+                    EdnValue::Symbol("?x".to_string()),
+                    EdnValue::Keyword(":a".to_string()),
+                    EdnValue::Boolean(true),
+                ))],
+                vec![WhereClause::Pattern(Pattern::new(
+                    EdnValue::Symbol("?x".to_string()),
+                    EdnValue::Keyword(":b".to_string()),
+                    EdnValue::Boolean(true),
+                ))],
+            ])],
+        );
+        registry.register_rule_unchecked("p".to_string(), rule);
+        let rules = Arc::new(RwLock::new(registry));
+        let evaluator = StratifiedEvaluator::new(storage.clone(), rules, 1000);
+        let derived = evaluator.evaluate(&["p".to_string()]).unwrap();
+        let facts = derived.get_asserted_facts().unwrap();
+        let p_facts: Vec<_> = facts.iter().filter(|f| f.attribute == ":p").collect();
+        assert_eq!(p_facts.len(), 2, "both e1 and e2 should be derived as :p");
     }
 }
