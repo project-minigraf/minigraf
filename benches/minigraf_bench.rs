@@ -821,8 +821,10 @@ fn bench_disjunction(c: &mut Criterion) {
     // or/scale: overhead of the `or` expansion at different DB sizes.
     // 25% tagged-a (first quarter), 25% tagged-b (last quarter), 50% untagged.
     // Query returns the 50% that have either tag.
+    // sample_size(10): 1k ~800ms/iter, 10k ~8s/iter — too slow for 100 samples.
     {
         let mut group = c.benchmark_group("disjunction/or_scale");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             let a_count = n / 4;
             let b_count = n / 4;
@@ -844,6 +846,7 @@ fn bench_disjunction(c: &mut Criterion) {
     // Semantically equivalent to or/scale but exercises the or-join projection path.
     {
         let mut group = c.benchmark_group("disjunction/or_join_scale");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             let a_count = n / 4;
             let b_count = n / 4;
@@ -865,6 +868,7 @@ fn bench_disjunction(c: &mut Criterion) {
     // Shows how match density affects or-expansion cost.
     {
         let mut group = c.benchmark_group("disjunction/or_selectivity");
+        group.sample_size(10);
         let n = 10_000;
         for &(label, pct) in &[
             ("match_0pct", 0usize),
@@ -894,6 +898,7 @@ fn bench_disjunction(c: &mut Criterion) {
     // Half have tag-a, half have tag-b → all entities match.
     {
         let mut group = c.benchmark_group("disjunction/or_rule_body");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             let db = helpers::populate_with_or_rule(n);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
