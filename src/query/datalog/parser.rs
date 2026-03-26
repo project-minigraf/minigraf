@@ -986,6 +986,48 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
                 clauses: inner,
             })
         }
+        EdnValue::Symbol(s) if s == "or" => {
+            if list.len() < 2 {
+                return Err("(or) requires at least one branch".to_string());
+            }
+            let mut branches: Vec<Vec<WhereClause>> = Vec::new();
+            for item in &list[1..] {
+                let branch = parse_or_branch(item)?;
+                branches.push(branch);
+            }
+            Ok(WhereClause::Or(branches))
+        }
+        EdnValue::Symbol(s) if s == "or-join" => {
+            if list.len() < 3 {
+                return Err(
+                    "(or-join) requires a join-vars vector and at least one branch".to_string(),
+                );
+            }
+            let join_var_vec = match &list[1] {
+                EdnValue::Vector(v) => v,
+                _ => {
+                    return Err(
+                        "(or-join) first argument must be a vector of join variables".to_string(),
+                    );
+                }
+            };
+            let join_vars: Vec<String> = join_var_vec
+                .iter()
+                .map(|v| match v {
+                    EdnValue::Symbol(s) if s.starts_with('?') => Ok(s.clone()),
+                    _ => Err(format!(
+                        "(or-join) join variables must be logic variables, got {:?}",
+                        v
+                    )),
+                })
+                .collect::<Result<_, _>>()?;
+            let mut branches: Vec<Vec<WhereClause>> = Vec::new();
+            for item in &list[2..] {
+                let branch = parse_or_branch(item)?;
+                branches.push(branch);
+            }
+            Ok(WhereClause::OrJoin { join_vars, branches })
+        }
         EdnValue::Symbol(predicate) => {
             let args = list[1..].to_vec();
             Ok(WhereClause::RuleInvocation {
@@ -996,6 +1038,56 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
         _ => Err(format!(
             "Rule invocation must start with predicate name (symbol), got {:?}",
             list[0]
+        )),
+    }
+}
+
+/// Parse a single branch of an (or ...) or (or-join ...) clause.
+///
+/// A branch is either:
+/// - A single clause: `[pattern]` or `(rule-invocation)` or `[(expr)]`
+/// - A grouped list of clauses: `(and clause1 clause2 ...)`
+fn parse_or_branch(item: &EdnValue) -> Result<Vec<WhereClause>, String> {
+    match item {
+        EdnValue::List(inner)
+            if matches!(inner.first(), Some(EdnValue::Symbol(s)) if s == "and") =>
+        {
+            // (and clause1 clause2 ...) — multi-clause branch
+            if inner.len() < 2 {
+                return Err(
+                    "(and) inside or/or-join requires at least one clause".to_string(),
+                );
+            }
+            let mut clauses = Vec::new();
+            for clause_item in &inner[1..] {
+                clauses.push(parse_or_branch_item(clause_item)?);
+            }
+            Ok(clauses)
+        }
+        other => {
+            // Single-clause branch
+            Ok(vec![parse_or_branch_item(other)?])
+        }
+    }
+}
+
+/// Parse a single clause item within an or branch.
+fn parse_or_branch_item(item: &EdnValue) -> Result<WhereClause, String> {
+    match item {
+        EdnValue::Vector(vec) => {
+            if matches!(vec.first(), Some(EdnValue::List(_))) {
+                parse_expr_clause(vec)
+            } else {
+                Ok(WhereClause::Pattern(Pattern::from_edn(vec)?))
+            }
+        }
+        EdnValue::List(inner_list) => {
+            // allow_not=true: or branches can contain not/not-join/or/or-join
+            parse_list_as_where_clause(inner_list, true)
+        }
+        _ => Err(format!(
+            "expected clause inside or branch, got {:?}",
+            item
         )),
     }
 }
@@ -1028,7 +1120,27 @@ fn outer_vars_from_clause(clause: &WhereClause) -> Vec<String> {
             .collect(),
         WhereClause::Not(_) => vec![], // not counted as "outer"
         WhereClause::NotJoin { .. } => vec![], // not counted as "outer"
-        WhereClause::Or(_) | WhereClause::OrJoin { .. } => vec![], // TODO: phase-7-3
+        WhereClause::Or(branches) => {
+            if branches.is_empty() {
+                return vec![];
+            }
+            // Variables available after `or` = intersection across all branches
+            let branch_var_sets: Vec<std::collections::HashSet<String>> = branches
+                .iter()
+                .map(|branch| {
+                    branch
+                        .iter()
+                        .flat_map(outer_vars_from_clause)
+                        .collect::<std::collections::HashSet<_>>()
+                })
+                .collect();
+            branch_var_sets[0]
+                .iter()
+                .filter(|v| branch_var_sets[1..].iter().all(|s| s.contains(*v)))
+                .cloned()
+                .collect()
+        }
+        WhereClause::OrJoin { join_vars, .. } => join_vars.clone(),
         WhereClause::Expr { binding, .. } => match binding {
             Some(var) => vec![var.clone()],
             None => vec![],
@@ -1137,6 +1249,45 @@ fn check_expr_safety_with_bound(
             WhereClause::NotJoin { clauses: inner, .. } => {
                 let mut inner_bound = bound.clone();
                 check_expr_safety_with_bound(inner, &mut inner_bound)?;
+            }
+            WhereClause::Or(branches) => {
+                if !branches.is_empty() {
+                    let mut branch_new_var_sets: Vec<std::collections::HashSet<String>> =
+                        Vec::new();
+                    for branch in branches {
+                        let mut branch_bound = bound.clone();
+                        check_expr_safety_with_bound(branch, &mut branch_bound)?;
+                        let new_vars: std::collections::HashSet<String> =
+                            branch_bound.difference(bound).cloned().collect();
+                        branch_new_var_sets.push(new_vars);
+                    }
+                    if branch_new_var_sets.windows(2).any(|w| w[0] != w[1]) {
+                        return Err(
+                            "all branches of (or ...) must introduce the same set of new variables"
+                                .to_string(),
+                        );
+                    }
+                    if let Some(new_vars) = branch_new_var_sets.first() {
+                        for var in new_vars {
+                            bound.insert(var.clone());
+                        }
+                    }
+                }
+            }
+            WhereClause::OrJoin { join_vars, branches } => {
+                for var in join_vars {
+                    if !var.starts_with("?_") && !bound.contains(var) {
+                        return Err(format!(
+                            "join variable {} in (or-join ...) is not bound by any earlier clause",
+                            var
+                        ));
+                    }
+                }
+                for branch in branches {
+                    let mut branch_bound = bound.clone();
+                    check_expr_safety_with_bound(branch, &mut branch_bound)?;
+                }
+                // or-join does NOT add new variables to the outer bound
             }
             other => {
                 for var in outer_vars_from_clause(other) {
@@ -2150,5 +2301,84 @@ mod tests {
             }
             _ => panic!(),
         }
+    }
+}
+
+#[cfg(test)]
+mod or_parse_tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_or_two_branches() {
+        let cmd = parse_datalog_command(
+            r#"(query [:find ?e
+                       :where [?e :a ?v]
+                              (or [?e :b ?v] [?e :c ?v])])"#,
+        );
+        assert!(cmd.is_ok(), "parse failed: {:?}", cmd.err());
+        if let Ok(DatalogCommand::Query(q)) = cmd {
+            assert_eq!(q.where_clauses.len(), 2);
+            assert!(matches!(q.where_clauses[1], WhereClause::Or(_)));
+        }
+    }
+
+    #[test]
+    fn test_parse_or_with_and_grouping() {
+        let cmd = parse_datalog_command(
+            r#"(query [:find ?e
+                       :where [?e :name ?n]
+                              (or (and [?e :tag ?t]) [?e :label ?t])])"#,
+        );
+        assert!(cmd.is_ok(), "parse with and grouping failed: {:?}", cmd.err());
+        if let Ok(DatalogCommand::Query(q)) = cmd {
+            let or_clause = &q.where_clauses[1];
+            if let WhereClause::Or(branches) = or_clause {
+                assert_eq!(branches.len(), 2);
+                assert_eq!(branches[0].len(), 1);
+                assert_eq!(branches[1].len(), 1);
+            } else {
+                panic!("expected Or clause");
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_or_join_basic() {
+        let cmd = parse_datalog_command(
+            r#"(query [:find ?e
+                       :where [?e :name ?n]
+                              (or-join [?e]
+                                [?e :tag :red]
+                                [?e :tag :blue])])"#,
+        );
+        assert!(cmd.is_ok(), "or-join parse failed: {:?}", cmd.err());
+        if let Ok(DatalogCommand::Query(q)) = cmd {
+            assert!(matches!(q.where_clauses[1], WhereClause::OrJoin { .. }));
+        }
+    }
+
+    #[test]
+    fn test_parse_or_safety_mismatched_new_vars_is_error() {
+        let cmd = parse_datalog_command(
+            r#"(query [:find ?e
+                       :where [?e :name ?n]
+                              (or [?e :a ?x] [?e :b ?y])])"#,
+        );
+        assert!(cmd.is_err(), "should fail: branches introduce different vars");
+        let err = cmd.unwrap_err();
+        assert!(err.contains("same set of new variables"), "unexpected error: {}", err);
+    }
+
+    #[test]
+    fn test_parse_or_join_unbound_join_var_is_error() {
+        let cmd = parse_datalog_command(
+            r#"(query [:find ?e
+                       :where [?e :name ?n]
+                              (or-join [?unbound]
+                                [?unbound :tag :red])])"#,
+        );
+        assert!(cmd.is_err(), "should fail: unbound join var");
+        let err = cmd.unwrap_err();
+        assert!(err.contains("not bound"), "unexpected error: {}", err);
     }
 }
