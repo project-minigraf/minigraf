@@ -1,0 +1,239 @@
+# ========================================
+# Minigraf: Disjunction Demo
+# ========================================
+# Demonstrates or and or-join in query bodies
+# and rule bodies, plus and-grouping and bi-temporal use.
+#
+# Run with: cargo run < demos/demo_disjunction.txt
+# ========================================
+
+# ========================================
+# 1. BASIC or
+# ========================================
+# (or branch1 branch2 ...) matches a binding if ANY
+# branch matches it.  Results from all branches are
+# unioned and deduplicated.
+# All branches of a plain or must bind the same variables.
+
+(transact [[:e1 :tag :red]
+           [:e2 :tag :blue]
+           [:e3 :tag :green]])
+
+# Match entities tagged red OR blue
+# Expected: :e1, :e2
+(query [:find ?e
+        :where [?e :tag ?_t]
+               (or [?e :tag :red]
+                   [?e :tag :blue])])
+
+# ========================================
+# 2. DEDUPLICATION
+# ========================================
+# If a binding matches multiple branches it appears only once.
+
+(transact [[:x :a true] [:x :b true]])
+
+# Both branches match :x — it must appear exactly once
+# Expected: [:x]
+(query [:find ?e
+        :where [?e :a ?_a]
+               (or [?e :a true]
+                   [?e :b true])])
+
+# ========================================
+# 3. and — GROUP CLAUSES WITHIN A BRANCH
+# ========================================
+# (and clause1 clause2 ...) groups multiple patterns
+# into a single or-branch.
+
+(transact [[:u1 :status :active] [:u1 :role :admin]
+           [:u2 :status :active]
+           [:u3 :status :inactive] [:u3 :role :admin]])
+
+# Match users that are (active admins) OR (inactive non-admins)
+# Expected: :u1 (active admin), :u2 treated below
+
+# Active admins OR inactive with no role
+# Expected: :u1
+(query [:find ?u
+        :where [?u :status ?_s]
+               (or (and [?u :status :active]
+                        [?u :role :admin])
+                   (and [?u :status :inactive]
+                        (not [?u :role ?_r])))])
+
+# ========================================
+# 4. not INSIDE AN or BRANCH
+# ========================================
+
+(transact [[:p1 :status :active]
+           [:p2 :status :active] [:p2 :banned true]
+           [:p3 :status :active] [:p3 :vip true]])
+
+# Match users that are (active and not banned) OR vip
+# Expected: :p1 (active, not banned), :p3 (active, vip)
+# :p2 is excluded from branch 1 (banned) but :p3 qualifies via both
+(query [:find ?u
+        :where [?u :status :active]
+               (or (and (not [?u :banned true]))
+                   [?u :vip true])])
+
+# ========================================
+# 5. NESTED or
+# ========================================
+
+(transact [[:n1 :kind :a] [:n2 :kind :b] [:n3 :kind :c]])
+
+# (a OR b) OR c — all three match
+# Expected: :n1, :n2, :n3
+(query [:find ?e
+        :where [?e :kind ?_k]
+               (or (or [?e :kind :a]
+                       [?e :kind :b])
+                   [?e :kind :c])])
+
+# ========================================
+# 6. or-join — BRANCHES BIND DIFFERENT VARIABLES
+# ========================================
+# (or-join [join-vars] branch1 branch2 ...)
+# Branches may bind different internal variables.
+# Only the variables declared in [join-vars] are
+# propagated to the outer query — branch-private
+# variables are stripped from the output.
+
+(transact [[:alice :name "Alice"] [:alice :tag :red]
+           [:bob   :name "Bob"]   [:bob   :badge :gold]
+           [:carol :name "Carol"]])
+
+# Match entities that have a :tag OR a :badge
+# Branch 1 binds ?tag; Branch 2 binds ?badge — different vars.
+# Only ?e (the join var) propagates outward.
+# Expected: "Alice", "Bob"
+(query [:find ?name
+        :where [?e :name ?name]
+               (or-join [?e]
+                 [?e :tag ?_tag]
+                 [?e :badge ?_badge])])
+
+# ========================================
+# 7. or-join WITH MULTIPLE JOIN VARS
+# ========================================
+
+(transact [[:e1 :dept :eng] [:e1 :level :senior]
+           [:e2 :dept :eng] [:e2 :role :lead]
+           [:e3 :dept :hr]])
+
+# Eng employees who are senior OR lead
+# Expected: :e1, :e2
+(query [:find ?e
+        :where [?e :dept ?dept]
+               (or-join [?e ?dept]
+                 (and [?e :dept ?dept] [?e :level :senior])
+                 (and [?e :dept ?dept] [?e :role :lead]))])
+
+# ========================================
+# 8. or IN A RULE BODY
+# ========================================
+
+(transact [[:item-a :tier :gold]
+           [:item-b :tier :silver]
+           [:item-c :tier :bronze]])
+
+(rule [(valuable ?e)
+       (or [?e :tier :gold]
+           [?e :tier :silver])])
+
+# Expected: :item-a, :item-b
+(query [:find ?e
+        :where (valuable ?e)])
+
+# ========================================
+# 9. or-join IN A RULE BODY
+# ========================================
+
+(transact [[:node-1 :color :red]
+           [:node-2 :color :blue]
+           [:node-3 :color :green]])
+
+(rule [(highlighted ?n)
+       (or-join [?n]
+         [?n :color :red]
+         [?n :color :blue])])
+
+# Expected: :node-1, :node-2
+(query [:find ?n
+        :where (highlighted ?n)])
+
+# ========================================
+# 10. or WITH :as-of (TRANSACTION-TIME SNAPSHOT)
+# ========================================
+# Bi-temporal filters apply to the whole query;
+# or-branches see only facts visible at the given tx.
+
+(transact [[:ev1 :event :login]])
+(transact [[:ev2 :event :logout]])
+
+# At tx 1, only :login was present
+# Expected: :ev1
+(query [:find ?e
+        :as-of 1
+        :where [?e :event ?_ev]
+               (or [?e :event :login]
+                   [?e :event :logout])])
+
+# At tx 2, both events are present
+# Expected: :ev1, :ev2
+(query [:find ?e
+        :as-of 2
+        :where [?e :event ?_ev]
+               (or [?e :event :login]
+                   [?e :event :logout])])
+
+# ========================================
+# 11. or WITH :valid-at (VALID-TIME QUERY)
+# ========================================
+
+(transact [[:contract-a :status :active
+            :db/valid-from "2024-01-01T00:00:00Z"
+            :db/valid-to   "2024-06-30T23:59:59Z"]
+           [:contract-b :status :active
+            :db/valid-from "2024-07-01T00:00:00Z"
+            :db/valid-to   "9999-12-31T23:59:59Z"]])
+
+# Which contracts were active in the first half of 2024?
+# Expected: :contract-a
+(query [:find ?c
+        :valid-at "2024-03-15T00:00:00Z"
+        :where [?c :status :active]
+               (or [?c :status :active]
+                   [?c :status :pending])])
+
+EXIT
+
+# ========================================
+# Summary
+# ========================================
+# or vs or-join:
+#
+#   (or branch1 branch2 ...)
+#     All branches must bind the same set of variables.
+#     Results from all branches are unioned + deduplicated.
+#
+#   (or-join [?join-var...] branch1 branch2 ...)
+#     Branches may bind different private variables.
+#     Only the declared join-vars propagate to the outer query.
+#     Useful when different branches use different attributes.
+#
+# (and clause1 clause2 ...)
+#     Groups multiple clauses into one branch of or / or-join.
+#
+# Composition:
+#   - not / not-join may appear inside or branches
+#   - or / or-join may be nested inside each other
+#   - or / or-join may appear inside rule bodies
+#   - or with a negative cycle is rejected at rule registration
+#
+# Bi-temporal:
+#   - :as-of and :valid-at filters compose with or / or-join
+#     exactly as they do with regular where clauses
+# ========================================

@@ -100,6 +100,57 @@
 (query [:find ?descendant :where (ancestor :bob ?descendant)])
 
 # ========================================
+# 5. TEMPORAL QUERIES WITH RECURSIVE RULES
+# ========================================
+# :as-of and :valid-at compose with recursive rules.
+
+# --- tx-time (:as-of) ---
+# Build a graph in two transactions:
+# tx N:   alpha → beta
+# tx N+1: beta → gamma (extends the chain)
+
+(transact [[:alpha :arc :beta]])
+(transact [[:beta  :arc :gamma]])
+
+(rule [(path ?a ?b) [?a :arc ?b]])
+(rule [(path ?a ?b) [?a :arc ?mid] (path ?mid ?b)])
+
+# Current state: alpha can reach beta and gamma
+# Expected: :beta, :gamma
+(query [:find ?to :where (path :alpha ?to)])
+
+# As of the first transact (only alpha→beta existed), alpha could only reach beta
+# Sections 1–4 issued several transacts; alpha→beta is added as tx 9.
+# Adjust :as-of to match the tx count printed after the first arc transact.
+# Expected: :beta
+(query [:find ?to
+        :as-of 9
+        :where (path :alpha ?to)])
+
+# --- valid-time (:valid-at) ---
+# Model connections that are only active during certain periods.
+(transact {:valid-from "2024-01-01" :valid-to "2024-12-31"}
+          [[:hub-a :route :hub-b]])
+(transact [[:hub-b :route :hub-c]])
+
+(rule [(reachable ?x ?y) [?x :route ?y]])
+(rule [(reachable ?x ?y) [?x :route ?m] (reachable ?m ?y)])
+
+# In 2024, hub-a→hub-b is active; hub-a can reach both b and c
+# Expected: :hub-b, :hub-c
+(query [:find ?to
+        :valid-at "2024-06-01"
+        :where (reachable :hub-a ?to)])
+
+# In 2025, hub-a→hub-b has expired; hub-a cannot reach anything
+# Expected: no results
+(query [:find ?to
+        :valid-at "2025-06-01"
+        :where (reachable :hub-a ?to)])
+
+EXIT
+
+# ========================================
 # Summary
 # ========================================
 # Recursive rules enable powerful graph queries:
@@ -107,6 +158,8 @@
 # - Cycle handling with convergence
 # - Arbitrary-depth traversals
 # - Hierarchical relationships (ancestors, descendants)
+# - Time-travel: :as-of queries graph state at a prior tx
+# - Valid-time: :valid-at activates only edges valid at that instant
 #
 # The semi-naive evaluation algorithm ensures:
 # - Efficient computation (only processes new facts)
