@@ -962,7 +962,10 @@ pub(crate) fn apply_or_clauses(
                         if !join_vars.iter().all(|v| b.contains_key(v)) {
                             continue;
                         }
-                        // Project: keep only outer_keys (strips branch-private vars)
+                        // Project to outer_keys (all variables bound before this or-join clause).
+                        // This is equivalent to retaining join_vars because:
+                        // (1) the parser enforces join_vars ⊆ outer_bound, so join_vars ⊆ outer_keys, and
+                        // (2) retaining outer_keys is safe because those variables were stable before the or-join.
                         b.retain(|k, _| outer_keys.contains(k));
                         if !result.contains(&b) {
                             result.push(b);

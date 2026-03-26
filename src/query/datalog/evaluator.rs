@@ -214,7 +214,7 @@ impl RecursiveEvaluator {
                     expr_clauses.push(clause);
                 }
                 WhereClause::Or(_) | WhereClause::OrJoin { .. } => {
-                    // TODO: phase-7-3 — or/or-join in rules not yet supported
+                    // Or/OrJoin rules are routed to the mixed_rules path by StratifiedEvaluator before reaching here.
                     return Err(anyhow!(
                         "WhereClause::Or/OrJoin in evaluate_rule: not yet implemented"
                     ));
@@ -653,7 +653,7 @@ impl StratifiedEvaluator {
                         },
                         WhereClause::Not(_) | WhereClause::NotJoin { .. } => None,
                         WhereClause::Expr { .. } => None,
-                        WhereClause::Or(_) | WhereClause::OrJoin { .. } => None, // TODO: phase-7-3
+                        WhereClause::Or(_) | WhereClause::OrJoin { .. } => None, // Or/OrJoin handled by apply_or_clauses below, not extracted as positive patterns.
                     })
                     .collect();
 
@@ -739,7 +739,7 @@ impl StratifiedEvaluator {
                                 }
                                 WhereClause::Not(_) | WhereClause::NotJoin { .. } => None,
                                 WhereClause::Expr { .. } => None,
-                                WhereClause::Or(_) | WhereClause::OrJoin { .. } => None, // TODO: phase-7-3
+                                WhereClause::Or(_) | WhereClause::OrJoin { .. } => None, // Or/OrJoin inside not bodies: rejected at parse time (see parser.rs).
                             })
                             .collect();
 

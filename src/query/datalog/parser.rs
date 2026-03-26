@@ -917,6 +917,13 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
                         inner.push(WhereClause::Pattern(pattern));
                     }
                 } else if let Some(inner_list) = item.as_list() {
+                    // Reject (or ...)/(or-join ...) inside not bodies
+                    if matches!(inner_list.first(), Some(EdnValue::Symbol(s)) if s == "or" || s == "or-join")
+                    {
+                        return Err(
+                            "(or)/(or-join) cannot appear inside (not)/(not-join)".to_string()
+                        );
+                    }
                     // Recurse with allow_not=false to reject nested not
                     let clause = parse_list_as_where_clause(inner_list, false)?;
                     inner.push(clause);
@@ -971,6 +978,13 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
                         inner.push(WhereClause::Pattern(pattern));
                     }
                 } else if let Some(inner_list) = item.as_list() {
+                    // Reject (or ...)/(or-join ...) inside not-join bodies
+                    if matches!(inner_list.first(), Some(EdnValue::Symbol(s)) if s == "or" || s == "or-join")
+                    {
+                        return Err(
+                            "(or)/(or-join) cannot appear inside (not)/(not-join)".to_string()
+                        );
+                    }
                     // allow_not=false to reject nested (not ...) or (not-join ...)
                     let clause = parse_list_as_where_clause(inner_list, false)?;
                     inner.push(clause);
@@ -2380,5 +2394,17 @@ mod or_parse_tests {
         assert!(cmd.is_err(), "should fail: unbound join var");
         let err = cmd.unwrap_err();
         assert!(err.contains("not bound"), "unexpected error: {}", err);
+    }
+
+    #[test]
+    fn test_or_inside_not_is_parse_error() {
+        let cmd = parse_datalog_command(
+            r#"(query [:find ?e
+                       :where [?e :name ?n]
+                              (not (or [?e :a true] [?e :b true]))])"#,
+        );
+        assert!(cmd.is_err(), "or inside not should be a parse error");
+        let err = cmd.unwrap_err();
+        assert!(err.contains("or") || err.contains("not"), "error: {}", err);
     }
 }
