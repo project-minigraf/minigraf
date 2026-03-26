@@ -2329,11 +2329,7 @@ mod or_parse_tests {
                        :where [?e :a ?v]
                               (or [?e :b ?v] [?e :c ?v])])"#,
         );
-        assert!(
-            cmd.is_ok(),
-            "parse failed: {}",
-            cmd.err().unwrap_or_default()
-        );
+        assert!(cmd.is_ok(), "parse failed");
         if let Ok(DatalogCommand::Query(q)) = cmd {
             assert_eq!(q.where_clauses.len(), 2);
             assert!(matches!(q.where_clauses[1], WhereClause::Or(_)));
@@ -2347,11 +2343,7 @@ mod or_parse_tests {
                        :where [?e :name ?n]
                               (or (and [?e :tag ?t]) [?e :label ?t])])"#,
         );
-        assert!(
-            cmd.is_ok(),
-            "parse with and grouping failed: {}",
-            cmd.err().unwrap_or_default()
-        );
+        assert!(cmd.is_ok(), "parse with and grouping failed");
         if let Ok(DatalogCommand::Query(q)) = cmd {
             let or_clause = &q.where_clauses[1];
             if let WhereClause::Or(branches) = or_clause {
@@ -2373,11 +2365,7 @@ mod or_parse_tests {
                                 [?e :tag :red]
                                 [?e :tag :blue])])"#,
         );
-        assert!(
-            cmd.is_ok(),
-            "or-join parse failed: {}",
-            cmd.err().unwrap_or_default()
-        );
+        assert!(cmd.is_ok(), "or-join parse failed");
         if let Ok(DatalogCommand::Query(q)) = cmd {
             assert!(matches!(q.where_clauses[1], WhereClause::OrJoin { .. }));
         }
@@ -2395,11 +2383,7 @@ mod or_parse_tests {
             "should fail: branches introduce different vars"
         );
         let err = cmd.unwrap_err();
-        assert!(
-            err.contains("same set of new variables"),
-            "unexpected error: {}",
-            err
-        );
+        assert!(err.contains("same set of new variables"));
     }
 
     #[test]
@@ -2412,7 +2396,7 @@ mod or_parse_tests {
         );
         assert!(cmd.is_err(), "should fail: unbound join var");
         let err = cmd.unwrap_err();
-        assert!(err.contains("not bound"), "unexpected error: {}", err);
+        assert!(err.contains("not bound"));
     }
 
     #[test]
@@ -2424,6 +2408,6 @@ mod or_parse_tests {
         );
         assert!(cmd.is_err(), "or inside not should be a parse error");
         let err = cmd.unwrap_err();
-        assert!(err.contains("or") || err.contains("not"), "error: {}", err);
+        assert!(err.contains("or") || err.contains("not"));
     }
 }
