@@ -379,7 +379,7 @@ pub fn substitute_value(value: &EdnValue, binding: &Bindings) -> EdnValue {
 ///
 /// 1-arg: `(blocked ?x)` → `[?x :blocked ?_rule_value]`
 /// 2-arg: `(reachable ?from ?to)` → `[?from :reachable ?to]`
-pub(super) fn rule_invocation_to_pattern(predicate: &str, args: &[EdnValue]) -> Result<Pattern> {
+pub(crate) fn rule_invocation_to_pattern(predicate: &str, args: &[EdnValue]) -> Result<Pattern> {
     match args.len() {
         1 => Ok(Pattern::new(
             args[0].clone(),
