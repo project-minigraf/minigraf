@@ -2329,7 +2329,7 @@ mod or_parse_tests {
                        :where [?e :a ?v]
                               (or [?e :b ?v] [?e :c ?v])])"#,
         );
-        assert!(cmd.is_ok(), "parse failed: {:?}", cmd.err());
+        assert!(cmd.is_ok(), "parse failed: {}", cmd.err().unwrap_or_default());
         if let Ok(DatalogCommand::Query(q)) = cmd {
             assert_eq!(q.where_clauses.len(), 2);
             assert!(matches!(q.where_clauses[1], WhereClause::Or(_)));
@@ -2345,8 +2345,8 @@ mod or_parse_tests {
         );
         assert!(
             cmd.is_ok(),
-            "parse with and grouping failed: {:?}",
-            cmd.err()
+            "parse with and grouping failed: {}",
+            cmd.err().unwrap_or_default()
         );
         if let Ok(DatalogCommand::Query(q)) = cmd {
             let or_clause = &q.where_clauses[1];
@@ -2369,7 +2369,7 @@ mod or_parse_tests {
                                 [?e :tag :red]
                                 [?e :tag :blue])])"#,
         );
-        assert!(cmd.is_ok(), "or-join parse failed: {:?}", cmd.err());
+        assert!(cmd.is_ok(), "or-join parse failed: {}", cmd.err().unwrap_or_default());
         if let Ok(DatalogCommand::Query(q)) = cmd {
             assert!(matches!(q.where_clauses[1], WhereClause::OrJoin { .. }));
         }
