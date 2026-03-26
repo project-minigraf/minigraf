@@ -854,7 +854,14 @@ pub(crate) fn evaluate_branch(
     }
 
     // Step 2: Nested Or/OrJoin
-    let bindings = apply_or_clauses(branch, bindings, storage, rules, as_of.clone(), valid_at.clone())?;
+    let bindings = apply_or_clauses(
+        branch,
+        bindings,
+        storage,
+        rules,
+        as_of.clone(),
+        valid_at.clone(),
+    )?;
 
     if bindings.is_empty() {
         return Ok(vec![]);
@@ -940,12 +947,13 @@ pub(crate) fn apply_or_clauses(
                 }
                 bindings = result;
             }
-            WhereClause::OrJoin { join_vars, branches } => {
+            WhereClause::OrJoin {
+                join_vars,
+                branches,
+            } => {
                 // outer_keys: all variable names present in the incoming bindings
-                let outer_keys: std::collections::HashSet<String> = bindings
-                    .iter()
-                    .flat_map(|b| b.keys().cloned())
-                    .collect();
+                let outer_keys: std::collections::HashSet<String> =
+                    bindings.iter().flat_map(|b| b.keys().cloned()).collect();
 
                 let mut result: Vec<Binding> = Vec::new();
                 for branch in branches {
@@ -2763,16 +2771,26 @@ mod expr_eval_tests {
         let storage = FactStorage::new();
         let e1 = Uuid::new_v4();
         let e2 = Uuid::new_v4();
-        storage.transact(vec![
-            (e1, ":color".to_string(), Value::Keyword(":red".to_string())),
-            (e2, ":color".to_string(), Value::Keyword(":blue".to_string())),
-        ], None).unwrap();
+        storage
+            .transact(
+                vec![
+                    (e1, ":color".to_string(), Value::Keyword(":red".to_string())),
+                    (
+                        e2,
+                        ":color".to_string(),
+                        Value::Keyword(":blue".to_string()),
+                    ),
+                ],
+                None,
+            )
+            .unwrap();
 
         let executor = DatalogExecutor::new(storage.clone());
         let cmd = crate::query::datalog::parser::parse_datalog_command(
             r#"(query [:find ?e
                        :where (or [?e :color :red] [?e :color :blue])])"#,
-        ).unwrap();
+        )
+        .unwrap();
         let result = executor.execute(cmd).unwrap();
         match result {
             QueryResult::QueryResults { results, .. } => {
@@ -2791,20 +2809,34 @@ mod expr_eval_tests {
         use uuid::Uuid;
         let storage = FactStorage::new();
         let e1 = Uuid::new_v4();
-        storage.transact(vec![
-            (e1, ":color".to_string(), Value::Keyword(":red".to_string())),
-            (e1, ":shape".to_string(), Value::Keyword(":circle".to_string())),
-        ], None).unwrap();
+        storage
+            .transact(
+                vec![
+                    (e1, ":color".to_string(), Value::Keyword(":red".to_string())),
+                    (
+                        e1,
+                        ":shape".to_string(),
+                        Value::Keyword(":circle".to_string()),
+                    ),
+                ],
+                None,
+            )
+            .unwrap();
 
         let executor = DatalogExecutor::new(storage.clone());
         let cmd = crate::query::datalog::parser::parse_datalog_command(
             r#"(query [:find ?e
                        :where (or [?e :color :red] [?e :shape :circle])])"#,
-        ).unwrap();
+        )
+        .unwrap();
         let result = executor.execute(cmd).unwrap();
         match result {
             QueryResult::QueryResults { results, .. } => {
-                assert_eq!(results.len(), 1, "one entity matched by both branches → deduplicated");
+                assert_eq!(
+                    results.len(),
+                    1,
+                    "one entity matched by both branches → deduplicated"
+                );
             }
             _ => panic!("expected QueryResults"),
         }

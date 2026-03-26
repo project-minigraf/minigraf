@@ -1040,7 +1040,10 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
                 let branch = parse_or_branch(item)?;
                 branches.push(branch);
             }
-            Ok(WhereClause::OrJoin { join_vars, branches })
+            Ok(WhereClause::OrJoin {
+                join_vars,
+                branches,
+            })
         }
         EdnValue::Symbol(predicate) => {
             let args = list[1..].to_vec();
@@ -1063,14 +1066,11 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
 /// - A grouped list of clauses: `(and clause1 clause2 ...)`
 fn parse_or_branch(item: &EdnValue) -> Result<Vec<WhereClause>, String> {
     match item {
-        EdnValue::List(inner)
-            if matches!(inner.first(), Some(EdnValue::Symbol(s)) if s == "and") =>
+        EdnValue::List(inner) if matches!(inner.first(), Some(EdnValue::Symbol(s)) if s == "and") =>
         {
             // (and clause1 clause2 ...) — multi-clause branch
             if inner.len() < 2 {
-                return Err(
-                    "(and) inside or/or-join requires at least one clause".to_string(),
-                );
+                return Err("(and) inside or/or-join requires at least one clause".to_string());
             }
             let mut clauses = Vec::new();
             for clause_item in &inner[1..] {
@@ -1099,10 +1099,7 @@ fn parse_or_branch_item(item: &EdnValue) -> Result<WhereClause, String> {
             // allow_not=true: or branches can contain not/not-join/or/or-join
             parse_list_as_where_clause(inner_list, true)
         }
-        _ => Err(format!(
-            "expected clause inside or branch, got {:?}",
-            item
-        )),
+        _ => Err(format!("expected clause inside or branch, got {:?}", item)),
     }
 }
 
@@ -1288,7 +1285,10 @@ fn check_expr_safety_with_bound(
                     }
                 }
             }
-            WhereClause::OrJoin { join_vars, branches } => {
+            WhereClause::OrJoin {
+                join_vars,
+                branches,
+            } => {
                 for var in join_vars {
                     if !var.starts_with("?_") && !bound.contains(var) {
                         return Err(format!(
@@ -2343,7 +2343,11 @@ mod or_parse_tests {
                        :where [?e :name ?n]
                               (or (and [?e :tag ?t]) [?e :label ?t])])"#,
         );
-        assert!(cmd.is_ok(), "parse with and grouping failed: {:?}", cmd.err());
+        assert!(
+            cmd.is_ok(),
+            "parse with and grouping failed: {:?}",
+            cmd.err()
+        );
         if let Ok(DatalogCommand::Query(q)) = cmd {
             let or_clause = &q.where_clauses[1];
             if let WhereClause::Or(branches) = or_clause {
@@ -2378,9 +2382,16 @@ mod or_parse_tests {
                        :where [?e :name ?n]
                               (or [?e :a ?x] [?e :b ?y])])"#,
         );
-        assert!(cmd.is_err(), "should fail: branches introduce different vars");
+        assert!(
+            cmd.is_err(),
+            "should fail: branches introduce different vars"
+        );
         let err = cmd.unwrap_err();
-        assert!(err.contains("same set of new variables"), "unexpected error: {}", err);
+        assert!(
+            err.contains("same set of new variables"),
+            "unexpected error: {}",
+            err
+        );
     }
 
     #[test]

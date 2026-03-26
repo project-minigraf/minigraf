@@ -515,10 +515,15 @@ mod tests {
         let alice_id = Uuid::new_v4();
         let bob_id = Uuid::new_v4();
 
-        storage.transact(vec![
-            (alice_id, ":person/age".to_string(), Value::Integer(30)),
-            (bob_id, ":person/age".to_string(), Value::Integer(25)),
-        ], None).unwrap();
+        storage
+            .transact(
+                vec![
+                    (alice_id, ":person/age".to_string(), Value::Integer(30)),
+                    (bob_id, ":person/age".to_string(), Value::Integer(25)),
+                ],
+                None,
+            )
+            .unwrap();
 
         let matcher = PatternMatcher::new(storage);
 
@@ -547,7 +552,9 @@ mod tests {
         use uuid::Uuid;
         let storage = FactStorage::new();
         let alice_id = Uuid::new_v4();
-        storage.transact(vec![(alice_id, ":a".to_string(), Value::Integer(1))], None).unwrap();
+        storage
+            .transact(vec![(alice_id, ":a".to_string(), Value::Integer(1))], None)
+            .unwrap();
         let matcher = PatternMatcher::new(storage);
         let pattern = Pattern::new(
             EdnValue::Symbol("?e".to_string()),

@@ -587,16 +587,15 @@ impl StratifiedEvaluator {
 
             for pred in &stratum_preds {
                 for rule in registry.get_rules(pred) {
-                    let has_not = rule
-                        .body
-                        .iter()
-                        .any(|c| matches!(
+                    let has_not = rule.body.iter().any(|c| {
+                        matches!(
                             c,
                             WhereClause::Not(_)
                                 | WhereClause::NotJoin { .. }
                                 | WhereClause::Or(_)
                                 | WhereClause::OrJoin { .. }
-                        ));
+                        )
+                    });
                     if has_not {
                         mixed_rules.push((pred.clone(), rule));
                     } else {
@@ -704,8 +703,7 @@ impl StratifiedEvaluator {
                 };
 
                 // Apply top-level Expr clauses to filter/extend candidates
-                let candidates =
-                    apply_expr_clauses_in_evaluator(or_expanded, &body_expr_clauses);
+                let candidates = apply_expr_clauses_in_evaluator(or_expanded, &body_expr_clauses);
 
                 // Build temp_eval once per rule (outside the binding loop);
                 // instantiate_head_public only uses storage, not the registry.
@@ -1566,18 +1564,23 @@ mod tests {
 
     #[test]
     fn test_stratified_evaluator_routes_or_rule_to_mixed_path() {
-        use std::sync::{Arc, RwLock};
+        use crate::graph::types::Value;
         use crate::query::datalog::rules::RuleRegistry;
         use crate::query::datalog::types::{EdnValue, Pattern, Rule, WhereClause};
-        use crate::graph::types::Value;
+        use std::sync::{Arc, RwLock};
 
         let storage = FactStorage::new();
         let e1 = uuid::Uuid::new_v4();
         let e2 = uuid::Uuid::new_v4();
-        storage.transact(vec![
-            (e1, ":a".to_string(), Value::Boolean(true)),
-            (e2, ":b".to_string(), Value::Boolean(true)),
-        ], None).unwrap();
+        storage
+            .transact(
+                vec![
+                    (e1, ":a".to_string(), Value::Boolean(true)),
+                    (e2, ":b".to_string(), Value::Boolean(true)),
+                ],
+                None,
+            )
+            .unwrap();
 
         let mut registry = RuleRegistry::new();
         // Rule: (p ?x) :- (or [?x :a true] [?x :b true])
