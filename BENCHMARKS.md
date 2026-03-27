@@ -2,7 +2,7 @@
 
 **Live benchmark history**: [bencher.dev/console/projects/minigraf/perf](https://bencher.dev/console/projects/minigraf/perf)
 
-Benchmark results for Minigraf v0.8.0 (Phase 6.5 — on-disk B+tree indexes, file format v6). Benchmark groups for negation, disjunction, aggregation, and expression clauses were added in v0.13.0; timing data for those sections will be populated after the next scheduled run.
+Benchmark results for Minigraf. Core query benchmarks are from v0.8.0 (Phase 6.5 — on-disk B+tree indexes, file format v6). Negation, disjunction, aggregation, and expression benchmarks were first run on v0.13.0.
 
 ## Environment
 
@@ -153,64 +153,72 @@ Pre-loaded 10K-fact database.
 
 ## Negation (`not` / `not-join`)
 
-Measures the post-filter pass overhead at different dataset sizes. 10% of entities are excluded.
+Measures the post-filter pass overhead at different dataset sizes. 10% of entities carry a `:banned true` fact that the `not` clause filters on.
+
+All 10K benchmarks were run with 100 samples. The O(N²) scaling is a known limitation of the current negation implementation (no hash-join in the inner filter loop).
 
 | Benchmark | 1K | 10K |
 |---|---|---|
-| `not_scale` | — | — |
-| `not_join_scale` | — | — |
-| `not_rule_body` | — | — |
+| `not_scale` | 101.84 ms | 13.394 s |
+| `not_join_scale` | 226.82 ms | 22.898 s |
+| `not_rule_body` | 172.96 ms | 16.883 s |
 
-`not_selectivity` — fixed 10K DB, exclusion fraction swept from 0% to 100%:
+`not_selectivity` — fixed 10K DB, exclusion fraction swept from 0% to 100% (100 samples each):
 
 | Selectivity | 0% excl. | 25% excl. | 50% excl. | 75% excl. | 100% excl. |
 |---|---|---|---|---|---|
-| `not_selectivity` | — | — | — | — | — |
+| `not_selectivity` | 11.606 s | 14.793 s | 18.289 s | 21.329 s | 13.291 s |
+
+> The non-monotonic dip at 100%: when all entities are excluded, the negation check can short-circuit as soon as a matching banned fact is found (O(1) per binding), whereas the 0%–75% cases must exhaust the entire banned-entity scan before concluding "not found".
 
 ---
 
 ## Disjunction (`or` / `or-join`)
 
-Measures `or`-expansion and `or-join` projection overhead. 25% of entities have `:tag-a`, 25% have `:tag-b`, 50% are untagged.
+Measures `or`-expansion and `or-join` projection overhead. 25% of entities have `:tag-a`, 25% have `:tag-b`, 50% are untagged. All disjunction benchmarks use `sample_size(10)`.
+
+The 10K numbers reflect a known O(N²) characteristic in the current `apply_or_clauses` implementation: branches are evaluated over the full incoming binding set (seeded re-scan). `or_rule_body` avoids this because rules start from an empty binding, giving O(N) branch expansion.
 
 | Benchmark | 1K | 10K |
 |---|---|---|
-| `or_scale` | — | — |
-| `or_join_scale` | — | — |
-| `or_rule_body` | — | — |
+| `or_scale` | 644.76 ms | 73.722 s |
+| `or_join_scale` | 683.99 ms | 72.751 s |
+| `or_rule_body` | 26.468 ms | 2.123 s |
 
-`or_selectivity` — fixed 10K DB, fraction matching either branch swept from 0% to 100%:
+`or_selectivity` — fixed 10K DB, fraction matching either branch swept from 0% to 100% (10 samples each):
 
-| Selectivity | 0% | 25% | 50% | 75% | 100% |
+| Selectivity | 0% match | 25% match | 50% match | 75% match | 100% match |
 |---|---|---|---|---|---|
-| `or_selectivity` | — | — | — | — | — |
+| `or_selectivity` | 44.477 s | 62.668 s | 75.393 s | 88.977 s | 104.88 s |
+
+> Selectivity scales roughly linearly with match fraction: each additional 25% of matching entities adds ~20 s at 10K. This is consistent with the O(N × result_count) cost of branch union construction and deduplication.
 
 ---
 
 ## Aggregation
 
-Measures aggregation post-processing overhead. `count_scale`/`sum_scale` use the value-only fixture; `grouped_count_scale`/`with_grouped_sum` use a 10-department fixture.
+Measures aggregation post-processing overhead. `count_scale`/`sum_scale` use the value-only fixture; `grouped_count_scale`/`with_grouped_sum` use a 10-department fixture (10 groups). All aggregation benchmarks use 100 samples.
 
 | Benchmark | 1K | 10K |
 |---|---|---|
-| `count_scale` (scalar `count`) | — | — |
-| `sum_scale` (scalar `sum`) | — | — |
-| `grouped_count_scale` (grouped by dept, 10 groups) | — | — |
-| `with_grouped_sum` (`:with` clause, grouped sum) | — | — |
+| `count_scale` (scalar `count`) | 1.770 ms | 23.437 ms |
+| `sum_scale` (scalar `sum`) | 1.881 ms | 22.745 ms |
+| `grouped_count_scale` (grouped by dept, 10 groups) | 4.038 ms | 51.550 ms |
+| `with_grouped_sum` (`:with` clause, grouped sum) | 670.85 ms | 67.266 s |
+
+> `count` and `sum` are O(N). `grouped_count` is slightly higher due to the two-pattern join (`[?e :dept ?dept]` × `[?e :val ?v]`). `with_grouped_sum` at 10K shows O(N²) scaling from the same two-pattern cross-product join — the planner currently lacks a hash-join step; this is tracked as a future optimisation.
 
 ---
 
 ## Expression Clauses
 
-Measures the expression evaluation pass overhead. `filter_scale` keeps half of entities; `binding_scale` binds a new variable for every row; `binding_into_agg` pipes through a scalar aggregate.
+Measures the expression evaluation pass overhead. `filter_scale` keeps half of entities; `binding_scale` binds a new variable for every row; `binding_into_agg` pipes the bound variable into a `sum` aggregate. All 100 samples; all show clean O(N) scaling.
 
 | Benchmark | 1K | 10K |
 |---|---|---|
-| `filter_scale` (`[(< ?v N)]`) | — | — |
-| `binding_scale` (`[(+ ?v 1) ?result]`) | — | — |
-| `binding_into_agg` (`[(* ?v 2) ?doubled]` → `(sum ?doubled)`) | — | — |
-
-> **Note:** Timing data for the above four sections will be populated after the next scheduled benchmark run (`cargo bench`). The `—` entries are placeholders.
+| `filter_scale` (`[(< ?v N)]`) | 1.799 ms | 22.738 ms |
+| `binding_scale` (`[(+ ?v 1) ?result]`) | 2.037 ms | 23.603 ms |
+| `binding_into_agg` (`[(* ?v 2) ?doubled]` → `(sum ?doubled)`) | 1.935 ms | 23.294 ms |
 
 ---
 
