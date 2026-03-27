@@ -502,7 +502,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 **Goal**: Complete the Datalog query engine — negation, aggregation, disjunction, temporal range queries, and prepared statements
 
-**Status**: 🔄 In Progress (7.1a + 7.1b + 7.2a + 7.2b complete ✅)
+**Status**: 🔄 In Progress (7.1a + 7.1b + 7.2a + 7.2b + 7.3 complete ✅)
 
 **Priority**: 🔴 Critical — without these, realistic production queries cannot be expressed in Datalog
 
@@ -691,12 +691,10 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 ### 7.4 Query Optimizer Improvements (deferred from Phase 6.3)
 
-- 🎯 Cost-based optimization improvements — extend `optimizer.rs` with cost estimates for the new clause types (negation sub-queries, aggregate post-processing, disjunction branch selection)
-- 🎯 Rule evaluation optimization — improve semi-naive evaluation for rules that include `not`, `or`, and aggregate expressions
-- 🎯 **`filter_facts_for_query` snapshot overhead** — `executor.rs::filter_facts_for_query` is O(N) in total fact count on every query: it streams all committed on-disk facts, clones the pending `Vec<Fact>`, and rebuilds all four indexes from scratch into a throwaway `FactStorage`. Fix: replace with a read-only `Arc<[Fact]>` snapshot so the pattern matcher works against an immutable slice without index reconstruction; use the existing on-disk B+tree indexes for selective attribute/entity lookups instead of a full scan. This is the primary query performance bottleneck at scale.
 - 🎯 **Profiling integration** — before optimizing, instrument the benchmark suite with a profiler to identify actual hotspots rather than relying on code inspection. Add `pprof` as a Criterion profiler (via `criterion-pprof` or the `pprof` crate's Criterion integration) so that `cargo bench` can emit flamegraphs. Run the existing `minigraf_bench.rs` benchmarks at 10K/100K facts under the profiler to confirm `filter_facts_for_query`, index rebuild, and `net_asserted_facts` are the dominant costs before investing in the fix. Profiling must precede any structural change to the query execution path.
+- 🎯 **`filter_facts_for_query` snapshot overhead** — `executor.rs::filter_facts_for_query` is O(N) in total fact count on every query: it streams all committed on-disk facts, clones the pending `Vec<Fact>`, and rebuilds all four indexes from scratch into a throwaway `FactStorage`. Fix: replace with a read-only `Arc<[Fact]>` snapshot so the pattern matcher works against an immutable slice without index reconstruction; whether to also use on-disk B+tree indexes for selective lookups is determined by profiling results. This is the primary query performance bottleneck at scale.
 
-**Note**: These items were originally scoped in Phase 6.3 but deferred here because meaningful cost estimates require the new clause types to exist first.
+**Note**: The following items were originally scoped here but are deferred to the post-1.0 backlog: cost-based optimizer extensions for new clause types, rule evaluation optimization for `not`/`or`/aggregate rules, and predicate push-down. The original cost-estimate items required the new clause types to exist first (now satisfied by 7.1–7.3), but the profiling-first constraint means they are lower priority than the snapshot fix.
 
 ### 7.5 Tests + Error Coverage
 
@@ -1343,6 +1341,18 @@ Known O(N²) hotspots discovered during benchmarking (v0.13.0). Each has a well-
 
 **Fix**: Add a hash-join planning step in the aggregation post-processor for multi-pattern `with` clauses.
 
+### Cost-Based Optimizer Extensions for New Clause Types
+
+Extend `optimizer.rs` `plan()` with cost estimates for negation sub-queries, aggregate post-processing, and disjunction branch selection. Requires the new clause types to exist (satisfied by 7.1–7.3) and profiling data to guide estimates. Deferred from Phase 7.4 to avoid expanding scope before v1.0.
+
+### Rule Evaluation Optimization
+
+Improve semi-naive evaluation for rules that include `not`, `or`, and aggregate expressions — currently routes to the mixed-rules path but does not apply any cost-aware ordering. Deferred from Phase 7.4.
+
+### Predicate Push-Down
+
+Push `Expr` predicate clauses (e.g. `[(> ?age 30)]`) down to filter bindings as early as possible rather than applying them as a final post-processing pass. Currently `apply_expr_clauses` runs after all pattern matching. A natural complement to the `filter_facts_for_query` snapshot fix, but kept separate to avoid expanding Phase 7.4's scope.
+
 ---
 
 ## Release Strategy
@@ -1514,7 +1524,7 @@ When evaluating features, ask:
 - ✅ Phase 7.1: Complete (March 2026) - Stratified negation (`not` / `not-join`), 407 tests
 - ✅ Phase 7.2a: Complete (March 2026) - Aggregation (`count`/`sum`/`min`/`max`/`distinct`/`:with`), 461 tests
 - ✅ Phase 7.2b: Complete (March 2026) - Arithmetic & predicate expression clauses, 527 tests
-- ✅ Phase 7.3: Complete (March 2026) - Disjunction (`or` / `or-join`), 0.13.0
+- ✅ Phase 7.3: Complete (March 2026) - Disjunction (`or` / `or-join`), 562 tests
 - 🎯 Phase 7.4–7.7: optimizer, prepared statements, temporal metadata bindings; ≥90% branch coverage - **NEXT**
 - 🎯 Phase 8: 3-4 months (Cross-platform — WASM, mobile, language bindings)
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)
@@ -1535,7 +1545,7 @@ When evaluating features, ask:
 4. ✅ `evaluate_branch` / `apply_or_clauses` in `executor.rs`; union + deduplication across branches
 5. ✅ `DependencyGraph::from_rules` refactored with `collect_clause_deps`; `Or`/`OrJoin` contribute positive edges
 6. ✅ Rules with `or`/`or-join` route to `mixed_rules` path in `StratifiedEvaluator`
-7. ✅ Integration tests in `tests/or_test.rs` and `tests/or_join_test.rs`; version bumped to v0.13.0
+7. ✅ Integration tests in `tests/disjunction_test.rs` (16 tests); 562 tests passing (384 unit + 172 integration + 6 doc); version bumped to v0.13.0
 
 **Immediate Next Steps (Phase 7.4)**:
 1. Query optimizer improvements for new clause types
