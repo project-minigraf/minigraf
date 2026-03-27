@@ -128,32 +128,21 @@ impl DatalogExecutor {
         Ok(QueryResult::Retracted(tx_id))
     }
 
-    /// Build a filtered FactStorage for a query's temporal constraints.
+    /// Build a filtered fact snapshot for a query's temporal constraints.
     ///
     /// Step 1: apply transaction-time filter (`:as-of`) — defaults to all facts.
-    /// Step 2: discard retracted facts within the tx window.
+    /// Step 2: discard retracted facts within the tx window (`net_asserted_facts`).
     /// Step 3: apply valid-time filter (`:valid-at`) — defaults to "currently valid".
     ///
-    /// # Performance note
+    /// Returns an `Arc<[Fact]>` snapshot. `.clone()` is a cheap Arc refcount increment,
+    /// so `or`-branches and `not`/`not-join` sub-evaluations share the same allocation.
+    /// The three steps above are paid exactly once per `execute_query` /
+    /// `execute_query_with_rules` call.
     ///
-    /// This method is O(N) in the total number of facts on every query:
-    ///
-    /// 1. `get_all_facts()` streams all committed (on-disk) facts and clones the
-    ///    pending in-memory `Vec<Fact>`.
-    /// 2. A brand-new `FactStorage` is constructed and all four indexes (EAVT/AEVT/AVET/VAET)
-    ///    are rebuilt from scratch via one `load_fact()` call per surviving fact.
-    ///
-    /// Subsequent `.clone()` calls on the returned `FactStorage` are cheap (Arc refcount),
-    /// so `or`-branches and `not`/`not-join` sub-evaluations do not add further full scans.
-    /// The cost is paid exactly once per `execute_query` / `execute_query_with_rules` call.
-    ///
-    /// **TODO (optimizer phase)**: Replace this with a read-only snapshot type —
-    /// e.g. `Arc<[Fact]>` — so that the pattern matcher can work directly against an
-    /// immutable slice without rebuilding the index structure. The existing on-disk B+tree
-    /// indexes (EAVT/AEVT/AVET/VAET) should be used for selective lookups instead of a
-    /// full scan + rebuild. This is the primary query performance bottleneck for databases
-    /// with more than a few thousand facts.
-    fn filter_facts_for_query(&self, query: &DatalogQuery) -> Result<FactStorage> {
+    /// **Post-1.0 backlog**: Use the on-disk B+tree indexes (EAVT/AEVT/AVET/VAET) for
+    /// selective attribute/entity lookups instead of the full `get_all_facts()` scan (step 1).
+    /// Also investigate caching the `net_asserted_facts()` result and invalidating on write (step 2).
+    fn filter_facts_for_query(&self, query: &DatalogQuery) -> Result<Arc<[Fact]>> {
         let now = tx_id_now() as i64;
 
         // Step 1: transaction-time filter
@@ -180,12 +169,7 @@ impl DatalogExecutor {
                 .collect(),
         };
 
-        // Build a temporary FactStorage with the filtered facts
-        let filtered_storage = FactStorage::new();
-        for fact in valid_filtered {
-            filtered_storage.load_fact(fact)?;
-        }
-        Ok(filtered_storage)
+        Ok(Arc::from(valid_filtered))
     }
 
     /// Execute a query: find matching facts and return specified variables
@@ -197,8 +181,8 @@ impl DatalogExecutor {
         }
 
         // Apply temporal filters before pattern matching
-        let filtered_storage = self.filter_facts_for_query(&query)?;
-        let matcher = PatternMatcher::new(filtered_storage.clone()); // keep filtered_storage for not-filter
+        let filtered_facts = self.filter_facts_for_query(&query)?;
+        let matcher = PatternMatcher::from_slice(filtered_facts.clone());
         let patterns = query.get_patterns();
 
         // Plan patterns: assign index hints and reorder by selectivity.
@@ -218,7 +202,7 @@ impl DatalogExecutor {
         let bindings = apply_or_clauses(
             &query.where_clauses,
             bindings,
-            Arc::from(filtered_storage.get_asserted_facts().unwrap_or_default()),
+            filtered_facts.clone(),
             &rules_guard,
             query.as_of.clone(),
             query.valid_at.clone(),
@@ -250,13 +234,11 @@ impl DatalogExecutor {
         let not_filtered: Vec<_> = if not_clauses.is_empty() && not_join_clauses.is_empty() {
             bindings
         } else {
-            let not_storage: Arc<[Fact]> =
-                Arc::from(filtered_storage.get_asserted_facts().unwrap_or_default());
             bindings
                 .into_iter()
                 .filter(|binding| {
                     for not_body in &not_clauses {
-                        if not_body_matches(not_body, binding, not_storage.clone()) {
+                        if not_body_matches(not_body, binding, filtered_facts.clone()) {
                             return false;
                         }
                     }
@@ -265,7 +247,7 @@ impl DatalogExecutor {
                             join_vars,
                             nj_clauses,
                             binding,
-                            not_storage.clone(),
+                            filtered_facts.clone(),
                         ) {
                             return false;
                         }
@@ -306,7 +288,15 @@ impl DatalogExecutor {
             .collect();
 
         // Apply temporal filters before evaluating recursive rules
-        let filtered_storage = self.filter_facts_for_query(&query)?;
+        let filtered_facts = self.filter_facts_for_query(&query)?;
+
+        // Convert to FactStorage for StratifiedEvaluator (needs mutable accumulation)
+        // TODO (post-1.0): use FactStorage::new_noindex() once profiling confirms rules-path
+        // index rebuild is also a bottleneck.
+        let filtered_storage = FactStorage::new();
+        for fact in filtered_facts.iter().cloned() {
+            filtered_storage.load_fact(fact)?;
+        }
 
         // Create StratifiedEvaluator — handles negation, stratification, and positive-only rules
         let evaluator = StratifiedEvaluator::new(
@@ -351,16 +341,21 @@ impl DatalogExecutor {
             all_patterns.push(pattern);
         }
 
+        // Compute derived_facts Arc once; reuse for or-clauses and not-post-filter.
+        // NOTE: must use derived_storage (includes rule-derived facts), not filtered_facts (base facts only)
+        let derived_facts: Arc<[Fact]> =
+            Arc::from(derived_storage.get_asserted_facts().unwrap_or_default());
+
         // Match all patterns against derived facts
-        let matcher = PatternMatcher::new(derived_storage.clone());
+        let matcher = PatternMatcher::from_slice(derived_facts.clone());
         let bindings = matcher.match_patterns(&all_patterns);
 
-        // Apply Or/OrJoin clauses against derived_storage (rules already evaluated)
+        // Apply Or/OrJoin clauses against derived facts (rules already evaluated)
         let rules_guard = self.rules.read().unwrap();
         let bindings = apply_or_clauses(
             &query.where_clauses,
             bindings,
-            Arc::from(derived_storage.get_asserted_facts().unwrap_or_default()),
+            derived_facts.clone(),
             &rules_guard,
             query.as_of.clone(),
             query.valid_at.clone(),
@@ -394,8 +389,6 @@ impl DatalogExecutor {
         let not_filtered: Vec<_> = if not_clauses.is_empty() && not_join_clauses.is_empty() {
             bindings
         } else {
-            let not_storage: Arc<[Fact]> =
-                Arc::from(derived_storage.get_asserted_facts().unwrap_or_default());
             bindings
                 .into_iter()
                 .filter(|binding| {
@@ -459,7 +452,7 @@ impl DatalogExecutor {
                             .collect();
 
                         // Compute not_bindings: if no patterns, seed with current binding.
-                        let m = PatternMatcher::from_slice(not_storage.clone());
+                        let m = PatternMatcher::from_slice(derived_facts.clone());
                         let mut not_bindings: Vec<Binding> = if substituted.is_empty() {
                             vec![binding.clone()]
                         } else {
@@ -485,7 +478,7 @@ impl DatalogExecutor {
                             join_vars,
                             nj_clauses,
                             binding,
-                            not_storage.clone(),
+                            derived_facts.clone(),
                         ) {
                             return false;
                         }
@@ -2506,8 +2499,6 @@ mod tests {
         // Setup: one fact asserted then retracted, one fact left standing.
         // After filter_facts_for_query, only the standing fact should appear.
         // The return type (Arc<[Fact]>) exposes .len() and index access [0].
-        // NOTE: this test currently FAILS TO COMPILE because filter_facts_for_query
-        // still returns Result<FactStorage>. Task 5 will change it to Result<Arc<[Fact]>>.
         use uuid::Uuid;
         let storage = FactStorage::new();
         let alice = Uuid::new_v4();
@@ -2550,8 +2541,6 @@ mod tests {
             with_vars: vec![],
         };
 
-        // Task 5 changes the return type from FactStorage to Arc<[Fact]>.
-        // Until then, .len() and [0] do not compile on FactStorage → intentional red state.
         let facts = executor.filter_facts_for_query(&query).unwrap();
         assert_eq!(facts.len(), 1, "expected exactly 1 net-asserted fact");
         assert_eq!(facts[0].attribute, ":person/age");
@@ -2562,8 +2551,7 @@ mod tests {
         // Setup: one fact with a narrow valid-time window (1000..2000), one open-ended.
         // Query with valid_at inside the window → both facts visible.
         // Query with valid_at outside the window → only the open-ended fact visible.
-        // NOTE: this test currently FAILS TO COMPILE because filter_facts_for_query
-        // still returns Result<FactStorage>. Task 5 will change it to Result<Arc<[Fact]>>.
+        // filter_facts_for_query now returns Result<Arc<[Fact]>> (changed in Task 5).
         use crate::graph::types::TransactOptions;
         use uuid::Uuid;
         let storage = FactStorage::new();
@@ -2581,7 +2569,9 @@ mod tests {
             )
             .unwrap();
 
-        // Fact valid forever (open-ended)
+        // Fact valid forever (open-ended): explicit valid_from=0 so it is visible at t=1500 and t=3000.
+        // Passing None would set valid_from=tx_id_now() (current epoch ms ≈ 1.7T), which is
+        // far beyond the test's query timestamps.
         storage
             .transact(
                 vec![(
@@ -2589,7 +2579,7 @@ mod tests {
                     ":person/name".to_string(),
                     Value::String("Alice".to_string()),
                 )],
-                None,
+                Some(TransactOptions::new(Some(0_i64), None)),
             )
             .unwrap();
 
@@ -2603,8 +2593,6 @@ mod tests {
             valid_at: Some(ValidAt::Timestamp(1500_i64)),
             with_vars: vec![],
         };
-        // Task 5 changes the return type from FactStorage to Arc<[Fact]>.
-        // Until then, .len() does not compile on FactStorage → intentional red state.
         let facts_inside = executor.filter_facts_for_query(&query_inside).unwrap();
         assert_eq!(facts_inside.len(), 2, "both facts visible at t=1500");
 
