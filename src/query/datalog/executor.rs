@@ -218,7 +218,7 @@ impl DatalogExecutor {
         let bindings = apply_or_clauses(
             &query.where_clauses,
             bindings,
-            &filtered_storage,
+            Arc::from(filtered_storage.get_asserted_facts().unwrap_or_default()),
             &rules_guard,
             query.as_of.clone(),
             query.valid_at.clone(),
@@ -250,17 +250,23 @@ impl DatalogExecutor {
         let not_filtered: Vec<_> = if not_clauses.is_empty() && not_join_clauses.is_empty() {
             bindings
         } else {
-            let not_storage = filtered_storage.clone();
+            let not_storage: Arc<[Fact]> =
+                Arc::from(filtered_storage.get_asserted_facts().unwrap_or_default());
             bindings
                 .into_iter()
                 .filter(|binding| {
                     for not_body in &not_clauses {
-                        if not_body_matches(not_body, binding, &not_storage) {
+                        if not_body_matches(not_body, binding, not_storage.clone()) {
                             return false;
                         }
                     }
                     for (join_vars, nj_clauses) in &not_join_clauses {
-                        if evaluate_not_join(join_vars, nj_clauses, binding, &not_storage) {
+                        if evaluate_not_join(
+                            join_vars,
+                            nj_clauses,
+                            binding,
+                            not_storage.clone(),
+                        ) {
                             return false;
                         }
                     }
@@ -354,7 +360,7 @@ impl DatalogExecutor {
         let bindings = apply_or_clauses(
             &query.where_clauses,
             bindings,
-            &derived_storage,
+            Arc::from(derived_storage.get_asserted_facts().unwrap_or_default()),
             &rules_guard,
             query.as_of.clone(),
             query.valid_at.clone(),
@@ -388,7 +394,8 @@ impl DatalogExecutor {
         let not_filtered: Vec<_> = if not_clauses.is_empty() && not_join_clauses.is_empty() {
             bindings
         } else {
-            let not_storage = derived_storage.clone();
+            let not_storage: Arc<[Fact]> =
+                Arc::from(derived_storage.get_asserted_facts().unwrap_or_default());
             bindings
                 .into_iter()
                 .filter(|binding| {
@@ -452,7 +459,7 @@ impl DatalogExecutor {
                             .collect();
 
                         // Compute not_bindings: if no patterns, seed with current binding.
-                        let m = PatternMatcher::new(not_storage.clone());
+                        let m = PatternMatcher::from_slice(not_storage.clone());
                         let mut not_bindings: Vec<Binding> = if substituted.is_empty() {
                             vec![binding.clone()]
                         } else {
@@ -474,7 +481,12 @@ impl DatalogExecutor {
                         }
                     }
                     for (join_vars, nj_clauses) in &not_join_clauses {
-                        if evaluate_not_join(join_vars, nj_clauses, binding, &not_storage) {
+                        if evaluate_not_join(
+                            join_vars,
+                            nj_clauses,
+                            binding,
+                            not_storage.clone(),
+                        ) {
                             return false;
                         }
                     }
@@ -547,7 +559,7 @@ impl DatalogExecutor {
 fn not_body_matches(
     not_body: &[WhereClause],
     outer: &Binding,
-    storage: &crate::graph::FactStorage,
+    storage: Arc<[Fact]>,
 ) -> bool {
     use crate::query::datalog::evaluator::substitute_pattern;
 
@@ -564,7 +576,7 @@ fn not_body_matches(
         })
         .collect();
 
-    let matcher = crate::query::datalog::matcher::PatternMatcher::new(storage.clone());
+    let matcher = crate::query::datalog::matcher::PatternMatcher::from_slice(storage.clone());
     let mut not_bindings: Vec<Binding> = if patterns.is_empty() {
         // Expr-only not body: start with the outer binding so variables resolve.
         vec![outer.clone()]
@@ -838,7 +850,7 @@ type Binding = std::collections::HashMap<String, Value>;
 pub(crate) fn evaluate_branch(
     branch: &[WhereClause],
     incoming: Vec<Binding>,
-    storage: &FactStorage,
+    storage: Arc<[Fact]>,
     rules: &crate::query::datalog::rules::RuleRegistry,
     as_of: Option<AsOf>,
     valid_at: Option<ValidAt>,
@@ -862,7 +874,7 @@ pub(crate) fn evaluate_branch(
         })
         .collect();
 
-    let matcher = PatternMatcher::new(storage.clone());
+    let matcher = PatternMatcher::from_slice(storage.clone());
     let bindings = if patterns.is_empty() {
         incoming
     } else {
@@ -877,7 +889,7 @@ pub(crate) fn evaluate_branch(
     let bindings = apply_or_clauses(
         branch,
         bindings,
-        storage,
+        storage.clone(),
         rules,
         as_of.clone(),
         valid_at.clone(),
@@ -913,12 +925,12 @@ pub(crate) fn evaluate_branch(
             .into_iter()
             .filter(|binding| {
                 for not_body in &not_clauses {
-                    if not_body_matches(not_body, binding, storage) {
+                    if not_body_matches(not_body, binding, storage.clone()) {
                         return false;
                     }
                 }
                 for (join_vars, nj_clauses) in &not_join_clauses {
-                    if evaluate_not_join(join_vars, nj_clauses, binding, storage) {
+                    if evaluate_not_join(join_vars, nj_clauses, binding, storage.clone()) {
                         return false;
                     }
                 }
@@ -941,7 +953,7 @@ pub(crate) fn evaluate_branch(
 pub(crate) fn apply_or_clauses(
     clauses: &[WhereClause],
     mut bindings: Vec<Binding>,
-    storage: &FactStorage,
+    storage: Arc<[Fact]>,
     rules: &crate::query::datalog::rules::RuleRegistry,
     as_of: Option<AsOf>,
     valid_at: Option<ValidAt>,
@@ -954,7 +966,7 @@ pub(crate) fn apply_or_clauses(
                     let branch_result = evaluate_branch(
                         branch,
                         bindings.clone(),
-                        storage,
+                        storage.clone(),
                         rules,
                         as_of.clone(),
                         valid_at.clone(),
@@ -980,7 +992,7 @@ pub(crate) fn apply_or_clauses(
                     let branch_result = evaluate_branch(
                         branch,
                         bindings.clone(),
-                        storage,
+                        storage.clone(),
                         rules,
                         as_of.clone(),
                         valid_at.clone(),

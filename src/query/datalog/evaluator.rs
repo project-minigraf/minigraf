@@ -416,7 +416,7 @@ pub fn evaluate_not_join(
     join_vars: &[String],
     clauses: &[WhereClause],
     binding: &Bindings,
-    storage: &FactStorage,
+    storage: Arc<[Fact]>,
 ) -> bool {
     // Build a partial binding containing only the join variables
     let partial: Bindings = join_vars
@@ -444,7 +444,7 @@ pub fn evaluate_not_join(
         .filter(|c| matches!(c, WhereClause::Expr { .. }))
         .collect();
 
-    let matcher = PatternMatcher::new(storage.clone());
+    let matcher = PatternMatcher::from_slice(storage.clone());
     let mut not_bindings: Vec<Bindings> = if substituted.is_empty() {
         // Expr-only not-join body: seed with the partial binding so variables resolve.
         vec![partial.clone()]
@@ -693,7 +693,7 @@ impl StratifiedEvaluator {
                     let expanded = apply_or_clauses(
                         &rule.body,
                         raw_candidates,
-                        &accumulated,
+                        Arc::from(accumulated.get_asserted_facts().unwrap_or_default()),
                         &registry_guard,
                         None,
                         None,
@@ -770,7 +770,12 @@ impl StratifiedEvaluator {
                     }
 
                     for (join_vars, nj_clauses) in &not_join_clauses {
-                        if evaluate_not_join(join_vars, nj_clauses, &binding, &accumulated) {
+                        if evaluate_not_join(
+                            join_vars,
+                            nj_clauses,
+                            &binding,
+                            Arc::from(accumulated.get_asserted_facts().unwrap_or_default()),
+                        ) {
                             continue 'binding;
                         }
                     }

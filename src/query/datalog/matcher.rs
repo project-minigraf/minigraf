@@ -11,7 +11,6 @@ pub type Bindings = HashMap<String, Value>;
 
 enum MatcherStorage {
     Owned(FactStorage),
-    #[allow(dead_code)] // call site added in Task 5 (filter_facts_for_query snapshot fix)
     Slice(Arc<[Fact]>),
 }
 
@@ -29,7 +28,6 @@ impl PatternMatcher {
     /// asserted facts. The caller is responsible for ensuring the slice contains
     /// only currently asserted facts (equivalent to `FactStorage::get_asserted_facts()`
     /// at the snapshot moment). No additional filtering is applied at match time.
-    #[allow(dead_code)] // call site added in Task 5 (filter_facts_for_query snapshot fix)
     pub(crate) fn from_slice(facts: Arc<[Fact]>) -> Self {
         PatternMatcher { storage: MatcherStorage::Slice(facts) }
     }
