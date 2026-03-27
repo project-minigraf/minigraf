@@ -63,8 +63,14 @@
                [?s :sale/region ?region]])
 
 # sum-distinct: only unique amounts are summed
-# Amounts: 100, 200, 150  (all distinct) → same result
+# Amounts: 100, 200, 150  (all distinct here) → same result as sum
 # Expected: [[450]]
+# NOTE: sum-distinct is rarely the right tool in practice.
+# If you're getting unwanted duplicates, the usual fixes are:
+#   (a) use :with to add a grouping key (prevents false row merging), or
+#   (b) fix the data model so the duplicate values don't arise.
+# sum-distinct exists for completeness with SQL's SUM(DISTINCT col),
+# but reaching for it is usually a signal to reconsider the query.
 (query [:find (sum-distinct ?amt)
         :where [?s :sale/amount ?amt]])
 
@@ -221,4 +227,10 @@ EXIT
 #   All aggregates silently skip Value::Null.
 #   count/count-distinct on zero rows → [[0]].
 #   Other aggregates on zero rows → empty result.
+#
+# NOTE on sum-distinct:
+#   Rarely useful in practice. If you find yourself reaching for it,
+#   first consider: (a) :with to prevent false row merging, or
+#   (b) rethinking the data model. sum-distinct is included for
+#   completeness with SQL's SUM(DISTINCT col).
 # ========================================

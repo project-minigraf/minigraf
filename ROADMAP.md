@@ -1321,6 +1321,30 @@ branched_db.execute("(transact [[:x :y 1]])")?;
 
 ---
 
+## Post-1.0 Performance Backlog
+
+Known O(N²) hotspots discovered during benchmarking (v0.13.0). Each has a well-understood O(N) fix but touches the query evaluator rather than the optimizer, so they are deferred beyond v1.0 to avoid expanding Phase 7.4's scope.
+
+### Hash-Join for Negation Inner Loop
+
+**Problem**: `not` / `not-join` evaluation re-scans all candidate facts once per outer binding — O(outer × inner) = O(N²). Observed: 13 s (`not_scale/10k`), 23 s (`not_join_scale/10k`).
+
+**Fix**: Pre-compute the exclusion set from the `not` body once → `HashSet<Value>`. Probe per outer binding in O(1). Overall: O(N).
+
+### Hash-Join for Disjunction (`or` / `or-join`) Inner Loop
+
+**Problem**: `apply_or_clauses` evaluates each branch against the full incoming binding set (seeded re-scan) — O(seeds × facts) = O(N²). Observed: 74 s (`or_scale/10k`), 73 s (`or_join_scale/10k`). (Rules are exempt — they start from an empty binding, giving O(N).)
+
+**Fix**: Evaluate each branch from an empty seed, then intersect/project results back onto the incoming bindings using a hash lookup. Overall: O(N) per branch.
+
+### Hash-Join for `with`-Grouped Aggregation Cross-Product
+
+**Problem**: `with_grouped_sum` triggers a two-pattern cross-product join without a hash-join step — O(N²). Observed: 67 s (`with_grouped_sum/10k`).
+
+**Fix**: Add a hash-join planning step in the aggregation post-processor for multi-pattern `with` clauses.
+
+---
+
 ## Release Strategy
 
 ### v0.1.0 - ✅ Phase 1 Complete (PoC)
@@ -1531,4 +1555,4 @@ See [GitHub Issues](https://github.com/adityamukho/minigraf/issues) for specific
 
 ---
 
-Last Updated: Phase 6.5 Complete - On-disk B+tree indexes, file format v6, concurrent scan per-page locking (March 2026)
+Last Updated: Phase 7.3 Complete - Disjunction (`or`/`or-join`), benchmarks extended to cover negation/aggregation/disjunction/expressions, post-1.0 performance backlog added (March 2026)
