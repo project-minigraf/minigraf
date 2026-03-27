@@ -30,8 +30,14 @@ Two query paths exist and are treated differently by this phase:
   (with index rebuild) for `StratifiedEvaluator`, which needs a mutable store for derived fact
   accumulation. Whether to eliminate this rebuild is deferred to profiling results.
 
-Evaluator-internal `PatternMatcher::new(FactStorage)` call sites in `evaluator.rs` are
-**untouched** — they operate on live-accumulating storage and are not part of this phase.
+Both paths share `apply_or_clauses` (defined in `executor.rs`, imported by `evaluator.rs`) and
+`evaluate_not_join` (defined in `evaluator.rs`, imported by `executor.rs`). These function
+signatures change in this phase; all call sites in both files are updated.
+
+The evaluator's mixed-rules loop (`StratifiedEvaluator`) has inline `PatternMatcher::new(...)` and
+`evaluate_not_join(...)` call sites that pass live-accumulating `FactStorage` objects — these are
+updated to convert to `Arc<[Fact]>` at call time but the accumulation logic is otherwise
+untouched.
 
 ---
 
@@ -40,32 +46,28 @@ Evaluator-internal `PatternMatcher::new(FactStorage)` call sites in `evaluator.r
 **Purpose**: confirm actual hotspots before making structural changes. Profiling is a local
 validation step; no flamegraph files are committed to the repository.
 
-### `Cargo.toml`
+### No `Cargo.toml` changes
 
-```toml
-[dev-dependencies]
-pprof = { version = "0.14", features = ["flamegraph", "criterion"] }
+Use `cargo flamegraph` (the `cargo-flamegraph` tool wrapping `perf`) rather than a
+pprof/Criterion integration. This avoids a dependency version conflict: pprof's `criterion`
+feature pins against Criterion `^0.5`, while the project uses `criterion = "0.8"`. These are
+incompatible and cannot coexist. `cargo flamegraph` has no Criterion dependency and produces the
+same flamegraph output.
+
+**Prerequisite**: `cargo install flamegraph` (one-time, local).
+
+### Validation run
+
+```bash
+cargo bench --no-run  # compile benchmarks in release mode
+cargo flamegraph --bench minigraf_bench -- query_simple_10k
+cargo flamegraph --bench minigraf_bench -- query_negation_10k
+cargo flamegraph --bench minigraf_bench -- query_aggregation_10k
+cargo flamegraph --bench minigraf_bench -- query_disjunction_10k
 ```
 
-### `benches/minigraf_bench.rs`
-
-Replace the existing TODO stub with a working pprof-profiled Criterion group:
-
-```rust
-use pprof::criterion::{Output, PProfProfiler};
-
-criterion_group! {
-    name = benches;
-    config = Criterion::default()
-        .with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
-    targets = /* existing benchmark functions */
-}
-```
-
-**Validation run**: `cargo bench -- --profile-time 10` on the query, negation, aggregation, and
-disjunction groups at 10K and 100K facts. Flamegraphs land in
-`target/criterion/*/profile/flamegraph.svg`. Inspect to confirm `filter_facts_for_query`,
-`net_asserted_facts`, and the index rebuild loop are top-of-stack.
+Flamegraphs land in `flamegraph.svg` in the working directory. Inspect to confirm
+`filter_facts_for_query`, `net_asserted_facts`, and the index rebuild loop are top-of-stack.
 
 **Gate rule**: if profiling shows a different dominant cost, stop and surface the findings before
 touching executor or matcher code.
@@ -85,12 +87,12 @@ touching executor or matcher code.
 that step 1 (`get_all_facts` I/O) or step 2 (`net_asserted_facts`) dominate, further work is
 needed:
 
-- Step 1: addressed by using the on-disk B+tree for selective attribute/entity lookups (deferred
-  Option B, not scoped here)
+- Step 1: addressed by using the on-disk B+tree for selective attribute/entity lookups (deferred,
+  not scoped here)
 - Step 2: would require caching the net-asserted view and invalidating on write (not currently
   scoped)
 
-This is captured in the post-1.0 backlog for future consideration.
+Both are captured in the post-1.0 backlog for future consideration.
 
 ---
 
@@ -123,7 +125,8 @@ optional B+tree selective-lookup integration (the step-1 fix above).
 ### 2.2 `PatternMatcher` — `matcher.rs`
 
 Add a second internal representation and a new `from_slice` constructor. The existing
-`PatternMatcher::new(FactStorage)` is kept **unchanged** for evaluator call sites.
+`PatternMatcher::new(FactStorage)` is kept **unchanged** for evaluator call sites that pass
+live-accumulating storage.
 
 ```rust
 enum MatcherStorage {
@@ -136,12 +139,12 @@ pub struct PatternMatcher {
 }
 
 impl PatternMatcher {
-    // Existing — unchanged, used by evaluator
+    // Existing — unchanged
     pub fn new(storage: FactStorage) -> Self {
         PatternMatcher { storage: MatcherStorage::Owned(storage) }
     }
 
-    // New — used by executor non-rules path
+    // New — used by executor and evaluator call sites that provide a pre-filtered slice
     pub(crate) fn from_slice(facts: Arc<[Fact]>) -> Self {
         PatternMatcher { storage: MatcherStorage::Slice(facts) }
     }
@@ -155,43 +158,107 @@ impl PatternMatcher {
 }
 ```
 
-`match_pattern` replaces its `self.storage.get_asserted_facts()` call with `self.get_facts()`.
-No other logic changes.
+**Two call sites** in `matcher.rs` call `self.storage.get_asserted_facts()` and must both be
+updated to `self.get_facts()`:
+
+- `match_pattern` (line 27)
+- `match_pattern_with_bindings` (line 222)
+
+No other logic changes. `match_patterns` and `match_patterns_seeded` delegate to these two methods
+and require no further changes.
+
+**Per-join allocation note**: `s.to_vec()` in the `Slice` arm produces a fresh `Vec<Fact>` on
+every `match_pattern` / `match_pattern_with_bindings` call. This is pre-existing behaviour (the
+`Owned` arm also allocates via `get_asserted_facts()`). The snapshot fix eliminates the index
+rebuild (step 4) — it does not eliminate per-join allocations. That would require iterating the
+slice directly in the match loop, which is out of scope for this phase.
 
 **Correctness note**: the `Slice` variant receives a pre-filtered, net-asserted slice from
-`filter_facts_for_query` — the same set that `get_asserted_facts()` would have returned from the
-old `FactStorage`. No additional filtering is needed.
+`filter_facts_for_query`. This is the same fact set that `get_asserted_facts()` would have
+returned from the old `FactStorage`. No additional filtering is needed.
 
-### 2.3 Cascading signature changes — `executor.rs`
+### 2.3 Shared function signature changes
 
-All functions in `executor.rs` that accept `&FactStorage` purely to construct a `PatternMatcher`
-change to accept `Arc<[Fact]>` instead. These functions never call index-based methods on the
-storage; the change is mechanical.
+Two functions are shared between `executor.rs` and `evaluator.rs` and have their signatures
+changed in this phase. All call sites in both files are updated.
+
+#### `apply_or_clauses` — defined in `executor.rs`, imported by `evaluator.rs`
+
+Change `storage: &FactStorage` parameter to `storage: Arc<[Fact]>`. Inside, all
+`PatternMatcher::new(storage.clone())` calls become `PatternMatcher::from_slice(storage.clone())`.
+The `Arc` clone is a refcount increment.
+
+**Call sites**:
+
+| File | Location | Old | New |
+|---|---|---|---|
+| `executor.rs` | `execute_query` | `&filtered_storage` (FactStorage) | `filtered_facts.clone()` (Arc) |
+| `executor.rs` | `execute_query_with_rules` | `&derived_storage` (FactStorage) | `Arc::from(derived_storage.get_asserted_facts().unwrap_or_default())` |
+| `evaluator.rs` | mixed-rules loop line 693 | `&accumulated` (FactStorage) | `Arc::from(accumulated.get_asserted_facts().unwrap_or_default())` |
+
+In `execute_query_with_rules`, the `apply_or_clauses` call operates on `derived_storage` — the
+fully-derived fact set produced by `StratifiedEvaluator` (base facts + all rule-derived facts).
+The slice must include derived facts; converting via `get_asserted_facts()` is correct.
+
+#### `evaluate_not_join` — defined in `evaluator.rs`, imported by `executor.rs`
+
+Change `storage: &FactStorage` parameter to `storage: Arc<[Fact]>`. Inside,
+`PatternMatcher::new(storage.clone())` becomes `PatternMatcher::from_slice(storage.clone())`.
+
+**Call sites**:
+
+| File | Location | Old | New |
+|---|---|---|---|
+| `executor.rs` | `execute_query` not-filter (line 263) | `&not_storage` (FactStorage clone) | `not_facts.clone()` (Arc clone) — same slice as `filtered_facts` |
+| `executor.rs` | `execute_query_with_rules` not-filter (line 477) | `&not_storage` (derived_storage clone) | `Arc::from(derived_storage.get_asserted_facts().unwrap_or_default())` |
+| `evaluator.rs` | mixed-rules loop line 773 | `&accumulated` (FactStorage) | `Arc::from(accumulated.get_asserted_facts().unwrap_or_default())` |
+
+In `execute_query_with_rules`, the not-post-filter at lines 388–483 must operate on
+`derived_storage` (fully-derived facts), not the base `Arc<[Fact]>` from
+`filter_facts_for_query`. `not` in the query body tests against the fully-derived state,
+including rule-derived predicates. Converting via `derived_storage.get_asserted_facts()` is
+correct.
+
+### 2.4 Executor-internal function signature changes
+
+These functions are only called within `executor.rs`; no `evaluator.rs` changes needed.
 
 | Function | Old param | New param |
 |---|---|---|
-| `apply_or_clauses` | `storage: &FactStorage` | `storage: Arc<[Fact]>` |
-| `evaluate_branch` | `storage: &FactStorage` | `storage: Arc<[Fact]>` |
 | `not_body_matches` | `storage: &FactStorage` | `storage: Arc<[Fact]>` |
-| `evaluate_not_join` (executor's own) | `storage: &FactStorage` | `storage: Arc<[Fact]>` |
+| `evaluate_branch` | `storage: &FactStorage` | `storage: Arc<[Fact]>` |
 
-Inside each, `PatternMatcher::new(storage.clone())` becomes
-`PatternMatcher::from_slice(storage.clone())`. The `Arc` clone is a refcount increment, not a
-copy.
+Inside each, `PatternMatcher::new(storage.clone())` becomes `PatternMatcher::from_slice(storage.clone())`.
 
-`evaluate_not_join` in `evaluator.rs` (the evaluator's own version) is **unchanged** — it
-operates on the live-accumulating `FactStorage` path.
+The `evaluate_not_join` call at line 921 (inside `evaluate_branch`) propagates the type change
+automatically — when `evaluate_branch`'s `storage` parameter becomes `Arc<[Fact]>`, that same
+value is passed through to `evaluate_not_join` unchanged.
 
-### 2.4 `execute_query` call site
+### 2.5 Evaluator inline `PatternMatcher` call sites — `evaluator.rs`
 
-Receives `Arc<[Fact]>` from `filter_facts_for_query`. Uses `PatternMatcher::from_slice` and
-passes the `Arc<[Fact]>` to all or/not functions. No `FactStorage` is constructed at any point in
-the non-rules path.
+The mixed-rules loop in `StratifiedEvaluator` has two inline `PatternMatcher::new(...)` call sites
+that pass `accumulated` (a live-accumulating `FactStorage`). These are updated to use
+`from_slice`:
 
-### 2.5 `execute_query_with_rules` call site
+- Line 686: insert `let accumulated_facts: Arc<[Fact]> = Arc::from(accumulated.get_asserted_facts().unwrap_or_default());`
+  **before** the existing line, then replace the line itself with
+  `PatternMatcher::from_slice(accumulated_facts.clone())`. Reuse the same `Arc` for the
+  `apply_or_clauses` call at line 693 to avoid a second `get_asserted_facts()` pass.
+- Line 744: `PatternMatcher::new(accumulated.clone())` (in the not-body inner loop) →
+  `PatternMatcher::from_slice(accumulated_facts.clone())` using the same `Arc` computed above if
+  it is still in scope; otherwise compute fresh.
 
-Receives `Arc<[Fact]>` from `filter_facts_for_query`, then converts to `FactStorage` for
-`StratifiedEvaluator`:
+### 2.6 `execute_query` call site
+
+Receives `Arc<[Fact]>` from `filter_facts_for_query` (renamed `filtered_facts` for clarity).
+Uses `PatternMatcher::from_slice(filtered_facts.clone())`. Passes `filtered_facts.clone()` to
+`apply_or_clauses` and `not_body_matches` / `evaluate_not_join`. No `FactStorage` is constructed
+at any point in the non-rules path.
+
+### 2.7 `execute_query_with_rules` call site
+
+Receives `Arc<[Fact]>` from `filter_facts_for_query`. Converts to `FactStorage` for
+`StratifiedEvaluator` (which needs mutable storage for derived fact accumulation):
 
 ```rust
 let filtered_storage = FactStorage::new();
@@ -199,10 +266,16 @@ for fact in filtered_facts.iter().cloned() {
     filtered_storage.load_fact(fact)?;
 }
 let evaluator = StratifiedEvaluator::new(filtered_storage, ...);
+let derived_storage = evaluator.evaluate(&predicates)?;
 ```
 
-The index rebuild cost is still paid here. A TODO comment notes `FactStorage::new_noindex()` as
-the next step if profiling confirms the rules-path rebuild also dominates.
+After evaluation, `derived_storage` is used for pattern matching, `apply_or_clauses`, and the
+not-post-filter — all converted to `Arc<[Fact]>` via `derived_storage.get_asserted_facts()` at
+call time (one conversion per distinct call, not one per binding).
+
+The index rebuild cost for the initial `filtered_storage` is still paid here. A TODO comment notes
+`FactStorage::new_noindex()` as the next step if profiling confirms the rules-path rebuild also
+dominates.
 
 ---
 
@@ -212,7 +285,8 @@ the next step if profiling confirms the rules-path rebuild also dominates.
 
 Add a `skip_indexing: bool` field to `FactData`. When set:
 - `load_fact` and `transact` skip all `pending_indexes.insert()` calls
-- `get_all_facts()` always uses the full `d.facts` scan (bypassing the index fallback check)
+- `get_all_facts()` always uses the full `d.facts` scan (bypassing the `eavt.is_empty()` check,
+  which would fail once derived facts start populating the index)
 
 `execute_query_with_rules` would use `FactStorage::new_noindex()` instead of `FactStorage::new()`
 when constructing the evaluator's initial storage from `Arc<[Fact]>`. `StratifiedEvaluator`'s
@@ -229,10 +303,11 @@ silently return empty results for those calls and must not be used.
 **No new test files.** The snapshot fix is a pure performance change — query semantics are
 unchanged. The primary correctness gate is the existing 527-test suite.
 
-**One new unit test** in `executor.rs` (or `tests/snapshot_test.rs`): assert that
+**One new unit test** in the `#[cfg(test)]` module of `executor.rs`: assert that
 `filter_facts_for_query` returns the correct temporally-filtered, net-asserted fact set for a
 small database covering assert/retract/valid-time scenarios. This pins the return type and
-semantics against future refactors.
+semantics against future refactors. The function is private to `DatalogExecutor` and can only be
+tested from within `executor.rs`.
 
 **Benchmark regression gate**: run `cargo bench` before and after the snapshot fix on the existing
 query groups at 10K facts. Record median latency delta. Expected: measurable improvement on
@@ -248,3 +323,5 @@ unchanged until the conditional extension is implemented.
 - Rule evaluation optimization (post-1.0 backlog)
 - B+tree selective-lookup integration in `filter_facts_for_query` step 1 (deferred to profiling)
 - `net_asserted_facts` caching (not currently scoped)
+- Per-join allocation elimination in `PatternMatcher` (requires iterating slice directly in match
+  loop; out of scope)
