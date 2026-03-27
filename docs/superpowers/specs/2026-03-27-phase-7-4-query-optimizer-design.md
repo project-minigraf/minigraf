@@ -21,11 +21,15 @@ before any structural change is made.
 
 ## Architecture Overview
 
-Two query paths exist and are treated differently by this phase:
+**Step 2 is conditional on Step 1.** No code changes are made until profiling confirms the index
+rebuild (step 4 of `filter_facts_for_query`) is the dominant cost. If profiling reveals a
+different bottleneck, Step 2 does not proceed and scope is reassessed.
 
-- **Non-rules path** (`execute_query`): after this phase, no `FactStorage` is constructed at
-  all — `PatternMatcher`, `apply_or_clauses`, `not_body_matches`, and `evaluate_not_join` all
-  receive an `Arc<[Fact]>` snapshot directly.
+If Step 1 confirms the index rebuild, two query paths are treated differently by Step 2:
+
+- **Non-rules path** (`execute_query`): no `FactStorage` is constructed at all — `PatternMatcher`,
+  `apply_or_clauses`, `not_body_matches`, and `evaluate_not_join` all receive an `Arc<[Fact]>`
+  snapshot directly.
 - **Rules path** (`execute_query_with_rules`): still converts `Arc<[Fact]>` to a `FactStorage`
   (with index rebuild) for `StratifiedEvaluator`, which needs a mutable store for derived fact
   accumulation. Whether to eliminate this rebuild is deferred to profiling results.
@@ -69,8 +73,11 @@ cargo flamegraph --bench minigraf_bench -- query_disjunction_10k
 Flamegraphs land in `flamegraph.svg` in the working directory. Inspect to confirm
 `filter_facts_for_query`, `net_asserted_facts`, and the index rebuild loop are top-of-stack.
 
-**Gate rule**: if profiling shows a different dominant cost, stop and surface the findings before
-touching executor or matcher code.
+**Gate rule — proceed condition**: Step 2 begins **only if** the flamegraph shows the `load_fact`
+loop / BTreeMap insertions (step 4) as the dominant stack frame within `filter_facts_for_query`
+at 10K+ facts. If steps 1–3 (`get_all_facts`, `net_asserted_facts`, valid-time filter) dominate
+instead, **do not touch any executor, matcher, or evaluator code** — surface the findings and
+reassess scope before proceeding.
 
 ### What the profiling reveals
 
@@ -96,7 +103,7 @@ Both are captured in the post-1.0 backlog for future consideration.
 
 ---
 
-## Step 2 — Snapshot Fix
+## Step 2 — Snapshot Fix *(proceeds only if Step 1 gate passes)*
 
 ### 2.1 `filter_facts_for_query` — `executor.rs`
 
