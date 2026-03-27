@@ -243,12 +243,8 @@ impl DatalogExecutor {
                         }
                     }
                     for (join_vars, nj_clauses) in &not_join_clauses {
-                        if evaluate_not_join(
-                            join_vars,
-                            nj_clauses,
-                            binding,
-                            filtered_facts.clone(),
-                        ) {
+                        if evaluate_not_join(join_vars, nj_clauses, binding, filtered_facts.clone())
+                        {
                             return false;
                         }
                     }
@@ -474,12 +470,8 @@ impl DatalogExecutor {
                         }
                     }
                     for (join_vars, nj_clauses) in &not_join_clauses {
-                        if evaluate_not_join(
-                            join_vars,
-                            nj_clauses,
-                            binding,
-                            derived_facts.clone(),
-                        ) {
+                        if evaluate_not_join(join_vars, nj_clauses, binding, derived_facts.clone())
+                        {
                             return false;
                         }
                     }
@@ -549,11 +541,7 @@ impl DatalogExecutor {
 /// Evaluate a `not` body against the current outer binding.
 ///
 /// Returns true if the body "matches" (i.e., the outer binding should be excluded).
-fn not_body_matches(
-    not_body: &[WhereClause],
-    outer: &Binding,
-    storage: Arc<[Fact]>,
-) -> bool {
+fn not_body_matches(not_body: &[WhereClause], outer: &Binding, storage: Arc<[Fact]>) -> bool {
     use crate::query::datalog::evaluator::substitute_pattern;
 
     let patterns: Vec<_> = not_body
@@ -2605,7 +2593,11 @@ mod tests {
             with_vars: vec![],
         };
         let facts_outside = executor.filter_facts_for_query(&query_outside).unwrap();
-        assert_eq!(facts_outside.len(), 1, "only open-ended fact visible at t=3000");
+        assert_eq!(
+            facts_outside.len(),
+            1,
+            "only open-ended fact visible at t=3000"
+        );
         assert_eq!(facts_outside[0].attribute, ":person/name");
     }
 }

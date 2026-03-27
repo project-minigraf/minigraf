@@ -21,7 +21,9 @@ pub struct PatternMatcher {
 
 impl PatternMatcher {
     pub fn new(storage: FactStorage) -> Self {
-        PatternMatcher { storage: MatcherStorage::Owned(storage) }
+        PatternMatcher {
+            storage: MatcherStorage::Owned(storage),
+        }
     }
 
     /// Constructs a [`PatternMatcher`] over a pre-built, already-filtered slice of
@@ -29,7 +31,9 @@ impl PatternMatcher {
     /// only currently asserted facts (equivalent to `FactStorage::get_asserted_facts()`
     /// at the snapshot moment). No additional filtering is applied at match time.
     pub(crate) fn from_slice(facts: Arc<[Fact]>) -> Self {
-        PatternMatcher { storage: MatcherStorage::Slice(facts) }
+        PatternMatcher {
+            storage: MatcherStorage::Slice(facts),
+        }
     }
 
     fn get_facts(&self) -> Vec<Fact> {
@@ -606,7 +610,11 @@ mod tests {
         let alice = Uuid::new_v4();
         storage
             .transact(
-                vec![(alice, ":person/name".to_string(), Value::String("Alice".to_string()))],
+                vec![(
+                    alice,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                )],
                 None,
             )
             .unwrap();
@@ -627,7 +635,11 @@ mod tests {
         let owned_results = owned_matcher.match_pattern(&pattern);
         let slice_results = slice_matcher.match_pattern(&pattern);
 
-        assert_eq!(owned_results.len(), slice_results.len(), "result count mismatch");
+        assert_eq!(
+            owned_results.len(),
+            slice_results.len(),
+            "result count mismatch"
+        );
         assert_eq!(
             owned_results[0].get("?name"),
             slice_results[0].get("?name"),
@@ -657,18 +669,27 @@ mod tests {
         let alice = Uuid::new_v4();
         storage
             .transact(
-                vec![(alice, ":name".to_string(), Value::String("Alice".to_string()))],
+                vec![(
+                    alice,
+                    ":name".to_string(),
+                    Value::String("Alice".to_string()),
+                )],
                 None,
             )
             .unwrap();
         storage
-            .retract(vec![(alice, ":name".to_string(), Value::String("Alice".to_string()))])
+            .retract(vec![(
+                alice,
+                ":name".to_string(),
+                Value::String("Alice".to_string()),
+            )])
             .unwrap();
 
         // net_asserted_facts() returns the true net state: for each (entity, attribute, value)
         // triple, the most recent record wins; retractions exclude the triple entirely.
-        let asserted: Arc<[Fact]> =
-            Arc::from(crate::graph::storage::net_asserted_facts(storage.get_all_facts().unwrap()));
+        let asserted: Arc<[Fact]> = Arc::from(crate::graph::storage::net_asserted_facts(
+            storage.get_all_facts().unwrap(),
+        ));
         let matcher = PatternMatcher::from_slice(asserted);
 
         let pattern = Pattern::new(
@@ -677,7 +698,10 @@ mod tests {
             EdnValue::Symbol("?v".to_string()),
         );
         let results = matcher.match_pattern(&pattern);
-        assert!(results.is_empty(), "retracted fact should not appear in slice-based matcher");
+        assert!(
+            results.is_empty(),
+            "retracted fact should not appear in slice-based matcher"
+        );
     }
 
     #[test]
@@ -689,12 +713,20 @@ mod tests {
         let alice = Uuid::new_v4();
         storage
             .transact(
-                vec![(alice, ":name".to_string(), Value::String("Alice".to_string()))],
+                vec![(
+                    alice,
+                    ":name".to_string(),
+                    Value::String("Alice".to_string()),
+                )],
                 None,
             )
             .unwrap();
         storage
-            .retract(vec![(alice, ":name".to_string(), Value::String("Alice".to_string()))])
+            .retract(vec![(
+                alice,
+                ":name".to_string(),
+                Value::String("Alice".to_string()),
+            )])
             .unwrap();
 
         // Deliberately build a raw, unfiltered slice (all facts, including the retraction)
