@@ -29,6 +29,7 @@ Minigraf is a **single-file embedded graph database** that lets you:
 3. **Perfect for temporal** - Time is just another dimension in relations
 4. **Proven at scale** - 40+ years of research, production use (Datomic, XTDB)
 5. **Graph-native** - Facts (Entity-Attribute-Value) are literally edges
+6. **LLM-friendly** - The small, uniform grammar (`[?e :attr ?v]` patterns, no JOIN variants, no subquery nesting) is easy for AI coding assistants to generate correctly from a few examples; the entire language fits in a system prompt
 
 ## Quick Start
 
