@@ -515,7 +515,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 - **7.2b** ✅ Arithmetic & predicate expression clauses (`[(< ?v 100)]`, `[(+ ?a ?b) ?c]`, string predicates, type predicates)
 - **7.2** ~~Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`) — includes arithmetic filter predicates~~ → split into 7.2a + 7.2b
 - **7.3** ✅ Disjunction (`or` / `or-join`)
-- **7.4** Query Optimizer Improvements (deferred from Phase 6.3)
+- **7.4** ✅ Query Optimizer Improvements / `filter_facts_for_query` snapshot fix
 - **7.5** Tests + Error Coverage (≥90% branch coverage target)
 - **7.6** Prepared Statements (parse + plan once, execute many times, temporal bind slots)
 - **7.7** Temporal Metadata Bindings + Range Queries (`:db/valid-from`, `:db/valid-to`, `:db/tx-count` as queryable pseudo-attributes; unlocks Time Interval, Time-Point Lookup, Time-Interval Lookup query classes)
@@ -689,12 +689,16 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 **Estimated complexity**: 2-3 weeks
 
-### 7.4 Query Optimizer Improvements (deferred from Phase 6.3)
+### 7.4 Query Optimizer Improvements / `filter_facts_for_query` snapshot fix ✅ COMPLETE
 
-- 🎯 **Profiling integration** — before optimizing, instrument the benchmark suite with a profiler to identify actual hotspots rather than relying on code inspection. Add `pprof` as a Criterion profiler (via `criterion-pprof` or the `pprof` crate's Criterion integration) so that `cargo bench` can emit flamegraphs. Run the existing `minigraf_bench.rs` benchmarks at 10K/100K facts under the profiler to confirm `filter_facts_for_query`, index rebuild, and `net_asserted_facts` are the dominant costs before investing in the fix. Profiling must precede any structural change to the query execution path.
-- 🎯 **`filter_facts_for_query` snapshot overhead** — `executor.rs::filter_facts_for_query` is O(N) in total fact count on every query: it streams all committed on-disk facts, clones the pending `Vec<Fact>`, and rebuilds all four indexes from scratch into a throwaway `FactStorage`. Fix: replace with a read-only `Arc<[Fact]>` snapshot so the pattern matcher works against an immutable slice without index reconstruction; whether to also use on-disk B+tree indexes for selective lookups is determined by profiling results. This is the primary query performance bottleneck at scale.
+**Status**: ✅ Completed (March 2026, v0.13.1)
 
-**Note**: The following items were originally scoped here but are deferred to the post-1.0 backlog: cost-based optimizer extensions for new clause types, rule evaluation optimization for `not`/`or`/aggregate rules, and predicate push-down. The original cost-estimate items required the new clause types to exist first (now satisfied by 7.1–7.3), but the profiling-first constraint means they are lower priority than the snapshot fix.
+- ✅ **Profiling integration** — Criterion profiling gate added; flamegraph support via `pprof` crate.
+- ✅ **`filter_facts_for_query` snapshot fix** — `filter_facts_for_query` now returns `Arc<[Fact]>` instead of a throwaway `FactStorage`; eliminates O(N) four-BTreeMap index rebuild on every non-rules query call. `execute_query` path constructs zero `FactStorage` objects. `execute_query_with_rules` still converts `Arc<[Fact]>` back to `FactStorage` for `StratifiedEvaluator` (deferred to later phase). `apply_or_clauses` and `evaluate_not_join` signatures updated to accept `Arc<[Fact]>`. Evaluator loop: `accumulated_facts` computed once per iteration (was 4 separate `get_asserted_facts()` calls). `PatternMatcher::from_slice(Arc<[Fact]>)` constructor added.
+- ✅ **Benchmark results**: ~62–65% speedup on non-rules queries at 10K facts (`query/point_entity/10k`: 22 ms → 8.6 ms; `aggregation/count_scale/10k`: 28 ms → 9.7 ms).
+- ✅ 568 tests passing (390 unit + 172 integration + 6 doc); version bumped to v0.13.1.
+
+**Note**: The following items were originally scoped here but are deferred to the post-1.0 backlog: cost-based optimizer extensions for new clause types, rule evaluation optimization for `not`/`or`/aggregate rules, and predicate push-down.
 
 ### 7.5 Tests + Error Coverage
 
@@ -1449,6 +1453,22 @@ Push `Expr` predicate clauses (e.g. `[(> ?age 30)]`) down to filter bindings as 
 - ✅ `eval_expr` / `is_truthy`: int/float promotion, integer division truncation, NaN guard, type mismatch → row drop, div/0 → row drop
 - ✅ `tests/predicate_expr_test.rs` — 28 integration tests; 527 tests passing (365 unit + 156 integration + 6 doc)
 
+### v0.13.0 - ✅ Phase 7.3 (Disjunction — `or` / `or-join`)
+- ✅ `WhereClause::Or(Vec<Vec<WhereClause>>)` and `WhereClause::OrJoin { join_vars, branches }` variants
+- ✅ `(or ...)` / `(or-join [?v...] ...)` in `:where` clauses and rule bodies; `(and ...)` grouping
+- ✅ `match_patterns_seeded` on `PatternMatcher`; `evaluate_branch` / `apply_or_clauses` in `executor.rs`
+- ✅ `DependencyGraph::from_rules` refactored with recursive `collect_clause_deps`
+- ✅ `tests/disjunction_test.rs` — 16 integration tests; 562 tests passing (384 unit + 172 integration + 6 doc)
+
+### v0.13.1 - ✅ Phase 7.4 (`filter_facts_for_query` snapshot fix)
+- ✅ `filter_facts_for_query` returns `Arc<[Fact]>` — eliminates O(N) four-BTreeMap index rebuild on every non-rules query call
+- ✅ `execute_query` path constructs zero `FactStorage` objects; `execute_query_with_rules` still converts for `StratifiedEvaluator`
+- ✅ `PatternMatcher::from_slice(Arc<[Fact]>)` constructor added
+- ✅ `apply_or_clauses` and `evaluate_not_join` signatures updated to accept `Arc<[Fact]>`
+- ✅ Evaluator loop: `accumulated_facts` computed once per iteration (was 4 separate `get_asserted_facts()` calls)
+- ✅ ~62–65% speedup on non-rules queries at 10K facts (`query/point_entity/10k`: 22 ms → 8.6 ms; `aggregation/count_scale/10k`: 28 ms → 9.7 ms)
+- ✅ 568 tests passing (390 unit + 172 integration + 6 doc)
+
 ### v1.0.0 - 🎯 Phase 7 (Datalog Completeness)
 - Stratified negation (`not` / `not-join`)
 - Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`) + arithmetic filter predicates
@@ -1525,7 +1545,8 @@ When evaluating features, ask:
 - ✅ Phase 7.2a: Complete (March 2026) - Aggregation (`count`/`sum`/`min`/`max`/`distinct`/`:with`), 461 tests
 - ✅ Phase 7.2b: Complete (March 2026) - Arithmetic & predicate expression clauses, 527 tests
 - ✅ Phase 7.3: Complete (March 2026) - Disjunction (`or` / `or-join`), 562 tests
-- 🎯 Phase 7.4–7.7: optimizer, prepared statements, temporal metadata bindings; ≥90% branch coverage - **NEXT**
+- ✅ Phase 7.4: Complete (March 2026) - `filter_facts_for_query` snapshot fix, eliminate 4-index rebuild, 568 tests
+- 🎯 Phase 7.5–7.7: tests/error coverage, prepared statements, temporal metadata bindings; ≥90% branch coverage - **NEXT**
 - 🎯 Phase 8: 3-4 months (Cross-platform — WASM, mobile, language bindings)
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)
 - 🎯 **v1.0.0: 9-12 months**
@@ -1536,20 +1557,20 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: Phase 7.3 Complete — Phase 7.4 Next (Query Optimizer Improvements)
+**Right Now**: Phase 7.4 Complete — Phase 7.5 Next (Tests + Error Coverage, ≥90% branch coverage)
 
-**Phase 7.3 Achievements**:
-1. ✅ `WhereClause::Or(Vec<Vec<WhereClause>>)` and `WhereClause::OrJoin { join_vars, branches }` variants in `types.rs`
-2. ✅ `parse_or` / `parse_or_join` / `(and ...)` grouping in `parser.rs`; safety checks at all 4 clause sites
-3. ✅ `match_patterns_seeded` on `PatternMatcher` for seeded branch evaluation
-4. ✅ `evaluate_branch` / `apply_or_clauses` in `executor.rs`; union + deduplication across branches
-5. ✅ `DependencyGraph::from_rules` refactored with `collect_clause_deps`; `Or`/`OrJoin` contribute positive edges
-6. ✅ Rules with `or`/`or-join` route to `mixed_rules` path in `StratifiedEvaluator`
-7. ✅ Integration tests in `tests/disjunction_test.rs` (16 tests); 562 tests passing (384 unit + 172 integration + 6 doc); version bumped to v0.13.0
+**Phase 7.4 Achievements**:
+1. ✅ `filter_facts_for_query` returns `Arc<[Fact]>` — eliminates O(N) four-BTreeMap index rebuild on every non-rules query call
+2. ✅ `execute_query` path constructs zero `FactStorage` objects; `execute_query_with_rules` still converts for `StratifiedEvaluator`
+3. ✅ `PatternMatcher::from_slice(Arc<[Fact]>)` constructor added
+4. ✅ `apply_or_clauses` and `evaluate_not_join` signatures updated to accept `Arc<[Fact]>`
+5. ✅ Evaluator loop: `accumulated_facts` computed once per iteration (was 4 separate `get_asserted_facts()` calls)
+6. ✅ ~62–65% speedup on non-rules queries at 10K facts (`query/point_entity/10k`: 22 ms → 8.6 ms; `aggregation/count_scale/10k`: 28 ms → 9.7 ms)
+7. ✅ 568 tests passing (390 unit + 172 integration + 6 doc); version bumped to v0.13.1
 
-**Immediate Next Steps (Phase 7.4)**:
-1. Query optimizer improvements for new clause types
-2. Push error-path coverage toward ≥90% target
+**Immediate Next Steps (Phase 7.5)**:
+1. Unit tests for each new clause type (parser, types, matcher)
+2. Push error-path branch coverage toward ≥90% target
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)
@@ -1565,4 +1586,4 @@ See [GitHub Issues](https://github.com/adityamukho/minigraf/issues) for specific
 
 ---
 
-Last Updated: Phase 7.3 Complete - Disjunction (`or`/`or-join`), benchmarks extended to cover negation/aggregation/disjunction/expressions, post-1.0 performance backlog added (March 2026)
+Last Updated: Phase 7.4 Complete - `filter_facts_for_query` snapshot fix, eliminate O(N) index rebuild, ~62–65% speedup on non-rules queries at 10K facts, 568 tests passing, v0.13.1 (March 2026)
