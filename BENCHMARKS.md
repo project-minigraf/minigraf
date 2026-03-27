@@ -73,7 +73,7 @@ Measures single-query latency against databases pre-loaded with 1K / 10K / 100K 
 
 10K `point_entity` updated in v0.13.1 (Phase 7.4 — snapshot fix, -61.5% vs pre-fix baseline of 22 ms, -45% vs Phase 6.5 v0.8.0). `point_attribute` and `join_3pattern` 10K numbers are from v0.8.0 and will be updated when re-benchmarked. 100K and 1M numbers are unchanged (from v0.8.0).
 
-Query performance scales linearly with dataset size. The query executor resolves committed facts via the on-disk B+tree range scan and page cache, then filters in memory. Starting from Phase 7.4, the non-rules query path no longer rebuilds in-memory EAVT/AEVT/AVET/VAET indexes on each call — facts are passed as a pre-filtered `Arc<[Fact]>` slice. Range-scan selectivity is not yet exploited to skip non-matching facts — that optimisation is deferred to a future phase.
+Query performance scales linearly with dataset size. The query executor resolves committed facts via the on-disk B+tree range scan and page cache, then filters in memory. Starting from Phase 7.4, the non-rules query path no longer rebuilds in-memory EAVT/AEVT/AVET/VAET indexes on each call — facts are passed as a pre-filtered `Arc<[Fact]>` slice. Range-scan selectivity is not yet exploited to skip non-matching facts — that optimisation is in the post-1.0 backlog (B+Tree Selective Lookup).
 
 ---
 
@@ -290,7 +290,7 @@ Negation and disjunction improvements are smaller because those paths are O(N²)
 
 ## Known Limitations
 
-- **Query scan is O(facts)**: Queries resolve all facts matching the range scan, then filter in memory. The per-query index rebuild (EAVT/AEVT/AVET/VAET) was eliminated in Phase 7.4 for the non-rules path. Index-based predicate pushdown for sub-linear lookups is deferred to a future phase.
+- **Query scan is O(facts)**: Queries resolve all facts matching the range scan, then filter in memory. The per-query index rebuild (EAVT/AEVT/AVET/VAET) was eliminated in Phase 7.4 for the non-rules path. Index-based predicate pushdown for sub-linear lookups is in the post-1.0 backlog (B+Tree Selective Lookup).
 - **Backend mutex held on cache-cold page reads**: Concurrent B+tree scans serialise only when a page must be loaded from disk (cache miss). Cache-warm reads are fully parallel. Further per-page I/O parallelism is deferred to Phase 8.
 - **1M recursion not benchmarked**: `chain/depth_100` takes 16 s; `chain/depth_1000` was not run.
 
