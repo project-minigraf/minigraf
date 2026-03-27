@@ -1357,6 +1357,14 @@ Improve semi-naive evaluation for rules that include `not`, `or`, and aggregate 
 
 Push `Expr` predicate clauses (e.g. `[(> ?age 30)]`) down to filter bindings as early as possible rather than applying them as a final post-processing pass. Currently `apply_expr_clauses` runs after all pattern matching. A natural complement to the `filter_facts_for_query` snapshot fix, but kept separate to avoid expanding Phase 7.4's scope.
 
+### B+Tree Selective Lookup (Range-Scan Predicate Push-Down)
+
+**Problem**: `filter_facts_for_query` step 1 calls `get_all_facts()`, which performs a full B+tree range scan regardless of query predicates. Every query pays O(N) I/O even when the query pattern binds a specific entity or attribute that could be resolved in O(log N) via an existing EAVT/AEVT index key lookup.
+
+**Fix**: Inspect query patterns before calling `get_all_facts()`. If a pattern binds a concrete entity (or entity + attribute), use `get_facts_by_entity` / `get_facts_by_attribute` to fetch only the relevant subset from the on-disk B+tree. This makes point-entity and point-attribute queries sub-linear in total fact count.
+
+**Scope**: Requires changes to `filter_facts_for_query` and the query planner to propagate bound values from patterns into the storage fetch call. More invasive than the Phase 7.4 snapshot fix; deferred to avoid destabilising the pre-1.0 query path.
+
 ---
 
 ## Release Strategy
