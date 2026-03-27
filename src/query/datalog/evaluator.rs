@@ -683,7 +683,12 @@ impl StratifiedEvaluator {
                     .filter(|c| matches!(c, WhereClause::Expr { .. }))
                     .collect();
 
-                let matcher = PatternMatcher::new(accumulated.clone());
+                // Compute once; reuse for matcher, apply_or_clauses, not-body matching, and evaluate_not_join.
+                // Declared at loop body scope so it remains in scope for all four usages below.
+                let accumulated_facts: Arc<[Fact]> =
+                    Arc::from(accumulated.get_asserted_facts().unwrap_or_default());
+
+                let matcher = PatternMatcher::from_slice(accumulated_facts.clone());
                 let raw_candidates = matcher.match_patterns(&positive_patterns);
 
                 // Apply Or/OrJoin clauses before Expr (mirrors top-level execute_query order)
@@ -693,7 +698,7 @@ impl StratifiedEvaluator {
                     let expanded = apply_or_clauses(
                         &rule.body,
                         raw_candidates,
-                        Arc::from(accumulated.get_asserted_facts().unwrap_or_default()),
+                        accumulated_facts.clone(),
                         &registry_guard,
                         None,
                         None,
@@ -741,7 +746,7 @@ impl StratifiedEvaluator {
                             })
                             .collect();
 
-                        let not_matcher = PatternMatcher::new(accumulated.clone());
+                        let not_matcher = PatternMatcher::from_slice(accumulated_facts.clone());
                         let mut not_bindings: Vec<Bindings> = if substituted.is_empty() {
                             vec![binding.clone()]
                         } else {
@@ -774,7 +779,7 @@ impl StratifiedEvaluator {
                             join_vars,
                             nj_clauses,
                             &binding,
-                            Arc::from(accumulated.get_asserted_facts().unwrap_or_default()),
+                            accumulated_facts.clone(),
                         ) {
                             continue 'binding;
                         }
