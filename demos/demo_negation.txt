@@ -126,7 +126,60 @@
                [?item :item/name ?name]])
 
 # ========================================
-# 6. NEGATIVE CYCLE REJECTION
+# 6. TEMPORAL QUERIES WITH NEGATION
+# ========================================
+# not and not-join compose with :as-of and :valid-at.
+
+# --- tx-time (:as-of) ---
+# tx N: record employees with their roles
+(transact [[:dev-alice :emp/name "Alice"] [:dev-alice :emp/role :developer]
+           [:dev-bob   :emp/name "Bob"]   [:dev-bob   :emp/role :developer]])
+
+# tx N+1: Bob is put on leave (mark him as inactive)
+(transact [[:dev-bob :emp/inactive true]])
+
+# Query: active developers right now (after both transactions)
+# Expected: "Alice"
+(query [:find ?name
+        :where [?e :emp/name ?name]
+               [?e :emp/role :developer]
+               (not [?e :emp/inactive true])])
+
+# Query: active developers as of the transaction that added Alice+Bob (before Bob was marked
+# inactive). Sections 1–5 issued 5 transacts; the Alice+Bob transact is #6.
+# Expected: "Alice", "Bob"  — Bob was not yet inactive at tx 6
+(query [:find ?name
+        :as-of 6
+        :where [?e :emp/name ?name]
+               [?e :emp/role :developer]
+               (not [?e :emp/inactive true])])
+
+# --- valid-time (:valid-at) ---
+# Model a temporary project assignment
+(transact {:valid-from "2024-01-01" :valid-to "2024-06-30"}
+          [[:dev-alice :blocked-by :legacy-service]])
+(transact [[:legacy-service :service/deprecated true]])
+
+# During the assignment window, Alice is blocked by a deprecated service
+# Expected: no results for Alice at this time (not-join excludes her)
+(query [:find ?name
+        :valid-at "2024-03-01"
+        :where [?e :emp/name ?name]
+               (not-join [?e]
+                         [?e :blocked-by ?svc]
+                         [?svc :service/deprecated true])])
+
+# After the assignment ended, Alice is no longer blocked
+# Expected: "Alice" (and "Bob" if the inactive fact is also expired — here it is not)
+(query [:find ?name
+        :valid-at "2025-01-01"
+        :where [?e :emp/name ?name]
+               (not-join [?e]
+                         [?e :blocked-by ?svc]
+                         [?svc :service/deprecated true])])
+
+# ========================================
+# 7. NEGATIVE CYCLE REJECTION
 # ========================================
 # Rules that form a negative cycle are rejected at
 # registration time. The rule below would create:

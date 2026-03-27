@@ -1,0 +1,236 @@
+# ========================================
+# Minigraf: Aggregation Demo
+# ========================================
+# Demonstrates count, count-distinct, sum, sum-distinct,
+# min, max, and the :with grouping clause.
+#
+# Run with: cargo run < demos/demo_aggregation.txt
+# ========================================
+
+# ========================================
+# 1. count — total rows
+# ========================================
+
+(transact [[:alice :person/name "Alice"] [:alice :person/dept "eng"]
+           [:bob   :person/name "Bob"]   [:bob   :person/dept "eng"]
+           [:carol :person/name "Carol"] [:carol :person/dept "hr"]])
+
+# Count all people
+# Expected: [[3]]
+(query [:find (count ?e)
+        :where [?e :person/name ?_n]])
+
+# Count per department (grouped)
+# Expected: [["eng" 2], ["hr" 1]]  (order may vary)
+(query [:find ?dept (count ?e)
+        :where [?e :person/dept ?dept]])
+
+# ========================================
+# 2. count-distinct — deduplicated count
+# ========================================
+
+(transact [[:proj-a :uses :lang/rust]
+           [:proj-b :uses :lang/rust]
+           [:proj-c :uses :lang/python]])
+
+# count returns 3 rows (one per project-language pair)
+# count-distinct returns 2 (only Rust and Python are distinct values)
+# Expected count:          [[3]]
+# Expected count-distinct: [[2]]
+(query [:find (count ?lang)
+        :where [?p :uses ?lang]])
+
+(query [:find (count-distinct ?lang)
+        :where [?p :uses ?lang]])
+
+# ========================================
+# 3. sum and sum-distinct
+# ========================================
+
+(transact [[:sale-1 :sale/amount 100] [:sale-1 :sale/region "west"]
+           [:sale-2 :sale/amount 200] [:sale-2 :sale/region "west"]
+           [:sale-3 :sale/amount 150] [:sale-3 :sale/region "east"]])
+
+# Total sales
+# Expected: [[450]]
+(query [:find (sum ?amt)
+        :where [?s :sale/amount ?amt]])
+
+# Total per region
+# Expected: [["east" 150], ["west" 300]]  (order may vary)
+(query [:find ?region (sum ?amt)
+        :where [?s :sale/amount ?amt]
+               [?s :sale/region ?region]])
+
+# sum-distinct: only unique amounts are summed
+# Amounts: 100, 200, 150  (all distinct here) → same result as sum
+# Expected: [[450]]
+# NOTE: sum-distinct is rarely the right tool in practice.
+# If you're getting unwanted duplicates, the usual fixes are:
+#   (a) use :with to add a grouping key (prevents false row merging), or
+#   (b) fix the data model so the duplicate values don't arise.
+# sum-distinct exists for completeness with SQL's SUM(DISTINCT col),
+# but reaching for it is usually a signal to reconsider the query.
+(query [:find (sum-distinct ?amt)
+        :where [?s :sale/amount ?amt]])
+
+# ========================================
+# 4. min and max
+# ========================================
+
+(transact [[:sensor-a :reading 30]
+           [:sensor-b :reading 10]
+           [:sensor-c :reading 20]])
+
+# Expected: [[10]]
+(query [:find (min ?r)
+        :where [?s :reading ?r]])
+
+# Expected: [[30]]
+(query [:find (max ?r)
+        :where [?s :reading ?r]])
+
+# min/max also work on strings (lexicographic order)
+(transact [[:fruit-a :name "cherry"]
+           [:fruit-b :name "apple"]
+           [:fruit-c :name "banana"]])
+
+# Expected: [["apple"]]
+(query [:find (min ?n)
+        :where [?f :name ?n]])
+
+# Expected: [["cherry"]]
+(query [:find (max ?n)
+        :where [?f :name ?n]])
+
+# ========================================
+# 5. :with — break ties in grouping
+# ========================================
+# :with adds extra variables to the grouping key without
+# including them in the output.  Useful when two rows have
+# identical values on all :find variables but should still
+# count as separate contributions to an aggregate.
+
+(transact [[:emp-1 :dept "eng"] [:emp-1 :salary 50]
+           [:emp-2 :dept "eng"] [:emp-2 :salary 50]])
+
+# Without :with — both employees collapse into one "eng" group
+# Expected: [["eng" 100]]
+(query [:find ?dept (sum ?salary)
+        :where [?e :dept ?dept]
+               [?e :salary ?salary]])
+
+# With :with ?e — each entity gets its own group key
+# Expected: [["eng" 50], ["eng" 50]]  (two rows, not one)
+(query [:find ?dept (sum ?salary)
+        :with ?e
+        :where [?e :dept ?dept]
+               [?e :salary ?salary]])
+
+# ========================================
+# 6. Aggregation with negation
+# ========================================
+
+(transact [[:cand-a :score 90]
+           [:cand-b :score 75] [:cand-b :disqualified true]
+           [:cand-c :score 80]])
+
+# Sum scores of non-disqualified candidates
+# Expected: [[170]]  (90 + 80; cand-b excluded)
+(query [:find (sum ?score)
+        :where [?c :score ?score]
+               (not [?c :disqualified true])])
+
+# ========================================
+# 7. Aggregation after a rule
+# ========================================
+
+(transact [[:m1 :member :team/alpha]
+           [:m2 :member :team/alpha]
+           [:m3 :member :team/beta]])
+
+(rule [(on-team ?person ?team) [?person :member ?team]])
+
+# Count members per team via rule
+# Expected: [[:team/alpha 2], [:team/beta 1]]  (order may vary)
+(query [:find ?team (count ?person)
+        :where (on-team ?person ?team)])
+
+# ========================================
+# 8. TEMPORAL QUERIES WITH AGGREGATION
+# ========================================
+# :as-of and :valid-at compose with aggregate queries.
+
+# --- tx-time (:as-of) ---
+# Build up a headcount in two transactions.
+(transact [[:hire-a :hire/dept "eng"]])
+(transact [[:hire-b :hire/dept "eng"]
+           [:hire-c :hire/dept "hr"]])
+
+# Current headcount per dept
+# Expected: [["eng" 2], ["hr" 1]]
+(query [:find ?dept (count ?e)
+        :where [?e :hire/dept ?dept]])
+
+# Headcount as of the first hiring transaction only (just :hire-a)
+# Sections 1–7 issued several transacts; adjust the number to match
+# the tx counter printed after the first hire transact.
+# Expected: [["eng" 1]]
+(query [:find ?dept (count ?e)
+        :as-of 8
+        :where [?e :hire/dept ?dept]])
+
+# --- valid-time (:valid-at) ---
+# Model employees with explicit employment periods.
+(transact {:valid-from "2023-01-01" :valid-to "2023-12-31"}
+          [[:fy23-emp-a :fy/dept "sales"]])
+(transact {:valid-from "2023-01-01" :valid-to "2023-12-31"}
+          [[:fy23-emp-b :fy/dept "sales"]])
+(transact {:valid-from "2024-01-01"}
+          [[:fy24-emp-c :fy/dept "sales"]])
+
+# Count sales staff active in 2023
+# Expected: [[2]]
+(query [:find (count ?e)
+        :valid-at "2023-06-01"
+        :where [?e :fy/dept "sales"]])
+
+# Count sales staff active in 2024 (only fy24-emp-c)
+# Expected: [[1]]
+(query [:find (count ?e)
+        :valid-at "2024-06-01"
+        :where [?e :fy/dept "sales"]])
+
+EXIT
+
+# ========================================
+# Summary
+# ========================================
+# AGGREGATE FUNCTIONS (in :find clause):
+#   (count ?x)          — total row count
+#   (count-distinct ?x) — distinct-value count
+#   (sum ?x)            — sum of numeric values
+#   (sum-distinct ?x)   — sum of distinct numeric values
+#   (min ?x)            — minimum (numbers and strings)
+#   (max ?x)            — maximum (numbers and strings)
+#
+# GROUPING:
+#   Mix plain variables with aggregates in :find →
+#   results are grouped by the plain variables.
+#
+# :with clause:
+#   [:find ?dept (sum ?salary) :with ?e :where ...]
+#   Adds ?e to the grouping key without outputting it.
+#   Prevents false merging of rows with identical values.
+#
+# NULL handling:
+#   All aggregates silently skip Value::Null.
+#   count/count-distinct on zero rows → [[0]].
+#   Other aggregates on zero rows → empty result.
+#
+# NOTE on sum-distinct:
+#   Rarely useful in practice. If you find yourself reaching for it,
+#   first consider: (a) :with to prevent false row merging, or
+#   (b) rethinking the data model. sum-distinct is included for
+#   completeness with SQL's SUM(DISTINCT col).
+# ========================================

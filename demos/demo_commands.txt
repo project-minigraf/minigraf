@@ -83,7 +83,7 @@
 EXIT
 
 # ============================================================================
-# KEY FEATURES (v0.10.0)
+# KEY FEATURES (v0.13.0)
 # ============================================================================
 #
 # FACTS AND QUERIES:
@@ -98,27 +98,40 @@ EXIT
 # - (rule [(reachable ?a ?b) [?a :connected ?m] (reachable ?m ?b)])
 # - Semi-naive fixed-point evaluation; handles cycles correctly
 #
-# STRATIFIED NEGATION:
+# STRATIFIED NEGATION (see demo_negation.txt for full examples):
 # - (not [?e :banned true])              — exclude matching entities
 # - (not-join [?e] [?e :dep ?d] [?d :status :bad]) — existential negation
 # - Negation in rule bodies; negative cycles rejected at registration time
 #
-# BI-TEMPORAL QUERIES:
-# - (query [:find ?x :as-of 50 :where ...])             — tx-time snapshot
+# AGGREGATION (see demo_aggregation.txt for full examples):
+# - (count ?e), (count-distinct ?e)
+# - (sum ?v), (sum-distinct ?v)
+# - (min ?v), (max ?v)
+# - :with clause for grouping: [:find ?dept (sum ?salary) :with ?e :where ...]
+#
+# EXPRESSION CLAUSES (see demo_expr.txt for full examples):
+# - Filter predicates: [(< ?age 30)] [(>= ?x ?y)] [(= ?name "Alice")]
+# - Arithmetic bindings: [(* ?price ?qty) ?total]
+# - Type checks: [(string? ?v)] [(integer? ?v) ?flag]
+# - String predicates: [(starts-with? ?s "pre")] [(matches? ?s "regex")]
+#
+# DISJUNCTION (see demo_disjunction.txt for full examples):
+# - (or branch1 branch2 ...)         — union of branches (same vars per branch)
+# - (or-join [?e] branch1 branch2 .) — union with branch-private variables
+# - (and clause1 clause2 ...)        — group clauses into one branch
+# - or / or-join usable in rule bodies
+#
+# BI-TEMPORAL QUERIES (see demo_bitemporal.txt for full examples):
+# - (query [:find ?x :as-of 3 :where ...])              — tx-time snapshot
 # - (query [:find ?x :as-of "2024-01-15T10:00:00Z" ...]) — wall-clock snapshot
 # - (query [:find ?x :valid-at "2023-06-01" ...])        — valid-time query
 # - (query [:find ?x :valid-at :any-valid-time ...])     — ignore valid-time filter
+# - All query features (negation, aggregation, expr, disjunction) compose with both axes
 #
 # PERSISTENT STORAGE:
 # - Single .graph file; open with OpenOptions::new().path("mydb.graph").open()
 # - WAL crash safety; explicit transactions via begin_write()/commit()
 # - On-disk B+tree indexes (EAVT, AEVT, AVET, VAET) with LRU page cache
 #
-# AVAILABLE (Phase 7.2a):
-# - Aggregation: (count ?e), (count-distinct ?e), (sum ?v), (sum-distinct ?v), (min ?v), (max ?v)
-# - :with clause for grouping: [:find ?dept (sum ?salary) :with ?e :where ...]
-#
-# PLANNED (see ROADMAP.md for current status):
-# - Arithmetic filter predicates: [(> ?age 26)]
-# - Disjunction: (or ...) / (or-join [...] ...)
+# See ROADMAP.md for upcoming features (Phase 7.4+).
 # ============================================================================

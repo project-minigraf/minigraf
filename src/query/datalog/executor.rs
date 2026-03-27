@@ -133,6 +133,26 @@ impl DatalogExecutor {
     /// Step 1: apply transaction-time filter (`:as-of`) — defaults to all facts.
     /// Step 2: discard retracted facts within the tx window.
     /// Step 3: apply valid-time filter (`:valid-at`) — defaults to "currently valid".
+    ///
+    /// # Performance note
+    ///
+    /// This method is O(N) in the total number of facts on every query:
+    ///
+    /// 1. `get_all_facts()` streams all committed (on-disk) facts and clones the
+    ///    pending in-memory `Vec<Fact>`.
+    /// 2. A brand-new `FactStorage` is constructed and all four indexes (EAVT/AEVT/AVET/VAET)
+    ///    are rebuilt from scratch via one `load_fact()` call per surviving fact.
+    ///
+    /// Subsequent `.clone()` calls on the returned `FactStorage` are cheap (Arc refcount),
+    /// so `or`-branches and `not`/`not-join` sub-evaluations do not add further full scans.
+    /// The cost is paid exactly once per `execute_query` / `execute_query_with_rules` call.
+    ///
+    /// **TODO (optimizer phase)**: Replace this with a read-only snapshot type —
+    /// e.g. `Arc<[Fact]>` — so that the pattern matcher can work directly against an
+    /// immutable slice without rebuilding the index structure. The existing on-disk B+tree
+    /// indexes (EAVT/AEVT/AVET/VAET) should be used for selective lookups instead of a
+    /// full scan + rebuild. This is the primary query performance bottleneck for databases
+    /// with more than a few thousand facts.
     fn filter_facts_for_query(&self, query: &DatalogQuery) -> Result<FactStorage> {
         let now = tx_id_now() as i64;
 

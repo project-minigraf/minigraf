@@ -1,0 +1,252 @@
+# ========================================
+# Minigraf: Expression Clauses Demo
+# ========================================
+# Demonstrates arithmetic filter predicates and
+# arithmetic binding expressions (Phase 7.2b).
+#
+# Run with: cargo run < demos/demo_expr.txt
+# ========================================
+
+# ========================================
+# 1. COMPARISON FILTERS
+# ========================================
+# [(op ?var value)] filters rows where the predicate holds.
+# Supported operators: < > <= >= = !=
+# Type mismatches are silently dropped (not an error).
+
+(transact [[:alice :person/name "Alice"] [:alice :person/age 30]
+           [:bob   :person/name "Bob"]   [:bob   :person/age 17]
+           [:carol :person/name "Carol"] [:carol :person/age 25]])
+
+# Find adults (age >= 18)
+# Expected: "Alice", "Carol"
+(query [:find ?name
+        :where [?e :person/name ?name]
+               [?e :person/age ?age]
+               [(>= ?age 18)]])
+
+# Find people younger than 28
+# Expected: "Bob", "Carol"
+(query [:find ?name
+        :where [?e :person/name ?name]
+               [?e :person/age ?age]
+               [(< ?age 28)]])
+
+# Find people whose name is exactly "Alice"
+# Expected: "Alice"
+(query [:find ?name
+        :where [?e :person/name ?name]
+               [(!= ?name "Bob")]])
+
+# ========================================
+# 2. TWO-VARIABLE COMPARISONS
+# ========================================
+# Both sides of the operator can be variables.
+
+(transact [[:match-1 :home-score 3] [:match-1 :away-score 1]
+           [:match-2 :home-score 2] [:match-2 :away-score 2]
+           [:match-3 :home-score 0] [:match-3 :away-score 2]])
+
+# Find matches where home team won (home-score > away-score)
+# Expected: :match-1
+(query [:find ?match
+        :where [?match :home-score ?h]
+               [?match :away-score ?a]
+               [(> ?h ?a)]])
+
+# ========================================
+# 3. ARITHMETIC BINDINGS
+# ========================================
+# [(expr) ?result] binds the result of an arithmetic
+# expression to a new variable.
+# Operators: + - * / (integer division truncates; div-by-zero drops row)
+
+(transact [[:order-1 :price 10] [:order-1 :qty 3]
+           [:order-2 :price 25] [:order-2 :qty 2]])
+
+# Compute line total
+# Expected: [[:order-1 30], [:order-2 50]]  (order may vary)
+(query [:find ?order ?total
+        :where [?order :price ?p]
+               [?order :qty ?q]
+               [(* ?p ?q) ?total]])
+
+# Apply a 10% tax (integer arithmetic — result truncated)
+# Expected: [[:order-1 33], [:order-2 55]]  (order may vary)
+(query [:find ?order ?with-tax
+        :where [?order :price ?p]
+               [?order :qty ?q]
+               [(* ?p ?q) ?subtotal]
+               [(* ?subtotal 11) ?scaled]
+               [(/ ?scaled 10) ?with-tax]])
+
+# ========================================
+# 4. ARITHMETIC COMBINED WITH AGGREGATION
+# ========================================
+
+(transact [[:item-a :cost 40] [:item-a :markup 10]
+           [:item-b :cost 60] [:item-b :markup 15]])
+
+# Sum the selling prices (cost + markup) across all items
+# Expected: [[125]]  (50 + 75)
+(query [:find (sum ?price)
+        :where [?i :cost ?c]
+               [?i :markup ?m]
+               [(+ ?c ?m) ?price]])
+
+# ========================================
+# 5. TYPE-CHECK PREDICATES
+# ========================================
+# (string? ?x), (integer? ?x), (float? ?x),
+# (boolean? ?x), (nil? ?x)
+# Used as filters or as bindings (return true/false).
+
+(transact [[:v1 :val "hello"]
+           [:v2 :val 42]
+           [:v3 :val 3.14]])
+
+# Keep only string values
+# Expected: [[:v1 "hello"]]
+(query [:find ?e ?v
+        :where [?e :val ?v]
+               [(string? ?v)]])
+
+# Bind type-check result as a variable
+# Expected: two rows — one true, one false for each entity
+(query [:find ?e ?is-int
+        :where [?e :val ?v]
+               [(integer? ?v) ?is-int]])
+
+# ========================================
+# 6. STRING PREDICATES
+# ========================================
+# (starts-with? ?s prefix), (ends-with? ?s suffix),
+# (contains? ?s substring), (matches? ?s regex)
+
+(transact [[:file-a :path "src/main.rs"]
+           [:file-b :path "src/lib.rs"]
+           [:file-c :path "tests/integration.rs"]
+           [:file-d :path "README.md"]])
+
+# Find Rust source files
+# Expected: src/main.rs, src/lib.rs, tests/integration.rs
+(query [:find ?path
+        :where [?f :path ?path]
+               [(ends-with? ?path ".rs")]])
+
+# Find files in src/
+# Expected: src/main.rs, src/lib.rs
+(query [:find ?path
+        :where [?f :path ?path]
+               [(starts-with? ?path "src/")]])
+
+# Find files matching a regex (any .rs file with "lib" in name)
+# Expected: src/lib.rs
+(query [:find ?path
+        :where [?f :path ?path]
+               [(matches? ?path "lib.*\\.rs$")]])
+
+# ========================================
+# 7. EXPR INSIDE not BODY
+# ========================================
+
+(transact [[:prod-a :product/name "Widget"] [:prod-a :product/price 50]
+           [:prod-b :product/name "Gadget"] [:prod-b :product/price 200]])
+
+# Find products that are NOT expensive (price <= 100)
+# Expected: "Widget"
+(query [:find ?name
+        :where [?p :product/name ?name]
+               [?p :product/price ?price]
+               (not [(> ?price 100)])])
+
+# ========================================
+# 8. EXPR IN A RULE BODY
+# ========================================
+
+(transact [[:student-a :grade 85]
+           [:student-b :grade 55]
+           [:student-c :grade 72]])
+
+(rule [(passing ?s) [?s :grade ?g] [(>= ?g 70)]])
+
+# Expected: :student-a, :student-c
+(query [:find ?s
+        :where (passing ?s)])
+
+# ========================================
+# 9. TEMPORAL QUERIES WITH EXPR CLAUSES
+# ========================================
+# :as-of and :valid-at compose with expression filters
+# and arithmetic bindings.
+
+# --- tx-time (:as-of) ---
+(transact [[:prod-x :item/price 80]])
+(transact [[:prod-y :item/price 120]])
+
+# Current: both products exist; only prod-x is under 100
+# Expected: [:prod-x]
+(query [:find ?e
+        :where [?e :item/price ?p]
+               [(< ?p 100)]])
+
+# As of first item transact (only prod-x was recorded)
+# Sections 1–8 issued several transacts; adjust :as-of to the tx
+# counter printed after the prod-x transact.
+# Expected: [:prod-x]
+(query [:find ?e
+        :as-of 9
+        :where [?e :item/price ?p]
+               [(< ?p 100)]])
+
+# --- valid-time (:valid-at) ---
+# Prices that were valid during a promotional period
+(transact {:valid-from "2024-11-01" :valid-to "2024-11-30"}
+          [[:promo-a :promo/price 50]])
+(transact {:valid-from "2024-11-01" :valid-to "2024-11-30"}
+          [[:promo-b :promo/price 200]])
+
+# During November 2024, find promotions under 100
+# Expected: [:promo-a]
+(query [:find ?e
+        :valid-at "2024-11-15"
+        :where [?e :promo/price ?p]
+               [(< ?p 100)]])
+
+# Outside the promotion window, no results
+# Expected: no results
+(query [:find ?e
+        :valid-at "2025-01-01"
+        :where [?e :promo/price ?p]
+               [(< ?p 100)]])
+
+EXIT
+
+# ========================================
+# Summary
+# ========================================
+# FILTER PREDICATES:
+#   [(< ?x ?y)]    [(> ?x ?y)]    [(= ?x ?y)]
+#   [(<= ?x ?y)]   [(>= ?x ?y)]   [(!= ?x ?y)]
+#
+# ARITHMETIC BINDINGS:
+#   [(+ ?a ?b) ?result]   [(- ?a ?b) ?result]
+#   [(* ?a ?b) ?result]   [(/ ?a ?b) ?result]
+#   Integer division truncates; divide-by-zero drops row silently.
+#   Int/float mixing promotes to float.
+#
+# TYPE CHECKS:
+#   [(string? ?x)]   [(integer? ?x)]  [(float? ?x)]
+#   [(boolean? ?x)]  [(nil? ?x)]
+#   Can be used as a filter or bound: [(string? ?x) ?flag]
+#
+# STRING PREDICATES:
+#   [(starts-with? ?s "prefix")]
+#   [(ends-with? ?s "suffix")]
+#   [(contains? ?s "substring")]
+#   [(matches? ?s "regex")]   — invalid regex → parse error
+#
+# TYPE MISMATCH:
+#   Applying a numeric operator to a non-numeric value
+#   silently drops that row — it is not an error.
+# ========================================
