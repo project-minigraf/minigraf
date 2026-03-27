@@ -4,7 +4,7 @@
 [![Clippy Status](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml/badge.svg)](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/adityamukho/minigraf#license)
 [![Rust Edition](https://img.shields.io/badge/rust-2024-orange.svg)](https://blog.rust-lang.org/2024/10/17/Rust-1.82.0.html)
-[![Phase](https://img.shields.io/badge/phase-7.2b%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
+[![Phase](https://img.shields.io/badge/phase-7.3%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
 
 > **Embedded graph memory for AI agents, mobile apps, and the browser** — the SQLite of bi-temporal graph databases
 
@@ -67,7 +67,7 @@ db.execute(r#"(rule [(reachable ?a ?b) [?a :friend ?b]])
 
 ```bash
 cargo run          # interactive Datalog REPL
-cargo test         # run 527 tests
+cargo test         # run 568 tests
 cargo run < demos/demo_recursive.txt   # recursive rules demo
 ```
 

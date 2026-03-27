@@ -4,8 +4,8 @@
 
 Minigraf is the SQLite of graph databases: zero configuration, one `.graph` file, embedded as a library. It stores facts in an Entity-Attribute-Value (EAV) model and queries them with Datalog, including recursive rules for graph traversal and stratified negation (`not` / `not-join`). Every fact carries two independent time dimensions (transaction time and valid time), enabling full bi-temporal time travel.
 
-**Current version**: 0.11.0 (pre-1.0 — API and file format may change before v1.0)
-**Maturity**: See [README](https://github.com/adityamukho/minigraf/blob/main/README.md) for current phase and [ROADMAP](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md) for the full plan. ACID + WAL are production-quality. Covering indexes (EAVT/AEVT/AVET/VAET), packed page storage, LRU page cache, and on-disk B+tree indexes are complete. Stratified negation and scalar aggregation are complete. Not recommended for production use until v1.0 (file format stability guaranteed only after Phase 8).
+**Current version**: 0.13.1 (pre-1.0 — API and file format may change before v1.0)
+**Maturity**: See [README](https://github.com/adityamukho/minigraf/blob/main/README.md) for current phase and [ROADMAP](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md) for the full plan. ACID + WAL are production-quality. Covering indexes (EAVT/AEVT/AVET/VAET), packed page storage, LRU page cache, and on-disk B+tree indexes are complete. Stratified negation, scalar aggregation, arithmetic/predicate expression clauses, and disjunction (`or`/`or-join`) are complete. Non-rules query path avoids all `FactStorage` index reconstruction (`filter_facts_for_query` snapshot fix, v0.13.1). Not recommended for production use until v1.0 (file format stability guaranteed only after Phase 8).
 
 ## Use for
 
@@ -52,7 +52,7 @@ Query either axis independently or together:
 The unit of storage is `(entity, attribute, value, valid_from, valid_to, tx_id, tx_count, asserted)`. Entities are UUIDs. Attributes are keywords (`:person/name`). Values are strings, integers, floats, booleans, entity refs, keywords, or null.
 
 **Datalog queries**
-Pattern matching with variable unification. Recursive rules use semi-naive fixed-point evaluation. Transitive closure and cycle-safe graph traversal are first-class. Stratified negation (`not` / `not-join`) is supported with negative-cycle detection at rule registration time.
+Pattern matching with variable unification. Recursive rules use semi-naive fixed-point evaluation. Transitive closure and cycle-safe graph traversal are first-class. Stratified negation (`not` / `not-join`), scalar aggregation (`count`, `sum`, `min`, `max`, `count-distinct`, `sum-distinct`), arithmetic/predicate expression clauses (`[(< ?age 30)]`, `[(+ ?a ?b) ?c]`), and disjunction (`or` / `or-join`) are all supported.
 
 **ACID transactions**
 `begin_write()` → `commit()` / `rollback()`. Fact-level WAL with CRC32 protection. Crash recovery on open.
@@ -130,6 +130,11 @@ tx.commit()?;
         :where [<e> <a> <v>] ...
                (not [<e> <a> <v>] ...)       ;; optional, negation
                (not-join [?join-var ...] ...) ;; optional, existential negation
+               (or branch1 branch2 ...)       ;; optional, disjunction (all branches bind same vars)
+               (or-join [?v ...] b1 b2 ...)  ;; optional, existential disjunction
+               (and clause1 clause2 ...)      ;; group clauses into one branch (inside or/or-join)
+               [(<op> ?a ?b)]                 ;; filter predicate: <, >, <=, >=, =, !=, string?, etc.
+               [(<op> ?a ?b) ?result]         ;; arithmetic binding: +, -, *, /
        ])
 
 ;; Recursive rule
@@ -160,7 +165,7 @@ tx.commit()?;
 - `src/wal.rs` — write-ahead log, CRC32 entries, crash recovery
 - `src/temporal.rs` — UTC timestamp parsing (avoids chrono CVE GHSA-wcg3-cvx6-7396)
 
-## Performance summary (v0.11.0)
+## Performance summary (v0.13.0)
 
 See [BENCHMARKS.md](https://github.com/adityamukho/minigraf/blob/main/BENCHMARKS.md) for full tables and methodology.
 

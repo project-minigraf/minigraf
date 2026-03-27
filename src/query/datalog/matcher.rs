@@ -2,20 +2,45 @@ use super::types::{EdnValue, Pattern};
 use crate::graph::FactStorage;
 use crate::graph::types::{EntityId, Fact, Value};
 use std::collections::HashMap;
+use std::sync::Arc;
 use uuid::Uuid;
 
 /// Variable bindings for query execution
 /// Maps variable names (e.g., "?name") to their bound values
 pub type Bindings = HashMap<String, Value>;
 
+enum MatcherStorage {
+    Owned(FactStorage),
+    Slice(Arc<[Fact]>),
+}
+
 /// Pattern matcher that finds facts matching a pattern and produces bindings
 pub struct PatternMatcher {
-    storage: FactStorage,
+    storage: MatcherStorage,
 }
 
 impl PatternMatcher {
     pub fn new(storage: FactStorage) -> Self {
-        PatternMatcher { storage }
+        PatternMatcher {
+            storage: MatcherStorage::Owned(storage),
+        }
+    }
+
+    /// Constructs a [`PatternMatcher`] over a pre-built, already-filtered slice of
+    /// asserted facts. The caller is responsible for ensuring the slice contains
+    /// only currently asserted facts (equivalent to `FactStorage::get_asserted_facts()`
+    /// at the snapshot moment). No additional filtering is applied at match time.
+    pub(crate) fn from_slice(facts: Arc<[Fact]>) -> Self {
+        PatternMatcher {
+            storage: MatcherStorage::Slice(facts),
+        }
+    }
+
+    fn get_facts(&self) -> Vec<Fact> {
+        match &self.storage {
+            MatcherStorage::Owned(s) => s.get_asserted_facts().unwrap_or_default(),
+            MatcherStorage::Slice(s) => s.to_vec(),
+        }
     }
 
     /// Match a single pattern against all facts in storage
@@ -24,7 +49,7 @@ impl PatternMatcher {
         let mut results = Vec::new();
 
         // Get all currently asserted facts
-        let facts = self.storage.get_asserted_facts().unwrap_or_default();
+        let facts = self.get_facts();
 
         for fact in facts {
             if let Some(bindings) = self.match_fact_against_pattern(&fact, pattern) {
@@ -219,7 +244,7 @@ impl PatternMatcher {
     fn match_pattern_with_bindings(&self, pattern: &Pattern, existing: &Bindings) -> Vec<Bindings> {
         let mut results = Vec::new();
 
-        let facts = self.storage.get_asserted_facts().unwrap_or_default();
+        let facts = self.get_facts();
 
         for fact in facts {
             // Try to match with existing bindings
@@ -577,5 +602,150 @@ mod tests {
         let results = matcher.match_patterns_seeded(&[], seed.clone());
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].get("?x"), Some(&Value::Integer(42)));
+    }
+
+    #[test]
+    fn test_from_slice_matches_same_as_owned() {
+        let storage = FactStorage::new();
+        let alice = Uuid::new_v4();
+        storage
+            .transact(
+                vec![(
+                    alice,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                )],
+                None,
+            )
+            .unwrap();
+
+        // Build owned matcher the existing way
+        let owned_matcher = PatternMatcher::new(storage.clone());
+
+        // Build slice matcher via from_slice
+        let facts: Arc<[Fact]> = Arc::from(storage.get_asserted_facts().unwrap());
+        let slice_matcher = PatternMatcher::from_slice(facts);
+
+        let pattern = Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":person/name".to_string()),
+            EdnValue::Symbol("?name".to_string()),
+        );
+
+        let owned_results = owned_matcher.match_pattern(&pattern);
+        let slice_results = slice_matcher.match_pattern(&pattern);
+
+        assert_eq!(
+            owned_results.len(),
+            slice_results.len(),
+            "result count mismatch"
+        );
+        assert_eq!(
+            owned_results[0].get("?name"),
+            slice_results[0].get("?name"),
+            "bound value mismatch"
+        );
+    }
+
+    #[test]
+    fn test_from_slice_empty() {
+        let empty: Arc<[Fact]> = Arc::from(vec![]);
+        let matcher = PatternMatcher::from_slice(empty);
+        let pattern = Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":any".to_string()),
+            EdnValue::Symbol("?v".to_string()),
+        );
+        let results = matcher.match_pattern(&pattern);
+        assert!(results.is_empty(), "empty slice should produce no results");
+    }
+
+    #[test]
+    fn test_from_slice_respects_caller_prefiltering() {
+        // The Slice arm applies no internal filtering — the caller is responsible.
+        // This test verifies that if the caller correctly excludes retracted facts
+        // before building the slice, the matcher respects that.
+        let storage = FactStorage::new();
+        let alice = Uuid::new_v4();
+        storage
+            .transact(
+                vec![(
+                    alice,
+                    ":name".to_string(),
+                    Value::String("Alice".to_string()),
+                )],
+                None,
+            )
+            .unwrap();
+        storage
+            .retract(vec![(
+                alice,
+                ":name".to_string(),
+                Value::String("Alice".to_string()),
+            )])
+            .unwrap();
+
+        // net_asserted_facts() returns the true net state: for each (entity, attribute, value)
+        // triple, the most recent record wins; retractions exclude the triple entirely.
+        let asserted: Arc<[Fact]> = Arc::from(crate::graph::storage::net_asserted_facts(
+            storage.get_all_facts().unwrap(),
+        ));
+        let matcher = PatternMatcher::from_slice(asserted);
+
+        let pattern = Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":name".to_string()),
+            EdnValue::Symbol("?v".to_string()),
+        );
+        let results = matcher.match_pattern(&pattern);
+        assert!(
+            results.is_empty(),
+            "retracted fact should not appear in slice-based matcher"
+        );
+    }
+
+    #[test]
+    fn test_from_slice_no_internal_filtering() {
+        // from_slice does NO filtering — the caller must pre-filter.
+        // If the caller passes a raw slice that includes a retracted fact,
+        // the matcher will return it. This is intentional by design.
+        let storage = FactStorage::new();
+        let alice = Uuid::new_v4();
+        storage
+            .transact(
+                vec![(
+                    alice,
+                    ":name".to_string(),
+                    Value::String("Alice".to_string()),
+                )],
+                None,
+            )
+            .unwrap();
+        storage
+            .retract(vec![(
+                alice,
+                ":name".to_string(),
+                Value::String("Alice".to_string()),
+            )])
+            .unwrap();
+
+        // Deliberately build a raw, unfiltered slice (all facts, including the retraction)
+        // This simulates a caller mistake — passing unfiltered facts to from_slice.
+        let all_facts: Arc<[Fact]> = Arc::from(storage.get_all_facts().unwrap());
+        let matcher = PatternMatcher::from_slice(all_facts);
+
+        let pattern = Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":name".to_string()),
+            EdnValue::Symbol("?v".to_string()),
+        );
+        let results = matcher.match_pattern(&pattern);
+
+        // The matcher returns ALL facts in the slice — both the assert and retract records.
+        // Caller must pre-filter; from_slice does not filter internally.
+        assert!(
+            !results.is_empty(),
+            "from_slice does not filter internally — raw slice passes through unchanged"
+        );
     }
 }

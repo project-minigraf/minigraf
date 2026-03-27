@@ -2,7 +2,7 @@
 
 **Live benchmark history**: [bencher.dev/console/projects/minigraf/perf](https://bencher.dev/console/projects/minigraf/perf)
 
-Benchmark results for Minigraf. Core query benchmarks are from v0.8.0 (Phase 6.5 — on-disk B+tree indexes, file format v6). Negation, disjunction, aggregation, and expression benchmarks were first run on v0.13.0.
+Benchmark results for Minigraf. Core query benchmarks were updated in v0.13.1 (Phase 7.4 — query path snapshot fix). Negation, disjunction, aggregation, and expression benchmarks were first run on v0.13.0 and selectively re-run on v0.13.1.
 
 ## Environment
 
@@ -15,7 +15,7 @@ Benchmark results for Minigraf. Core query benchmarks are from v0.8.0 (Phase 6.5
 | Profile | `release` (`opt-level = 3`, `lto = "thin"`, `panic = "abort"`) |
 | Swap | None |
 
-Benchmarks were run with [Criterion 0.5](https://bheisler.github.io/criterion.rs/book/). Each benchmark group is described below.
+Benchmarks were run with [Criterion 0.8](https://bheisler.github.io/criterion.rs/book/). Each benchmark group is described below.
 
 ### How to read these numbers
 
@@ -67,11 +67,13 @@ Measures single-query latency against databases pre-loaded with 1K / 10K / 100K 
 
 | Benchmark | 1K | 10K | 100K | 1M |
 |---|---|---|---|---|
-| `point_entity` (query by entity + attribute) | 1.26 ms | 15.6 ms | 266 ms | 4.33 s |
+| `point_entity` (query by entity + attribute) | 1.26 ms | **8.6 ms** | 266 ms | 4.33 s |
 | `point_attribute` (query by attribute only) | 1.16 ms | 14.7 ms | 258 ms | 4.29 s |
 | `join_3pattern` (3-clause join) | 4.38 ms | 53.6 ms | 857 ms | 12.93 s |
 
-Query performance scales linearly with dataset size. The query executor resolves committed facts via the on-disk B+tree range scan and page cache, then filters in memory. Range-scan selectivity is not yet exploited to skip non-matching facts — that optimisation is planned for Phase 7.
+10K `point_entity` updated in v0.13.1 (Phase 7.4 — snapshot fix, -61.5% vs pre-fix baseline of 22 ms, -45% vs Phase 6.5 v0.8.0). `point_attribute` and `join_3pattern` 10K numbers are from v0.8.0 and will be updated when re-benchmarked. 100K and 1M numbers are unchanged (from v0.8.0).
+
+Query performance scales linearly with dataset size. The query executor resolves committed facts via the on-disk B+tree range scan and page cache, then filters in memory. Starting from Phase 7.4, the non-rules query path no longer rebuilds in-memory EAVT/AEVT/AVET/VAET indexes on each call — facts are passed as a pre-filtered `Arc<[Fact]>` slice. Range-scan selectivity is not yet exploited to skip non-matching facts — that optimisation is in the post-1.0 backlog (B+Tree Selective Lookup).
 
 ---
 
@@ -159,9 +161,11 @@ All 10K benchmarks were run with 100 samples. The O(N²) scaling is a known limi
 
 | Benchmark | 1K | 10K |
 |---|---|---|
-| `not_scale` | 101.84 ms | 13.394 s |
+| `not_scale` | 101.84 ms | **6.986 s** |
 | `not_join_scale` | 226.82 ms | 22.898 s |
 | `not_rule_body` | 172.96 ms | 16.883 s |
+
+10K `not_scale` updated in v0.13.1 (Phase 7.4 — snapshot fix, -12.1% vs pre-fix baseline of 7.95 s). `not_join_scale` and `not_rule_body` 10K numbers are from v0.13.0 and will be updated when re-benchmarked.
 
 `not_selectivity` — fixed 10K DB, exclusion fraction swept from 0% to 100% (100 samples each):
 
@@ -181,9 +185,11 @@ The 10K numbers reflect a known O(N²) characteristic in the current `apply_or_c
 
 | Benchmark | 1K | 10K |
 |---|---|---|
-| `or_scale` | 644.76 ms | 73.722 s |
+| `or_scale` | 644.76 ms | 68.929 s |
 | `or_join_scale` | 683.99 ms | 72.751 s |
 | `or_rule_body` | 26.468 ms | 2.123 s |
+
+10K `or_scale` updated in v0.13.1 (Phase 7.4 — change not statistically significant at p=0.36; disjunction is O(N²) and dominated by branch enumeration, not the index rebuild). Other 10K numbers are from v0.13.0.
 
 `or_selectivity` — fixed 10K DB, fraction matching either branch swept from 0% to 100% (10 samples each):
 
@@ -201,10 +207,12 @@ Measures aggregation post-processing overhead. `count_scale`/`sum_scale` use the
 
 | Benchmark | 1K | 10K |
 |---|---|---|
-| `count_scale` (scalar `count`) | 1.770 ms | 23.437 ms |
+| `count_scale` (scalar `count`) | 1.770 ms | **9.720 ms** |
 | `sum_scale` (scalar `sum`) | 1.881 ms | 22.745 ms |
 | `grouped_count_scale` (grouped by dept, 10 groups) | 4.038 ms | 51.550 ms |
 | `with_grouped_sum` (`:with` clause, grouped sum) | 670.85 ms | 67.266 s |
+
+10K `count_scale` updated in v0.13.1 (Phase 7.4 — snapshot fix, -64.7% vs pre-fix baseline of 27.5 ms). Other 10K numbers are from v0.13.0 and will be updated when re-benchmarked.
 
 > `count` and `sum` are O(N). `grouped_count` is slightly higher due to the two-pattern join (`[?e :dept ?dept]` × `[?e :val ?v]`). `with_grouped_sum` at 10K shows O(N²) scaling from the same two-pattern cross-product join — the planner currently lacks a hash-join step; this is tracked as a future optimisation.
 
@@ -264,9 +272,25 @@ Peak heap consumption during `examples/memory_profile` (insert N facts + one que
 
 ---
 
+## Phase 7.3 → Phase 7.4 Summary
+
+Phase 7.4 eliminated the per-query 4-index rebuild (`load_fact` loop — BTreeMap insertions for EAVT/AEVT/AVET/VAET) in the non-rules query path. `filter_facts_for_query` now returns an `Arc<[Fact]>` slice instead of constructing a `FactStorage`; the rules path still builds a `FactStorage` for `StratifiedEvaluator`.
+
+| Metric | Pre-fix (v0.13.0) | Post-fix (v0.13.1) | Change |
+|---|---|---|---|
+| `query/point_entity` at 10K | 22.1 ms | 8.6 ms | **-61.5%** |
+| `aggregation/count_scale` at 10K | 27.5 ms | 9.7 ms | **-64.7%** |
+| `negation/not_scale` at 10K | 7.95 s | 6.99 s | -12.1% |
+| `disjunction/or_scale` at 10K | 70.9 s | 68.9 s | ~same (p=0.36) |
+| Rules path | unchanged | unchanged | index rebuild still paid |
+
+Negation and disjunction improvements are smaller because those paths are O(N²) and dominated by the inner binding-loop cost, not the index rebuild. The rules-path index rebuild is tracked in the post-1.0 backlog.
+
+---
+
 ## Known Limitations
 
-- **Query scan is O(facts)**: Queries resolve all facts matching the range scan, then filter in memory. Phase 7 will enable index-based predicate pushdown for sub-linear lookups.
+- **Query scan is O(facts)**: Queries resolve all facts matching the range scan, then filter in memory. The per-query index rebuild (EAVT/AEVT/AVET/VAET) was eliminated in Phase 7.4 for the non-rules path. Index-based predicate pushdown for sub-linear lookups is in the post-1.0 backlog (B+Tree Selective Lookup).
 - **Backend mutex held on cache-cold page reads**: Concurrent B+tree scans serialise only when a page must be loaded from disk (cache miss). Cache-warm reads are fully parallel. Further per-page I/O parallelism is deferred to Phase 8.
 - **1M recursion not benchmarked**: `chain/depth_100` takes 16 s; `chain/depth_1000` was not run.
 

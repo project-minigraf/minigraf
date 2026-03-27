@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.1] — 2026-03-27
+
+### Performance
+
+- **`filter_facts_for_query` snapshot fix** — function now returns `Arc<[Fact]>` instead of a throwaway `FactStorage`, eliminating the O(N) four-BTreeMap index rebuild that occurred on every non-rules query call. `execute_query` path constructs zero `FactStorage` objects. `execute_query_with_rules` still converts `Arc<[Fact]>` back to `FactStorage` for `StratifiedEvaluator` (deferred).
+- ~62–65% speedup on non-rules queries at 10K facts: `query/point_entity/10k` 22 ms → 8.6 ms; `aggregation/count_scale/10k` 28 ms → 9.7 ms.
+- Evaluator loop: `accumulated_facts` computed once per iteration (was 4 separate `get_asserted_facts()` calls).
+
+### Added
+
+- `PatternMatcher::from_slice(Arc<[Fact]>)` constructor — creates a matcher from an immutable fact snapshot without index reconstruction.
+
+### Technical
+
+- `apply_or_clauses` and `evaluate_not_join` signatures updated to accept `Arc<[Fact]>` instead of `&FactStorage`.
+- 6 new tests: 4 in `matcher.rs` (unit), 2 in `executor.rs` (unit).
+
+### Tests
+
+- Total: 568 tests passing (390 unit + 172 integration + 6 doc)
+
 ## [0.13.0] — 2026-03-26
 
 ### Added

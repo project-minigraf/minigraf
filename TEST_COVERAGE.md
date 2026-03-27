@@ -1,11 +1,11 @@
 # Minigraf Test Coverage Report
 
-**Last Updated**: Phase 7.2b COMPLETE - Arithmetic & Predicate Expression Clauses ✅
+**Last Updated**: Phase 7.4 COMPLETE - `filter_facts_for_query` snapshot fix ✅
 
 ## Test Summary
 
-**Total Tests**: 527 ✅
-- ✅ 365 unit tests (lib)
+**Total Tests**: 568 ✅
+- ✅ 390 unit tests (lib)
 - ✅ 10 bi-temporal tests (integration)
 - ✅ 10 complex query tests (integration)
 - ✅ 9 recursive rules tests (integration)
@@ -20,13 +20,36 @@
 - ✅ 14 not-join tests (integration, Phase 7.1b)
 - ✅ 24 aggregation tests (integration, Phase 7.2a)
 - ✅ 28 predicate expression tests (integration, Phase 7.2b)
+- ✅ 16 disjunction tests (integration, Phase 7.3)
 - ✅ 6 doc tests
 
-**Status**: ✅ **All 527 tests passing**
+**Status**: ✅ **All 568 tests passing**
 
-## Phase 7.2b Completion Status: ✅ COMPLETE
+## Phase 7.4 Completion Status: ✅ COMPLETE
 
-**Core Features Implemented**:
+**Phase 7.4 Features** (current, complete):
+- ✅ `filter_facts_for_query` returns `Arc<[Fact]>` — eliminates O(N) four-BTreeMap index rebuild on every non-rules query call
+- ✅ `execute_query` path constructs zero `FactStorage` objects; `execute_query_with_rules` still converts for `StratifiedEvaluator`
+- ✅ `PatternMatcher::from_slice(Arc<[Fact]>)` constructor added
+- ✅ `apply_or_clauses` and `evaluate_not_join` signatures updated to accept `Arc<[Fact]>`
+- ✅ Evaluator loop: `accumulated_facts` computed once per iteration (was 4 separate `get_asserted_facts()` calls)
+- ✅ ~62–65% speedup on non-rules queries at 10K facts (`query/point_entity/10k`: 22 ms → 8.6 ms; `aggregation/count_scale/10k`: 28 ms → 9.7 ms)
+- ✅ 4 new unit tests in `matcher.rs`, 2 new unit tests in `executor.rs` (6 total)
+- ✅ Version bumped to v0.13.1
+
+## Phase 7.3 Completion Status: ✅ COMPLETE
+
+**Phase 7.3 Features** (current, complete):
+- ✅ `WhereClause::Or(Vec<Vec<WhereClause>>)` and `WhereClause::OrJoin { join_vars, branches }` variants in `types.rs`
+- ✅ `(or branch1 branch2 ...)` and `(or-join [?v...] branch1 branch2 ...)` in `:where` clauses and rule bodies
+- ✅ `(and ...)` grouping clause to collect multiple clauses into a single branch
+- ✅ `match_patterns_seeded` on `PatternMatcher`; `evaluate_branch` and `apply_or_clauses` helpers in `executor.rs`
+- ✅ `DependencyGraph::from_rules` refactored with recursive `collect_clause_deps`; `Or`/`OrJoin` branches contribute positive dependency edges
+- ✅ Rules with `or`/`or-join` in bodies routed to `mixed_rules` path in `StratifiedEvaluator`
+- ✅ `tests/disjunction_test.rs`: 16 integration tests (Phase 7.3)
+- ✅ Version bumped to v0.13.0
+
+**Core Features Implemented** (Phase 6.2):
 - ✅ Packed fact pages (`page_type = 0x02`): ~25 facts per 4KB page (~25× space reduction)
 - ✅ LRU page cache (`cache.rs`): approximate-LRU, read-lock on hits, `Arc<Vec<u8>>` entries
 - ✅ `CommittedFactReader` trait + `CommittedFactLoaderImpl`: on-demand fact resolution
@@ -63,7 +86,7 @@
 - ✅ File format v1→v2 migration
 - ✅ UTC-only timestamp parsing (chrono, avoids GHSA-wcg3-cvx6-7396)
 
-**Phase 7.2b Features** (current, complete):
+**Phase 7.2b Features** (also complete):
 - ✅ `BinOp` (14 variants), `UnaryOp` (5 variants), `Expr` AST, `WhereClause::Expr { expr, binding }` in `types.rs`
 - ✅ Filter predicates: `[(< ?age 30)]`, `[(string? ?v)]`, `[(starts-with? ?tag "work")]`, `[(matches? ?email "...")]`
 - ✅ Arithmetic bindings: `[(+ ?price ?tax) ?total]`, nested `[(+ (* ?a 2) ?b) ?result]`, type-predicate binding `[(integer? ?v) ?is-int]`
@@ -569,13 +592,14 @@ cargo test -- --nocapture
 - Stratified negation (`not` / `not-join`) verified: safety validation, stratification, negative cycle rejection, time-travel integration (Phase 7.1)
 - Aggregation verified: all 6 aggregate functions, `:with` grouping, bi-temporal + aggregate, rule + aggregate (Phase 7.2a)
 - Arithmetic & predicate expressions verified: all operators, silent-drop semantics, int/float promotion, regex validation, expr in not/rule body, bi-temporal + expr (Phase 7.2b)
-- 527 tests covering all Phase 3-7.2b features
+- Disjunction (`or` / `or-join`) verified: flat queries, rule bodies, nested or/not/expr, or-join with private variables, dependency graph (Phase 7.3)
+- 562 tests covering all Phase 3-7.3 features
 
-**Confidence Level**: ✅ **Production-ready for Phase 7.1 scope**
+**Confidence Level**: ✅ **Production-ready for Phase 7.3 scope**
 
-**Readiness for Phase 7.3**: ✅ **Ready to proceed**
+**Readiness for Phase 7.4**: ✅ **Ready to proceed**
 
-The aggregation + arithmetic/predicate expression capable, stratified-negation-capable, on-disk B+tree indexed, packed, cached bi-temporal Datalog engine is **solid, well-tested, and benchmarked**.
+The disjunction + aggregation + arithmetic/predicate expression capable, stratified-negation-capable, on-disk B+tree indexed, packed, cached bi-temporal Datalog engine is **solid, well-tested, and benchmarked**.
 
 ---
 

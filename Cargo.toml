@@ -1,6 +1,6 @@
 [package]
 name = "minigraf"
-version = "0.13.0"
+version = "0.13.1"
 edition = "2024"
 description = "Zero-config, single-file, embedded graph database with bi-temporal Datalog queries"
 license = "MIT OR Apache-2.0"
@@ -39,3 +39,8 @@ lto = true
 codegen-units = 1
 strip = "symbols"
 opt-level = "z"
+
+[profile.bench]
+inherits = "release"
+strip = "none"
+debug = true
