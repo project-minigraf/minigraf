@@ -2488,6 +2488,126 @@ mod tests {
         assert_eq!(results_with.len(), 2);
         assert_eq!(results_with[0][1], Value::Integer(50));
     }
+
+    #[test]
+    fn test_filter_facts_for_query_returns_net_asserted_slice() {
+        // Setup: one fact asserted then retracted, one fact left standing.
+        // After filter_facts_for_query, only the standing fact should appear.
+        // The return type (Arc<[Fact]>) exposes .len() and index access [0].
+        // NOTE: this test currently FAILS TO COMPILE because filter_facts_for_query
+        // still returns Result<FactStorage>. Task 5 will change it to Result<Arc<[Fact]>>.
+        use uuid::Uuid;
+        let storage = FactStorage::new();
+        let alice = Uuid::new_v4();
+
+        // tx 1: assert name
+        storage
+            .transact(
+                vec![(
+                    alice,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                )],
+                None,
+            )
+            .unwrap();
+
+        // tx 2: retract name — net state for name is now gone
+        storage
+            .retract(vec![(
+                alice,
+                ":person/name".to_string(),
+                Value::String("Alice".to_string()),
+            )])
+            .unwrap();
+
+        // tx 3: assert age — this is the only net-asserted fact
+        storage
+            .transact(
+                vec![(alice, ":person/age".to_string(), Value::Integer(30))],
+                None,
+            )
+            .unwrap();
+
+        let executor = DatalogExecutor::new(storage);
+        let query = DatalogQuery {
+            find: vec![],
+            where_clauses: vec![],
+            as_of: None,
+            valid_at: Some(ValidAt::AnyValidTime),
+            with_vars: vec![],
+        };
+
+        // Task 5 changes the return type from FactStorage to Arc<[Fact]>.
+        // Until then, .len() and [0] do not compile on FactStorage → intentional red state.
+        let facts = executor.filter_facts_for_query(&query).unwrap();
+        assert_eq!(facts.len(), 1, "expected exactly 1 net-asserted fact");
+        assert_eq!(facts[0].attribute, ":person/age");
+    }
+
+    #[test]
+    fn test_filter_facts_for_query_valid_time_filter() {
+        // Setup: one fact with a narrow valid-time window (1000..2000), one open-ended.
+        // Query with valid_at inside the window → both facts visible.
+        // Query with valid_at outside the window → only the open-ended fact visible.
+        // NOTE: this test currently FAILS TO COMPILE because filter_facts_for_query
+        // still returns Result<FactStorage>. Task 5 will change it to Result<Arc<[Fact]>>.
+        use crate::graph::types::TransactOptions;
+        use uuid::Uuid;
+        let storage = FactStorage::new();
+        let alice = Uuid::new_v4();
+
+        // Fact valid only during [1000, 2000)
+        storage
+            .transact(
+                vec![(
+                    alice,
+                    ":employment/status".to_string(),
+                    Value::String("active".to_string()),
+                )],
+                Some(TransactOptions::new(Some(1000_i64), Some(2000_i64))),
+            )
+            .unwrap();
+
+        // Fact valid forever (open-ended)
+        storage
+            .transact(
+                vec![(
+                    alice,
+                    ":person/name".to_string(),
+                    Value::String("Alice".to_string()),
+                )],
+                None,
+            )
+            .unwrap();
+
+        let executor = DatalogExecutor::new(storage);
+
+        // Query inside the window: both facts should be visible
+        let query_inside = DatalogQuery {
+            find: vec![],
+            where_clauses: vec![],
+            as_of: None,
+            valid_at: Some(ValidAt::Timestamp(1500_i64)),
+            with_vars: vec![],
+        };
+        // Task 5 changes the return type from FactStorage to Arc<[Fact]>.
+        // Until then, .len() does not compile on FactStorage → intentional red state.
+        let facts_inside = executor.filter_facts_for_query(&query_inside).unwrap();
+        assert_eq!(facts_inside.len(), 2, "both facts visible at t=1500");
+
+        // Query outside the window: only the open-ended name fact should be visible
+        let query_outside = DatalogQuery {
+            find: vec![],
+            where_clauses: vec![],
+            as_of: None,
+            valid_at: Some(ValidAt::Timestamp(3000_i64)),
+            with_vars: vec![],
+        };
+        let facts_outside = executor.filter_facts_for_query(&query_outside).unwrap();
+        assert_eq!(facts_outside.len(), 1, "only open-ended fact visible at t=3000");
+        assert_eq!(facts_outside[0].attribute, ":person/name");
+    }
 }
 
 #[cfg(test)]
