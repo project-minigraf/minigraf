@@ -1059,9 +1059,6 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
     }
 }
 
-/// Parse a single branch of an (or ...) or (or-join ...) clause.
-///
-/// A branch is either:
 /// Parse a where-clause pattern vector with pseudo-attribute detection.
 ///
 /// Detects `:db/*` keywords in the attribute position and wraps them in
@@ -1105,6 +1102,9 @@ fn parse_query_pattern(vec: &[EdnValue]) -> Result<Pattern, String> {
     Pattern::from_edn(vec)
 }
 
+/// Parse a single branch of an (or ...) or (or-join ...) clause.
+///
+/// A branch is either:
 /// - A single clause: `[pattern]` or `(rule-invocation)` or `[(expr)]`
 /// - A grouped list of clauses: `(and clause1 clause2 ...)`
 fn parse_or_branch(item: &EdnValue) -> Result<Vec<WhereClause>, String> {
