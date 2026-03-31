@@ -28,7 +28,10 @@ fn sum_mixed_int_string_error() {
     db.execute(r#"(transact [[:a :score 10] [:b :score "twenty"]])"#)
         .unwrap();
     let r = db.execute(r#"(query [:find (sum ?s) :where [?e :score ?s]])"#);
-    assert!(r.is_err(), "sum of mixed integer/string must fail at runtime");
+    assert!(
+        r.is_err(),
+        "sum of mixed integer/string must fail at runtime"
+    );
 }
 
 /// max over a boolean attribute fails at query execution time.
@@ -52,7 +55,10 @@ fn negative_cycle_pair_rejected() {
     db.execute(r#"(rule [(p ?x) [?x :base true] (not (q ?x))])"#)
         .unwrap();
     let r = db.execute(r#"(rule [(q ?x) [?x :base true] (not (p ?x))])"#);
-    assert!(r.is_err(), "negative cycle p not-q and q not-p must be rejected");
+    assert!(
+        r.is_err(),
+        "negative cycle p not-q and q not-p must be rejected"
+    );
     let msg = r.unwrap_err().to_string();
     assert!(
         msg.contains("negative cycle") || msg.contains("unstratifiable"),
@@ -69,9 +75,8 @@ fn or_negative_cycle_rejected() {
     db.execute(r#"(rule [(safe ?x) [?x :item true] (not (unsafe ?x))])"#)
         .unwrap();
     // This rule creates a cycle: unsafe depends on not-safe (via or)
-    let r = db.execute(
-        r#"(rule [(unsafe ?x) [?x :item true] (or (not (safe ?x)) [?x :flagged true])])"#,
-    );
+    let r = db
+        .execute(r#"(rule [(unsafe ?x) [?x :item true] (or (not (safe ?x)) [?x :flagged true])])"#);
     assert!(r.is_err(), "or-with-negative-cycle must be rejected");
 }
 
@@ -89,7 +94,10 @@ fn not_join_unbound_join_var_rejected() {
                             [?e :ref ?x]
                             [?x :blocked true])])"#,
     );
-    assert!(r.is_err(), "not-join with unbound join var must fail at parse");
+    assert!(
+        r.is_err(),
+        "not-join with unbound join var must fail at parse"
+    );
 }
 
 /// or where the two branches introduce different new variables must fail.

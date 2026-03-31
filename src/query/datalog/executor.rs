@@ -3099,10 +3099,8 @@ mod expr_eval_tests {
         // (count ?x) with no matching facts → zero bindings → special-case returns 0
         let storage = FactStorage::new();
         let executor = DatalogExecutor::new(storage);
-        let cmd = parse_datalog_command(
-            "(query [:find (count ?x) :where [?x :no-such-attr _]])",
-        )
-        .expect("parse failed");
+        let cmd = parse_datalog_command("(query [:find (count ?x) :where [?x :no-such-attr _]])")
+            .expect("parse failed");
         let result = executor.execute(cmd).expect("query failed");
         match result {
             QueryResult::QueryResults { results, .. } => {
@@ -3130,10 +3128,8 @@ mod expr_eval_tests {
             .unwrap();
         let executor = DatalogExecutor::new(storage);
         // Query for non-existing attribute to produce empty bindings, then sum
-        let cmd = parse_datalog_command(
-            "(query [:find (sum ?v) :where [?x :no-such-attr ?v]])",
-        )
-        .expect("parse failed");
+        let cmd = parse_datalog_command("(query [:find (sum ?v) :where [?x :no-such-attr ?v]])")
+            .expect("parse failed");
         let result = executor.execute(cmd).expect("query failed");
         match result {
             QueryResult::QueryResults { results, .. } => {
@@ -3168,10 +3164,9 @@ mod expr_eval_tests {
             )
             .unwrap();
         let executor = DatalogExecutor::new(storage);
-        let cmd = parse_datalog_command(
-            "(query [:find (sum-distinct ?w) :where [?e :item/weight ?w]])",
-        )
-        .expect("parse failed");
+        let cmd =
+            parse_datalog_command("(query [:find (sum-distinct ?w) :where [?e :item/weight ?w]])")
+                .expect("parse failed");
         let result = executor.execute(cmd).expect("query failed");
         match result {
             QueryResult::QueryResults { results, .. } => {
@@ -3205,14 +3200,16 @@ mod expr_eval_tests {
             .unwrap();
         let executor = DatalogExecutor::new(storage);
         // min on only Null values → "no non-null values in group" → row skipped → 0 rows
-        let cmd = parse_datalog_command(
-            "(query [:find (min ?s) :where [?e :item/score ?s]])",
-        )
-        .expect("parse failed");
+        let cmd = parse_datalog_command("(query [:find (min ?s) :where [?e :item/score ?s]])")
+            .expect("parse failed");
         let result = executor.execute(cmd).expect("query failed");
         match result {
             QueryResult::QueryResults { results, .. } => {
-                assert_eq!(results.len(), 0, "min on all-null group should produce 0 rows");
+                assert_eq!(
+                    results.len(),
+                    0,
+                    "min on all-null group should produce 0 rows"
+                );
             }
             _ => panic!("expected QueryResults"),
         }
@@ -3242,10 +3239,8 @@ mod expr_eval_tests {
             )
             .unwrap();
         let executor = DatalogExecutor::new(storage);
-        let cmd = parse_datalog_command(
-            "(query [:find (min ?n) :where [?e :item/name ?n]])",
-        )
-        .expect("parse failed");
+        let cmd = parse_datalog_command("(query [:find (min ?n) :where [?e :item/name ?n]])")
+            .expect("parse failed");
         let result = executor.execute(cmd).expect("query failed");
         match result {
             QueryResult::QueryResults { results, .. } => {
@@ -3284,10 +3279,8 @@ mod expr_eval_tests {
             )
             .unwrap();
         let executor = DatalogExecutor::new(storage);
-        let cmd = parse_datalog_command(
-            "(query [:find (max ?s) :where [?e :item/score ?s]])",
-        )
-        .expect("parse failed");
+        let cmd = parse_datalog_command("(query [:find (max ?s) :where [?e :item/score ?s]])")
+            .expect("parse failed");
         let result = executor.execute(cmd).expect("query failed");
         match result {
             QueryResult::QueryResults { results, .. } => {
@@ -3345,12 +3338,8 @@ mod expr_eval_tests {
         ))];
         // Seed with one binding so the branch has something to work with
         let mut initial = std::collections::HashMap::new();
-        initial.insert(
-            "?init".to_string(),
-            crate::graph::types::Value::Integer(1),
-        );
-        let result =
-            evaluate_branch(&branch, vec![initial], facts, &rules, None, None).unwrap();
+        initial.insert("?init".to_string(), crate::graph::types::Value::Integer(1));
+        let result = evaluate_branch(&branch, vec![initial], facts, &rules, None, None).unwrap();
         assert_eq!(
             result.len(),
             0,
@@ -3435,7 +3424,11 @@ mod expr_eval_tests {
         let result = executor.execute(cmd).expect("query failed");
         match result {
             QueryResult::QueryResults { results, .. } => {
-                assert_eq!(results.len(), 1, "e1 should appear once despite two matching branches");
+                assert_eq!(
+                    results.len(),
+                    1,
+                    "e1 should appear once despite two matching branches"
+                );
             }
             _ => panic!("expected QueryResults"),
         }
@@ -3451,7 +3444,10 @@ mod expr_eval_tests {
         )
         .expect("parse with tx-level valid-time should succeed");
         let result = executor.execute(cmd);
-        assert!(result.is_ok(), "transact with tx-level valid-time should succeed");
+        assert!(
+            result.is_ok(),
+            "transact with tx-level valid-time should succeed"
+        );
     }
 
     #[test]
@@ -3464,7 +3460,10 @@ mod expr_eval_tests {
         )
         .expect("parse with per-fact valid-time should succeed");
         let result = executor.execute(cmd);
-        assert!(result.is_ok(), "transact with per-fact valid-time should succeed");
+        assert!(
+            result.is_ok(),
+            "transact with per-fact valid-time should succeed"
+        );
     }
 
     #[test]
@@ -3478,7 +3477,10 @@ mod expr_eval_tests {
         )
         .expect("parse with tx-level valid-to only should succeed");
         let result = executor.execute(cmd);
-        assert!(result.is_ok(), "transact with valid-to only at tx level should succeed");
+        assert!(
+            result.is_ok(),
+            "transact with valid-to only at tx level should succeed"
+        );
     }
 
     #[test]
@@ -3492,7 +3494,10 @@ mod expr_eval_tests {
         )
         .expect("parse with per-fact valid-to only should succeed");
         let result = executor.execute(cmd);
-        assert!(result.is_ok(), "transact with valid-to only per fact should succeed");
+        assert!(
+            result.is_ok(),
+            "transact with valid-to only per fact should succeed"
+        );
     }
 
     #[test]
@@ -3517,18 +3522,21 @@ mod expr_eval_tests {
 
         // Branch with only an Expr clause (no patterns) — patterns.is_empty() = true
         let branch = vec![WhereClause::Expr {
-            expr: crate::query::datalog::types::Expr::Lit(
-                crate::graph::types::Value::Boolean(true),
-            ),
+            expr: crate::query::datalog::types::Expr::Lit(crate::graph::types::Value::Boolean(
+                true,
+            )),
             binding: None,
         }];
         // Incoming with one binding
         let mut initial = std::collections::HashMap::new();
         initial.insert("?x".to_string(), crate::graph::types::Value::Integer(42));
-        let result =
-            evaluate_branch(&branch, vec![initial], facts, &rules, None, None).unwrap();
+        let result = evaluate_branch(&branch, vec![initial], facts, &rules, None, None).unwrap();
         // The expr is truthy so the binding passes through
-        assert_eq!(result.len(), 1, "expr-only branch should pass binding through");
+        assert_eq!(
+            result.len(),
+            1,
+            "expr-only branch should pass binding through"
+        );
     }
 
     #[test]
@@ -3551,9 +3559,12 @@ mod expr_eval_tests {
 
         let mut initial = std::collections::HashMap::new();
         initial.insert("?seed".to_string(), crate::graph::types::Value::Integer(1));
-        let result =
-            evaluate_branch(&branch, vec![initial], facts, &rules, None, None).unwrap();
-        assert_eq!(result.len(), 0, "or clause with no matches should yield empty");
+        let result = evaluate_branch(&branch, vec![initial], facts, &rules, None, None).unwrap();
+        assert_eq!(
+            result.len(),
+            0,
+            "or clause with no matches should yield empty"
+        );
     }
 
     #[test]
@@ -3593,7 +3604,11 @@ mod expr_eval_tests {
         let result = executor.execute(cmd).expect("query failed");
         match result {
             QueryResult::QueryResults { results, .. } => {
-                assert_eq!(results.len(), 1, "only non-blocked entity should be returned");
+                assert_eq!(
+                    results.len(),
+                    1,
+                    "only non-blocked entity should be returned"
+                );
             }
             _ => panic!("expected QueryResults"),
         }
@@ -3631,7 +3646,11 @@ mod expr_eval_tests {
         let result = executor.execute(cmd).expect("query failed");
         match result {
             QueryResult::QueryResults { results, .. } => {
-                assert_eq!(results.len(), 1, "only the item with price 50 should survive");
+                assert_eq!(
+                    results.len(),
+                    1,
+                    "only the item with price 50 should survive"
+                );
             }
             _ => panic!("expected QueryResults"),
         }

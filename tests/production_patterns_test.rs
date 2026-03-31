@@ -57,7 +57,11 @@ fn not_absent_from_dept_as_of() {
                               (not [?e :person/dept ?_d])])"#,
         )
         .unwrap();
-    assert_eq!(result_count(&r2), 1, "as-of tx 2: still only bob lacks a dept");
+    assert_eq!(
+        result_count(&r2),
+        1,
+        "as-of tx 2: still only bob lacks a dept"
+    );
 }
 
 // ── Test 2: not-join + count aggregation ─────────────────────────────────────
@@ -191,17 +195,14 @@ fn active_staff_by_role_valid_at() {
 #[test]
 fn recursive_reachable_excluding_blocked() {
     let db = db();
-    db.execute(
-        r#"(transact [[:a :edge :b] [:b :edge :c] [:c :edge :d] [:d :blocked true]])"#,
-    )
-    .unwrap();
-    db.execute(r#"(rule [(reach ?x ?y) [?x :edge ?y]])"#).unwrap();
+    db.execute(r#"(transact [[:a :edge :b] [:b :edge :c] [:c :edge :d] [:d :blocked true]])"#)
+        .unwrap();
+    db.execute(r#"(rule [(reach ?x ?y) [?x :edge ?y]])"#)
+        .unwrap();
     db.execute(r#"(rule [(reach ?x ?y) [?x :edge ?z] (reach ?z ?y)])"#)
         .unwrap();
-    db.execute(
-        r#"(rule [(accessible ?x ?y) (reach ?x ?y) (not [?y :blocked true])])"#,
-    )
-    .unwrap();
+    db.execute(r#"(rule [(accessible ?x ?y) (reach ?x ?y) (not [?y :blocked true])])"#)
+        .unwrap();
 
     // From :a, reachable = b, c, d; d is blocked → accessible = b, c (count=2)
     let r = db
