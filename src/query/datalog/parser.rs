@@ -517,6 +517,13 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                     i += 1;
                     continue;
                 }
+                ":any-valid-time" => {
+                    // Shorthand for `:valid-at :any-valid-time`; disables automatic
+                    // valid-time filtering so pseudo-attribute patterns are accessible.
+                    query_valid_at = Some(ValidAt::AnyValidTime);
+                    i += 1;
+                    continue;
+                }
                 ":with" => {
                     // Collect ?-prefixed symbols until the next keyword or end of vector
                     i += 1;
