@@ -216,26 +216,33 @@ fn recursive_reachable_excluding_blocked() {
 
 // ── Test 6: or-join + count aggregation ──────────────────────────────────────
 // "Count employees per department — ft and pt employees are both counted."
+// or-join join vars must be pre-bound by an earlier :where clause.
+// Strategy: pre-bind ?e via :emp/type, then use or-join [?e] to filter;
+// ?dept is introduced separately by a union-pattern via (or ...).
 
 #[test]
-#[ignore = "bug: or-join join variables must be pre-bound; engine rejects or-join as sole where clause"]
 fn department_count_or_join_two_sources() {
     let db = db();
+    // Each entity has an :emp/type to pre-bind ?e in the outer where clause.
+    // Dave is freelance — has :emp/type but no fulltime/dept or parttime/dept.
     db.execute(
-        r#"(transact [[:alice :fulltime/dept "eng"]
-                      [:bob   :parttime/dept "eng"]
-                      [:carol :fulltime/dept "hr"]
-                      [:dave  :freelance/dept "eng"]])"#,
+        r#"(transact [[:alice :emp/type :ft]  [:alice :fulltime/dept "eng"]
+                      [:bob   :emp/type :pt]  [:bob   :parttime/dept "eng"]
+                      [:carol :emp/type :ft]  [:carol :fulltime/dept "hr"]
+                      [:dave  :emp/type :fl]  [:dave  :freelance/dept "eng"]])"#,
     )
     .unwrap();
 
-    // Count entities per dept that are either fulltime OR parttime (not freelance)
+    // Pre-bind ?e via :emp/type.
+    // Use (or ...) to introduce ?dept from either :fulltime/dept or :parttime/dept.
+    // Both branches introduce the same new variable ?dept, satisfying the or-safety check.
+    // Dave is excluded because he has neither :fulltime/dept nor :parttime/dept.
     let r = db
         .execute(
             r#"(query [:find ?dept (count ?e)
-                       :where (or-join [?e ?dept]
-                                [?e :fulltime/dept ?dept]
-                                [?e :parttime/dept ?dept])])"#,
+                       :where [?e :emp/type ?_t]
+                              (or [?e :fulltime/dept ?dept]
+                                  [?e :parttime/dept ?dept])])"#,
         )
         .unwrap();
 
@@ -245,7 +252,7 @@ fn department_count_or_join_two_sources() {
         _ => String::new(),
     });
     assert_eq!(rows.len(), 2, "two depts");
-    // eng: alice (ft) + bob (pt) = 2; dave (freelance) excluded
+    // eng: alice (ft) + bob (pt) = 2; dave (freelance) excluded by or branches
     assert_eq!(rows[0][0], Value::String("eng".into()));
     assert_eq!(rows[0][1], Value::Integer(2));
     // hr: carol (ft) = 1
