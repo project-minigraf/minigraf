@@ -283,6 +283,17 @@ impl Pattern {
         }
     }
 
+    /// Create a pattern with a real (stored) attribute.
+    pub fn real(entity: EdnValue, attribute: EdnValue, value: EdnValue) -> Self {
+        Pattern {
+            entity,
+            attribute: AttributeSpec::Real(attribute),
+            value,
+            valid_from: None,
+            valid_to: None,
+        }
+    }
+
     /// Create a pattern with explicit per-fact valid-time overrides.
     pub fn with_valid_time(
         entity: EdnValue,
@@ -1211,5 +1222,14 @@ mod tests {
             p.attribute,
             AttributeSpec::Pseudo(PseudoAttr::ValidFrom)
         ));
+    }
+
+    #[test]
+    fn test_pseudo_attr_as_keyword() {
+        assert_eq!(PseudoAttr::ValidFrom.as_keyword(), ":db/valid-from");
+        assert_eq!(PseudoAttr::ValidTo.as_keyword(), ":db/valid-to");
+        assert_eq!(PseudoAttr::TxCount.as_keyword(), ":db/tx-count");
+        assert_eq!(PseudoAttr::TxId.as_keyword(), ":db/tx-id");
+        assert_eq!(PseudoAttr::ValidAt.as_keyword(), ":db/valid-at");
     }
 }
