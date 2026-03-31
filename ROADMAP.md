@@ -502,7 +502,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 **Goal**: Complete the Datalog query engine — negation, aggregation, disjunction, temporal range queries, and prepared statements
 
-**Status**: 🔄 In Progress (7.1a + 7.1b + 7.2a + 7.2b + 7.3 complete ✅)
+**Status**: 🔄 In Progress (7.1a + 7.1b + 7.2a + 7.2b + 7.3 + 7.4 + 7.5 complete ✅)
 
 **Priority**: 🔴 Critical — without these, realistic production queries cannot be expressed in Datalog
 
@@ -1477,6 +1477,13 @@ Push `Expr` predicate clauses (e.g. `[(> ?age 30)]`) down to filter bindings as 
 - ✅ ~62–65% speedup on non-rules queries at 10K facts (`query/point_entity/10k`: 22 ms → 8.6 ms; `aggregation/count_scale/10k`: 28 ms → 9.7 ms)
 - ✅ 568 tests passing (390 unit + 172 integration + 6 doc)
 
+### v0.14.0 - ✅ Phase 7.5 (Tests + Error Coverage)
+- ✅ `tests/production_patterns_test.rs` — 8 cross-feature integration tests (not+as-of, not-join+count, recursion+not, or+count, or+sum, count+valid-at, count+as-of-sequence)
+- ✅ `tests/error_handling_test.rs` — 8 error-path integration tests; 1 ignored (confirmed or+neg-cycle stratification bug)
+- ✅ Stream 3: ~53 unit tests for parser-unreachable branches in `executor.rs` and `evaluator.rs`
+- ✅ Branch coverage: `executor.rs` ~85.71% (up from ~75%), `evaluator.rs` ~89.29% (up from ~73%)
+- ✅ 617 tests passing (424 unit + 187 integration + 6 doc)
+
 ### v1.0.0 - 🎯 Phase 7 (Datalog Completeness)
 - Stratified negation (`not` / `not-join`)
 - Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`) + arithmetic filter predicates
@@ -1554,7 +1561,8 @@ When evaluating features, ask:
 - ✅ Phase 7.2b: Complete (March 2026) - Arithmetic & predicate expression clauses, 527 tests
 - ✅ Phase 7.3: Complete (March 2026) - Disjunction (`or` / `or-join`), 562 tests
 - ✅ Phase 7.4: Complete (March 2026) - `filter_facts_for_query` snapshot fix, eliminate 4-index rebuild, 568 tests
-- 🎯 Phase 7.5–7.7: tests/error coverage, prepared statements, temporal metadata bindings; ≥90% branch coverage - **NEXT**
+- ✅ Phase 7.5: Complete (March 2026) - Cross-feature tests, error-path coverage, ~86-89% branch coverage, 617 tests
+- 🎯 Phase 7.6–7.7: prepared statements, temporal metadata bindings; ≥90% branch coverage - **NEXT**
 - 🎯 Phase 8: 3-4 months (Cross-platform — WASM, mobile, language bindings)
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)
 - 🎯 **v1.0.0: 9-12 months**
@@ -1565,20 +1573,19 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: Phase 7.4 Complete — Phase 7.5 Next (Tests + Error Coverage, ≥90% branch coverage)
+**Right Now**: Phase 7.5 Complete — Phase 7.6 Next (Prepared Statements)
 
-**Phase 7.4 Achievements**:
-1. ✅ `filter_facts_for_query` returns `Arc<[Fact]>` — eliminates O(N) four-BTreeMap index rebuild on every non-rules query call
-2. ✅ `execute_query` path constructs zero `FactStorage` objects; `execute_query_with_rules` still converts for `StratifiedEvaluator`
-3. ✅ `PatternMatcher::from_slice(Arc<[Fact]>)` constructor added
-4. ✅ `apply_or_clauses` and `evaluate_not_join` signatures updated to accept `Arc<[Fact]>`
-5. ✅ Evaluator loop: `accumulated_facts` computed once per iteration (was 4 separate `get_asserted_facts()` calls)
-6. ✅ ~62–65% speedup on non-rules queries at 10K facts (`query/point_entity/10k`: 22 ms → 8.6 ms; `aggregation/count_scale/10k`: 28 ms → 9.7 ms)
-7. ✅ 568 tests passing (390 unit + 172 integration + 6 doc); version bumped to v0.13.1
+**Phase 7.5 Achievements**:
+1. ✅ `tests/production_patterns_test.rs` — 8 cross-feature integration tests (not+as-of, not-join+count, recursion+not, or+count, etc.)
+2. ✅ `tests/error_handling_test.rs` — 8 error-path integration tests (runtime type errors, stratification errors, parse safety errors)
+3. ✅ Stream 3 unit tests — ~53 new tests covering parser-unreachable branches in `executor.rs` and `evaluator.rs`
+4. ✅ Branch coverage: `executor.rs` ~85.71% (from ~75%), `evaluator.rs` ~89.29% (from ~73%)
+5. ✅ 617 tests passing (424 unit + 187 integration + 6 doc); version bumped to v0.14.0
+6. ✅ Known issue documented: or+negative-cycle not rejected by stratification (1 ignored test)
 
-**Immediate Next Steps (Phase 7.5)**:
-1. Unit tests for each new clause type (parser, types, matcher)
-2. Push error-path branch coverage toward ≥90% target
+**Immediate Next Steps (Phase 7.6)**:
+1. Prepared statements — parse + plan once, execute many times
+2. Temporal bind slots (`$tx`, `$date`, `$entity`)
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)
@@ -1594,4 +1601,4 @@ See [GitHub Issues](https://github.com/adityamukho/minigraf/issues) for specific
 
 ---
 
-Last Updated: Phase 7.4 Complete - `filter_facts_for_query` snapshot fix, eliminate O(N) index rebuild, ~62–65% speedup on non-rules queries at 10K facts, 568 tests passing, v0.13.1 (March 2026)
+Last Updated: Phase 7.5 Complete - Cross-feature tests, error-path coverage, ~86-89% branch coverage, 617 tests passing, v0.14.0 (March 2026)
