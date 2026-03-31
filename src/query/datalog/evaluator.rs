@@ -1620,4 +1620,261 @@ mod tests {
         let p_facts: Vec<_> = facts.iter().filter(|f| f.attribute == ":p").collect();
         assert_eq!(p_facts.len(), 2, "both e1 and e2 should be derived as :p");
     }
+
+    // ── Additional targeted branch coverage ───────────────────────────────────
+
+    #[test]
+    fn test_max_iterations_exceeded_returns_error() {
+        // Line 113: iteration > self.max_iterations → returns Err
+        // Use a recursive rule that keeps deriving new facts beyond max_iterations=0
+        let storage = create_test_storage();
+        let rules = Arc::new(RwLock::new(RuleRegistry::new()));
+
+        // Transitive closure rule — requires multiple iterations
+        register_test_rule(&rules, r#"(rule [(reachable ?x ?y) [?x :connected ?y]])"#);
+        register_test_rule(
+            &rules,
+            r#"(rule [(reachable ?x ?y) [?x :connected ?z] (reachable ?z ?y)])"#,
+        );
+
+        // max_iterations=0 means it will exceed the limit on the very first iteration
+        let evaluator = RecursiveEvaluator::new(storage, rules, 0);
+        let result = evaluator.evaluate_recursive_rules(&["reachable".to_string()]);
+        assert!(result.is_err(), "should fail when max iterations exceeded");
+    }
+
+    #[test]
+    fn test_rule_invocation_empty_list_error() {
+        // Line 253: rule_invocation_to_pattern with empty list → Err
+        let storage = FactStorage::new();
+        let rules = Arc::new(RwLock::new(RuleRegistry::new()));
+        let evaluator = RecursiveEvaluator::new(storage, rules, 1000);
+        let result = evaluator.rule_invocation_to_pattern(&[]);
+        assert!(result.is_err(), "empty rule invocation list should return error");
+    }
+
+    #[test]
+    fn test_instantiate_head_too_short_error() {
+        // Line 275: head.len() < 2 → Err("Rule head must have at least 2 elements")
+        let storage = FactStorage::new();
+        let rules = Arc::new(RwLock::new(RuleRegistry::new()));
+        let evaluator = RecursiveEvaluator::new(storage, rules, 1000);
+        let head = vec![EdnValue::Symbol("predicate".to_string())]; // only 1 element
+        let binding = std::collections::HashMap::new();
+        let result = evaluator.instantiate_head(&head, &binding);
+        assert!(result.is_err(), "head with only predicate and no arg should fail");
+    }
+
+    #[test]
+    fn test_evaluate_rule_empty_body_returns_empty_derived() {
+        // Line 225 TRUE: patterns.is_empty() && expr_clauses.is_empty() → return Ok(derived)
+        // Achieved by a rule with an empty body (no clauses)
+        use crate::query::datalog::types::{Rule, WhereClause};
+        use crate::graph::types::Value;
+
+        let storage = FactStorage::new();
+        let mut registry = RuleRegistry::new();
+        // Rule with empty body: no patterns, no expr_clauses
+        let rule = Rule {
+            head: vec![
+                EdnValue::Symbol("empty-body-pred".to_string()),
+                EdnValue::Symbol("?x".to_string()),
+            ],
+            body: vec![], // empty body
+        };
+        registry.register_rule_unchecked("empty-body-pred".to_string(), rule);
+        let rules = Arc::new(RwLock::new(registry));
+        let evaluator = RecursiveEvaluator::new(storage, rules, 1000);
+        let result = evaluator.evaluate_recursive_rules(&["empty-body-pred".to_string()]);
+        // Should succeed (returns base facts only, derives nothing)
+        assert!(result.is_ok(), "empty body rule should not fail");
+    }
+
+    #[test]
+    fn test_evaluate_rule_expr_only_body() {
+        // Line 230 TRUE: patterns.is_empty() but expr_clauses not empty → seed with empty binding
+        // Achieved by a rule with only Expr clauses in body
+        use crate::query::datalog::types::{BinOp, Expr, Rule, WhereClause};
+        use crate::graph::types::Value;
+
+        let storage = FactStorage::new();
+        let e1 = Uuid::new_v4();
+        storage
+            .transact(
+                vec![(
+                    e1,
+                    ":item/value".to_string(),
+                    Value::Integer(42),
+                )],
+                None,
+            )
+            .unwrap();
+
+        // Rule with only an Expr that always evaluates to truthy
+        // Since there are no patterns, it seeds with ONE empty binding
+        // The Expr filters it (or not), then instantiate_head would fail if ?x is unbound
+        // Let's just test that evaluate_rule handles this path without crashing
+        let mut registry = RuleRegistry::new();
+        let rule = Rule {
+            head: vec![
+                EdnValue::Symbol("expr-only-pred".to_string()),
+                EdnValue::Symbol("?x".to_string()),
+            ],
+            body: vec![WhereClause::Expr {
+                expr: Expr::Lit(Value::Boolean(false)), // always false → no bindings pass
+                binding: None,
+            }],
+        };
+        registry.register_rule_unchecked("expr-only-pred".to_string(), rule);
+        let rules = Arc::new(RwLock::new(registry));
+        let evaluator = RecursiveEvaluator::new(storage, rules, 1000);
+        // This exercises the expr-only path. The expr evaluates to false → no facts derived.
+        let result = evaluator.evaluate_recursive_rules(&["expr-only-pred".to_string()]);
+        assert!(result.is_ok(), "expr-only rule body should not fail");
+        let derived = result.unwrap();
+        let facts = derived.get_asserted_facts().unwrap();
+        let pred_facts: Vec<_> = facts.iter().filter(|f| f.attribute == ":expr-only-pred").collect();
+        assert_eq!(pred_facts.len(), 0, "expr evaluating to false should derive no facts");
+    }
+
+    #[test]
+    fn test_evaluate_not_join_expr_only_body() {
+        // Line 448: evaluate_not_join with substituted.is_empty() (Expr-only not-join body)
+        // Uses an Expr-only clause in the not-join body to hit the "seed with partial binding" path
+        use crate::query::datalog::types::{BinOp, Expr, WhereClause};
+        use crate::graph::types::Value;
+
+        let storage = FactStorage::new();
+        let e1 = Uuid::new_v4();
+        storage
+            .transact(
+                vec![(
+                    e1,
+                    ":score".to_string(),
+                    Value::Integer(100),
+                )],
+                None,
+            )
+            .unwrap();
+
+        let facts: Arc<[crate::graph::types::Fact]> =
+            Arc::from(storage.get_asserted_facts().unwrap().as_slice());
+
+        // Build a not-join with an Expr-only body: (not-join [?x] [(> ?x 50)])
+        // join_vars = ["?x"], clause = Expr that evaluates to true (100 > 50)
+        // → substituted is empty → seeds with partial binding → not_bindings has 1 entry
+        // → expr evaluates to true (100 > 50) → not_bindings not empty → returns true (reject)
+        let mut binding = std::collections::HashMap::new();
+        binding.insert("?x".to_string(), Value::Integer(100));
+
+        let expr_clause = WhereClause::Expr {
+            expr: Expr::BinOp(
+                BinOp::Gt,
+                Box::new(Expr::Var("?x".to_string())),
+                Box::new(Expr::Lit(Value::Integer(50))),
+            ),
+            binding: None,
+        };
+
+        let result = evaluate_not_join(
+            &["?x".to_string()],
+            &[expr_clause],
+            &binding,
+            facts,
+        );
+        assert!(result, "not-join with expr (100 > 50) should return true (reject)");
+    }
+
+    #[test]
+    fn test_stratified_evaluator_empty_stratum_skipped() {
+        // Line 580: stratum_preds.is_empty() → continue
+        // This is hit when a predicate has a stratum but no rules match
+        // We can trigger it by evaluating predicates that exist in strata but have no rules
+        let storage = FactStorage::new();
+        let e1 = Uuid::new_v4();
+        storage
+            .transact(
+                vec![(
+                    e1,
+                    ":x".to_string(),
+                    crate::graph::types::Value::Integer(1),
+                )],
+                None,
+            )
+            .unwrap();
+
+        let rules = Arc::new(RwLock::new(RuleRegistry::new()));
+        // Register a rule for pred "a" — "b" has no rule, creating a gap in strata
+        register_test_rule(&rules, r#"(rule [(a ?x) [?x :x ?v]])"#);
+
+        let evaluator = StratifiedEvaluator::new(storage.clone(), rules, 1000);
+        // Ask for both "a" and "nonexistent" — nonexistent has no rules → stratum_preds may be empty
+        let result = evaluator.evaluate(&["a".to_string(), "nonexistent".to_string()]);
+        assert!(result.is_ok(), "evaluation with missing predicate should succeed");
+    }
+
+    #[test]
+    fn test_stratified_evaluator_not_body_empty_patterns() {
+        // Line 750: in the mixed-rule loop, not-body with substituted.is_empty()
+        // (Expr-only not body in a stratified mixed rule)
+        // This exercises the path where not-body has no patterns → seed with current binding
+        let storage = FactStorage::new();
+        let e1 = Uuid::new_v4();
+        let e2 = Uuid::new_v4();
+        storage
+            .transact(
+                vec![
+                    (
+                        e1,
+                        ":val".to_string(),
+                        crate::graph::types::Value::Integer(200),
+                    ),
+                    (
+                        e2,
+                        ":val".to_string(),
+                        crate::graph::types::Value::Integer(50),
+                    ),
+                ],
+                None,
+            )
+            .unwrap();
+
+        // Rule with not + Expr-only not body: (big ?x) <- [?x :val ?v] (not [(< ?v 100)])
+        // This rule uses not with an expr-only body: the not body has no Pattern clauses
+        use crate::query::datalog::types::{Pattern, Rule, WhereClause, BinOp, Expr};
+        use crate::graph::types::Value;
+
+        let mut registry = RuleRegistry::new();
+        let rule = Rule {
+            head: vec![
+                EdnValue::Symbol("big".to_string()),
+                EdnValue::Symbol("?x".to_string()),
+            ],
+            body: vec![
+                WhereClause::Pattern(Pattern::new(
+                    EdnValue::Symbol("?x".to_string()),
+                    EdnValue::Keyword(":val".to_string()),
+                    EdnValue::Symbol("?v".to_string()),
+                )),
+                WhereClause::Not(vec![WhereClause::Expr {
+                    expr: Expr::BinOp(
+                        BinOp::Lt,
+                        Box::new(Expr::Var("?v".to_string())),
+                        Box::new(Expr::Lit(Value::Integer(100))),
+                    ),
+                    binding: None,
+                }]),
+            ],
+        };
+        registry.register_rule_unchecked("big".to_string(), rule);
+        let rules = Arc::new(RwLock::new(registry));
+        let evaluator = StratifiedEvaluator::new(storage.clone(), rules, 1000);
+        let result = evaluator.evaluate(&["big".to_string()]);
+        assert!(result.is_ok(), "stratified evaluation with expr-only not body should succeed");
+        let derived = result.unwrap();
+        let facts = derived.get_asserted_facts().unwrap();
+        let big_facts: Vec<_> = facts.iter().filter(|f| f.attribute == ":big").collect();
+        // Only e1 with val=200 should be derived (e2 with val=50 is excluded by not [(< ?v 100)])
+        assert_eq!(big_facts.len(), 1, "only entity with val=200 should be 'big'");
+    }
 }
