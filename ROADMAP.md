@@ -724,101 +724,6 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 **Timeline**: Completed 2026-03-31
 
-### 7.8 Prepared Statements
-
-**Goal**: Parse and plan a query once; execute it repeatedly with different bind values — including temporal filters — without re-parsing or re-planning on each call.
-
-**Why now (after Phase 7.1–7.7, not before)**:
-
-Phase 7 adds negation (stratification analysis), aggregation (post-processing), disjunction (branch evaluation), temporal metadata pseudo-attributes (`:db/valid-from` / `:db/valid-to` / `:db/tx-count`), arithmetic filter predicates, window functions, and UDFs — after which the plan cost becomes meaningfully larger. Designing bind parameter syntax *after* the full clause set exists means the syntax doesn't need revisiting when new clause types are added; in particular, predicate-argument positions (`[(>= ?vf $threshold)]`) introduced in Phase 7.6 and UDF predicate positions from Phase 7.7b are included in the bind-slot position table from the start. Before Phase 7, the parse + plan cost is small enough that caching it offers negligible benefit.
-
-**Motivation — the agentic memory loop**:
-
-The primary use case is an agent running the same query pattern thousands of times per session with different entity IDs and temporal coordinates:
-
-```datalog
-;; "What did the agent believe about entity X at transaction T?"
-(query [:find ?belief
-        :as-of $tx
-        :where [$entity :belief/value ?belief]])
-```
-
-Without parameterised temporal filters, a new query string must be prepared for every `$tx` value — re-parsing and re-planning each time, defeating the purpose entirely. The query shape (patterns, join order, index selection) is identical regardless of what tx count, timestamp, or entity is supplied; only the substituted values change at execution time.
-
-**Syntax**:
-
-`$identifier` tokens in any bind-able position are treated as named slots:
-
-```datalog
-;; Bind slots in :where patterns, :as-of, and :valid-at
-(query [:find ?status
-        :as-of $tx
-        :valid-at $date
-        :where [$entity :employment/status ?status]])
-```
-
-**Bind slot positions and permitted types**:
-
-| Position | Permitted `BindValue` variants | Notes |
-|---|---|---|
-| Entity position in pattern | `Entity(Uuid)` | `[$entity :attr ?val]` |
-| Value position in pattern | `Val(Value)` | `[?e :attr $val]` — any `Value` variant |
-| `:as-of` | `TxCount(u64)`, `Timestamp(i64)` | Counter or wall-clock millis |
-| `:valid-at` | `Timestamp(i64)`, `AnyValidTime` | millis or `:any-valid-time` sentinel |
-
-Attribute positions are intentionally **not** parameterisable — substituting the attribute name at execution time would make it impossible to select the correct index at prepare time, defeating plan caching entirely.
-
-**API**:
-
-```rust
-// Prepare once — parses, validates, and computes the query plan
-let prepared = db.prepare(
-    "(query [:find ?status
-             :as-of $tx
-             :valid-at $date
-             :where [$entity :employment/status ?status]])"
-)?;
-
-// Execute many times — plan reused, only bind values substituted
-let r1 = prepared.execute(&[
-    ("tx",     BindValue::TxCount(50)),
-    ("date",   BindValue::Timestamp(1_685_577_600_000)),
-    ("entity", BindValue::Entity(alice_id)),
-])?;
-
-let r2 = prepared.execute(&[
-    ("tx",     BindValue::TxCount(75)),
-    ("date",   BindValue::Timestamp(1_701_388_800_000)),
-    ("entity", BindValue::Entity(bob_id)),
-])?;
-
-// Existing db.execute() string API is unchanged — no breaking change
-```
-
-**Plan stability note**:
-
-The query optimizer uses selectivity estimates to pick join order. Different `:as-of` values could in theory affect fact counts and therefore optimal join order. The standard trade-off (used by PostgreSQL for generic plans) applies: use the plan computed at `prepare()` time and accept that it may be marginally suboptimal for some bind values. The amortised parse + plan saving across thousands of executions far outweighs occasional suboptimal join order.
-
-**Implementation**:
-- Parser: recognise `$identifier` as a `BindSlot` token in entity, value, `:as-of`, and `:valid-at` positions
-- `DatalogQuery` type: add `bind_slots: Vec<BindSlot>` field
-- New `PreparedQuery` struct: stores parsed AST + optimised plan + slot positions
-- `Minigraf::prepare(query_str) -> Result<PreparedQuery>` — new public API method
-- `PreparedQuery::execute(bindings: &[(&str, BindValue)]) -> Result<QueryResult>` — substitutes values, runs execution against current fact store state
-- `db.execute(str)` path unchanged — no breaking change
-
-**Tests**:
-- Prepare + execute with entity bind slots
-- Prepare + execute with value bind slots
-- Prepare + execute with `:as-of $tx` (counter and timestamp variants)
-- Prepare + execute with `:valid-at $date` and `:valid-at` `AnyValidTime`
-- Combined temporal + entity parameterisation (the primary agentic loop pattern)
-- Error: missing bind value at execute time
-- Error: type mismatch (e.g., `Val` supplied for an `:as-of` slot)
-- Attribute position rejected as a bind slot at prepare time
-
-**Estimated complexity**: 2-3 weeks
-
 ---
 
 ### 7.6 Temporal Metadata Bindings + Range Queries
@@ -1054,6 +959,103 @@ db.register_predicate(
 **Phase 7.7 deliverable**: Window aggregates (`sum over`, `rank`, `lag`, `lead`, etc.) expressible natively in Datalog `:find`; embedder-registered aggregate and predicate UDFs callable from any query; all built-in aggregates and window functions unified under `FunctionRegistry`; new public API methods included in Phase 7.9 publish surface
 
 **Estimated total Phase 7.7 complexity**: 4-6 weeks
+
+---
+
+### 7.8 Prepared Statements
+
+**Goal**: Parse and plan a query once; execute it repeatedly with different bind values — including temporal filters — without re-parsing or re-planning on each call.
+
+**Why now (after Phase 7.1–7.7, not before)**:
+
+Phase 7 adds negation (stratification analysis), aggregation (post-processing), disjunction (branch evaluation), temporal metadata pseudo-attributes (`:db/valid-from` / `:db/valid-to` / `:db/tx-count`), arithmetic filter predicates, window functions, and UDFs — after which the plan cost becomes meaningfully larger. Designing bind parameter syntax *after* the full clause set exists means the syntax doesn't need revisiting when new clause types are added; in particular, predicate-argument positions (`[(>= ?vf $threshold)]`) introduced in Phase 7.6 and UDF predicate positions from Phase 7.7b are included in the bind-slot position table from the start. Before Phase 7, the parse + plan cost is small enough that caching it offers negligible benefit.
+
+**Motivation — the agentic memory loop**:
+
+The primary use case is an agent running the same query pattern thousands of times per session with different entity IDs and temporal coordinates:
+
+```datalog
+;; "What did the agent believe about entity X at transaction T?"
+(query [:find ?belief
+        :as-of $tx
+        :where [$entity :belief/value ?belief]])
+```
+
+Without parameterised temporal filters, a new query string must be prepared for every `$tx` value — re-parsing and re-planning each time, defeating the purpose entirely. The query shape (patterns, join order, index selection) is identical regardless of what tx count, timestamp, or entity is supplied; only the substituted values change at execution time.
+
+**Syntax**:
+
+`$identifier` tokens in any bind-able position are treated as named slots:
+
+```datalog
+;; Bind slots in :where patterns, :as-of, and :valid-at
+(query [:find ?status
+        :as-of $tx
+        :valid-at $date
+        :where [$entity :employment/status ?status]])
+```
+
+**Bind slot positions and permitted types**:
+
+| Position | Permitted `BindValue` variants | Notes |
+|---|---|---|
+| Entity position in pattern | `Entity(Uuid)` | `[$entity :attr ?val]` |
+| Value position in pattern | `Val(Value)` | `[?e :attr $val]` — any `Value` variant |
+| `:as-of` | `TxCount(u64)`, `Timestamp(i64)` | Counter or wall-clock millis |
+| `:valid-at` | `Timestamp(i64)`, `AnyValidTime` | millis or `:any-valid-time` sentinel |
+
+Attribute positions are intentionally **not** parameterisable — substituting the attribute name at execution time would make it impossible to select the correct index at prepare time, defeating plan caching entirely.
+
+**API**:
+
+```rust
+// Prepare once — parses, validates, and computes the query plan
+let prepared = db.prepare(
+    "(query [:find ?status
+             :as-of $tx
+             :valid-at $date
+             :where [$entity :employment/status ?status]])"
+)?;
+
+// Execute many times — plan reused, only bind values substituted
+let r1 = prepared.execute(&[
+    ("tx",     BindValue::TxCount(50)),
+    ("date",   BindValue::Timestamp(1_685_577_600_000)),
+    ("entity", BindValue::Entity(alice_id)),
+])?;
+
+let r2 = prepared.execute(&[
+    ("tx",     BindValue::TxCount(75)),
+    ("date",   BindValue::Timestamp(1_701_388_800_000)),
+    ("entity", BindValue::Entity(bob_id)),
+])?;
+
+// Existing db.execute() string API is unchanged — no breaking change
+```
+
+**Plan stability note**:
+
+The query optimizer uses selectivity estimates to pick join order. Different `:as-of` values could in theory affect fact counts and therefore optimal join order. The standard trade-off (used by PostgreSQL for generic plans) applies: use the plan computed at `prepare()` time and accept that it may be marginally suboptimal for some bind values. The amortised parse + plan saving across thousands of executions far outweighs occasional suboptimal join order.
+
+**Implementation**:
+- Parser: recognise `$identifier` as a `BindSlot` token in entity, value, `:as-of`, and `:valid-at` positions
+- `DatalogQuery` type: add `bind_slots: Vec<BindSlot>` field
+- New `PreparedQuery` struct: stores parsed AST + optimised plan + slot positions
+- `Minigraf::prepare(query_str) -> Result<PreparedQuery>` — new public API method
+- `PreparedQuery::execute(bindings: &[(&str, BindValue)]) -> Result<QueryResult>` — substitutes values, runs execution against current fact store state
+- `db.execute(str)` path unchanged — no breaking change
+
+**Tests**:
+- Prepare + execute with entity bind slots
+- Prepare + execute with value bind slots
+- Prepare + execute with `:as-of $tx` (counter and timestamp variants)
+- Prepare + execute with `:valid-at $date` and `:valid-at` `AnyValidTime`
+- Combined temporal + entity parameterisation (the primary agentic loop pattern)
+- Error: missing bind value at execute time
+- Error: type mismatch (e.g., `Val` supplied for an `:as-of` slot)
+- Attribute position rejected as a bind slot at prepare time
+
+**Estimated complexity**: 2-3 weeks
 
 ---
 
