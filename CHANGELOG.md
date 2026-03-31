@@ -10,8 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `tests/production_patterns_test.rs`: 8 cross-feature integration tests combining not+as-of, not-join+count, count+not, count+valid-at, recursion+not, or+count, or+sum, count+as-of-sequence
 - `tests/error_handling_test.rs`: 8 integration-level error-path tests covering runtime type errors (sum/string, sum/mixed, max/boolean), stratification errors (negative cycles), and parse safety errors (not-join unbound join var, or mismatched vars, aggregate unbound var)
-- Stream 3: ~53 unit tests for parser-unreachable branches in `executor.rs` and `evaluator.rs`
-- `cargo-llvm-cov` coverage workflow documented in `CONTRIBUTING.md`
+- Stream 3: ~109 unit tests for parser-unreachable branches and aggregation/arithmetic edge cases in `executor.rs` and `evaluator.rs`
+- `cargo-llvm-cov` branch coverage command documented in `CONTRIBUTING.md`
+- CI coverage enforcement: `cargo-tarpaulin --fail-under 75` gates every PR; Codecov 75% threshold with 2% drop tolerance; `fail_ci_if_error: true`
+- Nightly `cargo-llvm-cov --branch` workflow: uploads LCOV to Codecov (`branch-coverage` flag) and attaches HTML artifact (30-day retention); also triggerable via `workflow_dispatch`
+- Codecov badge added to `README.md`
 
 ### Coverage
 - Branch coverage: `executor.rs` ~85.71% (from ~75%), `evaluator.rs` ~89.29% (from ~73%)
