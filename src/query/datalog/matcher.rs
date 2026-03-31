@@ -1,4 +1,4 @@
-use super::types::{EdnValue, Pattern};
+use super::types::{AttributeSpec, EdnValue, Pattern};
 use crate::graph::FactStorage;
 use crate::graph::types::{EntityId, Fact, Value};
 use std::collections::HashMap;
@@ -70,18 +70,26 @@ impl PatternMatcher {
             return None;
         }
 
-        // Match attribute
-        if !self.match_component(
-            &pattern.attribute,
-            &Value::Keyword(fact.attribute.clone()),
-            &mut bindings,
-        ) {
-            return None;
-        }
-
-        // Match value
-        if !self.match_component(&pattern.value, &fact.value, &mut bindings) {
-            return None;
+        match &pattern.attribute {
+            AttributeSpec::Real(attr_edn) => {
+                // Match attribute
+                if !self.match_component(
+                    attr_edn,
+                    &Value::Keyword(fact.attribute.clone()),
+                    &mut bindings,
+                ) {
+                    return None;
+                }
+                // Match value
+                if !self.match_component(&pattern.value, &fact.value, &mut bindings) {
+                    return None;
+                }
+            }
+            AttributeSpec::Pseudo(_) => {
+                // Full pseudo-attr binding implemented in Task 4.
+                // For now: skip attribute match, skip value match (returns empty bindings).
+                // This stub compiles but returns no results for pseudo-attr patterns.
+            }
         }
 
         Some(bindings)
@@ -278,9 +286,15 @@ impl PatternMatcher {
 
     /// Apply existing bindings to a pattern, replacing bound variables with their values
     fn apply_bindings_to_pattern(&self, pattern: &Pattern, bindings: &Bindings) -> Pattern {
+        let attribute = match &pattern.attribute {
+            AttributeSpec::Real(edn) => {
+                AttributeSpec::Real(self.apply_binding_to_component(edn, bindings))
+            }
+            AttributeSpec::Pseudo(p) => AttributeSpec::Pseudo(p.clone()),
+        };
         Pattern {
             entity: self.apply_binding_to_component(&pattern.entity, bindings),
-            attribute: self.apply_binding_to_component(&pattern.attribute, bindings),
+            attribute,
             value: self.apply_binding_to_component(&pattern.value, bindings),
             valid_from: pattern.valid_from,
             valid_to: pattern.valid_to,

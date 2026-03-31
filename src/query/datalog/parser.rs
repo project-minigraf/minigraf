@@ -1108,12 +1108,22 @@ fn outer_vars_from_clause(clause: &WhereClause) -> Vec<String> {
     match clause {
         WhereClause::Pattern(p) => {
             let mut vars = Vec::new();
-            for v in [&p.entity, &p.attribute, &p.value] {
-                if let Some(name) = v.as_variable()
+            if let Some(name) = p.entity.as_variable()
+                && !name.starts_with("?_")
+            {
+                vars.push(name.to_string());
+            }
+            if let AttributeSpec::Real(attr_edn) = &p.attribute {
+                if let Some(name) = attr_edn.as_variable()
                     && !name.starts_with("?_")
                 {
                     vars.push(name.to_string());
                 }
+            }
+            if let Some(name) = p.value.as_variable()
+                && !name.starts_with("?_")
+            {
+                vars.push(name.to_string());
             }
             vars
         }
@@ -1473,7 +1483,7 @@ mod tests {
                 assert_eq!(patterns.len(), 1);
                 assert_eq!(
                     patterns[0].attribute,
-                    EdnValue::Keyword(":person/name".to_string())
+                    AttributeSpec::Real(EdnValue::Keyword(":person/name".to_string()))
                 );
             }
             _ => panic!("Expected Query command"),

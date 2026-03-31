@@ -25,7 +25,7 @@
 /// ```
 use super::matcher::{Bindings, PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::rules::RuleRegistry;
-use super::types::{EdnValue, Pattern, Rule, WhereClause};
+use super::types::{AttributeSpec, EdnValue, Pattern, Rule, WhereClause};
 use crate::graph::FactStorage;
 use crate::graph::types::{Fact, Value};
 use anyhow::{Result, anyhow};
@@ -356,11 +356,17 @@ pub fn value_to_edn(value: &Value) -> EdnValue {
 
 /// Substitute bound variables in a Pattern, returning a new Pattern with concrete values.
 pub fn substitute_pattern(pattern: &Pattern, binding: &Bindings) -> Pattern {
-    Pattern::new(
-        substitute_value(&pattern.entity, binding),
-        substitute_value(&pattern.attribute, binding),
-        substitute_value(&pattern.value, binding),
-    )
+    let attribute = match &pattern.attribute {
+        AttributeSpec::Real(edn) => AttributeSpec::Real(substitute_value(edn, binding)),
+        AttributeSpec::Pseudo(p) => AttributeSpec::Pseudo(p.clone()),
+    };
+    Pattern {
+        entity: substitute_value(&pattern.entity, binding),
+        attribute,
+        value: substitute_value(&pattern.value, binding),
+        valid_from: pattern.valid_from,
+        valid_to: pattern.valid_to,
+    }
 }
 
 /// Substitute a single value: if it's a bound variable, replace it; otherwise clone.

@@ -20,7 +20,7 @@ use crate::query::datalog::executor::DatalogExecutor;
 use crate::query::datalog::executor::QueryResult;
 use crate::query::datalog::parser::parse_datalog_command;
 use crate::query::datalog::rules::RuleRegistry;
-use crate::query::datalog::types::{DatalogCommand, Transaction};
+use crate::query::datalog::types::{AttributeSpec, DatalogCommand, EdnValue, Transaction};
 use crate::storage::backend::MemoryBackend;
 use crate::storage::backend::file::FileBackend;
 use crate::storage::persistent_facts::PersistentFactStorage;
@@ -572,8 +572,9 @@ impl Minigraf {
                 .map_err(|e| anyhow::anyhow!("invalid entity: {}", e))?;
 
             let attr = match &pattern.attribute {
-                EdnValue::Keyword(k) => k.clone(),
-                _ => anyhow::bail!("attribute must be a keyword"),
+                AttributeSpec::Real(EdnValue::Keyword(k)) => k.clone(),
+                AttributeSpec::Real(_) => anyhow::bail!("attribute must be a keyword"),
+                AttributeSpec::Pseudo(_) => anyhow::bail!("cannot transact a pseudo-attribute"),
             };
 
             let value = edn_to_value(&pattern.value)
@@ -608,8 +609,9 @@ impl Minigraf {
                 .map_err(|e| anyhow::anyhow!("invalid entity: {}", e))?;
 
             let attr = match &pattern.attribute {
-                EdnValue::Keyword(k) => k.clone(),
-                _ => anyhow::bail!("attribute must be a keyword"),
+                AttributeSpec::Real(EdnValue::Keyword(k)) => k.clone(),
+                AttributeSpec::Real(_) => anyhow::bail!("attribute must be a keyword"),
+                AttributeSpec::Pseudo(_) => anyhow::bail!("cannot transact a pseudo-attribute"),
             };
 
             let value = edn_to_value(&pattern.value)

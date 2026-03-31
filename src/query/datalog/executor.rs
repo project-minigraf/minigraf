@@ -3,8 +3,8 @@ use super::matcher::{PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::optimizer;
 use super::rules::RuleRegistry;
 use super::types::{
-    AggFunc, AsOf, BinOp, DatalogCommand, DatalogQuery, EdnValue, Expr, FindSpec, Pattern, Rule,
-    Transaction, UnaryOp, ValidAt, WhereClause,
+    AggFunc, AsOf, AttributeSpec, BinOp, DatalogCommand, DatalogQuery, EdnValue, Expr, FindSpec,
+    Pattern, Rule, Transaction, UnaryOp, ValidAt, WhereClause,
 };
 use crate::graph::FactStorage;
 use crate::graph::types::{Fact, TransactOptions, TxId, Value, tx_id_now};
@@ -77,8 +77,11 @@ impl DatalogExecutor {
                 edn_to_entity_id(&pattern.entity).map_err(|e| anyhow!("Invalid entity: {}", e))?;
 
             let attribute = match &pattern.attribute {
-                EdnValue::Keyword(k) => k.clone(),
-                _ => return Err(anyhow!("Attribute must be a keyword")),
+                AttributeSpec::Real(EdnValue::Keyword(k)) => k.clone(),
+                AttributeSpec::Real(_) => return Err(anyhow!("Attribute must be a keyword")),
+                AttributeSpec::Pseudo(_) => {
+                    return Err(anyhow!("Cannot transact a pseudo-attribute"))
+                }
             };
 
             let value =
@@ -110,8 +113,11 @@ impl DatalogExecutor {
                 edn_to_entity_id(&pattern.entity).map_err(|e| anyhow!("Invalid entity: {}", e))?;
 
             let attribute = match &pattern.attribute {
-                EdnValue::Keyword(k) => k.clone(),
-                _ => return Err(anyhow!("Attribute must be a keyword")),
+                AttributeSpec::Real(EdnValue::Keyword(k)) => k.clone(),
+                AttributeSpec::Real(_) => return Err(anyhow!("Attribute must be a keyword")),
+                AttributeSpec::Pseudo(_) => {
+                    return Err(anyhow!("Cannot transact a pseudo-attribute"))
+                }
             };
 
             let value =
