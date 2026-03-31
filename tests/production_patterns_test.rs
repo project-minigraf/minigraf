@@ -184,3 +184,132 @@ fn active_staff_by_role_valid_at() {
     assert_eq!(rows_2024[1][0], Value::String("hr".into()));
     assert_eq!(rows_2024[1][1], Value::Integer(1));
 }
+
+// ── Test 5: recursion + not ───────────────────────────────────────────────────
+// "Reachable nodes from :a, excluding blocked nodes."
+
+#[test]
+fn recursive_reachable_excluding_blocked() {
+    let db = db();
+    db.execute(
+        r#"(transact [[:a :edge :b] [:b :edge :c] [:c :edge :d] [:d :blocked true]])"#,
+    )
+    .unwrap();
+    db.execute(r#"(rule [(reach ?x ?y) [?x :edge ?y]])"#).unwrap();
+    db.execute(r#"(rule [(reach ?x ?y) [?x :edge ?z] (reach ?z ?y)])"#)
+        .unwrap();
+    db.execute(
+        r#"(rule [(accessible ?x ?y) (reach ?x ?y) (not [?y :blocked true])])"#,
+    )
+    .unwrap();
+
+    // From :a, reachable = b, c, d; d is blocked → accessible = b, c (count=2)
+    let r = db
+        .execute(r#"(query [:find (count ?y) :where (accessible :a ?y)])"#)
+        .unwrap();
+    assert_eq!(
+        results(&r)[0][0],
+        Value::Integer(2),
+        "b and c are reachable and not blocked"
+    );
+}
+
+// ── Test 6: or-join + count aggregation ──────────────────────────────────────
+// "Count employees per department — ft and pt employees are both counted."
+
+#[test]
+#[ignore = "bug: or-join join variables must be pre-bound; engine rejects or-join as sole where clause"]
+fn department_count_or_join_two_sources() {
+    let db = db();
+    db.execute(
+        r#"(transact [[:alice :fulltime/dept "eng"]
+                      [:bob   :parttime/dept "eng"]
+                      [:carol :fulltime/dept "hr"]
+                      [:dave  :freelance/dept "eng"]])"#,
+    )
+    .unwrap();
+
+    // Count entities per dept that are either fulltime OR parttime (not freelance)
+    let r = db
+        .execute(
+            r#"(query [:find ?dept (count ?e)
+                       :where (or-join [?e ?dept]
+                                [?e :fulltime/dept ?dept]
+                                [?e :parttime/dept ?dept])])"#,
+        )
+        .unwrap();
+
+    let mut rows = results(&r).clone();
+    rows.sort_by_key(|row| match &row[0] {
+        Value::String(s) => s.clone(),
+        _ => String::new(),
+    });
+    assert_eq!(rows.len(), 2, "two depts");
+    // eng: alice (ft) + bob (pt) = 2; dave (freelance) excluded
+    assert_eq!(rows[0][0], Value::String("eng".into()));
+    assert_eq!(rows[0][1], Value::Integer(2));
+    // hr: carol (ft) = 1
+    assert_eq!(rows[1][0], Value::String("hr".into()));
+    assert_eq!(rows[1][1], Value::Integer(1));
+}
+
+// ── Test 7: or + sum aggregation ─────────────────────────────────────────────
+// "Sum salaries of people who are senior OR remote."
+
+#[test]
+fn salary_sum_or_conditions() {
+    let db = db();
+    db.execute(
+        r#"(transact [[:alice :person/salary 100] [:alice :person/senior true]
+                      [:bob   :person/salary 80]  [:bob   :person/remote true]
+                      [:carol :person/salary 60]
+                      [:dave  :person/salary 120] [:dave  :person/senior true]
+                                                  [:dave  :person/remote true]])"#,
+    )
+    .unwrap();
+
+    // alice (100, senior), bob (80, remote), dave (120, both) → sum=300
+    // carol (60, neither) excluded; dave deduped despite matching both branches
+    let r = db
+        .execute(
+            r#"(query [:find (sum ?salary)
+                       :where [?e :person/salary ?salary]
+                              (or [?e :person/senior true]
+                                  [?e :person/remote true])])"#,
+        )
+        .unwrap();
+    assert_eq!(results(&r)[0][0], Value::Integer(300));
+}
+
+// ── Test 8: count aggregation + :as-of in sequence ───────────────────────────
+// "Headcount grows with each transaction batch."
+
+#[test]
+fn headcount_sequence_as_of() {
+    let db = db();
+    db.execute(r#"(transact [[:alice :emp true] [:bob :emp true]])"#)
+        .unwrap(); // tx 1: 2
+    db.execute(r#"(transact [[:carol :emp true]])"#).unwrap(); // tx 2: 3
+    db.execute(r#"(transact [[:dave :emp true] [:eve :emp true]])"#)
+        .unwrap(); // tx 3: 5
+
+    let r1 = db
+        .execute(
+            r#"(query [:find (count ?e) :as-of 1 :valid-at :any-valid-time :where [?e :emp true]])"#,
+        )
+        .unwrap();
+    let r2 = db
+        .execute(
+            r#"(query [:find (count ?e) :as-of 2 :valid-at :any-valid-time :where [?e :emp true]])"#,
+        )
+        .unwrap();
+    let r3 = db
+        .execute(
+            r#"(query [:find (count ?e) :as-of 3 :valid-at :any-valid-time :where [?e :emp true]])"#,
+        )
+        .unwrap();
+
+    assert_eq!(results(&r1)[0][0], Value::Integer(2));
+    assert_eq!(results(&r2)[0][0], Value::Integer(3));
+    assert_eq!(results(&r3)[0][0], Value::Integer(5));
+}
