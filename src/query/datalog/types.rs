@@ -1212,6 +1212,19 @@ mod tests {
     }
 
     #[test]
+    fn test_pattern_real_constructor() {
+        let p = Pattern::real(
+            EdnValue::Keyword("alice".to_string()),
+            EdnValue::Keyword("person/name".to_string()),
+            EdnValue::String("Alice".to_string()),
+        );
+        assert!(
+            matches!(p.attribute, AttributeSpec::Real(_)),
+            "Pattern::real should wrap attribute in AttributeSpec::Real"
+        );
+    }
+
+    #[test]
     fn test_pattern_pseudo_wraps_pseudo() {
         let p = Pattern::pseudo(
             EdnValue::Symbol("?e".to_string()),

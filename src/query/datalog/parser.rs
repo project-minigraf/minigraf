@@ -1113,12 +1113,11 @@ fn outer_vars_from_clause(clause: &WhereClause) -> Vec<String> {
             {
                 vars.push(name.to_string());
             }
-            if let AttributeSpec::Real(attr_edn) = &p.attribute {
-                if let Some(name) = attr_edn.as_variable()
-                    && !name.starts_with("?_")
-                {
-                    vars.push(name.to_string());
-                }
+            if let AttributeSpec::Real(attr_edn) = &p.attribute
+                && let Some(name) = attr_edn.as_variable()
+                && !name.starts_with("?_")
+            {
+                vars.push(name.to_string());
             }
             if let Some(name) = p.value.as_variable()
                 && !name.starts_with("?_")

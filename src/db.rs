@@ -20,7 +20,7 @@ use crate::query::datalog::executor::DatalogExecutor;
 use crate::query::datalog::executor::QueryResult;
 use crate::query::datalog::parser::parse_datalog_command;
 use crate::query::datalog::rules::RuleRegistry;
-use crate::query::datalog::types::{AttributeSpec, DatalogCommand, EdnValue, Transaction};
+use crate::query::datalog::types::{AttributeSpec, DatalogCommand, Transaction};
 use crate::storage::backend::MemoryBackend;
 use crate::storage::backend::file::FileBackend;
 use crate::storage::persistent_facts::PersistentFactStorage;
