@@ -2606,8 +2606,11 @@ mod tests {
 mod expr_eval_tests {
     use super::*;
     use crate::graph::types::Value;
-    use crate::query::datalog::types::{BinOp, Expr, UnaryOp};
+    use crate::query::datalog::parser::parse_datalog_command;
+    use crate::query::datalog::types::{BinOp, Expr, UnaryOp, WhereClause};
     use std::collections::HashMap;
+    use std::sync::Arc;
+    use uuid::Uuid;
 
     fn b(pairs: &[(&str, Value)]) -> HashMap<String, Value> {
         pairs
@@ -2968,6 +2971,685 @@ mod expr_eval_tests {
                     results.len(),
                     1,
                     "one entity matched by both branches → deduplicated"
+                );
+            }
+            _ => panic!("expected QueryResults"),
+        }
+    }
+
+    // ── Stream 3: branches unreachable via the parser ─────────────────────────
+
+    #[test]
+    fn execute_transact_non_keyword_attribute_error() {
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage);
+        // Construct a transact with a String attribute (not a keyword)
+        let cmd = DatalogCommand::Transact(Transaction {
+            facts: vec![Pattern::new(
+                EdnValue::Keyword(":e".to_string()),
+                EdnValue::String("not-a-keyword".to_string()),
+                EdnValue::String("value".to_string()),
+            )],
+            valid_from: None,
+            valid_to: None,
+        });
+        let r = executor.execute(cmd);
+        assert!(r.is_err(), "non-keyword attribute in transact must fail");
+    }
+
+    #[test]
+    fn execute_retract_non_keyword_attribute_error() {
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage);
+        let cmd = DatalogCommand::Retract(Transaction {
+            facts: vec![Pattern::new(
+                EdnValue::Keyword(":e".to_string()),
+                EdnValue::Integer(42),
+                EdnValue::String("value".to_string()),
+            )],
+            valid_from: None,
+            valid_to: None,
+        });
+        let r = executor.execute(cmd);
+        assert!(r.is_err(), "non-keyword attribute in retract must fail");
+    }
+
+    #[test]
+    fn execute_rule_empty_head_error() {
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage);
+        let cmd = DatalogCommand::Rule(Rule {
+            head: vec![],
+            body: vec![WhereClause::Pattern(Pattern::new(
+                EdnValue::Symbol("?x".to_string()),
+                EdnValue::Keyword(":a".to_string()),
+                EdnValue::Symbol("?v".to_string()),
+            ))],
+        });
+        let r = executor.execute(cmd);
+        assert!(r.is_err(), "rule with empty head must fail");
+    }
+
+    #[test]
+    fn execute_rule_non_symbol_head_error() {
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage);
+        let cmd = DatalogCommand::Rule(Rule {
+            head: vec![EdnValue::Integer(99)], // not a Symbol
+            body: vec![WhereClause::Pattern(Pattern::new(
+                EdnValue::Symbol("?x".to_string()),
+                EdnValue::Keyword(":a".to_string()),
+                EdnValue::Symbol("?v".to_string()),
+            ))],
+        });
+        let r = executor.execute(cmd);
+        assert!(r.is_err(), "rule head starting with non-symbol must fail");
+    }
+
+    // ── Float arithmetic edge cases ──────────────────────────────────────────
+
+    #[test]
+    fn test_eval_float_div_by_zero_is_err() {
+        // Line 1096: rf == 0.0 → Err(()) for float division
+        let e = Expr::BinOp(
+            BinOp::Div,
+            Box::new(Expr::Lit(Value::Float(5.0))),
+            Box::new(Expr::Lit(Value::Float(0.0))),
+        );
+        assert_eq!(eval_expr(&e, &HashMap::new()), Err(()));
+    }
+
+    #[test]
+    fn test_eval_float_div_succeeds() {
+        // Line 1096 false branch: rf != 0.0 → Ok(Float)
+        let e = Expr::BinOp(
+            BinOp::Div,
+            Box::new(Expr::Lit(Value::Float(6.0))),
+            Box::new(Expr::Lit(Value::Float(2.0))),
+        );
+        assert_eq!(eval_expr(&e, &HashMap::new()), Ok(Value::Float(3.0)));
+    }
+
+    #[test]
+    fn test_eval_float_sub() {
+        // Line 1079-1085: float subtraction
+        let e = Expr::BinOp(
+            BinOp::Sub,
+            Box::new(Expr::Lit(Value::Float(5.0))),
+            Box::new(Expr::Lit(Value::Float(2.0))),
+        );
+        assert_eq!(eval_expr(&e, &HashMap::new()), Ok(Value::Float(3.0)));
+    }
+
+    #[test]
+    fn test_eval_float_mul() {
+        // Line 1087-1093: float multiplication
+        let e = Expr::BinOp(
+            BinOp::Mul,
+            Box::new(Expr::Lit(Value::Float(3.0))),
+            Box::new(Expr::Lit(Value::Float(4.0))),
+        );
+        assert_eq!(eval_expr(&e, &HashMap::new()), Ok(Value::Float(12.0)));
+    }
+
+    // ── Aggregation edge cases ────────────────────────────────────────────────
+
+    #[test]
+    fn test_agg_count_empty_bindings_returns_zero() {
+        // (count ?x) with no matching facts → zero bindings → special-case returns 0
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage);
+        let cmd = parse_datalog_command("(query [:find (count ?x) :where [?x :no-such-attr _]])")
+            .expect("parse failed");
+        let result = executor.execute(cmd).expect("query failed");
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(results.len(), 1, "should return one row with count 0");
+                assert_eq!(results[0][0], crate::graph::types::Value::Integer(0));
+            }
+            _ => panic!("expected QueryResults"),
+        }
+    }
+
+    #[test]
+    fn test_agg_sum_empty_no_grouping_returns_zero() {
+        // (sum ?v) with no matching facts and no grouping vars
+        // bindings is empty → `has_grouping_vars` is false but it's not count → returns []
+        let storage = FactStorage::new();
+        storage
+            .transact(
+                vec![(
+                    Uuid::new_v4(),
+                    ":item/price".to_string(),
+                    crate::graph::types::Value::Integer(50),
+                )],
+                None,
+            )
+            .unwrap();
+        let executor = DatalogExecutor::new(storage);
+        // Query for non-existing attribute to produce empty bindings, then sum
+        let cmd = parse_datalog_command("(query [:find (sum ?v) :where [?x :no-such-attr ?v]])")
+            .expect("parse failed");
+        let result = executor.execute(cmd).expect("query failed");
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                // empty bindings with non-count agg and no grouping → returns []
+                assert_eq!(results.len(), 0, "empty bindings with sum returns no rows");
+            }
+            _ => panic!("expected QueryResults"),
+        }
+    }
+
+    #[test]
+    fn test_agg_sum_distinct_float_values() {
+        // sum-distinct on float values exercises the SumDistinct + has_float path
+        let storage = FactStorage::new();
+        let e1 = Uuid::new_v4();
+        let e2 = Uuid::new_v4();
+        storage
+            .transact(
+                vec![
+                    (
+                        e1,
+                        ":item/weight".to_string(),
+                        crate::graph::types::Value::Float(1.5),
+                    ),
+                    (
+                        e2,
+                        ":item/weight".to_string(),
+                        crate::graph::types::Value::Float(1.5),
+                    ),
+                ],
+                None,
+            )
+            .unwrap();
+        let executor = DatalogExecutor::new(storage);
+        let cmd =
+            parse_datalog_command("(query [:find (sum-distinct ?w) :where [?e :item/weight ?w]])")
+                .expect("parse failed");
+        let result = executor.execute(cmd).expect("query failed");
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                // Both have weight 1.5 but sum-distinct deduplicates → result is 1.5
+                assert_eq!(results.len(), 1, "expected one result row");
+                assert_eq!(
+                    results[0][0],
+                    crate::graph::types::Value::Float(1.5),
+                    "sum-distinct of [1.5, 1.5] should be 1.5"
+                );
+            }
+            _ => panic!("expected QueryResults"),
+        }
+    }
+
+    #[test]
+    fn test_agg_min_max_on_all_null_group_skips_row() {
+        // min/max on a group where all values are Null → row is skipped
+        // We insert a fact with value Null and query for min
+        let storage = FactStorage::new();
+        let e1 = Uuid::new_v4();
+        storage
+            .transact(
+                vec![(
+                    e1,
+                    ":item/score".to_string(),
+                    crate::graph::types::Value::Null,
+                )],
+                None,
+            )
+            .unwrap();
+        let executor = DatalogExecutor::new(storage);
+        // min on only Null values → "no non-null values in group" → row skipped → 0 rows
+        let cmd = parse_datalog_command("(query [:find (min ?s) :where [?e :item/score ?s]])")
+            .expect("parse failed");
+        let result = executor.execute(cmd).expect("query failed");
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(
+                    results.len(),
+                    0,
+                    "min on all-null group should produce 0 rows"
+                );
+            }
+            _ => panic!("expected QueryResults"),
+        }
+    }
+
+    #[test]
+    fn test_agg_min_on_strings() {
+        // min on strings exercises the String comparison path in apply_agg_func
+        let storage = FactStorage::new();
+        let e1 = Uuid::new_v4();
+        let e2 = Uuid::new_v4();
+        storage
+            .transact(
+                vec![
+                    (
+                        e1,
+                        ":item/name".to_string(),
+                        crate::graph::types::Value::String("banana".to_string()),
+                    ),
+                    (
+                        e2,
+                        ":item/name".to_string(),
+                        crate::graph::types::Value::String("apple".to_string()),
+                    ),
+                ],
+                None,
+            )
+            .unwrap();
+        let executor = DatalogExecutor::new(storage);
+        let cmd = parse_datalog_command("(query [:find (min ?n) :where [?e :item/name ?n]])")
+            .expect("parse failed");
+        let result = executor.execute(cmd).expect("query failed");
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(results.len(), 1, "expected one result");
+                assert_eq!(
+                    results[0][0],
+                    crate::graph::types::Value::String("apple".to_string()),
+                    "min of strings should return lexicographically smallest"
+                );
+            }
+            _ => panic!("expected QueryResults"),
+        }
+    }
+
+    #[test]
+    fn test_agg_max_on_floats() {
+        // max on floats exercises the Float comparison path
+        let storage = FactStorage::new();
+        let e1 = Uuid::new_v4();
+        let e2 = Uuid::new_v4();
+        storage
+            .transact(
+                vec![
+                    (
+                        e1,
+                        ":item/score".to_string(),
+                        crate::graph::types::Value::Float(3.14),
+                    ),
+                    (
+                        e2,
+                        ":item/score".to_string(),
+                        crate::graph::types::Value::Float(2.71),
+                    ),
+                ],
+                None,
+            )
+            .unwrap();
+        let executor = DatalogExecutor::new(storage);
+        let cmd = parse_datalog_command("(query [:find (max ?s) :where [?e :item/score ?s]])")
+            .expect("parse failed");
+        let result = executor.execute(cmd).expect("query failed");
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(results.len(), 1, "expected one result");
+                assert_eq!(
+                    results[0][0],
+                    crate::graph::types::Value::Float(3.14),
+                    "max of floats should return largest"
+                );
+            }
+            _ => panic!("expected QueryResults"),
+        }
+    }
+
+    // ── evaluate_branch / apply_or_clauses edge cases ────────────────────────
+
+    #[test]
+    fn test_evaluate_branch_empty_incoming_returns_empty() {
+        // evaluate_branch with empty incoming bindings → returns [] immediately (line 842)
+        let storage = FactStorage::new();
+        storage
+            .transact(
+                vec![(
+                    Uuid::new_v4(),
+                    ":a".to_string(),
+                    crate::graph::types::Value::Integer(1),
+                )],
+                None,
+            )
+            .unwrap();
+        let facts: Arc<[crate::graph::types::Fact]> =
+            Arc::from(storage.get_asserted_facts().unwrap().as_slice());
+        let rules = crate::query::datalog::rules::RuleRegistry::new();
+        let branch = vec![WhereClause::Pattern(Pattern::new(
+            EdnValue::Symbol("?x".to_string()),
+            EdnValue::Keyword(":a".to_string()),
+            EdnValue::Symbol("?v".to_string()),
+        ))];
+        let result = evaluate_branch(&branch, vec![], facts, &rules, None, None).unwrap();
+        assert_eq!(result.len(), 0, "empty incoming should return empty");
+    }
+
+    #[test]
+    fn test_evaluate_branch_no_match_patterns_empty_bindings_returns_empty() {
+        // evaluate_branch: patterns exist but match nothing → bindings is empty (line 865)
+        let storage = FactStorage::new();
+        let facts: Arc<[crate::graph::types::Fact]> =
+            Arc::from(storage.get_asserted_facts().unwrap().as_slice());
+        let rules = crate::query::datalog::rules::RuleRegistry::new();
+        // Branch has a pattern that won't match empty storage
+        let branch = vec![WhereClause::Pattern(Pattern::new(
+            EdnValue::Symbol("?x".to_string()),
+            EdnValue::Keyword(":no-such-attr".to_string()),
+            EdnValue::Symbol("?v".to_string()),
+        ))];
+        // Seed with one binding so the branch has something to work with
+        let mut initial = std::collections::HashMap::new();
+        initial.insert("?init".to_string(), crate::graph::types::Value::Integer(1));
+        let result = evaluate_branch(&branch, vec![initial], facts, &rules, None, None).unwrap();
+        assert_eq!(
+            result.len(),
+            0,
+            "no matching facts should return empty bindings"
+        );
+    }
+
+    #[test]
+    fn test_evaluate_branch_not_filter_excludes_matching() {
+        // evaluate_branch with Not clause: entities that match the not body are excluded (line 909)
+        let storage = FactStorage::new();
+        let e1 = Uuid::new_v4();
+        let e2 = Uuid::new_v4();
+        storage
+            .transact(
+                vec![
+                    (
+                        e1,
+                        ":color".to_string(),
+                        crate::graph::types::Value::Keyword(":red".to_string()),
+                    ),
+                    (
+                        e2,
+                        ":color".to_string(),
+                        crate::graph::types::Value::Keyword(":blue".to_string()),
+                    ),
+                    (
+                        e1,
+                        ":flagged".to_string(),
+                        crate::graph::types::Value::Boolean(true),
+                    ),
+                ],
+                None,
+            )
+            .unwrap();
+        let executor = DatalogExecutor::new(storage);
+        // Query: find entities with :color but not :flagged
+        // Uses the not_body_matches path in not-post-filter (line 909)
+        let cmd = parse_datalog_command(
+            "(query [:find ?e :where [?e :color ?c] (not-join [?e] [?e :flagged ?fv])])",
+        )
+        .expect("parse failed");
+        let result = executor.execute(cmd).expect("query failed");
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(results.len(), 1, "only e2 (non-flagged) should match");
+            }
+            _ => panic!("expected QueryResults"),
+        }
+    }
+
+    #[test]
+    fn test_or_join_deduplication() {
+        // or-join where both branches bind ?e → duplicate bindings are deduplicated
+        // (line 991: if !result.contains(&b) { result.push(b); })
+        let storage = FactStorage::new();
+        let e1 = Uuid::new_v4();
+        storage
+            .transact(
+                vec![
+                    (
+                        e1,
+                        ":color".to_string(),
+                        crate::graph::types::Value::Keyword(":red".to_string()),
+                    ),
+                    (
+                        e1,
+                        ":shape".to_string(),
+                        crate::graph::types::Value::Keyword(":circle".to_string()),
+                    ),
+                ],
+                None,
+            )
+            .unwrap();
+        let executor = DatalogExecutor::new(storage);
+        // or-join [?e] with two branches that both match e1 → deduplicated to 1
+        // ?e must be bound by an earlier clause; use :color as the primary clause
+        let cmd = parse_datalog_command(
+            "(query [:find ?e :where [?e :color ?c] (or-join [?e] [?e :color ?c2] [?e :shape ?s])])",
+        )
+        .expect("parse failed");
+        let result = executor.execute(cmd).expect("query failed");
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(
+                    results.len(),
+                    1,
+                    "e1 should appear once despite two matching branches"
+                );
+            }
+            _ => panic!("expected QueryResults"),
+        }
+    }
+
+    #[test]
+    fn test_transact_with_tx_level_valid_time() {
+        // Exercises the tx_opts = Some(...) path when valid_from/valid_to set at tx level (line 66)
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage);
+        let cmd = parse_datalog_command(
+            r#"(transact {:valid-from "2020-01-01T00:00:00Z" :valid-to "2025-01-01T00:00:00Z"} [[:alice :person/name "Alice"]])"#,
+        )
+        .expect("parse with tx-level valid-time should succeed");
+        let result = executor.execute(cmd);
+        assert!(
+            result.is_ok(),
+            "transact with tx-level valid-time should succeed"
+        );
+    }
+
+    #[test]
+    fn test_transact_with_per_fact_valid_time() {
+        // Exercises the per_fact_opts = Some(...) path when valid_from/valid_to set per fact (line 87)
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage);
+        let cmd = parse_datalog_command(
+            r#"(transact [[:alice :person/name "Alice" {:valid-from "2020-01-01T00:00:00Z"}]])"#,
+        )
+        .expect("parse with per-fact valid-time should succeed");
+        let result = executor.execute(cmd);
+        assert!(
+            result.is_ok(),
+            "transact with per-fact valid-time should succeed"
+        );
+    }
+
+    #[test]
+    fn test_transact_with_valid_to_only_at_tx_level() {
+        // Exercises the `|| tx.valid_to.is_some()` branch (line 66 col 53)
+        // when valid_from is None but valid_to is Some
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage);
+        let cmd = parse_datalog_command(
+            r#"(transact {:valid-to "2025-01-01T00:00:00Z"} [[:alice :person/name "Alice"]])"#,
+        )
+        .expect("parse with tx-level valid-to only should succeed");
+        let result = executor.execute(cmd);
+        assert!(
+            result.is_ok(),
+            "transact with valid-to only at tx level should succeed"
+        );
+    }
+
+    #[test]
+    fn test_transact_with_valid_to_only_per_fact() {
+        // Exercises the `|| pattern.valid_to.is_some()` branch (line 87 col 68)
+        // when per-fact valid_from is None but valid_to is Some
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage);
+        let cmd = parse_datalog_command(
+            r#"(transact [[:alice :person/name "Alice" {:valid-to "2025-01-01T00:00:00Z"}]])"#,
+        )
+        .expect("parse with per-fact valid-to only should succeed");
+        let result = executor.execute(cmd);
+        assert!(
+            result.is_ok(),
+            "transact with valid-to only per fact should succeed"
+        );
+    }
+
+    #[test]
+    fn test_evaluate_branch_empty_patterns_passes_incoming_through() {
+        // Line 859: patterns.is_empty() = true → bindings = incoming (pass through)
+        // Achieved when branch contains only Not/Expr clauses, no Pattern/RuleInvocation
+        let storage = FactStorage::new();
+        let e1 = Uuid::new_v4();
+        storage
+            .transact(
+                vec![(
+                    e1,
+                    ":a".to_string(),
+                    crate::graph::types::Value::Integer(10),
+                )],
+                None,
+            )
+            .unwrap();
+        let facts: Arc<[crate::graph::types::Fact]> =
+            Arc::from(storage.get_asserted_facts().unwrap().as_slice());
+        let rules = crate::query::datalog::rules::RuleRegistry::new();
+
+        // Branch with only an Expr clause (no patterns) — patterns.is_empty() = true
+        let branch = vec![WhereClause::Expr {
+            expr: crate::query::datalog::types::Expr::Lit(crate::graph::types::Value::Boolean(
+                true,
+            )),
+            binding: None,
+        }];
+        // Incoming with one binding
+        let mut initial = std::collections::HashMap::new();
+        initial.insert("?x".to_string(), crate::graph::types::Value::Integer(42));
+        let result = evaluate_branch(&branch, vec![initial], facts, &rules, None, None).unwrap();
+        // The expr is truthy so the binding passes through
+        assert_eq!(
+            result.len(),
+            1,
+            "expr-only branch should pass binding through"
+        );
+    }
+
+    #[test]
+    fn test_evaluate_branch_or_clause_produces_empty_bindings() {
+        // Line 879: bindings empty after apply_or_clauses → return Ok([])
+        // This happens when an Or clause produces no results
+        let storage = FactStorage::new();
+        // Empty storage → no facts
+        let facts: Arc<[crate::graph::types::Fact]> =
+            Arc::from(storage.get_asserted_facts().unwrap().as_slice());
+        let rules = crate::query::datalog::rules::RuleRegistry::new();
+
+        // Branch with an Or clause that matches nothing
+        let or_branch = vec![WhereClause::Pattern(Pattern::new(
+            EdnValue::Symbol("?x".to_string()),
+            EdnValue::Keyword(":no-attr".to_string()),
+            EdnValue::Symbol("?v".to_string()),
+        ))];
+        let branch = vec![WhereClause::Or(vec![or_branch])];
+
+        let mut initial = std::collections::HashMap::new();
+        initial.insert("?seed".to_string(), crate::graph::types::Value::Integer(1));
+        let result = evaluate_branch(&branch, vec![initial], facts, &rules, None, None).unwrap();
+        assert_eq!(
+            result.len(),
+            0,
+            "or clause with no matches should yield empty"
+        );
+    }
+
+    #[test]
+    fn test_evaluate_branch_not_join_excludes_matching() {
+        // Line 914: evaluate_not_join returns true inside evaluate_branch → exclude
+        let storage = FactStorage::new();
+        let e1 = Uuid::new_v4();
+        let e2 = Uuid::new_v4();
+        storage
+            .transact(
+                vec![
+                    (
+                        e1,
+                        ":status".to_string(),
+                        crate::graph::types::Value::Keyword(":active".to_string()),
+                    ),
+                    (
+                        e2,
+                        ":status".to_string(),
+                        crate::graph::types::Value::Keyword(":inactive".to_string()),
+                    ),
+                    (
+                        e2,
+                        ":blocked".to_string(),
+                        crate::graph::types::Value::Boolean(true),
+                    ),
+                ],
+                None,
+            )
+            .unwrap();
+        let executor = DatalogExecutor::new(storage);
+        // not-join: exclude entities that have :blocked = true
+        let cmd = parse_datalog_command(
+            "(query [:find ?e :where [?e :status ?s] (not-join [?e] [?e :blocked ?b])])",
+        )
+        .expect("parse failed");
+        let result = executor.execute(cmd).expect("query failed");
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(
+                    results.len(),
+                    1,
+                    "only non-blocked entity should be returned"
+                );
+            }
+            _ => panic!("expected QueryResults"),
+        }
+    }
+
+    #[test]
+    fn test_not_body_expr_only_filters_binding() {
+        // Exercises not_body_matches with patterns.is_empty() (Expr-only not body) at line 561
+        let storage = FactStorage::new();
+        let e1 = Uuid::new_v4();
+        let e2 = Uuid::new_v4();
+        storage
+            .transact(
+                vec![
+                    (
+                        e1,
+                        ":item/price".to_string(),
+                        crate::graph::types::Value::Integer(200),
+                    ),
+                    (
+                        e2,
+                        ":item/price".to_string(),
+                        crate::graph::types::Value::Integer(50),
+                    ),
+                ],
+                None,
+            )
+            .unwrap();
+        let executor = DatalogExecutor::new(storage);
+        // not with expr-only body: exclude items where price > 100
+        let cmd = parse_datalog_command(
+            "(query [:find ?e :where [?e :item/price ?p] (not [(> ?p 100)])])",
+        )
+        .expect("parse failed");
+        let result = executor.execute(cmd).expect("query failed");
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(
+                    results.len(),
+                    1,
+                    "only the item with price 50 should survive"
                 );
             }
             _ => panic!("expected QueryResults"),

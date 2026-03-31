@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.14.0 — Phase 7.5: Tests + Error Coverage (2026-03-31)
+
+### Added
+- `tests/production_patterns_test.rs`: 8 cross-feature integration tests combining not+as-of, not-join+count, count+not, count+valid-at, recursion+not, or+count, or+sum, count+as-of-sequence
+- `tests/error_handling_test.rs`: 8 integration-level error-path tests covering runtime type errors (sum/string, sum/mixed, max/boolean), stratification errors (negative cycles), and parse safety errors (not-join unbound join var, or mismatched vars, aggregate unbound var)
+- Stream 3: ~53 unit tests for parser-unreachable branches in `executor.rs` and `evaluator.rs`
+- `cargo-llvm-cov` coverage workflow documented in `CONTRIBUTING.md`
+
+### Coverage
+- Branch coverage: `executor.rs` ~85.71% (from ~75%), `evaluator.rs` ~89.29% (from ~73%)
+- Remaining uncovered branches: NaN-check defensive code not reachable via public API
+- Total: 617 tests (424 unit + 187 integration + 6 doc)
+
+### Known Issues
+- `or`-with-negative-cycle: stratification does not currently detect negative cycles inside `or` branches. Tracked via `#[ignore]` in `tests/error_handling_test.rs::or_negative_cycle_rejected`.
+
 ## [0.13.1] — 2026-03-27
 
 ### Performance
