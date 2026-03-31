@@ -517,10 +517,10 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 - **7.3** ✅ Disjunction (`or` / `or-join`)
 - **7.4** ✅ Query Optimizer Improvements / `filter_facts_for_query` snapshot fix
 - **7.5** ✅ Tests + Error Coverage (617 tests; executor.rs 85.71%, evaluator.rs 89.29% branch coverage; CI coverage gate + nightly llvm-cov)
-- **7.6** Prepared Statements (parse + plan once, execute many times, temporal bind slots)
-- **7.7** Temporal Metadata Bindings + Range Queries (`:db/valid-from`, `:db/valid-to`, `:db/tx-count` as queryable pseudo-attributes; unlocks Time Interval, Time-Point Lookup, Time-Interval Lookup query classes)
+- **7.6** Temporal Metadata Bindings + Range Queries (`:db/valid-from`, `:db/valid-to`, `:db/tx-count` as queryable pseudo-attributes; unlocks Time Interval, Time-Point Lookup, Time-Interval Lookup query classes)
+- **7.7** Window Functions + UDFs (`sum/count/rank/lag/lead :over (partition-by … :order-by …)`; embedder-registered aggregate and predicate UDFs via `FunctionRegistry`)
+- **7.8** Prepared Statements (parse + plan once, execute many times, temporal bind slots; implemented after full clause set including predicate-argument positions)
 - **7.9** Publish Prep (crates.io — API cleanup, rustdoc, clippy, `unwrap` audit, CI matrix)
-- **7.8** Window Functions + UDFs (`sum/count/rank/lag/lead :over (partition-by … :order-by …)`; embedder-registered aggregate and predicate UDFs via `FunctionRegistry`)
 
 ### 7.1a Stratified Negation — `not` ✅ COMPLETE
 
@@ -629,7 +629,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 **Status**: ✅ Complete (v0.12.0, 2026-03-25)
 
-**Why it's load-bearing**: Required by Phase 7.7 (temporal range queries via `:db/valid-from` / `:db/valid-to`) and Phase 7.8b (UDF predicates via `FunctionRegistry`).
+**Why it's load-bearing**: Required by Phase 7.6 (temporal range queries via `:db/valid-from` / `:db/valid-to`) and Phase 7.7b (UDF predicates via `FunctionRegistry`).
 
 **Syntax**:
 ```datalog
@@ -724,13 +724,13 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 **Timeline**: Completed 2026-03-31
 
-### 7.6 Prepared Statements
+### 7.8 Prepared Statements
 
 **Goal**: Parse and plan a query once; execute it repeatedly with different bind values — including temporal filters — without re-parsing or re-planning on each call.
 
-**Why now (after Phase 7.1–7.4, not before)**:
+**Why now (after Phase 7.1–7.7, not before)**:
 
-Phase 7 adds negation (stratification analysis), aggregation (post-processing), and disjunction (branch evaluation) — after which the plan cost becomes meaningfully larger. Designing bind parameter syntax *after* the full clause set exists also means the syntax doesn't need revisiting when new clause types are added. Before Phase 7, the parse + plan cost is small enough that caching it offers negligible benefit.
+Phase 7 adds negation (stratification analysis), aggregation (post-processing), disjunction (branch evaluation), temporal metadata pseudo-attributes (`:db/valid-from` / `:db/valid-to` / `:db/tx-count`), arithmetic filter predicates, window functions, and UDFs — after which the plan cost becomes meaningfully larger. Designing bind parameter syntax *after* the full clause set exists means the syntax doesn't need revisiting when new clause types are added; in particular, predicate-argument positions (`[(>= ?vf $threshold)]`) introduced in Phase 7.6 and UDF predicate positions from Phase 7.7b are included in the bind-slot position table from the start. Before Phase 7, the parse + plan cost is small enough that caching it offers negligible benefit.
 
 **Motivation — the agentic memory loop**:
 
@@ -821,7 +821,7 @@ The query optimizer uses selectivity estimates to pick join order. Different `:a
 
 ---
 
-### 7.7 Temporal Metadata Bindings + Range Queries
+### 7.6 Temporal Metadata Bindings + Range Queries
 
 **Goal**: Expose `valid_from`, `valid_to`, and `tx_count` as first-class bindable values in Datalog `:where` clauses, unlocking the full four-class taxonomy of temporal queries described in the bi-temporal literature.
 
@@ -829,7 +829,7 @@ The query optimizer uses selectivity estimates to pick join order. Different `:a
 
 Most people are familiar with point-in-time queries (`:as-of`, `:valid-at`), but a complete bi-temporal query model covers four classes:
 
-| Class | Description | Minigraf before 7.7 |
+| Class | Description | Minigraf before 7.6 |
 |---|---|---|
 | **Point-in-Time** | Snapshot of state at a specific moment | ✅ `:as-of` / `:valid-at` |
 | **Time Interval** | Facts alive at any point during [T1, T2] | ⚠️ `:any-valid-time` only (no range predicate) |
@@ -877,7 +877,7 @@ These bind as ordinary `?var` in patterns alongside `:any-valid-time`, which dis
 
 **Dependency on Phase 7.2**:
 
-Arithmetic filter predicates — `[(op ?var literal)]` — are required for Time Interval and Time-Point Lookup queries. These predicates are also needed for aggregation (Phase 7.2). Phase 7.2 should implement the predicate evaluation infrastructure; Phase 7.7 then applies it to temporal metadata bindings.
+Arithmetic filter predicates — `[(op ?var literal)]` — are required for Time Interval and Time-Point Lookup queries. These predicates are also needed for aggregation (Phase 7.2). Phase 7.2 should implement the predicate evaluation infrastructure; Phase 7.6 then applies it to temporal metadata bindings.
 
 **Implementation**:
 
@@ -902,23 +902,23 @@ Arithmetic filter predicates — `[(op ?var literal)]` — are required for Time
 
 ---
 
-### 7.8 Window Functions + UDFs
+### 7.7 Window Functions + UDFs
 
 **Goal**: Expose `SUM OVER`–style window computations natively in Datalog `:find` clauses, and let embedders register custom aggregate and predicate functions at runtime.
 
 **Why here (before 7.9 publish prep)**:
 
-Phase 7.2 aggregation provides the grouping and accumulation infrastructure; Phase 7.7 pseudo-attributes expose `valid_from` / `valid_to` / `tx_count` as bindable values. Window functions are a direct extension: they apply aggregate semantics *over a partition of the current result set* while preserving per-row output — useful for ranked temporal queries and sliding-window analytics without a second query and application-side join.
+Phase 7.2 aggregation provides the grouping and accumulation infrastructure; Phase 7.6 pseudo-attributes expose `valid_from` / `valid_to` / `tx_count` as bindable values. Window functions are a direct extension: they apply aggregate semantics *over a partition of the current result set* while preserving per-row output — useful for ranked temporal queries and sliding-window analytics without a second query and application-side join.
 
 UDFs are the natural generalisation: if the engine can call built-in aggregates via a `FunctionRegistry`, embedders can register their own functions against the same registry. Designing both behind a single `FunctionRegistry` abstraction means neither feature needs to be retrofitted onto the other.
 
 **Dependency on Phase 7.2**: Phase 7.2 grouping and accumulation logic is the implementation substrate for window functions. Phase 7.2 must be complete before this phase begins.
 
-**Dependency on Phase 7.7**: `:db/valid-from` / `:db/valid-to` / `:db/tx-count` as bindable values are the primary ordering/partitioning keys for bi-temporal window queries. Phase 7.7 should be complete or in progress.
+**Dependency on Phase 7.6**: `:db/valid-from` / `:db/valid-to` / `:db/tx-count` as bindable values are the primary ordering/partitioning keys for bi-temporal window queries. Phase 7.6 should be complete or in progress.
 
 ---
 
-#### 7.8a Window Functions
+#### 7.7a Window Functions
 
 **Syntax** (Datomic-inspired, Datalog-native):
 
@@ -977,7 +977,7 @@ UDFs are the natural generalisation: if the engine can call built-in aggregates 
 
 ---
 
-#### 7.8b User-Defined Functions (UDFs)
+#### 7.7b User-Defined Functions (UDFs)
 
 **Goal**: Allow embedders to extend the query engine with custom aggregate functions and filter predicates registered at runtime, using the same `FunctionRegistry` that built-in aggregates and window functions use.
 
@@ -1033,7 +1033,7 @@ db.register_predicate(
 - `FunctionRegistry` struct (new, in `src/query/datalog/functions.rs`): `HashMap<String, AggregateDesc>` + `HashMap<String, PredicateDesc>`
   - `AggregateDesc`: init closure + step closure + finalise closure + optional window-compatible flag
   - `PredicateDesc`: one-argument `Fn(&Value) -> bool` closure
-- All built-in aggregates (Phase 7.2) and window functions (Phase 7.8a) are registered into `FunctionRegistry` at startup — UDFs use exactly the same path
+- All built-in aggregates (Phase 7.2) and window functions (Phase 7.7a) are registered into `FunctionRegistry` at startup — UDFs use exactly the same path
 - Parser: recognise registered function names in `:find` aggregate positions and `:where` predicate call positions at parse time (registry consulted at parse time for validation)
 - `Minigraf::register_aggregate(name, init, step, finalise)` and `Minigraf::register_predicate(name, fn)` — new public API methods, callable before or after `open()`
 - Functions are not persisted to the `.graph` file — they must be re-registered on each open, exactly as SQLite requires (this is correct: executable code is never stored in the data file)
@@ -1051,9 +1051,9 @@ db.register_predicate(
 
 ---
 
-**Phase 7.8 deliverable**: Window aggregates (`sum over`, `rank`, `lag`, `lead`, etc.) expressible natively in Datalog `:find`; embedder-registered aggregate and predicate UDFs callable from any query; all built-in aggregates and window functions unified under `FunctionRegistry`; new public API methods included in Phase 7.9 publish surface
+**Phase 7.7 deliverable**: Window aggregates (`sum over`, `rank`, `lag`, `lead`, etc.) expressible natively in Datalog `:find`; embedder-registered aggregate and predicate UDFs callable from any query; all built-in aggregates and window functions unified under `FunctionRegistry`; new public API methods included in Phase 7.9 publish surface
 
-**Estimated total Phase 7.8 complexity**: 4-6 weeks
+**Estimated total Phase 7.7 complexity**: 4-6 weeks
 
 ---
 
@@ -1497,31 +1497,24 @@ Push `Expr` predicate clauses (e.g. `[(> ?age 30)]`) down to filter bindings as 
 - Aggregation (`count`, `sum`, `min`, `max`, `distinct`, `:with`) + arithmetic filter predicates
 - Disjunction (`or` / `or-join`)
 - Query optimizer improvements (cost-based, rule evaluation)
-- Prepared statements with temporal bind slots
 - Temporal metadata pseudo-attributes (`:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`)
 - Full four-class temporal query taxonomy (point-in-time, time interval, time-point lookup, time-interval lookup)
 - Window functions (`sum/count/rank/lag/lead :over (partition-by … :order-by …)`) — `SUM OVER`–style analytics in Datalog `:find`
 - UDFs: embedder-registered aggregate and predicate functions via `FunctionRegistry`
+- Prepared statements with temporal bind slots (including predicate-argument and UDF positions)
 - ≥90% branch coverage
-
-### v1.1.0 - 🎯 Phase 8 (Cross-platform)
-- WASM support (browser + WASI)
-- Mobile bindings (iOS + Android)
-- Language bindings (Python, C, Node.js)
-
-### v1.0.0 - 🎯 Production Ready (12-15 months)
-- Stable API
-- Stable file format
-- Comprehensive tests
-- Full documentation
-- Performance validated
-- Backwards compatibility promise
+- Stable API, stable file format, comprehensive tests, full documentation, performance validated
 
 **Stability Promise**: After v1.0.0, we commit to:
 - Backwards-compatible file format (decades)
 - Stable public API (semantic versioning)
 - Migration tools for any format changes
 - Long-term support
+
+### v1.1.0 - 🎯 Phase 8 (Cross-platform)
+- WASM support (browser + WASI)
+- Mobile bindings (iOS + Android)
+- Language bindings (Python, C, Node.js)
 
 ---
 
@@ -1570,7 +1563,7 @@ When evaluating features, ask:
 - ✅ Phase 7.3: Complete (March 2026) - Disjunction (`or` / `or-join`), 562 tests
 - ✅ Phase 7.4: Complete (March 2026) - `filter_facts_for_query` snapshot fix, eliminate 4-index rebuild, 568 tests
 - ✅ Phase 7.5: Complete (March 2026) - Cross-feature tests, error-path coverage, ~86-89% branch coverage, 617 tests
-- 🎯 Phase 7.6–7.7: prepared statements, temporal metadata bindings; ≥90% branch coverage - **NEXT**
+- 🎯 Phase 7.6–7.8: temporal metadata bindings, window functions + UDFs, prepared statements; ≥90% branch coverage - **NEXT**
 - 🎯 Phase 8: 3-4 months (Cross-platform — WASM, mobile, language bindings)
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)
 - 🎯 **v1.0.0: 9-12 months**
@@ -1581,7 +1574,7 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: Phase 7.5 Complete — Phase 7.6 Next (Prepared Statements)
+**Right Now**: Phase 7.5 Complete — Phase 7.6 Next (Temporal Metadata Bindings + Range Queries)
 
 **Phase 7.5 Achievements**:
 1. ✅ `tests/production_patterns_test.rs` — 8 cross-feature integration tests (not+as-of, not-join+count, recursion+not, or+count, etc.)
@@ -1592,8 +1585,8 @@ When evaluating features, ask:
 6. ✅ Known issue documented: or+negative-cycle not rejected by stratification (1 ignored test)
 
 **Immediate Next Steps (Phase 7.6)**:
-1. Prepared statements — parse + plan once, execute many times
-2. Temporal bind slots (`$tx`, `$date`, `$entity`)
+1. Temporal metadata pseudo-attributes — `:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id` as bindable `:where` clause values
+2. Arithmetic filter predicates applied to temporal metadata (Time Interval, Time-Point Lookup, Time-Interval Lookup query classes)
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)

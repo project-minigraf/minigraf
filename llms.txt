@@ -4,8 +4,8 @@
 
 Minigraf is the SQLite of graph databases: zero configuration, one `.graph` file, embedded as a library. It stores facts in an Entity-Attribute-Value (EAV) model and queries them with Datalog, including recursive rules for graph traversal and stratified negation (`not` / `not-join`). Every fact carries two independent time dimensions (transaction time and valid time), enabling full bi-temporal time travel.
 
-**Current version**: 0.13.1 (pre-1.0 — API and file format may change before v1.0)
-**Maturity**: See [README](https://github.com/adityamukho/minigraf/blob/main/README.md) for current phase and [ROADMAP](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md) for the full plan. ACID + WAL are production-quality. Covering indexes (EAVT/AEVT/AVET/VAET), packed page storage, LRU page cache, and on-disk B+tree indexes are complete. Stratified negation, scalar aggregation, arithmetic/predicate expression clauses, and disjunction (`or`/`or-join`) are complete. Non-rules query path avoids all `FactStorage` index reconstruction (`filter_facts_for_query` snapshot fix, v0.13.1). Not recommended for production use until v1.0 (file format stability guaranteed only after Phase 8).
+**Current version**: 0.14.0 (pre-1.0 — API and file format may change before v1.0)
+**Maturity**: See [README](https://github.com/adityamukho/minigraf/blob/main/README.md) for current phase and [ROADMAP](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md) for the full plan. ACID + WAL are production-quality. Covering indexes (EAVT/AEVT/AVET/VAET), packed page storage, LRU page cache, and on-disk B+tree indexes are complete. Stratified negation, scalar aggregation, arithmetic/predicate expression clauses, and disjunction (`or`/`or-join`) are complete. Cross-feature integration tests and error-path coverage complete; ~86–89% branch coverage, 617 tests (Phase 7.5). Not recommended for production use until v1.0 (file format stability guaranteed only after Phase 8).
 
 ## Use for
 
