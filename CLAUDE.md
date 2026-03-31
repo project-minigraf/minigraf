@@ -165,7 +165,7 @@ Auto-migrates v1/v2/v3/v4/v5 → v6 on open/checkpoint.
 
 ## Test Coverage
 
-**568 tests passing** (390 unit + 172 integration + 6 doc).
+**617 tests passing** (424 unit + 187 integration + 6 doc).
 See `TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.

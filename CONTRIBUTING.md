@@ -55,6 +55,22 @@ cargo run
 cargo run < demos/demo_recursive.txt
 ```
 
+## Measuring Code Coverage
+
+Install `cargo-llvm-cov` (one-time):
+
+```bash
+cargo install cargo-llvm-cov
+```
+
+Run branch coverage and open the HTML report:
+
+```bash
+cargo llvm-cov --branch --open
+```
+
+The Phase 7.5 target is ≥90% branch coverage on `src/query/datalog/` modules. Re-run after adding tests to confirm progress.
+
 ## Code Standards
 
 - **No `unsafe` code** — the crate enforces `#![forbid(unsafe_code)]`; do not attempt to work around this

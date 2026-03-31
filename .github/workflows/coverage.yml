@@ -28,10 +28,11 @@ jobs:
         run: cargo install cargo-tarpaulin
 
       - name: Generate coverage
-        run: cargo tarpaulin --out Xml --timeout 300
+        run: cargo tarpaulin --out Xml --timeout 300 --fail-under 75
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: ./cobertura.xml
-          fail_ci_if_error: false
+          fail_ci_if_error: true

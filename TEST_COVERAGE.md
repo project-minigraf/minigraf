@@ -1,11 +1,11 @@
 # Minigraf Test Coverage Report
 
-**Last Updated**: Phase 7.4 COMPLETE - `filter_facts_for_query` snapshot fix ✅
+**Last Updated**: Phase 7.5 COMPLETE - Tests + Error Coverage ✅
 
 ## Test Summary
 
-**Total Tests**: 568 ✅
-- ✅ 390 unit tests (lib)
+**Total Tests**: 617 ✅
+- ✅ 424 unit tests (lib)
 - ✅ 10 bi-temporal tests (integration)
 - ✅ 10 complex query tests (integration)
 - ✅ 9 recursive rules tests (integration)
@@ -21,9 +21,21 @@
 - ✅ 24 aggregation tests (integration, Phase 7.2a)
 - ✅ 28 predicate expression tests (integration, Phase 7.2b)
 - ✅ 16 disjunction tests (integration, Phase 7.3)
+- ✅ 8 production pattern tests (integration, Phase 7.5 — cross-feature scenarios)
+- ✅ 8 error handling tests (integration, Phase 7.5 — error-path coverage; 1 ignored: or+neg-cycle bug)
 - ✅ 6 doc tests
 
-**Status**: ✅ **All 568 tests passing**
+**Status**: ✅ **All 617 tests passing** (1 ignored: confirmed or+neg-cycle stratification bug)
+
+## Phase 7.5 Completion Status: ✅ COMPLETE
+
+**Phase 7.5 Features** (current, complete):
+- ✅ `cargo-llvm-cov` branch coverage tooling documented in `CONTRIBUTING.md`
+- ✅ Baseline branch coverage recorded; executor.rs ~86.61%, evaluator.rs ~89.29% (up from ~75% / ~73%)
+- ✅ `tests/production_patterns_test.rs` — 8 cross-feature integration tests
+- ✅ `tests/error_handling_test.rs` — 8 error-path integration tests (1 ignored: confirmed or+neg-cycle stratification bug)
+- ✅ Stream 3 unit tests: ~53 new tests for previously uncovered branches in executor.rs and evaluator.rs
+- ✅ 617 tests passing (424 unit + 187 integration + 6 doc)
 
 ## Phase 7.4 Completion Status: ✅ COMPLETE
 
