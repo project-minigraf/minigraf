@@ -2973,4 +2973,73 @@ mod expr_eval_tests {
             _ => panic!("expected QueryResults"),
         }
     }
+
+    // ── Stream 3: branches unreachable via the parser ─────────────────────────
+
+    #[test]
+    fn execute_transact_non_keyword_attribute_error() {
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage);
+        // Construct a transact with a String attribute (not a keyword)
+        let cmd = DatalogCommand::Transact(Transaction {
+            facts: vec![Pattern::new(
+                EdnValue::Keyword(":e".to_string()),
+                EdnValue::String("not-a-keyword".to_string()),
+                EdnValue::String("value".to_string()),
+            )],
+            valid_from: None,
+            valid_to: None,
+        });
+        let r = executor.execute(cmd);
+        assert!(r.is_err(), "non-keyword attribute in transact must fail");
+    }
+
+    #[test]
+    fn execute_retract_non_keyword_attribute_error() {
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage);
+        let cmd = DatalogCommand::Retract(Transaction {
+            facts: vec![Pattern::new(
+                EdnValue::Keyword(":e".to_string()),
+                EdnValue::Integer(42),
+                EdnValue::String("value".to_string()),
+            )],
+            valid_from: None,
+            valid_to: None,
+        });
+        let r = executor.execute(cmd);
+        assert!(r.is_err(), "non-keyword attribute in retract must fail");
+    }
+
+    #[test]
+    fn execute_rule_empty_head_error() {
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage);
+        let cmd = DatalogCommand::Rule(Rule {
+            head: vec![],
+            body: vec![WhereClause::Pattern(Pattern::new(
+                EdnValue::Symbol("?x".to_string()),
+                EdnValue::Keyword(":a".to_string()),
+                EdnValue::Symbol("?v".to_string()),
+            ))],
+        });
+        let r = executor.execute(cmd);
+        assert!(r.is_err(), "rule with empty head must fail");
+    }
+
+    #[test]
+    fn execute_rule_non_symbol_head_error() {
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage);
+        let cmd = DatalogCommand::Rule(Rule {
+            head: vec![EdnValue::Integer(99)], // not a Symbol
+            body: vec![WhereClause::Pattern(Pattern::new(
+                EdnValue::Symbol("?x".to_string()),
+                EdnValue::Keyword(":a".to_string()),
+                EdnValue::Symbol("?v".to_string()),
+            ))],
+        });
+        let r = executor.execute(cmd);
+        assert!(r.is_err(), "rule head starting with non-symbol must fail");
+    }
 }
