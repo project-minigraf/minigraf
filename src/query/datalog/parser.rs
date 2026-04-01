@@ -1080,31 +1080,28 @@ fn parse_query_pattern(vec: &[EdnValue]) -> Result<Pattern, String> {
     }
 
     // Reject :db/* in entity position
-    if let EdnValue::Keyword(k) = &vec[0] {
-        if PseudoAttr::from_keyword(k).is_some() {
+    if let EdnValue::Keyword(k) = &vec[0]
+        && PseudoAttr::from_keyword(k).is_some() {
             return Err(format!(
                 "pseudo-attribute {} is not valid in entity position",
                 k
             ));
         }
-    }
 
     // Reject :db/* in value position
-    if let EdnValue::Keyword(k) = &vec[2] {
-        if PseudoAttr::from_keyword(k).is_some() {
+    if let EdnValue::Keyword(k) = &vec[2]
+        && PseudoAttr::from_keyword(k).is_some() {
             return Err(format!(
                 "pseudo-attribute {} is not valid in value position",
                 k
             ));
         }
-    }
 
     // Detect pseudo-attribute in attribute position
-    if let EdnValue::Keyword(k) = &vec[1] {
-        if let Some(pseudo) = PseudoAttr::from_keyword(k) {
+    if let EdnValue::Keyword(k) = &vec[1]
+        && let Some(pseudo) = PseudoAttr::from_keyword(k) {
             return Ok(Pattern::pseudo(vec[0].clone(), pseudo, vec[2].clone()));
         }
-    }
 
     Pattern::from_edn(vec)
 }
