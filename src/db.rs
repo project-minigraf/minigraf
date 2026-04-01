@@ -1116,4 +1116,46 @@ mod tests {
         let facts = db2.inner.fact_storage.get_asserted_facts().unwrap();
         assert_eq!(facts.len(), 1, "facts must survive checkpoint");
     }
+
+    #[test]
+    fn test_materialize_transaction_pseudo_attr_error() {
+        // Exercises db.rs line ~577: Pseudo(_) bail! in materialize_transaction
+        use crate::query::datalog::types::EdnValue;
+        use crate::query::datalog::types::{Pattern, PseudoAttr, Transaction};
+        let tx = Transaction {
+            facts: vec![Pattern::pseudo(
+                EdnValue::Keyword(":alice".to_string()),
+                PseudoAttr::ValidFrom,
+                EdnValue::Integer(0),
+            )],
+            valid_from: None,
+            valid_to: None,
+        };
+        let r = Minigraf::materialize_transaction(&tx);
+        assert!(
+            r.is_err(),
+            "materialize_transaction with pseudo-attr must fail"
+        );
+    }
+
+    #[test]
+    fn test_materialize_retraction_pseudo_attr_error() {
+        // Exercises db.rs line ~614: Pseudo(_) bail! in materialize_retraction
+        use crate::query::datalog::types::EdnValue;
+        use crate::query::datalog::types::{Pattern, PseudoAttr, Transaction};
+        let tx = Transaction {
+            facts: vec![Pattern::pseudo(
+                EdnValue::Keyword(":alice".to_string()),
+                PseudoAttr::TxCount,
+                EdnValue::Integer(0),
+            )],
+            valid_from: None,
+            valid_to: None,
+        };
+        let r = Minigraf::materialize_retraction(&tx);
+        assert!(
+            r.is_err(),
+            "materialize_retraction with pseudo-attr must fail"
+        );
+    }
 }

@@ -3110,6 +3110,44 @@ mod expr_eval_tests {
     }
 
     #[test]
+    fn execute_transact_pseudo_attr_error() {
+        // Exercises executor.rs line 103: Pseudo(_) arm in execute_transact
+        use crate::query::datalog::types::{PseudoAttr, Transaction};
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage);
+        let cmd = DatalogCommand::Transact(Transaction {
+            facts: vec![Pattern::pseudo(
+                EdnValue::Keyword(":e".to_string()),
+                PseudoAttr::ValidFrom,
+                EdnValue::Integer(0),
+            )],
+            valid_from: None,
+            valid_to: None,
+        });
+        let r = executor.execute(cmd);
+        assert!(r.is_err(), "transacting a pseudo-attribute must fail");
+    }
+
+    #[test]
+    fn execute_retract_pseudo_attr_error() {
+        // Exercises executor.rs line 139: Pseudo(_) arm in execute_retract
+        use crate::query::datalog::types::{PseudoAttr, Transaction};
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage);
+        let cmd = DatalogCommand::Retract(Transaction {
+            facts: vec![Pattern::pseudo(
+                EdnValue::Keyword(":e".to_string()),
+                PseudoAttr::TxCount,
+                EdnValue::Integer(0),
+            )],
+            valid_from: None,
+            valid_to: None,
+        });
+        let r = executor.execute(cmd);
+        assert!(r.is_err(), "retracting a pseudo-attribute must fail");
+    }
+
+    #[test]
     fn execute_rule_empty_head_error() {
         let storage = FactStorage::new();
         let executor = DatalogExecutor::new(storage);

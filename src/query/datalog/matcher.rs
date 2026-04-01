@@ -918,4 +918,99 @@ mod tests {
         assert_eq!(r2.len(), 1, "second pattern should bind ?vf");
         assert_eq!(r2[0].get("?vf"), Some(&Value::Integer(1577836800000)));
     }
+
+    #[test]
+    fn test_pseudo_attr_entity_non_uuid_non_keyword_falls_through() {
+        // Exercises matcher.rs line 302: `_ => None` when resolved entity is
+        // neither Uuid nor Keyword — falls through to scan path.
+        use crate::graph::storage::net_asserted_facts;
+        use crate::graph::types::Value as GValue;
+        use std::sync::Arc;
+
+        let storage = FactStorage::new();
+        let alice_id = Uuid::new_v4();
+        storage
+            .transact(
+                vec![(
+                    alice_id,
+                    ":item/label".to_string(),
+                    GValue::String("x".to_string()),
+                )],
+                None,
+            )
+            .unwrap();
+
+        let all_facts: Arc<[Fact]> =
+            Arc::from(net_asserted_facts(storage.get_all_facts().unwrap()));
+        let matcher = PatternMatcher::from_slice(all_facts);
+
+        // Entity is an Integer — neither Uuid nor Keyword → `_ => None` path
+        let pattern = Pattern {
+            entity: EdnValue::Integer(99),
+            attribute: AttributeSpec::Pseudo(PseudoAttr::ValidFrom),
+            value: EdnValue::Symbol("?vf".to_string()),
+            valid_from: None,
+            valid_to: None,
+        };
+        // Falls through to scan; Integer entity won't match any stored UUID → 0 results
+        let results = matcher.match_pattern(&pattern);
+        assert_eq!(
+            results.len(),
+            0,
+            "non-uuid/keyword entity should yield no matches"
+        );
+    }
+
+    #[test]
+    fn test_pseudo_attr_hidden_key_value_mismatch_returns_empty() {
+        // Exercises matcher.rs line 323: `return vec![]` when the stored hidden-key
+        // value doesn't match the pattern value component.
+        use crate::graph::storage::net_asserted_facts;
+        use crate::graph::types::Value as GValue;
+        use std::sync::Arc;
+
+        let storage = FactStorage::new();
+        let alice_id = Uuid::new_v4();
+        storage
+            .transact(
+                vec![(
+                    alice_id,
+                    ":item/label".to_string(),
+                    GValue::String("y".to_string()),
+                )],
+                None,
+            )
+            .unwrap();
+
+        let all_facts: Arc<[Fact]> =
+            Arc::from(net_asserted_facts(storage.get_all_facts().unwrap()));
+        let matcher = PatternMatcher::from_slice(all_facts.clone());
+
+        // Seed bindings with the real-attr pattern so hidden keys are populated
+        let p1 = Pattern {
+            entity: EdnValue::Symbol("?e".to_string()),
+            attribute: AttributeSpec::Real(EdnValue::Keyword(":item/label".to_string())),
+            value: EdnValue::Symbol("_".to_string()),
+            valid_from: None,
+            valid_to: None,
+        };
+        let seeded = matcher.match_pattern(&p1);
+        assert_eq!(seeded.len(), 1, "seed should match one fact");
+
+        // Ask for :db/valid-from with an impossible constant value (-999)
+        // The hidden key exists but -999 won't match the real valid_from → vec![]
+        let p2 = Pattern {
+            entity: EdnValue::Symbol("?e".to_string()),
+            attribute: AttributeSpec::Pseudo(PseudoAttr::ValidFrom),
+            value: EdnValue::Integer(-999),
+            valid_from: None,
+            valid_to: None,
+        };
+        let results = matcher.match_patterns_seeded(&[p2], seeded);
+        assert_eq!(
+            results.len(),
+            0,
+            "mismatched constant should return no bindings"
+        );
+    }
 }
