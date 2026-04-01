@@ -400,3 +400,150 @@ fn valid_at_succeeds_without_any_valid_time() {
         ":db/valid-at must not require :any-valid-time"
     );
 }
+
+// ─── Coverage Gap Tests (Phase 7.6) ─────────────────────────────────────────
+
+/// Gap 1: Hard error in rules-based query path — per-fact pseudo-attr without :any-valid-time.
+/// Exercises executor.rs lines 341–353 (execute_query_with_rules guard).
+#[test]
+fn runtime_error_rules_per_fact_pseudo_without_any_valid_time() {
+    let db = db();
+    db.execute(r#"(transact [[:alice :person/name "Alice"] [:alice :parent/of :bob]])"#)
+        .unwrap();
+    // Correct rule syntax: head and body patterns in one vector.
+    db.execute(r#"(rule [(ancestor ?x ?y) [?x :parent/of ?y]])"#)
+        .unwrap();
+    let result = db.execute(
+        r#"
+        (query [:find ?y
+                :where [(ancestor :alice ?y)]
+                       [:alice :db/tx-count ?tc]])
+    "#,
+    );
+    assert!(
+        result.is_err(),
+        ":db/tx-count in rules query requires :any-valid-time"
+    );
+}
+
+/// Gap 2: or-clause query with no :valid-at exercises the evaluate_branch None path.
+/// Exercises executor.rs lines 930–931 (branch_valid_at_value for None valid_at).
+#[test]
+fn or_clause_no_valid_at_executes() {
+    let db = db();
+    db.execute(r#"(transact [[:alice :person/name "Alice"]])"#)
+        .unwrap();
+    db.execute(r#"(transact [[:bob :person/name "Bob"]])"#)
+        .unwrap();
+
+    let r = db
+        .execute(
+            r#"
+        (query [:find ?n
+                :where [?e :person/name ?n]
+                       (or [?e :person/name "Alice"] [?e :person/name "Bob"])])
+    "#,
+        )
+        .unwrap();
+    let rows = results(&r);
+    assert_eq!(rows.len(), 2, "both Alice and Bob matched via or-clause");
+}
+
+/// Gap 3: Pseudo-attr as the sole where-clause pattern.
+/// Exercises matcher.rs lines 119–126 (match_fact_against_pattern Pseudo arm via scan).
+#[test]
+fn pseudo_attr_as_sole_pattern() {
+    let db = db();
+    // 2022-01-01 = 1640995200000
+    db.execute(r#"(transact {:valid-from "2022-01-01"} [[:alice :person/name "Alice"]])"#)
+        .unwrap();
+
+    let r = db
+        .execute(
+            r#"
+        (query [:find ?vf
+                :any-valid-time
+                :where [:alice :db/valid-from ?vf]])
+    "#,
+        )
+        .unwrap();
+    let rows = results(&r);
+    assert_eq!(rows.len(), 1, "one fact for alice");
+    assert_eq!(
+        rows[0][0],
+        Value::Integer(1640995200000),
+        "valid-from = 2022-01-01"
+    );
+}
+
+/// Gap 4: Pseudo-attr constant filter — hidden key found but value doesn't match.
+/// Exercises matcher.rs lines 322–323 (fast-path: stored_value != constant → return vec![]).
+#[test]
+fn pseudo_attr_constant_filter_no_match() {
+    let db = db();
+    db.execute(r#"(transact {:valid-from "2022-01-01"} [[:alice :person/name "Alice"]])"#)
+        .unwrap();
+
+    let r = db
+        .execute(
+            r#"
+        (query [:find ?n
+                :any-valid-time
+                :where [:alice :person/name ?n]
+                       [:alice :db/valid-from 9999999999999]])
+    "#,
+        )
+        .unwrap();
+    let rows = results(&r);
+    assert_eq!(rows.len(), 0, "no facts with valid-from = 9999999999999");
+}
+
+/// Gap 5: not-join body containing a pseudo-attr pattern.
+/// Exercises evaluator.rs line 361 (substitute_pattern Pseudo arm in evaluate_not_join).
+#[test]
+fn not_join_body_with_pseudo_attr() {
+    let db = db();
+    // 2020-01-01 = 1577836800000
+    db.execute(r#"(transact {:valid-from "2020-01-01"} [[:alice :person/name "Alice"]])"#)
+        .unwrap();
+    db.execute(r#"(transact {:valid-from "2022-01-01"} [[:bob :person/name "Bob"]])"#)
+        .unwrap();
+
+    // Find entities whose valid-from is NOT 2020-01-01 (= 1577836800000).
+    // The not-join body contains a pseudo-attr pattern [:db/valid-from 1577836800000],
+    // which triggers substitute_pattern's Pseudo arm.
+    let r = db
+        .execute(
+            r#"
+        (query [:find ?e
+                :any-valid-time
+                :where [?e :person/name _]
+                       (not-join [?e]
+                         [?e :db/valid-from 1577836800000])])
+    "#,
+        )
+        .unwrap();
+    let rows = results(&r);
+    // Only bob survives (alice's valid-from matches the excluded value)
+    assert_eq!(
+        rows.len(),
+        1,
+        "alice excluded by not-join on valid-from; only bob survives"
+    );
+}
+
+/// Gap 6: Wrong-length pattern in where clause is a parse error.
+/// Exercises parser.rs lines 1076–1079 (vec.len() != 3 check in parse_query_pattern).
+#[test]
+fn parse_error_wrong_length_where_pattern() {
+    let db = db();
+    let result = db.execute(
+        r#"
+        (query [:find ?e :where [?e :person/name]])
+    "#,
+    );
+    assert!(
+        result.is_err(),
+        "2-element where pattern must be a parse error"
+    );
+}
