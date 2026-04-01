@@ -1081,27 +1081,30 @@ fn parse_query_pattern(vec: &[EdnValue]) -> Result<Pattern, String> {
 
     // Reject :db/* in entity position
     if let EdnValue::Keyword(k) = &vec[0]
-        && PseudoAttr::from_keyword(k).is_some() {
-            return Err(format!(
-                "pseudo-attribute {} is not valid in entity position",
-                k
-            ));
-        }
+        && PseudoAttr::from_keyword(k).is_some()
+    {
+        return Err(format!(
+            "pseudo-attribute {} is not valid in entity position",
+            k
+        ));
+    }
 
     // Reject :db/* in value position
     if let EdnValue::Keyword(k) = &vec[2]
-        && PseudoAttr::from_keyword(k).is_some() {
-            return Err(format!(
-                "pseudo-attribute {} is not valid in value position",
-                k
-            ));
-        }
+        && PseudoAttr::from_keyword(k).is_some()
+    {
+        return Err(format!(
+            "pseudo-attribute {} is not valid in value position",
+            k
+        ));
+    }
 
     // Detect pseudo-attribute in attribute position
     if let EdnValue::Keyword(k) = &vec[1]
-        && let Some(pseudo) = PseudoAttr::from_keyword(k) {
-            return Ok(Pattern::pseudo(vec[0].clone(), pseudo, vec[2].clone()));
-        }
+        && let Some(pseudo) = PseudoAttr::from_keyword(k)
+    {
+        return Ok(Pattern::pseudo(vec[0].clone(), pseudo, vec[2].clone()));
+    }
 
     Pattern::from_edn(vec)
 }
@@ -2382,7 +2385,9 @@ mod tests {
             DatalogCommand::Query(q) => {
                 let patterns = q.get_patterns();
                 assert!(
-                    patterns.iter().any(|p| matches!(p.attribute, AttributeSpec::Pseudo(_))),
+                    patterns
+                        .iter()
+                        .any(|p| matches!(p.attribute, AttributeSpec::Pseudo(_))),
                     "expected a Pseudo attribute pattern"
                 );
             }
@@ -2393,17 +2398,23 @@ mod tests {
     #[test]
     fn test_parse_error_pseudo_attr_entity_position() {
         let result = parse_datalog_command(
-            "(query [:find ?v :any-valid-time :where [:db/valid-from :person/name ?v]])"
+            "(query [:find ?v :any-valid-time :where [:db/valid-from :person/name ?v]])",
         );
-        assert!(result.is_err(), "pseudo-attr in entity position should error");
+        assert!(
+            result.is_err(),
+            "pseudo-attr in entity position should error"
+        );
     }
 
     #[test]
     fn test_parse_error_pseudo_attr_value_position() {
         let result = parse_datalog_command(
-            "(query [:find ?e :any-valid-time :where [?e :person/name :db/valid-from]])"
+            "(query [:find ?e :any-valid-time :where [?e :person/name :db/valid-from]])",
         );
-        assert!(result.is_err(), "pseudo-attr in value position should error");
+        assert!(
+            result.is_err(),
+            "pseudo-attr in value position should error"
+        );
     }
 }
 

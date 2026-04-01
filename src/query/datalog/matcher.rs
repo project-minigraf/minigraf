@@ -106,7 +106,10 @@ impl PatternMatcher {
                 let eid = fact.entity.to_string();
                 bindings.insert(format!("__fvf_{}", eid), Value::Integer(fact.valid_from));
                 bindings.insert(format!("__fvt_{}", eid), Value::Integer(fact.valid_to));
-                bindings.insert(format!("__ftc_{}", eid), Value::Integer(fact.tx_count as i64));
+                bindings.insert(
+                    format!("__ftc_{}", eid),
+                    Value::Integer(fact.tx_count as i64),
+                );
                 bindings.insert(format!("__fti_{}", eid), Value::Integer(fact.tx_id as i64));
             }
             AttributeSpec::Pseudo(pseudo) => {
@@ -114,10 +117,10 @@ impl PatternMatcher {
                 // field to the value position variable (or match against a constant).
                 let pseudo_value = match pseudo {
                     PseudoAttr::ValidFrom => Value::Integer(fact.valid_from),
-                    PseudoAttr::ValidTo   => Value::Integer(fact.valid_to),
-                    PseudoAttr::TxCount   => Value::Integer(fact.tx_count as i64),
-                    PseudoAttr::TxId      => Value::Integer(fact.tx_id as i64),
-                    PseudoAttr::ValidAt   => self.valid_at_value.clone(),
+                    PseudoAttr::ValidTo => Value::Integer(fact.valid_to),
+                    PseudoAttr::TxCount => Value::Integer(fact.tx_count as i64),
+                    PseudoAttr::TxId => Value::Integer(fact.tx_id as i64),
+                    PseudoAttr::ValidAt => self.valid_at_value.clone(),
                 };
                 if !self.match_component(&pattern.value, &pseudo_value, &mut bindings) {
                     return None;
@@ -295,18 +298,16 @@ impl PatternMatcher {
             let resolved_entity = self.apply_binding_to_component(&pattern.entity, existing);
             let entity_uuid_opt: Option<uuid::Uuid> = match &resolved_entity {
                 EdnValue::Uuid(u) => Some(*u),
-                EdnValue::Keyword(k) => {
-                    edn_to_entity_id(&EdnValue::Keyword(k.clone())).ok()
-                }
+                EdnValue::Keyword(k) => edn_to_entity_id(&EdnValue::Keyword(k.clone())).ok(),
                 _ => None,
             };
             if let Some(uuid) = entity_uuid_opt {
                 let eid = uuid.to_string();
                 let hidden_key = match pseudo {
                     PseudoAttr::ValidFrom => format!("__fvf_{}", eid),
-                    PseudoAttr::ValidTo   => format!("__fvt_{}", eid),
-                    PseudoAttr::TxCount   => format!("__ftc_{}", eid),
-                    PseudoAttr::TxId      => format!("__fti_{}", eid),
+                    PseudoAttr::ValidTo => format!("__fvt_{}", eid),
+                    PseudoAttr::TxCount => format!("__ftc_{}", eid),
+                    PseudoAttr::TxId => format!("__fti_{}", eid),
                     // ValidAt is a query-level constant (not per-fact); fall through to
                     // the normal scan path so each fact produces one binding (all
                     // identical). Task 5 (executor) will inject the correct value.
@@ -468,8 +469,8 @@ mod tests {
 
     #[test]
     fn test_from_slice_with_valid_at_field() {
-        use std::sync::Arc;
         use crate::graph::types::Value;
+        use std::sync::Arc;
         let facts: Arc<[_]> = Arc::from(vec![]);
         let m = PatternMatcher::from_slice_with_valid_at(facts, Value::Integer(12345));
         assert_eq!(m.valid_at_value, Value::Integer(12345));
@@ -866,8 +867,8 @@ mod tests {
     fn test_pseudo_attr_valid_from_join() {
         // Simulates the time_interval_entire_interval test pattern:
         // [?e :item/label _] [?e :db/valid-from ?vf]
-        use crate::graph::types::{Fact, Value};
         use crate::graph::storage::net_asserted_facts;
+        use crate::graph::types::{Fact, Value};
         use crate::query::datalog::types::{AttributeSpec, PseudoAttr};
         use uuid::Uuid;
 
@@ -875,17 +876,23 @@ mod tests {
         let e1 = Uuid::new_v4();
 
         // Transact e1 with explicit valid-from = 1577836800000
-        let opt = crate::graph::types::TransactOptions::new(
-            Some(1577836800000),
-            Some(1735689600000),
-        );
-        storage.transact_batch(
-            vec![(e1, ":item/label".to_string(), Value::String("A".to_string()), None)],
-            Some(opt),
-        ).unwrap();
+        let opt =
+            crate::graph::types::TransactOptions::new(Some(1577836800000), Some(1735689600000));
+        storage
+            .transact_batch(
+                vec![(
+                    e1,
+                    ":item/label".to_string(),
+                    Value::String("A".to_string()),
+                    None,
+                )],
+                Some(opt),
+            )
+            .unwrap();
 
         // Get all facts
-        let all_facts: Arc<[Fact]> = Arc::from(net_asserted_facts(storage.get_all_facts().unwrap()));
+        let all_facts: Arc<[Fact]> =
+            Arc::from(net_asserted_facts(storage.get_all_facts().unwrap()));
         let matcher = PatternMatcher::from_slice(all_facts.clone());
 
         // First pattern: [?e :item/label _]

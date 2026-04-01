@@ -100,7 +100,7 @@ impl DatalogExecutor {
                 AttributeSpec::Real(EdnValue::Keyword(k)) => k.clone(),
                 AttributeSpec::Real(_) => return Err(anyhow!("Attribute must be a keyword")),
                 AttributeSpec::Pseudo(_) => {
-                    return Err(anyhow!("Cannot transact a pseudo-attribute"))
+                    return Err(anyhow!("Cannot transact a pseudo-attribute"));
                 }
             };
 
@@ -136,7 +136,7 @@ impl DatalogExecutor {
                 AttributeSpec::Real(EdnValue::Keyword(k)) => k.clone(),
                 AttributeSpec::Real(_) => return Err(anyhow!("Attribute must be a keyword")),
                 AttributeSpec::Pseudo(_) => {
-                    return Err(anyhow!("Cannot transact a pseudo-attribute"))
+                    return Err(anyhow!("Cannot transact a pseudo-attribute"));
                 }
             };
 
@@ -226,7 +226,10 @@ impl DatalogExecutor {
 
         // Apply temporal filters before pattern matching
         let filtered_facts = self.filter_facts_for_query(&query)?;
-        let matcher = PatternMatcher::from_slice_with_valid_at(filtered_facts.clone(), valid_at_value.clone());
+        let matcher = PatternMatcher::from_slice_with_valid_at(
+            filtered_facts.clone(),
+            valid_at_value.clone(),
+        );
         let patterns = query.get_patterns();
 
         // Plan patterns: assign index hints and reorder by selectivity.
@@ -282,7 +285,12 @@ impl DatalogExecutor {
                 .into_iter()
                 .filter(|binding| {
                     for not_body in &not_clauses {
-                        if not_body_matches(not_body, binding, filtered_facts.clone(), valid_at_value.clone()) {
+                        if not_body_matches(
+                            not_body,
+                            binding,
+                            filtered_facts.clone(),
+                            valid_at_value.clone(),
+                        ) {
                             return false;
                         }
                     }
@@ -405,7 +413,8 @@ impl DatalogExecutor {
             Arc::from(derived_storage.get_asserted_facts().unwrap_or_default());
 
         // Match all patterns against derived facts
-        let matcher = PatternMatcher::from_slice_with_valid_at(derived_facts.clone(), valid_at_value.clone());
+        let matcher =
+            PatternMatcher::from_slice_with_valid_at(derived_facts.clone(), valid_at_value.clone());
         let bindings = matcher.match_patterns(&all_patterns);
 
         // Apply Or/OrJoin clauses against derived facts (rules already evaluated)
@@ -510,7 +519,10 @@ impl DatalogExecutor {
                             .collect();
 
                         // Compute not_bindings: if no patterns, seed with current binding.
-                        let m = PatternMatcher::from_slice_with_valid_at(derived_facts.clone(), valid_at_value.clone());
+                        let m = PatternMatcher::from_slice_with_valid_at(
+                            derived_facts.clone(),
+                            valid_at_value.clone(),
+                        );
                         let mut not_bindings: Vec<Binding> = if substituted.is_empty() {
                             vec![binding.clone()]
                         } else {
@@ -624,7 +636,10 @@ fn not_body_matches(
         })
         .collect();
 
-    let matcher = crate::query::datalog::matcher::PatternMatcher::from_slice_with_valid_at(storage.clone(), valid_at);
+    let matcher = crate::query::datalog::matcher::PatternMatcher::from_slice_with_valid_at(
+        storage.clone(),
+        valid_at,
+    );
     let mut not_bindings: Vec<Binding> = if patterns.is_empty() {
         // Expr-only not body: start with the outer binding so variables resolve.
         vec![outer.clone()]
@@ -929,7 +944,8 @@ pub(crate) fn evaluate_branch(
         })
         .collect();
 
-    let matcher = PatternMatcher::from_slice_with_valid_at(storage.clone(), branch_valid_at_value.clone());
+    let matcher =
+        PatternMatcher::from_slice_with_valid_at(storage.clone(), branch_valid_at_value.clone());
     let bindings = if patterns.is_empty() {
         incoming
     } else {
@@ -980,7 +996,12 @@ pub(crate) fn evaluate_branch(
             .into_iter()
             .filter(|binding| {
                 for not_body in &not_clauses {
-                    if not_body_matches(not_body, binding, storage.clone(), branch_valid_at_value.clone()) {
+                    if not_body_matches(
+                        not_body,
+                        binding,
+                        storage.clone(),
+                        branch_valid_at_value.clone(),
+                    ) {
                         return false;
                     }
                 }

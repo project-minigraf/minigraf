@@ -651,7 +651,10 @@ mod tests {
         );
 
         assert!(pattern.entity.is_variable());
-        assert!(matches!(pattern.attribute, AttributeSpec::Real(EdnValue::Keyword(_))));
+        assert!(matches!(
+            pattern.attribute,
+            AttributeSpec::Real(EdnValue::Keyword(_))
+        ));
     }
 
     #[test]
