@@ -976,7 +976,6 @@ mod tests {
 
     #[test]
     fn test_where_clause_expr_binding_variant() {
-        use crate::graph::types::Value;
         let clause = WhereClause::Expr {
             expr: Expr::BinOp(
                 BinOp::Add,

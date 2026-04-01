@@ -1675,8 +1675,7 @@ mod tests {
     fn test_evaluate_rule_empty_body_returns_empty_derived() {
         // Line 225 TRUE: patterns.is_empty() && expr_clauses.is_empty() → return Ok(derived)
         // Achieved by a rule with an empty body (no clauses)
-        use crate::graph::types::Value;
-        use crate::query::datalog::types::{Rule, WhereClause};
+        use crate::query::datalog::types::Rule;
 
         let storage = FactStorage::new();
         let mut registry = RuleRegistry::new();
@@ -1700,8 +1699,7 @@ mod tests {
     fn test_evaluate_rule_expr_only_body() {
         // Line 230 TRUE: patterns.is_empty() but expr_clauses not empty → seed with empty binding
         // Achieved by a rule with only Expr clauses in body
-        use crate::graph::types::Value;
-        use crate::query::datalog::types::{BinOp, Expr, Rule, WhereClause};
+        use crate::query::datalog::types::{Expr, Rule, WhereClause};
 
         let storage = FactStorage::new();
         let e1 = Uuid::new_v4();
