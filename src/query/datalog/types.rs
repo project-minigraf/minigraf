@@ -194,6 +194,55 @@ impl FindSpec {
     }
 }
 
+/// Built-in pseudo-attributes — reserved `:db/*` keywords that bind fact metadata
+/// rather than stored attribute values. Never stored in the fact database.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum PseudoAttr {
+    ValidFrom, // :db/valid-from → Value::Integer(fact.valid_from)
+    ValidTo,   // :db/valid-to   → Value::Integer(fact.valid_to)
+    TxCount,   // :db/tx-count   → Value::Integer(fact.tx_count as i64)
+    TxId,      // :db/tx-id      → Value::Integer(fact.tx_id as i64)
+    ValidAt,   // :db/valid-at   → query-level constant (Value::Integer or Value::Null)
+}
+
+impl PseudoAttr {
+    /// Returns `Some(variant)` if `k` is a reserved `:db/*` pseudo-attribute keyword.
+    pub fn from_keyword(k: &str) -> Option<Self> {
+        match k {
+            ":db/valid-from" => Some(PseudoAttr::ValidFrom),
+            ":db/valid-to" => Some(PseudoAttr::ValidTo),
+            ":db/tx-count" => Some(PseudoAttr::TxCount),
+            ":db/tx-id" => Some(PseudoAttr::TxId),
+            ":db/valid-at" => Some(PseudoAttr::ValidAt),
+            _ => None,
+        }
+    }
+
+    /// Returns the canonical keyword string for this pseudo-attribute.
+    pub fn as_keyword(&self) -> &'static str {
+        match self {
+            PseudoAttr::ValidFrom => ":db/valid-from",
+            PseudoAttr::ValidTo => ":db/valid-to",
+            PseudoAttr::TxCount => ":db/tx-count",
+            PseudoAttr::TxId => ":db/tx-id",
+            PseudoAttr::ValidAt => ":db/valid-at",
+        }
+    }
+
+    /// True for the four per-fact pseudo-attributes (all except `ValidAt`).
+    pub fn is_per_fact(&self) -> bool {
+        !matches!(self, PseudoAttr::ValidAt)
+    }
+}
+
+/// Attribute position in a `Pattern` — either a real stored attribute keyword
+/// or a built-in pseudo-attribute that binds fact metadata.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AttributeSpec {
+    Real(EdnValue),
+    Pseudo(PseudoAttr),
+}
+
 /// A Datalog pattern: [Entity Attribute Value]
 /// Variables start with ?, constants are literal values
 ///
@@ -204,7 +253,7 @@ impl FindSpec {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pattern {
     pub entity: EdnValue,
-    pub attribute: EdnValue,
+    pub attribute: AttributeSpec,
     pub value: EdnValue,
     /// Per-fact valid-time override (millis since epoch). None = use transaction-level default.
     pub valid_from: Option<i64>,
@@ -216,7 +265,29 @@ impl Pattern {
     pub fn new(entity: EdnValue, attribute: EdnValue, value: EdnValue) -> Self {
         Pattern {
             entity,
-            attribute,
+            attribute: AttributeSpec::Real(attribute),
+            value,
+            valid_from: None,
+            valid_to: None,
+        }
+    }
+
+    /// Create a pattern with a pseudo-attribute.
+    pub fn pseudo(entity: EdnValue, pseudo: PseudoAttr, value: EdnValue) -> Self {
+        Pattern {
+            entity,
+            attribute: AttributeSpec::Pseudo(pseudo),
+            value,
+            valid_from: None,
+            valid_to: None,
+        }
+    }
+
+    /// Create a pattern with a real (stored) attribute.
+    pub fn real(entity: EdnValue, attribute: EdnValue, value: EdnValue) -> Self {
+        Pattern {
+            entity,
+            attribute: AttributeSpec::Real(attribute),
             value,
             valid_from: None,
             valid_to: None,
@@ -233,7 +304,7 @@ impl Pattern {
     ) -> Self {
         Pattern {
             entity,
-            attribute,
+            attribute: AttributeSpec::Real(attribute),
             value,
             valid_from,
             valid_to,
@@ -251,7 +322,7 @@ impl Pattern {
 
         Ok(Pattern {
             entity: vector[0].clone(),
-            attribute: vector[1].clone(),
+            attribute: AttributeSpec::Real(vector[1].clone()),
             value: vector[2].clone(),
             valid_from: None,
             valid_to: None,
@@ -580,7 +651,10 @@ mod tests {
         );
 
         assert!(pattern.entity.is_variable());
-        assert!(pattern.attribute.is_keyword());
+        assert!(matches!(
+            pattern.attribute,
+            AttributeSpec::Real(EdnValue::Keyword(_))
+        ));
     }
 
     #[test]
@@ -595,7 +669,7 @@ mod tests {
         assert_eq!(pattern.entity, EdnValue::Symbol("?e".to_string()));
         assert_eq!(
             pattern.attribute,
-            EdnValue::Keyword(":person/name".to_string())
+            AttributeSpec::Real(EdnValue::Keyword(":person/name".to_string()))
         );
         assert_eq!(pattern.value, EdnValue::String("Alice".to_string()));
     }
@@ -1075,5 +1149,102 @@ mod tests {
         let pred_names: Vec<&str> = invocations.iter().map(|(p, _)| p.as_str()).collect();
         assert!(pred_names.contains(&"active"));
         assert!(pred_names.contains(&"pending"));
+    }
+
+    #[test]
+    fn test_pseudo_attr_from_keyword_known() {
+        assert!(matches!(
+            PseudoAttr::from_keyword(":db/valid-from"),
+            Some(PseudoAttr::ValidFrom)
+        ));
+        assert!(matches!(
+            PseudoAttr::from_keyword(":db/valid-to"),
+            Some(PseudoAttr::ValidTo)
+        ));
+        assert!(matches!(
+            PseudoAttr::from_keyword(":db/tx-count"),
+            Some(PseudoAttr::TxCount)
+        ));
+        assert!(matches!(
+            PseudoAttr::from_keyword(":db/tx-id"),
+            Some(PseudoAttr::TxId)
+        ));
+        assert!(matches!(
+            PseudoAttr::from_keyword(":db/valid-at"),
+            Some(PseudoAttr::ValidAt)
+        ));
+    }
+
+    #[test]
+    fn test_pseudo_attr_from_keyword_unknown() {
+        assert!(PseudoAttr::from_keyword(":person/name").is_none());
+        assert!(PseudoAttr::from_keyword(":db/other").is_none());
+        assert!(PseudoAttr::from_keyword("").is_none());
+    }
+
+    #[test]
+    fn test_pseudo_attr_is_per_fact() {
+        assert!(PseudoAttr::ValidFrom.is_per_fact());
+        assert!(PseudoAttr::ValidTo.is_per_fact());
+        assert!(PseudoAttr::TxCount.is_per_fact());
+        assert!(PseudoAttr::TxId.is_per_fact());
+        assert!(!PseudoAttr::ValidAt.is_per_fact());
+    }
+
+    #[test]
+    fn test_attribute_spec_real_variant() {
+        let spec = AttributeSpec::Real(EdnValue::Keyword(":person/name".to_string()));
+        assert!(matches!(spec, AttributeSpec::Real(_)));
+    }
+
+    #[test]
+    fn test_attribute_spec_pseudo_variant() {
+        let spec = AttributeSpec::Pseudo(PseudoAttr::ValidFrom);
+        assert!(matches!(spec, AttributeSpec::Pseudo(PseudoAttr::ValidFrom)));
+    }
+
+    #[test]
+    fn test_pattern_new_wraps_real() {
+        let p = Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":person/name".to_string()),
+            EdnValue::Symbol("?n".to_string()),
+        );
+        assert!(matches!(p.attribute, AttributeSpec::Real(_)));
+    }
+
+    #[test]
+    fn test_pattern_real_constructor() {
+        let p = Pattern::real(
+            EdnValue::Keyword("alice".to_string()),
+            EdnValue::Keyword("person/name".to_string()),
+            EdnValue::String("Alice".to_string()),
+        );
+        assert!(
+            matches!(p.attribute, AttributeSpec::Real(_)),
+            "Pattern::real should wrap attribute in AttributeSpec::Real"
+        );
+    }
+
+    #[test]
+    fn test_pattern_pseudo_wraps_pseudo() {
+        let p = Pattern::pseudo(
+            EdnValue::Symbol("?e".to_string()),
+            PseudoAttr::ValidFrom,
+            EdnValue::Symbol("?vf".to_string()),
+        );
+        assert!(matches!(
+            p.attribute,
+            AttributeSpec::Pseudo(PseudoAttr::ValidFrom)
+        ));
+    }
+
+    #[test]
+    fn test_pseudo_attr_as_keyword() {
+        assert_eq!(PseudoAttr::ValidFrom.as_keyword(), ":db/valid-from");
+        assert_eq!(PseudoAttr::ValidTo.as_keyword(), ":db/valid-to");
+        assert_eq!(PseudoAttr::TxCount.as_keyword(), ":db/tx-count");
+        assert_eq!(PseudoAttr::TxId.as_keyword(), ":db/tx-id");
+        assert_eq!(PseudoAttr::ValidAt.as_keyword(), ":db/valid-at");
     }
 }

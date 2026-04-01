@@ -20,7 +20,7 @@ use crate::query::datalog::executor::DatalogExecutor;
 use crate::query::datalog::executor::QueryResult;
 use crate::query::datalog::parser::parse_datalog_command;
 use crate::query::datalog::rules::RuleRegistry;
-use crate::query::datalog::types::{DatalogCommand, Transaction};
+use crate::query::datalog::types::{AttributeSpec, DatalogCommand, Transaction};
 use crate::storage::backend::MemoryBackend;
 use crate::storage::backend::file::FileBackend;
 use crate::storage::persistent_facts::PersistentFactStorage;
@@ -572,8 +572,9 @@ impl Minigraf {
                 .map_err(|e| anyhow::anyhow!("invalid entity: {}", e))?;
 
             let attr = match &pattern.attribute {
-                EdnValue::Keyword(k) => k.clone(),
-                _ => anyhow::bail!("attribute must be a keyword"),
+                AttributeSpec::Real(EdnValue::Keyword(k)) => k.clone(),
+                AttributeSpec::Real(_) => anyhow::bail!("attribute must be a keyword"),
+                AttributeSpec::Pseudo(_) => anyhow::bail!("cannot transact a pseudo-attribute"),
             };
 
             let value = edn_to_value(&pattern.value)
@@ -608,8 +609,9 @@ impl Minigraf {
                 .map_err(|e| anyhow::anyhow!("invalid entity: {}", e))?;
 
             let attr = match &pattern.attribute {
-                EdnValue::Keyword(k) => k.clone(),
-                _ => anyhow::bail!("attribute must be a keyword"),
+                AttributeSpec::Real(EdnValue::Keyword(k)) => k.clone(),
+                AttributeSpec::Real(_) => anyhow::bail!("attribute must be a keyword"),
+                AttributeSpec::Pseudo(_) => anyhow::bail!("cannot transact a pseudo-attribute"),
             };
 
             let value = edn_to_value(&pattern.value)
@@ -1113,5 +1115,89 @@ mod tests {
         let db2 = Minigraf::open(&path).unwrap();
         let facts = db2.inner.fact_storage.get_asserted_facts().unwrap();
         assert_eq!(facts.len(), 1, "facts must survive checkpoint");
+    }
+
+    #[test]
+    fn test_materialize_transaction_non_keyword_real_attr_error() {
+        // Exercises db.rs line 576: Real(_) bail! in materialize_transaction (non-keyword Real attr)
+        use crate::query::datalog::types::EdnValue;
+        use crate::query::datalog::types::{Pattern, Transaction};
+        let tx = Transaction {
+            facts: vec![Pattern::new(
+                EdnValue::Keyword(":alice".to_string()),
+                EdnValue::Integer(42), // Real(Integer) — not a keyword
+                EdnValue::Integer(0),
+            )],
+            valid_from: None,
+            valid_to: None,
+        };
+        let r = Minigraf::materialize_transaction(&tx);
+        assert!(
+            r.is_err(),
+            "materialize_transaction with non-keyword Real attr must fail"
+        );
+    }
+
+    #[test]
+    fn test_materialize_retraction_non_keyword_real_attr_error() {
+        // Exercises db.rs line 613: Real(_) bail! in materialize_retraction (non-keyword Real attr)
+        use crate::query::datalog::types::EdnValue;
+        use crate::query::datalog::types::{Pattern, Transaction};
+        let tx = Transaction {
+            facts: vec![Pattern::new(
+                EdnValue::Keyword(":alice".to_string()),
+                EdnValue::String("not-a-keyword".to_string()), // Real(String) — not a keyword
+                EdnValue::Integer(0),
+            )],
+            valid_from: None,
+            valid_to: None,
+        };
+        let r = Minigraf::materialize_retraction(&tx);
+        assert!(
+            r.is_err(),
+            "materialize_retraction with non-keyword Real attr must fail"
+        );
+    }
+
+    #[test]
+    fn test_materialize_transaction_pseudo_attr_error() {
+        // Exercises db.rs line ~577: Pseudo(_) bail! in materialize_transaction
+        use crate::query::datalog::types::EdnValue;
+        use crate::query::datalog::types::{Pattern, PseudoAttr, Transaction};
+        let tx = Transaction {
+            facts: vec![Pattern::pseudo(
+                EdnValue::Keyword(":alice".to_string()),
+                PseudoAttr::ValidFrom,
+                EdnValue::Integer(0),
+            )],
+            valid_from: None,
+            valid_to: None,
+        };
+        let r = Minigraf::materialize_transaction(&tx);
+        assert!(
+            r.is_err(),
+            "materialize_transaction with pseudo-attr must fail"
+        );
+    }
+
+    #[test]
+    fn test_materialize_retraction_pseudo_attr_error() {
+        // Exercises db.rs line ~614: Pseudo(_) bail! in materialize_retraction
+        use crate::query::datalog::types::EdnValue;
+        use crate::query::datalog::types::{Pattern, PseudoAttr, Transaction};
+        let tx = Transaction {
+            facts: vec![Pattern::pseudo(
+                EdnValue::Keyword(":alice".to_string()),
+                PseudoAttr::TxCount,
+                EdnValue::Integer(0),
+            )],
+            valid_from: None,
+            valid_to: None,
+        };
+        let r = Minigraf::materialize_retraction(&tx);
+        assert!(
+            r.is_err(),
+            "materialize_retraction with pseudo-attr must fail"
+        );
     }
 }

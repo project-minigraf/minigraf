@@ -517,6 +517,13 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                     i += 1;
                     continue;
                 }
+                ":any-valid-time" => {
+                    // Shorthand for `:valid-at :any-valid-time`; disables automatic
+                    // valid-time filtering so pseudo-attribute patterns are accessible.
+                    query_valid_at = Some(ValidAt::AnyValidTime);
+                    i += 1;
+                    continue;
+                }
                 ":with" => {
                     // Collect ?-prefixed symbols until the next keyword or end of vector
                     i += 1;
@@ -568,7 +575,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                         let clause = parse_expr_clause(pattern_vec)?;
                         where_clauses.push(clause);
                     } else {
-                        let pattern = Pattern::from_edn(pattern_vec)?;
+                        let pattern = parse_query_pattern(pattern_vec)?;
                         where_clauses.push(WhereClause::Pattern(pattern));
                     }
                 } else if let Some(rule_list) = query_vector[i].as_list() {
@@ -913,7 +920,7 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
                         let clause = parse_expr_clause(vec)?;
                         inner.push(clause);
                     } else {
-                        let pattern = Pattern::from_edn(vec)?;
+                        let pattern = parse_query_pattern(vec)?;
                         inner.push(WhereClause::Pattern(pattern));
                     }
                 } else if let Some(inner_list) = item.as_list() {
@@ -974,7 +981,7 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
                         let clause = parse_expr_clause(vec)?;
                         inner.push(clause);
                     } else {
-                        let pattern = Pattern::from_edn(vec)?;
+                        let pattern = parse_query_pattern(vec)?;
                         inner.push(WhereClause::Pattern(pattern));
                     }
                 } else if let Some(inner_list) = item.as_list() {
@@ -1059,6 +1066,49 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
     }
 }
 
+/// Parse a where-clause pattern vector with pseudo-attribute detection.
+///
+/// Detects `:db/*` keywords in the attribute position and wraps them in
+/// `AttributeSpec::Pseudo`. Rejects `:db/*` keywords in entity or value positions.
+/// Falls through to `Pattern::from_edn` for regular patterns.
+fn parse_query_pattern(vec: &[EdnValue]) -> Result<Pattern, String> {
+    if vec.len() != 3 {
+        return Err(format!(
+            "Pattern must have exactly 3 elements (E A V), got {}",
+            vec.len()
+        ));
+    }
+
+    // Reject :db/* in entity position
+    if let EdnValue::Keyword(k) = &vec[0]
+        && PseudoAttr::from_keyword(k).is_some()
+    {
+        return Err(format!(
+            "pseudo-attribute {} is not valid in entity position",
+            k
+        ));
+    }
+
+    // Reject :db/* in value position
+    if let EdnValue::Keyword(k) = &vec[2]
+        && PseudoAttr::from_keyword(k).is_some()
+    {
+        return Err(format!(
+            "pseudo-attribute {} is not valid in value position",
+            k
+        ));
+    }
+
+    // Detect pseudo-attribute in attribute position
+    if let EdnValue::Keyword(k) = &vec[1]
+        && let Some(pseudo) = PseudoAttr::from_keyword(k)
+    {
+        return Ok(Pattern::pseudo(vec[0].clone(), pseudo, vec[2].clone()));
+    }
+
+    Pattern::from_edn(vec)
+}
+
 /// Parse a single branch of an (or ...) or (or-join ...) clause.
 ///
 /// A branch is either:
@@ -1092,7 +1142,7 @@ fn parse_or_branch_item(item: &EdnValue) -> Result<WhereClause, String> {
             if matches!(vec.first(), Some(EdnValue::List(_))) {
                 parse_expr_clause(vec)
             } else {
-                Ok(WhereClause::Pattern(Pattern::from_edn(vec)?))
+                Ok(WhereClause::Pattern(parse_query_pattern(vec)?))
             }
         }
         EdnValue::List(inner_list) => {
@@ -1108,12 +1158,21 @@ fn outer_vars_from_clause(clause: &WhereClause) -> Vec<String> {
     match clause {
         WhereClause::Pattern(p) => {
             let mut vars = Vec::new();
-            for v in [&p.entity, &p.attribute, &p.value] {
-                if let Some(name) = v.as_variable()
-                    && !name.starts_with("?_")
-                {
-                    vars.push(name.to_string());
-                }
+            if let Some(name) = p.entity.as_variable()
+                && !name.starts_with("?_")
+            {
+                vars.push(name.to_string());
+            }
+            if let AttributeSpec::Real(attr_edn) = &p.attribute
+                && let Some(name) = attr_edn.as_variable()
+                && !name.starts_with("?_")
+            {
+                vars.push(name.to_string());
+            }
+            if let Some(name) = p.value.as_variable()
+                && !name.starts_with("?_")
+            {
+                vars.push(name.to_string());
             }
             vars
         }
@@ -1353,7 +1412,7 @@ fn parse_rule(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                 let clause = parse_expr_clause(vec)?;
                 body_clauses.push(clause);
             } else {
-                let pattern = Pattern::from_edn(vec)?;
+                let pattern = parse_query_pattern(vec)?;
                 body_clauses.push(WhereClause::Pattern(pattern));
             }
         } else if let Some(list) = item.as_list() {
@@ -1473,7 +1532,7 @@ mod tests {
                 assert_eq!(patterns.len(), 1);
                 assert_eq!(
                     patterns[0].attribute,
-                    EdnValue::Keyword(":person/name".to_string())
+                    AttributeSpec::Real(EdnValue::Keyword(":person/name".to_string()))
                 );
             }
             _ => panic!("Expected Query command"),
@@ -2315,6 +2374,47 @@ mod tests {
             }
             _ => panic!(),
         }
+    }
+
+    #[test]
+    fn test_parse_pseudo_attr_in_where_clause() {
+        let cmd = parse_datalog_command(
+            "(query [:find ?vf :any-valid-time :where [?e :person/name _] [?e :db/valid-from ?vf]])"
+        ).unwrap();
+        match cmd {
+            DatalogCommand::Query(q) => {
+                let patterns = q.get_patterns();
+                assert!(
+                    patterns
+                        .iter()
+                        .any(|p| matches!(p.attribute, AttributeSpec::Pseudo(_))),
+                    "expected a Pseudo attribute pattern"
+                );
+            }
+            _ => panic!("expected Query"),
+        }
+    }
+
+    #[test]
+    fn test_parse_error_pseudo_attr_entity_position() {
+        let result = parse_datalog_command(
+            "(query [:find ?v :any-valid-time :where [:db/valid-from :person/name ?v]])",
+        );
+        assert!(
+            result.is_err(),
+            "pseudo-attr in entity position should error"
+        );
+    }
+
+    #[test]
+    fn test_parse_error_pseudo_attr_value_position() {
+        let result = parse_datalog_command(
+            "(query [:find ?e :any-valid-time :where [?e :person/name :db/valid-from]])",
+        );
+        assert!(
+            result.is_err(),
+            "pseudo-attr in value position should error"
+        );
     }
 }
 

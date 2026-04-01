@@ -517,7 +517,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 - **7.3** ✅ Disjunction (`or` / `or-join`)
 - **7.4** ✅ Query Optimizer Improvements / `filter_facts_for_query` snapshot fix
 - **7.5** ✅ Tests + Error Coverage (617 tests; executor.rs 85.71%, evaluator.rs 89.29% branch coverage; CI coverage gate + nightly llvm-cov)
-- **7.6** Temporal Metadata Bindings + Range Queries (`:db/valid-from`, `:db/valid-to`, `:db/tx-count` as queryable pseudo-attributes; unlocks Time Interval, Time-Point Lookup, Time-Interval Lookup query classes)
+- **7.6** ✅ Temporal Metadata Bindings + Range Queries (`:db/valid-from`, `:db/valid-to`, `:db/tx-count` as queryable pseudo-attributes; unlocks Time Interval, Time-Point Lookup, Time-Interval Lookup query classes)
 - **7.7** Window Functions + UDFs (`sum/count/rank/lag/lead :over (partition-by … :order-by …)`; embedder-registered aggregate and predicate UDFs via `FunctionRegistry`)
 - **7.8** Prepared Statements (parse + plan once, execute many times, temporal bind slots; implemented after full clause set including predicate-argument positions)
 - **7.9** Publish Prep (crates.io — API cleanup, rustdoc, clippy, `unwrap` audit, CI matrix)
@@ -726,7 +726,11 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 ---
 
-### 7.6 Temporal Metadata Bindings + Range Queries
+### 7.6 Temporal Metadata Bindings + Range Queries ✅ COMPLETE
+
+**Status**: ✅ Complete (v0.15.0, 2026-04-01)
+
+**Summary**: `:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`, and `:db/valid-at` are now first-class bindable pseudo-attributes in Datalog `:where` patterns. All four temporal query classes are now reachable. 647 tests (438 unit + 209 integration).
 
 **Goal**: Expose `valid_from`, `valid_to`, and `tx_count` as first-class bindable values in Datalog `:where` clauses, unlocking the full four-class taxonomy of temporal queries described in the bi-temporal literature.
 
@@ -1565,7 +1569,8 @@ When evaluating features, ask:
 - ✅ Phase 7.3: Complete (March 2026) - Disjunction (`or` / `or-join`), 562 tests
 - ✅ Phase 7.4: Complete (March 2026) - `filter_facts_for_query` snapshot fix, eliminate 4-index rebuild, 568 tests
 - ✅ Phase 7.5: Complete (March 2026) - Cross-feature tests, error-path coverage, ~86-89% branch coverage, 617 tests
-- 🎯 Phase 7.6–7.8: temporal metadata bindings, window functions + UDFs, prepared statements; ≥90% branch coverage - **NEXT**
+- ✅ Phase 7.6: Complete (April 2026) - Temporal metadata bindings (`:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`, `:db/valid-at`), 647 tests
+- 🎯 Phase 7.7–7.8: window functions + UDFs, prepared statements; ≥90% branch coverage - **NEXT**
 - 🎯 Phase 8: 3-4 months (Cross-platform — WASM, mobile, language bindings)
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)
 - 🎯 **v1.0.0: 9-12 months**
@@ -1576,19 +1581,20 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: Phase 7.5 Complete — Phase 7.6 Next (Temporal Metadata Bindings + Range Queries)
+**Right Now**: Phase 7.6 Complete — Phase 7.7 Next (Window Functions + UDFs)
 
-**Phase 7.5 Achievements**:
-1. ✅ `tests/production_patterns_test.rs` — 8 cross-feature integration tests (not+as-of, not-join+count, recursion+not, or+count, etc.)
-2. ✅ `tests/error_handling_test.rs` — 8 error-path integration tests (runtime type errors, stratification errors, parse safety errors)
-3. ✅ Stream 3 unit tests — ~53 new tests covering parser-unreachable branches in `executor.rs` and `evaluator.rs`
-4. ✅ Branch coverage: `executor.rs` ~85.71% (from ~75%), `evaluator.rs` ~89.29% (from ~73%)
-5. ✅ 617 tests passing (424 unit + 187 integration + 6 doc); version bumped to v0.14.0
-6. ✅ Known issue documented: or+negative-cycle not rejected by stratification (1 ignored test)
+**Phase 7.6 Achievements**:
+1. ✅ `PseudoAttr` enum and `AttributeSpec` wrapper type in `types.rs`
+2. ✅ `parse_query_pattern` in `parser.rs` — `:db/*` keywords in attribute position; parse error in entity/value positions
+3. ✅ `PatternMatcher::from_slice_with_valid_at` — passes query-level `valid_at` into the matcher
+4. ✅ Hard-error guard in executor: per-fact pseudo-attrs require `:any-valid-time`
+5. ✅ `:db/valid-at` binds effective query timestamp; `:any-valid-time` accepted as standalone keyword
+6. ✅ `tests/temporal_metadata_test.rs` — 16 integration tests covering all four temporal query classes
+7. ✅ 647 tests passing (438 unit + 209 integration); version bumped to v0.15.0
 
-**Immediate Next Steps (Phase 7.6)**:
-1. Temporal metadata pseudo-attributes — `:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id` as bindable `:where` clause values
-2. Arithmetic filter predicates applied to temporal metadata (Time Interval, Time-Point Lookup, Time-Interval Lookup query classes)
+**Immediate Next Steps (Phase 7.7)**:
+1. Window functions — `sum/count/rank/lag/lead :over (partition-by … :order-by …)` in `:find` clauses
+2. UDFs — embedder-registered aggregate and predicate functions via `FunctionRegistry`
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)

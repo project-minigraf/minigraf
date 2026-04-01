@@ -1,4 +1,4 @@
-use super::types::{EdnValue, Pattern};
+use super::types::{AttributeSpec, EdnValue, Pattern, PseudoAttr};
 use crate::graph::FactStorage;
 use crate::graph::types::{EntityId, Fact, Value};
 use std::collections::HashMap;
@@ -17,12 +17,15 @@ enum MatcherStorage {
 /// Pattern matcher that finds facts matching a pattern and produces bindings
 pub struct PatternMatcher {
     storage: MatcherStorage,
+    /// The `:db/valid-at` value for this query context (Value::Null when not set).
+    pub(crate) valid_at_value: Value,
 }
 
 impl PatternMatcher {
     pub fn new(storage: FactStorage) -> Self {
         PatternMatcher {
             storage: MatcherStorage::Owned(storage),
+            valid_at_value: Value::Null,
         }
     }
 
@@ -33,6 +36,16 @@ impl PatternMatcher {
     pub(crate) fn from_slice(facts: Arc<[Fact]>) -> Self {
         PatternMatcher {
             storage: MatcherStorage::Slice(facts),
+            valid_at_value: Value::Null,
+        }
+    }
+
+    /// Constructs a matcher with an explicit `:db/valid-at` binding value.
+    /// Used by the executor when the query has a known `valid_at` point.
+    pub(crate) fn from_slice_with_valid_at(facts: Arc<[Fact]>, valid_at: Value) -> Self {
+        PatternMatcher {
+            storage: MatcherStorage::Slice(facts),
+            valid_at_value: valid_at,
         }
     }
 
@@ -70,18 +83,49 @@ impl PatternMatcher {
             return None;
         }
 
-        // Match attribute
-        if !self.match_component(
-            &pattern.attribute,
-            &Value::Keyword(fact.attribute.clone()),
-            &mut bindings,
-        ) {
-            return None;
-        }
-
-        // Match value
-        if !self.match_component(&pattern.value, &fact.value, &mut bindings) {
-            return None;
+        match &pattern.attribute {
+            AttributeSpec::Real(attr_edn) => {
+                // Match attribute
+                if !self.match_component(
+                    attr_edn,
+                    &Value::Keyword(fact.attribute.clone()),
+                    &mut bindings,
+                ) {
+                    return None;
+                }
+                // Match value
+                if !self.match_component(&pattern.value, &fact.value, &mut bindings) {
+                    return None;
+                }
+                // Store hidden fact-metadata keys so that subsequent pseudo-attr patterns
+                // for the same entity can read per-fact temporal/tx metadata without
+                // cross-joining against every other fact for the entity.
+                // Keys are prefixed with `__f` and namespaced by entity UUID to avoid
+                // collisions across entities. They are never referenced in :find, so they
+                // are silently filtered out during result extraction.
+                let eid = fact.entity.to_string();
+                bindings.insert(format!("__fvf_{}", eid), Value::Integer(fact.valid_from));
+                bindings.insert(format!("__fvt_{}", eid), Value::Integer(fact.valid_to));
+                bindings.insert(
+                    format!("__ftc_{}", eid),
+                    Value::Integer(fact.tx_count as i64),
+                );
+                bindings.insert(format!("__fti_{}", eid), Value::Integer(fact.tx_id as i64));
+            }
+            AttributeSpec::Pseudo(pseudo) => {
+                // Pseudo-attribute: skip stored attribute match; bind fact metadata
+                // field to the value position variable (or match against a constant).
+                let pseudo_value = match pseudo {
+                    PseudoAttr::ValidFrom => Value::Integer(fact.valid_from),
+                    PseudoAttr::ValidTo => Value::Integer(fact.valid_to),
+                    PseudoAttr::TxCount => Value::Integer(fact.tx_count as i64),
+                    PseudoAttr::TxId => Value::Integer(fact.tx_id as i64),
+                    PseudoAttr::ValidAt => self.valid_at_value.clone(),
+                };
+                if !self.match_component(&pattern.value, &pseudo_value, &mut bindings) {
+                    return None;
+                }
+            }
         }
 
         Some(bindings)
@@ -96,6 +140,9 @@ impl PatternMatcher {
         bindings: &mut Bindings,
     ) -> bool {
         match pattern_component {
+            // Anonymous wildcard `_`: match any value without binding
+            EdnValue::Symbol(var) if var == "_" => true,
+
             // Wildcard variable (starts with ?_): match any value without binding
             EdnValue::Symbol(var) if var.starts_with("?_") => true,
 
@@ -242,6 +289,52 @@ impl PatternMatcher {
     /// Match a pattern given existing variable bindings
     /// Returns new bindings that extend the existing ones
     fn match_pattern_with_bindings(&self, pattern: &Pattern, existing: &Bindings) -> Vec<Bindings> {
+        // Fast path for pseudo-attr patterns: when a preceding real-attr pattern stored
+        // hidden fact-metadata keys (e.g. `__fvf_<uuid>`), use them directly instead of
+        // scanning all facts and cross-joining. This ensures pseudo-attr patterns are
+        // correlated with the specific fact matched by the preceding real-attr pattern.
+        if let AttributeSpec::Pseudo(pseudo) = &pattern.attribute {
+            // Resolve the entity component to a UUID using existing bindings
+            let resolved_entity = self.apply_binding_to_component(&pattern.entity, existing);
+            let entity_uuid_opt: Option<uuid::Uuid> = match &resolved_entity {
+                EdnValue::Uuid(u) => Some(*u),
+                EdnValue::Keyword(k) => edn_to_entity_id(&EdnValue::Keyword(k.clone())).ok(),
+                _ => None,
+            };
+            if let Some(uuid) = entity_uuid_opt {
+                let eid = uuid.to_string();
+                let hidden_key = match pseudo {
+                    PseudoAttr::ValidFrom => format!("__fvf_{}", eid),
+                    PseudoAttr::ValidTo => format!("__fvt_{}", eid),
+                    PseudoAttr::TxCount => format!("__ftc_{}", eid),
+                    PseudoAttr::TxId => format!("__fti_{}", eid),
+                    // ValidAt is a query-level constant (not per-fact); fall through to
+                    // the normal scan path so each fact produces one binding (all
+                    // identical). Task 5 (executor) will inject the correct value.
+                    PseudoAttr::ValidAt => {
+                        return self.match_pattern_with_bindings_scan(pattern, existing);
+                    }
+                };
+                if let Some(stored_value) = existing.get(&hidden_key) {
+                    let mut new_bindings = existing.clone();
+                    if self.match_component(&pattern.value, stored_value, &mut new_bindings) {
+                        return vec![new_bindings];
+                    }
+                    return vec![];
+                }
+            }
+        }
+
+        // Default: scan all facts
+        self.match_pattern_with_bindings_scan(pattern, existing)
+    }
+
+    /// Default join implementation: iterate all facts and try to match.
+    fn match_pattern_with_bindings_scan(
+        &self,
+        pattern: &Pattern,
+        existing: &Bindings,
+    ) -> Vec<Bindings> {
         let mut results = Vec::new();
 
         let facts = self.get_facts();
@@ -256,9 +349,15 @@ impl PatternMatcher {
             if let Some(additional_bindings) =
                 self.match_fact_against_pattern(&fact, &resolved_pattern)
             {
-                // Check that additional bindings are consistent with existing
+                // Check that additional bindings are consistent with existing.
+                // Hidden fact-metadata keys (prefixed `__f`) are always overwritten
+                // and are excluded from the consistency check.
                 let mut consistent = true;
                 for (var, val) in &additional_bindings {
+                    if var.starts_with("__f") {
+                        // Hidden metadata keys: always overwrite, never conflict-check.
+                        continue;
+                    }
                     if matches!(existing.get(var), Some(existing_val) if existing_val != val) {
                         consistent = false;
                         break;
@@ -266,7 +365,7 @@ impl PatternMatcher {
                 }
 
                 if consistent {
-                    // Merge bindings
+                    // Merge bindings (hidden keys are overwritten by the new fact's values)
                     new_bindings.extend(additional_bindings);
                     results.push(new_bindings);
                 }
@@ -278,9 +377,15 @@ impl PatternMatcher {
 
     /// Apply existing bindings to a pattern, replacing bound variables with their values
     fn apply_bindings_to_pattern(&self, pattern: &Pattern, bindings: &Bindings) -> Pattern {
+        let attribute = match &pattern.attribute {
+            AttributeSpec::Real(edn) => {
+                AttributeSpec::Real(self.apply_binding_to_component(edn, bindings))
+            }
+            AttributeSpec::Pseudo(p) => AttributeSpec::Pseudo(p.clone()),
+        };
         Pattern {
             entity: self.apply_binding_to_component(&pattern.entity, bindings),
-            attribute: self.apply_binding_to_component(&pattern.attribute, bindings),
+            attribute,
             value: self.apply_binding_to_component(&pattern.value, bindings),
             valid_from: pattern.valid_from,
             valid_to: pattern.valid_to,
@@ -361,6 +466,15 @@ pub fn edn_to_entity_id(edn: &EdnValue) -> Result<EntityId, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_from_slice_with_valid_at_field() {
+        use crate::graph::types::Value;
+        use std::sync::Arc;
+        let facts: Arc<[_]> = Arc::from(vec![]);
+        let m = PatternMatcher::from_slice_with_valid_at(facts, Value::Integer(12345));
+        assert_eq!(m.valid_at_value, Value::Integer(12345));
+    }
 
     #[test]
     fn test_match_simple_pattern() {
@@ -746,6 +860,219 @@ mod tests {
         assert!(
             !results.is_empty(),
             "from_slice does not filter internally — raw slice passes through unchanged"
+        );
+    }
+
+    #[test]
+    fn test_pseudo_attr_valid_from_join() {
+        // Simulates the time_interval_entire_interval test pattern:
+        // [?e :item/label _] [?e :db/valid-from ?vf]
+        use crate::graph::storage::net_asserted_facts;
+        use crate::graph::types::{Fact, Value};
+        use crate::query::datalog::types::{AttributeSpec, PseudoAttr};
+        use uuid::Uuid;
+
+        let storage = crate::graph::FactStorage::new();
+        let e1 = Uuid::new_v4();
+
+        // Transact e1 with explicit valid-from = 1577836800000
+        let opt =
+            crate::graph::types::TransactOptions::new(Some(1577836800000), Some(1735689600000));
+        storage
+            .transact_batch(
+                vec![(
+                    e1,
+                    ":item/label".to_string(),
+                    Value::String("A".to_string()),
+                    None,
+                )],
+                Some(opt),
+            )
+            .unwrap();
+
+        // Get all facts
+        let all_facts: Arc<[Fact]> =
+            Arc::from(net_asserted_facts(storage.get_all_facts().unwrap()));
+        let matcher = PatternMatcher::from_slice(all_facts.clone());
+
+        // First pattern: [?e :item/label _]
+        let p1 = Pattern {
+            entity: EdnValue::Symbol("?e".to_string()),
+            attribute: AttributeSpec::Real(EdnValue::Keyword(":item/label".to_string())),
+            value: EdnValue::Symbol("_".to_string()),
+            valid_from: None,
+            valid_to: None,
+        };
+        let r1 = matcher.match_pattern(&p1);
+        assert_eq!(r1.len(), 1, "first pattern should bind ?e");
+
+        // Second pattern: [?e :db/valid-from ?vf]
+        let p2 = Pattern {
+            entity: EdnValue::Symbol("?e".to_string()),
+            attribute: AttributeSpec::Pseudo(PseudoAttr::ValidFrom),
+            value: EdnValue::Symbol("?vf".to_string()),
+            valid_from: None,
+            valid_to: None,
+        };
+        let r2 = matcher.match_patterns_seeded(&[p2], r1);
+        assert_eq!(r2.len(), 1, "second pattern should bind ?vf");
+        assert_eq!(r2[0].get("?vf"), Some(&Value::Integer(1577836800000)));
+    }
+
+    #[test]
+    fn test_pseudo_attr_valid_to_tx_count_tx_id_scan_path() {
+        // Exercises matcher.rs lines 120-122: ValidTo/TxCount/TxId arms in
+        // match_fact_against_pattern (scan path — no hidden keys seeded).
+        use crate::graph::storage::net_asserted_facts;
+        use crate::graph::types::Value as GValue;
+        use std::sync::Arc;
+
+        let storage = FactStorage::new();
+        let alice_id = Uuid::new_v4();
+        storage
+            .transact(
+                vec![(
+                    alice_id,
+                    ":item/label".to_string(),
+                    GValue::String("z".to_string()),
+                )],
+                None,
+            )
+            .unwrap();
+
+        let all_facts: Arc<[Fact]> =
+            Arc::from(net_asserted_facts(storage.get_all_facts().unwrap()));
+        let matcher = PatternMatcher::from_slice(all_facts);
+
+        // Each test uses a UUID entity + wildcard value so the entity check passes
+        // and no hidden key is seeded → falls through to scan → hits line 120/121/122.
+
+        // Line 120: ValidTo
+        let p_vt = Pattern {
+            entity: EdnValue::Uuid(alice_id),
+            attribute: AttributeSpec::Pseudo(PseudoAttr::ValidTo),
+            value: EdnValue::Symbol("?vt".to_string()),
+            valid_from: None,
+            valid_to: None,
+        };
+        let r_vt = matcher.match_pattern(&p_vt);
+        assert_eq!(r_vt.len(), 1, "ValidTo scan should bind one result");
+
+        // Line 121: TxCount
+        let p_tc = Pattern {
+            entity: EdnValue::Uuid(alice_id),
+            attribute: AttributeSpec::Pseudo(PseudoAttr::TxCount),
+            value: EdnValue::Symbol("?tc".to_string()),
+            valid_from: None,
+            valid_to: None,
+        };
+        let r_tc = matcher.match_pattern(&p_tc);
+        assert_eq!(r_tc.len(), 1, "TxCount scan should bind one result");
+
+        // Line 122: TxId
+        let p_ti = Pattern {
+            entity: EdnValue::Uuid(alice_id),
+            attribute: AttributeSpec::Pseudo(PseudoAttr::TxId),
+            value: EdnValue::Symbol("?ti".to_string()),
+            valid_from: None,
+            valid_to: None,
+        };
+        let r_ti = matcher.match_pattern(&p_ti);
+        assert_eq!(r_ti.len(), 1, "TxId scan should bind one result");
+    }
+
+    #[test]
+    fn test_pseudo_attr_entity_non_uuid_non_keyword_falls_through() {
+        // Exercises matcher.rs line 302: `_ => None` when resolved entity is
+        // neither Uuid nor Keyword — falls through to scan path.
+        use crate::graph::storage::net_asserted_facts;
+        use crate::graph::types::Value as GValue;
+        use std::sync::Arc;
+
+        let storage = FactStorage::new();
+        let alice_id = Uuid::new_v4();
+        storage
+            .transact(
+                vec![(
+                    alice_id,
+                    ":item/label".to_string(),
+                    GValue::String("x".to_string()),
+                )],
+                None,
+            )
+            .unwrap();
+
+        let all_facts: Arc<[Fact]> =
+            Arc::from(net_asserted_facts(storage.get_all_facts().unwrap()));
+        let matcher = PatternMatcher::from_slice(all_facts);
+
+        // Entity is an Integer — neither Uuid nor Keyword → `_ => None` path
+        let pattern = Pattern {
+            entity: EdnValue::Integer(99),
+            attribute: AttributeSpec::Pseudo(PseudoAttr::ValidFrom),
+            value: EdnValue::Symbol("?vf".to_string()),
+            valid_from: None,
+            valid_to: None,
+        };
+        // Falls through to scan; Integer entity won't match any stored UUID → 0 results
+        let results = matcher.match_pattern(&pattern);
+        assert_eq!(
+            results.len(),
+            0,
+            "non-uuid/keyword entity should yield no matches"
+        );
+    }
+
+    #[test]
+    fn test_pseudo_attr_hidden_key_value_mismatch_returns_empty() {
+        // Exercises matcher.rs line 323: `return vec![]` when the stored hidden-key
+        // value doesn't match the pattern value component.
+        use crate::graph::storage::net_asserted_facts;
+        use crate::graph::types::Value as GValue;
+        use std::sync::Arc;
+
+        let storage = FactStorage::new();
+        let alice_id = Uuid::new_v4();
+        storage
+            .transact(
+                vec![(
+                    alice_id,
+                    ":item/label".to_string(),
+                    GValue::String("y".to_string()),
+                )],
+                None,
+            )
+            .unwrap();
+
+        let all_facts: Arc<[Fact]> =
+            Arc::from(net_asserted_facts(storage.get_all_facts().unwrap()));
+        let matcher = PatternMatcher::from_slice(all_facts.clone());
+
+        // Seed bindings with the real-attr pattern so hidden keys are populated
+        let p1 = Pattern {
+            entity: EdnValue::Symbol("?e".to_string()),
+            attribute: AttributeSpec::Real(EdnValue::Keyword(":item/label".to_string())),
+            value: EdnValue::Symbol("_".to_string()),
+            valid_from: None,
+            valid_to: None,
+        };
+        let seeded = matcher.match_pattern(&p1);
+        assert_eq!(seeded.len(), 1, "seed should match one fact");
+
+        // Ask for :db/valid-from with an impossible constant value (-999)
+        // The hidden key exists but -999 won't match the real valid_from → vec![]
+        let p2 = Pattern {
+            entity: EdnValue::Symbol("?e".to_string()),
+            attribute: AttributeSpec::Pseudo(PseudoAttr::ValidFrom),
+            value: EdnValue::Integer(-999),
+            valid_from: None,
+            valid_to: None,
+        };
+        let results = matcher.match_patterns_seeded(&[p2], seeded);
+        assert_eq!(
+            results.len(),
+            0,
+            "mismatched constant should return no bindings"
         );
     }
 }

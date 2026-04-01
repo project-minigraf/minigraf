@@ -3,7 +3,7 @@
 //! `plan()` is the single entry point. It assigns an `IndexHint` to each
 //! pattern and (outside the `wasm` feature) sorts patterns by selectivity.
 
-use crate::query::datalog::types::{EdnValue, Pattern};
+use crate::query::datalog::types::{AttributeSpec, EdnValue, Pattern};
 
 /// Which covering index to use for a given pattern.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,12 +28,21 @@ fn is_entity_literal(v: &EdnValue) -> bool {
     matches!(v, EdnValue::Uuid(_))
 }
 
+/// Return true if the attribute is a bound (non-variable) real attribute.
+/// Pseudo-attributes are never index-bound (they are not stored attributes).
+fn attr_is_index_bound(a: &AttributeSpec) -> bool {
+    match a {
+        AttributeSpec::Real(edn) => !is_variable(edn),
+        AttributeSpec::Pseudo(_) => false,
+    }
+}
+
 /// Count the number of non-variable components in a pattern.
 /// Higher score = more selective.
 #[cfg(not(feature = "wasm"))]
 fn selectivity_score(p: &Pattern) -> u8 {
     let e = !is_variable(&p.entity);
-    let a = !is_variable(&p.attribute);
+    let a = attr_is_index_bound(&p.attribute);
     let v = !is_variable(&p.value);
     e as u8 + a as u8 + v as u8
 }
@@ -48,7 +57,7 @@ fn selectivity_score(p: &Pattern) -> u8 {
 ///   Nothing bound                      → EAVT (full scan)
 pub fn select_index(p: &Pattern) -> IndexHint {
     let e_bound = !is_variable(&p.entity);
-    let a_bound = !is_variable(&p.attribute);
+    let a_bound = attr_is_index_bound(&p.attribute);
     let v_bound = !is_variable(&p.value);
 
     if e_bound {
@@ -106,13 +115,7 @@ mod tests {
     use uuid::Uuid;
 
     fn make_pattern(entity: EdnValue, attribute: EdnValue, value: EdnValue) -> Pattern {
-        Pattern {
-            entity,
-            attribute,
-            value,
-            valid_from: None,
-            valid_to: None,
-        }
+        Pattern::new(entity, attribute, value)
     }
 
     fn var(s: &str) -> EdnValue {

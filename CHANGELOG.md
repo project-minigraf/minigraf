@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.15.0 — Phase 7.6: Temporal Metadata Bindings (2026-04-01)
+
+### Added
+- **Temporal pseudo-attributes**: `:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`, and `:db/valid-at` are now first-class bindable values in Datalog `:where` patterns
+- `PseudoAttr` enum and `AttributeSpec` wrapper type in `types.rs` — clean type-safe representation for real vs. pseudo attributes in `Pattern`
+- `parse_query_pattern` in `parser.rs` — detects `:db/*` keywords in the attribute position; rejects them in entity/value positions (parse error)
+- `PatternMatcher::from_slice_with_valid_at` constructor — passes query-level `valid_at` into the matcher
+- Hard-error guard in executor: per-fact pseudo-attrs (`:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`) require `:any-valid-time`; error message tells user exactly what to add
+- `:db/valid-at` binds the effective query timestamp: explicit `:valid-at <ts>` → `Value::Integer(ts)`, no `:valid-at` → `Value::Integer(now)`, `:any-valid-time` → `Value::Null`
+- `:any-valid-time` now accepted as a standalone top-level query keyword (previously required `:valid-at :any-valid-time` form)
+- `tests/temporal_metadata_test.rs`: 16 new integration tests covering time-interval range queries, time-point lookups, tx-time correlation, `:db/valid-at` semantics, and all parse/runtime error guards
+
+### Total
+647 tests (438 unit + 209 integration)
+
 ## v0.14.0 — Phase 7.5: Tests + Error Coverage (2026-03-31)
 
 ### Added

@@ -120,7 +120,7 @@ cargo run < demos/demo_negation.txt
    - `evaluator.rs`: `RecursiveEvaluator` (semi-naive), `StratifiedEvaluator`, `evaluate_not_join`
    - `stratification.rs`: `DependencyGraph`, `stratify()` — negative edges + cycle detection
    - `rules.rs`: `RuleRegistry` — thread-safe rule management
-   - `types.rs`: `EdnValue`, `Pattern`, `DatalogQuery`, `AsOf`, `ValidAt`, `WhereClause` (incl. `Not`, `NotJoin`)
+   - `types.rs`: `EdnValue`, `Pattern`, `DatalogQuery`, `AsOf`, `ValidAt`, `WhereClause` (incl. `Not`, `NotJoin`); `PseudoAttr` enum, `AttributeSpec` wrapper
    - `optimizer.rs`: Selectivity-based join reordering; disabled under `wasm` feature
 
 4. **`src/temporal.rs`** — UTC-only timestamp parsing (avoids chrono CVE GHSA-wcg3-cvx6-7396)
@@ -165,7 +165,7 @@ Auto-migrates v1/v2/v3/v4/v5 → v6 on open/checkpoint.
 
 ## Test Coverage
 
-**617 tests passing** (424 unit + 187 integration + 6 doc).
+**647 tests passing** (438 unit + 209 integration).
 See `TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
