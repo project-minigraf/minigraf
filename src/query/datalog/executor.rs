@@ -13,6 +13,26 @@ use anyhow::{Result, anyhow};
 use regex_lite::Regex;
 use std::sync::{Arc, RwLock};
 
+/// Returns true if any where clause (at any depth) contains a per-fact
+/// pseudo-attribute pattern (ValidFrom / ValidTo / TxCount / TxId).
+/// Used to enforce the `:any-valid-time` requirement.
+fn query_uses_per_fact_pseudo_attr(query: &DatalogQuery) -> bool {
+    fn check_clauses(clauses: &[WhereClause]) -> bool {
+        clauses.iter().any(|c| match c {
+            WhereClause::Pattern(p) => matches!(
+                &p.attribute,
+                AttributeSpec::Pseudo(pa) if pa.is_per_fact()
+            ),
+            WhereClause::Not(inner) => check_clauses(inner),
+            WhereClause::NotJoin { clauses: inner, .. } => check_clauses(inner),
+            WhereClause::Or(branches) => branches.iter().any(|b| check_clauses(b)),
+            WhereClause::OrJoin { branches, .. } => branches.iter().any(|b| check_clauses(b)),
+            _ => false,
+        })
+    }
+    check_clauses(&query.where_clauses)
+}
+
 /// Result of executing a Datalog query
 #[derive(Debug, Clone, PartialEq)]
 pub enum QueryResult {
@@ -186,9 +206,27 @@ impl DatalogExecutor {
             return self.execute_query_with_rules(query);
         }
 
+        // Compute query-level valid_at value for :db/valid-at pseudo-attribute binding.
+        let now = tx_id_now() as i64;
+        let valid_at_value = match &query.valid_at {
+            Some(ValidAt::Timestamp(t)) => Value::Integer(*t),
+            Some(ValidAt::AnyValidTime) => Value::Null,
+            None => Value::Integer(now),
+        };
+
+        // Hard-error: per-fact pseudo-attrs require :any-valid-time.
+        if query_uses_per_fact_pseudo_attr(&query)
+            && !matches!(query.valid_at, Some(ValidAt::AnyValidTime))
+        {
+            return Err(anyhow!(
+                "temporal pseudo-attributes :db/valid-from, :db/valid-to, :db/tx-count, and \
+                 :db/tx-id require :any-valid-time; add :any-valid-time to your query"
+            ));
+        }
+
         // Apply temporal filters before pattern matching
         let filtered_facts = self.filter_facts_for_query(&query)?;
-        let matcher = PatternMatcher::from_slice(filtered_facts.clone());
+        let matcher = PatternMatcher::from_slice_with_valid_at(filtered_facts.clone(), valid_at_value.clone());
         let patterns = query.get_patterns();
 
         // Plan patterns: assign index hints and reorder by selectivity.
@@ -244,7 +282,7 @@ impl DatalogExecutor {
                 .into_iter()
                 .filter(|binding| {
                     for not_body in &not_clauses {
-                        if not_body_matches(not_body, binding, filtered_facts.clone()) {
+                        if not_body_matches(not_body, binding, filtered_facts.clone(), valid_at_value.clone()) {
                             return false;
                         }
                     }
@@ -288,6 +326,24 @@ impl DatalogExecutor {
             .iter()
             .map(|(pred, _)| pred.clone())
             .collect();
+
+        // Compute query-level valid_at value for :db/valid-at pseudo-attribute binding.
+        let now = tx_id_now() as i64;
+        let valid_at_value = match &query.valid_at {
+            Some(ValidAt::Timestamp(t)) => Value::Integer(*t),
+            Some(ValidAt::AnyValidTime) => Value::Null,
+            None => Value::Integer(now),
+        };
+
+        // Hard-error: per-fact pseudo-attrs require :any-valid-time.
+        if query_uses_per_fact_pseudo_attr(&query)
+            && !matches!(query.valid_at, Some(ValidAt::AnyValidTime))
+        {
+            return Err(anyhow!(
+                "temporal pseudo-attributes :db/valid-from, :db/valid-to, :db/tx-count, and \
+                 :db/tx-id require :any-valid-time; add :any-valid-time to your query"
+            ));
+        }
 
         // Apply temporal filters before evaluating recursive rules
         let filtered_facts = self.filter_facts_for_query(&query)?;
@@ -349,7 +405,7 @@ impl DatalogExecutor {
             Arc::from(derived_storage.get_asserted_facts().unwrap_or_default());
 
         // Match all patterns against derived facts
-        let matcher = PatternMatcher::from_slice(derived_facts.clone());
+        let matcher = PatternMatcher::from_slice_with_valid_at(derived_facts.clone(), valid_at_value.clone());
         let bindings = matcher.match_patterns(&all_patterns);
 
         // Apply Or/OrJoin clauses against derived facts (rules already evaluated)
@@ -454,7 +510,7 @@ impl DatalogExecutor {
                             .collect();
 
                         // Compute not_bindings: if no patterns, seed with current binding.
-                        let m = PatternMatcher::from_slice(derived_facts.clone());
+                        let m = PatternMatcher::from_slice_with_valid_at(derived_facts.clone(), valid_at_value.clone());
                         let mut not_bindings: Vec<Binding> = if substituted.is_empty() {
                             vec![binding.clone()]
                         } else {
@@ -547,7 +603,12 @@ impl DatalogExecutor {
 /// Evaluate a `not` body against the current outer binding.
 ///
 /// Returns true if the body "matches" (i.e., the outer binding should be excluded).
-fn not_body_matches(not_body: &[WhereClause], outer: &Binding, storage: Arc<[Fact]>) -> bool {
+fn not_body_matches(
+    not_body: &[WhereClause],
+    outer: &Binding,
+    storage: Arc<[Fact]>,
+    valid_at: Value,
+) -> bool {
     use crate::query::datalog::evaluator::substitute_pattern;
 
     let patterns: Vec<_> = not_body
@@ -563,7 +624,7 @@ fn not_body_matches(not_body: &[WhereClause], outer: &Binding, storage: Arc<[Fac
         })
         .collect();
 
-    let matcher = crate::query::datalog::matcher::PatternMatcher::from_slice(storage.clone());
+    let matcher = crate::query::datalog::matcher::PatternMatcher::from_slice_with_valid_at(storage.clone(), valid_at);
     let mut not_bindings: Vec<Binding> = if patterns.is_empty() {
         // Expr-only not body: start with the outer binding so variables resolve.
         vec![outer.clone()]
@@ -849,6 +910,13 @@ pub(crate) fn evaluate_branch(
         return Ok(vec![]);
     }
 
+    // Compute valid_at_value for pseudo-attribute binding in this branch.
+    let branch_valid_at_value = match &valid_at {
+        Some(ValidAt::Timestamp(t)) => Value::Integer(*t),
+        Some(ValidAt::AnyValidTime) => Value::Null,
+        None => Value::Integer(tx_id_now() as i64),
+    };
+
     // Step 1: Collect Pattern and RuleInvocation clauses
     let patterns: Vec<Pattern> = branch
         .iter()
@@ -861,7 +929,7 @@ pub(crate) fn evaluate_branch(
         })
         .collect();
 
-    let matcher = PatternMatcher::from_slice(storage.clone());
+    let matcher = PatternMatcher::from_slice_with_valid_at(storage.clone(), branch_valid_at_value.clone());
     let bindings = if patterns.is_empty() {
         incoming
     } else {
@@ -912,7 +980,7 @@ pub(crate) fn evaluate_branch(
             .into_iter()
             .filter(|binding| {
                 for not_body in &not_clauses {
-                    if not_body_matches(not_body, binding, storage.clone()) {
+                    if not_body_matches(not_body, binding, storage.clone(), branch_valid_at_value.clone()) {
                         return false;
                     }
                 }

@@ -162,7 +162,8 @@ fn tx_id_same_transaction_join() {
 #[test]
 fn valid_at_explicit_timestamp() {
     let db = db();
-    db.execute(r#"(transact [[:alice :person/name "Alice"]])"#).unwrap();
+    // Insert with valid-from before the query point so the fact is visible at "2023-01-01"
+    db.execute(r#"(transact {:valid-from "2020-01-01"} [[:alice :person/name "Alice"]])"#).unwrap();
 
     // 2023-01-01 = 1672531200000
     let r = db.execute(r#"
