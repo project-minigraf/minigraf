@@ -1,11 +1,11 @@
 # Minigraf Test Coverage Report
 
-**Last Updated**: Phase 7.5 COMPLETE - Tests + Error Coverage ✅
+**Last Updated**: Phase 7.6 COMPLETE - Temporal Metadata Bindings ✅
 
 ## Test Summary
 
-**Total Tests**: 617 ✅
-- ✅ 424 unit tests (lib)
+**Total Tests**: 647 ✅
+- ✅ 438 unit tests (lib)
 - ✅ 10 bi-temporal tests (integration)
 - ✅ 10 complex query tests (integration)
 - ✅ 9 recursive rules tests (integration)
@@ -23,13 +23,24 @@
 - ✅ 16 disjunction tests (integration, Phase 7.3)
 - ✅ 8 production pattern tests (integration, Phase 7.5 — cross-feature scenarios)
 - ✅ 8 error handling tests (integration, Phase 7.5 — error-path coverage; 1 ignored: or+neg-cycle bug)
-- ✅ 6 doc tests
+- ✅ 16 temporal metadata tests (integration, Phase 7.6 — `:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`, `:db/valid-at`)
 
-**Status**: ✅ **All 617 tests passing** (1 ignored: confirmed or+neg-cycle stratification bug)
+**Status**: ✅ **All 647 tests passing** (1 ignored: confirmed or+neg-cycle stratification bug)
+
+## Phase 7.6 Completion Status: ✅ COMPLETE
+
+**Phase 7.6 Features** (current, complete):
+- ✅ `PseudoAttr` enum and `AttributeSpec` wrapper type in `types.rs`
+- ✅ `parse_query_pattern` in `parser.rs` — detects `:db/*` keywords in attribute position; rejects in entity/value positions
+- ✅ `PatternMatcher::from_slice_with_valid_at` constructor — passes query-level `valid_at` into the matcher
+- ✅ Hard-error guard in executor: per-fact pseudo-attrs require `:any-valid-time`
+- ✅ `:db/valid-at` binds the effective query timestamp; `:any-valid-time` accepted as standalone keyword
+- ✅ `tests/temporal_metadata_test.rs` — 16 integration tests (time-interval range queries, time-point lookups, tx-time correlation, `:db/valid-at` semantics, parse/runtime error guards)
+- ✅ 647 tests passing (438 unit + 209 integration)
 
 ## Phase 7.5 Completion Status: ✅ COMPLETE
 
-**Phase 7.5 Features** (current, complete):
+**Phase 7.5 Features** (complete):
 - ✅ `cargo-llvm-cov` branch coverage tooling documented in `CONTRIBUTING.md`
 - ✅ Baseline branch coverage recorded; executor.rs ~86.61%, evaluator.rs ~89.29% (up from ~75% / ~73%)
 - ✅ `tests/production_patterns_test.rs` — 8 cross-feature integration tests
