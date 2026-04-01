@@ -3431,6 +3431,126 @@ mod expr_eval_tests {
     // ── evaluate_branch / apply_or_clauses edge cases ────────────────────────
 
     #[test]
+    fn test_evaluate_branch_with_timestamp_valid_at() {
+        // Exercises executor.rs lines 930-931: evaluate_branch with Timestamp/AnyValidTime
+        use crate::query::datalog::types::ValidAt;
+        let storage = FactStorage::new();
+        let e1 = Uuid::new_v4();
+        storage
+            .transact(
+                vec![(
+                    e1,
+                    ":tag".to_string(),
+                    crate::graph::types::Value::Integer(1),
+                )],
+                None,
+            )
+            .unwrap();
+        let facts: Arc<[crate::graph::types::Fact]> =
+            Arc::from(storage.get_asserted_facts().unwrap().as_slice());
+        let rules = crate::query::datalog::rules::RuleRegistry::new();
+        let branch = vec![WhereClause::Pattern(Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":tag".to_string()),
+            EdnValue::Symbol("?v".to_string()),
+        ))];
+        let mut initial = std::collections::HashMap::new();
+        initial.insert("?seed".to_string(), crate::graph::types::Value::Integer(0));
+
+        // Line 930: Some(ValidAt::Timestamp(t)) arm
+        let ts_result = evaluate_branch(
+            &branch,
+            vec![initial.clone()],
+            facts.clone(),
+            &rules,
+            None,
+            Some(ValidAt::Timestamp(crate::graph::types::tx_id_now() as i64)),
+        )
+        .unwrap();
+        assert_eq!(ts_result.len(), 1, "timestamp valid_at should match");
+
+        // Line 931: Some(ValidAt::AnyValidTime) arm
+        let any_result = evaluate_branch(
+            &branch,
+            vec![initial],
+            facts,
+            &rules,
+            None,
+            Some(ValidAt::AnyValidTime),
+        )
+        .unwrap();
+        assert_eq!(any_result.len(), 1, "any_valid_time should match");
+    }
+
+    #[test]
+    fn test_execute_query_with_rules_valid_at_timestamp() {
+        // Exercises executor.rs lines 341-342 (valid_at_value in execute_query_with_rules
+        // for Timestamp and AnyValidTime arms) and lines 348-350 (hard-error guard).
+        use crate::query::datalog::parser::parse_datalog_command;
+        use crate::query::datalog::types::ValidAt;
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage);
+
+        // Register a rule so the query routes through execute_query_with_rules
+        let rule_cmd = parse_datalog_command(r#"(rule [(tagged ?e) [?e :item/tag ?v]])"#)
+            .expect("rule parse failed");
+        executor.execute(rule_cmd).expect("rule register failed");
+
+        // Transact a fact
+        executor
+            .execute(
+                parse_datalog_command(r#"(transact [[:item1 :item/tag "x"]])"#)
+                    .expect("transact parse failed"),
+            )
+            .expect("transact failed");
+
+        // Lines 341-342: call execute_query_with_rules directly with Timestamp and AnyValidTime.
+        // The public execute() routing may bypass it if query_uses_rules returns false;
+        // calling the private method directly guarantees coverage.
+        let q_ts = crate::query::datalog::types::DatalogQuery {
+            find: vec![crate::query::datalog::types::FindSpec::Variable(
+                "?e".to_string(),
+            )],
+            where_clauses: vec![],
+            as_of: None,
+            valid_at: Some(ValidAt::Timestamp(946684800000)), // 2000-01-01
+            with_vars: vec![],
+        };
+        let r_ts = executor.execute_query_with_rules(q_ts);
+        assert!(
+            r_ts.is_ok(),
+            "execute_query_with_rules with Timestamp must not error"
+        );
+
+        let q_any = crate::query::datalog::types::DatalogQuery {
+            find: vec![crate::query::datalog::types::FindSpec::Variable(
+                "?e".to_string(),
+            )],
+            where_clauses: vec![],
+            as_of: None,
+            valid_at: Some(ValidAt::AnyValidTime),
+            with_vars: vec![],
+        };
+        let r_any = executor.execute_query_with_rules(q_any);
+        assert!(
+            r_any.is_ok(),
+            "execute_query_with_rules with AnyValidTime must not error"
+        );
+
+        // Lines 348-350: hard-error guard in execute_query_with_rules
+        // Per-fact pseudo-attr without :any-valid-time in a rules query
+        let err_cmd = parse_datalog_command(
+            "(query [:find ?e ?vf :where (tagged ?e) [?e :db/valid-from ?vf]])",
+        )
+        .expect("err query parse failed");
+        let err_result = executor.execute(err_cmd);
+        assert!(
+            err_result.is_err(),
+            "per-fact pseudo-attr without :any-valid-time in rules query must fail"
+        );
+    }
+
+    #[test]
     fn test_evaluate_branch_empty_incoming_returns_empty() {
         // evaluate_branch with empty incoming bindings → returns [] immediately (line 842)
         let storage = FactStorage::new();

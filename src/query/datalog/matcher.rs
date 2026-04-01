@@ -920,6 +920,68 @@ mod tests {
     }
 
     #[test]
+    fn test_pseudo_attr_valid_to_tx_count_tx_id_scan_path() {
+        // Exercises matcher.rs lines 120-122: ValidTo/TxCount/TxId arms in
+        // match_fact_against_pattern (scan path — no hidden keys seeded).
+        use crate::graph::storage::net_asserted_facts;
+        use crate::graph::types::Value as GValue;
+        use std::sync::Arc;
+
+        let storage = FactStorage::new();
+        let alice_id = Uuid::new_v4();
+        storage
+            .transact(
+                vec![(
+                    alice_id,
+                    ":item/label".to_string(),
+                    GValue::String("z".to_string()),
+                )],
+                None,
+            )
+            .unwrap();
+
+        let all_facts: Arc<[Fact]> =
+            Arc::from(net_asserted_facts(storage.get_all_facts().unwrap()));
+        let matcher = PatternMatcher::from_slice(all_facts);
+
+        // Each test uses a UUID entity + wildcard value so the entity check passes
+        // and no hidden key is seeded → falls through to scan → hits line 120/121/122.
+
+        // Line 120: ValidTo
+        let p_vt = Pattern {
+            entity: EdnValue::Uuid(alice_id),
+            attribute: AttributeSpec::Pseudo(PseudoAttr::ValidTo),
+            value: EdnValue::Symbol("?vt".to_string()),
+            valid_from: None,
+            valid_to: None,
+        };
+        let r_vt = matcher.match_pattern(&p_vt);
+        assert_eq!(r_vt.len(), 1, "ValidTo scan should bind one result");
+
+        // Line 121: TxCount
+        let p_tc = Pattern {
+            entity: EdnValue::Uuid(alice_id),
+            attribute: AttributeSpec::Pseudo(PseudoAttr::TxCount),
+            value: EdnValue::Symbol("?tc".to_string()),
+            valid_from: None,
+            valid_to: None,
+        };
+        let r_tc = matcher.match_pattern(&p_tc);
+        assert_eq!(r_tc.len(), 1, "TxCount scan should bind one result");
+
+        // Line 122: TxId
+        let p_ti = Pattern {
+            entity: EdnValue::Uuid(alice_id),
+            attribute: AttributeSpec::Pseudo(PseudoAttr::TxId),
+            value: EdnValue::Symbol("?ti".to_string()),
+            valid_from: None,
+            valid_to: None,
+        };
+        let r_ti = matcher.match_pattern(&p_ti);
+        assert_eq!(r_ti.len(), 1, "TxId scan should bind one result");
+    }
+
+    #[test]
     fn test_pseudo_attr_entity_non_uuid_non_keyword_falls_through() {
         // Exercises matcher.rs line 302: `_ => None` when resolved entity is
         // neither Uuid nor Keyword — falls through to scan path.

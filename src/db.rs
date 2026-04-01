@@ -1118,6 +1118,48 @@ mod tests {
     }
 
     #[test]
+    fn test_materialize_transaction_non_keyword_real_attr_error() {
+        // Exercises db.rs line 576: Real(_) bail! in materialize_transaction (non-keyword Real attr)
+        use crate::query::datalog::types::EdnValue;
+        use crate::query::datalog::types::{Pattern, Transaction};
+        let tx = Transaction {
+            facts: vec![Pattern::new(
+                EdnValue::Keyword(":alice".to_string()),
+                EdnValue::Integer(42), // Real(Integer) — not a keyword
+                EdnValue::Integer(0),
+            )],
+            valid_from: None,
+            valid_to: None,
+        };
+        let r = Minigraf::materialize_transaction(&tx);
+        assert!(
+            r.is_err(),
+            "materialize_transaction with non-keyword Real attr must fail"
+        );
+    }
+
+    #[test]
+    fn test_materialize_retraction_non_keyword_real_attr_error() {
+        // Exercises db.rs line 613: Real(_) bail! in materialize_retraction (non-keyword Real attr)
+        use crate::query::datalog::types::EdnValue;
+        use crate::query::datalog::types::{Pattern, Transaction};
+        let tx = Transaction {
+            facts: vec![Pattern::new(
+                EdnValue::Keyword(":alice".to_string()),
+                EdnValue::String("not-a-keyword".to_string()), // Real(String) — not a keyword
+                EdnValue::Integer(0),
+            )],
+            valid_from: None,
+            valid_to: None,
+        };
+        let r = Minigraf::materialize_retraction(&tx);
+        assert!(
+            r.is_err(),
+            "materialize_retraction with non-keyword Real attr must fail"
+        );
+    }
+
+    #[test]
     fn test_materialize_transaction_pseudo_attr_error() {
         // Exercises db.rs line ~577: Pseudo(_) bail! in materialize_transaction
         use crate::query::datalog::types::EdnValue;
