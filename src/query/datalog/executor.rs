@@ -832,29 +832,24 @@ fn compute_aggregation(
                     .filter_map(|b| b.get(var.as_str()))
                     .filter(|v| !matches!(v, Value::Null))
                     .collect();
-                let agg_val = match apply_builtin_aggregate(func, &non_null) {
-                    // Known built-in: use batch result (preserves strict type-error semantics).
-                    Ok(v) => Ok(v),
-                    Err(e) if e.to_string().starts_with("unknown aggregate function:") => {
-                        // Not a built-in: dispatch through registry for user-defined aggregates
-                        // (registered in Phase 7.7b via register_aggregate).
-                        if let Some(desc) = registry.get(func) {
-                            if let Some(ops) = &desc.window_ops {
-                                // Registry dispatch: incremental init/step/finalise
-                                let mut acc = (ops.init)();
-                                for v in &non_null {
-                                    (ops.step)(&mut acc, v);
-                                }
-                                Ok((ops.finalise)(&acc))
-                            } else {
-                                // Non-window-compatible function (e.g. count-distinct): batch path
-                                apply_builtin_aggregate(func, &non_null)
-                            }
-                        } else {
-                            Err(e)
+                let agg_val: anyhow::Result<Value> = if let Some(desc) = registry.get(func) {
+                    if desc.is_builtin {
+                        // Built-in: use batch path which enforces strict type-error semantics.
+                        apply_builtin_aggregate(func, &non_null)
+                    } else if let Some(ops) = &desc.window_ops {
+                        // UDF registered with window_ops: incremental init/step/finalise.
+                        let mut acc = (ops.init)();
+                        for v in &non_null {
+                            (ops.step)(&mut acc, v);
                         }
+                        Ok((ops.finalise)(&acc))
+                    } else {
+                        // UDF without window_ops: batch path (will return a proper error for truly unknown names).
+                        apply_builtin_aggregate(func, &non_null)
                     }
-                    Err(e) => Err(e),
+                } else {
+                    // Unknown to registry: batch path (will return a proper error for truly unknown names).
+                    apply_builtin_aggregate(func, &non_null)
                 };
                 match agg_val {
                     Ok(v) => {

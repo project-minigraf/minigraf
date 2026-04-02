@@ -22,6 +22,9 @@ pub struct WindowOps {
 pub struct AggregateDesc {
     pub window_compatible: bool,
     pub window_ops: Option<WindowOps>,
+    /// True for built-in functions handled by `apply_builtin_aggregate`.
+    /// False for user-defined aggregates registered at runtime.
+    pub is_builtin: bool,
 }
 
 /// Registry of aggregate function descriptors, keyed by hyphenated name.
@@ -43,6 +46,7 @@ impl FunctionRegistry {
             "count".into(),
             AggregateDesc {
                 window_compatible: true,
+                is_builtin: true,
                 window_ops: Some(WindowOps {
                     init: || AggState::Count(0),
                     step: |state, v| {
@@ -67,6 +71,7 @@ impl FunctionRegistry {
             "sum".into(),
             AggregateDesc {
                 window_compatible: true,
+                is_builtin: true,
                 window_ops: Some(WindowOps {
                     init: || AggState::Sum { total: 0.0, is_float: false },
                     step: |state, v| {
@@ -101,6 +106,7 @@ impl FunctionRegistry {
             "min".into(),
             AggregateDesc {
                 window_compatible: true,
+                is_builtin: true,
                 window_ops: Some(WindowOps {
                     init: || AggState::MinMax { current: None },
                     step: |state, v| {
@@ -134,6 +140,7 @@ impl FunctionRegistry {
             "max".into(),
             AggregateDesc {
                 window_compatible: true,
+                is_builtin: true,
                 window_ops: Some(WindowOps {
                     init: || AggState::MinMax { current: None },
                     step: |state, v| {
@@ -167,6 +174,7 @@ impl FunctionRegistry {
             "avg".into(),
             AggregateDesc {
                 window_compatible: true,
+                is_builtin: true,
                 window_ops: Some(WindowOps {
                     init: || AggState::Avg { sum: 0.0, count: 0 },
                     step: |state, v| {
@@ -202,13 +210,13 @@ impl FunctionRegistry {
         // count-distinct (NOT window-compatible)
         reg.aggregates.insert(
             "count-distinct".into(),
-            AggregateDesc { window_compatible: false, window_ops: None },
+            AggregateDesc { window_compatible: false, is_builtin: true, window_ops: None },
         );
 
         // sum-distinct (NOT window-compatible)
         reg.aggregates.insert(
             "sum-distinct".into(),
-            AggregateDesc { window_compatible: false, window_ops: None },
+            AggregateDesc { window_compatible: false, is_builtin: true, window_ops: None },
         );
 
         reg
