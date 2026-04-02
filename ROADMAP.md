@@ -518,7 +518,8 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 - **7.4** ✅ Query Optimizer Improvements / `filter_facts_for_query` snapshot fix
 - **7.5** ✅ Tests + Error Coverage (617 tests; executor.rs 85.71%, evaluator.rs 89.29% branch coverage; CI coverage gate + nightly llvm-cov)
 - **7.6** ✅ Temporal Metadata Bindings + Range Queries (`:db/valid-from`, `:db/valid-to`, `:db/tx-count` as queryable pseudo-attributes; unlocks Time Interval, Time-Point Lookup, Time-Interval Lookup query classes)
-- **7.7** Window Functions + UDFs (`sum/count/rank/lag/lead :over (partition-by … :order-by …)`; embedder-registered aggregate and predicate UDFs via `FunctionRegistry`)
+- **7.7a** Window Functions — `sum`, `count`, `min`, `max`, `avg`, `rank`, `row-number` with unbounded-preceding frame; `FunctionRegistry` introduced (built-ins only); `lag`/`lead` and sliding frames deferred to post-1.0 backlog
+- **7.7b** User-Defined Functions (UDFs) — public `register_aggregate`/`register_predicate` API on the `FunctionRegistry` introduced in 7.7a
 - **7.8** Prepared Statements (parse + plan once, execute many times, temporal bind slots; implemented after full clause set including predicate-argument positions)
 - **7.9** Publish Prep (crates.io — API cleanup, rustdoc, clippy, `unwrap` audit, CI matrix)
 
@@ -861,8 +862,8 @@ UDFs are the natural generalisation: if the engine can call built-in aggregates 
 | `avg ?v :over (…)` | Running average |
 | `rank :over (…)` | Rank within partition |
 | `row-number :over (…)` | Sequential row number within partition |
-| `lag ?v :over (…)` | Previous row value in partition |
-| `lead ?v :over (…)` | Next row value in partition |
+
+> **Note:** `lag`, `lead`, and the `:rows N preceding` sliding frame are deferred to the post-1.0 backlog. 7.7a ships `sum`, `count`, `min`, `max`, `avg`, `rank`, `row-number` with unbounded-preceding (cumulative from partition start to current row) only.
 
 **`:over` clause sub-options**:
 
@@ -871,7 +872,6 @@ UDFs are the natural generalisation: if the engine can call built-in aggregates 
 | `:partition-by ?var` | Reset accumulation per unique value of `?var` (like SQL `PARTITION BY`) |
 | `:order-by ?var` (`:asc` / `:desc`) | Determines row order within each partition |
 | Frame: `:rows-unbounded-preceding` (default) | Accumulate from first row in partition to current |
-| Frame: `:rows N preceding` | Sliding window of N preceding rows |
 
 **Implementation**:
 - Parser: add `WindowExpr` variant to the `:find` clause AST; parse `(func ?v :over (...))` forms
