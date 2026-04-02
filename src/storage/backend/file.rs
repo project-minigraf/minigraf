@@ -1,5 +1,5 @@
 /// File-based storage backend for native platforms.
-use crate::storage::{FileHeader, PAGE_SIZE, StorageBackend};
+use crate::storage::{FileHeader, StorageBackend, PAGE_SIZE};
 use anyhow::Result;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -20,6 +20,7 @@ pub struct FileBackend {
     path: PathBuf,
     file: File,
     header: FileHeader,
+    is_new: bool,
 }
 
 impl FileBackend {
@@ -43,6 +44,7 @@ impl FileBackend {
         let file_len = file.metadata()?.len();
 
         // Determine if this is an existing file with data or a new/empty one.
+        let is_new = file_len < PAGE_SIZE as u64;
         let header = if file_len >= PAGE_SIZE as u64 {
             // File has at least one page - try to read the header
             match Self::read_header(&mut file) {
@@ -63,7 +65,12 @@ impl FileBackend {
             header
         };
 
-        Ok(FileBackend { path, file, header })
+        Ok(FileBackend {
+            path,
+            file,
+            header,
+            is_new,
+        })
     }
 
     /// Read the file header from page 0.
@@ -160,6 +167,10 @@ impl StorageBackend for FileBackend {
 
     fn backend_name(&self) -> &'static str {
         "file"
+    }
+
+    fn is_new(&self) -> bool {
+        self.is_new
     }
 }
 
