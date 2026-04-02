@@ -178,7 +178,8 @@ pub enum UnaryOp {
     FloatQ,
     BooleanQ,
     NilQ,
-    /// A UDF predicate name not in the built-in whitelist, resolved at execution time.
+    /// A UDF predicate name not in the built-in whitelist — resolved against
+    /// `FunctionRegistry` at query execution time.
     Udf(String),
 }
 
@@ -1049,6 +1050,14 @@ mod tests {
             .func_name(),
             "row-number"
         );
+        let ws_udf = WindowSpec {
+            func: WindowFunc::Udf("geomean".to_string()),
+            var: Some("?v".to_string()),
+            partition_by: None,
+            order_by: "?o".to_string(),
+            order: Order::Asc,
+        };
+        assert_eq!(ws_udf.func_name(), "geomean".to_string());
     }
 
     #[test]
@@ -1101,6 +1110,7 @@ mod tests {
         let _ = UnaryOp::FloatQ;
         let _ = UnaryOp::BooleanQ;
         let _ = UnaryOp::NilQ;
+        let _ = UnaryOp::Udf("test-fn".to_string());
     }
 
     #[test]

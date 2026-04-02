@@ -950,7 +950,9 @@ fn apply_window_functions(
                 }
 
                 _ => {
-                    // Accumulator-based: sum, count, min, max, avg.
+                    // Accumulator-based: sum, count, min, max, avg, and UDF aggregates (WindowFunc::Udf).
+                    // UDFs will be dispatched via registry in Task 4; for now Udf falls through and
+                    // produces a "no descriptor" error if the function is not registered.
                     let func_name = ws.func_name();
                     let desc = registry.get(func_name.as_str()).ok_or_else(|| {
                         anyhow::anyhow!("no descriptor for window function '{}'", func_name)
