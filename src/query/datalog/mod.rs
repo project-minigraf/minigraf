@@ -1,5 +1,6 @@
 pub mod evaluator;
 pub mod executor;
+pub mod functions;
 pub mod matcher;
 pub mod optimizer;
 pub mod parser;
