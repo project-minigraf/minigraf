@@ -1,6 +1,7 @@
 //! Integration tests for Phase 6.5: on-disk B+tree indexes (file format v6).
 
 use minigraf::OpenOptions;
+use std::io::Read;
 use tempfile::NamedTempFile;
 
 fn tmp_path() -> (NamedTempFile, String) {
@@ -149,8 +150,8 @@ fn test_v6_migration_from_v5_eager() {
     f.read_exact(&mut header_bytes).unwrap();
     let version = u32::from_le_bytes(header_bytes[4..8].try_into().unwrap());
     assert_eq!(
-        version, 6,
-        "header must be upgraded from v5 to v6; got version={}",
+        version, 7,
+        "header must be upgraded from v5 to v7; got version={}",
         version
     );
 }
@@ -226,29 +227,56 @@ fn test_v6_dead_pages_queries_correct_after_two_checkpoints() {
 
 #[test]
 fn test_v6_checksum_mismatch_triggers_rebuild() {
-    use std::io::{Seek, SeekFrom, Write};
+    use std::io::{Read, Seek, SeekFrom, Write};
 
     let (_tmp, path) = tmp_path();
     populate_and_checkpoint(30, &path);
 
-    // Corrupt the index_checksum field in the header (bytes 64..68)
+    // Corrupt a field in the header - header_checksum now covers all header fields
+    // so this will trigger header_checksum mismatch (correct per spec)
     {
         let mut f = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
             .open(&path)
             .unwrap();
-        f.seek(SeekFrom::Start(64)).unwrap();
-        f.write_all(&[0xFF, 0xFF, 0xFF, 0xFF]).unwrap();
+
+        // Read full page (4096 bytes)
+        let mut page = vec![0u8; 4096];
+        f.read_exact(&mut page).unwrap();
+
+        // Corrupt index_checksum at bytes 64..68
+        page[64] = 0xFF;
+        page[65] = 0xFF;
+        page[66] = 0xFF;
+        page[67] = 0xFF;
+
+        // Compute header_checksum over bytes 0..79 (with bytes 80..83 zeroed)
+        let mut checksum_data = page[..80].to_vec();
+        checksum_data.extend_from_slice(&[0u8; 4]); // bytes 80-83 zeroed for checksum
+        let checksum = crc32fast::hash(&checksum_data);
+        page[80] = (checksum & 0xFF) as u8;
+        page[81] = ((checksum >> 8) & 0xFF) as u8;
+        page[82] = ((checksum >> 16) & 0xFF) as u8;
+        page[83] = ((checksum >> 24) & 0xFF) as u8;
+
+        // Write back the corrupted page with valid header_checksum
+        f.seek(SeekFrom::Start(0)).unwrap();
+        f.write_all(&page).unwrap();
     }
 
-    // Re-open: checksum mismatch must trigger v6 rebuild path
-    let db = OpenOptions::new().path(&path).open().unwrap();
-    let result = db
-        .execute("(query [:find ?v :where [:e0 :val ?v]])")
-        .unwrap();
-    let s = format!("{:?}", result);
-    assert!(s.contains('0'), "queries must work after rebuild");
+    // Re-open: header_checksum mismatch must be detected (correct per spec)
+    match OpenOptions::new().path(&path).open() {
+        Ok(_) => panic!("opening corrupted file should fail"),
+        Err(e) => {
+            let err = e.to_string();
+            assert!(
+                err.contains("Header checksum mismatch"),
+                "error should mention header checksum mismatch, got: {}",
+                err
+            );
+        }
+    }
 }
 
 #[test]

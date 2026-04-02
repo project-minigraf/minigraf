@@ -1,18 +1,18 @@
+use crate::graph::FactStorage;
 /// Persistent fact storage that integrates StorageBackend with Datalog facts.
 ///
 /// This module bridges the gap between high-level fact operations and
 /// low-level page-based storage backends.
 use crate::graph::types::Fact;
-use crate::graph::FactStorage;
+use crate::storage::FACT_PAGE_FORMAT_PACKED;
 use crate::storage::btree::{read_aevt_index, read_avet_index, read_eavt_index, read_vaet_index};
 use crate::storage::btree_v6::{
-    btree_entries, build_btree, merge_sorted_vecs, stream_all_entries, OnDiskIndexReader,
+    OnDiskIndexReader, btree_entries, build_btree, merge_sorted_vecs, stream_all_entries,
 };
 use crate::storage::cache::PageCache;
-use crate::storage::index::{encode_value, AevtKey, AvetKey, EavtKey, FactRef, VaetKey};
+use crate::storage::index::{AevtKey, AvetKey, EavtKey, FactRef, VaetKey, encode_value};
 use crate::storage::packed_pages::pack_facts;
-use crate::storage::FACT_PAGE_FORMAT_PACKED;
-use crate::storage::{FileHeader, StorageBackend, PAGE_SIZE};
+use crate::storage::{FileHeader, PAGE_SIZE, StorageBackend};
 use anyhow::Result;
 use crc32fast::Hasher;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -1204,8 +1204,8 @@ mod tests {
     #[test]
     fn test_sync_check_detects_mismatch_and_rebuilds() {
         use crate::graph::types::Value;
-        use crate::storage::backend::FileBackend;
         use crate::storage::StorageBackend;
+        use crate::storage::backend::FileBackend;
         use tempfile::NamedTempFile;
         use uuid::Uuid;
 
@@ -1260,7 +1260,7 @@ mod tests {
 
     #[test]
     fn test_compute_index_checksum_stable() {
-        use crate::graph::types::{Fact, Value, VALID_TIME_FOREVER};
+        use crate::graph::types::{Fact, VALID_TIME_FOREVER, Value};
         use uuid::Uuid;
 
         let e = Uuid::new_v4();
@@ -1680,7 +1680,7 @@ mod tests {
 
     #[test]
     fn test_header_checksum_corruption_detection() {
-        use crate::storage::{FileHeader, FORMAT_VERSION};
+        use crate::storage::{FORMAT_VERSION, FileHeader};
 
         let mut header = FileHeader::new();
         header.version = FORMAT_VERSION;
