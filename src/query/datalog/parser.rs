@@ -2788,4 +2788,38 @@ mod window_parse_tests {
             panic!("expected Query");
         }
     }
+
+    #[test]
+    fn parse_unknown_window_func_rejected() {
+        let result = parse_datalog_command(
+            r#"(query [:find (frobnicate ?v :over (:order-by ?v)) :where [?e :x ?v]])"#,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_lowercase().contains("unknown window function"));
+    }
+
+    #[test]
+    fn parse_lead_rejected() {
+        let result = parse_datalog_command(
+            r#"(query [:find (lead ?v :over (:order-by ?v)) :where [?e :x ?v]])"#,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not supported"));
+    }
+
+    #[test]
+    fn parse_mixed_aggregate_and_window_allowed() {
+        let cmd = parse_datalog_command(
+            r#"(query [:find (count ?e) (sum ?v :over (:order-by ?v))
+                       :where [?e :x ?v]])"#,
+        );
+        assert!(cmd.is_ok(), "parse failed");
+        if let Ok(DatalogCommand::Query(q)) = cmd {
+            assert_eq!(q.find.len(), 2);
+            assert!(matches!(&q.find[0], FindSpec::Aggregate { func, .. } if func == "count"));
+            assert!(matches!(&q.find[1], FindSpec::Window(ws) if ws.func == WindowFunc::Sum));
+        } else {
+            panic!("expected Query");
+        }
+    }
 }
