@@ -5,7 +5,7 @@
 [![Coverage](https://codecov.io/gh/adityamukho/minigraf/branch/main/graph/badge.svg)](https://codecov.io/gh/adityamukho/minigraf)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/adityamukho/minigraf#license)
 [![Rust Edition](https://img.shields.io/badge/rust-2024-orange.svg)](https://blog.rust-lang.org/2024/10/17/Rust-1.82.0.html)
-[![Phase](https://img.shields.io/badge/phase-7.5%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
+[![Phase](https://img.shields.io/badge/phase-7.7a%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
 
 > **Embedded graph memory for AI agents, mobile apps, and the browser** — the SQLite of bi-temporal graph databases
 
@@ -16,6 +16,7 @@ A tiny, self-contained graph database with **Datalog queries** and **bi-temporal
 Minigraf is a **single-file embedded graph database** that lets you:
 - ✅ **Query relationships with Datalog** - Recursive rules, natural graph traversal
 - ✅ **Time travel through history** - Bi-temporal queries (transaction time + valid time)
+- ✅ **Window functions** - `sum/count/min/max/avg/rank/row-number :over (partition-by … :order-by …)` in `:find` clauses
 - ✅ **Embed anywhere** - Native, WASM, mobile, IoT - one `.graph` file
 - ✅ **Zero configuration** - Just `Minigraf::open("data.graph")` and you're done
 
@@ -68,7 +69,7 @@ db.execute(r#"(rule [(reachable ?a ?b) [?a :friend ?b]])
 
 ```bash
 cargo run          # interactive Datalog REPL
-cargo test         # run 617 tests
+cargo test         # run 705 tests
 cargo run < demos/demo_recursive.txt   # recursive rules demo
 ```
 

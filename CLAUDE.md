@@ -79,6 +79,7 @@ cargo test
 
 # Run specific test suite
 cargo test --test bitemporal_test -- --nocapture
+cargo test --test window_functions_test -- --nocapture
 cargo test --test complex_queries_test -- --nocapture
 cargo test --test recursive_rules_test -- --nocapture
 cargo test --test concurrency_test
@@ -165,7 +166,7 @@ Auto-migrates v1/v2/v3/v4/v5 → v6 on open/checkpoint.
 
 ## Test Coverage
 
-**647 tests passing** (438 unit + 209 integration).
+**707 tests passing** (unit + integration + doc).
 See `TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.

@@ -502,7 +502,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 **Goal**: Complete the Datalog query engine — negation, aggregation, disjunction, temporal range queries, and prepared statements
 
-**Status**: 🔄 In Progress (7.1a + 7.1b + 7.2a + 7.2b + 7.3 + 7.4 + 7.5 complete ✅)
+**Status**: 🔄 In Progress (7.1a + 7.1b + 7.2a + 7.2b + 7.3 + 7.4 + 7.5 + 7.6 + 7.7a complete ✅)
 
 **Priority**: 🔴 Critical — without these, realistic production queries cannot be expressed in Datalog
 
@@ -828,7 +828,11 @@ UDFs are the natural generalisation: if the engine can call built-in aggregates 
 
 ---
 
-#### 7.7a Window Functions
+#### 7.7a Window Functions ✅ COMPLETE
+
+**Status**: ✅ Complete (v0.16.0, 2026-04-02)
+
+**Summary**: Window functions (`sum`, `count`, `min`, `max`, `avg`, `rank`, `row-number`) added to the Datalog `:find` clause via `(func ?v :over (:partition-by ?p :order-by ?o))` syntax. `FunctionRegistry` introduced — all built-in aggregates migrated into it; `lag`/`lead` and sliding frames deferred to post-1.0 backlog. 705 tests.
 
 **Syntax** (Datomic-inspired, Datalog-native):
 
@@ -1570,7 +1574,8 @@ When evaluating features, ask:
 - ✅ Phase 7.4: Complete (March 2026) - `filter_facts_for_query` snapshot fix, eliminate 4-index rebuild, 568 tests
 - ✅ Phase 7.5: Complete (March 2026) - Cross-feature tests, error-path coverage, ~86-89% branch coverage, 617 tests
 - ✅ Phase 7.6: Complete (April 2026) - Temporal metadata bindings (`:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`, `:db/valid-at`), 647 tests
-- 🎯 Phase 7.7–7.8: window functions + UDFs, prepared statements; ≥90% branch coverage - **NEXT**
+- ✅ Phase 7.7a: Complete (April 2026) - Window functions (`sum/count/min/max/avg/rank/row-number :over`), `FunctionRegistry`, 705 tests
+- 🎯 Phase 7.7b–7.8: UDFs, prepared statements; ≥90% branch coverage - **NEXT**
 - 🎯 Phase 8: 3-4 months (Cross-platform — WASM, mobile, language bindings)
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)
 - 🎯 **v1.0.0: 9-12 months**
@@ -1581,20 +1586,19 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: Phase 7.6 Complete — Phase 7.7 Next (Window Functions + UDFs)
+**Right Now**: Phase 7.7a Complete — Phase 7.7b Next (UDFs)
 
-**Phase 7.6 Achievements**:
-1. ✅ `PseudoAttr` enum and `AttributeSpec` wrapper type in `types.rs`
-2. ✅ `parse_query_pattern` in `parser.rs` — `:db/*` keywords in attribute position; parse error in entity/value positions
-3. ✅ `PatternMatcher::from_slice_with_valid_at` — passes query-level `valid_at` into the matcher
-4. ✅ Hard-error guard in executor: per-fact pseudo-attrs require `:any-valid-time`
-5. ✅ `:db/valid-at` binds effective query timestamp; `:any-valid-time` accepted as standalone keyword
-6. ✅ `tests/temporal_metadata_test.rs` — 16 integration tests covering all four temporal query classes
-7. ✅ 647 tests passing (438 unit + 209 integration); version bumped to v0.15.0
+**Phase 7.7a Achievements**:
+1. ✅ `FunctionRegistry` in `src/query/datalog/functions.rs` — string-keyed registry; all built-in aggregates migrated; `window_ops` (init/step/finalise)
+2. ✅ `WindowFunc`, `Order`, `WindowSpec`, `FindSpec::Window` types in `types.rs`
+3. ✅ `parse_window_expr` in `parser.rs` — `(func ?v :over (:partition-by ?p :order-by ?o :desc))` syntax; `lag`/`lead` rejected with "not supported"
+4. ✅ `apply_post_processing` + `apply_window_functions` + `compute_aggregation` in `executor.rs`
+5. ✅ `FunctionRegistry` wired through `db.rs` (`Minigraf::Inner`)
+6. ✅ `tests/window_functions_test.rs` — 12 integration tests covering all window functions, partition-by, desc order, mixed aggregate+window, edge cases
+7. ✅ 705 tests passing; version bumped to v0.16.0
 
-**Immediate Next Steps (Phase 7.7)**:
-1. Window functions — `sum/count/rank/lag/lead :over (partition-by … :order-by …)` in `:find` clauses
-2. UDFs — embedder-registered aggregate and predicate functions via `FunctionRegistry`
+**Immediate Next Steps (Phase 7.7b)**:
+1. UDFs — embedder-registered aggregate and predicate functions via `FunctionRegistry`
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)

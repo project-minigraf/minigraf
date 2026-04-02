@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.16.0 — Phase 7.7a: Window Functions (2026-04-02)
+
+### Added
+- **Window functions** in Datalog `:find` clause: `(sum ?v :over (...))`, `(count ?v :over (...))`, `(min ?v :over (...))`, `(max ?v :over (...))`, `(avg ?v :over (...))`, `(rank :over (...))`, `(row-number :over (...))` with unbounded-preceding (cumulative from partition start to current row) frame
+- **`:partition-by ?var`** optional clause: absent means whole result set is one partition
+- **`:order-by ?var`** required in every `:over` clause; `:desc` optional (default ascending)
+- **`FunctionRegistry`** (`src/query/datalog/functions.rs`): string-keyed registry of aggregate descriptors; all built-in aggregates migrated into it; `window_ops` (init/step/finalise) on window-compatible entries; `is_builtin` flag separates built-ins from future UDFs
+- **Mixed queries**: regular aggregates and window functions may coexist in the same `:find` clause; aggregates collapse rows first, windows annotate over collapsed rows
+- **`AggregateDesc`**, **`AggState`**, **`WindowOps`** types in `functions.rs`
+- **`WindowFunc`**, **`Order`**, **`WindowSpec`**, **`FindSpec::Window`** types in `types.rs`
+- `tests/window_functions_test.rs`: 12 integration tests (cumulative sum, running count/min/avg, rank with ties, row-number, partition-by, desc ordering, mixed aggregate+window, single-row and empty-result edge cases, lag/lead parse rejection)
+
+### Changed
+- `FindSpec::Aggregate { func }`: type of `func` changed from `AggFunc` enum to `String`; dispatch goes through `FunctionRegistry` — internal change, no public API impact
+- `AggFunc` enum removed from `types.rs`; all aggregate dispatch centralised in `functions.rs`
+- `apply_aggregation` and `apply_agg_func` removed from `executor.rs`; replaced by `apply_post_processing` + helpers
+
+### Total
+707 tests (unit + integration + doc)
+
 ## v0.15.0 — Phase 7.6: Temporal Metadata Bindings (2026-04-01)
 
 ### Added

@@ -1,11 +1,11 @@
 # Minigraf Test Coverage Report
 
-**Last Updated**: Phase 7.6 COMPLETE - Temporal Metadata Bindings ✅
+**Last Updated**: Phase 7.7a COMPLETE - Window Functions ✅
 
 ## Test Summary
 
-**Total Tests**: 647 ✅
-- ✅ 438 unit tests (lib)
+**Total Tests**: 707 ✅
+- ✅ 478 unit tests (lib)
 - ✅ 10 bi-temporal tests (integration)
 - ✅ 10 complex query tests (integration)
 - ✅ 9 recursive rules tests (integration)
@@ -24,8 +24,21 @@
 - ✅ 8 production pattern tests (integration, Phase 7.5 — cross-feature scenarios)
 - ✅ 8 error handling tests (integration, Phase 7.5 — error-path coverage; 1 ignored: or+neg-cycle bug)
 - ✅ 16 temporal metadata tests (integration, Phase 7.6 — `:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`, `:db/valid-at`)
+- ✅ 12 window function tests (integration, Phase 7.7a — cumulative sum/count/min/avg, rank with ties, row-number, partition-by, desc ordering, mixed aggregate+window, edge cases, lag/lead parse rejection)
+- ✅ 6 doc tests
 
-**Status**: ✅ **All 647 tests passing** (1 ignored: confirmed or+neg-cycle stratification bug)
+**Status**: ✅ **All 707 tests passing** (1 ignored: confirmed or+neg-cycle stratification bug)
+
+## Phase 7.7a Completion Status: ✅ COMPLETE
+
+**Phase 7.7a Features** (current, complete):
+- ✅ `FunctionRegistry` in `src/query/datalog/functions.rs` — string-keyed registry; built-in aggregates (`sum`, `count`, `min`, `max`, `avg`, `count-distinct`, `sum-distinct`) migrated into it; `window_ops` (init/step/finalise) on window-compatible entries; `is_builtin` flag
+- ✅ `WindowFunc`, `Order`, `WindowSpec`, `FindSpec::Window` types in `types.rs`; `AggFunc` enum removed; `FindSpec::Aggregate.func` changed to `String`
+- ✅ `parse_window_expr` in `parser.rs` — `(func ?v :over (:partition-by ?p :order-by ?o :desc))` syntax; `lag`/`lead` rejected; unknown function → parse error; non-window-compatible in `:over` → parse error
+- ✅ `apply_post_processing`, `compute_aggregation`, `apply_window_functions`, `project_find_specs` in `executor.rs` — replaces `apply_aggregation`/`apply_agg_func`
+- ✅ `FunctionRegistry` wired through `db.rs` (`Minigraf::Inner` gains `Arc<RwLock<FunctionRegistry>>`)
+- ✅ `tests/window_functions_test.rs` — 12 integration tests (cumulative sum, running count/min/avg, rank with ties, row-number, partition-by, desc ordering, mixed aggregate+window, single-row and empty-result edge cases, lag/lead parse rejection)
+- ✅ 707 tests passing (unit + integration + doc)
 
 ## Phase 7.6 Completion Status: ✅ COMPLETE
 
