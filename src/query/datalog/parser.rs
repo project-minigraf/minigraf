@@ -86,7 +86,10 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                         }
                     } else {
                         if string.len() >= MAX_STRING_LENGTH {
-                            return Err(format!("String exceeds maximum length of {} bytes", MAX_STRING_LENGTH));
+                            return Err(format!(
+                                "String exceeds maximum length of {} bytes",
+                                MAX_STRING_LENGTH
+                            ));
                         }
                         string.push(ch);
                         chars.next();
@@ -101,7 +104,10 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 while let Some(&ch) = chars.peek() {
                     if ch.is_alphanumeric() || ch == '/' || ch == '-' || ch == '_' {
                         if keyword.len() >= MAX_KEYWORD_LENGTH {
-                            return Err(format!("Keyword exceeds maximum length of {} bytes", MAX_KEYWORD_LENGTH));
+                            return Err(format!(
+                                "Keyword exceeds maximum length of {} bytes",
+                                MAX_KEYWORD_LENGTH
+                            ));
                         }
                         keyword.push(ch);
                         chars.next();
@@ -118,7 +124,10 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 while let Some(&ch) = chars.peek() {
                     if ch.is_alphanumeric() || ch == '-' {
                         if tag.len() >= MAX_SYMBOL_LENGTH {
-                            return Err(format!("Tagged literal exceeds maximum length of {} bytes", MAX_SYMBOL_LENGTH));
+                            return Err(format!(
+                                "Tagged literal exceeds maximum length of {} bytes",
+                                MAX_SYMBOL_LENGTH
+                            ));
                         }
                         tag.push(ch);
                         chars.next();
@@ -170,7 +179,10 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 while let Some(&ch) = chars.peek() {
                     if ch.is_alphanumeric() || ch == '?' || ch == '_' || ch == '-' || ch == '/' {
                         if symbol.len() >= MAX_SYMBOL_LENGTH {
-                            return Err(format!("Symbol exceeds maximum length of {} bytes", MAX_SYMBOL_LENGTH));
+                            return Err(format!(
+                                "Symbol exceeds maximum length of {} bytes",
+                                MAX_SYMBOL_LENGTH
+                            ));
                         }
                         symbol.push(ch);
                         chars.next();
@@ -238,12 +250,18 @@ fn parse_number(
     Ok((is_float, num_str.clone()))
 }
 
-fn parse_symbol(chars: &mut std::iter::Peekable<std::str::Chars>, first: char) -> Result<String, String> {
+fn parse_symbol(
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+    first: char,
+) -> Result<String, String> {
     let mut symbol = String::from(first);
     while let Some(&ch) = chars.peek() {
         if ch.is_alphanumeric() || ch == '?' || ch == '_' || ch == '-' || ch == '/' {
             if symbol.len() >= MAX_SYMBOL_LENGTH {
-                return Err(format!("Symbol exceeds maximum length of {} bytes", MAX_SYMBOL_LENGTH));
+                return Err(format!(
+                    "Symbol exceeds maximum length of {} bytes",
+                    MAX_SYMBOL_LENGTH
+                ));
             }
             symbol.push(ch);
             chars.next();
