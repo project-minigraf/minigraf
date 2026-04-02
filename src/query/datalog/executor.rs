@@ -75,7 +75,11 @@ impl DatalogExecutor {
         rules: Arc<RwLock<RuleRegistry>>,
         functions: Arc<RwLock<FunctionRegistry>>,
     ) -> Self {
-        DatalogExecutor { storage, rules, functions }
+        DatalogExecutor {
+            storage,
+            rules,
+            functions,
+        }
     }
 
     /// Convenience constructor for tests. Shares `rules` with other executors but creates
@@ -328,12 +332,8 @@ impl DatalogExecutor {
         let filtered_bindings = apply_expr_clauses(not_filtered, &query.where_clauses);
 
         let registry = self.functions.read().unwrap();
-        let results = apply_post_processing(
-            filtered_bindings,
-            &query.find,
-            &query.with_vars,
-            &registry,
-        )?;
+        let results =
+            apply_post_processing(filtered_bindings, &query.find, &query.with_vars, &registry)?;
 
         Ok(QueryResult::QueryResults {
             vars: query.find.iter().map(|s| s.display_name()).collect(),
@@ -574,12 +574,8 @@ impl DatalogExecutor {
         let filtered_bindings = apply_expr_clauses(not_filtered, &query.where_clauses);
 
         let registry = self.functions.read().unwrap();
-        let results = apply_post_processing(
-            filtered_bindings,
-            &query.find,
-            &query.with_vars,
-            &registry,
-        )?;
+        let results =
+            apply_post_processing(filtered_bindings, &query.find, &query.with_vars, &registry)?;
 
         Ok(QueryResult::QueryResults {
             vars: query.find.iter().map(|s| s.display_name()).collect(),
@@ -712,7 +708,9 @@ fn apply_post_processing(
     with_vars: &[String],
     registry: &FunctionRegistry,
 ) -> Result<Vec<Vec<Value>>> {
-    let has_aggregates = find_specs.iter().any(|s| matches!(s, FindSpec::Aggregate { .. }));
+    let has_aggregates = find_specs
+        .iter()
+        .any(|s| matches!(s, FindSpec::Aggregate { .. }));
     let has_windows = find_specs.iter().any(|s| matches!(s, FindSpec::Window(_)));
 
     if !has_aggregates && !has_windows {
@@ -743,7 +741,9 @@ fn compute_aggregation(
     with_vars: &[String],
     registry: &FunctionRegistry,
 ) -> Result<Vec<Binding>> {
-    let has_grouping_vars = find_specs.iter().any(|s| matches!(s, FindSpec::Variable(_)));
+    let has_grouping_vars = find_specs
+        .iter()
+        .any(|s| matches!(s, FindSpec::Variable(_)));
 
     // Special case: zero bindings + all-count specs → one zero row.
     if bindings.is_empty() {
@@ -992,12 +992,8 @@ fn project_find_specs(bindings: &[Binding], find_specs: &[FindSpec]) -> Vec<Vec<
         for (i, spec) in find_specs.iter().enumerate() {
             let val = match spec {
                 FindSpec::Variable(v) => binding.get(v).cloned(),
-                FindSpec::Aggregate { .. } => {
-                    binding.get(&format!("__agg_{}", i)).cloned()
-                }
-                FindSpec::Window(_) => {
-                    binding.get(&format!("__win_{}", i)).cloned()
-                }
+                FindSpec::Aggregate { .. } => binding.get(&format!("__agg_{}", i)).cloned(),
+                FindSpec::Window(_) => binding.get(&format!("__win_{}", i)).cloned(),
             };
             match val {
                 Some(v) => row.push(v),
@@ -2409,7 +2405,13 @@ mod tests {
             func: "count".to_string(),
             var: "?e".to_string(),
         }];
-        let results = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
+        let results = apply_post_processing(
+            bindings,
+            &find_specs,
+            &[],
+            &FunctionRegistry::with_builtins(),
+        )
+        .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0][0], Value::Integer(3));
     }
@@ -2437,7 +2439,13 @@ mod tests {
                 var: "?e".to_string(),
             },
         ];
-        let mut results = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
+        let mut results = apply_post_processing(
+            bindings,
+            &find_specs,
+            &[],
+            &FunctionRegistry::with_builtins(),
+        )
+        .unwrap();
         results.sort_by_key(|r| match &r[0] {
             Value::String(s) => s.clone(),
             _ => String::new(),
@@ -2464,7 +2472,13 @@ mod tests {
             func: "count-distinct".to_string(),
             var: "?v".to_string(),
         }];
-        let results = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
+        let results = apply_post_processing(
+            bindings,
+            &find_specs,
+            &[],
+            &FunctionRegistry::with_builtins(),
+        )
+        .unwrap();
         assert_eq!(results[0][0], Value::Integer(2));
     }
 
@@ -2475,7 +2489,9 @@ mod tests {
             func: "count".to_string(),
             var: "?e".to_string(),
         }];
-        let results = apply_post_processing(vec![], &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
+        let results =
+            apply_post_processing(vec![], &find_specs, &[], &FunctionRegistry::with_builtins())
+                .unwrap();
         assert_eq!(results.len(), 1, "should return one row with 0");
         assert_eq!(results[0][0], Value::Integer(0));
     }
@@ -2490,7 +2506,9 @@ mod tests {
                 var: "?e".to_string(),
             },
         ];
-        let results = apply_post_processing(vec![], &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
+        let results =
+            apply_post_processing(vec![], &find_specs, &[], &FunctionRegistry::with_builtins())
+                .unwrap();
         assert_eq!(results.len(), 0, "should return empty set");
     }
 
@@ -2505,7 +2523,13 @@ mod tests {
             func: "sum".to_string(),
             var: "?v".to_string(),
         }];
-        let results = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
+        let results = apply_post_processing(
+            bindings,
+            &find_specs,
+            &[],
+            &FunctionRegistry::with_builtins(),
+        )
+        .unwrap();
         assert_eq!(results[0][0], Value::Integer(60));
     }
 
@@ -2519,7 +2543,13 @@ mod tests {
             func: "sum".to_string(),
             var: "?v".to_string(),
         }];
-        let results = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
+        let results = apply_post_processing(
+            bindings,
+            &find_specs,
+            &[],
+            &FunctionRegistry::with_builtins(),
+        )
+        .unwrap();
         assert_eq!(results[0][0], Value::Float(10.5));
     }
 
@@ -2534,7 +2564,13 @@ mod tests {
             func: "sum-distinct".to_string(),
             var: "?v".to_string(),
         }];
-        let results = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
+        let results = apply_post_processing(
+            bindings,
+            &find_specs,
+            &[],
+            &FunctionRegistry::with_builtins(),
+        )
+        .unwrap();
         assert_eq!(results[0][0], Value::Integer(15)); // 5 + 10, not 5 + 5 + 10
     }
 
@@ -2545,7 +2581,12 @@ mod tests {
             func: "sum".to_string(),
             var: "?v".to_string(),
         }];
-        let result = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins());
+        let result = apply_post_processing(
+            bindings,
+            &find_specs,
+            &[],
+            &FunctionRegistry::with_builtins(),
+        );
         assert!(result.is_err(), "sum of string should fail");
     }
 
@@ -2560,7 +2601,13 @@ mod tests {
             func: "min".to_string(),
             var: "?v".to_string(),
         }];
-        let results = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
+        let results = apply_post_processing(
+            bindings,
+            &find_specs,
+            &[],
+            &FunctionRegistry::with_builtins(),
+        )
+        .unwrap();
         assert_eq!(results[0][0], Value::Integer(10));
     }
 
@@ -2575,7 +2622,13 @@ mod tests {
             func: "max".to_string(),
             var: "?v".to_string(),
         }];
-        let results = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
+        let results = apply_post_processing(
+            bindings,
+            &find_specs,
+            &[],
+            &FunctionRegistry::with_builtins(),
+        )
+        .unwrap();
         assert_eq!(results[0][0], Value::String("zebra".to_string()));
     }
 
@@ -2586,7 +2639,12 @@ mod tests {
             func: "min".to_string(),
             var: "?v".to_string(),
         }];
-        let result = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins());
+        let result = apply_post_processing(
+            bindings,
+            &find_specs,
+            &[],
+            &FunctionRegistry::with_builtins(),
+        );
         assert!(result.is_err(), "min of boolean should fail");
     }
 
@@ -2600,7 +2658,12 @@ mod tests {
             func: "min".to_string(),
             var: "?v".to_string(),
         }];
-        let result = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins());
+        let result = apply_post_processing(
+            bindings,
+            &find_specs,
+            &[],
+            &FunctionRegistry::with_builtins(),
+        );
         assert!(result.is_err(), "min of mixed Integer/Float should fail");
     }
 
@@ -2615,7 +2678,13 @@ mod tests {
             func: "sum".to_string(),
             var: "?v".to_string(),
         }];
-        let results = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
+        let results = apply_post_processing(
+            bindings,
+            &find_specs,
+            &[],
+            &FunctionRegistry::with_builtins(),
+        )
+        .unwrap();
         assert_eq!(results[0][0], Value::Integer(30));
     }
 
@@ -2630,7 +2699,13 @@ mod tests {
             func: "count".to_string(),
             var: "?v".to_string(),
         }];
-        let results = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
+        let results = apply_post_processing(
+            bindings,
+            &find_specs,
+            &[],
+            &FunctionRegistry::with_builtins(),
+        )
+        .unwrap();
         assert_eq!(results[0][0], Value::Integer(2)); // null not counted
     }
 
@@ -2640,7 +2715,9 @@ mod tests {
             func: "sum".to_string(),
             var: "?v".to_string(),
         }];
-        let results = apply_post_processing(vec![], &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
+        let results =
+            apply_post_processing(vec![], &find_specs, &[], &FunctionRegistry::with_builtins())
+                .unwrap();
         assert_eq!(results.len(), 0, "sum on empty should return empty set");
     }
 
@@ -2668,11 +2745,23 @@ mod tests {
             },
         ];
         // Without :with: group key = ("eng",). Both bindings in one group → sum = 100.
-        let results_no_with = apply_post_processing(bindings.clone(), &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
+        let results_no_with = apply_post_processing(
+            bindings.clone(),
+            &find_specs,
+            &[],
+            &FunctionRegistry::with_builtins(),
+        )
+        .unwrap();
         assert_eq!(results_no_with.len(), 1);
         assert_eq!(results_no_with[0][1], Value::Integer(100));
         // With :with ?e: group key = ("eng", e). Two separate groups → two rows, each sum = 50.
-        let results_with = apply_post_processing(bindings, &find_specs, &["?e".to_string()], &FunctionRegistry::with_builtins()).unwrap();
+        let results_with = apply_post_processing(
+            bindings,
+            &find_specs,
+            &["?e".to_string()],
+            &FunctionRegistry::with_builtins(),
+        )
+        .unwrap();
         assert_eq!(results_with.len(), 2);
         assert_eq!(results_with[0][1], Value::Integer(50));
     }
@@ -4015,9 +4104,24 @@ mod expr_eval_tests {
         use super::super::types::{Order, WindowFunc, WindowSpec};
 
         let mut bindings: Vec<std::collections::HashMap<String, Value>> = vec![
-            [("dept".into(), Value::String("A".into())), ("salary".into(), Value::Integer(10))].into_iter().collect(),
-            [("dept".into(), Value::String("A".into())), ("salary".into(), Value::Integer(20))].into_iter().collect(),
-            [("dept".into(), Value::String("B".into())), ("salary".into(), Value::Integer(100))].into_iter().collect(),
+            [
+                ("dept".into(), Value::String("A".into())),
+                ("salary".into(), Value::Integer(10)),
+            ]
+            .into_iter()
+            .collect(),
+            [
+                ("dept".into(), Value::String("A".into())),
+                ("salary".into(), Value::Integer(20)),
+            ]
+            .into_iter()
+            .collect(),
+            [
+                ("dept".into(), Value::String("B".into())),
+                ("salary".into(), Value::Integer(100)),
+            ]
+            .into_iter()
+            .collect(),
         ];
         let find_specs = vec![
             FindSpec::Variable("dept".into()),
@@ -4034,14 +4138,23 @@ mod expr_eval_tests {
         apply_window_functions(&mut bindings, &find_specs, &registry).expect("window");
 
         // Partition A: 10 → sum=10, 20 → sum=30
-        let row_a10 = bindings.iter().find(|b| b.get("salary") == Some(&Value::Integer(10))).unwrap();
+        let row_a10 = bindings
+            .iter()
+            .find(|b| b.get("salary") == Some(&Value::Integer(10)))
+            .unwrap();
         assert_eq!(row_a10.get("__win_2"), Some(&Value::Integer(10)));
 
-        let row_a20 = bindings.iter().find(|b| b.get("salary") == Some(&Value::Integer(20))).unwrap();
+        let row_a20 = bindings
+            .iter()
+            .find(|b| b.get("salary") == Some(&Value::Integer(20)))
+            .unwrap();
         assert_eq!(row_a20.get("__win_2"), Some(&Value::Integer(30)));
 
         // Partition B: 100 → sum=100 (accumulator reset, NOT 130)
-        let row_b100 = bindings.iter().find(|b| b.get("salary") == Some(&Value::Integer(100))).unwrap();
+        let row_b100 = bindings
+            .iter()
+            .find(|b| b.get("salary") == Some(&Value::Integer(100)))
+            .unwrap();
         assert_eq!(row_b100.get("__win_2"), Some(&Value::Integer(100)));
     }
 }

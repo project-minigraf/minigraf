@@ -443,8 +443,14 @@ fn parse_aggregate(elems: &[EdnValue]) -> Result<FindSpec, String> {
         }
     };
 
-    const KNOWN_AGGREGATES: &[&str] =
-        &["count", "count-distinct", "sum", "sum-distinct", "min", "max"];
+    const KNOWN_AGGREGATES: &[&str] = &[
+        "count",
+        "count-distinct",
+        "sum",
+        "sum-distinct",
+        "min",
+        "max",
+    ];
     const WINDOW_ONLY: &[&str] = &["avg", "rank", "row-number"];
 
     if WINDOW_ONLY.contains(&func_name.as_str()) {
@@ -462,7 +468,10 @@ fn parse_aggregate(elems: &[EdnValue]) -> Result<FindSpec, String> {
         _ => return Err("Aggregate argument must be a variable (starting with ?)".to_string()),
     };
 
-    Ok(FindSpec::Aggregate { func: func_name, var })
+    Ok(FindSpec::Aggregate {
+        func: func_name,
+        var,
+    })
 }
 
 /// Parse a window function expression.
@@ -542,9 +551,7 @@ fn parse_window_expr(elems: &[EdnValue]) -> Result<FindSpec, String> {
     let over_list = match elems.get(over_keyword_idx + 1) {
         Some(EdnValue::List(l)) => l.as_slice(),
         _ => {
-            return Err(
-                "':over' must be followed by a list, e.g., (:order-by ?var)".to_string(),
-            );
+            return Err("':over' must be followed by a list, e.g., (:order-by ?var)".to_string());
         }
     };
 
@@ -562,7 +569,7 @@ fn parse_window_expr(elems: &[EdnValue]) -> Result<FindSpec, String> {
                         Some(EdnValue::Symbol(s)) if s.starts_with('?') => Some(s.clone()),
                         _ => {
                             return Err(
-                                "':partition-by' requires a variable (starting with ?)".into(),
+                                "':partition-by' requires a variable (starting with ?)".into()
                             );
                         }
                     };
@@ -572,9 +579,7 @@ fn parse_window_expr(elems: &[EdnValue]) -> Result<FindSpec, String> {
                     order_by = match over_list.get(j) {
                         Some(EdnValue::Symbol(s)) if s.starts_with('?') => Some(s.clone()),
                         _ => {
-                            return Err(
-                                "':order-by' requires a variable (starting with ?)".into(),
-                            );
+                            return Err("':order-by' requires a variable (starting with ?)".into());
                         }
                     };
                 }
@@ -589,17 +594,14 @@ fn parse_window_expr(elems: &[EdnValue]) -> Result<FindSpec, String> {
                 }
             },
             other => {
-                return Err(format!(
-                    "unexpected element in ':over' clause: {:?}",
-                    other
-                ));
+                return Err(format!("unexpected element in ':over' clause: {:?}", other));
             }
         }
         j += 1;
     }
 
-    let order_by = order_by
-        .ok_or_else(|| "':order-by' is required in the ':over' clause".to_string())?;
+    let order_by =
+        order_by.ok_or_else(|| "':order-by' is required in the ':over' clause".to_string())?;
 
     Ok(FindSpec::Window(WindowSpec {
         func,
@@ -2764,9 +2766,7 @@ mod window_parse_tests {
 
     #[test]
     fn parse_existing_aggregate_still_works() {
-        let cmd = parse_datalog_command(
-            r#"(query [:find (count ?e) :where [?e :person/name _]])"#,
-        );
+        let cmd = parse_datalog_command(r#"(query [:find (count ?e) :where [?e :person/name _]])"#);
         assert!(cmd.is_ok(), "parse failed");
         if let Ok(DatalogCommand::Query(q)) = cmd {
             assert!(matches!(&q.find[0], FindSpec::Aggregate { func, .. } if func == "count"));
@@ -2797,7 +2797,12 @@ mod window_parse_tests {
             r#"(query [:find (frobnicate ?v :over (:order-by ?v)) :where [?e :x ?v]])"#,
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_lowercase().contains("unknown window function"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_lowercase()
+                .contains("unknown window function")
+        );
     }
 
     #[test]

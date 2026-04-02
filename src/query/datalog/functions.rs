@@ -4,11 +4,19 @@ use std::collections::HashMap;
 /// Accumulator state for window aggregate functions (incremental computation).
 #[derive(Clone, Debug)]
 pub enum AggState {
-    Sum { total: f64, is_float: bool },
+    Sum {
+        total: f64,
+        is_float: bool,
+    },
     Count(i64),
     /// Used by both min and max; semantics determined by the registered step fn.
-    MinMax { current: Option<Value> },
-    Avg { sum: f64, count: usize },
+    MinMax {
+        current: Option<Value>,
+    },
+    Avg {
+        sum: f64,
+        count: usize,
+    },
 }
 
 /// Incremental operations for window-compatible aggregate functions.
@@ -73,7 +81,10 @@ impl FunctionRegistry {
                 window_compatible: true,
                 is_builtin: true,
                 window_ops: Some(WindowOps {
-                    init: || AggState::Sum { total: 0.0, is_float: false },
+                    init: || AggState::Sum {
+                        total: 0.0,
+                        is_float: false,
+                    },
                     step: |state, v| {
                         if let AggState::Sum { total, is_float } = state {
                             match v {
@@ -210,13 +221,21 @@ impl FunctionRegistry {
         // count-distinct (NOT window-compatible)
         reg.aggregates.insert(
             "count-distinct".into(),
-            AggregateDesc { window_compatible: false, is_builtin: true, window_ops: None },
+            AggregateDesc {
+                window_compatible: false,
+                is_builtin: true,
+                window_ops: None,
+            },
         );
 
         // sum-distinct (NOT window-compatible)
         reg.aggregates.insert(
             "sum-distinct".into(),
-            AggregateDesc { window_compatible: false, is_builtin: true, window_ops: None },
+            AggregateDesc {
+                window_compatible: false,
+                is_builtin: true,
+                window_ops: None,
+            },
         );
 
         reg
@@ -407,7 +426,15 @@ mod tests {
     #[test]
     fn registry_knows_all_builtins() {
         let reg = FunctionRegistry::with_builtins();
-        for name in ["count", "count-distinct", "sum", "sum-distinct", "min", "max", "avg"] {
+        for name in [
+            "count",
+            "count-distinct",
+            "sum",
+            "sum-distinct",
+            "min",
+            "max",
+            "avg",
+        ] {
             assert!(reg.is_known(name), "expected '{}' to be registered", name);
         }
     }
@@ -416,10 +443,18 @@ mod tests {
     fn window_compatible_flags() {
         let reg = FunctionRegistry::with_builtins();
         for name in ["count", "sum", "min", "max", "avg"] {
-            assert!(reg.is_window_compatible(name), "'{}' should be window-compatible", name);
+            assert!(
+                reg.is_window_compatible(name),
+                "'{}' should be window-compatible",
+                name
+            );
         }
         for name in ["count-distinct", "sum-distinct"] {
-            assert!(!reg.is_window_compatible(name), "'{}' should NOT be window-compatible", name);
+            assert!(
+                !reg.is_window_compatible(name),
+                "'{}' should NOT be window-compatible",
+                name
+            );
         }
     }
 
@@ -490,7 +525,12 @@ mod tests {
     fn apply_builtin_min_empty_errors() {
         let result = apply_builtin_aggregate("min", &[]);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("no non-null values"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("no non-null values")
+        );
     }
 
     #[test]
@@ -502,8 +542,14 @@ mod tests {
 
     #[test]
     fn value_lt_strings() {
-        assert!(value_lt(&Value::String("a".into()), &Value::String("b".into())));
-        assert!(!value_lt(&Value::String("b".into()), &Value::String("a".into())));
+        assert!(value_lt(
+            &Value::String("a".into()),
+            &Value::String("b".into())
+        ));
+        assert!(!value_lt(
+            &Value::String("b".into()),
+            &Value::String("a".into())
+        ));
     }
 
     #[test]
