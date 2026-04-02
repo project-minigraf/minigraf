@@ -1,11 +1,11 @@
 use super::evaluator::{StratifiedEvaluator, evaluate_not_join};
-use super::functions::FunctionRegistry;
+use super::functions::{FunctionRegistry, apply_builtin_aggregate, value_lt};
 use super::matcher::{PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::optimizer;
 use super::rules::RuleRegistry;
 use super::types::{
-    AsOf, AttributeSpec, BinOp, DatalogCommand, DatalogQuery, EdnValue, Expr, FindSpec, Pattern,
-    Rule, Transaction, UnaryOp, ValidAt, WhereClause,
+    AsOf, AttributeSpec, BinOp, DatalogCommand, DatalogQuery, EdnValue, Expr, FindSpec, Order,
+    Pattern, Rule, Transaction, UnaryOp, ValidAt, WhereClause, WindowFunc,
 };
 use crate::graph::FactStorage;
 use crate::graph::types::{Fact, TransactOptions, TxId, Value, tx_id_now};
@@ -54,8 +54,7 @@ pub enum QueryResult {
 pub struct DatalogExecutor {
     storage: FactStorage,
     rules: Arc<RwLock<RuleRegistry>>,
-    // Used in Task 7 (apply_post_processing); RwLock pre-wired for 7.7b register_aggregate API.
-    #[allow(dead_code)]
+    // RwLock pre-wired for 7.7b register_aggregate API.
     functions: Arc<RwLock<FunctionRegistry>>,
 }
 
@@ -328,16 +327,13 @@ impl DatalogExecutor {
         // Apply WhereClause::Expr clauses (filter and binding predicates)
         let filtered_bindings = apply_expr_clauses(not_filtered, &query.where_clauses);
 
-        // Extract requested variables from bindings (or aggregate)
-        let has_aggregates = query
-            .find
-            .iter()
-            .any(|s| matches!(s, FindSpec::Aggregate { .. }));
-        let results = if has_aggregates {
-            apply_aggregation(filtered_bindings, &query.find, &query.with_vars)?
-        } else {
-            extract_variables(filtered_bindings, &query.find)
-        };
+        let registry = self.functions.read().unwrap();
+        let results = apply_post_processing(
+            filtered_bindings,
+            &query.find,
+            &query.with_vars,
+            &registry,
+        )?;
 
         Ok(QueryResult::QueryResults {
             vars: query.find.iter().map(|s| s.display_name()).collect(),
@@ -577,16 +573,13 @@ impl DatalogExecutor {
         // Apply WhereClause::Expr clauses (filter and binding predicates)
         let filtered_bindings = apply_expr_clauses(not_filtered, &query.where_clauses);
 
-        // Extract requested variables from bindings (or aggregate)
-        let has_aggregates = query
-            .find
-            .iter()
-            .any(|s| matches!(s, FindSpec::Aggregate { .. }));
-        let results = if has_aggregates {
-            apply_aggregation(filtered_bindings, &query.find, &query.with_vars)?
-        } else {
-            extract_variables(filtered_bindings, &query.find)
-        };
+        let registry = self.functions.read().unwrap();
+        let results = apply_post_processing(
+            filtered_bindings,
+            &query.find,
+            &query.with_vars,
+            &registry,
+        )?;
 
         Ok(QueryResult::QueryResults {
             vars: query.find.iter().map(|s| s.display_name()).collect(),
@@ -704,43 +697,96 @@ fn extract_variables(
     results
 }
 
-/// Post-process bindings through aggregation.
-/// Called only when find_specs contains at least one FindSpec::Aggregate.
-fn apply_aggregation(
-    bindings: Vec<std::collections::HashMap<String, Value>>,
+type Binding = std::collections::HashMap<String, Value>;
+
+/// Unified post-processing: handles plain-variable extraction, aggregation,
+/// window functions, and mixed (aggregate + window) queries.
+///
+/// - Plain variables only → `extract_variables` (no change from current path).
+/// - Aggregates only → group-by collapse, then project.
+/// - Windows only → partition/sort/accumulate per spec, then project.
+/// - Mixed → aggregate collapses first, window runs over collapsed rows.
+fn apply_post_processing(
+    bindings: Vec<Binding>,
     find_specs: &[FindSpec],
     with_vars: &[String],
+    registry: &FunctionRegistry,
 ) -> Result<Vec<Vec<Value>>> {
-    let has_grouping_vars = find_specs
-        .iter()
-        .any(|s| matches!(s, FindSpec::Variable(_)));
+    let has_aggregates = find_specs.iter().any(|s| matches!(s, FindSpec::Aggregate { .. }));
+    let has_windows = find_specs.iter().any(|s| matches!(s, FindSpec::Window(_)));
 
-    // Zero bindings: special case for pure count/count-distinct (no grouping vars)
+    if !has_aggregates && !has_windows {
+        return Ok(extract_variables(bindings, find_specs));
+    }
+
+    // Step 1: Aggregate (collapses rows, produces binding maps).
+    let mut working: Vec<Binding> = if has_aggregates {
+        compute_aggregation(bindings, find_specs, with_vars, registry)?
+    } else {
+        bindings
+    };
+
+    // Step 2: Window functions (annotate each row, no collapse).
+    if has_windows {
+        apply_window_functions(&mut working, find_specs, registry)?;
+    }
+
+    // Step 3: Project to output rows in find-spec order.
+    Ok(project_find_specs(&working, find_specs))
+}
+
+/// Group bindings by non-aggregate find vars + with_vars, apply aggregate functions,
+/// return one binding map per group. Aggregate results stored under `"__agg_{i}"`.
+fn compute_aggregation(
+    bindings: Vec<Binding>,
+    find_specs: &[FindSpec],
+    with_vars: &[String],
+    _registry: &FunctionRegistry,
+) -> Result<Vec<Binding>> {
+    let has_grouping_vars = find_specs.iter().any(|s| matches!(s, FindSpec::Variable(_)));
+
+    // Special case: zero bindings + all-count specs → one zero row.
     if bindings.is_empty() {
         let all_count = !has_grouping_vars
             && find_specs.iter().all(|s| {
-                matches!(s, FindSpec::Aggregate { func, .. } if func == "count" || func == "count-distinct")
+                matches!(s, FindSpec::Aggregate { func, .. }
+                    if func == "count" || func == "count-distinct")
             });
         if all_count {
-            let row = find_specs.iter().map(|_| Value::Integer(0)).collect();
-            return Ok(vec![row]);
+            let mut b = Binding::new();
+            for (i, _) in find_specs.iter().enumerate() {
+                b.insert(format!("__agg_{}", i), Value::Integer(0));
+            }
+            return Ok(vec![b]);
         }
         return Ok(vec![]);
     }
 
-    // Grouping key = FindSpec::Variable vars (in find order) + with_vars
-    let group_var_names: Vec<&str> = find_specs
+    // In a mixed aggregate+window query, :with vars must NOT be added to the
+    // grouping key. The window phase runs after aggregation, so :with vars that
+    // are used only by window specs (var, order_by) would otherwise inflate the
+    // number of groups. Even :with vars used by aggregate specs (e.g. ?e in
+    // count(?e)) should not split groups — the aggregate operates over all rows
+    // in the base group determined by the Variable find specs.
+    let has_windows = find_specs.iter().any(|s| matches!(s, FindSpec::Window(_)));
+
+    // Grouping key = Variable find specs (in find order).
+    // In pure-aggregate queries, also include with_vars (Datomic semantics: :with
+    // prevents pre-aggregation de-duplication by adding vars to the group key).
+    let mut group_var_names: Vec<&str> = find_specs
         .iter()
         .filter_map(|s| match s {
             FindSpec::Variable(v) => Some(v.as_str()),
-            FindSpec::Aggregate { .. } | FindSpec::Window(_) => None,
+            _ => None,
         })
-        .chain(with_vars.iter().map(|s| s.as_str()))
         .collect();
+    if !has_windows {
+        // Pure aggregate: with_vars add to grouping key.
+        group_var_names.extend(with_vars.iter().map(|s| s.as_str()));
+    }
 
-    // Group using Vec + PartialEq scan (Value::Float doesn't implement Hash)
-    #[allow(clippy::type_complexity)]
-    let mut groups: Vec<(Vec<Value>, Vec<std::collections::HashMap<String, Value>>)> = Vec::new();
+    // Group using Vec + PartialEq scan (Value::Float doesn't implement Hash).
+    let mut groups: Vec<(Vec<Value>, Vec<Binding>)> = Vec::new();
     for b in bindings {
         let key: Vec<Value> = group_var_names
             .iter()
@@ -753,176 +799,199 @@ fn apply_aggregation(
         }
     }
 
-    // Map of Variable spec name → its index in the group key Vec (only Variable specs, in order)
-    let mut group_key_idx_for_var: std::collections::HashMap<&str, usize> =
+    // Map of Variable spec name → its index in the group key Vec.
+    let mut group_key_idx: std::collections::HashMap<&str, usize> =
         std::collections::HashMap::new();
     {
         let mut var_pos = 0usize;
         for spec in find_specs {
             if let FindSpec::Variable(v) = spec {
-                group_key_idx_for_var.insert(v.as_str(), var_pos);
+                group_key_idx.insert(v.as_str(), var_pos);
                 var_pos += 1;
             }
         }
-        let _ = var_pos; // suppress unused warning
     }
 
-    // Build output rows (one per group)
-    let mut results = Vec::new();
+    let mut results: Vec<Binding> = Vec::new();
     for (key, group_bindings) in &groups {
-        let mut row = Vec::new();
-        let mut skip_row = false;
-        for spec in find_specs {
-            match spec {
-                FindSpec::Variable(v) => {
-                    let pos = *group_key_idx_for_var.get(v.as_str()).unwrap();
-                    row.push(key[pos].clone());
-                }
-                FindSpec::Aggregate { func, var } => {
-                    let non_null_values: Vec<&Value> = group_bindings
-                        .iter()
-                        .filter_map(|b| b.get(var.as_str()))
-                        .filter(|v| !matches!(v, Value::Null))
-                        .collect();
-                    match apply_agg_func(func.as_str(), &non_null_values) {
-                        Ok(v) => row.push(v),
-                        Err(e) => {
-                            // min/max on all-null group: skip this group
-                            let msg = e.to_string();
-                            if msg.contains("no non-null values in group") {
-                                skip_row = true;
-                                break;
-                            }
-                            return Err(e);
-                        }
+        let mut binding = Binding::new();
+        let mut skip = false;
+
+        // Plain variable values from group key.
+        for (v, &idx) in &group_key_idx {
+            binding.insert((*v).to_string(), key[idx].clone());
+        }
+
+        // Aggregate values stored under "__agg_{i}".
+        for (i, spec) in find_specs.iter().enumerate() {
+            if let FindSpec::Aggregate { func, var } = spec {
+                let non_null: Vec<&Value> = group_bindings
+                    .iter()
+                    .filter_map(|b| b.get(var.as_str()))
+                    .filter(|v| !matches!(v, Value::Null))
+                    .collect();
+                match apply_builtin_aggregate(func, &non_null) {
+                    Ok(v) => {
+                        binding.insert(format!("__agg_{}", i), v);
                     }
-                }
-                FindSpec::Window(_) => {
-                    // Window functions are not handled in apply_aggregation;
-                    // they are processed in a separate post-processing step.
-                    row.push(Value::Null);
+                    Err(e) => {
+                        let msg = e.to_string();
+                        if msg.contains("no non-null values in group") {
+                            skip = true;
+                            break;
+                        }
+                        return Err(e);
+                    }
                 }
             }
         }
-        if !skip_row {
-            results.push(row);
+
+        if !skip {
+            results.push(binding);
         }
     }
 
     Ok(results)
 }
 
-/// Apply a single aggregate function to a slice of non-null values.
-fn apply_agg_func(func: &str, values: &[&Value]) -> Result<Value> {
-    match func {
-        "count" => Ok(Value::Integer(values.len() as i64)),
+/// Compute window function values for each row and store under `"__win_{i}"`.
+/// Modifies `bindings` in place.
+fn apply_window_functions(
+    bindings: &mut [Binding],
+    find_specs: &[FindSpec],
+    registry: &FunctionRegistry,
+) -> Result<()> {
+    for (i, spec) in find_specs.iter().enumerate() {
+        let FindSpec::Window(ws) = spec else {
+            continue;
+        };
+        let key = format!("__win_{}", i);
 
-        "count-distinct" => {
-            let mut seen: Vec<&Value> = Vec::new();
-            for v in values {
-                if !seen.contains(v) {
-                    seen.push(v);
-                }
+        // Build partitions: (partition_key, sorted row indices).
+        let mut partitions: Vec<(Option<Value>, Vec<usize>)> = Vec::new();
+        for (row_idx, binding) in bindings.iter().enumerate() {
+            let part_key = ws
+                .partition_by
+                .as_ref()
+                .and_then(|pv| binding.get(pv))
+                .cloned();
+            if let Some(pos) = partitions.iter().position(|(k, _)| k == &part_key) {
+                partitions[pos].1.push(row_idx);
+            } else {
+                partitions.push((part_key, vec![row_idx]));
             }
-            Ok(Value::Integer(seen.len() as i64))
         }
 
-        "sum" | "sum-distinct" => {
-            let deduped: Vec<&Value> = if func == "sum-distinct" {
-                let mut seen: Vec<&Value> = Vec::new();
-                for v in values {
-                    if !seen.contains(v) {
-                        seen.push(v);
-                    }
+        // For each partition: sort, compute window values, write back.
+        for (_, row_indices) in &mut partitions {
+            // Sort by order_by key.
+            row_indices.sort_by(|&a, &b| {
+                let va = bindings[a].get(&ws.order_by).unwrap_or(&Value::Null);
+                let vb = bindings[b].get(&ws.order_by).unwrap_or(&Value::Null);
+                let lt = value_lt(va, vb);
+                let eq = va == vb;
+                let cmp = if eq {
+                    std::cmp::Ordering::Equal
+                } else if lt {
+                    std::cmp::Ordering::Less
+                } else {
+                    std::cmp::Ordering::Greater
+                };
+                match ws.order {
+                    Order::Asc => cmp,
+                    Order::Desc => cmp.reverse(),
                 }
-                seen
-            } else {
-                values.to_vec()
+            });
+
+            // Compute one window value per row in partition order.
+            let window_values: Vec<Value> = match ws.func {
+                WindowFunc::RowNumber => row_indices
+                    .iter()
+                    .enumerate()
+                    .map(|(pos, _)| Value::Integer(pos as i64 + 1))
+                    .collect(),
+
+                WindowFunc::Rank => {
+                    let mut values = Vec::with_capacity(row_indices.len());
+                    let mut rank = 1i64;
+                    let mut prev_order_val: Option<Value> = None;
+                    let mut row_num = 1i64;
+                    for &row_idx in row_indices.iter() {
+                        let cur_val = bindings[row_idx].get(&ws.order_by).cloned();
+                        if prev_order_val.as_ref() != cur_val.as_ref() {
+                            rank = row_num;
+                            prev_order_val = cur_val;
+                        }
+                        values.push(Value::Integer(rank));
+                        row_num += 1;
+                    }
+                    values
+                }
+
+                _ => {
+                    // Accumulator-based: sum, count, min, max, avg.
+                    let func_name = ws.func_name();
+                    let desc = registry.get(func_name).ok_or_else(|| {
+                        anyhow::anyhow!("no descriptor for window function '{}'", func_name)
+                    })?;
+                    let ops = desc.window_ops.as_ref().ok_or_else(|| {
+                        anyhow::anyhow!("function '{}' is not window-compatible", func_name)
+                    })?;
+
+                    let mut acc = (ops.init)();
+                    let mut values = Vec::with_capacity(row_indices.len());
+                    for &row_idx in row_indices.iter() {
+                        let val = ws
+                            .var
+                            .as_ref()
+                            .and_then(|v| bindings[row_idx].get(v))
+                            .unwrap_or(&Value::Null);
+                        (ops.step)(&mut acc, val);
+                        values.push((ops.finalise)(&acc));
+                    }
+                    values
+                }
             };
 
-            if deduped.is_empty() {
-                return Ok(Value::Integer(0));
-            }
-
-            let has_float = deduped.iter().any(|v| matches!(v, Value::Float(_)));
-            if has_float {
-                let mut sum = 0.0_f64;
-                for v in &deduped {
-                    match v {
-                        Value::Float(f) => sum += f,
-                        Value::Integer(i) => sum += *i as f64,
-                        other => {
-                            return Err(anyhow!(
-                                "sum: expected Integer, Float, or Null, got {}",
-                                value_type_name(other)
-                            ));
-                        }
-                    }
-                }
-                Ok(Value::Float(sum))
-            } else {
-                let mut sum = 0_i64;
-                for v in &deduped {
-                    match v {
-                        Value::Integer(i) => sum += i,
-                        other => {
-                            return Err(anyhow!(
-                                "sum: expected Integer, Float, or Null, got {}",
-                                value_type_name(other)
-                            ));
-                        }
-                    }
-                }
-                Ok(Value::Integer(sum))
+            // Write window values back to rows.
+            for (&row_idx, window_val) in row_indices.iter().zip(window_values.into_iter()) {
+                bindings[row_idx].insert(key.clone(), window_val);
             }
         }
-
-        "min" | "max" => {
-            if values.is_empty() {
-                return Err(anyhow!("min/max: no non-null values in group"));
-            }
-            // Check all same type (no mixing Integer and Float)
-            let first = values[0];
-            for v in &values[1..] {
-                if std::mem::discriminant(*v) != std::mem::discriminant(first) {
-                    return Err(anyhow!(
-                        "{}: cannot compare {} and {} values",
-                        func,
-                        value_type_name(first),
-                        value_type_name(v)
-                    ));
-                }
-            }
-            // Find min or max using PartialOrd
-            let result = values.iter().try_fold((*values[0]).clone(), |acc, v| {
-                let ordering = match (&acc, v) {
-                    (Value::Integer(a), Value::Integer(b)) => a.cmp(b),
-                    (Value::Float(a), Value::Float(b)) => {
-                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-                    }
-                    (Value::String(a), Value::String(b)) => a.cmp(b),
-                    (_, other) => {
-                        return Err(anyhow!(
-                            "{}: expected Integer, Float, String, or Null, got {}",
-                            func,
-                            value_type_name(other)
-                        ));
-                    }
-                };
-                let replace = match func {
-                    "min" => ordering == std::cmp::Ordering::Greater,
-                    _ => ordering == std::cmp::Ordering::Less, // "max"
-                };
-                Ok::<Value, anyhow::Error>(if replace { (*v).clone() } else { acc })
-            })?;
-            Ok(result)
-        }
-
-        other => Err(anyhow!("Unknown aggregate function: '{}'", other)),
     }
+    Ok(())
 }
 
-type Binding = std::collections::HashMap<String, Value>;
+/// Project binding maps to output rows in find-spec order.
+fn project_find_specs(bindings: &[Binding], find_specs: &[FindSpec]) -> Vec<Vec<Value>> {
+    let mut results = Vec::new();
+    for binding in bindings {
+        let mut row = Vec::new();
+        let mut complete = true;
+        for (i, spec) in find_specs.iter().enumerate() {
+            let val = match spec {
+                FindSpec::Variable(v) => binding.get(v).cloned(),
+                FindSpec::Aggregate { .. } => {
+                    binding.get(&format!("__agg_{}", i)).cloned()
+                }
+                FindSpec::Window(_) => {
+                    binding.get(&format!("__win_{}", i)).cloned()
+                }
+            };
+            match val {
+                Some(v) => row.push(v),
+                None => {
+                    complete = false;
+                    break;
+                }
+            }
+        }
+        if complete {
+            results.push(row);
+        }
+    }
+    results
+}
 
 /// Evaluate a single branch of an `or`/`or-join` against incoming bindings.
 ///
@@ -1314,19 +1383,6 @@ pub(crate) fn apply_expr_clauses(
         }
     }
     bindings
-}
-
-/// Human-readable type name for error messages.
-fn value_type_name(v: &Value) -> &'static str {
-    match v {
-        Value::String(_) => "String",
-        Value::Integer(_) => "Integer",
-        Value::Float(_) => "Float",
-        Value::Boolean(_) => "Boolean",
-        Value::Ref(_) => "Ref",
-        Value::Keyword(_) => "Keyword",
-        Value::Null => "Null",
-    }
 }
 
 #[cfg(test)]
@@ -2330,7 +2386,7 @@ mod tests {
             func: "count".to_string(),
             var: "?e".to_string(),
         }];
-        let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
+        let results = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0][0], Value::Integer(3));
     }
@@ -2358,7 +2414,7 @@ mod tests {
                 var: "?e".to_string(),
             },
         ];
-        let mut results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
+        let mut results = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
         results.sort_by_key(|r| match &r[0] {
             Value::String(s) => s.clone(),
             _ => String::new(),
@@ -2385,7 +2441,7 @@ mod tests {
             func: "count-distinct".to_string(),
             var: "?v".to_string(),
         }];
-        let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
+        let results = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
         assert_eq!(results[0][0], Value::Integer(2));
     }
 
@@ -2396,7 +2452,7 @@ mod tests {
             func: "count".to_string(),
             var: "?e".to_string(),
         }];
-        let results = apply_aggregation(vec![], &find_specs, &[]).unwrap();
+        let results = apply_post_processing(vec![], &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
         assert_eq!(results.len(), 1, "should return one row with 0");
         assert_eq!(results[0][0], Value::Integer(0));
     }
@@ -2411,7 +2467,7 @@ mod tests {
                 var: "?e".to_string(),
             },
         ];
-        let results = apply_aggregation(vec![], &find_specs, &[]).unwrap();
+        let results = apply_post_processing(vec![], &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
         assert_eq!(results.len(), 0, "should return empty set");
     }
 
@@ -2426,7 +2482,7 @@ mod tests {
             func: "sum".to_string(),
             var: "?v".to_string(),
         }];
-        let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
+        let results = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
         assert_eq!(results[0][0], Value::Integer(60));
     }
 
@@ -2440,7 +2496,7 @@ mod tests {
             func: "sum".to_string(),
             var: "?v".to_string(),
         }];
-        let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
+        let results = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
         assert_eq!(results[0][0], Value::Float(10.5));
     }
 
@@ -2455,7 +2511,7 @@ mod tests {
             func: "sum-distinct".to_string(),
             var: "?v".to_string(),
         }];
-        let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
+        let results = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
         assert_eq!(results[0][0], Value::Integer(15)); // 5 + 10, not 5 + 5 + 10
     }
 
@@ -2466,7 +2522,7 @@ mod tests {
             func: "sum".to_string(),
             var: "?v".to_string(),
         }];
-        let result = apply_aggregation(bindings, &find_specs, &[]);
+        let result = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins());
         assert!(result.is_err(), "sum of string should fail");
     }
 
@@ -2481,7 +2537,7 @@ mod tests {
             func: "min".to_string(),
             var: "?v".to_string(),
         }];
-        let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
+        let results = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
         assert_eq!(results[0][0], Value::Integer(10));
     }
 
@@ -2496,7 +2552,7 @@ mod tests {
             func: "max".to_string(),
             var: "?v".to_string(),
         }];
-        let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
+        let results = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
         assert_eq!(results[0][0], Value::String("zebra".to_string()));
     }
 
@@ -2507,7 +2563,7 @@ mod tests {
             func: "min".to_string(),
             var: "?v".to_string(),
         }];
-        let result = apply_aggregation(bindings, &find_specs, &[]);
+        let result = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins());
         assert!(result.is_err(), "min of boolean should fail");
     }
 
@@ -2521,7 +2577,7 @@ mod tests {
             func: "min".to_string(),
             var: "?v".to_string(),
         }];
-        let result = apply_aggregation(bindings, &find_specs, &[]);
+        let result = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins());
         assert!(result.is_err(), "min of mixed Integer/Float should fail");
     }
 
@@ -2536,7 +2592,7 @@ mod tests {
             func: "sum".to_string(),
             var: "?v".to_string(),
         }];
-        let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
+        let results = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
         assert_eq!(results[0][0], Value::Integer(30));
     }
 
@@ -2551,7 +2607,7 @@ mod tests {
             func: "count".to_string(),
             var: "?v".to_string(),
         }];
-        let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
+        let results = apply_post_processing(bindings, &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
         assert_eq!(results[0][0], Value::Integer(2)); // null not counted
     }
 
@@ -2561,7 +2617,7 @@ mod tests {
             func: "sum".to_string(),
             var: "?v".to_string(),
         }];
-        let results = apply_aggregation(vec![], &find_specs, &[]).unwrap();
+        let results = apply_post_processing(vec![], &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
         assert_eq!(results.len(), 0, "sum on empty should return empty set");
     }
 
@@ -2589,11 +2645,11 @@ mod tests {
             },
         ];
         // Without :with: group key = ("eng",). Both bindings in one group → sum = 100.
-        let results_no_with = apply_aggregation(bindings.clone(), &find_specs, &[]).unwrap();
+        let results_no_with = apply_post_processing(bindings.clone(), &find_specs, &[], &FunctionRegistry::with_builtins()).unwrap();
         assert_eq!(results_no_with.len(), 1);
         assert_eq!(results_no_with[0][1], Value::Integer(100));
         // With :with ?e: group key = ("eng", e). Two separate groups → two rows, each sum = 50.
-        let results_with = apply_aggregation(bindings, &find_specs, &["?e".to_string()]).unwrap();
+        let results_with = apply_post_processing(bindings, &find_specs, &["?e".to_string()], &FunctionRegistry::with_builtins()).unwrap();
         assert_eq!(results_with.len(), 2);
         assert_eq!(results_with[0][1], Value::Integer(50));
     }
