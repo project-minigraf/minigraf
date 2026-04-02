@@ -1,18 +1,18 @@
-use crate::graph::FactStorage;
 /// Persistent fact storage that integrates StorageBackend with Datalog facts.
 ///
 /// This module bridges the gap between high-level fact operations and
 /// low-level page-based storage backends.
 use crate::graph::types::Fact;
-use crate::storage::FACT_PAGE_FORMAT_PACKED;
+use crate::graph::FactStorage;
 use crate::storage::btree::{read_aevt_index, read_avet_index, read_eavt_index, read_vaet_index};
 use crate::storage::btree_v6::{
-    OnDiskIndexReader, btree_entries, build_btree, merge_sorted_vecs, stream_all_entries,
+    btree_entries, build_btree, merge_sorted_vecs, stream_all_entries, OnDiskIndexReader,
 };
 use crate::storage::cache::PageCache;
-use crate::storage::index::{AevtKey, AvetKey, EavtKey, FactRef, VaetKey, encode_value};
+use crate::storage::index::{encode_value, AevtKey, AvetKey, EavtKey, FactRef, VaetKey};
 use crate::storage::packed_pages::pack_facts;
-use crate::storage::{FileHeader, PAGE_SIZE, StorageBackend};
+use crate::storage::FACT_PAGE_FORMAT_PACKED;
+use crate::storage::{FileHeader, StorageBackend, PAGE_SIZE};
 use anyhow::Result;
 use crc32fast::Hasher;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -193,9 +193,9 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         if header.version >= 7 && header.header_checksum != 0 {
             let computed = compute_header_checksum_from_bytes(&raw_header_bytes);
             if header.header_checksum != computed {
-                // Header checksum mismatch - this is real corruption, not just index checksum
-                eprintln!("WARNING: Header checksum mismatch - possible file corruption");
-                // Don't fail here, let index_checksum check handle rebuild if needed
+                anyhow::bail!(
+                    "Header checksum mismatch: possible file corruption. Database may be damaged."
+                );
             }
         }
 
@@ -1206,8 +1206,8 @@ mod tests {
     #[test]
     fn test_sync_check_detects_mismatch_and_rebuilds() {
         use crate::graph::types::Value;
-        use crate::storage::StorageBackend;
         use crate::storage::backend::FileBackend;
+        use crate::storage::StorageBackend;
         use tempfile::NamedTempFile;
         use uuid::Uuid;
 
@@ -1257,7 +1257,7 @@ mod tests {
 
     #[test]
     fn test_compute_index_checksum_stable() {
-        use crate::graph::types::{Fact, VALID_TIME_FOREVER, Value};
+        use crate::graph::types::{Fact, Value, VALID_TIME_FOREVER};
         use uuid::Uuid;
 
         let e = Uuid::new_v4();
@@ -1677,7 +1677,7 @@ mod tests {
 
     #[test]
     fn test_header_checksum_corruption_detection() {
-        use crate::storage::{FORMAT_VERSION, FileHeader};
+        use crate::storage::{FileHeader, FORMAT_VERSION};
 
         let mut header = FileHeader::new();
         header.version = FORMAT_VERSION;
