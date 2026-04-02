@@ -188,8 +188,6 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
 
         // For v7+ files, validate header checksum using raw bytes from disk
         // For older versions (v6 and earlier), header_checksum is 0 so validation is skipped
-        // NOTE: We skip validation here because index_checksum corruption would cause
-        // this to fail unnecessarily. Header checksum is validated after any rebuild.
         if header.version >= 7 && header.header_checksum != 0 {
             let computed = compute_header_checksum_from_bytes(&raw_header_bytes);
             if header.header_checksum != computed {
