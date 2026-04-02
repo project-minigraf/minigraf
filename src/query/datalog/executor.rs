@@ -1,4 +1,5 @@
 use super::evaluator::{StratifiedEvaluator, evaluate_not_join};
+use super::functions::FunctionRegistry;
 use super::matcher::{PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::optimizer;
 use super::rules::RuleRegistry;
@@ -53,6 +54,7 @@ pub enum QueryResult {
 pub struct DatalogExecutor {
     storage: FactStorage,
     rules: Arc<RwLock<RuleRegistry>>,
+    functions: Arc<RwLock<FunctionRegistry>>,
 }
 
 impl DatalogExecutor {
@@ -60,14 +62,30 @@ impl DatalogExecutor {
         DatalogExecutor {
             storage,
             rules: Arc::new(RwLock::new(RuleRegistry::new())),
+            functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
         }
+    }
+
+    /// Create a `DatalogExecutor` with a shared rule registry and function registry.
+    ///
+    /// Used by `Minigraf` to share registries across all `execute()` calls.
+    pub fn new_with_rules_and_functions(
+        storage: FactStorage,
+        rules: Arc<RwLock<RuleRegistry>>,
+        functions: Arc<RwLock<FunctionRegistry>>,
+    ) -> Self {
+        DatalogExecutor { storage, rules, functions }
     }
 
     /// Create a `DatalogExecutor` with a shared rule registry.
     ///
     /// Used by `Minigraf` to share rules across all `execute()` calls.
     pub fn new_with_rules(storage: FactStorage, rules: Arc<RwLock<RuleRegistry>>) -> Self {
-        DatalogExecutor { storage, rules }
+        Self::new_with_rules_and_functions(
+            storage,
+            rules,
+            Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
+        )
     }
 
     /// Execute a Datalog command

@@ -18,6 +18,7 @@ const VALID_FROM_USE_TX_TIME: i64 = i64::MIN;
 use crate::graph::FactStorage;
 use crate::query::datalog::executor::DatalogExecutor;
 use crate::query::datalog::executor::QueryResult;
+use crate::query::datalog::functions::FunctionRegistry;
 use crate::query::datalog::parser::parse_datalog_command;
 use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::types::{AttributeSpec, DatalogCommand, Transaction};
@@ -137,6 +138,8 @@ struct Inner {
     fact_storage: FactStorage,
     /// Shared rule registry, persists across all `execute()` calls.
     rules: Arc<RwLock<RuleRegistry>>,
+    /// Shared function registry, persists across all `execute()` calls.
+    functions: Arc<RwLock<FunctionRegistry>>,
     /// Serialises all writes. Holds `WriteContext` which contains the PFS/WAL
     /// for file-backed databases.
     write_lock: Mutex<WriteContext>,
@@ -280,6 +283,7 @@ impl Minigraf {
             inner: Arc::new(Inner {
                 fact_storage,
                 rules: Arc::new(RwLock::new(RuleRegistry::new())),
+                functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
                 write_lock: Mutex::new(ctx),
                 options: opts,
             }),
@@ -300,6 +304,7 @@ impl Minigraf {
             inner: Arc::new(Inner {
                 fact_storage,
                 rules: Arc::new(RwLock::new(RuleRegistry::new())),
+                functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
                 write_lock: Mutex::new(WriteContext::Memory),
                 options: OpenOptions::default(),
             }),
@@ -446,9 +451,10 @@ impl Minigraf {
             }
         } else {
             // Read-only: no lock needed
-            let executor = DatalogExecutor::new_with_rules(
+            let executor = DatalogExecutor::new_with_rules_and_functions(
                 self.inner.fact_storage.clone(),
                 self.inner.rules.clone(),
+                self.inner.functions.clone(),
             );
             executor.execute(cmd)
         }
@@ -677,7 +683,11 @@ impl<'a> WriteTransaction<'a> {
                 // For queries: build a temporary FactStorage that includes
                 // committed facts + buffered pending facts (read-your-own-writes).
                 let view = self.build_query_view()?;
-                let executor = DatalogExecutor::new_with_rules(view, self.inner.rules.clone());
+                let executor = DatalogExecutor::new_with_rules_and_functions(
+                    view,
+                    self.inner.rules.clone(),
+                    self.inner.functions.clone(),
+                );
                 executor.execute(cmd)
             }
         }
