@@ -1654,4 +1654,22 @@ mod tests {
             "should fail on corrupted header in existing file"
         );
     }
+
+    #[test]
+    fn test_is_new_returns_correct_value() {
+        use crate::storage::backend::FileBackend;
+        use tempfile::NamedTempFile;
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().expect("valid path").to_string();
+        drop(tmp);
+
+        let backend = FileBackend::open(&path).unwrap();
+        assert!(backend.is_new(), "newly created file should be new");
+        drop(backend);
+
+        let backend = FileBackend::open(&path).unwrap();
+        assert!(!backend.is_new(), "reopened file should not be new");
+        drop(backend);
+    }
 }
