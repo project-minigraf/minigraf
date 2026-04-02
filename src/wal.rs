@@ -20,7 +20,7 @@
 //! ```
 
 use crate::graph::types::Fact;
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -203,13 +203,16 @@ impl WalReader {
                 break; // treat as corrupt entry
             }
 
+            // Maximum fact size to prevent memory exhaustion from large facts
+            const MAX_FACT_SIZE: usize = 10 * 1024 * 1024; // 10MB
+
             // Build payload for CRC32 verification
             let mut payload = Vec::new();
             payload.extend_from_slice(&tx_count_buf);
             payload.extend_from_slice(&num_facts_buf);
 
             // Read each fact
-            let mut facts = Vec::with_capacity(num_facts);
+            let mut facts = Vec::new(); // grow dynamically instead of pre-allocating
             let mut truncated = false;
             for _ in 0..num_facts {
                 let mut len_buf = [0u8; 4];
@@ -218,6 +221,10 @@ impl WalReader {
                     break;
                 }
                 let fact_len = u32::from_le_bytes(len_buf) as usize;
+                if fact_len > MAX_FACT_SIZE {
+                    truncated = true;
+                    break;
+                }
                 payload.extend_from_slice(&len_buf);
 
                 let mut fact_bytes = vec![0u8; fact_len];
@@ -258,7 +265,7 @@ impl WalReader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::types::{VALID_TIME_FOREVER, Value};
+    use crate::graph::types::{Value, VALID_TIME_FOREVER};
     use uuid::Uuid;
 
     fn make_fact(entity: Uuid, attr: &str, value: Value, tx_count: u64) -> Fact {
@@ -452,5 +459,46 @@ mod tests {
         assert!(path.exists());
         WalWriter::delete_file(&path).unwrap();
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn test_wal_fact_size_limit() {
+        use crate::graph::types::Value;
+        use crate::graph::Fact;
+        use uuid::Uuid;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.wal");
+
+        let mut writer = WalWriter::open_or_create(&path).unwrap();
+
+        let entity = Uuid::new_v4();
+        let fact = Fact::new(
+            entity,
+            ":test".to_string(),
+            Value::String("x".to_string()),
+            1,
+        );
+
+        // Write an entry with one fact
+        writer.append_entry(1, &[fact]).unwrap();
+        writer.file.sync_all().unwrap();
+
+        // Manually corrupt the WAL to have a fact larger than MAX_FACT_SIZE
+        let mut file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        file.seek(std::io::SeekFrom::End(-20)).unwrap();
+        // Overwrite the fact length to be huge
+        let huge_len: u32 = (10 * 1024 * 1024 + 1) as u32; // Just over MAX_FACT_SIZE
+        file.write_all(&huge_len.to_le_bytes()).unwrap();
+
+        drop(file);
+
+        // Try to read - should fail gracefully
+        let mut reader = WalReader::open(&path).unwrap();
+        let result = reader.read_entries();
+        assert!(
+            result.is_err() || result.unwrap().is_empty(),
+            "Should fail or return empty on corrupted large fact"
+        );
     }
 }
