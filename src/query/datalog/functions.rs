@@ -745,7 +745,7 @@ mod tests {
     }
 
     #[test]
-    fn udf_accumulator_runs() {
+    fn builtin_sum_accumulator_regression_guard() {
         let reg = FunctionRegistry::with_builtins();
         // Regression guard: existing window_ops path still works.
         let desc = reg.get("sum").unwrap();

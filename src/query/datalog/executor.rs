@@ -839,8 +839,12 @@ fn compute_aggregation(
                             apply_builtin_aggregate(func, &non_null)
                         }
                         AggImpl::Udf(_) => {
-                            // Task 4 will properly implement UDF evaluation; stub uses builtin path.
-                            apply_builtin_aggregate(func, &non_null)
+                            // Task 4 will implement UDF grouping aggregation properly.
+                            Err(anyhow::anyhow!(
+                                "UDF aggregate '{}' not yet supported in grouping position — \
+                                 register_aggregate support will be completed in Task 4",
+                                func
+                            ))
                         }
                     }
                 } else {
