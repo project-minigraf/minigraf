@@ -741,7 +741,7 @@ fn compute_aggregation(
     bindings: Vec<Binding>,
     find_specs: &[FindSpec],
     with_vars: &[String],
-    _registry: &FunctionRegistry,
+    registry: &FunctionRegistry,
 ) -> Result<Vec<Binding>> {
     let has_grouping_vars = find_specs.iter().any(|s| matches!(s, FindSpec::Variable(_)));
 
@@ -799,6 +799,8 @@ fn compute_aggregation(
         }
     }
 
+    // Build a position map for Variable specs only (indices 0..n_vars in the key vector).
+    // with_vars occupy key positions n_vars..end and are used only for grouping, not for output.
     // Map of Variable spec name → its index in the group key Vec.
     let mut group_key_idx: std::collections::HashMap<&str, usize> =
         std::collections::HashMap::new();
@@ -830,7 +832,31 @@ fn compute_aggregation(
                     .filter_map(|b| b.get(var.as_str()))
                     .filter(|v| !matches!(v, Value::Null))
                     .collect();
-                match apply_builtin_aggregate(func, &non_null) {
+                let agg_val = match apply_builtin_aggregate(func, &non_null) {
+                    // Known built-in: use batch result (preserves strict type-error semantics).
+                    Ok(v) => Ok(v),
+                    Err(e) if e.to_string().starts_with("unknown aggregate function:") => {
+                        // Not a built-in: dispatch through registry for user-defined aggregates
+                        // (registered in Phase 7.7b via register_aggregate).
+                        if let Some(desc) = registry.get(func) {
+                            if let Some(ops) = &desc.window_ops {
+                                // Registry dispatch: incremental init/step/finalise
+                                let mut acc = (ops.init)();
+                                for v in &non_null {
+                                    (ops.step)(&mut acc, v);
+                                }
+                                Ok((ops.finalise)(&acc))
+                            } else {
+                                // Non-window-compatible function (e.g. count-distinct): batch path
+                                apply_builtin_aggregate(func, &non_null)
+                            }
+                        } else {
+                            Err(e)
+                        }
+                    }
+                    Err(e) => Err(e),
+                };
+                match agg_val {
                     Ok(v) => {
                         binding.insert(format!("__agg_{}", i), v);
                     }
@@ -980,6 +1006,8 @@ fn project_find_specs(bindings: &[Binding], find_specs: &[FindSpec]) -> Vec<Vec<
             };
             match val {
                 Some(v) => row.push(v),
+                // Invariant: all __agg_{i} and __win_{i} keys are populated for non-skipped rows.
+                // None here only occurs for skipped aggregate groups (e.g. min/max on all-null input).
                 None => {
                     complete = false;
                     break;
@@ -3984,5 +4012,41 @@ mod expr_eval_tests {
             }
             _ => panic!("expected QueryResults"),
         }
+    }
+
+    #[test]
+    fn window_sum_resets_per_partition() {
+        use super::super::functions::FunctionRegistry;
+        use super::super::types::{Order, WindowFunc, WindowSpec};
+
+        let mut bindings: Vec<std::collections::HashMap<String, Value>> = vec![
+            [("dept".into(), Value::String("A".into())), ("salary".into(), Value::Integer(10))].into_iter().collect(),
+            [("dept".into(), Value::String("A".into())), ("salary".into(), Value::Integer(20))].into_iter().collect(),
+            [("dept".into(), Value::String("B".into())), ("salary".into(), Value::Integer(100))].into_iter().collect(),
+        ];
+        let find_specs = vec![
+            FindSpec::Variable("dept".into()),
+            FindSpec::Variable("salary".into()),
+            FindSpec::Window(WindowSpec {
+                func: WindowFunc::Sum,
+                var: Some("salary".into()),
+                partition_by: Some("dept".into()),
+                order_by: "salary".into(),
+                order: Order::Asc,
+            }),
+        ];
+        let registry = FunctionRegistry::with_builtins();
+        apply_window_functions(&mut bindings, &find_specs, &registry).expect("window");
+
+        // Partition A: 10 → sum=10, 20 → sum=30
+        let row_a10 = bindings.iter().find(|b| b.get("salary") == Some(&Value::Integer(10))).unwrap();
+        assert_eq!(row_a10.get("__win_2"), Some(&Value::Integer(10)));
+
+        let row_a20 = bindings.iter().find(|b| b.get("salary") == Some(&Value::Integer(20))).unwrap();
+        assert_eq!(row_a20.get("__win_2"), Some(&Value::Integer(30)));
+
+        // Partition B: 100 → sum=100 (accumulator reset, NOT 130)
+        let row_b100 = bindings.iter().find(|b| b.get("salary") == Some(&Value::Integer(100))).unwrap();
+        assert_eq!(row_b100.get("__win_2"), Some(&Value::Integer(100)));
     }
 }
