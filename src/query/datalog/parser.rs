@@ -418,12 +418,21 @@ pub fn parse_datalog_command(input: &str) -> Result<DatalogCommand, String> {
 /// Parse an aggregate expression list: (func-name ?var)
 /// e.g., [Symbol("count"), Symbol("?e")] → FindSpec::Aggregate { "count", "?e" }
 fn parse_aggregate(elems: &[EdnValue]) -> Result<FindSpec, String> {
+    // Detect window function: contains ":over" keyword anywhere in elems
+    let has_over = elems
+        .iter()
+        .any(|e| matches!(e, EdnValue::Keyword(k) if k == ":over"));
+    if has_over {
+        return parse_window_expr(elems);
+    }
+
     if elems.len() != 2 {
         return Err(format!(
             "Aggregate expression must have exactly 2 elements (func ?var), got {}",
             elems.len()
         ));
     }
+
     let func_name = match &elems[0] {
         EdnValue::Symbol(s) => s.clone(),
         other => {
@@ -433,16 +442,170 @@ fn parse_aggregate(elems: &[EdnValue]) -> Result<FindSpec, String> {
             ));
         }
     };
+
     const KNOWN_AGGREGATES: &[&str] =
         &["count", "count-distinct", "sum", "sum-distinct", "min", "max"];
+    const WINDOW_ONLY: &[&str] = &["avg", "rank", "row-number"];
+
+    if matches!(func_name.as_str(), "lag" | "lead") {
+        return Err(format!(
+            "'{}' is not supported in this version; lag/lead are planned for a future release",
+            func_name
+        ));
+    }
+    if WINDOW_ONLY.contains(&func_name.as_str()) {
+        return Err(format!(
+            "'{}' is a window function and requires an ':over (...)' clause",
+            func_name
+        ));
+    }
     if !KNOWN_AGGREGATES.contains(&func_name.as_str()) {
         return Err(format!("Unknown aggregate function: '{}'", func_name));
     }
+
     let var = match &elems[1] {
         EdnValue::Symbol(s) if s.starts_with('?') => s.clone(),
         _ => return Err("Aggregate argument must be a variable (starting with ?)".to_string()),
     };
+
     Ok(FindSpec::Aggregate { func: func_name, var })
+}
+
+/// Parse a window function expression.
+/// Syntax: `(func ?var :over (:partition-by ?p :order-by ?o :desc))`
+/// For rank/row-number (no var): `(rank :over (:order-by ?o))`
+fn parse_window_expr(elems: &[EdnValue]) -> Result<FindSpec, String> {
+    let func_name = match &elems[0] {
+        EdnValue::Symbol(s) => s.as_str(),
+        _ => return Err("window function name must be a symbol".into()),
+    };
+
+    if matches!(func_name, "lag" | "lead") {
+        return Err(format!(
+            "'{}' is not supported in this version; lag/lead are planned for a future release",
+            func_name
+        ));
+    }
+
+    let func = match func_name {
+        "sum" => WindowFunc::Sum,
+        "count" => WindowFunc::Count,
+        "min" => WindowFunc::Min,
+        "max" => WindowFunc::Max,
+        "avg" => WindowFunc::Avg,
+        "rank" => WindowFunc::Rank,
+        "row-number" => WindowFunc::RowNumber,
+        "count-distinct" | "sum-distinct" => {
+            return Err(format!(
+                "'{}' is not window-compatible and cannot be used with ':over'",
+                func_name
+            ));
+        }
+        other => return Err(format!("unknown window function: '{}'", other)),
+    };
+
+    // rank and row-number: no ?var argument
+    // others: require ?var before :over
+    let (var, over_keyword_idx) = match func {
+        WindowFunc::Rank | WindowFunc::RowNumber => {
+            if !matches!(elems.get(1), Some(EdnValue::Keyword(k)) if k == ":over") {
+                return Err(format!(
+                    "'{}' requires ':over' immediately after the function name (no variable argument)",
+                    func_name
+                ));
+            }
+            (None, 1usize)
+        }
+        _ => {
+            let var = match elems.get(1) {
+                Some(EdnValue::Symbol(s)) if s.starts_with('?') => s.clone(),
+                _ => {
+                    return Err(format!(
+                        "'{}' requires a variable argument (starting with ?) before ':over'",
+                        func_name
+                    ));
+                }
+            };
+            if !matches!(elems.get(2), Some(EdnValue::Keyword(k)) if k == ":over") {
+                return Err(format!(
+                    "'{}' requires ':over' after the variable argument",
+                    func_name
+                ));
+            }
+            (Some(var), 2usize)
+        }
+    };
+
+    // Parse the :over clause list
+    let over_list = match elems.get(over_keyword_idx + 1) {
+        Some(EdnValue::List(l)) => l.as_slice(),
+        _ => {
+            return Err(
+                "':over' must be followed by a list, e.g., (:order-by ?var)".to_string(),
+            );
+        }
+    };
+
+    let mut partition_by: Option<String> = None;
+    let mut order_by: Option<String> = None;
+    let mut order = Order::Asc;
+
+    let mut j = 0;
+    while j < over_list.len() {
+        match &over_list[j] {
+            EdnValue::Keyword(k) => match k.as_str() {
+                ":partition-by" => {
+                    j += 1;
+                    partition_by = match over_list.get(j) {
+                        Some(EdnValue::Symbol(s)) if s.starts_with('?') => Some(s.clone()),
+                        _ => {
+                            return Err(
+                                "':partition-by' requires a variable (starting with ?)".into(),
+                            );
+                        }
+                    };
+                }
+                ":order-by" => {
+                    j += 1;
+                    order_by = match over_list.get(j) {
+                        Some(EdnValue::Symbol(s)) if s.starts_with('?') => Some(s.clone()),
+                        _ => {
+                            return Err(
+                                "':order-by' requires a variable (starting with ?)".into(),
+                            );
+                        }
+                    };
+                }
+                ":desc" => {
+                    order = Order::Desc;
+                }
+                ":asc" => {
+                    order = Order::Asc;
+                }
+                other => {
+                    return Err(format!("unknown option in ':over' clause: '{}'", other));
+                }
+            },
+            other => {
+                return Err(format!(
+                    "unexpected element in ':over' clause: {:?}",
+                    other
+                ));
+            }
+        }
+        j += 1;
+    }
+
+    let order_by = order_by
+        .ok_or_else(|| "':order-by' is required in the ':over' clause".to_string())?;
+
+    Ok(FindSpec::Window(WindowSpec {
+        func,
+        var,
+        partition_by,
+        order_by,
+        order,
+    }))
 }
 
 fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
@@ -2506,5 +2669,123 @@ mod or_parse_tests {
         assert!(cmd.is_err(), "or inside not should be a parse error");
         let err = cmd.unwrap_err();
         assert!(err.contains("or") || err.contains("not"));
+    }
+}
+
+#[cfg(test)]
+mod window_parse_tests {
+    use super::*;
+
+    #[test]
+    fn parse_window_sum_no_partition() {
+        let cmd = parse_datalog_command(
+            r#"(query [:find ?name (sum ?salary :over (:order-by ?salary))
+                       :where [?e :employee/name ?name]
+                              [?e :employee/salary ?salary]])"#,
+        );
+        assert!(cmd.is_ok(), "parse failed");
+        if let Ok(DatalogCommand::Query(q)) = cmd {
+            assert_eq!(q.find.len(), 2);
+            assert!(matches!(&q.find[1], FindSpec::Window(ws) if
+                ws.func == WindowFunc::Sum &&
+                ws.var == Some("?salary".to_string()) &&
+                ws.partition_by.is_none() &&
+                ws.order_by == "?salary" &&
+                ws.order == Order::Asc
+            ));
+        } else {
+            panic!("expected Query command");
+        }
+    }
+
+    #[test]
+    fn parse_window_rank_desc() {
+        let cmd = parse_datalog_command(
+            r#"(query [:find (rank :over (:order-by ?score :desc))
+                       :where [?e :item/score ?score]])"#,
+        );
+        assert!(cmd.is_ok(), "parse failed");
+        if let Ok(DatalogCommand::Query(q)) = cmd {
+            assert!(matches!(&q.find[0], FindSpec::Window(ws) if
+                ws.func == WindowFunc::Rank &&
+                ws.var.is_none() &&
+                ws.order == Order::Desc
+            ));
+        } else {
+            panic!("expected Query");
+        }
+    }
+
+    #[test]
+    fn parse_window_with_partition_by() {
+        let cmd = parse_datalog_command(
+            r#"(query [:find ?dept (sum ?salary :over (:partition-by ?dept :order-by ?salary))
+                       :where [?e :employee/dept ?dept]
+                              [?e :employee/salary ?salary]])"#,
+        );
+        assert!(cmd.is_ok(), "parse failed");
+        if let Ok(DatalogCommand::Query(q)) = cmd {
+            assert!(matches!(&q.find[1], FindSpec::Window(ws) if
+                ws.partition_by == Some("?dept".to_string())
+            ));
+        } else {
+            panic!("expected Query");
+        }
+    }
+
+    #[test]
+    fn parse_lag_rejected() {
+        let result = parse_datalog_command(
+            r#"(query [:find (lag ?v :over (:order-by ?v)) :where [?e :x ?v]])"#,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not supported"));
+    }
+
+    #[test]
+    fn parse_window_order_by_missing_rejected() {
+        let result = parse_datalog_command(
+            r#"(query [:find (sum ?v :over (:partition-by ?p)) :where [?e :x ?v] [?e :y ?p]])"#,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("order-by"));
+    }
+
+    #[test]
+    fn parse_non_window_compatible_in_over_rejected() {
+        let result = parse_datalog_command(
+            r#"(query [:find (count-distinct ?v :over (:order-by ?v)) :where [?e :x ?v]])"#,
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_lowercase().contains("window"));
+    }
+
+    #[test]
+    fn parse_existing_aggregate_still_works() {
+        let cmd = parse_datalog_command(
+            r#"(query [:find (count ?e) :where [?e :person/name _]])"#,
+        );
+        assert!(cmd.is_ok(), "parse failed");
+        if let Ok(DatalogCommand::Query(q)) = cmd {
+            assert!(matches!(&q.find[0], FindSpec::Aggregate { func, .. } if func == "count"));
+        } else {
+            panic!("expected Query");
+        }
+    }
+
+    #[test]
+    fn parse_row_number_no_var() {
+        let cmd = parse_datalog_command(
+            r#"(query [:find (row-number :over (:order-by ?v)) :where [?e :x ?v]])"#,
+        );
+        assert!(cmd.is_ok(), "parse failed");
+        if let Ok(DatalogCommand::Query(q)) = cmd {
+            assert!(matches!(&q.find[0], FindSpec::Window(ws) if
+                ws.func == WindowFunc::RowNumber &&
+                ws.var.is_none()
+            ));
+        } else {
+            panic!("expected Query");
+        }
     }
 }
