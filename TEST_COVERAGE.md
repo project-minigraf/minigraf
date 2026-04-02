@@ -4,7 +4,7 @@
 
 ## Test Summary
 
-**Total Tests**: 705 ✅
+**Total Tests**: 707 ✅
 - ✅ 478 unit tests (lib)
 - ✅ 10 bi-temporal tests (integration)
 - ✅ 10 complex query tests (integration)
@@ -27,7 +27,7 @@
 - ✅ 12 window function tests (integration, Phase 7.7a — cumulative sum/count/min/avg, rank with ties, row-number, partition-by, desc ordering, mixed aggregate+window, edge cases, lag/lead parse rejection)
 - ✅ 6 doc tests
 
-**Status**: ✅ **All 705 tests passing** (1 ignored: confirmed or+neg-cycle stratification bug)
+**Status**: ✅ **All 707 tests passing** (1 ignored: confirmed or+neg-cycle stratification bug)
 
 ## Phase 7.7a Completion Status: ✅ COMPLETE
 
@@ -38,7 +38,7 @@
 - ✅ `apply_post_processing`, `compute_aggregation`, `apply_window_functions`, `project_find_specs` in `executor.rs` — replaces `apply_aggregation`/`apply_agg_func`
 - ✅ `FunctionRegistry` wired through `db.rs` (`Minigraf::Inner` gains `Arc<RwLock<FunctionRegistry>>`)
 - ✅ `tests/window_functions_test.rs` — 12 integration tests (cumulative sum, running count/min/avg, rank with ties, row-number, partition-by, desc ordering, mixed aggregate+window, single-row and empty-result edge cases, lag/lead parse rejection)
-- ✅ 705 tests passing (unit + integration + doc)
+- ✅ 707 tests passing (unit + integration + doc)
 
 ## Phase 7.6 Completion Status: ✅ COMPLETE
 

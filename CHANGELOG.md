@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `apply_aggregation` and `apply_agg_func` removed from `executor.rs`; replaced by `apply_post_processing` + helpers
 
 ### Total
-705 tests (unit + integration + doc)
+707 tests (unit + integration + doc)
 
 ## v0.15.0 — Phase 7.6: Temporal Metadata Bindings (2026-04-01)
 
