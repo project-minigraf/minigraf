@@ -96,27 +96,49 @@ impl EdnValue {
     }
 }
 
-/// Aggregate function applied to a logic variable in the :find clause.
+/// Window aggregate functions usable inside an `:over` clause.
 #[derive(Debug, Clone, PartialEq)]
-pub enum AggFunc {
-    Count,
-    CountDistinct,
+pub enum WindowFunc {
     Sum,
-    SumDistinct,
+    Count,
     Min,
     Max,
+    Avg,
+    Rank,
+    RowNumber,
 }
 
-impl AggFunc {
-    /// Hyphenated lowercase name used in display and parsing.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            AggFunc::Count => "count",
-            AggFunc::CountDistinct => "count-distinct",
-            AggFunc::Sum => "sum",
-            AggFunc::SumDistinct => "sum-distinct",
-            AggFunc::Min => "min",
-            AggFunc::Max => "max",
+/// Sort direction for the `:order-by` key in a window spec.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Order {
+    Asc,
+    Desc,
+}
+
+/// The `:over (...)` clause of a window function expression.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WindowSpec {
+    pub func: WindowFunc,
+    /// The variable to accumulate. None for rank/row-number (position-based).
+    pub var: Option<String>,
+    /// Partition variable; None means the whole result set is one partition.
+    pub partition_by: Option<String>,
+    /// Sort key variable (required — parser enforces this).
+    pub order_by: String,
+    pub order: Order,
+}
+
+impl WindowSpec {
+    /// Returns the FunctionRegistry key name for this function.
+    pub fn func_name(&self) -> &'static str {
+        match self.func {
+            WindowFunc::Sum => "sum",
+            WindowFunc::Count => "count",
+            WindowFunc::Min => "min",
+            WindowFunc::Max => "max",
+            WindowFunc::Avg => "avg",
+            WindowFunc::Rank => "rank",
+            WindowFunc::RowNumber => "row-number",
         }
     }
 }
@@ -165,31 +187,40 @@ pub enum Expr {
     UnaryOp(UnaryOp, Box<Expr>),
 }
 
-/// A single element in the :find clause: either a plain variable or an aggregate.
+/// A single element in the :find clause: either a plain variable, an aggregate, or a window function.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FindSpec {
     /// A plain logic variable: ?name
     Variable(String),
-    /// An aggregate expression: (count ?e), (sum ?salary), etc.
-    Aggregate { func: AggFunc, var: String },
+    /// A regular aggregate: (count ?e), (sum ?salary), etc.
+    /// `func` is the hyphenated name registered in `FunctionRegistry`.
+    Aggregate { func: String, var: String },
+    /// A window function: (sum ?salary :over (:order-by ?hire-date))
+    Window(WindowSpec),
 }
 
 impl FindSpec {
     /// Column header string used in QueryResult::QueryResults.vars.
     /// Variable("?name") → "?name"
-    /// Aggregate { CountDistinct, "?e" } → "(count-distinct ?e)"
+    /// Aggregate { "count-distinct", "?e" } → "(count-distinct ?e)"
     pub fn display_name(&self) -> String {
         match self {
             FindSpec::Variable(v) => v.clone(),
-            FindSpec::Aggregate { func, var } => format!("({} {})", func.as_str(), var),
+            FindSpec::Aggregate { func, var } => format!("({} {})", func, var),
+            FindSpec::Window(ws) => match &ws.var {
+                Some(v) => format!("({} {} :over ...)", ws.func_name(), v),
+                None => format!("({} :over ...)", ws.func_name()),
+            },
         }
     }
 
-    /// The logic variable this spec references.
+    /// The logic variable this spec draws values from.
+    /// For rank/row-number (no var), returns a synthetic placeholder.
     pub fn var(&self) -> &str {
         match self {
             FindSpec::Variable(v) => v.as_str(),
             FindSpec::Aggregate { var, .. } => var.as_str(),
+            FindSpec::Window(ws) => ws.var.as_deref().unwrap_or("__window_var"),
         }
     }
 }
@@ -942,16 +973,6 @@ mod tests {
     }
 
     #[test]
-    fn test_agg_func_as_str() {
-        assert_eq!(AggFunc::Count.as_str(), "count");
-        assert_eq!(AggFunc::CountDistinct.as_str(), "count-distinct");
-        assert_eq!(AggFunc::Sum.as_str(), "sum");
-        assert_eq!(AggFunc::SumDistinct.as_str(), "sum-distinct");
-        assert_eq!(AggFunc::Min.as_str(), "min");
-        assert_eq!(AggFunc::Max.as_str(), "max");
-    }
-
-    #[test]
     fn test_find_spec_variable_display_and_var() {
         let spec = FindSpec::Variable("?name".to_string());
         assert_eq!(spec.display_name(), "?name");
@@ -961,7 +982,7 @@ mod tests {
     #[test]
     fn test_find_spec_aggregate_display_and_var() {
         let spec = FindSpec::Aggregate {
-            func: AggFunc::CountDistinct,
+            func: "count-distinct".to_string(),
             var: "?e".to_string(),
         };
         assert_eq!(spec.display_name(), "(count-distinct ?e)");
@@ -971,20 +992,82 @@ mod tests {
     #[test]
     fn test_find_spec_all_agg_display_names() {
         let cases = [
-            (AggFunc::Count, "?e", "(count ?e)"),
-            (AggFunc::CountDistinct, "?e", "(count-distinct ?e)"),
-            (AggFunc::Sum, "?v", "(sum ?v)"),
-            (AggFunc::SumDistinct, "?v", "(sum-distinct ?v)"),
-            (AggFunc::Min, "?x", "(min ?x)"),
-            (AggFunc::Max, "?x", "(max ?x)"),
+            ("count", "?e", "(count ?e)"),
+            ("count-distinct", "?e", "(count-distinct ?e)"),
+            ("sum", "?v", "(sum ?v)"),
+            ("sum-distinct", "?v", "(sum-distinct ?v)"),
+            ("min", "?x", "(min ?x)"),
+            ("max", "?x", "(max ?x)"),
         ];
         for (func, var, expected) in cases {
             let spec = FindSpec::Aggregate {
-                func,
+                func: func.to_string(),
                 var: var.to_string(),
             };
             assert_eq!(spec.display_name(), expected);
         }
+    }
+
+    #[test]
+    fn test_window_spec_func_name() {
+        assert_eq!(
+            WindowSpec {
+                func: WindowFunc::Sum,
+                var: Some("?v".to_string()),
+                partition_by: None,
+                order_by: "?x".to_string(),
+                order: Order::Asc,
+            }
+            .func_name(),
+            "sum"
+        );
+        assert_eq!(
+            WindowSpec {
+                func: WindowFunc::Rank,
+                var: None,
+                partition_by: None,
+                order_by: "?x".to_string(),
+                order: Order::Desc,
+            }
+            .func_name(),
+            "rank"
+        );
+        assert_eq!(
+            WindowSpec {
+                func: WindowFunc::RowNumber,
+                var: None,
+                partition_by: None,
+                order_by: "?x".to_string(),
+                order: Order::Asc,
+            }
+            .func_name(),
+            "row-number"
+        );
+    }
+
+    #[test]
+    fn test_find_spec_window_display_and_var() {
+        let ws_with_var = WindowSpec {
+            func: WindowFunc::Sum,
+            var: Some("?salary".to_string()),
+            partition_by: None,
+            order_by: "?date".to_string(),
+            order: Order::Asc,
+        };
+        let spec = FindSpec::Window(ws_with_var);
+        assert_eq!(spec.display_name(), "(sum ?salary :over ...)");
+        assert_eq!(spec.var(), "?salary");
+
+        let ws_no_var = WindowSpec {
+            func: WindowFunc::Rank,
+            var: None,
+            partition_by: None,
+            order_by: "?date".to_string(),
+            order: Order::Desc,
+        };
+        let spec2 = FindSpec::Window(ws_no_var);
+        assert_eq!(spec2.display_name(), "(rank :over ...)");
+        assert_eq!(spec2.var(), "__window_var");
     }
 
     #[test]

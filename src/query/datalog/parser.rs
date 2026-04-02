@@ -416,7 +416,7 @@ pub fn parse_datalog_command(input: &str) -> Result<DatalogCommand, String> {
 }
 
 /// Parse an aggregate expression list: (func-name ?var)
-/// e.g., [Symbol("count"), Symbol("?e")] → FindSpec::Aggregate { Count, "?e" }
+/// e.g., [Symbol("count"), Symbol("?e")] → FindSpec::Aggregate { "count", "?e" }
 fn parse_aggregate(elems: &[EdnValue]) -> Result<FindSpec, String> {
     if elems.len() != 2 {
         return Err(format!(
@@ -424,16 +424,8 @@ fn parse_aggregate(elems: &[EdnValue]) -> Result<FindSpec, String> {
             elems.len()
         ));
     }
-    let func = match &elems[0] {
-        EdnValue::Symbol(s) => match s.as_str() {
-            "count" => AggFunc::Count,
-            "count-distinct" => AggFunc::CountDistinct,
-            "sum" => AggFunc::Sum,
-            "sum-distinct" => AggFunc::SumDistinct,
-            "min" => AggFunc::Min,
-            "max" => AggFunc::Max,
-            other => return Err(format!("Unknown aggregate function: '{}'", other)),
-        },
+    let func_name = match &elems[0] {
+        EdnValue::Symbol(s) => s.clone(),
         other => {
             return Err(format!(
                 "Aggregate function name must be a symbol, got {:?}",
@@ -441,11 +433,16 @@ fn parse_aggregate(elems: &[EdnValue]) -> Result<FindSpec, String> {
             ));
         }
     };
+    const KNOWN_AGGREGATES: &[&str] =
+        &["count", "count-distinct", "sum", "sum-distinct", "min", "max"];
+    if !KNOWN_AGGREGATES.contains(&func_name.as_str()) {
+        return Err(format!("Unknown aggregate function: '{}'", func_name));
+    }
     let var = match &elems[1] {
         EdnValue::Symbol(s) if s.starts_with('?') => s.clone(),
         _ => return Err("Aggregate argument must be a variable (starting with ?)".to_string()),
     };
-    Ok(FindSpec::Aggregate { func, var })
+    Ok(FindSpec::Aggregate { func: func_name, var })
 }
 
 fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
@@ -2151,7 +2148,7 @@ mod tests {
                 assert_eq!(
                     q.find[0],
                     FindSpec::Aggregate {
-                        func: AggFunc::Count,
+                        func: "count".to_string(),
                         var: "?e".to_string()
                     }
                 );
@@ -2173,7 +2170,7 @@ mod tests {
                 assert_eq!(
                     q.find[1],
                     FindSpec::Aggregate {
-                        func: AggFunc::CountDistinct,
+                        func: "count-distinct".to_string(),
                         var: "?e".to_string()
                     }
                 );
@@ -2185,14 +2182,14 @@ mod tests {
     #[test]
     fn test_parse_all_aggregate_functions() {
         let cases = [
-            ("count", AggFunc::Count),
-            ("count-distinct", AggFunc::CountDistinct),
-            ("sum", AggFunc::Sum),
-            ("sum-distinct", AggFunc::SumDistinct),
-            ("min", AggFunc::Min),
-            ("max", AggFunc::Max),
+            "count",
+            "count-distinct",
+            "sum",
+            "sum-distinct",
+            "min",
+            "max",
         ];
-        for (name, expected_func) in cases {
+        for name in cases {
             let input = format!("(query [:find ({} ?v) :where [?e :a ?v]])", name);
             let cmd = parse_datalog_command(&input).expect("parse failed");
             match cmd {
@@ -2200,7 +2197,7 @@ mod tests {
                     assert_eq!(
                         q.find[0],
                         FindSpec::Aggregate {
-                            func: expected_func,
+                            func: name.to_string(),
                             var: "?v".to_string()
                         }
                     );

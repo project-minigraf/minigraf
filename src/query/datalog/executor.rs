@@ -3,8 +3,8 @@ use super::matcher::{PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::optimizer;
 use super::rules::RuleRegistry;
 use super::types::{
-    AggFunc, AsOf, AttributeSpec, BinOp, DatalogCommand, DatalogQuery, EdnValue, Expr, FindSpec,
-    Pattern, Rule, Transaction, UnaryOp, ValidAt, WhereClause,
+    AsOf, AttributeSpec, BinOp, DatalogCommand, DatalogQuery, EdnValue, Expr, FindSpec, Pattern,
+    Rule, Transaction, UnaryOp, ValidAt, WhereClause,
 };
 use crate::graph::FactStorage;
 use crate::graph::types::{Fact, TransactOptions, TxId, Value, tx_id_now};
@@ -699,13 +699,7 @@ fn apply_aggregation(
     if bindings.is_empty() {
         let all_count = !has_grouping_vars
             && find_specs.iter().all(|s| {
-                matches!(
-                    s,
-                    FindSpec::Aggregate {
-                        func: AggFunc::Count | AggFunc::CountDistinct,
-                        ..
-                    }
-                )
+                matches!(s, FindSpec::Aggregate { func, .. } if func == "count" || func == "count-distinct")
             });
         if all_count {
             let row = find_specs.iter().map(|_| Value::Integer(0)).collect();
@@ -719,7 +713,7 @@ fn apply_aggregation(
         .iter()
         .filter_map(|s| match s {
             FindSpec::Variable(v) => Some(v.as_str()),
-            FindSpec::Aggregate { .. } => None,
+            FindSpec::Aggregate { .. } | FindSpec::Window(_) => None,
         })
         .chain(with_vars.iter().map(|s| s.as_str()))
         .collect();
@@ -750,6 +744,7 @@ fn apply_aggregation(
                 var_pos += 1;
             }
         }
+        let _ = var_pos; // suppress unused warning
     }
 
     // Build output rows (one per group)
@@ -769,7 +764,7 @@ fn apply_aggregation(
                         .filter_map(|b| b.get(var.as_str()))
                         .filter(|v| !matches!(v, Value::Null))
                         .collect();
-                    match apply_agg_func(func, &non_null_values) {
+                    match apply_agg_func(func.as_str(), &non_null_values) {
                         Ok(v) => row.push(v),
                         Err(e) => {
                             // min/max on all-null group: skip this group
@@ -782,6 +777,11 @@ fn apply_aggregation(
                         }
                     }
                 }
+                FindSpec::Window(_) => {
+                    // Window functions are not handled in apply_aggregation;
+                    // they are processed in a separate post-processing step.
+                    row.push(Value::Null);
+                }
             }
         }
         if !skip_row {
@@ -793,11 +793,11 @@ fn apply_aggregation(
 }
 
 /// Apply a single aggregate function to a slice of non-null values.
-fn apply_agg_func(func: &AggFunc, values: &[&Value]) -> Result<Value> {
+fn apply_agg_func(func: &str, values: &[&Value]) -> Result<Value> {
     match func {
-        AggFunc::Count => Ok(Value::Integer(values.len() as i64)),
+        "count" => Ok(Value::Integer(values.len() as i64)),
 
-        AggFunc::CountDistinct => {
+        "count-distinct" => {
             let mut seen: Vec<&Value> = Vec::new();
             for v in values {
                 if !seen.contains(v) {
@@ -807,8 +807,8 @@ fn apply_agg_func(func: &AggFunc, values: &[&Value]) -> Result<Value> {
             Ok(Value::Integer(seen.len() as i64))
         }
 
-        AggFunc::Sum | AggFunc::SumDistinct => {
-            let deduped: Vec<&Value> = if matches!(func, AggFunc::SumDistinct) {
+        "sum" | "sum-distinct" => {
+            let deduped: Vec<&Value> = if func == "sum-distinct" {
                 let mut seen: Vec<&Value> = Vec::new();
                 for v in values {
                     if !seen.contains(v) {
@@ -857,7 +857,7 @@ fn apply_agg_func(func: &AggFunc, values: &[&Value]) -> Result<Value> {
             }
         }
 
-        AggFunc::Min | AggFunc::Max => {
+        "min" | "max" => {
             if values.is_empty() {
                 return Err(anyhow!("min/max: no non-null values in group"));
             }
@@ -867,7 +867,7 @@ fn apply_agg_func(func: &AggFunc, values: &[&Value]) -> Result<Value> {
                 if std::mem::discriminant(*v) != std::mem::discriminant(first) {
                     return Err(anyhow!(
                         "{}: cannot compare {} and {} values",
-                        func.as_str(),
+                        func,
                         value_type_name(first),
                         value_type_name(v)
                     ));
@@ -884,20 +884,21 @@ fn apply_agg_func(func: &AggFunc, values: &[&Value]) -> Result<Value> {
                     (_, other) => {
                         return Err(anyhow!(
                             "{}: expected Integer, Float, String, or Null, got {}",
-                            func.as_str(),
+                            func,
                             value_type_name(other)
                         ));
                     }
                 };
                 let replace = match func {
-                    AggFunc::Min => ordering == std::cmp::Ordering::Greater,
-                    AggFunc::Max => ordering == std::cmp::Ordering::Less,
-                    _ => unreachable!(),
+                    "min" => ordering == std::cmp::Ordering::Greater,
+                    _ => ordering == std::cmp::Ordering::Less, // "max"
                 };
                 Ok::<Value, anyhow::Error>(if replace { (*v).clone() } else { acc })
             })?;
             Ok(result)
         }
+
+        other => Err(anyhow!("Unknown aggregate function: '{}'", other)),
     }
 }
 
@@ -2306,7 +2307,7 @@ mod tests {
             binding(&[("?e", Value::Integer(3))]),
         ];
         let find_specs = vec![FindSpec::Aggregate {
-            func: AggFunc::Count,
+            func: "count".to_string(),
             var: "?e".to_string(),
         }];
         let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
@@ -2333,7 +2334,7 @@ mod tests {
         let find_specs = vec![
             FindSpec::Variable("?dept".to_string()),
             FindSpec::Aggregate {
-                func: AggFunc::Count,
+                func: "count".to_string(),
                 var: "?e".to_string(),
             },
         ];
@@ -2361,7 +2362,7 @@ mod tests {
             binding(&[("?v", Value::Integer(2))]),
         ];
         let find_specs = vec![FindSpec::Aggregate {
-            func: AggFunc::CountDistinct,
+            func: "count-distinct".to_string(),
             var: "?v".to_string(),
         }];
         let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
@@ -2372,7 +2373,7 @@ mod tests {
     fn test_apply_aggregation_count_empty_no_grouping_vars() {
         // count with no grouping vars + zero bindings → [[0]]
         let find_specs = vec![FindSpec::Aggregate {
-            func: AggFunc::Count,
+            func: "count".to_string(),
             var: "?e".to_string(),
         }];
         let results = apply_aggregation(vec![], &find_specs, &[]).unwrap();
@@ -2386,7 +2387,7 @@ mod tests {
         let find_specs = vec![
             FindSpec::Variable("?dept".to_string()),
             FindSpec::Aggregate {
-                func: AggFunc::Count,
+                func: "count".to_string(),
                 var: "?e".to_string(),
             },
         ];
@@ -2402,7 +2403,7 @@ mod tests {
             binding(&[("?v", Value::Integer(30))]),
         ];
         let find_specs = vec![FindSpec::Aggregate {
-            func: AggFunc::Sum,
+            func: "sum".to_string(),
             var: "?v".to_string(),
         }];
         let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
@@ -2416,7 +2417,7 @@ mod tests {
             binding(&[("?v", Value::Float(0.5))]),
         ];
         let find_specs = vec![FindSpec::Aggregate {
-            func: AggFunc::Sum,
+            func: "sum".to_string(),
             var: "?v".to_string(),
         }];
         let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
@@ -2431,7 +2432,7 @@ mod tests {
             binding(&[("?v", Value::Integer(10))]),
         ];
         let find_specs = vec![FindSpec::Aggregate {
-            func: AggFunc::SumDistinct,
+            func: "sum-distinct".to_string(),
             var: "?v".to_string(),
         }];
         let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
@@ -2442,7 +2443,7 @@ mod tests {
     fn test_apply_aggregation_sum_type_error() {
         let bindings = vec![binding(&[("?v", Value::String("bad".to_string()))])];
         let find_specs = vec![FindSpec::Aggregate {
-            func: AggFunc::Sum,
+            func: "sum".to_string(),
             var: "?v".to_string(),
         }];
         let result = apply_aggregation(bindings, &find_specs, &[]);
@@ -2457,7 +2458,7 @@ mod tests {
             binding(&[("?v", Value::Integer(20))]),
         ];
         let find_specs = vec![FindSpec::Aggregate {
-            func: AggFunc::Min,
+            func: "min".to_string(),
             var: "?v".to_string(),
         }];
         let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
@@ -2472,7 +2473,7 @@ mod tests {
             binding(&[("?v", Value::String("mango".to_string()))]),
         ];
         let find_specs = vec![FindSpec::Aggregate {
-            func: AggFunc::Max,
+            func: "max".to_string(),
             var: "?v".to_string(),
         }];
         let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
@@ -2483,7 +2484,7 @@ mod tests {
     fn test_apply_aggregation_min_type_error_boolean() {
         let bindings = vec![binding(&[("?v", Value::Boolean(true))])];
         let find_specs = vec![FindSpec::Aggregate {
-            func: AggFunc::Min,
+            func: "min".to_string(),
             var: "?v".to_string(),
         }];
         let result = apply_aggregation(bindings, &find_specs, &[]);
@@ -2497,7 +2498,7 @@ mod tests {
             binding(&[("?v", Value::Float(2.0))]),
         ];
         let find_specs = vec![FindSpec::Aggregate {
-            func: AggFunc::Min,
+            func: "min".to_string(),
             var: "?v".to_string(),
         }];
         let result = apply_aggregation(bindings, &find_specs, &[]);
@@ -2512,7 +2513,7 @@ mod tests {
             binding(&[("?v", Value::Integer(20))]),
         ];
         let find_specs = vec![FindSpec::Aggregate {
-            func: AggFunc::Sum,
+            func: "sum".to_string(),
             var: "?v".to_string(),
         }];
         let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
@@ -2527,7 +2528,7 @@ mod tests {
             binding(&[("?v", Value::Integer(2))]),
         ];
         let find_specs = vec![FindSpec::Aggregate {
-            func: AggFunc::Count,
+            func: "count".to_string(),
             var: "?v".to_string(),
         }];
         let results = apply_aggregation(bindings, &find_specs, &[]).unwrap();
@@ -2537,7 +2538,7 @@ mod tests {
     #[test]
     fn test_apply_aggregation_sum_empty_bindings() {
         let find_specs = vec![FindSpec::Aggregate {
-            func: AggFunc::Sum,
+            func: "sum".to_string(),
             var: "?v".to_string(),
         }];
         let results = apply_aggregation(vec![], &find_specs, &[]).unwrap();
@@ -2563,7 +2564,7 @@ mod tests {
         let find_specs = vec![
             FindSpec::Variable("?dept".to_string()),
             FindSpec::Aggregate {
-                func: AggFunc::Sum,
+                func: "sum".to_string(),
                 var: "?salary".to_string(),
             },
         ];
