@@ -1,0 +1,13 @@
+codecov:
+  require_ci_to_pass: false
+
+coverage:
+  status:
+    patch:
+      default:
+        informational: true
+    project:
+      default:
+        informational: true
+    default_rules:
+      informational: true

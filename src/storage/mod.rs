@@ -62,6 +62,12 @@ pub trait StorageBackend: Send + Sync {
 
     /// Get a human-readable name for this backend (for debugging).
     fn backend_name(&self) -> &'static str;
+
+    /// Returns true if this is a newly created empty storage.
+    ///
+    /// This is used to determine whether a header read failure should
+    /// create a fresh header (new storage) or return an error (corrupted existing storage).
+    fn is_new(&self) -> bool;
 }
 
 /// File header for .graph files — 84 bytes in v7.

@@ -609,7 +609,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
 
         let curr_header = match backend.read_page(0) {
             Ok(bytes) => FileHeader::from_bytes(&bytes)?,
-            Err(_) => FileHeader::new(), // fresh database: page 0 not yet written
+            Err(_) if backend.is_new() => FileHeader::new(),
+            Err(e) => anyhow::bail!("Failed to read header from existing file: {}", e),
         };
 
         // Stream committed B+tree entries BEFORE writing new pages that may overlap
@@ -923,6 +924,7 @@ mod tests {
     use super::*;
     use crate::graph::types::Value;
     use crate::storage::backend::MemoryBackend;
+    use std::io::Write;
     use uuid::Uuid;
 
     #[test]
@@ -1691,5 +1693,83 @@ mod tests {
 
         let computed = compute_header_checksum(&header);
         assert_ne!(computed, header.header_checksum);
+    }
+
+    #[test]
+    fn test_save_with_valid_header_read() {
+        use crate::storage::backend::FileBackend;
+        use tempfile::NamedTempFile;
+        use uuid::Uuid;
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        let alice = Uuid::new_v4();
+
+        {
+            let mut pfs =
+                PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
+            pfs.storage()
+                .transact(
+                    vec![(
+                        alice,
+                        ":name".to_string(),
+                        Value::String("Alice".to_string()),
+                    )],
+                    None,
+                )
+                .unwrap();
+            pfs.dirty = true;
+            pfs.save().unwrap();
+        }
+
+        {
+            let pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
+            let facts = pfs.storage().get_facts_by_entity(&alice).unwrap();
+            assert_eq!(facts.len(), 1, "should load facts from existing file");
+        }
+    }
+
+    #[test]
+    fn test_save_fails_on_corrupted_header() {
+        use crate::storage::backend::FileBackend;
+        use tempfile::NamedTempFile;
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().expect("valid path").to_string();
+        drop(tmp);
+
+        {
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .open(&path)
+                .unwrap();
+            file.write_all(&vec![0u8; PAGE_SIZE]).unwrap();
+            file.write_all(&vec![0u8; PAGE_SIZE]).unwrap();
+        }
+
+        let result = FileBackend::open(&path);
+        assert!(
+            result.is_err(),
+            "should fail on corrupted header in existing file"
+        );
+    }
+
+    #[test]
+    fn test_is_new_returns_correct_value() {
+        use crate::storage::backend::FileBackend;
+        use tempfile::NamedTempFile;
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().expect("valid path").to_string();
+        drop(tmp);
+
+        let backend = FileBackend::open(&path).unwrap();
+        assert!(backend.is_new(), "newly created file should be new");
+        drop(backend);
+
+        let backend = FileBackend::open(&path).unwrap();
+        assert!(!backend.is_new(), "reopened file should not be new");
+        drop(backend);
     }
 }

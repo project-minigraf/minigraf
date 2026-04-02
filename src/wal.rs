@@ -38,7 +38,7 @@ fn write_wal_header(file: &mut File) -> Result<()> {
     // bytes 8..32 are reserved zeros
     file.seek(SeekFrom::Start(0))?;
     file.write_all(&buf)?;
-    file.flush()?;
+    file.sync_all()?;
     Ok(())
 }
 
