@@ -447,12 +447,6 @@ fn parse_aggregate(elems: &[EdnValue]) -> Result<FindSpec, String> {
         &["count", "count-distinct", "sum", "sum-distinct", "min", "max"];
     const WINDOW_ONLY: &[&str] = &["avg", "rank", "row-number"];
 
-    if matches!(func_name.as_str(), "lag" | "lead") {
-        return Err(format!(
-            "'{}' is not supported in this version; lag/lead are planned for a future release",
-            func_name
-        ));
-    }
     if WINDOW_ONLY.contains(&func_name.as_str()) {
         return Err(format!(
             "'{}' is a window function and requires an ':over (...)' clause",
@@ -475,6 +469,10 @@ fn parse_aggregate(elems: &[EdnValue]) -> Result<FindSpec, String> {
 /// Syntax: `(func ?var :over (:partition-by ?p :order-by ?o :desc))`
 /// For rank/row-number (no var): `(rank :over (:order-by ?o))`
 fn parse_window_expr(elems: &[EdnValue]) -> Result<FindSpec, String> {
+    if elems.is_empty() {
+        return Err("window expression cannot be empty".into());
+    }
+
     let func_name = match &elems[0] {
         EdnValue::Symbol(s) => s.as_str(),
         _ => return Err("window function name must be a symbol".into()),
@@ -535,6 +533,10 @@ fn parse_window_expr(elems: &[EdnValue]) -> Result<FindSpec, String> {
             (Some(var), 2usize)
         }
     };
+
+    if over_keyword_idx + 2 != elems.len() {
+        return Err("unexpected tokens after ':over' clause in window expression".into());
+    }
 
     // Parse the :over clause list
     let over_list = match elems.get(over_keyword_idx + 1) {
