@@ -508,7 +508,7 @@ fn parse_window_expr(elems: &[EdnValue]) -> Result<FindSpec, String> {
                 func_name
             ));
         }
-        other => return Err(format!("unknown window function: '{}'", other)),
+        other => WindowFunc::Udf(other.to_string()),
     };
 
     // rank and row-number: no ?var argument
@@ -1029,7 +1029,16 @@ fn parse_expr(list: &[EdnValue]) -> Result<Expr, String> {
             Ok(Expr::BinOp(op, Box::new(lhs), Box::new(rhs)))
         }
 
-        other => Err(format!("unknown expression operator: {}", other)),
+        other => {
+            // Unknown name in 1-arg position: treat as UDF predicate resolved at runtime.
+            // 2-arg unknown forms are still rejected.
+            if list.len() == 2 {
+                let arg = parse_expr_arg(&list[1])?;
+                Ok(Expr::UnaryOp(UnaryOp::Udf(other.to_string()), Box::new(arg)))
+            } else {
+                Err(format!("unknown expression operator: {}", other))
+            }
+        }
     }
 }
 
@@ -2792,17 +2801,18 @@ mod window_parse_tests {
     }
 
     #[test]
-    fn parse_unknown_window_func_rejected() {
+    fn parse_unknown_window_func_as_udf() {
         let result = parse_datalog_command(
             r#"(query [:find (frobnicate ?v :over (:order-by ?v)) :where [?e :x ?v]])"#,
         );
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_lowercase()
-                .contains("unknown window function")
-        );
+        assert!(result.is_ok(), "unknown window function should parse as UDF");
+        if let Ok(DatalogCommand::Query(q)) = result {
+            if let FindSpec::Window(ws) = &q.find[0] {
+                assert_eq!(ws.func, WindowFunc::Udf("frobnicate".to_string()));
+            } else {
+                panic!("expected Window find spec");
+            }
+        }
     }
 
     #[test]
@@ -2828,5 +2838,64 @@ mod window_parse_tests {
         } else {
             panic!("expected Query");
         }
+    }
+
+    #[test]
+    fn parse_udf_window_function() {
+        // A name not in the built-in list should produce WindowFunc::Udf
+        let result = parse_datalog_command(
+            r#"(query [:find (geomean ?score :over (:order-by ?score))
+                     :where [?e :item/score ?score]])"#,
+        );
+        assert!(result.is_ok(), "UDF window function should parse");
+        if let Ok(DatalogCommand::Query(q)) = result {
+            assert_eq!(q.find.len(), 1);
+            if let FindSpec::Window(ws) = &q.find[0] {
+                assert_eq!(ws.func, WindowFunc::Udf("geomean".to_string()));
+            } else {
+                panic!("expected Window find spec");
+            }
+        }
+    }
+
+    #[test]
+    fn parse_udf_predicate_clause() {
+        // Unknown 1-arg predicate should produce UnaryOp::Udf
+        let result = parse_datalog_command(
+            r#"(query [:find ?e :where [?e :person/email ?addr] [(email? ?addr)]])"#,
+        );
+        assert!(result.is_ok(), "UDF predicate should parse");
+        if let Ok(DatalogCommand::Query(q)) = result {
+            let has_udf = q.where_clauses.iter().any(|c| {
+                matches!(c, WhereClause::Expr { expr: Expr::UnaryOp(UnaryOp::Udf(name), _), .. }
+                    if name == "email?")
+            });
+            assert!(has_udf, "should have UnaryOp::Udf(\"email?\") clause");
+        }
+    }
+
+    #[test]
+    fn parse_unknown_two_arg_predicate_rejected() {
+        // Unknown 2-arg form should still be a parse error
+        let result = parse_datalog_command(
+            r#"(query [:find ?e :where [?e :x ?v] [(myfn? ?v ?v)]])"#,
+        );
+        assert!(result.is_err(), "unknown 2-arg form should be rejected");
+    }
+
+    #[test]
+    fn parse_lag_still_rejected() {
+        let result = parse_datalog_command(
+            r#"(query [:find (lag ?v :over (:order-by ?v)) :where [?e :x ?v]])"#,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_lead_still_rejected() {
+        let result = parse_datalog_command(
+            r#"(query [:find (lead ?v :over (:order-by ?v)) :where [?e :x ?v]])"#,
+        );
+        assert!(result.is_err());
     }
 }
