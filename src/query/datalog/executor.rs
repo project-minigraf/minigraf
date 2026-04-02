@@ -54,6 +54,8 @@ pub enum QueryResult {
 pub struct DatalogExecutor {
     storage: FactStorage,
     rules: Arc<RwLock<RuleRegistry>>,
+    // Used in Task 7 (apply_post_processing); RwLock pre-wired for 7.7b register_aggregate API.
+    #[allow(dead_code)]
     functions: Arc<RwLock<FunctionRegistry>>,
 }
 
@@ -77,9 +79,9 @@ impl DatalogExecutor {
         DatalogExecutor { storage, rules, functions }
     }
 
-    /// Create a `DatalogExecutor` with a shared rule registry.
-    ///
-    /// Used by `Minigraf` to share rules across all `execute()` calls.
+    /// Convenience constructor for tests. Shares `rules` with other executors but creates
+    /// a fresh `FunctionRegistry::with_builtins()`. Production code uses
+    /// [`new_with_rules_and_functions`] to share the registry from `Minigraf::Inner`.
     pub fn new_with_rules(storage: FactStorage, rules: Arc<RwLock<RuleRegistry>>) -> Self {
         Self::new_with_rules_and_functions(
             storage,

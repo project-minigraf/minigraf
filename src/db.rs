@@ -138,7 +138,8 @@ struct Inner {
     fact_storage: FactStorage,
     /// Shared rule registry, persists across all `execute()` calls.
     rules: Arc<RwLock<RuleRegistry>>,
-    /// Shared function registry, persists across all `execute()` calls.
+    /// Function registry for aggregates and window functions.
+    /// `RwLock` is used in anticipation of the 7.7b `register_aggregate`/`register_predicate` mutation API.
     functions: Arc<RwLock<FunctionRegistry>>,
     /// Serialises all writes. Holds `WriteContext` which contains the PFS/WAL
     /// for file-backed databases.
