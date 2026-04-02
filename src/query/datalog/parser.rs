@@ -3,6 +3,10 @@ use crate::graph::types::Value;
 use crate::temporal::parse_timestamp;
 use uuid::Uuid;
 
+const MAX_STRING_LENGTH: usize = 1024 * 1024; // 1MB
+const MAX_KEYWORD_LENGTH: usize = 1024; // 1KB
+const MAX_SYMBOL_LENGTH: usize = 1024; // 1KB
+
 /// Tokenizer for EDN syntax
 #[derive(Debug, Clone, PartialEq)]
 enum Token {
@@ -81,6 +85,12 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                             }
                         }
                     } else {
+                        if string.len() >= MAX_STRING_LENGTH {
+                            return Err(format!(
+                                "String exceeds maximum length of {} bytes",
+                                MAX_STRING_LENGTH
+                            ));
+                        }
                         string.push(ch);
                         chars.next();
                     }
@@ -93,6 +103,12 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 let mut keyword = String::from(":");
                 while let Some(&ch) = chars.peek() {
                     if ch.is_alphanumeric() || ch == '/' || ch == '-' || ch == '_' {
+                        if keyword.len() >= MAX_KEYWORD_LENGTH {
+                            return Err(format!(
+                                "Keyword exceeds maximum length of {} bytes",
+                                MAX_KEYWORD_LENGTH
+                            ));
+                        }
                         keyword.push(ch);
                         chars.next();
                     } else {
@@ -107,6 +123,12 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 let mut tag = String::new();
                 while let Some(&ch) = chars.peek() {
                     if ch.is_alphanumeric() || ch == '-' {
+                        if tag.len() >= MAX_SYMBOL_LENGTH {
+                            return Err(format!(
+                                "Tagged literal exceeds maximum length of {} bytes",
+                                MAX_SYMBOL_LENGTH
+                            ));
+                        }
                         tag.push(ch);
                         chars.next();
                     } else {
@@ -133,7 +155,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                         // It's a symbol starting with -
                         chars = start_pos;
                         chars.next();
-                        let symbol = parse_symbol(&mut chars, '-');
+                        let symbol = parse_symbol(&mut chars, '-')?;
                         tokens.push(Token::Symbol(symbol));
                     }
                 } else {
@@ -156,6 +178,12 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 let mut symbol = String::new();
                 while let Some(&ch) = chars.peek() {
                     if ch.is_alphanumeric() || ch == '?' || ch == '_' || ch == '-' || ch == '/' {
+                        if symbol.len() >= MAX_SYMBOL_LENGTH {
+                            return Err(format!(
+                                "Symbol exceeds maximum length of {} bytes",
+                                MAX_SYMBOL_LENGTH
+                            ));
+                        }
                         symbol.push(ch);
                         chars.next();
                     } else {
@@ -222,17 +250,26 @@ fn parse_number(
     Ok((is_float, num_str.clone()))
 }
 
-fn parse_symbol(chars: &mut std::iter::Peekable<std::str::Chars>, first: char) -> String {
+fn parse_symbol(
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+    first: char,
+) -> Result<String, String> {
     let mut symbol = String::from(first);
     while let Some(&ch) = chars.peek() {
         if ch.is_alphanumeric() || ch == '?' || ch == '_' || ch == '-' || ch == '/' {
+            if symbol.len() >= MAX_SYMBOL_LENGTH {
+                return Err(format!(
+                    "Symbol exceeds maximum length of {} bytes",
+                    MAX_SYMBOL_LENGTH
+                ));
+            }
             symbol.push(ch);
             chars.next();
         } else {
             break;
         }
     }
-    symbol
+    Ok(symbol)
 }
 
 /// Parser for EDN values
@@ -1649,6 +1686,38 @@ mod tests {
         let tokens = tokenize(r#""hello" "world\"test""#).unwrap();
         assert_eq!(tokens[0], Token::String("hello".to_string()));
         assert_eq!(tokens[1], Token::String("world\"test".to_string()));
+    }
+
+    #[test]
+    fn test_tokenize_string_length_limit() {
+        let long_string = "\"".to_string() + &"x".repeat(MAX_STRING_LENGTH + 1);
+        let result = tokenize(&long_string);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("exceeds maximum length"));
+    }
+
+    #[test]
+    fn test_tokenize_keyword_length_limit() {
+        let long_keyword = ":".to_string() + &"x".repeat(MAX_KEYWORD_LENGTH + 1);
+        let result = tokenize(&long_keyword);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("exceeds maximum length"));
+    }
+
+    #[test]
+    fn test_tokenize_symbol_length_limit() {
+        let long_symbol = "x".repeat(MAX_SYMBOL_LENGTH + 1);
+        let result = tokenize(&long_symbol);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("exceeds maximum length"));
+    }
+
+    #[test]
+    fn test_tokenize_tagged_literal_length_limit() {
+        let long_tag = "#".to_string() + &"x".repeat(MAX_SYMBOL_LENGTH + 1);
+        let result = tokenize(&long_tag);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("exceeds maximum length"));
     }
 
     #[test]
