@@ -1,18 +1,18 @@
-use crate::graph::FactStorage;
 /// Persistent fact storage that integrates StorageBackend with Datalog facts.
 ///
 /// This module bridges the gap between high-level fact operations and
 /// low-level page-based storage backends.
 use crate::graph::types::Fact;
-use crate::storage::FACT_PAGE_FORMAT_PACKED;
+use crate::graph::FactStorage;
 use crate::storage::btree::{read_aevt_index, read_avet_index, read_eavt_index, read_vaet_index};
 use crate::storage::btree_v6::{
-    OnDiskIndexReader, btree_entries, build_btree, merge_sorted_vecs, stream_all_entries,
+    btree_entries, build_btree, merge_sorted_vecs, stream_all_entries, OnDiskIndexReader,
 };
 use crate::storage::cache::PageCache;
-use crate::storage::index::{AevtKey, AvetKey, EavtKey, FactRef, VaetKey, encode_value};
+use crate::storage::index::{encode_value, AevtKey, AvetKey, EavtKey, FactRef, VaetKey};
 use crate::storage::packed_pages::pack_facts;
-use crate::storage::{FileHeader, PAGE_SIZE, StorageBackend};
+use crate::storage::FACT_PAGE_FORMAT_PACKED;
+use crate::storage::{FileHeader, StorageBackend, PAGE_SIZE};
 use anyhow::Result;
 use crc32fast::Hasher;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -865,6 +865,7 @@ mod tests {
     use super::*;
     use crate::graph::types::Value;
     use crate::storage::backend::MemoryBackend;
+    use std::io::Write;
     use uuid::Uuid;
 
     #[test]
@@ -1146,8 +1147,8 @@ mod tests {
     #[test]
     fn test_sync_check_detects_mismatch_and_rebuilds() {
         use crate::graph::types::Value;
-        use crate::storage::StorageBackend;
         use crate::storage::backend::FileBackend;
+        use crate::storage::StorageBackend;
         use tempfile::NamedTempFile;
         use uuid::Uuid;
 
@@ -1197,7 +1198,7 @@ mod tests {
 
     #[test]
     fn test_compute_index_checksum_stable() {
-        use crate::graph::types::{Fact, VALID_TIME_FOREVER, Value};
+        use crate::graph::types::{Fact, Value, VALID_TIME_FOREVER};
         use uuid::Uuid;
 
         let e = Uuid::new_v4();
@@ -1591,6 +1592,66 @@ mod tests {
         assert_eq!(
             header.version, 6,
             "migration must complete despite prior partial run"
+        );
+    }
+
+    #[test]
+    fn test_save_with_valid_header_read() {
+        use crate::storage::backend::FileBackend;
+        use tempfile::NamedTempFile;
+        use uuid::Uuid;
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        let alice = Uuid::new_v4();
+
+        {
+            let mut pfs =
+                PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
+            pfs.storage()
+                .transact(
+                    vec![(
+                        alice,
+                        ":name".to_string(),
+                        Value::String("Alice".to_string()),
+                    )],
+                    None,
+                )
+                .unwrap();
+            pfs.dirty = true;
+            pfs.save().unwrap();
+        }
+
+        {
+            let pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
+            let facts = pfs.storage().get_facts_by_entity(&alice).unwrap();
+            assert_eq!(facts.len(), 1, "should load facts from existing file");
+        }
+    }
+
+    #[test]
+    fn test_save_fails_on_corrupted_header() {
+        use crate::storage::backend::FileBackend;
+        use tempfile::NamedTempFile;
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().expect("valid path").to_string();
+        drop(tmp);
+
+        {
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .open(&path)
+                .unwrap();
+            file.write_all(&vec![0u8; PAGE_SIZE]).unwrap();
+            file.write_all(&vec![0u8; PAGE_SIZE]).unwrap();
+        }
+
+        let result = FileBackend::open(&path);
+        assert!(
+            result.is_err(),
+            "should fail on corrupted header in existing file"
         );
     }
 }

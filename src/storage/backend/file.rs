@@ -1,5 +1,5 @@
 /// File-based storage backend for native platforms.
-use crate::storage::{FileHeader, PAGE_SIZE, StorageBackend};
+use crate::storage::{FileHeader, StorageBackend, PAGE_SIZE};
 use anyhow::Result;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -187,9 +187,33 @@ mod tests {
         let backend = FileBackend::open(temp_path).unwrap();
         assert_eq!(backend.backend_name(), "file");
         assert_eq!(backend.page_count().unwrap(), 1); // Header page
+        assert!(backend.is_new(), "newly created file should be new");
 
         // Clean up
         drop(backend);
+        fs::remove_file(temp_path).unwrap();
+    }
+
+    #[test]
+    fn test_file_backend_existing_file_not_new() {
+        let temp_path = "/tmp/test_minigraf_existing.graph";
+        let _ = fs::remove_file(temp_path);
+
+        {
+            let backend = FileBackend::open(temp_path).unwrap();
+            assert!(backend.is_new(), "first open should be new");
+            drop(backend);
+        }
+
+        {
+            let backend = FileBackend::open(temp_path).unwrap();
+            assert!(
+                !backend.is_new(),
+                "reopening existing file should not be new"
+            );
+            drop(backend);
+        }
+
         fs::remove_file(temp_path).unwrap();
     }
 
