@@ -1,5 +1,5 @@
 /// File-based storage backend for native platforms.
-use crate::storage::{FileHeader, PAGE_SIZE, StorageBackend};
+use crate::storage::{FileHeader, StorageBackend, PAGE_SIZE};
 use anyhow::Result;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -211,6 +211,12 @@ mod tests {
                 !backend.is_new(),
                 "reopening existing file should not be new"
             );
+            drop(backend);
+        }
+
+        {
+            let backend = FileBackend::open(temp_path).unwrap();
+            assert!(!backend.is_new(), "third open should still not be new");
             drop(backend);
         }
 
