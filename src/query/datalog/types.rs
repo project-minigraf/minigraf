@@ -106,6 +106,9 @@ pub enum WindowFunc {
     Avg,
     Rank,
     RowNumber,
+    /// Any function name not recognised at parse time — resolved against
+    /// `FunctionRegistry` at query execution time.
+    Udf(String),
 }
 
 /// Sort direction for the `:order-by` key in a window spec.
@@ -130,15 +133,16 @@ pub struct WindowSpec {
 
 impl WindowSpec {
     /// Returns the FunctionRegistry key name for this function.
-    pub fn func_name(&self) -> &'static str {
-        match self.func {
-            WindowFunc::Sum => "sum",
-            WindowFunc::Count => "count",
-            WindowFunc::Min => "min",
-            WindowFunc::Max => "max",
-            WindowFunc::Avg => "avg",
-            WindowFunc::Rank => "rank",
-            WindowFunc::RowNumber => "row-number",
+    pub fn func_name(&self) -> String {
+        match &self.func {
+            WindowFunc::Sum => "sum".to_string(),
+            WindowFunc::Count => "count".to_string(),
+            WindowFunc::Min => "min".to_string(),
+            WindowFunc::Max => "max".to_string(),
+            WindowFunc::Avg => "avg".to_string(),
+            WindowFunc::Rank => "rank".to_string(),
+            WindowFunc::RowNumber => "row-number".to_string(),
+            WindowFunc::Udf(name) => name.clone(),
         }
     }
 }
@@ -174,6 +178,8 @@ pub enum UnaryOp {
     FloatQ,
     BooleanQ,
     NilQ,
+    /// A UDF predicate name not in the built-in whitelist, resolved at execution time.
+    Udf(String),
 }
 
 /// Composable expression tree for `WhereClause::Expr`.

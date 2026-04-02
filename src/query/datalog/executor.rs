@@ -952,7 +952,7 @@ fn apply_window_functions(
                 _ => {
                     // Accumulator-based: sum, count, min, max, avg.
                     let func_name = ws.func_name();
-                    let desc = registry.get(func_name).ok_or_else(|| {
+                    let desc = registry.get(func_name.as_str()).ok_or_else(|| {
                         anyhow::anyhow!("no descriptor for window function '{}'", func_name)
                     })?;
                     let ops = desc.window_ops.as_ref().ok_or_else(|| {
@@ -1359,6 +1359,7 @@ pub(crate) fn eval_expr(
                 UnaryOp::FloatQ => matches!(v, Value::Float(_)),
                 UnaryOp::BooleanQ => matches!(v, Value::Boolean(_)),
                 UnaryOp::NilQ => matches!(v, Value::Null),
+                UnaryOp::Udf(_) => return Err(()),
             }))
         }
         Expr::BinOp(op, lhs, rhs) => {
