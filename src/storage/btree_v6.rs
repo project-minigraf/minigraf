@@ -502,6 +502,10 @@ impl<B: StorageBackend> StorageBackend for MutexStorageBackend<B> {
     fn backend_name(&self) -> &'static str {
         unimplemented!("MutexStorageBackend is read-only; backend_name must not be called")
     }
+
+    fn is_new(&self) -> bool {
+        self.0.lock().unwrap().is_new()
+    }
 }
 
 // ─── OnDiskIndexReader ────────────────────────────────────────────────────────
