@@ -362,6 +362,32 @@ pub fn apply_builtin_aggregate(name: &str, values: &[&Value]) -> anyhow::Result<
             Ok(result)
         }
 
+        "avg" => {
+            if values.is_empty() {
+                return Ok(Value::Null);
+            }
+            let mut sum = 0.0_f64;
+            let mut count = 0usize;
+            for v in values {
+                match v {
+                    Value::Integer(i) => {
+                        sum += *i as f64;
+                        count += 1;
+                    }
+                    Value::Float(f) => {
+                        sum += f;
+                        count += 1;
+                    }
+                    _ => {}
+                }
+            }
+            if count == 0 {
+                Ok(Value::Null)
+            } else {
+                Ok(Value::Float(sum / count as f64))
+            }
+        }
+
         other => Err(anyhow::anyhow!("unknown aggregate function: '{}'", other)),
     }
 }
@@ -435,6 +461,14 @@ mod tests {
         let refs: Vec<&Value> = vals.iter().collect();
         let result = apply_builtin_aggregate("max", &refs).unwrap();
         assert_eq!(result, Value::Integer(30));
+    }
+
+    #[test]
+    fn apply_builtin_avg() {
+        let vals = vec![Value::Integer(10), Value::Integer(20), Value::Integer(30)];
+        let refs: Vec<&Value> = vals.iter().collect();
+        let result = apply_builtin_aggregate("avg", &refs).unwrap();
+        assert_eq!(result, Value::Float(20.0));
     }
 
     #[test]
