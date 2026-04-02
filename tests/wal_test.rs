@@ -585,8 +585,8 @@ fn test_v2_file_opens_and_upgrades_to_v3_on_checkpoint() {
     );
     let header = FileHeader::from_bytes(&raw[..PAGE_SIZE]).unwrap();
     assert_eq!(
-        header.version, 6,
-        "file must be upgraded to v6 on checkpoint"
+        header.version, 7,
+        "file must be upgraded to v7 on checkpoint"
     );
     assert_eq!(header.magic, *b"MGRF", "magic number must be preserved");
     assert!(
