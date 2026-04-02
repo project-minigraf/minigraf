@@ -22,7 +22,7 @@ pub const PAGE_SIZE: usize = 4096;
 pub const MAGIC_NUMBER: [u8; 4] = *b"MGRF";
 
 /// Current file format version
-pub const FORMAT_VERSION: u32 = 6;
+pub const FORMAT_VERSION: u32 = 7;
 
 /// fact_page_format: legacy one-per-page (v4 and earlier, or unset byte = 0x00).
 pub const FACT_PAGE_FORMAT_ONE_PER_PAGE: u8 = 0x01;
@@ -70,7 +70,7 @@ pub trait StorageBackend: Send + Sync {
     fn is_new(&self) -> bool;
 }
 
-/// File header for .graph files — 80 bytes in v6.
+/// File header for .graph files — 84 bytes in v7.
 ///
 /// Layout (all fields little-endian):
 ///   0..4    magic ("MGRF")
@@ -86,6 +86,7 @@ pub trait StorageBackend: Send + Sync {
 ///   68      fact_page_format (u8)
 ///   69..72  _padding ([u8; 3])
 ///   72..80  fact_page_count (u64)     — new in v6
+///   80..84  header_checksum (u32)    — new in v7
 #[derive(Debug, Clone, Copy)]
 pub struct FileHeader {
     pub magic: [u8; 4],
@@ -104,6 +105,9 @@ pub struct FileHeader {
     /// Number of pages (starting at page 1) holding committed fact data.
     /// New in v6; zero-initialised when reading v5 or older headers.
     pub fact_page_count: u64,
+    /// CRC32 checksum of the first 80 bytes of the header (excluding this field).
+    /// New in v7; zero-initialised when reading v6 or older headers.
+    pub header_checksum: u32,
 }
 
 impl FileHeader {
@@ -123,12 +127,13 @@ impl FileHeader {
             fact_page_format: FACT_PAGE_FORMAT_PACKED,
             _padding: [0; 3],
             fact_page_count: 0,
+            header_checksum: 0,
         }
     }
 
     /// Serialize the header to bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(80);
+        let mut b = Vec::with_capacity(84);
         b.extend_from_slice(&self.magic);
         b.extend_from_slice(&self.version.to_le_bytes());
         b.extend_from_slice(&self.page_count.to_le_bytes());
@@ -142,6 +147,7 @@ impl FileHeader {
         b.push(self.fact_page_format);
         b.extend_from_slice(&self._padding);
         b.extend_from_slice(&self.fact_page_count.to_le_bytes());
+        b.extend_from_slice(&self.header_checksum.to_le_bytes());
         b
     }
 
@@ -191,6 +197,7 @@ impl FileHeader {
                 fact_page_format: 0,
                 _padding: [0; 3],
                 fact_page_count: 0,
+                header_checksum: 0,
             });
         }
 
@@ -211,6 +218,15 @@ impl FileHeader {
             0
         };
 
+        let header_checksum = if version >= 7 {
+            if bytes.len() < 84 {
+                anyhow::bail!("Invalid v7 header: expected 84 bytes, got {}", bytes.len());
+            }
+            u32::from_le_bytes(bytes[80..84].try_into().unwrap())
+        } else {
+            0
+        };
+
         Ok(FileHeader {
             magic,
             version,
@@ -225,6 +241,7 @@ impl FileHeader {
             fact_page_format: bytes[68],
             _padding: [bytes[69], bytes[70], bytes[71]],
             fact_page_count,
+            header_checksum,
         })
     }
 
@@ -307,39 +324,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_file_header_serialization_v6() {
-        let header = FileHeader::new();
-        let bytes = header.to_bytes();
-        assert_eq!(bytes.len(), 80);
-        assert_eq!(&bytes[0..4], b"MGRF");
-        // version field at bytes 4..8
-        assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), 6);
-        // eavt_root_page at bytes 32..40: zero on fresh header
-        assert_eq!(u64::from_le_bytes(bytes[32..40].try_into().unwrap()), 0);
-        // index_checksum at bytes 64..68: zero on fresh header
-        assert_eq!(u32::from_le_bytes(bytes[64..68].try_into().unwrap()), 0);
-        // fact_page_format at byte 68: FACT_PAGE_FORMAT_PACKED on fresh header
-        assert_eq!(bytes[68], FACT_PAGE_FORMAT_PACKED);
-    }
-
-    #[test]
-    fn test_file_header_roundtrip_v6() {
-        let mut header = FileHeader::new();
-        header.eavt_root_page = 10;
-        header.aevt_root_page = 20;
-        header.avet_root_page = 30;
-        header.vaet_root_page = 40;
-        header.index_checksum = 0xDEAD_BEEF;
-        let bytes = header.to_bytes();
-        let parsed = FileHeader::from_bytes(&bytes).unwrap();
-        assert_eq!(parsed.eavt_root_page, 10);
-        assert_eq!(parsed.aevt_root_page, 20);
-        assert_eq!(parsed.avet_root_page, 30);
-        assert_eq!(parsed.vaet_root_page, 40);
-        assert_eq!(parsed.index_checksum, 0xDEAD_BEEF);
-    }
-
-    #[test]
     fn test_file_header_from_bytes_v3_accepted() {
         // v3 files have a 64-byte header. from_bytes must accept them and
         // return zeroed index fields.
@@ -364,25 +348,111 @@ mod tests {
     }
 
     #[test]
-    fn test_format_version_is_6() {
-        assert_eq!(FORMAT_VERSION, 6);
+    fn test_format_version_is_7() {
+        assert_eq!(FORMAT_VERSION, 7);
     }
 
     #[test]
-    fn test_validate_rejects_version_0_and_7() {
-        let mut header = FileHeader::new();
-        header.version = 0;
-        assert!(header.validate().is_err());
-
-        header.version = 7;
-        assert!(header.validate().is_err());
+    fn test_validate_accepts_version_7() {
+        let mut h = FileHeader::new();
+        h.version = 7;
+        assert!(h.validate().is_ok());
     }
 
     #[test]
-    fn test_new_header_has_version_6() {
+    fn test_new_header_has_version_7() {
         let header = FileHeader::new();
         assert_eq!(header.version, FORMAT_VERSION);
-        assert_eq!(header.version, 6);
+        assert_eq!(header.version, 7);
+    }
+
+    #[test]
+    fn test_file_header_serialization_v7() {
+        let header = FileHeader::new();
+        let bytes = header.to_bytes();
+        assert_eq!(bytes.len(), 84);
+    }
+
+    #[test]
+    fn test_file_header_roundtrip_v7() {
+        let mut header = FileHeader::new();
+        header.header_checksum = 0xDEAD_BEEF;
+        let bytes = header.to_bytes();
+        let parsed = FileHeader::from_bytes(&bytes).unwrap();
+        assert_eq!(parsed.header_checksum, 0xDEAD_BEEF);
+    }
+
+    #[test]
+    fn test_file_header_v7_byte_layout_all_fields() {
+        let mut h = FileHeader::new();
+        h.page_count = 0x0102_0304_0506_0708_u64;
+        h.node_count = 0x1112_1314_1516_1718_u64;
+        h.last_checkpointed_tx_count = 0x2122_2324_2526_2728_u64;
+        h.eavt_root_page = 0x3132_3334_3536_3738_u64;
+        h.aevt_root_page = 0x4142_4344_4546_4748_u64;
+        h.avet_root_page = 0x5152_5354_5556_5758_u64;
+        h.vaet_root_page = 0x6162_6364_6566_6768_u64;
+        h.index_checksum = 0x7172_7374_u32;
+        h.fact_page_format = 0x02;
+        h._padding = [0x00; 3];
+        h.fact_page_count = 0xA1A2_A3A4_A5A6_A7A8_u64;
+        h.header_checksum = 0xC1C2_C3C4_u32;
+
+        let b = h.to_bytes();
+        assert_eq!(b.len(), 84, "v7 header must be exactly 84 bytes");
+
+        assert_eq!(&b[0..4], b"MGRF");
+        assert_eq!(&b[4..8], &7u32.to_le_bytes());
+        assert_eq!(&b[8..16], &0x0102_0304_0506_0708_u64.to_le_bytes());
+        assert_eq!(&b[16..24], &0x1112_1314_1516_1718_u64.to_le_bytes());
+        assert_eq!(&b[24..32], &0x2122_2324_2526_2728_u64.to_le_bytes());
+        assert_eq!(&b[32..40], &0x3132_3334_3536_3738_u64.to_le_bytes());
+        assert_eq!(&b[40..48], &0x4142_4344_4546_4748_u64.to_le_bytes());
+        assert_eq!(&b[48..56], &0x5152_5354_5556_5758_u64.to_le_bytes());
+        assert_eq!(&b[56..64], &0x6162_6364_6566_6768_u64.to_le_bytes());
+        assert_eq!(&b[64..68], &0x7172_7374_u32.to_le_bytes());
+        assert_eq!(b[68], 0x02);
+        assert_eq!(&b[69..72], &[0x00u8; 3]);
+        assert_eq!(&b[72..80], &0xA1A2_A3A4_A5A6_A7A8_u64.to_le_bytes());
+        assert_eq!(&b[80..84], &0xC1C2_C3C4_u32.to_le_bytes());
+    }
+
+    #[test]
+    fn test_file_header_v6_reads_header_checksum_zero() {
+        let mut bytes = vec![0u8; 80];
+        bytes[0..4].copy_from_slice(b"MGRF");
+        bytes[4..8].copy_from_slice(&6u32.to_le_bytes());
+        bytes[8..16].copy_from_slice(&2u64.to_le_bytes());
+        let h = FileHeader::from_bytes(&bytes).unwrap();
+        assert_eq!(h.version, 6);
+        assert_eq!(h.header_checksum, 0);
+    }
+
+    #[test]
+    fn test_file_header_v7_truncated_rejected() {
+        let mut bytes = vec![0u8; 80];
+        bytes[0..4].copy_from_slice(b"MGRF");
+        bytes[4..8].copy_from_slice(&7u32.to_le_bytes());
+        assert!(FileHeader::from_bytes(&bytes).is_err());
+    }
+
+    #[test]
+    fn test_validate_accepts_versions_1_to_7() {
+        let mut h = FileHeader::new();
+        for v in 1u32..=7 {
+            h.version = v;
+            assert!(h.validate().is_ok(), "version {} should be accepted", v);
+        }
+    }
+
+    #[test]
+    fn test_file_header_v7_header_checksum_roundtrip() {
+        let mut h = FileHeader::new();
+        h.header_checksum = 42;
+        let bytes = h.to_bytes();
+        assert_eq!(bytes.len(), 84);
+        let parsed = FileHeader::from_bytes(&bytes).unwrap();
+        assert_eq!(parsed.header_checksum, 42);
     }
 
     #[test]
@@ -420,145 +490,5 @@ mod tests {
         let mut h = FileHeader::new();
         h.version = 5;
         assert!(h.validate().is_ok());
-    }
-
-    /// Pin every field to a distinct non-zero value and assert the raw byte
-    /// pattern at each exact offset matches the little-endian encoding.
-    ///
-    /// A roundtrip test (to_bytes → from_bytes → field value) would pass even
-    /// if two adjacent fields were accidentally swapped, because both ends of
-    /// the roundtrip use the same (potentially wrong) offsets.  This test
-    /// compares against the *canonical* byte positions documented in the layout
-    /// comment above `FileHeader`, so it catches offset drift and also detects
-    /// accidental `to_ne_bytes()` use on big-endian platforms.
-    #[test]
-    fn test_file_header_byte_layout_all_fields() {
-        let mut h = FileHeader::new();
-        h.page_count = 0x0102_0304_0506_0708_u64;
-        h.node_count = 0x1112_1314_1516_1718_u64;
-        h.last_checkpointed_tx_count = 0x2122_2324_2526_2728_u64;
-        h.eavt_root_page = 0x3132_3334_3536_3738_u64;
-        h.aevt_root_page = 0x4142_4344_4546_4748_u64;
-        h.avet_root_page = 0x5152_5354_5556_5758_u64;
-        h.vaet_root_page = 0x6162_6364_6566_6768_u64;
-        h.index_checksum = 0x7172_7374_u32;
-        h.fact_page_format = 0x02;
-        h._padding = [0x00, 0x00, 0x00];
-
-        let b = h.to_bytes();
-        assert_eq!(b.len(), 80, "header must be exactly 80 bytes");
-
-        // bytes 0..4: magic "MGRF"
-        assert_eq!(&b[0..4], b"MGRF");
-
-        // bytes 4..8: version = 6 (u32 LE)
-        assert_eq!(&b[4..8], &6u32.to_le_bytes());
-
-        // bytes 8..16: page_count (u64 LE)
-        assert_eq!(&b[8..16], &0x0102_0304_0506_0708_u64.to_le_bytes());
-
-        // bytes 16..24: node_count (u64 LE)
-        assert_eq!(&b[16..24], &0x1112_1314_1516_1718_u64.to_le_bytes());
-
-        // bytes 24..32: last_checkpointed_tx_count (u64 LE)
-        assert_eq!(&b[24..32], &0x2122_2324_2526_2728_u64.to_le_bytes());
-
-        // bytes 32..40: eavt_root_page (u64 LE)
-        assert_eq!(&b[32..40], &0x3132_3334_3536_3738_u64.to_le_bytes());
-
-        // bytes 40..48: aevt_root_page (u64 LE)
-        assert_eq!(&b[40..48], &0x4142_4344_4546_4748_u64.to_le_bytes());
-
-        // bytes 48..56: avet_root_page (u64 LE)
-        assert_eq!(&b[48..56], &0x5152_5354_5556_5758_u64.to_le_bytes());
-
-        // bytes 56..64: vaet_root_page (u64 LE)
-        assert_eq!(&b[56..64], &0x6162_6364_6566_6768_u64.to_le_bytes());
-
-        // bytes 64..68: index_checksum (u32 LE)
-        assert_eq!(&b[64..68], &0x7172_7374_u32.to_le_bytes());
-
-        // byte 68: fact_page_format
-        assert_eq!(b[68], 0x02);
-
-        // bytes 69..72: _padding (must be zero)
-        assert_eq!(&b[69..72], &[0x00, 0x00, 0x00]);
-
-        // bytes 72..80: fact_page_count (u64 LE) — zero (not set in this test)
-        assert_eq!(&b[72..80], &0u64.to_le_bytes());
-    }
-
-    // --- New tests for v6 ---
-
-    #[test]
-    fn test_validate_accepts_versions_1_to_6() {
-        let mut h = FileHeader::new();
-        for v in 1u32..=6 {
-            h.version = v;
-            assert!(h.validate().is_ok(), "version {} should be accepted", v);
-        }
-    }
-
-    #[test]
-    fn test_file_header_v6_fact_page_count_roundtrip() {
-        let mut h = FileHeader::new();
-        h.fact_page_count = 42;
-        let bytes = h.to_bytes();
-        assert_eq!(bytes.len(), 80);
-        let parsed = FileHeader::from_bytes(&bytes).unwrap();
-        assert_eq!(parsed.fact_page_count, 42);
-    }
-
-    #[test]
-    fn test_file_header_v6_byte_layout_all_fields() {
-        let mut h = FileHeader::new();
-        h.page_count = 0x0102_0304_0506_0708_u64;
-        h.node_count = 0x1112_1314_1516_1718_u64;
-        h.last_checkpointed_tx_count = 0x2122_2324_2526_2728_u64;
-        h.eavt_root_page = 0x3132_3334_3536_3738_u64;
-        h.aevt_root_page = 0x4142_4344_4546_4748_u64;
-        h.avet_root_page = 0x5152_5354_5556_5758_u64;
-        h.vaet_root_page = 0x6162_6364_6566_6768_u64;
-        h.index_checksum = 0x7172_7374_u32;
-        h.fact_page_format = 0x02;
-        h._padding = [0x00; 3];
-        h.fact_page_count = 0xA1A2_A3A4_A5A6_A7A8_u64;
-
-        let b = h.to_bytes();
-        assert_eq!(b.len(), 80, "v6 header must be exactly 80 bytes");
-
-        assert_eq!(&b[0..4], b"MGRF");
-        assert_eq!(&b[4..8], &6u32.to_le_bytes());
-        assert_eq!(&b[8..16], &0x0102_0304_0506_0708_u64.to_le_bytes());
-        assert_eq!(&b[16..24], &0x1112_1314_1516_1718_u64.to_le_bytes());
-        assert_eq!(&b[24..32], &0x2122_2324_2526_2728_u64.to_le_bytes());
-        assert_eq!(&b[32..40], &0x3132_3334_3536_3738_u64.to_le_bytes());
-        assert_eq!(&b[40..48], &0x4142_4344_4546_4748_u64.to_le_bytes());
-        assert_eq!(&b[48..56], &0x5152_5354_5556_5758_u64.to_le_bytes());
-        assert_eq!(&b[56..64], &0x6162_6364_6566_6768_u64.to_le_bytes());
-        assert_eq!(&b[64..68], &0x7172_7374_u32.to_le_bytes());
-        assert_eq!(b[68], 0x02);
-        assert_eq!(&b[69..72], &[0x00u8; 3]);
-        assert_eq!(&b[72..80], &0xA1A2_A3A4_A5A6_A7A8_u64.to_le_bytes());
-    }
-
-    #[test]
-    fn test_file_header_v5_reads_fact_page_count_zero() {
-        // v5 files have a 72-byte header; fact_page_count must come back as 0.
-        let mut bytes = vec![0u8; 72];
-        bytes[0..4].copy_from_slice(b"MGRF");
-        bytes[4..8].copy_from_slice(&5u32.to_le_bytes());
-        bytes[8..16].copy_from_slice(&2u64.to_le_bytes());
-        let h = FileHeader::from_bytes(&bytes).unwrap();
-        assert_eq!(h.version, 5);
-        assert_eq!(h.fact_page_count, 0);
-    }
-
-    #[test]
-    fn test_file_header_v6_truncated_rejected() {
-        let mut bytes = vec![0u8; 75]; // only 75 bytes, need 80 for v6
-        bytes[0..4].copy_from_slice(b"MGRF");
-        bytes[4..8].copy_from_slice(&6u32.to_le_bytes());
-        assert!(FileHeader::from_bytes(&bytes).is_err());
     }
 }

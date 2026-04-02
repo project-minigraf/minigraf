@@ -168,12 +168,12 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
 
     /// Load all facts from the backend into memory.
     fn load(&mut self) -> Result<()> {
-        let header = {
+        let (header, raw_header_bytes) = {
             let backend = self.backend.lock().unwrap();
             let header_page = backend.read_page(0)?;
             let h = FileHeader::from_bytes(&header_page)?;
             h.validate()?;
-            h
+            (h, header_page)
         };
 
         // Migrate v1 → v2 if needed
@@ -184,6 +184,17 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         // Migrate v5 → v6 (paged-blob indexes → on-disk B+tree)
         if header.version == 5 {
             return self.migrate_v5_to_v6(&header);
+        }
+
+        // For v7+ files, validate header checksum using raw bytes from disk
+        // For older versions (v6 and earlier), header_checksum is 0 so validation is skipped
+        if header.version >= 7 && header.header_checksum != 0 {
+            let computed = compute_header_checksum_from_bytes(&raw_header_bytes);
+            if header.header_checksum != computed {
+                anyhow::bail!(
+                    "Header checksum mismatch: possible file corruption. Database may be damaged."
+                );
+            }
         }
 
         // Store last_checkpointed_tx_count from header (0 for v2 files)
@@ -306,6 +317,9 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             new_header.fact_page_format = FACT_PAGE_FORMAT_PACKED;
             new_header.fact_page_count = num_fact_pages;
 
+            let write_checksum = compute_header_checksum(&new_header);
+            new_header.header_checksum = write_checksum;
+
             let mut header_page = new_header.to_bytes();
             header_page.resize(PAGE_SIZE, 0);
             backend.write_page(0, &header_page)?;
@@ -315,8 +329,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             self.last_checkpointed_tx_count = max_tx;
 
             // Wire OnDiskIndexReader
-            let index_reader: Arc<dyn crate::storage::CommittedIndexReader> =
-                Arc::new(OnDiskIndexReader::new(
+            let index_reader: std::sync::Arc<dyn crate::storage::CommittedIndexReader> =
+                std::sync::Arc::new(OnDiskIndexReader::new(
                     self.backend.clone(),
                     self.page_cache.clone(),
                     eavt_root,
@@ -325,18 +339,34 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
                     vaet_root,
                 ));
             self.storage.set_committed_index_reader(index_reader);
-        } else if header.eavt_root_page != 0 {
-            // Fast path: v6 — wire OnDiskIndexReader from header roots, no RAM index load
-            let index_reader: Arc<dyn crate::storage::CommittedIndexReader> =
-                Arc::new(OnDiskIndexReader::new(
-                    self.backend.clone(),
-                    self.page_cache.clone(),
-                    header.eavt_root_page,
-                    header.aevt_root_page,
-                    header.avet_root_page,
-                    header.vaet_root_page,
-                ));
-            self.storage.set_committed_index_reader(index_reader);
+        } else {
+            // No rebuild needed - validate header checksum for v7+ files
+            // Re-read header from disk to get any updates from rebuild path
+            if header.version >= 7 && header.header_checksum != 0 {
+                let backend = self.backend.lock().unwrap();
+                let current_header_bytes = backend.read_page(0)?;
+                let current_header = FileHeader::from_bytes(&current_header_bytes)?;
+                let computed = compute_header_checksum_from_bytes(&current_header_bytes);
+                if current_header.header_checksum != computed {
+                    anyhow::bail!(
+                        "Header checksum mismatch: possible file corruption. Database may be damaged."
+                    );
+                }
+            }
+
+            if header.eavt_root_page != 0 {
+                // Fast path: v6 — wire OnDiskIndexReader from header roots, no RAM index load
+                let index_reader: std::sync::Arc<dyn crate::storage::CommittedIndexReader> =
+                    std::sync::Arc::new(OnDiskIndexReader::new(
+                        self.backend.clone(),
+                        self.page_cache.clone(),
+                        header.eavt_root_page,
+                        header.aevt_root_page,
+                        header.avet_root_page,
+                        header.vaet_root_page,
+                    ));
+                self.storage.set_committed_index_reader(index_reader);
+            }
         }
         // else: empty DB — indexes are empty by default, nothing to do.
 
@@ -498,7 +528,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             next_free4,
         )?;
 
-        let mut new_header = FileHeader::new(); // version=6
+        let mut new_header = FileHeader::new(); // version=7
         new_header.page_count = final_next_free;
         new_header.node_count = header.node_count;
         new_header.last_checkpointed_tx_count = header.last_checkpointed_tx_count;
@@ -509,6 +539,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         new_header.index_checksum = header.index_checksum;
         new_header.fact_page_format = header.fact_page_format;
         new_header.fact_page_count = num_fact_pages;
+        new_header.header_checksum = compute_header_checksum(&new_header);
 
         let mut header_page = new_header.to_bytes();
         header_page.resize(PAGE_SIZE, 0);
@@ -661,7 +692,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             build_btree(vaet_ser.into_iter(), &mut *backend, &self.page_cache, next3)?;
 
         // ── Step E: write v6 header (last write = crash-safe boundary) ──────────
-        let mut header = FileHeader::new(); // version=6
+        let mut header = FileHeader::new(); // version=7
         header.page_count = next4;
         header.node_count = curr_header.node_count + pending_facts.len() as u64;
         header.last_checkpointed_tx_count = self.storage.current_tx_count();
@@ -672,6 +703,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         header.index_checksum = checksum;
         header.fact_page_format = FACT_PAGE_FORMAT_PACKED;
         header.fact_page_count = new_total_fact_pages;
+        header.header_checksum = compute_header_checksum(&header);
 
         let mut header_page = header.to_bytes();
         header_page.resize(PAGE_SIZE, 0);
@@ -763,6 +795,33 @@ fn compute_page_checksum(
         hasher.update(&page);
     }
     Ok(hasher.finalize())
+}
+
+/// Compute CRC32 checksum over header bytes 0-79 (header_checksum field zeroed).
+pub fn compute_header_checksum(header: &FileHeader) -> u32 {
+    let mut bytes = header.to_bytes();
+    bytes[80] = 0;
+    bytes[81] = 0;
+    bytes[82] = 0;
+    bytes[83] = 0;
+    let mut hasher = Hasher::new();
+    hasher.update(&bytes[..80]);
+    hasher.finalize()
+}
+
+/// Compute CRC32 checksum over raw header bytes 0-79 (bytes 80-83 zeroed).
+fn compute_header_checksum_from_bytes(bytes: &[u8]) -> u32 {
+    let mut data = bytes.to_vec();
+    if data.len() < 84 {
+        data.resize(84, 0);
+    }
+    data[80] = 0;
+    data[81] = 0;
+    data[82] = 0;
+    data[83] = 0;
+    let mut hasher = Hasher::new();
+    hasher.update(&data[..80]);
+    hasher.finalize()
 }
 
 /// Build sorted index entry vecs for a slice of facts and their corresponding FactRefs.
@@ -1174,11 +1233,16 @@ mod tests {
             pfs.save().unwrap();
         }
 
-        // Corrupt the index_checksum (bytes 64..68 of page 0)
+        // Corrupt the index_checksum (bytes 64..68 of page 0), then recompute header_checksum
         {
             let mut backend = FileBackend::open(&path).unwrap();
             let mut page = backend.read_page(0).unwrap();
             page[64] ^= 0xFF;
+            let new_header_checksum = compute_header_checksum_from_bytes(&page);
+            page[80] = (new_header_checksum & 0xFF) as u8;
+            page[81] = ((new_header_checksum >> 8) & 0xFF) as u8;
+            page[82] = ((new_header_checksum >> 16) & 0xFF) as u8;
+            page[83] = ((new_header_checksum >> 24) & 0xFF) as u8;
             backend.write_page(0, &page).unwrap();
             backend.sync().unwrap();
         }
@@ -1285,7 +1349,7 @@ mod tests {
             let backend = FileBackend::open(&path).unwrap();
             let header_bytes = backend.read_page(0).unwrap();
             let header = crate::storage::FileHeader::from_bytes(&header_bytes).unwrap();
-            assert_eq!(header.version, 6);
+            assert_eq!(header.version, 7);
             assert_eq!(
                 header.fact_page_format,
                 crate::storage::FACT_PAGE_FORMAT_PACKED
@@ -1398,7 +1462,7 @@ mod tests {
             let backend = FileBackend::open(&path).unwrap();
             let header_bytes = backend.read_page(0).unwrap();
             let header = crate::storage::FileHeader::from_bytes(&header_bytes).unwrap();
-            assert_eq!(header.version, 6, "file must be upgraded to v6");
+            assert_eq!(header.version, 7, "file must be upgraded to v7");
             assert_eq!(header.fact_page_format, FACT_PAGE_FORMAT_PACKED);
         }
     }
@@ -1464,8 +1528,8 @@ mod tests {
         let backend = storage.into_backend();
         let header_page = backend.read_page(0).unwrap();
         let header = crate::storage::FileHeader::from_bytes(&header_page).unwrap();
-        assert_eq!(header.version, 6, "save() must write v6 header");
-        assert_eq!(header.to_bytes().len(), 80, "v6 header must be 80 bytes");
+        assert_eq!(header.version, 7, "save() must write v7 header");
+        assert_eq!(header.to_bytes().len(), 84, "v7 header must be 84 bytes");
         assert!(header.fact_page_count > 0, "fact_page_count must be set");
         assert!(
             header.eavt_root_page > 0,
@@ -1564,8 +1628,8 @@ mod tests {
         let b = s.into_backend();
         let header_page = b.read_page(0).unwrap();
         let header = crate::storage::FileHeader::from_bytes(&header_page).unwrap();
-        assert_eq!(header.version, 6, "migration must upgrade header to v6");
-        assert_eq!(header.to_bytes().len(), 80, "v6 header must be 80 bytes");
+        assert_eq!(header.version, 7, "migration must upgrade header to v7");
+        assert_eq!(header.to_bytes().len(), 84, "v7 header must be 84 bytes");
         // page_count=2 means 1 fact page (page 1), even if empty
         assert_eq!(
             header.fact_page_count, 1,
@@ -1590,9 +1654,45 @@ mod tests {
         let header_bytes = b.read_page(0).unwrap();
         let header = crate::storage::FileHeader::from_bytes(&header_bytes).unwrap();
         assert_eq!(
-            header.version, 6,
+            header.version, 7,
             "migration must complete despite prior partial run"
         );
+    }
+
+    #[test]
+    fn test_header_checksum_computation() {
+        use crate::storage::FileHeader;
+
+        let mut header = FileHeader::new();
+        header.page_count = 10;
+        header.node_count = 5;
+
+        let checksum = compute_header_checksum(&header);
+        assert_ne!(checksum, 0, "checksum must be non-zero");
+
+        let mut header2 = FileHeader::new();
+        header2.page_count = 10;
+        header2.node_count = 5;
+        assert_eq!(compute_header_checksum(&header2), checksum);
+
+        let mut header3 = FileHeader::new();
+        header3.page_count = 11;
+        assert_ne!(compute_header_checksum(&header3), checksum);
+    }
+
+    #[test]
+    fn test_header_checksum_corruption_detection() {
+        use crate::storage::{FORMAT_VERSION, FileHeader};
+
+        let mut header = FileHeader::new();
+        header.version = FORMAT_VERSION;
+        let valid_checksum = compute_header_checksum(&header);
+        header.header_checksum = valid_checksum;
+
+        header.page_count = 999;
+
+        let computed = compute_header_checksum(&header);
+        assert_ne!(computed, header.header_checksum);
     }
 
     #[test]
