@@ -1231,11 +1231,16 @@ mod tests {
             pfs.save().unwrap();
         }
 
-        // Corrupt the index_checksum (bytes 64..68 of page 0)
+        // Corrupt the index_checksum (bytes 64..68 of page 0), then recompute header_checksum
         {
             let mut backend = FileBackend::open(&path).unwrap();
             let mut page = backend.read_page(0).unwrap();
             page[64] ^= 0xFF;
+            let new_header_checksum = compute_header_checksum_from_bytes(&page);
+            page[80] = (new_header_checksum & 0xFF) as u8;
+            page[81] = ((new_header_checksum >> 8) & 0xFF) as u8;
+            page[82] = ((new_header_checksum >> 16) & 0xFF) as u8;
+            page[83] = ((new_header_checksum >> 24) & 0xFF) as u8;
             backend.write_page(0, &page).unwrap();
             backend.sync().unwrap();
         }
