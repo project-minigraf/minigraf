@@ -1,5 +1,5 @@
 /// In-memory storage backend for testing and embedded use.
-use crate::storage::{StorageBackend, PAGE_SIZE};
+use crate::storage::{PAGE_SIZE, StorageBackend};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
