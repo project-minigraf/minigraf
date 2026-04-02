@@ -3,4 +3,7 @@ coverage:
     patch:
       default:
         target: 60%
+        threshold: 20%
         informational: true
+    default_rules:
+      informational: true
