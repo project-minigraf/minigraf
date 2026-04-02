@@ -252,9 +252,6 @@ pub(crate) fn value_lt(a: &Value, b: &Value) -> bool {
 }
 
 /// Human-readable type name for error messages.
-///
-/// NOTE: executor.rs contains a private duplicate of this function that will be
-/// removed in Task 7 when aggregate dispatch is migrated out of the executor.
 pub(crate) fn value_type_name(v: &Value) -> &'static str {
     match v {
         Value::String(_) => "String",

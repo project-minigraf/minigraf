@@ -256,3 +256,29 @@ fn lag_rejected_at_parse_time() {
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("not supported"));
 }
+
+#[test]
+fn lead_rejected_at_parse_time() {
+    let db = Minigraf::in_memory().expect("in-memory db");
+    let result = db.execute(
+        r#"(query [:find (lead ?v :over (:order-by ?v)) :where [?e :x ?v]])"#,
+    );
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("not supported"));
+}
+
+// ── running max ─────────────────────────────────────────────────────────────
+
+#[test]
+fn running_max_over_ordered_result() {
+    let db = setup_employees();
+    let result = db.execute(
+        r#"(query [:find ?salary (max ?salary :over (:order-by ?salary))
+                   :where [?e :employee/salary ?salary]])"#,
+    ).expect("query");
+    let rows = get_results(result);
+    // Running max: sorted asc 85000, 90000, 95000, 110000
+    // The last row (110000) should have running max = 110000
+    let row_110k = rows.iter().find(|r| r[0] == Value::Integer(110000)).unwrap();
+    assert_eq!(row_110k[1], Value::Integer(110000));
+}
