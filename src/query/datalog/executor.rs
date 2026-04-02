@@ -1,5 +1,5 @@
 use super::evaluator::{StratifiedEvaluator, evaluate_not_join};
-use super::functions::{FunctionRegistry, apply_builtin_aggregate, value_lt};
+use super::functions::{AggImpl, FunctionRegistry, apply_builtin_aggregate, value_lt};
 use super::matcher::{PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::optimizer;
 use super::rules::RuleRegistry;
@@ -833,19 +833,15 @@ fn compute_aggregation(
                     .filter(|v| !matches!(v, Value::Null))
                     .collect();
                 let agg_val: anyhow::Result<Value> = if let Some(desc) = registry.get(func) {
-                    if desc.is_builtin {
-                        // Built-in: use batch path which enforces strict type-error semantics.
-                        apply_builtin_aggregate(func, &non_null)
-                    } else if let Some(ops) = &desc.window_ops {
-                        // UDF registered with window_ops: incremental init/step/finalise.
-                        let mut acc = (ops.init)();
-                        for v in &non_null {
-                            (ops.step)(&mut acc, v);
+                    match &desc.impl_ {
+                        AggImpl::Builtin(_) => {
+                            // Built-in: use batch path which enforces strict type-error semantics.
+                            apply_builtin_aggregate(func, &non_null)
                         }
-                        Ok((ops.finalise)(&acc))
-                    } else {
-                        // UDF without window_ops: batch path (will return a proper error for truly unknown names).
-                        apply_builtin_aggregate(func, &non_null)
+                        AggImpl::Udf(_) => {
+                            // Task 4 will properly implement UDF evaluation; stub uses builtin path.
+                            apply_builtin_aggregate(func, &non_null)
+                        }
                     }
                 } else {
                     // Unknown to registry: batch path (will return a proper error for truly unknown names).
@@ -957,9 +953,13 @@ fn apply_window_functions(
                     let desc = registry.get(func_name.as_str()).ok_or_else(|| {
                         anyhow::anyhow!("no descriptor for window function '{}'", func_name)
                     })?;
-                    let ops = desc.window_ops.as_ref().ok_or_else(|| {
-                        anyhow::anyhow!("function '{}' is not window-compatible", func_name)
-                    })?;
+                    let AggImpl::Builtin(ops) = &desc.impl_ else {
+                        // UDF window path — Task 4 will implement this properly.
+                        return Err(anyhow::anyhow!(
+                            "UDF window function '{}' not yet supported in window position (Task 4)",
+                            func_name
+                        ));
+                    };
 
                     let mut acc = (ops.init)();
                     let mut values = Vec::with_capacity(row_indices.len());
