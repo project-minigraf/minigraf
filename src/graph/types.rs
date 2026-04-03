@@ -90,12 +90,23 @@ impl Ord for Value {
             (Value::Ref(a), Value::Ref(b)) => a.cmp(b),
             (Value::Keyword(a), Value::Keyword(b)) => a.cmp(b),
             (Value::Null, Value::Null) => std::cmp::Ordering::Equal,
-            // Different variants - order by discriminant
+            // Different variants — order by a stable integer discriminant so
+            // the total order is deterministic and does not depend on stack
+            // addresses (the previous implementation used pointer values here,
+            // which are non-deterministic and violate Ord's contract).
             _ => {
-                // Use pointers to get consistent ordering between variants
-                let self_ptr = self as *const Value as usize;
-                let other_ptr = other as *const Value as usize;
-                self_ptr.cmp(&other_ptr)
+                fn discriminant(v: &Value) -> u8 {
+                    match v {
+                        Value::String(_) => 0,
+                        Value::Integer(_) => 1,
+                        Value::Float(_) => 2,
+                        Value::Boolean(_) => 3,
+                        Value::Ref(_) => 4,
+                        Value::Keyword(_) => 5,
+                        Value::Null => 6,
+                    }
+                }
+                discriminant(self).cmp(&discriminant(other))
             }
         }
     }
@@ -592,5 +603,58 @@ mod tests {
         let opts = TransactOptions::default();
         assert!(opts.valid_from.is_none());
         assert!(opts.valid_to.is_none());
+    }
+
+    // Helper used by the cross-variant Ord tests: moves values into a fresh
+    // stack frame so the two parameters are always at distinct, consistent
+    // addresses independent of the call site.
+    fn cmp_values(a: Value, b: Value) -> std::cmp::Ordering {
+        a.cmp(&b)
+    }
+
+    #[test]
+    fn value_ord_cross_variant_is_antisymmetric() {
+        // The pointer-address bug causes both cmp_values(A, B) and
+        // cmp_values(B, A) to return the same ordering (whichever parameter
+        // slot has the lower address "wins" in both calls), violating the
+        // antisymmetry requirement for Ord: cmp(a,b) must equal reverse(cmp(b,a)).
+        let pairs: &[(Value, Value)] = &[
+            (Value::String("hello".into()), Value::Integer(42)),
+            (Value::Integer(1), Value::Float(1.0)),
+            (Value::Boolean(true), Value::Null),
+            (Value::Keyword(":k".into()), Value::String("x".into())),
+        ];
+        for (a, b) in pairs {
+            let forward = cmp_values(a.clone(), b.clone());
+            let backward = cmp_values(b.clone(), a.clone());
+            assert_eq!(
+                forward,
+                backward.reverse(),
+                "Value::Ord cross-variant comparison must be antisymmetric"
+            );
+            assert_ne!(
+                forward,
+                std::cmp::Ordering::Equal,
+                "Values of different types must not compare as Equal"
+            );
+        }
+    }
+
+    #[test]
+    fn value_ord_cross_variant_is_stable() {
+        // Ordering between two fixed variant types must be stable: it should
+        // not depend on what the inner value is, only on which variant it is.
+        // With the pointer-address bug every allocation is at a different
+        // address, so this constraint can be violated non-deterministically.
+        let string_lt_integer = cmp_values(Value::String("a".into()), Value::Integer(0));
+        for s in ["", "z", "hello world"] {
+            for i in [i64::MIN, 0, i64::MAX] {
+                let result = cmp_values(Value::String(s.into()), Value::Integer(i));
+                assert_eq!(
+                    result, string_lt_integer,
+                    "Cross-variant ordering must depend only on the variant, not the inner value"
+                );
+            }
+        }
     }
 }
