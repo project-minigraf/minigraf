@@ -491,6 +491,10 @@ fn apply_expr_clauses_in_evaluator(
         .filter_map(|mut b| {
             for clause in expr_clauses {
                 if let WhereClause::Expr { expr, binding: out } = clause {
+                    // NOTE: Passing None as the registry means UDF predicates (UnaryOp::Udf) in rule
+                    // body Expr clauses will produce an error rather than being evaluated. This is a
+                    // known architectural limitation: threading FunctionRegistry into RecursiveEvaluator
+                    // and StratifiedEvaluator is out of scope for this phase. See phase 7.7b roadmap.
                     match eval_expr(expr, &b, None) {
                         Ok(value) => match out {
                             None => {
