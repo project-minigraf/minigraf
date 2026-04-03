@@ -791,18 +791,15 @@ fn compute_aggregation(
         group_var_names.extend(with_vars.iter().map(|s| s.as_str()));
     }
 
-    // Group using Vec + PartialEq scan (Value::Float doesn't implement Hash).
-    let mut groups: Vec<(Vec<Value>, Vec<Binding>)> = Vec::new();
+    // Group using BTreeMap keyed by group key (O(log g) instead of O(g) per binding).
+    use std::collections::BTreeMap;
+    let mut groups: BTreeMap<Vec<Value>, Vec<Binding>> = BTreeMap::new();
     for b in bindings {
         let key: Vec<Value> = group_var_names
             .iter()
             .map(|v| b.get(*v).cloned().unwrap_or(Value::Null))
             .collect();
-        if let Some(pos) = groups.iter().position(|(k, _)| k == &key) {
-            groups[pos].1.push(b);
-        } else {
-            groups.push((key.clone(), vec![b]));
-        }
+        groups.entry(key).or_default().push(b);
     }
 
     // Build a position map for Variable specs only (indices 0..n_vars in the key vector).
@@ -821,7 +818,7 @@ fn compute_aggregation(
     }
 
     let mut results: Vec<Binding> = Vec::new();
-    for (key, group_bindings) in &groups {
+    for (key, group_bindings) in groups.iter() {
         let mut binding = Binding::new();
         let mut skip = false;
 
