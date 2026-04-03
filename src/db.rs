@@ -337,7 +337,7 @@ impl Minigraf {
                 continue;
             }
             for fact in &entry.facts {
-                fact_storage.load_fact(fact.clone())?;
+                let _ = fact_storage.load_fact(fact.clone())?;
             }
             replayed += 1;
         }
@@ -435,7 +435,7 @@ impl Minigraf {
 
             // WAL succeeded — now apply facts to shared FactStorage.
             for fact in &stamped {
-                self.inner.fact_storage.load_fact(fact.clone())?;
+                let _ = self.inner.fact_storage.load_fact(fact.clone())?;
             }
 
             // Trigger auto-checkpoint AFTER facts are in FactStorage so the
@@ -737,7 +737,7 @@ impl<'a> WriteTransaction<'a> {
 
             // WAL succeeded — now apply facts to shared FactStorage.
             for fact in stamped {
-                self.inner.fact_storage.load_fact(fact)?;
+                let _ = self.inner.fact_storage.load_fact(fact)?;
             }
 
             // Trigger auto-checkpoint AFTER facts are in FactStorage so the

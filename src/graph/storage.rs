@@ -251,8 +251,24 @@ impl FactStorage {
     /// Used by the load and migration paths only — bypasses tx_counter entirely.
     /// After loading all facts, call `restore_tx_counter()` to re-synchronise the
     /// counter so subsequent `transact()` calls get correct tx_count values.
-    pub fn load_fact(&self, fact: Fact) -> Result<()> {
+    ///
+    /// Checks for duplicate facts before loading (based on entity, attribute, value,
+    /// valid_from, valid_to, and tx_count).
+    pub fn load_fact(&self, fact: Fact) -> Result<bool> {
         let mut d = self.data.write().unwrap();
+
+        // Check for duplicate based on unique key (entity, attribute, value, valid_from, valid_to, tx_count)
+        if d.facts.iter().any(|f| {
+            f.entity == fact.entity
+                && f.attribute == fact.attribute
+                && f.value == fact.value
+                && f.valid_from == fact.valid_from
+                && f.valid_to == fact.valid_to
+                && f.tx_count == fact.tx_count
+        }) {
+            return Ok(false); // Already exists, not loaded
+        }
+
         let slot = d.facts.len() as u16;
         d.pending_indexes.insert(
             &fact,
@@ -262,7 +278,7 @@ impl FactStorage {
             },
         );
         d.facts.push(fact);
-        Ok(())
+        Ok(true)
     }
 
     /// Set tx_counter to max(tx_count) across all loaded facts.
@@ -1610,5 +1626,35 @@ mod tests {
             "storage should be usable after setting committed index reader"
         );
         assert_eq!(result.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_load_fact_prevents_duplicates() {
+        use crate::graph::types::Value;
+
+        let storage = FactStorage::new();
+
+        let entity = uuid::Uuid::new_v4();
+        let attr = ":test/attr".to_string();
+        let value = Value::Integer(42);
+
+        let fact1 = Fact::new(entity, attr.clone(), value.clone(), 1);
+        let fact1_key = (entity, attr.clone(), value.clone());
+
+        let fact2 = Fact::new(uuid::Uuid::new_v4(), attr.clone(), value.clone(), 1);
+
+        // Different entities - should load both
+        assert!(storage.load_fact(fact1).unwrap());
+        assert!(storage.load_fact(fact2).unwrap());
+
+        let count = storage.fact_count();
+        assert_eq!(count, 2);
+
+        // Try loading the exact same fact again - should be rejected as duplicate
+        let fact1_dup = Fact::new(fact1_key.0, fact1_key.1, fact1_key.2, 1);
+        assert!(!storage.load_fact(fact1_dup).unwrap());
+
+        // Count should remain the same
+        assert_eq!(storage.fact_count(), 2);
     }
 }
