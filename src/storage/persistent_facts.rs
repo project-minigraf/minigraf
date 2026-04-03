@@ -1582,7 +1582,7 @@ mod tests {
             backend.sync().unwrap();
         }
 
-        // Open — should auto-migrate to v6
+        // Open — should auto-migrate to v7
         {
             let pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
             assert_eq!(
@@ -1592,7 +1592,7 @@ mod tests {
             );
         }
 
-        // Verify file is now v6
+        // Verify file is now v7
         {
             let backend = FileBackend::open(&path).unwrap();
             let header_bytes = backend.read_page(0).unwrap();
