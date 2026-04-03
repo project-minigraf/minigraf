@@ -13,7 +13,6 @@ use crate::graph::FactStorage;
 use crate::graph::types::{Fact, TransactOptions, TxId, Value, tx_id_now};
 use crate::storage::index::Indexes;
 use anyhow::{Result, anyhow};
-use regex_lite::Regex;
 use std::sync::{Arc, RwLock};
 
 /// Returns true if any where clause (at any depth) contains a per-fact
@@ -1331,12 +1330,8 @@ fn eval_binop(op: &BinOp, l: Value, r: Value) -> Result<Value, ()> {
             }
             _ => Err(()),
         },
-        BinOp::Matches => match (l, r) {
-            (Value::String(s), Value::String(pattern)) => {
-                // Pattern was validated at parse time; compile here.
-                let re = Regex::new(&pattern).map_err(|_| ())?;
-                Ok(Value::Boolean(re.is_match(&s)))
-            }
+        BinOp::Matches { regex: re, .. } => match (l, r) {
+            (Value::String(s), Value::String(_)) => Ok(Value::Boolean(re.is_match(&s))),
             _ => Err(()),
         },
 
@@ -3067,8 +3062,12 @@ mod expr_eval_tests {
 
     #[test]
     fn test_eval_matches_true() {
+        let re = regex_lite::Regex::new("^[^@]+@[^@]+$").unwrap();
         let e = Expr::BinOp(
-            BinOp::Matches,
+            BinOp::Matches {
+                regex: re,
+                pattern: "^[^@]+@[^@]+$".to_string(),
+            },
             Box::new(Expr::Lit(Value::String("test@example.com".to_string()))),
             Box::new(Expr::Lit(Value::String("^[^@]+@[^@]+$".to_string()))),
         );

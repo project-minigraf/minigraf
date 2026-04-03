@@ -1031,6 +1031,29 @@ fn parse_expr(list: &[EdnValue]) -> Result<Expr, String> {
             if list.len() != 3 {
                 return Err(format!("{} takes exactly 2 arguments", head));
             }
+            // matches? second arg must be a string literal; compile regex early.
+            if head == "matches?" {
+                let lhs = parse_expr_arg(&list[1])?;
+                let rhs = parse_expr_arg(&list[2])?;
+                match &rhs {
+                    Expr::Lit(Value::String(pattern)) => {
+                        let compiled = regex_lite::Regex::new(pattern)
+                            .map_err(|e| format!("invalid regex pattern {:?}: {}", pattern, e))?;
+                        let rhs_lit = Expr::Lit(Value::String(pattern.clone()));
+                        return Ok(Expr::BinOp(
+                            BinOp::Matches {
+                                regex: compiled,
+                                pattern: pattern.clone(),
+                            },
+                            Box::new(lhs),
+                            Box::new(rhs_lit),
+                        ));
+                    }
+                    _ => {
+                        return Err("matches? second argument must be a string literal".to_string());
+                    }
+                }
+            }
             let op = match head {
                 "<" => BinOp::Lt,
                 ">" => BinOp::Gt,
@@ -1045,24 +1068,10 @@ fn parse_expr(list: &[EdnValue]) -> Result<Expr, String> {
                 "starts-with?" => BinOp::StartsWith,
                 "ends-with?" => BinOp::EndsWith,
                 "contains?" => BinOp::Contains,
-                "matches?" => BinOp::Matches,
                 _ => unreachable!(),
             };
             let lhs = parse_expr_arg(&list[1])?;
             let rhs = parse_expr_arg(&list[2])?;
-
-            // matches? second arg must be a string literal; validate regex now.
-            if op == BinOp::Matches {
-                match &rhs {
-                    Expr::Lit(Value::String(pattern)) => {
-                        regex_lite::Regex::new(pattern)
-                            .map_err(|e| format!("invalid regex pattern {:?}: {}", pattern, e))?;
-                    }
-                    _ => {
-                        return Err("matches? second argument must be a string literal".to_string());
-                    }
-                }
-            }
             Ok(Expr::BinOp(op, Box::new(lhs), Box::new(rhs)))
         }
 
