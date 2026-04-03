@@ -68,7 +68,6 @@ fn negative_cycle_pair_rejected() {
 
 /// An or branch that creates a negative cycle must also be rejected.
 #[test]
-#[ignore = "bug: or-with-negative-cycle not rejected by stratification"]
 fn or_negative_cycle_rejected() {
     let db = db();
     // base rule: safe depends on not-unsafe
