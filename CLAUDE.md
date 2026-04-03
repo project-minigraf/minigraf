@@ -200,7 +200,8 @@ Applies to all `#[cfg(test)]` modules and all `tests/*.rs` files.
 
 ## Important Reminders
 
-1. **Datalog is the query language** — no other query language
+1. **Always use git worktrees for new features/bugfixes** — Never make changes directly on main. Create an isolated worktree (in `.worktrees/` directory) using the `using-git-worktrees` skill before implementing any feature or fixing any issue.
+2. **Datalog is the query language** — no other query language
 2. **Bi-temporal is first-class** — not an afterthought
 3. **Single file is sacred** — never break this
 4. **Simplicity over features** — do less, do it perfectly
