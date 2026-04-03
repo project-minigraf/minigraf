@@ -1464,7 +1464,12 @@ Push `Expr` predicate clauses (e.g. `[(> ?age 30)]`) down to filter bindings as 
 - ✅ 331 tests passing; `tests/btree_v6_test.rs` covers B+tree correctness and concurrency
 - crates.io publish deferred to Phase 7.9 (API cleanup + publish prep)
 
-### v0.10.0 - ✅ Phase 7.1 (Stratified Negation — `not` + `not-join`)
+### v0.17.0 - ✅ Phase 7.7b (UDFs)
+- ✅ User-defined functions (UDFs) via `register_fn`
+- ✅ Built-in aggregates (`count-distinct`, `avg`, `sum`, `min`, `max`) and window functions (`row_number`, `rank`, `dense_rank`)
+- ✅ `count-distinct` O(n log n) with `Ord` impl for `Value`
+- ✅ File format v7 (84 bytes) with automatic v6 migration
+- ✅ 505 tests passing
 - ✅ `src/query/datalog/stratification.rs`: `DependencyGraph`, `stratify()` — Bellman-Ford cycle detection; negative cycles rejected at rule registration time with a clear error
 - ✅ `(not clause…)` in queries and rule bodies — safety check requires all body vars bound by outer clauses
 - ✅ `(not-join [?v…] clause…)` — existential negation with explicit join-variable sharing; body-only variables are fresh/unbound
