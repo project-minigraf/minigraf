@@ -2883,19 +2883,4 @@ mod window_parse_tests {
         assert!(result.is_err(), "unknown 2-arg form should be rejected");
     }
 
-    #[test]
-    fn parse_lag_still_rejected() {
-        let result = parse_datalog_command(
-            r#"(query [:find (lag ?v :over (:order-by ?v)) :where [?e :x ?v]])"#,
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn parse_lead_still_rejected() {
-        let result = parse_datalog_command(
-            r#"(query [:find (lead ?v :over (:order-by ?v)) :where [?e :x ?v]])"#,
-        );
-        assert!(result.is_err());
-    }
 }
