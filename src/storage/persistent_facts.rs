@@ -504,14 +504,36 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             .unwrap_or(header.page_count);
             first_index_page.saturating_sub(1)
         };
+
+        // Validate the calculated range contains valid pages.
+        // If the file was in an inconsistent state (partial checkpoint),
+        // the calculated range might be incorrect. Do a quick validation
+        // by checking that the first fact page can be read (doesn't need to
+        // be a packed page - the index checksum will catch any real corruption).
+        let validated_num_fact_pages = if num_fact_pages > 0 {
+            let backend = self.backend.lock().unwrap();
+            // Just verify we can read the page - actual validation happens via checksum
+            if backend.read_page(1).is_ok() {
+                num_fact_pages
+            } else {
+                eprintln!(
+                    "Warning: cannot read first fact page (page 1). Header claims {}. Using 0.",
+                    num_fact_pages
+                );
+                0
+            }
+        } else {
+            num_fact_pages
+        };
+
         self.committed_fact_pages
-            .store(num_fact_pages, Ordering::SeqCst);
+            .store(validated_num_fact_pages, Ordering::SeqCst);
 
         // Verify index integrity via checksum before trusting the old indexes.
         // If checksum doesn't match, rebuild indexes from facts instead.
-        let use_old_indexes = num_fact_pages > 0 && header.index_checksum > 0 && {
+        let use_old_indexes = validated_num_fact_pages > 0 && header.index_checksum > 0 && {
             let backend = self.backend.lock().unwrap();
-            let computed = compute_page_checksum(&*backend, 1, num_fact_pages)?;
+            let computed = compute_page_checksum(&*backend, 1, validated_num_fact_pages)?;
             computed == header.index_checksum
         };
 
@@ -543,7 +565,11 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             // Checksum mismatch or missing - rebuild indexes from facts
             let all_facts = {
                 let backend = self.backend.lock().unwrap();
-                crate::storage::packed_pages::read_all_from_pages(&*backend, 1, num_fact_pages)?
+                crate::storage::packed_pages::read_all_from_pages(
+                    &*backend,
+                    1,
+                    validated_num_fact_pages,
+                )?
             };
             // Build indexes from fact data
             let mut eavt_map = std::collections::BTreeMap::new();
@@ -640,10 +666,10 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         new_header.avet_root_page = avet_root;
         new_header.vaet_root_page = vaet_root;
         // Recompute the checksum for the new indexes
-        let computed_checksum = compute_page_checksum(&*backend, 1, num_fact_pages)?;
+        let computed_checksum = compute_page_checksum(&*backend, 1, validated_num_fact_pages)?;
         new_header.index_checksum = computed_checksum;
         new_header.fact_page_format = header.fact_page_format;
-        new_header.fact_page_count = num_fact_pages;
+        new_header.fact_page_count = validated_num_fact_pages;
         new_header.header_checksum = compute_header_checksum(&new_header);
 
         let mut header_page = new_header.to_bytes();
