@@ -267,10 +267,14 @@ fn parse_error_with_without_aggregate() {
 }
 
 #[test]
-fn parse_error_unknown_aggregate_function() {
+fn runtime_error_unknown_aggregate_function() {
+    // Phase 7.7b: unknown aggregate names are no longer rejected at parse time.
+    // They parse as UDF candidates and fail at runtime if no matching UDF is registered.
+    // Seed a fact so the aggregation code path is actually reached.
     let db = db();
-    let r = db.execute(r#"(query [:find (average ?e) :where [?e :a ?v]])"#);
-    assert!(r.is_err(), "unknown aggregate should fail");
+    db.execute(r#"(transact [[:e :a 1]])"#).expect("seed");
+    let r = db.execute(r#"(query [:find (average ?v) :where [?e :a ?v]])"#);
+    assert!(r.is_err(), "unknown aggregate should fail at runtime");
 }
 
 #[test]

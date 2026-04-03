@@ -443,14 +443,6 @@ fn parse_aggregate(elems: &[EdnValue]) -> Result<FindSpec, String> {
         }
     };
 
-    const KNOWN_AGGREGATES: &[&str] = &[
-        "count",
-        "count-distinct",
-        "sum",
-        "sum-distinct",
-        "min",
-        "max",
-    ];
     const WINDOW_ONLY: &[&str] = &["avg", "rank", "row-number"];
 
     if WINDOW_ONLY.contains(&func_name.as_str()) {
@@ -459,9 +451,8 @@ fn parse_aggregate(elems: &[EdnValue]) -> Result<FindSpec, String> {
             func_name
         ));
     }
-    if !KNOWN_AGGREGATES.contains(&func_name.as_str()) {
-        return Err(format!("Unknown aggregate function: '{}'", func_name));
-    }
+    // Unknown aggregate names are allowed — they are resolved at runtime as UDFs.
+    // If no UDF with this name is registered, the executor returns an error.
 
     let var = match &elems[1] {
         EdnValue::Symbol(s) if s.starts_with('?') => s.clone(),
@@ -2412,13 +2403,15 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_error_unknown_aggregate() {
+    fn test_parse_unknown_aggregate_as_udf() {
+        // Phase 7.7b: unknown aggregate names are no longer rejected at parse time.
+        // They are emitted as FindSpec::Aggregate and resolved at runtime as UDFs.
         let result = parse_datalog_command("(query [:find (average ?e) :where [?e :a ?v]])");
-        assert!(result.is_err(), "unknown aggregate should fail");
-        assert!(
-            result.unwrap_err().contains("Unknown aggregate function"),
-            "wrong error message"
-        );
+        assert!(result.is_ok(), "unknown aggregate should parse as UDF");
+        if let Ok(DatalogCommand::Query(q)) = result {
+            assert!(q.find.iter().any(|s| matches!(s, FindSpec::Aggregate { func, .. } if func == "average")),
+                "should have Aggregate with func='average'");
+        }
     }
 
     #[test]
