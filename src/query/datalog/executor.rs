@@ -1,4 +1,6 @@
-use super::evaluator::{StratifiedEvaluator, evaluate_not_join};
+use super::evaluator::{
+    DEFAULT_MAX_DERIVED_FACTS, DEFAULT_MAX_RESULTS, StratifiedEvaluator, evaluate_not_join,
+};
 use super::functions::{FunctionRegistry, apply_builtin_aggregate, value_lt};
 use super::matcher::{PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::optimizer;
@@ -385,6 +387,8 @@ impl DatalogExecutor {
             filtered_storage,
             self.rules.clone(),
             1000, // max iterations
+            DEFAULT_MAX_DERIVED_FACTS,
+            DEFAULT_MAX_RESULTS,
         );
 
         let derived_storage = evaluator.evaluate(&predicates)?;
