@@ -376,24 +376,17 @@ pub fn apply_builtin_aggregate(name: &str, values: &[&Value]) -> anyhow::Result<
         "count" => Ok(Value::Integer(values.len() as i64)),
 
         "count-distinct" => {
-            let mut seen: Vec<&Value> = Vec::new();
-            for v in values {
-                if !seen.contains(v) {
-                    seen.push(v);
-                }
-            }
+            // O(n log n) via BTreeSet — Value::Ord is a stable discriminant-based
+            // total order so BTreeSet membership is correct.
+            let seen: std::collections::BTreeSet<&Value> = values.iter().copied().collect();
             Ok(Value::Integer(seen.len() as i64))
         }
 
         "sum" | "sum-distinct" => {
             let deduped: Vec<&Value> = if name == "sum-distinct" {
-                let mut seen: Vec<&Value> = Vec::new();
-                for v in values {
-                    if !seen.contains(v) {
-                        seen.push(v);
-                    }
-                }
-                seen
+                // O(n log n) via BTreeSet (same rationale as count-distinct).
+                let seen: std::collections::BTreeSet<&Value> = values.iter().copied().collect();
+                seen.into_iter().collect()
             } else {
                 values.to_vec()
             };
