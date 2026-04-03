@@ -475,7 +475,16 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.committed_fact_pages
             .store(num_fact_pages, Ordering::SeqCst);
 
-        let (eavt, aevt, avet, vaet) = {
+        // Verify index integrity via checksum before trusting the old indexes.
+        // If checksum doesn't match, rebuild indexes from facts instead.
+        let use_old_indexes = num_fact_pages > 0 && header.index_checksum > 0 && {
+            let backend = self.backend.lock().unwrap();
+            let computed = compute_page_checksum(&*backend, 1, num_fact_pages)?;
+            computed == header.index_checksum
+        };
+
+        let (eavt, aevt, avet, vaet) = if use_old_indexes {
+            // Read and trust the old v5 indexes
             let backend = self.backend.lock().unwrap();
             let e = if header.eavt_root_page > 0 {
                 read_eavt_index(header.eavt_root_page, &*backend)?
@@ -498,6 +507,68 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
                 std::collections::BTreeMap::new()
             };
             (e, a, av, v)
+        } else {
+            // Checksum mismatch or missing - rebuild indexes from facts
+            let all_facts = {
+                let backend = self.backend.lock().unwrap();
+                crate::storage::packed_pages::read_all_from_pages(&*backend, 1, num_fact_pages)?
+            };
+            // Build indexes from fact data
+            let mut eavt_map = std::collections::BTreeMap::new();
+            let mut aevt_map = std::collections::BTreeMap::new();
+            let mut avet_map = std::collections::BTreeMap::new();
+            let mut vaet_map = std::collections::BTreeMap::new();
+            for (i, fact) in all_facts.iter().enumerate() {
+                let fr = FactRef {
+                    page_id: 1,
+                    slot_index: i as u16,
+                };
+                eavt_map.insert(
+                    EavtKey {
+                        entity: fact.entity,
+                        attribute: fact.attribute.clone(),
+                        valid_from: fact.valid_from,
+                        valid_to: fact.valid_to,
+                        tx_count: fact.tx_count,
+                    },
+                    fr,
+                );
+                aevt_map.insert(
+                    AevtKey {
+                        attribute: fact.attribute.clone(),
+                        entity: fact.entity,
+                        valid_from: fact.valid_from,
+                        valid_to: fact.valid_to,
+                        tx_count: fact.tx_count,
+                    },
+                    fr,
+                );
+                avet_map.insert(
+                    AvetKey {
+                        attribute: fact.attribute.clone(),
+                        value_bytes: encode_value(&fact.value),
+                        valid_from: fact.valid_from,
+                        valid_to: fact.valid_to,
+                        entity: fact.entity,
+                        tx_count: fact.tx_count,
+                    },
+                    fr,
+                );
+                if let crate::graph::types::Value::Ref(target) = &fact.value {
+                    vaet_map.insert(
+                        VaetKey {
+                            ref_target: *target,
+                            attribute: fact.attribute.clone(),
+                            valid_from: fact.valid_from,
+                            valid_to: fact.valid_to,
+                            source_entity: fact.entity,
+                            tx_count: fact.tx_count,
+                        },
+                        fr,
+                    );
+                }
+            }
+            (eavt_map, aevt_map, avet_map, vaet_map)
         };
 
         let mut backend = self.backend.lock().unwrap();
@@ -536,7 +607,9 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         new_header.aevt_root_page = aevt_root;
         new_header.avet_root_page = avet_root;
         new_header.vaet_root_page = vaet_root;
-        new_header.index_checksum = header.index_checksum;
+        // Recompute the checksum for the new indexes
+        let computed_checksum = compute_page_checksum(&*backend, 1, num_fact_pages)?;
+        new_header.index_checksum = computed_checksum;
         new_header.fact_page_format = header.fact_page_format;
         new_header.fact_page_count = num_fact_pages;
         new_header.header_checksum = compute_header_checksum(&new_header);
