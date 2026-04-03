@@ -684,7 +684,9 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     ///
     /// Useful in tests to inspect or reuse the backend after saving.
     /// Any dirty (unsaved) changes are saved before the backend is returned.
-    pub fn into_backend(mut self) -> B {
+    ///
+    /// Returns an error if the backend Arc has multiple references.
+    pub fn into_backend(mut self) -> Result<B> {
         // Save pending changes before giving up ownership
         if self.dirty {
             let _ = self.save();
@@ -694,8 +696,10 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.dirty = false;
         drop(self);
         match Arc::try_unwrap(backend_arc) {
-            Ok(mutex) => mutex.into_inner().unwrap(),
-            Err(_) => panic!("into_backend: backend Arc has multiple owners"),
+            Ok(mutex) => Ok(mutex.into_inner().unwrap()),
+            Err(_) => Err(anyhow::anyhow!(
+                "into_backend: backend Arc has multiple owners"
+            )),
         }
     }
 
@@ -1182,7 +1186,7 @@ mod tests {
         pfs.save().unwrap();
 
         // Reload from the same backend
-        let backend = pfs.into_backend();
+        let backend = pfs.into_backend().unwrap();
         let pfs2 = PersistentFactStorage::new(backend, 256).unwrap();
         let loaded_tx_id = pfs2.storage().get_all_facts().unwrap()[0].tx_id;
 
@@ -1237,7 +1241,7 @@ mod tests {
         pfs.save().unwrap();
 
         // Read back the header and verify version and last_checkpointed_tx_count
-        let backend = pfs.into_backend();
+        let backend = pfs.into_backend().unwrap();
         let header_page = backend.read_page(0).unwrap();
         let header = crate::storage::FileHeader::from_bytes(&header_page).unwrap();
         assert_eq!(header.version, FORMAT_VERSION);
@@ -1630,7 +1634,7 @@ mod tests {
         storage.mark_dirty();
         storage.save().unwrap();
 
-        let backend = storage.into_backend();
+        let backend = storage.into_backend().unwrap();
         let header_page = backend.read_page(0).unwrap();
         let header = crate::storage::FileHeader::from_bytes(&header_page).unwrap();
         assert_eq!(header.version, 7, "save() must write v7 header");
@@ -1660,7 +1664,7 @@ mod tests {
                 .unwrap();
             s.mark_dirty();
             s.save().unwrap();
-            s.into_backend()
+            s.into_backend().unwrap()
         };
 
         let s2 = PersistentFactStorage::new(backend, 256).unwrap();
@@ -1701,7 +1705,7 @@ mod tests {
         storage.mark_dirty();
         storage.save().unwrap();
 
-        let backend = storage.into_backend();
+        let backend = storage.into_backend().unwrap();
         let s2 = PersistentFactStorage::new(backend, 256).unwrap();
         let e1_facts = s2.storage().get_facts_by_entity(&e1).unwrap();
         let e2_facts = s2.storage().get_facts_by_entity(&e2).unwrap();
@@ -1730,7 +1734,7 @@ mod tests {
         backend.write_page(1, &vec![0u8; PAGE_SIZE]).unwrap();
 
         let s = PersistentFactStorage::new(backend, 256).unwrap();
-        let b = s.into_backend();
+        let b = s.into_backend().unwrap();
         let header_page = b.read_page(0).unwrap();
         let header = crate::storage::FileHeader::from_bytes(&header_page).unwrap();
         assert_eq!(header.version, 7, "migration must upgrade header to v7");
@@ -1755,7 +1759,7 @@ mod tests {
         backend.write_page(2, &vec![0xFF_u8; PAGE_SIZE]).unwrap();
 
         let s = PersistentFactStorage::new(backend, 256).unwrap();
-        let b = s.into_backend();
+        let b = s.into_backend().unwrap();
         let header_bytes = b.read_page(0).unwrap();
         let header = crate::storage::FileHeader::from_bytes(&header_bytes).unwrap();
         assert_eq!(
