@@ -143,7 +143,14 @@ impl WalWriter {
     }
 
     /// Delete the WAL file at `path`. Called after a successful checkpoint.
+    ///
+    /// On some filesystems, deleting a recently-written file may not be durable
+    /// until a sync occurs. We open the file and sync it before deletion to ensure
+    /// durability.
     pub fn delete_file(path: &Path) -> Result<()> {
+        let file = std::fs::File::open(path)?;
+        file.sync_all()?;
+        drop(file);
         std::fs::remove_file(path)?;
         Ok(())
     }
