@@ -19,7 +19,7 @@ use crate::graph::FactStorage;
 use crate::query::datalog::executor::DatalogExecutor;
 use crate::query::datalog::executor::QueryResult;
 use crate::graph::types::Value;
-use crate::query::datalog::functions::{AggImpl, AggregateDesc, FunctionRegistry, PredicateDesc, UdfOps};
+use crate::query::datalog::functions::{AggImpl, AggregateDesc, FunctionRegistry, PredicateDesc, UdfFinaliseFn, UdfOps, UdfStepFn};
 use std::any::Any;
 use crate::query::datalog::parser::parse_datalog_command;
 use crate::query::datalog::rules::RuleRegistry;
@@ -668,12 +668,12 @@ impl Minigraf {
     {
         let init_boxed: Arc<dyn Fn() -> Box<dyn Any + Send> + Send + Sync> =
             Arc::new(move || Box::new(init()) as Box<dyn Any + Send>);
-        let step_boxed: Arc<dyn Fn(&mut Box<dyn Any + Send>, &Value) + Send + Sync> =
+        let step_boxed: UdfStepFn =
             Arc::new(move |acc, v| {
                 // SAFETY: `init_boxed` always creates `Box<Acc>`, so downcast is infallible.
                 step(acc.downcast_mut::<Acc>().expect("UDF accumulator type mismatch"), v);
             });
-        let finalise_boxed: Arc<dyn Fn(&Box<dyn Any + Send>, usize) -> Value + Send + Sync> =
+        let finalise_boxed: UdfFinaliseFn =
             Arc::new(move |acc, n| {
                 finalise(acc.downcast_ref::<Acc>().expect("UDF accumulator type mismatch"), n)
             });

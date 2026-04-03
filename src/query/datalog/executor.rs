@@ -280,7 +280,7 @@ impl DatalogExecutor {
             &rules_guard,
             query.as_of.clone(),
             query.valid_at.clone(),
-            &*registry,
+            &registry,
         )?;
         drop(rules_guard);
 
@@ -318,7 +318,7 @@ impl DatalogExecutor {
                             binding,
                             filtered_facts.clone(),
                             valid_at_value.clone(),
-                            &*registry,
+                            &registry,
                         ) {
                             return false;
                         }
@@ -335,10 +335,10 @@ impl DatalogExecutor {
         };
 
         // Apply WhereClause::Expr clauses (filter and binding predicates)
-        let filtered_bindings = apply_expr_clauses(not_filtered, &query.where_clauses, &*registry)?;
+        let filtered_bindings = apply_expr_clauses(not_filtered, &query.where_clauses, &registry)?;
 
         let results =
-            apply_post_processing(filtered_bindings, &query.find, &query.with_vars, &*registry)?;
+            apply_post_processing(filtered_bindings, &query.find, &query.with_vars, &registry)?;
 
         Ok(QueryResult::QueryResults {
             vars: query.find.iter().map(|s| s.display_name()).collect(),
@@ -451,7 +451,7 @@ impl DatalogExecutor {
             &rules_guard,
             query.as_of.clone(),
             query.valid_at.clone(),
-            &*registry,
+            &registry,
         )?;
         drop(rules_guard);
 
@@ -565,7 +565,7 @@ impl DatalogExecutor {
 
                         // Apply Expr clauses from the not body.
                         // Errors (e.g. unknown UDF predicate) are treated as "no match".
-                        not_bindings = apply_expr_clauses(not_bindings, not_body, &*registry)
+                        not_bindings = apply_expr_clauses(not_bindings, not_body, &registry)
                             .unwrap_or_default();
                         if !not_bindings.is_empty() {
                             return false; // not condition violated
@@ -583,10 +583,10 @@ impl DatalogExecutor {
         };
 
         // Apply WhereClause::Expr clauses (filter and binding predicates)
-        let filtered_bindings = apply_expr_clauses(not_filtered, &query.where_clauses, &*registry)?;
+        let filtered_bindings = apply_expr_clauses(not_filtered, &query.where_clauses, &registry)?;
 
         let results =
-            apply_post_processing(filtered_bindings, &query.find, &query.with_vars, &*registry)?;
+            apply_post_processing(filtered_bindings, &query.find, &query.with_vars, &registry)?;
 
         Ok(QueryResult::QueryResults {
             vars: query.find.iter().map(|s| s.display_name()).collect(),
@@ -1433,12 +1433,10 @@ pub(crate) fn apply_expr_clauses(
 ) -> anyhow::Result<Vec<Binding>> {
     // Pre-validate: surface unknown UDF predicate names as errors before filtering rows.
     for clause in where_clauses {
-        if let WhereClause::Expr { expr, .. } = clause {
-            if let Expr::UnaryOp(UnaryOp::Udf(name), _) = expr {
-                if registry.get_predicate(name).is_none() {
-                    anyhow::bail!("unknown predicate: '{}'", name);
-                }
-            }
+        if let WhereClause::Expr { expr: Expr::UnaryOp(UnaryOp::Udf(name), _), .. } = clause
+            && registry.get_predicate(name).is_none()
+        {
+            anyhow::bail!("unknown predicate: '{}'", name);
         }
     }
 

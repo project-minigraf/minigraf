@@ -28,12 +28,18 @@ pub struct WindowOps {
     pub finalise: fn(&AggState) -> Value,
 }
 
+/// Type alias for the type-erased UDF accumulator step closure.
+pub type UdfStepFn = Arc<dyn Fn(&mut Box<dyn Any + Send>, &Value) + Send + Sync>;
+
+/// Type alias for the type-erased UDF accumulator finalise closure.
+pub type UdfFinaliseFn = Arc<dyn Fn(&Box<dyn Any + Send>, usize) -> Value + Send + Sync>;
+
 /// Closure-based aggregate ops for UDFs.
 /// The accumulator is type-erased as `Box<dyn Any + Send>`.
 pub struct UdfOps {
     pub init:     Arc<dyn Fn() -> Box<dyn Any + Send> + Send + Sync>,
-    pub step:     Arc<dyn Fn(&mut Box<dyn Any + Send>, &Value) + Send + Sync>,
-    pub finalise: Arc<dyn Fn(&Box<dyn Any + Send>, usize) -> Value + Send + Sync>,
+    pub step:     UdfStepFn,
+    pub finalise: UdfFinaliseFn,
 }
 
 /// Implementation discriminator for aggregate functions.
