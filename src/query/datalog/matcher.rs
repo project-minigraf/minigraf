@@ -1,3 +1,4 @@
+use super::optimizer::IndexHint;
 use super::types::{AttributeSpec, EdnValue, Pattern, PseudoAttr};
 use crate::graph::FactStorage;
 use crate::graph::types::{EntityId, Fact, Value};
@@ -250,6 +251,110 @@ impl PatternMatcher {
         }
 
         results
+    }
+
+    /// Match multiple patterns with index hints for optimized lookups.
+    pub fn match_patterns_with_hints(&self, patterns: &[(Pattern, IndexHint)]) -> Vec<Bindings> {
+        if patterns.is_empty() {
+            return vec![HashMap::new()];
+        }
+
+        // Start with the first pattern
+        let mut results = self.match_pattern_with_hint(&patterns[0].0, &patterns[0].1);
+
+        // Join with each subsequent pattern
+        for (pattern, _hint) in &patterns[1..] {
+            results = self.join_with_pattern(results, pattern);
+        }
+
+        results
+    }
+
+    /// Match a single pattern with an index hint for optimized lookup.
+    fn match_pattern_with_hint(&self, pattern: &Pattern, hint: &IndexHint) -> Vec<Bindings> {
+        // Get matching fact references from index
+        let fact_refs = self.lookup_with_hint(pattern, hint);
+
+        // If no index lookup possible, fall back to full scan
+        if fact_refs.is_empty() {
+            return self.match_pattern(pattern);
+        }
+
+        // Get all facts and filter by the fact refs from index lookup
+        let facts = self.get_facts();
+
+        let mut results = Vec::new();
+        for fact in facts {
+            if let Some(bindings) = self.match_fact_against_pattern(&fact, pattern) {
+                results.push(bindings);
+            }
+        }
+
+        results
+    }
+
+    /// Look up fact references using the index based on pattern and hint.
+    fn lookup_with_hint(
+        &self,
+        pattern: &Pattern,
+        hint: &IndexHint,
+    ) -> Vec<crate::storage::index::FactRef> {
+        let indexes = &self.indexes;
+
+        match hint {
+            IndexHint::Eavt => {
+                // If entity is bound, use EAVT entity lookup
+                if let EdnValue::Uuid(entity) = &pattern.entity {
+                    return indexes.lookup_eavt_entity(*entity);
+                }
+                // Fall back to full scan
+                vec![]
+            }
+            IndexHint::Aevt => {
+                // If attribute is bound, use AEVT attribute lookup
+                if let AttributeSpec::Real(EdnValue::Keyword(attr)) = &pattern.attribute {
+                    return indexes.lookup_aevt_attr(attr);
+                }
+                // Fall back to full scan
+                vec![]
+            }
+            IndexHint::Avet => {
+                // If attribute and value are bound, use AVET
+                let attr_bound = match &pattern.attribute {
+                    AttributeSpec::Real(edn) => {
+                        if let EdnValue::Keyword(attr) = edn {
+                            Some(attr.clone())
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                };
+                let value_bound = match &pattern.value {
+                    EdnValue::Keyword(k) => Some(Value::Keyword(k.clone())),
+                    EdnValue::String(s) => Some(Value::String(s.clone())),
+                    EdnValue::Integer(i) => Some(Value::Integer(*i)),
+                    EdnValue::Float(f) => Some(Value::Float(*f)),
+                    EdnValue::Boolean(b) => Some(Value::Boolean(*b)),
+                    EdnValue::Uuid(u) => Some(Value::Ref(*u)),
+                    _ => None,
+                };
+
+                if let (Some(attr), Some(value)) = (attr_bound, value_bound) {
+                    return indexes.lookup_avet_attr_value(&attr, &value);
+                }
+                // Fall back to full scan
+                vec![]
+            }
+            IndexHint::Vaet => {
+                // If value is a Ref, use VAET reverse lookup
+                if let EdnValue::Uuid(target) = &pattern.value {
+                    return indexes.lookup_vaet_ref(*target);
+                }
+                // Fall back to full scan
+                vec![]
+            }
+        }
     }
 
     /// Match multiple patterns starting from existing seed bindings.

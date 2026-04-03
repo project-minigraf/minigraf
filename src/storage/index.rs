@@ -202,6 +202,111 @@ impl Indexes {
             );
         }
     }
+
+    /// Query EAVT index for a specific entity (returns all facts for that entity).
+    pub fn lookup_eavt_entity(&self, entity: EntityId) -> Vec<FactRef> {
+        let start = EavtKey {
+            entity,
+            attribute: String::new(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
+        // Use exclusive range with a very high attribute string
+        let end = EavtKey {
+            entity,
+            attribute: String::from("zzzzzzzzzzzzzzzzzz"),
+            valid_from: i64::MAX,
+            valid_to: i64::MAX,
+            tx_count: u64::MAX,
+        };
+        self.eavt.range(start..end).map(|(_, v)| *v).collect()
+    }
+
+    /// Query EAVT index for entity + attribute.
+    pub fn lookup_eavt_entity_attr(&self, entity: EntityId, attribute: &str) -> Vec<FactRef> {
+        let start = EavtKey {
+            entity,
+            attribute: attribute.to_string(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
+        let end = EavtKey {
+            entity,
+            attribute: attribute.to_string(),
+            valid_from: i64::MAX,
+            valid_to: i64::MAX,
+            tx_count: u64::MAX,
+        };
+        self.eavt.range(start..=end).map(|(_, v)| *v).collect()
+    }
+
+    /// Query AEVT index for a specific attribute (returns all facts with that attribute).
+    pub fn lookup_aevt_attr(&self, attribute: &str) -> Vec<FactRef> {
+        let max_uuid = uuid::Uuid::parse_str("ffffffff-ffff-ffff-ffff-ffffffffffff").unwrap();
+        let start = AevtKey {
+            attribute: attribute.to_string(),
+            entity: EntityId::default(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
+        let end = AevtKey {
+            attribute: attribute.to_string(),
+            entity: max_uuid,
+            valid_from: i64::MAX,
+            valid_to: i64::MAX,
+            tx_count: u64::MAX,
+        };
+        self.aevt.range(start..=end).map(|(_, v)| *v).collect()
+    }
+
+    /// Query AVET index for attribute + value.
+    pub fn lookup_avet_attr_value(&self, attribute: &str, value: &Value) -> Vec<FactRef> {
+        let max_uuid = uuid::Uuid::parse_str("ffffffff-ffff-ffff-ffff-ffffffffffff").unwrap();
+        let value_bytes = encode_value(value);
+        let start = AvetKey {
+            attribute: attribute.to_string(),
+            value_bytes: value_bytes.clone(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            entity: EntityId::default(),
+            tx_count: 0,
+        };
+        let end = AvetKey {
+            attribute: attribute.to_string(),
+            value_bytes,
+            valid_from: i64::MAX,
+            valid_to: i64::MAX,
+            entity: max_uuid,
+            tx_count: u64::MAX,
+        };
+        self.avet.range(start..=end).map(|(_, v)| *v).collect()
+    }
+
+    /// Query VAET index for ref target (reverse references).
+    pub fn lookup_vaet_ref(&self, target: EntityId) -> Vec<FactRef> {
+        let max_uuid = uuid::Uuid::parse_str("ffffffff-ffff-ffff-ffff-ffffffffffff").unwrap();
+        let start = VaetKey {
+            ref_target: target,
+            attribute: String::new(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            source_entity: EntityId::default(),
+            tx_count: 0,
+        };
+        let end = VaetKey {
+            ref_target: target,
+            // Use max char to include all attributes
+            attribute: char::MAX.to_string(),
+            valid_from: i64::MAX,
+            valid_to: i64::MAX,
+            source_entity: max_uuid,
+            tx_count: u64::MAX,
+        };
+        self.vaet.range(start..=end).map(|(_, v)| *v).collect()
+    }
 }
 
 #[cfg(test)]
