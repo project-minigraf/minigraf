@@ -264,12 +264,7 @@ impl DatalogExecutor {
         let planned_patterns = optimizer::plan(patterns, &self.indexes);
 
         // Match all patterns in planned order and get bindings
-        let bindings = matcher.match_patterns(
-            &planned_patterns
-                .into_iter()
-                .map(|(p, _hint)| p)
-                .collect::<Vec<_>>(),
-        );
+        let bindings = matcher.match_patterns_with_hints(&planned_patterns);
 
         // Acquire the function registry once; used by apply_or_clauses, not_body_matches,
         // apply_expr_clauses, and apply_post_processing below.
