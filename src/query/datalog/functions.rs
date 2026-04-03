@@ -37,8 +37,8 @@ pub type UdfFinaliseFn = Arc<dyn Fn(&Box<dyn Any + Send>, usize) -> Value + Send
 /// Closure-based aggregate ops for UDFs.
 /// The accumulator is type-erased as `Box<dyn Any + Send>`.
 pub struct UdfOps {
-    pub init:     Arc<dyn Fn() -> Box<dyn Any + Send> + Send + Sync>,
-    pub step:     UdfStepFn,
+    pub init: Arc<dyn Fn() -> Box<dyn Any + Send> + Send + Sync>,
+    pub step: UdfStepFn,
     pub finalise: UdfFinaliseFn,
 }
 
@@ -52,13 +52,13 @@ pub enum AggImpl {
 
 /// Descriptor for a registered predicate function.
 pub struct PredicateDesc {
-    pub f:          Arc<dyn Fn(&Value) -> bool + Send + Sync>,
+    pub f: Arc<dyn Fn(&Value) -> bool + Send + Sync>,
     pub is_builtin: bool,
 }
 
 /// Descriptor for one registered aggregate function.
 pub struct AggregateDesc {
-    pub impl_:      AggImpl,
+    pub impl_: AggImpl,
     /// True for built-in functions handled by `apply_builtin_aggregate`.
     pub is_builtin: bool,
 }
@@ -272,8 +272,15 @@ impl FunctionRegistry {
 
         // Built-in predicate name sentinels — block user registration of these names.
         for name in [
-            "string?", "integer?", "float?", "boolean?", "nil?",
-            "starts-with?", "ends-with?", "contains?", "matches?",
+            "string?",
+            "integer?",
+            "float?",
+            "boolean?",
+            "nil?",
+            "starts-with?",
+            "ends-with?",
+            "contains?",
+            "matches?",
         ] {
             reg.predicates.insert(
                 name.to_string(),
@@ -305,7 +312,11 @@ impl FunctionRegistry {
     }
 
     /// Register a UDF aggregate descriptor. Returns Err if the name is already taken.
-    pub fn register_aggregate_desc(&mut self, name: String, desc: AggregateDesc) -> anyhow::Result<()> {
+    pub fn register_aggregate_desc(
+        &mut self,
+        name: String,
+        desc: AggregateDesc,
+    ) -> anyhow::Result<()> {
         if self.aggregates.contains_key(&name) {
             anyhow::bail!("aggregate function '{}' is already registered", name);
         }
@@ -314,7 +325,11 @@ impl FunctionRegistry {
     }
 
     /// Register a predicate descriptor. Returns Err if the name is already taken.
-    pub fn register_predicate_desc(&mut self, name: String, desc: PredicateDesc) -> anyhow::Result<()> {
+    pub fn register_predicate_desc(
+        &mut self,
+        name: String,
+        desc: PredicateDesc,
+    ) -> anyhow::Result<()> {
         if self.predicates.contains_key(&name) {
             anyhow::bail!("predicate '{}' is already registered", name);
         }
@@ -628,7 +643,9 @@ mod tests {
     fn window_ops_sum_accumulator() {
         let reg = FunctionRegistry::with_builtins();
         let desc = reg.get("sum").unwrap();
-        let AggImpl::Builtin(ops) = &desc.impl_ else { panic!("sum should be Builtin") };
+        let AggImpl::Builtin(ops) = &desc.impl_ else {
+            panic!("sum should be Builtin")
+        };
         let mut state = (ops.init)();
         (ops.step)(&mut state, &Value::Integer(10));
         assert_eq!((ops.finalise)(&state), Value::Integer(10));
@@ -640,7 +657,9 @@ mod tests {
     fn window_ops_count_accumulator() {
         let reg = FunctionRegistry::with_builtins();
         let desc = reg.get("count").unwrap();
-        let AggImpl::Builtin(ops) = &desc.impl_ else { panic!("count should be Builtin") };
+        let AggImpl::Builtin(ops) = &desc.impl_ else {
+            panic!("count should be Builtin")
+        };
         let mut state = (ops.init)();
         (ops.step)(&mut state, &Value::Integer(1));
         (ops.step)(&mut state, &Value::Integer(2));
@@ -651,7 +670,9 @@ mod tests {
     fn window_ops_avg_accumulator() {
         let reg = FunctionRegistry::with_builtins();
         let desc = reg.get("avg").unwrap();
-        let AggImpl::Builtin(ops) = &desc.impl_ else { panic!("avg should be Builtin") };
+        let AggImpl::Builtin(ops) = &desc.impl_ else {
+            panic!("avg should be Builtin")
+        };
         let mut state = (ops.init)();
         (ops.step)(&mut state, &Value::Integer(10));
         (ops.step)(&mut state, &Value::Integer(20));
@@ -679,7 +700,8 @@ mod tests {
                 }),
                 is_builtin: false,
             },
-        ).expect("register should succeed");
+        )
+        .expect("register should succeed");
         assert!(reg.is_known("myfn"));
         assert!(reg.is_window_compatible("myfn"));
     }
@@ -695,8 +717,12 @@ mod tests {
             }),
             is_builtin: false,
         };
-        reg.register_aggregate_desc("myfn".to_string(), make_desc()).expect("first ok");
-        assert!(reg.register_aggregate_desc("myfn".to_string(), make_desc()).is_err());
+        reg.register_aggregate_desc("myfn".to_string(), make_desc())
+            .expect("first ok");
+        assert!(
+            reg.register_aggregate_desc("myfn".to_string(), make_desc())
+                .is_err()
+        );
     }
 
     #[test]
@@ -725,7 +751,8 @@ mod tests {
                 f: Arc::new(|v| matches!(v, Value::String(s) if s.contains('@'))),
                 is_builtin: false,
             },
-        ).expect("first registration ok");
+        )
+        .expect("first registration ok");
         assert!(reg.get_predicate("email?").is_some());
         let second = reg.register_predicate_desc(
             "email?".to_string(),

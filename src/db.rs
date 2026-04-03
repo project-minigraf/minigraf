@@ -16,11 +16,12 @@ use crate::graph::types::{Fact, VALID_TIME_FOREVER};
 /// epoch (1970-01-01T00:00:00Z), which is a legitimate `valid_from` value.
 const VALID_FROM_USE_TX_TIME: i64 = i64::MIN;
 use crate::graph::FactStorage;
+use crate::graph::types::Value;
 use crate::query::datalog::executor::DatalogExecutor;
 use crate::query::datalog::executor::QueryResult;
-use crate::graph::types::Value;
-use crate::query::datalog::functions::{AggImpl, AggregateDesc, FunctionRegistry, PredicateDesc, UdfFinaliseFn, UdfOps, UdfStepFn};
-use std::any::Any;
+use crate::query::datalog::functions::{
+    AggImpl, AggregateDesc, FunctionRegistry, PredicateDesc, UdfFinaliseFn, UdfOps, UdfStepFn,
+};
 use crate::query::datalog::parser::parse_datalog_command;
 use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::types::{AttributeSpec, DatalogCommand, Transaction};
@@ -29,6 +30,7 @@ use crate::storage::backend::file::FileBackend;
 use crate::storage::persistent_facts::PersistentFactStorage;
 use crate::wal::WalWriter;
 use anyhow::{Result, bail};
+use std::any::Any;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
@@ -659,8 +661,8 @@ impl Minigraf {
     pub fn register_aggregate<Acc>(
         &self,
         name: &str,
-        init:     impl Fn() -> Acc              + Send + Sync + 'static,
-        step:     impl Fn(&mut Acc, &Value)     + Send + Sync + 'static,
+        init: impl Fn() -> Acc + Send + Sync + 'static,
+        step: impl Fn(&mut Acc, &Value) + Send + Sync + 'static,
         finalise: impl Fn(&Acc, usize) -> Value + Send + Sync + 'static,
     ) -> Result<()>
     where
@@ -668,15 +670,21 @@ impl Minigraf {
     {
         let init_boxed: Arc<dyn Fn() -> Box<dyn Any + Send> + Send + Sync> =
             Arc::new(move || Box::new(init()) as Box<dyn Any + Send>);
-        let step_boxed: UdfStepFn =
-            Arc::new(move |acc, v| {
-                // SAFETY: `init_boxed` always creates `Box<Acc>`, so downcast is infallible.
-                step(acc.downcast_mut::<Acc>().expect("UDF accumulator type mismatch"), v);
-            });
-        let finalise_boxed: UdfFinaliseFn =
-            Arc::new(move |acc, n| {
-                finalise(acc.downcast_ref::<Acc>().expect("UDF accumulator type mismatch"), n)
-            });
+        let step_boxed: UdfStepFn = Arc::new(move |acc, v| {
+            // SAFETY: `init_boxed` always creates `Box<Acc>`, so downcast is infallible.
+            step(
+                acc.downcast_mut::<Acc>()
+                    .expect("UDF accumulator type mismatch"),
+                v,
+            );
+        });
+        let finalise_boxed: UdfFinaliseFn = Arc::new(move |acc, n| {
+            finalise(
+                acc.downcast_ref::<Acc>()
+                    .expect("UDF accumulator type mismatch"),
+                n,
+            )
+        });
 
         let desc = AggregateDesc {
             impl_: AggImpl::Udf(UdfOps {

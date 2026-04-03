@@ -1025,7 +1025,10 @@ fn parse_expr(list: &[EdnValue]) -> Result<Expr, String> {
             // 2-arg unknown forms are still rejected.
             if list.len() == 2 {
                 let arg = parse_expr_arg(&list[1])?;
-                Ok(Expr::UnaryOp(UnaryOp::Udf(other.to_string()), Box::new(arg)))
+                Ok(Expr::UnaryOp(
+                    UnaryOp::Udf(other.to_string()),
+                    Box::new(arg),
+                ))
             } else {
                 Err(format!("unknown expression operator: {}", other))
             }
@@ -2409,8 +2412,12 @@ mod tests {
         let result = parse_datalog_command("(query [:find (average ?e) :where [?e :a ?v]])");
         assert!(result.is_ok(), "unknown aggregate should parse as UDF");
         if let Ok(DatalogCommand::Query(q)) = result {
-            assert!(q.find.iter().any(|s| matches!(s, FindSpec::Aggregate { func, .. } if func == "average")),
-                "should have Aggregate with func='average'");
+            assert!(
+                q.find
+                    .iter()
+                    .any(|s| matches!(s, FindSpec::Aggregate { func, .. } if func == "average")),
+                "should have Aggregate with func='average'"
+            );
         }
     }
 
@@ -2798,7 +2805,10 @@ mod window_parse_tests {
         let result = parse_datalog_command(
             r#"(query [:find (frobnicate ?v :over (:order-by ?v)) :where [?e :x ?v]])"#,
         );
-        assert!(result.is_ok(), "unknown window function should parse as UDF");
+        assert!(
+            result.is_ok(),
+            "unknown window function should parse as UDF"
+        );
         if let Ok(DatalogCommand::Query(q)) = result {
             if let FindSpec::Window(ws) = &q.find[0] {
                 assert_eq!(ws.func, WindowFunc::Udf("frobnicate".to_string()));
@@ -2870,10 +2880,8 @@ mod window_parse_tests {
     #[test]
     fn parse_unknown_two_arg_predicate_rejected() {
         // Unknown 2-arg form should still be a parse error
-        let result = parse_datalog_command(
-            r#"(query [:find ?e :where [?e :x ?v] [(myfn? ?v ?v)]])"#,
-        );
+        let result =
+            parse_datalog_command(r#"(query [:find ?e :where [?e :x ?v] [(myfn? ?v ?v)]])"#);
         assert!(result.is_err(), "unknown 2-arg form should be rejected");
     }
-
 }

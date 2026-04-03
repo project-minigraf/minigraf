@@ -681,8 +681,7 @@ fn not_body_matches(
     // Apply Expr clauses from the not body.
     // Errors (e.g. unknown UDF predicate) are treated as "no match" — same as an
     // empty result — so the outer row is kept (not-condition not violated).
-    not_bindings = apply_expr_clauses(not_bindings, not_body, registry)
-        .unwrap_or_default();
+    not_bindings = apply_expr_clauses(not_bindings, not_body, registry).unwrap_or_default();
     !not_bindings.is_empty()
 }
 
@@ -868,9 +867,7 @@ fn compute_aggregation(
                             apply_builtin_aggregate(func, &non_null)
                         }
                     }
-                    None => {
-                        Err(anyhow::anyhow!("unknown aggregate function: '{}'", func))
-                    }
+                    None => Err(anyhow::anyhow!("unknown aggregate function: '{}'", func)),
                 };
                 match agg_val {
                     Ok(v) => {
@@ -986,7 +983,9 @@ fn apply_window_functions(
                         AggImpl::Builtin(ops) => {
                             let mut acc = (ops.init)();
                             for &row_idx in row_indices.iter() {
-                                let val = ws.var.as_ref()
+                                let val = ws
+                                    .var
+                                    .as_ref()
                                     .and_then(|v| bindings[row_idx].get(v))
                                     .unwrap_or(&Value::Null);
                                 (ops.step)(&mut acc, val);
@@ -997,7 +996,9 @@ fn apply_window_functions(
                             let mut acc = (ops.init)();
                             let mut row_count = 0usize;
                             for &row_idx in row_indices.iter() {
-                                let val = ws.var.as_ref()
+                                let val = ws
+                                    .var
+                                    .as_ref()
                                     .and_then(|v| bindings[row_idx].get(v))
                                     .unwrap_or(&Value::Null);
                                 (ops.step)(&mut acc, val);
@@ -1397,15 +1398,13 @@ pub(crate) fn eval_expr(
         Expr::UnaryOp(op, arg) => {
             let v = eval_expr(arg, binding, registry)?;
             match op {
-                UnaryOp::StringQ  => Ok(Value::Boolean(matches!(v, Value::String(_)))),
+                UnaryOp::StringQ => Ok(Value::Boolean(matches!(v, Value::String(_)))),
                 UnaryOp::IntegerQ => Ok(Value::Boolean(matches!(v, Value::Integer(_)))),
-                UnaryOp::FloatQ   => Ok(Value::Boolean(matches!(v, Value::Float(_)))),
+                UnaryOp::FloatQ => Ok(Value::Boolean(matches!(v, Value::Float(_)))),
                 UnaryOp::BooleanQ => Ok(Value::Boolean(matches!(v, Value::Boolean(_)))),
-                UnaryOp::NilQ     => Ok(Value::Boolean(matches!(v, Value::Null))),
+                UnaryOp::NilQ => Ok(Value::Boolean(matches!(v, Value::Null))),
                 UnaryOp::Udf(name) => {
-                    let desc = registry
-                        .and_then(|r| r.get_predicate(name))
-                        .ok_or(())?;
+                    let desc = registry.and_then(|r| r.get_predicate(name)).ok_or(())?;
                     Ok(Value::Boolean((desc.f)(&v)))
                 }
             }
@@ -1433,7 +1432,10 @@ pub(crate) fn apply_expr_clauses(
 ) -> anyhow::Result<Vec<Binding>> {
     // Pre-validate: surface unknown UDF predicate names as errors before filtering rows.
     for clause in where_clauses {
-        if let WhereClause::Expr { expr: Expr::UnaryOp(UnaryOp::Udf(name), _), .. } = clause
+        if let WhereClause::Expr {
+            expr: Expr::UnaryOp(UnaryOp::Udf(name), _),
+            ..
+        } = clause
             && registry.get_predicate(name).is_none()
         {
             anyhow::bail!("unknown predicate: '{}'", name);
@@ -3051,7 +3053,10 @@ mod expr_eval_tests {
             Box::new(Expr::Lit(Value::String("Alice".to_string()))),
             Box::new(Expr::Lit(Value::String("Alice".to_string()))),
         );
-        assert_eq!(eval_expr(&e, &HashMap::new(), None), Ok(Value::Boolean(true)));
+        assert_eq!(
+            eval_expr(&e, &HashMap::new(), None),
+            Ok(Value::Boolean(true))
+        );
     }
 
     #[test]
@@ -3062,7 +3067,10 @@ mod expr_eval_tests {
             Box::new(Expr::Lit(Value::Integer(1))),
             Box::new(Expr::Lit(Value::Float(1.0))),
         );
-        assert_eq!(eval_expr(&e, &HashMap::new(), None), Ok(Value::Boolean(false)));
+        assert_eq!(
+            eval_expr(&e, &HashMap::new(), None),
+            Ok(Value::Boolean(false))
+        );
     }
 
     #[test]
@@ -3081,13 +3089,19 @@ mod expr_eval_tests {
             UnaryOp::StringQ,
             Box::new(Expr::Lit(Value::String("hi".to_string()))),
         );
-        assert_eq!(eval_expr(&e, &HashMap::new(), None), Ok(Value::Boolean(true)));
+        assert_eq!(
+            eval_expr(&e, &HashMap::new(), None),
+            Ok(Value::Boolean(true))
+        );
     }
 
     #[test]
     fn test_eval_string_q_false() {
         let e = Expr::UnaryOp(UnaryOp::StringQ, Box::new(Expr::Lit(Value::Integer(1))));
-        assert_eq!(eval_expr(&e, &HashMap::new(), None), Ok(Value::Boolean(false)));
+        assert_eq!(
+            eval_expr(&e, &HashMap::new(), None),
+            Ok(Value::Boolean(false))
+        );
     }
 
     #[test]
@@ -3097,7 +3111,10 @@ mod expr_eval_tests {
             Box::new(Expr::Lit(Value::String("foobar".to_string()))),
             Box::new(Expr::Lit(Value::String("foo".to_string()))),
         );
-        assert_eq!(eval_expr(&e, &HashMap::new(), None), Ok(Value::Boolean(true)));
+        assert_eq!(
+            eval_expr(&e, &HashMap::new(), None),
+            Ok(Value::Boolean(true))
+        );
     }
 
     #[test]
@@ -3107,7 +3124,10 @@ mod expr_eval_tests {
             Box::new(Expr::Lit(Value::String("foobar".to_string()))),
             Box::new(Expr::Lit(Value::String("bar".to_string()))),
         );
-        assert_eq!(eval_expr(&e, &HashMap::new(), None), Ok(Value::Boolean(true)));
+        assert_eq!(
+            eval_expr(&e, &HashMap::new(), None),
+            Ok(Value::Boolean(true))
+        );
     }
 
     #[test]
@@ -3117,7 +3137,10 @@ mod expr_eval_tests {
             Box::new(Expr::Lit(Value::String("engineer at co".to_string()))),
             Box::new(Expr::Lit(Value::String("engineer".to_string()))),
         );
-        assert_eq!(eval_expr(&e, &HashMap::new(), None), Ok(Value::Boolean(true)));
+        assert_eq!(
+            eval_expr(&e, &HashMap::new(), None),
+            Ok(Value::Boolean(true))
+        );
     }
 
     #[test]
@@ -3127,7 +3150,10 @@ mod expr_eval_tests {
             Box::new(Expr::Lit(Value::String("test@example.com".to_string()))),
             Box::new(Expr::Lit(Value::String("^[^@]+@[^@]+$".to_string()))),
         );
-        assert_eq!(eval_expr(&e, &HashMap::new(), None), Ok(Value::Boolean(true)));
+        assert_eq!(
+            eval_expr(&e, &HashMap::new(), None),
+            Ok(Value::Boolean(true))
+        );
     }
 
     #[test]
@@ -3159,8 +3185,8 @@ mod expr_eval_tests {
             b(&[("?v", Value::Integer(50))]),
             b(&[("?v", Value::Integer(150))]),
         ];
-        let result = apply_expr_clauses(bindings, &clauses, &FunctionRegistry::with_builtins())
-            .unwrap();
+        let result =
+            apply_expr_clauses(bindings, &clauses, &FunctionRegistry::with_builtins()).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].get("?v"), Some(&Value::Integer(50)));
     }
@@ -3179,8 +3205,8 @@ mod expr_eval_tests {
             binding: Some("?sum".to_string()),
         }];
         let bindings = vec![b(&[("?a", Value::Integer(3)), ("?b", Value::Integer(4))])];
-        let result = apply_expr_clauses(bindings, &clauses, &FunctionRegistry::with_builtins())
-            .unwrap();
+        let result =
+            apply_expr_clauses(bindings, &clauses, &FunctionRegistry::with_builtins()).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].get("?sum"), Some(&Value::Integer(7)));
     }
@@ -3199,8 +3225,8 @@ mod expr_eval_tests {
             binding: None,
         }];
         let bindings = vec![b(&[("?v", Value::String("hello".to_string()))])];
-        let result = apply_expr_clauses(bindings, &clauses, &FunctionRegistry::with_builtins())
-            .unwrap();
+        let result =
+            apply_expr_clauses(bindings, &clauses, &FunctionRegistry::with_builtins()).unwrap();
         assert_eq!(result.len(), 0);
     }
 
@@ -3825,7 +3851,16 @@ mod expr_eval_tests {
             EdnValue::Keyword(":a".to_string()),
             EdnValue::Symbol("?v".to_string()),
         ))];
-        let result = evaluate_branch(&branch, vec![], facts, &rules, None, None, &FunctionRegistry::with_builtins()).unwrap();
+        let result = evaluate_branch(
+            &branch,
+            vec![],
+            facts,
+            &rules,
+            None,
+            None,
+            &FunctionRegistry::with_builtins(),
+        )
+        .unwrap();
         assert_eq!(result.len(), 0, "empty incoming should return empty");
     }
 
@@ -3845,7 +3880,16 @@ mod expr_eval_tests {
         // Seed with one binding so the branch has something to work with
         let mut initial = std::collections::HashMap::new();
         initial.insert("?init".to_string(), crate::graph::types::Value::Integer(1));
-        let result = evaluate_branch(&branch, vec![initial], facts, &rules, None, None, &FunctionRegistry::with_builtins()).unwrap();
+        let result = evaluate_branch(
+            &branch,
+            vec![initial],
+            facts,
+            &rules,
+            None,
+            None,
+            &FunctionRegistry::with_builtins(),
+        )
+        .unwrap();
         assert_eq!(
             result.len(),
             0,
@@ -4036,7 +4080,16 @@ mod expr_eval_tests {
         // Incoming with one binding
         let mut initial = std::collections::HashMap::new();
         initial.insert("?x".to_string(), crate::graph::types::Value::Integer(42));
-        let result = evaluate_branch(&branch, vec![initial], facts, &rules, None, None, &FunctionRegistry::with_builtins()).unwrap();
+        let result = evaluate_branch(
+            &branch,
+            vec![initial],
+            facts,
+            &rules,
+            None,
+            None,
+            &FunctionRegistry::with_builtins(),
+        )
+        .unwrap();
         // The expr is truthy so the binding passes through
         assert_eq!(
             result.len(),
@@ -4065,7 +4118,16 @@ mod expr_eval_tests {
 
         let mut initial = std::collections::HashMap::new();
         initial.insert("?seed".to_string(), crate::graph::types::Value::Integer(1));
-        let result = evaluate_branch(&branch, vec![initial], facts, &rules, None, None, &FunctionRegistry::with_builtins()).unwrap();
+        let result = evaluate_branch(
+            &branch,
+            vec![initial],
+            facts,
+            &rules,
+            None,
+            None,
+            &FunctionRegistry::with_builtins(),
+        )
+        .unwrap();
         assert_eq!(
             result.len(),
             0,
