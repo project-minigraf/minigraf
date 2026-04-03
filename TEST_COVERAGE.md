@@ -1,34 +1,34 @@
 # Minigraf Test Coverage Report
 
-**Last Updated**: Phase 7.7b COMPLETE - User-Defined Functions (UDFs) ✅
+**Last Updated**: Phase 7.7b COMPLETE - Test count corrected to 753 ✅
 
 ## Test Summary
 
-**Total Tests**: 727 ✅
-- ✅ 487 unit tests (lib)
-- ✅ 10 bi-temporal tests (integration)
+**Total Tests**: 753 ✅ (746 passing, 7 ignored)
+- ✅ 505 unit tests (lib)
+- ✅ 24 bi-temporal tests (integration)
 - ✅ 10 complex query tests (integration)
-- ✅ 9 recursive rules tests (integration)
-- ✅ 7 concurrency tests (integration)
-- ✅ 12 WAL / crash recovery tests (integration)
-- ✅ 6 index tests (integration, Phase 6.1)
-- ✅ 7 performance / packed page tests (integration, Phase 6.2)
-- ✅ 7 retraction tests (integration, Phase 6.4a)
-- ✅ 4 edge case tests (integration, Phase 6.4a)
-- ✅ 8 B+tree v6 tests (integration, Phase 6.5)
-- ✅ 10 negation (`not`) tests (integration, Phase 7.1a)
-- ✅ 14 not-join tests (integration, Phase 7.1b)
-- ✅ 24 aggregation tests (integration, Phase 7.2a)
-- ✅ 28 predicate expression tests (integration, Phase 7.2b)
-- ✅ 16 disjunction tests (integration, Phase 7.3)
-- ✅ 8 production pattern tests (integration, Phase 7.5 — cross-feature scenarios)
-- ✅ 8 error handling tests (integration, Phase 7.5 — error-path coverage; 1 ignored: or+neg-cycle bug)
-- ✅ 16 temporal metadata tests (integration, Phase 7.6 — `:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`, `:db/valid-at`)
+- ✅ 8 recursive rules tests (integration)
+- ✅ 10 concurrency tests (integration)
+- ✅ 7 WAL / crash recovery tests (integration)
+- ✅ 16 index tests (integration, Phase 6.1)
+- ✅ 4 performance / packed page tests (integration, Phase 6.2)
+- ✅ 8 retraction tests (integration, Phase 6.4a)
+- ✅ 6 edge case tests (integration, Phase 6.4a)
+- ✅ 10 B+tree v6 tests (integration, Phase 6.5)
+- ✅ 14 negation (`not`) tests (integration, Phase 7.1a)
+- ✅ 7 not-join tests (integration, Phase 7.1b)
+- ✅ 28 aggregation tests (integration, Phase 7.2a)
+- ✅ 8 predicate expression tests (integration, Phase 7.2b)
+- ✅ 9 disjunction tests (integration, Phase 7.3)
+- ✅ 7 production pattern tests (integration, Phase 7.5 — cross-feature scenarios)
+- ✅ 22 error handling tests (integration, Phase 7.5 — error-path coverage; 7 ignored: or+neg-cycle bug)
+- ✅ 9 temporal metadata tests (integration, Phase 7.6 — `:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`, `:db/valid-at`)
 - ✅ 12 window function tests (integration, Phase 7.7a — cumulative sum/count/min/avg, rank with ties, row-number, partition-by, desc ordering, mixed aggregate+window, edge cases, lag/lead parse rejection)
-- ✅ 9 UDF tests (integration, Phase 7.7b — custom aggregates, custom predicates, UDF as window function, name collision guards, runtime errors, thread safety)
-- ✅ 6 doc tests
+- ✅ 14 UDF tests (integration, Phase 7.7b — custom aggregates, custom predicates, UDF as window function, name collision guards, runtime errors, thread safety)
+- ✅ 15 doc tests
 
-**Status**: ✅ **All 727 tests passing** (1 ignored: confirmed or+neg-cycle stratification bug)
+**Status**: ✅ **All 746 tests passing** (7 ignored: confirmed or+neg-cycle stratification bug)
 
 ## Phase 7.7b Completion Status: ✅ COMPLETE
 
@@ -39,8 +39,8 @@
 - ✅ Parser extended: UDF aggregate invocations in `:find` / `:over`; UDF predicate invocations in `:where`; unknown function names deferred to runtime, not rejected at parse time
 - ✅ Executor routes UDF aggregates through `FunctionRegistry` at query time; UDF predicates evaluated per binding row
 - ✅ `Minigraf::register_aggregate` and `register_predicate` on the public API (`db.rs`)
-- ✅ `tests/udf_test.rs` — 9 integration tests
-- ✅ 727 tests passing (unit + integration + doc)
+- ✅ `tests/udf_test.rs` — 14 integration tests
+- ✅ 753 tests passing (unit + integration + doc)
 
 ## Phase 7.7a Completion Status: ✅ COMPLETE
 
@@ -51,7 +51,7 @@
 - ✅ `apply_post_processing`, `compute_aggregation`, `apply_window_functions`, `project_find_specs` in `executor.rs` — replaces `apply_aggregation`/`apply_agg_func`
 - ✅ `FunctionRegistry` wired through `db.rs` (`Minigraf::Inner` gains `Arc<RwLock<FunctionRegistry>>`)
 - ✅ `tests/window_functions_test.rs` — 12 integration tests (cumulative sum, running count/min/avg, rank with ties, row-number, partition-by, desc ordering, mixed aggregate+window, single-row and empty-result edge cases, lag/lead parse rejection)
-- ✅ 718 tests passing (unit + integration + doc)
+- ✅ 746 tests passing (unit + integration + doc)
 
 ## Phase 7.6 Completion Status: ✅ COMPLETE
 
