@@ -28,7 +28,9 @@ use super::rules::RuleRegistry;
 use super::types::{AttributeSpec, EdnValue, Pattern, Rule, WhereClause};
 use crate::graph::FactStorage;
 use crate::graph::types::{Fact, Value};
+use crate::storage::index::encode_value;
 use anyhow::{Result, anyhow};
+use std::collections::BTreeSet;
 use std::sync::{Arc, RwLock};
 
 /// Default maximum iterations for recursive evaluation
@@ -114,11 +116,13 @@ impl RecursiveEvaluator {
             )?;
         }
 
-        // Track facts we've seen (for delta computation)
-        // Note: Using Vec instead of HashSet because Value contains Float which can't Hash
-        let mut seen_facts: Vec<(uuid::Uuid, String, Value)> = base_facts
+        // Track facts we've seen (for delta computation) using BTreeSet with canonical encoding.
+        let mut seen_facts: BTreeSet<(uuid::Uuid, String, Vec<u8>)> = base_facts
             .iter()
-            .map(|f| (f.entity, f.attribute.clone(), f.value.clone()))
+            .map(|f| {
+                let encoded = encode_value(&f.value);
+                (f.entity, f.attribute.clone(), encoded)
+            })
             .collect();
 
         let mut iteration = 0;
@@ -148,8 +152,9 @@ impl RecursiveEvaluator {
             // Compute delta: facts not yet seen
             let mut delta = Vec::new();
             for fact in new_facts {
-                let key = (fact.entity, fact.attribute.clone(), fact.value.clone());
-                if !self.contains_fact(&seen_facts, &key) {
+                let encoded = encode_value(&fact.value);
+                let key = (fact.entity, fact.attribute.clone(), encoded);
+                if !seen_facts.contains(&key) {
                     // Check total result limit
                     if seen_facts.len() >= self.max_results {
                         return Err(anyhow!(
@@ -157,7 +162,7 @@ impl RecursiveEvaluator {
                             self.max_results
                         ));
                     }
-                    seen_facts.push(key);
+                    seen_facts.insert(key);
                     delta.push(fact);
                 }
             }
@@ -357,19 +362,6 @@ impl RecursiveEvaluator {
     /// Public version of instantiate_head for use by StratifiedEvaluator.
     pub fn instantiate_head_public(&self, head: &[EdnValue], binding: &Bindings) -> Result<Fact> {
         self.instantiate_head(head, binding)
-    }
-
-    /// Check if a fact tuple exists in the seen_facts vector.
-    ///
-    /// Manual containment check since Value can't implement Hash (contains Float).
-    fn contains_fact(
-        &self,
-        seen_facts: &[(uuid::Uuid, String, Value)],
-        key: &(uuid::Uuid, String, Value),
-    ) -> bool {
-        seen_facts
-            .iter()
-            .any(|(e, a, v)| e == &key.0 && a == &key.1 && v == &key.2)
     }
 }
 
