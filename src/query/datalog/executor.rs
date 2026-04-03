@@ -11,7 +11,6 @@ use super::types::{
 };
 use crate::graph::FactStorage;
 use crate::graph::types::{Fact, TransactOptions, TxId, Value, tx_id_now};
-use crate::storage::index::Indexes;
 use anyhow::{Result, anyhow};
 use std::sync::{Arc, RwLock};
 
@@ -57,14 +56,17 @@ pub struct DatalogExecutor {
     rules: Arc<RwLock<RuleRegistry>>,
     // RwLock pre-wired for 7.7b register_aggregate API.
     functions: Arc<RwLock<FunctionRegistry>>,
+    indexes: Arc<crate::storage::index::Indexes>,
 }
 
 impl DatalogExecutor {
     pub fn new(storage: FactStorage) -> Self {
+        let indexes = storage.pending_indexes_snapshot();
         DatalogExecutor {
             storage,
             rules: Arc::new(RwLock::new(RuleRegistry::new())),
             functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
+            indexes: Arc::new(indexes),
         }
     }
 
@@ -76,10 +78,12 @@ impl DatalogExecutor {
         rules: Arc<RwLock<RuleRegistry>>,
         functions: Arc<RwLock<FunctionRegistry>>,
     ) -> Self {
+        let indexes = storage.pending_indexes_snapshot();
         DatalogExecutor {
             storage,
             rules,
             functions,
+            indexes: Arc::new(indexes),
         }
     }
 
@@ -257,8 +261,7 @@ impl DatalogExecutor {
         let patterns = query.get_patterns();
 
         // Plan patterns: assign index hints and reorder by selectivity.
-        // Phase 6.1: Indexes::new() is a placeholder; Phase 6.2 will pass real indexes.
-        let planned_patterns = optimizer::plan(patterns, &Indexes::new());
+        let planned_patterns = optimizer::plan(patterns, &self.indexes);
 
         // Match all patterns in planned order and get bindings
         let bindings = matcher.match_patterns(

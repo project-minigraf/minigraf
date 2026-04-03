@@ -1,6 +1,7 @@
 use super::types::{AttributeSpec, EdnValue, Pattern, PseudoAttr};
 use crate::graph::FactStorage;
 use crate::graph::types::{EntityId, Fact, Value};
+use crate::storage::index::Indexes;
 use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -19,13 +20,18 @@ pub struct PatternMatcher {
     storage: MatcherStorage,
     /// The `:db/valid-at` value for this query context (Value::Null when not set).
     pub(crate) valid_at_value: Value,
+    #[allow(dead_code)]
+    /// Indexes for index-guided lookups (Phase 6.2)
+    indexes: Arc<Indexes>,
 }
 
 impl PatternMatcher {
     pub fn new(storage: FactStorage) -> Self {
+        let indexes = storage.pending_indexes_snapshot();
         PatternMatcher {
             storage: MatcherStorage::Owned(storage),
             valid_at_value: Value::Null,
+            indexes: Arc::new(indexes),
         }
     }
 
@@ -37,6 +43,7 @@ impl PatternMatcher {
         PatternMatcher {
             storage: MatcherStorage::Slice(facts),
             valid_at_value: Value::Null,
+            indexes: Arc::new(Indexes::new()),
         }
     }
 
@@ -46,6 +53,7 @@ impl PatternMatcher {
         PatternMatcher {
             storage: MatcherStorage::Slice(facts),
             valid_at_value: valid_at,
+            indexes: Arc::new(Indexes::new()),
         }
     }
 
