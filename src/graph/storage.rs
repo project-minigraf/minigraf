@@ -253,11 +253,11 @@ impl FactStorage {
     /// counter so subsequent `transact()` calls get correct tx_count values.
     ///
     /// Checks for duplicate facts before loading (based on entity, attribute, value,
-    /// valid_from, valid_to, and tx_count).
+    /// valid_from, valid_to, tx_count, and asserted).
     pub fn load_fact(&self, fact: Fact) -> Result<bool> {
         let mut d = self.data.write().unwrap();
 
-        // Check for duplicate based on unique key (entity, attribute, value, valid_from, valid_to, tx_count)
+        // Check for duplicate based on unique key (entity, attribute, value, valid_from, valid_to, tx_count, asserted)
         if d.facts.iter().any(|f| {
             f.entity == fact.entity
                 && f.attribute == fact.attribute
@@ -265,6 +265,7 @@ impl FactStorage {
                 && f.valid_from == fact.valid_from
                 && f.valid_to == fact.valid_to
                 && f.tx_count == fact.tx_count
+                && f.asserted == fact.asserted
         }) {
             return Ok(false); // Already exists, not loaded
         }
@@ -1655,6 +1656,28 @@ mod tests {
         assert!(!storage.load_fact(fact1_dup).unwrap());
 
         // Count should remain the same
+        assert_eq!(storage.fact_count(), 2);
+    }
+
+    #[test]
+    fn test_load_fact_duplicate_detection_includes_asserted() {
+        let storage = FactStorage::new();
+        let entity = uuid::Uuid::new_v4();
+        let attr = ":test/attr".to_string();
+        let value = Value::Integer(42);
+
+        // Load an asserted fact
+        let mut fact1 = Fact::new(entity, attr.clone(), value.clone(), 1);
+        fact1.asserted = true;
+        assert!(storage.load_fact(fact1).unwrap());
+
+        // Load a retraction for the same entity/attr/value/tx_count but different asserted
+        let mut fact2 = Fact::new(entity, attr.clone(), value.clone(), 1);
+        fact2.asserted = false;
+        // Should NOT be deduplicated - different asserted values should both survive
+        assert!(storage.load_fact(fact2).unwrap());
+
+        // Both facts should be present
         assert_eq!(storage.fact_count(), 2);
     }
 }
