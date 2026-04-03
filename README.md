@@ -69,7 +69,7 @@ db.execute(r#"(rule [(reachable ?a ?b) [?a :friend ?b]])
 
 ```bash
 cargo run          # interactive Datalog REPL
-cargo test         # run 705 tests
+cargo test         # run 727 tests
 cargo run < demos/demo_recursive.txt   # recursive rules demo
 ```
 

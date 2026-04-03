@@ -106,6 +106,9 @@ pub enum WindowFunc {
     Avg,
     Rank,
     RowNumber,
+    /// Any function name not recognised at parse time — resolved against
+    /// `FunctionRegistry` at query execution time.
+    Udf(String),
 }
 
 /// Sort direction for the `:order-by` key in a window spec.
@@ -130,15 +133,16 @@ pub struct WindowSpec {
 
 impl WindowSpec {
     /// Returns the FunctionRegistry key name for this function.
-    pub fn func_name(&self) -> &'static str {
-        match self.func {
-            WindowFunc::Sum => "sum",
-            WindowFunc::Count => "count",
-            WindowFunc::Min => "min",
-            WindowFunc::Max => "max",
-            WindowFunc::Avg => "avg",
-            WindowFunc::Rank => "rank",
-            WindowFunc::RowNumber => "row-number",
+    pub fn func_name(&self) -> String {
+        match &self.func {
+            WindowFunc::Sum => "sum".to_string(),
+            WindowFunc::Count => "count".to_string(),
+            WindowFunc::Min => "min".to_string(),
+            WindowFunc::Max => "max".to_string(),
+            WindowFunc::Avg => "avg".to_string(),
+            WindowFunc::Rank => "rank".to_string(),
+            WindowFunc::RowNumber => "row-number".to_string(),
+            WindowFunc::Udf(name) => name.clone(),
         }
     }
 }
@@ -203,6 +207,9 @@ pub enum UnaryOp {
     FloatQ,
     BooleanQ,
     NilQ,
+    /// A UDF predicate name not in the built-in whitelist — resolved against
+    /// `FunctionRegistry` at query execution time.
+    Udf(String),
 }
 
 /// Composable expression tree for `WhereClause::Expr`.
@@ -1072,6 +1079,14 @@ mod tests {
             .func_name(),
             "row-number"
         );
+        let ws_udf = WindowSpec {
+            func: WindowFunc::Udf("geomean".to_string()),
+            var: Some("?v".to_string()),
+            partition_by: None,
+            order_by: "?o".to_string(),
+            order: Order::Asc,
+        };
+        assert_eq!(ws_udf.func_name(), "geomean".to_string());
     }
 
     #[test]
@@ -1123,6 +1138,7 @@ mod tests {
         let _ = UnaryOp::FloatQ;
         let _ = UnaryOp::BooleanQ;
         let _ = UnaryOp::NilQ;
+        let _ = UnaryOp::Udf("test-fn".to_string());
     }
 
     #[test]

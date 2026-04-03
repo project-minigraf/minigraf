@@ -16,9 +16,12 @@ use crate::graph::types::{Fact, VALID_TIME_FOREVER};
 /// epoch (1970-01-01T00:00:00Z), which is a legitimate `valid_from` value.
 const VALID_FROM_USE_TX_TIME: i64 = i64::MIN;
 use crate::graph::FactStorage;
+use crate::graph::types::Value;
 use crate::query::datalog::executor::DatalogExecutor;
 use crate::query::datalog::executor::QueryResult;
-use crate::query::datalog::functions::FunctionRegistry;
+use crate::query::datalog::functions::{
+    AggImpl, AggregateDesc, FunctionRegistry, PredicateDesc, UdfFinaliseFn, UdfOps, UdfStepFn,
+};
 use crate::query::datalog::parser::parse_datalog_command;
 use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::types::{AttributeSpec, DatalogCommand, Transaction};
@@ -27,6 +30,7 @@ use crate::storage::backend::file::FileBackend;
 use crate::storage::persistent_facts::PersistentFactStorage;
 use crate::wal::WalWriter;
 use anyhow::{Result, bail};
+use std::any::Any;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
@@ -630,6 +634,102 @@ impl Minigraf {
         }
 
         Ok(facts)
+    }
+
+    // ── UDF registration ─────────────────────────────────────────────────────
+
+    /// Register a custom aggregate function.
+    ///
+    /// `Acc` is any `Send + 'static` type that serves as the accumulator.
+    /// It is type-erased internally. The function is usable in both `:find`
+    /// grouping position and `:over` (window) position.
+    ///
+    /// Returns `Err` if `name` is already registered (built-in or UDF).
+    ///
+    /// # Example
+    /// ```
+    /// # use minigraf::db::Minigraf;
+    /// # use minigraf::graph::types::Value;
+    /// let db = Minigraf::in_memory().unwrap();
+    /// db.register_aggregate(
+    ///     "mysum",
+    ///     || 0i64,
+    ///     |acc: &mut i64, v: &Value| { if let Value::Integer(i) = v { *acc += i; } },
+    ///     |acc: &i64, _n: usize| Value::Integer(*acc),
+    /// ).unwrap();
+    /// ```
+    pub fn register_aggregate<Acc>(
+        &self,
+        name: &str,
+        init: impl Fn() -> Acc + Send + Sync + 'static,
+        step: impl Fn(&mut Acc, &Value) + Send + Sync + 'static,
+        finalise: impl Fn(&Acc, usize) -> Value + Send + Sync + 'static,
+    ) -> Result<()>
+    where
+        Acc: Any + Send + 'static,
+    {
+        let init_boxed: Arc<dyn Fn() -> Box<dyn Any + Send> + Send + Sync> =
+            Arc::new(move || Box::new(init()) as Box<dyn Any + Send>);
+        let step_boxed: UdfStepFn = Arc::new(move |acc, v| {
+            // SAFETY: `init_boxed` always creates `Box<Acc>`, so downcast is infallible.
+            step(
+                acc.downcast_mut::<Acc>()
+                    .expect("UDF accumulator type mismatch"),
+                v,
+            );
+        });
+        let finalise_boxed: UdfFinaliseFn = Arc::new(move |acc, n| {
+            finalise(
+                acc.downcast_ref::<Acc>()
+                    .expect("UDF accumulator type mismatch"),
+                n,
+            )
+        });
+
+        let desc = AggregateDesc {
+            impl_: AggImpl::Udf(UdfOps {
+                init: init_boxed,
+                step: step_boxed,
+                finalise: finalise_boxed,
+            }),
+            is_builtin: false,
+        };
+        self.inner
+            .functions
+            .write()
+            .map_err(|e| anyhow::anyhow!("function registry lock poisoned: {}", e))?
+            .register_aggregate_desc(name.to_string(), desc)
+    }
+
+    /// Register a custom single-argument filter predicate.
+    ///
+    /// The predicate is usable in `[(name? ?var)]` `:where` clauses.
+    /// Returns `Err` if `name` is already registered (built-in or UDF).
+    ///
+    /// # Example
+    /// ```
+    /// # use minigraf::db::Minigraf;
+    /// # use minigraf::graph::types::Value;
+    /// let db = Minigraf::in_memory().unwrap();
+    /// db.register_predicate(
+    ///     "email?",
+    ///     |v: &Value| matches!(v, Value::String(s) if s.contains('@')),
+    /// ).unwrap();
+    /// ```
+    pub fn register_predicate(
+        &self,
+        name: &str,
+        f: impl Fn(&Value) -> bool + Send + Sync + 'static,
+    ) -> Result<()> {
+        let desc = PredicateDesc {
+            f: Arc::new(f),
+            is_builtin: false,
+        };
+        self.inner
+            .functions
+            .write()
+            .map_err(|e| anyhow::anyhow!("function registry lock poisoned: {}", e))?
+            .register_predicate_desc(name.to_string(), desc)
     }
 }
 

@@ -1,5 +1,7 @@
 use crate::graph::types::Value;
+use std::any::Any;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Accumulator state for window aggregate functions (incremental computation).
 #[derive(Clone, Debug)]
@@ -26,36 +28,64 @@ pub struct WindowOps {
     pub finalise: fn(&AggState) -> Value,
 }
 
+/// Type alias for the type-erased UDF accumulator step closure.
+pub type UdfStepFn = Arc<dyn Fn(&mut Box<dyn Any + Send>, &Value) + Send + Sync>;
+
+/// Type alias for the type-erased UDF accumulator finalise closure.
+pub type UdfFinaliseFn = Arc<dyn Fn(&Box<dyn Any + Send>, usize) -> Value + Send + Sync>;
+
+/// Closure-based aggregate ops for UDFs.
+/// The accumulator is type-erased as `Box<dyn Any + Send>`.
+pub struct UdfOps {
+    pub init: Arc<dyn Fn() -> Box<dyn Any + Send> + Send + Sync>,
+    pub step: UdfStepFn,
+    pub finalise: UdfFinaliseFn,
+}
+
+/// Implementation discriminator for aggregate functions.
+pub enum AggImpl {
+    /// Built-in: uses `fn()` function pointers and `AggState`.
+    Builtin(WindowOps),
+    /// User-defined: uses `Arc<dyn Fn>` closures and `Box<dyn Any + Send>`.
+    Udf(UdfOps),
+}
+
+/// Descriptor for a registered predicate function.
+pub struct PredicateDesc {
+    pub f: Arc<dyn Fn(&Value) -> bool + Send + Sync>,
+    pub is_builtin: bool,
+}
+
 /// Descriptor for one registered aggregate function.
 pub struct AggregateDesc {
-    pub window_compatible: bool,
-    pub window_ops: Option<WindowOps>,
+    pub impl_: AggImpl,
     /// True for built-in functions handled by `apply_builtin_aggregate`.
-    /// False for user-defined aggregates registered at runtime.
     pub is_builtin: bool,
 }
 
 /// Registry of aggregate function descriptors, keyed by hyphenated name.
 ///
-/// In 7.7a this holds only built-ins. Phase 7.7b will add
-/// `register_aggregate` / `register_predicate` public methods.
+/// In 7.7a this holds only built-ins. Phase 7.7b adds
+/// `register_aggregate_desc` / `register_predicate_desc` public methods.
 pub struct FunctionRegistry {
     aggregates: HashMap<String, AggregateDesc>,
+    /// Registered filter predicates, including built-in name sentinels.
+    predicates: HashMap<String, PredicateDesc>,
 }
 
 impl FunctionRegistry {
     pub fn with_builtins() -> Self {
         let mut reg = Self {
             aggregates: HashMap::new(),
+            predicates: HashMap::new(),
         };
 
         // count (window-compatible)
         reg.aggregates.insert(
             "count".into(),
             AggregateDesc {
-                window_compatible: true,
                 is_builtin: true,
-                window_ops: Some(WindowOps {
+                impl_: AggImpl::Builtin(WindowOps {
                     init: || AggState::Count(0),
                     step: |state, v| {
                         if !matches!(v, Value::Null) {
@@ -78,9 +108,8 @@ impl FunctionRegistry {
         reg.aggregates.insert(
             "sum".into(),
             AggregateDesc {
-                window_compatible: true,
                 is_builtin: true,
-                window_ops: Some(WindowOps {
+                impl_: AggImpl::Builtin(WindowOps {
                     init: || AggState::Sum {
                         total: 0.0,
                         is_float: false,
@@ -116,9 +145,8 @@ impl FunctionRegistry {
         reg.aggregates.insert(
             "min".into(),
             AggregateDesc {
-                window_compatible: true,
                 is_builtin: true,
-                window_ops: Some(WindowOps {
+                impl_: AggImpl::Builtin(WindowOps {
                     init: || AggState::MinMax { current: None },
                     step: |state, v| {
                         if matches!(v, Value::Null) {
@@ -150,9 +178,8 @@ impl FunctionRegistry {
         reg.aggregates.insert(
             "max".into(),
             AggregateDesc {
-                window_compatible: true,
                 is_builtin: true,
-                window_ops: Some(WindowOps {
+                impl_: AggImpl::Builtin(WindowOps {
                     init: || AggState::MinMax { current: None },
                     step: |state, v| {
                         if matches!(v, Value::Null) {
@@ -184,9 +211,8 @@ impl FunctionRegistry {
         reg.aggregates.insert(
             "avg".into(),
             AggregateDesc {
-                window_compatible: true,
                 is_builtin: true,
-                window_ops: Some(WindowOps {
+                impl_: AggImpl::Builtin(WindowOps {
                     init: || AggState::Avg { sum: 0.0, count: 0 },
                     step: |state, v| {
                         if let AggState::Avg { sum, count } = state {
@@ -218,25 +244,52 @@ impl FunctionRegistry {
             },
         );
 
-        // count-distinct (NOT window-compatible)
+        // count-distinct (NOT window-compatible) — stub WindowOps; never called in window position
         reg.aggregates.insert(
             "count-distinct".into(),
             AggregateDesc {
-                window_compatible: false,
                 is_builtin: true,
-                window_ops: None,
+                impl_: AggImpl::Builtin(WindowOps {
+                    init: || AggState::Count(0),
+                    step: |_state, _v| {},
+                    finalise: |_state| Value::Null,
+                }),
             },
         );
 
-        // sum-distinct (NOT window-compatible)
+        // sum-distinct (NOT window-compatible) — stub WindowOps; never called in window position
         reg.aggregates.insert(
             "sum-distinct".into(),
             AggregateDesc {
-                window_compatible: false,
                 is_builtin: true,
-                window_ops: None,
+                impl_: AggImpl::Builtin(WindowOps {
+                    init: || AggState::Count(0),
+                    step: |_state, _v| {},
+                    finalise: |_state| Value::Null,
+                }),
             },
         );
+
+        // Built-in predicate name sentinels — block user registration of these names.
+        for name in [
+            "string?",
+            "integer?",
+            "float?",
+            "boolean?",
+            "nil?",
+            "starts-with?",
+            "ends-with?",
+            "contains?",
+            "matches?",
+        ] {
+            reg.predicates.insert(
+                name.to_string(),
+                PredicateDesc {
+                    f: Arc::new(|_| false), // sentinel; never called via registry
+                    is_builtin: true,
+                },
+            );
+        }
 
         reg
     }
@@ -249,11 +302,45 @@ impl FunctionRegistry {
         self.aggregates.contains_key(name)
     }
 
+    /// count-distinct and sum-distinct are not window-compatible.
+    /// All other registered aggregates (built-in or UDF) are window-compatible.
     pub fn is_window_compatible(&self, name: &str) -> bool {
-        self.aggregates
-            .get(name)
-            .map(|d| d.window_compatible)
-            .unwrap_or(false)
+        match name {
+            "count-distinct" | "sum-distinct" => false,
+            _ => self.aggregates.contains_key(name),
+        }
+    }
+
+    /// Register a UDF aggregate descriptor. Returns Err if the name is already taken.
+    pub fn register_aggregate_desc(
+        &mut self,
+        name: String,
+        desc: AggregateDesc,
+    ) -> anyhow::Result<()> {
+        if self.aggregates.contains_key(&name) {
+            anyhow::bail!("aggregate function '{}' is already registered", name);
+        }
+        self.aggregates.insert(name, desc);
+        Ok(())
+    }
+
+    /// Register a predicate descriptor. Returns Err if the name is already taken.
+    pub fn register_predicate_desc(
+        &mut self,
+        name: String,
+        desc: PredicateDesc,
+    ) -> anyhow::Result<()> {
+        if self.predicates.contains_key(&name) {
+            anyhow::bail!("predicate '{}' is already registered", name);
+        }
+        self.predicates.insert(name, desc);
+        Ok(())
+    }
+
+    /// Look up a registered predicate by name.
+    /// Returns None for built-in sentinels (they are not callable via registry).
+    pub fn get_predicate(&self, name: &str) -> Option<&PredicateDesc> {
+        self.predicates.get(name).filter(|d| !d.is_builtin)
     }
 }
 
@@ -556,7 +643,9 @@ mod tests {
     fn window_ops_sum_accumulator() {
         let reg = FunctionRegistry::with_builtins();
         let desc = reg.get("sum").unwrap();
-        let ops = desc.window_ops.as_ref().unwrap();
+        let AggImpl::Builtin(ops) = &desc.impl_ else {
+            panic!("sum should be Builtin")
+        };
         let mut state = (ops.init)();
         (ops.step)(&mut state, &Value::Integer(10));
         assert_eq!((ops.finalise)(&state), Value::Integer(10));
@@ -568,7 +657,9 @@ mod tests {
     fn window_ops_count_accumulator() {
         let reg = FunctionRegistry::with_builtins();
         let desc = reg.get("count").unwrap();
-        let ops = desc.window_ops.as_ref().unwrap();
+        let AggImpl::Builtin(ops) = &desc.impl_ else {
+            panic!("count should be Builtin")
+        };
         let mut state = (ops.init)();
         (ops.step)(&mut state, &Value::Integer(1));
         (ops.step)(&mut state, &Value::Integer(2));
@@ -579,10 +670,124 @@ mod tests {
     fn window_ops_avg_accumulator() {
         let reg = FunctionRegistry::with_builtins();
         let desc = reg.get("avg").unwrap();
-        let ops = desc.window_ops.as_ref().unwrap();
+        let AggImpl::Builtin(ops) = &desc.impl_ else {
+            panic!("avg should be Builtin")
+        };
         let mut state = (ops.init)();
         (ops.step)(&mut state, &Value::Integer(10));
         (ops.step)(&mut state, &Value::Integer(20));
         assert_eq!((ops.finalise)(&state), Value::Float(15.0));
+    }
+
+    #[test]
+    fn register_udf_aggregate_is_known() {
+        let mut reg = FunctionRegistry::with_builtins();
+        reg.register_aggregate_desc(
+            "myfn".to_string(),
+            AggregateDesc {
+                impl_: AggImpl::Udf(UdfOps {
+                    init: Arc::new(|| Box::new(0i64) as Box<dyn Any + Send>),
+                    step: Arc::new(|acc, v| {
+                        if let (Some(n), Value::Integer(i)) = (acc.downcast_mut::<i64>(), v) {
+                            *n += i;
+                        }
+                    }),
+                    finalise: Arc::new(|acc, _n| {
+                        acc.downcast_ref::<i64>()
+                            .map(|n| Value::Integer(*n))
+                            .unwrap_or(Value::Null)
+                    }),
+                }),
+                is_builtin: false,
+            },
+        )
+        .expect("register should succeed");
+        assert!(reg.is_known("myfn"));
+        assert!(reg.is_window_compatible("myfn"));
+    }
+
+    #[test]
+    fn register_udf_duplicate_rejected() {
+        let mut reg = FunctionRegistry::with_builtins();
+        let make_desc = || AggregateDesc {
+            impl_: AggImpl::Udf(UdfOps {
+                init: Arc::new(|| Box::new(0i64) as Box<dyn Any + Send>),
+                step: Arc::new(|_acc, _v| {}),
+                finalise: Arc::new(|_acc, _n| Value::Null),
+            }),
+            is_builtin: false,
+        };
+        reg.register_aggregate_desc("myfn".to_string(), make_desc())
+            .expect("first ok");
+        assert!(
+            reg.register_aggregate_desc("myfn".to_string(), make_desc())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn register_builtin_name_rejected() {
+        let mut reg = FunctionRegistry::with_builtins();
+        let result = reg.register_aggregate_desc(
+            "sum".to_string(),
+            AggregateDesc {
+                impl_: AggImpl::Udf(UdfOps {
+                    init: Arc::new(|| Box::new(0i64) as Box<dyn Any + Send>),
+                    step: Arc::new(|_acc, _v| {}),
+                    finalise: Arc::new(|_acc, _n| Value::Null),
+                }),
+                is_builtin: false,
+            },
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn register_predicate_works_and_rejects_duplicate() {
+        let mut reg = FunctionRegistry::with_builtins();
+        reg.register_predicate_desc(
+            "email?".to_string(),
+            PredicateDesc {
+                f: Arc::new(|v| matches!(v, Value::String(s) if s.contains('@'))),
+                is_builtin: false,
+            },
+        )
+        .expect("first registration ok");
+        assert!(reg.get_predicate("email?").is_some());
+        let second = reg.register_predicate_desc(
+            "email?".to_string(),
+            PredicateDesc {
+                f: Arc::new(|_v| false),
+                is_builtin: false,
+            },
+        );
+        assert!(second.is_err());
+    }
+
+    #[test]
+    fn register_builtin_predicate_name_rejected() {
+        let mut reg = FunctionRegistry::with_builtins();
+        let result = reg.register_predicate_desc(
+            "string?".to_string(),
+            PredicateDesc {
+                f: Arc::new(|_v| false),
+                is_builtin: false,
+            },
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn builtin_sum_accumulator_regression_guard() {
+        let reg = FunctionRegistry::with_builtins();
+        // Regression guard: existing window_ops path still works.
+        let desc = reg.get("sum").unwrap();
+        if let AggImpl::Builtin(ops) = &desc.impl_ {
+            let mut acc = (ops.init)();
+            (ops.step)(&mut acc, &Value::Integer(5));
+            assert_eq!((ops.finalise)(&acc), Value::Integer(5));
+        } else {
+            panic!("sum should be Builtin");
+        }
     }
 }

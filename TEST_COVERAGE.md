@@ -1,11 +1,11 @@
 # Minigraf Test Coverage Report
 
-**Last Updated**: Phase 7.7a COMPLETE - Window Functions ✅
+**Last Updated**: Phase 7.7b COMPLETE - User-Defined Functions (UDFs) ✅
 
 ## Test Summary
 
-**Total Tests**: 707 ✅
-- ✅ 478 unit tests (lib)
+**Total Tests**: 727 ✅
+- ✅ 487 unit tests (lib)
 - ✅ 10 bi-temporal tests (integration)
 - ✅ 10 complex query tests (integration)
 - ✅ 9 recursive rules tests (integration)
@@ -25,9 +25,22 @@
 - ✅ 8 error handling tests (integration, Phase 7.5 — error-path coverage; 1 ignored: or+neg-cycle bug)
 - ✅ 16 temporal metadata tests (integration, Phase 7.6 — `:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`, `:db/valid-at`)
 - ✅ 12 window function tests (integration, Phase 7.7a — cumulative sum/count/min/avg, rank with ties, row-number, partition-by, desc ordering, mixed aggregate+window, edge cases, lag/lead parse rejection)
+- ✅ 9 UDF tests (integration, Phase 7.7b — custom aggregates, custom predicates, UDF as window function, name collision guards, runtime errors, thread safety)
 - ✅ 6 doc tests
 
-**Status**: ✅ **All 707 tests passing** (1 ignored: confirmed or+neg-cycle stratification bug)
+**Status**: ✅ **All 727 tests passing** (1 ignored: confirmed or+neg-cycle stratification bug)
+
+## Phase 7.7b Completion Status: ✅ COMPLETE
+
+**Phase 7.7b Features** (current, complete):
+- ✅ `UdfOps` and `PredicateDesc` types in `src/query/datalog/functions.rs` — register custom aggregates (init/step/finalise closures) and custom predicates (filter closure)
+- ✅ `FunctionRegistry::register_aggregate` and `register_predicate` methods; collision guards reject re-registration of built-in names or duplicate UDFs
+- ✅ `FindSpec::Udf` and `WhereClause::UdfPredicate` variants in `types.rs`; UDF aggregates usable in `:find` and `:over` window specs; UDF predicates usable in `:where`
+- ✅ Parser extended: UDF aggregate invocations in `:find` / `:over`; UDF predicate invocations in `:where`; unknown function names deferred to runtime, not rejected at parse time
+- ✅ Executor routes UDF aggregates through `FunctionRegistry` at query time; UDF predicates evaluated per binding row
+- ✅ `Minigraf::register_aggregate` and `register_predicate` on the public API (`db.rs`)
+- ✅ `tests/udf_test.rs` — 9 integration tests
+- ✅ 727 tests passing (unit + integration + doc)
 
 ## Phase 7.7a Completion Status: ✅ COMPLETE
 
@@ -38,7 +51,7 @@
 - ✅ `apply_post_processing`, `compute_aggregation`, `apply_window_functions`, `project_find_specs` in `executor.rs` — replaces `apply_aggregation`/`apply_agg_func`
 - ✅ `FunctionRegistry` wired through `db.rs` (`Minigraf::Inner` gains `Arc<RwLock<FunctionRegistry>>`)
 - ✅ `tests/window_functions_test.rs` — 12 integration tests (cumulative sum, running count/min/avg, rank with ties, row-number, partition-by, desc ordering, mixed aggregate+window, single-row and empty-result edge cases, lag/lead parse rejection)
-- ✅ 707 tests passing (unit + integration + doc)
+- ✅ 718 tests passing (unit + integration + doc)
 
 ## Phase 7.6 Completion Status: ✅ COMPLETE
 
@@ -451,6 +464,32 @@
 - ✅ Negative cycle via `not-join` at rule registration → `Err`, rule not registered
 - ✅ `not` and `not-join` coexist in the same query
 
+### Window Functions (`tests/window_functions_test.rs`) - ✅ 12 tests (Phase 7.7a)
+
+- ✅ Cumulative sum over ordered partition
+- ✅ Running count and running min
+- ✅ Running average
+- ✅ Rank with ties (equal values share rank)
+- ✅ Row-number (unique sequential position regardless of ties)
+- ✅ Partition-by — window resets per group
+- ✅ Descending order in window spec
+- ✅ Mixed aggregate + window in same `:find`
+- ✅ Single-row result (window function on one row)
+- ✅ Empty-result edge case (no matching facts)
+- ✅ `lag` / `lead` rejected at parse time
+
+### User-Defined Functions (`tests/udf_test.rs`) - ✅ 9 tests (Phase 7.7b)
+
+- ✅ `custom_aggregate_geometric_mean` — UDF aggregate registered and used in `:find`
+- ✅ `custom_aggregate_empty_result` — UDF aggregate on empty result set returns correct identity
+- ✅ `custom_predicate_filter` — UDF predicate in `:where` filters binding rows
+- ✅ `udf_as_window_function` — UDF aggregate used inside `:over` window spec
+- ✅ `name_collision_builtin_aggregate` — registering a UDF with a built-in name returns `Err`
+- ✅ `name_collision_udf_on_udf` — registering a second UDF with the same name returns `Err`
+- ✅ `unknown_function_runtime_error` — invoking an unregistered aggregate name at query time returns `Err`
+- ✅ `unknown_predicate_runtime_error` — invoking an unregistered predicate name at query time returns `Err`
+- ✅ `thread_safety` — concurrent UDF registration and query execution from multiple threads
+
 ---
 
 ## Coverage Metrics
@@ -600,6 +639,8 @@ cargo test --test negation_test        # stratified not (10)
 cargo test --test not_join_test        # not-join (14)
 cargo test --test aggregation_test     # aggregation (24)
 cargo test --test predicate_expr_test  # arithmetic & predicate expr (28)
+cargo test --test window_functions_test # window functions (12)
+cargo test --test udf_test             # user-defined functions (9)
 
 # Run with output
 cargo test -- --nocapture
@@ -609,9 +650,9 @@ cargo test -- --nocapture
 
 ## Conclusion
 
-**Phase 7.2b Status**: ✅ **COMPLETE**
+**Phase 7.7b Status**: ✅ **COMPLETE**
 
-**Test Quality**: ✅ **Excellent** — High confidence in all Phase 3-7.2b features
+**Test Quality**: ✅ **Excellent** — High confidence in all Phase 3-7.7b features
 
 **Strengths**:
 - WAL crash safety verified with real `mem::forget` simulation
@@ -629,14 +670,16 @@ cargo test -- --nocapture
 - Aggregation verified: all 6 aggregate functions, `:with` grouping, bi-temporal + aggregate, rule + aggregate (Phase 7.2a)
 - Arithmetic & predicate expressions verified: all operators, silent-drop semantics, int/float promotion, regex validation, expr in not/rule body, bi-temporal + expr (Phase 7.2b)
 - Disjunction (`or` / `or-join`) verified: flat queries, rule bodies, nested or/not/expr, or-join with private variables, dependency graph (Phase 7.3)
-- 562 tests covering all Phase 3-7.3 features
+- Window functions verified: cumulative aggregates, rank/row-number, partition-by, desc ordering, mixed aggregate+window (Phase 7.7a)
+- User-defined functions verified: custom aggregates, custom predicates, UDF as window function, name collision guards, runtime error handling, thread safety (Phase 7.7b)
+- 727 tests covering all Phase 3-7.7b features
 
-**Confidence Level**: ✅ **Production-ready for Phase 7.3 scope**
+**Confidence Level**: ✅ **Production-ready for Phase 7.7b scope**
 
-**Readiness for Phase 7.4**: ✅ **Ready to proceed**
+**Readiness for Phase 7.8**: ✅ **Ready to proceed**
 
-The disjunction + aggregation + arithmetic/predicate expression capable, stratified-negation-capable, on-disk B+tree indexed, packed, cached bi-temporal Datalog engine is **solid, well-tested, and benchmarked**.
+The UDF-capable, window-function-capable, disjunction + aggregation + arithmetic/predicate expression capable, stratified-negation-capable, on-disk B+tree indexed, packed, cached bi-temporal Datalog engine is **solid, well-tested, and benchmarked**.
 
 ---
 
-**Next Steps**: Begin Phase 7.3 (Disjunction — `or` / `or-join`) 🚀
+**Next Steps**: Begin Phase 7.8 (Query Planner Improvements / Prepared Statements)

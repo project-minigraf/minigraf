@@ -519,7 +519,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 - **7.5** ✅ Tests + Error Coverage (617 tests; executor.rs 85.71%, evaluator.rs 89.29% branch coverage; CI coverage gate + nightly llvm-cov)
 - **7.6** ✅ Temporal Metadata Bindings + Range Queries (`:db/valid-from`, `:db/valid-to`, `:db/tx-count` as queryable pseudo-attributes; unlocks Time Interval, Time-Point Lookup, Time-Interval Lookup query classes)
 - **7.7a** Window Functions — `sum`, `count`, `min`, `max`, `avg`, `rank`, `row-number` with unbounded-preceding frame; `FunctionRegistry` introduced (built-ins only); `lag`/`lead` and sliding frames deferred to post-1.0 backlog
-- **7.7b** User-Defined Functions (UDFs) — public `register_aggregate`/`register_predicate` API on the `FunctionRegistry` introduced in 7.7a
+- **7.7b** ✅ User-Defined Functions (UDFs) — public `register_aggregate`/`register_predicate` API on the `FunctionRegistry` introduced in 7.7a
 - **7.8** Prepared Statements (parse + plan once, execute many times, temporal bind slots; implemented after full clause set including predicate-argument positions)
 - **7.9** Publish Prep (crates.io — API cleanup, rustdoc, clippy, `unwrap` audit, CI matrix)
 
@@ -890,7 +890,15 @@ UDFs are the natural generalisation: if the engine can call built-in aggregates 
 
 ---
 
-#### 7.7b User-Defined Functions (UDFs)
+#### 7.7b User-Defined Functions (UDFs) ✅ COMPLETE
+
+**Status**: ✅ Complete (v0.17.0, 2026-04-02)
+
+**Summary**: `register_aggregate` and `register_predicate` public API added to `Minigraf`.
+UDFs plug into grouping aggregation, window computation, and `:where` predicate filtering
+via type-erased `Box<dyn Any + Send>` accumulators and `Arc<dyn Fn>` closures.
+`FunctionRegistry` extended with `AggImpl` discriminator and `PredicateDesc`.
+727 tests.
 
 **Goal**: Allow embedders to extend the query engine with custom aggregate functions and filter predicates registered at runtime, using the same `FunctionRegistry` that built-in aggregates and window functions use.
 
@@ -1575,7 +1583,8 @@ When evaluating features, ask:
 - ✅ Phase 7.5: Complete (March 2026) - Cross-feature tests, error-path coverage, ~86-89% branch coverage, 617 tests
 - ✅ Phase 7.6: Complete (April 2026) - Temporal metadata bindings (`:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`, `:db/valid-at`), 647 tests
 - ✅ Phase 7.7a: Complete (April 2026) - Window functions (`sum/count/min/max/avg/rank/row-number :over`), `FunctionRegistry`, 705 tests
-- 🎯 Phase 7.7b–7.8: UDFs, prepared statements; ≥90% branch coverage - **NEXT**
+- ✅ Phase 7.7b: Complete (April 2026) - User-Defined Functions (`register_aggregate`/`register_predicate`), 727 tests
+- 🎯 Phase 7.8: Prepared statements; ≥90% branch coverage - **NEXT**
 - 🎯 Phase 8: 3-4 months (Cross-platform — WASM, mobile, language bindings)
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)
 - 🎯 **v1.0.0: 9-12 months**
@@ -1586,19 +1595,20 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: Phase 7.7a Complete — Phase 7.7b Next (UDFs)
+**Right Now**: Phase 7.7b Complete — Phase 7.8 Next (Prepared Statements)
 
-**Phase 7.7a Achievements**:
-1. ✅ `FunctionRegistry` in `src/query/datalog/functions.rs` — string-keyed registry; all built-in aggregates migrated; `window_ops` (init/step/finalise)
-2. ✅ `WindowFunc`, `Order`, `WindowSpec`, `FindSpec::Window` types in `types.rs`
-3. ✅ `parse_window_expr` in `parser.rs` — `(func ?v :over (:partition-by ?p :order-by ?o :desc))` syntax; `lag`/`lead` rejected with "not supported"
-4. ✅ `apply_post_processing` + `apply_window_functions` + `compute_aggregation` in `executor.rs`
-5. ✅ `FunctionRegistry` wired through `db.rs` (`Minigraf::Inner`)
-6. ✅ `tests/window_functions_test.rs` — 12 integration tests covering all window functions, partition-by, desc order, mixed aggregate+window, edge cases
-7. ✅ 705 tests passing; version bumped to v0.16.0
+**Phase 7.7b Achievements**:
+1. ✅ `WindowFunc::Udf(String)` and `UnaryOp::Udf(String)` AST variants in `types.rs`
+2. ✅ `UdfOps`, `AggImpl`, `PredicateDesc` types in `functions.rs`; `UdfStepFn`/`UdfFinaliseFn` type aliases
+3. ✅ Parser emits `Udf` variants for unknown function names (runtime validation)
+4. ✅ `apply_expr_clauses` returns `Result<Vec<Binding>>` and pre-validates UDF predicate names
+5. ✅ `eval_expr` accepts `Option<&FunctionRegistry>` for UDF predicate resolution
+6. ✅ `Minigraf::register_aggregate` and `Minigraf::register_predicate` public API methods
+7. ✅ `tests/udf_test.rs` — 9 integration tests (custom aggregate, predicate, window UDF, name collisions, edge cases)
+8. ✅ 727 tests passing; version bumped to v0.17.0
 
-**Immediate Next Steps (Phase 7.7b)**:
-1. UDFs — embedder-registered aggregate and predicate functions via `FunctionRegistry`
+**Immediate Next Steps (Phase 7.8)**:
+1. Prepared Statements — parse + plan once, execute many times, temporal bind slots
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)

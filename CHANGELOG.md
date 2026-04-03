@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.17.0 — Phase 7.7b: User-Defined Functions (2026-04-02)
+
+### Added
+- `Minigraf::register_aggregate(name, init, step, finalise)` — register a custom aggregate
+  function usable in both `:find` grouping and `:over` (window) clauses
+- `Minigraf::register_predicate(name, f)` — register a single-argument filter predicate
+  usable in `[(name? ?var)]` `:where` clauses
+- `FunctionRegistry::register_aggregate_desc` / `register_predicate_desc` (internal API)
+- `WindowFunc::Udf(String)` and `UnaryOp::Udf(String)` AST variants for runtime-resolved functions
+- `UdfOps`, `AggImpl`, `PredicateDesc` types in `functions.rs`
+
+### Changed
+- `AggregateDesc` now uses `AggImpl` discriminator instead of `window_compatible`+`window_ops`
+- `apply_expr_clauses` now returns `Result<Vec<Binding>>` and accepts `&FunctionRegistry`
+- `eval_expr` accepts `Option<&FunctionRegistry>` for UDF predicate resolution
+- `WindowSpec::func_name()` now returns `String` instead of `&'static str`
+- Parser emits `Udf` variants for unknown names instead of erroring (runtime validation)
+
+### Test count: 727 tests
+
 ## v0.16.0 — Phase 7.7a: Window Functions (2026-04-02)
 
 ### Added

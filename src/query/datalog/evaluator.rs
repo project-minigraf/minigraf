@@ -515,7 +515,11 @@ fn apply_expr_clauses_in_evaluator(
         .filter_map(|mut b| {
             for clause in expr_clauses {
                 if let WhereClause::Expr { expr, binding: out } = clause {
-                    match eval_expr(expr, &b) {
+                    // NOTE: Passing None as the registry means UDF predicates (UnaryOp::Udf) in rule
+                    // body Expr clauses will produce an error rather than being evaluated. This is a
+                    // known architectural limitation: threading FunctionRegistry into RecursiveEvaluator
+                    // and StratifiedEvaluator is out of scope for this phase. See phase 7.7b roadmap.
+                    match eval_expr(expr, &b, None) {
                         Ok(value) => match out {
                             None => {
                                 if !is_truthy(&value) {
@@ -735,7 +739,12 @@ impl StratifiedEvaluator {
                 // Apply Or/OrJoin clauses before Expr (mirrors top-level execute_query order)
                 let or_expanded = {
                     use crate::query::datalog::executor::apply_or_clauses;
+                    use crate::query::datalog::functions::FunctionRegistry;
                     let registry_guard = self.rules.read().unwrap();
+                    // Rule bodies in the semi-naive evaluator don't have access to a
+                    // FunctionRegistry (UDF registration happens at the db layer). Use the
+                    // built-in-only registry so or-branches can still use built-in predicates.
+                    let fn_registry = FunctionRegistry::with_builtins();
                     let expanded = apply_or_clauses(
                         &rule.body,
                         raw_candidates,
@@ -743,6 +752,7 @@ impl StratifiedEvaluator {
                         &registry_guard,
                         None,
                         None,
+                        &fn_registry,
                     )?;
                     drop(registry_guard);
                     expanded
