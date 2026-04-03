@@ -77,6 +77,10 @@ impl StorageBackend for MemoryBackend {
     fn backend_name(&self) -> &'static str {
         "memory"
     }
+
+    fn is_new(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]

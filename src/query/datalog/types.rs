@@ -148,7 +148,9 @@ impl WindowSpec {
 }
 
 /// Binary operators for expression clauses.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Manual impl for PartialEq/Eq/Hash because `Matches` holds a `regex_lite::Regex`
+/// which doesn't implement these traits.
+#[derive(Debug, Clone)]
 pub enum BinOp {
     // Comparisons — return Boolean
     Lt,
@@ -167,7 +169,34 @@ pub enum BinOp {
     EndsWith,
     Contains,
     /// Pattern must be a string literal validated at parse time via regex-lite.
-    Matches,
+    /// The compiled `regex_lite::Regex` is stored alongside the original string pattern.
+    Matches {
+        regex: regex_lite::Regex,
+        pattern: String,
+    },
+}
+
+impl PartialEq for BinOp {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (BinOp::Matches { pattern: p1, .. }, BinOp::Matches { pattern: p2, .. }) => p1 == p2,
+            (a, b) => std::mem::discriminant(a) == std::mem::discriminant(b),
+        }
+    }
+}
+
+impl Eq for BinOp {}
+
+impl std::hash::Hash for BinOp {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            BinOp::Matches { pattern, .. } => {
+                core::hash::Hash::hash(&0u8, state);
+                core::hash::Hash::hash(pattern, state);
+            }
+            _ => core::hash::Hash::hash(&std::mem::discriminant(self), state),
+        }
+    }
 }
 
 /// Unary type-predicate operators — always return Boolean.
@@ -1100,7 +1129,6 @@ mod tests {
         let _ = BinOp::StartsWith;
         let _ = BinOp::EndsWith;
         let _ = BinOp::Contains;
-        let _ = BinOp::Matches;
     }
 
     #[test]

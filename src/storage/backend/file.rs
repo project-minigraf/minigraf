@@ -20,6 +20,7 @@ pub struct FileBackend {
     path: PathBuf,
     file: File,
     header: FileHeader,
+    is_new: bool,
 }
 
 impl FileBackend {
@@ -43,6 +44,7 @@ impl FileBackend {
         let file_len = file.metadata()?.len();
 
         // Determine if this is an existing file with data or a new/empty one.
+        let is_new = file_len < PAGE_SIZE as u64;
         let header = if file_len >= PAGE_SIZE as u64 {
             // File has at least one page - try to read the header
             match Self::read_header(&mut file) {
@@ -63,7 +65,12 @@ impl FileBackend {
             header
         };
 
-        Ok(FileBackend { path, file, header })
+        Ok(FileBackend {
+            path,
+            file,
+            header,
+            is_new,
+        })
     }
 
     /// Read the file header from page 0.
@@ -161,6 +168,10 @@ impl StorageBackend for FileBackend {
     fn backend_name(&self) -> &'static str {
         "file"
     }
+
+    fn is_new(&self) -> bool {
+        self.is_new
+    }
 }
 
 #[cfg(test)]
@@ -176,9 +187,39 @@ mod tests {
         let backend = FileBackend::open(temp_path).unwrap();
         assert_eq!(backend.backend_name(), "file");
         assert_eq!(backend.page_count().unwrap(), 1); // Header page
+        assert!(backend.is_new(), "newly created file should be new");
 
         // Clean up
         drop(backend);
+        fs::remove_file(temp_path).unwrap();
+    }
+
+    #[test]
+    fn test_file_backend_existing_file_not_new() {
+        let temp_path = "/tmp/test_minigraf_existing.graph";
+        let _ = fs::remove_file(temp_path);
+
+        {
+            let backend = FileBackend::open(temp_path).unwrap();
+            assert!(backend.is_new(), "first open should be new");
+            drop(backend);
+        }
+
+        {
+            let backend = FileBackend::open(temp_path).unwrap();
+            assert!(
+                !backend.is_new(),
+                "reopening existing file should not be new"
+            );
+            drop(backend);
+        }
+
+        {
+            let backend = FileBackend::open(temp_path).unwrap();
+            assert!(!backend.is_new(), "third open should still not be new");
+            drop(backend);
+        }
+
         fs::remove_file(temp_path).unwrap();
     }
 

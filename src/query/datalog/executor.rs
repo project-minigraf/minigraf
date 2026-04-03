@@ -1,4 +1,6 @@
-use super::evaluator::{StratifiedEvaluator, evaluate_not_join};
+use super::evaluator::{
+    DEFAULT_MAX_DERIVED_FACTS, DEFAULT_MAX_RESULTS, StratifiedEvaluator, evaluate_not_join,
+};
 use super::functions::{AggImpl, FunctionRegistry, apply_builtin_aggregate, value_lt};
 use super::matcher::{PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::optimizer;
@@ -9,9 +11,7 @@ use super::types::{
 };
 use crate::graph::FactStorage;
 use crate::graph::types::{Fact, TransactOptions, TxId, Value, tx_id_now};
-use crate::storage::index::Indexes;
 use anyhow::{Result, anyhow};
-use regex_lite::Regex;
 use std::sync::{Arc, RwLock};
 
 /// Returns true if any where clause (at any depth) contains a per-fact
@@ -56,14 +56,17 @@ pub struct DatalogExecutor {
     rules: Arc<RwLock<RuleRegistry>>,
     // RwLock pre-wired for 7.7b register_aggregate API.
     functions: Arc<RwLock<FunctionRegistry>>,
+    indexes: Arc<crate::storage::index::Indexes>,
 }
 
 impl DatalogExecutor {
     pub fn new(storage: FactStorage) -> Self {
+        let indexes = storage.pending_indexes_snapshot();
         DatalogExecutor {
             storage,
             rules: Arc::new(RwLock::new(RuleRegistry::new())),
             functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
+            indexes: Arc::new(indexes),
         }
     }
 
@@ -75,10 +78,12 @@ impl DatalogExecutor {
         rules: Arc<RwLock<RuleRegistry>>,
         functions: Arc<RwLock<FunctionRegistry>>,
     ) -> Self {
+        let indexes = storage.pending_indexes_snapshot();
         DatalogExecutor {
             storage,
             rules,
             functions,
+            indexes: Arc::new(indexes),
         }
     }
 
@@ -256,8 +261,7 @@ impl DatalogExecutor {
         let patterns = query.get_patterns();
 
         // Plan patterns: assign index hints and reorder by selectivity.
-        // Phase 6.1: Indexes::new() is a placeholder; Phase 6.2 will pass real indexes.
-        let planned_patterns = optimizer::plan(patterns, &Indexes::new());
+        let planned_patterns = optimizer::plan(patterns, &self.indexes);
 
         // Match all patterns in planned order and get bindings
         let bindings = matcher.match_patterns(
@@ -390,6 +394,8 @@ impl DatalogExecutor {
             filtered_storage,
             self.rules.clone(),
             1000, // max iterations
+            DEFAULT_MAX_DERIVED_FACTS,
+            DEFAULT_MAX_RESULTS,
         );
 
         let derived_storage = evaluator.evaluate(&predicates)?;
@@ -1187,6 +1193,9 @@ pub(crate) fn apply_or_clauses(
     for clause in clauses {
         match clause {
             WhereClause::Or(branches) => {
+                let mut seen: std::collections::BTreeSet<
+                    Vec<(String, crate::graph::types::Value)>,
+                > = std::collections::BTreeSet::new();
                 let mut result: Vec<Binding> = Vec::new();
                 for branch in branches {
                     let branch_result = evaluate_branch(
@@ -1199,7 +1208,10 @@ pub(crate) fn apply_or_clauses(
                         registry,
                     )?;
                     for b in branch_result {
-                        if !result.contains(&b) {
+                        let mut key: Vec<_> =
+                            b.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                        key.sort_unstable();
+                        if seen.insert(key) {
                             result.push(b);
                         }
                     }
@@ -1214,6 +1226,9 @@ pub(crate) fn apply_or_clauses(
                 let outer_keys: std::collections::HashSet<String> =
                     bindings.iter().flat_map(|b| b.keys().cloned()).collect();
 
+                let mut seen: std::collections::BTreeSet<
+                    Vec<(String, crate::graph::types::Value)>,
+                > = std::collections::BTreeSet::new();
                 let mut result: Vec<Binding> = Vec::new();
                 for branch in branches {
                     let branch_result = evaluate_branch(
@@ -1235,7 +1250,10 @@ pub(crate) fn apply_or_clauses(
                         // (1) the parser enforces join_vars ⊆ outer_bound, so join_vars ⊆ outer_keys, and
                         // (2) retaining outer_keys is safe because those variables were stable before the or-join.
                         b.retain(|k, _| outer_keys.contains(k));
-                        if !result.contains(&b) {
+                        let mut key: Vec<_> =
+                            b.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                        key.sort_unstable();
+                        if seen.insert(key) {
                             result.push(b);
                         }
                     }
@@ -1370,12 +1388,8 @@ fn eval_binop(op: &BinOp, l: Value, r: Value) -> Result<Value, ()> {
             }
             _ => Err(()),
         },
-        BinOp::Matches => match (l, r) {
-            (Value::String(s), Value::String(pattern)) => {
-                // Pattern was validated at parse time; compile here.
-                let re = Regex::new(&pattern).map_err(|_| ())?;
-                Ok(Value::Boolean(re.is_match(&s)))
-            }
+        BinOp::Matches { regex: re, .. } => match (l, r) {
+            (Value::String(s), Value::String(_)) => Ok(Value::Boolean(re.is_match(&s))),
             _ => Err(()),
         },
 
@@ -3145,8 +3159,12 @@ mod expr_eval_tests {
 
     #[test]
     fn test_eval_matches_true() {
+        let re = regex_lite::Regex::new("^[^@]+@[^@]+$").unwrap();
         let e = Expr::BinOp(
-            BinOp::Matches,
+            BinOp::Matches {
+                regex: re,
+                pattern: "^[^@]+@[^@]+$".to_string(),
+            },
             Box::new(Expr::Lit(Value::String("test@example.com".to_string()))),
             Box::new(Expr::Lit(Value::String("^[^@]+@[^@]+$".to_string()))),
         );

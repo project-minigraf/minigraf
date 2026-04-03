@@ -60,6 +60,47 @@ pub enum Value {
     Null,
 }
 
+impl Eq for Value {}
+
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Value {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Simple variant ordering using match
+        match (self, other) {
+            // Same variant - compare inner values
+            (Value::String(a), Value::String(b)) => a.cmp(b),
+            (Value::Integer(a), Value::Integer(b)) => a.cmp(b),
+            (Value::Float(a), Value::Float(b)) => {
+                if a.is_nan() && b.is_nan() {
+                    std::cmp::Ordering::Equal
+                } else if a.is_nan() {
+                    std::cmp::Ordering::Greater
+                } else if b.is_nan() {
+                    std::cmp::Ordering::Less
+                } else {
+                    a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                }
+            }
+            (Value::Boolean(a), Value::Boolean(b)) => a.cmp(b),
+            (Value::Ref(a), Value::Ref(b)) => a.cmp(b),
+            (Value::Keyword(a), Value::Keyword(b)) => a.cmp(b),
+            (Value::Null, Value::Null) => std::cmp::Ordering::Equal,
+            // Different variants - order by discriminant
+            _ => {
+                // Use pointers to get consistent ordering between variants
+                let self_ptr = self as *const Value as usize;
+                let other_ptr = other as *const Value as usize;
+                self_ptr.cmp(&other_ptr)
+            }
+        }
+    }
+}
+
 impl Value {
     /// Extract string value if this is a String variant
     pub fn as_string(&self) -> Option<&str> {

@@ -7,7 +7,7 @@
 use crate::storage::cache::PageCache;
 use crate::storage::index::FactRef;
 use crate::storage::{PAGE_SIZE, StorageBackend};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -29,6 +29,36 @@ const INTERNAL_HEADER_SIZE: usize = 12;
 const SLOT_SIZE: usize = 4;
 /// Fill-factor threshold: stop packing once total used bytes exceed this (~75% of PAGE_SIZE).
 const PAGE_FILL_BYTES: usize = PAGE_SIZE * 3 / 4;
+
+// ─── Safe slice access helpers ───────────────────────────────────────────────
+
+/// Read a u16 from 2 bytes at the given offset, returning an error if out of bounds.
+fn read_u16_at(page: &[u8], offset: usize) -> Result<u16> {
+    if offset + 2 > page.len() {
+        return Err(anyhow!(
+            "out of bounds: offset {} + 2 > len {}",
+            offset,
+            page.len()
+        ));
+    }
+    Ok(u16::from_le_bytes(
+        page[offset..offset + 2].try_into().unwrap(),
+    ))
+}
+
+/// Read a u64 from 8 bytes at the given offset, returning an error if out of bounds.
+fn read_u64_at(page: &[u8], offset: usize) -> Result<u64> {
+    if offset + 8 > page.len() {
+        return Err(anyhow!(
+            "out of bounds: offset {} + 8 > len {}",
+            offset,
+            page.len()
+        ));
+    }
+    Ok(u64::from_le_bytes(
+        page[offset..offset + 8].try_into().unwrap(),
+    ))
+}
 
 // ─── Low-level page writers ───────────────────────────────────────────────────
 
@@ -81,6 +111,10 @@ fn write_internal_page(
     sep_bytes: &[Vec<u8>],
 ) -> Result<()> {
     debug_assert_eq!(child_ids.len(), sep_bytes.len() + 1);
+    // Defensive check: empty child_ids would cause panic on .last()
+    if child_ids.is_empty() {
+        anyhow::bail!("internal page has no children");
+    }
     let key_count = sep_bytes.len() as u16;
     let rightmost_child = *child_ids.last().unwrap();
 
@@ -170,7 +204,10 @@ pub fn build_btree(
 
         if projected > PAGE_FILL_BYTES && !cur_entries.is_empty() {
             write_leaf_page(backend, cache, next_page, &cur_entries, 0)?;
-            leaf_infos.push((next_page, cur_first_key.unwrap()));
+            let first_key = cur_first_key.take().ok_or_else(|| {
+                anyhow::anyhow!("BUG: cur_first_key empty when writing leaf page")
+            })?;
+            leaf_infos.push((next_page, first_key));
             next_page += 1;
             cur_entries.clear();
             cur_data_bytes = 0;
@@ -192,7 +229,10 @@ pub fn build_btree(
     }
     if !cur_entries.is_empty() {
         write_leaf_page(backend, cache, next_page, &cur_entries, 0)?;
-        leaf_infos.push((next_page, cur_first_key.unwrap()));
+        let first_key = cur_first_key.take().ok_or_else(|| {
+            anyhow::anyhow!("BUG: cur_first_key empty when flushing last leaf page")
+        })?;
+        leaf_infos.push((next_page, first_key));
         next_page += 1;
     }
 
@@ -291,15 +331,11 @@ fn find_leftmost_leaf(root: u64, backend: &dyn StorageBackend, cache: &PageCache
         match page[0] {
             PAGE_TYPE_LEAF => return Ok(page_id),
             PAGE_TYPE_INTERNAL => {
-                let key_count = u16::from_le_bytes(page[2..4].try_into().unwrap()) as usize;
+                let key_count = read_u16_at(&page[..], 2)? as usize;
                 if key_count == 0 {
-                    page_id = u64::from_le_bytes(page[4..12].try_into().unwrap());
+                    page_id = read_u64_at(&page[..], 4)?;
                 } else {
-                    page_id = u64::from_le_bytes(
-                        page[INTERNAL_HEADER_SIZE..INTERNAL_HEADER_SIZE + 8]
-                            .try_into()
-                            .unwrap(),
-                    );
+                    page_id = read_u64_at(&page[..], INTERNAL_HEADER_SIZE)?;
                 }
             }
             t => anyhow::bail!(
@@ -327,27 +363,22 @@ where
         match page[0] {
             PAGE_TYPE_LEAF => return Ok(page_id),
             PAGE_TYPE_INTERNAL => {
-                let key_count = u16::from_le_bytes(page[2..4].try_into().unwrap()) as usize;
-                let rightmost_child = u64::from_le_bytes(page[4..12].try_into().unwrap());
+                let key_count = read_u16_at(&page[..], 2)? as usize;
+                let rightmost_child = read_u64_at(&page[..], 4)?;
                 let child_arr_start = INTERNAL_HEADER_SIZE;
                 let slot_dir_start = INTERNAL_HEADER_SIZE + key_count * 8;
 
                 let mut descended = false;
                 for i in 0..key_count {
                     let slot_off = slot_dir_start + i * SLOT_SIZE;
-                    let sep_offset =
-                        u16::from_le_bytes(page[slot_off..slot_off + 2].try_into().unwrap())
-                            as usize;
-                    let sep_length =
-                        u16::from_le_bytes(page[slot_off + 2..slot_off + 4].try_into().unwrap())
-                            as usize;
+                    let sep_offset = read_u16_at(&page[..], slot_off)? as usize;
+                    let sep_length = read_u16_at(&page[..], slot_off + 2)? as usize;
                     let sep_key: K =
                         postcard::from_bytes(&page[sep_offset..sep_offset + sep_length])?;
 
                     if *key < sep_key {
                         let child_off = child_arr_start + i * 8;
-                        page_id =
-                            u64::from_le_bytes(page[child_off..child_off + 8].try_into().unwrap());
+                        page_id = read_u64_at(&page[..], child_off)?;
                         descended = true;
                         break;
                     }
@@ -370,13 +401,12 @@ fn read_leaf_entries<K>(page: &[u8]) -> Result<Vec<(K, FactRef)>>
 where
     K: for<'de> Deserialize<'de>,
 {
-    let entry_count = u16::from_le_bytes(page[2..4].try_into().unwrap()) as usize;
+    let entry_count = read_u16_at(page, 2)? as usize;
     let mut entries = Vec::with_capacity(entry_count);
     for i in 0..entry_count {
         let slot_off = LEAF_HEADER_SIZE + i * SLOT_SIZE;
-        let offset = u16::from_le_bytes(page[slot_off..slot_off + 2].try_into().unwrap()) as usize;
-        let length =
-            u16::from_le_bytes(page[slot_off + 2..slot_off + 4].try_into().unwrap()) as usize;
+        let offset = read_u16_at(page, slot_off)? as usize;
+        let length = read_u16_at(page, slot_off + 2)? as usize;
         let (k, fr): (K, FactRef) = postcard::from_bytes(&page[offset..offset + length])?;
         entries.push((k, fr));
     }
@@ -406,8 +436,8 @@ where
                 leaf_id
             );
         }
-        let next_leaf = u64::from_le_bytes(page[4..12].try_into().unwrap());
-        result.extend(read_leaf_entries::<K>(&page)?);
+        let next_leaf = read_u64_at(&page[..], 4)?;
+        result.extend(read_leaf_entries::<K>(&page[..])?);
 
         if next_leaf == 0 {
             break;
@@ -442,8 +472,8 @@ where
         if page[0] != PAGE_TYPE_LEAF {
             anyhow::bail!("range_scan: expected leaf at page_id={}", leaf_id);
         }
-        let next_leaf = u64::from_le_bytes(page[4..12].try_into().unwrap());
-        let entries: Vec<(K, FactRef)> = read_leaf_entries(&page)?;
+        let next_leaf = read_u64_at(&page[..], 4)?;
+        let entries: Vec<(K, FactRef)> = read_leaf_entries(&page[..])?;
 
         for (k, fr) in entries {
             if k < *start {
@@ -501,6 +531,10 @@ impl<B: StorageBackend> StorageBackend for MutexStorageBackend<B> {
 
     fn backend_name(&self) -> &'static str {
         unimplemented!("MutexStorageBackend is read-only; backend_name must not be called")
+    }
+
+    fn is_new(&self) -> bool {
+        self.0.lock().unwrap().is_new()
     }
 }
 
@@ -611,6 +645,20 @@ mod tests {
     }
 
     #[test]
+    fn test_read_u16_at_oob_rejected() {
+        let page = vec![0u8; 4];
+        assert!(read_u16_at(&page, 3).is_err());
+        assert!(read_u16_at(&page, 4).is_err());
+    }
+
+    #[test]
+    fn test_read_u64_at_oob_rejected() {
+        let page = vec![0u8; 4];
+        assert!(read_u64_at(&page, 0).is_err());
+        assert!(read_u64_at(&page, 1).is_err());
+    }
+
+    #[test]
     fn test_build_btree_empty_returns_single_leaf() {
         let mut backend = MemoryBackend::new();
         let cache = PageCache::new(64);
@@ -622,7 +670,7 @@ mod tests {
         // Verify it is a leaf page
         let page = cache.get_or_load(1, &backend).unwrap();
         assert_eq!(page[0], PAGE_TYPE_LEAF);
-        let entry_count = u16::from_le_bytes(page[2..4].try_into().unwrap());
+        let entry_count = read_u16_at(&page[..], 2).unwrap();
         assert_eq!(entry_count, 0);
     }
 
@@ -637,7 +685,7 @@ mod tests {
         assert_eq!(next_free, 6);
         let page = cache.get_or_load(5, &backend).unwrap();
         assert_eq!(page[0], PAGE_TYPE_LEAF);
-        assert_eq!(u16::from_le_bytes(page[2..4].try_into().unwrap()), 1);
+        assert_eq!(read_u16_at(&page[..], 2).unwrap(), 1);
     }
 
     #[test]
@@ -758,7 +806,7 @@ mod tests {
                     break pid;
                 }
                 // first child is at child_array[0] = bytes 12..20
-                pid = u64::from_le_bytes(p[12..20].try_into().unwrap());
+                pid = read_u64_at(&p[..], 12).unwrap();
             }
         };
 
@@ -767,7 +815,7 @@ mod tests {
         loop {
             let p = cache.get_or_load(leaf_pid, &backend).unwrap();
             assert_eq!(p[0], PAGE_TYPE_LEAF, "page {} should be leaf", leaf_pid);
-            let next = u64::from_le_bytes(p[4..12].try_into().unwrap());
+            let next = read_u64_at(&p[..], 4).unwrap();
             if next == 0 {
                 break;
             }
@@ -785,7 +833,7 @@ mod tests {
             .iter()
             .map(|&pid| {
                 let p = cache.get_or_load(pid, &backend).unwrap();
-                u16::from_le_bytes(p[2..4].try_into().unwrap()) as u64
+                read_u16_at(&p[..], 2).unwrap() as u64
             })
             .sum();
         assert_eq!(total_entries, 100);
