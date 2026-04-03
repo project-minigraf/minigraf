@@ -1604,7 +1604,7 @@ When evaluating features, ask:
 4. ✅ `apply_expr_clauses` returns `Result<Vec<Binding>>` and pre-validates UDF predicate names
 5. ✅ `eval_expr` accepts `Option<&FunctionRegistry>` for UDF predicate resolution
 6. ✅ `Minigraf::register_aggregate` and `Minigraf::register_predicate` public API methods
-7. ✅ `tests/udf_test.rs` — 20 integration tests (custom aggregate, predicate, window UDF, name collisions, edge cases)
+7. ✅ `tests/udf_test.rs` — 9 integration tests (custom aggregate, predicate, window UDF, name collisions, edge cases)
 8. ✅ 727 tests passing; version bumped to v0.17.0
 
 **Immediate Next Steps (Phase 7.8)**:

@@ -33,7 +33,7 @@
 ## Phase 7.7b Completion Status: ✅ COMPLETE
 
 **Phase 7.7b Features** (current, complete):
-- ✅ `UdfAggOps` and `PredicateDesc` types in `src/query/datalog/functions.rs` — register custom aggregates (init/step/finalise closures) and custom predicates (filter closure)
+- ✅ `UdfOps` and `PredicateDesc` types in `src/query/datalog/functions.rs` — register custom aggregates (init/step/finalise closures) and custom predicates (filter closure)
 - ✅ `FunctionRegistry::register_aggregate` and `register_predicate` methods; collision guards reject re-registration of built-in names or duplicate UDFs
 - ✅ `FindSpec::Udf` and `WhereClause::UdfPredicate` variants in `types.rs`; UDF aggregates usable in `:find` and `:over` window specs; UDF predicates usable in `:where`
 - ✅ Parser extended: UDF aggregate invocations in `:find` / `:over`; UDF predicate invocations in `:where`; unknown function names deferred to runtime, not rejected at parse time
