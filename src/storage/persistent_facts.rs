@@ -375,17 +375,35 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     }
 
     /// Load facts from legacy one-per-page format (v4 and earlier).
-    fn load_one_per_page_legacy(&mut self, header: &FileHeader) -> Result<()> {
+    fn load_one_per_page_legacy(&mut self, header: &FileHeader) -> Result<usize> {
         let page_count = header.page_count;
         let backend = self.backend.lock().unwrap();
+        let mut loaded = 0;
+        let mut skipped = 0;
         for page_id in 1..page_count {
             let page = backend.read_page(page_id)?;
             // Try to deserialize a fact from this page (legacy format: raw postcard bytes)
-            if let Ok(fact) = postcard::from_bytes::<Fact>(&page) {
-                self.storage.load_fact(fact)?;
+            match postcard::from_bytes::<Fact>(&page) {
+                Ok(fact) => {
+                    self.storage.load_fact(fact)?;
+                    loaded += 1;
+                }
+                Err(e) => {
+                    skipped += 1;
+                    eprintln!(
+                        "Warning: failed to deserialize fact at page {}: {}. Skipping.",
+                        page_id, e
+                    );
+                }
             }
         }
-        Ok(())
+        if skipped > 0 {
+            eprintln!(
+                "Warning: {} facts failed to deserialize during legacy load (version {})",
+                skipped, header.version
+            );
+        }
+        Ok(loaded)
     }
 
     /// Migrate a v1 file (Phase 3 format, no bi-temporal fields) to v2.
@@ -407,13 +425,27 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let header = FileHeader::from_bytes(&header_page)?;
         let page_count = header.page_count;
 
-        // Read all v1 facts (skip pages that don't deserialize)
+        // Read all v1 facts (track deserialization failures)
         let mut v1_facts: Vec<FactV1> = Vec::new();
+        let mut skipped = 0;
         for page_id in 1..page_count {
             let page = backend.read_page(page_id)?;
-            if let Ok(fact) = postcard::from_bytes::<FactV1>(&page) {
-                v1_facts.push(fact);
+            match postcard::from_bytes::<FactV1>(&page) {
+                Ok(fact) => v1_facts.push(fact),
+                Err(e) => {
+                    skipped += 1;
+                    eprintln!(
+                        "Warning: failed to deserialize v1 fact at page {}: {}. Skipping.",
+                        page_id, e
+                    );
+                }
             }
+        }
+        if skipped > 0 {
+            eprintln!(
+                "Warning: {} v1 facts failed to deserialize during migration",
+                skipped
+            );
         }
         drop(backend);
 
