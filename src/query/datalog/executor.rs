@@ -1149,6 +1149,9 @@ pub(crate) fn apply_or_clauses(
     for clause in clauses {
         match clause {
             WhereClause::Or(branches) => {
+                let mut seen: std::collections::BTreeSet<
+                    Vec<(String, crate::graph::types::Value)>,
+                > = std::collections::BTreeSet::new();
                 let mut result: Vec<Binding> = Vec::new();
                 for branch in branches {
                     let branch_result = evaluate_branch(
@@ -1160,7 +1163,8 @@ pub(crate) fn apply_or_clauses(
                         valid_at.clone(),
                     )?;
                     for b in branch_result {
-                        if !result.contains(&b) {
+                        let key: Vec<_> = b.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                        if seen.insert(key) {
                             result.push(b);
                         }
                     }
@@ -1175,6 +1179,9 @@ pub(crate) fn apply_or_clauses(
                 let outer_keys: std::collections::HashSet<String> =
                     bindings.iter().flat_map(|b| b.keys().cloned()).collect();
 
+                let mut seen: std::collections::BTreeSet<
+                    Vec<(String, crate::graph::types::Value)>,
+                > = std::collections::BTreeSet::new();
                 let mut result: Vec<Binding> = Vec::new();
                 for branch in branches {
                     let branch_result = evaluate_branch(
@@ -1195,7 +1202,8 @@ pub(crate) fn apply_or_clauses(
                         // (1) the parser enforces join_vars ⊆ outer_bound, so join_vars ⊆ outer_keys, and
                         // (2) retaining outer_keys is safe because those variables were stable before the or-join.
                         b.retain(|k, _| outer_keys.contains(k));
-                        if !result.contains(&b) {
+                        let key: Vec<_> = b.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                        if seen.insert(key) {
                             result.push(b);
                         }
                     }
