@@ -111,6 +111,10 @@ fn write_internal_page(
     sep_bytes: &[Vec<u8>],
 ) -> Result<()> {
     debug_assert_eq!(child_ids.len(), sep_bytes.len() + 1);
+    // Defensive check: empty child_ids would cause panic on .last()
+    if child_ids.is_empty() {
+        anyhow::bail!("internal page has no children");
+    }
     let key_count = sep_bytes.len() as u16;
     let rightmost_child = *child_ids.last().unwrap();
 
@@ -200,7 +204,10 @@ pub fn build_btree(
 
         if projected > PAGE_FILL_BYTES && !cur_entries.is_empty() {
             write_leaf_page(backend, cache, next_page, &cur_entries, 0)?;
-            leaf_infos.push((next_page, cur_first_key.unwrap()));
+            let first_key = cur_first_key.take().ok_or_else(|| {
+                anyhow::anyhow!("BUG: cur_first_key empty when writing leaf page")
+            })?;
+            leaf_infos.push((next_page, first_key));
             next_page += 1;
             cur_entries.clear();
             cur_data_bytes = 0;
@@ -222,7 +229,10 @@ pub fn build_btree(
     }
     if !cur_entries.is_empty() {
         write_leaf_page(backend, cache, next_page, &cur_entries, 0)?;
-        leaf_infos.push((next_page, cur_first_key.unwrap()));
+        let first_key = cur_first_key.take().ok_or_else(|| {
+            anyhow::anyhow!("BUG: cur_first_key empty when flushing last leaf page")
+        })?;
+        leaf_infos.push((next_page, first_key));
         next_page += 1;
     }
 
