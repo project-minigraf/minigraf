@@ -276,10 +276,12 @@ fn substitute_pattern(
     p: &mut crate::query::datalog::types::Pattern,
     bindings: &HashMap<&str, &BindValue>,
 ) -> Result<()> {
-    if let EdnValue::BindSlot(name) = std::mem::replace(&mut p.entity, EdnValue::Nil) {
+    if let EdnValue::BindSlot(name) = &p.entity {
+        let name = name.clone();
         p.entity = resolve_entity_slot(&name, bindings)?;
     }
-    if let EdnValue::BindSlot(name) = std::mem::replace(&mut p.value, EdnValue::Nil) {
+    if let EdnValue::BindSlot(name) = &p.value {
+        let name = name.clone();
         p.value = resolve_value_slot(&name, bindings)?;
     }
     Ok(())
@@ -302,7 +304,8 @@ fn substitute_expr(expr: &mut Expr, bindings: &HashMap<&str, &BindValue>) -> Res
 }
 
 fn substitute_edn_value(val: &mut EdnValue, bindings: &HashMap<&str, &BindValue>) -> Result<()> {
-    if let EdnValue::BindSlot(name) = std::mem::replace(val, EdnValue::Nil) {
+    if let EdnValue::BindSlot(name) = val {
+        let name = name.clone();
         *val = resolve_value_slot(&name, bindings)?;
     }
     Ok(())
