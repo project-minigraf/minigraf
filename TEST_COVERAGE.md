@@ -1,11 +1,11 @@
 # Minigraf Test Coverage Report
 
-**Last Updated**: Phase 7.7b COMPLETE - Test count corrected to 753 ✅
+**Last Updated**: Phase 7.8 COMPLETE - Prepared statements, 780 tests ✅
 
 ## Test Summary
 
-**Total Tests**: 753 ✅ (746 passing, 7 ignored)
-- ✅ 505 unit tests (lib)
+**Total Tests**: 780 ✅ (773 passing, 7 ignored)
+- ✅ 524 unit tests (lib, +19 from `prepared.rs`)
 - ✅ 24 bi-temporal tests (integration)
 - ✅ 10 complex query tests (integration)
 - ✅ 8 recursive rules tests (integration)
@@ -26,9 +26,24 @@
 - ✅ 9 temporal metadata tests (integration, Phase 7.6 — `:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`, `:db/valid-at`)
 - ✅ 12 window function tests (integration, Phase 7.7a — cumulative sum/count/min/avg, rank with ties, row-number, partition-by, desc ordering, mixed aggregate+window, edge cases, lag/lead parse rejection)
 - ✅ 14 UDF tests (integration, Phase 7.7b — custom aggregates, custom predicates, UDF as window function, name collision guards, runtime errors, thread safety)
+- ✅ 17 prepared statement tests (integration, Phase 7.8 — entity/value/as-of/valid-at slots, combined temporal+entity, AnyValidTime, error paths, plan reuse)
 - ✅ 15 doc tests
 
-**Status**: ✅ **All 746 tests passing** (7 ignored: confirmed or+neg-cycle stratification bug)
+**Status**: ✅ **All 773 tests passing** (7 ignored: confirmed or+neg-cycle stratification bug)
+
+## Phase 7.8 Completion Status: ✅ COMPLETE
+
+**Phase 7.8 Features** (current, complete):
+- ✅ `EdnValue::BindSlot(String)`, `AsOf::Slot(String)`, `ValidAt::Slot(String)`, `Expr::Slot(String)` AST variants in `types.rs`
+- ✅ `BindValue` enum in `src/query/datalog/prepared.rs`: `Entity(Uuid)`, `Val(Value)`, `TxCount(u64)`, `Timestamp(i64)`, `AnyValidTime`
+- ✅ `PreparedQuery` struct — stores parsed AST + optimised plan + `Arc` handles to fact store and registries; re-executes against live fact store state
+- ✅ `prepare_query()` (pub(crate)) — parse, validate, compute query plan once
+- ✅ `PreparedQuery::execute(bindings)` — deep-clone + AST walk substitution; type-checked per bind position; executor, optimizer, matcher unchanged
+- ✅ Panic guards (no slot-name interpolation) in `executor.rs` (4 `ValidAt::Slot` sites, 1 `Expr::Slot` site) and `storage.rs` (`AsOf::Slot`)
+- ✅ `Minigraf::prepare(query_str) -> Result<PreparedQuery>` on public API (`db.rs`)
+- ✅ `BindValue` and `PreparedQuery` re-exported from `lib.rs`
+- ✅ `tests/prepared_statements_test.rs` — 17 integration tests
+- ✅ 780 tests passing (unit + integration + doc)
 
 ## Phase 7.7b Completion Status: ✅ COMPLETE
 
@@ -490,6 +505,26 @@
 - ✅ `unknown_predicate_runtime_error` — invoking an unregistered predicate name at query time returns `Err`
 - ✅ `thread_safety` — concurrent UDF registration and query execution from multiple threads
 
+### Prepared Statements (`tests/prepared_statements_test.rs`) - ✅ 17 tests (Phase 7.8)
+
+- ✅ `prepare_and_execute_entity_slot` — entity `$slot` substituted at execute time; correct results returned
+- ✅ `prepare_and_execute_value_slot` — value `$slot` substituted at execute time; correct filtering
+- ✅ `prepare_and_execute_as_of_tx_count` — `:as-of $tx` with `TxCount` variant; time-travel query returns correct snapshot
+- ✅ `prepare_and_execute_as_of_timestamp` — `:as-of $tx` with `Timestamp` variant (millis)
+- ✅ `prepare_and_execute_valid_at_timestamp` — `:valid-at $date` with `Timestamp` variant
+- ✅ `prepare_and_execute_valid_at_any` — `:valid-at $va` with `AnyValidTime` variant; all time-windows returned
+- ✅ `prepare_and_execute_combined_temporal_and_entity` — `:as-of $tx` + entity `$slot` simultaneously (primary agentic loop pattern)
+- ✅ `plan_is_reused_across_executions` — same `PreparedQuery` executed twice with different bindings; both correct
+- ✅ `error_missing_bind_value` — missing `$slot` at execute time returns `Err`
+- ✅ `error_wrong_type_for_as_of` — `Val` supplied for `:as-of` slot returns type-mismatch `Err`
+- ✅ `error_wrong_type_for_valid_at` — `TxCount` supplied for `:valid-at` slot returns type-mismatch `Err`
+- ✅ `error_wrong_type_for_entity` — `Val` supplied for entity slot returns type-mismatch `Err`
+- ✅ `error_attribute_slot_rejected` — `$slot` in attribute position rejected at prepare time
+- ✅ `prepare_with_no_slots` — static query prepared and executed correctly (no bindings needed)
+- ✅ `prepare_transact_rejected` — preparing a `(transact ...)` command returns `Err`
+- ✅ `execute_with_extra_bindings` — extra `BindValue`s beyond declared slots are silently ignored
+- ✅ `multiple_slots_same_execute` — multiple distinct `$slot` names resolved in a single `execute()` call
+
 ---
 
 ## Coverage Metrics
@@ -641,6 +676,7 @@ cargo test --test aggregation_test     # aggregation (24)
 cargo test --test predicate_expr_test  # arithmetic & predicate expr (28)
 cargo test --test window_functions_test # window functions (12)
 cargo test --test udf_test             # user-defined functions (9)
+cargo test --test prepared_statements_test # prepared statements (17)
 
 # Run with output
 cargo test -- --nocapture
@@ -650,9 +686,9 @@ cargo test -- --nocapture
 
 ## Conclusion
 
-**Phase 7.7b Status**: ✅ **COMPLETE**
+**Phase 7.8 Status**: ✅ **COMPLETE**
 
-**Test Quality**: ✅ **Excellent** — High confidence in all Phase 3-7.7b features
+**Test Quality**: ✅ **Excellent** — High confidence in all Phase 3-7.8 features
 
 **Strengths**:
 - WAL crash safety verified with real `mem::forget` simulation
@@ -672,14 +708,15 @@ cargo test -- --nocapture
 - Disjunction (`or` / `or-join`) verified: flat queries, rule bodies, nested or/not/expr, or-join with private variables, dependency graph (Phase 7.3)
 - Window functions verified: cumulative aggregates, rank/row-number, partition-by, desc ordering, mixed aggregate+window (Phase 7.7a)
 - User-defined functions verified: custom aggregates, custom predicates, UDF as window function, name collision guards, runtime error handling, thread safety (Phase 7.7b)
-- 727 tests covering all Phase 3-7.7b features
+- Prepared statements verified: entity/value/as-of/valid-at slot positions, AnyValidTime, combined temporal+entity (agentic loop pattern), plan reuse, all error paths (Phase 7.8)
+- 780 tests covering all Phase 3-7.8 features
 
-**Confidence Level**: ✅ **Production-ready for Phase 7.7b scope**
+**Confidence Level**: ✅ **Production-ready for Phase 7.8 scope**
 
-**Readiness for Phase 7.8**: ✅ **Ready to proceed**
+**Readiness for Phase 7.9**: ✅ **Ready to proceed**
 
-The UDF-capable, window-function-capable, disjunction + aggregation + arithmetic/predicate expression capable, stratified-negation-capable, on-disk B+tree indexed, packed, cached bi-temporal Datalog engine is **solid, well-tested, and benchmarked**.
+The prepared-statement-capable, UDF-capable, window-function-capable, disjunction + aggregation + arithmetic/predicate expression capable, stratified-negation-capable, on-disk B+tree indexed, packed, cached bi-temporal Datalog engine is **solid, well-tested, and benchmarked**.
 
 ---
 
-**Next Steps**: Begin Phase 7.8 (Query Planner Improvements / Prepared Statements)
+**Next Steps**: Begin Phase 7.9 (Publish Prep — crates.io API cleanup, Rustdoc sweep, `unwrap` audit)

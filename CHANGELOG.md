@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.18.0 — Phase 7.8: Prepared Statements (2026-04-04)
+
+### Added
+- `Minigraf::prepare(query_str) -> Result<PreparedQuery>` — parse and plan a query once,
+  returning a `PreparedQuery` that can be executed many times with different bind values
+- `PreparedQuery::execute(bindings: &[(&str, BindValue)]) -> Result<QueryResult>` — substitute
+  named `$slot` tokens and run against the current fact store state; plan is reused on each call
+- `BindValue` enum — `Entity(Uuid)`, `Val(Value)`, `TxCount(u64)`, `Timestamp(i64)`,
+  `AnyValidTime`; each variant is permitted only in the appropriate bind-slot position
+- `$identifier` bind slot tokens in parser — accepted in entity position, value position,
+  `:as-of`, and `:valid-at`; attribute position is intentionally rejected at prepare time
+- `EdnValue::BindSlot(String)`, `AsOf::Slot(String)`, `ValidAt::Slot(String)`,
+  `Expr::Slot(String)` AST variants (parse-only; panic at runtime if unsubstituted)
+- `BindValue` and `PreparedQuery` re-exported from `lib.rs` (public API surface)
+- `tests/prepared_statements_test.rs` — 17 integration tests covering all slot positions,
+  combined temporal + entity parameterisation, plan reuse, and all error paths
+
+### Internal
+- `src/query/datalog/prepared.rs` — new module: `prepare_query()`, substitution logic,
+  19 unit tests; manual `Debug` impl for `PreparedQuery` (avoids `FactStorage: Debug` bound)
+- Panic guards (no slot-name interpolation) in `executor.rs` (4 sites) and `storage.rs` (1 site)
+  for unsubstituted slot variants; CodeQL-safe (no user-controlled string in panic message)
+
+### Unchanged
+- `db.execute(str)` string API — no breaking change
+- Executor, optimizer, matcher — no changes required
+
 ## v0.17.0 — Phase 7.7b: User-Defined Functions (2026-04-02)
 
 ### Added
