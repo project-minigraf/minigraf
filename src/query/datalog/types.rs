@@ -27,6 +27,10 @@ pub enum EdnValue {
     Map(Vec<(EdnValue, EdnValue)>),
     /// Null/nil
     Nil,
+    /// A named bind slot: `$identifier`.
+    /// Only valid in a `PreparedQuery` template AST — must be replaced by
+    /// `substitute()` before the query reaches the executor.
+    BindSlot(String),
 }
 
 impl EdnValue {
@@ -219,6 +223,8 @@ pub enum Expr {
     Var(String),
     /// Literal value: `100`, `"foo"`, `true`
     Lit(Value),
+    /// Named bind slot: `$name` — substituted to `Expr::Lit` before execution.
+    Slot(String),
     BinOp(BinOp, Box<Expr>, Box<Expr>),
     UnaryOp(UnaryOp, Box<Expr>),
 }
@@ -657,6 +663,8 @@ pub enum AsOf {
     Counter(u64),
     /// Select facts whose `tx_id` (wall-clock millis since epoch) is ≤ t.
     Timestamp(i64),
+    /// Named bind slot: `$name` — resolved to `Counter` or `Timestamp` at execute time.
+    Slot(String),
 }
 
 /// A point-in-time selector for valid-time travel queries.
@@ -669,6 +677,8 @@ pub enum ValidAt {
     Timestamp(i64),
     /// Return all facts regardless of valid time (no valid-time filter).
     AnyValidTime,
+    /// Named bind slot: `$name` — resolved to `Timestamp` or `AnyValidTime` at execute time.
+    Slot(String),
 }
 
 /// A Datalog command (top-level form)
@@ -1373,5 +1383,32 @@ mod tests {
         assert_eq!(PseudoAttr::TxCount.as_keyword(), ":db/tx-count");
         assert_eq!(PseudoAttr::TxId.as_keyword(), ":db/tx-id");
         assert_eq!(PseudoAttr::ValidAt.as_keyword(), ":db/valid-at");
+    }
+
+    #[test]
+    fn test_bind_slot_edn_variant_exists() {
+        let v = EdnValue::BindSlot("entity".to_string());
+        assert!(matches!(v, EdnValue::BindSlot(_)));
+        // BindSlot is not a logic variable — it is not a ?-prefixed symbol
+        assert!(!v.is_variable());
+        assert!(v.as_variable().is_none());
+    }
+
+    #[test]
+    fn test_as_of_slot_variant_exists() {
+        let a = AsOf::Slot("tx".to_string());
+        assert!(matches!(a, AsOf::Slot(_)));
+    }
+
+    #[test]
+    fn test_valid_at_slot_variant_exists() {
+        let v = ValidAt::Slot("date".to_string());
+        assert!(matches!(v, ValidAt::Slot(_)));
+    }
+
+    #[test]
+    fn test_expr_slot_variant_exists() {
+        let e = Expr::Slot("threshold".to_string());
+        assert!(matches!(e, Expr::Slot(_)));
     }
 }
