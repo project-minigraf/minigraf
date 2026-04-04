@@ -52,6 +52,14 @@ pub struct PreparedQuery {
     functions: Arc<RwLock<FunctionRegistry>>,
 }
 
+impl std::fmt::Debug for PreparedQuery {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PreparedQuery")
+            .field("slot_names", &self.slot_names)
+            .finish_non_exhaustive()
+    }
+}
+
 impl PreparedQuery {
     /// Substitute bind values and execute against the current database state.
     ///
