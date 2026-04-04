@@ -319,6 +319,9 @@ impl FactStorage {
             .filter(|f| match as_of {
                 AsOf::Counter(n) => f.tx_count <= *n,
                 AsOf::Timestamp(t) => f.tx_id <= *t as u64,
+                AsOf::Slot(_) => {
+                    panic!("internal: unsubstituted :as-of bind slot reached get_facts_as_of");
+                }
             })
             .collect();
         Ok(filtered)

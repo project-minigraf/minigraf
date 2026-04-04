@@ -978,7 +978,14 @@ db.register_predicate(
 
 ---
 
-### 7.8 Prepared Statements
+### 7.8 Prepared Statements ✅ COMPLETE
+
+**Status**: ✅ Complete (v0.18.0, 2026-04-04)
+
+**Summary**: `Minigraf::prepare(query_str)` returns a `PreparedQuery` that can be executed many
+times with different `BindValue` bindings. Named `$slot` tokens are substituted at execute time
+via deep-clone + AST walk; the executor, optimizer, and matcher are unchanged.
+780 tests.
 
 **Goal**: Parse and plan a query once; execute it repeatedly with different bind values — including temporal filters — without re-parsing or re-planning on each call.
 
@@ -1464,6 +1471,16 @@ Push `Expr` predicate clauses (e.g. `[(> ?age 30)]`) down to filter bindings as 
 - ✅ 331 tests passing; `tests/btree_v6_test.rs` covers B+tree correctness and concurrency
 - crates.io publish deferred to Phase 7.9 (API cleanup + publish prep)
 
+### v0.18.0 - ✅ Phase 7.8 (Prepared Statements)
+- ✅ `$identifier` bind slot tokens: `EdnValue::BindSlot`, `AsOf::Slot`, `ValidAt::Slot`, `Expr::Slot` AST variants
+- ✅ `BindValue` enum: `Entity(Uuid)`, `Val(Value)`, `TxCount(u64)`, `Timestamp(i64)`, `AnyValidTime`
+- ✅ `PreparedQuery` struct — stores parsed AST + optimised plan; re-executes against live fact store
+- ✅ `Minigraf::prepare(query_str) -> Result<PreparedQuery>` and `PreparedQuery::execute(bindings)` public API
+- ✅ Deep-clone + AST walk substitution (executor, optimizer, matcher unchanged)
+- ✅ Panic guards in `executor.rs` and `storage.rs` for unsubstituted slots
+- ✅ `BindValue` and `PreparedQuery` re-exported from `lib.rs`
+- ✅ `tests/prepared_statements_test.rs` — 17 integration tests; 780 tests total
+
 ### v0.17.0 - ✅ Phase 7.7b (UDFs)
 - ✅ User-defined functions (UDFs) via `register_fn`
 - ✅ Built-in aggregates (`count-distinct`, `avg`, `sum`, `min`, `max`) and window functions (`row_number`, `rank`, `dense_rank`)
@@ -1589,7 +1606,8 @@ When evaluating features, ask:
 - ✅ Phase 7.6: Complete (April 2026) - Temporal metadata bindings (`:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`, `:db/valid-at`), 647 tests
 - ✅ Phase 7.7a: Complete (April 2026) - Window functions (`sum/count/min/max/avg/rank/row-number :over`), `FunctionRegistry`, 705 tests
 - ✅ Phase 7.7b: Complete (April 2026) - User-Defined Functions (`register_aggregate`/`register_predicate`), 727 tests
-- 🎯 Phase 7.8: Prepared statements; ≥90% branch coverage - **NEXT**
+- ✅ Phase 7.8: Complete (April 2026) - Prepared statements (`$slot` bind tokens, temporal bind slots, plan reuse), 780 tests
+- 🎯 Phase 7.9: Publish prep (crates.io API cleanup, Rustdoc sweep, `unwrap` audit) - **NEXT**
 - 🎯 Phase 8: 3-4 months (Cross-platform — WASM, mobile, language bindings)
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)
 - 🎯 **v1.0.0: 9-12 months**
@@ -1600,20 +1618,21 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: Phase 7.7b Complete — Phase 7.8 Next (Prepared Statements)
+**Right Now**: Phase 7.8 Complete — Phase 7.9 Next (Publish Prep)
 
-**Phase 7.7b Achievements**:
-1. ✅ `WindowFunc::Udf(String)` and `UnaryOp::Udf(String)` AST variants in `types.rs`
-2. ✅ `UdfOps`, `AggImpl`, `PredicateDesc` types in `functions.rs`; `UdfStepFn`/`UdfFinaliseFn` type aliases
-3. ✅ Parser emits `Udf` variants for unknown function names (runtime validation)
-4. ✅ `apply_expr_clauses` returns `Result<Vec<Binding>>` and pre-validates UDF predicate names
-5. ✅ `eval_expr` accepts `Option<&FunctionRegistry>` for UDF predicate resolution
-6. ✅ `Minigraf::register_aggregate` and `Minigraf::register_predicate` public API methods
-7. ✅ `tests/udf_test.rs` — 9 integration tests (custom aggregate, predicate, window UDF, name collisions, edge cases)
-8. ✅ 727 tests passing; version bumped to v0.17.0
+**Phase 7.8 Achievements**:
+1. ✅ `$identifier` bind slot tokens in entity, value, `:as-of`, and `:valid-at` positions
+2. ✅ `EdnValue::BindSlot`, `AsOf::Slot`, `ValidAt::Slot`, `Expr::Slot` AST variants
+3. ✅ `BindValue` enum: `Entity(Uuid)`, `Val(Value)`, `TxCount(u64)`, `Timestamp(i64)`, `AnyValidTime`
+4. ✅ `PreparedQuery` struct — stores AST + optimised plan; re-executes against current fact store state
+5. ✅ `Minigraf::prepare(query_str) -> Result<PreparedQuery>` public API method
+6. ✅ `PreparedQuery::execute(bindings) -> Result<QueryResult>` — deep-clone + AST walk substitution
+7. ✅ Panic guards in `executor.rs` / `storage.rs` for unsubstituted slots reaching runtime
+8. ✅ `BindValue` and `PreparedQuery` re-exported from `lib.rs`
+9. ✅ `tests/prepared_statements_test.rs` — 17 integration tests; 780 tests passing; version bumped to v0.18.0
 
-**Immediate Next Steps (Phase 7.8)**:
-1. Prepared Statements — parse + plan once, execute many times, temporal bind slots
+**Immediate Next Steps (Phase 7.9)**:
+1. Publish Prep — narrow `lib.rs` exports, Rustdoc sweep, `unwrap` audit, `cargo doc --no-deps` clean
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)
@@ -1629,4 +1648,4 @@ See [GitHub Issues](https://github.com/adityamukho/minigraf/issues) for specific
 
 ---
 
-Last Updated: Phase 7.5 Complete - Cross-feature tests, error-path coverage, ~86-89% branch coverage, 617 tests passing, v0.14.0 (March 2026)
+Last Updated: Phase 7.8 Complete - Prepared statements (`$slot` bind tokens, temporal bind slots, plan reuse), 780 tests passing, v0.18.0 (April 2026)

@@ -123,12 +123,13 @@ cargo run < demos/demo_negation.txt
    - `rules.rs`: `RuleRegistry` — thread-safe rule management
    - `types.rs`: `EdnValue`, `Pattern`, `DatalogQuery`, `AsOf`, `ValidAt`, `WhereClause` (incl. `Not`, `NotJoin`); `PseudoAttr` enum, `AttributeSpec` wrapper
    - `optimizer.rs`: Selectivity-based join reordering; disabled under `wasm` feature
+   - `prepared.rs`: `BindValue`, `PreparedQuery` — parse-once/execute-many with named `$slot` bind slots; `prepare_query`, `substitute`
 
 4. **`src/temporal.rs`** — UTC-only timestamp parsing (avoids chrono CVE GHSA-wcg3-cvx6-7396)
 
 5. **`src/repl.rs`** — Interactive REPL; TTY-aware (suppresses prompts/banner for piped input)
 
-6. **`src/db.rs`** — Public API: `Minigraf::open/execute/begin_write/checkpoint/save`, `WriteTransaction`, `OpenOptions::page_cache_size`
+6. **`src/db.rs`** — Public API: `Minigraf::open/execute/prepare/begin_write/checkpoint/save`, `WriteTransaction`, `OpenOptions::page_cache_size`
 
 7. **`src/wal.rs`** — Fact-level sidecar WAL, CRC32-protected entries, crash recovery
 
@@ -166,7 +167,7 @@ Auto-migrates v1/v2/v3/v4/v5/v6 → v7 on open/checkpoint.
 
 ## Test Coverage
 
-**505 tests passing** (unit + integration + doc).
+**780 tests passing** (unit + integration + doc).
 See `TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
