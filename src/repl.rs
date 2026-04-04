@@ -100,8 +100,17 @@ impl Repl {
                                     eprintln!("Execution error: {}", e);
                                 }
                             },
-                            Err(_e) => {
-                                eprintln!("Parse error");
+                            Err(e) => {
+                                // CodeQL false positive: parser errors contain structural info only (token type, position).
+                                // Extract error kind by taking up to first ':' or first 80 chars to avoid UserInput in logs.
+                                let error_kind = e
+                                    .split(':')
+                                    .next()
+                                    .unwrap_or(&e)
+                                    .chars()
+                                    .take(80)
+                                    .collect::<String>();
+                                eprintln!("Parse error: {}", error_kind);
                             }
                         }
 

@@ -336,3 +336,46 @@ fn test_or_with_rule_invocation_positive_dep() {
         .unwrap();
     assert_eq!(result_count(&r), 1, "e1 matches via base -> derived");
 }
+
+// ── Regression tests ───────────────────────────────────────────────────────────────
+
+/// (17) Regression test for issue #82: or/or-join deduplication missed identical bindings.
+///
+/// The bug: HashMap::iter() returns entries in non-deterministic order. Two bindings
+/// that are logically identical can produce different Vec orderings, causing
+/// BTreeSet::insert to treat them as distinct and failing to deduplicate.
+/// The fix: sort the key before inserting into BTreeSet (apply_or_clauses lines ~1205, ~1247).
+#[test]
+fn test_or_does_not_return_duplicate_bindings() {
+    let db = db();
+    db.execute(r#"(transact [[:e1 :tag-a true] [:e1 :tag-b true]])"#)
+        .unwrap();
+    let r = db
+        .execute(r#"(query [:find ?e :where (or [?e :tag-a true] [?e :tag-b true])])"#)
+        .unwrap();
+    assert_eq!(
+        result_count(&r),
+        1,
+        "entity matching both branches must appear exactly once"
+    );
+}
+
+/// (18) or-join also deduplicates correctly.
+#[test]
+fn test_or_join_does_not_return_duplicate_bindings() {
+    let db = db();
+    db.execute(r#"(transact [[:e1 :tag-a true] [:e1 :tag-b true]])"#)
+        .unwrap();
+    let r = db
+        .execute(
+            r#"(query [:find ?e
+                    :where [?e :tag-a ?_a]
+                           (or-join [?e] [?e :tag-a true] [?e :tag-b true])])"#,
+        )
+        .unwrap();
+    assert_eq!(
+        result_count(&r),
+        1,
+        "or-join entity matching both branches must appear exactly once"
+    );
+}
