@@ -35,3 +35,6 @@ pub use query::{
 
 // Bi-temporal query types (Phase 4+)
 pub use query::datalog::types::{AsOf, ValidAt};
+
+// Prepared statements (Phase 7.8)
+pub use query::datalog::prepared::{BindValue, PreparedQuery};
