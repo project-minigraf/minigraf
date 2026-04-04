@@ -93,9 +93,7 @@ fn prepare_and_execute_as_of_counter() {
         .unwrap();
 
     // At tx 1 only "Alice" exists
-    let r = prepared
-        .execute(&[("tx", BindValue::TxCount(1))])
-        .unwrap();
+    let r = prepared.execute(&[("tx", BindValue::TxCount(1))]).unwrap();
     match r {
         QueryResult::QueryResults { results, .. } => {
             assert_eq!(results.len(), 1);
@@ -236,7 +234,10 @@ fn prepare_and_execute_combined() {
             ("tx", BindValue::TxCount(100)),
             ("date", BindValue::AnyValidTime),
             ("entity", BindValue::Entity(alice)),
-            ("expected-status", BindValue::Val(Value::Keyword(":active".to_string()))),
+            (
+                "expected-status",
+                BindValue::Val(Value::Keyword(":active".to_string())),
+            ),
         ])
         .unwrap();
     match r {
@@ -265,11 +266,7 @@ fn plan_reused_across_executions() {
         .prepare("(query [:find ?name :where [$entity :person/name ?name]])")
         .unwrap();
 
-    for (uuid, expected) in [
-        (alice, "Alice"),
-        (bob, "Bob"),
-        (carol, "Carol"),
-    ] {
+    for (uuid, expected) in [(alice, "Alice"), (bob, "Bob"), (carol, "Carol")] {
         let r = prepared
             .execute(&[("entity", BindValue::Entity(uuid))])
             .unwrap();
@@ -291,7 +288,10 @@ fn prepare_rejects_attribute_slot() {
     let result = db.prepare("(query [:find ?v :where [?e $attr ?v]])");
     assert!(result.is_err(), "expected error for attribute slot");
     assert!(
-        result.unwrap_err().to_string().contains("attribute position"),
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("attribute position"),
         "error should mention attribute position"
     );
 }
@@ -361,7 +361,10 @@ fn execute_type_mismatch_entity() {
         .prepare("(query [:find ?name :where [$entity :person/name ?name]])")
         .unwrap();
 
-    let result = prepared.execute(&[("entity", BindValue::Val(Value::String("not-a-uuid".to_string())))]);
+    let result = prepared.execute(&[(
+        "entity",
+        BindValue::Val(Value::String("not-a-uuid".to_string())),
+    )]);
     assert!(result.is_err(), "expected type mismatch error");
     assert!(
         result.unwrap_err().to_string().contains("entity position"),

@@ -555,25 +555,18 @@ impl Minigraf {
     ) -> Result<crate::query::datalog::prepared::PreparedQuery> {
         use crate::query::datalog::prepared::prepare_query;
 
-        let cmd =
-            parse_datalog_command(query_str).map_err(|e| anyhow::anyhow!("{}", e))?;
+        let cmd = parse_datalog_command(query_str).map_err(|e| anyhow::anyhow!("{}", e))?;
 
         let query = match cmd {
             DatalogCommand::Query(q) => q,
             DatalogCommand::Transact(_) => {
-                anyhow::bail!(
-                    "only (query ...) commands can be prepared; got transact"
-                )
+                anyhow::bail!("only (query ...) commands can be prepared; got transact")
             }
             DatalogCommand::Retract(_) => {
-                anyhow::bail!(
-                    "only (query ...) commands can be prepared; got retract"
-                )
+                anyhow::bail!("only (query ...) commands can be prepared; got retract")
             }
             DatalogCommand::Rule(_) => {
-                anyhow::bail!(
-                    "only (query ...) commands can be prepared; got rule"
-                )
+                anyhow::bail!("only (query ...) commands can be prepared; got rule")
             }
         };
 

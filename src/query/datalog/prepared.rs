@@ -1,5 +1,5 @@
-use crate::graph::types::Value;
 use crate::graph::FactStorage;
+use crate::graph::types::Value;
 use crate::query::datalog::executor::{DatalogExecutor, QueryResult};
 use crate::query::datalog::functions::FunctionRegistry;
 use crate::query::datalog::rules::RuleRegistry;
@@ -128,9 +128,7 @@ fn validate_clauses_no_attr_slots(clauses: &[WhereClause]) -> Result<()> {
                 }
             }
             WhereClause::Not(inner) => validate_clauses_no_attr_slots(inner)?,
-            WhereClause::NotJoin { clauses: inner, .. } => {
-                validate_clauses_no_attr_slots(inner)?
-            }
+            WhereClause::NotJoin { clauses: inner, .. } => validate_clauses_no_attr_slots(inner)?,
             WhereClause::Or(branches) => {
                 for b in branches {
                     validate_clauses_no_attr_slots(b)?;
@@ -175,9 +173,7 @@ fn collect_slots_from_clauses(clauses: &[WhereClause], names: &mut HashSet<Strin
                 }
             }
             WhereClause::Not(inner) => collect_slots_from_clauses(inner, names),
-            WhereClause::NotJoin { clauses: inner, .. } => {
-                collect_slots_from_clauses(inner, names)
-            }
+            WhereClause::NotJoin { clauses: inner, .. } => collect_slots_from_clauses(inner, names),
             WhereClause::Or(branches) => {
                 for b in branches {
                     collect_slots_from_clauses(b, names);
@@ -481,7 +477,12 @@ mod tests {
         let q = make_query_attr_slot();
         let result = validate_no_attribute_slots(&q);
         assert!(result.is_err(), "expected error for attribute slot");
-        assert!(result.unwrap_err().to_string().contains("attribute position"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("attribute position")
+        );
     }
 
     #[test]
@@ -600,7 +601,10 @@ mod tests {
         let bv = BindValue::Timestamp(1_685_577_600_000);
         let bindings: HashMap<&str, &BindValue> = [("tx", &bv)].into();
         let filled = substitute(&q, &bindings).unwrap();
-        assert!(matches!(filled.as_of, Some(AsOf::Timestamp(1_685_577_600_000))));
+        assert!(matches!(
+            filled.as_of,
+            Some(AsOf::Timestamp(1_685_577_600_000))
+        ));
     }
 
     #[test]
@@ -609,7 +613,10 @@ mod tests {
         let bv = BindValue::Timestamp(1_685_577_600_000);
         let bindings: HashMap<&str, &BindValue> = [("date", &bv)].into();
         let filled = substitute(&q, &bindings).unwrap();
-        assert!(matches!(filled.valid_at, Some(ValidAt::Timestamp(1_685_577_600_000))));
+        assert!(matches!(
+            filled.valid_at,
+            Some(ValidAt::Timestamp(1_685_577_600_000))
+        ));
     }
 
     #[test]
@@ -628,7 +635,10 @@ mod tests {
         let bindings: HashMap<&str, &BindValue> = [("threshold", &bv)].into();
         let filled = substitute(&q, &bindings).unwrap();
         match &filled.where_clauses[1] {
-            WhereClause::Expr { expr: Expr::BinOp(_, _, rhs), .. } => {
+            WhereClause::Expr {
+                expr: Expr::BinOp(_, _, rhs),
+                ..
+            } => {
                 assert!(matches!(rhs.as_ref(), Expr::Lit(Value::Integer(50))));
             }
             _ => panic!("expected BinOp Expr clause"),
@@ -662,6 +672,11 @@ mod tests {
         let bindings: HashMap<&str, &BindValue> = [("date", &bv)].into();
         let result = substitute(&q, &bindings);
         assert!(result.is_err(), "expected type mismatch error");
-        assert!(result.unwrap_err().to_string().contains(":valid-at position"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains(":valid-at position")
+        );
     }
 }

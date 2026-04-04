@@ -218,7 +218,10 @@ impl DatalogExecutor {
                 .collect(),
             Some(ValidAt::AnyValidTime) => asserted,
             Some(ValidAt::Slot(name)) => {
-                panic!("internal: unsubstituted :valid-at bind slot '{}' reached the executor", name);
+                panic!(
+                    "internal: unsubstituted :valid-at bind slot '{}' reached the executor",
+                    name
+                );
             }
             None => asserted
                 .into_iter()
@@ -243,7 +246,10 @@ impl DatalogExecutor {
             Some(ValidAt::Timestamp(t)) => Value::Integer(*t),
             Some(ValidAt::AnyValidTime) => Value::Null,
             Some(ValidAt::Slot(name)) => {
-                panic!("internal: unsubstituted :valid-at bind slot '{}' reached the executor", name);
+                panic!(
+                    "internal: unsubstituted :valid-at bind slot '{}' reached the executor",
+                    name
+                );
             }
             None => Value::Integer(now),
         };
@@ -367,7 +373,10 @@ impl DatalogExecutor {
             Some(ValidAt::Timestamp(t)) => Value::Integer(*t),
             Some(ValidAt::AnyValidTime) => Value::Null,
             Some(ValidAt::Slot(name)) => {
-                panic!("internal: unsubstituted :valid-at bind slot '{}' reached the executor", name);
+                panic!(
+                    "internal: unsubstituted :valid-at bind slot '{}' reached the executor",
+                    name
+                );
             }
             None => Value::Integer(now),
         };
@@ -1084,7 +1093,10 @@ pub(crate) fn evaluate_branch(
         Some(ValidAt::Timestamp(t)) => Value::Integer(*t),
         Some(ValidAt::AnyValidTime) => Value::Null,
         Some(ValidAt::Slot(name)) => {
-            panic!("internal: unsubstituted :valid-at bind slot '{}' reached the executor", name);
+            panic!(
+                "internal: unsubstituted :valid-at bind slot '{}' reached the executor",
+                name
+            );
         }
         None => Value::Integer(tx_id_now() as i64),
     };
@@ -1433,7 +1445,10 @@ pub(crate) fn eval_expr(
             eval_binop(op, l, r)
         }
         Expr::Slot(name) => {
-            panic!("internal: unsubstituted bind slot '{}' reached eval_expr; call PreparedQuery::execute() instead of passing the template directly", name);
+            panic!(
+                "internal: unsubstituted bind slot '{}' reached eval_expr; call PreparedQuery::execute() instead of passing the template directly",
+                name
+            );
         }
     }
 }
