@@ -17,6 +17,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone)]
 pub enum BindValue {
     /// Substituted into an entity position: `[$entity :attr ?v]`.
+    /// Not accepted in rule invocation argument positions — use `Val(Value::Ref(...))` there.
     Entity(Uuid),
     /// Substituted into a value position `[?e :attr $val]` or an expression literal.
     Val(Value),

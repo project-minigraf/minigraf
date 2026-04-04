@@ -173,8 +173,9 @@ fn prepare_and_execute_valid_at_any() {
     db.execute(r#"(transact [[:alice :person/name "Alice"]])"#)
         .unwrap();
 
+    // The slot $va is resolved to AnyValidTime at execute() time, bypassing valid-time filtering.
     let prepared = db
-        .prepare("(query [:find ?name :valid-at $va :any-valid-time :where [?e :person/name ?name]])")
+        .prepare("(query [:find ?name :valid-at $va :where [?e :person/name ?name]])")
         .unwrap();
 
     let r = prepared
@@ -182,7 +183,8 @@ fn prepare_and_execute_valid_at_any() {
         .unwrap();
     match r {
         QueryResult::QueryResults { results, .. } => {
-            assert!(!results.is_empty());
+            assert_eq!(results.len(), 1);
+            assert_eq!(results[0][0], Value::String("Alice".to_string()));
         }
         _ => panic!("expected QueryResults"),
     }
