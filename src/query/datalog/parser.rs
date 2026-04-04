@@ -24,6 +24,7 @@ enum Token {
     Boolean(bool),
     TaggedLiteral(String), // e.g., "#uuid"
     Nil,
+    BindSlot(String), // $identifier — named bind slot for PreparedQuery
 }
 
 /// Tokenize EDN input
@@ -219,6 +220,28 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                     return Err("Unexpected character: !".to_string());
                 }
             }
+            '$' => {
+                chars.next(); // consume '$'
+                let mut name = String::new();
+                while let Some(&ch) = chars.peek() {
+                    if ch.is_alphanumeric() || ch == '_' || ch == '-' {
+                        if name.len() >= MAX_SYMBOL_LENGTH {
+                            return Err(format!(
+                                "Bind slot name exceeds maximum length of {} bytes",
+                                MAX_SYMBOL_LENGTH
+                            ));
+                        }
+                        name.push(ch);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                if name.is_empty() {
+                    return Err("Bind slot '$' must be followed by an identifier (e.g. $entity)".to_string());
+                }
+                tokens.push(Token::BindSlot(name));
+            }
             _ => {
                 return Err(format!("Unexpected character: {}", ch));
             }
@@ -383,6 +406,13 @@ impl Parser {
             Some(Token::Nil) => {
                 self.advance();
                 Ok(EdnValue::Nil)
+            }
+            Some(Token::BindSlot(_)) => {
+                if let Some(Token::BindSlot(name)) = self.advance() {
+                    Ok(EdnValue::BindSlot(name))
+                } else {
+                    unreachable!()
+                }
             }
             Some(token) => Err(format!("Unexpected token: {:?}", token)),
             None => Err("Unexpected end of input".to_string()),
@@ -676,6 +706,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                             let ts = parse_timestamp(s).map_err(|e| e.to_string())?;
                             AsOf::Timestamp(ts)
                         }
+                        EdnValue::BindSlot(name) => AsOf::Slot(name.clone()),
                         other => {
                             return Err(format!(
                                 ":as-of must be an integer (counter) or ISO 8601 string, got {:?}",
@@ -698,6 +729,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                             ValidAt::Timestamp(ts)
                         }
                         EdnValue::Keyword(k) if k == ":any-valid-time" => ValidAt::AnyValidTime,
+                        EdnValue::BindSlot(name) => ValidAt::Slot(name.clone()),
                         other => {
                             return Err(format!(
                                 ":valid-at must be an ISO 8601 string or :any-valid-time, got {:?}",
@@ -981,6 +1013,7 @@ fn parse_expr_arg(edn: &EdnValue) -> Result<Expr, String> {
         EdnValue::Nil => Ok(Expr::Lit(Value::Null)),
         EdnValue::Keyword(k) => Ok(Expr::Lit(Value::Keyword(k.clone()))),
         EdnValue::List(inner) => parse_expr(inner),
+        EdnValue::BindSlot(name) => Ok(Expr::Slot(name.clone())),
         other => Err(format!("unsupported expression argument: {:?}", other)),
     }
 }
@@ -2667,6 +2700,111 @@ mod tests {
             result.is_err(),
             "pseudo-attr in value position should error"
         );
+    }
+
+    #[test]
+    fn test_tokenize_bind_slot() {
+        let result = parse_edn("$entity");
+        assert!(matches!(result, Ok(EdnValue::BindSlot(ref s)) if s == "entity"), "expected BindSlot");
+    }
+
+    #[test]
+    fn test_tokenize_bind_slot_hyphenated() {
+        let result = parse_edn("$min-level");
+        assert!(matches!(result, Ok(EdnValue::BindSlot(ref s)) if s == "min-level"), "expected BindSlot(min-level)");
+    }
+
+    #[test]
+    fn test_parse_bind_slot_in_entity_position() {
+        let cmd = parse_datalog_command(
+            "(query [:find ?name :where [$entity :person/name ?name]])"
+        );
+        assert!(cmd.is_ok(), "parse failed");
+        match cmd.unwrap() {
+            DatalogCommand::Query(q) => {
+                match &q.where_clauses[0] {
+                    WhereClause::Pattern(p) => {
+                        assert!(matches!(&p.entity, EdnValue::BindSlot(s) if s == "entity"));
+                    }
+                    _ => panic!("expected Pattern"),
+                }
+            }
+            _ => panic!("expected Query"),
+        }
+    }
+
+    #[test]
+    fn test_parse_bind_slot_in_value_position() {
+        let cmd = parse_datalog_command(
+            "(query [:find ?e :where [?e :person/name $name]])"
+        );
+        assert!(cmd.is_ok(), "parse failed");
+        match cmd.unwrap() {
+            DatalogCommand::Query(q) => {
+                match &q.where_clauses[0] {
+                    WhereClause::Pattern(p) => {
+                        assert!(matches!(&p.value, EdnValue::BindSlot(s) if s == "name"));
+                    }
+                    _ => panic!("expected Pattern"),
+                }
+            }
+            _ => panic!("expected Query"),
+        }
+    }
+
+    #[test]
+    fn test_parse_as_of_slot() {
+        let cmd = parse_datalog_command(
+            "(query [:find ?v :as-of $tx :where [?e :score ?v]])"
+        );
+        assert!(cmd.is_ok(), "parse failed");
+        match cmd.unwrap() {
+            DatalogCommand::Query(q) => {
+                assert!(matches!(q.as_of, Some(AsOf::Slot(ref s)) if s == "tx"));
+            }
+            _ => panic!("expected Query"),
+        }
+    }
+
+    #[test]
+    fn test_parse_valid_at_slot() {
+        let cmd = parse_datalog_command(
+            "(query [:find ?v :valid-at $date :where [?e :score ?v]])"
+        );
+        assert!(cmd.is_ok(), "parse failed");
+        match cmd.unwrap() {
+            DatalogCommand::Query(q) => {
+                assert!(matches!(q.valid_at, Some(ValidAt::Slot(ref s)) if s == "date"));
+            }
+            _ => panic!("expected Query"),
+        }
+    }
+
+    #[test]
+    fn test_parse_expr_bind_slot_in_binop() {
+        let cmd = parse_datalog_command(
+            "(query [:any-valid-time :find ?v :where [?e :score ?v] [(>= ?v $threshold)]])"
+        );
+        assert!(cmd.is_ok(), "parse failed");
+        match cmd.unwrap() {
+            DatalogCommand::Query(q) => {
+                let expr_clause = q.where_clauses.iter().find(|c| matches!(c, WhereClause::Expr { .. }));
+                assert!(expr_clause.is_some(), "no Expr clause found");
+                match expr_clause.unwrap() {
+                    WhereClause::Expr { expr: Expr::BinOp(_, _, rhs), .. } => {
+                        assert!(matches!(rhs.as_ref(), Expr::Slot(s) if s == "threshold"));
+                    }
+                    _other => panic!("expected BinOp Expr clause"),
+                }
+            }
+            _ => panic!("expected Query"),
+        }
+    }
+
+    #[test]
+    fn test_parse_bind_slot_empty_name_is_error() {
+        let result = parse_edn("$");
+        assert!(result.is_err(), "bare '$' should be a parse error");
     }
 }
 
