@@ -217,11 +217,8 @@ impl DatalogExecutor {
                 .filter(|f| f.valid_from <= *t && *t < f.valid_to)
                 .collect(),
             Some(ValidAt::AnyValidTime) => asserted,
-            Some(ValidAt::Slot(name)) => {
-                panic!(
-                    "internal: unsubstituted :valid-at bind slot '{}' reached the executor",
-                    name
-                );
+            Some(ValidAt::Slot(_)) => {
+                panic!("internal: unsubstituted :valid-at bind slot reached the executor");
             }
             None => asserted
                 .into_iter()
@@ -245,11 +242,8 @@ impl DatalogExecutor {
         let valid_at_value = match &query.valid_at {
             Some(ValidAt::Timestamp(t)) => Value::Integer(*t),
             Some(ValidAt::AnyValidTime) => Value::Null,
-            Some(ValidAt::Slot(name)) => {
-                panic!(
-                    "internal: unsubstituted :valid-at bind slot '{}' reached the executor",
-                    name
-                );
+            Some(ValidAt::Slot(_)) => {
+                panic!("internal: unsubstituted :valid-at bind slot reached the executor");
             }
             None => Value::Integer(now),
         };
@@ -377,11 +371,8 @@ impl DatalogExecutor {
         let valid_at_value = match &query.valid_at {
             Some(ValidAt::Timestamp(t)) => Value::Integer(*t),
             Some(ValidAt::AnyValidTime) => Value::Null,
-            Some(ValidAt::Slot(name)) => {
-                panic!(
-                    "internal: unsubstituted :valid-at bind slot '{}' reached the executor",
-                    name
-                );
+            Some(ValidAt::Slot(_)) => {
+                panic!("internal: unsubstituted :valid-at bind slot reached the executor");
             }
             None => Value::Integer(now),
         };
@@ -1103,11 +1094,8 @@ pub(crate) fn evaluate_branch(
     let branch_valid_at_value = match &valid_at {
         Some(ValidAt::Timestamp(t)) => Value::Integer(*t),
         Some(ValidAt::AnyValidTime) => Value::Null,
-        Some(ValidAt::Slot(name)) => {
-            panic!(
-                "internal: unsubstituted :valid-at bind slot '{}' reached the executor",
-                name
-            );
+        Some(ValidAt::Slot(_)) => {
+            panic!("internal: unsubstituted :valid-at bind slot reached the executor");
         }
         None => Value::Integer(tx_id_now() as i64),
     };
@@ -1456,11 +1444,8 @@ pub(crate) fn eval_expr(
             let r = eval_expr(rhs, binding, registry)?;
             eval_binop(op, l, r)
         }
-        Expr::Slot(name) => {
-            panic!(
-                "internal: unsubstituted bind slot '{}' reached eval_expr; call PreparedQuery::execute() instead of passing the template directly",
-                name
-            );
+        Expr::Slot(_) => {
+            panic!("internal: unsubstituted bind slot reached eval_expr");
         }
     }
 }
