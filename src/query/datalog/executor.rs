@@ -323,8 +323,13 @@ impl DatalogExecutor {
                         }
                     }
                     for (join_vars, nj_clauses) in &not_join_clauses {
-                        if evaluate_not_join(join_vars, nj_clauses, binding, filtered_facts.clone())
-                        {
+                        if evaluate_not_join(
+                            join_vars,
+                            nj_clauses,
+                            binding,
+                            filtered_facts.clone(),
+                            &self.functions.read().unwrap(),
+                        ) {
                             return false;
                         }
                     }
@@ -388,6 +393,7 @@ impl DatalogExecutor {
         let evaluator = StratifiedEvaluator::new(
             filtered_storage,
             self.rules.clone(),
+            self.functions.clone(),
             1000, // max iterations
             DEFAULT_MAX_DERIVED_FACTS,
             DEFAULT_MAX_RESULTS,
@@ -573,8 +579,13 @@ impl DatalogExecutor {
                         }
                     }
                     for (join_vars, nj_clauses) in &not_join_clauses {
-                        if evaluate_not_join(join_vars, nj_clauses, binding, derived_facts.clone())
-                        {
+                        if evaluate_not_join(
+                            join_vars,
+                            nj_clauses,
+                            binding,
+                            derived_facts.clone(),
+                            &self.functions.read().unwrap(),
+                        ) {
                             return false;
                         }
                     }
@@ -1153,7 +1164,8 @@ pub(crate) fn evaluate_branch(
                     }
                 }
                 for (join_vars, nj_clauses) in &not_join_clauses {
-                    if evaluate_not_join(join_vars, nj_clauses, binding, storage.clone()) {
+                    if evaluate_not_join(join_vars, nj_clauses, binding, storage.clone(), registry)
+                    {
                         return false;
                     }
                 }
