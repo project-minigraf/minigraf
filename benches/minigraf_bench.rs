@@ -19,7 +19,7 @@
 
 mod helpers;
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use minigraf::OpenOptions;
 
 // ── Task 3: insert/ ───────────────────────────────────────────────────────────
