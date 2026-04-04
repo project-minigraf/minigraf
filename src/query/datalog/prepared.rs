@@ -213,12 +213,12 @@ fn substitute(
 ) -> Result<DatalogQuery> {
     let mut query = template.clone();
 
-    if let Some(AsOf::Slot(name)) = &query.as_of.clone() {
-        query.as_of = Some(resolve_as_of_slot(name, bindings)?);
+    if let Some(AsOf::Slot(name)) = query.as_of.take() {
+        query.as_of = Some(resolve_as_of_slot(&name, bindings)?);
     }
 
-    if let Some(ValidAt::Slot(name)) = &query.valid_at.clone() {
-        query.valid_at = Some(resolve_valid_at_slot(name, bindings)?);
+    if let Some(ValidAt::Slot(name)) = query.valid_at.take() {
+        query.valid_at = Some(resolve_valid_at_slot(&name, bindings)?);
     }
 
     for clause in &mut query.where_clauses {
@@ -276,11 +276,11 @@ fn substitute_pattern(
     p: &mut crate::query::datalog::types::Pattern,
     bindings: &HashMap<&str, &BindValue>,
 ) -> Result<()> {
-    if let EdnValue::BindSlot(name) = &p.entity.clone() {
-        p.entity = resolve_entity_slot(name, bindings)?;
+    if let EdnValue::BindSlot(name) = std::mem::replace(&mut p.entity, EdnValue::Nil) {
+        p.entity = resolve_entity_slot(&name, bindings)?;
     }
-    if let EdnValue::BindSlot(name) = &p.value.clone() {
-        p.value = resolve_value_slot(name, bindings)?;
+    if let EdnValue::BindSlot(name) = std::mem::replace(&mut p.value, EdnValue::Nil) {
+        p.value = resolve_value_slot(&name, bindings)?;
     }
     Ok(())
 }
@@ -302,7 +302,7 @@ fn substitute_expr(expr: &mut Expr, bindings: &HashMap<&str, &BindValue>) -> Res
 }
 
 fn substitute_edn_value(val: &mut EdnValue, bindings: &HashMap<&str, &BindValue>) -> Result<()> {
-    if let EdnValue::BindSlot(name) = val.clone() {
+    if let EdnValue::BindSlot(name) = std::mem::replace(val, EdnValue::Nil) {
         *val = resolve_value_slot(&name, bindings)?;
     }
     Ok(())
