@@ -217,6 +217,9 @@ impl DatalogExecutor {
                 .filter(|f| f.valid_from <= *t && *t < f.valid_to)
                 .collect(),
             Some(ValidAt::AnyValidTime) => asserted,
+            Some(ValidAt::Slot(name)) => {
+                panic!("internal: unsubstituted :valid-at bind slot '{}' reached the executor", name);
+            }
             None => asserted
                 .into_iter()
                 .filter(|f| f.valid_from <= now && now < f.valid_to)
@@ -239,6 +242,9 @@ impl DatalogExecutor {
         let valid_at_value = match &query.valid_at {
             Some(ValidAt::Timestamp(t)) => Value::Integer(*t),
             Some(ValidAt::AnyValidTime) => Value::Null,
+            Some(ValidAt::Slot(name)) => {
+                panic!("internal: unsubstituted :valid-at bind slot '{}' reached the executor", name);
+            }
             None => Value::Integer(now),
         };
 
@@ -360,6 +366,9 @@ impl DatalogExecutor {
         let valid_at_value = match &query.valid_at {
             Some(ValidAt::Timestamp(t)) => Value::Integer(*t),
             Some(ValidAt::AnyValidTime) => Value::Null,
+            Some(ValidAt::Slot(name)) => {
+                panic!("internal: unsubstituted :valid-at bind slot '{}' reached the executor", name);
+            }
             None => Value::Integer(now),
         };
 
@@ -1074,6 +1083,9 @@ pub(crate) fn evaluate_branch(
     let branch_valid_at_value = match &valid_at {
         Some(ValidAt::Timestamp(t)) => Value::Integer(*t),
         Some(ValidAt::AnyValidTime) => Value::Null,
+        Some(ValidAt::Slot(name)) => {
+            panic!("internal: unsubstituted :valid-at bind slot '{}' reached the executor", name);
+        }
         None => Value::Integer(tx_id_now() as i64),
     };
 
@@ -1419,6 +1431,9 @@ pub(crate) fn eval_expr(
             let l = eval_expr(lhs, binding, registry)?;
             let r = eval_expr(rhs, binding, registry)?;
             eval_binop(op, l, r)
+        }
+        Expr::Slot(name) => {
+            panic!("internal: unsubstituted bind slot '{}' reached eval_expr; call PreparedQuery::execute() instead of passing the template directly", name);
         }
     }
 }
