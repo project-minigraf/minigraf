@@ -1492,9 +1492,7 @@ fn expr_vars(expr: &Expr) -> Vec<String> {
             v
         }
         Expr::UnaryOp(_, arg) => expr_vars(arg),
-        Expr::Slot(name) => {
-            panic!("internal: unsubstituted bind slot '{}' in parser Expr match — this should not occur in a parsed PreparedQuery template before substitution", name);
-        }
+        Expr::Slot(_) => vec![],
     }
 }
 
