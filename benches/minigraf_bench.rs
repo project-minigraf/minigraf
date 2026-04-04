@@ -19,7 +19,7 @@
 
 mod helpers;
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use minigraf::OpenOptions;
 
 // ── Task 3: insert/ ───────────────────────────────────────────────────────────
@@ -1059,6 +1059,213 @@ fn bench_expr(c: &mut Criterion) {
     }
 }
 
+// ── Window functions ────────────────────────────────────────────────────────────
+
+fn bench_window(c: &mut Criterion) {
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+
+    // running_sum: sum over ordered rows — measures window accumulator path.
+    {
+        let mut group = c.benchmark_group("window/running_sum");
+        for &(label, n) in SCALES {
+            let db = helpers::populate_in_memory(n);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute(
+                        "(query [:find ?e (sum ?v :over (:order-by ?v)) :where [?e :val ?v]])",
+                    )
+                    .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+
+    // rank: rank function — measures sorting overhead for ranking.
+    {
+        let mut group = c.benchmark_group("window/rank");
+        for &(label, n) in SCALES {
+            let db = helpers::populate_in_memory(n);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute("(query [:find ?e (rank :over (:order-by ?v)) :where [?e :val ?v]])")
+                        .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+
+    // row_number: row number function — similar overhead to rank.
+    {
+        let mut group = c.benchmark_group("window/row_number");
+        for &(label, n) in SCALES {
+            let db = helpers::populate_in_memory(n);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute(
+                        "(query [:find ?e (row-number :over (:order-by ?v)) :where [?e :val ?v]])",
+                    )
+                    .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+}
+
+// ── Temporal metadata queries ─────────────────────────────────────────────────
+
+fn bench_temporal_metadata(c: &mut Criterion) {
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+
+    // tx_time: bind transaction timestamp — measures per-row projection overhead.
+    {
+        let mut group = c.benchmark_group("temporal_metadata/tx_time");
+        for &(label, n) in SCALES {
+            let db = helpers::populate_in_memory(n);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute("(query [:find ?e ?t :where [?e :val ?v :tx-time ?t]])")
+                        .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+
+    // valid_from: bind valid-from timestamp.
+    {
+        let mut group = c.benchmark_group("temporal_metadata/valid_from");
+        for &(label, n) in SCALES {
+            let db = helpers::populate_in_memory(n);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute("(query [:find ?e ?vf :where [?e :val ?v :valid-from ?vf]])")
+                        .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+
+    // valid_to: bind valid-to timestamp.
+    {
+        let mut group = c.benchmark_group("temporal_metadata/valid_to");
+        for &(label, n) in SCALES {
+            let db = helpers::populate_in_memory(n);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute("(query [:find ?e ?vt :where [?e :val ?v :valid-to ?vt]])")
+                        .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+}
+
+// ── UDF dispatch overhead ─────────────────────────────────────────────────────
+
+fn bench_udf(c: &mut Criterion) {
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+
+    // aggregate_sum_dispatch: UDF aggregate vs built-in sum — isolates closure dispatch.
+    {
+        let mut group = c.benchmark_group("udf/aggregate_sum_dispatch");
+        for &(label, n) in SCALES {
+            let db = helpers::populate_in_memory(n);
+            db.register_aggregate(
+                "udf_sum",
+                || 0i64,
+                |acc: &mut i64, v: &minigraf::Value| {
+                    if let minigraf::Value::Integer(i) = v {
+                        *acc += *i;
+                    }
+                },
+                |acc: &i64, _n: usize| minigraf::Value::Integer(*acc),
+            )
+            .unwrap();
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute("(query [:find (udf_sum ?v) :where [?e :val ?v]])")
+                        .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+
+    // predicate_filter_dispatch: UDF predicate vs built-in comparison.
+    {
+        let mut group = c.benchmark_group("udf/predicate_filter_dispatch");
+        for &(label, n) in SCALES {
+            let db = helpers::populate_in_memory(n);
+            db.register_predicate("udf_gt", |v: &minigraf::Value| -> bool {
+                if let minigraf::Value::Integer(i) = v {
+                    *i > 500
+                } else {
+                    false
+                }
+            })
+            .unwrap();
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute("(query [:find ?e :where [?e :val ?v] (udf_gt ?v)])")
+                        .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+}
+
+// ── Aggregation: count-distinct ───────────────────────────────────────────────
+
+fn bench_aggregation_extras(c: &mut Criterion) {
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+
+    // count_distinct_scale: count-distinct with 50% duplicate values.
+    // Measures the distinct-dedup path overhead.
+    {
+        let mut group = c.benchmark_group("aggregation/count_distinct_scale");
+        for &(label, n) in SCALES {
+            let db = helpers::populate_with_duplicates(n, 50);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute("(query [:find (count-distinct ?v) :where [?e :val ?v]])")
+                        .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+}
+
+// ── Query: regex filter ──────────────────────────────────────────────────────
+
+fn bench_query_extras(c: &mut Criterion) {
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+
+    // regex_filter: query with matches? predicate — measures regex evaluation overhead.
+    // All entities have :val strings matching pattern "item-\d+".
+    {
+        let mut group = c.benchmark_group("query/regex_filter");
+        for &(label, n) in SCALES {
+            let db = helpers::populate_with_string_vals(n);
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+                b.iter(|| {
+                    db.execute(
+                        "(query [:find ?e :where [?e :val ?v] (matches? ?v \"item-\\\\d+\")])",
+                    )
+                    .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+}
+
 criterion_group!(
     benches,
     bench_insert,
@@ -1070,6 +1277,11 @@ criterion_group!(
     bench_disjunction,
     bench_aggregation,
     bench_expr,
+    bench_window,
+    bench_temporal_metadata,
+    bench_udf,
+    bench_aggregation_extras,
+    bench_query_extras,
     bench_open,
     bench_checkpoint,
     bench_concurrent,

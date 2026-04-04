@@ -331,6 +331,50 @@ pub fn populate_with_dept(n: usize, dept_count: usize) -> Arc<Minigraf> {
     Arc::new(db)
 }
 
+/// In-memory DB with `n` value facts, `dup_fraction`% of values are duplicates.
+/// Each entity has `:val` integer where `dup_fraction`% map to same values.
+///
+/// Schema:
+///   `:e{i} :val {i % (n * (100 - dup_fraction) / 100)}` for i in 0..n
+///
+/// Used for count-distinct benchmarks to exercise the distinct-dedup path.
+pub fn populate_with_duplicates(n: usize, dup_fraction: usize) -> Arc<Minigraf> {
+    let db = Minigraf::in_memory().unwrap();
+    let unique_count = n * (100 - dup_fraction) / 100;
+    for batch_start in (0..n).step_by(50) {
+        let batch_end = (batch_start + 50).min(n);
+        let mut cmd = String::from("(transact [");
+        for i in batch_start..batch_end {
+            let val = i % unique_count;
+            cmd.push_str(&format!("[:e{} :val {}]", i, val));
+        }
+        cmd.push_str("])");
+        db.execute(&cmd).unwrap();
+    }
+    Arc::new(db)
+}
+
+/// In-memory DB with `n` entities, each having a `:val` string that matches
+/// a regex pattern "item-\d+".
+///
+/// Schema:
+///   `:e{i} :val "item-{i}"` for i in 0..n
+///
+/// Used for regex_filter benchmark.
+pub fn populate_with_string_vals(n: usize) -> Arc<Minigraf> {
+    let db = Minigraf::in_memory().unwrap();
+    for batch_start in (0..n).step_by(50) {
+        let batch_end = (batch_start + 50).min(n);
+        let mut cmd = String::from("(transact [");
+        for i in batch_start..batch_end {
+            cmd.push_str(&format!("[:e{} :val \"item-{}\"]", i, i));
+        }
+        cmd.push_str("])");
+        db.execute(&cmd).unwrap();
+    }
+    Arc::new(db)
+}
+
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 fn insert_val_facts(db: &Minigraf, n: usize) {
