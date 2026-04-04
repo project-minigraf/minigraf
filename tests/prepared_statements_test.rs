@@ -54,12 +54,16 @@ fn prepare_and_execute_value_slot() {
         .prepare("(query [:find ?e :where [?e :person/name $name]])")
         .unwrap();
 
+    let alice_id = Uuid::new_v5(&Uuid::NAMESPACE_OID, b":alice");
+    let bob_id = Uuid::new_v5(&Uuid::NAMESPACE_OID, b":bob");
+
     let r = prepared
         .execute(&[("name", BindValue::Val(Value::String("Alice".to_string())))])
         .unwrap();
     match r {
         QueryResult::QueryResults { results, .. } => {
             assert_eq!(results.len(), 1);
+            assert_eq!(results[0][0], Value::Ref(alice_id));
         }
         _ => panic!("expected QueryResults"),
     }
@@ -70,6 +74,7 @@ fn prepare_and_execute_value_slot() {
     match r2 {
         QueryResult::QueryResults { results, .. } => {
             assert_eq!(results.len(), 1);
+            assert_eq!(results[0][0], Value::Ref(bob_id));
         }
         _ => panic!("expected QueryResults"),
     }
