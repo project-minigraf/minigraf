@@ -538,6 +538,53 @@ impl Minigraf {
         Ok(())
     }
 
+    /// Parse and plan a query once; bind slots (`$name`) are left unresolved.
+    ///
+    /// Returns a [`crate::query::datalog::prepared::PreparedQuery`] that can be executed
+    /// many times with different bind values via
+    /// [`crate::query::datalog::prepared::PreparedQuery::execute`].
+    ///
+    /// # Errors
+    /// - Parse failure.
+    /// - A bind slot appears in an attribute position (rejected at prepare time).
+    /// - The command is not a `(query ...)` — `transact`, `retract`, and `rule`
+    ///   are not preparable.
+    pub fn prepare(
+        &self,
+        query_str: &str,
+    ) -> Result<crate::query::datalog::prepared::PreparedQuery> {
+        use crate::query::datalog::prepared::prepare_query;
+
+        let cmd =
+            parse_datalog_command(query_str).map_err(|e| anyhow::anyhow!("{}", e))?;
+
+        let query = match cmd {
+            DatalogCommand::Query(q) => q,
+            DatalogCommand::Transact(_) => {
+                anyhow::bail!(
+                    "only (query ...) commands can be prepared; got transact"
+                )
+            }
+            DatalogCommand::Retract(_) => {
+                anyhow::bail!(
+                    "only (query ...) commands can be prepared; got retract"
+                )
+            }
+            DatalogCommand::Rule(_) => {
+                anyhow::bail!(
+                    "only (query ...) commands can be prepared; got rule"
+                )
+            }
+        };
+
+        prepare_query(
+            query,
+            self.inner.fact_storage.clone(),
+            self.inner.rules.clone(),
+            self.inner.functions.clone(),
+        )
+    }
+
     /// Returns a clone of the underlying `FactStorage` for use by the REPL.
     ///
     /// Cloning is cheap — `FactStorage` is `Arc`-backed.
