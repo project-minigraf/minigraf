@@ -308,3 +308,28 @@ fn thread_safety() {
         panic!("expected QueryResults");
     }
 }
+
+// ─── Test 14: UDF predicate in rule body (issue #83) ─────────────────────────────--
+
+#[test]
+fn udf_predicate_works_in_rule_body() {
+    let db = db();
+    db.register_predicate("large?", |v| matches!(v, Value::Integer(n) if *n > 100))
+        .unwrap();
+    db.execute(r#"(transact [[:e1 :score 200] [:e2 :score 50]])"#)
+        .unwrap();
+    db.execute(r#"(rule [(high-scorer ?e) [?e :score ?v] [(large? ?v)]])"#)
+        .unwrap();
+    let result = db
+        .execute(r#"(query [:find ?e :where (high-scorer ?e)])"#)
+        .unwrap();
+    if let minigraf::query::QueryResult::QueryResults { results, .. } = result {
+        assert_eq!(
+            results.len(),
+            1,
+            "only the entity with score > 100 should match"
+        );
+    } else {
+        panic!("expected QueryResults");
+    }
+}
