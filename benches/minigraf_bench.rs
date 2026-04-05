@@ -1126,7 +1126,7 @@ fn bench_temporal_metadata(c: &mut Criterion) {
             let db = helpers::populate_in_memory(n);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
                 b.iter(|| {
-                    db.execute("(query [:find ?e ?t :where [?e :val ?v :tx-time ?t]])")
+                    db.execute("(query [:find ?e ?t :any-valid-time :where [?e :val ?v] [?e :db/tx-count ?t]])")
                         .unwrap()
                 });
             });
@@ -1141,7 +1141,7 @@ fn bench_temporal_metadata(c: &mut Criterion) {
             let db = helpers::populate_in_memory(n);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
                 b.iter(|| {
-                    db.execute("(query [:find ?e ?vf :where [?e :val ?v :valid-from ?vf]])")
+                    db.execute("(query [:find ?e ?vf :any-valid-time :where [?e :val ?v] [?e :db/valid-from ?vf]])")
                         .unwrap()
                 });
             });
@@ -1156,7 +1156,7 @@ fn bench_temporal_metadata(c: &mut Criterion) {
             let db = helpers::populate_in_memory(n);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
                 b.iter(|| {
-                    db.execute("(query [:find ?e ?vt :where [?e :val ?v :valid-to ?vt]])")
+                    db.execute("(query [:find ?e ?vt :any-valid-time :where [?e :val ?v] [?e :db/valid-to ?vt]])")
                         .unwrap()
                 });
             });
