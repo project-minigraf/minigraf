@@ -1,4 +1,4 @@
-name: Nightly Benchmarks (Heavy)
+name: Nightly Benchmarks (Light)
 
 on:
   schedule:
@@ -11,9 +11,9 @@ permissions:
 
 jobs:
   benchmark:
-    name: Run heavy benchmarks
+    name: Run light benchmarks
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 120
 
     steps:
       - name: Checkout
@@ -32,10 +32,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-bench-
 
-      - name: Run heavy benchmarks (negation onwards)
+      - name: Run light benchmarks (insert through recursion)
         run: |
           set -o pipefail
-          CARGO_TERM_COLOR=never cargo bench -- negation disjunction aggregation expr window temporal_metadata udf aggregation_extras query_extras open checkpoint concurrent concurrent_file concurrent_btree_scan 2>&1 | tee bench_heavy.txt
+          CARGO_TERM_COLOR=never cargo bench -- insert insert_file query time_travel recursion 2>&1 | tee bench_light.txt
 
       - name: Install Bencher CLI
         uses: bencherdev/bencher@v0.4.25
@@ -54,7 +54,7 @@ jobs:
             --threshold-upper-boundary 0.99 \
             --err \
             --adapter rust_criterion \
-            --file bench_heavy.txt
+            --file bench_light.txt
 
       - name: Open regression issue
         if: steps.bencher.outcome == 'failure'
@@ -62,7 +62,7 @@ jobs:
         with:
           script: |
             const today = new Date().toISOString().slice(0, 10);
-            const title = `Benchmark regression (heavy) - ${today}`;
+            const title = `Benchmark regression (light) - ${today}`;
 
             // Deduplication: skip if an open regression issue already exists
             const { data: openIssues } = await github.rest.issues.listForRepo({
@@ -86,7 +86,7 @@ jobs:
               repo: context.repo.repo,
               title: title,
               body: [
-                'Bencher detected a performance regression in the nightly heavy benchmark run.',
+                'Bencher detected a performance regression in the nightly light benchmark run.',
                 '',
                 `**Run:** ${runUrl}`,
                 '',
