@@ -32,10 +32,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-bench-
 
-      - name: Run heavy benchmarks (negation onwards)
+      - name: Run heavy benchmarks (negation through concurrent_btree_scan)
         run: |
           set -o pipefail
-          CARGO_TERM_COLOR=never cargo bench -- negation disjunction aggregation expr window temporal_metadata udf aggregation_extras query_extras open checkpoint concurrent concurrent_file concurrent_btree_scan 2>&1 | tee bench_heavy.txt
+          CARGO_TERM_COLOR=never cargo bench -- negation disjunction aggregation expr window temporal_metadata udf aggregation_extras query_extras concurrent_btree_scan 2>&1 | tee bench_heavy.txt
 
       - name: Install Bencher CLI
         uses: bencherdev/bencher@v0.4.25

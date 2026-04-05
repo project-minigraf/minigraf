@@ -13,7 +13,7 @@ jobs:
   benchmark:
     name: Run light benchmarks
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
 
     steps:
       - name: Checkout
@@ -32,10 +32,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-bench-
 
-      - name: Run light benchmarks (insert through recursion)
+      - name: Run light benchmarks (insert through concurrent_file)
         run: |
           set -o pipefail
-          CARGO_TERM_COLOR=never cargo bench -- insert insert_file query time_travel recursion 2>&1 | tee bench_light.txt
+          CARGO_TERM_COLOR=never cargo bench -- insert insert_file query time_travel recursion open checkpoint concurrent concurrent_file 2>&1 | tee bench_light.txt
 
       - name: Install Bencher CLI
         uses: bencherdev/bencher@v0.4.25
