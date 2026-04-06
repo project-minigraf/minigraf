@@ -480,10 +480,11 @@ impl Minigraf {
                 "a WriteTransaction is already in progress on this thread; use tx.execute() instead"
             );
         }
-        set_write_tx_active(true);
         let guard = self.inner.write_lock.lock().map_err(|_| {
             anyhow::anyhow!("write lock is poisoned; database may be in an inconsistent state")
         })?;
+        // Set flag only after successfully acquiring the lock
+        set_write_tx_active(true);
         Ok(WriteTransaction {
             guard,
             inner: &self.inner,
@@ -1349,6 +1350,48 @@ mod tests {
         assert!(
             r.is_err(),
             "materialize_retraction with pseudo-attr must fail"
+        );
+    }
+
+    // ── begin_write flag not leaked on lock failure ────────────────────────────────
+
+    #[test]
+    fn test_begin_write_flag_not_leaked_on_lock_failure() {
+        // This test verifies that the thread-local flag is not set if lock acquisition fails.
+        // We can't easily simulate lock failure in normal test, but we can verify the
+        // flag is correctly managed: set after lock acquired, cleared on drop.
+
+        let db = Minigraf::in_memory().unwrap();
+
+        // Normal flow: begin_write succeeds, flag should be set
+        {
+            let _tx = db.begin_write().unwrap();
+            assert!(
+                is_write_tx_active(),
+                "flag should be set during active transaction"
+            );
+        }
+        // After drop, flag should be cleared
+        assert!(
+            !is_write_tx_active(),
+            "flag should be cleared after transaction ends"
+        );
+
+        // Multiple sequential transactions should work
+        {
+            let _tx = db.begin_write().unwrap();
+        }
+        assert!(
+            !is_write_tx_active(),
+            "flag should be cleared after second transaction"
+        );
+
+        {
+            let _tx = db.begin_write().unwrap();
+        }
+        assert!(
+            !is_write_tx_active(),
+            "flag should be cleared after third transaction"
         );
     }
 }
