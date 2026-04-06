@@ -15,8 +15,8 @@ use crate::graph::types::{Fact, VALID_TIME_FOREVER};
 /// in any practical context, avoiding the collision that `0` would have with the Unix
 /// epoch (1970-01-01T00:00:00Z), which is a legitimate `valid_from` value.
 const VALID_FROM_USE_TX_TIME: i64 = i64::MIN;
-use crate::graph::FactStorage;
 use crate::graph::types::Value;
+use crate::graph::FactStorage;
 use crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS;
 use crate::query::datalog::evaluator::DEFAULT_MAX_RESULTS;
 use crate::query::datalog::executor::DatalogExecutor;
@@ -27,11 +27,11 @@ use crate::query::datalog::functions::{
 use crate::query::datalog::parser::parse_datalog_command;
 use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::types::{AttributeSpec, DatalogCommand, Transaction};
-use crate::storage::backend::MemoryBackend;
 use crate::storage::backend::file::FileBackend;
+use crate::storage::backend::MemoryBackend;
 use crate::storage::persistent_facts::PersistentFactStorage;
 use crate::wal::WalWriter;
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use std::any::Any;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
@@ -192,30 +192,7 @@ impl Drop for Inner {
     }
 }
 
-// ─── Fact size validation ─────────────────────────────────────────────────────
-
-/// Validate that every fact in `facts` can fit in a single packed-page slot.
-///
-/// Called before writing to the WAL so that oversized facts are rejected at
-/// insertion time rather than at checkpoint time.  Only invoked for file-backed
-/// databases — in-memory databases have no page size constraint.
-fn check_fact_sizes(facts: &[Fact]) -> anyhow::Result<()> {
-    use crate::storage::packed_pages::MAX_FACT_BYTES;
-    for fact in facts {
-        let bytes = postcard::to_allocvec(fact)
-            .map_err(|e| anyhow::anyhow!("Failed to serialise fact for size check: {}", e))?;
-        if bytes.len() > MAX_FACT_BYTES {
-            anyhow::bail!(
-                "Fact serialised size {} bytes exceeds maximum {} bytes. \
-                 Store large payloads externally and reference them with a \
-                 Value::String URL/path or Value::Ref entity ID.",
-                bytes.len(),
-                MAX_FACT_BYTES
-            );
-        }
-    }
-    Ok(())
-}
+// ─── Fact size validation (moved to WAL serialization) ────────────────────────
 
 // ─── Minigraf ─────────────────────────────────────────────────────────────────
 
@@ -467,11 +444,7 @@ impl Minigraf {
                 })
                 .collect();
 
-            // For file-backed databases, reject oversized facts before touching the WAL.
-            if matches!(*ctx, WriteContext::File { .. }) {
-                check_fact_sizes(&stamped)?;
-            }
-
+            // WAL write includes size validation — no separate check needed.
             // Write WAL BEFORE applying to shared FactStorage.
             // If this fails, FactStorage is still unchanged — clean rollback.
             let should_checkpoint = WriteTransaction::wal_write_stamped_batch(
@@ -910,10 +883,7 @@ impl<'a> WriteTransaction<'a> {
                 })
                 .collect();
 
-            // For file-backed databases, reject oversized facts before touching the WAL.
-            if matches!(*self.guard, WriteContext::File { .. }) {
-                check_fact_sizes(&stamped)?;
-            }
+            // WAL write includes size validation — no separate check needed.
 
             // Write WAL entry FIRST — if this fails, no facts have been applied
             // to shared FactStorage, so the database remains in a clean state.
