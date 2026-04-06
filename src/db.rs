@@ -417,10 +417,11 @@ impl Minigraf {
 
         let cmd = parse_datalog_command(input).map_err(|e| anyhow::anyhow!("{}", e))?;
 
-        // Determine if this is a read-only command (query / rule registration).
+        // Determine if this is a read-only command (query only).
+        // Rule registration is treated as a write because it mutates the shared RuleRegistry.
         let is_write = matches!(
             cmd,
-            DatalogCommand::Transact(_) | DatalogCommand::Retract(_)
+            DatalogCommand::Transact(_) | DatalogCommand::Retract(_) | DatalogCommand::Rule(_)
         );
 
         if is_write {
@@ -428,15 +429,26 @@ impl Minigraf {
                 anyhow::anyhow!("write lock is poisoned; database may be in an inconsistent state")
             })?;
 
-            // Handle write commands with correct WAL-first ordering:
+            // Handle write commands with correct WAL-first ordering for Transact/Retract:
             // 1. Materialize facts (no storage mutation yet)
             // 2. Allocate tx_count + tx_id and stamp facts
             // 3. Write WAL entry FIRST — if this fails, FactStorage is unchanged
             // 4. Apply facts to shared FactStorage
+            // For Rule registration: acquire lock to serialize rule changes, no WAL needed
             let (stamped, is_retract) = match &cmd {
                 DatalogCommand::Transact(tx) => (Minigraf::materialize_transaction(tx)?, false),
                 DatalogCommand::Retract(tx) => (Minigraf::materialize_retraction(tx)?, true),
-                _ => unreachable!("is_write guarantees Transact or Retract"),
+                DatalogCommand::Rule(_) => {
+                    // Rule registration: execute while holding write_lock to serialize
+                    // rule registry changes (no WAL needed for rules)
+                    let executor = DatalogExecutor::new_with_rules_and_functions(
+                        self.inner.fact_storage.clone(),
+                        self.inner.rules.clone(),
+                        self.inner.functions.clone(),
+                    );
+                    return executor.execute(cmd);
+                }
+                _ => unreachable!("is_write guarantees Transact, Retract, or Rule"),
             };
 
             let tx_count = self.inner.fact_storage.allocate_tx_count();
