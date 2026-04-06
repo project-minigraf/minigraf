@@ -257,6 +257,24 @@ impl FileHeader {
                 FORMAT_VERSION
             );
         }
+        // Validate logical relationships
+        if self.page_count == 0 {
+            anyhow::bail!("page_count must be greater than 0");
+        }
+        if self.eavt_root_page != 0 && self.eavt_root_page >= self.page_count {
+            anyhow::bail!(
+                "eavt_root_page ({}) must be less than page_count ({})",
+                self.eavt_root_page,
+                self.page_count
+            );
+        }
+        if self.fact_page_count > self.page_count {
+            anyhow::bail!(
+                "fact_page_count ({}) cannot exceed page_count ({})",
+                self.fact_page_count,
+                self.page_count
+            );
+        }
         Ok(())
     }
 }
@@ -356,6 +374,47 @@ mod tests {
     fn test_validate_accepts_version_7() {
         let mut h = FileHeader::new();
         h.version = 7;
+        assert!(h.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_page_count_must_be_positive() {
+        let mut h = FileHeader::new();
+        h.page_count = 0;
+        let result = h.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("page_count"));
+    }
+
+    #[test]
+    fn test_validate_eavt_root_page_bounds() {
+        let mut h = FileHeader::new();
+        h.page_count = 10;
+        h.eavt_root_page = 10; // equal to page_count, should fail
+        let result = h.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("eavt_root_page"));
+
+        // Should pass when 0
+        h.eavt_root_page = 0;
+        assert!(h.validate().is_ok());
+
+        // Should pass when valid
+        h.eavt_root_page = 5;
+        assert!(h.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_fact_page_count_bounds() {
+        let mut h = FileHeader::new();
+        h.page_count = 10;
+        h.fact_page_count = 11; // exceeds page_count
+        let result = h.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("fact_page_count"));
+
+        // Should pass when within bounds
+        h.fact_page_count = 5;
         assert!(h.validate().is_ok());
     }
 
