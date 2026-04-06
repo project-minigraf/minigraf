@@ -68,6 +68,16 @@ impl PartialOrd for Value {
     }
 }
 
+/// Ordering for `Value` variants.
+///
+/// # NaN Semantics
+/// - `NaN` is ordered as **Greater** than all other float values (including positive infinity)
+/// - `NaN` equals `NaN` (two NaN values are considered equal)
+/// - When comparing a float against a non-float, the float's NaN status determines ordering
+///
+/// # Cross-Variant Ordering
+/// Values of different variants are ordered by discriminant:
+/// - String (0) < Integer (1) < Float (2) < Boolean (3) < Ref (4) < Keyword (5) < Null (6)
 impl Ord for Value {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // Simple variant ordering using match
