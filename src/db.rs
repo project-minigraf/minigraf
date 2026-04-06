@@ -15,8 +15,8 @@ use crate::graph::types::{Fact, VALID_TIME_FOREVER};
 /// in any practical context, avoiding the collision that `0` would have with the Unix
 /// epoch (1970-01-01T00:00:00Z), which is a legitimate `valid_from` value.
 const VALID_FROM_USE_TX_TIME: i64 = i64::MIN;
-use crate::graph::types::Value;
 use crate::graph::FactStorage;
+use crate::graph::types::Value;
 use crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS;
 use crate::query::datalog::evaluator::DEFAULT_MAX_RESULTS;
 use crate::query::datalog::executor::DatalogExecutor;
@@ -27,11 +27,11 @@ use crate::query::datalog::functions::{
 use crate::query::datalog::parser::parse_datalog_command;
 use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::types::{AttributeSpec, DatalogCommand, Transaction};
-use crate::storage::backend::file::FileBackend;
 use crate::storage::backend::MemoryBackend;
+use crate::storage::backend::file::FileBackend;
 use crate::storage::persistent_facts::PersistentFactStorage;
 use crate::wal::WalWriter;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::any::Any;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
