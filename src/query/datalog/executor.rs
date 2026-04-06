@@ -268,6 +268,14 @@ impl DatalogExecutor {
             return self.execute_query_with_rules(query);
         }
 
+        // Warn about queries with no binding mechanism
+        if !query.has_binding_mechanism() {
+            return Err(anyhow!(
+                "query has no :where clause, rules, or aggregates — nothing binds the variables. \
+                 Add a :where clause (e.g., [:find ?e ?a ?v :where [?e ?a ?v]]) or use an aggregate."
+            ));
+        }
+
         // Compute query-level valid_at value for :db/valid-at pseudo-attribute binding.
         let now = tx_id_now() as i64;
         let valid_at_value = match &query.valid_at {

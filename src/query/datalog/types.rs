@@ -548,6 +548,15 @@ impl DatalogQuery {
             .collect()
     }
 
+    /// Check if this query has any binding mechanism (patterns, rules, or aggregates)
+    pub fn has_binding_mechanism(&self) -> bool {
+        !self.where_clauses.is_empty()
+            || self
+                .find
+                .iter()
+                .any(|f| matches!(f, FindSpec::Aggregate { .. }))
+    }
+
     /// Recursively collect all (predicate, args) pairs from rule invocations,
     /// including those nested inside Not bodies at any depth.
     fn collect_rule_invocations_recursive(clauses: &[WhereClause]) -> Vec<(String, Vec<EdnValue>)> {
