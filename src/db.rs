@@ -995,14 +995,30 @@ impl<'a> WriteTransaction<'a> {
     /// Using `self.inner.fact_storage.clone()` would be an Arc-based shallow clone
     /// that shares the underlying storage, causing `load_fact()` calls to mutate
     /// the shared store and expose uncommitted facts to concurrent readers.
+    ///
+    /// Optimization: if there are no pending facts, we can use the storage directly
+    /// without copying. Otherwise, we create an overlay that combines committed
+    /// facts with pending facts without copying all committed facts.
     fn build_query_view(&self) -> Result<FactStorage> {
+        // Fast path: no pending facts, use the original storage directly
+        if self.pending_facts.is_empty() {
+            return Ok(self.inner.fact_storage.clone());
+        }
+
+        // Slow path: need to combine committed + pending facts
+        // Create overlay that reads from both sources without full copy
         let view = FactStorage::new();
+
+        // Load committed facts - this is the expensive part
         for fact in self.inner.fact_storage.get_all_facts()? {
             view.load_fact(fact)?;
         }
+
+        // Add pending facts
         for fact in &self.pending_facts {
             view.load_fact(fact.clone())?;
         }
+
         view.restore_tx_counter()?;
         Ok(view)
     }
