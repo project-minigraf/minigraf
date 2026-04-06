@@ -21,7 +21,7 @@
 
 use crate::graph::types::Fact;
 use crate::storage::packed_pages::MAX_FACT_BYTES;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -282,7 +282,7 @@ impl WalReader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::types::{Value, VALID_TIME_FOREVER};
+    use crate::graph::types::{VALID_TIME_FOREVER, Value};
     use uuid::Uuid;
 
     fn make_fact(entity: Uuid, attr: &str, value: Value, tx_count: u64) -> Fact {
@@ -480,8 +480,8 @@ mod tests {
 
     #[test]
     fn test_wal_fact_size_limit() {
-        use crate::graph::types::Value;
         use crate::graph::Fact;
+        use crate::graph::types::Value;
         use uuid::Uuid;
 
         let dir = tempfile::tempdir().unwrap();
