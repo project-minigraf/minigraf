@@ -15,8 +15,8 @@ use crate::graph::types::{Fact, VALID_TIME_FOREVER};
 /// in any practical context, avoiding the collision that `0` would have with the Unix
 /// epoch (1970-01-01T00:00:00Z), which is a legitimate `valid_from` value.
 const VALID_FROM_USE_TX_TIME: i64 = i64::MIN;
-use crate::graph::FactStorage;
 use crate::graph::types::Value;
+use crate::graph::FactStorage;
 use crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS;
 use crate::query::datalog::evaluator::DEFAULT_MAX_RESULTS;
 use crate::query::datalog::executor::DatalogExecutor;
@@ -27,11 +27,11 @@ use crate::query::datalog::functions::{
 use crate::query::datalog::parser::parse_datalog_command;
 use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::types::{AttributeSpec, DatalogCommand, Transaction};
-use crate::storage::backend::MemoryBackend;
 use crate::storage::backend::file::FileBackend;
+use crate::storage::backend::MemoryBackend;
 use crate::storage::persistent_facts::PersistentFactStorage;
 use crate::wal::WalWriter;
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use std::any::Any;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
@@ -983,14 +983,30 @@ impl<'a> WriteTransaction<'a> {
     /// Using `self.inner.fact_storage.clone()` would be an Arc-based shallow clone
     /// that shares the underlying storage, causing `load_fact()` calls to mutate
     /// the shared store and expose uncommitted facts to concurrent readers.
+    ///
+    /// Optimization: if there are no pending facts, we can use the storage directly
+    /// without copying. Otherwise, we create an overlay that combines committed
+    /// facts with pending facts without copying all committed facts.
     fn build_query_view(&self) -> Result<FactStorage> {
+        // Fast path: no pending facts, use the original storage directly
+        if self.pending_facts.is_empty() {
+            return Ok(self.inner.fact_storage.clone());
+        }
+
+        // Slow path: need to combine committed + pending facts
+        // Create overlay that reads from both sources without full copy
         let view = FactStorage::new();
+
+        // Load committed facts - this is the expensive part
         for fact in self.inner.fact_storage.get_all_facts()? {
             view.load_fact(fact)?;
         }
+
+        // Add pending facts
         for fact in &self.pending_facts {
             view.load_fact(fact.clone())?;
         }
+
         view.restore_tx_counter()?;
         Ok(view)
     }
