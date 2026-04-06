@@ -1,6 +1,4 @@
-use super::evaluator::{
-    DEFAULT_MAX_DERIVED_FACTS, DEFAULT_MAX_RESULTS, StratifiedEvaluator, evaluate_not_join,
-};
+use super::evaluator::{StratifiedEvaluator, evaluate_not_join};
 use super::functions::{AggImpl, FunctionRegistry, apply_builtin_aggregate, value_lt};
 use super::matcher::{PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::optimizer;
@@ -57,6 +55,8 @@ pub struct DatalogExecutor {
     // RwLock pre-wired for 7.7b register_aggregate API.
     functions: Arc<RwLock<FunctionRegistry>>,
     indexes: Arc<crate::storage::index::Indexes>,
+    max_derived_facts: usize,
+    max_results: usize,
 }
 
 impl DatalogExecutor {
@@ -67,6 +67,8 @@ impl DatalogExecutor {
             rules: Arc::new(RwLock::new(RuleRegistry::new())),
             functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
             indexes: Arc::new(indexes),
+            max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
+            max_results: crate::query::datalog::evaluator::DEFAULT_MAX_RESULTS,
         }
     }
 
@@ -84,6 +86,8 @@ impl DatalogExecutor {
             rules,
             functions,
             indexes: Arc::new(indexes),
+            max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
+            max_results: crate::query::datalog::evaluator::DEFAULT_MAX_RESULTS,
         }
     }
 
@@ -96,6 +100,33 @@ impl DatalogExecutor {
             rules,
             Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
         )
+    }
+
+    /// Create a `DatalogExecutor` with custom complexity limits.
+    ///
+    /// Used by `Minigraf` when `OpenOptions` specifies non-default limits.
+    pub fn new_with_limits(
+        storage: FactStorage,
+        rules: Arc<RwLock<RuleRegistry>>,
+        functions: Arc<RwLock<FunctionRegistry>>,
+        max_derived_facts: usize,
+        max_results: usize,
+    ) -> Self {
+        let indexes = storage.pending_indexes_snapshot();
+        DatalogExecutor {
+            storage,
+            rules,
+            functions,
+            indexes: Arc::new(indexes),
+            max_derived_facts,
+            max_results,
+        }
+    }
+
+    /// Set complexity limits on an existing executor.
+    pub fn set_limits(&mut self, max_derived_facts: usize, max_results: usize) {
+        self.max_derived_facts = max_derived_facts;
+        self.max_results = max_results;
     }
 
     /// Execute a Datalog command
@@ -404,8 +435,8 @@ impl DatalogExecutor {
             self.rules.clone(),
             self.functions.clone(),
             1000, // max iterations
-            DEFAULT_MAX_DERIVED_FACTS,
-            DEFAULT_MAX_RESULTS,
+            self.max_derived_facts,
+            self.max_results,
         );
 
         let derived_storage = evaluator.evaluate(&predicates)?;
