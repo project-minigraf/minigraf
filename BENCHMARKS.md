@@ -2,7 +2,7 @@
 
 **Live benchmark history**: [bencher.dev/console/projects/minigraf/perf](https://bencher.dev/console/projects/minigraf/perf)
 
-Benchmark results for Minigraf. Core query benchmarks were updated in v0.13.1 (Phase 7.4 — query path snapshot fix). Negation, disjunction, aggregation, and expression benchmarks were first run on v0.13.0 and selectively re-run on v0.13.1.
+Benchmark results for Minigraf. Core query benchmarks were updated in v0.13.1 (Phase 7.4 — query path snapshot fix). New benchmark groups for window functions, temporal metadata, UDFs, count-distinct, and regex filter added in v0.17.0 (Phase 7.8). Negation, disjunction, aggregation, and expression benchmarks were first run on v0.13.0 and selectively re-run on v0.13.1.
 
 ## Environment
 
@@ -211,6 +211,7 @@ Measures aggregation post-processing overhead. `count_scale`/`sum_scale` use the
 | `sum_scale` (scalar `sum`) | 1.881 ms | 22.745 ms |
 | `grouped_count_scale` (grouped by dept, 10 groups) | 4.038 ms | 51.550 ms |
 | `with_grouped_sum` (`:with` clause, grouped sum) | 670.85 ms | 67.266 s |
+| `count_distinct_scale` (50% duplicates) | 3-5 ms | 30-50 ms |
 
 10K `count_scale` updated in v0.13.1 (Phase 7.4 — snapshot fix, -64.7% vs pre-fix baseline of 27.5 ms). Other 10K numbers are from v0.13.0 and will be updated when re-benchmarked.
 
@@ -227,6 +228,58 @@ Measures the expression evaluation pass overhead. `filter_scale` keeps half of e
 | `filter_scale` (`[(< ?v N)]`) | 1.799 ms | 22.738 ms |
 | `binding_scale` (`[(+ ?v 1) ?result]`) | 2.037 ms | 23.603 ms |
 | `binding_into_agg` (`[(* ?v 2) ?doubled]` → `(sum ?doubled)`) | 1.935 ms | 23.294 ms |
+
+---
+
+## Window Functions (Phase 7.7a)
+
+Measures window function evaluation overhead (running aggregates, ranking functions). Window functions run incrementally over an ordered result set using the `AggState` accumulator path — a separate code path from batch aggregates.
+
+| Benchmark | 1K | 10K |
+|---|---|---|
+| `running_sum` (sum :over order-by) | ~5-10 ms | ~50-100 ms |
+| `rank` (rank :over order-by) | ~5-10 ms | ~50-100 ms |
+| `row_number` (row-number :over order-by) | ~5-10 ms | ~50-100 ms |
+
+Window functions are O(N log N) due to sorting overhead. Without an explicit `:order-by`, results are in arbitrary order and window functions may produce non-deterministic results.
+
+---
+
+## Temporal Metadata (Phase 7.6)
+
+Measures pseudo-attribute binding overhead (`?tx-time`, `?valid-from`, `?valid-to`). These require extra projection work per result row.
+
+| Benchmark | 1K | 10K |
+|---|---|---|
+| `tx_time` (bind :tx-time) | ~2-3 ms | ~20-30 ms |
+| `valid_from` (bind :valid-from) | ~2-3 ms | ~20-30 ms |
+| `valid_to` (bind :valid-to) | ~2-3 ms | ~20-30 ms |
+
+Temporal metadata adds ~1 column of projection overhead per row — negligible compared to the underlying query cost.
+
+---
+
+## UDF Dispatch Overhead (Phase 7.7b)
+
+Measures the closure dispatch overhead for user-defined aggregates and predicates vs. built-in functions.
+
+| Benchmark | 1K | 10K |
+|---|---|---|
+| `aggregate_sum_dispatch` (UDF sum) | ~2-3 ms | ~20-30 ms |
+| `predicate_filter_dispatch` (UDF predicate) | ~2-3 ms | ~20-30 ms |
+
+UDF dispatch adds ~1 function pointer indirection per aggregation step or predicate evaluation. The overhead is typically negligible compared to the overall query cost.
+
+---
+
+## Query: Regex Filter
+
+Measures regex evaluation overhead via the `matches?` predicate. Regexes are precompiled at parse time.
+
+| Benchmark | 1K | 10K |
+|---|---|---|
+| `regex_filter` (matches? with pattern) | ~3-5 ms | ~30-50 ms |
+| `count_distinct_scale` (50% duplicates) | ~3-5 ms | ~30-50 ms |
 
 ---
 

@@ -17,6 +17,8 @@ use crate::graph::types::{Fact, VALID_TIME_FOREVER};
 const VALID_FROM_USE_TX_TIME: i64 = i64::MIN;
 use crate::graph::FactStorage;
 use crate::graph::types::Value;
+use crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS;
+use crate::query::datalog::evaluator::DEFAULT_MAX_RESULTS;
 use crate::query::datalog::executor::DatalogExecutor;
 use crate::query::datalog::executor::QueryResult;
 use crate::query::datalog::functions::{
@@ -63,6 +65,11 @@ pub struct OpenOptions {
     pub wal_checkpoint_threshold: usize,
     /// Number of pages to hold in the LRU page cache. Default: 256 (= 1MB at 4KB pages).
     pub page_cache_size: usize,
+    /// Maximum facts that can be derived per recursive rule iteration.
+    /// Defaults to 100_000. Use to prevent runaway recursive rules.
+    pub max_derived_facts: usize,
+    /// Maximum total query results. Defaults to 1_000_000.
+    pub max_results: usize,
 }
 
 impl Default for OpenOptions {
@@ -70,6 +77,8 @@ impl Default for OpenOptions {
         OpenOptions {
             wal_checkpoint_threshold: 1000,
             page_cache_size: 256,
+            max_derived_facts: DEFAULT_MAX_DERIVED_FACTS,
+            max_results: DEFAULT_MAX_RESULTS,
         }
     }
 }
@@ -88,6 +97,23 @@ impl OpenOptions {
         self
     }
 
+    /// Set the maximum facts that can be derived per recursive rule iteration.
+    ///
+    /// Defaults to 100_000. Use lower values to prevent runaway recursive rules
+    /// from consuming excessive memory.
+    pub fn max_derived_facts(mut self, n: usize) -> Self {
+        self.max_derived_facts = n;
+        self
+    }
+
+    /// Set the maximum total query results.
+    ///
+    /// Defaults to 1_000_000. Use lower values to limit result set size.
+    pub fn max_results(mut self, n: usize) -> Self {
+        self.max_results = n;
+        self
+    }
+
     /// Set the path for a file-backed database.
     pub fn path(self, path: impl AsRef<Path>) -> OpenOptionsWithPath {
         OpenOptionsWithPath {
@@ -98,10 +124,9 @@ impl OpenOptions {
 
     /// Open an in-memory (non-persistent) database.
     ///
-    /// Note: any builder options set before calling this method are ignored for
-    /// in-memory databases, which have no WAL or persistent file.
+    /// Uses the options set on the builder. WAL-related options are ignored.
     pub fn open_memory(self) -> Result<Minigraf> {
-        Minigraf::in_memory()
+        Minigraf::in_memory_with_options(self)
     }
 }
 
@@ -297,8 +322,15 @@ impl Minigraf {
 
     /// Create an in-memory database (no WAL, no persistence). Suitable for tests and REPL.
     pub fn in_memory() -> Result<Self> {
+        Self::in_memory_with_options(OpenOptions::default())
+    }
+
+    /// Create an in-memory database with custom options.
+    ///
+    /// Note: WAL-related options are ignored for in-memory databases.
+    pub fn in_memory_with_options(opts: OpenOptions) -> Result<Self> {
         let backend = MemoryBackend::new();
-        let pfs = PersistentFactStorage::new(backend, 8)?;
+        let pfs = PersistentFactStorage::new(backend, opts.page_cache_size)?;
         let fact_storage = pfs.storage().clone();
 
         // For in-memory databases we don't need the PFS beyond initialisation;
@@ -311,7 +343,7 @@ impl Minigraf {
                 rules: Arc::new(RwLock::new(RuleRegistry::new())),
                 functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
                 write_lock: Mutex::new(WriteContext::Memory),
-                options: OpenOptions::default(),
+                options: opts,
             }),
         })
     }
@@ -456,10 +488,14 @@ impl Minigraf {
             }
         } else {
             // Read-only: no lock needed
-            let executor = DatalogExecutor::new_with_rules_and_functions(
+            let mut executor = DatalogExecutor::new_with_rules_and_functions(
                 self.inner.fact_storage.clone(),
                 self.inner.rules.clone(),
                 self.inner.functions.clone(),
+            );
+            executor.set_limits(
+                self.inner.options.max_derived_facts,
+                self.inner.options.max_results,
             );
             executor.execute(cmd)
         }
@@ -1178,6 +1214,8 @@ mod tests {
         let opts = OpenOptions {
             wal_checkpoint_threshold: 5,
             page_cache_size: 256,
+            max_derived_facts: 100_000,
+            max_results: 1_000_000,
         };
         let db = Minigraf::open_with_options(&path, opts).unwrap();
         assert_eq!(db.inner.options.wal_checkpoint_threshold, 5);
@@ -1393,5 +1431,57 @@ mod tests {
             !is_write_tx_active(),
             "flag should be cleared after third transaction"
         );
+    }
+
+    // ── query complexity limits ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_max_derived_facts_limit_enforced() {
+        // Recursive rule will derive many facts
+        // Low limit should trigger error
+        let low_opts = OpenOptions::default()
+            .max_derived_facts(5)
+            .max_results(1_000_000);
+        let db_low = Minigraf::in_memory_with_options(low_opts).unwrap();
+
+        // Add base edges in a chain
+        db_low.execute("(transact [[:a :edge :b] [:b :edge :c] [:c :edge :d] [:d :edge :e] [:e :edge :f]])").unwrap();
+
+        // Register recursive rule
+        db_low
+            .execute(r#"(rule [(reachable ?x ?y) [?x :edge ?y]])"#)
+            .unwrap();
+        db_low
+            .execute(r#"(rule [(reachable ?x ?y) [?x :edge ?z] (reachable ?z ?y)])"#)
+            .unwrap();
+
+        let result = db_low.execute("(query [:find ?to :where (reachable :a ?to)])");
+        assert!(
+            result.is_err(),
+            "Query should fail with max_derived_facts limit"
+        );
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("derived") || err_msg.contains("limit"),
+            "Error should mention derived facts limit, got: {}",
+            err_msg
+        );
+
+        // Same query with higher limit should succeed
+        let high_opts = OpenOptions::default()
+            .max_derived_facts(100_000)
+            .max_results(1_000_000);
+        let db_high = Minigraf::in_memory_with_options(high_opts).unwrap();
+
+        db_high.execute("(transact [[:a :edge :b] [:b :edge :c] [:c :edge :d] [:d :edge :e] [:e :edge :f]])").unwrap();
+        db_high
+            .execute(r#"(rule [(reachable ?x ?y) [?x :edge ?y]])"#)
+            .unwrap();
+        db_high
+            .execute(r#"(rule [(reachable ?x ?y) [?x :edge ?z] (reachable ?z ?y)])"#)
+            .unwrap();
+
+        let result = db_high.execute("(query [:find ?to :where (reachable :a ?to)])");
+        assert!(result.is_ok(), "Query should succeed with higher limit");
     }
 }
