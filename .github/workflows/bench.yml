@@ -35,7 +35,18 @@ jobs:
       - name: Run heavy benchmarks (negation through concurrent_btree_scan)
         run: |
           set -o pipefail
-          CARGO_TERM_COLOR=never cargo bench -- negation disjunction aggregation expr window temporal_metadata udf aggregation_extras query_extras concurrent_btree_scan 2>&1 | tee bench_heavy.txt
+          (
+            CARGO_TERM_COLOR=never cargo bench -- negation
+            CARGO_TERM_COLOR=never cargo bench -- disjunction
+            CARGO_TERM_COLOR=never cargo bench -- aggregation
+            CARGO_TERM_COLOR=never cargo bench -- expr
+            CARGO_TERM_COLOR=never cargo bench -- window
+            CARGO_TERM_COLOR=never cargo bench -- temporal_metadata
+            CARGO_TERM_COLOR=never cargo bench -- udf
+            CARGO_TERM_COLOR=never cargo bench -- aggregation_extras
+            CARGO_TERM_COLOR=never cargo bench -- query_extras
+            CARGO_TERM_COLOR=never cargo bench -- concurrent_btree_scan
+          ) 2>&1 | tee bench_heavy.txt
 
       - name: Install Bencher CLI
         uses: bencherdev/bencher@v0.4.25
