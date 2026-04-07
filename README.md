@@ -1,5 +1,7 @@
 # Minigraf
 
+[![crates.io](https://img.shields.io/crates/v/minigraf.svg)](https://crates.io/crates/minigraf)
+[![docs.rs](https://docs.rs/minigraf/badge.svg)](https://docs.rs/minigraf)
 [![Build Status](https://github.com/adityamukho/minigraf/actions/workflows/rust.yml/badge.svg)](https://github.com/adityamukho/minigraf/actions/workflows/rust.yml)
 [![Clippy Status](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml/badge.svg)](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml)
 [![Coverage](https://codecov.io/gh/adityamukho/minigraf/branch/main/graph/badge.svg)](https://codecov.io/gh/adityamukho/minigraf)
@@ -33,6 +35,19 @@ Minigraf is a **single-file embedded graph database** that lets you:
 4. **Proven at scale** - 40+ years of research, production use (Datomic, XTDB)
 5. **Graph-native** - Facts (Entity-Attribute-Value) are literally edges
 6. **LLM-friendly** - The small, uniform grammar (`[?e :attr ?v]` patterns, no JOIN variants, no subquery nesting) is easy for AI coding assistants to generate correctly from a few examples; the entire language fits in a system prompt
+
+## Installation
+
+```toml
+[dependencies]
+minigraf = "0.19"
+```
+
+Or via cargo:
+
+```sh
+cargo add minigraf
+```
 
 ## Quick Start
 
