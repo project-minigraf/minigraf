@@ -61,8 +61,9 @@ fn resolve_fact_ref(d: &FactData, fr: FactRef) -> Result<Fact> {
 /// which wraps this with a "load all, save all" strategy.
 ///
 /// # Examples
-/// ```
-/// use minigraf::{FactStorage, Value};
+/// ```ignore
+/// use crate::graph::storage::FactStorage;
+/// use crate::graph::types::Value;
 /// use uuid::Uuid;
 ///
 /// let storage = FactStorage::new();

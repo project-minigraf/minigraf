@@ -1,40 +1,70 @@
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
+//! Zero-config, single-file, embedded graph database with bi-temporal Datalog queries.
+//!
+//! Minigraf is the SQLite of graph databases: embedded, no server, no configuration,
+//! a single portable `.graph` file. It stores data as Entity-Attribute-Value facts,
+//! queries them with [Datalog](https://en.wikipedia.org/wiki/Datalog), and tracks every
+//! change with full bi-temporal history (transaction time + valid time).
+//!
+//! # Installation
+//!
+//! ```toml
+//! [dependencies]
+//! minigraf = "0.19"
+//! ```
+//!
+//! # Quick Start
+//!
+//! ```
+//! use minigraf::{Minigraf, BindValue};
+//!
+//! // Open (or create) a database
+//! let db = Minigraf::in_memory().unwrap();
+//!
+//! // Assert facts
+//! db.execute(r#"(transact [[:alice :person/name "Alice"]
+//!                          [:alice :person/age 30]
+//!                          [:alice :friend :bob]
+//!                          [:bob   :person/name "Bob"]])"#).unwrap();
+//!
+//! // Query with Datalog
+//! let results = db.execute(r#"
+//!     (query [:find ?friend-name
+//!             :where [:alice :friend ?friend]
+//!                    [?friend :person/name ?friend-name]])
+//! "#).unwrap();
+//!
+//! // Explicit transaction — all-or-nothing
+//! let mut tx = db.begin_write().unwrap();
+//! tx.execute(r#"(transact [[:alice :person/age 31]])"#).unwrap();
+//! tx.commit().unwrap();
+//!
+//! // Time travel — query the state as of transaction 1
+//! db.execute("(query [:find ?age :as-of 1 :where [:alice :person/age ?age]])").unwrap();
+//! ```
 
 pub mod db;
-pub mod graph;
-pub mod query;
+pub(crate) mod graph;
+pub(crate) mod query;
 pub mod repl;
-pub mod storage;
-pub mod temporal;
-pub mod wal;
+pub(crate) mod storage;
+pub(crate) mod temporal;
+pub(crate) mod wal;
 
 pub use db::{Minigraf, OpenOptions, OpenOptionsWithPath, WriteTransaction};
-
-// Datalog EAV storage (Phase 3+)
-pub use graph::FactStorage;
-
-// Datalog EAV types (Phase 3+)
-pub use graph::types::{
-    Attribute, EntityId, Fact, TransactOptions, TxId, VALID_TIME_FOREVER, Value,
-    tx_id_from_system_time, tx_id_now, tx_id_to_system_time,
-};
-
-// REPL
 pub use repl::Repl;
 
-// Storage backend (Phase 2+)
-pub use storage::backend::file::FileBackend;
-pub use storage::persistent_facts::PersistentFactStorage;
-pub use storage::{FileHeader, PAGE_SIZE, StorageBackend};
+// EAV value types — users construct and match on these
+pub use graph::types::{EntityId, Value};
 
-// Datalog query API (Phase 3+)
-pub use query::{
-    DatalogCommand, DatalogExecutor, DatalogQuery, EdnValue, Pattern, PatternMatcher, QueryResult,
-    Transaction, parse_datalog_command, parse_edn,
-};
+// Query result type
+pub use query::datalog::executor::QueryResult;
 
-// Bi-temporal query types (Phase 4+)
+// Bi-temporal query types
 pub use query::datalog::types::{AsOf, ValidAt};
 
-// Prepared statements (Phase 7.8)
+// Prepared statements
 pub use query::datalog::prepared::{BindValue, PreparedQuery};

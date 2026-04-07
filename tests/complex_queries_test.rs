@@ -1,45 +1,31 @@
-use minigraf::graph::FactStorage;
-use minigraf::graph::types::Value;
-use minigraf::query::datalog::parser::parse_datalog_command;
-use minigraf::query::datalog::{DatalogExecutor, QueryResult};
+use minigraf::{Minigraf, QueryResult, Value};
 use uuid::Uuid;
+
+/// Helper: execute a Datalog command via `Minigraf::execute`, panicking on error
+fn exec(db: &Minigraf, input: &str) -> QueryResult {
+    db.execute(input)
+        .unwrap_or_else(|e| panic!("execution error for {:?}: {}", input, e))
+}
 
 /// Test 3-pattern join: find entities with name, age, and city
 #[test]
 fn test_three_pattern_join() {
-    let storage = FactStorage::new();
-    let executor = DatalogExecutor::new(storage.clone());
+    let db = Minigraf::in_memory().unwrap();
 
-    // Create entity with 3 attributes
-    let alice_id = Uuid::new_v4();
-    storage
-        .transact(
-            vec![
-                (
-                    alice_id,
-                    ":person/name".to_string(),
-                    Value::String("Alice".to_string()),
-                ),
-                (alice_id, ":person/age".to_string(), Value::Integer(30)),
-                (
-                    alice_id,
-                    ":person/city".to_string(),
-                    Value::String("NYC".to_string()),
-                ),
-            ],
-            None,
-        )
-        .unwrap();
+    exec(
+        &db,
+        r#"(transact [[:alice :person/name "Alice"]
+                       [:alice :person/age 30]
+                       [:alice :person/city "NYC"]])"#,
+    );
 
-    let query = parse_datalog_command(
+    let result = exec(
+        &db,
         r#"(query [:find ?name ?age ?city
                    :where [?e :person/name ?name]
                           [?e :person/age ?age]
                           [?e :person/city ?city]])"#,
-    )
-    .unwrap();
-
-    let result = executor.execute(query).unwrap();
+    );
     match result {
         QueryResult::QueryResults { vars, results } => {
             assert_eq!(vars, vec!["?name", "?age", "?city"]);
@@ -55,45 +41,27 @@ fn test_three_pattern_join() {
 /// Test 4-pattern join with multiple entities
 #[test]
 fn test_four_pattern_join() {
-    let storage = FactStorage::new();
-    let executor = DatalogExecutor::new(storage.clone());
+    let db = Minigraf::in_memory().unwrap();
 
-    let alice = Uuid::new_v4();
-    let bob = Uuid::new_v4();
+    exec(
+        &db,
+        r#"(transact [[:alice :person/name "Alice"]
+                       [:alice :person/age 30]
+                       [:bob   :person/name "Bob"]
+                       [:bob   :person/age 25]
+                       [:alice :friend :bob]])"#,
+    );
 
-    storage
-        .transact(
-            vec![
-                (
-                    alice,
-                    ":person/name".to_string(),
-                    Value::String("Alice".to_string()),
-                ),
-                (alice, ":person/age".to_string(), Value::Integer(30)),
-                (
-                    bob,
-                    ":person/name".to_string(),
-                    Value::String("Bob".to_string()),
-                ),
-                (bob, ":person/age".to_string(), Value::Integer(25)),
-                (alice, ":friend".to_string(), Value::Ref(bob)),
-            ],
-            None,
-        )
-        .unwrap();
-
-    // Find pairs where person1 is older than 28 and friends with person2
-    let query = parse_datalog_command(
+    // Find pairs where person1 friends person2
+    let result = exec(
+        &db,
         r#"(query [:find ?name1 ?age1 ?name2 ?age2
                    :where [?p1 :person/name ?name1]
                           [?p1 :person/age ?age1]
                           [?p1 :friend ?p2]
                           [?p2 :person/name ?name2]
                           [?p2 :person/age ?age2]])"#,
-    )
-    .unwrap();
-
-    let result = executor.execute(query).unwrap();
+    );
     match result {
         QueryResult::QueryResults { vars, results } => {
             assert_eq!(vars.len(), 4);
@@ -110,49 +78,25 @@ fn test_four_pattern_join() {
 /// Test self-join: find friends of friends
 #[test]
 fn test_self_join_friends_of_friends() {
-    let storage = FactStorage::new();
-    let executor = DatalogExecutor::new(storage.clone());
+    let db = Minigraf::in_memory().unwrap();
 
-    let alice = Uuid::new_v4();
-    let bob = Uuid::new_v4();
-    let charlie = Uuid::new_v4();
-
-    storage
-        .transact(
-            vec![
-                (
-                    alice,
-                    ":person/name".to_string(),
-                    Value::String("Alice".to_string()),
-                ),
-                (
-                    bob,
-                    ":person/name".to_string(),
-                    Value::String("Bob".to_string()),
-                ),
-                (
-                    charlie,
-                    ":person/name".to_string(),
-                    Value::String("Charlie".to_string()),
-                ),
-                (alice, ":friend".to_string(), Value::Ref(bob)),
-                (bob, ":friend".to_string(), Value::Ref(charlie)),
-            ],
-            None,
-        )
-        .unwrap();
+    exec(
+        &db,
+        r#"(transact [[:alice   :person/name "Alice"]
+                       [:bob     :person/name "Bob"]
+                       [:charlie :person/name "Charlie"]
+                       [:alice   :friend :bob]
+                       [:bob     :friend :charlie]])"#,
+    );
 
     // Find friends of Alice's friends (Bob's friends)
-    let query_str = format!(
+    let result = exec(
+        &db,
         r#"(query [:find ?name
-                   :where [#uuid "{}" :friend ?friend]
+                   :where [:alice :friend ?friend]
                           [?friend :friend ?fof]
                           [?fof :person/name ?name]])"#,
-        alice
     );
-    let query = parse_datalog_command(&query_str).unwrap();
-
-    let result = executor.execute(query).unwrap();
     match result {
         QueryResult::QueryResults { vars, results } => {
             assert_eq!(vars, vec!["?name"]);
@@ -166,48 +110,25 @@ fn test_self_join_friends_of_friends() {
 /// Test entity reference join: find people working at specific company
 #[test]
 fn test_entity_reference_join() {
-    let storage = FactStorage::new();
-    let executor = DatalogExecutor::new(storage.clone());
+    let db = Minigraf::in_memory().unwrap();
 
-    let alice = Uuid::new_v4();
-    let bob = Uuid::new_v4();
-    let company = Uuid::new_v4();
-
-    storage
-        .transact(
-            vec![
-                (
-                    alice,
-                    ":person/name".to_string(),
-                    Value::String("Alice".to_string()),
-                ),
-                (
-                    bob,
-                    ":person/name".to_string(),
-                    Value::String("Bob".to_string()),
-                ),
-                (
-                    company,
-                    ":company/name".to_string(),
-                    Value::String("TechCorp".to_string()),
-                ),
-                (alice, ":works-at".to_string(), Value::Ref(company)),
-                (bob, ":works-at".to_string(), Value::Ref(company)),
-            ],
-            None,
-        )
-        .unwrap();
+    exec(
+        &db,
+        r#"(transact [[:alice   :person/name "Alice"]
+                       [:bob     :person/name "Bob"]
+                       [:techcorp :company/name "TechCorp"]
+                       [:alice   :works-at :techcorp]
+                       [:bob     :works-at :techcorp]])"#,
+    );
 
     // Find people working at TechCorp
-    let query = parse_datalog_command(
+    let result = exec(
+        &db,
         r#"(query [:find ?person-name
                    :where [?person :works-at ?company]
                           [?company :company/name "TechCorp"]
                           [?person :person/name ?person-name]])"#,
-    )
-    .unwrap();
-
-    let result = executor.execute(query).unwrap();
+    );
     match result {
         QueryResult::QueryResults { vars, results } => {
             assert_eq!(vars, vec!["?person-name"]);
@@ -231,27 +152,15 @@ fn test_entity_reference_join() {
 /// Test query with no results
 #[test]
 fn test_query_no_results() {
-    let storage = FactStorage::new();
-    let executor = DatalogExecutor::new(storage.clone());
+    let db = Minigraf::in_memory().unwrap();
 
-    // Add some facts
-    let alice = Uuid::new_v4();
-    storage
-        .transact(
-            vec![(
-                alice,
-                ":person/name".to_string(),
-                Value::String("Alice".to_string()),
-            )],
-            None,
-        )
-        .unwrap();
+    exec(&db, r#"(transact [[:alice :person/name "Alice"]])"#);
 
     // Query for non-existent attribute
-    let query = parse_datalog_command(r#"(query [:find ?email :where [?e :person/email ?email]])"#)
-        .unwrap();
-
-    let result = executor.execute(query).unwrap();
+    let result = exec(
+        &db,
+        r#"(query [:find ?email :where [?e :person/email ?email]])"#,
+    );
     match result {
         QueryResult::QueryResults { vars, results } => {
             assert_eq!(vars, vec!["?email"]);
@@ -264,41 +173,22 @@ fn test_query_no_results() {
 /// Test query with partial matches (some entities match, some don't)
 #[test]
 fn test_query_partial_matches() {
-    let storage = FactStorage::new();
-    let executor = DatalogExecutor::new(storage.clone());
+    let db = Minigraf::in_memory().unwrap();
 
-    let alice = Uuid::new_v4();
-    let bob = Uuid::new_v4();
-
-    storage
-        .transact(
-            vec![
-                (
-                    alice,
-                    ":person/name".to_string(),
-                    Value::String("Alice".to_string()),
-                ),
-                (alice, ":person/age".to_string(), Value::Integer(30)),
-                (
-                    bob,
-                    ":person/name".to_string(),
-                    Value::String("Bob".to_string()),
-                ),
-                // Bob has no age
-            ],
-            None,
-        )
-        .unwrap();
+    exec(
+        &db,
+        r#"(transact [[:alice :person/name "Alice"]
+                       [:alice :person/age 30]
+                       [:bob   :person/name "Bob"]])"#,
+    );
 
     // Query for name AND age - should only return Alice
-    let query = parse_datalog_command(
+    let result = exec(
+        &db,
         r#"(query [:find ?name ?age
                    :where [?e :person/name ?name]
                           [?e :person/age ?age]])"#,
-    )
-    .unwrap();
-
-    let result = executor.execute(query).unwrap();
+    );
     match result {
         QueryResult::QueryResults { vars, results } => {
             assert_eq!(vars.len(), 2);
@@ -312,38 +202,21 @@ fn test_query_partial_matches() {
 /// Test query with same variable used multiple times
 #[test]
 fn test_query_variable_reuse() {
-    let storage = FactStorage::new();
-    let executor = DatalogExecutor::new(storage.clone());
+    let db = Minigraf::in_memory().unwrap();
 
-    let alice = Uuid::new_v4();
-
-    storage
-        .transact(
-            vec![
-                (
-                    alice,
-                    ":person/name".to_string(),
-                    Value::String("Alice".to_string()),
-                ),
-                (
-                    alice,
-                    ":person/nickname".to_string(),
-                    Value::String("Alice".to_string()),
-                ),
-            ],
-            None,
-        )
-        .unwrap();
+    exec(
+        &db,
+        r#"(transact [[:alice :person/name "Alice"]
+                       [:alice :person/nickname "Alice"]])"#,
+    );
 
     // Find people whose name equals their nickname
-    let query = parse_datalog_command(
+    let result = exec(
+        &db,
         r#"(query [:find ?name
                    :where [?e :person/name ?name]
                           [?e :person/nickname ?name]])"#,
-    )
-    .unwrap();
-
-    let result = executor.execute(query).unwrap();
+    );
     match result {
         QueryResult::QueryResults { vars, results } => {
             assert_eq!(vars, vec!["?name"]);
@@ -357,64 +230,30 @@ fn test_query_variable_reuse() {
 /// Test query with multiple entities, complex filtering
 #[test]
 fn test_complex_multi_entity_query() {
-    let storage = FactStorage::new();
-    let executor = DatalogExecutor::new(storage.clone());
+    let db = Minigraf::in_memory().unwrap();
 
-    let alice = Uuid::new_v4();
-    let bob = Uuid::new_v4();
-    let charlie = Uuid::new_v4();
-    let project1 = Uuid::new_v4();
-    let project2 = Uuid::new_v4();
-
-    storage
-        .transact(
-            vec![
-                (
-                    alice,
-                    ":person/name".to_string(),
-                    Value::String("Alice".to_string()),
-                ),
-                (
-                    bob,
-                    ":person/name".to_string(),
-                    Value::String("Bob".to_string()),
-                ),
-                (
-                    charlie,
-                    ":person/name".to_string(),
-                    Value::String("Charlie".to_string()),
-                ),
-                (
-                    project1,
-                    ":project/name".to_string(),
-                    Value::String("Project X".to_string()),
-                ),
-                (
-                    project2,
-                    ":project/name".to_string(),
-                    Value::String("Project Y".to_string()),
-                ),
-                (alice, ":works-on".to_string(), Value::Ref(project1)),
-                (bob, ":works-on".to_string(), Value::Ref(project1)),
-                (charlie, ":works-on".to_string(), Value::Ref(project2)),
-                (alice, ":manages".to_string(), Value::Ref(project1)),
-            ],
-            None,
-        )
-        .unwrap();
+    exec(
+        &db,
+        r#"(transact [[:alice    :person/name "Alice"]
+                       [:bob      :person/name "Bob"]
+                       [:charlie  :person/name "Charlie"]
+                       [:project1 :project/name "Project X"]
+                       [:project2 :project/name "Project Y"]
+                       [:alice    :works-on :project1]
+                       [:bob      :works-on :project1]
+                       [:charlie  :works-on :project2]
+                       [:alice    :manages :project1]])"#,
+    );
 
     // Find projects that Alice manages, along with other people working on them
-    let query_str = format!(
+    let result = exec(
+        &db,
         r#"(query [:find ?project-name ?coworker-name
-                   :where [#uuid "{}" :manages ?project]
+                   :where [:alice :manages ?project]
                           [?project :project/name ?project-name]
                           [?coworker :works-on ?project]
                           [?coworker :person/name ?coworker-name]])"#,
-        alice
     );
-    let query = parse_datalog_command(&query_str).unwrap();
-
-    let result = executor.execute(query).unwrap();
     match result {
         QueryResult::QueryResults { vars, results } => {
             assert_eq!(vars.len(), 2);
@@ -438,60 +277,23 @@ fn test_complex_multi_entity_query() {
 /// Test query returning multiple variable bindings per entity
 #[test]
 fn test_multiple_values_same_attribute() {
-    let storage = FactStorage::new();
-    let executor = DatalogExecutor::new(storage.clone());
+    let db = Minigraf::in_memory().unwrap();
 
-    let alice = Uuid::new_v4();
-
-    storage
-        .transact(
-            vec![
-                (
-                    alice,
-                    ":person/name".to_string(),
-                    Value::String("Alice".to_string()),
-                ),
-                (
-                    alice,
-                    ":hobby".to_string(),
-                    Value::String("Reading".to_string()),
-                ),
-            ],
-            None,
-        )
-        .unwrap();
-
-    storage
-        .transact(
-            vec![(
-                alice,
-                ":hobby".to_string(),
-                Value::String("Hiking".to_string()),
-            )],
-            None,
-        )
-        .unwrap();
-
-    storage
-        .transact(
-            vec![(
-                alice,
-                ":hobby".to_string(),
-                Value::String("Coding".to_string()),
-            )],
-            None,
-        )
-        .unwrap();
+    exec(
+        &db,
+        r#"(transact [[:alice :person/name "Alice"]
+                       [:alice :hobby "Reading"]])"#,
+    );
+    exec(&db, r#"(transact [[:alice :hobby "Hiking"]])"#);
+    exec(&db, r#"(transact [[:alice :hobby "Coding"]])"#);
 
     // Find all hobbies (should get 3 separate results)
-    let query = parse_datalog_command(
+    let result = exec(
+        &db,
         r#"(query [:find ?hobby
                    :where [?e :person/name "Alice"]
                           [?e :hobby ?hobby]])"#,
-    )
-    .unwrap();
-
-    let result = executor.execute(query).unwrap();
+    );
     match result {
         QueryResult::QueryResults { vars, results } => {
             assert_eq!(vars, vec!["?hobby"]);
@@ -516,17 +318,51 @@ fn test_multiple_values_same_attribute() {
 /// Test empty database query
 #[test]
 fn test_query_empty_database() {
-    let storage = FactStorage::new();
-    let executor = DatalogExecutor::new(storage);
+    let db = Minigraf::in_memory().unwrap();
 
-    let query =
-        parse_datalog_command(r#"(query [:find ?name :where [?e :person/name ?name]])"#).unwrap();
-
-    let result = executor.execute(query).unwrap();
+    let result = exec(
+        &db,
+        r#"(query [:find ?name :where [?e :person/name ?name]])"#,
+    );
     match result {
         QueryResult::QueryResults { vars, results } => {
             assert_eq!(vars, vec!["?name"]);
             assert_eq!(results.len(), 0);
+        }
+        _ => panic!("Expected QueryResults"),
+    }
+}
+
+/// Test UUID entity references (verify #uuid literals work in queries)
+#[test]
+fn test_uuid_entity_reference() {
+    let db = Minigraf::in_memory().unwrap();
+
+    let alice = Uuid::new_v4();
+    let bob = Uuid::new_v4();
+
+    // Use UUID entities via the execute API
+    let cmd = format!(
+        r#"(transact [[#uuid "{}" :person/name "Alice"]
+                       [#uuid "{}" :person/name "Bob"]
+                       [#uuid "{}" :friend #uuid "{}"]])"#,
+        alice, bob, alice, bob
+    );
+    exec(&db, &cmd);
+
+    // Query friends of Alice
+    let query = format!(
+        r#"(query [:find ?name
+                   :where [#uuid "{}" :friend ?friend]
+                          [?friend :person/name ?name]])"#,
+        alice
+    );
+    let result = exec(&db, &query);
+    match result {
+        QueryResult::QueryResults { vars, results } => {
+            assert_eq!(vars, vec!["?name"]);
+            assert_eq!(results.len(), 1);
+            assert_eq!(results[0][0], Value::String("Bob".to_string()));
         }
         _ => panic!("Expected QueryResults"),
     }

@@ -192,9 +192,9 @@ pub const VALID_TIME_FOREVER: i64 = i64::MAX;
 /// - `valid_to`: when the fact stopped being valid (`VALID_TIME_FOREVER` = open-ended)
 ///
 /// # Examples
-/// ```
-/// use minigraf::{Fact, Value};
+/// ```ignore
 /// use uuid::Uuid;
+/// use crate::graph::types::{Fact, Value};
 ///
 /// // Fact: Alice's name is "Alice"
 /// let alice_id = Uuid::new_v4();

@@ -12,8 +12,10 @@
 //! - V2 → V3 file format upgrade on first checkpoint
 
 use minigraf::db::{Minigraf, OpenOptions};
-use minigraf::query::QueryResult;
-use minigraf::storage::{FileHeader, PAGE_SIZE};
+use minigraf::QueryResult;
+
+/// File format page size (4 KiB) — matches the internal `PAGE_SIZE` constant.
+const PAGE_SIZE: usize = 4096;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -255,15 +257,18 @@ fn test_manual_checkpoint_deletes_wal() {
     );
     assert_eq!(n, 1, "Alice must still be visible after checkpoint");
 
-    // Main file header must reflect the checkpoint
+    // Main file header must reflect the checkpoint.
+    // Reads the raw bytes: version is at offset 4..8 (u32 LE),
+    // last_checkpointed_tx_count is at offset 24..32 (u64 LE).
     {
         use std::io::Read;
         let mut f = std::fs::File::open(&db_path).unwrap();
         let mut page = vec![0u8; PAGE_SIZE];
         f.read_exact(&mut page).unwrap();
-        let header = FileHeader::from_bytes(&page).unwrap();
+        let last_checkpointed_tx_count =
+            u64::from_le_bytes(page[24..32].try_into().unwrap());
         assert!(
-            header.last_checkpointed_tx_count > 0,
+            last_checkpointed_tx_count > 0,
             "last_checkpointed_tx_count must be set after checkpoint"
         );
     }
@@ -577,20 +582,25 @@ fn test_v2_file_opens_and_upgrades_to_v3_on_checkpoint() {
         // Drop runs another checkpoint, but that's idempotent.
     }
 
-    // ── Read the raw header and assert version = 3 ───────────────────────
+    // ── Read the raw header and assert version = 7 ───────────────────────
+    // Reads raw bytes: magic at 0..4, version at 4..8 (u32 LE),
+    // last_checkpointed_tx_count at 24..32 (u64 LE).
     let raw = std::fs::read(&db_path).unwrap();
     assert!(
         raw.len() >= PAGE_SIZE,
         "file must be at least one page after checkpoint"
     );
-    let header = FileHeader::from_bytes(&raw[..PAGE_SIZE]).unwrap();
+    let magic = &raw[0..4];
+    let version = u32::from_le_bytes(raw[4..8].try_into().unwrap());
+    let last_checkpointed_tx_count =
+        u64::from_le_bytes(raw[24..32].try_into().unwrap());
     assert_eq!(
-        header.version, 7,
+        version, 7,
         "file must be upgraded to v7 on checkpoint"
     );
-    assert_eq!(header.magic, *b"MGRF", "magic number must be preserved");
+    assert_eq!(magic, b"MGRF", "magic number must be preserved");
     assert!(
-        header.last_checkpointed_tx_count > 0,
+        last_checkpointed_tx_count > 0,
         "last_checkpointed_tx_count must be set after checkpoint on v2→v6 upgrade"
     );
 }

@@ -10,9 +10,9 @@ use std::collections::HashMap;
 /// In-memory registry for Datalog rules.
 ///
 /// # Examples
-/// ```
-/// use minigraf::query::datalog::rules::RuleRegistry;
-/// use minigraf::query::datalog::types::Rule;
+/// ```ignore
+/// use crate::query::datalog::rules::RuleRegistry;
+/// use crate::query::datalog::types::Rule;
 ///
 /// let mut registry = RuleRegistry::new();
 ///

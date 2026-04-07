@@ -9,8 +9,7 @@
 //! - Explicit write transactions work correctly with indexes
 
 use minigraf::db::Minigraf;
-use minigraf::graph::types::Value;
-use minigraf::query::QueryResult;
+use minigraf::{QueryResult, Value};
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

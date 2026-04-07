@@ -1,6 +1,5 @@
 use minigraf::db::Minigraf;
-use minigraf::graph::types::Value;
-use minigraf::query::datalog::executor::QueryResult;
+use minigraf::{QueryResult, Value};
 
 fn setup_employees() -> Minigraf {
     let db = Minigraf::in_memory().expect("in-memory db");

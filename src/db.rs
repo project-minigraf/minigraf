@@ -713,7 +713,7 @@ impl Minigraf {
     /// # Example
     /// ```
     /// # use minigraf::db::Minigraf;
-    /// # use minigraf::graph::types::Value;
+    /// # use minigraf::Value;
     /// let db = Minigraf::in_memory().unwrap();
     /// db.register_aggregate(
     ///     "mysum",
@@ -773,7 +773,7 @@ impl Minigraf {
     /// # Example
     /// ```
     /// # use minigraf::db::Minigraf;
-    /// # use minigraf::graph::types::Value;
+    /// # use minigraf::Value;
     /// let db = Minigraf::in_memory().unwrap();
     /// db.register_predicate(
     ///     "email?",

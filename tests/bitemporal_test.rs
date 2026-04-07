@@ -1,14 +1,8 @@
-use minigraf::graph::FactStorage;
-use minigraf::graph::types::Value;
-use minigraf::{DatalogExecutor, QueryResult, parse_datalog_command};
-use uuid::Uuid;
+use minigraf::{Minigraf, QueryResult, Value};
 
-/// Helper: parse and execute a Datalog command string, panicking on error
-fn exec(executor: &DatalogExecutor, input: &str) -> QueryResult {
-    let cmd = parse_datalog_command(input)
-        .unwrap_or_else(|e| panic!("parse error for {:?}: {}", input, e));
-    executor
-        .execute(cmd)
+/// Helper: execute a Datalog command string via `Minigraf::execute`, panicking on error
+fn exec(db: &Minigraf, input: &str) -> QueryResult {
+    db.execute(input)
         .unwrap_or_else(|e| panic!("execution error for {:?}: {}", input, e))
 }
 
@@ -26,19 +20,18 @@ fn result_rows(result: QueryResult) -> Vec<Vec<Value>> {
 
 #[test]
 fn test_tx_time_travel_via_counter() {
-    let storage = FactStorage::new();
-    let executor = DatalogExecutor::new(storage);
+    let db = Minigraf::in_memory().unwrap();
 
     // tx_count=1: assert Alice's name
-    exec(&executor, r#"(transact [[:alice :person/name "Alice"]])"#);
+    exec(&db, r#"(transact [[:alice :person/name "Alice"]])"#);
 
     // tx_count=2: assert Alice's age
-    exec(&executor, r#"(transact [[:alice :person/age "30"]])"#);
+    exec(&db, r#"(transact [[:alice :person/age "30"]])"#);
 
     // :as-of 1 → only the name fact was asserted at tx_count=1
     // Use :valid-at :any-valid-time so the forever-valid fact passes the valid-time filter
     let result = exec(
-        &executor,
+        &db,
         r#"(query [:find ?attr :as-of 1 :valid-at :any-valid-time :where [:alice ?attr ?v]])"#,
     );
     let rows = result_rows(result);
@@ -57,17 +50,16 @@ fn test_tx_time_travel_via_counter() {
 
 #[test]
 fn test_tx_time_travel_as_of_all() {
-    let storage = FactStorage::new();
-    let executor = DatalogExecutor::new(storage);
+    let db = Minigraf::in_memory().unwrap();
 
     // tx_count=1
-    exec(&executor, r#"(transact [[:alice :person/name "Alice"]])"#);
+    exec(&db, r#"(transact [[:alice :person/name "Alice"]])"#);
     // tx_count=2
-    exec(&executor, r#"(transact [[:alice :person/age "30"]])"#);
+    exec(&db, r#"(transact [[:alice :person/age "30"]])"#);
 
     // :as-of 2 (or higher) → both facts visible
     let result = exec(
-        &executor,
+        &db,
         r#"(query [:find ?attr :as-of 2 :valid-at :any-valid-time :where [:alice ?attr ?v]])"#,
     );
     let rows = result_rows(result);
@@ -80,18 +72,17 @@ fn test_tx_time_travel_as_of_all() {
 
 #[test]
 fn test_valid_at_inside_range() {
-    let storage = FactStorage::new();
-    let executor = DatalogExecutor::new(storage);
+    let db = Minigraf::in_memory().unwrap();
 
     // Alice was employed at Acme from 2023-01-01 to 2023-06-30
     exec(
-        &executor,
+        &db,
         r#"(transact {:valid-from "2023-01-01" :valid-to "2023-06-30"} [[:alice :employment/status :active]])"#,
     );
 
     // Query on 2023-03-01 (inside range) → should match
     let result = exec(
-        &executor,
+        &db,
         r#"(query [:find ?s :valid-at "2023-03-01" :where [:alice :employment/status ?s]])"#,
     );
     let rows = result_rows(result);
@@ -112,17 +103,16 @@ fn test_valid_at_inside_range() {
 
 #[test]
 fn test_valid_at_outside_range() {
-    let storage = FactStorage::new();
-    let executor = DatalogExecutor::new(storage);
+    let db = Minigraf::in_memory().unwrap();
 
     exec(
-        &executor,
+        &db,
         r#"(transact {:valid-from "2023-01-01" :valid-to "2023-06-30"} [[:alice :employment/status :active]])"#,
     );
 
     // Query on 2024-01-01 (outside range) → no match
     let result = exec(
-        &executor,
+        &db,
         r#"(query [:find ?s :valid-at "2024-01-01" :where [:alice :employment/status ?s]])"#,
     );
     let rows = result_rows(result);
@@ -139,21 +129,20 @@ fn test_valid_at_outside_range() {
 
 #[test]
 fn test_no_valid_at_returns_only_current() {
-    let storage = FactStorage::new();
-    let executor = DatalogExecutor::new(storage);
+    let db = Minigraf::in_memory().unwrap();
 
     // Expired fact — valid only in 2020
     exec(
-        &executor,
+        &db,
         r#"(transact {:valid-from "2020-01-01" :valid-to "2020-12-31"} [[:alice :employment/org :old-company]])"#,
     );
 
     // Forever fact (default valid time: now to far future)
-    exec(&executor, r#"(transact [[:alice :person/name "Alice"]])"#);
+    exec(&db, r#"(transact [[:alice :person/name "Alice"]])"#);
 
     // Default query (no :valid-at) → only the forever-valid name fact
     let result = exec(
-        &executor,
+        &db,
         r#"(query [:find ?attr :where [:alice ?attr ?v]])"#,
     );
     let rows = result_rows(result);
@@ -174,21 +163,20 @@ fn test_no_valid_at_returns_only_current() {
 
 #[test]
 fn test_valid_at_any_valid_time_returns_all() {
-    let storage = FactStorage::new();
-    let executor = DatalogExecutor::new(storage);
+    let db = Minigraf::in_memory().unwrap();
 
     // Expired fact
     exec(
-        &executor,
+        &db,
         r#"(transact {:valid-from "2020-01-01" :valid-to "2020-12-31"} [[:alice :employment/org :old-company]])"#,
     );
 
     // Forever valid fact
-    exec(&executor, r#"(transact [[:alice :person/name "Alice"]])"#);
+    exec(&db, r#"(transact [[:alice :person/name "Alice"]])"#);
 
     // :any-valid-time → both facts returned
     let result = exec(
-        &executor,
+        &db,
         r#"(query [:find ?attr :valid-at :any-valid-time :where [:alice ?attr ?v]])"#,
     );
     let rows = result_rows(result);
@@ -205,24 +193,23 @@ fn test_valid_at_any_valid_time_returns_all() {
 
 #[test]
 fn test_bitemporal_combined_query() {
-    let storage = FactStorage::new();
-    let executor = DatalogExecutor::new(storage);
+    let db = Minigraf::in_memory().unwrap();
 
     // tx_count=1: Alice was active from 2023-01 to 2023-06
     exec(
-        &executor,
+        &db,
         r#"(transact {:valid-from "2023-01-01" :valid-to "2023-06-30"} [[:alice :employment/status :active]])"#,
     );
 
     // tx_count=2: Correction — Alice was actually inactive in that period
     exec(
-        &executor,
+        &db,
         r#"(transact {:valid-from "2023-01-01" :valid-to "2023-06-30"} [[:alice :employment/status :inactive]])"#,
     );
 
     // As-of tx 1, valid on 2023-03-01 → should see only the original :active fact
     let result = exec(
-        &executor,
+        &db,
         r#"(query [:find ?s :as-of 1 :valid-at "2023-03-01" :where [:alice :employment/status ?s]])"#,
     );
     let rows = result_rows(result);
@@ -243,18 +230,17 @@ fn test_bitemporal_combined_query() {
 
 #[test]
 fn test_valid_at_boundary_exclusive() {
-    let storage = FactStorage::new();
-    let executor = DatalogExecutor::new(storage);
+    let db = Minigraf::in_memory().unwrap();
 
     // Fact valid from 2023-01-01 (inclusive) to 2023-06-30 (exclusive)
     exec(
-        &executor,
+        &db,
         r#"(transact {:valid-from "2023-01-01" :valid-to "2023-06-30"} [[:alice :employment/status :active]])"#,
     );
 
     // Query exactly at valid_to boundary (should be exclusive)
     let result = exec(
-        &executor,
+        &db,
         r#"(query [:find ?s :valid-at "2023-06-30" :where [:alice :employment/status ?s]])"#,
     );
     let rows = result_rows(result);
@@ -266,7 +252,7 @@ fn test_valid_at_boundary_exclusive() {
 
     // Query one day before valid_to boundary → should match
     let result2 = exec(
-        &executor,
+        &db,
         r#"(query [:find ?s :valid-at "2023-06-29" :where [:alice :employment/status ?s]])"#,
     );
     let rows2 = result_rows(result2);
@@ -293,46 +279,26 @@ fn test_valid_at_boundary_exclusive() {
 
 #[test]
 fn test_bitemporal_multi_entity() {
-    let storage = FactStorage::new();
-    let executor = DatalogExecutor::new(storage.clone());
+    let db = Minigraf::in_memory().unwrap();
 
-    let alice = Uuid::new_v4();
-    let bob = Uuid::new_v4();
-
-    // Both employed in 2023 Q1
-    storage
-        .transact(
-            vec![
-                (
-                    alice,
-                    ":person/name".to_string(),
-                    Value::String("Alice".to_string()),
-                ),
-                (
-                    bob,
-                    ":person/name".to_string(),
-                    Value::String("Bob".to_string()),
-                ),
-            ],
-            None,
-        )
-        .unwrap();
+    // Establish names for both entities
+    exec(&db, r#"(transact [[:alice-kw :person/name "Alice"] [:bob-kw :person/name "Bob"]])"#);
 
     // Alice: employed at Acme in 2023 H1
     exec(
-        &executor,
+        &db,
         r#"(transact {:valid-from "2023-01-01" :valid-to "2023-06-30"} [[:alice-kw :employment/org :acme]])"#,
     );
 
     // Bob: employed at Beta in 2023 H2
     exec(
-        &executor,
+        &db,
         r#"(transact {:valid-from "2023-07-01" :valid-to "2023-12-31"} [[:bob-kw :employment/org :beta]])"#,
     );
 
     // Query at 2023-03-01: only :alice-kw is employed
     let result = exec(
-        &executor,
+        &db,
         r#"(query [:find ?who :valid-at "2023-03-01" :where [?who :employment/org ?org]])"#,
     );
     let rows = result_rows(result);
@@ -344,7 +310,7 @@ fn test_bitemporal_multi_entity() {
 
     // Query at 2023-09-01: only :bob-kw is employed
     let result2 = exec(
-        &executor,
+        &db,
         r#"(query [:find ?who :valid-at "2023-09-01" :where [?who :employment/org ?org]])"#,
     );
     let rows2 = result_rows(result2);
@@ -361,35 +327,34 @@ fn test_bitemporal_multi_entity() {
 
 #[test]
 fn test_as_of_counter_time_travel() {
-    let storage = FactStorage::new();
-    let executor = DatalogExecutor::new(storage);
+    let db = Minigraf::in_memory().unwrap();
 
     // tx_count=1: name
-    exec(&executor, r#"(transact [[:alice :person/name "Alice"]])"#);
+    exec(&db, r#"(transact [[:alice :person/name "Alice"]])"#);
 
     // tx_count=2: age
-    exec(&executor, r#"(transact [[:alice :person/age "30"]])"#);
+    exec(&db, r#"(transact [[:alice :person/age "30"]])"#);
 
     // tx_count=3: city
-    exec(&executor, r#"(transact [[:alice :person/city "NYC"]])"#);
+    exec(&db, r#"(transact [[:alice :person/city "NYC"]])"#);
 
     // :as-of 1 → only name
     let result1 = exec(
-        &executor,
+        &db,
         r#"(query [:find ?attr :as-of 1 :valid-at :any-valid-time :where [:alice ?attr ?v]])"#,
     );
     assert_eq!(result_rows(result1).len(), 1, "as-of 1: only name");
 
     // :as-of 2 → name + age
     let result2 = exec(
-        &executor,
+        &db,
         r#"(query [:find ?attr :as-of 2 :valid-at :any-valid-time :where [:alice ?attr ?v]])"#,
     );
     assert_eq!(result_rows(result2).len(), 2, "as-of 2: name + age");
 
     // :as-of 3 → name + age + city
     let result3 = exec(
-        &executor,
+        &db,
         r#"(query [:find ?attr :as-of 3 :valid-at :any-valid-time :where [:alice ?attr ?v]])"#,
     );
     assert_eq!(result_rows(result3).len(), 3, "as-of 3: name + age + city");
