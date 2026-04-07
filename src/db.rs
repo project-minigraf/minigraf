@@ -609,8 +609,23 @@ impl Minigraf {
     /// the built-in REPL (`src/main.rs`). External callers should use
     /// [`Minigraf::execute`] or [`Minigraf::begin_write`] to ensure crash safety.
     #[doc(hidden)]
-    pub fn inner_fact_storage(&self) -> crate::graph::FactStorage {
+    pub(crate) fn inner_fact_storage(&self) -> crate::graph::FactStorage {
         self.inner.fact_storage.clone()
+    }
+
+    /// Return an interactive REPL that reads commands from stdin.
+    ///
+    /// The REPL borrows the database for the duration of the session.
+    /// Call [`Repl::run`] to start the interactive loop.
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use minigraf::Minigraf;
+    /// let db = Minigraf::in_memory().unwrap();
+    /// db.repl().run();
+    /// ```
+    pub fn repl(&self) -> crate::repl::Repl<'_> {
+        crate::repl::Repl::new(self)
     }
 
     /// Compute the WAL sidecar path for a given database path.
@@ -1011,6 +1026,14 @@ impl Drop for WriteTransaction<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── repl factory ────────────────────────────────────────────────────────
+
+    #[test]
+    fn repl_constructed_from_db() {
+        let db = Minigraf::in_memory().unwrap();
+        let _repl = db.repl();
+    }
 
     // ── in_memory basic ─────────────────────────────────────────────────────
 
