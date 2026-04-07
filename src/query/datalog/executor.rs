@@ -41,7 +41,9 @@ pub enum QueryResult {
     Retracted(TxId),
     /// Query results: list of variable bindings
     QueryResults {
+        /// The variable names in the order they appear in the `:find` clause.
         vars: Vec<String>,
+        /// Each inner `Vec<Value>` is one result row, aligned with `vars`.
         results: Vec<Vec<Value>>,
     },
     /// Empty result (e.g., for future rule definitions)

@@ -1,6 +1,9 @@
 use crate::db::Minigraf;
 use std::io::{self, IsTerminal, Write};
 
+/// An interactive REPL for a [`Minigraf`] database.
+///
+/// Construct via [`Minigraf::repl`] and call [`Repl::run`] to start the session.
 pub struct Repl<'a> {
     db: &'a Minigraf,
 }
@@ -10,6 +13,11 @@ impl<'a> Repl<'a> {
         Repl { db }
     }
 
+    /// Start the interactive REPL loop.
+    ///
+    /// Reads Datalog commands from stdin line-by-line. When stdin is a TTY,
+    /// a banner and prompts are printed; when piped, output is suppressed so
+    /// the REPL can be driven by scripts.
     pub fn run(&self) {
         if io::stdin().is_terminal() {
             println!(

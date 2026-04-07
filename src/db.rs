@@ -219,7 +219,7 @@ impl Drop for Inner {
 /// # Fact Size Limit (file-backed databases only)
 ///
 /// Each fact persisted to a `.graph` file must serialise to at most
-/// [`crate::storage::packed_pages::MAX_FACT_BYTES`] bytes (currently 4 080).
+/// 4 080 bytes (the per-page capacity limit).
 ///
 /// In practice, `Value::String` content is limited to roughly **3 900–4 000 bytes**
 /// depending on entity and attribute name lengths.
@@ -603,7 +603,7 @@ impl Minigraf {
     /// Return an interactive REPL that reads commands from stdin.
     ///
     /// The REPL borrows the database for the duration of the session.
-    /// Call [`Repl::run`] to start the interactive loop.
+    /// Call [`crate::repl::Repl::run`] to start the interactive loop.
     ///
     /// # Example
     /// ```no_run

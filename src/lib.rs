@@ -49,6 +49,7 @@
 pub mod db;
 pub(crate) mod graph;
 pub(crate) mod query;
+/// Interactive REPL for exploring a [`Minigraf`] database from the command line.
 pub mod repl;
 pub(crate) mod storage;
 pub(crate) mod temporal;
