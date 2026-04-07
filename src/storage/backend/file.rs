@@ -179,78 +179,64 @@ impl StorageBackend for FileBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
 
     #[test]
     fn test_file_backend_create() {
-        let temp_path = "/tmp/test_minigraf_create.graph";
-        let _ = fs::remove_file(temp_path); // Clean up if exists
+        let dir = tempfile::tempdir().unwrap();
+        let temp_path = dir.path().join("test_minigraf_create.graph");
 
-        let backend = FileBackend::open(temp_path).unwrap();
+        let backend = FileBackend::open(&temp_path).unwrap();
         assert_eq!(backend.backend_name(), "file");
         assert_eq!(backend.page_count().unwrap(), 1); // Header page
         assert!(backend.is_new(), "newly created file should be new");
-
-        // Clean up
-        drop(backend);
-        fs::remove_file(temp_path).unwrap();
     }
 
     #[test]
     fn test_file_backend_existing_file_not_new() {
-        let temp_path = "/tmp/test_minigraf_existing.graph";
-        let _ = fs::remove_file(temp_path);
+        let dir = tempfile::tempdir().unwrap();
+        let temp_path = dir.path().join("test_minigraf_existing.graph");
 
         {
-            let backend = FileBackend::open(temp_path).unwrap();
+            let backend = FileBackend::open(&temp_path).unwrap();
             assert!(backend.is_new(), "first open should be new");
-            drop(backend);
         }
 
         {
-            let backend = FileBackend::open(temp_path).unwrap();
+            let backend = FileBackend::open(&temp_path).unwrap();
             assert!(
                 !backend.is_new(),
                 "reopening existing file should not be new"
             );
-            drop(backend);
         }
 
         {
-            let backend = FileBackend::open(temp_path).unwrap();
+            let backend = FileBackend::open(&temp_path).unwrap();
             assert!(!backend.is_new(), "third open should still not be new");
-            drop(backend);
         }
-
-        fs::remove_file(temp_path).unwrap();
     }
 
     #[test]
     fn test_file_backend_write_read() {
-        let temp_path = "/tmp/test_minigraf_write_read.graph";
-        let _ = fs::remove_file(temp_path);
+        let dir = tempfile::tempdir().unwrap();
+        let temp_path = dir.path().join("test_minigraf_write_read.graph");
 
-        let mut backend = FileBackend::open(temp_path).unwrap();
+        let mut backend = FileBackend::open(&temp_path).unwrap();
 
         let data = vec![42u8; PAGE_SIZE];
         backend.write_page(1, &data).unwrap(); // Page 0 is header
 
         let read_data = backend.read_page(1).unwrap();
         assert_eq!(data, read_data);
-
-        // Clean up
-        drop(backend);
-        fs::remove_file(temp_path).unwrap();
     }
 
     #[test]
     fn test_file_backend_persistence() {
-        let temp_path = "/tmp/test_file_backend_persistence.graph";
-        let _ = fs::remove_file(temp_path);
+        let dir = tempfile::tempdir().unwrap();
+        let temp_path = dir.path().join("test_file_backend_persistence.graph");
 
         // Write data
         {
-            let mut backend = FileBackend::open(temp_path).unwrap();
+            let mut backend = FileBackend::open(&temp_path).unwrap();
             let data = vec![99u8; PAGE_SIZE];
             backend.write_page(1, &data).unwrap();
             backend.close().unwrap();
@@ -258,21 +244,18 @@ mod tests {
 
         // Read data after reopening
         {
-            let backend = FileBackend::open(temp_path).unwrap();
+            let backend = FileBackend::open(&temp_path).unwrap();
             let read_data = backend.read_page(1).unwrap();
             assert_eq!(read_data[0], 99);
         }
-
-        // Clean up
-        fs::remove_file(temp_path).unwrap();
     }
 
     #[test]
     fn test_file_backend_page_count() {
-        let temp_path = "/tmp/test_minigraf_page_count.graph";
-        let _ = fs::remove_file(temp_path);
+        let dir = tempfile::tempdir().unwrap();
+        let temp_path = dir.path().join("test_minigraf_page_count.graph");
 
-        let mut backend = FileBackend::open(temp_path).unwrap();
+        let mut backend = FileBackend::open(&temp_path).unwrap();
         assert_eq!(backend.page_count().unwrap(), 1);
 
         backend.write_page(1, &vec![0u8; PAGE_SIZE]).unwrap();
@@ -280,9 +263,5 @@ mod tests {
 
         backend.write_page(2, &vec![0u8; PAGE_SIZE]).unwrap();
         assert_eq!(backend.page_count().unwrap(), 3);
-
-        // Clean up
-        drop(backend);
-        fs::remove_file(temp_path).unwrap();
     }
 }
