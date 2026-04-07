@@ -671,9 +671,18 @@ impl Transaction {
     }
 }
 
-/// A point-in-time selector for transaction-time travel queries.
+/// A point-in-time selector for **transaction-time** travel queries.
 ///
-/// Used with `get_facts_as_of()` to snapshot the database at a past point.
+/// Selects the subset of facts that had been committed on or before the
+/// specified point. Use `:as-of N` in a query to snapshot the database
+/// at a past transaction counter, or `:as-of "2024-01-15T10:00:00Z"` to
+/// snapshot at a wall-clock time.
+///
+/// # Datalog syntax
+/// ```text
+/// (query [:find ?name :as-of 5 :where [:alice :person/name ?name]])
+/// (query [:find ?name :as-of "2024-01-15T10:00:00Z" :where ...])
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum AsOf {
     /// Select facts whose `tx_count` is ≤ n (monotonic batch counter).
@@ -684,10 +693,21 @@ pub enum AsOf {
     Slot(String),
 }
 
-/// A point-in-time selector for valid-time travel queries.
+/// A point-in-time selector for **valid-time** queries.
 ///
-/// Used with `get_facts_valid_at()` to see which facts were valid at a
-/// specific moment in the real world.
+/// Valid time tracks when a fact is true in the real world, independent of
+/// when it was recorded. Use `:valid-at "2023-06-01"` to see which facts were
+/// valid on a specific date. Use `:valid-at :any-valid-time` to return all
+/// facts regardless of validity period (useful for auditing).
+///
+/// Without `:valid-at`, queries return only facts that are currently valid
+/// (i.e., `valid_from <= now < valid_to`).
+///
+/// # Datalog syntax
+/// ```text
+/// (query [:find ?name :valid-at "2023-06-01" :where [:alice :person/name ?name]])
+/// (query [:find ?name :valid-at :any-valid-time :where ...])
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValidAt {
     /// Return facts where `valid_from <= ts < valid_to`.

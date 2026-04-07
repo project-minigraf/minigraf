@@ -21,30 +21,50 @@ pub(crate) fn tx_id_now() -> TxId {
         .as_millis() as u64
 }
 
-/// Entity ID type - using UUID for unique entity identification
+/// A unique identifier for a graph entity (UUID v4).
+///
+/// In Datalog syntax, entities are written as keywords (`:alice`, `:person/42`)
+/// or as UUID literals (`#uuid "550e8400-e29b-41d4-a716-446655440000"`).
+/// `EntityId` values appear in [`Value::Ref`] for cross-entity relationships
+/// and are returned in query result rows.
 pub type EntityId = Uuid;
 
 /// Attribute name - namespace-qualified keywords like ":person/name" or ":friend"
 pub(crate) type Attribute = String;
 
-/// Value types for Datalog facts
+/// All value types that can be stored in a Minigraf fact.
 ///
-/// The Value enum represents all possible value types that can be stored in facts.
+/// Values appear in the third position of EAV triples:
+/// `[entity attribute value]`, e.g. `[:alice :person/name "Alice"]`.
+///
+/// # Datalog literals
+///
+/// | Variant | Datalog syntax | Example |
+/// |---------|---------------|---------|
+/// | `String` | double-quoted | `"hello"` |
+/// | `Integer` | bare integer | `42`, `-7` |
+/// | `Float` | decimal | `3.14`, `-0.5` |
+/// | `Boolean` | `true` / `false` | `true` |
+/// | `Ref` | keyword entity or UUID | `:alice`, `#uuid "550e8400-..."` |
+/// | `Keyword` | colon-prefixed | `:status/active`, `:red` |
+/// | `Null` | `nil` | `nil` |
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Value {
-    /// String value
+    /// A UTF-8 string. Datalog literal: `"hello"`.
     String(String),
-    /// 64-bit integer
+    /// A 64-bit signed integer. Datalog literal: `42` or `-7`.
     Integer(i64),
-    /// 64-bit floating point
+    /// A 64-bit float. Datalog literal: `3.14` or `-0.5`.
     Float(f64),
-    /// Boolean value
+    /// A boolean. Datalog literal: `true` or `false`.
     Boolean(bool),
-    /// Reference to another entity (for relationships)
+    /// A reference to another entity by its [`EntityId`] (UUID).
+    /// Datalog literal: `:alice` (keyword short-form) or `#uuid "..."`.
     Ref(EntityId),
-    /// Keyword (e.g., ":status/active", ":person")
+    /// A namespaced keyword used for enumerated values and tags.
+    /// Datalog literal: `:status/active`, `:red`.
     Keyword(String),
-    /// Null/None value
+    /// An absent value. Datalog literal: `nil`.
     Null,
 }
 

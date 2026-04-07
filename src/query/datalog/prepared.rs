@@ -13,19 +13,30 @@ use uuid::Uuid;
 
 // ─── BindValue ────────────────────────────────────────────────────────────────
 
-/// A concrete value supplied to a named bind slot (`$name`) in a `PreparedQuery`.
+/// A concrete value supplied to a named bind slot (`$name`) in a [`PreparedQuery`].
+///
+/// Each variant corresponds to a different query position:
+///
+/// | Variant | Use in query |
+/// |---------|-------------|
+/// | `Entity` | entity position: `[$slot :attr ?v]` |
+/// | `Val` | value position: `[?e :attr $slot]`, expressions |
+/// | `TxCount` | `:as-of $slot` (monotonic counter) |
+/// | `Timestamp` | `:as-of $slot` (wall-clock ms) or `:valid-at $slot` |
+/// | `AnyValidTime` | `:valid-at $slot` — disables valid-time filter |
 #[derive(Debug, Clone)]
 pub enum BindValue {
-    /// Substituted into an entity position: `[$entity :attr ?v]`.
-    /// Not accepted in rule invocation argument positions — use `Val(Value::Ref(...))` there.
+    /// Fill an entity position `[$slot :attr ?v]` with a UUID.
+    ///
+    /// Not valid in rule-invocation argument positions — use `Val(Value::Ref(uuid))` there.
     Entity(Uuid),
-    /// Substituted into a value position `[?e :attr $val]` or an expression literal.
+    /// Fill a value position `[?e :attr $slot]` or an expression literal.
     Val(Value),
-    /// Substituted into an `:as-of $tx` slot (monotonic transaction counter).
+    /// Fill an `:as-of $slot` with a monotonic transaction counter (the `N` in `:as-of N`).
     TxCount(u64),
-    /// Substituted into an `:as-of $tx` slot (wall-clock millis) or `:valid-at $date` slot.
+    /// Fill an `:as-of $slot` (Unix ms wall-clock) or `:valid-at $slot` (Unix ms timestamp).
     Timestamp(i64),
-    /// Substituted into a `:valid-at $date` slot — disables valid-time filtering.
+    /// Fill a `:valid-at $slot` — disables valid-time filtering (equivalent to `:any-valid-time`).
     AnyValidTime,
 }
 
@@ -41,10 +52,28 @@ fn bind_value_type_name(bv: &BindValue) -> &'static str {
 
 // ─── PreparedQuery ────────────────────────────────────────────────────────────
 
-/// A parsed query template with named bind slots (`$name`).
+/// A parsed and validated query template with named bind slots (`$name`).
 ///
-/// Obtain via [`crate::db::Minigraf::prepare`].
-/// Execute many times via [`PreparedQuery::execute`].
+/// Parse once, execute many times with different values — more efficient than
+/// calling [`crate::db::Minigraf::execute`] with a freshly formatted string on
+/// each invocation.
+///
+/// Obtain via [`crate::db::Minigraf::prepare`]; execute via [`PreparedQuery::execute`].
+///
+/// # Example
+///
+/// ```
+/// # use minigraf::{Minigraf, BindValue, Value};
+/// # use uuid::Uuid;
+/// let db = Minigraf::in_memory().unwrap();
+/// db.execute(r#"(transact [[:alice :person/age 30] [:bob :person/age 25]])"#).unwrap();
+///
+/// let pq = db.prepare("(query [:find ?name :where [?e :person/age $age]])").unwrap();
+///
+/// // Re-use the same prepared query with different bindings
+/// let young = pq.execute(&[("age", BindValue::Val(Value::Integer(25)))]).unwrap();
+/// let older = pq.execute(&[("age", BindValue::Val(Value::Integer(30)))]).unwrap();
+/// ```
 pub struct PreparedQuery {
     template: DatalogQuery,
     slot_names: Vec<String>,
