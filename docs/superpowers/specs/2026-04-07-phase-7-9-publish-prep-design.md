@@ -80,7 +80,25 @@ This works for both file-backed and in-memory databases. The Repl going through 
 
 ## Section 2: Rustdoc Sweep
 
-Target: `cargo doc --no-deps` with zero warnings. Add `#![warn(missing_docs)]` to `lib.rs`.
+Target: `cargo doc --no-deps` with zero warnings and `cargo test --doc` with all doc examples passing. Add `#![warn(missing_docs)]` to `lib.rs`.
+
+### `Cargo.toml` — `[package.metadata.docs.rs]`
+
+Add this section so docs.rs builds with all features and uses the correct rustdoc args:
+
+```toml
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+```
+
+Also add to `lib.rs`:
+
+```rust
+#![cfg_attr(docsrs, feature(doc_cfg))]
+```
+
+The `wasm` feature disables the query optimizer (`optimizer.rs`). With `all-features = true`, docs.rs builds with `wasm` enabled, so the optimizer's absence is documented accurately. Any items gated on `#[cfg(feature = "wasm")]` should carry `#[doc(cfg(feature = "wasm"))]` so docs.rs renders feature badges.
 
 ### Crate-level (`lib.rs`)
 
@@ -98,10 +116,18 @@ Add `//!` module doc:
 | `PreparedQuery` | Parse-once/execute-many explanation + bind-slot example |
 | `Value` | Each variant + corresponding Datalog literal |
 | `BindValue` | Each variant + which query position it targets |
-| `Repl` | One-liner + `db.repl().run()` example |
+| `Repl<'_>` | One-liner + `db.repl().run()` example |
 | `QueryResult` | Explain result structure |
 | `AsOf`, `ValidAt` | Temporal filter semantics (brief) |
 | `EntityId` | One-liner (Uuid newtype for entity identity) |
+
+### Intra-doc links
+
+Use `[TypeName]` and `[TypeName::method]` cross-references throughout — e.g. `[WriteTransaction]` in `Minigraf::begin_write` docs, `[PreparedQuery::execute]` in `Minigraf::prepare` docs. `cargo doc` validates these resolve; broken links become warnings (or errors under `-D warnings`).
+
+### Doctests
+
+Every `/// # Examples` block must compile and run under `cargo test --doc`. Use `# use minigraf::*;` preamble lines (hidden from rendered output) to avoid boilerplate repetition. Examples that require a filesystem path should use `tempfile::tempdir()` or `Minigraf::in_memory()` so they're self-contained.
 
 ---
 
@@ -176,7 +202,7 @@ All other workflows (clippy, tarpaulin coverage, benchmarks, binary-size) stay L
 | `src/wal.rs` | `pub` → `pub(crate)` |
 | `.github/workflows/rust.yml` | Add OS matrix |
 | `.github/workflows/rust-clippy.yml` | Add PR trigger |
-| `Cargo.toml` | Bump to 0.19.0 |
+| `Cargo.toml` | Bump to 0.19.0, add `[package.metadata.docs.rs]` section |
 
 ---
 
@@ -189,6 +215,7 @@ cargo test                           # must pass (780 tests)
 
 # After rustdoc sweep
 cargo doc --no-deps                  # zero warnings
+cargo test --doc                     # all doc examples compile and run
 
 # After clippy audit
 cargo clippy -- -D warnings          # zero warnings
@@ -198,5 +225,5 @@ cargo package --list
 cargo publish --dry-run
 
 # Final
-cargo test                           # full suite green
+cargo test                           # full suite green (unit + integration + doc)
 ```
