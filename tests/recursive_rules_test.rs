@@ -27,12 +27,18 @@ fn test_simple_transitive_closure() {
 
     // Register reachable rules
     exec(&db, r#"(rule [(reachable ?x ?y) [?x :connected ?y]])"#);
-    exec(&db, r#"(rule [(reachable ?x ?y) [?x :connected ?z] (reachable ?z ?y)])"#);
+    exec(
+        &db,
+        r#"(rule [(reachable ?x ?y) [?x :connected ?z] (reachable ?z ?y)])"#,
+    );
 
     // Query: what can A reach?
     let result = exec(
         &db,
-        &format!(r#"(query [:find ?to :where (reachable #uuid "{}" ?to)])"#, a),
+        &format!(
+            r#"(query [:find ?to :where (reachable #uuid "{}" ?to)])"#,
+            a
+        ),
     );
     match result {
         QueryResult::QueryResults { vars, results } => {
@@ -75,12 +81,18 @@ fn test_transitive_closure_with_cycle() {
 
     // Register reachable rules
     exec(&db, r#"(rule [(reachable ?x ?y) [?x :connected ?y]])"#);
-    exec(&db, r#"(rule [(reachable ?x ?y) [?x :connected ?z] (reachable ?z ?y)])"#);
+    exec(
+        &db,
+        r#"(rule [(reachable ?x ?y) [?x :connected ?z] (reachable ?z ?y)])"#,
+    );
 
     // Query: what can A reach? (should be B, C, and A itself via cycle)
     let result = exec(
         &db,
-        &format!(r#"(query [:find ?to :where (reachable #uuid "{}" ?to)])"#, a),
+        &format!(
+            r#"(query [:find ?to :where (reachable #uuid "{}" ?to)])"#,
+            a
+        ),
     );
     match result {
         QueryResult::QueryResults { vars, results } => {
@@ -114,7 +126,8 @@ fn test_long_chain_transitive_closure() {
     for i in 0..9 {
         transact.push_str(&format!(
             r#"[#uuid "{}" :next #uuid "{}"]"#,
-            nodes[i], nodes[i + 1]
+            nodes[i],
+            nodes[i + 1]
         ));
     }
     transact.push_str("])");
@@ -122,12 +135,18 @@ fn test_long_chain_transitive_closure() {
 
     // Register reachable rules
     exec(&db, r#"(rule [(reachable ?x ?y) [?x :next ?y]])"#);
-    exec(&db, r#"(rule [(reachable ?x ?y) [?x :next ?z] (reachable ?z ?y)])"#);
+    exec(
+        &db,
+        r#"(rule [(reachable ?x ?y) [?x :next ?z] (reachable ?z ?y)])"#,
+    );
 
     // Query: what can n0 reach? (should be all 9 others)
     let result = exec(
         &db,
-        &format!(r#"(query [:find ?to :where (reachable #uuid "{}" ?to)])"#, nodes[0]),
+        &format!(
+            r#"(query [:find ?to :where (reachable #uuid "{}" ?to)])"#,
+            nodes[0]
+        ),
     );
     match result {
         QueryResult::QueryResults { vars, results } => {
@@ -174,7 +193,10 @@ fn test_ancestor_relationship() {
 
     // Register ancestor rules
     exec(&db, r#"(rule [(ancestor ?a ?d) [?a :parent ?d]])"#);
-    exec(&db, r#"(rule [(ancestor ?a ?d) [?a :parent ?p] (ancestor ?p ?d)])"#);
+    exec(
+        &db,
+        r#"(rule [(ancestor ?a ?d) [?a :parent ?p] (ancestor ?p ?d)])"#,
+    );
 
     // Query: who are Alice's descendants?
     let result = exec(
@@ -227,16 +249,25 @@ fn test_multiple_recursive_predicates() {
 
     // Register friend-reachable rules
     exec(&db, r#"(rule [(friend-reach ?x ?y) [?x :friend ?y]])"#);
-    exec(&db, r#"(rule [(friend-reach ?x ?y) [?x :friend ?z] (friend-reach ?z ?y)])"#);
+    exec(
+        &db,
+        r#"(rule [(friend-reach ?x ?y) [?x :friend ?z] (friend-reach ?z ?y)])"#,
+    );
 
     // Register coworker-reachable rules
     exec(&db, r#"(rule [(coworker-reach ?x ?y) [?x :coworker ?y]])"#);
-    exec(&db, r#"(rule [(coworker-reach ?x ?y) [?x :coworker ?z] (coworker-reach ?z ?y)])"#);
+    exec(
+        &db,
+        r#"(rule [(coworker-reach ?x ?y) [?x :coworker ?z] (coworker-reach ?z ?y)])"#,
+    );
 
     // Query: who can A reach via friends?
     let result1 = exec(
         &db,
-        &format!(r#"(query [:find ?to :where (friend-reach #uuid "{}" ?to)])"#, a),
+        &format!(
+            r#"(query [:find ?to :where (friend-reach #uuid "{}" ?to)])"#,
+            a
+        ),
     );
     match result1 {
         QueryResult::QueryResults { results, .. } => {
@@ -259,7 +290,10 @@ fn test_multiple_recursive_predicates() {
     // Query: who can A reach via coworkers?
     let result2 = exec(
         &db,
-        &format!(r#"(query [:find ?to :where (coworker-reach #uuid "{}" ?to)])"#, a),
+        &format!(
+            r#"(query [:find ?to :where (coworker-reach #uuid "{}" ?to)])"#,
+            a
+        ),
     );
     match result2 {
         QueryResult::QueryResults { results, .. } => {
@@ -299,7 +333,10 @@ fn test_recursive_rule_with_constants() {
 
     // Register reachable rules
     exec(&db, r#"(rule [(reach ?x ?y) [?x :connected ?y]])"#);
-    exec(&db, r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#);
+    exec(
+        &db,
+        r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#,
+    );
 
     // Query with both constants: can A reach C?
     let result = exec(
@@ -343,7 +380,10 @@ fn test_diamond_pattern_reachability() {
 
     // Register reachable rules
     exec(&db, r#"(rule [(reach ?x ?y) [?x :connected ?y]])"#);
-    exec(&db, r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#);
+    exec(
+        &db,
+        r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#,
+    );
 
     // Query: what can A reach?
     let result = exec(
@@ -377,7 +417,10 @@ fn test_recursive_rule_no_base_facts() {
 
     // Register rules but no facts
     exec(&db, r#"(rule [(reach ?x ?y) [?x :connected ?y]])"#);
-    exec(&db, r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#);
+    exec(
+        &db,
+        r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#,
+    );
 
     // Query with no matching facts
     let a = Uuid::new_v4();
@@ -408,7 +451,10 @@ fn test_convergence_simple_graph() {
 
     // Register rules
     exec(&db, r#"(rule [(reach ?x ?y) [?x :connected ?y]])"#);
-    exec(&db, r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#);
+    exec(
+        &db,
+        r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#,
+    );
 
     // Query should converge quickly
     let result = exec(

@@ -2,8 +2,8 @@
 //!
 //! Testing conventions: no `{:?}` of Result/Value/Fact in assert messages.
 
-use minigraf::db::Minigraf;
 use minigraf::Value;
+use minigraf::db::Minigraf;
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 

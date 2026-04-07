@@ -11,8 +11,8 @@
 //! - Concurrent reads while writer holds the write lock
 //! - V2 → V3 file format upgrade on first checkpoint
 
-use minigraf::db::{Minigraf, OpenOptions};
 use minigraf::QueryResult;
+use minigraf::db::{Minigraf, OpenOptions};
 
 /// File format page size (4 KiB) — matches the internal `PAGE_SIZE` constant.
 const PAGE_SIZE: usize = 4096;
@@ -265,8 +265,7 @@ fn test_manual_checkpoint_deletes_wal() {
         let mut f = std::fs::File::open(&db_path).unwrap();
         let mut page = vec![0u8; PAGE_SIZE];
         f.read_exact(&mut page).unwrap();
-        let last_checkpointed_tx_count =
-            u64::from_le_bytes(page[24..32].try_into().unwrap());
+        let last_checkpointed_tx_count = u64::from_le_bytes(page[24..32].try_into().unwrap());
         assert!(
             last_checkpointed_tx_count > 0,
             "last_checkpointed_tx_count must be set after checkpoint"
@@ -592,12 +591,8 @@ fn test_v2_file_opens_and_upgrades_to_v3_on_checkpoint() {
     );
     let magic = &raw[0..4];
     let version = u32::from_le_bytes(raw[4..8].try_into().unwrap());
-    let last_checkpointed_tx_count =
-        u64::from_le_bytes(raw[24..32].try_into().unwrap());
-    assert_eq!(
-        version, 7,
-        "file must be upgraded to v7 on checkpoint"
-    );
+    let last_checkpointed_tx_count = u64::from_le_bytes(raw[24..32].try_into().unwrap());
+    assert_eq!(version, 7, "file must be upgraded to v7 on checkpoint");
     assert_eq!(magic, b"MGRF", "magic number must be preserved");
     assert!(
         last_checkpointed_tx_count > 0,

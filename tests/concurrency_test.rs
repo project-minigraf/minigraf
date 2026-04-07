@@ -44,7 +44,8 @@ fn test_concurrent_rule_queries() {
     for i in 0..9 {
         facts.push_str(&format!(
             r#"[#uuid "{}" :connected #uuid "{}"]"#,
-            nodes[i], nodes[i + 1]
+            nodes[i],
+            nodes[i + 1]
         ));
     }
     facts.push(']');
@@ -52,8 +53,10 @@ fn test_concurrent_rule_queries() {
     db.execute(&facts).unwrap();
 
     // Register reachable rules
-    db.execute(r#"(rule [(reach ?x ?y) [?x :connected ?y]])"#).unwrap();
-    db.execute(r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#).unwrap();
+    db.execute(r#"(rule [(reach ?x ?y) [?x :connected ?y]])"#)
+        .unwrap();
+    db.execute(r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#)
+        .unwrap();
 
     // Spawn 10 threads, each querying from a different starting node
     let handles: Vec<_> = (0..10)
@@ -96,10 +99,7 @@ fn test_concurrent_transact_and_rules() {
                     // Even threads: add facts
                     let a = Uuid::new_v4();
                     let b = Uuid::new_v4();
-                    let cmd = format!(
-                        r#"(transact [[#uuid "{}" :attr{} #uuid "{}"]])"#,
-                        a, i, b
-                    );
+                    let cmd = format!(r#"(transact [[#uuid "{}" :attr{} #uuid "{}"]])"#, a, i, b);
                     db.execute(&cmd).unwrap();
                 } else {
                     // Odd threads: register rules
@@ -117,7 +117,9 @@ fn test_concurrent_transact_and_rules() {
 
     // Verify some facts were added — at least 5 from even threads
     // We check indirectly by verifying queries work without error
-    let result = db.execute(r#"(query [:find ?x :where [?x :attr0 ?y]])"#).unwrap();
+    let result = db
+        .execute(r#"(query [:find ?x :where [?x :attr0 ?y]])"#)
+        .unwrap();
     // Even thread 0 wrote :attr0 facts; result may be 0 or 1 depending on timing — just verify no crash
     match result {
         QueryResult::QueryResults { .. } => {}
@@ -142,8 +144,10 @@ fn test_concurrent_read_heavy() {
     .unwrap();
 
     // Register rules
-    db.execute(r#"(rule [(reach ?x ?y) [?x :connected ?y]])"#).unwrap();
-    db.execute(r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#).unwrap();
+    db.execute(r#"(rule [(reach ?x ?y) [?x :connected ?y]])"#)
+        .unwrap();
+    db.execute(r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#)
+        .unwrap();
 
     // Spawn 50 reader threads
     let handles: Vec<_> = (0..50)
@@ -185,7 +189,8 @@ fn test_concurrent_recursive_evaluation() {
         for i in 0..4 {
             all_facts.push_str(&format!(
                 r#"[#uuid "{}" :connected #uuid "{}"]"#,
-                nodes[i], nodes[i + 1]
+                nodes[i],
+                nodes[i + 1]
             ));
         }
         chains.push(nodes);
@@ -195,8 +200,10 @@ fn test_concurrent_recursive_evaluation() {
     db.execute(&all_facts).unwrap();
 
     // Register recursive rules
-    db.execute(r#"(rule [(reach ?x ?y) [?x :connected ?y]])"#).unwrap();
-    db.execute(r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#).unwrap();
+    db.execute(r#"(rule [(reach ?x ?y) [?x :connected ?y]])"#)
+        .unwrap();
+    db.execute(r#"(rule [(reach ?x ?y) [?x :connected ?z] (reach ?z ?y)])"#)
+        .unwrap();
 
     // Spawn threads to query each chain
     let handles: Vec<_> = chains
@@ -241,7 +248,8 @@ fn test_no_deadlocks_mixed_operations() {
     ))
     .unwrap();
 
-    db.execute(r#"(rule [(reach ?x ?y) [?x :connected ?y]])"#).unwrap();
+    db.execute(r#"(rule [(reach ?x ?y) [?x :connected ?y]])"#)
+        .unwrap();
 
     // Spawn mixed workload
     let handles: Vec<_> = (0..20)

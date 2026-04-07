@@ -283,7 +283,12 @@ impl Fact {
     }
 
     /// Create a retraction with default valid time.
-    pub(crate) fn retract(entity: EntityId, attribute: Attribute, value: Value, tx_id: TxId) -> Self {
+    pub(crate) fn retract(
+        entity: EntityId,
+        attribute: Attribute,
+        value: Value,
+        tx_id: TxId,
+    ) -> Self {
         Fact {
             entity,
             attribute,

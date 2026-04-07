@@ -388,7 +388,10 @@ impl FactStorage {
 
     /// Set the committed fact reader. Called by PersistentFactStorage::load() after
     /// opening a v5 file so index-driven reads can resolve FactRefs via page cache.
-    pub(crate) fn set_committed_reader(&self, reader: Arc<dyn crate::storage::CommittedFactReader>) {
+    pub(crate) fn set_committed_reader(
+        &self,
+        reader: Arc<dyn crate::storage::CommittedFactReader>,
+    ) {
         let mut d = self.data.write().unwrap();
         d.committed = Some(reader);
     }

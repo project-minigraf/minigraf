@@ -141,10 +141,7 @@ fn test_no_valid_at_returns_only_current() {
     exec(&db, r#"(transact [[:alice :person/name "Alice"]])"#);
 
     // Default query (no :valid-at) → only the forever-valid name fact
-    let result = exec(
-        &db,
-        r#"(query [:find ?attr :where [:alice ?attr ?v]])"#,
-    );
+    let result = exec(&db, r#"(query [:find ?attr :where [:alice ?attr ?v]])"#);
     let rows = result_rows(result);
     assert_eq!(
         rows.len(),
@@ -282,7 +279,10 @@ fn test_bitemporal_multi_entity() {
     let db = Minigraf::in_memory().unwrap();
 
     // Establish names for both entities
-    exec(&db, r#"(transact [[:alice-kw :person/name "Alice"] [:bob-kw :person/name "Bob"]])"#);
+    exec(
+        &db,
+        r#"(transact [[:alice-kw :person/name "Alice"] [:bob-kw :person/name "Bob"]])"#,
+    );
 
     // Alice: employed at Acme in 2023 H1
     exec(
