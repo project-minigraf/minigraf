@@ -100,10 +100,37 @@ Also add to `lib.rs`:
 
 The `wasm` feature disables the query optimizer (`optimizer.rs`). With `all-features = true`, docs.rs builds with `wasm` enabled, so the optimizer's absence is documented accurately. Any items gated on `#[cfg(feature = "wasm")]` should carry `#[doc(cfg(feature = "wasm"))]` so docs.rs renders feature badges.
 
+### `README.md` updates
+
+Add before the Quick Start section:
+
+```markdown
+## Installation
+
+```toml
+[dependencies]
+minigraf = "0.19"
+```
+
+Or via cargo:
+
+```sh
+cargo add minigraf
+```
+```
+
+Add crates.io and docs.rs badges to the existing badge row at the top of `README.md`:
+
+```markdown
+[![crates.io](https://img.shields.io/crates/v/minigraf.svg)](https://crates.io/crates/minigraf)
+[![docs.rs](https://docs.rs/minigraf/badge.svg)](https://docs.rs/minigraf)
+```
+
 ### Crate-level (`lib.rs`)
 
 Add `//!` module doc:
 - 3–5 sentence overview (bi-temporal, Datalog, embedded, single-file)
+- Installation snippet (`cargo add minigraf` / `[dependencies]` block)
 - Quick-start code example (matches README: open, transact, query, write tx, time-travel, prepared statement)
 
 ### Per-type doc requirements
@@ -190,7 +217,8 @@ All other workflows (clippy, tarpaulin coverage, benchmarks, binary-size) stay L
 
 | File | Change |
 |---|---|
-| `src/lib.rs` | Narrow module visibility, narrow re-exports, add `#![warn(missing_docs)]`, add crate-level doc |
+| `README.md` | Add Installation section (`cargo add` + `[dependencies]`), add crates.io + docs.rs badges |
+| `src/lib.rs` | Narrow module visibility, narrow re-exports, add `#![warn(missing_docs)]`, add crate-level doc with installation snippet |
 | `src/db.rs` | Add `Minigraf::repl()`, remove `inner_fact_storage()`, add rustdoc to all public items |
 | `src/repl.rs` | Change constructor to work via `Minigraf`, fix stdout flush unwrap |
 | `src/graph/storage.rs` | `pub` → `pub(crate)` on types no longer in public API |
