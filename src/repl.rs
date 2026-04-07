@@ -81,10 +81,10 @@ impl<'a> Repl<'a> {
                     }
                     command_buffer.push_str(line);
 
-                    if self.is_command_complete(&command_buffer) {
+                    if Self::is_command_complete(&command_buffer) {
                         match self.db.execute(&command_buffer) {
                             Ok(result) => {
-                                self.print_result(result);
+                                Self::print_result(result);
                             }
                             Err(e) => {
                                 eprintln!("Error: {}", e);
@@ -108,7 +108,7 @@ impl<'a> Repl<'a> {
         }
     }
 
-    fn is_command_complete(&self, input: &str) -> bool {
+    fn is_command_complete(input: &str) -> bool {
         let mut depth = 0;
         let mut in_string = false;
         let mut escape_next = false;
@@ -139,7 +139,7 @@ impl<'a> Repl<'a> {
         depth == 0 && input.contains('(')
     }
 
-    fn print_result(&self, result: crate::query::datalog::QueryResult) {
+    fn print_result(result: crate::query::datalog::QueryResult) {
         use crate::query::datalog::QueryResult as DResult;
 
         match result {
@@ -158,7 +158,7 @@ impl<'a> Repl<'a> {
 
                     for row in &results {
                         let formatted_row: Vec<String> =
-                            row.iter().map(|v| self.format_value(v)).collect();
+                            row.iter().map(Self::format_value).collect();
                         println!("{}", formatted_row.join("\t"));
                     }
 
@@ -171,7 +171,7 @@ impl<'a> Repl<'a> {
         }
     }
 
-    fn format_value(&self, value: &crate::graph::types::Value) -> String {
+    fn format_value(value: &crate::graph::types::Value) -> String {
         use crate::graph::types::Value;
 
         match value {

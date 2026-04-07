@@ -600,19 +600,6 @@ impl Minigraf {
         )
     }
 
-    /// Returns a clone of the underlying `FactStorage` for use by the REPL.
-    ///
-    /// Cloning is cheap — `FactStorage` is `Arc`-backed.
-    ///
-    /// # Warning
-    /// This method bypasses the WAL and the write lock. It is intended **only** for
-    /// the built-in REPL (`src/main.rs`). External callers should use
-    /// [`Minigraf::execute`] or [`Minigraf::begin_write`] to ensure crash safety.
-    #[doc(hidden)]
-    pub(crate) fn inner_fact_storage(&self) -> crate::graph::FactStorage {
-        self.inner.fact_storage.clone()
-    }
-
     /// Return an interactive REPL that reads commands from stdin.
     ///
     /// The REPL borrows the database for the duration of the session.
