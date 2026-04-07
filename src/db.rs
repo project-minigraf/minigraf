@@ -941,7 +941,7 @@ impl<'a> WriteTransaction<'a> {
                     *wal = Some(WalWriter::open_or_create(&wal_path)?);
                 }
 
-                let wal_writer = wal.as_mut().unwrap();
+                let wal_writer = wal.as_mut().expect("WAL not initialized");
                 wal_writer.append_entry(tx_count, facts)?;
                 pfs.mark_dirty();
                 *wal_entry_count += 1;

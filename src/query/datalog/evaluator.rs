@@ -202,7 +202,7 @@ impl RecursiveEvaluator {
     ) -> Result<Vec<Fact>> {
         let mut new_facts = Vec::new();
 
-        let registry = self.rules.read().unwrap();
+        let registry = self.rules.read().expect("lock poisoned");
 
         // For each predicate, evaluate all its rules
         for predicate in predicates {
@@ -282,7 +282,7 @@ impl RecursiveEvaluator {
         let bindings = apply_expr_clauses_in_evaluator(
             bindings,
             &expr_clauses,
-            &self.functions.read().unwrap(),
+            &self.functions.read().expect("lock poisoned"),
         );
 
         for binding in bindings {
@@ -585,7 +585,7 @@ impl StratifiedEvaluator {
     pub fn evaluate(&self, predicates: &[String]) -> Result<FactStorage> {
         use crate::query::datalog::stratification::DependencyGraph;
 
-        let registry = self.rules.read().unwrap();
+        let registry = self.rules.read().expect("lock poisoned");
 
         // Build dependency graph and stratify
         let graph = DependencyGraph::from_rules(&registry);
@@ -622,7 +622,7 @@ impl StratifiedEvaluator {
         let accumulated = self.storage.clone();
 
         for stratum in 0..=max_stratum {
-            let registry = self.rules.read().unwrap();
+            let registry = self.rules.read().expect("lock poisoned");
             let stratum_preds: Vec<String> = all_preds
                 .iter()
                 .filter(|p| *strata.get(*p).unwrap_or(&0) == stratum)
@@ -753,7 +753,7 @@ impl StratifiedEvaluator {
                 let or_expanded = {
                     use crate::query::datalog::executor::apply_or_clauses;
                     use crate::query::datalog::functions::FunctionRegistry;
-                    let registry_guard = self.rules.read().unwrap();
+                    let registry_guard = self.rules.read().expect("lock poisoned");
                     // Rule bodies in the semi-naive evaluator don't have access to a
                     // FunctionRegistry (UDF registration happens at the db layer). Use the
                     // built-in-only registry so or-branches can still use built-in predicates.
@@ -775,7 +775,7 @@ impl StratifiedEvaluator {
                 let candidates = apply_expr_clauses_in_evaluator(
                     or_expanded,
                     &body_expr_clauses,
-                    &self.functions.read().unwrap(),
+                    &self.functions.read().expect("lock poisoned"),
                 );
 
                 // Build temp_eval once per rule (outside the binding loop);
@@ -844,7 +844,7 @@ impl StratifiedEvaluator {
                         not_bindings = apply_expr_clauses_in_evaluator(
                             not_bindings,
                             &not_body_expr_clauses,
-                            &self.functions.read().unwrap(),
+                            &self.functions.read().expect("lock poisoned"),
                         );
                         if !not_bindings.is_empty() {
                             continue 'binding; // not condition violated -> discard binding
@@ -857,7 +857,7 @@ impl StratifiedEvaluator {
                             nj_clauses,
                             &binding,
                             accumulated_facts.clone(),
-                            &self.functions.read().unwrap(),
+                            &self.functions.read().expect("lock poisoned"),
                         ) {
                             continue 'binding;
                         }

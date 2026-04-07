@@ -68,14 +68,14 @@ impl PageCache {
         // Approximate LRU: return without promoting to MRU to avoid a write lock
         // on every read. Pages loaded recently (on miss) are already near MRU.
         {
-            let inner = self.inner.read().unwrap();
+            let inner = self.inner.read().expect("lock poisoned");
             if let Some(entry) = inner.entries.get(&page_id) {
                 return Ok(entry.data.clone());
             }
         }
         // Miss: load from backend (without holding any lock)
         let data = Arc::new(backend.read_page(page_id)?);
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write().expect("lock poisoned");
         // Double-check after acquiring write lock (another thread may have loaded it)
         if let Some(entry) = inner.entries.get(&page_id) {
             return Ok(entry.data.clone());
@@ -101,7 +101,7 @@ impl PageCache {
 
     /// Insert or update a page in the cache and mark it dirty.
     pub fn put_dirty(&self, page_id: u64, data: Vec<u8>) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write().expect("lock poisoned");
         let data = Arc::new(data);
         if inner.entries.contains_key(&page_id) {
             // Update in place, move to MRU
@@ -127,7 +127,7 @@ impl PageCache {
     /// Write all dirty pages to the backend and clear dirty flags.
     #[allow(dead_code)]
     pub fn flush(&self, backend: &mut dyn StorageBackend) -> Result<()> {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write().expect("lock poisoned");
         for (&page_id, entry) in inner.entries.iter_mut() {
             if entry.dirty {
                 backend.write_page(page_id, &entry.data[..])?;
@@ -140,7 +140,7 @@ impl PageCache {
     /// Invalidate (remove) a page from the cache.
     #[allow(dead_code)]
     pub fn invalidate(&self, page_id: u64) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write().expect("lock poisoned");
         inner.entries.remove(&page_id);
         inner.order.retain(|&id| id != page_id);
     }
@@ -150,7 +150,7 @@ impl PageCache {
     /// Used during save to discard stale B+tree index pages before
     /// overwriting them with new fact and index pages.
     pub fn invalidate_from(&self, from_page: u64) {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write().expect("lock poisoned");
         inner.entries.retain(|&id, _| id < from_page);
         inner.order.retain(|&id| id < from_page);
     }
@@ -158,7 +158,7 @@ impl PageCache {
     /// Number of pages currently cached (for testing).
     #[allow(dead_code)]
     pub fn cached_page_count(&self) -> usize {
-        self.inner.read().unwrap().entries.len()
+        self.inner.read().expect("lock poisoned").entries.len()
     }
 }
 
