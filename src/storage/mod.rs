@@ -134,7 +134,7 @@ impl FileHeader {
     }
 
     /// Serialize the header to bytes.
-    pub fn to_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(self) -> Vec<u8> {
         let mut b = Vec::with_capacity(84);
         b.extend_from_slice(&self.magic);
         b.extend_from_slice(&self.version.to_le_bytes());

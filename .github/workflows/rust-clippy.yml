@@ -41,7 +41,10 @@ jobs:
       - name: Install required cargo
         run: cargo install clippy-sarif sarif-fmt
 
-      - name: Run rust-clippy
+      - name: Run rust-clippy (strict — fails on warnings)
+        run: cargo clippy --all-features -- -D warnings
+
+      - name: Run rust-clippy (SARIF upload for code scanning)
         run:
           cargo clippy
           --all-features
