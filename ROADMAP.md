@@ -498,11 +498,11 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 ---
 
-## Phase 7: Datalog Completeness 🔄 IN PROGRESS
+## Phase 7: Datalog Completeness ✅ COMPLETE
 
 **Goal**: Complete the Datalog query engine — negation, aggregation, disjunction, temporal range queries, and prepared statements
 
-**Status**: 🔄 In Progress (7.1a + 7.1b + 7.2a + 7.2b + 7.3 + 7.4 + 7.5 + 7.6 + 7.7a complete ✅)
+**Status**: ✅ Complete (7.1a + 7.1b + 7.2a + 7.2b + 7.3 + 7.4 + 7.5 + 7.6 + 7.7a + 7.7b + 7.8 + 7.9 complete)
 
 **Priority**: 🔴 Critical — without these, realistic production queries cannot be expressed in Datalog
 
@@ -520,8 +520,8 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 - **7.6** ✅ Temporal Metadata Bindings + Range Queries (`:db/valid-from`, `:db/valid-to`, `:db/tx-count` as queryable pseudo-attributes; unlocks Time Interval, Time-Point Lookup, Time-Interval Lookup query classes)
 - **7.7a** Window Functions — `sum`, `count`, `min`, `max`, `avg`, `rank`, `row-number` with unbounded-preceding frame; `FunctionRegistry` introduced (built-ins only); `lag`/`lead` and sliding frames deferred to post-1.0 backlog
 - **7.7b** ✅ User-Defined Functions (UDFs) — public `register_aggregate`/`register_predicate` API on the `FunctionRegistry` introduced in 7.7a
-- **7.8** Prepared Statements (parse + plan once, execute many times, temporal bind slots; implemented after full clause set including predicate-argument positions)
-- **7.9** Publish Prep (crates.io — API cleanup, rustdoc, clippy, `unwrap` audit, CI matrix)
+- **7.8** ✅ Prepared Statements (parse + plan once, execute many times, temporal bind slots; implemented after full clause set including predicate-argument positions)
+- **7.9** ✅ Publish Prep (crates.io — API cleanup, rustdoc, clippy, `unwrap` audit, CI matrix)
 
 ### 7.1a Stratified Negation — `not` ✅ COMPLETE
 
@@ -1082,9 +1082,11 @@ The query optimizer uses selectivity estimates to pick join order. Different `:a
 
 ---
 
-### 7.9 Publish Prep (crates.io)
+### 7.9 Publish Prep (crates.io) ✅ COMPLETE
 
 **Goal**: Make the public API clean, documented, and safe before publishing to crates.io.
+
+**Status**: ✅ Complete (v0.19.0, 2026-04-08)
 
 **Scope**:
 - Narrow `lib.rs` exports — expose only `Minigraf`, `WriteTransaction`, and the query/result types; mark internal types (`PersistentFactStorage`, `FileHeader`, `PAGE_SIZE`, `Repl`, `Wal`, etc.) as `pub(crate)` or remove re-exports
@@ -1607,7 +1609,7 @@ When evaluating features, ask:
 - ✅ Phase 7.7a: Complete (April 2026) - Window functions (`sum/count/min/max/avg/rank/row-number :over`), `FunctionRegistry`, 705 tests
 - ✅ Phase 7.7b: Complete (April 2026) - User-Defined Functions (`register_aggregate`/`register_predicate`), 727 tests
 - ✅ Phase 7.8: Complete (April 2026) - Prepared statements (`$slot` bind tokens, temporal bind slots, plan reuse), 780 tests
-- 🎯 Phase 7.9: Publish prep (crates.io API cleanup, Rustdoc sweep, `unwrap` audit) - **NEXT**
+- ✅ Phase 7.9: Complete (April 2026) - Publish prep (crates.io API cleanup, Rustdoc sweep, `unwrap` audit, CI matrix), 788 tests
 - 🎯 Phase 8: 3-4 months (Cross-platform — WASM, mobile, language bindings)
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)
 - 🎯 **v1.0.0: 9-12 months**
@@ -1618,21 +1620,22 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: Phase 7.8 Complete — Phase 7.9 Next (Publish Prep)
+**Right Now**: Phase 7.9 Complete — Phase 8 Next (Cross-Platform Expansion)
 
-**Phase 7.8 Achievements**:
-1. ✅ `$identifier` bind slot tokens in entity, value, `:as-of`, and `:valid-at` positions
-2. ✅ `EdnValue::BindSlot`, `AsOf::Slot`, `ValidAt::Slot`, `Expr::Slot` AST variants
-3. ✅ `BindValue` enum: `Entity(Uuid)`, `Val(Value)`, `TxCount(u64)`, `Timestamp(i64)`, `AnyValidTime`
-4. ✅ `PreparedQuery` struct — stores AST + optimised plan; re-executes against current fact store state
-5. ✅ `Minigraf::prepare(query_str) -> Result<PreparedQuery>` public API method
-6. ✅ `PreparedQuery::execute(bindings) -> Result<QueryResult>` — deep-clone + AST walk substitution
-7. ✅ Panic guards in `executor.rs` / `storage.rs` for unsubstituted slots reaching runtime
-8. ✅ `BindValue` and `PreparedQuery` re-exported from `lib.rs`
-9. ✅ `tests/prepared_statements_test.rs` — 17 integration tests; 780 tests passing; version bumped to v0.18.0
+**Phase 7.9 Achievements**:
+1. ✅ `Minigraf::repl(&self) -> Repl<'_>` factory method — `Repl` now borrows `&Minigraf`
+2. ✅ All internal types narrowed to `pub(crate)`: `FactStorage`, `PersistentFactStorage`, `FileHeader`, `StorageBackend`, `DatalogExecutor`, `PatternMatcher`, `Fact`, `TxId`, `VALID_TIME_FOREVER`, `Wal`, etc.
+3. ✅ Full rustdoc on all public API items with `# Examples` doctests; 8 new doctests
+4. ✅ `[package.metadata.docs.rs]` in `Cargo.toml` — docs.rs builds with `all-features = true`
+5. ✅ `#![warn(missing_docs)]` — enforces documentation coverage going forward
+6. ✅ Bare `.unwrap()` in library code replaced with `.expect("lock poisoned")` / `.expect("WAL not initialized")`
+7. ✅ `cargo clippy -- -D warnings` clean
+8. ✅ macOS and Windows added to CI test matrix (`rust.yml`)
+9. ✅ crates.io and docs.rs badges + Installation section in `README.md`
+10. ✅ 788 tests passing; version bumped to v0.19.0
 
-**Immediate Next Steps (Phase 7.9)**:
-1. Publish Prep — narrow `lib.rs` exports, Rustdoc sweep, `unwrap` audit, `cargo doc --no-deps` clean
+**Immediate Next Steps (Phase 8)**:
+1. Cross-Platform Expansion — WASM, mobile, language bindings
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)
@@ -1648,4 +1651,4 @@ See [GitHub Issues](https://github.com/adityamukho/minigraf/issues) for specific
 
 ---
 
-Last Updated: Phase 7.8 Complete - Prepared statements (`$slot` bind tokens, temporal bind slots, plan reuse), 780 tests passing, v0.18.0 (April 2026)
+Last Updated: Phase 7.9 Complete - Publish prep (API cleanup, Rustdoc sweep, `unwrap` audit, CI matrix), 788 tests passing, v0.19.0 (April 2026)

@@ -1,10 +1,10 @@
 # Minigraf Test Coverage Report
 
-**Last Updated**: Phase 7.8 COMPLETE - Prepared statements, 780 tests ✅
+**Last Updated**: Phase 7.9 COMPLETE - Publish prep, 788 tests ✅
 
 ## Test Summary
 
-**Total Tests**: 780 ✅ (773 passing, 7 ignored)
+**Total Tests**: 788 ✅ (781 passing, 7 ignored)
 - ✅ 524 unit tests (lib, +19 from `prepared.rs`)
 - ✅ 24 bi-temporal tests (integration)
 - ✅ 10 complex query tests (integration)
@@ -27,13 +27,27 @@
 - ✅ 12 window function tests (integration, Phase 7.7a — cumulative sum/count/min/avg, rank with ties, row-number, partition-by, desc ordering, mixed aggregate+window, edge cases, lag/lead parse rejection)
 - ✅ 14 UDF tests (integration, Phase 7.7b — custom aggregates, custom predicates, UDF as window function, name collision guards, runtime errors, thread safety)
 - ✅ 17 prepared statement tests (integration, Phase 7.8 — entity/value/as-of/valid-at slots, combined temporal+entity, AnyValidTime, error paths, plan reuse)
-- ✅ 15 doc tests
+- ✅ 23 doc tests (15 prior + 8 new from Phase 7.9 rustdoc sweep on public API items)
 
-**Status**: ✅ **All 773 tests passing** (7 ignored: confirmed or+neg-cycle stratification bug)
+**Status**: ✅ **All 781 tests passing** (7 ignored: confirmed or+neg-cycle stratification bug)
+
+## Phase 7.9 Completion Status: ✅ COMPLETE
+
+**Phase 7.9 Features** (current, complete):
+- ✅ `Minigraf::repl(&self) -> Repl<'_>` factory method — `Repl` now borrows `&Minigraf` for lifetime safety
+- ✅ All internal types narrowed to `pub(crate)`: `FactStorage`, `PersistentFactStorage`, `FileHeader`, `StorageBackend`, `DatalogExecutor`, `PatternMatcher`, `Fact`, `TxId`, `VALID_TIME_FOREVER`, `Wal`, etc.
+- ✅ Full rustdoc on all public API items with `# Examples` doctests; 8 new doctests added
+- ✅ `[package.metadata.docs.rs]` in `Cargo.toml` — docs.rs builds with `all-features = true`
+- ✅ `#![warn(missing_docs)]` — enforces documentation coverage going forward
+- ✅ Bare `.unwrap()` in library code replaced with `.expect("lock poisoned")` / `.expect("WAL not initialized")`
+- ✅ `cargo clippy -- -D warnings` clean
+- ✅ macOS and Windows added to CI test matrix (`rust.yml`)
+- ✅ crates.io and docs.rs badges + Installation section in `README.md`
+- ✅ 788 tests passing (unit + integration + doc); version bumped to v0.19.0
 
 ## Phase 7.8 Completion Status: ✅ COMPLETE
 
-**Phase 7.8 Features** (current, complete):
+**Phase 7.8 Features** (complete):
 - ✅ `EdnValue::BindSlot(String)`, `AsOf::Slot(String)`, `ValidAt::Slot(String)`, `Expr::Slot(String)` AST variants in `types.rs`
 - ✅ `BindValue` enum in `src/query/datalog/prepared.rs`: `Entity(Uuid)`, `Val(Value)`, `TxCount(u64)`, `Timestamp(i64)`, `AnyValidTime`
 - ✅ `PreparedQuery` struct — stores parsed AST + optimised plan + `Arc` handles to fact store and registries; re-executes against live fact store state
@@ -686,9 +700,9 @@ cargo test -- --nocapture
 
 ## Conclusion
 
-**Phase 7.8 Status**: ✅ **COMPLETE**
+**Phase 7.9 Status**: ✅ **COMPLETE**
 
-**Test Quality**: ✅ **Excellent** — High confidence in all Phase 3-7.8 features
+**Test Quality**: ✅ **Excellent** — High confidence in all Phase 3-7.9 features
 
 **Strengths**:
 - WAL crash safety verified with real `mem::forget` simulation
@@ -709,14 +723,15 @@ cargo test -- --nocapture
 - Window functions verified: cumulative aggregates, rank/row-number, partition-by, desc ordering, mixed aggregate+window (Phase 7.7a)
 - User-defined functions verified: custom aggregates, custom predicates, UDF as window function, name collision guards, runtime error handling, thread safety (Phase 7.7b)
 - Prepared statements verified: entity/value/as-of/valid-at slot positions, AnyValidTime, combined temporal+entity (agentic loop pattern), plan reuse, all error paths (Phase 7.8)
-- 780 tests covering all Phase 3-7.8 features
+- Public API surface verified via rustdoc doctests: `Minigraf::open`, `execute`, `prepare`, `repl`, `WriteTransaction`, `OpenOptions` (Phase 7.9)
+- 788 tests covering all Phase 3-7.9 features
 
-**Confidence Level**: ✅ **Production-ready for Phase 7.8 scope**
+**Confidence Level**: ✅ **Production-ready for Phase 7.9 scope**
 
-**Readiness for Phase 7.9**: ✅ **Ready to proceed**
+**Readiness for Phase 8**: ✅ **Ready to proceed**
 
-The prepared-statement-capable, UDF-capable, window-function-capable, disjunction + aggregation + arithmetic/predicate expression capable, stratified-negation-capable, on-disk B+tree indexed, packed, cached bi-temporal Datalog engine is **solid, well-tested, and benchmarked**.
+The publish-ready, prepared-statement-capable, UDF-capable, window-function-capable, disjunction + aggregation + arithmetic/predicate expression capable, stratified-negation-capable, on-disk B+tree indexed, packed, cached bi-temporal Datalog engine is **solid, well-tested, documented, and benchmarked**.
 
 ---
 
-**Next Steps**: Begin Phase 7.9 (Publish Prep — crates.io API cleanup, Rustdoc sweep, `unwrap` audit)
+**Next Steps**: Begin Phase 8 (Cross-Platform Expansion — WASM, mobile, language bindings)
