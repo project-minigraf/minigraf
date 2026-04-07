@@ -80,7 +80,7 @@ fn resolve_fact_ref(d: &FactData, fr: FactRef) -> Result<Fact> {
 /// assert_eq!(facts.len(), 2);
 /// ```
 #[derive(Clone)]
-pub struct FactStorage {
+pub(crate) struct FactStorage {
     /// Append-only log of all facts (assertions and retractions) plus indexes.
     data: Arc<RwLock<FactData>>,
     /// Monotonically incrementing batch counter — increments once per transact/retract call.
@@ -95,7 +95,7 @@ impl Default for FactStorage {
 
 impl FactStorage {
     /// Create a new empty fact storage
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         FactStorage {
             data: Arc::new(RwLock::new(FactData {
                 facts: Vec::new(),
@@ -119,7 +119,7 @@ impl FactStorage {
     ///
     /// # Returns
     /// The TxId (timestamp) assigned to these facts
-    pub fn transact(
+    pub(crate) fn transact(
         &self,
         fact_tuples: Vec<(EntityId, Attribute, Value)>,
         opts: Option<TransactOptions>,
@@ -169,7 +169,7 @@ impl FactStorage {
     ///
     /// # Returns
     /// The TxId (timestamp) assigned to all facts in this batch
-    pub fn transact_batch(
+    pub(crate) fn transact_batch(
         &self,
         fact_tuples: Vec<(EntityId, Attribute, Value, Option<TransactOptions>)>,
         default_opts: Option<TransactOptions>,
@@ -217,7 +217,7 @@ impl FactStorage {
     ///
     /// # Returns
     /// The TxId (timestamp) assigned to these retractions
-    pub fn retract(&self, fact_tuples: Vec<(EntityId, Attribute, Value)>) -> Result<TxId> {
+    pub(crate) fn retract(&self, fact_tuples: Vec<(EntityId, Attribute, Value)>) -> Result<TxId> {
         let tx_id = tx_id_now();
         let tx_count = self.tx_counter.fetch_add(1, Ordering::SeqCst) + 1;
 
@@ -255,7 +255,7 @@ impl FactStorage {
     ///
     /// Checks for duplicate facts before loading (based on entity, attribute, value,
     /// valid_from, valid_to, tx_count, and asserted).
-    pub fn load_fact(&self, fact: Fact) -> Result<bool> {
+    pub(crate) fn load_fact(&self, fact: Fact) -> Result<bool> {
         let mut d = self.data.write().unwrap();
 
         // Check for duplicate based on unique key (entity, attribute, value, valid_from, valid_to, tx_count, asserted)
@@ -287,7 +287,7 @@ impl FactStorage {
     ///
     /// Must be called after all `load_fact()` calls complete so that the next
     /// `transact()` call picks up from the right sequence number.
-    pub fn restore_tx_counter(&self) -> Result<()> {
+    pub(crate) fn restore_tx_counter(&self) -> Result<()> {
         let d = self.data.read().unwrap();
         let max = d.facts.iter().map(|f| f.tx_count).max().unwrap_or(0);
         self.tx_counter.store(max, Ordering::SeqCst);
@@ -297,7 +297,7 @@ impl FactStorage {
     /// Return the current value of the monotonic tx counter.
     ///
     /// Useful for persisting `last_checkpointed_tx_count` into the file header.
-    pub fn current_tx_count(&self) -> u64 {
+    pub(crate) fn current_tx_count(&self) -> u64 {
         self.tx_counter.load(Ordering::SeqCst)
     }
 
@@ -305,7 +305,7 @@ impl FactStorage {
     ///
     /// Used by explicit transactions to claim a tx_count at commit time,
     /// without creating any facts in FactStorage.
-    pub fn allocate_tx_count(&self) -> u64 {
+    pub(crate) fn allocate_tx_count(&self) -> u64 {
         self.tx_counter.fetch_add(1, Ordering::SeqCst) + 1
     }
 
@@ -313,7 +313,7 @@ impl FactStorage {
     ///
     /// * `AsOf::Counter(n)` — include facts whose `tx_count <= n`
     /// * `AsOf::Timestamp(t)` — include facts whose `tx_id <= t as u64`
-    pub fn get_facts_as_of(&self, as_of: &AsOf) -> Result<Vec<Fact>> {
+    pub(crate) fn get_facts_as_of(&self, as_of: &AsOf) -> Result<Vec<Fact>> {
         let all = self.get_all_facts()?;
         let filtered = all
             .into_iter()
@@ -331,7 +331,7 @@ impl FactStorage {
     /// Return all asserted facts valid at the given timestamp.
     ///
     /// A fact is valid at `ts` when `valid_from <= ts < valid_to` and it is asserted.
-    pub fn get_facts_valid_at(&self, ts: i64) -> Result<Vec<Fact>> {
+    pub(crate) fn get_facts_valid_at(&self, ts: i64) -> Result<Vec<Fact>> {
         let all = self.get_all_facts()?;
         let filtered = all
             .into_iter()
@@ -345,7 +345,7 @@ impl FactStorage {
     /// Returns the complete append-only log. For current state, filter by
     /// asserted=true and take the most recent fact for each (E, A) pair.
     /// Includes both committed (on-disk) facts and pending (in-memory) facts.
-    pub fn get_all_facts(&self) -> Result<Vec<Fact>> {
+    pub(crate) fn get_all_facts(&self) -> Result<Vec<Fact>> {
         let d = self.data.read().unwrap();
         let mut all = Vec::new();
         // Committed facts first (on disk, via CommittedFactReader)
@@ -361,7 +361,7 @@ impl FactStorage {
     ///
     /// Returns only facts where asserted=true. This gives you the currently
     /// valid facts, but includes all historical versions.
-    pub fn get_asserted_facts(&self) -> Result<Vec<Fact>> {
+    pub(crate) fn get_asserted_facts(&self) -> Result<Vec<Fact>> {
         let all = self.get_all_facts()?;
         Ok(all.into_iter().filter(|f| f.is_asserted()).collect())
     }
@@ -377,7 +377,7 @@ impl FactStorage {
     ///
     /// # Returns
     /// All facts (assertions and retractions) about this entity
-    pub fn get_facts_by_entity(&self, entity_id: &EntityId) -> Result<Vec<Fact>> {
+    pub(crate) fn get_facts_by_entity(&self, entity_id: &EntityId) -> Result<Vec<Fact>> {
         use crate::storage::index::EavtKey;
         let d = self.data.read().unwrap();
 
@@ -457,7 +457,7 @@ impl FactStorage {
     ///
     /// # Returns
     /// All facts with this attribute
-    pub fn get_facts_by_attribute(&self, attribute: &Attribute) -> Result<Vec<Fact>> {
+    pub(crate) fn get_facts_by_attribute(&self, attribute: &Attribute) -> Result<Vec<Fact>> {
         use crate::storage::index::AevtKey;
         let d = self.data.read().unwrap();
 
@@ -531,7 +531,7 @@ impl FactStorage {
     ///
     /// # Returns
     /// All facts (including history) for this entity-attribute pair
-    pub fn get_facts_by_entity_attribute(
+    pub(crate) fn get_facts_by_entity_attribute(
         &self,
         entity_id: &EntityId,
         attribute: &Attribute,
@@ -554,7 +554,7 @@ impl FactStorage {
     ///
     /// # Returns
     /// The current value, or None if retracted or not found
-    pub fn get_current_value(
+    pub(crate) fn get_current_value(
         &self,
         entity_id: &EntityId,
         attribute: &Attribute,
@@ -569,7 +569,7 @@ impl FactStorage {
     }
 
     /// Get the count of all facts in storage (committed + pending).
-    pub fn fact_count(&self) -> usize {
+    pub(crate) fn fact_count(&self) -> usize {
         let d = self.data.read().unwrap();
         let committed_count = d
             .committed
@@ -581,12 +581,12 @@ impl FactStorage {
     }
 
     /// Get the count of currently asserted facts
-    pub fn asserted_fact_count(&self) -> usize {
+    pub(crate) fn asserted_fact_count(&self) -> usize {
         self.get_asserted_facts().map(|v| v.len()).unwrap_or(0)
     }
 
     /// Clear all facts (for testing)
-    pub fn clear(&self) -> Result<()> {
+    pub(crate) fn clear(&self) -> Result<()> {
         let mut d = self.data.write().unwrap();
         d.facts.clear();
         d.pending_indexes = Indexes::new();
@@ -597,7 +597,7 @@ impl FactStorage {
     }
 
     /// Returns (eavt_len, aevt_len, avet_len, vaet_len) for testing.
-    pub fn index_counts(&self) -> (usize, usize, usize, usize) {
+    pub(crate) fn index_counts(&self) -> (usize, usize, usize, usize) {
         let d = self.data.read().unwrap();
         (
             d.pending_indexes.eavt.len(),
@@ -611,26 +611,26 @@ impl FactStorage {
     ///
     /// Used by `PersistentFactStorage` after detecting an index checksum
     /// mismatch (e.g. after crash recovery).
-    pub fn replace_pending_indexes(&self, indexes: Indexes) {
+    pub(crate) fn replace_pending_indexes(&self, indexes: Indexes) {
         let mut d = self.data.write().unwrap();
         d.pending_indexes = indexes;
     }
 
     /// Return the pending (uncommitted) facts held in memory.
-    pub fn get_pending_facts(&self) -> Vec<Fact> {
+    pub(crate) fn get_pending_facts(&self) -> Vec<Fact> {
         let d = self.data.read().unwrap();
         d.facts.clone()
     }
 
     /// Clear pending facts and pending indexes after a successful checkpoint.
-    pub fn post_checkpoint_clear(&self) {
+    pub(crate) fn post_checkpoint_clear(&self) {
         let mut d = self.data.write().unwrap();
         d.facts.clear();
         d.pending_indexes = Indexes::new();
     }
 
     /// Set the tx_counter to `max` (used on load to restore from persisted state).
-    pub fn restore_tx_counter_from(&self, max: u64) {
+    pub(crate) fn restore_tx_counter_from(&self, max: u64) {
         self.tx_counter.store(max, Ordering::SeqCst);
     }
 
@@ -638,7 +638,7 @@ impl FactStorage {
     ///
     /// Used by `PersistentFactStorage::save()` to write index B+tree pages.
     /// Clones the BTreeMaps — acceptable since `save()` is not on the hot path.
-    pub fn pending_indexes_snapshot(&self) -> Indexes {
+    pub(crate) fn pending_indexes_snapshot(&self) -> Indexes {
         let d = self.data.read().unwrap();
         Indexes {
             eavt: d.pending_indexes.eavt.clone(),
@@ -650,14 +650,14 @@ impl FactStorage {
 
     /// Set the committed fact reader. Called by PersistentFactStorage::load() after
     /// opening a v5 file so index-driven reads can resolve FactRefs via page cache.
-    pub fn set_committed_reader(&self, reader: Arc<dyn crate::storage::CommittedFactReader>) {
+    pub(crate) fn set_committed_reader(&self, reader: Arc<dyn crate::storage::CommittedFactReader>) {
         let mut d = self.data.write().unwrap();
         d.committed = Some(reader);
     }
 
     /// Set the committed index reader. Called by PersistentFactStorage after
     /// each open/migration/checkpoint so queries can range-scan the on-disk B+tree.
-    pub fn set_committed_index_reader(
+    pub(crate) fn set_committed_index_reader(
         &self,
         reader: Arc<dyn crate::storage::CommittedIndexReader>,
     ) {
@@ -667,7 +667,7 @@ impl FactStorage {
 
     /// Returns (eavt_len, aevt_len, avet_len, vaet_len) for the pending indexes.
     /// Used in tests to verify pending index state.
-    pub fn pending_index_counts(&self) -> (usize, usize, usize, usize) {
+    pub(crate) fn pending_index_counts(&self) -> (usize, usize, usize, usize) {
         let d = self.data.read().unwrap();
         (
             d.pending_indexes.eavt.len(),
