@@ -480,8 +480,7 @@ mod tests {
 
     #[test]
     fn test_wal_fact_size_limit() {
-        use crate::graph::Fact;
-        use crate::graph::types::Value;
+        use crate::graph::types::{Fact, Value};
         use uuid::Uuid;
 
         let dir = tempfile::tempdir().unwrap();

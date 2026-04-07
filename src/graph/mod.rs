@@ -1,9 +1,6 @@
 pub(crate) mod storage;
 pub(crate) mod types;
 
-// Datalog EAV types (Phase 3+)
+// Re-export the one name imported via `crate::graph::FactStorage` across the codebase.
+// Everything else is imported directly from `crate::graph::types::*`.
 pub(crate) use storage::FactStorage;
-pub(crate) use types::{Attribute, Fact, TransactOptions, TxId, VALID_TIME_FOREVER,
-    tx_id_from_system_time, tx_id_now, tx_id_to_system_time};
-// EntityId and Value are part of the public API — re-exported from lib.rs
-pub use types::{EntityId, Value};

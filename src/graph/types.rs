@@ -21,18 +21,6 @@ pub(crate) fn tx_id_now() -> TxId {
         .as_millis() as u64
 }
 
-/// Create a TxId from a SystemTime
-pub(crate) fn tx_id_from_system_time(time: SystemTime) -> TxId {
-    time.duration_since(UNIX_EPOCH)
-        .expect("System time before UNIX epoch")
-        .as_millis() as u64
-}
-
-/// Convert a TxId back to a SystemTime
-pub(crate) fn tx_id_to_system_time(tx_id: TxId) -> SystemTime {
-    UNIX_EPOCH + std::time::Duration::from_millis(tx_id)
-}
-
 /// Entity ID type - using UUID for unique entity identification
 pub type EntityId = Uuid;
 
@@ -288,7 +276,16 @@ impl Fact {
         }
     }
 
+    /// Check if this is an assertion (not a retraction)
+    pub(crate) fn is_asserted(&self) -> bool {
+        self.asserted
+    }
+}
+
+#[cfg(test)]
+impl Fact {
     /// Create a fact with explicit asserted flag and default valid time.
+    /// Used only in tests.
     pub(crate) fn with_asserted(
         entity: EntityId,
         attribute: Attribute,
@@ -308,12 +305,7 @@ impl Fact {
         }
     }
 
-    /// Check if this is an assertion (not a retraction)
-    pub(crate) fn is_asserted(&self) -> bool {
-        self.asserted
-    }
-
-    /// Check if this is a retraction
+    /// Check if this is a retraction. Used only in tests.
     pub(crate) fn is_retracted(&self) -> bool {
         !self.asserted
     }
@@ -343,6 +335,13 @@ impl TransactOptions {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Create a TxId from a SystemTime. Test-only helper.
+    fn tx_id_from_system_time(time: std::time::SystemTime) -> TxId {
+        time.duration_since(std::time::UNIX_EPOCH)
+            .expect("System time before UNIX epoch")
+            .as_millis() as u64
+    }
 
     #[test]
     fn test_tx_id_timestamp() {
