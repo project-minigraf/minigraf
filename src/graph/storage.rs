@@ -348,6 +348,7 @@ impl FactStorage {
     ///
     /// Used by `PersistentFactStorage` after detecting an index checksum
     /// mismatch (e.g. after crash recovery).
+    #[allow(dead_code)]
     pub(crate) fn replace_pending_indexes(&self, indexes: Indexes) {
         let mut d = self.data.write().unwrap();
         d.pending_indexes = indexes;
@@ -404,6 +405,7 @@ impl FactStorage {
 
     /// Returns (eavt_len, aevt_len, avet_len, vaet_len) for the pending indexes.
     /// Used in tests to verify pending index state.
+    #[allow(dead_code)]
     pub(crate) fn pending_index_counts(&self) -> (usize, usize, usize, usize) {
         let d = self.data.read().unwrap();
         (

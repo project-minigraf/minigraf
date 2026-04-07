@@ -26,7 +26,8 @@ use anyhow::Result;
 
 /// Page type byte for packed fact pages.
 pub const PAGE_TYPE_PACKED: u8 = 0x02;
-/// Page type byte for overflow pages (reserved, not used in Phase 6.2).
+/// Page type byte for overflow pages (reserved, not yet used).
+#[allow(dead_code)]
 pub const PAGE_TYPE_OVERFLOW: u8 = 0x03;
 
 /// Packed page header size in bytes.

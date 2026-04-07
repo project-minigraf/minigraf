@@ -34,7 +34,8 @@ use anyhow::{Result, anyhow};
 use std::collections::BTreeSet;
 use std::sync::{Arc, RwLock};
 
-/// Default maximum iterations for recursive evaluation
+/// Default maximum iterations for recursive evaluation (kept for reference).
+#[allow(dead_code)]
 pub const DEFAULT_MAX_ITERATIONS: usize = 1000;
 /// Default maximum facts that can be derived per iteration
 pub const DEFAULT_MAX_DERIVED_FACTS: usize = 100_000;
@@ -929,7 +930,7 @@ mod tests {
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
         let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
 
-        let evaluator = RecursiveEvaluator::new(
+        let _evaluator = RecursiveEvaluator::new(
             storage,
             rules,
             functions,
@@ -938,7 +939,7 @@ mod tests {
             DEFAULT_MAX_RESULTS,
         );
         // Note: RecursiveEvaluator uses evaluate_recursive_rules, not evaluate
-        // let derived = evaluator.evaluate(&["p".to_string()]).unwrap();
+        // let derived = _evaluator.evaluate(&["p".to_string()]).unwrap();
     }
 
     // ── Additional targeted branch coverage ───────────────────────────────────

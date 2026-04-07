@@ -44,6 +44,7 @@ pub fn parse_timestamp(s: &str) -> Result<i64> {
 /// Returns an error if `millis` is outside chrono's supported range.
 /// Note: `i64::MAX` (VALID_TIME_FOREVER) should never be passed to this function;
 /// callers should check for the sentinel before formatting.
+#[allow(dead_code)]
 pub fn millis_to_timestamp_string(millis: i64) -> Result<String> {
     let dt = DateTime::<Utc>::from_timestamp_millis(millis).ok_or_else(|| {
         anyhow!(

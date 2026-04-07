@@ -48,6 +48,7 @@ impl EdnValue {
     }
 
     /// Check if this is a keyword
+    #[allow(dead_code)]
     pub fn is_keyword(&self) -> bool {
         matches!(self, EdnValue::Keyword(_))
     }
@@ -61,6 +62,7 @@ impl EdnValue {
     }
 
     /// Check if this is a vector
+    #[allow(dead_code)]
     pub fn is_vector(&self) -> bool {
         matches!(self, EdnValue::Vector(_))
     }
@@ -74,6 +76,7 @@ impl EdnValue {
     }
 
     /// Check if this is a list
+    #[allow(dead_code)]
     pub fn is_list(&self) -> bool {
         matches!(self, EdnValue::List(_))
     }
@@ -292,6 +295,7 @@ impl PseudoAttr {
     }
 
     /// Returns the canonical keyword string for this pseudo-attribute.
+    #[allow(dead_code)]
     pub fn as_keyword(&self) -> &'static str {
         match self {
             PseudoAttr::ValidFrom => ":db/valid-from",
@@ -357,6 +361,7 @@ impl Pattern {
     }
 
     /// Create a pattern with a real (stored) attribute.
+    #[allow(dead_code)]
     pub fn real(entity: EdnValue, attribute: EdnValue, value: EdnValue) -> Self {
         Pattern {
             entity,
@@ -466,6 +471,7 @@ impl WhereClause {
     }
 
     /// True if this clause is a Not or NotJoin containing at least one RuleInvocation.
+    #[allow(dead_code)]
     pub fn has_negated_invocation(&self) -> bool {
         match self {
             WhereClause::Not(clauses) | WhereClause::NotJoin { clauses, .. } => clauses
@@ -527,6 +533,7 @@ impl DatalogQuery {
     }
 
     /// Helper: Create a query with only patterns (for backward compatibility)
+    #[allow(dead_code)]
     pub fn from_patterns(find: Vec<FindSpec>, patterns: Vec<Pattern>) -> Self {
         DatalogQuery {
             find,
@@ -630,6 +637,7 @@ pub struct Rule {
 }
 
 impl Rule {
+    #[allow(dead_code)]
     pub fn new(head: Vec<EdnValue>, body: Vec<WhereClause>) -> Self {
         Rule { head, body }
     }

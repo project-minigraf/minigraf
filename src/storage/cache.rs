@@ -125,6 +125,7 @@ impl PageCache {
     }
 
     /// Write all dirty pages to the backend and clear dirty flags.
+    #[allow(dead_code)]
     pub fn flush(&self, backend: &mut dyn StorageBackend) -> Result<()> {
         let mut inner = self.inner.write().unwrap();
         for (&page_id, entry) in inner.entries.iter_mut() {
@@ -137,6 +138,7 @@ impl PageCache {
     }
 
     /// Invalidate (remove) a page from the cache.
+    #[allow(dead_code)]
     pub fn invalidate(&self, page_id: u64) {
         let mut inner = self.inner.write().unwrap();
         inner.entries.remove(&page_id);
@@ -154,6 +156,7 @@ impl PageCache {
     }
 
     /// Number of pages currently cached (for testing).
+    #[allow(dead_code)]
     pub fn cached_page_count(&self) -> usize {
         self.inner.read().unwrap().entries.len()
     }

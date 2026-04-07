@@ -1,3 +1,9 @@
+//! Legacy v5 B+tree serialisation — kept for v5→v7 file format migration only.
+//! The write_* functions are no longer called in production; they exist
+//! only to support tests that verify round-trip serialisation.
+// Suppress dead-code warnings: this entire module is legacy v5 code; the write_*
+// functions are only invoked by the unit tests in this file.
+#![allow(dead_code)]
 //! B+tree page serialisation for covering index persistence.
 //!
 //! `write_*_index` writes a `BTreeMap<K, FactRef>` to B+tree leaf pages starting

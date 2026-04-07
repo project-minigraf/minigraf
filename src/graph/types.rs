@@ -286,6 +286,7 @@ impl Fact {
 impl Fact {
     /// Create a fact with explicit asserted flag and default valid time.
     /// Used only in tests.
+    #[allow(dead_code)]
     pub(crate) fn with_asserted(
         entity: EntityId,
         attribute: Attribute,

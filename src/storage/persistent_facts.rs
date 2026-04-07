@@ -45,8 +45,11 @@ fn compute_index_checksum(facts: &[Fact]) -> u32 {
 /// Resolves FactRefs to Fact objects by reading packed pages from the backend
 /// through the page cache. Used after loading (or migrating) a v5/v6 file so that indexes can
 /// resolve committed facts without keeping the entire fact list in memory.
+// page_cache is read in the CommittedFactReader::resolve impl; Rust's dead-code
+// lint does not track trait-impl field reads when the impl is behind dyn dispatch.
 struct CommittedFactLoaderImpl<B: StorageBackend> {
     backend: Arc<Mutex<B>>,
+    #[allow(dead_code)]
     page_cache: Arc<PageCache>,
     committed_fact_pages: Arc<AtomicU64>,
     #[allow(dead_code)]
@@ -712,6 +715,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     /// Any dirty (unsaved) changes are saved before the backend is returned.
     ///
     /// Returns an error if the backend Arc has multiple references.
+    #[allow(dead_code)]
     pub fn into_backend(mut self) -> Result<B> {
         // Save pending changes before giving up ownership
         if self.dirty {
@@ -904,6 +908,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     }
 
     /// Check if storage has unsaved changes
+    #[allow(dead_code)]
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }

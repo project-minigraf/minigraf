@@ -224,6 +224,7 @@ impl Indexes {
     }
 
     /// Query EAVT index for entity + attribute.
+    #[allow(dead_code)]
     pub fn lookup_eavt_entity_attr(&self, entity: EntityId, attribute: &str) -> Vec<FactRef> {
         let start = EavtKey {
             entity,

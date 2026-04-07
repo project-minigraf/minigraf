@@ -60,6 +60,7 @@ pub struct DatalogExecutor {
 }
 
 impl DatalogExecutor {
+    #[allow(dead_code)]
     pub fn new(storage: FactStorage) -> Self {
         let indexes = storage.pending_indexes_snapshot();
         DatalogExecutor {
@@ -94,6 +95,7 @@ impl DatalogExecutor {
     /// Convenience constructor for tests. Shares `rules` with other executors but creates
     /// a fresh `FunctionRegistry::with_builtins()`. Production code uses
     /// [`new_with_rules_and_functions`] to share the registry from `Minigraf::Inner`.
+    #[allow(dead_code)]
     pub fn new_with_rules(storage: FactStorage, rules: Arc<RwLock<RuleRegistry>>) -> Self {
         Self::new_with_rules_and_functions(
             storage,
@@ -105,6 +107,7 @@ impl DatalogExecutor {
     /// Create a `DatalogExecutor` with custom complexity limits.
     ///
     /// Used by `Minigraf` when `OpenOptions` specifies non-default limits.
+    #[allow(dead_code)]
     pub fn new_with_limits(
         storage: FactStorage,
         rules: Arc<RwLock<RuleRegistry>>,
@@ -681,6 +684,7 @@ impl DatalogExecutor {
     }
 
     /// Get the underlying storage (for testing)
+    #[allow(dead_code)]
     pub fn storage(&self) -> &FactStorage {
         &self.storage
     }

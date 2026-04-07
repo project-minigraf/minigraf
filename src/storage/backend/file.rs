@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 ///
 /// File format is cross-platform (endian-safe).
 pub struct FileBackend {
+    #[allow(dead_code)]
     path: PathBuf,
     file: File,
     header: FileHeader,
@@ -101,6 +102,7 @@ impl FileBackend {
     }
 
     /// Get the file path.
+    #[allow(dead_code)]
     pub fn path(&self) -> &Path {
         &self.path
     }

@@ -298,12 +298,14 @@ impl FunctionRegistry {
         self.aggregates.get(name)
     }
 
+    #[allow(dead_code)]
     pub fn is_known(&self, name: &str) -> bool {
         self.aggregates.contains_key(name)
     }
 
     /// count-distinct and sum-distinct are not window-compatible.
     /// All other registered aggregates (built-in or UDF) are window-compatible.
+    #[allow(dead_code)]
     pub fn is_window_compatible(&self, name: &str) -> bool {
         match name {
             "count-distinct" | "sum-distinct" => false,
