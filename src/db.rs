@@ -870,6 +870,7 @@ impl<'a> WriteTransaction<'a> {
         let merged_facts = self.merged_query_facts()?;
         let mut executor = DatalogExecutor::new_from_facts_with_rules_and_functions(
             merged_facts,
+            self.pending_read_now_floor(),
             self.inner.rules.clone(),
             self.inner.functions.clone(),
         );
@@ -1021,6 +1022,14 @@ impl<'a> WriteTransaction<'a> {
         merged.extend(committed);
         merged.extend(self.pending_facts.iter().cloned());
         Ok(Arc::from(merged))
+    }
+
+    /// Return the read-time floor implied by pending facts only.
+    fn pending_read_now_floor(&self) -> Option<i64> {
+        self.pending_facts
+            .iter()
+            .map(|fact| fact.tx_id as i64)
+            .max()
     }
 }
 
@@ -1240,6 +1249,18 @@ mod tests {
 
         tx.execute(r#"(transact [[:alice :person/age 31]])"#).unwrap();
 
+        let future_tx_id = tx_id as u64 + 60_000;
+        let future_fact = Fact::with_valid_time(
+            uuid::Uuid::new_v4(),
+            ":future/marker".to_string(),
+            Value::Integer(99),
+            future_tx_id,
+            1,
+            future_tx_id as i64,
+            VALID_TIME_FOREVER,
+        );
+        db.inner.fact_storage.load_fact(future_fact).unwrap();
+
         let as_of_timestamp = chrono::DateTime::<Utc>::from_timestamp_millis(tx_id)
             .unwrap()
             .to_rfc3339_opts(SecondsFormat::Millis, true);
@@ -1253,6 +1274,20 @@ mod tests {
             QueryResult::QueryResults { results, .. } => {
                 assert_eq!(results.len(), 1);
                 assert_eq!(results[0][0], Value::Integer(30));
+            }
+            _ => panic!("expected QueryResults"),
+        }
+
+        let future_query = tx
+            .execute(r#"(query [:find ?v :where [?e :future/marker ?v]])"#)
+            .unwrap();
+        match future_query {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(
+                    results.len(),
+                    0,
+                    "future committed facts must not become visible from pending-only floor"
+                );
             }
             _ => panic!("expected QueryResults"),
         }

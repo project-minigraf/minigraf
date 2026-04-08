@@ -74,6 +74,7 @@ pub enum QueryResult {
 pub struct DatalogExecutor {
     storage: FactStorage,
     facts_override: Option<Arc<[Fact]>>,
+    read_now_floor: Option<i64>,
     rules: Arc<RwLock<RuleRegistry>>,
     // RwLock pre-wired for 7.7b register_aggregate API.
     functions: Arc<RwLock<FunctionRegistry>>,
@@ -89,6 +90,7 @@ impl DatalogExecutor {
         DatalogExecutor {
             storage,
             facts_override: None,
+            read_now_floor: None,
             rules: Arc::new(RwLock::new(RuleRegistry::new())),
             functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
             indexes: Arc::new(indexes),
@@ -109,6 +111,7 @@ impl DatalogExecutor {
         DatalogExecutor {
             storage,
             facts_override: None,
+            read_now_floor: None,
             rules,
             functions,
             indexes: Arc::new(indexes),
@@ -120,12 +123,14 @@ impl DatalogExecutor {
     /// Create a `DatalogExecutor` over a merged fact slice while sharing rules and functions.
     pub(crate) fn new_from_facts_with_rules_and_functions(
         facts: Arc<[Fact]>,
+        pending_read_now_floor: Option<i64>,
         rules: Arc<RwLock<RuleRegistry>>,
         functions: Arc<RwLock<FunctionRegistry>>,
     ) -> Self {
         DatalogExecutor {
             storage: FactStorage::new(),
             facts_override: Some(facts),
+            read_now_floor: pending_read_now_floor,
             rules,
             functions,
             indexes: Arc::new(crate::storage::index::Indexes::new()),
@@ -161,6 +166,7 @@ impl DatalogExecutor {
         DatalogExecutor {
             storage,
             facts_override: None,
+            read_now_floor: None,
             rules,
             functions,
             indexes: Arc::new(indexes),
@@ -182,14 +188,7 @@ impl DatalogExecutor {
     /// of the current millisecond.
     fn read_now(&self) -> i64 {
         let now = tx_id_now() as i64;
-        match &self.facts_override {
-            Some(facts) => facts
-                .iter()
-                .map(|fact| fact.tx_id as i64)
-                .max()
-                .map_or(now, |pending_now| now.max(pending_now)),
-            None => now,
-        }
+        self.read_now_floor.map_or(now, |floor| now.max(floor))
     }
 
     /// Execute a Datalog command
