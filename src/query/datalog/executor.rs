@@ -123,23 +123,12 @@ impl DatalogExecutor {
         rules: Arc<RwLock<RuleRegistry>>,
         functions: Arc<RwLock<FunctionRegistry>>,
     ) -> Self {
-        let mut indexes = crate::storage::index::Indexes::new();
-        for (slot_index, fact) in facts.iter().enumerate() {
-            indexes.insert(
-                fact,
-                crate::storage::index::FactRef {
-                    page_id: 0,
-                    slot_index: slot_index as u16,
-                },
-            );
-        }
-
         DatalogExecutor {
             storage: FactStorage::new(),
             facts_override: Some(facts),
             rules,
             functions,
-            indexes: Arc::new(indexes),
+            indexes: Arc::new(crate::storage::index::Indexes::new()),
             max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
             max_results: crate::query::datalog::evaluator::DEFAULT_MAX_RESULTS,
         }
