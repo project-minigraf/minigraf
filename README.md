@@ -95,6 +95,10 @@ cargo test         # run 780 tests
 cargo run < demos/demo_recursive.txt   # recursive rules demo
 ```
 
+## Demo
+
+See a working implementation of **temporal reasoning** with Minigraf at [github.com/adityamukho/temporal_reasoning](https://github.com/adityamukho/temporal_reasoning) — an AI agent that uses Minigraf's bi-temporal model to store, correct, and audit beliefs.
+
 See the [Datalog Reference](https://github.com/adityamukho/minigraf/wiki/Datalog-Reference) wiki page for the complete syntax.
 
 ## Why Minigraf?
