@@ -1,6 +1,5 @@
 use minigraf::db::Minigraf;
-use minigraf::query::datalog::executor::QueryResult;
-use minigraf::{BindValue, Value};
+use minigraf::{BindValue, QueryResult, Value};
 use uuid::Uuid;
 
 // ─── Happy-path tests ─────────────────────────────────────────────────────────

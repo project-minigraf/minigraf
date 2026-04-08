@@ -11,52 +11,60 @@ use uuid::Uuid;
 /// We use timestamps as transaction IDs for natural chronological ordering
 /// and consistency with bi-temporal valid_time (Phase 4). Millisecond precision
 /// is sufficient for Phase 3's single-threaded usage.
-pub type TxId = u64;
+pub(crate) type TxId = u64;
 
 /// Get current timestamp as transaction ID (milliseconds since UNIX epoch)
-pub fn tx_id_now() -> TxId {
+pub(crate) fn tx_id_now() -> TxId {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("System time before UNIX epoch")
         .as_millis() as u64
 }
 
-/// Create a TxId from a SystemTime
-pub fn tx_id_from_system_time(time: SystemTime) -> TxId {
-    time.duration_since(UNIX_EPOCH)
-        .expect("System time before UNIX epoch")
-        .as_millis() as u64
-}
-
-/// Convert a TxId back to a SystemTime
-pub fn tx_id_to_system_time(tx_id: TxId) -> SystemTime {
-    UNIX_EPOCH + std::time::Duration::from_millis(tx_id)
-}
-
-/// Entity ID type - using UUID for unique entity identification
+/// A unique identifier for a graph entity (UUID v4).
+///
+/// In Datalog syntax, entities are written as keywords (`:alice`, `:person/42`)
+/// or as UUID literals (`#uuid "550e8400-e29b-41d4-a716-446655440000"`).
+/// `EntityId` values appear in [`Value::Ref`] for cross-entity relationships
+/// and are returned in query result rows.
 pub type EntityId = Uuid;
 
 /// Attribute name - namespace-qualified keywords like ":person/name" or ":friend"
-pub type Attribute = String;
+pub(crate) type Attribute = String;
 
-/// Value types for Datalog facts
+/// All value types that can be stored in a Minigraf fact.
 ///
-/// The Value enum represents all possible value types that can be stored in facts.
+/// Values appear in the third position of EAV triples:
+/// `[entity attribute value]`, e.g. `[:alice :person/name "Alice"]`.
+///
+/// # Datalog literals
+///
+/// | Variant | Datalog syntax | Example |
+/// |---------|---------------|---------|
+/// | `String` | double-quoted | `"hello"` |
+/// | `Integer` | bare integer | `42`, `-7` |
+/// | `Float` | decimal | `3.14`, `-0.5` |
+/// | `Boolean` | `true` / `false` | `true` |
+/// | `Ref` | keyword entity or UUID | `:alice`, `#uuid "550e8400-..."` |
+/// | `Keyword` | colon-prefixed | `:status/active`, `:red` |
+/// | `Null` | `nil` | `nil` |
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Value {
-    /// String value
+    /// A UTF-8 string. Datalog literal: `"hello"`.
     String(String),
-    /// 64-bit integer
+    /// A 64-bit signed integer. Datalog literal: `42` or `-7`.
     Integer(i64),
-    /// 64-bit floating point
+    /// A 64-bit float. Datalog literal: `3.14` or `-0.5`.
     Float(f64),
-    /// Boolean value
+    /// A boolean. Datalog literal: `true` or `false`.
     Boolean(bool),
-    /// Reference to another entity (for relationships)
+    /// A reference to another entity by its [`EntityId`] (UUID).
+    /// Datalog literal: `:alice` (keyword short-form) or `#uuid "..."`.
     Ref(EntityId),
-    /// Keyword (e.g., ":status/active", ":person")
+    /// A namespaced keyword used for enumerated values and tags.
+    /// Datalog literal: `:status/active`, `:red`.
     Keyword(String),
-    /// Null/None value
+    /// An absent value. Datalog literal: `nil`.
     Null,
 }
 
@@ -179,7 +187,7 @@ impl Value {
 
 /// Sentinel value for open-ended valid time (a fact is valid "forever").
 /// Used as the default `valid_to` when no end time is specified.
-pub const VALID_TIME_FOREVER: i64 = i64::MAX;
+pub(crate) const VALID_TIME_FOREVER: i64 = i64::MAX;
 
 /// A Datalog fact: (Entity, Attribute, Value) triple with transaction metadata
 ///
@@ -192,9 +200,9 @@ pub const VALID_TIME_FOREVER: i64 = i64::MAX;
 /// - `valid_to`: when the fact stopped being valid (`VALID_TIME_FOREVER` = open-ended)
 ///
 /// # Examples
-/// ```
-/// use minigraf::{Fact, Value};
+/// ```ignore
 /// use uuid::Uuid;
+/// use crate::graph::types::{Fact, Value};
 ///
 /// // Fact: Alice's name is "Alice"
 /// let alice_id = Uuid::new_v4();
@@ -215,31 +223,31 @@ pub const VALID_TIME_FOREVER: i64 = i64::MAX;
 /// );
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Fact {
+pub(crate) struct Fact {
     /// The entity this fact is about
-    pub entity: EntityId,
+    pub(crate) entity: EntityId,
     /// The attribute/property name (namespace-qualified, e.g., ":person/name")
-    pub attribute: Attribute,
+    pub(crate) attribute: Attribute,
     /// The value of this attribute
-    pub value: Value,
+    pub(crate) value: Value,
     /// Transaction ID that asserted or retracted this fact
-    pub tx_id: TxId,
+    pub(crate) tx_id: TxId,
     /// Monotonically incrementing batch counter within a transaction (Phase 4)
-    pub tx_count: u64,
+    pub(crate) tx_count: u64,
     /// Valid-time start: when the fact became valid in the real world (millis since epoch).
     /// Defaults to `tx_id as i64` (wall-clock time of the transaction).
-    pub valid_from: i64,
+    pub(crate) valid_from: i64,
     /// Valid-time end: when the fact stopped being valid (millis since epoch).
     /// `VALID_TIME_FOREVER` means the fact is open-ended (still valid).
-    pub valid_to: i64,
+    pub(crate) valid_to: i64,
     /// True if this fact is asserted, false if retracted.
     /// Retractions are used instead of deletions to maintain history.
-    pub asserted: bool,
+    pub(crate) asserted: bool,
 }
 
 impl Fact {
     /// Create a new asserted fact with default valid time (valid_from=tx_id, valid_to=FOREVER).
-    pub fn new(entity: EntityId, attribute: Attribute, value: Value, tx_id: TxId) -> Self {
+    pub(crate) fn new(entity: EntityId, attribute: Attribute, value: Value, tx_id: TxId) -> Self {
         Fact {
             entity,
             attribute,
@@ -253,7 +261,7 @@ impl Fact {
     }
 
     /// Create an asserted fact with explicit valid time and tx_count.
-    pub fn with_valid_time(
+    pub(crate) fn with_valid_time(
         entity: EntityId,
         attribute: Attribute,
         value: Value,
@@ -275,7 +283,12 @@ impl Fact {
     }
 
     /// Create a retraction with default valid time.
-    pub fn retract(entity: EntityId, attribute: Attribute, value: Value, tx_id: TxId) -> Self {
+    pub(crate) fn retract(
+        entity: EntityId,
+        attribute: Attribute,
+        value: Value,
+        tx_id: TxId,
+    ) -> Self {
         Fact {
             entity,
             attribute,
@@ -288,8 +301,18 @@ impl Fact {
         }
     }
 
+    /// Check if this is an assertion (not a retraction)
+    pub(crate) fn is_asserted(&self) -> bool {
+        self.asserted
+    }
+}
+
+#[cfg(test)]
+impl Fact {
     /// Create a fact with explicit asserted flag and default valid time.
-    pub fn with_asserted(
+    /// Used only in tests.
+    #[allow(dead_code)]
+    pub(crate) fn with_asserted(
         entity: EntityId,
         attribute: Attribute,
         value: Value,
@@ -308,13 +331,8 @@ impl Fact {
         }
     }
 
-    /// Check if this is an assertion (not a retraction)
-    pub fn is_asserted(&self) -> bool {
-        self.asserted
-    }
-
-    /// Check if this is a retraction
-    pub fn is_retracted(&self) -> bool {
+    /// Check if this is a retraction. Used only in tests.
+    pub(crate) fn is_retracted(&self) -> bool {
         !self.asserted
     }
 }
@@ -324,15 +342,15 @@ impl Fact {
 /// When `valid_from` is `None`, defaults to the transaction timestamp.
 /// When `valid_to` is `None`, defaults to `VALID_TIME_FOREVER` (open-ended).
 #[derive(Debug, Clone, Default)]
-pub struct TransactOptions {
+pub(crate) struct TransactOptions {
     /// Override the valid-time start (millis since epoch). `None` = use tx timestamp.
-    pub valid_from: Option<i64>,
+    pub(crate) valid_from: Option<i64>,
     /// Override the valid-time end (millis since epoch). `None` = open-ended (FOREVER).
-    pub valid_to: Option<i64>,
+    pub(crate) valid_to: Option<i64>,
 }
 
 impl TransactOptions {
-    pub fn new(valid_from: Option<i64>, valid_to: Option<i64>) -> Self {
+    pub(crate) fn new(valid_from: Option<i64>, valid_to: Option<i64>) -> Self {
         TransactOptions {
             valid_from,
             valid_to,
@@ -343,6 +361,13 @@ impl TransactOptions {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Create a TxId from a SystemTime. Test-only helper.
+    fn tx_id_from_system_time(time: std::time::SystemTime) -> TxId {
+        time.duration_since(std::time::UNIX_EPOCH)
+            .expect("System time before UNIX epoch")
+            .as_millis() as u64
+    }
 
     #[test]
     fn test_tx_id_timestamp() {

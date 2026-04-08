@@ -154,15 +154,28 @@ impl WalWriter {
 
     /// Delete the WAL file at `path`. Called after a successful checkpoint.
     ///
-    /// On some filesystems, deleting a recently-written file may not be durable
-    /// until a sync occurs. We open the file and sync it before deletion to ensure
-    /// durability.
+    /// Uses a short retry loop to tolerate Windows races where the OS file handle
+    /// is not immediately released after the `WalWriter` is dropped.
     pub fn delete_file(path: &Path) -> Result<()> {
-        let file = std::fs::File::open(path)?;
-        file.sync_all()?;
-        drop(file);
-        std::fs::remove_file(path)?;
-        Ok(())
+        // Retry up to ~500 ms on Windows where handle release can lag drop().
+        let retries: u32 = if cfg!(windows) { 10 } else { 1 };
+        let mut last_err = None;
+        for i in 0..retries {
+            match std::fs::remove_file(path) {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    last_err = Some(e);
+                    if i + 1 < retries {
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                }
+            }
+        }
+        Err(anyhow::anyhow!(
+            "failed to delete WAL file {}: {}",
+            path.display(),
+            last_err.unwrap()
+        ))
     }
 }
 
@@ -480,8 +493,7 @@ mod tests {
 
     #[test]
     fn test_wal_fact_size_limit() {
-        use crate::graph::Fact;
-        use crate::graph::types::Value;
+        use crate::graph::types::{Fact, Value};
         use uuid::Uuid;
 
         let dir = tempfile::tempdir().unwrap();

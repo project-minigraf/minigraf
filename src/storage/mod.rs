@@ -58,9 +58,11 @@ pub trait StorageBackend: Send + Sync {
     /// Close the storage backend.
     ///
     /// Performs final sync and cleanup.
+    #[allow(dead_code)]
     fn close(&mut self) -> Result<()>;
 
     /// Get a human-readable name for this backend (for debugging).
+    #[allow(dead_code)]
     fn backend_name(&self) -> &'static str;
 
     /// Returns true if this is a newly created empty storage.
@@ -132,7 +134,7 @@ impl FileHeader {
     }
 
     /// Serialize the header to bytes.
-    pub fn to_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(self) -> Vec<u8> {
         let mut b = Vec::with_capacity(84);
         b.extend_from_slice(&self.magic);
         b.extend_from_slice(&self.version.to_le_bytes());
@@ -292,6 +294,7 @@ impl Default for FileHeader {
 /// objects via the page cache without keeping the entire fact list in memory.
 pub trait CommittedFactReader: Send + Sync {
     /// Resolve a single committed fact by its disk reference.
+    #[allow(dead_code)]
     fn resolve(
         &self,
         fact_ref: crate::storage::index::FactRef,
@@ -299,6 +302,7 @@ pub trait CommittedFactReader: Send + Sync {
     /// Stream all committed facts (for full scans, checksum verification, migration).
     fn stream_all(&self) -> Result<Vec<crate::graph::types::Fact>>;
     /// Number of committed fact pages (used for checksum + iteration bounds).
+    #[allow(dead_code)]
     fn committed_page_count(&self) -> u64;
 }
 
@@ -309,6 +313,7 @@ pub trait CommittedFactReader: Send + Sync {
 /// pending index entries without loading the full index into RAM.
 pub trait CommittedIndexReader: Send + Sync {
     /// Returns all committed EAVT entries in `[start, end)`. `end: None` means unbounded upper.
+    #[allow(dead_code)]
     fn range_scan_eavt(
         &self,
         start: &crate::storage::index::EavtKey,
@@ -316,6 +321,7 @@ pub trait CommittedIndexReader: Send + Sync {
     ) -> anyhow::Result<Vec<crate::storage::index::FactRef>>;
 
     /// Returns all committed AEVT entries in `[start, end)`. `end: None` means unbounded upper.
+    #[allow(dead_code)]
     fn range_scan_aevt(
         &self,
         start: &crate::storage::index::AevtKey,
@@ -323,6 +329,7 @@ pub trait CommittedIndexReader: Send + Sync {
     ) -> anyhow::Result<Vec<crate::storage::index::FactRef>>;
 
     /// Returns all committed AVET entries in `[start, end)`. `end: None` means unbounded upper.
+    #[allow(dead_code)]
     fn range_scan_avet(
         &self,
         start: &crate::storage::index::AvetKey,
@@ -330,6 +337,7 @@ pub trait CommittedIndexReader: Send + Sync {
     ) -> anyhow::Result<Vec<crate::storage::index::FactRef>>;
 
     /// Returns all committed VAET entries in `[start, end)`. `end: None` means unbounded upper.
+    #[allow(dead_code)]
     fn range_scan_vaet(
         &self,
         start: &crate::storage::index::VaetKey,

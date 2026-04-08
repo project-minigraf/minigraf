@@ -32,19 +32,41 @@ fn query_uses_per_fact_pseudo_attr(query: &DatalogQuery) -> bool {
     check_clauses(&query.where_clauses)
 }
 
-/// Result of executing a Datalog query
+/// The result of executing a Datalog command via [`crate::db::Minigraf::execute`].
+///
+/// Pattern-match on this to distinguish query results from write confirmations:
+///
+/// ```
+/// # use minigraf::{Minigraf, QueryResult};
+/// # let db = Minigraf::in_memory().unwrap();
+/// # db.execute(r#"(transact [[:alice :person/name "Alice"]])"#).unwrap();
+/// match db.execute("(query [:find ?name :where [?e :person/name ?name]])").unwrap() {
+///     QueryResult::QueryResults { vars, results } => {
+///         for row in &results {
+///             println!("{}: {:?}", vars[0], row[0]);
+///         }
+///     }
+///     QueryResult::Transacted(tx_id) => println!("wrote tx {}", tx_id),
+///     QueryResult::Retracted(tx_id) => println!("retracted tx {}", tx_id),
+///     QueryResult::Ok => {}
+/// }
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum QueryResult {
-    /// Transaction completed successfully with TX ID
+    /// Transaction completed successfully. The inner value is the transaction ID
+    /// (Unix milliseconds), also displayed by the REPL as the `tx` counter.
     Transacted(TxId),
-    /// Retraction completed successfully with TX ID
+    /// Retraction completed successfully with the transaction ID.
     Retracted(TxId),
     /// Query results: list of variable bindings
     QueryResults {
+        /// The variable names in the order they appear in the `:find` clause.
         vars: Vec<String>,
+        /// Each inner `Vec<Value>` is one result row, aligned with `vars`.
         results: Vec<Vec<Value>>,
     },
-    /// Empty result (e.g., for future rule definitions)
+    /// Acknowledgement for commands that produce no data (e.g. rule definitions
+    /// inside a [`crate::db::WriteTransaction`]).
     Ok,
 }
 
@@ -60,6 +82,7 @@ pub struct DatalogExecutor {
 }
 
 impl DatalogExecutor {
+    #[allow(dead_code)]
     pub fn new(storage: FactStorage) -> Self {
         let indexes = storage.pending_indexes_snapshot();
         DatalogExecutor {
@@ -94,6 +117,7 @@ impl DatalogExecutor {
     /// Convenience constructor for tests. Shares `rules` with other executors but creates
     /// a fresh `FunctionRegistry::with_builtins()`. Production code uses
     /// [`new_with_rules_and_functions`] to share the registry from `Minigraf::Inner`.
+    #[allow(dead_code)]
     pub fn new_with_rules(storage: FactStorage, rules: Arc<RwLock<RuleRegistry>>) -> Self {
         Self::new_with_rules_and_functions(
             storage,
@@ -105,6 +129,7 @@ impl DatalogExecutor {
     /// Create a `DatalogExecutor` with custom complexity limits.
     ///
     /// Used by `Minigraf` when `OpenOptions` specifies non-default limits.
+    #[allow(dead_code)]
     pub fn new_with_limits(
         storage: FactStorage,
         rules: Arc<RwLock<RuleRegistry>>,
@@ -681,6 +706,7 @@ impl DatalogExecutor {
     }
 
     /// Get the underlying storage (for testing)
+    #[allow(dead_code)]
     pub fn storage(&self) -> &FactStorage {
         &self.storage
     }

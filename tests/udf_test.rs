@@ -2,8 +2,8 @@
 //!
 //! Testing conventions: no `{:?}` of Result/Value/Fact in assert messages.
 
+use minigraf::Value;
 use minigraf::db::Minigraf;
-use minigraf::graph::types::Value;
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -58,7 +58,7 @@ fn custom_aggregate_geometric_mean() {
         .execute(r#"(query [:find (geomean ?score) :where [?e :item/score ?score]])"#)
         .expect("query failed");
 
-    if let minigraf::query::QueryResult::QueryResults { results, .. } = result {
+    if let minigraf::QueryResult::QueryResults { results, .. } = result {
         assert_eq!(results.len(), 1);
         // geomean(2, 8) = sqrt(16) = 4.0
         if let Value::Float(f) = &results[0][0] {
@@ -102,7 +102,7 @@ fn custom_aggregate_empty_result() {
         .execute(r#"(query [:find (geomean2 ?score) :where [?e :item/score ?score]])"#)
         .expect("query failed");
 
-    if let minigraf::query::QueryResult::QueryResults { results, .. } = result {
+    if let minigraf::QueryResult::QueryResults { results, .. } = result {
         // Empty input → no groups → no output rows (consistent with built-in behaviour
         // for non-count aggregates when no facts match)
         assert!(results.is_empty() || results[0][0] == Value::Null);
@@ -134,7 +134,7 @@ fn custom_predicate_filter() {
         .execute(r#"(query [:find ?e :where [?e :person/email ?addr] [(email? ?addr)]])"#)
         .expect("query failed");
 
-    if let minigraf::query::QueryResult::QueryResults { results, .. } = result {
+    if let minigraf::QueryResult::QueryResults { results, .. } = result {
         assert_eq!(results.len(), 1, "only alice has a valid email");
         // Entity IDs are stored as Value::Ref(deterministic UUID derived from the keyword).
         // We verify the result is a Ref (entity ID) rather than checking the exact UUID.
@@ -180,7 +180,7 @@ fn udf_as_window_function() {
         )
         .expect("query failed");
 
-    if let minigraf::query::QueryResult::QueryResults { results, .. } = result {
+    if let minigraf::QueryResult::QueryResults { results, .. } = result {
         assert_eq!(results.len(), 3, "three rows");
         // After ordering by score: rows are 1,2,3; cumulative sums are 1,3,6
         let mut sums: Vec<i64> = results
@@ -301,7 +301,7 @@ fn thread_safety() {
     let result = db
         .execute(r#"(query [:find (threadfn ?x) :where [?e :x ?x]])"#)
         .expect("post-registration query");
-    if let minigraf::query::QueryResult::QueryResults { results, .. } = result {
+    if let minigraf::QueryResult::QueryResults { results, .. } = result {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0][0], Value::Integer(3)); // 1 + 2
     } else {
@@ -323,7 +323,7 @@ fn udf_predicate_works_in_rule_body() {
     let result = db
         .execute(r#"(query [:find ?e :where (high-scorer ?e)])"#)
         .unwrap();
-    if let minigraf::query::QueryResult::QueryResults { results, .. } = result {
+    if let minigraf::QueryResult::QueryResults { results, .. } = result {
         assert_eq!(
             results.len(),
             1,

@@ -10,9 +10,9 @@ use std::collections::HashMap;
 /// In-memory registry for Datalog rules.
 ///
 /// # Examples
-/// ```
-/// use minigraf::query::datalog::rules::RuleRegistry;
-/// use minigraf::query::datalog::types::Rule;
+/// ```ignore
+/// use crate::query::datalog::rules::RuleRegistry;
+/// use crate::query::datalog::types::Rule;
 ///
 /// let mut registry = RuleRegistry::new();
 ///
@@ -96,16 +96,19 @@ impl RuleRegistry {
     ///
     /// # Returns
     /// `true` if at least one rule is registered, `false` otherwise
+    #[allow(dead_code)]
     pub fn has_rule(&self, predicate: &str) -> bool {
         self.rules.contains_key(predicate)
     }
 
     /// Get the total number of rules registered across all predicates.
+    #[allow(dead_code)]
     pub fn rule_count(&self) -> usize {
         self.rules.values().map(|v| v.len()).sum()
     }
 
     /// Get the number of unique predicates with registered rules.
+    #[allow(dead_code)]
     pub fn predicate_count(&self) -> usize {
         self.rules.len()
     }
@@ -113,11 +116,13 @@ impl RuleRegistry {
     /// Clear all rules from the registry.
     ///
     /// This is primarily useful for testing.
+    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.rules.clear();
     }
 
     /// Get all predicate names that have registered rules.
+    #[allow(dead_code)]
     pub fn predicate_names(&self) -> Vec<String> {
         self.rules.keys().cloned().collect()
     }

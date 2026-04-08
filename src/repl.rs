@@ -1,16 +1,23 @@
-use crate::graph::FactStorage;
-use crate::query::datalog::{DatalogExecutor, parse_datalog_command};
+use crate::db::Minigraf;
 use std::io::{self, IsTerminal, Write};
 
-pub struct Repl {
-    fact_storage: FactStorage,
+/// An interactive REPL for a [`Minigraf`] database.
+///
+/// Construct via [`Minigraf::repl`] and call [`Repl::run`] to start the session.
+pub struct Repl<'a> {
+    db: &'a Minigraf,
 }
 
-impl Repl {
-    pub fn new(fact_storage: FactStorage) -> Self {
-        Repl { fact_storage }
+impl<'a> Repl<'a> {
+    pub(crate) fn new(db: &'a Minigraf) -> Self {
+        Repl { db }
     }
 
+    /// Start the interactive REPL loop.
+    ///
+    /// Reads Datalog commands from stdin line-by-line. When stdin is a TTY,
+    /// a banner and prompts are printed; when piped, output is suppressed so
+    /// the REPL can be driven by scripts.
     pub fn run(&self) {
         if io::stdin().is_terminal() {
             println!(
@@ -46,82 +53,58 @@ impl Repl {
             println!("Type EXIT to quit.\n");
         }
 
-        let datalog_executor = DatalogExecutor::new(self.fact_storage.clone());
         let mut command_buffer = String::new();
         let mut is_multiline = false;
         let interactive = io::stdin().is_terminal();
 
         loop {
-            // Show appropriate prompt only when running interactively
             if interactive {
                 if is_multiline {
                     print!("       .> ");
                 } else {
                     print!("minigraf> ");
                 }
-                io::stdout().flush().unwrap();
+                io::stdout().flush().ok();
             }
 
             let mut input = String::new();
             match io::stdin().read_line(&mut input) {
                 Ok(n) => {
-                    // EOF reached (stdin closed)
                     if n == 0 {
                         break;
                     }
 
                     let line = input.trim();
 
-                    // Skip empty lines and comment lines
                     if line.is_empty() || line.starts_with('#') {
                         continue;
                     }
 
-                    // Check for EXIT command
                     if line.to_uppercase() == "EXIT" {
                         break;
                     }
 
-                    // Accumulate input for multi-line commands
                     if !command_buffer.is_empty() {
                         command_buffer.push(' ');
                     }
                     command_buffer.push_str(line);
 
-                    // Check if we have a complete command (balanced parentheses)
-                    if self.is_command_complete(&command_buffer) {
-                        // Parse and execute the complete command
-                        match parse_datalog_command(&command_buffer) {
-                            Ok(command) => match datalog_executor.execute(command) {
-                                Ok(result) => {
-                                    self.print_result(result);
-                                }
-                                Err(e) => {
-                                    eprintln!("Execution error: {}", e);
-                                }
-                            },
+                    if Self::is_command_complete(&command_buffer) {
+                        match self.db.execute(&command_buffer) {
+                            Ok(result) => {
+                                Self::print_result(result);
+                            }
                             Err(e) => {
-                                // CodeQL false positive: parser errors contain structural info only (token type, position).
-                                // Extract error kind by taking up to first ':' or first 80 chars to avoid UserInput in logs.
-                                let error_kind = e
-                                    .split(':')
-                                    .next()
-                                    .unwrap_or(&e)
-                                    .chars()
-                                    .take(80)
-                                    .collect::<String>();
-                                eprintln!("Parse error: {}", error_kind);
+                                eprintln!("Error: {}", e);
                             }
                         }
 
-                        // Reset buffer
                         command_buffer.clear();
                         is_multiline = false;
                         if interactive {
                             println!();
                         }
                     } else {
-                        // Command is incomplete, continue reading
                         is_multiline = true;
                     }
                 }
@@ -133,8 +116,7 @@ impl Repl {
         }
     }
 
-    /// Check if a command has balanced parentheses (is complete)
-    fn is_command_complete(&self, input: &str) -> bool {
+    fn is_command_complete(input: &str) -> bool {
         let mut depth = 0;
         let mut in_string = false;
         let mut escape_next = false;
@@ -162,11 +144,10 @@ impl Repl {
             }
         }
 
-        // Command is complete if we have balanced parens and at least one opening paren
         depth == 0 && input.contains('(')
     }
 
-    fn print_result(&self, result: crate::query::datalog::QueryResult) {
+    fn print_result(result: crate::query::datalog::QueryResult) {
         use crate::query::datalog::QueryResult as DResult;
 
         match result {
@@ -180,14 +161,12 @@ impl Repl {
                 if results.is_empty() {
                     println!("No results found.");
                 } else {
-                    // Print header
                     println!("{}", vars.join("\t"));
                     println!("{}", "-".repeat(vars.len() * 20));
 
-                    // Print rows
                     for row in &results {
                         let formatted_row: Vec<String> =
-                            row.iter().map(|v| self.format_value(v)).collect();
+                            row.iter().map(Self::format_value).collect();
                         println!("{}", formatted_row.join("\t"));
                     }
 
@@ -200,7 +179,7 @@ impl Repl {
         }
     }
 
-    fn format_value(&self, value: &crate::graph::types::Value) -> String {
+    fn format_value(value: &crate::graph::types::Value) -> String {
         use crate::graph::types::Value;
 
         match value {

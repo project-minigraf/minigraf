@@ -1,7 +1,6 @@
 //! Integration tests for Phase 6.5: on-disk B+tree indexes (file format v6).
 
 use minigraf::OpenOptions;
-use std::io::Read;
 use tempfile::NamedTempFile;
 
 fn tmp_path() -> (NamedTempFile, String) {

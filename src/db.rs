@@ -219,7 +219,7 @@ impl Drop for Inner {
 /// # Fact Size Limit (file-backed databases only)
 ///
 /// Each fact persisted to a `.graph` file must serialise to at most
-/// [`crate::storage::packed_pages::MAX_FACT_BYTES`] bytes (currently 4 080).
+/// 4 080 bytes (the per-page capacity limit).
 ///
 /// In practice, `Value::String` content is limited to roughly **3 900–4 000 bytes**
 /// depending on entity and attribute name lengths.
@@ -600,17 +600,19 @@ impl Minigraf {
         )
     }
 
-    /// Returns a clone of the underlying `FactStorage` for use by the REPL.
+    /// Return an interactive REPL that reads commands from stdin.
     ///
-    /// Cloning is cheap — `FactStorage` is `Arc`-backed.
+    /// The REPL borrows the database for the duration of the session.
+    /// Call [`crate::repl::Repl::run`] to start the interactive loop.
     ///
-    /// # Warning
-    /// This method bypasses the WAL and the write lock. It is intended **only** for
-    /// the built-in REPL (`src/main.rs`). External callers should use
-    /// [`Minigraf::execute`] or [`Minigraf::begin_write`] to ensure crash safety.
-    #[doc(hidden)]
-    pub fn inner_fact_storage(&self) -> crate::graph::FactStorage {
-        self.inner.fact_storage.clone()
+    /// # Example
+    /// ```no_run
+    /// # use minigraf::Minigraf;
+    /// let db = Minigraf::in_memory().unwrap();
+    /// db.repl().run();
+    /// ```
+    pub fn repl(&self) -> crate::repl::Repl<'_> {
+        crate::repl::Repl::new(self)
     }
 
     /// Compute the WAL sidecar path for a given database path.
@@ -711,7 +713,7 @@ impl Minigraf {
     /// # Example
     /// ```
     /// # use minigraf::db::Minigraf;
-    /// # use minigraf::graph::types::Value;
+    /// # use minigraf::Value;
     /// let db = Minigraf::in_memory().unwrap();
     /// db.register_aggregate(
     ///     "mysum",
@@ -771,7 +773,7 @@ impl Minigraf {
     /// # Example
     /// ```
     /// # use minigraf::db::Minigraf;
-    /// # use minigraf::graph::types::Value;
+    /// # use minigraf::Value;
     /// let db = Minigraf::in_memory().unwrap();
     /// db.register_predicate(
     ///     "email?",
@@ -939,7 +941,7 @@ impl<'a> WriteTransaction<'a> {
                     *wal = Some(WalWriter::open_or_create(&wal_path)?);
                 }
 
-                let wal_writer = wal.as_mut().unwrap();
+                let wal_writer = wal.as_mut().expect("WAL not initialized");
                 wal_writer.append_entry(tx_count, facts)?;
                 pfs.mark_dirty();
                 *wal_entry_count += 1;
@@ -1011,6 +1013,14 @@ impl Drop for WriteTransaction<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── repl factory ────────────────────────────────────────────────────────
+
+    #[test]
+    fn repl_constructed_from_db() {
+        let db = Minigraf::in_memory().unwrap();
+        let _repl = db.repl();
+    }
 
     // ── in_memory basic ─────────────────────────────────────────────────────
 

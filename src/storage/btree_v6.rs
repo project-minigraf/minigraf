@@ -348,6 +348,8 @@ fn find_leftmost_leaf(root: u64, backend: &dyn StorageBackend, cache: &PageCache
 }
 
 /// Traverse from `root` to the leaf that would contain `key`.
+// Called by range_scan which is called by OnDiskIndexReader::range_scan_*.
+#[allow(dead_code)]
 fn find_leaf_for_key<K>(
     root: u64,
     key: &K,
@@ -453,6 +455,8 @@ where
 /// Scan the B+tree for all `FactRef`s whose key is in `[start, end]`.
 ///
 /// `end: None` means unbounded (scan to last leaf).
+// Called by OnDiskIndexReader::range_scan_* (via trait object dispatch).
+#[allow(dead_code)]
 pub fn range_scan<K>(
     root_page_id: u64,
     start: &K,
@@ -506,6 +510,8 @@ where
 /// entire range scan. On a cache hit [`PageCache::get_or_load`] never calls
 /// `read_page`, so no lock is acquired at all. All methods other than `read_page`
 /// are unimplemented and will panic if called.
+// Instantiated inside OnDiskIndexReader::range_scan_* methods.
+#[allow(dead_code)]
 struct MutexStorageBackend<B>(Arc<Mutex<B>>);
 
 impl<B: StorageBackend> StorageBackend for MutexStorageBackend<B> {
@@ -542,6 +548,8 @@ impl<B: StorageBackend> StorageBackend for MutexStorageBackend<B> {
 
 /// Implements `CommittedIndexReader` by delegating to `range_scan` on
 /// on-disk B+tree pages via the page cache.
+// Fields are read by range_scan_* methods of the CommittedIndexReader impl.
+#[allow(dead_code)]
 pub struct OnDiskIndexReader<B: StorageBackend + 'static> {
     backend: Arc<Mutex<B>>,
     cache: Arc<PageCache>,

@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.19.0 — Phase 7.9: Publish Prep (2026-04-08)
+
+### Changed (breaking — internal visibility only)
+- `Minigraf::repl()` factory method replaces direct `Repl::new(FactStorage)` constructor — users call `db.repl().run()` instead
+- All internal types narrowed to `pub(crate)`: `FactStorage`, `PersistentFactStorage`, `FileHeader`, `StorageBackend`, `DatalogExecutor`, `PatternMatcher`, `Fact`, `TxId`, `VALID_TIME_FOREVER`, `Wal`, and all related internals
+- `Minigraf::inner_fact_storage()` removed (was unused)
+
+### Added
+- `Minigraf::repl(&self) -> Repl<'_>` — constructs an interactive REPL session; `Repl` now borrows `&Minigraf` for lifetime safety
+- Full rustdoc on all public API items with `# Examples` doctests
+- `[package.metadata.docs.rs]` in `Cargo.toml` — docs.rs builds with `all-features = true`
+- `#![warn(missing_docs)]` — enforces documentation coverage going forward
+- crates.io and docs.rs badges in `README.md`
+- Installation section in `README.md` (`cargo add minigraf` / `[dependencies]` block)
+- macOS and Windows added to CI test matrix (`rust.yml`)
+- Strict `cargo clippy -- -D warnings` step in `rust-clippy.yml`
+
+### Fixed
+- Bare `.unwrap()` in library code replaced with `.expect("lock poisoned")` (RwLock operations in `cache.rs`, `evaluator.rs`) and `.expect("WAL not initialized")` (`db.rs`)
+- `FileHeader::to_bytes` now takes `self` by value (clippy `wrong_self_convention`)
+- Broken intra-doc link `[Repl::run]` in `db.rs` fixed to `[crate::repl::Repl::run]`
+
+788 tests.
+
 ## v0.18.0 — Phase 7.8: Prepared Statements (2026-04-04)
 
 ### Added
