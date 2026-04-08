@@ -73,6 +73,7 @@ pub enum QueryResult {
 /// Executor for Datalog commands
 pub struct DatalogExecutor {
     storage: FactStorage,
+    facts_override: Option<Arc<[Fact]>>,
     rules: Arc<RwLock<RuleRegistry>>,
     // RwLock pre-wired for 7.7b register_aggregate API.
     functions: Arc<RwLock<FunctionRegistry>>,
@@ -87,6 +88,7 @@ impl DatalogExecutor {
         let indexes = storage.pending_indexes_snapshot();
         DatalogExecutor {
             storage,
+            facts_override: None,
             rules: Arc::new(RwLock::new(RuleRegistry::new())),
             functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
             indexes: Arc::new(indexes),
@@ -106,6 +108,35 @@ impl DatalogExecutor {
         let indexes = storage.pending_indexes_snapshot();
         DatalogExecutor {
             storage,
+            facts_override: None,
+            rules,
+            functions,
+            indexes: Arc::new(indexes),
+            max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
+            max_results: crate::query::datalog::evaluator::DEFAULT_MAX_RESULTS,
+        }
+    }
+
+    /// Create a `DatalogExecutor` over a merged fact slice while sharing rules and functions.
+    pub fn new_from_facts_with_rules_and_functions(
+        facts: Arc<[Fact]>,
+        rules: Arc<RwLock<RuleRegistry>>,
+        functions: Arc<RwLock<FunctionRegistry>>,
+    ) -> Self {
+        let mut indexes = crate::storage::index::Indexes::new();
+        for (slot_index, fact) in facts.iter().enumerate() {
+            indexes.insert(
+                fact,
+                crate::storage::index::FactRef {
+                    page_id: 0,
+                    slot_index: slot_index as u16,
+                },
+            );
+        }
+
+        DatalogExecutor {
+            storage: FactStorage::new(),
+            facts_override: Some(facts),
             rules,
             functions,
             indexes: Arc::new(indexes),
@@ -140,6 +171,7 @@ impl DatalogExecutor {
         let indexes = storage.pending_indexes_snapshot();
         DatalogExecutor {
             storage,
+            facts_override: None,
             rules,
             functions,
             indexes: Arc::new(indexes),
@@ -255,10 +287,25 @@ impl DatalogExecutor {
     fn filter_facts_for_query(&self, query: &DatalogQuery) -> Result<Arc<[Fact]>> {
         let now = tx_id_now() as i64;
 
+        let source_facts: Vec<Fact> = match &self.facts_override {
+            Some(facts) => facts.iter().cloned().collect(),
+            None => match &query.as_of {
+                Some(as_of) => self.storage.get_facts_as_of(as_of)?,
+                None => self.storage.get_all_facts()?,
+            },
+        };
+
         // Step 1: transaction-time filter
         let tx_filtered: Vec<Fact> = match &query.as_of {
-            Some(as_of) => self.storage.get_facts_as_of(as_of)?,
-            None => self.storage.get_all_facts()?,
+            Some(as_of) => source_facts
+                .into_iter()
+                .filter(|fact| match as_of {
+                    AsOf::Counter(counter) => fact.tx_count <= *counter,
+                    AsOf::Timestamp(ts) => fact.tx_id as i64 <= *ts,
+                    AsOf::Slot(_) => false,
+                })
+                .collect(),
+            None => source_facts,
         };
 
         // Step 2: compute net-asserted view — for each (entity, attribute, value) triple,

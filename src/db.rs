@@ -848,8 +848,31 @@ impl<'a> WriteTransaction<'a> {
         }
     }
 
-    fn execute_read_command(&self, _cmd: DatalogCommand) -> Result<QueryResult> {
-        unimplemented!("transactional slice-backed read path not implemented yet")
+    fn execute_read_command(&self, cmd: DatalogCommand) -> Result<QueryResult> {
+        if self.pending_facts.is_empty() {
+            let mut executor = DatalogExecutor::new_with_rules_and_functions(
+                self.inner.fact_storage.clone(),
+                self.inner.rules.clone(),
+                self.inner.functions.clone(),
+            );
+            executor.set_limits(
+                self.inner.options.max_derived_facts,
+                self.inner.options.max_results,
+            );
+            return executor.execute(cmd);
+        }
+
+        let merged_facts = self.merged_query_facts()?;
+        let mut executor = DatalogExecutor::new_from_facts_with_rules_and_functions(
+            merged_facts,
+            self.inner.rules.clone(),
+            self.inner.functions.clone(),
+        );
+        executor.set_limits(
+            self.inner.options.max_derived_facts,
+            self.inner.options.max_results,
+        );
+        executor.execute(cmd)
     }
 
     /// Commit this transaction atomically.
@@ -952,41 +975,24 @@ impl<'a> WriteTransaction<'a> {
         set_write_tx_active(false);
     }
 
-    /// Build a temporary `FactStorage` that merges committed facts with pending ones.
-    ///
-    /// Used to implement read-your-own-writes semantics during a transaction.
-    ///
-    /// This performs a **deep copy**: a brand-new `FactStorage` is created and
-    /// populated with all committed facts followed by the pending buffered facts.
-    /// Using `self.inner.fact_storage.clone()` would be an Arc-based shallow clone
-    /// that shares the underlying storage, causing `load_fact()` calls to mutate
-    /// the shared store and expose uncommitted facts to concurrent readers.
-    ///
-    /// Optimization: if there are no pending facts, we can use the storage directly
-    /// without copying. Otherwise, we create an overlay that combines committed
-    /// facts with pending facts without copying all committed facts.
-    fn build_query_view(&self) -> Result<FactStorage> {
-        // Fast path: no pending facts, use the original storage directly
-        if self.pending_facts.is_empty() {
-            return Ok(self.inner.fact_storage.clone());
-        }
+    /// Build a merged fact snapshot for transactional reads.
+    fn merged_query_facts(&self) -> Result<Arc<[Fact]>> {
+        let committed = self.inner.fact_storage.get_all_facts()?;
+        let mut merged = Vec::with_capacity(committed.len() + self.pending_facts.len());
+        merged.extend(committed);
 
-        // Slow path: need to combine committed + pending facts
-        // Create overlay that reads from both sources without full copy
-        let view = FactStorage::new();
+        let overlay_tx_id = crate::graph::types::tx_id_now();
+        let overlay_tx_count = self.inner.fact_storage.current_tx_count() + 1;
 
-        // Load committed facts - this is the expensive part
-        for fact in self.inner.fact_storage.get_all_facts()? {
-            view.load_fact(fact)?;
-        }
-
-        // Add pending facts
-        for fact in &self.pending_facts {
-            view.load_fact(fact.clone())?;
-        }
-
-        view.restore_tx_counter()?;
-        Ok(view)
+        merged.extend(self.pending_facts.iter().cloned().map(|mut fact| {
+            fact.tx_id = overlay_tx_id;
+            fact.tx_count = overlay_tx_count;
+            if fact.asserted && fact.valid_from == VALID_FROM_USE_TX_TIME {
+                fact.valid_from = overlay_tx_id as i64;
+            }
+            fact
+        }));
+        Ok(Arc::from(merged))
     }
 }
 
@@ -1127,6 +1133,30 @@ mod tests {
             QueryResult::QueryResults { results, .. } => {
                 assert_eq!(results.len(), 1, "should see only one visible age");
                 assert_eq!(results[0][0], Value::Integer(31));
+            }
+            _ => panic!("expected QueryResults"),
+        }
+    }
+
+    #[test]
+    fn test_write_transaction_rule_query_with_pending_write() {
+        let db = Minigraf::in_memory().unwrap();
+        db.execute("(rule [(reachable ?x ?y) [?x :edge ?y]])").unwrap();
+        db.execute("(rule [(reachable ?x ?y) [?x :edge ?z] (reachable ?z ?y)])")
+            .unwrap();
+        db.execute("(transact [[:a :edge :b]])").unwrap();
+
+        let mut tx = db.begin_write().unwrap();
+        tx.execute("(transact [[:b :edge :c]])").unwrap();
+
+        let result = tx.execute("(query [:find ?y :where (reachable :a ?y)])").unwrap();
+
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert!(
+                    results.iter().any(|row| row[0] == Value::Keyword(":c".to_string())),
+                    "rule query should see pending edge"
+                );
             }
             _ => panic!("expected QueryResults"),
         }
