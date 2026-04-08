@@ -6,7 +6,7 @@
 //! - `Minigraf::begin_write()` / `WriteTransaction` for explicit transactions
 //! - `Minigraf::checkpoint()` for manual WAL compaction
 
-use crate::graph::types::{Fact, VALID_TIME_FOREVER};
+use crate::graph::types::{Fact, TxId, VALID_TIME_FOREVER};
 
 /// Sentinel value used in `materialize_transaction` to signal "no explicit `valid_from`
 /// was provided; use the transaction timestamp at commit time."
@@ -510,6 +510,8 @@ impl Minigraf {
             guard,
             inner: &self.inner,
             pending_facts: Vec::new(),
+            read_tx_id: crate::graph::types::tx_id_now(),
+            read_tx_count: self.inner.fact_storage.current_tx_count() + 1,
             committed: false,
         })
     }
@@ -818,6 +820,9 @@ pub struct WriteTransaction<'a> {
     inner: &'a Inner,
     /// Facts buffered in this transaction (not yet committed to FactStorage).
     pending_facts: Vec<Fact>,
+    /// Stable synthetic tx metadata used while reading pending facts.
+    read_tx_id: TxId,
+    read_tx_count: u64,
     /// Set to `true` after a successful `commit()` to suppress rollback in `Drop`.
     committed: bool,
 }
@@ -844,7 +849,8 @@ impl<'a> WriteTransaction<'a> {
                 self.pending_facts.extend(new_facts);
                 Ok(QueryResult::Ok)
             }
-            DatalogCommand::Query(_) | DatalogCommand::Rule(_) => self.execute_read_command(cmd),
+            DatalogCommand::Query(_) => self.execute_read_command(cmd),
+            DatalogCommand::Rule(rule) => self.execute_rule_command(rule),
         }
     }
 
@@ -873,6 +879,19 @@ impl<'a> WriteTransaction<'a> {
             self.inner.options.max_results,
         );
         executor.execute(cmd)
+    }
+
+    fn execute_rule_command(&self, rule: crate::query::datalog::types::Rule) -> Result<QueryResult> {
+        let mut executor = DatalogExecutor::new_with_rules_and_functions(
+            self.inner.fact_storage.clone(),
+            self.inner.rules.clone(),
+            self.inner.functions.clone(),
+        );
+        executor.set_limits(
+            self.inner.options.max_derived_facts,
+            self.inner.options.max_results,
+        );
+        executor.execute(DatalogCommand::Rule(rule))
     }
 
     /// Commit this transaction atomically.
@@ -981,14 +1000,13 @@ impl<'a> WriteTransaction<'a> {
         let mut merged = Vec::with_capacity(committed.len() + self.pending_facts.len());
         merged.extend(committed);
 
-        let overlay_tx_id = crate::graph::types::tx_id_now();
-        let overlay_tx_count = self.inner.fact_storage.current_tx_count() + 1;
+        let overlay_tx_count = self.read_tx_count;
 
         merged.extend(self.pending_facts.iter().cloned().map(|mut fact| {
-            fact.tx_id = overlay_tx_id;
+            fact.tx_id = self.read_tx_id;
             fact.tx_count = overlay_tx_count;
             if fact.asserted && fact.valid_from == VALID_FROM_USE_TX_TIME {
-                fact.valid_from = overlay_tx_id as i64;
+                fact.valid_from = self.read_tx_id as i64;
             }
             fact
         }));
@@ -1157,6 +1175,46 @@ mod tests {
                     results.iter().any(|row| row[0] == Value::Keyword(":c".to_string())),
                     "rule query should see pending edge"
                 );
+            }
+            _ => panic!("expected QueryResults"),
+        }
+    }
+
+    #[test]
+    fn test_write_transaction_pending_metadata_is_stable_across_reads() {
+        use std::time::Duration;
+
+        let db = Minigraf::in_memory().unwrap();
+        let mut tx = db.begin_write().unwrap();
+        tx.execute(r#"(transact [[:alice :person/name "Alice"]])"#)
+            .unwrap();
+
+        let first = tx
+            .execute(
+                r#"(query [:find ?tx ?vf :any-valid-time :where [:alice :db/tx-id ?tx] [:alice :db/valid-from ?vf]])"#,
+            )
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(3));
+        let second = tx
+            .execute(
+                r#"(query [:find ?tx ?vf :any-valid-time :where [:alice :db/tx-id ?tx] [:alice :db/valid-from ?vf]])"#,
+            )
+            .unwrap();
+
+        match (first, second) {
+            (
+                QueryResult::QueryResults {
+                    results: first_results,
+                    ..
+                },
+                QueryResult::QueryResults {
+                    results: second_results,
+                    ..
+                },
+            ) => {
+                assert_eq!(first_results.len(), 1);
+                assert_eq!(second_results.len(), 1);
+                assert_eq!(first_results[0], second_results[0]);
             }
             _ => panic!("expected QueryResults"),
         }

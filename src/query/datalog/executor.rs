@@ -32,6 +32,23 @@ fn query_uses_per_fact_pseudo_attr(query: &DatalogQuery) -> bool {
     check_clauses(&query.where_clauses)
 }
 
+fn apply_as_of_filter(facts: Vec<Fact>, as_of: Option<&AsOf>) -> Result<Vec<Fact>> {
+    match as_of {
+        Some(AsOf::Counter(counter)) => Ok(facts
+            .into_iter()
+            .filter(|fact| fact.tx_count <= *counter)
+            .collect()),
+        Some(AsOf::Timestamp(ts)) => Ok(facts
+            .into_iter()
+            .filter(|fact| fact.tx_id as i64 <= *ts)
+            .collect()),
+        Some(AsOf::Slot(_)) => {
+            panic!("internal: unsubstituted :as-of bind slot reached the executor");
+        }
+        None => Ok(facts),
+    }
+}
+
 /// The result of executing a Datalog command via [`crate::db::Minigraf::execute`].
 ///
 /// Pattern-match on this to distinguish query results from write confirmations:
@@ -284,17 +301,10 @@ impl DatalogExecutor {
             },
         };
 
-        // Step 1: transaction-time filter
-        let tx_filtered: Vec<Fact> = match &query.as_of {
-            Some(as_of) => source_facts
-                .into_iter()
-                .filter(|fact| match as_of {
-                    AsOf::Counter(counter) => fact.tx_count <= *counter,
-                    AsOf::Timestamp(ts) => fact.tx_id as i64 <= *ts,
-                    AsOf::Slot(_) => false,
-                })
-                .collect(),
-            None => source_facts,
+        let tx_filtered = if self.facts_override.is_some() {
+            apply_as_of_filter(source_facts, query.as_of.as_ref())?
+        } else {
+            source_facts
         };
 
         // Step 2: compute net-asserted view — for each (entity, attribute, value) triple,
