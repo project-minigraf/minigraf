@@ -10,8 +10,8 @@ permissions:
   issues: write
 
 jobs:
-  benchmark:
-    name: Run light benchmarks
+  benchmark-sequential:
+    name: Run sequential benchmarks
     runs-on: ubuntu-latest
     timeout-minutes: 360
 
@@ -32,20 +32,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-bench-
 
-      - name: Run light benchmarks (insert through concurrent_file)
+      - name: Run sequential benchmarks (insert through checkpoint)
         run: |
           set -o pipefail
           (
-            CARGO_TERM_COLOR=never cargo bench -- insert
-            CARGO_TERM_COLOR=never cargo bench -- insert_file
-            CARGO_TERM_COLOR=never cargo bench -- query
-            CARGO_TERM_COLOR=never cargo bench -- time_travel
-            CARGO_TERM_COLOR=never cargo bench -- recursion
-            CARGO_TERM_COLOR=never cargo bench -- open
-            CARGO_TERM_COLOR=never cargo bench -- checkpoint
-            CARGO_TERM_COLOR=never cargo bench -- concurrent
-            CARGO_TERM_COLOR=never cargo bench -- concurrent_file
-          ) 2>&1 | tee bench_light.txt
+            CARGO_TERM_COLOR=never cargo bench -- "insert/"
+            CARGO_TERM_COLOR=never cargo bench -- "insert_file/"
+            CARGO_TERM_COLOR=never cargo bench -- "query/"
+            CARGO_TERM_COLOR=never cargo bench -- "time_travel/"
+            CARGO_TERM_COLOR=never cargo bench -- "recursion/"
+            CARGO_TERM_COLOR=never cargo bench -- "open/"
+            CARGO_TERM_COLOR=never cargo bench -- "checkpoint/"
+          ) 2>&1 | tee bench_light_seq.txt
 
       - name: Install Bencher CLI
         uses: bencherdev/bencher@v0.4.25
@@ -64,7 +62,7 @@ jobs:
             --threshold-upper-boundary 0.99 \
             --err \
             --adapter rust_criterion \
-            --file bench_light.txt
+            --file bench_light_seq.txt
 
       - name: Open regression issue
         if: steps.bencher.outcome == 'failure'
@@ -96,7 +94,95 @@ jobs:
               repo: context.repo.repo,
               title: title,
               body: [
-                'Bencher detected a performance regression in the nightly light benchmark run.',
+                'Bencher detected a performance regression in the nightly light benchmark run (sequential).',
+                '',
+                `**Run:** ${runUrl}`,
+                '',
+                'Please review the Bencher dashboard for details on which benchmarks regressed.',
+              ].join('\n'),
+              labels: ['performance'],
+            });
+
+  benchmark-concurrent:
+    name: Run concurrent benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-bench-
+
+      - name: Run concurrent benchmarks (concurrent and concurrent_file)
+        run: |
+          set -o pipefail
+          (
+            CARGO_TERM_COLOR=never cargo bench -- "concurrent/"
+            CARGO_TERM_COLOR=never cargo bench -- "concurrent_file/"
+          ) 2>&1 | tee bench_light_conc.txt
+
+      - name: Install Bencher CLI
+        uses: bencherdev/bencher@v0.4.25
+
+      - name: Upload to Bencher
+        id: bencher
+        continue-on-error: true
+        run: |
+          bencher run \
+            --project minigraf \
+            --token "${{ secrets.BENCHER_API_TOKEN }}" \
+            --branch main \
+            --testbed ubuntu-latest \
+            --threshold-measure latency \
+            --threshold-test t_test \
+            --threshold-upper-boundary 0.99 \
+            --err \
+            --adapter rust_criterion \
+            --file bench_light_conc.txt
+
+      - name: Open regression issue
+        if: steps.bencher.outcome == 'failure'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const today = new Date().toISOString().slice(0, 10);
+            const title = `Benchmark regression (light) - ${today}`;
+
+            // Deduplication: skip if an open regression issue already exists
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'performance',
+              state: 'open',
+              per_page: 100,
+            });
+            const existing = openIssues.filter(i =>
+              i.title.startsWith('Benchmark regression')
+            );
+            if (existing.length > 0) {
+              console.log(`Skipping: open regression issue already exists (#${existing[0].number})`);
+              return;
+            }
+
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: [
+                'Bencher detected a performance regression in the nightly light benchmark run (concurrent).',
                 '',
                 `**Run:** ${runUrl}`,
                 '',
