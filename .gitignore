@@ -4,6 +4,7 @@
 
 .idea
 .worktrees/
+.codex
 
 # heaptrack profiling artifacts
 heaptrack.*.zst
