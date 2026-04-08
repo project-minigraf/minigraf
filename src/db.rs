@@ -844,18 +844,12 @@ impl<'a> WriteTransaction<'a> {
                 self.pending_facts.extend(new_facts);
                 Ok(QueryResult::Ok)
             }
-            DatalogCommand::Query(_) | DatalogCommand::Rule(_) => {
-                // For queries: build a temporary FactStorage that includes
-                // committed facts + buffered pending facts (read-your-own-writes).
-                let view = self.build_query_view()?;
-                let executor = DatalogExecutor::new_with_rules_and_functions(
-                    view,
-                    self.inner.rules.clone(),
-                    self.inner.functions.clone(),
-                );
-                executor.execute(cmd)
-            }
+            DatalogCommand::Query(_) | DatalogCommand::Rule(_) => self.execute_read_command(cmd),
         }
+    }
+
+    fn execute_read_command(&self, _cmd: DatalogCommand) -> Result<QueryResult> {
+        unimplemented!("transactional slice-backed read path not implemented yet")
     }
 
     /// Commit this transaction atomically.
@@ -1113,6 +1107,29 @@ mod tests {
         }
 
         tx.commit().unwrap();
+    }
+
+    #[test]
+    fn test_write_transaction_query_with_pending_retraction_and_assertion() {
+        let db = Minigraf::in_memory().unwrap();
+        db.execute(r#"(transact [[:alice :person/name "Alice"] [:alice :person/age 30]])"#)
+            .unwrap();
+
+        let mut tx = db.begin_write().unwrap();
+        tx.execute(r#"(retract [[:alice :person/age 30]])"#).unwrap();
+        tx.execute(r#"(transact [[:alice :person/age 31]])"#).unwrap();
+
+        let result = tx
+            .execute(r#"(query [:find ?age :where [:alice :person/age ?age]])"#)
+            .unwrap();
+
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(results.len(), 1, "should see only one visible age");
+                assert_eq!(results[0][0], Value::Integer(31));
+            }
+            _ => panic!("expected QueryResults"),
+        }
     }
 
     // ── thread-local flag: same-thread reentrant error ────────────────────────
