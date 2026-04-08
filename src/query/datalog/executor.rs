@@ -118,7 +118,7 @@ impl DatalogExecutor {
     }
 
     /// Create a `DatalogExecutor` over a merged fact slice while sharing rules and functions.
-    pub fn new_from_facts_with_rules_and_functions(
+    pub(crate) fn new_from_facts_with_rules_and_functions(
         facts: Arc<[Fact]>,
         rules: Arc<RwLock<RuleRegistry>>,
         functions: Arc<RwLock<FunctionRegistry>>,
