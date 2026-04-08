@@ -32,23 +32,6 @@ fn query_uses_per_fact_pseudo_attr(query: &DatalogQuery) -> bool {
     check_clauses(&query.where_clauses)
 }
 
-fn apply_as_of_filter(facts: Vec<Fact>, as_of: Option<&AsOf>) -> Result<Vec<Fact>> {
-    match as_of {
-        Some(AsOf::Counter(counter)) => Ok(facts
-            .into_iter()
-            .filter(|fact| fact.tx_count <= *counter)
-            .collect()),
-        Some(AsOf::Timestamp(ts)) => Ok(facts
-            .into_iter()
-            .filter(|fact| fact.tx_id as i64 <= *ts)
-            .collect()),
-        Some(AsOf::Slot(_)) => {
-            panic!("internal: unsubstituted :as-of bind slot reached the executor");
-        }
-        None => Ok(facts),
-    }
-}
-
 /// The result of executing a Datalog command via [`crate::db::Minigraf::execute`].
 ///
 /// Pattern-match on this to distinguish query results from write confirmations:
@@ -192,6 +175,23 @@ impl DatalogExecutor {
         self.max_results = max_results;
     }
 
+    /// Read-time "now" for query visibility.
+    ///
+    /// Overlay reads floor the wall clock to the newest staged fact so buffered
+    /// writes remain visible even if their synthetic metadata is slightly ahead
+    /// of the current millisecond.
+    fn read_now(&self) -> i64 {
+        let now = tx_id_now() as i64;
+        match &self.facts_override {
+            Some(facts) => facts
+                .iter()
+                .map(|fact| fact.tx_id as i64)
+                .max()
+                .map_or(now, |pending_now| now.max(pending_now)),
+            None => now,
+        }
+    }
+
     /// Execute a Datalog command
     pub fn execute(&self, command: DatalogCommand) -> Result<QueryResult> {
         match command {
@@ -291,21 +291,18 @@ impl DatalogExecutor {
     /// selective attribute/entity lookups instead of the full `get_all_facts()` scan (step 1).
     /// Also investigate caching the `net_asserted_facts()` result and invalidating on write (step 2).
     fn filter_facts_for_query(&self, query: &DatalogQuery) -> Result<Arc<[Fact]>> {
-        let now = tx_id_now() as i64;
+        let now = self.read_now();
 
-        let source_facts: Vec<Fact> = match &self.facts_override {
-            Some(facts) => facts.iter().cloned().collect(),
-            None => match &query.as_of {
-                Some(as_of) => self.storage.get_facts_as_of(as_of)?,
-                None => self.storage.get_all_facts()?,
-            },
+        let source_facts: Vec<Fact> = match (&self.facts_override, query.as_of.as_ref()) {
+            (Some(facts), Some(as_of)) => {
+                crate::graph::storage::filter_facts_as_of(facts.iter().cloned().collect(), as_of)
+            }
+            (Some(facts), None) => facts.iter().cloned().collect(),
+            (None, Some(as_of)) => self.storage.get_facts_as_of(as_of)?,
+            (None, None) => self.storage.get_all_facts()?,
         };
 
-        let tx_filtered = if self.facts_override.is_some() {
-            apply_as_of_filter(source_facts, query.as_of.as_ref())?
-        } else {
-            source_facts
-        };
+        let tx_filtered = source_facts;
 
         // Step 2: compute net-asserted view — for each (entity, attribute, value) triple,
         // keep it only if the record with the highest tx_count is an assertion.
@@ -348,7 +345,7 @@ impl DatalogExecutor {
         }
 
         // Compute query-level valid_at value for :db/valid-at pseudo-attribute binding.
-        let now = tx_id_now() as i64;
+        let now = self.read_now();
         let valid_at_value = match &query.valid_at {
             Some(ValidAt::Timestamp(t)) => Value::Integer(*t),
             Some(ValidAt::AnyValidTime) => Value::Null,
@@ -477,7 +474,7 @@ impl DatalogExecutor {
             .collect();
 
         // Compute query-level valid_at value for :db/valid-at pseudo-attribute binding.
-        let now = tx_id_now() as i64;
+        let now = self.read_now();
         let valid_at_value = match &query.valid_at {
             Some(ValidAt::Timestamp(t)) => Value::Integer(*t),
             Some(ValidAt::AnyValidTime) => Value::Null,

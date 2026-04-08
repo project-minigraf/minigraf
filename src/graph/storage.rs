@@ -288,25 +288,6 @@ impl FactStorage {
         self.tx_counter.fetch_add(1, Ordering::SeqCst) + 1
     }
 
-    /// Return all facts visible as of the given transaction point.
-    ///
-    /// * `AsOf::Counter(n)` — include facts whose `tx_count <= n`
-    /// * `AsOf::Timestamp(t)` — include facts whose `tx_id <= t as u64`
-    pub(crate) fn get_facts_as_of(&self, as_of: &AsOf) -> Result<Vec<Fact>> {
-        let all = self.get_all_facts()?;
-        let filtered = all
-            .into_iter()
-            .filter(|f| match as_of {
-                AsOf::Counter(n) => f.tx_count <= *n,
-                AsOf::Timestamp(t) => f.tx_id <= *t as u64,
-                AsOf::Slot(_) => {
-                    panic!("internal: unsubstituted :as-of bind slot reached get_facts_as_of");
-                }
-            })
-            .collect();
-        Ok(filtered)
-    }
-
     /// Get all facts (including retractions)
     ///
     /// Returns the complete append-only log. For current state, filter by
@@ -322,6 +303,15 @@ impl FactStorage {
         // Then pending facts (post-checkpoint, in memory)
         all.extend(d.facts.iter().cloned());
         Ok(all)
+    }
+
+    /// Return all facts visible as of the given transaction point.
+    ///
+    /// * `AsOf::Counter(n)` — include facts whose `tx_count <= n`
+    /// * `AsOf::Timestamp(t)` — include facts whose `tx_id <= t as u64`
+    pub(crate) fn get_facts_as_of(&self, as_of: &AsOf) -> Result<Vec<Fact>> {
+        let all = self.get_all_facts()?;
+        Ok(filter_facts_as_of(all, as_of))
     }
 
     /// Get all asserted facts (filters out retractions)
@@ -418,6 +408,22 @@ impl FactStorage {
             d.pending_indexes.vaet.len(),
         )
     }
+}
+
+/// Apply transaction-time snapshot semantics to a batch of facts.
+///
+/// Shared by `FactStorage::get_facts_as_of()` and transactional overlay reads.
+pub(crate) fn filter_facts_as_of(facts: Vec<Fact>, as_of: &AsOf) -> Vec<Fact> {
+    facts
+        .into_iter()
+        .filter(|f| match as_of {
+            AsOf::Counter(n) => f.tx_count <= *n,
+            AsOf::Timestamp(t) => f.tx_id <= *t as u64,
+            AsOf::Slot(_) => {
+                panic!("internal: unsubstituted :as-of bind slot reached get_facts_as_of");
+            }
+        })
+        .collect()
 }
 
 /// Compute the net-asserted view of a fact set.

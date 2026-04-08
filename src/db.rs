@@ -510,8 +510,8 @@ impl Minigraf {
             guard,
             inner: &self.inner,
             pending_facts: Vec::new(),
-            read_tx_id: crate::graph::types::tx_id_now(),
-            read_tx_count: self.inner.fact_storage.current_tx_count() + 1,
+            next_pending_tx_count: self.inner.fact_storage.current_tx_count() + 1,
+            next_pending_tx_id: crate::graph::types::tx_id_now(),
             committed: false,
         })
     }
@@ -820,9 +820,10 @@ pub struct WriteTransaction<'a> {
     inner: &'a Inner,
     /// Facts buffered in this transaction (not yet committed to FactStorage).
     pending_facts: Vec<Fact>,
-    /// Stable synthetic tx metadata used while reading pending facts.
-    read_tx_id: TxId,
-    read_tx_count: u64,
+    /// Synthetic tx_count assigned to the next staged write batch.
+    next_pending_tx_count: u64,
+    /// Synthetic tx_id seed used to keep staged writes monotonic.
+    next_pending_tx_id: TxId,
     /// Set to `true` after a successful `commit()` to suppress rollback in `Drop`.
     committed: bool,
 }
@@ -840,13 +841,11 @@ impl<'a> WriteTransaction<'a> {
 
         match cmd {
             DatalogCommand::Transact(tx) => {
-                let new_facts = Minigraf::materialize_transaction(&tx)?;
-                self.pending_facts.extend(new_facts);
+                self.stage_pending_facts(Minigraf::materialize_transaction(&tx)?);
                 Ok(QueryResult::Ok)
             }
             DatalogCommand::Retract(tx) => {
-                let new_facts = Minigraf::materialize_retraction(&tx)?;
-                self.pending_facts.extend(new_facts);
+                self.stage_pending_facts(Minigraf::materialize_retraction(&tx)?);
                 Ok(QueryResult::Ok)
             }
             DatalogCommand::Query(_) => self.execute_read_command(cmd),
@@ -892,6 +891,27 @@ impl<'a> WriteTransaction<'a> {
             self.inner.options.max_results,
         );
         executor.execute(DatalogCommand::Rule(rule))
+    }
+
+    /// Stage buffered facts with stable synthetic read metadata.
+    fn stage_pending_facts(&mut self, facts: Vec<Fact>) {
+        let staged_tx_id =
+            std::cmp::max(crate::graph::types::tx_id_now(), self.next_pending_tx_id);
+        let staged_tx_count = self.next_pending_tx_count;
+
+        self.pending_facts.extend(facts.into_iter().map(|mut fact| {
+            fact.tx_id = staged_tx_id;
+            fact.tx_count = staged_tx_count;
+            if fact.asserted && fact.valid_from == VALID_FROM_USE_TX_TIME {
+                fact.valid_from = staged_tx_id as i64;
+            } else if !fact.asserted && fact.valid_from == 0 {
+                fact.valid_from = staged_tx_id as i64;
+            }
+            fact
+        }));
+
+        self.next_pending_tx_id = staged_tx_id.saturating_add(1);
+        self.next_pending_tx_count += 1;
     }
 
     /// Commit this transaction atomically.
@@ -999,17 +1019,7 @@ impl<'a> WriteTransaction<'a> {
         let committed = self.inner.fact_storage.get_all_facts()?;
         let mut merged = Vec::with_capacity(committed.len() + self.pending_facts.len());
         merged.extend(committed);
-
-        let overlay_tx_count = self.read_tx_count;
-
-        merged.extend(self.pending_facts.iter().cloned().map(|mut fact| {
-            fact.tx_id = self.read_tx_id;
-            fact.tx_count = overlay_tx_count;
-            if fact.asserted && fact.valid_from == VALID_FROM_USE_TX_TIME {
-                fact.valid_from = self.read_tx_id as i64;
-            }
-            fact
-        }));
+        merged.extend(self.pending_facts.iter().cloned());
         Ok(Arc::from(merged))
     }
 }
@@ -1182,39 +1192,67 @@ mod tests {
 
     #[test]
     fn test_write_transaction_pending_metadata_is_stable_across_reads() {
+        use chrono::{SecondsFormat, Utc};
         use std::time::Duration;
 
         let db = Minigraf::in_memory().unwrap();
         let mut tx = db.begin_write().unwrap();
-        tx.execute(r#"(transact [[:alice :person/name "Alice"]])"#)
+        tx.execute(r#"(transact [[:alice :person/age 30]])"#)
             .unwrap();
 
         let first = tx
             .execute(
-                r#"(query [:find ?tx ?vf :any-valid-time :where [:alice :db/tx-id ?tx] [:alice :db/valid-from ?vf]])"#,
+                r#"(query [:find ?tx ?tc ?vf :any-valid-time :where [:alice :person/age ?age] [:alice :db/tx-id ?tx] [:alice :db/tx-count ?tc] [:alice :db/valid-from ?vf]])"#,
             )
             .unwrap();
         std::thread::sleep(Duration::from_millis(3));
         let second = tx
             .execute(
-                r#"(query [:find ?tx ?vf :any-valid-time :where [:alice :db/tx-id ?tx] [:alice :db/valid-from ?vf]])"#,
+                r#"(query [:find ?tx ?tc ?vf :any-valid-time :where [:alice :person/age ?age] [:alice :db/tx-id ?tx] [:alice :db/tx-count ?tc] [:alice :db/valid-from ?vf]])"#,
             )
             .unwrap();
 
-        match (first, second) {
-            (
-                QueryResult::QueryResults {
-                    results: first_results,
-                    ..
-                },
-                QueryResult::QueryResults {
-                    results: second_results,
-                    ..
-                },
-            ) => {
-                assert_eq!(first_results.len(), 1);
+        let (first_row, tx_id) = match &first {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(results.len(), 1);
+                let row = results[0].clone();
+                let tx_id = match row[0] {
+                    Value::Integer(i) => i,
+                    _ => panic!("expected tx id integer"),
+                };
+                assert_eq!(row[1], Value::Integer(1));
+                assert_eq!(row[2], Value::Integer(tx_id));
+                (row, tx_id)
+            }
+            _ => panic!("expected QueryResults"),
+        };
+
+        match second {
+            QueryResult::QueryResults {
+                results: second_results,
+                ..
+            } => {
                 assert_eq!(second_results.len(), 1);
-                assert_eq!(first_results[0], second_results[0]);
+                assert_eq!(first_row, second_results[0]);
+            }
+            _ => panic!("expected QueryResults"),
+        }
+
+        tx.execute(r#"(transact [[:alice :person/age 31]])"#).unwrap();
+
+        let as_of_timestamp = chrono::DateTime::<Utc>::from_timestamp_millis(tx_id)
+            .unwrap()
+            .to_rfc3339_opts(SecondsFormat::Millis, true);
+        let as_of_query = format!(
+            r#"(query [:find ?age :as-of "{}" :where [:alice :person/age ?age]])"#,
+            as_of_timestamp
+        );
+        let as_of_result = tx.execute(&as_of_query).unwrap();
+
+        match as_of_result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(results.len(), 1);
+                assert_eq!(results[0][0], Value::Integer(30));
             }
             _ => panic!("expected QueryResults"),
         }
