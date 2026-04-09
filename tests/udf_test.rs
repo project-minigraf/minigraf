@@ -32,7 +32,9 @@ fn custom_aggregate_geometric_mean() {
                     acc.0 += f.ln();
                     acc.1 += 1;
                 }
-            } else if let Value::Integer(i) = v && *i > 0 {
+            } else if let Value::Integer(i) = v
+                && *i > 0
+            {
                 acc.0 += (*i as f64).ln();
                 acc.1 += 1;
             }
@@ -78,7 +80,9 @@ fn custom_aggregate_empty_result() {
         "geomean2",
         || (0.0_f64, 0usize),
         |acc: &mut (f64, usize), v: &Value| {
-            if let Value::Float(f) = v && *f > 0.0 {
+            if let Value::Float(f) = v
+                && *f > 0.0
+            {
                 acc.0 += f.ln();
                 acc.1 += 1;
             }

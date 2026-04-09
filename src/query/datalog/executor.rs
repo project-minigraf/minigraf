@@ -1715,11 +1715,7 @@ mod tests {
 
         // Retract it using UUID-based entity reference
         let cmd = parse_datalog_command(
-            format!(
-                r#"(retract [[#uuid "{}" :person/age 30]])"#,
-                alice_id
-            )
-            .as_str(),
+            format!(r#"(retract [[#uuid "{}" :person/age 30]])"#, alice_id).as_str(),
         )
         .unwrap();
 
