@@ -721,7 +721,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 
 **Note**: Stratification correctly detects negative cycles inside `or` branches. Tests `or_negative_cycle_rejected` and `test_or_with_not_cycle_rejected` verify this behavior.
 
-**Deliverable**: 617 tests (424 unit + 187 integration + 6 doc); CI enforces ≥75% line coverage on every PR; nightly branch coverage report
+**Deliverable**: 788 tests (unit + integration + doc); CI enforces ≥75% line coverage on every PR; nightly branch coverage report
 
 **Timeline**: Completed 2026-03-31
 
