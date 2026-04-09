@@ -10,10 +10,118 @@ permissions:
   issues: write
 
 jobs:
-  benchmark-insert:
-    name: Run heavy benchmarks (insert)
+  benchmark:
+    name: bench / ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    strategy:
+      fail-fast: false   # one timeout must not cancel sibling jobs
+      matrix:
+        include:
+          # ── Sequential: insert ──────────────────────────────────────────────
+          - name: insert
+            filter: "^insert/"
+            file: bench_insert.txt
+
+          # ── Sequential: insert_file ─────────────────────────────────────────
+          - name: insert_file
+            filter: "^insert_file/"
+            file: bench_insert_file.txt
+
+          # ── Sequential: query (includes query_extras) ───────────────────────
+          - name: query
+            filter: "^query/"
+            file: bench_query.txt
+
+          # ── Sequential: time_travel ─────────────────────────────────────────
+          - name: time_travel
+            filter: "^time_travel/"
+            file: bench_time_travel.txt
+
+          # ── Sequential: recursion ───────────────────────────────────────────
+          - name: recursion
+            filter: "^recursion/"
+            file: bench_recursion.txt
+
+          # ── Sequential: open ────────────────────────────────────────────────
+          - name: open
+            filter: "^open/"
+            file: bench_open.txt
+
+          # ── Sequential: checkpoint ──────────────────────────────────────────
+          - name: checkpoint
+            filter: "^checkpoint"
+            file: bench_checkpoint.txt
+
+          # ── Concurrent (in-memory): readers ────────────────────────────────
+          - name: concurrent/readers
+            filter: "^concurrent/readers/"
+            file: bench_concurrent_readers.txt
+
+          # ── Concurrent (in-memory): readers_plus_writer ────────────────────
+          - name: concurrent/readers_plus_writer
+            filter: "^concurrent/readers_plus_writer/"
+            file: bench_concurrent_mixed.txt
+
+          # ── Concurrent (in-memory): serialized_writers ─────────────────────
+          - name: concurrent/serialized_writers
+            filter: "^concurrent/serialized_writers/"
+            file: bench_concurrent_writers.txt
+
+          # ── Concurrent (file-backed): readers ──────────────────────────────
+          - name: concurrent_file/readers
+            filter: "^concurrent_file/readers/"
+            file: bench_concurrent_file_readers.txt
+
+          # ── Concurrent (file-backed): readers_plus_writer ──────────────────
+          - name: concurrent_file/readers_plus_writer
+            filter: "^concurrent_file/readers_plus_writer/"
+            file: bench_concurrent_file_mixed.txt
+
+          # ── Concurrent (file-backed): serialized_writers ───────────────────
+          - name: concurrent_file/serialized_writers
+            filter: "^concurrent_file/serialized_writers/"
+            file: bench_concurrent_file_writers.txt
+
+          # ── Concurrent: B+tree scan ─────────────────────────────────────────
+          - name: concurrent_btree_scan
+            filter: "^concurrent_btree_scan"
+            file: bench_concurrent_btree_scan.txt
+
+          # ── Negation: not / not-join ────────────────────────────────────────
+          - name: negation
+            filter: "^negation/"
+            file: bench_negation.txt
+
+          # ── Disjunction: or / or-join ───────────────────────────────────────
+          - name: disjunction
+            filter: "^disjunction/"
+            file: bench_disjunction.txt
+
+          # ── Aggregation (includes aggregation_extras) ───────────────────────
+          - name: aggregation
+            filter: "^aggregation/"
+            file: bench_aggregation.txt
+
+          # ── Expression filters / binding ────────────────────────────────────
+          - name: expr
+            filter: "^expr/"
+            file: bench_expr.txt
+
+          # ── Window functions ────────────────────────────────────────────────
+          - name: window
+            filter: "^window/"
+            file: bench_window.txt
+
+          # ── Temporal metadata ───────────────────────────────────────────────
+          - name: temporal_metadata
+            filter: "^temporal_metadata/"
+            file: bench_temporal_metadata.txt
+
+          # ── User-defined functions ──────────────────────────────────────────
+          - name: udf
+            filter: "^udf/"
+            file: bench_udf.txt
 
     steps:
       - name: Checkout
@@ -32,18 +140,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-bench-
 
-      - name: Run benchmarks (insert)
+      - name: Run benchmarks (${{ matrix.name }})
         run: |
           set -o pipefail
-          (
-            CARGO_TERM_COLOR=never cargo bench -- insert
-          ) 2>&1 | tee bench_insert.txt
+          CARGO_TERM_COLOR=never cargo bench -- "${{ matrix.filter }}" \
+            2>&1 | tee ${{ matrix.file }}
 
       - name: Install Bencher CLI
         uses: bencherdev/bencher@v0.4.25
 
       - name: Upload to Bencher
         id: bencher
+        continue-on-error: true
         run: |
           bencher run \
             --project minigraf \
@@ -55,316 +163,10 @@ jobs:
             --threshold-upper-boundary 0.99 \
             --err \
             --adapter rust_criterion \
-            --file bench_insert.txt
+            --file ${{ matrix.file }}
 
-  benchmark-query:
-    name: Run heavy benchmarks (query)
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-bench-
-
-      - name: Run benchmarks (query)
-        run: |
-          set -o pipefail
-          (
-            CARGO_TERM_COLOR=never cargo bench -- query
-          ) 2>&1 | tee bench_query.txt
-
-      - name: Install Bencher CLI
-        uses: bencherdev/bencher@v0.4.25
-
-      - name: Upload to Bencher
-        id: bencher
-        run: |
-          bencher run \
-            --project minigraf \
-            --token "${{ secrets.BENCHER_API_TOKEN }}" \
-            --branch main \
-            --testbed ubuntu-latest \
-            --threshold-measure latency \
-            --threshold-test t_test \
-            --threshold-upper-boundary 0.99 \
-            --err \
-            --adapter rust_criterion \
-            --file bench_query.txt
-
-  benchmark-time-recursion-open:
-    name: Run heavy benchmarks (time_travel, recursion, open)
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-bench-
-
-      - name: Run benchmarks (time_travel, recursion, open)
-        run: |
-          set -o pipefail
-          (
-            CARGO_TERM_COLOR=never cargo bench -- time_travel
-            CARGO_TERM_COLOR=never cargo bench -- recursion
-            CARGO_TERM_COLOR=never cargo bench -- open
-          ) 2>&1 | tee bench_time_recursion_open.txt
-
-      - name: Install Bencher CLI
-        uses: bencherdev/bencher@v0.4.25
-
-      - name: Upload to Bencher
-        id: bencher
-        run: |
-          bencher run \
-            --project minigraf \
-            --token "${{ secrets.BENCHER_API_TOKEN }}" \
-            --branch main \
-            --testbed ubuntu-latest \
-            --threshold-measure latency \
-            --threshold-test t_test \
-            --threshold-upper-boundary 0.99 \
-            --err \
-            --adapter rust_criterion \
-            --file bench_time_recursion_open.txt
-
-  benchmark-checkpoint-concurrent:
-    name: Run heavy benchmarks (checkpoint, concurrent)
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-bench-
-
-      - name: Run benchmarks (checkpoint, concurrent)
-        run: |
-          set -o pipefail
-          (
-            CARGO_TERM_COLOR=never cargo bench -- checkpoint
-            CARGO_TERM_COLOR=never cargo bench -- concurrent
-            CARGO_TERM_COLOR=never cargo bench -- concurrent_file
-          ) 2>&1 | tee bench_checkpoint_concurrent.txt
-
-      - name: Install Bencher CLI
-        uses: bencherdev/bencher@v0.4.25
-
-      - name: Upload to Bencher
-        id: bencher
-        run: |
-          bencher run \
-            --project minigraf \
-            --token "${{ secrets.BENCHER_API_TOKEN }}" \
-            --branch main \
-            --testbed ubuntu-latest \
-            --threshold-measure latency \
-            --threshold-test t_test \
-            --threshold-upper-boundary 0.99 \
-            --err \
-            --adapter rust_criterion \
-            --file bench_checkpoint_concurrent.txt
-
-  benchmark-negation-disjunction:
-    name: Run heavy benchmarks (negation, disjunction)
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-bench-
-
-      - name: Run benchmarks (negation, disjunction)
-        run: |
-          set -o pipefail
-          (
-            CARGO_TERM_COLOR=never cargo bench -- negation
-            CARGO_TERM_COLOR=never cargo bench -- disjunction
-          ) 2>&1 | tee bench_negation_disjunction.txt
-
-      - name: Install Bencher CLI
-        uses: bencherdev/bencher@v0.4.25
-
-      - name: Upload to Bencher
-        id: bencher
-        run: |
-          bencher run \
-            --project minigraf \
-            --token "${{ secrets.BENCHER_API_TOKEN }}" \
-            --branch main \
-            --testbed ubuntu-latest \
-            --threshold-measure latency \
-            --threshold-test t_test \
-            --threshold-upper-boundary 0.99 \
-            --err \
-            --adapter rust_criterion \
-            --file bench_negation_disjunction.txt
-
-  benchmark-aggregation-expr:
-    name: Run heavy benchmarks (aggregation, expr, window)
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-bench-
-
-      - name: Run benchmarks (aggregation, expr, window)
-        run: |
-          set -o pipefail
-          (
-            CARGO_TERM_COLOR=never cargo bench -- aggregation
-            CARGO_TERM_COLOR=never cargo bench -- expr
-            CARGO_TERM_COLOR=never cargo bench -- window
-          ) 2>&1 | tee bench_aggregation_expr.txt
-
-      - name: Install Bencher CLI
-        uses: bencherdev/bencher@v0.4.25
-
-      - name: Upload to Bencher
-        id: bencher
-        run: |
-          bencher run \
-            --project minigraf \
-            --token "${{ secrets.BENCHER_API_TOKEN }}" \
-            --branch main \
-            --testbed ubuntu-latest \
-            --threshold-measure latency \
-            --threshold-test t_test \
-            --threshold-upper-boundary 0.99 \
-            --err \
-            --adapter rust_criterion \
-            --file bench_aggregation_expr.txt
-
-  benchmark-temporal-udf:
-    name: Run heavy benchmarks (temporal_metadata, udf, aggregation_extras, query_extras, concurrent_btree_scan)
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-bench-
-
-      - name: Run benchmarks (temporal_metadata, udf, aggregation_extras, query_extras, concurrent_btree_scan)
-        run: |
-          set -o pipefail
-          (
-            CARGO_TERM_COLOR=never cargo bench -- temporal_metadata
-            CARGO_TERM_COLOR=never cargo bench -- udf
-            CARGO_TERM_COLOR=never cargo bench -- aggregation_extras
-            CARGO_TERM_COLOR=never cargo bench -- query_extras
-            CARGO_TERM_COLOR=never cargo bench -- concurrent_btree_scan
-          ) 2>&1 | tee bench_temporal_udf.txt
-
-      - name: Install Bencher CLI
-        uses: bencherdev/bencher@v0.4.25
-
-      - name: Upload to Bencher
-        id: bencher
-        run: |
-          bencher run \
-            --project minigraf \
-            --token "${{ secrets.BENCHER_API_TOKEN }}" \
-            --branch main \
-            --testbed ubuntu-latest \
-            --threshold-measure latency \
-            --threshold-test t_test \
-            --threshold-upper-boundary 0.99 \
-            --err \
-            --adapter rust_criterion \
-            --file bench_temporal_udf.txt
-
-  report-regression:
-    name: Report regressions
-    runs-on: ubuntu-latest
-    needs:
-      - benchmark-insert
-      - benchmark-query
-      - benchmark-time-recursion-open
-      - benchmark-checkpoint-concurrent
-      - benchmark-negation-disjunction
-      - benchmark-aggregation-expr
-      - benchmark-temporal-udf
-    if: always() && contains(join(needs.*.result, ','), 'failure')
-
-    steps:
       - name: Open regression issue
+        if: steps.bencher.outcome == 'failure'
         uses: actions/github-script@v6
         with:
           script: |
@@ -392,7 +194,7 @@ jobs:
               repo: context.repo.repo,
               title: title,
               body: [
-                'Bencher detected a performance regression in the nightly heavy benchmark run.',
+                `Bencher detected a performance regression in the nightly heavy benchmark run (${{ matrix.name }}).`,
                 '',
                 `**Run:** ${runUrl}`,
                 '',
