@@ -44,7 +44,6 @@ jobs:
 
       - name: Upload to Bencher
         id: bencher
-        continue-on-error: true
         run: |
           bencher run \
             --project minigraf \
@@ -92,7 +91,6 @@ jobs:
 
       - name: Upload to Bencher
         id: bencher
-        continue-on-error: true
         run: |
           bencher run \
             --project minigraf \
@@ -142,7 +140,6 @@ jobs:
 
       - name: Upload to Bencher
         id: bencher
-        continue-on-error: true
         run: |
           bencher run \
             --project minigraf \
@@ -192,7 +189,6 @@ jobs:
 
       - name: Upload to Bencher
         id: bencher
-        continue-on-error: true
         run: |
           bencher run \
             --project minigraf \
@@ -241,7 +237,6 @@ jobs:
 
       - name: Upload to Bencher
         id: bencher
-        continue-on-error: true
         run: |
           bencher run \
             --project minigraf \
@@ -291,7 +286,6 @@ jobs:
 
       - name: Upload to Bencher
         id: bencher
-        continue-on-error: true
         run: |
           bencher run \
             --project minigraf \
@@ -343,7 +337,6 @@ jobs:
 
       - name: Upload to Bencher
         id: bencher
-        continue-on-error: true
         run: |
           bencher run \
             --project minigraf \
@@ -368,18 +361,10 @@ jobs:
       - benchmark-negation-disjunction
       - benchmark-aggregation-expr
       - benchmark-temporal-udf
-    if: always()
+    if: always() && contains(join(needs.*.result, ','), 'failure')
 
     steps:
-      - name: Check for failures
-        run: |
-          if [[ "${{ needs.*.result }}" == "failure" ]]; then
-            echo "One or more benchmark jobs failed"
-            exit 1
-          fi
-
       - name: Open regression issue
-        if: contains(join(needs.*.result, ','), 'failure')
         uses: actions/github-script@v6
         with:
           script: |
