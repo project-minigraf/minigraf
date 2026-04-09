@@ -719,7 +719,7 @@ Current v5 stores index data as paged blobs (page type `0x11`). v6 introduces pr
 - `stratification.rs`: 100% branch coverage
 - Remaining gaps: NaN-check defensive code unreachable via public API
 
-**Known issue**: stratification does not detect negative cycles inside `or` branches. Tracked via `#[ignore]` in `tests/error_handling_test.rs::or_negative_cycle_rejected`.
+**Note**: Stratification correctly detects negative cycles inside `or` branches. Tests `or_negative_cycle_rejected` and `test_or_with_not_cycle_rejected` verify this behavior.
 
 **Deliverable**: 617 tests (424 unit + 187 integration + 6 doc); CI enforces ≥75% line coverage on every PR; nightly branch coverage report
 
