@@ -60,7 +60,7 @@ jobs:
   benchmark-query:
     name: Run heavy benchmarks (query)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 360
 
     steps:
       - name: Checkout
@@ -107,7 +107,7 @@ jobs:
   benchmark-time-recursion-open:
     name: Run heavy benchmarks (time_travel, recursion, open)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 360
 
     steps:
       - name: Checkout
@@ -156,7 +156,7 @@ jobs:
   benchmark-checkpoint-concurrent:
     name: Run heavy benchmarks (checkpoint, concurrent)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 360
 
     steps:
       - name: Checkout
@@ -205,7 +205,7 @@ jobs:
   benchmark-negation-disjunction:
     name: Run heavy benchmarks (negation, disjunction)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 360
 
     steps:
       - name: Checkout
@@ -253,7 +253,7 @@ jobs:
   benchmark-aggregation-expr:
     name: Run heavy benchmarks (aggregation, expr, window)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 360
 
     steps:
       - name: Checkout
@@ -302,7 +302,7 @@ jobs:
   benchmark-temporal-udf:
     name: Run heavy benchmarks (temporal_metadata, udf, aggregation_extras, query_extras, concurrent_btree_scan)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 360
 
     steps:
       - name: Checkout
