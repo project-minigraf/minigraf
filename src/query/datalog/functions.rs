@@ -549,7 +549,7 @@ mod tests {
 
     #[test]
     fn apply_builtin_count() {
-        let vals = vec![Value::Integer(1), Value::Integer(2), Value::Integer(3)];
+        let vals = [Value::Integer(1), Value::Integer(2), Value::Integer(3)];
         let refs: Vec<&Value> = vals.iter().collect();
         let result = apply_builtin_aggregate("count", &refs).unwrap();
         assert_eq!(result, Value::Integer(3));
@@ -557,7 +557,7 @@ mod tests {
 
     #[test]
     fn apply_builtin_sum_integers() {
-        let vals = vec![Value::Integer(10), Value::Integer(20), Value::Integer(30)];
+        let vals = [Value::Integer(10), Value::Integer(20), Value::Integer(30)];
         let refs: Vec<&Value> = vals.iter().collect();
         let result = apply_builtin_aggregate("sum", &refs).unwrap();
         assert_eq!(result, Value::Integer(60));
@@ -565,7 +565,7 @@ mod tests {
 
     #[test]
     fn apply_builtin_sum_floats() {
-        let vals = vec![Value::Float(1.5), Value::Float(2.5)];
+        let vals = [Value::Float(1.5), Value::Float(2.5)];
         let refs: Vec<&Value> = vals.iter().collect();
         let result = apply_builtin_aggregate("sum", &refs).unwrap();
         assert_eq!(result, Value::Float(4.0));
@@ -573,7 +573,7 @@ mod tests {
 
     #[test]
     fn apply_builtin_min() {
-        let vals = vec![Value::Integer(30), Value::Integer(10), Value::Integer(20)];
+        let vals = [Value::Integer(30), Value::Integer(10), Value::Integer(20)];
         let refs: Vec<&Value> = vals.iter().collect();
         let result = apply_builtin_aggregate("min", &refs).unwrap();
         assert_eq!(result, Value::Integer(10));
@@ -581,7 +581,7 @@ mod tests {
 
     #[test]
     fn apply_builtin_max() {
-        let vals = vec![Value::Integer(30), Value::Integer(10), Value::Integer(20)];
+        let vals = [Value::Integer(30), Value::Integer(10), Value::Integer(20)];
         let refs: Vec<&Value> = vals.iter().collect();
         let result = apply_builtin_aggregate("max", &refs).unwrap();
         assert_eq!(result, Value::Integer(30));
@@ -589,7 +589,7 @@ mod tests {
 
     #[test]
     fn apply_builtin_avg() {
-        let vals = vec![Value::Integer(10), Value::Integer(20), Value::Integer(30)];
+        let vals = [Value::Integer(10), Value::Integer(20), Value::Integer(30)];
         let refs: Vec<&Value> = vals.iter().collect();
         let result = apply_builtin_aggregate("avg", &refs).unwrap();
         assert_eq!(result, Value::Float(20.0));
@@ -597,7 +597,7 @@ mod tests {
 
     #[test]
     fn apply_builtin_count_distinct() {
-        let vals = vec![Value::Integer(1), Value::Integer(2), Value::Integer(1)];
+        let vals = [Value::Integer(1), Value::Integer(2), Value::Integer(1)];
         let refs: Vec<&Value> = vals.iter().collect();
         let result = apply_builtin_aggregate("count-distinct", &refs).unwrap();
         assert_eq!(result, Value::Integer(2));

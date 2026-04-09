@@ -161,8 +161,8 @@ fn test_long_chain_transitive_closure() {
                 })
                 .collect();
 
-            for i in 1..10 {
-                assert!(targets.contains(&nodes[i]));
+            for node in &nodes[1..10] {
+                assert!(targets.contains(node));
             }
         }
         _ => panic!("Expected QueryResults"),

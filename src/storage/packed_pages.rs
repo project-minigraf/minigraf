@@ -196,7 +196,7 @@ mod tests {
             Uuid::from_u128(n as u128),
             ":attr".to_string(),
             Value::Integer(n as i64),
-            n as u64,
+            n,
             n,
             0,
             VALID_TIME_FOREVER,

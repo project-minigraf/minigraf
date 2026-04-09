@@ -286,19 +286,18 @@ fn bench_recursion(c: &mut Criterion) {
         let mut group = c.benchmark_group("recursion/fanout");
         group.sample_size(10);
         // (width, depth): (10,3) ~1110 nodes — manageable transitive closure
-        for &(label, width, depth) in &[("w10_d3", 10usize, 3usize)] {
-            let db = helpers::fanout_graph(width, depth);
-            group.bench_with_input(
-                BenchmarkId::from_parameter(label),
-                &(width, depth),
-                |b, _| {
-                    b.iter(|| {
-                        db.execute("(query [:find ?to :where (reach :n0 ?to)])")
-                            .unwrap()
-                    });
-                },
-            );
-        }
+        let (label, width, depth) = ("w10_d3", 10usize, 3usize);
+        let db = helpers::fanout_graph(width, depth);
+        group.bench_with_input(
+            BenchmarkId::from_parameter(label),
+            &(width, depth),
+            |b, _| {
+                b.iter(|| {
+                    db.execute("(query [:find ?to :where (reach :n0 ?to)])")
+                        .unwrap()
+                });
+            },
+        );
         group.finish();
     }
 }
