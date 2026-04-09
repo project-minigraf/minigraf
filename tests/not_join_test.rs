@@ -15,6 +15,7 @@ fn result_count(r: &QueryResult) -> usize {
 }
 
 /// 1. Basic not-join: single join var, inner var existentially quantified.
+///
 /// alice has a blocked dep → excluded; bob has no deps → included.
 #[test]
 fn test_not_join_basic_inner_var_excluded() {
@@ -46,6 +47,7 @@ fn test_not_join_basic_inner_var_excluded() {
 }
 
 /// 2. Multiple join vars.
+///
 /// u1 has restricted role r1; u2 has unrestricted role r2 → only u2 returned.
 #[test]
 fn test_not_join_multiple_join_vars() {
@@ -75,6 +77,7 @@ fn test_not_join_multiple_join_vars() {
 }
 
 /// 3. Multi-clause not-join body (conjunction of patterns).
+///
 /// Only e3 has :data true and no :tag :sensitive.
 #[test]
 fn test_not_join_multi_clause_body() {
@@ -105,6 +108,7 @@ fn test_not_join_multi_clause_body() {
 }
 
 /// 4. not-join in a rule body.
+///
 /// alice has a rejected dep → ineligible; bob has no deps → eligible.
 #[test]
 fn test_not_join_in_rule_body() {
@@ -210,6 +214,7 @@ fn test_not_join_multi_stratum_chain() {
 }
 
 /// 6. not-join allows inner vars not bound by outer clauses (unlike plain `not`).
+///
 /// alice's dep is blocked → excluded; bob's dep is not blocked → included.
 #[test]
 fn test_not_join_allows_inner_var_not_would_reject() {
@@ -242,6 +247,7 @@ fn test_not_join_allows_inner_var_not_would_reject() {
 }
 
 /// 7. not-join combined with :as-of time travel.
+///
 /// At tx 1 alice has no dep yet → passes not-join.
 /// At tx 2 alice's dep is present and blocked → excluded.
 #[test]
@@ -289,6 +295,7 @@ fn test_not_join_with_as_of() {
 }
 
 /// 8. Unbound join variable rejected at parse time.
+///
 /// ?unbound appears in the join-vars list but is never bound by any outer clause.
 #[test]
 fn test_not_join_unbound_join_var_parse_error() {
@@ -326,6 +333,7 @@ fn test_not_join_nested_inside_not_rejected() {
 }
 
 /// 10. not-join body contains a RuleInvocation — derived rule facts correctly negated end-to-end.
+///
 /// Rule: (banned ?x) :- [?x :status :banned]
 /// Rule: (eligible ?x) :- [?x :applied true], (not-join [?x] (banned ?x))
 /// alice: applied + banned → NOT eligible; bob: applied only → eligible.

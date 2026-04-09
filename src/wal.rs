@@ -331,7 +331,7 @@ mod tests {
         let fact = make_fact(alice, ":name", Value::String("Alice".to_string()), 1);
 
         let mut writer = WalWriter::open_or_create(&path).unwrap();
-        writer.append_entry(1, &[fact.clone()]).unwrap();
+        writer.append_entry(1, std::slice::from_ref(&fact)).unwrap();
 
         let mut reader = WalReader::open(&path).unwrap();
         let entries = reader.read_entries().unwrap();

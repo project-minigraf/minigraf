@@ -1717,7 +1717,7 @@ mod tests {
         let cmd = parse_datalog_command(
             format!(
                 r#"(retract [[#uuid "{}" :person/age 30]])"#,
-                alice_id.to_string()
+                alice_id
             )
             .as_str(),
         )
@@ -1866,7 +1866,7 @@ mod tests {
         // Query using rule invocation: find all nodes reachable from A
         let query_str = format!(
             r#"(query [:find ?to :where (reachable #uuid "{}" ?to)])"#,
-            a.to_string()
+            a
         );
         let query_cmd = parse_datalog_command(&query_str).unwrap();
 
@@ -1928,7 +1928,7 @@ mod tests {
         // Query: find names of nodes reachable from A
         let query_str = format!(
             r#"(query [:find ?name :where (reachable #uuid "{}" ?to) [?to :person/name ?name]])"#,
-            a.to_string()
+            a
         );
         let query_cmd = parse_datalog_command(&query_str).unwrap();
 
@@ -1982,7 +1982,7 @@ mod tests {
         // Query: find all nodes reachable from A
         let query_str = format!(
             r#"(query [:find ?to :where (reachable #uuid "{}" ?to)])"#,
-            a.to_string()
+            a
         );
         let query_cmd = parse_datalog_command(&query_str).unwrap();
 
@@ -2217,7 +2217,7 @@ mod tests {
         // Query: find names of nodes transitively reachable from A
         let query_str = format!(
             r#"(query [:find ?name :where (reachable #uuid "{}" ?to) [?to :person/name ?name]])"#,
-            a.to_string()
+            a
         );
         let query_cmd = parse_datalog_command(&query_str).unwrap();
 
@@ -3779,12 +3779,12 @@ mod expr_eval_tests {
                     (
                         e1,
                         ":item/score".to_string(),
-                        crate::graph::types::Value::Float(3.14),
+                        crate::graph::types::Value::Float(3.5),
                     ),
                     (
                         e2,
                         ":item/score".to_string(),
-                        crate::graph::types::Value::Float(2.71),
+                        crate::graph::types::Value::Float(2.5),
                     ),
                 ],
                 None,
@@ -3799,7 +3799,7 @@ mod expr_eval_tests {
                 assert_eq!(results.len(), 1, "expected one result");
                 assert_eq!(
                     results[0][0],
-                    crate::graph::types::Value::Float(3.14),
+                    crate::graph::types::Value::Float(3.5),
                     "max of floats should return largest"
                 );
             }

@@ -1495,11 +1495,7 @@ mod tests {
                 crate::storage::FACT_PAGE_FORMAT_PACKED
             );
             // 51 facts @ ~25/page = ~3 pages (far fewer than 51)
-            let fact_page_count = if header.eavt_root_page > 1 {
-                header.eavt_root_page - 1
-            } else {
-                0
-            };
+            let fact_page_count = header.eavt_root_page.saturating_sub(1);
             assert!(
                 fact_page_count <= 5,
                 "got {} fact pages (expected <=5)",
@@ -1882,6 +1878,7 @@ mod tests {
             let mut file = std::fs::OpenOptions::new()
                 .write(true)
                 .create(true)
+                .truncate(true)
                 .open(&path)
                 .unwrap();
             file.write_all(&vec![0u8; PAGE_SIZE]).unwrap();

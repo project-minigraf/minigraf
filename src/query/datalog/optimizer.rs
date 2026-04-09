@@ -111,6 +111,7 @@ pub fn plan(
 mod tests {
     use super::*;
     use crate::query::datalog::types::{EdnValue, Pattern};
+    #[cfg(not(feature = "wasm"))]
     use crate::storage::index::Indexes;
     use uuid::Uuid;
 
