@@ -32,6 +32,7 @@ fn bench_insert(c: &mut Criterion) {
     // (realistic steady-state: insert into a DB of approximately scale N).
     {
         let mut group = c.benchmark_group("insert/single_fact");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             let db = helpers::populate_in_memory(n);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
@@ -44,6 +45,7 @@ fn bench_insert(c: &mut Criterion) {
     // batch_100: insert 100 facts in a single transact
     {
         let mut group = c.benchmark_group("insert/batch_100");
+        group.sample_size(10);
         let batch_cmd: String = {
             let mut s = String::from("(transact [");
             for i in 0..100 {
@@ -66,6 +68,7 @@ fn bench_insert(c: &mut Criterion) {
     // explicit_tx: single fact via begin_write()/commit()
     {
         let mut group = c.benchmark_group("insert/explicit_tx");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             let db = helpers::populate_in_memory(n);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
@@ -696,6 +699,7 @@ fn bench_negation(c: &mut Criterion) {
     // Query: all entities that have :val and are NOT banned.
     {
         let mut group = c.benchmark_group("negation/not_scale");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             let excluded = n / 10;
             let db = helpers::populate_with_not_exclusion(n, excluded);
@@ -714,6 +718,7 @@ fn bench_negation(c: &mut Criterion) {
     // Query: all entities that have :val and have no :dep whose :status is :bad.
     {
         let mut group = c.benchmark_group("negation/not_join_scale");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             let excluded = n / 10;
             let db = helpers::populate_with_not_join_exclusion(n, excluded);
@@ -734,6 +739,7 @@ fn bench_negation(c: &mut Criterion) {
     // Shows how the exclusion ratio affects query latency.
     {
         let mut group = c.benchmark_group("negation/not_selectivity");
+        group.sample_size(10);
         let n = 10_000;
         for &(label, pct) in &[
             ("excl_0pct", 0usize),
@@ -759,6 +765,7 @@ fn bench_negation(c: &mut Criterion) {
     // 10% of entities are blocked.
     {
         let mut group = c.benchmark_group("negation/not_rule_body");
+        group.sample_size(10);
         for &(label, n) in &[("1k", 1_000usize), ("10k", 10_000)] {
             let excluded = n / 10;
             let db = helpers::populate_with_not_rule(n, excluded);
@@ -843,6 +850,7 @@ fn bench_disjunction(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("disjunction/or_scale");
         group.sample_size(10);
+        group.warm_up_time(std::time::Duration::from_millis(500));
         for &(label, n) in SCALES {
             let a_count = n / 4;
             let b_count = n / 4;
@@ -865,6 +873,7 @@ fn bench_disjunction(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("disjunction/or_join_scale");
         group.sample_size(10);
+        group.warm_up_time(std::time::Duration::from_millis(500));
         for &(label, n) in SCALES {
             let a_count = n / 4;
             let b_count = n / 4;
@@ -887,6 +896,7 @@ fn bench_disjunction(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("disjunction/or_selectivity");
         group.sample_size(10);
+        group.warm_up_time(std::time::Duration::from_millis(500));
         let n = 10_000;
         for &(label, pct) in &[
             ("match_0pct", 0usize),
@@ -917,6 +927,7 @@ fn bench_disjunction(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("disjunction/or_rule_body");
         group.sample_size(10);
+        group.warm_up_time(std::time::Duration::from_millis(500));
         for &(label, n) in SCALES {
             let db = helpers::populate_with_or_rule(n);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
@@ -936,6 +947,7 @@ fn bench_aggregation(c: &mut Criterion) {
     // Single output row regardless of DB size; cost is dominated by binding collection.
     {
         let mut group = c.benchmark_group("aggregation/count_scale");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             let db = helpers::populate_in_memory(n);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
@@ -952,6 +964,7 @@ fn bench_aggregation(c: &mut Criterion) {
     // 10 departments → 10 output rows. Measures grouping + per-group aggregation.
     {
         let mut group = c.benchmark_group("aggregation/grouped_count_scale");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             let db = helpers::populate_with_dept(n, 10);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
@@ -967,6 +980,7 @@ fn bench_aggregation(c: &mut Criterion) {
     // sum/scale: `sum` aggregate over integer :val — measures numeric accumulation.
     {
         let mut group = c.benchmark_group("aggregation/sum_scale");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             let db = helpers::populate_in_memory(n);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
@@ -983,6 +997,7 @@ fn bench_aggregation(c: &mut Criterion) {
     // Each entity has a unique :val, so `:with ?e` keeps individual rows distinct.
     {
         let mut group = c.benchmark_group("aggregation/with_grouped_sum");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             let db = helpers::populate_with_dept(n, 10);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
@@ -1008,6 +1023,7 @@ fn bench_expr(c: &mut Criterion) {
     // Keeps entities with :val < half of n; drops the other half.
     {
         let mut group = c.benchmark_group("expr/filter_scale");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             let db = helpers::populate_in_memory(n);
             let threshold = n / 2;
@@ -1026,6 +1042,7 @@ fn bench_expr(c: &mut Criterion) {
     // Binds ?result = ?v + 1 for every row; all rows survive.
     {
         let mut group = c.benchmark_group("expr/binding_scale");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             let db = helpers::populate_in_memory(n);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
@@ -1042,6 +1059,7 @@ fn bench_expr(c: &mut Criterion) {
     // Measures expr bind + aggregation pipeline together.
     {
         let mut group = c.benchmark_group("expr/binding_into_agg");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             let db = helpers::populate_in_memory(n);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
@@ -1121,6 +1139,7 @@ fn bench_temporal_metadata(c: &mut Criterion) {
     // tx_time: bind transaction timestamp — measures per-row projection overhead.
     {
         let mut group = c.benchmark_group("temporal_metadata/tx_time");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             let db = helpers::populate_in_memory(n);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
@@ -1136,6 +1155,7 @@ fn bench_temporal_metadata(c: &mut Criterion) {
     // valid_from: bind valid-from timestamp.
     {
         let mut group = c.benchmark_group("temporal_metadata/valid_from");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             let db = helpers::populate_in_memory(n);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
@@ -1151,6 +1171,7 @@ fn bench_temporal_metadata(c: &mut Criterion) {
     // valid_to: bind valid-to timestamp.
     {
         let mut group = c.benchmark_group("temporal_metadata/valid_to");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             let db = helpers::populate_in_memory(n);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
@@ -1172,6 +1193,7 @@ fn bench_udf(c: &mut Criterion) {
     // aggregate_sum_dispatch: UDF aggregate vs built-in sum — isolates closure dispatch.
     {
         let mut group = c.benchmark_group("udf/aggregate_sum_dispatch");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             let db = helpers::populate_in_memory(n);
             db.register_aggregate(
@@ -1198,6 +1220,7 @@ fn bench_udf(c: &mut Criterion) {
     // predicate_filter_dispatch: UDF predicate vs built-in comparison.
     {
         let mut group = c.benchmark_group("udf/predicate_filter_dispatch");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             let db = helpers::populate_in_memory(n);
             db.register_predicate("udf_gt", |v: &minigraf::Value| -> bool {
@@ -1228,6 +1251,7 @@ fn bench_aggregation_extras(c: &mut Criterion) {
     // Measures the distinct-dedup path overhead.
     {
         let mut group = c.benchmark_group("aggregation/count_distinct_scale");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             let db = helpers::populate_with_duplicates(n, 50);
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
