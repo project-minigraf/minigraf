@@ -905,11 +905,6 @@ impl<'a> WriteTransaction<'a> {
         self.pending_facts.extend(facts.into_iter().map(|mut fact| {
             fact.tx_id = staged_tx_id;
             fact.tx_count = staged_tx_count;
-            if (fact.asserted && fact.valid_from == VALID_FROM_USE_TX_TIME)
-                || (!fact.asserted && fact.valid_from == 0)
-            {
-                fact.valid_from = staged_tx_id as i64;
-            }
             fact
         }));
 
@@ -1018,11 +1013,21 @@ impl<'a> WriteTransaction<'a> {
     }
 
     /// Build a merged fact snapshot for transactional reads.
+    ///
+    /// Pending facts still carry `VALID_FROM_USE_TX_TIME` for assertions where no
+    /// explicit `valid_from` was supplied (the sentinel is left intact so `commit()`
+    /// can stamp it with the real commit timestamp).  We resolve it here using each
+    /// fact's own staged `tx_id` so transactional queries see a coherent valid-time.
     fn merged_query_facts(&self) -> Result<Arc<[Fact]>> {
         let committed = self.inner.fact_storage.get_all_facts()?;
         let mut merged = Vec::with_capacity(committed.len() + self.pending_facts.len());
         merged.extend(committed);
-        merged.extend(self.pending_facts.iter().cloned());
+        merged.extend(self.pending_facts.iter().cloned().map(|mut f| {
+            if f.asserted && f.valid_from == VALID_FROM_USE_TX_TIME {
+                f.valid_from = f.tx_id as i64;
+            }
+            f
+        }));
         Ok(Arc::from(merged))
     }
 
