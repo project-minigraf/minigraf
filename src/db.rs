@@ -903,9 +903,9 @@ impl<'a> WriteTransaction<'a> {
         self.pending_facts.extend(facts.into_iter().map(|mut fact| {
             fact.tx_id = staged_tx_id;
             fact.tx_count = staged_tx_count;
-            if fact.asserted && fact.valid_from == VALID_FROM_USE_TX_TIME {
-                fact.valid_from = staged_tx_id as i64;
-            } else if !fact.asserted && fact.valid_from == 0 {
+            if (fact.asserted && fact.valid_from == VALID_FROM_USE_TX_TIME)
+                || (!fact.asserted && fact.valid_from == 0)
+            {
                 fact.valid_from = staged_tx_id as i64;
             }
             fact
