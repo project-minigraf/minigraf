@@ -6,7 +6,7 @@
 //! - `Minigraf::begin_write()` / `WriteTransaction` for explicit transactions
 //! - `Minigraf::checkpoint()` for manual WAL compaction
 
-use crate::graph::types::{Fact, VALID_TIME_FOREVER};
+use crate::graph::types::{Fact, TxId, VALID_TIME_FOREVER};
 
 /// Sentinel value used in `materialize_transaction` to signal "no explicit `valid_from`
 /// was provided; use the transaction timestamp at commit time."
@@ -510,6 +510,8 @@ impl Minigraf {
             guard,
             inner: &self.inner,
             pending_facts: Vec::new(),
+            next_pending_tx_count: self.inner.fact_storage.current_tx_count() + 1,
+            next_pending_tx_id: crate::graph::types::tx_id_now(),
             committed: false,
         })
     }
@@ -818,6 +820,10 @@ pub struct WriteTransaction<'a> {
     inner: &'a Inner,
     /// Facts buffered in this transaction (not yet committed to FactStorage).
     pending_facts: Vec<Fact>,
+    /// Synthetic tx_count assigned to the next staged write batch.
+    next_pending_tx_count: u64,
+    /// Synthetic tx_id seed used to keep staged writes monotonic.
+    next_pending_tx_id: TxId,
     /// Set to `true` after a successful `commit()` to suppress rollback in `Drop`.
     committed: bool,
 }
@@ -835,27 +841,75 @@ impl<'a> WriteTransaction<'a> {
 
         match cmd {
             DatalogCommand::Transact(tx) => {
-                let new_facts = Minigraf::materialize_transaction(&tx)?;
-                self.pending_facts.extend(new_facts);
+                self.stage_pending_facts(Minigraf::materialize_transaction(&tx)?);
                 Ok(QueryResult::Ok)
             }
             DatalogCommand::Retract(tx) => {
-                let new_facts = Minigraf::materialize_retraction(&tx)?;
-                self.pending_facts.extend(new_facts);
+                self.stage_pending_facts(Minigraf::materialize_retraction(&tx)?);
                 Ok(QueryResult::Ok)
             }
-            DatalogCommand::Query(_) | DatalogCommand::Rule(_) => {
-                // For queries: build a temporary FactStorage that includes
-                // committed facts + buffered pending facts (read-your-own-writes).
-                let view = self.build_query_view()?;
-                let executor = DatalogExecutor::new_with_rules_and_functions(
-                    view,
-                    self.inner.rules.clone(),
-                    self.inner.functions.clone(),
-                );
-                executor.execute(cmd)
-            }
+            DatalogCommand::Query(_) => self.execute_read_command(cmd),
+            DatalogCommand::Rule(rule) => self.execute_rule_command(rule),
         }
+    }
+
+    fn execute_read_command(&self, cmd: DatalogCommand) -> Result<QueryResult> {
+        if self.pending_facts.is_empty() {
+            let mut executor = DatalogExecutor::new_with_rules_and_functions(
+                self.inner.fact_storage.clone(),
+                self.inner.rules.clone(),
+                self.inner.functions.clone(),
+            );
+            executor.set_limits(
+                self.inner.options.max_derived_facts,
+                self.inner.options.max_results,
+            );
+            return executor.execute(cmd);
+        }
+
+        let merged_facts = self.merged_query_facts()?;
+        let mut executor = DatalogExecutor::new_from_facts_with_rules_and_functions(
+            merged_facts,
+            self.pending_read_now_floor(),
+            self.inner.rules.clone(),
+            self.inner.functions.clone(),
+        );
+        executor.set_limits(
+            self.inner.options.max_derived_facts,
+            self.inner.options.max_results,
+        );
+        executor.execute(cmd)
+    }
+
+    fn execute_rule_command(
+        &self,
+        rule: crate::query::datalog::types::Rule,
+    ) -> Result<QueryResult> {
+        let mut executor = DatalogExecutor::new_with_rules_and_functions(
+            self.inner.fact_storage.clone(),
+            self.inner.rules.clone(),
+            self.inner.functions.clone(),
+        );
+        executor.set_limits(
+            self.inner.options.max_derived_facts,
+            self.inner.options.max_results,
+        );
+        executor.execute(DatalogCommand::Rule(rule))
+    }
+
+    /// Stage buffered facts with stable synthetic read metadata.
+    fn stage_pending_facts(&mut self, facts: Vec<Fact>) {
+        let staged_tx_id = std::cmp::max(crate::graph::types::tx_id_now(), self.next_pending_tx_id);
+        let staged_tx_count = self.next_pending_tx_count;
+
+        self.pending_facts.extend(facts.into_iter().map(|mut fact| {
+            fact.tx_id = staged_tx_id;
+            fact.tx_count = staged_tx_count;
+            fact
+        }));
+
+        self.next_pending_tx_id = staged_tx_id.saturating_add(1);
+        self.next_pending_tx_count += 1;
     }
 
     /// Commit this transaction atomically.
@@ -958,41 +1012,31 @@ impl<'a> WriteTransaction<'a> {
         set_write_tx_active(false);
     }
 
-    /// Build a temporary `FactStorage` that merges committed facts with pending ones.
+    /// Build a merged fact snapshot for transactional reads.
     ///
-    /// Used to implement read-your-own-writes semantics during a transaction.
-    ///
-    /// This performs a **deep copy**: a brand-new `FactStorage` is created and
-    /// populated with all committed facts followed by the pending buffered facts.
-    /// Using `self.inner.fact_storage.clone()` would be an Arc-based shallow clone
-    /// that shares the underlying storage, causing `load_fact()` calls to mutate
-    /// the shared store and expose uncommitted facts to concurrent readers.
-    ///
-    /// Optimization: if there are no pending facts, we can use the storage directly
-    /// without copying. Otherwise, we create an overlay that combines committed
-    /// facts with pending facts without copying all committed facts.
-    fn build_query_view(&self) -> Result<FactStorage> {
-        // Fast path: no pending facts, use the original storage directly
-        if self.pending_facts.is_empty() {
-            return Ok(self.inner.fact_storage.clone());
-        }
+    /// Pending facts still carry `VALID_FROM_USE_TX_TIME` for assertions where no
+    /// explicit `valid_from` was supplied (the sentinel is left intact so `commit()`
+    /// can stamp it with the real commit timestamp).  We resolve it here using each
+    /// fact's own staged `tx_id` so transactional queries see a coherent valid-time.
+    fn merged_query_facts(&self) -> Result<Arc<[Fact]>> {
+        let committed = self.inner.fact_storage.get_all_facts()?;
+        let mut merged = Vec::with_capacity(committed.len() + self.pending_facts.len());
+        merged.extend(committed);
+        merged.extend(self.pending_facts.iter().cloned().map(|mut f| {
+            if f.asserted && f.valid_from == VALID_FROM_USE_TX_TIME {
+                f.valid_from = f.tx_id as i64;
+            }
+            f
+        }));
+        Ok(Arc::from(merged))
+    }
 
-        // Slow path: need to combine committed + pending facts
-        // Create overlay that reads from both sources without full copy
-        let view = FactStorage::new();
-
-        // Load committed facts - this is the expensive part
-        for fact in self.inner.fact_storage.get_all_facts()? {
-            view.load_fact(fact)?;
-        }
-
-        // Add pending facts
-        for fact in &self.pending_facts {
-            view.load_fact(fact.clone())?;
-        }
-
-        view.restore_tx_counter()?;
-        Ok(view)
+    /// Return the read-time floor implied by pending facts only.
+    fn pending_read_now_floor(&self) -> Option<i64> {
+        self.pending_facts
+            .iter()
+            .map(|fact| fact.tx_id as i64)
+            .max()
     }
 }
 
@@ -1113,6 +1157,181 @@ mod tests {
         }
 
         tx.commit().unwrap();
+    }
+
+    #[test]
+    fn test_write_transaction_query_with_pending_retraction_and_assertion() {
+        let db = Minigraf::in_memory().unwrap();
+        db.execute(r#"(transact [[:alice :person/name "Alice"] [:alice :person/age 30]])"#)
+            .unwrap();
+
+        let mut tx = db.begin_write().unwrap();
+        tx.execute(r#"(retract [[:alice :person/age 30]])"#)
+            .unwrap();
+        tx.execute(r#"(transact [[:alice :person/age 31]])"#)
+            .unwrap();
+
+        let result = tx
+            .execute(r#"(query [:find ?age :where [:alice :person/age ?age]])"#)
+            .unwrap();
+
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(results.len(), 1, "should see only one visible age");
+                assert_eq!(results[0][0], Value::Integer(31));
+            }
+            _ => panic!("expected QueryResults"),
+        }
+    }
+
+    #[test]
+    fn test_write_transaction_pending_retraction_only_hides_committed_fact() {
+        let db = Minigraf::in_memory().unwrap();
+        db.execute(r#"(transact [[:alice :person/age 30]])"#)
+            .unwrap();
+
+        let mut tx = db.begin_write().unwrap();
+        tx.execute(r#"(retract [[:alice :person/age 30]])"#)
+            .unwrap();
+
+        let result = tx
+            .execute(r#"(query [:find ?age :where [:alice :person/age ?age]])"#)
+            .unwrap();
+
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(
+                    results.len(),
+                    0,
+                    "retracted committed fact must not be visible"
+                );
+            }
+            _ => panic!("expected QueryResults"),
+        }
+    }
+
+    #[test]
+    fn test_write_transaction_rule_query_with_pending_write() {
+        let db = Minigraf::in_memory().unwrap();
+        db.execute("(rule [(reachable ?x ?y) [?x :edge ?y]])")
+            .unwrap();
+        db.execute("(rule [(reachable ?x ?y) [?x :edge ?z] (reachable ?z ?y)])")
+            .unwrap();
+        db.execute("(transact [[:a :edge :b]])").unwrap();
+
+        let mut tx = db.begin_write().unwrap();
+        tx.execute("(transact [[:b :edge :c]])").unwrap();
+
+        let result = tx
+            .execute("(query [:find ?y :where (reachable :a ?y)])")
+            .unwrap();
+
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert!(
+                    results
+                        .iter()
+                        .any(|row| row[0] == Value::Keyword(":c".to_string())),
+                    "rule query should see pending edge"
+                );
+            }
+            _ => panic!("expected QueryResults"),
+        }
+    }
+
+    #[test]
+    fn test_write_transaction_pending_metadata_is_stable_across_reads() {
+        use chrono::{SecondsFormat, Utc};
+        use std::time::Duration;
+
+        let db = Minigraf::in_memory().unwrap();
+        let mut tx = db.begin_write().unwrap();
+        tx.execute(r#"(transact [[:alice :person/age 30]])"#)
+            .unwrap();
+
+        let first = tx
+            .execute(
+                r#"(query [:find ?tx ?tc ?vf :any-valid-time :where [:alice :person/age ?age] [:alice :db/tx-id ?tx] [:alice :db/tx-count ?tc] [:alice :db/valid-from ?vf]])"#,
+            )
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(3));
+        let second = tx
+            .execute(
+                r#"(query [:find ?tx ?tc ?vf :any-valid-time :where [:alice :person/age ?age] [:alice :db/tx-id ?tx] [:alice :db/tx-count ?tc] [:alice :db/valid-from ?vf]])"#,
+            )
+            .unwrap();
+
+        let (first_row, tx_id) = match &first {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(results.len(), 1);
+                let row = results[0].clone();
+                let tx_id = match row[0] {
+                    Value::Integer(i) => i,
+                    _ => panic!("expected tx id integer"),
+                };
+                assert_eq!(row[1], Value::Integer(1));
+                assert_eq!(row[2], Value::Integer(tx_id));
+                (row, tx_id)
+            }
+            _ => panic!("expected QueryResults"),
+        };
+
+        match second {
+            QueryResult::QueryResults {
+                results: second_results,
+                ..
+            } => {
+                assert_eq!(second_results.len(), 1);
+                assert_eq!(first_row, second_results[0]);
+            }
+            _ => panic!("expected QueryResults"),
+        }
+
+        tx.execute(r#"(transact [[:alice :person/age 31]])"#)
+            .unwrap();
+
+        let future_tx_id = tx_id as u64 + 60_000;
+        let future_fact = Fact::with_valid_time(
+            uuid::Uuid::new_v4(),
+            ":future/marker".to_string(),
+            Value::Integer(99),
+            future_tx_id,
+            1,
+            future_tx_id as i64,
+            VALID_TIME_FOREVER,
+        );
+        db.inner.fact_storage.load_fact(future_fact).unwrap();
+
+        let as_of_timestamp = chrono::DateTime::<Utc>::from_timestamp_millis(tx_id)
+            .unwrap()
+            .to_rfc3339_opts(SecondsFormat::Millis, true);
+        let as_of_query = format!(
+            r#"(query [:find ?age :as-of "{}" :where [:alice :person/age ?age]])"#,
+            as_of_timestamp
+        );
+        let as_of_result = tx.execute(&as_of_query).unwrap();
+
+        match as_of_result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(results.len(), 1);
+                assert_eq!(results[0][0], Value::Integer(30));
+            }
+            _ => panic!("expected QueryResults"),
+        }
+
+        let future_query = tx
+            .execute(r#"(query [:find ?v :where [?e :future/marker ?v]])"#)
+            .unwrap();
+        match future_query {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(
+                    results.len(),
+                    0,
+                    "future committed facts must not become visible from pending-only floor"
+                );
+            }
+            _ => panic!("expected QueryResults"),
+        }
     }
 
     // ── thread-local flag: same-thread reentrant error ────────────────────────

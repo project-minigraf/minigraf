@@ -73,6 +73,8 @@ pub enum QueryResult {
 /// Executor for Datalog commands
 pub struct DatalogExecutor {
     storage: FactStorage,
+    facts_override: Option<Arc<[Fact]>>,
+    read_now_floor: Option<i64>,
     rules: Arc<RwLock<RuleRegistry>>,
     // RwLock pre-wired for 7.7b register_aggregate API.
     functions: Arc<RwLock<FunctionRegistry>>,
@@ -87,6 +89,8 @@ impl DatalogExecutor {
         let indexes = storage.pending_indexes_snapshot();
         DatalogExecutor {
             storage,
+            facts_override: None,
+            read_now_floor: None,
             rules: Arc::new(RwLock::new(RuleRegistry::new())),
             functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
             indexes: Arc::new(indexes),
@@ -106,9 +110,30 @@ impl DatalogExecutor {
         let indexes = storage.pending_indexes_snapshot();
         DatalogExecutor {
             storage,
+            facts_override: None,
+            read_now_floor: None,
             rules,
             functions,
             indexes: Arc::new(indexes),
+            max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
+            max_results: crate::query::datalog::evaluator::DEFAULT_MAX_RESULTS,
+        }
+    }
+
+    /// Create a `DatalogExecutor` over a merged fact slice while sharing rules and functions.
+    pub(crate) fn new_from_facts_with_rules_and_functions(
+        facts: Arc<[Fact]>,
+        pending_read_now_floor: Option<i64>,
+        rules: Arc<RwLock<RuleRegistry>>,
+        functions: Arc<RwLock<FunctionRegistry>>,
+    ) -> Self {
+        DatalogExecutor {
+            storage: FactStorage::new(),
+            facts_override: Some(facts),
+            read_now_floor: pending_read_now_floor,
+            rules,
+            functions,
+            indexes: Arc::new(crate::storage::index::Indexes::new()),
             max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
             max_results: crate::query::datalog::evaluator::DEFAULT_MAX_RESULTS,
         }
@@ -140,6 +165,8 @@ impl DatalogExecutor {
         let indexes = storage.pending_indexes_snapshot();
         DatalogExecutor {
             storage,
+            facts_override: None,
+            read_now_floor: None,
             rules,
             functions,
             indexes: Arc::new(indexes),
@@ -152,6 +179,16 @@ impl DatalogExecutor {
     pub fn set_limits(&mut self, max_derived_facts: usize, max_results: usize) {
         self.max_derived_facts = max_derived_facts;
         self.max_results = max_results;
+    }
+
+    /// Read-time "now" for query visibility.
+    ///
+    /// Overlay reads floor the wall clock to the newest staged fact so buffered
+    /// writes remain visible even if their synthetic metadata is slightly ahead
+    /// of the current millisecond.
+    fn read_now(&self) -> i64 {
+        let now = tx_id_now() as i64;
+        self.read_now_floor.map_or(now, |floor| now.max(floor))
     }
 
     /// Execute a Datalog command
@@ -253,13 +290,18 @@ impl DatalogExecutor {
     /// selective attribute/entity lookups instead of the full `get_all_facts()` scan (step 1).
     /// Also investigate caching the `net_asserted_facts()` result and invalidating on write (step 2).
     fn filter_facts_for_query(&self, query: &DatalogQuery) -> Result<Arc<[Fact]>> {
-        let now = tx_id_now() as i64;
+        let now = self.read_now();
 
-        // Step 1: transaction-time filter
-        let tx_filtered: Vec<Fact> = match &query.as_of {
-            Some(as_of) => self.storage.get_facts_as_of(as_of)?,
-            None => self.storage.get_all_facts()?,
+        let source_facts: Vec<Fact> = match (&self.facts_override, query.as_of.as_ref()) {
+            (Some(facts), Some(as_of)) => {
+                crate::graph::storage::filter_facts_as_of(facts.iter().cloned().collect(), as_of)
+            }
+            (Some(facts), None) => facts.iter().cloned().collect(),
+            (None, Some(as_of)) => self.storage.get_facts_as_of(as_of)?,
+            (None, None) => self.storage.get_all_facts()?,
         };
+
+        let tx_filtered = source_facts;
 
         // Step 2: compute net-asserted view — for each (entity, attribute, value) triple,
         // keep it only if the record with the highest tx_count is an assertion.
@@ -302,7 +344,7 @@ impl DatalogExecutor {
         }
 
         // Compute query-level valid_at value for :db/valid-at pseudo-attribute binding.
-        let now = tx_id_now() as i64;
+        let now = self.read_now();
         let valid_at_value = match &query.valid_at {
             Some(ValidAt::Timestamp(t)) => Value::Integer(*t),
             Some(ValidAt::AnyValidTime) => Value::Null,
@@ -431,7 +473,7 @@ impl DatalogExecutor {
             .collect();
 
         // Compute query-level valid_at value for :db/valid-at pseudo-attribute binding.
-        let now = tx_id_now() as i64;
+        let now = self.read_now();
         let valid_at_value = match &query.valid_at {
             Some(ValidAt::Timestamp(t)) => Value::Integer(*t),
             Some(ValidAt::AnyValidTime) => Value::Null,
