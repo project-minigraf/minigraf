@@ -1,4 +1,4 @@
-name: Nightly Benchmarks (Heavy)
+name: Nightly Benchmarks
 
 on:
   schedule:
@@ -230,7 +230,7 @@ jobs:
         with:
           script: |
             const today = new Date().toISOString().slice(0, 10);
-            const title = `Benchmark regression (heavy) - ${today}`;
+            const title = `Benchmark regression - ${today}`;
 
             const { data: openIssues } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
@@ -253,7 +253,7 @@ jobs:
               repo: context.repo.repo,
               title: title,
               body: [
-                `Bencher detected a performance regression in the nightly heavy benchmark run (${{ matrix.name }}).`,
+                `Bencher detected a performance regression in the nightly benchmark run (${{ matrix.name }}).`,
                 '',
                 `**Run:** ${runUrl}`,
                 '',
