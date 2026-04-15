@@ -881,7 +881,10 @@ impl<'a> WriteTransaction<'a> {
         executor.execute(cmd)
     }
 
-    fn execute_rule_command(&self, rule: crate::query::datalog::types::Rule) -> Result<QueryResult> {
+    fn execute_rule_command(
+        &self,
+        rule: crate::query::datalog::types::Rule,
+    ) -> Result<QueryResult> {
         let mut executor = DatalogExecutor::new_with_rules_and_functions(
             self.inner.fact_storage.clone(),
             self.inner.rules.clone(),
@@ -896,8 +899,7 @@ impl<'a> WriteTransaction<'a> {
 
     /// Stage buffered facts with stable synthetic read metadata.
     fn stage_pending_facts(&mut self, facts: Vec<Fact>) {
-        let staged_tx_id =
-            std::cmp::max(crate::graph::types::tx_id_now(), self.next_pending_tx_id);
+        let staged_tx_id = std::cmp::max(crate::graph::types::tx_id_now(), self.next_pending_tx_id);
         let staged_tx_count = self.next_pending_tx_count;
 
         self.pending_facts.extend(facts.into_iter().map(|mut fact| {
@@ -1159,8 +1161,10 @@ mod tests {
             .unwrap();
 
         let mut tx = db.begin_write().unwrap();
-        tx.execute(r#"(retract [[:alice :person/age 30]])"#).unwrap();
-        tx.execute(r#"(transact [[:alice :person/age 31]])"#).unwrap();
+        tx.execute(r#"(retract [[:alice :person/age 30]])"#)
+            .unwrap();
+        tx.execute(r#"(transact [[:alice :person/age 31]])"#)
+            .unwrap();
 
         let result = tx
             .execute(r#"(query [:find ?age :where [:alice :person/age ?age]])"#)
@@ -1182,7 +1186,8 @@ mod tests {
             .unwrap();
 
         let mut tx = db.begin_write().unwrap();
-        tx.execute(r#"(retract [[:alice :person/age 30]])"#).unwrap();
+        tx.execute(r#"(retract [[:alice :person/age 30]])"#)
+            .unwrap();
 
         let result = tx
             .execute(r#"(query [:find ?age :where [:alice :person/age ?age]])"#)
@@ -1190,7 +1195,11 @@ mod tests {
 
         match result {
             QueryResult::QueryResults { results, .. } => {
-                assert_eq!(results.len(), 0, "retracted committed fact must not be visible");
+                assert_eq!(
+                    results.len(),
+                    0,
+                    "retracted committed fact must not be visible"
+                );
             }
             _ => panic!("expected QueryResults"),
         }
@@ -1199,7 +1208,8 @@ mod tests {
     #[test]
     fn test_write_transaction_rule_query_with_pending_write() {
         let db = Minigraf::in_memory().unwrap();
-        db.execute("(rule [(reachable ?x ?y) [?x :edge ?y]])").unwrap();
+        db.execute("(rule [(reachable ?x ?y) [?x :edge ?y]])")
+            .unwrap();
         db.execute("(rule [(reachable ?x ?y) [?x :edge ?z] (reachable ?z ?y)])")
             .unwrap();
         db.execute("(transact [[:a :edge :b]])").unwrap();
@@ -1207,12 +1217,16 @@ mod tests {
         let mut tx = db.begin_write().unwrap();
         tx.execute("(transact [[:b :edge :c]])").unwrap();
 
-        let result = tx.execute("(query [:find ?y :where (reachable :a ?y)])").unwrap();
+        let result = tx
+            .execute("(query [:find ?y :where (reachable :a ?y)])")
+            .unwrap();
 
         match result {
             QueryResult::QueryResults { results, .. } => {
                 assert!(
-                    results.iter().any(|row| row[0] == Value::Keyword(":c".to_string())),
+                    results
+                        .iter()
+                        .any(|row| row[0] == Value::Keyword(":c".to_string())),
                     "rule query should see pending edge"
                 );
             }
@@ -1268,7 +1282,8 @@ mod tests {
             _ => panic!("expected QueryResults"),
         }
 
-        tx.execute(r#"(transact [[:alice :person/age 31]])"#).unwrap();
+        tx.execute(r#"(transact [[:alice :person/age 31]])"#)
+            .unwrap();
 
         let future_tx_id = tx_id as u64 + 60_000;
         let future_fact = Fact::with_valid_time(
