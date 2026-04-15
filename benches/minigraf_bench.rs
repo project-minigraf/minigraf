@@ -34,8 +34,8 @@ fn bench_insert(c: &mut Criterion) {
         let mut group = c.benchmark_group("insert/single_fact");
         group.sample_size(10);
         for &(label, n) in SCALES {
-            let db = helpers::populate_in_memory(n);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
                 b.iter(|| db.execute("(transact [[:ebench :val 0]])").unwrap());
             });
         }
@@ -56,9 +56,9 @@ fn bench_insert(c: &mut Criterion) {
             s
         };
         for &(label, n) in SCALES {
-            let db = helpers::populate_in_memory(n);
             let cmd = batch_cmd.clone();
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
                 b.iter(|| db.execute(&cmd).unwrap());
             });
         }
@@ -70,8 +70,8 @@ fn bench_insert(c: &mut Criterion) {
         let mut group = c.benchmark_group("insert/explicit_tx");
         group.sample_size(10);
         for &(label, n) in SCALES {
-            let db = helpers::populate_in_memory(n);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
                 b.iter(|| {
                     let mut tx = db.begin_write().unwrap();
                     tx.execute("(transact [[:ebench :val 0]])").unwrap();
@@ -92,6 +92,7 @@ fn bench_insert_file(c: &mut Criterion) {
     // single_fact: one execute() per iter against growing file-backed DB
     {
         let mut group = c.benchmark_group("insert_file/single_fact");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
                 let tmp = NamedTempFile::new().unwrap();
@@ -108,6 +109,7 @@ fn bench_insert_file(c: &mut Criterion) {
     // batch_100: 100 facts per execute()
     {
         let mut group = c.benchmark_group("insert_file/batch_100");
+        group.sample_size(10);
         let batch_cmd: String = {
             let mut s = String::from("(transact [");
             for i in 0..100 {
@@ -134,6 +136,7 @@ fn bench_insert_file(c: &mut Criterion) {
     // explicit_tx: begin_write()/commit() per iter
     {
         let mut group = c.benchmark_group("insert_file/explicit_tx");
+        group.sample_size(10);
         for &(label, n) in SCALES {
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
                 let tmp = NamedTempFile::new().unwrap();
@@ -167,8 +170,8 @@ fn bench_query(c: &mut Criterion) {
         let mut group = c.benchmark_group("query/point_entity");
         group.sample_size(10); // 1m scale takes ~2s/iter
         for &(label, n) in SCALES {
-            let db = helpers::populate_in_memory(n);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
                 b.iter(|| {
                     db.execute("(query [:find ?v :where [:e0 :val ?v]])")
                         .unwrap()
@@ -183,8 +186,8 @@ fn bench_query(c: &mut Criterion) {
         let mut group = c.benchmark_group("query/point_attribute");
         group.sample_size(10); // 1m scale returns all N results — slow
         for &(label, n) in SCALES {
-            let db = helpers::populate_in_memory(n);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
                 b.iter(|| db.execute("(query [:find ?e :where [?e :val _]])").unwrap());
             });
         }
@@ -198,8 +201,8 @@ fn bench_query(c: &mut Criterion) {
         let mut group = c.benchmark_group("query/join_3pattern");
         group.sample_size(10); // 1m scale may be slow
         for &(label, n) in SCALES {
-            let db = helpers::populate_for_join(n);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_for_join(n);
                 b.iter(|| {
                     db.execute(
                         "(query [:find ?v :where [:e0 :next ?m] [?m :next ?end] [?end :val ?v]])",
@@ -229,8 +232,8 @@ fn bench_time_travel(c: &mut Criterion) {
         let mut group = c.benchmark_group("time_travel/as_of_counter");
         group.sample_size(10); // 1m scale takes ~2s/iter; 10 samples suffices
         for &(label, n) in SCALES {
-            let db = helpers::populate_in_memory(n);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
                 b.iter(|| {
                     db.execute("(query [:find ?v :as-of 999999 :where [:e0 :val ?v]])")
                         .unwrap()
@@ -247,8 +250,8 @@ fn bench_time_travel(c: &mut Criterion) {
         let mut group = c.benchmark_group("time_travel/valid_at");
         group.sample_size(10); // 1m scale takes ~2s/iter; 10 samples suffices
         for &(label, n) in SCALES {
-            let db = helpers::populate_in_memory(n);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
                 b.iter(|| {
                     db.execute(
                         r#"(query [:find ?v :valid-at "2099-01-01T00:00:00Z" :where [:e0 :val ?v]])"#,
@@ -271,8 +274,8 @@ fn bench_recursion(c: &mut Criterion) {
         let mut group = c.benchmark_group("recursion/chain");
         group.sample_size(10);
         for &(label, depth) in &[("depth_10", 10usize), ("depth_100", 100)] {
-            let db = helpers::chain_graph(depth);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &depth, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &depth, |b, &depth| {
+                let db = helpers::chain_graph(depth);
                 b.iter(|| {
                     db.execute("(query [:find ?to :where (reach :n0 ?to)])")
                         .unwrap()
@@ -290,11 +293,11 @@ fn bench_recursion(c: &mut Criterion) {
         group.sample_size(10);
         // (width, depth): (10,3) ~1110 nodes — manageable transitive closure
         let (label, width, depth) = ("w10_d3", 10usize, 3usize);
-        let db = helpers::fanout_graph(width, depth);
         group.bench_with_input(
             BenchmarkId::from_parameter(label),
             &(width, depth),
-            |b, _| {
+            |b, &(width, depth)| {
+                let db = helpers::fanout_graph(width, depth);
                 b.iter(|| {
                     db.execute("(query [:find ?to :where (reach :n0 ?to)])")
                         .unwrap()
@@ -313,20 +316,19 @@ fn bench_open(c: &mut Criterion) {
     // checkpointed: open a fully-checkpointed .graph file (no WAL replay)
     {
         let mut group = c.benchmark_group("open/checkpointed");
+        group.sample_size(10);
         for &(label, n) in &[
             ("1k", 1_000usize),
             ("10k", 10_000),
             ("100k", 100_000),
             ("1m", 1_000_000),
         ] {
-            // Create the pre-populated file ONCE (outside iter loop).
-            let tmp = NamedTempFile::new().unwrap();
-            let path = tmp.path().to_str().unwrap().to_string();
-            helpers::populate_file(n, &path);
-            // Checkpoint is already done by populate_file; WAL sidecar absent.
-
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
-                let path = path.clone();
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                // Create the pre-populated file ONCE per benchmark variant (outside iter loop).
+                let tmp = NamedTempFile::new().unwrap();
+                let path = tmp.path().to_str().unwrap().to_string();
+                helpers::populate_file(n, &path);
+                // Checkpoint is already done by populate_file; WAL sidecar absent.
                 b.iter(|| {
                     // Open and immediately drop — measures full open time.
                     let _db = OpenOptions::new()
@@ -335,8 +337,8 @@ fn bench_open(c: &mut Criterion) {
                         .open()
                         .unwrap();
                 });
+                drop(tmp);
             });
-            drop(tmp);
         }
         group.finish();
     }
@@ -344,14 +346,13 @@ fn bench_open(c: &mut Criterion) {
     // wal_replay: open with N WAL entries pending (crash-recovery path)
     {
         let mut group = c.benchmark_group("open/wal_replay");
+        group.sample_size(10);
         for &(label, n) in &[("1k", 1_000usize), ("10k", 10_000)] {
-            let tmp = NamedTempFile::new().unwrap();
-            let path = tmp.path().to_str().unwrap().to_string();
-            // populate_file_no_checkpoint leaves all facts in the WAL (not checkpointed).
-            helpers::populate_file_no_checkpoint(n, &path);
-
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
-                let path = path.clone();
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let tmp = NamedTempFile::new().unwrap();
+                let path = tmp.path().to_str().unwrap().to_string();
+                // populate_file_no_checkpoint leaves all facts in the WAL (not checkpointed).
+                helpers::populate_file_no_checkpoint(n, &path);
                 b.iter(|| {
                     // Each open replays the WAL. WAL is NOT consumed (no checkpoint during bench).
                     let _db = OpenOptions::new()
@@ -360,8 +361,8 @@ fn bench_open(c: &mut Criterion) {
                         .open()
                         .unwrap();
                 });
+                drop(tmp);
             });
-            drop(tmp);
         }
         group.finish();
     }
@@ -409,13 +410,13 @@ fn bench_concurrent(c: &mut Criterion) {
     // readers: N threads all querying simultaneously
     {
         let mut group = c.benchmark_group("concurrent/readers");
+        group.sample_size(10);
         for &(label, n_threads) in &[("4", 4usize), ("8", 8), ("16", 16)] {
-            let db = helpers::populate_in_memory(10_000);
-            let db = StdArc::clone(&db);
             group.bench_with_input(
                 BenchmarkId::from_parameter(label),
                 &n_threads,
                 |b, &n_threads| {
+                    let db = helpers::populate_in_memory(10_000);
                     b.iter_custom(|iters| {
                         let barrier = StdArc::new(Barrier::new(n_threads + 1));
                         let mut handles = Vec::new();
@@ -448,13 +449,13 @@ fn bench_concurrent(c: &mut Criterion) {
     // readers_plus_writer: (N-1) readers + 1 writer
     {
         let mut group = c.benchmark_group("concurrent/readers_plus_writer");
+        group.sample_size(10);
         for &(label, n_threads) in &[("4", 4usize), ("8", 8), ("16", 16)] {
-            let db = helpers::populate_in_memory(10_000);
-            let db = StdArc::clone(&db);
             group.bench_with_input(
                 BenchmarkId::from_parameter(label),
                 &n_threads,
                 |b, &n_threads| {
+                    let db = helpers::populate_in_memory(10_000);
                     b.iter_custom(|iters| {
                         let n_readers = n_threads - 1;
                         let barrier = StdArc::new(Barrier::new(n_threads + 1));
@@ -504,13 +505,13 @@ fn bench_concurrent(c: &mut Criterion) {
     // Writes are serialized by design. Throughput expected to stay flat or decrease slightly.
     {
         let mut group = c.benchmark_group("concurrent/serialized_writers");
+        group.sample_size(10);
         for &(label, n_threads) in &[("2", 2usize), ("4", 4), ("8", 8), ("16", 16)] {
-            let db = helpers::populate_in_memory(10_000);
-            let db = StdArc::clone(&db);
             group.bench_with_input(
                 BenchmarkId::from_parameter(label),
                 &n_threads,
                 |b, &n_threads| {
+                    let db = helpers::populate_in_memory(10_000);
                     b.iter_custom(|iters| {
                         let barrier = StdArc::new(Barrier::new(n_threads + 1));
                         let mut handles = Vec::new();
@@ -552,16 +553,16 @@ fn bench_concurrent_file(c: &mut Criterion) {
     // readers (file-backed): concurrent page-cache reads under RwLock
     {
         let mut group = c.benchmark_group("concurrent_file/readers");
+        group.sample_size(10);
         for &(label, n_threads) in &[("4", 4usize), ("8", 8), ("16", 16)] {
-            let tmp = Box::new(NamedTempFile::new().unwrap());
-            let path = tmp.path().to_str().unwrap().to_string();
-            helpers::populate_file(10_000, &path);
-            let db = helpers::open_file_no_checkpoint(&path);
-            let db = StdArc::clone(&db);
             group.bench_with_input(
                 BenchmarkId::from_parameter(label),
                 &n_threads,
                 |b, &n_threads| {
+                    let tmp = Box::new(NamedTempFile::new().unwrap());
+                    let path = tmp.path().to_str().unwrap().to_string();
+                    helpers::populate_file(10_000, &path);
+                    let db = helpers::open_file_no_checkpoint(&path);
                     b.iter_custom(|iters| {
                         let barrier = StdArc::new(Barrier::new(n_threads + 1));
                         let mut handles = Vec::new();
@@ -585,6 +586,7 @@ fn bench_concurrent_file(c: &mut Criterion) {
                             .max()
                             .unwrap()
                     });
+                    drop(tmp);
                 },
             );
         }
@@ -594,16 +596,16 @@ fn bench_concurrent_file(c: &mut Criterion) {
     // readers_plus_writer (file-backed): readers + 1 WAL-writing thread
     {
         let mut group = c.benchmark_group("concurrent_file/readers_plus_writer");
+        group.sample_size(10);
         for &(label, n_threads) in &[("4", 4usize), ("8", 8), ("16", 16)] {
-            let tmp = Box::new(NamedTempFile::new().unwrap());
-            let path = tmp.path().to_str().unwrap().to_string();
-            helpers::populate_file(10_000, &path);
-            let db = helpers::open_file_no_checkpoint(&path);
-            let db = StdArc::clone(&db);
             group.bench_with_input(
                 BenchmarkId::from_parameter(label),
                 &n_threads,
                 |b, &n_threads| {
+                    let tmp = Box::new(NamedTempFile::new().unwrap());
+                    let path = tmp.path().to_str().unwrap().to_string();
+                    helpers::populate_file(10_000, &path);
+                    let db = helpers::open_file_no_checkpoint(&path);
                     b.iter_custom(|iters| {
                         let n_readers = n_threads - 1;
                         let barrier = StdArc::new(Barrier::new(n_threads + 1));
@@ -640,6 +642,7 @@ fn bench_concurrent_file(c: &mut Criterion) {
                             .max()
                             .unwrap()
                     });
+                    drop(tmp);
                 },
             );
         }
@@ -649,16 +652,16 @@ fn bench_concurrent_file(c: &mut Criterion) {
     // serialized_writers (file-backed): N WAL-writing threads queuing on Mutex
     {
         let mut group = c.benchmark_group("concurrent_file/serialized_writers");
+        group.sample_size(10);
         for &(label, n_threads) in &[("2", 2usize), ("4", 4), ("8", 8), ("16", 16)] {
-            let tmp = Box::new(NamedTempFile::new().unwrap());
-            let path = tmp.path().to_str().unwrap().to_string();
-            helpers::populate_file(10_000, &path);
-            let db = helpers::open_file_no_checkpoint(&path);
-            let db = StdArc::clone(&db);
             group.bench_with_input(
                 BenchmarkId::from_parameter(label),
                 &n_threads,
                 |b, &n_threads| {
+                    let tmp = Box::new(NamedTempFile::new().unwrap());
+                    let path = tmp.path().to_str().unwrap().to_string();
+                    helpers::populate_file(10_000, &path);
+                    let db = helpers::open_file_no_checkpoint(&path);
                     b.iter_custom(|iters| {
                         let barrier = StdArc::new(Barrier::new(n_threads + 1));
                         let mut handles = Vec::new();
@@ -681,6 +684,7 @@ fn bench_concurrent_file(c: &mut Criterion) {
                             .max()
                             .unwrap()
                     });
+                    drop(tmp);
                 },
             );
         }
@@ -701,9 +705,9 @@ fn bench_negation(c: &mut Criterion) {
         let mut group = c.benchmark_group("negation/not_scale");
         group.sample_size(10);
         for &(label, n) in SCALES {
-            let excluded = n / 10;
-            let db = helpers::populate_with_not_exclusion(n, excluded);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let excluded = n / 10;
+                let db = helpers::populate_with_not_exclusion(n, excluded);
                 b.iter(|| {
                     db.execute("(query [:find ?e :where [?e :val ?v] (not [?e :banned true])])")
                         .unwrap()
@@ -720,9 +724,9 @@ fn bench_negation(c: &mut Criterion) {
         let mut group = c.benchmark_group("negation/not_join_scale");
         group.sample_size(10);
         for &(label, n) in SCALES {
-            let excluded = n / 10;
-            let db = helpers::populate_with_not_join_exclusion(n, excluded);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let excluded = n / 10;
+                let db = helpers::populate_with_not_join_exclusion(n, excluded);
                 b.iter(|| {
                     db.execute(
                         "(query [:find ?e :where [?e :val ?v] \
@@ -749,13 +753,17 @@ fn bench_negation(c: &mut Criterion) {
             ("excl_100pct", 100),
         ] {
             let excluded = n * pct / 100;
-            let db = helpers::populate_with_not_exclusion(n, excluded);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &excluded, |b, _| {
-                b.iter(|| {
-                    db.execute("(query [:find ?e :where [?e :val ?v] (not [?e :banned true])])")
-                        .unwrap()
-                });
-            });
+            group.bench_with_input(
+                BenchmarkId::from_parameter(label),
+                &excluded,
+                |b, &excluded| {
+                    let db = helpers::populate_with_not_exclusion(n, excluded);
+                    b.iter(|| {
+                        db.execute("(query [:find ?e :where [?e :val ?v] (not [?e :banned true])])")
+                            .unwrap()
+                    });
+                },
+            );
         }
         group.finish();
     }
@@ -767,9 +775,9 @@ fn bench_negation(c: &mut Criterion) {
         let mut group = c.benchmark_group("negation/not_rule_body");
         group.sample_size(10);
         for &(label, n) in &[("1k", 1_000usize), ("10k", 10_000)] {
-            let excluded = n / 10;
-            let db = helpers::populate_with_not_rule(n, excluded);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let excluded = n / 10;
+                let db = helpers::populate_with_not_rule(n, excluded);
                 b.iter(|| {
                     db.execute("(query [:find ?e :where (eligible ?e)])")
                         .unwrap()
@@ -794,18 +802,16 @@ fn bench_concurrent_btree_scan(c: &mut Criterion) {
     group.sample_size(10);
 
     for &(label, n_threads) in &[("2", 2usize), ("4", 4), ("8", 8)] {
-        // Pre-populate and checkpoint file DB so all facts are in committed B+tree.
-        let tmp = Box::new(NamedTempFile::new().unwrap());
-        let path = tmp.path().to_str().unwrap().to_string();
-        helpers::populate_file(10_000, &path);
-        // Open a handle shared by all threads
-        let db = helpers::open_file_no_checkpoint(&path);
-        let db = StdArc::clone(&db);
-
         group.bench_with_input(
             BenchmarkId::from_parameter(label),
             &n_threads,
             |b, &n_threads| {
+                // Pre-populate and checkpoint file DB so all facts are in committed B+tree.
+                let tmp = Box::new(NamedTempFile::new().unwrap());
+                let path = tmp.path().to_str().unwrap().to_string();
+                helpers::populate_file(10_000, &path);
+                // Open a handle shared by all threads
+                let db = helpers::open_file_no_checkpoint(&path);
                 b.iter_custom(|iters| {
                     let barrier = StdArc::new(Barrier::new(n_threads + 1));
                     let mut handles = Vec::new();
@@ -830,9 +836,9 @@ fn bench_concurrent_btree_scan(c: &mut Criterion) {
                         .max()
                         .unwrap()
                 });
+                drop(tmp);
             },
         );
-        drop(tmp);
     }
     group.finish();
 }
@@ -852,10 +858,10 @@ fn bench_disjunction(c: &mut Criterion) {
         group.sample_size(10);
         group.warm_up_time(std::time::Duration::from_millis(500));
         for &(label, n) in SCALES {
-            let a_count = n / 4;
-            let b_count = n / 4;
-            let db = helpers::populate_with_or_tags(n, a_count, b_count);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let a_count = n / 4;
+                let b_count = n / 4;
+                let db = helpers::populate_with_or_tags(n, a_count, b_count);
                 b.iter(|| {
                     db.execute(
                         "(query [:find ?e :where [?e :val ?v] \
@@ -875,10 +881,10 @@ fn bench_disjunction(c: &mut Criterion) {
         group.sample_size(10);
         group.warm_up_time(std::time::Duration::from_millis(500));
         for &(label, n) in SCALES {
-            let a_count = n / 4;
-            let b_count = n / 4;
-            let db = helpers::populate_with_or_tags(n, a_count, b_count);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let a_count = n / 4;
+                let b_count = n / 4;
+                let db = helpers::populate_with_or_tags(n, a_count, b_count);
                 b.iter(|| {
                     db.execute(
                         "(query [:find ?e :where [?e :val ?v] \
@@ -905,10 +911,10 @@ fn bench_disjunction(c: &mut Criterion) {
             ("match_75pct", 75),
             ("match_100pct", 100),
         ] {
-            let a_count = n * pct / 100;
-            let b_count = 0; // only tag-a varies; tag-b absent
-            let db = helpers::populate_with_or_tags(n, a_count, b_count);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &pct, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &pct, |b, &pct| {
+                let a_count = n * pct / 100;
+                let b_count = 0; // only tag-a varies; tag-b absent
+                let db = helpers::populate_with_or_tags(n, a_count, b_count);
                 b.iter(|| {
                     db.execute(
                         "(query [:find ?e :where [?e :val ?v] \
@@ -929,8 +935,8 @@ fn bench_disjunction(c: &mut Criterion) {
         group.sample_size(10);
         group.warm_up_time(std::time::Duration::from_millis(500));
         for &(label, n) in SCALES {
-            let db = helpers::populate_with_or_rule(n);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_with_or_rule(n);
                 b.iter(|| db.execute("(query [:find ?e :where (tagged ?e)])").unwrap());
             });
         }
@@ -949,8 +955,8 @@ fn bench_aggregation(c: &mut Criterion) {
         let mut group = c.benchmark_group("aggregation/count_scale");
         group.sample_size(10);
         for &(label, n) in SCALES {
-            let db = helpers::populate_in_memory(n);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
                 b.iter(|| {
                     db.execute("(query [:find (count ?e) :where [?e :val ?v]])")
                         .unwrap()
@@ -966,8 +972,8 @@ fn bench_aggregation(c: &mut Criterion) {
         let mut group = c.benchmark_group("aggregation/grouped_count_scale");
         group.sample_size(10);
         for &(label, n) in SCALES {
-            let db = helpers::populate_with_dept(n, 10);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_with_dept(n, 10);
                 b.iter(|| {
                     db.execute("(query [:find ?dept (count ?e) :where [?e :dept ?dept]])")
                         .unwrap()
@@ -982,8 +988,8 @@ fn bench_aggregation(c: &mut Criterion) {
         let mut group = c.benchmark_group("aggregation/sum_scale");
         group.sample_size(10);
         for &(label, n) in SCALES {
-            let db = helpers::populate_in_memory(n);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
                 b.iter(|| {
                     db.execute("(query [:find (sum ?v) :where [?e :val ?v]])")
                         .unwrap()
@@ -999,8 +1005,8 @@ fn bench_aggregation(c: &mut Criterion) {
         let mut group = c.benchmark_group("aggregation/with_grouped_sum");
         group.sample_size(10);
         for &(label, n) in SCALES {
-            let db = helpers::populate_with_dept(n, 10);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_with_dept(n, 10);
                 b.iter(|| {
                     db.execute(
                         "(query [:find ?dept (sum ?v) :with ?e \
@@ -1025,13 +1031,13 @@ fn bench_expr(c: &mut Criterion) {
         let mut group = c.benchmark_group("expr/filter_scale");
         group.sample_size(10);
         for &(label, n) in SCALES {
-            let db = helpers::populate_in_memory(n);
-            let threshold = n / 2;
-            let query = format!(
-                "(query [:find ?e :where [?e :val ?v] [(< ?v {})]])",
-                threshold
-            );
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
+                let threshold = n / 2;
+                let query = format!(
+                    "(query [:find ?e :where [?e :val ?v] [(< ?v {})]])",
+                    threshold
+                );
                 b.iter(|| db.execute(&query).unwrap());
             });
         }
@@ -1044,8 +1050,8 @@ fn bench_expr(c: &mut Criterion) {
         let mut group = c.benchmark_group("expr/binding_scale");
         group.sample_size(10);
         for &(label, n) in SCALES {
-            let db = helpers::populate_in_memory(n);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
                 b.iter(|| {
                     db.execute("(query [:find ?result :where [?e :val ?v] [(+ ?v 1) ?result]])")
                         .unwrap()
@@ -1061,8 +1067,8 @@ fn bench_expr(c: &mut Criterion) {
         let mut group = c.benchmark_group("expr/binding_into_agg");
         group.sample_size(10);
         for &(label, n) in SCALES {
-            let db = helpers::populate_in_memory(n);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
                 b.iter(|| {
                     db.execute(
                         "(query [:find (sum ?doubled) \
@@ -1084,9 +1090,10 @@ fn bench_window(c: &mut Criterion) {
     // running_sum: sum over ordered rows — measures window accumulator path.
     {
         let mut group = c.benchmark_group("window/running_sum");
+        group.sample_size(10);
         for &(label, n) in SCALES {
-            let db = helpers::populate_in_memory(n);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
                 b.iter(|| {
                     db.execute(
                         "(query [:find ?e (sum ?v :over (:order-by ?v)) :where [?e :val ?v]])",
@@ -1101,9 +1108,10 @@ fn bench_window(c: &mut Criterion) {
     // rank: rank function — measures sorting overhead for ranking.
     {
         let mut group = c.benchmark_group("window/rank");
+        group.sample_size(10);
         for &(label, n) in SCALES {
-            let db = helpers::populate_in_memory(n);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
                 b.iter(|| {
                     db.execute("(query [:find ?e (rank :over (:order-by ?v)) :where [?e :val ?v]])")
                         .unwrap()
@@ -1116,9 +1124,10 @@ fn bench_window(c: &mut Criterion) {
     // row_number: row number function — similar overhead to rank.
     {
         let mut group = c.benchmark_group("window/row_number");
+        group.sample_size(10);
         for &(label, n) in SCALES {
-            let db = helpers::populate_in_memory(n);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
                 b.iter(|| {
                     db.execute(
                         "(query [:find ?e (row-number :over (:order-by ?v)) :where [?e :val ?v]])",
@@ -1141,8 +1150,8 @@ fn bench_temporal_metadata(c: &mut Criterion) {
         let mut group = c.benchmark_group("temporal_metadata/tx_time");
         group.sample_size(10);
         for &(label, n) in SCALES {
-            let db = helpers::populate_in_memory(n);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
                 b.iter(|| {
                     db.execute("(query [:find ?e ?t :any-valid-time :where [?e :val ?v] [?e :db/tx-count ?t]])")
                         .unwrap()
@@ -1157,8 +1166,8 @@ fn bench_temporal_metadata(c: &mut Criterion) {
         let mut group = c.benchmark_group("temporal_metadata/valid_from");
         group.sample_size(10);
         for &(label, n) in SCALES {
-            let db = helpers::populate_in_memory(n);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
                 b.iter(|| {
                     db.execute("(query [:find ?e ?vf :any-valid-time :where [?e :val ?v] [?e :db/valid-from ?vf]])")
                         .unwrap()
@@ -1173,8 +1182,8 @@ fn bench_temporal_metadata(c: &mut Criterion) {
         let mut group = c.benchmark_group("temporal_metadata/valid_to");
         group.sample_size(10);
         for &(label, n) in SCALES {
-            let db = helpers::populate_in_memory(n);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
                 b.iter(|| {
                     db.execute("(query [:find ?e ?vt :any-valid-time :where [?e :val ?v] [?e :db/valid-to ?vt]])")
                         .unwrap()
@@ -1195,19 +1204,19 @@ fn bench_udf(c: &mut Criterion) {
         let mut group = c.benchmark_group("udf/aggregate_sum_dispatch");
         group.sample_size(10);
         for &(label, n) in SCALES {
-            let db = helpers::populate_in_memory(n);
-            db.register_aggregate(
-                "udf_sum",
-                || 0i64,
-                |acc: &mut i64, v: &minigraf::Value| {
-                    if let minigraf::Value::Integer(i) = v {
-                        *acc += *i;
-                    }
-                },
-                |acc: &i64, _n: usize| minigraf::Value::Integer(*acc),
-            )
-            .unwrap();
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
+                db.register_aggregate(
+                    "udf_sum",
+                    || 0i64,
+                    |acc: &mut i64, v: &minigraf::Value| {
+                        if let minigraf::Value::Integer(i) = v {
+                            *acc += *i;
+                        }
+                    },
+                    |acc: &i64, _n: usize| minigraf::Value::Integer(*acc),
+                )
+                .unwrap();
                 b.iter(|| {
                     db.execute("(query [:find (udf_sum ?v) :where [?e :val ?v]])")
                         .unwrap()
@@ -1222,16 +1231,16 @@ fn bench_udf(c: &mut Criterion) {
         let mut group = c.benchmark_group("udf/predicate_filter_dispatch");
         group.sample_size(10);
         for &(label, n) in SCALES {
-            let db = helpers::populate_in_memory(n);
-            db.register_predicate("udf_gt", |v: &minigraf::Value| -> bool {
-                if let minigraf::Value::Integer(i) = v {
-                    *i > 500
-                } else {
-                    false
-                }
-            })
-            .unwrap();
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
+                db.register_predicate("udf_gt", |v: &minigraf::Value| -> bool {
+                    if let minigraf::Value::Integer(i) = v {
+                        *i > 500
+                    } else {
+                        false
+                    }
+                })
+                .unwrap();
                 b.iter(|| {
                     db.execute("(query [:find ?e :where [?e :val ?v] (udf_gt ?v)])")
                         .unwrap()
@@ -1253,8 +1262,8 @@ fn bench_aggregation_extras(c: &mut Criterion) {
         let mut group = c.benchmark_group("aggregation/count_distinct_scale");
         group.sample_size(10);
         for &(label, n) in SCALES {
-            let db = helpers::populate_with_duplicates(n, 50);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_with_duplicates(n, 50);
                 b.iter(|| {
                     db.execute("(query [:find (count-distinct ?v) :where [?e :val ?v]])")
                         .unwrap()
@@ -1274,9 +1283,10 @@ fn bench_query_extras(c: &mut Criterion) {
     // All entities have :val strings matching pattern "item-\d+".
     {
         let mut group = c.benchmark_group("query/regex_filter");
+        group.sample_size(10);
         for &(label, n) in SCALES {
-            let db = helpers::populate_with_string_vals(n);
-            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, _| {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_with_string_vals(n);
                 b.iter(|| {
                     db.execute(
                         "(query [:find ?e :where [?e :val ?v] (matches? ?v \"item-\\\\d+\")])",

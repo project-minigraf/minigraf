@@ -35,7 +35,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: target
-          key: ${{ runner.os }}-bench-target-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-bench-target-${{ hashFiles('**/Cargo.lock', 'benches/**', 'src/**/*.rs') }}
 
       - name: Compile benchmarks
         run: cargo bench --no-run
@@ -197,7 +197,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: target
-          key: ${{ runner.os }}-bench-target-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-bench-target-${{ hashFiles('**/Cargo.lock', 'benches/**', 'src/**/*.rs') }}
 
       - name: Run benchmarks (${{ matrix.name }})
         run: |
