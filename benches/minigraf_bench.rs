@@ -753,13 +753,17 @@ fn bench_negation(c: &mut Criterion) {
             ("excl_100pct", 100),
         ] {
             let excluded = n * pct / 100;
-            group.bench_with_input(BenchmarkId::from_parameter(label), &excluded, |b, &excluded| {
-                let db = helpers::populate_with_not_exclusion(n, excluded);
-                b.iter(|| {
-                    db.execute("(query [:find ?e :where [?e :val ?v] (not [?e :banned true])])")
-                        .unwrap()
-                });
-            });
+            group.bench_with_input(
+                BenchmarkId::from_parameter(label),
+                &excluded,
+                |b, &excluded| {
+                    let db = helpers::populate_with_not_exclusion(n, excluded);
+                    b.iter(|| {
+                        db.execute("(query [:find ?e :where [?e :val ?v] (not [?e :banned true])])")
+                            .unwrap()
+                    });
+                },
+            );
         }
         group.finish();
     }
