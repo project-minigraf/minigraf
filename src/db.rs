@@ -1176,6 +1176,27 @@ mod tests {
     }
 
     #[test]
+    fn test_write_transaction_pending_retraction_only_hides_committed_fact() {
+        let db = Minigraf::in_memory().unwrap();
+        db.execute(r#"(transact [[:alice :person/age 30]])"#)
+            .unwrap();
+
+        let mut tx = db.begin_write().unwrap();
+        tx.execute(r#"(retract [[:alice :person/age 30]])"#).unwrap();
+
+        let result = tx
+            .execute(r#"(query [:find ?age :where [:alice :person/age ?age]])"#)
+            .unwrap();
+
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(results.len(), 0, "retracted committed fact must not be visible");
+            }
+            _ => panic!("expected QueryResults"),
+        }
+    }
+
+    #[test]
     fn test_write_transaction_rule_query_with_pending_write() {
         let db = Minigraf::in_memory().unwrap();
         db.execute("(rule [(reachable ?x ?y) [?x :edge ?y]])").unwrap();
