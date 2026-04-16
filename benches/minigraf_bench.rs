@@ -25,7 +25,12 @@ use minigraf::OpenOptions;
 // ── Task 3: insert/ ───────────────────────────────────────────────────────────
 
 fn bench_insert(c: &mut Criterion) {
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
+    const SCALES: &[(&str, usize)] = &[
+        ("1k", 1_000),
+        ("10k", 10_000),
+        ("100k", 100_000),
+        ("1m", 1_000_000),
+    ];
 
     // single_fact: insert one fact into a pre-populated in-memory DB.
     // DB created once per scale; b.iter() accumulates facts across iterations
@@ -87,7 +92,12 @@ fn bench_insert(c: &mut Criterion) {
 
 fn bench_insert_file(c: &mut Criterion) {
     use tempfile::NamedTempFile;
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
+    const SCALES: &[(&str, usize)] = &[
+        ("1k", 1_000),
+        ("10k", 10_000),
+        ("100k", 100_000),
+        ("1m", 1_000_000),
+    ];
 
     // single_fact: one execute() per iter against growing file-backed DB
     {
@@ -347,7 +357,7 @@ fn bench_open(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("open/wal_replay");
         group.sample_size(10);
-        for &(label, n) in &[("1k", 1_000usize), ("10k", 10_000)] {
+        for &(label, n) in &[("1k", 1_000usize), ("10k", 10_000), ("100k", 100_000)] {
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
                 let tmp = NamedTempFile::new().unwrap();
                 let path = tmp.path().to_str().unwrap().to_string();
@@ -375,7 +385,7 @@ fn bench_checkpoint(c: &mut Criterion) {
     use tempfile::NamedTempFile;
 
     let mut group = c.benchmark_group("checkpoint");
-    for &(label, n) in &[("1k", 1_000usize), ("10k", 10_000)] {
+    for &(label, n) in &[("1k", 1_000usize), ("10k", 10_000), ("100k", 100_000)] {
         group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
             b.iter_batched(
                 || {
@@ -407,135 +417,144 @@ fn bench_concurrent(c: &mut Criterion) {
     // Fresh DB per scenario to prevent unbounded fact accumulation across benchmarks.
     // (Sharing one DB caused OOM as write scenarios accumulate millions of facts.)
 
-    // readers: N threads all querying simultaneously
+    // readers: N threads all querying simultaneously, at two DB sizes
     {
         let mut group = c.benchmark_group("concurrent/readers");
         group.sample_size(10);
-        for &(label, n_threads) in &[("4", 4usize), ("8", 8), ("16", 16)] {
-            group.bench_with_input(
-                BenchmarkId::from_parameter(label),
-                &n_threads,
-                |b, &n_threads| {
-                    let db = helpers::populate_in_memory(10_000);
-                    b.iter_custom(|iters| {
-                        let barrier = StdArc::new(Barrier::new(n_threads + 1));
-                        let mut handles = Vec::new();
-                        for _ in 0..n_threads {
-                            let db = StdArc::clone(&db);
-                            let barrier = StdArc::clone(&barrier);
-                            handles.push(std::thread::spawn(move || {
-                                barrier.wait();
-                                let start = Instant::now();
-                                for _ in 0..iters {
-                                    db.execute("(query [:find ?v :where [:e0 :val ?v]])")
-                                        .unwrap();
-                                }
-                                start.elapsed()
-                            }));
-                        }
-                        barrier.wait(); // release all threads simultaneously
-                        handles
-                            .into_iter()
-                            .map(|h| h.join().unwrap())
-                            .max()
-                            .unwrap()
-                    });
-                },
-            );
+        for &(db_label, db_size) in &[("10k", 10_000usize), ("100k", 100_000)] {
+            for &(t_label, n_threads) in &[("4t", 4usize), ("8t", 8), ("16t", 16)] {
+                let label = format!("{}_{}", db_label, t_label);
+                group.bench_with_input(
+                    BenchmarkId::from_parameter(&label),
+                    &(n_threads, db_size),
+                    |b, &(n_threads, db_size)| {
+                        let db = helpers::populate_in_memory(db_size);
+                        b.iter_custom(|iters| {
+                            let barrier = StdArc::new(Barrier::new(n_threads + 1));
+                            let mut handles = Vec::new();
+                            for _ in 0..n_threads {
+                                let db = StdArc::clone(&db);
+                                let barrier = StdArc::clone(&barrier);
+                                handles.push(std::thread::spawn(move || {
+                                    barrier.wait();
+                                    let start = Instant::now();
+                                    for _ in 0..iters {
+                                        db.execute("(query [:find ?v :where [:e0 :val ?v]])")
+                                            .unwrap();
+                                    }
+                                    start.elapsed()
+                                }));
+                            }
+                            barrier.wait(); // release all threads simultaneously
+                            handles
+                                .into_iter()
+                                .map(|h| h.join().unwrap())
+                                .max()
+                                .unwrap()
+                        });
+                    },
+                );
+            }
         }
         group.finish();
     }
 
-    // readers_plus_writer: (N-1) readers + 1 writer
+    // readers_plus_writer: (N-1) readers + 1 writer, at two DB sizes
     {
         let mut group = c.benchmark_group("concurrent/readers_plus_writer");
         group.sample_size(10);
-        for &(label, n_threads) in &[("4", 4usize), ("8", 8), ("16", 16)] {
-            group.bench_with_input(
-                BenchmarkId::from_parameter(label),
-                &n_threads,
-                |b, &n_threads| {
-                    let db = helpers::populate_in_memory(10_000);
-                    b.iter_custom(|iters| {
-                        let n_readers = n_threads - 1;
-                        let barrier = StdArc::new(Barrier::new(n_threads + 1));
-                        let mut handles = Vec::new();
-                        // readers
-                        for _ in 0..n_readers {
-                            let db = StdArc::clone(&db);
-                            let barrier = StdArc::clone(&barrier);
-                            handles.push(std::thread::spawn(move || {
-                                barrier.wait();
-                                let start = Instant::now();
-                                for _ in 0..iters {
-                                    db.execute("(query [:find ?v :where [:e0 :val ?v]])")
-                                        .unwrap();
-                                }
-                                start.elapsed()
-                            }));
-                        }
-                        // 1 writer
-                        {
-                            let db = StdArc::clone(&db);
-                            let barrier = StdArc::clone(&barrier);
-                            handles.push(std::thread::spawn(move || {
-                                barrier.wait();
-                                let start = Instant::now();
-                                for _ in 0..iters {
-                                    db.execute("(transact [[:ebench :val 0]])").unwrap();
-                                }
-                                start.elapsed()
-                            }));
-                        }
-                        barrier.wait();
-                        handles
-                            .into_iter()
-                            .map(|h| h.join().unwrap())
-                            .max()
-                            .unwrap()
-                    });
-                },
-            );
+        for &(db_label, db_size) in &[("10k", 10_000usize), ("100k", 100_000)] {
+            for &(t_label, n_threads) in &[("4t", 4usize), ("8t", 8), ("16t", 16)] {
+                let label = format!("{}_{}", db_label, t_label);
+                group.bench_with_input(
+                    BenchmarkId::from_parameter(&label),
+                    &(n_threads, db_size),
+                    |b, &(n_threads, db_size)| {
+                        let db = helpers::populate_in_memory(db_size);
+                        b.iter_custom(|iters| {
+                            let n_readers = n_threads - 1;
+                            let barrier = StdArc::new(Barrier::new(n_threads + 1));
+                            let mut handles = Vec::new();
+                            // readers
+                            for _ in 0..n_readers {
+                                let db = StdArc::clone(&db);
+                                let barrier = StdArc::clone(&barrier);
+                                handles.push(std::thread::spawn(move || {
+                                    barrier.wait();
+                                    let start = Instant::now();
+                                    for _ in 0..iters {
+                                        db.execute("(query [:find ?v :where [:e0 :val ?v]])")
+                                            .unwrap();
+                                    }
+                                    start.elapsed()
+                                }));
+                            }
+                            // 1 writer
+                            {
+                                let db = StdArc::clone(&db);
+                                let barrier = StdArc::clone(&barrier);
+                                handles.push(std::thread::spawn(move || {
+                                    barrier.wait();
+                                    let start = Instant::now();
+                                    for _ in 0..iters {
+                                        db.execute("(transact [[:ebench :val 0]])").unwrap();
+                                    }
+                                    start.elapsed()
+                                }));
+                            }
+                            barrier.wait();
+                            handles
+                                .into_iter()
+                                .map(|h| h.join().unwrap())
+                                .max()
+                                .unwrap()
+                        });
+                    },
+                );
+            }
         }
         group.finish();
     }
 
-    // serialized_writers: N threads competing for the write Mutex.
+    // serialized_writers: N threads competing for the write Mutex, at two DB sizes.
     // NOTE: Measures lock-contention overhead, NOT write parallelism.
     // Writes are serialized by design. Throughput expected to stay flat or decrease slightly.
     {
         let mut group = c.benchmark_group("concurrent/serialized_writers");
         group.sample_size(10);
-        for &(label, n_threads) in &[("2", 2usize), ("4", 4), ("8", 8), ("16", 16)] {
-            group.bench_with_input(
-                BenchmarkId::from_parameter(label),
-                &n_threads,
-                |b, &n_threads| {
-                    let db = helpers::populate_in_memory(10_000);
-                    b.iter_custom(|iters| {
-                        let barrier = StdArc::new(Barrier::new(n_threads + 1));
-                        let mut handles = Vec::new();
-                        for _ in 0..n_threads {
-                            let db = StdArc::clone(&db);
-                            let barrier = StdArc::clone(&barrier);
-                            handles.push(std::thread::spawn(move || {
-                                barrier.wait();
-                                let start = Instant::now();
-                                for _ in 0..iters {
-                                    db.execute("(transact [[:ebench :val 0]])").unwrap();
-                                }
-                                start.elapsed()
-                            }));
-                        }
-                        barrier.wait();
-                        handles
-                            .into_iter()
-                            .map(|h| h.join().unwrap())
-                            .max()
-                            .unwrap()
-                    });
-                },
-            );
+        for &(db_label, db_size) in &[("10k", 10_000usize), ("100k", 100_000)] {
+            for &(t_label, n_threads) in &[("2t", 2usize), ("4t", 4), ("8t", 8), ("16t", 16)] {
+                let label = format!("{}_{}", db_label, t_label);
+                group.bench_with_input(
+                    BenchmarkId::from_parameter(&label),
+                    &(n_threads, db_size),
+                    |b, &(n_threads, db_size)| {
+                        let db = helpers::populate_in_memory(db_size);
+                        b.iter_custom(|iters| {
+                            let barrier = StdArc::new(Barrier::new(n_threads + 1));
+                            let mut handles = Vec::new();
+                            for _ in 0..n_threads {
+                                let db = StdArc::clone(&db);
+                                let barrier = StdArc::clone(&barrier);
+                                handles.push(std::thread::spawn(move || {
+                                    barrier.wait();
+                                    let start = Instant::now();
+                                    for _ in 0..iters {
+                                        db.execute("(transact [[:ebench :val 0]])").unwrap();
+                                    }
+                                    start.elapsed()
+                                }));
+                            }
+                            barrier.wait();
+                            handles
+                                .into_iter()
+                                .map(|h| h.join().unwrap())
+                                .max()
+                                .unwrap()
+                        });
+                    },
+                );
+            }
         }
         group.finish();
     }
@@ -550,143 +569,152 @@ fn bench_concurrent_file(c: &mut Criterion) {
 
     // Fresh file-backed DB per scenario to prevent unbounded WAL growth and OOM.
 
-    // readers (file-backed): concurrent page-cache reads under RwLock
+    // readers (file-backed): concurrent page-cache reads under RwLock, at two DB sizes
     {
         let mut group = c.benchmark_group("concurrent_file/readers");
         group.sample_size(10);
-        for &(label, n_threads) in &[("4", 4usize), ("8", 8), ("16", 16)] {
-            group.bench_with_input(
-                BenchmarkId::from_parameter(label),
-                &n_threads,
-                |b, &n_threads| {
-                    let tmp = Box::new(NamedTempFile::new().unwrap());
-                    let path = tmp.path().to_str().unwrap().to_string();
-                    helpers::populate_file(10_000, &path);
-                    let db = helpers::open_file_no_checkpoint(&path);
-                    b.iter_custom(|iters| {
-                        let barrier = StdArc::new(Barrier::new(n_threads + 1));
-                        let mut handles = Vec::new();
-                        for _ in 0..n_threads {
-                            let db = StdArc::clone(&db);
-                            let barrier = StdArc::clone(&barrier);
-                            handles.push(std::thread::spawn(move || {
-                                barrier.wait();
-                                let start = Instant::now();
-                                for _ in 0..iters {
-                                    db.execute("(query [:find ?v :where [:e0 :val ?v]])")
-                                        .unwrap();
-                                }
-                                start.elapsed()
-                            }));
-                        }
-                        barrier.wait();
-                        handles
-                            .into_iter()
-                            .map(|h| h.join().unwrap())
-                            .max()
-                            .unwrap()
-                    });
-                    drop(tmp);
-                },
-            );
+        for &(db_label, db_size) in &[("10k", 10_000usize), ("100k", 100_000)] {
+            for &(t_label, n_threads) in &[("4t", 4usize), ("8t", 8), ("16t", 16)] {
+                let label = format!("{}_{}", db_label, t_label);
+                group.bench_with_input(
+                    BenchmarkId::from_parameter(&label),
+                    &(n_threads, db_size),
+                    |b, &(n_threads, db_size)| {
+                        let tmp = Box::new(NamedTempFile::new().unwrap());
+                        let path = tmp.path().to_str().unwrap().to_string();
+                        helpers::populate_file(db_size, &path);
+                        let db = helpers::open_file_no_checkpoint(&path);
+                        b.iter_custom(|iters| {
+                            let barrier = StdArc::new(Barrier::new(n_threads + 1));
+                            let mut handles = Vec::new();
+                            for _ in 0..n_threads {
+                                let db = StdArc::clone(&db);
+                                let barrier = StdArc::clone(&barrier);
+                                handles.push(std::thread::spawn(move || {
+                                    barrier.wait();
+                                    let start = Instant::now();
+                                    for _ in 0..iters {
+                                        db.execute("(query [:find ?v :where [:e0 :val ?v]])")
+                                            .unwrap();
+                                    }
+                                    start.elapsed()
+                                }));
+                            }
+                            barrier.wait();
+                            handles
+                                .into_iter()
+                                .map(|h| h.join().unwrap())
+                                .max()
+                                .unwrap()
+                        });
+                        drop(tmp);
+                    },
+                );
+            }
         }
         group.finish();
     }
 
-    // readers_plus_writer (file-backed): readers + 1 WAL-writing thread
+    // readers_plus_writer (file-backed): readers + 1 WAL-writing thread, at two DB sizes
     {
         let mut group = c.benchmark_group("concurrent_file/readers_plus_writer");
         group.sample_size(10);
-        for &(label, n_threads) in &[("4", 4usize), ("8", 8), ("16", 16)] {
-            group.bench_with_input(
-                BenchmarkId::from_parameter(label),
-                &n_threads,
-                |b, &n_threads| {
-                    let tmp = Box::new(NamedTempFile::new().unwrap());
-                    let path = tmp.path().to_str().unwrap().to_string();
-                    helpers::populate_file(10_000, &path);
-                    let db = helpers::open_file_no_checkpoint(&path);
-                    b.iter_custom(|iters| {
-                        let n_readers = n_threads - 1;
-                        let barrier = StdArc::new(Barrier::new(n_threads + 1));
-                        let mut handles = Vec::new();
-                        for _ in 0..n_readers {
-                            let db = StdArc::clone(&db);
-                            let barrier = StdArc::clone(&barrier);
-                            handles.push(std::thread::spawn(move || {
-                                barrier.wait();
-                                let start = Instant::now();
-                                for _ in 0..iters {
-                                    db.execute("(query [:find ?v :where [:e0 :val ?v]])")
-                                        .unwrap();
-                                }
-                                start.elapsed()
-                            }));
-                        }
-                        {
-                            let db = StdArc::clone(&db);
-                            let barrier = StdArc::clone(&barrier);
-                            handles.push(std::thread::spawn(move || {
-                                barrier.wait();
-                                let start = Instant::now();
-                                for _ in 0..iters {
-                                    db.execute("(transact [[:ebench :val 0]])").unwrap();
-                                }
-                                start.elapsed()
-                            }));
-                        }
-                        barrier.wait();
-                        handles
-                            .into_iter()
-                            .map(|h| h.join().unwrap())
-                            .max()
-                            .unwrap()
-                    });
-                    drop(tmp);
-                },
-            );
+        for &(db_label, db_size) in &[("10k", 10_000usize), ("100k", 100_000)] {
+            for &(t_label, n_threads) in &[("4t", 4usize), ("8t", 8), ("16t", 16)] {
+                let label = format!("{}_{}", db_label, t_label);
+                group.bench_with_input(
+                    BenchmarkId::from_parameter(&label),
+                    &(n_threads, db_size),
+                    |b, &(n_threads, db_size)| {
+                        let tmp = Box::new(NamedTempFile::new().unwrap());
+                        let path = tmp.path().to_str().unwrap().to_string();
+                        helpers::populate_file(db_size, &path);
+                        let db = helpers::open_file_no_checkpoint(&path);
+                        b.iter_custom(|iters| {
+                            let n_readers = n_threads - 1;
+                            let barrier = StdArc::new(Barrier::new(n_threads + 1));
+                            let mut handles = Vec::new();
+                            for _ in 0..n_readers {
+                                let db = StdArc::clone(&db);
+                                let barrier = StdArc::clone(&barrier);
+                                handles.push(std::thread::spawn(move || {
+                                    barrier.wait();
+                                    let start = Instant::now();
+                                    for _ in 0..iters {
+                                        db.execute("(query [:find ?v :where [:e0 :val ?v]])")
+                                            .unwrap();
+                                    }
+                                    start.elapsed()
+                                }));
+                            }
+                            {
+                                let db = StdArc::clone(&db);
+                                let barrier = StdArc::clone(&barrier);
+                                handles.push(std::thread::spawn(move || {
+                                    barrier.wait();
+                                    let start = Instant::now();
+                                    for _ in 0..iters {
+                                        db.execute("(transact [[:ebench :val 0]])").unwrap();
+                                    }
+                                    start.elapsed()
+                                }));
+                            }
+                            barrier.wait();
+                            handles
+                                .into_iter()
+                                .map(|h| h.join().unwrap())
+                                .max()
+                                .unwrap()
+                        });
+                        drop(tmp);
+                    },
+                );
+            }
         }
         group.finish();
     }
 
-    // serialized_writers (file-backed): N WAL-writing threads queuing on Mutex
+    // serialized_writers (file-backed): N WAL-writing threads queuing on Mutex, at two DB sizes
     {
         let mut group = c.benchmark_group("concurrent_file/serialized_writers");
         group.sample_size(10);
-        for &(label, n_threads) in &[("2", 2usize), ("4", 4), ("8", 8), ("16", 16)] {
-            group.bench_with_input(
-                BenchmarkId::from_parameter(label),
-                &n_threads,
-                |b, &n_threads| {
-                    let tmp = Box::new(NamedTempFile::new().unwrap());
-                    let path = tmp.path().to_str().unwrap().to_string();
-                    helpers::populate_file(10_000, &path);
-                    let db = helpers::open_file_no_checkpoint(&path);
-                    b.iter_custom(|iters| {
-                        let barrier = StdArc::new(Barrier::new(n_threads + 1));
-                        let mut handles = Vec::new();
-                        for _ in 0..n_threads {
-                            let db = StdArc::clone(&db);
-                            let barrier = StdArc::clone(&barrier);
-                            handles.push(std::thread::spawn(move || {
-                                barrier.wait();
-                                let start = Instant::now();
-                                for _ in 0..iters {
-                                    db.execute("(transact [[:ebench :val 0]])").unwrap();
-                                }
-                                start.elapsed()
-                            }));
-                        }
-                        barrier.wait();
-                        handles
-                            .into_iter()
-                            .map(|h| h.join().unwrap())
-                            .max()
-                            .unwrap()
-                    });
-                    drop(tmp);
-                },
-            );
+        for &(db_label, db_size) in &[("10k", 10_000usize), ("100k", 100_000)] {
+            for &(t_label, n_threads) in &[("2t", 2usize), ("4t", 4), ("8t", 8), ("16t", 16)] {
+                let label = format!("{}_{}", db_label, t_label);
+                group.bench_with_input(
+                    BenchmarkId::from_parameter(&label),
+                    &(n_threads, db_size),
+                    |b, &(n_threads, db_size)| {
+                        let tmp = Box::new(NamedTempFile::new().unwrap());
+                        let path = tmp.path().to_str().unwrap().to_string();
+                        helpers::populate_file(db_size, &path);
+                        let db = helpers::open_file_no_checkpoint(&path);
+                        b.iter_custom(|iters| {
+                            let barrier = StdArc::new(Barrier::new(n_threads + 1));
+                            let mut handles = Vec::new();
+                            for _ in 0..n_threads {
+                                let db = StdArc::clone(&db);
+                                let barrier = StdArc::clone(&barrier);
+                                handles.push(std::thread::spawn(move || {
+                                    barrier.wait();
+                                    let start = Instant::now();
+                                    for _ in 0..iters {
+                                        db.execute("(transact [[:ebench :val 0]])").unwrap();
+                                    }
+                                    start.elapsed()
+                                }));
+                            }
+                            barrier.wait();
+                            handles
+                                .into_iter()
+                                .map(|h| h.join().unwrap())
+                                .max()
+                                .unwrap()
+                        });
+                        drop(tmp);
+                    },
+                );
+            }
         }
         group.finish();
     }
@@ -695,8 +723,7 @@ fn bench_concurrent_file(c: &mut Criterion) {
 // ── Negation: not / not-join ──────────────────────────────────────────────────
 
 fn bench_negation(c: &mut Criterion) {
-    // 100k excluded: returning O(N) results makes --test mode too slow even for one run.
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
 
     // not/scale: overhead of the `not` post-filter at different DB sizes.
     // 10% of entities are excluded (`:banned true`).
@@ -801,53 +828,55 @@ fn bench_concurrent_btree_scan(c: &mut Criterion) {
     let mut group = c.benchmark_group("concurrent_btree_scan");
     group.sample_size(10);
 
-    for &(label, n_threads) in &[("2", 2usize), ("4", 4), ("8", 8)] {
-        group.bench_with_input(
-            BenchmarkId::from_parameter(label),
-            &n_threads,
-            |b, &n_threads| {
-                // Pre-populate and checkpoint file DB so all facts are in committed B+tree.
-                let tmp = Box::new(NamedTempFile::new().unwrap());
-                let path = tmp.path().to_str().unwrap().to_string();
-                helpers::populate_file(10_000, &path);
-                // Open a handle shared by all threads
-                let db = helpers::open_file_no_checkpoint(&path);
-                b.iter_custom(|iters| {
-                    let barrier = StdArc::new(Barrier::new(n_threads + 1));
-                    let mut handles = Vec::new();
-                    for _ in 0..n_threads {
-                        let db = StdArc::clone(&db);
-                        let barrier = StdArc::clone(&barrier);
-                        handles.push(std::thread::spawn(move || {
-                            barrier.wait();
-                            let start = Instant::now();
-                            for _ in 0..iters {
-                                // EAVT range scan: entity :e0 with attribute :val
-                                db.execute("(query [:find ?v :where [:e0 :val ?v]])")
-                                    .unwrap();
-                            }
-                            start.elapsed()
-                        }));
-                    }
-                    barrier.wait();
-                    handles
-                        .into_iter()
-                        .map(|h| h.join().unwrap())
-                        .max()
-                        .unwrap()
-                });
-                drop(tmp);
-            },
-        );
-    }
+    for &(db_label, db_size) in &[("10k", 10_000usize), ("100k", 100_000)] {
+        for &(t_label, n_threads) in &[("2t", 2usize), ("4t", 4), ("8t", 8)] {
+            let label = format!("{}_{}", db_label, t_label);
+            group.bench_with_input(
+                BenchmarkId::from_parameter(&label),
+                &(n_threads, db_size),
+                |b, &(n_threads, db_size)| {
+                    // Pre-populate and checkpoint file DB so all facts are in committed B+tree.
+                    let tmp = Box::new(NamedTempFile::new().unwrap());
+                    let path = tmp.path().to_str().unwrap().to_string();
+                    helpers::populate_file(db_size, &path);
+                    // Open a handle shared by all threads
+                    let db = helpers::open_file_no_checkpoint(&path);
+                    b.iter_custom(|iters| {
+                        let barrier = StdArc::new(Barrier::new(n_threads + 1));
+                        let mut handles = Vec::new();
+                        for _ in 0..n_threads {
+                            let db = StdArc::clone(&db);
+                            let barrier = StdArc::clone(&barrier);
+                            handles.push(std::thread::spawn(move || {
+                                barrier.wait();
+                                let start = Instant::now();
+                                for _ in 0..iters {
+                                    // EAVT range scan: entity :e0 with attribute :val
+                                    db.execute("(query [:find ?v :where [:e0 :val ?v]])")
+                                        .unwrap();
+                                }
+                                start.elapsed()
+                            }));
+                        }
+                        barrier.wait();
+                        handles
+                            .into_iter()
+                            .map(|h| h.join().unwrap())
+                            .max()
+                            .unwrap()
+                    });
+                    drop(tmp);
+                },
+            );
+        } // inner: n_threads
+    } // outer: db_size
     group.finish();
 }
 
 // ── Disjunction: or / or-join ─────────────────────────────────────────────────
 
 fn bench_disjunction(c: &mut Criterion) {
-    // 100k excluded: O(N) results make --test mode too slow.
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
 
     // or/scale: overhead of the `or` expansion at different DB sizes.
     // 25% tagged-a (first quarter), 25% tagged-b (last quarter), 50% untagged.
@@ -947,7 +976,7 @@ fn bench_disjunction(c: &mut Criterion) {
 // ── Aggregation ───────────────────────────────────────────────────────────────
 
 fn bench_aggregation(c: &mut Criterion) {
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
 
     // count/scale: scalar `count` aggregate — measures aggregation post-processing overhead.
     // Single output row regardless of DB size; cost is dominated by binding collection.
@@ -1023,14 +1052,15 @@ fn bench_aggregation(c: &mut Criterion) {
 // ── Expression clauses ────────────────────────────────────────────────────────
 
 fn bench_expr(c: &mut Criterion) {
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+    const SCALES_LINEAR: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
 
     // filter/scale: `[(< ?v N)]` comparison filter — measures expr post-filter pass overhead.
     // Keeps entities with :val < half of n; drops the other half.
     {
         let mut group = c.benchmark_group("expr/filter_scale");
         group.sample_size(10);
-        for &(label, n) in SCALES {
+        for &(label, n) in SCALES_LINEAR {
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
                 let db = helpers::populate_in_memory(n);
                 let threshold = n / 2;
@@ -1049,7 +1079,7 @@ fn bench_expr(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("expr/binding_scale");
         group.sample_size(10);
-        for &(label, n) in SCALES {
+        for &(label, n) in SCALES_LINEAR {
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
                 let db = helpers::populate_in_memory(n);
                 b.iter(|| {
@@ -1085,7 +1115,7 @@ fn bench_expr(c: &mut Criterion) {
 // ── Window functions ────────────────────────────────────────────────────────────
 
 fn bench_window(c: &mut Criterion) {
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
 
     // running_sum: sum over ordered rows — measures window accumulator path.
     {
@@ -1143,7 +1173,7 @@ fn bench_window(c: &mut Criterion) {
 // ── Temporal metadata queries ─────────────────────────────────────────────────
 
 fn bench_temporal_metadata(c: &mut Criterion) {
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
 
     // tx_time: bind transaction timestamp — measures per-row projection overhead.
     {
@@ -1197,13 +1227,15 @@ fn bench_temporal_metadata(c: &mut Criterion) {
 // ── UDF dispatch overhead ─────────────────────────────────────────────────────
 
 fn bench_udf(c: &mut Criterion) {
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+    // Scalar-output UDF: safe to push to 100k.
+    const SCALES_SCALAR: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
+    const SCALES_LINEAR: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
 
     // aggregate_sum_dispatch: UDF aggregate vs built-in sum — isolates closure dispatch.
     {
         let mut group = c.benchmark_group("udf/aggregate_sum_dispatch");
         group.sample_size(10);
-        for &(label, n) in SCALES {
+        for &(label, n) in SCALES_SCALAR {
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
                 let db = helpers::populate_in_memory(n);
                 db.register_aggregate(
@@ -1230,7 +1262,7 @@ fn bench_udf(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("udf/predicate_filter_dispatch");
         group.sample_size(10);
-        for &(label, n) in SCALES {
+        for &(label, n) in SCALES_LINEAR {
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
                 let db = helpers::populate_in_memory(n);
                 db.register_predicate("udf_gt", |v: &minigraf::Value| -> bool {
@@ -1254,7 +1286,7 @@ fn bench_udf(c: &mut Criterion) {
 // ── Aggregation: count-distinct ───────────────────────────────────────────────
 
 fn bench_aggregation_extras(c: &mut Criterion) {
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
 
     // count_distinct_scale: count-distinct with 50% duplicate values.
     // Measures the distinct-dedup path overhead.
@@ -1277,7 +1309,7 @@ fn bench_aggregation_extras(c: &mut Criterion) {
 // ── Query: regex filter ──────────────────────────────────────────────────────
 
 fn bench_query_extras(c: &mut Criterion) {
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
 
     // regex_filter: query with matches? predicate — measures regex evaluation overhead.
     // All entities have :val strings matching pattern "item-\d+".
