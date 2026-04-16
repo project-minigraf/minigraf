@@ -4,8 +4,29 @@ use crate::graph::types::{
 use crate::query::datalog::types::AsOf;
 use crate::storage::index::{FactRef, Indexes, encode_value};
 use anyhow::Result;
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
+
+/// Compact key for O(1) duplicate detection in `FactData::pending_keys`.
+///
+/// Mirrors the equality predicate used by `load_fact`:
+/// (entity, attribute, encoded_value, valid_from, valid_to, tx_count, asserted).
+/// `encode_value` is used for the value field because `Value` contains `f64`
+/// and therefore cannot implement `Hash` directly.
+type PendingKey = (EntityId, String, Vec<u8>, i64, i64, u64, bool);
+
+fn pending_key(f: &Fact) -> PendingKey {
+    (
+        f.entity,
+        f.attribute.clone(),
+        encode_value(&f.value),
+        f.valid_from,
+        f.valid_to,
+        f.tx_count,
+        f.asserted,
+    )
+}
 
 // ============================================================================
 // Datalog Fact Storage (Phase 3+)
@@ -16,6 +37,12 @@ use std::sync::{Arc, RwLock};
 /// without needing a second lock.
 struct FactData {
     facts: Vec<Fact>,
+    /// O(1) duplicate-detection set for `load_fact`.
+    ///
+    /// Maintained in sync with `facts` by every method that appends to `facts`.
+    /// Replaces the O(n) linear scan that made `load_fact` O(n²) for large
+    /// fact sets (e.g. 1M-fact benchmark setup).
+    pending_keys: HashSet<PendingKey>,
     pending_indexes: Indexes,
     /// Resolves committed (on-disk) FactRefs to Fact objects.
     /// None for in-memory databases or before load() is called.
@@ -78,6 +105,7 @@ impl FactStorage {
         FactStorage {
             data: Arc::new(RwLock::new(FactData {
                 facts: Vec::new(),
+                pending_keys: HashSet::new(),
                 pending_indexes: Indexes::new(),
                 committed: None,
                 committed_index_reader: None,
@@ -121,6 +149,7 @@ impl FactStorage {
         let mut d = self.data.write().unwrap();
         let mut slot = d.facts.len() as u16;
         for fact in &facts {
+            d.pending_keys.insert(pending_key(fact));
             d.pending_indexes.insert(
                 fact,
                 FactRef {
@@ -172,6 +201,7 @@ impl FactStorage {
         let mut d = self.data.write().unwrap();
         let mut slot = d.facts.len() as u16;
         for fact in &facts {
+            d.pending_keys.insert(pending_key(fact));
             d.pending_indexes.insert(
                 fact,
                 FactRef {
@@ -212,6 +242,7 @@ impl FactStorage {
         let mut d = self.data.write().unwrap();
         let mut slot = d.facts.len() as u16;
         for fact in &retractions {
+            d.pending_keys.insert(pending_key(fact));
             d.pending_indexes.insert(
                 fact,
                 FactRef {
@@ -237,16 +268,11 @@ impl FactStorage {
     pub(crate) fn load_fact(&self, fact: Fact) -> Result<bool> {
         let mut d = self.data.write().unwrap();
 
-        // Check for duplicate based on unique key (entity, attribute, value, valid_from, valid_to, tx_count, asserted)
-        if d.facts.iter().any(|f| {
-            f.entity == fact.entity
-                && f.attribute == fact.attribute
-                && f.value == fact.value
-                && f.valid_from == fact.valid_from
-                && f.valid_to == fact.valid_to
-                && f.tx_count == fact.tx_count
-                && f.asserted == fact.asserted
-        }) {
+        // O(1) duplicate check via the pending_keys HashSet.
+        // Previously this was an O(n) linear scan over d.facts, causing O(n²)
+        // total complexity when loading n facts (e.g. 1M-fact benchmarks).
+        let key = pending_key(&fact);
+        if !d.pending_keys.insert(key) {
             return Ok(false); // Already exists, not loaded
         }
 
@@ -327,6 +353,7 @@ impl FactStorage {
     pub(crate) fn clear(&self) -> Result<()> {
         let mut d = self.data.write().unwrap();
         d.facts.clear();
+        d.pending_keys.clear();
         d.pending_indexes = Indexes::new();
         d.committed = None;
         d.committed_index_reader = None;
@@ -354,6 +381,7 @@ impl FactStorage {
     pub(crate) fn post_checkpoint_clear(&self) {
         let mut d = self.data.write().unwrap();
         d.facts.clear();
+        d.pending_keys.clear();
         d.pending_indexes = Indexes::new();
     }
 
