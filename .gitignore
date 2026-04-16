@@ -6,6 +6,7 @@
 .worktrees/
 .codex
 .opencode/
+skills/
 
 # heaptrack profiling artifacts
 heaptrack.*.zst
