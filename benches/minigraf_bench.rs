@@ -831,44 +831,44 @@ fn bench_concurrent_btree_scan(c: &mut Criterion) {
 
     for &(db_label, db_size) in &[("10k", 10_000usize), ("100k", 100_000)] {
         for &(t_label, n_threads) in &[("2t", 2usize), ("4t", 4), ("8t", 8)] {
-        let label = format!("{}_{}", db_label, t_label);
-        group.bench_with_input(
-            BenchmarkId::from_parameter(&label),
-            &(n_threads, db_size),
-            |b, &(n_threads, db_size)| {
-                // Pre-populate and checkpoint file DB so all facts are in committed B+tree.
-                let tmp = Box::new(NamedTempFile::new().unwrap());
-                let path = tmp.path().to_str().unwrap().to_string();
-                helpers::populate_file(db_size, &path);
-                // Open a handle shared by all threads
-                let db = helpers::open_file_no_checkpoint(&path);
-                b.iter_custom(|iters| {
-                    let barrier = StdArc::new(Barrier::new(n_threads + 1));
-                    let mut handles = Vec::new();
-                    for _ in 0..n_threads {
-                        let db = StdArc::clone(&db);
-                        let barrier = StdArc::clone(&barrier);
-                        handles.push(std::thread::spawn(move || {
-                            barrier.wait();
-                            let start = Instant::now();
-                            for _ in 0..iters {
-                                // EAVT range scan: entity :e0 with attribute :val
-                                db.execute("(query [:find ?v :where [:e0 :val ?v]])")
-                                    .unwrap();
-                            }
-                            start.elapsed()
-                        }));
-                    }
-                    barrier.wait();
-                    handles
-                        .into_iter()
-                        .map(|h| h.join().unwrap())
-                        .max()
-                        .unwrap()
-                });
-                drop(tmp);
-            },
-        );
+            let label = format!("{}_{}", db_label, t_label);
+            group.bench_with_input(
+                BenchmarkId::from_parameter(&label),
+                &(n_threads, db_size),
+                |b, &(n_threads, db_size)| {
+                    // Pre-populate and checkpoint file DB so all facts are in committed B+tree.
+                    let tmp = Box::new(NamedTempFile::new().unwrap());
+                    let path = tmp.path().to_str().unwrap().to_string();
+                    helpers::populate_file(db_size, &path);
+                    // Open a handle shared by all threads
+                    let db = helpers::open_file_no_checkpoint(&path);
+                    b.iter_custom(|iters| {
+                        let barrier = StdArc::new(Barrier::new(n_threads + 1));
+                        let mut handles = Vec::new();
+                        for _ in 0..n_threads {
+                            let db = StdArc::clone(&db);
+                            let barrier = StdArc::clone(&barrier);
+                            handles.push(std::thread::spawn(move || {
+                                barrier.wait();
+                                let start = Instant::now();
+                                for _ in 0..iters {
+                                    // EAVT range scan: entity :e0 with attribute :val
+                                    db.execute("(query [:find ?v :where [:e0 :val ?v]])")
+                                        .unwrap();
+                                }
+                                start.elapsed()
+                            }));
+                        }
+                        barrier.wait();
+                        handles
+                            .into_iter()
+                            .map(|h| h.join().unwrap())
+                            .max()
+                            .unwrap()
+                    });
+                    drop(tmp);
+                },
+            );
         } // inner: n_threads
     } // outer: db_size
     group.finish();
@@ -1232,8 +1232,7 @@ fn bench_temporal_metadata(c: &mut Criterion) {
 
 fn bench_udf(c: &mut Criterion) {
     // Scalar-output UDF: safe to push to 100k.
-    const SCALES_SCALAR: &[(&str, usize)] =
-        &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
+    const SCALES_SCALAR: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
     // O(N)-output UDF (predicate filter returns ~N/2 rows): keep at 10k.
     const SCALES_LINEAR: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
 
