@@ -1079,15 +1079,13 @@ fn apply_window_functions(
                     let mut values = Vec::with_capacity(row_indices.len());
                     let mut rank = 1i64;
                     let mut prev_order_val: Option<Value> = None;
-                    let mut row_num = 1i64;
-                    for &row_idx in row_indices.iter() {
+                    for (row_num, &row_idx) in (1i64..).zip(row_indices.iter()) {
                         let cur_val = bindings[row_idx].get(&ws.order_by).cloned();
                         if prev_order_val.as_ref() != cur_val.as_ref() {
                             rank = row_num;
                             prev_order_val = cur_val;
                         }
                         values.push(Value::Integer(rank));
-                        row_num += 1;
                     }
                     values
                 }
@@ -1137,7 +1135,7 @@ fn apply_window_functions(
             };
 
             // Write window values back to rows.
-            for (&row_idx, window_val) in row_indices.iter().zip(window_values.into_iter()) {
+            for (&row_idx, window_val) in row_indices.iter().zip(window_values) {
                 bindings[row_idx].insert(key.clone(), window_val);
             }
         }

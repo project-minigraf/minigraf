@@ -147,8 +147,7 @@ impl FactStorage {
             .collect();
 
         let mut d = self.data.write().unwrap();
-        let mut slot = d.facts.len() as u16;
-        for fact in &facts {
+        for (slot, fact) in (d.facts.len() as u16..).zip(facts.iter()) {
             d.pending_keys.insert(pending_key(fact));
             d.pending_indexes.insert(
                 fact,
@@ -157,7 +156,6 @@ impl FactStorage {
                     slot_index: slot,
                 },
             );
-            slot += 1;
         }
         d.facts.extend(facts);
 
@@ -199,8 +197,7 @@ impl FactStorage {
             .collect();
 
         let mut d = self.data.write().unwrap();
-        let mut slot = d.facts.len() as u16;
-        for fact in &facts {
+        for (slot, fact) in (d.facts.len() as u16..).zip(facts.iter()) {
             d.pending_keys.insert(pending_key(fact));
             d.pending_indexes.insert(
                 fact,
@@ -209,7 +206,6 @@ impl FactStorage {
                     slot_index: slot,
                 },
             );
-            slot += 1;
         }
         d.facts.extend(facts);
 
@@ -240,8 +236,7 @@ impl FactStorage {
             .collect();
 
         let mut d = self.data.write().unwrap();
-        let mut slot = d.facts.len() as u16;
-        for fact in &retractions {
+        for (slot, fact) in (d.facts.len() as u16..).zip(retractions.iter()) {
             d.pending_keys.insert(pending_key(fact));
             d.pending_indexes.insert(
                 fact,
@@ -250,7 +245,6 @@ impl FactStorage {
                     slot_index: slot,
                 },
             );
-            slot += 1;
         }
         d.facts.extend(retractions);
 
