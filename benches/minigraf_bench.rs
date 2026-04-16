@@ -723,8 +723,7 @@ fn bench_concurrent_file(c: &mut Criterion) {
 // ── Negation: not / not-join ──────────────────────────────────────────────────
 
 fn bench_negation(c: &mut Criterion) {
-    // 100k excluded: returning O(N) results makes --test mode too slow even for one run.
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
 
     // not/scale: overhead of the `not` post-filter at different DB sizes.
     // 10% of entities are excluded (`:banned true`).
@@ -877,8 +876,7 @@ fn bench_concurrent_btree_scan(c: &mut Criterion) {
 // ── Disjunction: or / or-join ─────────────────────────────────────────────────
 
 fn bench_disjunction(c: &mut Criterion) {
-    // 100k excluded: O(N) results make --test mode too slow.
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
 
     // or/scale: overhead of the `or` expansion at different DB sizes.
     // 25% tagged-a (first quarter), 25% tagged-b (last quarter), 50% untagged.
@@ -1054,9 +1052,7 @@ fn bench_aggregation(c: &mut Criterion) {
 // ── Expression clauses ────────────────────────────────────────────────────────
 
 fn bench_expr(c: &mut Criterion) {
-    // O(N) output groups capped at 10k — returning N rows at 100k scale is too slow per iteration.
-    const SCALES_LINEAR: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
-    // Scalar/small output groups can go to 100k safely.
+    const SCALES_LINEAR: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
     const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
 
     // filter/scale: `[(< ?v N)]` comparison filter — measures expr post-filter pass overhead.
@@ -1119,7 +1115,7 @@ fn bench_expr(c: &mut Criterion) {
 // ── Window functions ────────────────────────────────────────────────────────────
 
 fn bench_window(c: &mut Criterion) {
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
 
     // running_sum: sum over ordered rows — measures window accumulator path.
     {
@@ -1177,7 +1173,7 @@ fn bench_window(c: &mut Criterion) {
 // ── Temporal metadata queries ─────────────────────────────────────────────────
 
 fn bench_temporal_metadata(c: &mut Criterion) {
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
 
     // tx_time: bind transaction timestamp — measures per-row projection overhead.
     {
@@ -1233,8 +1229,7 @@ fn bench_temporal_metadata(c: &mut Criterion) {
 fn bench_udf(c: &mut Criterion) {
     // Scalar-output UDF: safe to push to 100k.
     const SCALES_SCALAR: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
-    // O(N)-output UDF (predicate filter returns ~N/2 rows): keep at 10k.
-    const SCALES_LINEAR: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+    const SCALES_LINEAR: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
 
     // aggregate_sum_dispatch: UDF aggregate vs built-in sum — isolates closure dispatch.
     {
@@ -1314,7 +1309,7 @@ fn bench_aggregation_extras(c: &mut Criterion) {
 // ── Query: regex filter ──────────────────────────────────────────────────────
 
 fn bench_query_extras(c: &mut Criterion) {
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
 
     // regex_filter: query with matches? predicate — measures regex evaluation overhead.
     // All entities have :val strings matching pattern "item-\d+".
