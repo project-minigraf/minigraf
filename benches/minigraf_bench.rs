@@ -168,12 +168,7 @@ fn bench_insert_file(c: &mut Criterion) {
 // ── Task 5: query/ ────────────────────────────────────────────────────────────
 
 fn bench_query(c: &mut Criterion) {
-    const SCALES: &[(&str, usize)] = &[
-        ("1k", 1_000),
-        ("10k", 10_000),
-        ("100k", 100_000),
-        ("1m", 1_000_000),
-    ];
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
 
     // point_entity: EAVT range scan on a known entity
     {
@@ -723,7 +718,7 @@ fn bench_concurrent_file(c: &mut Criterion) {
 // ── Negation: not / not-join ──────────────────────────────────────────────────
 
 fn bench_negation(c: &mut Criterion) {
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
 
     // not/scale: overhead of the `not` post-filter at different DB sizes.
     // 10% of entities are excluded (`:banned true`).
@@ -876,7 +871,7 @@ fn bench_concurrent_btree_scan(c: &mut Criterion) {
 // ── Disjunction: or / or-join ─────────────────────────────────────────────────
 
 fn bench_disjunction(c: &mut Criterion) {
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
 
     // or/scale: overhead of the `or` expansion at different DB sizes.
     // 25% tagged-a (first quarter), 25% tagged-b (last quarter), 50% untagged.
@@ -976,7 +971,7 @@ fn bench_disjunction(c: &mut Criterion) {
 // ── Aggregation ───────────────────────────────────────────────────────────────
 
 fn bench_aggregation(c: &mut Criterion) {
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
 
     // count/scale: scalar `count` aggregate — measures aggregation post-processing overhead.
     // Single output row regardless of DB size; cost is dominated by binding collection.
@@ -1228,8 +1223,8 @@ fn bench_temporal_metadata(c: &mut Criterion) {
 
 fn bench_udf(c: &mut Criterion) {
     // Scalar-output UDF: safe to push to 100k.
-    const SCALES_SCALAR: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
-    const SCALES_LINEAR: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
+    const SCALES_SCALAR: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+    const SCALES_LINEAR: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
 
     // aggregate_sum_dispatch: UDF aggregate vs built-in sum — isolates closure dispatch.
     {
@@ -1286,7 +1281,7 @@ fn bench_udf(c: &mut Criterion) {
 // ── Aggregation: count-distinct ───────────────────────────────────────────────
 
 fn bench_aggregation_extras(c: &mut Criterion) {
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
 
     // count_distinct_scale: count-distinct with 50% duplicate values.
     // Measures the distinct-dedup path overhead.
