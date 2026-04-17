@@ -917,6 +917,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     ///
     /// Used by the browser WASM layer to read pages after `save()` without
     /// exposing the `Arc<Mutex<B>>` directly.
+    #[cfg(all(target_arch = "wasm32", feature = "browser"))]
     pub(crate) fn with_backend<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&B) -> R,
@@ -928,6 +929,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     /// Run a closure with mutable access to the underlying storage backend.
     ///
     /// Used by the browser WASM layer to drain dirty pages after `save()`.
+    #[cfg(all(target_arch = "wasm32", feature = "browser"))]
     pub(crate) fn with_backend_mut<F, R>(&mut self, f: F) -> R
     where
         F: FnOnce(&mut B) -> R,
