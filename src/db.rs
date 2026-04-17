@@ -28,11 +28,14 @@ use crate::query::datalog::parser::parse_datalog_command;
 use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::types::{AttributeSpec, DatalogCommand, Transaction};
 use crate::storage::backend::MemoryBackend;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::storage::backend::file::FileBackend;
 use crate::storage::persistent_facts::PersistentFactStorage;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::wal::WalWriter;
 use anyhow::{Result, bail};
 use std::any::Any;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
@@ -115,6 +118,7 @@ impl OpenOptions {
     }
 
     /// Set the path for a file-backed database.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn path(self, path: impl AsRef<Path>) -> OpenOptionsWithPath {
         OpenOptionsWithPath {
             opts: self,
@@ -131,11 +135,13 @@ impl OpenOptions {
 }
 
 /// `OpenOptions` combined with a file path, ready to open.
+#[cfg(not(target_arch = "wasm32"))]
 pub struct OpenOptionsWithPath {
     opts: OpenOptions,
     path: PathBuf,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl OpenOptionsWithPath {
     /// Open or create the file-backed database.
     pub fn open(self) -> Result<Minigraf> {
@@ -150,6 +156,7 @@ enum WriteContext {
     /// In-memory database: no WAL, no persistence.
     Memory,
     /// File-backed database: has a WAL sidecar and a persistent storage layer.
+    #[cfg(not(target_arch = "wasm32"))]
     File {
         pfs: PersistentFactStorage<FileBackend>,
         /// WAL writer. `None` after a checkpoint until the next write.
@@ -250,11 +257,13 @@ impl Minigraf {
     ///
     /// A sidecar WAL file (`<path>.wal`) is created alongside the main file.
     /// Any existing WAL from a previous crash is replayed automatically.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         Self::open_with_options(path, OpenOptions::default())
     }
 
     /// Open or create a file-backed database with custom options.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn open_with_options(path: impl AsRef<Path>, opts: OpenOptions) -> Result<Self> {
         let db_path = path.as_ref().to_path_buf();
 
@@ -330,6 +339,7 @@ impl Minigraf {
     /// Replay any WAL entries that are newer than the main file's checkpoint.
     ///
     /// Returns the number of entries replayed (used to seed `wal_entry_count`).
+    #[cfg(not(target_arch = "wasm32"))]
     fn replay_wal(
         wal_path: &Path,
         fact_storage: &FactStorage,
@@ -535,6 +545,7 @@ impl Minigraf {
             WriteContext::Memory => {
                 // No-op for in-memory databases.
             }
+            #[cfg(not(target_arch = "wasm32"))]
             WriteContext::File {
                 pfs,
                 wal,
@@ -618,6 +629,7 @@ impl Minigraf {
     }
 
     /// Compute the WAL sidecar path for a given database path.
+    #[cfg(not(target_arch = "wasm32"))]
     fn wal_path_for(db_path: &Path) -> PathBuf {
         let mut p = db_path.to_path_buf();
         let name = p
@@ -983,6 +995,7 @@ impl<'a> WriteTransaction<'a> {
     ) -> Result<bool> {
         match ctx {
             WriteContext::Memory => Ok(false),
+            #[cfg(not(target_arch = "wasm32"))]
             WriteContext::File {
                 pfs,
                 wal,

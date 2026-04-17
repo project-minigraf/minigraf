@@ -5,3 +5,4 @@
 //! runtime. For Node.js, use `@minigraf/node` (Phase 8.3).
 
 pub mod buffer;
+pub mod indexeddb;
