@@ -365,12 +365,12 @@ pub(crate) fn value_cmp(a: &Value, b: &Value) -> std::cmp::Ordering {
     match (a, b) {
         (Value::Integer(x), Value::Integer(y)) => x.cmp(y),
         (Value::Float(x), Value::Float(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
-        (Value::Integer(x), Value::Float(y)) => {
-            (*x as f64).partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal)
-        }
-        (Value::Float(x), Value::Integer(y)) => {
-            x.partial_cmp(&(*y as f64)).unwrap_or(std::cmp::Ordering::Equal)
-        }
+        (Value::Integer(x), Value::Float(y)) => (*x as f64)
+            .partial_cmp(y)
+            .unwrap_or(std::cmp::Ordering::Equal),
+        (Value::Float(x), Value::Integer(y)) => x
+            .partial_cmp(&(*y as f64))
+            .unwrap_or(std::cmp::Ordering::Equal),
         (Value::String(x), Value::String(y)) => x.cmp(y),
         _ => std::cmp::Ordering::Equal,
     }
