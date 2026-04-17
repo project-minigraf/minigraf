@@ -10,6 +10,7 @@ use super::types::{
 use crate::graph::FactStorage;
 use crate::graph::types::{Fact, TransactOptions, TxId, Value, tx_id_now};
 use anyhow::{Result, anyhow};
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 /// Returns true if any where clause (at any depth) contains a per-fact
@@ -1030,22 +1031,18 @@ fn apply_window_functions(
         let key = format!("__win_{}", i);
 
         // Build partitions: (partition_key, sorted row indices).
-        let mut partitions: Vec<(Option<Value>, Vec<usize>)> = Vec::new();
+        let mut partitions: HashMap<Option<Value>, Vec<usize>> = HashMap::new();
         for (row_idx, binding) in bindings.iter().enumerate() {
             let part_key = ws
                 .partition_by
                 .as_ref()
                 .and_then(|pv| binding.get(pv))
                 .cloned();
-            if let Some(pos) = partitions.iter().position(|(k, _)| k == &part_key) {
-                partitions[pos].1.push(row_idx);
-            } else {
-                partitions.push((part_key, vec![row_idx]));
-            }
+            partitions.entry(part_key).or_default().push(row_idx);
         }
 
         // For each partition: sort, compute window values, write back.
-        for (_, row_indices) in &mut partitions {
+        for row_indices in partitions.values_mut() {
             // Pre-extract order_by values into a contiguous Vec so the sort
             // comparator never touches the HashMap — O(n) lookups here instead
             // of O(n log n) random HashMap accesses inside sort_by.
