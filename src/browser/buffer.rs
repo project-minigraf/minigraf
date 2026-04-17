@@ -50,6 +50,13 @@ impl Default for BrowserBufferBackend {
     }
 }
 
+impl BrowserBufferBackend {
+    /// Read a page by ID (delegates to `StorageBackend::read_page`, usable without the trait).
+    pub fn read_page_raw(&self, page_id: u64) -> anyhow::Result<Vec<u8>> {
+        self.read_page(page_id)
+    }
+}
+
 impl StorageBackend for BrowserBufferBackend {
     fn write_page(&mut self, page_id: u64, data: &[u8]) -> Result<()> {
         if data.len() != PAGE_SIZE {

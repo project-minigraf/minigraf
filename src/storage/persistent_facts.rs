@@ -912,6 +912,29 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }
+
+    /// Run a closure with read access to the underlying storage backend.
+    ///
+    /// Used by the browser WASM layer to read pages after `save()` without
+    /// exposing the `Arc<Mutex<B>>` directly.
+    pub(crate) fn with_backend<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&B) -> R,
+    {
+        let guard = self.backend.lock().unwrap();
+        f(&*guard)
+    }
+
+    /// Run a closure with mutable access to the underlying storage backend.
+    ///
+    /// Used by the browser WASM layer to drain dirty pages after `save()`.
+    pub(crate) fn with_backend_mut<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce(&mut B) -> R,
+    {
+        let mut guard = self.backend.lock().unwrap();
+        f(&mut *guard)
+    }
 }
 
 impl<B: StorageBackend + 'static> Drop for PersistentFactStorage<B> {
