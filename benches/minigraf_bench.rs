@@ -168,7 +168,7 @@ fn bench_insert_file(c: &mut Criterion) {
 // ── Task 5: query/ ────────────────────────────────────────────────────────────
 
 fn bench_query(c: &mut Criterion) {
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
 
     // point_entity: EAVT range scan on a known entity
     {
@@ -1304,7 +1304,7 @@ fn bench_aggregation_extras(c: &mut Criterion) {
 // ── Query: regex filter ──────────────────────────────────────────────────────
 
 fn bench_query_extras(c: &mut Criterion) {
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
 
     // regex_filter: query with matches? predicate — measures regex evaluation overhead.
     // All entities have :val strings matching pattern "item-\d+".
