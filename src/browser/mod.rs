@@ -135,6 +135,103 @@ impl BrowserDb {
             DatalogCommand::Query(_) | DatalogCommand::Rule(_) => unreachable!(),
         }
     }
+
+    /// Flush all dirty pages to IndexedDB.
+    ///
+    /// Write-through means individual `execute()` calls already flush dirty pages,
+    /// so `checkpoint()` is only needed after `import_graph()` or explicit bulk ops.
+    /// No-op for in-memory databases.
+    pub async fn checkpoint(&self) -> Result<(), JsValue> {
+        let (dirty_pages, has_idb) = {
+            let mut inner = self.inner.borrow_mut();
+            inner.pfs.save()
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            let dirty_ids = inner.pfs.with_backend_mut(|b| b.take_dirty());
+            let pages: Vec<(u64, Vec<u8>)> = dirty_ids
+                .into_iter()
+                .filter_map(|id| {
+                    inner.pfs.with_backend(|b| b.read_page_raw(id).ok().map(|d| (id, d)))
+                })
+                .collect();
+            (pages, inner.idb.is_some())
+        };
+
+        if has_idb && !dirty_pages.is_empty() {
+            let idb = self.inner.borrow().idb.as_ref().unwrap().clone_handle();
+            idb.write_pages(dirty_pages).await?;
+        }
+        Ok(())
+    }
+
+    /// Serialise the current database to a portable `.graph` blob.
+    ///
+    /// The blob is byte-for-bit compatible with native `.graph` files opened by
+    /// `Minigraf::open()`. Pages are always in ascending `page_id` order.
+    ///
+    /// Call `checkpoint()` on native before importing a file here to ensure
+    /// no WAL entries are missing from the main file.
+    #[wasm_bindgen(js_name = exportGraph)]
+    pub fn export_graph(&self) -> Result<js_sys::Uint8Array, JsValue> {
+        let inner = self.inner.borrow();
+        let page_count = inner.pfs.with_backend(|b| b.page_count_raw())
+            .map_err(|e| JsValue::from_str(&e.to_string()))? as usize;
+
+        let mut blob = Vec::with_capacity(page_count * crate::storage::PAGE_SIZE);
+        for id in 0..page_count as u64 {
+            let page = inner.pfs.with_backend(|b| b.read_page_raw(id))
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            blob.extend_from_slice(&page);
+        }
+        Ok(js_sys::Uint8Array::from(blob.as_slice()))
+    }
+
+    /// Replace the current database with a `.graph` blob.
+    ///
+    /// The blob must be a checkpointed native `.graph` file (no pending WAL sidecar).
+    /// All existing data is overwritten. After import, the new data is immediately
+    /// queryable and all dirty pages are flushed to IndexedDB.
+    #[wasm_bindgen(js_name = importGraph)]
+    pub async fn import_graph(&self, data: js_sys::Uint8Array) -> Result<(), JsValue> {
+        let bytes = data.to_vec();
+        if bytes.len() % crate::storage::PAGE_SIZE != 0 {
+            return Err(JsValue::from_str("import data length is not a multiple of PAGE_SIZE"));
+        }
+
+        let mut pages = std::collections::HashMap::new();
+        for (i, chunk) in bytes.chunks(crate::storage::PAGE_SIZE).enumerate() {
+            pages.insert(i as u64, chunk.to_vec());
+        }
+
+        // ── Sync section ──────────────────────────────────────────────────────────
+        let (dirty_pages, has_idb) = {
+            let mut inner = self.inner.borrow_mut();
+            let buffer = BrowserBufferBackend::load_pages_all_dirty(pages);
+            let mut new_pfs = PersistentFactStorage::new(buffer, 256)
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            let new_fact_storage = new_pfs.storage().clone();
+
+            // Drain dirty set and collect owned page bytes before swapping inner.
+            let dirty_ids = new_pfs.with_backend_mut(|b| b.take_dirty());
+            let dirty_pages: Vec<(u64, Vec<u8>)> = dirty_ids
+                .into_iter()
+                .filter_map(|id| {
+                    new_pfs.with_backend(|b| b.read_page_raw(id).ok().map(|d| (id, d)))
+                })
+                .collect();
+
+            inner.pfs = new_pfs;
+            inner.fact_storage = new_fact_storage;
+
+            (dirty_pages, inner.idb.is_some())
+        };
+        // ── Borrow dropped ────────────────────────────────────────────────────────
+
+        if has_idb && !dirty_pages.is_empty() {
+            let idb = self.inner.borrow().idb.as_ref().unwrap().clone_handle();
+            idb.write_pages(dirty_pages).await?;
+        }
+        Ok(())
+    }
 }
 
 impl BrowserDb {

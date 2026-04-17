@@ -55,6 +55,11 @@ impl BrowserBufferBackend {
     pub fn read_page_raw(&self, page_id: u64) -> anyhow::Result<Vec<u8>> {
         self.read_page(page_id)
     }
+
+    /// Return the number of pages stored (delegates to `StorageBackend::page_count`, usable without the trait).
+    pub fn page_count_raw(&self) -> anyhow::Result<u64> {
+        self.page_count()
+    }
 }
 
 impl StorageBackend for BrowserBufferBackend {
