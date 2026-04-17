@@ -15,10 +15,20 @@ pub(crate) type TxId = u64;
 
 /// Get current timestamp as transaction ID (milliseconds since UNIX epoch)
 pub(crate) fn tx_id_now() -> TxId {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("System time before UNIX epoch")
-        .as_millis() as u64
+    #[cfg(all(target_arch = "wasm32", feature = "browser"))]
+    {
+        // On WASM browser targets, `std::time::SystemTime::now()` panics.
+        // Use `js_sys::Date::now()` which returns milliseconds since the Unix
+        // epoch as an f64 (same precision as `Date.now()` in JavaScript).
+        js_sys::Date::now() as u64
+    }
+    #[cfg(not(all(target_arch = "wasm32", feature = "browser")))]
+    {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("System time before UNIX epoch")
+            .as_millis() as u64
+    }
 }
 
 /// A unique identifier for a graph entity (UUID v4).

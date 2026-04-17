@@ -1,4 +1,5 @@
 //! Integration tests for Phase 6.2 packed pages.
+#![cfg(not(target_arch = "wasm32"))]
 
 use minigraf::{Minigraf, OpenOptions};
 use tempfile::NamedTempFile;

@@ -274,6 +274,7 @@ impl BrowserDb {
                     .map_err(|e| JsValue::from_str(&e.to_string()))?;
             }
 
+            inner.pfs.mark_dirty();
             inner
                 .pfs
                 .save()
@@ -352,5 +353,99 @@ fn value_to_json(v: &crate::graph::types::Value) -> serde_json::Value {
         Value::Ref(uuid) => JVal::String(uuid.to_string()),
         Value::Keyword(k) => JVal::String(k.clone()),
         Value::Null => JVal::Null,
+    }
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "browser", test))]
+mod tests {
+    use super::*;
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test_configure!(run_in_browser);
+
+    #[wasm_bindgen_test]
+    async fn in_memory_transact_and_query() {
+        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        let transact_result = db
+            .execute(r#"(transact [[:alice :name "Alice"] [:alice :age 30]])"#.to_string())
+            .await
+            .expect("transact");
+        let v: serde_json::Value = serde_json::from_str(&transact_result).unwrap();
+        assert!(v.get("transacted").is_some());
+
+        let query_result = db
+            .execute(r#"(query [:find ?name :where [:alice :name ?name]])"#.to_string())
+            .await
+            .expect("query");
+        let v: serde_json::Value = serde_json::from_str(&query_result).unwrap();
+        let results = v["results"].as_array().unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0][0], serde_json::Value::String("Alice".into()));
+    }
+
+    #[wasm_bindgen_test]
+    async fn empty_query_returns_empty_results() {
+        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        let result = db
+            .execute(r#"(query [:find ?e :where [?e :name _]])"#.to_string())
+            .await
+            .expect("query");
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(v["results"].as_array().unwrap().len(), 0);
+    }
+
+    #[wasm_bindgen_test]
+    async fn export_import_round_trip() {
+        let db = BrowserDb::open_in_memory().expect("open");
+        db.execute(r#"(transact [[:bob :role "admin"]])"#.to_string())
+            .await
+            .expect("transact");
+
+        let blob = db.export_graph().expect("export");
+        let bytes = blob.to_vec();
+        assert_eq!(&bytes[0..4], b"MGRF", "exported blob must start with MGRF magic");
+
+        let db2 = BrowserDb::open_in_memory().expect("open2");
+        db2.import_graph(blob).await.expect("import");
+
+        let result = db2
+            .execute(r#"(query [:find ?role :where [:bob :role ?role]])"#.to_string())
+            .await
+            .expect("query after import");
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        let results = v["results"].as_array().unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0][0], serde_json::Value::String("admin".into()));
+    }
+
+    #[wasm_bindgen_test]
+    async fn export_size_is_page_aligned() {
+        let db = BrowserDb::open_in_memory().expect("open");
+        db.execute(r#"(transact [[:e :v 1]])"#.to_string())
+            .await
+            .expect("transact");
+        let blob = db.export_graph().expect("export");
+        assert_eq!(blob.byte_length() as usize % crate::storage::PAGE_SIZE, 0);
+    }
+
+    #[wasm_bindgen_test]
+    async fn idb_persistence_round_trip() {
+        let db_name = "minigraf-test-persistence";
+
+        let db1 = BrowserDb::open(db_name).await.expect("open db1");
+        db1.execute(r#"(transact [[:carol :dept "eng"]])"#.to_string())
+            .await
+            .expect("transact");
+        drop(db1);
+
+        let db2 = BrowserDb::open(db_name).await.expect("open db2");
+        let result = db2
+            .execute(r#"(query [:find ?dept :where [:carol :dept ?dept]])"#.to_string())
+            .await
+            .expect("query after reopen");
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        let results = v["results"].as_array().unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0][0], serde_json::Value::String("eng".into()));
     }
 }

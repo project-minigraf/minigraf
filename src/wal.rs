@@ -292,7 +292,7 @@ impl WalReader {
 
 // ─── Unit tests ─────────────────────────────────────────────────────────────
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::graph::types::{VALID_TIME_FOREVER, Value};

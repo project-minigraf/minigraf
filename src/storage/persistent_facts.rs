@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 ///
 /// Sorts facts by `(tx_count, entity_bytes, attribute)` before hashing to
 /// produce a stable total order independent of Vec insertion order.
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 fn compute_index_checksum(facts: &[Fact]) -> u32 {
     let mut sorted: Vec<&Fact> = facts.iter().collect();
     sorted.sort_by(|a, b| {
@@ -1082,7 +1082,7 @@ fn build_sorted_index_entries(
     (eavt, aevt, avet, vaet)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::graph::types::Value;

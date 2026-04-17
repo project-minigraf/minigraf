@@ -209,10 +209,12 @@ impl Drop for Inner {
 ///
 /// # File-backed usage
 /// ```no_run
+/// # #[cfg(not(target_arch = "wasm32"))] {
 /// use minigraf::db::Minigraf;
 ///
 /// let db = Minigraf::open("mydb.graph").unwrap();
 /// db.execute(r#"(transact [[:alice :person/name "Alice"]])"#).unwrap();
+/// # }
 /// ```
 ///
 /// # In-memory usage
@@ -1068,7 +1070,7 @@ impl Drop for WriteTransaction<'_> {
 
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 
