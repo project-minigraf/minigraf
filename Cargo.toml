@@ -14,6 +14,9 @@ documentation = "https://docs.rs/minigraf"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-O", "--enable-bulk-memory"]
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
