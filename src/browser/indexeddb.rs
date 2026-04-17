@@ -35,7 +35,6 @@ fn request_to_promise(request: &IdbRequest) -> Promise {
 }
 
 /// Converts an `IdbTransaction` completion into a JS `Promise`.
-#[allow(dead_code)]
 fn transaction_to_promise(tx: &IdbTransaction) -> Promise {
     let tx = tx.clone();
     Promise::new(&mut |resolve, reject| {
@@ -144,5 +143,35 @@ impl IndexedDbBackend {
             db: self.db.clone(),
             store_name: self.store_name.clone(),
         }
+    }
+
+    /// Write a batch of pages to IndexedDB in a single `readwrite` transaction.
+    ///
+    /// All `put` operations are queued synchronously on the store, then we wait
+    /// for the transaction's `oncomplete` event. If any put fails, the transaction
+    /// is aborted and an error is returned.
+    ///
+    /// `pages` is a list of `(page_id, page_bytes)` pairs. Empty input is a no-op.
+    pub async fn write_pages(&self, pages: Vec<(u64, Vec<u8>)>) -> Result<(), JsValue> {
+        if pages.is_empty() {
+            return Ok(());
+        }
+        let tx = self
+            .db
+            .transaction_with_str_and_mode(&self.store_name, IdbTransactionMode::Readwrite)?;
+        let store = tx.object_store(&self.store_name)?;
+
+        for (page_id, data) in &pages {
+            let key = JsValue::from_f64(*page_id as f64);
+            let arr = Uint8Array::from(data.as_slice());
+            store.put_with_key(&arr, &key)?;
+        }
+
+        // Wait for the transaction to commit. The IDB transaction commits
+        // automatically once all put requests have been processed and no
+        // new requests are made. We wait here to ensure durability before
+        // returning to the caller.
+        JsFuture::from(transaction_to_promise(&tx)).await?;
+        Ok(())
     }
 }
