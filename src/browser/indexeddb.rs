@@ -5,9 +5,9 @@
 
 use js_sys::{Array, Promise, Uint8Array};
 use std::collections::HashMap;
+use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{IdbDatabase, IdbRequest, IdbTransaction, IdbTransactionMode};
 
@@ -88,10 +88,7 @@ impl IndexedDbBackend {
                 let target = event.target().unwrap();
                 let request: web_sys::IdbOpenDbRequest = target.dyn_into().unwrap();
                 let db: IdbDatabase = request.result().unwrap().dyn_into().unwrap();
-                if !db
-                    .object_store_names()
-                    .contains(&store_name_upgrade)
-                {
+                if !db.object_store_names().contains(&store_name_upgrade) {
                     db.create_object_store(&store_name_upgrade).unwrap();
                 }
             });
@@ -129,7 +126,8 @@ impl IndexedDbBackend {
             let key = keys_arr.get(i);
             let page_id = key
                 .as_f64()
-                .ok_or_else(|| JsValue::from_str("page_id is not a number"))? as u64;
+                .ok_or_else(|| JsValue::from_str("page_id is not a number"))?
+                as u64;
             let val = vals_arr.get(i);
             let arr: Uint8Array = val.dyn_into()?;
             pages.insert(page_id, arr.to_vec());

@@ -100,8 +100,7 @@ impl BrowserDb {
     /// - Rule: `{"ok": true}`
     #[wasm_bindgen(js_name = execute)]
     pub async fn execute(&self, datalog: String) -> Result<String, JsValue> {
-        let cmd = parse_datalog_command(&datalog)
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let cmd = parse_datalog_command(&datalog).map_err(|e| JsValue::from_str(&e.to_string()))?;
 
         // Peek at the discriminant before consuming `cmd`.
         let is_read = matches!(cmd, DatalogCommand::Query(_) | DatalogCommand::Rule(_));
@@ -144,13 +143,17 @@ impl BrowserDb {
     pub async fn checkpoint(&self) -> Result<(), JsValue> {
         let (dirty_pages, has_idb) = {
             let mut inner = self.inner.borrow_mut();
-            inner.pfs.save()
+            inner
+                .pfs
+                .save()
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let dirty_ids = inner.pfs.with_backend_mut(|b| b.take_dirty());
             let pages: Vec<(u64, Vec<u8>)> = dirty_ids
                 .into_iter()
                 .filter_map(|id| {
-                    inner.pfs.with_backend(|b| b.read_page_raw(id).ok().map(|d| (id, d)))
+                    inner
+                        .pfs
+                        .with_backend(|b| b.read_page_raw(id).ok().map(|d| (id, d)))
                 })
                 .collect();
             (pages, inner.idb.is_some())
@@ -173,12 +176,16 @@ impl BrowserDb {
     #[wasm_bindgen(js_name = exportGraph)]
     pub fn export_graph(&self) -> Result<js_sys::Uint8Array, JsValue> {
         let inner = self.inner.borrow();
-        let page_count = inner.pfs.with_backend(|b| b.page_count_raw())
+        let page_count = inner
+            .pfs
+            .with_backend(|b| b.page_count_raw())
             .map_err(|e| JsValue::from_str(&e.to_string()))? as usize;
 
         let mut blob = Vec::with_capacity(page_count * crate::storage::PAGE_SIZE);
         for id in 0..page_count as u64 {
-            let page = inner.pfs.with_backend(|b| b.read_page_raw(id))
+            let page = inner
+                .pfs
+                .with_backend(|b| b.read_page_raw(id))
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             blob.extend_from_slice(&page);
         }
@@ -194,7 +201,9 @@ impl BrowserDb {
     pub async fn import_graph(&self, data: js_sys::Uint8Array) -> Result<(), JsValue> {
         let bytes = data.to_vec();
         if bytes.len() % crate::storage::PAGE_SIZE != 0 {
-            return Err(JsValue::from_str("import data length is not a multiple of PAGE_SIZE"));
+            return Err(JsValue::from_str(
+                "import data length is not a multiple of PAGE_SIZE",
+            ));
         }
 
         let mut pages = std::collections::HashMap::new();
@@ -305,13 +314,7 @@ impl BrowserDb {
         if !dirty_pages.is_empty() {
             let has_idb = self.inner.borrow().idb.is_some();
             if has_idb {
-                let idb = self
-                    .inner
-                    .borrow()
-                    .idb
-                    .as_ref()
-                    .unwrap()
-                    .clone_handle();
+                let idb = self.inner.borrow().idb.as_ref().unwrap().clone_handle();
                 idb.write_pages(dirty_pages).await?;
             }
         }
@@ -403,7 +406,11 @@ mod tests {
 
         let blob = db.export_graph().expect("export");
         let bytes = blob.to_vec();
-        assert_eq!(&bytes[0..4], b"MGRF", "exported blob must start with MGRF magic");
+        assert_eq!(
+            &bytes[0..4],
+            b"MGRF",
+            "exported blob must start with MGRF magic"
+        );
 
         let db2 = BrowserDb::open_in_memory().expect("open2");
         db2.import_graph(blob).await.expect("import");

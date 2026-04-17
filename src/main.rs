@@ -1,7 +1,7 @@
 #[cfg(not(target_arch = "wasm32"))]
-use minigraf::OpenOptions;
-#[cfg(not(target_arch = "wasm32"))]
 use minigraf::Minigraf;
+#[cfg(not(target_arch = "wasm32"))]
+use minigraf::OpenOptions;
 
 fn main() -> anyhow::Result<()> {
     #[cfg(target_arch = "wasm32")]
