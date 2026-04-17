@@ -1313,9 +1313,8 @@ pub(crate) fn apply_or_clauses(
     for clause in clauses {
         match clause {
             WhereClause::Or(branches) => {
-                let mut seen: std::collections::BTreeSet<
-                    Vec<(String, crate::graph::types::Value)>,
-                > = std::collections::BTreeSet::new();
+                let mut seen: std::collections::HashSet<Vec<(String, crate::graph::types::Value)>> =
+                    std::collections::HashSet::new();
                 let mut result: Vec<Binding> = Vec::new();
                 for branch in branches {
                     let branch_result = evaluate_branch(
@@ -1346,9 +1345,8 @@ pub(crate) fn apply_or_clauses(
                 let outer_keys: std::collections::HashSet<String> =
                     bindings.iter().flat_map(|b| b.keys().cloned()).collect();
 
-                let mut seen: std::collections::BTreeSet<
-                    Vec<(String, crate::graph::types::Value)>,
-                > = std::collections::BTreeSet::new();
+                let mut seen: std::collections::HashSet<Vec<(String, crate::graph::types::Value)>> =
+                    std::collections::HashSet::new();
                 let mut result: Vec<Binding> = Vec::new();
                 for branch in branches {
                     let branch_result = evaluate_branch(
