@@ -29,15 +29,25 @@ struct CacheInner {
     entries: HashMap<u64, CacheEntry>,
     /// LRU order: front = least-recently-used, back = most-recently-used.
     order: VecDeque<u64>,
+    /// Position of each page_id in the order VecDeque (for O(1) touch).
+    positions: HashMap<u64, usize>,
     capacity: usize,
 }
 
 impl CacheInner {
     fn touch(&mut self, page_id: u64) {
-        if let Some(pos) = self.order.iter().position(|&id| id == page_id) {
-            self.order.remove(pos);
+        if let Some(&pos) = self.positions.get(&page_id) {
+            if pos == self.order.len() - 1 {
+                return; // Already at MRU position
+            }
+            // Swap with last element to avoid updating all positions
+            let last_id = self.order.pop_back().unwrap();
+            self.order[pos] = last_id;
+            self.positions.insert(last_id, pos);
+            self.positions.remove(&page_id);
         }
         self.order.push_back(page_id);
+        self.positions.insert(page_id, self.order.len() - 1);
     }
 }
 
@@ -57,6 +67,7 @@ impl PageCache {
             inner: RwLock::new(CacheInner {
                 entries: HashMap::new(),
                 order: VecDeque::new(),
+                positions: HashMap::new(),
                 capacity,
             }),
         }
@@ -84,6 +95,7 @@ impl PageCache {
         while inner.entries.len() >= inner.capacity && inner.capacity > 0 {
             if let Some(id) = inner.order.pop_front() {
                 inner.entries.remove(&id);
+                inner.positions.remove(&id);
             } else {
                 break; // order/entries out of sync — avoid infinite loop
             }
@@ -95,7 +107,9 @@ impl PageCache {
                 dirty: false,
             },
         );
+        let new_pos = inner.order.len();
         inner.order.push_back(page_id);
+        inner.positions.insert(page_id, new_pos);
         Ok(data)
     }
 
@@ -113,6 +127,7 @@ impl PageCache {
             while inner.entries.len() >= inner.capacity && inner.capacity > 0 {
                 if let Some(id) = inner.order.pop_front() {
                     inner.entries.remove(&id);
+                    inner.positions.remove(&id);
                 } else {
                     break; // order/entries out of sync — avoid infinite loop
                 }
@@ -120,7 +135,9 @@ impl PageCache {
             inner
                 .entries
                 .insert(page_id, CacheEntry { data, dirty: true });
+            let new_pos = inner.order.len();
             inner.order.push_back(page_id);
+            inner.positions.insert(page_id, new_pos);
         }
     }
 
@@ -143,6 +160,7 @@ impl PageCache {
         let mut inner = self.inner.write().expect("lock poisoned");
         inner.entries.remove(&page_id);
         inner.order.retain(|&id| id != page_id);
+        inner.positions.remove(&page_id);
     }
 
     /// Invalidate all cached pages with `page_id >= from_page`.
@@ -153,6 +171,7 @@ impl PageCache {
         let mut inner = self.inner.write().expect("lock poisoned");
         inner.entries.retain(|&id, _| id < from_page);
         inner.order.retain(|&id| id < from_page);
+        inner.positions.retain(|&id, _| id < from_page);
     }
 
     /// Number of pages currently cached (for testing).
