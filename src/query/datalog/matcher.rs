@@ -3,6 +3,7 @@ use super::types::{AttributeSpec, EdnValue, Pattern, PseudoAttr};
 use crate::graph::FactStorage;
 use crate::graph::types::{EntityId, Fact, Value};
 use crate::storage::index::Indexes;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -58,10 +59,10 @@ impl PatternMatcher {
         }
     }
 
-    fn get_facts(&self) -> Vec<Fact> {
+    fn get_facts(&self) -> Cow<'_, [Fact]> {
         match &self.storage {
-            MatcherStorage::Owned(s) => s.get_asserted_facts().unwrap_or_default(),
-            MatcherStorage::Slice(s) => s.to_vec(),
+            MatcherStorage::Owned(s) => Cow::Owned(s.get_asserted_facts().unwrap_or_default()),
+            MatcherStorage::Slice(s) => Cow::Borrowed(s),
         }
     }
 
@@ -73,8 +74,8 @@ impl PatternMatcher {
         // Get all currently asserted facts
         let facts = self.get_facts();
 
-        for fact in facts {
-            if let Some(bindings) = self.match_fact_against_pattern(&fact, pattern) {
+        for fact in &*facts {
+            if let Some(bindings) = self.match_fact_against_pattern(fact, pattern) {
                 results.push(bindings);
             }
         }
@@ -284,8 +285,8 @@ impl PatternMatcher {
         let facts = self.get_facts();
 
         let mut results = Vec::new();
-        for fact in facts {
-            if let Some(bindings) = self.match_fact_against_pattern(&fact, pattern) {
+        for fact in &*facts {
+            if let Some(bindings) = self.match_fact_against_pattern(fact, pattern) {
                 results.push(bindings);
             }
         }
@@ -452,7 +453,7 @@ impl PatternMatcher {
 
         let facts = self.get_facts();
 
-        for fact in facts {
+        for fact in &*facts {
             // Try to match with existing bindings
             let mut new_bindings = existing.clone();
 
@@ -460,7 +461,7 @@ impl PatternMatcher {
             let resolved_pattern = self.apply_bindings_to_pattern(pattern, existing);
 
             if let Some(additional_bindings) =
-                self.match_fact_against_pattern(&fact, &resolved_pattern)
+                self.match_fact_against_pattern(fact, &resolved_pattern)
             {
                 // Check that additional bindings are consistent with existing.
                 // Hidden fact-metadata keys (prefixed `__f`) are always overwritten

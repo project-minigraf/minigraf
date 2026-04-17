@@ -86,14 +86,13 @@ pub struct DatalogExecutor {
 impl DatalogExecutor {
     #[allow(dead_code)]
     pub fn new(storage: FactStorage) -> Self {
-        let indexes = storage.pending_indexes_snapshot();
         DatalogExecutor {
             storage,
             facts_override: None,
             read_now_floor: None,
             rules: Arc::new(RwLock::new(RuleRegistry::new())),
             functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
-            indexes: Arc::new(indexes),
+            indexes: Arc::new(crate::storage::index::Indexes::new()),
             max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
             max_results: crate::query::datalog::evaluator::DEFAULT_MAX_RESULTS,
         }
@@ -107,14 +106,13 @@ impl DatalogExecutor {
         rules: Arc<RwLock<RuleRegistry>>,
         functions: Arc<RwLock<FunctionRegistry>>,
     ) -> Self {
-        let indexes = storage.pending_indexes_snapshot();
         DatalogExecutor {
             storage,
             facts_override: None,
             read_now_floor: None,
             rules,
             functions,
-            indexes: Arc::new(indexes),
+            indexes: Arc::new(crate::storage::index::Indexes::new()),
             max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
             max_results: crate::query::datalog::evaluator::DEFAULT_MAX_RESULTS,
         }
