@@ -8,9 +8,15 @@
 
 ## Goal
 
-Ship Minigraf as an npm package (`@minigraf/core`) that runs natively in browser
-environments using WebAssembly (`wasm32-unknown-unknown` + `wasm-bindgen`), with full
-TypeScript types and a page-granular IndexedDB storage backend.
+Ship Minigraf as an npm package (`@minigraf/core`) that runs natively in **browser
+environments only** using WebAssembly (`wasm32-unknown-unknown` + `wasm-bindgen`), with
+full TypeScript types and a page-granular IndexedDB storage backend.
+
+**`@minigraf/core` is not compatible with Node.js or other server-side runtimes.**
+Server-side Node.js is handled by `@minigraf/node` (Phase 8.3, `napi-rs`, native
+bindings). These are distinct packages with different storage backends, different
+loading mechanisms, and different performance profiles. Do not attempt to make
+`@minigraf/core` work in Node.js — use the correct package for the target runtime.
 
 ---
 
@@ -120,6 +126,12 @@ examples/
 ## Public API (`src/browser/mod.rs`)
 
 All methods are `async` and compile to JS `Promise`s via `wasm-bindgen`.
+
+**Runtime requirement**: this API requires a browser environment with `window.indexedDB`
+available. It will not function in Node.js, Deno, Bun, or any server-side runtime
+(IndexedDB is absent; WASM file loading also differs). `open_in_memory()` avoids
+IndexedDB but is still not supported or tested outside a browser context — use
+`@minigraf/node` (Phase 8.3) for server-side use cases.
 
 ```rust
 #[wasm_bindgen]
@@ -476,8 +488,27 @@ If the console shows the expected JSON, the example passes.
 
 ---
 
+## Package scope and runtime compatibility
+
+| Package | Target | Storage | Build tool | Phase |
+|---------|--------|---------|------------|-------|
+| `@minigraf/core` | Browser only | IndexedDB | `wasm-pack --target web` | 8.1a (this) |
+| `@minigraf/node` | Node.js / server | Filesystem | `napi-rs` | 8.3 |
+
+`wasm-pack --target web` generates ES-module JS glue that loads the `.wasm` file via
+`fetch()` and calls `window.indexedDB` for storage. Neither is available in Node.js in
+the same form. A Node.js WASM build would require `--target nodejs` (CommonJS,
+`fs.readFileSync` for WASM loading) **and** a different storage backend — that is
+exactly what Phase 8.3 provides, as native bindings rather than WASM.
+
+**Do not add a `--target nodejs` build to this phase.** It is out of scope and
+would require a different storage backend design.
+
+---
+
 ## Out of Scope for this Phase
 
+- Node.js / server-side runtime support — use `@minigraf/node` (Phase 8.3)
 - SharedArrayBuffer / WASM threads — `BrowserDb` is single-threaded by design
 - Explicit write transactions (`begin_write` / `WriteTransaction`) — single `(transact [...])` batching is sufficient
 - On-demand page fetching from IndexedDB — requires async `StorageBackend`, post-1.0
