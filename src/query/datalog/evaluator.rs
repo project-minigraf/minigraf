@@ -32,6 +32,7 @@ use crate::graph::types::{Fact, Value};
 use crate::storage::index::encode_value;
 use anyhow::{Result, anyhow};
 use std::collections::BTreeSet;
+use std::collections::HashSet;
 use std::sync::{Arc, RwLock};
 
 /// Default maximum iterations for recursive evaluation (kept for reference).
@@ -674,14 +675,21 @@ impl StratifiedEvaluator {
                 );
                 let derived = sub_eval.evaluate_recursive_rules(&stratum_preds)?;
                 // Snapshot existing fact keys so we only load truly new (derived) facts
-                let existing: Vec<(uuid::Uuid, String, Value)> = accumulated
+                let existing: HashSet<(uuid::Uuid, String, Vec<u8>)> = accumulated
                     .get_asserted_facts()?
                     .into_iter()
-                    .map(|f| (f.entity, f.attribute, f.value))
+                    .map(|f| {
+                        let encoded = encode_value(&f.value);
+                        (f.entity, f.attribute, encoded)
+                    })
                     .collect();
                 for fact in derived.get_asserted_facts()? {
-                    let key = (fact.entity, fact.attribute.clone(), fact.value.clone());
-                    if !existing.iter().any(|e| e == &key) {
+                    let key = (
+                        fact.entity,
+                        fact.attribute.clone(),
+                        encode_value(&fact.value),
+                    );
+                    if !existing.contains(&key) {
                         let _ = accumulated.load_fact(fact);
                     }
                 }
