@@ -1,5 +1,5 @@
 use super::evaluator::{StratifiedEvaluator, evaluate_not_join};
-use super::functions::{AggImpl, FunctionRegistry, apply_builtin_aggregate, value_lt};
+use super::functions::{AggImpl, FunctionRegistry, apply_builtin_aggregate, value_cmp};
 use super::matcher::{PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::optimizer;
 use super::rules::RuleRegistry;
@@ -1048,42 +1048,46 @@ fn apply_window_functions(
 
         // For each partition: sort, compute window values, write back.
         for (_, row_indices) in &mut partitions {
-            // Sort by order_by key.
-            row_indices.sort_by(|&a, &b| {
-                let va = bindings[a].get(&ws.order_by).unwrap_or(&Value::Null);
-                let vb = bindings[b].get(&ws.order_by).unwrap_or(&Value::Null);
-                let lt = value_lt(va, vb);
-                let eq = va == vb;
-                let cmp = if eq {
-                    std::cmp::Ordering::Equal
-                } else if lt {
-                    std::cmp::Ordering::Less
-                } else {
-                    std::cmp::Ordering::Greater
-                };
+            // Pre-extract order_by values into a contiguous Vec so the sort
+            // comparator never touches the HashMap — O(n) lookups here instead
+            // of O(n log n) random HashMap accesses inside sort_by.
+            let mut keyed: Vec<(Value, usize)> = row_indices
+                .iter()
+                .map(|&i| {
+                    let k = bindings[i]
+                        .get(&ws.order_by)
+                        .cloned()
+                        .unwrap_or(Value::Null);
+                    (k, i)
+                })
+                .collect();
+            keyed.sort_by(|(a, _), (b, _)| {
+                let cmp = value_cmp(a, b);
                 match ws.order {
                     Order::Asc => cmp,
                     Order::Desc => cmp.reverse(),
                 }
             });
+            // Rewrite row_indices in sorted order for the write-back step.
+            for (dest, (_, src)) in row_indices.iter_mut().zip(keyed.iter()) {
+                *dest = *src;
+            }
 
-            // Compute one window value per row in partition order.
+            // Compute one window value per row in sorted order.
             let window_values: Vec<Value> = match ws.func {
-                WindowFunc::RowNumber => row_indices
-                    .iter()
-                    .enumerate()
-                    .map(|(pos, _)| Value::Integer(pos as i64 + 1))
+                WindowFunc::RowNumber => (1..=keyed.len())
+                    .map(|pos| Value::Integer(pos as i64))
                     .collect(),
 
                 WindowFunc::Rank => {
-                    let mut values = Vec::with_capacity(row_indices.len());
+                    // Reuse pre-extracted keys for tie-detection — no extra HashMap lookups.
+                    let mut values = Vec::with_capacity(keyed.len());
                     let mut rank = 1i64;
-                    let mut prev_order_val: Option<Value> = None;
-                    for (row_num, &row_idx) in (1i64..).zip(row_indices.iter()) {
-                        let cur_val = bindings[row_idx].get(&ws.order_by).cloned();
-                        if prev_order_val.as_ref() != cur_val.as_ref() {
+                    let mut prev: Option<&Value> = None;
+                    for (row_num, (key, _)) in (1i64..).zip(keyed.iter()) {
+                        if prev != Some(key) {
                             rank = row_num;
-                            prev_order_val = cur_val;
+                            prev = Some(key);
                         }
                         values.push(Value::Integer(rank));
                     }
@@ -1101,15 +1105,15 @@ fn apply_window_functions(
                         )
                     })?;
 
-                    let mut values = Vec::with_capacity(row_indices.len());
+                    let mut values = Vec::with_capacity(keyed.len());
                     match &desc.impl_ {
                         AggImpl::Builtin(ops) => {
                             let mut acc = (ops.init)();
-                            for &row_idx in row_indices.iter() {
+                            for (_, row_idx) in keyed.iter() {
                                 let val = ws
                                     .var
                                     .as_ref()
-                                    .and_then(|v| bindings[row_idx].get(v))
+                                    .and_then(|v| bindings[*row_idx].get(v))
                                     .unwrap_or(&Value::Null);
                                 (ops.step)(&mut acc, val);
                                 values.push((ops.finalise)(&acc));
@@ -1118,11 +1122,11 @@ fn apply_window_functions(
                         AggImpl::Udf(ops) => {
                             let mut acc = (ops.init)();
                             let mut row_count = 0usize;
-                            for &row_idx in row_indices.iter() {
+                            for (_, row_idx) in keyed.iter() {
                                 let val = ws
                                     .var
                                     .as_ref()
-                                    .and_then(|v| bindings[row_idx].get(v))
+                                    .and_then(|v| bindings[*row_idx].get(v))
                                     .unwrap_or(&Value::Null);
                                 (ops.step)(&mut acc, val);
                                 row_count += 1;
