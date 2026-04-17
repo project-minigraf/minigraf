@@ -15,7 +15,7 @@ documentation = "https://docs.rs/minigraf"
 crate-type = ["cdylib", "rlib"]
 
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = ["-O", "--enable-bulk-memory"]
+wasm-opt = false
 
 [package.metadata.docs.rs]
 all-features = true
