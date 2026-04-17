@@ -80,6 +80,31 @@ pub enum Value {
 
 impl Eq for Value {}
 
+impl std::hash::Hash for Value {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Value::String(s) => s.hash(state),
+            Value::Integer(i) => i.hash(state),
+            Value::Float(f) => {
+                if f.is_nan() {
+                    0_u8.hash(state);
+                } else if f.is_sign_negative() {
+                    1_u8.hash(state);
+                    (-f).to_bits().hash(state);
+                } else {
+                    2_u8.hash(state);
+                    f.to_bits().hash(state);
+                }
+            }
+            Value::Boolean(b) => b.hash(state),
+            Value::Ref(r) => r.hash(state),
+            Value::Keyword(k) => k.hash(state),
+            Value::Null => {}
+        }
+    }
+}
+
 impl PartialOrd for Value {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
