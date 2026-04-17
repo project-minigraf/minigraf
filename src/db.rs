@@ -987,6 +987,7 @@ impl<'a> WriteTransaction<'a> {
     /// Returns `true` if an auto-checkpoint should be triggered.  The caller is
     /// responsible for applying facts to `FactStorage` **before** triggering the
     /// checkpoint, so that the checkpoint captures the newly written facts.
+    #[allow(unused_variables)]
     fn wal_write_stamped_batch(
         ctx: &mut WriteContext,
         opts: &OpenOptions,

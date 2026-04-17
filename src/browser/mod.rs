@@ -4,5 +4,7 @@
 //! feature enabled. It is **not** compatible with Node.js or any server-side
 //! runtime. For Node.js, use `@minigraf/node` (Phase 8.3).
 
+/// Synchronous in-memory page buffer with dirty-page tracking.
 pub mod buffer;
+/// Async IndexedDB backend for browser WASM persistence.
 pub mod indexeddb;
