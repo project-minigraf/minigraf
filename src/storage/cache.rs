@@ -29,25 +29,24 @@ struct CacheInner {
     entries: HashMap<u64, CacheEntry>,
     /// LRU order: front = least-recently-used, back = most-recently-used.
     order: VecDeque<u64>,
-    /// Position of each page_id in the order VecDeque (for O(1) touch).
-    positions: HashMap<u64, usize>,
     capacity: usize,
 }
 
 impl CacheInner {
+    /// Move `page_id` to the MRU (back) position.
+    ///
+    /// Uses an O(N) scan — acceptable for the small cache sizes used here
+    /// (default 256 pages). A positions HashMap was tried previously but was
+    /// incorrect: every `pop_front` eviction shifts all remaining indices,
+    /// making stored positions stale and causing out-of-bounds panics.
     fn touch(&mut self, page_id: u64) {
-        if let Some(&pos) = self.positions.get(&page_id) {
+        if let Some(pos) = self.order.iter().position(|&id| id == page_id) {
             if pos == self.order.len() - 1 {
                 return; // Already at MRU position
             }
-            // Swap with last element to avoid updating all positions
-            let last_id = self.order.pop_back().unwrap();
-            self.order[pos] = last_id;
-            self.positions.insert(last_id, pos);
-            self.positions.remove(&page_id);
+            self.order.remove(pos);
         }
         self.order.push_back(page_id);
-        self.positions.insert(page_id, self.order.len() - 1);
     }
 }
 
@@ -67,7 +66,6 @@ impl PageCache {
             inner: RwLock::new(CacheInner {
                 entries: HashMap::new(),
                 order: VecDeque::new(),
-                positions: HashMap::new(),
                 capacity,
             }),
         }
@@ -95,7 +93,6 @@ impl PageCache {
         while inner.entries.len() >= inner.capacity && inner.capacity > 0 {
             if let Some(id) = inner.order.pop_front() {
                 inner.entries.remove(&id);
-                inner.positions.remove(&id);
             } else {
                 break; // order/entries out of sync — avoid infinite loop
             }
@@ -107,9 +104,7 @@ impl PageCache {
                 dirty: false,
             },
         );
-        let new_pos = inner.order.len();
         inner.order.push_back(page_id);
-        inner.positions.insert(page_id, new_pos);
         Ok(data)
     }
 
@@ -127,7 +122,6 @@ impl PageCache {
             while inner.entries.len() >= inner.capacity && inner.capacity > 0 {
                 if let Some(id) = inner.order.pop_front() {
                     inner.entries.remove(&id);
-                    inner.positions.remove(&id);
                 } else {
                     break; // order/entries out of sync — avoid infinite loop
                 }
@@ -135,9 +129,7 @@ impl PageCache {
             inner
                 .entries
                 .insert(page_id, CacheEntry { data, dirty: true });
-            let new_pos = inner.order.len();
             inner.order.push_back(page_id);
-            inner.positions.insert(page_id, new_pos);
         }
     }
 
@@ -160,7 +152,6 @@ impl PageCache {
         let mut inner = self.inner.write().expect("lock poisoned");
         inner.entries.remove(&page_id);
         inner.order.retain(|&id| id != page_id);
-        inner.positions.remove(&page_id);
     }
 
     /// Invalidate all cached pages with `page_id >= from_page`.
@@ -171,7 +162,6 @@ impl PageCache {
         let mut inner = self.inner.write().expect("lock poisoned");
         inner.entries.retain(|&id, _| id < from_page);
         inner.order.retain(|&id| id < from_page);
-        inner.positions.retain(|&id, _| id < from_page);
     }
 
     /// Number of pages currently cached (for testing).
@@ -277,5 +267,30 @@ mod tests {
         // Page 4 must now be loadable from cache (just loaded)
         // We can't directly inspect the cache, but we can verify capacity is respected
         assert!(cache.cached_page_count() == 3);
+    }
+
+    /// Regression test for: put_dirty on a cached page after an eviction caused
+    /// an out-of-bounds panic. The positions HashMap (now removed) became stale
+    /// after pop_front shifted all remaining VecDeque indices by 1, so touch()
+    /// tried to index beyond the end of the order deque.
+    #[test]
+    fn test_put_dirty_after_eviction_does_not_panic() {
+        let mut backend = MemoryBackend::new();
+        for i in 1u64..=3 {
+            backend.write_page(i, &make_page(i as u8)).unwrap();
+        }
+        let cache = PageCache::new(2);
+        // Fill cache: pages 1 and 2 (order: [1, 2])
+        cache.get_or_load(1, &backend).unwrap();
+        cache.get_or_load(2, &backend).unwrap();
+        // Evict page 1 (LRU) by loading page 3 (order becomes [2, 3])
+        cache.get_or_load(3, &backend).unwrap();
+        // put_dirty on page 2 triggers touch(); previously this panicked because
+        // the stale position for page 2 (index 1 in the old 2-element deque)
+        // became out of bounds after eviction made it a 2-element deque with
+        // indices 0..1 but the stored position was 1 — which after pop_front
+        // pointed past the end.
+        cache.put_dirty(2, make_page(0xBB)); // must not panic
+        assert_eq!(cache.cached_page_count(), 2);
     }
 }
