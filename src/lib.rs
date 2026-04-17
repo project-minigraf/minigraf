@@ -55,6 +55,9 @@ pub(crate) mod storage;
 pub(crate) mod temporal;
 pub(crate) mod wal;
 
+#[cfg(all(target_arch = "wasm32", feature = "browser"))]
+pub mod browser;
+
 pub use db::{Minigraf, OpenOptions, OpenOptionsWithPath, WriteTransaction};
 pub use repl::Repl;
 

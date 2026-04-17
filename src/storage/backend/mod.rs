@@ -16,3 +16,6 @@ pub use memory::MemoryBackend;
 #[cfg(not(target_arch = "wasm32"))]
 #[allow(unused_imports)]
 pub use file::FileBackend;
+
+#[cfg(all(target_arch = "wasm32", feature = "browser"))]
+pub use crate::browser::buffer::BrowserBufferBackend;
