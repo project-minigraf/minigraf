@@ -1368,9 +1368,7 @@ pub(crate) fn apply_or_clauses(
                         // (1) the parser enforces join_vars ⊆ outer_bound, so join_vars ⊆ outer_keys, and
                         // (2) retaining outer_keys is safe because those variables were stable before the or-join.
                         b.retain(|k, _| outer_keys.contains(k));
-                        let mut key: Vec<_> =
-                            b.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-                        key.sort_unstable();
+                        let key: Vec<_> = b.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                         if seen.insert(key) {
                             result.push(b);
                         }
