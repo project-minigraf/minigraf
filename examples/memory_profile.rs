@@ -5,9 +5,13 @@
 //! Inserts <fact_count> `:eN :val N` facts into a checkpointed file-backed DB,
 //! then runs a single point-entity query. Run under heaptrack to capture
 //! peak heap and allocation counts.
+//!
+//! Not applicable on WASM targets (no filesystem, no heaptrack).
 
+#[cfg(not(target_arch = "wasm32"))]
 use minigraf::OpenOptions;
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> anyhow::Result<()> {
     let n: usize = std::env::args()
         .nth(1)
@@ -46,3 +50,6 @@ fn main() -> anyhow::Result<()> {
     eprintln!("memory_profile: inserted and queried {} facts", n);
     Ok(())
 }
+
+#[cfg(target_arch = "wasm32")]
+fn main() {}

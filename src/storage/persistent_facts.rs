@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 ///
 /// Sorts facts by `(tx_count, entity_bytes, attribute)` before hashing to
 /// produce a stable total order independent of Vec insertion order.
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 fn compute_index_checksum(facts: &[Fact]) -> u32 {
     let mut sorted: Vec<&Fact> = facts.iter().collect();
     sorted.sort_by(|a, b| {
@@ -912,6 +912,31 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }
+
+    /// Run a closure with read access to the underlying storage backend.
+    ///
+    /// Used by the browser WASM layer to read pages after `save()` without
+    /// exposing the `Arc<Mutex<B>>` directly.
+    #[cfg(all(target_arch = "wasm32", feature = "browser"))]
+    pub(crate) fn with_backend<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&B) -> R,
+    {
+        let guard = self.backend.lock().unwrap();
+        f(&*guard)
+    }
+
+    /// Run a closure with mutable access to the underlying storage backend.
+    ///
+    /// Used by the browser WASM layer to drain dirty pages after `save()`.
+    #[cfg(all(target_arch = "wasm32", feature = "browser"))]
+    pub(crate) fn with_backend_mut<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce(&mut B) -> R,
+    {
+        let mut guard = self.backend.lock().unwrap();
+        f(&mut *guard)
+    }
 }
 
 impl<B: StorageBackend + 'static> Drop for PersistentFactStorage<B> {
@@ -1059,7 +1084,7 @@ fn build_sorted_index_entries(
     (eavt, aevt, avet, vaet)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::graph::types::Value;

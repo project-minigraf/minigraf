@@ -55,7 +55,12 @@ pub(crate) mod storage;
 pub(crate) mod temporal;
 pub(crate) mod wal;
 
-pub use db::{Minigraf, OpenOptions, OpenOptionsWithPath, WriteTransaction};
+#[cfg(all(target_arch = "wasm32", feature = "browser"))]
+pub mod browser;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use db::OpenOptionsWithPath;
+pub use db::{Minigraf, OpenOptions, WriteTransaction};
 pub use repl::Repl;
 
 // EAV value types — users construct and match on these

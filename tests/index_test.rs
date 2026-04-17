@@ -7,6 +7,7 @@
 //! - Transaction-time as-of queries still work correctly
 //! - Recursive rules are unaffected by the index layer
 //! - Explicit write transactions work correctly with indexes
+#![cfg(not(target_arch = "wasm32"))]
 
 use minigraf::db::Minigraf;
 use minigraf::{QueryResult, Value};

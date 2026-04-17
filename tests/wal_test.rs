@@ -10,6 +10,7 @@
 //! - Explicit transaction commit and rollback
 //! - Concurrent reads while writer holds the write lock
 //! - V2 → V3 file format upgrade on first checkpoint
+#![cfg(not(target_arch = "wasm32"))]
 
 use minigraf::QueryResult;
 use minigraf::db::{Minigraf, OpenOptions};

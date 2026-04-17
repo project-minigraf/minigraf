@@ -14,7 +14,7 @@ use crate::graph::types::{Fact, TxId, VALID_TIME_FOREVER};
 /// `i64::MIN` is chosen because it is not a representable Unix millisecond timestamp
 /// in any practical context, avoiding the collision that `0` would have with the Unix
 /// epoch (1970-01-01T00:00:00Z), which is a legitimate `valid_from` value.
-const VALID_FROM_USE_TX_TIME: i64 = i64::MIN;
+pub(crate) const VALID_FROM_USE_TX_TIME: i64 = i64::MIN;
 use crate::graph::FactStorage;
 use crate::graph::types::Value;
 use crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS;
@@ -28,11 +28,14 @@ use crate::query::datalog::parser::parse_datalog_command;
 use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::types::{AttributeSpec, DatalogCommand, Transaction};
 use crate::storage::backend::MemoryBackend;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::storage::backend::file::FileBackend;
 use crate::storage::persistent_facts::PersistentFactStorage;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::wal::WalWriter;
 use anyhow::{Result, bail};
 use std::any::Any;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
@@ -115,6 +118,7 @@ impl OpenOptions {
     }
 
     /// Set the path for a file-backed database.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn path(self, path: impl AsRef<Path>) -> OpenOptionsWithPath {
         OpenOptionsWithPath {
             opts: self,
@@ -131,11 +135,13 @@ impl OpenOptions {
 }
 
 /// `OpenOptions` combined with a file path, ready to open.
+#[cfg(not(target_arch = "wasm32"))]
 pub struct OpenOptionsWithPath {
     opts: OpenOptions,
     path: PathBuf,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl OpenOptionsWithPath {
     /// Open or create the file-backed database.
     pub fn open(self) -> Result<Minigraf> {
@@ -150,6 +156,7 @@ enum WriteContext {
     /// In-memory database: no WAL, no persistence.
     Memory,
     /// File-backed database: has a WAL sidecar and a persistent storage layer.
+    #[cfg(not(target_arch = "wasm32"))]
     File {
         pfs: PersistentFactStorage<FileBackend>,
         /// WAL writer. `None` after a checkpoint until the next write.
@@ -202,10 +209,12 @@ impl Drop for Inner {
 ///
 /// # File-backed usage
 /// ```no_run
+/// # #[cfg(not(target_arch = "wasm32"))] {
 /// use minigraf::db::Minigraf;
 ///
 /// let db = Minigraf::open("mydb.graph").unwrap();
 /// db.execute(r#"(transact [[:alice :person/name "Alice"]])"#).unwrap();
+/// # }
 /// ```
 ///
 /// # In-memory usage
@@ -250,11 +259,13 @@ impl Minigraf {
     ///
     /// A sidecar WAL file (`<path>.wal`) is created alongside the main file.
     /// Any existing WAL from a previous crash is replayed automatically.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         Self::open_with_options(path, OpenOptions::default())
     }
 
     /// Open or create a file-backed database with custom options.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn open_with_options(path: impl AsRef<Path>, opts: OpenOptions) -> Result<Self> {
         let db_path = path.as_ref().to_path_buf();
 
@@ -330,6 +341,7 @@ impl Minigraf {
     /// Replay any WAL entries that are newer than the main file's checkpoint.
     ///
     /// Returns the number of entries replayed (used to seed `wal_entry_count`).
+    #[cfg(not(target_arch = "wasm32"))]
     fn replay_wal(
         wal_path: &Path,
         fact_storage: &FactStorage,
@@ -535,6 +547,7 @@ impl Minigraf {
             WriteContext::Memory => {
                 // No-op for in-memory databases.
             }
+            #[cfg(not(target_arch = "wasm32"))]
             WriteContext::File {
                 pfs,
                 wal,
@@ -618,6 +631,7 @@ impl Minigraf {
     }
 
     /// Compute the WAL sidecar path for a given database path.
+    #[cfg(not(target_arch = "wasm32"))]
     fn wal_path_for(db_path: &Path) -> PathBuf {
         let mut p = db_path.to_path_buf();
         let name = p
@@ -636,7 +650,7 @@ impl Minigraf {
 
     /// Convert a `Transaction` into a list of assertion `Fact`s (tx_id and tx_count
     /// are set to 0 as placeholders; they are assigned at commit time).
-    fn materialize_transaction(tx: &Transaction) -> Result<Vec<Fact>> {
+    pub(crate) fn materialize_transaction(tx: &Transaction) -> Result<Vec<Fact>> {
         use crate::query::datalog::matcher::{edn_to_entity_id, edn_to_value};
         use crate::query::datalog::types::EdnValue;
 
@@ -675,7 +689,7 @@ impl Minigraf {
     }
 
     /// Convert a `Transaction` into a list of retraction `Fact`s.
-    fn materialize_retraction(tx: &Transaction) -> Result<Vec<Fact>> {
+    pub(crate) fn materialize_retraction(tx: &Transaction) -> Result<Vec<Fact>> {
         use crate::query::datalog::matcher::{edn_to_entity_id, edn_to_value};
         use crate::query::datalog::types::EdnValue;
 
@@ -975,6 +989,7 @@ impl<'a> WriteTransaction<'a> {
     /// Returns `true` if an auto-checkpoint should be triggered.  The caller is
     /// responsible for applying facts to `FactStorage` **before** triggering the
     /// checkpoint, so that the checkpoint captures the newly written facts.
+    #[allow(unused_variables)]
     fn wal_write_stamped_batch(
         ctx: &mut WriteContext,
         opts: &OpenOptions,
@@ -983,6 +998,7 @@ impl<'a> WriteTransaction<'a> {
     ) -> Result<bool> {
         match ctx {
             WriteContext::Memory => Ok(false),
+            #[cfg(not(target_arch = "wasm32"))]
             WriteContext::File {
                 pfs,
                 wal,
@@ -1054,7 +1070,7 @@ impl Drop for WriteTransaction<'_> {
 
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 

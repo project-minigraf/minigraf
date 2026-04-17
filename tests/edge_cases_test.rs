@@ -4,6 +4,7 @@
 //! - Oversized fact rejected at insertion (file-backed, both execute() and commit() paths)
 //! - Oversized fact accepted in-memory (no page size constraint)
 //! - Stale WAL after checkpoint is replayed idempotently (no duplicate facts)
+#![cfg(not(target_arch = "wasm32"))]
 
 use minigraf::{Minigraf, OpenOptions, QueryResult};
 
