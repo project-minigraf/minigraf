@@ -86,6 +86,7 @@ opt-level = "z"
 inherits = "release"
 strip = "none"
 debug = true
+panic = "unwind"
 
 # The profile that 'dist' will build with
 [profile.dist]
