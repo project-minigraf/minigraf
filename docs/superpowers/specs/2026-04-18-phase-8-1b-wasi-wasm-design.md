@@ -103,11 +103,11 @@ fn main() -> anyhow::Result<()> {
 
 ### 3. `src/db.rs` — WASM-gated test
 
-Add at least one `#[cfg(all(target_arch = "wasm32", test))]` gated test verifying the in-memory backend compiles and works. Placed in the existing `#[cfg(test)]` section of `src/db.rs`:
+Add at least one `#[cfg(all(target_os = "wasi", test))]` gated test verifying the in-memory backend compiles and works. Placed in the existing `#[cfg(test)]` section of `src/db.rs`:
 
 ```rust
-#[cfg(all(target_arch = "wasm32", test))]
-mod wasm_tests {
+#[cfg(all(target_os = "wasi", test))]
+mod wasi_tests {
     use super::*;
 
     #[test]
@@ -120,7 +120,9 @@ mod wasm_tests {
 }
 ```
 
-Note: This test is not run in CI (WASI test execution is complex); it serves as a compile-time verification gate and usage example.
+**Why `target_os = "wasi"` and not `target_arch = "wasm32"`**: the broader `wasm32` gate would also match `wasm32-unknown-unknown` (browser), where `wasm-pack test` requires `#[wasm_bindgen_test]` instead of `#[test]`. A plain `#[test]` in that context is silently ignored or panics. WASI-specific gating keeps the two targets cleanly separated.
+
+Note: This test is not run in CI (WASI test execution via `cargo test --target wasm32-wasip1` requires a WASI-capable runner); it serves as a compile-time verification gate and usage example.
 
 ### 4. `.github/workflows/wasm-wasi.yml` — rewrite
 
