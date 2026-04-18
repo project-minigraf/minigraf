@@ -435,6 +435,47 @@ mod tests {
         assert_eq!(blob.byte_length() as usize % crate::storage::PAGE_SIZE, 0);
     }
 
+    /// Load the committed binary fixture (produced by `cargo run --example
+    /// generate_compat_fixture` from the native build) into a `BrowserDb` via
+    /// `import_graph` and verify the known facts are queryable.
+    ///
+    /// This is the **native → browser** direction of the cross-platform
+    /// compatibility test.  The companion native side lives in
+    /// `tests/cross_platform_compat_test.rs`.
+    #[wasm_bindgen_test]
+    async fn native_fixture_readable_by_browser_db() {
+        let fixture: &[u8] = include_bytes!("../../tests/fixtures/compat.graph");
+        let db = BrowserDb::open_in_memory().expect("open in-memory");
+        let arr = js_sys::Uint8Array::from(fixture);
+        db.import_graph(arr).await.expect("import native fixture");
+
+        let r = db
+            .execute(r#"(query [:find ?name :where [?e :name ?name]])"#.to_string())
+            .await
+            .expect("query name");
+        let v: serde_json::Value = serde_json::from_str(&r).unwrap();
+        let results = v["results"].as_array().unwrap();
+        assert_eq!(
+            results.len(),
+            1,
+            "expected 1 name result from native fixture"
+        );
+        assert_eq!(results[0][0], serde_json::Value::String("Alice".into()));
+
+        let r2 = db
+            .execute("(query [:find ?age :where [?e :age ?age]])".to_string())
+            .await
+            .expect("query age");
+        let v2: serde_json::Value = serde_json::from_str(&r2).unwrap();
+        let results2 = v2["results"].as_array().unwrap();
+        assert_eq!(
+            results2.len(),
+            1,
+            "expected 1 age result from native fixture"
+        );
+        assert_eq!(results2[0][0], serde_json::Value::Number(30.into()));
+    }
+
     #[wasm_bindgen_test]
     async fn idb_persistence_round_trip() {
         let db_name = "minigraf-test-persistence";
