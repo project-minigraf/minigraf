@@ -131,7 +131,7 @@ Offline-first storage with retroactive corrections — the bi-temporal model let
 
 ### For WASM / Browser
 
-Phase 8 target: page-granular IndexedDB backend, `wasm-pack` packaging, npm release as `@minigraf/core`. Also supports server-side WASM via WASI.
+Phase 8.1a complete: IndexedDB backend, `wasm-pack` packaging. Phase 8.1b complete: server-side WASM via `wasm32-wasip1` / WASI (Wasmtime, Wasmer). npm release as `@minigraf/core` planned for Phase 8.2.
 
 See the [Use Cases](https://github.com/adityamukho/minigraf/wiki/Use-Cases) wiki page for detailed guides on all three targets.
 
