@@ -211,14 +211,70 @@ jobs:
           path: |
             ${{ steps.cargo-dist.outputs.paths }}
             ${{ env.BUILD_MANIFEST_NAME }}
+  # Build the WASI binary (wasm32-wasip1)
+  build-wasm-wasi:
+    needs:
+      - plan
+    # Only build on tag pushes (release runs), not PRs
+    if: ${{ needs.plan.outputs.publishing == 'true' }}
+    runs-on: "ubuntu-22.04"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - name: Build WASI binary
+        run: cargo build --target wasm32-wasip1 --release --bin minigraf
+      - name: Stage artifact
+        run: |
+          mkdir -p target/wasm-artifacts
+          cp target/wasm32-wasip1/release/minigraf.wasm target/wasm-artifacts/minigraf-wasi.wasm
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: artifacts-wasm-wasi
+          path: target/wasm-artifacts/
+
+  # Build the browser WASM package (wasm32-unknown-unknown via wasm-pack)
+  build-wasm-browser:
+    needs:
+      - plan
+    # Only build on tag pushes (release runs), not PRs
+    if: ${{ needs.plan.outputs.publishing == 'true' }}
+    runs-on: "ubuntu-22.04"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Build browser WASM
+        run: wasm-pack build --target web --features browser
+      - name: Package pkg/ directory
+        run: |
+          mkdir -p target/wasm-artifacts
+          tar -czf target/wasm-artifacts/minigraf-browser-wasm.tar.gz -C . pkg/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: artifacts-wasm-browser
+          path: target/wasm-artifacts/
+
   # Determines if we should publish/announce
   host:
     needs:
       - plan
       - build-local-artifacts
       - build-global-artifacts
-    # Only run if we're "publishing", and only if plan, local and global didn't fail (skipped is fine)
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
+      - build-wasm-wasi
+      - build-wasm-browser
+    # Only run if we're "publishing", and only if all build jobs didn't fail (skipped is fine)
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') && (needs.build-wasm-wasi.result == 'skipped' || needs.build-wasm-wasi.result == 'success') && (needs.build-wasm-browser.result == 'skipped' || needs.build-wasm-browser.result == 'success') }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     runs-on: "ubuntu-22.04"
@@ -294,3 +350,18 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+
+  # Publish to crates.io after the GitHub release is created
+  publish-crates-io:
+    needs:
+      - plan
+      - host
+    if: ${{ always() && needs.host.result == 'success' && needs.plan.outputs.publishing == 'true' }}
+    runs-on: "ubuntu-22.04"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Publish to crates.io
+        run: cargo publish --locked --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
