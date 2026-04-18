@@ -113,7 +113,7 @@ No other database offers this combination:
 | **Embedded** | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No | ✅ Yes |
 | **Graph Native** | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No |
 | **Rust** | ✅ Yes | ❌ Clojure | ✅ Yes | ❌ Java | ❌ C |
-| **WASM Ready** | 🎯 Phase 8 | ❌ No | ⚠️ Limited | ❌ No | ✅ Yes |
+| **WASM Ready** | ✅ Phase 8.1a/b | ❌ No | ⚠️ Limited | ❌ No | ✅ Yes |
 
 **Embedded graph memory for agents, mobile, and the browser — SQLite's simplicity + Datomic's temporal model.**
 
@@ -140,7 +140,7 @@ See the [Use Cases](https://github.com/adityamukho/minigraf/wiki/Use-Cases) wiki
 Minigraf runs as:
 - ✅ An embedded library
 - ✅ A standalone binary (interactive REPL)
-- 🎯 A WebAssembly module (Phase 8)
+- ✅ A WebAssembly module — browser (`wasm32-unknown-unknown`) and server-side WASI (`wasm32-wasip1`) (Phase 8.1a/b complete)
 
 Minigraf will **not** be (by design):
 - **Distributed** — no clustering, no sharding, no replication; each agent instance owns its own `.graph` file
