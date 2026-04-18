@@ -1,11 +1,11 @@
 # Minigraf Test Coverage Report
 
-**Last Updated**: Phase 7.9 COMPLETE - Publish prep, 788 tests ✅
+**Last Updated**: Phase 8.1 COMPLETE - WebAssembly (browser + WASI), 795 tests ✅
 
 ## Test Summary
 
-**Total Tests**: 788 ✅ (781 passing, 7 ignored)
-- ✅ 524 unit tests (lib, +19 from `prepared.rs`)
+**Total Tests**: 795 ✅ (788 passing, 7 ignored)
+- ✅ 530 unit tests (lib, +6 from browser/mod.rs wasm-bindgen-test suite)
 - ✅ 24 bi-temporal tests (integration)
 - ✅ 10 complex query tests (integration)
 - ✅ 8 recursive rules tests (integration)
@@ -29,7 +29,27 @@
 - ✅ 17 prepared statement tests (integration, Phase 7.8 — entity/value/as-of/valid-at slots, combined temporal+entity, AnyValidTime, error paths, plan reuse)
 - ✅ 23 doc tests (15 prior + 8 new from Phase 7.9 rustdoc sweep on public API items)
 
-**Status**: ✅ **All 781 tests passing** (7 ignored: confirmed or+neg-cycle stratification bug)
+**Status**: ✅ **All 788 tests passing** (7 ignored: confirmed or+neg-cycle stratification bug)
+
+## Phase 8.1 Completion Status: ✅ COMPLETE
+
+**Phase 8.1a Features** (browser WASM, complete):
+- ✅ `BrowserDb` public API: `open_in_memory`, `execute`, `checkpoint`, `export_graph`, `import_graph`
+- ✅ `BrowserBufferBackend` — in-memory `StorageBackend` over a flat page buffer, byte-identical to native `.graph` format
+- ✅ `IndexedDbBackend` — page-granular IndexedDB storage via `web-sys` + `wasm-bindgen`
+- ✅ `wasm-pack` build generating `pkg/` with JS glue and TypeScript `.d.ts`
+- ✅ `wasm-bindgen-test` suite: 6 browser integration tests (Chrome + Firefox in CI)
+
+**Phase 8.1b Features** (WASI, complete):
+- ✅ `FileBackend` verified under WASI capability-based filesystem (no changes needed)
+- ✅ `wasm32-wasip1` CI workflow: build, unit tests (Wasmtime runner), smoke tests (Wasmtime + Wasmer)
+- ✅ Thread-dependent tests gated with `#[cfg(not(target_os = "wasi"))]`
+
+**Cross-platform compatibility** (issue #150, complete):
+- ✅ `tests/cross_platform_compat_test.rs`: 2 native tests (raw page byte round-trip + fixture readability)
+- ✅ `tests/fixtures/compat.graph`: committed v7 binary fixture with known facts
+- ✅ `native_fixture_readable_by_browser_db` wasm-bindgen-test: imports native fixture, verifies both facts
+- ✅ 795 tests passing (unit + integration + doc + wasm); version bumped to v0.20.0
 
 ## Phase 7.9 Completion Status: ✅ COMPLETE
 
@@ -700,9 +720,9 @@ cargo test -- --nocapture
 
 ## Conclusion
 
-**Phase 7.9 Status**: ✅ **COMPLETE**
+**Phase 8.1 Status**: ✅ **COMPLETE**
 
-**Test Quality**: ✅ **Excellent** — High confidence in all Phase 3-7.9 features
+**Test Quality**: ✅ **Excellent** — High confidence in all Phase 3-8.1 features
 
 **Strengths**:
 - WAL crash safety verified with real `mem::forget` simulation
@@ -724,13 +744,13 @@ cargo test -- --nocapture
 - User-defined functions verified: custom aggregates, custom predicates, UDF as window function, name collision guards, runtime error handling, thread safety (Phase 7.7b)
 - Prepared statements verified: entity/value/as-of/valid-at slot positions, AnyValidTime, combined temporal+entity (agentic loop pattern), plan reuse, all error paths (Phase 7.8)
 - Public API surface verified via rustdoc doctests: `Minigraf::open`, `execute`, `prepare`, `repl`, `WriteTransaction`, `OpenOptions` (Phase 7.9)
-- 788 tests covering all Phase 3-7.9 features
+- 795 tests covering all Phase 3-8.1 features (including browser WASM + WASI + cross-platform compat)
 
-**Confidence Level**: ✅ **Production-ready for Phase 7.9 scope**
+**Confidence Level**: ✅ **Production-ready for Phase 8.1 scope**
 
-**Readiness for Phase 8**: ✅ **Ready to proceed**
+**Readiness for Phase 8.2**: ✅ **Ready to proceed**
 
-The publish-ready, prepared-statement-capable, UDF-capable, window-function-capable, disjunction + aggregation + arithmetic/predicate expression capable, stratified-negation-capable, on-disk B+tree indexed, packed, cached bi-temporal Datalog engine is **solid, well-tested, documented, and benchmarked**.
+The WebAssembly-capable (browser + WASI), publish-ready, prepared-statement-capable, UDF-capable, window-function-capable, disjunction + aggregation + arithmetic/predicate expression capable, stratified-negation-capable, on-disk B+tree indexed, packed, cached bi-temporal Datalog engine is **solid, well-tested, documented, and benchmarked**.
 
 ---
 
