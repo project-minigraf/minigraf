@@ -1,4 +1,10 @@
 //! Cross-platform `.graph` file compatibility tests (native side).
+// These tests use Minigraf::open() and the file system, which are not available
+// on wasm32 targets. wasm-pack compiles integration tests too, so gate the
+// entire file.
+#![cfg(not(target_arch = "wasm32"))]
+
+//!
 //!
 //! Verifies that raw page bytes produced by the native storage layer are
 //! self-consistent (mimicking what `BrowserDb::export_graph` / `import_graph`
