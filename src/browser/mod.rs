@@ -455,7 +455,11 @@ mod tests {
             .expect("query name");
         let v: serde_json::Value = serde_json::from_str(&r).unwrap();
         let results = v["results"].as_array().unwrap();
-        assert_eq!(results.len(), 1, "expected 1 name result from native fixture");
+        assert_eq!(
+            results.len(),
+            1,
+            "expected 1 name result from native fixture"
+        );
         assert_eq!(results[0][0], serde_json::Value::String("Alice".into()));
 
         let r2 = db
@@ -464,7 +468,11 @@ mod tests {
             .expect("query age");
         let v2: serde_json::Value = serde_json::from_str(&r2).unwrap();
         let results2 = v2["results"].as_array().unwrap();
-        assert_eq!(results2.len(), 1, "expected 1 age result from native fixture");
+        assert_eq!(
+            results2.len(),
+            1,
+            "expected 1 age result from native fixture"
+        );
         assert_eq!(results2[0][0], serde_json::Value::Number(30.into()));
     }
 
