@@ -228,6 +228,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "wasi"))]
     fn test_concurrent_reads() {
         use std::sync::Arc;
         use std::thread;
