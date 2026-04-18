@@ -1743,7 +1743,7 @@ mod wasi_tests {
     #[test]
     fn in_memory_smoke() {
         let db = Minigraf::in_memory().expect("open in-memory db");
-        db.execute(r#"(transact [{:db/id "e1" :name "hello"}])"#)
+        db.execute("(transact [[:e1 :name \"hello\"]])")
             .expect("transact");
         let r = db
             .execute("(query [:find ?e :where [?e :name _]])")
