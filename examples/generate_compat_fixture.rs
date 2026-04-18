@@ -8,9 +8,16 @@
 //! v7 file format itself has changed — regenerating changes the binary and
 //! every cross-platform test that embeds it via `include_bytes!`.
 
-use std::path::PathBuf;
+// wasm-pack compiles examples for the browser target; provide a no-op entry
+// point so the example compiles cleanly. The actual generator only makes sense
+// on native (it needs the file system and Minigraf::open).
+#[cfg(target_arch = "wasm32")]
+fn main() {}
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> anyhow::Result<()> {
+    use std::path::PathBuf;
+
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let fixture_path = PathBuf::from(manifest_dir).join("tests/fixtures/compat.graph");
     let tmp_path = fixture_path.with_extension("graph.tmp");
