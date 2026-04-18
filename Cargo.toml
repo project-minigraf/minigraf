@@ -83,10 +83,10 @@ strip = "symbols"
 opt-level = "z"
 
 [profile.bench]
-inherits = "release"
 strip = "none"
 debug = true
-panic = "unwind"
+lto = true
+codegen-units = 1
 
 # The profile that 'dist' will build with
 [profile.dist]
