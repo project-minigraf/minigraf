@@ -113,7 +113,7 @@ No other database offers this combination:
 | **Embedded** | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No | ✅ Yes |
 | **Graph Native** | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No |
 | **Rust** | ✅ Yes | ❌ Clojure | ✅ Yes | ❌ Java | ❌ C |
-| **WASM Ready** | 🎯 Phase 8 | ❌ No | ⚠️ Limited | ❌ No | ✅ Yes |
+| **WASM Ready** | ✅ Phase 8.1a/b | ❌ No | ⚠️ Limited | ❌ No | ✅ Yes |
 
 **Embedded graph memory for agents, mobile, and the browser — SQLite's simplicity + Datomic's temporal model.**
 
@@ -131,7 +131,7 @@ Offline-first storage with retroactive corrections — the bi-temporal model let
 
 ### For WASM / Browser
 
-Phase 8 target: page-granular IndexedDB backend, `wasm-pack` packaging, npm release as `@minigraf/core`. Also supports server-side WASM via WASI.
+Phase 8.1a complete: IndexedDB backend, `wasm-pack` packaging. Phase 8.1b complete: server-side WASM via `wasm32-wasip1` / WASI (Wasmtime, Wasmer). npm release as `@minigraf/core` planned for Phase 8.2.
 
 See the [Use Cases](https://github.com/adityamukho/minigraf/wiki/Use-Cases) wiki page for detailed guides on all three targets.
 
@@ -140,7 +140,7 @@ See the [Use Cases](https://github.com/adityamukho/minigraf/wiki/Use-Cases) wiki
 Minigraf runs as:
 - ✅ An embedded library
 - ✅ A standalone binary (interactive REPL)
-- 🎯 A WebAssembly module (Phase 8)
+- ✅ A WebAssembly module — browser (`wasm32-unknown-unknown`) and server-side WASI (`wasm32-wasip1`) (Phase 8.1a/b complete)
 
 Minigraf will **not** be (by design):
 - **Distributed** — no clustering, no sharding, no replication; each agent instance owns its own `.graph` file

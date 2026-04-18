@@ -1728,3 +1728,31 @@ mod tests {
         assert!(result.is_ok(), "Query should succeed with higher limit");
     }
 }
+
+// ─── WASI smoke test ─────────────────────────────────────────────────────────
+// Gated to target_os = "wasi" only. Regular #[test] works here because
+// cargo test --target wasm32-wasip1 uses Wasmtime as the runner
+// (CARGO_TARGET_WASM32_WASIP1_RUNNER). Not gated on target_arch = "wasm32"
+// because the browser target (wasm32-unknown-unknown) requires
+// #[wasm_bindgen_test] instead, which is a separate harness.
+#[cfg(all(target_os = "wasi", test))]
+mod wasi_tests {
+    use crate::db::Minigraf;
+    use crate::query::datalog::executor::QueryResult;
+
+    #[test]
+    fn in_memory_smoke() {
+        let db = Minigraf::in_memory().expect("open in-memory db");
+        db.execute("(transact [[:e1 :name \"hello\"]])")
+            .expect("transact");
+        let r = db
+            .execute("(query [:find ?e :where [?e :name _]])")
+            .expect("query");
+        match r {
+            QueryResult::QueryResults { results, .. } => {
+                assert!(!results.is_empty());
+            }
+            _ => panic!("expected QueryResults"),
+        }
+    }
+}

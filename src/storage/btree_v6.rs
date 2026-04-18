@@ -1049,6 +1049,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "wasi"))]
     fn test_concurrent_range_scans_correctness() {
         use crate::storage::CommittedIndexReader;
         use std::sync::{Arc, Barrier};

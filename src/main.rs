@@ -1,12 +1,18 @@
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(not(target_arch = "wasm32"), target_os = "wasi"))]
 use minigraf::Minigraf;
 #[cfg(not(target_arch = "wasm32"))]
 use minigraf::OpenOptions;
 
 fn main() -> anyhow::Result<()> {
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(target_os = "wasi")]
     {
-        // The REPL binary is not applicable to WASM targets.
+        let db = Minigraf::in_memory()?;
+        db.repl().run();
+        Ok(())
+    }
+    #[cfg(all(target_arch = "wasm32", not(target_os = "wasi")))]
+    {
+        // Browser WASM — entry point is the BrowserDb JS/WASM API, not a REPL binary.
         Ok(())
     }
     #[cfg(not(target_arch = "wasm32"))]
