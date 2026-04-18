@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.20.0 — Phase 8.1: WebAssembly Support (2026-04-18)
+
+### Added
+- **Phase 8.1a** — Browser WASM (`wasm32-unknown-unknown` + `wasm-bindgen`):
+  - `BrowserDb` public API: `open_in_memory()`, `execute()`, `checkpoint()`, `export_graph()`, `import_graph()`
+  - `BrowserBufferBackend` — in-memory `StorageBackend` over a flat page buffer, identical byte layout to the native `.graph` format
+  - `IndexedDbBackend` — page-granular IndexedDB storage (one 4 KB entry per page); only dirty pages written on checkpoint
+  - `wasm-pack` build workflow (`wasm32-unknown-unknown --features browser`) generating `pkg/` with JS glue and TypeScript definitions
+  - `wasm-bindgen-test` browser integration tests (Chrome + Firefox via `wasm-pack test`)
+- **Phase 8.1b** — Server-side WASM (`wasm32-wasip1` / WASI):
+  - `FileBackend` verified under WASI's capability-based filesystem (no backend changes needed)
+  - CI workflow (`wasm-wasi.yml`) builds, unit-tests, and smoke-tests under Wasmtime and Wasmer on every push/PR
+  - Thread-dependent tests gated with `#[cfg(not(target_os = "wasi"))]`
+- **Cross-platform compatibility tests** (issue #150):
+  - `tests/cross_platform_compat_test.rs` — native round-trip (raw page byte copy) and fixture-readability tests
+  - `tests/fixtures/compat.graph` — committed v7 binary fixture containing `:alice :name "Alice"` and `:alice :age 30`
+  - `examples/generate_compat_fixture.rs` — reproducible fixture generator (native only; no-op on wasm32)
+  - `native_fixture_readable_by_browser_db` wasm-bindgen-test — loads native fixture via `BrowserDb::import_graph`, verifies both facts
+- Release workflow: WASM artifacts (WASI binary + browser tarball) built and attached on every tag; `cargo publish` to crates.io on release
+
+795 tests.
+
 ## v0.19.0 — Phase 7.9: Publish Prep (2026-04-08)
 
 ### Changed (breaking — internal visibility only)
