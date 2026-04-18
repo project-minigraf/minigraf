@@ -122,7 +122,13 @@ mod wasi_tests {
 
 **Why `target_os = "wasi"` and not `target_arch = "wasm32"`**: the broader `wasm32` gate would also match `wasm32-unknown-unknown` (browser), where `wasm-pack test` requires `#[wasm_bindgen_test]` instead of `#[test]`. A plain `#[test]` in that context is silently ignored or panics. WASI-specific gating keeps the two targets cleanly separated.
 
-Note: This test is not run in CI (WASI test execution via `cargo test --target wasm32-wasip1` requires a WASI-capable runner); it serves as a compile-time verification gate and usage example.
+This test IS run in CI. Wasmtime is already installed in the workflow, and Cargo supports a custom test runner via the `CARGO_TARGET_WASM32_WASIP1_RUNNER` environment variable:
+
+```
+CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime run --dir /tmp" cargo test --target wasm32-wasip1
+```
+
+Cargo invokes this as `wasmtime run --dir /tmp <test_binary.wasm> <test-args>`. The existing test suite causes no issues — `tempfile` and `criterion` are already gated behind `#[cfg(not(target_arch = "wasm32"))]` dev-dependencies and will not appear in the WASI test binary. Only the new `wasi_tests` module (and any other wasm32-compatible tests) will run.
 
 ### 4. `.github/workflows/wasm-wasi.yml` — rewrite
 
@@ -165,6 +171,11 @@ jobs:
             -o /tmp/wasmtime.tar.xz
           tar -xf /tmp/wasmtime.tar.xz -C /tmp
           echo "/tmp/wasmtime-${WASMTIME_VERSION}-x86_64-linux" >> "$GITHUB_PATH"
+
+      - name: Run WASI tests
+        run: cargo test --target wasm32-wasip1
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run --dir /tmp
 
       - name: Smoke test (Wasmtime — transact)
         run: |
