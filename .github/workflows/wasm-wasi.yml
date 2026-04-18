@@ -1,0 +1,66 @@
+name: WASM WASI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+  WASMTIME_VERSION: v33.0.0
+  WASMER_VERSION: v5.0.4
+
+permissions:
+  contents: read
+
+jobs:
+  wasm-wasi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+
+      - name: Build (release)
+        run: cargo build --target wasm32-wasip1 --release --bin minigraf
+
+      - name: Install Wasmtime
+        run: |
+          curl -sSfL \
+            "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz" \
+            -o /tmp/wasmtime.tar.xz
+          tar -xf /tmp/wasmtime.tar.xz -C /tmp
+          echo "/tmp/wasmtime-${WASMTIME_VERSION}-x86_64-linux" >> "$GITHUB_PATH"
+
+      - name: Run WASI tests (Wasmtime runner)
+        run: cargo test --target wasm32-wasip1 --lib
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run --dir /tmp
+
+      - name: Smoke test — Wasmtime transact + query
+        run: |
+          out=$(printf '(transact [{:db/id "eid-1" :name "Alice"}])\n(query [:find ?e :where [?e :name _]])\n' | \
+            wasmtime run --dir /tmp \
+              target/wasm32-wasip1/release/minigraf.wasm)
+          echo "$out"
+          echo "$out" | grep -q "result(s) found" || { echo "SMOKE TEST FAILED: no results in output"; exit 1; }
+
+      - name: Install Wasmer
+        run: |
+          curl -sSfL \
+            "https://github.com/wasmerio/wasmer/releases/download/${WASMER_VERSION}/wasmer-linux-amd64.tar.gz" \
+            -o /tmp/wasmer.tar.gz
+          mkdir -p /tmp/wasmer-install
+          tar -xf /tmp/wasmer.tar.gz -C /tmp/wasmer-install bin/wasmer
+          echo "/tmp/wasmer-install/bin" >> "$GITHUB_PATH"
+
+      - name: Smoke test — Wasmer transact + query
+        run: |
+          out=$(printf '(transact [{:db/id "eid-1" :name "Alice"}])\n(query [:find ?e :where [?e :name _]])\n' | \
+            wasmer run --dir /tmp \
+              target/wasm32-wasip1/release/minigraf.wasm)
+          echo "$out"
+          echo "$out" | grep -q "result(s) found" || { echo "SMOKE TEST FAILED: no results in output"; exit 1; }
