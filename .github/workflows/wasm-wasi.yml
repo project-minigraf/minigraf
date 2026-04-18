@@ -42,7 +42,7 @@ jobs:
 
       - name: Smoke test — Wasmtime transact + query
         run: |
-          out=$(printf '(transact [{:db/id "eid-1" :name "Alice"}])\n(query [:find ?e :where [?e :name _]])\n' | \
+          out=$(printf '(transact [[:alice :name "Alice"]])\n(query [:find ?e :where [?e :name _]])\n' | \
             wasmtime run --dir /tmp \
               target/wasm32-wasip1/release/minigraf.wasm)
           echo "$out"
@@ -59,7 +59,7 @@ jobs:
 
       - name: Smoke test — Wasmer transact + query
         run: |
-          out=$(printf '(transact [{:db/id "eid-1" :name "Alice"}])\n(query [:find ?e :where [?e :name _]])\n' | \
+          out=$(printf '(transact [[:alice :name "Alice"]])\n(query [:find ?e :where [?e :name _]])\n' | \
             wasmer run --dir /tmp \
               target/wasm32-wasip1/release/minigraf.wasm)
           echo "$out"
