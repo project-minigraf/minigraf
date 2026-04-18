@@ -89,6 +89,10 @@ lto = true
 codegen-units = 1
 panic = "unwind"
 
+# cargo-dist config — allow-dirty=ci lets us extend release.yml beyond what dist generates
+[workspace.metadata.dist]
+allow-dirty = ["ci"]
+
 # The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
