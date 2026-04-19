@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "minigraf-ffi"]
+resolver = "2"
+
 [package]
 name = "minigraf"
 version = "0.20.1"
