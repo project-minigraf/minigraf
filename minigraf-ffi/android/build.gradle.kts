@@ -16,6 +16,9 @@ android {
             java.srcDirs("src/main/java")
         }
     }
+    publishing {
+        singleVariant("release")
+    }
 }
 
 afterEvaluate {
