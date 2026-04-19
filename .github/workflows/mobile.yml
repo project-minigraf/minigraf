@@ -198,7 +198,19 @@ jobs:
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # RELEASE_TOKEN must be a PAT with repo scope from a repo admin.
+          # It is required to push directly to the protected main branch.
+          # Create one at Settings > Developer settings > Personal access tokens
+          # and add it as a repository secret named RELEASE_TOKEN.
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
+          if [ -z "$RELEASE_TOKEN" ]; then
+            echo "ERROR: RELEASE_TOKEN secret is not set."
+            echo "A PAT with repo scope from a repo admin is required to push"
+            echo "Package.swift updates to the protected main branch."
+            echo "Add it as a repository secret named RELEASE_TOKEN."
+            exit 1
+          fi
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git add Package.swift swift/Sources/MinigrafKit/
@@ -206,7 +218,7 @@ jobs:
             || echo "Nothing to commit"
           git fetch origin main
           git rebase origin/main
-          git push origin HEAD:main
+          git push "https://x-access-token:${RELEASE_TOKEN}@github.com/${GITHUB_REPOSITORY}" HEAD:main
           NEW_SHA=$(git rev-parse HEAD)
           gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
             -X PATCH \
