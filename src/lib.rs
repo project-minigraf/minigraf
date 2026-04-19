@@ -13,7 +13,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! minigraf = "0.19"
+//! minigraf = "0.21"
 //! ```
 //!
 //! # Quick Start
