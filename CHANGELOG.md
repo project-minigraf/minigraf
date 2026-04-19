@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.21.1 — Patch: mobile/WASM docs (2026-04-19)
+
+### Changed
+- `src/lib.rs`: added **Feature Flags** section and **WebAssembly targets** subsection to crate-level docs — browser feature, `wasm32-unknown-unknown` target switcher note, and WASI build command
+- `README.md`: updated "For Mobile Apps" section — replaced Phase 8 placeholder with current state, added Kotlin/Swift quick-start snippets and link to wiki integration guide
+- Wiki `Use-Cases.md`: replaced Integration placeholder with full Android (Gradle setup, Kotlin API, error handling, threading) and iOS (SPM setup, Swift API, error handling, async) integration guides
+
+795 tests.
+
+## v0.21.0 — Phase 8.2: Android/iOS Mobile Bindings (2026-04-19)
+
+### Added
+- `minigraf-ffi` crate: UniFFI 0.31 bindings exposing `MiniGrafDb` (open, openInMemory, execute, checkpoint) and `MiniGrafError` (Parse, Query, Storage, Other) to Kotlin and Swift
+- Android `.aar` release artifact, published to GitHub Packages (`io.github.adityamukho:minigraf-android`)
+- iOS `.xcframework` release artifact, distributed via Swift Package Manager (`Package.swift` at repo root)
+- `mobile.yml` CI workflow: cross-compiles Android targets with `cargo-ndk`, generates Kotlin/Swift UniFFI bindings, assembles AAR with Gradle, assembles xcframework with `xcodebuild`, and publishes both on every tag
+- `docs-check` CI job in `rust.yml` and `release.yml` — gates releases on `cargo doc --all-features` passing cleanly
+
+### Fixed
+- `release.yml`: added `docs-check` to `host` job's `needs` and `if` condition
+- `wasm-release.yml` / `mobile.yml`: retry loops extended from 20 to 40 attempts; `inputs.tag || github.ref_name` ordering corrected
+- `minigraf-ffi/android/gradlew`: removed inner double-quotes from `DEFAULT_JVM_OPTS` and replaced xargs/sed eval block with direct `exec` — fixes "Could not find main class" and garbled usage output
+- `minigraf-ffi/android/build.gradle.kts`: added `android { publishing { singleVariant("release") } }` — fixes AGP 8.x "SoftwareComponent 'release' not found"
+- `mobile.yml` Package.swift commit: pushes to unprotected `swift-releases` branch and moves tag via `gh api -F force=true` — avoids branch-protection blocks and string/boolean type mismatch
+
+795 tests.
+
 ## v0.20.1 — Patch: docs.rs browser module visibility (2026-04-19)
 
 ### Fixed

@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "minigraf"
-version = "0.21.0"
+version = "0.21.1"
 edition = "2024"
 description = "Zero-config, single-file, embedded graph database with bi-temporal Datalog queries"
 license = "MIT OR Apache-2.0"
