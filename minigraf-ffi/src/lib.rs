@@ -21,6 +21,7 @@ pub enum MiniGrafError {
 
 #[derive(uniffi::Object)]
 pub struct MiniGrafDb {
+    #[allow(dead_code)] // populated in Task 5
     inner: Arc<Mutex<minigraf::Minigraf>>,
 }
 
@@ -47,6 +48,7 @@ impl MiniGrafDb {
 
 // ─── JSON serialisation (internal helpers) ───────────────────────────────────
 
+#[allow(dead_code)] // called by execute() in Task 5
 fn value_to_json(v: &Value) -> serde_json::Value {
     use serde_json::Value as JVal;
     match v {
@@ -62,6 +64,7 @@ fn value_to_json(v: &Value) -> serde_json::Value {
     }
 }
 
+#[allow(dead_code)] // called by execute() in Task 5
 fn query_result_to_json(result: QueryResult) -> String {
     use serde_json::json;
     let val = match result {
@@ -129,5 +132,49 @@ mod tests {
         let json = query_result_to_json(QueryResult::Ok);
         let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert_eq!(v["ok"], serde_json::json!(true));
+    }
+
+    #[test]
+    fn value_to_json_float_finite() {
+        let j = value_to_json(&Value::Float(3.14));
+        assert_eq!(j, serde_json::json!(3.14));
+    }
+
+    #[test]
+    fn value_to_json_float_nan() {
+        let j = value_to_json(&Value::Float(f64::NAN));
+        assert_eq!(j, serde_json::Value::Null);
+    }
+
+    #[test]
+    fn value_to_json_float_infinity() {
+        let j = value_to_json(&Value::Float(f64::INFINITY));
+        assert_eq!(j, serde_json::Value::Null);
+    }
+
+    #[test]
+    fn value_to_json_boolean() {
+        assert_eq!(value_to_json(&Value::Boolean(true)), serde_json::json!(true));
+        assert_eq!(value_to_json(&Value::Boolean(false)), serde_json::json!(false));
+    }
+
+    #[test]
+    fn value_to_json_ref() {
+        let id = minigraf::EntityId::new_v4();
+        let j = value_to_json(&Value::Ref(id));
+        assert_eq!(j, serde_json::Value::String(id.to_string()));
+    }
+
+    #[test]
+    fn value_to_json_keyword() {
+        let j = value_to_json(&Value::Keyword(":status/active".into()));
+        assert_eq!(j, serde_json::Value::String(":status/active".into()));
+    }
+
+    #[test]
+    fn query_result_to_json_retracted() {
+        let json = query_result_to_json(QueryResult::Retracted(99));
+        let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+        assert_eq!(v["retracted"], serde_json::json!(99));
     }
 }
