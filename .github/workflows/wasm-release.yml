@@ -79,6 +79,10 @@ jobs:
             echo "Attempt $i/20: release not yet available, waiting 15s..."
             sleep 15
           done
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "ERROR: Release $TAG not found after 20 attempts (5 minutes). Aborting."
+            exit 1
+          fi
           gh release upload "$TAG" wasm-artifacts/* \
             --repo "$GITHUB_REPOSITORY" \
             --clobber

@@ -168,6 +168,10 @@ jobs:
             echo "Attempt $i/20: not yet, waiting 15s..."
             sleep 15
           done
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "ERROR: Release $TAG not found after 20 attempts (5 minutes). Aborting."
+            exit 1
+          fi
 
       - name: Upload artifacts to GitHub Release
         env:
@@ -200,6 +204,8 @@ jobs:
           git add Package.swift swift/Sources/MinigrafKit/
           git commit -m "chore(release): update Package.swift and Swift bindings for ${TAG}" \
             || echo "Nothing to commit"
+          git fetch origin main
+          git rebase origin/main
           git push origin HEAD:main
           NEW_SHA=$(git rev-parse HEAD)
           gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \

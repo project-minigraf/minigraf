@@ -1657,4 +1657,4 @@ See [GitHub Issues](https://github.com/adityamukho/minigraf/issues) for specific
 
 ---
 
-Last Updated: Phase 7.9 Complete - Publish prep (API cleanup, Rustdoc sweep, `unwrap` audit, CI matrix), 788 tests passing, v0.19.0 (April 2026)
+**Last Updated**: Phase 8.2 In Progress (April 2026) — 815 tests passing, v0.20.1
