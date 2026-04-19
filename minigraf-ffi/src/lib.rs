@@ -17,11 +17,28 @@ pub enum MiniGrafError {
     Other { msg: String },
 }
 
-// ─── MiniGrafDb stub (needed for test compilation) ───────────────────────────
+// ─── anyhow::Error → MiniGrafError conversion ────────────────────────────────
+
+impl From<anyhow::Error> for MiniGrafError {
+    fn from(e: anyhow::Error) -> Self {
+        let full = format!("{e:#}").to_lowercase();
+        let msg = e.to_string();
+        if full.contains("parse") || full.contains("unexpected") || full.contains("expected token") {
+            MiniGrafError::Parse { msg }
+        } else if full.contains("storage") || full.contains("page") || full.contains("wal") {
+            MiniGrafError::Storage { msg }
+        } else if full.contains("query") || full.contains(":find") || full.contains(":where") {
+            MiniGrafError::Query { msg }
+        } else {
+            MiniGrafError::Other { msg }
+        }
+    }
+}
+
+// ─── MiniGrafDb ──────────────────────────────────────────────────────────────
 
 #[derive(uniffi::Object)]
 pub struct MiniGrafDb {
-    #[allow(dead_code)] // populated in Task 5
     inner: Arc<Mutex<minigraf::Minigraf>>,
 }
 
@@ -34,11 +51,20 @@ impl MiniGrafDb {
 
     #[uniffi::constructor]
     pub fn open_in_memory() -> Result<Arc<Self>, MiniGrafError> {
-        todo!()
+        let db = minigraf::Minigraf::in_memory().map_err(MiniGrafError::from)?;
+        Ok(Arc::new(Self {
+            inner: Arc::new(Mutex::new(db)),
+        }))
     }
 
-    pub fn execute(&self, _datalog: String) -> Result<String, MiniGrafError> {
-        todo!()
+    pub fn execute(&self, datalog: String) -> Result<String, MiniGrafError> {
+        let result = self
+            .inner
+            .lock()
+            .map_err(|_| MiniGrafError::Other { msg: "mutex poisoned".into() })?
+            .execute(&datalog)
+            .map_err(MiniGrafError::from)?;
+        Ok(query_result_to_json(result))
     }
 
     pub fn checkpoint(&self) -> Result<(), MiniGrafError> {
@@ -48,7 +74,6 @@ impl MiniGrafDb {
 
 // ─── JSON serialisation (internal helpers) ───────────────────────────────────
 
-#[allow(dead_code)] // called by execute() in Task 5
 fn value_to_json(v: &Value) -> serde_json::Value {
     use serde_json::Value as JVal;
     match v {
@@ -64,7 +89,6 @@ fn value_to_json(v: &Value) -> serde_json::Value {
     }
 }
 
-#[allow(dead_code)] // called by execute() in Task 5
 fn query_result_to_json(result: QueryResult) -> String {
     use serde_json::json;
     let val = match result {
@@ -176,5 +200,43 @@ mod tests {
         let json = query_result_to_json(QueryResult::Retracted(99));
         let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert_eq!(v["retracted"], serde_json::json!(99));
+    }
+
+    #[test]
+    fn open_in_memory_succeeds() {
+        MiniGrafDb::open_in_memory().expect("open_in_memory");
+    }
+
+    #[test]
+    fn execute_transact_returns_json() {
+        let db = MiniGrafDb::open_in_memory().expect("open");
+        let json = db
+            .execute(r#"(transact [[:alice :name "Alice"]])"#.into())
+            .expect("execute");
+        let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+        assert!(v.get("transacted").is_some(), "expected transacted key");
+    }
+
+    #[test]
+    fn execute_query_returns_results() {
+        let db = MiniGrafDb::open_in_memory().expect("open");
+        db.execute(r#"(transact [[:alice :name "Alice"]])"#.into())
+            .expect("transact");
+        let json = db
+            .execute(r#"(query [:find ?n :where [?e :name ?n]])"#.into())
+            .expect("query");
+        let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+        assert_eq!(v["variables"][0], "?n");
+        assert_eq!(v["results"][0][0], "Alice");
+    }
+
+    #[test]
+    fn execute_invalid_datalog_returns_parse_error() {
+        let db = MiniGrafDb::open_in_memory().expect("open");
+        let result = db.execute("not valid datalog at all !!!".into());
+        assert!(
+            matches!(result, Err(MiniGrafError::Parse { .. })),
+            "expected Parse error"
+        );
     }
 }
