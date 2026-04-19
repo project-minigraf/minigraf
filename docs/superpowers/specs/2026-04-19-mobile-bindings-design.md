@@ -62,8 +62,8 @@ path = "src/uniffi_bindgen.rs"
 
 [dependencies]
 minigraf = { path = "..", features = ["serde_json"] }
-uniffi = { version = "...", features = ["build", "bindgen"] }
-thiserror = "..."
+uniffi = { version = "<pinned at implementation time>" }
+thiserror = { version = "<pinned at implementation time>" }
 ```
 
 `serde_json` is enabled on the `minigraf` dependency — it only bloats the FFI compilation, not the native `minigraf` binary published to crates.io.
@@ -165,7 +165,7 @@ Triggers on: same tag pattern as `release.yml` (`**[0-9]+.[0-9]+.[0-9]+*`) + `wo
 1. Install Android NDK + `cargo-ndk`
 2. Cross-compile `minigraf-ffi` for `arm64-v8a`, `armeabi-v7a`, `x86_64` → `android/jniLibs/`
 3. Run `uniffi-bindgen` to generate Kotlin bindings → `android/src/main/java/`
-4. `cd android && ./gradlew assembleRelease` → `.aar`
+4. `cd minigraf-ffi/android && ./gradlew assembleRelease` → `.aar`
 5. Upload artifact
 
 **`mobile-ios`** (`macos-latest`, tag-only):
@@ -186,9 +186,9 @@ Triggers on: same tag pattern as `release.yml` (`**[0-9]+.[0-9]+.[0-9]+*`) + `wo
    done
    ```
 3. `gh release upload $TAG minigraf-android.aar MinigrafKit.xcframework.zip`
-4. Compute `.xcframework.zip` SHA256 checksum
-5. Patch `Package.swift` in the tag with the new URL + checksum via `gh api`
-6. Publish `.aar` to GitHub Packages via Gradle `publishReleasePublicationToGitHubPackagesRepository`
+4. Compute `.xcframework.zip` SHA256 checksum (`shasum -a 256`)
+5. Update `Package.swift` with the new artifact URL + checksum, commit to `main`, then force-update the release tag to point to the new commit via `gh api repos/{owner}/{repo}/git/refs/tags/{tag} -X PATCH -f sha={new_sha} -f force=true`. The artifact URL is deterministic (`releases/download/vX.Y.Z/MinigrafKit-vX.Y.Z.xcframework.zip`) so this is the only unknown resolved post-build.
+6. Publish `.aar` to GitHub Packages via `cd minigraf-ffi/android && ./gradlew publishReleasePublicationToGitHubPackagesRepository`
 
 ### `wasm-release.yml` (new, tag-only)
 
