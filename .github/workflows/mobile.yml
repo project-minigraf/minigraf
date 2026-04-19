@@ -160,16 +160,16 @@ jobs:
           TAG: ${{ github.ref_name || inputs.tag }}
         run: |
           echo "Waiting for release $TAG..."
-          for i in $(seq 1 20); do
+          for i in $(seq 1 40); do
             if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
               echo "Release found on attempt $i"
               break
             fi
-            echo "Attempt $i/20: not yet, waiting 15s..."
+            echo "Attempt $i/40: not yet, waiting 15s..."
             sleep 15
           done
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            echo "ERROR: Release $TAG not found after 20 attempts (5 minutes). Aborting."
+            echo "ERROR: Release $TAG not found after 40 attempts (10 minutes). Aborting."
             exit 1
           fi
 
