@@ -35,7 +35,7 @@ The column headers (e.g. "1K facts", "10K facts") indicate the **size of the dat
 
 ---
 
-## Insert Throughput
+## Insert Latency
 
 Measures per-fact insert latency at three dataset sizes (1K / 10K / 100K facts in the database at insert time).
 
