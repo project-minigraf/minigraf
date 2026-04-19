@@ -35,3 +35,13 @@ jobs:
       run: cargo check -p minigraf-ffi
     - name: Run FFI native tests
       run: cargo test -p minigraf-ffi
+
+  docs-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@nightly
+    - name: Check docs.rs build
+      env:
+        RUSTDOCFLAGS: "--cfg docsrs"
+      run: cargo doc --all-features --no-deps
