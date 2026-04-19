@@ -19,7 +19,7 @@
 
 mod helpers;
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use minigraf::OpenOptions;
 
 // ── Task 3: insert/ ───────────────────────────────────────────────────────────
@@ -48,9 +48,11 @@ fn bench_insert(c: &mut Criterion) {
     }
 
     // batch_100: insert 100 facts in a single transact
+    // Throughput::Elements(100) reports facts/sec, enabling direct comparison with single_fact.
     {
         let mut group = c.benchmark_group("insert/batch_100");
         group.sample_size(10);
+        group.throughput(Throughput::Elements(100));
         let batch_cmd: String = {
             let mut s = String::from("(transact [");
             for i in 0..100 {
@@ -117,9 +119,11 @@ fn bench_insert_file(c: &mut Criterion) {
     }
 
     // batch_100: 100 facts per execute()
+    // Throughput::Elements(100) reports facts/sec, enabling direct comparison with single_fact.
     {
         let mut group = c.benchmark_group("insert_file/batch_100");
         group.sample_size(10);
+        group.throughput(Throughput::Elements(100));
         let batch_cmd: String = {
             let mut s = String::from("(transact [");
             for i in 0..100 {
@@ -380,7 +384,12 @@ fn bench_checkpoint(c: &mut Criterion) {
     use tempfile::NamedTempFile;
 
     let mut group = c.benchmark_group("checkpoint");
-    for &(label, n) in &[("1k", 1_000usize), ("10k", 10_000), ("100k", 100_000)] {
+    for &(label, n) in &[
+        ("1k", 1_000usize),
+        ("10k", 10_000),
+        ("100k", 100_000),
+        ("1m", 1_000_000),
+    ] {
         group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
             b.iter_batched(
                 || {
@@ -412,13 +421,16 @@ fn bench_concurrent(c: &mut Criterion) {
     // Fresh DB per scenario to prevent unbounded fact accumulation across benchmarks.
     // (Sharing one DB caused OOM as write scenarios accumulate millions of facts.)
 
-    // readers: N threads all querying simultaneously, at two DB sizes
+    // readers: N threads all querying simultaneously, at two DB sizes.
+    // Throughput::Elements(n_threads) tells Criterion each iteration represents n_threads ops,
+    // so the reported ops/sec reflects aggregate query throughput across all threads.
     {
         let mut group = c.benchmark_group("concurrent/readers");
         group.sample_size(10);
         for &(db_label, db_size) in &[("10k", 10_000usize), ("100k", 100_000)] {
             for &(t_label, n_threads) in &[("4t", 4usize), ("8t", 8), ("16t", 16)] {
                 let label = format!("{}_{}", db_label, t_label);
+                group.throughput(Throughput::Elements(n_threads as u64));
                 group.bench_with_input(
                     BenchmarkId::from_parameter(&label),
                     &(n_threads, db_size),
@@ -454,13 +466,15 @@ fn bench_concurrent(c: &mut Criterion) {
         group.finish();
     }
 
-    // readers_plus_writer: (N-1) readers + 1 writer, at two DB sizes
+    // readers_plus_writer: (N-1) readers + 1 writer, at two DB sizes.
+    // Throughput counts all operations (reads + writes) across all threads.
     {
         let mut group = c.benchmark_group("concurrent/readers_plus_writer");
         group.sample_size(10);
         for &(db_label, db_size) in &[("10k", 10_000usize), ("100k", 100_000)] {
             for &(t_label, n_threads) in &[("4t", 4usize), ("8t", 8), ("16t", 16)] {
                 let label = format!("{}_{}", db_label, t_label);
+                group.throughput(Throughput::Elements(n_threads as u64));
                 group.bench_with_input(
                     BenchmarkId::from_parameter(&label),
                     &(n_threads, db_size),
@@ -513,13 +527,15 @@ fn bench_concurrent(c: &mut Criterion) {
 
     // serialized_writers: N threads competing for the write Mutex, at two DB sizes.
     // NOTE: Measures lock-contention overhead, NOT write parallelism.
-    // Writes are serialized by design. Throughput expected to stay flat or decrease slightly.
+    // Writes are serialized by design. Aggregate throughput expected to stay flat or
+    // decrease with more threads — contention is visible in the throughput curve.
     {
         let mut group = c.benchmark_group("concurrent/serialized_writers");
         group.sample_size(10);
         for &(db_label, db_size) in &[("10k", 10_000usize), ("100k", 100_000)] {
             for &(t_label, n_threads) in &[("2t", 2usize), ("4t", 4), ("8t", 8), ("16t", 16)] {
                 let label = format!("{}_{}", db_label, t_label);
+                group.throughput(Throughput::Elements(n_threads as u64));
                 group.bench_with_input(
                     BenchmarkId::from_parameter(&label),
                     &(n_threads, db_size),
@@ -564,13 +580,15 @@ fn bench_concurrent_file(c: &mut Criterion) {
 
     // Fresh file-backed DB per scenario to prevent unbounded WAL growth and OOM.
 
-    // readers (file-backed): concurrent page-cache reads under RwLock, at two DB sizes
+    // readers (file-backed): concurrent page-cache reads under RwLock, at two DB sizes.
+    // Throughput::Elements(n_threads) reports aggregate ops/sec across all threads.
     {
         let mut group = c.benchmark_group("concurrent_file/readers");
         group.sample_size(10);
         for &(db_label, db_size) in &[("10k", 10_000usize), ("100k", 100_000)] {
             for &(t_label, n_threads) in &[("4t", 4usize), ("8t", 8), ("16t", 16)] {
                 let label = format!("{}_{}", db_label, t_label);
+                group.throughput(Throughput::Elements(n_threads as u64));
                 group.bench_with_input(
                     BenchmarkId::from_parameter(&label),
                     &(n_threads, db_size),
@@ -610,13 +628,15 @@ fn bench_concurrent_file(c: &mut Criterion) {
         group.finish();
     }
 
-    // readers_plus_writer (file-backed): readers + 1 WAL-writing thread, at two DB sizes
+    // readers_plus_writer (file-backed): readers + 1 WAL-writing thread, at two DB sizes.
+    // Throughput counts all operations (reads + writes) across all threads.
     {
         let mut group = c.benchmark_group("concurrent_file/readers_plus_writer");
         group.sample_size(10);
         for &(db_label, db_size) in &[("10k", 10_000usize), ("100k", 100_000)] {
             for &(t_label, n_threads) in &[("4t", 4usize), ("8t", 8), ("16t", 16)] {
                 let label = format!("{}_{}", db_label, t_label);
+                group.throughput(Throughput::Elements(n_threads as u64));
                 group.bench_with_input(
                     BenchmarkId::from_parameter(&label),
                     &(n_threads, db_size),
@@ -669,13 +689,15 @@ fn bench_concurrent_file(c: &mut Criterion) {
         group.finish();
     }
 
-    // serialized_writers (file-backed): N WAL-writing threads queuing on Mutex, at two DB sizes
+    // serialized_writers (file-backed): N WAL-writing threads queuing on Mutex, at two DB sizes.
+    // Aggregate throughput plateauing/declining with more threads signals contention.
     {
         let mut group = c.benchmark_group("concurrent_file/serialized_writers");
         group.sample_size(10);
         for &(db_label, db_size) in &[("10k", 10_000usize), ("100k", 100_000)] {
             for &(t_label, n_threads) in &[("2t", 2usize), ("4t", 4), ("8t", 8), ("16t", 16)] {
                 let label = format!("{}_{}", db_label, t_label);
+                group.throughput(Throughput::Elements(n_threads as u64));
                 group.bench_with_input(
                     BenchmarkId::from_parameter(&label),
                     &(n_threads, db_size),
@@ -826,6 +848,7 @@ fn bench_concurrent_btree_scan(c: &mut Criterion) {
     for &(db_label, db_size) in &[("10k", 10_000usize), ("100k", 100_000)] {
         for &(t_label, n_threads) in &[("2t", 2usize), ("4t", 4), ("8t", 8)] {
             let label = format!("{}_{}", db_label, t_label);
+            group.throughput(Throughput::Elements(n_threads as u64));
             group.bench_with_input(
                 BenchmarkId::from_parameter(&label),
                 &(n_threads, db_size),
@@ -1326,6 +1349,122 @@ fn bench_query_extras(c: &mut Criterion) {
     }
 }
 
+// ── Prepared queries ──────────────────────────────────────────────────────────
+//
+// Compares PreparedQuery (parse-once/execute-many) against the unprepared path,
+// isolating parser overhead. Relevant for AI agents that issue the same query
+// pattern repeatedly with different bind values.
+//
+// Uses BindValue::Val so no UUID lookup is needed; the pattern mirrors real
+// agent workloads (look up an entity by a known attribute value, filter by threshold).
+
+fn bench_prepared(c: &mut Criterion) {
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+
+    // value_lookup: find the entity that has a specific :val.
+    // Equivalent to query/point_attribute but with a value-bound slot;
+    // parser overhead is paid once at prepare time.
+    {
+        let mut group = c.benchmark_group("prepared/value_lookup");
+        group.sample_size(10);
+        for &(label, n) in SCALES {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
+                let pq = db
+                    .prepare("(query [:find ?e :where [?e :val $val]])")
+                    .unwrap();
+                b.iter(|| {
+                    pq.execute(&[("val", minigraf::BindValue::Val(minigraf::Value::Integer(0)))])
+                        .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+
+    // threshold_filter: find all entities with :val below a bound threshold.
+    // Exercises the expr-filter path with a substituted value; parser runs once.
+    {
+        let mut group = c.benchmark_group("prepared/threshold_filter");
+        group.sample_size(10);
+        for &(label, n) in SCALES {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
+                let pq = db
+                    .prepare("(query [:find ?e :where [?e :val ?v] [(< ?v $threshold)]])")
+                    .unwrap();
+                let threshold = (n / 2) as i64;
+                b.iter(|| {
+                    pq.execute(&[(
+                        "threshold",
+                        minigraf::BindValue::Val(minigraf::Value::Integer(threshold)),
+                    )])
+                    .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+}
+
+// ── Retraction ────────────────────────────────────────────────────────────────
+//
+// Retraction is a first-class bi-temporal operation (logical delete via
+// asserted=false fact). These benchmarks measure retraction cost and confirm
+// it scales comparably to insertion.
+
+fn bench_retract(c: &mut Criterion) {
+    const SCALES: &[(&str, usize)] = &[
+        ("1k", 1_000),
+        ("10k", 10_000),
+        ("100k", 100_000),
+        ("1m", 1_000_000),
+    ];
+
+    // single_fact: retract one fact from a pre-populated in-memory DB.
+    // DB created once per scale; b.iter() accumulates retractions (realistic
+    // steady-state: retract from a DB of approximately scale N).
+    {
+        let mut group = c.benchmark_group("retract/single_fact");
+        group.sample_size(10);
+        for &(label, n) in SCALES {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
+                // Retract entity :e0 :val — the fact is already asserted; repeated
+                // retractions are no-ops on the value but still exercise the full path.
+                b.iter(|| db.execute("(retract [[:e0 :val 0]])").unwrap());
+            });
+        }
+        group.finish();
+    }
+
+    // batch_100: retract 100 facts in a single retract command.
+    // Throughput::Elements(100) reports facts/sec for apples-to-apples comparison
+    // with insert/batch_100.
+    {
+        let mut group = c.benchmark_group("retract/batch_100");
+        group.sample_size(10);
+        group.throughput(Throughput::Elements(100));
+        let batch_cmd: String = {
+            let mut s = String::from("(retract [");
+            for i in 0..100 {
+                s.push_str(&format!("[:e{} :val {}]", i, i));
+            }
+            s.push(']');
+            s.push(')');
+            s
+        };
+        for &(label, n) in SCALES {
+            let cmd = batch_cmd.clone();
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
+                b.iter(|| db.execute(&cmd).unwrap());
+            });
+        }
+        group.finish();
+    }
+}
+
 criterion_group!(
     benches,
     bench_insert,
@@ -1347,5 +1486,7 @@ criterion_group!(
     bench_concurrent,
     bench_concurrent_file,
     bench_concurrent_btree_scan,
+    bench_prepared,
+    bench_retract,
 );
 criterion_main!(benches);
