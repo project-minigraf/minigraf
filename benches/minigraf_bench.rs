@@ -1391,9 +1391,7 @@ fn bench_prepared(c: &mut Criterion) {
             group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
                 let db = helpers::populate_in_memory(n);
                 let pq = db
-                    .prepare(
-                        "(query [:find ?e :where [?e :val ?v] [(< ?v $threshold)]])",
-                    )
+                    .prepare("(query [:find ?e :where [?e :val ?v] [(< ?v $threshold)]])")
                     .unwrap();
                 let threshold = (n / 2) as i64;
                 b.iter(|| {
