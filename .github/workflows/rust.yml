@@ -26,3 +26,12 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+
+  ffi-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Check FFI crate compiles
+      run: cargo check -p minigraf-ffi
+    - name: Run FFI native tests
+      run: cargo test -p minigraf-ffi

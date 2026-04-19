@@ -1,0 +1,88 @@
+name: WASM Release Artifacts
+
+on:
+  push:
+    tags:
+      - '**[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to upload artifacts to (e.g. v0.21.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-wasm-wasi:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - name: Build WASI binary
+        run: cargo build --target wasm32-wasip1 --release --bin minigraf
+      - name: Stage artifact
+        run: |
+          mkdir -p target/wasm-artifacts
+          cp target/wasm32-wasip1/release/minigraf.wasm target/wasm-artifacts/minigraf-wasi.wasm
+      - uses: actions/upload-artifact@v6
+        with:
+          name: artifacts-wasm-wasi
+          path: target/wasm-artifacts/
+
+  build-wasm-browser:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Build browser WASM
+        run: wasm-pack build --target web --features browser
+      - name: Package pkg/ directory
+        run: |
+          mkdir -p target/wasm-artifacts
+          tar -czf target/wasm-artifacts/minigraf-browser-wasm.tar.gz -C . pkg/
+      - uses: actions/upload-artifact@v6
+        with:
+          name: artifacts-wasm-browser
+          path: target/wasm-artifacts/
+
+  release-upload-wasm:
+    needs: [build-wasm-wasi, build-wasm-browser]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: artifacts-wasm-*
+          path: wasm-artifacts/
+          merge-multiple: true
+      - name: Wait for GitHub Release to exist, then upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name || inputs.tag }}
+        run: |
+          echo "Waiting for release $TAG to be created by cargo-dist..."
+          for i in $(seq 1 20); do
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+              echo "Release found on attempt $i"
+              break
+            fi
+            echo "Attempt $i/20: release not yet available, waiting 15s..."
+            sleep 15
+          done
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "ERROR: Release $TAG not found after 20 attempts (5 minutes). Aborting."
+            exit 1
+          fi
+          gh release upload "$TAG" wasm-artifacts/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber

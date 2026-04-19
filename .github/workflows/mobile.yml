@@ -1,0 +1,227 @@
+name: Mobile Release Artifacts
+
+on:
+  push:
+    tags:
+      - '**[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to upload artifacts to (e.g. v0.21.0)'
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  # ── Android ──────────────────────────────────────────────────────────────────
+
+  mobile-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Set ANDROID_NDK_HOME
+        run: echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> $GITHUB_ENV
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Cross-compile Android targets
+        run: |
+          cargo ndk \
+            -t arm64-v8a \
+            -t armeabi-v7a \
+            -t x86_64 \
+            -o minigraf-ffi/android/jniLibs \
+            build --release -p minigraf-ffi
+
+      - name: Generate Kotlin bindings
+        run: |
+          cargo run -p minigraf-ffi --bin uniffi-bindgen -- generate \
+            --library target/aarch64-linux-android/release/libminigraf_ffi.so \
+            --language kotlin \
+            --out-dir minigraf-ffi/android/src/main/java/
+
+      - name: Assemble AAR
+        run: |
+          cd minigraf-ffi/android
+          ./gradlew assembleRelease
+
+      - name: Rename artifact
+        run: |
+          TAG="${{ github.ref_name || inputs.tag }}"
+          cp minigraf-ffi/android/build/outputs/aar/minigraf-android-release.aar \
+             "minigraf-android-${TAG}.aar"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: minigraf-android
+          path: "minigraf-android-*.aar"
+
+  # ── iOS ──────────────────────────────────────────────────────────────────────
+
+  mobile-ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Build iOS device library
+        run: cargo build --target aarch64-apple-ios --release -p minigraf-ffi
+
+      - name: Build iOS simulator library
+        run: cargo build --target aarch64-apple-ios-sim --release -p minigraf-ffi
+
+      - name: Generate Swift bindings
+        run: |
+          mkdir -p swift/Sources/MinigrafKit
+          cargo run -p minigraf-ffi --bin uniffi-bindgen -- generate \
+            --library target/aarch64-apple-ios/release/libminigraf_ffi.a \
+            --language swift \
+            --out-dir swift/Sources/MinigrafKit/
+
+      - name: Prepare headers for xcframework
+        run: |
+          mkdir -p swift/includes
+          cp swift/Sources/MinigrafKit/*.h swift/includes/ 2>/dev/null || true
+          cp swift/Sources/MinigrafKit/*.modulemap swift/includes/ 2>/dev/null || true
+
+      - name: Assemble xcframework
+        run: |
+          TAG="${{ github.ref_name || inputs.tag }}"
+          xcodebuild -create-xcframework \
+            -library target/aarch64-apple-ios/release/libminigraf_ffi.a \
+            -headers swift/includes/ \
+            -library target/aarch64-apple-ios-sim/release/libminigraf_ffi.a \
+            -headers swift/includes/ \
+            -output "MinigrafKit.xcframework"
+          zip -r "MinigrafKit-${TAG}.xcframework.zip" MinigrafKit.xcframework
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: minigraf-ios
+          path: "MinigrafKit-*.xcframework.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swift-sources
+          path: swift/Sources/MinigrafKit/
+
+  # ── Upload to release + GitHub Packages ──────────────────────────────────────
+
+  release-upload-mobile:
+    needs: [mobile-android, mobile-ios]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: minigraf-android
+          path: artifacts/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: minigraf-ios
+          path: artifacts/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: swift-sources
+          path: swift/Sources/MinigrafKit/
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Wait for GitHub Release to exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name || inputs.tag }}
+        run: |
+          echo "Waiting for release $TAG..."
+          for i in $(seq 1 20); do
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+              echo "Release found on attempt $i"
+              break
+            fi
+            echo "Attempt $i/20: not yet, waiting 15s..."
+            sleep 15
+          done
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "ERROR: Release $TAG not found after 20 attempts (5 minutes). Aborting."
+            exit 1
+          fi
+
+      - name: Upload artifacts to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name || inputs.tag }}
+        run: |
+          gh release upload "$TAG" artifacts/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+
+      - name: Compute xcframework checksum and update Package.swift
+        env:
+          TAG: ${{ github.ref_name || inputs.tag }}
+        run: |
+          XCFW_ZIP=$(ls artifacts/MinigrafKit-*.xcframework.zip)
+          CHECKSUM=$(shasum -a 256 "$XCFW_ZIP" | awk '{print $1}')
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/MinigrafKit-${TAG}.xcframework.zip"
+          sed -i \
+            -e "s|url: \"https://github.com/.*/releases/download/.*/MinigrafKit-.*\\.xcframework\\.zip\"|url: \"${URL}\"|" \
+            -e "s|checksum: \"[0-9a-f]*\"|checksum: \"${CHECKSUM}\"|" \
+            Package.swift
+
+      - name: Commit Package.swift update and Swift sources, then move tag
+        env:
+          TAG: ${{ github.ref_name || inputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add Package.swift swift/Sources/MinigrafKit/
+          git commit -m "chore(release): update Package.swift and Swift bindings for ${TAG}" \
+            || echo "Nothing to commit"
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
+          NEW_SHA=$(git rev-parse HEAD)
+          gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
+            -X PATCH \
+            -f sha="$NEW_SHA" \
+            -f force=true
+
+      - name: Publish AAR to GitHub Packages
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name || inputs.tag }}"
+          export VERSION="${TAG#v}"
+          mkdir -p minigraf-ffi/android/build/outputs/aar/
+          cp artifacts/minigraf-android-*.aar \
+             minigraf-ffi/android/build/outputs/aar/minigraf-android-release.aar
+          cd minigraf-ffi/android
+          ./gradlew publishReleasePublicationToGitHubPackagesRepository
