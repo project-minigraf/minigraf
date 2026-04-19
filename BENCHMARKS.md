@@ -2,7 +2,7 @@
 
 **Live benchmark history**: [bencher.dev/console/projects/minigraf/perf](https://bencher.dev/console/projects/minigraf/perf)
 
-Benchmark results for Minigraf. Core query benchmarks were updated in v0.13.1 (Phase 7.4 — query path snapshot fix). New benchmark groups for window functions, temporal metadata, UDFs, count-distinct, and regex filter added in v0.17.0 (Phase 7.8). Negation, disjunction, aggregation, and expression benchmarks were first run on v0.13.0 and selectively re-run on v0.13.1.
+Benchmark results for Minigraf. Core query benchmarks were updated in v0.13.1 (Phase 7.4 — query path snapshot fix). New benchmark groups for window functions, temporal metadata, UDFs, count-distinct, and regex filter added in v0.17.0 (Phase 7.8). Negation, disjunction, aggregation, and expression benchmarks were first run on v0.13.0 and selectively re-run on v0.13.1. Throughput reporting (facts/sec, aggregate ops/sec), retraction benchmarks, prepared query benchmarks, and checkpoint@1M added in v0.20.1.
 
 ## Environment
 
@@ -11,7 +11,7 @@ Benchmark results for Minigraf. Core query benchmarks were updated in v0.13.1 (P
 | CPU | Intel Core i7-1065G7 @ 1.30GHz (4 cores / 8 threads) |
 | RAM | 16 GB |
 | OS | Manjaro Linux 6.12.73-1 |
-| Rust | 1.92.0 |
+| Rust | 1.94.0 |
 | Profile | `release` (`opt-level = 3`, `lto = "thin"`, `panic = "abort"`) |
 | Swap | None |
 
@@ -20,6 +20,10 @@ Benchmarks were run with [Criterion 0.8](https://bheisler.github.io/criterion.rs
 ### How to read these numbers
 
 **All times are per-call latency** — the time for a single operation (one insert, one query, one open, etc.), not a total or cumulative time.
+
+**Some benchmarks also report throughput** (elements/second, shown as `K elem/s` or `elem/s`):
+- **Batch inserts / retractions**: throughput is facts/second — `Throughput::Elements(100)` over a 100-fact batch, enabling apples-to-apples comparison with single-fact inserts.
+- **Concurrent groups**: throughput is aggregate ops/second across *all threads combined* — `Throughput::Elements(n_threads)` per Criterion iteration. This answers "does total system throughput scale with thread count?" independently of per-thread latency.
 
 Criterion measures this by running each operation repeatedly and computing a median:
 
@@ -59,6 +63,32 @@ Single-fact insert is constant across dataset sizes — the in-memory pending in
 
 File-backed insert latency is constant — writes go to the WAL sidecar, not the `.graph` file directly, so insert cost is independent of database size.
 
+### Batch Insert Throughput (facts/sec)
+
+`batch_100` with `Throughput::Elements(100)` — reports facts/sec for a 100-fact batch at each DB scale (v0.20.1).
+
+| Backend | 1K | 10K | 100K | 1M |
+|---|---|---|---|---|
+| In-memory | 139 K/s | 130 K/s | 129 K/s | 128 K/s |
+| File-backed (WAL) | 120 K/s | 120 K/s | 123 K/s | 137 K/s |
+
+Throughput is essentially flat across DB sizes for both backends — confirms the O(1)-per-insert property of the WAL path. In-memory is ~10% faster than file-backed; the difference is WAL fsync overhead. At 1M facts, file-backed throughput is slightly higher than at 100K due to batch amortisation over a warmer path (OS page cache pre-warmed from the populate phase).
+
+---
+
+## Retraction Throughput
+
+Measures `(retract [...])` performance — a first-class bi-temporal operation that logically deletes facts by asserting `asserted=false` entries. Uses `batch_100` (100 retractions per call) with `Throughput::Elements(100)` to report facts/sec.
+
+| DB size | Throughput | Latency/batch |
+|---|---|---|
+| 1K | 148 K/s | 677 µs |
+| 10K | 147 K/s | 681 µs |
+| 100K | 146 K/s | 686 µs |
+| 1M | 143 K/s | 700 µs |
+
+Retraction throughput matches batch insert throughput (~130–148 K facts/sec) and is equally flat across DB sizes. The retraction path writes a `asserted=false` WAL entry per fact — structurally identical to an insert — so parity with insertion cost is expected. The slight decline at 1M reflects a larger in-memory pending index during the measurement window.
+
 ---
 
 ## Query Latency
@@ -85,6 +115,19 @@ Query performance scales linearly with dataset size. The query executor resolves
 | `valid_at` (`:valid-at` timestamp) | 1.27 ms | 16.0 ms | 272 ms | 4.47 s |
 
 Time-travel queries have the same cost profile as plain queries — temporal filtering adds negligible overhead.
+
+---
+
+## Prepared Query Latency
+
+`PreparedQuery` (parse-once/execute-many via `db.prepare(...)` + `pq.execute(...)`) moves parser overhead out of the hot path. Relevant for AI agents that issue the same query pattern repeatedly with different bind values (v0.20.1).
+
+| Benchmark | 1K | 10K |
+|---|---|---|
+| `value_lookup` (`[?e :val $val]`, returns 1 result) | 1.52 ms | 17.3 ms |
+| `threshold_filter` (`[(< ?v $threshold)]`, returns ~50% of facts) | 5.34 ms | 57.8 ms |
+
+`value_lookup` scans all facts for a matching `:val` attribute (AVET index path); `threshold_filter` additionally evaluates an expression predicate on every binding. Both scale linearly with DB size. The parse step is paid once at `prepare` time and is not reflected in these numbers.
 
 ---
 
@@ -119,9 +162,11 @@ At small sizes (1K), v6 open is slower than v5 (7.2 ms vs 1.83 ms) — the per-o
 
 Measures time to flush the WAL to committed `.graph` pages (including B+tree rebuild for all four indexes).
 
-| Benchmark | 1K | 10K |
-|---|---|---|
-| `checkpoint` | 1.25 ms | 11.80 ms |
+| Benchmark | 1K | 10K | 100K |
+|---|---|---|---|
+| `checkpoint` | 1.25 ms | 11.80 ms | — |
+
+> 100K and 1M variants added in v0.20.1 but not yet run on this machine (each iteration requires a fresh 100K/1M-fact WAL setup — setup cost dominates at `sample_size(10)`). Numbers will be added in the next benchmark pass.
 
 Checkpoint now includes a merge-sort of committed + pending entries and a B+tree rebuild across all four indexes (EAVT, AEVT, AVET, VAET). At 10K facts this is **11.8 ms** — slightly faster than the v5 paged-blob serialisation (16.5 ms), as the B+tree writer makes fewer random-access passes.
 
@@ -129,27 +174,81 @@ Checkpoint now includes a merge-sort of committed + pending entries and a B+tree
 
 ## Concurrency (In-Memory)
 
-Pre-loaded 10K-fact database. All threads operate concurrently.
+All threads operate concurrently. Throughput = aggregate ops/sec across all threads (v0.20.1).
 
-| Benchmark | 2 threads | 4 threads | 8 threads | 16 threads |
+### readers — latency (ms per Criterion iteration) / aggregate throughput (queries/sec)
+
+| DB size | 4 threads | 8 threads | 16 threads |
+|---|---|---|---|
+| 10K — latency | 20.2 ms | 38.6 ms | 77.2 ms |
+| 10K — throughput | 198 q/s | 207 q/s | 207 q/s |
+| 100K — latency | 237 ms | 438 ms | 907 ms |
+| 100K — throughput | 16.8 q/s | 18.3 q/s | 17.6 q/s |
+
+At 10K, throughput scales nearly linearly from 4→8 threads (198→207 q/s, +4.5%), then plateaus at 16 threads — the in-memory RwLock becomes the bottleneck. At 100K, throughput stays flat across thread counts because per-query scan cost dominates lock overhead.
+
+### readers_plus_writer — latency / aggregate throughput
+
+| DB size | 4 threads | 8 threads | 16 threads |
+|---|---|---|---|
+| 10K — latency | 19.9 ms | 35.6 ms | 73.5 ms |
+| 10K — throughput | 200 q/s | 225 q/s | 218 q/s |
+| 100K — latency | 227 ms | 406 ms | 847 ms |
+| 100K — throughput | 17.6 q/s | 19.7 q/s | 18.9 q/s |
+
+Mixed read/write workload shows *higher* aggregate throughput than pure readers at 10K — the single writer holds the write lock only during WAL append, allowing readers to proceed concurrently most of the time.
+
+### serialized_writers — latency / aggregate throughput
+
+Writes are serialized by design (one writer at a time). Throughput measures total committed writes/sec across all competing threads.
+
+| DB size | 2 threads | 4 threads | 8 threads | 16 threads |
 |---|---|---|---|---|
-| `readers` | — | 39.1 ms | 77.5 ms | 147.5 ms |
-| `readers_plus_writer` | — | 33.5 ms | 66.7 ms | 141.6 ms |
-| `serialized_writers` | 6.09 µs | 17.65 µs | 38.8 µs | 77.7 µs |
+| 10K — latency | 16.9 µs | 39.2 µs | 80.1 µs | 159.9 µs |
+| 10K — throughput | 118 K/s | 102 K/s | 100 K/s | 100 K/s |
+| 100K — latency | 17.2 µs | 40.5 µs | 81.4 µs | 166 µs |
+| 100K — throughput | 116 K/s | 98.8 K/s | 98.3 K/s | 96.4 K/s |
 
-`serialized_writers` at ≥4 threads was previously OOM-killed on this machine. With v6, facts are cleared from RAM after each checkpoint, so accumulated memory is much lower and all thread counts now complete.
+Aggregate write throughput drops ~15% from 2→4 threads (lock contention overhead), then stays flat at 4–16 threads — confirms serialised writes with negligible per-thread overhead. `serialized_writers` at ≥4 threads was previously OOM-killed on this machine; v6 clearing facts from RAM after checkpoint fixed that.
 
 ---
 
 ## Concurrency (File-Backed)
 
-Pre-loaded 10K-fact database.
+File-backed DB — reads go through the LRU page cache; writes append to the WAL sidecar. Throughput = aggregate ops/sec across all threads (v0.20.1).
 
-| Benchmark | 2 threads | 4 threads | 8 threads | 16 threads |
+### readers — latency / aggregate throughput
+
+| DB size | 4 threads | 8 threads | 16 threads |
+|---|---|---|---|
+| 10K — latency | 24.4 ms | 56.6 ms | 114.9 ms |
+| 10K — throughput | 164 q/s | 141 q/s | 138 q/s |
+| 100K — latency | 325 ms | 711 ms | 1.27 s |
+| 100K — throughput | 12.3 q/s | 11.2 q/s | 12.6 q/s |
+
+File-backed read throughput is ~15–25% lower than in-memory at equivalent thread counts, due to page-cache locking on cache misses. At 10K the 4→8 thread scaling degrades (164→141 q/s) — the page-cache RwLock becomes contended when all pages are hot and threads compete on every read. At 100K throughput stays roughly flat (page-cache warm after first scan iteration).
+
+### readers_plus_writer — latency / aggregate throughput
+
+| DB size | 4 threads | 8 threads | 16 threads |
+|---|---|---|---|
+| 10K — latency | 24.2 ms | 49.3 ms | 104.3 ms |
+| 10K — throughput | 165 q/s | 164 q/s | 153 q/s |
+| 100K — latency | 303 ms | 646 ms | 1.20 s |
+| 100K — throughput | 13.2 q/s | 12.4 q/s | 13.4 q/s |
+
+Mixed workload throughput at 10K stays flat 4→8 threads (165→164 q/s) vs. the degradation seen in pure-readers — the writer holding the write lock briefly gives readers a chance to be scheduled without cache contention.
+
+### serialized_writers — latency / aggregate throughput
+
+| DB size | 2 threads | 4 threads | 8 threads | 16 threads |
 |---|---|---|---|---|
-| `readers` | — | 41.5 ms | 87.7 ms | 152.8 ms |
-| `readers_plus_writer` | — | 34.0 ms | 73.9 ms | 146.8 ms |
-| `serialized_writers` | 10.98 µs | 25.9 µs | 56.4 µs | 112 µs |
+| 10K — latency | 25.9 µs | 56.7 µs | 118 µs | 235 µs |
+| 10K — throughput | 77.4 K/s | 70.6 K/s | 67.7 K/s | 68.0 K/s |
+| 100K — latency | 26.7 µs | 57.3 µs | 117 µs | 236 µs |
+| 100K — throughput | 75.0 K/s | 69.9 K/s | 68.2 K/s | 67.7 K/s |
+
+File-backed write throughput (~68–77 K writes/sec) is ~30% lower than in-memory (~100–118 K/s) — the WAL fsync on each commit dominates. Throughput declines ~12% from 2→4 threads then stabilises, matching the in-memory contention pattern.
 
 ---
 
@@ -283,17 +382,20 @@ Measures regex evaluation overhead via the `matches?` predicate. Regexes are pre
 
 ---
 
-## Concurrent B+Tree Range Scans (Phase 6.5, new)
+## Concurrent B+Tree Range Scans (Phase 6.5)
 
-Measures wall-clock latency of N simultaneous EAVT range scans against a committed B+tree with 10K facts.
+Measures N simultaneous EAVT range scans against a fully committed (checkpointed) B+tree — no WAL involvement. Throughput = aggregate queries/sec across all threads (v0.20.1).
 
-| Threads | Median latency |
-|---|---|
-| 2 | 22.4 ms |
-| 4 | 33.1 ms |
-| 8 | 63.9 ms |
+| DB size | 2 threads | 4 threads | 8 threads |
+|---|---|---|---|
+| 10K — latency | 23.4 ms | 24.6 ms | 56.9 ms |
+| 10K — throughput | 85.3 q/s | 162 q/s | 140 q/s |
+| 100K — latency | 264 ms | 322 ms | 702 ms |
+| 100K — throughput | 7.57 q/s | 12.4 q/s | 11.4 q/s |
 
-Scaling: 2→4 threads is ~1.5× (good), 4→8 threads is ~1.9× (improved from 2.2× before per-page locking). The backend `Mutex` is now held only for the duration of a single `read_page` call on a cache miss — on cache-warm pages no lock is acquired at all, allowing concurrent readers to proceed in parallel. Remaining contention at 8 threads reflects cold-page I/O serialisation, which is unavoidable and correct.
+At 10K, throughput nearly doubles from 2→4 threads (85→162 q/s, +90%) — strong scaling on cache-warm pages. At 8 threads it drops back to 140 q/s — the per-page read `Mutex` becomes contended when all threads hit the same B+tree nodes simultaneously. At 100K the pattern repeats: 2→4 is +64%, then 4→8 degrades slightly as cold-page I/O serialisation limits further scaling.
+
+The backend `Mutex` is held only for the duration of a single `read_page` call on a cache miss — cache-warm reads acquire no lock, allowing true parallel reads. Remaining contention at 8 threads reflects unavoidable cold-page I/O serialisation.
 
 ---
 
