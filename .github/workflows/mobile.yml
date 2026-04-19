@@ -212,7 +212,7 @@ jobs:
           gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
             -X PATCH \
             -f sha="$NEW_SHA" \
-            -f force=true
+            -F force=true
 
       - name: Publish AAR to GitHub Packages
         env:
