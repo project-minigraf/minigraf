@@ -23,9 +23,9 @@ impl From<anyhow::Error> for MiniGrafError {
     fn from(e: anyhow::Error) -> Self {
         let full = format!("{e:#}").to_lowercase();
         let msg = e.to_string();
-        if full.contains("parse") || full.contains("unexpected") || full.contains("expected token") {
+        if full.contains("parse") || full.contains("unexpected") || full.contains("expected token") || full.contains("unknown command") {
             MiniGrafError::Parse { msg }
-        } else if full.contains("storage") || full.contains("page") || full.contains("wal") {
+        } else if full.contains("storage") || full.contains(" page") || full.contains("wal ") {
             MiniGrafError::Storage { msg }
         } else if full.contains("query") || full.contains(":find") || full.contains(":where") {
             MiniGrafError::Query { msg }
@@ -233,10 +233,22 @@ mod tests {
     #[test]
     fn execute_invalid_datalog_returns_parse_error() {
         let db = MiniGrafDb::open_in_memory().expect("open");
+        // Illegal characters trigger tokenizer-level parse error
         let result = db.execute("not valid datalog at all !!!".into());
         assert!(
             matches!(result, Err(MiniGrafError::Parse { .. })),
-            "expected Parse error"
+            "expected Parse error for illegal characters"
+        );
+    }
+
+    #[test]
+    fn execute_unknown_command_returns_parse_error() {
+        let db = MiniGrafDb::open_in_memory().expect("open");
+        // Structurally valid tokens but unknown command — should also route to Parse
+        let result = db.execute("(unknown-command [])".into());
+        assert!(
+            matches!(result, Err(MiniGrafError::Parse { .. })),
+            "expected Parse error for unknown command"
         );
     }
 }
