@@ -127,7 +127,23 @@ Pairs well with vector stores (GraphRAG pattern): the vector store answers "what
 
 ### For Mobile Apps
 
-Offline-first storage with retroactive corrections — the bi-temporal model lets you correct a mis-entered value while preserving the original record. Phase 8 will ship iOS `.xcframework` and Android `.aar` via UniFFI.
+Offline-first storage with retroactive corrections — the bi-temporal model lets you correct a mis-entered value while preserving the original record. Native Kotlin and Swift bindings ship as an Android `.aar` (GitHub Packages) and an iOS `.xcframework` (Swift Package Manager) via [UniFFI](https://github.com/mozilla/uniffi-rs). No Rust required.
+
+```kotlin
+// Android (Kotlin)
+val db = MiniGrafDb.open(context.filesDir.absolutePath + "/myapp.graph")
+db.execute("""(transact [[:alice :person/name "Alice"] [:alice :person/age 30]])""")
+val json = db.execute("(query [:find ?name :where [?e :person/name ?name]])")
+```
+
+```swift
+// iOS (Swift)
+let db = try MiniGrafDb.open(path: docsURL.appendingPathComponent("myapp.graph").path)
+try db.execute(datalog: #"(transact [[:alice :person/name "Alice"] [:alice :person/age 30]])"#)
+let json = try db.execute(datalog: "(query [:find ?name :where [?e :person/name ?name]])")
+```
+
+See the [Mobile Integration](https://github.com/adityamukho/minigraf/wiki/Use-Cases#mobile-apps) wiki section for full setup and usage docs (Gradle config, SPM integration, error handling, threading).
 
 ### For WASM / Browser
 

@@ -45,6 +45,22 @@
 //! // Time travel — query the state as of transaction 1
 //! db.execute("(query [:find ?age :as-of 1 :where [:alice :person/age ?age]])").unwrap();
 //! ```
+//!
+//! # Feature Flags
+//!
+//! | Feature | Target | Description |
+//! |---------|--------|-------------|
+//! | *(default)* | native / WASI | File-backed and in-memory databases; full Datalog engine |
+//! | `browser` | `wasm32-unknown-unknown` | Enables the `browser` module (`BrowserDb`), backed by IndexedDB for use inside a web browser via `wasm-pack` |
+//!
+//! The `browser` feature is only meaningful on the `wasm32-unknown-unknown` target.
+//! When browsing docs on [docs.rs](https://docs.rs/minigraf), switch the target to
+//! `wasm32-unknown-unknown` (top-right target selector) to see the full browser API.
+//!
+//! ## WebAssembly targets
+//!
+//! - **Browser** (`wasm32-unknown-unknown` + `browser` feature) — `wasm-pack build --target web --features browser`
+//! - **WASI / server-side** (`wasm32-wasip1`) — `cargo build --target wasm32-wasip1 --release --bin minigraf`
 
 pub mod db;
 pub(crate) mod graph;
