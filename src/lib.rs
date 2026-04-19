@@ -55,7 +55,8 @@ pub(crate) mod storage;
 pub(crate) mod temporal;
 pub(crate) mod wal;
 
-#[cfg(all(target_arch = "wasm32", feature = "browser"))]
+#[cfg(any(all(target_arch = "wasm32", feature = "browser"), docsrs))]
+#[cfg_attr(docsrs, doc(cfg(all(target_arch = "wasm32", feature = "browser"))))]
 pub mod browser;
 
 #[cfg(not(target_arch = "wasm32"))]
