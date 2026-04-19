@@ -68,7 +68,7 @@ jobs:
       - name: Wait for GitHub Release to exist, then upload
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name || inputs.tag }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           echo "Waiting for release $TAG to be created by cargo-dist..."
           for i in $(seq 1 40); do
