@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.20.1 — Patch: docs.rs browser module visibility (2026-04-19)
+
+### Fixed
+- `browser` module now appears on docs.rs: added `docsrs` to the `cfg` gate and `doc(cfg(...))` badge annotation (`src/lib.rs`)
+
 ## v0.20.0 — Phase 8.1: WebAssembly Support (2026-04-18)
 
 ### Added
