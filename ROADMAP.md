@@ -1250,12 +1250,16 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 - `implementation("io.github.adityamukho:minigraf-android:0.9.0")`
 
 **Features** (implementation order):
-- 🎯 `minigraf-ffi` crate with UniFFI proc-macro bindings
-- 🎯 GitHub Actions cross-compilation matrix (Android ABIs + iOS targets)
-- 🎯 `.xcframework` and `.aar` assembly in CI
-- 🎯 Swift Package manifest
-- 🎯 Android Gradle integration example
-- 🎯 Memory/resource management: ensure `Minigraf` handle lifecycle is safe across FFI boundary
+- ✅ `minigraf-ffi` crate with UniFFI proc-macro bindings (uniffi 0.31.1, proc-macro approach)
+- ✅ GitHub Actions cross-compilation matrix (Android ABIs + iOS targets)
+- ✅ `.xcframework` and `.aar` assembly in CI (`mobile.yml`)
+- ✅ Swift Package manifest (`Package.swift` at repo root, CI-updated checksum)
+- ✅ Android Gradle project with GitHub Packages publishing
+- ✅ Memory/resource management: `Arc<Mutex<Minigraf>>` behind UniFFI object ref-counting
+
+**Post-1.0 FFI deferrals** (complex to represent safely over UniFFI):
+- 🎯 `register_aggregate` / `register_predicate` over UniFFI — requires closure-passing across FFI (not supported by UniFFI 0.31.1); needs a callback-based redesign
+- 🎯 `prepare()` / `PreparedQuery` over UniFFI — bind-slot substitution requires a stateful handle; design TBD once basic FFI API is proven stable
 
 ### 8.3 Language Bindings
 
@@ -1266,6 +1270,7 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 - 🎯 C header (`minigraf.h`) via `cbindgen` for any language with a C FFI
 - 🎯 Node.js / TypeScript bindings via `neon` or `napi-rs`
 - 🎯 Published to PyPI (`minigraf`), npm (`@minigraf/core`)
+- 🎯 Desktop JVM bindings — plain JAR + desktop-native `.so`/`.dylib`/`.dll` via UniFFI for non-Android Java/Kotlin desktop applications (Maven Central)
 
 **Note**: Python and C bindings share the UniFFI / cbindgen work done for mobile — the incremental cost is small once Phase 8.2 is complete.
 
@@ -1613,6 +1618,7 @@ When evaluating features, ask:
 - ✅ Phase 7.8: Complete (April 2026) - Prepared statements (`$slot` bind tokens, temporal bind slots, plan reuse), 780 tests
 - ✅ Phase 7.9: Complete (April 2026) - Publish prep (crates.io API cleanup, Rustdoc sweep, `unwrap` audit, CI matrix), 788 tests
 - ✅ Phase 8.1: Complete (April 2026) - Browser WASM (`BrowserDb`, IndexedDB backend) + WASI (`wasm32-wasip1` CI) + cross-platform compat tests, 795 tests
+- 🔄 Phase 8.2: In progress — Mobile bindings (Android `.aar` + iOS `.xcframework` via UniFFI 0.31.1), 815 tests
 - 🔄 Phase 8: In progress (Cross-platform — WASM ✅, mobile, language bindings → **v1.0.0**)
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)
 
@@ -1622,17 +1628,20 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: Phase 8.1 Complete (v0.20.0) — Phase 8.2 Next (Mobile Bindings)
+**Right Now**: Phase 8.2 In Progress — Mobile Bindings (Android `.aar` + iOS `.xcframework`)
 
-**Phase 8.1 Achievements**:
-1. ✅ `BrowserDb` API (browser WASM) with `IndexedDbBackend` page-granular storage
-2. ✅ `wasm-pack` build generating `pkg/` with JS glue and TypeScript `.d.ts`
-3. ✅ `wasm32-wasip1` (WASI) CI: build, unit tests, smoke tests under Wasmtime + Wasmer
-4. ✅ Cross-platform `.graph` compatibility tests (native ↔ browser): committed fixture + import round-trip
-5. ✅ 795 tests passing; version bumped to v0.20.0
+**Phase 8.2 Progress**:
+1. ✅ Workspace conversion (`minigraf-ffi` crate added)
+2. ✅ `MiniGrafDb` FFI API (open, open_in_memory, execute, checkpoint) via UniFFI 0.31.1
+3. ✅ Android Gradle project (`.aar` assembly + GitHub Packages publishing)
+4. ✅ Swift Package Manager manifest (`Package.swift`)
+5. ✅ CI workflows: `mobile.yml` (Android/iOS), `wasm-release.yml` (WASM artifacts)
+6. ✅ 815 tests passing (795 core + 20 FFI)
 
-**Immediate Next Steps (Phase 8.2)**:
-1. Mobile Bindings — iOS + Android via UniFFI
+**Immediate Next Steps (Phase 8.3)**:
+1. Python bindings via UniFFI
+2. C header via `cbindgen`
+3. Desktop JVM bindings (plain JAR + desktop-native libraries)
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)
