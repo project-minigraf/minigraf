@@ -23,7 +23,11 @@ impl From<anyhow::Error> for MiniGrafError {
     fn from(e: anyhow::Error) -> Self {
         let full = format!("{e:#}").to_lowercase();
         let msg = e.to_string();
-        if full.contains("parse") || full.contains("unexpected") || full.contains("expected token") || full.contains("unknown command") {
+        if full.contains("parse")
+            || full.contains("unexpected")
+            || full.contains("expected token")
+            || full.contains("unknown command")
+        {
             MiniGrafError::Parse { msg }
         } else if full.contains("storage") || full.contains(" page") || full.contains("wal ") {
             MiniGrafError::Storage { msg }
@@ -64,7 +68,9 @@ impl MiniGrafDb {
         let result = self
             .inner
             .lock()
-            .map_err(|_| MiniGrafError::Other { msg: "mutex poisoned".into() })?
+            .map_err(|_| MiniGrafError::Other {
+                msg: "mutex poisoned".into(),
+            })?
             .execute(&datalog)
             .map_err(MiniGrafError::from)?;
         Ok(query_result_to_json(result))
@@ -73,7 +79,9 @@ impl MiniGrafDb {
     pub fn checkpoint(&self) -> Result<(), MiniGrafError> {
         self.inner
             .lock()
-            .map_err(|_| MiniGrafError::Other { msg: "mutex poisoned".into() })?
+            .map_err(|_| MiniGrafError::Other {
+                msg: "mutex poisoned".into(),
+            })?
             .checkpoint()
             .map_err(MiniGrafError::from)
     }
@@ -185,8 +193,14 @@ mod tests {
 
     #[test]
     fn value_to_json_boolean() {
-        assert_eq!(value_to_json(&Value::Boolean(true)), serde_json::json!(true));
-        assert_eq!(value_to_json(&Value::Boolean(false)), serde_json::json!(false));
+        assert_eq!(
+            value_to_json(&Value::Boolean(true)),
+            serde_json::json!(true)
+        );
+        assert_eq!(
+            value_to_json(&Value::Boolean(false)),
+            serde_json::json!(false)
+        );
     }
 
     #[test]
