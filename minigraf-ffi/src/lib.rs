@@ -45,8 +45,11 @@ pub struct MiniGrafDb {
 #[uniffi::export]
 impl MiniGrafDb {
     #[uniffi::constructor]
-    pub fn open(_path: String) -> Result<Arc<Self>, MiniGrafError> {
-        todo!()
+    pub fn open(path: String) -> Result<Arc<Self>, MiniGrafError> {
+        let db = minigraf::Minigraf::open(&path).map_err(MiniGrafError::from)?;
+        Ok(Arc::new(Self {
+            inner: Arc::new(Mutex::new(db)),
+        }))
     }
 
     #[uniffi::constructor]
@@ -68,7 +71,11 @@ impl MiniGrafDb {
     }
 
     pub fn checkpoint(&self) -> Result<(), MiniGrafError> {
-        todo!()
+        self.inner
+            .lock()
+            .map_err(|_| MiniGrafError::Other { msg: "mutex poisoned".into() })?
+            .checkpoint()
+            .map_err(MiniGrafError::from)
     }
 }
 
@@ -250,5 +257,40 @@ mod tests {
             matches!(result, Err(MiniGrafError::Parse { .. })),
             "expected Parse error for unknown command"
         );
+    }
+
+    #[test]
+    fn open_file_backed_roundtrip() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("minigraf_ffi_test.graph");
+        // Clean up any leftover file from a previous run
+        let _ = std::fs::remove_file(&path);
+        let path_str = path.to_str().expect("utf8 path").to_string();
+
+        {
+            let db = MiniGrafDb::open(path_str.clone()).expect("open");
+            db.execute(r#"(transact [[:alice :name "Alice"]])"#.into())
+                .expect("transact");
+            db.checkpoint().expect("checkpoint");
+        }
+
+        // Re-open and verify fact persisted
+        let db2 = MiniGrafDb::open(path_str).expect("re-open");
+        let json = db2
+            .execute(r#"(query [:find ?n :where [?e :name ?n]])"#.into())
+            .expect("query");
+        let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+        assert_eq!(v["results"][0][0], "Alice");
+
+        // Clean up
+        let _ = std::fs::remove_file(path);
+        let wal = dir.join("minigraf_ffi_test.graph.wal");
+        let _ = std::fs::remove_file(wal);
+    }
+
+    #[test]
+    fn checkpoint_in_memory_succeeds() {
+        let db = MiniGrafDb::open_in_memory().expect("open");
+        db.checkpoint().expect("checkpoint on in-memory db");
     }
 }
