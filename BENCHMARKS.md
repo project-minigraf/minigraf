@@ -1,6 +1,6 @@
 # Minigraf Benchmarks
 
-**Live benchmark history**: [bencher.dev/console/projects/minigraf/perf](https://bencher.dev/console/projects/minigraf/perf)
+**Live benchmark history**: [https://bencher.dev/perf/minigraf/plots](https://bencher.dev/perf/minigraf/plots)
 
 Benchmark results for Minigraf. Core query benchmarks were updated in v0.13.1 (Phase 7.4 — query path snapshot fix). New benchmark groups for window functions, temporal metadata, UDFs, count-distinct, and regex filter added in v0.17.0 (Phase 7.8). Negation, disjunction, aggregation, and expression benchmarks were first run on v0.13.0 and selectively re-run on v0.13.1.
 
