@@ -19,3 +19,4 @@ heaptrack.*.zst
 minigraf-ffi/python/minigraf/minigraf_ffi/
 minigraf-ffi/python/**/__pycache__/
 minigraf-ffi/python/.venv/
+minigraf-ffi/python/dist/

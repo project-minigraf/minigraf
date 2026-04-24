@@ -30,37 +30,34 @@ cargo build --bin uniffi-bindgen --manifest-path "$FFI_TOML"
 # Maturin calls: cargo run --bin uniffi-bindgen generate ...
 # We need:       cargo run --package minigraf-ffi --bin uniffi-bindgen generate ...
 mkdir -p "$SHIM_DIR"
-cat > "$SHIM_DIR/cargo" <<'SHIM_EOF'
+cat > "$SHIM_DIR/cargo" << SHIM_EOF
 #!/usr/bin/env bash
-REAL_CARGO=REAL_CARGO_PLACEHOLDER
-ARGS=("$@")
+REAL_CARGO=$REAL_CARGO
+ARGS=("\$@")
 NEW_ARGS=()
 HAS_RUN=false; HAS_BIN_UNIFFI=false; HAS_MANIFEST=false; HAS_PACKAGE=false; INJECTED=false
 
-for arg in "${ARGS[@]}"; do
-    [[ "$arg" == "run" ]]                           && HAS_RUN=true
-    [[ "$arg" == "uniffi-bindgen" ]]                && HAS_BIN_UNIFFI=true
-    [[ "$arg" == "--manifest-path" ]]               && HAS_MANIFEST=true
-    [[ "$arg" == "--package" || "$arg" == "-p" ]]   && HAS_PACKAGE=true
+for arg in "\${ARGS[@]}"; do
+    [[ "\$arg" == "run" ]]                           && HAS_RUN=true
+    [[ "\$arg" == "uniffi-bindgen" ]]                && HAS_BIN_UNIFFI=true
+    [[ "\$arg" == "--manifest-path" ]]               && HAS_MANIFEST=true
+    [[ "\$arg" == "--package" || "\$arg" == "-p" ]]   && HAS_PACKAGE=true
 done
 
-if $HAS_RUN && $HAS_BIN_UNIFFI && ! $HAS_MANIFEST && ! $HAS_PACKAGE; then
-    for arg in "${ARGS[@]}"; do
-        if [[ "$arg" == "run" && "$INJECTED" == "false" ]]; then
+if \$HAS_RUN && \$HAS_BIN_UNIFFI && ! \$HAS_MANIFEST && ! \$HAS_PACKAGE; then
+    for arg in "\${ARGS[@]}"; do
+        if [[ "\$arg" == "run" && "\$INJECTED" == "false" ]]; then
             NEW_ARGS+=("run" "--package" "minigraf-ffi")
             INJECTED=true
         else
-            NEW_ARGS+=("$arg")
+            NEW_ARGS+=("\$arg")
         fi
     done
-    exec "$REAL_CARGO" "${NEW_ARGS[@]}"
+    exec "\$REAL_CARGO" "\${NEW_ARGS[@]}"
 else
-    exec "$REAL_CARGO" "${ARGS[@]}"
+    exec "\$REAL_CARGO" "\${ARGS[@]}"
 fi
 SHIM_EOF
-
-# Embed the real cargo path into the shim
-sed -i "s|REAL_CARGO_PLACEHOLDER|$REAL_CARGO|g" "$SHIM_DIR/cargo"
 chmod +x "$SHIM_DIR/cargo"
 
 # Run maturin with the shim on PATH

@@ -21,7 +21,7 @@ def test_transact_and_query():
 
 def test_invalid_datalog_raises():
     db = MiniGrafDb.open_in_memory()
-    with pytest.raises(Exception):
+    with pytest.raises(MiniGrafError):
         db.execute("not valid datalog !!!")
 
 

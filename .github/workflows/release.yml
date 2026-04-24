@@ -324,3 +324,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Publish to crates.io
         run: cargo publish --locked -p minigraf --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  # Publish Python wheels to PyPI after the GitHub release is created
+  publish-python:
+    name: Publish Python wheels to PyPI
+    needs:
+      - plan
+      - host
+    if: ${{ always() && needs.host.result == 'success' && needs.plan.outputs.publishing == 'true' }}
+    uses: ./.github/workflows/python-release.yml
+    with:
+      tag: ${{ needs.plan.outputs.tag }}
+    secrets: inherit
