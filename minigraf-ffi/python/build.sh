@@ -11,6 +11,9 @@
 #   source .venv/bin/activate   # activate a virtualenv first
 #   ./build.sh           # build + install into active virtualenv
 #   ./build.sh test      # build + run pytest -v
+#   ./build.sh build [extra_maturin_args...]
+#                        # produce a release wheel in dist/ (no pytest)
+#                        # e.g.: bash build.sh build --release --manylinux 2014 --out dist
 
 set -euo pipefail
 
@@ -62,8 +65,18 @@ chmod +x "$SHIM_DIR/cargo"
 
 # Run maturin with the shim on PATH
 cd "$SCRIPT_DIR"
-PATH="$SHIM_DIR:$PATH" maturin develop
 
-if [[ "${1:-}" == "test" ]]; then
-    pytest tests/ -v
+SUBCOMMAND="${1:-}"
+
+if [[ "$SUBCOMMAND" == "build" ]]; then
+    # Release wheel build — extra args forwarded to maturin build
+    shift
+    PATH="$SHIM_DIR:$PATH" maturin build "$@"
+else
+    # Development install (default)
+    PATH="$SHIM_DIR:$PATH" maturin develop
+
+    if [[ "$SUBCOMMAND" == "test" ]]; then
+        pytest tests/ -v
+    fi
 fi
