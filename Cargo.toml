@@ -1,6 +1,5 @@
 [workspace]
 members = [".", "minigraf-ffi"]
-default-members = [".", "minigraf-ffi"]
 resolver = "2"
 
 [package]
