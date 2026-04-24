@@ -17,7 +17,13 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
 ]
 
+[project.urls]
+Homepage = "https://github.com/adityamukho/minigraf"
+Repository = "https://github.com/adityamukho/minigraf"
+"Bug Tracker" = "https://github.com/adityamukho/minigraf/issues"
+
 [tool.maturin]
 manifest-path = "../Cargo.toml"
 bindings = "uniffi"
 python-packages = ["minigraf"]
+module-name = "minigraf.minigraf_ffi"
