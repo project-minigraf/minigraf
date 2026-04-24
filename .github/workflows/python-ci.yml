@@ -26,10 +26,17 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install maturin and pytest
-        run: pip install "maturin>=1.5" pytest
+      - name: Install maturin
+        run: pip install "maturin>=1.5"
+
+      - name: Create virtualenv
+        working-directory: minigraf-ffi/python
+        run: python -m venv .venv
 
       - name: Build and test (workaround for maturin workspace uniffi-bindgen bug)
         working-directory: minigraf-ffi/python
-        run: bash build.sh test
+        run: |
+          source .venv/bin/activate 2>/dev/null || source .venv/Scripts/activate
+          pip install pytest
+          bash build.sh test
         shell: bash
