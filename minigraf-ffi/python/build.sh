@@ -5,6 +5,12 @@
 # `cargo run --bin uniffi-bindgen` without `--package minigraf-ffi` when the
 # binary lives in a non-root workspace member.
 #
+# Solution: prepend a shim dir to PATH containing a cargo wrapper that injects
+# `--package minigraf-ffi`. On Unix the shim is a bash script; on Windows it is
+# cargo.bat + cargo_shim.py. MSYS2 auto-converts POSIX paths in PATH to Windows
+# format when spawning native Windows processes, so the same PATH= prefix works
+# on all platforms.
+#
 # Requires an active virtualenv (or conda environment).
 
 set -euo pipefail
@@ -14,20 +20,6 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 FFI_TOML="$REPO_ROOT/minigraf-ffi/Cargo.toml"
 SHIM_DIR="$REPO_ROOT/target/cargo-shim"
 REAL_CARGO_POSIX="$(command -v cargo)"
-
-# Detect Windows (Git Bash).
-IS_WINDOWS=false
-_UNAME="$(uname -s 2>/dev/null || true)"
-case "$_UNAME" in MINGW*|MSYS*|CYGWIN*) IS_WINDOWS=true ;; esac
-[[ "${OSTYPE:-}" == msys || "${OSTYPE:-}" == cygwin ]] && IS_WINDOWS=true
-
-echo "=== build.sh diagnostics ==="
-echo "IS_WINDOWS=$IS_WINDOWS"
-echo "uname -s: $_UNAME"
-echo "OSTYPE: ${OSTYPE:-<unset>}"
-echo "REAL_CARGO_POSIX: $REAL_CARGO_POSIX"
-echo "SHIM_DIR: $SHIM_DIR"
-echo "==========================="
 
 # Build the uniffi-bindgen binary with the correct --manifest-path (no-op if fresh).
 cargo build --bin uniffi-bindgen --manifest-path "$FFI_TOML"
@@ -93,30 +85,16 @@ echo "Shim dir contents after creation:"
 ls -la "$SHIM_DIR/"
 
 # Run maturin.
+# Use POSIX-format PATH on all platforms — MSYS2 on Windows automatically converts
+# POSIX paths to Windows format when spawning native Windows processes, so cargo.bat
+# in the shim dir will be found by maturin.exe via PATHEXT resolution.
 cd "$SCRIPT_DIR"
 SUBCOMMAND="${1:-}"
 
-if $IS_WINDOWS; then
-    # On Windows, convert POSIX PATH to Windows format so maturin finds cargo.bat.
-    SHIM_DIR_WIN="$(cygpath -w "$SHIM_DIR")"
-    echo "SHIM_DIR_WIN: $SHIM_DIR_WIN"
-    # Get current PATH in Windows format and prepend shim dir.
-    CURRENT_WIN_PATH="$(cygpath -wp "$PATH")"
-    WIN_PATH="${SHIM_DIR_WIN};${CURRENT_WIN_PATH}"
-    echo "First 200 chars of WIN_PATH: ${WIN_PATH:0:200}"
-    if [[ "$SUBCOMMAND" == "build" ]]; then
-        shift
-        PATH="$WIN_PATH" maturin build "$@"
-    else
-        PATH="$WIN_PATH" maturin develop
-        [[ "$SUBCOMMAND" == "test" ]] && pytest tests/ -v
-    fi
+if [[ "$SUBCOMMAND" == "build" ]]; then
+    shift
+    PATH="$SHIM_DIR:$PATH" maturin build "$@"
 else
-    if [[ "$SUBCOMMAND" == "build" ]]; then
-        shift
-        PATH="$SHIM_DIR:$PATH" maturin build "$@"
-    else
-        PATH="$SHIM_DIR:$PATH" maturin develop
-        [[ "$SUBCOMMAND" == "test" ]] && pytest tests/ -v
-    fi
+    PATH="$SHIM_DIR:$PATH" maturin develop
+    [[ "$SUBCOMMAND" == "test" ]] && pytest tests/ -v
 fi
