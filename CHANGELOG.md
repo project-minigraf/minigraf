@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.25.0] — 2026-04-26
+
+### Added
+- **Phase 8.3d**: Node.js bindings published to npm as `minigraf`.
+  Install with `npm install minigraf`. No build step required — prebuilt
+  `.node` binaries for Linux x86_64/aarch64, macOS universal2, Windows x86_64.
+  API: `new MiniGrafDb(path)`, `MiniGrafDb.inMemory()`, `.execute(datalog)`,
+  `.checkpoint()`. Full TypeScript definitions included.
+
 ## v0.24.0 — Phase 8.3c: C Bindings (2026-04-26)
 
 ### Added

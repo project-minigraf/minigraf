@@ -1261,7 +1261,7 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 - 🎯 `register_aggregate` / `register_predicate` over UniFFI — requires closure-passing across FFI (not supported by UniFFI 0.31.1); needs a callback-based redesign
 - 🎯 `prepare()` / `PreparedQuery` over UniFFI — bind-slot substitution requires a stateful handle; design TBD once basic FFI API is proven stable
 
-### 8.3 Language Bindings
+### 8.3 Language Bindings ✅ COMPLETE
 
 **Goal**: Python and C FFI as the highest-priority non-mobile targets (covers scripting, agent frameworks, and "any other language via C").
 
@@ -1296,12 +1296,14 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 
 **Deliverable**: ✅ `implementation("io.github.adityamukho:minigraf-jvm:0.23.0")` — JVM bindings published to Maven Central.
 
-#### 8.3d: Node.js / TypeScript Bindings
+#### 8.3d: Node.js / TypeScript Bindings ✅ COMPLETE
+
+**Status**: ✅ Completed (April 2026) — v0.25.0
 
 **Features**:
 - ✅ 8.3c: C header (`minigraf.h`) via `cbindgen` for any language with a C FFI — v0.24.0 COMPLETE
-- 🎯 8.3d: Node.js / TypeScript bindings via `napi-rs` — v0.25.0
-- 🎯 Published to npm (`@minigraf/core`)
+- ✅ 8.3d: Node.js / TypeScript bindings via `napi-rs` — v0.25.0 COMPLETE
+- ✅ Published to npm (`minigraf`)
 
 **Note**: Python and C bindings share the UniFFI / cbindgen work done for mobile — the incremental cost is small once Phase 8.2 is complete.
 
@@ -1659,7 +1661,7 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: Phase 8.3 In Progress — Language Bindings
+**Right Now**: Phase 8.3 ✅ COMPLETE — Language Bindings
 
 **Phase 8.2 Progress** ✅ COMPLETE:
 1. ✅ Workspace conversion (`minigraf-ffi` crate added)
@@ -1673,10 +1675,10 @@ When evaluating features, ask:
 - ✅ 8.3a: Python bindings via UniFFI — PyPI `minigraf` — v0.22.0 COMPLETE
 - ✅ 8.3b: Desktop JVM bindings — fat JAR on Maven Central (`io.github.adityamukho:minigraf-jvm:0.23.0`) — v0.23.0 COMPLETE
 - ✅ 8.3c: C bindings via `cbindgen` — GitHub Releases tarballs (`minigraf.h` + shared lib) — v0.24.0 COMPLETE
-- 🎯 8.3d: Node.js bindings via `napi-rs` (v0.25.0)
+- ✅ 8.3d: Node.js bindings via `napi-rs` — npm `minigraf` — v0.25.0 COMPLETE
 
-**Immediate Next Steps (Phase 8.3)**:
-1. 8.3d: Node.js bindings via `napi-rs`
+**Immediate Next Steps**:
+- Phase 9: Ecosystem & Tooling
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)
@@ -1692,4 +1694,4 @@ See [GitHub Issues](https://github.com/adityamukho/minigraf/issues) for specific
 
 ---
 
-**Last Updated**: Phase 8.3c Complete (April 2026) — 795 tests passing, v0.24.0
+**Last Updated**: Phase 8.3d Complete (April 2026) — 795 tests passing, v0.25.0
