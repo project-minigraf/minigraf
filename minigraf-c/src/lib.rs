@@ -70,10 +70,7 @@ pub extern "C" fn minigraf_close(handle: *mut MiniGrafDb) {
 /// Execute a Datalog string. Returns a JSON string on success (caller must free
 /// with `minigraf_string_free`), or NULL on error (call `minigraf_last_error`).
 #[unsafe(no_mangle)]
-pub extern "C" fn minigraf_execute(
-    handle: *mut MiniGrafDb,
-    datalog: *const c_char,
-) -> *mut c_char {
+pub extern "C" fn minigraf_execute(handle: *mut MiniGrafDb, datalog: *const c_char) -> *mut c_char {
     if handle.is_null() || datalog.is_null() {
         return std::ptr::null_mut();
     }
@@ -175,8 +172,10 @@ fn query_result_to_json(result: QueryResult) -> String {
         QueryResult::Retracted(tx) => serde_json::json!({"retracted": tx}),
         QueryResult::Ok => serde_json::json!({"ok": true}),
         QueryResult::QueryResults { vars, results } => {
-            let rows: Vec<Vec<serde_json::Value>> =
-                results.iter().map(|r| r.iter().map(value_to_json).collect()).collect();
+            let rows: Vec<Vec<serde_json::Value>> = results
+                .iter()
+                .map(|r| r.iter().map(value_to_json).collect())
+                .collect();
             serde_json::json!({"variables": vars, "results": rows})
         }
     };
