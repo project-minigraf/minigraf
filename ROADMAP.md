@@ -1265,11 +1265,27 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 
 **Goal**: Python and C FFI as the highest-priority non-mobile targets (covers scripting, agent frameworks, and "any other language via C").
 
+#### 8.3a Python Bindings ✅ COMPLETE
+
+**Status**: ✅ Completed (April 2026) — v0.22.0
+
 **Features**:
-- 🎯 Python bindings via UniFFI (same `.udl` / proc-macro as mobile — no extra code)
+- ✅ Python bindings via UniFFI (reusing `minigraf-ffi` crate from Phase 8.2)
+- ✅ `maturin` build backend — generates wheels via `minigraf-ffi/python/`
+- ✅ Python package `minigraf` with `MiniGrafDb` class: `open(path)`, `open_in_memory()`, `execute(datalog)`, `checkpoint()`
+- ✅ Published to PyPI as `minigraf` (`pip install minigraf`)
+- ✅ Pre-built wheels for Linux x86_64/aarch64, macOS universal2, Windows x86_64
+- ✅ CI workflow (`python-release.yml`): cross-compiles via `maturin` on every release tag
+- ✅ PR CI (`python-pr.yml`): validates build on every pull request
+
+**Deliverable**: ✅ `pip install minigraf` — Python bindings published to PyPI with pre-built platform wheels.
+
+#### 8.3b Remaining Language Bindings 🎯 FUTURE
+
+**Features**:
 - 🎯 C header (`minigraf.h`) via `cbindgen` for any language with a C FFI
 - 🎯 Node.js / TypeScript bindings via `neon` or `napi-rs`
-- 🎯 Published to PyPI (`minigraf`), npm (`@minigraf/core`)
+- 🎯 Published to npm (`@minigraf/core`)
 - 🎯 Desktop JVM bindings — plain JAR + desktop-native `.so`/`.dylib`/`.dll` via UniFFI for non-Android Java/Kotlin desktop applications (Maven Central)
 
 **Note**: Python and C bindings share the UniFFI / cbindgen work done for mobile — the incremental cost is small once Phase 8.2 is complete.
@@ -1657,4 +1673,4 @@ See [GitHub Issues](https://github.com/adityamukho/minigraf/issues) for specific
 
 ---
 
-**Last Updated**: Phase 8.2 In Progress (April 2026) — 815 tests passing, v0.20.1
+**Last Updated**: Phase 8.3a Complete (April 2026) — 795 tests passing, v0.22.0
