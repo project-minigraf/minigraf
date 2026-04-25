@@ -17,7 +17,10 @@ use std::process;
 fn main() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
-    let mut real_bin = manifest_dir.join("target").join("debug").join("uniffi-bindgen");
+    let mut real_bin = manifest_dir
+        .join("target")
+        .join("debug")
+        .join("uniffi-bindgen");
     if cfg!(windows) {
         real_bin.set_extension("exe");
     }
