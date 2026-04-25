@@ -1296,7 +1296,7 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 
 **Deliverable**: ✅ `implementation("io.github.adityamukho:minigraf-jvm:0.23.0")` — JVM bindings published to Maven Central.
 
-#### 8.3c/8.3d Remaining Language Bindings
+#### 8.3d: Node.js / TypeScript Bindings
 
 **Features**:
 - ✅ 8.3c: C header (`minigraf.h`) via `cbindgen` for any language with a C FFI — v0.24.0 COMPLETE
@@ -1692,4 +1692,4 @@ See [GitHub Issues](https://github.com/adityamukho/minigraf/issues) for specific
 
 ---
 
-**Last Updated**: Phase 8.3b Complete (April 2026) — 795 tests passing, v0.23.0
+**Last Updated**: Phase 8.3c Complete (April 2026) — 795 tests passing, v0.24.0

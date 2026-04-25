@@ -1,6 +1,6 @@
 # Minigraf Test Coverage Report
 
-**Last Updated**: Phase 8.1 COMPLETE - WebAssembly (browser + WASI), 795 tests ✅
+**Last Updated**: Phase 8.3c COMPLETE - C bindings (GitHub Releases tarballs), 795 tests ✅
 
 ## Test Summary
 
