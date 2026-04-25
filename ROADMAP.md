@@ -1296,10 +1296,10 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 
 **Deliverable**: ✅ `implementation("io.github.adityamukho:minigraf-jvm:0.23.0")` — JVM bindings published to Maven Central.
 
-#### 8.3c/8.3d Remaining Language Bindings 🎯 FUTURE
+#### 8.3d: Node.js / TypeScript Bindings
 
 **Features**:
-- 🎯 8.3c: C header (`minigraf.h`) via `cbindgen` for any language with a C FFI — v0.24.0
+- ✅ 8.3c: C header (`minigraf.h`) via `cbindgen` for any language with a C FFI — v0.24.0 COMPLETE
 - 🎯 8.3d: Node.js / TypeScript bindings via `napi-rs` — v0.25.0
 - 🎯 Published to npm (`@minigraf/core`)
 
@@ -1672,12 +1672,11 @@ When evaluating features, ask:
 **Phase 8.3 Progress**:
 - ✅ 8.3a: Python bindings via UniFFI — PyPI `minigraf` — v0.22.0 COMPLETE
 - ✅ 8.3b: Desktop JVM bindings — fat JAR on Maven Central (`io.github.adityamukho:minigraf-jvm:0.23.0`) — v0.23.0 COMPLETE
-- 🎯 8.3c: C header via `cbindgen` (v0.24.0)
+- ✅ 8.3c: C bindings via `cbindgen` — GitHub Releases tarballs (`minigraf.h` + shared lib) — v0.24.0 COMPLETE
 - 🎯 8.3d: Node.js bindings via `napi-rs` (v0.25.0)
 
 **Immediate Next Steps (Phase 8.3)**:
-1. 8.3c: C header via `cbindgen`
-2. 8.3d: Node.js bindings via `napi-rs`
+1. 8.3d: Node.js bindings via `napi-rs`
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)
@@ -1693,4 +1692,4 @@ See [GitHub Issues](https://github.com/adityamukho/minigraf/issues) for specific
 
 ---
 
-**Last Updated**: Phase 8.3b Complete (April 2026) — 795 tests passing, v0.23.0
+**Last Updated**: Phase 8.3c Complete (April 2026) — 795 tests passing, v0.24.0

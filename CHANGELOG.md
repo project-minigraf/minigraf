@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.24.0 — Phase 8.3c: C Bindings (2026-04-26)
+
+### Added
+- **Phase 8.3c**: C bindings distributed as GitHub Releases tarballs.
+  Download `minigraf-c-v0.24.0-<platform>.tar.gz` (Linux/macOS) or `.zip` (Windows)
+  from the release page. Each archive contains the prebuilt shared library plus
+  `minigraf.h`. API: `minigraf_open`, `minigraf_open_in_memory`, `minigraf_execute`,
+  `minigraf_string_free`, `minigraf_checkpoint`, `minigraf_close`, `minigraf_last_error`.
+  Memory contract mirrors SQLite: `minigraf_execute` returns a heap-allocated JSON string;
+  call `minigraf_string_free` to release it.
+- `minigraf-c/`: new workspace crate (`cdylib` + `staticlib`) — `Cargo.toml`, `src/lib.rs`
+- `minigraf-c/cbindgen.toml`: cbindgen 0.29.2 configuration
+- `minigraf-c/include/minigraf.h`: committed stable header (cbindgen-generated)
+- `.github/workflows/c-ci.yml`: PR test matrix on 4 platforms + header drift check
+- `.github/workflows/c-release.yml`: release workflow — builds + packages platform tarballs,
+  uploads to GitHub Releases
+
+795 tests.
+
 ## v0.23.0 — Phase 8.3b: Java Desktop JVM Bindings (2026-04-25)
 
 ### Added
