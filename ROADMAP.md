@@ -1280,13 +1280,28 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 
 **Deliverable**: ✅ `pip install minigraf` — Python bindings published to PyPI with pre-built platform wheels.
 
-#### 8.3b Remaining Language Bindings 🎯 FUTURE
+#### 8.3b Desktop JVM Bindings ✅ COMPLETE
+
+**Status**: ✅ Completed (April 2026) — v0.23.0
 
 **Features**:
-- 🎯 C header (`minigraf.h`) via `cbindgen` for any language with a C FFI
-- 🎯 Node.js / TypeScript bindings via `neon` or `napi-rs`
+- ✅ Desktop JVM bindings via UniFFI (reusing `minigraf-ffi` crate from Phase 8.2)
+- ✅ Gradle 8.11 project in `minigraf-ffi/java/` — fat JAR with embedded platform natives
+- ✅ `NativeLoader.kt` — runtime native extraction from JAR resources via `System.load()`
+- ✅ `MiniGrafDb` class: `open(path)`, `openInMemory()`, `execute(datalog)`, `checkpoint()`
+- ✅ Published to Maven Central as `io.github.adityamukho:minigraf-jvm`
+- ✅ Embedded natives for Linux x86_64/aarch64, macOS universal2, Windows x86_64
+- ✅ CI workflow (`java-release.yml`): cross-compiles natives, assembles fat JAR, publishes on release tag
+- ✅ PR CI (`java-ci.yml`): validates build and JUnit 5 tests on every pull request
+
+**Deliverable**: ✅ `implementation("io.github.adityamukho:minigraf-jvm:0.23.0")` — JVM bindings published to Maven Central.
+
+#### 8.3c/8.3d Remaining Language Bindings 🎯 FUTURE
+
+**Features**:
+- 🎯 8.3c: C header (`minigraf.h`) via `cbindgen` for any language with a C FFI — v0.24.0
+- 🎯 8.3d: Node.js / TypeScript bindings via `napi-rs` — v0.25.0
 - 🎯 Published to npm (`@minigraf/core`)
-- 🎯 Desktop JVM bindings — plain JAR + desktop-native `.so`/`.dylib`/`.dll` via UniFFI for non-Android Java/Kotlin desktop applications (Maven Central)
 
 **Note**: Python and C bindings share the UniFFI / cbindgen work done for mobile — the incremental cost is small once Phase 8.2 is complete.
 
@@ -1644,9 +1659,9 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: Phase 8.2 In Progress — Mobile Bindings (Android `.aar` + iOS `.xcframework`)
+**Right Now**: Phase 8.3 In Progress — Language Bindings
 
-**Phase 8.2 Progress**:
+**Phase 8.2 Progress** ✅ COMPLETE:
 1. ✅ Workspace conversion (`minigraf-ffi` crate added)
 2. ✅ `MiniGrafDb` FFI API (open, open_in_memory, execute, checkpoint) via UniFFI 0.31.1
 3. ✅ Android Gradle project (`.aar` assembly + GitHub Packages publishing)
@@ -1654,10 +1669,15 @@ When evaluating features, ask:
 5. ✅ CI workflows: `mobile.yml` (Android/iOS), `wasm-release.yml` (WASM artifacts)
 6. ✅ 815 tests passing (795 core + 20 FFI)
 
+**Phase 8.3 Progress**:
+- ✅ 8.3a: Python bindings via UniFFI — PyPI `minigraf` — v0.22.0 COMPLETE
+- ✅ 8.3b: Desktop JVM bindings — fat JAR on Maven Central (`io.github.adityamukho:minigraf-jvm:0.23.0`) — v0.23.0 COMPLETE
+- 🎯 8.3c: C header via `cbindgen` (v0.24.0)
+- 🎯 8.3d: Node.js bindings via `napi-rs` (v0.25.0)
+
 **Immediate Next Steps (Phase 8.3)**:
-1. Python bindings via UniFFI
-2. C header via `cbindgen`
-3. Desktop JVM bindings (plain JAR + desktop-native libraries)
+1. 8.3c: C header via `cbindgen`
+2. 8.3d: Node.js bindings via `napi-rs`
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)
@@ -1673,4 +1693,4 @@ See [GitHub Issues](https://github.com/adityamukho/minigraf/issues) for specific
 
 ---
 
-**Last Updated**: Phase 8.3a Complete (April 2026) — 795 tests passing, v0.22.0
+**Last Updated**: Phase 8.3b Complete (April 2026) — 795 tests passing, v0.23.0
