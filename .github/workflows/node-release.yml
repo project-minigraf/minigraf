@@ -82,6 +82,10 @@ jobs:
           path: minigraf-node
           merge-multiple: true
 
+      - name: Move artifacts into platform packages
+        working-directory: minigraf-node
+        run: npx @napi-rs/cli artifacts
+
       - name: Publish platform packages
         working-directory: minigraf-node
         env:

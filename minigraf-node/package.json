@@ -10,6 +10,9 @@
     "url": "https://github.com/adityamukho/minigraf.git"
   },
   "keywords": ["graph", "datalog", "bitemporal", "embedded", "database"],
+  "engines": {
+    "node": ">=18"
+  },
   "napi": {
     "name": "minigraf",
     "triples": {
