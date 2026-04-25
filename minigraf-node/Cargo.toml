@@ -1,0 +1,17 @@
+[package]
+name = "minigraf-node"
+version = "0.25.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "2.16", features = ["napi6", "async"] }
+napi-derive = "2.16"
+minigraf = { path = ".." }
+serde_json = "1.0"
+
+[build-dependencies]
+napi-build = "2.1"
