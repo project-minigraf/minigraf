@@ -49,34 +49,41 @@ val libExt = when {
 val libPrefix = if (System.getProperty("os.name").lowercase().contains("windows")) "" else "lib"
 val libPath = "$repoRoot/target/release/${libPrefix}minigraf_ffi.$libExt"
 
+// Generated sources go to build/generated/uniffi so Gradle can track them
+// as task outputs and wire them into the compile classpath automatically.
+val generatedSourcesDir = layout.buildDirectory.dir("generated/uniffi")
+
 val generateKotlinBindings by tasks.registering(Exec::class) {
     group = "codegen"
     description = "Generate Kotlin bindings from UniFFI"
     dependsOn(buildUniffiBindgen)
     workingDir = File(repoRoot)
-    val outDir = "$projectDir/src/main/kotlin"
+    inputs.file(libPath)
+    outputs.dir(generatedSourcesDir)
     commandLine(
         "$repoRoot/target/release/uniffi-bindgen",
         "generate", "--library", libPath,
         "--language", "kotlin",
-        "--out-dir", outDir
+        "--out-dir", generatedSourcesDir.get().asFile.absolutePath
     )
     // After generation, patch System.loadLibrary → NativeLoader.load()
     doLast {
-        val generatedDir = File("$projectDir/src/main/kotlin/uniffi/minigraf_ffi")
-        generatedDir.walkTopDown().filter { it.extension == "kt" }.forEach { file ->
-            val patched = file.readText()
-                .replace(
-                    """System.loadLibrary("minigraf_ffi")""",
-                    "io.github.adityamukho.minigraf.NativeLoader.load()"
-                )
-            file.writeText(patched)
-        }
+        generatedSourcesDir.get().asFile
+            .walkTopDown().filter { it.extension == "kt" }.forEach { file ->
+                val patched = file.readText()
+                    .replace(
+                        """System.loadLibrary("minigraf_ffi")""",
+                        "io.github.adityamukho.minigraf.NativeLoader.load()"
+                    )
+                file.writeText(patched)
+            }
     }
 }
 
-tasks.compileKotlin {
-    dependsOn(generateKotlinBindings)
+// Register the generated dir as a Kotlin source set so that both
+// compileKotlin and compileTestKotlin automatically depend on the task.
+sourceSets.main {
+    kotlin.srcDir(generatedSourcesDir)
 }
 
 // ── native resources ───────────────────────────────────────────────────────
