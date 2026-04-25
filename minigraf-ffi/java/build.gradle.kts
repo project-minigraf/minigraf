@@ -7,7 +7,7 @@ plugins {
     `java-library`
 }
 
-group = "io.github.adityamukho"
+group = "io.github.project-minigraf"
 version = "0.23.0"
 
 repositories {
@@ -80,7 +80,7 @@ val generateKotlinBindings by tasks.registering(Exec::class) {
                 val patched = file.readText()
                     .replace(
                         "private fun findLibraryName(componentName: String): String {",
-                        "private fun findLibraryName(componentName: String): String {\n    io.github.adityamukho.minigraf.NativeLoader.load()"
+                        "private fun findLibraryName(componentName: String): String {\n    io.github.project_minigraf.minigraf.NativeLoader.load()"
                     )
                 file.writeText(patched)
             }
@@ -125,18 +125,18 @@ publishing {
     publications {
         create<MavenPublication>("release") {
             from(components["java"])
-            groupId = "io.github.adityamukho"
+            groupId = "io.github.project-minigraf"
             artifactId = "minigraf-jvm"
             version = project.version.toString()
 
             pom {
                 name.set("Minigraf JVM")
                 description.set("Zero-config, single-file, embedded graph database with bi-temporal Datalog queries — JVM bindings")
-                url.set("https://github.com/adityamukho/minigraf")
+                url.set("https://github.com/project-minigraf/minigraf")
                 licenses {
                     license {
                         name.set("MIT OR Apache-2.0")
-                        url.set("https://github.com/adityamukho/minigraf/blob/main/LICENSE-MIT")
+                        url.set("https://github.com/project-minigraf/minigraf/blob/main/LICENSE-MIT")
                     }
                 }
                 developers {
@@ -146,9 +146,9 @@ publishing {
                     }
                 }
                 scm {
-                    connection.set("scm:git:git://github.com/adityamukho/minigraf.git")
-                    developerConnection.set("scm:git:ssh://github.com/adityamukho/minigraf.git")
-                    url.set("https://github.com/adityamukho/minigraf")
+                    connection.set("scm:git:git://github.com/project-minigraf/minigraf.git")
+                    developerConnection.set("scm:git:ssh://github.com/project-minigraf/minigraf.git")
+                    url.set("https://github.com/project-minigraf/minigraf")
                 }
             }
         }

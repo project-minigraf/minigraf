@@ -1,4 +1,4 @@
-package io.github.adityamukho.minigraf
+package io.github.project_minigraf.minigraf
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue

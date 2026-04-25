@@ -1,4 +1,4 @@
-package io.github.adityamukho.minigraf
+package io.github.project_minigraf.minigraf
 
 import java.io.File
 import java.nio.file.Files
@@ -28,7 +28,7 @@ object NativeLoader {
                 "windows/x86_64" to "minigraf_ffi.dll"
             else -> throw UnsupportedOperationException(
                 "Unsupported platform: $os / $arch. " +
-                "Please file an issue at https://github.com/adityamukho/minigraf"
+                "Please file an issue at https://github.com/project-minigraf/minigraf"
             )
         }
 
