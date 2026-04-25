@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.23.0 — Phase 8.3b: Java Desktop JVM Bindings (2026-04-25)
+
+### Added
+- **Phase 8.3b**: Java desktop JVM bindings published to Maven Central as
+  `io.github.adityamukho:minigraf-jvm:0.23.0`. Add to Gradle:
+  `implementation("io.github.adityamukho:minigraf-jvm:0.23.0")`.
+  Fat JAR with embedded natives for Linux x86_64/aarch64, macOS universal2,
+  Windows x86_64. API: `MiniGrafDb.open(path)`, `MiniGrafDb.openInMemory()`,
+  `.execute(datalog)`, `.checkpoint()`.
+- `minigraf-ffi/java/`: Gradle 8.11 project — `build.gradle.kts`, `settings.gradle.kts`,
+  `NativeLoader.kt` (runtime native extraction from JAR resources), and Gradle wrapper
+- `minigraf-ffi/java/src/test/kotlin/.../BasicTest.kt`: JUnit 5 suite (in-memory, transact/query,
+  error handling, file-backed persistence)
+- `.github/workflows/java-ci.yml`: PR test matrix on 4 platforms (Linux x86_64, Linux aarch64,
+  macOS universal2, Windows x86_64)
+- `.github/workflows/java-release.yml`: release workflow — cross-compiles natives on 4 platforms,
+  assembles fat JAR, publishes to Maven Central via Sonatype OSSRH
+
+795 tests.
+
 ## v0.22.0 — Phase 8.3a: Python Bindings (2026-04-25)
 
 ### Added

@@ -1,0 +1,40 @@
+name: Java CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Java tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-14, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Build Rust library (release)
+        run: cargo build --release -p minigraf-ffi
+
+      - name: Generate Kotlin bindings + copy local native
+        working-directory: minigraf-ffi/java
+        run: |
+          ./gradlew generateKotlinBindings copyLocalNative
+
+      - name: Run tests
+        working-directory: minigraf-ffi/java
+        run: ./gradlew test

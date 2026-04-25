@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "minigraf"
-version = "0.22.0"
+version = "0.23.0"
 edition = "2024"
 description = "Zero-config, single-file, embedded graph database with bi-temporal Datalog queries"
 license = "MIT OR Apache-2.0"
@@ -96,6 +96,13 @@ lto = true
 codegen-units = 1
 strip = "symbols"
 opt-level = "z"
+
+# uniffi-bindgen reads UNIFFI_META symbols from .symtab (not .dynsym).
+# strip = "symbols" removes .symtab from ELF shared libraries on Linux,
+# making symbol extraction silently produce no output.
+# Override strip to "none" for the FFI crate so the symbols remain.
+[profile.release.package.minigraf-ffi]
+strip = "none"
 
 [profile.bench]
 strip = "none"
