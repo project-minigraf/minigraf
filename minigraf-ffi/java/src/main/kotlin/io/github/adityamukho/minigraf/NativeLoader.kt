@@ -48,7 +48,10 @@ object NativeLoader {
             dest.outputStream().use { dst -> src.copyTo(dst) }
         }
 
-        System.load(dest.absolutePath)
+        // JNA's Native.register() uses findLibraryName() which reads this property.
+        // Providing an absolute path causes JNA to dlopen/LoadLibrary directly from
+        // the temp file, bypassing the system library search path.
+        System.setProperty("uniffi.component.minigraf_ffi.libraryOverride", dest.absolutePath)
         loaded = true
     }
 }
