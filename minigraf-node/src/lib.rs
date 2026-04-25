@@ -28,8 +28,10 @@ fn query_result_to_json(result: QueryResult) -> String {
         QueryResult::Retracted(tx) => serde_json::json!({"retracted": tx}),
         QueryResult::Ok => serde_json::json!({"ok": true}),
         QueryResult::QueryResults { vars, results } => {
-            let rows: Vec<Vec<serde_json::Value>> =
-                results.iter().map(|r| r.iter().map(value_to_json).collect()).collect();
+            let rows: Vec<Vec<serde_json::Value>> = results
+                .iter()
+                .map(|r| r.iter().map(value_to_json).collect())
+                .collect();
             serde_json::json!({"variables": vars, "results": rows})
         }
     };
