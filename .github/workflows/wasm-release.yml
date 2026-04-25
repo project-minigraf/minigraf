@@ -46,7 +46,7 @@ jobs:
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: Build browser WASM
-        run: wasm-pack build --target web --features browser
+        run: wasm-pack build --target web --features browser -- -p minigraf
       - name: Package pkg/ directory
         run: |
           mkdir -p target/wasm-artifacts
