@@ -30,7 +30,7 @@ tasks.test {
 }
 
 kotlin {
-    jvmToolchain(11)
+    jvmToolchain(17)
 }
 
 // ── uniffi-bindgen codegen ─────────────────────────────────────────────────
@@ -89,10 +89,18 @@ val generateKotlinBindings by tasks.registering(Exec::class) {
     }
 }
 
-// Register the generated dir as a Kotlin source set so that both
-// compileKotlin and compileTestKotlin automatically depend on the task.
+// Register the generated dir as a Kotlin source set and wire explicit task dependencies
+// so Gradle knows compileKotlin must wait for codegen to finish.
 sourceSets.main {
     kotlin.srcDir(generatedSourcesDir)
+}
+tasks.named("compileKotlin") { dependsOn(generateKotlinBindings) }
+tasks.named("compileTestKotlin") { dependsOn(generateKotlinBindings) }
+// Wire all archive tasks (sourcesJar, kotlinSourcesJar, javadocJar, etc.) to codegen.
+// Using withType<AbstractArchiveTask> avoids a hard-coded task name that may differ
+// across Kotlin / java-library plugin versions.
+tasks.withType<org.gradle.api.tasks.bundling.AbstractArchiveTask>().configureEach {
+    dependsOn(generateKotlinBindings)
 }
 
 // ── native resources ───────────────────────────────────────────────────────
@@ -164,14 +172,13 @@ publishing {
 // publishingType = "USER_MANAGED" means you click "Publish" in the portal UI after validation.
 // Change to "AUTOMATIC" to publish without that manual step.
 nmcp {
-    val tokenUsername = System.getenv("CENTRAL_TOKEN_USERNAME")
-    val tokenPassword = System.getenv("CENTRAL_TOKEN_PASSWORD")
-    if (tokenUsername != null && tokenPassword != null) {
-        publishAllPublicationsToCentralPortal {
-            username = tokenUsername
-            password = tokenPassword
-            publishingType = "USER_MANAGED"
-        }
+    // "release" must match the publication name in publishing { publications { create("release") { } } }
+    // publicationType = "USER_MANAGED" means you click Publish in the portal UI after validation;
+    // change to "AUTOMATIC" to release without that manual step.
+    publish("release") {
+        username = System.getenv("CENTRAL_TOKEN_USERNAME") ?: ""
+        password = System.getenv("CENTRAL_TOKEN_PASSWORD") ?: ""
+        publicationType = "USER_MANAGED"
     }
 }
 
