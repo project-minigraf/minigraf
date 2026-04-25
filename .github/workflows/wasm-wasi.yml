@@ -36,7 +36,7 @@ jobs:
           echo "/tmp/wasmtime-${WASMTIME_VERSION}-x86_64-linux" >> "$GITHUB_PATH"
 
       - name: Run WASI tests (Wasmtime runner)
-        run: cargo test --target wasm32-wasip1 --lib
+        run: cargo test -p minigraf --target wasm32-wasip1 --lib
         env:
           CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run --dir /tmp
 
