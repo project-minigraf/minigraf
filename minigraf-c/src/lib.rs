@@ -1,4 +1,5 @@
 #![deny(unsafe_op_in_unsafe_fn)]
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 use minigraf::{QueryResult, Value};
 use std::ffi::{CStr, CString};
@@ -92,7 +93,10 @@ pub extern "C" fn minigraf_execute(
             let json = query_result_to_json(qr);
             match CString::new(json) {
                 Ok(s) => s.into_raw(),
-                Err(_) => std::ptr::null_mut(),
+                Err(_) => {
+                    handle.set_error("result JSON contained a null byte".into());
+                    std::ptr::null_mut()
+                }
             }
         }
         Err(e) => {
