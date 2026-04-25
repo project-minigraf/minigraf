@@ -5,6 +5,8 @@ plugins {
     `maven-publish`
     signing
     `java-library`
+    // New Sonatype Central Portal publisher (replaces EOL OSSRH / s01.oss.sonatype.org)
+    id("com.gradleup.nmcp") version "0.0.8"
 }
 
 group = "io.github.project-minigraf"
@@ -153,19 +155,22 @@ publishing {
             }
         }
     }
-    repositories {
-        maven {
-            name = "OSSRH"
-            url = uri(
-                if (version.toString().endsWith("SNAPSHOT"))
-                    "https://s01.oss.sonatype.org/content/repositories/snapshots/"
-                else
-                    "https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/"
-            )
-            credentials {
-                username = System.getenv("OSSRH_USERNAME")
-                password = System.getenv("OSSRH_PASSWORD")
-            }
+}
+
+// ── Sonatype Central Portal publishing ────────────────────────────────────
+// Uses com.gradleup.nmcp which POSTs a bundle to central.sonatype.com/api/v1/publisher/upload.
+// Credentials are a *token* pair generated at https://central.sonatype.com → Account → Generate User Token.
+// Set CENTRAL_TOKEN_USERNAME and CENTRAL_TOKEN_PASSWORD as GitHub Actions secrets.
+// publishingType = "USER_MANAGED" means you click "Publish" in the portal UI after validation.
+// Change to "AUTOMATIC" to publish without that manual step.
+nmcp {
+    val tokenUsername = System.getenv("CENTRAL_TOKEN_USERNAME")
+    val tokenPassword = System.getenv("CENTRAL_TOKEN_PASSWORD")
+    if (tokenUsername != null && tokenPassword != null) {
+        publishAllPublicationsToCentralPortal {
+            username = tokenUsername
+            password = tokenPassword
+            publishingType = "USER_MANAGED"
         }
     }
 }
