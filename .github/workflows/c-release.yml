@@ -1,0 +1,118 @@
+name: C Release
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: Build C library (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact-name: linux-x86_64
+            lib-name: libminigraf.so
+            src-lib: libminigraf_c.so
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact-name: linux-aarch64
+            lib-name: libminigraf.so
+            src-lib: libminigraf_c.so
+          - os: macos-14
+            target: universal2
+            artifact-name: macos-universal2
+            lib-name: libminigraf.dylib
+            src-lib: libminigraf_c.dylib
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact-name: windows-x86_64
+            lib-name: minigraf.dll
+            src-lib: minigraf_c.dll
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target == 'universal2' && 'aarch64-apple-darwin x86_64-apple-darwin' || matrix.target }}
+
+      - name: Build (universal2)
+        if: matrix.target == 'universal2'
+        run: |
+          cargo build --release -p minigraf-c --target aarch64-apple-darwin
+          cargo build --release -p minigraf-c --target x86_64-apple-darwin
+          lipo -create \
+            target/aarch64-apple-darwin/release/libminigraf_c.dylib \
+            target/x86_64-apple-darwin/release/libminigraf_c.dylib \
+            -output ${{ matrix.lib-name }}
+
+      - name: Build (other)
+        if: matrix.target != 'universal2'
+        run: cargo build --release -p minigraf-c --target ${{ matrix.target }}
+
+      - name: Rename and package (unix)
+        if: runner.os != 'Windows' && matrix.target != 'universal2'
+        run: |
+          cp target/${{ matrix.target }}/release/${{ matrix.src-lib }} ${{ matrix.lib-name }}
+          tar czf minigraf-c-${{ inputs.tag }}-${{ matrix.artifact-name }}.tar.gz \
+            ${{ matrix.lib-name }} minigraf-c/include/minigraf.h
+
+      - name: Rename and package (universal2)
+        if: matrix.target == 'universal2'
+        run: |
+          tar czf minigraf-c-${{ inputs.tag }}-${{ matrix.artifact-name }}.tar.gz \
+            ${{ matrix.lib-name }} minigraf-c/include/minigraf.h
+
+      - name: Rename and package (windows)
+        if: runner.os == 'Windows'
+        run: |
+          copy target\${{ matrix.target }}\release\${{ matrix.src-lib }} ${{ matrix.lib-name }}
+          Compress-Archive -Path ${{ matrix.lib-name }},minigraf-c\include\minigraf.h `
+            -DestinationPath minigraf-c-${{ inputs.tag }}-${{ matrix.artifact-name }}.zip
+        shell: pwsh
+
+      - name: Upload artifact (unix)
+        if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: c-release-${{ matrix.artifact-name }}
+          path: minigraf-c-${{ inputs.tag }}-${{ matrix.artifact-name }}.tar.gz
+
+      - name: Upload artifact (windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: c-release-${{ matrix.artifact-name }}
+          path: minigraf-c-${{ inputs.tag }}-${{ matrix.artifact-name }}.zip
+
+  upload-to-release:
+    name: Upload artifacts to GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: c-release-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: artifacts/*
