@@ -1,6 +1,5 @@
 [workspace]
 members = [".", "minigraf-ffi"]
-default-members = [".", "minigraf-ffi"]
 resolver = "2"
 
 [package]
@@ -18,6 +17,16 @@ documentation = "https://docs.rs/minigraf"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
+
+# Stub that lets `cargo run --bin uniffi-bindgen` work from the workspace root.
+# maturin calls this when bindings = "uniffi"; it execs the binary pre-built by
+# build.sh (cargo build --bin uniffi-bindgen --manifest-path minigraf-ffi/Cargo.toml).
+# Uses only std — no extra dependencies. Excluded from `cargo build --lib` so
+# WASM builds are unaffected.
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi_bindgen_stub.rs"
+doc = false
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false

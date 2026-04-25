@@ -26,7 +26,7 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build (release)
-        run: wasm-pack build --target web --features browser -- -p minigraf
+        run: wasm-pack build --target web --features browser
 
       - name: Check gzipped binary size
         run: |
@@ -68,4 +68,4 @@ jobs:
         uses: browser-actions/setup-firefox@v1
 
       - name: Test (headless ${{ matrix.browser }})
-        run: wasm-pack test --headless --${{ matrix.browser }} --features browser -- -p minigraf
+        run: wasm-pack test --headless --${{ matrix.browser }} --features browser
