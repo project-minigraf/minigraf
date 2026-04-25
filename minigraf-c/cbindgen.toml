@@ -1,0 +1,18 @@
+language = "C"
+include_guard = "MINIGRAF_H"
+sys_includes = ["stdint.h"]
+documentation = true
+documentation_style = "c99"
+no_includes = false
+
+[export]
+include = [
+    "minigraf_open",
+    "minigraf_open_in_memory",
+    "minigraf_close",
+    "minigraf_execute",
+    "minigraf_string_free",
+    "minigraf_checkpoint",
+    "minigraf_last_error",
+    "MiniGrafDb",
+]
