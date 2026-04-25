@@ -15,6 +15,8 @@ repositories {
 }
 
 dependencies {
+    // JNA is required at runtime by UniFFI-generated Kotlin bindings (com.sun.jna.*)
+    implementation("net.java.dev.jna:jna:5.14.0")
     testImplementation(kotlin("test"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
@@ -64,6 +66,7 @@ val generateKotlinBindings by tasks.registering(Exec::class) {
         "$repoRoot/target/release/uniffi-bindgen",
         "generate", "--library", libPath,
         "--language", "kotlin",
+        "--no-format",
         "--out-dir", generatedSourcesDir.get().asFile.absolutePath
     )
     // After generation, patch System.loadLibrary → NativeLoader.load()
