@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "minigraf-ffi"]
+members = [".", "minigraf-ffi", "minigraf-c"]
 resolver = "2"
 
 [package]
