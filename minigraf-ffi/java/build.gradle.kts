@@ -69,16 +69,18 @@ val generateKotlinBindings by tasks.registering(Exec::class) {
         "--no-format",
         "--out-dir", generatedSourcesDir.get().asFile.absolutePath
     )
-    // After generation, insert NativeLoader.load() into IntegrityCheckingUniffiLib.init
-    // before Native.register() so the native is extracted and the libraryOverride system
-    // property is set before JNA tries to resolve the library by name.
+    // After generation, patch findLibraryName() to extract the native and set the
+    // libraryOverride property before JNA tries to resolve the library by name.
+    // findLibraryName() is called from every Native.register() invocation, so this
+    // fires regardless of which object (UniffiLib / IntegrityCheckingUniffiLib) is
+    // initialised first.  NativeLoader.load() is idempotent.
     doLast {
         generatedSourcesDir.get().asFile
             .walkTopDown().filter { it.extension == "kt" }.forEach { file ->
                 val patched = file.readText()
                     .replace(
-                        """        Native.register(IntegrityCheckingUniffiLib::class.java, findLibraryName(componentName = "minigraf_ffi"))""",
-                        "        io.github.adityamukho.minigraf.NativeLoader.load()\n        Native.register(IntegrityCheckingUniffiLib::class.java, findLibraryName(componentName = \"minigraf_ffi\"))"
+                        "private fun findLibraryName(componentName: String): String {",
+                        "private fun findLibraryName(componentName: String): String {\n    io.github.adityamukho.minigraf.NativeLoader.load()"
                     )
                 file.writeText(patched)
             }
