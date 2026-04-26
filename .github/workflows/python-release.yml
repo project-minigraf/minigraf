@@ -10,6 +10,10 @@ on:
         description: 'Release tag to publish wheels for (e.g. "v0.22.0")'
         required: false
         type: string
+      checkout_ref:
+        description: 'Git ref to build from (e.g. "v0.22.0"). Defaults to triggered ref. Use for retroactive publishes from main.'
+        required: false
+        type: string
 
 jobs:
   build-wheels:
@@ -20,9 +24,9 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            build_args: --release --manylinux 2014 --out dist
+            build_args: --release --manylinux auto --out dist
           - os: ubuntu-24.04-arm
-            build_args: --release --manylinux 2014 --out dist
+            build_args: --release --manylinux auto --out dist
           - os: macos-14
             build_args: --release --target universal2-apple-darwin --out dist
           - os: windows-latest
@@ -30,6 +34,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.checkout_ref || github.ref }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
