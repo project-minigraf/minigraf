@@ -24,9 +24,9 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            build_args: --release --manylinux auto --out dist
+            build_args: --release --manylinux manylinux_2_34 --out dist
           - os: ubuntu-24.04-arm
-            build_args: --release --manylinux auto --out dist
+            build_args: --release --manylinux manylinux_2_34 --out dist
           - os: macos-14
             build_args: --release --target universal2-apple-darwin --out dist
           - os: windows-latest
