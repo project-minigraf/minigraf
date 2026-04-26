@@ -101,9 +101,14 @@ jobs:
           path: minigraf-node
           merge-multiple: true
 
-      - name: Move artifacts into platform packages
+      - name: Distribute .node binaries to platform packages
         working-directory: minigraf-node
-        run: npx @napi-rs/cli artifacts
+        run: |
+          # napi artifacts does not reliably copy files; do it explicitly.
+          cp minigraf.linux-x64-gnu.node   packages/@minigraf/linux-x64-gnu/
+          cp minigraf.linux-arm64-gnu.node packages/@minigraf/linux-arm64-gnu/
+          cp minigraf.darwin-universal.node packages/@minigraf/darwin-universal/
+          cp minigraf.win32-x64-msvc.node  packages/@minigraf/win32-x64-msvc/
 
       - name: Sync platform package versions
         working-directory: minigraf-node
@@ -124,7 +129,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           for dir in packages/@minigraf/*/; do
-            npm publish "$dir" --access public
+            npm publish "$dir" --access public || echo "Skipping $dir (already published or error)"
           done
 
       - name: Publish main minigraf package
