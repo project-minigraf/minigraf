@@ -1,0 +1,19 @@
+{
+  "name": "@minigraf/win32-x64-msvc",
+  "version": "0.0.0",
+  "description": "Zero-config, single-file, embedded graph database with bi-temporal Datalog queries (Windows x64 MSVC)",
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "main": "minigraf.win32-x64-msvc.node",
+  "files": [
+    "minigraf.win32-x64-msvc.node"
+  ],
+  "license": "MIT OR Apache-2.0",
+  "engines": {
+    "node": ">=18"
+  }
+}
