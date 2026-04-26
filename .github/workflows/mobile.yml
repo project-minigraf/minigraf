@@ -194,6 +194,19 @@ jobs:
             -e "s|checksum: \"[0-9a-f]*\"|checksum: \"${CHECKSUM}\"|" \
             Package.swift
 
+      - name: Publish AAR to GitHub Packages
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          export VERSION="${TAG#v}"
+          mkdir -p minigraf-ffi/android/build/outputs/aar/
+          cp artifacts/minigraf-android-*.aar \
+             minigraf-ffi/android/build/outputs/aar/minigraf-android-release.aar
+          cd minigraf-ffi/android
+          ./gradlew publishReleasePublicationToGitHubPackagesRepository
+
       - name: Commit Package.swift update and Swift sources, then move tag
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
@@ -239,16 +252,3 @@ jobs:
             -X PATCH \
             -f sha="$NEW_SHA" \
             -F force=true
-
-      - name: Publish AAR to GitHub Packages
-        env:
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ inputs.tag || github.ref_name }}"
-          export VERSION="${TAG#v}"
-          mkdir -p minigraf-ffi/android/build/outputs/aar/
-          cp artifacts/minigraf-android-*.aar \
-             minigraf-ffi/android/build/outputs/aar/minigraf-android-release.aar
-          cd minigraf-ffi/android
-          ./gradlew publishReleasePublicationToGitHubPackagesRepository
