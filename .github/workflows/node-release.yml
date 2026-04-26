@@ -109,7 +109,10 @@ jobs:
         working-directory: minigraf-node
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npx @napi-rs/cli publish --prefix packages
+        run: |
+          for dir in packages/@minigraf/*/; do
+            npm publish "$dir" --access public
+          done
 
       - name: Publish main minigraf package
         working-directory: minigraf-node
