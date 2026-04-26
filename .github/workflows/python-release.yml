@@ -1,18 +1,14 @@
 name: Python Release
 
 on:
-  workflow_call:
-    inputs:
-      tag:
-        # Reserved: the release tag (e.g. "v0.22.0") passed from release.yml.
-        # Available as ${{ inputs.tag }} for future use (e.g. annotating wheel metadata).
-        required: true
-        type: string
+  push:
+    tags:
+      - '**[0-9]+.[0-9]+.[0-9]+*'
   workflow_dispatch:
     inputs:
       tag:
-        # The release tag to publish wheels for (e.g. "v0.22.0").
-        required: true
+        description: 'Release tag to publish wheels for (e.g. "v0.22.0")'
+        required: false
         type: string
 
 jobs:

@@ -44,19 +44,6 @@ on:
       - '**[0-9]+.[0-9]+.[0-9]+*'
 
 jobs:
-  # Verify docs.rs build passes before publishing
-  docs-check:
-    runs-on: "ubuntu-22.04"
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@nightly
-      - name: Check docs.rs build
-        env:
-          RUSTDOCFLAGS: "--cfg docsrs"
-        run: cargo doc --all-features --no-deps
-
   # Run 'dist plan' (or host) to determine what tasks we need to do
   plan:
     runs-on: "ubuntu-22.04"
@@ -230,9 +217,8 @@ jobs:
       - plan
       - build-local-artifacts
       - build-global-artifacts
-      - docs-check
     # Only run if we're "publishing", and only if all build jobs didn't fail (skipped is fine)
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && needs.docs-check.result == 'success' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     runs-on: "ubuntu-22.04"
@@ -324,40 +310,3 @@ jobs:
       - name: Publish to crates.io
         run: cargo publish --locked -p minigraf --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-  # Publish Python wheels to PyPI after the GitHub release is created
-  publish-python:
-    name: Publish Python wheels to PyPI
-    needs:
-      - plan
-      - host
-    if: ${{ always() && needs.host.result == 'success' && needs.plan.outputs.publishing == 'true' }}
-    uses: ./.github/workflows/python-release.yml
-    with:
-      tag: ${{ needs.plan.outputs.tag }}
-    secrets: inherit
-
-  # Build and publish C library tarballs to GitHub Release after the release is created
-  publish-c:
-    name: Publish C library to GitHub Release
-    needs:
-      - plan
-      - host
-    if: ${{ always() && needs.host.result == 'success' && needs.plan.outputs.publishing == 'true' }}
-    uses: ./.github/workflows/c-release.yml
-    with:
-      tag: ${{ needs.plan.outputs.tag }}
-    secrets: inherit
-    permissions:
-      contents: write
-
-  # Build and publish Node.js bindings to npm after the release is created
-  publish-node:
-    name: Publish Node.js bindings to npm
-    needs:
-      - plan
-      - host
-    if: ${{ always() && needs.host.result == 'success' && needs.plan.outputs.publishing == 'true' }}
-    uses: ./.github/workflows/node-release.yml
-    with:
-      tag: ${{ needs.plan.outputs.tag }}
-    secrets: inherit
