@@ -18,8 +18,8 @@ let package = Package(
         .binaryTarget(
             name: "minigrafFFI",
             // Updated by CI: release-upload-mobile job
-            url: "https://github.com/project-minigraf/minigraf/releases/download/v0.23.0/MinigrafKit-v0.23.0.xcframework.zip",
-            checksum: "d5f44e66187be54028e76b9359bee82cce2c203ca0280fa26dce457c58267625"
+            url: "https://github.com/project-minigraf/minigraf/releases/download/v0.24.0/MinigrafKit-v0.24.0.xcframework.zip",
+            checksum: "e19b69cf8c1e73106fc005dd25adca10782e2f5a9a93e75d71a03102eb34212c"
         ),
         .target(
             name: "MinigrafKit",
