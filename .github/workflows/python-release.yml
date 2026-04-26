@@ -50,6 +50,13 @@ jobs:
       - name: Install maturin
         run: pip install "maturin>=1.5"
 
+      - name: Set Python package version from release tag
+        shell: bash
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          sed -i "s/^version = .*/version = \"${VERSION}\"/" minigraf-ffi/python/pyproject.toml
+
       - name: Build wheel (workaround for maturin workspace uniffi-bindgen bug)
         working-directory: minigraf-ffi/python
         run: bash build.sh build ${{ matrix.build_args }}

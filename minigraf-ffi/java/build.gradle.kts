@@ -178,7 +178,7 @@ nmcp {
     publish("release") {
         username = System.getenv("CENTRAL_TOKEN_USERNAME") ?: ""
         password = System.getenv("CENTRAL_TOKEN_PASSWORD") ?: ""
-        publicationType = "USER_MANAGED"
+        publicationType = "AUTOMATIC"
     }
 }
 
