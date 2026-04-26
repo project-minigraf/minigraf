@@ -1,15 +1,14 @@
 name: C Release
 
 on:
-  workflow_call:
-    inputs:
-      tag:
-        required: true
-        type: string
+  push:
+    tags:
+      - '**[0-9]+.[0-9]+.[0-9]+*'
   workflow_dispatch:
     inputs:
       tag:
-        required: true
+        description: 'Release tag to upload C artifacts to (e.g. "v0.24.0")'
+        required: false
         type: string
 
 jobs:
@@ -69,13 +68,13 @@ jobs:
         if: runner.os != 'Windows' && matrix.target != 'universal2'
         run: |
           cp target/${{ matrix.target }}/release/${{ matrix.src-lib }} ${{ matrix.lib-name }}
-          tar czf minigraf-c-${{ inputs.tag }}-${{ matrix.artifact-name }}.tar.gz \
+          tar czf minigraf-c-${{ inputs.tag || github.ref_name }}-${{ matrix.artifact-name }}.tar.gz \
             ${{ matrix.lib-name }} minigraf-c/include/minigraf.h
 
       - name: Rename and package (universal2)
         if: matrix.target == 'universal2'
         run: |
-          tar czf minigraf-c-${{ inputs.tag }}-${{ matrix.artifact-name }}.tar.gz \
+          tar czf minigraf-c-${{ inputs.tag || github.ref_name }}-${{ matrix.artifact-name }}.tar.gz \
             ${{ matrix.lib-name }} minigraf-c/include/minigraf.h
 
       - name: Rename and package (windows)
@@ -83,7 +82,7 @@ jobs:
         run: |
           copy target\${{ matrix.target }}\release\${{ matrix.src-lib }} ${{ matrix.lib-name }}
           Compress-Archive -Path ${{ matrix.lib-name }},minigraf-c\include\minigraf.h `
-            -DestinationPath minigraf-c-${{ inputs.tag }}-${{ matrix.artifact-name }}.zip
+            -DestinationPath minigraf-c-${{ inputs.tag || github.ref_name }}-${{ matrix.artifact-name }}.zip
         shell: pwsh
 
       - name: Upload artifact (unix)
@@ -91,14 +90,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: c-release-${{ matrix.artifact-name }}
-          path: minigraf-c-${{ inputs.tag }}-${{ matrix.artifact-name }}.tar.gz
+          path: minigraf-c-${{ inputs.tag || github.ref_name }}-${{ matrix.artifact-name }}.tar.gz
 
       - name: Upload artifact (windows)
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: c-release-${{ matrix.artifact-name }}
-          path: minigraf-c-${{ inputs.tag }}-${{ matrix.artifact-name }}.zip
+          path: minigraf-c-${{ inputs.tag || github.ref_name }}-${{ matrix.artifact-name }}.zip
 
   upload-to-release:
     name: Upload artifacts to GitHub Release
@@ -115,8 +114,24 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.tag }}
-          files: artifacts/*
+      - name: Wait for GitHub Release to exist, then upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          echo "Waiting for release $TAG to be created by cargo-dist..."
+          for i in $(seq 1 40); do
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+              echo "Release found on attempt $i"
+              break
+            fi
+            echo "Attempt $i/40: release not yet available, waiting 15s..."
+            sleep 15
+          done
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "ERROR: Release $TAG not found after 40 attempts (10 minutes). Aborting."
+            exit 1
+          fi
+          gh release upload "$TAG" artifacts/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
