@@ -13,7 +13,6 @@ on:
 permissions:
   contents: write
   packages: write
-  workflows: write
 
 jobs:
   # ── Android ──────────────────────────────────────────────────────────────────
@@ -202,13 +201,37 @@ jobs:
         run: |
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
+
+          # Save the files we intend to push (Package.swift already updated by sed,
+          # swift sources already downloaded by actions/download-artifact above).
+          TMPDIR_SWIFT=$(mktemp -d)
+          cp Package.swift "$TMPDIR_SWIFT/Package.swift"
+          cp -r swift/Sources/MinigrafKit/ "$TMPDIR_SWIFT/MinigrafKit"
+
+          # Switch to swift-releases branch so we only push Package.swift and Swift
+          # sources — not the full main HEAD (which includes workflow files, requiring
+          # `workflows` scope that GITHUB_TOKEN cannot be granted via permissions:).
+          if git fetch origin swift-releases 2>/dev/null; then
+            git checkout -B swift-releases origin/swift-releases
+          else
+            # First-ever release: start a clean orphan branch with no history.
+            git checkout --orphan swift-releases
+            git rm -rf . --quiet 2>/dev/null || true
+          fi
+
+          # Apply only the intended changes.
+          cp "$TMPDIR_SWIFT/Package.swift" Package.swift
+          mkdir -p swift/Sources/MinigrafKit/
+          cp -r "$TMPDIR_SWIFT/MinigrafKit/." swift/Sources/MinigrafKit/
+          rm -rf "$TMPDIR_SWIFT"
+
           git add Package.swift swift/Sources/MinigrafKit/
           git commit -m "chore(release): update Package.swift and Swift bindings for ${TAG}" \
             || echo "Nothing to commit"
           # Push to the unprotected swift-releases branch instead of main.
           # SPM resolves packages by tag, not by branch, so the tag pointing
           # to this commit is all that matters for Swift package consumers.
-          git push origin HEAD:swift-releases --force
+          git push origin swift-releases --force
           NEW_SHA=$(git rev-parse HEAD)
           gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
             -X PATCH \
