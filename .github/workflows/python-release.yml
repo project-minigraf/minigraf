@@ -55,11 +55,7 @@ jobs:
         run: |
           TAG="${{ inputs.tag || github.ref_name }}"
           VERSION="${TAG#v}"
-          python3 -c "
-import re, pathlib
-p = pathlib.Path('minigraf-ffi/python/pyproject.toml')
-p.write_text(re.sub(r'^version = .*', 'version = \"${VERSION}\"', p.read_text(), flags=re.MULTILINE))
-"
+          python3 -c "import re, pathlib; p = pathlib.Path('minigraf-ffi/python/pyproject.toml'); p.write_text(re.sub(r'^version = .*', 'version = \"${VERSION}\"', p.read_text(), flags=re.MULTILINE))"
 
       - name: Build wheel (workaround for maturin workspace uniffi-bindgen bug)
         working-directory: minigraf-ffi/python
