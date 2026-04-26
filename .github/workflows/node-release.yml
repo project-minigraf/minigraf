@@ -90,6 +90,10 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Install npm dependencies
+        working-directory: minigraf-node
+        run: npm install
+
       - name: Download all binaries
         uses: actions/download-artifact@v4
         with:
