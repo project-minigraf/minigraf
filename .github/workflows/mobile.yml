@@ -188,6 +188,9 @@ jobs:
         run: |
           XCFW_ZIP=$(ls artifacts/MinigrafKit-*.xcframework.zip)
           CHECKSUM=$(shasum -a 256 "$XCFW_ZIP" | awk '{print $1}')
+          # The xcframework zip lives on the main release (TAG).
+          # Package.swift itself lives on the swift-releases branch tagged swift-TAG,
+          # so SPM consumers use the swift-TAG reference for the Swift package.
           URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/MinigrafKit-${TAG}.xcframework.zip"
           sed -i \
             -e "s|url: \"https://github.com/.*/releases/download/.*/MinigrafKit-.*\\.xcframework\\.zip\"|url: \"${URL}\"|" \
@@ -207,7 +210,7 @@ jobs:
           cd minigraf-ffi/android
           ./gradlew publishReleasePublicationToGitHubPackagesRepository
 
-      - name: Commit Package.swift update and Swift sources, then move tag
+      - name: Commit Package.swift update and Swift sources, then create swift-TAG
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -244,11 +247,19 @@ jobs:
           git commit -m "chore(release): update Package.swift and Swift bindings for ${TAG}" \
             || echo "Nothing to commit"
           # Push to the unprotected swift-releases branch instead of main.
-          # SPM resolves packages by tag, not by branch, so the tag pointing
-          # to this commit is all that matters for Swift package consumers.
+          # SPM resolves packages by the swift-TAG (e.g. swift-v0.25.0) which points
+          # to this commit — the original TAG is left on the main branch so that all
+          # other language workflows (Python, Java, C, Node.js) can check out the
+          # full source tree.
           git push origin swift-releases --force
           NEW_SHA=$(git rev-parse HEAD)
-          gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
+          # Create (or update) the swift-TAG reference on the swift-releases commit.
+          SWIFT_TAG="swift-${TAG}"
+          gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -X POST \
+            -f ref="refs/tags/${SWIFT_TAG}" \
+            -f sha="$NEW_SHA" 2>/dev/null \
+          || gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${SWIFT_TAG}" \
             -X PATCH \
             -f sha="$NEW_SHA" \
             -F force=true
