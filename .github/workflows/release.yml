@@ -349,3 +349,15 @@ jobs:
     secrets: inherit
     permissions:
       contents: write
+
+  # Build and publish Node.js bindings to npm after the release is created
+  publish-node:
+    name: Publish Node.js bindings to npm
+    needs:
+      - plan
+      - host
+    if: ${{ always() && needs.host.result == 'success' && needs.plan.outputs.publishing == 'true' }}
+    uses: ./.github/workflows/node-release.yml
+    with:
+      tag: ${{ needs.plan.outputs.tag }}
+    secrets: inherit

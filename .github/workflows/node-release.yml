@@ -1,0 +1,99 @@
+name: Node.js Release
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: Build .node binary (${{ matrix.settings.host }})
+    runs-on: ${{ matrix.settings.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            npm-package: '@minigraf/linux-x64-gnu'
+          - host: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            npm-package: '@minigraf/linux-arm64-gnu'
+          - host: macos-14
+            target: universal-apple-darwin
+            npm-package: '@minigraf/darwin-universal'
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+            npm-package: '@minigraf/win32-x64-msvc'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.settings.target == 'universal-apple-darwin' && 'aarch64-apple-darwin x86_64-apple-darwin' || matrix.settings.target }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install npm dependencies
+        working-directory: minigraf-node
+        run: npm install
+
+      - name: Build native addon
+        working-directory: minigraf-node
+        run: npx @napi-rs/cli build --platform --release --target ${{ matrix.settings.target }}
+
+      - name: Upload .node binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-binary-${{ matrix.settings.npm-package }}
+          path: minigraf-node/*.node
+
+  publish:
+    name: Publish to npm
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Download all binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: node-binary-*
+          path: minigraf-node
+          merge-multiple: true
+
+      - name: Move artifacts into platform packages
+        working-directory: minigraf-node
+        run: npx @napi-rs/cli artifacts
+
+      - name: Publish platform packages
+        working-directory: minigraf-node
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npx @napi-rs/cli publish --prefix packages
+
+      - name: Publish main minigraf package
+        working-directory: minigraf-node
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public

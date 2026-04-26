@@ -1,0 +1,39 @@
+{
+  "name": "minigraf",
+  "version": "0.25.0",
+  "description": "Zero-config, single-file, embedded graph database with bi-temporal Datalog queries",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/adityamukho/minigraf.git"
+  },
+  "keywords": ["graph", "datalog", "bitemporal", "embedded", "database"],
+  "engines": {
+    "node": ">=18"
+  },
+  "napi": {
+    "name": "minigraf",
+    "triples": {
+      "defaults": true,
+      "additional": [
+        "aarch64-unknown-linux-gnu",
+        "universal-apple-darwin"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "napi build --platform --release",
+    "test": "node --test test/basic.test.mjs"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^2.18.0"
+  },
+  "optionalDependencies": {
+    "@minigraf/linux-x64-gnu": "0.25.0",
+    "@minigraf/linux-arm64-gnu": "0.25.0",
+    "@minigraf/darwin-universal": "0.25.0",
+    "@minigraf/win32-x64-msvc": "0.25.0"
+  }
+}
