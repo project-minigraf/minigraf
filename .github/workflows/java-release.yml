@@ -113,4 +113,8 @@ jobs:
           CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
           GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
           GPG_SIGNING_PASSWORD: ${{ secrets.GPG_SIGNING_PASSWORD }}
-        run: ./gradlew publishAllPublicationsToCentralPortal
+          RELEASE_VERSION: ${{ inputs.tag && (startsWith(inputs.tag, 'v') && inputs.tag || format('v{0}', inputs.tag)) || github.ref_name }}
+        run: |
+          # Strip leading 'v' so Gradle gets plain semver (e.g. "0.23.0")
+          export RELEASE_VERSION="${RELEASE_VERSION#v}"
+          ./gradlew publishAllPublicationsToCentralPortal
