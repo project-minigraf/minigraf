@@ -21,16 +21,16 @@ jobs:
         settings:
           - host: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            npm-package: '@minigraf/linux-x64-gnu'
+            artifact-name: minigraf-linux-x64-gnu
           - host: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            npm-package: '@minigraf/linux-arm64-gnu'
+            artifact-name: minigraf-linux-arm64-gnu
           - host: macos-14
             target: universal-apple-darwin
-            npm-package: '@minigraf/darwin-universal'
+            artifact-name: minigraf-darwin-universal
           - host: windows-latest
             target: x86_64-pc-windows-msvc
-            npm-package: '@minigraf/win32-x64-msvc'
+            artifact-name: minigraf-win32-x64-msvc
 
     steps:
       - uses: actions/checkout@v4
@@ -52,12 +52,25 @@ jobs:
 
       - name: Build native addon
         working-directory: minigraf-node
-        run: npx @napi-rs/cli build --platform --release --target ${{ matrix.settings.target }}
+        shell: bash
+        run: |
+          if [ "${{ matrix.settings.target }}" = "universal-apple-darwin" ]; then
+            # napi-rs 2.x does not internally handle universal-apple-darwin.
+            # Build each arch separately, then lipo-combine.
+            npx @napi-rs/cli build --platform --release --target aarch64-apple-darwin
+            npx @napi-rs/cli build --platform --release --target x86_64-apple-darwin
+            lipo -create -output minigraf.darwin-universal.node \
+              minigraf.aarch64-apple-darwin.node minigraf.x86_64-apple-darwin.node
+            rm minigraf.aarch64-apple-darwin.node minigraf.x86_64-apple-darwin.node
+          else
+            npx @napi-rs/cli build --platform --release --target "${{ matrix.settings.target }}"
+          fi
 
       - name: Upload .node binary
         uses: actions/upload-artifact@v4
         with:
-          name: node-binary-${{ matrix.settings.npm-package }}
+          # artifact-name must not contain '/'; use the sanitized artifact-name field.
+          name: ${{ matrix.settings.artifact-name }}
           path: minigraf-node/*.node
 
   publish:
@@ -77,7 +90,7 @@ jobs:
       - name: Download all binaries
         uses: actions/download-artifact@v4
         with:
-          pattern: node-binary-*
+          pattern: minigraf-*
           path: minigraf-node
           merge-multiple: true
 
