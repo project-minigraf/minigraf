@@ -212,7 +212,9 @@ jobs:
           # sources — not the full main HEAD (which includes workflow files, requiring
           # `workflows` scope that GITHUB_TOKEN cannot be granted via permissions:).
           if git fetch origin swift-releases 2>/dev/null; then
-            git checkout -B swift-releases origin/swift-releases
+            # -f: discard local changes (Package.swift modified by sed, swift sources
+            # untracked from artifact download) — we've already saved them to TMPDIR.
+            git checkout -fB swift-releases origin/swift-releases
           else
             # First-ever release: start a clean orphan branch with no history.
             git checkout --orphan swift-releases
