@@ -43,7 +43,7 @@ edition = "2024"
 description = "Zero-config, single-file, embedded graph database with bi-temporal Datalog queries"
 license = "MIT OR Apache-2.0"
 authors = ["Aditya Mukhopadhyay"]
-repository = "https://github.com/adityamukho/minigraf"
+repository = "https://github.com/project-minigraf/minigraf"
 keywords = ["graph", "datalog", "bitemporal", "embedded", "database"]
 categories = ["database", "embedded"]
 readme = "README.md"
@@ -501,12 +501,12 @@ Three targeted changes: (a) update the phase badge and status text, (b) add a me
 
 Find:
 ```markdown
-[![Phase](https://img.shields.io/badge/phase-6.4a%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
+[![Phase](https://img.shields.io/badge/phase-6.4a%20complete-blue.svg)](https://github.com/project-minigraf/minigraf/blob/main/ROADMAP.md)
 ```
 
 Replace with:
 ```markdown
-[![Phase](https://img.shields.io/badge/phase-6.4b%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
+[![Phase](https://img.shields.io/badge/phase-6.4b%20complete-blue.svg)](https://github.com/project-minigraf/minigraf/blob/main/ROADMAP.md)
 ```
 
 - [ ] **Step 2: Update status text (line 21)**
@@ -645,7 +645,7 @@ git commit -m "docs: add CHANGELOG.md v0.8.0 entry for Phase 6.4b"
 - [ ] **Step 1: Enable Discussions via GitHub API**
 
 ```bash
-gh api repos/adityamukho/minigraf -X PATCH -f has_discussions=true
+gh api repos/project-minigraf/minigraf -X PATCH -f has_discussions=true
 ```
 
 Expected: JSON response with `"has_discussions": true`.
@@ -653,7 +653,7 @@ Expected: JSON response with `"has_discussions": true`.
 - [ ] **Step 2: Verify**
 
 ```bash
-gh api repos/adityamukho/minigraf --jq '.has_discussions'
+gh api repos/project-minigraf/minigraf --jq '.has_discussions'
 ```
 
 Expected: `true`

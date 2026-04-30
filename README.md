@@ -2,12 +2,12 @@
 
 [![crates.io](https://img.shields.io/crates/v/minigraf.svg)](https://crates.io/crates/minigraf)
 [![docs.rs](https://docs.rs/minigraf/badge.svg)](https://docs.rs/minigraf)
-[![Build Status](https://github.com/adityamukho/minigraf/actions/workflows/rust.yml/badge.svg)](https://github.com/adityamukho/minigraf/actions/workflows/rust.yml)
-[![Clippy Status](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml/badge.svg)](https://github.com/adityamukho/minigraf/actions/workflows/rust-clippy.yml)
-[![Coverage](https://codecov.io/gh/adityamukho/minigraf/branch/main/graph/badge.svg)](https://codecov.io/gh/adityamukho/minigraf)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/adityamukho/minigraf#license)
+[![Build Status](https://github.com/project-minigraf/minigraf/actions/workflows/rust.yml/badge.svg)](https://github.com/project-minigraf/minigraf/actions/workflows/rust.yml)
+[![Clippy Status](https://github.com/project-minigraf/minigraf/actions/workflows/rust-clippy.yml/badge.svg)](https://github.com/project-minigraf/minigraf/actions/workflows/rust-clippy.yml)
+[![Coverage](https://codecov.io/gh/project-minigraf/minigraf/branch/main/graph/badge.svg)](https://codecov.io/gh/project-minigraf/minigraf)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/project-minigraf/minigraf#license)
 [![Rust Edition](https://img.shields.io/badge/rust-2024-orange.svg)](https://blog.rust-lang.org/2024/10/17/Rust-1.82.0.html)
-[![Phase](https://img.shields.io/badge/phase-8.3c%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
+[![Phase](https://img.shields.io/badge/phase-8.3c%20complete-blue.svg)](https://github.com/project-minigraf/minigraf/blob/main/ROADMAP.md)
 
 > **Embedded graph memory for AI agents, mobile apps, and the browser** — the SQLite of bi-temporal graph databases
 
@@ -99,7 +99,7 @@ cargo run < demos/demo_recursive.txt   # recursive rules demo
 
 See a working implementation of **temporal reasoning** with Minigraf at [github.com/adityamukho/temporal_reasoning](https://github.com/adityamukho/temporal_reasoning) — an AI agent that uses Minigraf's bi-temporal model to store, correct, and audit beliefs.
 
-See the [Datalog Reference](https://github.com/adityamukho/minigraf/wiki/Datalog-Reference) wiki page for the complete syntax.
+See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference) wiki page for the complete syntax.
 
 ## Why Minigraf?
 
@@ -117,7 +117,7 @@ No other database offers this combination:
 
 **Embedded graph memory for agents, mobile, and the browser — SQLite's simplicity + Datomic's temporal model.**
 
-See the [Comparison](https://github.com/adityamukho/minigraf/wiki/Comparison) wiki page for detailed analysis including temporal vs. time-series databases.
+See the [Comparison](https://github.com/project-minigraf/minigraf/wiki/Comparison) wiki page for detailed analysis including temporal vs. time-series databases.
 
 ### For AI Agents
 
@@ -143,13 +143,13 @@ try db.execute(datalog: #"(transact [[:alice :person/name "Alice"] [:alice :pers
 let json = try db.execute(datalog: "(query [:find ?name :where [?e :person/name ?name]])")
 ```
 
-See the [Mobile Integration](https://github.com/adityamukho/minigraf/wiki/Use-Cases#mobile-apps) wiki section for full setup and usage docs (Gradle config, SPM integration, error handling, threading).
+See the [Mobile Integration](https://github.com/project-minigraf/minigraf/wiki/Use-Cases#mobile-apps) wiki section for full setup and usage docs (Gradle config, SPM integration, error handling, threading).
 
 ### For WASM / Browser
 
 Phase 8.1a complete: IndexedDB backend, `wasm-pack` packaging. Phase 8.1b complete: server-side WASM via `wasm32-wasip1` / WASI (Wasmtime, Wasmer). npm release as `@minigraf/core` planned for Phase 8.2.
 
-See the [Use Cases](https://github.com/adityamukho/minigraf/wiki/Use-Cases) wiki page for detailed guides on all three targets.
+See the [Use Cases](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) wiki page for detailed guides on all three targets.
 
 ## Scope
 
@@ -162,7 +162,7 @@ Minigraf will **not** be (by design):
 - **Distributed** — no clustering, no sharding, no replication; each agent instance owns its own `.graph` file
 - **Client-server** — no network protocol in core
 - **Billion-node scale** — optimised for <1M nodes (like SQLite)
-- **A time-series database** — Minigraf is a *temporal* database; see [Comparison](https://github.com/adityamukho/minigraf/wiki/Comparison#influxdb--prometheus--timescaledb-time-series-databases)
+- **A time-series database** — Minigraf is a *temporal* database; see [Comparison](https://github.com/project-minigraf/minigraf/wiki/Comparison#influxdb--prometheus--timescaledb-time-series-databases)
 
 ## Roadmap
 

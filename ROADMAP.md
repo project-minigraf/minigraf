@@ -1243,7 +1243,7 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 
 **Swift Package Manager support**:
 - `Package.swift` pointing to the `.xcframework` release artifact
-- Allows `swift package add https://github.com/adityamukho/minigraf` in Xcode
+- Allows `swift package add https://github.com/project-minigraf/minigraf` in Xcode
 
 **Maven / Gradle support**:
 - Publish `.aar` to GitHub Packages or Maven Central
@@ -1690,7 +1690,7 @@ When evaluating features, ask:
 - ✅ Approximate LRU (read-lock on hits — avoids write-lock contention)
 - ✅ Phase 8 = v1.0.0 (not Phase 7 — cross-platform completion is the 1.0 milestone)
 
-See [GitHub Issues](https://github.com/adityamukho/minigraf/issues) for specific tasks.
+See [GitHub Issues](https://github.com/project-minigraf/minigraf/issues) for specific tasks.
 
 ---
 

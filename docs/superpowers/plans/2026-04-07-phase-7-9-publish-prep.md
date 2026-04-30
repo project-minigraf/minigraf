@@ -1019,7 +1019,7 @@ cargo add minigraf
 The badge at line 8 currently says `phase-7.8%20complete`. Update it to `phase-7.9%20complete`:
 
 ```markdown
-[![Phase](https://img.shields.io/badge/phase-7.9%20complete-blue.svg)](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md)
+[![Phase](https://img.shields.io/badge/phase-7.9%20complete-blue.svg)](https://github.com/project-minigraf/minigraf/blob/main/ROADMAP.md)
 ```
 
 - [ ] **Step 4: Commit**

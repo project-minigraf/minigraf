@@ -243,7 +243,7 @@ git commit -m "feat(node): implement napi-rs MiniGrafDb (open, in_memory, execut
   "license": "MIT OR Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/adityamukho/minigraf.git"
+    "url": "https://github.com/project-minigraf/minigraf.git"
   },
   "keywords": ["graph", "datalog", "bitemporal", "embedded", "database"],
   "napi": {

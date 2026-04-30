@@ -9,7 +9,7 @@
 **Tech Stack:** Rust 2024 edition, `wasm-bindgen 0.2`, `wasm-bindgen-futures 0.4`, `web-sys 0.3`, `js-sys 0.3`, `serde_json 1.0` (optional dep), `wasm-pack` build tool, headless Chrome for integration tests.
 
 **Spec:** `docs/superpowers/specs/2026-04-17-phase-8-1a-browser-wasm-design.md`
-**Issue:** adityamukho/minigraf#129
+**Issue:** project-minigraf/minigraf#129
 
 ---
 
