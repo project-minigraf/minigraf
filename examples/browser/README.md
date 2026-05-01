@@ -1,6 +1,6 @@
 # Minigraf Browser Demo
 
-Demonstrates `@minigraf/core` running in a plain browser page with no bundler.
+Demonstrates `@minigraf/browser` running in a plain browser page with no bundler.
 
 ## Build
 
@@ -34,5 +34,5 @@ Open `http://localhost:8080/examples/browser/` in Chrome or Firefox.
 
 - Data persists across page reloads (stored in IndexedDB).
 - The `minigraf-wasm/` directory is committed — the files are up to date after pulling.
-- This package (`@minigraf/core`) is **browser-only**. For Node.js, use
-  `@minigraf/node` (Phase 8.3).
+- This package (`@minigraf/browser`) is **browser-only**. For Node.js, use
+  `@minigraf/node`.

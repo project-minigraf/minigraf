@@ -147,7 +147,7 @@ See the [Mobile Integration](https://github.com/project-minigraf/minigraf/wiki/U
 
 ### For WASM / Browser
 
-Phase 8.1a complete: IndexedDB backend, `wasm-pack` packaging. Phase 8.1b complete: server-side WASM via `wasm32-wasip1` / WASI (Wasmtime, Wasmer). npm release as `@minigraf/core` planned for Phase 8.2.
+Phase 8.1a complete: IndexedDB backend, `wasm-pack` packaging. Phase 8.1b complete: server-side WASM via `wasm32-wasip1` / WASI (Wasmtime, Wasmer). npm release as `@minigraf/browser` planned for Phase 8.2.
 
 See the [Use Cases](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) wiki page for detailed guides on all three targets.
 

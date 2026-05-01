@@ -13,6 +13,7 @@
   },
   "files": [
     "minigraf_bg.wasm",
+    "minigraf_bg.wasm.d.ts",
     "minigraf.js",
     "minigraf.d.ts"
   ],
