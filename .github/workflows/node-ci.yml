@@ -32,7 +32,7 @@ jobs:
 
       - name: Build native addon
         working-directory: minigraf-node
-        run: npx @napi-rs/cli build --platform --release
+        run: npx napi build --platform --release
 
       - name: Run tests
         working-directory: minigraf-node
