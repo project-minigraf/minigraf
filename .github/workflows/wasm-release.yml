@@ -112,7 +112,7 @@ jobs:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           VERSION="${TAG#v}"
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9] ]]; then
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "ERROR: VERSION '$VERSION' does not look like a semver string. Aborting."
             exit 1
           fi
