@@ -61,18 +61,18 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.settings.target }}" = "universal-apple-darwin" ]; then
-            # napi-rs 2.x does not internally handle universal-apple-darwin.
+            # napi-rs does not internally handle universal-apple-darwin.
             # Build each arch separately, then lipo-combine.
             # napi-rs --platform names the output using npm platform names:
             #   aarch64-apple-darwin → minigraf.darwin-arm64.node
             #   x86_64-apple-darwin  → minigraf.darwin-x64.node
-            npx @napi-rs/cli build --platform --release --target aarch64-apple-darwin
-            npx @napi-rs/cli build --platform --release --target x86_64-apple-darwin
+            npx napi build --platform --release --target aarch64-apple-darwin
+            npx napi build --platform --release --target x86_64-apple-darwin
             lipo -create -output minigraf.darwin-universal.node \
               minigraf.darwin-arm64.node minigraf.darwin-x64.node
             rm minigraf.darwin-arm64.node minigraf.darwin-x64.node
           else
-            npx @napi-rs/cli build --platform --release --target "${{ matrix.settings.target }}"
+            npx napi build --platform --release --target "${{ matrix.settings.target }}"
           fi
 
       - name: Upload .node binary

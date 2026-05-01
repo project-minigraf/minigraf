@@ -28,7 +28,7 @@
     "test": "node --test test/basic.test.mjs"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^2.18.0"
+    "@napi-rs/cli": "^3"
   },
   "optionalDependencies": {
     "@minigraf/linux-x64-gnu": "0.25.0",
