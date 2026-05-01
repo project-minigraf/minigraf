@@ -139,8 +139,8 @@ Replace body with completed summary: all 8 sub-phase deliverables, 795 tests, st
 now in effect.
 
 ### Phase 9 header
-Change `## Phase 9: Ecosystem & Tooling 🎯 FUTURE` → `## Phase 9: Ecosystem & Tooling 🎯 NEXT`
-(or keep FUTURE — either is fine; not a blocker).
+Leave `## Phase 9: Ecosystem & Tooling 🎯 FUTURE` unchanged. Phase 9 may not begin
+immediately after v1.0.0 — optimisation work, benchmarks, and post-release tweaks come first.
 
 ---
 
@@ -270,9 +270,22 @@ Remove the stale "Phase 7.5 target is ≥90%" sentence. Replace with:
 
 ## 10. Per-Platform READMEs
 
+### `pkg/README.md` — delete
+`pkg/README.md` is byte-for-byte identical to `minigraf-wasm/README.md` (both are stale copies
+of the root README). There is no unique content to preserve. Delete `pkg/README.md` as part of
+this PR.
+
 ### `minigraf-wasm/README.md` — rewrite
 This is the npm package README for `@minigraf/browser`. Current content is a stale copy of the
-root README. Rewrite as a focused browser-WASM README:
+root README. Rewrite as a focused browser-WASM README.
+
+**wasm-pack clobbering note**: `wasm-pack build` may overwrite `minigraf-wasm/README.md` with a
+generated file. The implementor must verify this behaviour. If wasm-pack does clobber it, the
+release workflow (`wasm-release.yml`) needs a pre-publish step that re-injects the README from a
+stable source outside `minigraf-wasm/` (e.g., a file at the repo root such as
+`minigraf-wasm.README.md`, copied in after `wasm-pack build` and before `npm publish`).
+
+Content of the rewritten README:
 - Title: `@minigraf/browser`
 - One-paragraph description: embedded bi-temporal graph database for the browser, powered by
   IndexedDB, Datalog queries, time travel
