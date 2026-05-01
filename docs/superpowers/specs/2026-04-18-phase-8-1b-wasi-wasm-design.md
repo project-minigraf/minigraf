@@ -1,7 +1,7 @@
 # Phase 8.1b: Server-side WASM Support (wasm32-wasip1 / WASI) — Design Spec
 
 **Date**: 2026-04-18
-**Issue**: adityamukho/minigraf#130
+**Issue**: project-minigraf/minigraf#130
 **Status**: Approved — ready for implementation
 
 ---

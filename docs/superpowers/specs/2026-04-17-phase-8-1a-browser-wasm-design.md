@@ -1,7 +1,7 @@
 # Phase 8.1a: Browser WASM Support — Design Spec
 
 **Date**: 2026-04-17
-**Issue**: adityamukho/minigraf#129
+**Issue**: project-minigraf/minigraf#129
 **Status**: Approved — ready for implementation planning
 
 ---

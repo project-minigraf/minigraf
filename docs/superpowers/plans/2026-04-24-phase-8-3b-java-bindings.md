@@ -16,8 +16,8 @@
 |--------|------|----------------|
 | CREATE | `minigraf-ffi/java/settings.gradle.kts` | Gradle project name |
 | CREATE | `minigraf-ffi/java/build.gradle.kts` | Full build: bindgen, compile, fat JAR, publish |
-| CREATE | `minigraf-ffi/java/src/main/kotlin/io/github/adityamukho/minigraf/NativeLoader.kt` | Runtime native extraction from JAR resources |
-| CREATE | `minigraf-ffi/java/src/test/kotlin/io/github/adityamukho/minigraf/BasicTest.kt` | JUnit 5 tests |
+| CREATE | `minigraf-ffi/java/src/main/kotlin/io/github/project-minigraf/minigraf/NativeLoader.kt` | Runtime native extraction from JAR resources |
+| CREATE | `minigraf-ffi/java/src/test/kotlin/io/github/project-minigraf/minigraf/BasicTest.kt` | JUnit 5 tests |
 | CREATE | `.github/workflows/java-ci.yml` | PR test matrix (4 platforms) |
 | CREATE | `.github/workflows/java-release.yml` | Release: cross-compile natives + assemble fat JAR + publish |
 | MODIFY | `Cargo.toml` (root) | Bump version to `0.23.0` |
@@ -162,11 +162,11 @@ publishing {
             pom {
                 name.set("Minigraf JVM")
                 description.set("Zero-config, single-file, embedded graph database with bi-temporal Datalog queries — JVM bindings")
-                url.set("https://github.com/adityamukho/minigraf")
+                url.set("https://github.com/project-minigraf/minigraf")
                 licenses {
                     license {
                         name.set("MIT OR Apache-2.0")
-                        url.set("https://github.com/adityamukho/minigraf/blob/main/LICENSE-MIT")
+                        url.set("https://github.com/project-minigraf/minigraf/blob/main/LICENSE-MIT")
                     }
                 }
                 developers {
@@ -176,9 +176,9 @@ publishing {
                     }
                 }
                 scm {
-                    connection.set("scm:git:git://github.com/adityamukho/minigraf.git")
-                    developerConnection.set("scm:git:ssh://github.com/adityamukho/minigraf.git")
-                    url.set("https://github.com/adityamukho/minigraf")
+                    connection.set("scm:git:git://github.com/project-minigraf/minigraf.git")
+                    developerConnection.set("scm:git:ssh://github.com/project-minigraf/minigraf.git")
+                    url.set("https://github.com/project-minigraf/minigraf")
                 }
             }
         }
@@ -222,14 +222,14 @@ git commit -m "feat(java): add Gradle project skeleton for Maven Central JAR"
 ## Task 2: Write NativeLoader
 
 **Files:**
-- Create: `minigraf-ffi/java/src/main/kotlin/io/github/adityamukho/minigraf/NativeLoader.kt`
+- Create: `minigraf-ffi/java/src/main/kotlin/io/github/project-minigraf/minigraf/NativeLoader.kt`
 
 - [ ] **Step 1: Create the directory structure**
 
 ```bash
-mkdir -p minigraf-ffi/java/src/main/kotlin/io/github/adityamukho/minigraf
+mkdir -p minigraf-ffi/java/src/main/kotlin/io/github/project-minigraf/minigraf
 mkdir -p minigraf-ffi/java/src/main/resources/natives
-mkdir -p minigraf-ffi/java/src/test/kotlin/io/github/adityamukho/minigraf
+mkdir -p minigraf-ffi/java/src/test/kotlin/io/github/project-minigraf/minigraf
 ```
 
 - [ ] **Step 2: Create `NativeLoader.kt`**
@@ -265,7 +265,7 @@ object NativeLoader {
                 "windows/x86_64" to "minigraf_ffi.dll"
             else -> throw UnsupportedOperationException(
                 "Unsupported platform: $os / $arch. " +
-                "Please file an issue at https://github.com/adityamukho/minigraf"
+                "Please file an issue at https://github.com/project-minigraf/minigraf"
             )
         }
 
@@ -294,7 +294,7 @@ object NativeLoader {
 - [ ] **Step 3: Commit**
 
 ```bash
-git add minigraf-ffi/java/src/main/kotlin/io/github/adityamukho/minigraf/NativeLoader.kt
+git add minigraf-ffi/java/src/main/kotlin/io/github/project-minigraf/minigraf/NativeLoader.kt
 git commit -m "feat(java): add NativeLoader for runtime native extraction from JAR"
 ```
 
@@ -303,7 +303,7 @@ git commit -m "feat(java): add NativeLoader for runtime native extraction from J
 ## Task 3: Write Java tests
 
 **Files:**
-- Create: `minigraf-ffi/java/src/test/kotlin/io/github/adityamukho/minigraf/BasicTest.kt`
+- Create: `minigraf-ffi/java/src/test/kotlin/io/github/project-minigraf/minigraf/BasicTest.kt`
 
 - [ ] **Step 1: Create `BasicTest.kt`**
 
@@ -384,7 +384,7 @@ class BasicTest {
 - [ ] **Step 2: Commit**
 
 ```bash
-git add minigraf-ffi/java/src/test/kotlin/io/github/adityamukho/minigraf/BasicTest.kt
+git add minigraf-ffi/java/src/test/kotlin/io/github/project-minigraf/minigraf/BasicTest.kt
 git commit -m "test(java): add JUnit 5 suite for Maven Central JAR"
 ```
 

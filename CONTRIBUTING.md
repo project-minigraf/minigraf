@@ -31,7 +31,7 @@ Thank you for your interest in contributing. Minigraf is a hobby project with a 
 
 ```bash
 # Clone and build
-git clone https://github.com/adityamukho/minigraf.git
+git clone https://github.com/project-minigraf/minigraf.git
 cd minigraf
 cargo build
 

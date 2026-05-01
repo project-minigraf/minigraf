@@ -645,7 +645,7 @@ This Gradle project is a configuration-only Android library. It has no source co
           repositories {
               maven {
                   name = "GitHubPackages"
-                  url = uri("https://maven.pkg.github.com/adityamukho/minigraf")
+                  url = uri("https://maven.pkg.github.com/project-minigraf/minigraf")
                   credentials {
                       username = System.getenv("GITHUB_ACTOR") ?: ""
                       password = System.getenv("GITHUB_TOKEN") ?: ""
@@ -735,7 +735,7 @@ This Gradle project is a configuration-only Android library. It has no source co
           .binaryTarget(
               name: "minigrafFFI",
               // Updated by CI: release-upload-mobile job
-              url: "https://github.com/adityamukho/minigraf/releases/download/v0.20.1/MinigrafKit-v0.20.1.xcframework.zip",
+              url: "https://github.com/project-minigraf/minigraf/releases/download/v0.20.1/MinigrafKit-v0.20.1.xcframework.zip",
               checksum: "0000000000000000000000000000000000000000000000000000000000000000"
           ),
           .target(

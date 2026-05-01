@@ -5,7 +5,7 @@
 Minigraf is the SQLite of graph databases: zero configuration, one `.graph` file, embedded as a library. It stores facts in an Entity-Attribute-Value (EAV) model and queries them with Datalog, including recursive rules for graph traversal and stratified negation (`not` / `not-join`). Every fact carries two independent time dimensions (transaction time and valid time), enabling full bi-temporal time travel.
 
 **Current version**: 0.14.0 (pre-1.0 — API and file format may change before v1.0)
-**Maturity**: See [README](https://github.com/adityamukho/minigraf/blob/main/README.md) for current phase and [ROADMAP](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md) for the full plan. ACID + WAL are production-quality. Covering indexes (EAVT/AEVT/AVET/VAET), packed page storage, LRU page cache, and on-disk B+tree indexes are complete. Stratified negation, scalar aggregation, arithmetic/predicate expression clauses, and disjunction (`or`/`or-join`) are complete. Cross-feature integration tests and error-path coverage complete; ~86–89% branch coverage, 617 tests (Phase 7.5). Not recommended for production use until v1.0 (file format stability guaranteed only after Phase 8).
+**Maturity**: See [README](https://github.com/project-minigraf/minigraf/blob/main/README.md) for current phase and [ROADMAP](https://github.com/project-minigraf/minigraf/blob/main/ROADMAP.md) for the full plan. ACID + WAL are production-quality. Covering indexes (EAVT/AEVT/AVET/VAET), packed page storage, LRU page cache, and on-disk B+tree indexes are complete. Stratified negation, scalar aggregation, arithmetic/predicate expression clauses, and disjunction (`or`/`or-join`) are complete. Cross-feature integration tests and error-path coverage complete; ~86–89% branch coverage, 617 tests (Phase 7.5). Not recommended for production use until v1.0 (file format stability guaranteed only after Phase 8).
 
 ## Use for
 
@@ -167,7 +167,7 @@ tx.commit()?;
 
 ## Performance summary (v0.13.0)
 
-See [BENCHMARKS.md](https://github.com/adityamukho/minigraf/blob/main/BENCHMARKS.md) for full tables and methodology.
+See [BENCHMARKS.md](https://github.com/project-minigraf/minigraf/blob/main/BENCHMARKS.md) for full tables and methodology.
 
 - **Insert**: ~2.7 µs/fact (in-memory), ~3.6 µs/fact (file-backed WAL). Flat across 1K–100K facts.
 - **Query (point lookup)**: O(N) full scan — 4.3–4.5 s at 1M facts.
@@ -176,13 +176,13 @@ See [BENCHMARKS.md](https://github.com/adityamukho/minigraf/blob/main/BENCHMARKS
 
 ## Links
 
-- [Repository](https://github.com/adityamukho/minigraf)
-- [README](https://github.com/adityamukho/minigraf/blob/main/README.md) — current status and quick start
-- [ROADMAP](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md) — phase-by-phase plan
-- [BENCHMARKS](https://github.com/adityamukho/minigraf/blob/main/BENCHMARKS.md) — Criterion results at 1K–1M facts
-- [Philosophy](https://github.com/adityamukho/minigraf/blob/main/PHILOSOPHY.md)
-- [Security Policy](https://github.com/adityamukho/minigraf/security/policy)
-- [Wiki: Architecture](https://github.com/adityamukho/minigraf/wiki/Architecture) — module structure, data model, file format, query pipeline
-- [Wiki: Datalog Reference](https://github.com/adityamukho/minigraf/wiki/Datalog-Reference) — complete syntax reference
-- [Wiki: Use Cases](https://github.com/adityamukho/minigraf/wiki/Use-Cases) — AI agents, mobile apps, WASM/browser
-- [Wiki: Comparison](https://github.com/adityamukho/minigraf/wiki/Comparison) — vs XTDB, Cozo, Datomic, Neo4j, SQLite and others
+- [Repository](https://github.com/project-minigraf/minigraf)
+- [README](https://github.com/project-minigraf/minigraf/blob/main/README.md) — current status and quick start
+- [ROADMAP](https://github.com/project-minigraf/minigraf/blob/main/ROADMAP.md) — phase-by-phase plan
+- [BENCHMARKS](https://github.com/project-minigraf/minigraf/blob/main/BENCHMARKS.md) — Criterion results at 1K–1M facts
+- [Philosophy](https://github.com/project-minigraf/minigraf/blob/main/PHILOSOPHY.md)
+- [Security Policy](https://github.com/project-minigraf/minigraf/security/policy)
+- [Wiki: Architecture](https://github.com/project-minigraf/minigraf/wiki/Architecture) — module structure, data model, file format, query pipeline
+- [Wiki: Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference) — complete syntax reference
+- [Wiki: Use Cases](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) — AI agents, mobile apps, WASM/browser
+- [Wiki: Comparison](https://github.com/project-minigraf/minigraf/wiki/Comparison) — vs XTDB, Cozo, Datomic, Neo4j, SQLite and others

@@ -18,9 +18,9 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/adityamukho/minigraf"
-Repository = "https://github.com/adityamukho/minigraf"
-"Bug Tracker" = "https://github.com/adityamukho/minigraf/issues"
+Homepage = "https://github.com/project-minigraf/minigraf"
+Repository = "https://github.com/project-minigraf/minigraf"
+"Bug Tracker" = "https://github.com/project-minigraf/minigraf/issues"
 
 [tool.maturin]
 manifest-path = "../Cargo.toml"

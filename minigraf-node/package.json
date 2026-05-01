@@ -7,7 +7,7 @@
   "license": "MIT OR Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/adityamukho/minigraf.git"
+    "url": "https://github.com/project-minigraf/minigraf.git"
   },
   "keywords": ["graph", "datalog", "bitemporal", "embedded", "database"],
   "engines": {

@@ -17,7 +17,7 @@ Please **do not** open a public GitHub issue for security vulnerabilities.
 
 Use GitHub's private vulnerability reporting instead:
 
-> **[Report a vulnerability](https://github.com/adityamukho/minigraf/security/advisories/new)**
+> **[Report a vulnerability](https://github.com/project-minigraf/minigraf/security/advisories/new)**
 
 Include as much of the following as possible:
 
@@ -35,7 +35,7 @@ This is a solo hobby project. I will make a best-effort response:
 - **Fix or mitigation**: timeline depends on severity and complexity
 
 If a fix is warranted, it will be released as a patch version and a
-[GitHub Security Advisory](https://github.com/adityamukho/minigraf/security/advisories)
+[GitHub Security Advisory](https://github.com/project-minigraf/minigraf/security/advisories)
 will be published.
 
 ## Scope

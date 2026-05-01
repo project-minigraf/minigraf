@@ -175,7 +175,7 @@ Verify after: `cargo build` and `cargo test` must still pass.
 Add to `[package]`:
 
 ```toml
-repository = "https://github.com/adityamukho/minigraf"
+repository = "https://github.com/project-minigraf/minigraf"
 keywords = ["graph", "datalog", "bitemporal", "embedded", "database"]
 categories = ["database", "embedded"]
 readme = "README.md"
@@ -189,7 +189,7 @@ documentation = "https://docs.rs/minigraf"
 Enable via GitHub API:
 
 ```bash
-gh api repos/adityamukho/minigraf -X PATCH -f has_discussions=true
+gh api repos/project-minigraf/minigraf -X PATCH -f has_discussions=true
 ```
 
 No content to create. Existing `CONTRIBUTING.md`, issue templates, and `CODE_OF_CONDUCT.md` already provide contributor context.
