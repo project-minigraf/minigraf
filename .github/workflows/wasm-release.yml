@@ -46,7 +46,9 @@ jobs:
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: Build browser WASM
-        run: wasm-pack build --target web --features browser --out-dir minigraf-wasm
+        run: wasm-pack build --target web --features browser
+      - name: Rename pkg/ → minigraf-wasm/
+        run: mv pkg minigraf-wasm
       - name: Package minigraf-wasm/ directory
         run: |
           mkdir -p target/wasm-artifacts
@@ -106,7 +108,9 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
       - name: Build browser WASM
-        run: wasm-pack build --target web --features browser --out-dir minigraf-wasm
+        run: wasm-pack build --target web --features browser
+      - name: Rename pkg/ → minigraf-wasm/
+        run: mv pkg minigraf-wasm
       - name: Stamp package name and version
         env:
           TAG: ${{ inputs.tag || github.ref_name }}

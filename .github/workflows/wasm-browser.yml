@@ -26,7 +26,10 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build (release)
-        run: wasm-pack build --target web --features browser --out-dir minigraf-wasm
+        run: wasm-pack build --target web --features browser
+
+      - name: Rename pkg/ → minigraf-wasm/
+        run: mv pkg minigraf-wasm
 
       - name: Check gzipped binary size
         run: |
