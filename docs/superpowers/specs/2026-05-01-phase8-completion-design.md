@@ -23,16 +23,18 @@ Bump every versioned manifest to `1.0.0`. The `minigraf-wasm/package.json` versi
 `0.0.0` — the CI stamps the real version from the Git tag at publish time (per the design in
 `docs/superpowers/specs/2026-05-01-wasm-npm-publish-design.md`).
 
-| File | Current | Target |
-|---|---|---|
-| `Cargo.toml` | `0.25.0` | `1.0.0` |
-| `minigraf-ffi/Cargo.toml` | `0.23.0` | `1.0.0` |
-| `minigraf-c/Cargo.toml` | `0.24.0` | `1.0.0` |
-| `minigraf-node/Cargo.toml` | `0.25.0` | `1.0.0` |
-| `minigraf-node/package.json` | `0.25.0` | `1.0.0` |
-| `minigraf-ffi/python/pyproject.toml` | `0.22.0` | `1.0.0` |
-| `Package.swift` (tag URL) | `v0.20.1` | `v1.0.0` |
-| `minigraf-wasm/package.json` | `0.0.0` | unchanged |
+| File | Current | Target | Notes |
+|---|---|---|---|
+| `Cargo.toml` | `0.25.0` | `1.0.0` | |
+| `minigraf-ffi/Cargo.toml` | `0.23.0` | `1.0.0` | |
+| `minigraf-c/Cargo.toml` | `0.24.0` | `1.0.0` | |
+| `minigraf-node/Cargo.toml` | `0.25.0` | `1.0.0` | |
+| `minigraf-node/package.json` | `0.25.0` | `1.0.0` | |
+| `minigraf-ffi/python/pyproject.toml` | `0.22.0` | `1.0.0` | |
+| `minigraf-ffi/java/build.gradle.kts` | `0.23.0` | `1.0.0` | hardcoded fallback (`?: "0.23.0"`); CI uses `$RELEASE_VERSION` env var |
+| `Package.swift` (tag URL) | `v0.20.1` | `v1.0.0` | |
+| `minigraf-wasm/package.json` | `0.0.0` | unchanged | CI stamps version from tag at publish time |
+| `minigraf-ffi/android/build.gradle.kts` | n/a | unchanged | fully env-var driven (`$VERSION`); no hardcoded version |
 
 After all bumps: run `cargo check --workspace` to confirm `Cargo.lock` is consistent.
 
