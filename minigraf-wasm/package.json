@@ -1,0 +1,31 @@
+{
+  "name": "minigraf",
+  "type": "module",
+  "collaborators": [
+    "Aditya Mukhopadhyay"
+  ],
+  "description": "Zero-config, single-file, embedded graph database with bi-temporal Datalog queries",
+  "version": "0.19.0",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/project-minigraf/minigraf"
+  },
+  "files": [
+    "minigraf_bg.wasm",
+    "minigraf.js",
+    "minigraf.d.ts"
+  ],
+  "main": "minigraf.js",
+  "types": "minigraf.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ],
+  "keywords": [
+    "graph",
+    "datalog",
+    "bitemporal",
+    "embedded",
+    "database"
+  ]
+}
