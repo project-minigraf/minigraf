@@ -89,26 +89,26 @@ jobs:
 
       - name: Generate Swift bindings
         run: |
-          mkdir -p swift/Sources/MinigrafKit
+          mkdir -p minigraf-swift/Sources/MinigrafKit
           cargo run -p minigraf-ffi --bin uniffi-bindgen -- generate \
             --library target/aarch64-apple-ios/release/libminigraf_ffi.a \
             --language swift \
-            --out-dir swift/Sources/MinigrafKit/
+            --out-dir minigraf-swift/Sources/MinigrafKit/
 
       - name: Prepare headers for xcframework
         run: |
-          mkdir -p swift/includes
-          cp swift/Sources/MinigrafKit/*.h swift/includes/ 2>/dev/null || true
-          cp swift/Sources/MinigrafKit/*.modulemap swift/includes/ 2>/dev/null || true
+          mkdir -p minigraf-swift/includes
+          cp minigraf-swift/Sources/MinigrafKit/*.h minigraf-swift/includes/ 2>/dev/null || true
+          cp minigraf-swift/Sources/MinigrafKit/*.modulemap minigraf-swift/includes/ 2>/dev/null || true
 
       - name: Assemble xcframework
         run: |
           TAG="${{ inputs.tag || github.ref_name }}"
           xcodebuild -create-xcframework \
             -library target/aarch64-apple-ios/release/libminigraf_ffi.a \
-            -headers swift/includes/ \
+            -headers minigraf-swift/includes/ \
             -library target/aarch64-apple-ios-sim/release/libminigraf_ffi.a \
-            -headers swift/includes/ \
+            -headers minigraf-swift/includes/ \
             -output "MinigrafKit.xcframework"
           zip -r "MinigrafKit-${TAG}.xcframework.zip" MinigrafKit.xcframework
 
@@ -120,7 +120,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: swift-sources
-          path: swift/Sources/MinigrafKit/
+          path: minigraf-swift/Sources/MinigrafKit/
 
   # ── Upload to release + GitHub Packages ──────────────────────────────────────
 
@@ -146,7 +146,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: swift-sources
-          path: swift/Sources/MinigrafKit/
+          path: minigraf-swift/Sources/MinigrafKit/
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -222,7 +222,7 @@ jobs:
           # swift sources already downloaded by actions/download-artifact above).
           TMPDIR_SWIFT=$(mktemp -d)
           cp Package.swift "$TMPDIR_SWIFT/Package.swift"
-          cp -r swift/Sources/MinigrafKit/ "$TMPDIR_SWIFT/MinigrafKit"
+          cp -r minigraf-swift/Sources/MinigrafKit/ "$TMPDIR_SWIFT/MinigrafKit"
 
           # Switch to swift-releases branch so we only push Package.swift and Swift
           # sources — not the full main HEAD (which includes workflow files, requiring
@@ -239,11 +239,11 @@ jobs:
 
           # Apply only the intended changes.
           cp "$TMPDIR_SWIFT/Package.swift" Package.swift
-          mkdir -p swift/Sources/MinigrafKit/
-          cp -r "$TMPDIR_SWIFT/MinigrafKit/." swift/Sources/MinigrafKit/
+          mkdir -p minigraf-swift/Sources/MinigrafKit/
+          cp -r "$TMPDIR_SWIFT/MinigrafKit/." minigraf-swift/Sources/MinigrafKit/
           rm -rf "$TMPDIR_SWIFT"
 
-          git add Package.swift swift/Sources/MinigrafKit/
+          git add Package.swift minigraf-swift/Sources/MinigrafKit/
           git commit -m "chore(release): update Package.swift and Swift bindings for ${TAG}" \
             || echo "Nothing to commit"
           # Push to the unprotected swift-releases branch instead of main.

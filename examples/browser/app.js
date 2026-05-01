@@ -1,9 +1,9 @@
 // Minigraf browser demo — no bundler required.
-// Build first: wasm-pack build --target web --features browser
+// Build first: wasm-pack build --target web --features browser --out-dir minigraf-wasm
 // Then serve from repo root: python3 -m http.server 8080
 // Open: http://localhost:8080/examples/browser/
 
-import init, { BrowserDb } from "../../pkg/minigraf.js";
+import init, { BrowserDb } from "../../minigraf-wasm/minigraf.js";
 
 async function main() {
   // Initialise the WASM module (loads minigraf_bg.wasm).
