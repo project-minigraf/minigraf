@@ -37,7 +37,7 @@
 - ✅ `BrowserDb` public API: `open_in_memory`, `execute`, `checkpoint`, `export_graph`, `import_graph`
 - ✅ `BrowserBufferBackend` — in-memory `StorageBackend` over a flat page buffer, byte-identical to native `.graph` format
 - ✅ `IndexedDbBackend` — page-granular IndexedDB storage via `web-sys` + `wasm-bindgen`
-- ✅ `wasm-pack` build generating `pkg/` with JS glue and TypeScript `.d.ts`
+- ✅ `wasm-pack` build generating `minigraf-wasm/` with JS glue and TypeScript `.d.ts`
 - ✅ `wasm-bindgen-test` suite: 6 browser integration tests (Chrome + Firefox in CI)
 
 **Phase 8.1b Features** (WASI, complete):

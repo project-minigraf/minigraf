@@ -100,7 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `BrowserDb` public API: `open_in_memory()`, `execute()`, `checkpoint()`, `export_graph()`, `import_graph()`
   - `BrowserBufferBackend` — in-memory `StorageBackend` over a flat page buffer, identical byte layout to the native `.graph` format
   - `IndexedDbBackend` — page-granular IndexedDB storage (one 4 KB entry per page); only dirty pages written on checkpoint
-  - `wasm-pack` build workflow (`wasm32-unknown-unknown --features browser`) generating `pkg/` with JS glue and TypeScript definitions
+  - `wasm-pack` build workflow (`wasm32-unknown-unknown --features browser`) generating `minigraf-wasm/` with JS glue and TypeScript definitions
   - `wasm-bindgen-test` browser integration tests (Chrome + Firefox via `wasm-pack test`)
 - **Phase 8.1b** — Server-side WASM (`wasm32-wasip1` / WASI):
   - `FileBackend` verified under WASI's capability-based filesystem (no backend changes needed)

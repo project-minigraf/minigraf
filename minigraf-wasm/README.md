@@ -7,7 +7,7 @@
 [![Coverage](https://codecov.io/gh/project-minigraf/minigraf/branch/main/graph/badge.svg)](https://codecov.io/gh/project-minigraf/minigraf)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/project-minigraf/minigraf#license)
 [![Rust Edition](https://img.shields.io/badge/rust-2024-orange.svg)](https://blog.rust-lang.org/2024/10/17/Rust-1.82.0.html)
-[![Phase](https://img.shields.io/badge/phase-8.3c%20complete-blue.svg)](https://github.com/project-minigraf/minigraf/blob/main/ROADMAP.md)
+[![Phase](https://img.shields.io/badge/phase-7.9%20complete-blue.svg)](https://github.com/project-minigraf/minigraf/blob/main/ROADMAP.md)
 
 > **Embedded graph memory for AI agents, mobile apps, and the browser** — the SQLite of bi-temporal graph databases
 
@@ -40,7 +40,7 @@ Minigraf is a **single-file embedded graph database** that lets you:
 
 ```toml
 [dependencies]
-minigraf = "0.21"
+minigraf = "0.19"
 ```
 
 Or via cargo:
@@ -127,23 +127,7 @@ Pairs well with vector stores (GraphRAG pattern): the vector store answers "what
 
 ### For Mobile Apps
 
-Offline-first storage with retroactive corrections — the bi-temporal model lets you correct a mis-entered value while preserving the original record. Native Kotlin and Swift bindings ship as an Android `.aar` (GitHub Packages) and an iOS `.xcframework` (Swift Package Manager) via [UniFFI](https://github.com/mozilla/uniffi-rs). No Rust required.
-
-```kotlin
-// Android (Kotlin)
-val db = MiniGrafDb.open(context.filesDir.absolutePath + "/myapp.graph")
-db.execute("""(transact [[:alice :person/name "Alice"] [:alice :person/age 30]])""")
-val json = db.execute("(query [:find ?name :where [?e :person/name ?name]])")
-```
-
-```swift
-// iOS (Swift)
-let db = try MiniGrafDb.open(path: docsURL.appendingPathComponent("myapp.graph").path)
-try db.execute(datalog: #"(transact [[:alice :person/name "Alice"] [:alice :person/age 30]])"#)
-let json = try db.execute(datalog: "(query [:find ?name :where [?e :person/name ?name]])")
-```
-
-See the [Mobile Integration](https://github.com/project-minigraf/minigraf/wiki/Use-Cases#mobile-apps) wiki section for full setup and usage docs (Gradle config, SPM integration, error handling, threading).
+Offline-first storage with retroactive corrections — the bi-temporal model lets you correct a mis-entered value while preserving the original record. Phase 8 will ship iOS `.xcframework` and Android `.aar` via UniFFI.
 
 ### For WASM / Browser
 

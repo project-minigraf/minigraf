@@ -28,9 +28,12 @@ jobs:
       - name: Build (release)
         run: wasm-pack build --target web --features browser
 
+      - name: Rename pkg/ → minigraf-wasm/
+        run: mv pkg minigraf-wasm
+
       - name: Check gzipped binary size
         run: |
-          SIZE=$(gzip -c pkg/minigraf_bg.wasm | wc -c)
+          SIZE=$(gzip -c minigraf-wasm/minigraf_bg.wasm | wc -c)
           echo "Gzipped WASM size: ${SIZE} bytes"
           if [ "$SIZE" -gt 1048576 ]; then
             echo "WARNING: exceeds 1 MB gzipped budget (${SIZE} bytes)"
@@ -40,7 +43,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wasm-pkg
-          path: pkg/
+          path: minigraf-wasm/
 
   test:
     needs: build

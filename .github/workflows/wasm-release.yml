@@ -47,10 +47,12 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: Build browser WASM
         run: wasm-pack build --target web --features browser
-      - name: Package pkg/ directory
+      - name: Rename pkg/ → minigraf-wasm/
+        run: mv pkg minigraf-wasm
+      - name: Package minigraf-wasm/ directory
         run: |
           mkdir -p target/wasm-artifacts
-          tar -czf target/wasm-artifacts/minigraf-browser-wasm.tar.gz -C . pkg/
+          tar -czf target/wasm-artifacts/minigraf-browser-wasm.tar.gz -C . minigraf-wasm/
       - uses: actions/upload-artifact@v6
         with:
           name: artifacts-wasm-browser
@@ -86,3 +88,50 @@ jobs:
           gh release upload "$TAG" wasm-artifacts/* \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
+
+  publish-npm:
+    name: Publish @minigraf/browser to npm
+    needs: [build-wasm-browser]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Build browser WASM
+        run: wasm-pack build --target web --features browser
+      - name: Rename pkg/ → minigraf-wasm/
+        run: mv pkg minigraf-wasm
+      - name: Stamp package name and version
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          # Only publish stable releases; pre-release tags (e.g. v1.0.0-rc.1) are rejected here intentionally.
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: VERSION '$VERSION' does not look like a semver string. Aborting."
+            exit 1
+          fi
+          export VERSION
+          node -e "
+            const fs = require('fs');
+            const p = 'minigraf-wasm/package.json';
+            const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+            pkg.name = '@minigraf/browser';
+            pkg.version = process.env.VERSION;
+            fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + '\n');
+          "
+      - name: Publish to npm
+        working-directory: minigraf-wasm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
