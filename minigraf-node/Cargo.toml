@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 napi = { version = "3.8", features = ["napi6"] }
-napi-derive = "2.16"
+napi-derive = "3"
 minigraf = { path = ".." }
 serde_json = "1.0"
 
