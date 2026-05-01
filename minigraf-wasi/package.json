@@ -1,0 +1,34 @@
+{
+  "name": "@minigraf/wasi",
+  "type": "module",
+  "collaborators": [
+    "Aditya Mukhopadhyay"
+  ],
+  "description": "WASI WebAssembly build of Minigraf, a bi-temporal Datalog graph database",
+  "version": "0.0.0",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/project-minigraf/minigraf"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "minigraf-wasi.wasm",
+    "README.md"
+  ],
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "test": "node --test package.test.js"
+  },
+  "keywords": [
+    "graph",
+    "datalog",
+    "bitemporal",
+    "embedded",
+    "database",
+    "wasi",
+    "webassembly"
+  ]
+}
