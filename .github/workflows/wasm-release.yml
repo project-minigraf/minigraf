@@ -108,10 +108,22 @@ jobs:
       - name: Build browser WASM
         run: wasm-pack build --target web --features browser --out-dir minigraf-wasm
       - name: Stamp package name and version
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          TAG="${{ inputs.tag || github.ref_name }}"
           VERSION="${TAG#v}"
-          node -e "const fs=require('fs'); const p='minigraf-wasm/package.json'; const pkg=JSON.parse(fs.readFileSync(p,'utf8')); pkg.name='@minigraf/browser'; pkg.version='${VERSION}'; fs.writeFileSync(p,JSON.stringify(pkg,null,2)+'\n');"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9] ]]; then
+            echo "ERROR: VERSION '$VERSION' does not look like a semver string. Aborting."
+            exit 1
+          fi
+          node -e "
+            const fs = require('fs');
+            const p = 'minigraf-wasm/package.json';
+            const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+            pkg.name = '@minigraf/browser';
+            pkg.version = process.env.VERSION;
+            fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + '\n');
+          "
       - name: Publish to npm
         working-directory: minigraf-wasm
         env:
