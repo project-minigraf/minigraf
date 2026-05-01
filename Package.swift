@@ -24,7 +24,7 @@ let package = Package(
         .target(
             name: "MinigrafKit",
             dependencies: [.target(name: "minigrafFFI")],
-            path: "swift/Sources/MinigrafKit"
+            path: "minigraf-swift/Sources/MinigrafKit"
         ),
     ]
 )
