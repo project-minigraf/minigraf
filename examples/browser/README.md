@@ -7,10 +7,10 @@ Demonstrates `@minigraf/core` running in a plain browser page with no bundler.
 From the repo root:
 
 ```bash
-wasm-pack build --target web --features browser
+wasm-pack build --target web --features browser --out-dir minigraf-wasm
 ```
 
-This produces `pkg/` containing `minigraf.js`, `minigraf_bg.wasm`, and
+This produces `minigraf-wasm/` containing `minigraf.js`, `minigraf_bg.wasm`, and
 `minigraf.d.ts`.
 
 ## Serve
@@ -33,6 +33,6 @@ Open `http://localhost:8080/examples/browser/` in Chrome or Firefox.
 ## Notes
 
 - Data persists across page reloads (stored in IndexedDB).
-- The `pkg/` directory is gitignored — rebuild after pulling changes.
+- The `minigraf-wasm/` directory is committed — the files are up to date after pulling.
 - This package (`@minigraf/core`) is **browser-only**. For Node.js, use
   `@minigraf/node` (Phase 8.3).
