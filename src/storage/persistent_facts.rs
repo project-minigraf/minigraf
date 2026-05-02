@@ -239,14 +239,30 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.committed_fact_pages
             .store(num_fact_pages, Ordering::SeqCst);
 
-        // Compute page-based checksum to verify indexes are valid
-        let computed = {
+        // Compute page-based checksum to verify data integrity.
+        // New files (post-fix): checksum covers ALL pages (facts + indexes).
+        // Old files (pre-fix): checksum covers only fact pages.
+        // Try full checksum first; fall back to fact-only for backwards compat.
+        let needs_rebuild = if num_fact_pages == 0 || header.eavt_root_page == 0 {
+            num_fact_pages > 0 // rebuild if facts exist but no index root
+        } else {
             let backend = self.backend.lock().unwrap();
-            compute_page_checksum(&*backend, 1, num_fact_pages)?
+            let stored = header.index_checksum;
+            // Total data pages: pages 1 through page_count-1 (everything except header)
+            let total_data_pages = header.page_count.saturating_sub(1);
+            let full_checksum = compute_page_checksum(&*backend, 1, total_data_pages)?;
+            if full_checksum == stored {
+                false // new-style checksum matches: facts + indexes verified
+            } else {
+                // Fall back: old files stored checksum over fact pages only
+                let fact_checksum = compute_page_checksum(&*backend, 1, num_fact_pages)?;
+                if fact_checksum == stored {
+                    false // old-style checksum matches: facts verified, indexes unprotected
+                } else {
+                    true // neither matches: corruption detected, rebuild
+                }
+            }
         };
-        let stored = header.index_checksum;
-        let needs_rebuild =
-            num_fact_pages > 0 && (computed != stored || header.eavt_root_page == 0);
 
         // Register CommittedFactReader on FactStorage (before WAL replay)
         let loader: std::sync::Arc<dyn crate::storage::CommittedFactReader> =
@@ -307,7 +323,10 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
                 next3,
             )?;
 
-            // Write v6 header
+            // Write header with full-coverage checksum (facts + indexes)
+            let total_data_pages = next4.saturating_sub(1);
+            let full_checksum = compute_page_checksum(&*backend, 1, total_data_pages)?;
+
             let mut new_header = FileHeader::new();
             new_header.page_count = next4;
             new_header.node_count = all_facts.len() as u64;
@@ -316,7 +335,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             new_header.aevt_root_page = aevt_root;
             new_header.avet_root_page = avet_root;
             new_header.vaet_root_page = vaet_root;
-            new_header.index_checksum = computed;
+            new_header.index_checksum = full_checksum;
             new_header.fact_page_format = FACT_PAGE_FORMAT_PACKED;
             new_header.fact_page_count = num_fact_pages;
 
@@ -533,11 +552,17 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             .store(validated_num_fact_pages, Ordering::SeqCst);
 
         // Verify index integrity via checksum before trusting the old indexes.
-        // If checksum doesn't match, rebuild indexes from facts instead.
+        // Try full checksum (facts + indexes) first, then fact-only for old files.
         let use_old_indexes = validated_num_fact_pages > 0 && header.index_checksum > 0 && {
             let backend = self.backend.lock().unwrap();
-            let computed = compute_page_checksum(&*backend, 1, validated_num_fact_pages)?;
-            computed == header.index_checksum
+            let total_data_pages = header.page_count.saturating_sub(1);
+            let full = compute_page_checksum(&*backend, 1, total_data_pages)?;
+            if full == header.index_checksum {
+                true
+            } else {
+                let fact_only = compute_page_checksum(&*backend, 1, validated_num_fact_pages)?;
+                fact_only == header.index_checksum
+            }
         };
 
         let (eavt, aevt, avet, vaet) = if use_old_indexes {
@@ -668,8 +693,9 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         new_header.aevt_root_page = aevt_root;
         new_header.avet_root_page = avet_root;
         new_header.vaet_root_page = vaet_root;
-        // Recompute the checksum for the new indexes
-        let computed_checksum = compute_page_checksum(&*backend, 1, validated_num_fact_pages)?;
+        // Checksum over all data pages (facts + indexes)
+        let total_data_pages = final_next_free.saturating_sub(1);
+        let computed_checksum = compute_page_checksum(&*backend, 1, total_data_pages)?;
         new_header.index_checksum = computed_checksum;
         new_header.fact_page_format = header.fact_page_format;
         new_header.fact_page_count = validated_num_fact_pages;
@@ -789,9 +815,6 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         // fact pages that the old header's index roots would try to traverse.
         backend.sync()?;
 
-        // CRC32 over ALL fact pages (old committed + newly appended)
-        let checksum = compute_page_checksum(&*backend, 1, new_total_fact_pages)?;
-
         // ── Step C: build sorted index entries for pending facts ────────────────
         let (pending_eavt, pending_aevt, pending_avet, pending_vaet) =
             build_sorted_index_entries(&pending_facts, &new_fact_refs);
@@ -840,6 +863,11 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         // recovery uses the new root pages. All data those roots reference
         // must already be on stable storage.
         backend.sync()?;
+
+        // CRC32 over ALL data pages (facts + indexes), excluding page 0 (header).
+        // This detects corruption in both fact pages and B+tree index pages.
+        let total_data_pages = next4.saturating_sub(1);
+        let checksum = compute_page_checksum(&*backend, 1, total_data_pages)?;
 
         // ── Step E: write header (last write = crash-safe boundary) ─────────────
         let mut header = FileHeader::new(); // version=7
