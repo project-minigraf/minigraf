@@ -174,7 +174,12 @@ See `TEST_COVERAGE.md` for the full per-file breakdown.
 
 ## Key Files for the Next Phase
 
-See `ROADMAP.md` for the current next phase spec, including the relevant files and implementation details.
+Phase 8 is complete — v1.0.0 released. Phase 9 (Ecosystem & Tooling) is next.
+
+Phase 9 relevant areas (see `ROADMAP.md` for full spec):
+- `examples/` — end-to-end annotated examples (agentic memory, offline-first mobile, browser PWA)
+- `.wiki/` — cookbook-style guides for each Phase 9 deliverable
+- `BENCHMARKS.md` — post-1.0 performance baseline updates
 
 ## Testing Conventions
 

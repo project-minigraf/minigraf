@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "minigraf"
-version = "0.22.0"
+version = "1.0.0"
 description = "Zero-config, single-file, embedded graph database with bi-temporal Datalog queries"
 license = { text = "MIT OR Apache-2.0" }
 requires-python = ">=3.9"
