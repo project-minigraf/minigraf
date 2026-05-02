@@ -113,7 +113,7 @@ No other database offers this combination:
 | **Embedded** | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No | ✅ Yes |
 | **Graph Native** | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No |
 | **Rust** | ✅ Yes | ❌ Clojure | ✅ Yes | ❌ Java | ❌ C |
-| **WASM Ready** | ✅ Phase 8.1a/b | ❌ No | ⚠️ Limited | ❌ No | ✅ Yes |
+| **WASM Ready** | ✅ Yes (browser + WASI + 6 targets) | ❌ No | ⚠️ Limited | ❌ No | ✅ Yes |
 
 ## Platform support
 
