@@ -194,7 +194,7 @@ jobs:
           URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/MinigrafKit-${TAG}.xcframework.zip"
           sed -i \
             -e "s|url: \"https://github.com/.*/releases/download/.*/MinigrafKit-.*\\.xcframework\\.zip\"|url: \"${URL}\"|" \
-            -e "s|checksum: \"[0-9a-f]*\"|checksum: \"${CHECKSUM}\"|" \
+            -e "s|checksum: \"[^\"]*\"|checksum: \"${CHECKSUM}\"|" \
             Package.swift
 
       - name: Publish AAR to GitHub Packages
