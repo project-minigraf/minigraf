@@ -135,3 +135,51 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public
+
+  publish-npm-wasi:
+    name: Publish @minigraf/wasi to npm
+    needs: [build-wasm-wasi]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Build WASI binary
+        run: cargo build --target wasm32-wasip1 --release --bin minigraf
+      - name: Stage WASI npm package
+        run: cp target/wasm32-wasip1/release/minigraf.wasm minigraf-wasi/minigraf-wasi.wasm
+      - name: Stamp package version
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          # Only publish stable releases; pre-release tags (e.g. v1.0.0-rc.1) are rejected here intentionally.
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: VERSION '$VERSION' does not look like a semver string. Aborting."
+            exit 1
+          fi
+          export VERSION
+          node -e "
+            const fs = require('fs');
+            const p = 'minigraf-wasi/package.json';
+            const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+            pkg.name = '@minigraf/wasi';
+            pkg.version = process.env.VERSION;
+            fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + '\n');
+          "
+      - name: Test npm package
+        working-directory: minigraf-wasi
+        run: npm test
+      - name: Publish to npm
+        working-directory: minigraf-wasi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
