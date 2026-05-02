@@ -203,10 +203,12 @@ fn test_v6_dead_pages_queries_correct_after_two_checkpoints() {
     populate_and_checkpoint(20, &path);
 
     // Second checkpoint (adds new facts + new B+tree; old index pages are dead)
-    let db = OpenOptions::new().path(&path).open().unwrap();
-    db.execute("(transact [[:e20 :val 20][:e21 :val 21]])")
-        .unwrap();
-    db.checkpoint().unwrap();
+    {
+        let db = OpenOptions::new().path(&path).open().unwrap();
+        db.execute("(transact [[:e20 :val 20][:e21 :val 21]])")
+            .unwrap();
+        db.checkpoint().unwrap();
+    }
 
     // Re-open and verify queries are correct
     let db2 = OpenOptions::new().path(&path).open().unwrap();

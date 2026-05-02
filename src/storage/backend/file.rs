@@ -5,6 +5,86 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
+/// Advisory file lock to prevent multi-process corruption.
+///
+/// Uses a sidecar `.lock` file with exclusive creation semantics.
+/// The lock is released (file deleted) on drop.
+struct FileLock {
+    path: PathBuf,
+}
+
+impl FileLock {
+    /// Attempt to acquire an exclusive lock for the given database path.
+    /// Returns `Err` if another process already holds the lock.
+    ///
+    /// If a stale lock file exists (the holder PID is no longer running),
+    /// it is automatically removed and a new lock is acquired. This handles
+    /// the case where the previous process crashed without cleaning up.
+    fn acquire(db_path: &Path) -> Result<Self> {
+        let lock_path = db_path.with_extension("graph.lock");
+        // create_new fails with AlreadyExists if the lock file is present
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+        {
+            Ok(mut f) => {
+                // Write PID for diagnostics (best-effort)
+                let _ = write!(f, "{}", std::process::id());
+                Ok(FileLock { path: lock_path })
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                // Check if the holder process is still alive
+                let holder = std::fs::read_to_string(&lock_path).unwrap_or_default();
+                if let Ok(pid) = holder.trim().parse::<u32>() {
+                    let our_pid = std::process::id();
+                    if pid == our_pid || !Self::is_process_alive(pid) {
+                        // Stale lock — either our own leaked handle or previous
+                        // process crashed. Remove and retry.
+                        let _ = std::fs::remove_file(&lock_path);
+                        return Self::acquire(db_path);
+                    }
+                }
+                anyhow::bail!(
+                    "Database is locked by another process (lock file: {}, holder PID: {}). \
+                     If no other process is using this database, delete the lock file manually.",
+                    lock_path.display(),
+                    holder.trim()
+                );
+            }
+            Err(e) => {
+                anyhow::bail!(
+                    "Failed to acquire database lock at {}: {}",
+                    lock_path.display(),
+                    e
+                );
+            }
+        }
+    }
+
+    /// Check if a process with the given PID is still running.
+    fn is_process_alive(pid: u32) -> bool {
+        // On Linux/Android, /proc/<pid> exists iff the process is alive.
+        let proc_path = format!("/proc/{}", pid);
+        if std::path::Path::new(&proc_path).exists() {
+            return true;
+        }
+        // On Linux, if /proc exists but /proc/<pid> doesn't, the process is dead.
+        if std::path::Path::new("/proc").exists() {
+            return false;
+        }
+        // On non-procfs systems (macOS, Windows), assume alive (conservative).
+        // Users must manually delete stale lock files on these platforms.
+        true
+    }
+}
+
+impl Drop for FileLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
 /// File-based storage backend for native platforms.
 ///
 /// Stores graph data in a single `.graph` file with a page-based structure:
@@ -22,6 +102,7 @@ pub struct FileBackend {
     file: File,
     header: FileHeader,
     is_new: bool,
+    _lock: FileLock,
 }
 
 impl FileBackend {
@@ -29,8 +110,15 @@ impl FileBackend {
     ///
     /// If the file doesn't exist, creates it with an initial header.
     /// If it exists, validates and loads the header.
+    ///
+    /// Acquires an advisory file lock (sidecar `.graph.lock` file) to prevent
+    /// multi-process corruption. Returns an error if the database is already
+    /// opened by another process.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
+
+        // Acquire advisory lock before touching the database file.
+        let lock = FileLock::acquire(&path)?;
 
         let mut file = OpenOptions::new()
             .read(true)
@@ -71,6 +159,7 @@ impl FileBackend {
             file,
             header,
             is_new,
+            _lock: lock,
         })
     }
 

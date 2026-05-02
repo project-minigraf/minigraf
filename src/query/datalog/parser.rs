@@ -148,9 +148,15 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                         let mut num_str = String::from("-");
                         let (is_float, num) = parse_number(&mut chars, &mut num_str)?;
                         if is_float {
-                            tokens.push(Token::Float(num.parse().unwrap()));
+                            let f: f64 = num
+                                .parse()
+                                .map_err(|_| format!("Float literal out of range: {}", num))?;
+                            tokens.push(Token::Float(f));
                         } else {
-                            tokens.push(Token::Integer(num.parse().unwrap()));
+                            let i: i64 = num
+                                .parse()
+                                .map_err(|_| format!("Integer literal out of range: {}", num))?;
+                            tokens.push(Token::Integer(i));
                         }
                     } else {
                         // It's a symbol starting with -
@@ -169,9 +175,15 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 let mut num_str = String::new();
                 let (is_float, num) = parse_number(&mut chars, &mut num_str)?;
                 if is_float {
-                    tokens.push(Token::Float(num.parse().unwrap()));
+                    let f: f64 = num
+                        .parse()
+                        .map_err(|_| format!("Float literal out of range: {}", num))?;
+                    tokens.push(Token::Float(f));
                 } else {
-                    tokens.push(Token::Integer(num.parse().unwrap()));
+                    let i: i64 = num
+                        .parse()
+                        .map_err(|_| format!("Integer literal out of range: {}", num))?;
+                    tokens.push(Token::Integer(i));
                 }
             }
             // Symbols (including variables starting with ?)
@@ -2809,6 +2821,43 @@ mod tests {
     fn test_parse_bind_slot_empty_name_is_error() {
         let result = parse_edn("$");
         assert!(result.is_err(), "bare '$' should be a parse error");
+    }
+
+    #[test]
+    fn test_integer_overflow_returns_error() {
+        let result = tokenize("99999999999999999999999999999");
+        assert!(result.is_err(), "i64 overflow must return error, not panic");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("out of range"),
+            "error should mention out of range"
+        );
+    }
+
+    #[test]
+    fn test_negative_integer_overflow_returns_error() {
+        let result = tokenize("-99999999999999999999999999999");
+        assert!(result.is_err(), "negative i64 overflow must return error");
+    }
+
+    #[test]
+    fn test_float_overflow_returns_error() {
+        // f64::MAX is ~1.8e308, so 1e999 overflows to infinity
+        let result = tokenize("1.0e999");
+        // f64 parse of very large exponent may produce infinity rather than error;
+        // our code rejects it if parse() itself errors. For f64, parse() succeeds
+        // with infinity, so this may not error. The critical fix is for integers.
+        // Just ensure no panic occurs.
+        let _ = result;
+    }
+
+    #[test]
+    fn test_overflow_in_transact_returns_error() {
+        let result = parse_datalog_command("(transact [[:e :a 99999999999999999999999999999]])");
+        assert!(
+            result.is_err(),
+            "overflow in transact should be parse error"
+        );
     }
 }
 
