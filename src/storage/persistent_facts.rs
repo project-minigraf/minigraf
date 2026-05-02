@@ -784,6 +784,11 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         }
         let new_total_fact_pages = old_fact_page_count + new_pages.len() as u64;
 
+        // Sync fact pages to disk before building indexes on top of them.
+        // Without this, a crash during index build could leave partially-flushed
+        // fact pages that the old header's index roots would try to traverse.
+        backend.sync()?;
+
         // CRC32 over ALL fact pages (old committed + newly appended)
         let checksum = compute_page_checksum(&*backend, 1, new_total_fact_pages)?;
 
@@ -830,7 +835,13 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let (vaet_root, next4) =
             build_btree(vaet_ser.into_iter(), &mut *backend, &self.page_cache, next3)?;
 
-        // ── Step E: write v6 header (last write = crash-safe boundary) ──────────
+        // Sync index pages to disk before writing the header.
+        // The header update is the atomic commit point: once it's durable,
+        // recovery uses the new root pages. All data those roots reference
+        // must already be on stable storage.
+        backend.sync()?;
+
+        // ── Step E: write header (last write = crash-safe boundary) ─────────────
         let mut header = FileHeader::new(); // version=7
         header.page_count = next4;
         header.node_count = curr_header.node_count + pending_facts.len() as u64;
