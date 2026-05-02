@@ -359,3 +359,95 @@ fn test_as_of_counter_time_travel() {
     );
     assert_eq!(result_rows(result3).len(), 3, "as-of 3: name + age + city");
 }
+
+// ============================================================================
+// Regression: same EAV asserted at multiple valid-time intervals must coexist
+// ============================================================================
+
+/// The same (entity, attribute, value) triple asserted with different valid-time
+/// windows must all be visible when querying within their respective windows.
+/// Previously, `net_asserted_facts` collapsed them by keeping only the latest
+/// tx_count, causing earlier valid-time intervals to be silently lost.
+#[test]
+fn test_same_eav_multiple_valid_time_intervals() {
+    let db = Minigraf::in_memory().unwrap();
+
+    // tx_count=1: Alice earns 100000 from 2020-01-01 to 2022-01-01
+    exec(
+        &db,
+        r#"(transact {:valid-from "2020-01-01" :valid-to "2022-01-01"} [[:alice :salary 100000]])"#,
+    );
+
+    // tx_count=2: Alice earns 100000 again from 2024-01-01 to 2026-01-01
+    exec(
+        &db,
+        r#"(transact {:valid-from "2024-01-01" :valid-to "2026-01-01"} [[:alice :salary 100000]])"#,
+    );
+
+    // Query at 2021-06-01 → should find the 2020-2022 assertion
+    let rows_2021 = result_rows(exec(
+        &db,
+        r#"(query [:find ?v :valid-at "2021-06-01" :where [:alice :salary ?v]])"#,
+    ));
+    assert_eq!(rows_2021.len(), 1, "salary visible at 2021-06-01");
+    assert_eq!(rows_2021[0][0], Value::Integer(100000));
+
+    // Query at 2025-01-01 → should find the 2024-2026 assertion
+    let rows_2025 = result_rows(exec(
+        &db,
+        r#"(query [:find ?v :valid-at "2025-01-01" :where [:alice :salary ?v]])"#,
+    ));
+    assert_eq!(rows_2025.len(), 1, "salary visible at 2025-01-01");
+    assert_eq!(rows_2025[0][0], Value::Integer(100000));
+
+    // Query at 2023-01-01 → gap between intervals, should find nothing
+    let rows_2023 = result_rows(exec(
+        &db,
+        r#"(query [:find ?v :valid-at "2023-01-01" :where [:alice :salary ?v]])"#,
+    ));
+    assert_eq!(rows_2023.len(), 0, "no salary in the gap between intervals");
+
+    // Query with :any-valid-time → should see BOTH intervals
+    let rows_any = result_rows(exec(
+        &db,
+        r#"(query [:find ?v :valid-at :any-valid-time :where [:alice :salary ?v]])"#,
+    ));
+    assert_eq!(rows_any.len(), 2, "both valid-time intervals visible with :any-valid-time");
+}
+
+/// Retraction still cancels all prior assertions of the same EAV, but
+/// a re-assertion after the retraction is preserved.
+#[test]
+fn test_retraction_cancels_prior_intervals_reassertion_survives() {
+    let db = Minigraf::in_memory().unwrap();
+
+    // tx_count=1: salary valid 2020-2022
+    exec(
+        &db,
+        r#"(transact {:valid-from "2020-01-01" :valid-to "2022-01-01"} [[:alice :salary 100000]])"#,
+    );
+
+    // tx_count=2: retract the salary (cancels all prior assertions of this EAV)
+    exec(&db, r#"(retract [[:alice :salary 100000]])"#);
+
+    // tx_count=3: re-assert salary for 2024-2026
+    exec(
+        &db,
+        r#"(transact {:valid-from "2024-01-01" :valid-to "2026-01-01"} [[:alice :salary 100000]])"#,
+    );
+
+    // The 2020-2022 assertion should be gone (retracted at tx_count=2)
+    let rows_2021 = result_rows(exec(
+        &db,
+        r#"(query [:find ?v :valid-at "2021-06-01" :where [:alice :salary ?v]])"#,
+    ));
+    assert_eq!(rows_2021.len(), 0, "retracted interval no longer visible");
+
+    // The 2024-2026 re-assertion should survive (tx_count=3 > retraction tx_count=2)
+    let rows_2025 = result_rows(exec(
+        &db,
+        r#"(query [:find ?v :valid-at "2025-01-01" :where [:alice :salary ?v]])"#,
+    ));
+    assert_eq!(rows_2025.len(), 1, "re-assertion after retraction visible");
+    assert_eq!(rows_2025[0][0], Value::Integer(100000));
+}

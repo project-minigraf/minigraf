@@ -450,9 +450,16 @@ pub(crate) fn filter_facts_as_of(facts: Vec<Fact>, as_of: &AsOf) -> Vec<Fact> {
 
 /// Compute the net-asserted view of a fact set.
 ///
-/// For each unique `(entity, attribute, value)` triple, keeps the fact only if
-/// the record with the highest `tx_count` for that triple has `asserted=true`.
-/// Facts whose most recent record is a retraction are excluded entirely.
+/// For each unique `(entity, attribute, value)` triple:
+/// 1. Find the retraction with the highest `tx_count` (if any).
+/// 2. Keep all assertions whose `tx_count` is greater than that retraction.
+/// 3. Deduplicate surviving assertions by `(valid_from, valid_to)`, keeping the
+///    one with the highest `tx_count` for each validity window.
+///
+/// This allows the same EAV triple to be asserted at multiple non-overlapping
+/// valid-time intervals (e.g., salary=$100k valid 2020–2022 AND 2024–2026).
+/// A retraction still cancels all prior assertions of that triple, but
+/// re-assertions after the retraction are preserved.
 ///
 /// Uses [`encode_value`] for the value key to handle floating-point edge cases
 /// (NaN canonicalisation, ±0.0 disambiguation) consistently with the rest of
@@ -462,25 +469,52 @@ pub(crate) fn filter_facts_as_of(facts: Vec<Fact>, as_of: &AsOf) -> Vec<Fact> {
 /// `get_current_value` and `filter_facts_for_query`.
 pub(crate) fn net_asserted_facts(facts: Vec<Fact>) -> Vec<Fact> {
     use std::collections::HashMap;
-    // key: (entity, attribute, canonical value bytes) → fact with highest tx_count
-    let mut latest: HashMap<(EntityId, Attribute, Vec<u8>), Fact> = HashMap::new();
+
+    // Group all facts by (entity, attribute, canonical value bytes).
+    let mut groups: HashMap<(EntityId, Attribute, Vec<u8>), Vec<Fact>> = HashMap::new();
     for fact in facts {
         let key = (
             fact.entity,
             fact.attribute.clone(),
             encode_value(&fact.value),
         );
-        match latest.get(&key) {
-            None => {
-                latest.insert(key, fact);
-            }
-            Some(existing) if fact.tx_count > existing.tx_count => {
-                latest.insert(key, fact);
-            }
-            _ => {}
-        }
+        groups.entry(key).or_default().push(fact);
     }
-    latest.into_values().filter(|f| f.asserted).collect()
+
+    let mut result = Vec::new();
+    for (_key, group) in groups {
+        // Find the highest tx_count among retractions in this group.
+        let max_retract_tx = group
+            .iter()
+            .filter(|f| !f.asserted)
+            .map(|f| f.tx_count)
+            .max()
+            .unwrap_or(0);
+
+        // Keep assertions whose tx_count > max_retract_tx.
+        // (If no retraction exists, max_retract_tx is 0 and all assertions pass.)
+        // Deduplicate by (valid_from, valid_to): keep the highest-tx_count assertion
+        // for each validity window so that re-asserting the same EAV at the same
+        // window acts as an update rather than a duplicate.
+        let mut by_window: HashMap<(i64, i64), Fact> = HashMap::new();
+        for fact in group {
+            if !fact.asserted || fact.tx_count <= max_retract_tx {
+                continue;
+            }
+            let window = (fact.valid_from, fact.valid_to);
+            match by_window.get(&window) {
+                None => {
+                    by_window.insert(window, fact);
+                }
+                Some(existing) if fact.tx_count > existing.tx_count => {
+                    by_window.insert(window, fact);
+                }
+                _ => {}
+            }
+        }
+        result.extend(by_window.into_values());
+    }
+    result
 }
 
 /// Resolve a FactRef to a Fact using the committed reader (for on-disk facts)
