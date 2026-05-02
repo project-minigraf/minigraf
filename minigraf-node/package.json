@@ -1,6 +1,6 @@
 {
   "name": "minigraf",
-  "version": "0.25.0",
+  "version": "1.0.0",
   "description": "Zero-config, single-file, embedded graph database with bi-temporal Datalog queries",
   "main": "index.js",
   "types": "index.d.ts",
@@ -31,9 +31,9 @@
     "@napi-rs/cli": "^3"
   },
   "optionalDependencies": {
-    "@minigraf/linux-x64-gnu": "0.25.0",
-    "@minigraf/linux-arm64-gnu": "0.25.0",
-    "@minigraf/darwin-universal": "0.25.0",
-    "@minigraf/win32-x64-msvc": "0.25.0"
+    "@minigraf/linux-x64-gnu": "1.0.0",
+    "@minigraf/linux-arm64-gnu": "1.0.0",
+    "@minigraf/darwin-universal": "1.0.0",
+    "@minigraf/win32-x64-msvc": "1.0.0"
   }
 }
