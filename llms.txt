@@ -190,7 +190,7 @@ tx.commit()?;
 - `minigraf-wasm/` — wasm-pack output: `@minigraf/browser` npm package (IndexedDB-backed browser WASM)
 - `minigraf-wasi/` — `@minigraf/wasi` npm package: ESM loader, TypeScript declarations, `minigraf-wasi.wasm`
 
-## Performance summary (v0.19.0)
+## Performance summary (v1.0.0)
 
 See [BENCHMARKS.md](https://github.com/project-minigraf/minigraf/blob/main/BENCHMARKS.md) for full tables and methodology. Phase 8 (v0.20.0–v1.0.0) added cross-platform targets without touching the native query or storage path — benchmark numbers are unchanged from Phase 7.
 
