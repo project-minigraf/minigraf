@@ -1,0 +1,83 @@
+name: Retroactive Native Binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag to add native binaries to (e.g. v0.22.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            archive: tar.xz
+          - runner: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            archive: tar.xz
+          - runner: macos-latest
+            target: x86_64-apple-darwin
+            archive: tar.xz
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+            archive: tar.xz
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+    runs-on: ${{ matrix.runner }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install aarch64-linux cross-compiler
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+
+      - name: Package (tar.xz)
+        if: matrix.archive == 'tar.xz'
+        shell: bash
+        run: |
+          ARCHIVE="minigraf-${{ matrix.target }}.tar.xz"
+          tar cJf "$ARCHIVE" -C "target/${{ matrix.target }}/release" minigraf
+          sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
+
+      - name: Package (zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $archive = "minigraf-${{ matrix.target }}.zip"
+          Compress-Archive -Path "target\${{ matrix.target }}\release\minigraf.exe" -DestinationPath $archive
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLower()
+          "$hash  $archive" | Out-File -FilePath "$archive.sha256" -Encoding utf8
+
+      - name: Upload to existing release
+        shell: bash
+        run: |
+          if [ "${{ matrix.archive }}" = "tar.xz" ]; then
+            ARCHIVE="minigraf-${{ matrix.target }}.tar.xz"
+          else
+            ARCHIVE="minigraf-${{ matrix.target }}.zip"
+          fi
+          gh release upload "${{ inputs.version }}" "$ARCHIVE" "$ARCHIVE.sha256" --clobber

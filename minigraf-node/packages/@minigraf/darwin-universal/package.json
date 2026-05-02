@@ -1,0 +1,20 @@
+{
+  "name": "@minigraf/darwin-universal",
+  "version": "0.0.0",
+  "description": "Zero-config, single-file, embedded graph database with bi-temporal Datalog queries (macOS universal)",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "main": "minigraf.darwin-universal.node",
+  "files": [
+    "minigraf.darwin-universal.node"
+  ],
+  "license": "MIT OR Apache-2.0",
+  "engines": {
+    "node": ">=18"
+  }
+}

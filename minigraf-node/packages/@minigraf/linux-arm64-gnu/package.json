@@ -1,0 +1,22 @@
+{
+  "name": "@minigraf/linux-arm64-gnu",
+  "version": "0.0.0",
+  "description": "Zero-config, single-file, embedded graph database with bi-temporal Datalog queries (Linux arm64 GNU)",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "libc": [
+    "glibc"
+  ],
+  "main": "minigraf.linux-arm64-gnu.node",
+  "files": [
+    "minigraf.linux-arm64-gnu.node"
+  ],
+  "license": "MIT OR Apache-2.0",
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -34,7 +34,7 @@ afterEvaluate {
         repositories {
             maven {
                 name = "GitHubPackages"
-                url = uri("https://maven.pkg.github.com/adityamukho/minigraf")
+                url = uri("https://maven.pkg.github.com/project-minigraf/minigraf")
                 credentials {
                     username = System.getenv("GITHUB_ACTOR") ?: ""
                     password = System.getenv("GITHUB_TOKEN") ?: ""

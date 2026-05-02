@@ -5,6 +5,95 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.0.0 — Phase 8 Complete (2026-05-01)
+
+### Milestone
+
+This is the **v1.0.0 release**. The public Rust API and the `.graph` file format are now stable
+and committed to semantic versioning. File format stability is guaranteed from this release.
+
+### Phase 8 summary
+
+All Phase 8 cross-platform targets have shipped:
+
+- **8.1a** — Browser WASM (`BrowserDb`, `IndexedDbBackend`, `@minigraf/browser` on npm) — v0.20.0
+- **8.1b** — Server-side WASM (`wasm32-wasip1` / WASI, Wasmtime/Wasmer CI) — v0.20.0
+- **8.2** — Mobile bindings (Android `.aar` on GitHub Packages, iOS `.xcframework` via SPM, UniFFI) — v0.21.0
+- **8.3a** — Python (`minigraf` on PyPI, pre-built wheels) — v0.22.0
+- **8.3b** — Java/JVM (`io.github.adityamukho:minigraf-jvm` on Maven Central, fat JAR) — v0.23.0
+- **8.3c** — C FFI (`minigraf.h` + platform tarballs on GitHub Releases) — v0.24.0
+- **8.3d** — Node.js (`minigraf` on npm, pre-built `.node` binaries) — v0.25.0
+
+### Also in this release
+
+- `pkg/` renamed to `minigraf-wasm/`, `swift/` renamed to `minigraf-swift/` — consistent
+  top-level naming across all workspace packages (issue #179)
+- `@minigraf/browser` now published to npm on every tagged release (issue #179)
+- `@minigraf/wasi` published to npm on every tagged release (issue #178) — WASI binary packaged for Node.js WASI consumers
+- Per-platform READMEs added: `minigraf-wasm/`, `minigraf-node/`, `minigraf-ffi/python/`,
+  `minigraf-c/`, `minigraf-ffi/java/`
+
+### Tests
+
+795 tests passing (788 passing + 7 ignored: confirmed `or`+neg-cycle stratification bug,
+deferred to post-1.0 backlog).
+
+## v0.25.0 — 2026-04-26
+
+### Added
+- **Phase 8.3d**: Node.js bindings published to npm as `minigraf`.
+  Install with `npm install minigraf`. No build step required — prebuilt
+  `.node` binaries for Linux x86_64/aarch64, macOS universal2, Windows x86_64.
+  API: `new MiniGrafDb(path)`, `MiniGrafDb.inMemory()`, `.execute(datalog)`,
+  `.checkpoint()`. Full TypeScript definitions included.
+
+## v0.24.0 — Phase 8.3c: C Bindings (2026-04-26)
+
+### Added
+- **Phase 8.3c**: C bindings distributed as GitHub Releases tarballs.
+  Download `minigraf-c-v0.24.0-<platform>.tar.gz` (Linux/macOS) or `.zip` (Windows)
+  from the release page. Each archive contains the prebuilt shared library plus
+  `minigraf.h`. API: `minigraf_open`, `minigraf_open_in_memory`, `minigraf_execute`,
+  `minigraf_string_free`, `minigraf_checkpoint`, `minigraf_close`, `minigraf_last_error`.
+  Memory contract mirrors SQLite: `minigraf_execute` returns a heap-allocated JSON string;
+  call `minigraf_string_free` to release it.
+- `minigraf-c/`: new workspace crate (`cdylib` + `staticlib`) — `Cargo.toml`, `src/lib.rs`
+- `minigraf-c/cbindgen.toml`: cbindgen 0.29.2 configuration
+- `minigraf-c/include/minigraf.h`: committed stable header (cbindgen-generated)
+- `.github/workflows/c-ci.yml`: PR test matrix on 4 platforms + header drift check
+- `.github/workflows/c-release.yml`: release workflow — builds + packages platform tarballs,
+  uploads to GitHub Releases
+
+795 tests.
+
+## v0.23.0 — Phase 8.3b: Java Desktop JVM Bindings (2026-04-25)
+
+### Added
+- **Phase 8.3b**: Java desktop JVM bindings published to Maven Central as
+  `io.github.adityamukho:minigraf-jvm:0.23.0`. Add to Gradle:
+  `implementation("io.github.adityamukho:minigraf-jvm:0.23.0")`.
+  Fat JAR with embedded natives for Linux x86_64/aarch64, macOS universal2,
+  Windows x86_64. API: `MiniGrafDb.open(path)`, `MiniGrafDb.openInMemory()`,
+  `.execute(datalog)`, `.checkpoint()`.
+- `minigraf-ffi/java/`: Gradle 8.11 project — `build.gradle.kts`, `settings.gradle.kts`,
+  `NativeLoader.kt` (runtime native extraction from JAR resources), and Gradle wrapper
+- `minigraf-ffi/java/src/test/kotlin/.../BasicTest.kt`: JUnit 5 suite (in-memory, transact/query,
+  error handling, file-backed persistence)
+- `.github/workflows/java-ci.yml`: PR test matrix on 4 platforms (Linux x86_64, Linux aarch64,
+  macOS universal2, Windows x86_64)
+- `.github/workflows/java-release.yml`: release workflow — cross-compiles natives on 4 platforms,
+  assembles fat JAR, publishes to Maven Central via Sonatype OSSRH
+
+795 tests.
+
+## v0.22.0 — Phase 8.3a: Python Bindings (2026-04-25)
+
+### Added
+- **Phase 8.3a**: Python bindings published to PyPI as `minigraf`.
+  Install with `pip install minigraf`. API: `MiniGrafDb.open(path)`,
+  `MiniGrafDb.open_in_memory()`, `.execute(datalog)`, `.checkpoint()`.
+  Pre-built wheels for Linux x86_64/aarch64, macOS universal2, Windows x86_64.
+
 ## v0.21.1 — Patch: mobile/WASM docs (2026-04-19)
 
 ### Changed
@@ -44,7 +133,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `BrowserDb` public API: `open_in_memory()`, `execute()`, `checkpoint()`, `export_graph()`, `import_graph()`
   - `BrowserBufferBackend` — in-memory `StorageBackend` over a flat page buffer, identical byte layout to the native `.graph` format
   - `IndexedDbBackend` — page-granular IndexedDB storage (one 4 KB entry per page); only dirty pages written on checkpoint
-  - `wasm-pack` build workflow (`wasm32-unknown-unknown --features browser`) generating `pkg/` with JS glue and TypeScript definitions
+  - `wasm-pack` build workflow (`wasm32-unknown-unknown --features browser`) generating `minigraf-wasm/` with JS glue and TypeScript definitions
   - `wasm-bindgen-test` browser integration tests (Chrome + Firefox via `wasm-pack test`)
 - **Phase 8.1b** — Server-side WASM (`wasm32-wasip1` / WASI):
   - `FileBackend` verified under WASI's capability-based filesystem (no backend changes needed)

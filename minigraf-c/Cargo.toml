@@ -1,0 +1,13 @@
+[package]
+name = "minigraf-c"
+version = "1.0.0"
+edition = "2024"
+description = "C bindings for Minigraf — stable C API with cbindgen-generated header"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+minigraf = { path = ".." }
+serde_json = "1.0"

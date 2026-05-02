@@ -1,0 +1,92 @@
+name: Python Release
+
+on:
+  push:
+    tags:
+      - '**[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish wheels for (e.g. "v0.22.0")'
+        required: false
+        type: string
+      checkout_ref:
+        description: 'Git ref to build from (e.g. "v0.22.0"). Defaults to triggered ref. Use for retroactive publishes from main.'
+        required: false
+        type: string
+
+jobs:
+  build-wheels:
+    name: Build wheel (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            build_args: --release --manylinux manylinux_2_34 --out dist
+          - os: ubuntu-24.04-arm
+            build_args: --release --manylinux manylinux_2_34 --out dist
+          - os: macos-14
+            build_args: --release --target universal2-apple-darwin --out dist
+          - os: windows-latest
+            build_args: --release --out dist
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.checkout_ref || github.ref }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin  # needed for universal2 on macos-14 (arm)
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install maturin
+        run: pip install "maturin>=1.5"
+
+      - name: Set Python package version from release tag
+        shell: bash
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          python3 -c "import re, pathlib; p = pathlib.Path('minigraf-ffi/python/pyproject.toml'); p.write_text(re.sub(r'^version = .*', 'version = \"${VERSION}\"', p.read_text(), flags=re.MULTILINE))"
+
+      - name: Build wheel (workaround for maturin workspace uniffi-bindgen bug)
+        working-directory: minigraf-ffi/python
+        run: bash build.sh build ${{ matrix.build_args }}
+        shell: bash
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-wheel-${{ matrix.os }}
+          path: minigraf-ffi/python/dist/*.whl
+
+  publish:
+    name: Publish to PyPI
+    needs: build-wheels
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/minigraf
+    permissions:
+      id-token: write  # for PyPI trusted publishing
+
+    steps:
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: python-wheel-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/

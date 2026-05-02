@@ -1,5 +1,11 @@
 # Minigraf Benchmarks
 
+## Phase 8 Note
+
+Phase 8 (v0.20.0–v1.0.0) added cross-platform targets: Browser WASM, WASI, Android, iOS,
+Python, Node.js, Java, and C bindings. No changes were made to the native query or storage path.
+All benchmark numbers below are unchanged from Phase 7 (v0.19.0).
+
 **Live benchmark history**: [https://bencher.dev/perf/minigraf/plots](https://bencher.dev/perf/minigraf/plots)
 
 Benchmark results for Minigraf. Core query benchmarks were updated in v0.13.1 (Phase 7.4 — query path snapshot fix). New benchmark groups for window functions, temporal metadata, UDFs, count-distinct, and regex filter added in v0.17.0 (Phase 7.8). Negation, disjunction, aggregation, and expression benchmarks were first run on v0.13.0 and selectively re-run on v0.13.1. Throughput reporting (facts/sec, aggregate ops/sec), retraction benchmarks, prepared query benchmarks, and checkpoint@1M added in v0.20.1.

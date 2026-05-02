@@ -89,26 +89,26 @@ jobs:
 
       - name: Generate Swift bindings
         run: |
-          mkdir -p swift/Sources/MinigrafKit
+          mkdir -p minigraf-swift/Sources/MinigrafKit
           cargo run -p minigraf-ffi --bin uniffi-bindgen -- generate \
             --library target/aarch64-apple-ios/release/libminigraf_ffi.a \
             --language swift \
-            --out-dir swift/Sources/MinigrafKit/
+            --out-dir minigraf-swift/Sources/MinigrafKit/
 
       - name: Prepare headers for xcframework
         run: |
-          mkdir -p swift/includes
-          cp swift/Sources/MinigrafKit/*.h swift/includes/ 2>/dev/null || true
-          cp swift/Sources/MinigrafKit/*.modulemap swift/includes/ 2>/dev/null || true
+          mkdir -p minigraf-swift/includes
+          cp minigraf-swift/Sources/MinigrafKit/*.h minigraf-swift/includes/ 2>/dev/null || true
+          cp minigraf-swift/Sources/MinigrafKit/*.modulemap minigraf-swift/includes/ 2>/dev/null || true
 
       - name: Assemble xcframework
         run: |
           TAG="${{ inputs.tag || github.ref_name }}"
           xcodebuild -create-xcframework \
             -library target/aarch64-apple-ios/release/libminigraf_ffi.a \
-            -headers swift/includes/ \
+            -headers minigraf-swift/includes/ \
             -library target/aarch64-apple-ios-sim/release/libminigraf_ffi.a \
-            -headers swift/includes/ \
+            -headers minigraf-swift/includes/ \
             -output "MinigrafKit.xcframework"
           zip -r "MinigrafKit-${TAG}.xcframework.zip" MinigrafKit.xcframework
 
@@ -120,7 +120,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: swift-sources
-          path: swift/Sources/MinigrafKit/
+          path: minigraf-swift/Sources/MinigrafKit/
 
   # ── Upload to release + GitHub Packages ──────────────────────────────────────
 
@@ -146,7 +146,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: swift-sources
-          path: swift/Sources/MinigrafKit/
+          path: minigraf-swift/Sources/MinigrafKit/
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -188,31 +188,14 @@ jobs:
         run: |
           XCFW_ZIP=$(ls artifacts/MinigrafKit-*.xcframework.zip)
           CHECKSUM=$(shasum -a 256 "$XCFW_ZIP" | awk '{print $1}')
+          # The xcframework zip lives on the main release (TAG).
+          # Package.swift itself lives on the swift-releases branch tagged swift-TAG,
+          # so SPM consumers use the swift-TAG reference for the Swift package.
           URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/MinigrafKit-${TAG}.xcframework.zip"
           sed -i \
             -e "s|url: \"https://github.com/.*/releases/download/.*/MinigrafKit-.*\\.xcframework\\.zip\"|url: \"${URL}\"|" \
-            -e "s|checksum: \"[0-9a-f]*\"|checksum: \"${CHECKSUM}\"|" \
+            -e "s|checksum: \"[^\"]*\"|checksum: \"${CHECKSUM}\"|" \
             Package.swift
-
-      - name: Commit Package.swift update and Swift sources, then move tag
-        env:
-          TAG: ${{ inputs.tag || github.ref_name }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name "github-actions[bot]"
-          git add Package.swift swift/Sources/MinigrafKit/
-          git commit -m "chore(release): update Package.swift and Swift bindings for ${TAG}" \
-            || echo "Nothing to commit"
-          # Push to the unprotected swift-releases branch instead of main.
-          # SPM resolves packages by tag, not by branch, so the tag pointing
-          # to this commit is all that matters for Swift package consumers.
-          git push origin HEAD:swift-releases --force
-          NEW_SHA=$(git rev-parse HEAD)
-          gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
-            -X PATCH \
-            -f sha="$NEW_SHA" \
-            -F force=true
 
       - name: Publish AAR to GitHub Packages
         env:
@@ -226,3 +209,57 @@ jobs:
              minigraf-ffi/android/build/outputs/aar/minigraf-android-release.aar
           cd minigraf-ffi/android
           ./gradlew publishReleasePublicationToGitHubPackagesRepository
+
+      - name: Commit Package.swift update and Swift sources, then create swift-TAG
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+
+          # Save the files we intend to push (Package.swift already updated by sed,
+          # swift sources already downloaded by actions/download-artifact above).
+          TMPDIR_SWIFT=$(mktemp -d)
+          cp Package.swift "$TMPDIR_SWIFT/Package.swift"
+          cp -r minigraf-swift/Sources/MinigrafKit/ "$TMPDIR_SWIFT/MinigrafKit"
+
+          # Switch to swift-releases branch so we only push Package.swift and Swift
+          # sources — not the full main HEAD (which includes workflow files, requiring
+          # `workflows` scope that GITHUB_TOKEN cannot be granted via permissions:).
+          if git fetch origin swift-releases 2>/dev/null; then
+            # -f: discard local changes (Package.swift modified by sed, swift sources
+            # untracked from artifact download) — we've already saved them to TMPDIR.
+            git checkout -fB swift-releases origin/swift-releases
+          else
+            # First-ever release: start a clean orphan branch with no history.
+            git checkout --orphan swift-releases
+            git rm -rf . --quiet 2>/dev/null || true
+          fi
+
+          # Apply only the intended changes.
+          cp "$TMPDIR_SWIFT/Package.swift" Package.swift
+          mkdir -p minigraf-swift/Sources/MinigrafKit/
+          cp -r "$TMPDIR_SWIFT/MinigrafKit/." minigraf-swift/Sources/MinigrafKit/
+          rm -rf "$TMPDIR_SWIFT"
+
+          git add Package.swift minigraf-swift/Sources/MinigrafKit/
+          git commit -m "chore(release): update Package.swift and Swift bindings for ${TAG}" \
+            || echo "Nothing to commit"
+          # Push to the unprotected swift-releases branch instead of main.
+          # SPM resolves packages by the swift-TAG (e.g. swift-v0.25.0) which points
+          # to this commit — the original TAG is left on the main branch so that all
+          # other language workflows (Python, Java, C, Node.js) can check out the
+          # full source tree.
+          git push origin swift-releases --force
+          NEW_SHA=$(git rev-parse HEAD)
+          # Create (or update) the swift-TAG reference on the swift-releases commit.
+          SWIFT_TAG="swift-${TAG}"
+          gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -X POST \
+            -f ref="refs/tags/${SWIFT_TAG}" \
+            -f sha="$NEW_SHA" 2>/dev/null \
+          || gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${SWIFT_TAG}" \
+            -X PATCH \
+            -f sha="$NEW_SHA" \
+            -F force=true

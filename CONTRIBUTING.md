@@ -16,7 +16,7 @@ Thank you for your interest in contributing. Minigraf is a hobby project with a 
 - Performance improvements with benchmarks showing the gain
 - Documentation improvements and example additions
 - Test coverage improvements (especially error-path coverage)
-- Cross-platform compatibility fixes (Linux, macOS, Windows, eventually WASM/mobile)
+- Cross-platform compatibility fixes (Linux, macOS, Windows, WASM, mobile, language bindings)
 
 ## What We Will Not Merge
 
@@ -31,7 +31,7 @@ Thank you for your interest in contributing. Minigraf is a hobby project with a 
 
 ```bash
 # Clone and build
-git clone https://github.com/adityamukho/minigraf.git
+git clone https://github.com/project-minigraf/minigraf.git
 cd minigraf
 cargo build
 
@@ -69,7 +69,7 @@ Run branch coverage and open the HTML report:
 cargo llvm-cov --branch --open
 ```
 
-The Phase 7.5 target is ≥90% branch coverage on `src/query/datalog/` modules. Re-run after adding tests to confirm progress.
+Run branch coverage to check overall project health before submitting a PR.
 
 ## Code Standards
 
@@ -101,40 +101,16 @@ Before submitting, ask yourself:
 
 If you answer "yes" to the last two questions, reconsider. If in doubt, open an issue and discuss first.
 
-## Pre-Publishing Checklist (crates.io)
+## Release Process
 
-**Do not publish before Phase 7.8.** Before publishing, verify all of the following:
+Releases are managed by the project maintainer. The process is documented in issue #133 and the
+`docs/superpowers/specs/` design files. For each release:
 
-### Minimum Bar
-- [x] Phase 6.4 benchmarks complete (`BENCHMARKS.md`)
-- [x] Phase 6.5 complete — on-disk B+tree, file format v6
-- [x] Phase 7.1 complete — stratified negation, 407 tests passing
-- [ ] Checkpoint-during-crash recovery exercised (Phase 7.5)
-- [ ] Error-path coverage ≥90% (currently ~82%) (Phase 7.5)
-- [x] GitHub Discussions enabled
-
-### API Cleanup (Phase 7.8)
-- [ ] Narrow `lib.rs` exports — expose only `Minigraf`, `WriteTransaction`, and query/result types; hide `PersistentFactStorage`, `FileHeader`, `PAGE_SIZE`, `Repl`, `Wal`, etc.
-- [x] Remove dead `clap` dependency ✅
-
-### Crate Metadata (`Cargo.toml`)
-- [x] `repository`, `keywords`, `categories`, `readme`, `documentation` fields set
-- [ ] Verify `description` is accurate and compelling (Phase 7.8)
-
-### Documentation (Phase 7.8)
-- [ ] All public API items have rustdoc comments with examples
-- [ ] `README.md` quick-start example compiles and runs
-- [ ] `CHANGELOG.md` up to date
-
-### Quality Gates (Phase 7.8)
-- [ ] `cargo test` passes on Linux, macOS, Windows (CI matrix)
-- [ ] `cargo clippy -- -D warnings` passes
-- [ ] `cargo doc --no-deps` builds without warnings
-- [ ] No `unwrap()`/`expect()` in library code paths (tests and binary are fine)
-
-### Versioning
-- [ ] Publish as `0.x` — no backwards-compat promise until v1.0.0 (Phase 7.8)
-- [ ] Stable API target is v1.0.0 — after Phase 8 cross-platform work
+1. All prerequisite issue PRs merged and CI green
+2. Version bumped consistently across all manifests (`Cargo.toml`, `package.json`, `pyproject.toml`, `build.gradle.kts`, `Package.swift`)
+3. `cargo check --workspace` passes cleanly
+4. All docs synced (see `CLAUDE.md` — "Sync all docs at phase completion")
+5. Tag pushed — CI publishes to crates.io, PyPI, npm, and Maven Central automatically
 
 ## Code of Conduct
 

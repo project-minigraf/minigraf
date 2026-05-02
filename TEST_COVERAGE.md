@@ -1,6 +1,6 @@
 # Minigraf Test Coverage Report
 
-**Last Updated**: Phase 8.1 COMPLETE - WebAssembly (browser + WASI), 795 tests ✅
+**Last Updated**: Phase 8 COMPLETE — v1.0.0 (May 2026), 795 tests ✅
 
 ## Test Summary
 
@@ -31,13 +31,70 @@
 
 **Status**: ✅ **All 788 tests passing** (7 ignored: confirmed or+neg-cycle stratification bug)
 
+## Phase 8 Completion Status: ✅ COMPLETE — v1.0.0
+
+All Phase 8 sub-phases complete. See per-phase sections below.
+
+---
+
+## Phase 8.3d Completion Status: ✅ COMPLETE
+
+**Phase 8.3d Features** (Node.js, complete — v0.25.0):
+- ✅ `minigraf-node/src/lib.rs` — napi-rs bindings: `MiniGrafDb` class (open, inMemory, execute, checkpoint)
+- ✅ `minigraf-node/package.json` — `minigraf` npm package; prebuilt `.node` binaries for Linux x86_64/aarch64, macOS universal2, Windows x86_64
+- ✅ `node-ci.yml` — PR test matrix on 4 platforms
+- ✅ `node-release.yml` — cross-compile, assemble platform packages, publish to npm on tag
+
+---
+
+## Phase 8.3c Completion Status: ✅ COMPLETE
+
+**Phase 8.3c Features** (C FFI, complete — v0.24.0):
+- ✅ `minigraf-c/src/lib.rs` — `cdylib` + `staticlib`; 7 exported functions: `minigraf_open`, `minigraf_open_in_memory`, `minigraf_execute`, `minigraf_string_free`, `minigraf_checkpoint`, `minigraf_close`, `minigraf_last_error`
+- ✅ `minigraf-c/include/minigraf.h` — committed stable header (cbindgen-generated); header drift check in CI
+- ✅ `c-ci.yml` — PR test matrix on 4 platforms + header drift check
+- ✅ `c-release.yml` — builds platform tarballs (`.tar.gz` / `.zip`), uploads to GitHub Releases
+
+---
+
+## Phase 8.3b Completion Status: ✅ COMPLETE
+
+**Phase 8.3b Features** (Java/JVM, complete — v0.23.0):
+- ✅ `minigraf-ffi/java/` — Gradle 8.11 project: `build.gradle.kts`, `settings.gradle.kts`, `NativeLoader.kt` (runtime native extraction from JAR resources)
+- ✅ `minigraf-ffi/java/src/test/kotlin/.../BasicTest.kt` — JUnit 5 suite: in-memory, transact/query, error handling, file-backed persistence
+- ✅ `java-ci.yml` — PR test matrix on 4 platforms (Linux x86_64, Linux aarch64, macOS universal2, Windows x86_64)
+- ✅ `java-release.yml` — cross-compiles natives, assembles fat JAR, publishes to Maven Central via NMCP
+
+---
+
+## Phase 8.3a Completion Status: ✅ COMPLETE
+
+**Phase 8.3a Features** (Python, complete — v0.22.0):
+- ✅ `minigraf-ffi/python/` — maturin project: `pyproject.toml`, Python extension module via UniFFI
+- ✅ Pre-built wheels for Linux x86_64/aarch64, macOS universal2, Windows x86_64; no Rust toolchain required by end users
+- ✅ `python-ci.yml` — PR test matrix on 4 platforms
+- ✅ `python-release.yml` — builds wheels, publishes to PyPI on tag
+
+---
+
+## Phase 8.2 Completion Status: ✅ COMPLETE
+
+**Phase 8.2 Features** (Mobile, complete — v0.21.0):
+- ✅ `minigraf-ffi/src/lib.rs` — UniFFI 0.31 bindings: `MiniGrafDb` (open, openInMemory, execute, checkpoint), `MiniGrafError` (Parse, Query, Storage, Other)
+- ✅ Android `.aar` release artifact — published to GitHub Packages (`io.github.adityamukho:minigraf-android`)
+- ✅ iOS `.xcframework` release artifact — distributed via Swift Package Manager (`Package.swift` at repo root)
+- ✅ `mobile.yml` CI — cross-compiles Android targets with `cargo-ndk`, generates Kotlin/Swift UniFFI bindings, assembles AAR and xcframework, publishes both on every tag
+- ✅ `docs-check` CI job added to `rust.yml` and `release.yml` — gates releases on `cargo doc --all-features` passing cleanly
+
+---
+
 ## Phase 8.1 Completion Status: ✅ COMPLETE
 
 **Phase 8.1a Features** (browser WASM, complete):
 - ✅ `BrowserDb` public API: `open_in_memory`, `execute`, `checkpoint`, `export_graph`, `import_graph`
 - ✅ `BrowserBufferBackend` — in-memory `StorageBackend` over a flat page buffer, byte-identical to native `.graph` format
 - ✅ `IndexedDbBackend` — page-granular IndexedDB storage via `web-sys` + `wasm-bindgen`
-- ✅ `wasm-pack` build generating `pkg/` with JS glue and TypeScript `.d.ts`
+- ✅ `wasm-pack` build generating `minigraf-wasm/` with JS glue and TypeScript `.d.ts`
 - ✅ `wasm-bindgen-test` suite: 6 browser integration tests (Chrome + Firefox in CI)
 
 **Phase 8.1b Features** (WASI, complete):

@@ -4,13 +4,16 @@
 
 Minigraf is the SQLite of graph databases: zero configuration, one `.graph` file, embedded as a library. It stores facts in an Entity-Attribute-Value (EAV) model and queries them with Datalog, including recursive rules for graph traversal and stratified negation (`not` / `not-join`). Every fact carries two independent time dimensions (transaction time and valid time), enabling full bi-temporal time travel.
 
-**Current version**: 0.14.0 (pre-1.0 — API and file format may change before v1.0)
-**Maturity**: See [README](https://github.com/adityamukho/minigraf/blob/main/README.md) for current phase and [ROADMAP](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md) for the full plan. ACID + WAL are production-quality. Covering indexes (EAVT/AEVT/AVET/VAET), packed page storage, LRU page cache, and on-disk B+tree indexes are complete. Stratified negation, scalar aggregation, arithmetic/predicate expression clauses, and disjunction (`or`/`or-join`) are complete. Cross-feature integration tests and error-path coverage complete; ~86–89% branch coverage, 617 tests (Phase 7.5). Not recommended for production use until v1.0 (file format stability guaranteed only after Phase 8).
+**Current version**: 1.0.0
+**Maturity**: ACID + WAL are production-quality. Covering indexes (EAVT/AEVT/AVET/VAET), packed page storage, LRU page cache, and on-disk B+tree indexes are complete. Stratified negation, scalar aggregation, arithmetic/predicate expression clauses, disjunction (`or`/`or-join`), window functions (`sum/count/min/max/avg/rank/row-number`), user-defined functions, and prepared statements are complete. Phase 8 complete: Browser WASM (`@minigraf/browser` npm), WASI (`wasm32-wasip1`, `@minigraf/wasi` npm), Android/iOS (UniFFI), Python (PyPI), Java/JVM (Maven Central), C FFI, and Node.js (npm) all ship at v1.0.0. File format stable from v1.0.0. 795 tests.
 
 ## Use for
 
 - **Agent memory with provenance**: Store facts an agent asserted, when it asserted them, and query any past state. Retract and correct beliefs without losing history. Rewind to the exact knowledge state at the moment of a bad decision for root cause analysis.
 - **Verifiable agent reasoning**: Preserve an agent's full decision-making lineage. Post-hoc audits can reconstruct what the agent believed at any transaction counter or timestamp.
+- **Browser agent memory**: Run entirely client-side with `@minigraf/browser` (npm). Persists to IndexedDB; portable `.graph` files are byte-identical to native.
+- **Mobile offline-first applications**: Android (Kotlin/Java) and iOS (Swift) native bindings via UniFFI. No Rust required. Same single-file `.graph` format.
+- **Python/Node.js/Java scripting and server-side embedding**: Pre-built packages on PyPI, npm, and Maven Central. No build step required.
 - **Task planning agents**: Model sub-task DAGs as a graph. Update dependencies and status over time. Query historical task states with `:as-of`.
 - **Code dependency / debugging agents**: Embed call graphs or module dependency graphs; traverse with recursive Datalog rules.
 - **Audit-trail applications**: Compliance-grade history where both "what was recorded when" (transaction time) and "what was true when" (valid time) matter independently.
@@ -52,13 +55,16 @@ Query either axis independently or together:
 The unit of storage is `(entity, attribute, value, valid_from, valid_to, tx_id, tx_count, asserted)`. Entities are UUIDs. Attributes are keywords (`:person/name`). Values are strings, integers, floats, booleans, entity refs, keywords, or null.
 
 **Datalog queries**
-Pattern matching with variable unification. Recursive rules use semi-naive fixed-point evaluation. Transitive closure and cycle-safe graph traversal are first-class. Stratified negation (`not` / `not-join`), scalar aggregation (`count`, `sum`, `min`, `max`, `count-distinct`, `sum-distinct`), arithmetic/predicate expression clauses (`[(< ?age 30)]`, `[(+ ?a ?b) ?c]`), and disjunction (`or` / `or-join`) are all supported.
+Pattern matching with variable unification. Recursive rules use semi-naive fixed-point evaluation. Transitive closure and cycle-safe graph traversal are first-class. Stratified negation (`not` / `not-join`), scalar aggregation (`count`, `sum`, `min`, `max`, `count-distinct`, `sum-distinct`), arithmetic/predicate expression clauses (`[(< ?age 30)]`, `[(+ ?a ?b) ?c]`), disjunction (`or` / `or-join`), window functions (`sum/count/min/max/avg/rank/row-number :over (:partition-by … :order-by …)`), and user-defined functions (custom aggregates + predicates via `FunctionRegistry`) are all supported.
+
+**Prepared statements**
+Parse and plan a query once; execute thousands of times with different bind values. `$slot` tokens accepted in entity, value, `:as-of`, and `:valid-at` positions. `BindValue` variants: `Entity(Uuid)`, `Val(Value)`, `TxCount(u64)`, `Timestamp(i64)`, `AnyValidTime`.
 
 **ACID transactions**
 `begin_write()` → `commit()` / `rollback()`. Fact-level WAL with CRC32 protection. Crash recovery on open.
 
 **Single-file storage**
-Page-based `.graph` file (4 KB pages, magic `MGRF`, format v6). Packed fact pages (~25 facts/page). On-disk B+tree indexes (EAVT/AEVT/AVET/VAET) with LRU page cache. WAL sidecar (`.wal`) deleted on clean close. Automatic migration from v1–v5. Endian-safe, cross-platform.
+Page-based `.graph` file (4 KB pages, magic `MGRF`, format v7). Packed fact pages (~25 facts/page). On-disk B+tree indexes (EAVT/AEVT/AVET/VAET) with LRU page cache. WAL sidecar (`.wal`) deleted on clean close. Automatic migration from v1–v6. Endian-safe, cross-platform. File format stable from v1.0.0.
 
 ## API (Rust)
 
@@ -102,6 +108,14 @@ db.execute("(query [:find ?status :as-of 10 :where [:agent-1 :employment/status 
 db.execute(r#"(query [:find ?status :valid-at "2024-06-01"
                       :where [:agent-1 :employment/status ?status]])"#)?;
 
+// Prepared statement — parse once, execute many times with $slot bind tokens
+use minigraf::BindValue;
+let pq = db.prepare(
+    "(query [:find ?fact :as-of $tx :where [$entity :belief/fact ?fact]])"
+)?;
+let r1 = pq.execute(&[("tx", BindValue::TxCount(5)), ("entity", BindValue::Entity(agent_id))])?;
+let r2 = pq.execute(&[("tx", BindValue::TxCount(10)), ("entity", BindValue::Entity(agent_id))])?;
+
 // Explicit transaction
 let mut tx = db.begin_write()?;
 tx.execute(r#"(retract [[:agent-1 :belief/fact "Paris is in France"]])"#)?;
@@ -124,18 +138,22 @@ tx.commit()?;
 (query [:find ?var ...                        ;; plain variable
               (count ?e)                      ;; aggregate: count, count-distinct,
               (sum ?salary)                   ;;   sum, sum-distinct, min, max
+              (sum ?v :over (:order-by ?v))   ;; window: sum/count/min/max/avg/rank/row-number
         :with ?grouping-var ...               ;; optional, extra grouping variables
         :as-of <tx_count|"ISO8601">           ;; optional, transaction time
         :valid-at <"ISO8601"|:any-valid-time> ;; optional, valid time
         :where [<e> <a> <v>] ...
                (not [<e> <a> <v>] ...)       ;; optional, negation
                (not-join [?join-var ...] ...) ;; optional, existential negation
-               (or branch1 branch2 ...)       ;; optional, disjunction (all branches bind same vars)
+               (or branch1 branch2 ...)       ;; optional, disjunction
                (or-join [?v ...] b1 b2 ...)  ;; optional, existential disjunction
-               (and clause1 clause2 ...)      ;; group clauses into one branch (inside or/or-join)
-               [(<op> ?a ?b)]                 ;; filter predicate: <, >, <=, >=, =, !=, string?, etc.
+               (and clause1 clause2 ...)      ;; group clauses (inside or/or-join)
+               [(<op> ?a ?b)]                 ;; filter predicate: <, >, <=, >=, =, !=, string?
                [(<op> ?a ?b) ?result]         ;; arithmetic binding: +, -, *, /
        ])
+
+;; Prepared statement with $slot bind tokens
+(query [:find ?fact :as-of $tx :where [$entity :belief/fact ?fact]])
 
 ;; Recursive rule
 (rule [(<rule-name> ?arg ...) <body-clauses> ...])
@@ -149,25 +167,32 @@ tx.commit()?;
 
 ## Source layout
 
-- `src/db.rs` — public API: `Minigraf`, `OpenOptions`, `WriteTransaction`
+- `src/db.rs` — public API: `Minigraf`, `OpenOptions`, `WriteTransaction`, `PreparedQuery`, `BindValue`; `register_aggregate` / `register_predicate` for UDFs; `prepare(query_str)`
 - `src/graph/types.rs` — `Fact`, `Value`, EAV types, bi-temporal fields
 - `src/graph/storage.rs` — in-memory fact store with temporal query methods and `net_asserted_facts`
-- `src/query/datalog/` — parser, executor, matcher, evaluator, optimizer, stratification, rules, types
+- `src/query/datalog/` — parser, executor, matcher, evaluator, optimizer, stratification, rules, types, functions, prepared
 - `src/query/datalog/stratification.rs` — `DependencyGraph`, `stratify()` — negative edges + cycle detection
 - `src/query/datalog/evaluator.rs` — `RecursiveEvaluator` (semi-naive), `StratifiedEvaluator`, `evaluate_not_join`
-- `src/storage/mod.rs` — `StorageBackend` trait, `FileHeader` v6, `CommittedFactReader` / `CommittedIndexReader` traits
-- `src/storage/backend/` — file, memory backends
+- `src/query/datalog/functions.rs` — `FunctionRegistry`: aggregate/window/predicate registry; UDF registration
+- `src/query/datalog/prepared.rs` — `PreparedQuery`: parse-once/execute-many; `BindValue` enum; `$slot` substitution
+- `src/storage/mod.rs` — `StorageBackend` trait, `FileHeader` v7, `CommittedFactReader` / `CommittedIndexReader` traits
+- `src/storage/backend/` — `file.rs` (native), `memory.rs` (tests), `indexeddb.rs` (browser WASM)
 - `src/storage/index.rs` — EAVT/AEVT/AVET/VAET index key types, `FactRef`, `encode_value`
 - `src/storage/btree_v6.rs` — on-disk B+tree (current); `btree.rs` — legacy v5 (migration only)
 - `src/storage/cache.rs` — LRU page cache (approximate-LRU, configurable capacity)
 - `src/storage/packed_pages.rs` — packed fact page format (~25 facts/4KB page), `MAX_FACT_BYTES`
-- `src/storage/persistent_facts.rs` — v6 save/load, auto-migration v1–v5→v6
+- `src/storage/persistent_facts.rs` — v7 save/load, auto-migration v1–v6→v7
 - `src/wal.rs` — write-ahead log, CRC32 entries, crash recovery
 - `src/temporal.rs` — UTC timestamp parsing (avoids chrono CVE GHSA-wcg3-cvx6-7396)
+- `minigraf-ffi/src/lib.rs` — UniFFI bindings: `MiniGrafDb`, `MiniGrafError` (Android, iOS, Python, Java)
+- `minigraf-c/src/lib.rs` — C FFI (`cdylib` + `staticlib`): `minigraf_open`, `minigraf_execute`, `minigraf_string_free`, `minigraf_checkpoint`, `minigraf_close`, `minigraf_last_error`
+- `minigraf-node/src/lib.rs` — Node.js bindings via napi-rs: `MiniGrafDb` class
+- `minigraf-wasm/` — wasm-pack output: `@minigraf/browser` npm package (IndexedDB-backed browser WASM)
+- `minigraf-wasi/` — `@minigraf/wasi` npm package: ESM loader, TypeScript declarations, `minigraf-wasi.wasm`
 
-## Performance summary (v0.13.0)
+## Performance summary (v0.19.0)
 
-See [BENCHMARKS.md](https://github.com/adityamukho/minigraf/blob/main/BENCHMARKS.md) for full tables and methodology.
+See [BENCHMARKS.md](https://github.com/project-minigraf/minigraf/blob/main/BENCHMARKS.md) for full tables and methodology. Phase 8 (v0.20.0–v1.0.0) added cross-platform targets without touching the native query or storage path — benchmark numbers are unchanged from Phase 7.
 
 - **Insert**: ~2.7 µs/fact (in-memory), ~3.6 µs/fact (file-backed WAL). Flat across 1K–100K facts.
 - **Query (point lookup)**: O(N) full scan — 4.3–4.5 s at 1M facts.
@@ -176,13 +201,20 @@ See [BENCHMARKS.md](https://github.com/adityamukho/minigraf/blob/main/BENCHMARKS
 
 ## Links
 
-- [Repository](https://github.com/adityamukho/minigraf)
-- [README](https://github.com/adityamukho/minigraf/blob/main/README.md) — current status and quick start
-- [ROADMAP](https://github.com/adityamukho/minigraf/blob/main/ROADMAP.md) — phase-by-phase plan
-- [BENCHMARKS](https://github.com/adityamukho/minigraf/blob/main/BENCHMARKS.md) — Criterion results at 1K–1M facts
-- [Philosophy](https://github.com/adityamukho/minigraf/blob/main/PHILOSOPHY.md)
-- [Security Policy](https://github.com/adityamukho/minigraf/security/policy)
-- [Wiki: Architecture](https://github.com/adityamukho/minigraf/wiki/Architecture) — module structure, data model, file format, query pipeline
-- [Wiki: Datalog Reference](https://github.com/adityamukho/minigraf/wiki/Datalog-Reference) — complete syntax reference
-- [Wiki: Use Cases](https://github.com/adityamukho/minigraf/wiki/Use-Cases) — AI agents, mobile apps, WASM/browser
-- [Wiki: Comparison](https://github.com/adityamukho/minigraf/wiki/Comparison) — vs XTDB, Cozo, Datomic, Neo4j, SQLite and others
+- [Repository](https://github.com/project-minigraf/minigraf)
+- [crates.io](https://crates.io/crates/minigraf)
+- [README](https://github.com/project-minigraf/minigraf/blob/main/README.md) — current status and quick start
+- [ROADMAP](https://github.com/project-minigraf/minigraf/blob/main/ROADMAP.md) — phase-by-phase plan
+- [BENCHMARKS](https://github.com/project-minigraf/minigraf/blob/main/BENCHMARKS.md) — Criterion results at 1K–1M facts
+- [Philosophy](https://github.com/project-minigraf/minigraf/blob/main/PHILOSOPHY.md)
+- [Security Policy](https://github.com/project-minigraf/minigraf/security/policy)
+- [Wiki: Architecture](https://github.com/project-minigraf/minigraf/wiki/Architecture) — module structure, data model, file format, query pipeline
+- [Wiki: Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference) — complete syntax reference
+- [Wiki: Use Cases](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) — AI agents, mobile, browser, Python, Node.js, Java, C
+- [Wiki: Comparison](https://github.com/project-minigraf/minigraf/wiki/Comparison) — vs XTDB, Cozo, Datomic, Neo4j, SQLite and others
+- [@minigraf/browser on npm](https://www.npmjs.com/package/@minigraf/browser) — Browser WASM
+- [@minigraf/wasi on npm](https://www.npmjs.com/package/@minigraf/wasi) — WASI / Node.js
+- [minigraf on npm](https://www.npmjs.com/package/minigraf) — Node.js
+- [minigraf on PyPI](https://pypi.org/project/minigraf) — Python
+- [minigraf-jvm on Maven Central](https://central.sonatype.com/artifact/io.github.adityamukho/minigraf-jvm) — Java/JVM
+- [C header + libraries on GitHub Releases](https://github.com/project-minigraf/minigraf/releases) — C FFI, WASI `.wasm`, Android `.aar`, iOS `.xcframework`

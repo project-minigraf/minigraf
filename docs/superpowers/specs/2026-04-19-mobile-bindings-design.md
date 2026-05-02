@@ -1,7 +1,7 @@
 # Phase 8.2: Mobile Bindings Design
 
 **Date**: 2026-04-19
-**Issue**: [adityamukho/minigraf#131](https://github.com/adityamukho/minigraf/issues/131)
+**Issue**: [project-minigraf/minigraf#131](https://github.com/project-minigraf/minigraf/issues/131)
 **Status**: Approved
 
 ---
@@ -227,7 +227,7 @@ Consumers must add the GitHub Packages Maven repo + a read-scoped PAT to their `
 
 ```
 # In Xcode: File > Add Package Dependencies
-https://github.com/adityamukho/minigraf
+https://github.com/project-minigraf/minigraf
 ```
 
 ---

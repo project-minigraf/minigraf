@@ -1,0 +1,29 @@
+[build-system]
+requires = ["maturin>=1.5,<2"]
+build-backend = "maturin"
+
+[project]
+name = "minigraf"
+version = "1.0.0"
+description = "Zero-config, single-file, embedded graph database with bi-temporal Datalog queries"
+license = { text = "MIT OR Apache-2.0" }
+requires-python = ">=3.9"
+keywords = ["graph", "datalog", "bitemporal", "embedded", "database"]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
+]
+
+[project.urls]
+Homepage = "https://github.com/project-minigraf/minigraf"
+Repository = "https://github.com/project-minigraf/minigraf"
+"Bug Tracker" = "https://github.com/project-minigraf/minigraf/issues"
+
+[tool.maturin]
+manifest-path = "../Cargo.toml"
+bindings = "uniffi"
+python-packages = ["minigraf"]
+module-name = "minigraf.minigraf_ffi"

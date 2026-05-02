@@ -1,15 +1,15 @@
 [workspace]
-members = [".", "minigraf-ffi"]
+members = [".", "minigraf-ffi", "minigraf-c", "minigraf-node"]
 resolver = "2"
 
 [package]
 name = "minigraf"
-version = "0.21.1"
+version = "1.0.0"
 edition = "2024"
 description = "Zero-config, single-file, embedded graph database with bi-temporal Datalog queries"
 license = "MIT OR Apache-2.0"
 authors = ["Aditya Mukhopadhyay"]
-repository = "https://github.com/adityamukho/minigraf"
+repository = "https://github.com/project-minigraf/minigraf"
 keywords = ["graph", "datalog", "bitemporal", "embedded", "database"]
 categories = ["database-implementations", "embedded"]
 readme = "README.md"
@@ -17,6 +17,16 @@ documentation = "https://docs.rs/minigraf"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
+
+# Stub that lets `cargo run --bin uniffi-bindgen` work from the workspace root.
+# maturin calls this when bindings = "uniffi"; it execs the binary pre-built by
+# build.sh (cargo build --bin uniffi-bindgen --manifest-path minigraf-ffi/Cargo.toml).
+# Uses only std — no extra dependencies. Excluded from `cargo build --lib` so
+# WASM builds are unaffected.
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi_bindgen_stub.rs"
+doc = false
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false
@@ -86,6 +96,13 @@ lto = true
 codegen-units = 1
 strip = "symbols"
 opt-level = "z"
+
+# uniffi-bindgen reads UNIFFI_META symbols from .symtab (not .dynsym).
+# strip = "symbols" removes .symtab from ELF shared libraries on Linux,
+# making symbol extraction silently produce no output.
+# Override strip to "none" for the FFI crate so the symbols remain.
+[profile.release.package.minigraf-ffi]
+strip = "none"
 
 [profile.bench]
 strip = "none"
