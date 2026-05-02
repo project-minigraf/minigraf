@@ -1,6 +1,6 @@
 [package]
 name = "minigraf-c"
-version = "0.24.0"
+version = "1.0.0"
 edition = "2024"
 description = "C bindings for Minigraf — stable C API with cbindgen-generated header"
 publish = false

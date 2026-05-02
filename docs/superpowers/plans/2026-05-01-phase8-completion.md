@@ -1891,6 +1891,92 @@ gh issue comment 133 --repo project-minigraf/minigraf \
 
 ---
 
+## Addendum: @minigraf/wasi (PR #222, merged 2026-05-02)
+
+PR #222 (closes #178) adds `minigraf-wasi/` — the `@minigraf/wasi` npm package (ESM loader + TypeScript declarations for Node.js WASI consumers) and a `publish-npm-wasi` CI job in `wasm-release.yml`. `minigraf-wasi/package.json` stays at `0.0.0`; CI stamps the tag version at publish time (same pattern as `@minigraf/browser`). A basic `minigraf-wasi/README.md` was added by the PR.
+
+Incorporate the following additions into the relevant tasks when executing:
+
+### Task 3 (CHANGELOG) — add to "Also in this release" bullets:
+```
+- `@minigraf/wasi` published to npm on every tagged release (issue #178) — WASI binary packaged for Node.js WASI consumers
+```
+
+### Task 4 (README) — two changes:
+**Step 4** — update the WASI row in the platform support table:
+```markdown
+| WASI | `@minigraf/wasi` on npm, `.wasm` on GitHub Releases | `npm install @minigraf/wasi` |
+```
+
+**Step 6** — in the "For WASM / Browser" replacement text, change the WASI sentence from:
+```
+WASI build (`wasm32-wasip1`) available as a GitHub Releases artifact (Wasmtime / Wasmer).
+```
+to:
+```
+WASI build (`wasm32-wasip1`) available as [`@minigraf/wasi`](https://www.npmjs.com/package/@minigraf/wasi) on npm and as a GitHub Releases artifact (Wasmtime / Wasmer).
+```
+
+### Task 5 (ROADMAP) — one change:
+**Step 4** — in the v1.0.0 entry, update the WASI line to:
+```
+- WASI (`wasm32-wasip1`, Wasmtime/Wasmer CI) + `@minigraf/wasi` npm package ✅ v1.0.0
+```
+
+### Task 7 (llms.txt) — three changes:
+1. In the maturity paragraph, change `WASI (\`wasm32-wasip1\`)` to `WASI (\`wasm32-wasip1\`, \`@minigraf/wasi\` npm)`.
+2. In the source layout section, add after the `minigraf-wasm/` entry:
+```
+- `minigraf-wasi/` — `@minigraf/wasi` npm package: ESM loader, TypeScript declarations, `minigraf-wasi.wasm`
+```
+3. In the Links section, add after the `@minigraf/browser on npm` line:
+```
+- [@minigraf/wasi on npm](https://www.npmjs.com/package/@minigraf/wasi) — WASI / Node.js
+```
+
+### Task 13 (Wiki Home.md) — one change:
+**Step 4** — in the Packages table, split the last row:
+Replace:
+```markdown
+| Android, iOS, C, WASI | [GitHub Releases](https://github.com/project-minigraf/minigraf/releases) |
+```
+with:
+```markdown
+| WASI (Node.js) | [@minigraf/wasi on npm](https://www.npmjs.com/package/@minigraf/wasi) |
+| Android, iOS, C, WASI binary | [GitHub Releases](https://github.com/project-minigraf/minigraf/releases) |
+```
+
+### Task 14 (Wiki Use-Cases.md) — one addition:
+After the existing WASI section (Wasmtime/Wasmer usage), add a subsection:
+
+```markdown
+### Node.js
+
+For Node.js consumers, the `@minigraf/wasi` npm package provides an ESM loader:
+
+```sh
+npm install @minigraf/wasi
+```
+
+```js
+import { WASI } from "node:wasi";
+import { startMinigrafWasi } from "@minigraf/wasi";
+
+const wasi = new WASI({
+  version: "preview1",
+  args: ["minigraf"],
+  env: process.env,
+  preopens: { "/tmp": "/tmp" },
+});
+
+await startMinigrafWasi(wasi);
+```
+
+Use `MINIGRAF_WASI_WASM_PATH` or the `wasmPath` option to point the loader at an alternate `.wasm` file.
+```
+
+---
+
 ## Self-review notes
 
 - **Task 2, Step 8**: Package.swift checksum is a placeholder — this must be updated after CI produces the `MinigrafKit-v1.0.0.xcframework.zip` artifact. This is a deliberate two-step: the PR merges with the placeholder, then a follow-up commit updates the checksum once the release tag is pushed and CI completes.

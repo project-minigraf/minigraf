@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.0.0 — Phase 8 Complete (2026-05-01)
+
+### Milestone
+
+This is the **v1.0.0 release**. The public Rust API and the `.graph` file format are now stable
+and committed to semantic versioning. File format stability is guaranteed from this release.
+
+### Phase 8 summary
+
+All Phase 8 cross-platform targets have shipped:
+
+- **8.1a** — Browser WASM (`BrowserDb`, `IndexedDbBackend`, `@minigraf/browser` on npm) — v0.20.0
+- **8.1b** — Server-side WASM (`wasm32-wasip1` / WASI, Wasmtime/Wasmer CI) — v0.20.0
+- **8.2** — Mobile bindings (Android `.aar` on GitHub Packages, iOS `.xcframework` via SPM, UniFFI) — v0.21.0
+- **8.3a** — Python (`minigraf` on PyPI, pre-built wheels) — v0.22.0
+- **8.3b** — Java/JVM (`io.github.adityamukho:minigraf-jvm` on Maven Central, fat JAR) — v0.23.0
+- **8.3c** — C FFI (`minigraf.h` + platform tarballs on GitHub Releases) — v0.24.0
+- **8.3d** — Node.js (`minigraf` on npm, pre-built `.node` binaries) — v0.25.0
+
+### Also in this release
+
+- `pkg/` renamed to `minigraf-wasm/`, `swift/` renamed to `minigraf-swift/` — consistent
+  top-level naming across all workspace packages (issue #179)
+- `@minigraf/browser` now published to npm on every tagged release (issue #179)
+- `@minigraf/wasi` published to npm on every tagged release (issue #178) — WASI binary packaged for Node.js WASI consumers
+- Per-platform READMEs added: `minigraf-wasm/`, `minigraf-node/`, `minigraf-ffi/python/`,
+  `minigraf-c/`, `minigraf-ffi/java/`
+
+### Tests
+
+795 tests passing (788 passing + 7 ignored: confirmed `or`+neg-cycle stratification bug,
+deferred to post-1.0 backlog).
+
 ## v0.25.0 — 2026-04-26
 
 ### Added

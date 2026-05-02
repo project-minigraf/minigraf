@@ -1105,11 +1105,11 @@ The query optimizer uses selectivity estimates to pick join order. Different `:a
 
 ---
 
-## Phase 8: Cross-Platform Expansion 🔄 IN PROGRESS
+## Phase 8: Cross-Platform Expansion ✅ COMPLETE
 
 **Goal**: WASM, mobile, language bindings
 
-**Status**: 🔄 In Progress (Phase 8.1 complete — v0.20.0)
+**Status**: ✅ Completed (May 2026) — v1.0.0
 
 **Priority**: 🟢 Medium
 
@@ -1203,7 +1203,9 @@ cargo build --target wasm32-wasip1 --release
 
 **Deliverable**: ✅ Minigraf `.wasm` binary runs under Wasmtime/Wasmer with file-backed storage; suitable for use in Cloudflare Workers (WASI) and similar edge runtimes
 
-### 8.2 Mobile Bindings
+### 8.2 Mobile Bindings ✅ COMPLETE
+
+**Status**: ✅ Completed (April 2026) — v0.21.0
 
 **Goal**: Ship Minigraf as a drop-in native library for Android (Kotlin/Java) and iOS (Swift), with pre-built artifacts so mobile developers don't need to touch Rust.
 
@@ -1587,10 +1589,14 @@ Push `Expr` predicate clauses (e.g. `[(> ?age 30)]`) down to filter bindings as 
 - ≥90% branch coverage
 - Stable API, stable file format, comprehensive tests, full documentation, performance validated
 
-### v1.0.0 - 🎯 Phase 8 (Cross-platform)
-- WASM support (browser + WASI) ✅ Phase 8.1 complete (v0.20.0)
-- Mobile bindings (iOS + Android)
-- Language bindings (Python, C, Node.js)
+### v1.0.0 - ✅ Phase 8 Complete (Cross-platform)
+- Browser WASM (`@minigraf/browser` npm, IndexedDB backend) ✅ v0.20.0
+- WASI (`wasm32-wasip1`, Wasmtime/Wasmer CI) + `@minigraf/wasi` npm package ✅ v1.0.0
+- Android `.aar` + iOS `.xcframework` (UniFFI) ✅ v0.21.0
+- Python `minigraf` on PyPI ✅ v0.22.0
+- Java/JVM `minigraf-jvm` on Maven Central ✅ v0.23.0
+- C FFI `minigraf.h` + platform tarballs ✅ v0.24.0
+- Node.js `minigraf` on npm ✅ v0.25.0
 
 **Stability Promise**: After v1.0.0, we commit to:
 - Backwards-compatible file format (decades)
@@ -1651,8 +1657,12 @@ When evaluating features, ask:
 - ✅ Phase 7.8: Complete (April 2026) - Prepared statements (`$slot` bind tokens, temporal bind slots, plan reuse), 780 tests
 - ✅ Phase 7.9: Complete (April 2026) - Publish prep (crates.io API cleanup, Rustdoc sweep, `unwrap` audit, CI matrix), 788 tests
 - ✅ Phase 8.1: Complete (April 2026) - Browser WASM (`BrowserDb`, IndexedDB backend) + WASI (`wasm32-wasip1` CI) + cross-platform compat tests, 795 tests
-- 🔄 Phase 8.2: In progress — Mobile bindings (Android `.aar` + iOS `.xcframework` via UniFFI 0.31.1), 815 tests
-- 🔄 Phase 8: In progress (Cross-platform — WASM ✅, mobile, language bindings → **v1.0.0**)
+- ✅ Phase 8.2: Complete (April 2026) — Mobile bindings (Android `.aar` + iOS `.xcframework` via UniFFI 0.31.1), 795 tests
+- ✅ Phase 8.3a: Complete (April 2026) — Python `minigraf` on PyPI, 795 tests
+- ✅ Phase 8.3b: Complete (April 2026) — Java/JVM `minigraf-jvm` on Maven Central, 795 tests
+- ✅ Phase 8.3c: Complete (April 2026) — C FFI `minigraf.h` + platform tarballs, 795 tests
+- ✅ Phase 8.3d: Complete (April 2026) — Node.js `minigraf` on npm, 795 tests
+- ✅ Phase 8: Complete (May 2026) — v1.0.0
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)
 
 **Note**: This is a hobby project. Timeline is flexible but realistic.
@@ -1661,24 +1671,18 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Right Now**: Phase 8.3 ✅ COMPLETE — Language Bindings
+**Phase 8**: ✅ COMPLETE — v1.0.0 released (May 2026)
 
-**Phase 8.2 Progress** ✅ COMPLETE:
-1. ✅ Workspace conversion (`minigraf-ffi` crate added)
-2. ✅ `MiniGrafDb` FFI API (open, open_in_memory, execute, checkpoint) via UniFFI 0.31.1
-3. ✅ Android Gradle project (`.aar` assembly + GitHub Packages publishing)
-4. ✅ Swift Package Manager manifest (`Package.swift`)
-5. ✅ CI workflows: `mobile.yml` (Android/iOS), `wasm-release.yml` (WASM artifacts)
-6. ✅ 815 tests passing (795 core + 20 FFI)
+**All Phase 8 sub-phases complete**:
+- ✅ 8.1a: Browser WASM (`@minigraf/browser` npm) — v0.20.0
+- ✅ 8.1b: WASI (`wasm32-wasip1`) + `@minigraf/wasi` npm — v1.0.0
+- ✅ 8.2: Mobile (Android `.aar` + iOS `.xcframework`) — v0.21.0
+- ✅ 8.3a: Python (PyPI) — v0.22.0
+- ✅ 8.3b: Java/JVM (Maven Central) — v0.23.0
+- ✅ 8.3c: C FFI (GitHub Releases) — v0.24.0
+- ✅ 8.3d: Node.js (npm) — v0.25.0
 
-**Phase 8.3 Progress**:
-- ✅ 8.3a: Python bindings via UniFFI — PyPI `minigraf` — v0.22.0 COMPLETE
-- ✅ 8.3b: Desktop JVM bindings — fat JAR on Maven Central (`io.github.adityamukho:minigraf-jvm:0.23.0`) — v0.23.0 COMPLETE
-- ✅ 8.3c: C bindings via `cbindgen` — GitHub Releases tarballs (`minigraf.h` + shared lib) — v0.24.0 COMPLETE
-- ✅ 8.3d: Node.js bindings via `napi-rs` — npm `minigraf` — v0.25.0 COMPLETE
-
-**Immediate Next Steps**:
-- Phase 9: Ecosystem & Tooling
+**Next**: Phase 9 — Ecosystem & Tooling (post-release optimisation and benchmarking first)
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)
@@ -1688,10 +1692,10 @@ When evaluating features, ask:
 - ✅ UTC-only timestamps (avoids chrono GHSA-wcg3-cvx6-7396)
 - ✅ Packed pages over one-per-page (philosophy: small binary, efficient storage)
 - ✅ Approximate LRU (read-lock on hits — avoids write-lock contention)
-- ✅ Phase 8 = v1.0.0 (not Phase 7 — cross-platform completion is the 1.0 milestone)
+- ✅ Phase 8 = v1.0.0 (cross-platform completion is the 1.0 milestone)
 
 See [GitHub Issues](https://github.com/project-minigraf/minigraf/issues) for specific tasks.
 
 ---
 
-**Last Updated**: Phase 8.3d Complete (April 2026) — 795 tests passing, v0.25.0
+**Last Updated**: Phase 8 Complete (May 2026) — 795 tests passing, v1.0.0
