@@ -148,14 +148,14 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                         let mut num_str = String::from("-");
                         let (is_float, num) = parse_number(&mut chars, &mut num_str)?;
                         if is_float {
-                            let f: f64 = num.parse().map_err(|_| {
-                                format!("Float literal out of range: {}", num)
-                            })?;
+                            let f: f64 = num
+                                .parse()
+                                .map_err(|_| format!("Float literal out of range: {}", num))?;
                             tokens.push(Token::Float(f));
                         } else {
-                            let i: i64 = num.parse().map_err(|_| {
-                                format!("Integer literal out of range: {}", num)
-                            })?;
+                            let i: i64 = num
+                                .parse()
+                                .map_err(|_| format!("Integer literal out of range: {}", num))?;
                             tokens.push(Token::Integer(i));
                         }
                     } else {
@@ -175,14 +175,14 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 let mut num_str = String::new();
                 let (is_float, num) = parse_number(&mut chars, &mut num_str)?;
                 if is_float {
-                    let f: f64 = num.parse().map_err(|_| {
-                        format!("Float literal out of range: {}", num)
-                    })?;
+                    let f: f64 = num
+                        .parse()
+                        .map_err(|_| format!("Float literal out of range: {}", num))?;
                     tokens.push(Token::Float(f));
                 } else {
-                    let i: i64 = num.parse().map_err(|_| {
-                        format!("Integer literal out of range: {}", num)
-                    })?;
+                    let i: i64 = num
+                        .parse()
+                        .map_err(|_| format!("Integer literal out of range: {}", num))?;
                     tokens.push(Token::Integer(i));
                 }
             }
@@ -2828,7 +2828,10 @@ mod tests {
         let result = tokenize("99999999999999999999999999999");
         assert!(result.is_err(), "i64 overflow must return error, not panic");
         let err = result.unwrap_err();
-        assert!(err.contains("out of range"), "error should mention out of range");
+        assert!(
+            err.contains("out of range"),
+            "error should mention out of range"
+        );
     }
 
     #[test]
@@ -2850,10 +2853,11 @@ mod tests {
 
     #[test]
     fn test_overflow_in_transact_returns_error() {
-        let result = parse_datalog_command(
-            "(transact [[:e :a 99999999999999999999999999999]])",
+        let result = parse_datalog_command("(transact [[:e :a 99999999999999999999999999999]])");
+        assert!(
+            result.is_err(),
+            "overflow in transact should be parse error"
         );
-        assert!(result.is_err(), "overflow in transact should be parse error");
     }
 }
 

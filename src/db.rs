@@ -1532,19 +1532,21 @@ mod tests {
         let path = dir.path().join("test.graph");
         let wal_path = dir.path().join("test.graph.wal");
 
-        let db = Minigraf::open(&path).unwrap();
-        db.execute(r#"(transact [[:alice :person/name "Alice"]])"#)
-            .unwrap();
+        {
+            let db = Minigraf::open(&path).unwrap();
+            db.execute(r#"(transact [[:alice :person/name "Alice"]])"#)
+                .unwrap();
 
-        // WAL should exist before checkpoint
-        assert!(wal_path.exists(), "WAL must exist after a write");
+            // WAL should exist before checkpoint
+            assert!(wal_path.exists(), "WAL must exist after a write");
 
-        db.checkpoint().unwrap();
+            db.checkpoint().unwrap();
 
-        // WAL should be deleted after checkpoint
-        assert!(!wal_path.exists(), "WAL must be deleted after checkpoint");
+            // WAL should be deleted after checkpoint
+            assert!(!wal_path.exists(), "WAL must be deleted after checkpoint");
+        }
 
-        // Main file should be present with facts
+        // Reopen after first handle is dropped (releases file lock)
         let db2 = Minigraf::open(&path).unwrap();
         let facts = db2.inner.fact_storage.get_asserted_facts().unwrap();
         assert_eq!(facts.len(), 1, "facts must survive checkpoint");

@@ -412,7 +412,11 @@ fn test_same_eav_multiple_valid_time_intervals() {
         &db,
         r#"(query [:find ?v :valid-at :any-valid-time :where [:alice :salary ?v]])"#,
     ));
-    assert_eq!(rows_any.len(), 2, "both valid-time intervals visible with :any-valid-time");
+    assert_eq!(
+        rows_any.len(),
+        2,
+        "both valid-time intervals visible with :any-valid-time"
+    );
 }
 
 /// Retraction still cancels all prior assertions of the same EAV, but
