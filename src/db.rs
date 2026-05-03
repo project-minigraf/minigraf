@@ -554,7 +554,26 @@ impl Minigraf {
                 db_path,
                 wal_entry_count,
             } => {
-                // Force a full save even if no new writes since last checkpoint.
+                // Skip checkpoint if nothing to flush.
+                //
+                // `wal_entry_count` is non-zero when this handle has made writes *or*
+                // replayed WAL entries on open (crash-recovery path). `pfs.is_dirty()`
+                // catches any facts marked dirty via the normal write path.
+                //
+                // File locking (`.graph.lock` sidecar, acquired by FileBackend::open)
+                // already prevents a second *process* from opening the file while this
+                // handle holds the lock, which covers the main multi-process exposure
+                // described in issue #226. This guard closes the remaining edge cases:
+                // same-process double-opens (same PID bypasses the stale-lock check)
+                // and environments where the advisory lock can be bypassed (e.g.
+                // network filesystems, manual lock deletion).
+                if *wal_entry_count == 0 && !pfs.is_dirty() {
+                    return Ok(());
+                }
+                // `force_dirty` is needed for the WAL-replay case: facts were loaded
+                // into memory during `replay_wal` but `pfs.dirty` was not set because
+                // no write path was exercised. Without it `save()` would no-op and
+                // the replayed facts would never reach the main file.
                 pfs.force_dirty();
                 pfs.save()?;
 
