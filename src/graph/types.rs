@@ -24,10 +24,13 @@ pub(crate) fn tx_id_now() -> TxId {
     }
     #[cfg(not(all(target_arch = "wasm32", feature = "browser")))]
     {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_millis() as u64
+        u64::try_from(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis(),
+        )
+        .unwrap_or(u64::MAX)
     }
 }
 
@@ -289,7 +292,7 @@ impl Fact {
             value,
             tx_id,
             tx_count: 0,
-            valid_from: tx_id as i64,
+            valid_from: i64::try_from(tx_id).unwrap_or(i64::MAX),
             valid_to: VALID_TIME_FOREVER,
             asserted: true,
         }
@@ -330,7 +333,7 @@ impl Fact {
             value,
             tx_id,
             tx_count: 0,
-            valid_from: tx_id as i64,
+            valid_from: i64::try_from(tx_id).unwrap_or(i64::MAX),
             valid_to: VALID_TIME_FOREVER,
             asserted: false,
         }
@@ -360,7 +363,7 @@ impl Fact {
             value,
             tx_id,
             tx_count: 0,
-            valid_from: tx_id as i64,
+            valid_from: i64::try_from(tx_id).unwrap_or(i64::MAX),
             valid_to: VALID_TIME_FOREVER,
             asserted,
         }
@@ -399,9 +402,12 @@ mod tests {
 
     /// Create a TxId from a SystemTime. Test-only helper.
     fn tx_id_from_system_time(time: std::time::SystemTime) -> TxId {
-        time.duration_since(std::time::UNIX_EPOCH)
-            .expect("System time before UNIX epoch")
-            .as_millis() as u64
+        u64::try_from(
+            time.duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis(),
+        )
+        .unwrap_or(u64::MAX)
     }
 
     #[test]
