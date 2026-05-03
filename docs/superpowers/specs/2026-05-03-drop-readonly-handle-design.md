@@ -55,6 +55,12 @@ New test `test_readonly_handle_drop_does_not_modify_file`:
 
 - `src/db.rs` — 5-line guard in `do_checkpoint`, one new test
 
+## File Locking Context
+
+As of the current version, `FileBackend::open()` acquires an exclusive advisory lock (`.graph.lock` sidecar). This means a second *process* cannot open the same file while another holds the lock, which prevents the multi-process corruption path described in the issue. The bug was originally encountered on v0.22 before file locking was introduced.
+
+The Drop guard is still applied as defense in depth — it closes the remaining exposure from same-process double-opens (same PID bypasses the stale-lock check), lock bypasses (e.g. network filesystems, manual lock deletion), or future refactors that loosen the locking model. A comment in the code will note this context.
+
 ## Non-changes
 
 - `src/storage/persistent_facts.rs` — no changes; `force_dirty()` / `is_dirty()` / `save()` behaviour unchanged
