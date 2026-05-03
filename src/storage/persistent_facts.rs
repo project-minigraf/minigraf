@@ -157,13 +157,23 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             committed_fact_pages,
         };
 
-        // Try to load existing data
-        let page_count = persistent.backend.lock().unwrap().page_count()?;
-        if page_count > 1 {
+        // Try to load existing data.
+        //
+        // The load condition combines two checks:
+        // - `!is_new`: FileBackend reports false when the file existed on disk
+        //   (even with only a header page, page_count == 1). This ensures
+        //   migrate_v5_to_v6 runs for a v5 file that has no fact pages.
+        // - `page_count > 1`: catches MemoryBackend, which always reports
+        //   is_new == true; page count > 1 means facts were previously saved.
+        let (is_new_backend, page_count) = {
+            let b = persistent.backend.lock().unwrap();
+            (b.is_new(), b.page_count()?)
+        };
+        if !is_new_backend || page_count > 1 {
             persistent.load()?;
         } else {
-            // Initialize new database with header
-            persistent.save()?;
+            // New database: FileBackend already wrote the initial header;
+            // MemoryBackend starts empty. Nothing to save yet.
         }
 
         Ok(persistent)
@@ -947,7 +957,6 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     }
 
     /// Check if storage has unsaved changes
-    #[allow(dead_code)]
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }
