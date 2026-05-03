@@ -1729,6 +1729,54 @@ mod tests {
         let result = db_high.execute("(query [:find ?to :where (reachable :a ?to)])");
         assert!(result.is_ok(), "Query should succeed with higher limit");
     }
+
+    // ── read-only handle drop must not modify the file ────────────────────────
+
+    #[test]
+    fn test_readonly_handle_drop_does_not_modify_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.graph");
+
+        // Write a fact and checkpoint so the main file is clean and WAL is gone.
+        {
+            let db = Minigraf::open(&path).unwrap();
+            db.execute(r#"(transact [[:alice :person/name "Alice"]])"#).unwrap();
+            db.checkpoint().unwrap();
+        }
+
+        // Record file metadata before the read-only handle opens.
+        let meta_before = std::fs::metadata(&path).unwrap();
+        let mtime_before = meta_before.modified().unwrap();
+        let len_before = meta_before.len();
+
+        // Open a second handle, do a read-only query, then drop it.
+        {
+            let db2 = Minigraf::open(&path).unwrap();
+            let result = db2
+                .execute(r#"(query [:find ?name :where [?e :person/name ?name]])"#)
+                .unwrap();
+            match result {
+                QueryResult::QueryResults { results, .. } => {
+                    assert_eq!(results.len(), 1, "Alice must be visible");
+                }
+                _ => panic!("expected QueryResults"),
+            }
+            // db2 dropped here — Drop must NOT write to the file
+        }
+
+        // File must be byte-for-byte identical (same mtime and size).
+        let meta_after = std::fs::metadata(&path).unwrap();
+        assert_eq!(
+            meta_after.len(),
+            len_before,
+            "file size must not change after read-only handle drop"
+        );
+        assert_eq!(
+            meta_after.modified().unwrap(),
+            mtime_before,
+            "file mtime must not change after read-only handle drop"
+        );
+    }
 }
 
 // ─── WASI smoke test ─────────────────────────────────────────────────────────
