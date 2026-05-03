@@ -1759,7 +1759,8 @@ mod tests {
         // Write a fact and checkpoint so the main file is clean and WAL is gone.
         {
             let db = Minigraf::open(&path).unwrap();
-            db.execute(r#"(transact [[:alice :person/name "Alice"]])"#).unwrap();
+            db.execute(r#"(transact [[:alice :person/name "Alice"]])"#)
+                .unwrap();
             db.checkpoint().unwrap();
         }
 
