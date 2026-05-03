@@ -554,7 +554,26 @@ impl Minigraf {
                 db_path,
                 wal_entry_count,
             } => {
-                // Force a full save even if no new writes since last checkpoint.
+                // Skip checkpoint if nothing to flush.
+                //
+                // `wal_entry_count` is non-zero when this handle has made writes *or*
+                // replayed WAL entries on open (crash-recovery path). `pfs.is_dirty()`
+                // catches any facts marked dirty via the normal write path.
+                //
+                // File locking (`.graph.lock` sidecar, acquired by FileBackend::open)
+                // already prevents a second *process* from opening the file while this
+                // handle holds the lock, which covers the main multi-process exposure
+                // described in issue #226. This guard closes the remaining edge cases:
+                // same-process double-opens (same PID bypasses the stale-lock check)
+                // and environments where the advisory lock can be bypassed (e.g.
+                // network filesystems, manual lock deletion).
+                if *wal_entry_count == 0 && !pfs.is_dirty() {
+                    return Ok(());
+                }
+                // `force_dirty` is needed for the WAL-replay case: facts were loaded
+                // into memory during `replay_wal` but `pfs.dirty` was not set because
+                // no write path was exercised. Without it `save()` would no-op and
+                // the replayed facts would never reach the main file.
                 pfs.force_dirty();
                 pfs.save()?;
 
@@ -1728,6 +1747,51 @@ mod tests {
 
         let result = db_high.execute("(query [:find ?to :where (reachable :a ?to)])");
         assert!(result.is_ok(), "Query should succeed with higher limit");
+    }
+
+    // ── read-only handle drop must not modify the file ────────────────────────
+
+    #[test]
+    fn test_readonly_handle_drop_does_not_modify_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.graph");
+
+        // Write a fact and checkpoint so the main file is clean and WAL is gone.
+        {
+            let db = Minigraf::open(&path).unwrap();
+            db.execute(r#"(transact [[:alice :person/name "Alice"]])"#)
+                .unwrap();
+            db.checkpoint().unwrap();
+        }
+
+        // db2 is opened with the standard read-write constructor — there is no
+        // dedicated read-only open API.  The fix being tested is behavioral:
+        // Drop must not checkpoint when no writes were made on this handle.
+        let meta_before = std::fs::metadata(&path).unwrap();
+        let len_before = meta_before.len();
+
+        // Open a second handle, do a read-only query, then drop it.
+        {
+            let db2 = Minigraf::open(&path).unwrap();
+            let result = db2
+                .execute(r#"(query [:find ?name :where [?e :person/name ?name]])"#)
+                .unwrap();
+            match result {
+                QueryResult::QueryResults { results, .. } => {
+                    assert_eq!(results.len(), 1, "Alice must be visible");
+                }
+                _ => panic!("expected QueryResults"),
+            }
+            // db2 dropped here — Drop must NOT write to the file
+        }
+
+        // File must be byte-for-byte identical (same size).
+        let meta_after = std::fs::metadata(&path).unwrap();
+        assert_eq!(
+            meta_after.len(),
+            len_before,
+            "file size must not change after read-only handle drop"
+        );
     }
 }
 
