@@ -182,7 +182,10 @@ impl FileBackend {
 
         let header_bytes = header.to_bytes();
         let mut page = vec![0u8; PAGE_SIZE];
-        page[..header_bytes.len()].copy_from_slice(&header_bytes);
+        let hlen = header_bytes.len();
+        page.get_mut(..hlen)
+            .ok_or_else(|| anyhow::anyhow!("header bytes exceed page size"))?
+            .copy_from_slice(&header_bytes);
 
         file.write_all(&page)?;
         file.sync_all()?;
@@ -207,7 +210,9 @@ impl StorageBackend for FileBackend {
             );
         }
 
-        let offset = page_id * PAGE_SIZE as u64;
+        let offset = page_id
+            .checked_mul(PAGE_SIZE as u64)
+            .ok_or_else(|| anyhow::anyhow!("page offset overflow for page_id {}", page_id))?;
         self.file.seek(SeekFrom::Start(offset))?;
         self.file.write_all(data)?;
 
@@ -217,7 +222,9 @@ impl StorageBackend for FileBackend {
             self.header = FileHeader::from_bytes(data)?;
         } else if page_id >= self.header.page_count {
             // Update page count if this is a new page (but not page 0)
-            self.header.page_count = page_id + 1;
+            self.header.page_count = page_id
+                .checked_add(1)
+                .ok_or_else(|| anyhow::anyhow!("page_count overflow for page_id {}", page_id))?;
             Self::write_header(&mut self.file, &self.header)?;
         }
 
@@ -233,7 +240,9 @@ impl StorageBackend for FileBackend {
             );
         }
 
-        let offset = page_id * PAGE_SIZE as u64;
+        let offset = page_id
+            .checked_mul(PAGE_SIZE as u64)
+            .ok_or_else(|| anyhow::anyhow!("page offset overflow for page_id {}", page_id))?;
         let mut file = &self.file;
         file.seek(SeekFrom::Start(offset))?;
 
