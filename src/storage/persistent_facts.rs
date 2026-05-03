@@ -957,7 +957,6 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     }
 
     /// Check if storage has unsaved changes
-    #[allow(dead_code)]
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }
