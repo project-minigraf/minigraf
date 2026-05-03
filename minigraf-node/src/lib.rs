@@ -1,5 +1,3 @@
-#![deny(clippy::all)]
-
 use minigraf::{QueryResult, Value};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
