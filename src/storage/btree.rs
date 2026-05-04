@@ -93,7 +93,8 @@ fn write_blob(blob: &[u8], backend: &mut dyn StorageBackend, start_page_id: u64)
         };
         let chunk_len = u32::try_from(chunk.len())
             .map_err(|_| anyhow::anyhow!("chunk.len() overflows u32 (len={})", chunk.len()))?;
-        let is_last: u8 = if i == num_pages.saturating_sub(1) { 0x01 } else { 0x00 };
+        // num_pages >= 1 is guaranteed: write_blob always writes at least one page.
+        let is_last: u8 = if i == num_pages - 1 { 0x01 } else { 0x00 };
 
         let mut page = vec![0u8; PAGE_SIZE];
         *page
