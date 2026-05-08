@@ -78,14 +78,20 @@ impl PageCache {
         // Approximate LRU: return without promoting to MRU to avoid a write lock
         // on every read. Pages loaded recently (on miss) are already near MRU.
         {
-            let inner = self.inner.read().map_err(|_| anyhow::anyhow!("cache lock poisoned"))?;
+            let inner = self
+                .inner
+                .read()
+                .map_err(|_| anyhow::anyhow!("cache lock poisoned"))?;
             if let Some(entry) = inner.entries.get(&page_id) {
                 return Ok(entry.data.clone());
             }
         }
         // Miss: load from backend (without holding any lock)
         let data = Arc::new(backend.read_page(page_id)?);
-        let mut inner = self.inner.write().map_err(|_| anyhow::anyhow!("cache lock poisoned"))?;
+        let mut inner = self
+            .inner
+            .write()
+            .map_err(|_| anyhow::anyhow!("cache lock poisoned"))?;
         // Double-check after acquiring write lock (another thread may have loaded it)
         if let Some(entry) = inner.entries.get(&page_id) {
             return Ok(entry.data.clone());
@@ -139,7 +145,10 @@ impl PageCache {
     /// Write all dirty pages to the backend and clear dirty flags.
     #[allow(dead_code)]
     pub fn flush(&self, backend: &mut dyn StorageBackend) -> Result<()> {
-        let mut inner = self.inner.write().map_err(|_| anyhow::anyhow!("cache lock poisoned"))?;
+        let mut inner = self
+            .inner
+            .write()
+            .map_err(|_| anyhow::anyhow!("cache lock poisoned"))?;
         for (&page_id, entry) in inner.entries.iter_mut() {
             if entry.dirty {
                 backend.write_page(page_id, &entry.data[..])?;
@@ -170,7 +179,11 @@ impl PageCache {
     /// Number of pages currently cached (for testing).
     #[allow(dead_code)]
     pub fn cached_page_count(&self) -> usize {
-        self.inner.read().unwrap_or_else(|e| e.into_inner()).entries.len()
+        self.inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .entries
+            .len()
     }
 }
 

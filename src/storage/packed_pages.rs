@@ -80,9 +80,7 @@ pub fn pack_facts(facts: &[Fact], start_page_id: u64) -> Result<(Vec<Vec<u8>>, V
         // Check if this fact fits on the current page.
         // Free space = data_offset - dir_offset - dir_entry_size (for the new dir entry).
         // saturating_sub is safe: dir_offset + dir_entry_size is bounded by PAGE_SIZE.
-        let free = data_offset.saturating_sub(
-            dir_offset.saturating_add(dir_entry_size),
-        );
+        let free = data_offset.saturating_sub(dir_offset.saturating_add(dir_entry_size));
         if len > free || current_record_count == u16::MAX {
             // Flush current page and start a new one.
             write_record_count(&mut current_page, current_record_count);

@@ -80,14 +80,19 @@ fn serialize_entry(tx_count: u64, facts: &[Fact]) -> Result<Vec<u8>> {
                 MAX_FACT_BYTES
             );
         }
-        let fact_len = fact_bytes.len() as u32;
+        let fact_len = u32::try_from(fact_bytes.len()).map_err(|_| {
+            anyhow::anyhow!(
+                "fact serialised size {} exceeds u32 range",
+                fact_bytes.len()
+            )
+        })?;
         payload.extend_from_slice(&fact_len.to_le_bytes());
         payload.extend_from_slice(&fact_bytes);
     }
 
     let checksum = crc32fast::hash(&payload);
 
-    let mut entry = Vec::with_capacity(4 + payload.len());
+    let mut entry = Vec::with_capacity(payload.len().saturating_add(4));
     entry.extend_from_slice(&checksum.to_le_bytes());
     entry.extend_from_slice(&payload);
     Ok(entry)
@@ -165,7 +170,7 @@ impl WalWriter {
                 Ok(()) => return Ok(()),
                 Err(e) => {
                     last_err = Some(e);
-                    if i + 1 < retries {
+                    if i.saturating_add(1) < retries {
                         std::thread::sleep(std::time::Duration::from_millis(50));
                     }
                 }
@@ -174,7 +179,9 @@ impl WalWriter {
         Err(anyhow::anyhow!(
             "failed to delete WAL file {}: {}",
             path.display(),
-            last_err.unwrap()
+            last_err
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| "unknown error".to_string())
         ))
     }
 }
@@ -225,7 +232,8 @@ impl WalReader {
             if self.file.read_exact(&mut num_facts_buf).is_err() {
                 break; // truncated
             }
-            let num_facts = u64::from_le_bytes(num_facts_buf) as usize;
+            let num_facts = usize::try_from(u64::from_le_bytes(num_facts_buf))
+                .map_err(|_| anyhow::anyhow!("WAL num_facts exceeds platform usize"))?;
 
             // Sanity cap: no legitimate entry has more than 1M facts
             const MAX_FACTS_PER_ENTRY: usize = 1_000_000;

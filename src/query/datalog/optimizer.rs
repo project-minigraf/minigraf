@@ -44,7 +44,7 @@ fn selectivity_score(p: &Pattern) -> u8 {
     let e = !is_variable(&p.entity);
     let a = attr_is_index_bound(&p.attribute);
     let v = !is_variable(&p.value);
-    e as u8 + a as u8 + v as u8
+    (e as u8).saturating_add(a as u8).saturating_add(v as u8)
 }
 
 /// Select the most efficient index for a single pattern.

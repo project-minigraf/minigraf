@@ -27,12 +27,17 @@ pub struct MiniGrafDb {
 
 impl MiniGrafDb {
     fn set_error(&self, msg: String) {
-        *self.last_error.lock().unwrap() =
-            Some(CString::new(msg).unwrap_or_else(|_| CString::new("error").unwrap()));
+        if let Ok(mut guard) = self.last_error.lock() {
+            *guard = Some(
+                CString::new(msg).unwrap_or_else(|_| CString::new("error").unwrap_or_default()),
+            );
+        }
     }
 
     fn clear_error(&self) {
-        *self.last_error.lock().unwrap() = None;
+        if let Ok(mut guard) = self.last_error.lock() {
+            *guard = None;
+        }
     }
 }
 
@@ -95,7 +100,15 @@ pub extern "C" fn minigraf_execute(handle: *mut MiniGrafDb, datalog: *const c_ch
         }
     };
 
-    let result = handle.db.lock().unwrap().execute(datalog);
+    let db_guard = match handle.db.lock() {
+        Ok(g) => g,
+        Err(_) => {
+            handle.set_error("database lock poisoned".into());
+            return std::ptr::null_mut();
+        }
+    };
+    let result = db_guard.execute(datalog);
+    drop(db_guard);
     match result {
         Ok(qr) => {
             handle.clear_error();
@@ -132,7 +145,14 @@ pub extern "C" fn minigraf_checkpoint(handle: *mut MiniGrafDb) -> c_int {
         return -1;
     }
     let handle = unsafe { &*handle };
-    match handle.db.lock().unwrap().checkpoint() {
+    let db_guard = match handle.db.lock() {
+        Ok(g) => g,
+        Err(_) => {
+            handle.set_error("database lock poisoned".into());
+            return -1;
+        }
+    };
+    match db_guard.checkpoint() {
         Ok(_) => {
             handle.clear_error();
             0
@@ -154,7 +174,10 @@ pub extern "C" fn minigraf_last_error(handle: *mut MiniGrafDb) -> *const c_char 
         return std::ptr::null();
     }
     let handle = unsafe { &*handle };
-    let guard = handle.last_error.lock().unwrap();
+    let guard = match handle.last_error.lock() {
+        Ok(g) => g,
+        Err(_) => return std::ptr::null(),
+    };
     match guard.as_ref() {
         Some(s) => s.as_ptr(),
         None => std::ptr::null(),

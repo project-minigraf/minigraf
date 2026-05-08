@@ -120,7 +120,10 @@ impl PatternMatcher {
                     format!("__ftc_{}", eid),
                     Value::Integer(fact.tx_count.cast_signed()),
                 );
-                bindings.insert(format!("__fti_{}", eid), Value::Integer(fact.tx_id.cast_signed()));
+                bindings.insert(
+                    format!("__fti_{}", eid),
+                    Value::Integer(fact.tx_id.cast_signed()),
+                );
             }
             AttributeSpec::Pseudo(pseudo) => {
                 // Pseudo-attribute: skip stored attribute match; bind fact metadata

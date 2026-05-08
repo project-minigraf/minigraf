@@ -132,13 +132,18 @@ impl FactStorage {
         opts: Option<TransactOptions>,
     ) -> Result<TxId> {
         let tx_id = tx_id_now();
-        let tx_count = self.tx_counter.fetch_add(1, Ordering::SeqCst).saturating_add(1);
+        let tx_count = self
+            .tx_counter
+            .fetch_add(1, Ordering::SeqCst)
+            .saturating_add(1);
         let opts = opts.unwrap_or_default();
 
         let facts: Vec<Fact> = fact_tuples
             .into_iter()
             .map(|(entity, attribute, value)| {
-                let valid_from = opts.valid_from.unwrap_or_else(|| i64::try_from(tx_id).unwrap_or(i64::MAX));
+                let valid_from = opts
+                    .valid_from
+                    .unwrap_or_else(|| i64::try_from(tx_id).unwrap_or(i64::MAX));
                 let valid_to = opts.valid_to.unwrap_or(VALID_TIME_FOREVER);
                 Fact::with_valid_time(
                     entity, attribute, value, tx_id, tx_count, valid_from, valid_to,
@@ -146,7 +151,10 @@ impl FactStorage {
             })
             .collect();
 
-        let mut d = self.data.write().map_err(|_| anyhow::anyhow!("data lock poisoned"))?;
+        let mut d = self
+            .data
+            .write()
+            .map_err(|_| anyhow::anyhow!("data lock poisoned"))?;
         for (slot, fact) in (u16::try_from(d.facts.len()).unwrap_or(u16::MAX)..).zip(facts.iter()) {
             d.pending_keys.insert(pending_key(fact));
             d.pending_indexes.insert(
@@ -181,14 +189,19 @@ impl FactStorage {
         default_opts: Option<TransactOptions>,
     ) -> Result<TxId> {
         let tx_id = tx_id_now();
-        let tx_count = self.tx_counter.fetch_add(1, Ordering::SeqCst).saturating_add(1);
+        let tx_count = self
+            .tx_counter
+            .fetch_add(1, Ordering::SeqCst)
+            .saturating_add(1);
         let default_opts = default_opts.unwrap_or_default();
 
         let facts: Vec<Fact> = fact_tuples
             .into_iter()
             .map(|(entity, attribute, value, per_fact_opts)| {
                 let opts = per_fact_opts.unwrap_or_else(|| default_opts.clone());
-                let valid_from = opts.valid_from.unwrap_or_else(|| i64::try_from(tx_id).unwrap_or(i64::MAX));
+                let valid_from = opts
+                    .valid_from
+                    .unwrap_or_else(|| i64::try_from(tx_id).unwrap_or(i64::MAX));
                 let valid_to = opts.valid_to.unwrap_or(VALID_TIME_FOREVER);
                 Fact::with_valid_time(
                     entity, attribute, value, tx_id, tx_count, valid_from, valid_to,
@@ -196,7 +209,10 @@ impl FactStorage {
             })
             .collect();
 
-        let mut d = self.data.write().map_err(|_| anyhow::anyhow!("data lock poisoned"))?;
+        let mut d = self
+            .data
+            .write()
+            .map_err(|_| anyhow::anyhow!("data lock poisoned"))?;
         for (slot, fact) in (u16::try_from(d.facts.len()).unwrap_or(u16::MAX)..).zip(facts.iter()) {
             d.pending_keys.insert(pending_key(fact));
             d.pending_indexes.insert(
@@ -224,7 +240,10 @@ impl FactStorage {
     /// The TxId (timestamp) assigned to these retractions
     pub(crate) fn retract(&self, fact_tuples: Vec<(EntityId, Attribute, Value)>) -> Result<TxId> {
         let tx_id = tx_id_now();
-        let tx_count = self.tx_counter.fetch_add(1, Ordering::SeqCst).saturating_add(1);
+        let tx_count = self
+            .tx_counter
+            .fetch_add(1, Ordering::SeqCst)
+            .saturating_add(1);
 
         let retractions: Vec<Fact> = fact_tuples
             .into_iter()
@@ -235,8 +254,13 @@ impl FactStorage {
             })
             .collect();
 
-        let mut d = self.data.write().map_err(|_| anyhow::anyhow!("data lock poisoned"))?;
-        for (slot, fact) in (u16::try_from(d.facts.len()).unwrap_or(u16::MAX)..).zip(retractions.iter()) {
+        let mut d = self
+            .data
+            .write()
+            .map_err(|_| anyhow::anyhow!("data lock poisoned"))?;
+        for (slot, fact) in
+            (u16::try_from(d.facts.len()).unwrap_or(u16::MAX)..).zip(retractions.iter())
+        {
             d.pending_keys.insert(pending_key(fact));
             d.pending_indexes.insert(
                 fact,
@@ -260,7 +284,10 @@ impl FactStorage {
     /// Checks for duplicate facts before loading (based on entity, attribute, value,
     /// valid_from, valid_to, tx_count, and asserted).
     pub(crate) fn load_fact(&self, fact: Fact) -> Result<bool> {
-        let mut d = self.data.write().map_err(|_| anyhow::anyhow!("data lock poisoned"))?;
+        let mut d = self
+            .data
+            .write()
+            .map_err(|_| anyhow::anyhow!("data lock poisoned"))?;
 
         // O(1) duplicate check via the pending_keys HashSet.
         // Previously this was an O(n) linear scan over d.facts, causing O(n²)
@@ -287,7 +314,10 @@ impl FactStorage {
     /// Must be called after all `load_fact()` calls complete so that the next
     /// `transact()` call picks up from the right sequence number.
     pub(crate) fn restore_tx_counter(&self) -> Result<()> {
-        let d = self.data.read().map_err(|_| anyhow::anyhow!("data lock poisoned"))?;
+        let d = self
+            .data
+            .read()
+            .map_err(|_| anyhow::anyhow!("data lock poisoned"))?;
         let max = d.facts.iter().map(|f| f.tx_count).max().unwrap_or(0);
         self.tx_counter.store(max, Ordering::SeqCst);
         Ok(())
@@ -305,7 +335,9 @@ impl FactStorage {
     /// Used by explicit transactions to claim a tx_count at commit time,
     /// without creating any facts in FactStorage.
     pub(crate) fn allocate_tx_count(&self) -> u64 {
-        self.tx_counter.fetch_add(1, Ordering::SeqCst).saturating_add(1)
+        self.tx_counter
+            .fetch_add(1, Ordering::SeqCst)
+            .saturating_add(1)
     }
 
     /// Get all facts (including retractions)
@@ -314,7 +346,10 @@ impl FactStorage {
     /// asserted=true and take the most recent fact for each (E, A) pair.
     /// Includes both committed (on-disk) facts and pending (in-memory) facts.
     pub(crate) fn get_all_facts(&self) -> Result<Vec<Fact>> {
-        let d = self.data.read().map_err(|_| anyhow::anyhow!("data lock poisoned"))?;
+        let d = self
+            .data
+            .read()
+            .map_err(|_| anyhow::anyhow!("data lock poisoned"))?;
         let mut all = Vec::new();
         // Committed facts first (on disk, via CommittedFactReader)
         if let Some(loader) = &d.committed {
@@ -345,7 +380,10 @@ impl FactStorage {
 
     /// Clear all facts (for testing)
     pub(crate) fn clear(&self) -> Result<()> {
-        let mut d = self.data.write().map_err(|_| anyhow::anyhow!("data lock poisoned"))?;
+        let mut d = self
+            .data
+            .write()
+            .map_err(|_| anyhow::anyhow!("data lock poisoned"))?;
         d.facts.clear();
         d.pending_keys.clear();
         d.pending_indexes = Indexes::new();

@@ -203,7 +203,10 @@ impl RecursiveEvaluator {
     ) -> Result<Vec<Fact>> {
         let mut new_facts = Vec::new();
 
-        let registry = self.rules.read().expect("lock poisoned");
+        let registry = self
+            .rules
+            .read()
+            .map_err(|_| anyhow!("rule registry lock poisoned"))?;
 
         // For each predicate, evaluate all its rules
         for predicate in predicates {
@@ -280,11 +283,11 @@ impl RecursiveEvaluator {
         };
 
         // Apply Expr clauses to filter/extend bindings
-        let bindings = apply_expr_clauses_in_evaluator(
-            bindings,
-            &expr_clauses,
-            &self.functions.read().expect("lock poisoned"),
-        );
+        let fn_guard = self
+            .functions
+            .read()
+            .map_err(|_| anyhow!("function registry lock poisoned"))?;
+        let bindings = apply_expr_clauses_in_evaluator(bindings, &expr_clauses, &fn_guard);
 
         for binding in bindings {
             let fact = self.instantiate_head(&rule.head, &binding)?;
@@ -302,15 +305,18 @@ impl RecursiveEvaluator {
         if list.is_empty() {
             return Err(anyhow!("Rule invocation cannot be empty"));
         }
-        let predicate = match &list[0] {
-            EdnValue::Symbol(s) => s.clone(),
-            _ => {
+        let predicate = match list.first() {
+            Some(EdnValue::Symbol(s)) => s.clone(),
+            Some(_) => {
                 return Err(anyhow!(
                     "Rule invocation must start with predicate name (symbol)"
                 ));
             }
+            None => {
+                return Err(anyhow!("Rule invocation cannot be empty"));
+            }
         };
-        let args: Vec<EdnValue> = list[1..].to_vec();
+        let args: Vec<EdnValue> = list.get(1..).unwrap_or_default().to_vec();
         rule_invocation_to_pattern(&predicate, &args)
     }
 
@@ -328,19 +334,25 @@ impl RecursiveEvaluator {
         }
 
         // head[0] is predicate name
-        let predicate = match &head[0] {
-            EdnValue::Symbol(s) => s.clone(),
+        let predicate = match head.first() {
+            Some(EdnValue::Symbol(s)) => s.clone(),
             _ => return Err(anyhow!("Rule head must start with predicate name (symbol)")),
         };
 
         // head[1] is entity (usually a variable)
-        let entity_edn = self.substitute_variable(&head[1], binding)?;
+        let head_1 = head
+            .get(1)
+            .ok_or_else(|| anyhow!("Rule head missing entity argument"))?;
+        let entity_edn = self.substitute_variable(head_1, binding)?;
         let entity = edn_to_entity_id(&entity_edn)
             .map_err(|e| anyhow!("Failed to convert entity: {}", e))?;
 
         let value = if head.len() >= 3 {
             // 2-arg head: (reachable ?from ?to) — value is head[2]
-            let value_edn = self.substitute_variable(&head[2], binding)?;
+            let head_2 = head
+                .get(2)
+                .ok_or_else(|| anyhow!("Rule head missing value argument"))?;
+            let value_edn = self.substitute_variable(head_2, binding)?;
             edn_to_value(&value_edn).map_err(|e| anyhow!("Failed to convert value: {}", e))?
         } else {
             // 1-arg head: (blocked ?x) — store a Boolean(true) sentinel
@@ -423,16 +435,24 @@ pub fn substitute_value(value: &EdnValue, binding: &Bindings) -> EdnValue {
 /// 2-arg: `(reachable ?from ?to)` → `[?from :reachable ?to]`
 pub(crate) fn rule_invocation_to_pattern(predicate: &str, args: &[EdnValue]) -> Result<Pattern> {
     match args.len() {
-        1 => Ok(Pattern::new(
-            args[0].clone(),
-            EdnValue::Keyword(format!(":{}", predicate)),
-            EdnValue::Symbol("?_rule_value".to_string()),
-        )),
-        2 => Ok(Pattern::new(
-            args[0].clone(),
-            EdnValue::Keyword(format!(":{}", predicate)),
-            args[1].clone(),
-        )),
+        1 => {
+            // Safety: length checked above
+            let arg0 = args.first().ok_or_else(|| anyhow!("missing arg 0"))?;
+            Ok(Pattern::new(
+                arg0.clone(),
+                EdnValue::Keyword(format!(":{}", predicate)),
+                EdnValue::Symbol("?_rule_value".to_string()),
+            ))
+        }
+        2 => {
+            let arg0 = args.first().ok_or_else(|| anyhow!("missing arg 0"))?;
+            let arg1 = args.get(1).ok_or_else(|| anyhow!("missing arg 1"))?;
+            Ok(Pattern::new(
+                arg0.clone(),
+                EdnValue::Keyword(format!(":{}", predicate)),
+                arg1.clone(),
+            ))
+        }
         n => Err(anyhow!(
             "Rule invocation '{}' must have 1 or 2 arguments, got {}",
             predicate,
@@ -586,7 +606,10 @@ impl StratifiedEvaluator {
     pub fn evaluate(&self, predicates: &[String]) -> Result<FactStorage> {
         use crate::query::datalog::stratification::DependencyGraph;
 
-        let registry = self.rules.read().expect("lock poisoned");
+        let registry = self
+            .rules
+            .read()
+            .map_err(|_| anyhow!("rule registry lock poisoned"))?;
 
         // Build dependency graph and stratify
         let graph = DependencyGraph::from_rules(&registry);
@@ -597,7 +620,10 @@ impl StratifiedEvaluator {
         {
             let mut i = 0;
             while i < all_preds.len() {
-                let pred = all_preds[i].clone();
+                let pred = all_preds
+                    .get(i)
+                    .ok_or_else(|| anyhow!("index out of bounds"))?
+                    .clone();
                 for rule in registry.get_rules(&pred) {
                     for clause in &rule.body {
                         for dep in clause.rule_invocations() {
@@ -623,7 +649,10 @@ impl StratifiedEvaluator {
         let accumulated = self.storage.clone();
 
         for stratum in 0..=max_stratum {
-            let registry = self.rules.read().expect("lock poisoned");
+            let registry = self
+                .rules
+                .read()
+                .map_err(|_| anyhow!("rule registry lock poisoned"))?;
             let stratum_preds: Vec<String> = all_preds
                 .iter()
                 .filter(|p| *strata.get(*p).unwrap_or(&0) == stratum)
@@ -704,16 +733,22 @@ impl StratifiedEvaluator {
                     .filter_map(|c| match c {
                         WhereClause::Pattern(p) => Some(p.clone()),
                         WhereClause::RuleInvocation { predicate, args } => match args.len() {
-                            1 => Some(Pattern::new(
-                                args[0].clone(),
-                                EdnValue::Keyword(format!(":{}", predicate)),
-                                EdnValue::Symbol("?_rule_value".to_string()),
-                            )),
-                            2 => Some(Pattern::new(
-                                args[0].clone(),
-                                EdnValue::Keyword(format!(":{}", predicate)),
-                                args[1].clone(),
-                            )),
+                            1 => args.first().map(|a0| {
+                                Pattern::new(
+                                    a0.clone(),
+                                    EdnValue::Keyword(format!(":{}", predicate)),
+                                    EdnValue::Symbol("?_rule_value".to_string()),
+                                )
+                            }),
+                            2 => args.first().and_then(|a0| {
+                                args.get(1).map(|a1| {
+                                    Pattern::new(
+                                        a0.clone(),
+                                        EdnValue::Keyword(format!(":{}", predicate)),
+                                        a1.clone(),
+                                    )
+                                })
+                            }),
                             _ => None,
                         },
                         WhereClause::Not(_) | WhereClause::NotJoin { .. } => None,
@@ -761,7 +796,10 @@ impl StratifiedEvaluator {
                 let or_expanded = {
                     use crate::query::datalog::executor::apply_or_clauses;
                     use crate::query::datalog::functions::FunctionRegistry;
-                    let registry_guard = self.rules.read().expect("lock poisoned");
+                    let registry_guard = self
+                        .rules
+                        .read()
+                        .map_err(|_| anyhow!("rule registry lock poisoned"))?;
                     // Rule bodies in the semi-naive evaluator don't have access to a
                     // FunctionRegistry (UDF registration happens at the db layer). Use the
                     // built-in-only registry so or-branches can still use built-in predicates.
@@ -780,11 +818,13 @@ impl StratifiedEvaluator {
                 };
 
                 // Apply top-level Expr clauses to filter/extend candidates
-                let candidates = apply_expr_clauses_in_evaluator(
-                    or_expanded,
-                    &body_expr_clauses,
-                    &self.functions.read().expect("lock poisoned"),
-                );
+                let fn_guard = self
+                    .functions
+                    .read()
+                    .map_err(|_| anyhow!("function registry lock poisoned"))?;
+                let candidates =
+                    apply_expr_clauses_in_evaluator(or_expanded, &body_expr_clauses, &fn_guard);
+                drop(fn_guard);
 
                 // Build temp_eval once per rule (outside the binding loop);
                 // instantiate_head_public only uses storage, not the registry.
@@ -809,16 +849,22 @@ impl StratifiedEvaluator {
                                         .map(|a| substitute_value(a, &binding))
                                         .collect();
                                     match subst_args.len() {
-                                        1 => Some(Pattern::new(
-                                            subst_args[0].clone(),
-                                            EdnValue::Keyword(format!(":{}", predicate)),
-                                            EdnValue::Symbol("?_rule_value".to_string()),
-                                        )),
-                                        2 => Some(Pattern::new(
-                                            subst_args[0].clone(),
-                                            EdnValue::Keyword(format!(":{}", predicate)),
-                                            subst_args[1].clone(),
-                                        )),
+                                        1 => subst_args.first().map(|a0| {
+                                            Pattern::new(
+                                                a0.clone(),
+                                                EdnValue::Keyword(format!(":{}", predicate)),
+                                                EdnValue::Symbol("?_rule_value".to_string()),
+                                            )
+                                        }),
+                                        2 => subst_args.first().and_then(|a0| {
+                                            subst_args.get(1).map(|a1| {
+                                                Pattern::new(
+                                                    a0.clone(),
+                                                    EdnValue::Keyword(format!(":{}", predicate)),
+                                                    a1.clone(),
+                                                )
+                                            })
+                                        }),
                                         _ => None,
                                     }
                                 }
@@ -849,23 +895,32 @@ impl StratifiedEvaluator {
                             .iter()
                             .filter(|c| matches!(c, WhereClause::Expr { .. }))
                             .collect();
+                        let fn_guard = self
+                            .functions
+                            .read()
+                            .map_err(|_| anyhow!("function registry lock poisoned"))?;
                         not_bindings = apply_expr_clauses_in_evaluator(
                             not_bindings,
                             &not_body_expr_clauses,
-                            &self.functions.read().expect("lock poisoned"),
+                            &fn_guard,
                         );
+                        drop(fn_guard);
                         if !not_bindings.is_empty() {
                             continue 'binding; // not condition violated -> discard binding
                         }
                     }
 
                     for (join_vars, nj_clauses) in &not_join_clauses {
+                        let fn_guard = self
+                            .functions
+                            .read()
+                            .map_err(|_| anyhow!("function registry lock poisoned"))?;
                         if evaluate_not_join(
                             join_vars,
                             nj_clauses,
                             &binding,
                             accumulated_facts.clone(),
-                            &self.functions.read().expect("lock poisoned"),
+                            &fn_guard,
                         ) {
                             continue 'binding;
                         }

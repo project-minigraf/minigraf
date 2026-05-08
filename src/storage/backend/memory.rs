@@ -47,13 +47,19 @@ impl StorageBackend for MemoryBackend {
             );
         }
 
-        let mut pages = self.pages.write().map_err(|_| anyhow::anyhow!("pages lock poisoned"))?;
+        let mut pages = self
+            .pages
+            .write()
+            .map_err(|_| anyhow::anyhow!("pages lock poisoned"))?;
         pages.insert(page_id, data.to_vec());
         Ok(())
     }
 
     fn read_page(&self, page_id: u64) -> Result<Vec<u8>> {
-        let pages = self.pages.read().map_err(|_| anyhow::anyhow!("pages lock poisoned"))?;
+        let pages = self
+            .pages
+            .read()
+            .map_err(|_| anyhow::anyhow!("pages lock poisoned"))?;
         pages
             .get(&page_id)
             .cloned()

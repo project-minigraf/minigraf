@@ -86,8 +86,8 @@ fn write_leaf_page(
         write_pos -= entry.len();
         page[write_pos..write_pos + entry.len()].copy_from_slice(entry);
         let slot_off = LEAF_HEADER_SIZE + i * SLOT_SIZE;
-        let write_pos_u16 = u16::try_from(write_pos)
-            .map_err(|_| anyhow!("write_pos {write_pos} exceeds u16"))?;
+        let write_pos_u16 =
+            u16::try_from(write_pos).map_err(|_| anyhow!("write_pos {write_pos} exceeds u16"))?;
         let entry_len_u16 = u16::try_from(entry.len())
             .map_err(|_| anyhow!("entry len {} exceeds u16", entry.len()))?;
         page[slot_off..slot_off + 2].copy_from_slice(&write_pos_u16.to_le_bytes());
@@ -118,9 +118,11 @@ fn write_internal_page(
     if child_ids.is_empty() {
         anyhow::bail!("internal page has no children");
     }
-    let key_count =
-        u16::try_from(sep_bytes.len()).map_err(|_| anyhow!("too many sep keys: {}", sep_bytes.len()))?;
-    let rightmost_child = *child_ids.last().ok_or_else(|| anyhow!("child_ids is empty"))?;
+    let key_count = u16::try_from(sep_bytes.len())
+        .map_err(|_| anyhow!("too many sep keys: {}", sep_bytes.len()))?;
+    let rightmost_child = *child_ids
+        .last()
+        .ok_or_else(|| anyhow!("child_ids is empty"))?;
 
     let mut page = vec![0u8; PAGE_SIZE];
 
@@ -146,10 +148,10 @@ fn write_internal_page(
         write_pos -= sep.len();
         page[write_pos..write_pos + sep.len()].copy_from_slice(sep);
         let slot_off = slot_dir_start + i * SLOT_SIZE;
-        let write_pos_u16 = u16::try_from(write_pos)
-            .map_err(|_| anyhow!("write_pos {write_pos} exceeds u16"))?;
-        let sep_len_u16 = u16::try_from(sep.len())
-            .map_err(|_| anyhow!("sep len {} exceeds u16", sep.len()))?;
+        let write_pos_u16 =
+            u16::try_from(write_pos).map_err(|_| anyhow!("write_pos {write_pos} exceeds u16"))?;
+        let sep_len_u16 =
+            u16::try_from(sep.len()).map_err(|_| anyhow!("sep len {} exceeds u16", sep.len()))?;
         page[slot_off..slot_off + 2].copy_from_slice(&write_pos_u16.to_le_bytes());
         page[slot_off + 2..slot_off + 4].copy_from_slice(&sep_len_u16.to_le_bytes());
     }
@@ -627,10 +629,7 @@ impl<B: StorageBackend> StorageBackend for MutexStorageBackend<B> {
     }
 
     fn is_new(&self) -> bool {
-        self.0
-            .lock()
-            .map(|g| g.is_new())
-            .unwrap_or(false)
+        self.0.lock().map(|g| g.is_new()).unwrap_or(false)
     }
 }
 

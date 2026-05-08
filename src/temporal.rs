@@ -35,7 +35,11 @@ pub fn parse_timestamp(s: &str) -> Result<i64> {
     let date = s
         .parse::<NaiveDate>()
         .map_err(|e| anyhow!("invalid date '{}': {}", s, e))?;
-    let dt = Utc.from_utc_datetime(&date.and_hms_opt(0, 0, 0).unwrap());
+    let dt = Utc.from_utc_datetime(
+        &date
+            .and_hms_opt(0, 0, 0)
+            .ok_or_else(|| anyhow!("invalid date '{}': could not create midnight UTC", s))?,
+    );
     Ok(dt.timestamp_millis())
 }
 

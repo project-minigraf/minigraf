@@ -326,13 +326,9 @@ impl Parser {
     }
 
     fn advance(&mut self) -> Option<Token> {
-        if self.pos < self.tokens.len() {
-            let token = self.tokens[self.pos].clone();
-            self.pos += 1;
-            Some(token)
-        } else {
-            None
-        }
+        let token = self.tokens.get(self.pos)?.clone();
+        self.pos += 1;
+        Some(token)
     }
 
     fn parse_map(&mut self) -> Result<EdnValue, String> {
@@ -361,42 +357,43 @@ impl Parser {
                 if let Some(Token::Keyword(k)) = self.advance() {
                     Ok(EdnValue::Keyword(k))
                 } else {
-                    unreachable!()
+                    // peek confirmed Keyword variant; advance should match
+                    Err("internal parser error: expected keyword token".to_string())
                 }
             }
             Some(Token::Symbol(_)) => {
                 if let Some(Token::Symbol(s)) = self.advance() {
                     Ok(EdnValue::Symbol(s))
                 } else {
-                    unreachable!()
+                    Err("internal parser error: expected symbol token".to_string())
                 }
             }
             Some(Token::String(_)) => {
                 if let Some(Token::String(s)) = self.advance() {
                     Ok(EdnValue::String(s))
                 } else {
-                    unreachable!()
+                    Err("internal parser error: expected string token".to_string())
                 }
             }
             Some(Token::Integer(_)) => {
                 if let Some(Token::Integer(i)) = self.advance() {
                     Ok(EdnValue::Integer(i))
                 } else {
-                    unreachable!()
+                    Err("internal parser error: expected integer token".to_string())
                 }
             }
             Some(Token::Float(_)) => {
                 if let Some(Token::Float(f)) = self.advance() {
                     Ok(EdnValue::Float(f))
                 } else {
-                    unreachable!()
+                    Err("internal parser error: expected float token".to_string())
                 }
             }
             Some(Token::Boolean(_)) => {
                 if let Some(Token::Boolean(b)) = self.advance() {
                     Ok(EdnValue::Boolean(b))
                 } else {
-                    unreachable!()
+                    Err("internal parser error: expected boolean token".to_string())
                 }
             }
             Some(Token::TaggedLiteral(_)) => {
@@ -415,7 +412,7 @@ impl Parser {
                         Err(format!("Unknown tagged literal: #{}", tag))
                     }
                 } else {
-                    unreachable!()
+                    Err("internal parser error: expected tagged literal token".to_string())
                 }
             }
             Some(Token::Nil) => {
@@ -426,7 +423,7 @@ impl Parser {
                 if let Some(Token::BindSlot(name)) = self.advance() {
                     Ok(EdnValue::BindSlot(name))
                 } else {
-                    unreachable!()
+                    Err("internal parser error: expected bind slot token".to_string())
                 }
             }
             Some(token) => Err(format!("Unexpected token: {:?}", token)),
@@ -479,17 +476,22 @@ pub fn parse_datalog_command(input: &str) -> Result<DatalogCommand, String> {
     match edn {
         EdnValue::List(elements) if !elements.is_empty() => {
             // Command is a symbol (e.g., "query", "transact")
+            // SAFETY: is_empty() check above guarantees index 0 exists
+            #[allow(clippy::indexing_slicing)]
             let command = match &elements[0] {
                 EdnValue::Symbol(s) => s.as_str(),
                 EdnValue::Keyword(k) => k.as_str(),
                 _ => return Err("Expected command symbol".to_string()),
             };
 
+            // SAFETY: elements has at least 1 element, so [1..] is valid (may be empty)
+            #[allow(clippy::indexing_slicing)]
+            let rest = &elements[1..];
             match command {
-                "query" => parse_query(&elements[1..]),
-                "transact" => parse_transact(&elements[1..]),
-                "retract" => parse_retract(&elements[1..]),
-                "rule" => parse_rule(&elements[1..]),
+                "query" => parse_query(rest),
+                "transact" => parse_transact(rest),
+                "retract" => parse_retract(rest),
+                "rule" => parse_rule(rest),
                 _ => Err(format!("Unknown command: {}", command)),
             }
         }
@@ -515,6 +517,8 @@ fn parse_aggregate(elems: &[EdnValue]) -> Result<FindSpec, String> {
         ));
     }
 
+    // SAFETY: len == 2 check above guarantees indices 0 and 1 exist
+    #[allow(clippy::indexing_slicing)]
     let func_name = match &elems[0] {
         EdnValue::Symbol(s) => s.clone(),
         other => {
@@ -536,6 +540,8 @@ fn parse_aggregate(elems: &[EdnValue]) -> Result<FindSpec, String> {
     // Unknown aggregate names are allowed — they are resolved at runtime as UDFs.
     // If no UDF with this name is registered, the executor returns an error.
 
+    // SAFETY: len == 2 check above guarantees index 1 exists
+    #[allow(clippy::indexing_slicing)]
     let var = match &elems[1] {
         EdnValue::Symbol(s) if s.starts_with('?') => s.clone(),
         _ => return Err("Aggregate argument must be a variable (starting with ?)".to_string()),
@@ -555,6 +561,8 @@ fn parse_window_expr(elems: &[EdnValue]) -> Result<FindSpec, String> {
         return Err("window expression cannot be empty".into());
     }
 
+    // SAFETY: is_empty() check above guarantees index 0 exists
+    #[allow(clippy::indexing_slicing)]
     let func_name = match &elems[0] {
         EdnValue::Symbol(s) => s.as_str(),
         _ => return Err("window function name must be a symbol".into()),
@@ -634,7 +642,10 @@ fn parse_window_expr(elems: &[EdnValue]) -> Result<FindSpec, String> {
 
     let mut j = 0;
     while j < over_list.len() {
-        match &over_list[j] {
+        let item = over_list
+            .get(j)
+            .ok_or_else(|| "unexpected end of :over clause".to_string())?;
+        match item {
             EdnValue::Keyword(k) => match k.as_str() {
                 ":partition-by" => {
                     j += 1;
@@ -691,6 +702,8 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
         return Err("Query requires a map argument".to_string());
     }
 
+    // SAFETY: is_empty() check above guarantees index 0 exists
+    #[allow(clippy::indexing_slicing)]
     let query_vector = elements[0]
         .as_vector()
         .ok_or("Query argument must be a vector")?;
@@ -704,16 +717,23 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
 
     let mut i = 0;
     while i < query_vector.len() {
-        if let Some(keyword) = query_vector[i].as_keyword() {
+        let current_item = query_vector
+            .get(i)
+            .ok_or_else(|| "unexpected end of query vector".to_string())?;
+        if let Some(keyword) = current_item.as_keyword() {
             match keyword {
                 ":as-of" => {
                     // Next element is the value
                     i += 1;
-                    if i >= query_vector.len() {
-                        return Err(":as-of requires a value".to_string());
-                    }
-                    let as_of = match &query_vector[i] {
-                        EdnValue::Integer(n) if *n >= 0 => AsOf::Counter(*n as u64),
+                    let as_of_val = query_vector
+                        .get(i)
+                        .ok_or_else(|| ":as-of requires a value".to_string())?;
+                    let as_of = match as_of_val {
+                        EdnValue::Integer(n) if *n >= 0 => {
+                            let val = u64::try_from(*n)
+                                .map_err(|_| ":as-of counter must be non-negative".to_string())?;
+                            AsOf::Counter(val)
+                        }
                         EdnValue::Integer(n) => {
                             return Err(format!(":as-of counter must be non-negative, got {}", n));
                         }
@@ -735,10 +755,10 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                 }
                 ":valid-at" => {
                     i += 1;
-                    if i >= query_vector.len() {
-                        return Err(":valid-at requires a value".to_string());
-                    }
-                    let valid_at = match &query_vector[i] {
+                    let valid_at_val = query_vector
+                        .get(i)
+                        .ok_or_else(|| ":valid-at requires a value".to_string())?;
+                    let valid_at = match valid_at_val {
                         EdnValue::String(s) => {
                             let ts = parse_timestamp(s).map_err(|e| e.to_string())?;
                             ValidAt::Timestamp(ts)
@@ -767,7 +787,10 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                     // Collect ?-prefixed symbols until the next keyword or end of vector
                     i += 1;
                     while i < query_vector.len() {
-                        match &query_vector[i] {
+                        let with_item = query_vector
+                            .get(i)
+                            .ok_or_else(|| "unexpected end of query vector in :with".to_string())?;
+                        match with_item {
                             EdnValue::Symbol(s) if s.starts_with('?') => {
                                 with_vars.push(s.clone());
                                 i += 1;
@@ -792,7 +815,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
         }
 
         match current_clause {
-            Some(":find") => match &query_vector[i] {
+            Some(":find") => match current_item {
                 EdnValue::Symbol(s) if s.starts_with('?') => {
                     find_specs.push(FindSpec::Variable(s.clone()));
                 }
@@ -808,7 +831,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
             },
             Some(":where") => {
                 // Parse both patterns (vectors) and rule invocations (lists)
-                if let Some(pattern_vec) = query_vector[i].as_vector() {
+                if let Some(pattern_vec) = current_item.as_vector() {
                     // Expr clause: [(list-expr) ?out?] — element 0 is a List
                     if matches!(pattern_vec.first(), Some(EdnValue::List(_))) {
                         let clause = parse_expr_clause(pattern_vec)?;
@@ -817,21 +840,18 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                         let pattern = parse_query_pattern(pattern_vec)?;
                         where_clauses.push(WhereClause::Pattern(pattern));
                     }
-                } else if let Some(rule_list) = query_vector[i].as_list() {
+                } else if let Some(rule_list) = current_item.as_list() {
                     let clause = parse_list_as_where_clause(rule_list, true)?;
                     where_clauses.push(clause);
                 } else {
                     return Err(format!(
                         "Expected pattern vector or rule invocation in :where clause, got {:?}",
-                        query_vector[i]
+                        current_item
                     ));
                 }
             }
             _ => {
-                return Err(format!(
-                    "Unexpected element in query: {:?}",
-                    query_vector[i]
-                ));
+                return Err(format!("Unexpected element in query: {:?}", current_item));
             }
         }
 
@@ -882,16 +902,22 @@ fn parse_transact(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
         return Err("Transact requires a vector of facts".to_string());
     }
 
+    // SAFETY: is_empty() check above guarantees index 0 exists
+    #[allow(clippy::indexing_slicing)]
+    let first_element = &elements[0];
+
     // Check if the first element is a map (transaction-level options)
-    let (tx_valid_from, tx_valid_to, facts_element) = if elements[0].is_map() {
-        let map = elements[0].as_map().unwrap();
+    let (tx_valid_from, tx_valid_to, facts_element) = if first_element.is_map() {
+        let map = first_element.as_map().ok_or_else(|| {
+            "internal error: is_map() true but as_map() returned None".to_string()
+        })?;
         let (from, to) = parse_valid_time_map(map)?;
-        if elements.len() < 2 {
-            return Err("Transact with options requires a facts vector after the map".to_string());
-        }
-        (from, to, &elements[1])
+        let facts_elem = elements.get(1).ok_or_else(|| {
+            "Transact with options requires a facts vector after the map".to_string()
+        })?;
+        (from, to, facts_elem)
     } else {
-        (None, None, &elements[0])
+        (None, None, first_element)
     };
 
     let facts_vector = facts_element
@@ -912,19 +938,26 @@ fn parse_transact(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
             ));
         }
 
+        // SAFETY: len >= 3 check above guarantees indices 0, 1, 2 exist
+        #[allow(clippy::indexing_slicing)]
         let entity = fact_vec[0].clone();
+        #[allow(clippy::indexing_slicing)]
         let attribute = fact_vec[1].clone();
+        #[allow(clippy::indexing_slicing)]
         let value = fact_vec[2].clone();
 
         // Check for optional per-fact map at position 3
         let (fact_valid_from, fact_valid_to) = if fact_vec.len() >= 4 {
-            match &fact_vec[3] {
-                EdnValue::Map(pairs) => parse_valid_time_map(pairs)?,
-                other => {
+            match fact_vec.get(3) {
+                Some(EdnValue::Map(pairs)) => parse_valid_time_map(pairs)?,
+                Some(other) => {
                     return Err(format!(
                         "Optional 4th element of a fact must be a map {{:valid-from ... :valid-to ...}}, got {:?}",
                         other
                     ));
+                }
+                None => {
+                    return Err("unexpected end of fact vector".to_string());
                 }
             }
         } else {
@@ -1002,6 +1035,8 @@ fn parse_retract(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
         return Err("Retract requires a vector of facts".to_string());
     }
 
+    // SAFETY: is_empty() check above guarantees index 0 exists
+    #[allow(clippy::indexing_slicing)]
     let facts_vector = elements[0]
         .as_vector()
         .ok_or("Retract argument must be a vector")?;
@@ -1041,6 +1076,8 @@ fn parse_expr(list: &[EdnValue]) -> Result<Expr, String> {
     if list.is_empty() {
         return Err("expression list cannot be empty".to_string());
     }
+    // SAFETY: is_empty() check above guarantees index 0 exists
+    #[allow(clippy::indexing_slicing)]
     let head = match &list[0] {
         EdnValue::Symbol(s) => s.as_str(),
         other => return Err(format!("expression head must be a symbol, got {:?}", other)),
@@ -1057,9 +1094,11 @@ fn parse_expr(list: &[EdnValue]) -> Result<Expr, String> {
                 "integer?" => UnaryOp::IntegerQ,
                 "float?" => UnaryOp::FloatQ,
                 "boolean?" => UnaryOp::BooleanQ,
-                "nil?" => UnaryOp::NilQ,
-                _ => unreachable!(),
+                // SAFETY: the match arm above covers all 5 variants; this is the last one
+                _ => UnaryOp::NilQ,
             };
+            // SAFETY: len == 2 check above guarantees index 1 exists
+            #[allow(clippy::indexing_slicing)]
             let arg = parse_expr_arg(&list[1])?;
             Ok(Expr::UnaryOp(op, Box::new(arg)))
         }
@@ -1072,7 +1111,10 @@ fn parse_expr(list: &[EdnValue]) -> Result<Expr, String> {
             }
             // matches? second arg must be a string literal; compile regex early.
             if head == "matches?" {
+                // SAFETY: len == 3 check above guarantees indices 1 and 2 exist
+                #[allow(clippy::indexing_slicing)]
                 let lhs = parse_expr_arg(&list[1])?;
+                #[allow(clippy::indexing_slicing)]
                 let rhs = parse_expr_arg(&list[2])?;
                 match &rhs {
                     Expr::Lit(Value::String(pattern)) => {
@@ -1106,10 +1148,13 @@ fn parse_expr(list: &[EdnValue]) -> Result<Expr, String> {
                 "/" => BinOp::Div,
                 "starts-with?" => BinOp::StartsWith,
                 "ends-with?" => BinOp::EndsWith,
-                "contains?" => BinOp::Contains,
-                _ => unreachable!(),
+                // SAFETY: the match arm above covers all non-matches? variants
+                _ => BinOp::Contains,
             };
+            // SAFETY: len == 3 check above guarantees indices 1 and 2 exist
+            #[allow(clippy::indexing_slicing)]
             let lhs = parse_expr_arg(&list[1])?;
+            #[allow(clippy::indexing_slicing)]
             let rhs = parse_expr_arg(&list[2])?;
             Ok(Expr::BinOp(op, Box::new(lhs), Box::new(rhs)))
         }
@@ -1118,6 +1163,8 @@ fn parse_expr(list: &[EdnValue]) -> Result<Expr, String> {
             // Unknown name in 1-arg position: treat as UDF predicate resolved at runtime.
             // 2-arg unknown forms are still rejected.
             if list.len() == 2 {
+                // SAFETY: len == 2 check above guarantees index 1 exists
+                #[allow(clippy::indexing_slicing)]
                 let arg = parse_expr_arg(&list[1])?;
                 Ok(Expr::UnaryOp(
                     UnaryOp::Udf(other.to_string()),
@@ -1134,22 +1181,30 @@ fn parse_expr(list: &[EdnValue]) -> Result<Expr, String> {
 ///
 /// Called from `:where` dispatch when `vec[0]` is an `EdnValue::List`.
 fn parse_expr_clause(vec: &[EdnValue]) -> Result<WhereClause, String> {
-    let inner_list = match &vec[0] {
+    let first = vec
+        .first()
+        .ok_or_else(|| "parse_expr_clause called with empty vector".to_string())?;
+    let inner_list = match first {
         EdnValue::List(l) => l.as_slice(),
         _ => return Err("parse_expr_clause called with non-list element 0".to_string()),
     };
     let expr = parse_expr(inner_list)?;
     let binding = match vec.len() {
         1 => None,
-        2 => match &vec[1] {
-            EdnValue::Symbol(s) if s.starts_with('?') => Some(s.clone()),
-            other => {
-                return Err(format!(
-                    "expression output must be a ?variable, got {:?}",
-                    other
-                ));
+        2 => {
+            let second = vec
+                .get(1)
+                .ok_or_else(|| "unexpected end of expression clause".to_string())?;
+            match second {
+                EdnValue::Symbol(s) if s.starts_with('?') => Some(s.clone()),
+                other => {
+                    return Err(format!(
+                        "expression output must be a ?variable, got {:?}",
+                        other
+                    ));
+                }
             }
-        },
+        }
         n => {
             return Err(format!(
                 "expression clause must be [(expr)] or [(expr) ?out], got {} elements",
@@ -1166,7 +1221,10 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
     if list.is_empty() {
         return Err("Empty list in :where clause".to_string());
     }
-    match &list[0] {
+    // SAFETY: is_empty() check above guarantees index 0 exists
+    #[allow(clippy::indexing_slicing)]
+    let head = &list[0];
+    match head {
         EdnValue::Symbol(s) if s == "not" => {
             if !allow_not {
                 return Err("(not ...) cannot appear inside another (not ...)".to_string());
@@ -1175,7 +1233,10 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
                 return Err("(not) requires at least one clause".to_string());
             }
             let mut inner = Vec::new();
-            for item in &list[1..] {
+            let rest = list
+                .get(1..)
+                .ok_or_else(|| "unexpected end of not clause".to_string())?;
+            for item in rest {
                 if let Some(vec) = item.as_vector() {
                     if matches!(vec.first(), Some(EdnValue::List(_))) {
                         let clause = parse_expr_clause(vec)?;
@@ -1217,8 +1278,8 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
                     "(not-join) requires a join-vars vector and at least one clause".to_string(),
                 );
             }
-            let join_var_vec = match &list[1] {
-                EdnValue::Vector(v) => v,
+            let join_var_vec = match list.get(1) {
+                Some(EdnValue::Vector(v)) => v,
                 _ => {
                     return Err(
                         "(not-join) first argument must be a vector of join variables".to_string(),
@@ -1236,7 +1297,10 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
                 })
                 .collect::<Result<_, _>>()?;
             let mut inner = Vec::new();
-            for item in &list[2..] {
+            let rest = list
+                .get(2..)
+                .ok_or_else(|| "unexpected end of not-join clause".to_string())?;
+            for item in rest {
                 if let Some(vec) = item.as_vector() {
                     if matches!(vec.first(), Some(EdnValue::List(_))) {
                         let clause = parse_expr_clause(vec)?;
@@ -1273,7 +1337,10 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
                 return Err("(or) requires at least one branch".to_string());
             }
             let mut branches: Vec<Vec<WhereClause>> = Vec::new();
-            for item in &list[1..] {
+            let rest = list
+                .get(1..)
+                .ok_or_else(|| "unexpected end of or clause".to_string())?;
+            for item in rest {
                 let branch = parse_or_branch(item)?;
                 branches.push(branch);
             }
@@ -1285,8 +1352,8 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
                     "(or-join) requires a join-vars vector and at least one branch".to_string(),
                 );
             }
-            let join_var_vec = match &list[1] {
-                EdnValue::Vector(v) => v,
+            let join_var_vec = match list.get(1) {
+                Some(EdnValue::Vector(v)) => v,
                 _ => {
                     return Err(
                         "(or-join) first argument must be a vector of join variables".to_string(),
@@ -1304,7 +1371,10 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
                 })
                 .collect::<Result<_, _>>()?;
             let mut branches: Vec<Vec<WhereClause>> = Vec::new();
-            for item in &list[2..] {
+            let rest = list
+                .get(2..)
+                .ok_or_else(|| "unexpected end of or-join clause".to_string())?;
+            for item in rest {
                 let branch = parse_or_branch(item)?;
                 branches.push(branch);
             }
@@ -1314,7 +1384,10 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
             })
         }
         EdnValue::Symbol(predicate) => {
-            let args = list[1..].to_vec();
+            let args = list
+                .get(1..)
+                .ok_or_else(|| "unexpected end of rule invocation".to_string())?
+                .to_vec();
             Ok(WhereClause::RuleInvocation {
                 predicate: predicate.clone(),
                 args,
@@ -1322,7 +1395,7 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
         }
         _ => Err(format!(
             "Rule invocation must start with predicate name (symbol), got {:?}",
-            list[0]
+            head
         )),
     }
 }
@@ -1340,7 +1413,9 @@ fn parse_query_pattern(vec: &[EdnValue]) -> Result<Pattern, String> {
         ));
     }
 
+    // SAFETY: len == 3 check above guarantees indices 0, 1, 2 exist
     // Reject :db/* in entity position
+    #[allow(clippy::indexing_slicing)]
     if let EdnValue::Keyword(k) = &vec[0]
         && PseudoAttr::from_keyword(k).is_some()
     {
@@ -1351,6 +1426,7 @@ fn parse_query_pattern(vec: &[EdnValue]) -> Result<Pattern, String> {
     }
 
     // Reject :db/* in value position
+    #[allow(clippy::indexing_slicing)]
     if let EdnValue::Keyword(k) = &vec[2]
         && PseudoAttr::from_keyword(k).is_some()
     {
@@ -1361,9 +1437,11 @@ fn parse_query_pattern(vec: &[EdnValue]) -> Result<Pattern, String> {
     }
 
     // Detect pseudo-attribute in attribute position
+    #[allow(clippy::indexing_slicing)]
     if let EdnValue::Keyword(k) = &vec[1]
         && let Some(pseudo) = PseudoAttr::from_keyword(k)
     {
+        #[allow(clippy::indexing_slicing)]
         return Ok(Pattern::pseudo(vec[0].clone(), pseudo, vec[2].clone()));
     }
 
@@ -1384,7 +1462,10 @@ fn parse_or_branch(item: &EdnValue) -> Result<Vec<WhereClause>, String> {
                 return Err("(and) inside or/or-join requires at least one clause".to_string());
             }
             let mut clauses = Vec::new();
-            for clause_item in &inner[1..] {
+            let rest = inner
+                .get(1..)
+                .ok_or_else(|| "unexpected end of and clause".to_string())?;
+            for clause_item in rest {
                 clauses.push(parse_or_branch_item(clause_item)?);
             }
             Ok(clauses)
@@ -1465,9 +1546,17 @@ fn outer_vars_from_clause(clause: &WhereClause) -> Vec<String> {
                         .collect::<std::collections::HashSet<_>>()
                 })
                 .collect();
-            branch_var_sets[0]
+            let first_set = match branch_var_sets.first() {
+                Some(s) => s,
+                None => return vec![],
+            };
+            let rest_sets = match branch_var_sets.get(1..) {
+                Some(s) => s,
+                None => return first_set.iter().cloned().collect(),
+            };
+            first_set
                 .iter()
-                .filter(|v| branch_var_sets[1..].iter().all(|s| s.contains(*v)))
+                .filter(|v| rest_sets.iter().all(|s| s.contains(*v)))
                 .cloned()
                 .collect()
         }
@@ -1593,6 +1682,8 @@ fn check_expr_safety_with_bound(
                             branch_bound.difference(bound).cloned().collect();
                         branch_new_var_sets.push(new_vars);
                     }
+                    // SAFETY: windows(2) yields slices of exactly 2 elements
+                    #[allow(clippy::indexing_slicing)]
                     if branch_new_var_sets.windows(2).any(|w| w[0] != w[1]) {
                         return Err(
                             "all branches of (or ...) must introduce the same set of new variables"
@@ -1643,6 +1734,8 @@ fn parse_rule(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
     }
 
     // Parse the rule body (single vector containing head + body patterns)
+    // SAFETY: is_empty() check above guarantees index 0 exists
+    #[allow(clippy::indexing_slicing)]
     let body_vec = elements[0]
         .as_vector()
         .ok_or("Rule body must be a vector")?;
@@ -1652,6 +1745,8 @@ fn parse_rule(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
     }
 
     // First element is the head (must be a list)
+    // SAFETY: is_empty() check above guarantees index 0 exists
+    #[allow(clippy::indexing_slicing)]
     let head_list = body_vec[0]
         .as_list()
         .ok_or("Rule head must be a list: (predicate ?args)")?;
@@ -1661,6 +1756,8 @@ fn parse_rule(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
     }
 
     // Verify head starts with a symbol (predicate name)
+    // SAFETY: is_empty() check above guarantees index 0 exists
+    #[allow(clippy::indexing_slicing)]
     match &head_list[0] {
         EdnValue::Symbol(_) => {}
         _ => return Err("Rule head must start with a symbol (predicate name)".to_string()),
@@ -1668,7 +1765,10 @@ fn parse_rule(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
 
     // Rest of body_vec are patterns, rule invocations, or (not ...) clauses
     let mut body_clauses: Vec<WhereClause> = Vec::new();
-    for item in &body_vec[1..] {
+    // SAFETY: body_vec is non-empty, so [1..] is valid (may be empty)
+    #[allow(clippy::indexing_slicing)]
+    let body_rest = &body_vec[1..];
+    for item in body_rest {
         if let Some(vec) = item.as_vector() {
             if matches!(vec.first(), Some(EdnValue::List(_))) {
                 let clause = parse_expr_clause(vec)?;
@@ -1695,7 +1795,10 @@ fn parse_rule(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
     // Safety check: variables in (not ...) must be bound by the rule head or outer body clauses
     let mut outer_bound: std::collections::HashSet<String> = std::collections::HashSet::new();
     // Head args count as binding sites
-    for v in &head_list[1..] {
+    // SAFETY: head_list is non-empty, so [1..] is valid
+    #[allow(clippy::indexing_slicing)]
+    let head_args = &head_list[1..];
+    for v in head_args {
         if let Some(name) = v.as_variable() {
             outer_bound.insert(name.to_string());
         }

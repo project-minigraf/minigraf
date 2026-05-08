@@ -135,10 +135,16 @@ impl<'a> Repl<'a> {
                     in_string = !in_string;
                 }
                 '(' if !in_string => {
-                    depth += 1;
+                    #[allow(clippy::arithmetic_side_effects)]
+                    {
+                        depth += 1;
+                    }
                 }
                 ')' if !in_string => {
-                    depth -= 1;
+                    #[allow(clippy::arithmetic_side_effects)]
+                    {
+                        depth -= 1;
+                    }
                 }
                 _ => {}
             }
@@ -162,7 +168,7 @@ impl<'a> Repl<'a> {
                     println!("No results found.");
                 } else {
                     println!("{}", vars.join("\t"));
-                    println!("{}", "-".repeat(vars.len() * 20));
+                    println!("{}", "-".repeat(vars.len().saturating_mul(20)));
 
                     for row in &results {
                         let formatted_row: Vec<String> =

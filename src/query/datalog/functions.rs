@@ -131,8 +131,9 @@ impl FunctionRegistry {
                             if *is_float {
                                 Value::Float(*total)
                             } else {
-                                #[allow(clippy::cast_possible_truncation)] // value was accumulated from integers, range checked by is_float guard
-                            Value::Integer(*total as i64)
+                                #[allow(clippy::cast_possible_truncation)]
+                                // value was accumulated from integers, range checked by is_float guard
+                                Value::Integer(*total as i64)
                             }
                         } else {
                             Value::Null
@@ -393,13 +394,17 @@ pub(crate) fn value_type_name(v: &Value) -> &'static str {
 /// Apply a built-in aggregate function to a slice of non-null values (batch mode).
 pub fn apply_builtin_aggregate(name: &str, values: &[&Value]) -> anyhow::Result<Value> {
     match name {
-        "count" => Ok(Value::Integer(i64::try_from(values.len()).unwrap_or(i64::MAX))),
+        "count" => Ok(Value::Integer(
+            i64::try_from(values.len()).unwrap_or(i64::MAX),
+        )),
 
         "count-distinct" => {
             // O(n log n) via BTreeSet — Value::Ord is a stable discriminant-based
             // total order so BTreeSet membership is correct.
             let seen: std::collections::BTreeSet<&Value> = values.iter().copied().collect();
-            Ok(Value::Integer(i64::try_from(seen.len()).unwrap_or(i64::MAX)))
+            Ok(Value::Integer(
+                i64::try_from(seen.len()).unwrap_or(i64::MAX),
+            ))
         }
 
         "sum" | "sum-distinct" => {
@@ -452,7 +457,10 @@ pub fn apply_builtin_aggregate(name: &str, values: &[&Value]) -> anyhow::Result<
             if values.is_empty() {
                 return Err(anyhow::anyhow!("min/max: no non-null values in group"));
             }
-            let first = values.first().copied().ok_or_else(|| anyhow::anyhow!("min/max: no non-null values in group"))?;
+            let first = values
+                .first()
+                .copied()
+                .ok_or_else(|| anyhow::anyhow!("min/max: no non-null values in group"))?;
             for v in values.get(1..).unwrap_or(&[]) {
                 if std::mem::discriminant(*v) != std::mem::discriminant(first) {
                     return Err(anyhow::anyhow!(

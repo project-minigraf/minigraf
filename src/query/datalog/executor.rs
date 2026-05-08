@@ -186,7 +186,7 @@ impl DatalogExecutor {
     /// writes remain visible even if their synthetic metadata is slightly ahead
     /// of the current millisecond.
     fn read_now(&self) -> i64 {
-        let now = tx_id_now() as i64;
+        let now = tx_id_now().cast_signed();
         self.read_now_floor.map_or(now, |floor| now.max(floor))
     }
 
@@ -315,7 +315,9 @@ impl DatalogExecutor {
                 .collect(),
             Some(ValidAt::AnyValidTime) => asserted,
             Some(ValidAt::Slot(_)) => {
-                panic!("internal: unsubstituted :valid-at bind slot reached the executor");
+                return Err(anyhow!(
+                    "internal: unsubstituted :valid-at bind slot reached the executor"
+                ));
             }
             None => asserted
                 .into_iter()
@@ -348,7 +350,9 @@ impl DatalogExecutor {
             Some(ValidAt::Timestamp(t)) => Value::Integer(*t),
             Some(ValidAt::AnyValidTime) => Value::Null,
             Some(ValidAt::Slot(_)) => {
-                panic!("internal: unsubstituted :valid-at bind slot reached the executor");
+                return Err(anyhow!(
+                    "internal: unsubstituted :valid-at bind slot reached the executor"
+                ));
             }
             None => Value::Integer(now),
         };
@@ -379,10 +383,16 @@ impl DatalogExecutor {
 
         // Acquire the function registry once; used by apply_or_clauses, not_body_matches,
         // apply_expr_clauses, and apply_post_processing below.
-        let registry = self.functions.read().unwrap();
+        let registry = self
+            .functions
+            .read()
+            .map_err(|_| anyhow!("functions lock poisoned"))?;
 
         // Apply Or/OrJoin clauses (post-pass: after pattern matching, before not/expr)
-        let rules_guard = self.rules.read().unwrap();
+        let rules_guard = self
+            .rules
+            .read()
+            .map_err(|_| anyhow!("rules lock poisoned"))?;
         let bindings = apply_or_clauses(
             &query.where_clauses,
             bindings,
@@ -434,12 +444,13 @@ impl DatalogExecutor {
                         }
                     }
                     for (join_vars, nj_clauses) in &not_join_clauses {
+                        // Use the already-acquired registry instead of re-acquiring the lock.
                         if evaluate_not_join(
                             join_vars,
                             nj_clauses,
                             binding,
                             filtered_facts.clone(),
-                            &self.functions.read().unwrap(),
+                            &registry,
                         ) {
                             return false;
                         }
@@ -477,7 +488,9 @@ impl DatalogExecutor {
             Some(ValidAt::Timestamp(t)) => Value::Integer(*t),
             Some(ValidAt::AnyValidTime) => Value::Null,
             Some(ValidAt::Slot(_)) => {
-                panic!("internal: unsubstituted :valid-at bind slot reached the executor");
+                return Err(anyhow!(
+                    "internal: unsubstituted :valid-at bind slot reached the executor"
+                ));
             }
             None => Value::Integer(now),
         };
@@ -524,19 +537,23 @@ impl DatalogExecutor {
             let pattern = match args.len() {
                 1 => {
                     // 1-arg: (blocked ?x)  →  [?x :blocked ?_rule_value]
+                    // Safety: len()==1 guarantees index 0 exists.
+                    #[allow(clippy::indexing_slicing)]
+                    let entity = args[0].clone();
                     Pattern::new(
-                        args[0].clone(),
+                        entity,
                         EdnValue::Keyword(format!(":{}", predicate)),
                         EdnValue::Symbol("?_rule_value".to_string()),
                     )
                 }
                 2 => {
                     // 2-arg: (reachable ?x ?y)  →  [?x :reachable ?y]
-                    Pattern::new(
-                        args[0].clone(),
-                        EdnValue::Keyword(format!(":{}", predicate)),
-                        args[1].clone(),
-                    )
+                    // Safety: len()==2 guarantees indices 0 and 1 exist.
+                    #[allow(clippy::indexing_slicing)]
+                    let entity = args[0].clone();
+                    #[allow(clippy::indexing_slicing)]
+                    let value = args[1].clone();
+                    Pattern::new(entity, EdnValue::Keyword(format!(":{}", predicate)), value)
                 }
                 n => {
                     return Err(anyhow!(
@@ -561,10 +578,16 @@ impl DatalogExecutor {
 
         // Acquire the function registry once; used by apply_or_clauses, not-body filtering,
         // apply_expr_clauses, and apply_post_processing below.
-        let registry = self.functions.read().unwrap();
+        let registry = self
+            .functions
+            .read()
+            .map_err(|_| anyhow!("functions lock poisoned"))?;
 
         // Apply Or/OrJoin clauses against derived facts (rules already evaluated)
-        let rules_guard = self.rules.read().unwrap();
+        let rules_guard = self
+            .rules
+            .read()
+            .map_err(|_| anyhow!("rules lock poisoned"))?;
         let bindings = apply_or_clauses(
             &query.where_clauses,
             bindings,
@@ -644,17 +667,28 @@ impl DatalogExecutor {
                                             other => other.clone(),
                                         })
                                         .collect();
+                                    // Safety: match arms guarantee len()==1 or len()==2.
                                     let pattern = match resolved_args.len() {
-                                        1 => Pattern::new(
-                                            resolved_args[0].clone(),
-                                            EdnValue::Keyword(format!(":{}", predicate)),
-                                            EdnValue::Symbol("?_rule_value".to_string()),
-                                        ),
-                                        2 => Pattern::new(
-                                            resolved_args[0].clone(),
-                                            EdnValue::Keyword(format!(":{}", predicate)),
-                                            resolved_args[1].clone(),
-                                        ),
+                                        1 => {
+                                            #[allow(clippy::indexing_slicing)]
+                                            let entity = resolved_args[0].clone();
+                                            Pattern::new(
+                                                entity,
+                                                EdnValue::Keyword(format!(":{}", predicate)),
+                                                EdnValue::Symbol("?_rule_value".to_string()),
+                                            )
+                                        }
+                                        2 => {
+                                            #[allow(clippy::indexing_slicing)]
+                                            let entity = resolved_args[0].clone();
+                                            #[allow(clippy::indexing_slicing)]
+                                            let value = resolved_args[1].clone();
+                                            Pattern::new(
+                                                entity,
+                                                EdnValue::Keyword(format!(":{}", predicate)),
+                                                value,
+                                            )
+                                        }
                                         _ => return None,
                                     };
                                     Some(crate::query::datalog::evaluator::substitute_pattern(
@@ -692,13 +726,14 @@ impl DatalogExecutor {
                             return false; // not condition violated
                         }
                     }
+                    // Use the already-acquired registry instead of re-acquiring the lock.
                     for (join_vars, nj_clauses) in &not_join_clauses {
                         if evaluate_not_join(
                             join_vars,
                             nj_clauses,
                             binding,
                             derived_facts.clone(),
-                            &self.functions.read().unwrap(),
+                            &registry,
                         ) {
                             return false;
                         }
@@ -727,7 +762,10 @@ impl DatalogExecutor {
         let predicate = self.extract_predicate(&rule)?;
 
         // Register the rule
-        self.rules.write().unwrap().register_rule(predicate, rule)?;
+        self.rules
+            .write()
+            .map_err(|_| anyhow!("rules lock poisoned"))?
+            .register_rule(predicate, rule)?;
 
         Ok(QueryResult::Ok)
     }
@@ -738,6 +776,8 @@ impl DatalogExecutor {
             return Err(anyhow!("Rule head cannot be empty"));
         }
 
+        // Safety: is_empty() check above guarantees index 0 exists.
+        #[allow(clippy::indexing_slicing)]
         match &rule.head[0] {
             EdnValue::Symbol(s) => Ok(s.clone()),
             _ => Err(anyhow!(
@@ -959,7 +999,9 @@ fn compute_aggregation(
 
         // Plain variable values from group key.
         for (v, &idx) in &group_key_idx {
-            binding.insert((*v).to_string(), key[idx].clone());
+            if let Some(val) = key.get(idx) {
+                binding.insert((*v).to_string(), val.clone());
+            }
         }
 
         // Aggregate values stored under "__agg_{i}".
@@ -1046,6 +1088,9 @@ fn apply_window_functions(
             // Pre-extract order_by values into a contiguous Vec so the sort
             // comparator never touches the HashMap — O(n) lookups here instead
             // of O(n log n) random HashMap accesses inside sort_by.
+            // Safety: row_indices are populated from 0..bindings.len() enumeration above,
+            // so all indices are valid.
+            #[allow(clippy::indexing_slicing)]
             let mut keyed: Vec<(Value, usize)> = row_indices
                 .iter()
                 .map(|&i| {
@@ -1070,9 +1115,15 @@ fn apply_window_functions(
 
             // Compute one window value per row in sorted order.
             let window_values: Vec<Value> = match ws.func {
-                WindowFunc::RowNumber => (1..=keyed.len())
-                    .map(|pos| Value::Integer(pos as i64))
-                    .collect(),
+                WindowFunc::RowNumber => {
+                    let mut values = Vec::with_capacity(keyed.len());
+                    for pos in 1..=keyed.len() {
+                        values.push(Value::Integer(
+                            i64::try_from(pos).map_err(|_| anyhow!("row number overflow"))?,
+                        ));
+                    }
+                    values
+                }
 
                 WindowFunc::Rank => {
                     // Reuse pre-extracted keys for tie-detection — no extra HashMap lookups.
@@ -1101,6 +1152,8 @@ fn apply_window_functions(
                     })?;
 
                     let mut values = Vec::with_capacity(keyed.len());
+                    // Safety: row_idx values come from enumerate() over bindings, so indices are valid.
+                    #[allow(clippy::indexing_slicing)]
                     match &desc.impl_ {
                         AggImpl::Builtin(ops) => {
                             let mut acc = (ops.init)();
@@ -1134,7 +1187,9 @@ fn apply_window_functions(
             };
 
             // Write window values back to rows.
+            // Safety: row_idx values come from enumerate() over bindings, so indices are valid.
             for (&row_idx, window_val) in row_indices.iter().zip(window_values) {
+                #[allow(clippy::indexing_slicing)]
                 bindings[row_idx].insert(key.clone(), window_val);
             }
         }
@@ -1199,9 +1254,11 @@ pub(crate) fn evaluate_branch(
         Some(ValidAt::Timestamp(t)) => Value::Integer(*t),
         Some(ValidAt::AnyValidTime) => Value::Null,
         Some(ValidAt::Slot(_)) => {
-            panic!("internal: unsubstituted :valid-at bind slot reached the executor");
+            return Err(anyhow!(
+                "internal: unsubstituted :valid-at bind slot reached the executor"
+            ));
         }
-        None => Value::Integer(tx_id_now() as i64),
+        None => Value::Integer(tx_id_now().cast_signed()),
     };
 
     // Step 1: Collect Pattern and RuleInvocation clauses
@@ -1427,6 +1484,7 @@ fn eval_binop(op: &BinOp, l: Value, r: Value) -> Result<Value, ()> {
                 BinOp::Gt => lf > rf,
                 BinOp::Lte => lf <= rf,
                 BinOp::Gte => lf >= rf,
+                #[allow(clippy::unreachable)]
                 _ => unreachable!(),
             }))
         }
@@ -1444,6 +1502,7 @@ fn eval_binop(op: &BinOp, l: Value, r: Value) -> Result<Value, ()> {
                         Ok(Value::Integer(a / b))
                     }
                 }
+                #[allow(clippy::unreachable)]
                 _ => unreachable!(),
             },
             _ => {
@@ -1480,6 +1539,7 @@ fn eval_binop(op: &BinOp, l: Value, r: Value) -> Result<Value, ()> {
                             Ok(Value::Float(lf / rf))
                         }
                     }
+                    #[allow(clippy::unreachable)]
                     _ => unreachable!(),
                 }
             }
@@ -1545,7 +1605,8 @@ pub(crate) fn eval_expr(
             eval_binop(op, l, r)
         }
         Expr::Slot(_) => {
-            panic!("internal: unsubstituted bind slot reached eval_expr");
+            // Unsubstituted bind slot — treat as eval error (unbound variable equivalent).
+            Err(())
         }
     }
 }
