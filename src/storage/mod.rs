@@ -15,6 +15,42 @@ pub mod persistent_facts;
 
 use anyhow::Result;
 
+/// Read a 4-byte little-endian u32 from `bytes` at `offset`.
+fn read_u32_le(bytes: &[u8], offset: usize) -> anyhow::Result<u32> {
+    Ok(u32::from_le_bytes(
+        bytes
+            .get(offset..offset + 4)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "header too short: need {}..{}, got {} bytes",
+                    offset,
+                    offset + 4,
+                    bytes.len()
+                )
+            })?
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("header: slice at {offset} not exactly 4 bytes"))?,
+    ))
+}
+
+/// Read an 8-byte little-endian u64 from `bytes` at `offset`.
+fn read_u64_le(bytes: &[u8], offset: usize) -> anyhow::Result<u64> {
+    Ok(u64::from_le_bytes(
+        bytes
+            .get(offset..offset + 8)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "header too short: need {}..{}, got {} bytes",
+                    offset,
+                    offset + 8,
+                    bytes.len()
+                )
+            })?
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("header: slice at {offset} not exactly 8 bytes"))?,
+    ))
+}
+
 /// Page size for the storage engine (4KB like SQLite)
 pub const PAGE_SIZE: usize = 4096;
 
@@ -171,16 +207,20 @@ impl FileHeader {
         }
 
         let mut magic = [0u8; 4];
-        magic.copy_from_slice(&bytes[0..4]);
+        magic.copy_from_slice(
+            bytes
+                .get(0..4)
+                .ok_or_else(|| anyhow::anyhow!("header too short for magic bytes"))?,
+        );
 
         if magic != MAGIC_NUMBER {
             anyhow::bail!("Invalid magic number: not a .graph file");
         }
 
-        let version = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
-        let page_count = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
-        let node_count = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
-        let last_checkpointed_tx_count = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
+        let version = read_u32_le(bytes, 4)?;
+        let page_count = read_u64_le(bytes, 8)?;
+        let node_count = read_u64_le(bytes, 16)?;
+        let last_checkpointed_tx_count = read_u64_le(bytes, 24)?;
 
         // v3 and earlier: no index fields — return with zero-filled index fields.
         // The v3→v4 migration in persistent_facts.rs will upgrade on next save.
@@ -215,7 +255,7 @@ impl FileHeader {
             if bytes.len() < 80 {
                 anyhow::bail!("Invalid v6 header: expected 80 bytes, got {}", bytes.len());
             }
-            u64::from_le_bytes(bytes[72..80].try_into().unwrap())
+            read_u64_le(bytes, 72)?
         } else {
             0
         };
@@ -224,7 +264,7 @@ impl FileHeader {
             if bytes.len() < 84 {
                 anyhow::bail!("Invalid v7 header: expected 84 bytes, got {}", bytes.len());
             }
-            u32::from_le_bytes(bytes[80..84].try_into().unwrap())
+            read_u32_le(bytes, 80)?
         } else {
             0
         };
@@ -235,13 +275,25 @@ impl FileHeader {
             page_count,
             node_count,
             last_checkpointed_tx_count,
-            eavt_root_page: u64::from_le_bytes(bytes[32..40].try_into().unwrap()),
-            aevt_root_page: u64::from_le_bytes(bytes[40..48].try_into().unwrap()),
-            avet_root_page: u64::from_le_bytes(bytes[48..56].try_into().unwrap()),
-            vaet_root_page: u64::from_le_bytes(bytes[56..64].try_into().unwrap()),
-            index_checksum: u32::from_le_bytes(bytes[64..68].try_into().unwrap()),
-            fact_page_format: bytes[68],
-            _padding: [bytes[69], bytes[70], bytes[71]],
+            eavt_root_page: read_u64_le(bytes, 32)?,
+            aevt_root_page: read_u64_le(bytes, 40)?,
+            avet_root_page: read_u64_le(bytes, 48)?,
+            vaet_root_page: read_u64_le(bytes, 56)?,
+            index_checksum: read_u32_le(bytes, 64)?,
+            fact_page_format: *bytes
+                .get(68)
+                .ok_or_else(|| anyhow::anyhow!("header too short for fact_page_format"))?,
+            _padding: [
+                *bytes
+                    .get(69)
+                    .ok_or_else(|| anyhow::anyhow!("header too short for padding[0]"))?,
+                *bytes
+                    .get(70)
+                    .ok_or_else(|| anyhow::anyhow!("header too short for padding[1]"))?,
+                *bytes
+                    .get(71)
+                    .ok_or_else(|| anyhow::anyhow!("header too short for padding[2]"))?,
+            ],
             fact_page_count,
             header_checksum,
         })

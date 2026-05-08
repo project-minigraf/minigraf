@@ -90,7 +90,7 @@ impl FunctionRegistry {
                     step: |state, v| {
                         if !matches!(v, Value::Null) {
                             let AggState::Count(n) = state else { return };
-                            *n += 1;
+                            *n = n.saturating_add(1);
                         }
                     },
                     finalise: |state| {
@@ -131,6 +131,8 @@ impl FunctionRegistry {
                             if *is_float {
                                 Value::Float(*total)
                             } else {
+                                #[allow(clippy::cast_possible_truncation)]
+                                // value was accumulated from integers, range checked by is_float guard
                                 Value::Integer(*total as i64)
                             }
                         } else {
@@ -219,11 +221,11 @@ impl FunctionRegistry {
                             match v {
                                 Value::Integer(i) => {
                                     *sum += *i as f64;
-                                    *count += 1;
+                                    *count = count.saturating_add(1);
                                 }
                                 Value::Float(f) => {
                                     *sum += f;
-                                    *count += 1;
+                                    *count = count.saturating_add(1);
                                 }
                                 _ => {}
                             }
@@ -392,13 +394,17 @@ pub(crate) fn value_type_name(v: &Value) -> &'static str {
 /// Apply a built-in aggregate function to a slice of non-null values (batch mode).
 pub fn apply_builtin_aggregate(name: &str, values: &[&Value]) -> anyhow::Result<Value> {
     match name {
-        "count" => Ok(Value::Integer(values.len() as i64)),
+        "count" => Ok(Value::Integer(
+            i64::try_from(values.len()).unwrap_or(i64::MAX),
+        )),
 
         "count-distinct" => {
             // O(n log n) via BTreeSet — Value::Ord is a stable discriminant-based
             // total order so BTreeSet membership is correct.
             let seen: std::collections::BTreeSet<&Value> = values.iter().copied().collect();
-            Ok(Value::Integer(seen.len() as i64))
+            Ok(Value::Integer(
+                i64::try_from(seen.len()).unwrap_or(i64::MAX),
+            ))
         }
 
         "sum" | "sum-distinct" => {
@@ -434,7 +440,7 @@ pub fn apply_builtin_aggregate(name: &str, values: &[&Value]) -> anyhow::Result<
                 let mut sum = 0_i64;
                 for v in &deduped {
                     match v {
-                        Value::Integer(i) => sum += i,
+                        Value::Integer(i) => sum = sum.saturating_add(*i),
                         other => {
                             return Err(anyhow::anyhow!(
                                 "sum: expected Integer, Float, or Null, got {}",
@@ -451,8 +457,11 @@ pub fn apply_builtin_aggregate(name: &str, values: &[&Value]) -> anyhow::Result<
             if values.is_empty() {
                 return Err(anyhow::anyhow!("min/max: no non-null values in group"));
             }
-            let first = values[0];
-            for v in &values[1..] {
+            let first = values
+                .first()
+                .copied()
+                .ok_or_else(|| anyhow::anyhow!("min/max: no non-null values in group"))?;
+            for v in values.get(1..).unwrap_or(&[]) {
                 if std::mem::discriminant(*v) != std::mem::discriminant(first) {
                     return Err(anyhow::anyhow!(
                         "{}: cannot compare {} and {} values",
@@ -462,7 +471,7 @@ pub fn apply_builtin_aggregate(name: &str, values: &[&Value]) -> anyhow::Result<
                     ));
                 }
             }
-            let result = values.iter().try_fold((*values[0]).clone(), |acc, v| {
+            let result = values.iter().try_fold((*first).clone(), |acc, v| {
                 let ordering = match (&acc, v) {
                     (Value::Integer(a), Value::Integer(b)) => a.cmp(b),
                     (Value::Float(a), Value::Float(b)) => {
@@ -497,11 +506,11 @@ pub fn apply_builtin_aggregate(name: &str, values: &[&Value]) -> anyhow::Result<
                 match v {
                     Value::Integer(i) => {
                         sum += *i as f64;
-                        count += 1;
+                        count = count.saturating_add(1);
                     }
                     Value::Float(f) => {
                         sum += f;
-                        count += 1;
+                        count = count.saturating_add(1);
                     }
                     _ => {}
                 }

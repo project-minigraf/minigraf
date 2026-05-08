@@ -1,5 +1,17 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+    )
+)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 //! Zero-config, single-file, embedded graph database with bi-temporal Datalog queries.

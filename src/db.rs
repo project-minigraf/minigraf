@@ -129,6 +129,10 @@ impl OpenOptions {
     /// Open an in-memory (non-persistent) database.
     ///
     /// Uses the options set on the builder. WAL-related options are ignored.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the in-memory storage backend fails to initialise.
     pub fn open_memory(self) -> Result<Minigraf> {
         Minigraf::in_memory_with_options(self)
     }
@@ -144,6 +148,11 @@ pub struct OpenOptionsWithPath {
 #[cfg(not(target_arch = "wasm32"))]
 impl OpenOptionsWithPath {
     /// Open or create the file-backed database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be opened, the header is corrupt,
+    /// or WAL replay fails.
     pub fn open(self) -> Result<Minigraf> {
         Minigraf::open_with_options(self.path, self.opts)
     }
@@ -259,12 +268,22 @@ impl Minigraf {
     ///
     /// A sidecar WAL file (`<path>.wal`) is created alongside the main file.
     /// Any existing WAL from a previous crash is replayed automatically.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be opened, the header is corrupt,
+    /// or WAL replay fails.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         Self::open_with_options(path, OpenOptions::default())
     }
 
     /// Open or create a file-backed database with custom options.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be opened, the header is corrupt,
+    /// or WAL replay fails.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn open_with_options(path: impl AsRef<Path>, opts: OpenOptions) -> Result<Self> {
         let db_path = path.as_ref().to_path_buf();
@@ -309,6 +328,10 @@ impl Minigraf {
     }
 
     /// Create an in-memory database (no WAL, no persistence). Suitable for tests and REPL.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the in-memory storage backend fails to initialise.
     pub fn in_memory() -> Result<Self> {
         Self::in_memory_with_options(OpenOptions::default())
     }
@@ -316,6 +339,10 @@ impl Minigraf {
     /// Create an in-memory database with custom options.
     ///
     /// Note: WAL-related options are ignored for in-memory databases.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the in-memory storage backend fails to initialise.
     pub fn in_memory_with_options(opts: OpenOptions) -> Result<Self> {
         let backend = MemoryBackend::new();
         let pfs = PersistentFactStorage::new(backend, opts.page_cache_size)?;
@@ -364,7 +391,10 @@ impl Minigraf {
             for fact in &entry.facts {
                 let _ = fact_storage.load_fact(fact.clone())?;
             }
-            replayed += 1;
+            #[allow(clippy::arithmetic_side_effects)]
+            {
+                replayed += 1;
+            }
         }
 
         // Re-synchronise tx_counter to the maximum tx_count across all facts
@@ -437,7 +467,7 @@ impl Minigraf {
                     );
                     return executor.execute(cmd);
                 }
-                _ => unreachable!("is_write guarantees Transact, Retract, or Rule"),
+                _ => return Err(anyhow::anyhow!("unexpected command variant in write path")),
             };
 
             let tx_count = self.inner.fact_storage.allocate_tx_count();
@@ -450,7 +480,7 @@ impl Minigraf {
                     f.tx_count = tx_count;
                     // Fix valid_from if it was left as the sentinel
                     if f.asserted && f.valid_from == VALID_FROM_USE_TX_TIME {
-                        f.valid_from = tx_id as i64;
+                        f.valid_from = tx_id.cast_signed();
                     }
                     f
                 })
@@ -522,7 +552,7 @@ impl Minigraf {
             guard,
             inner: &self.inner,
             pending_facts: Vec::new(),
-            next_pending_tx_count: self.inner.fact_storage.current_tx_count() + 1,
+            next_pending_tx_count: self.inner.fact_storage.current_tx_count().saturating_add(1),
             next_pending_tx_id: crate::graph::types::tx_id_now(),
             committed: false,
         })
@@ -534,6 +564,10 @@ impl Minigraf {
     /// and delete the WAL sidecar.
     ///
     /// No-op for in-memory databases.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the write lock is poisoned or the checkpoint I/O fails.
     pub fn checkpoint(&self) -> Result<()> {
         let mut ctx = self.inner.write_lock.lock().map_err(|_| {
             anyhow::anyhow!("write lock is poisoned; database may be in an inconsistent state")
@@ -743,7 +777,10 @@ impl Minigraf {
     /// It is type-erased internally. The function is usable in both `:find`
     /// grouping position and `:over` (window) position.
     ///
-    /// Returns `Err` if `name` is already registered (built-in or UDF).
+    /// # Errors
+    ///
+    /// Returns an error if `name` is already registered (built-in or UDF)
+    /// or the function registry lock is poisoned.
     ///
     /// # Example
     /// ```
@@ -770,19 +807,15 @@ impl Minigraf {
         let init_boxed: Arc<dyn Fn() -> Box<dyn Any + Send> + Send + Sync> =
             Arc::new(move || Box::new(init()) as Box<dyn Any + Send>);
         let step_boxed: UdfStepFn = Arc::new(move |acc, v| {
-            // SAFETY: `init_boxed` always creates `Box<Acc>`, so downcast is infallible.
-            step(
-                acc.downcast_mut::<Acc>()
-                    .expect("UDF accumulator type mismatch"),
-                v,
-            );
+            // `init_boxed` always creates `Box<Acc>`, so downcast is infallible.
+            if let Some(typed_acc) = acc.downcast_mut::<Acc>() {
+                step(typed_acc, v);
+            }
         });
         let finalise_boxed: UdfFinaliseFn = Arc::new(move |acc, n| {
-            finalise(
-                acc.downcast_ref::<Acc>()
-                    .expect("UDF accumulator type mismatch"),
-                n,
-            )
+            acc.downcast_ref::<Acc>()
+                .map(|typed_acc| finalise(typed_acc, n))
+                .unwrap_or(Value::Null)
         });
 
         let desc = AggregateDesc {
@@ -803,7 +836,11 @@ impl Minigraf {
     /// Register a custom single-argument filter predicate.
     ///
     /// The predicate is usable in `[(name? ?var)]` `:where` clauses.
-    /// Returns `Err` if `name` is already registered (built-in or UDF).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `name` is already registered (built-in or UDF)
+    /// or the function registry lock is poisoned.
     ///
     /// # Example
     /// ```
@@ -869,6 +906,10 @@ impl<'a> WriteTransaction<'a> {
     /// - **Reads** (query): see committed facts in `FactStorage` **plus** all facts
     ///   buffered in this transaction (read-your-own-writes).
     /// - **Rules**: registered immediately into the shared rule registry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if parsing or execution fails.
     pub fn execute(&mut self, input: &str) -> Result<QueryResult> {
         let cmd = parse_datalog_command(input).map_err(|e| anyhow::anyhow!("{}", e))?;
 
@@ -942,7 +983,7 @@ impl<'a> WriteTransaction<'a> {
         }));
 
         self.next_pending_tx_id = staged_tx_id.saturating_add(1);
-        self.next_pending_tx_count += 1;
+        self.next_pending_tx_count = self.next_pending_tx_count.saturating_add(1);
     }
 
     /// Commit this transaction atomically.
@@ -951,6 +992,10 @@ impl<'a> WriteTransaction<'a> {
     /// the WAL entry is written and fsynced **before** any fact is applied to the
     /// shared `FactStorage`.  This guarantees that if the WAL write fails the
     /// database is left completely unchanged (clean rollback — no cleanup needed).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WAL write or fact application fails.
     pub fn commit(mut self) -> Result<()> {
         let facts_to_commit = std::mem::take(&mut self.pending_facts);
 
@@ -966,7 +1011,7 @@ impl<'a> WriteTransaction<'a> {
                     f.tx_count = tx_count;
                     // Fix valid_from if it was left as the sentinel (placeholder for "use tx time")
                     if f.valid_from == VALID_FROM_USE_TX_TIME && f.asserted {
-                        f.valid_from = tx_id as i64;
+                        f.valid_from = tx_id.cast_signed();
                     }
                     f
                 })
@@ -1030,10 +1075,12 @@ impl<'a> WriteTransaction<'a> {
                     *wal = Some(WalWriter::open_or_create(&wal_path)?);
                 }
 
-                let wal_writer = wal.as_mut().expect("WAL not initialized");
+                let wal_writer = wal
+                    .as_mut()
+                    .ok_or_else(|| anyhow::anyhow!("WAL not initialized"))?;
                 wal_writer.append_entry(tx_count, facts)?;
                 pfs.mark_dirty();
-                *wal_entry_count += 1;
+                *wal_entry_count = wal_entry_count.saturating_add(1);
 
                 Ok(*wal_entry_count >= opts.wal_checkpoint_threshold)
             }
@@ -1055,11 +1102,12 @@ impl<'a> WriteTransaction<'a> {
     /// fact's own staged `tx_id` so transactional queries see a coherent valid-time.
     fn merged_query_facts(&self) -> Result<Arc<[Fact]>> {
         let committed = self.inner.fact_storage.get_all_facts()?;
-        let mut merged = Vec::with_capacity(committed.len() + self.pending_facts.len());
+        let mut merged =
+            Vec::with_capacity(committed.len().saturating_add(self.pending_facts.len()));
         merged.extend(committed);
         merged.extend(self.pending_facts.iter().cloned().map(|mut f| {
             if f.asserted && f.valid_from == VALID_FROM_USE_TX_TIME {
-                f.valid_from = f.tx_id as i64;
+                f.valid_from = f.tx_id.cast_signed();
             }
             f
         }));
@@ -1070,7 +1118,7 @@ impl<'a> WriteTransaction<'a> {
     fn pending_read_now_floor(&self) -> Option<i64> {
         self.pending_facts
             .iter()
-            .map(|fact| fact.tx_id as i64)
+            .map(|fact| fact.tx_id.cast_signed())
             .max()
     }
 }
@@ -1332,7 +1380,7 @@ mod tests {
             Value::Integer(99),
             future_tx_id,
             1,
-            future_tx_id as i64,
+            future_tx_id.cast_signed(),
             VALID_TIME_FOREVER,
         );
         db.inner.fact_storage.load_fact(future_fact).unwrap();

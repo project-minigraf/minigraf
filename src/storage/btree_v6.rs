@@ -34,29 +34,25 @@ const PAGE_FILL_BYTES: usize = PAGE_SIZE * 3 / 4;
 
 /// Read a u16 from 2 bytes at the given offset, returning an error if out of bounds.
 fn read_u16_at(page: &[u8], offset: usize) -> Result<u16> {
-    if offset + 2 > page.len() {
-        return Err(anyhow!(
-            "out of bounds: offset {} + 2 > len {}",
-            offset,
-            page.len()
-        ));
-    }
+    let bytes = page
+        .get(offset..offset.saturating_add(2))
+        .ok_or_else(|| anyhow!("out of bounds: read_u16 at {offset} (len {})", page.len()))?;
     Ok(u16::from_le_bytes(
-        page[offset..offset + 2].try_into().unwrap(),
+        bytes
+            .try_into()
+            .map_err(|_| anyhow!("slice at {offset} not 2 bytes"))?,
     ))
 }
 
 /// Read a u64 from 8 bytes at the given offset, returning an error if out of bounds.
 fn read_u64_at(page: &[u8], offset: usize) -> Result<u64> {
-    if offset + 8 > page.len() {
-        return Err(anyhow!(
-            "out of bounds: offset {} + 8 > len {}",
-            offset,
-            page.len()
-        ));
-    }
+    let bytes = page
+        .get(offset..offset.saturating_add(8))
+        .ok_or_else(|| anyhow!("out of bounds: read_u64 at {offset} (len {})", page.len()))?;
     Ok(u64::from_le_bytes(
-        page[offset..offset + 8].try_into().unwrap(),
+        bytes
+            .try_into()
+            .map_err(|_| anyhow!("slice at {offset} not 8 bytes"))?,
     ))
 }
 
@@ -66,6 +62,7 @@ fn read_u64_at(page: &[u8], offset: usize) -> Result<u64> {
 ///
 /// `entries`: each element is the postcard-serialised `(K, FactRef)` bytes for
 /// one index entry, in sort order. Written end-to-start in the page.
+#[allow(clippy::arithmetic_side_effects, clippy::indexing_slicing)]
 fn write_leaf_page(
     backend: &mut dyn StorageBackend,
     cache: &PageCache,
@@ -73,7 +70,8 @@ fn write_leaf_page(
     entries: &[Vec<u8>],
     next_leaf: u64,
 ) -> Result<()> {
-    let entry_count = entries.len() as u16;
+    let entry_count =
+        u16::try_from(entries.len()).map_err(|_| anyhow!("too many entries: {}", entries.len()))?;
     let mut page = vec![0u8; PAGE_SIZE];
 
     // Fixed header
@@ -88,8 +86,12 @@ fn write_leaf_page(
         write_pos -= entry.len();
         page[write_pos..write_pos + entry.len()].copy_from_slice(entry);
         let slot_off = LEAF_HEADER_SIZE + i * SLOT_SIZE;
-        page[slot_off..slot_off + 2].copy_from_slice(&(write_pos as u16).to_le_bytes());
-        page[slot_off + 2..slot_off + 4].copy_from_slice(&(entry.len() as u16).to_le_bytes());
+        let write_pos_u16 =
+            u16::try_from(write_pos).map_err(|_| anyhow!("write_pos {write_pos} exceeds u16"))?;
+        let entry_len_u16 = u16::try_from(entry.len())
+            .map_err(|_| anyhow!("entry len {} exceeds u16", entry.len()))?;
+        page[slot_off..slot_off + 2].copy_from_slice(&write_pos_u16.to_le_bytes());
+        page[slot_off + 2..slot_off + 4].copy_from_slice(&entry_len_u16.to_le_bytes());
     }
 
     backend.write_page(page_id, &page)?;
@@ -103,6 +105,7 @@ fn write_leaf_page(
 /// `sep_bytes`: postcard-serialised Key bytes for each separator key.
 ///   `sep_bytes[j]` = first key of `child_ids[j+1]`'s subtree.
 ///   `sep_bytes.len()` == `child_ids.len() - 1`.
+#[allow(clippy::arithmetic_side_effects, clippy::indexing_slicing)]
 fn write_internal_page(
     backend: &mut dyn StorageBackend,
     cache: &PageCache,
@@ -115,8 +118,11 @@ fn write_internal_page(
     if child_ids.is_empty() {
         anyhow::bail!("internal page has no children");
     }
-    let key_count = sep_bytes.len() as u16;
-    let rightmost_child = *child_ids.last().unwrap();
+    let key_count = u16::try_from(sep_bytes.len())
+        .map_err(|_| anyhow!("too many sep keys: {}", sep_bytes.len()))?;
+    let rightmost_child = *child_ids
+        .last()
+        .ok_or_else(|| anyhow!("child_ids is empty"))?;
 
     let mut page = vec![0u8; PAGE_SIZE];
 
@@ -142,8 +148,12 @@ fn write_internal_page(
         write_pos -= sep.len();
         page[write_pos..write_pos + sep.len()].copy_from_slice(sep);
         let slot_off = slot_dir_start + i * SLOT_SIZE;
-        page[slot_off..slot_off + 2].copy_from_slice(&(write_pos as u16).to_le_bytes());
-        page[slot_off + 2..slot_off + 4].copy_from_slice(&(sep.len() as u16).to_le_bytes());
+        let write_pos_u16 =
+            u16::try_from(write_pos).map_err(|_| anyhow!("write_pos {write_pos} exceeds u16"))?;
+        let sep_len_u16 =
+            u16::try_from(sep.len()).map_err(|_| anyhow!("sep len {} exceeds u16", sep.len()))?;
+        page[slot_off..slot_off + 2].copy_from_slice(&write_pos_u16.to_le_bytes());
+        page[slot_off + 2..slot_off + 4].copy_from_slice(&sep_len_u16.to_le_bytes());
     }
 
     backend.write_page(page_id, &page)?;
@@ -182,6 +192,7 @@ pub fn btree_entries<K: Serialize>(
 /// pass the returned `next_free_page_id` as `start_page_id` for the next index.
 ///
 /// All written pages are inserted into `cache` via `put_dirty`.
+#[allow(clippy::arithmetic_side_effects, clippy::indexing_slicing)]
 pub fn build_btree(
     sorted_entries: impl Iterator<Item = (Vec<u8>, Vec<u8>)>,
     backend: &mut dyn StorageBackend,
@@ -238,18 +249,33 @@ pub fn build_btree(
 
     // Patch next_leaf pointers: leaf[i].next_leaf = leaf[i+1].page_id
     for i in 0..leaf_infos.len() - 1 {
-        let pid = leaf_infos[i].0;
-        let next_lid = leaf_infos[i + 1].0;
+        let (pid, _) = leaf_infos
+            .get(i)
+            .ok_or_else(|| anyhow!("leaf_infos[{i}] out of bounds"))?
+            .clone();
+        let (next_lid, _) = leaf_infos
+            .get(i + 1)
+            .ok_or_else(|| anyhow!("leaf_infos[{}] out of bounds", i + 1))?
+            .clone();
         let cached = cache.get_or_load(pid, backend)?;
         let mut page = (*cached).clone();
-        page[4..12].copy_from_slice(&next_lid.to_le_bytes());
+        // Safety: page is PAGE_SIZE bytes; offset 4..12 is always valid
+        page.get_mut(4..12)
+            .ok_or_else(|| anyhow!("page too small to write next_leaf"))?
+            .copy_from_slice(&next_lid.to_le_bytes());
         backend.write_page(pid, &page)?;
         cache.put_dirty(pid, page);
     }
 
     // Single leaf: it is the root
     if leaf_infos.len() == 1 {
-        return Ok((leaf_infos[0].0, next_page));
+        return Ok((
+            leaf_infos
+                .first()
+                .ok_or_else(|| anyhow!("leaf_infos unexpectedly empty"))?
+                .0,
+            next_page,
+        ));
     }
 
     // ── Phase 2: build internal levels bottom-up ──────────────────────────────
@@ -257,7 +283,13 @@ pub fn build_btree(
 
     loop {
         if current_level.len() == 1 {
-            return Ok((current_level[0].0, next_page));
+            return Ok((
+                current_level
+                    .first()
+                    .ok_or_else(|| anyhow!("current_level unexpectedly empty"))?
+                    .0,
+                next_page,
+            ));
         }
 
         let mut next_level: Vec<(u64, Vec<u8>)> = Vec::new();
@@ -265,13 +297,19 @@ pub fn build_btree(
 
         while i < current_level.len() {
             let i_start = i;
-            let mut child_ids: Vec<u64> = vec![current_level[i].0];
+            let first_entry = current_level
+                .get(i)
+                .ok_or_else(|| anyhow!("current_level[{i}] out of bounds"))?;
+            let mut child_ids: Vec<u64> = vec![first_entry.0];
             let mut sep_bytes: Vec<Vec<u8>> = Vec::new();
             let mut sep_data_bytes: usize = 0;
             i += 1;
 
             while i < current_level.len() {
-                let sep = current_level[i].1.clone();
+                let entry = current_level
+                    .get(i)
+                    .ok_or_else(|| anyhow!("current_level[{i}] out of bounds"))?;
+                let sep = entry.1.clone();
                 let projected = INTERNAL_HEADER_SIZE
                     + (child_ids.len() - 1) * 8
                     + (sep_bytes.len() + 1) * SLOT_SIZE
@@ -284,7 +322,12 @@ pub fn build_btree(
 
                 sep_data_bytes += sep.len();
                 sep_bytes.push(sep);
-                child_ids.push(current_level[i].0);
+                child_ids.push(
+                    current_level
+                        .get(i)
+                        .ok_or_else(|| anyhow!("current_level[{i}] out of bounds"))?
+                        .0,
+                );
                 i += 1;
             }
 
@@ -292,7 +335,11 @@ pub fn build_btree(
             write_internal_page(backend, cache, node_page_id, &child_ids, &sep_bytes)?;
             next_page += 1;
 
-            let first_key = current_level[i_start].1.clone();
+            let first_key = current_level
+                .get(i_start)
+                .ok_or_else(|| anyhow!("current_level[{i_start}] out of bounds"))?
+                .1
+                .clone();
             next_level.push((node_page_id, first_key));
         }
 
@@ -309,7 +356,7 @@ pub fn merge_sorted_vecs<T: Ord>(a: Vec<T>, b: Vec<T>) -> impl Iterator<Item = T
     let mut bi = b.into_iter().peekable();
     std::iter::from_fn(move || match (ai.peek(), bi.peek()) {
         (Some(_), Some(_)) => {
-            if ai.peek().unwrap() <= bi.peek().unwrap() {
+            if ai.peek() <= bi.peek() {
                 ai.next()
             } else {
                 bi.next()
@@ -324,11 +371,16 @@ pub fn merge_sorted_vecs<T: Ord>(a: Vec<T>, b: Vec<T>) -> impl Iterator<Item = T
 // ─── Leaf traversal helpers ───────────────────────────────────────────────────
 
 /// Traverse internal nodes from `root` to find the leftmost (first) leaf page.
+#[allow(clippy::arithmetic_side_effects)]
 fn find_leftmost_leaf(root: u64, backend: &dyn StorageBackend, cache: &PageCache) -> Result<u64> {
     let mut page_id = root;
     loop {
         let page = cache.get_or_load(page_id, backend)?;
-        match page[0] {
+        let page_type = page
+            .first()
+            .copied()
+            .ok_or_else(|| anyhow!("empty page at page_id={page_id}"))?;
+        match page_type {
             PAGE_TYPE_LEAF => return Ok(page_id),
             PAGE_TYPE_INTERNAL => {
                 let key_count = read_u16_at(&page[..], 2)? as usize;
@@ -350,6 +402,7 @@ fn find_leftmost_leaf(root: u64, backend: &dyn StorageBackend, cache: &PageCache
 /// Traverse from `root` to the leaf that would contain `key`.
 // Called by range_scan which is called by OnDiskIndexReader::range_scan_*.
 #[allow(dead_code)]
+#[allow(clippy::arithmetic_side_effects)]
 fn find_leaf_for_key<K>(
     root: u64,
     key: &K,
@@ -362,7 +415,11 @@ where
     let mut page_id = root;
     loop {
         let page = cache.get_or_load(page_id, backend)?;
-        match page[0] {
+        let page_type = page
+            .first()
+            .copied()
+            .ok_or_else(|| anyhow!("empty page at page_id={page_id}"))?;
+        match page_type {
             PAGE_TYPE_LEAF => return Ok(page_id),
             PAGE_TYPE_INTERNAL => {
                 let key_count = read_u16_at(&page[..], 2)? as usize;
@@ -375,8 +432,15 @@ where
                     let slot_off = slot_dir_start + i * SLOT_SIZE;
                     let sep_offset = read_u16_at(&page[..], slot_off)? as usize;
                     let sep_length = read_u16_at(&page[..], slot_off + 2)? as usize;
-                    let sep_key: K =
-                        postcard::from_bytes(&page[sep_offset..sep_offset + sep_length])?;
+                    let sep_slice = page
+                        .get(sep_offset..sep_offset.saturating_add(sep_length))
+                        .ok_or_else(|| {
+                            anyhow!(
+                                "sep slice out of bounds: offset={sep_offset} len={sep_length} page_len={}",
+                                page.len()
+                            )
+                        })?;
+                    let sep_key: K = postcard::from_bytes(sep_slice)?;
 
                     if *key < sep_key {
                         let child_off = child_arr_start + i * 8;
@@ -399,6 +463,7 @@ where
 }
 
 /// Read all `(K, FactRef)` entries from a leaf page's slot directory.
+#[allow(clippy::arithmetic_side_effects)]
 fn read_leaf_entries<K>(page: &[u8]) -> Result<Vec<(K, FactRef)>>
 where
     K: for<'de> Deserialize<'de>,
@@ -409,7 +474,15 @@ where
         let slot_off = LEAF_HEADER_SIZE + i * SLOT_SIZE;
         let offset = read_u16_at(page, slot_off)? as usize;
         let length = read_u16_at(page, slot_off + 2)? as usize;
-        let (k, fr): (K, FactRef) = postcard::from_bytes(&page[offset..offset + length])?;
+        let slice = page
+            .get(offset..offset.saturating_add(length))
+            .ok_or_else(|| {
+                anyhow!(
+                    "entry slice out of bounds: offset={offset} len={length} page_len={}",
+                    page.len()
+                )
+            })?;
+        let (k, fr): (K, FactRef) = postcard::from_bytes(slice)?;
         entries.push((k, fr));
     }
     Ok(entries)
@@ -432,7 +505,11 @@ where
 
     loop {
         let page = cache.get_or_load(leaf_id, backend)?;
-        if page[0] != PAGE_TYPE_LEAF {
+        let page_type = page
+            .first()
+            .copied()
+            .ok_or_else(|| anyhow!("empty page at page_id={leaf_id}"))?;
+        if page_type != PAGE_TYPE_LEAF {
             anyhow::bail!(
                 "stream_all_entries: expected leaf page at page_id={}",
                 leaf_id
@@ -473,7 +550,11 @@ where
 
     'outer: loop {
         let page = cache.get_or_load(leaf_id, backend)?;
-        if page[0] != PAGE_TYPE_LEAF {
+        let page_type = page
+            .first()
+            .copied()
+            .ok_or_else(|| anyhow!("empty page at page_id={leaf_id}"))?;
+        if page_type != PAGE_TYPE_LEAF {
             anyhow::bail!("range_scan: expected leaf at page_id={}", leaf_id);
         }
         let next_leaf = read_u64_at(&page[..], 4)?;
@@ -516,31 +597,39 @@ struct MutexStorageBackend<B>(Arc<Mutex<B>>);
 
 impl<B: StorageBackend> StorageBackend for MutexStorageBackend<B> {
     fn read_page(&self, page_id: u64) -> anyhow::Result<Vec<u8>> {
-        self.0.lock().unwrap().read_page(page_id)
+        self.0
+            .lock()
+            .map_err(|e| anyhow!("MutexStorageBackend lock poisoned: {e}"))?
+            .read_page(page_id)
     }
 
+    #[allow(clippy::unimplemented)]
     fn write_page(&mut self, _page_id: u64, _data: &[u8]) -> anyhow::Result<()> {
         unimplemented!("MutexStorageBackend is read-only; write_page must not be called")
     }
 
+    #[allow(clippy::unimplemented)]
     fn sync(&mut self) -> anyhow::Result<()> {
         unimplemented!("MutexStorageBackend is read-only; sync must not be called")
     }
 
+    #[allow(clippy::unimplemented)]
     fn page_count(&self) -> anyhow::Result<u64> {
         unimplemented!("MutexStorageBackend is read-only; page_count must not be called")
     }
 
+    #[allow(clippy::unimplemented)]
     fn close(&mut self) -> anyhow::Result<()> {
         unimplemented!("MutexStorageBackend is read-only; close must not be called")
     }
 
+    #[allow(clippy::unimplemented)]
     fn backend_name(&self) -> &'static str {
         unimplemented!("MutexStorageBackend is read-only; backend_name must not be called")
     }
 
     fn is_new(&self) -> bool {
-        self.0.lock().unwrap().is_new()
+        self.0.lock().map(|g| g.is_new()).unwrap_or(false)
     }
 }
 

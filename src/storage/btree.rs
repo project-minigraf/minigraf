@@ -67,70 +67,141 @@ fn write_blob(blob: &[u8], backend: &mut dyn StorageBackend, start_page_id: u64)
             u32::MAX
         );
     }
-    let total_len = blob.len() as u32;
+    // Safe: guarded by the > u32::MAX check above.
+    let total_len = u32::try_from(blob.len())
+        .map_err(|_| anyhow::anyhow!("blob.len() overflows u32 (len={})", blob.len()))?;
     let num_pages = if blob.is_empty() {
-        1 // always write at least one page
+        1usize // always write at least one page
     } else {
         blob.len().div_ceil(DATA_BYTES_PER_PAGE)
     };
 
     for i in 0..num_pages {
-        let offset = i * DATA_BYTES_PER_PAGE;
+        let offset = i
+            .checked_mul(DATA_BYTES_PER_PAGE)
+            .ok_or_else(|| anyhow::anyhow!("btree write_blob: page offset overflow at i={i}"))?;
         let chunk = if offset < blob.len() {
-            &blob[offset..blob.len().min(offset + DATA_BYTES_PER_PAGE)]
+            let end = blob.len().min(
+                offset
+                    .checked_add(DATA_BYTES_PER_PAGE)
+                    .ok_or_else(|| anyhow::anyhow!("btree write_blob: end offset overflow"))?,
+            );
+            blob.get(offset..end).ok_or_else(|| {
+                anyhow::anyhow!("btree write_blob: slice {offset}..{end} out of bounds")
+            })?
         } else {
             &[]
         };
-        let chunk_len = chunk.len() as u32;
+        let chunk_len = u32::try_from(chunk.len())
+            .map_err(|_| anyhow::anyhow!("chunk.len() overflows u32 (len={})", chunk.len()))?;
+        // num_pages >= 1 is guaranteed: write_blob always writes at least one page.
         let is_last: u8 = if i == num_pages - 1 { 0x01 } else { 0x00 };
 
         let mut page = vec![0u8; PAGE_SIZE];
-        page[0] = PAGE_TYPE_INDEX;
-        page[1..5].copy_from_slice(&total_len.to_le_bytes());
-        page[5..9].copy_from_slice(&chunk_len.to_le_bytes());
-        page[9] = is_last;
+        *page
+            .get_mut(0)
+            .ok_or_else(|| anyhow::anyhow!("btree: page index 0 out of bounds"))? = PAGE_TYPE_INDEX;
+        page.get_mut(1..5)
+            .ok_or_else(|| anyhow::anyhow!("btree: page slice 1..5 out of bounds"))?
+            .copy_from_slice(&total_len.to_le_bytes());
+        page.get_mut(5..9)
+            .ok_or_else(|| anyhow::anyhow!("btree: page slice 5..9 out of bounds"))?
+            .copy_from_slice(&chunk_len.to_le_bytes());
+        *page
+            .get_mut(9)
+            .ok_or_else(|| anyhow::anyhow!("btree: page index 9 out of bounds"))? = is_last;
         if !chunk.is_empty() {
-            page[PAGE_HEADER_SIZE..PAGE_HEADER_SIZE + chunk.len()].copy_from_slice(chunk);
+            let end = PAGE_HEADER_SIZE
+                .checked_add(chunk.len())
+                .ok_or_else(|| anyhow::anyhow!("btree write_blob: data end overflow"))?;
+            page.get_mut(PAGE_HEADER_SIZE..end)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("btree: page slice {PAGE_HEADER_SIZE}..{end} out of bounds")
+                })?
+                .copy_from_slice(chunk);
         }
 
-        backend.write_page(start_page_id + i as u64, &page)?;
+        let page_offset = u64::try_from(i)
+            .map_err(|_| anyhow::anyhow!("btree write_blob: page index {i} overflows u64"))?;
+        backend.write_page(
+            start_page_id
+                .checked_add(page_offset)
+                .ok_or_else(|| anyhow::anyhow!("btree write_blob: page_id overflow"))?,
+            &page,
+        )?;
     }
 
     // Return the page ID immediately after the last page written.
-    Ok(start_page_id + num_pages as u64)
+    let num_pages_u64 = u64::try_from(num_pages)
+        .map_err(|_| anyhow::anyhow!("btree write_blob: num_pages {num_pages} overflows u64"))?;
+    start_page_id
+        .checked_add(num_pages_u64)
+        .ok_or_else(|| anyhow::anyhow!("btree write_blob: final page_id overflow"))
 }
 
 fn read_blob(backend: &dyn StorageBackend, start_page_id: u64) -> Result<Vec<u8>> {
     // Read the first page to get total_len.
     let first_page = backend.read_page(start_page_id)?;
-    if first_page[0] != PAGE_TYPE_INDEX {
+    let first_byte = *first_page
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("btree read_blob: first_page index 0 out of bounds"))?;
+    if first_byte != PAGE_TYPE_INDEX {
         anyhow::bail!(
             "Expected index page type 0x{:02x}, got 0x{:02x}",
             PAGE_TYPE_INDEX,
-            first_page[0]
+            first_byte
         );
     }
 
-    let total_len = u32::from_le_bytes(first_page[1..5].try_into().unwrap()) as usize;
+    let total_len = u32::from_le_bytes(
+        first_page
+            .get(1..5)
+            .ok_or_else(|| anyhow::anyhow!("btree read_blob: first_page slice 1..5 out of bounds"))?
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("btree read_blob: slice 1..5 not exactly 4 bytes"))?,
+    ) as usize;
     let mut blob = Vec::with_capacity(total_len);
 
     let mut page_id = start_page_id;
     loop {
         let page = backend.read_page(page_id)?;
-        if page[0] != PAGE_TYPE_INDEX {
+        let page_byte = *page.first().ok_or_else(|| {
+            anyhow::anyhow!("btree read_blob: page index 0 out of bounds (page {page_id})")
+        })?;
+        if page_byte != PAGE_TYPE_INDEX {
             anyhow::bail!("Expected index page at page {}", page_id);
         }
-        let chunk_len = u32::from_le_bytes(page[5..9].try_into().unwrap()) as usize;
-        let is_last = page[9] == 0x01;
+        let chunk_len = u32::from_le_bytes(
+            page.get(5..9)
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "btree read_blob: page slice 5..9 out of bounds (page {page_id})"
+                    )
+                })?
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("btree read_blob: slice 5..9 not exactly 4 bytes"))?,
+        ) as usize;
+        let is_last = *page.get(9).ok_or_else(|| {
+            anyhow::anyhow!("btree read_blob: page index 9 out of bounds (page {page_id})")
+        })? == 0x01;
 
         if chunk_len > 0 {
-            blob.extend_from_slice(&page[PAGE_HEADER_SIZE..PAGE_HEADER_SIZE + chunk_len]);
+            let end = PAGE_HEADER_SIZE.checked_add(chunk_len).ok_or_else(|| {
+                anyhow::anyhow!("btree read_blob: data end overflow (chunk_len={chunk_len})")
+            })?;
+            blob.extend_from_slice(page.get(PAGE_HEADER_SIZE..end).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "btree read_blob: page slice {PAGE_HEADER_SIZE}..{end} out of bounds"
+                )
+            })?);
         }
 
         if is_last {
             break;
         }
-        page_id += 1;
+        page_id = page_id
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("btree read_blob: page_id overflow"))?;
     }
 
     Ok(blob)

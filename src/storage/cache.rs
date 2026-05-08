@@ -41,7 +41,8 @@ impl CacheInner {
     /// making stored positions stale and causing out-of-bounds panics.
     fn touch(&mut self, page_id: u64) {
         if let Some(pos) = self.order.iter().position(|&id| id == page_id) {
-            if pos == self.order.len() - 1 {
+            // Check if already at MRU (back) position without arithmetic
+            if self.order.back() == Some(&page_id) {
                 return; // Already at MRU position
             }
             self.order.remove(pos);
@@ -77,14 +78,20 @@ impl PageCache {
         // Approximate LRU: return without promoting to MRU to avoid a write lock
         // on every read. Pages loaded recently (on miss) are already near MRU.
         {
-            let inner = self.inner.read().expect("lock poisoned");
+            let inner = self
+                .inner
+                .read()
+                .map_err(|_| anyhow::anyhow!("cache lock poisoned"))?;
             if let Some(entry) = inner.entries.get(&page_id) {
                 return Ok(entry.data.clone());
             }
         }
         // Miss: load from backend (without holding any lock)
         let data = Arc::new(backend.read_page(page_id)?);
-        let mut inner = self.inner.write().expect("lock poisoned");
+        let mut inner = self
+            .inner
+            .write()
+            .map_err(|_| anyhow::anyhow!("cache lock poisoned"))?;
         // Double-check after acquiring write lock (another thread may have loaded it)
         if let Some(entry) = inner.entries.get(&page_id) {
             return Ok(entry.data.clone());
@@ -110,12 +117,14 @@ impl PageCache {
 
     /// Insert or update a page in the cache and mark it dirty.
     pub fn put_dirty(&self, page_id: u64, data: Vec<u8>) {
-        let mut inner = self.inner.write().expect("lock poisoned");
+        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         let data = Arc::new(data);
         if inner.entries.contains_key(&page_id) {
             // Update in place, move to MRU
-            inner.entries.get_mut(&page_id).unwrap().data = data;
-            inner.entries.get_mut(&page_id).unwrap().dirty = true;
+            if let Some(entry) = inner.entries.get_mut(&page_id) {
+                entry.data = data;
+                entry.dirty = true;
+            }
             inner.touch(page_id);
         } else {
             // Evict if at capacity
@@ -136,7 +145,10 @@ impl PageCache {
     /// Write all dirty pages to the backend and clear dirty flags.
     #[allow(dead_code)]
     pub fn flush(&self, backend: &mut dyn StorageBackend) -> Result<()> {
-        let mut inner = self.inner.write().expect("lock poisoned");
+        let mut inner = self
+            .inner
+            .write()
+            .map_err(|_| anyhow::anyhow!("cache lock poisoned"))?;
         for (&page_id, entry) in inner.entries.iter_mut() {
             if entry.dirty {
                 backend.write_page(page_id, &entry.data[..])?;
@@ -149,7 +161,7 @@ impl PageCache {
     /// Invalidate (remove) a page from the cache.
     #[allow(dead_code)]
     pub fn invalidate(&self, page_id: u64) {
-        let mut inner = self.inner.write().expect("lock poisoned");
+        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         inner.entries.remove(&page_id);
         inner.order.retain(|&id| id != page_id);
     }
@@ -159,7 +171,7 @@ impl PageCache {
     /// Used during save to discard stale B+tree index pages before
     /// overwriting them with new fact and index pages.
     pub fn invalidate_from(&self, from_page: u64) {
-        let mut inner = self.inner.write().expect("lock poisoned");
+        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
         inner.entries.retain(|&id, _| id < from_page);
         inner.order.retain(|&id| id < from_page);
     }
@@ -167,7 +179,11 @@ impl PageCache {
     /// Number of pages currently cached (for testing).
     #[allow(dead_code)]
     pub fn cached_page_count(&self) -> usize {
-        self.inner.read().expect("lock poisoned").entries.len()
+        self.inner
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .entries
+            .len()
     }
 }
 

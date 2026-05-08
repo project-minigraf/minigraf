@@ -399,9 +399,20 @@ impl Pattern {
         }
 
         Ok(Pattern {
-            entity: vector[0].clone(),
-            attribute: AttributeSpec::Real(vector[1].clone()),
-            value: vector[2].clone(),
+            entity: vector
+                .first()
+                .cloned()
+                .ok_or_else(|| "Pattern missing entity (index 0)".to_string())?,
+            attribute: AttributeSpec::Real(
+                vector
+                    .get(1)
+                    .cloned()
+                    .ok_or_else(|| "Pattern missing attribute (index 1)".to_string())?,
+            ),
+            value: vector
+                .get(2)
+                .cloned()
+                .ok_or_else(|| "Pattern missing value (index 2)".to_string())?,
             valid_from: None,
             valid_to: None,
         })

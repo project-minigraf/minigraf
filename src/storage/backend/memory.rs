@@ -27,7 +27,7 @@ impl MemoryBackend {
 
     /// Get the number of pages stored.
     fn page_count_internal(&self) -> u64 {
-        self.pages.read().unwrap().len() as u64
+        self.pages.read().unwrap_or_else(|e| e.into_inner()).len() as u64
     }
 }
 
@@ -47,13 +47,19 @@ impl StorageBackend for MemoryBackend {
             );
         }
 
-        let mut pages = self.pages.write().unwrap();
+        let mut pages = self
+            .pages
+            .write()
+            .map_err(|_| anyhow::anyhow!("pages lock poisoned"))?;
         pages.insert(page_id, data.to_vec());
         Ok(())
     }
 
     fn read_page(&self, page_id: u64) -> Result<Vec<u8>> {
-        let pages = self.pages.read().unwrap();
+        let pages = self
+            .pages
+            .read()
+            .map_err(|_| anyhow::anyhow!("pages lock poisoned"))?;
         pages
             .get(&page_id)
             .cloned()

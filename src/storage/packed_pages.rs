@@ -79,7 +79,8 @@ pub fn pack_facts(facts: &[Fact], start_page_id: u64) -> Result<(Vec<Vec<u8>>, V
 
         // Check if this fact fits on the current page.
         // Free space = data_offset - dir_offset - dir_entry_size (for the new dir entry).
-        let free = data_offset.saturating_sub(dir_offset + dir_entry_size);
+        // saturating_sub is safe: dir_offset + dir_entry_size is bounded by PAGE_SIZE.
+        let free = data_offset.saturating_sub(dir_offset.saturating_add(dir_entry_size));
         if len > free || current_record_count == u16::MAX {
             // Flush current page and start a new one.
             write_record_count(&mut current_page, current_record_count);
@@ -91,22 +92,57 @@ pub fn pack_facts(facts: &[Fact], start_page_id: u64) -> Result<(Vec<Vec<u8>>, V
         }
 
         // Write data from end of page backwards.
-        data_offset -= len;
-        current_page[data_offset..data_offset + len].copy_from_slice(&serialised);
+        // len <= MAX_FACT_BYTES <= PAGE_SIZE, and we checked len <= free <= data_offset,
+        // so this subtraction cannot underflow.
+        data_offset = data_offset.wrapping_sub(len);
+        current_page
+            .get_mut(data_offset..data_offset.saturating_add(len))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "packed page too short: data region {}..{} out of bounds",
+                    data_offset,
+                    data_offset.saturating_add(len)
+                )
+            })?
+            .copy_from_slice(&serialised);
 
         // Write directory entry: offset (u16 LE) | length (u16 LE).
-        let offset_u16 = data_offset as u16;
-        let len_u16 = len as u16;
-        current_page[dir_offset..dir_offset + 2].copy_from_slice(&offset_u16.to_le_bytes());
-        current_page[dir_offset + 2..dir_offset + 4].copy_from_slice(&len_u16.to_le_bytes());
-        dir_offset += 4;
+        // data_offset <= PAGE_SIZE (4096) which fits in u16; len <= MAX_FACT_BYTES < u16::MAX.
+        let offset_u16 = u16::try_from(data_offset)
+            .map_err(|_| anyhow::anyhow!("data_offset {} overflows u16", data_offset))?;
+        let len_u16 = u16::try_from(len)
+            .map_err(|_| anyhow::anyhow!("serialised fact too large: {} bytes", len))?;
+        current_page
+            .get_mut(dir_offset..dir_offset.saturating_add(2))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "packed page dir out of bounds at {}..{}",
+                    dir_offset,
+                    dir_offset.saturating_add(2)
+                )
+            })?
+            .copy_from_slice(&offset_u16.to_le_bytes());
+        current_page
+            .get_mut(dir_offset.saturating_add(2)..dir_offset.saturating_add(4))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "packed page dir out of bounds at {}..{}",
+                    dir_offset.saturating_add(2),
+                    dir_offset.saturating_add(4)
+                )
+            })?
+            .copy_from_slice(&len_u16.to_le_bytes());
+        dir_offset = dir_offset.saturating_add(4);
 
-        let page_id = start_page_id + pages.len() as u64;
+        let page_id = start_page_id.saturating_add(
+            u64::try_from(pages.len())
+                .map_err(|_| anyhow::anyhow!("too many pages: overflows u64"))?,
+        );
         fact_refs.push(FactRef {
             page_id,
             slot_index: current_record_count,
         });
-        current_record_count += 1;
+        current_record_count = current_record_count.saturating_add(1);
     }
 
     // Always flush the last page (even if facts slice is empty).
@@ -125,10 +161,19 @@ pub fn read_slot(page: &[u8], slot: u16) -> Result<Fact> {
             PAGE_SIZE
         );
     }
-    if page[0] != PAGE_TYPE_PACKED {
-        anyhow::bail!("Expected packed page (0x02), got 0x{:02x}", page[0]);
+    let page_type = *page
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("packed page empty"))?;
+    if page_type != PAGE_TYPE_PACKED {
+        anyhow::bail!("Expected packed page (0x02), got 0x{:02x}", page_type);
     }
-    let record_count = u16::from_le_bytes([page[2], page[3]]);
+    let b2 = *page
+        .get(2)
+        .ok_or_else(|| anyhow::anyhow!("packed page too short for record_count byte 2"))?;
+    let b3 = *page
+        .get(3)
+        .ok_or_else(|| anyhow::anyhow!("packed page too short for record_count byte 3"))?;
+    let record_count = u16::from_le_bytes([b2, b3]);
     if slot >= record_count {
         anyhow::bail!(
             "Slot {} out of bounds (page has {} records)",
@@ -136,13 +181,37 @@ pub fn read_slot(page: &[u8], slot: u16) -> Result<Fact> {
             record_count
         );
     }
-    let dir_base = PACKED_HEADER_SIZE + (slot as usize) * 4;
-    let offset = u16::from_le_bytes([page[dir_base], page[dir_base + 1]]) as usize;
-    let length = u16::from_le_bytes([page[dir_base + 2], page[dir_base + 3]]) as usize;
-    if offset + length > PAGE_SIZE {
+    // dir_base = PACKED_HEADER_SIZE + slot * 4; slot < record_count <= u16::MAX,
+    // so slot as usize * 4 <= (65534 * 4) which fits in usize.
+    let slot_usize = usize::from(slot);
+    let dir_base = PACKED_HEADER_SIZE.saturating_add(slot_usize.saturating_mul(4));
+    let db0 = *page
+        .get(dir_base)
+        .ok_or_else(|| anyhow::anyhow!("packed page dir entry {} out of bounds", slot))?;
+    let db1 = *page
+        .get(dir_base.saturating_add(1))
+        .ok_or_else(|| anyhow::anyhow!("packed page dir entry {} byte 1 out of bounds", slot))?;
+    let db2 = *page
+        .get(dir_base.saturating_add(2))
+        .ok_or_else(|| anyhow::anyhow!("packed page dir entry {} byte 2 out of bounds", slot))?;
+    let db3 = *page
+        .get(dir_base.saturating_add(3))
+        .ok_or_else(|| anyhow::anyhow!("packed page dir entry {} byte 3 out of bounds", slot))?;
+    let offset = usize::from(u16::from_le_bytes([db0, db1]));
+    let length = usize::from(u16::from_le_bytes([db2, db3]));
+    if offset.saturating_add(length) > PAGE_SIZE {
         anyhow::bail!("Record at slot {} extends beyond page boundary", slot);
     }
-    let fact: Fact = postcard::from_bytes(&page[offset..offset + length])?;
+    let fact: Fact = postcard::from_bytes(
+        page.get(offset..offset.saturating_add(length))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "packed page record {}..{} out of bounds",
+                    offset,
+                    offset.saturating_add(length)
+                )
+            })?,
+    )?;
     Ok(fact)
 }
 
@@ -158,11 +227,14 @@ pub fn read_all_from_pages(
 ) -> Result<Vec<Fact>> {
     let mut facts = Vec::new();
     for i in 0..num_pages {
-        let page = backend.read_page(first_page_id + i)?;
-        if page.len() < PAGE_SIZE || page[0] != PAGE_TYPE_PACKED {
+        let page = backend.read_page(first_page_id.saturating_add(i))?;
+        let page_type = page.first().copied().unwrap_or(0);
+        if page.len() < PAGE_SIZE || page_type != PAGE_TYPE_PACKED {
             continue;
         }
-        let record_count = u16::from_le_bytes([page[2], page[3]]);
+        let b2 = page.get(2).copied().unwrap_or(0);
+        let b3 = page.get(3).copied().unwrap_or(0);
+        let record_count = u16::from_le_bytes([b2, b3]);
         for slot in 0..record_count {
             facts.push(read_slot(&page, slot)?);
         }
@@ -174,7 +246,10 @@ pub fn read_all_from_pages(
 
 fn new_packed_page() -> Vec<u8> {
     let mut page = vec![0u8; PAGE_SIZE];
-    page[0] = PAGE_TYPE_PACKED;
+    // Safety: page is PAGE_SIZE bytes; index 0 is always valid.
+    if let Some(b) = page.get_mut(0) {
+        *b = PAGE_TYPE_PACKED;
+    }
     // byte 1: reserved = 0x00 (already zero from vec initialisation)
     // bytes 2-3: record_count = 0 (written later via write_record_count)
     // bytes 4-11: next_page = 0 (already zero)
@@ -182,7 +257,9 @@ fn new_packed_page() -> Vec<u8> {
 }
 
 fn write_record_count(page: &mut [u8], count: u16) {
-    page[2..4].copy_from_slice(&count.to_le_bytes());
+    if let Some(slot) = page.get_mut(2..4) {
+        slot.copy_from_slice(&count.to_le_bytes());
+    }
 }
 
 #[cfg(test)]

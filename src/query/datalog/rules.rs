@@ -65,7 +65,9 @@ impl RuleRegistry {
         let graph = DependencyGraph::from_rules(self);
         if let Err(e) = graph.stratify() {
             // Roll back: remove the rule we just added
-            let rules = self.rules.get_mut(&predicate).unwrap();
+            let rules = self.rules.get_mut(&predicate).ok_or_else(|| {
+                anyhow::anyhow!("rule predicate '{}' disappeared during rollback", predicate)
+            })?;
             rules.pop();
             if rules.is_empty() {
                 self.rules.remove(&predicate);

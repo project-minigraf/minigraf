@@ -83,7 +83,7 @@ impl DependencyGraph {
                 for (dep, is_negative) in deps {
                     let dep_stratum = *strata.get(dep).unwrap_or(&0);
                     let required = if *is_negative {
-                        dep_stratum + 1
+                        dep_stratum.saturating_add(1)
                     } else {
                         dep_stratum
                     };

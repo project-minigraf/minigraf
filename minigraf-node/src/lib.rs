@@ -1,4 +1,16 @@
 #![deny(clippy::all)]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+    )
+)]
 
 use minigraf::{QueryResult, Value};
 use napi::bindgen_prelude::*;

@@ -115,3 +115,24 @@ panic = "unwind"
 [profile.dist]
 inherits = "release"
 lto = "thin"
+
+[lints]
+workspace = true
+
+[workspace.lints.clippy]
+# Panic prevention — use Result/? or debug_assert! instead
+unwrap_used              = "deny"
+expect_used              = "deny"
+panic                    = "deny"
+todo                     = "deny"
+unimplemented            = "deny"
+unreachable              = "allow"   # legitimate in exhaustive match arms; too noisy as warn
+# Numeric safety — critical for page offsets, checksums, byte sizes
+cast_possible_truncation = "deny"
+cast_possible_wrap       = "deny"
+cast_sign_loss           = "deny"
+arithmetic_side_effects  = "allow"   # too noisy for parser/evaluator index arithmetic
+# Bounds safety
+indexing_slicing         = "deny"
+# API documentation
+missing_errors_doc       = "allow"   # too noisy; revisit when writing public API docs

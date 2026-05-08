@@ -118,9 +118,12 @@ impl PatternMatcher {
                 bindings.insert(format!("__fvt_{}", eid), Value::Integer(fact.valid_to));
                 bindings.insert(
                     format!("__ftc_{}", eid),
-                    Value::Integer(fact.tx_count as i64),
+                    Value::Integer(fact.tx_count.cast_signed()),
                 );
-                bindings.insert(format!("__fti_{}", eid), Value::Integer(fact.tx_id as i64));
+                bindings.insert(
+                    format!("__fti_{}", eid),
+                    Value::Integer(fact.tx_id.cast_signed()),
+                );
             }
             AttributeSpec::Pseudo(pseudo) => {
                 // Pseudo-attribute: skip stored attribute match; bind fact metadata
@@ -128,8 +131,8 @@ impl PatternMatcher {
                 let pseudo_value = match pseudo {
                     PseudoAttr::ValidFrom => Value::Integer(fact.valid_from),
                     PseudoAttr::ValidTo => Value::Integer(fact.valid_to),
-                    PseudoAttr::TxCount => Value::Integer(fact.tx_count as i64),
-                    PseudoAttr::TxId => Value::Integer(fact.tx_id as i64),
+                    PseudoAttr::TxCount => Value::Integer(fact.tx_count.cast_signed()),
+                    PseudoAttr::TxId => Value::Integer(fact.tx_id.cast_signed()),
                     PseudoAttr::ValidAt => self.valid_at_value.clone(),
                 };
                 if !self.match_component(&pattern.value, &pseudo_value, &mut bindings) {
@@ -244,10 +247,13 @@ impl PatternMatcher {
         }
 
         // Start with the first pattern
-        let mut results = self.match_pattern(&patterns[0]);
+        let Some(first) = patterns.first() else {
+            return vec![HashMap::new()];
+        };
+        let mut results = self.match_pattern(first);
 
         // Join with each subsequent pattern
-        for pattern in &patterns[1..] {
+        for pattern in patterns.get(1..).unwrap_or(&[]) {
             results = self.join_with_pattern(results, pattern);
         }
 
@@ -261,10 +267,13 @@ impl PatternMatcher {
         }
 
         // Start with the first pattern
-        let mut results = self.match_pattern_with_hint(&patterns[0].0, &patterns[0].1);
+        let Some(first) = patterns.first() else {
+            return vec![HashMap::new()];
+        };
+        let mut results = self.match_pattern_with_hint(&first.0, &first.1);
 
         // Join with each subsequent pattern
-        for (pattern, _hint) in &patterns[1..] {
+        for (pattern, _hint) in patterns.get(1..).unwrap_or(&[]) {
             results = self.join_with_pattern(results, pattern);
         }
 

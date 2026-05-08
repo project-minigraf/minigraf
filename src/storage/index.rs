@@ -7,6 +7,19 @@
 
 use crate::graph::types::{Attribute, EntityId, Fact, Value};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+/// Generate the maximum UUID value (all bits set to 1).
+/// Used as an upper bound for range queries on UUID fields.
+fn max_uuid() -> Uuid {
+    // This is safe because MAX_UUID is a valid hardcoded UUID string literal.
+    // It will never fail at runtime.
+    const MAX_UUID_BYTES: [u8; 16] = [
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF,
+    ];
+    Uuid::from_bytes(MAX_UUID_BYTES)
+}
 
 // ─── FactRef ────────────────────────────────────────────────────────────────
 
@@ -40,7 +53,7 @@ pub fn encode_value(v: &Value) -> Vec<u8> {
             // Flip the sign bit so that negative numbers sort before positive
             // after unsigned byte comparison: MIN..=-1 maps to 0..0x7FFF...,
             // 0..=MAX maps to 0x8000...=0xFFFF...
-            let bits = (*n as u64) ^ 0x8000_0000_0000_0000;
+            let bits = (*n).cast_unsigned() ^ 0x8000_0000_0000_0000;
             bytes.extend_from_slice(&bits.to_be_bytes());
             bytes
         }
@@ -62,13 +75,13 @@ pub fn encode_value(v: &Value) -> Vec<u8> {
             bytes
         }
         Value::String(s) => {
-            let mut bytes = Vec::with_capacity(1 + s.len());
+            let mut bytes = Vec::with_capacity(s.len().saturating_add(1));
             bytes.push(0x04);
             bytes.extend_from_slice(s.as_bytes());
             bytes
         }
         Value::Keyword(k) => {
-            let mut bytes = Vec::with_capacity(1 + k.len());
+            let mut bytes = Vec::with_capacity(k.len().saturating_add(1));
             bytes.push(0x05);
             bytes.extend_from_slice(k.as_bytes());
             bytes
@@ -245,7 +258,7 @@ impl Indexes {
 
     /// Query AEVT index for a specific attribute (returns all facts with that attribute).
     pub fn lookup_aevt_attr(&self, attribute: &str) -> Vec<FactRef> {
-        let max_uuid = uuid::Uuid::parse_str("ffffffff-ffff-ffff-ffff-ffffffffffff").unwrap();
+        let max_uuid = max_uuid();
         let start = AevtKey {
             attribute: attribute.to_string(),
             entity: EntityId::default(),
@@ -265,7 +278,7 @@ impl Indexes {
 
     /// Query AVET index for attribute + value.
     pub fn lookup_avet_attr_value(&self, attribute: &str, value: &Value) -> Vec<FactRef> {
-        let max_uuid = uuid::Uuid::parse_str("ffffffff-ffff-ffff-ffff-ffffffffffff").unwrap();
+        let max_uuid = max_uuid();
         let value_bytes = encode_value(value);
         let start = AvetKey {
             attribute: attribute.to_string(),
@@ -288,7 +301,7 @@ impl Indexes {
 
     /// Query VAET index for ref target (reverse references).
     pub fn lookup_vaet_ref(&self, target: EntityId) -> Vec<FactRef> {
-        let max_uuid = uuid::Uuid::parse_str("ffffffff-ffff-ffff-ffff-ffffffffffff").unwrap();
+        let max_uuid = max_uuid();
         let start = VaetKey {
             ref_target: target,
             attribute: String::new(),
