@@ -1,8 +1,17 @@
-# Grammar Conformance Test Harness — Design
+# Grammar Specification and Conformance Harness — Design
 
 **Date:** 2026-05-08
-**Issue:** [#230](https://github.com/project-minigraf/minigraf/issues/230) — Documentation
-**Scope:** Test infrastructure that verifies the formal grammar document exactly matches parser behaviour. The grammar document itself (EBNF + semantics + tutorials) is a separate deliverable; this spec covers only the conformance harness.
+**Issue:** [#233](https://github.com/project-minigraf/minigraf/issues/233) — EBNF grammar specification and semantics documentation (sub-issue of [#230](https://github.com/project-minigraf/minigraf/issues/230))
+
+## Deliverables
+
+This work produces three things:
+
+1. **Conformance test harness** — `pest` shadow grammar + `.edn` corpus + `grammar_conformance.rs`. Verifies continuously that the grammar doc matches parser behaviour.
+2. **EBNF grammar document** — human-readable formal grammar for the full Minigraf Datalog syntax, derived from `grammar.pest` and published in the wiki (`Datalog-Reference.md`).
+3. **Semantics documentation** — prose covering all constraints enforced above the structural grammar layer (not-safety, expr binding, aggregate binding, window function rules, timestamp/UUID validation). Also published in `Datalog-Reference.md`.
+
+Tutorials are tracked separately in [#234](https://github.com/project-minigraf/minigraf/issues/234).
 
 ---
 
@@ -178,7 +187,7 @@ No production dependencies added.
 
 ## What This Does Not Cover
 
-- **Grammar documentation** — the EBNF text, semantics prose, and tutorials are separate deliverables (the main output of issue #230). The `grammar.pest` file is the machine-checkable backing for the EBNF; they must agree.
-- **Round-trip / pretty-print testing** — not in scope for this harness.
+- **Tutorials** — tracked in [#234](https://github.com/project-minigraf/minigraf/issues/234).
+- **Round-trip / pretty-print testing** — not in scope.
 - **Property-based generation** — the corpus is manually curated. Fuzzing is a possible future addition.
 - **Executor correctness** — the harness tests parse acceptance/rejection only, not query result correctness.
