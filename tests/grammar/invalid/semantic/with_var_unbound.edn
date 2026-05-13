@@ -1,0 +1,3 @@
+(query [:find (count ?e)
+        :with ?unbound
+        :where [?e :person/name ?name]])

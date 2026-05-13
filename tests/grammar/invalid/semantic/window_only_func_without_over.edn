@@ -1,0 +1,2 @@
+(query [:find (avg ?salary)
+        :where [?e :emp/salary ?salary]])

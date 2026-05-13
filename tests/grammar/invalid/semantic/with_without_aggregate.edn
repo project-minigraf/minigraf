@@ -1,0 +1,3 @@
+(query [:find ?name
+        :with ?e
+        :where [?e :person/name ?name]])

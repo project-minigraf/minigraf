@@ -1,0 +1,2 @@
+(query [:find (count-distinct ?e :over (:order-by ?name))
+        :where [?e :person/name ?name]])
