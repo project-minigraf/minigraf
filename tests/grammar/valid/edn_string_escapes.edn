@@ -1,0 +1,4 @@
+(transact [[:e :str/newline "line1\nline2"]
+           [:e :str/tab "col1\tcol2"]
+           [:e :str/quote "say \"hello\""]
+           [:e :str/backslash "path\\to\\file"]])

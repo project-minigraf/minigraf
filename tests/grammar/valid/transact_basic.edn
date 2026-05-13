@@ -1,0 +1,2 @@
+(transact [[:alice :person/name "Alice"]
+           [:bob :person/name "Bob"]])

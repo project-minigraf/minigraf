@@ -1,3 +1,89 @@
-// Minigraf Datalog grammar — built incrementally; see implementation plan.
-// This placeholder rejects all input until proper rules are added in Task 2.
-command = { SOI ~ EOI }
+// ── WHITESPACE (auto-skipped between every token) ─────────────────────────
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" | "," }
+
+// ── WORD-BOUNDARY HELPER ──────────────────────────────────────────────────
+// Used in negative lookaheads to enforce keyword boundaries.
+word_cont = _{ ASCII_ALPHANUMERIC | "?" | "_" | "-" | "/" }
+
+// ── EDN PRIMITIVES ────────────────────────────────────────────────────────
+
+// boolean: "true" or "false" — only when NOT followed by a word character
+// (so "trueish" is NOT a boolean, it's a plain symbol)
+boolean_lit = @{ ("true" | "false") ~ !word_cont }
+
+// nil literal
+nil_lit = @{ "nil" ~ !word_cont }
+
+// integer: optional minus, one or more digits, NOT followed by "." + digit
+// (the negative lookahead prevents consuming "-3" as the start of "-3.14")
+integer_lit = @{ "-"? ~ ASCII_DIGIT+ ~ !("." ~ ASCII_DIGIT) }
+
+// float: optional minus, digits, dot, optional more digits
+float_lit = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* }
+
+// string with escape sequences: \n \t \r \" \\, or any other char after \
+str_char  = _{ "\\" ~ ("n" | "t" | "r" | "\"" | "\\" | ANY) | !("\"" | "\\") ~ ANY }
+string_lit = @{ "\"" ~ str_char* ~ "\"" }
+
+// UUID tagged literal: #uuid "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+// Content validation (RFC 4122 format) is a semantic check — pest accepts any string.
+uuid_lit = { "#uuid" ~ string_lit }
+
+// Prepared-query bind slot: $name
+bind_slot = @{ "$" ~ (ASCII_ALPHANUMERIC | "_" | "-")+ }
+
+// Keyword: starts with ":", followed by alphanumeric, "/", "-", "_"
+keyword = @{ ":" ~ (ASCII_ALPHANUMERIC | "/" | "-" | "_")+ }
+
+// Logic variable: starts with "?"
+variable = @{ "?" ~ word_cont* }
+
+// Operator symbols used in expressions
+op_sym = @{ "<=" | ">=" | "!=" | "<" | ">" | "=" | "+" | "*" | "/" }
+
+// Plain symbol: letter or underscore start; or "-" followed by at least one word char.
+// Negative lookaheads prevent "true", "false", "nil" from matching as plain symbols.
+plain_sym = @{
+    !boolean_lit ~ !nil_lit ~ (ASCII_ALPHA | "_") ~ word_cont*
+    | "-" ~ word_cont+
+}
+
+// ── EDN VALUE (any EDN atom or container) ─────────────────────────────────
+// Order matters: more specific alternatives first to avoid ambiguity.
+edn_value = {
+    uuid_lit | boolean_lit | nil_lit | float_lit | integer_lit | string_lit |
+    bind_slot | keyword | op_sym | variable | plain_sym |
+    edn_list | edn_vector | edn_map
+}
+edn_list   = { "(" ~ edn_value* ~ ")" }
+edn_vector = { "[" ~ edn_value* ~ "]" }
+edn_map    = { "{" ~ (edn_value ~ edn_value)* ~ "}" }
+
+// ── TOP-LEVEL COMMAND ─────────────────────────────────────────────────────
+command = { SOI ~ (transact_cmd | retract_cmd | query_cmd | rule_cmd) ~ EOI }
+
+// ── TRANSACT ──────────────────────────────────────────────────────────────
+// (transact [facts...]) or (transact {:valid-from "ts"} [facts...])
+transact_cmd = {
+    "(" ~ "transact" ~ (valid_time_map ~ fact_vector | fact_vector) ~ ")"
+}
+
+// ── RETRACT ───────────────────────────────────────────────────────────────
+retract_cmd = { "(" ~ "retract" ~ fact_vector ~ ")" }
+
+// Fact vector: a vector of individual fact vectors
+fact_vector = { "[" ~ fact* ~ "]" }
+
+// A single fact: permissive (edn_value+) so arity violations are semantic, not syntax.
+// The real parser enforces [E A V] or [E A V {map}]; pest only requires ≥1 element.
+fact = { "[" ~ edn_value+ ~ "]" }
+
+// Transaction-level valid-time options map
+valid_time_map  = { "{" ~ valid_time_pair* ~ "}" }
+valid_time_pair = { (":valid-from" | ":valid-to") ~ string_lit }
+
+// ── QUERY (stub — filled in Task 3+) ─────────────────────────────────────
+query_cmd = { "(" ~ "query" ~ edn_value+ ~ ")" }
+
+// ── RULE (stub — filled in Task 8) ───────────────────────────────────────
+rule_cmd = { "(" ~ "rule" ~ edn_value+ ~ ")" }

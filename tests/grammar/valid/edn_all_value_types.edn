@@ -1,0 +1,9 @@
+(transact [[:e1 :type/string "hello world"]
+           [:e2 :type/integer 42]
+           [:e3 :type/neg-int -7]
+           [:e4 :type/float 3.14]
+           [:e5 :type/neg-float -2.5]
+           [:e6 :type/bool-true true]
+           [:e7 :type/bool-false false]
+           [:e8 :type/nil nil]
+           [:e9 :type/ref :other-entity]])
