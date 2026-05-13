@@ -69,14 +69,21 @@ fn load_corpus(dir: &str) -> Vec<(String, String)> {
 #[allow(clippy::panic)]
 fn valid_corpus() {
     let files = load_corpus("tests/grammar/valid");
-    assert!(!files.is_empty(), "valid/ corpus is empty — add .edn fixtures");
+    assert!(
+        !files.is_empty(),
+        "valid/ corpus is empty — add .edn fixtures"
+    );
     let mut failures: Vec<String> = vec![];
     for (name, content) in &files {
         if !pest_accepts(content) {
-            failures.push(format!("FAIL valid/{name}: pest rejected (expected accept)"));
+            failures.push(format!(
+                "FAIL valid/{name}: pest rejected (expected accept)"
+            ));
         }
         if !parser_accepts(content) {
-            failures.push(format!("FAIL valid/{name}: parser rejected (expected accept)"));
+            failures.push(format!(
+                "FAIL valid/{name}: parser rejected (expected accept)"
+            ));
         }
     }
     if !failures.is_empty() {
