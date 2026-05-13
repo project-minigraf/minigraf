@@ -1,0 +1,3 @@
+// Minigraf Datalog grammar — built incrementally; see implementation plan.
+// This placeholder rejects all input until proper rules are added in Task 2.
+command = { SOI ~ EOI }

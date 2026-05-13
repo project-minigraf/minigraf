@@ -67,6 +67,8 @@ web-sys              = { version = "0.3", optional = true, features = [
 
 [dev-dependencies]
 serde_json = "1.0"
+pest = "2"
+pest_derive = "2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tempfile = "3"
