@@ -1,0 +1,3 @@
+(rule [(reachable ?from ?to)
+       [?from :connected ?mid]
+       (reachable ?mid ?to)])

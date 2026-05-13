@@ -162,5 +162,8 @@ valid_at_section       = { ":valid-at" ~ (string_lit | ":any-valid-time" | bind_
 any_valid_time_section = { ":any-valid-time" }
 with_section           = { ":with" ~ variable+ }
 
-// ── RULE (stub — filled in Task 8) ───────────────────────────────────────
-rule_cmd = { "(" ~ "rule" ~ edn_value+ ~ ")" }
+// ── RULE ──────────────────────────────────────────────────────────────────
+// (rule [(head ?args) body-clause ...])
+rule_cmd    = { "(" ~ "rule" ~ rule_vector ~ ")" }
+rule_vector = { "[" ~ rule_head ~ where_clause* ~ "]" }
+rule_head   = { "(" ~ plain_sym ~ variable* ~ ")" }
