@@ -1,0 +1,3 @@
+(query [:find ?name ?age
+        :where [?e :person/name ?name]
+               [?e :person/age ?age]])
