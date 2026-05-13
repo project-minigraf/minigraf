@@ -1,0 +1,5 @@
+(query [:find ?name ?result
+        :where [?e :person/name ?name]
+               [?e :metric/a ?a]
+               [?e :metric/b ?b]
+               [(+ (* ?a 2) ?b) ?result]])

@@ -1,0 +1,5 @@
+(query [:find ?name ?total
+        :where [?e :person/name ?name]
+               [?e :order/price ?price]
+               [?e :order/qty ?qty]
+               [(* ?price ?qty) ?total]])
