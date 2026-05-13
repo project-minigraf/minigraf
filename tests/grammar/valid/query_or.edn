@@ -1,0 +1,4 @@
+(query [:find ?name
+        :where [?e :person/name ?name]
+               (or [?e :person/city "London"]
+                   [?e :person/city "Paris"])])

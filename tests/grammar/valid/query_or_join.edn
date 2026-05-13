@@ -1,0 +1,5 @@
+(query [:find ?name
+        :where [?e :person/name ?name]
+               (or-join [?e]
+                 [?e :person/role :admin]
+                 [?e :person/role :superuser])])

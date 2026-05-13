@@ -1,0 +1,4 @@
+(query [:find ?name
+        :where [?e :person/name ?name]
+               (not-join [?e]
+                 [?e :person/banned true])])
