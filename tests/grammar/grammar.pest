@@ -143,7 +143,7 @@ rule_invocation = { "(" ~ plain_sym ~ edn_value* ~ ")" }
 
 // ── EXPRESSIONS ───────────────────────────────────────────────────────────
 expr        = { "(" ~ expr_body ~ ")" }
-expr_body   = { unary_form | binary_form }
+expr_body   = { binary_form | unary_form }
 unary_form  = { (unary_op | op_sym | plain_sym) ~ expr_arg }
 binary_form = { binary_op ~ expr_arg ~ expr_arg }
 unary_op    = @{ "string?" | "integer?" | "float?" | "boolean?" | "nil?" }
