@@ -1,0 +1,2 @@
+(query [:find (geomean ?v)
+        :where [?e :metric/value ?v]])

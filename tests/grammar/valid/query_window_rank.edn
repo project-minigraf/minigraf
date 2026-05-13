@@ -1,0 +1,2 @@
+(query [:find (rank :over (:order-by ?salary :desc))
+        :where [?e :emp/salary ?salary]])

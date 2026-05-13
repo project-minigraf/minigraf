@@ -1,0 +1,3 @@
+(query [:find (sum ?salary :over (:order-by ?hire-date))
+        :where [?e :emp/salary ?salary]
+               [?e :emp/hire-date ?hire-date]])

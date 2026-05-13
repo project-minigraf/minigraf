@@ -1,0 +1,4 @@
+(query [:find (sum ?salary :over (:partition-by ?dept :order-by ?hire-date))
+        :where [?e :emp/salary ?salary]
+               [?e :emp/dept ?dept]
+               [?e :emp/hire-date ?hire-date]])

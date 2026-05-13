@@ -1,0 +1,2 @@
+(query [:find (sum ?salary)
+        :where [?e :emp/salary ?salary]])
