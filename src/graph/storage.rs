@@ -506,51 +506,55 @@ pub(crate) fn filter_facts_as_of(facts: Vec<Fact>, as_of: &AsOf) -> Vec<Fact> {
 pub(crate) fn net_asserted_facts(facts: Vec<Fact>) -> Vec<Fact> {
     use std::collections::HashMap;
 
-    // Group all facts by (entity, attribute, canonical value bytes).
-    let mut groups: HashMap<(EntityId, Attribute, Vec<u8>), Vec<Fact>> = HashMap::new();
+    type EavKey = (EntityId, Attribute, Vec<u8>);
+    type WindowKey = (EntityId, Attribute, Vec<u8>, i64, i64);
+
+    let mut max_retract_tx: HashMap<EavKey, u64> = HashMap::new();
+    let mut by_window: HashMap<WindowKey, Fact> = HashMap::new();
+
     for fact in facts {
-        let key = (
+        let eav_key = (
             fact.entity,
             fact.attribute.clone(),
             encode_value(&fact.value),
         );
-        groups.entry(key).or_default().push(fact);
-    }
 
-    let mut result = Vec::new();
-    for (_key, group) in groups {
-        // Find the highest tx_count among retractions in this group.
-        let max_retract_tx = group
-            .iter()
-            .filter(|f| !f.asserted)
-            .map(|f| f.tx_count)
-            .max()
-            .unwrap_or(0);
-
-        // Keep assertions whose tx_count > max_retract_tx.
-        // (If no retraction exists, max_retract_tx is 0 and all assertions pass.)
-        // Deduplicate by (valid_from, valid_to): keep the highest-tx_count assertion
-        // for each validity window so that re-asserting the same EAV at the same
-        // window acts as an update rather than a duplicate.
-        let mut by_window: HashMap<(i64, i64), Fact> = HashMap::new();
-        for fact in group {
-            if !fact.asserted || fact.tx_count <= max_retract_tx {
-                continue;
-            }
-            let window = (fact.valid_from, fact.valid_to);
-            match by_window.get(&window) {
+        if fact.asserted {
+            let window_key = (
+                eav_key.0,
+                eav_key.1,
+                eav_key.2,
+                fact.valid_from,
+                fact.valid_to,
+            );
+            match by_window.get(&window_key) {
                 None => {
-                    by_window.insert(window, fact);
+                    by_window.insert(window_key, fact);
                 }
                 Some(existing) if fact.tx_count > existing.tx_count => {
-                    by_window.insert(window, fact);
+                    by_window.insert(window_key, fact);
                 }
                 _ => {}
             }
+        } else {
+            let tx_count = fact.tx_count;
+            max_retract_tx
+                .entry(eav_key)
+                .and_modify(|max_tx| *max_tx = (*max_tx).max(tx_count))
+                .or_insert(tx_count);
         }
-        result.extend(by_window.into_values());
     }
-    result
+
+    by_window
+        .into_iter()
+        .filter_map(|((entity, attribute, value, _, _), fact)| {
+            let retract_tx = max_retract_tx
+                .get(&(entity, attribute, value))
+                .copied()
+                .unwrap_or(0);
+            (fact.tx_count > retract_tx).then_some(fact)
+        })
+        .collect()
 }
 
 /// Resolve a FactRef to a Fact using the committed reader (for on-disk facts)
