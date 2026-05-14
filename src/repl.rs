@@ -560,6 +560,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_arch = "wasm32"))]
     fn run_with_init_sources_file_before_interactive_loop() {
         // Write a temp init file that defines a rule, then verify a query using
         // that rule succeeds in the subsequent (non-interactive) stdin pass.
@@ -590,6 +591,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_arch = "wasm32"))]
     fn run_with_init_missing_file_prints_error_and_continues() {
         // A non-existent init path should print an error to stderr but not panic,
         // and the subsequent interactive loop should still start (and exit cleanly
