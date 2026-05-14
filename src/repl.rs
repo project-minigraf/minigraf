@@ -215,6 +215,20 @@ mod tests {
     use crate::db::Minigraf;
 
     #[test]
+    fn run_public_method_exits_on_non_tty_stdin() {
+        // In TTY environments (local dev) stdin.is_terminal() is true and run() would
+        // block waiting for input — skip the test gracefully.  In CI the test binary's
+        // stdin is a closed pipe, so read_line() returns Ok(0) immediately and run()
+        // returns after one loop iteration.  This exercises the two otherwise-uncovered
+        // lines in the public `run()` wrapper (is_terminal + run_impl call).
+        if io::stdin().is_terminal() {
+            return;
+        }
+        let db = Minigraf::in_memory().expect("in-memory db");
+        db.repl().run();
+    }
+
+    #[test]
     fn eof_in_interactive_mode_exits_cleanly() {
         // Exercises the `if interactive { println!(); }` branch in the Ok(0) arm.
         // An empty Cursor reaches EOF immediately; interactive=true triggers the newline path.
