@@ -1,5 +1,5 @@
 use crate::db::Minigraf;
-use std::io::{self, IsTerminal, Write};
+use std::io::{self, BufRead, IsTerminal, Write};
 
 /// An interactive REPL for a [`Minigraf`] database.
 ///
@@ -19,7 +19,12 @@ impl<'a> Repl<'a> {
     /// a banner and prompts are printed; when piped, output is suppressed so
     /// the REPL can be driven by scripts.
     pub fn run(&self) {
-        if io::stdin().is_terminal() {
+        let interactive = io::stdin().is_terminal();
+        self.run_impl(io::BufReader::new(io::stdin()), interactive);
+    }
+
+    fn run_impl<R: BufRead>(&self, mut reader: R, interactive: bool) {
+        if interactive {
             println!(
                 "Minigraf v{} - Interactive Datalog Console",
                 env!("CARGO_PKG_VERSION")
@@ -55,7 +60,6 @@ impl<'a> Repl<'a> {
 
         let mut command_buffer = String::new();
         let mut is_multiline = false;
-        let interactive = io::stdin().is_terminal();
 
         loop {
             if interactive {
@@ -68,7 +72,7 @@ impl<'a> Repl<'a> {
             }
 
             let mut input = String::new();
-            match io::stdin().read_line(&mut input) {
+            match reader.read_line(&mut input) {
                 Ok(n) => {
                     if n == 0 {
                         // EOF (Ctrl-D): emit a newline so the shell prompt starts
@@ -202,5 +206,51 @@ impl<'a> Repl<'a> {
             Value::Keyword(k) => k.clone(),
             Value::Null => "nil".to_string(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Minigraf;
+
+    #[test]
+    fn eof_in_interactive_mode_exits_cleanly() {
+        // Exercises the `if interactive { println!(); }` branch in the Ok(0) arm.
+        // An empty Cursor reaches EOF immediately; interactive=true triggers the newline path.
+        let db = Minigraf::in_memory().expect("in-memory db");
+        let repl = db.repl();
+        repl.run_impl(std::io::Cursor::new(b""), true);
+    }
+
+    #[test]
+    fn eof_in_non_interactive_mode_exits_cleanly() {
+        let db = Minigraf::in_memory().expect("in-memory db");
+        let repl = db.repl();
+        repl.run_impl(std::io::Cursor::new(b""), false);
+    }
+
+    #[test]
+    fn exit_command_terminates_loop() {
+        let db = Minigraf::in_memory().expect("in-memory db");
+        let repl = db.repl();
+        repl.run_impl(std::io::Cursor::new(b"EXIT\n"), false);
+    }
+
+    #[test]
+    fn comment_and_blank_lines_are_skipped() {
+        let db = Minigraf::in_memory().expect("in-memory db");
+        let repl = db.repl();
+        repl.run_impl(std::io::Cursor::new(b"# comment\n\nEXIT\n"), false);
+    }
+
+    #[test]
+    fn simple_query_runs_without_panic() {
+        let db = Minigraf::in_memory().expect("in-memory db");
+        let repl = db.repl();
+        repl.run_impl(
+            std::io::Cursor::new(b"(query [:find ?e :where [?e :x 1]])\nEXIT\n"),
+            false,
+        );
     }
 }
