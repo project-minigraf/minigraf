@@ -167,5 +167,51 @@ fn main() -> anyhow::Result<()> {
     println!();
     println!("{} result(s) found.", score_count);
 
+    // ── UDF aggregate in a window clause ─────────────────────────────────────────
+    println!();
+    println!("=== UDF aggregate in a window clause ===");
+    println!();
+    println!("Query: annotate each order with its customer delivery score");
+    println!();
+
+    let window_result = db.execute(
+        r#"(query [:find ?order (delivery-score ?flag :over (:partition-by ?customer :order-by ?order))
+               :where [?customer :customer/name ?name]
+                      [?order :order/customer ?customer]
+                      [?order :order/on-time-flag ?flag]])"#,
+    )?;
+
+    let (window_rows, window_count) = match window_result {
+        QueryResult::QueryResults { results, .. } => {
+            let n = results.len();
+            (results, n)
+        }
+        _ => (vec![], 0),
+    };
+
+    println!("?order     (delivery-score ?flag :over ...)");
+    println!("--------------------------------------------");
+    for row in &window_rows {
+        let order = match &row[0] {
+            Value::Keyword(k) => format!(":{}", k),
+            Value::Ref(u) => format!("{}", &u.to_string()[..8]),
+            other => format!("{:?}", other),
+        };
+        let score = match &row[1] {
+            Value::Float(f) => {
+                if f.fract() == 0.0 {
+                    format!("{:.1}", f)
+                } else {
+                    format!("{}", f)
+                }
+            }
+            Value::Null => "null".to_string(),
+            other => format!("{:?}", other),
+        };
+        println!("{:<12}{}", order, score);
+    }
+    println!();
+    println!("{} result(s) found.", window_count);
+
     Ok(())
 }
