@@ -330,4 +330,193 @@ mod tests {
         let repl = db.repl();
         repl.run_impl(ErrorReader, false);
     }
+
+    #[test]
+    fn query_integer_result_covers_format_value_integer() {
+        let db = Minigraf::in_memory().expect("in-memory db");
+        let repl = db.repl();
+        repl.run_impl(
+            std::io::Cursor::new(
+                b"(transact [[:db/add \"e1\" :item/count 42]])\n\
+                  (query [:find ?c :where [_ :item/count ?c]])\n\
+                  EXIT\n",
+            ),
+            false,
+        );
+    }
+
+    #[test]
+    fn query_float_result_covers_format_value_float() {
+        let db = Minigraf::in_memory().expect("in-memory db");
+        let repl = db.repl();
+        repl.run_impl(
+            std::io::Cursor::new(
+                b"(transact [[:db/add \"e1\" :item/price 9.99]])\n\
+                  (query [:find ?p :where [_ :item/price ?p]])\n\
+                  EXIT\n",
+            ),
+            false,
+        );
+    }
+
+    #[test]
+    fn query_keyword_result_covers_format_value_keyword() {
+        let db = Minigraf::in_memory().expect("in-memory db");
+        let repl = db.repl();
+        repl.run_impl(
+            std::io::Cursor::new(
+                b"(transact [[:db/add \"e1\" :item/status :active]])\n\
+                  (query [:find ?s :where [_ :item/status ?s]])\n\
+                  EXIT\n",
+            ),
+            false,
+        );
+    }
+
+    #[test]
+    fn query_boolean_result_covers_format_value_boolean() {
+        let db = Minigraf::in_memory().expect("in-memory db");
+        let repl = db.repl();
+        repl.run_impl(
+            std::io::Cursor::new(
+                b"(transact [[:db/add \"e1\" :item/in-stock true]])\n\
+                  (query [:find ?s :where [_ :item/in-stock ?s]])\n\
+                  EXIT\n",
+            ),
+            false,
+        );
+    }
+
+    #[test]
+    fn rule_definition_covers_result_ok_arm() {
+        let db = Minigraf::in_memory().expect("in-memory db");
+        let repl = db.repl();
+        repl.run_impl(
+            std::io::Cursor::new(
+                b"(rule [(parent ?x ?y) [?x :parent/of ?y]])\n\
+                  EXIT\n",
+            ),
+            false,
+        );
+    }
+
+    #[test]
+    fn multiline_command_in_interactive_mode_covers_continuation_prompt() {
+        let db = Minigraf::in_memory().expect("in-memory db");
+        let repl = db.repl();
+        // First line is incomplete (unmatched paren) → prints "       .> " continuation prompt.
+        repl.run_impl(
+            std::io::Cursor::new(b"(query [:find ?e\n:where [?e :x 1]])\nEXIT\n"),
+            true,
+        );
+    }
+
+    // --- Direct tests for print_result ---
+
+    #[test]
+    fn print_result_transacted() {
+        use crate::query::datalog::QueryResult as DResult;
+        Repl::print_result(DResult::Transacted(12345678));
+    }
+
+    #[test]
+    fn print_result_retracted() {
+        use crate::query::datalog::QueryResult as DResult;
+        Repl::print_result(DResult::Retracted(12345678));
+    }
+
+    #[test]
+    fn print_result_ok() {
+        use crate::query::datalog::QueryResult as DResult;
+        Repl::print_result(DResult::Ok);
+    }
+
+    #[test]
+    fn print_result_query_no_results() {
+        use crate::query::datalog::QueryResult as DResult;
+        Repl::print_result(DResult::QueryResults {
+            vars: vec!["?x".to_string()],
+            results: vec![],
+        });
+    }
+
+    #[test]
+    fn print_result_query_with_rows() {
+        use crate::graph::types::Value;
+        use crate::query::datalog::QueryResult as DResult;
+        Repl::print_result(DResult::QueryResults {
+            vars: vec!["?x".to_string(), "?y".to_string()],
+            results: vec![vec![
+                Value::String("hello".to_string()),
+                Value::Integer(42),
+            ]],
+        });
+    }
+
+    // --- Direct tests for format_value ---
+
+    #[test]
+    fn format_value_string() {
+        use crate::graph::types::Value;
+        assert_eq!(Repl::format_value(&Value::String("hi".to_string())), "\"hi\"");
+    }
+
+    #[test]
+    fn format_value_integer() {
+        use crate::graph::types::Value;
+        assert_eq!(Repl::format_value(&Value::Integer(7)), "7");
+    }
+
+    #[test]
+    fn format_value_float() {
+        use crate::graph::types::Value;
+        assert_eq!(Repl::format_value(&Value::Float(3.14)), "3.14");
+    }
+
+    #[test]
+    fn format_value_boolean() {
+        use crate::graph::types::Value;
+        assert_eq!(Repl::format_value(&Value::Boolean(true)), "true");
+    }
+
+    #[test]
+    fn format_value_ref() {
+        use crate::graph::types::Value;
+        let id = uuid::Uuid::new_v4();
+        assert_eq!(
+            Repl::format_value(&Value::Ref(id)),
+            format!("#uuid {}", id)
+        );
+    }
+
+    #[test]
+    fn format_value_keyword() {
+        use crate::graph::types::Value;
+        assert_eq!(
+            Repl::format_value(&Value::Keyword(":active".to_string())),
+            ":active"
+        );
+    }
+
+    #[test]
+    fn format_value_null() {
+        use crate::graph::types::Value;
+        assert_eq!(Repl::format_value(&Value::Null), "nil");
+    }
+
+    // --- Direct tests for is_command_complete ---
+
+    #[test]
+    fn is_command_complete_handles_escaped_quote_in_string() {
+        // Exercises the `escape_next` branches (lines 135-136, 140-141).
+        assert!(Repl::is_command_complete(
+            r#"(query [:find ?x :where [?x :name "he said \"hi\""]])"#
+        ));
+    }
+
+    #[test]
+    fn is_command_complete_default_arm() {
+        // A plain character inside a string hits the `_ => {}` arm.
+        assert!(Repl::is_command_complete(r#"(foo "bar")"#));
+    }
 }
