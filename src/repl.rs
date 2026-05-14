@@ -62,12 +62,8 @@ impl<'a> Repl<'a> {
         let mut is_multiline = false;
 
         loop {
-            if interactive {
-                if is_multiline {
-                    print!("       .> ");
-                } else {
-                    print!("minigraf> ");
-                }
+            if interactive && !is_multiline {
+                print!("minigraf> ");
                 io::stdout().flush().ok();
             }
 
@@ -421,7 +417,7 @@ mod tests {
     fn multiline_command_in_interactive_mode_covers_continuation_prompt() {
         let db = Minigraf::in_memory().expect("in-memory db");
         let repl = db.repl();
-        // First line is incomplete (unmatched paren) → prints "       .> " continuation prompt.
+        // First line is incomplete (unmatched paren) → no continuation prompt (suppressed in multiline mode).
         repl.run_impl(
             std::io::Cursor::new(b"(query [:find ?e\n:where [?e :x 1]])\nEXIT\n"),
             true,
