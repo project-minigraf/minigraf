@@ -71,6 +71,11 @@ impl<'a> Repl<'a> {
             match io::stdin().read_line(&mut input) {
                 Ok(n) => {
                     if n == 0 {
+                        // EOF (Ctrl-D): emit a newline so the shell prompt starts
+                        // on a fresh line rather than appending to the REPL prompt.
+                        if interactive {
+                            println!();
+                        }
                         break;
                     }
 
