@@ -85,7 +85,7 @@ impl<'a> Repl<'a> {
 
                     let line = input.trim();
 
-                    if line.is_empty() || line.starts_with('#') {
+                    if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
                         continue;
                     }
 
@@ -255,7 +255,10 @@ mod tests {
     fn comment_and_blank_lines_are_skipped() {
         let db = Minigraf::in_memory().expect("in-memory db");
         let repl = db.repl();
-        repl.run_impl(std::io::Cursor::new(b"# comment\n\nEXIT\n"), false);
+        repl.run_impl(
+            std::io::Cursor::new(b"# hash comment\n; edn comment\n\nEXIT\n"),
+            false,
+        );
     }
 
     #[test]
