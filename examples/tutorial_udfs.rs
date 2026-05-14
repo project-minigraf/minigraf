@@ -16,17 +16,20 @@ fn main() -> anyhow::Result<()> {
     // Promo codes: one valid Corestore code, one invalid short code, one from
     // a different scheme.
 
-    db.execute(r#"(transact [
+    db.execute(
+        r#"(transact [
         [:promo-1 :promo/code "CORESTORE-SUMMER2026"]
         [:promo-2 :promo/code "SAVE10"]
         [:promo-3 :promo/code "PARTNER-EXCLUSIVE"]
-    ])"#)?;
+    ])"#,
+    )?;
 
     // Customers and their orders with on-time-flag attributes.
     //   Alice: order-a (on time), order-b (late)  → score = 1/2 = 0.5
     //   Ben:   order-c (on time)                  → score = 1/1 = 1.0
 
-    db.execute(r#"(transact [
+    db.execute(
+        r#"(transact [
         [:alice :customer/name "Alice"]
         [:ben   :customer/name "Ben"]
         [:order-a :order/customer :alice]
@@ -35,23 +38,21 @@ fn main() -> anyhow::Result<()> {
         [:order-b :order/on-time-flag 0]
         [:order-c :order/customer :ben]
         [:order-c :order/on-time-flag 1]
-    ])"#)?;
+    ])"#,
+    )?;
 
     // ── Predicate UDF: valid-promo? ───────────────────────────────────────────
     //
     // A valid Corestore promo code must start with "CORESTORE-" and be at
     // least 15 characters long.
 
-    db.register_predicate(
-        "valid-promo?",
-        |v: &Value| {
-            if let Value::String(s) = v {
-                s.starts_with("CORESTORE-") && s.len() >= 15
-            } else {
-                false
-            }
-        },
-    )?;
+    db.register_predicate("valid-promo?", |v: &Value| {
+        if let Value::String(s) = v {
+            s.starts_with("CORESTORE-") && s.len() >= 15
+        } else {
+            false
+        }
+    })?;
 
     println!("=== Predicate UDF: valid-promo? ===");
     println!();
