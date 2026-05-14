@@ -446,10 +446,7 @@ mod tests {
         use crate::query::datalog::QueryResult as DResult;
         Repl::print_result(DResult::QueryResults {
             vars: vec!["?x".to_string(), "?y".to_string()],
-            results: vec![vec![
-                Value::String("hello".to_string()),
-                Value::Integer(42),
-            ]],
+            results: vec![vec![Value::String("hello".to_string()), Value::Integer(42)]],
         });
     }
 
@@ -458,7 +455,10 @@ mod tests {
     #[test]
     fn format_value_string() {
         use crate::graph::types::Value;
-        assert_eq!(Repl::format_value(&Value::String("hi".to_string())), "\"hi\"");
+        assert_eq!(
+            Repl::format_value(&Value::String("hi".to_string())),
+            "\"hi\""
+        );
     }
 
     #[test]
@@ -483,10 +483,7 @@ mod tests {
     fn format_value_ref() {
         use crate::graph::types::Value;
         let id = uuid::Uuid::new_v4();
-        assert_eq!(
-            Repl::format_value(&Value::Ref(id)),
-            format!("#uuid {}", id)
-        );
+        assert_eq!(Repl::format_value(&Value::Ref(id)), format!("#uuid {}", id));
     }
 
     #[test]
