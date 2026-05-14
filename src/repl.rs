@@ -245,12 +245,89 @@ mod tests {
     }
 
     #[test]
-    fn simple_query_runs_without_panic() {
+    fn query_with_no_results_runs_without_panic() {
         let db = Minigraf::in_memory().expect("in-memory db");
         let repl = db.repl();
         repl.run_impl(
             std::io::Cursor::new(b"(query [:find ?e :where [?e :x 1]])\nEXIT\n"),
             false,
         );
+    }
+
+    #[test]
+    fn transact_and_query_with_results() {
+        let db = Minigraf::in_memory().expect("in-memory db");
+        let repl = db.repl();
+        repl.run_impl(
+            std::io::Cursor::new(
+                b"(transact [[:db/add \"e1\" :item/name \"Widget\"]])\n\
+                  (query [:find ?n :where [_ :item/name ?n]])\n\
+                  EXIT\n",
+            ),
+            false,
+        );
+    }
+
+    #[test]
+    fn retract_command_runs_without_panic() {
+        let db = Minigraf::in_memory().expect("in-memory db");
+        let repl = db.repl();
+        repl.run_impl(
+            std::io::Cursor::new(
+                b"(transact [[:db/add \"e1\" :item/name \"Widget\"]])\n\
+                  (retract [[:db/retract \"e1\" :item/name \"Widget\"]])\n\
+                  EXIT\n",
+            ),
+            false,
+        );
+    }
+
+    #[test]
+    fn multiline_command_is_buffered_until_complete() {
+        let db = Minigraf::in_memory().expect("in-memory db");
+        let repl = db.repl();
+        // The first line is an incomplete command (unmatched paren); the second
+        // line completes it — exercises the `is_multiline = true` branch.
+        repl.run_impl(
+            std::io::Cursor::new(b"(query [:find ?e\n:where [?e :x 1]])\nEXIT\n"),
+            false,
+        );
+    }
+
+    #[test]
+    fn interactive_mode_prints_output_after_command() {
+        // interactive=true exercises the `println!()` after a successful command.
+        let db = Minigraf::in_memory().expect("in-memory db");
+        let repl = db.repl();
+        repl.run_impl(
+            std::io::Cursor::new(b"(query [:find ?e :where [?e :x 1]])\nEXIT\n"),
+            true,
+        );
+    }
+
+    #[test]
+    fn read_error_exits_loop() {
+        struct ErrorReader;
+        impl std::io::Read for ErrorReader {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "simulated read error",
+                ))
+            }
+        }
+        impl std::io::BufRead for ErrorReader {
+            fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "simulated read error",
+                ))
+            }
+            fn consume(&mut self, _amt: usize) {}
+        }
+
+        let db = Minigraf::in_memory().expect("in-memory db");
+        let repl = db.repl();
+        repl.run_impl(ErrorReader, false);
     }
 }
