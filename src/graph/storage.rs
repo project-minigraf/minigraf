@@ -605,12 +605,12 @@ fn resolve_fact_ref(d: &FactData, fr: FactRef) -> Result<Fact> {
 fn next_string_prefix(s: &str) -> Option<String> {
     let mut bytes = s.as_bytes().to_vec();
     for i in (0..bytes.len()).rev() {
-        if let Some(b) = bytes.get_mut(i) {
-            if *b < 0xFF {
-                *b += 1;
-                bytes.truncate(i + 1);
-                return String::from_utf8(bytes).ok();
-            }
+        if let Some(b) = bytes.get_mut(i)
+            && *b < 0xFF
+        {
+            *b += 1;
+            bytes.truncate(i + 1);
+            return String::from_utf8(bytes).ok();
         }
     }
     None
