@@ -788,7 +788,7 @@ impl StratifiedEvaluator {
 
                 // Compute once; reuse for plan loop, apply_or_clauses, not-body matching.
                 let accumulated_facts: Arc<[Fact]> =
-                    Arc::from(accumulated.get_asserted_facts().unwrap_or_default());
+                    Arc::from(accumulated.get_asserted_facts()?);
 
                 let matcher = PatternMatcher::from_slice(accumulated_facts.clone());
 
