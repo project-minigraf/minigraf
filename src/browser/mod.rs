@@ -329,8 +329,12 @@ fn query_result_to_json(result: QueryResult) -> String {
     use serde_json::{Value as JVal, json};
 
     let val: JVal = match result {
-        QueryResult::Transacted(tx_id) => json!({"transacted": tx_id}),
-        QueryResult::Retracted(tx_id) => json!({"retracted": tx_id}),
+        QueryResult::Transacted { tx_id, tx_count } => {
+            json!({"transacted": tx_id, "tx_count": tx_count})
+        }
+        QueryResult::Retracted { tx_id, tx_count } => {
+            json!({"retracted": tx_id, "tx_count": tx_count})
+        }
         QueryResult::Ok => json!({"ok": true}),
         QueryResult::QueryResults { vars, results } => {
             let rows: Vec<Vec<JVal>> = results

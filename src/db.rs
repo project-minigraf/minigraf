@@ -509,9 +509,9 @@ impl Minigraf {
 
             // Return the same QueryResult the executor would have returned.
             if is_retract {
-                Ok(QueryResult::Retracted(tx_id))
+                Ok(QueryResult::Retracted { tx_id, tx_count })
             } else {
-                Ok(QueryResult::Transacted(tx_id))
+                Ok(QueryResult::Transacted { tx_id, tx_count })
             }
         } else {
             // Read-only: no lock needed
