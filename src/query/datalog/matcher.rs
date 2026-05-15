@@ -1361,10 +1361,7 @@ mod tests {
         let storage = FactStorage::new();
         let entity = uuid::Uuid::new_v4();
         storage
-            .transact(
-                vec![(entity, ":val".to_string(), Value::Integer(1))],
-                None,
-            )
+            .transact(vec![(entity, ":val".to_string(), Value::Integer(1))], None)
             .unwrap();
         let facts: Arc<[Fact]> = Arc::from(storage.get_asserted_facts().unwrap());
         let matcher = PatternMatcher::from_slice(facts);
@@ -1375,7 +1372,11 @@ mod tests {
         );
         let unit_seed = vec![HashMap::new()];
         let results = matcher.match_with_hint_seeded(unit_seed, &p, &IndexHint::Aevt);
-        assert_eq!(results.len(), 1, "unit seed must produce one result per matching fact");
+        assert_eq!(
+            results.len(),
+            1,
+            "unit seed must produce one result per matching fact"
+        );
         assert!(results[0].contains_key("?v"), "binding must contain ?v");
     }
 
@@ -1386,10 +1387,7 @@ mod tests {
         let storage = FactStorage::new();
         let e = uuid::Uuid::new_v4();
         storage
-            .transact(
-                vec![(e, ":val".to_string(), Value::Integer(42))],
-                None,
-            )
+            .transact(vec![(e, ":val".to_string(), Value::Integer(42))], None)
             .unwrap();
         let facts: Arc<[Fact]> = Arc::from(storage.get_asserted_facts().unwrap());
         let matcher = PatternMatcher::from_slice(facts);
@@ -1405,7 +1403,11 @@ mod tests {
             m
         }];
         let results = matcher.match_with_hint_seeded(seed, &p, &IndexHint::Eavt);
-        assert_eq!(results.len(), 1, "join path must unify with existing binding");
+        assert_eq!(
+            results.len(),
+            1,
+            "join path must unify with existing binding"
+        );
         assert_eq!(results[0].get("?v"), Some(&Value::Integer(42)));
     }
 

@@ -787,8 +787,7 @@ impl StratifiedEvaluator {
                     .collect();
 
                 // Compute once; reuse for plan loop, apply_or_clauses, not-body matching.
-                let accumulated_facts: Arc<[Fact]> =
-                    Arc::from(accumulated.get_asserted_facts()?);
+                let accumulated_facts: Arc<[Fact]> = Arc::from(accumulated.get_asserted_facts()?);
 
                 let matcher = PatternMatcher::from_slice(accumulated_facts.clone());
 
@@ -818,20 +817,18 @@ impl StratifiedEvaluator {
                             use crate::query::datalog::executor::{eval_expr, is_truthy};
                             candidates = candidates
                                 .into_iter()
-                                .filter_map(|mut b| {
-                                    match eval_expr(&expr, &b, Some(&fn_guard)) {
-                                        Ok(v) => {
-                                            if let Some(var) = &out {
-                                                b.insert(var.clone(), v);
-                                                Some(b)
-                                            } else if is_truthy(&v) {
-                                                Some(b)
-                                            } else {
-                                                None
-                                            }
+                                .filter_map(|mut b| match eval_expr(&expr, &b, Some(&fn_guard)) {
+                                    Ok(v) => {
+                                        if let Some(var) = &out {
+                                            b.insert(var.clone(), v);
+                                            Some(b)
+                                        } else if is_truthy(&v) {
+                                            Some(b)
+                                        } else {
+                                            None
                                         }
-                                        Err(_) => None,
                                     }
+                                    Err(_) => None,
                                 })
                                 .collect();
                         }

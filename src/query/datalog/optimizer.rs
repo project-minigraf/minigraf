@@ -94,7 +94,9 @@ fn expr_vars(expr: &Expr) -> Vec<String> {
 /// Only Symbol values starting with `?` count — literals never bind.
 fn pattern_bound_vars(p: &Pattern) -> Vec<String> {
     let mut vars = Vec::new();
-    if is_variable(&p.entity) && let EdnValue::Symbol(s) = &p.entity {
+    if is_variable(&p.entity)
+        && let EdnValue::Symbol(s) = &p.entity
+    {
         vars.push(s.clone());
     }
     if let AttributeSpec::Real(attr) = &p.attribute
@@ -103,7 +105,9 @@ fn pattern_bound_vars(p: &Pattern) -> Vec<String> {
     {
         vars.push(s.clone());
     }
-    if is_variable(&p.value) && let EdnValue::Symbol(s) = &p.value {
+    if is_variable(&p.value)
+        && let EdnValue::Symbol(s) = &p.value
+    {
         vars.push(s.clone());
     }
     vars
@@ -264,10 +268,7 @@ mod tests {
         let p1_attr = p1.attribute.clone();
         let p2_attr = p2.attribute.clone();
         let planned = plan(
-            vec![
-                WhereClause::Pattern(p1),
-                WhereClause::Pattern(p2),
-            ],
+            vec![WhereClause::Pattern(p1), WhereClause::Pattern(p2)],
             &Indexes::new(),
         );
         let first_attr = match &planned[0].0 {
@@ -278,9 +279,18 @@ mod tests {
             WhereClause::Pattern(p) => p.attribute.clone(),
             _ => panic!("expected Pattern at index 1"),
         };
-        assert_ne!(first_attr, p1_attr, "Lower-selectivity pattern must not be first");
-        assert_eq!(first_attr, p2_attr, "Higher-selectivity pattern must be first");
-        assert_eq!(second_attr, p1_attr, "Lower-selectivity pattern must be second");
+        assert_ne!(
+            first_attr, p1_attr,
+            "Lower-selectivity pattern must not be first"
+        );
+        assert_eq!(
+            first_attr, p2_attr,
+            "Higher-selectivity pattern must be first"
+        );
+        assert_eq!(
+            second_attr, p1_attr,
+            "Lower-selectivity pattern must be second"
+        );
     }
 
     // ── expr_vars() ──────────────────────────────────────────────────────────
@@ -342,7 +352,10 @@ mod tests {
             use crate::storage::index::Indexes;
             let p = WhereClause::Pattern(make_pattern(var("e"), kw(":val"), var("v")));
             let planned = plan(vec![p], &Indexes::new());
-            assert!(planned[0].1.is_some(), "Pattern entry must carry Some(IndexHint)");
+            assert!(
+                planned[0].1.is_some(),
+                "Pattern entry must carry Some(IndexHint)"
+            );
         }
     }
 
@@ -357,9 +370,14 @@ mod tests {
                 binding: None,
             };
             let planned = plan(vec![p, expr], &Indexes::new());
-            let expr_entry = planned.iter().find(|(c, _)| matches!(c, WhereClause::Expr { .. }));
+            let expr_entry = planned
+                .iter()
+                .find(|(c, _)| matches!(c, WhereClause::Expr { .. }));
             assert!(expr_entry.is_some());
-            assert!(expr_entry.unwrap().1.is_none(), "Expr entry must carry None hint");
+            assert!(
+                expr_entry.unwrap().1.is_none(),
+                "Expr entry must carry None hint"
+            );
         }
     }
 

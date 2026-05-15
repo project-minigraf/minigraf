@@ -534,20 +534,18 @@ impl DatalogExecutor {
                 WhereClause::Expr { expr, binding: out } => {
                     bindings = bindings
                         .into_iter()
-                        .filter_map(|mut b| {
-                            match eval_expr(&expr, &b, Some(&registry)) {
-                                Ok(v) => {
-                                    if let Some(var) = &out {
-                                        b.insert(var.clone(), v);
-                                        Some(b)
-                                    } else if is_truthy(&v) {
-                                        Some(b)
-                                    } else {
-                                        None
-                                    }
+                        .filter_map(|mut b| match eval_expr(&expr, &b, Some(&registry)) {
+                            Ok(v) => {
+                                if let Some(var) = &out {
+                                    b.insert(var.clone(), v);
+                                    Some(b)
+                                } else if is_truthy(&v) {
+                                    Some(b)
+                                } else {
+                                    None
                                 }
-                                Err(_) => None,
                             }
+                            Err(_) => None,
                         })
                         .collect();
                 }
@@ -1002,20 +1000,18 @@ impl DatalogExecutor {
                 WhereClause::Expr { expr, binding: out } => {
                     bindings = bindings
                         .into_iter()
-                        .filter_map(|mut b| {
-                            match eval_expr(&expr, &b, Some(&registry)) {
-                                Ok(v) => {
-                                    if let Some(var) = &out {
-                                        b.insert(var.clone(), v);
-                                        Some(b)
-                                    } else if is_truthy(&v) {
-                                        Some(b)
-                                    } else {
-                                        None
-                                    }
+                        .filter_map(|mut b| match eval_expr(&expr, &b, Some(&registry)) {
+                            Ok(v) => {
+                                if let Some(var) = &out {
+                                    b.insert(var.clone(), v);
+                                    Some(b)
+                                } else if is_truthy(&v) {
+                                    Some(b)
+                                } else {
+                                    None
                                 }
-                                Err(_) => None,
                             }
+                            Err(_) => None,
                         })
                         .collect();
                 }
@@ -5434,18 +5430,14 @@ mod pushdown_tests {
         let executor = DatalogExecutor::new(storage.clone());
         executor
             .execute(
-                parse_datalog_command(
-                    "(transact [[:e1 :val 10] [:e2 :val 20] [:e3 :val 30]])",
-                )
-                .unwrap(),
+                parse_datalog_command("(transact [[:e1 :val 10] [:e2 :val 20] [:e3 :val 30]])")
+                    .unwrap(),
             )
             .unwrap();
         let result = executor
             .execute(
-                parse_datalog_command(
-                    "(query [:find ?e ?v :where [?e :val ?v] [(> ?v 15)]])",
-                )
-                .unwrap(),
+                parse_datalog_command("(query [:find ?e ?v :where [?e :val ?v] [(> ?v 15)]])")
+                    .unwrap(),
             )
             .unwrap();
         if let QueryResult::QueryResults { results, .. } = result {
@@ -5487,9 +5479,7 @@ mod pushdown_tests {
         let storage = FactStorage::new();
         let executor = DatalogExecutor::new(storage.clone());
         executor
-            .execute(
-                parse_datalog_command("(transact [[:e1 :val 5] [:e2 :val 10]])").unwrap(),
-            )
+            .execute(parse_datalog_command("(transact [[:e1 :val 5] [:e2 :val 10]])").unwrap())
             .unwrap();
         let result = executor
             .execute(
@@ -5512,21 +5502,15 @@ mod pushdown_tests {
         let executor = DatalogExecutor::new(storage.clone());
         executor
             .execute(
-                parse_datalog_command(
-                    "(transact [[:e1 :val 5] [:e2 :val 20] [:e3 :val 30]])",
-                )
-                .unwrap(),
+                parse_datalog_command("(transact [[:e1 :val 5] [:e2 :val 20] [:e3 :val 30]])")
+                    .unwrap(),
             )
             .unwrap();
         executor
-            .execute(
-                parse_datalog_command("(rule [(high ?e) [?e :val ?v] [(> ?v 15)]])").unwrap(),
-            )
+            .execute(parse_datalog_command("(rule [(high ?e) [?e :val ?v] [(> ?v 15)]])").unwrap())
             .unwrap();
         let result = executor
-            .execute(
-                parse_datalog_command("(query [:find ?e :where (high ?e)])").unwrap(),
-            )
+            .execute(parse_datalog_command("(query [:find ?e :where (high ?e)])").unwrap())
             .unwrap();
         if let QueryResult::QueryResults { results, .. } = result {
             assert_eq!(results.len(), 2, "only :e2 and :e3 qualify");
