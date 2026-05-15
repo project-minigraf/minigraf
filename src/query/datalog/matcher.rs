@@ -391,22 +391,149 @@ impl PatternMatcher {
         results
     }
 
-    /// Join existing bindings with a new pattern
-    /// Only keeps bindings that are consistent with the new pattern
+    /// Join existing bindings with a new pattern.
+    ///
+    /// Uses a hash-join when the pattern shares a variable with existing bindings
+    /// (the common `?e`-join shape). Falls back to the nested-loop scan when no
+    /// shared join variable is found (unrelated patterns, fully-literal patterns,
+    /// or pseudo-attribute patterns which have their own fast path in
+    /// `match_pattern_with_bindings`).
     fn join_with_pattern(
         &self,
         existing_bindings: Vec<Bindings>,
         pattern: &Pattern,
     ) -> Vec<Bindings> {
-        let mut results = Vec::new();
-
-        for existing in existing_bindings {
-            // Try to match the pattern with existing bindings
-            let new_matches = self.match_pattern_with_bindings(pattern, &existing);
-            results.extend(new_matches);
+        if existing_bindings.is_empty() {
+            return vec![];
         }
 
+        // Detect the join variable: the first variable in entity, then value position
+        // of the new pattern that also appears as a bound key in the existing bindings.
+        // We skip pseudo-attributes (they have a dedicated fast path in
+        // match_pattern_with_bindings) and fully-literal patterns (nested loop is
+        // already O(1) per binding for those).
+        let is_pseudo = matches!(&pattern.attribute, AttributeSpec::Pseudo(_));
+
+        let join_var: Option<String> = if is_pseudo {
+            None
+        } else {
+            // Check entity position first.
+            let entity_var = match &pattern.entity {
+                EdnValue::Symbol(s) if s.starts_with('?') => {
+                    // It's a variable. Is it bound in existing bindings?
+                    if existing_bindings.first().is_some_and(|b| b.contains_key(s)) {
+                        Some(s.clone())
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+            if entity_var.is_some() {
+                entity_var
+            } else {
+                // Check value position.
+                match &pattern.value {
+                    EdnValue::Symbol(s) if s.starts_with('?') => {
+                        if existing_bindings.first().is_some_and(|b| b.contains_key(s)) {
+                            Some(s.clone())
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                }
+            }
+        };
+
+        let Some(jvar) = join_var else {
+            // No join variable detected: fall back to nested-loop scan.
+            let mut results = Vec::new();
+            for existing in existing_bindings {
+                let new_matches = self.match_pattern_with_bindings(pattern, &existing);
+                results.extend(new_matches);
+            }
+            return results;
+        };
+
+        // Hash-join path:
+        // 1. Scan all candidate facts for this pattern from an empty binding (no outer context).
+        //    This gives us every binding the pattern can produce, keyed by the join variable.
+        let candidate_bindings = self.match_pattern(pattern);
+
+        // 2. Build HashMap: join_var_value → Vec<Bindings from pattern>
+        //    Normalize keyword values to Ref (UUID) so keyword entity references
+        //    (e.g., Value::Keyword(":d-bad") stored as a value) can match the UUID
+        //    that match_fact_against_pattern produces when the same entity appears
+        //    in entity position (stored as Value::Ref). This mirrors the cross-type
+        //    matching done by match_component's EdnValue::Keyword arm.
+        let mut build_side: HashMap<Value, Vec<Bindings>> = HashMap::new();
+        for b in candidate_bindings {
+            if let Some(val) = b.get(&jvar) {
+                let key = Self::normalize_join_value(val);
+                build_side.entry(key).or_default().push(b);
+            }
+        }
+
+        // 3. Probe: for each existing binding, look up join_var value.
+        let mut results = Vec::new();
+        for existing in existing_bindings {
+            let Some(probe_val) = existing.get(&jvar) else {
+                // Outer binding doesn't have the join var yet — fall back to scan for this row.
+                let new_matches = self.match_pattern_with_bindings(pattern, &existing);
+                results.extend(new_matches);
+                continue;
+            };
+            let probe_key = Self::normalize_join_value(probe_val);
+            if let Some(matches) = build_side.get(&probe_key) {
+                for candidate in matches {
+                    // Merge and consistency-check.
+                    let mut merged = existing.clone();
+                    let mut consistent = true;
+                    for (var, val) in candidate {
+                        if var.starts_with("__f") {
+                            merged.insert(var.clone(), val.clone());
+                            continue;
+                        }
+                        if let Some(merged_val) = merged.get(var) {
+                            // Compare using normalized values so that keyword entity
+                            // references (e.g., Keyword(":d-bad") stored as a value in
+                            // one fact) are treated as equal to the UUID Ref produced
+                            // when the same entity appears in entity position.
+                            if Self::normalize_join_value(merged_val)
+                                != Self::normalize_join_value(val)
+                            {
+                                consistent = false;
+                                break;
+                            }
+                        } else {
+                            merged.insert(var.clone(), val.clone());
+                        }
+                    }
+                    if consistent {
+                        results.push(merged);
+                    }
+                }
+            }
+            // No match in build side → this outer binding is dropped (inner join semantics).
+        }
         results
+    }
+
+    /// Normalize a binding value for use as a hash-join key.
+    ///
+    /// Converts `Value::Keyword(k)` → `Value::Ref(uuid)` so that entity references
+    /// bound via keyword (value position) and via entity ID (entity position) hash
+    /// to the same key. Used only for key comparison — does NOT affect what is
+    /// stored in merged output bindings (the original `val` is always inserted into
+    /// the result binding, never the normalized form).
+    fn normalize_join_value(val: &Value) -> Value {
+        if let Value::Keyword(k) = val
+            && let Ok(uuid) = edn_to_entity_id(&EdnValue::Keyword(k.clone()))
+        {
+            return Value::Ref(uuid);
+        }
+        val.clone()
     }
 
     /// Match a pattern given existing variable bindings
@@ -1197,5 +1324,106 @@ mod tests {
             0,
             "mismatched constant should return no bindings"
         );
+    }
+}
+
+#[cfg(test)]
+mod hash_join_tests {
+    use crate::graph::FactStorage;
+    use crate::query::datalog::executor::DatalogExecutor;
+
+    fn make_join_db(n: usize, dept_count: usize) -> DatalogExecutor {
+        let storage = FactStorage::new();
+        let exec = DatalogExecutor::new(storage);
+        for batch_start in (0..n).step_by(50) {
+            let batch_end = (batch_start + 50).min(n);
+            let mut cmd = String::from("(transact [");
+            for i in batch_start..batch_end {
+                cmd.push_str(&format!("[:e{i} :val {i}]", i = i));
+                cmd.push_str(&format!("[:e{i} :dept :d{d}]", i = i, d = i % dept_count));
+            }
+            cmd.push_str("])");
+            exec.execute(crate::query::datalog::parser::parse_datalog_command(&cmd).unwrap())
+                .unwrap();
+        }
+        exec
+    }
+
+    /// Two-pattern join: every entity has both :dept and :val facts.
+    /// Querying [:find ?e ?dept ?v :where [?e :dept ?dept] [?e :val ?v]] should
+    /// return exactly one row per entity (N rows for N entities).
+    #[test]
+    fn two_pattern_join_returns_correct_count() {
+        let n = 100;
+        let exec = make_join_db(n, 10);
+        let result = exec
+            .execute(
+                crate::query::datalog::parser::parse_datalog_command(
+                    "(query [:find ?e ?dept ?v :where [?e :dept ?dept] [?e :val ?v]])",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        if let crate::query::datalog::executor::QueryResult::QueryResults { results, .. } = result {
+            // One row per entity — the join must not produce a cross-product.
+            assert_eq!(results.len(), n, "expected one row per entity");
+        } else {
+            panic!("expected QueryResults");
+        }
+    }
+
+    /// Correctness check: for 10 entities across 2 departments, the join must
+    /// pair each entity with the right department and value (no mixing).
+    #[test]
+    fn two_pattern_join_values_are_correct() {
+        // e0,e2,e4,e6,e8 → :d0;  e1,e3,e5,e7,e9 → :d1
+        let n = 10;
+        let exec = make_join_db(n, 2);
+        let result = exec
+            .execute(
+                crate::query::datalog::parser::parse_datalog_command(
+                    "(query [:find ?e ?dept ?v :where [?e :dept ?dept] [?e :val ?v]])",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        if let crate::query::datalog::executor::QueryResult::QueryResults {
+            vars, results, ..
+        } = result
+        {
+            assert_eq!(results.len(), n, "expected one row per entity");
+            let dept_idx = vars
+                .iter()
+                .position(|v| v == "?dept")
+                .expect("?dept in vars");
+            let val_idx = vars.iter().position(|v| v == "?v").expect("?v in vars");
+            // Collect (dept, val) pairs; no entity should appear in both departments.
+            let mut d0_vals: Vec<i64> = Vec::new();
+            let mut d1_vals: Vec<i64> = Vec::new();
+            for row in &results {
+                if let (
+                    crate::graph::types::Value::Keyword(dept),
+                    crate::graph::types::Value::Integer(val),
+                ) = (&row[dept_idx], &row[val_idx])
+                {
+                    if dept == ":d0" {
+                        d0_vals.push(*val);
+                    } else if dept == ":d1" {
+                        d1_vals.push(*val);
+                    }
+                }
+            }
+            assert_eq!(d0_vals.len(), 5, "d0 should have 5 entities");
+            assert_eq!(d1_vals.len(), 5, "d1 should have 5 entities");
+            // All d0 vals are even (0,2,4,6,8) and d1 vals are odd (1,3,5,7,9).
+            for v in &d0_vals {
+                assert_eq!(v % 2, 0, "d0 entities have even vals");
+            }
+            for v in &d1_vals {
+                assert_eq!(v % 2, 1, "d1 entities have odd vals");
+            }
+        } else {
+            panic!("expected QueryResults");
+        }
     }
 }
