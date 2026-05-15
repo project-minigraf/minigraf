@@ -77,7 +77,7 @@ pub fn select_index(p: &Pattern) -> IndexHint {
 }
 
 /// Collect all logic-variable names (`?foo`) referenced in an Expr tree.
-pub fn expr_vars(expr: &Expr) -> Vec<String> {
+fn expr_vars(expr: &Expr) -> Vec<String> {
     match expr {
         Expr::Var(s) => vec![s.clone()],
         Expr::Lit(_) | Expr::Slot(_) => vec![],
@@ -197,8 +197,6 @@ mod tests {
     use super::*;
     use crate::graph::types::Value;
     use crate::query::datalog::types::{BinOp, EdnValue, Expr, Pattern, WhereClause};
-    #[cfg(not(feature = "wasm"))]
-    use crate::storage::index::Indexes;
     use uuid::Uuid;
 
     fn make_pattern(entity: EdnValue, attribute: EdnValue, value: EdnValue) -> Pattern {
