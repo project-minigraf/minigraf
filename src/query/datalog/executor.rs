@@ -4489,3 +4489,86 @@ mod expr_eval_tests {
         assert_eq!(row_b100.get("__win_2"), Some(&Value::Integer(100)));
     }
 }
+
+#[cfg(test)]
+mod selective_lookup_tests {
+    use crate::graph::FactStorage;
+    use crate::query::datalog::executor::DatalogExecutor;
+
+    fn make_db_with_entities(n: usize) -> DatalogExecutor {
+        let storage = FactStorage::new();
+        let exec = DatalogExecutor::new(storage);
+        for batch_start in (0..n).step_by(50) {
+            let batch_end = (batch_start + 50).min(n);
+            let mut cmd = String::from("(transact [");
+            for i in batch_start..batch_end {
+                cmd.push_str(&format!(r#"[:e{i} :name "entity{i}"]"#, i = i));
+                cmd.push_str(&format!("[:e{i} :val {i}]", i = i));
+            }
+            cmd.push_str("])");
+            exec.execute(
+                crate::query::datalog::parser::parse_datalog_command(&cmd).unwrap(),
+            )
+            .unwrap();
+        }
+        exec
+    }
+
+    #[test]
+    fn entity_bound_query_returns_correct_results() {
+        let exec = make_db_with_entities(100);
+        let result = exec
+            .execute(
+                crate::query::datalog::parser::parse_datalog_command(
+                    r#"(query [:find ?n :where [:e5 :name ?n]])"#,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        if let crate::query::datalog::executor::QueryResult::QueryResults { results, .. } = result {
+            assert_eq!(results.len(), 1, "expected exactly 1 result for entity :e5");
+            assert_eq!(
+                results[0][0],
+                crate::graph::types::Value::String("entity5".to_string())
+            );
+        } else {
+            panic!("expected QueryResults");
+        }
+    }
+
+    #[test]
+    fn attribute_bound_query_returns_correct_results() {
+        let exec = make_db_with_entities(100);
+        let result = exec
+            .execute(
+                crate::query::datalog::parser::parse_datalog_command(
+                    "(query [:find ?e ?v :where [?e :val ?v]])",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        if let crate::query::datalog::executor::QueryResult::QueryResults { results, .. } = result {
+            assert_eq!(results.len(), 100, "expected 100 results for :val attribute scan");
+        } else {
+            panic!("expected QueryResults");
+        }
+    }
+
+    #[test]
+    fn as_of_query_still_works_after_change() {
+        let exec = make_db_with_entities(10);
+        let result = exec
+            .execute(
+                crate::query::datalog::parser::parse_datalog_command(
+                    "(query [:find ?n :where [?e :name ?n] :as-of 1])",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        if let crate::query::datalog::executor::QueryResult::QueryResults { results, .. } = result {
+            assert!(!results.is_empty(), "expected results from as-of 1 query");
+        } else {
+            panic!("expected QueryResults");
+        }
+    }
+}
