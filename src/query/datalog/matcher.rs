@@ -423,7 +423,7 @@ impl PatternMatcher {
                     // It's a variable. Is it bound in existing bindings?
                     if existing_bindings
                         .first()
-                        .map_or(false, |b| b.contains_key(s))
+                        .is_some_and(|b| b.contains_key(s))
                     {
                         Some(s.clone())
                     } else {
@@ -440,7 +440,7 @@ impl PatternMatcher {
                     EdnValue::Symbol(s) if s.starts_with('?') => {
                         if existing_bindings
                             .first()
-                            .map_or(false, |b| b.contains_key(s))
+                            .is_some_and(|b| b.contains_key(s))
                         {
                             Some(s.clone())
                         } else {
@@ -465,7 +465,7 @@ impl PatternMatcher {
         // Hash-join path:
         // 1. Scan all candidate facts for this pattern from an empty binding (no outer context).
         //    This gives us every binding the pattern can produce, keyed by the join variable.
-        let candidate_bindings = self.match_pattern(&pattern.clone());
+        let candidate_bindings = self.match_pattern(pattern);
 
         // 2. Build HashMap: join_var_value → Vec<Bindings from pattern>
         //    Normalize keyword values to Ref (UUID) so keyword entity references
@@ -501,12 +501,12 @@ impl PatternMatcher {
                             merged.insert(var.clone(), val.clone());
                             continue;
                         }
-                        if let Some(existing_val) = existing.get(var) {
+                        if let Some(merged_val) = merged.get(var) {
                             // Compare using normalized values so that keyword entity
                             // references (e.g., Keyword(":d-bad") stored as a value in
                             // one fact) are treated as equal to the UUID Ref produced
                             // when the same entity appears in entity position.
-                            if Self::normalize_join_value(existing_val)
+                            if Self::normalize_join_value(merged_val)
                                 != Self::normalize_join_value(val)
                             {
                                 consistent = false;
@@ -526,17 +526,18 @@ impl PatternMatcher {
         results
     }
 
-    /// Normalize a value for use as a hash-join key.
+    /// Normalize a binding value for use as a hash-join key.
     ///
-    /// Converts `Value::Keyword` to `Value::Ref` when the keyword can be parsed
-    /// as a UUID or resolved via the deterministic UUID-v5 scheme. This ensures
-    /// that a keyword entity reference (e.g., `:d-bad` stored as a value) and the
-    /// same entity stored as a Ref in entity position compare equal in the HashMap.
+    /// Converts `Value::Keyword(k)` → `Value::Ref(uuid)` so that entity references
+    /// bound via keyword (value position) and via entity ID (entity position) hash
+    /// to the same key. Used only for key comparison — does NOT affect what is
+    /// stored in merged output bindings (the original `val` is always inserted into
+    /// the result binding, never the normalized form).
     fn normalize_join_value(val: &Value) -> Value {
-        if let Value::Keyword(k) = val {
-            if let Ok(uuid) = edn_to_entity_id(&EdnValue::Keyword(k.clone())) {
-                return Value::Ref(uuid);
-            }
+        if let Value::Keyword(k) = val
+            && let Ok(uuid) = edn_to_entity_id(&EdnValue::Keyword(k.clone()))
+        {
+            return Value::Ref(uuid);
         }
         val.clone()
     }
