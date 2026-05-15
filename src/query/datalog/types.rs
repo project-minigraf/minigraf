@@ -556,6 +556,7 @@ impl DatalogQuery {
     }
 
     /// Helper: Get all patterns from where clauses
+    #[allow(dead_code)]
     pub fn get_patterns(&self) -> Vec<Pattern> {
         self.where_clauses
             .iter()

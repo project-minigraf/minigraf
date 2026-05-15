@@ -94,22 +94,17 @@ fn expr_vars(expr: &Expr) -> Vec<String> {
 /// Only Symbol values starting with `?` count — literals never bind.
 fn pattern_bound_vars(p: &Pattern) -> Vec<String> {
     let mut vars = Vec::new();
-    if is_variable(&p.entity) {
-        if let EdnValue::Symbol(s) = &p.entity {
-            vars.push(s.clone());
-        }
+    if is_variable(&p.entity) && let EdnValue::Symbol(s) = &p.entity {
+        vars.push(s.clone());
     }
-    if let AttributeSpec::Real(attr) = &p.attribute {
-        if is_variable(attr) {
-            if let EdnValue::Symbol(s) = attr {
-                vars.push(s.clone());
-            }
-        }
+    if let AttributeSpec::Real(attr) = &p.attribute
+        && is_variable(attr)
+        && let EdnValue::Symbol(s) = attr
+    {
+        vars.push(s.clone());
     }
-    if is_variable(&p.value) {
-        if let EdnValue::Symbol(s) = &p.value {
-            vars.push(s.clone());
-        }
+    if is_variable(&p.value) && let EdnValue::Symbol(s) = &p.value {
+        vars.push(s.clone());
     }
     vars
 }

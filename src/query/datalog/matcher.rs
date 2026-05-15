@@ -261,6 +261,7 @@ impl PatternMatcher {
     }
 
     /// Match multiple patterns with index hints for optimized lookups.
+    #[allow(dead_code)]
     pub fn match_patterns_with_hints(&self, patterns: &[(Pattern, IndexHint)]) -> Vec<Bindings> {
         if patterns.is_empty() {
             return vec![HashMap::new()];
@@ -298,7 +299,7 @@ impl PatternMatcher {
         if seed.is_empty() {
             return vec![];
         }
-        if seed.len() == 1 && seed[0].is_empty() {
+        if seed.len() == 1 && seed.first().map(|s| s.is_empty()).unwrap_or(false) {
             // First pattern in the plan — use the index hint for a targeted lookup.
             self.match_pattern_with_hint(pattern, hint)
         } else {
