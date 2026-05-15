@@ -490,13 +490,21 @@ impl DatalogExecutor {
             filtered_facts.clone(),
             valid_at_value.clone(),
         );
-        let patterns = query.get_patterns();
+        // Plan where clauses: assign index hints and reorder patterns by selectivity.
+        let planned = optimizer::plan(query.where_clauses.clone(), &self.indexes);
 
-        // Plan patterns: assign index hints and reorder by selectivity.
-        let planned_patterns = optimizer::plan(patterns, &self.indexes);
+        // Extract pattern clauses with hints for pattern matching
+        let mut patterns_with_hints: Vec<(Pattern, optimizer::IndexHint)> = Vec::new();
+        for (clause, hint) in &planned {
+            if let WhereClause::Pattern(pattern) = clause {
+                if let Some(h) = hint {
+                    patterns_with_hints.push((pattern.clone(), h.clone()));
+                }
+            }
+        }
 
         // Match all patterns in planned order and get bindings
-        let bindings = matcher.match_patterns_with_hints(&planned_patterns);
+        let bindings = matcher.match_patterns_with_hints(&patterns_with_hints);
 
         // Acquire the function registry once; used by apply_or_clauses, not_body_matches,
         // apply_expr_clauses, and apply_post_processing below.
