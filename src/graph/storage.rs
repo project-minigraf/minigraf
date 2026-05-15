@@ -750,7 +750,6 @@ impl FactStorage {
 
         Ok(facts)
     }
-
 }
 
 /// Test-only helpers on FactStorage: for use in tests, not the production query path.

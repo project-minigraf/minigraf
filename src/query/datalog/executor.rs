@@ -380,11 +380,7 @@ impl DatalogExecutor {
     /// or exceeds `threshold` (too many — full scan is cheaper), returns `None`.
     /// Otherwise returns `Some(facts)` — the union of all selectively fetched facts,
     /// deduplicated by `(entity, attribute, tx_count)`.
-    fn selective_fact_fetch(
-        &self,
-        patterns: &[Pattern],
-        threshold: usize,
-    ) -> Option<Vec<Fact>> {
+    fn selective_fact_fetch(&self, patterns: &[Pattern], threshold: usize) -> Option<Vec<Fact>> {
         use std::collections::HashSet;
 
         let mut entity_ids: HashSet<uuid::Uuid> = HashSet::new();
@@ -4618,10 +4614,8 @@ mod selective_lookup_tests {
                 cmd.push_str(&format!("[:e{i} :val {i}]", i = i));
             }
             cmd.push_str("])");
-            exec.execute(
-                crate::query::datalog::parser::parse_datalog_command(&cmd).unwrap(),
-            )
-            .unwrap();
+            exec.execute(crate::query::datalog::parser::parse_datalog_command(&cmd).unwrap())
+                .unwrap();
         }
         exec
     }
@@ -4660,7 +4654,11 @@ mod selective_lookup_tests {
             )
             .unwrap();
         if let crate::query::datalog::executor::QueryResult::QueryResults { results, .. } = result {
-            assert_eq!(results.len(), 100, "expected 100 results for :val attribute scan");
+            assert_eq!(
+                results.len(),
+                100,
+                "expected 100 results for :val attribute scan"
+            );
         } else {
             panic!("expected QueryResults");
         }
