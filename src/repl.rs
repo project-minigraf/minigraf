@@ -35,7 +35,8 @@ impl<'a> Repl<'a> {
                 self.run_impl(io::BufReader::new(file), false);
             }
             Err(e) => {
-                eprintln!("error: could not open init file '{}': {}", init_path.display(), e);
+                let path = init_path.display();
+                eprintln!("error: could not open init file '{path}': {e}");
             }
         }
     }
