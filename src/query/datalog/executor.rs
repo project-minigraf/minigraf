@@ -490,20 +490,68 @@ impl DatalogExecutor {
             filtered_facts.clone(),
             valid_at_value.clone(),
         );
-        let patterns = query.get_patterns();
-
-        // Plan patterns: assign index hints and reorder by selectivity.
-        let planned_patterns = optimizer::plan(patterns, &self.indexes);
-
-        // Match all patterns in planned order and get bindings
-        let bindings = matcher.match_patterns_with_hints(&planned_patterns);
-
-        // Acquire the function registry once; used by apply_or_clauses, not_body_matches,
-        // apply_expr_clauses, and apply_post_processing below.
+        // Acquire function registry before the plan loop — needed for inline Expr evaluation.
         let registry = self
             .functions
             .read()
             .map_err(|_| anyhow!("functions lock poisoned"))?;
+
+        // Pre-validate UDF predicate names: surface unknown predicates as errors before
+        // processing any rows (matches the behaviour of the former apply_expr_clauses post-pass).
+        for clause in &query.where_clauses {
+            if let WhereClause::Expr {
+                expr: Expr::UnaryOp(UnaryOp::Udf(name), _),
+                ..
+            } = clause
+                && registry.get_predicate(name).is_none()
+            {
+                anyhow::bail!("unknown predicate: '{}'", name);
+            }
+        }
+
+        // Collect Pattern and Expr top-level clauses for the planner.
+        // Not/NotJoin/Or/OrJoin are extracted separately below and applied as post-filters.
+        let plan_clauses: Vec<WhereClause> = query
+            .where_clauses
+            .iter()
+            .filter(|c| matches!(c, WhereClause::Pattern(_) | WhereClause::Expr { .. }))
+            .cloned()
+            .collect();
+
+        let planned = optimizer::plan(plan_clauses, &self.indexes);
+
+        // Process planned clauses in order: Pattern → expand bindings, Expr → filter/extend.
+        let mut bindings: Vec<Binding> = vec![Binding::new()];
+        for (clause, hint) in planned {
+            match clause {
+                WhereClause::Pattern(p) => {
+                    bindings = matcher.match_with_hint_seeded(
+                        bindings,
+                        &p,
+                        hint.as_ref().unwrap_or(&optimizer::IndexHint::Eavt),
+                    );
+                }
+                WhereClause::Expr { expr, binding: out } => {
+                    bindings = bindings
+                        .into_iter()
+                        .filter_map(|mut b| match eval_expr(&expr, &b, Some(&registry)) {
+                            Ok(v) => {
+                                if let Some(var) = &out {
+                                    b.insert(var.clone(), v);
+                                    Some(b)
+                                } else if is_truthy(&v) {
+                                    Some(b)
+                                } else {
+                                    None
+                                }
+                            }
+                            Err(_) => None,
+                        })
+                        .collect();
+                }
+                _ => {}
+            }
+        }
 
         // Apply Or/OrJoin clauses (post-pass: after pattern matching, before not/expr)
         let rules_guard = self
@@ -807,11 +855,8 @@ impl DatalogExecutor {
                 .collect()
         };
 
-        // Apply WhereClause::Expr clauses (filter and binding predicates)
-        let filtered_bindings = apply_expr_clauses(not_filtered, &query.where_clauses, &registry)?;
-
         let results =
-            apply_post_processing(filtered_bindings, &query.find, &query.with_vars, &registry)?;
+            apply_post_processing(not_filtered, &query.find, &query.with_vars, &registry)?;
 
         Ok(QueryResult::QueryResults {
             vars: query.find.iter().map(|s| s.display_name()).collect(),
@@ -875,16 +920,44 @@ impl DatalogExecutor {
 
         let derived_storage = evaluator.evaluate(&predicates)?;
 
-        // Convert ONLY top-level rule invocations to positive-match patterns.
-        // Rule invocations inside `not` bodies are handled by the not-post-filter below.
-        // (reachable ?x ?y) becomes [?x :reachable ?y]
-        let mut all_patterns = query.get_patterns();
+        // Compute derived_facts Arc once; reuse for plan loop, or-clauses and not-post-filter.
+        // Must use derived_storage (includes rule-derived facts), not filtered_facts (base only).
+        let derived_facts: Arc<[Fact]> =
+            Arc::from(derived_storage.get_asserted_facts().unwrap_or_default());
+
+        let matcher =
+            PatternMatcher::from_slice_with_valid_at(derived_facts.clone(), valid_at_value.clone());
+
+        // Acquire function registry before the plan loop — needed for inline Expr evaluation.
+        let registry = self
+            .functions
+            .read()
+            .map_err(|_| anyhow!("functions lock poisoned"))?;
+
+        // Pre-validate UDF predicate names.
+        for clause in &query.where_clauses {
+            if let WhereClause::Expr {
+                expr: Expr::UnaryOp(UnaryOp::Udf(name), _),
+                ..
+            } = clause
+                && registry.get_predicate(name).is_none()
+            {
+                anyhow::bail!("unknown predicate: '{}'", name);
+            }
+        }
+
+        // Collect Pattern and Expr top-level clauses for the planner.
+        // Rule invocations are converted to WhereClause::Pattern against derived_storage.
+        let mut plan_clauses: Vec<WhereClause> = query
+            .where_clauses
+            .iter()
+            .filter(|c| matches!(c, WhereClause::Pattern(_) | WhereClause::Expr { .. }))
+            .cloned()
+            .collect();
 
         for (predicate, args) in query.get_top_level_rule_invocations() {
             let pattern = match args.len() {
                 1 => {
-                    // 1-arg: (blocked ?x)  →  [?x :blocked ?_rule_value]
-                    // Safety: len()==1 guarantees index 0 exists.
                     #[allow(clippy::indexing_slicing)]
                     let entity = args[0].clone();
                     Pattern::new(
@@ -894,8 +967,6 @@ impl DatalogExecutor {
                     )
                 }
                 2 => {
-                    // 2-arg: (reachable ?x ?y)  →  [?x :reachable ?y]
-                    // Safety: len()==2 guarantees indices 0 and 1 exist.
                     #[allow(clippy::indexing_slicing)]
                     let entity = args[0].clone();
                     #[allow(clippy::indexing_slicing)]
@@ -910,25 +981,43 @@ impl DatalogExecutor {
                     ));
                 }
             };
-            all_patterns.push(pattern);
+            plan_clauses.push(WhereClause::Pattern(pattern));
         }
 
-        // Compute derived_facts Arc once; reuse for or-clauses and not-post-filter.
-        // NOTE: must use derived_storage (includes rule-derived facts), not filtered_facts (base facts only)
-        let derived_facts: Arc<[Fact]> =
-            Arc::from(derived_storage.get_asserted_facts().unwrap_or_default());
+        let planned = optimizer::plan(plan_clauses, &self.indexes);
 
-        // Match all patterns against derived facts
-        let matcher =
-            PatternMatcher::from_slice_with_valid_at(derived_facts.clone(), valid_at_value.clone());
-        let bindings = matcher.match_patterns(&all_patterns);
-
-        // Acquire the function registry once; used by apply_or_clauses, not-body filtering,
-        // apply_expr_clauses, and apply_post_processing below.
-        let registry = self
-            .functions
-            .read()
-            .map_err(|_| anyhow!("functions lock poisoned"))?;
+        // Process planned clauses in order: Pattern → expand, Expr → filter/extend.
+        let mut bindings: Vec<Binding> = vec![Binding::new()];
+        for (clause, hint) in planned {
+            match clause {
+                WhereClause::Pattern(p) => {
+                    bindings = matcher.match_with_hint_seeded(
+                        bindings,
+                        &p,
+                        hint.as_ref().unwrap_or(&optimizer::IndexHint::Eavt),
+                    );
+                }
+                WhereClause::Expr { expr, binding: out } => {
+                    bindings = bindings
+                        .into_iter()
+                        .filter_map(|mut b| match eval_expr(&expr, &b, Some(&registry)) {
+                            Ok(v) => {
+                                if let Some(var) = &out {
+                                    b.insert(var.clone(), v);
+                                    Some(b)
+                                } else if is_truthy(&v) {
+                                    Some(b)
+                                } else {
+                                    None
+                                }
+                            }
+                            Err(_) => None,
+                        })
+                        .collect();
+                }
+                _ => {}
+            }
+        }
 
         // Apply Or/OrJoin clauses against derived facts (rules already evaluated)
         let rules_guard = self
@@ -1090,11 +1179,8 @@ impl DatalogExecutor {
                 .collect()
         };
 
-        // Apply WhereClause::Expr clauses (filter and binding predicates)
-        let filtered_bindings = apply_expr_clauses(not_filtered, &query.where_clauses, &registry)?;
-
         let results =
-            apply_post_processing(filtered_bindings, &query.find, &query.with_vars, &registry)?;
+            apply_post_processing(not_filtered, &query.find, &query.with_vars, &registry)?;
 
         Ok(QueryResult::QueryResults {
             vars: query.find.iter().map(|s| s.display_name()).collect(),
@@ -1601,7 +1687,8 @@ fn project_find_specs(bindings: &[Binding], find_specs: &[FindSpec]) -> Vec<Vec<
 
 /// Evaluate a single branch of an `or`/`or-join` against incoming bindings.
 ///
-/// Processing order (mirrors top-level execute_query order):
+/// Processing order (note: top-level execute_query now uses an interleaved plan loop
+/// where Expr clauses are pushed down inline; branches retain their own Expr post-pass):
 /// 1. Pattern/RuleInvocation → match_patterns_seeded
 /// 2. Nested Or/OrJoin → apply_or_clauses (recursive)
 /// 3. Not/NotJoin → post-filter
@@ -5325,6 +5412,108 @@ mod or_hash_join_tests {
             .unwrap();
         if let crate::query::datalog::executor::QueryResult::QueryResults { results, .. } = result {
             assert_eq!(results.len(), n, "expected {} deduplicated results", n);
+        } else {
+            panic!("expected QueryResults");
+        }
+    }
+}
+
+#[cfg(test)]
+mod pushdown_tests {
+    use crate::graph::FactStorage;
+    use crate::query::datalog::executor::{DatalogExecutor, QueryResult};
+    use crate::query::datalog::parser::parse_datalog_command;
+
+    #[test]
+    fn test_expr_pushdown_preserves_query_results() {
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage.clone());
+        executor
+            .execute(
+                parse_datalog_command("(transact [[:e1 :val 10] [:e2 :val 20] [:e3 :val 30]])")
+                    .unwrap(),
+            )
+            .unwrap();
+        let result = executor
+            .execute(
+                parse_datalog_command("(query [:find ?e ?v :where [?e :val ?v] [(> ?v 15)]])")
+                    .unwrap(),
+            )
+            .unwrap();
+        if let QueryResult::QueryResults { results, .. } = result {
+            assert_eq!(results.len(), 2, "only :e2 and :e3 have :val > 15");
+        } else {
+            panic!("expected QueryResults");
+        }
+    }
+
+    #[test]
+    fn test_expr_pushdown_multi_pattern_preserves_results() {
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage.clone());
+        executor
+            .execute(
+                parse_datalog_command(
+                    r#"(transact [[:e1 :val 5] [:e1 :name "a"] [:e2 :val 20] [:e2 :name "b"]])"#,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        let result = executor
+            .execute(
+                parse_datalog_command(
+                    r#"(query [:find ?e ?n :where [?e :val ?v] [?e :name ?n] [(> ?v 10)]])"#,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        if let QueryResult::QueryResults { results, .. } = result {
+            assert_eq!(results.len(), 1, "only :e2 passes the predicate");
+        } else {
+            panic!("expected QueryResults");
+        }
+    }
+
+    #[test]
+    fn test_expr_binding_form_preserves_results() {
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage.clone());
+        executor
+            .execute(parse_datalog_command("(transact [[:e1 :val 5] [:e2 :val 10]])").unwrap())
+            .unwrap();
+        let result = executor
+            .execute(
+                parse_datalog_command(
+                    "(query [:find ?e ?doubled :where [?e :val ?v] [(* ?v 2) ?doubled]])",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        if let QueryResult::QueryResults { results, .. } = result {
+            assert_eq!(results.len(), 2, "both entities must appear");
+        } else {
+            panic!("expected QueryResults");
+        }
+    }
+
+    #[test]
+    fn test_expr_pushdown_with_rules_preserves_results() {
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage.clone());
+        executor
+            .execute(
+                parse_datalog_command("(transact [[:e1 :val 5] [:e2 :val 20] [:e3 :val 30]])")
+                    .unwrap(),
+            )
+            .unwrap();
+        executor
+            .execute(parse_datalog_command("(rule [(high ?e) [?e :val ?v] [(> ?v 15)]])").unwrap())
+            .unwrap();
+        let result = executor
+            .execute(parse_datalog_command("(query [:find ?e :where (high ?e)])").unwrap())
+            .unwrap();
+        if let QueryResult::QueryResults { results, .. } = result {
+            assert_eq!(results.len(), 2, "only :e2 and :e3 qualify");
         } else {
             panic!("expected QueryResults");
         }

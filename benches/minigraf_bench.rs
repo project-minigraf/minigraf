@@ -1503,6 +1503,40 @@ fn bench_btree_lookup(c: &mut Criterion) {
     }
 }
 
+// ── query/predicate_pushdown ──────────────────────────────────────────────────
+
+fn bench_predicate_pushdown(c: &mut Criterion) {
+    // Fixture: n entities each with :val (integer) and :name (string).
+    // Uses helpers::populate_with_names(n).
+    //
+    // Query: multi-pattern with a selective Expr predicate.
+    //   (query [:find ?e ?n :where [?e :val ?v] [?e :name ?n] [(> ?v <threshold>)]])
+    //
+    // Threshold = 90th percentile → ~10% of entities pass the filter.
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
+
+    let mut group = c.benchmark_group("query/predicate_pushdown");
+    group.sample_size(10);
+
+    for &(label, n) in SCALES {
+        let db = helpers::populate_with_names(n);
+        let threshold = (n as i64) * 9 / 10;
+        let query = format!(
+            "(query [:find ?e ?n :where [?e :val ?v] [?e :name ?n] [(> ?v {})]])",
+            threshold
+        );
+        group.bench_with_input(
+            BenchmarkId::from_parameter(label),
+            &(db, query),
+            |b, (db, q)| {
+                b.iter(|| db.execute(q).unwrap());
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_insert,
@@ -1527,5 +1561,6 @@ criterion_group!(
     bench_prepared,
     bench_retract,
     bench_btree_lookup,
+    bench_predicate_pushdown,
 );
 criterion_main!(benches);

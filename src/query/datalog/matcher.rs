@@ -261,6 +261,7 @@ impl PatternMatcher {
     }
 
     /// Match multiple patterns with index hints for optimized lookups.
+    #[allow(dead_code)]
     pub fn match_patterns_with_hints(&self, patterns: &[(Pattern, IndexHint)]) -> Vec<Bindings> {
         if patterns.is_empty() {
             return vec![HashMap::new()];
@@ -278,6 +279,33 @@ impl PatternMatcher {
         }
 
         results
+    }
+
+    /// Match a single pattern against existing bindings, using an index hint when the
+    /// bindings are the unit seed (one empty map — i.e., this is the first pattern in
+    /// an incremental plan loop).
+    ///
+    /// - Unit seed (`[{}]`): delegates to `match_pattern_with_hint` for an indexed lookup.
+    /// - Any other non-empty seed: delegates to `join_with_pattern` (hash-join path).
+    /// - Empty seed (`[]`): returns empty immediately.
+    ///
+    /// Used by the executor and evaluator incremental plan loops introduced in #207.
+    pub(crate) fn match_with_hint_seeded(
+        &self,
+        seed: Vec<Bindings>,
+        pattern: &Pattern,
+        hint: &IndexHint,
+    ) -> Vec<Bindings> {
+        if seed.is_empty() {
+            return vec![];
+        }
+        if seed.len() == 1 && seed.first().map(|s| s.is_empty()).unwrap_or(false) {
+            // First pattern in the plan — use the index hint for a targeted lookup.
+            self.match_pattern_with_hint(pattern, hint)
+        } else {
+            // Subsequent pattern — join_with_pattern uses hash-join when possible.
+            self.join_with_pattern(seed, pattern)
+        }
     }
 
     /// Match a single pattern with an index hint for optimized lookup.
@@ -1324,6 +1352,80 @@ mod tests {
             0,
             "mismatched constant should return no bindings"
         );
+    }
+
+    #[test]
+    fn test_match_with_hint_seeded_unit_seed_delegates_to_hint_path() {
+        use crate::query::datalog::optimizer::IndexHint;
+        use std::sync::Arc;
+        let storage = FactStorage::new();
+        let entity = uuid::Uuid::new_v4();
+        storage
+            .transact(vec![(entity, ":val".to_string(), Value::Integer(1))], None)
+            .unwrap();
+        let facts: Arc<[Fact]> = Arc::from(storage.get_asserted_facts().unwrap());
+        let matcher = PatternMatcher::from_slice(facts);
+        let p = Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":val".to_string()),
+            EdnValue::Symbol("?v".to_string()),
+        );
+        let unit_seed = vec![HashMap::new()];
+        let results = matcher.match_with_hint_seeded(unit_seed, &p, &IndexHint::Aevt);
+        assert_eq!(
+            results.len(),
+            1,
+            "unit seed must produce one result per matching fact"
+        );
+        assert!(results[0].contains_key("?v"), "binding must contain ?v");
+    }
+
+    #[test]
+    fn test_match_with_hint_seeded_real_bindings_uses_join() {
+        use crate::query::datalog::optimizer::IndexHint;
+        use std::sync::Arc;
+        let storage = FactStorage::new();
+        let e = uuid::Uuid::new_v4();
+        storage
+            .transact(vec![(e, ":val".to_string(), Value::Integer(42))], None)
+            .unwrap();
+        let facts: Arc<[Fact]> = Arc::from(storage.get_asserted_facts().unwrap());
+        let matcher = PatternMatcher::from_slice(facts);
+        let p = Pattern::new(
+            EdnValue::Uuid(e),
+            EdnValue::Keyword(":val".to_string()),
+            EdnValue::Symbol("?v".to_string()),
+        );
+        // Non-unit seed — simulates a second-pattern call with existing bindings
+        let seed = vec![{
+            let mut m = HashMap::new();
+            m.insert("?other".to_string(), Value::Integer(99));
+            m
+        }];
+        let results = matcher.match_with_hint_seeded(seed, &p, &IndexHint::Eavt);
+        assert_eq!(
+            results.len(),
+            1,
+            "join path must unify with existing binding"
+        );
+        assert_eq!(results[0].get("?v"), Some(&Value::Integer(42)));
+    }
+
+    #[test]
+    fn test_match_with_hint_seeded_empty_seed_returns_empty() {
+        use crate::query::datalog::optimizer::IndexHint;
+        use std::sync::Arc;
+        let storage = FactStorage::new();
+        let facts: Arc<[Fact]> = Arc::from(storage.get_asserted_facts().unwrap());
+        let matcher = PatternMatcher::from_slice(facts);
+        let p = Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":val".to_string()),
+            EdnValue::Symbol("?v".to_string()),
+        );
+        // Completely empty seed (no rows at all)
+        let results = matcher.match_with_hint_seeded(vec![], &p, &IndexHint::Aevt);
+        assert!(results.is_empty(), "empty seed must produce empty results");
     }
 }
 

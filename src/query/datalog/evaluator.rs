@@ -727,35 +727,44 @@ impl StratifiedEvaluator {
 
             // Evaluate mixed rules (with not-filter)
             for (_pred, rule) in &mixed_rules {
-                let positive_patterns: Vec<Pattern> = rule
-                    .body
-                    .iter()
-                    .filter_map(|c| match c {
-                        WhereClause::Pattern(p) => Some(p.clone()),
-                        WhereClause::RuleInvocation { predicate, args } => match args.len() {
-                            1 => args.first().map(|a0| {
-                                Pattern::new(
-                                    a0.clone(),
-                                    EdnValue::Keyword(format!(":{}", predicate)),
-                                    EdnValue::Symbol("?_rule_value".to_string()),
-                                )
-                            }),
-                            2 => args.first().and_then(|a0| {
-                                args.get(1).map(|a1| {
+                // Collect Pattern and Expr clauses for the planner.
+                // RuleInvocations are converted to Pattern; Not/NotJoin/Or/OrJoin extracted separately.
+                let mut plan_clauses: Vec<WhereClause> = Vec::new();
+                for c in &rule.body {
+                    match c {
+                        WhereClause::Pattern(_) | WhereClause::Expr { .. } => {
+                            plan_clauses.push(c.clone());
+                        }
+                        WhereClause::RuleInvocation { predicate, args } => {
+                            let pattern = match args.len() {
+                                1 => args.first().map(|a0| {
                                     Pattern::new(
                                         a0.clone(),
                                         EdnValue::Keyword(format!(":{}", predicate)),
-                                        a1.clone(),
+                                        EdnValue::Symbol("?_rule_value".to_string()),
                                     )
-                                })
-                            }),
-                            _ => None,
-                        },
-                        WhereClause::Not(_) | WhereClause::NotJoin { .. } => None,
-                        WhereClause::Expr { .. } => None,
-                        WhereClause::Or(_) | WhereClause::OrJoin { .. } => None, // Or/OrJoin handled by apply_or_clauses below, not extracted as positive patterns.
-                    })
-                    .collect();
+                                }),
+                                2 => args.first().and_then(|a0| {
+                                    args.get(1).map(|a1| {
+                                        Pattern::new(
+                                            a0.clone(),
+                                            EdnValue::Keyword(format!(":{}", predicate)),
+                                            a1.clone(),
+                                        )
+                                    })
+                                }),
+                                _ => None,
+                            };
+                            if let Some(p) = pattern {
+                                plan_clauses.push(WhereClause::Pattern(p));
+                            }
+                        }
+                        WhereClause::Not(_)
+                        | WhereClause::NotJoin { .. }
+                        | WhereClause::Or(_)
+                        | WhereClause::OrJoin { .. } => {}
+                    }
+                }
 
                 let not_clauses: Vec<Vec<WhereClause>> = rule
                     .body
@@ -777,23 +786,59 @@ impl StratifiedEvaluator {
                     })
                     .collect();
 
-                // Collect top-level Expr clauses from the rule body
-                let body_expr_clauses: Vec<&WhereClause> = rule
-                    .body
-                    .iter()
-                    .filter(|c| matches!(c, WhereClause::Expr { .. }))
-                    .collect();
-
-                // Compute once; reuse for matcher, apply_or_clauses, not-body matching, and evaluate_not_join.
-                // Declared at loop body scope so it remains in scope for all four usages below.
-                let accumulated_facts: Arc<[Fact]> =
-                    Arc::from(accumulated.get_asserted_facts().unwrap_or_default());
+                // Compute once; reuse for plan loop, apply_or_clauses, not-body matching.
+                let accumulated_facts: Arc<[Fact]> = Arc::from(accumulated.get_asserted_facts()?);
 
                 let matcher = PatternMatcher::from_slice(accumulated_facts.clone());
-                let raw_candidates = matcher.match_patterns(&positive_patterns);
 
-                // Apply Or/OrJoin clauses before Expr (mirrors top-level execute_query order)
-                let or_expanded = {
+                // Plan: assigns index hints + pushes Expr to earliest binding position.
+                let planned = crate::query::datalog::optimizer::plan(
+                    plan_clauses,
+                    &crate::storage::index::Indexes::new(),
+                );
+
+                // Process planned clauses in order: Pattern → join, Expr → filter/extend.
+                let fn_guard = self
+                    .functions
+                    .read()
+                    .map_err(|_| anyhow!("function registry lock poisoned"))?;
+                let mut candidates: Vec<Bindings> = vec![Bindings::new()];
+                for (clause, hint) in planned {
+                    match clause {
+                        WhereClause::Pattern(p) => {
+                            candidates = matcher.match_with_hint_seeded(
+                                candidates,
+                                &p,
+                                hint.as_ref()
+                                    .unwrap_or(&crate::query::datalog::optimizer::IndexHint::Eavt),
+                            );
+                        }
+                        WhereClause::Expr { expr, binding: out } => {
+                            use crate::query::datalog::executor::{eval_expr, is_truthy};
+                            candidates = candidates
+                                .into_iter()
+                                .filter_map(|mut b| match eval_expr(&expr, &b, Some(&fn_guard)) {
+                                    Ok(v) => {
+                                        if let Some(var) = &out {
+                                            b.insert(var.clone(), v);
+                                            Some(b)
+                                        } else if is_truthy(&v) {
+                                            Some(b)
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                    Err(_) => None,
+                                })
+                                .collect();
+                        }
+                        _ => {}
+                    }
+                }
+                drop(fn_guard);
+
+                // Apply Or/OrJoin clauses (unchanged, applied after the plan loop).
+                let candidates = {
                     use crate::query::datalog::executor::apply_or_clauses;
                     use crate::query::datalog::functions::FunctionRegistry;
                     let registry_guard = self
@@ -806,7 +851,7 @@ impl StratifiedEvaluator {
                     let fn_registry = FunctionRegistry::with_builtins();
                     let expanded = apply_or_clauses(
                         &rule.body,
-                        raw_candidates,
+                        candidates,
                         accumulated_facts.clone(),
                         &registry_guard,
                         None,
@@ -816,15 +861,6 @@ impl StratifiedEvaluator {
                     drop(registry_guard);
                     expanded
                 };
-
-                // Apply top-level Expr clauses to filter/extend candidates
-                let fn_guard = self
-                    .functions
-                    .read()
-                    .map_err(|_| anyhow!("function registry lock poisoned"))?;
-                let candidates =
-                    apply_expr_clauses_in_evaluator(or_expanded, &body_expr_clauses, &fn_guard);
-                drop(fn_guard);
 
                 // Build temp_eval once per rule (outside the binding loop);
                 // instantiate_head_public only uses storage, not the registry.
@@ -1374,5 +1410,53 @@ mod tests {
             result.is_err(),
             "stratified should error when max_derived_facts exceeded"
         );
+    }
+
+    #[test]
+    fn test_mixed_rule_with_expr_preserves_semantics() {
+        // Rule: (eligible ?x) :- [?x :val ?v] [(> ?v 10)] (not [?x :blocked true])
+        // Expr should be pushed after [?x :val ?v] in the plan.
+        // Result must be the same as before.
+        let storage = FactStorage::new();
+        let rules = Arc::new(RwLock::new(RuleRegistry::new()));
+        let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
+
+        let e1 = Uuid::new_v4();
+        let e2 = Uuid::new_v4();
+        let e3 = Uuid::new_v4();
+
+        storage
+            .transact(
+                vec![
+                    (e1, ":val".to_string(), Value::Integer(5)),
+                    (e2, ":val".to_string(), Value::Integer(20)),
+                    (e3, ":val".to_string(), Value::Integer(30)),
+                    (e3, ":blocked".to_string(), Value::Boolean(true)),
+                ],
+                None,
+            )
+            .unwrap();
+
+        register_test_rule(
+            &rules,
+            r#"(rule [(eligible ?x) [?x :val ?v] [(> ?v 10)] (not [?x :blocked true])])"#,
+        );
+
+        let evaluator = StratifiedEvaluator::new(
+            storage,
+            Arc::clone(&rules),
+            Arc::clone(&functions),
+            DEFAULT_MAX_ITERATIONS,
+            DEFAULT_MAX_DERIVED_FACTS,
+            DEFAULT_MAX_RESULTS,
+        );
+
+        let derived = evaluator.evaluate(&["eligible".to_string()]).unwrap();
+        let facts = derived.get_asserted_facts().unwrap();
+        let eligible: Vec<_> = facts
+            .iter()
+            .filter(|f| f.attribute.contains("eligible"))
+            .collect();
+        assert_eq!(eligible.len(), 1, "only e2 is eligible (e3 is blocked)");
     }
 }
