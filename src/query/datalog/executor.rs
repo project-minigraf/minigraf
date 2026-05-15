@@ -521,8 +521,7 @@ impl DatalogExecutor {
         let planned = optimizer::plan(plan_clauses, &self.indexes);
 
         // Process planned clauses in order: Pattern → expand bindings, Expr → filter/extend.
-        let mut bindings: Vec<std::collections::HashMap<String, crate::graph::types::Value>> =
-            vec![std::collections::HashMap::new()];
+        let mut bindings: Vec<Binding> = vec![Binding::new()];
         for (clause, hint) in planned {
             match clause {
                 WhereClause::Pattern(p) => {
@@ -990,8 +989,7 @@ impl DatalogExecutor {
         let planned = optimizer::plan(plan_clauses, &self.indexes);
 
         // Process planned clauses in order: Pattern → expand, Expr → filter/extend.
-        let mut bindings: Vec<std::collections::HashMap<String, crate::graph::types::Value>> =
-            vec![std::collections::HashMap::new()];
+        let mut bindings: Vec<Binding> = vec![Binding::new()];
         for (clause, hint) in planned {
             match clause {
                 WhereClause::Pattern(p) => {
@@ -1693,7 +1691,8 @@ fn project_find_specs(bindings: &[Binding], find_specs: &[FindSpec]) -> Vec<Vec<
 
 /// Evaluate a single branch of an `or`/`or-join` against incoming bindings.
 ///
-/// Processing order (mirrors top-level execute_query order):
+/// Processing order (note: top-level execute_query now uses an interleaved plan loop
+/// where Expr clauses are pushed down inline; branches retain their own Expr post-pass):
 /// 1. Pattern/RuleInvocation → match_patterns_seeded
 /// 2. Nested Or/OrJoin → apply_or_clauses (recursive)
 /// 3. Not/NotJoin → post-filter
