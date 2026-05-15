@@ -23,6 +23,24 @@ impl<'a> Repl<'a> {
         self.run_impl(io::BufReader::new(io::stdin()), interactive);
     }
 
+    /// Source `init_path` silently, without starting the interactive loop.
+    ///
+    /// Commands in the init file are executed exactly as if they had been
+    /// typed at the prompt, but without any banner or prompts. Errors are
+    /// printed to stderr and execution of the init file continues. Call
+    /// [`Repl::run`] afterwards to start the interactive REPL.
+    pub fn run_with_init(&self, init_path: &std::path::Path) {
+        match std::fs::File::open(init_path) {
+            Ok(file) => {
+                self.run_impl(io::BufReader::new(file), false);
+            }
+            Err(e) => {
+                let path = init_path.display();
+                eprintln!("error: could not open init file '{path}': {e}");
+            }
+        }
+    }
+
     fn run_impl<R: BufRead>(&self, mut reader: R, interactive: bool) {
         if interactive {
             println!(
@@ -534,5 +552,44 @@ mod tests {
     fn is_command_complete_default_arm() {
         // A plain character inside a string hits the `_ => {}` arm.
         assert!(Repl::is_command_complete(r#"(foo "bar")"#));
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn run_with_init_sources_file() {
+        // run_with_init only processes the init file (no interactive loop), so
+        // this test is safe to run in any environment without blocking on stdin.
+        use std::io::Write;
+        let mut tmp = tempfile::NamedTempFile::new().expect("tempfile");
+        writeln!(
+            tmp,
+            "(transact [[:alice :person/name \"Alice\"]])\n\
+             (rule [(has-name ?e ?n) [?e :person/name ?n]])"
+        )
+        .expect("write init");
+        tmp.flush().expect("flush");
+
+        let db = Minigraf::in_memory().expect("in-memory db");
+        let repl = db.repl();
+        repl.run_with_init(tmp.path());
+        let result = db
+            .execute("(query [:find ?n :where (has-name _ ?n)])")
+            .expect("query");
+        match result {
+            crate::query::datalog::QueryResult::QueryResults { results, .. } => {
+                assert_eq!(results.len(), 1);
+            }
+            _ => panic!("expected query results"),
+        }
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn run_with_init_missing_file_prints_error() {
+        // A non-existent init path should print an error to stderr but not panic.
+        // run_with_init no longer starts the interactive loop, so no stdin blocking.
+        let db = Minigraf::in_memory().expect("in-memory db");
+        let repl = db.repl();
+        repl.run_with_init(std::path::Path::new("/nonexistent/path/rules.datalog"));
     }
 }

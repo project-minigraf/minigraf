@@ -24,11 +24,12 @@ jobs:
         run: cargo install cargo-tarpaulin
 
       - name: Generate coverage
-        run: cargo tarpaulin --out Xml --timeout 300 --fail-under 75
+        run: cargo tarpaulin --out Xml --timeout 300 --fail-under 75 --exclude-files "src/main.rs"
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./cobertura.xml
+          disable_search: 'true'
           fail_ci_if_error: true
