@@ -33,6 +33,30 @@ fn query_uses_per_fact_pseudo_attr(query: &DatalogQuery) -> bool {
     check_clauses(&query.where_clauses)
 }
 
+/// Recursively collect all `Pattern` clauses from a slice of where clauses,
+/// including those nested inside `Not`, `NotJoin`, `Or`, and `OrJoin` bodies.
+/// Used by `selective_fact_fetch` to ensure every pattern that references a fact
+/// (including not-body patterns) is considered when deciding which indexes to query.
+fn collect_all_patterns(clauses: &[WhereClause]) -> Vec<Pattern> {
+    let mut patterns = Vec::new();
+    for clause in clauses {
+        match clause {
+            WhereClause::Pattern(p) => patterns.push(p.clone()),
+            WhereClause::Not(inner) => patterns.extend(collect_all_patterns(inner)),
+            WhereClause::NotJoin { clauses: inner, .. } => {
+                patterns.extend(collect_all_patterns(inner))
+            }
+            WhereClause::Or(branches) | WhereClause::OrJoin { branches, .. } => {
+                for branch in branches {
+                    patterns.extend(collect_all_patterns(branch));
+                }
+            }
+            WhereClause::RuleInvocation { .. } | WhereClause::Expr { .. } => {}
+        }
+    }
+    patterns
+}
+
 /// The result of executing a Datalog command via [`crate::db::Minigraf::execute`].
 ///
 /// Pattern-match on this to distinguish query results from write confirmations:
@@ -294,9 +318,9 @@ impl DatalogExecutor {
     /// The three steps above are paid exactly once per `execute_query` /
     /// `execute_query_with_rules` call.
     ///
-    /// **Post-1.0 backlog**: Use the on-disk B+tree indexes (EAVT/AEVT/AVET/VAET) for
-    /// selective attribute/entity lookups instead of the full `get_all_facts()` scan (step 1).
-    /// Also investigate caching the `net_asserted_facts()` result and invalidating on write (step 2).
+    /// Step 1 uses selective index-backed fetches when query patterns bind concrete entities
+    /// or attributes (up to 4 distinct lookups); falls back to `get_all_facts()` otherwise.
+    /// Step 2 (caching `net_asserted_facts()`) remains a future optimisation opportunity.
     fn filter_facts_for_query(&self, query: &DatalogQuery) -> Result<Arc<[Fact]>> {
         let now = self.read_now();
 
@@ -306,7 +330,19 @@ impl DatalogExecutor {
             }
             (Some(facts), None) => facts.iter().cloned().collect(),
             (None, Some(as_of)) => self.storage.get_facts_as_of(as_of)?,
-            (None, None) => self.storage.get_all_facts()?,
+            (None, None) => {
+                // Selective fetch is only safe when no rule invocations are present —
+                // rules require the full fact base to evaluate correctly.
+                if !query.uses_rules() {
+                    let patterns = collect_all_patterns(&query.where_clauses);
+                    match self.selective_fact_fetch(&patterns, 4) {
+                        Some(facts) => facts,
+                        None => self.storage.get_all_facts()?,
+                    }
+                } else {
+                    self.storage.get_all_facts()?
+                }
+            }
         };
 
         let tx_filtered = source_facts;
@@ -335,6 +371,78 @@ impl DatalogExecutor {
         };
 
         Ok(Arc::from(valid_filtered))
+    }
+
+    /// Attempt a selective index-backed fact fetch for the given patterns.
+    ///
+    /// Inspects `patterns` for bound entity literals (UUID or keyword → deterministic UUID)
+    /// and bound attribute keywords. If the total distinct lookup count is 0 (nothing bound)
+    /// or exceeds `threshold` (too many — full scan is cheaper), returns `None`.
+    /// Otherwise returns `Some(facts)` — the union of all selectively fetched facts,
+    /// deduplicated by `(entity, attribute, tx_count)`.
+    fn selective_fact_fetch(&self, patterns: &[Pattern], threshold: usize) -> Option<Vec<Fact>> {
+        use std::collections::HashSet;
+
+        let mut entity_ids: HashSet<uuid::Uuid> = HashSet::new();
+        let mut attributes: HashSet<String> = HashSet::new();
+
+        for pattern in patterns {
+            // Bound entity: UUID literal or keyword that resolves deterministically
+            match &pattern.entity {
+                EdnValue::Uuid(u) => {
+                    entity_ids.insert(*u);
+                }
+                EdnValue::Keyword(_) => {
+                    if let Ok(uid) = edn_to_entity_id(&pattern.entity) {
+                        entity_ids.insert(uid);
+                    }
+                }
+                _ => {}
+            }
+            // Bound attribute: non-variable keyword
+            if let AttributeSpec::Real(EdnValue::Keyword(attr)) = &pattern.attribute {
+                attributes.insert(attr.clone());
+            }
+        }
+
+        let total = entity_ids.len() + attributes.len();
+        if total == 0 || total > threshold {
+            return None;
+        }
+
+        // Dedup key: (entity uuid, attribute string, tx_count) — avoids Value debug formatting.
+        let mut seen: HashSet<(uuid::Uuid, String, u64)> = HashSet::new();
+        let mut all_facts: Vec<Fact> = Vec::new();
+
+        for uid in &entity_ids {
+            match self.storage.get_facts_by_entity(uid) {
+                Ok(facts) => {
+                    for fact in facts {
+                        let key = (fact.entity, fact.attribute.clone(), fact.tx_count);
+                        if seen.insert(key) {
+                            all_facts.push(fact);
+                        }
+                    }
+                }
+                Err(_) => return None,
+            }
+        }
+
+        for attr in &attributes {
+            match self.storage.get_facts_by_attribute(attr) {
+                Ok(facts) => {
+                    for fact in facts {
+                        let key = (fact.entity, fact.attribute.clone(), fact.tx_count);
+                        if seen.insert(key) {
+                            all_facts.push(fact);
+                        }
+                    }
+                }
+                Err(_) => return None,
+            }
+        }
+
+        Some(all_facts)
     }
 
     /// Execute a query: find matching facts and return specified variables
@@ -4487,5 +4595,90 @@ mod expr_eval_tests {
             .find(|b| b.get("salary") == Some(&Value::Integer(100)))
             .unwrap();
         assert_eq!(row_b100.get("__win_2"), Some(&Value::Integer(100)));
+    }
+}
+
+#[cfg(test)]
+mod selective_lookup_tests {
+    use crate::graph::FactStorage;
+    use crate::query::datalog::executor::DatalogExecutor;
+
+    fn make_db_with_entities(n: usize) -> DatalogExecutor {
+        let storage = FactStorage::new();
+        let exec = DatalogExecutor::new(storage);
+        for batch_start in (0..n).step_by(50) {
+            let batch_end = (batch_start + 50).min(n);
+            let mut cmd = String::from("(transact [");
+            for i in batch_start..batch_end {
+                cmd.push_str(&format!(r#"[:e{i} :name "entity{i}"]"#, i = i));
+                cmd.push_str(&format!("[:e{i} :val {i}]", i = i));
+            }
+            cmd.push_str("])");
+            exec.execute(crate::query::datalog::parser::parse_datalog_command(&cmd).unwrap())
+                .unwrap();
+        }
+        exec
+    }
+
+    #[test]
+    fn entity_bound_query_returns_correct_results() {
+        let exec = make_db_with_entities(100);
+        let result = exec
+            .execute(
+                crate::query::datalog::parser::parse_datalog_command(
+                    r#"(query [:find ?n :where [:e5 :name ?n]])"#,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        if let crate::query::datalog::executor::QueryResult::QueryResults { results, .. } = result {
+            assert_eq!(results.len(), 1, "expected exactly 1 result for entity :e5");
+            assert_eq!(
+                results[0][0],
+                crate::graph::types::Value::String("entity5".to_string())
+            );
+        } else {
+            panic!("expected QueryResults");
+        }
+    }
+
+    #[test]
+    fn attribute_bound_query_returns_correct_results() {
+        let exec = make_db_with_entities(100);
+        let result = exec
+            .execute(
+                crate::query::datalog::parser::parse_datalog_command(
+                    "(query [:find ?e ?v :where [?e :val ?v]])",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        if let crate::query::datalog::executor::QueryResult::QueryResults { results, .. } = result {
+            assert_eq!(
+                results.len(),
+                100,
+                "expected 100 results for :val attribute scan"
+            );
+        } else {
+            panic!("expected QueryResults");
+        }
+    }
+
+    #[test]
+    fn as_of_query_still_works_after_change() {
+        let exec = make_db_with_entities(10);
+        let result = exec
+            .execute(
+                crate::query::datalog::parser::parse_datalog_command(
+                    "(query [:find ?n :where [?e :name ?n] :as-of 1])",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        if let crate::query::datalog::executor::QueryResult::QueryResults { results, .. } = result {
+            assert!(!results.is_empty(), "expected results from as-of 1 query");
+        } else {
+            panic!("expected QueryResults");
+        }
     }
 }

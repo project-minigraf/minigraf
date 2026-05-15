@@ -331,6 +331,27 @@ pub fn populate_with_dept(n: usize, dept_count: usize) -> Arc<Minigraf> {
     Arc::new(db)
 }
 
+/// In-memory DB with `n` entities, each with `:val` and `:name` attributes.
+/// Suitable for point-lookup and attribute-scan benchmarks.
+///
+/// Schema:
+///   `:e{i} :val {i}` for i in 0..n
+///   `:e{i} :name "entity{i}"` for i in 0..n
+pub fn populate_with_names(n: usize) -> Arc<Minigraf> {
+    let db = Minigraf::in_memory().unwrap();
+    for batch_start in (0..n).step_by(50) {
+        let batch_end = (batch_start + 50).min(n);
+        let mut cmd = String::from("(transact [");
+        for i in batch_start..batch_end {
+            cmd.push_str(&format!("[:e{i} :val {i}]", i = i));
+            cmd.push_str(&format!(r#"[:e{i} :name "entity{i}"]"#, i = i));
+        }
+        cmd.push_str("])");
+        db.execute(&cmd).unwrap();
+    }
+    Arc::new(db)
+}
+
 /// In-memory DB with `n` value facts, `dup_fraction`% of values are duplicates.
 /// Each entity has `:val` integer where `dup_fraction`% map to same values.
 ///

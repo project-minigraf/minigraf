@@ -1465,6 +1465,44 @@ fn bench_retract(c: &mut Criterion) {
     }
 }
 
+// ── B+Tree selective lookup (Issue #208) ─────────────────────────────────────
+
+fn bench_btree_lookup(c: &mut Criterion) {
+    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000), ("100k", 100_000)];
+
+    // entity_point: single known entity literal — should be O(1) with selective lookup.
+    {
+        let mut group = c.benchmark_group("btree_lookup/entity_point");
+        group.sample_size(10);
+        for &(label, n) in SCALES {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_with_names(n);
+                b.iter(|| {
+                    db.execute(r#"(query [:find ?n :where [:e0 :name ?n]])"#)
+                        .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+
+    // attribute_scan: all entities via a single bound attribute.
+    {
+        let mut group = c.benchmark_group("btree_lookup/attribute_scan");
+        group.sample_size(10);
+        for &(label, n) in SCALES {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_with_names(n);
+                b.iter(|| {
+                    db.execute("(query [:find ?e ?n :where [?e :name ?n]])")
+                        .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+}
+
 criterion_group!(
     benches,
     bench_insert,
@@ -1488,5 +1526,6 @@ criterion_group!(
     bench_concurrent_btree_scan,
     bench_prepared,
     bench_retract,
+    bench_btree_lookup,
 );
 criterion_main!(benches);
