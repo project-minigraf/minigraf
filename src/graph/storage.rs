@@ -182,12 +182,13 @@ impl FactStorage {
     ///   has no per-fact override
     ///
     /// # Returns
-    /// The TxId (timestamp) assigned to all facts in this batch
+    /// `(tx_id, tx_count)` — the Unix-ms timestamp and the monotonic counter
+    /// assigned to all facts in this batch.
     pub(crate) fn transact_batch(
         &self,
         fact_tuples: Vec<(EntityId, Attribute, Value, Option<TransactOptions>)>,
         default_opts: Option<TransactOptions>,
-    ) -> Result<TxId> {
+    ) -> Result<(TxId, u64)> {
         let tx_id = tx_id_now();
         let tx_count = self
             .tx_counter
@@ -225,7 +226,7 @@ impl FactStorage {
         }
         d.facts.extend(facts);
 
-        Ok(tx_id)
+        Ok((tx_id, tx_count))
     }
 
     /// Retract a batch of facts with automatic timestamping
@@ -237,8 +238,12 @@ impl FactStorage {
     /// * `fact_tuples` - Vec of (EntityId, Attribute, Value) tuples to retract
     ///
     /// # Returns
-    /// The TxId (timestamp) assigned to these retractions
-    pub(crate) fn retract(&self, fact_tuples: Vec<(EntityId, Attribute, Value)>) -> Result<TxId> {
+    /// `(tx_id, tx_count)` — the Unix-ms timestamp and the monotonic counter
+    /// assigned to these retractions.
+    pub(crate) fn retract(
+        &self,
+        fact_tuples: Vec<(EntityId, Attribute, Value)>,
+    ) -> Result<(TxId, u64)> {
         let tx_id = tx_id_now();
         let tx_count = self
             .tx_counter
@@ -272,7 +277,7 @@ impl FactStorage {
         }
         d.facts.extend(retractions);
 
-        Ok(tx_id)
+        Ok((tx_id, tx_count))
     }
 
     /// Insert a fact with its original tx_id and tx_count preserved.
@@ -876,7 +881,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(2));
 
         // Retract the fact
-        let tx2 = storage
+        let (tx2, _) = storage
             .retract(vec![(
                 alice,
                 ":person/name".to_string(),
