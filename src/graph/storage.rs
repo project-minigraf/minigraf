@@ -605,10 +605,12 @@ fn resolve_fact_ref(d: &FactData, fr: FactRef) -> Result<Fact> {
 fn next_string_prefix(s: &str) -> Option<String> {
     let mut bytes = s.as_bytes().to_vec();
     for i in (0..bytes.len()).rev() {
-        if bytes[i] < 0xFF {
-            bytes[i] += 1;
-            bytes.truncate(i + 1);
-            return String::from_utf8(bytes).ok();
+        if let Some(b) = bytes.get_mut(i) {
+            if *b < 0xFF {
+                *b += 1;
+                bytes.truncate(i + 1);
+                return String::from_utf8(bytes).ok();
+            }
         }
     }
     None
@@ -619,7 +621,7 @@ impl FactStorage {
     /// Get all facts for a specific entity (index-driven).
     pub(crate) fn get_facts_by_entity(&self, entity_id: &EntityId) -> Result<Vec<Fact>> {
         use crate::storage::index::EavtKey;
-        let d = self.data.read().unwrap();
+        let d = self.data.read().unwrap_or_else(|e| e.into_inner());
 
         let start = EavtKey {
             entity: *entity_id,
@@ -687,7 +689,7 @@ impl FactStorage {
     /// Get all facts for a specific attribute (index-driven).
     pub(crate) fn get_facts_by_attribute(&self, attribute: &Attribute) -> Result<Vec<Fact>> {
         use crate::storage::index::AevtKey;
-        let d = self.data.read().unwrap();
+        let d = self.data.read().unwrap_or_else(|e| e.into_inner());
 
         // Fallback: no index
         if d.pending_indexes.aevt.is_empty() && d.committed_index_reader.is_none() {
