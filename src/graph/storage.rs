@@ -578,10 +578,12 @@ pub(crate) fn net_asserted_facts(facts: Vec<Fact>) -> Vec<Fact> {
         .collect()
 }
 
-/// Resolve a FactRef to a Fact using the committed reader (for on-disk facts)
+/// Resolve a [FactRef] to a [Fact] using the committed reader (for on-disk facts)
 /// or the pending facts vector (for in-memory facts with page_id=0).
-/// Only used from test-only FactStorage methods and the tests module.
-#[cfg(test)]
+/// Used by the production index-driven lookup methods (`get_facts_by_entity`,
+/// `get_facts_by_attribute`). The `#[allow(dead_code)]` suppresses the warning
+/// until the executor wires up calls to those methods in a subsequent task.
+#[allow(dead_code)]
 fn resolve_fact_ref(d: &FactData, fr: FactRef) -> Result<Fact> {
     if fr.page_id == 0 {
         d.facts
@@ -601,8 +603,10 @@ fn resolve_fact_ref(d: &FactData, fr: FactRef) -> Result<Fact> {
 
 /// Increment the last byte of a string for prefix upper-bound construction.
 /// Returns `None` if all bytes are 0xFF (true unbounded scan needed).
-/// Only used from test-only FactStorage methods.
-#[cfg(test)]
+/// Used by the production index-driven lookup methods (`get_facts_by_attribute`).
+/// The `#[allow(dead_code)]` suppresses the warning until the executor wires up
+/// calls to those methods in a subsequent task.
+#[allow(dead_code)]
 fn next_string_prefix(s: &str) -> Option<String> {
     let mut bytes = s.as_bytes().to_vec();
     for i in (0..bytes.len()).rev() {
@@ -615,25 +619,11 @@ fn next_string_prefix(s: &str) -> Option<String> {
     None
 }
 
-/// Test-only helpers on FactStorage: index-driven entity/attribute queries.
-///
-/// These methods are only used from tests; they are not part of the production
-/// query path (the executor uses `get_asserted_facts` + temporal filtering).
-#[cfg(test)]
+/// Production helpers on FactStorage: index-driven entity/attribute lookups.
+/// Called from the query executor's selective_fact_fetch (wired in a subsequent task).
+#[allow(dead_code)]
 impl FactStorage {
-    /// Return all asserted facts valid at the given timestamp.
-    ///
-    /// A fact is valid at `ts` when `valid_from <= ts < valid_to` and it is asserted.
-    pub(crate) fn get_facts_valid_at(&self, ts: i64) -> Result<Vec<Fact>> {
-        let all = self.get_all_facts()?;
-        let filtered = all
-            .into_iter()
-            .filter(|f| f.is_asserted() && f.valid_from <= ts && ts < f.valid_to)
-            .collect();
-        Ok(filtered)
-    }
-
-    /// Get all facts for a specific entity (index-driven, test use only).
+    /// Get all facts for a specific entity (index-driven).
     pub(crate) fn get_facts_by_entity(&self, entity_id: &EntityId) -> Result<Vec<Fact>> {
         use crate::storage::index::EavtKey;
         let d = self.data.read().unwrap();
@@ -701,7 +691,7 @@ impl FactStorage {
         Ok(facts)
     }
 
-    /// Get all facts for a specific attribute (index-driven, test use only).
+    /// Get all facts for a specific attribute (index-driven).
     pub(crate) fn get_facts_by_attribute(&self, attribute: &Attribute) -> Result<Vec<Fact>> {
         use crate::storage::index::AevtKey;
         let d = self.data.read().unwrap();
@@ -768,7 +758,10 @@ impl FactStorage {
         Ok(facts)
     }
 
-    /// Get all facts for a specific entity and attribute (test use only).
+    /// Get all facts for a specific entity and attribute.
+    ///
+    /// Note: uses a full scan via `get_all_facts()` rather than an index-driven range scan.
+    /// For index-driven lookups, use `get_facts_by_entity` and filter by attribute in the caller.
     pub(crate) fn get_facts_by_entity_attribute(
         &self,
         entity_id: &EntityId,
@@ -779,6 +772,22 @@ impl FactStorage {
             .into_iter()
             .filter(|f| &f.entity == entity_id && &f.attribute == attribute)
             .collect())
+    }
+}
+
+/// Test-only helpers on FactStorage: for use in tests, not the production query path.
+#[cfg(test)]
+impl FactStorage {
+    /// Return all asserted facts valid at the given timestamp.
+    ///
+    /// A fact is valid at `ts` when `valid_from <= ts < valid_to` and it is asserted.
+    pub(crate) fn get_facts_valid_at(&self, ts: i64) -> Result<Vec<Fact>> {
+        let all = self.get_all_facts()?;
+        let filtered = all
+            .into_iter()
+            .filter(|f| f.is_asserted() && f.valid_from <= ts && ts < f.valid_to)
+            .collect();
+        Ok(filtered)
     }
 
     /// Get the current value for an entity-attribute pair (test use only).
