@@ -768,9 +768,21 @@ impl DatalogExecutor {
                                         })
                                         .collect();
                                     key.sort_unstable_by(|a, b| a.0.cmp(&b.0));
-                                    if key.len() == key_vars.len()
-                                        && exclusion_set.contains(&key)
-                                    {
+                                    if key.len() == key_vars.len() {
+                                        if exclusion_set.contains(&key) {
+                                            return false;
+                                        }
+                                        continue;
+                                    }
+                                    // Outer binding underspecified relative to the not-join body —
+                                    // fall back to the slow path so the body is correctly evaluated.
+                                    if evaluate_not_join(
+                                        join_vars,
+                                        nj_clauses,
+                                        binding,
+                                        filtered_facts.clone(),
+                                        &registry,
+                                    ) {
                                         return false;
                                     }
                                     continue;
