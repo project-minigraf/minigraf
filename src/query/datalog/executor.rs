@@ -5571,11 +5571,11 @@ mod pushdown_tests {
         match result {
             QueryResult::QueryResults { results, .. } => {
                 assert_eq!(results.len(), 1, "only doohickey should pass");
-                assert_eq!(
-                    results[0][0],
-                    Value::String("doohickey".to_string()),
-                    "result should be doohickey"
-                );
+                if let Value::String(ref s) = results[0][0] {
+                    assert_eq!(s.as_str(), "doohickey", "result should be doohickey");
+                } else {
+                    panic!("expected a String value for the result");
+                }
             }
             _ => panic!("expected QueryResults"),
         }
