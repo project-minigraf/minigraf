@@ -2081,4 +2081,65 @@ mod tests {
         assert!(!backend.is_new(), "reopened file should not be new");
         drop(backend);
     }
+
+    // ══ Wave 3: #214 fault-injection unit tests ═══════════════════════════
+
+    mod fault_injection_tests {
+        use super::*;
+        use crate::storage::backend::MemoryBackend;
+        use crate::storage::backend::fault_inject::{FaultConfig, FaultInjectingBackend};
+
+        fn make_pfs_with_config() -> (
+            PersistentFactStorage<FaultInjectingBackend<MemoryBackend>>,
+            std::sync::Arc<std::sync::Mutex<FaultConfig>>,
+        ) {
+            let (backend, config) = FaultInjectingBackend::with_config(MemoryBackend::new());
+            let pfs = PersistentFactStorage::new(backend, 16).unwrap();
+            (pfs, config)
+        }
+
+        fn stage_fact(pfs: &mut PersistentFactStorage<FaultInjectingBackend<MemoryBackend>>) {
+            let entity = Uuid::new_v4();
+            pfs.storage()
+                .transact(
+                    vec![(entity, ":test/attr".to_string(), Value::Boolean(true))],
+                    None,
+                )
+                .unwrap();
+            pfs.mark_dirty();
+        }
+
+        #[test]
+        fn save_returns_error_when_write_fails() {
+            let (mut pfs, config) = make_pfs_with_config();
+            stage_fact(&mut pfs);
+            config.lock().unwrap().fail_write_after = Some(0);
+            let result = pfs.save();
+            assert!(
+                result.is_err(),
+                "save must return Err when write_page fails"
+            );
+        }
+
+        #[test]
+        fn save_returns_error_when_sync_fails() {
+            let (mut pfs, config) = make_pfs_with_config();
+            stage_fact(&mut pfs);
+            config.lock().unwrap().fail_sync_after = Some(0);
+            let result = pfs.save();
+            assert!(result.is_err(), "save must return Err when sync fails");
+        }
+
+        #[test]
+        fn save_error_message_is_non_empty() {
+            let (mut pfs, config) = make_pfs_with_config();
+            stage_fact(&mut pfs);
+            config.lock().unwrap().fail_sync_after = Some(0);
+            let err = pfs.save().unwrap_err();
+            assert!(
+                !err.to_string().is_empty(),
+                "error message must not be empty"
+            );
+        }
+    }
 }

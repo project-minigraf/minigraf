@@ -533,6 +533,213 @@ fn test_implicit_tx_execute_survives_replay() {
     );
 }
 
+// ══ Wave 3: #209 WAL crash-recovery matrix ════════════════════════════════
+
+fn read_wal_bytes(db_path: &std::path::Path) -> Vec<u8> {
+    std::fs::read(wal_path_for(db_path)).unwrap_or_default()
+}
+
+fn write_wal_bytes(db_path: &std::path::Path, bytes: &[u8]) {
+    std::fs::write(wal_path_for(db_path), bytes).unwrap();
+}
+
+fn setup_db_with_one_fact() -> (tempfile::TempDir, std::path::PathBuf, Vec<u8>) {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("test.graph");
+    {
+        let db = minigraf::db::Minigraf::open(&db_path).unwrap();
+        db.execute(r#"(transact [[:e1 :name "Alice"]])"#).unwrap();
+        std::mem::forget(db);
+    }
+    let wal_bytes = read_wal_bytes(&db_path);
+    (dir, db_path, wal_bytes)
+}
+
+fn query_names(db_path: &std::path::Path) -> Vec<String> {
+    let db = minigraf::db::Minigraf::open(db_path).unwrap();
+    match db
+        .execute("(query [:find ?n :where [?e :name ?n]])")
+        .unwrap()
+    {
+        minigraf::QueryResult::QueryResults { results, .. } => results
+            .into_iter()
+            .flatten()
+            .filter_map(|v| match v {
+                minigraf::Value::String(s) => Some(s),
+                _ => None,
+            })
+            .collect(),
+        _ => vec![],
+    }
+}
+
+#[test]
+fn wal_recover_truncated_length_header() {
+    let (_dir, db_path, wal_bytes) = setup_db_with_one_fact();
+    assert!(!wal_bytes.is_empty(), "WAL should have content");
+    write_wal_bytes(&db_path, &wal_bytes[..wal_bytes.len() / 2]);
+    let names = query_names(&db_path);
+    assert_eq!(names.len(), 0, "partial WAL entry must not be applied");
+}
+
+#[test]
+fn wal_recover_truncated_payload() {
+    let (_dir, db_path, wal_bytes) = setup_db_with_one_fact();
+    let truncation_point = (wal_bytes.len() * 3) / 4;
+    write_wal_bytes(&db_path, &wal_bytes[..truncation_point]);
+    let names = query_names(&db_path);
+    assert_eq!(
+        names.len(),
+        0,
+        "entry with truncated payload must not be applied"
+    );
+}
+
+#[test]
+fn wal_recover_bad_checksum_second_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("test.graph");
+    {
+        let db = minigraf::db::Minigraf::open(&db_path).unwrap();
+        db.execute(r#"(transact [[:e1 :name "Alice"]])"#).unwrap();
+        db.execute(r#"(transact [[:e2 :name "Bob"]])"#).unwrap();
+        std::mem::forget(db);
+    }
+    let mut wal_bytes = read_wal_bytes(&db_path);
+    assert!(wal_bytes.len() > 36, "WAL too short to corrupt");
+    let n = wal_bytes.len();
+    wal_bytes[n - 4] ^= 0xFF;
+    wal_bytes[n - 3] ^= 0xFF;
+    write_wal_bytes(&db_path, &wal_bytes);
+    let names = query_names(&db_path);
+    assert_eq!(
+        names.len(),
+        1,
+        "only the entry before bad checksum should replay"
+    );
+    assert!(names.contains(&"Alice".to_string()), "Alice should survive");
+}
+
+#[test]
+fn wal_recover_committed_tx_crash_before_checkpoint() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("test.graph");
+    {
+        let db = minigraf::db::Minigraf::open(&db_path).unwrap();
+        let mut tx = db.begin_write().unwrap();
+        tx.execute(r#"(transact [[:e1 :name "Charlie"]])"#).unwrap();
+        tx.commit().unwrap();
+        std::mem::forget(db);
+    }
+    let names = query_names(&db_path);
+    assert_eq!(
+        names.len(),
+        1,
+        "committed tx must survive crash before checkpoint"
+    );
+    assert!(
+        names.contains(&"Charlie".to_string()),
+        "Charlie must be present"
+    );
+}
+
+#[test]
+fn wal_recover_rollback_crash() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("test.graph");
+    {
+        let db = minigraf::db::Minigraf::open(&db_path).unwrap();
+        let mut tx = db.begin_write().unwrap();
+        tx.execute(r#"(transact [[:e1 :name "Dave"]])"#).unwrap();
+        tx.rollback();
+        std::mem::forget(db);
+    }
+    let names = query_names(&db_path);
+    assert_eq!(
+        names.len(),
+        0,
+        "rolled-back fact must not appear after crash"
+    );
+}
+
+#[test]
+fn wal_recover_multiple_committed_corrupt_tail() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("test.graph");
+    {
+        let db = minigraf::db::Minigraf::open(&db_path).unwrap();
+        db.execute(r#"(transact [[:e1 :name "Eve"]])"#).unwrap();
+        db.execute(r#"(transact [[:e2 :name "Frank"]])"#).unwrap();
+        std::mem::forget(db);
+    }
+    let mut wal_bytes = read_wal_bytes(&db_path);
+    wal_bytes.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x00]);
+    write_wal_bytes(&db_path, &wal_bytes);
+    let names = query_names(&db_path);
+    assert_eq!(
+        names.len(),
+        2,
+        "both valid entries must replay; junk tail is discarded"
+    );
+}
+
+#[test]
+fn wal_corrupt_tail_never_applied() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("test.graph");
+    {
+        let db = minigraf::db::Minigraf::open(&db_path).unwrap();
+        db.execute(r#"(transact [[:e1 :name "Grace"]])"#).unwrap();
+        std::mem::forget(db);
+    }
+    let mut wal_bytes = read_wal_bytes(&db_path);
+    let mut fake_entry: Vec<u8> = Vec::new();
+    fake_entry.extend_from_slice(&0u32.to_le_bytes());
+    fake_entry.extend_from_slice(&999u64.to_le_bytes());
+    fake_entry.extend_from_slice(&1000u64.to_le_bytes());
+    wal_bytes.extend_from_slice(&fake_entry);
+    write_wal_bytes(&db_path, &wal_bytes);
+    let names = query_names(&db_path);
+    assert!(names.contains(&"Grace".to_string()), "Grace should replay");
+    assert_eq!(names.len(), 1, "fake entry must not create phantom facts");
+}
+
+// ══ Wave 3: #214 lock-leak tests ═════════════════════════════════════════
+
+#[test]
+fn write_lock_not_leaked_after_rollback() {
+    let db = minigraf::db::Minigraf::in_memory().unwrap();
+    let mut tx1 = db.begin_write().unwrap();
+    tx1.execute(r#"(transact [[:e1 :name "Temp"]])"#).unwrap();
+    tx1.rollback();
+    let mut tx2 = db.begin_write().unwrap();
+    tx2.execute(r#"(transact [[:e2 :name "Perm"]])"#).unwrap();
+    tx2.commit().unwrap();
+    let n = count_results(
+        db.execute("(query [:find ?n :where [?e :name ?n]])")
+            .unwrap(),
+    );
+    assert_eq!(n, 1, "only committed fact should be visible");
+}
+
+#[test]
+fn write_state_clean_after_drop() {
+    let db = minigraf::db::Minigraf::in_memory().unwrap();
+    {
+        let mut tx = db.begin_write().unwrap();
+        tx.execute(r#"(transact [[:e1 :name "Ghost"]])"#).unwrap();
+        // drop without commit or rollback
+    }
+    let mut tx2 = db.begin_write().unwrap();
+    tx2.execute(r#"(transact [[:e2 :name "Real"]])"#).unwrap();
+    tx2.commit().unwrap();
+    let n = count_results(
+        db.execute("(query [:find ?n :where [?e :name ?n]])")
+            .unwrap(),
+    );
+    assert_eq!(n, 1, "only committed fact visible after dropped tx");
+}
+
 // ── 12. V2 file upgrades to V3 on checkpoint ─────────────────────────────────
 
 /// Create a v2-format `.graph` file manually (version field = 2, no
