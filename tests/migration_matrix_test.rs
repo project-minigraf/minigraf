@@ -60,6 +60,11 @@ fn corrupt_magic_fails_loudly() {
     f.write_all(&page).unwrap();
     let result = Minigraf::open(&path);
     assert!(result.is_err(), "corrupt magic must produce an error");
+    let msg = result.err().unwrap().to_string();
+    assert!(
+        msg.contains("magic") || msg.contains("invalid") || msg.contains("not a"),
+        "error message must describe the corrupt magic"
+    );
 }
 
 #[test]

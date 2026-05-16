@@ -39,7 +39,19 @@ fn corrupted_header_checksum_does_not_panic() {
     let path = dir.path().join("corrupt_checksum.graph");
     build_valid_db(&path, 3);
     corrupt_bytes_at(&path, 76, 4);
-    let _ = Minigraf::open(&path);
+    match Minigraf::open(&path) {
+        Ok(db) => {
+            // If the open succeeded despite checksum corruption, facts must still be readable.
+            let n = count_results(
+                db.execute("(query [:find ?e :where [?e :idx ?i]])")
+                    .unwrap(),
+            );
+            assert_eq!(n, 3, "facts must be readable even after header checksum corruption");
+        }
+        Err(_) => {
+            // Rejected at open — also acceptable; either way: no panic.
+        }
+    }
 }
 
 #[test]
