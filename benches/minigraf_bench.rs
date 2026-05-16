@@ -19,7 +19,10 @@
 
 mod helpers;
 
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+#[cfg(not(target_arch = "wasm32"))]
+mod simd_helpers;
+
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use minigraf::OpenOptions;
 
 // ── Task 3: insert/ ───────────────────────────────────────────────────────────
@@ -1537,6 +1540,117 @@ fn bench_predicate_pushdown(c: &mut Criterion) {
     group.finish();
 }
 
+// ── SIMD kernel benchmarks (Issue #229) ──────────────────────────────────────
+//
+// Both scalar and SIMD variants operate on synthetic Vec<i64>/Vec<u64> data.
+// Fact internals (valid_from, valid_to, tx_count) are pub(crate) and unavailable
+// from bench code; benchmarks isolate the hot loop rather than the full query path.
+// Cross-reference the existing time_travel/ and aggregation/ groups for full-query costs.
+
+fn bench_simd(c: &mut Criterion) {
+    const SCALES: &[(&str, usize)] = &[
+        ("100", 100),
+        ("1k", 1_000),
+        ("10k", 10_000),
+        ("100k", 100_000),
+        ("1m", 1_000_000),
+    ];
+
+    // ── simd_temporal: valid-time range filter ──────────────────────────────
+    //
+    // Synthetic data: valid_from[i] = i, valid_to[i] = i + n/2.
+    // ts = n/4 → ~50% of facts are valid at ts (those with valid_from ≤ n/4 < valid_to).
+    {
+        let mut group = c.benchmark_group("simd_temporal");
+        group.sample_size(10);
+
+        for &(label, n) in SCALES {
+            let n_i64 = i64::try_from(n).unwrap_or(i64::MAX);
+            let valid_from: Vec<i64> = (0_i64..n_i64).collect();
+            let valid_to: Vec<i64> = valid_from.iter().map(|&vf| vf + n_i64 / 2).collect();
+            let ts = n_i64 / 4;
+
+            group.bench_with_input(BenchmarkId::new("scalar", label), &n, |b, _| {
+                b.iter(|| {
+                    valid_from
+                        .iter()
+                        .zip(valid_to.iter())
+                        .filter(|&(&vf, &vt)| vf <= black_box(ts) && black_box(ts) < vt)
+                        .count()
+                })
+            });
+
+            group.bench_with_input(BenchmarkId::new("simd", label), &n, |b, _| {
+                b.iter(|| {
+                    simd_helpers::valid_time_filter_simd(
+                        black_box(&valid_from),
+                        black_box(&valid_to),
+                        black_box(ts),
+                    )
+                })
+            });
+        }
+
+        group.finish();
+    }
+
+    // ── simd_as_of: tx-time as-of filter ───────────────────────────────────
+    //
+    // Synthetic data: tx_counts = 1..=n (monotonic counter).
+    // threshold = n/2 → 50% of facts pass the filter.
+    {
+        let mut group = c.benchmark_group("simd_as_of");
+        group.sample_size(10);
+
+        for &(label, n) in SCALES {
+            let n_u64 = u64::try_from(n).unwrap_or(u64::MAX);
+            let tx_counts: Vec<u64> = (1..=n_u64).collect();
+            let threshold = n_u64 / 2;
+
+            group.bench_with_input(BenchmarkId::new("scalar", label), &n, |b, _| {
+                b.iter(|| {
+                    tx_counts
+                        .iter()
+                        .filter(|&&tc| tc <= black_box(threshold))
+                        .count()
+                })
+            });
+
+            group.bench_with_input(BenchmarkId::new("simd", label), &n, |b, _| {
+                b.iter(|| {
+                    simd_helpers::as_of_filter_simd(black_box(&tx_counts), black_box(threshold))
+                })
+            });
+        }
+
+        group.finish();
+    }
+
+    // ── simd_aggregate: i64 horizontal sum ─────────────────────────────────
+    //
+    // Synthetic data: values = 0..n as i64.
+    // Measures horizontal reduction performance.
+    {
+        let mut group = c.benchmark_group("simd_aggregate");
+        group.sample_size(10);
+
+        for &(label, n) in SCALES {
+            let n_i64 = i64::try_from(n).unwrap_or(i64::MAX);
+            let values: Vec<i64> = (0_i64..n_i64).collect();
+
+            group.bench_with_input(BenchmarkId::new("scalar", label), &n, |b, _| {
+                b.iter(|| black_box(&values).iter().copied().sum::<i64>())
+            });
+
+            group.bench_with_input(BenchmarkId::new("simd", label), &n, |b, _| {
+                b.iter(|| simd_helpers::sum_simd_i64(black_box(&values)))
+            });
+        }
+
+        group.finish();
+    }
+}
+
 criterion_group!(
     benches,
     bench_insert,
@@ -1562,5 +1676,6 @@ criterion_group!(
     bench_retract,
     bench_btree_lookup,
     bench_predicate_pushdown,
+    bench_simd, // Issue #229
 );
 criterion_main!(benches);
