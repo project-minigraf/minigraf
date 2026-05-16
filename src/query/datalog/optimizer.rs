@@ -196,6 +196,70 @@ pub fn plan(
     result
 }
 
+/// Static 4-tier cardinality estimate for a single pattern.
+///
+/// Derived from selectivity_score but returns u64 cost (lower = cheaper) rather
+/// than a selectivity score. Unconditional: available on all targets including WASM.
+fn pattern_cost(p: &Pattern) -> u64 {
+    let e = !is_variable(&p.entity);
+    let a = attr_is_index_bound(&p.attribute);
+    let v = !is_variable(&p.value);
+    match (e as u8) + (a as u8) + (v as u8) {
+        3 => 1,
+        2 => 10,
+        1 => 100,
+        _ => 10_000,
+    }
+}
+
+/// Estimated cost for a body/branch slice — the minimum `pattern_cost` across all
+/// Pattern clauses, or 0 if the body contains no patterns (expr-only bodies are
+/// cheap pure computation).
+///
+/// Rationale for `min`: In a multi-pattern join the most selective pattern dominates —
+/// the join cannot produce more rows than the smallest input.
+///
+/// Unconditional: available on all targets including WASM.
+pub fn branch_cost(branch: &[WhereClause]) -> u64 {
+    branch
+        .iter()
+        .filter_map(|c| {
+            if let WhereClause::Pattern(p) = c {
+                Some(pattern_cost(p))
+            } else {
+                None
+            }
+        })
+        .min()
+        .unwrap_or(0)
+}
+
+/// Estimated evaluation cost for any `WhereClause`.
+///
+/// | Clause type        | Cost |
+/// |--------------------|------|
+/// | `Pattern`          | `pattern_cost(p)` |
+/// | `Expr`             | 0 (pure computation) |
+/// | `Not(body)`        | `branch_cost(body)` |
+/// | `NotJoin{clauses}` | `branch_cost(clauses)` |
+/// | `Or(branches)`     | sum of `branch_cost` per branch |
+/// | `OrJoin{branches}` | sum of `branch_cost` per branch |
+/// | other              | `u64::MAX` (defensive; not expected in practice) |
+///
+/// Unconditional: available on all targets including WASM. The *sorting* call-sites
+/// that consume this function are gated behind `#[cfg(not(feature = "wasm"))]`.
+pub fn clause_cost(clause: &WhereClause) -> u64 {
+    match clause {
+        WhereClause::Pattern(p) => pattern_cost(p),
+        WhereClause::Expr { .. } => 0,
+        WhereClause::Not(body) => branch_cost(body),
+        WhereClause::NotJoin { clauses, .. } => branch_cost(clauses),
+        WhereClause::Or(branches) => branches.iter().map(|b| branch_cost(b)).sum(),
+        WhereClause::OrJoin { branches, .. } => branches.iter().map(|b| branch_cost(b)).sum(),
+        _ => u64::MAX,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
