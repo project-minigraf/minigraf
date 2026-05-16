@@ -1618,10 +1618,7 @@ fn bench_simd(c: &mut Criterion) {
 
             group.bench_with_input(BenchmarkId::new("simd", label), &n, |b, _| {
                 b.iter(|| {
-                    simd_helpers::as_of_filter_simd(
-                        black_box(&tx_counts),
-                        black_box(threshold),
-                    )
+                    simd_helpers::as_of_filter_simd(black_box(&tx_counts), black_box(threshold))
                 })
             });
         }
@@ -1679,6 +1676,6 @@ criterion_group!(
     bench_retract,
     bench_btree_lookup,
     bench_predicate_pushdown,
-    bench_simd,       // Issue #229
+    bench_simd, // Issue #229
 );
 criterion_main!(benches);

@@ -15,9 +15,9 @@
 //!   - `u64x4` (not u64x2) is the 4-wide unsigned-64 type; no move_mask, use to_array
 
 #![allow(clippy::cast_possible_truncation)] // synthetic bench data: N ≤ 1M fits in i64
-#![allow(clippy::cast_sign_loss)]           // tx_count cast: monotonic counter, always positive
+#![allow(clippy::cast_sign_loss)] // tx_count cast: monotonic counter, always positive
 
-use wide::{i64x4, u64x4, CmpGt};
+use wide::{CmpGt, i64x4, u64x4};
 
 /// Count facts where `valid_from[i] <= ts && ts < valid_to[i]`.
 ///
@@ -28,8 +28,12 @@ pub fn valid_time_filter_simd(valid_from: &[i64], valid_to: &[i64], ts: i64) -> 
     let mut count = 0usize;
 
     for (vf_chunk, vt_chunk) in valid_from.chunks_exact(4).zip(valid_to.chunks_exact(4)) {
-        let [vf0, vf1, vf2, vf3] = *vf_chunk else { unreachable!() };
-        let [vt0, vt1, vt2, vt3] = *vt_chunk else { unreachable!() };
+        let [vf0, vf1, vf2, vf3] = *vf_chunk else {
+            unreachable!()
+        };
+        let [vt0, vt1, vt2, vt3] = *vt_chunk else {
+            unreachable!()
+        };
 
         let vf = i64x4::new([vf0, vf1, vf2, vf3]);
         let vt = i64x4::new([vt0, vt1, vt2, vt3]);
