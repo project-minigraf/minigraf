@@ -456,4 +456,138 @@ mod tests {
             "Expr with unbound var must be last"
         );
     }
+
+    // ── cost model tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_pattern_cost_fully_bound() {
+        // entity bound (UUID), attribute real keyword, value bound literal — 3 bound → cost 1
+        let p = Pattern::new(
+            EdnValue::Uuid(Uuid::new_v4()),
+            EdnValue::Keyword(":person/name".to_string()),
+            EdnValue::String("Alice".to_string()),
+        );
+        assert_eq!(pattern_cost(&p), 1);
+    }
+
+    #[test]
+    fn test_pattern_cost_two_bound() {
+        // attribute + value bound, entity variable — 2 bound → cost 10
+        let p = Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":person/name".to_string()),
+            EdnValue::String("Alice".to_string()),
+        );
+        assert_eq!(pattern_cost(&p), 10);
+    }
+
+    #[test]
+    fn test_pattern_cost_one_bound() {
+        // only attribute bound — 1 bound → cost 100
+        let p = Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":person/name".to_string()),
+            EdnValue::Symbol("?v".to_string()),
+        );
+        assert_eq!(pattern_cost(&p), 100);
+    }
+
+    #[test]
+    fn test_pattern_cost_unbound() {
+        // all variables — 0 bound → cost 10_000
+        let p = Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Symbol("?a".to_string()),
+            EdnValue::Symbol("?v".to_string()),
+        );
+        assert_eq!(pattern_cost(&p), 10_000);
+    }
+
+    #[test]
+    fn test_clause_cost_pattern_two_bound() {
+        // clause_cost delegates to pattern_cost for Pattern variant
+        // attr + value bound = 2 → cost 10
+        let p = Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":person/name".to_string()),
+            EdnValue::String("Alice".to_string()),
+        );
+        assert_eq!(clause_cost(&WhereClause::Pattern(p)), 10);
+    }
+
+    #[test]
+    fn test_clause_cost_expr_is_zero() {
+        // Expr is pure computation — cost 0
+        let clause = WhereClause::Expr {
+            expr: Expr::Lit(Value::Integer(42)),
+            binding: None,
+        };
+        assert_eq!(clause_cost(&clause), 0);
+    }
+
+    #[test]
+    fn test_clause_cost_not_body_uses_min() {
+        // Not body: one cost-10 pattern + one cost-10_000 pattern → min = 10
+        let selective = Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":person/name".to_string()),
+            EdnValue::String("Alice".to_string()),
+        );
+        let full_scan = Pattern::new(
+            EdnValue::Symbol("?x".to_string()),
+            EdnValue::Symbol("?a".to_string()),
+            EdnValue::Symbol("?v".to_string()),
+        );
+        let clause = WhereClause::Not(vec![
+            WhereClause::Pattern(selective),
+            WhereClause::Pattern(full_scan),
+        ]);
+        assert_eq!(clause_cost(&clause), 10);
+    }
+
+    #[test]
+    fn test_clause_cost_not_body_expr_only_is_zero() {
+        // Not body with no patterns (expr only) → cost 0
+        let clause = WhereClause::Not(vec![WhereClause::Expr {
+            expr: Expr::Lit(Value::Integer(1)),
+            binding: None,
+        }]);
+        assert_eq!(clause_cost(&clause), 0);
+    }
+
+    #[test]
+    fn test_branch_cost_empty_branch() {
+        // Empty branch → 0
+        assert_eq!(branch_cost(&[]), 0);
+    }
+
+    #[test]
+    fn test_branch_cost_expr_only_is_zero() {
+        // Branch with only Expr clauses → 0
+        let branch = vec![WhereClause::Expr {
+            expr: Expr::Lit(Value::Integer(99)),
+            binding: None,
+        }];
+        assert_eq!(branch_cost(&branch), 0);
+    }
+
+    #[test]
+    fn test_clause_cost_or_sums_branch_costs() {
+        // Or with two branches:
+        // branch 1: one pattern with cost 10 (attr+value bound)
+        // branch 2: one pattern with cost 100 (attr only bound)
+        // clause_cost(Or) = sum = 110
+        let b1 = vec![WhereClause::Pattern(Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":person/name".to_string()),
+            EdnValue::String("Alice".to_string()),
+        ))];
+        let b2 = vec![WhereClause::Pattern(Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":person/age".to_string()),
+            EdnValue::Symbol("?v".to_string()),
+        ))];
+        let clause = WhereClause::Or(vec![b1, b2]);
+        assert_eq!(clause_cost(&clause), 110); // 10 + 100
+    }
 }
