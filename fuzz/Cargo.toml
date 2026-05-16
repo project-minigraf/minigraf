@@ -1,0 +1,48 @@
+[package]
+name = "minigraf-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+minigraf = { path = ".." }
+
+[[bin]]
+name = "wal_entry"
+path = "fuzz_targets/wal_entry.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "file_header"
+path = "fuzz_targets/file_header.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fact_page"
+path = "fuzz_targets/fact_page.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "btree_page"
+path = "fuzz_targets/btree_page.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "datalog_parser"
+path = "fuzz_targets/datalog_parser.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "datalog_eval"
+path = "fuzz_targets/datalog_eval.rs"
+test = false
+doc = false
