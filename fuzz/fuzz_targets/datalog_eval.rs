@@ -7,7 +7,8 @@ fuzz_target!(|data: &[u8]| {
             Ok(db) => db,
             Err(_) => return,
         };
-        let _ = db.execute(r#"(transact [[:alice :name "Alice"] [:bob :name "Bob"] [:alice :age 30]])"#);
+        let _ = db
+            .execute(r#"(transact [[:alice :name "Alice"] [:bob :name "Bob"] [:alice :age 30]])"#);
         let _ = db.execute(s);
     }
 });
