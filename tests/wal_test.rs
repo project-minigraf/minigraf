@@ -557,7 +557,10 @@ fn setup_db_with_one_fact() -> (tempfile::TempDir, std::path::PathBuf, Vec<u8>) 
 
 fn query_names(db_path: &std::path::Path) -> Vec<String> {
     let db = minigraf::db::Minigraf::open(db_path).unwrap();
-    match db.execute("(query [:find ?n :where [?e :name ?n]])").unwrap() {
+    match db
+        .execute("(query [:find ?n :where [?e :name ?n]])")
+        .unwrap()
+    {
         minigraf::QueryResult::QueryResults { results, .. } => results
             .into_iter()
             .flatten()
@@ -585,7 +588,11 @@ fn wal_recover_truncated_payload() {
     let truncation_point = (wal_bytes.len() * 3) / 4;
     write_wal_bytes(&db_path, &wal_bytes[..truncation_point]);
     let names = query_names(&db_path);
-    assert_eq!(names.len(), 0, "entry with truncated payload must not be applied");
+    assert_eq!(
+        names.len(),
+        0,
+        "entry with truncated payload must not be applied"
+    );
 }
 
 #[test]
@@ -605,7 +612,11 @@ fn wal_recover_bad_checksum_second_entry() {
     wal_bytes[n - 3] ^= 0xFF;
     write_wal_bytes(&db_path, &wal_bytes);
     let names = query_names(&db_path);
-    assert_eq!(names.len(), 1, "only the entry before bad checksum should replay");
+    assert_eq!(
+        names.len(),
+        1,
+        "only the entry before bad checksum should replay"
+    );
     assert!(names.contains(&"Alice".to_string()), "Alice should survive");
 }
 
@@ -621,8 +632,15 @@ fn wal_recover_committed_tx_crash_before_checkpoint() {
         std::mem::forget(db);
     }
     let names = query_names(&db_path);
-    assert_eq!(names.len(), 1, "committed tx must survive crash before checkpoint");
-    assert!(names.contains(&"Charlie".to_string()), "Charlie must be present");
+    assert_eq!(
+        names.len(),
+        1,
+        "committed tx must survive crash before checkpoint"
+    );
+    assert!(
+        names.contains(&"Charlie".to_string()),
+        "Charlie must be present"
+    );
 }
 
 #[test]
@@ -637,7 +655,11 @@ fn wal_recover_rollback_crash() {
         std::mem::forget(db);
     }
     let names = query_names(&db_path);
-    assert_eq!(names.len(), 0, "rolled-back fact must not appear after crash");
+    assert_eq!(
+        names.len(),
+        0,
+        "rolled-back fact must not appear after crash"
+    );
 }
 
 #[test]
@@ -654,7 +676,11 @@ fn wal_recover_multiple_committed_corrupt_tail() {
     wal_bytes.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x00]);
     write_wal_bytes(&db_path, &wal_bytes);
     let names = query_names(&db_path);
-    assert_eq!(names.len(), 2, "both valid entries must replay; junk tail is discarded");
+    assert_eq!(
+        names.len(),
+        2,
+        "both valid entries must replay; junk tail is discarded"
+    );
 }
 
 #[test]

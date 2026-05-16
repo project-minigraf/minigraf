@@ -2086,8 +2086,8 @@ mod tests {
 
     mod fault_injection_tests {
         use super::*;
-        use crate::storage::backend::fault_inject::{FaultConfig, FaultInjectingBackend};
         use crate::storage::backend::MemoryBackend;
+        use crate::storage::backend::fault_inject::{FaultConfig, FaultInjectingBackend};
 
         fn make_pfs_with_config() -> (
             PersistentFactStorage<FaultInjectingBackend<MemoryBackend>>,
@@ -2098,9 +2098,7 @@ mod tests {
             (pfs, config)
         }
 
-        fn stage_fact(
-            pfs: &mut PersistentFactStorage<FaultInjectingBackend<MemoryBackend>>,
-        ) {
+        fn stage_fact(pfs: &mut PersistentFactStorage<FaultInjectingBackend<MemoryBackend>>) {
             let entity = Uuid::new_v4();
             pfs.storage()
                 .transact(
@@ -2117,7 +2115,10 @@ mod tests {
             stage_fact(&mut pfs);
             config.lock().unwrap().fail_write_after = Some(0);
             let result = pfs.save();
-            assert!(result.is_err(), "save must return Err when write_page fails");
+            assert!(
+                result.is_err(),
+                "save must return Err when write_page fails"
+            );
         }
 
         #[test]
@@ -2135,7 +2136,10 @@ mod tests {
             stage_fact(&mut pfs);
             config.lock().unwrap().fail_sync_after = Some(0);
             let err = pfs.save().unwrap_err();
-            assert!(!err.to_string().is_empty(), "error message must not be empty");
+            assert!(
+                !err.to_string().is_empty(),
+                "error message must not be empty"
+            );
         }
     }
 }
