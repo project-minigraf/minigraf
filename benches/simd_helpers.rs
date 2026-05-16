@@ -102,7 +102,7 @@ pub fn sum_simd_i64(values: &[i64]) -> i64 {
     }
 
     let lanes: [i64; 4] = acc.to_array();
-    let mut sum: i64 = lanes.iter().sum();
+    let mut sum: i64 = lanes.iter().fold(0_i64, |acc, &x| acc.wrapping_add(x));
 
     let rem = (values.len() / 4) * 4;
     for &v in values.get(rem..).unwrap_or(&[]) {
