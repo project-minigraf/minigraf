@@ -571,7 +571,7 @@ impl DatalogExecutor {
 
         // Apply not-filter for WhereClause::Not and WhereClause::NotJoin clauses
         // (no rules involved — pure post-filter)
-        let not_clauses: Vec<&Vec<WhereClause>> = query
+        let mut not_clauses: Vec<&Vec<WhereClause>> = query
             .where_clauses
             .iter()
             .filter_map(|c| match c {
@@ -580,7 +580,7 @@ impl DatalogExecutor {
             })
             .collect();
 
-        let not_join_clauses: Vec<(Vec<String>, Vec<WhereClause>)> = query
+        let mut not_join_clauses: Vec<(Vec<String>, Vec<WhereClause>)> = query
             .where_clauses
             .iter()
             .filter_map(|c| match c {
@@ -590,6 +590,13 @@ impl DatalogExecutor {
                 _ => None,
             })
             .collect();
+
+        // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
+        #[cfg(not(feature = "wasm"))]
+        not_clauses.sort_by_key(|body| optimizer::branch_cost(body));
+        // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
+        #[cfg(not(feature = "wasm"))]
+        not_join_clauses.sort_by_key(|(_, clauses)| optimizer::branch_cost(clauses));
 
         let not_filtered: Vec<_> = if not_clauses.is_empty() && not_join_clauses.is_empty() {
             bindings
@@ -1039,7 +1046,7 @@ impl DatalogExecutor {
         // in the query body. (The StratifiedEvaluator handles `not`/`not-join` in rule
         // bodies; this handles them appearing directly in the query body alongside rule
         // invocations.)
-        let not_clauses: Vec<&Vec<WhereClause>> = query
+        let mut not_clauses: Vec<&Vec<WhereClause>> = query
             .where_clauses
             .iter()
             .filter_map(|c| match c {
@@ -1048,7 +1055,7 @@ impl DatalogExecutor {
             })
             .collect();
 
-        let not_join_clauses: Vec<(Vec<String>, Vec<WhereClause>)> = query
+        let mut not_join_clauses: Vec<(Vec<String>, Vec<WhereClause>)> = query
             .where_clauses
             .iter()
             .filter_map(|c| match c {
@@ -1058,6 +1065,13 @@ impl DatalogExecutor {
                 _ => None,
             })
             .collect();
+
+        // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
+        #[cfg(not(feature = "wasm"))]
+        not_clauses.sort_by_key(|body| optimizer::branch_cost(body));
+        // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
+        #[cfg(not(feature = "wasm"))]
+        not_join_clauses.sort_by_key(|(_, clauses)| optimizer::branch_cost(clauses));
 
         let not_filtered: Vec<_> = if not_clauses.is_empty() && not_join_clauses.is_empty() {
             bindings
@@ -5421,6 +5435,7 @@ mod or_hash_join_tests {
 #[cfg(test)]
 mod pushdown_tests {
     use crate::graph::FactStorage;
+    use crate::graph::types::Value;
     use crate::query::datalog::executor::{DatalogExecutor, QueryResult};
     use crate::query::datalog::parser::parse_datalog_command;
 
@@ -5516,6 +5531,53 @@ mod pushdown_tests {
             assert_eq!(results.len(), 2, "only :e2 and :e3 qualify");
         } else {
             panic!("expected QueryResults");
+        }
+    }
+
+    #[test]
+    fn test_not_clause_ordering_correctness() {
+        // Two `not` clauses given in expensive-first source order; results must be
+        // identical regardless of which order the optimizer chooses to evaluate them.
+        // This is a correctness regression guard — semantics must not change.
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage);
+
+        // Transact 3 items: widget, gadget, doohickey
+        executor
+            .execute(
+                parse_datalog_command(
+                    r#"(transact [[:item1 :item/name "widget"]
+                                  [:item2 :item/name "gadget"]
+                                  [:item3 :item/name "doohickey"]])"#,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        // Query: find items that are NOT "widget" AND NOT "gadget"
+        // Clauses are given in expensive-first order to exercise the cost-based sort.
+        let result = executor
+            .execute(
+                parse_datalog_command(
+                    r#"(query [:find ?name
+                               :where [?e :item/name ?name]
+                                      (not [?e :item/name "gadget"])
+                                      (not [?e :item/name "widget"])])"#,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        match result {
+            QueryResult::QueryResults { results, .. } => {
+                assert_eq!(results.len(), 1, "only doohickey should pass");
+                assert_eq!(
+                    results[0][0],
+                    Value::String("doohickey".to_string()),
+                    "result should be doohickey"
+                );
+            }
+            _ => panic!("expected QueryResults"),
         }
     }
 }
