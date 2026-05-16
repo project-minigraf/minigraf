@@ -224,8 +224,8 @@ pub fn branch_cost(branch: &[WhereClause]) -> u64 {
     branch
         .iter()
         .filter_map(|c| {
-            if matches!(c, WhereClause::Pattern(_)) {
-                Some(clause_cost(c))
+            if let WhereClause::Pattern(p) = c {
+                Some(pattern_cost(p))
             } else {
                 None
             }
