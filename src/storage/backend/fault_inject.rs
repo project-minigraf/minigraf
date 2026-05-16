@@ -28,13 +28,10 @@ pub struct FaultConfig {
 
 impl FaultConfig {
     fn check_and_increment(count: &mut u64, limit: Option<u64>) -> Result<()> {
-        if let Some(n) = limit {
-            if *count >= n {
-                return Err(anyhow::Error::new(io::Error::new(
-                    io::ErrorKind::Other,
-                    "fault injection: simulated I/O error",
-                )));
-            }
+        if limit.is_some_and(|n| *count >= n) {
+            return Err(anyhow::Error::new(io::Error::other(
+                "fault injection: simulated I/O error",
+            )));
         }
         *count += 1;
         Ok(())
@@ -48,10 +45,6 @@ pub struct FaultInjectingBackend<B: StorageBackend> {
 }
 
 impl<B: StorageBackend> FaultInjectingBackend<B> {
-    pub fn new(inner: B, config: Arc<Mutex<FaultConfig>>) -> Self {
-        FaultInjectingBackend { inner, config }
-    }
-
     /// Convenience constructor: returns the backend AND a shared config handle.
     pub fn with_config(inner: B) -> (Self, Arc<Mutex<FaultConfig>>) {
         let config = Arc::new(Mutex::new(FaultConfig::default()));
