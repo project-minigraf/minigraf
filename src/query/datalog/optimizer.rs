@@ -224,8 +224,8 @@ pub fn branch_cost(branch: &[WhereClause]) -> u64 {
     branch
         .iter()
         .filter_map(|c| {
-            if let WhereClause::Pattern(p) = c {
-                Some(pattern_cost(p))
+            if matches!(c, WhereClause::Pattern(_)) {
+                Some(clause_cost(c))
             } else {
                 None
             }
@@ -248,7 +248,6 @@ pub fn branch_cost(branch: &[WhereClause]) -> u64 {
 ///
 /// Unconditional: available on all targets including WASM. The *sorting* call-sites
 /// that consume this function are gated behind `#[cfg(not(feature = "wasm"))]`.
-#[allow(dead_code)] // public API; used in tests; will be consumed by sort call-sites in issue #250
 pub fn clause_cost(clause: &WhereClause) -> u64 {
     match clause {
         WhereClause::Pattern(p) => pattern_cost(p),
