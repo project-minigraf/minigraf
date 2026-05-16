@@ -101,8 +101,8 @@ impl<B: StorageBackend> StorageBackend for FaultInjectingBackend<B> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::backend::MemoryBackend;
     use crate::storage::PAGE_SIZE;
+    use crate::storage::backend::MemoryBackend;
 
     fn make_page() -> Vec<u8> {
         vec![0xAB; PAGE_SIZE]
@@ -111,10 +111,16 @@ mod tests {
     #[test]
     fn fault_injecting_backend_fails_on_nth_write() {
         let (mut backend, config) = FaultInjectingBackend::with_config(MemoryBackend::new());
-        assert!(backend.write_page(0, &make_page()).is_ok(), "first write should succeed");
+        assert!(
+            backend.write_page(0, &make_page()).is_ok(),
+            "first write should succeed"
+        );
         config.lock().unwrap().fail_write_after = Some(1);
         let result = backend.write_page(1, &make_page());
-        assert!(result.is_err(), "second write should fail after fault injection");
+        assert!(
+            result.is_err(),
+            "second write should fail after fault injection"
+        );
     }
 
     #[test]
@@ -123,7 +129,10 @@ mod tests {
         assert!(backend.sync().is_ok(), "first sync should succeed");
         config.lock().unwrap().fail_sync_after = Some(1);
         let result = backend.sync();
-        assert!(result.is_err(), "second sync should fail after fault injection");
+        assert!(
+            result.is_err(),
+            "second sync should fail after fault injection"
+        );
     }
 
     #[test]
@@ -131,7 +140,10 @@ mod tests {
         let (mut backend, config) = FaultInjectingBackend::with_config(MemoryBackend::new());
         backend.write_page(0, &make_page()).unwrap();
         config.lock().unwrap().fail_write_after = Some(0);
-        assert!(backend.read_page(0).is_ok(), "reads should never be faulted");
+        assert!(
+            backend.read_page(0).is_ok(),
+            "reads should never be faulted"
+        );
     }
 
     #[test]
@@ -141,8 +153,14 @@ mod tests {
             assert!(backend.write_page(i, &make_page()).is_ok());
         }
         config.lock().unwrap().fail_write_after = Some(3);
-        assert!(backend.write_page(3, &make_page()).is_err(), "4th write should fail");
+        assert!(
+            backend.write_page(3, &make_page()).is_err(),
+            "4th write should fail"
+        );
         config.lock().unwrap().fail_write_after = None;
-        assert!(backend.write_page(4, &make_page()).is_ok(), "write should succeed after removing fault");
+        assert!(
+            backend.write_page(4, &make_page()).is_ok(),
+            "write should succeed after removing fault"
+        );
     }
 }
