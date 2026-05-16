@@ -593,10 +593,15 @@ impl DatalogExecutor {
 
         // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
         #[cfg(not(feature = "wasm"))]
-        not_clauses.sort_by_key(|body| optimizer::branch_cost(body));
+        not_clauses.sort_by_key(|body| optimizer::clause_cost(&WhereClause::Not(body.to_vec())));
         // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
         #[cfg(not(feature = "wasm"))]
-        not_join_clauses.sort_by_key(|(_, clauses)| optimizer::branch_cost(clauses));
+        not_join_clauses.sort_by_key(|(vars, clauses)| {
+            optimizer::clause_cost(&WhereClause::NotJoin {
+                join_vars: vars.clone(),
+                clauses: clauses.clone(),
+            })
+        });
 
         let not_filtered: Vec<_> = if not_clauses.is_empty() && not_join_clauses.is_empty() {
             bindings
@@ -1068,10 +1073,15 @@ impl DatalogExecutor {
 
         // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
         #[cfg(not(feature = "wasm"))]
-        not_clauses.sort_by_key(|body| optimizer::branch_cost(body));
+        not_clauses.sort_by_key(|body| optimizer::clause_cost(&WhereClause::Not(body.to_vec())));
         // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
         #[cfg(not(feature = "wasm"))]
-        not_join_clauses.sort_by_key(|(_, clauses)| optimizer::branch_cost(clauses));
+        not_join_clauses.sort_by_key(|(vars, clauses)| {
+            optimizer::clause_cost(&WhereClause::NotJoin {
+                join_vars: vars.clone(),
+                clauses: clauses.clone(),
+            })
+        });
 
         let not_filtered: Vec<_> = if not_clauses.is_empty() && not_join_clauses.is_empty() {
             bindings

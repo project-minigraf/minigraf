@@ -788,11 +788,16 @@ impl StratifiedEvaluator {
 
                 // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
                 #[cfg(not(feature = "wasm"))]
-                not_clauses.sort_by_key(|body| crate::query::datalog::optimizer::branch_cost(body));
+                not_clauses.sort_by_key(|body| {
+                    crate::query::datalog::optimizer::clause_cost(&WhereClause::Not(body.clone()))
+                });
                 // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
                 #[cfg(not(feature = "wasm"))]
-                not_join_clauses.sort_by_key(|(_, clauses)| {
-                    crate::query::datalog::optimizer::branch_cost(clauses)
+                not_join_clauses.sort_by_key(|(vars, clauses)| {
+                    crate::query::datalog::optimizer::clause_cost(&WhereClause::NotJoin {
+                        join_vars: vars.clone(),
+                        clauses: clauses.clone(),
+                    })
                 });
 
                 // Compute once; reuse for plan loop, apply_or_clauses, not-body matching.
