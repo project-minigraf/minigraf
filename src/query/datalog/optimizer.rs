@@ -248,6 +248,7 @@ pub fn branch_cost(branch: &[WhereClause]) -> u64 {
 ///
 /// Unconditional: available on all targets including WASM. The *sorting* call-sites
 /// that consume this function are gated behind `#[cfg(not(feature = "wasm"))]`.
+#[allow(dead_code)] // public API; used in tests; will be consumed by sort call-sites in issue #250
 pub fn clause_cost(clause: &WhereClause) -> u64 {
     match clause {
         WhereClause::Pattern(p) => pattern_cost(p),

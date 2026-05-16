@@ -1844,10 +1844,20 @@ pub(crate) fn apply_or_clauses(
     for clause in clauses {
         match clause {
             WhereClause::Or(branches) => {
+                let sorted_or_branches: Vec<&Vec<WhereClause>> = {
+                    let mut b: Vec<&Vec<WhereClause>> = branches.iter().collect();
+                    // Sort branches by cost ascending so cheaper branches evaluate first.
+                    // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
+                    // Note: all branches still evaluated (no short-circuit); ordering is
+                    // infrastructure for issue #250.
+                    #[cfg(not(feature = "wasm"))]
+                    b.sort_by_key(|br| optimizer::branch_cost(br));
+                    b
+                };
                 // If any branch contains Not/NotJoin clauses (which need bound variables
                 // from the outer scope to evaluate correctly), fall back to the classic
                 // seeded-branch evaluation to preserve correctness.
-                let any_branch_has_not = branches.iter().any(|b| {
+                let any_branch_has_not = sorted_or_branches.iter().any(|b| {
                     b.iter()
                         .any(|c| matches!(c, WhereClause::Not(_) | WhereClause::NotJoin { .. }))
                 });
@@ -1857,7 +1867,7 @@ pub(crate) fn apply_or_clauses(
                     let mut seen: std::collections::HashSet<Vec<(String, Value)>> =
                         std::collections::HashSet::new();
                     let mut result: Vec<Binding> = Vec::new();
-                    for branch in branches {
+                    for branch in &sorted_or_branches {
                         let branch_result = evaluate_branch(
                             branch,
                             bindings.clone(),
@@ -1891,7 +1901,7 @@ pub(crate) fn apply_or_clauses(
                 let mut seen_keys: std::collections::HashSet<Vec<(String, Value)>> =
                     std::collections::HashSet::new();
 
-                for branch in branches {
+                for branch in &sorted_or_branches {
                     let branch_result = evaluate_branch(
                         branch,
                         empty_seed.clone(),
@@ -1989,6 +1999,16 @@ pub(crate) fn apply_or_clauses(
                 join_vars,
                 branches,
             } => {
+                let sorted_oj_branches: Vec<&Vec<WhereClause>> = {
+                    let mut b: Vec<&Vec<WhereClause>> = branches.iter().collect();
+                    // Sort branches by cost ascending so cheaper branches evaluate first.
+                    // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
+                    // Note: all branches still evaluated (no short-circuit); ordering is
+                    // infrastructure for issue #250.
+                    #[cfg(not(feature = "wasm"))]
+                    b.sort_by_key(|br| optimizer::branch_cost(br));
+                    b
+                };
                 let outer_keys: std::collections::HashSet<String> =
                     bindings.iter().flat_map(|b| b.keys().cloned()).collect();
 
@@ -2006,7 +2026,7 @@ pub(crate) fn apply_or_clauses(
                 let mut seen_proj: std::collections::HashSet<Vec<(String, Value)>> =
                     std::collections::HashSet::new();
 
-                for branch in branches {
+                for branch in &sorted_oj_branches {
                     let branch_result = evaluate_branch(
                         branch,
                         empty_seed.clone(),
