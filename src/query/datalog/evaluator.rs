@@ -766,7 +766,7 @@ impl StratifiedEvaluator {
                     }
                 }
 
-                let not_clauses: Vec<Vec<WhereClause>> = rule
+                let mut not_clauses: Vec<Vec<WhereClause>> = rule
                     .body
                     .iter()
                     .filter_map(|c| match c {
@@ -775,7 +775,7 @@ impl StratifiedEvaluator {
                     })
                     .collect();
 
-                let not_join_clauses: Vec<(Vec<String>, Vec<WhereClause>)> = rule
+                let mut not_join_clauses: Vec<(Vec<String>, Vec<WhereClause>)> = rule
                     .body
                     .iter()
                     .filter_map(|c| match c {
@@ -785,6 +785,15 @@ impl StratifiedEvaluator {
                         _ => None,
                     })
                     .collect();
+
+                // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
+                #[cfg(not(feature = "wasm"))]
+                not_clauses.sort_by_key(|body| crate::query::datalog::optimizer::branch_cost(body));
+                // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
+                #[cfg(not(feature = "wasm"))]
+                not_join_clauses.sort_by_key(|(_, clauses)| {
+                    crate::query::datalog::optimizer::branch_cost(clauses)
+                });
 
                 // Compute once; reuse for plan loop, apply_or_clauses, not-body matching.
                 let accumulated_facts: Arc<[Fact]> = Arc::from(accumulated.get_asserted_facts()?);
