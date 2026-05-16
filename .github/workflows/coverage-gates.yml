@@ -35,16 +35,23 @@ jobs:
             local file=$1 threshold=$2
             local pct
             pct=$(grep "$file" cov_text.txt | grep -oP '\d+\.\d+(?=%)' | tail -1)
-            if [ -z "$pct" ]; then echo "WARNING: $file not found in coverage report"; return 0; fi
-            python3 -c "import sys; sys.exit(0 if float('$pct') >= $threshold else 1)" \
-              && echo "OK: $file: ${pct}% >= ${threshold}%" \
-              || { echo "FAIL: $file: ${pct}% < ${threshold}%"; return 1; }
+            if [ -z "$pct" ]; then
+              echo "WARNING: $file not found in coverage report"
+              return 0
+            fi
+            if python3 -c "import sys; sys.exit(0 if float('$pct') >= $threshold else 1)"; then
+              echo "OK: $file: ${pct}% >= ${threshold}%"
+            else
+              echo "FAIL: $file: ${pct}% < ${threshold}%"
+              return 1
+            fi
           }
-          check_module "wal.rs"            $(python3 -c "import tomllib; d=tomllib.load(open('coverage-thresholds.toml','rb')); print(d['modules']['src/wal.rs'])") || FAIL=1
-          check_module "db.rs"             $(python3 -c "import tomllib; d=tomllib.load(open('coverage-thresholds.toml','rb')); print(d['modules']['src/db.rs'])") || FAIL=1
-          check_module "persistent_facts"  $(python3 -c "import tomllib; d=tomllib.load(open('coverage-thresholds.toml','rb')); print(d['modules']['src/storage/persistent_facts.rs'])") || FAIL=1
-          check_module "btree_v6"          $(python3 -c "import tomllib; d=tomllib.load(open('coverage-thresholds.toml','rb')); print(d['modules']['src/storage/btree_v6.rs'])") || FAIL=1
-          check_module "executor.rs"       $(python3 -c "import tomllib; d=tomllib.load(open('coverage-thresholds.toml','rb')); print(d['modules']['src/query/datalog/executor.rs'])") || FAIL=1
-          check_module "evaluator.rs"      $(python3 -c "import tomllib; d=tomllib.load(open('coverage-thresholds.toml','rb')); print(d['modules']['src/query/datalog/evaluator.rs'])") || FAIL=1
-          check_module "stratification"    $(python3 -c "import tomllib; d=tomllib.load(open('coverage-thresholds.toml','rb')); print(d['modules']['src/query/datalog/stratification.rs'])") || FAIL=1
+          # Thresholds from coverage-thresholds.toml
+          check_module "wal.rs"            75 || FAIL=1
+          check_module "db.rs"             70 || FAIL=1
+          check_module "persistent_facts"  70 || FAIL=1
+          check_module "btree_v6"          65 || FAIL=1
+          check_module "executor.rs"       75 || FAIL=1
+          check_module "evaluator.rs"      75 || FAIL=1
+          check_module "stratification"    75 || FAIL=1
           exit $FAIL

@@ -69,13 +69,13 @@ web-sys              = { version = "0.3", optional = true, features = [
 serde_json = "1.0"
 pest = "2"
 pest_derive = "2"
-uuid = { version = "1.0", features = ["v4", "v5"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tempfile = "3"
 criterion = { version = "0.8", features = ["html_reports"] }
 wide = "0.7"
 proptest = "1"
+uuid = { version = "1.0", features = ["v4", "v5"] }
 
 [target.'cfg(all(target_arch = "wasm32", not(target_os = "wasi")))'.dev-dependencies]
 wasm-bindgen-test = "0.3"

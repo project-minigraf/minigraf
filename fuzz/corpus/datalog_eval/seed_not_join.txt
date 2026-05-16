@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :color ?c] (not-join [?e] [?e :active true])])

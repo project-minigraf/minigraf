@@ -1,0 +1,48 @@
+name: Fuzz (nightly)
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: Fuzz targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Fuzz wal_entry (60s)
+        run: cargo fuzz run wal_entry -- -max_total_time=60
+        continue-on-error: false
+
+      - name: Fuzz file_header (60s)
+        run: cargo fuzz run file_header -- -max_total_time=60
+        continue-on-error: false
+
+      - name: Fuzz fact_page (60s)
+        run: cargo fuzz run fact_page -- -max_total_time=60
+        continue-on-error: false
+
+      - name: Fuzz btree_page (60s)
+        run: cargo fuzz run btree_page -- -max_total_time=60
+        continue-on-error: false
+
+      - name: Fuzz datalog_parser (60s)
+        run: cargo fuzz run datalog_parser -- -max_total_time=60
+        continue-on-error: false
+
+      - name: Fuzz datalog_eval (60s)
+        run: cargo fuzz run datalog_eval -- -max_total_time=60
+        continue-on-error: false

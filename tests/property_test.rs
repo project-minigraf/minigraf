@@ -5,6 +5,7 @@
 //!
 //! Run: cargo test --test property_test
 //! More cases: PROPTEST_CASES=500 cargo test --test property_test
+#![cfg(not(target_arch = "wasm32"))]
 
 use minigraf::db::Minigraf;
 use minigraf::QueryResult;
@@ -109,8 +110,13 @@ fn minigraf_eval(facts: &[TestFact], query: &TestQuery, max_entity: usize) -> Ve
         "(query [:find ?e :where [?e {attr} ?v]{val_clause}{neg_clause}])"
     );
 
-    match db.execute(&datalog) {
-        Ok(QueryResult::QueryResults { results, .. }) => {
+    let result = db.execute(&datalog);
+    // Skip test cases where the generated query fails to parse/evaluate.
+    if result.is_err() {
+        return vec![];
+    }
+    match result.unwrap() {
+        QueryResult::QueryResults { results, .. } => {
             let mut entities: Vec<usize> = results
                 .into_iter()
                 .flat_map(|r| r.into_iter())
@@ -123,7 +129,6 @@ fn minigraf_eval(facts: &[TestFact], query: &TestQuery, max_entity: usize) -> Ve
             entities.dedup();
             entities
         }
-        Err(_) => vec![],
         _ => vec![],
     }
 }
