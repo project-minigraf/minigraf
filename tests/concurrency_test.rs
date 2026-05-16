@@ -347,3 +347,143 @@ fn test_rwlock_consistency() {
         }
     }
 }
+
+// ══ Wave 3: #217 concurrency stress tests ════════════════════════════════════
+
+#[test]
+fn stress_readers_during_writer() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    use std::thread;
+
+    let db = Arc::new(minigraf::db::Minigraf::in_memory().unwrap());
+    let stop = Arc::new(AtomicBool::new(false));
+
+    db.execute(r#"(transact [[:seed :k "v"]])"#).unwrap();
+
+    let reader_handles: Vec<_> = (0..8)
+        .map(|_| {
+            let db = db.clone();
+            let stop = stop.clone();
+            thread::spawn(move || {
+                while !stop.load(Ordering::Relaxed) {
+                    let _ = db.execute("(query [:find ?k :where [?e :k ?k]])");
+                    thread::yield_now();
+                }
+            })
+        })
+        .collect();
+
+    let writer = {
+        let db = db.clone();
+        let stop = stop.clone();
+        thread::spawn(move || {
+            for i in 0..50 {
+                let _ = db.execute(&format!(r#"(transact [[:w{i} :n {i}]])"#));
+            }
+            stop.store(true, Ordering::Relaxed);
+        })
+    };
+
+    writer.join().expect("writer panicked");
+    for h in reader_handles {
+        h.join().expect("reader panicked");
+    }
+}
+
+#[test]
+fn failed_write_followed_by_successful_write() {
+    let db = minigraf::db::Minigraf::in_memory().unwrap();
+    let bad = db.execute("(transact [[NOT VALID SYNTAX");
+    assert!(bad.is_err(), "invalid input must return Err");
+    db.execute(r#"(transact [[:e1 :ok true]])"#).unwrap();
+    let n = match db
+        .execute("(query [:find ?e :where [?e :ok true]])")
+        .unwrap()
+    {
+        minigraf::QueryResult::QueryResults { results, .. } => results.len(),
+        _ => 0,
+    };
+    assert_eq!(n, 1, "fact after failed write must be visible");
+}
+
+#[test]
+fn rollback_after_partial_work() {
+    let db = minigraf::db::Minigraf::in_memory().unwrap();
+    {
+        let mut tx = db.begin_write().unwrap();
+        tx.execute(r#"(transact [[:a :x 1] [:b :x 2] [:c :x 3]])"#)
+            .unwrap();
+        tx.rollback();
+    }
+    let n = match db.execute("(query [:find ?v :where [?e :x ?v]])").unwrap() {
+        minigraf::QueryResult::QueryResults { results, .. } => results.len(),
+        _ => 0,
+    };
+    assert_eq!(n, 0, "rolled-back multi-fact tx must leave no state");
+}
+
+#[test]
+fn open_write_checkpoint_query_loop_per_thread() {
+    use std::thread;
+
+    let handles: Vec<_> = (0..4)
+        .map(|thread_id| {
+            thread::spawn(move || {
+                let db = minigraf::db::Minigraf::in_memory().unwrap();
+                for i in 0..20 {
+                    db.execute(&format!(
+                        r#"(transact [[:t{thread_id}e{i} :thread {thread_id}]])"#
+                    ))
+                    .unwrap();
+                }
+                let n = match db
+                    .execute(&format!(
+                        "(query [:find ?e :where [?e :thread {thread_id}]])"
+                    ))
+                    .unwrap()
+                {
+                    minigraf::QueryResult::QueryResults { results, .. } => results.len(),
+                    _ => 0,
+                };
+                assert_eq!(n, 20, "expected 20 facts per thread");
+            })
+        })
+        .collect();
+
+    for h in handles {
+        h.join().expect("thread panicked");
+    }
+}
+
+#[test]
+#[ignore]
+fn stress_open_write_loop_nightly() {
+    use std::thread;
+
+    let handles: Vec<_> = (0..8)
+        .map(|tid| {
+            thread::spawn(move || {
+                let db = minigraf::db::Minigraf::in_memory().unwrap();
+                for i in 0..200 {
+                    db.execute(&format!(r#"(transact [[:nt{tid}e{i} :n {i}]])"#))
+                        .unwrap();
+                }
+                let n = match db
+                    .execute(&format!("(query [:find ?e :where [?e :n {}]])", 199))
+                    .unwrap()
+                {
+                    minigraf::QueryResult::QueryResults { results, .. } => results.len(),
+                    _ => 0,
+                };
+                assert!(n >= 1, "last fact must be visible in nightly run");
+            })
+        })
+        .collect();
+
+    for h in handles {
+        h.join().expect("thread panicked in nightly stress");
+    }
+}
