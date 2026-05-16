@@ -766,6 +766,7 @@ impl StratifiedEvaluator {
                     }
                 }
 
+                #[cfg_attr(feature = "wasm", allow(unused_mut))]
                 let mut not_clauses: Vec<Vec<WhereClause>> = rule
                     .body
                     .iter()
@@ -775,6 +776,7 @@ impl StratifiedEvaluator {
                     })
                     .collect();
 
+                #[cfg_attr(feature = "wasm", allow(unused_mut))]
                 let mut not_join_clauses: Vec<(Vec<String>, Vec<WhereClause>)> = rule
                     .body
                     .iter()

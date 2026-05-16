@@ -571,6 +571,7 @@ impl DatalogExecutor {
 
         // Apply not-filter for WhereClause::Not and WhereClause::NotJoin clauses
         // (no rules involved — pure post-filter)
+        #[cfg_attr(feature = "wasm", allow(unused_mut))]
         let mut not_clauses: Vec<&Vec<WhereClause>> = query
             .where_clauses
             .iter()
@@ -580,6 +581,7 @@ impl DatalogExecutor {
             })
             .collect();
 
+        #[cfg_attr(feature = "wasm", allow(unused_mut))]
         let mut not_join_clauses: Vec<(Vec<String>, Vec<WhereClause>)> = query
             .where_clauses
             .iter()
@@ -1051,6 +1053,7 @@ impl DatalogExecutor {
         // in the query body. (The StratifiedEvaluator handles `not`/`not-join` in rule
         // bodies; this handles them appearing directly in the query body alongside rule
         // invocations.)
+        #[cfg_attr(feature = "wasm", allow(unused_mut))]
         let mut not_clauses: Vec<&Vec<WhereClause>> = query
             .where_clauses
             .iter()
@@ -1060,6 +1063,7 @@ impl DatalogExecutor {
             })
             .collect();
 
+        #[cfg_attr(feature = "wasm", allow(unused_mut))]
         let mut not_join_clauses: Vec<(Vec<String>, Vec<WhereClause>)> = query
             .where_clauses
             .iter()
@@ -1855,6 +1859,7 @@ pub(crate) fn apply_or_clauses(
         match clause {
             WhereClause::Or(branches) => {
                 let sorted_or_branches: Vec<&Vec<WhereClause>> = {
+                    #[cfg_attr(feature = "wasm", allow(unused_mut))]
                     let mut b: Vec<&Vec<WhereClause>> = branches.iter().collect();
                     // Sort branches by cost ascending so cheaper branches evaluate first.
                     // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
@@ -2010,6 +2015,7 @@ pub(crate) fn apply_or_clauses(
                 branches,
             } => {
                 let sorted_oj_branches: Vec<&Vec<WhereClause>> = {
+                    #[cfg_attr(feature = "wasm", allow(unused_mut))]
                     let mut b: Vec<&Vec<WhereClause>> = branches.iter().collect();
                     // Sort branches by cost ascending so cheaper branches evaluate first.
                     // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
