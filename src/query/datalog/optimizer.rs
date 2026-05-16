@@ -654,4 +654,39 @@ mod tests {
         let clause = WhereClause::Or(vec![b1, b2]);
         assert_eq!(clause_cost(&clause), 110); // 10 + 100
     }
+
+    #[test]
+    fn test_clause_cost_not_join_uses_branch_cost() {
+        // NotJoin with one selective pattern (cost 10) → cost 10
+        let p = Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":person/name".to_string()),
+            EdnValue::String("Alice".to_string()),
+        );
+        let clause = WhereClause::NotJoin {
+            join_vars: vec!["?e".to_string()],
+            clauses: vec![WhereClause::Pattern(p)],
+        };
+        assert_eq!(clause_cost(&clause), 10);
+    }
+
+    #[test]
+    fn test_clause_cost_or_join_sums_branch_costs() {
+        // OrJoin with two branches: cost 10 + cost 100 = 110
+        let b1 = vec![WhereClause::Pattern(Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":person/name".to_string()),
+            EdnValue::String("Alice".to_string()),
+        ))];
+        let b2 = vec![WhereClause::Pattern(Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":person/age".to_string()),
+            EdnValue::Symbol("?v".to_string()),
+        ))];
+        let clause = WhereClause::OrJoin {
+            join_vars: vec!["?e".to_string()],
+            branches: vec![b1, b2],
+        };
+        assert_eq!(clause_cost(&clause), 110);
+    }
 }
