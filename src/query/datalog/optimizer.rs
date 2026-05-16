@@ -689,4 +689,25 @@ mod tests {
         };
         assert_eq!(clause_cost(&clause), 110);
     }
+
+    #[test]
+    fn test_clause_cost_not_body_fully_bound_min_is_one() {
+        // Not body: one fully-bound pattern (cost 1) + one full-scan (cost 10_000)
+        // clause_cost → min = 1
+        let fully_bound = Pattern::new(
+            EdnValue::Uuid(Uuid::new_v4()),
+            EdnValue::Keyword(":person/name".to_string()),
+            EdnValue::String("Alice".to_string()),
+        );
+        let full_scan = Pattern::new(
+            EdnValue::Symbol("?x".to_string()),
+            EdnValue::Symbol("?a".to_string()),
+            EdnValue::Symbol("?v".to_string()),
+        );
+        let clause = WhereClause::Not(vec![
+            WhereClause::Pattern(full_scan),
+            WhereClause::Pattern(fully_bound),
+        ]);
+        assert_eq!(clause_cost(&clause), 1);
+    }
 }
