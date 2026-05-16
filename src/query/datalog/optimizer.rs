@@ -199,8 +199,9 @@ pub fn plan(
 /// Static 4-tier cardinality estimate for a single pattern.
 ///
 /// Derived from selectivity_score but returns u64 cost (lower = cheaper) rather
-/// than a selectivity score. Gated on non-wasm (only called from non-wasm paths).
-#[cfg(not(feature = "wasm"))]
+/// than a selectivity score. Available on all targets; on WASM the dead_code lint
+/// is suppressed because the sorting call-sites are omitted there.
+#[cfg_attr(feature = "wasm", allow(dead_code))]
 fn pattern_cost(p: &Pattern) -> u64 {
     let e = !is_variable(&p.entity);
     let a = attr_is_index_bound(&p.attribute);
@@ -220,8 +221,9 @@ fn pattern_cost(p: &Pattern) -> u64 {
 /// Rationale for `min`: In a multi-pattern join the most selective pattern dominates —
 /// the join cannot produce more rows than the smallest input.
 ///
-/// Gated on non-wasm: only called from non-wasm code paths.
-#[cfg(not(feature = "wasm"))]
+/// Available on all targets; on WASM the dead_code lint is suppressed because
+/// the sorting call-sites are omitted there.
+#[cfg_attr(feature = "wasm", allow(dead_code))]
 pub fn branch_cost(branch: &[WhereClause]) -> u64 {
     branch
         .iter()
@@ -248,9 +250,9 @@ pub fn branch_cost(branch: &[WhereClause]) -> u64 {
 /// | `OrJoin{branches}` | sum of `branch_cost` per branch |
 /// | other              | `u64::MAX` (defensive; not expected in practice) |
 ///
-/// Gated on non-wasm: only called from non-wasm code paths (sorting call-sites are
-/// gated behind `#[cfg(not(feature = "wasm"))]`).
-#[cfg(not(feature = "wasm"))]
+/// Available on all targets; on WASM the dead_code lint is suppressed because
+/// the sorting call-sites are omitted there.
+#[cfg_attr(feature = "wasm", allow(dead_code))]
 pub fn clause_cost(clause: &WhereClause) -> u64 {
     match clause {
         WhereClause::Pattern(p) => pattern_cost(p),
@@ -526,9 +528,8 @@ mod tests {
 
     // ── cost model tests ──────────────────────────────────────────────────
     // These tests call pattern_cost / branch_cost / clause_cost which are
-    // gated on #[cfg(not(feature = "wasm"))].
+    // unconditional (available on all targets).
 
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_pattern_cost_fully_bound() {
         // entity bound (UUID), attribute real keyword, value bound literal — 3 bound → cost 1
@@ -540,7 +541,6 @@ mod tests {
         assert_eq!(pattern_cost(&p), 1);
     }
 
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_pattern_cost_two_bound() {
         // attribute + value bound, entity variable — 2 bound → cost 10
@@ -552,7 +552,6 @@ mod tests {
         assert_eq!(pattern_cost(&p), 10);
     }
 
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_pattern_cost_one_bound() {
         // only attribute bound — 1 bound → cost 100
@@ -564,7 +563,6 @@ mod tests {
         assert_eq!(pattern_cost(&p), 100);
     }
 
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_pattern_cost_unbound() {
         // all variables — 0 bound → cost 10_000
@@ -576,7 +574,6 @@ mod tests {
         assert_eq!(pattern_cost(&p), 10_000);
     }
 
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_clause_cost_pattern_two_bound() {
         // clause_cost delegates to pattern_cost for Pattern variant
@@ -589,7 +586,6 @@ mod tests {
         assert_eq!(clause_cost(&WhereClause::Pattern(p)), 10);
     }
 
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_clause_cost_expr_is_zero() {
         // Expr is pure computation — cost 0
@@ -600,7 +596,6 @@ mod tests {
         assert_eq!(clause_cost(&clause), 0);
     }
 
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_clause_cost_not_body_uses_min() {
         // Not body: one cost-10 pattern + one cost-10_000 pattern → min = 10
@@ -621,7 +616,6 @@ mod tests {
         assert_eq!(clause_cost(&clause), 10);
     }
 
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_clause_cost_not_body_expr_only_is_zero() {
         // Not body with no patterns (expr only) → cost 0
@@ -632,14 +626,12 @@ mod tests {
         assert_eq!(clause_cost(&clause), 0);
     }
 
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_branch_cost_empty_branch() {
         // Empty branch → 0
         assert_eq!(branch_cost(&[]), 0);
     }
 
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_branch_cost_expr_only_is_zero() {
         // Branch with only Expr clauses → 0
@@ -650,7 +642,6 @@ mod tests {
         assert_eq!(branch_cost(&branch), 0);
     }
 
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_clause_cost_or_sums_branch_costs() {
         // Or with two branches:
@@ -671,7 +662,6 @@ mod tests {
         assert_eq!(clause_cost(&clause), 110); // 10 + 100
     }
 
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_clause_cost_not_join_uses_branch_cost() {
         // NotJoin with one selective pattern (cost 10) → cost 10
@@ -687,7 +677,6 @@ mod tests {
         assert_eq!(clause_cost(&clause), 10);
     }
 
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_clause_cost_or_join_sums_branch_costs() {
         // OrJoin with two branches: cost 10 + cost 100 = 110
@@ -708,7 +697,6 @@ mod tests {
         assert_eq!(clause_cost(&clause), 110);
     }
 
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_clause_cost_not_body_fully_bound_min_is_one() {
         // Not body: one fully-bound pattern (cost 1) + one full-scan (cost 10_000)
