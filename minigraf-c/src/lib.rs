@@ -203,11 +203,11 @@ fn value_to_json(v: &Value) -> serde_json::Value {
 
 fn query_result_to_json(result: QueryResult) -> String {
     let val = match result {
-        QueryResult::Transacted { tx_id, tx_count } => {
-            serde_json::json!({"transacted": tx_id, "tx_count": tx_count})
+        QueryResult::Transacted(tx_id) => {
+            serde_json::json!({"transacted": tx_id})
         }
-        QueryResult::Retracted { tx_id, tx_count } => {
-            serde_json::json!({"retracted": tx_id, "tx_count": tx_count})
+        QueryResult::Retracted(tx_id) => {
+            serde_json::json!({"retracted": tx_id})
         }
         QueryResult::Ok => serde_json::json!({"ok": true}),
         QueryResult::QueryResults { vars, results } => {
