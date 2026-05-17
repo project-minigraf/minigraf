@@ -1,6 +1,6 @@
 [package]
 name = "minigraf-ffi"
-version = "1.1.1"
+version = "1.1.2"
 edition = "2024"
 description = "UniFFI bridge for Minigraf — bi-temporal graph database"
 license = "MIT OR Apache-2.0"
@@ -12,7 +12,7 @@ keywords = ["graph", "datalog", "bitemporal", "embedded", "database"]
 categories = ["database-implementations", "embedded"]
 
 [lib]
-crate-type = ["cdylib", "staticlib"]
+crate-type = ["cdylib", "staticlib", "lib"]
 
 [[bin]]
 name = "uniffi-bindgen"
