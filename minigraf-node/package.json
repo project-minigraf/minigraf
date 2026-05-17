@@ -1,6 +1,6 @@
 {
   "name": "minigraf",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Zero-config, single-file, embedded graph database with bi-temporal Datalog queries",
   "main": "index.js",
   "types": "index.d.ts",
