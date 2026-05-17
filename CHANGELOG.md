@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.1.0 — 2026-05-17
+
+Drop-in replacement for v1.0.0. No file-format changes, no public API changes, no query surface changes. Upgrading requires no code changes.
+
+### Performance
+
+- Hash-join replaces nested-loop join for multi-clause queries — O(N) instead of O(N²) for large fact sets (#202, #203, #204)
+- Selective B+Tree fact fetch: queries with bound entity/attribute skip full-scan and read only relevant index pages (#208)
+- Predicate push-down into join ordering (#207)
+- Cost-based clause ordering for `not`/`or` rules (#206, #205)
+- SIMD crossover analysis and benchmarking infrastructure (#229)
+
+### Bug fixes
+
+- Fixed critical correctness and durability bugs found during deep audit (#225): fact visibility edge cases, WAL entry ordering, checkpoint atomicity
+- Fixed read-only handle `Drop` triggering unnecessary checkpoint, modifying the file on close (#226)
+- `QueryResult::Transacted` and `Retracted` reverted to tuple variants — struct-variant form introduced post-1.0 was a breaking change (#261)
+- Added `Minigraf::current_tx_count() -> u64` as additive API to expose the `:as-of` monotonic counter without breaking existing pattern matches
+
+### Reliability & testing
+
+- WAL fault injection harness (`FaultInjectingBackend`) with 9 crash-recovery tests (#209, #210, #214)
+- Storage/migration resilience: migration matrix, index corruption recovery, concurrency stress tests (#215, #216, #217)
+- Property-based query correctness tests against a reference evaluator (proptest, #212)
+- Datalog parser/evaluator fuzz targets with seed corpus (#213)
+- Per-module branch coverage gates in CI (#219)
+- Long-haul smoke suite: 500 entities × 10 write/read/checkpoint cycles (#220)
+- XTDB and Datomic semantic compatibility tests (#221)
+
+### Internal
+
+- Workspace-wide clippy lint enforcement — 336 violations fixed (#232)
+- Grammar conformance test harness: pest shadow grammar + EDN corpus (#233)
+- CI: codecov-action v3→v5, actions-rs→dtolnay migration
+
 ## Wave 3 Reliability — 2026-05-17
 
 ### Summary
