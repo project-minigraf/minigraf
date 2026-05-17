@@ -120,11 +120,11 @@ fn value_to_json(v: &Value) -> serde_json::Value {
 fn query_result_to_json(result: QueryResult) -> String {
     use serde_json::json;
     let val = match result {
-        QueryResult::Transacted { tx_id, tx_count } => {
-            json!({"transacted": tx_id, "tx_count": tx_count})
+        QueryResult::Transacted(tx_id) => {
+            json!({"transacted": tx_id})
         }
-        QueryResult::Retracted { tx_id, tx_count } => {
-            json!({"retracted": tx_id, "tx_count": tx_count})
+        QueryResult::Retracted(tx_id) => {
+            json!({"retracted": tx_id})
         }
         QueryResult::Ok => json!({"ok": true}),
         QueryResult::QueryResults { vars, results } => {
@@ -166,13 +166,9 @@ mod tests {
 
     #[test]
     fn query_result_to_json_transacted() {
-        let json = query_result_to_json(QueryResult::Transacted {
-            tx_id: 12345,
-            tx_count: 1,
-        });
+        let json = query_result_to_json(QueryResult::Transacted(12345));
         let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert_eq!(v["transacted"], serde_json::json!(12345));
-        assert_eq!(v["tx_count"], serde_json::json!(1));
     }
 
     #[test]
@@ -239,13 +235,9 @@ mod tests {
 
     #[test]
     fn query_result_to_json_retracted() {
-        let json = query_result_to_json(QueryResult::Retracted {
-            tx_id: 99,
-            tx_count: 2,
-        });
+        let json = query_result_to_json(QueryResult::Retracted(99));
         let v: serde_json::Value = serde_json::from_str(&json).expect("valid json");
         assert_eq!(v["retracted"], serde_json::json!(99));
-        assert_eq!(v["tx_count"], serde_json::json!(2));
     }
 
     #[test]

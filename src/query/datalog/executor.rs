@@ -71,27 +71,21 @@ fn collect_all_patterns(clauses: &[WhereClause]) -> Vec<Pattern> {
 ///             println!("{}: {:?}", vars[0], row[0]);
 ///         }
 ///     }
-///     QueryResult::Transacted { tx_id, tx_count } => println!("tx {} (count {})", tx_id, tx_count),
-///     QueryResult::Retracted { tx_id, tx_count } => println!("retracted tx {} (count {})", tx_id, tx_count),
+///     QueryResult::Transacted(tx_id) => println!("tx {}", tx_id),
+///     QueryResult::Retracted(tx_id) => println!("retracted tx {}", tx_id),
 ///     QueryResult::Ok => {}
 /// }
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum QueryResult {
-    /// Transaction completed successfully.
-    Transacted {
-        /// Unix-millisecond timestamp of the transaction.
-        tx_id: TxId,
-        /// Monotonic counter (1, 2, 3 …). This is the value used by `:as-of N`.
-        tx_count: u64,
-    },
-    /// Retraction completed successfully.
-    Retracted {
-        /// Unix-millisecond timestamp of the retraction.
-        tx_id: TxId,
-        /// Monotonic counter (1, 2, 3 …). This is the value used by `:as-of N`.
-        tx_count: u64,
-    },
+    /// Transaction completed successfully. The inner value is the transaction ID
+    /// (Unix milliseconds). Use [`crate::db::Minigraf::current_tx_count`] to retrieve
+    /// the monotonic counter (`:as-of N` value) after a write.
+    Transacted(TxId),
+    /// Retraction completed successfully. The inner value is the transaction ID
+    /// (Unix milliseconds). Use [`crate::db::Minigraf::current_tx_count`] to retrieve
+    /// the monotonic counter (`:as-of N` value) after a write.
+    Retracted(TxId),
     /// Query results: list of variable bindings
     QueryResults {
         /// The variable names in the order they appear in the `:find` clause.
@@ -269,12 +263,12 @@ impl DatalogExecutor {
             fact_tuples.push((entity_id, attribute, value, per_fact_opts));
         }
 
-        let (tx_id, tx_count) = self
+        let (tx_id, _tx_count) = self
             .storage
             .transact_batch(fact_tuples, tx_opts)
             .map_err(|e| anyhow!("Transaction failed: {}", e))?;
 
-        Ok(QueryResult::Transacted { tx_id, tx_count })
+        Ok(QueryResult::Transacted(tx_id))
     }
 
     /// Execute a retract command: retract facts from storage
@@ -299,12 +293,12 @@ impl DatalogExecutor {
             fact_tuples.push((entity_id, attribute, value));
         }
 
-        let (tx_id, tx_count) = self
+        let (tx_id, _tx_count) = self
             .storage
             .retract(fact_tuples)
             .map_err(|e| anyhow!("Retraction failed: {}", e))?;
 
-        Ok(QueryResult::Retracted { tx_id, tx_count })
+        Ok(QueryResult::Retracted(tx_id))
     }
 
     /// Build a filtered fact snapshot for a query's temporal constraints.
@@ -2349,9 +2343,8 @@ mod tests {
 
         let result = executor.execute(cmd).unwrap();
         match result {
-            QueryResult::Transacted { tx_id, tx_count } => {
+            QueryResult::Transacted(tx_id) => {
                 assert!(tx_id > 0);
-                assert!(tx_count > 0);
             }
             _ => panic!("Expected Transacted result"),
         }
@@ -2488,9 +2481,8 @@ mod tests {
 
         let result = executor.execute(cmd).unwrap();
         match result {
-            QueryResult::Retracted { tx_id, tx_count } => {
+            QueryResult::Retracted(tx_id) => {
                 assert!(tx_id > 0);
-                assert!(tx_count > 0);
             }
             _ => panic!("Expected Retracted result"),
         }
@@ -2516,7 +2508,7 @@ mod tests {
 
         let result = executor.execute(cmd).unwrap();
         match result {
-            QueryResult::Transacted { .. } => {}
+            QueryResult::Transacted(_) => {}
             _ => panic!("Expected Transacted result"),
         }
 

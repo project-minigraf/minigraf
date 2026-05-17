@@ -1672,8 +1672,8 @@ When evaluating features, ask:
 - ✅ Phase 8.3d: Complete (April 2026) — Node.js `minigraf` on npm, 795 tests
 - ✅ Phase 8: Complete (May 2026) — v1.0.0
 - ✅ Wave 1 Performance: Complete (May 2026) — hash-join cluster + selective B+Tree lookup (#202, #203, #204, #208), 850 tests
-- ✅ Wave 2 Performance: Complete (May 2026) — secondary perf (#207, #206, #205, #229)
-- ✅ Wave 3 Reliability & Testing: Complete (May 2026) — WAL, storage/migration, query correctness, long-haul, CI coverage (#209, #210, #214, #215, #216, #217, #212, #213, #221, #220, #219)
+- ✅ Wave 2 Optimizer & Benchmarks: Complete (May 2026) — predicate push-down (#207, #206), cost-based not/or ordering (#205), SIMD crossover analysis (#229), 850 tests
+- ✅ Wave 3 Reliability: Complete (May 2026) — WAL fault injection, migration matrix, index corruption resilience, property-based testing, coverage gates, long-haul smoke, XTDB/Datomic compat (#209, #210, #212, #213, #214, #215, #216, #217, #219, #220, #221), 935 tests
 - ✅ Wave 4 Deferred Features: Complete (May 2026) — #182, #183, #180, #181 tagged milestone 2.0; #187 closed (no pre-1.0 users); #201 deferred to Wave 6
 - 🎯 Phase 9: Ongoing (Ecosystem — integration examples, cookbook, GraphRAG/LangChain examples)
 
@@ -1694,7 +1694,7 @@ When evaluating features, ask:
 - ✅ 8.3c: C FFI (GitHub Releases) — v0.24.0
 - ✅ 8.3d: Node.js (npm) — v0.25.0
 
-**Next**: Phase 9 — Ecosystem & Tooling (post-release optimisation and benchmarking first)
+**Next**: Phase 9 — Ecosystem & Tooling (Wave 3 Reliability complete; moving to ecosystem, examples, and cookbook)
 
 **Key Decisions Made**:
 - ✅ Datalog query language (simpler, better for temporal)
@@ -1710,4 +1710,4 @@ See [GitHub Issues](https://github.com/project-minigraf/minigraf/issues) for spe
 
 ---
 
-**Last Updated**: Wave 4 Complete (May 2026) — 850 tests passing, v1.0.0; milestone 2.0 issues queued; #231 repo-split is next gate
+**Last Updated**: Wave 4 Complete (May 2026) — 935 tests passing, v1.0.0; milestone 2.0 issues queued; #231 repo-split is next gate

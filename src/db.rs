@@ -509,9 +509,9 @@ impl Minigraf {
 
             // Return the same QueryResult the executor would have returned.
             if is_retract {
-                Ok(QueryResult::Retracted { tx_id, tx_count })
+                Ok(QueryResult::Retracted(tx_id))
             } else {
-                Ok(QueryResult::Transacted { tx_id, tx_count })
+                Ok(QueryResult::Transacted(tx_id))
             }
         } else {
             // Read-only: no lock needed
@@ -573,6 +573,18 @@ impl Minigraf {
             anyhow::anyhow!("write lock is poisoned; database may be in an inconsistent state")
         })?;
         Self::do_checkpoint(&self.inner.fact_storage, &mut ctx)
+    }
+
+    /// Returns the current monotonic transaction counter.
+    ///
+    /// This is the value that `:as-of N` compares against. After a successful
+    /// [`execute`](Self::execute) that returns [`QueryResult::Transacted`] or
+    /// [`QueryResult::Retracted`], this reflects the count of that transaction.
+    ///
+    /// Starts at 0 for a new database and increments once per `transact`/`retract` call,
+    /// regardless of how many facts the batch contains.
+    pub fn current_tx_count(&self) -> u64 {
+        self.inner.fact_storage.current_tx_count()
     }
 
     /// Internal checkpoint logic (operates on an already-held write-lock guard).

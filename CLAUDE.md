@@ -167,14 +167,14 @@ Auto-migrates v1/v2/v3/v4/v5/v6 → v7 on open/checkpoint.
 
 ## Test Coverage
 
-**850 tests passing** (unit + integration + doc).
+**935 tests passing** (unit + integration + doc).
 See `TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
 
 ## Key Files for the Next Phase
 
-Phase 8 is complete — v1.0.0 released. Phase 9 (Ecosystem & Tooling) is next.
+Phase 8 is complete — v1.0.0 released. Wave 3 Reliability is complete. Phase 9 (Ecosystem & Tooling) is next.
 
 Phase 9 relevant areas (see `ROADMAP.md` for full spec):
 - `examples/` — end-to-end annotated examples (agentic memory, offline-first mobile, browser PWA)
