@@ -1,10 +1,11 @@
 [workspace]
-members = [".", "minigraf-ffi", "minigraf-c", "minigraf-node", "fuzz"]
+members = [".", "minigraf-ffi", "minigraf-c", "minigraf-node"]
+exclude = ["fuzz"]
 resolver = "2"
 
 [package]
 name = "minigraf"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2024"
 description = "Zero-config, single-file, embedded graph database with bi-temporal Datalog queries"
 license = "MIT OR Apache-2.0"

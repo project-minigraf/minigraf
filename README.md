@@ -7,7 +7,7 @@
 [![Coverage](https://codecov.io/gh/project-minigraf/minigraf/branch/main/graph/badge.svg)](https://codecov.io/gh/project-minigraf/minigraf)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/project-minigraf/minigraf#license)
 [![Rust Edition](https://img.shields.io/badge/rust-2024-orange.svg)](https://blog.rust-lang.org/2024/10/17/Rust-1.82.0.html)
-[![Release](https://img.shields.io/badge/release-v1.1.0-blue.svg)](https://github.com/project-minigraf/minigraf/releases/tag/v1.1.0)
+[![Release](https://img.shields.io/badge/release-v1.1.1-blue.svg)](https://github.com/project-minigraf/minigraf/releases/tag/v1.1.1)
 
 > **Embedded graph memory for AI agents, mobile apps, and the browser** — the SQLite of bi-temporal graph databases
 
