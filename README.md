@@ -91,7 +91,7 @@ let r2 = pq.execute(&[("tx", BindValue::TxCount(2)), ("entity", BindValue::Entit
 
 ```bash
 cargo run          # interactive Datalog REPL
-cargo test         # run 850 tests
+cargo test         # run 935 tests
 cargo run < demos/demo_recursive.txt   # recursive rules demo
 ```
 

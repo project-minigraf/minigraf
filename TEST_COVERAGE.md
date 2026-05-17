@@ -1,16 +1,16 @@
 # Minigraf Test Coverage Report
 
-**Last Updated**: Wave 1 Performance COMPLETE (May 2026), 850 tests ✅
+**Last Updated**: Wave 3 Reliability COMPLETE (May 2026), 935 tests ✅
 
 ## Test Summary
 
-**Total Tests**: 856 ✅ (850 passing, 6 ignored)
-- ✅ 580 unit tests (lib — includes Wave 1 hash-join and selective-lookup test modules)
+**Total Tests**: 943 ✅ (935 passing, 8 ignored)
+- ✅ 620 unit tests (lib — includes Wave 1 hash-join and selective-lookup test modules, Wave 3 fault-injection unit tests)
 - ✅ 12 bi-temporal tests (integration)
 - ✅ 11 complex query tests (integration)
 - ✅ 9 recursive rules tests (integration)
-- ✅ 7 concurrency tests (integration)
-- ✅ 12 WAL / crash recovery tests (integration)
+- ✅ 12 concurrency tests (integration, 1 ignored: nightly stress)
+- ✅ 21 WAL / crash recovery tests (integration)
 - ✅ 2 cross-platform compat tests (integration, Phase 8.1)
 - ✅ 6 index tests (integration, Phase 6.1)
 - ✅ 7 performance tests (integration, Phase 6.2/6.4b)
@@ -23,15 +23,51 @@
 - ✅ 28 predicate expression tests (integration, Phase 7.2b)
 - ✅ 18 disjunction tests (integration, Phase 7.3)
 - ✅ 8 production pattern tests (integration, Phase 7.5 — cross-feature scenarios)
-- ✅ 8 error handling tests (integration, Phase 7.5 — error-path coverage; 6 ignored: or+neg-cycle bug)
+- ✅ 8 error handling tests (integration, Phase 7.5 — error-path coverage)
 - ✅ 22 temporal metadata tests (integration, Phase 7.6 — `:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`, `:db/valid-at`)
 - ✅ 14 window function tests (integration, Phase 7.7a — cumulative sum/count/min/avg, rank with ties, row-number, partition-by, desc ordering, mixed aggregate+window, edge cases, lag/lead parse rejection)
 - ✅ 10 UDF tests (integration, Phase 7.7b — custom aggregates, custom predicates, UDF as window function, name collision guards, runtime errors, thread safety)
 - ✅ 17 prepared statement tests (integration, Phase 7.8 — entity/value/as-of/valid-at slots, combined temporal+entity, AnyValidTime, error paths, plan reuse)
 - ✅ 3 grammar conformance tests (integration, Phase 7.9 — pest shadow grammar + EDN corpus)
+- ✅ 5 migration matrix tests (integration, Wave 3 #215 — v7 round-trip, v3 empty migrate, corrupt magic, unsupported version, WAL replay idempotent)
+- ✅ 5 index corruption tests (integration, Wave 3 #216 — checksum corruption, btree leaf/internal no-panic, root pointer mismatch, non-critical corruption query check)
+- ✅ 3 property-based tests (integration, Wave 3 #212/#213/#219 — proptest Datalog correctness vs naive reference evaluator)
+- ✅ 1 long-haul smoke test (integration, Wave 3 #220 — 500 entities × 10 attrs × 10 cycles; ignored: nightly)
+- ✅ 10 XTDB compat tests (integration, Wave 3 #221 — Apache 2.0 semantic ports of XTDB concepts)
+- ✅ 9 Datomic compat tests (integration, Wave 3 #221 — independently written semantic ports of Datomic concepts)
 - ✅ 15 doc tests (9 passing, 6 ignored: or+neg-cycle stratification bug confirmed)
 
-**Status**: ✅ **All 850 tests passing** (6 ignored: confirmed or+neg-cycle stratification bug)
+**Status**: ✅ **All 935 tests passing** (8 ignored: 6 or+neg-cycle stratification doc tests, 1 nightly concurrency stress, 1 nightly smoke)
+
+## Wave 3 Reliability Completion Status: ✅ COMPLETE
+
+**Wave 3 issues**: #209, #210, #214 (WAL fault injection), #215 (migration matrix), #216 (index corruption), #217 (concurrency stress), #212, #213, #219 (property-based / coverage), #220 (long-haul smoke), #221 (XTDB/Datomic compat)
+
+**New tests added by Wave 3** (+87 total):
+- ✅ `wal_test.rs` — 9 new fault-injection tests (FaultInjectingBackend: write fail, flush fail, read fault, WAL CRC corruption, checkpoint atomicity, partial checkpoint recovery, multi-writer serialisation, concurrent write+checkpoint, backend error propagation)
+- ✅ `tests/migration_matrix_test.rs` — 5 migration tests (v7 round-trip, v3 empty migrate, corrupt magic, unsupported version, WAL replay idempotent)
+- ✅ `tests/index_corruption_test.rs` — 5 corruption-resilience tests (checksum corruption, btree leaf/internal no-panic, root pointer mismatch, non-critical corruption query check)
+- ✅ `tests/concurrency_test.rs` — 5 new stress tests (stress readers during writer, failed write then success, rollback after partial work, open/write/checkpoint/query loop per thread, nightly stress loop)
+- ✅ `tests/property_test.rs` — 3 proptest property tests (EAV fact model, bi-temporal monotonicity, retract visibility)
+- ✅ `tests/smoke_test.rs` — 1 long-haul smoke test (500 entities × 10 attrs × 10 cycles, 7 invariants; `#[ignore]` nightly)
+- ✅ `tests/xtdb_compat_test.rs` — 10 XTDB semantic compatibility tests
+- ✅ `tests/datomic_compat_test.rs` — 9 Datomic semantic compatibility tests
+- ✅ 40 new lib unit tests (FaultInjectingBackend unit tests, WAL corruption helpers, property test infrastructure)
+
+**New CI workflows added**:
+- ✅ `.github/workflows/fuzz.yml` — nightly fuzzing, 6 libFuzzer targets × 60s each
+- ✅ `.github/workflows/coverage-gates.yml` — per-module coverage thresholds, fails PR if coverage drops
+- ✅ `.github/workflows/smoke.yml` — nightly 5am UTC, 15-min timeout, `--include-ignored`
+
+---
+
+## Wave 2 Optimizer & Benchmarks Completion Status: ✅ COMPLETE
+
+**Wave 2 issues**: #207 + #206 (predicate push-down + mixed rule optimization), #205 (cost-based not/or ordering), #229 (SIMD benchmarking + crossover analysis)
+
+No new integration tests added — Wave 2 is entirely optimizer and benchmark work. Existing 850 tests cover all affected code paths. New benchmark groups: `simd_temporal`, `simd_as_of`, `simd_aggregate`.
+
+---
 
 ## Wave 1 Performance Completion Status: ✅ COMPLETE
 
@@ -482,11 +518,16 @@ All Phase 8 sub-phases complete. See per-phase sections below.
 - ✅ Transitive closure, cycles, long chains, diamond patterns
 - ✅ Ancestor/descendant, family trees, multiple recursive predicates
 
-### Concurrency (`tests/concurrency_test.rs`) - ✅ 7 tests
+### Concurrency (`tests/concurrency_test.rs`) - ✅ 12 tests (1 ignored: nightly)
 
 - ✅ Concurrent rule registration (5 threads), concurrent queries with rules (10 threads)
 - ✅ Read-heavy workload (50 threads), recursive evaluation concurrency
 - ✅ No deadlocks (20 threads mixed), RwLock consistency (10 writers + 10 readers)
+- ✅ Stress readers during writer: concurrent readers see consistent state while writer holds lock (Wave 3 #217)
+- ✅ Failed write followed by successful write: DB remains usable after write error (Wave 3 #217)
+- ✅ Rollback after partial work: partial transaction leaves no trace (Wave 3 #217)
+- ✅ Open/write/checkpoint/query loop per thread: 10-thread concurrent lifecycle (Wave 3 #217)
+- ✅ Stress open/write loop (nightly, `#[ignore]`): high-contention loop stress test (Wave 3 #217)
 
 ### Bi-temporal (`tests/bitemporal_test.rs`) - ✅ 10 tests
 
@@ -494,7 +535,7 @@ All Phase 8 sub-phases complete. See per-phase sections below.
 - ✅ Valid-at inside/outside/boundary, default filter, any-valid-time
 - ✅ Combined bi-temporal (both dimensions), multi-entity valid ranges
 
-### WAL / Crash Recovery (`tests/wal_test.rs`) - ✅ 12 tests
+### WAL / Crash Recovery (`tests/wal_test.rs`) - ✅ 21 tests
 
 - ✅ Basic persistence (file-backed transact and query)
 - ✅ WAL replay after `mem::forget` crash simulation
@@ -507,6 +548,15 @@ All Phase 8 sub-phases complete. See per-phase sections below.
 - ✅ Concurrent reads while writer holds exclusive lock
 - ✅ Implicit `execute()` WAL ordering verified
 - ✅ v2→v3 format migration on checkpoint
+- ✅ FaultInjectingBackend write-fail: WAL write error propagates correctly (Wave 3 #209)
+- ✅ FaultInjectingBackend flush-fail: flush error propagates without data corruption (Wave 3 #209)
+- ✅ FaultInjectingBackend read-fault: read error on replay returns Err (Wave 3 #210)
+- ✅ WAL CRC corruption: corrupt entry discarded, replay continues (Wave 3 #210)
+- ✅ Checkpoint atomicity: backend write-fail during checkpoint leaves WAL intact (Wave 3 #214)
+- ✅ Partial checkpoint recovery: incomplete checkpoint detected and WAL replayed (Wave 3 #214)
+- ✅ Multi-writer serialisation: concurrent writers serialise correctly under fault conditions (Wave 3 #217)
+- ✅ Concurrent write+checkpoint: no deadlock or data loss under concurrent fault injection (Wave 3 #214)
+- ✅ Backend error propagation: storage errors surface as Err, not panic (Wave 3 #209)
 
 ### Covering Indexes (`tests/index_test.rs`) - ✅ 6 tests (Phase 6.1)
 
@@ -629,6 +679,57 @@ All Phase 8 sub-phases complete. See per-phase sections below.
 - ✅ `prepare_transact_rejected` — preparing a `(transact ...)` command returns `Err`
 - ✅ `execute_with_extra_bindings` — extra `BindValue`s beyond declared slots are silently ignored
 - ✅ `multiple_slots_same_execute` — multiple distinct `$slot` names resolved in a single `execute()` call
+
+### Migration Matrix (`tests/migration_matrix_test.rs`) - ✅ 5 tests (Wave 3 #215)
+
+- ✅ v7 round-trip — facts written and read back correctly after save/load
+- ✅ v3 empty migrate — empty v3 database opens and migrates to v7 cleanly
+- ✅ corrupt magic — file with bad magic header returns `Err`, not panic
+- ✅ unsupported version — file with unrecognised format version returns `Err`
+- ✅ WAL replay idempotent — replaying a WAL twice produces the same result as replaying once
+
+### Index Corruption (`tests/index_corruption_test.rs`) - ✅ 5 tests (Wave 3 #216)
+
+- ✅ checksum corruption — database with corrupted index checksum rebuilds index and serves correct query
+- ✅ btree leaf no-panic — corrupt btree leaf page returns `Err` without panic
+- ✅ btree internal no-panic — corrupt btree internal page returns `Err` without panic
+- ✅ root pointer mismatch no-panic — mismatched root pointer in header handled without panic
+- ✅ non-critical corruption query check — database with non-critical corruption still serves queries on good data
+
+### Property-Based Tests (`tests/property_test.rs`) - ✅ 3 tests (Wave 3 #212/#213/#219)
+
+- ✅ `prop_eav_model` — arbitrary EAV fact sets stored and retrieved correctly (proptest)
+- ✅ `prop_bitemporal_monotonicity` — tx-time advances monotonically across arbitrary transactions (proptest)
+- ✅ `prop_retract_visibility` — retracted facts are invisible in current view and visible in pre-retraction `:as-of` snapshot (proptest)
+
+### Long-Haul Smoke (`tests/smoke_test.rs`) - ✅ 1 test (Wave 3 #220, `#[ignore]` nightly)
+
+- ✅ `smoke_large_graph_10_cycles` — 500 entities × 10 attributes × 10 update cycles; 7 invariants verified: active count (333), retracted count, fact count bounds, temporal snapshot integrity, prepared query consistency, rule transitive closure, WAL checkpoint round-trip
+
+### XTDB Compatibility (`tests/xtdb_compat_test.rs`) - ✅ 10 tests (Wave 3 #221)
+
+- ✅ `xtdb_eav_triple_model` — entity attributes are independent queryable facts
+- ✅ `xtdb_transaction_time_as_of` — `:as-of` by tx_count matches XTDB transaction-time semantics
+- ✅ `xtdb_valid_time_travel` — `:valid-at` point-in-time filter matches XTDB valid-time semantics
+- ✅ `xtdb_retraction_current_view` — retracted facts absent from current-time view
+- ✅ `xtdb_retraction_historical_view` — retracted facts visible in pre-retraction snapshot
+- ✅ `xtdb_datalog_join` — multi-pattern join matches XTDB Datalog query semantics
+- ✅ `xtdb_datalog_negation` — `not` clause matches XTDB negation semantics
+- ✅ `xtdb_recursive_rules` — recursive rule transitive closure matches XTDB rule semantics
+- ✅ `xtdb_parameterized_query` — prepared-statement `$slot` bindings match XTDB `:in` semantics
+- ✅ `xtdb_bitemporal_combined` — combined `:as-of` + `:valid-at` query matches XTDB bi-temporal semantics
+
+### Datomic Compatibility (`tests/datomic_compat_test.rs`) - ✅ 9 tests (Wave 3 #221)
+
+- ✅ `datomic_entity_attributes_are_independent_facts` — EAV datom model: each attribute independently queryable
+- ✅ `datomic_multiple_entities_same_attribute` — multiple entities share the same attribute; all (entity, value) pairs returned
+- ✅ `datomic_transaction_time_as_of` — `:as-of tx_count` matches Datomic transaction-time semantics
+- ✅ `datomic_retract_all_entity_facts` — fully-retracted entity absent from all queries
+- ✅ `datomic_multi_variable_find` — multi-variable `:find` returns correct tuple count
+- ✅ `datomic_ground_value_binding` — constant binding in `:where` clause filters correctly
+- ✅ `datomic_parameterized_query_prepared` — prepared `$slot` bindings match Datomic `:in` clause semantics
+- ✅ `datomic_named_rule_reuse` — named reusable rules match Datomic rule semantics
+- ✅ `datomic_predicate_expression_filter` — predicate expression `[(>= ?a 18)]` matches Datomic expression clause semantics
 
 ---
 
@@ -768,8 +869,8 @@ cargo test --lib                       # Unit tests (216)
 cargo test --test bitemporal           # Bi-temporal (10)
 cargo test --test complex_queries      # Complex queries (10)
 cargo test --test recursive_rules      # Recursive rules (9)
-cargo test --test concurrency          # Concurrency (7)
-cargo test --test wal_test             # WAL / crash recovery (12)
+cargo test --test concurrency          # Concurrency (12, 1 ignored)
+cargo test --test wal_test             # WAL / crash recovery (21)
 cargo test --test index_test           # Covering indexes (6)
 cargo test --test performance_test     # Packed pages (7)
 cargo test --test retraction_test      # Retraction semantics (7)
@@ -782,6 +883,12 @@ cargo test --test predicate_expr_test  # arithmetic & predicate expr (28)
 cargo test --test window_functions_test # window functions (12)
 cargo test --test udf_test             # user-defined functions (9)
 cargo test --test prepared_statements_test # prepared statements (17)
+cargo test --test migration_matrix_test    # migration matrix (5)
+cargo test --test index_corruption_test    # index corruption (5)
+cargo test --test property_test            # property-based (3)
+cargo test --test xtdb_compat_test         # XTDB compat (10)
+cargo test --test datomic_compat_test      # Datomic compat (9)
+cargo test --test smoke_test -- --include-ignored  # long-haul smoke (1, nightly)
 
 # Run with output
 cargo test -- --nocapture
@@ -791,9 +898,9 @@ cargo test -- --nocapture
 
 ## Conclusion
 
-**Phase 8.1 Status**: ✅ **COMPLETE**
+**Wave 3 Status**: ✅ **COMPLETE**
 
-**Test Quality**: ✅ **Excellent** — High confidence in all Phase 3-8.1 features
+**Test Quality**: ✅ **Excellent** — High confidence in all Phase 3-8.1 + Wave 3 reliability features
 
 **Strengths**:
 - WAL crash safety verified with real `mem::forget` simulation
@@ -815,14 +922,21 @@ cargo test -- --nocapture
 - User-defined functions verified: custom aggregates, custom predicates, UDF as window function, name collision guards, runtime error handling, thread safety (Phase 7.7b)
 - Prepared statements verified: entity/value/as-of/valid-at slot positions, AnyValidTime, combined temporal+entity (agentic loop pattern), plan reuse, all error paths (Phase 7.8)
 - Public API surface verified via rustdoc doctests: `Minigraf::open`, `execute`, `prepare`, `repl`, `WriteTransaction`, `OpenOptions` (Phase 7.9)
-- 795 tests covering all Phase 3-8.1 features (including browser WASM + WASI + cross-platform compat)
+- WAL fault injection verified: write-fail, flush-fail, read-fault, CRC corruption, checkpoint atomicity, concurrent write+checkpoint (Wave 3)
+- Migration matrix verified: v7 round-trip, v3 empty migrate, corrupt magic, unsupported version, WAL replay idempotent (Wave 3)
+- Index corruption resilience verified: checksum corruption triggers rebuild, btree corruption returns Err not panic (Wave 3)
+- Property-based testing verified: EAV model, bi-temporal monotonicity, retract visibility (Wave 3)
+- Long-haul smoke verified: 500 entities × 10 attrs × 10 cycles, 7 invariants, nightly CI (Wave 3)
+- XTDB compatibility verified: 10 semantic ports covering EAV, time travel, negation, rules, prepared queries (Wave 3)
+- Datomic compatibility verified: 9 independently written semantic ports covering datom model, tx-time, retraction, Datalog patterns (Wave 3)
+- 935 tests covering all Phase 3-8.1 features + Wave 3 reliability/compat (including browser WASM + WASI + cross-platform compat + fuzzing CI)
 
-**Confidence Level**: ✅ **Production-ready for Phase 8.1 scope**
+**Confidence Level**: ✅ **Production-ready for Wave 3 scope**
 
-**Readiness for Phase 8.2**: ✅ **Ready to proceed**
+**Readiness for Phase 9**: ✅ **Ready to proceed**
 
-The WebAssembly-capable (browser + WASI), publish-ready, prepared-statement-capable, UDF-capable, window-function-capable, disjunction + aggregation + arithmetic/predicate expression capable, stratified-negation-capable, on-disk B+tree indexed, packed, cached bi-temporal Datalog engine is **solid, well-tested, documented, and benchmarked**.
+The fault-injection-tested, property-based-tested, XTDB/Datomic-compatible, fuzz-hardened, WebAssembly-capable (browser + WASI), publish-ready, prepared-statement-capable, UDF-capable, window-function-capable, disjunction + aggregation + arithmetic/predicate expression capable, stratified-negation-capable, on-disk B+tree indexed, packed, cached bi-temporal Datalog engine is **solid, well-tested, documented, and benchmarked**.
 
 ---
 
-**Next Steps**: Begin Phase 8 (Cross-Platform Expansion — WASM, mobile, language bindings)
+**Next Steps**: Phase 9 (Ecosystem & Tooling — examples, wiki guides, performance baseline updates)
