@@ -40,11 +40,13 @@ fn query_strings(db: &Minigraf, q: &str) -> Vec<String> {
 #[test]
 fn xtdb_basic_find_by_attribute_value() {
     let db = Minigraf::in_memory().unwrap();
-    db.execute(r#"(transact [
+    db.execute(
+        r#"(transact [
         [:pablo    :profession "painter"]
         [:salvador :profession "painter"]
         [:kafka    :profession "writer"]
-    ])"#)
+    ])"#,
+    )
     .unwrap();
 
     let painters = count_results(
@@ -59,11 +61,13 @@ fn xtdb_basic_find_by_attribute_value() {
 #[test]
 fn xtdb_multi_attribute_join() {
     let db = Minigraf::in_memory().unwrap();
-    db.execute(r#"(transact [
+    db.execute(
+        r#"(transact [
         [:e1 :role "admin"] [:e1 :active true]
         [:e2 :role "user"]  [:e2 :active true]
         [:e3 :role "admin"] [:e3 :active false]
-    ])"#)
+    ])"#,
+    )
     .unwrap();
 
     let active_admins = count_results(
@@ -78,11 +82,13 @@ fn xtdb_multi_attribute_join() {
 #[test]
 fn xtdb_entity_reference_join() {
     let db = Minigraf::in_memory().unwrap();
-    db.execute(r#"(transact [
+    db.execute(
+        r#"(transact [
         [:alice :dept :dept-eng]
         [:bob   :dept :dept-eng]
         [:carol :dept :dept-hr]
-    ])"#)
+    ])"#,
+    )
     .unwrap();
 
     let eng_employees = count_results(
@@ -147,15 +153,25 @@ fn xtdb_as_of_returns_past_state() {
 
     // tx 2 + 3: alice's role changes to "admin"
     db.execute(r#"(retract [[:alice :role "user"]])"#).unwrap();
-    db.execute(r#"(transact [[:alice :role "admin"]])"#).unwrap();
+    db.execute(r#"(transact [[:alice :role "admin"]])"#)
+        .unwrap();
 
     // Current state: admin.
     let current = query_strings(&db, r#"(query [:find ?r :where [?e :role ?r]])"#);
-    assert!(current.contains(&"admin".to_string()), "current role should be admin");
+    assert!(
+        current.contains(&"admin".to_string()),
+        "current role should be admin"
+    );
 
     // As-of tx 1: user.
-    let past = query_strings(&db, r#"(query [:find ?r :as-of 1 :valid-at :any-valid-time :where [?e :role ?r]])"#);
-    assert!(past.contains(&"user".to_string()), "past role at tx 1 should be user");
+    let past = query_strings(
+        &db,
+        r#"(query [:find ?r :as-of 1 :valid-at :any-valid-time :where [?e :role ?r]])"#,
+    );
+    assert!(
+        past.contains(&"user".to_string()),
+        "past role at tx 1 should be user"
+    );
 }
 
 /// XTDB concept: valid-time query returns facts valid at a specific time.
@@ -180,7 +196,10 @@ fn xtdb_valid_at_query() {
         db.execute(r#"(query [:find ?s :valid-at "2024-01-01" :where [?e :status ?s]])"#)
             .unwrap(),
     );
-    assert_eq!(n_after, 0, "fact should not be visible after valid-to boundary");
+    assert_eq!(
+        n_after, 0,
+        "fact should not be visible after valid-to boundary"
+    );
 }
 
 // ── Negation ─────────────────────────────────────────────────────────────────
@@ -190,11 +209,13 @@ fn xtdb_valid_at_query() {
 #[test]
 fn xtdb_not_excludes_matching_entities() {
     let db = Minigraf::in_memory().unwrap();
-    db.execute(r#"(transact [
+    db.execute(
+        r#"(transact [
         [:alice :person true] [:alice :banned true]
         [:bob   :person true]
         [:carol :person true] [:carol :banned true]
-    ])"#)
+    ])"#,
+    )
     .unwrap();
 
     let unbanned = count_results(
@@ -211,9 +232,11 @@ fn xtdb_not_excludes_matching_entities() {
 #[test]
 fn xtdb_count_aggregate() {
     let db = Minigraf::in_memory().unwrap();
-    db.execute(r#"(transact [
+    db.execute(
+        r#"(transact [
         [:a :tag "rust"] [:b :tag "rust"] [:c :tag "go"] [:d :tag "rust"]
-    ])"#)
+    ])"#,
+    )
     .unwrap();
 
     match db
@@ -238,11 +261,13 @@ fn xtdb_count_aggregate() {
 #[test]
 fn xtdb_recursive_ancestor_rule() {
     let db = Minigraf::in_memory().unwrap();
-    db.execute(r#"(transact [
+    db.execute(
+        r#"(transact [
         [:alice :parent :bob]
         [:bob   :parent :carol]
         [:carol :parent :dave]
-    ])"#)
+    ])"#,
+    )
     .unwrap();
 
     db.execute(r#"(rule [(ancestor ?x ?y) [?x :parent ?y]])"#)
@@ -254,7 +279,10 @@ fn xtdb_recursive_ancestor_rule() {
         db.execute(r#"(query [:find ?anc :where (ancestor :alice ?anc)])"#)
             .unwrap(),
     );
-    assert_eq!(ancestors_of_alice, 3, "alice has 3 ancestors: bob, carol, dave");
+    assert_eq!(
+        ancestors_of_alice, 3,
+        "alice has 3 ancestors: bob, carol, dave"
+    );
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

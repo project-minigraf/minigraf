@@ -26,11 +26,13 @@ fn count_results(r: QueryResult) -> usize {
 #[test]
 fn datomic_entity_attributes_are_independent_facts() {
     let db = Minigraf::in_memory().unwrap();
-    db.execute(r#"(transact [
+    db.execute(
+        r#"(transact [
         [:user42 :user/name "Jane"]
         [:user42 :user/email "jane@example.com"]
         [:user42 :user/role :admin]
-    ])"#)
+    ])"#,
+    )
     .unwrap();
 
     // Each attribute is an independent queryable fact.
@@ -58,11 +60,13 @@ fn datomic_entity_attributes_are_independent_facts() {
 #[test]
 fn datomic_multiple_entities_same_attribute() {
     let db = Minigraf::in_memory().unwrap();
-    db.execute(r#"(transact [
+    db.execute(
+        r#"(transact [
         [:article1 :tag "rust"]
         [:article2 :tag "database"]
         [:article3 :tag "embedded"]
-    ])"#)
+    ])"#,
+    )
     .unwrap();
 
     let tags = count_results(
@@ -115,18 +119,22 @@ fn datomic_transaction_time_as_of() {
 #[test]
 fn datomic_retract_all_entity_facts() {
     let db = Minigraf::in_memory().unwrap();
-    db.execute(r#"(transact [
+    db.execute(
+        r#"(transact [
         [:ghost :name "Ghost"]
         [:ghost :age 100]
         [:ghost :role "phantom"]
-    ])"#)
+    ])"#,
+    )
     .unwrap();
 
-    db.execute(r#"(retract [
+    db.execute(
+        r#"(retract [
         [:ghost :name "Ghost"]
         [:ghost :age 100]
         [:ghost :role "phantom"]
-    ])"#)
+    ])"#,
+    )
     .unwrap();
 
     let n = count_results(
@@ -143,10 +151,12 @@ fn datomic_retract_all_entity_facts() {
 #[test]
 fn datomic_multi_variable_find() {
     let db = Minigraf::in_memory().unwrap();
-    db.execute(r#"(transact [
+    db.execute(
+        r#"(transact [
         [:p1 :person/name "Alice"] [:p1 :person/age 30]
         [:p2 :person/name "Bob"]   [:p2 :person/age 25]
-    ])"#)
+    ])"#,
+    )
     .unwrap();
 
     match db
@@ -165,9 +175,11 @@ fn datomic_multi_variable_find() {
 #[test]
 fn datomic_ground_value_binding() {
     let db = Minigraf::in_memory().unwrap();
-    db.execute(r#"(transact [
+    db.execute(
+        r#"(transact [
         [:a :score 10] [:b :score 20] [:c :score 10] [:d :score 30]
-    ])"#)
+    ])"#,
+    )
     .unwrap();
 
     let tens = count_results(
@@ -183,9 +195,11 @@ fn datomic_ground_value_binding() {
 #[test]
 fn datomic_parameterized_query_prepared() {
     let db = Minigraf::in_memory().unwrap();
-    db.execute(r#"(transact [
+    db.execute(
+        r#"(transact [
         [:x :val 42] [:y :val 7] [:z :val 42]
-    ])"#)
+    ])"#,
+    )
     .unwrap();
 
     let prep = db
@@ -210,17 +224,17 @@ fn datomic_parameterized_query_prepared() {
 #[test]
 fn datomic_named_rule_reuse() {
     let db = Minigraf::in_memory().unwrap();
-    db.execute(r#"(transact [
+    db.execute(
+        r#"(transact [
         [:a :likes :b] [:b :likes :c] [:c :likes :a]
-    ])"#)
+    ])"#,
+    )
     .unwrap();
 
     db.execute(r#"(rule [(likes-transitively ?x ?y) [?x :likes ?y]])"#)
         .unwrap();
-    db.execute(
-        r#"(rule [(likes-transitively ?x ?z) [?x :likes ?y] (likes-transitively ?y ?z)])"#,
-    )
-    .unwrap();
+    db.execute(r#"(rule [(likes-transitively ?x ?z) [?x :likes ?y] (likes-transitively ?y ?z)])"#)
+        .unwrap();
 
     let all_pairs = count_results(
         db.execute(r#"(query [:find ?x ?y :where (likes-transitively ?x ?y)])"#)
@@ -240,9 +254,11 @@ fn datomic_named_rule_reuse() {
 #[test]
 fn datomic_predicate_expression_filter() {
     let db = Minigraf::in_memory().unwrap();
-    db.execute(r#"(transact [
+    db.execute(
+        r#"(transact [
         [:a :age 25] [:b :age 35] [:c :age 15] [:d :age 40]
-    ])"#)
+    ])"#,
+    )
     .unwrap();
 
     let adults = count_results(
