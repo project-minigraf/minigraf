@@ -20,9 +20,6 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build
-        run: cargo build --release
-
       - name: Run smoke suite
         run: cargo test --test smoke_test -- --include-ignored --nocapture
         env:

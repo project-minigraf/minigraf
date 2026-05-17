@@ -107,7 +107,7 @@ fn smoke_large_graph_10_cycles() {
             );
         }
 
-        // Invariant 4: active entities (index % 3 != 0) = 334.
+        // Invariant 4: active entities (index % 3 != 0) = 333.
         let n_active = count_results(
             db.execute("(query [:find ?e :where [?e :active true]])")
                 .unwrap(),
