@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.1.1 — 2026-05-17
+
+Patch release. Fixes cargo-dist Windows build failure that prevented REPL binaries and crates.io publish from completing for v1.1.0. No code changes to the library itself.
+
+### Build
+
+- Exclude `fuzz` crate from workspace so cargo-dist can build on Windows (MSVC linker incompatible with `#![no_main]` libFuzzer targets) — fixes #263
+
 ## v1.1.0 — 2026-05-17
 
 Drop-in replacement for v1.0.0. No file-format changes, no public API changes, no query surface changes. Upgrading requires no code changes.
