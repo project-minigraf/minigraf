@@ -52,11 +52,11 @@ fn datomic_entity_attributes_are_independent_facts() {
     );
 }
 
-/// Datomic concept: cardinality-many attributes — multiple entities share the same attribute.
-/// Datomic doc reference: "Schema" — :db/cardinality/many.
-/// In Minigraf, multiple entities can each hold a :tag fact; querying ?e ?t returns all pairs.
+/// Datomic concept: multiple entities sharing the same attribute — each entity independently
+/// carries its own :tag fact; querying [:find ?e ?t] returns all (entity, value) pairs.
+/// Datomic doc reference: "Schema" — EAV model; each datom is an independent fact.
 #[test]
-fn datomic_cardinality_many_multiple_values() {
+fn datomic_multiple_entities_same_attribute() {
     let db = Minigraf::in_memory().unwrap();
     db.execute(r#"(transact [
         [:article1 :tag "rust"]
