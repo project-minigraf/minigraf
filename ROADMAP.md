@@ -1692,9 +1692,11 @@ When evaluating features, ask:
 - ✅ Wave 3: Reliability — WAL fault injection, migration matrix, index corruption resilience, XTDB/Datomic compat, coverage gates (#209, #210, #212–#217, #219–#221)
 - ✅ Wave 4: Deferred Features — #180, #181, #182, #183 tagged milestone 2.0; #187 closed; #201 deferred
 
-**Next gate**: #231 — Repo Split (gates Wave 5 and beyond; ecosystem work is cleaner post-split)
+**Completed gate**: #231 — Repo Split complete (Phase 1: Python, Node, WASM split out; Phase 2: Java/Android/Swift deferred)
 
-**Pending waves** (post-split):
+**Next**: Wave 5 — Query profiler (#185); #184 → `minigraf-inspector`, #186 → `minigraf-visualizer`
+
+**Pending waves**:
 - Wave 5: Query profiler (#185) — stays in this repo; #184 → `minigraf-inspector`, #186 → `minigraf-visualizer`
 - Wave 6+7: Integration examples (#193–#200) → `minigraf-examples` repo (stub created)
 - Wave 8: Documentation — cookbook (#190), perf tuning guide (#191), error message guide (#192)
@@ -1714,4 +1716,4 @@ See [GitHub Issues](https://github.com/project-minigraf/minigraf/issues) for spe
 
 ---
 
-**Last Updated**: Wave 4 Complete (May 2026) — 935 tests passing, v1.1.1; milestone 2.0 issues queued; #231 repo-split is next gate
+**Last Updated**: #231 Repo Split Complete (May 2026) — 935 tests passing, v1.1.1; Phase 1 bindings (Python, Node, WASM) in separate repos; Wave 5 is next

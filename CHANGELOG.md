@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Infrastructure
+
+- Split Python, Node.js, and browser WASM/WASI bindings into independent repos under `project-minigraf` org (#231)
+  - `minigraf-python`: https://github.com/project-minigraf/minigraf-python
+  - `minigraf-node`: https://github.com/project-minigraf/minigraf-node
+  - `minigraf-wasm`: https://github.com/project-minigraf/minigraf-wasm
+- Add `cascade.yml`: publishes `minigraf-ffi` to crates.io and dispatches releases to binding repos on every version tag
+- Publish `minigraf-ffi` to crates.io (previously internal only)
+
 ## v1.1.1 — 2026-05-17
 
 Patch release. Fixes cargo-dist Windows build failure that prevented REPL binaries and crates.io publish from completing for v1.1.0. No code changes to the library itself.

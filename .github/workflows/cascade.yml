@@ -1,0 +1,67 @@
+name: Release Cascade
+
+on:
+  push:
+    tags:
+      - '**[0-9]+.[0-9]+.[0-9]+*'
+
+jobs:
+  publish-ffi:
+    name: Publish minigraf-ffi to crates.io
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish minigraf-ffi
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p minigraf-ffi
+
+      - name: Wait for minigraf-ffi to be indexed on crates.io
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Waiting for minigraf-ffi@$VERSION on crates.io..."
+          for i in $(seq 1 18); do
+            STATUS=$(curl -s "https://crates.io/api/v1/crates/minigraf-ffi/$VERSION" \
+              -H "User-Agent: minigraf-cascade/1.0" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('version',{}).get('num',''))" 2>/dev/null || echo "")
+            if [ "$STATUS" = "$VERSION" ]; then
+              echo "minigraf-ffi@$VERSION is live (attempt $i)"
+              break
+            fi
+            echo "Attempt $i/18: not yet available, waiting 10s..."
+            sleep 10
+          done
+
+      - name: Wait for minigraf to be indexed on crates.io
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Waiting for minigraf@$VERSION on crates.io..."
+          for i in $(seq 1 18); do
+            STATUS=$(curl -s "https://crates.io/api/v1/crates/minigraf/$VERSION" \
+              -H "User-Agent: minigraf-cascade/1.0" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('version',{}).get('num',''))" 2>/dev/null || echo "")
+            if [ "$STATUS" = "$VERSION" ]; then
+              echo "minigraf@$VERSION is live (attempt $i)"
+              break
+            fi
+            echo "Attempt $i/18: not yet available, waiting 10s..."
+            sleep 10
+          done
+
+  dispatch-bindings:
+    name: Dispatch to binding repos
+    needs: publish-ffi
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch to Phase 1 binding repos
+        env:
+          GH_TOKEN: ${{ secrets.MINIGRAF_RELEASE_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          for REPO in minigraf-python minigraf-node minigraf-wasm; do
+            echo "Dispatching core-release to project-minigraf/$REPO @ $VERSION"
+            gh api repos/project-minigraf/$REPO/dispatches \
+              -f event_type=core-release \
+              -f "client_payload[version]=$VERSION"
+          done

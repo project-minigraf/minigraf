@@ -131,6 +131,19 @@ No other database offers this combination:
 
 **Embedded graph memory for agents, mobile, and the browser — SQLite's simplicity + Datomic's temporal model.**
 
+## Language Bindings
+
+| Language | Package | Repo |
+|---|---|---|
+| Python | [`minigraf` on PyPI](https://pypi.org/p/minigraf) | [minigraf-python](https://github.com/project-minigraf/minigraf-python) |
+| Node.js | [`minigraf` on npm](https://www.npmjs.com/package/minigraf) | [minigraf-node](https://github.com/project-minigraf/minigraf-node) |
+| Browser WASM | [`@minigraf/browser` on npm](https://www.npmjs.com/package/@minigraf/browser) | [minigraf-wasm](https://github.com/project-minigraf/minigraf-wasm) |
+| WASI | [`@minigraf/wasi` on npm](https://www.npmjs.com/package/@minigraf/wasi) | [minigraf-wasm](https://github.com/project-minigraf/minigraf-wasm) |
+| Java | (in this repo — Phase 2 split pending) | — |
+| Android | (in this repo — Phase 2 split pending) | — |
+| iOS/macOS | (in this repo — Phase 2 split pending) | — |
+| C | [`minigraf-c`](./minigraf-c) (in this repo) | — |
+
 See the [Comparison](https://github.com/project-minigraf/minigraf/wiki/Comparison) wiki page for detailed analysis including temporal vs. time-series databases.
 
 ### For AI Agents

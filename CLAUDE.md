@@ -174,11 +174,10 @@ See `TEST_COVERAGE.md` for the full per-file breakdown.
 
 ## Key Files for the Next Phase
 
-Phase 8 is complete — v1.0.0 released. Wave 3 Reliability is complete. Phase 9 (Ecosystem & Tooling) is next.
+Phase 8 is complete — v1.0.0 released. Wave 3 Reliability is complete. #231 Repo Split (Phase 1) is complete — Python, Node, WASM bindings are in separate repos. Wave 5 (Query Profiler) is next.
 
-Phase 9 relevant areas (see `ROADMAP.md` for full spec):
-- `examples/` — end-to-end annotated examples (agentic memory, offline-first mobile, browser PWA)
-- `.wiki/` — cookbook-style guides for each Phase 9 deliverable
+Wave 5 relevant areas (see `ROADMAP.md` for full spec):
+- `src/query/datalog/` — query executor where profiling hooks will go (#185)
 - `BENCHMARKS.md` — post-1.0 performance baseline updates
 
 ## Testing Conventions
