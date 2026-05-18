@@ -65,7 +65,7 @@ pest_derive = "2"
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tempfile = "3"
 criterion = { version = "0.8", features = ["html_reports"] }
-wide = "0.7"
+wide = "1.4"
 proptest = "1"
 uuid = { version = "1.0", features = ["v4", "v5"] }
 
