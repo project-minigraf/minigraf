@@ -27,7 +27,7 @@ jobs:
           key: cargo-fuzz-${{ runner.os }}-${{ hashFiles('fuzz/Cargo.toml') }}
 
       - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked
+        run: cargo install cargo-fuzz
 
       - name: Fuzz wal_entry (60s)
         run: cargo fuzz run wal_entry -- -max_total_time=60
