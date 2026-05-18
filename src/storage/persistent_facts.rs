@@ -718,7 +718,14 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             .backend
             .lock()
             .map_err(|_| anyhow::anyhow!("backend mutex poisoned"))?;
-        let next_free = header.page_count;
+        // Use the actual end of fact pages as the start for new index pages, NOT
+        // header.page_count — that field comes from the (possibly untrusted) file
+        // on disk and may be a huge fuzz-crafted value that causes build_btree to
+        // write leaf pages at a ~TB offset, then compute_page_checksum to loop
+        // over billions of pages.
+        let next_free = 1u64
+            .checked_add(validated_num_fact_pages)
+            .ok_or_else(|| anyhow::anyhow!("page count overflow computing next_free"))?;
 
         let (eavt_root, next_free2) = build_btree(
             btree_entries(eavt.into_iter())?.into_iter(),
@@ -1964,6 +1971,50 @@ mod tests {
         assert_eq!(
             header.version, 7,
             "migration must complete despite prior partial run"
+        );
+    }
+
+    /// Regression test for fuzz-discovered timeout (artifact:
+    /// `timeout-23b2b7e0aa43d92c12c49f123a48d6f4ace6ce33`).
+    ///
+    /// A crafted v5 header with page_count=3_604_123_350 and vaet_root_page=61
+    /// caused migrate_v5_to_v6 to use page_count as the B-tree start page.
+    /// build_btree then wrote a leaf at offset ~14 TB in a sparse file, and
+    /// compute_page_checksum looped over 3.6 billion zero-filled sparse pages
+    /// (each read_exact returns zeros, no error), hanging the process.
+    ///
+    /// After the fix, next_free = 1 + validated_num_fact_pages (= 1 here),
+    /// so migration completes in constant time and produces a sane v7 header.
+    #[test]
+    fn test_v5_migration_large_page_count_does_not_hang() {
+        use crate::storage::backend::FileBackend;
+        use tempfile::NamedTempFile;
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_path_buf();
+
+        // Write the exact fuzz-artifact header bytes (75 bytes + zero padding to 4096)
+        let mut page = vec![0u8; PAGE_SIZE];
+        page[0..4].copy_from_slice(b"MGRF");
+        page[4..8].copy_from_slice(&5u32.to_le_bytes()); // version = 5
+        page[8..16].copy_from_slice(&3_604_123_350u64.to_le_bytes()); // page_count (huge)
+        page[56..64].copy_from_slice(&61u64.to_le_bytes()); // vaet_root_page = 61
+        page[68] = 0x20; // fact_page_format
+        std::fs::write(&path, &page).unwrap();
+
+        // Must complete without hanging; next_free must be computed from actual
+        // fact pages (= 1 + 0 = 1), not from the crafted header.page_count.
+        let s = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256)
+            .expect("migration must complete");
+        let b = s.into_backend().unwrap();
+        let header_bytes = b.read_page(0).unwrap();
+        let header = crate::storage::FileHeader::from_bytes(&header_bytes).unwrap();
+        assert_eq!(header.version, 7, "migration must upgrade to v7");
+        // Resulting page_count must be small (0 fact pages + 4 index pages + header),
+        // NOT the crafted 3.6-billion-page value.
+        assert!(
+            header.page_count < 100,
+            "page_count must be sane after migration"
         );
     }
 
