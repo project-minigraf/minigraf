@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "minigraf-ffi", "minigraf-c"]
+members = ["."]
 exclude = ["fuzz"]
 resolver = "2"
 
@@ -95,11 +95,6 @@ strip = "symbols"
 opt-level = "z"
 
 # uniffi-bindgen reads UNIFFI_META symbols from .symtab (not .dynsym).
-# strip = "symbols" removes .symtab from ELF shared libraries on Linux,
-# making symbol extraction silently produce no output.
-# Override strip to "none" for the FFI crate so the symbols remain.
-[profile.release.package.minigraf-ffi]
-strip = "none"
 
 [profile.bench]
 strip = "none"
