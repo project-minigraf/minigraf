@@ -1262,7 +1262,138 @@ $<4097-char-slot-name>
 Query execution errors occur after parsing succeeds, during pattern matching,
 predicate evaluation, or fact transacting.
 
-<!-- entries added in Task 8 -->
+### QRY-001 Invalid entity
+
+**Error text**: `Invalid entity: "not-a-uuid"`
+
+**Cause**: An entity ID in a `transact` fact could not be resolved. Entity IDs must be UUIDs (as `#uuid "..."` tagged literals), existing entity symbols, or values that can be resolved to a UUID at execution time.
+
+**Resolution**:
+- Use a `#uuid "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"` literal for a specific entity.
+- Use a new unique symbol if creating a new entity and let Minigraf assign a UUID.
+
+**Example**:
+```datalog
+(transact [["my-entity" :name "Alice"]])
+```
+*`"my-entity"` is a plain string, not a UUID; use `#uuid "..."` or an entity variable*
+
+### QRY-002 Attribute must be a keyword
+
+**Error text**: `Attribute must be a keyword`
+
+**Cause**: An attribute in a `transact` fact is not a keyword (does not start with `:`). Attributes must always be namespaced keywords.
+
+**Resolution**:
+- Use the `:namespace/attr` form, e.g. `:person/name`, `:app/status`.
+
+**Example**:
+```datalog
+(transact [[#uuid "..." name "Alice"]])
+```
+*`name` is a symbol, not a keyword; use `:name` or `:person/name`*
+
+### QRY-003 Cannot transact a pseudo-attribute
+
+**Error text**: `Cannot transact a pseudo-attribute`
+
+**Cause**: A pseudo-attribute (an internal Minigraf metadata attribute used for system bookkeeping) was used as a fact attribute in `transact`. Pseudo-attributes are reserved and cannot be written by user code.
+
+**Resolution**:
+- Use only user-defined attributes (e.g. `:person/name`, `:app/status`).
+- Avoid attribute names that begin with `db/` or other system namespaces.
+
+**Example**:
+```datalog
+(transact [[#uuid "..." :db/id #uuid "..."]])
+```
+*`:db/id` is a pseudo-attribute; use only user-defined attributes*
+
+### QRY-004 Invalid value
+
+**Error text**: `Invalid value: [1, 2, 3]`
+
+**Cause**: A value in a fact is of a type that Minigraf cannot store. Supported value types are: string, integer (i64), float (f64), boolean, UUID ref (`Value::Ref`), and keyword.
+
+**Resolution**:
+- Convert the value to a supported type.
+- For lists or maps, serialise to a string or model them as separate entities with `:ref` attributes.
+
+**Example**:
+```datalog
+(transact [[#uuid "..." :tags ["a" "b" "c"]]])
+```
+*Vectors are not a valid value type; represent tags as separate facts or a comma-joined string*
+
+### QRY-005 Transaction failed
+
+**Error text**: `Transaction failed: write lock is poisoned`
+
+**Cause**: The batch of facts could not be committed. This is a wrapper error — the nested reason message identifies the root cause, which is typically a storage error, lock poisoning, or WAL write failure.
+
+**Resolution**:
+- Check the nested error message.
+- Common sub-causes are covered by API-001 (lock poisoned) and STG/WAL errors.
+- Restart the process if the database is in an inconsistent state.
+
+**Scenario**: A `transact` call fails because an earlier operation panicked while holding the write lock. The nested message reads "write lock is poisoned".
+
+### QRY-006 Retraction failed
+
+**Error text**: `Retraction failed: fact not found`
+
+**Cause**: A retraction could not be applied. The nested reason message identifies the specific cause — the fact may not exist at the given transaction time, or a storage error occurred.
+
+**Resolution**:
+- Check the nested error message.
+- Verify the entity, attribute, and value exactly match an asserted fact before retracting.
+- A retraction of a non-existent fact is not a no-op — it is an error.
+
+**Scenario**: `(retract [[#uuid "..." :name "alice"]])` fails because no fact `[:name "alice"]` was ever asserted for that entity.
+
+### QRY-007 Unknown predicate
+
+**Error text**: `unknown predicate: 'between?'`
+
+**Cause**: A `:where` clause invoked a predicate (expression function) that is not built-in and has not been registered via `db.register_predicate()`.
+
+**Resolution**:
+- Check spelling against built-in predicates: `=`, `!=`, `<`, `<=`, `>`, `>=`, `matches?`, `starts-with?`, `ends-with?`, `contains?`.
+- Register a custom predicate: `db.register_predicate("between?", |args| { ... })?;`.
+
+**Example**:
+```datalog
+(query {:find [?e]
+        :where [[?e :age ?a]
+                [(between? ?a 18 65)]]})
+```
+*`between?` is not built-in; register it or use `[(>= ?a 18)] [(<= ?a 65)]`*
+
+### QRY-008 Functions lock poisoned
+
+**Error text**: `functions lock poisoned`
+
+**Cause**: An internal Rust mutex guarding the custom function registry was poisoned — a previous operation panicked while holding the lock.
+
+**Resolution**:
+- Restart the process.
+- If panics recur when calling custom registered functions, investigate the function implementations for panics.
+- If this occurs without any custom functions, file a bug.
+
+**Scenario**: `db.register_predicate()` or a query invoking a custom predicate panics; subsequent calls to any query return this error.
+
+### QRY-009 Rules lock poisoned
+
+**Error text**: `rules lock poisoned`
+
+**Cause**: An internal Rust mutex guarding the Datalog rule registry was poisoned — a previous operation panicked while adding or evaluating rules.
+
+**Resolution**:
+- Restart the process.
+- If panics recur when using `(rule ...)` forms, investigate whether the rule input is triggering a bug.
+- File a bug with the rule text if the input appears valid.
+
+**Scenario**: `db.execute("(rule ...)")` panics; subsequent queries that reference rules return this error.
 
 ---
 
