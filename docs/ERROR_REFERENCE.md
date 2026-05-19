@@ -1760,7 +1760,142 @@ The WAL is replayed on open and deleted on checkpoint.
 API errors indicate a violated contract in how the public `Minigraf` or
 `WriteTransaction` API is used.
 
-<!-- entries added in Task 11 -->
+### API-001 Write lock poisoned
+
+**Error text**: `write lock is poisoned; database may be in an inconsistent state`
+
+**Cause**: A previous `WriteTransaction` panicked while holding the write lock. Rust's mutex poisoning mechanism prevents further writes to protect data integrity.
+
+**Resolution**:
+- Restart the process — the WAL will be replayed on the next `Minigraf::open()` call to recover any committed facts. If panics are occurring regularly, investigate the root cause in your application code before retrying writes.
+
+**Scenario**: `db.begin_write()` is called after a previous write closure panicked mid-transaction, poisoning the lock.
+
+### API-002 Unexpected command variant in write path
+
+**Error text**: `unexpected command variant in write path`
+
+**Cause**: An internal routing error — a command type not expected in the write path was dispatched there. This indicates a bug in the Minigraf library, not a user mistake.
+
+**Resolution**:
+- File a bug report with the exact input string that triggered this error.
+
+**Scenario**: A newly added command type was not handled in the write path dispatcher, causing an unexpected variant to arrive.
+
+### API-003 Attribute must be a keyword (API layer)
+
+**Error text**: `attribute must be a keyword`
+
+**Cause**: An attribute validation check in the database API layer (mirroring QRY-002) found a non-keyword attribute. This fires for facts that pass parsing but fail validation at execution time.
+
+**Resolution**:
+- Ensure all attribute names are keywords starting with `:`, e.g. `:person/name`, `:app/status`.
+
+**Example**:
+```rust
+// Wrong — attribute is a plain string
+db.execute("(transact [[#uuid \"...\" \"name\" \"Alice\"]])")?;
+
+// Right
+db.execute("(transact [[#uuid \"...\" :name \"Alice\"]])")?;
+```
+
+### API-004 Cannot transact a pseudo-attribute (API layer)
+
+**Error text**: `cannot transact a pseudo-attribute`
+
+**Cause**: A pseudo-attribute (reserved internal attribute) was used in a `transact` call. This mirrors QRY-003 but fires at the API layer.
+
+**Resolution**:
+- Use only user-defined attributes. Avoid attribute names in system-reserved namespaces such as `db/`.
+
+**Example**:
+```rust
+// Wrong
+db.execute("(transact [[#uuid \"...\" :db/id #uuid \"...\"]])")?;
+
+// Right — use user-defined attributes
+db.execute("(transact [[#uuid \"...\" :person/name \"Alice\"]])")?;
+```
+
+### API-005 Only query commands can be prepared (got transact)
+
+**Error text**: `only (query ...) commands can be prepared; got transact`
+
+**Cause**: `db.prepare()` only accepts `(query ...)` forms. Passing a `(transact ...)` command to `prepare()` is not supported.
+
+**Resolution**:
+- Use `db.execute()` for `transact` commands. Only use `db.prepare()` for `(query ...)` commands that will be executed repeatedly with different bind slot values.
+
+**Example**:
+```rust
+// Wrong
+let pq = db.prepare("(transact [[#uuid \"...\" :name \"Alice\"]])")?;
+
+// Right — use execute() for transact
+db.execute("(transact [[#uuid \"...\" :name \"Alice\"]])")?;
+
+// Right — prepare() is for repeated queries
+let pq = db.prepare("(query {:find [?e] :where [[?e :name $name]]})")?;
+```
+
+### API-006 Only query commands can be prepared (got retract)
+
+**Error text**: `only (query ...) commands can be prepared; got retract`
+
+**Cause**: `db.prepare()` does not accept `(retract ...)` commands.
+
+**Resolution**:
+- Use `db.execute()` for `retract` commands.
+
+**Example**:
+```rust
+// Wrong
+let pq = db.prepare("(retract [[#uuid \"...\" :name \"Alice\"]])")?;
+
+// Right
+db.execute("(retract [[#uuid \"...\" :name \"Alice\"]])")?;
+```
+
+### API-007 Only query commands can be prepared (got rule)
+
+**Error text**: `only (query ...) commands can be prepared; got rule`
+
+**Cause**: `db.prepare()` does not accept `(rule ...)` commands.
+
+**Resolution**:
+- Use `db.execute()` for `rule` commands. Rules are registered once and then available in all subsequent queries — they do not need to be prepared.
+
+**Example**:
+```rust
+// Wrong
+let pq = db.prepare("(rule [(ancestor ?x ?y) [?x :parent ?y]])")?;
+
+// Right
+db.execute("(rule [(ancestor ?x ?y) [?x :parent ?y]])")?;
+```
+
+### API-008 Function registry lock poisoned
+
+**Error text**: `function registry lock poisoned: PoisonError { .. }`
+
+**Cause**: An internal Rust mutex guarding the custom function/predicate registry was poisoned — a previous operation panicked while registering or invoking a custom function.
+
+**Resolution**:
+- Restart the process. If panics recur during `db.register_predicate()` or `db.register_aggregate()` calls, investigate the closure implementations for panics.
+
+**Scenario**: A custom predicate closure registered via `db.register_predicate()` panics during a query, poisoning the function registry mutex.
+
+### API-009 WAL not initialized
+
+**Error text**: `WAL not initialized`
+
+**Cause**: `db.execute()` or `db.checkpoint()` was called in a state where the WAL subsystem has not been initialised. This indicates an internal sequencing bug in the library.
+
+**Resolution**:
+- File a bug report with the sequence of API calls that produced this error.
+
+**Scenario**: A code path in the library called a write operation before the WAL was set up during `Minigraf::open()`.
 
 ---
 
