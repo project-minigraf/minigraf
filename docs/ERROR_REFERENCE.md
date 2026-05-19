@@ -17,7 +17,128 @@ appear in runtime output today — runtime codes are tracked in
 
 | Code | Error (prefix) | Category |
 |------|----------------|----------|
-<!-- filled in Task 12 -->
+| PRS-001 | Unexpected end of input | Parser |
+| PRS-002 | Unexpected character | Parser |
+| PRS-003 | Unexpected token | Parser |
+| PRS-004 | Unclosed vector | Parser |
+| PRS-005 | Unclosed list | Parser |
+| PRS-006 | Unterminated map | Parser |
+| PRS-007 | String exceeds maximum length | Parser |
+| PRS-008 | Keyword exceeds maximum length | Parser |
+| PRS-009 | Tagged literal exceeds maximum length | Parser |
+| PRS-010 | Expected command symbol | Parser |
+| PRS-011 | Unknown command | Parser |
+| PRS-012 | Expected a list starting with command | Parser |
+| PRS-013 | Query requires a map argument | Parser |
+| PRS-014 | :as-of requires a value | Parser |
+| PRS-015 | :as-of counter must be non-negative | Parser |
+| PRS-016 | :as-of must be integer or ISO 8601 | Parser |
+| PRS-017 | :valid-at requires a value | Parser |
+| PRS-018 | :valid-at must be ISO 8601 or :any-valid-time | Parser |
+| PRS-019 | :valid-from must be ISO 8601 | Parser |
+| PRS-020 | :valid-to must be ISO 8601 | Parser |
+| PRS-021 | :with requires aggregate in :find | Parser |
+| PRS-022 | :with variable not bound in :where | Parser |
+| PRS-023 | Aggregate variable not bound in :where | Parser |
+| PRS-024 | Aggregate expression must have 2 elements | Parser |
+| PRS-025 | Aggregate function name must be a symbol | Parser |
+| PRS-026 | Aggregate argument must be a variable | Parser |
+| PRS-027 | Window function requires :over clause | Parser |
+| PRS-028 | Window expression cannot be empty | Parser |
+| PRS-029 | Window function name must be a symbol | Parser |
+| PRS-030 | lag/lead not supported in this version | Parser |
+| PRS-031 | Function is not window-compatible | Parser |
+| PRS-032 | Function requires variable before :over | Parser |
+| PRS-033 | Function requires :over after variable | Parser |
+| PRS-034 | Function requires :over after function name | Parser |
+| PRS-035 | :over must be followed by a list | Parser |
+| PRS-036 | Unexpected tokens after :over clause | Parser |
+| PRS-037 | :partition-by requires a variable | Parser |
+| PRS-038 | :order-by requires a variable | Parser |
+| PRS-039 | Unknown option in :over clause | Parser |
+| PRS-040 | Unexpected element in :over clause | Parser |
+| PRS-041 | Transact requires a vector of facts | Parser |
+| PRS-042 | Transact argument must be a vector | Parser |
+| PRS-043 | Retract requires a vector of facts | Parser |
+| PRS-044 | Retract argument must be a vector | Parser |
+| PRS-045 | Each fact must be a vector [e a v] | Parser |
+| PRS-046 | Fact must have at least 3 elements | Parser |
+| PRS-047 | Optional 4th fact element must be a map | Parser |
+| PRS-048 | Transact with options requires facts vector | Parser |
+| PRS-049 | Unexpected end of fact vector | Parser |
+| PRS-050 | Empty list in :where clause | Parser |
+| PRS-051 | (not) cannot appear inside another (not) | Parser |
+| PRS-052 | (not) requires at least one clause | Parser |
+| PRS-053 | (or) requires at least one branch | Parser |
+| PRS-054 | (or-join) requires join-vars and branch | Parser |
+| PRS-055 | (or-join) first argument must be a vector | Parser |
+| PRS-056 | (or-join) join variables must be logic variables | Parser |
+| PRS-057 | (or) branches must introduce same variables | Parser |
+| PRS-058 | (and) requires at least one clause | Parser |
+| PRS-059 | (not-join) requires join-vars and clause | Parser |
+| PRS-060 | Expected pattern or rule in :where clause | Parser |
+| PRS-061 | Unexpected element in query | Parser |
+| PRS-062 | Expression list cannot be empty | Parser |
+| PRS-063 | Expression head must be a symbol | Parser |
+| PRS-064 | Function takes exactly 1 argument | Parser |
+| PRS-065 | Function takes exactly 2 arguments | Parser |
+| PRS-066 | matches? second argument must be string literal | Parser |
+| PRS-067 | Unknown expression operator | Parser |
+| PRS-068 | Expression clause must be [(expr)] or [(expr) ?out] | Parser |
+| PRS-069 | Expression output must be a ?variable | Parser |
+| PRS-070 | Unsupported expression argument | Parser |
+| PRS-071 | Expected UUID string after #uuid | Parser |
+| PRS-072 | Invalid UUID | Parser |
+| PRS-073 | Unknown tagged literal | Parser |
+| PRS-074 | Bind slot name exceeds maximum length | Parser |
+| QRY-001 | Invalid entity | Query Execution |
+| QRY-002 | Attribute must be a keyword | Query Execution |
+| QRY-003 | Cannot transact a pseudo-attribute | Query Execution |
+| QRY-004 | Invalid value | Query Execution |
+| QRY-005 | Transaction failed | Query Execution |
+| QRY-006 | Retraction failed | Query Execution |
+| QRY-007 | Unknown predicate | Query Execution |
+| QRY-008 | Functions lock poisoned | Query Execution |
+| QRY-009 | Rules lock poisoned | Query Execution |
+| STG-001 | Invalid header: too short | Storage |
+| STG-002 | Invalid magic number: not a .graph file | Storage |
+| STG-003 | Invalid v4/v5/v6 header too short | Storage |
+| STG-004 | Invalid v6 header too short | Storage |
+| STG-005 | Invalid v7 header too short | Storage |
+| STG-006 | Unsupported format version | Storage |
+| STG-007 | page_count must be greater than 0 | Storage |
+| STG-008 | eavt_root_page must be less than page_count | Storage |
+| STG-009 | fact_page_count cannot exceed page_count | Storage |
+| STG-010 | Failed to read header from existing file | Storage |
+| STG-011 | Internal page has no children | Storage |
+| STG-012 | Expected index page at page N | Storage |
+| STG-013 | range_scan expected leaf | Storage |
+| STG-014 | Expected packed page type | Storage |
+| STG-015 | Record extends beyond page boundary | Storage |
+| STG-016 | Backend mutex poisoned | Storage |
+| STG-017 | Page count overflow: index_start | Storage |
+| STG-018 | Page count overflow: next_free | Storage |
+| STG-019 | Page count overflow: new_fact_start | Storage |
+| STG-020 | Fact index exceeds u16::MAX | Storage |
+| STG-021 | Page id overflow in checksum computation | Storage |
+| STG-022 | Page id overflow writing fact pages | Storage |
+| STG-023 | Page index exceeds u64::MAX | Storage |
+| STG-024 | Pending fact count exceeds u64::MAX | Storage |
+| WAL-001 | Invalid WAL magic number | WAL |
+| WAL-002 | Unsupported WAL version | WAL |
+| WAL-003 | Fact serialised size exceeds maximum | WAL |
+| WAL-004 | Fact serialised size exceeds u32 range | WAL |
+| WAL-005 | WAL num_facts exceeds platform usize | WAL |
+| WAL-006 | Failed to delete WAL file | WAL |
+| API-001 | Write lock poisoned | Database API |
+| API-002 | Unexpected command variant in write path | Database API |
+| API-003 | Attribute must be a keyword | Database API |
+| API-004 | Cannot transact a pseudo-attribute | Database API |
+| API-005 | Only query commands can be prepared (transact) | Database API |
+| API-006 | Only query commands can be prepared (retract) | Database API |
+| API-007 | Only query commands can be prepared (rule) | Database API |
+| API-008 | Function registry lock poisoned | Database API |
+| API-009 | WAL not initialized | Database API |
 
 ---
 
