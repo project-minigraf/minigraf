@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `cascade.yml`: publishes `minigraf-ffi` to crates.io and dispatches releases to binding repos on every version tag
 - Publish `minigraf-ffi` to crates.io (previously internal only)
 
+### Documentation
+
+- Add `docs/ERROR_REFERENCE.md`: full inventory of user-facing errors (PRS/QRY/STG/WAL/API categories, 113 entries) with cause, resolution steps, and bad-input examples; docs-only reference codes PRS-001…API-009 (#192)
+
 ## v1.1.1 — 2026-05-17
 
 Patch release. Fixes cargo-dist Windows build failure that prevented REPL binaries and crates.io publish from completing for v1.1.0. No code changes to the library itself.

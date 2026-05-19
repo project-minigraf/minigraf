@@ -1337,7 +1337,7 @@ MinigrafKit-v0.9.0.zip            ← Swift Package Manager checksum source
 - 🎯 Datalog language specification
 - 🎯 Cookbook: common patterns (graph traversal, audit queries, time travel idioms)
 - 🎯 Performance tuning guide
-- 🎯 Error message guide — every user-facing error has a documented cause and resolution
+- ✅ Error message guide — every user-facing error has a documented cause and resolution (#192)
 
 ### 9.3 Integration Examples
 
