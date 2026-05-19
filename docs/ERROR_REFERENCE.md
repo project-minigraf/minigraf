@@ -321,6 +321,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Use `"2024-01-01T00:00:00Z"` format.
+- See the [Datalog Reference — Time Travel](../../.wiki/Datalog-Reference.md#time-travel)
 
 **Example**:
 ```datalog
@@ -337,6 +338,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 **Resolution**:
 - Use `"2024-12-31T23:59:59Z"` format.
 - To express "forever", omit `:valid-to` (the default is `VALID_TIME_FOREVER`).
+- See the [Datalog Reference — Time Travel](../../.wiki/Datalog-Reference.md#time-travel)
 
 **Example**:
 ```datalog
