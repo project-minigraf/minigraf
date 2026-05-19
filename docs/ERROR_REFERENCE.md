@@ -1675,7 +1675,83 @@ See the [file format section in README](../README.md#file-format) for version hi
 WAL errors relate to the sidecar `.wal` file written alongside the `.graph` file.
 The WAL is replayed on open and deleted on checkpoint.
 
-<!-- entries added in Task 10 -->
+### WAL-001 Invalid WAL magic number
+
+**Error text**: `Invalid WAL magic number: not a .wal file`
+
+**Cause**: The sidecar `.wal` file does not start with the expected WAL magic bytes. The file may have been replaced, corrupted, or created by an incompatible tool.
+
+**Resolution**:
+- If the WAL file is stale or corrupt, delete `<dbname>.wal` and reopen the database — Minigraf will replay only from the committed state in the `.graph` file.
+- Do not manually create or edit `.wal` files.
+
+**Scenario**: `my-db.wal` was accidentally replaced with an empty file before `Minigraf::open("my-db.graph")` was called.
+
+### WAL-002 Unsupported WAL version
+
+**Error text**: `Unsupported WAL version: 3 (expected 2)`
+
+**Cause**: The `.wal` file was written by a version of Minigraf with a different WAL format. This can occur when downgrading the library after a WAL was written by a newer version.
+
+**Resolution**:
+- Delete the `.wal` file if it is from an incomplete or stale session (no data is lost — committed facts are in the `.graph` file).
+- If the WAL contains uncommitted in-flight data you need to recover, upgrade the library to the version that wrote the WAL before reopening.
+
+**Scenario**: A `.wal` file written by a pre-release version of Minigraf is opened with the stable release, which uses a different WAL version number.
+
+### WAL-003 Fact serialised size exceeds maximum
+
+**Error text**: `Fact serialised size 524800 bytes exceeds maximum 524288 bytes. Store large payloads externally and reference them with a Value::String URL/path or Value::Ref entity ID.`
+
+**Cause**: A single fact's serialised size exceeds the WAL entry limit (~512 KB). This typically means a `Value::String` attribute value contains very large content such as raw document text, a base64-encoded image, or binary data.
+
+**Resolution**:
+- Store large payloads in an external file or object store.
+- Store the file path or URL as a `Value::String` attribute on the entity.
+- Or create a dedicated entity for the content and reference it with `Value::Ref`.
+- See [BENCHMARKS.md](../BENCHMARKS.md) for size guidance.
+
+**Example**:
+```datalog
+(transact [[#uuid "..." :document/body "<50000-word essay...>"]])
+```
+*The `:document/body` value is too large; store it in a file and use `:document/path` instead*
+
+### WAL-004 Fact serialised size exceeds u32 range
+
+**Error text**: `fact serialised size 4294967297 exceeds u32 range`
+
+**Cause**: The serialised size of a single fact exceeds `u32::MAX` (~4 GB). This is practically unreachable — WAL-003's ~512 KB limit fires first.
+
+**Resolution**:
+- This should not occur under normal operation.
+- If it does, file a bug.
+
+**Scenario**: An extreme edge case where the fact serialisation path bypassed the WAL-003 limit check, producing an impossibly large entry.
+
+### WAL-005 WAL num_facts exceeds platform usize
+
+**Error text**: `WAL num_facts exceeds platform usize`
+
+**Cause**: The number of facts recorded in the WAL header exceeds the platform's `usize` maximum. Practically unreachable on 64-bit platforms.
+
+**Resolution**:
+- This should not occur under normal operation.
+- File a bug.
+
+**Scenario**: A corrupted WAL header field contains a fact count larger than `usize::MAX`, triggering an overflow during replay.
+
+### WAL-006 Failed to delete WAL file
+
+**Error text**: `failed to delete WAL file my-db.wal: permission denied`
+
+**Cause**: After a successful `checkpoint()`, Minigraf could not delete the sidecar `.wal` file. This is typically a file system permissions issue.
+
+**Resolution**:
+- Check that the process has write access to the directory containing the `.graph` file (WAL deletion requires directory write permission, not just file write permission).
+- The `.wal` file is safe to delete manually — Minigraf will create a new one on the next write.
+
+**Scenario**: `db.checkpoint()` succeeds but the process lacks directory write permission, preventing deletion of `my-db.wal`.
 
 ---
 
