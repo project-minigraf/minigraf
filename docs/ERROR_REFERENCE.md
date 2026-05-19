@@ -265,6 +265,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 ```datalog
 (query {:find [?e] :where [[?e :name ?n]] :as-of -1})
 ```
+*`:as-of` accepts non-negative integers (transaction count) or ISO 8601 strings*
 
 ### PRS-016 :as-of must be integer or ISO 8601 string
 
@@ -296,6 +297,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 ```datalog
 (query {:find [?e] :where [[?e :name ?n]] :valid-at})
 ```
+*`:valid-at` requires an ISO 8601 timestamp string or `:any-valid-time`*
 
 ### PRS-018 :valid-at must be ISO 8601 or :any-valid-time
 
@@ -321,7 +323,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Use `"2024-01-01T00:00:00Z"` format.
-- See the [Datalog Reference — Time Travel](../../.wiki/Datalog-Reference.md#time-travel)
+- See the [Datalog Reference — Time Travel](../../.wiki/Datalog-Reference.md#time-travel).
 
 **Example**:
 ```datalog
@@ -338,7 +340,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 **Resolution**:
 - Use `"2024-12-31T23:59:59Z"` format.
 - To express "forever", omit `:valid-to` (the default is `VALID_TIME_FOREVER`).
-- See the [Datalog Reference — Time Travel](../../.wiki/Datalog-Reference.md#time-travel)
+- See the [Datalog Reference — Time Travel](../../.wiki/Datalog-Reference.md#time-travel).
 
 **Example**:
 ```datalog
@@ -509,7 +511,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Remove `lag`/`lead` from the query.
-- Follow [#277](https://github.com/project-minigraf/minigraf/issues/277) for progress on additional window functions.
+- Follow [#182](https://github.com/project-minigraf/minigraf/issues/182) for progress on `lag`/`lead` implementation.
 
 **Example**:
 ```datalog
@@ -707,7 +709,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Error text**: `Transact argument must be a vector of facts`
 
-**Cause**: The argument to `transact` is not a vector. This variant fires on a different call path than PRS-041 but has the same meaning.
+**Cause**: The argument to `transact` is present but is not a vector (e.g. a map or keyword was passed). PRS-041 covers the case where no argument is provided at all.
 
 **Resolution**:
 - Use `(transact [[#uuid "..." :attr value]])`.
@@ -737,7 +739,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Error text**: `Retract argument must be a vector of facts`
 
-**Cause**: The argument to `retract` is not a vector. Same meaning as PRS-043 on a different code path.
+**Cause**: The argument to `retract` is present but is not a vector (e.g. a map or keyword was passed). PRS-043 covers the case where no argument is provided at all.
 
 **Resolution**:
 - Use `(retract [[#uuid "..." :attr value]])`.
@@ -856,7 +858,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 **Example**:
 ```datalog
 (query {:find [?e]
-        :where [(not (not [[?e :active true]]))]})
+        :where [(not (not [?e :active true]))]})
 ```
 *Remove the outer `(not ...)`; match `[?e :active true]` directly*
 
@@ -885,7 +887,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Add at least one branch.
-- See the [Datalog Reference](../../.wiki/Datalog-Reference.md).
+- See the [Datalog Reference](../../.wiki/Datalog-Reference.md#disjunction).
 
 **Example**:
 ```datalog
@@ -902,7 +904,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Use the form `(or-join [?e] [[?e :a 1]] [[?e :b 2]])`.
-- See the [Datalog Reference](../../.wiki/Datalog-Reference.md).
+- See the [Datalog Reference](../../.wiki/Datalog-Reference.md#disjunction).
 
 **Example**:
 ```datalog
@@ -919,7 +921,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - The form is `(or-join [?var1 ?var2] ...)`.
-- See the [Datalog Reference](../../.wiki/Datalog-Reference.md).
+- See the [Datalog Reference](../../.wiki/Datalog-Reference.md#disjunction).
 
 **Example**:
 ```datalog
@@ -936,7 +938,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Use `?variable` not `:keyword` or a string.
-- See the [Datalog Reference](../../.wiki/Datalog-Reference.md).
+- See the [Datalog Reference](../../.wiki/Datalog-Reference.md#disjunction).
 
 **Example**:
 ```datalog
@@ -954,7 +956,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 **Resolution**:
 - Restructure branches so they all bind the same new variables.
 - Or use `or-join` to specify exactly which variables to share.
-- See the [Datalog Reference](../../.wiki/Datalog-Reference.md).
+- See the [Datalog Reference](../../.wiki/Datalog-Reference.md#disjunction).
 
 **Example**:
 ```datalog
@@ -972,7 +974,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Add at least one clause inside `(and ...)`.
-- See the [Datalog Reference](../../.wiki/Datalog-Reference.md).
+- See the [Datalog Reference](../../.wiki/Datalog-Reference.md#disjunction).
 
 **Example**:
 ```datalog
@@ -1127,7 +1129,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Check spelling against the supported operator list above.
-- For missing operators, register a custom function via `db.register_function()`.
+- For missing operators, register a custom predicate via `db.register_predicate()`.
 - See the [Datalog Reference — Expressions](../../.wiki/Datalog-Reference.md#expressions).
 
 **Example**:
@@ -1248,10 +1250,10 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 - Bind slot names should be brief and descriptive, e.g. `$name`, `$entity-id`.
 
 **Example**:
-```rust
-db.prepare("(query {:find [?e] :where [[?e :name $<4097-char-name>]]})")
+```datalog
+$<4097-char-slot-name>
 ```
-*Shorten the bind slot name*
+*Shorten the bind slot name; `$name` is sufficient for most use cases*
 
 ---
 
