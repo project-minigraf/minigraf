@@ -4,13 +4,12 @@
 //! `Fact` internals are `pub(crate)` and unavailable from bench code;
 //! benchmarks use synthetic data to isolate the hot loop.
 //!
-//! `wide` API notes (verified against wide 0.7.33 source):
+//! `wide` API notes (verified against wide 1.x source):
 //!   - `i64x4::new([a, b, c, d])` — construct from array
 //!   - `i64x4::splat(v)` — broadcast scalar to all lanes
-//!   - `a.cmp_gt(b)` — i64x4 mask: all-bits-1 (= -1) where a > b, 0 elsewhere
-//!   - `a.cmp_lt(b)` — i64x4 mask: all-bits-1 where a < b, 0 elsewhere
+//!   - `a.simd_gt(b)` — i64x4 mask: all-bits-1 (= -1) where a > b, 0 elsewhere
 //!   - `!mask` — bitwise NOT (flips -1↔0)
-//!   - `a.move_mask()` — i32 bitmask of sign bits; non-zero lane = matched
+//!   - `a.to_bitmask()` — u32 bitmask of sign bits; non-zero lane = matched
 //!   - `a.to_array()` — extract [i64; 4] lanes
 //!   - `u64x4` (not u64x2) is the 4-wide unsigned-64 type; no move_mask, use to_array
 
@@ -39,13 +38,13 @@ pub fn valid_time_filter_simd(valid_from: &[i64], valid_to: &[i64], ts: i64) -> 
         let vt = i64x4::new([vt0, vt1, vt2, vt3]);
 
         // vf <= ts  ≡  NOT (vf > ts)
-        let lo = !vf.cmp_gt(ts_v);
+        let lo = !vf.simd_gt(ts_v);
         // ts < vt   ≡  vt > ts
-        let hi = vt.cmp_gt(ts_v);
+        let hi = vt.simd_gt(ts_v);
         let mask = lo & hi;
 
-        // move_mask sets bit i if lane i has its sign bit set (i.e. value is -1)
-        count += mask.move_mask().count_ones() as usize;
+        // to_bitmask sets bit i if lane i has its sign bit set (i.e. value is -1)
+        count += mask.to_bitmask().count_ones() as usize;
     }
 
     let rem = (valid_from.len() / 4) * 4;
@@ -76,9 +75,9 @@ pub fn as_of_filter_simd(tx_counts: &[u64], threshold: u64) -> usize {
         let v = u64x4::new([a, b, c, d]);
 
         // tc <= threshold  ≡  NOT (tc > threshold)
-        // cmp_gt gives u64::MAX where true, 0 where false
+        // simd_gt gives u64::MAX where true, 0 where false
         // !mask gives u64::MAX where tc <= threshold, 0 elsewhere
-        let mask = !v.cmp_gt(thr_v);
+        let mask = !v.simd_gt(thr_v);
         let arr: [u64; 4] = mask.to_array();
         count += arr.iter().filter(|&&x| x != 0).count();
     }
