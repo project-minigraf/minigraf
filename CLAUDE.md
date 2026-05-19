@@ -168,7 +168,7 @@ Auto-migrates v1/v2/v3/v4/v5/v6 → v7 on open/checkpoint.
 ## Test Coverage
 
 **962 tests passing** (unit + integration + doc).
-See `TEST_COVERAGE.md` for the full per-file breakdown.
+See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
 
@@ -178,7 +178,7 @@ Phase 8 is complete — v1.0.0 released. Wave 3 Reliability is complete. #231 Re
 
 Wave 5 relevant areas (see `ROADMAP.md` for full spec):
 - `src/query/datalog/` — query executor where profiling hooks will go (#185)
-- `BENCHMARKS.md` — post-1.0 performance baseline updates
+- `docs/BENCHMARKS.md` — post-1.0 performance baseline updates
 
 ## Testing Conventions
 
@@ -213,7 +213,7 @@ Applies to all `#[cfg(test)]` modules and all `tests/*.rs` files.
 5. **Test everything** — no untested code
 6. **Think SQLite** — would SQLite do this?
 7. **Long-term vision** — building for decades
-8. **Sync all docs at phase completion** — when a phase is marked complete, update and cross-check ALL of: `CLAUDE.md` (status line, test count), `ROADMAP.md`, `README.md`, `TEST_COVERAGE.md`, `CHANGELOG.md`. No doc should contradict another.
+8. **Sync all docs at phase completion** — when a phase is marked complete, update and cross-check ALL of: `CLAUDE.md` (status line, test count), `ROADMAP.md`, `README.md`, `docs/TEST_COVERAGE.md`, `CHANGELOG.md`. No doc should contradict another.
    Also update affected wiki pages in `.wiki/`: `Architecture.md` (module/format/model changes), `Datalog-Reference.md` (new syntax), `Comparison.md` (feature matrix), `Use-Cases.md` (deployment targets). Commit and push the wiki repo separately (`cd .wiki && git add -A && git commit -m "..." && git push`).
 9. **Tag every version bump** — after the final doc-sync commit: `git tag -a v<x.y.z> -m "<phase> complete — <summary>"` then `git push origin v<x.y.z>`.
 

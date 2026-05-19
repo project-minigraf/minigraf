@@ -423,8 +423,8 @@ tx.commit()?;  // or tx.rollback()?
 **Benchmark Suite**:
 - ✅ Full Criterion suite run (9 groups; insert, query, time-travel, recursion, open, checkpoint, concurrency)
 - ✅ Memory profiling via heaptrack at 10K / 100K / 1M facts (peak heap 14 MB → 136 MB → 1.33 GB)
-- ✅ `BENCHMARKS.md` — full tables + machine spec + known limitations + reproduction instructions
-- ✅ `README.md` Performance section updated with Phase 6.4b numbers and link to `BENCHMARKS.md`
+- ✅ `docs/BENCHMARKS.md` — full tables + machine spec + known limitations + reproduction instructions
+- ✅ `README.md` Performance section updated with Phase 6.4b numbers and link to `docs/BENCHMARKS.md`
 - ✅ `examples/memory_profile.rs` — heaptrack profiling binary
 
 **Light Publish Prep** (low-risk, no API changes):
@@ -1500,7 +1500,7 @@ Push `Expr` predicate clauses (e.g. `[(> ?age 30)]`) down to filter bindings as 
 ### v0.8.0 - ✅ Phase 6.4b (Criterion Benchmarks + Light Publish Prep)
 - Run existing Criterion suite; validated performance numbers at 10K / 100K / 1M facts
 - Memory profiling via heaptrack
-- `BENCHMARKS.md` with full result tables; "Performance" section in README
+- `docs/BENCHMARKS.md` with full result tables; "Performance" section in README
 - `clap` moved to binary-only dep; `Cargo.toml` metadata completed
 - GitHub Discussions enabled
 
