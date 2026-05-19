@@ -7,7 +7,8 @@ use crate::graph::types::Fact;
 use crate::storage::FACT_PAGE_FORMAT_PACKED;
 use crate::storage::btree::{read_aevt_index, read_avet_index, read_eavt_index, read_vaet_index};
 use crate::storage::btree_v6::{
-    OnDiskIndexReader, btree_entries, build_btree, merge_sorted_vecs, stream_all_entries,
+    MutexStorageBackend, OnDiskIndexReader, btree_entries, build_btree, merge_sorted_vecs,
+    stream_all_entries,
 };
 use crate::storage::cache::PageCache;
 use crate::storage::index::{AevtKey, AvetKey, EavtKey, FactRef, VaetKey, encode_value};
@@ -63,11 +64,12 @@ impl<B: StorageBackend + 'static> crate::storage::CommittedFactReader
         &self,
         fact_ref: crate::storage::index::FactRef,
     ) -> anyhow::Result<crate::graph::types::Fact> {
-        let backend = self
-            .backend
-            .lock()
-            .map_err(|_| anyhow::anyhow!("backend mutex poisoned"))?;
-        let page = self.page_cache.get_or_load(fact_ref.page_id, &*backend)?;
+        // Use MutexStorageBackend so the backend mutex is acquired only when
+        // get_or_load actually needs to read a cold page from disk. On cache
+        // hits get_or_load returns without ever calling read_page, so no lock
+        // is acquired and concurrent readers do not serialize.
+        let adapter = MutexStorageBackend(Arc::clone(&self.backend));
+        let page = self.page_cache.get_or_load(fact_ref.page_id, &adapter)?;
         crate::storage::packed_pages::read_slot(&page, fact_ref.slot_index)
     }
 

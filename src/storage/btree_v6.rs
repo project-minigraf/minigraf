@@ -586,14 +586,12 @@ where
 /// Read-only [`StorageBackend`] adapter that locks `Arc<Mutex<B>>` only for the
 /// duration of a single [`StorageBackend::read_page`] call.
 ///
-/// Used exclusively by [`OnDiskIndexReader::range_scan_*`] so that the backend
-/// mutex is held only while reading one cold page from disk, rather than for the
-/// entire range scan. On a cache hit [`PageCache::get_or_load`] never calls
-/// `read_page`, so no lock is acquired at all. All methods other than `read_page`
-/// are unimplemented and will panic if called.
-// Instantiated inside OnDiskIndexReader::range_scan_* methods.
-#[allow(dead_code)]
-struct MutexStorageBackend<B>(Arc<Mutex<B>>);
+/// Used by [`OnDiskIndexReader::range_scan_*`] and [`crate::storage::persistent_facts`]
+/// so that the backend mutex is held only while reading one cold page from disk,
+/// rather than for the entire operation. On a cache hit [`PageCache::get_or_load`]
+/// never calls `read_page`, so no lock is acquired at all. All methods other than
+/// `read_page` are unimplemented and will panic if called.
+pub(crate) struct MutexStorageBackend<B>(pub(crate) Arc<Mutex<B>>);
 
 impl<B: StorageBackend> StorageBackend for MutexStorageBackend<B> {
     fn read_page(&self, page_id: u64) -> anyhow::Result<Vec<u8>> {
