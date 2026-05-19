@@ -1404,7 +1404,269 @@ indicate a corrupted, truncated, or incompatible database file.
 
 See the [file format section in README](../README.md#file-format) for version history.
 
-<!-- entries added in Task 9 -->
+### STG-001 Invalid header: too short
+
+**Error text**: `Invalid header: too short (got 12 bytes, need 64)`
+
+**Cause**: The `.graph` file is truncated — shorter than the minimum header size. Happens if the file was partially written (e.g. a crash during the initial `save()`) or if a non-Minigraf file was passed by mistake.
+
+**Resolution**:
+- Restore the file from a backup. If no backup exists and the file was newly created, delete it and let Minigraf create a fresh one. See the [file format section in README](../README.md#file-format).
+
+**Scenario**: Opening a `.graph` file that was truncated by a disk-full condition during the first `db.save()` or `db.checkpoint()` call.
+
+### STG-002 Invalid magic number: not a .graph file
+
+**Error text**: `Invalid magic number: not a .graph file`
+
+**Cause**: The first 4 bytes of the file are not the Minigraf magic bytes `MGRF`. The path points to a non-Minigraf file, or the file header was overwritten by another process.
+
+**Resolution**:
+- Verify the file path is correct and points to a `.graph` file created by Minigraf. Do not open SQLite databases, JSON files, or other formats with Minigraf.
+
+**Scenario**: `Minigraf::open("config.json")` — a wrong file path was passed.
+
+### STG-003 Invalid v4/v5/v6 header too short
+
+**Error text**: `Invalid v4/v5/v6 header: expected at least 72 bytes, got 40`
+
+**Cause**: A file identified as format version 4, 5, or 6 is too short to hold a valid header of that version. The file is truncated at the header.
+
+**Resolution**:
+- Restore from backup. If the file is newly created, delete it. See the [file format section in README](../README.md#file-format).
+
+**Scenario**: A v5-format `.graph` file was corrupted by a partial write and is missing the latter part of its header.
+
+### STG-004 Invalid v6 header too short
+
+**Error text**: `Invalid v6 header: expected 80 bytes, got 64`
+
+**Cause**: A file identified as format version 6 is shorter than the required 80-byte v6 header. The file is truncated.
+
+**Resolution**:
+- Restore from backup. If the file is newly created, delete it. See the [file format section in README](../README.md#file-format).
+
+**Scenario**: A v6-format `.graph` file was written by an older pre-release version and its header is incomplete.
+
+### STG-005 Invalid v7 header too short
+
+**Error text**: `Invalid v7 header: expected 84 bytes, got 80`
+
+**Cause**: A file identified as format version 7 (current format) is shorter than the required 84-byte header. The file is truncated.
+
+**Resolution**:
+- Restore from backup. If the file is newly created, delete it. See the [file format section in README](../README.md#file-format).
+
+**Scenario**: A v7-format `.graph` file was partially written by a crash during header initialisation.
+
+### STG-006 Unsupported format version
+
+**Error text**: `Unsupported format version: 8 (supported: 1-7)`
+
+**Cause**: The file was written by a newer version of Minigraf than is currently installed. The format version number in the header is outside the range this library can read.
+
+**Resolution**:
+- Upgrade the Minigraf library to a version that supports the file's format. Do not downgrade a database file to an older format — upgrade the library instead. See the [file format section in README](../README.md#file-format).
+
+**Scenario**: A `.graph` file created with a future version of Minigraf is opened with the current library.
+
+### STG-007 page_count must be greater than 0
+
+**Error text**: `page_count must be greater than 0`
+
+**Cause**: The `page_count` field in the file header is zero, which is invalid for any non-empty database.
+
+**Resolution**:
+- The file header is corrupted. Restore from backup. See the [file format section in README](../README.md#file-format).
+
+**Scenario**: The header page of a `.graph` file was zeroed out by a storage hardware error.
+
+### STG-008 eavt_root_page must be less than page_count
+
+**Error text**: `eavt_root_page (500) must be less than page_count (100)`
+
+**Cause**: The EAVT B+tree root page index in the header points beyond the file's page count. The header is internally inconsistent — a sign of file corruption.
+
+**Resolution**:
+- Restore from backup. See the [file format section in README](../README.md#file-format).
+
+**Scenario**: Partial overwrite of the header during an interrupted `checkpoint()` left the root page pointer pointing past the end of the file.
+
+### STG-009 fact_page_count cannot exceed page_count
+
+**Error text**: `fact_page_count (200) cannot exceed page_count (100)`
+
+**Cause**: The fact page count in the header is larger than the total page count. The header is internally inconsistent.
+
+**Resolution**:
+- Restore from backup. See the [file format section in README](../README.md#file-format).
+
+**Scenario**: Bit-flip corruption in the header fact_page_count field produced an out-of-range value.
+
+### STG-010 Failed to read header from existing file
+
+**Error text**: `Failed to read header from existing file: permission denied`
+
+**Cause**: A low-level I/O error prevented reading the file header. Common causes: file permissions, file moved or deleted between open and read, disk I/O error.
+
+**Resolution**:
+- Check file system permissions (the process must have read access). Verify the file path still exists. Check for disk errors with your OS's filesystem check tool.
+
+**Scenario**: `Minigraf::open("/data/app.graph")` fails because the process does not have read permission on the file.
+
+### STG-011 Internal page has no children
+
+**Error text**: `internal page has no children`
+
+**Cause**: An internal B+tree page was found with an empty children list, which violates B+tree invariants. This indicates index corruption.
+
+**Resolution**:
+- Restore from backup. If the corruption occurred after a recent write, the WAL file may contain a recoverable state — delete the `.graph` file and try opening from the WAL only (by restoring the last good checkpoint and replaying the WAL). See the [file format section in README](../README.md#file-format).
+
+**Scenario**: A crash mid-checkpoint left an internal B+tree page in an inconsistent state.
+
+### STG-012 Expected index page at page N
+
+**Error text**: `Expected index page at page 42`
+
+**Cause**: The B+tree traversal expected an index page at a specific page number, but the page found has a different type tag. This indicates index corruption or file truncation.
+
+**Resolution**:
+- Restore from backup. See the [file format section in README](../README.md#file-format).
+
+**Scenario**: A packed-fact page and an index page were written to overlapping positions due to a page allocation bug in a pre-release version.
+
+### STG-013 range_scan expected leaf
+
+**Error text**: `range_scan: expected leaf at page_id=87`
+
+**Cause**: A range scan of the B+tree expected a leaf page at a given position but found a non-leaf page. Indicates corruption of the B+tree structure.
+
+**Resolution**:
+- Restore from backup. See the [file format section in README](../README.md#file-format).
+
+**Scenario**: A partial checkpoint left the B+tree leaf and internal pages inconsistent.
+
+### STG-014 Expected packed page type
+
+**Error text**: `Expected packed page (0x02), got 0x01`
+
+**Cause**: A page expected to contain packed facts has a different page type tag. Indicates that the page layout in the file does not match the header's page allocation records.
+
+**Resolution**:
+- Restore from backup. See the [file format section in README](../README.md#file-format).
+
+**Scenario**: A fact page and an index page swapped positions in the file due to a storage driver bug.
+
+### STG-015 Record extends beyond page boundary
+
+**Error text**: `Record at slot 14 extends beyond page boundary`
+
+**Cause**: A fact record at the given slot in a packed-facts page extends past the 4KB page boundary. This indicates corruption of the page's internal offset table.
+
+**Resolution**:
+- Restore from backup. See the [file format section in README](../README.md#file-format).
+
+**Scenario**: A disk write was interrupted, leaving a partial fact page with a corrupt slot table.
+
+### STG-016 Backend mutex poisoned
+
+**Error text**: `backend mutex poisoned`
+
+**Cause**: An internal Rust mutex guarding the storage backend was poisoned — a previous operation panicked while holding it.
+
+**Resolution**:
+- Restart the process. The WAL will be replayed on the next `Minigraf::open()` to recover committed facts. If panics recur, investigate the application code for panics occurring inside write operations.
+
+**Scenario**: A write closure panics mid-transaction, poisoning the backend mutex and preventing all subsequent reads and writes.
+
+### STG-017 Page count overflow: index_start
+
+**Error text**: `page count overflow computing index_start`
+
+**Cause**: Computing the starting page of the index section caused an integer overflow in the page count. This occurs only if the database has grown to an extreme size (billions of pages) or if the page count field in the header is corrupted.
+
+**Resolution**:
+- If the database file size is normal (under several terabytes), the header is likely corrupted — restore from backup. If the file is genuinely enormous, file a bug with the database size.
+
+**Scenario**: The `page_count` header field was corrupted to `u64::MAX`, causing an overflow when computing derived positions.
+
+### STG-018 Page count overflow: next_free
+
+**Error text**: `page count overflow computing next_free`
+
+**Cause**: Computing the next free page position caused an integer overflow. Same root cause as STG-017 — extreme database size or corrupted header.
+
+**Resolution**:
+- Same as STG-017. Restore from backup if the database size is normal.
+
+**Scenario**: Same as STG-017.
+
+### STG-019 Page count overflow: new_fact_start
+
+**Error text**: `page count overflow computing new_fact_start`
+
+**Cause**: Computing the starting position for new fact pages caused an integer overflow. Same root cause as STG-017.
+
+**Resolution**:
+- Same as STG-017. Restore from backup if the database size is normal.
+
+**Scenario**: Same as STG-017.
+
+### STG-020 Fact index exceeds u16::MAX
+
+**Error text**: `fact index 65536 exceeds u16::MAX`
+
+**Cause**: The number of facts on a single packed page exceeded 65535 (u16::MAX). This is a theoretical limit that should not be reached in practice — a single 4KB page holds roughly 20–30 facts.
+
+**Resolution**:
+- This should not occur under normal operation. If it does, file a bug with the fact serialisation size of the triggering fact.
+
+**Scenario**: A bug in the page packer caused more facts to be written to a single page than the slot index can represent.
+
+### STG-021 Page id overflow in checksum computation
+
+**Error text**: `page id overflow in checksum computation`
+
+**Cause**: A page ID exceeded the range that can be represented during checksum computation. Indicates an extremely large database or a corrupted page count.
+
+**Resolution**:
+- If the database file is unexpectedly large, file a bug. Otherwise restore from backup.
+
+**Scenario**: Same as STG-017 — corrupted `page_count` triggers overflow during the checksum phase.
+
+### STG-022 Page id overflow writing fact pages
+
+**Error text**: `page id overflow writing fact pages`
+
+**Cause**: A page ID exceeded the representable range when writing fact pages during a checkpoint. Indicates an extremely large database or corrupted header state.
+
+**Resolution**:
+- Same as STG-021. Restore from backup if the database size is normal.
+
+**Scenario**: Same as STG-017.
+
+### STG-023 Page index exceeds u64::MAX
+
+**Error text**: `page index 18446744073709551616 exceeds u64::MAX`
+
+**Cause**: A page index computation produced a value larger than u64::MAX. This is practically unreachable — would require a database with more pages than u64 can represent.
+
+**Resolution**:
+- This should never occur under normal operation. File a bug.
+
+**Scenario**: An extreme edge case in page count arithmetic triggered an overflow that wrapped past u64::MAX.
+
+### STG-024 Pending fact count exceeds u64::MAX
+
+**Error text**: `pending fact count exceeds u64::MAX`
+
+**Cause**: The number of pending (unflushed) facts in the WAL exceeded u64::MAX. Practically unreachable.
+
+**Resolution**:
+- This should never occur under normal operation. File a bug.
+
+**Scenario**: An extremely long-running write session accumulated more unflushed facts than u64 can count.
 
 ---
 
