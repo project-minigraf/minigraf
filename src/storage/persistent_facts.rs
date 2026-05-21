@@ -73,7 +73,9 @@ impl<B: StorageBackend + 'static> crate::storage::CommittedFactReader
     ) -> anyhow::Result<crate::graph::types::Fact> {
         // backend_adapter is pre-built at construction time — no Arc::clone per call.
         // Backend mutex is only acquired inside adapter.read_page() on a cache miss.
-        let page = self.page_cache.get_or_load(fact_ref.page_id, &self.backend_adapter)?;
+        let page = self
+            .page_cache
+            .get_or_load(fact_ref.page_id, &self.backend_adapter)?;
         crate::storage::packed_pages::read_slot(&page, fact_ref.slot_index)
     }
 
