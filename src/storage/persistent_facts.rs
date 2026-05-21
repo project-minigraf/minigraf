@@ -46,12 +46,19 @@ fn compute_index_checksum(facts: &[Fact]) -> u32 {
 /// Resolves FactRefs to Fact objects by reading packed pages from the backend
 /// through the page cache. Used after loading (or migrating) a v5/v6 file so that indexes can
 /// resolve committed facts without keeping the entire fact list in memory.
-// page_cache is read in the CommittedFactReader::resolve impl; Rust's dead-code
-// lint does not track trait-impl field reads when the impl is behind dyn dispatch.
+// Fields are read inside CommittedFactReader trait methods that are accessed via
+// dyn dispatch — Rust's dead-code lint does not track trait-impl field reads
+// when the impl is behind dyn dispatch.
 struct CommittedFactLoaderImpl<B: StorageBackend> {
+    #[allow(dead_code)]
     backend: Arc<Mutex<B>>,
     #[allow(dead_code)]
     page_cache: Arc<PageCache>,
+    /// Pre-built adapter reused on every `resolve()` call.
+    /// Avoids an `Arc::clone` per call: the adapter is constructed once and
+    /// holds the `Arc<Mutex<B>>` for the lifetime of this reader.
+    /// Backend mutex is still only acquired on cache misses (see `MutexStorageBackend`).
+    backend_adapter: MutexStorageBackend<B>,
     committed_fact_pages: Arc<AtomicU64>,
     #[allow(dead_code)]
     first_fact_page: u64, // always 1 in current layout
@@ -64,12 +71,9 @@ impl<B: StorageBackend + 'static> crate::storage::CommittedFactReader
         &self,
         fact_ref: crate::storage::index::FactRef,
     ) -> anyhow::Result<crate::graph::types::Fact> {
-        // Use MutexStorageBackend so the backend mutex is acquired only when
-        // get_or_load actually needs to read a cold page from disk. On cache
-        // hits get_or_load returns without ever calling read_page, so no lock
-        // is acquired and concurrent readers do not serialize.
-        let adapter = MutexStorageBackend(Arc::clone(&self.backend));
-        let page = self.page_cache.get_or_load(fact_ref.page_id, &adapter)?;
+        // backend_adapter is pre-built at construction time — no Arc::clone per call.
+        // Backend mutex is only acquired inside adapter.read_page() on a cache miss.
+        let page = self.page_cache.get_or_load(fact_ref.page_id, &self.backend_adapter)?;
         crate::storage::packed_pages::read_slot(&page, fact_ref.slot_index)
     }
 
@@ -295,6 +299,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let loader: std::sync::Arc<dyn crate::storage::CommittedFactReader> =
             std::sync::Arc::new(CommittedFactLoaderImpl {
                 backend: self.backend.clone(),
+                backend_adapter: MutexStorageBackend(self.backend.clone()),
                 page_cache: self.page_cache.clone(),
                 committed_fact_pages: self.committed_fact_pages.clone(),
                 first_fact_page: 1,
@@ -781,6 +786,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let loader: Arc<dyn crate::storage::CommittedFactReader> =
             Arc::new(CommittedFactLoaderImpl {
                 backend: self.backend.clone(),
+                backend_adapter: MutexStorageBackend(self.backend.clone()),
                 page_cache: self.page_cache.clone(),
                 committed_fact_pages: self.committed_fact_pages.clone(),
                 first_fact_page: 1,
@@ -990,6 +996,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let loader: Arc<dyn crate::storage::CommittedFactReader> =
             Arc::new(CommittedFactLoaderImpl {
                 backend: self.backend.clone(),
+                backend_adapter: MutexStorageBackend(self.backend.clone()),
                 page_cache: self.page_cache.clone(),
                 committed_fact_pages: self.committed_fact_pages.clone(),
                 first_fact_page: 1,
