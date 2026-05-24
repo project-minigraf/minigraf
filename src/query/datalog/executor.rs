@@ -369,11 +369,12 @@ impl DatalogExecutor {
 
     /// Attempt a selective index-backed fact fetch for the given patterns.
     ///
-    /// Inspects `patterns` for bound entity literals (UUID or keyword → deterministic UUID)
-    /// and bound attribute keywords. If the total distinct lookup count is 0 (nothing bound)
-    /// or exceeds `threshold` (too many — full scan is cheaper), returns `None`.
-    /// Otherwise returns `Some(facts)` — the union of all selectively fetched facts,
-    /// deduplicated by `(entity, attribute, tx_count)`.
+    /// For each pattern, prefer a bound entity literal (UUID or keyword -> deterministic UUID)
+    /// over a bound attribute keyword for that same pattern. Entity lookups are usually more
+    /// selective, but multi-pattern joins still need attribute candidates for patterns that do not
+    /// bind an entity. If any pattern has neither a bound entity nor a bound attribute, or if the
+    /// distinct lookup count exceeds `threshold`, returns `None` to use a full scan. Otherwise
+    /// returns `Some(facts)`, deduplicated by `(entity, attribute, tx_count)`.
     fn selective_fact_fetch(&self, patterns: &[Pattern], threshold: usize) -> Option<Vec<Fact>> {
         use std::collections::HashSet;
 
@@ -381,21 +382,21 @@ impl DatalogExecutor {
         let mut attributes: HashSet<String> = HashSet::new();
 
         for pattern in patterns {
-            // Bound entity: UUID literal or keyword that resolves deterministically
-            match &pattern.entity {
-                EdnValue::Uuid(u) => {
-                    entity_ids.insert(*u);
-                }
-                EdnValue::Keyword(_) => {
-                    if let Ok(uid) = edn_to_entity_id(&pattern.entity) {
-                        entity_ids.insert(uid);
-                    }
-                }
-                _ => {}
+            let bound_entity = match &pattern.entity {
+                EdnValue::Uuid(u) => Some(*u),
+                EdnValue::Keyword(_) => edn_to_entity_id(&pattern.entity).ok(),
+                _ => None,
+            };
+
+            if let Some(uid) = bound_entity {
+                entity_ids.insert(uid);
+                continue;
             }
-            // Bound attribute: non-variable keyword
+
             if let AttributeSpec::Real(EdnValue::Keyword(attr)) = &pattern.attribute {
                 attributes.insert(attr.clone());
+            } else {
+                return None;
             }
         }
 
@@ -3798,6 +3799,33 @@ mod tests {
             "only open-ended fact visible at t=3000"
         );
         assert_eq!(facts_outside[0].attribute, ":person/name");
+    }
+
+    #[test]
+    fn test_selective_fetch_prefers_bound_entity_over_attribute_scan() {
+        let storage = FactStorage::new();
+        let executor = DatalogExecutor::new(storage);
+
+        let mut cmd = String::from(r#"(transact [[:e0 :val 0][:e0 :name "entity0"]"#);
+        for i in 1..=20 {
+            cmd.push_str(&format!("[:e{i} :val {i}]"));
+        }
+        cmd.push_str("])");
+        executor.execute(parse_datalog_command(&cmd).unwrap()).unwrap();
+
+        let query = match parse_datalog_command("(query [:find ?v :where [:e0 :val ?v]])")
+            .unwrap()
+        {
+            DatalogCommand::Query(query) => query,
+            _ => panic!("expected query"),
+        };
+
+        let facts = executor.filter_facts_for_query(&query).unwrap();
+        assert_eq!(
+            facts.len(),
+            2,
+            "bound entity + attribute query should fetch only the bound entity's facts"
+        );
     }
 }
 
