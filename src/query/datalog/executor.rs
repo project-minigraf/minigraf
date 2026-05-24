@@ -3811,10 +3811,11 @@ mod tests {
             cmd.push_str(&format!("[:e{i} :val {i}]"));
         }
         cmd.push_str("])");
-        executor.execute(parse_datalog_command(&cmd).unwrap()).unwrap();
+        executor
+            .execute(parse_datalog_command(&cmd).unwrap())
+            .unwrap();
 
-        let query = match parse_datalog_command("(query [:find ?v :where [:e0 :val ?v]])")
-            .unwrap()
+        let query = match parse_datalog_command("(query [:find ?v :where [:e0 :val ?v]])").unwrap()
         {
             DatalogCommand::Query(query) => query,
             _ => panic!("expected query"),
