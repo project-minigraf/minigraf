@@ -416,7 +416,12 @@ impl DatalogExecutor {
             match self.storage.get_facts_by_entity(uid) {
                 Ok(facts) => {
                     for fact in facts {
-                        let key = (fact.entity, fact.attribute.clone(), fact.tx_count, fact.asserted);
+                        let key = (
+                            fact.entity,
+                            fact.attribute.clone(),
+                            fact.tx_count,
+                            fact.asserted,
+                        );
                         if seen.insert(key) {
                             all_facts.push(fact);
                         }
@@ -430,7 +435,12 @@ impl DatalogExecutor {
             match self.storage.get_facts_by_attribute(attr) {
                 Ok(facts) => {
                     for fact in facts {
-                        let key = (fact.entity, fact.attribute.clone(), fact.tx_count, fact.asserted);
+                        let key = (
+                            fact.entity,
+                            fact.attribute.clone(),
+                            fact.tx_count,
+                            fact.asserted,
+                        );
                         if seen.insert(key) {
                             all_facts.push(fact);
                         }
