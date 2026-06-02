@@ -122,6 +122,36 @@ fn test_retraction_rule_as_of_before_sees_fact() {
     );
 }
 
+// ── Test 7: Atomic retract+transact in WriteTransaction (issue #285) ─────────
+// When both a retraction and a new assertion share the same tx_count (because they
+// are committed together), selective_fact_fetch must not drop the assertion due to
+// dedup on (entity, attribute, tx_count).
+
+#[test]
+fn test_write_transaction_retract_and_transact_same_attr_query_sees_new_value() {
+    let db = Minigraf::in_memory().unwrap();
+
+    db.execute("(transact [[:order-42 :fsm/state :awaiting-payment]])")
+        .unwrap();
+
+    let mut tx = db.begin_write().unwrap();
+    tx.execute("(retract [[:order-42 :fsm/state :awaiting-payment]])")
+        .unwrap();
+    tx.execute("(transact [[:order-42 :fsm/state :paid]])")
+        .unwrap();
+    tx.commit().unwrap();
+
+    let result = db
+        .execute("(query [:find ?order ?state :where [?order :fsm/state ?state]])")
+        .unwrap();
+    match result {
+        minigraf::QueryResult::QueryResults { results, .. } => {
+            assert_eq!(results.len(), 1, "expected exactly one result row");
+        }
+        _ => panic!("expected QueryResults"),
+    }
+}
+
 // ── Test 6: Retraction + recursive rule — as-of after retraction ──────────────
 
 #[test]

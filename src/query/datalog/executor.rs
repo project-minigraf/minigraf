@@ -374,7 +374,7 @@ impl DatalogExecutor {
     /// selective, but multi-pattern joins still need attribute candidates for patterns that do not
     /// bind an entity. If any pattern has neither a bound entity nor a bound attribute, or if the
     /// distinct lookup count exceeds `threshold`, returns `None` to use a full scan. Otherwise
-    /// returns `Some(facts)`, deduplicated by `(entity, attribute, tx_count)`.
+    /// returns `Some(facts)`, deduplicated by `(entity, attribute, tx_count, asserted)`.
     fn selective_fact_fetch(&self, patterns: &[Pattern], threshold: usize) -> Option<Vec<Fact>> {
         use std::collections::HashSet;
 
@@ -405,15 +405,18 @@ impl DatalogExecutor {
             return None;
         }
 
-        // Dedup key: (entity uuid, attribute string, tx_count) — avoids Value debug formatting.
-        let mut seen: HashSet<(uuid::Uuid, String, u64)> = HashSet::new();
+        // Dedup key: (entity uuid, attribute string, tx_count, asserted) — avoids Value debug
+        // formatting. Including `asserted` ensures that a retraction and an assertion committed in
+        // the same WriteTransaction (same tx_count) are both retained, since they differ only by
+        // the `asserted` flag.
+        let mut seen: HashSet<(uuid::Uuid, String, u64, bool)> = HashSet::new();
         let mut all_facts: Vec<Fact> = Vec::new();
 
         for uid in &entity_ids {
             match self.storage.get_facts_by_entity(uid) {
                 Ok(facts) => {
                     for fact in facts {
-                        let key = (fact.entity, fact.attribute.clone(), fact.tx_count);
+                        let key = (fact.entity, fact.attribute.clone(), fact.tx_count, fact.asserted);
                         if seen.insert(key) {
                             all_facts.push(fact);
                         }
@@ -427,7 +430,7 @@ impl DatalogExecutor {
             match self.storage.get_facts_by_attribute(attr) {
                 Ok(facts) => {
                     for fact in facts {
-                        let key = (fact.entity, fact.attribute.clone(), fact.tx_count);
+                        let key = (fact.entity, fact.attribute.clone(), fact.tx_count, fact.asserted);
                         if seen.insert(key) {
                             all_facts.push(fact);
                         }
