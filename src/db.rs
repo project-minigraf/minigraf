@@ -69,7 +69,7 @@ pub struct OpenOptions {
     /// Number of pages to hold in the LRU page cache. Default: 256 (= 1MB at 4KB pages).
     pub page_cache_size: usize,
     /// Maximum facts that can be derived per recursive rule iteration.
-    /// Defaults to 100_000. Use to prevent runaway recursive rules.
+    /// Defaults to 1_000_000. Use to prevent runaway recursive rules.
     pub max_derived_facts: usize,
     /// Maximum total query results. Defaults to 1_000_000.
     pub max_results: usize,
@@ -102,8 +102,9 @@ impl OpenOptions {
 
     /// Set the maximum facts that can be derived per recursive rule iteration.
     ///
-    /// Defaults to 100_000. Use lower values to prevent runaway recursive rules
-    /// from consuming excessive memory.
+    /// Defaults to 1_000_000. Use lower values to prevent runaway recursive rules
+    /// from consuming excessive memory. Can be overridden per-query using
+    /// `:max-derived-facts N` in the query vector.
     pub fn max_derived_facts(mut self, n: usize) -> Self {
         self.max_derived_facts = n;
         self
