@@ -930,14 +930,18 @@ impl DatalogExecutor {
             filtered_storage.load_fact(fact)?;
         }
 
+        // Compute effective limits: per-query override takes precedence over executor default.
+        let effective_max_derived = query.max_derived_facts.unwrap_or(self.max_derived_facts);
+        let effective_max_results = query.max_results.unwrap_or(self.max_results);
+
         // Create StratifiedEvaluator — handles negation, stratification, and positive-only rules
         let evaluator = StratifiedEvaluator::new(
             filtered_storage,
             self.rules.clone(),
             self.functions.clone(),
             1000, // max iterations
-            self.max_derived_facts,
-            self.max_results,
+            effective_max_derived,
+            effective_max_results,
         );
 
         let derived_storage = evaluator.evaluate(&predicates)?;
@@ -2342,6 +2346,9 @@ mod tests {
     use super::*;
     use crate::query::datalog::parser::parse_datalog_command;
     use crate::query::datalog::types::WhereClause;
+    use crate::query::datalog::rules::RuleRegistry;
+    use crate::query::datalog::functions::FunctionRegistry;
+    use std::sync::{Arc, RwLock};
     use uuid::Uuid;
 
     #[test]
@@ -3850,6 +3857,71 @@ mod tests {
             2,
             "bound entity + attribute query should fetch only the bound entity's facts"
         );
+    }
+
+    #[test]
+    fn test_per_query_max_derived_facts_overrides_executor_default() {
+        let storage = FactStorage::new();
+        let rules = Arc::new(RwLock::new(RuleRegistry::new()));
+        let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
+        let mut executor = DatalogExecutor::new_with_rules_and_functions(
+            storage,
+            rules.clone(),
+            functions.clone(),
+        );
+        executor.set_limits(1_000_000, 1_000_000);
+
+        executor.execute(parse_datalog_command(
+            r#"(rule [(reachable ?x ?y) [?x :edge ?y]])"#
+        ).unwrap()).unwrap();
+        executor.execute(parse_datalog_command(
+            r#"(rule [(reachable ?x ?z) [?x :edge ?y] (reachable ?y ?z)])"#
+        ).unwrap()).unwrap();
+        executor.execute(parse_datalog_command(
+            r#"(transact [[:a :edge :b] [:b :edge :c]])"#
+        ).unwrap()).unwrap();
+
+        // Per-query limit of 1 — too tight, must fail
+        let result = executor.execute(parse_datalog_command(
+            "(query [:find ?x ?y :where (reachable ?x ?y) :max-derived-facts 1])"
+        ).unwrap());
+        assert!(result.is_err(), "per-query limit of 1 should fail");
+
+        // Per-query limit of 1M — should succeed
+        let result = executor.execute(parse_datalog_command(
+            "(query [:find ?x ?y :where (reachable ?x ?y) :max-derived-facts 1000000])"
+        ).unwrap());
+        assert!(result.is_ok(), "per-query limit of 1M should succeed");
+    }
+
+    #[test]
+    fn test_per_query_limit_does_not_bleed_into_next_query() {
+        let storage = FactStorage::new();
+        let rules = Arc::new(RwLock::new(RuleRegistry::new()));
+        let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
+        let executor = DatalogExecutor::new_with_rules_and_functions(
+            storage,
+            rules.clone(),
+            functions.clone(),
+        );
+
+        executor.execute(parse_datalog_command(
+            r#"(rule [(reachable ?x ?y) [?x :edge ?y]])"#
+        ).unwrap()).unwrap();
+        executor.execute(parse_datalog_command(
+            r#"(transact [[:a :edge :b]])"#
+        ).unwrap()).unwrap();
+
+        // First query: tight limit, expect failure (ignore result)
+        let _ = executor.execute(parse_datalog_command(
+            "(query [:find ?x ?y :where (reachable ?x ?y) :max-derived-facts 1])"
+        ).unwrap());
+
+        // Second query: no per-query limit — must use executor default (1M) and succeed
+        let result = executor.execute(parse_datalog_command(
+            "(query [:find ?x ?y :where (reachable ?x ?y)])"
+        ).unwrap());
+        assert!(result.is_ok(), "next query should not inherit the tight per-query limit");
     }
 }
 
