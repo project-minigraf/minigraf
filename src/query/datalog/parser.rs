@@ -810,7 +810,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                         EdnValue::Integer(_) => {
                             return Err(":max-derived-facts must be >= 1".to_string());
                         }
-                        other => {
+                        _other => {
                             return Err(":max-derived-facts must be a positive integer".to_string());
                         }
                     }
@@ -832,7 +832,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                         EdnValue::Integer(_) => {
                             return Err(":max-results must be >= 1".to_string());
                         }
-                        other => {
+                        _other => {
                             return Err(":max-results must be a positive integer".to_string());
                         }
                     }
