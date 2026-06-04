@@ -1,6 +1,7 @@
 pub mod evaluator;
 pub mod executor;
 pub mod functions;
+pub(crate) mod magic_sets;
 pub mod matcher;
 pub mod optimizer;
 pub mod parser;

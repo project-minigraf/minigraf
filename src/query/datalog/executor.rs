@@ -934,10 +934,30 @@ impl DatalogExecutor {
         let effective_max_derived = query.max_derived_facts.unwrap_or(self.max_derived_facts);
         let effective_max_results = query.max_results.unwrap_or(self.max_results);
 
+        // Apply magic sets rewriting for demand-driven recursive evaluation.
+        // Returns None for all-free queries — zero overhead path.
+        let rewritten = {
+            let reg = self
+                .rules
+                .read()
+                .map_err(|_| anyhow!("rule registry lock poisoned"))?;
+            crate::query::datalog::magic_sets::rewrite(&query, &reg)
+        };
+        let (eval_rules, seed_facts) = match rewritten {
+            Some((rewritten_registry, seeds)) => (Arc::new(RwLock::new(rewritten_registry)), seeds),
+            None => (self.rules.clone(), vec![]),
+        };
+        for (entity, attribute, value) in seed_facts {
+            // tx_id=0 is intentional: magic seed facts are synthetic EAV triples that carry
+            // no temporal semantics. They are inserted after temporal filtering has completed,
+            // so they never participate in valid-time or tx-time queries.
+            filtered_storage.load_fact(Fact::new(entity, attribute, value, 0))?;
+        }
+
         // Create StratifiedEvaluator — handles negation, stratification, and positive-only rules
         let evaluator = StratifiedEvaluator::new(
             filtered_storage,
-            self.rules.clone(),
+            eval_rules,
             self.functions.clone(),
             1000, // max iterations
             effective_max_derived,
