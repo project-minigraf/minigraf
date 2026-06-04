@@ -69,7 +69,7 @@ pub struct OpenOptions {
     /// Number of pages to hold in the LRU page cache. Default: 256 (= 1MB at 4KB pages).
     pub page_cache_size: usize,
     /// Maximum facts that can be derived per recursive rule iteration.
-    /// Defaults to 100_000. Use to prevent runaway recursive rules.
+    /// Defaults to 1_000_000. Use to prevent runaway recursive rules.
     pub max_derived_facts: usize,
     /// Maximum total query results. Defaults to 1_000_000.
     pub max_results: usize,
@@ -102,8 +102,9 @@ impl OpenOptions {
 
     /// Set the maximum facts that can be derived per recursive rule iteration.
     ///
-    /// Defaults to 100_000. Use lower values to prevent runaway recursive rules
-    /// from consuming excessive memory.
+    /// Defaults to 1_000_000. Use lower values to prevent runaway recursive rules
+    /// from consuming excessive memory. Can be overridden per-query using
+    /// `:max-derived-facts N` in the query vector.
     pub fn max_derived_facts(mut self, n: usize) -> Self {
         self.max_derived_facts = n;
         self
@@ -1807,6 +1808,52 @@ mod tests {
 
         let result = db_high.execute("(query [:find ?to :where (reachable :a ?to)])");
         assert!(result.is_ok(), "Query should succeed with higher limit");
+    }
+
+    #[test]
+    fn test_per_query_max_derived_facts_via_execute() {
+        let db = OpenOptions::new()
+            .max_derived_facts(1_000_000)
+            .open_memory()
+            .unwrap();
+
+        db.execute("(rule [(reachable ?x ?y) [?x :edge ?y]])")
+            .unwrap();
+        db.execute("(rule [(reachable ?x ?z) [?x :edge ?y] (reachable ?y ?z)])")
+            .unwrap();
+        db.execute(r#"(transact [[:a :edge :b] [:b :edge :c]])"#)
+            .unwrap();
+
+        // Per-query limit of 1 — too tight, must fail
+        let result =
+            db.execute("(query [:find ?x ?y :where (reachable ?x ?y) :max-derived-facts 1])");
+        assert!(result.is_err(), "per-query limit of 1 should fail");
+
+        // Per-query limit of 1M — should succeed
+        let result =
+            db.execute("(query [:find ?x ?y :where (reachable ?x ?y) :max-derived-facts 1000000])");
+        assert!(result.is_ok(), "per-query limit of 1M should succeed");
+
+        // No per-query limit — should fall back to OpenOptions default (1M) and succeed
+        let result = db.execute("(query [:find ?x ?y :where (reachable ?x ?y)])");
+        assert!(
+            result.is_ok(),
+            "no per-query limit should use database default"
+        );
+    }
+
+    #[test]
+    fn test_per_query_max_results_via_execute() {
+        let db = Minigraf::in_memory().unwrap();
+        db.execute(r#"(transact [[:a :v 1] [:b :v 2] [:c :v 3]])"#)
+            .unwrap();
+
+        // Confirms the field parses cleanly and the query succeeds
+        let result = db.execute("(query [:find ?e :where [?e :v ?v] :max-results 1])");
+        assert!(
+            result.is_ok(),
+            "query with :max-results should parse and execute"
+        );
     }
 
     // ── read-only handle drop must not modify the file ────────────────────────

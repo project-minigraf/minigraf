@@ -39,7 +39,7 @@ use std::sync::{Arc, RwLock};
 #[allow(dead_code)]
 pub const DEFAULT_MAX_ITERATIONS: usize = 1000;
 /// Default maximum facts that can be derived per iteration
-pub const DEFAULT_MAX_DERIVED_FACTS: usize = 100_000;
+pub const DEFAULT_MAX_DERIVED_FACTS: usize = 1_000_000;
 /// Default maximum total query results
 pub const DEFAULT_MAX_RESULTS: usize = 1_000_000;
 

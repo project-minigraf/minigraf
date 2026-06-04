@@ -1,0 +1,1 @@
+(query [:find ?x :where [?x :a :b] :max-results 9999])

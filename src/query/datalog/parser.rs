@@ -724,6 +724,8 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
     let mut current_clause: Option<&str> = None;
     let mut query_as_of: Option<AsOf> = None;
     let mut query_valid_at: Option<ValidAt> = None;
+    let mut query_max_derived_facts: Option<usize> = None;
+    let mut query_max_results: Option<usize> = None;
 
     let mut i = 0;
     while i < query_vector.len() {
@@ -790,6 +792,56 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                     // Shorthand for `:valid-at :any-valid-time`; disables automatic
                     // valid-time filtering so pseudo-attribute patterns are accessible.
                     query_valid_at = Some(ValidAt::AnyValidTime);
+                    i += 1;
+                    continue;
+                }
+                ":max-derived-facts" => {
+                    if query_max_derived_facts.is_some() {
+                        return Err("duplicate :max-derived-facts".to_string());
+                    }
+                    i += 1;
+                    let val = query_vector
+                        .get(i)
+                        .ok_or_else(|| ":max-derived-facts requires a value".to_string())?;
+                    match val {
+                        EdnValue::Integer(n) if *n >= 1 => {
+                            #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+                            {
+                                query_max_derived_facts = Some(*n as usize);
+                            }
+                        }
+                        EdnValue::Integer(_) => {
+                            return Err(":max-derived-facts must be >= 1".to_string());
+                        }
+                        _other => {
+                            return Err(":max-derived-facts must be a positive integer".to_string());
+                        }
+                    }
+                    i += 1;
+                    continue;
+                }
+                ":max-results" => {
+                    if query_max_results.is_some() {
+                        return Err("duplicate :max-results".to_string());
+                    }
+                    i += 1;
+                    let val = query_vector
+                        .get(i)
+                        .ok_or_else(|| ":max-results requires a value".to_string())?;
+                    match val {
+                        EdnValue::Integer(n) if *n >= 1 => {
+                            #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+                            {
+                                query_max_results = Some(*n as usize);
+                            }
+                        }
+                        EdnValue::Integer(_) => {
+                            return Err(":max-results must be >= 1".to_string());
+                        }
+                        _other => {
+                            return Err(":max-results must be a positive integer".to_string());
+                        }
+                    }
                     i += 1;
                     continue;
                 }
@@ -903,6 +955,8 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
     query.as_of = query_as_of;
     query.valid_at = query_valid_at;
     query.with_vars = with_vars;
+    query.max_derived_facts = query_max_derived_facts;
+    query.max_results = query_max_results;
     Ok(DatalogCommand::Query(query))
 }
 
@@ -2318,6 +2372,140 @@ mod tests {
         };
         assert!(matches!(query.as_of, Some(AsOf::Counter(100))));
         assert!(matches!(query.valid_at, Some(ValidAt::Timestamp(_))));
+    }
+
+    #[test]
+    fn test_parse_max_derived_facts_valid() {
+        let input = r#"(query [:find ?x :where [?x :a :b] :max-derived-facts 500000])"#;
+        let result = parse_datalog_command(input);
+        assert!(result.is_ok(), "should parse :max-derived-facts");
+        match result.unwrap() {
+            DatalogCommand::Query(q) => {
+                assert_eq!(q.max_derived_facts, Some(500_000));
+                assert_eq!(q.max_results, None);
+            }
+            _ => panic!("expected Query"),
+        }
+    }
+
+    #[test]
+    fn test_parse_max_results_valid() {
+        let input = r#"(query [:find ?x :where [?x :a :b] :max-results 9999])"#;
+        let result = parse_datalog_command(input);
+        assert!(result.is_ok(), "should parse :max-results");
+        match result.unwrap() {
+            DatalogCommand::Query(q) => {
+                assert_eq!(q.max_derived_facts, None);
+                assert_eq!(q.max_results, Some(9_999));
+            }
+            _ => panic!("expected Query"),
+        }
+    }
+
+    #[test]
+    fn test_parse_both_limits_valid() {
+        let input =
+            r#"(query [:find ?x :where [?x :a :b] :max-derived-facts 1000000 :max-results 100])"#;
+        let result = parse_datalog_command(input);
+        assert!(result.is_ok(), "should parse both limit keys");
+        match result.unwrap() {
+            DatalogCommand::Query(q) => {
+                assert_eq!(q.max_derived_facts, Some(1_000_000));
+                assert_eq!(q.max_results, Some(100));
+            }
+            _ => panic!("expected Query"),
+        }
+    }
+
+    #[test]
+    fn test_parse_max_derived_facts_zero_rejected() {
+        let input = r#"(query [:find ?x :where [?x :a :b] :max-derived-facts 0])"#;
+        let result = parse_datalog_command(input);
+        assert!(result.is_err(), "0 should be rejected");
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains(":max-derived-facts must be >= 1"),
+            "wrong error: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_parse_max_results_zero_rejected() {
+        let input = r#"(query [:find ?x :where [?x :a :b] :max-results 0])"#;
+        let result = parse_datalog_command(input);
+        assert!(result.is_err(), "0 should be rejected");
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains(":max-results must be >= 1"),
+            "wrong error: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_parse_max_derived_facts_duplicate_rejected() {
+        let input =
+            r#"(query [:find ?x :where [?x :a :b] :max-derived-facts 100 :max-derived-facts 200])"#;
+        let result = parse_datalog_command(input);
+        assert!(result.is_err(), "duplicate key should be rejected");
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("duplicate :max-derived-facts"),
+            "wrong error: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_parse_max_results_duplicate_rejected() {
+        let input = r#"(query [:find ?x :where [?x :a :b] :max-results 100 :max-results 200])"#;
+        let result = parse_datalog_command(input);
+        assert!(result.is_err(), "duplicate key should be rejected");
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("duplicate :max-results"),
+            "wrong error: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_parse_max_derived_facts_non_integer_rejected() {
+        let input = r#"(query [:find ?x :where [?x :a :b] :max-derived-facts "a lot"])"#;
+        let result = parse_datalog_command(input);
+        assert!(result.is_err(), "non-integer should be rejected");
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains(":max-derived-facts must be a positive integer"),
+            "wrong error: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_parse_max_results_non_integer_rejected() {
+        let input = r#"(query [:find ?x :where [?x :a :b] :max-results "a lot"])"#;
+        let result = parse_datalog_command(input);
+        assert!(result.is_err(), "non-integer should be rejected");
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains(":max-results must be a positive integer"),
+            "wrong error: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_parse_limits_order_independent() {
+        // :max-derived-facts before :find — order should not matter
+        let input = r#"(query [:max-derived-facts 42 :find ?x :where [?x :a :b]])"#;
+        let result = parse_datalog_command(input);
+        assert!(result.is_ok(), "order should not matter");
+        match result.unwrap() {
+            DatalogCommand::Query(q) => assert_eq!(q.max_derived_facts, Some(42)),
+            _ => panic!("expected Query"),
+        }
     }
 
     #[test]

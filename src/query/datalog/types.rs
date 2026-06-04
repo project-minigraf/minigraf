@@ -530,6 +530,12 @@ pub struct DatalogQuery {
     pub valid_at: Option<ValidAt>,
     /// Grouping variables that participate in grouping but are excluded from output rows.
     pub with_vars: Vec<String>,
+    /// Per-query override for maximum derived facts per recursive rule iteration.
+    /// `None` falls back to the executor's configured limit (from `OpenOptions`).
+    pub max_derived_facts: Option<usize>,
+    /// Per-query override for maximum total query results.
+    /// `None` falls back to the executor's configured limit (from `OpenOptions`).
+    pub max_results: Option<usize>,
 }
 
 impl DatalogQuery {
@@ -540,6 +546,8 @@ impl DatalogQuery {
             as_of: None,
             valid_at: None,
             with_vars: Vec::new(),
+            max_derived_facts: None,
+            max_results: None,
         }
     }
 
@@ -552,6 +560,8 @@ impl DatalogQuery {
             as_of: None,
             valid_at: None,
             with_vars: Vec::new(),
+            max_derived_facts: None,
+            max_results: None,
         }
     }
 
