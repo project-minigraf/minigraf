@@ -1,10 +1,11 @@
 #[allow(unused_imports)]
 use crate::graph::types::{EntityId, Value};
 use crate::query::datalog::rules::RuleRegistry;
-use crate::query::datalog::types::{DatalogQuery, EdnValue, WhereClause};
+use crate::query::datalog::types::DatalogQuery;
 #[allow(unused_imports)]
 use std::collections::{HashMap, HashSet};
 
+#[allow(dead_code)]
 pub(crate) fn rewrite(
     _query: &DatalogQuery,
     _registry: &RuleRegistry,
