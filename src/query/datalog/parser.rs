@@ -811,10 +811,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                             return Err(":max-derived-facts must be >= 1".to_string());
                         }
                         other => {
-                            return Err(format!(
-                                ":max-derived-facts must be a positive integer, got {:?}",
-                                other
-                            ));
+                            return Err(":max-derived-facts must be a positive integer".to_string());
                         }
                     }
                     i += 1;
@@ -836,10 +833,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                             return Err(":max-results must be >= 1".to_string());
                         }
                         other => {
-                            return Err(format!(
-                                ":max-results must be a positive integer, got {:?}",
-                                other
-                            ));
+                            return Err(":max-results must be a positive integer".to_string());
                         }
                     }
                     i += 1;
@@ -2473,6 +2467,25 @@ mod tests {
         let input = r#"(query [:find ?x :where [?x :a :b] :max-derived-facts "a lot"])"#;
         let result = parse_datalog_command(input);
         assert!(result.is_err(), "non-integer should be rejected");
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains(":max-derived-facts must be a positive integer"),
+            "wrong error: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_parse_max_results_non_integer_rejected() {
+        let input = r#"(query [:find ?x :where [?x :a :b] :max-results "a lot"])"#;
+        let result = parse_datalog_command(input);
+        assert!(result.is_err(), "non-integer should be rejected");
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains(":max-results must be a positive integer"),
+            "wrong error: {}",
+            msg
+        );
     }
 
     #[test]
