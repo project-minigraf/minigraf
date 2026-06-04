@@ -19,7 +19,7 @@ fn extract_refs(result: QueryResult) -> Vec<Uuid> {
             .into_iter()
             .map(|row| match &row[0] {
                 Value::Ref(uuid) => *uuid,
-                other => panic!("Expected Ref, got {:?}", other),
+                _ => panic!("Expected Ref in result row"),
             })
             .collect(),
         _ => panic!("Expected QueryResults"),
@@ -229,4 +229,6 @@ fn test_mutual_recursion_even_odd_distance() {
     assert!(odds.contains(&nodes[1]), "n1 should be odd-distance");
     assert!(odds.contains(&nodes[3]), "n3 should be odd-distance");
     assert!(!odds.contains(&nodes[0]), "n0 should not be odd-distance");
+    assert!(!odds.contains(&nodes[2]), "n2 should not be odd-distance");
+    assert!(!odds.contains(&nodes[4]), "n4 should not be odd-distance");
 }
