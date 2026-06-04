@@ -3,6 +3,7 @@ pub mod executor;
 pub mod functions;
 pub mod matcher;
 pub mod optimizer;
+pub(crate) mod magic_sets;
 pub mod parser;
 pub mod prepared;
 pub mod rules;
