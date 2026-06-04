@@ -1401,6 +1401,14 @@ branched_db.execute("(transact [[:x :y 1]])")?;
 
 ---
 
+### 9.6 Magic Sets with Stratified Negation (Exploratory)
+
+Magic sets rewriting (#289) is not applied to mixed rules containing `not`/`not-join` — those continue to use full semi-naive evaluation. Extending to negation is well-studied (Beeri & Ramakrishnan 1991, §5) but adds significant complexity: negated subgoals require care to avoid unsound propagation across stratification boundaries.
+
+**Only worth pursuing if**: profiling shows that negation-heavy recursive rules are a bottleneck in a real workload. No issue is tracked — investigate if and when the need arises.
+
+---
+
 ## Performance Backlog
 
 Known O(N²) hotspots discovered during benchmarking (v0.13.0). The first post-1.0 performance batch (#208, #202, #203, #204) eliminated four of them.
@@ -1717,4 +1725,4 @@ See [GitHub Issues](https://github.com/project-minigraf/minigraf/issues) for spe
 
 ---
 
-**Last Updated**: May 2026 — 962 tests passing, v1.1.1; all post-1.0 work complete; #185 deferred to 2.0; ecosystem, developer tools, and integration examples fully transferred to external repos
+**Last Updated**: June 2026 — magic sets rewriting (#289) implemented (967 tests passing); #185 deferred to 2.0; ecosystem, developer tools, and integration examples fully transferred to external repos
