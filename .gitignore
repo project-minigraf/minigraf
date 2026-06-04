@@ -6,6 +6,8 @@
 .worktrees/
 .codex
 .opencode/
+.claude/
+.mcp.json
 skills/
 memory.graph
 
