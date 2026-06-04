@@ -1810,6 +1810,48 @@ mod tests {
         assert!(result.is_ok(), "Query should succeed with higher limit");
     }
 
+    #[test]
+    fn test_per_query_max_derived_facts_via_execute() {
+        let db = OpenOptions::new()
+            .max_derived_facts(1_000_000)
+            .open_memory()
+            .unwrap();
+
+        db.execute("(rule [(reachable ?x ?y) [?x :edge ?y]])").unwrap();
+        db.execute("(rule [(reachable ?x ?z) [?x :edge ?y] (reachable ?y ?z)])").unwrap();
+        db.execute(r#"(transact [[:a :edge :b] [:b :edge :c]])"#).unwrap();
+
+        // Per-query limit of 1 — too tight, must fail
+        let result = db.execute(
+            "(query [:find ?x ?y :where (reachable ?x ?y) :max-derived-facts 1])"
+        );
+        assert!(result.is_err(), "per-query limit of 1 should fail");
+
+        // Per-query limit of 1M — should succeed
+        let result = db.execute(
+            "(query [:find ?x ?y :where (reachable ?x ?y) :max-derived-facts 1000000])"
+        );
+        assert!(result.is_ok(), "per-query limit of 1M should succeed");
+
+        // No per-query limit — should fall back to OpenOptions default (1M) and succeed
+        let result = db.execute(
+            "(query [:find ?x ?y :where (reachable ?x ?y)])"
+        );
+        assert!(result.is_ok(), "no per-query limit should use database default");
+    }
+
+    #[test]
+    fn test_per_query_max_results_via_execute() {
+        let db = Minigraf::in_memory().unwrap();
+        db.execute(r#"(transact [[:a :v 1] [:b :v 2] [:c :v 3]])"#).unwrap();
+
+        // Confirms the field parses cleanly and the query succeeds
+        let result = db.execute(
+            "(query [:find ?e :where [?e :v ?v] :max-results 1])"
+        );
+        assert!(result.is_ok(), "query with :max-results should parse and execute");
+    }
+
     // ── read-only handle drop must not modify the file ────────────────────────
 
     #[test]
