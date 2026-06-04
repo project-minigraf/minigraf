@@ -378,6 +378,16 @@ pub(crate) fn rewrite(
         return None;
     }
 
+    // Magic sets only helps when at least one predicate has a free ('f') position.
+    // For fully-bound adornments (e.g. "bb"), the regular evaluator is already optimal
+    // and the magic-guard encoding doesn't support multi-bound seed facts.
+    let any_free = initial_bound
+        .values()
+        .any(|ad| ad.iter().any(|&ch| ch == 'f'));
+    if !any_free {
+        return None;
+    }
+
     let adorned = propagate_adornments(&initial_bound, registry);
     let seeds = build_seed_facts(&query.where_clauses, &adorned);
     if seeds.is_empty() {
