@@ -378,9 +378,11 @@ pub(crate) fn rewrite(
         return None;
     }
 
-    // Magic sets only helps when at least one predicate has a free ('f') position.
-    // For fully-bound adornments (e.g. "bb"), the regular evaluator is already optimal
-    // and the magic-guard encoding doesn't support multi-bound seed facts.
+    // Fast-path: magic sets only helps when at least one adorned predicate has a free
+    // position. Fully-bound adornments (e.g. "bb") provide no demand-driven benefit
+    // and the current seed encoding only supports arg0-bound or arg1-only-bound cases.
+    // NOTE: this guard is redundant with the downstream `seeds.is_empty()` check, but
+    // is retained as an early exit that avoids the `propagate_adornments` traversal.
     let any_free = initial_bound
         .values()
         .any(|ad| ad.iter().any(|&ch| ch == 'f'));

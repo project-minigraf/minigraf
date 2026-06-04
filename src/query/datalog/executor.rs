@@ -948,6 +948,9 @@ impl DatalogExecutor {
             None => (self.rules.clone(), vec![]),
         };
         for (entity, attribute, value) in seed_facts {
+            // tx_id=0 is intentional: magic seed facts are synthetic EAV triples that carry
+            // no temporal semantics. They are inserted after temporal filtering has completed,
+            // so they never participate in valid-time or tx-time queries.
             filtered_storage.load_fact(Fact::new(entity, attribute, value, 0))?;
         }
 
