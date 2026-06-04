@@ -805,7 +805,10 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                         .ok_or_else(|| ":max-derived-facts requires a value".to_string())?;
                     match val {
                         EdnValue::Integer(n) if *n >= 1 => {
-                            query_max_derived_facts = Some(*n as usize);
+                            #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+                            {
+                                query_max_derived_facts = Some(*n as usize);
+                            }
                         }
                         EdnValue::Integer(_) => {
                             return Err(":max-derived-facts must be >= 1".to_string());
@@ -827,7 +830,10 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand, String> {
                         .ok_or_else(|| ":max-results requires a value".to_string())?;
                     match val {
                         EdnValue::Integer(n) if *n >= 1 => {
-                            query_max_results = Some(*n as usize);
+                            #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+                            {
+                                query_max_results = Some(*n as usize);
+                            }
                         }
                         EdnValue::Integer(_) => {
                             return Err(":max-results must be >= 1".to_string());
@@ -2398,7 +2404,8 @@ mod tests {
 
     #[test]
     fn test_parse_both_limits_valid() {
-        let input = r#"(query [:find ?x :where [?x :a :b] :max-derived-facts 1000000 :max-results 100])"#;
+        let input =
+            r#"(query [:find ?x :where [?x :a :b] :max-derived-facts 1000000 :max-results 100])"#;
         let result = parse_datalog_command(input);
         assert!(result.is_ok(), "should parse both limit keys");
         match result.unwrap() {
@@ -2438,7 +2445,8 @@ mod tests {
 
     #[test]
     fn test_parse_max_derived_facts_duplicate_rejected() {
-        let input = r#"(query [:find ?x :where [?x :a :b] :max-derived-facts 100 :max-derived-facts 200])"#;
+        let input =
+            r#"(query [:find ?x :where [?x :a :b] :max-derived-facts 100 :max-derived-facts 200])"#;
         let result = parse_datalog_command(input);
         assert!(result.is_err(), "duplicate key should be rejected");
         let msg = result.unwrap_err();

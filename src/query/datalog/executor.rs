@@ -2344,10 +2344,10 @@ pub(crate) fn apply_expr_clauses(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::datalog::parser::parse_datalog_command;
-    use crate::query::datalog::types::WhereClause;
-    use crate::query::datalog::rules::RuleRegistry;
     use crate::query::datalog::functions::FunctionRegistry;
+    use crate::query::datalog::parser::parse_datalog_command;
+    use crate::query::datalog::rules::RuleRegistry;
+    use crate::query::datalog::types::WhereClause;
     use std::sync::{Arc, RwLock};
     use uuid::Uuid;
 
@@ -3871,26 +3871,37 @@ mod tests {
         );
         executor.set_limits(1_000_000, 1_000_000);
 
-        executor.execute(parse_datalog_command(
-            r#"(rule [(reachable ?x ?y) [?x :edge ?y]])"#
-        ).unwrap()).unwrap();
-        executor.execute(parse_datalog_command(
-            r#"(rule [(reachable ?x ?z) [?x :edge ?y] (reachable ?y ?z)])"#
-        ).unwrap()).unwrap();
-        executor.execute(parse_datalog_command(
-            r#"(transact [[:a :edge :b] [:b :edge :c]])"#
-        ).unwrap()).unwrap();
+        executor
+            .execute(parse_datalog_command(r#"(rule [(reachable ?x ?y) [?x :edge ?y]])"#).unwrap())
+            .unwrap();
+        executor
+            .execute(
+                parse_datalog_command(
+                    r#"(rule [(reachable ?x ?z) [?x :edge ?y] (reachable ?y ?z)])"#,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        executor
+            .execute(parse_datalog_command(r#"(transact [[:a :edge :b] [:b :edge :c]])"#).unwrap())
+            .unwrap();
 
         // Per-query limit of 1 — too tight, must fail
-        let result = executor.execute(parse_datalog_command(
-            "(query [:find ?x ?y :where (reachable ?x ?y) :max-derived-facts 1])"
-        ).unwrap());
+        let result = executor.execute(
+            parse_datalog_command(
+                "(query [:find ?x ?y :where (reachable ?x ?y) :max-derived-facts 1])",
+            )
+            .unwrap(),
+        );
         assert!(result.is_err(), "per-query limit of 1 should fail");
 
         // Per-query limit of 1M — should succeed
-        let result = executor.execute(parse_datalog_command(
-            "(query [:find ?x ?y :where (reachable ?x ?y) :max-derived-facts 1000000])"
-        ).unwrap());
+        let result = executor.execute(
+            parse_datalog_command(
+                "(query [:find ?x ?y :where (reachable ?x ?y) :max-derived-facts 1000000])",
+            )
+            .unwrap(),
+        );
         assert!(result.is_ok(), "per-query limit of 1M should succeed");
     }
 
@@ -3905,23 +3916,29 @@ mod tests {
             functions.clone(),
         );
 
-        executor.execute(parse_datalog_command(
-            r#"(rule [(reachable ?x ?y) [?x :edge ?y]])"#
-        ).unwrap()).unwrap();
-        executor.execute(parse_datalog_command(
-            r#"(transact [[:a :edge :b]])"#
-        ).unwrap()).unwrap();
+        executor
+            .execute(parse_datalog_command(r#"(rule [(reachable ?x ?y) [?x :edge ?y]])"#).unwrap())
+            .unwrap();
+        executor
+            .execute(parse_datalog_command(r#"(transact [[:a :edge :b]])"#).unwrap())
+            .unwrap();
 
         // First query: tight limit, expect failure (ignore result)
-        let _ = executor.execute(parse_datalog_command(
-            "(query [:find ?x ?y :where (reachable ?x ?y) :max-derived-facts 1])"
-        ).unwrap());
+        let _ = executor.execute(
+            parse_datalog_command(
+                "(query [:find ?x ?y :where (reachable ?x ?y) :max-derived-facts 1])",
+            )
+            .unwrap(),
+        );
 
         // Second query: no per-query limit — must use executor default (1M) and succeed
-        let result = executor.execute(parse_datalog_command(
-            "(query [:find ?x ?y :where (reachable ?x ?y)])"
-        ).unwrap());
-        assert!(result.is_ok(), "next query should not inherit the tight per-query limit");
+        let result = executor.execute(
+            parse_datalog_command("(query [:find ?x ?y :where (reachable ?x ?y)])").unwrap(),
+        );
+        assert!(
+            result.is_ok(),
+            "next query should not inherit the tight per-query limit"
+        );
     }
 }
 
