@@ -1,7 +1,9 @@
 use crate::graph::types::{EntityId, Value};
+use crate::query::datalog::matcher::{edn_to_entity_id, edn_to_value};
 use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::types::{DatalogQuery, EdnValue, Rule, WhereClause};
 use std::collections::{HashMap, HashSet};
+use uuid::Uuid;
 
 /// Classify each arg in rule invocations as bound ('b') or free ('f').
 /// Single left-to-right pass; all variables in Pattern entity/value positions are
@@ -58,6 +60,51 @@ pub(crate) fn adornment_string(adornment: &[char]) -> String {
 #[allow(dead_code)]
 pub(crate) fn magic_pred_name(pred: &str, adornment: &[char]) -> String {
     format!("__magic_{}_{}", pred, adornment_string(adornment))
+}
+
+/// Build seed facts for adorned rule invocations with at least one bound arg.
+///
+/// Encoding:
+///   arg0 bound: entity = edn_to_entity_id(arg0), attr = ":__magic_p_ad", value = Boolean(true)
+///   arg1-only bound (fb): entity = Uuid::new_v4() (ephemeral carrier), value = edn_to_value(arg1)
+#[allow(dead_code)]
+pub(crate) fn build_seed_facts(
+    where_clauses: &[WhereClause],
+    adornments: &HashMap<String, Vec<char>>,
+) -> Vec<(EntityId, String, Value)> {
+    let mut seeds = Vec::new();
+
+    for clause in where_clauses {
+        let WhereClause::RuleInvocation { predicate, args } = clause else {
+            continue;
+        };
+        let Some(adornment) = adornments.get(predicate) else {
+            continue;
+        };
+        if !has_bound_arg(adornment) {
+            continue;
+        }
+
+        let magic_attr = format!(":{}", magic_pred_name(predicate, adornment));
+
+        if adornment.first() == Some(&'b') {
+            // arg0 bound — dominant case
+            if let Some(arg0) = args.first() {
+                if let Ok(entity) = edn_to_entity_id(arg0) {
+                    seeds.push((entity, magic_attr, Value::Boolean(true)));
+                }
+            }
+        } else if adornment.get(1) == Some(&'b') {
+            // arg1-only bound (fb) — ephemeral carrier UUID
+            if let Some(arg1) = args.get(1) {
+                if let Ok(value) = edn_to_value(arg1) {
+                    seeds.push((Uuid::new_v4(), magic_attr, value));
+                }
+            }
+        }
+    }
+
+    seeds
 }
 
 #[allow(dead_code)]
@@ -153,5 +200,37 @@ mod tests {
         let adornments = compute_query_adornments(&clauses);
         let ad = adornments.get("ancestor").unwrap();
         assert!(!has_bound_arg(ad));
+    }
+
+    #[test]
+    fn test_seed_fact_for_keyword_entity_arg() {
+        // (ancestor :alice ?y) — arg0 bound (keyword alias)
+        // seed: entity = edn_to_entity_id(:alice), attr = ":__magic_ancestor_bf", value = true
+        let clauses = vec![WhereClause::RuleInvocation {
+            predicate: "ancestor".to_string(),
+            args: vec![
+                EdnValue::Keyword(":alice".to_string()),
+                EdnValue::Symbol("?y".to_string()),
+            ],
+        }];
+        let adornments = compute_query_adornments(&clauses);
+        let seeds = build_seed_facts(&clauses, &adornments);
+        assert_eq!(seeds.len(), 1);
+        let (entity, attr, value) = &seeds[0];
+        assert_eq!(attr, ":__magic_ancestor_bf");
+        assert_eq!(value, &Value::Boolean(true));
+        let expected = crate::query::datalog::matcher::edn_to_entity_id(
+            &EdnValue::Keyword(":alice".to_string()),
+        )
+        .unwrap();
+        assert_eq!(*entity, expected);
+    }
+
+    #[test]
+    fn test_no_seed_for_all_free() {
+        let clauses = vec![rule_inv("ancestor", &["?x", "?y"])];
+        let adornments = compute_query_adornments(&clauses);
+        let seeds = build_seed_facts(&clauses, &adornments);
+        assert!(seeds.is_empty());
     }
 }
