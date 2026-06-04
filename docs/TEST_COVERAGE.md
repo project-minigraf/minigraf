@@ -1,11 +1,11 @@
 # Minigraf Test Coverage Report
 
-**Last Updated**: Wave 3 Reliability COMPLETE (May 2026), 935 tests ✅
+**Last Updated**: magic sets (#289) complete (June 2026), 974 tests ✅
 
 ## Test Summary
 
-**Total Tests**: 943 ✅ (935 passing, 8 ignored)
-- ✅ 620 unit tests (lib — includes Wave 1 hash-join and selective-lookup test modules, Wave 3 fault-injection unit tests)
+**Total Tests**: 974 ✅ (966 passing, 8 ignored)
+- ✅ 653 unit tests (lib — includes Wave 1 hash-join and selective-lookup test modules, Wave 3 fault-injection unit tests, per-query limits #288, magic sets #289)
 - ✅ 12 bi-temporal tests (integration)
 - ✅ 11 complex query tests (integration)
 - ✅ 9 recursive rules tests (integration)
@@ -35,9 +35,10 @@
 - ✅ 1 long-haul smoke test (integration, Wave 3 #220 — 500 entities × 10 attrs × 10 cycles; ignored: nightly)
 - ✅ 10 XTDB compat tests (integration, Wave 3 #221 — Apache 2.0 semantic ports of XTDB concepts)
 - ✅ 9 Datomic compat tests (integration, Wave 3 #221 — independently written semantic ports of Datomic concepts)
+- ✅ 5 magic sets tests (integration, #289 — demand-driven recursive evaluation correctness: bound transitive closure, all-free closure, subset invariant, multi-hop, mutual recursion)
 - ✅ 15 doc tests (9 passing, 6 ignored: or+neg-cycle stratification bug confirmed)
 
-**Status**: ✅ **All 935 tests passing** (8 ignored: 6 or+neg-cycle stratification doc tests, 1 nightly concurrency stress, 1 nightly smoke)
+**Status**: ✅ **All 966 tests passing** (8 ignored: 6 or+neg-cycle stratification doc tests, 1 nightly concurrency stress, 1 nightly smoke)
 
 ## Wave 3 Reliability Completion Status: ✅ COMPLETE
 
