@@ -89,17 +89,17 @@ pub(crate) fn build_seed_facts(
 
         if adornment.first() == Some(&'b') {
             // arg0 bound — dominant case
-            if let Some(arg0) = args.first() {
-                if let Ok(entity) = edn_to_entity_id(arg0) {
-                    seeds.push((entity, magic_attr, Value::Boolean(true)));
-                }
+            if let Some(arg0) = args.first()
+                && let Ok(entity) = edn_to_entity_id(arg0)
+            {
+                seeds.push((entity, magic_attr, Value::Boolean(true)));
             }
         } else if adornment.get(1) == Some(&'b') {
             // arg1-only bound (fb) — ephemeral carrier UUID
-            if let Some(arg1) = args.get(1) {
-                if let Ok(value) = edn_to_value(arg1) {
-                    seeds.push((Uuid::new_v4(), magic_attr, value));
-                }
+            if let Some(arg1) = args.get(1)
+                && let Ok(value) = edn_to_value(arg1)
+            {
+                seeds.push((Uuid::new_v4(), magic_attr, value));
             }
         }
     }
@@ -232,7 +232,7 @@ pub(crate) fn build_propagation_rules(
 
         // Propagation body = guard + all non-RuleInvocation clauses before this call.
         let mut prop_body = vec![guard.clone()];
-        for preceding in &rule.body[..i] {
+        for preceding in rule.body.iter().take(i) {
             if !matches!(preceding, WhereClause::RuleInvocation { .. }) {
                 prop_body.push(preceding.clone());
             }
@@ -277,10 +277,10 @@ pub(crate) fn propagate_adornments(
                 // Seed grounded vars with bound-position vars from the rule head
                 let mut grounded: HashSet<String> = HashSet::new();
                 for (i, &ch) in adornment.iter().enumerate() {
-                    if ch == 'b' {
-                        if let Some(v) = rule.head.get(i + 1).and_then(|e| e.as_variable()) {
-                            grounded.insert(v.to_string());
-                        }
+                    if ch == 'b'
+                        && let Some(v) = rule.head.get(i + 1).and_then(|e| e.as_variable())
+                    {
+                        grounded.insert(v.to_string());
                     }
                 }
                 for clause in &rule.body {
@@ -302,6 +302,10 @@ pub(crate) fn propagate_adornments(
                                     None => 'b', // literals are always bound
                                 })
                                 .collect();
+                            // First-writer-wins: if a predicate is already adorned from another call site,
+                            // we keep the first adornment. In programs with multiple call sites for the same
+                            // predicate, this may miss more-permissive adornments from later call sites.
+                            // This is an acceptable simplification — worst case is less pruning, not wrong results.
                             if has_bound_arg(&call_adornment)
                                 && !adorned.contains_key(called.as_str())
                             {
@@ -431,7 +435,6 @@ mod tests {
         }
     }
 
-    #[allow(dead_code)]
     fn make_rule(pred: &str, head_args: &[&str], body: Vec<WhereClause>) -> Rule {
         Rule {
             head: std::iter::once(EdnValue::Symbol(pred.to_string()))
@@ -695,6 +698,25 @@ mod tests {
         assert!(
             !rewritten_reg.get_rules(&magic_name).is_empty(),
             "magic propagation rules should be registered"
+        );
+    }
+
+    #[test]
+    fn test_rewritten_registry_has_magic_guard_in_rules() {
+        let mut registry = RuleRegistry::new();
+        registry.register_rule_unchecked(
+            "reach".to_string(),
+            make_rule("reach", &["?a", "?b"], vec![pat("?a", ":edge", "?b")]),
+        );
+        let adorned: HashMap<String, Vec<char>> =
+            [("reach".to_string(), vec!['b', 'f'])].into_iter().collect();
+        let new_reg = build_rewritten_registry(&registry, &adorned);
+        let rules = new_reg.get_rules("reach");
+        assert!(!rules.is_empty(), "rewritten registry should contain reach rules");
+        let first_body = rules[0].body.first().expect("rule should have body");
+        assert!(
+            matches!(first_body, WhereClause::RuleInvocation { .. }),
+            "first body clause of adorned rule should be magic guard"
         );
     }
 }
