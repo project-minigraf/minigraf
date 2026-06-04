@@ -107,6 +107,39 @@ pub(crate) fn build_seed_facts(
     seeds
 }
 
+/// Prepend a magic-predicate guard to a positive rule's body.
+/// Rules containing Not/NotJoin are returned unchanged.
+///
+/// The guard uses head[1] (the entity-position variable) as its argument,
+/// which is always the bound position for the dominant `bf` adornment.
+#[allow(dead_code)]
+pub(crate) fn inject_magic_guard(rule: &Rule, predicate: &str, adornment: &[char]) -> Rule {
+    let has_negation = rule
+        .body
+        .iter()
+        .any(|c| matches!(c, WhereClause::Not(_) | WhereClause::NotJoin { .. }));
+    if has_negation {
+        return rule.clone();
+    }
+
+    let magic_name = magic_pred_name(predicate, adornment);
+    let bound_head_arg = rule
+        .head
+        .get(1)
+        .cloned()
+        .unwrap_or(EdnValue::Symbol("?_".to_string()));
+    let guard = WhereClause::RuleInvocation {
+        predicate: magic_name,
+        args: vec![bound_head_arg],
+    };
+
+    let mut new_body = Vec::with_capacity(rule.body.len() + 1);
+    new_body.push(guard);
+    new_body.extend(rule.body.iter().cloned());
+
+    Rule { head: rule.head.clone(), body: new_body }
+}
+
 #[allow(dead_code)]
 pub(crate) fn rewrite(
     _query: &DatalogQuery,
@@ -232,5 +265,44 @@ mod tests {
         let adornments = compute_query_adornments(&clauses);
         let seeds = build_seed_facts(&clauses, &adornments);
         assert!(seeds.is_empty());
+    }
+
+    #[test]
+    fn test_magic_guard_prepended_to_positive_rule() {
+        // (ancestor ?a ?c) :- [?a :parent ?b] (ancestor ?b ?c)
+        // adornment bf → guard (__magic_ancestor_bf ?a) prepended
+        let rule = make_rule(
+            "ancestor",
+            &["?a", "?c"],
+            vec![pat("?a", ":parent", "?b"), rule_inv("ancestor", &["?b", "?c"])],
+        );
+        let adornment = vec!['b', 'f'];
+        let rewritten = inject_magic_guard(&rule, "ancestor", &adornment);
+        match rewritten.body.first().unwrap() {
+            WhereClause::RuleInvocation { predicate, args } => {
+                assert_eq!(predicate, &magic_pred_name("ancestor", &adornment));
+                assert_eq!(args.len(), 1);
+                assert_eq!(args[0], EdnValue::Symbol("?a".to_string()));
+            }
+            other => panic!("expected RuleInvocation guard, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_mixed_rule_not_touched_by_guard() {
+        let rule = make_rule(
+            "eligible",
+            &["?x"],
+            vec![
+                pat("?x", ":applied", "true"),
+                WhereClause::Not(vec![pat("?x", ":rejected", "true")]),
+            ],
+        );
+        let rewritten = inject_magic_guard(&rule, "eligible", &['b']);
+        // First body clause must still be Pattern (not an injected guard)
+        assert!(
+            matches!(rewritten.body.first().unwrap(), WhereClause::Pattern(_)),
+            "mixed rule must not have guard injected"
+        );
     }
 }
