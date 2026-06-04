@@ -2877,6 +2877,8 @@ mod tests {
                 as_of: Some(AsOf::Counter(1)),
                 valid_at: Some(ValidAt::AnyValidTime),
                 with_vars: Vec::new(),
+                max_derived_facts: None,
+                max_results: None,
             }))
             .unwrap();
 
@@ -2933,6 +2935,8 @@ mod tests {
                 as_of: None,
                 valid_at: Some(ValidAt::AnyValidTime),
                 with_vars: Vec::new(),
+                max_derived_facts: None,
+                max_results: None,
             }))
             .unwrap();
 
@@ -3740,6 +3744,8 @@ mod tests {
             as_of: None,
             valid_at: Some(ValidAt::AnyValidTime),
             with_vars: vec![],
+            max_derived_facts: None,
+            max_results: None,
         };
 
         let facts = executor.filter_facts_for_query(&query).unwrap();
@@ -3793,6 +3799,8 @@ mod tests {
             as_of: None,
             valid_at: Some(ValidAt::Timestamp(1500_i64)),
             with_vars: vec![],
+            max_derived_facts: None,
+            max_results: None,
         };
         let facts_inside = executor.filter_facts_for_query(&query_inside).unwrap();
         assert_eq!(facts_inside.len(), 2, "both facts visible at t=1500");
@@ -3804,6 +3812,8 @@ mod tests {
             as_of: None,
             valid_at: Some(ValidAt::Timestamp(3000_i64)),
             with_vars: vec![],
+            max_derived_facts: None,
+            max_results: None,
         };
         let facts_outside = executor.filter_facts_for_query(&query_outside).unwrap();
         assert_eq!(
@@ -4694,6 +4704,8 @@ mod expr_eval_tests {
             as_of: None,
             valid_at: Some(ValidAt::Timestamp(946684800000)), // 2000-01-01
             with_vars: vec![],
+            max_derived_facts: None,
+            max_results: None,
         };
         let r_ts = executor.execute_query_with_rules(q_ts);
         assert!(
@@ -4709,6 +4721,8 @@ mod expr_eval_tests {
             as_of: None,
             valid_at: Some(ValidAt::AnyValidTime),
             with_vars: vec![],
+            max_derived_facts: None,
+            max_results: None,
         };
         let r_any = executor.execute_query_with_rules(q_any);
         assert!(
