@@ -89,7 +89,8 @@ query_vector = { "[" ~ query_section+ ~ "]" }
 // A query vector is a sequence of keyed sections in any order.
 query_section = {
     find_section | where_section | as_of_section |
-    valid_at_section | any_valid_time_section | with_section
+    valid_at_section | any_valid_time_section | with_section |
+    max_derived_facts_section | max_results_section
 }
 
 // ── FIND SECTION ──────────────────────────────────────────────────────────
@@ -161,6 +162,8 @@ as_of_section          = { ":as-of" ~ (integer_lit | string_lit | bind_slot) }
 valid_at_section       = { ":valid-at" ~ (string_lit | ":any-valid-time" | bind_slot) }
 any_valid_time_section = { ":any-valid-time" }
 with_section           = { ":with" ~ variable+ }
+max_derived_facts_section = { ":max-derived-facts" ~ integer_lit }
+max_results_section       = { ":max-results" ~ integer_lit }
 
 // ── RULE ──────────────────────────────────────────────────────────────────
 // (rule [(head ?args) body-clause ...])

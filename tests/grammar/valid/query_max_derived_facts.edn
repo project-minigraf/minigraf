@@ -1,0 +1,1 @@
+(query [:find ?x :where [?x :a :b] :max-derived-facts 500000])
