@@ -1,6 +1,6 @@
 # Contributing to Minigraf
 
-Thank you for your interest in contributing. Minigraf is a hobby project with a long-term vision — quality and correctness matter more than pace. Please read this document before opening an issue or pull request.
+Thank you for your interest in contributing. Minigraf is a solo-maintained project with a long-term vision — quality and correctness matter more than pace. Please read this document before opening an issue or pull request.
 
 ## Before You Contribute
 

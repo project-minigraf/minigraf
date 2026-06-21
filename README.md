@@ -13,6 +13,8 @@
 
 A tiny, self-contained graph database with **Datalog queries** and **bi-temporal time travel**. Think SQLite, but for connected data with full history.
 
+**[Try it in your browser — no install needed →](https://minigraf-playground.vercel.app/)**
+
 ## Vision
 
 Minigraf is a **single-file embedded graph database** that lets you:
@@ -215,7 +217,7 @@ File-backed databases enforce a maximum fact size of **4 080 serialised bytes** 
 
 ## Contributing
 
-This is a hobby project with a long-term vision. Read [PHILOSOPHY.md](PHILOSOPHY.md) and [ROADMAP.md](ROADMAP.md) before proposing features.
+This is a solo-maintained project with a long-term vision. Read [PHILOSOPHY.md](PHILOSOPHY.md) and [ROADMAP.md](ROADMAP.md) before proposing features.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code standards, and the PR process.
 

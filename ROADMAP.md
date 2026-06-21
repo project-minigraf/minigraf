@@ -1687,7 +1687,7 @@ When evaluating features, ask:
 - ✅ Documentation: Complete (May 2026) — cookbook (#190), perf tuning guide (#191), error message guide (#192)
 - 🎯 Phase 9: Ongoing (Ecosystem — tracked in `minigraf-examples` repo; developer tools in `minigraf-inspector` and `minigraf-visualizer`)
 
-**Note**: This is a hobby project. Timeline is flexible but realistic.
+**Note**: This is a solo-maintained project. Timeline is flexible but realistic.
 
 ---
 

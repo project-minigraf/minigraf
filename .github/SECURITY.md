@@ -28,7 +28,7 @@ Include as much of the following as possible:
 
 ## Response Timeline
 
-This is a solo hobby project. I will make a best-effort response:
+This is a solo-maintained project. I will make a best-effort response:
 
 - **Acknowledgement**: within 7 days
 - **Assessment**: within 14 days
