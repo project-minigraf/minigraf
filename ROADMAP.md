@@ -361,7 +361,7 @@ tx.commit()?;  // or tx.rollback()?
 
 ---
 
-## Phase 6: Performance & Indexes 🚧 IN PROGRESS
+## Phase 6: Performance & Indexes ✅ COMPLETE
 
 **Goal**: Make queries fast
 
