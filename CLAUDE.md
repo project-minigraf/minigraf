@@ -174,7 +174,7 @@ See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 ## Key Files for the Next Phase
 
-Phase 8 is complete — v1.0.0 released. Wave 3 Reliability is complete. #231 Repo Split is complete — Python, Node, WASM, Java, Android, Swift, and C bindings are all in separate repos under the project-minigraf org. Wave 8 Documentation is complete (#190, #191, #192). Wave 5 (Query Profiler) is next.
+Phase 8 is complete — v1.0.0 released. Wave 3 Reliability is complete. #231 Repo Split is complete — Python, Node, WASM, Java, Android, Swift, and C bindings are all in separate repos under the project-minigraf org. Wave 8 Documentation is complete (#190, #191, #192). v1.2.0 released — magic sets rewriting (#289) and per-query limits (#288). Wave 5 (Query Profiler) is next.
 
 Wave 5 relevant areas (see `ROADMAP.md` for full spec):
 - `src/query/datalog/` — query executor where profiling hooks will go (#185)

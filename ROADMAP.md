@@ -1693,7 +1693,7 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Current release**: v1.1.1 (May 2026) — drop-in replacement for v1.0.0; all changes internal
+**Current release**: v1.2.0 (June 2026) — magic sets rewriting and per-query limits; drop-in replacement for v1.1.x
 
 **Completed**:
 - ✅ Phase 8 / v1.0.0: Cross-platform release (WASM, WASI, Mobile, Python, Java, C FFI, Node.js)
@@ -1703,6 +1703,7 @@ When evaluating features, ask:
 - ✅ Deferred Features — #180, #181, #182, #183 tagged milestone 2.0; #187 closed; #201 deferred to 2.0
 - ✅ #231 Repo Split — Python, Node, WASM, Java, Android, Swift, C all in separate repos under [project-minigraf](https://github.com/project-minigraf)
 - ✅ Documentation — cookbook (#190), perf tuning guide (#191), error message guide (#192)
+- ✅ v1.2.0 — Magic Sets rewriting (#289), per-query `:max-derived-facts`/`:max-results` limits (#288), bug fixes (#272, #283, #285), perf improvements (#279, #281)
 
 **Transferred to other repos**:
 - Developer tools: `minigraf-inspector` (#184), `minigraf-visualizer` (#186); #185 (query profiler) deferred to 2.0
@@ -1725,4 +1726,4 @@ See [GitHub Issues](https://github.com/project-minigraf/minigraf/issues) for spe
 
 ---
 
-**Last Updated**: June 2026 — magic sets rewriting (#289) implemented (967 tests passing); #185 deferred to 2.0; ecosystem, developer tools, and integration examples fully transferred to external repos
+**Last Updated**: June 2026 — v1.2.0 released; magic sets rewriting (#289), per-query limits (#288); #185 deferred to 2.0; ecosystem, developer tools, and integration examples fully transferred to external repos

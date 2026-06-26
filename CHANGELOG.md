@@ -5,16 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## v1.2.0 — 2026-06-26
+
+Drop-in replacement for v1.1.x. No file-format changes, no public API breaking changes. Upgrading requires no code changes.
+
+### Features
+
+- **Magic Sets rewriting** — recursive Datalog queries with bound arguments are now automatically rewritten top-down via magic sets, propagating bound values into recursive rules to avoid full-relation scans (#289)
+  - Adornment classification, seed fact generation, magic guard injection, SCC-aware propagation rule generation, full `rewrite()` wired into `execute_query_with_rules`
+  - Limitation: mutual recursion through negation is not rewritten (documented in ROADMAP §9.6)
+- **Per-query complexity limits** — `:max-derived-facts` and `:max-results` clauses added to `query`; global default raised to 1,000,000 derived facts (#288, #290)
+
+### Bug fixes
+
+- `selective_fact_fetch`: include `asserted` flag in dedup key — previously retracted facts could shadow live facts under certain access patterns (#285, #286)
+- `selective_fact_fetch`: restore per-pattern entity priority lost in a prior refactor (#283)
+- v5→v6 migration: fix hang caused by using `header.page_count` as the B-tree start page instead of the correct offset (#272)
+
+### Performance
+
+- Eliminate backend mutex hold on cache hits in `CommittedFactLoaderImpl::resolve` — read path no longer acquires the write lock when the page is cached (#279)
+- Pre-build `MutexStorageBackend` in `CommittedFactLoaderImpl` to eliminate one `Arc::clone` per `resolve()` call (#280, #281)
 
 ### Infrastructure
 
-- Split Python, Node.js, and browser WASM/WASI bindings into independent repos under `project-minigraf` org (#231)
-  - `minigraf-python`: https://github.com/project-minigraf/minigraf-python
-  - `minigraf-node`: https://github.com/project-minigraf/minigraf-node
-  - `minigraf-wasm`: https://github.com/project-minigraf/minigraf-wasm
-- Add `cascade.yml`: publishes `minigraf-ffi` to crates.io and dispatches releases to binding repos on every version tag
-- Publish `minigraf-ffi` to crates.io (previously internal only)
+- Split Java, Android, Swift, and C bindings into independent repos under `project-minigraf` org — completes #231 repo split (#231 phase 2)
+  - `minigraf-java`: https://github.com/project-minigraf/minigraf-java
+  - `minigraf-android`: https://github.com/project-minigraf/minigraf-android
+  - `minigraf-swift`: https://github.com/project-minigraf/minigraf-swift
+  - `minigraf-c`: https://github.com/project-minigraf/minigraf-c
+- `minigraf-ffi` yanked from crates.io — UniFFI layer inlined into each binding repo's private shim; use the per-language packages instead
+- `cascade.yml` updated to dispatch `core-release` to all 7 binding repos on every version tag
+- All binding repos migrated to OIDC trusted publishing — `NPM_TOKEN` and `CARGO_REGISTRY_TOKEN` secrets removed; crates.io uses `rust-lang/crates-io-auth-action@v1`, npm uses `setup-node@v6` OIDC
+- Python, Node, and WASM binding repos now include a `prepare` job that pins the `minigraf` dependency version in `Cargo.toml` and commits before building — consistent with Java, Android, Swift, and C
 
 ### Documentation
 

@@ -1,6 +1,6 @@
 # Minigraf Test Coverage Report
 
-**Last Updated**: magic sets (#289) complete (June 2026), 974 tests ✅
+**Last Updated**: v1.2.0 (June 2026), 974 tests ✅
 
 ## Test Summary
 
