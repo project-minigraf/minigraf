@@ -65,11 +65,20 @@ pub(crate) fn magic_pred_name(pred: &str, adornment: &[char]) -> String {
     format!("__magic_{}_{}", pred, adornment_string(adornment))
 }
 
+/// Return a deterministic sentinel entity UUID for an `fb`-adorned magic predicate.
+///
+/// Using a stable UUID (v5, OID namespace, keyed on the magic attribute name)
+/// means the seed fact entity and the guard literal always match, without
+/// requiring the bound variable to be coerced through `edn_to_entity_id`.
+fn sentinel_entity(magic_attr: &str) -> EntityId {
+    Uuid::new_v5(&Uuid::NAMESPACE_OID, magic_attr.as_bytes())
+}
+
 /// Build seed facts for adorned rule invocations with at least one bound arg.
 ///
 /// Encoding:
 ///   arg0 bound: entity = edn_to_entity_id(arg0), attr = ":__magic_p_ad", value = Boolean(true)
-///   arg1-only bound (fb): entity = Uuid::new_v4() (ephemeral carrier), value = edn_to_value(arg1)
+///   arg1-only bound (fb): entity = sentinel_entity(...), value = edn_to_value(arg1)
 #[allow(dead_code)]
 pub(crate) fn build_seed_facts(
     where_clauses: &[WhereClause],
@@ -98,11 +107,13 @@ pub(crate) fn build_seed_facts(
                 seeds.push((entity, magic_attr, Value::Boolean(true)));
             }
         } else if adornment.get(1) == Some(&'b') {
-            // arg1-only bound (fb) — ephemeral carrier UUID
+            // arg1-only bound (fb) — deterministic sentinel entity so the guard
+            // can match via entity position while the bound value stays in value
+            // position, preserving its original type (e.g. Keyword).
             if let Some(arg1) = args.get(1)
                 && let Ok(value) = edn_to_value(arg1)
             {
-                seeds.push((Uuid::new_v4(), magic_attr, value));
+                seeds.push((sentinel_entity(&magic_attr), magic_attr, value));
             }
         }
     }
@@ -132,16 +143,36 @@ pub(crate) fn inject_magic_guard(rule: &Rule, predicate: &str, adornment: &[char
     );
 
     let magic_name = magic_pred_name(predicate, adornment);
-    let bound_head_args: Vec<EdnValue> = adornment
-        .iter()
-        .enumerate()
-        .filter(|&(_, &ch)| ch == 'b')
-        // rule.head[0] is the predicate name; args start at index 1
-        .filter_map(|(i, _)| rule.head.get(i + 1).cloned())
-        .collect();
-    let guard = WhereClause::RuleInvocation {
-        predicate: magic_name,
-        args: bound_head_args,
+    // For fb adornments (entity position free, value position bound): emit a
+    // 2-arg guard [sentinel, bound_var] so the pattern matches value position,
+    // keeping the bound variable's original type (e.g. Keyword) intact.
+    // For bf/bb adornments: 1-arg guard with entity-position bound vars (unchanged).
+    let guard = if adornment.first() == Some(&'f') && has_bound_arg(adornment) {
+        let magic_attr = format!(":{}", magic_name);
+        let sentinel = EdnValue::Uuid(sentinel_entity(&magic_attr));
+        let bound_var = adornment
+            .iter()
+            .enumerate()
+            .filter(|&(_, &ch)| ch == 'b')
+            // rule.head[0] is the predicate name; args start at index 1
+            .filter_map(|(i, _)| rule.head.get(i + 1).cloned())
+            .next();
+        WhereClause::RuleInvocation {
+            predicate: magic_name,
+            args: bound_var.map(|v| vec![sentinel, v]).unwrap_or_default(),
+        }
+    } else {
+        let bound_head_args: Vec<EdnValue> = adornment
+            .iter()
+            .enumerate()
+            .filter(|&(_, &ch)| ch == 'b')
+            // rule.head[0] is the predicate name; args start at index 1
+            .filter_map(|(i, _)| rule.head.get(i + 1).cloned())
+            .collect();
+        WhereClause::RuleInvocation {
+            predicate: magic_name,
+            args: bound_head_args,
+        }
     };
 
     let mut new_body = Vec::with_capacity(rule.body.len() + 1);
@@ -194,9 +225,26 @@ pub(crate) fn build_propagation_rules(
         .collect();
 
     // Guard clause reused in every propagation rule body.
-    let guard = WhereClause::RuleInvocation {
-        predicate: magic_name,
-        args: bound_head_vars,
+    // fb adornment: 2-arg sentinel guard (mirrors inject_magic_guard fix).
+    // bf/bb: 1-arg entity-position guard (unchanged).
+    let guard = if adornment.first() == Some(&'f') && has_bound_arg(adornment) {
+        let magic_attr_str = format!(":{}", magic_name);
+        let sentinel = EdnValue::Uuid(sentinel_entity(&magic_attr_str));
+        let bound_var = adornment
+            .iter()
+            .enumerate()
+            .filter(|&(_, &ch)| ch == 'b')
+            .filter_map(|(i, _)| rule.head.get(i + 1).cloned())
+            .next();
+        WhereClause::RuleInvocation {
+            predicate: magic_name,
+            args: bound_var.map(|v| vec![sentinel, v]).unwrap_or_default(),
+        }
+    } else {
+        WhereClause::RuleInvocation {
+            predicate: magic_name,
+            args: bound_head_vars,
+        }
     };
 
     let mut result = Vec::new();
@@ -244,10 +292,24 @@ pub(crate) fn build_propagation_rules(
             }
         }
 
-        // Fix 1: Head must include ALL bound args, not just the first.
-        let mut head = Vec::with_capacity(1 + new_magic_args.len());
-        head.push(EdnValue::Symbol(called_magic_name.clone()));
-        head.extend(new_magic_args);
+        // Build the propagation rule head.
+        // For fb-adorned called predicates: head = [pred, sentinel, bound_val_var]
+        // so the derived magic fact lands in value position.
+        // For bf/bb: head = [pred, bound_entity_vars...] (unchanged).
+        let head = if called_adornment.first() == Some(&'f') && has_bound_arg(called_adornment) {
+            let called_magic_attr = format!(":{}", called_magic_name);
+            let sentinel = EdnValue::Uuid(sentinel_entity(&called_magic_attr));
+            let mut h = Vec::with_capacity(3);
+            h.push(EdnValue::Symbol(called_magic_name.clone()));
+            h.push(sentinel);
+            h.extend(new_magic_args);
+            h
+        } else {
+            let mut h = Vec::with_capacity(1 + new_magic_args.len());
+            h.push(EdnValue::Symbol(called_magic_name.clone()));
+            h.extend(new_magic_args);
+            h
+        };
         result.push((
             called_magic_name,
             Rule {
@@ -766,5 +828,102 @@ mod tests {
             matches!(first_body, WhereClause::RuleInvocation { .. }),
             "first body clause of adorned rule should be magic guard"
         );
+    }
+
+    #[test]
+    fn test_fb_seed_uses_sentinel_entity() {
+        // Same keyword arg must produce the same entity UUID on repeated calls
+        // (deterministic sentinel, not random UUID).
+        let clauses = vec![WhereClause::RuleInvocation {
+            predicate: "reports-to".to_string(),
+            args: vec![
+                EdnValue::Symbol("?emp".to_string()),
+                EdnValue::Keyword(":alice".to_string()),
+            ],
+        }];
+        let adornments: HashMap<String, Vec<char>> = [("reports-to".to_string(), vec!['f', 'b'])]
+            .into_iter()
+            .collect();
+
+        let seeds1 = build_seed_facts(&clauses, &adornments);
+        let seeds2 = build_seed_facts(&clauses, &adornments);
+
+        assert_eq!(seeds1.len(), 1, "expected 1 seed");
+        assert_eq!(seeds2.len(), 1, "expected 1 seed");
+        assert_eq!(
+            seeds1[0].0, seeds2[0].0,
+            "sentinel entity must be deterministic"
+        );
+    }
+
+    #[test]
+    fn test_fb_guard_is_two_arg() {
+        // inject_magic_guard for ['f','b'] must emit a 2-arg RuleInvocation:
+        // [Uuid(sentinel), Symbol("?mgr")]
+        // so the pattern matches value position rather than entity position.
+        let rule = make_rule(
+            "reports-to",
+            &["?emp", "?mgr"],
+            vec![pat("?emp", ":employee/manager", "?mgr")],
+        );
+        let adornment = vec!['f', 'b'];
+        let rewritten = inject_magic_guard(&rule, "reports-to", &adornment);
+        let guard = rewritten
+            .body
+            .first()
+            .expect("guard must be first body clause");
+        match guard {
+            WhereClause::RuleInvocation { predicate, args } => {
+                assert_eq!(predicate, "__magic_reports-to_fb");
+                assert_eq!(args.len(), 2, "fb guard must be 2-arg");
+                assert!(
+                    matches!(args[0], EdnValue::Uuid(_)),
+                    "first arg must be sentinel UUID"
+                );
+                assert_eq!(args[1], EdnValue::Symbol("?mgr".to_string()));
+            }
+            _ => panic!("expected RuleInvocation guard"),
+        }
+    }
+
+    #[test]
+    fn test_fb_sentinel_matches_seed() {
+        // The sentinel UUID in the guard must equal the entity in the seed fact,
+        // so that pattern matching can find the seed.
+        let clauses = vec![WhereClause::RuleInvocation {
+            predicate: "reports-to".to_string(),
+            args: vec![
+                EdnValue::Symbol("?emp".to_string()),
+                EdnValue::Keyword(":alice".to_string()),
+            ],
+        }];
+        let adornments: HashMap<String, Vec<char>> = [("reports-to".to_string(), vec!['f', 'b'])]
+            .into_iter()
+            .collect();
+
+        let seeds = build_seed_facts(&clauses, &adornments);
+        assert_eq!(seeds.len(), 1, "expected 1 seed");
+        let seed_entity = seeds[0].0;
+
+        let rule = make_rule(
+            "reports-to",
+            &["?emp", "?mgr"],
+            vec![pat("?emp", ":employee/manager", "?mgr")],
+        );
+        let adornment = vec!['f', 'b'];
+        let rewritten = inject_magic_guard(&rule, "reports-to", &adornment);
+        let guard = rewritten
+            .body
+            .first()
+            .expect("guard must be first body clause");
+        match guard {
+            WhereClause::RuleInvocation { predicate: _, args } => match &args[0] {
+                EdnValue::Uuid(u) => {
+                    assert_eq!(*u, seed_entity, "sentinel in guard must match seed entity");
+                }
+                _ => panic!("expected UUID as first guard arg"),
+            },
+            _ => panic!("expected RuleInvocation guard"),
+        }
     }
 }
