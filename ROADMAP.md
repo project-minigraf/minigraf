@@ -1693,7 +1693,7 @@ When evaluating features, ask:
 
 ## Current Focus
 
-**Current release**: v1.2.0 (June 2026) — magic sets rewriting and per-query limits; drop-in replacement for v1.1.x
+**Current release**: v1.2.1 (June 2026) — magic sets `fb` adornment regression fix; drop-in replacement for v1.2.0
 
 **Completed**:
 - ✅ Phase 8 / v1.0.0: Cross-platform release (WASM, WASI, Mobile, Python, Java, C FFI, Node.js)
@@ -1704,6 +1704,7 @@ When evaluating features, ask:
 - ✅ #231 Repo Split — Python, Node, WASM, Java, Android, Swift, C all in separate repos under [project-minigraf](https://github.com/project-minigraf)
 - ✅ Documentation — cookbook (#190), perf tuning guide (#191), error message guide (#192)
 - ✅ v1.2.0 — Magic Sets rewriting (#289), per-query `:max-derived-facts`/`:max-results` limits (#288), bug fixes (#272, #283, #285), perf improvements (#279, #281)
+- ✅ v1.2.1 — Magic sets `fb` adornment fix: sentinel entity + 2-arg guard preserves keyword type through value-position binding (#297, #298)
 
 **Transferred to other repos**:
 - Developer tools: `minigraf-inspector` (#184), `minigraf-visualizer` (#186); #185 (query profiler) deferred to 2.0

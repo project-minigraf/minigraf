@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.2.1 — 2026-06-28
+
+Drop-in replacement for v1.2.0. No file-format changes, no public API changes.
+
+### Bug fixes
+
+- **Magic sets `fb` adornment**: queries with a literal keyword in value position (e.g. `(reports-to ?emp :alice)`) now return correct results instead of empty results (#298). Root cause: seed fact used an ephemeral random UUID as entity; the 1-arg guard bound the variable to that UUID rather than the keyword value. Fixed with a deterministic sentinel entity (`Uuid::new_v5`) and a 2-arg guard that binds from value position.
+- **Magic sets recursive rules**: `(reach :a ?y)` with intermediate variable `?mid` and keyword entity binding now evaluates correctly (#297).
+
 ## v1.2.0 — 2026-06-26
 
 Drop-in replacement for v1.1.x. No file-format changes, no public API breaking changes. Upgrading requires no code changes.
