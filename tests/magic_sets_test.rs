@@ -262,7 +262,10 @@ fn test_value_position_keyword_binding() {
         r#"(rule [(reports-to ?emp ?mgr) [?emp :employee/manager ?mgr]])"#,
     );
 
-    let result = exec(&db, r#"(query [:find ?emp :where (reports-to ?emp :alice)])"#);
+    let result = exec(
+        &db,
+        r#"(query [:find ?emp :where (reports-to ?emp :alice)])"#,
+    );
     let targets = extract_refs(result);
 
     assert_eq!(targets.len(), 2, "expected 2 employees reporting to alice");

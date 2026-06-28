@@ -159,9 +159,7 @@ pub(crate) fn inject_magic_guard(rule: &Rule, predicate: &str, adornment: &[char
             .next();
         WhereClause::RuleInvocation {
             predicate: magic_name,
-            args: bound_var
-                .map(|v| vec![sentinel, v])
-                .unwrap_or_default(),
+            args: bound_var.map(|v| vec![sentinel, v]).unwrap_or_default(),
         }
     } else {
         let bound_head_args: Vec<EdnValue> = adornment
@@ -240,9 +238,7 @@ pub(crate) fn build_propagation_rules(
             .next();
         WhereClause::RuleInvocation {
             predicate: magic_name,
-            args: bound_var
-                .map(|v| vec![sentinel, v])
-                .unwrap_or_default(),
+            args: bound_var.map(|v| vec![sentinel, v]).unwrap_or_default(),
         }
     } else {
         WhereClause::RuleInvocation {
@@ -845,8 +841,9 @@ mod tests {
                 EdnValue::Keyword(":alice".to_string()),
             ],
         }];
-        let adornments: HashMap<String, Vec<char>> =
-            [("reports-to".to_string(), vec!['f', 'b'])].into_iter().collect();
+        let adornments: HashMap<String, Vec<char>> = [("reports-to".to_string(), vec!['f', 'b'])]
+            .into_iter()
+            .collect();
 
         let seeds1 = build_seed_facts(&clauses, &adornments);
         let seeds2 = build_seed_facts(&clauses, &adornments);
@@ -871,7 +868,10 @@ mod tests {
         );
         let adornment = vec!['f', 'b'];
         let rewritten = inject_magic_guard(&rule, "reports-to", &adornment);
-        let guard = rewritten.body.first().expect("guard must be first body clause");
+        let guard = rewritten
+            .body
+            .first()
+            .expect("guard must be first body clause");
         match guard {
             WhereClause::RuleInvocation { predicate, args } => {
                 assert_eq!(predicate, "__magic_reports-to_fb");
@@ -897,8 +897,9 @@ mod tests {
                 EdnValue::Keyword(":alice".to_string()),
             ],
         }];
-        let adornments: HashMap<String, Vec<char>> =
-            [("reports-to".to_string(), vec!['f', 'b'])].into_iter().collect();
+        let adornments: HashMap<String, Vec<char>> = [("reports-to".to_string(), vec!['f', 'b'])]
+            .into_iter()
+            .collect();
 
         let seeds = build_seed_facts(&clauses, &adornments);
         assert_eq!(seeds.len(), 1, "expected 1 seed");
@@ -911,16 +912,17 @@ mod tests {
         );
         let adornment = vec!['f', 'b'];
         let rewritten = inject_magic_guard(&rule, "reports-to", &adornment);
-        let guard = rewritten.body.first().expect("guard must be first body clause");
+        let guard = rewritten
+            .body
+            .first()
+            .expect("guard must be first body clause");
         match guard {
-            WhereClause::RuleInvocation { predicate: _, args } => {
-                match &args[0] {
-                    EdnValue::Uuid(u) => {
-                        assert_eq!(*u, seed_entity, "sentinel in guard must match seed entity");
-                    }
-                    _ => panic!("expected UUID as first guard arg"),
+            WhereClause::RuleInvocation { predicate: _, args } => match &args[0] {
+                EdnValue::Uuid(u) => {
+                    assert_eq!(*u, seed_entity, "sentinel in guard must match seed entity");
                 }
-            }
+                _ => panic!("expected UUID as first guard arg"),
+            },
             _ => panic!("expected RuleInvocation guard"),
         }
     }
