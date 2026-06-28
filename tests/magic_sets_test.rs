@@ -239,3 +239,67 @@ fn test_mutual_recursion_even_odd_distance() {
     assert!(!odds.contains(&nodes[2]), "n2 should not be odd-distance");
     assert!(!odds.contains(&nodes[4]), "n4 should not be odd-distance");
 }
+
+/// #298 — value-position keyword binding: (reports-to ?emp :alice) must return
+/// employees whose manager is :alice. Previously returned empty due to broken
+/// fb seed encoding.
+#[test]
+fn test_value_position_keyword_binding() {
+    let db = open_db();
+    let bob = Uuid::new_v4();
+    let carol = Uuid::new_v4();
+
+    exec(
+        &db,
+        &format!(
+            r#"(transact [[#uuid "{}" :employee/manager :alice]
+                           [#uuid "{}" :employee/manager :alice]])"#,
+            bob, carol
+        ),
+    );
+    exec(
+        &db,
+        r#"(rule [(reports-to ?emp ?mgr) [?emp :employee/manager ?mgr]])"#,
+    );
+
+    let result = exec(&db, r#"(query [:find ?emp :where (reports-to ?emp :alice)])"#);
+    let targets = extract_refs(result);
+
+    assert_eq!(targets.len(), 2, "expected 2 employees reporting to alice");
+    assert!(targets.contains(&bob), "bob should report to alice");
+    assert!(targets.contains(&carol), "carol should report to alice");
+}
+
+/// #297 — recursive rule with intermediate variable and entity-position keyword:
+/// (reach :a ?y) must return the values reachable from :a via :edge.
+/// Previously failed with "Unbound variable in rule head: ?mid".
+#[test]
+fn test_recursive_intermediate_variable_with_keyword_entity() {
+    let db = open_db();
+
+    exec(&db, r#"(transact [[:a :edge :b] [:b :edge :c]])"#);
+    exec(&db, r#"(rule [(reach ?x ?y) [?x :edge ?y]])"#);
+    exec(
+        &db,
+        r#"(rule [(reach ?x ?y) [?x :edge ?mid] (reach ?mid ?y)])"#,
+    );
+
+    let result = exec(&db, r#"(query [:find ?y :where (reach :a ?y)])"#);
+
+    match result {
+        minigraf::QueryResult::QueryResults { results, .. } => {
+            let values: Vec<minigraf::Value> =
+                results.into_iter().map(|row| row[0].clone()).collect();
+            assert_eq!(values.len(), 2, "expected 2 results");
+            assert!(
+                values.contains(&minigraf::Value::Keyword(":b".to_string())),
+                "expected :b in results"
+            );
+            assert!(
+                values.contains(&minigraf::Value::Keyword(":c".to_string())),
+                "expected :c in results"
+            );
+        }
+        _ => panic!("expected QueryResults"),
+    }
+}
