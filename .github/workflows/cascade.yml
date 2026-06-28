@@ -32,7 +32,7 @@ jobs:
           VERSION="${{ steps.ver.outputs.semver }}"
           echo "Waiting for minigraf@$VERSION on crates.io..."
           FOUND=0
-          for i in $(seq 1 18); do
+          for i in $(seq 1 36); do
             STATUS=$(curl -s "https://crates.io/api/v1/crates/minigraf/$VERSION" \
               -H "User-Agent: minigraf-cascade/1.0" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('version',{}).get('num',''))" 2>/dev/null || echo "")
             if [ "$STATUS" = "$VERSION" ]; then
@@ -40,11 +40,11 @@ jobs:
               FOUND=1
               break
             fi
-            echo "Attempt $i/18: not yet available, waiting 10s..."
+            echo "Attempt $i/36: not yet available, waiting 10s..."
             sleep 10
           done
           if [ "$FOUND" != "1" ]; then
-            echo "ERROR: minigraf@$VERSION did not appear on crates.io within 3 minutes"
+            echo "ERROR: minigraf@$VERSION did not appear on crates.io within 6 minutes"
             exit 1
           fi
 
