@@ -256,9 +256,25 @@ pub fn read_all_from_pages(
     first_page_id: u64,
     num_pages: u64,
 ) -> Result<Vec<Fact>> {
+    Ok(read_all_with_refs(backend, first_page_id, num_pages)?.0)
+}
+
+/// Read every fact from `num_pages` packed pages, together with the `FactRef` that
+/// addresses each fact at its actual on-disk location.
+///
+/// Unlike re-packing the facts with [`pack_facts`], the returned refs reflect the real
+/// page layout, which is not contiguous when the file was written by several `save()`
+/// calls (each starts a fresh page).
+pub fn read_all_with_refs(
+    backend: &dyn StorageBackend,
+    first_page_id: u64,
+    num_pages: u64,
+) -> Result<(Vec<Fact>, Vec<FactRef>)> {
     let mut facts = Vec::new();
+    let mut refs = Vec::new();
     for i in 0..num_pages {
-        let page = backend.read_page(first_page_id.saturating_add(i))?;
+        let page_id = first_page_id.saturating_add(i);
+        let page = backend.read_page(page_id)?;
         let page_type = page.first().copied().unwrap_or(0);
         if page.len() < PAGE_SIZE || page_type != PAGE_TYPE_PACKED {
             continue;
@@ -268,9 +284,13 @@ pub fn read_all_from_pages(
         let record_count = u16::from_le_bytes([b2, b3]);
         for slot in 0..record_count {
             facts.push(read_slot(&page, slot)?);
+            refs.push(FactRef {
+                page_id,
+                slot_index: slot,
+            });
         }
     }
-    Ok(facts)
+    Ok((facts, refs))
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

@@ -319,15 +319,16 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
 
         if needs_rebuild {
             // Checksum mismatch: rebuild indexes by re-reading all packed facts
-            let all_facts = {
+            // FactRefs must come from the actual on-disk layout: each save() starts a
+            // fresh page, so re-packing all facts contiguously would yield refs that
+            // point at the wrong page/slot (#370).
+            let (all_facts, real_refs) = {
                 let backend = self
                     .backend
                     .lock()
                     .map_err(|_| err_coded!(ErrorCode::Stg016))?;
-                crate::storage::packed_pages::read_all_from_pages(&*backend, 1, num_fact_pages)?
+                crate::storage::packed_pages::read_all_with_refs(&*backend, 1, num_fact_pages)?
             };
-            // Re-pack to derive correct FactRefs (same deterministic layout as on disk)
-            let (_, real_refs) = pack_facts(&all_facts, 1)?;
 
             // Build sorted index entries
             let (eavt_entries, aevt_entries, avet_entries, vaet_entries) =
@@ -1606,6 +1607,61 @@ mod tests {
                 1,
                 "After rebuild, fact must be accessible via index"
             );
+        }
+    }
+
+    /// Regression test for #370: the rebuild-on-load path must derive `FactRef`s from the
+    /// on-disk fact-page layout, not by re-packing all facts as a single batch. Each
+    /// `save()` starts a fresh page, so a file written by several checkpoints has partially
+    /// filled pages that a contiguous re-pack would not reproduce.
+    #[test]
+    fn test_rebuild_after_multiple_checkpoints_keeps_entity_lookups() {
+        use crate::graph::types::Value;
+        use crate::storage::StorageBackend;
+        use crate::storage::backend::FileBackend;
+        use tempfile::NamedTempFile;
+        use uuid::Uuid;
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        let entities: Vec<Uuid> = (0..5).map(|_| Uuid::new_v4()).collect();
+
+        // One checkpoint per entity: five fact batches, each on its own partial page.
+        {
+            let mut pfs =
+                PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
+            for (i, e) in entities.iter().enumerate() {
+                pfs.storage()
+                    .transact(
+                        vec![(*e, ":name".to_string(), Value::String(format!("n{i}")))],
+                        None,
+                    )
+                    .unwrap();
+                pfs.dirty = true;
+                pfs.save().unwrap();
+            }
+        }
+
+        // Corrupt index_checksum (and re-seal the header) to force the rebuild path.
+        {
+            let mut backend = FileBackend::open(&path).unwrap();
+            let mut page = backend.read_page(0).unwrap();
+            page[64] ^= 0xFF;
+            let cs = compute_header_checksum_from_bytes(&page);
+            page[80..84].copy_from_slice(&cs.to_le_bytes());
+            backend.write_page(0, &page).unwrap();
+            backend.sync().unwrap();
+        }
+
+        let pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
+        for e in &entities {
+            let facts = pfs.storage().get_facts_by_entity(e).unwrap();
+            assert_eq!(
+                facts.len(),
+                1,
+                "entity lookup must survive index rebuild after multiple checkpoints"
+            );
+            assert_eq!(facts[0].entity, *e, "lookup returned a different entity");
         }
     }
 
