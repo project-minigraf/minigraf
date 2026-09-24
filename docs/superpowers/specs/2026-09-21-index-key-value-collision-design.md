@@ -36,7 +36,7 @@ In scope:
 Out of scope:
 
 - Dropping v1–v6 migration code (a separate PR at v3.0.0 cut time). v1–v6 migrations stay and
-  chain into v8.
+  chain into v8, with the changes under "Legacy decoders" below that keep them working.
 - Version bump, tag, and release.
 - The `seen` set in `executor.rs` `Or`-branch evaluation. It keys on bound values and is not
   affected.
@@ -60,9 +60,11 @@ order are unchanged.
 Range bounds (`get_facts_by_entity`, `get_facts_by_attribute`, `lookup_eavt_*`, `lookup_aevt_*`,
 and B+tree range tests) use `value_bytes: vec![]` and `asserted: false` as the minimum. Existing
 upper bounds are exclusive next-entity or next-attribute keys, so they need only the same minimum
-values. Inclusive upper bounds built from `tx_count: u64::MAX` (`lookup_eavt_entity_attr`) cannot
-name a maximal `value_bytes`, so they would drop entries whose `tx_count` is `u64::MAX`. Those
-helpers are rewritten as exclusive bounds on the next attribute, and a unit test covers the edge.
+values. `lookup_eavt_entity`, `lookup_eavt_entity_attr` and similar `Indexes` helpers build
+upper bounds from `u64::MAX` sentinels (and one from a `"zzz…"` attribute). With `value_bytes`
+appended, an inclusive `tx_count: u64::MAX` bound no longer covers every key, so these helpers
+switch to the exclusive next-entity / next-attribute bound that `graph/storage.rs` already uses.
+Several are `#[allow(dead_code)]`; if unused outside tests they are removed instead.
 
 Alternative rejected: placing `value_bytes` directly after the attribute, as AVET does. It changes
 the sort order and hurts temporal range scans on entity and attribute.
@@ -76,30 +78,72 @@ attribute-driven loops use it.
 ### Format v8 and migration
 
 - `FORMAT_VERSION` becomes 8. The 84-byte header layout is unchanged; only `version` differs.
-- On open, a v7 header forces the existing `needs_rebuild` path in `PersistentFactStorage::load`.
-  That path re-reads packed fact pages with real `FactRef`s (`read_all_with_refs`), rebuilds all
-  four B+trees with the new keys, and writes a v8 header. Fact pages are not modified.
-- Idempotent under crash: the rebuild overwrites index pages before writing the header. A crash in
-  between leaves a v7 header whose index checksum no longer matches, so the next open rebuilds
-  again.
-- `FileHeader::validate` still rejects versions above `FORMAT_VERSION` (`STG-006`).
-- Header checksum validation applies to `version >= 7` as today.
+- Keys are postcard-encoded in B+tree pages. Postcard is not self-describing, so a v6 or v7 key
+  cannot be decoded as a v8 key. Every code path that decodes on-disk keys (`OnDiskIndexReader`
+  range scans, `stream_all_entries` in `save()`) must therefore never see a pre-v8 tree.
+- On open, any header with `version < 8` that has B+tree index roots (v6 and v7) forces the
+  existing `needs_rebuild` path in `PersistentFactStorage::load`, before the index reader is wired
+  and before any `save()`. That path re-reads packed fact pages with real `FactRef`s
+  (`read_all_with_refs`), rebuilds all four B+trees with v8 keys, and writes a v8 header
+  (`FileHeader::new()` already uses `FORMAT_VERSION`). Fact pages are not modified.
+- Crash safety: the rebuild overwrites index pages first and writes the header last. A crash in
+  between leaves a header with `version < 8`, so the next open rebuilds again. This rests on the
+  version check, not on the index checksum.
+- `FileHeader::validate` still rejects versions above `FORMAT_VERSION` (`STG-006`), so v2.x opening
+  a v8 file fails cleanly. The upgrade is one-way and happens on first open; the CHANGELOG must say
+  so, since bindings users (e.g. temporal_reasoning) get the upgrade silently on open.
+- WAL entries carry facts, not index keys, so a sidecar WAL on a v7 file replays unchanged after
+  the rebuild.
+- The browser backend (`src/browser/mod.rs`, `import_graph`) uses the same
+  `PersistentFactStorage::load`, so it gets the migration with no separate code.
+
+### Legacy decoders
+
+The v5 → v6 migration (`migrate_v5_to_v6`) reads v5 paged-blob indexes with
+`btree::read_*_index`, which postcard-decode into the current `EavtKey`/`AevtKey`/`AvetKey`/
+`VaetKey`. Changing those structs silently breaks v5 migration. The same function also builds
+keys by hand when it rebuilds from facts.
+
+- `use_old_indexes` in `migrate_v5_to_v6` is removed: v5 indexes lack value bytes and cannot be
+  converted into v8 keys, so v5 migration always rebuilds from fact pages.
+- The legacy `btree::read_*_index` / `write_*_index` functions then have no production caller.
+  They keep their own frozen `v7`-layout key types (private to `btree.rs`) so their unit tests keep
+  exercising the old byte layout; they are deleted in the v1–v6 cleanup PR.
+- All hand-built key literals (`persistent_facts.rs` v5 path, `build_sorted_index_entries`,
+  `Indexes::insert`, `graph/storage.rs` range bounds, tests) go through one constructor per key
+  type (`EavtKey::from_fact` etc.) so a future field change cannot miss a site.
+- Verify during planning that the v4 one-per-page path (`load_one_per_page_legacy` → `save()`)
+  and the v1 → v2 path never have non-zero B+tree roots when `save()` streams them.
 
 ## Testing
 
 Regression tests are written first and shown failing before any fix:
 
-1. Issue reproduction: two values of one attribute in one transact; read through EAVT, AEVT and
-   full scan; after checkpoint and reopen; over several graph shapes (filler entities with two
-   attributes each). All three paths return both values.
+1. Issue reproduction: two values of one attribute in one transact; read through EAVT
+   (`[:e :attr ?v]`), AEVT (`[?e :attr ?v]`) and full scan (`[?e ?a ?v]`), in three states:
+   before checkpoint (pending `BTreeMap`s), after reopen without checkpoint (WAL replay), and after
+   checkpoint and reopen (on-disk B+tree). Run over several graph shapes, including filler entities
+   with two attributes each, which is what made EAVT and AEVT disagree in the issue. All paths
+   return both values in all states.
 2. Batched retract of both values, then checkpoint and reopen: no path returns either value.
-3. Same value asserted and retracted in one `WriteTransaction`: both facts survive in all four
-   indexes (demonstrates the `asserted` collision, then the fix).
-4. v7 → v8 migration: build a v7 fixture containing colliding values (from the current code, before
-   the change), open with the new code, assert v8 header and correct reads.
-5. Unit tests: key ordering, range-bound minima, `encode_value` in the key, `selective_fact_fetch`
-   dedup with two values sharing everything but the value.
-6. Update existing assertions on `FORMAT_VERSION == 7` and header version.
+3. Same value asserted and retracted in one `WriteTransaction` with the same valid window: all
+   four indexes keep both facts. This test must fail on the current code first; if it cannot be
+   made to fail, `asserted` is not added to AVET/VAET and the spec is revised.
+4. v7 → v8 migration, from real v7 files written by v2.0.0 code:
+   - The existing `tests/fixtures/compat.graph` is v7. Its native test
+     (`tests/cross_platform_compat_test.rs`) and browser test (`src/browser/mod.rs`) now cover
+     the migration path; add assertions that the header is v8 after open and that a second open
+     does not rebuild.
+   - Add a second fixture with colliding values, generated on `main` (v2.0.0) with the existing
+     `generate_compat_fixture` example pattern. After migration, both values read back through
+     all paths. The generation steps are recorded in the fixture's test doc comment.
+5. v5 migration still works after the key change (existing v5 tests), now always rebuilding.
+6. Maximum-size value: a fact whose value is near `MAX_FACT_BYTES` checkpoints and reads back
+   through all four indexes. AVET already stores full value bytes today, so this is not a new
+   risk class, but EAVT/AEVT separators in internal nodes now carry values too.
+7. Unit tests: key ordering, range-bound minima, per-key constructors, and `selective_fact_fetch`
+   dedup with two facts that differ only in value.
+8. Update existing assertions on `FORMAT_VERSION == 7` and header version 7.
 
 Tests follow the project convention: no `{:?}` of `Result`/`Fact`/`Value` in assert messages.
 
@@ -115,9 +159,13 @@ Tests follow the project convention: no `{:?}` of `Result`/`Fact`/`Value` in ass
 
 ## Risks
 
-- Larger keys (value bytes) increase index size and lower B+tree fanout for EAVT/AEVT. Measure
-  file size and benchmark impact on the existing suite before claiming no regression.
-- Long string values inflate keys. The existing `MAX_FACT_BYTES` bound applies to facts; check
-  whether a key can exceed the B+tree node page size and, if so, decide on truncation with a
-  fact-page tiebreak or a size error.
+- Larger EAVT/AEVT keys lower B+tree fanout and grow the file. Measure file size and run the
+  benchmark suite (`cargo bench`, not `cargo test --release`) against `main` before claiming no
+  regression, and record the numbers in the PR.
+- Oversized entries: `build_btree` writes one entry per page when an entry exceeds the fill
+  threshold, but an entry larger than a page would overflow `write_leaf_page`. Facts are capped at
+  `MAX_FACT_BYTES` and AVET entries already carry full value bytes, so EAVT/AEVT entries have the
+  same bound as AVET today. Test 6 confirms this rather than assuming it.
+- `encode_value` in the `selective_fact_fetch` dedup key allocates per fetched fact. Acceptable
+  for correctness; note it in the benchmark comparison.
 - v8 files are unreadable by v2.x. This is the intended breaking change for v3.0.0.
