@@ -252,3 +252,126 @@ fn batched_retract_with_non_asserted_colliding_value_hides_real_values_before_ch
         );
     }
 }
+
+/// `tests/fixtures/v7_multivalue.graph` was written by the v7 writer at
+/// 84bf375 (v2.0.0 format) with this generator:
+///
+/// ```ignore
+/// fn main() -> anyhow::Result<()> {
+///     use std::path::PathBuf;
+///     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+///     let tmp = dir.join("v7_multivalue.graph.tmp");
+///     let _ = std::fs::remove_file(&tmp);
+///     let _ = std::fs::remove_file(dir.join("v7_multivalue.graph.tmp.wal"));
+///
+///     let db = minigraf::Minigraf::open(&tmp)?;
+///     let mut facts = vec![
+///         "[:t/x :kind :k/a]".to_string(),
+///         "[:t/x :kind :k/b]".to_string(),
+///         r#"[:t/x :note "two"]"#.to_string(),
+///     ];
+///     for i in 0..30 {
+///         facts.push(format!("[:t/f-{i} :kind :k/c]"));
+///         facts.push(format!(r#"[:t/f-{i} :note "f"]"#));
+///     }
+///     db.execute(&format!("(transact [{}])", facts.join(" ")))?;
+///     db.execute("(transact [[:t/y :tag :g/a] [:t/y :tag :g/b]])")?;
+///     db.execute("(retract [[:t/y :tag :g/a] [:t/y :tag :g/b]])")?;
+///     db.checkpoint()?;
+///     drop(db);
+///     let _ = std::fs::remove_file(dir.join("v7_multivalue.graph.tmp.wal"));
+///     std::fs::rename(&tmp, dir.join("v7_multivalue.graph"))?;
+///     Ok(())
+/// }
+/// ```
+///
+/// Opening it must migrate to v8 and return both values on every path, and
+/// the batched retract of `:t/y`'s two `:tag` values must hide both.
+#[test]
+fn v7_multivalue_fixture_migrates_and_reads_correctly() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("v7.graph");
+    std::fs::write(&path, include_bytes!("fixtures/v7_multivalue.graph")).unwrap();
+
+    {
+        let db = Minigraf::open(&path).unwrap();
+        for (name, got) in ["eavt", "aevt", "scan"]
+            .iter()
+            .zip(three_paths(&db, ":t/x", ":kind", "two"))
+        {
+            assert_eq!(
+                got,
+                both(),
+                "{name} path must return both values after migration"
+            );
+        }
+        let tags = rows(
+            db.execute("(query [:find ?v :where [:t/y :tag ?v]])")
+                .unwrap(),
+        );
+        assert!(
+            tags.is_empty(),
+            "batched retract in the v7 file must hide both values"
+        );
+    }
+
+    let raw = std::fs::read(&path).unwrap();
+    assert_eq!(
+        u32::from_le_bytes(raw[4..8].try_into().unwrap()),
+        8,
+        "file must be v8 after open"
+    );
+
+    // Second open is a plain v8 open (no rebuild) and reads the same.
+    let db = Minigraf::open(&path).unwrap();
+    for (name, got) in ["eavt", "aevt", "scan"]
+        .iter()
+        .zip(three_paths(&db, ":t/x", ":kind", "two"))
+    {
+        assert_eq!(
+            got,
+            both(),
+            "{name} path must return both values on second open"
+        );
+    }
+}
+
+/// Index entries now carry the value bytes; a near-maximum string value must
+/// still checkpoint and read back through every index.
+#[test]
+fn near_max_size_values_checkpoint_and_read_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("big.graph");
+    let big_a = "a".repeat(3_800);
+    let big_b = "b".repeat(3_800);
+    {
+        let db = Minigraf::open(&path).unwrap();
+        db.execute(&format!(
+            r#"(transact [[:t/big :blob "{big_a}"] [:t/big :blob "{big_b}"] [:t/big :note "big"]])"#
+        ))
+        .unwrap();
+        db.checkpoint().unwrap();
+    }
+    let db = Minigraf::open(&path).unwrap();
+    let by_entity = rows(
+        db.execute("(query [:find ?v :where [:t/big :blob ?v]])")
+            .unwrap(),
+    );
+    assert_eq!(
+        by_entity.len(),
+        2,
+        "EAVT path must return both large values"
+    );
+    let by_attr = rows(
+        db.execute(r#"(query [:find ?v :where [?e :blob ?v] [?e :note "big"]])"#)
+            .unwrap(),
+    );
+    assert_eq!(by_attr.len(), 2, "AEVT path must return both large values");
+    let by_value = rows(
+        db.execute(&format!(
+            r#"(query [:find ?e :where [?e :blob "{big_a}"]])"#
+        ))
+        .unwrap(),
+    );
+    assert_eq!(by_value.len(), 1, "AVET path must find the large value");
+}
