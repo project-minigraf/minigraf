@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Breaking changes
+
+- **File format v8** (#287, #371). Index keys now include the encoded value and the assert/retract flag. A v7 file (written by v2.x) is re-indexed and upgraded to v8 the first time it is opened; the upgrade is one-way and v2.x cannot open a v8 file (`STG-006`). Bindings users get this upgrade silently on open.
+- **Formats v1–v6 are no longer readable.** Opening one fails with the new `STG-028`; open it once with Minigraf v2.x to upgrade it to v7 first. `STG-003` and `STG-004` are retired. `STG-005` and `STG-006` message text changed.
+
+### Fixed
+
+- Two values of the same attribute written in one transaction are both returned by every query path. Previously only one came back, and entity-bound and attribute-bound queries could return different ones (#371, #287).
+- A retract that removes several values of one attribute in one call now hides all of them (#371).
+
 ## v2.0.0 — 2026-08-26
 
 This was originally slated as v1.3.0, matching the GitHub milestone name under
