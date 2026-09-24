@@ -110,49 +110,29 @@ fn test_v6_pending_plus_committed_merge() {
 }
 
 #[test]
-fn test_v6_migration_from_v5_eager() {
-    // Write a minimal v5 header directly to the .graph file (raw bytes),
-    // then open with v6 code — migrate_v5_to_v6 must run and produce a v6 file.
-    // We cannot use OpenOptions to produce a v5 file (v6 code always writes v6),
-    // so we write the raw 72-byte v5 header at offset 0.
+fn test_v5_file_is_rejected() {
+    // v3.0.0 dropped support for formats v1–v6. Write a minimal v5 header
+    // directly to the .graph file (raw bytes) and verify that opening it
+    // fails with STG-028 and leaves the file unmodified.
     let (_tmp, path) = tmp_path();
 
-    // Create an empty v5 .graph file with only a header (no facts, no index pages)
-    {
-        let mut f = std::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(&path)
-            .unwrap();
-        let mut page = vec![0u8; 4096]; // PAGE_SIZE
-        page[0..4].copy_from_slice(b"MGRF");
-        page[4..8].copy_from_slice(&5u32.to_le_bytes()); // version = 5
-        page[8..16].copy_from_slice(&1u64.to_le_bytes()); // page_count = 1
-        page[68] = 0x02; // fact_page_format = PACKED
-        use std::io::Write;
-        f.write_all(&page).unwrap();
-    }
+    let mut page = vec![0u8; 4096]; // PAGE_SIZE
+    page[0..4].copy_from_slice(b"MGRF");
+    page[4..8].copy_from_slice(&5u32.to_le_bytes()); // version = 5
+    page[8..16].copy_from_slice(&1u64.to_le_bytes()); // page_count = 1
+    page[68] = 0x02; // fact_page_format = PACKED
+    std::fs::write(&path, &page).unwrap();
 
-    // Open with v6 code — migration must run
-    let db = OpenOptions::new().path(&path).open().unwrap();
+    let err = match OpenOptions::new().path(&path).open() {
+        Ok(_) => panic!("v5 file must not open"),
+        Err(e) => e,
+    };
+    assert_eq!(err.code(), "STG-028", "v5 file must fail with STG-028");
 
-    // Query on empty DB must return empty result (not an error)
-    let _result = db
-        .execute("(query [:find ?e :where [?e :any :any]])")
-        .unwrap();
-    drop(db);
-
-    // Re-open and verify header was upgraded to v6
-    let mut f = std::fs::File::open(&path).unwrap();
-    let mut header_bytes = vec![0u8; 4096];
-    use std::io::Read;
-    f.read_exact(&mut header_bytes).unwrap();
-    let version = u32::from_le_bytes(header_bytes[4..8].try_into().unwrap());
     assert_eq!(
-        version, 7,
-        "header must be upgraded from v5 to v7; got version={}",
-        version
+        std::fs::read(&path).unwrap(),
+        page,
+        "rejected file must be left unmodified"
     );
 }
 

@@ -138,8 +138,6 @@ pub(crate) enum ErrorCode {
     Int000,
     Stg001,
     Stg002,
-    Stg003,
-    Stg004,
     Stg005,
     Stg006,
     Stg007,
@@ -163,6 +161,7 @@ pub(crate) enum ErrorCode {
     Stg025,
     Stg026,
     Stg027,
+    Stg028,
     Wal001,
     Wal002,
     Wal003,
@@ -787,27 +786,15 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCategory::Storage,
     ),
     (
-        ErrorCode::Stg003,
-        "STG-003",
-        "Invalid v4/v5/v6 header: expected at least 72 bytes, got {}",
-        ErrorCategory::Storage,
-    ),
-    (
-        ErrorCode::Stg004,
-        "STG-004",
-        "Invalid v6 header: expected 80 bytes, got {}",
-        ErrorCategory::Storage,
-    ),
-    (
         ErrorCode::Stg005,
         "STG-005",
-        "Invalid v7 header: expected 84 bytes, got {}",
+        "Invalid header: expected 84 bytes, got {}",
         ErrorCategory::Storage,
     ),
     (
         ErrorCode::Stg006,
         "STG-006",
-        "Unsupported format version: {} (supported: 1-{})",
+        "Unsupported format version: {} (supported: 7-{})",
         ErrorCategory::Storage,
     ),
     (
@@ -934,6 +921,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Stg027,
         "STG-027",
         "Failed to lock database at {}: {}. This filesystem does not support file locking (common on NFSv3 without lockd, and on some FUSE mounts). Set `allow_unlocked` in `OpenOptions` to open anyway — that accepts the risk that concurrent writers corrupt the file.",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg028,
+        "STG-028",
+        "Format version {} is no longer supported (oldest supported: {}). Open the file once with Minigraf v2.x to upgrade it to format v7, then open it with this version.",
         ErrorCategory::Storage,
     ),
     (
@@ -1719,8 +1712,6 @@ mod tests {
                 | ErrorCode::Qry009
                 | ErrorCode::Stg001
                 | ErrorCode::Stg002
-                | ErrorCode::Stg003
-                | ErrorCode::Stg004
                 | ErrorCode::Stg005
                 | ErrorCode::Stg006
                 | ErrorCode::Stg007
@@ -1744,6 +1735,7 @@ mod tests {
                 | ErrorCode::Stg025
                 | ErrorCode::Stg026
                 | ErrorCode::Stg027
+                | ErrorCode::Stg028
                 | ErrorCode::Wal001
                 | ErrorCode::Wal002
                 | ErrorCode::Wal003
@@ -1909,8 +1901,6 @@ mod tests {
             ErrorCode::Qry009,
             ErrorCode::Stg001,
             ErrorCode::Stg002,
-            ErrorCode::Stg003,
-            ErrorCode::Stg004,
             ErrorCode::Stg005,
             ErrorCode::Stg006,
             ErrorCode::Stg007,
@@ -1934,6 +1924,7 @@ mod tests {
             ErrorCode::Stg025,
             ErrorCode::Stg026,
             ErrorCode::Stg027,
+            ErrorCode::Stg028,
             ErrorCode::Wal001,
             ErrorCode::Wal002,
             ErrorCode::Wal003,
