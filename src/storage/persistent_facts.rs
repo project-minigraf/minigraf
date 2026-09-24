@@ -287,8 +287,15 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             let (eavt_entries, aevt_entries, avet_entries, vaet_entries) =
                 build_sorted_index_entries(&all_facts, &real_refs);
 
-            // Fix up tx_counter from actual facts
-            let max_tx = all_facts.iter().map(|f| f.tx_count).max().unwrap_or(0);
+            // Fix up tx_counter from actual facts. Empty transactions
+            // (`(transact [])`, `(retract [])`) still allocate a tx_count
+            // without producing any facts, so the highest fact tx_count can
+            // undercount the counter the file was actually at; floor it at
+            // the old header's last_checkpointed_tx_count so migration never
+            // rewinds the counter and lets new transactions reuse tx_counts
+            // that `:as-of N` already served facts for (#371, #287).
+            let max_fact_tx = all_facts.iter().map(|f| f.tx_count).max().unwrap_or(0);
+            let max_tx = max_fact_tx.max(header.last_checkpointed_tx_count);
             self.storage.restore_tx_counter_from(max_tx);
 
             // Build v6 B+tree indexes directly
@@ -323,6 +330,12 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
                 &self.page_cache,
                 next3,
             )?;
+
+            // Sync index pages to disk before writing the header.
+            // The header update is the atomic commit point: once it's durable,
+            // recovery uses the new root pages. All data those roots reference
+            // must already be on stable storage.
+            backend.sync()?;
 
             // Write header with full-coverage checksum (facts + indexes)
             let total_data_pages = next4.saturating_sub(1);
@@ -1354,6 +1367,62 @@ mod tests {
         let b = s.into_backend().unwrap();
         let h2 = FileHeader::from_bytes(&b.read_page(0).unwrap()).unwrap();
         assert_eq!(h2.version, 8, "v7 file must be upgraded to v8 on open");
+    }
+
+    /// #371/#287 review finding: empty transactions (`(transact [])`,
+    /// `(retract [])`) still allocate a tx_count without producing any facts
+    /// (see `FactStorage::transact` — `fetch_add` happens unconditionally).
+    /// The v7->v8 rebuild path must not compute the restored tx_counter as
+    /// `max(fact.tx_count)` alone, or trailing empty transactions before the
+    /// last checkpoint would be forgotten, rewinding the counter and letting
+    /// new transactions reuse tx_counts that `:as-of N` already served facts
+    /// for.
+    #[test]
+    fn v7_migration_does_not_rewind_tx_counter_past_empty_transactions() {
+        use crate::storage::FileHeader;
+        let e = Uuid::from_u128(70);
+        let mut backend = {
+            let mut s = PersistentFactStorage::new(MemoryBackend::new(), 256).unwrap();
+            s.storage()
+                .transact(vec![(e, ":n".to_string(), Value::Integer(1))], None)
+                .unwrap();
+            // Empty transactions still allocate tx_count without producing facts.
+            s.storage().transact(vec![], None).unwrap();
+            s.storage().transact(vec![], None).unwrap();
+            s.mark_dirty();
+            s.save().unwrap();
+            s.into_backend().unwrap()
+        };
+        let pre_migration_last_checkpointed = {
+            let h = FileHeader::from_bytes(&backend.read_page(0).unwrap()).unwrap();
+            h.last_checkpointed_tx_count
+        };
+        assert_eq!(
+            pre_migration_last_checkpointed, 3,
+            "one fact-bearing transact plus two empty transacts"
+        );
+
+        // Downgrade the header to v7 (keys on disk are now v8-shaped, which is
+        // fine: the rebuild never reads them).
+        let mut h = FileHeader::from_bytes(&backend.read_page(0).unwrap()).unwrap();
+        h.version = 7;
+        h.header_checksum = compute_header_checksum(&h);
+        let mut page = h.to_bytes();
+        page.resize(PAGE_SIZE, 0);
+        backend.write_page(0, &page).unwrap();
+
+        let s = PersistentFactStorage::new(backend, 256).unwrap();
+        assert!(
+            s.storage().current_tx_count() >= pre_migration_last_checkpointed,
+            "tx_counter must not rewind below the pre-migration last_checkpointed_tx_count"
+        );
+
+        let b = s.into_backend().unwrap();
+        let h2 = FileHeader::from_bytes(&b.read_page(0).unwrap()).unwrap();
+        assert!(
+            h2.last_checkpointed_tx_count >= pre_migration_last_checkpointed,
+            "v8 header's last_checkpointed_tx_count must not decrease across migration"
+        );
     }
 
     #[test]
