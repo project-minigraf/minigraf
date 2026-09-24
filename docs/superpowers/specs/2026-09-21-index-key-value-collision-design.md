@@ -30,13 +30,14 @@ In scope:
   `value_bytes`, VAET has the ref target), but an assertion and a retraction of the same value at
   the same `tx_count` share a key. This is inferred from the key definitions; a test written first
   must demonstrate it before the change is applied.
-- File format v7 → v8, with migration.
+- File format v7 → v8, with migration. v7 (the format written by v2.0.0) is the only older
+  format still supported.
+- Dropping support for formats v1–v6, as the v3.0.0 file-format policy in `ROADMAP.md` requires.
+  Doing it here avoids adapting v5 migration code to the new key types only to delete it.
 - Add value bytes to the `seen` key in `selective_fact_fetch`.
 
 Out of scope:
 
-- Dropping v1–v6 migration code (a separate PR at v3.0.0 cut time). v1–v6 migrations stay and
-  chain into v8, with the changes under "Legacy decoders" below that keep them working.
 - Version bump, tag, and release.
 - The `seen` set in `executor.rs` `Or`-branch evaluation. It keys on bound values and is not
   affected.
@@ -78,16 +79,15 @@ attribute-driven loops use it.
 ### Format v8 and migration
 
 - `FORMAT_VERSION` becomes 8. The 84-byte header layout is unchanged; only `version` differs.
-- Keys are postcard-encoded in B+tree pages. Postcard is not self-describing, so a v6 or v7 key
+- Keys are postcard-encoded in B+tree pages. Postcard is not self-describing, so a v7 key
   cannot be decoded as a v8 key. Every code path that decodes on-disk keys (`OnDiskIndexReader`
   range scans, `stream_all_entries` in `save()`) must therefore never see a pre-v8 tree.
-- On open, any header with `version < 8` that has B+tree index roots (v6 and v7) forces the
-  existing `needs_rebuild` path in `PersistentFactStorage::load`, before the index reader is wired
-  and before any `save()`. That path re-reads packed fact pages with real `FactRef`s
-  (`read_all_with_refs`), rebuilds all four B+trees with v8 keys, and writes a v8 header
-  (`FileHeader::new()` already uses `FORMAT_VERSION`). Fact pages are not modified.
+- On open, a v7 header forces the existing `needs_rebuild` path in `PersistentFactStorage::load`,
+  before the index reader is wired and before any `save()`. That path re-reads packed fact pages
+  with real `FactRef`s (`read_all_with_refs`), rebuilds all four B+trees with v8 keys, and writes
+  a v8 header (`FileHeader::new()` already uses `FORMAT_VERSION`). Fact pages are not modified.
 - Crash safety: the rebuild overwrites index pages first and writes the header last. A crash in
-  between leaves a header with `version < 8`, so the next open rebuilds again. This rests on the
+  between leaves a v7 header, so the next open rebuilds again. This rests on the
   version check, not on the index checksum.
 - `FileHeader::validate` still rejects versions above `FORMAT_VERSION` (`STG-006`), so v2.x opening
   a v8 file fails cleanly. The upgrade is one-way and happens on first open; the CHANGELOG must say
@@ -97,23 +97,22 @@ attribute-driven loops use it.
 - The browser backend (`src/browser/mod.rs`, `import_graph`) uses the same
   `PersistentFactStorage::load`, so it gets the migration with no separate code.
 
-### Legacy decoders
+### Dropping v1–v6
 
-The v5 → v6 migration (`migrate_v5_to_v6`) reads v5 paged-blob indexes with
-`btree::read_*_index`, which postcard-decode into the current `EavtKey`/`AevtKey`/`AvetKey`/
-`VaetKey`. Changing those structs silently breaks v5 migration. The same function also builds
-keys by hand when it rebuilds from facts.
-
-- `use_old_indexes` in `migrate_v5_to_v6` is removed: v5 indexes lack value bytes and cannot be
-  converted into v8 keys, so v5 migration always rebuilds from fact pages.
-- The legacy `btree::read_*_index` / `write_*_index` functions then have no production caller.
-  They keep their own frozen `v7`-layout key types (private to `btree.rs`) so their unit tests keep
-  exercising the old byte layout; they are deleted in the v1–v6 cleanup PR.
-- All hand-built key literals (`persistent_facts.rs` v5 path, `build_sorted_index_entries`,
-  `Indexes::insert`, `graph/storage.rs` range bounds, tests) go through one constructor per key
-  type (`EavtKey::from_fact` etc.) so a future field change cannot miss a site.
-- Verify during planning that the v4 one-per-page path (`load_one_per_page_legacy` → `save()`)
-  and the v1 → v2 path never have non-zero B+tree roots when `save()` streams them.
+- `FileHeader::validate` rejects versions below 7 with a new error code (next free `STG-0xx`),
+  whose text names the version found and says the file must first be opened with Minigraf v2.x to
+  upgrade it to v7. Versions above 8 keep `STG-006`, whose text changes from
+  `supported: 1-{}` to `supported: 7-{}`. Both are added to `docs/ERROR_REFERENCE.md`.
+- Removed: `src/storage/btree.rs` (v5 paged-blob indexes), `migrate_v1_to_v2`,
+  `migrate_v5_to_v6`, `load_one_per_page_legacy`, the `fact_page_format` one-per-page branch in
+  `load`, and the pre-v7 branches of header parsing and checksum handling (the `version >= 6`,
+  `version >= 7` and fact-pages-only checksum fallbacks). Their tests go with them.
+- Kept: every v7 read path, since v7 is still opened (and migrated).
+- All hand-built key literals (`build_sorted_index_entries`, `Indexes::insert`,
+  `graph/storage.rs` range bounds, tests) go through one constructor per key type
+  (`EavtKey::from_fact` etc.) so a future field change cannot miss a site.
+- Planning must list every removed function and test, and confirm nothing else reaches the removed
+  code (fuzz targets, examples, benches, bindings).
 
 ## Testing
 
@@ -137,7 +136,8 @@ Regression tests are written first and shown failing before any fix:
    - Add a second fixture with colliding values, generated on `main` (v2.0.0) with the existing
      `generate_compat_fixture` example pattern. After migration, both values read back through
      all paths. The generation steps are recorded in the fixture's test doc comment.
-5. v5 migration still works after the key change (existing v5 tests), now always rebuilding.
+5. Files with versions 1–6 fail to open with the new error code; files with version 9 fail with
+   `STG-006`. Neither is modified on disk.
 6. Maximum-size value: a fact whose value is near `MAX_FACT_BYTES` checkpoints and reads back
    through all four indexes. AVET already stores full value bytes today, so this is not a new
    risk class, but EAVT/AEVT separators in internal nodes now carry values too.
