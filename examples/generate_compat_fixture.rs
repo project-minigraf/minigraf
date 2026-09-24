@@ -1,12 +1,12 @@
-//! Generates `tests/fixtures/compat.graph` — a minimal v7 `.graph` file containing
-//! two known facts used by the cross-platform compatibility tests.
+//! Generates a `.graph` file with two known facts (the committed `compat.graph` is
+//! the frozen v7 output of this example from v2.0.0).
 //!
 //! Run once when the file format changes or the fixture needs regenerating:
 //!   cargo run --example generate_compat_fixture
 //!
-//! The fixture is committed to the repository. Do not regenerate it unless the
-//! v7 file format itself has changed — regenerating changes the binary and
-//! every cross-platform test that embeds it via `include_bytes!`.
+//! `compat.graph` is the frozen v7 fixture written by Minigraf v2.0.0; the
+//! cross-platform tests use it to check v7→v8 migration. Do not regenerate it
+//! — running this example now writes a v8 file.
 
 // wasm-pack compiles examples for the browser target; provide a no-op entry
 // point so the example compiles cleanly. The actual generator only makes sense

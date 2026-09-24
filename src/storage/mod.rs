@@ -44,7 +44,7 @@ pub const PAGE_SIZE: usize = 4096;
 pub const MAGIC_NUMBER: [u8; 4] = *b"MGRF";
 
 /// Current file format version
-pub const FORMAT_VERSION: u32 = 7;
+pub const FORMAT_VERSION: u32 = 8;
 
 /// Oldest file format version this library reads. Older files must first be
 /// opened with Minigraf v2.x, which upgrades them to v7 (see STG-028).
@@ -96,7 +96,7 @@ pub trait StorageBackend: Send + Sync {
     fn is_new(&self) -> bool;
 }
 
-/// File header for .graph files — 84 bytes in v7.
+/// File header for .graph files — 84 bytes (v7 and v8 share the layout).
 ///
 /// Layout (all fields little-endian):
 ///   0..4    magic ("MGRF")
@@ -341,14 +341,21 @@ mod tests {
     }
 
     #[test]
-    fn test_format_version_is_7() {
-        assert_eq!(FORMAT_VERSION, 7);
+    fn test_format_version_is_8() {
+        assert_eq!(FORMAT_VERSION, 8);
     }
 
     #[test]
     fn test_validate_accepts_version_7() {
         let mut h = FileHeader::new();
         h.version = 7;
+        assert!(h.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_accepts_version_8() {
+        let mut h = FileHeader::new();
+        h.version = 8;
         assert!(h.validate().is_ok());
     }
 
@@ -394,10 +401,10 @@ mod tests {
     }
 
     #[test]
-    fn test_new_header_has_version_7() {
+    fn test_new_header_has_version_8() {
         let header = FileHeader::new();
         assert_eq!(header.version, FORMAT_VERSION);
-        assert_eq!(header.version, 7);
+        assert_eq!(header.version, 8);
     }
 
     #[test]
@@ -436,7 +443,7 @@ mod tests {
         assert_eq!(b.len(), 84, "v7 header must be exactly 84 bytes");
 
         assert_eq!(&b[0..4], b"MGRF");
-        assert_eq!(&b[4..8], &7u32.to_le_bytes());
+        assert_eq!(&b[4..8], &FORMAT_VERSION.to_le_bytes());
         assert_eq!(&b[8..16], &0x0102_0304_0506_0708_u64.to_le_bytes());
         assert_eq!(&b[16..24], &0x1112_1314_1516_1718_u64.to_le_bytes());
         assert_eq!(&b[24..32], &0x2122_2324_2526_2728_u64.to_le_bytes());

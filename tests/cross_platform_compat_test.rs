@@ -82,8 +82,10 @@ fn native_raw_page_bytes_round_trip() {
 /// Load the committed fixture (produced by `cargo run --example generate_compat_fixture`)
 /// via `Minigraf::open` and assert that the known facts are present.
 ///
-/// This fixture is also loaded by the browser WASM tests via `include_bytes!` +
-/// `BrowserDb::import_graph`, completing the cross-boundary coverage.
+/// The fixture is a frozen v7 file written by Minigraf v2.0.0; opening it
+/// here exercises v7→v8 migration (#371, #287). It is also loaded by the
+/// browser WASM tests via `include_bytes!` + `BrowserDb::import_graph`,
+/// completing the cross-boundary coverage.
 #[test]
 fn fixture_readable_by_native() {
     let fixture: &[u8] = include_bytes!("fixtures/compat.graph");
@@ -114,6 +116,11 @@ fn fixture_readable_by_native() {
         }
         _ => panic!("expected QueryResults for age query"),
     }
+
+    drop(db);
+    let raw = std::fs::read(&path).expect("read migrated fixture");
+    let version = u32::from_le_bytes(raw[4..8].try_into().unwrap());
+    assert_eq!(version, 8, "v7 fixture must be upgraded to v8 on open");
 
     cleanup(&path);
 }

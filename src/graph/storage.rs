@@ -621,21 +621,9 @@ impl FactStorage {
         use crate::storage::index::EavtKey;
         let d = self.data.read().unwrap_or_else(|e| e.into_inner());
 
-        let start = EavtKey {
-            entity: *entity_id,
-            attribute: String::new(),
-            valid_from: i64::MIN,
-            valid_to: i64::MIN,
-            tx_count: 0,
-        };
+        let start = EavtKey::entity_start(*entity_id);
         let next_entity = uuid::Uuid::from_u128(entity_id.as_u128().wrapping_add(1));
-        let end = EavtKey {
-            entity: next_entity,
-            attribute: String::new(),
-            valid_from: i64::MIN,
-            valid_to: i64::MIN,
-            tx_count: 0,
-        };
+        let end = EavtKey::entity_start(next_entity);
 
         // Fallback: no indexes built yet
         if d.pending_indexes.eavt.is_empty() && d.committed_index_reader.is_none() {
@@ -699,20 +687,9 @@ impl FactStorage {
                 .collect());
         }
 
-        let start = AevtKey {
-            attribute: attribute.clone(),
-            entity: uuid::Uuid::nil(),
-            valid_from: i64::MIN,
-            valid_to: i64::MIN,
-            tx_count: 0,
-        };
-        let end_opt: Option<AevtKey> = next_string_prefix(attribute).map(|next_attr| AevtKey {
-            attribute: next_attr,
-            entity: uuid::Uuid::nil(),
-            valid_from: i64::MIN,
-            valid_to: i64::MIN,
-            tx_count: 0,
-        });
+        let start = AevtKey::attribute_start(attribute);
+        let end_opt: Option<AevtKey> =
+            next_string_prefix(attribute).map(|next_attr| AevtKey::attribute_start(&next_attr));
 
         let mut facts = Vec::new();
 

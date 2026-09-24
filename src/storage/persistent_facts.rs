@@ -11,9 +11,9 @@ use crate::storage::btree_v6::{
     stream_all_entries,
 };
 use crate::storage::cache::PageCache;
-use crate::storage::index::{AevtKey, AvetKey, EavtKey, FactRef, VaetKey, encode_value};
+use crate::storage::index::{AevtKey, AvetKey, EavtKey, FactRef, VaetKey};
 use crate::storage::packed_pages::pack_facts;
-use crate::storage::{FileHeader, PAGE_SIZE, StorageBackend};
+use crate::storage::{FORMAT_VERSION, FileHeader, PAGE_SIZE, StorageBackend};
 use anyhow::Result;
 use crc32fast::Hasher;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -238,32 +238,21 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.committed_fact_pages
             .store(num_fact_pages, Ordering::SeqCst);
 
-        // Compute page-based checksum to verify data integrity.
-        // New files (post-fix): checksum covers ALL pages (facts + indexes).
-        // Old files (pre-fix): checksum covers only fact pages.
-        // Try full checksum first; fall back to fact-only for backwards compat.
-        let needs_rebuild = if num_fact_pages == 0 || header.eavt_root_page == 0 {
+        // v7 files carry index keys without value bytes / asserted flags; they
+        // cannot be decoded as v8 keys, so rebuild every index from the fact
+        // pages (#371, #287). The header is written last, so a crash mid-rebuild
+        // leaves a v7 header and the next open rebuilds again.
+        let needs_rebuild = if header.version < FORMAT_VERSION {
+            true
+        } else if num_fact_pages == 0 || header.eavt_root_page == 0 {
             num_fact_pages > 0 // rebuild if facts exist but no index root
         } else {
             let backend = self
                 .backend
                 .lock()
                 .map_err(|_| err_coded!(ErrorCode::Stg016))?;
-            let stored = header.index_checksum;
-            // Total data pages: pages 1 through page_count-1 (everything except header)
             let total_data_pages = header.page_count.saturating_sub(1);
-            let full_checksum = compute_page_checksum(&*backend, 1, total_data_pages)?;
-            if full_checksum == stored {
-                false // new-style checksum matches: facts + indexes verified
-            } else {
-                // Fall back: old files stored checksum over fact pages only
-                let fact_checksum = compute_page_checksum(&*backend, 1, num_fact_pages)?;
-                if fact_checksum == stored {
-                    false // old-style checksum matches: facts verified, indexes unprotected
-                } else {
-                    true // neither matches: corruption detected, rebuild
-                }
-            }
+            compute_page_checksum(&*backend, 1, total_data_pages)? != header.index_checksum
         };
 
         // Register CommittedFactReader on FactStorage (before WAL replay)
@@ -559,7 +548,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let checksum = compute_page_checksum(&*backend, 1, total_data_pages)?;
 
         // ── Step E: write header (last write = crash-safe boundary) ─────────────
-        let mut header = FileHeader::new(); // version=7
+        let mut header = FileHeader::new(); // version=FORMAT_VERSION
         header.page_count = next4;
         let pending_len =
             u64::try_from(pending_facts.len()).map_err(|_| err_coded!(ErrorCode::Stg024))?;
@@ -776,78 +765,28 @@ fn build_sorted_index_entries(
     let mut eavt: Vec<(EavtKey, FactRef)> = facts
         .iter()
         .zip(refs.iter())
-        .map(|(f, &fr)| {
-            (
-                EavtKey {
-                    entity: f.entity,
-                    attribute: f.attribute.clone(),
-                    valid_from: f.valid_from,
-                    valid_to: f.valid_to,
-                    tx_count: f.tx_count,
-                },
-                fr,
-            )
-        })
+        .map(|(f, &fr)| (EavtKey::from_fact(f), fr))
         .collect();
     eavt.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
 
     let mut aevt: Vec<(AevtKey, FactRef)> = facts
         .iter()
         .zip(refs.iter())
-        .map(|(f, &fr)| {
-            (
-                AevtKey {
-                    attribute: f.attribute.clone(),
-                    entity: f.entity,
-                    valid_from: f.valid_from,
-                    valid_to: f.valid_to,
-                    tx_count: f.tx_count,
-                },
-                fr,
-            )
-        })
+        .map(|(f, &fr)| (AevtKey::from_fact(f), fr))
         .collect();
     aevt.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
 
     let mut avet: Vec<(AvetKey, FactRef)> = facts
         .iter()
         .zip(refs.iter())
-        .map(|(f, &fr)| {
-            (
-                AvetKey {
-                    attribute: f.attribute.clone(),
-                    value_bytes: encode_value(&f.value),
-                    valid_from: f.valid_from,
-                    valid_to: f.valid_to,
-                    entity: f.entity,
-                    tx_count: f.tx_count,
-                },
-                fr,
-            )
-        })
+        .map(|(f, &fr)| (AvetKey::from_fact(f), fr))
         .collect();
     avet.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
 
     let mut vaet: Vec<(VaetKey, FactRef)> = facts
         .iter()
         .zip(refs.iter())
-        .filter_map(|(f, &fr)| {
-            if let crate::graph::types::Value::Ref(target) = &f.value {
-                Some((
-                    VaetKey {
-                        ref_target: *target,
-                        attribute: f.attribute.clone(),
-                        valid_from: f.valid_from,
-                        valid_to: f.valid_to,
-                        source_entity: f.entity,
-                        tx_count: f.tx_count,
-                    },
-                    fr,
-                ))
-            } else {
-                None
-            }
-        })
+        .filter_map(|(f, &fr)| VaetKey::from_fact(f).map(|k| (k, fr)))
         .collect();
     vaet.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
 
@@ -878,6 +817,29 @@ mod tests {
 
         // Should be able to create new storage
         assert_eq!(storage.storage().fact_count(), 0);
+    }
+
+    #[test]
+    fn same_tx_multi_value_visible_through_entity_and_attribute_lookups_before_save() {
+        let pfs = PersistentFactStorage::new(MemoryBackend::new(), 256).unwrap();
+        let e = Uuid::from_u128(42);
+        pfs.storage()
+            .transact(
+                vec![
+                    (e, ":kind".to_string(), Value::Keyword(":k/a".to_string())),
+                    (e, ":kind".to_string(), Value::Keyword(":k/b".to_string())),
+                ],
+                None,
+            )
+            .unwrap();
+        assert_eq!(pfs.storage().get_facts_by_entity(&e).unwrap().len(), 2);
+        assert_eq!(
+            pfs.storage()
+                .get_facts_by_attribute(&":kind".to_string())
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[test]
@@ -1237,12 +1199,12 @@ mod tests {
             pfs.save().unwrap();
         }
 
-        // Verify: header says v6, fact_page_format = PACKED
+        // Verify: header says current version, fact_page_format = PACKED
         {
             let backend = FileBackend::open(&path).unwrap();
             let header_bytes = backend.read_page(0).unwrap();
             let header = crate::storage::FileHeader::from_bytes(&header_bytes).unwrap();
-            assert_eq!(header.version, 7);
+            assert_eq!(header.version, FORMAT_VERSION);
             assert_eq!(
                 header.fact_page_format,
                 crate::storage::FACT_PAGE_FORMAT_PACKED
@@ -1353,13 +1315,45 @@ mod tests {
         let backend = storage.into_backend().unwrap();
         let header_page = backend.read_page(0).unwrap();
         let header = crate::storage::FileHeader::from_bytes(&header_page).unwrap();
-        assert_eq!(header.version, 7, "save() must write v7 header");
-        assert_eq!(header.to_bytes().len(), 84, "v7 header must be 84 bytes");
+        assert_eq!(
+            header.version, FORMAT_VERSION,
+            "save() must write current-version header"
+        );
+        assert_eq!(header.to_bytes().len(), 84, "header must be 84 bytes");
         assert!(header.fact_page_count > 0, "fact_page_count must be set");
         assert!(
             header.eavt_root_page > 0,
             "eavt_root must be set after save"
         );
+    }
+
+    #[test]
+    fn v7_header_forces_rebuild_and_upgrades_to_v8() {
+        use crate::storage::FileHeader;
+        let e = Uuid::from_u128(7);
+        let mut backend = {
+            let mut s = PersistentFactStorage::new(MemoryBackend::new(), 256).unwrap();
+            s.storage()
+                .transact(vec![(e, ":n".to_string(), Value::Integer(1))], None)
+                .unwrap();
+            s.mark_dirty();
+            s.save().unwrap();
+            s.into_backend().unwrap()
+        };
+        // Downgrade the header to v7 (keys on disk are now v8-shaped, which is
+        // fine: the rebuild never reads them).
+        let mut h = FileHeader::from_bytes(&backend.read_page(0).unwrap()).unwrap();
+        h.version = 7;
+        h.header_checksum = compute_header_checksum(&h);
+        let mut page = h.to_bytes();
+        page.resize(PAGE_SIZE, 0);
+        backend.write_page(0, &page).unwrap();
+
+        let s = PersistentFactStorage::new(backend, 256).unwrap();
+        assert_eq!(s.storage().get_facts_by_entity(&e).unwrap().len(), 1);
+        let b = s.into_backend().unwrap();
+        let h2 = FileHeader::from_bytes(&b.read_page(0).unwrap()).unwrap();
+        assert_eq!(h2.version, 8, "v7 file must be upgraded to v8 on open");
     }
 
     #[test]
