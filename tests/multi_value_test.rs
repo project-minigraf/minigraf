@@ -173,3 +173,82 @@ fn batched_retract_of_both_values_hides_both_on_every_path() {
         }
     }
 }
+
+/// Retracting exactly the values that were asserted together (same
+/// order or not, one transaction or split across several) is not, on its
+/// own, a sufficient regression guard for the pre-fix dedup key: the old
+/// `(entity, attribute, tx_count, asserted)` key — no value — collapses
+/// every fact sharing that tuple down to whichever one sorts first by
+/// encoded value bytes. When the retracted set is *exactly* the asserted
+/// set, that same smallest-byte member wins the collision on both the
+/// assert side and the retract side, so it always cancels itself out
+/// correctly and the net result is empty either way — this was verified
+/// empirically (reordering the retract list, and splitting the two
+/// retracts across separate transactions, both still pass against the
+/// pre-fix key). What actually exercises the retract-side collision is a
+/// batched retract whose value set is *not* identical to what was
+/// asserted: here, `:k/A` (uppercase — encodes to fewer bytes than
+/// `:k/a`) is retracted alongside the two real values but was never
+/// itself asserted. Under the pre-fix key, `:k/A` wins the three-way
+/// collision in the retract batch, and the real retraction records for
+/// `:k/a` and `:k/b` are silently dropped — leaving `:k/a` visible.
+#[test]
+fn batched_retract_with_non_asserted_colliding_value_hides_real_values_on_every_path() {
+    for i in 0..8 {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db.graph");
+        {
+            let db = Minigraf::open(&path).unwrap();
+            for s in setup_statements(i) {
+                db.execute(&s).unwrap();
+            }
+            db.checkpoint().unwrap();
+        }
+        {
+            let db = Minigraf::open(&path).unwrap();
+            db.execute(&format!(
+                "(retract [[:t/x{i} :kind :k/A] [:t/x{i} :kind :k/a] [:t/x{i} :kind :k/b]])"
+            ))
+            .unwrap();
+            db.checkpoint().unwrap();
+        }
+        let db = Minigraf::open(&path).unwrap();
+        let x = format!(":t/x{i}");
+        let marker = format!("two{i}");
+        for (name, got) in ["eavt", "aevt", "scan"]
+            .iter()
+            .zip(three_paths(&db, &x, ":kind", &marker))
+        {
+            assert!(
+                got.is_empty(),
+                "{name} path must hide real values even when the retract batch also \
+                 contains a never-asserted colliding value"
+            );
+        }
+    }
+}
+
+/// Same construction as
+/// `batched_retract_with_non_asserted_colliding_value_hides_real_values_on_every_path`,
+/// checked on the same handle immediately after the retract — no
+/// intervening checkpoint or reopen — to cover the pending in-memory
+/// index path as well as the on-disk one.
+#[test]
+fn batched_retract_with_non_asserted_colliding_value_hides_real_values_before_checkpoint() {
+    let db = Minigraf::in_memory().unwrap();
+    for s in setup_statements(0) {
+        db.execute(&s).unwrap();
+    }
+    db.execute("(retract [[:t/x0 :kind :k/A] [:t/x0 :kind :k/a] [:t/x0 :kind :k/b]])")
+        .unwrap();
+    for (name, got) in ["eavt", "aevt", "scan"]
+        .iter()
+        .zip(three_paths(&db, ":t/x0", ":kind", "two0"))
+    {
+        assert!(
+            got.is_empty(),
+            "{name} path must hide real values even when the retract batch also \
+             contains a never-asserted colliding value, before checkpoint"
+        );
+    }
+}
