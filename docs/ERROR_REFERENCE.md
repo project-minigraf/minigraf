@@ -111,9 +111,9 @@ with no `CodedError` anywhere in its chain.
 | QRY-009 | Rules lock poisoned | Query Execution |
 | STG-001 | Invalid header: too short | Storage |
 | STG-002 | Invalid magic number: not a .graph file | Storage |
-| STG-003 | Invalid v4/v5/v6 header too short | Storage |
-| STG-004 | Invalid v6 header too short | Storage |
-| STG-005 | Invalid v7 header too short | Storage |
+| STG-003 | Invalid v4/v5/v6 header too short (deprecated) | Storage |
+| STG-004 | Invalid v6 header too short (deprecated) | Storage |
+| STG-005 | Invalid header too short | Storage |
 | STG-006 | Unsupported format version | Storage |
 | STG-007 | page_count must be greater than 0 | Storage |
 | STG-008 | eavt_root_page must be less than page_count | Storage |
@@ -136,6 +136,7 @@ with no `CodedError` anywhere in its chain.
 | STG-025 | Database already open in this process | Storage |
 | STG-026 | Database locked by another process | Storage |
 | STG-027 | Filesystem does not support file locking | Storage |
+| STG-028 | Format version no longer supported | Storage |
 | WAL-001 | Invalid WAL magic number | WAL |
 | WAL-002 | Unsupported WAL version | WAL |
 | WAL-003 | Fact serialised size exceeds maximum | WAL |
@@ -207,6 +208,8 @@ with no `CodedError` anywhere in its chain.
 | INT-053 | Header checksum mismatch: possible file corruption | Internal |
 | INT-054 | Unstratifiable negative recursion cycle | Internal |
 | INT-055 | Rule predicate disappeared during rollback | Internal |
+
+Deprecated codes: STG-003 and STG-004 (pre-v7 header sizes) are deprecated as of v3.0.0 and are no longer emitted, because formats v1–v6 are rejected with STG-028 before any header-size check. They stay registered and documented, and error codes are never removed or reused.
 
 ---
 
@@ -1698,6 +1701,8 @@ See the [file format section in README](../README.md#file-format) for version hi
 
 ### STG-003 Invalid v4/v5/v6 header too short
 
+> **Deprecated in v3.0.0.** No longer emitted: files in formats v1–v6 are rejected with [STG-028](#stg-028-format-version-no-longer-supported) before any header-size check. Kept for reference; this code will not be reused.
+
 **Error text**: `Invalid v4/v5/v6 header: expected at least 72 bytes, got {}`
 
 **Cause**: A file identified as format version 4, 5, or 6 is too short to hold a valid header of that version. The file is truncated at the header.
@@ -1709,6 +1714,8 @@ See the [file format section in README](../README.md#file-format) for version hi
 
 ### STG-004 Invalid v6 header too short
 
+> **Deprecated in v3.0.0.** No longer emitted: files in formats v1–v6 are rejected with [STG-028](#stg-028-format-version-no-longer-supported) before any header-size check. Kept for reference; this code will not be reused.
+
 **Error text**: `Invalid v6 header: expected 80 bytes, got {}`
 
 **Cause**: A file identified as format version 6 is shorter than the required 80-byte v6 header. The file is truncated.
@@ -1718,20 +1725,18 @@ See the [file format section in README](../README.md#file-format) for version hi
 
 **Scenario**: A v6-format `.graph` file was written by an older pre-release version and its header is incomplete.
 
-### STG-005 Invalid v7 header too short
+### STG-005 Invalid header too short
 
-**Error text**: `Invalid v7 header: expected 84 bytes, got {}`
+**Error text**: `Invalid header: expected 84 bytes, got {}`
 
-**Cause**: A file identified as format version 7 (current format) is shorter than the required 84-byte header. The file is truncated.
+**Cause**: The file declares a supported format version (7 or later) but is shorter than the 84-byte header. The file is truncated.
 
 **Resolution**:
 - Restore from backup. If the file is newly created, delete it. See the [file format section in README](../README.md#file-format).
 
-**Scenario**: A v7-format `.graph` file was partially written by a crash during header initialisation.
-
 ### STG-006 Unsupported format version
 
-**Error text**: `Unsupported format version: {} (supported: 1-{})`
+**Error text**: `Unsupported format version: {} (supported: 7-{})`
 
 **Cause**: The file was written by a newer version of Minigraf than is currently installed. The format version number in the header is outside the range this library can read.
 
@@ -1983,6 +1988,17 @@ See the [file format section in README](../README.md#file-format) for version hi
 **Scenario**: A `.graph` file placed on an NFSv3 export whose `lockd` is not running.
 
 **NFSv3 `nolock` is not covered by this error — it is a silent, undetectable gap (#334).** An export explicitly mounted with `-o nolock` behaves differently from plain "no `lockd`": the Linux NFS client serves `flock`/OFD locks out of its own local, in-kernel lock table instead of going over NLM to the server. `try_lock` sees an ordinary local success, `classify` takes the same branch it would on a filesystem where locking genuinely works, and this error is never raised — `allow_unlocked` is never consulted because the code never learns the mount can't really lock. Two separate client hosts writing the same `nolock` export each get a false `Ok(())` from their own kernel with zero cross-host coordination, and can silently corrupt the file. There is no way to detect this from inside `try_lock`'s result, so `nolock` NFSv3 exports are an unsupported deployment for multi-writer use, the same way running mixed Minigraf versions against one file is unsupported (see the kernel-locking CHANGELOG entry) — avoid `nolock` exports rather than relying on this check to catch them.
+
+### STG-028 Format version no longer supported
+
+**Error text**: `Format version {} is no longer supported (oldest supported: {}). Open the file once with Minigraf v2.x to upgrade it to format v7, then open it with this version.`
+
+**Cause**: The file was last written by Minigraf v1.x or earlier in a format older than v7. Minigraf v3.0.0 and later read only format v7 (written by v2.x) and v8.
+
+**Resolution**:
+- Open the file once with Minigraf v2.x, which upgrades it to format v7, then open it with this version. The file is not modified by the failed open.
+
+**Scenario**: A `.graph` file created with Minigraf v1.x and never opened with v2.x.
 
 ---
 

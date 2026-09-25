@@ -483,6 +483,14 @@ mod tests {
             "expected 1 age result from native fixture"
         );
         assert_eq!(results2[0][0], serde_json::Value::Number(30.into()));
+
+        let exported = db.export_graph().expect("export after import");
+        let bytes = exported.to_vec();
+        assert_eq!(
+            u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
+            8,
+            "v7 fixture must be upgraded to v8 on import"
+        );
     }
 
     /// #275: `BrowserBufferBackend` is already an in-memory page store, so the

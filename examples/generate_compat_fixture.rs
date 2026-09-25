@@ -1,12 +1,14 @@
-//! Generates `tests/fixtures/compat.graph` — a minimal v7 `.graph` file containing
-//! two known facts used by the cross-platform compatibility tests.
+//! Generates a `.graph` file with two known facts, for inspecting what the
+//! current storage layer writes.
 //!
-//! Run once when the file format changes or the fixture needs regenerating:
 //!   cargo run --example generate_compat_fixture
 //!
-//! The fixture is committed to the repository. Do not regenerate it unless the
-//! v7 file format itself has changed — regenerating changes the binary and
-//! every cross-platform test that embeds it via `include_bytes!`.
+//! `tests/fixtures/compat.graph` is the frozen v7 fixture written by Minigraf
+//! v2.0.0; the cross-platform tests use it to check v7→v8 migration on open.
+//! This example must never overwrite it — running it now would write a v8
+//! file, silently invalidating that migration coverage. It writes to
+//! `target/generate_compat_fixture/compat_generated.graph` instead, which is
+//! not read by any test.
 
 // wasm-pack compiles examples for the browser target; provide a no-op entry
 // point so the example compiles cleanly. The actual generator only makes sense
@@ -19,7 +21,9 @@ fn main() -> anyhow::Result<()> {
     use std::path::PathBuf;
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let fixture_path = PathBuf::from(manifest_dir).join("tests/fixtures/compat.graph");
+    let out_dir = PathBuf::from(manifest_dir).join("target/generate_compat_fixture");
+    std::fs::create_dir_all(&out_dir)?;
+    let fixture_path = out_dir.join("compat_generated.graph");
     let tmp_path = fixture_path.with_extension("graph.tmp");
 
     // Remove any leftover from a previous run.

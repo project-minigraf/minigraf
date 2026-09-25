@@ -10,13 +10,13 @@ Completed releases and their implementation details live in the [CHANGELOG](CHAN
 
 ## v3.0.0 — File Format Policy
 
-**v3.0.0 supports file format v8 only.** Fixing #287's `EavtKey`/`AevtKey` missing-value-bytes data-loss bug bumps the format from v7 to v8. Support for v1–v6 is dropped at the same time. The v1–v6 → v7 auto-migration code in `persistent_facts.rs` can be removed when cutting this release; a v7→v8 migration replaces it. Any database opened at least once under a v1.x release will already be on v7; there are no known users on older formats.
+**#287/#371 have landed in-tree (unreleased): file format v8, replacing v7.** Fixing #287's `EavtKey`/`AevtKey` missing-value-bytes data-loss bug bumped the format from v7 to v8; index keys now include the encoded value and the assert/retract flag. Support for v1–v6 is dropped at the same time — opening one fails with `STG-028`. A v7 file is auto-migrated (re-indexed) to v8 the first time it is opened. v3.0.0 itself has not been released yet; this work will ship as part of it. Any database opened at least once under a v1.x release will already be on v7; there are no known users on older formats.
 
 This was the GitHub milestone named “2.0” before v2.0.0 used that version number for the kernel-locking and structured-error-code breaking changes; it was consequently renumbered to v3.0.0.
 
 Scope:
 
-- `EavtKey`/`AevtKey` missing-value-bytes fix and file-format v7→v8 migration (#287)
+- ✅ `EavtKey`/`AevtKey` value-bytes fix, format v8, v7→v8 migration, v1–v6 dropped (#287, #371)
 - `lag`/`lead` window functions (#182)
 - Sliding row frames — `:rows N preceding` (#183; builds on #182)
 - `PreparedQuery` over UniFFI (#181)

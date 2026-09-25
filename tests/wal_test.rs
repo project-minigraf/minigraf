@@ -9,7 +9,7 @@
 //! - Auto-checkpoint threshold
 //! - Explicit transaction commit and rollback
 //! - Concurrent reads while writer holds the write lock
-//! - V2 → V3 file format upgrade on first checkpoint
+//! - Pre-v7 file formats (e.g. V2) are rejected, not silently upgraded
 #![cfg(not(target_arch = "wasm32"))]
 
 use minigraf::QueryResult;
@@ -720,27 +720,19 @@ fn write_state_clean_after_drop() {
     assert_eq!(n, 1, "only committed fact visible after dropped tx");
 }
 
-// ── 12. V2 file upgrades to V3 on checkpoint ─────────────────────────────────
+// ── 12. V2 file is rejected ──────────────────────────────────────────────────
 
-/// Create a v2-format `.graph` file manually (version field = 2, no
-/// `last_checkpointed_tx_count`), open it with `Minigraf`, write a fact,
-/// checkpoint, then read the raw header and verify it is now v3.
+/// v3.0.0 dropped support for formats v1–v6. Create a v2-format `.graph`
+/// file manually (version field = 2) and verify that opening it fails with
+/// STG-028 rather than silently upgrading it.
 #[test]
-fn test_v2_file_opens_and_upgrades_to_v3_on_checkpoint() {
+fn test_v2_file_is_rejected() {
     use std::io::Write;
 
     let dir = tempfile::tempdir().unwrap();
     let db_path = dir.path().join("v2.graph");
 
     // ── Build a minimal v2 `.graph` file ──────────────────────────────────
-    //
-    // V2 and V3 have identical binary layouts.
-    // The only difference is the version field (bytes 4-7): 2 vs 3.
-    // In V2, bytes 24-31 were the unused `edge_count` field (always 0).
-    // Phase 5 repurposed that slot as `last_checkpointed_tx_count` without
-    // changing the wire layout. Opening a V2 file with Phase 5 code works
-    // transparently because `last_checkpointed_tx_count` reads as 0 from
-    // the old `edge_count` slot.
     //
     // The file contains exactly 1 page (the header page, 4096 bytes).
     {
@@ -751,39 +743,15 @@ fn test_v2_file_opens_and_upgrades_to_v3_on_checkpoint() {
         page[4..8].copy_from_slice(&2u32.to_le_bytes());
         // page_count = 1
         page[8..16].copy_from_slice(&1u64.to_le_bytes());
-        // node_count = 0 (bytes 16..24 already zero)
-        // last_checkpointed_tx_count = 0 (bytes 24..32 already zero)
-        // reserved = 0 (bytes 32..64 already zero)
 
         let mut file = std::fs::File::create(&db_path).unwrap();
         file.write_all(&page).unwrap();
         file.sync_all().unwrap();
     }
 
-    // ── Open, write a fact, and checkpoint ────────────────────────────────
-    {
-        let db = Minigraf::open(&db_path).unwrap();
-        db.execute(r#"(transact [[:alice :name "Alice"]])"#)
-            .unwrap();
-        db.checkpoint().unwrap();
-        // Drop runs another checkpoint, but that's idempotent.
-    }
-
-    // ── Read the raw header and assert version = 7 ───────────────────────
-    // Reads raw bytes: magic at 0..4, version at 4..8 (u32 LE),
-    // last_checkpointed_tx_count at 24..32 (u64 LE).
-    let raw = std::fs::read(&db_path).unwrap();
-    assert!(
-        raw.len() >= PAGE_SIZE,
-        "file must be at least one page after checkpoint"
-    );
-    let magic = &raw[0..4];
-    let version = u32::from_le_bytes(raw[4..8].try_into().unwrap());
-    let last_checkpointed_tx_count = u64::from_le_bytes(raw[24..32].try_into().unwrap());
-    assert_eq!(version, 7, "file must be upgraded to v7 on checkpoint");
-    assert_eq!(magic, b"MGRF", "magic number must be preserved");
-    assert!(
-        last_checkpointed_tx_count > 0,
-        "last_checkpointed_tx_count must be set after checkpoint on v2→v6 upgrade"
-    );
+    let err = match Minigraf::open(&db_path) {
+        Ok(_) => panic!("v2 file must not open"),
+        Err(e) => e,
+    };
+    assert_eq!(err.code(), "STG-028", "v2 file must fail with STG-028");
 }

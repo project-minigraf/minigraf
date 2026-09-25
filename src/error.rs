@@ -138,7 +138,12 @@ pub(crate) enum ErrorCode {
     Int000,
     Stg001,
     Stg002,
+    // STG-003/STG-004 are deprecated since v3.0.0: they reported truncated
+    // v4–v6 headers, and formats older than v7 are now rejected with STG-028
+    // before any size check. Kept so the codes are never reused.
+    #[allow(dead_code)]
     Stg003,
+    #[allow(dead_code)]
     Stg004,
     Stg005,
     Stg006,
@@ -163,6 +168,7 @@ pub(crate) enum ErrorCode {
     Stg025,
     Stg026,
     Stg027,
+    Stg028,
     Wal001,
     Wal002,
     Wal003,
@@ -801,13 +807,13 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
     (
         ErrorCode::Stg005,
         "STG-005",
-        "Invalid v7 header: expected 84 bytes, got {}",
+        "Invalid header: expected 84 bytes, got {}",
         ErrorCategory::Storage,
     ),
     (
         ErrorCode::Stg006,
         "STG-006",
-        "Unsupported format version: {} (supported: 1-{})",
+        "Unsupported format version: {} (supported: 7-{})",
         ErrorCategory::Storage,
     ),
     (
@@ -934,6 +940,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Stg027,
         "STG-027",
         "Failed to lock database at {}: {}. This filesystem does not support file locking (common on NFSv3 without lockd, and on some FUSE mounts). Set `allow_unlocked` in `OpenOptions` to open anyway — that accepts the risk that concurrent writers corrupt the file.",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg028,
+        "STG-028",
+        "Format version {} is no longer supported (oldest supported: {}). Open the file once with Minigraf v2.x to upgrade it to format v7, then open it with this version.",
         ErrorCategory::Storage,
     ),
     (
@@ -1744,6 +1756,7 @@ mod tests {
                 | ErrorCode::Stg025
                 | ErrorCode::Stg026
                 | ErrorCode::Stg027
+                | ErrorCode::Stg028
                 | ErrorCode::Wal001
                 | ErrorCode::Wal002
                 | ErrorCode::Wal003
@@ -1934,6 +1947,7 @@ mod tests {
             ErrorCode::Stg025,
             ErrorCode::Stg026,
             ErrorCode::Stg027,
+            ErrorCode::Stg028,
             ErrorCode::Wal001,
             ErrorCode::Wal002,
             ErrorCode::Wal003,

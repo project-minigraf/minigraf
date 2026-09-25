@@ -34,24 +34,34 @@ fn v7_round_trip_is_idempotent() {
     assert_eq!(n, 1, "v7 round-trip: Alice must survive close/reopen");
 }
 
+/// Formats v1–v6 are no longer readable (v3.0.0 file-format policy). Opening
+/// one must fail with STG-028 and must not modify the file.
 #[test]
-fn v3_empty_migrates_without_error() {
-    use std::io::Write;
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("v3.graph");
-    // Build a minimally valid v3 header: magic + version=3 + page_count=1
-    // All other fields zero (roots=0 means empty index, fact_count=0).
-    let mut page = vec![0u8; PAGE_SIZE];
-    page[0..4].copy_from_slice(&MAGIC_NUMBER);
-    page[4..8].copy_from_slice(&3u32.to_le_bytes()); // version
-    page[8..16].copy_from_slice(&1u64.to_le_bytes()); // page_count = 1
-    let mut f = std::fs::File::create(&path).unwrap();
-    f.write_all(&page).unwrap();
-    drop(f);
-    assert!(
-        Minigraf::open(&path).is_ok(),
-        "v3 empty file should open without error"
-    );
+fn pre_v7_versions_are_rejected_with_stg_028() {
+    for version in 1u32..=6 {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("old.graph");
+        let mut page = vec![0u8; PAGE_SIZE];
+        page[0..4].copy_from_slice(&MAGIC_NUMBER);
+        page[4..8].copy_from_slice(&version.to_le_bytes());
+        page[8..16].copy_from_slice(&1u64.to_le_bytes()); // page_count = 1
+        std::fs::write(&path, &page).unwrap();
+
+        let err = match Minigraf::open(&path) {
+            Ok(_) => panic!("pre-v7 file must not open"),
+            Err(e) => e,
+        };
+        assert_eq!(err.code(), "STG-028", "pre-v7 file must fail with STG-028");
+        assert!(
+            err.to_string().contains("v2.x"),
+            "STG-028 message must tell the user how to upgrade"
+        );
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            page,
+            "rejected file must be left unmodified"
+        );
+    }
 }
 
 #[test]
@@ -83,8 +93,16 @@ fn unsupported_version_fails_loudly() {
     page[4..8].copy_from_slice(&99u32.to_le_bytes());
     let mut f = std::fs::File::create(&path).unwrap();
     f.write_all(&page).unwrap();
+    drop(f);
+    let before = std::fs::read(&path).unwrap();
     let result = Minigraf::open(&path);
     assert!(result.is_err(), "unsupported version must produce an error");
+    assert_eq!(result.err().unwrap().code(), "STG-006");
+    let after = std::fs::read(&path).unwrap();
+    assert_eq!(
+        before, after,
+        "a rejected future-version file must be left unmodified"
+    );
 }
 
 #[test]
