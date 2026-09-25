@@ -70,23 +70,6 @@ fn open_unsupported_version_returns_stg_006() {
 }
 
 #[test]
-fn open_pre_v7_version_returns_stg_028() {
-    let dir = scratch_dir("pre_v7");
-    let path = dir.join("db.graph");
-    write_file(
-        &path,
-        &header_page(|b| {
-            b[4..8].copy_from_slice(&6u32.to_le_bytes()); // version = 6
-        }),
-    );
-    let err = match Minigraf::open(&path) {
-        Ok(_) => panic!("opening a v6 file should fail"),
-        Err(e) => e,
-    };
-    assert_eq!(err.code(), "STG-028");
-}
-
-#[test]
 fn open_zero_page_count_returns_stg_007() {
     let dir = scratch_dir("zero_pages");
     let path = dir.join("bad.graph");

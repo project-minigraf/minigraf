@@ -6,14 +6,15 @@ use crate::graph::FactStorage;
 /// low-level page-based storage backends.
 use crate::graph::types::Fact;
 use crate::storage::FACT_PAGE_FORMAT_PACKED;
+use crate::storage::btree::{read_aevt_index, read_avet_index, read_eavt_index, read_vaet_index};
 use crate::storage::btree_v6::{
     MutexStorageBackend, OnDiskIndexReader, btree_entries, build_btree, merge_sorted_vecs,
     stream_all_entries,
 };
 use crate::storage::cache::PageCache;
-use crate::storage::index::{AevtKey, AvetKey, EavtKey, FactRef, VaetKey};
+use crate::storage::index::{AevtKey, AvetKey, EavtKey, FactRef, VaetKey, encode_value};
 use crate::storage::packed_pages::pack_facts;
-use crate::storage::{FORMAT_VERSION, FileHeader, PAGE_SIZE, StorageBackend};
+use crate::storage::{FileHeader, PAGE_SIZE, StorageBackend};
 use anyhow::Result;
 use crc32fast::Hasher;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -93,6 +94,18 @@ impl<B: StorageBackend + 'static> crate::storage::CommittedFactReader
     }
 }
 
+/// V1 fact format (Phase 3, before bi-temporal fields were added).
+///
+/// Used only during migration from v1 → v2 file format.
+#[derive(Debug, serde::Deserialize)]
+struct FactV1 {
+    entity: crate::graph::types::EntityId,
+    attribute: crate::graph::types::Attribute,
+    value: crate::graph::types::Value,
+    tx_id: crate::graph::types::TxId,
+    asserted: bool,
+}
+
 /// Persistent fact storage with serialization support.
 ///
 /// Architecture:
@@ -164,8 +177,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         // The load condition combines two checks:
         // - `!is_new`: FileBackend reports false when the file existed on disk
         //   (even with only a header page, page_count == 1). This ensures
-        //   `load()` runs (and its version check rejects pre-v7 files) even
-        //   for a file that has no fact pages.
+        //   migrate_v5_to_v6 runs for a v5 file that has no fact pages.
         // - `page_count > 1`: catches MemoryBackend, which always reports
         //   is_new == true; page count > 1 means facts were previously saved.
         let (is_new_backend, page_count) = {
@@ -204,8 +216,19 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             (h, header_page)
         };
 
+        // Migrate v1 → v2 if needed
+        if header.version < 2 {
+            return self.migrate_v1_to_v2();
+        }
+
+        // Migrate v5 → v6 (paged-blob indexes → on-disk B+tree)
+        if header.version == 5 {
+            return self.migrate_v5_to_v6(&header);
+        }
+
         // For v7+ files, validate header checksum using raw bytes from disk
-        if header.header_checksum != 0 {
+        // For older versions (v6 and earlier), header_checksum is 0 so validation is skipped
+        if header.version >= 7 && header.header_checksum != 0 {
             let computed = compute_header_checksum_from_bytes(&raw_header_bytes);
             if header.header_checksum != computed {
                 bail_coded!(ErrorCode::Int053);
@@ -218,8 +241,21 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         // Clear existing storage
         self.storage.clear()?;
 
+        let fact_page_format = header.fact_page_format;
+
+        if fact_page_format == 0
+            || fact_page_format == crate::storage::FACT_PAGE_FORMAT_ONE_PER_PAGE
+        {
+            // Legacy one-per-page format (v4 or earlier): load all facts, then migrate to v5.
+            self.load_one_per_page_legacy(&header)?;
+            self.storage.restore_tx_counter()?;
+            self.dirty = true;
+            self.save()?;
+            return Ok(());
+        }
+
         // v6 packed format
-        let num_fact_pages = if header.fact_page_count > 0 {
+        let num_fact_pages = if header.version >= 6 && header.fact_page_count > 0 {
             header.fact_page_count
         } else {
             let first_index_page = [
@@ -238,21 +274,32 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.committed_fact_pages
             .store(num_fact_pages, Ordering::SeqCst);
 
-        // v7 files carry index keys without value bytes / asserted flags; they
-        // cannot be decoded as v8 keys, so rebuild every index from the fact
-        // pages (#371, #287). The header is written last, so a crash mid-rebuild
-        // leaves a v7 header and the next open rebuilds again.
-        let needs_rebuild = if header.version < FORMAT_VERSION {
-            true
-        } else if num_fact_pages == 0 || header.eavt_root_page == 0 {
+        // Compute page-based checksum to verify data integrity.
+        // New files (post-fix): checksum covers ALL pages (facts + indexes).
+        // Old files (pre-fix): checksum covers only fact pages.
+        // Try full checksum first; fall back to fact-only for backwards compat.
+        let needs_rebuild = if num_fact_pages == 0 || header.eavt_root_page == 0 {
             num_fact_pages > 0 // rebuild if facts exist but no index root
         } else {
             let backend = self
                 .backend
                 .lock()
                 .map_err(|_| err_coded!(ErrorCode::Stg016))?;
+            let stored = header.index_checksum;
+            // Total data pages: pages 1 through page_count-1 (everything except header)
             let total_data_pages = header.page_count.saturating_sub(1);
-            compute_page_checksum(&*backend, 1, total_data_pages)? != header.index_checksum
+            let full_checksum = compute_page_checksum(&*backend, 1, total_data_pages)?;
+            if full_checksum == stored {
+                false // new-style checksum matches: facts + indexes verified
+            } else {
+                // Fall back: old files stored checksum over fact pages only
+                let fact_checksum = compute_page_checksum(&*backend, 1, num_fact_pages)?;
+                if fact_checksum == stored {
+                    false // old-style checksum matches: facts verified, indexes unprotected
+                } else {
+                    true // neither matches: corruption detected, rebuild
+                }
+            }
         };
 
         // Register CommittedFactReader on FactStorage (before WAL replay)
@@ -287,15 +334,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             let (eavt_entries, aevt_entries, avet_entries, vaet_entries) =
                 build_sorted_index_entries(&all_facts, &real_refs);
 
-            // Fix up tx_counter from actual facts. Empty transactions
-            // (`(transact [])`, `(retract [])`) still allocate a tx_count
-            // without producing any facts, so the highest fact tx_count can
-            // undercount the counter the file was actually at; floor it at
-            // the old header's last_checkpointed_tx_count so migration never
-            // rewinds the counter and lets new transactions reuse tx_counts
-            // that `:as-of N` already served facts for (#371, #287).
-            let max_fact_tx = all_facts.iter().map(|f| f.tx_count).max().unwrap_or(0);
-            let max_tx = max_fact_tx.max(header.last_checkpointed_tx_count);
+            // Fix up tx_counter from actual facts
+            let max_tx = all_facts.iter().map(|f| f.tx_count).max().unwrap_or(0);
             self.storage.restore_tx_counter_from(max_tx);
 
             // Build v6 B+tree indexes directly
@@ -330,12 +370,6 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
                 &self.page_cache,
                 next3,
             )?;
-
-            // Sync index pages to disk before writing the header.
-            // The header update is the atomic commit point: once it's durable,
-            // recovery uses the new root pages. All data those roots reference
-            // must already be on stable storage.
-            backend.sync()?;
 
             // Write header with full-coverage checksum (facts + indexes)
             let total_data_pages = next4.saturating_sub(1);
@@ -378,7 +412,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         } else {
             // No rebuild needed - validate header checksum for v7+ files
             // Re-read header from disk to get any updates from rebuild path
-            if header.header_checksum != 0 {
+            if header.version >= 7 && header.header_checksum != 0 {
                 let backend = self
                     .backend
                     .lock()
@@ -407,6 +441,376 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         }
         // else: empty DB — indexes are empty by default, nothing to do.
 
+        self.dirty = false;
+        Ok(())
+    }
+
+    /// Load facts from legacy one-per-page format (v4 and earlier).
+    fn load_one_per_page_legacy(&mut self, header: &FileHeader) -> Result<usize> {
+        let page_count = header.page_count;
+        let backend = self
+            .backend
+            .lock()
+            .map_err(|_| err_coded!(ErrorCode::Stg016))?;
+        let mut loaded: usize = 0;
+        let mut skipped: usize = 0;
+        for page_id in 1..page_count {
+            let page = backend.read_page(page_id)?;
+            // Try to deserialize a fact from this page (legacy format: raw postcard bytes)
+            match postcard::from_bytes::<Fact>(&page) {
+                Ok(fact) => {
+                    self.storage.load_fact(fact)?;
+                    loaded = loaded.saturating_add(1);
+                }
+                Err(e) => {
+                    skipped = skipped.saturating_add(1);
+                    eprintln!(
+                        "Warning: failed to deserialize fact at page {}: {}. Skipping.",
+                        page_id, e
+                    );
+                }
+            }
+        }
+        if skipped > 0 {
+            eprintln!(
+                "Warning: {} facts failed to deserialize during legacy load (version {})",
+                skipped, header.version
+            );
+        }
+        Ok(loaded)
+    }
+
+    /// Migrate a v1 file (Phase 3 format, no bi-temporal fields) to v2.
+    ///
+    /// V1 facts only have (entity, attribute, value, tx_id, asserted).
+    /// V2 facts add tx_count, valid_from, valid_to.
+    ///
+    /// Migration strategy:
+    /// - Sort v1 facts by tx_id ascending
+    /// - Group facts with the same tx_id into the same tx_count (monotonic counter)
+    /// - Set valid_from = tx_id as i64 (wall-clock approximation)
+    /// - Set valid_to = VALID_TIME_FOREVER (open-ended)
+    /// - Write the migrated data back in v2 format
+    fn migrate_v1_to_v2(&mut self) -> Result<()> {
+        use crate::graph::types::VALID_TIME_FOREVER;
+
+        let backend = self
+            .backend
+            .lock()
+            .map_err(|_| err_coded!(ErrorCode::Stg016))?;
+        let header_page = backend.read_page(0)?;
+        let header = FileHeader::from_bytes(&header_page)?;
+        let page_count = header.page_count;
+
+        // Read all v1 facts (track deserialization failures)
+        let mut v1_facts: Vec<FactV1> = Vec::new();
+        let mut skipped: usize = 0;
+        for page_id in 1..page_count {
+            let page = backend.read_page(page_id)?;
+            match postcard::from_bytes::<FactV1>(&page) {
+                Ok(fact) => v1_facts.push(fact),
+                Err(e) => {
+                    skipped = skipped.saturating_add(1);
+                    eprintln!(
+                        "Warning: failed to deserialize v1 fact at page {}: {}. Skipping.",
+                        page_id, e
+                    );
+                }
+            }
+        }
+        if skipped > 0 {
+            eprintln!(
+                "Warning: {} v1 facts failed to deserialize during migration",
+                skipped
+            );
+        }
+        drop(backend);
+
+        // Sort by tx_id ascending so we can group them
+        v1_facts.sort_by_key(|f| f.tx_id);
+
+        // Assign tx_count, grouping facts with the same tx_id into the same tx_count
+        let mut tx_count: u64 = 0;
+        let mut prev_tx_id: Option<crate::graph::types::TxId> = None;
+        let mut migrated: Vec<Fact> = Vec::new();
+
+        for v1 in v1_facts {
+            if prev_tx_id != Some(v1.tx_id) {
+                tx_count = tx_count.saturating_add(1);
+                prev_tx_id = Some(v1.tx_id);
+            }
+            let valid_from = v1.tx_id.cast_signed();
+            let mut fact = Fact::with_valid_time(
+                v1.entity,
+                v1.attribute,
+                v1.value,
+                v1.tx_id,
+                tx_count,
+                valid_from,
+                VALID_TIME_FOREVER,
+            );
+            // Preserve the asserted flag (with_valid_time sets asserted=true by default)
+            fact.asserted = v1.asserted;
+            migrated.push(fact);
+        }
+
+        self.storage.clear()?;
+        for fact in migrated {
+            self.storage.load_fact(fact)?;
+        }
+        self.storage.restore_tx_counter()?;
+
+        // Persist in v2 format immediately
+        self.dirty = true;
+        self.save()?;
+        Ok(())
+    }
+
+    /// Migrate a v5 file (paged-blob indexes) to v6 (on-disk B+tree indexes).
+    fn migrate_v5_to_v6(&mut self, header: &FileHeader) -> Result<()> {
+        let num_fact_pages = {
+            let first_index_page = [
+                header.eavt_root_page,
+                header.aevt_root_page,
+                header.avet_root_page,
+                header.vaet_root_page,
+            ]
+            .iter()
+            .filter(|&&p| p > 0)
+            .copied()
+            .min()
+            .unwrap_or(header.page_count);
+            first_index_page.saturating_sub(1)
+        };
+
+        // Validate the calculated range contains valid pages.
+        // If the file was in an inconsistent state (partial checkpoint),
+        // the calculated range might be incorrect. Do a quick validation
+        // by checking that the first fact page can be read (doesn't need to
+        // be a packed page - the index checksum will catch any real corruption).
+        let validated_num_fact_pages = if num_fact_pages > 0 {
+            let backend = self
+                .backend
+                .lock()
+                .map_err(|_| err_coded!(ErrorCode::Stg016))?;
+            // Just verify we can read the page - actual validation happens via checksum
+            if backend.read_page(1).is_ok() {
+                num_fact_pages
+            } else {
+                eprintln!(
+                    "Warning: cannot read first fact page (page 1). Header claims {}. Using 0.",
+                    num_fact_pages
+                );
+                0
+            }
+        } else {
+            num_fact_pages
+        };
+
+        self.committed_fact_pages
+            .store(validated_num_fact_pages, Ordering::SeqCst);
+
+        // Verify index integrity via checksum before trusting the old indexes.
+        // Try full checksum (facts + indexes) first, then fact-only for old files.
+        let use_old_indexes = validated_num_fact_pages > 0 && header.index_checksum > 0 && {
+            let backend = self
+                .backend
+                .lock()
+                .map_err(|_| err_coded!(ErrorCode::Stg016))?;
+            let total_data_pages = header.page_count.saturating_sub(1);
+            let full = compute_page_checksum(&*backend, 1, total_data_pages)?;
+            if full == header.index_checksum {
+                true
+            } else {
+                let fact_only = compute_page_checksum(&*backend, 1, validated_num_fact_pages)?;
+                fact_only == header.index_checksum
+            }
+        };
+
+        let (eavt, aevt, avet, vaet) = if use_old_indexes {
+            // Read and trust the old v5 indexes
+            let backend = self
+                .backend
+                .lock()
+                .map_err(|_| err_coded!(ErrorCode::Stg016))?;
+            let e = if header.eavt_root_page > 0 {
+                read_eavt_index(header.eavt_root_page, &*backend)?
+            } else {
+                std::collections::BTreeMap::new()
+            };
+            let a = if header.aevt_root_page > 0 {
+                read_aevt_index(header.aevt_root_page, &*backend)?
+            } else {
+                std::collections::BTreeMap::new()
+            };
+            let av = if header.avet_root_page > 0 {
+                read_avet_index(header.avet_root_page, &*backend)?
+            } else {
+                std::collections::BTreeMap::new()
+            };
+            let v = if header.vaet_root_page > 0 {
+                read_vaet_index(header.vaet_root_page, &*backend)?
+            } else {
+                std::collections::BTreeMap::new()
+            };
+            (e, a, av, v)
+        } else {
+            // Checksum mismatch or missing - rebuild indexes from facts
+            let all_facts = {
+                let backend = self
+                    .backend
+                    .lock()
+                    .map_err(|_| err_coded!(ErrorCode::Stg016))?;
+                crate::storage::packed_pages::read_all_from_pages(
+                    &*backend,
+                    1,
+                    validated_num_fact_pages,
+                )?
+            };
+            // Build indexes from fact data
+            let mut eavt_map = std::collections::BTreeMap::new();
+            let mut aevt_map = std::collections::BTreeMap::new();
+            let mut avet_map = std::collections::BTreeMap::new();
+            let mut vaet_map = std::collections::BTreeMap::new();
+            for (i, fact) in all_facts.iter().enumerate() {
+                let slot_index = u16::try_from(i).map_err(|_| err_coded!(ErrorCode::Stg020, i))?;
+                let fr = FactRef {
+                    page_id: 1,
+                    slot_index,
+                };
+                eavt_map.insert(
+                    EavtKey {
+                        entity: fact.entity,
+                        attribute: fact.attribute.clone(),
+                        valid_from: fact.valid_from,
+                        valid_to: fact.valid_to,
+                        tx_count: fact.tx_count,
+                    },
+                    fr,
+                );
+                aevt_map.insert(
+                    AevtKey {
+                        attribute: fact.attribute.clone(),
+                        entity: fact.entity,
+                        valid_from: fact.valid_from,
+                        valid_to: fact.valid_to,
+                        tx_count: fact.tx_count,
+                    },
+                    fr,
+                );
+                avet_map.insert(
+                    AvetKey {
+                        attribute: fact.attribute.clone(),
+                        value_bytes: encode_value(&fact.value),
+                        valid_from: fact.valid_from,
+                        valid_to: fact.valid_to,
+                        entity: fact.entity,
+                        tx_count: fact.tx_count,
+                    },
+                    fr,
+                );
+                if let crate::graph::types::Value::Ref(target) = &fact.value {
+                    vaet_map.insert(
+                        VaetKey {
+                            ref_target: *target,
+                            attribute: fact.attribute.clone(),
+                            valid_from: fact.valid_from,
+                            valid_to: fact.valid_to,
+                            source_entity: fact.entity,
+                            tx_count: fact.tx_count,
+                        },
+                        fr,
+                    );
+                }
+            }
+            (eavt_map, aevt_map, avet_map, vaet_map)
+        };
+
+        let mut backend = self
+            .backend
+            .lock()
+            .map_err(|_| err_coded!(ErrorCode::Stg016))?;
+        // Use the actual end of fact pages as the start for new index pages, NOT
+        // header.page_count — that field comes from the (possibly untrusted) file
+        // on disk and may be a huge fuzz-crafted value that causes build_btree to
+        // write leaf pages at a ~TB offset, then compute_page_checksum to loop
+        // over billions of pages.
+        let next_free = 1u64
+            .checked_add(validated_num_fact_pages)
+            .ok_or_else(|| err_coded!(ErrorCode::Stg018))?;
+
+        let (eavt_root, next_free2) = build_btree(
+            btree_entries(eavt.into_iter())?.into_iter(),
+            &mut *backend,
+            &self.page_cache,
+            next_free,
+        )?;
+        let (aevt_root, next_free3) = build_btree(
+            btree_entries(aevt.into_iter())?.into_iter(),
+            &mut *backend,
+            &self.page_cache,
+            next_free2,
+        )?;
+        let (avet_root, next_free4) = build_btree(
+            btree_entries(avet.into_iter())?.into_iter(),
+            &mut *backend,
+            &self.page_cache,
+            next_free3,
+        )?;
+        let (vaet_root, final_next_free) = build_btree(
+            btree_entries(vaet.into_iter())?.into_iter(),
+            &mut *backend,
+            &self.page_cache,
+            next_free4,
+        )?;
+
+        let mut new_header = FileHeader::new(); // version=7
+        new_header.page_count = final_next_free;
+        new_header.node_count = header.node_count;
+        new_header.last_checkpointed_tx_count = header.last_checkpointed_tx_count;
+        new_header.eavt_root_page = eavt_root;
+        new_header.aevt_root_page = aevt_root;
+        new_header.avet_root_page = avet_root;
+        new_header.vaet_root_page = vaet_root;
+        // Checksum over all data pages (facts + indexes)
+        let total_data_pages = final_next_free.saturating_sub(1);
+        let computed_checksum = compute_page_checksum(&*backend, 1, total_data_pages)?;
+        new_header.index_checksum = computed_checksum;
+        new_header.fact_page_format = header.fact_page_format;
+        new_header.fact_page_count = validated_num_fact_pages;
+        new_header.header_checksum = compute_header_checksum(&new_header);
+
+        let mut header_page = new_header.to_bytes();
+        header_page.resize(PAGE_SIZE, 0);
+        backend.write_page(0, &header_page)?;
+        backend.sync()?;
+        drop(backend);
+
+        self.last_checkpointed_tx_count = header.last_checkpointed_tx_count;
+
+        let loader: Arc<dyn crate::storage::CommittedFactReader> =
+            Arc::new(CommittedFactLoaderImpl {
+                backend: self.backend.clone(),
+                backend_adapter: MutexStorageBackend(self.backend.clone()),
+                page_cache: self.page_cache.clone(),
+                committed_fact_pages: self.committed_fact_pages.clone(),
+                first_fact_page: 1,
+            });
+        self.storage.set_committed_reader(loader);
+
+        let index_reader: Arc<dyn crate::storage::CommittedIndexReader> =
+            Arc::new(OnDiskIndexReader::new(
+                self.backend.clone(),
+                self.page_cache.clone(),
+                eavt_root,
+                aevt_root,
+                avet_root,
+                vaet_root,
+            ));
+        self.storage.set_committed_index_reader(index_reader);
+
+        self.storage
+            .restore_tx_counter_from(header.last_checkpointed_tx_count);
         self.dirty = false;
         Ok(())
     }
@@ -561,7 +965,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let checksum = compute_page_checksum(&*backend, 1, total_data_pages)?;
 
         // ── Step E: write header (last write = crash-safe boundary) ─────────────
-        let mut header = FileHeader::new(); // version=FORMAT_VERSION
+        let mut header = FileHeader::new(); // version=7
         header.page_count = next4;
         let pending_len =
             u64::try_from(pending_facts.len()).map_err(|_| err_coded!(ErrorCode::Stg024))?;
@@ -778,28 +1182,78 @@ fn build_sorted_index_entries(
     let mut eavt: Vec<(EavtKey, FactRef)> = facts
         .iter()
         .zip(refs.iter())
-        .map(|(f, &fr)| (EavtKey::from_fact(f), fr))
+        .map(|(f, &fr)| {
+            (
+                EavtKey {
+                    entity: f.entity,
+                    attribute: f.attribute.clone(),
+                    valid_from: f.valid_from,
+                    valid_to: f.valid_to,
+                    tx_count: f.tx_count,
+                },
+                fr,
+            )
+        })
         .collect();
     eavt.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
 
     let mut aevt: Vec<(AevtKey, FactRef)> = facts
         .iter()
         .zip(refs.iter())
-        .map(|(f, &fr)| (AevtKey::from_fact(f), fr))
+        .map(|(f, &fr)| {
+            (
+                AevtKey {
+                    attribute: f.attribute.clone(),
+                    entity: f.entity,
+                    valid_from: f.valid_from,
+                    valid_to: f.valid_to,
+                    tx_count: f.tx_count,
+                },
+                fr,
+            )
+        })
         .collect();
     aevt.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
 
     let mut avet: Vec<(AvetKey, FactRef)> = facts
         .iter()
         .zip(refs.iter())
-        .map(|(f, &fr)| (AvetKey::from_fact(f), fr))
+        .map(|(f, &fr)| {
+            (
+                AvetKey {
+                    attribute: f.attribute.clone(),
+                    value_bytes: encode_value(&f.value),
+                    valid_from: f.valid_from,
+                    valid_to: f.valid_to,
+                    entity: f.entity,
+                    tx_count: f.tx_count,
+                },
+                fr,
+            )
+        })
         .collect();
     avet.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
 
     let mut vaet: Vec<(VaetKey, FactRef)> = facts
         .iter()
         .zip(refs.iter())
-        .filter_map(|(f, &fr)| VaetKey::from_fact(f).map(|k| (k, fr)))
+        .filter_map(|(f, &fr)| {
+            if let crate::graph::types::Value::Ref(target) = &f.value {
+                Some((
+                    VaetKey {
+                        ref_target: *target,
+                        attribute: f.attribute.clone(),
+                        valid_from: f.valid_from,
+                        valid_to: f.valid_to,
+                        source_entity: f.entity,
+                        tx_count: f.tx_count,
+                    },
+                    fr,
+                ))
+            } else {
+                None
+            }
+        })
         .collect();
     vaet.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
 
@@ -830,29 +1284,6 @@ mod tests {
 
         // Should be able to create new storage
         assert_eq!(storage.storage().fact_count(), 0);
-    }
-
-    #[test]
-    fn same_tx_multi_value_visible_through_entity_and_attribute_lookups_before_save() {
-        let pfs = PersistentFactStorage::new(MemoryBackend::new(), 256).unwrap();
-        let e = Uuid::from_u128(42);
-        pfs.storage()
-            .transact(
-                vec![
-                    (e, ":kind".to_string(), Value::Keyword(":k/a".to_string())),
-                    (e, ":kind".to_string(), Value::Keyword(":k/b".to_string())),
-                ],
-                None,
-            )
-            .unwrap();
-        assert_eq!(pfs.storage().get_facts_by_entity(&e).unwrap().len(), 2);
-        assert_eq!(
-            pfs.storage()
-                .get_facts_by_attribute(&":kind".to_string())
-                .unwrap()
-                .len(),
-            2
-        );
     }
 
     #[test]
@@ -920,6 +1351,60 @@ mod tests {
         // This test verifies the pattern, actual persistence is tested above
     }
 
+    // -----------------------------------------------------------------------
+    // Migration helpers
+    // -----------------------------------------------------------------------
+
+    /// Build a MemoryBackend that contains a v1-format file with two FactV1 facts.
+    fn make_v1_backend() -> MemoryBackend {
+        use crate::storage::{MAGIC_NUMBER, PAGE_SIZE};
+
+        let alice = Uuid::new_v4();
+
+        #[derive(serde::Serialize)]
+        struct FactV1Ser {
+            entity: Uuid,
+            attribute: String,
+            value: Value,
+            tx_id: u64,
+            asserted: bool,
+        }
+
+        let fact1 = FactV1Ser {
+            entity: alice,
+            attribute: ":person/name".to_string(),
+            value: Value::String("Alice".to_string()),
+            tx_id: 1000,
+            asserted: true,
+        };
+        let fact2 = FactV1Ser {
+            entity: alice,
+            attribute: ":person/age".to_string(),
+            value: Value::Integer(30),
+            tx_id: 1000,
+            asserted: true,
+        };
+
+        let mut backend = MemoryBackend::new();
+
+        // Write v1 header (version=1, page_count=3)
+        let mut header_bytes = vec![0u8; PAGE_SIZE];
+        header_bytes[0..4].copy_from_slice(&MAGIC_NUMBER);
+        header_bytes[4..8].copy_from_slice(&1u32.to_le_bytes()); // version = 1
+        header_bytes[8..16].copy_from_slice(&3u64.to_le_bytes()); // page_count = 3
+        backend.write_page(0, &header_bytes).unwrap();
+
+        // Write facts (one per page)
+        for (i, fact) in [&fact1, &fact2].iter().enumerate() {
+            let data = postcard::to_allocvec(*fact).unwrap();
+            let mut page = vec![0u8; PAGE_SIZE];
+            page[..data.len()].copy_from_slice(&data);
+            backend.write_page((i + 1) as u64, &page).unwrap();
+        }
+
+        backend
+    }
+
     #[test]
     fn test_load_preserves_original_tx_id() {
         let mut pfs = PersistentFactStorage::new(MemoryBackend::new(), 256).unwrap();
@@ -949,6 +1434,30 @@ mod tests {
         assert_eq!(
             original_tx_id, loaded_tx_id,
             "tx_id must survive save/load round-trip"
+        );
+    }
+
+    #[test]
+    fn test_migrate_v1_to_v2_assigns_defaults() {
+        use crate::graph::types::VALID_TIME_FOREVER;
+
+        let backend = make_v1_backend();
+        let pfs = PersistentFactStorage::new(backend, 256).unwrap();
+        let facts = pfs.storage().get_all_facts().unwrap();
+
+        assert_eq!(facts.len(), 2);
+        // Both facts share tx_id=1000 → same tx_count
+        assert_eq!(
+            facts[0].tx_count, facts[1].tx_count,
+            "facts from the same tx_id batch must get the same tx_count"
+        );
+        assert_eq!(
+            facts[0].valid_to, VALID_TIME_FOREVER,
+            "migrated fact must have open-ended valid_to"
+        );
+        assert_eq!(
+            facts[0].valid_from, 1000_i64,
+            "migrated fact valid_from must equal original tx_id"
         );
     }
 
@@ -1190,6 +1699,34 @@ mod tests {
     }
 
     #[test]
+    fn test_migrate_v1_tx_counter_set_correctly() {
+        let backend = make_v1_backend();
+        let pfs = PersistentFactStorage::new(backend, 256).unwrap();
+
+        let alice = Uuid::new_v4();
+        pfs.storage()
+            .transact(
+                vec![(alice, ":new/fact".to_string(), Value::Boolean(true))],
+                None,
+            )
+            .unwrap();
+
+        let new_fact = pfs
+            .storage()
+            .get_all_facts()
+            .unwrap()
+            .into_iter()
+            .find(|f| f.attribute == ":new/fact")
+            .unwrap();
+
+        // After migrating 1 unique tx_id (tx_count=1), next tx should get tx_count=2
+        assert_eq!(
+            new_fact.tx_count, 2,
+            "first new transaction after migration must get tx_count=2"
+        );
+    }
+
+    #[test]
     fn test_save_writes_packed_pages() {
         use crate::storage::backend::FileBackend;
         use tempfile::NamedTempFile;
@@ -1212,12 +1749,12 @@ mod tests {
             pfs.save().unwrap();
         }
 
-        // Verify: header says current version, fact_page_format = PACKED
+        // Verify: header says v6, fact_page_format = PACKED
         {
             let backend = FileBackend::open(&path).unwrap();
             let header_bytes = backend.read_page(0).unwrap();
             let header = crate::storage::FileHeader::from_bytes(&header_bytes).unwrap();
-            assert_eq!(header.version, FORMAT_VERSION);
+            assert_eq!(header.version, 7);
             assert_eq!(
                 header.fact_page_format,
                 crate::storage::FACT_PAGE_FORMAT_PACKED
@@ -1264,6 +1801,70 @@ mod tests {
             let header = crate::storage::FileHeader::from_bytes(&header_bytes).unwrap();
             // Checksum should be non-zero for a non-empty DB
             assert_ne!(header.index_checksum, 0, "checksum must be set");
+        }
+    }
+
+    #[test]
+    fn test_v4_database_migrates_to_v5_on_open() {
+        use crate::storage::backend::FileBackend;
+        use crate::storage::{FACT_PAGE_FORMAT_PACKED, PAGE_SIZE};
+        use tempfile::NamedTempFile;
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        let alice = Uuid::new_v4();
+
+        // Write a "v4-style" file: version=4, fact_page_format byte = 0 (legacy padding)
+        {
+            use crate::storage::FileHeader;
+            let fact = crate::graph::types::Fact::with_valid_time(
+                alice,
+                ":name".to_string(),
+                Value::String("Alice".to_string()),
+                1u64,
+                1u64,
+                0i64,
+                i64::MAX,
+            );
+            let mut backend = FileBackend::open(&path).unwrap();
+
+            // Write fact at page 1 (one-per-page format)
+            let data = postcard::to_allocvec(&fact).unwrap();
+            let mut page = vec![0u8; PAGE_SIZE];
+            page[..data.len()].copy_from_slice(&data);
+            backend.write_page(1, &page).unwrap();
+
+            // Write v4 header (fact_page_format byte will be 0)
+            let mut header = FileHeader::new();
+            header.page_count = 2;
+            header.node_count = 1;
+            let mut hbytes = header.to_bytes();
+            // Force version to 4
+            hbytes[4..8].copy_from_slice(&4u32.to_le_bytes());
+            // Force fact_page_format byte (offset 68) to 0
+            hbytes[68] = 0;
+            hbytes.resize(PAGE_SIZE, 0);
+            backend.write_page(0, &hbytes).unwrap();
+            backend.sync().unwrap();
+        }
+
+        // Open — should auto-migrate to v7
+        {
+            let pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
+            assert_eq!(
+                pfs.storage().fact_count(),
+                1,
+                "migrated fact must be loaded"
+            );
+        }
+
+        // Verify file is now v7
+        {
+            let backend = FileBackend::open(&path).unwrap();
+            let header_bytes = backend.read_page(0).unwrap();
+            let header = crate::storage::FileHeader::from_bytes(&header_bytes).unwrap();
+            assert_eq!(header.version, 7, "file must be upgraded to v7");
+            assert_eq!(header.fact_page_format, FACT_PAGE_FORMAT_PACKED);
         }
     }
 
@@ -1328,100 +1929,12 @@ mod tests {
         let backend = storage.into_backend().unwrap();
         let header_page = backend.read_page(0).unwrap();
         let header = crate::storage::FileHeader::from_bytes(&header_page).unwrap();
-        assert_eq!(
-            header.version, FORMAT_VERSION,
-            "save() must write current-version header"
-        );
-        assert_eq!(header.to_bytes().len(), 84, "header must be 84 bytes");
+        assert_eq!(header.version, 7, "save() must write v7 header");
+        assert_eq!(header.to_bytes().len(), 84, "v7 header must be 84 bytes");
         assert!(header.fact_page_count > 0, "fact_page_count must be set");
         assert!(
             header.eavt_root_page > 0,
             "eavt_root must be set after save"
-        );
-    }
-
-    #[test]
-    fn v7_header_forces_rebuild_and_upgrades_to_v8() {
-        use crate::storage::FileHeader;
-        let e = Uuid::from_u128(7);
-        let mut backend = {
-            let mut s = PersistentFactStorage::new(MemoryBackend::new(), 256).unwrap();
-            s.storage()
-                .transact(vec![(e, ":n".to_string(), Value::Integer(1))], None)
-                .unwrap();
-            s.mark_dirty();
-            s.save().unwrap();
-            s.into_backend().unwrap()
-        };
-        // Downgrade the header to v7 (keys on disk are now v8-shaped, which is
-        // fine: the rebuild never reads them).
-        let mut h = FileHeader::from_bytes(&backend.read_page(0).unwrap()).unwrap();
-        h.version = 7;
-        h.header_checksum = compute_header_checksum(&h);
-        let mut page = h.to_bytes();
-        page.resize(PAGE_SIZE, 0);
-        backend.write_page(0, &page).unwrap();
-
-        let s = PersistentFactStorage::new(backend, 256).unwrap();
-        assert_eq!(s.storage().get_facts_by_entity(&e).unwrap().len(), 1);
-        let b = s.into_backend().unwrap();
-        let h2 = FileHeader::from_bytes(&b.read_page(0).unwrap()).unwrap();
-        assert_eq!(h2.version, 8, "v7 file must be upgraded to v8 on open");
-    }
-
-    /// #371/#287 review finding: empty transactions (`(transact [])`,
-    /// `(retract [])`) still allocate a tx_count without producing any facts
-    /// (see `FactStorage::transact` — `fetch_add` happens unconditionally).
-    /// The v7->v8 rebuild path must not compute the restored tx_counter as
-    /// `max(fact.tx_count)` alone, or trailing empty transactions before the
-    /// last checkpoint would be forgotten, rewinding the counter and letting
-    /// new transactions reuse tx_counts that `:as-of N` already served facts
-    /// for.
-    #[test]
-    fn v7_migration_does_not_rewind_tx_counter_past_empty_transactions() {
-        use crate::storage::FileHeader;
-        let e = Uuid::from_u128(70);
-        let mut backend = {
-            let mut s = PersistentFactStorage::new(MemoryBackend::new(), 256).unwrap();
-            s.storage()
-                .transact(vec![(e, ":n".to_string(), Value::Integer(1))], None)
-                .unwrap();
-            // Empty transactions still allocate tx_count without producing facts.
-            s.storage().transact(vec![], None).unwrap();
-            s.storage().transact(vec![], None).unwrap();
-            s.mark_dirty();
-            s.save().unwrap();
-            s.into_backend().unwrap()
-        };
-        let pre_migration_last_checkpointed = {
-            let h = FileHeader::from_bytes(&backend.read_page(0).unwrap()).unwrap();
-            h.last_checkpointed_tx_count
-        };
-        assert_eq!(
-            pre_migration_last_checkpointed, 3,
-            "one fact-bearing transact plus two empty transacts"
-        );
-
-        // Downgrade the header to v7 (keys on disk are now v8-shaped, which is
-        // fine: the rebuild never reads them).
-        let mut h = FileHeader::from_bytes(&backend.read_page(0).unwrap()).unwrap();
-        h.version = 7;
-        h.header_checksum = compute_header_checksum(&h);
-        let mut page = h.to_bytes();
-        page.resize(PAGE_SIZE, 0);
-        backend.write_page(0, &page).unwrap();
-
-        let s = PersistentFactStorage::new(backend, 256).unwrap();
-        assert!(
-            s.storage().current_tx_count() >= pre_migration_last_checkpointed,
-            "tx_counter must not rewind below the pre-migration last_checkpointed_tx_count"
-        );
-
-        let b = s.into_backend().unwrap();
-        let h2 = FileHeader::from_bytes(&b.read_page(0).unwrap()).unwrap();
-        assert!(
-            h2.last_checkpointed_tx_count >= pre_migration_last_checkpointed,
-            "v8 header's last_checkpointed_tx_count must not decrease across migration"
         );
     }
 
@@ -1500,6 +2013,53 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_v6_migration_from_v5_unit() {
+        let mut backend = MemoryBackend::new();
+        let mut page = vec![0u8; PAGE_SIZE];
+        page[0..4].copy_from_slice(b"MGRF");
+        page[4..8].copy_from_slice(&5u32.to_le_bytes()); // version = 5
+        page[8..16].copy_from_slice(&2u64.to_le_bytes()); // page_count = 2 (header + 1 empty page)
+        page[68] = 0x02; // fact_page_format = PACKED
+        backend.write_page(0, &page).unwrap();
+        // Write an empty fact page so page_count > 1 triggers load()
+        backend.write_page(1, &vec![0u8; PAGE_SIZE]).unwrap();
+
+        let s = PersistentFactStorage::new(backend, 256).unwrap();
+        let b = s.into_backend().unwrap();
+        let header_page = b.read_page(0).unwrap();
+        let header = crate::storage::FileHeader::from_bytes(&header_page).unwrap();
+        assert_eq!(header.version, 7, "migration must upgrade header to v7");
+        assert_eq!(header.to_bytes().len(), 84, "v7 header must be 84 bytes");
+        // page_count=2 means 1 fact page (page 1), even if empty
+        assert_eq!(
+            header.fact_page_count, 1,
+            "fact_page_count must reflect page layout"
+        );
+    }
+
+    #[test]
+    fn test_v6_migration_crash_safe_unit() {
+        let mut backend = MemoryBackend::new();
+        let mut page = vec![0u8; PAGE_SIZE];
+        page[0..4].copy_from_slice(b"MGRF");
+        page[4..8].copy_from_slice(&5u32.to_le_bytes());
+        page[8..16].copy_from_slice(&1u64.to_le_bytes()); // page_count = 1
+        page[68] = 0x02;
+        backend.write_page(0, &page).unwrap();
+        backend.write_page(1, &vec![0xFF_u8; PAGE_SIZE]).unwrap();
+        backend.write_page(2, &vec![0xFF_u8; PAGE_SIZE]).unwrap();
+
+        let s = PersistentFactStorage::new(backend, 256).unwrap();
+        let b = s.into_backend().unwrap();
+        let header_bytes = b.read_page(0).unwrap();
+        let header = crate::storage::FileHeader::from_bytes(&header_bytes).unwrap();
+        assert_eq!(
+            header.version, 7,
+            "migration must complete despite prior partial run"
+        );
+    }
+
     /// Regression test for fuzz-discovered timeout (artifact:
     /// `timeout-23b2b7e0aa43d92c12c49f123a48d6f4ace6ce33`).
     ///
@@ -1509,7 +2069,8 @@ mod tests {
     /// compute_page_checksum looped over 3.6 billion zero-filled sparse pages
     /// (each read_exact returns zeros, no error), hanging the process.
     ///
-    /// Since v3.0.0 a v5 header is rejected before any page is touched.
+    /// After the fix, next_free = 1 + validated_num_fact_pages (= 1 here),
+    /// so migration completes in constant time and produces a sane v7 header.
     #[test]
     fn test_v5_migration_large_page_count_does_not_hang() {
         use crate::storage::backend::FileBackend;
@@ -1527,16 +2088,19 @@ mod tests {
         page[68] = 0x20; // fact_page_format
         std::fs::write(&path, &page).unwrap();
 
-        // `FileBackend::open` itself reads and validates the header, so the
-        // pre-v7 rejection surfaces there rather than in
-        // `PersistentFactStorage::new`.
-        let err = match FileBackend::open(&path) {
-            Ok(_) => panic!("v5 header must be rejected"),
-            Err(e) => e,
-        };
+        // Must complete without hanging; next_free must be computed from actual
+        // fact pages (= 1 + 0 = 1), not from the crafted header.page_count.
+        let s = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256)
+            .expect("migration must complete");
+        let b = s.into_backend().unwrap();
+        let header_bytes = b.read_page(0).unwrap();
+        let header = crate::storage::FileHeader::from_bytes(&header_bytes).unwrap();
+        assert_eq!(header.version, 7, "migration must upgrade to v7");
+        // Resulting page_count must be small (0 fact pages + 4 index pages + header),
+        // NOT the crafted 3.6-billion-page value.
         assert!(
-            err.to_string().contains("no longer supported"),
-            "must fail with STG-028"
+            header.page_count < 100,
+            "page_count must be sane after migration"
         );
     }
 

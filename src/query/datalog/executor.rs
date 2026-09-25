@@ -373,22 +373,9 @@ impl DatalogExecutor {
     /// selective, but multi-pattern joins still need attribute candidates for patterns that do not
     /// bind an entity. If any pattern has neither a bound entity nor a bound attribute, or if the
     /// distinct lookup count exceeds `threshold`, returns `None` to use a full scan. Otherwise
-    /// returns `Some(facts)`, deduplicated by `(entity, attribute, tx_count, asserted, value)`.
+    /// returns `Some(facts)`, deduplicated by `(entity, attribute, tx_count, asserted)`.
     fn selective_fact_fetch(&self, patterns: &[Pattern], threshold: usize) -> Option<Vec<Fact>> {
         use std::collections::HashSet;
-
-        // Dedup key: (entity, attribute, tx_count, asserted, encoded value,
-        // valid_from, valid_to). `asserted` keeps an assertion and a
-        // retraction from the same WriteTransaction apart; the encoded value
-        // keeps two values of one attribute written in the same transaction
-        // apart (#371). Uses `encode_value` bytes rather than `Value` to
-        // avoid Float hashing. `valid_from`/`valid_to` keep two distinct
-        // valid-time stints of the same (entity, attribute, value, tx_count,
-        // asserted) tuple apart — without them, two per-fact valid-time
-        // windows on the same value in one transaction collapse into a
-        // single arbitrary survivor and the other window's row is silently
-        // dropped from `:valid-at` and `:any-valid-time` results (#371).
-        type FactDedupKey = (uuid::Uuid, String, u64, bool, Vec<u8>, i64, i64);
 
         let mut entity_ids: HashSet<uuid::Uuid> = HashSet::new();
         let mut attributes: HashSet<String> = HashSet::new();
@@ -417,7 +404,11 @@ impl DatalogExecutor {
             return None;
         }
 
-        let mut seen: HashSet<FactDedupKey> = HashSet::new();
+        // Dedup key: (entity uuid, attribute string, tx_count, asserted) — avoids Value debug
+        // formatting. Including `asserted` ensures that a retraction and an assertion committed in
+        // the same WriteTransaction (same tx_count) are both retained, since they differ only by
+        // the `asserted` flag.
+        let mut seen: HashSet<(uuid::Uuid, String, u64, bool)> = HashSet::new();
         let mut all_facts: Vec<Fact> = Vec::new();
 
         for uid in &entity_ids {
@@ -429,9 +420,6 @@ impl DatalogExecutor {
                             fact.attribute.clone(),
                             fact.tx_count,
                             fact.asserted,
-                            crate::storage::index::encode_value(&fact.value),
-                            fact.valid_from,
-                            fact.valid_to,
                         );
                         if seen.insert(key) {
                             all_facts.push(fact);
@@ -451,9 +439,6 @@ impl DatalogExecutor {
                             fact.attribute.clone(),
                             fact.tx_count,
                             fact.asserted,
-                            crate::storage::index::encode_value(&fact.value),
-                            fact.valid_from,
-                            fact.valid_to,
                         );
                         if seen.insert(key) {
                             all_facts.push(fact);
