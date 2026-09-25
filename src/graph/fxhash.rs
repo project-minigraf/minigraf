@@ -1,6 +1,7 @@
 //! Small non-cryptographic hasher for internal hot-path hash maps (#323).
 //!
-//! Same multiply-rotate scheme as rustc's `FxHasher`. Not HashDoS-resistant;
+//! Same multiply-rotate scheme as rustc's `FxHasher`, plus rustc-hash 2.x's
+//! final rotation so hashbrown's low-bit bucket index is well mixed. Not HashDoS-resistant;
 //! only use it for maps keyed by data the embedding application already
 //! controls (facts in its own database), never for untrusted network input.
 
@@ -60,9 +61,12 @@ impl Hasher for FxHasher {
         self.add_to_hash(i);
     }
 
+    /// The multiply only propagates entropy upwards, but hashbrown takes the
+    /// bucket index from the low bits; rotating moves the well-mixed high bits
+    /// down (same fix as rustc-hash 2.x).
     #[inline]
     fn finish(&self) -> u64 {
-        self.hash
+        self.hash.rotate_left(26)
     }
 }
 
@@ -97,5 +101,20 @@ mod tests {
         assert_eq!(m.get(&(":x", 2)).copied(), Some(20));
         let s: HashSet<u64, FxBuildHasher> = (0..1000).collect();
         assert_eq!(s.len(), 1000);
+    }
+
+    /// hashbrown picks the bucket from the hash's low bits. Keys that differ only
+    /// in the upper bytes of their last word (e.g. "h0001".."h1024") must still
+    /// spread across low bits, or every probe collides (#323).
+    #[test]
+    fn low_bits_spread_for_keys_differing_in_high_bytes() {
+        let b = FxBuildHasher::default();
+        let buckets: HashSet<u64> = (0..1024)
+            .map(|i| b.hash_one(format!("h{i:04}").as_str()) & 0x3ff)
+            .collect();
+        assert!(
+            buckets.len() > 512,
+            "low 10 bits should take most of 1024 values"
+        );
     }
 }
