@@ -90,6 +90,17 @@ fn native_raw_page_bytes_round_trip() {
 fn fixture_readable_by_native() {
     let fixture: &[u8] = include_bytes!("fixtures/compat.graph");
 
+    // The whole point of this fixture is exercising v7->v8 migration on open;
+    // catch a silent regeneration (e.g. someone running
+    // `cargo run --example generate_compat_fixture` against the old output
+    // path and overwriting the frozen fixture) before it opens successfully
+    // for the wrong reason.
+    let embedded_version = u32::from_le_bytes(fixture[4..8].try_into().unwrap());
+    assert_eq!(
+        embedded_version, 7,
+        "compat.graph fixture must remain the frozen v7 file"
+    );
+
     // Write to a temp path so Minigraf::open can use it.
     let path = tmp("fixture");
     cleanup(&path);
