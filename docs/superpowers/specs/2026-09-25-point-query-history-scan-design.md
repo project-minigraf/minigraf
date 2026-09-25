@@ -30,7 +30,7 @@ entity-wide, not attribute-wide.
 |---|---:|
 | `net_asserted_facts` — SipHash on cloned `(Uuid, String, Vec<u8>, i64, i64)` keys | ~40% |
 | `get_facts_by_entity` — `resolve_fact_ref` + postcard decode per record | ~30% |
-| `selective_fact_fetch` dedup `HashSet<(Uuid, String, u64, bool)>` | ~16% |
+| `selective_fact_fetch` dedup `HashSet<(Uuid, String, u64, bool)>` (redundant — §4.2) | ~16% |
 
 It is CPU overhead per dead record, not I/O.
 
@@ -82,9 +82,12 @@ pub(crate) fn get_facts_by_entity_attribute_indexed(
     to that entity's set (unless it is already `None`).
   - Pattern with bound entity and any other attribute (variable, pseudo-attribute) →
     set that entity to `None` (whole-entity scan).
-- Lookup count = Σ over entities of (1 if `None` else number of attributes) + number of
-  attribute-only lookups; compared against the existing `threshold` (4). Over threshold →
-  `None` (full scan), as today.
+- Narrowed lookup count = Σ over entities of (1 if `None` else number of attributes) +
+  number of attribute-only lookups. If it exceeds the existing `threshold` (4), every
+  entity collapses back to one whole-entity scan (today's behaviour) and the count is
+  recomputed; only if *that* still exceeds the threshold → `None` (full scan), as today.
+  This guarantees narrowing never turns a query that used the selective path into a
+  full scan (e.g. five attributes of one bound entity).
 - Fetch `get_facts_by_entity` for `None` entries and
   `get_facts_by_entity_attribute_indexed` per `(e, a)` otherwise.
 
@@ -94,12 +97,17 @@ filter is per-fact, so restricting input to one `(e, a)` never splits a group.
 `or-join`, so every attribute any clause could match on that entity is fetched.
 Rule-using queries never reach this path.
 
-### 4.2 Dedup only when sources can overlap
+### 4.2 Remove the executor dedup
 
-- If exactly one lookup is issued, its facts are returned without the `seen` set: a single
-  index range scan cannot yield the same record twice.
-- With ≥2 lookups the dedup stays with the same key `(entity, attribute, tx_count,
-  asserted)`, but the `HashSet` uses `FxBuildHasher` from §4.3.
+`selective_fact_fetch` has exactly one caller, `filter_facts_for_query`, which passes its
+output straight into `net_asserted_facts`. That function is idempotent under duplicated
+input records: an identical assertion lands in the same `(e, a, v, valid_from, valid_to)`
+window and the first one wins the tie; a duplicated retraction leaves the per-`(e, a, v)`
+max `tx_count` unchanged. So the `seen: HashSet<(Uuid, String, u64, bool)>` pass is
+redundant and is deleted. It cannot simply be skipped "for single-source lookups" instead:
+between `set_committed_index_reader` and `post_checkpoint_clear` a concurrent reader can
+see a fact in both the pending and the committed index. The idempotence is pinned by a
+unit test (§5) so a future change to `net_asserted_facts` cannot silently break it.
 
 ### 4.3 Cheaper `net_asserted_facts`
 
@@ -129,7 +137,8 @@ TDD; correctness first, then measurement.
 - `:a` vs `:ab` prefix isolation;
 - other entities / other attributes excluded.
 
-**`net_asserted_facts` tests**: existing tests keep passing; add a property-style test
+**`net_asserted_facts` tests**: existing tests keep passing; add a duplicate-idempotence
+test (`net_asserted_facts(xs ++ dup) == net_asserted_facts(xs)` as sorted sets); add a property-style test
 comparing the new implementation against the old one (kept as a `#[cfg(test)]` reference
 function) on randomized assert/retract sequences incl. multiple windows, same-tx
 assert+retract, and multi-valued attributes — compared as sorted sets.
