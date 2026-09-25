@@ -460,3 +460,92 @@ fn near_max_size_values_checkpoint_and_read_back() {
     );
     assert_eq!(by_value.len(), 1, "AVET path must find the large value");
 }
+
+/// `near_max_size_values_checkpoint_and_read_back` above leaves roughly 230
+/// bytes of headroom below the real per-fact maximum (`MAX_FACT_BYTES` minus
+/// the fixed postcard overhead of the rest of the `Fact` struct, which isn't
+/// a public constant). This test locates the exact edge at runtime — the
+/// largest value length that still transacts — by searching downward from a
+/// length guaranteed to fail, and checkpoints/reads back exactly there.
+#[test]
+fn max_size_value_at_exact_boundary_checkpoint_and_read_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("boundary.graph");
+    let db = Minigraf::open(&path).unwrap();
+
+    // Binary search the largest ASCII string length that still transacts as
+    // a single fact value, using a throwaway probe entity (and a fill
+    // character distinct from the real assertions below) so the search
+    // doesn't interfere with them — the AVET lookup below is by exact value,
+    // and the search's last successful probe value would otherwise collide
+    // with `big_a`. Same attribute name (`:blob`) as the real facts below:
+    // the attribute string is part of the encoded fact size, so a
+    // differently-sized attribute name would find a different boundary.
+    // `hi` starts comfortably above MAX_FACT_BYTES (4080), so it is
+    // guaranteed to fail.
+    let mut lo = 0usize;
+    let mut hi = 4096usize;
+    while lo + 1 < hi {
+        let mid = lo + (hi - lo) / 2;
+        let s = "z".repeat(mid);
+        let stmt = format!(r#"(transact [[:t/probe :blob "{s}"]])"#);
+        match db.execute(&stmt) {
+            Ok(_) => lo = mid,
+            Err(_) => hi = mid,
+        }
+    }
+    let max_len = lo;
+    assert!(
+        max_len > 3_800,
+        "boundary search must find a length past the near-max test's headroom"
+    );
+
+    let big_a = "a".repeat(max_len);
+    let big_b = "b".repeat(max_len);
+    db.execute(&format!(
+        r#"(transact [[:t/boundary :blob "{big_a}"] [:t/boundary :blob "{big_b}"] [:t/boundary :note "boundary"]])"#
+    ))
+    .unwrap();
+    db.checkpoint().unwrap();
+    drop(db);
+
+    let db = Minigraf::open(&path).unwrap();
+    let by_entity = rows(
+        db.execute("(query [:find ?v :where [:t/boundary :blob ?v]])")
+            .unwrap(),
+    );
+    assert_eq!(
+        by_entity.len(),
+        2,
+        "EAVT path must return both exact-boundary values"
+    );
+    let by_attr = rows(
+        db.execute(r#"(query [:find ?v :where [?e :blob ?v] [?e :note "boundary"]])"#)
+            .unwrap(),
+    );
+    assert_eq!(
+        by_attr.len(),
+        2,
+        "AEVT path must return both exact-boundary values"
+    );
+    let by_value = rows(
+        db.execute(&format!(
+            r#"(query [:find ?e :where [?e :blob "{big_a}"]])"#
+        ))
+        .unwrap(),
+    );
+    assert_eq!(
+        by_value.len(),
+        1,
+        "AVET path must find the exact-boundary value"
+    );
+
+    // One byte past the boundary must fail cleanly, confirming max_len is
+    // really the edge and not just some length that happens to work.
+    let over = "a".repeat(max_len + 1);
+    let over_result = db.execute(&format!(r#"(transact [[:t/over :blob "{over}"]])"#));
+    assert!(
+        over_result.is_err(),
+        "one byte past the boundary must be rejected"
+    );
+}
