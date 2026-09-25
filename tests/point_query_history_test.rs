@@ -190,3 +190,20 @@ fn valid_at_past_on_churned_attribute() {
     assert_eq!(r.len(), 1);
     assert!(r[0].contains("old"));
 }
+
+/// One WriteTransaction writing the same (entity, attribute) in two valid-time
+/// windows gives both facts the same tx_count. The selective path used to dedup on
+/// (entity, attribute, tx_count, asserted) and silently drop one window's row; it
+/// must match a full scan (#323 review).
+#[test]
+fn same_transaction_multi_window_matches_full_scan() {
+    let db = Minigraf::in_memory().unwrap();
+    let mut tx = db.begin_write().unwrap();
+    tx.execute(r#"(transact {:valid-from "2020-01-01T00:00:00Z" :valid-to "2021-01-01T00:00:00Z"} [[:e/w :x 1]])"#)
+        .unwrap();
+    tx.execute(r#"(transact {:valid-from "2021-01-01T00:00:00Z"} [[:e/w :x 2]])"#)
+        .unwrap();
+    tx.commit().unwrap();
+    let r = same_as_full_scan(&db, "?v", ":any-valid-time", "[:e/w :x ?v]");
+    assert_eq!(r.len(), 2, "both windows' values must be returned");
+}

@@ -684,10 +684,9 @@ impl FactStorage {
 
     /// Get every stored record for one `(entity, attribute)` pair (index-driven, #323).
     ///
-    /// Range-scans EAVT over `[(e, a, …), (e, next_prefix(a), …))` so other
-    /// attributes of the same entity — and their version history — are never
-    /// resolved. Both index sources post-filter on the exact attribute because a
-    /// prefix range also covers longer attributes (`:a` → `:ab`).
+    /// Range-scans EAVT over exactly `[(e, a, …), (e, a + "\0", …))`, so other
+    /// attributes of the same entity — including prefix siblings such as `:ab` for
+    /// `:a` — and their version history are never resolved.
     pub(crate) fn get_facts_by_entity_attribute_indexed(
         &self,
         entity_id: &EntityId,
@@ -713,15 +712,17 @@ impl FactStorage {
             valid_to: i64::MIN,
             tx_count: 0,
         };
-        // None only for the empty attribute; then the committed scan is unbounded
-        // above and relies on the post-filter.
-        let end_opt: Option<EavtKey> = next_string_prefix(attribute).map(|next_attr| EavtKey {
+        // Exact successor of `attribute`: the smallest string that sorts after it is
+        // `attribute + "\0"`, so `[start, end)` holds exactly this (e, a) pair. Always
+        // valid UTF-8 — unlike incrementing the last byte, which fails for attributes
+        // ending in 0x7F or a character whose last UTF-8 byte is 0xBF (e.g. `:丿`).
+        let end = EavtKey {
             entity: *entity_id,
-            attribute: next_attr,
+            attribute: format!("{attribute}\0"),
             valid_from: i64::MIN,
             valid_to: i64::MIN,
             tx_count: 0,
-        });
+        };
 
         let mut facts = Vec::new();
 
@@ -734,9 +735,10 @@ impl FactStorage {
             facts.push(resolve_fact_ref(&d, fr)?);
         }
 
-        // Committed: on-disk B+tree range scan, post-filtered on the exact pair.
+        // Committed: on-disk B+tree range scan over exactly this (e, a) pair; the
+        // post-filter is a cheap guard, not something the range relies on.
         if let Some(reader) = &d.committed_index_reader {
-            for fr in reader.range_scan_eavt(&start, end_opt.as_ref())? {
+            for fr in reader.range_scan_eavt(&start, Some(&end))? {
                 let fact = resolve_fact_ref(&d, fr)?;
                 if matches(&fact) {
                     facts.push(fact);
@@ -2262,5 +2264,86 @@ mod tests {
             .unwrap();
         assert_eq!(facts.len(), 1, "committed :a only, :ab excluded");
         assert_eq!(facts[0].value, Value::Integer(1));
+    }
+
+    /// #323 review: the committed EAVT range must end at the exact successor of
+    /// `(e, a)` for every attribute — including ones whose last UTF-8 byte is 0xBF
+    /// (e.g. `:丿`), where incrementing the last byte is not valid UTF-8 and the scan
+    /// used to run unbounded to the end of the index.
+    #[test]
+    fn entity_attribute_indexed_committed_range_is_bounded_for_any_attribute() {
+        use crate::storage::CommittedIndexReader;
+        use crate::storage::index::{AevtKey, AvetKey, EavtKey, FactRef, VaetKey};
+        use std::sync::{Arc, Mutex};
+
+        struct RecordingReader {
+            eavt_bounds: Mutex<Vec<(EavtKey, Option<EavtKey>)>>,
+        }
+        impl CommittedIndexReader for RecordingReader {
+            fn range_scan_eavt(
+                &self,
+                start: &EavtKey,
+                end: Option<&EavtKey>,
+            ) -> anyhow::Result<Vec<FactRef>> {
+                self.eavt_bounds
+                    .lock()
+                    .unwrap()
+                    .push((start.clone(), end.cloned()));
+                Ok(vec![])
+            }
+            fn range_scan_aevt(
+                &self,
+                _: &AevtKey,
+                _: Option<&AevtKey>,
+            ) -> anyhow::Result<Vec<FactRef>> {
+                Ok(vec![])
+            }
+            fn range_scan_avet(
+                &self,
+                _: &AvetKey,
+                _: Option<&AvetKey>,
+            ) -> anyhow::Result<Vec<FactRef>> {
+                Ok(vec![])
+            }
+            fn range_scan_vaet(
+                &self,
+                _: &VaetKey,
+                _: Option<&VaetKey>,
+            ) -> anyhow::Result<Vec<FactRef>> {
+                Ok(vec![])
+            }
+        }
+
+        let reader = Arc::new(RecordingReader {
+            eavt_bounds: Mutex::new(Vec::new()),
+        });
+        let storage = FactStorage::new();
+        storage.set_committed_index_reader(reader.clone());
+        let e = uuid::Uuid::from_u128(5);
+
+        for attr in [":plain", ":\u{4e3f}", ":\u{bf}", ":a\u{7f}"] {
+            storage
+                .get_facts_by_entity_attribute_indexed(&e, &attr.to_string())
+                .unwrap();
+        }
+
+        let bounds = reader.eavt_bounds.lock().unwrap();
+        assert_eq!(bounds.len(), 4, "one committed scan per lookup");
+        for (start, end) in bounds.iter() {
+            let end = end
+                .as_ref()
+                .expect("committed EAVT scan must have an upper bound");
+            assert_eq!(end.entity, e, "upper bound must stay within the entity");
+            assert!(start < end, "range must be non-empty");
+            // No other attribute may sort between start and end.
+            let sibling = EavtKey {
+                attribute: format!("{}x", start.attribute),
+                ..start.clone()
+            };
+            assert!(
+                sibling >= *end,
+                "prefix sibling must fall outside the range"
+            );
+        }
     }
 }

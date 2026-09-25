@@ -9,7 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
-- **Bound-entity point queries no longer pay for other attributes' history (#323).** `[:e :attr ?v]` now range-scans only `(e, :attr)` in the EAVT index instead of every record the entity has ever written. Reading a rarely changed attribute of a heavily rewritten entity no longer slows down as that entity's history grows: at 2,000 retract/reassert cycles on a sibling attribute, it drops from 4.67 ms to 18.6 µs. Reading the heavily rewritten attribute itself, and attribute scans (`[?e :attr ?v]`), are about 1.6× faster (4.66 ms → 2.88 ms) from cheaper net-assert grouping and removing a redundant dedup pass. File format and query results are unchanged. On v2.x, reading a heavily rewritten attribute still costs time proportional to its history, because v7 index keys carry neither the value nor the assert/retract flag; the structural fix needs the v8 keys and is tracked for v3.0.0 in #379.
+- **Bound-entity point queries no longer pay for other attributes' history (#323).** `[:e :attr ?v]` now range-scans only `(e, :attr)` in the EAVT index instead of every record the entity has ever written. Reading a rarely changed attribute of a heavily rewritten entity no longer slows down as that entity's history grows: at 2,000 retract/reassert cycles on a sibling attribute, it drops from 4.67 ms to 18.6 µs. Reading the heavily rewritten attribute itself, and attribute scans (`[?e :attr ?v]`), are about 1.6× faster (4.66 ms → 2.88 ms) from cheaper net-assert grouping and removing a redundant dedup pass. The file format is unchanged.
+
+### Fixed
+
+- **Bound-entity queries could drop rows when one `WriteTransaction` wrote the same attribute in several valid-time windows (#323).** Both facts share a `tx_count`, and the selective lookup path de-duplicated on `(entity, attribute, tx_count, asserted)`, so one window's value was silently lost, while the same query via a full scan returned both. That de-duplication has been removed, and bound-entity queries now always match a full scan.
+
+### Notes
+
+- On v2.x, reading a heavily rewritten attribute still costs time proportional to its history, because v7 index keys carry neither the value nor the assert/retract flag; the structural fix needs the v8 keys and is tracked for v3.0.0 in #379.
 
 ## v2.0.1 — 2026-09-25
 
