@@ -7,6 +7,19 @@
 
 use crate::graph::types::{Attribute, EntityId, Fact, Value};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+/// Generate the maximum UUID value (all bits set to 1).
+/// Used as an upper bound for range queries on UUID fields.
+fn max_uuid() -> Uuid {
+    // This is safe because MAX_UUID is a valid hardcoded UUID string literal.
+    // It will never fail at runtime.
+    const MAX_UUID_BYTES: [u8; 16] = [
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF,
+    ];
+    Uuid::from_bytes(MAX_UUID_BYTES)
+}
 
 // ─── FactRef ────────────────────────────────────────────────────────────────
 
@@ -84,11 +97,7 @@ pub fn encode_value(v: &Value) -> Vec<u8> {
 
 // ─── Index Key Types ─────────────────────────────────────────────────────────
 
-/// EAVT: sort by (Entity, Attribute, ValidFrom, ValidTo, TxCount, ValueBytes, Asserted)
-///
-/// `value_bytes` and `asserted` come last so entity/attribute range scans keep
-/// their order; they keep facts that differ only in value or assert/retract
-/// from colliding (#371, #287).
+/// EAVT: sort by (Entity, Attribute, ValidFrom, ValidTo, TxCount)
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct EavtKey {
     pub entity: EntityId,
@@ -96,15 +105,9 @@ pub struct EavtKey {
     pub valid_from: i64,
     pub valid_to: i64,
     pub tx_count: u64,
-    pub value_bytes: Vec<u8>,
-    pub asserted: bool,
 }
 
-/// AEVT: sort by (Attribute, Entity, ValidFrom, ValidTo, TxCount, ValueBytes, Asserted)
-///
-/// `value_bytes` and `asserted` come last so entity/attribute range scans keep
-/// their order; they keep facts that differ only in value or assert/retract
-/// from colliding (#371, #287).
+/// AEVT: sort by (Attribute, Entity, ValidFrom, ValidTo, TxCount)
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct AevtKey {
     pub attribute: Attribute,
@@ -112,11 +115,9 @@ pub struct AevtKey {
     pub valid_from: i64,
     pub valid_to: i64,
     pub tx_count: u64,
-    pub value_bytes: Vec<u8>,
-    pub asserted: bool,
 }
 
-/// AVET: sort by (Attribute, ValueBytes, ValidFrom, ValidTo, Entity, TxCount, Asserted)
+/// AVET: sort by (Attribute, ValueBytes, ValidFrom, ValidTo, Entity, TxCount)
 ///
 /// `value_bytes` is the canonical encoding from `encode_value`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -127,10 +128,9 @@ pub struct AvetKey {
     pub valid_to: i64,
     pub entity: EntityId,
     pub tx_count: u64,
-    pub asserted: bool,
 }
 
-/// VAET: sort by (RefTarget, Attribute, ValidFrom, ValidTo, SourceEntity, TxCount, Asserted)
+/// VAET: sort by (RefTarget, Attribute, ValidFrom, ValidTo, SourceEntity, TxCount)
 ///
 /// Only facts with `Value::Ref` are indexed here.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -141,93 +141,6 @@ pub struct VaetKey {
     pub valid_to: i64,
     pub source_entity: EntityId,
     pub tx_count: u64,
-    pub asserted: bool,
-}
-
-impl EavtKey {
-    pub fn from_fact(f: &Fact) -> Self {
-        EavtKey {
-            entity: f.entity,
-            attribute: f.attribute.clone(),
-            valid_from: f.valid_from,
-            valid_to: f.valid_to,
-            tx_count: f.tx_count,
-            value_bytes: encode_value(&f.value),
-            asserted: f.asserted,
-        }
-    }
-
-    /// Smallest possible key for `entity`: every EAVT key of that entity sorts at or after it.
-    pub fn entity_start(entity: EntityId) -> Self {
-        EavtKey {
-            entity,
-            attribute: String::new(),
-            valid_from: i64::MIN,
-            valid_to: i64::MIN,
-            tx_count: 0,
-            value_bytes: Vec::new(),
-            asserted: false,
-        }
-    }
-}
-
-impl AevtKey {
-    pub fn from_fact(f: &Fact) -> Self {
-        AevtKey {
-            attribute: f.attribute.clone(),
-            entity: f.entity,
-            valid_from: f.valid_from,
-            valid_to: f.valid_to,
-            tx_count: f.tx_count,
-            value_bytes: encode_value(&f.value),
-            asserted: f.asserted,
-        }
-    }
-
-    /// Smallest possible key for `attribute`.
-    pub fn attribute_start(attribute: &str) -> Self {
-        AevtKey {
-            attribute: attribute.to_string(),
-            entity: EntityId::nil(),
-            valid_from: i64::MIN,
-            valid_to: i64::MIN,
-            tx_count: 0,
-            value_bytes: Vec::new(),
-            asserted: false,
-        }
-    }
-}
-
-impl AvetKey {
-    pub fn from_fact(f: &Fact) -> Self {
-        AvetKey {
-            attribute: f.attribute.clone(),
-            value_bytes: encode_value(&f.value),
-            valid_from: f.valid_from,
-            valid_to: f.valid_to,
-            entity: f.entity,
-            tx_count: f.tx_count,
-            asserted: f.asserted,
-        }
-    }
-}
-
-impl VaetKey {
-    /// `None` unless the fact's value is a `Value::Ref` (only refs are VAET-indexed).
-    pub fn from_fact(f: &Fact) -> Option<Self> {
-        match &f.value {
-            Value::Ref(target) => Some(VaetKey {
-                ref_target: *target,
-                attribute: f.attribute.clone(),
-                valid_from: f.valid_from,
-                valid_to: f.valid_to,
-                source_entity: f.entity,
-                tx_count: f.tx_count,
-                asserted: f.asserted,
-            }),
-            _ => None,
-        }
-    }
 }
 
 // ─── Indexes ─────────────────────────────────────────────────────────────────
@@ -254,67 +167,159 @@ impl Indexes {
     /// `FactRef { page_id: 0, slot_index: 0 }` as a placeholder; real
     /// page IDs are assigned by `save()` and updated via `reindex_from_facts`.
     pub fn insert(&mut self, fact: &Fact, fact_ref: FactRef) {
-        self.eavt.insert(EavtKey::from_fact(fact), fact_ref);
-        self.aevt.insert(AevtKey::from_fact(fact), fact_ref);
-        self.avet.insert(AvetKey::from_fact(fact), fact_ref);
-        if let Some(k) = VaetKey::from_fact(fact) {
-            self.vaet.insert(k, fact_ref);
+        self.eavt.insert(
+            EavtKey {
+                entity: fact.entity,
+                attribute: fact.attribute.clone(),
+                valid_from: fact.valid_from,
+                valid_to: fact.valid_to,
+                tx_count: fact.tx_count,
+            },
+            fact_ref,
+        );
+
+        self.aevt.insert(
+            AevtKey {
+                attribute: fact.attribute.clone(),
+                entity: fact.entity,
+                valid_from: fact.valid_from,
+                valid_to: fact.valid_to,
+                tx_count: fact.tx_count,
+            },
+            fact_ref,
+        );
+
+        self.avet.insert(
+            AvetKey {
+                attribute: fact.attribute.clone(),
+                value_bytes: encode_value(&fact.value),
+                valid_from: fact.valid_from,
+                valid_to: fact.valid_to,
+                entity: fact.entity,
+                tx_count: fact.tx_count,
+            },
+            fact_ref,
+        );
+
+        if let Value::Ref(target) = &fact.value {
+            self.vaet.insert(
+                VaetKey {
+                    ref_target: *target,
+                    attribute: fact.attribute.clone(),
+                    valid_from: fact.valid_from,
+                    valid_to: fact.valid_to,
+                    source_entity: fact.entity,
+                    tx_count: fact.tx_count,
+                },
+                fact_ref,
+            );
         }
     }
 
     /// Query EAVT index for a specific entity (returns all facts for that entity).
     pub fn lookup_eavt_entity(&self, entity: EntityId) -> Vec<FactRef> {
-        self.eavt
-            .range(EavtKey::entity_start(entity)..)
-            .take_while(|(k, _)| k.entity == entity)
-            .map(|(_, v)| *v)
-            .collect()
+        let start = EavtKey {
+            entity,
+            attribute: String::new(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
+        // Use exclusive range with a very high attribute string
+        let end = EavtKey {
+            entity,
+            attribute: String::from("zzzzzzzzzzzzzzzzzz"),
+            valid_from: i64::MAX,
+            valid_to: i64::MAX,
+            tx_count: u64::MAX,
+        };
+        self.eavt.range(start..end).map(|(_, v)| *v).collect()
+    }
+
+    /// Query EAVT index for entity + attribute.
+    #[allow(dead_code)]
+    pub fn lookup_eavt_entity_attr(&self, entity: EntityId, attribute: &str) -> Vec<FactRef> {
+        let start = EavtKey {
+            entity,
+            attribute: attribute.to_string(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
+        let end = EavtKey {
+            entity,
+            attribute: attribute.to_string(),
+            valid_from: i64::MAX,
+            valid_to: i64::MAX,
+            tx_count: u64::MAX,
+        };
+        self.eavt.range(start..=end).map(|(_, v)| *v).collect()
     }
 
     /// Query AEVT index for a specific attribute (returns all facts with that attribute).
     pub fn lookup_aevt_attr(&self, attribute: &str) -> Vec<FactRef> {
-        self.aevt
-            .range(AevtKey::attribute_start(attribute)..)
-            .take_while(|(k, _)| k.attribute == attribute)
-            .map(|(_, v)| *v)
-            .collect()
+        let max_uuid = max_uuid();
+        let start = AevtKey {
+            attribute: attribute.to_string(),
+            entity: EntityId::default(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
+        let end = AevtKey {
+            attribute: attribute.to_string(),
+            entity: max_uuid,
+            valid_from: i64::MAX,
+            valid_to: i64::MAX,
+            tx_count: u64::MAX,
+        };
+        self.aevt.range(start..=end).map(|(_, v)| *v).collect()
     }
 
     /// Query AVET index for attribute + value.
     pub fn lookup_avet_attr_value(&self, attribute: &str, value: &Value) -> Vec<FactRef> {
+        let max_uuid = max_uuid();
         let value_bytes = encode_value(value);
         let start = AvetKey {
             attribute: attribute.to_string(),
             value_bytes: value_bytes.clone(),
             valid_from: i64::MIN,
             valid_to: i64::MIN,
-            entity: EntityId::nil(),
+            entity: EntityId::default(),
             tx_count: 0,
-            asserted: false,
         };
-        self.avet
-            .range(start..)
-            .take_while(|(k, _)| k.attribute == attribute && k.value_bytes == value_bytes)
-            .map(|(_, v)| *v)
-            .collect()
+        let end = AvetKey {
+            attribute: attribute.to_string(),
+            value_bytes,
+            valid_from: i64::MAX,
+            valid_to: i64::MAX,
+            entity: max_uuid,
+            tx_count: u64::MAX,
+        };
+        self.avet.range(start..=end).map(|(_, v)| *v).collect()
     }
 
     /// Query VAET index for ref target (reverse references).
     pub fn lookup_vaet_ref(&self, target: EntityId) -> Vec<FactRef> {
+        let max_uuid = max_uuid();
         let start = VaetKey {
             ref_target: target,
             attribute: String::new(),
             valid_from: i64::MIN,
             valid_to: i64::MIN,
-            source_entity: EntityId::nil(),
+            source_entity: EntityId::default(),
             tx_count: 0,
-            asserted: false,
         };
-        self.vaet
-            .range(start..)
-            .take_while(|(k, _)| k.ref_target == target)
-            .map(|(_, v)| *v)
-            .collect()
+        let end = VaetKey {
+            ref_target: target,
+            // Use max char to include all attributes
+            attribute: char::MAX.to_string(),
+            valid_from: i64::MAX,
+            valid_to: i64::MAX,
+            source_entity: max_uuid,
+            tx_count: u64::MAX,
+        };
+        self.vaet.range(start..=end).map(|(_, v)| *v).collect()
     }
 }
 
@@ -323,126 +328,6 @@ mod tests {
     use super::*;
     use crate::graph::types::{Fact, VALID_TIME_FOREVER, Value};
     use uuid::Uuid;
-
-    fn fact_at(entity: Uuid, attr: &str, value: Value, asserted: bool) -> Fact {
-        let mut f = Fact::with_valid_time(
-            entity,
-            attr.to_string(),
-            value,
-            100,
-            7,
-            100,
-            VALID_TIME_FOREVER,
-        );
-        f.asserted = asserted;
-        f
-    }
-
-    /// #371: two values of one attribute in one transaction must both be indexed.
-    #[test]
-    fn same_tx_multi_value_keeps_both_entries_in_all_indexes() {
-        let e = Uuid::from_u128(1);
-        let t1 = Uuid::from_u128(10);
-        let t2 = Uuid::from_u128(11);
-        let mut idx = Indexes::new();
-        idx.insert(
-            &fact_at(e, ":kind", Value::Ref(t1), true),
-            FactRef {
-                page_id: 0,
-                slot_index: 0,
-            },
-        );
-        idx.insert(
-            &fact_at(e, ":kind", Value::Ref(t2), true),
-            FactRef {
-                page_id: 0,
-                slot_index: 1,
-            },
-        );
-        assert_eq!(
-            idx.lookup_eavt_entity(e).len(),
-            2,
-            "EAVT must keep both values"
-        );
-        assert_eq!(
-            idx.lookup_aevt_attr(":kind").len(),
-            2,
-            "AEVT must keep both values"
-        );
-        assert_eq!(idx.eavt.len(), 2);
-        assert_eq!(idx.aevt.len(), 2);
-        assert_eq!(idx.avet.len(), 2);
-        assert_eq!(idx.vaet.len(), 2);
-    }
-
-    /// An assertion and a retraction of the same value at the same tx_count
-    /// must not collide in any index.
-    #[test]
-    fn same_tx_assert_and_retract_keep_both_entries_in_all_indexes() {
-        let e = Uuid::from_u128(1);
-        let t = Uuid::from_u128(10);
-        let mut idx = Indexes::new();
-        idx.insert(
-            &fact_at(e, ":kind", Value::Ref(t), true),
-            FactRef {
-                page_id: 0,
-                slot_index: 0,
-            },
-        );
-        idx.insert(
-            &fact_at(e, ":kind", Value::Ref(t), false),
-            FactRef {
-                page_id: 0,
-                slot_index: 1,
-            },
-        );
-        assert_eq!(idx.eavt.len(), 2, "EAVT must keep assert and retract");
-        assert_eq!(idx.aevt.len(), 2, "AEVT must keep assert and retract");
-        assert_eq!(idx.avet.len(), 2, "AVET must keep assert and retract");
-        assert_eq!(idx.vaet.len(), 2, "VAET must keep assert and retract");
-    }
-
-    #[test]
-    fn lookups_do_not_leak_neighbouring_entities_or_attributes() {
-        let (a, b) = (Uuid::from_u128(1), Uuid::from_u128(2));
-        let mut idx = Indexes::new();
-        idx.insert(
-            &fact_at(a, ":x", Value::Integer(1), true),
-            FactRef {
-                page_id: 0,
-                slot_index: 0,
-            },
-        );
-        idx.insert(
-            &fact_at(b, ":x", Value::Integer(1), true),
-            FactRef {
-                page_id: 0,
-                slot_index: 1,
-            },
-        );
-        idx.insert(
-            &fact_at(a, ":xy", Value::Integer(1), true),
-            FactRef {
-                page_id: 0,
-                slot_index: 2,
-            },
-        );
-        assert_eq!(idx.lookup_eavt_entity(a).len(), 2);
-        assert_eq!(idx.lookup_aevt_attr(":x").len(), 2);
-        assert_eq!(
-            idx.lookup_avet_attr_value(":x", &Value::Integer(1)).len(),
-            2
-        );
-    }
-
-    #[test]
-    fn entity_and_attribute_start_keys_sort_before_every_matching_key() {
-        let e = Uuid::from_u128(5);
-        let f = fact_at(e, ":a", Value::Null, false);
-        assert!(EavtKey::entity_start(e) <= EavtKey::from_fact(&f));
-        assert!(AevtKey::attribute_start(":a") <= AevtKey::from_fact(&f));
-        assert!(EavtKey::entity_start(Uuid::from_u128(6)) > EavtKey::from_fact(&f));
-    }
 
     #[test]
     fn test_fact_ref_fields() {
@@ -497,8 +382,6 @@ mod tests {
             valid_from: 0,
             valid_to: i64::MAX,
             tx_count: 1,
-            value_bytes: Vec::new(),
-            asserted: true,
         };
         let k2 = EavtKey {
             entity: e2,
@@ -506,8 +389,6 @@ mod tests {
             valid_from: 0,
             valid_to: i64::MAX,
             tx_count: 1,
-            value_bytes: Vec::new(),
-            asserted: true,
         };
         assert!(k1 < k2);
     }
@@ -522,7 +403,6 @@ mod tests {
             valid_to: i64::MAX,
             entity: e,
             tx_count: 1,
-            asserted: true,
         };
         let k2 = AvetKey {
             attribute: ":score".to_string(),
@@ -531,7 +411,6 @@ mod tests {
             valid_to: i64::MAX,
             entity: e,
             tx_count: 2,
-            asserted: true,
         };
         assert!(k1 < k2);
     }

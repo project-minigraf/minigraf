@@ -818,8 +818,6 @@ mod tests {
                 valid_from: 0,
                 valid_to: i64::MAX,
                 tx_count: tx,
-                value_bytes: Vec::new(),
-                asserted: true,
             },
             FactRef {
                 page_id: tx + 1,
@@ -1089,8 +1087,6 @@ mod tests {
             valid_from: i64::MIN,
             valid_to: i64::MIN,
             tx_count: 0,
-            value_bytes: Vec::new(),
-            asserted: true,
         };
         let next_entity = Uuid::from_u128(43);
         let end = EavtKey {
@@ -1099,8 +1095,6 @@ mod tests {
             valid_from: i64::MIN,
             valid_to: i64::MIN,
             tx_count: 0,
-            value_bytes: Vec::new(),
-            asserted: true,
         };
 
         let refs = range_scan(root, &start, Some(&end), &backend, &cache).unwrap();
@@ -1131,8 +1125,6 @@ mod tests {
             valid_from: 0,
             valid_to: 0,
             tx_count: 0,
-            value_bytes: Vec::new(),
-            asserted: true,
         };
         let refs = range_scan::<EavtKey>(root, &start, None, &backend, &cache).unwrap();
         assert_eq!(refs.len(), 0);
@@ -1154,8 +1146,6 @@ mod tests {
             valid_from: i64::MIN,
             valid_to: i64::MIN,
             tx_count: 0,
-            value_bytes: Vec::new(),
-            asserted: true,
         };
         let refs = range_scan::<EavtKey>(root, &start, None, &backend, &cache).unwrap();
         assert_eq!(refs.len(), 5, "entities 5..9 = 5 entries");
@@ -1177,8 +1167,6 @@ mod tests {
             valid_from: i64::MIN,
             valid_to: i64::MIN,
             tx_count: 0,
-            value_bytes: Vec::new(),
-            asserted: true,
         };
         let end = EavtKey {
             entity: Uuid::from_u128(200),
@@ -1186,8 +1174,6 @@ mod tests {
             valid_from: i64::MIN,
             valid_to: i64::MIN,
             tx_count: 0,
-            value_bytes: Vec::new(),
-            asserted: true,
         };
         let refs = range_scan(root, &start, Some(&end), &backend, &cache).unwrap();
         // NOTE: The end key has attribute="" which sorts BEFORE ":a". So entity 200's
@@ -1257,8 +1243,6 @@ mod tests {
             valid_from: i64::MIN,
             valid_to: i64::MIN,
             tx_count: 0,
-            value_bytes: Vec::new(),
-            asserted: true,
         };
         let err = range_scan::<EavtKey>(root, &start, None, &backend, &cache)
             .expect_err("following a next_leaf pointer into a non-leaf page must fail");
@@ -1288,8 +1272,6 @@ mod tests {
             valid_from: i64::MIN,
             valid_to: i64::MIN,
             tx_count: 0,
-            value_bytes: Vec::new(),
-            asserted: true,
         };
         let end = EavtKey {
             entity: Uuid::from_u128(10),
@@ -1297,8 +1279,6 @@ mod tests {
             valid_from: i64::MIN,
             valid_to: i64::MIN,
             tx_count: 0,
-            value_bytes: Vec::new(),
-            asserted: true,
         };
         let refs = reader.range_scan_eavt(&start, Some(&end)).unwrap();
         // Same exclusion logic: entity 10's entry {10, ":x", ...} > end {10, "", ...}
@@ -1340,8 +1320,6 @@ mod tests {
             valid_from: i64::MIN,
             valid_to: i64::MIN,
             tx_count: 0,
-            value_bytes: Vec::new(),
-            asserted: true,
         };
         let end = EavtKey {
             entity: Uuid::from_u128(20),
@@ -1349,8 +1327,6 @@ mod tests {
             valid_from: i64::MIN,
             valid_to: i64::MIN,
             tx_count: 0,
-            value_bytes: Vec::new(),
-            asserted: true,
         };
 
         let barrier = Arc::new(Barrier::new(8));
