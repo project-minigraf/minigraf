@@ -4,7 +4,7 @@
 
 **Verified**: 2026-09-25 with `cargo test --quiet`
 
-**Result**: 1,147 passing tests and 8 ignored tests (1,155 total)
+**Result**: 1,149 passing tests and 8 ignored tests (1,157 total)
 
 This supersedes the v2.0.0-era count (1,145 passing, 8 ignored) with the unreleased
 file-format-v8 work (#287, #371): the index-key value-collision fix, the v7→v8
@@ -15,7 +15,7 @@ and structured-error-code changes.
 ### Covered Areas
 
 - **Core database behavior**: in-memory and file-backed operation, transactions, checkpoints, retractions, bi-temporal queries, recursive rules, prepared statements, aggregation, expressions, disjunction, window functions, UDFs, and magic-sets evaluation.
-- **Multi-value and index-key correctness** (`tests/multi_value_test.rs`, 8 tests): same-transaction multi-valued facts surviving query-time dedup, retracting several values of one attribute in one call, and format v8 index keys (value bytes + assert/retract flag) (#287, #371).
+- **Multi-value and index-key correctness** (`tests/multi_value_test.rs`, 10 tests): same-transaction multi-valued facts surviving query-time dedup, retracting several values of one attribute in one call, valid-time stints (facts differing only in valid time), maximum-value-size boundaries, and format v8 index keys (value bytes + assert/retract flag) (#287, #371).
 - **Storage correctness**: packed pages, B+tree indexes and range scans, cache behavior, file-header validation, migration (including v7→v8 index rebuild and v1–v6 rejection via `STG-028`), WAL replay, checksums, corruption handling, and fault injection.
 - **Reliability and concurrency**: concurrent reads and writes, rollback behavior, same-process handle exclusion, cross-process locking, PID namespaces, NFS and container lock behavior, and SIGKILL recovery.
 - **Public diagnostics**: structured parser, query, storage, WAL, API, and internal error codes; the error-code registry is checked against [`ERROR_REFERENCE.md`](ERROR_REFERENCE.md).
