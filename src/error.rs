@@ -138,6 +138,13 @@ pub(crate) enum ErrorCode {
     Int000,
     Stg001,
     Stg002,
+    // STG-003/STG-004 are deprecated since v3.0.0: they reported truncated
+    // v4–v6 headers, and formats older than v7 are now rejected with STG-028
+    // before any size check. Kept so the codes are never reused.
+    #[allow(dead_code)]
+    Stg003,
+    #[allow(dead_code)]
+    Stg004,
     Stg005,
     Stg006,
     Stg007,
@@ -783,6 +790,18 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Stg002,
         "STG-002",
         "Invalid magic number: not a .graph file",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg003,
+        "STG-003",
+        "Invalid v4/v5/v6 header: expected at least 72 bytes, got {}",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg004,
+        "STG-004",
+        "Invalid v6 header: expected 80 bytes, got {}",
         ErrorCategory::Storage,
     ),
     (
@@ -1712,6 +1731,8 @@ mod tests {
                 | ErrorCode::Qry009
                 | ErrorCode::Stg001
                 | ErrorCode::Stg002
+                | ErrorCode::Stg003
+                | ErrorCode::Stg004
                 | ErrorCode::Stg005
                 | ErrorCode::Stg006
                 | ErrorCode::Stg007
@@ -1901,6 +1922,8 @@ mod tests {
             ErrorCode::Qry009,
             ErrorCode::Stg001,
             ErrorCode::Stg002,
+            ErrorCode::Stg003,
+            ErrorCode::Stg004,
             ErrorCode::Stg005,
             ErrorCode::Stg006,
             ErrorCode::Stg007,

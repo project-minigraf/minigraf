@@ -22,7 +22,7 @@
   ```
 - Commits and the PR reference `#371` and `#287`; only the PR body uses closing keywords (`Closes #371`, `Closes #287`).
 - No version bump, no tag, no `release.yml` edits (cargo-dist owns it).
-- New error code: `STG-028`. Retired codes: `STG-003`, `STG-004` (never reused).
+- New error code: `STG-028`. `STG-003`, `STG-004` become deprecated (kept registered and documented, never reused). **Amended after review:** the plan originally deleted them as "retired"; error codes are never removed.
 - `FORMAT_VERSION = 8`, new `MIN_FORMAT_VERSION = 7`.
 - The pre-push hook runs fmt + clippy + test; CI's clippy may be newer than local — run `cargo clippy --all-targets --all-features -- -D warnings` before pushing.
 

@@ -111,6 +111,8 @@ with no `CodedError` anywhere in its chain.
 | QRY-009 | Rules lock poisoned | Query Execution |
 | STG-001 | Invalid header: too short | Storage |
 | STG-002 | Invalid magic number: not a .graph file | Storage |
+| STG-003 | Invalid v4/v5/v6 header too short (deprecated) | Storage |
+| STG-004 | Invalid v6 header too short (deprecated) | Storage |
 | STG-005 | Invalid header too short | Storage |
 | STG-006 | Unsupported format version | Storage |
 | STG-007 | page_count must be greater than 0 | Storage |
@@ -207,7 +209,7 @@ with no `CodedError` anywhere in its chain.
 | INT-054 | Unstratifiable negative recursion cycle | Internal |
 | INT-055 | Rule predicate disappeared during rollback | Internal |
 
-Retired codes: STG-003 and STG-004 (pre-v7 header sizes) were retired in v3.0.0, when formats v1–v6 stopped being readable. Retired codes are never reused.
+Deprecated codes: STG-003 and STG-004 (pre-v7 header sizes) are deprecated as of v3.0.0 and are no longer emitted, because formats v1–v6 are rejected with STG-028 before any header-size check. They stay registered and documented, and error codes are never removed or reused.
 
 ---
 
@@ -1696,6 +1698,32 @@ See the [file format section in README](../README.md#file-format) for version hi
 - Verify the file path is correct and points to a `.graph` file created by Minigraf. Do not open SQLite databases, JSON files, or other formats with Minigraf.
 
 **Scenario**: `Minigraf::open("config.json")` — a wrong file path was passed.
+
+### STG-003 Invalid v4/v5/v6 header too short
+
+> **Deprecated in v3.0.0.** No longer emitted: files in formats v1–v6 are rejected with [STG-028](#stg-028-format-version-no-longer-supported) before any header-size check. Kept for reference; this code will not be reused.
+
+**Error text**: `Invalid v4/v5/v6 header: expected at least 72 bytes, got {}`
+
+**Cause**: A file identified as format version 4, 5, or 6 is too short to hold a valid header of that version. The file is truncated at the header.
+
+**Resolution**:
+- Restore from backup. If the file is newly created, delete it. See the [file format section in README](../README.md#file-format).
+
+**Scenario**: A v5-format `.graph` file was corrupted by a partial write and is missing the latter part of its header.
+
+### STG-004 Invalid v6 header too short
+
+> **Deprecated in v3.0.0.** No longer emitted: files in formats v1–v6 are rejected with [STG-028](#stg-028-format-version-no-longer-supported) before any header-size check. Kept for reference; this code will not be reused.
+
+**Error text**: `Invalid v6 header: expected 80 bytes, got {}`
+
+**Cause**: A file identified as format version 6 is shorter than the required 80-byte v6 header. The file is truncated.
+
+**Resolution**:
+- Restore from backup. If the file is newly created, delete it. See the [file format section in README](../README.md#file-format).
+
+**Scenario**: A v6-format `.graph` file was written by an older pre-release version and its header is incomplete.
 
 ### STG-005 Invalid header too short
 
