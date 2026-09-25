@@ -93,9 +93,16 @@ fn unsupported_version_fails_loudly() {
     page[4..8].copy_from_slice(&99u32.to_le_bytes());
     let mut f = std::fs::File::create(&path).unwrap();
     f.write_all(&page).unwrap();
+    drop(f);
+    let before = std::fs::read(&path).unwrap();
     let result = Minigraf::open(&path);
     assert!(result.is_err(), "unsupported version must produce an error");
     assert_eq!(result.err().unwrap().code(), "STG-006");
+    let after = std::fs::read(&path).unwrap();
+    assert_eq!(
+        before, after,
+        "a rejected future-version file must be left unmodified"
+    );
 }
 
 #[test]
