@@ -512,70 +512,68 @@ pub(crate) fn filter_facts_as_of(facts: Vec<Fact>, as_of: &AsOf) -> Vec<Fact> {
 ///
 /// # Implementation note
 ///
-/// This function uses two flat `HashMap`s in a single pass over the input:
+/// Hot path for every non-`:as-of` query (#323). Each value is encoded once;
+/// the two group maps borrow `(entity, attribute, value_bytes)` from the input
+/// instead of cloning them, and use
+/// [`FxBuildHasher`](crate::graph::fxhash::FxBuildHasher). `by_window` stores the
+/// index and `tx_count` of the winning assertion per validity window; survivors
+/// are moved out of `facts` at the end, preserving input order.
 ///
-/// - `max_retract_tx`: EAV → highest retraction `tx_count` seen so far.
-/// - `by_window`: (EAV + valid_from + valid_to) → highest-`tx_count` assertion
-///   for that time window.
-///
-/// The retraction filter (`fact.tx_count > max_retract_tx`) is applied in the
-/// final `filter_map` rather than eagerly.  This means `by_window` temporarily
-/// holds assertions that will be filtered out, so on workloads where most
-/// EAV triples are immediately retracted it uses more peak memory than the
-/// previous per-group approach.  The trade-off is intentional: eliminating the
-/// per-group `Vec<Fact>` allocation yields a measurable throughput gain on large
-/// mostly-unique fact sets (see issue #227).
+/// Idempotent under duplicated input records (a duplicate assertion ties with
+/// the original and loses; a duplicate retraction leaves the max unchanged).
+/// `selective_fact_fetch` relies on this instead of deduplicating.
 pub(crate) fn net_asserted_facts(facts: Vec<Fact>) -> Vec<Fact> {
+    use crate::graph::fxhash::FxBuildHasher;
     use std::collections::HashMap;
 
-    type EavKey = (EntityId, Attribute, Vec<u8>);
-    type WindowKey = (EntityId, Attribute, Vec<u8>, i64, i64);
+    type EavKey<'a> = (&'a EntityId, &'a str, &'a [u8]);
+    type WindowKey<'a> = (&'a EntityId, &'a str, &'a [u8], i64, i64);
 
-    let mut max_retract_tx: HashMap<EavKey, u64> = HashMap::new();
-    let mut by_window: HashMap<WindowKey, Fact> = HashMap::new();
+    let encoded: Vec<Vec<u8>> = facts.iter().map(|f| encode_value(&f.value)).collect();
+    let mut keep = vec![false; facts.len()];
 
-    for fact in facts {
-        let eav_key = (
-            fact.entity,
-            fact.attribute.clone(),
-            encode_value(&fact.value),
-        );
+    {
+        let mut max_retract_tx: HashMap<EavKey<'_>, u64, FxBuildHasher> = HashMap::default();
+        let mut by_window: HashMap<WindowKey<'_>, (usize, u64), FxBuildHasher> = HashMap::default();
 
-        if fact.asserted {
-            let window_key = (
-                eav_key.0,
-                eav_key.1,
-                eav_key.2,
-                fact.valid_from,
-                fact.valid_to,
-            );
-            match by_window.get(&window_key) {
-                None => {
-                    by_window.insert(window_key, fact);
-                }
-                Some(existing) if fact.tx_count > existing.tx_count => {
-                    by_window.insert(window_key, fact);
-                }
-                _ => {}
+        for (idx, (fact, value_bytes)) in facts.iter().zip(encoded.iter()).enumerate() {
+            let entity = &fact.entity;
+            let attribute = fact.attribute.as_str();
+            let value = value_bytes.as_slice();
+            if fact.asserted {
+                by_window
+                    .entry((entity, attribute, value, fact.valid_from, fact.valid_to))
+                    .and_modify(|winner| {
+                        if fact.tx_count > winner.1 {
+                            *winner = (idx, fact.tx_count);
+                        }
+                    })
+                    .or_insert((idx, fact.tx_count));
+            } else {
+                max_retract_tx
+                    .entry((entity, attribute, value))
+                    .and_modify(|max_tx| *max_tx = (*max_tx).max(fact.tx_count))
+                    .or_insert(fact.tx_count);
             }
-        } else {
-            let tx_count = fact.tx_count;
-            max_retract_tx
-                .entry(eav_key)
-                .and_modify(|max_tx| *max_tx = (*max_tx).max(tx_count))
-                .or_insert(tx_count);
+        }
+
+        for ((entity, attribute, value, _, _), (idx, tx_count)) in &by_window {
+            let retract_tx = max_retract_tx
+                .get(&(*entity, *attribute, *value))
+                .copied()
+                .unwrap_or(0);
+            if *tx_count > retract_tx
+                && let Some(slot) = keep.get_mut(*idx)
+            {
+                *slot = true;
+            }
         }
     }
 
-    by_window
+    facts
         .into_iter()
-        .filter_map(|((entity, attribute, value, _, _), fact)| {
-            let retract_tx = max_retract_tx
-                .get(&(entity, attribute, value))
-                .copied()
-                .unwrap_or(0);
-            (fact.tx_count > retract_tx).then_some(fact)
-        })
+        .zip(keep)
+        .filter_map(|(fact, kept)| kept.then_some(fact))
         .collect()
 }
 
@@ -1892,5 +1890,189 @@ mod tests {
             0,
             "retraction should wipe all windows for the EAV triple"
         );
+    }
+
+    /// Pre-#323 implementation, kept verbatim as the oracle for the
+    /// randomized equivalence test.
+    fn net_asserted_facts_reference(facts: Vec<Fact>) -> Vec<Fact> {
+        use std::collections::HashMap;
+
+        type EavKey = (EntityId, Attribute, Vec<u8>);
+        type WindowKey = (EntityId, Attribute, Vec<u8>, i64, i64);
+
+        let mut max_retract_tx: HashMap<EavKey, u64> = HashMap::new();
+        let mut by_window: HashMap<WindowKey, Fact> = HashMap::new();
+
+        for fact in facts {
+            let eav_key = (
+                fact.entity,
+                fact.attribute.clone(),
+                encode_value(&fact.value),
+            );
+
+            if fact.asserted {
+                let window_key = (
+                    eav_key.0,
+                    eav_key.1,
+                    eav_key.2,
+                    fact.valid_from,
+                    fact.valid_to,
+                );
+                match by_window.get(&window_key) {
+                    None => {
+                        by_window.insert(window_key, fact);
+                    }
+                    Some(existing) if fact.tx_count > existing.tx_count => {
+                        by_window.insert(window_key, fact);
+                    }
+                    _ => {}
+                }
+            } else {
+                let tx_count = fact.tx_count;
+                max_retract_tx
+                    .entry(eav_key)
+                    .and_modify(|max_tx| *max_tx = (*max_tx).max(tx_count))
+                    .or_insert(tx_count);
+            }
+        }
+
+        by_window
+            .into_iter()
+            .filter_map(|((entity, attribute, value, _, _), fact)| {
+                let retract_tx = max_retract_tx
+                    .get(&(entity, attribute, value))
+                    .copied()
+                    .unwrap_or(0);
+                (fact.tx_count > retract_tx).then_some(fact)
+            })
+            .collect()
+    }
+
+    /// Order-independent comparison key for a fact set.
+    fn sorted_keys(facts: &[Fact]) -> Vec<String> {
+        let mut v: Vec<String> = facts
+            .iter()
+            .map(|f| {
+                format!(
+                    "{}|{}|{:?}|{}|{}|{}|{}",
+                    f.entity,
+                    f.attribute,
+                    f.value,
+                    f.tx_count,
+                    f.valid_from,
+                    f.valid_to,
+                    f.asserted
+                )
+            })
+            .collect();
+        v.sort();
+        v
+    }
+
+    /// Deterministic xorshift so the test needs no RNG dependency.
+    struct XorShift(u64);
+    impl XorShift {
+        fn next(&mut self) -> u64 {
+            let mut x = self.0;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            self.0 = x;
+            x
+        }
+        fn below(&mut self, n: u64) -> u64 {
+            self.next() % n
+        }
+    }
+
+    #[test]
+    fn net_asserted_matches_reference_on_random_histories() {
+        let entities = [uuid::Uuid::from_u128(1), uuid::Uuid::from_u128(2)];
+        let attrs = [":a", ":ab", ":b"];
+        let windows = [
+            (0_i64, VALID_TIME_FOREVER),
+            (1_000, 2_000),
+            (1_500, VALID_TIME_FOREVER),
+        ];
+        let mut rng = XorShift(0x9E37_79B9_7F4A_7C15);
+        for _case in 0..500 {
+            let n = rng.below(40) + 1;
+            let mut facts = Vec::new();
+            let mut tx = 0_u64;
+            for _ in 0..n {
+                // ~25% of records share the previous tx_count (same-transaction batches).
+                if rng.below(4) != 0 {
+                    tx += 1;
+                }
+                let e = entities[rng.below(2) as usize];
+                let a = attrs[rng.below(3) as usize];
+                let v = Value::Integer(i64::try_from(rng.below(3)).unwrap());
+                if rng.below(3) == 0 {
+                    facts.push(make_retract(e, a, v, tx));
+                } else {
+                    let (vf, vt) = windows[rng.below(3) as usize];
+                    facts.push(make_assert(e, a, v, tx, vf, vt));
+                }
+            }
+            let expected = sorted_keys(&net_asserted_facts_reference(facts.clone()));
+            let actual = sorted_keys(&net_asserted_facts(facts));
+            assert_eq!(
+                actual, expected,
+                "new net_asserted_facts diverged from reference"
+            );
+        }
+    }
+
+    /// The executor's selective fetch no longer dedups (#323); it relies on
+    /// net_asserted_facts collapsing duplicated input records.
+    #[test]
+    fn net_asserted_idempotent_under_duplicates() {
+        let e = uuid::Uuid::from_u128(7);
+        let facts = vec![
+            make_assert(
+                e,
+                ":hash",
+                Value::String("h0".into()),
+                1,
+                0,
+                VALID_TIME_FOREVER,
+            ),
+            make_retract(e, ":hash", Value::String("h0".into()), 2),
+            make_assert(
+                e,
+                ":hash",
+                Value::String("h1".into()),
+                3,
+                0,
+                VALID_TIME_FOREVER,
+            ),
+            make_assert(
+                e,
+                ":other",
+                Value::String("o".into()),
+                3,
+                0,
+                VALID_TIME_FOREVER,
+            ),
+        ];
+        let mut doubled = facts.clone();
+        doubled.extend(facts.clone());
+        let once = sorted_keys(&net_asserted_facts(facts));
+        let twice = sorted_keys(&net_asserted_facts(doubled));
+        assert_eq!(once.len(), 2, "h1 and o are live");
+        assert_eq!(twice, once, "duplicated records must not change the result");
+    }
+
+    #[test]
+    fn net_asserted_preserves_input_order() {
+        let e = uuid::Uuid::from_u128(9);
+        let facts = vec![
+            make_assert(e, ":z", Value::Integer(1), 1, 0, VALID_TIME_FOREVER),
+            make_assert(e, ":a", Value::Integer(2), 2, 0, VALID_TIME_FOREVER),
+            make_assert(e, ":m", Value::Integer(3), 3, 0, VALID_TIME_FOREVER),
+        ];
+        let out = net_asserted_facts(facts);
+        let attrs: Vec<&str> = out.iter().map(|f| f.attribute.as_str()).collect();
+        assert_eq!(attrs, vec![":z", ":a", ":m"]);
     }
 }
