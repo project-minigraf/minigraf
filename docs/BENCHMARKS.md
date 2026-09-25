@@ -30,6 +30,26 @@ Each value is Criterion's estimated per-query latency; the range is its 95% conf
 
 `point_entity` uses a selective index-backed lookup. `point_attribute` and `join_3pattern` return larger result sets and therefore scale with the number of matching facts. Do not compare these local measurements directly with CI runs or earlier releases: host load, CPU-frequency policy, toolchain, and implementation all affect the result.
 
+### Point Query vs. Version-Chain Depth (#323)
+
+**Date**: 2026-09-26 · **Command**: `cargo bench --bench minigraf_bench -- point_query_chain_depth` · same host as above.
+
+One entity's `:hash` is retracted and reasserted `depth` times (exactly one live value), plus a never-changed `:other` on the same entity and 2,000 filler facts; checkpointed file database. "Before" is v2.0.1; "after" is the #323 change.
+
+| Query | Depth | Before | After |
+|---|---:|---:|---:|
+| `[:e/hot :hash ?v]` (churned attribute) | 1 | 19.1 µs | 18.6 µs |
+| | 500 | 1.17 ms | 737 µs |
+| | 2000 | 4.66 ms | 2.88 ms |
+| `[:e/hot :other ?v]` (sibling attribute) | 1 | 20.2 µs | 19.4 µs |
+| | 500 | 1.18 ms | 20.5 µs |
+| | 2000 | 4.67 ms | 18.6 µs |
+| `[?e :hash ?v]` (attribute scan) | 1 | 17.7 µs | 17.9 µs |
+| | 500 | 1.16 ms | 721 µs |
+| | 2000 | 4.57 ms | 2.87 ms |
+
+The churned attribute still scales with its own history on v2.x; see #379 for the v3.0.0 fix.
+
 ## Measurement Method
 
 Criterion warms up each benchmark, collects ten samples for this query group, and estimates per-call latency from repeated iterations. The reported confidence intervals describe measurement uncertainty on this host; they are not cross-machine performance guarantees.

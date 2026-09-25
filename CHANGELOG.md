@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Performance
+
+- **Bound-entity point queries no longer pay for other attributes' history (#323).** `[:e :attr ?v]` now range-scans only `(e, :attr)` in the EAVT index instead of every record the entity has ever written. Reading a rarely changed attribute of a heavily rewritten entity no longer slows down as that entity's history grows: at 2,000 retract/reassert cycles on a sibling attribute, it drops from 4.67 ms to 18.6 µs. Reading the heavily rewritten attribute itself, and attribute scans (`[?e :attr ?v]`), are about 1.6× faster (4.66 ms → 2.88 ms) from cheaper net-assert grouping and removing a redundant dedup pass. File format and query results are unchanged. On v2.x, reading a heavily rewritten attribute still costs time proportional to its history, because v7 index keys carry neither the value nor the assert/retract flag; the structural fix needs the v8 keys and is tracked for v3.0.0 in #379.
+
 ## v2.0.1 — 2026-09-25
 
 Patch release on the v2.x line. File format is unchanged (v7); no API changes.

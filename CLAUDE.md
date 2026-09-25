@@ -101,7 +101,8 @@ cargo run < demos/demo_negation.txt
 
 1. **`src/graph/`** — EAV fact store with bi-temporal support
    - `types.rs`: `Fact`, `Value`, `EntityId`, `TxId`, `VALID_TIME_FOREVER`
-   - `storage.rs`: `FactStorage` — in-memory store, `transact_batch`, `retract`, `get_facts_as_of`, `get_facts_valid_at`, `net_asserted_facts`
+   - `storage.rs`: `FactStorage` — in-memory store, `transact_batch`, `retract`, `get_facts_as_of`, `get_facts_valid_at`, `net_asserted_facts`, `get_facts_by_entity_attribute_indexed`
+   - `fxhash.rs`: `FxBuildHasher` — in-crate non-cryptographic hasher for hot-path maps (#323)
 
 2. **`src/storage/`** — Persistence layer
    - `mod.rs`: `StorageBackend` trait, `FileHeader` v7 (84 bytes), `CommittedFactReader` / `CommittedIndexReader` traits
@@ -167,7 +168,7 @@ Auto-migrates v1/v2/v3/v4/v5/v6 → v7 on open/checkpoint.
 
 ## Test Coverage
 
-**1154 tests passing** (1146 passing, 8 ignored; unit + integration + doc).
+**1175 tests passing** (1167 passing, 8 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
