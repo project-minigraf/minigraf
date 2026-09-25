@@ -404,12 +404,18 @@ impl DatalogExecutor {
             return None;
         }
 
-        // Dedup key: (entity, attribute, tx_count, asserted, encoded value).
-        // `asserted` keeps an assertion and a retraction from the same
-        // WriteTransaction apart; the encoded value keeps two values of one
-        // attribute written in the same transaction apart (#371). Uses
-        // `encode_value` bytes rather than `Value` to avoid Float hashing.
-        let mut seen: HashSet<(uuid::Uuid, String, u64, bool, Vec<u8>)> = HashSet::new();
+        // Dedup key: (entity, attribute, tx_count, asserted, encoded value,
+        // valid_from, valid_to). `asserted` keeps an assertion and a
+        // retraction from the same WriteTransaction apart; the encoded value
+        // keeps two values of one attribute written in the same transaction
+        // apart (#371). Uses `encode_value` bytes rather than `Value` to
+        // avoid Float hashing. `valid_from`/`valid_to` keep two distinct
+        // valid-time stints of the same (entity, attribute, value, tx_count,
+        // asserted) tuple apart — without them, two per-fact valid-time
+        // windows on the same value in one transaction collapse into a
+        // single arbitrary survivor and the other window's row is silently
+        // dropped from `:valid-at` and `:any-valid-time` results (#371).
+        let mut seen: HashSet<(uuid::Uuid, String, u64, bool, Vec<u8>, i64, i64)> = HashSet::new();
         let mut all_facts: Vec<Fact> = Vec::new();
 
         for uid in &entity_ids {
@@ -422,6 +428,8 @@ impl DatalogExecutor {
                             fact.tx_count,
                             fact.asserted,
                             crate::storage::index::encode_value(&fact.value),
+                            fact.valid_from,
+                            fact.valid_to,
                         );
                         if seen.insert(key) {
                             all_facts.push(fact);
@@ -442,6 +450,8 @@ impl DatalogExecutor {
                             fact.tx_count,
                             fact.asserted,
                             crate::storage::index::encode_value(&fact.value),
+                            fact.valid_from,
+                            fact.valid_to,
                         );
                         if seen.insert(key) {
                             all_facts.push(fact);

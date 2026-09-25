@@ -336,6 +336,91 @@ fn v7_multivalue_fixture_migrates_and_reads_correctly() {
     }
 }
 
+/// Two valid-time stints for the *same* (entity, attribute, value) written in
+/// one transaction must both be individually visible: a `:valid-at` query
+/// inside the second window's range must return that stint (not the first,
+/// not neither), and `:any-valid-time` must return both, on every selective
+/// query path. The pre-fix `selective_fact_fetch` dedup key
+/// `(entity, attribute, tx_count, asserted, value_bytes)` has no valid-time
+/// component, so these two facts — same tx_count (one transact call), same
+/// value bytes (`true`), same asserted flag — collapse into a single
+/// arbitrary survivor in the entity-bound and attribute+join loops. A full
+/// scan does not go through `selective_fact_fetch` (its patterns are not
+/// selective — unbound attribute/value), so it is unaffected and serves as
+/// the control.
+#[test]
+fn multi_value_time_stints_visible_at_correct_valid_time_on_every_path() {
+    let db = Minigraf::in_memory().unwrap();
+    // The `:note` marker's valid-time window must cover both stints' windows —
+    // otherwise the query's `:valid-at "2022-06-01"` filter (applied to every
+    // candidate fact, including the join marker) would drop `:note` itself,
+    // since its default valid_from is the real transaction wall-clock time.
+    db.execute(
+        r#"(transact [[:vt/alice :employed true {:valid-from "2020-01-01" :valid-to "2021-01-01"}] [:vt/alice :employed true {:valid-from "2022-01-01" :valid-to "2023-01-01"}] [:vt/alice :note "vt" {:valid-from "2000-01-01"}]])"#,
+    )
+    .unwrap();
+
+    // Inside the second window only: exactly one row on every path.
+    let eavt = rows(
+        db.execute(r#"(query [:find ?v :valid-at "2022-06-01" :where [:vt/alice :employed ?v]])"#)
+            .unwrap(),
+    );
+    assert_eq!(
+        eavt.len(),
+        1,
+        "entity-bound path must return the stint valid in the second window"
+    );
+
+    let aevt = rows(
+        db.execute(
+            r#"(query [:find ?v :valid-at "2022-06-01" :where [?e :employed ?v] [?e :note "vt"]])"#,
+        )
+        .unwrap(),
+    );
+    assert_eq!(
+        aevt.len(),
+        1,
+        "attribute+join path must return the stint valid in the second window"
+    );
+
+    let scan = rows(
+        db.execute(
+            r#"(query [:find ?a ?v :valid-at "2022-06-01" :where [?e ?a ?v] [?e :note "vt"]])"#,
+        )
+        .unwrap(),
+    )
+    .into_iter()
+    .filter(|r| matches!(&r[0], Value::Keyword(a) if a == ":employed"))
+    .count();
+    assert_eq!(
+        scan, 1,
+        "full scan path must return the stint valid in the second window"
+    );
+
+    // Under :any-valid-time, both stints must be visible on the selective paths.
+    let eavt_any = rows(
+        db.execute(r#"(query [:find ?v :any-valid-time :where [:vt/alice :employed ?v]])"#)
+            .unwrap(),
+    );
+    assert_eq!(
+        eavt_any.len(),
+        2,
+        "entity-bound path must return both stints under :any-valid-time"
+    );
+
+    let aevt_any = rows(
+        db.execute(
+            r#"(query [:find ?v :any-valid-time :where [?e :employed ?v] [?e :note "vt"]])"#,
+        )
+        .unwrap(),
+    );
+    assert_eq!(
+        aevt_any.len(),
+        2,
+        "attribute+join path must return both stints under :any-valid-time"
+    );
+}
+
 /// Index entries now carry the value bytes; a near-maximum string value must
 /// still checkpoint and read back through every index.
 #[test]
