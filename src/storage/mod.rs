@@ -125,7 +125,9 @@ pub struct FileHeader {
     pub avet_root_page: u64,
     pub vaet_root_page: u64,
     pub index_checksum: u32,
-    /// fact_page_format (v5+): 0x00 = unset/legacy, 0x01 = one-per-page, 0x02 = packed.
+    /// fact_page_format: only 0x02 (packed, `FACT_PAGE_FORMAT_PACKED`) is
+    /// written or read; v1-v6 files (which could carry 0x00 unset/legacy or
+    /// 0x01 one-per-page) are rejected outright (STG-028), not migrated.
     pub fact_page_format: u8,
     pub(crate) _padding: [u8; 3],
     /// Number of pages (starting at page 1) holding committed fact data.
