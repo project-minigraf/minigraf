@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v2.0.1 — 2026-09-25
+
+Patch release on the v2.x line. File format is unchanged (v7); no API changes.
+
+### Fixed
+
+- **Entity-bound lookups could silently return nothing after an index rebuild on open (#370).** When the index checksum does not match on open (for example after a process was killed during `save()`), Minigraf rebuilds all four indexes from the fact pages. The rebuild computed each fact's location by re-packing all facts contiguously, but a file written by several checkpoints has partially filled pages that a contiguous re-pack does not reproduce. From the second checkpoint onward, rebuilt index entries pointed at the wrong page/slot: entity-bound queries (`[:some/ident ?a ?v]`) returned `[]` or errored while attribute-driven queries still worked, and `checkpoint()` copied the bad entries forward. The rebuild now reads each fact's real on-disk location (#372).
+
+### Known issues
+
+- Files whose indexes were already rebuilt with wrong locations by v2.0.0 are not repaired by this release. A public integrity check and rebuild-indexes-from-fact-pages operation is tracked in #373; a crash-atomic `save()` in #374.
+- Two values of the same attribute for one entity written in a single `transact` (or retracted in a single `retract`) can read back as one value, differently per query path (#371, #287). The fix changes the index key layout (file format v8) and ships in v3.0.0. Workaround on v2.x: write or retract each value of a multi-valued attribute in its own call.
+
 ## v2.0.0 — 2026-08-26
 
 This was originally slated as v1.3.0, matching the GitHub milestone name under

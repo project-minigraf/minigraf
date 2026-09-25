@@ -105,7 +105,8 @@ When evaluating features, ask:
 
 ## Current Focus
 
-- The v3.0.0 file-format policy and its scoped work above
+- v2.x minor releases (v2.1.0–v2.3.0) on `main`
+- The v3.0.0 file-format policy and its scoped work above, on the `v3` branch
 - Ecosystem work tracked in [`minigraf-examples`](https://github.com/project-minigraf/minigraf-examples)
 - Developer tools tracked in `minigraf-inspector` and `minigraf-visualizer`
 
@@ -113,4 +114,4 @@ See [GitHub Issues](https://github.com/project-minigraf/minigraf/issues) for spe
 
 ---
 
-**Last updated**: August 2026 — v2.0.0 is the current release; v3.0.0 is the next core milestone described here.
+**Last updated**: September 2026 — v2.0.1 is the current release. v2.x minor releases (v2.1.0–v2.3.0) ship from `main` first; v3.0.0 work, including the file-format v8 fix for #287/#371, is developed on the long-lived `v3` branch and merges into `main` at the v3.0.0 cut.

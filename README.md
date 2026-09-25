@@ -41,7 +41,7 @@ Minigraf is a **single-file embedded graph database** that lets you:
 
 ```toml
 [dependencies]
-minigraf = "2.0.0"
+minigraf = "2.0.1"
 ```
 
 Or via cargo:
@@ -92,7 +92,7 @@ let r2 = pq.execute(&[("tx", BindValue::TxCount(2)), ("entity", BindValue::Entit
 
 ```bash
 cargo run          # interactive Datalog REPL
-cargo test         # run 1153 tests
+cargo test         # run 1154 tests
 cargo run < demos/demo_recursive.txt   # recursive rules demo
 ```
 

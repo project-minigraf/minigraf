@@ -1,12 +1,12 @@
 # Minigraf Test Coverage
 
-## v2.0.0 Coverage Summary
+## v2.0.1 Coverage Summary
 
-**Verified**: 2026-08-26 with `cargo test --quiet`
+**Verified**: 2026-09-25 with `cargo test`
 
-**Result**: 1,145 passing tests and 8 ignored tests (1,153 total)
+**Result**: 1,146 passing tests and 8 ignored tests (1,154 total)
 
-The v2.0.0 suite covers the public database API, the Datalog engine, storage and recovery paths, and the release’s locking and structured-error-code changes.
+The v2.0.1 suite covers the public database API, the Datalog engine, storage and recovery paths, and the v2.0.0 locking and structured-error-code changes, plus v2.0.1's regression test for rebuilding indexes on open after several checkpoints (#370).
 
 ### Covered Areas
 

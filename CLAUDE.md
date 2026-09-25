@@ -167,14 +167,14 @@ Auto-migrates v1/v2/v3/v4/v5/v6 → v7 on open/checkpoint.
 
 ## Test Coverage
 
-**1153 tests passing** (1145 passing, 8 ignored; unit + integration + doc).
+**1154 tests passing** (1146 passing, 8 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
 
 ## Current Maintainer Context
 
-**v2.0.0 released** — it introduced kernel file locking (#317, #304), structured runtime error codes (#277), `OpenOptions` `#[non_exhaustive]`, and an MSRV of Rust 1.89. See `CHANGELOG.md` for the full rationale and release history.
+**v2.0.1 released** (2026-09-25) — patch fixing index rebuild on open (#370). **v2.0.0** introduced kernel file locking (#317, #304), structured runtime error codes (#277), `OpenOptions` `#[non_exhaustive]`, and an MSRV of Rust 1.89. See `CHANGELOG.md` for the full rationale and release history.
 
 Relevant areas for the planned query-profiler work (see `ROADMAP.md`):
 - `src/query/datalog/` — query executor where profiling hooks will go (#185)
