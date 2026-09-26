@@ -112,21 +112,22 @@ unit test (§5) so a future change to `net_asserted_facts` cannot silently break
 
 ### 4.3 Cheaper `net_asserted_facts`
 
-- Add a small in-crate FxHash-style hasher (`FxHasher` + `type FxBuildHasher =
-  BuildHasherDefault<FxHasher>`) in a new private module `src/graph/fxhash.rs`
-  (~30 lines, no dependency). Word-at-a-time multiply-rotate as in rustc's FxHash.
+- ~~Add a small in-crate FxHash-style hasher.~~ **Dropped after final review
+  (2026-09-26):** a fixed-seed fast hash lets crafted colliding values (untrusted text in
+  agent memory) make every query quadratic. It bought ~13%; the maps keep std's randomly
+  keyed `RandomState`.
 - Restructure `net_asserted_facts` so each fact's value is encoded once and group keys
   borrow from the input rather than cloning `attribute`/`value_bytes` into every key:
   1. `encoded: Vec<Vec<u8>> = facts.iter().map(|f| encode_value(&f.value)).collect()`.
-  2. `max_retract_tx: HashMap<(&Uuid, &str, &[u8]), u64, FxBuildHasher>`.
-  3. `by_window: HashMap<(&Uuid, &str, &[u8], i64, i64), usize, FxBuildHasher>` storing the
+  2. `max_retract_tx: HashMap<(&Uuid, &str, &[u8]), u64>`.
+  3. `by_window: HashMap<(&Uuid, &str, &[u8], i64, i64), (usize, u64)>` storing the
      index of the winning assertion.
   4. Collect surviving indices, then move the winning facts out of `facts`
      (e.g. mark survivors in a `Vec<bool>` and `into_iter().zip(...).filter`).
 - Output **order**: callers must not depend on it today (current output is HashMap
   iteration order). Tests that compare results already sort or use sets; verify during
   implementation.
-- HashDoS: not a concern — keys are the embedding application's own data, in-process.
+- HashDoS: fact values can be untrusted text, so hashing stays randomly keyed (see above).
 
 ## 5. Testing
 
@@ -161,13 +162,13 @@ All assert messages follow the CLAUDE.md testing convention (no `{:?}` of UUID-b
 Record before/after numbers in the PR and `docs/BENCHMARKS.md`.
 
 **Acceptance:**
-- `[:e/hot :other ?v]` at depth 2000 within 2× of depth 1. **Met**: 18.6 µs vs 19.4 µs.
+- `[:e/hot :other ?v]` at depth 2000 within 2× of depth 1. **Met**: 19.0 µs vs 19.2 µs.
 - `[:e/hot :hash ?v]` and `[?e :hash ?v]` at depth 2000 faster than baseline. Original
-  target ≥3×; **measured 1.62× / 1.59×** (criterion, bench profile with LTO and
-  `opt-level = "z"`: 4.66 → 2.88 ms, 4.57 → 2.87 ms). Revised to the measured numbers on
-  2026-09-26 and shipped as a mitigation. The remaining cost is per-record fact resolve +
-  decode (~31%), EAVT leaf-key decode (~22%) and `net_asserted_facts` (~27%) — the
-  first two are inherent to v7 keys; see §6 / #379.
+  target ≥3×; **measured 1.38× / 1.35×** (criterion on AC, bench profile with LTO and
+  `opt-level = "z"`: 4.64 → 3.36 ms, 4.49 → 3.33 ms; 1.6× with the dropped FxHash).
+  Revised to the measured numbers on 2026-09-26 and shipped as a mitigation. The remaining
+  cost is mostly per-record fact resolve + decode and EAVT leaf-key decode — inherent to
+  v7 keys; see §6 / #379.
 - Full suite green; clippy/fmt clean.
 
 ## 6. Follow-up: v3 structural fix (#379, milestone v3.0.0)

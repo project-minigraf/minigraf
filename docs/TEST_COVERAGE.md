@@ -4,7 +4,7 @@
 
 **Verified**: 2026-09-26 with `cargo test`
 
-**Result**: 1,167 passing tests and 8 ignored tests (1,175 total)
+**Result**: 1,165 passing tests and 8 ignored tests (1,173 total)
 
 The v2.0.1 suite covers the public database API, the Datalog engine, storage and recovery paths, and the v2.0.0 locking and structured-error-code changes, plus v2.0.1's regression test for rebuilding indexes on open after several checkpoints (#370). Since v2.0.1, `tests/point_query_history_test.rs` and new storage unit tests check that attribute-narrowed bound-entity lookups return exactly what a full scan returns, and that `net_asserted_facts` matches its previous implementation on randomized histories (#323).
 

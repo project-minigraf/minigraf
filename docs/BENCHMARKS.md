@@ -32,21 +32,21 @@ Each value is Criterion's estimated per-query latency; the range is its 95% conf
 
 ### Point Query vs. Version-Chain Depth (#323)
 
-**Date**: 2026-09-26 · **Command**: `cargo bench --bench minigraf_bench -- point_query_chain_depth` · same host as above.
+**Date**: 2026-09-26 · **Command**: `cargo bench --bench minigraf_bench -- point_query_chain_depth` · same host as above, on AC power and otherwise idle.
 
 One entity's `:hash` is retracted and reasserted `depth` times (exactly one live value), plus a never-changed `:other` on the same entity and 2,000 filler facts; checkpointed file database. "Before" is v2.0.1; "after" is the #323 change.
 
 | Query | Depth | Before | After |
 |---|---:|---:|---:|
-| `[:e/hot :hash ?v]` (churned attribute) | 1 | 19.1 µs | 18.6 µs |
-| | 500 | 1.17 ms | 737 µs |
-| | 2000 | 4.66 ms | 2.88 ms |
-| `[:e/hot :other ?v]` (sibling attribute) | 1 | 20.2 µs | 19.4 µs |
-| | 500 | 1.18 ms | 20.5 µs |
-| | 2000 | 4.67 ms | 18.6 µs |
-| `[?e :hash ?v]` (attribute scan) | 1 | 17.7 µs | 17.9 µs |
-| | 500 | 1.16 ms | 721 µs |
-| | 2000 | 4.57 ms | 2.87 ms |
+| `[:e/hot :hash ?v]` (churned attribute) | 1 | 19.5 µs | 18.3 µs |
+| | 500 | 1.18 ms | 855 µs |
+| | 2000 | 4.64 ms | 3.36 ms |
+| `[:e/hot :other ?v]` (sibling attribute) | 1 | 20.0 µs | 19.2 µs |
+| | 500 | 1.17 ms | 20.6 µs |
+| | 2000 | 4.58 ms | 19.0 µs |
+| `[?e :hash ?v]` (attribute scan) | 1 | 17.5 µs | 17.8 µs |
+| | 500 | 1.14 ms | 841 µs |
+| | 2000 | 4.49 ms | 3.33 ms |
 
 The churned attribute still scales with its own history on v2.x; see #379 for the v3.0.0 fix.
 

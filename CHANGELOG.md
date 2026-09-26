@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
-- **Bound-entity point queries no longer pay for other attributes' history (#323).** `[:e :attr ?v]` now range-scans only `(e, :attr)` in the EAVT index instead of every record the entity has ever written. Reading a rarely changed attribute of a heavily rewritten entity no longer slows down as that entity's history grows: at 2,000 retract/reassert cycles on a sibling attribute, it drops from 4.67 ms to 18.6 µs. Reading the heavily rewritten attribute itself, and attribute scans (`[?e :attr ?v]`), are about 1.6× faster (4.66 ms → 2.88 ms) from cheaper net-assert grouping and removing a redundant dedup pass. The file format is unchanged.
+- **Bound-entity point queries no longer pay for other attributes' history (#323).** `[:e :attr ?v]` now range-scans only `(e, :attr)` in the EAVT index instead of every record the entity has ever written. Reading a rarely changed attribute of a heavily rewritten entity no longer slows down as that entity's history grows: with 2,000 retract/reassert cycles on another attribute of the same entity, it drops from 4.58 ms to 19.0 µs. Reading the heavily rewritten attribute itself, and attribute scans (`[?e :attr ?v]`), are about 1.35–1.4× faster (4.64 ms → 3.36 ms), from cheaper net-assert grouping and removing a redundant dedup pass. The file format is unchanged.
 
 ### Fixed
 
