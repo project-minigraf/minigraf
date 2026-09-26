@@ -58,8 +58,8 @@ An already-checkpointed file database of `n` facts receives one new fact, then `
 
 | Facts | Before | After |
 |---:|---:|---:|
-| 10k | 23.9 ms | 3.94 ms |
-| 100k | 246 ms | 25.7 ms |
+| 10k | 23.9 ms | 4.01 ms |
+| 100k | 246 ms | 26.3 ms |
 
 Cost still grows with graph size, because index pages are copied on every checkpoint. Checkpoints proportional to the change alone need copy-on-write pages, tracked with #374 for v3.0.0.
 

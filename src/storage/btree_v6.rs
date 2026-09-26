@@ -461,6 +461,8 @@ pub fn collect_leaf_pages(
     backend: &dyn StorageBackend,
     cache: &PageCache,
 ) -> Result<Vec<Arc<Vec<u8>>>> {
+    // A chain longer than the file has pages must contain a cycle.
+    let max_leaves = backend.page_count()?;
     let mut leaves = Vec::new();
     let mut leaf_id = find_leftmost_leaf(root_page_id, backend, cache)?;
     loop {
@@ -471,6 +473,13 @@ pub fn collect_leaf_pages(
                 format!("collect_leaf_pages: expected leaf page at page_id={leaf_id}")
             );
         }
+        if u64::try_from(leaves.len()).map_or(true, |n| n >= max_leaves) {
+            bail_coded!(
+                ErrorCode::Int049,
+                format!("collect_leaf_pages: leaf chain longer than the file at page_id={leaf_id}")
+            );
+        }
+        validate_leaf_slots(&page[..], leaf_id)?;
         let next_leaf = read_u64_at(&page[..], 4)?;
         leaves.push(page);
         if next_leaf == 0 {
@@ -479,6 +488,34 @@ pub fn collect_leaf_pages(
         leaf_id = next_leaf;
     }
     Ok(leaves)
+}
+
+/// Check a leaf's slot directory stays inside the page without decoding entries.
+///
+/// Untouched leaves are copied verbatim and sealed under a fresh file checksum,
+/// so damage must be caught here instead of being carried forward.
+#[allow(clippy::arithmetic_side_effects)]
+fn validate_leaf_slots(page: &[u8], page_id: u64) -> Result<()> {
+    let count = read_u16_at(page, 2)? as usize;
+    let data_start = LEAF_HEADER_SIZE + count * SLOT_SIZE;
+    if data_start > page.len() {
+        bail_coded!(
+            ErrorCode::Int049,
+            format!("leaf page_id={page_id}: slot directory overflows the page")
+        );
+    }
+    for i in 0..count {
+        let slot_off = LEAF_HEADER_SIZE + i * SLOT_SIZE;
+        let offset = read_u16_at(page, slot_off)? as usize;
+        let length = read_u16_at(page, slot_off + 2)? as usize;
+        if offset < data_start || offset + length > page.len() {
+            bail_coded!(
+                ErrorCode::Int049,
+                format!("leaf page_id={page_id}: slot {i} out of bounds")
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Decode the key of a leaf's first entry; `None` for an empty leaf.
@@ -1148,6 +1185,68 @@ mod tests {
             let refs = range_scan(root, start, Some(end), backend, cache).unwrap();
             assert!(refs == want, "range_scan differs from expected slice");
         }
+    }
+
+    /// Build a multi-leaf tree and return (backend, cache, root, leaf page ids).
+    fn multi_leaf_tree() -> (MemoryBackend, PageCache, u64, Vec<u64>) {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(4096);
+        let entries: Vec<_> = (0u128..500).map(|n| make_eavt(n, ":a", n as u64)).collect();
+        let ser = btree_entries(entries.into_iter()).unwrap();
+        let (root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        let mut ids = vec![find_leftmost_leaf(root, &backend, &cache).unwrap()];
+        loop {
+            let page = cache.get_or_load(*ids.last().unwrap(), &backend).unwrap();
+            let next = read_u64_at(&page[..], 4).unwrap();
+            if next == 0 {
+                break;
+            }
+            ids.push(next);
+        }
+        assert!(ids.len() >= 3, "fixture needs several leaves");
+        (backend, cache, root, ids)
+    }
+
+    fn overwrite_page(backend: &mut MemoryBackend, cache: &PageCache, id: u64, page: Vec<u8>) {
+        backend.write_page(id, &page).unwrap();
+        cache.put_dirty(id, page);
+    }
+
+    #[test]
+    fn test_collect_leaf_pages_rejects_cyclic_chain() {
+        // A corrupt next_leaf pointing back must be an error, not an endless loop.
+        let (mut backend, cache, root, ids) = multi_leaf_tree();
+        let mut page = cache.get_or_load(ids[1], &backend).unwrap().to_vec();
+        page[4..12].copy_from_slice(&ids[0].to_le_bytes());
+        overwrite_page(&mut backend, &cache, ids[1], page);
+        assert!(
+            collect_leaf_pages(root, &backend, &cache).is_err(),
+            "cyclic leaf chain must be rejected"
+        );
+    }
+
+    #[test]
+    fn test_collect_leaf_pages_rejects_corrupt_slot_directory() {
+        // Untouched leaves are copied without decoding, so a damaged slot must be
+        // caught here rather than sealed under a fresh checksum.
+        let (mut backend, cache, root, ids) = multi_leaf_tree();
+        let mut page = cache.get_or_load(ids[1], &backend).unwrap().to_vec();
+        let bad_offset = u16::try_from(PAGE_SIZE - 2).unwrap();
+        page[LEAF_HEADER_SIZE..LEAF_HEADER_SIZE + 2].copy_from_slice(&bad_offset.to_le_bytes());
+        overwrite_page(&mut backend, &cache, ids[1], page);
+        assert!(
+            collect_leaf_pages(root, &backend, &cache).is_err(),
+            "slot pointing past the page end must be rejected"
+        );
+
+        let (mut backend, cache, root, ids) = multi_leaf_tree();
+        let mut page = cache.get_or_load(ids[2], &backend).unwrap().to_vec();
+        page[2..4].copy_from_slice(&u16::MAX.to_le_bytes());
+        overwrite_page(&mut backend, &cache, ids[2], page);
+        assert!(
+            collect_leaf_pages(root, &backend, &cache).is_err(),
+            "entry count overflowing the page must be rejected"
+        );
     }
 
     #[test]
