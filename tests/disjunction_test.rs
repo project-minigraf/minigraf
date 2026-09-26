@@ -587,3 +587,86 @@ fn test_or_never_skips_branches_that_introduce_new_variables() {
         "both branches must contribute a row for ?e=:e1, since ?v differs between them"
     );
 }
+
+// ── #405: or-join with zero incoming rows ──────────────────────────────────────
+
+const OR_JOIN_AFTER_PRODUCT: &str = r#"
+    (query [:find ?item
+            :where [?item :order-item/product ?p]
+                   (or-join [?item]
+                     [?item :order-item/order :a]
+                     [?item :order-item/order :b])])"#;
+
+/// #405: or-join on an empty database returns an empty result, not INT-031.
+#[test]
+fn test_or_join_empty_database_returns_empty() {
+    let db = db();
+    let r = db
+        .execute(OR_JOIN_AFTER_PRODUCT)
+        .expect("or-join on empty db must not error");
+    assert_eq!(result_count(&r), 0, "empty db has no results");
+}
+
+/// #405: or-join after a pattern that matches nothing returns an empty result.
+#[test]
+fn test_or_join_after_unmatched_pattern_returns_empty() {
+    let db = db();
+    db.execute(r#"(transact [[:i1 :order-item/order :a]])"#)
+        .unwrap();
+    let r = db
+        .execute(OR_JOIN_AFTER_PRODUCT)
+        .expect("or-join after unmatched pattern must not error");
+    assert_eq!(result_count(&r), 0, "no :order-item/product facts");
+
+    db.execute(r#"(transact [[:i1 :order-item/product :p1]])"#)
+        .unwrap();
+    let r = db.execute(OR_JOIN_AFTER_PRODUCT).unwrap();
+    assert_eq!(result_count(&r), 1, "i1 now matches");
+}
+
+/// #405: or-join after a `not` that removes every row returns an empty result.
+#[test]
+fn test_or_join_after_not_removing_all_rows_returns_empty() {
+    let db = db();
+    db.execute(
+        r#"(transact [[:i1 :order-item/product :p1] [:i1 :order-item/order :a]
+                      [:i1 :order-item/cancelled true]])"#,
+    )
+    .unwrap();
+    let r = db
+        .execute(
+            r#"
+        (query [:find ?item
+                :where [?item :order-item/product ?p]
+                       (not [?item :order-item/cancelled true])
+                       (or-join [?item]
+                         [?item :order-item/order :a]
+                         [?item :order-item/order :b])])"#,
+        )
+        .expect("or-join after all-removing not must not error");
+    assert_eq!(result_count(&r), 0, "the only item is cancelled");
+}
+
+/// #405: or-join in a rule body whose preceding pattern matches nothing.
+#[test]
+fn test_rule_with_or_join_body_no_matches_returns_empty() {
+    let db = db();
+    db.execute(
+        r#"(rule [(vivid ?e)
+                         [?e :color ?_c]
+                         (or-join [?e]
+                           [?e :color :red]
+                           [?e :color :blue])])"#,
+    )
+    .unwrap();
+    let r = db
+        .execute(r#"(query [:find ?e :where (vivid ?e)])"#)
+        .expect("rule with or-join on empty db must not error");
+    assert_eq!(result_count(&r), 0, "empty db has no vivid entities");
+
+    db.execute(r#"(transact [[:e1 :shape :round]])"#).unwrap();
+    let r = db
+        .execute(r#"(query [:find ?e :where [?e :shape ?_s] (vivid ?e)])"#)
+        .expect("rule with or-join and no colored entities must not error");
+    assert_eq!(result_count(&r), 0, "no colored entities");
+}
