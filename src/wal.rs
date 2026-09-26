@@ -22,6 +22,7 @@
 use crate::db::SyncMode;
 use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::graph::types::Fact;
+use crate::storage::dir_sync::sync_parent_dir;
 use crate::storage::packed_pages::MAX_FACT_BYTES;
 use anyhow::Result;
 use std::fs::{File, OpenOptions};
@@ -148,6 +149,9 @@ impl WalWriter {
         {
             Ok(mut file) => {
                 write_wal_header(&mut file)?;
+                // The header is durable; make the WAL's directory entry
+                // durable too, or a power loss can lose the whole file (#389).
+                sync_parent_dir(path)?;
                 file.seek(SeekFrom::End(0))?;
                 return Ok(WalWriter { file, sync_mode });
             }
@@ -162,7 +166,12 @@ impl WalWriter {
             // A previous crash landed between this file's creation and its
             // header write completing; no entry could have been appended
             // yet, so re-initialize it as a fresh, empty WAL.
-            WalHeaderState::Absent => write_wal_header(&mut file)?,
+            // The crash may also have preceded the directory sync that
+            // follows creation, so repeat it (#389).
+            WalHeaderState::Absent => {
+                write_wal_header(&mut file)?;
+                sync_parent_dir(path)?;
+            }
         }
         file.seek(SeekFrom::End(0))?;
         Ok(WalWriter { file, sync_mode })
@@ -192,6 +201,9 @@ impl WalWriter {
 
     /// Delete the WAL file at `path`. Called after a successful checkpoint.
     ///
+    /// Fsyncs the parent directory after the remove, so a power loss cannot
+    /// bring the deleted WAL back (#389).
+    ///
     /// Uses a short retry loop to tolerate Windows races where the OS file handle
     /// is not immediately released after the `WalWriter` is dropped.
     pub fn delete_file(path: &Path) -> Result<()> {
@@ -200,7 +212,10 @@ impl WalWriter {
         let mut last_err = None;
         for i in 0..retries {
             match std::fs::remove_file(path) {
-                Ok(()) => return Ok(()),
+                Ok(()) => {
+                    sync_parent_dir(path)?;
+                    return Ok(());
+                }
                 Err(e) => {
                     last_err = Some(e);
                     if i.saturating_add(1) < retries {
@@ -737,6 +752,118 @@ mod tests {
         let err = result.expect_err("deleting a directory should fail");
         let minigraf_err: crate::error::MinigrafError = err.into();
         assert_eq!(minigraf_err.code(), "WAL-006");
+
+        std::fs::remove_dir(&path).unwrap();
+    }
+
+    // ── #389: parent-directory fsync ────────────────────────────────────────
+
+    #[test]
+    fn test_wal_create_syncs_parent_dir_after_create() {
+        use crate::storage::dir_sync::take_sync_log;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.wal");
+        take_sync_log();
+
+        let _writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+
+        let log = take_sync_log();
+        assert_eq!(
+            log.len(),
+            1,
+            "creating the WAL must sync its directory once"
+        );
+        assert_eq!(
+            log[0].dir,
+            dir.path(),
+            "must sync the WAL's parent directory"
+        );
+        assert!(
+            log[0].child_existed,
+            "directory sync must follow the create"
+        );
+    }
+
+    #[test]
+    fn test_wal_reopen_existing_does_not_sync_parent_dir() {
+        use crate::storage::dir_sync::take_sync_log;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.wal");
+        drop(WalWriter::open_or_create(&path, SyncMode::Full).unwrap());
+        take_sync_log();
+
+        let _writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+
+        assert!(
+            take_sync_log().is_empty(),
+            "reopening an intact WAL creates nothing, so needs no directory sync"
+        );
+    }
+
+    #[test]
+    fn test_wal_reinit_headerless_syncs_parent_dir() {
+        use crate::storage::dir_sync::take_sync_log;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.wal");
+        // A crash between `create_new` and the header write leaves a short
+        // file whose directory entry may never have been synced either.
+        std::fs::write(&path, b"MW").unwrap();
+        take_sync_log();
+
+        let _writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+
+        let log = take_sync_log();
+        assert_eq!(
+            log.len(),
+            1,
+            "re-initializing the WAL must sync its directory"
+        );
+        assert!(
+            log[0].child_existed,
+            "directory sync must follow the header write"
+        );
+    }
+
+    #[test]
+    fn test_wal_delete_syncs_parent_dir_after_remove() {
+        use crate::storage::dir_sync::take_sync_log;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.wal");
+        drop(WalWriter::open_or_create(&path, SyncMode::Full).unwrap());
+        take_sync_log();
+
+        WalWriter::delete_file(&path).unwrap();
+
+        let log = take_sync_log();
+        assert_eq!(
+            log.len(),
+            1,
+            "deleting the WAL must sync its directory once"
+        );
+        assert_eq!(
+            log[0].dir,
+            dir.path(),
+            "must sync the WAL's parent directory"
+        );
+        assert!(
+            !log[0].child_existed,
+            "directory sync must follow the remove"
+        );
+    }
+
+    #[test]
+    fn test_wal_failed_delete_does_not_sync_parent_dir() {
+        use crate::storage::dir_sync::take_sync_log;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("not-a-file.wal");
+        std::fs::create_dir(&path).unwrap();
+        take_sync_log();
+
+        assert!(WalWriter::delete_file(&path).is_err(), "delete must fail");
+        assert!(
+            take_sync_log().is_empty(),
+            "nothing was removed, nothing to sync"
+        );
 
         std::fs::remove_dir(&path).unwrap();
     }
