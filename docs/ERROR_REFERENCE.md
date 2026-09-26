@@ -218,7 +218,7 @@ Deprecated codes: STG-003 and STG-004 (pre-v7 header sizes) are deprecated as of
 Parser errors occur when Minigraf cannot parse the Datalog/EDN input string.
 They are returned immediately from `db.execute()` before any fact is read or written.
 
-See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidance.
+See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference) for syntax guidance.
 
 ### PRS-001 Unexpected end of input
 
@@ -262,7 +262,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Check surrounding delimiters for balance.
-- Consult the [Datalog Reference](../../.wiki/Datalog-Reference.md) for expected syntax at that position.
+- Consult the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference) for expected syntax at that position.
 
 **Example**:
 ```datalog
@@ -434,7 +434,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Add a value: `:as-of 5` (transaction count) or `:as-of "2024-01-01T00:00:00Z"` (ISO 8601 wall-clock time).
-- See the [Datalog Reference — Time Travel](../../.wiki/Datalog-Reference.md#time-travel).
+- See the [Datalog Reference — Time Travel](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#bi-temporal-queries).
 
 **Example**:
 ```datalog
@@ -451,7 +451,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 **Resolution**:
 - Use a non-negative integer.
 - `:as-of 0` returns the database before any transaction; `:as-of 1` returns the state after the first transaction.
-- See the [Datalog Reference — Time Travel](../../.wiki/Datalog-Reference.md#time-travel).
+- See the [Datalog Reference — Time Travel](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#bi-temporal-queries).
 
 **Example**:
 ```datalog
@@ -467,7 +467,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Use `42` (tx-count) or `"2024-01-01T00:00:00Z"` (wall-clock).
-- See the [Datalog Reference — Time Travel](../../.wiki/Datalog-Reference.md#time-travel).
+- See the [Datalog Reference — Time Travel](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#bi-temporal-queries).
 
 **Example**:
 ```datalog
@@ -483,7 +483,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Add an ISO 8601 timestamp: `:valid-at "2024-06-01T00:00:00Z"`.
-- See the [Datalog Reference — Time Travel](../../.wiki/Datalog-Reference.md#time-travel).
+- See the [Datalog Reference — Time Travel](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#bi-temporal-queries).
 
 **Example**:
 ```datalog
@@ -499,7 +499,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Use `"2024-06-01T00:00:00Z"` or `:any-valid-time`.
-- See the [Datalog Reference — Time Travel](../../.wiki/Datalog-Reference.md#time-travel).
+- See the [Datalog Reference — Time Travel](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#bi-temporal-queries).
 
 **Example**:
 ```datalog
@@ -515,7 +515,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Use `"2024-01-01T00:00:00Z"` format.
-- See the [Datalog Reference — Time Travel](../../.wiki/Datalog-Reference.md#time-travel).
+- See the [Datalog Reference — Time Travel](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#bi-temporal-queries).
 
 **Example**:
 ```datalog
@@ -532,7 +532,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 **Resolution**:
 - Use `"2024-12-31T23:59:59Z"` format.
 - To express "forever", omit `:valid-to` (the default is `VALID_TIME_FOREVER`).
-- See the [Datalog Reference — Time Travel](../../.wiki/Datalog-Reference.md#time-travel).
+- See the [Datalog Reference — Time Travel](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#bi-temporal-queries).
 
 **Example**:
 ```datalog
@@ -548,7 +548,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Add an aggregate to `:find`, or remove `:with` if no aggregation is needed.
-- See the [Datalog Reference — Aggregates](../../.wiki/Datalog-Reference.md#aggregates).
+- See the [Datalog Reference — Aggregates](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#aggregation).
 
 **Example**:
 ```datalog
@@ -566,7 +566,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Add a `:where` clause that binds the variable, or remove it from `:with`.
-- See the [Datalog Reference — Aggregates](../../.wiki/Datalog-Reference.md#aggregates).
+- See the [Datalog Reference — Aggregates](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#aggregation).
 
 **Example**:
 ```datalog
@@ -584,7 +584,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Add a `:where` clause that binds the variable.
-- See the [Datalog Reference — Aggregates](../../.wiki/Datalog-Reference.md#aggregates).
+- See the [Datalog Reference — Aggregates](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#aggregation).
 
 **Example**:
 ```datalog
@@ -601,7 +601,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Use `(count ?e)`, `(sum ?amount)`, `(avg ?score)` — one function name, one variable.
-- See the [Datalog Reference — Aggregates](../../.wiki/Datalog-Reference.md#aggregates).
+- See the [Datalog Reference — Aggregates](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#aggregation).
 
 **Example**:
 ```datalog
@@ -618,7 +618,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Use `sum`, not `:sum`.
-- See the [Datalog Reference — Aggregates](../../.wiki/Datalog-Reference.md#aggregates).
+- See the [Datalog Reference — Aggregates](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#aggregation).
 
 **Example**:
 ```datalog
@@ -635,7 +635,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Use a `?variable`, not a literal value.
-- See the [Datalog Reference — Aggregates](../../.wiki/Datalog-Reference.md#aggregates).
+- See the [Datalog Reference — Aggregates](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#aggregation).
 
 **Example**:
 ```datalog
@@ -652,7 +652,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Add an `:over` clause: `(rank :over (:order-by ?score))`.
-- See the [Datalog Reference — Window Functions](../../.wiki/Datalog-Reference.md#window-functions).
+- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
 
 **Example**:
 ```datalog
@@ -669,7 +669,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Provide at least `:order-by` or `:partition-by` inside the `:over` list.
-- See the [Datalog Reference — Window Functions](../../.wiki/Datalog-Reference.md#window-functions).
+- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
 
 **Example**:
 ```datalog
@@ -686,7 +686,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Use `rank`, not `:rank`.
-- See the [Datalog Reference — Window Functions](../../.wiki/Datalog-Reference.md#window-functions).
+- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
 
 **Example**:
 ```datalog
@@ -720,7 +720,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Drop the `:over` clause and use the function as a plain aggregate.
-- See the [Datalog Reference — Aggregates](../../.wiki/Datalog-Reference.md#aggregates).
+- See the [Datalog Reference — Aggregates](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#aggregation).
 
 **Example**:
 ```datalog
@@ -737,7 +737,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Add the variable argument before `:over`.
-- See the [Datalog Reference — Window Functions](../../.wiki/Datalog-Reference.md#window-functions).
+- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
 
 **Example**:
 ```datalog
@@ -754,7 +754,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Add `:over` after the variable.
-- See the [Datalog Reference — Window Functions](../../.wiki/Datalog-Reference.md#window-functions).
+- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
 
 **Example**:
 ```datalog
@@ -771,7 +771,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Remove the variable: `(rank :over (:order-by ?score))`.
-- See the [Datalog Reference — Window Functions](../../.wiki/Datalog-Reference.md#window-functions).
+- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
 
 **Example**:
 ```datalog
@@ -788,7 +788,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Always follow `:over` with a list: `(rank :over (:order-by ?score))`.
-- See the [Datalog Reference — Window Functions](../../.wiki/Datalog-Reference.md#window-functions).
+- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
 
 **Example**:
 ```datalog
@@ -805,7 +805,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - The window expression must end after the `:over` clause. Remove trailing tokens.
-- See the [Datalog Reference — Window Functions](../../.wiki/Datalog-Reference.md#window-functions).
+- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
 
 **Example**:
 ```datalog
@@ -822,7 +822,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Use a `?variable`: `(rank :over (:partition-by ?dept :order-by ?score))`.
-- See the [Datalog Reference — Window Functions](../../.wiki/Datalog-Reference.md#window-functions).
+- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
 
 **Example**:
 ```datalog
@@ -839,7 +839,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Use a `?variable`: `(rank :over (:order-by ?score))`.
-- See the [Datalog Reference — Window Functions](../../.wiki/Datalog-Reference.md#window-functions).
+- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
 
 **Example**:
 ```datalog
@@ -856,7 +856,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Use only `:order-by` and `:partition-by`.
-- See the [Datalog Reference — Window Functions](../../.wiki/Datalog-Reference.md#window-functions).
+- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
 
 **Example**:
 ```datalog
@@ -873,7 +873,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - The `:over` list must contain only `:order-by` / `:partition-by` followed by variables.
-- See the [Datalog Reference — Window Functions](../../.wiki/Datalog-Reference.md#window-functions).
+- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
 
 **Example**:
 ```datalog
@@ -1027,7 +1027,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Remove the empty list or replace it with a valid clause.
-- See the [Datalog Reference](../../.wiki/Datalog-Reference.md).
+- See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference).
 
 **Example**:
 ```datalog
@@ -1045,7 +1045,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 **Resolution**:
 - Double negation is logically equivalent to the positive pattern; use the pattern directly.
 - For complex negation use `not-join` with explicit join variables.
-- See the [Datalog Reference — Negation](../../.wiki/Datalog-Reference.md#negation).
+- See the [Datalog Reference — Negation](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#negation).
 
 **Example**:
 ```datalog
@@ -1062,7 +1062,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Add at least one pattern inside `(not ...)`.
-- See the [Datalog Reference — Negation](../../.wiki/Datalog-Reference.md#negation).
+- See the [Datalog Reference — Negation](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#negation).
 
 **Example**:
 ```datalog
@@ -1079,7 +1079,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Add at least one branch.
-- See the [Datalog Reference](../../.wiki/Datalog-Reference.md#disjunction).
+- See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#disjunction).
 
 **Example**:
 ```datalog
@@ -1096,7 +1096,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Use the form `(or-join [?e] [[?e :a 1]] [[?e :b 2]])`.
-- See the [Datalog Reference](../../.wiki/Datalog-Reference.md#disjunction).
+- See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#disjunction).
 
 **Example**:
 ```datalog
@@ -1113,7 +1113,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - The form is `(or-join [?var1 ?var2] ...)`.
-- See the [Datalog Reference](../../.wiki/Datalog-Reference.md#disjunction).
+- See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#disjunction).
 
 **Example**:
 ```datalog
@@ -1130,7 +1130,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Use `?variable` not `:keyword` or a string.
-- See the [Datalog Reference](../../.wiki/Datalog-Reference.md#disjunction).
+- See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#disjunction).
 
 **Example**:
 ```datalog
@@ -1148,7 +1148,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 **Resolution**:
 - Restructure branches so they all bind the same new variables.
 - Or use `or-join` to specify exactly which variables to share.
-- See the [Datalog Reference](../../.wiki/Datalog-Reference.md#disjunction).
+- See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#disjunction).
 
 **Example**:
 ```datalog
@@ -1166,7 +1166,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Add at least one clause inside `(and ...)`.
-- See the [Datalog Reference](../../.wiki/Datalog-Reference.md#disjunction).
+- See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#disjunction).
 
 **Example**:
 ```datalog
@@ -1183,7 +1183,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Use `(not-join [?e] [?e :deleted true])`.
-- See the [Datalog Reference — Negation](../../.wiki/Datalog-Reference.md#negation).
+- See the [Datalog Reference — Negation](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#negation).
 
 **Example**:
 ```datalog
@@ -1200,7 +1200,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Each `:where` element must be a vector `[e a v]`, a `(not ...)`, `(not-join ...)`, `(or ...)`, `(or-join ...)`, or expression `[(expr) ?out]`.
-- See the [Datalog Reference](../../.wiki/Datalog-Reference.md).
+- See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference).
 
 **Example**:
 ```datalog
@@ -1218,7 +1218,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 **Resolution**:
 - Valid query map keys are `:find`, `:where`, `:with`, `:as-of`, `:valid-at`.
 - Check spelling.
-- See the [Datalog Reference](../../.wiki/Datalog-Reference.md).
+- See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference).
 
 **Example**:
 ```datalog
@@ -1234,7 +1234,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Provide a function: `[(+ ?a ?b) ?sum]`.
-- See the [Datalog Reference — Expressions](../../.wiki/Datalog-Reference.md#expressions).
+- See the [Datalog Reference — Expressions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#arithmetic--predicate-expressions).
 
 **Example**:
 ```datalog
@@ -1251,7 +1251,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Use `+` not `:+`.
-- See the [Datalog Reference — Expressions](../../.wiki/Datalog-Reference.md#expressions).
+- See the [Datalog Reference — Expressions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#arithmetic--predicate-expressions).
 
 **Example**:
 ```datalog
@@ -1269,7 +1269,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 **Resolution**:
 - Check the argument count.
 - Single-argument operators: `abs`, `not`, `str` (for coercion).
-- See the [Datalog Reference — Expressions](../../.wiki/Datalog-Reference.md#expressions).
+- See the [Datalog Reference — Expressions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#arithmetic--predicate-expressions).
 
 **Example**:
 ```datalog
@@ -1287,7 +1287,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 **Resolution**:
 - Check the argument count.
 - Two-argument operators: `+`, `-`, `*`, `/`, `mod`, `quot`, `=`, `!=`, `<`, `<=`, `>`, `>=`, `starts-with?`, `ends-with?`, `contains?`, `matches?`.
-- See the [Datalog Reference — Expressions](../../.wiki/Datalog-Reference.md#expressions).
+- See the [Datalog Reference — Expressions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#arithmetic--predicate-expressions).
 
 **Example**:
 ```datalog
@@ -1304,7 +1304,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Pass the pattern as a string literal: `[(matches? ?name "alice.*")]`.
-- See the [Datalog Reference — Expressions](../../.wiki/Datalog-Reference.md#expressions).
+- See the [Datalog Reference — Expressions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#arithmetic--predicate-expressions).
 
 **Example**:
 ```datalog
@@ -1322,7 +1322,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 **Resolution**:
 - Check spelling against the supported operator list above.
 - For missing operators, register a custom predicate via `db.register_predicate()`.
-- See the [Datalog Reference — Expressions](../../.wiki/Datalog-Reference.md#expressions).
+- See the [Datalog Reference — Expressions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#arithmetic--predicate-expressions).
 
 **Example**:
 ```datalog
@@ -1339,7 +1339,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Ensure the expression is wrapped in exactly one outer `[...]`.
-- See the [Datalog Reference — Expressions](../../.wiki/Datalog-Reference.md#expressions).
+- See the [Datalog Reference — Expressions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#arithmetic--predicate-expressions).
 
 **Example**:
 ```datalog
@@ -1356,7 +1356,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 
 **Resolution**:
 - Use a `?variable`: `[(+ ?a ?b) ?sum]`.
-- See the [Datalog Reference — Expressions](../../.wiki/Datalog-Reference.md#expressions).
+- See the [Datalog Reference — Expressions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#arithmetic--predicate-expressions).
 
 **Example**:
 ```datalog
@@ -1374,7 +1374,7 @@ See the [Datalog Reference](../../.wiki/Datalog-Reference.md) for syntax guidanc
 **Resolution**:
 - Expressions accept variables (`?x`), integers, floats, strings, booleans, and keywords.
 - Restructure to avoid passing complex types.
-- See the [Datalog Reference — Expressions](../../.wiki/Datalog-Reference.md#expressions).
+- See the [Datalog Reference — Expressions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#arithmetic--predicate-expressions).
 
 **Example**:
 ```datalog
@@ -1796,7 +1796,9 @@ See the [file format section in README](../README.md#file-format) for version hi
 **Cause**: An internal B+tree page was found with an empty children list, which violates B+tree invariants. This indicates index corruption.
 
 **Resolution**:
-- Restore from backup. If the corruption occurred after a recent write, the WAL file may contain a recoverable state — delete the `.graph` file and try opening from the WAL only (by restoring the last good checkpoint and replaying the WAL). See the [file format section in README](../README.md#file-format).
+- Stop writing to the database and copy both the `.graph` file and its `.wal` sidecar before trying anything else.
+- Restore from backup. Do not delete the `.graph` file: the WAL holds only the transactions written since the last checkpoint, so it cannot rebuild the database on its own. If you restore an older `.graph` file, you can keep the matching `.wal` only if it was written after that file's last checkpoint.
+- Index integrity checking and rebuilding from fact pages are tracked in #373.
 
 **Scenario**: A crash mid-checkpoint left an internal B+tree page in an inconsistent state.
 
@@ -2014,7 +2016,8 @@ The WAL is replayed on open and deleted on checkpoint.
 **Cause**: The sidecar `.wal` file does not start with the expected WAL magic bytes. The file may have been replaced, corrupted, or created by an incompatible tool.
 
 **Resolution**:
-- If the WAL file is stale or corrupt, delete `<dbname>.wal` and reopen the database — Minigraf will replay only from the committed state in the `.graph` file.
+- Copy both the `.graph` file and the `.wal` file before changing anything.
+- Deleting `<dbname>.wal` makes the database open, but **every transaction committed since the last checkpoint is lost**, because those transactions exist only in the WAL. Do this only if you have a backup or accept that loss.
 - Do not manually create or edit `.wal` files.
 
 **Scenario**: `my-db.wal` was accidentally replaced with an empty file before `Minigraf::open("my-db.graph")` was called.
@@ -2026,8 +2029,8 @@ The WAL is replayed on open and deleted on checkpoint.
 **Cause**: The `.wal` file was written by a version of Minigraf with a different WAL format. This can occur when downgrading the library after a WAL was written by a newer version.
 
 **Resolution**:
-- Delete the `.wal` file if it is from an incomplete or stale session (no data is lost — committed facts are in the `.graph` file).
-- If the WAL contains uncommitted in-flight data you need to recover, upgrade the library to the version that wrote the WAL before reopening.
+- Open the database with the Minigraf version that wrote the WAL and call `checkpoint()`. This moves the WAL's transactions into the `.graph` file and removes the WAL. Then open it with the new version.
+- Deleting the `.wal` file instead loses **every transaction committed since the last checkpoint**, because those transactions exist only in the WAL. Do this only if you have a backup or accept that loss.
 
 **Scenario**: A `.wal` file written by a pre-release version of Minigraf is opened with the stable release, which uses a different WAL version number — e.g. `Unsupported WAL version: 3 (expected 2)`.
 
@@ -2041,7 +2044,7 @@ The WAL is replayed on open and deleted on checkpoint.
 - Store large payloads in an external file or object store.
 - Store the file path or URL as a `Value::String` attribute on the entity.
 - Or create a dedicated entity for the content and reference it with `Value::Ref`.
-- See [BENCHMARKS.md](../BENCHMARKS.md) for size guidance.
+- See the [Datalog Reference — Constraints and Limits](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#constraints-and-limits) for the size limit.
 
 **Example**:
 ```datalog

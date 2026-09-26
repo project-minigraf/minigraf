@@ -30,6 +30,39 @@ Each value is Criterion's estimated per-query latency; the range is its 95% conf
 
 `point_entity` uses a selective index-backed lookup. `point_attribute` and `join_3pattern` return larger result sets and therefore scale with the number of matching facts. Do not compare these local measurements directly with CI runs or earlier releases: host load, CPU-frequency policy, toolchain, and implementation all affect the result.
 
+### Point Query vs. Version-Chain Depth (#323)
+
+**Date**: 2026-09-26 · **Command**: `cargo bench --bench minigraf_bench -- point_query_chain_depth` · same host as above, on AC power and otherwise idle.
+
+One entity's `:hash` is retracted and reasserted `depth` times (exactly one live value), plus a never-changed `:other` on the same entity and 2,000 filler facts; checkpointed file database. "Before" is v2.0.1; "after" is the #323 change.
+
+| Query | Depth | Before | After |
+|---|---:|---:|---:|
+| `[:e/hot :hash ?v]` (churned attribute) | 1 | 19.5 µs | 18.3 µs |
+| | 500 | 1.18 ms | 855 µs |
+| | 2000 | 4.64 ms | 3.36 ms |
+| `[:e/hot :other ?v]` (sibling attribute) | 1 | 20.0 µs | 19.2 µs |
+| | 500 | 1.17 ms | 20.6 µs |
+| | 2000 | 4.58 ms | 19.0 µs |
+| `[?e :hash ?v]` (attribute scan) | 1 | 17.5 µs | 17.8 µs |
+| | 500 | 1.14 ms | 841 µs |
+| | 2000 | 4.49 ms | 3.33 ms |
+
+The churned attribute still scales with its own history on v2.x; see #379 for the v3.0.0 fix.
+
+### Checkpoint After One Dirty Fact (#315)
+
+**Date**: 2026-09-26 · **Command**: `cargo bench --bench minigraf_bench -- checkpoint/after_1_fact` · same host as above; file on tmpfs, so fsync cost is excluded.
+
+An already-checkpointed file database of `n` facts receives one new fact, then `checkpoint()` runs; every iteration has exactly one dirty fact. "Before" is v2.0.1, which decoded and re-encoded every index entry. "After" copies index leaves that receive no new entries.
+
+| Facts | Before | After |
+|---:|---:|---:|
+| 10k | 23.9 ms | 4.01 ms |
+| 100k | 246 ms | 26.3 ms |
+
+Cost still grows with graph size, because index pages are copied on every checkpoint. Checkpoints proportional to the change alone need copy-on-write pages, tracked with #374 for v3.0.0.
+
 ## Measurement Method
 
 Criterion warms up each benchmark, collects ten samples for this query group, and estimates per-call latency from repeated iterations. The reported confidence intervals describe measurement uncertainty on this host; they are not cross-machine performance guarantees.

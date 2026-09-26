@@ -169,6 +169,14 @@ impl EavtKey {
             asserted: false,
         }
     }
+
+    /// Smallest possible key for the `(entity, attribute)` pair.
+    pub fn entity_attribute_start(entity: EntityId, attribute: &str) -> Self {
+        EavtKey {
+            attribute: attribute.to_string(),
+            ..EavtKey::entity_start(entity)
+        }
+    }
 }
 
 impl AevtKey {

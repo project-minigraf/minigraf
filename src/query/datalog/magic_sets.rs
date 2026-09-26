@@ -188,7 +188,7 @@ pub(crate) fn inject_magic_guard(rule: &Rule, predicate: &str, adornment: &[char
 /// Build magic propagation rules for adorned recursive calls within a rule body.
 ///
 /// For each `RuleInvocation` in the body that calls an adorned predicate,
-/// emits a rule: (magic-p-ad ?bound_arg) :- (magic-p-ad ?head_bound_var) <preceding non-invocation clauses>
+/// emits a rule: (magic-p-ad ?bound_arg) :- (magic-p-ad ?head_bound_var) <preceding clauses>
 ///
 /// Returns Vec<(predicate_name, Rule)> to be registered with `register_rule_unchecked`.
 #[allow(dead_code)]
@@ -284,13 +284,12 @@ pub(crate) fn build_propagation_rules(
             .filter_map(|(pos, _)| called_args.get(pos).cloned())
             .collect();
 
-        // Propagation body = guard + all non-RuleInvocation clauses before this call.
-        let mut prop_body = vec![guard.clone()];
-        for preceding in rule.body.iter().take(i) {
-            if !matches!(preceding, WhereClause::RuleInvocation { .. }) {
-                prop_body.push(preceding.clone());
-            }
-        }
+        // Propagation body = guard + every clause before this call, including rule
+        // invocations: a preceding call may be the only binder of a variable passed
+        // in a bound position (e.g. `(link ?x ?mid) (chain ?mid ?y)`, #297).
+        let mut prop_body = Vec::with_capacity(1 + i);
+        prop_body.push(guard.clone());
+        prop_body.extend(rule.body.iter().take(i).cloned());
 
         // Build the propagation rule head.
         // For fb-adorned called predicates: head = [pred, sentinel, bound_val_var]
@@ -693,6 +692,36 @@ mod tests {
             }
             _ => panic!("expected magic guard in propagation body"),
         }
+    }
+
+    #[test]
+    fn test_propagation_rule_keeps_preceding_rule_invocation() {
+        // (chain ?x ?y) :- (link ?x ?mid) (chain ?mid ?y)
+        // bf → (__magic_chain_bf ?mid) :- (__magic_chain_bf ?x) (link ?x ?mid)
+        // The preceding (link ...) call is the only binder of ?mid (#297).
+        let rule = make_rule(
+            "chain",
+            &["?x", "?y"],
+            vec![
+                rule_inv("link", &["?x", "?mid"]),
+                rule_inv("chain", &["?mid", "?y"]),
+            ],
+        );
+        let adorned: HashMap<String, Vec<char>> = [
+            ("chain".to_string(), vec!['b', 'f']),
+            ("link".to_string(), vec!['b', 'f']),
+        ]
+        .into_iter()
+        .collect();
+        let prop_rules = build_propagation_rules(&rule, "chain", &adorned);
+        let chain_magic = magic_pred_name("chain", &['b', 'f']);
+        let (_, prop) = prop_rules
+            .iter()
+            .find(|(pred, _)| *pred == chain_magic)
+            .expect("propagation rule for the recursive chain call");
+        assert_eq!(prop.head[1], EdnValue::Symbol("?mid".to_string()));
+        assert_eq!(prop.body.len(), 2, "guard + preceding link call");
+        assert_eq!(prop.body[1], rule_inv("link", &["?x", "?mid"]));
     }
 
     #[test]

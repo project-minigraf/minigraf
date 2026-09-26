@@ -113,6 +113,10 @@ pub struct OpenOptions {
     ///
     /// Defaults to 1000. Lower values mean more frequent checkpoints (smaller WAL,
     /// more I/O). Higher values mean less frequent checkpoints (larger WAL, less I/O).
+    ///
+    /// A checkpoint's cost grows with the total size of the database (see
+    /// [`Minigraf::checkpoint`]), while durability does not depend on it: the WAL
+    /// is crash-durable. Raise this for write-heavy workloads on large graphs.
     pub wal_checkpoint_threshold: usize,
     /// Number of pages to hold in the LRU page cache. Default: 256 (= 1MB at 4KB pages).
     ///
@@ -684,6 +688,15 @@ impl Minigraf {
     /// Manually trigger a checkpoint: flush all in-memory facts to the main file
     /// and delete the WAL sidecar.
     ///
+    /// A checkpoint is **not** a durability boundary: committed writes are already
+    /// crash-durable in the `<db>.wal` sidecar and are replayed on the next open.
+    /// Checkpointing less often only makes that replay (reopen) slower.
+    ///
+    /// Cost: every checkpoint rewrites the four covering indexes after the fact
+    /// pages, so it copies pages in proportion to the total index size; only the
+    /// index leaves that receive new entries are decoded and re-encoded. Prefer
+    /// checkpointing on a size or time budget over once per logical unit of work.
+    ///
     /// No-op for in-memory databases.
     ///
     /// # Errors
@@ -733,13 +746,10 @@ impl Minigraf {
                 // replayed WAL entries on open (crash-recovery path). `pfs.is_dirty()`
                 // catches any facts marked dirty via the normal write path.
                 //
-                // The kernel file lock taken by FileBackend::open covers both a
-                // second process and a second handle in this one, since flock
-                // and OFD locks attach to the open file description. This guard
-                // remains for environments where the filesystem cannot lock at all —
-                // for example, NFSv3 without lockd or some FUSE mounts — where the
-                // caller set `allow_unlocked` to accept that Minigraf cannot detect
-                // concurrent writers.
+                // Kernel file locking refuses a second writer (another process, or a
+                // second handle in this one — #304/#314). The guard still matters where
+                // the filesystem cannot lock (e.g. NFSv3 without lockd, some FUSE
+                // mounts) and the caller set `allow_unlocked`.
                 if *wal_entry_count == 0 && !pfs.is_dirty() {
                     return Ok(());
                 }

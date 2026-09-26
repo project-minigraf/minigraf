@@ -415,6 +415,40 @@ fn bench_checkpoint(c: &mut Criterion) {
     group.finish();
 }
 
+// ── checkpoint/after_1_fact (#315) ────────────────────────────────────────────
+
+/// Checkpoint cost when only one fact is dirty, on an already-checkpointed graph.
+/// Before #315 this was flat in dirty bytes and proportional to graph size.
+fn bench_checkpoint_after_1_fact(c: &mut Criterion) {
+    use criterion::BatchSize;
+    use tempfile::NamedTempFile;
+
+    let mut group = c.benchmark_group("checkpoint/after_1_fact");
+    group.sample_size(20);
+    for &(label, n) in &[("10k", 10_000usize), ("100k", 100_000)] {
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        helpers::populate_file_no_checkpoint(n, &path);
+        let db = helpers::open_file_no_checkpoint(&path);
+        db.checkpoint().unwrap();
+        let mut i = 0u64;
+        group.bench_function(BenchmarkId::from_parameter(label), |b| {
+            b.iter_batched(
+                || {
+                    i += 1;
+                    db.execute(&format!("(transact [[:ck{i} :val {i}]])"))
+                        .unwrap();
+                },
+                // One dirty fact per checkpoint: batched setups would leave
+                // every checkpoint after the first with nothing to do.
+                |()| db.checkpoint().unwrap(),
+                BatchSize::PerIteration,
+            );
+        });
+    }
+    group.finish();
+}
+
 // ── Task 10: concurrent/ ─────────────────────────────────────────────────────
 
 fn bench_concurrent(c: &mut Criterion) {
@@ -1582,6 +1616,54 @@ fn bench_btree_lookup(c: &mut Criterion) {
     }
 }
 
+// ── point_query_chain_depth (Issue #323) ─────────────────────────────────────
+//
+// One entity whose :hash is retracted/reasserted `depth` times (exactly one live
+// value), plus a never-churned :other on the same entity; checkpointed file DB.
+
+fn bench_point_query_chain_depth(c: &mut Criterion) {
+    const DEPTHS: &[usize] = &[1, 500, 2000];
+    const QUERIES: &[(&str, &str)] = &[
+        (
+            "churned_attr",
+            "(query [:find ?v :where [:e/hot :hash ?v]])",
+        ),
+        (
+            "sibling_attr",
+            "(query [:find ?v :where [:e/hot :other ?v]])",
+        ),
+        ("attr_scan", "(query [:find ?v :where [?e :hash ?v]])"),
+    ];
+    for &(name, q) in QUERIES {
+        let mut group = c.benchmark_group(format!("point_query_chain_depth/{name}"));
+        group.sample_size(20);
+        for &depth in DEPTHS {
+            let dir = tempfile::tempdir().unwrap();
+            let db = minigraf::Minigraf::open(dir.path().join("b.graph")).unwrap();
+            for i in 0..2000 {
+                db.execute(&format!("(transact [[:f/{i} :x {i}]])"))
+                    .unwrap();
+            }
+            db.execute("(transact [[:e/hot :other \"o\"]])").unwrap();
+            db.execute("(transact {:valid-from \"2020-01-01T00:00:00Z\"} [[:e/hot :hash \"h0\"]])")
+                .unwrap();
+            for i in 1..depth {
+                db.execute(&format!("(retract [[:e/hot :hash \"h{}\"]])", i - 1))
+                    .unwrap();
+                db.execute(&format!(
+                    "(transact {{:valid-from \"2020-01-01T00:00:00Z\"}} [[:e/hot :hash \"h{i}\"]])"
+                ))
+                .unwrap();
+            }
+            db.checkpoint().unwrap();
+            group.bench_with_input(BenchmarkId::from_parameter(depth), &depth, |b, _| {
+                b.iter(|| black_box(db.execute(q).unwrap()));
+            });
+        }
+        group.finish();
+    }
+}
+
 // ── query/predicate_pushdown ──────────────────────────────────────────────────
 
 fn bench_predicate_pushdown(c: &mut Criterion) {
@@ -1745,6 +1827,7 @@ criterion_group!(
     bench_query_extras,
     bench_open,
     bench_checkpoint,
+    bench_checkpoint_after_1_fact,
     bench_concurrent,
     bench_concurrent_file,
     bench_concurrent_btree_scan,
@@ -1752,6 +1835,7 @@ criterion_group!(
     bench_retract,
     bench_btree_lookup,
     bench_predicate_pushdown,
-    bench_simd, // Issue #229
+    bench_point_query_chain_depth, // Issue #323
+    bench_simd,                    // Issue #229
 );
 criterion_main!(benches);

@@ -8,6 +8,7 @@
 pub mod backend;
 pub mod btree_v6;
 pub mod cache;
+pub(crate) mod dir_sync;
 pub mod index;
 pub mod packed_pages;
 pub mod persistent_facts;
