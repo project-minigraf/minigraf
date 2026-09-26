@@ -439,8 +439,10 @@ fn bench_checkpoint_after_1_fact(c: &mut Criterion) {
                     db.execute(&format!("(transact [[:ck{i} :val {i}]])"))
                         .unwrap();
                 },
+                // One dirty fact per checkpoint: batched setups would leave
+                // every checkpoint after the first with nothing to do.
                 |()| db.checkpoint().unwrap(),
-                BatchSize::SmallInput,
+                BatchSize::PerIteration,
             );
         });
     }
