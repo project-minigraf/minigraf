@@ -512,70 +512,68 @@ pub(crate) fn filter_facts_as_of(facts: Vec<Fact>, as_of: &AsOf) -> Vec<Fact> {
 ///
 /// # Implementation note
 ///
-/// This function uses two flat `HashMap`s in a single pass over the input:
+/// Hot path for every non-`:as-of` query (#323). Each value is encoded once;
+/// the two group maps borrow `(entity, attribute, value_bytes)` from the input
+/// instead of cloning them. They keep std's randomly keyed hasher on purpose:
+/// values are often untrusted text (agent memory), and a fixed-seed fast hash
+/// would let crafted colliding values make every query quadratic. `by_window` stores the
+/// index and `tx_count` of the winning assertion per validity window; survivors
+/// are moved out of `facts` at the end, preserving input order.
 ///
-/// - `max_retract_tx`: EAV → highest retraction `tx_count` seen so far.
-/// - `by_window`: (EAV + valid_from + valid_to) → highest-`tx_count` assertion
-///   for that time window.
-///
-/// The retraction filter (`fact.tx_count > max_retract_tx`) is applied in the
-/// final `filter_map` rather than eagerly.  This means `by_window` temporarily
-/// holds assertions that will be filtered out, so on workloads where most
-/// EAV triples are immediately retracted it uses more peak memory than the
-/// previous per-group approach.  The trade-off is intentional: eliminating the
-/// per-group `Vec<Fact>` allocation yields a measurable throughput gain on large
-/// mostly-unique fact sets (see issue #227).
+/// Idempotent under duplicated input records (a duplicate assertion ties with
+/// the original and loses; a duplicate retraction leaves the max unchanged).
+/// `selective_fact_fetch` relies on this instead of deduplicating.
 pub(crate) fn net_asserted_facts(facts: Vec<Fact>) -> Vec<Fact> {
     use std::collections::HashMap;
 
-    type EavKey = (EntityId, Attribute, Vec<u8>);
-    type WindowKey = (EntityId, Attribute, Vec<u8>, i64, i64);
+    type EavKey<'a> = (&'a EntityId, &'a str, &'a [u8]);
+    type WindowKey<'a> = (&'a EntityId, &'a str, &'a [u8], i64, i64);
 
-    let mut max_retract_tx: HashMap<EavKey, u64> = HashMap::new();
-    let mut by_window: HashMap<WindowKey, Fact> = HashMap::new();
+    let encoded: Vec<Vec<u8>> = facts.iter().map(|f| encode_value(&f.value)).collect();
+    let mut keep = vec![false; facts.len()];
 
-    for fact in facts {
-        let eav_key = (
-            fact.entity,
-            fact.attribute.clone(),
-            encode_value(&fact.value),
-        );
+    {
+        let mut max_retract_tx: HashMap<EavKey<'_>, u64> = HashMap::new();
+        let mut by_window: HashMap<WindowKey<'_>, (usize, u64)> = HashMap::new();
 
-        if fact.asserted {
-            let window_key = (
-                eav_key.0,
-                eav_key.1,
-                eav_key.2,
-                fact.valid_from,
-                fact.valid_to,
-            );
-            match by_window.get(&window_key) {
-                None => {
-                    by_window.insert(window_key, fact);
-                }
-                Some(existing) if fact.tx_count > existing.tx_count => {
-                    by_window.insert(window_key, fact);
-                }
-                _ => {}
+        for (idx, (fact, value_bytes)) in facts.iter().zip(encoded.iter()).enumerate() {
+            let entity = &fact.entity;
+            let attribute = fact.attribute.as_str();
+            let value = value_bytes.as_slice();
+            if fact.asserted {
+                by_window
+                    .entry((entity, attribute, value, fact.valid_from, fact.valid_to))
+                    .and_modify(|winner| {
+                        if fact.tx_count > winner.1 {
+                            *winner = (idx, fact.tx_count);
+                        }
+                    })
+                    .or_insert((idx, fact.tx_count));
+            } else {
+                max_retract_tx
+                    .entry((entity, attribute, value))
+                    .and_modify(|max_tx| *max_tx = (*max_tx).max(fact.tx_count))
+                    .or_insert(fact.tx_count);
             }
-        } else {
-            let tx_count = fact.tx_count;
-            max_retract_tx
-                .entry(eav_key)
-                .and_modify(|max_tx| *max_tx = (*max_tx).max(tx_count))
-                .or_insert(tx_count);
+        }
+
+        for ((entity, attribute, value, _, _), (idx, tx_count)) in &by_window {
+            let retract_tx = max_retract_tx
+                .get(&(*entity, *attribute, *value))
+                .copied()
+                .unwrap_or(0);
+            if *tx_count > retract_tx
+                && let Some(slot) = keep.get_mut(*idx)
+            {
+                *slot = true;
+            }
         }
     }
 
-    by_window
+    facts
         .into_iter()
-        .filter_map(|((entity, attribute, value, _, _), fact)| {
-            let retract_tx = max_retract_tx
-                .get(&(entity, attribute, value))
-                .copied()
-                .unwrap_or(0);
-            (fact.tx_count > retract_tx).then_some(fact)
-        })
+        .zip(keep)
+        .filter_map(|(fact, kept)| kept.then_some(fact))
         .collect()
 }
 
@@ -678,6 +676,73 @@ impl FactStorage {
             let committed_refs = reader.range_scan_eavt(&start, Some(&end))?;
             for fr in committed_refs {
                 facts.push(resolve_fact_ref(&d, fr)?);
+            }
+        }
+
+        Ok(facts)
+    }
+
+    /// Get every stored record for one `(entity, attribute)` pair (index-driven, #323).
+    ///
+    /// Range-scans EAVT over exactly `[(e, a, …), (e, a + "\0", …))`, so other
+    /// attributes of the same entity — including prefix siblings such as `:ab` for
+    /// `:a` — and their version history are never resolved.
+    pub(crate) fn get_facts_by_entity_attribute_indexed(
+        &self,
+        entity_id: &EntityId,
+        attribute: &Attribute,
+    ) -> Result<Vec<Fact>> {
+        use crate::storage::index::EavtKey;
+        let d = self.data.read().unwrap_or_else(|e| e.into_inner());
+        let matches = |f: &Fact| &f.entity == entity_id && &f.attribute == attribute;
+
+        // Fallback: no indexes built yet
+        if d.pending_indexes.eavt.is_empty() && d.committed_index_reader.is_none() {
+            let mut result: Vec<Fact> = d.facts.iter().filter(|f| matches(f)).cloned().collect();
+            if let Some(loader) = &d.committed {
+                result.extend(loader.stream_all()?.into_iter().filter(|f| matches(f)));
+            }
+            return Ok(result);
+        }
+
+        let start = EavtKey {
+            entity: *entity_id,
+            attribute: attribute.clone(),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
+        // Exact successor of `attribute`: the smallest string that sorts after it is
+        // `attribute + "\0"`, so `[start, end)` holds exactly this (e, a) pair. Always
+        // valid UTF-8 — unlike incrementing the last byte, which fails for attributes
+        // ending in 0x7F or a character whose last UTF-8 byte is 0xBF (e.g. `:丿`).
+        let end = EavtKey {
+            entity: *entity_id,
+            attribute: format!("{attribute}\0"),
+            valid_from: i64::MIN,
+            valid_to: i64::MIN,
+            tx_count: 0,
+        };
+
+        let mut facts = Vec::new();
+
+        // Pending: EAVT keys for the exact (e, a) are contiguous from `start`;
+        // the first key with a different entity or attribute ends the run.
+        for (key, &fr) in d.pending_indexes.eavt.range(start.clone()..) {
+            if key.entity != *entity_id || key.attribute != *attribute {
+                break;
+            }
+            facts.push(resolve_fact_ref(&d, fr)?);
+        }
+
+        // Committed: on-disk B+tree range scan over exactly this (e, a) pair; the
+        // post-filter is a cheap guard, not something the range relies on.
+        if let Some(reader) = &d.committed_index_reader {
+            for fr in reader.range_scan_eavt(&start, Some(&end))? {
+                let fact = resolve_fact_ref(&d, fr)?;
+                if matches(&fact) {
+                    facts.push(fact);
+                }
             }
         }
 
@@ -1892,5 +1957,393 @@ mod tests {
             0,
             "retraction should wipe all windows for the EAV triple"
         );
+    }
+
+    /// Pre-#323 implementation, kept verbatim as the oracle for the
+    /// randomized equivalence test.
+    fn net_asserted_facts_reference(facts: Vec<Fact>) -> Vec<Fact> {
+        use std::collections::HashMap;
+
+        type EavKey = (EntityId, Attribute, Vec<u8>);
+        type WindowKey = (EntityId, Attribute, Vec<u8>, i64, i64);
+
+        let mut max_retract_tx: HashMap<EavKey, u64> = HashMap::new();
+        let mut by_window: HashMap<WindowKey, Fact> = HashMap::new();
+
+        for fact in facts {
+            let eav_key = (
+                fact.entity,
+                fact.attribute.clone(),
+                encode_value(&fact.value),
+            );
+
+            if fact.asserted {
+                let window_key = (
+                    eav_key.0,
+                    eav_key.1,
+                    eav_key.2,
+                    fact.valid_from,
+                    fact.valid_to,
+                );
+                match by_window.get(&window_key) {
+                    None => {
+                        by_window.insert(window_key, fact);
+                    }
+                    Some(existing) if fact.tx_count > existing.tx_count => {
+                        by_window.insert(window_key, fact);
+                    }
+                    _ => {}
+                }
+            } else {
+                let tx_count = fact.tx_count;
+                max_retract_tx
+                    .entry(eav_key)
+                    .and_modify(|max_tx| *max_tx = (*max_tx).max(tx_count))
+                    .or_insert(tx_count);
+            }
+        }
+
+        by_window
+            .into_iter()
+            .filter_map(|((entity, attribute, value, _, _), fact)| {
+                let retract_tx = max_retract_tx
+                    .get(&(entity, attribute, value))
+                    .copied()
+                    .unwrap_or(0);
+                (fact.tx_count > retract_tx).then_some(fact)
+            })
+            .collect()
+    }
+
+    /// Order-independent comparison key for a fact set.
+    fn sorted_keys(facts: &[Fact]) -> Vec<String> {
+        let mut v: Vec<String> = facts
+            .iter()
+            .map(|f| {
+                format!(
+                    "{}|{}|{:?}|{}|{}|{}|{}",
+                    f.entity,
+                    f.attribute,
+                    f.value,
+                    f.tx_count,
+                    f.valid_from,
+                    f.valid_to,
+                    f.asserted
+                )
+            })
+            .collect();
+        v.sort();
+        v
+    }
+
+    /// Deterministic xorshift so the test needs no RNG dependency.
+    struct XorShift(u64);
+    impl XorShift {
+        fn next(&mut self) -> u64 {
+            let mut x = self.0;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            self.0 = x;
+            x
+        }
+        fn below(&mut self, n: u64) -> u64 {
+            self.next() % n
+        }
+    }
+
+    #[test]
+    fn net_asserted_matches_reference_on_random_histories() {
+        let entities = [uuid::Uuid::from_u128(1), uuid::Uuid::from_u128(2)];
+        let attrs = [":a", ":ab", ":b"];
+        let windows = [
+            (0_i64, VALID_TIME_FOREVER),
+            (1_000, 2_000),
+            (1_500, VALID_TIME_FOREVER),
+        ];
+        let mut rng = XorShift(0x9E37_79B9_7F4A_7C15);
+        for _case in 0..500 {
+            let n = rng.below(40) + 1;
+            let mut facts = Vec::new();
+            let mut tx = 0_u64;
+            for _ in 0..n {
+                // ~25% of records share the previous tx_count (same-transaction batches).
+                if rng.below(4) != 0 {
+                    tx += 1;
+                }
+                let e = entities[rng.below(2) as usize];
+                let a = attrs[rng.below(3) as usize];
+                let v = Value::Integer(i64::try_from(rng.below(3)).unwrap());
+                if rng.below(3) == 0 {
+                    facts.push(make_retract(e, a, v, tx));
+                } else {
+                    let (vf, vt) = windows[rng.below(3) as usize];
+                    facts.push(make_assert(e, a, v, tx, vf, vt));
+                }
+            }
+            let expected = sorted_keys(&net_asserted_facts_reference(facts.clone()));
+            let actual = sorted_keys(&net_asserted_facts(facts));
+            assert_eq!(
+                actual, expected,
+                "new net_asserted_facts diverged from reference"
+            );
+        }
+    }
+
+    /// The executor's selective fetch no longer dedups (#323); it relies on
+    /// net_asserted_facts collapsing duplicated input records.
+    #[test]
+    fn net_asserted_idempotent_under_duplicates() {
+        let e = uuid::Uuid::from_u128(7);
+        let facts = vec![
+            make_assert(
+                e,
+                ":hash",
+                Value::String("h0".into()),
+                1,
+                0,
+                VALID_TIME_FOREVER,
+            ),
+            make_retract(e, ":hash", Value::String("h0".into()), 2),
+            make_assert(
+                e,
+                ":hash",
+                Value::String("h1".into()),
+                3,
+                0,
+                VALID_TIME_FOREVER,
+            ),
+            make_assert(
+                e,
+                ":other",
+                Value::String("o".into()),
+                3,
+                0,
+                VALID_TIME_FOREVER,
+            ),
+        ];
+        let mut doubled = facts.clone();
+        doubled.extend(facts.clone());
+        let once = sorted_keys(&net_asserted_facts(facts));
+        let twice = sorted_keys(&net_asserted_facts(doubled));
+        assert_eq!(once.len(), 2, "h1 and o are live");
+        assert_eq!(twice, once, "duplicated records must not change the result");
+    }
+
+    #[test]
+    fn net_asserted_preserves_input_order() {
+        let e = uuid::Uuid::from_u128(9);
+        let facts = vec![
+            make_assert(e, ":z", Value::Integer(1), 1, 0, VALID_TIME_FOREVER),
+            make_assert(e, ":a", Value::Integer(2), 2, 0, VALID_TIME_FOREVER),
+            make_assert(e, ":m", Value::Integer(3), 3, 0, VALID_TIME_FOREVER),
+        ];
+        let out = net_asserted_facts(facts);
+        let attrs: Vec<&str> = out.iter().map(|f| f.attribute.as_str()).collect();
+        assert_eq!(attrs, vec![":z", ":a", ":m"]);
+    }
+
+    #[test]
+    fn entity_attribute_indexed_pending_only() {
+        let storage = FactStorage::new();
+        let e = uuid::Uuid::from_u128(1);
+        let other = uuid::Uuid::from_u128(2);
+        storage
+            .transact(
+                vec![
+                    (e, ":hash".to_string(), Value::String("h0".into())),
+                    (e, ":other".to_string(), Value::String("o".into())),
+                    (other, ":hash".to_string(), Value::String("x".into())),
+                ],
+                None,
+            )
+            .unwrap();
+        storage
+            .retract(vec![(e, ":hash".to_string(), Value::String("h0".into()))])
+            .unwrap();
+        let facts = storage
+            .get_facts_by_entity_attribute_indexed(&e, &":hash".to_string())
+            .unwrap();
+        assert_eq!(facts.len(), 2, "assert + retract of :hash for e only");
+        assert!(
+            facts
+                .iter()
+                .all(|f| f.entity == e && f.attribute == ":hash")
+        );
+    }
+
+    #[test]
+    fn entity_attribute_indexed_excludes_prefix_sibling() {
+        let storage = FactStorage::new();
+        let e = uuid::Uuid::from_u128(1);
+        storage
+            .transact(
+                vec![
+                    (e, ":a".to_string(), Value::Integer(1)),
+                    (e, ":ab".to_string(), Value::Integer(2)),
+                    (e, ":a/b".to_string(), Value::Integer(3)),
+                ],
+                None,
+            )
+            .unwrap();
+        let facts = storage
+            .get_facts_by_entity_attribute_indexed(&e, &":a".to_string())
+            .unwrap();
+        assert_eq!(facts.len(), 1, "only :a, not :ab or :a/b");
+        assert_eq!(facts[0].value, Value::Integer(1));
+    }
+
+    #[test]
+    fn entity_attribute_indexed_no_index_fallback() {
+        // FactStorage with facts but empty pending indexes and no committed reader
+        // exercises the fallback branch.
+        let storage = FactStorage::new();
+        let e = uuid::Uuid::from_u128(1);
+        storage
+            .transact(
+                vec![
+                    (e, ":a".to_string(), Value::Integer(1)),
+                    (e, ":b".to_string(), Value::Integer(2)),
+                ],
+                None,
+            )
+            .unwrap();
+        storage.replace_pending_indexes(crate::storage::index::Indexes::new());
+        let facts = storage
+            .get_facts_by_entity_attribute_indexed(&e, &":b".to_string())
+            .unwrap();
+        assert_eq!(facts.len(), 1);
+        assert_eq!(facts[0].value, Value::Integer(2));
+    }
+
+    #[test]
+    fn entity_attribute_indexed_committed_and_pending() {
+        use crate::storage::CommittedFactReader;
+        use crate::storage::index::{FactRef, Indexes};
+        use std::sync::Arc;
+
+        struct MockLoader {
+            facts: Vec<Fact>,
+        }
+        impl CommittedFactReader for MockLoader {
+            fn resolve(&self, fr: FactRef) -> anyhow::Result<Fact> {
+                self.facts
+                    .get(fr.slot_index as usize)
+                    .cloned()
+                    .ok_or_else(|| anyhow::anyhow!("no fact at slot"))
+            }
+            fn stream_all(&self) -> anyhow::Result<Vec<Fact>> {
+                Ok(self.facts.clone())
+            }
+            fn committed_page_count(&self) -> u64 {
+                1
+            }
+        }
+
+        let storage = FactStorage::new();
+        let e = uuid::Uuid::from_u128(1);
+        let committed = vec![
+            make_assert(e, ":a", Value::Integer(1), 1, 0, VALID_TIME_FOREVER),
+            make_assert(e, ":ab", Value::Integer(9), 1, 0, VALID_TIME_FOREVER),
+        ];
+        let mut indexes = Indexes::new();
+        for (slot, f) in committed.iter().enumerate() {
+            indexes.insert(
+                f,
+                FactRef {
+                    page_id: 1,
+                    slot_index: u16::try_from(slot).unwrap(),
+                },
+            );
+        }
+        storage.replace_pending_indexes(indexes);
+        storage.set_committed_reader(Arc::new(MockLoader { facts: committed }));
+
+        let facts = storage
+            .get_facts_by_entity_attribute_indexed(&e, &":a".to_string())
+            .unwrap();
+        assert_eq!(facts.len(), 1, "committed :a only, :ab excluded");
+        assert_eq!(facts[0].value, Value::Integer(1));
+    }
+
+    /// #323 review: the committed EAVT range must end at the exact successor of
+    /// `(e, a)` for every attribute — including ones whose last UTF-8 byte is 0xBF
+    /// (e.g. `:丿`), where incrementing the last byte is not valid UTF-8 and the scan
+    /// used to run unbounded to the end of the index.
+    #[test]
+    fn entity_attribute_indexed_committed_range_is_bounded_for_any_attribute() {
+        use crate::storage::CommittedIndexReader;
+        use crate::storage::index::{AevtKey, AvetKey, EavtKey, FactRef, VaetKey};
+        use std::sync::{Arc, Mutex};
+
+        struct RecordingReader {
+            eavt_bounds: Mutex<Vec<(EavtKey, Option<EavtKey>)>>,
+        }
+        impl CommittedIndexReader for RecordingReader {
+            fn range_scan_eavt(
+                &self,
+                start: &EavtKey,
+                end: Option<&EavtKey>,
+            ) -> anyhow::Result<Vec<FactRef>> {
+                self.eavt_bounds
+                    .lock()
+                    .unwrap()
+                    .push((start.clone(), end.cloned()));
+                Ok(vec![])
+            }
+            fn range_scan_aevt(
+                &self,
+                _: &AevtKey,
+                _: Option<&AevtKey>,
+            ) -> anyhow::Result<Vec<FactRef>> {
+                Ok(vec![])
+            }
+            fn range_scan_avet(
+                &self,
+                _: &AvetKey,
+                _: Option<&AvetKey>,
+            ) -> anyhow::Result<Vec<FactRef>> {
+                Ok(vec![])
+            }
+            fn range_scan_vaet(
+                &self,
+                _: &VaetKey,
+                _: Option<&VaetKey>,
+            ) -> anyhow::Result<Vec<FactRef>> {
+                Ok(vec![])
+            }
+        }
+
+        let reader = Arc::new(RecordingReader {
+            eavt_bounds: Mutex::new(Vec::new()),
+        });
+        let storage = FactStorage::new();
+        storage.set_committed_index_reader(reader.clone());
+        let e = uuid::Uuid::from_u128(5);
+
+        for attr in [":plain", ":\u{4e3f}", ":\u{bf}", ":a\u{7f}"] {
+            storage
+                .get_facts_by_entity_attribute_indexed(&e, &attr.to_string())
+                .unwrap();
+        }
+
+        let bounds = reader.eavt_bounds.lock().unwrap();
+        assert_eq!(bounds.len(), 4, "one committed scan per lookup");
+        for (start, end) in bounds.iter() {
+            let end = end
+                .as_ref()
+                .expect("committed EAVT scan must have an upper bound");
+            assert_eq!(end.entity, e, "upper bound must stay within the entity");
+            assert!(start < end, "range must be non-empty");
+            // No other attribute may sort between start and end.
+            let sibling = EavtKey {
+                attribute: format!("{}x", start.attribute),
+                ..start.clone()
+            };
+            assert!(
+                sibling >= *end,
+                "prefix sibling must fall outside the range"
+            );
+        }
     }
 }

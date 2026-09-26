@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Performance
+
+- **Bound-entity point queries no longer pay for other attributes' history (#323).** `[:e :attr ?v]` now range-scans only `(e, :attr)` in the EAVT index instead of every record the entity has ever written. Reading a rarely changed attribute of a heavily rewritten entity no longer slows down as that entity's history grows: with 2,000 retract/reassert cycles on another attribute of the same entity, it drops from 4.58 ms to 19.0 µs. Reading the heavily rewritten attribute itself, and attribute scans (`[?e :attr ?v]`), are about 1.35–1.4× faster (4.64 ms → 3.36 ms), from cheaper net-assert grouping and removing a redundant dedup pass. The file format is unchanged.
+
+### Fixed
+
+- **Bound-entity queries could drop rows when one `WriteTransaction` wrote the same attribute in several valid-time windows (#323).** Both facts share a `tx_count`, and the selective lookup path de-duplicated on `(entity, attribute, tx_count, asserted)`, so one window's value was silently lost, while the same query via a full scan returned both. That de-duplication has been removed, and bound-entity queries now always match a full scan.
+
+### Notes
+
+- On v2.x, reading a heavily rewritten attribute still costs time proportional to its history, because v7 index keys carry neither the value nor the assert/retract flag; the structural fix needs the v8 keys and is tracked for v3.0.0 in #379.
+
 ## v2.0.1 — 2026-09-25
 
 Patch release on the v2.x line. File format is unchanged (v7); no API changes.
