@@ -4,9 +4,9 @@
 
 **Verified**: 2026-09-26 with `cargo test`
 
-**Result**: 1,168 passing tests and 8 ignored tests (1,176 total)
+**Result**: 1,192 passing tests and 8 ignored tests (1,200 total)
 
-The v2.0.1 suite covers the public database API, the Datalog engine, storage and recovery paths, and the v2.0.0 locking and structured-error-code changes, plus v2.0.1's regression test for rebuilding indexes on open after several checkpoints (#370). Since v2.0.1, `tests/point_query_history_test.rs` and new storage unit tests check that attribute-narrowed bound-entity lookups return exactly what a full scan returns, and that `net_asserted_facts` matches its previous implementation on randomized histories (#323). Attribute-scan tests check that the AEVT range covers exactly the queried attribute, including non-ASCII names such as `:丿` and prefix siblings such as `:ab` for `:a` (#381).
+The v2.0.1 suite covers the public database API, the Datalog engine, storage and recovery paths, and the v2.0.0 locking and structured-error-code changes, plus v2.0.1's regression test for rebuilding indexes on open after several checkpoints (#370). Since v2.0.1, `tests/point_query_history_test.rs` and new storage unit tests check that attribute-narrowed bound-entity lookups return exactly what a full scan returns, and that `net_asserted_facts` matches its previous implementation on randomized histories (#323). Attribute-scan tests check that the AEVT range covers exactly the queried attribute, including non-ASCII names such as `:丿` and prefix siblings such as `:ab` for `:a` (#381). Incremental B+tree rebuild tests check that checkpoints which copy untouched index leaves produce exactly the entries and file checksum a full rebuild would, including over repeated checkpoints, that single-fact checkpoints do not fragment the index, and that a cyclic leaf chain or damaged slot directory is rejected rather than copied (#315). Directory-sync unit tests check that creating the `.graph` file or the WAL, and deleting the WAL, fsync the parent directory after the file operation, and that reopening an existing file does not (#389).
 
 ### Covered Areas
 

@@ -8,6 +8,7 @@ on:
 permissions:
   contents: read
   issues: write
+  actions: read  # read the previous night's job logs to confirm an alert repeats
 
 jobs:
   compile:
@@ -212,6 +213,7 @@ jobs:
         id: bencher
         continue-on-error: true
         run: |
+          set -o pipefail
           bencher run \
             --project minigraf \
             --token "${{ secrets.BENCHER_API_TOKEN }}" \
@@ -222,42 +224,111 @@ jobs:
             --threshold-upper-boundary ${{ matrix.threshold }} \
             --err \
             --adapter rust_criterion \
-            --file ${{ matrix.file }}
+            --file ${{ matrix.file }} \
+            2>&1 | tee bencher_out.txt
 
-      - name: Open regression issue
+      # Shared CI runners are noisy, so one alert on its own is usually a slow
+      # runner, not a regression. Report only benchmarks that also alerted in
+      # this suite on the previous run. If a regression issue is already open,
+      # add a comment to it instead of skipping, so later alerts stay visible.
+      - name: Report regression
         if: steps.bencher.outcome == 'failure'
         uses: actions/github-script@v6
+        env:
+          SUITE: ${{ matrix.name }}
         with:
           script: |
-            const today = new Date().toISOString().slice(0, 10);
-            const title = `Benchmark regression - ${today}`;
+            const fs = require('fs');
+            const { owner, repo } = context.repo;
+            const suite = process.env.SUITE;
+            const jobName = `bench / ${suite}`;
+
+            // Bencher lists each alert as "- <benchmark> (Latency): <.../alerts/<id>>".
+            // The "View results" lines use /perf? URLs, so they do not match.
+            const alertRe = /- (\S+) \(Latency\): https:\/\/bencher\.dev\/console\/projects\/[^/\s]+\/alerts\//g;
+            const parseAlerts = text => new Set([...text.matchAll(alertRe)].map(m => m[1]));
+
+            const current = parseAlerts(fs.readFileSync('bencher_out.txt', 'utf8'));
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            let body;
+            if (current.size === 0) {
+              // Bencher failed without listing alerts (API or upload error).
+              // Report it at once so a broken setup does not go unnoticed.
+              body = [
+                `Bencher failed in the nightly benchmark run (${suite}) but listed no alerts. This is likely an API or upload error.`,
+                '',
+                `**Run:** ${runUrl}`,
+              ].join('\n');
+            } else {
+              // Find this suite's job in the previous completed run and read its alerts.
+              let previous = new Set();
+              let previousUrl = null;
+              try {
+                const { data: runs } = await github.rest.actions.listWorkflowRuns({
+                  owner, repo,
+                  workflow_id: 'bench.yml',
+                  branch: 'main',
+                  status: 'completed',
+                  per_page: 10,
+                });
+                const prevRun = runs.workflow_runs.find(r => r.id !== context.runId);
+                if (prevRun) {
+                  previousUrl = prevRun.html_url;
+                  const { data: jobs } = await github.rest.actions.listJobsForWorkflowRun({
+                    owner, repo, run_id: prevRun.id, per_page: 100,
+                  });
+                  const prevJob = jobs.jobs.find(j => j.name === jobName);
+                  if (prevJob) {
+                    const { data: log } = await github.rest.actions.downloadJobLogsForWorkflowRun({
+                      owner, repo, job_id: prevJob.id,
+                    });
+                    previous = parseAlerts(typeof log === 'string' ? log : Buffer.from(log).toString('utf8'));
+                  }
+                }
+              } catch (err) {
+                core.warning(`Could not read the previous run's alerts: ${err.message}`);
+              }
+
+              const repeated = [...current].filter(b => previous.has(b)).sort();
+              console.log(`Alerts this run: ${[...current].join(', ')}`);
+              console.log(`Alerts in previous run: ${[...previous].join(', ') || 'none'}`);
+              if (repeated.length === 0) {
+                core.notice(`No benchmark in ${suite} alerted on two runs in a row. Not reporting.`);
+                return;
+              }
+
+              body = [
+                `Bencher flagged these benchmarks in the nightly run (${suite}) on two runs in a row:`,
+                '',
+                ...repeated.map(b => `- \`${b}\``),
+                '',
+                `**Run:** ${runUrl}`,
+                `**Previous run:** ${previousUrl}`,
+                '',
+                'Please review the Bencher dashboard to confirm the regression.',
+              ].join('\n');
+            }
 
             const { data: openIssues } = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+              owner, repo,
               labels: 'performance',
               state: 'open',
               per_page: 100,
             });
-            const existing = openIssues.filter(i =>
-              i.title.startsWith('Benchmark regression')
-            );
-            if (existing.length > 0) {
-              console.log(`Skipping: open regression issue already exists (#${existing[0].number})`);
+            const existing = openIssues.find(i => i.title.startsWith('Benchmark regression'));
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: existing.number, body,
+              });
+              console.log(`Commented on open regression issue #${existing.number}`);
               return;
             }
 
-            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const today = new Date().toISOString().slice(0, 10);
             await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: title,
-              body: [
-                `Bencher detected a performance regression in the nightly benchmark run (${{ matrix.name }}).`,
-                '',
-                `**Run:** ${runUrl}`,
-                '',
-                'Please review the Bencher dashboard for details on which benchmarks regressed.',
-              ].join('\n'),
+              owner, repo,
+              title: `Benchmark regression - ${today}`,
+              body,
               labels: ['performance'],
             });

@@ -8,8 +8,8 @@ use crate::graph::types::Fact;
 use crate::storage::FACT_PAGE_FORMAT_PACKED;
 use crate::storage::btree::{read_aevt_index, read_avet_index, read_eavt_index, read_vaet_index};
 use crate::storage::btree_v6::{
-    MutexStorageBackend, OnDiskIndexReader, btree_entries, build_btree, merge_sorted_vecs,
-    stream_all_entries,
+    MutexStorageBackend, OnDiskIndexReader, btree_entries, build_btree, collect_leaf_pages,
+    rebuild_btree_incremental,
 };
 use crate::storage::cache::PageCache;
 use crate::storage::index::{AevtKey, AvetKey, EavtKey, FactRef, VaetKey, encode_value};
@@ -149,6 +149,10 @@ pub struct PersistentFactStorage<B: StorageBackend + 'static> {
     dirty: bool,
     last_checkpointed_tx_count: u64,
     committed_fact_pages: Arc<AtomicU64>,
+    /// CRC32 state after hashing fact pages `1..=n` (`n` is the first element).
+    /// Fact pages are never rewritten, so `save()` extends this instead of
+    /// re-reading them; `None` (or a stale `n`) falls back to a full pass (#315).
+    fact_prefix_crc: Option<(u64, Hasher)>,
 }
 
 impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
@@ -170,6 +174,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             dirty: false,
             last_checkpointed_tx_count: 0,
             committed_fact_pages,
+            fact_prefix_crc: None,
         };
 
         // Try to load existing data.
@@ -288,8 +293,26 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             let stored = header.index_checksum;
             // Total data pages: pages 1 through page_count-1 (everything except header)
             let total_data_pages = header.page_count.saturating_sub(1);
-            let full_checksum = compute_page_checksum(&*backend, 1, total_data_pages)?;
+            // Hash fact pages, keep that state for save() (#315), then the index pages.
+            let (full_checksum, fact_prefix) = if total_data_pages >= num_fact_pages {
+                let mut hasher = Hasher::new();
+                hash_pages(&*backend, &mut hasher, 1, num_fact_pages)?;
+                let prefix = hasher.clone();
+                let index_start = num_fact_pages
+                    .checked_add(1)
+                    .ok_or_else(|| err_coded!(ErrorCode::Stg021))?;
+                hash_pages(
+                    &*backend,
+                    &mut hasher,
+                    index_start,
+                    total_data_pages.saturating_sub(num_fact_pages),
+                )?;
+                (hasher.finalize(), Some(prefix))
+            } else {
+                (compute_page_checksum(&*backend, 1, total_data_pages)?, None)
+            };
             if full_checksum == stored {
+                self.fact_prefix_crc = fact_prefix.map(|p| (num_fact_pages, p));
                 false // new-style checksum matches: facts + indexes verified
             } else {
                 // Fall back: old files stored checksum over fact pages only
@@ -863,27 +886,18 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             Err(e) => bail_coded!(ErrorCode::Stg010, e),
         };
 
-        // Stream committed B+tree entries BEFORE writing new pages that may overlap
-        let committed_eavt: Vec<(EavtKey, FactRef)> = if curr_header.eavt_root_page != 0 {
-            stream_all_entries(curr_header.eavt_root_page, &*backend, &self.page_cache)?
-        } else {
-            Vec::new()
+        // Snapshot old B+tree leaves BEFORE writing new pages that may overlap them.
+        let old_leaves = |root: u64| -> Result<Vec<Arc<Vec<u8>>>> {
+            if root == 0 {
+                Ok(Vec::new())
+            } else {
+                collect_leaf_pages(root, &*backend, &self.page_cache)
+            }
         };
-        let committed_aevt: Vec<(AevtKey, FactRef)> = if curr_header.aevt_root_page != 0 {
-            stream_all_entries(curr_header.aevt_root_page, &*backend, &self.page_cache)?
-        } else {
-            Vec::new()
-        };
-        let committed_avet: Vec<(AvetKey, FactRef)> = if curr_header.avet_root_page != 0 {
-            stream_all_entries(curr_header.avet_root_page, &*backend, &self.page_cache)?
-        } else {
-            Vec::new()
-        };
-        let committed_vaet: Vec<(VaetKey, FactRef)> = if curr_header.vaet_root_page != 0 {
-            stream_all_entries(curr_header.vaet_root_page, &*backend, &self.page_cache)?
-        } else {
-            Vec::new()
-        };
+        let old_eavt = old_leaves(curr_header.eavt_root_page)?;
+        let old_aevt = old_leaves(curr_header.aevt_root_page)?;
+        let old_avet = old_leaves(curr_header.avet_root_page)?;
+        let old_vaet = old_leaves(curr_header.vaet_root_page)?;
 
         // Invalidate cached pages that will be overwritten (old index pages)
         self.page_cache.invalidate_from(new_fact_start);
@@ -917,41 +931,35 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             .checked_add(new_total_fact_pages)
             .ok_or_else(|| err_coded!(ErrorCode::Stg017))?;
 
-        let eavt_ser = if !committed_eavt.is_empty() {
-            btree_entries(merge_sorted_vecs(committed_eavt, pending_eavt))?
-        } else {
-            btree_entries(pending_eavt.into_iter())?
-        };
-        let (eavt_root, next1) = build_btree(
-            eavt_ser.into_iter(),
+        // Copy untouched leaves, repack only leaves that receive pending entries (#315).
+        let (eavt_root, next1) = rebuild_btree_incremental(
+            old_eavt,
+            pending_eavt,
             &mut *backend,
             &self.page_cache,
             index_start,
         )?;
-
-        let aevt_ser = if !committed_aevt.is_empty() {
-            btree_entries(merge_sorted_vecs(committed_aevt, pending_aevt))?
-        } else {
-            btree_entries(pending_aevt.into_iter())?
-        };
-        let (aevt_root, next2) =
-            build_btree(aevt_ser.into_iter(), &mut *backend, &self.page_cache, next1)?;
-
-        let avet_ser = if !committed_avet.is_empty() {
-            btree_entries(merge_sorted_vecs(committed_avet, pending_avet))?
-        } else {
-            btree_entries(pending_avet.into_iter())?
-        };
-        let (avet_root, next3) =
-            build_btree(avet_ser.into_iter(), &mut *backend, &self.page_cache, next2)?;
-
-        let vaet_ser = if !committed_vaet.is_empty() {
-            btree_entries(merge_sorted_vecs(committed_vaet, pending_vaet))?
-        } else {
-            btree_entries(pending_vaet.into_iter())?
-        };
-        let (vaet_root, next4) =
-            build_btree(vaet_ser.into_iter(), &mut *backend, &self.page_cache, next3)?;
+        let (aevt_root, next2) = rebuild_btree_incremental(
+            old_aevt,
+            pending_aevt,
+            &mut *backend,
+            &self.page_cache,
+            next1,
+        )?;
+        let (avet_root, next3) = rebuild_btree_incremental(
+            old_avet,
+            pending_avet,
+            &mut *backend,
+            &self.page_cache,
+            next2,
+        )?;
+        let (vaet_root, next4) = rebuild_btree_incremental(
+            old_vaet,
+            pending_vaet,
+            &mut *backend,
+            &self.page_cache,
+            next3,
+        )?;
 
         // Sync index pages to disk before writing the header.
         // The header update is the atomic commit point: once it's durable,
@@ -961,8 +969,29 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
 
         // CRC32 over ALL data pages (facts + indexes), excluding page 0 (header).
         // This detects corruption in both fact pages and B+tree index pages.
-        let total_data_pages = next4.saturating_sub(1);
-        let checksum = compute_page_checksum(&*backend, 1, total_data_pages)?;
+        // Fact pages 1..=old count are unchanged since the last save/load, so extend
+        // the cached CRC state instead of re-reading them (#315). Taking the cache
+        // means a failed save leaves None and the next save does a full pass.
+        let mut hasher = match self.fact_prefix_crc.take() {
+            Some((n, prefix)) if n == old_fact_page_count => {
+                let mut h = prefix;
+                hash_pages(&*backend, &mut h, new_fact_start, new_pages_len)?;
+                h
+            }
+            _ => {
+                let mut h = Hasher::new();
+                hash_pages(&*backend, &mut h, 1, new_total_fact_pages)?;
+                h
+            }
+        };
+        let new_prefix = hasher.clone();
+        hash_pages(
+            &*backend,
+            &mut hasher,
+            index_start,
+            next4.saturating_sub(index_start),
+        )?;
+        let checksum = hasher.finalize();
 
         // ── Step E: write header (last write = crash-safe boundary) ─────────────
         let mut header = FileHeader::new(); // version=7
@@ -991,6 +1020,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
 
         self.committed_fact_pages
             .store(new_total_fact_pages, Ordering::SeqCst);
+        self.fact_prefix_crc = Some((new_total_fact_pages, new_prefix));
         self.last_checkpointed_tx_count = self.storage.current_tx_count();
         self.dirty = false;
 
@@ -1105,14 +1135,24 @@ fn compute_page_checksum(
     num_pages: u64,
 ) -> Result<u32> {
     let mut hasher = Hasher::new();
+    hash_pages(backend, &mut hasher, first_page, num_pages)?;
+    Ok(hasher.finalize())
+}
+
+/// Feed pages `first_page..first_page + num_pages` into `hasher`.
+fn hash_pages(
+    backend: &dyn StorageBackend,
+    hasher: &mut Hasher,
+    first_page: u64,
+    num_pages: u64,
+) -> Result<()> {
     for i in 0..num_pages {
         let page_id = first_page
             .checked_add(i)
             .ok_or_else(|| err_coded!(ErrorCode::Stg021))?;
-        let page = backend.read_page(page_id)?;
-        hasher.update(&page);
+        hasher.update(&backend.read_page(page_id)?);
     }
-    Ok(hasher.finalize())
+    Ok(())
 }
 
 /// Compute CRC32 checksum over header bytes 0-79 (header_checksum field zeroed).
@@ -1265,8 +1305,186 @@ mod tests {
     use super::*;
     use crate::graph::types::Value;
     use crate::storage::backend::MemoryBackend;
+    use crate::storage::btree_v6::stream_all_entries;
     use std::io::Write;
     use uuid::Uuid;
+
+    /// All four on-disk indexes equal a from-scratch derivation from the fact pages,
+    /// and the stored checksum equals a full pass over pages 1..page_count.
+    fn assert_indexes_and_checksum_exact<B: StorageBackend + 'static>(
+        pfs: &PersistentFactStorage<B>,
+    ) {
+        let backend = pfs.backend.lock().unwrap();
+        let header = FileHeader::from_bytes(&backend.read_page(0).unwrap()).unwrap();
+        let full = compute_page_checksum(&*backend, 1, header.page_count - 1).unwrap();
+        assert_eq!(header.index_checksum, full, "stored checksum != full pass");
+
+        let (facts, refs) =
+            crate::storage::packed_pages::read_all_with_refs(&*backend, 1, header.fact_page_count)
+                .unwrap();
+        let (eavt, aevt, avet, vaet) = build_sorted_index_entries(&facts, &refs);
+        let cache = &pfs.page_cache;
+        let got_eavt: Vec<(EavtKey, FactRef)> =
+            stream_all_entries(header.eavt_root_page, &*backend, cache).unwrap();
+        let got_aevt: Vec<(AevtKey, FactRef)> =
+            stream_all_entries(header.aevt_root_page, &*backend, cache).unwrap();
+        let got_avet: Vec<(AvetKey, FactRef)> =
+            stream_all_entries(header.avet_root_page, &*backend, cache).unwrap();
+        let got_vaet: Vec<(VaetKey, FactRef)> =
+            stream_all_entries(header.vaet_root_page, &*backend, cache).unwrap();
+        assert!(
+            got_eavt.is_sorted_by(|a, b| a.0 <= b.0),
+            "EAVT not in key order"
+        );
+        assert!(
+            got_aevt.is_sorted_by(|a, b| a.0 <= b.0),
+            "AEVT not in key order"
+        );
+        assert!(
+            got_avet.is_sorted_by(|a, b| a.0 <= b.0),
+            "AVET not in key order"
+        );
+        assert!(
+            got_vaet.is_sorted_by(|a, b| a.0 <= b.0),
+            "VAET not in key order"
+        );
+        // One transaction can write the same (entity, attribute) twice, giving equal
+        // v7 keys (#371); their relative order is unspecified, so compare as sets.
+        fn by_key_then_ref<K: Ord>(mut v: Vec<(K, FactRef)>) -> Vec<(K, FactRef)> {
+            v.sort();
+            v
+        }
+        let (eavt, aevt, avet, vaet) = (
+            by_key_then_ref(eavt),
+            by_key_then_ref(aevt),
+            by_key_then_ref(avet),
+            by_key_then_ref(vaet),
+        );
+        let (got_eavt, got_aevt, got_avet, got_vaet) = (
+            by_key_then_ref(got_eavt),
+            by_key_then_ref(got_aevt),
+            by_key_then_ref(got_avet),
+            by_key_then_ref(got_vaet),
+        );
+        assert!(got_eavt == eavt, "EAVT differs from full derivation");
+        assert!(got_aevt == aevt, "AEVT differs from full derivation");
+        assert!(got_avet == avet, "AVET differs from full derivation");
+        assert!(got_vaet == vaet, "VAET differs from full derivation");
+    }
+
+    /// One transact of `n` facts: new and reused entities, strings and refs (VAET).
+    fn transact_mixed<B: StorageBackend + 'static>(
+        pfs: &mut PersistentFactStorage<B>,
+        entities: &mut Vec<Uuid>,
+        n: usize,
+        seed: u64,
+    ) {
+        let mut batch = Vec::new();
+        for i in 0..n {
+            let k = seed.wrapping_mul(31).wrapping_add(i as u64);
+            let e = if entities.is_empty() || k % 3 == 0 {
+                let e = Uuid::new_v4();
+                entities.push(e);
+                e
+            } else {
+                entities[(k as usize) % entities.len()]
+            };
+            let value = if k % 4 == 0 {
+                Value::Ref(entities[(k as usize / 4) % entities.len()])
+            } else {
+                Value::String(format!("v{k}"))
+            };
+            batch.push((e, format!(":a{}", k % 5), value));
+        }
+        pfs.storage().transact(batch, None).unwrap();
+        pfs.mark_dirty();
+    }
+
+    #[test]
+    fn test_incremental_saves_keep_indexes_and_checksum_exact() {
+        let mut pfs = PersistentFactStorage::new(MemoryBackend::new(), 256).unwrap();
+        let mut entities = Vec::new();
+        for round in 0..25u64 {
+            let n = 1 + ((round * 37) % 60) as usize;
+            transact_mixed(&mut pfs, &mut entities, n, round);
+            pfs.save().unwrap();
+            assert!(pfs.fact_prefix_crc.is_some(), "prefix cached after save");
+            assert_indexes_and_checksum_exact(&pfs);
+        }
+    }
+
+    #[test]
+    fn test_reopen_after_incremental_saves_takes_no_rebuild() {
+        use crate::storage::backend::FileBackend;
+        use tempfile::NamedTempFile;
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        let mut entities = Vec::new();
+        {
+            let mut pfs =
+                PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
+            for round in 0..10u64 {
+                transact_mixed(&mut pfs, &mut entities, 40, round);
+                pfs.save().unwrap();
+            }
+        }
+        let mut pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
+        // Set only when the full checksum matched on load, i.e. no rebuild.
+        assert!(
+            pfs.fact_prefix_crc.is_some(),
+            "full checksum must match on reopen"
+        );
+        transact_mixed(&mut pfs, &mut entities, 40, 99);
+        pfs.save().unwrap();
+        assert_indexes_and_checksum_exact(&pfs);
+    }
+
+    #[test]
+    fn test_prefix_cache_page_count_mismatch_falls_back() {
+        let mut pfs = PersistentFactStorage::new(MemoryBackend::new(), 256).unwrap();
+        let mut entities = Vec::new();
+        transact_mixed(&mut pfs, &mut entities, 50, 1);
+        pfs.save().unwrap();
+        pfs.fact_prefix_crc = Some((999, Hasher::new()));
+        transact_mixed(&mut pfs, &mut entities, 50, 2);
+        pfs.save().unwrap();
+        assert_indexes_and_checksum_exact(&pfs);
+    }
+
+    #[test]
+    fn test_prefix_cache_absent_after_rebuild_on_open() {
+        use crate::storage::backend::FileBackend;
+        use tempfile::NamedTempFile;
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        let mut entities = Vec::new();
+        {
+            let mut pfs =
+                PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
+            for round in 0..3u64 {
+                transact_mixed(&mut pfs, &mut entities, 30, round);
+                pfs.save().unwrap();
+            }
+        }
+        // Corrupt index_checksum (re-sealing the header) to force the rebuild path.
+        {
+            let mut backend = FileBackend::open(&path).unwrap();
+            let mut page = backend.read_page(0).unwrap();
+            page[64] ^= 0xFF;
+            let cs = compute_header_checksum_from_bytes(&page);
+            page[80..84].copy_from_slice(&cs.to_le_bytes());
+            backend.write_page(0, &page).unwrap();
+            backend.sync().unwrap();
+        }
+        let mut pfs = PersistentFactStorage::new(FileBackend::open(&path).unwrap(), 256).unwrap();
+        assert!(
+            pfs.fact_prefix_crc.is_none(),
+            "no prefix after rebuild-on-open"
+        );
+        transact_mixed(&mut pfs, &mut entities, 30, 7);
+        pfs.save().unwrap();
+        assert_indexes_and_checksum_exact(&pfs);
+    }
 
     #[test]
     fn test_page_cache_capacity_reflects_constructed_value() {

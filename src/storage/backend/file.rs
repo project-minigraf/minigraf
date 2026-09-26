@@ -1,5 +1,6 @@
 /// File-based storage backend for native platforms.
 use crate::error::{ErrorCode, bail_coded, err_coded};
+use crate::storage::dir_sync::sync_parent_dir;
 use crate::storage::{FileHeader, PAGE_SIZE, StorageBackend};
 use anyhow::Result;
 use std::fs::{File, OpenOptions};
@@ -285,9 +286,14 @@ impl FileBackend {
                 }
             }
         } else {
-            // New file or empty file: write initial header
+            // New file or empty file: write initial header, then make the
+            // file's directory entry durable. Without the directory sync a
+            // power loss can lose the whole file despite the header fsync
+            // (#389). An empty file left by a crash before this point takes
+            // this branch again on the next open, so the sync is repeated.
             let header = FileHeader::new();
             Self::write_header(&mut file, &header)?;
+            sync_parent_dir(&path)?;
             header
         };
 
@@ -854,5 +860,51 @@ mod tests {
             admitted, 1,
             "exactly one concurrent claimant should be admitted"
         );
+    }
+
+    // ── #389: parent-directory fsync ────────────────────────────────────────
+
+    #[test]
+    fn test_create_syncs_parent_dir_after_header_write() {
+        use crate::storage::dir_sync::take_sync_log;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("new.graph");
+        take_sync_log();
+
+        let backend = FileBackend::open(&path).unwrap();
+
+        let log = take_sync_log();
+        assert_eq!(
+            log.len(),
+            1,
+            "creating the file must sync its directory once"
+        );
+        assert_eq!(
+            log[0].dir,
+            dir.path(),
+            "must sync the file's parent directory"
+        );
+        assert!(
+            log[0].child_existed,
+            "directory sync must follow the create"
+        );
+        drop(backend);
+    }
+
+    #[test]
+    fn test_reopen_existing_does_not_sync_parent_dir() {
+        use crate::storage::dir_sync::take_sync_log;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("existing.graph");
+        drop(FileBackend::open(&path).unwrap());
+        take_sync_log();
+
+        let backend = FileBackend::open(&path).unwrap();
+
+        assert!(
+            take_sync_log().is_empty(),
+            "reopening an initialized file creates nothing, so needs no directory sync"
+        );
+        drop(backend);
     }
 }
