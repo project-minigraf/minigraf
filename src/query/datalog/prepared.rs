@@ -177,6 +177,24 @@ fn validate_clauses_no_attr_slots(clauses: &[WhereClause]) -> Result<()> {
 
 // ─── Slot collection ──────────────────────────────────────────────────────────
 
+/// Reject a query that still contains `$name` bind slots.
+///
+/// Called on the `execute()` path, where there are no bind values to substitute.
+/// Without this check the query would fail deep in the executor with an internal
+/// error, or quietly match nothing.
+pub(crate) fn reject_unbound_slots(query: &DatalogQuery) -> Result<()> {
+    let names = collect_slot_names(query);
+    if !names.is_empty() {
+        let list = names
+            .iter()
+            .map(|n| format!("${n}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        bail_coded!(ErrorCode::Api010, list);
+    }
+    Ok(())
+}
+
 fn collect_slot_names(query: &DatalogQuery) -> Vec<String> {
     let mut names: HashSet<String> = HashSet::new();
     if let Some(AsOf::Slot(name)) = &query.as_of {
@@ -196,6 +214,11 @@ fn collect_slots_from_clauses(clauses: &[WhereClause], names: &mut HashSet<Strin
         match clause {
             WhereClause::Pattern(p) => {
                 if let EdnValue::BindSlot(name) = &p.entity {
+                    names.insert(name.clone());
+                }
+                // `prepare()` rejects attribute slots before collecting, so this
+                // only matters for `reject_unbound_slots`.
+                if let AttributeSpec::Real(EdnValue::BindSlot(name)) = &p.attribute {
                     names.insert(name.clone());
                 }
                 if let EdnValue::BindSlot(name) = &p.value {

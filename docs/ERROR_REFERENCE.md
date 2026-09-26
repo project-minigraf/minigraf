@@ -151,6 +151,7 @@ with no `CodedError` anywhere in its chain.
 | API-007 | Only query commands can be prepared (rule) | Database API |
 | API-008 | Function registry lock poisoned | Database API |
 | API-009 | WAL not initialized | Database API |
+| API-010 | Query with bind slots passed to execute() | Database API |
 | INT-000 | Unclassified internal error | Internal |
 | INT-001 | WriteTransaction already in progress on this thread | Internal |
 | INT-002 | Invalid entity (API layer) | Internal |
@@ -2215,6 +2216,29 @@ db.execute("(rule [(ancestor ?x ?y) [?x :parent ?y]])")?;
 - File a bug report with the sequence of API calls that produced this error.
 
 **Scenario**: A code path in the library called a write operation before the WAL was set up during `Minigraf::open()`.
+
+### API-010 Query with bind slots passed to execute()
+
+**Error text**: `query contains bind slots ({}); use prepare() and execute the prepared query with bind values`
+
+**Cause**: The query contains one or more `$name` bind slots, but it was run with `db.execute()` (or `WriteTransaction::execute()`, or the REPL). Bind slots are placeholders for `db.prepare()`; `execute()` has no values to put in them. The `{}` lists the slots found, sorted by name.
+
+**Resolution**:
+- Prepare the query and supply a value for every slot:
+
+```rust
+let pq = db.prepare("(query [:find ?status :as-of $tx :valid-at $date \
+                     :where [$entity :employment/status ?status]])")?;
+let result = pq.execute(&[
+    ("tx", BindValue::TxCount(5)),
+    ("date", BindValue::Timestamp(1_704_067_200_000)),
+    ("entity", BindValue::Entity(alice_id)),
+])?;
+```
+
+- Or replace each `$name` with a literal value and keep using `execute()`.
+
+**Scenario**: A query copied from the prepared-query docs is pasted into the REPL or passed to `db.execute()` unchanged.
 
 ---
 
