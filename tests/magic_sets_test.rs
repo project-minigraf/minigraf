@@ -306,3 +306,70 @@ fn test_recursive_intermediate_variable_with_keyword_entity() {
         _ => panic!("expected QueryResults"),
     }
 }
+
+fn extract_keywords(result: QueryResult) -> Vec<String> {
+    match result {
+        QueryResult::QueryResults { results, .. } => {
+            let mut kws: Vec<String> = results
+                .into_iter()
+                .map(|row| match &row[0] {
+                    Value::Keyword(k) => k.clone(),
+                    _ => panic!("Expected Keyword in result row"),
+                })
+                .collect();
+            kws.sort();
+            kws
+        }
+        _ => panic!("Expected QueryResults"),
+    }
+}
+
+/// #297 (reopened) — the intermediate variable is bound by a call to another
+/// user-defined rule rather than a fact pattern. The magic propagation rule
+/// must keep that call in its body, otherwise `?mid` is unbound in its head.
+#[test]
+fn test_recursive_intermediate_variable_bound_by_rule_call() {
+    let db = open_db();
+
+    exec(
+        &db,
+        r#"(transact [[:a :next :b] [:b :next :c] [:x :next :y]])"#,
+    );
+    exec(&db, r#"(rule [(link ?x ?y) [?x :next ?y]])"#);
+    exec(&db, r#"(rule [(chain ?x ?y) (link ?x ?y)])"#);
+    exec(
+        &db,
+        r#"(rule [(chain ?x ?y) (link ?x ?mid) (chain ?mid ?y)])"#,
+    );
+
+    let bound = extract_keywords(exec(&db, r#"(query [:find ?y :where (chain :a ?y)])"#));
+    assert_eq!(bound, vec![":b".to_string(), ":c".to_string()]);
+
+    // Same answer as the pattern-bound form, which does not go through magic sets.
+    let via_pattern = extract_keywords(exec(
+        &db,
+        r#"(query [:find ?y :where [?a :next :b] (chain ?a ?y)])"#,
+    ));
+    assert_eq!(bound, via_pattern, "magic sets must not change results");
+}
+
+/// #297 (reopened) — left-recursive variant: the intermediate variable is bound
+/// by a preceding recursive call and then fed into another user rule.
+#[test]
+fn test_left_recursive_intermediate_variable_bound_by_rule_call() {
+    let db = open_db();
+
+    exec(
+        &db,
+        r#"(transact [[:a :next :b] [:b :next :c] [:x :next :y]])"#,
+    );
+    exec(&db, r#"(rule [(link ?x ?y) [?x :next ?y]])"#);
+    exec(&db, r#"(rule [(path ?x ?y) (link ?x ?y)])"#);
+    exec(
+        &db,
+        r#"(rule [(path ?x ?y) (path ?x ?mid) (link ?mid ?y)])"#,
+    );
+
+    let bound = extract_keywords(exec(&db, r#"(query [:find ?y :where (path :a ?y)])"#));
+    assert_eq!(bound, vec![":b".to_string(), ":c".to_string()]);
+}
