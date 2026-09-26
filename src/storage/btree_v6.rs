@@ -450,6 +450,202 @@ pub fn merge_sorted_vecs<T: Ord>(a: Vec<T>, b: Vec<T>) -> impl Iterator<Item = T
     })
 }
 
+// ─── Incremental rebuild (#315) ───────────────────────────────────────────────
+
+/// Collect the raw leaf pages of the B+tree at `root_page_id`, in key order.
+///
+/// `save()` calls this before writing anything: new fact pages overwrite the
+/// start of the old index region, so the old leaves must be snapshotted first.
+pub fn collect_leaf_pages(
+    root_page_id: u64,
+    backend: &dyn StorageBackend,
+    cache: &PageCache,
+) -> Result<Vec<Arc<Vec<u8>>>> {
+    let mut leaves = Vec::new();
+    let mut leaf_id = find_leftmost_leaf(root_page_id, backend, cache)?;
+    loop {
+        let page = cache.get_or_load(leaf_id, backend)?;
+        if page.first().copied() != Some(PAGE_TYPE_LEAF) {
+            bail_coded!(
+                ErrorCode::Int049,
+                format!("collect_leaf_pages: expected leaf page at page_id={leaf_id}")
+            );
+        }
+        let next_leaf = read_u64_at(&page[..], 4)?;
+        leaves.push(page);
+        if next_leaf == 0 {
+            break;
+        }
+        leaf_id = next_leaf;
+    }
+    Ok(leaves)
+}
+
+/// Decode the key of a leaf's first entry; `None` for an empty leaf.
+#[allow(clippy::arithmetic_side_effects)]
+fn leaf_first_key<K>(page: &[u8]) -> Result<Option<K>>
+where
+    K: for<'de> Deserialize<'de>,
+{
+    if read_u16_at(page, 2)? == 0 {
+        return Ok(None);
+    }
+    let offset = read_u16_at(page, LEAF_HEADER_SIZE)? as usize;
+    let length = read_u16_at(page, LEAF_HEADER_SIZE + 2)? as usize;
+    let slice = page
+        .get(offset..offset.saturating_add(length))
+        .ok_or_else(|| {
+            err_coded!(
+                ErrorCode::Int049,
+                format!("first entry out of bounds: offset={offset} len={length}")
+            )
+        })?;
+    let (key, _): (K, FactRef) = postcard::from_bytes(slice)?;
+    Ok(Some(key))
+}
+
+/// Writes leaf pages at consecutive page ids, linking each to the next.
+///
+/// One page is held back so its `next_leaf` can be set to the following page
+/// id, or to 0 once it is known to be the last leaf.
+struct LeafEmitter<'a> {
+    backend: &'a mut dyn StorageBackend,
+    cache: &'a PageCache,
+    next_page: u64,
+    held: Option<(u64, Vec<u8>)>,
+    infos: Vec<(u64, Vec<u8>)>,
+}
+
+impl LeafEmitter<'_> {
+    #[allow(clippy::arithmetic_side_effects)]
+    fn push(&mut self, page: Vec<u8>, first_key_bytes: Vec<u8>) -> Result<()> {
+        let page_id = self.next_page;
+        self.next_page += 1;
+        self.release_held(page_id)?;
+        self.held = Some((page_id, page));
+        self.infos.push((page_id, first_key_bytes));
+        Ok(())
+    }
+
+    fn release_held(&mut self, next_leaf: u64) -> Result<()> {
+        if let Some((page_id, mut page)) = self.held.take() {
+            page.get_mut(4..12)
+                .ok_or_else(|| {
+                    err_coded!(
+                        ErrorCode::Int049,
+                        "page too small to write next_leaf".to_string()
+                    )
+                })?
+                .copy_from_slice(&next_leaf.to_le_bytes());
+            self.backend.write_page(page_id, &page)?;
+            self.cache.put_dirty(page_id, page);
+        }
+        Ok(())
+    }
+
+    /// Write the last held leaf and return `(leaf_infos, next_free_page_id)`.
+    fn finish(mut self) -> Result<(Vec<(u64, Vec<u8>)>, u64)> {
+        self.release_held(0)?;
+        Ok((self.infos, self.next_page))
+    }
+}
+
+/// Serialise sorted entries and emit them as leaves using `build_btree`'s fill rule.
+#[allow(clippy::arithmetic_side_effects)]
+fn emit_packed<K: Serialize>(
+    emitter: &mut LeafEmitter<'_>,
+    entries: impl Iterator<Item = (K, FactRef)>,
+) -> Result<()> {
+    let mut cur: Vec<Vec<u8>> = Vec::new();
+    let mut cur_bytes = 0usize;
+    let mut cur_first: Option<Vec<u8>> = None;
+    for (key, fact_ref) in entries {
+        let entry = postcard::to_allocvec(&(&key, &fact_ref))?;
+        if !cur.is_empty() && leaf_overflows(cur.len(), cur_bytes, entry.len()) {
+            let first = cur_first.take().ok_or_else(|| {
+                err_coded!(ErrorCode::Int049, "BUG: leaf without first key".to_string())
+            })?;
+            emitter.push(encode_leaf_page(&cur, 0)?, first)?;
+            cur.clear();
+            cur_bytes = 0;
+        }
+        if cur_first.is_none() {
+            cur_first = Some(postcard::to_allocvec(&key)?);
+        }
+        cur_bytes += entry.len();
+        cur.push(entry);
+    }
+    if let Some(first) = cur_first {
+        emitter.push(encode_leaf_page(&cur, 0)?, first)?;
+    }
+    Ok(())
+}
+
+/// Rebuild a B+tree from its old leaves plus sorted `pending` entries.
+///
+/// Leaves that receive no pending entry are copied verbatim (only `next_leaf`
+/// is patched); only leaves that do are decoded, merged and repacked. Internal
+/// levels are rebuilt from scratch. Pending keys route to leaf `i` when
+/// `first_key[i] <= key < first_key[i + 1]`; keys below the first leaf's first
+/// key go to leaf 0. With no non-empty old leaves this is a plain bulk build.
+///
+/// `old_leaves` must be snapshotted (see [`collect_leaf_pages`]) before any
+/// page in `start_page_id..` is written. Returns `(root_page_id, next_free_page_id)`.
+pub fn rebuild_btree_incremental<K>(
+    old_leaves: Vec<Arc<Vec<u8>>>,
+    pending: Vec<(K, FactRef)>,
+    backend: &mut dyn StorageBackend,
+    cache: &PageCache,
+    start_page_id: u64,
+) -> Result<(u64, u64)>
+where
+    K: Serialize + for<'de> Deserialize<'de> + Ord,
+{
+    let mut leaves: Vec<(Arc<Vec<u8>>, K)> = Vec::with_capacity(old_leaves.len());
+    for page in old_leaves {
+        if let Some(first_key) = leaf_first_key::<K>(&page[..])? {
+            leaves.push((page, first_key));
+        }
+    }
+    if leaves.is_empty() {
+        return build_btree(
+            btree_entries(pending.into_iter())?.into_iter(),
+            backend,
+            cache,
+            start_page_id,
+        );
+    }
+
+    let mut emitter = LeafEmitter {
+        backend: &mut *backend,
+        cache,
+        next_page: start_page_id,
+        held: None,
+        infos: Vec::new(),
+    };
+    let mut pending = pending.into_iter().peekable();
+    for (i, (page, first_key)) in leaves.iter().enumerate() {
+        let upper = leaves.get(i.saturating_add(1)).map(|(_, k)| k);
+        let mut batch = Vec::new();
+        while let Some((key, _)) = pending.peek() {
+            if upper.is_some_and(|u| key >= u) {
+                break;
+            }
+            if let Some(entry) = pending.next() {
+                batch.push(entry);
+            }
+        }
+        if batch.is_empty() {
+            emitter.push((**page).clone(), postcard::to_allocvec(first_key)?)?;
+        } else {
+            let old = read_leaf_entries::<K>(&page[..])?;
+            emit_packed(&mut emitter, merge_sorted_vecs(old, batch))?;
+        }
+    }
+    let (leaf_infos, next_page) = emitter.finish()?;
+    build_internal_levels(leaf_infos, backend, cache, next_page)
+}
+
 // ─── Leaf traversal helpers ───────────────────────────────────────────────────
 
 /// Traverse internal nodes from `root` to find the leftmost (first) leaf page.
@@ -837,6 +1033,218 @@ mod tests {
                 slot_index: 0,
             },
         )
+    }
+
+    /// Deterministic xorshift64 so randomized tests are reproducible without deps.
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            let mut x = self.0;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            self.0 = x;
+            x
+        }
+    }
+
+    /// `n` EAVT entries with random entities; `counter` keeps keys unique.
+    fn random_eavt(rng: &mut Rng, n: usize, counter: &mut u64) -> Vec<(EavtKey, FactRef)> {
+        let mut v: Vec<(EavtKey, FactRef)> = (0..n)
+            .map(|_| {
+                *counter += 1;
+                let entity = (u128::from(rng.next()) << 64) | u128::from(*counter);
+                make_eavt(entity, ":attr", *counter)
+            })
+            .collect();
+        v.sort();
+        v
+    }
+
+    fn sorted_union(a: &[(EavtKey, FactRef)], b: &[(EavtKey, FactRef)]) -> Vec<(EavtKey, FactRef)> {
+        let mut v: Vec<_> = a.iter().chain(b.iter()).cloned().collect();
+        v.sort();
+        v
+    }
+
+    /// Build `committed` at page 1, then rebuild with `pending` starting at `start`.
+    fn build_then_incremental(
+        committed: &[(EavtKey, FactRef)],
+        pending: &[(EavtKey, FactRef)],
+        start: u64,
+    ) -> (MemoryBackend, PageCache, u64, u64) {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(4096);
+        let ser = btree_entries(committed.iter().cloned()).unwrap();
+        let (old_root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        let leaves = collect_leaf_pages(old_root, &backend, &cache).unwrap();
+        let (root, next_free) =
+            rebuild_btree_incremental(leaves, pending.to_vec(), &mut backend, &cache, start)
+                .unwrap();
+        (backend, cache, root, next_free)
+    }
+
+    /// Stream equality, a next_leaf chain of non-empty leaves, and range_scan
+    /// agreement on random bounds.
+    fn assert_tree_exact(
+        root: u64,
+        backend: &MemoryBackend,
+        cache: &PageCache,
+        expected: &[(EavtKey, FactRef)],
+        rng: &mut Rng,
+    ) {
+        let got: Vec<(EavtKey, FactRef)> = stream_all_entries(root, backend, cache).unwrap();
+        assert_eq!(got.len(), expected.len(), "entry count differs");
+        assert!(got == expected, "streamed entries differ from expected");
+
+        let leaves = collect_leaf_pages(root, backend, cache).unwrap();
+        if expected.is_empty() {
+            assert_eq!(leaves.len(), 1, "empty tree is one empty leaf");
+        } else {
+            for page in &leaves {
+                assert!(read_u16_at(&page[..], 2).unwrap() > 0, "empty leaf in tree");
+            }
+        }
+
+        for _ in 0..20 {
+            if expected.is_empty() {
+                break;
+            }
+            let a = (rng.next() as usize) % expected.len();
+            let b = (rng.next() as usize) % expected.len();
+            let (lo, hi) = (a.min(b), a.max(b));
+            let start = &expected[lo].0;
+            let end = &expected[hi].0;
+            let want: Vec<FactRef> = expected[lo..hi].iter().map(|(_, r)| *r).collect();
+            let refs = range_scan(root, start, Some(end), backend, cache).unwrap();
+            assert!(refs == want, "range_scan differs from expected slice");
+        }
+    }
+
+    #[test]
+    fn test_incremental_no_pending_copies_leaves_verbatim() {
+        let mut rng = Rng(0x315);
+        let mut ctr = 0;
+        let committed = random_eavt(&mut rng, 2000, &mut ctr);
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(4096);
+        let ser = btree_entries(committed.iter().cloned()).unwrap();
+        let (old_root, old_next) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        let old_leaves = collect_leaf_pages(old_root, &backend, &cache).unwrap();
+        let (root, _) = rebuild_btree_incremental(
+            old_leaves.clone(),
+            Vec::<(EavtKey, FactRef)>::new(),
+            &mut backend,
+            &cache,
+            old_next,
+        )
+        .unwrap();
+        let new_leaves = collect_leaf_pages(root, &backend, &cache).unwrap();
+        assert_eq!(new_leaves.len(), old_leaves.len(), "leaf count changed");
+        for (o, n) in old_leaves.iter().zip(new_leaves.iter()) {
+            assert!(o[..4] == n[..4], "leaf header prefix changed");
+            assert!(o[12..] == n[12..], "leaf body changed");
+        }
+        assert_tree_exact(root, &backend, &cache, &committed, &mut rng);
+    }
+
+    #[test]
+    fn test_incremental_matches_merge_random() {
+        let mut rng = Rng(0xC0FFEE);
+        let mut ctr = 0;
+        for _ in 0..40 {
+            let n_committed = (rng.next() % 3000) as usize;
+            let committed = random_eavt(&mut rng, n_committed, &mut ctr);
+            let n_pending = (rng.next() % 200) as usize;
+            let pending = random_eavt(&mut rng, n_pending, &mut ctr);
+            let (backend, cache, root, _) = build_then_incremental(&committed, &pending, 5000);
+            let expected = sorted_union(&committed, &pending);
+            assert_tree_exact(root, &backend, &cache, &expected, &mut rng);
+        }
+    }
+
+    #[test]
+    fn test_incremental_pending_outside_old_range() {
+        let mut rng = Rng(7);
+        let committed: Vec<_> = (1000u128..3000)
+            .map(|n| make_eavt(n, ":a", n as u64))
+            .collect();
+        let pending = vec![
+            make_eavt(1, ":a", 1),
+            make_eavt(2, ":a", 2),
+            make_eavt(9_000, ":a", 9_000),
+            make_eavt(9_001, ":a", 9_001),
+        ];
+        let (backend, cache, root, _) = build_then_incremental(&committed, &pending, 5000);
+        let expected = sorted_union(&committed, &pending);
+        assert_tree_exact(root, &backend, &cache, &expected, &mut rng);
+    }
+
+    #[test]
+    fn test_incremental_many_pending_into_one_leaf_splits() {
+        let mut rng = Rng(11);
+        // Committed entities are 0, 10_000, 20_000, …: every pending 0 < e < 10_000
+        // routes to leaf 0, which must split into several leaves.
+        let committed: Vec<_> = (0u128..2000)
+            .map(|n| make_eavt(n * 10_000, ":a", n as u64 + 1))
+            .collect();
+        let pending: Vec<_> = (1u128..3000)
+            .map(|n| make_eavt(n, ":a", 100_000 + n as u64))
+            .collect();
+        let (backend, cache, root, _) = build_then_incremental(&committed, &pending, 5000);
+        let expected = sorted_union(&committed, &pending);
+        assert_tree_exact(root, &backend, &cache, &expected, &mut rng);
+    }
+
+    #[test]
+    fn test_incremental_empty_old_tree_falls_back_to_bulk_build() {
+        let mut rng = Rng(13);
+        let mut ctr = 0;
+        let pending = random_eavt(&mut rng, 500, &mut ctr);
+        let (backend, cache, root, _) = build_then_incremental(&[], &pending, 5000);
+        assert_tree_exact(root, &backend, &cache, &pending, &mut rng);
+        // Nothing old, nothing new: still a valid single empty leaf.
+        let (backend, cache, root, next) = build_then_incremental(&[], &[], 5000);
+        assert_eq!(next, root + 1, "empty result is one page");
+        assert_tree_exact(root, &backend, &cache, &[], &mut rng);
+    }
+
+    #[test]
+    fn test_incremental_new_tree_overlaps_old_pages() {
+        // save() writes the new tree over the old tree's pages; old leaves are
+        // snapshotted first, so the result must still be exact.
+        let mut rng = Rng(17);
+        let mut ctr = 0;
+        let committed = random_eavt(&mut rng, 3000, &mut ctr);
+        let pending = random_eavt(&mut rng, 100, &mut ctr);
+        let (backend, cache, root, _) = build_then_incremental(&committed, &pending, 3);
+        let expected = sorted_union(&committed, &pending);
+        assert_tree_exact(root, &backend, &cache, &expected, &mut rng);
+    }
+
+    #[test]
+    fn test_incremental_repeated_rounds() {
+        // Each round consumes the previous round's incrementally built tree,
+        // writing the new tree over the old pages like save() does.
+        let mut rng = Rng(19);
+        let mut ctr = 0;
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(4096);
+        let mut expected = random_eavt(&mut rng, 1500, &mut ctr);
+        let ser = btree_entries(expected.iter().cloned()).unwrap();
+        let (mut root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        for round in 0..30u64 {
+            let n_pending = 1 + (rng.next() % 150) as usize;
+            let pending = random_eavt(&mut rng, n_pending, &mut ctr);
+            let leaves = collect_leaf_pages(root, &backend, &cache).unwrap();
+            let start = 1 + round % 3;
+            let (r, _) =
+                rebuild_btree_incremental(leaves, pending.clone(), &mut backend, &cache, start)
+                    .unwrap();
+            root = r;
+            expected = sorted_union(&expected, &pending);
+            assert_tree_exact(root, &backend, &cache, &expected, &mut rng);
+        }
     }
 
     #[test]
