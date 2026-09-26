@@ -17,6 +17,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two values of the same attribute written in one transaction are both returned by every query path. Previously only one came back, and entity-bound and attribute-bound queries could return different ones (#371, #287).
 - A retract that removes several values of one attribute in one call now hides all of them (#371).
 
+## Unreleased on v2.x (main) — v2.0.2
+
+These changes ship first in v2.0.2 from `main` and are merged into the `v3` branch.
+
+### Performance
+
+- **Bound-entity point queries no longer pay for other attributes' history (#323).** `[:e :attr ?v]` now range-scans only `(e, :attr)` in the EAVT index instead of every record the entity has ever written. Reading a rarely changed attribute of a heavily rewritten entity no longer slows down as that entity's history grows: with 2,000 retract/reassert cycles on another attribute of the same entity, it drops from 4.58 ms to 19.0 µs. Reading the heavily rewritten attribute itself, and attribute scans (`[?e :attr ?v]`), are about 1.35–1.4× faster (4.64 ms → 3.36 ms), from cheaper net-assert grouping and removing a redundant dedup pass. The file format is unchanged.
+- **Attribute scans are bounded to exactly the queried attribute (#381).** `[?e :attr ?v]` computed the end of its AEVT range by incrementing the attribute's last byte. For attributes whose last byte is `0x7F` or `0xBF` — including about 1 in 64 non-ASCII characters, such as `:丿` or `:ÿ` — the result was not valid UTF-8, so the scan ran to the end of the whole AEVT index and read every later fact before filtering. It also read facts for prefix siblings (`:ab`, `:a/b` when scanning `:a`). The range now ends at `attribute + "\0"`, which covers exactly one attribute. Scanning 100 `:丿` facts in a checkpointed file with 40,000 facts on neighbouring attributes drops from 45.4 ms to 251 µs. Results are unchanged.
+
+- **Checkpoints no longer re-encode the whole index (#315).** `checkpoint()` decoded and re-serialised every entry of all four covering indexes and re-read every page of the file for its checksum, so checkpointing after one new fact cost almost as much as after thousands. Index leaves that receive no new entries are now copied verbatim, only the leaves that do are decoded and re-split, and unchanged fact pages are no longer re-hashed. Leaves are still bounds-checked and the leaf chain is checked for cycles, so a damaged index fails the checkpoint instead of being copied forward. Checkpoint after one new fact drops from 246 ms to 26.3 ms on a 100k-fact file and from 23.9 ms to 4.0 ms at 10k. Cost still grows with graph size, because the index pages are copied on every checkpoint; the file format is unchanged. The `checkpoint()` and `wal_checkpoint_threshold` docs now state that a checkpoint is not a durability boundary: the WAL is already crash-durable.
+
+### Fixed
+
+- **A power loss could lose a new database or WAL file, or bring back a deleted WAL (#389).** On Linux and other POSIX systems, a created or deleted file survives a power loss only once its parent directory is fsynced; Minigraf fsynced file contents but never a directory. Creating the `.graph` file or the `<db>.wal` sidecar, and deleting the WAL after a checkpoint, now fsync the parent directory after the file operation. A resurrected WAL was already harmless, since replay skips entries at or below the last checkpointed transaction, but a lost `.graph` or WAL lost committed data. Windows needs no directory sync and is unchanged. Process kills were never affected, because they leave the OS page cache intact.
+- **Recursive rules failed with a literal start when the recursion goes through another rule (#297).** `(query [:find ?y :where (chain :a ?y)])` over `(chain ?x ?y) :- (link ?x ?mid) (chain ?mid ?y)` failed with `Unbound variable in rule head: ?mid` (INT-022). The magic-sets rewrite, which runs when a rule argument is given as a literal, dropped earlier rule calls from the rules that pass bindings to the next call, so a variable bound only by such a call (here `?mid`, bound by `link`) was never bound. #300 fixed the case where a fact pattern binds it. Those calls are now kept, and results match the same query without a literal start.
+- **Bound-entity queries could drop rows when one `WriteTransaction` wrote the same attribute in several valid-time windows (#323).** Both facts share a `tx_count`, and the selective lookup path de-duplicated on `(entity, attribute, tx_count, asserted)`, so one window's value was silently lost, while the same query via a full scan returned both. That de-duplication has been removed, and bound-entity queries now always match a full scan.
+
+### Documentation
+
+- **Unsafe WAL recovery advice removed from `docs/ERROR_REFERENCE.md`.** The WAL-001, WAL-002 and STG-011 resolutions said a `.wal` file could be deleted with no data loss, or that a database could be rebuilt from the WAL alone. Both are wrong: transactions committed since the last checkpoint exist only in the WAL, and the WAL holds nothing older than that checkpoint. The resolutions now say to copy both files first, to checkpoint with the version that wrote the WAL, and what is lost if the WAL is deleted.
+- CLAUDE.md now matches the milestones (v2.0.2 final v2.x release, v3.0.0 format v8 and data integrity, v3.1.0 features) and documents `error.rs`, `magic_sets.rs`, `fault_inject.rs` and `src/browser/`. ROADMAP lists #405 and #407 in the v2.0.2 scope.
+- README: MSRV (1.89) stated, v2.x known issue (#371) shown near the top, Maven coordinates corrected to `io.github.project-minigraf`, Android listed on Maven Central, and binding download locations point to the binding repos.
+- `.github/SECURITY.md` lists 2.x as the supported line. About 50 broken wiki links in `docs/ERROR_REFERENCE.md` now use full wiki URLs.
+
+### Notes
+
+- On v2.x, reading a heavily rewritten attribute still costs time proportional to its history, because v7 index keys carry neither the value nor the assert/retract flag; the structural fix needs the v8 keys and is tracked for v3.0.0 in #379.
+- Checkpoints on v2.x still copy every index page, so their cost grows with graph size. Copy-on-write index pages on the v3 branch, which also make `save()` crash-atomic, are needed for checkpoints proportional to the change alone (#374).
+
+## v2.0.1 — 2026-09-25
+
+Patch release on the v2.x line. File format is unchanged (v7); no API changes.
+
+### Fixed
+
+- **Entity-bound lookups could silently return nothing after an index rebuild on open (#370).** When the index checksum does not match on open (for example after a process was killed during `save()`), Minigraf rebuilds all four indexes from the fact pages. The rebuild computed each fact's location by re-packing all facts contiguously, but a file written by several checkpoints has partially filled pages that a contiguous re-pack does not reproduce. From the second checkpoint onward, rebuilt index entries pointed at the wrong page/slot: entity-bound queries (`[:some/ident ?a ?v]`) returned `[]` or errored while attribute-driven queries still worked, and `checkpoint()` copied the bad entries forward. The rebuild now reads each fact's real on-disk location (#372).
+
+### Known issues
+
+- Files whose indexes were already rebuilt with wrong locations by v2.0.0 are not repaired by this release. A public integrity check and rebuild-indexes-from-fact-pages operation is tracked in #373; a crash-atomic `save()` in #374.
+- Two values of the same attribute for one entity written in a single `transact` (or retracted in a single `retract`) can read back as one value, differently per query path (#371, #287). The fix changes the index key layout (file format v8) and ships in v3.0.0. Workaround on v2.x: write or retract each value of a multi-valued attribute in its own call.
+
 ## v2.0.0 — 2026-08-26
 
 This was originally slated as v1.3.0, matching the GitHub milestone name under

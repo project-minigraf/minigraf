@@ -368,30 +368,26 @@ impl DatalogExecutor {
 
     /// Attempt a selective index-backed fact fetch for the given patterns.
     ///
-    /// For each pattern, prefer a bound entity literal (UUID or keyword -> deterministic UUID)
-    /// over a bound attribute keyword for that same pattern. Entity lookups are usually more
-    /// selective, but multi-pattern joins still need attribute candidates for patterns that do not
-    /// bind an entity. If any pattern has neither a bound entity nor a bound attribute, or if the
-    /// distinct lookup count exceeds `threshold`, returns `None` to use a full scan. Otherwise
-    /// returns `Some(facts)`, deduplicated by `(entity, attribute, tx_count, asserted, value)`.
+    /// Patterns with a bound entity literal (UUID or keyword → deterministic UUID) are
+    /// fetched by entity; if every pattern on that entity also binds a concrete attribute
+    /// keyword, only those `(entity, attribute)` EAVT ranges are read, so other attributes'
+    /// version history is never resolved (#323). An entity also referenced with a variable
+    /// or pseudo-attribute is read whole. Patterns without a bound entity are fetched by
+    /// attribute. If any pattern has neither, returns `None` (full scan).
+    ///
+    /// Lookup budget: if narrowing needs more than `threshold` lookups, every entity falls
+    /// back to a single whole-entity scan; only if that still exceeds `threshold` does this
+    /// return `None`. Narrowing therefore never turns a selective query into a full scan.
+    ///
+    /// Results are not deduplicated: the sole caller feeds them to `net_asserted_facts`,
+    /// which is idempotent under duplicated records.
     fn selective_fact_fetch(&self, patterns: &[Pattern], threshold: usize) -> Option<Vec<Fact>> {
-        use std::collections::HashSet;
+        use std::collections::{BTreeMap, BTreeSet};
 
-        // Dedup key: (entity, attribute, tx_count, asserted, encoded value,
-        // valid_from, valid_to). `asserted` keeps an assertion and a
-        // retraction from the same WriteTransaction apart; the encoded value
-        // keeps two values of one attribute written in the same transaction
-        // apart (#371). Uses `encode_value` bytes rather than `Value` to
-        // avoid Float hashing. `valid_from`/`valid_to` keep two distinct
-        // valid-time stints of the same (entity, attribute, value, tx_count,
-        // asserted) tuple apart — without them, two per-fact valid-time
-        // windows on the same value in one transaction collapse into a
-        // single arbitrary survivor and the other window's row is silently
-        // dropped from `:valid-at` and `:any-valid-time` results (#371).
-        type FactDedupKey = (uuid::Uuid, String, u64, bool, Vec<u8>, i64, i64);
-
-        let mut entity_ids: HashSet<uuid::Uuid> = HashSet::new();
-        let mut attributes: HashSet<String> = HashSet::new();
+        // Per bound entity: Some(attrs) = only these attributes are referenced;
+        // None = the whole entity is needed. BTree* for deterministic lookup order.
+        let mut entity_attrs: BTreeMap<uuid::Uuid, Option<BTreeSet<String>>> = BTreeMap::new();
+        let mut attributes: BTreeSet<String> = BTreeSet::new();
 
         for pattern in patterns {
             let bound_entity = match &pattern.entity {
@@ -401,7 +397,17 @@ impl DatalogExecutor {
             };
 
             if let Some(uid) = bound_entity {
-                entity_ids.insert(uid);
+                let slot = entity_attrs
+                    .entry(uid)
+                    .or_insert_with(|| Some(BTreeSet::new()));
+                match &pattern.attribute {
+                    AttributeSpec::Real(EdnValue::Keyword(attr)) => {
+                        if let Some(attrs) = slot {
+                            attrs.insert(attr.clone());
+                        }
+                    }
+                    _ => *slot = None,
+                }
                 continue;
             }
 
@@ -412,56 +418,40 @@ impl DatalogExecutor {
             }
         }
 
-        let total = entity_ids.len() + attributes.len();
+        let narrowed_lookups: usize = entity_attrs
+            .values()
+            .map(|a| a.as_ref().map_or(1, BTreeSet::len))
+            .sum::<usize>()
+            + attributes.len();
+        let narrow = narrowed_lookups <= threshold;
+        let total = if narrow {
+            narrowed_lookups
+        } else {
+            entity_attrs.len() + attributes.len()
+        };
         if total == 0 || total > threshold {
             return None;
         }
 
-        let mut seen: HashSet<FactDedupKey> = HashSet::new();
         let mut all_facts: Vec<Fact> = Vec::new();
 
-        for uid in &entity_ids {
-            match self.storage.get_facts_by_entity(uid) {
-                Ok(facts) => {
-                    for fact in facts {
-                        let key = (
-                            fact.entity,
-                            fact.attribute.clone(),
-                            fact.tx_count,
-                            fact.asserted,
-                            crate::storage::index::encode_value(&fact.value),
-                            fact.valid_from,
-                            fact.valid_to,
+        for (uid, attrs) in &entity_attrs {
+            match attrs {
+                Some(attrs) if narrow => {
+                    for attr in attrs {
+                        all_facts.extend(
+                            self.storage
+                                .get_facts_by_entity_attribute_indexed(uid, attr)
+                                .ok()?,
                         );
-                        if seen.insert(key) {
-                            all_facts.push(fact);
-                        }
                     }
                 }
-                Err(_) => return None,
+                _ => all_facts.extend(self.storage.get_facts_by_entity(uid).ok()?),
             }
         }
 
         for attr in &attributes {
-            match self.storage.get_facts_by_attribute(attr) {
-                Ok(facts) => {
-                    for fact in facts {
-                        let key = (
-                            fact.entity,
-                            fact.attribute.clone(),
-                            fact.tx_count,
-                            fact.asserted,
-                            crate::storage::index::encode_value(&fact.value),
-                            fact.valid_from,
-                            fact.valid_to,
-                        );
-                        if seen.insert(key) {
-                            all_facts.push(fact);
-                        }
-                    }
-                }
-                Err(_) => return None,
-            }
+            all_facts.extend(self.storage.get_facts_by_attribute(attr).ok()?);
         }
 
         Some(all_facts)
@@ -3909,8 +3899,21 @@ mod tests {
         let facts = executor.filter_facts_for_query(&query).unwrap();
         assert_eq!(
             facts.len(),
+            1,
+            "bound entity + attribute query should fetch only that (entity, attribute) pair (#323)"
+        );
+
+        // A variable attribute on the same bound entity still needs the whole entity.
+        let query = match parse_datalog_command("(query [:find ?a ?v :where [:e0 ?a ?v]])").unwrap()
+        {
+            DatalogCommand::Query(query) => query,
+            _ => panic!("expected query"),
+        };
+        let facts = executor.filter_facts_for_query(&query).unwrap();
+        assert_eq!(
+            facts.len(),
             2,
-            "bound entity + attribute query should fetch only the bound entity's facts"
+            "bound entity + variable attribute should fetch all of the entity's facts"
         );
     }
 
