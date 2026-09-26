@@ -22,7 +22,7 @@ mod helpers;
 #[cfg(not(target_arch = "wasm32"))]
 mod simd_helpers;
 
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group};
 use minigraf::OpenOptions;
 
 // ── Task 3: insert/ ───────────────────────────────────────────────────────────
@@ -1838,4 +1838,9 @@ criterion_group!(
     bench_point_query_chain_depth, // Issue #323
     bench_simd,                    // Issue #229
 );
-criterion_main!(benches);
+// Expanded `criterion_main!` so the shared file fixtures are removed at exit.
+fn main() {
+    benches();
+    Criterion::default().configure_from_args().final_summary();
+    helpers::remove_file_fixtures();
+}

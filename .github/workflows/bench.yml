@@ -17,13 +17,13 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo registry
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -33,7 +33,7 @@ jobs:
             ${{ runner.os }}-cargo-bench-
 
       - name: Cache bench target
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: target
           key: ${{ runner.os }}-bench-target-${{ hashFiles('**/Cargo.lock', 'benches/**', 'src/**/*.rs') }}
@@ -57,10 +57,13 @@ jobs:
             threshold: "0.99"
 
           # ── Sequential: insert_file ─────────────────────────────────────────
+          # threshold=0.999 for insert_file, open, checkpoint and concurrent_file:
+          # they fsync or read files, and file I/O on shared runners is too noisy
+          # for 0.99 (#393).
           - name: insert_file
             filter: "^insert_file/"
             file: bench_insert_file.txt
-            threshold: "0.99"
+            threshold: "0.999"
 
           # ── Sequential: query (includes query_extras) ───────────────────────
           - name: query
@@ -84,13 +87,13 @@ jobs:
           - name: open
             filter: "^open/"
             file: bench_open.txt
-            threshold: "0.99"
+            threshold: "0.999"
 
           # ── Sequential: checkpoint ──────────────────────────────────────────
           - name: checkpoint
             filter: "^checkpoint"
             file: bench_checkpoint.txt
-            threshold: "0.99"
+            threshold: "0.999"
 
           # ── Concurrent (in-memory): readers ────────────────────────────────
           # threshold=0.999: concurrent benchmarks are noisy on shared CI runners
@@ -179,13 +182,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo registry
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -195,7 +198,7 @@ jobs:
             ${{ runner.os }}-cargo-bench-
 
       - name: Restore bench target
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: target
           key: ${{ runner.os }}-bench-target-${{ hashFiles('**/Cargo.lock', 'benches/**', 'src/**/*.rs') }}
@@ -229,11 +232,13 @@ jobs:
 
       # Shared CI runners are noisy, so one alert on its own is usually a slow
       # runner, not a regression. Report only benchmarks that also alerted in
-      # this suite on the previous run. If a regression issue is already open,
-      # add a comment to it instead of skipping, so later alerts stay visible.
+      # this suite on the previous run. Each suite has its own issue: if one is
+      # open, add a comment to it instead of skipping. Every outcome, including
+      # an alert that is not reported, goes in the job summary, because the
+      # Bencher step is continue-on-error and the run stays green (#393).
       - name: Report regression
         if: steps.bencher.outcome == 'failure'
-        uses: actions/github-script@v6
+        uses: actions/github-script@v9
         env:
           SUITE: ${{ matrix.name }}
         with:
@@ -294,7 +299,13 @@ jobs:
               console.log(`Alerts this run: ${[...current].join(', ')}`);
               console.log(`Alerts in previous run: ${[...previous].join(', ') || 'none'}`);
               if (repeated.length === 0) {
-                core.notice(`No benchmark in ${suite} alerted on two runs in a row. Not reporting.`);
+                const msg = `Bencher flagged ${current.size} benchmark(s) in ${suite}, but none alerted on the previous run too. Not reporting.`;
+                core.warning(msg);
+                await core.summary
+                  .addHeading(`Benchmark alerts not reported (${suite})`, 3)
+                  .addRaw(msg, true)
+                  .addList([...current].sort().map(b => `<code>${b}</code>`))
+                  .write();
                 return;
               }
 
@@ -316,19 +327,25 @@ jobs:
               state: 'open',
               per_page: 100,
             });
-            const existing = openIssues.find(i => i.title.startsWith('Benchmark regression'));
+            const title = `Benchmark regression: ${suite}`;
+            const existing = openIssues.find(i => !i.pull_request && i.title === title);
+            let reported;
             if (existing) {
               await github.rest.issues.createComment({
                 owner, repo, issue_number: existing.number, body,
               });
-              console.log(`Commented on open regression issue #${existing.number}`);
-              return;
+              reported = `Commented on #${existing.number}`;
+            } else {
+              const { data: issue } = await github.rest.issues.create({
+                owner, repo, title, body,
+                labels: ['performance'],
+              });
+              reported = `Opened #${issue.number}`;
             }
-
-            const today = new Date().toISOString().slice(0, 10);
-            await github.rest.issues.create({
-              owner, repo,
-              title: `Benchmark regression - ${today}`,
-              body,
-              labels: ['performance'],
-            });
+            core.warning(`${title}. ${reported}.`);
+            await core.summary
+              .addHeading(`Benchmark regression reported (${suite})`, 3)
+              .addRaw(`${reported}.`, true)
+              .addBreak()
+              .addRaw(body, true)
+              .write();
