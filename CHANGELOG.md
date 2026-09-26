@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A power loss could lose a new database or WAL file, or bring back a deleted WAL (#389).** On Linux and other POSIX systems, a created or deleted file survives a power loss only once its parent directory is fsynced; Minigraf fsynced file contents but never a directory. Creating the `.graph` file or the `<db>.wal` sidecar, and deleting the WAL after a checkpoint, now fsync the parent directory after the file operation. A resurrected WAL was already harmless, since replay skips entries at or below the last checkpointed transaction, but a lost `.graph` or WAL lost committed data. Windows needs no directory sync and is unchanged. Process kills were never affected, because they leave the OS page cache intact.
 - **Bound-entity queries could drop rows when one `WriteTransaction` wrote the same attribute in several valid-time windows (#323).** Both facts share a `tx_count`, and the selective lookup path de-duplicated on `(entity, attribute, tx_count, asserted)`, so one window's value was silently lost, while the same query via a full scan returned both. That de-duplication has been removed, and bound-entity queries now always match a full scan.
 
 ### Notes
