@@ -1,6 +1,6 @@
 use crate::error::{ErrorCode, err_coded};
 use anyhow::Result;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::types::WhereClause;
@@ -42,12 +42,15 @@ fn collect_clause_deps(clause: &WhereClause, entry: &mut Vec<(String, bool)>) {
 
 pub struct DependencyGraph {
     /// head_predicate → Vec<(dependency_predicate, is_negative)>
-    edges: HashMap<String, Vec<(String, bool)>>,
+    ///
+    /// A `BTreeMap` so `stratify()` walks heads in a fixed order and always
+    /// reports the same pair for a given negative cycle (#410).
+    edges: BTreeMap<String, Vec<(String, bool)>>,
 }
 
 impl DependencyGraph {
     pub fn from_rules(registry: &RuleRegistry) -> Self {
-        let mut edges: HashMap<String, Vec<(String, bool)>> = HashMap::new();
+        let mut edges: BTreeMap<String, Vec<(String, bool)>> = BTreeMap::new();
 
         for (head_pred, rules) in registry.all_rules() {
             for rule in rules {
@@ -214,6 +217,25 @@ mod tests {
             make_registry_with_rules(vec![negative_rule("p", "q"), negative_rule("q", "p")]);
         let graph = DependencyGraph::from_rules(&registry);
         assert!(graph.stratify().is_err());
+    }
+
+    #[test]
+    fn test_negative_cycle_error_message_is_deterministic() {
+        // #410: the reported (head, dep) pair must not depend on HashMap
+        // iteration order. Each registry gets a fresh RandomState, so looping
+        // exercises many different orders within one process.
+        for _ in 0..64 {
+            let registry =
+                make_registry_with_rules(vec![negative_rule("p", "q"), negative_rule("q", "p")]);
+            let err = DependencyGraph::from_rules(&registry)
+                .stratify()
+                .expect_err("negative cycle must be rejected");
+            assert_eq!(
+                err.to_string(),
+                "unstratifiable: predicate 'q' is involved in a negative cycle through 'p'",
+                "negative-cycle error must name the same pair every time"
+            );
+        }
     }
 
     #[test]
