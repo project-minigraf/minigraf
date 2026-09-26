@@ -236,16 +236,31 @@ mod tests {
 
     #[test]
     fn run_public_method_exits_on_non_tty_stdin() {
-        // In TTY environments (local dev) stdin.is_terminal() is true and run() would
-        // block waiting for input — skip the test gracefully.  In CI the test binary's
-        // stdin is a closed pipe, so read_line() returns Ok(0) immediately and run()
-        // returns after one loop iteration.  This exercises the two otherwise-uncovered
-        // lines in the public `run()` wrapper (is_terminal + run_impl call).
-        if io::stdin().is_terminal() {
+        // Exercises the two otherwise-uncovered lines in the public `run()` wrapper
+        // (is_terminal + run_impl call). `run()` reads the process's real stdin, which
+        // may be a TTY or an open, idle pipe/socket that never reaches EOF (#415). So the
+        // test re-executes this test binary as a child with stdin set to /dev/null: the
+        // child sees a non-TTY stdin at EOF, and `run()` returns after one loop iteration.
+        const CHILD_ENV: &str = "MINIGRAF_REPL_RUN_CHILD";
+        if std::env::var_os(CHILD_ENV).is_some() {
+            let db = Minigraf::in_memory().expect("in-memory db");
+            db.repl().run();
             return;
         }
-        let db = Minigraf::in_memory().expect("in-memory db");
-        db.repl().run();
+        let exe = std::env::current_exe().expect("current test executable");
+        let status = std::process::Command::new(exe)
+            .args([
+                "--exact",
+                "repl::tests::run_public_method_exits_on_non_tty_stdin",
+                "--test-threads=1",
+            ])
+            .env(CHILD_ENV, "1")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .expect("spawn child test process");
+        assert!(status.success(), "child run() did not exit cleanly");
     }
 
     #[test]
