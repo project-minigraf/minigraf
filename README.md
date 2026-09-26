@@ -6,7 +6,8 @@
 [![Clippy Status](https://github.com/project-minigraf/minigraf/actions/workflows/rust-clippy.yml/badge.svg)](https://github.com/project-minigraf/minigraf/actions/workflows/rust-clippy.yml)
 [![Coverage](https://codecov.io/gh/project-minigraf/minigraf/branch/main/graph/badge.svg)](https://codecov.io/gh/project-minigraf/minigraf)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/project-minigraf/minigraf#license)
-[![Rust Edition](https://img.shields.io/badge/rust-2024-orange.svg)](https://blog.rust-lang.org/2024/10/17/Rust-1.82.0.html)
+[![Rust Edition](https://img.shields.io/badge/rust-2024-orange.svg)](https://doc.rust-lang.org/edition-guide/rust-2024/index.html)
+[![MSRV](https://img.shields.io/badge/MSRV-1.89-orange.svg)](Cargo.toml)
 
 > **Embedded graph memory for AI agents, mobile apps, and the browser** — the SQLite of bi-temporal graph databases
 
@@ -49,6 +50,10 @@ Or via cargo:
 ```sh
 cargo add minigraf
 ```
+
+Requires Rust 1.89 or newer (the minimum supported Rust version, set in `Cargo.toml`).
+
+**Known issue on v2.x:** two values of the same attribute for one entity written in a single `transact` (or retracted in a single `retract`) can read back as one value (#371). Write or retract each value of a multi-valued attribute in its own call. The fix changes the file format and ships in v3.0.0. See the [CHANGELOG](CHANGELOG.md).
 
 ## Quick Start
 
@@ -114,7 +119,7 @@ No other database offers this combination:
 | **Embedded** | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No | ✅ Yes |
 | **Graph Native** | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No |
 | **Rust** | ✅ Yes | ❌ Clojure | ✅ Yes | ❌ Java | ❌ C |
-| **WASM Ready** | ✅ Yes (browser + WASI + 6 targets) | ❌ No | ⚠️ Limited | ❌ No | ✅ Yes |
+| **WASM Ready** | ✅ Yes (browser + WASI) | ❌ No | ⚠️ Limited | ❌ No | ✅ Yes |
 
 ## Platform support
 
@@ -122,13 +127,13 @@ No other database offers this combination:
 |---|---|---|
 | Rust (native) | `minigraf` on crates.io | `cargo add minigraf` |
 | Browser WASM | `@minigraf/browser` on npm | `npm install @minigraf/browser` |
-| WASI | `@minigraf/wasi` on npm, `.wasm` on GitHub Releases | `npm install @minigraf/wasi` |
+| WASI | `@minigraf/wasi` on npm | `npm install @minigraf/wasi` |
 | Node.js | `minigraf` on npm | `npm install minigraf` |
 | Python | `minigraf` on PyPI | `pip install minigraf` |
-| Java/JVM | `io.github.adityamukho:minigraf-jvm` on Maven Central | see [wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) |
-| Android | `.aar` on GitHub Packages | see [wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) |
-| iOS / macOS | `.xcframework` via Swift Package Manager | see [wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) |
-| C / FFI | header + tarball on GitHub Releases | see [wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) |
+| Java/JVM | `io.github.project-minigraf:minigraf-jvm` on Maven Central | see [wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) |
+| Android | `io.github.project-minigraf:minigraf-android` (`.aar`) on Maven Central | see [wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) |
+| iOS / macOS | `.xcframework` via Swift Package Manager ([minigraf-swift](https://github.com/project-minigraf/minigraf-swift)) | see [wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) |
+| C / FFI | header + tarball on [minigraf-c releases](https://github.com/project-minigraf/minigraf-c/releases) | see [wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) |
 
 **Embedded graph memory for agents, mobile, and the browser — SQLite's simplicity + Datomic's temporal model.**
 
@@ -140,8 +145,8 @@ No other database offers this combination:
 | Node.js | [`minigraf` on npm](https://www.npmjs.com/package/minigraf) | [minigraf-node](https://github.com/project-minigraf/minigraf-node) |
 | Browser WASM | [`@minigraf/browser` on npm](https://www.npmjs.com/package/@minigraf/browser) | [minigraf-wasm](https://github.com/project-minigraf/minigraf-wasm) |
 | WASI | [`@minigraf/wasi` on npm](https://www.npmjs.com/package/@minigraf/wasi) | [minigraf-wasm](https://github.com/project-minigraf/minigraf-wasm) |
-| Java | `minigraf-jvm` on Maven Central | [minigraf-java](https://github.com/project-minigraf/minigraf-java) |
-| Android | Android bindings | [minigraf-android](https://github.com/project-minigraf/minigraf-android) |
+| Java | `io.github.project-minigraf:minigraf-jvm` on Maven Central | [minigraf-java](https://github.com/project-minigraf/minigraf-java) |
+| Android | `io.github.project-minigraf:minigraf-android` on Maven Central | [minigraf-android](https://github.com/project-minigraf/minigraf-android) |
 | iOS/macOS | Swift bindings | [minigraf-swift](https://github.com/project-minigraf/minigraf-swift) |
 | C | C bindings | [minigraf-c](https://github.com/project-minigraf/minigraf-c) |
 
@@ -155,7 +160,7 @@ Pairs well with vector stores (GraphRAG pattern): the vector store answers "what
 
 ### For Mobile Apps
 
-Offline-first storage with retroactive corrections — the bi-temporal model lets you correct a mis-entered value while preserving the original record. Native Kotlin and Swift bindings ship as an Android `.aar` (GitHub Packages) and an iOS `.xcframework` (Swift Package Manager) via [UniFFI](https://github.com/mozilla/uniffi-rs). No Rust required.
+Offline-first storage with retroactive corrections — the bi-temporal model lets you correct a mis-entered value while preserving the original record. Native Kotlin and Swift bindings ship as an Android `.aar` (Maven Central) and an iOS `.xcframework` (Swift Package Manager) via [UniFFI](https://github.com/mozilla/uniffi-rs). No Rust required.
 
 ```kotlin
 // Android (Kotlin)

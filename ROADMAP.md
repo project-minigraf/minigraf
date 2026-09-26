@@ -16,6 +16,8 @@ Scope:
 
 - Already merged: bound-entity point queries narrowed to the queried attribute (#323 mitigation), exact attribute-scan bounds (#381), and checkpoints that copy untouched index leaves (#315 mitigation)
 - fsync the parent directory after creating the `.graph`/WAL file and after deleting the WAL (#389)
+- `or-join` returns an empty result, not INT-031, when the clauses before it match no rows (#405)
+- A clear user error for `$slot` queries run through `execute()`, not internal INT-025 (#407)
 - Benchmark regression alerting that is not silently muted (#393)
 - CI: MSRV build, public-API semver check, dependency policy (#395)
 - Stability and support policy, including how long v2.x gets data-integrity fixes after v3.0.0 (#397)

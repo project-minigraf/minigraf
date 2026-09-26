@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A power loss could lose a new database or WAL file, or bring back a deleted WAL (#389).** On Linux and other POSIX systems, a created or deleted file survives a power loss only once its parent directory is fsynced; Minigraf fsynced file contents but never a directory. Creating the `.graph` file or the `<db>.wal` sidecar, and deleting the WAL after a checkpoint, now fsync the parent directory after the file operation. A resurrected WAL was already harmless, since replay skips entries at or below the last checkpointed transaction, but a lost `.graph` or WAL lost committed data. Windows needs no directory sync and is unchanged. Process kills were never affected, because they leave the OS page cache intact.
 - **Bound-entity queries could drop rows when one `WriteTransaction` wrote the same attribute in several valid-time windows (#323).** Both facts share a `tx_count`, and the selective lookup path de-duplicated on `(entity, attribute, tx_count, asserted)`, so one window's value was silently lost, while the same query via a full scan returned both. That de-duplication has been removed, and bound-entity queries now always match a full scan.
 
+### Documentation
+
+- **Unsafe WAL recovery advice removed from `docs/ERROR_REFERENCE.md`.** The WAL-001, WAL-002 and STG-011 resolutions said a `.wal` file could be deleted with no data loss, or that a database could be rebuilt from the WAL alone. Both are wrong: transactions committed since the last checkpoint exist only in the WAL, and the WAL holds nothing older than that checkpoint. The resolutions now say to copy both files first, to checkpoint with the version that wrote the WAL, and what is lost if the WAL is deleted.
+- CLAUDE.md now matches the milestones (v2.0.2 final v2.x release, v3.0.0 format v8 and data integrity, v3.1.0 features) and documents `error.rs`, `magic_sets.rs`, `fault_inject.rs` and `src/browser/`. ROADMAP lists #405 and #407 in the v2.0.2 scope.
+- README: MSRV (1.89) stated, v2.x known issue (#371) shown near the top, Maven coordinates corrected to `io.github.project-minigraf`, Android listed on Maven Central, and binding download locations point to the binding repos.
+- `.github/SECURITY.md` lists 2.x as the supported line. About 50 broken wiki links in `docs/ERROR_REFERENCE.md` now use full wiki URLs.
+
 ### Notes
 
 - On v2.x, reading a heavily rewritten attribute still costs time proportional to its history, because v7 index keys carry neither the value nor the assert/retract flag; the structural fix needs the v8 keys and is tracked for v3.0.0 in #379.
