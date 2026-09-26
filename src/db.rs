@@ -26,6 +26,7 @@ use crate::query::datalog::functions::{
     AggImpl, AggregateDesc, FunctionRegistry, PredicateDesc, UdfFinaliseFn, UdfOps, UdfStepFn,
 };
 use crate::query::datalog::parser::parse_datalog_command;
+use crate::query::datalog::prepared::reject_unbound_slots;
 use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::types::{AttributeSpec, DatalogCommand, Transaction};
 use crate::storage::backend::MemoryBackend;
@@ -554,6 +555,9 @@ impl Minigraf {
         }
 
         let cmd = parse_datalog_command(input)?;
+        if let DatalogCommand::Query(q) = &cmd {
+            reject_unbound_slots(q)?;
+        }
 
         // Determine if this is a read-only command (query only).
         // Rule registration is treated as a write because it mutates the shared RuleRegistry.
@@ -1105,7 +1109,10 @@ impl<'a> WriteTransaction<'a> {
                 self.stage_pending_facts(Minigraf::materialize_retraction(&tx)?);
                 Ok(QueryResult::Ok)
             }
-            DatalogCommand::Query(_) => self.execute_read_command(cmd),
+            DatalogCommand::Query(ref q) => {
+                reject_unbound_slots(q)?;
+                self.execute_read_command(cmd)
+            }
             DatalogCommand::Rule(rule) => self.execute_rule_command(rule),
         }
     }
