@@ -61,18 +61,12 @@ fn read_u64_at(page: &[u8], offset: usize) -> Result<u64> {
 
 // ─── Low-level page writers ───────────────────────────────────────────────────
 
-/// Write a single leaf page and insert it into the cache.
+/// Encode a leaf page: fixed header, slot directory, entries written end-to-start.
 ///
 /// `entries`: each element is the postcard-serialised `(K, FactRef)` bytes for
-/// one index entry, in sort order. Written end-to-start in the page.
+/// one index entry, in sort order.
 #[allow(clippy::arithmetic_side_effects, clippy::indexing_slicing)]
-fn write_leaf_page(
-    backend: &mut dyn StorageBackend,
-    cache: &PageCache,
-    page_id: u64,
-    entries: &[Vec<u8>],
-    next_leaf: u64,
-) -> Result<()> {
+fn encode_leaf_page(entries: &[Vec<u8>], next_leaf: u64) -> Result<Vec<u8>> {
     let entry_count = u16::try_from(entries.len()).map_err(|_| {
         err_coded!(
             ErrorCode::Int049,
@@ -108,7 +102,18 @@ fn write_leaf_page(
         page[slot_off..slot_off + 2].copy_from_slice(&write_pos_u16.to_le_bytes());
         page[slot_off + 2..slot_off + 4].copy_from_slice(&entry_len_u16.to_le_bytes());
     }
+    Ok(page)
+}
 
+/// Write a single leaf page and insert it into the cache.
+fn write_leaf_page(
+    backend: &mut dyn StorageBackend,
+    cache: &PageCache,
+    page_id: u64,
+    entries: &[Vec<u8>],
+    next_leaf: u64,
+) -> Result<()> {
+    let page = encode_leaf_page(entries, next_leaf)?;
     backend.write_page(page_id, &page)?;
     cache.put_dirty(page_id, page);
     Ok(())
@@ -188,6 +193,13 @@ fn write_internal_page(
     Ok(())
 }
 
+/// True when adding an entry of `entry_len` bytes to a leaf that already holds
+/// `n_entries` entries totalling `data_bytes` would exceed the fill threshold.
+#[allow(clippy::arithmetic_side_effects)]
+fn leaf_overflows(n_entries: usize, data_bytes: usize, entry_len: usize) -> bool {
+    LEAF_HEADER_SIZE + (n_entries + 1) * SLOT_SIZE + data_bytes + entry_len > PAGE_FILL_BYTES
+}
+
 // ─── build_btree ──────────────────────────────────────────────────────────────
 
 /// Serialize `(key, fact_ref)` pairs into the byte format expected by [`build_btree`].
@@ -235,12 +247,9 @@ pub fn build_btree(
     let mut next_page = start_page_id;
 
     for (entry_bytes, key_bytes) in sorted_entries {
-        let projected = LEAF_HEADER_SIZE
-            + (cur_entries.len() + 1) * SLOT_SIZE
-            + cur_data_bytes
-            + entry_bytes.len();
-
-        if projected > PAGE_FILL_BYTES && !cur_entries.is_empty() {
+        if !cur_entries.is_empty()
+            && leaf_overflows(cur_entries.len(), cur_data_bytes, entry_bytes.len())
+        {
             write_leaf_page(backend, cache, next_page, &cur_entries, 0)?;
             let first_key = cur_first_key.take().ok_or_else(|| {
                 err_coded!(
@@ -310,23 +319,27 @@ pub fn build_btree(
         cache.put_dirty(pid, page);
     }
 
-    // Single leaf: it is the root
-    if leaf_infos.len() == 1 {
-        return Ok((
-            leaf_infos
-                .first()
-                .ok_or_else(|| {
-                    err_coded!(
-                        ErrorCode::Int049,
-                        "leaf_infos unexpectedly empty".to_string()
-                    )
-                })?
-                .0,
-            next_page,
-        ));
-    }
+    build_internal_levels(leaf_infos, backend, cache, next_page)
+}
 
-    // ── Phase 2: build internal levels bottom-up ──────────────────────────────
+/// Build internal levels bottom-up over `leaf_infos` (`(page_id, first_key_bytes)`
+/// per leaf, in key order), writing nodes from `next_page` onward.
+///
+/// Returns `(root_page_id, next_free_page_id)`. A single leaf is its own root.
+#[allow(clippy::arithmetic_side_effects, clippy::indexing_slicing)]
+fn build_internal_levels(
+    leaf_infos: Vec<(u64, Vec<u8>)>,
+    backend: &mut dyn StorageBackend,
+    cache: &PageCache,
+    next_page: u64,
+) -> Result<(u64, u64)> {
+    if leaf_infos.is_empty() {
+        bail_coded!(
+            ErrorCode::Int049,
+            "build_internal_levels: no leaves".to_string()
+        );
+    }
+    let mut next_page = next_page;
     let mut current_level = leaf_infos;
 
     loop {
