@@ -70,8 +70,12 @@ Algorithm:
 3. Leaf with no pending entries → **raw copy**: write the 4 KB page verbatim to the
    next page id, patching only bytes 4..12 (`next_leaf`). No decode/encode.
 4. Leaf with pending entries → decode all its entries, merge with its pending
-   entries, serialise, and repack using `build_btree`'s 75% fill rule (may emit
-   more than one leaf).
+   entries and serialise. If the result fits in one physical page it stays one
+   leaf; otherwise it splits into pages of at most `PAGE_FILL_BYTES`, balanced by
+   size (classic B+tree split). *Revised during implementation:* repacking with
+   `build_btree`'s "fill to 75%, then start a new leaf" rule left a near-empty
+   leaf on every checkpoint that inserted into a full leaf (43 → 596 leaves after
+   600 single-fact checkpoints), so cost drifted upward with checkpoint count.
 5. Leaves are written in order with `next_leaf = pid + 1` (0 for the last), so there
    is no second patch pass.
 6. Collect `(page_id, first_key_bytes)` per new leaf (postcard of the first key) and
@@ -85,10 +89,11 @@ Collecting raw leaves: `collect_leaf_pages(root, backend, cache) -> Vec<Arc<Vec<
 walks `find_leftmost_leaf` + the `next_leaf` chain, validating page type as
 `stream_all_entries` does.
 
-Leaf fill: untouched leaves keep their existing fill; touched leaves are repacked at
-75%. The tree shape differs from a fresh bulk build but is a valid B+tree for
-`range_scan` / `stream_all_entries` / `find_leaf_for_key`. No merging of
-under-filled leaves (YAGNI).
+Leaf fill: untouched leaves keep their existing fill; touched leaves stay between
+roughly 37% and 100% full. The tree shape differs from a fresh bulk build but is a
+valid B+tree for `range_scan` / `stream_all_entries` / `find_leaf_for_key`. No
+merging of under-filled neighbours (inserts only; nothing is ever removed from an
+index).
 
 ### 4.2 `save()` ordering — `src/storage/persistent_facts.rs`
 

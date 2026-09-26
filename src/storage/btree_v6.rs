@@ -544,35 +544,60 @@ impl LeafEmitter<'_> {
     }
 
     /// Write the last held leaf and return `(leaf_infos, next_free_page_id)`.
+    #[allow(clippy::type_complexity)]
     fn finish(mut self) -> Result<(Vec<(u64, Vec<u8>)>, u64)> {
         self.release_held(0)?;
         Ok((self.infos, self.next_page))
     }
 }
 
-/// Serialise sorted entries and emit them as leaves using `build_btree`'s fill rule.
+/// Serialise sorted entries and emit them as leaves.
+///
+/// Entries that fit in one physical page stay in one leaf. Otherwise they are
+/// split into pages of at most `PAGE_FILL_BYTES`, balanced by size, so a leaf that
+/// overflows by one entry splits roughly in half. Splitting "full page + remainder"
+/// instead left a near-empty leaf behind on every checkpoint that inserted into a
+/// full leaf, growing the index without bound (#315).
 #[allow(clippy::arithmetic_side_effects)]
 fn emit_packed<K: Serialize>(
     emitter: &mut LeafEmitter<'_>,
     entries: impl Iterator<Item = (K, FactRef)>,
 ) -> Result<()> {
-    let mut cur: Vec<Vec<u8>> = Vec::new();
-    let mut cur_bytes = 0usize;
-    let mut cur_first: Option<Vec<u8>> = None;
+    // Each entry costs its bytes plus one slot-directory entry.
+    let mut serialised: Vec<(Vec<u8>, K)> = Vec::new();
+    let mut total = 0usize;
     for (key, fact_ref) in entries {
         let entry = postcard::to_allocvec(&(&key, &fact_ref))?;
-        if !cur.is_empty() && leaf_overflows(cur.len(), cur_bytes, entry.len()) {
+        total += entry.len() + SLOT_SIZE;
+        serialised.push((entry, key));
+    }
+    if serialised.is_empty() {
+        return Ok(());
+    }
+    let target = if LEAF_HEADER_SIZE + total <= PAGE_SIZE {
+        total
+    } else {
+        let usable = PAGE_FILL_BYTES - LEAF_HEADER_SIZE;
+        total.div_ceil(total.div_ceil(usable))
+    };
+
+    let mut cur: Vec<Vec<u8>> = Vec::new();
+    let mut cur_size = 0usize;
+    let mut cur_first: Option<Vec<u8>> = None;
+    for (entry, key) in serialised {
+        let size = entry.len() + SLOT_SIZE;
+        if !cur.is_empty() && cur_size + size > target {
             let first = cur_first.take().ok_or_else(|| {
                 err_coded!(ErrorCode::Int049, "BUG: leaf without first key".to_string())
             })?;
             emitter.push(encode_leaf_page(&cur, 0)?, first)?;
             cur.clear();
-            cur_bytes = 0;
+            cur_size = 0;
         }
         if cur_first.is_none() {
             cur_first = Some(postcard::to_allocvec(&key)?);
         }
-        cur_bytes += entry.len();
+        cur_size += size;
         cur.push(entry);
     }
     if let Some(first) = cur_first {
@@ -780,6 +805,10 @@ where
 // ─── stream_all_entries ───────────────────────────────────────────────────────
 
 /// Stream all `(K, FactRef)` entries from a B+tree in sorted order.
+///
+/// Test-only since #315: `save()` snapshots raw leaves via [`collect_leaf_pages`]
+/// instead of decoding every entry.
+#[cfg(test)]
 pub fn stream_all_entries<K>(
     root_page_id: u64,
     backend: &dyn StorageBackend,
@@ -1220,6 +1249,36 @@ mod tests {
         let (backend, cache, root, _) = build_then_incremental(&committed, &pending, 3);
         let expected = sorted_union(&committed, &pending);
         assert_tree_exact(root, &backend, &cache, &expected, &mut rng);
+    }
+
+    #[test]
+    fn test_incremental_single_inserts_do_not_fragment_leaves() {
+        // One random insert per round into a bulk-built (75%-full) tree, like one
+        // checkpoint per new fact. Splitting "75% + remainder" left a near-empty
+        // leaf per insert; leaves must stay reasonably full instead.
+        let mut rng = Rng(23);
+        let mut ctr = 0;
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(4096);
+        let mut expected = random_eavt(&mut rng, 3000, &mut ctr);
+        let ser = btree_entries(expected.iter().cloned()).unwrap();
+        let (mut root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        let bulk_leaves = collect_leaf_pages(root, &backend, &cache).unwrap().len();
+        for _ in 0..600 {
+            let pending = random_eavt(&mut rng, 1, &mut ctr);
+            let leaves = collect_leaf_pages(root, &backend, &cache).unwrap();
+            root = rebuild_btree_incremental(leaves, pending.clone(), &mut backend, &cache, 1)
+                .unwrap()
+                .0;
+            expected = sorted_union(&expected, &pending);
+        }
+        assert_tree_exact(root, &backend, &cache, &expected, &mut rng);
+        // 20% more entries; at >= ~37% fill that is at most ~2.5x the bulk leaf count.
+        let leaves = collect_leaf_pages(root, &backend, &cache).unwrap().len();
+        assert!(
+            leaves <= bulk_leaves * 5 / 2,
+            "leaf count grew from {bulk_leaves} to {leaves}"
+        );
     }
 
     #[test]
