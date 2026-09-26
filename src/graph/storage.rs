@@ -514,8 +514,9 @@ pub(crate) fn filter_facts_as_of(facts: Vec<Fact>, as_of: &AsOf) -> Vec<Fact> {
 ///
 /// Hot path for every non-`:as-of` query (#323). Each value is encoded once;
 /// the two group maps borrow `(entity, attribute, value_bytes)` from the input
-/// instead of cloning them, and use
-/// [`FxBuildHasher`](crate::graph::fxhash::FxBuildHasher). `by_window` stores the
+/// instead of cloning them. They keep std's randomly keyed hasher on purpose:
+/// values are often untrusted text (agent memory), and a fixed-seed fast hash
+/// would let crafted colliding values make every query quadratic. `by_window` stores the
 /// index and `tx_count` of the winning assertion per validity window; survivors
 /// are moved out of `facts` at the end, preserving input order.
 ///
@@ -523,7 +524,6 @@ pub(crate) fn filter_facts_as_of(facts: Vec<Fact>, as_of: &AsOf) -> Vec<Fact> {
 /// the original and loses; a duplicate retraction leaves the max unchanged).
 /// `selective_fact_fetch` relies on this instead of deduplicating.
 pub(crate) fn net_asserted_facts(facts: Vec<Fact>) -> Vec<Fact> {
-    use crate::graph::fxhash::FxBuildHasher;
     use std::collections::HashMap;
 
     type EavKey<'a> = (&'a EntityId, &'a str, &'a [u8]);
@@ -533,8 +533,8 @@ pub(crate) fn net_asserted_facts(facts: Vec<Fact>) -> Vec<Fact> {
     let mut keep = vec![false; facts.len()];
 
     {
-        let mut max_retract_tx: HashMap<EavKey<'_>, u64, FxBuildHasher> = HashMap::default();
-        let mut by_window: HashMap<WindowKey<'_>, (usize, u64), FxBuildHasher> = HashMap::default();
+        let mut max_retract_tx: HashMap<EavKey<'_>, u64> = HashMap::new();
+        let mut by_window: HashMap<WindowKey<'_>, (usize, u64)> = HashMap::new();
 
         for (idx, (fact, value_bytes)) in facts.iter().zip(encoded.iter()).enumerate() {
             let entity = &fact.entity;

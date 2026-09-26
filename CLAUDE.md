@@ -102,7 +102,6 @@ cargo run < demos/demo_negation.txt
 1. **`src/graph/`** — EAV fact store with bi-temporal support
    - `types.rs`: `Fact`, `Value`, `EntityId`, `TxId`, `VALID_TIME_FOREVER`
    - `storage.rs`: `FactStorage` — in-memory store, `transact_batch`, `retract`, `get_facts_as_of`, `get_facts_valid_at`, `net_asserted_facts`, `get_facts_by_entity_attribute_indexed`
-   - `fxhash.rs`: `FxBuildHasher` — in-crate non-cryptographic hasher for hot-path maps (#323)
 
 2. **`src/storage/`** — Persistence layer
    - `mod.rs`: `StorageBackend` trait, `FileHeader` v7 (84 bytes), `CommittedFactReader` / `CommittedIndexReader` traits

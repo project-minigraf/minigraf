@@ -1,4 +1,3 @@
-pub(crate) mod fxhash;
 pub(crate) mod storage;
 pub(crate) mod types;
 
