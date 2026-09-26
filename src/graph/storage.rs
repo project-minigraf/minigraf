@@ -595,23 +595,6 @@ fn resolve_fact_ref(d: &FactData, fr: FactRef) -> Result<Fact> {
     }
 }
 
-/// Increment the last byte of a string for prefix upper-bound construction.
-/// Returns `None` if all bytes are 0xFF (true unbounded scan needed).
-/// Used by the production index-driven lookup methods (`get_facts_by_attribute`).
-fn next_string_prefix(s: &str) -> Option<String> {
-    let mut bytes = s.as_bytes().to_vec();
-    for i in (0..bytes.len()).rev() {
-        if let Some(b) = bytes.get_mut(i)
-            && *b < 0xFF
-        {
-            *b += 1;
-            bytes.truncate(i + 1);
-            return String::from_utf8(bytes).ok();
-        }
-    }
-    None
-}
-
 /// Production helpers on FactStorage: index-driven entity/attribute lookups used by the query executor.
 impl FactStorage {
     /// Get all facts for a specific entity (index-driven).
@@ -771,41 +754,28 @@ impl FactStorage {
             valid_to: i64::MIN,
             tx_count: 0,
         };
-        let end_opt: Option<AevtKey> = next_string_prefix(attribute).map(|next_attr| AevtKey {
-            attribute: next_attr,
+        // Exact successor of `attribute` (see `get_facts_by_entity_attribute_indexed`):
+        // `[start, end)` holds exactly this attribute, never prefix siblings such as
+        // `:ab` for `:a`, and is valid UTF-8 for any attribute (#381).
+        let end = AevtKey {
+            attribute: format!("{attribute}\0"),
             entity: uuid::Uuid::nil(),
             valid_from: i64::MIN,
             valid_to: i64::MIN,
             tx_count: 0,
-        });
+        };
 
         let mut facts = Vec::new();
 
-        // Pending
-        let pending_range: Vec<FactRef> = match &end_opt {
-            Some(end) => d
-                .pending_indexes
-                .aevt
-                .range(start.clone()..end.clone())
-                .filter(|(k, _)| k.attribute == *attribute)
-                .map(|(_, &r)| r)
-                .collect(),
-            None => d
-                .pending_indexes
-                .aevt
-                .range(start.clone()..)
-                .take_while(|(k, _)| k.attribute == *attribute)
-                .map(|(_, &r)| r)
-                .collect(),
-        };
-        for fr in pending_range {
+        // Pending: AEVT keys for the exact attribute are contiguous from `start`.
+        for (_, &fr) in d.pending_indexes.aevt.range(start.clone()..end.clone()) {
             facts.push(resolve_fact_ref(&d, fr)?);
         }
 
-        // Committed
+        // Committed: on-disk B+tree range scan over exactly this attribute; the
+        // post-filter is a cheap guard, not something the range relies on.
         if let Some(reader) = &d.committed_index_reader {
-            let committed_refs = reader.range_scan_aevt(&start, end_opt.as_ref())?;
-            for fr in committed_refs {
+            for fr in reader.range_scan_aevt(&start, Some(&end))? {
                 let fact = resolve_fact_ref(&d, fr)?;
                 if &fact.attribute == attribute {
                     facts.push(fact);
@@ -2343,6 +2313,109 @@ mod tests {
             assert!(
                 sibling >= *end,
                 "prefix sibling must fall outside the range"
+            );
+        }
+    }
+
+    #[test]
+    fn attribute_committed_range_is_bounded_for_any_attribute() {
+        use crate::storage::CommittedIndexReader;
+        use crate::storage::index::{AevtKey, AvetKey, EavtKey, FactRef, VaetKey};
+        use std::sync::{Arc, Mutex};
+
+        struct RecordingReader {
+            aevt_bounds: Mutex<Vec<(AevtKey, Option<AevtKey>)>>,
+        }
+        impl CommittedIndexReader for RecordingReader {
+            fn range_scan_eavt(
+                &self,
+                _: &EavtKey,
+                _: Option<&EavtKey>,
+            ) -> anyhow::Result<Vec<FactRef>> {
+                Ok(vec![])
+            }
+            fn range_scan_aevt(
+                &self,
+                start: &AevtKey,
+                end: Option<&AevtKey>,
+            ) -> anyhow::Result<Vec<FactRef>> {
+                self.aevt_bounds
+                    .lock()
+                    .unwrap()
+                    .push((start.clone(), end.cloned()));
+                Ok(vec![])
+            }
+            fn range_scan_avet(
+                &self,
+                _: &AvetKey,
+                _: Option<&AvetKey>,
+            ) -> anyhow::Result<Vec<FactRef>> {
+                Ok(vec![])
+            }
+            fn range_scan_vaet(
+                &self,
+                _: &VaetKey,
+                _: Option<&VaetKey>,
+            ) -> anyhow::Result<Vec<FactRef>> {
+                Ok(vec![])
+            }
+        }
+
+        let reader = Arc::new(RecordingReader {
+            aevt_bounds: Mutex::new(Vec::new()),
+        });
+        let storage = FactStorage::new();
+        storage.set_committed_index_reader(reader.clone());
+
+        for attr in [":plain", ":\u{4e3f}", ":\u{bf}", ":a\u{7f}"] {
+            storage.get_facts_by_attribute(&attr.to_string()).unwrap();
+        }
+
+        let bounds = reader.aevt_bounds.lock().unwrap();
+        assert_eq!(bounds.len(), 4, "one committed scan per lookup");
+        for (start, end) in bounds.iter() {
+            let end = end
+                .as_ref()
+                .expect("committed AEVT scan must have an upper bound");
+            assert!(start < end, "range must be non-empty");
+            // No other attribute may sort between start and end.
+            let sibling = AevtKey {
+                attribute: format!("{}x", start.attribute),
+                ..start.clone()
+            };
+            assert!(
+                sibling >= *end,
+                "prefix sibling must fall outside the range"
+            );
+        }
+    }
+
+    #[test]
+    fn attribute_scan_excludes_prefix_siblings_and_non_ascii_neighbours() {
+        let storage = FactStorage::new();
+        let e = uuid::Uuid::from_u128(7);
+        for attr in [
+            ":a",
+            ":ab",
+            ":a/b",
+            ":\u{4e3f}",
+            ":\u{4e40}",
+            ":\u{bf}",
+            ":\u{c0}",
+        ] {
+            storage
+                .transact(
+                    vec![(e, attr.to_string(), Value::String(attr.to_string()))],
+                    None,
+                )
+                .unwrap();
+        }
+        for attr in [":a", ":\u{4e3f}", ":\u{bf}"] {
+            let facts = storage.get_facts_by_attribute(&attr.to_string()).unwrap();
+            assert_eq!(facts.len(), 1, "exactly one fact for the attribute");
+            assert!(
+                facts.iter().all(|f| f.attribute == attr),
+                "no sibling facts"
             );
         }
     }
