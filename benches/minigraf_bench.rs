@@ -415,6 +415,38 @@ fn bench_checkpoint(c: &mut Criterion) {
     group.finish();
 }
 
+// ── checkpoint/after_1_fact (#315) ────────────────────────────────────────────
+
+/// Checkpoint cost when only one fact is dirty, on an already-checkpointed graph.
+/// Before #315 this was flat in dirty bytes and proportional to graph size.
+fn bench_checkpoint_after_1_fact(c: &mut Criterion) {
+    use criterion::BatchSize;
+    use tempfile::NamedTempFile;
+
+    let mut group = c.benchmark_group("checkpoint/after_1_fact");
+    group.sample_size(20);
+    for &(label, n) in &[("10k", 10_000usize), ("100k", 100_000)] {
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        helpers::populate_file_no_checkpoint(n, &path);
+        let db = helpers::open_file_no_checkpoint(&path);
+        db.checkpoint().unwrap();
+        let mut i = 0u64;
+        group.bench_function(BenchmarkId::from_parameter(label), |b| {
+            b.iter_batched(
+                || {
+                    i += 1;
+                    db.execute(&format!("(transact [[:ck{i} :val {i}]])"))
+                        .unwrap();
+                },
+                |()| db.checkpoint().unwrap(),
+                BatchSize::SmallInput,
+            );
+        });
+    }
+    group.finish();
+}
+
 // ── Task 10: concurrent/ ─────────────────────────────────────────────────────
 
 fn bench_concurrent(c: &mut Criterion) {
@@ -1793,6 +1825,7 @@ criterion_group!(
     bench_query_extras,
     bench_open,
     bench_checkpoint,
+    bench_checkpoint_after_1_fact,
     bench_concurrent,
     bench_concurrent_file,
     bench_concurrent_btree_scan,
