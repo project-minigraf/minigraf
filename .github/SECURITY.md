@@ -9,8 +9,8 @@ patched unless a separate security advisory explicitly says otherwise.
 
 | Version | Supported |
 | ------- | --------- |
-| latest 1.x minor line | ✅ |
-| older 1.x minor lines | ❌ |
+| 2.x (latest release)  | ✅ |
+| 1.x                   | ❌ |
 | 0.x                   | ❌ |
 
 ## Reporting a Vulnerability

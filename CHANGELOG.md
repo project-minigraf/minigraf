@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Bound-entity queries could drop rows when one `WriteTransaction` wrote the same attribute in several valid-time windows (#323).** Both facts share a `tx_count`, and the selective lookup path de-duplicated on `(entity, attribute, tx_count, asserted)`, so one window's value was silently lost, while the same query via a full scan returned both. That de-duplication has been removed, and bound-entity queries now always match a full scan.
 
+### Documentation
+
+- **Unsafe WAL recovery advice removed from `docs/ERROR_REFERENCE.md`.** The WAL-001, WAL-002 and STG-011 resolutions said a `.wal` file could be deleted with no data loss, or that a database could be rebuilt from the WAL alone. Both are wrong: transactions committed since the last checkpoint exist only in the WAL, and the WAL holds nothing older than that checkpoint. The resolutions now say to copy both files first, to checkpoint with the version that wrote the WAL, and what is lost if the WAL is deleted.
+- ROADMAP and CLAUDE.md now match the milestones: v2.0.2 is the final planned v2.x release, v3.0.0 is the format v8 and data-integrity release (#383), and features move to v3.1.0.
+- README: MSRV (1.89) stated, v2.x known issue (#371) shown near the top, Maven coordinates corrected to `io.github.project-minigraf`, Android listed on Maven Central, and binding download locations point to the binding repos.
+- `.github/SECURITY.md` lists 2.x as the supported line. About 50 broken wiki links in `docs/ERROR_REFERENCE.md` now use full wiki URLs.
+
 ### Notes
 
 - On v2.x, reading a heavily rewritten attribute still costs time proportional to its history, because v7 index keys carry neither the value nor the assert/retract flag; the structural fix needs the v8 keys and is tracked for v3.0.0 in #379.

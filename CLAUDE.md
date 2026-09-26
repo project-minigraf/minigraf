@@ -107,6 +107,7 @@ cargo run < demos/demo_negation.txt
    - `mod.rs`: `StorageBackend` trait, `FileHeader` v7 (84 bytes), `CommittedFactReader` / `CommittedIndexReader` traits
    - `backend/file.rs`: Single `.graph` file backend (4KB pages, cross-platform)
    - `backend/memory.rs`: In-memory backend for testing
+   - `backend/fault_inject.rs`: `FaultInjectingBackend` — injects I/O errors for durability tests (test builds only)
    - `index.rs`: EAVT / AEVT / AVET / VAET key types, `FactRef`, `encode_value`
    - `btree_v6.rs`: On-disk B+tree (`build_btree`, `OnDiskIndexReader`, `MutexStorageBackend`)
    - `btree.rs`: Legacy v5 B+tree (migration only)
@@ -124,6 +125,7 @@ cargo run < demos/demo_negation.txt
    - `types.rs`: `EdnValue`, `Pattern`, `DatalogQuery`, `AsOf`, `ValidAt`, `WhereClause` (incl. `Not`, `NotJoin`); `PseudoAttr` enum, `AttributeSpec` wrapper
    - `optimizer.rs`: Selectivity-based join reordering; disabled under `wasm` feature
    - `prepared.rs`: `BindValue`, `PreparedQuery` — parse-once/execute-many with named `$slot` bind slots; `prepare_query`, `substitute`
+   - `magic_sets.rs`: Magic-sets rewriting for demand-driven recursive rule evaluation (not applied to rules with `not`/`not-join`)
 
 4. **`src/temporal.rs`** — UTC-only timestamp parsing (avoids chrono CVE GHSA-wcg3-cvx6-7396)
 
@@ -132,6 +134,10 @@ cargo run < demos/demo_negation.txt
 6. **`src/db.rs`** — Public API: `Minigraf::open/execute/prepare/begin_write/checkpoint/save`, `WriteTransaction`, `OpenOptions::page_cache_size`
 
 7. **`src/wal.rs`** — Fact-level sidecar WAL, CRC32-protected entries, crash recovery
+
+8. **`src/error.rs`** — Structured error codes: `MinigrafError`, `ErrorCategory`, `ErrorCode` registry (PRS/QRY/STG/WAL/API/INT codes); must match `docs/ERROR_REFERENCE.md`
+
+9. **`src/browser/`** — Browser WASM backend (`browser` feature): `buffer.rs` (`BrowserBufferBackend`, in-memory pages with dirty tracking), `indexeddb.rs` (IndexedDB persistence)
 
 ### Data Model
 
@@ -176,9 +182,11 @@ See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **v2.0.1 released** (2026-09-25) — patch fixing index rebuild on open (#370). **v2.0.0** introduced kernel file locking (#317, #304), structured runtime error codes (#277), `OpenOptions` `#[non_exhaustive]`, and an MSRV of Rust 1.89. See `CHANGELOG.md` for the full rationale and release history.
 
-Relevant areas for the planned query-profiler work (see `ROADMAP.md`):
-- `src/query/datalog/` — query executor where profiling hooks will go (#185)
-- `docs/BENCHMARKS.md` — post-1.0 performance baseline updates
+Current plan (see `ROADMAP.md` and the milestones):
+- **v2.0.2** (final planned v2.x release, format v7, no API change) ships from `main`.
+- **v3.0.0** (format v8 and data integrity, tracker #383) is developed on the long-lived `v3` branch. Merge `main` into `v3` regularly.
+- **v3.1.0** holds new features (query profiler #185, `:limit` #306/#310, lag/lead #182, UniFFI additions).
+- Known v2.x data issue: same-transaction multi-valued facts (#371). Fix ships in v3.0.0.
 
 ## Testing Conventions
 

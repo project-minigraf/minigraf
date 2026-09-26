@@ -1,6 +1,6 @@
 # Minigraf Roadmap
 
-> The path from a production-ready bi-temporal Datalog database to a stronger ecosystem.
+> The path to a production-ready bi-temporal Datalog database, and then to a stronger ecosystem. Production readiness is tracked in #383.
 
 **Philosophy**: Embedded graph memory for agents, mobile, and the browser — built on the SQLite approach: be boring, be reliable, be embeddable.
 
@@ -8,20 +8,51 @@ Completed releases and their implementation details live in the [CHANGELOG](CHAN
 
 ---
 
-## v3.0.0 — File Format Policy
+## v2.0.2 — Final Planned v2.x Release
 
-**v3.0.0 supports file format v8 only.** Fixing #287's `EavtKey`/`AevtKey` missing-value-bytes data-loss bug bumps the format from v7 to v8. Support for v1–v6 is dropped at the same time. The v1–v6 → v7 auto-migration code in `persistent_facts.rs` can be removed when cutting this release; a v7→v8 migration replaces it. Any database opened at least once under a v1.x release will already be on v7; there are no known users on older formats.
+v2.0.2 is a patch release on file format v7 with no API change. It is the last planned v2.x release. New feature work targets v3.x.
+
+Scope (milestone [v2.0.2](https://github.com/project-minigraf/minigraf/milestone/8)):
+
+- Merged performance mitigations (#323, #381, #315)
+- Parent-directory fsync after creating or deleting files (#389)
+- `or-join` returning an error when the clauses before it match no rows (#405)
+- A clear error for `$slot` queries run through `execute()` (#407)
+- CI hardening: benchmark alerting (#393), MSRV, semver and dependency checks (#395)
+- Stability, support and known-issues docs and process (#397, #399, #400). These define how v2.x is supported after v3.0.0.
+
+Known issue on v2.x: same-transaction multi-valued facts can read back as one value (#371). The fix needs file format v8 and ships in v3.0.0. Workaround: write or retract each value of a multi-valued attribute in its own call.
+
+---
+
+## v3.0.0 — File Format v8 and Data Integrity
+
+**v3.0.0 supports file format v8 only.** Fixing the #287/#371 data-loss bug adds the value to the `EavtKey`/`AevtKey` index keys, which bumps the format from v7 to v8. Support for v1–v6 is dropped at the same time. The v1–v6 → v7 auto-migration code in `persistent_facts.rs` can be removed when cutting this release; a v7→v8 migration replaces it. Any database opened at least once under a v1.x or v2.x release is already on v7.
 
 This was the GitHub milestone named “2.0” before v2.0.0 used that version number for the kernel-locking and structured-error-code breaking changes; it was consequently renumbered to v3.0.0.
 
-Scope:
+Scope (milestone [v3.0.0](https://github.com/project-minigraf/minigraf/milestone/1)):
 
-- `EavtKey`/`AevtKey` missing-value-bytes fix and file-format v7→v8 migration (#287)
-- `lag`/`lead` window functions (#182)
-- Sliding row frames — `:rows N preceding` (#183; builds on #182)
-- `PreparedQuery` over UniFFI (#181)
-- UDF registration over UniFFI (#180)
-- `OpenOptions` exposed over UniFFI, so embedders can suppress the close-time checkpoint (#322)
+- v8 index keys and v7→v8 migration (#287, #371; done on the `v3` branch)
+- Per-page checksums for fact and B+tree pages (#388)
+- Crash-atomic `save()` (#374)
+- Index verify and rebuild (#373)
+- O(live) point queries on v8 keys (#379)
+- Release-gate test suite: golden files (#391), crash data checks (#384), model-based tests (#385), wider property tests (#386), fuzz corpus and operation-sequence target (#387, #375), fault injection (#390), soak test (#392), coverage gates (#396)
+- Performance envelope (#394) and durability guide (#398)
+
+---
+
+## v3.1.0 — Additive Features
+
+Scope (milestone [v3.1.0](https://github.com/project-minigraf/minigraf/milestone/9)):
+
+- Rule persistence (#241)
+- Query profiler (#185)
+- `:limit` / `:offset` (#306, #310)
+- Set membership predicates (#316)
+- `lag`/`lead` window functions (#182) and sliding row frames, `:rows N preceding` (#183)
+- UniFFI: `PreparedQuery` (#181), UDF registration (#180), `OpenOptions` (#322)
 - Temporal graph-traversal research (#273; may result in documentation or a blog post rather than code)
 
 ---
@@ -105,8 +136,9 @@ When evaluating features, ask:
 
 ## Current Focus
 
-- v2.x minor releases (v2.1.0–v2.3.0) on `main`
-- The v3.0.0 file-format policy and its scoped work above, on the `v3` branch
+- v2.0.2, the final planned v2.x release, on `main`
+- v3.0.0 (format v8 and data integrity) on the `v3` branch, tracked in #383
+- v3.1.0 features after v3.0.0 ships
 - Ecosystem work tracked in [`minigraf-examples`](https://github.com/project-minigraf/minigraf-examples)
 - Developer tools tracked in `minigraf-inspector` and `minigraf-visualizer`
 
@@ -114,4 +146,4 @@ See [GitHub Issues](https://github.com/project-minigraf/minigraf/issues) for spe
 
 ---
 
-**Last updated**: September 2026 — v2.0.1 is the current release. v2.x minor releases (v2.1.0–v2.3.0) ship from `main` first; v3.0.0 work, including the file-format v8 fix for #287/#371, is developed on the long-lived `v3` branch and merges into `main` at the v3.0.0 cut.
+**Last updated**: September 2026. v2.0.1 is the current release. v2.0.2 is the final planned v2.x release and ships from `main`. v3.0.0 work, including the file-format v8 fix for #287/#371, is developed on the long-lived `v3` branch and merges into `main` at the v3.0.0 cut. New features follow in v3.1.0.
