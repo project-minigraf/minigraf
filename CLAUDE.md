@@ -108,7 +108,7 @@ cargo run < demos/demo_negation.txt
    - `backend/file.rs`: Single `.graph` file backend (4KB pages, cross-platform)
    - `backend/memory.rs`: In-memory backend for testing
    - `index.rs`: EAVT / AEVT / AVET / VAET key types, `FactRef`, `encode_value`
-   - `btree_v6.rs`: On-disk B+tree (`build_btree`, `OnDiskIndexReader`, `MutexStorageBackend`)
+   - `btree_v6.rs`: On-disk B+tree (`build_btree`, `rebuild_btree_incremental`, `OnDiskIndexReader`, `MutexStorageBackend`)
    - `btree.rs`: Legacy v5 B+tree (migration only)
    - `cache.rs`: LRU page cache (`PageCache`, default 256 pages)
    - `packed_pages.rs`: Packed fact pages (~25 facts/4KB page), `MAX_FACT_BYTES`
@@ -167,7 +167,7 @@ Auto-migrates v1/v2/v3/v4/v5/v6 → v7 on open/checkpoint.
 
 ## Test Coverage
 
-**1176 tests passing** (1168 passing, 8 ignored; unit + integration + doc).
+**1188 tests passing** (1180 passing, 8 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.

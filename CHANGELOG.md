@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bound-entity point queries no longer pay for other attributes' history (#323).** `[:e :attr ?v]` now range-scans only `(e, :attr)` in the EAVT index instead of every record the entity has ever written. Reading a rarely changed attribute of a heavily rewritten entity no longer slows down as that entity's history grows: with 2,000 retract/reassert cycles on another attribute of the same entity, it drops from 4.58 ms to 19.0 µs. Reading the heavily rewritten attribute itself, and attribute scans (`[?e :attr ?v]`), are about 1.35–1.4× faster (4.64 ms → 3.36 ms), from cheaper net-assert grouping and removing a redundant dedup pass. The file format is unchanged.
 - **Attribute scans are bounded to exactly the queried attribute (#381).** `[?e :attr ?v]` computed the end of its AEVT range by incrementing the attribute's last byte. For attributes whose last byte is `0x7F` or `0xBF` — including about 1 in 64 non-ASCII characters, such as `:丿` or `:ÿ` — the result was not valid UTF-8, so the scan ran to the end of the whole AEVT index and read every later fact before filtering. It also read facts for prefix siblings (`:ab`, `:a/b` when scanning `:a`). The range now ends at `attribute + "\0"`, which covers exactly one attribute. Scanning 100 `:丿` facts in a checkpointed file with 40,000 facts on neighbouring attributes drops from 45.4 ms to 251 µs. Results are unchanged.
 
+- **Checkpoints no longer re-encode the whole index (#315).** `checkpoint()` decoded and re-serialised every entry of all four covering indexes and re-read every page of the file for its checksum, so checkpointing after one new fact cost almost as much as after thousands. Index leaves that receive no new entries are now copied verbatim, only the leaves that do are decoded and re-split, and unchanged fact pages are no longer re-hashed. Checkpoint after one new fact drops from 246 ms to 25.7 ms on a 100k-fact file and from 23.9 ms to 3.9 ms at 10k. Cost still grows with graph size, because the index pages are copied on every checkpoint; the file format is unchanged. The `checkpoint()` and `wal_checkpoint_threshold` docs now state that a checkpoint is not a durability boundary: the WAL is already crash-durable.
+
 ### Fixed
 
 - **Bound-entity queries could drop rows when one `WriteTransaction` wrote the same attribute in several valid-time windows (#323).** Both facts share a `tx_count`, and the selective lookup path de-duplicated on `(entity, attribute, tx_count, asserted)`, so one window's value was silently lost, while the same query via a full scan returned both. That de-duplication has been removed, and bound-entity queries now always match a full scan.
@@ -19,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Notes
 
 - On v2.x, reading a heavily rewritten attribute still costs time proportional to its history, because v7 index keys carry neither the value nor the assert/retract flag; the structural fix needs the v8 keys and is tracked for v3.0.0 in #379.
+- Checkpoints on v2.x still copy every index page, so their cost grows with graph size. Copy-on-write index pages on the v3 branch, which also make `save()` crash-atomic, are needed for checkpoints proportional to the change alone (#374).
 
 ## v2.0.1 — 2026-09-25
 
