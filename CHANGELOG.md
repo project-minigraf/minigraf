@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Performance
 
 - **Bound-entity point queries no longer pay for other attributes' history (#323).** `[:e :attr ?v]` now range-scans only `(e, :attr)` in the EAVT index instead of every record the entity has ever written. Reading a rarely changed attribute of a heavily rewritten entity no longer slows down as that entity's history grows: with 2,000 retract/reassert cycles on another attribute of the same entity, it drops from 4.58 ms to 19.0 µs. Reading the heavily rewritten attribute itself, and attribute scans (`[?e :attr ?v]`), are about 1.35–1.4× faster (4.64 ms → 3.36 ms), from cheaper net-assert grouping and removing a redundant dedup pass. The file format is unchanged.
+- **Attribute scans are bounded to exactly the queried attribute (#381).** `[?e :attr ?v]` computed the end of its AEVT range by incrementing the attribute's last byte. For attributes whose last byte is `0x7F` or `0xBF` — including about 1 in 64 non-ASCII characters, such as `:丿` or `:ÿ` — the result was not valid UTF-8, so the scan ran to the end of the whole AEVT index and read every later fact before filtering. It also read facts for prefix siblings (`:ab`, `:a/b` when scanning `:a`). The range now ends at `attribute + "\0"`, which covers exactly one attribute. Scanning 100 `:丿` facts in a checkpointed file with 40,000 facts on neighbouring attributes drops from 45.4 ms to 251 µs. Results are unchanged.
 
 ### Fixed
 

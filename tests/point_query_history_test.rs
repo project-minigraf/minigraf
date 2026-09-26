@@ -207,3 +207,34 @@ fn same_transaction_multi_window_matches_full_scan() {
     let r = same_as_full_scan(&db, "?v", ":any-valid-time", "[:e/w :x ?v]");
     assert_eq!(r.len(), 2, "both windows' values must be returned");
 }
+
+/// #381 — attribute-bound scans (`[?e :a ?v]`) over a checkpointed file return exactly
+/// the queried attribute, including non-ASCII names whose last UTF-8 byte is 0xBF
+/// (`:丿`, `:ÿ`) and ordinary names with prefix siblings (`:a` vs `:ab`, `:a/b`).
+#[test]
+fn attribute_scan_exact_for_non_ascii_and_prefix_siblings_file_backed() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("t.graph");
+    let attrs = [":a", ":ab", ":a/b", ":丿", ":丿x", ":乀", ":ÿ", ":ÿx", ":Ā"];
+    let db = Minigraf::open(&path).unwrap();
+    for (i, attr) in attrs.iter().enumerate() {
+        db.execute(&format!("(transact [[:e/c{i} {attr} \"c{i}\"]])"))
+            .unwrap();
+    }
+    db.checkpoint().unwrap();
+    // Pending on top of committed.
+    for (i, attr) in attrs.iter().enumerate() {
+        db.execute(&format!("(transact [[:e/p{i} {attr} \"p{i}\"]])"))
+            .unwrap();
+    }
+    for (i, attr) in attrs.iter().enumerate() {
+        let r = same_as_full_scan(&db, "?e ?v", "", &format!("[?e {attr} ?v]"));
+        assert_eq!(
+            r.len(),
+            2,
+            "one committed and one pending fact per attribute"
+        );
+        assert!(r.iter().any(|row| row.contains(&format!("\"c{i}\""))));
+        assert!(r.iter().any(|row| row.contains(&format!("\"p{i}\""))));
+    }
+}
