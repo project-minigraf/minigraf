@@ -2601,5 +2601,114 @@ mod tests {
                 "error message must not be empty"
             );
         }
+
+        /// #374: `save()` is not crash-atomic, but a crash at any point inside it must
+        /// lose no checkpointed fact. Kills `save()` at every page write and every sync
+        /// of a checkpoint on a file already written by several checkpoints, then reopens
+        /// the bytes that reached storage. Either the old header survives (old facts only,
+        /// old `last_checkpointed_tx_count`, so WAL replay re-applies the in-flight
+        /// transaction) or the new one does (all facts). Never anything in between.
+        #[test]
+        fn crash_at_every_point_in_save_loses_no_checkpointed_fact() {
+            const PER_BATCH: u128 = 150;
+            const OLD_BATCHES: u128 = 3;
+            let entity = |i: u128| Uuid::from_u128(i + 1);
+
+            // A file written by several checkpoints, then one more batch pending.
+            let build = || {
+                let mem = MemoryBackend::new();
+                let mut pfs = PersistentFactStorage::new(mem.clone(), 16).unwrap();
+                for b in 0..OLD_BATCHES {
+                    let batch = (b * PER_BATCH..(b + 1) * PER_BATCH)
+                        .map(|i| (entity(i), ":test/n".to_string(), Value::Integer(i as i64)))
+                        .collect();
+                    pfs.storage().transact(batch, None).unwrap();
+                    pfs.mark_dirty();
+                    pfs.save().unwrap();
+                }
+                let old_tx = pfs.last_checkpointed_tx_count();
+                drop(pfs);
+                (mem, old_tx)
+            };
+            let old_total = (OLD_BATCHES * PER_BATCH) as usize;
+            let new_total = old_total + PER_BATCH as usize;
+
+            // Returns (fact count, last_checkpointed_tx_count, rebuilt on open).
+            let crash_and_reopen = |fail_write: Option<u64>, fail_sync: Option<u64>| {
+                let (mem, old_tx) = build();
+                let (backend, config) = FaultInjectingBackend::with_config(mem.clone());
+                let mut pfs = PersistentFactStorage::new(backend, 16).unwrap();
+                let batch = (OLD_BATCHES * PER_BATCH..(OLD_BATCHES + 1) * PER_BATCH)
+                    .map(|i| (entity(i), ":test/n".to_string(), Value::Integer(i as i64)))
+                    .collect();
+                pfs.storage().transact(batch, None).unwrap();
+                pfs.mark_dirty();
+                {
+                    let mut cfg = config.lock().unwrap();
+                    cfg.fail_write_after = fail_write;
+                    cfg.fail_sync_after = fail_sync;
+                }
+                let saved = pfs.save().is_ok();
+                // Simulated kill: no retry, no auto-save on drop.
+                pfs.dirty = false;
+                drop(pfs);
+
+                let pfs = PersistentFactStorage::new(mem, 16).expect("reopen after crash");
+                let by_attr = pfs
+                    .storage()
+                    .get_facts_by_attribute(&":test/n".to_string())
+                    .unwrap()
+                    .len();
+                let limit = if by_attr == new_total {
+                    new_total
+                } else {
+                    old_total
+                };
+                for i in 0..limit as u128 {
+                    let facts = pfs.storage().get_facts_by_entity(&entity(i)).unwrap();
+                    assert_eq!(facts.len(), 1, "entity lookup lost a checkpointed fact");
+                }
+                let rebuilt = pfs.fact_prefix_crc.is_none();
+                (
+                    saved,
+                    by_attr,
+                    pfs.last_checkpointed_tx_count(),
+                    old_tx,
+                    rebuilt,
+                )
+            };
+
+            let mut rebuilds = 0;
+            let mut points = 0;
+            for fault in ["write", "sync"] {
+                for k in 0u64.. {
+                    let (saved, count, tx, old_tx, rebuilt) = if fault == "write" {
+                        crash_and_reopen(Some(k), None)
+                    } else {
+                        crash_and_reopen(None, Some(k))
+                    };
+                    if saved {
+                        assert_eq!(count, new_total, "completed save must keep all facts");
+                        break;
+                    }
+                    points += 1;
+                    rebuilds += usize::from(rebuilt);
+                    if tx == old_tx {
+                        assert_eq!(
+                            count, old_total,
+                            "old header must see exactly the old facts"
+                        );
+                    } else {
+                        assert_eq!(count, new_total, "new header must see all facts");
+                    }
+                }
+            }
+            assert!(points > 20, "expected many crash points");
+            assert!(
+                rebuilds > 0,
+                "expected some crash points to force an index rebuild"
+            );
+            eprintln!("#374 crash test: {points} crash points, {rebuilds} rebuilt on open");
+        }
     }
 }
