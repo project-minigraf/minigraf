@@ -8,16 +8,18 @@ Completed releases and their implementation details live in the [CHANGELOG](CHAN
 
 ---
 
-## v2.0.2 — Final Planned v2.x Release
+## v2.0.2 — Final Planned v2.x Release (released 2026-09-27)
 
-**The v2.x line (`main`) ends with a patch.** File format stays v7 and the public API does not change. All new feature work has moved to v3.x. Tracker: #383.
+**The v2.x line (`main`) ends with a patch.** File format stays v7 and the public API does not change. All new feature work has moved to v3.x. Tracker: #383. Details are in the [CHANGELOG](CHANGELOG.md).
 
-Scope:
+Shipped:
 
-- Already merged: bound-entity point queries narrowed to the queried attribute (#323 mitigation), exact attribute-scan bounds (#381), and checkpoints that copy untouched index leaves (#315 mitigation)
+- Bound-entity point queries narrowed to the queried attribute (#323 mitigation), exact attribute-scan bounds (#381), and checkpoints that copy untouched index leaves (#315 mitigation)
 - fsync the parent directory after creating the `.graph`/WAL file and after deleting the WAL (#389)
 - `or-join` returns an empty result, not INT-031, when the clauses before it match no rows (#405)
 - A clear user error for `$slot` queries run through `execute()`, not internal INT-025 (#407)
+- Recursive rules with a literal start that recurse through another rule no longer fail under magic sets (#297)
+- The INT-054 negative-cycle error names its predicates in a stable order (#410)
 - Benchmark regression alerting that is not silently muted (#393)
 - CI: MSRV build, public-API semver check, dependency policy (#395)
 - Stability and support policy, including how long v2.x gets data-integrity fixes after v3.0.0 (#397)
@@ -156,7 +158,7 @@ When evaluating features, ask:
 
 ## Current Focus
 
-- v2.0.2, the final planned v2.x release, on `main`
+- v2.x maintenance on `main`: data-integrity and security fixes only
 - v3.0.0 (format v8 and data integrity) on the `v3` branch, then v3.1.0 features
 - Production readiness for high-stakes deployments, tracked in #383
 - Ecosystem work tracked in [`minigraf-examples`](https://github.com/project-minigraf/minigraf-examples)
@@ -166,4 +168,4 @@ See [GitHub Issues](https://github.com/project-minigraf/minigraf/issues) for spe
 
 ---
 
-**Last updated**: September 2026 — v2.0.1 is the current release. v2.0.2 is the final planned v2.x release and ships from `main` first; v3.0.0 work, including the file-format v8 fix for #287/#371, is developed on the long-lived `v3` branch and merges into `main` at the v3.0.0 cut.
+**Last updated**: September 2026 — v2.0.2, the final planned v2.x release, is the current release; v3.0.0 work, including the file-format v8 fix for #287/#371, is developed on the long-lived `v3` branch and merges into `main` at the v3.0.0 cut.
