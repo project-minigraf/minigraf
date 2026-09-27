@@ -34,8 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README: MSRV (1.89) stated, v2.x known issue (#371) shown near the top, Maven coordinates corrected to `io.github.project-minigraf`, Android listed on Maven Central, and binding download locations point to the binding repos.
 - `.github/SECURITY.md` lists 2.x as the supported line. About 50 broken wiki links in `docs/ERROR_REFERENCE.md` now use full wiki URLs.
 
+- **Stability and support policy (#397).** PHILOSOPHY.md §7 now states a format policy instead of "frozen for decades": what counts as a format change, that v(N+1) always reads v(N), and that older formats are dropped only in a major release. A new support policy gives v2.x data-integrity and security fixes for 12 months after v3.0.0 ships. "Production-ready", "12–15 months to production" and the check mark on "never losing data" are replaced with claims that hold today. SECURITY.md links the policy.
+- **Support tiers (#400).** The Rust crate and Python are Tier 1 (fully tested, released with every core release). Node.js, browser WASM, WASI, Java/JVM, Android, Swift and C are Tier 2 (experimental, best-effort releases). Tier 1 platforms are Linux ext4/xfs, macOS APFS and Windows NTFS on local disk. The README platform table shows each binding's tier.
+- **Known-issues process (#399).** Issues labelled `data-integrity`, `corruption` or `durability` stay open until their fix is in a published release (CONTRIBUTING.md). A new `known-issue` label and a pinned issue (#421) list each bug in the current release with affected versions, workaround and fix version; the README links it from a new "Known issues" section. #287 was reopened under this rule. The bug report template asks for the affected version range, binding and filesystem.
+
 ### Notes
 
+- **v3.0.0 drops read support for file formats v1–v6.** v3.0.0 reads format v7 and migrates it to v8. Every v1.x and v2.x release migrates v1–v6 files to v7 on open, so open any older file once with v2.x before upgrading to v3.0.0.
 - On v2.x, reading a heavily rewritten attribute still costs time proportional to its history, because v7 index keys carry neither the value nor the assert/retract flag; the structural fix needs the v8 keys and is tracked for v3.0.0 in #379.
 - Checkpoints on v2.x still copy every index page, so their cost grows with graph size. Copy-on-write index pages on the v3 branch, which also make `save()` crash-atomic, are needed for checkpoints proportional to the change alone (#374).
 

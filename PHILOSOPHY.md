@@ -41,11 +41,11 @@ Bi-temporal is 3-4 months of proven patterns (Datomic/XTDB model).
 
 Transitive closure is native, not bolted on.
 
-### 4. Faster Path to Production
+### 4. Faster Path to a Reliable Core
 
-**Datalog roadmap**: 12-15 months to production (proven implementation patterns)
+**Datalog**: proven implementation patterns (semi-naive evaluation, stratified negation) mean less of the engine is novel.
 
-We can ship a useful, reliable database faster with Datalog.
+A smaller, well-understood query engine leaves more effort for the storage engine, which is where the data-integrity risk is.
 
 ### 5. Unique Market Position
 
@@ -159,18 +159,22 @@ SQLite's success comes from a clear philosophy: be a library, not a server. Be s
 
 ### 7. Stability & Backwards Compatibility
 
-**Philosophy**: Your graph database files should work forever.
+**Philosophy**: Your graph database files should keep working, and every upgrade path should be written down before it is needed.
 
-**Implementation**:
-- Stable file format once v1.0 ships
-- Can read graphs created 20+ years ago
-- API stability: semantic versioning, no breaking changes in minor versions
-- Clear migration paths when absolutely necessary
-- Deprecation warnings 12+ months before removal
+This section is a policy, not a promise of a frozen format. Minigraf has changed its file format when a data-integrity fix needed it (v7 → v8 in v3.0.0 fixes #371), and it may need to again. What it guarantees is how those changes happen.
 
-**Commitment**: Once v1.0 ships, file format is stable for decades.
+**What counts as a format change**: any change to the on-disk layout of the header, fact pages, B+tree index pages or the WAL sidecar that an older release could not read correctly. Every format change bumps the version number in the file header. A release never changes the layout without bumping it.
 
-**Anti-pattern**: Breaking changes, format churn, forced migrations.
+**Format readability**:
+- Release line v(N+1) always reads files written in format v(N) and migrates them automatically.
+- Read support for format v(N−1) and older is dropped only in a major release, and the CHANGELOG of the previous major line announces the drop before it ships. v3.0.0 (format v8) reads v7 and drops v1–v6; every v1.x and v2.x release already migrates v1–v6 to v7, so opening a file once with any v2.x release makes it readable by v3.0.0.
+- A format change never ships in a minor or patch release.
+
+**Migration guarantee**: migration runs on open or checkpoint and needs no separate tool or configuration. Back up the file before the first open with a new major release. A migration that loses or alters facts is a data-integrity bug and is handled as one (see the support policy below).
+
+**API stability**: semantic versioning. No breaking API changes in minor or patch releases; the `Policy` CI workflow checks this on every PR to `main`. Deprecations are announced at least one minor release before removal in the next major.
+
+**Anti-pattern**: silent format changes, format changes in minor releases, migrations that need a separate tool.
 
 ### 8. Performance Through Simplicity
 
@@ -215,13 +219,43 @@ SQLite's success comes from a clear philosophy: be a library, not a server. Be s
 **Philosophy**: This is a marathon, not a sprint.
 
 **Implementation**:
-- Commitment to decades of support
+- A written support policy (below), so users know which release lines get fixes and for how long
 - Conservative, deliberate feature additions
-- No rewrites or "version 2.0" churn
-- Security patches for old versions
+- Major releases only when a data-integrity fix or a real API problem needs one, not for new features
 - Focus on stability over novelty
 
-**Inspiration**: SQLite has been maintained for 20+ years and is committed to 2050.
+**Inspiration**: SQLite has been maintained for 20+ years and is committed to 2050. Minigraf aims for the same longevity, and the support policy is the part of that aim it can commit to today.
+
+#### Support policy
+
+| Release line | Gets | For how long |
+|---|---|---|
+| Latest minor of the current major (today: 2.0.x) | All fixes: bugs, data integrity, security | Until the next release |
+| Previous major, after the next major's `.0` release | Data-integrity and security fixes only, as patch releases | 12 months after the next major's `.0` release |
+| Older lines | Nothing | — |
+
+When v3.0.0 ships, v2.x gets data-integrity and security fixes for 12 months after that date. A data-integrity fix that needs a format change cannot ship on the older line; in that case the older line gets a documented workaround and the issue stays listed as a known issue until the line leaves support. #371 is the current example.
+
+Data-integrity bugs stay visible until they are fixed in a published release; see the known-issues process in [CONTRIBUTING.md](CONTRIBUTING.md#known-issues-and-data-integrity-bugs).
+
+#### Support tiers
+
+"Supported" depends on which binding and which platform. Tier 1 is what the project tests and releases together; Tier 2 is built and smoke-tested but released on a best-effort schedule.
+
+| Tier | Bindings | What it means |
+|---|---|---|
+| **Tier 1** | Rust crate (`minigraf`), Python (`minigraf` on PyPI) | Full test suite in CI. Released at the same time as every core release. Data-integrity fixes land here first. |
+| **Tier 2 (experimental)** | Node.js, browser WASM, WASI, Java/JVM, Android, Swift (iOS/macOS), C | Built and smoke-tested in its own repo. Released on a best-effort schedule, possibly after the core release. |
+
+A binding moves to Tier 1 when real users need it: issues from outside users, or known dependents. No binding is removed by being Tier 2.
+
+| Tier | Platform and filesystem |
+|---|---|
+| **Tier 1** | Linux on ext4 or xfs, macOS on APFS, Windows on NTFS, all on local disk |
+| **Supported with caveats** | NFSv4 with working locks. Network filesystems add latency and failure modes that local disks do not have. |
+| **Unsupported for multiple writers** | NFSv3 mounted with `nolock`, NFSv3 without `lockd`, and FUSE filesystems without working locks (see [STG-027](docs/ERROR_REFERENCE.md#stg-027-filesystem-does-not-support-file-locking)) |
+
+Browser (IndexedDB) and WASI storage follow the tier of their binding.
 
 **Anti-pattern**: Framework churn, major rewrites, abandoned versions.
 
@@ -359,16 +393,16 @@ When evaluating a feature or design choice, ask:
 
 ## Success Metrics
 
-You'll know Minigraf has succeeded when:
+These are goals, not a description of today. You'll know Minigraf has succeeded when:
 
-1. ✅ **Ubiquity**: Developers say "just use Minigraf" for embedded graph storage
-2. ✅ **Trust**: Known for never losing data, crash-safe, reliable
-3. ✅ **Simplicity**: New users are productive in under 5 minutes
-4. ✅ **Size**: Core binary within its ~1.2MB budget, minimal dependencies
-5. ✅ **Portability**: Runs everywhere from Raspberry Pi to browsers
-6. ✅ **Stability**: API hasn't broken in years
-7. ✅ **Documentation**: Comprehensive docs with examples
-8. ✅ **Longevity**: Still maintained and improved 10+ years later
+1. **Ubiquity**: Developers say "just use Minigraf" for embedded graph storage
+2. **Trust**: Known for never losing data, crash-safe, reliable. Not yet met: v2.x has a known data-integrity bug (#371), and the work to meet this goal is tracked in #383. See the [known issues](https://github.com/project-minigraf/minigraf/issues?q=is%3Aissue+is%3Aopen+label%3Aknown-issue).
+3. **Simplicity**: New users are productive in under 5 minutes
+4. **Size**: Core binary within its ~1.2MB budget, minimal dependencies
+5. **Portability**: Runs everywhere from Raspberry Pi to browsers
+6. **Stability**: API hasn't broken in years
+7. **Documentation**: Comprehensive docs with examples
+8. **Longevity**: Still maintained and improved 10+ years later
 
 ## Non-Goals
 
@@ -407,7 +441,7 @@ Inspired by SQLite's legendary testing rigor:
 
 The `.graph` file format must be:
 
-1. **Stable** - Once v1.0 ships, format is frozen for decades
+1. **Stable** - Format changes follow the policy in §7: versioned, only in major releases, and v(N+1) always reads v(N)
 2. **Self-describing** - Header with magic number and version
 3. **Portable** - Endian-agnostic, cross-platform
 4. **Efficient** - Page-based, locality of reference
