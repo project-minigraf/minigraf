@@ -1,6 +1,6 @@
 # Minigraf Roadmap
 
-> The path from a production-ready bi-temporal Datalog database to a stronger ecosystem.
+> Planned work for Minigraf, a bi-temporal Datalog database. v2.x has known data-integrity issues ([pinned list](https://github.com/project-minigraf/minigraf/issues/421)); v3.0.0 fixes them (tracker #383).
 
 **Philosophy**: Embedded graph memory for agents, mobile, and the browser — built on the SQLite approach: be boring, be reliable, be embeddable.
 
@@ -24,7 +24,9 @@ Scope:
 - Known-issues process: data-integrity issues stay open until the fix is in a published release (#399)
 - Support tiers for language bindings and platforms (#400)
 
-**Known issue on all v2.x releases:** same-transaction multi-valued facts read back as one value (#371, #287). The fix needs format v8 and ships in v3.0.0. Workaround: write or retract each value of a multi-valued attribute in its own `transact`/`retract` call.
+**Known issue on all v2.x releases:** same-transaction multi-valued facts read back as one value (#371, #287). The fix needs format v8 and ships in v3.0.0. Workaround: write or retract each value of a multi-valued attribute in its own `transact`/`retract` call. All v2.x known issues are listed in the pinned issue #421.
+
+**After v3.0.0 ships,** v2.x gets data-integrity and security fixes for 12 months ([support policy](PHILOSOPHY.md#support-policy)).
 
 ---
 

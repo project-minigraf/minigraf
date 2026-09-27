@@ -8,7 +8,9 @@
 //! — `page_cache_size()` must precede `path()` due to type-state design.
 
 use minigraf::{Minigraf, OpenOptions};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 // ── Value-only fixture ────────────────────────────────────────────────────────
 
@@ -21,15 +23,44 @@ pub fn populate_in_memory(n: usize) -> Arc<Minigraf> {
 }
 
 /// File-backed DB with `n` value facts, fully checkpointed (no WAL sidecar).
+///
+/// Criterion calls a benchmark's setup closure once per sample plus warm-up,
+/// so building the file each time rebuilt 1m facts ~11 times per benchmark and
+/// ran `insert_file` for hours (#393). The file for each `n` is built once and
+/// copied to `path`; every caller still gets a fresh, identical file.
 pub fn populate_file(n: usize, path: &str) {
-    let db = OpenOptions::new()
-        .page_cache_size(256)
-        .path(path)
-        .open()
-        .unwrap();
-    insert_val_facts(&db, n);
-    db.checkpoint().unwrap();
+    let mut fixtures = FILE_FIXTURES.lock().unwrap();
+    let fixtures = fixtures.get_or_insert_with(|| FileFixtures {
+        dir: tempfile::tempdir().unwrap(),
+        built: HashMap::new(),
+    });
+    let dir = fixtures.dir.path();
+    let template = fixtures.built.entry(n).or_insert_with(|| {
+        let template = dir.join(format!("val_{n}.graph"));
+        let db = OpenOptions::new()
+            .page_cache_size(256)
+            .path(template.to_str().unwrap())
+            .open()
+            .unwrap();
+        insert_val_facts(&db, n);
+        db.checkpoint().unwrap();
+        template
+    });
+    std::fs::copy(template, path).unwrap();
 }
+
+/// Delete the files built by [`populate_file`]. Statics are not dropped at
+/// exit, so the bench `main` calls this after the last group.
+pub fn remove_file_fixtures() {
+    FILE_FIXTURES.lock().unwrap().take();
+}
+
+struct FileFixtures {
+    dir: tempfile::TempDir,
+    built: HashMap<usize, PathBuf>,
+}
+
+static FILE_FIXTURES: Mutex<Option<FileFixtures>> = Mutex::new(None);
 
 /// File-backed DB with `n` value facts, WAL NOT checkpointed.
 /// Uses `wal_checkpoint_threshold: usize::MAX` to suppress auto-checkpoint.
