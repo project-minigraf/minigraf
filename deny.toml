@@ -1,0 +1,49 @@
+# cargo-deny policy for Minigraf dependencies (#395).
+# Run locally with: cargo deny check bans licenses sources
+# Advisories are covered by cargo-audit.yml and osv-scanner.yml.
+
+[graph]
+# Check the native targets plus the browser WASM target, so the
+# wasm-bindgen / web-sys dependency tree is covered too.
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "wasm32-unknown-unknown",
+]
+all-features = true
+
+[licenses]
+# Permissive licenses compatible with Minigraf's MIT OR Apache-2.0.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unlicense",
+    "CC0-1.0",
+]
+confidence-threshold = 0.9
+# Keep the list stable as dependencies come and go.
+unused-allowed-license = "allow"
+
+[bans]
+# Two versions of the same crate bloat the binary (PHILOSOPHY.md §4).
+# If an upstream crate forces a duplicate, list it under `skip` with a
+# comment explaining why, e.g.
+#   skip = [{ crate = "foo@1.2.3", reason = "bar still depends on foo 1.x" }]
+multiple-versions = "deny"
+skip = []
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+# Every crate must come from crates.io.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

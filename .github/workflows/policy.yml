@@ -1,0 +1,90 @@
+name: Policy
+
+# Release-policy checks (#395):
+#   - msrv:          the crate builds and its unit tests pass on `rust-version`
+#   - semver-checks: no accidental public-API break against the latest release tag
+#   - cargo-deny:    dependency licenses, duplicate versions and sources (deny.toml)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    # Major-version branches (e.g. `v3`) run the same checks, but a semver
+    # break is allowed there — see the semver-checks job.
+    branches: [ "main", "v[0-9]*" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  msrv:
+    name: MSRV (Rust 1.89)
+    runs-on: ubuntu-latest
+    env:
+      MSRV: "1.89"
+      # Resolve dependencies to versions that support our rust-version, so a
+      # new upstream release cannot break the MSRV build on its own.
+      CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check MSRV matches Cargo.toml
+        run: |
+          declared=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml)
+          if [ "$declared" != "$MSRV" ]; then
+            echo "::error::Cargo.toml rust-version is $declared but this job tests $MSRV; update policy.yml"
+            exit 1
+          fi
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.89"
+
+      - name: Check (all features)
+        run: cargo check --all-features
+
+      - name: Run unit tests
+        run: cargo test --lib
+
+  semver-checks:
+    name: Public API semver check
+    runs-on: ubuntu-latest
+    # A breaking change is only allowed on a major-version branch (e.g. `v3`).
+    # There the job still runs, so the break is visible, but it cannot fail
+    # the PR. On `main` it is a hard gate.
+    continue-on-error: ${{ github.event_name == 'pull_request' && github.base_ref != 'main' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find latest release tag
+        id: baseline
+        run: |
+          tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*')
+          echo "Baseline: $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Run cargo-semver-checks
+        uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          baseline-rev: ${{ steps.baseline.outputs.tag }}
+
+  cargo-deny:
+    name: Dependency policy (cargo-deny)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          # Advisories are covered by cargo-audit.yml and osv-scanner.yml.
+          command: check bans licenses sources

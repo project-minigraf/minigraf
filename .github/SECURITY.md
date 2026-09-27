@@ -2,16 +2,19 @@
 
 ## Supported Versions
 
-Minigraf is post-1.0 and under active development. Only the latest published
-minor release line on [crates.io](https://crates.io/crates/minigraf) and the
-current `main` branch receive security fixes. Older minor release lines are not
-patched unless a separate security advisory explicitly says otherwise.
+The latest minor release of the current major line gets all fixes. After the
+next major version ships, the previous major line gets security and
+data-integrity fixes for 12 months. The full policy is in
+[PHILOSOPHY.md](../PHILOSOPHY.md#support-policy).
 
 | Version | Supported |
 | ------- | --------- |
-| 2.x (latest release)  | ✅ |
+| 2.x (latest release)  | ✅ Until 12 months after v3.0.0 ships |
 | 1.x                   | ❌ |
 | 0.x                   | ❌ |
+
+Known bugs in the current release, including data-integrity bugs, are listed in
+the pinned [known-issues issue](https://github.com/project-minigraf/minigraf/issues/421).
 
 ## Reporting a Vulnerability
 

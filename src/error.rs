@@ -184,6 +184,7 @@ pub(crate) enum ErrorCode {
     Api007,
     Api008,
     Api009,
+    Api010,
     Int001,
     Int002,
     Int003,
@@ -1039,6 +1040,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCategory::Api,
     ),
     (
+        ErrorCode::Api010,
+        "API-010",
+        "query contains bind slots ({}); use prepare() and execute the prepared query with bind values",
+        ErrorCategory::Api,
+    ),
+    (
         ErrorCode::Int001,
         "INT-001",
         "a WriteTransaction is already in progress on this thread; use tx.execute() instead",
@@ -1772,6 +1779,7 @@ mod tests {
                 | ErrorCode::Api007
                 | ErrorCode::Api008
                 | ErrorCode::Api009
+                | ErrorCode::Api010
                 | ErrorCode::Int001
                 | ErrorCode::Int002
                 | ErrorCode::Int003
@@ -1963,6 +1971,7 @@ mod tests {
             ErrorCode::Api007,
             ErrorCode::Api008,
             ErrorCode::Api009,
+            ErrorCode::Api010,
             ErrorCode::Int001,
             ErrorCode::Int002,
             ErrorCode::Int003,

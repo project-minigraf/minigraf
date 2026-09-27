@@ -2040,6 +2040,12 @@ pub(crate) fn apply_or_clauses(
                 join_vars,
                 branches,
             } => {
+                // No incoming rows: the join is empty. Skip before the defensive check
+                // below, which derives outer_keys from the rows and would otherwise
+                // report every join var as unbound (#405).
+                if bindings.is_empty() {
+                    continue;
+                }
                 let sorted_oj_branches: Vec<&Vec<WhereClause>> = {
                     #[cfg_attr(feature = "wasm", allow(unused_mut))]
                     let mut b: Vec<&Vec<WhereClause>> = branches.iter().collect();

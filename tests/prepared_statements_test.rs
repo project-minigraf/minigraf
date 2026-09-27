@@ -385,3 +385,57 @@ fn execute_extra_bindings_ignored() {
     let result = prepared.execute(&[("unused-slot", BindValue::Val(Value::Integer(99)))]);
     assert!(result.is_ok(), "extra bindings should be silently ignored");
 }
+
+// ─── Bind slots through execute() (#407) ──────────────────────────────────────
+
+#[test]
+fn execute_rejects_bind_slots_with_api_error() {
+    let db = Minigraf::in_memory().unwrap();
+    let err = db
+        .execute(
+            "(query [:find ?status :as-of $tx :valid-at $date \
+             :where [$entity :employment/status ?status]])",
+        )
+        .unwrap_err();
+    assert_eq!(err.code(), "API-010");
+    let msg = err.to_string();
+    assert!(msg.contains("$date, $entity, $tx"), "slots listed sorted");
+    assert!(msg.contains("prepare"), "error should point at prepare()");
+}
+
+#[test]
+fn execute_rejects_bind_slot_in_every_position() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute(r#"(transact [[:alice :person/age 30]])"#)
+        .unwrap();
+    for q in [
+        "(query [:find ?e :as-of $tx :where [?e :person/age _]])",
+        "(query [:find ?e :valid-at $d :where [?e :person/age _]])",
+        "(query [:find ?a :where [$e :person/age ?a]])",
+        "(query [:find ?e :where [?e :person/age $age]])",
+        "(query [:find ?v :where [?e $attr ?v]])",
+        "(query [:find ?e :where [?e :person/age ?a] [(> ?a $min)]])",
+        "(query [:find ?e :where [?e :person/age _] (not [?e :person/name $n])])",
+        "(query [:find ?e :where (or [?e :person/age $a] [?e :person/name $n])])",
+    ] {
+        let err = db.execute(q).unwrap_err();
+        assert_eq!(
+            err.code(),
+            "API-010",
+            "query with a bind slot must be API-010"
+        );
+    }
+}
+
+#[test]
+fn write_transaction_execute_rejects_bind_slots() {
+    let db = Minigraf::in_memory().unwrap();
+    let mut tx = db.begin_write().unwrap();
+    tx.execute(r#"(transact [[:alice :person/age 30]])"#)
+        .unwrap();
+    let err = tx
+        .execute("(query [:find ?e :where [?e :person/age $age]])")
+        .unwrap_err();
+    assert_eq!(err.code(), "API-010");
+    tx.rollback();
+}
