@@ -180,10 +180,10 @@ See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 ## Current Maintainer Context
 
-**v2.0.1 released** (2026-09-25) — patch fixing index rebuild on open (#370). **v2.0.0** introduced kernel file locking (#317, #304), structured runtime error codes (#277), `OpenOptions` `#[non_exhaustive]`, and an MSRV of Rust 1.89. See `CHANGELOG.md` for the full rationale and release history.
+**v2.0.2 released** (2026-09-27) — final planned v2.x release: query fixes (#297, #405, #407, #410), directory fsync (#389), point-query/attribute-scan/checkpoint perf mitigations (#323, #381, #315), CI policy checks (#395), support policy and tiers (#397, #399, #400). **v2.0.1** (2026-09-25) fixed index rebuild on open (#370). **v2.0.0** introduced kernel file locking (#317, #304), structured runtime error codes (#277), `OpenOptions` `#[non_exhaustive]`, and an MSRV of Rust 1.89. See `CHANGELOG.md` for the full rationale and release history.
 
 Current plan (see `ROADMAP.md` and the milestones):
-- **v2.0.2** (final planned v2.x release, format v7, no API change) ships from `main`.
+- **v2.x** (`main`, format v7) now gets only data-integrity and security fixes; v2.0.2 was the final planned v2.x release.
 - **v3.0.0** (format v8 and data integrity, tracker #383) is developed on the long-lived `v3` branch. Merge `main` into `v3` regularly.
 - **v3.1.0** holds new features (query profiler #185, `:limit` #306/#310, lag/lead #182, UniFFI additions).
 - Known v2.x data issue: same-transaction multi-valued facts (#371). Fix ships in v3.0.0. All v2.x known issues are listed in pinned issue #421 (`known-issue` label); `data-integrity`/`corruption`/`durability` issues stay open until the fix is in a published release (CONTRIBUTING.md).

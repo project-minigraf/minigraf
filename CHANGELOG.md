@@ -17,9 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two values of the same attribute written in one transaction are both returned by every query path. Previously only one came back, and entity-bound and attribute-bound queries could return different ones (#371, #287).
 - A retract that removes several values of one attribute in one call now hides all of them (#371).
 
-## Unreleased on v2.x (main) — v2.0.2
+## v2.0.2 — 2026-09-27
 
-These changes ship first in v2.0.2 from `main` and are merged into the `v3` branch.
+Final planned release on the v2.x line. File format is unchanged (v7). No breaking API changes; one new user-facing error code (API-010). v2.x gets data-integrity and security fixes for 12 months after v3.0.0 ships ([support policy](PHILOSOPHY.md#support-policy)).
 
 ### Performance
 
@@ -55,6 +55,10 @@ These changes ship first in v2.0.2 from `main` and are merged into the `v3` bran
 - **Stability and support policy (#397).** PHILOSOPHY.md §7 now states a format policy instead of "frozen for decades": what counts as a format change, that v(N+1) always reads v(N), and that older formats are dropped only in a major release. A new support policy gives v2.x data-integrity and security fixes for 12 months after v3.0.0 ships. "Production-ready", "12–15 months to production" and the check mark on "never losing data" are replaced with claims that hold today. SECURITY.md links the policy.
 - **Support tiers (#400).** The Rust crate and Python are Tier 1 (fully tested, released with every core release). Node.js, browser WASM, WASI, Java/JVM, Android, Swift and C are Tier 2 (experimental, best-effort releases). Tier 1 platforms are Linux ext4/xfs, macOS APFS and Windows NTFS on local disk. The README platform table shows each binding's tier.
 - **Known-issues process (#399).** Issues labelled `data-integrity`, `corruption` or `durability` stay open until their fix is in a published release (CONTRIBUTING.md). A new `known-issue` label and a pinned issue (#421) list each bug in the current release with affected versions, workaround and fix version; the README links it from a new "Known issues" section. #287 was reopened under this rule. The bug report template asks for the affected version range, binding and filesystem.
+
+### Known issues
+
+- Same-transaction multi-valued facts can read back as one value (#371, #287); the fix needs file format v8 and ships in v3.0.0. Workaround: write or retract each value of a multi-valued attribute in its own call. `save()` is not crash-atomic (#374), and indexes damaged by the pre-v2.0.1 rebuild bug are not repaired (#373). All v2.x known issues, with affected versions and workarounds, are listed in the pinned issue #421.
 
 ### Notes
 
