@@ -53,7 +53,13 @@ cargo add minigraf
 
 Requires Rust 1.89 or newer (the minimum supported Rust version, set in `Cargo.toml`).
 
-**Known issue on v2.x:** two values of the same attribute for one entity written in a single `transact` (or retracted in a single `retract`) can read back as one value (#371). Write or retract each value of a multi-valued attribute in its own call. The fix changes the file format and ships in v3.0.0. See the [CHANGELOG](CHANGELOG.md).
+## Known issues
+
+Bugs present in the current release, with affected versions, workarounds and fix versions, are listed in the pinned **[Known issues in the current release](https://github.com/project-minigraf/minigraf/issues/421)** issue. The most important one on v2.x:
+
+- Two values of the same attribute for one entity written in a single `transact` (or retracted in a single `retract`) can read back as one value ([#371](https://github.com/project-minigraf/minigraf/issues/371)). Write or retract each value of a multi-valued attribute in its own call. The fix changes the file format and ships in v3.0.0.
+
+v2.x gets data-integrity and security fixes for 12 months after v3.0.0 ships. See the [support policy](PHILOSOPHY.md#support-policy).
 
 ## Quick Start
 
@@ -123,17 +129,19 @@ No other database offers this combination:
 
 ## Platform support
 
-| Platform | Package | Install |
-|---|---|---|
-| Rust (native) | `minigraf` on crates.io | `cargo add minigraf` |
-| Browser WASM | `@minigraf/browser` on npm | `npm install @minigraf/browser` |
-| WASI | `@minigraf/wasi` on npm | `npm install @minigraf/wasi` |
-| Node.js | `minigraf` on npm | `npm install minigraf` |
-| Python | `minigraf` on PyPI | `pip install minigraf` |
-| Java/JVM | `io.github.project-minigraf:minigraf-jvm` on Maven Central | see [wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) |
-| Android | `io.github.project-minigraf:minigraf-android` (`.aar`) on Maven Central | see [wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) |
-| iOS / macOS | `.xcframework` via Swift Package Manager ([minigraf-swift](https://github.com/project-minigraf/minigraf-swift)) | see [wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) |
-| C / FFI | header + tarball on [minigraf-c releases](https://github.com/project-minigraf/minigraf-c/releases) | see [wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) |
+| Platform | Tier | Package | Install |
+|---|---|---|---|
+| Rust (native) | 1 | `minigraf` on crates.io | `cargo add minigraf` |
+| Python | 1 | `minigraf` on PyPI | `pip install minigraf` |
+| Browser WASM | 2 (experimental) | `@minigraf/browser` on npm | `npm install @minigraf/browser` |
+| WASI | 2 (experimental) | `@minigraf/wasi` on npm | `npm install @minigraf/wasi` |
+| Node.js | 2 (experimental) | `minigraf` on npm | `npm install minigraf` |
+| Java/JVM | 2 (experimental) | `io.github.project-minigraf:minigraf-jvm` on Maven Central | see [wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) |
+| Android | 2 (experimental) | `io.github.project-minigraf:minigraf-android` (`.aar`) on Maven Central | see [wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) |
+| iOS / macOS | 2 (experimental) | `.xcframework` via Swift Package Manager ([minigraf-swift](https://github.com/project-minigraf/minigraf-swift)) | see [wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) |
+| C / FFI | 2 (experimental) | header + tarball on [minigraf-c releases](https://github.com/project-minigraf/minigraf-c/releases) | see [wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) |
+
+**Tier 1** bindings are fully tested and released at the same time as every core release. **Tier 2** bindings are built and smoke-tested, released on a best-effort schedule, and experimental. A binding moves to Tier 1 when real users need it. Tier 1 operating systems and filesystems are Linux (ext4, xfs), macOS (APFS) and Windows (NTFS) on local disk; NFSv4 is supported with caveats, and NFSv3 `nolock` is unsupported for multiple writers. Details: [support tiers](PHILOSOPHY.md#support-tiers).
 
 **Embedded graph memory for agents, mobile, and the browser — SQLite's simplicity + Datomic's temporal model.**
 

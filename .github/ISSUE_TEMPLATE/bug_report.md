@@ -27,8 +27,10 @@ What actually happened. Include the full error message or panic output if applic
 ## Environment
 
 - Minigraf version:
+- Affected version range, if known (first and last version you saw it in):
+- Binding (Rust, Python, Node.js, WASM, WASI, Java, Android, Swift, C):
 - Rust version (`rustc --version`):
-- OS:
+- OS and filesystem (for example, Linux ext4, macOS APFS, NFSv4):
 
 ## Additional context
 

@@ -89,6 +89,17 @@ Run branch coverage to check overall project health before submitting a PR.
 5. Open a PR with a clear description of what the change does and why
 6. Reference any related issues in the PR description
 
+## Known Issues and Data-Integrity Bugs
+
+Bugs that can lose, corrupt or hide data are handled so that users can always see them before they adopt a release:
+
+- An issue labelled `data-integrity`, `corruption` or `durability` stays **open until its fix is in a published release**, not just merged. The closing comment links that release. A fix merged only to a development branch (such as `v3`) does not close the issue.
+- Every such bug that affects a published release also gets the `known-issue` label and an entry in the pinned [Known issues in the current release](https://github.com/project-minigraf/minigraf/issues/421) issue: affected versions, symptom, workaround and fix version. The entry is removed when the fix ships.
+- For bugs found downstream, the issue title or body states the affected version range (for example, "v0.6.0 – v2.0.1").
+- The README links to the pinned issue from its "Known issues" section.
+
+At release time, the maintainer updates the pinned issue and closes the issues whose fixes are in the release.
+
 ## Philosophy Check
 
 Before submitting, ask yourself:
@@ -111,6 +122,8 @@ Releases are managed by the project maintainer. The process is documented in iss
 3. `cargo check --workspace` passes cleanly
 4. All affected docs synced (see `CLAUDE.md` — "Keep documentation synchronized")
 5. Tag pushed — CI publishes to crates.io, PyPI, npm, and Maven Central automatically
+6. Tier 1 bindings (Python) released alongside the core release; Tier 2 bindings follow on a best-effort schedule (see [support tiers](PHILOSOPHY.md#support-tiers))
+7. Known-issues issue updated, and `data-integrity`/`corruption`/`durability` issues fixed by this release closed with a link to it (see above)
 
 ## Code of Conduct
 
