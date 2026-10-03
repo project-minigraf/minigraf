@@ -15,6 +15,8 @@ A tiny, self-contained graph database with **Datalog queries** and **bi-temporal
 
 **[Try it in your browser — no install needed →](https://minigraf-playground.vercel.app/)**
 
+**[Watch time travel in the visualizer →](https://project-minigraf.github.io/minigraf-visualizer/#sample=careers&tx=7&e=:alice&view=map)** Scrub transaction time and valid time, and see the graph change.
+
 ## Vision
 
 Minigraf is a **single-file embedded graph database** that lets you:
@@ -111,6 +113,8 @@ cargo run < demos/demo_recursive.txt   # recursive rules demo
 
 See a working implementation of **temporal reasoning** with Minigraf at [github.com/adityamukho/temporal_reasoning](https://github.com/adityamukho/temporal_reasoning) — an AI agent that uses Minigraf's bi-temporal model to store, correct, and audit beliefs.
 
+The **[time travel visualizer](https://project-minigraf.github.io/minigraf-visualizer/)** runs Minigraf in your browser and draws its history. Step through transactions, move the valid-time cursor, and see each fact version on a bitemporal map. It opens `.graph` files too. For example, see [a salary that was recorded wrong and then corrected](https://project-minigraf.github.io/minigraf-visualizer/#sample=careers&tx=7&e=:alice&view=map).
+
 See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference) wiki page for the complete syntax.
 
 ## Why Minigraf?
@@ -166,9 +170,11 @@ Store what an agent believes, retract and correct without losing history, and re
 
 Pairs well with vector stores (GraphRAG pattern): the vector store answers "what is similar?"; Minigraf answers "what are the relationships, who recorded them, and what did we believe at time T?"
 
+See it in the visualizer: [what an agent believed when it made a recommendation](https://project-minigraf.github.io/minigraf-visualizer/#sample=agent-memory&tx=3&vt=any&e=:user-ana), and the correction that followed (press → to step forward).
+
 ### For Mobile Apps
 
-Offline-first storage with retroactive corrections — the bi-temporal model lets you correct a mis-entered value while preserving the original record. Native Kotlin and Swift bindings ship as an Android `.aar` (Maven Central) and an iOS `.xcframework` (Swift Package Manager) via [UniFFI](https://github.com/mozilla/uniffi-rs). No Rust required.
+Offline-first storage with retroactive corrections — the bi-temporal model lets you correct a mis-entered value while preserving the original record ([see a correction in the visualizer](https://project-minigraf.github.io/minigraf-visualizer/#data=KHRyYW5zYWN0IHs6dmFsaWQtZnJvbSAiMjAyNS0wNi0wMSJ9CiAgICAgICAgICBbWzp1c2VyIDpoZWFsdGgvd2VpZ2h0LWtnIDgyLjVdXSkKKHJldHJhY3QgW1s6dXNlciA6aGVhbHRoL3dlaWdodC1rZyA4Mi41XV0pCih0cmFuc2FjdCB7OnZhbGlkLWZyb20gIjIwMjUtMDYtMDEifQogICAgICAgICAgW1s6dXNlciA6aGVhbHRoL3dlaWdodC1rZyA4MC41XV0p&title=Record+facts+offline%2C+correct+on+sync&vt=any&e=:user&view=map)). Native Kotlin and Swift bindings ship as an Android `.aar` (Maven Central) and an iOS `.xcframework` (Swift Package Manager) via [UniFFI](https://github.com/mozilla/uniffi-rs). No Rust required.
 
 ```kotlin
 // Android (Kotlin)
@@ -188,7 +194,7 @@ See the [Mobile Integration](https://github.com/project-minigraf/minigraf/wiki/U
 
 ### For WASM / Browser
 
-Published as [`@minigraf/browser`](https://www.npmjs.com/package/@minigraf/browser) on npm (IndexedDB-backed, `wasm-pack`). WASI build (`wasm32-wasip1`) available as [`@minigraf/wasi`](https://www.npmjs.com/package/@minigraf/wasi) on npm and as a GitHub Releases artifact (Wasmtime / Wasmer). See the [Use Cases wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases).
+Published as [`@minigraf/browser`](https://www.npmjs.com/package/@minigraf/browser) on npm (IndexedDB-backed, `wasm-pack`). WASI build (`wasm32-wasip1`) available as [`@minigraf/wasi`](https://www.npmjs.com/package/@minigraf/wasi) on npm and as a GitHub Releases artifact (Wasmtime / Wasmer). See the [Use Cases wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases). The [playground](https://minigraf-playground.vercel.app/) and the [time travel visualizer](https://project-minigraf.github.io/minigraf-visualizer/) are both built on `@minigraf/browser`.
 
 ### For Python / Node.js / Java / C
 
