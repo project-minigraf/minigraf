@@ -39,8 +39,10 @@ page 0 leaves a file whose header fails its CRC, and the file cannot be opened a
   generation that wrote it. Every read checks them. A failed check returns a structured
   `STG-0xx` error and never returns the page's data. (#388)
 - G4. Open is O(1) in graph size: no full-file checksum pass.
-- G5. v7 files and pre-release v8 files (single header, contiguous fact pages) migrate
-  on open. The migration is crash-safe and writes checksums. (#388 migration clause)
+- G5. v7 files migrate on open. The migration is crash-safe and writes checksums
+  (#388 migration clause). Pre-release v8 files written by `v3` builds before this
+  change are not supported: v8 was never released, so they fail to open with the
+  "no valid meta page" error (§8).
 
 **Non-goals (separate issues)**
 
@@ -239,10 +241,10 @@ reopen stays fast.
 
 ## 6. Migration from legacy files
 
-A legacy file has an 84-byte `FileHeader` at page 0 and no valid meta page. It is either
-v7, or a pre-release v8 file written by `v3` builds before this change. The two have the
-same layout, and both are migrated by rebuilding indexes from the fact pages, so no
-separate path is needed.
+A legacy file has an 84-byte v7 `FileHeader` at page 0 (version 7, header CRC valid)
+and no valid meta page. Only v7 is migrated. A page 0 that is neither a valid meta page
+nor a v7 header, including a pre-release v8 single-header file, is rejected with
+"no valid meta page".
 
 1. Read the legacy header (header CRC checked) and all facts with their old refs from
    pages `1..=fact_page_count` (legacy 12-byte fact header).
@@ -267,8 +269,8 @@ TDD per component. No new dependencies. Test assert messages follow the CodeQL r
 - **Page header:** encode/verify round trip; a flipped bit, a wrong `page_id` and a
   future `generation` each give their own STG code; a failed page is not cached.
 - **Meta selection:** both valid (highest generation wins); a torn newer slot (older
-  wins); neither valid with a legacy header (migration); neither valid without one
-  (error).
+  wins); neither valid with a v7 header (migration); neither valid with a pre-release
+  v8 single header or anything else (error).
 - **Copy-on-write insert equivalence:** random committed sets and pending batches
   (including splits, keys below the first leaf and above the last, root splits).
   `stream_all_entries` of the result must equal the merged sorted set. The old root
@@ -291,7 +293,7 @@ TDD per component. No new dependencies. Test assert messages follow the CodeQL r
 - **Concurrency:** queries running during checkpoints in `concurrency_test` still return
   consistent results, and no read ever fails CRC.
 - **Migration:** v7 fixture → v8, with equal facts, query results and `tx_count` floor;
-  pre-release v8 → v8; crash at every point of the migration.
+  crash at every point of the migration; a pre-release v8 single-header file is rejected.
 - **Corruption surfacing:** corrupt a leaf, a fact page and a free-list page in turn. A
   query or a checkpoint returns the STG code and never wrong data.
 - **Benchmark:** `checkpoint/after_1_fact` and `checkpoint/after_100k_facts` at 10k,
