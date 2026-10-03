@@ -7,7 +7,7 @@ name: Policy
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "v[0-9]*" ]
   pull_request:
     # Major-version branches (e.g. `v3`) run the same checks, but a semver
     # break is allowed there — see the semver-checks job.
@@ -56,8 +56,8 @@ jobs:
     runs-on: ubuntu-latest
     # A breaking change is only allowed on a major-version branch (e.g. `v3`).
     # There the job still runs, so the break is visible, but it cannot fail
-    # the PR. On `main` it is a hard gate.
-    continue-on-error: ${{ github.event_name == 'pull_request' && github.base_ref != 'main' }}
+    # the PR or the branch push. On `main` it is a hard gate.
+    continue-on-error: ${{ (github.event_name == 'pull_request' && github.base_ref != 'main') || (github.event_name == 'push' && github.ref_name != 'main') }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

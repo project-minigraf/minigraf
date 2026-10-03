@@ -184,7 +184,7 @@ See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 Current plan (see `ROADMAP.md` and the milestones):
 - **v2.x** (`main`, format v7) now gets only data-integrity and security fixes; v2.0.2 was the final planned v2.x release.
-- **v3.0.0** (format v8 and data integrity, tracker #383) is developed on the long-lived `v3` branch. Merge `main` into `v3` regularly.
+- **v3.0.0** (format v8 and data integrity, tracker #383) is developed on the long-lived `v3` branch. All v3 PRs target `v3`; `main` stays untouched. CI runs on PRs to `v3` the same as on PRs to `main`. Merge `main` into `v3` regularly. At the first v3 release, the current `main` is copied to `v2` and `v3` becomes the new `main`.
 - **v3.1.0** holds new features (query profiler #185, `:limit` #306/#310, lag/lead #182, UniFFI additions).
 - Known v2.x data issue: same-transaction multi-valued facts (#371). Fix ships in v3.0.0. All v2.x known issues are listed in pinned issue #421 (`known-issue` label); `data-integrity`/`corruption`/`durability` issues stay open until the fix is in a published release (CONTRIBUTING.md).
 - Support policy and tiers: PHILOSOPHY.md §7 and §10. v2.x gets data-integrity and security fixes for 12 months after v3.0.0. Tier 1 = Rust + Python; other bindings are Tier 2.
