@@ -36,7 +36,7 @@ Shipped:
 
 **v3.0.0 supports file format v8 only.** Fixing #287/#371 (`EavtKey`/`AevtKey` carry no value bytes, so same-transaction multi-values collapse) bumps the format from v7 to v8. Support for v1–v6 is dropped at the same time. The v1–v6 → v7 auto-migration code in `persistent_facts.rs` can be removed when cutting this release; a v7→v8 migration replaces it. Any database opened at least once under a v1.x release will already be on v7; there are no known users on older formats. Every other layout change this release needs goes into v8 too, so there is no separate v9.
 
-This was the GitHub milestone named “2.0” before v2.0.0 used that version number for the kernel-locking and structured-error-code breaking changes; it was consequently renumbered to v3.0.0. It is developed on the long-lived `v3` branch and merges into `main` at the cut.
+This was the GitHub milestone named “2.0” before v2.0.0 used that version number for the kernel-locking and structured-error-code breaking changes; it was consequently renumbered to v3.0.0. It is developed on the long-lived `v3` branch; every v3 pull request targets `v3` and `main` is left untouched. At the first v3 release the current `main` is copied to a `v2` branch and `v3` becomes the new `main`.
 
 Scope — format and storage integrity:
 
