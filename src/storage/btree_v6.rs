@@ -802,64 +802,92 @@ fn internal_children(page: &[u8]) -> Result<Vec<u64>> {
     Ok(children)
 }
 
-/// Decode an internal node into `(children, separators)`.
+/// One internal node on the cursor's path from the root.
 ///
-/// `children.len() == seps.len() + 1` and the last child is `rightmost_child`.
-/// `seps[j]` is the first key of `children[j + 1]`'s subtree, as written by
-/// [`write_internal_page`].
-#[allow(clippy::arithmetic_side_effects)]
-fn decode_internal<K>(page: &[u8]) -> Result<(Vec<u64>, Vec<K>)>
-where
-    K: for<'de> Deserialize<'de>,
-{
-    let children = internal_children(page)?;
-    let key_count = children.len() - 1;
-    let slot_dir_start = INTERNAL_HEADER_SIZE + key_count * 8;
-    let mut seps = Vec::with_capacity(key_count);
-    for i in 0..key_count {
-        let slot_off = slot_dir_start + i * SLOT_SIZE;
-        let sep_offset = read_u16_at(page, slot_off)? as usize;
-        let sep_length = read_u16_at(page, slot_off + 2)? as usize;
-        let sep_slice = page
+/// Separators are decoded on demand (binary search decodes O(log n) of them),
+/// so descending through a node never decodes every key it holds.
+struct Frame {
+    page: Arc<Vec<u8>>,
+    key_count: usize,
+    /// Index into the node's children of the subtree the cursor is in;
+    /// `key_count` means `rightmost_child`.
+    child_idx: usize,
+}
+
+impl Frame {
+    fn new(page: Arc<Vec<u8>>) -> Result<Self> {
+        let key_count = read_u16_at(&page[..], 2)? as usize;
+        Ok(Frame {
+            page,
+            key_count,
+            child_idx: 0,
+        })
+    }
+
+    /// Child page id `i` (`i == key_count` is `rightmost_child`).
+    #[allow(clippy::arithmetic_side_effects)]
+    fn child(&self, i: usize) -> Result<u64> {
+        if i == self.key_count {
+            read_u64_at(&self.page[..], 4)
+        } else {
+            read_u64_at(&self.page[..], INTERNAL_HEADER_SIZE + i * 8)
+        }
+    }
+
+    /// Separator `i`: the first key of child `i + 1`'s subtree, as written by
+    /// [`write_internal_page`].
+    #[allow(clippy::arithmetic_side_effects)]
+    fn sep<K: for<'de> Deserialize<'de>>(&self, i: usize) -> Result<K> {
+        let slot_off = INTERNAL_HEADER_SIZE + self.key_count * 8 + i * SLOT_SIZE;
+        let sep_offset = read_u16_at(&self.page[..], slot_off)? as usize;
+        let sep_length = read_u16_at(&self.page[..], slot_off + 2)? as usize;
+        let sep_slice = self
+            .page
             .get(sep_offset..sep_offset.saturating_add(sep_length))
             .ok_or_else(|| {
                 err_coded!(
                     ErrorCode::Int049,
                     format!(
                         "sep slice out of bounds: offset={sep_offset} len={sep_length} page_len={}",
-                        page.len()
+                        self.page.len()
                     )
                 )
             })?;
-        seps.push(postcard::from_bytes(sep_slice)?);
+        Ok(postcard::from_bytes(sep_slice)?)
     }
-    Ok((children, seps))
-}
 
-/// One internal node on the cursor's path from the root.
-struct Frame<K> {
-    children: Vec<u64>,
-    seps: Vec<K>,
-    /// Index into `children` of the subtree the cursor is in.
-    child_idx: usize,
-    /// Exclusive upper bound of this node's key range; `None` = unbounded.
-    upper: Option<K>,
+    /// The child to take for `key`, searching children `from..`: the number of
+    /// separators `<= key`, counted from `from`.
+    #[allow(clippy::arithmetic_side_effects)]
+    fn route<K>(&self, key: &K, from: usize) -> Result<usize>
+    where
+        K: for<'de> Deserialize<'de> + Ord,
+    {
+        let (mut lo, mut hi) = (from, self.key_count);
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if self.sep::<K>(mid)? <= *key {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        Ok(lo)
+    }
 }
 
 /// Forward cursor over a B+tree's entries in key order.
 ///
-/// Holds the path from the root as a stack of decoded internal nodes, so
-/// moving to the next leaf or seeking forward re-reads only the pages below
-/// the lowest ancestor that still covers the target. Leaf `next_leaf`
-/// pointers are never read: a copy-on-write tree (#374) cannot keep them.
+/// Holds the path from the root as a stack of internal nodes, so moving to
+/// the next leaf or seeking forward re-reads only the pages below the lowest
+/// ancestor that still covers the target. Leaf `next_leaf` pointers are never
+/// read: a copy-on-write tree (#374) cannot keep them.
 pub(crate) struct LeafCursor<'a, K> {
     backend: &'a dyn StorageBackend,
     cache: &'a PageCache,
-    stack: Vec<Frame<K>>,
+    stack: Vec<Frame>,
     entries: Vec<(K, FactRef)>,
     pos: usize,
-    /// Exclusive upper bound of the current leaf's key range.
-    leaf_upper: Option<K>,
     /// Set once the cursor has moved past the last leaf.
     done: bool,
 }
@@ -881,24 +909,28 @@ where
             stack: Vec::new(),
             entries: Vec::new(),
             pos: 0,
-            leaf_upper: None,
             done: false,
         };
-        cursor.descend(root, start, None)?;
+        cursor.descend(root, start)?;
         Ok(cursor)
     }
 
     /// The next entry in key order, or `None` past the last one.
-    #[allow(clippy::arithmetic_side_effects)]
+    #[cfg(test)]
     pub(crate) fn next(&mut self) -> Result<Option<(K, FactRef)>> {
+        Ok(self.next_ref()?.cloned())
+    }
+
+    /// Like [`next`](Self::next), but borrows the entry instead of cloning it.
+    #[allow(clippy::arithmetic_side_effects)]
+    pub(crate) fn next_ref(&mut self) -> Result<Option<&(K, FactRef)>> {
         loop {
             if self.done {
                 return Ok(None);
             }
-            if let Some(entry) = self.entries.get(self.pos) {
-                let entry = entry.clone();
+            if self.pos < self.entries.len() {
                 self.pos += 1;
-                return Ok(Some(entry));
+                return Ok(self.entries.get(self.pos - 1));
             }
             if !self.advance_leaf()? {
                 return Ok(None);
@@ -920,45 +952,33 @@ where
         {
             return Ok(());
         }
-        // Still inside the current leaf's key range: search the leaf only.
-        if self.leaf_upper.as_ref().is_none_or(|u| key < u) {
+        // Find the lowest node whose range covers `key`. The child a frame
+        // is in ends at that frame's separator `child_idx`; a rightmost child
+        // inherits its parent's bound. `reroute` is the frame to route `key`
+        // in again; `stack.len()` means the current leaf covers it.
+        let mut reroute = self.stack.len();
+        for (d, f) in self.stack.iter().enumerate().rev() {
+            if f.child_idx < f.key_count {
+                if *key < f.sep::<K>(f.child_idx)? {
+                    break;
+                }
+                reroute = d;
+            }
+        }
+        if reroute == self.stack.len() {
             let p = self.entries.partition_point(|(k, _)| k < key);
             self.pos = self.pos.max(p);
             return Ok(());
         }
-        // Climb to the lowest ancestor whose range still covers `key`.
-        while self
+        self.stack.truncate(reroute + 1);
+        let top = self
             .stack
-            .last()
-            .is_some_and(|f| f.upper.as_ref().is_some_and(|u| key >= u))
-        {
-            self.stack.pop();
-        }
-        let Some(top) = self.stack.last_mut() else {
-            // Only an unbounded root covers every key, and it is never popped.
-            bail_coded!(
-                ErrorCode::Int049,
-                "seek: no ancestor covers the key".to_string()
-            );
-        };
-        let from = top.child_idx;
-        let c = from
-            + top
-                .seps
-                .get(from..)
-                .map_or(0, |rest| rest.partition_point(|s| s <= key));
+            .last_mut()
+            .ok_or_else(|| err_coded!(ErrorCode::Int049, "seek: empty cursor stack".to_string()))?;
+        let c = top.route(key, top.child_idx)?;
         top.child_idx = c;
-        let child = *top.children.get(c).ok_or_else(|| {
-            err_coded!(
-                ErrorCode::Int049,
-                format!("seek: child index {c} out of range")
-            )
-        })?;
-        let upper = match top.seps.get(c) {
-            Some(sep) => Some(sep.clone()),
-            None => top.upper.clone(),
-        };
-        self.descend(child, Some(key), upper)
+        let child = top.child(c)?;
+        self.descend(child, Some(key))
     }
 
     /// Move to the start of the next leaf. Returns false past the last leaf.
@@ -971,28 +991,20 @@ where
                 self.pos = 0;
                 return Ok(false);
             };
-            if top.child_idx + 1 < top.children.len() {
+            if top.child_idx < top.key_count {
                 top.child_idx += 1;
-                let c = top.child_idx;
-                let child = *top.children.get(c).ok_or_else(|| {
-                    err_coded!(ErrorCode::Int049, format!("child index {c} out of range"))
-                })?;
-                let upper = match top.seps.get(c) {
-                    Some(sep) => Some(sep.clone()),
-                    None => top.upper.clone(),
-                };
-                self.descend(child, None, upper)?;
+                let child = top.child(top.child_idx)?;
+                self.descend(child, None)?;
                 return Ok(true);
             }
             self.stack.pop();
         }
     }
 
-    /// Descend from `page_id` (whose range ends at `upper`) to the leaf that
-    /// holds `key`, or to the leftmost leaf when `key` is `None`.
-    fn descend(&mut self, page_id: u64, key: Option<&K>, upper: Option<K>) -> Result<()> {
+    /// Descend from `page_id` to the leaf that holds `key`, or to the
+    /// leftmost leaf when `key` is `None`.
+    fn descend(&mut self, page_id: u64, key: Option<&K>) -> Result<()> {
         let mut page_id = page_id;
-        let mut upper = upper;
         loop {
             if self.stack.len() >= MAX_TREE_DEPTH {
                 bail_coded!(
@@ -1007,27 +1019,16 @@ where
                 Some(PAGE_TYPE_LEAF) => {
                     self.entries = read_leaf_entries(&page[..])?;
                     self.pos = key.map_or(0, |k| self.entries.partition_point(|(e, _)| e < k));
-                    self.leaf_upper = upper;
                     return Ok(());
                 }
                 Some(PAGE_TYPE_INTERNAL) => {
-                    let (children, seps) = decode_internal::<K>(&page[..])?;
-                    let c = key.map_or(0, |k| seps.partition_point(|s| s <= k));
-                    let child = *children.get(c).ok_or_else(|| {
-                        err_coded!(ErrorCode::Int049, format!("child index {c} out of range"))
-                    })?;
-                    let child_upper = match seps.get(c) {
-                        Some(sep) => Some(sep.clone()),
-                        None => upper.clone(),
+                    let mut frame = Frame::new(page)?;
+                    frame.child_idx = match key {
+                        Some(k) => frame.route(k, 0)?,
+                        None => 0,
                     };
-                    self.stack.push(Frame {
-                        children,
-                        seps,
-                        child_idx: c,
-                        upper,
-                    });
-                    upper = child_upper;
-                    page_id = child;
+                    page_id = frame.child(frame.child_idx)?;
+                    self.stack.push(frame);
                 }
                 _ => bail_coded!(ErrorCode::Stg013, page_id),
             }
@@ -1075,11 +1076,11 @@ where
 {
     let mut cursor = LeafCursor::new(root_page_id, Some(start), backend, cache)?;
     let mut result = Vec::new();
-    while let Some((k, fr)) = cursor.next()? {
-        if end.is_some_and(|e| k >= *e) {
+    while let Some((k, fr)) = cursor.next_ref()? {
+        if end.is_some_and(|e| k >= e) {
             break;
         }
-        result.push(fr);
+        result.push(*fr);
     }
     Ok(result)
 }

@@ -173,7 +173,7 @@ Auto-migrates v7 → v8 on open (index rebuild). v1–v6 are rejected (STG-028).
 
 ## Test Coverage
 
-**1215 tests passing** (1207 passing, 8 ignored; unit + integration + doc).
+**1225 tests passing** (1217 passing, 8 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
