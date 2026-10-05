@@ -229,6 +229,14 @@ never freed. A test pins this down (§7).
 - **Index, fact-directory and free-list pages** take from `M`'s free list first and
   append only when it is empty. In steady state, index churn reuses the pages freed one
   checkpoint earlier, and the file grows only by fact pages and net index growth.
+- **Order within a checkpoint:** all fact pages are allocated before any other page is
+  appended. A checkpoint with new facts therefore always writes a fact page at
+  `M.page_count`, stamped with the new generation. §3.1.1 relies on this as evidence
+  that the checkpoint wrote its data. The fact-ordering test in §7 checks it.
+- **Layout over time:** fact pages and index pages interleave. Fact pages are no longer
+  kept contiguous at `1..=fact_page_count`, and the index no longer follows them. The
+  fact directory (§3.4) records where the fact pages are. A new extent starts only when
+  index pages were appended after the previous checkpoint's fact pages.
 
 ### 4.3 Steps
 
@@ -329,6 +337,10 @@ TDD per component. No new dependencies. Test assert messages follow the CodeQL r
   each checkpoint: the reachable set (all trees plus the free-list chain) and the free
   ids are disjoint, and together they cover `2..page_count` exactly. This also detects
   leaks.
+- **Fact ordering:** in a checkpoint with new facts that also appends index pages (a
+  root split, or a free list that runs out), the page at the old `page_count` is a fact
+  page stamped with the new generation, and the fact directory gains an extent only when
+  index pages sit between two checkpoints' fact pages.
 - **Crash atomicity:** extend `crash_at_every_point_in_save_loses_no_checkpointed_fact`.
   Inject a failure at every write and sync, and add torn writes, including a torn meta
   write, using a new `FaultInjectingBackend` mode that writes a prefix of the page. After
