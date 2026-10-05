@@ -64,7 +64,7 @@ All integers are little-endian. Page size stays 4096.
 Page 0, 1   Meta pages A and B (alternating commits)
 Page 2+     Any mix of: fact pages, index nodes (EAVT/AEVT/AVET/VAET),
             fact-directory nodes, free-list pages, free pages
-Sidecar     <db>.wal — unchanged
+Sidecar     <db>.wal — header gains base_generation (§3.1.1); entries unchanged
 ```
 
 ### 3.1 Meta pages
@@ -96,6 +96,44 @@ slot with the highest `generation` wins. Neither valid → §6.
 The CRC covers the whole page, so the reserved bytes must be zero and future fields fit
 without a layout change. The 84-byte `FileHeader` and its `index_checksum` and
 `header_checksum` are removed.
+
+#### 3.1.1 Choosing the meta on open
+
+Each slot is classified as one of:
+
+- **empty:** no `"MGRF"`/`"META"` magic. This is slot B before generation 2.
+- **valid:** magic, version and `meta_crc` all check out.
+- **damaged:** magic present, but the CRC or a field fails.
+
+If both slots are valid, the higher generation wins. If neither is valid, see §6
+(a v7 header, the migration backup meta) or fail with "no valid meta page".
+
+If exactly one slot is valid, with generation `g`, the other slot either held a newer
+commit `g+1` that is torn or rotted, or held the older `g-1` and was damaged later.
+Open must never silently drop a checkpoint whose WAL is already gone, so it decides
+with two extra facts:
+
+1. **WAL `base_generation`.** The WAL header records the generation of the meta that
+   was active when the WAL file was created; it is reserved bytes today, so this is
+   WAL version 2. A WAL is deleted only after a commit is durable, so an interrupted
+   commit of `g+1` always leaves a WAL with `base_generation == g`.
+2. **Evidence of `g+1` in the data pages.** A checkpoint with new facts always appends
+   a fact page at `M_g.page_count` (§4.2). A valid page there stamped `generation == g+1`
+   means `g+1` wrote its data.
+
+| WAL | page at `M_g.page_count` | meaning | action |
+|---|---|---|---|
+| `base_generation == g` | any | torn commit of `g+1`, or the older slot was damaged | open at `g`, replay the WAL |
+| `base_generation > g` | any | a later commit existed and its meta is lost | error: meta damaged after commit |
+| none | valid, generation `g+1` | `g+1` committed (its WAL was deleted), then its meta rotted | error: meta damaged after commit |
+| none | anything else | the older slot was damaged, or `g == 1` with B empty | open at `g` |
+
+The error is a new STG code. The file is not modified. #373's tooling can recover at
+`g` explicitly, and that loses the last checkpoint's facts. The next commit always
+rewrites the damaged slot, because it is the inactive one.
+
+The browser backend writes through IndexedDB transactions and has no torn writes. Its
+flush keeps the meta page in the same transaction as the data pages (§8).
 
 ### 3.2 Common page header (all non-meta pages)
 
@@ -252,11 +290,18 @@ nor a v7 header, including a pre-release v8 single-header file, is rejected with
    the fact directory and the four indexes built by `build_btree` (bulk build, now
    stamped and checksummed). Set the free list to old pages `2..old_page_count`. They
    become unreferenced at commit. Page 1 is excluded because it is meta slot B.
-3. Sync, write meta generation 1 to page 0, sync. The commit overwrites the legacy
-   header. Page 1 still holds old fact bytes, which are not a valid meta, so it is
-   ignored until generation 2 writes it.
-4. A crash before step 3 leaves the legacy header intact, and the appended pages lie
-   beyond its `page_count`. The next open runs the migration again.
+3. Append a **backup copy of meta generation 1** as the last page, sync, then write meta
+   generation 1 to page 0 and sync. The commit overwrites the legacy header. Page 1
+   still holds old fact bytes, which are not a valid meta, so it is ignored until
+   generation 2 writes it. The backup page is on the generation-1 free list.
+4. A crash before the page 0 write leaves the legacy header intact, and the appended
+   pages lie beyond its `page_count`. The next open runs the migration again.
+5. A torn page 0 write leaves neither a valid meta nor a v7 header, and page 1 is not a
+   meta either. Only at this point does open read the file's last page. If it is a
+   valid meta with generation 1 whose `page_count` matches the file, open copies it to
+   page 0 and continues. Otherwise it fails with "no valid meta page". Generation 2
+   reuses the backup page from the free list, so the fallback never sees a stale
+   backup.
 
 Cost: one O(N) pass. The file temporarily holds both copies, and the old region becomes
 free pages that later index growth reuses. The file does not shrink until a vacuum
@@ -268,9 +313,12 @@ TDD per component. No new dependencies. Test assert messages follow the CodeQL r
 
 - **Page header:** encode/verify round trip; a flipped bit, a wrong `page_id` and a
   future `generation` each give their own STG code; a failed page is not cached.
-- **Meta selection:** both valid (highest generation wins); a torn newer slot (older
-  wins); neither valid with a v7 header (migration); neither valid with a pre-release
-  v8 single header or anything else (error).
+- **Meta selection:** both valid (highest generation wins). Each row of the §3.1.1
+  table: torn newer slot with WAL base `g` (open at `g`, replay); WAL base `> g`
+  (error); no WAL with a `g+1` page at `M_g.page_count` (error); no WAL and no `g+1`
+  page (open at `g`); `g == 1` with slot B empty. Neither valid: v7 header (migration);
+  torn migration commit with backup meta (recovered); pre-release v8 single header or
+  anything else (error).
 - **Copy-on-write insert equivalence:** random committed sets and pending batches
   (including splits, keys below the first leaf and above the last, root splits).
   `stream_all_entries` of the result must equal the merged sorted set. The old root
@@ -303,7 +351,10 @@ TDD per component. No new dependencies. Test assert messages follow the CodeQL r
 ## 8. Errors, docs, compatibility
 
 - New STG codes: page checksum mismatch, page id mismatch, page generation ahead of
-  meta, no valid meta page, free-list/allocator inconsistency. The codes for the removed
+  meta, no valid meta page, meta damaged after commit (§3.1.1), free-list/allocator
+  inconsistency.
+- WAL format version 2: the header gains `base_generation u64` at bytes 8..16, taken
+  from the reserved bytes. A v1 WAL is accepted only next to a v7 file being migrated. The codes for the removed
   paths (header CRC mismatch `INT-053`, index rebuild) stay registered and are marked
   deprecated, never recycled. Update `docs/ERROR_REFERENCE.md`.
 - Browser: `BrowserBufferBackend` dirty sets become O(change). The IndexedDB flush must
