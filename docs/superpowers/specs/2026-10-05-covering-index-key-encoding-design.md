@@ -34,6 +34,37 @@ Two further costs grow with N:
 | D5 | **Byte-comparable keys** (memcmp order). Integers use order-preserving variable-length encoding. Leaves are prefix-compressed. Separators are truncated to their shortest form. | postcard structs compared after decoding: no prefix compression, decode on every compare |
 | D6 | **Datomic component order, newest transaction first:** `(e,a,v)` triples are contiguous, followed by `tx` descending. | Today's `(e,a,vf,vt,tx,v)`: history of one triple is scattered |
 
+### 2.1 Covering does not multiply writes
+
+Each fact is written into 3–4 index entries: EAVT, AEVT and AVET always, and VAET only
+for `Ref` values. That is not an added cost. An index ordered by any permutation of
+`e a v` must already hold `e`, `a`, `v` and `tx` in its key to order entries and keep
+them distinct (#371). Covering adds only `vf`, `vt` and `op`, about 9 B (`vt` FOREVER is
+1 byte). That is about the size of the `FactRef` it replaces.
+
+| per fact | today (v7 / v8 dev) | covering (this design) |
+|---|---|---|
+| fact record | 1 × ~70 B | none |
+| index entries | 4 × ~80 B: already nearly whole facts, plus a `FactRef` | ~3.3 × ~25 B after prefix compression |
+| raw bytes written | ~390 B | ~80 B |
+| random page reads per query match | 1 (fact fetch) | 0 |
+
+Checkpoint cost is set by leaves touched per tree, not by entry size. Any design with
+four sort orders touches four trees.
+
+**Fewer copies means fewer indexes.** Both options were rejected for 3.0.0:
+
+- **Drop AEVT.** Attribute scans would use AVET, which returns entries in value order
+  rather than entity order. Joins on `?e` would then need a sort or a hash. It saves
+  about 30 % of index bytes.
+- **Opt-in AVET per attribute** (Datomic's `:db/index`). Value lookups on attributes
+  without it become full attribute scans. Turning it on per attribute is a schema
+  setting, which goes against zero-configuration.
+
+minigraf is schema-less, so every query pattern keeps an index. If #394 shows that
+index writes dominate, opt-in AVET can come later behind a feature bit (companion §3.1.2)
+without a format v9.
+
 ## 3. Data model in the file
 
 ### 3.1 Identifiers
