@@ -456,36 +456,46 @@ pub fn merge_sorted_vecs<T: Ord>(a: Vec<T>, b: Vec<T>) -> impl Iterator<Item = T
 ///
 /// `save()` calls this before writing anything: new fact pages overwrite the
 /// start of the old index region, so the old leaves must be snapshotted first.
+/// Leaves are found by walking child pointers depth-first, not by following
+/// the `next_leaf` chain, and their entries are not decoded.
 pub fn collect_leaf_pages(
     root_page_id: u64,
     backend: &dyn StorageBackend,
     cache: &PageCache,
 ) -> Result<Vec<Arc<Vec<u8>>>> {
-    // A chain longer than the file has pages must contain a cycle.
-    let max_leaves = backend.page_count()?;
+    // A tree cannot have more nodes than the file has pages; more visits
+    // means a cycle in the child pointers.
+    let max_visits = backend.page_count()?;
+    let mut visits: u64 = 0;
     let mut leaves = Vec::new();
-    let mut leaf_id = find_leftmost_leaf(root_page_id, backend, cache)?;
-    loop {
-        let page = cache.get_or_load(leaf_id, backend)?;
-        if page.first().copied() != Some(PAGE_TYPE_LEAF) {
+    let mut stack = vec![(root_page_id, 0usize)];
+    while let Some((page_id, depth)) = stack.pop() {
+        visits = visits.saturating_add(1);
+        if depth > MAX_TREE_DEPTH || visits > max_visits {
             bail_coded!(
                 ErrorCode::Int049,
-                format!("collect_leaf_pages: expected leaf page at page_id={leaf_id}")
+                format!(
+                    "collect_leaf_pages: cycle or corruption in child pointers at page_id={page_id}"
+                )
             );
         }
-        if u64::try_from(leaves.len()).map_or(true, |n| n >= max_leaves) {
-            bail_coded!(
-                ErrorCode::Int049,
-                format!("collect_leaf_pages: leaf chain longer than the file at page_id={leaf_id}")
-            );
+        let page = cache.get_or_load(page_id, backend)?;
+        match page.first().copied() {
+            Some(PAGE_TYPE_LEAF) => {
+                validate_leaf_slots(&page[..], page_id)?;
+                leaves.push(page);
+            }
+            Some(PAGE_TYPE_INTERNAL) => {
+                let children = internal_children(&page[..])?;
+                stack.extend(
+                    children
+                        .into_iter()
+                        .rev()
+                        .map(|c| (c, depth.saturating_add(1))),
+                );
+            }
+            _ => bail_coded!(ErrorCode::Stg013, page_id),
         }
-        validate_leaf_slots(&page[..], leaf_id)?;
-        let next_leaf = read_u64_at(&page[..], 4)?;
-        leaves.push(page);
-        if next_leaf == 0 {
-            break;
-        }
-        leaf_id = next_leaf;
     }
     Ok(leaves)
 }
@@ -711,6 +721,7 @@ where
 // ─── Leaf traversal helpers ───────────────────────────────────────────────────
 
 /// Traverse internal nodes from `root` to find the leftmost (first) leaf page.
+#[cfg(test)]
 #[allow(clippy::arithmetic_side_effects)]
 fn find_leftmost_leaf(root: u64, backend: &dyn StorageBackend, cache: &PageCache) -> Result<u64> {
     let mut page_id = root;
@@ -736,73 +747,6 @@ fn find_leftmost_leaf(root: u64, backend: &dyn StorageBackend, cache: &PageCache
                 ErrorCode::Int049,
                 format!(
                     "find_leftmost_leaf: unexpected page type 0x{:02x} at page_id={}",
-                    t, page_id
-                )
-            ),
-        }
-    }
-}
-
-/// Traverse from `root` to the leaf that would contain `key`.
-// Called by range_scan which is called by OnDiskIndexReader::range_scan_*.
-#[allow(dead_code)]
-#[allow(clippy::arithmetic_side_effects)]
-fn find_leaf_for_key<K>(
-    root: u64,
-    key: &K,
-    backend: &dyn StorageBackend,
-    cache: &PageCache,
-) -> Result<u64>
-where
-    K: for<'de> Deserialize<'de> + Ord,
-{
-    let mut page_id = root;
-    loop {
-        let page = cache.get_or_load(page_id, backend)?;
-        let page_type = page.first().copied().ok_or_else(|| {
-            err_coded!(
-                ErrorCode::Int049,
-                format!("empty page at page_id={page_id}")
-            )
-        })?;
-        match page_type {
-            PAGE_TYPE_LEAF => return Ok(page_id),
-            PAGE_TYPE_INTERNAL => {
-                let key_count = read_u16_at(&page[..], 2)? as usize;
-                let rightmost_child = read_u64_at(&page[..], 4)?;
-                let child_arr_start = INTERNAL_HEADER_SIZE;
-                let slot_dir_start = INTERNAL_HEADER_SIZE + key_count * 8;
-
-                let mut descended = false;
-                for i in 0..key_count {
-                    let slot_off = slot_dir_start + i * SLOT_SIZE;
-                    let sep_offset = read_u16_at(&page[..], slot_off)? as usize;
-                    let sep_length = read_u16_at(&page[..], slot_off + 2)? as usize;
-                    let sep_slice = page
-                        .get(sep_offset..sep_offset.saturating_add(sep_length))
-                        .ok_or_else(|| {
-                            err_coded!(ErrorCode::Int049, format!(
-                                "sep slice out of bounds: offset={sep_offset} len={sep_length} page_len={}",
-                                page.len()
-                            ))
-                        })?;
-                    let sep_key: K = postcard::from_bytes(sep_slice)?;
-
-                    if *key < sep_key {
-                        let child_off = child_arr_start + i * 8;
-                        page_id = read_u64_at(&page[..], child_off)?;
-                        descended = true;
-                        break;
-                    }
-                }
-                if !descended {
-                    page_id = rightmost_child;
-                }
-            }
-            t => bail_coded!(
-                ErrorCode::Int049,
-                format!(
-                    "find_leaf_for_key: unexpected page type 0x{:02x} at page_id={}",
                     t, page_id
                 )
             ),
@@ -839,6 +783,259 @@ where
     Ok(entries)
 }
 
+// ─── LeafCursor ───────────────────────────────────────────────────────────────
+
+/// Deepest tree a reader descends. Every internal node has at least two
+/// children, so a real tree this deep would need 2^32 leaves; anything deeper
+/// is a cycle in the child pointers or corruption.
+const MAX_TREE_DEPTH: usize = 32;
+
+/// Child page ids of an internal node, in key order (`rightmost_child` last).
+#[allow(clippy::arithmetic_side_effects)]
+fn internal_children(page: &[u8]) -> Result<Vec<u64>> {
+    let key_count = read_u16_at(page, 2)? as usize;
+    let mut children = Vec::with_capacity(key_count + 1);
+    for i in 0..key_count {
+        children.push(read_u64_at(page, INTERNAL_HEADER_SIZE + i * 8)?);
+    }
+    children.push(read_u64_at(page, 4)?);
+    Ok(children)
+}
+
+/// One internal node on the cursor's path from the root.
+///
+/// Separators are decoded on demand (binary search decodes O(log n) of them),
+/// so descending through a node never decodes every key it holds.
+struct Frame {
+    page: Arc<Vec<u8>>,
+    key_count: usize,
+    /// Index into the node's children of the subtree the cursor is in;
+    /// `key_count` means `rightmost_child`.
+    child_idx: usize,
+}
+
+impl Frame {
+    fn new(page: Arc<Vec<u8>>) -> Result<Self> {
+        let key_count = read_u16_at(&page[..], 2)? as usize;
+        Ok(Frame {
+            page,
+            key_count,
+            child_idx: 0,
+        })
+    }
+
+    /// Child page id `i` (`i == key_count` is `rightmost_child`).
+    #[allow(clippy::arithmetic_side_effects)]
+    fn child(&self, i: usize) -> Result<u64> {
+        if i == self.key_count {
+            read_u64_at(&self.page[..], 4)
+        } else {
+            read_u64_at(&self.page[..], INTERNAL_HEADER_SIZE + i * 8)
+        }
+    }
+
+    /// Separator `i`: the first key of child `i + 1`'s subtree, as written by
+    /// [`write_internal_page`].
+    #[allow(clippy::arithmetic_side_effects)]
+    fn sep<K: for<'de> Deserialize<'de>>(&self, i: usize) -> Result<K> {
+        let slot_off = INTERNAL_HEADER_SIZE + self.key_count * 8 + i * SLOT_SIZE;
+        let sep_offset = read_u16_at(&self.page[..], slot_off)? as usize;
+        let sep_length = read_u16_at(&self.page[..], slot_off + 2)? as usize;
+        let sep_slice = self
+            .page
+            .get(sep_offset..sep_offset.saturating_add(sep_length))
+            .ok_or_else(|| {
+                err_coded!(
+                    ErrorCode::Int049,
+                    format!(
+                        "sep slice out of bounds: offset={sep_offset} len={sep_length} page_len={}",
+                        self.page.len()
+                    )
+                )
+            })?;
+        Ok(postcard::from_bytes(sep_slice)?)
+    }
+
+    /// The child to take for `key`, searching children `from..`: the number of
+    /// separators `<= key`, counted from `from`.
+    #[allow(clippy::arithmetic_side_effects)]
+    fn route<K>(&self, key: &K, from: usize) -> Result<usize>
+    where
+        K: for<'de> Deserialize<'de> + Ord,
+    {
+        let (mut lo, mut hi) = (from, self.key_count);
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if self.sep::<K>(mid)? <= *key {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        Ok(lo)
+    }
+}
+
+/// Forward cursor over a B+tree's entries in key order.
+///
+/// Holds the path from the root as a stack of internal nodes, so moving to
+/// the next leaf or seeking forward re-reads only the pages below the lowest
+/// ancestor that still covers the target. Leaf `next_leaf` pointers are never
+/// read: a copy-on-write tree (#374) cannot keep them.
+pub(crate) struct LeafCursor<'a, K> {
+    backend: &'a dyn StorageBackend,
+    cache: &'a PageCache,
+    stack: Vec<Frame>,
+    entries: Vec<(K, FactRef)>,
+    pos: usize,
+    /// Set once the cursor has moved past the last leaf.
+    done: bool,
+}
+
+impl<'a, K> LeafCursor<'a, K>
+where
+    K: for<'de> Deserialize<'de> + Ord + Clone,
+{
+    /// A cursor positioned before the first entry `>= start` (`None`: the first entry).
+    pub(crate) fn new(
+        root: u64,
+        start: Option<&K>,
+        backend: &'a dyn StorageBackend,
+        cache: &'a PageCache,
+    ) -> Result<Self> {
+        let mut cursor = LeafCursor {
+            backend,
+            cache,
+            stack: Vec::new(),
+            entries: Vec::new(),
+            pos: 0,
+            done: false,
+        };
+        cursor.descend(root, start)?;
+        Ok(cursor)
+    }
+
+    /// The next entry in key order, or `None` past the last one.
+    #[cfg(test)]
+    pub(crate) fn next(&mut self) -> Result<Option<(K, FactRef)>> {
+        Ok(self.next_ref()?.cloned())
+    }
+
+    /// Like [`next`](Self::next), but borrows the entry instead of cloning it.
+    #[allow(clippy::arithmetic_side_effects)]
+    pub(crate) fn next_ref(&mut self) -> Result<Option<&(K, FactRef)>> {
+        loop {
+            if self.done {
+                return Ok(None);
+            }
+            if self.pos < self.entries.len() {
+                self.pos += 1;
+                return Ok(self.entries.get(self.pos - 1));
+            }
+            if !self.advance_leaf()? {
+                return Ok(None);
+            }
+        }
+    }
+
+    /// Move forward to the first entry `>= key`. A key at or before the
+    /// current position leaves the cursor where it is.
+    // Only tests call this until the streaming engine's joins (#432) do.
+    #[allow(dead_code)]
+    #[allow(clippy::arithmetic_side_effects)]
+    pub(crate) fn seek(&mut self, key: &K) -> Result<()> {
+        if self.done {
+            return Ok(());
+        }
+        if let Some((next_key, _)) = self.entries.get(self.pos)
+            && key <= next_key
+        {
+            return Ok(());
+        }
+        // Find the lowest node whose range covers `key`. The child a frame
+        // is in ends at that frame's separator `child_idx`; a rightmost child
+        // inherits its parent's bound. `reroute` is the frame to route `key`
+        // in again; `stack.len()` means the current leaf covers it.
+        let mut reroute = self.stack.len();
+        for (d, f) in self.stack.iter().enumerate().rev() {
+            if f.child_idx < f.key_count {
+                if *key < f.sep::<K>(f.child_idx)? {
+                    break;
+                }
+                reroute = d;
+            }
+        }
+        if reroute == self.stack.len() {
+            let p = self.entries.partition_point(|(k, _)| k < key);
+            self.pos = self.pos.max(p);
+            return Ok(());
+        }
+        self.stack.truncate(reroute + 1);
+        let top = self
+            .stack
+            .last_mut()
+            .ok_or_else(|| err_coded!(ErrorCode::Int049, "seek: empty cursor stack".to_string()))?;
+        let c = top.route(key, top.child_idx)?;
+        top.child_idx = c;
+        let child = top.child(c)?;
+        self.descend(child, Some(key))
+    }
+
+    /// Move to the start of the next leaf. Returns false past the last leaf.
+    #[allow(clippy::arithmetic_side_effects)]
+    pub(crate) fn advance_leaf(&mut self) -> Result<bool> {
+        loop {
+            let Some(top) = self.stack.last_mut() else {
+                self.done = true;
+                self.entries.clear();
+                self.pos = 0;
+                return Ok(false);
+            };
+            if top.child_idx < top.key_count {
+                top.child_idx += 1;
+                let child = top.child(top.child_idx)?;
+                self.descend(child, None)?;
+                return Ok(true);
+            }
+            self.stack.pop();
+        }
+    }
+
+    /// Descend from `page_id` to the leaf that holds `key`, or to the
+    /// leftmost leaf when `key` is `None`.
+    fn descend(&mut self, page_id: u64, key: Option<&K>) -> Result<()> {
+        let mut page_id = page_id;
+        loop {
+            if self.stack.len() >= MAX_TREE_DEPTH {
+                bail_coded!(
+                    ErrorCode::Int049,
+                    format!(
+                        "tree deeper than {MAX_TREE_DEPTH} at page_id={page_id}: cycle or corruption"
+                    )
+                );
+            }
+            let page = self.cache.get_or_load(page_id, self.backend)?;
+            match page.first().copied() {
+                Some(PAGE_TYPE_LEAF) => {
+                    self.entries = read_leaf_entries(&page[..])?;
+                    self.pos = key.map_or(0, |k| self.entries.partition_point(|(e, _)| e < k));
+                    return Ok(());
+                }
+                Some(PAGE_TYPE_INTERNAL) => {
+                    let mut frame = Frame::new(page)?;
+                    frame.child_idx = match key {
+                        Some(k) => frame.route(k, 0)?,
+                        None => 0,
+                    };
+                    page_id = frame.child(frame.child_idx)?;
+                    self.stack.push(frame);
+                }
+                _ => bail_coded!(ErrorCode::Stg013, page_id),
+            }
+        }
+    }
+}
+
 // ─── stream_all_entries ───────────────────────────────────────────────────────
 
 /// Stream all `(K, FactRef)` entries from a B+tree in sorted order.
@@ -852,48 +1049,21 @@ pub fn stream_all_entries<K>(
     cache: &PageCache,
 ) -> Result<Vec<(K, FactRef)>>
 where
-    K: for<'de> Deserialize<'de> + Ord,
+    K: for<'de> Deserialize<'de> + Ord + Clone,
 {
-    let first_leaf = find_leftmost_leaf(root_page_id, backend, cache)?;
+    let mut cursor = LeafCursor::new(root_page_id, None, backend, cache)?;
     let mut result = Vec::new();
-    let mut leaf_id = first_leaf;
-
-    loop {
-        let page = cache.get_or_load(leaf_id, backend)?;
-        let page_type = page.first().copied().ok_or_else(|| {
-            err_coded!(
-                ErrorCode::Int049,
-                format!("empty page at page_id={leaf_id}")
-            )
-        })?;
-        if page_type != PAGE_TYPE_LEAF {
-            bail_coded!(
-                ErrorCode::Int049,
-                format!(
-                    "stream_all_entries: expected leaf page at page_id={}",
-                    leaf_id
-                )
-            );
-        }
-        let next_leaf = read_u64_at(&page[..], 4)?;
-        result.extend(read_leaf_entries::<K>(&page[..])?);
-
-        if next_leaf == 0 {
-            break;
-        }
-        leaf_id = next_leaf;
+    while let Some(entry) = cursor.next()? {
+        result.push(entry);
     }
-
     Ok(result)
 }
 
 // ─── range_scan ───────────────────────────────────────────────────────────────
 
-/// Scan the B+tree for all `FactRef`s whose key is in `[start, end]`.
+/// Scan the B+tree for all `FactRef`s whose key is in `[start, end)`.
 ///
-/// `end: None` means unbounded (scan to last leaf).
-// Called by OnDiskIndexReader::range_scan_* (via trait object dispatch).
-#[allow(dead_code)]
+/// `end: None` means unbounded (scan to the last leaf).
 pub fn range_scan<K>(
     root_page_id: u64,
     start: &K,
@@ -902,44 +1072,16 @@ pub fn range_scan<K>(
     cache: &PageCache,
 ) -> Result<Vec<FactRef>>
 where
-    K: Serialize + for<'de> Deserialize<'de> + Ord,
+    K: for<'de> Deserialize<'de> + Ord + Clone,
 {
-    let start_leaf = find_leaf_for_key(root_page_id, start, backend, cache)?;
+    let mut cursor = LeafCursor::new(root_page_id, Some(start), backend, cache)?;
     let mut result = Vec::new();
-    let mut leaf_id = start_leaf;
-
-    'outer: loop {
-        let page = cache.get_or_load(leaf_id, backend)?;
-        let page_type = page.first().copied().ok_or_else(|| {
-            err_coded!(
-                ErrorCode::Int049,
-                format!("empty page at page_id={leaf_id}")
-            )
-        })?;
-        if page_type != PAGE_TYPE_LEAF {
-            bail_coded!(ErrorCode::Stg013, leaf_id);
-        }
-        let next_leaf = read_u64_at(&page[..], 4)?;
-        let entries: Vec<(K, FactRef)> = read_leaf_entries(&page[..])?;
-
-        for (k, fr) in entries {
-            if k < *start {
-                continue;
-            }
-            if let Some(e) = end
-                && k >= *e
-            {
-                break 'outer;
-            }
-            result.push(fr);
-        }
-
-        if next_leaf == 0 {
+    while let Some((k, fr)) = cursor.next_ref()? {
+        if end.is_some_and(|e| k >= e) {
             break;
         }
-        leaf_id = next_leaf;
+        result.push(*fr);
     }
-
     Ok(result)
 }
 
@@ -1215,15 +1357,49 @@ mod tests {
     }
 
     #[test]
-    fn test_collect_leaf_pages_rejects_cyclic_chain() {
-        // A corrupt next_leaf pointing back must be an error, not an endless loop.
-        let (mut backend, cache, root, ids) = multi_leaf_tree();
-        let mut page = cache.get_or_load(ids[1], &backend).unwrap().to_vec();
-        page[4..12].copy_from_slice(&ids[0].to_le_bytes());
-        overwrite_page(&mut backend, &cache, ids[1], page);
+    fn cursor_cycle_in_child_pointers_is_bounded() {
+        // A child pointer leading back up the tree must be an error, not a hang.
+        let (mut backend, cache, root, _ids) = multi_leaf_tree();
+        let mut page = cache.get_or_load(root, &backend).unwrap().to_vec();
+        assert_eq!(page[0], PAGE_TYPE_INTERNAL, "fixture root must be internal");
+        // First child id lives at INTERNAL_HEADER_SIZE; point it at the root.
+        page[INTERNAL_HEADER_SIZE..INTERNAL_HEADER_SIZE + 8].copy_from_slice(&root.to_le_bytes());
+        overwrite_page(&mut backend, &cache, root, page);
         assert!(
             collect_leaf_pages(root, &backend, &cache).is_err(),
-            "cyclic leaf chain must be rejected"
+            "cycle must be rejected by collect_leaf_pages"
+        );
+        assert!(
+            stream_all_entries::<EavtKey>(root, &backend, &cache).is_err(),
+            "cycle must be rejected by the cursor"
+        );
+    }
+
+    #[test]
+    fn range_scan_ignores_next_leaf() {
+        // Zeroing every next_leaf pointer must not change any read: the cursor
+        // walks the tree, which a copy-on-write layout (#374) requires.
+        let (mut backend, cache, root, ids) = multi_leaf_tree();
+        let expected: Vec<(EavtKey, FactRef)> =
+            (0u128..500).map(|n| make_eavt(n, ":a", n as u64)).collect();
+        for &id in &ids {
+            let mut page = cache.get_or_load(id, &backend).unwrap().to_vec();
+            page[4..12].copy_from_slice(&0u64.to_le_bytes());
+            overwrite_page(&mut backend, &cache, id, page);
+        }
+        let got: Vec<(EavtKey, FactRef)> = stream_all_entries(root, &backend, &cache).unwrap();
+        assert!(got == expected, "stream must cover every leaf");
+        let refs = range_scan(root, &expected[0].0, None, &backend, &cache).unwrap();
+        assert_eq!(
+            refs.len(),
+            expected.len(),
+            "range_scan must cover every leaf"
+        );
+        let leaves = collect_leaf_pages(root, &backend, &cache).unwrap();
+        assert_eq!(
+            leaves.len(),
+            ids.len(),
+            "collect_leaf_pages must find every leaf"
         );
     }
 
@@ -1791,56 +1967,28 @@ mod tests {
     // release-build defensive guard and isn't reachable from a normal test
     // build. No dedicated regression test for STG-011 as a result.
 
-    /// A leaf's `next_leaf` chain pointer corrupted to point at a non-leaf
-    /// page must surface as the coded STG-013 when `range_scan` follows it,
-    /// not a generic error. `find_leaf_for_key`'s own traversal only
-    /// validates the *first* leaf it lands on; a corrupted `next_leaf` on a
-    /// later page in a multi-leaf scan is caught by `range_scan`'s own
-    /// per-page check.
+    /// A child pointer corrupted to point at a page that is not a B+tree node
+    /// must surface as the coded STG-013 when a scan descends into it.
     #[test]
-    fn range_scan_corrupted_next_leaf_pointer_returns_stg_013() {
-        let mut backend = MemoryBackend::new();
-        let cache = PageCache::new(512);
-        // Enough entries with long keys to force a multi-leaf tree with an
-        // internal-node root (mirrors test_build_btree_leaf_next_pointers_form_chain).
-        let entries = (0u128..100).map(|n| make_eavt(n, ":verylongattributename", n as u64 + 1));
-        let ser = btree_entries(entries).unwrap();
-        let (root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+    fn cursor_child_pointing_at_non_btree_page_returns_stg_013() {
+        let (mut backend, cache, root, _ids) = multi_leaf_tree();
+        let mut page = cache.get_or_load(root, &backend).unwrap().to_vec();
+        assert_eq!(page[0], PAGE_TYPE_INTERNAL, "fixture root must be internal");
+        // A page that is neither leaf nor internal (as a fact page would be).
+        // Well past every page build_btree wrote (MemoryBackend's page_count
+        // counts written pages, so it can equal the root's id).
+        let bogus_id = root + 1_000;
+        let mut bogus = vec![0u8; PAGE_SIZE];
+        bogus[0] = crate::storage::packed_pages::PAGE_TYPE_PACKED;
+        overwrite_page(&mut backend, &cache, bogus_id, bogus);
+        // Route the leftmost subtree to it.
+        page[INTERNAL_HEADER_SIZE..INTERNAL_HEADER_SIZE + 8]
+            .copy_from_slice(&bogus_id.to_le_bytes());
+        overwrite_page(&mut backend, &cache, root, page);
 
-        let root_page = cache.get_or_load(root, &backend).unwrap();
-        assert_eq!(
-            root_page[0], PAGE_TYPE_INTERNAL,
-            "100 long-key entries must produce an internal-node root for this test to be valid"
-        );
-
-        // Find the leftmost leaf by following first children down from root.
-        let mut leaf_pid = root;
-        loop {
-            let p = cache.get_or_load(leaf_pid, &backend).unwrap();
-            if p[0] == PAGE_TYPE_LEAF {
-                break;
-            }
-            leaf_pid = read_u64_at(&p[..], 12).unwrap();
-        }
-
-        // Corrupt the leftmost leaf's next_leaf pointer (bytes 4..12) to
-        // point at the internal-node root instead of the next real leaf.
-        let mut leaf_bytes = backend.read_page(leaf_pid).unwrap();
-        leaf_bytes[4..12].copy_from_slice(&root.to_le_bytes());
-        backend.write_page(leaf_pid, &leaf_bytes).unwrap();
-        cache.invalidate(leaf_pid);
-
-        let start = EavtKey {
-            entity: Uuid::from_u128(0),
-            attribute: String::new(),
-            valid_from: i64::MIN,
-            valid_to: i64::MIN,
-            tx_count: 0,
-            value_bytes: Vec::new(),
-            asserted: true,
-        };
+        let start = make_eavt(0, ":a", 0).0;
         let err = range_scan::<EavtKey>(root, &start, None, &backend, &cache)
-            .expect_err("following a next_leaf pointer into a non-leaf page must fail");
+            .expect_err("descending into a non-B+tree page must fail");
         let coded: crate::error::MinigrafError = err.into();
         assert_eq!(coded.code(), "STG-013");
     }
@@ -1959,5 +2107,323 @@ mod tests {
                 expected_len
             );
         }
+    }
+
+    // ─── LeafCursor ──────────────────────────────────────────────────────────
+
+    /// `MemoryBackend` that counts `read_page` calls, for seek cost tests.
+    struct CountingBackend {
+        inner: MemoryBackend,
+        reads: std::sync::atomic::AtomicU64,
+    }
+
+    impl CountingBackend {
+        fn reads(&self) -> u64 {
+            self.reads.load(std::sync::atomic::Ordering::Relaxed)
+        }
+        fn reset(&self) {
+            self.reads.store(0, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    impl StorageBackend for CountingBackend {
+        fn write_page(&mut self, page_id: u64, data: &[u8]) -> Result<()> {
+            self.inner.write_page(page_id, data)
+        }
+        fn read_page(&self, page_id: u64) -> Result<Vec<u8>> {
+            self.reads
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.inner.read_page(page_id)
+        }
+        fn sync(&mut self) -> Result<()> {
+            self.inner.sync()
+        }
+        fn page_count(&self) -> Result<u64> {
+            self.inner.page_count()
+        }
+        fn close(&mut self) -> Result<()> {
+            self.inner.close()
+        }
+        fn backend_name(&self) -> &'static str {
+            "counting"
+        }
+        fn is_new(&self) -> bool {
+            self.inner.is_new()
+        }
+    }
+
+    /// Entities `0, 2, 4, ...` so every odd entity is a key that is not in the tree.
+    fn even_entries(n: u128) -> Vec<(EavtKey, FactRef)> {
+        (0..n)
+            .map(|i| make_eavt(i * 2, ":attr", i as u64))
+            .collect()
+    }
+
+    fn key_for(entity: u128) -> EavtKey {
+        make_eavt(entity, ":attr", 0).0
+    }
+
+    fn build_tree<B: StorageBackend>(
+        backend: &mut B,
+        cache: &PageCache,
+        entries: &[(EavtKey, FactRef)],
+    ) -> u64 {
+        let ser = btree_entries(entries.iter().cloned()).unwrap();
+        build_btree(ser.into_iter(), backend, cache, 1).unwrap().0
+    }
+
+    fn drain(cursor: &mut LeafCursor<'_, EavtKey>) -> Vec<(EavtKey, FactRef)> {
+        let mut v = Vec::new();
+        while let Some(e) = cursor.next().unwrap() {
+            v.push(e);
+        }
+        v
+    }
+
+    /// Leaf page ids in key order, found through the tree (not next_leaf).
+    fn leaf_ids(root: u64, backend: &dyn StorageBackend, cache: &PageCache) -> Vec<u64> {
+        let mut ids = Vec::new();
+        let mut stack = vec![root];
+        while let Some(id) = stack.pop() {
+            let page = cache.get_or_load(id, backend).unwrap();
+            if page[0] == PAGE_TYPE_LEAF {
+                ids.push(id);
+            } else {
+                let children = internal_children(&page[..]).unwrap();
+                stack.extend(children.into_iter().rev());
+            }
+        }
+        ids
+    }
+
+    fn first_key_of_leaf(id: u64, backend: &dyn StorageBackend, cache: &PageCache) -> EavtKey {
+        let page = cache.get_or_load(id, backend).unwrap();
+        read_leaf_entries::<EavtKey>(&page[..]).unwrap()[0]
+            .0
+            .clone()
+    }
+
+    fn last_key_of_leaf(id: u64, backend: &dyn StorageBackend, cache: &PageCache) -> EavtKey {
+        let page = cache.get_or_load(id, backend).unwrap();
+        read_leaf_entries::<EavtKey>(&page[..])
+            .unwrap()
+            .last()
+            .unwrap()
+            .0
+            .clone()
+    }
+
+    #[test]
+    fn cursor_full_scan_matches_input() {
+        for n in [0u128, 1, 10, 500, 5_000] {
+            let mut backend = MemoryBackend::new();
+            let cache = PageCache::new(4096);
+            let entries = even_entries(n);
+            let root = build_tree(&mut backend, &cache, &entries);
+            if n == 5_000 {
+                let root_page = cache.get_or_load(root, &backend).unwrap();
+                assert_eq!(
+                    root_page[0], PAGE_TYPE_INTERNAL,
+                    "5000 entries need depth >= 2"
+                );
+            }
+            let mut cursor = LeafCursor::new(root, None, &backend, &cache).unwrap();
+            let got = drain(&mut cursor);
+            assert_eq!(got.len(), entries.len(), "entry count differs");
+            assert!(got == entries, "cursor scan differs from input");
+        }
+    }
+
+    #[test]
+    fn cursor_start_key_positions_at_first_ge() {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(4096);
+        let entries = even_entries(2_000);
+        let root = build_tree(&mut backend, &cache, &entries);
+        let leaves = leaf_ids(root, &backend, &cache);
+        assert!(leaves.len() >= 3, "fixture needs several leaves");
+        let second_leaf_first = first_key_of_leaf(leaves[1], &backend, &cache);
+        let pos_of = |k: &EavtKey| entries.partition_point(|(e, _)| e < k);
+
+        let starts = [
+            key_for(0),
+            key_for(1),
+            key_for(500),
+            key_for(501),
+            second_leaf_first,
+            key_for(3_998),
+            key_for(3_999),
+        ];
+        for start in &starts {
+            let mut cursor = LeafCursor::new(root, Some(start), &backend, &cache).unwrap();
+            let got = cursor.next().unwrap();
+            let want = entries.get(pos_of(start)).cloned();
+            assert!(got == want, "first entry after start differs");
+        }
+    }
+
+    #[test]
+    fn cursor_seek_matches_fresh_descent_random() {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(4096);
+        let entries = even_entries(20_000);
+        let root = build_tree(&mut backend, &cache, &entries);
+        let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
+        let mut targets: Vec<u128> = (0..2_000)
+            .map(|_| u128::from(rng.next() % 40_010))
+            .collect();
+        targets.sort_unstable();
+
+        let mut cursor = LeafCursor::new(root, None, &backend, &cache).unwrap();
+        for t in targets {
+            let key = key_for(t);
+            cursor.seek(&key).unwrap();
+            let got = cursor.next().unwrap();
+            let mut fresh = LeafCursor::new(root, Some(&key), &backend, &cache).unwrap();
+            let want = fresh.next().unwrap();
+            assert!(got == want, "seek differs from a fresh descent");
+            // Put the entry back in play for the next seek (targets may repeat).
+            cursor = LeafCursor::new(root, Some(&key), &backend, &cache).unwrap();
+        }
+    }
+
+    #[test]
+    fn cursor_seek_sequence_without_reset_visits_ascending_entries() {
+        // Monotone seeks on one cursor, interleaved with next(): each result is
+        // the first entry >= max(target, previous result + 1).
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(4096);
+        let entries = even_entries(20_000);
+        let root = build_tree(&mut backend, &cache, &entries);
+        let mut rng = Rng(0xD1B5_4A32_D192_ED03);
+        let mut cursor = LeafCursor::new(root, None, &backend, &cache).unwrap();
+        let mut consumed = 0usize; // entries before this index have been returned
+        let mut target: u128 = 0;
+        while consumed < entries.len() {
+            target += u128::from(rng.next() % 200);
+            let key = key_for(target);
+            cursor.seek(&key).unwrap();
+            let expect_idx = consumed.max(entries.partition_point(|(e, _)| e < &key));
+            let got = cursor.next().unwrap();
+            assert!(
+                got == entries.get(expect_idx).cloned(),
+                "seek/next result differs"
+            );
+            consumed = expect_idx + 1;
+        }
+        assert!(
+            cursor.next().unwrap().is_none(),
+            "cursor must end after the last entry"
+        );
+    }
+
+    #[test]
+    fn cursor_seek_within_leaf_sibling_and_across_subtrees() {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(4096);
+        let entries = even_entries(20_000);
+        let root = build_tree(&mut backend, &cache, &entries);
+        let leaves = leaf_ids(root, &backend, &cache);
+        assert!(leaves.len() > 20, "fixture needs many leaves");
+        let first = first_key_of_leaf(leaves[0], &backend, &cache);
+        let last_in_first = last_key_of_leaf(leaves[0], &backend, &cache);
+        let sibling = first_key_of_leaf(leaves[1], &backend, &cache);
+        let far = first_key_of_leaf(leaves[leaves.len() - 2], &backend, &cache);
+
+        let mut cursor = LeafCursor::new(root, Some(&first), &backend, &cache).unwrap();
+        for target in [&last_in_first, &sibling, &far] {
+            cursor.seek(target).unwrap();
+            let (k, _) = cursor.next().unwrap().unwrap();
+            assert!(k == *target, "seek must land on the target key");
+        }
+    }
+
+    #[test]
+    fn cursor_seek_past_end() {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(4096);
+        let entries = even_entries(5_000);
+        let root = build_tree(&mut backend, &cache, &entries);
+        let mut cursor = LeafCursor::new(root, None, &backend, &cache).unwrap();
+        cursor.seek(&key_for(1_000_000)).unwrap();
+        assert!(
+            cursor.next().unwrap().is_none(),
+            "nothing after the last entry"
+        );
+        cursor.seek(&key_for(2_000_000)).unwrap();
+        assert!(cursor.next().unwrap().is_none(), "still at the end");
+    }
+
+    #[test]
+    fn cursor_seek_into_gap_after_leaf_end() {
+        // A key between leaf L's last entry and leaf L+1's first entry: the
+        // cursor parks at the end of L, and next() moves to L+1.
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(4096);
+        let entries = even_entries(5_000);
+        let root = build_tree(&mut backend, &cache, &entries);
+        let leaves = leaf_ids(root, &backend, &cache);
+        let last_in_l = last_key_of_leaf(leaves[2], &backend, &cache);
+        let first_in_next = first_key_of_leaf(leaves[3], &backend, &cache);
+        // Entities are even, so last + 1 is absent and lies in the gap.
+        let gap = key_for(last_in_l.entity.as_u128() + 1);
+        assert!(
+            gap > last_in_l && gap < first_in_next,
+            "gap key must sit between leaves"
+        );
+
+        let mut cursor = LeafCursor::new(root, None, &backend, &cache).unwrap();
+        cursor.seek(&gap).unwrap();
+        let (k, _) = cursor.next().unwrap().unwrap();
+        assert!(
+            k == first_in_next,
+            "next() after a gap seek is the next leaf's first entry"
+        );
+    }
+
+    #[test]
+    fn cursor_seek_backwards_is_noop() {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(4096);
+        let entries = even_entries(5_000);
+        let root = build_tree(&mut backend, &cache, &entries);
+        let mut cursor = LeafCursor::new(root, None, &backend, &cache).unwrap();
+        cursor.seek(&key_for(6_000)).unwrap();
+        cursor.seek(&key_for(10)).unwrap();
+        let (k, _) = cursor.next().unwrap().unwrap();
+        assert!(
+            k.entity.as_u128() == 6_000,
+            "backward seek must not move the cursor"
+        );
+    }
+
+    #[test]
+    fn cursor_seek_to_next_leaf_reads_one_page() {
+        // Cache disabled: every page access reaches the backend.
+        let mut backend = CountingBackend {
+            inner: MemoryBackend::new(),
+            reads: std::sync::atomic::AtomicU64::new(0),
+        };
+        let cache = PageCache::new(0);
+        let entries = even_entries(20_000);
+        let root = build_tree(&mut backend, &cache, &entries);
+        let leaves = leaf_ids(root, &backend, &cache);
+        assert!(leaves.len() > 3, "fixture needs several leaves");
+
+        let first = first_key_of_leaf(leaves[0], &backend, &cache);
+        let next_leaf_first = first_key_of_leaf(leaves[1], &backend, &cache);
+        let mut cursor = LeafCursor::new(root, Some(&first), &backend, &cache).unwrap();
+        backend.reset();
+        cursor.seek(&next_leaf_first).unwrap();
+        assert_eq!(
+            backend.reads(),
+            1,
+            "seek to the sibling leaf reads only that leaf"
+        );
+        let (k, _) = cursor.next().unwrap().unwrap();
+        assert!(
+            k == next_leaf_first,
+            "seek lands on the sibling's first entry"
+        );
     }
 }

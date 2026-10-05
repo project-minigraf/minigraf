@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two values of the same attribute written in one transaction are both returned by every query path. Previously only one came back, and entity-bound and attribute-bound queries could return different ones (#371, #287).
 - A retract that removes several values of one attribute in one call now hides all of them (#371).
 
+### Internal
+
+- **B+tree reads no longer follow leaf sibling links** (v8 storage format, PR 1 of 5; #374). Every index scan uses a cursor that walks down from the root and keeps the path, with a forward `seek` that climbs only as far as needed. This prepares for copy-on-write index pages, which cannot keep sibling links. The file format and query results are unchanged. Concurrent 100k-fact scans take 25–37 % less time and checkpointing after one fact at 10k facts 9 % less; single point lookups and attribute scans are 2–6 % slower (about 0.4 µs per lookup). A corrupted child pointer now fails with STG-013 (wrong page type) or INT-049 (cycle) instead of following a bad link.
+
 ## v2.0.2 — 2026-09-27
 
 Final planned release on the v2.x line. File format is unchanged (v7). No breaking API changes; one new user-facing error code (API-010). v2.x gets data-integrity and security fixes for 12 months after v3.0.0 ships ([support policy](PHILOSOPHY.md#support-policy)).
