@@ -4,6 +4,9 @@
 **Milestone:** v3.0.0, branch `v3`, file format v8 (unreleased; this redefines its layout)
 **Must land before:** #391 golden-file corpus freezes v8
 **Builds on:** #315 / `2026-09-26-incremental-checkpoint-design.md` (balanced leaf split, routing)
+**Companion:** `2026-10-05-covering-index-key-encoding-design.md` (#433). It defines what
+the trees store: covering keys, dictionaries and value pages. This spec defines how pages
+are laid out, checksummed and committed.
 
 ## 1. Problem
 
@@ -30,8 +33,8 @@ page 0 leaves a file whose header fails its CRC, and the file cannot be opened a
 - G1. A crash at any point of a checkpoint (any write, any sync, a torn page write)
   reopens to the last committed checkpoint plus WAL replay. No checkpointed fact is lost.
   No index rebuild happens on open. (#374)
-- G2. A checkpoint writes only new fact pages, the copied-on-write path from each
-  modified leaf to its root, the fact-directory path, free-list pages and one meta page.
+- G2. A checkpoint writes only new value pages, the copied-on-write path from each
+  modified leaf to its root in each tree, free-list pages and one meta page.
   Bytes written are O(k · log N) after k new facts and never depend on N. This bound
   covers `checkpoint()`, the auto-checkpoint and the close-time checkpoint in
   `Drop for Inner`. (#434 acceptance 1, 2, 4)
@@ -48,14 +51,9 @@ page 0 leaves a file whose header fails its CRC, and the file cannot be opened a
 
 - Shrinking the file or compacting free pages. The free list is reused. Vacuum is
   a later, separate operation (#434: "space reclamation can be a later operation").
-- Fact-page density, dictionary coding and prefix compression (#433 format decisions).
-  The page header in §3.2 leaves the payload encoding free to change. #433 must be
-  settled before PR 2 (§10) freezes the node format. With today's ~70-byte keys, 1B
-  facts need ~320 GB for the indexes alone, and random-key checkpoints (AVET/VAET,
-  random UUIDv4 entities) write ~40× the data they add. Dictionary-coded attributes,
-  sequential internal entity ids, leaf prefix compression and suffix-truncated
-  separators are the levers. Bε-style buffered internal nodes (§3.1.2) are the
-  v3.x fallback if #394 still measures write amplification > 10.
+- Key encoding, dictionaries, covering indexes and node layout. These are settled in the
+  companion #433 spec. Bε-style buffered internal nodes (§3.1.2) are the v3.x fallback
+  if #394 still measures write amplification > 10.
 - The public streaming cursor API (#432). §5 adds an internal leaf cursor that #432
   can build on.
 - Lost-write detection, where the device acknowledges a write that never lands and an
@@ -68,8 +66,8 @@ All integers are little-endian. Page size stays 4096.
 
 ```
 Page 0, 1   Meta pages A and B (alternating commits)
-Page 2+     Any mix of: fact pages, index nodes (EAVT/AEVT/AVET/VAET),
-            fact-directory nodes, free-list pages, free pages
+Page 2+     Any mix of: B+tree nodes (EAVT/AEVT/AVET/VAET/DICT), value pages,
+            free-list pages, free pages
 Sidecar     <db>.wal — header gains base_generation (§3.1.1); entries unchanged
 ```
 
@@ -93,13 +91,13 @@ slot with the highest `generation` wins. Neither valid → §6.
 | 56..64 | aevt_root `u64` | |
 | 64..72 | avet_root `u64` | |
 | 72..80 | vaet_root `u64` | |
-| 80..88 | factdir_root `u64` | §3.4 |
+| 80..88 | dict_root `u64` | §3.4 |
 | 88..96 | freelist_head `u64` | §3.5; 0 = empty |
 | 96..104 | freelist_count `u64` | number of free page ids in the chain |
-| 104 | fact_page_format `u8` | |
-| 105..112 | zero | reserved |
+| 104..112 | next_eid `u64` | next entity id (#433 §3.1) |
 | 112..120 | required_features `u64` | bitmask; v3.0.0 writes 0 (§3.1.2) |
-| 120..PAGE_SIZE | zero | reserved, covered by meta_crc |
+| 120..124 | next_iid `u32` | next ident id (#433 §3.1) |
+| 124..PAGE_SIZE | zero | reserved, covered by meta_crc |
 
 The CRC covers the whole page, so the reserved bytes must be zero and future fields fit
 without a layout change. The 84-byte `FileHeader` and its `index_checksum` and
@@ -125,16 +123,20 @@ with two extra facts:
    was active when the WAL file was created; it is reserved bytes today, so this is
    WAL version 2. A WAL is deleted only after a commit is durable, so an interrupted
    commit of `g+1` always leaves a WAL with `base_generation == g`.
-2. **Evidence of `g+1` in the data pages.** A checkpoint with new facts always appends
-   a fact page at `M_g.page_count` (§4.2). A valid page there stamped `generation == g+1`
-   means `g+1` wrote its data.
+2. **Evidence of `g+1` in the data pages.** Generation `g+1` can only have written
+   to pages on `M_g`'s free list or at or above `M_g.page_count` (§4.1). A valid page in
+   one of those places stamped `generation == g+1` means `g+1` wrote its data. A
+   checkpoint with any new data writes at least one such page. The check reads
+   `M_g`'s free-list pages and the pages from `M_g.page_count` to the end of the file.
+   That cost is proportional to the last change, and it is paid only in this rare
+   case.
 
-| WAL | page at `M_g.page_count` | meaning | action |
+| WAL | page stamped `g+1` where `g+1` could write | meaning | action |
 |---|---|---|---|
 | `base_generation == g` | any | torn commit of `g+1`, or the older slot was damaged | open at `g`, replay the WAL |
 | `base_generation > g` | any | a later commit existed and its meta is lost | error: meta damaged after commit |
-| none | valid, generation `g+1` | `g+1` committed (its WAL was deleted), then its meta rotted | error: meta damaged after commit |
-| none | anything else | the older slot was damaged, or `g == 1` with B empty | open at `g` |
+| none | found | `g+1` committed (its WAL was deleted), then its meta rotted | error: meta damaged after commit |
+| none | not found | the older slot was damaged, or `g == 1` with B empty | open at `g` |
 
 The error is a new STG code. The file is not modified. #373's tooling can recover at
 `g` explicitly, and that loses the last checkpoint's facts. The next commit always
@@ -183,13 +185,14 @@ Any failure returns a new structured error (§8) and the page is not cached.
 
 | page_type | name | body after the 24-byte header |
 |---|---|---|
-| 0x51 | fact page | record directory + postcard facts, as today (the 8-byte `next_page` is dropped) |
-| 0x52 | fact overflow | reserved, not written |
-| 0x61 | index leaf | slot directory + `(K, FactRef)` entries; **no `next_leaf`** |
-| 0x62 | index internal | rightmost_child `u64` + keys/children, as today |
-| 0x71 | fact-dir leaf | `(start_page u64, len u64)` extents |
-| 0x72 | fact-dir internal | same layout as 0x62 with `u64` keys |
+| 0x51 | value page | record directory + long values (#433 §4.3) |
+| 0x52 | value overflow | reserved, not written |
+| 0x61 | B+tree leaf | prefix-compressed entries + restart array (#433 §5); **no `next_leaf`** |
+| 0x62 | B+tree internal | rightmost_child `u64` + truncated separators/children (#433 §5) |
 | 0x81 | free-list page | next `u64` + `count` × page id `u64` (up to 508 per page) |
+
+All five trees (EAVT, AEVT, AVET, VAET, DICT) use 0x61/0x62. A node does not record
+which tree it belongs to; its tree is given by the root it was reached from.
 
 Type values follow the existing convention: the high nibble is the page family and the
 low nibble is the variant. No v8 value reuses one from an earlier format. Those are
@@ -197,31 +200,24 @@ low nibble is the variant. No v8 value reuses one from an earlier format. Those 
 B+tree. Every v8 page has a different header from its v7 counterpart, so the type byte
 alone tells a v8 page from a legacy one. A legacy page read where a v8 page is expected
 fails the type check before the CRC is computed. #373's verify and salvage can classify
-any page from its first byte, and v7 migration never confuses an old fact page with a
-new one. Retired values stay reserved and are never reassigned.
+any page from its first byte, and v7 migration never confuses an old page with a new
+one. Retired values stay reserved and are never reassigned.
 
-The header grows from 12 to 24 bytes, so `MAX_FACT_BYTES` drops by 12, to 4056. That
-is a public constant change and goes in the CHANGELOG.
+### 3.3 B+trees
 
-### 3.3 Index trees
-
-Leaves have no sibling pointer. With copy-on-write, a `next_leaf` pointer means changing
+The node contents are defined in #433 §5. Leaves have no sibling pointer. With copy-on-write, a `next_leaf` pointer means changing
 one leaf forces a rewrite of its left neighbour, then that neighbour's left neighbour,
 and so on: the O(N) cascade this design removes. Scans use a cursor with a parent stack
 instead (§5). Fill and split rules carry over from #315: balanced split by bytes, no
 merging, because nothing is ever removed from an index.
 
-### 3.4 Fact directory
+### 3.4 DICT tree and value pages
 
-A small B+tree keyed by `start_page`, with extent entries `(start_page, len)`. It is the
-authoritative list of committed fact pages. It is used for full scans in page order
-(`CommittedFactReader::stream_all`), and for #373's verify and `rebuild_indexes`.
-Pages that a crashed checkpoint wrote are never in it, because only the committed meta's
-directory counts.
-
-New fact pages are allocated by appending (§4.2), so a checkpoint usually extends the
-last extent. That rewrites only the rightmost path. A non-contiguous allocation adds a
-new extent, which also touches only the rightmost path.
+DICT holds the entity and ident dictionaries, the tx table and the long-value dedup
+index (#433 §3.2). Value pages hold long values. They are append-only, never rewritten
+and never freed, and they are reachable only through value refs in index keys, so
+verify (#373) finds them by walking the indexes. There are no fact pages and no fact
+directory: EAVT is the complete, ordered list of facts.
 
 ### 3.5 Free list
 
@@ -255,46 +251,37 @@ free list and pages at or above `M.page_count`. Three things follow:
 
 The implementation must confirm that no query keeps an `OnDiskIndexReader` across two
 checkpoints. Today each `range_scan_*` runs under the `FactStorage` guard that
-`set_committed_index_reader` needs, and `resolve()` reads only fact pages, which are
+`set_committed_index_reader` needs. Long-value reads go only to value pages, which are
 never freed. A test pins this down (§7).
 
 ### 4.2 Allocation policy
 
-- **Fact pages** always append at `page_count`. Extents stay long and full scans stay
-  sequential. Facts are never freed, so appending is the file's unavoidable growth.
-- **Index, fact-directory and free-list pages** take from `M`'s free list first and
-  append only when it is empty. In steady state, index churn reuses the pages freed one
-  checkpoint earlier, and the file grows only by fact pages and net index growth.
-- **Order within a checkpoint:** all fact pages are allocated before any other page is
-  appended. A checkpoint with new facts therefore always writes a fact page at
-  `M.page_count`, stamped with the new generation. §3.1.1 relies on this as evidence
-  that the checkpoint wrote its data. The fact-ordering test in §7 checks it.
-- **Layout over time:** fact pages and index pages interleave. Fact pages are no longer
-  kept contiguous at `1..=fact_page_count`, and the index no longer follows them. The
-  fact directory (§3.4) records where the fact pages are. A new extent starts only when
-  index pages were appended after the previous checkpoint's fact pages.
+- **Value pages** always append at `page_count`. They are never freed.
+- **B+tree and free-list pages** take from `M`'s free list first and append only when
+  it is empty. In steady state, tree churn reuses the pages freed one checkpoint
+  earlier, and the file grows only by net tree growth and new long values.
+- **Layout over time:** page kinds interleave freely. Nothing needs to be contiguous;
+  every page is reached from a root in the meta page or from the free-list head.
 
 ### 4.3 Steps
 
 1. **Snapshot.** Take `M` and the pending facts. Build an allocator from `M`'s free list
    and `M.page_count`.
-2. **Facts.** Pack the pending facts into new fact pages, appended, stamped with `g'`.
-   The `FactRef`s come from the allocated ids.
-3. **Indexes.** For each of the four trees, run a copy-on-write batch insert of the sorted
-   pending entries: descend from the root, route entries to leaves by separator keys,
+2. **Long values.** Write new long values (after dedup, #433 §4.3) into new value pages,
+   appended and stamped with `g'`. Their value refs complete the pending keys.
+3. **Trees.** For each of the five trees (the four indexes, then DICT with the new
+   eid/iid/tx/dedup entries), run a copy-on-write batch insert of the sorted pending
+   entries: descend from the root, route entries to leaves by separator keys,
    merge each touched leaf and split it by balanced bytes, then rewrite each touched
    internal node into a new page. A root split adds a level. Every page replaced along
    the way goes into `freed`.
-4. **Fact directory.** Extend or add an extent on the rightmost path (copy-on-write) and
-   add the replaced pages to `freed`.
-5. **Free list.** Pop is already done by the allocator. Push `freed` and the consumed
+4. **Free list.** Pop is already done by the allocator. Push `freed` and the consumed
    free-list pages as new head pages (§3.5).
-6. **Data sync.** All pages above have been written, each stamped with `g'` and its CRC.
+5. **Data sync.** All pages above have been written, each stamped with `g'` and its CRC.
    Call `backend.sync()`.
-7. **Commit.** Write meta `g'` to slot `g' % 2`, then call `backend.sync()`. This is the
+6. **Commit.** Write meta `g'` (with the new roots, `next_eid` and `next_iid`) to slot `g' % 2`, then call `backend.sync()`. This is the
    only commit point.
-8. **Publish.** Swap the in-memory `CommittedFactReader` and `OnDiskIndexReader` to the
-   new roots and clear the pending facts. Then delete the WAL in `do_checkpoint`, as
+7. **Publish.** Swap the in-memory readers to the new roots and clear the pending facts. Then delete the WAL in `do_checkpoint`, as
    today.
 
 `fact_prefix_crc`, `rebuild_btree_incremental`'s copy-every-leaf path,
@@ -322,11 +309,12 @@ reopen stays fast.
   key d leaves away costs O(log d). A seek to a key below the current position is a
   no-op. Merge joins and leapfrog-style worst-case-optimal joins in the streaming
   engine (#432) call `seek` on each index ordering constantly, so it must stay cheap.
-- **Full fact scans** walk the fact-directory extents in page order.
+- **Full fact scans** are an EAVT cursor scan. Covering keys mean no other page is read
+  except for long values.
 - **Open** reads two meta pages and nothing else. Pages are verified when first read
   (§3.2). The rebuild-on-checksum-mismatch branch in `load()` is deleted. A corrupt
-  page is now an error on the read that hits it. Repairs are explicit through #373
-  (`verify`, `rebuild_indexes` over the fact directory).
+  page is now an error on the read that hits it. Repairs are explicit through #373:
+  `verify`, and `rebuild_indexes` from EAVT or AEVT, each of which holds every fact.
 
 ## 6. Migration from legacy files
 
@@ -335,12 +323,13 @@ and no valid meta page. Only v7 is migrated. A page 0 that is neither a valid me
 nor a v7 header, including a pre-release v8 single-header file, is rejected with
 "no valid meta page".
 
-1. Read the legacy header (header CRC checked) and all facts with their old refs from
-   pages `1..=fact_page_count` (legacy 12-byte fact header).
-2. From `old_page_count` up, append new fact pages (new header, CRC, generation 1), then
-   the fact directory and the four indexes built by `build_btree` (bulk build, now
-   stamped and checksummed). Set the free list to old pages `2..old_page_count`. They
-   become unreferenced at commit. Page 1 is excluded because it is meta slot B.
+1. Read the legacy header (header CRC checked) and all facts from pages
+   `1..=fact_page_count` (legacy 12-byte fact header).
+2. Assign eids and iids in `tx_count` order (#433 §3.1). From `old_page_count` up,
+   append value pages for long values, then the five trees built by `build_btree` (bulk
+   build from sorted input, stamped and checksummed). Set the free list to old pages
+   `2..old_page_count`. They become unreferenced at commit. Page 1 is excluded because
+   it is meta slot B.
 3. Append a **backup copy of meta generation 1** as the last page, sync, then write meta
    generation 1 to page 0 and sync. The commit overwrites the legacy header. Page 1
    still holds old fact bytes, which are not a valid meta, so it is ignored until
@@ -366,8 +355,8 @@ TDD per component. No new dependencies. Test assert messages follow the CodeQL r
   future `generation` each give their own STG code; a failed page is not cached.
 - **Meta selection:** both valid (highest generation wins). Each row of the §3.1.1
   table: torn newer slot with WAL base `g` (open at `g`, replay); WAL base `> g`
-  (error); no WAL with a `g+1` page at `M_g.page_count` (error); no WAL and no `g+1`
-  page (open at `g`); `g == 1` with slot B empty. Neither valid: v7 header (migration);
+  (error); no WAL with a `g+1` page on `M_g`'s free list or past `M_g.page_count`
+  (error, each location tested); no WAL and no `g+1` page (open at `g`); `g == 1` with slot B empty. Neither valid: v7 header (migration);
   torn migration commit with backup meta (recovered); pre-release v8 single header or
   anything else (error).
 - **Copy-on-write insert equivalence:** random committed sets and pending batches
@@ -383,13 +372,9 @@ TDD per component. No new dependencies. Test assert messages follow the CodeQL r
 - **Feature bits:** a file with an unknown `required_features` bit fails with the new
   STG code and is not modified. v3.0.0 writes 0.
 - **Allocator and free list:** pop/push across many generations. Invariant check after
-  each checkpoint: the reachable set (all trees plus the free-list chain) and the free
+  each checkpoint: the reachable set (all five trees, the value pages their keys reference, and the free-list chain) and the free
   ids are disjoint, and together they cover `2..page_count` exactly. This also detects
   leaks.
-- **Fact ordering:** in a checkpoint with new facts that also appends index pages (a
-  root split, or a free list that runs out), the page at the old `page_count` is a fact
-  page stamped with the new generation, and the fact directory gains an extent only when
-  index pages sit between two checkpoints' fact pages.
 - **Crash atomicity:** extend `crash_at_every_point_in_save_loses_no_checkpointed_fact`.
   Inject a failure at every write and sync, and add torn writes, including a torn meta
   write, using a new `FaultInjectingBackend` mode that writes a prefix of the page. After
@@ -403,7 +388,7 @@ TDD per component. No new dependencies. Test assert messages follow the CodeQL r
   consistent results, and no read ever fails CRC.
 - **Migration:** v7 fixture → v8, with equal facts, query results and `tx_count` floor;
   crash at every point of the migration; a pre-release v8 single-header file is rejected.
-- **Corruption surfacing:** corrupt a leaf, a fact page and a free-list page in turn. A
+- **Corruption surfacing:** corrupt a leaf, a value page and a free-list page in turn. A
   query or a checkpoint returns the STG code and never wrong data.
 - **Benchmark:** `checkpoint/after_1_fact` and `checkpoint/after_100k_facts` at 10k,
   100k and 1M facts, recording bytes written per checkpoint. Write amplification is
@@ -423,35 +408,35 @@ TDD per component. No new dependencies. Test assert messages follow the CodeQL r
   fix it if it is not already the case.
 - Docs: the `Minigraf::checkpoint` and `wal_checkpoint_threshold` rustdoc drop "copies
   pages in proportion to the total index size". Also update the CLAUDE.md "File Format"
-  section, `.wiki/Architecture.md`, CHANGELOG (format, `MAX_FACT_BYTES`, migration file
-  growth) and ROADMAP.
+  section, `.wiki/Architecture.md`, CHANGELOG (format, `MAX_FACT_BYTES` →
+  `MAX_VALUE_BYTES`, migration file growth) and ROADMAP.
 - Philosophy: aligned. Single file, reliability first, no dependencies, and the format
   change goes into the unreleased v8, not a v9.
 
 ## 9. Alternatives rejected
 
 - **Parent-held child checksums (ZFS style).** These would catch lost writes, but every
-  internal pointer and every `FactRef` in all four indexes would grow by 4 bytes, against
-  #433's density goal. In-page CRC plus page id plus generation catches torn, corrupt and
+  internal pointer and every value ref would grow by 4 bytes, against #433's density
+  goal. In-page CRC plus page id plus generation catches torn, corrupt and
   misdirected pages.
 - **Single header page.** A torn header write would make the file unopenable.
-- **Typed-page scan instead of a fact directory.** Full scans would read fact pages in
-  random order, and salvage would have to trust the free list to rule out orphan pages
-  left by a crashed checkpoint.
 - **Removing the close-time checkpoint.** It is unnecessary once checkpoints are
   O(change). Removing it would slow reopens and change binding behaviour (#322).
-- **Appending to the last partial fact page in place.** Under per-page CRCs, a torn
-  in-place write would destroy facts that were already committed. Each checkpoint
-  therefore starts a fresh fact page, and density is #433's concern.
+- **Appending to the last partial value page in place.** Under per-page CRCs, a torn
+  in-place write would destroy values that were already committed. Each checkpoint
+  that writes long values therefore starts a fresh value page. The space lost to
+  partly filled pages is bounded by one page per checkpoint that writes long values.
 
 ## 10. Delivery (PRs into `v3`)
 
 1. **Cursor scans:** add `LeafCursor` with `seek` and move every scan onto it, still on
    the current format. Behaviour does not change.
 2. **v8 page format:** common page header with CRC/id/generation, verify on read, meta
-   pages A/B, fact directory, legacy migration. `save()` still does a full rebuild into
-   fresh pages, which is atomic but O(N). (#388, #374 atomicity)
-3. **Copy-on-write insert, allocator, free list:** O(change) checkpoints. (#434)
-4. **Cost and crash test hardening, benchmarks, docs.**
+   pages A/B with meta selection, feature bits, WAL v2. `save()` still does a full rebuild
+   into fresh pages, which is atomic but O(N). (#388, #374 atomicity)
+3. **Covering keys (#433):** byte-comparable key encoding, prefix-compressed nodes, DICT,
+   value pages, eid/iid assignment, covering reads, v7 migration.
+4. **Copy-on-write insert, allocator, free list:** O(change) checkpoints. (#434)
+5. **Cost and crash test hardening, benchmarks, docs.**
 
-PR 2 freezes the page format for #391. PRs 3 and 4 do not change it.
+The format freezes for #391 once PRs 2 and 3 have merged. PRs 4 and 5 do not change it.
