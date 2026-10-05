@@ -187,8 +187,9 @@ stays O(N). PR 4 makes it O(change).
 - **Error codes (new):** STG-029 page checksum mismatch, STG-030 page id mismatch,
   STG-031 page generation ahead of meta, STG-032 no valid meta page, STG-033 meta damaged
   after commit, STG-034 unsupported file feature, STG-035 free-list inconsistency. An
-  unknown page type is the existing STG-013. INT-053 (header CRC) is marked
-  deprecated. Check the next free numbers in `src/error.rs` before assigning.
+  unknown page type is the existing STG-013. INT-053 (header CRC) stays in use for a
+  damaged v7 header, and a file with no magic in page 0 is still STG-002. Check the
+  next free numbers in `src/error.rs` before assigning.
 
 ## Review Focus
 

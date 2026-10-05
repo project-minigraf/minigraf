@@ -162,18 +162,24 @@ enum Value { String(String), Integer(i64), Float(f64), Boolean(bool),
 ### File Format (v8)
 
 ```
-Page 0:  Header (84 bytes) — magic "MGRF", version, page/fact counts,
-         B+tree root pages (eavt/aevt/avet/vaet), header_checksum, index_checksum, fact_page_count
-Page 1+: Packed fact pages (postcard-encoded, ~25 facts/4KB page)
-After:   On-disk B+tree index pages (one node per 4KB page)
-Sidecar: <db>.wal — CRC32-protected WAL entries; replayed on open; deleted on checkpoint
+Page 0, 1: Meta pages A/B (alternating commits: odd generations in page 0, even in 1).
+           Magic "MGRF"/"META", generation, page_count, index roots, free-list head,
+           required_features; CRC over the whole page. The only commit point.
+Page 2+:   Any mix of fact pages (0x41, interim until covering indexes), B+tree
+           leaf/internal pages (0x61/0x62) and free-list pages (0x81). Every one has
+           a 24-byte header (type, count, CRC32, page id, generation), verified on load.
+Sidecar:   <db>.wal — v2 header records the base generation; CRC32-protected entries;
+           replayed on open; deleted on checkpoint
 ```
 
-Auto-migrates v7 → v8 on open (index rebuild). v1–v6 are rejected (STG-028).
+A checkpoint writes only pages the active meta does not reference, syncs, then writes
+the other meta page and syncs, so a crash at any point keeps the previous checkpoint.
+Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are rejected
+(STG-028). Design: `docs/superpowers/specs/2026-10-05-v8-storage-format-design.md`.
 
 ## Test Coverage
 
-**1225 tests passing** (1217 passing, 8 ignored; unit + integration + doc).
+**1233 tests** (1225 passing, 8 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.

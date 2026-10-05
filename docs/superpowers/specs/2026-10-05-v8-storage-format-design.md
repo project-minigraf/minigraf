@@ -181,7 +181,11 @@ with two extra facts:
 1. **WAL `base_generation`.** The WAL header records the generation of the meta that
    was active when the WAL file was created; it is reserved bytes today, so this is
    WAL version 2. A WAL is deleted only after a commit is durable, so an interrupted
-   commit of `g+1` always leaves a WAL with `base_generation == g`.
+   commit of `g+1` always leaves a WAL with `base_generation ≤ g`. The base can be
+   below `g` when a crash came between a commit and the WAL delete: the reopened
+   session keeps appending to that WAL, which still holds every fact not in `g`.
+   A version 1 WAL (v2.x) can only sit next to a migrated file whose generation-2
+   commit has not finished, so it reads as base generation 1.
 2. **Evidence of `g+1` in the data pages.** Generation `g+1` can only have written to
    pages on `M_g`'s free list or at or above `M_g.page_count` (§8.1). A valid page in
    one of those places stamped `generation == g+1` means `g+1` wrote its data. A
@@ -191,7 +195,7 @@ with two extra facts:
 
 | WAL | page stamped `g+1` where `g+1` could write | meaning | action |
 |---|---|---|---|
-| `base_generation == g` | any | torn commit of `g+1`, or the older slot was damaged | open at `g`, replay the WAL |
+| `base_generation ≤ g` | any | torn commit of `g+1`, or the older slot was damaged | open at `g`, replay the WAL |
 | `base_generation > g` | any | a later commit existed and its meta is lost | error: meta damaged after commit |
 | none | found | `g+1` committed (its WAL was deleted), then its meta rotted | error: meta damaged after commit |
 | none | not found | the older slot was damaged, or `g == 1` with B empty | open at `g` |
@@ -650,9 +654,10 @@ TDD per component. No new dependencies. Test assert messages follow the CodeQL r
 
 - New STG codes: page checksum mismatch, page id mismatch, page generation ahead of
   meta, no valid meta page, meta damaged after commit (§4.1.1), unsupported file
-  feature (§4.1.2), free-list/allocator inconsistency. The codes for the removed paths
-  (header CRC mismatch `INT-053`, index rebuild) stay registered and are marked
-  deprecated, never recycled. Update `docs/ERROR_REFERENCE.md`.
+  feature (§4.1.2), free-list/allocator inconsistency. A page that does not start with
+  the magic in either meta slot is still `STG-002`. `INT-053` (header CRC mismatch)
+  stays in use for a v7 header whose own CRC fails, so it is not deprecated. Codes are
+  never recycled. Update `docs/ERROR_REFERENCE.md`.
 - WAL format version 2: the header gains `base_generation u64` at bytes 8..16, taken
   from the reserved bytes. A v1 WAL is accepted only next to a v7 file being migrated.
 - Public API: `MAX_FACT_BYTES` → `MAX_VALUE_BYTES` (§6.3). Committed scan order changes
