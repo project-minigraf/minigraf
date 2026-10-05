@@ -49,7 +49,13 @@ page 0 leaves a file whose header fails its CRC, and the file cannot be opened a
 - Shrinking the file or compacting free pages. The free list is reused. Vacuum is
   a later, separate operation (#434: "space reclamation can be a later operation").
 - Fact-page density, dictionary coding and prefix compression (#433 format decisions).
-  The page header in §3.2 leaves the payload encoding free to change.
+  The page header in §3.2 leaves the payload encoding free to change. #433 must be
+  settled before PR 2 (§10) freezes the node format. With today's ~70-byte keys, 1B
+  facts need ~320 GB for the indexes alone, and random-key checkpoints (AVET/VAET,
+  random UUIDv4 entities) write ~40× the data they add. Dictionary-coded attributes,
+  sequential internal entity ids, leaf prefix compression and suffix-truncated
+  separators are the levers. Bε-style buffered internal nodes (§3.1.2) are the
+  v3.x fallback if #394 still measures write amplification > 10.
 - The public streaming cursor API (#432). §5 adds an internal leaf cursor that #432
   can build on.
 - Lost-write detection, where the device acknowledges a write that never lands and an
@@ -91,7 +97,9 @@ slot with the highest `generation` wins. Neither valid → §6.
 | 88..96 | freelist_head `u64` | §3.5; 0 = empty |
 | 96..104 | freelist_count `u64` | number of free page ids in the chain |
 | 104 | fact_page_format `u8` | |
-| 105..PAGE_SIZE | zero | reserved, covered by meta_crc |
+| 105..112 | zero | reserved |
+| 112..120 | required_features `u64` | bitmask; v3.0.0 writes 0 (§3.1.2) |
+| 120..PAGE_SIZE | zero | reserved, covered by meta_crc |
 
 The CRC covers the whole page, so the reserved bytes must be zero and future fields fit
 without a layout change. The 84-byte `FileHeader` and its `index_checksum` and
@@ -134,6 +142,21 @@ rewrites the damaged slot, because it is the inactive one.
 
 The browser backend writes through IndexedDB transactions and has no torn writes. Its
 flush keeps the meta page in the same transaction as the data pages (§8).
+
+#### 3.1.2 Feature bits
+
+`required_features` lets later v3.x releases add structures without a format v9.
+Examples are Bε-style buffered internal nodes or a new leaf encoding, each as a new
+page type. Bit `i` set means a reader must understand feature `i` to read the file
+correctly. Open fails with a new STG code ("unsupported file feature", naming the
+bits) if any set bit is unknown to the running version. Nothing else is checked, so
+the format version stays 8.
+
+- A writer sets a bit at the first commit that writes a page that needs it. Once set,
+  a bit is never cleared.
+- v3.0.0 defines no bits and always writes 0.
+- The bit registry lives next to the error-code registry and follows the same rule:
+  bits are never reused.
 
 ### 3.2 Common page header (all non-meta pages)
 
@@ -292,6 +315,13 @@ reopen stays fast.
   The amortised cost per step is O(1), and memory is O(depth). `range_scan`,
   `stream_all_entries` and the four `CommittedIndexReader` methods are rewritten on top
   of it, and their signatures stay the same. #432 exposes it later.
+- **Seek.** `LeafCursor::seek(key)` moves to the first entry ≥ `key`, never backwards.
+  If `key` is in the current leaf, it binary-searches that leaf. Otherwise it pops the
+  stack to the lowest ancestor whose key range still covers `key`, and descends from
+  there, not from the root. A seek to a nearby key costs O(1) page visits, and one to a
+  key d leaves away costs O(log d). A seek to a key below the current position is a
+  no-op. Merge joins and leapfrog-style worst-case-optimal joins in the streaming
+  engine (#432) call `seek` on each index ordering constantly, so it must stay cheap.
 - **Full fact scans** walk the fact-directory extents in page order.
 - **Open** reads two meta pages and nothing else. Pages are verified when first read
   (§3.2). The rebuild-on-checksum-mismatch branch in `load()` is deleted. A corrupt
@@ -346,6 +376,12 @@ TDD per component. No new dependencies. Test assert messages follow the CodeQL r
   must still stream its old contents unchanged, which proves it was not written to.
 - **Cursor:** `range_scan` with random bounds, compared with a filter over the
   expected set, across depth 1–4 trees.
+- **Seek:** random monotone seek sequences give the same positions as a fresh descent
+  from the root. This covers seeks within a leaf, to a sibling, across subtrees, past
+  the end, and backwards (no-op). A page-read counter shows that a seek to the
+  neighbouring leaf reads no internal page that the cursor already holds.
+- **Feature bits:** a file with an unknown `required_features` bit fails with the new
+  STG code and is not modified. v3.0.0 writes 0.
 - **Allocator and free list:** pop/push across many generations. Invariant check after
   each checkpoint: the reachable set (all trees plus the free-list chain) and the free
   ids are disjoint, and together they cover `2..page_count` exactly. This also detects
@@ -376,12 +412,12 @@ TDD per component. No new dependencies. Test assert messages follow the CodeQL r
 ## 8. Errors, docs, compatibility
 
 - New STG codes: page checksum mismatch, page id mismatch, page generation ahead of
-  meta, no valid meta page, meta damaged after commit (§3.1.1), free-list/allocator
-  inconsistency.
-- WAL format version 2: the header gains `base_generation u64` at bytes 8..16, taken
-  from the reserved bytes. A v1 WAL is accepted only next to a v7 file being migrated. The codes for the removed
-  paths (header CRC mismatch `INT-053`, index rebuild) stay registered and are marked
+  meta, no valid meta page, meta damaged after commit (§3.1.1), unsupported file
+  feature (§3.1.2), free-list/allocator inconsistency. The codes for the removed paths
+  (header CRC mismatch `INT-053`, index rebuild) stay registered and are marked
   deprecated, never recycled. Update `docs/ERROR_REFERENCE.md`.
+- WAL format version 2: the header gains `base_generation u64` at bytes 8..16, taken
+  from the reserved bytes. A v1 WAL is accepted only next to a v7 file being migrated.
 - Browser: `BrowserBufferBackend` dirty sets become O(change). The IndexedDB flush must
   write the meta page in the same IDB transaction as the data pages. Verify this, and
   fix it if it is not already the case.
@@ -410,8 +446,8 @@ TDD per component. No new dependencies. Test assert messages follow the CodeQL r
 
 ## 10. Delivery (PRs into `v3`)
 
-1. **Cursor scans:** add `LeafCursor` and move every scan onto it, still on the current
-   format. Behaviour does not change.
+1. **Cursor scans:** add `LeafCursor` with `seek` and move every scan onto it, still on
+   the current format. Behaviour does not change.
 2. **v8 page format:** common page header with CRC/id/generation, verify on read, meta
    pages A/B, fact directory, legacy migration. `save()` still does a full rebuild into
    fresh pages, which is atomic but O(N). (#388, #374 atomicity)
