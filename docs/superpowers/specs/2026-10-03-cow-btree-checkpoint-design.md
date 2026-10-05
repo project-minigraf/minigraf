@@ -148,21 +148,34 @@ flush keeps the meta page in the same transaction as the data pages (§8).
 
 Read checks, in the page-cache load path so that every reader gets them:
 
-1. crc32 matches.
-2. `page_id` equals the requested id.
-3. `generation ≤ active_meta.generation`.
-4. `page_type` is the type the caller expects. Callers already check this.
+1. `page_type` is a known v8 type (table below). This is a cheap first-byte check, so a
+   legacy or foreign page fails before any CRC is computed.
+2. crc32 matches.
+3. `page_id` equals the requested id.
+4. `generation ≤ active_meta.generation`.
+5. `page_type` is the specific type the caller expects. Callers check this after the
+   cache returns, as they do today.
 
 Any failure returns a new structured error (§8) and the page is not cached.
 
 | page_type | name | body after the 24-byte header |
 |---|---|---|
-| 0x02 | fact page | record directory + postcard facts, as today (the 8-byte `next_page` is dropped) |
-| 0x21 | index leaf | slot directory + `(K, FactRef)` entries; **no `next_leaf`** |
-| 0x22 | index internal | rightmost_child `u64` + keys/children, as today |
-| 0x31 | fact-dir leaf | `(start_page u64, len u64)` extents |
-| 0x32 | fact-dir internal | same layout as 0x22 with `u64` keys |
-| 0x41 | free-list page | next `u64` + `count` × page id `u64` (up to 508 per page) |
+| 0x51 | fact page | record directory + postcard facts, as today (the 8-byte `next_page` is dropped) |
+| 0x52 | fact overflow | reserved, not written |
+| 0x61 | index leaf | slot directory + `(K, FactRef)` entries; **no `next_leaf`** |
+| 0x62 | index internal | rightmost_child `u64` + keys/children, as today |
+| 0x71 | fact-dir leaf | `(start_page u64, len u64)` extents |
+| 0x72 | fact-dir internal | same layout as 0x62 with `u64` keys |
+| 0x81 | free-list page | next `u64` + `count` × page id `u64` (up to 508 per page) |
+
+Type values follow the existing convention: the high nibble is the page family and the
+low nibble is the variant. No v8 value reuses one from an earlier format. Those are
+0x02/0x03 for v5–v7 fact pages, 0x11 for v5 index pages, and 0x21/0x22 for the v6/v7
+B+tree. Every v8 page has a different header from its v7 counterpart, so the type byte
+alone tells a v8 page from a legacy one. A legacy page read where a v8 page is expected
+fails the type check before the CRC is computed. #373's verify and salvage can classify
+any page from its first byte, and v7 migration never confuses an old fact page with a
+new one. Retired values stay reserved and are never reassigned.
 
 The header grows from 12 to 24 bytes, so `MAX_FACT_BYTES` drops by 12, to 4056. That
 is a public constant change and goes in the CHANGELOG.
