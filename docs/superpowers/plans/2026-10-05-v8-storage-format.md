@@ -8,7 +8,7 @@
 
 **Tech Stack:** Rust (MSRV 1.89), postcard (until PR 3), crc32fast, criterion. No new dependencies.
 
-**Delivery:** five PRs into `v3` (spec §14). This plan details PR 1 task by task. PRs 2–5 are listed at task level. Each gets its own detailed plan section, written when the previous PR has merged, because each builds on the code shape the previous one leaves.
+**Delivery:** five PRs into `v3` (spec §14). PR 1 and PR 2 are detailed task by task. PRs 3–5 are listed at task level. Each gets its own detailed plan section, written when the previous PR has merged, because each builds on the code shape the previous one leaves.
 
 ## Global Constraints
 
@@ -149,17 +149,221 @@
 
 ---
 
-# PR 2 — v8 page format (outline)
+# PR 2 — v8 page format
 
-Spec §4.1, §4.2, §12. Atomic but still O(N) `save()`.
+Spec §4.1, §4.2, §4.4 (full-rewrite form), §9, §12. Branch `feat/v8-pr2-page-format`.
 
-- Common 24-byte page header (type, count, CRC, page id, generation): encode and verify helpers. Verification runs in `PageCache::get_or_load`, with new STG codes.
-- Renumber page types (0x51, 0x61, 0x62, 0x81). Update constants and the type-check tests.
-- Meta pages A/B: `MetaPage` struct, encode/decode, selection by §4.1.1. WAL v2 `base_generation` (`wal.rs` header). Search for evidence of an interrupted commit.
-- `required_features` check and error code.
-- `save()`: write everything into fresh pages (append), sync, write the inactive meta, sync. Delete `index_checksum`, `fact_prefix_crc` and the rebuild-on-open branch.
-- `FaultInjectingBackend` torn-write mode. Extend the crash-at-every-point test, including a torn meta write.
-- Browser flush check: the meta page goes in the same IDB transaction.
+**Outcome:** every page carries a verified header, two alternating meta pages are the
+only commit point, and a crash at any write, sync or torn write loses no checkpointed
+fact and needs no index rebuild on open. `save()` still rewrites all four trees, so it
+stays O(N). PR 4 makes it O(change).
+
+**Shape decisions (from reading the v3 code):**
+
+- **Fact pages stay until PR 3** with the interim type 0x41 and the 24-byte header.
+  They always append at `page_count` and are never freed, as value pages will be
+  (§8.2). Page id order is then insertion order, which keeps `stream_all` ordering.
+- **`stream_all`** collects the distinct fact page ids referenced by EAVT, sorts them,
+  and reads each page. No fact-page directory and no contiguity assumption.
+- **Trees** are rebuilt each save with the existing `rebuild_btree_incremental`. It now
+  takes a page allocator instead of a start id, and it restamps copied leaves with the
+  new id, generation and CRC. Tree and free-list pages come from `M`'s free list first,
+  then append.
+- **Free list:** each save frees every page of `M`'s four trees and `M`'s free-list
+  pages, and writes the whole new list as a fresh 0x81 chain. PR 4 replaces this with
+  O(delta) push/pop. The on-disk format is already final.
+- **FileBackend becomes format-agnostic.** Today it parses page 0 as a v7 header and
+  rewrites it on every append, which is the #308 hazard. Its page count comes from the
+  file length, rounded down so that a torn trailing append is invisible. Page 0 is just
+  a page.
+- **New file:** `PersistentFactStorage` writes an empty generation-1 meta to page 0 and
+  syncs, before anything else.
+- **v7 migration lands here**, because page 0 changes here. It follows §9 with
+  postcard keys and 0x41 fact pages. PR 3 retargets it to covering keys.
+- **Page cache** verifies on every miss against a generation bound held in an
+  `AtomicU64`. Meta pages, legacy v7 pages and the evidence search read the backend
+  directly and never go through the cache. Every page write updates the cache
+  (`put_dirty`), so a reused page id never serves stale bytes.
+- **Error codes (new):** STG-029 page checksum mismatch, STG-030 page id mismatch,
+  STG-031 page generation ahead of meta, STG-032 no valid meta page, STG-033 meta damaged
+  after commit, STG-034 unsupported file feature, STG-035 free-list inconsistency. An
+  unknown page type is the existing STG-013. INT-053 (header CRC) is marked
+  deprecated. Check the next free numbers in `src/error.rs` before assigning.
+
+## Review Focus
+
+- Every page write in `save()` and migration targets a page `M` does not reference.
+  Task 9 asserts this in tests.
+- Meta selection, row by row against the §4.1.1 table.
+- No path silently opens an older generation when the WAL is gone.
+
+### Task 1: `src/storage/page.rs` — common header
+
+- [ ] Constants: `PAGE_HEADER_SIZE = 24`, `PAGE_TYPE_FACT_INTERIM = 0x41`,
+  `PAGE_TYPE_VALUE = 0x51`, `PAGE_TYPE_VALUE_OVERFLOW = 0x52`, `PAGE_TYPE_LEAF = 0x61`,
+  `PAGE_TYPE_INTERNAL = 0x62`, `PAGE_TYPE_FREELIST = 0x81`, plus a `RETIRED_PAGE_TYPES`
+  doc table (0x02, 0x03, 0x11, 0x21, 0x22).
+- [ ] `fn seal(page: &mut [u8], page_id: u64, generation: u64)` writes the id and
+  generation, zeroes the CRC field, computes CRC32 over the page and stores it.
+- [ ] `fn verify(page: &[u8], expected_id: u64, max_generation: u64) -> Result<u8>` runs
+  checks 1–4 from §4.2 in order and returns the page type.
+- [ ] Register the STG codes in `src/error.rs` and `docs/ERROR_REFERENCE.md`.
+- [ ] Tests: seal/verify round trip; flipped body bit → STG-029; wrong id → STG-030;
+  future generation → STG-031; legacy type byte 0x21 → STG-013 before the CRC check
+  (a page with a wrong CRC and type 0x21 still gives STG-013).
+
+### Task 2: Page cache verifies on load
+
+- [ ] `PageCache` gains `generation_bound: AtomicU64` (default `u64::MAX`) and
+  `set_generation_bound`.
+- [ ] `get_or_load` calls `page::verify` on every backend read, including the
+  capacity-0 path, before inserting. A failed page is not cached.
+- [ ] Remove `invalidate_from` (its only caller is the old `save`).
+- [ ] Tests: a corrupt page returns STG-029 and `cached_page_count()` is unchanged; a
+  page with `generation > bound` is rejected and accepted after the bound is raised.
+
+### Task 3: Pages on the new header
+
+- [ ] B+tree: types 0x61/0x62, header 24 bytes, `next_leaf` removed from the encoding
+  and from `build_btree`'s patch pass and `HeldPage`. `count` lives at bytes 2..4.
+  Internal: `rightmost_child` moves to body offset 24.
+- [ ] `PageAllocator { free: Vec<u64>, next_append: u64, generation: u64 }` with
+  `alloc()` (free list first, then append) and `alloc_append()`. Writers take
+  `&mut PageAllocator` and seal every page with its generation.
+  `rebuild_btree_incremental` restamps copied leaves.
+- [ ] Fact pages: `packed_pages` writes 0x41 with the 24-byte header and
+  `MAX_FACT_BYTES = PAGE_SIZE − 24 − 4`. Move the 12-byte 0x02 reader to
+  `packed_pages::legacy_v7`, used only by migration.
+- [ ] Update the type-check and layout tests and every `PAGE_TYPE_*` assertion.
+  `range_scan_ignores_next_leaf` is deleted, since the field no longer exists.
+
+### Task 4: Meta pages — `src/storage/meta.rs`
+
+- [ ] `MetaPage` with the §4.1 fields, `encode() -> [u8; PAGE_SIZE]` and
+  `decode(&[u8]) -> SlotState { Empty, Valid(MetaPage), Damaged }`.
+  `fn slot_page(generation) = (generation − 1) % 2`.
+- [ ] `KNOWN_FEATURES: u64 = 0`. A valid meta with unknown bits fails open with
+  STG-034, naming the bits.
+- [ ] Tests: round trip; each field offset matches the table; reserved bytes non-zero →
+  Damaged; CRC flip → Damaged; no magic → Empty; v7 header bytes → Empty (it has no
+  "META").
+
+### Task 5: Free-list pages
+
+- [ ] `freelist::write_chain(ids, alloc, backend, cache)`: up to 508 ids per page,
+  `next u64` at body offset 24, chain pages allocated from `alloc`. The chain's own
+  pages are not in the list.
+- [ ] `freelist::read_chain(head, backend, cache, page_count) -> Vec<u64>`: verifies each
+  page and bounds the walk by `page_count`. A cycle, an id < 2 or an id ≥ `page_count`
+  gives STG-035.
+- [ ] Tests: round trip at 0, 1, 508, 509 and 5 000 ids; a cycle → STG-035.
+
+### Task 6: FileBackend format-agnostic
+
+- [ ] Drop the `header` field and `read_header`/`write_header`. `page_count = len /
+  PAGE_SIZE`, tracked in memory and bumped on append. `read_page` past it → INT-049.
+- [ ] New file: create, `sync_parent_dir`, no page written. `is_new = page_count == 0`.
+- [ ] `MemoryBackend::is_new` returns `page_count == 0`.
+- [ ] Update `file.rs` tests. Header-validation tests move to Task 8.
+
+### Task 7: WAL v2
+
+- [ ] `WAL_VERSION = 2`. `base_generation u64` at header bytes 8..16.
+  `WalWriter::open_or_create(path, sync, base_generation)` writes it on create. An
+  existing file keeps its header.
+- [ ] `WalReader::base_generation() -> u64`. A v1 header reads as 1: a v1 WAL can only
+  sit next to a migrated file whose generation-2 commit has not finished.
+  Other versions → WAL-002.
+- [ ] `db.rs`: read the WAL header (if the file exists) before
+  `PersistentFactStorage::open`, and pass `Option<u64>`. A lazily created WAL takes
+  `pfs.generation()`.
+- [ ] Tests: v2 round trip; v1 file → 1; version 3 → WAL-002.
+
+### Task 8: Open and meta selection
+
+- [ ] `PersistentFactStorage::open(backend, cache_cap, wal_base: Option<u64>)`
+  replaces the load branch of `new`:
+  1. `page_count == 0`, or neither slot valid with `page_count ≤ 2` and no v7
+     header: write an empty generation-1 meta to page 0, sync.
+  2. Both valid: the higher generation wins.
+  3. One valid at `g`: apply the §4.1.1 table. The evidence search reads `M_g`'s free
+     list and pages `M_g.page_count..page_count` raw, and looks for a page that passes
+     `verify` with generation `g + 1`.
+  4. Neither valid: a v7 header → Task 10 migration. Otherwise, a valid generation-1
+     meta in the last page whose `page_count` equals the file's → copy it to page 0,
+     sync, continue. Otherwise STG-032.
+- [ ] Wire the readers from the chosen meta and set the cache generation bound. Delete
+  `index_checksum`, `fact_prefix_crc`, `compute_*_checksum`, `hash_pages` and the
+  rebuild-on-open branch. `FileHeader` becomes `LegacyHeaderV7` (read-only, migration
+  only).
+- [ ] Tests, one per row: both valid; torn newer slot with WAL base `g` (open at `g`,
+  replay); WAL base `> g` → STG-033; no WAL with a `g+1` page on the free list → STG-033;
+  no WAL with a `g+1` page past `page_count` → STG-033; no WAL and no evidence → open at
+  `g`; `g == 1` with slot B empty; unknown feature bit → STG-034 and the file bytes are
+  unchanged; pre-release v8 single header → STG-032; an error path never modifies the
+  file.
+
+### Task 9: `save()` — full rewrite, atomic
+
+- [ ] Steps:
+  1. Set `g' = g + 1` and build the allocator from `read_chain(M.freelist_head)` and
+     `M.page_count`.
+  2. Append fact pages for the pending facts.
+  3. Rebuild the four trees through the allocator.
+  4. `freed` = every page of `M`'s trees plus `M`'s chain pages. The new list is the
+     unused part of `M`'s free list plus `freed`. `write_chain` allocates its pages from
+     that unused part, or by appending.
+  5. Sync. Write meta `g'` to `slot_page(g')`. Sync.
+  6. Swap the readers, set `M = M'`, raise the cache bound, and clear pending.
+- [ ] Concurrent queries hold `M`'s roots. They never read a page that `save` writes,
+  which follows from §8.1.
+- [ ] Test guard: `WriteLog` (a test backend recording written ids) asserts that no
+  written id is reachable from `M`. Run it in the existing save tests.
+- [ ] Invariant helper (`#[cfg(test)]`): the pages reachable from the trees plus the
+  fact pages plus the chain pages, together with the free ids, are disjoint and cover
+  `2..page_count`. Check it after each save in the multi-save tests.
+- [ ] `stream_all` via EAVT page ids (see Shape decisions).
+
+### Task 10: v7 migration
+
+- [ ] Detection: a page 0 whose `LegacyHeaderV7` parses with version 7 and a valid
+  header CRC.
+- [ ] Steps (§9 with interim pages):
+  1. Read the facts through `legacy_v7`.
+  2. Append 0x41 fact pages and four trees from `old_page_count`.
+  3. Set the free list to `2..old_page_count`, plus the backup page id.
+  4. Append the backup meta.
+  5. Sync, write page 0, sync.
+- [ ] A WAL next to the v7 file is replayed after migration. Its v1 header reads as
+  base 1.
+- [ ] Tests: the existing `v7_header_forces_rebuild_and_upgrades_to_v8` and
+  `v7_migration_does_not_rewind_tx_counter…`; a crash at every write/sync of migration
+  leaves either the v7 file or a v8 file with every fact; a torn page-0 write recovers
+  from the backup.
+
+### Task 11: Torn writes and crash tests
+
+- [ ] `FaultConfig::torn_write_at: Option<(u64, usize)>`: at write number `n`, write
+  the first `k` bytes of the new page over the old one, then fail.
+- [ ] Extend `crash_at_every_point_in_save_loses_no_checkpointed_fact`: for each write
+  index, a failure and torn writes at `k ∈ {0, 512, 4095}`, including the meta write.
+  After each: reopen with no rebuild, check the facts against the model, replay the
+  WAL, and run the invariant helper.
+- [ ] Browser: confirm that `BrowserDb`'s flush writes page 0/1 in the same
+  `write_pages` call as the data pages. A test asserts that the dirty set after
+  `save()` holds the meta page.
+
+### Task 12: Docs and CI
+
+- [ ] `CHANGELOG.md` Unreleased (format v8 header, meta pages, WAL v2, `MAX_FACT_BYTES`
+  is 12 bytes smaller), `docs/ERROR_REFERENCE.md`, `docs/TEST_COVERAGE.md`, the
+  `CLAUDE.md` test count, and the `CLAUDE.md` File Format section, which describes the
+  interim layout.
+- [ ] `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, and
+  `cargo bench --bench minigraf_bench -- checkpoint` against v3 (a regression is expected
+  until PR 4; record it).
+- [ ] Open the PR into `v3` with `Refs #374 #388 #434`. Own CI until it is green. Ask the
+  user before merging.
 
 # PR 3 — Covering keys and dictionaries (outline)
 
@@ -170,7 +374,7 @@ Spec §4.3, §5, §6, §9. The format freezes after this PR.
 - DICT tree with tags 0x01–0x06. Id assignment at transact time in WAL order (`FactStorage` pending index keyed by encoded keys). `next_eid`/`next_iid` in the meta page.
 - Value pages with dedup. `MAX_VALUE_BYTES` replaces `MAX_FACT_BYTES`.
 - Covering reads: `CommittedIndexReader` returns facts, translating ids through cached DICT lookups. Delete `FactRef`, fact pages, `CommittedFactReader`.
-- v7 migration with a backup meta page, and crash tests.
+- Retarget PR 2's v7 migration to covering keys, DICT and value pages; keep its crash tests.
 - Audit of result-order assumptions in tests and bindings.
 
 # PR 4 — Copy-on-write insert, allocator, free list (outline)

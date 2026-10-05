@@ -127,8 +127,14 @@ Sidecar     <db>.wal — header gains base_generation (§4.1.1); entries unchang
 
 ### 4.1 Meta pages
 
-Each checkpoint writes the inactive slot, `slot = generation % 2`. On open, both slots
+Each checkpoint writes the inactive slot: odd generations go to page 0 (slot A) and even
+generations to page 1 (slot B), so `slot = (generation − 1) % 2`. On open, both slots
 are read and one is chosen by §4.1.1.
+
+A new file is created with an empty generation-1 meta in slot A, synced before anything
+else is written, so every file that can hold committed data has a valid meta. If
+neither slot is valid and the file has at most two pages, no commit can have written
+data (every commit with data writes a page ≥ 2), and open initialises the file again.
 
 | offset | field | notes |
 |---|---|---|
@@ -254,6 +260,10 @@ alone tells a v8 page from a legacy one. A legacy page read where a v8 page is e
 fails the type check before the CRC is computed. #373's verify and salvage can classify
 any page from its first byte, and v7 migration never confuses an old page with a new
 one. Retired values stay reserved and are never reassigned.
+
+During development, between delivery PRs 2 and 3 (§14), fact pages still exist and use
+the interim type 0x41 with this header. Files carrying it are pre-release and are
+rejected like any other pre-release v8 file. 0x41 is retired with them.
 
 ### 4.3 B+tree nodes
 
@@ -444,7 +454,7 @@ several pages can come later behind a feature bit.
 ## 8. Checkpoint
 
 Let `M` be the active meta, with generation `g`. The new checkpoint commits generation
-`g' = g + 1` into slot `g' % 2`.
+`g' = g + 1` into slot `(g' − 1) % 2`.
 
 ### 8.1 Invariant
 
@@ -488,7 +498,7 @@ never freed. A test pins this down (§11).
 5. **Data sync.** All pages above have been written, each stamped with `g'` and its CRC.
    Call `backend.sync()`.
 6. **Commit.** Write meta `g'` (with the new roots, `next_eid` and `next_iid`) to slot
-   `g' % 2`, then call `backend.sync()`. This is the only commit point.
+   `(g' − 1) % 2`, then call `backend.sync()`. This is the only commit point.
 7. **Publish.** Swap the in-memory readers to the new roots and clear the pending facts.
    Then delete the WAL in `do_checkpoint`, as today.
 
@@ -689,10 +699,12 @@ TDD per component. No new dependencies. Test assert messages follow the CodeQL r
 1. **Cursor scans:** add `LeafCursor` with `seek` and move every scan onto it, still on
    the current format. Behaviour does not change.
 2. **v8 page format:** common page header with CRC/id/generation, verify on read, meta
-   pages A/B with meta selection, feature bits, WAL v2. `save()` still does a full
-   rebuild into fresh pages, which is atomic but O(N). (#388, #374 atomicity)
+   pages A/B with meta selection, feature bits, WAL v2, a full-rewrite free list, and
+   v7 migration with the backup meta (page 0 changes here, so migration must too).
+   `save()` rebuilds the trees into pages the active meta does not reference, which
+   is atomic but O(N). (#388, #374 atomicity)
 3. **Covering keys (#433):** byte-comparable key encoding, prefix-compressed nodes, DICT,
-   value pages, eid/iid assignment, covering reads, v7 migration.
+   value pages, eid/iid assignment, covering reads; migration moves to the new keys.
 4. **Copy-on-write insert, allocator, free list:** O(change) checkpoints. (#434)
 5. **Cost and crash test hardening, benchmarks, docs.**
 
