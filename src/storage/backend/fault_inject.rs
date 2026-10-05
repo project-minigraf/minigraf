@@ -21,6 +21,10 @@ pub struct FaultConfig {
     pub fail_sync_after: Option<u64>,
     /// Fail `close` after this many successful calls.
     pub fail_close_after: Option<u64>,
+    /// When the write that `fail_write_after` fails is reached, first write the
+    /// leading `n` bytes of the new page over the old contents (a torn write),
+    /// then fail. `None` leaves the old page untouched.
+    pub torn_write_bytes: Option<usize>,
     write_count: u64,
     sync_count: u64,
     close_count: u64,
@@ -60,8 +64,21 @@ impl<B: StorageBackend> StorageBackend for FaultInjectingBackend<B> {
     fn write_page(&mut self, page_id: u64, data: &[u8]) -> Result<()> {
         let mut cfg = self.config.lock().unwrap();
         let limit = cfg.fail_write_after;
-        FaultConfig::check_and_increment(&mut cfg.write_count, limit)?;
+        let torn = cfg.torn_write_bytes;
+        let result = FaultConfig::check_and_increment(&mut cfg.write_count, limit);
         drop(cfg);
+        if let Err(e) = result {
+            if let Some(n) = torn {
+                let mut page = self
+                    .inner
+                    .read_page(page_id)
+                    .unwrap_or_else(|_| vec![0u8; data.len()]);
+                let n = n.min(data.len()).min(page.len());
+                page[..n].copy_from_slice(&data[..n]);
+                self.inner.write_page(page_id, &page)?;
+            }
+            return Err(e);
+        }
         self.inner.write_page(page_id, data)
     }
 
@@ -91,10 +108,6 @@ impl<B: StorageBackend> StorageBackend for FaultInjectingBackend<B> {
 
     fn backend_name(&self) -> &'static str {
         "fault-injecting"
-    }
-
-    fn is_new(&self) -> bool {
-        self.inner.is_new()
     }
 }
 
@@ -162,5 +175,20 @@ mod tests {
             backend.write_page(4, &make_page()).is_ok(),
             "write should succeed after removing fault"
         );
+    }
+
+    #[test]
+    fn torn_write_keeps_a_prefix_of_the_new_page() {
+        let (mut backend, config) = FaultInjectingBackend::with_config(MemoryBackend::new());
+        backend.write_page(0, &vec![0x11; PAGE_SIZE]).unwrap();
+        {
+            let mut cfg = config.lock().unwrap();
+            cfg.fail_write_after = Some(1);
+            cfg.torn_write_bytes = Some(100);
+        }
+        assert!(backend.write_page(0, &vec![0x22; PAGE_SIZE]).is_err());
+        let page = backend.read_page(0).unwrap();
+        assert!(page[..100].iter().all(|&b| b == 0x22), "new prefix");
+        assert!(page[100..].iter().all(|&b| b == 0x11), "old suffix");
     }
 }

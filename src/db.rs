@@ -401,15 +401,21 @@ impl Minigraf {
     fn open_with_options_inner(path: impl AsRef<Path>, opts: OpenOptions) -> Result<Self> {
         let db_path = path.as_ref().to_path_buf();
 
-        // Open the main .graph file
+        // Derive WAL path: "<db_path>.wal"
+        let wal_path = Self::wal_path_for(&db_path);
+
+        // Open the main .graph file. The WAL's base generation (if a WAL exists)
+        // decides which meta page to trust when only one is valid.
         let backend = FileBackend::open_with(&db_path, opts.allow_unlocked)?;
-        let pfs = PersistentFactStorage::new(backend, opts.page_cache_size)?;
+        let wal_base = if wal_path.exists() {
+            crate::wal::WalReader::open(&wal_path)?.base_generation()
+        } else {
+            None
+        };
+        let pfs = PersistentFactStorage::open(backend, opts.page_cache_size, wal_base)?;
 
         // Share the fact storage
         let fact_storage = pfs.storage().clone();
-
-        // Derive WAL path: "<db_path>.wal"
-        let wal_path = Self::wal_path_for(&db_path);
 
         // Replay any existing WAL entries before opening the writer
         let wal_entry_count = Self::replay_wal(&wal_path, &fact_storage, &pfs)?;
@@ -417,7 +423,11 @@ impl Minigraf {
         // Open the WAL writer only if the WAL file already exists from a previous session.
         // Otherwise, create it lazily on the first write.
         let wal = if wal_path.exists() {
-            Some(WalWriter::open_or_create(&wal_path, opts.synchronous)?)
+            Some(WalWriter::open_or_create_at(
+                &wal_path,
+                opts.synchronous,
+                pfs.generation(),
+            )?)
         } else {
             None
         };
@@ -1266,7 +1276,11 @@ impl<'a> WriteTransaction<'a> {
                 // Lazily open the WAL writer if not already open.
                 if wal.is_none() {
                     let wal_path = Minigraf::wal_path_for(db_path);
-                    *wal = Some(WalWriter::open_or_create(&wal_path, opts.synchronous)?);
+                    *wal = Some(WalWriter::open_or_create_at(
+                        &wal_path,
+                        opts.synchronous,
+                        pfs.generation(),
+                    )?);
                 }
 
                 let wal_writer = wal.as_mut().ok_or_else(|| err_coded!(ErrorCode::Api009))?;

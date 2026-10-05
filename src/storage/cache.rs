@@ -17,8 +17,10 @@
 
 use crate::error::{ErrorCode, err_coded};
 use crate::storage::StorageBackend;
+use crate::storage::page;
 use anyhow::Result;
 use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 struct CacheEntry {
@@ -57,6 +59,9 @@ impl CacheInner {
 /// All methods take `&self` (interior mutability via `RwLock`).
 pub struct PageCache {
     inner: RwLock<CacheInner>,
+    /// Highest page generation a load accepts: the active meta's generation
+    /// (spec §4.2 check 4). `u64::MAX` until storage sets it.
+    generation_bound: AtomicU64,
 }
 
 impl PageCache {
@@ -76,10 +81,27 @@ impl PageCache {
                 order: VecDeque::new(),
                 capacity,
             }),
+            generation_bound: AtomicU64::new(u64::MAX),
         }
     }
 
+    /// Set the highest page generation that `get_or_load` accepts.
+    pub fn set_generation_bound(&self, generation: u64) {
+        self.generation_bound.store(generation, Ordering::SeqCst);
+    }
+
+    /// Read a page from the backend and run the spec §4.2 header checks.
+    fn load_verified(&self, page_id: u64, backend: &dyn StorageBackend) -> Result<Vec<u8>> {
+        let data = backend.read_page(page_id)?;
+        page::verify(&data, page_id, self.generation_bound.load(Ordering::SeqCst))?;
+        Ok(data)
+    }
+
     /// Get a page from the cache, loading from `backend` on a miss.
+    ///
+    /// Every page read from the backend is verified (type, CRC, page id,
+    /// generation) before it is returned or cached; a page that fails is
+    /// never cached.
     pub fn get_or_load(&self, page_id: u64, backend: &dyn StorageBackend) -> Result<Arc<Vec<u8>>> {
         // Fast path: read lock for cache hits (concurrent readers don't block each other)
         // Approximate LRU: return without promoting to MRU to avoid a write lock
@@ -91,14 +113,14 @@ impl PageCache {
                 .map_err(|_| err_coded!(ErrorCode::Int050, "cache"))?;
             // Capacity 0 disables the cache: always read through, no bookkeeping.
             if inner.capacity == 0 {
-                return Ok(Arc::new(backend.read_page(page_id)?));
+                return Ok(Arc::new(self.load_verified(page_id, backend)?));
             }
             if let Some(entry) = inner.entries.get(&page_id) {
                 return Ok(entry.data.clone());
             }
         }
         // Miss: load from backend (without holding any lock)
-        let data = Arc::new(backend.read_page(page_id)?);
+        let data = Arc::new(self.load_verified(page_id, backend)?);
         let mut inner = self
             .inner
             .write()
@@ -181,16 +203,6 @@ impl PageCache {
         inner.order.retain(|&id| id != page_id);
     }
 
-    /// Invalidate all cached pages with `page_id >= from_page`.
-    ///
-    /// Used during save to discard stale B+tree index pages before
-    /// overwriting them with new fact and index pages.
-    pub fn invalidate_from(&self, from_page: u64) {
-        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
-        inner.entries.retain(|&id, _| id < from_page);
-        inner.order.retain(|&id| id < from_page);
-    }
-
     /// Number of pages currently cached (for testing).
     #[allow(dead_code)]
     pub fn cached_page_count(&self) -> usize {
@@ -215,37 +227,43 @@ impl PageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::PAGE_SIZE;
     use crate::storage::backend::MemoryBackend;
 
-    fn make_page(byte: u8) -> Vec<u8> {
-        vec![byte; PAGE_SIZE]
+    /// Byte offset of the marker each test page carries in its body.
+    const MARK: usize = 100;
+
+    /// A valid sealed leaf page for `page_id` (generation 1) with `byte` at `MARK`.
+    fn make_page(page_id: u64, byte: u8) -> Vec<u8> {
+        let mut p = page::new_page(page::PAGE_TYPE_LEAF, 0);
+        p[MARK] = byte;
+        page::seal(&mut p, page_id, 1).unwrap();
+        p
     }
 
     #[test]
     fn test_cache_miss_loads_from_backend() {
         let mut backend = MemoryBackend::new();
-        backend.write_page(1, &make_page(0xAB)).unwrap();
+        backend.write_page(1, &make_page(1, 0xAB)).unwrap();
         let cache = PageCache::new(4);
         let page = cache.get_or_load(1, &backend).unwrap();
-        assert_eq!(page[0], 0xAB);
+        assert_eq!(page[MARK], 0xAB);
     }
 
     #[test]
     fn test_cache_hit_returns_same_bytes() {
         let mut backend = MemoryBackend::new();
-        backend.write_page(1, &make_page(0x11)).unwrap();
+        backend.write_page(1, &make_page(1, 0x11)).unwrap();
         let cache = PageCache::new(4);
         let p1 = cache.get_or_load(1, &backend).unwrap();
         let p2 = cache.get_or_load(1, &backend).unwrap();
-        assert_eq!(p1[0], p2[0]);
+        assert_eq!(p1[MARK], p2[MARK]);
     }
 
     #[test]
     fn test_lru_eviction_respects_capacity() {
         let mut backend = MemoryBackend::new();
         for i in 1u64..=5 {
-            backend.write_page(i, &make_page(i as u8)).unwrap();
+            backend.write_page(i, &make_page(i, i as u8)).unwrap();
         }
         let cache = PageCache::new(3); // capacity 3
         cache.get_or_load(1, &backend).unwrap();
@@ -260,12 +278,12 @@ mod tests {
     #[test]
     fn test_dirty_page_written_back_on_flush() {
         let mut backend = MemoryBackend::new();
-        backend.write_page(1, &make_page(0x00)).unwrap();
+        backend.write_page(1, &make_page(1, 0x00)).unwrap();
         let cache = PageCache::new(4);
-        cache.put_dirty(1, make_page(0xFF));
+        cache.put_dirty(1, make_page(1, 0xFF));
         cache.flush(&mut backend).unwrap();
         let page = backend.read_page(1).unwrap();
-        assert_eq!(page[0], 0xFF);
+        assert_eq!(page[MARK], 0xFF);
     }
 
     #[test]
@@ -274,7 +292,7 @@ mod tests {
         use std::sync::Arc;
         use std::thread;
         let mut backend = MemoryBackend::new();
-        backend.write_page(1, &make_page(0x42)).unwrap();
+        backend.write_page(1, &make_page(1, 0x42)).unwrap();
         let cache = Arc::new(PageCache::new(8));
         let handles: Vec<_> = (0..4)
             .map(|_| {
@@ -282,7 +300,7 @@ mod tests {
                 let b = backend.clone();
                 thread::spawn(move || {
                     let page = c.get_or_load(1, &b).unwrap();
-                    assert_eq!(page[0], 0x42);
+                    assert_eq!(page[MARK], 0x42);
                 })
             })
             .collect();
@@ -295,7 +313,7 @@ mod tests {
     fn test_lru_eviction_evicts_correct_page() {
         let mut backend = MemoryBackend::new();
         for i in 1u64..=4 {
-            backend.write_page(i, &make_page(i as u8)).unwrap();
+            backend.write_page(i, &make_page(i, i as u8)).unwrap();
         }
         let cache = PageCache::new(3);
         // Load 1, 2, 3 in order
@@ -315,13 +333,13 @@ mod tests {
     fn test_zero_capacity_disables_caching() {
         let mut backend = MemoryBackend::new();
         for i in 1u64..=10 {
-            backend.write_page(i, &make_page(i as u8)).unwrap();
+            backend.write_page(i, &make_page(i, i as u8)).unwrap();
         }
         let cache = PageCache::new(0);
         assert_eq!(cache.capacity(), 0);
         for i in 1u64..=10 {
             let page = cache.get_or_load(i, &backend).unwrap();
-            assert_eq!(page[0], i as u8);
+            assert_eq!(page[MARK], i as u8);
         }
         // Nothing should have been retained: capacity 0 means "no cache", not
         // "unbounded cache" — every load must read straight through and leave
@@ -332,7 +350,7 @@ mod tests {
     #[test]
     fn test_zero_capacity_put_dirty_is_noop() {
         let cache = PageCache::new(0);
-        cache.put_dirty(1, make_page(0xAA));
+        cache.put_dirty(1, make_page(1, 0xAA));
         assert_eq!(cache.cached_page_count(), 0);
     }
 
@@ -344,7 +362,7 @@ mod tests {
     fn test_put_dirty_after_eviction_does_not_panic() {
         let mut backend = MemoryBackend::new();
         for i in 1u64..=3 {
-            backend.write_page(i, &make_page(i as u8)).unwrap();
+            backend.write_page(i, &make_page(i, i as u8)).unwrap();
         }
         let cache = PageCache::new(2);
         // Fill cache: pages 1 and 2 (order: [1, 2])
@@ -357,7 +375,37 @@ mod tests {
         // became out of bounds after eviction made it a 2-element deque with
         // indices 0..1 but the stored position was 1 — which after pop_front
         // pointed past the end.
-        cache.put_dirty(2, make_page(0xBB)); // must not panic
+        cache.put_dirty(2, make_page(2, 0xBB)); // must not panic
         assert_eq!(cache.cached_page_count(), 2);
+    }
+
+    #[test]
+    fn corrupt_page_is_rejected_and_not_cached() {
+        let mut backend = MemoryBackend::new();
+        let mut p = make_page(1, 0x11);
+        p[MARK] ^= 1; // body changed after sealing
+        backend.write_page(1, &p).unwrap();
+        for cap in [0, 4] {
+            let cache = PageCache::new(cap);
+            let err = cache.get_or_load(1, &backend).unwrap_err();
+            assert_eq!(crate::error::MinigrafError::from(err).code(), "STG-029");
+            assert_eq!(cache.cached_page_count(), 0);
+        }
+    }
+
+    #[test]
+    fn page_newer_than_bound_is_rejected_until_bound_rises() {
+        let mut backend = MemoryBackend::new();
+        let mut p = page::new_page(page::PAGE_TYPE_LEAF, 0);
+        page::seal(&mut p, 1, 5).unwrap();
+        backend.write_page(1, &p).unwrap();
+        let cache = PageCache::new(4);
+        cache.set_generation_bound(4);
+        let err = cache.get_or_load(1, &backend).unwrap_err();
+        assert_eq!(crate::error::MinigrafError::from(err).code(), "STG-031");
+        assert_eq!(cache.cached_page_count(), 0);
+        cache.set_generation_bound(5);
+        cache.get_or_load(1, &backend).unwrap();
+        assert_eq!(cache.cached_page_count(), 1);
     }
 }

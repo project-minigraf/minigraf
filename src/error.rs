@@ -169,6 +169,13 @@ pub(crate) enum ErrorCode {
     Stg026,
     Stg027,
     Stg028,
+    Stg029,
+    Stg030,
+    Stg031,
+    Stg032,
+    Stg033,
+    Stg034,
+    Stg035,
     Wal001,
     Wal002,
     Wal003,
@@ -947,6 +954,48 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Stg028,
         "STG-028",
         "Format version {} is no longer supported (oldest supported: {}). Open the file once with Minigraf v2.x to upgrade it to format v7, then open it with this version.",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg029,
+        "STG-029",
+        "Page {} checksum mismatch: the page is torn or corrupted",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg030,
+        "STG-030",
+        "Page id mismatch: requested page {} but the page records id {}",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg031,
+        "STG-031",
+        "Page {} has generation {}, newer than the committed generation {}",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg032,
+        "STG-032",
+        "No valid meta page: the file is not a Minigraf v7 or v8 database, or both meta pages are damaged",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg033,
+        "STG-033",
+        "Meta page damaged after commit: generation {} is valid but a later commit existed ({}). Opening would silently drop that checkpoint",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg034,
+        "STG-034",
+        "Unsupported file feature bits {}: the file was written by a newer Minigraf version",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg035,
+        "STG-035",
+        "Free list is inconsistent: {}",
         ErrorCategory::Storage,
     ),
     (
@@ -1764,6 +1813,13 @@ mod tests {
                 | ErrorCode::Stg026
                 | ErrorCode::Stg027
                 | ErrorCode::Stg028
+                | ErrorCode::Stg029
+                | ErrorCode::Stg030
+                | ErrorCode::Stg031
+                | ErrorCode::Stg032
+                | ErrorCode::Stg033
+                | ErrorCode::Stg034
+                | ErrorCode::Stg035
                 | ErrorCode::Wal001
                 | ErrorCode::Wal002
                 | ErrorCode::Wal003
@@ -1956,6 +2012,13 @@ mod tests {
             ErrorCode::Stg026,
             ErrorCode::Stg027,
             ErrorCode::Stg028,
+            ErrorCode::Stg029,
+            ErrorCode::Stg030,
+            ErrorCode::Stg031,
+            ErrorCode::Stg032,
+            ErrorCode::Stg033,
+            ErrorCode::Stg034,
+            ErrorCode::Stg035,
             ErrorCode::Wal001,
             ErrorCode::Wal002,
             ErrorCode::Wal003,

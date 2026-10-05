@@ -26,9 +26,15 @@ impl MemoryBackend {
         }
     }
 
-    /// Get the number of pages stored.
+    /// One past the highest page id written (0 when empty), like a file's length
+    /// in pages.
     fn page_count_internal(&self) -> u64 {
-        self.pages.read().unwrap_or_else(|e| e.into_inner()).len() as u64
+        self.pages
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .keys()
+            .max()
+            .map_or(0, |m| m.saturating_add(1))
     }
 }
 
@@ -79,10 +85,6 @@ impl StorageBackend for MemoryBackend {
 
     fn backend_name(&self) -> &'static str {
         "memory"
-    }
-
-    fn is_new(&self) -> bool {
-        true
     }
 }
 

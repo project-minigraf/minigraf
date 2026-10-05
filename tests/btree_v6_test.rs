@@ -207,57 +207,49 @@ fn test_v6_dead_pages_queries_correct_after_two_checkpoints() {
     assert!(s0.contains('0'), "original e0 should still be visible");
 }
 
+/// Damaging the newest meta page after a completed checkpoint (its WAL already
+/// deleted) must refuse to open with STG-033, never silently fall back to the
+/// older meta and lose that checkpoint's facts.
 #[test]
-fn test_v6_checksum_mismatch_triggers_rebuild() {
+fn newest_meta_damaged_after_commit_is_refused() {
     use std::io::{Read, Seek, SeekFrom, Write};
 
     let (_tmp, path) = tmp_path();
     populate_and_checkpoint(30, &path);
 
-    // Corrupt a field in the header - header_checksum now covers all header fields
-    // so this will trigger header_checksum mismatch (correct per spec)
-    {
-        let mut f = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&path)
-            .unwrap();
-
-        // Read full page (4096 bytes)
-        let mut page = vec![0u8; 4096];
-        f.read_exact(&mut page).unwrap();
-
-        // Corrupt index_checksum at bytes 64..68
-        page[64] = 0xFF;
-        page[65] = 0xFF;
-        page[66] = 0xFF;
-        page[67] = 0xFF;
-
-        // Compute header_checksum over bytes 0..79 (with bytes 80..83 zeroed)
-        let mut checksum_data = page[..80].to_vec();
-        checksum_data.extend_from_slice(&[0u8; 4]); // bytes 80-83 zeroed for checksum
-        let checksum = crc32fast::hash(&checksum_data);
-        page[80] = (checksum & 0xFF) as u8;
-        page[81] = ((checksum >> 8) & 0xFF) as u8;
-        page[82] = ((checksum >> 16) & 0xFF) as u8;
-        page[83] = ((checksum >> 24) & 0xFF) as u8;
-
-        // Write back the corrupted page with valid header_checksum
-        f.seek(SeekFrom::Start(0)).unwrap();
-        f.write_all(&page).unwrap();
+    let mut f = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&path)
+        .unwrap();
+    let mut pages = [vec![0u8; 4096], vec![0u8; 4096]];
+    for p in pages.iter_mut() {
+        f.read_exact(p).unwrap();
     }
-
-    // Re-open: header_checksum mismatch must be detected (correct per spec)
-    match OpenOptions::new().path(&path).open() {
-        Ok(_) => panic!("opening corrupted file should fail"),
-        Err(e) => {
-            let err = e.to_string();
-            assert!(
-                err.contains("Header checksum mismatch"),
-                "error should mention header checksum mismatch, got: {}",
-                err
-            );
+    let generation = |p: &[u8]| {
+        if &p[8..12] == b"META" {
+            u64::from_le_bytes(p[16..24].try_into().unwrap())
+        } else {
+            0
         }
+    };
+    let newest = if generation(&pages[0]) > generation(&pages[1]) {
+        0
+    } else {
+        1
+    };
+    assert!(
+        generation(&pages[newest]) >= 2,
+        "a checkpoint was committed"
+    );
+    pages[newest][30] ^= 0xFF;
+    f.seek(SeekFrom::Start(newest as u64 * 4096)).unwrap();
+    f.write_all(&pages[newest]).unwrap();
+    drop(f);
+
+    match OpenOptions::new().path(&path).open() {
+        Ok(_) => panic!("opening with the newest meta damaged must fail"),
+        Err(e) => assert_eq!(e.code(), "STG-033"),
     }
 }
 

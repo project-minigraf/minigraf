@@ -15,17 +15,17 @@ use std::sync::Mutex;
 
 // ─── Page type constants ───────────────────────────────────────────────────────
 
-/// Leaf node page type (v6).
-pub const PAGE_TYPE_LEAF: u8 = 0x21;
-/// Internal node page type (v6).
-pub const PAGE_TYPE_INTERNAL: u8 = 0x22;
+use crate::storage::page::{PAGE_HEADER_SIZE, PageAllocator};
+pub use crate::storage::page::{PAGE_TYPE_INTERNAL, PAGE_TYPE_LEAF};
 
 // ─── Fixed sizes ──────────────────────────────────────────────────────────────
 
-/// Leaf page fixed header: type(1) + reserved(1) + entry_count(2) + next_leaf(8) = 12 bytes.
-const LEAF_HEADER_SIZE: usize = 12;
-/// Internal page fixed header: type(1) + reserved(1) + key_count(2) + rightmost_child(8) = 12 bytes.
-const INTERNAL_HEADER_SIZE: usize = 12;
+/// Leaf page fixed header: the common page header (entry count in `count`).
+const LEAF_HEADER_SIZE: usize = PAGE_HEADER_SIZE;
+/// Offset of an internal node's `rightmost_child` (u64), right after the common header.
+const RIGHTMOST_CHILD_OFFSET: usize = PAGE_HEADER_SIZE;
+/// Internal page fixed header: common header (key count in `count`) + rightmost_child(8).
+const INTERNAL_HEADER_SIZE: usize = PAGE_HEADER_SIZE + 8;
 /// Slot directory entry: offset(u16) + length(u16) = 4 bytes.
 const SLOT_SIZE: usize = 4;
 /// Fill-factor threshold: stop packing once total used bytes exceed this (~75% of PAGE_SIZE).
@@ -66,22 +66,24 @@ fn read_u64_at(page: &[u8], offset: usize) -> Result<u64> {
 /// `entries`: each element is the postcard-serialised `(K, FactRef)` bytes for
 /// one index entry, in sort order.
 #[allow(clippy::arithmetic_side_effects, clippy::indexing_slicing)]
-fn encode_leaf_page(entries: &[Vec<u8>], next_leaf: u64) -> Result<Vec<u8>> {
+fn encode_leaf_page(entries: &[Vec<u8>]) -> Result<Vec<u8>> {
     let entry_count = u16::try_from(entries.len()).map_err(|_| {
         err_coded!(
             ErrorCode::Int049,
             format!("too many entries: {}", entries.len())
         )
     })?;
-    let mut page = vec![0u8; PAGE_SIZE];
+    let used =
+        LEAF_HEADER_SIZE + entries.len() * SLOT_SIZE + entries.iter().map(Vec::len).sum::<usize>();
+    if used > PAGE_SIZE {
+        bail_coded!(
+            ErrorCode::Int049,
+            format!("leaf entries need {used} bytes, more than a page")
+        );
+    }
+    let mut page = crate::storage::page::new_page(PAGE_TYPE_LEAF, entry_count);
 
-    // Fixed header
-    page[0] = PAGE_TYPE_LEAF;
-    page[1] = 0; // reserved
-    page[2..4].copy_from_slice(&entry_count.to_le_bytes());
-    page[4..12].copy_from_slice(&next_leaf.to_le_bytes());
-
-    // Slot directory starts at byte 12; data written end-to-start
+    // Slot directory follows the header; data written end-to-start
     let mut write_pos = PAGE_SIZE;
     for (i, entry) in entries.iter().enumerate() {
         write_pos -= entry.len();
@@ -105,21 +107,20 @@ fn encode_leaf_page(entries: &[Vec<u8>], next_leaf: u64) -> Result<Vec<u8>> {
     Ok(page)
 }
 
-/// Write a single leaf page and insert it into the cache.
+/// Write a single leaf page at a newly allocated id and insert it into the cache.
 fn write_leaf_page(
     backend: &mut dyn StorageBackend,
     cache: &PageCache,
-    page_id: u64,
+    alloc: &mut PageAllocator,
     entries: &[Vec<u8>],
-    next_leaf: u64,
-) -> Result<()> {
-    let page = encode_leaf_page(entries, next_leaf)?;
-    backend.write_page(page_id, &page)?;
-    cache.put_dirty(page_id, page);
-    Ok(())
+) -> Result<u64> {
+    let page = encode_leaf_page(entries)?;
+    let page_id = alloc.alloc()?;
+    alloc.write(backend, cache, page_id, page)?;
+    Ok(page_id)
 }
 
-/// Write a single internal node page and insert it into the cache.
+/// Write a single internal node page at a newly allocated id and insert it into the cache.
 ///
 /// `child_ids`: all child page IDs in order; the last one is `rightmost_child`.
 /// `sep_bytes`: postcard-serialised Key bytes for each separator key.
@@ -129,10 +130,10 @@ fn write_leaf_page(
 fn write_internal_page(
     backend: &mut dyn StorageBackend,
     cache: &PageCache,
-    page_id: u64,
+    alloc: &mut PageAllocator,
     child_ids: &[u64],
     sep_bytes: &[Vec<u8>],
-) -> Result<()> {
+) -> Result<u64> {
     debug_assert_eq!(child_ids.len(), sep_bytes.len() + 1);
     // Defensive check: empty child_ids would cause panic on .last()
     if child_ids.is_empty() {
@@ -148,15 +149,20 @@ fn write_internal_page(
         .last()
         .ok_or_else(|| err_coded!(ErrorCode::Int049, "child_ids is empty".to_string()))?;
 
-    let mut page = vec![0u8; PAGE_SIZE];
+    let used = INTERNAL_HEADER_SIZE
+        + sep_bytes.len() * (8 + SLOT_SIZE)
+        + sep_bytes.iter().map(Vec::len).sum::<usize>();
+    if used > PAGE_SIZE {
+        bail_coded!(
+            ErrorCode::Int049,
+            format!("internal node needs {used} bytes, more than a page")
+        );
+    }
+    let mut page = crate::storage::page::new_page(PAGE_TYPE_INTERNAL, key_count);
+    page[RIGHTMOST_CHILD_OFFSET..RIGHTMOST_CHILD_OFFSET + 8]
+        .copy_from_slice(&rightmost_child.to_le_bytes());
 
-    // Fixed header
-    page[0] = PAGE_TYPE_INTERNAL;
-    page[1] = 0; // reserved
-    page[2..4].copy_from_slice(&key_count.to_le_bytes());
-    page[4..12].copy_from_slice(&rightmost_child.to_le_bytes());
-
-    // Child array: key_count entries starting at byte 12
+    // Child array: key_count entries after the fixed header
     let child_arr_start = INTERNAL_HEADER_SIZE;
     for (i, &cid) in child_ids[..child_ids.len() - 1].iter().enumerate() {
         let off = child_arr_start + i * 8;
@@ -188,9 +194,9 @@ fn write_internal_page(
         page[slot_off + 2..slot_off + 4].copy_from_slice(&sep_len_u16.to_le_bytes());
     }
 
-    backend.write_page(page_id, &page)?;
-    cache.put_dirty(page_id, page);
-    Ok(())
+    let page_id = alloc.alloc()?;
+    alloc.write(backend, cache, page_id, page)?;
+    Ok(page_id)
 }
 
 /// True when adding an entry of `entry_len` bytes to a leaf that already holds
@@ -227,8 +233,8 @@ pub fn btree_entries<K: Serialize>(
 /// Each item in `sorted_entries` is `(entry_bytes, key_bytes)` as produced by
 /// [`btree_entries`]. Entries **must already be sorted** by key.
 ///
-/// Returns `(root_page_id, next_free_page_id)`. Chain multiple calls:
-/// pass the returned `next_free_page_id` as `start_page_id` for the next index.
+/// Pages are taken from `alloc` and stamped with its generation. Returns the
+/// root page id.
 ///
 /// All written pages are inserted into `cache` via `put_dirty`.
 #[allow(clippy::arithmetic_side_effects, clippy::indexing_slicing)]
@@ -236,29 +242,27 @@ pub fn build_btree(
     sorted_entries: impl Iterator<Item = (Vec<u8>, Vec<u8>)>,
     backend: &mut dyn StorageBackend,
     cache: &PageCache,
-    start_page_id: u64,
-) -> Result<(u64, u64)> {
+    alloc: &mut PageAllocator,
+) -> Result<u64> {
     // ── Phase 1: pack entries into leaf pages ─────────────────────────────────
     let mut leaf_infos: Vec<(u64, Vec<u8>)> = Vec::new();
 
     let mut cur_entries: Vec<Vec<u8>> = Vec::new();
     let mut cur_data_bytes: usize = 0;
     let mut cur_first_key: Option<Vec<u8>> = None;
-    let mut next_page = start_page_id;
 
     for (entry_bytes, key_bytes) in sorted_entries {
         if !cur_entries.is_empty()
             && leaf_overflows(cur_entries.len(), cur_data_bytes, entry_bytes.len())
         {
-            write_leaf_page(backend, cache, next_page, &cur_entries, 0)?;
+            let page_id = write_leaf_page(backend, cache, alloc, &cur_entries)?;
             let first_key = cur_first_key.take().ok_or_else(|| {
                 err_coded!(
                     ErrorCode::Int049,
                     "BUG: cur_first_key empty when writing leaf page".to_string()
                 )
             })?;
-            leaf_infos.push((next_page, first_key));
-            next_page += 1;
+            leaf_infos.push((page_id, first_key));
             cur_entries.clear();
             cur_data_bytes = 0;
             cur_first_key = None;
@@ -274,88 +278,52 @@ pub fn build_btree(
     // Flush the last (or only) batch
     if cur_entries.is_empty() && leaf_infos.is_empty() {
         // Empty tree: single empty leaf
-        write_leaf_page(backend, cache, next_page, &[], 0)?;
-        return Ok((next_page, next_page + 1));
+        return write_leaf_page(backend, cache, alloc, &[]);
     }
     if !cur_entries.is_empty() {
-        write_leaf_page(backend, cache, next_page, &cur_entries, 0)?;
+        let page_id = write_leaf_page(backend, cache, alloc, &cur_entries)?;
         let first_key = cur_first_key.take().ok_or_else(|| {
             err_coded!(
                 ErrorCode::Int049,
                 "BUG: cur_first_key empty when flushing last leaf page".to_string()
             )
         })?;
-        leaf_infos.push((next_page, first_key));
-        next_page += 1;
+        leaf_infos.push((page_id, first_key));
     }
 
-    // Patch next_leaf pointers: leaf[i].next_leaf = leaf[i+1].page_id
-    for i in 0..leaf_infos.len() - 1 {
-        let (pid, _) = leaf_infos
-            .get(i)
-            .ok_or_else(|| err_coded!(ErrorCode::Int049, format!("leaf_infos[{i}] out of bounds")))?
-            .clone();
-        let (next_lid, _) = leaf_infos
-            .get(i + 1)
-            .ok_or_else(|| {
-                err_coded!(
-                    ErrorCode::Int049,
-                    format!("leaf_infos[{}] out of bounds", i + 1)
-                )
-            })?
-            .clone();
-        let cached = cache.get_or_load(pid, backend)?;
-        let mut page = (*cached).clone();
-        // Safety: page is PAGE_SIZE bytes; offset 4..12 is always valid
-        page.get_mut(4..12)
-            .ok_or_else(|| {
-                err_coded!(
-                    ErrorCode::Int049,
-                    "page too small to write next_leaf".to_string()
-                )
-            })?
-            .copy_from_slice(&next_lid.to_le_bytes());
-        backend.write_page(pid, &page)?;
-        cache.put_dirty(pid, page);
-    }
-
-    build_internal_levels(leaf_infos, backend, cache, next_page)
+    build_internal_levels(leaf_infos, backend, cache, alloc)
 }
 
 /// Build internal levels bottom-up over `leaf_infos` (`(page_id, first_key_bytes)`
-/// per leaf, in key order), writing nodes from `next_page` onward.
+/// per leaf, in key order), writing nodes at ids taken from `alloc`.
 ///
-/// Returns `(root_page_id, next_free_page_id)`. A single leaf is its own root.
+/// Returns the root page id. A single leaf is its own root.
 #[allow(clippy::arithmetic_side_effects, clippy::indexing_slicing)]
 fn build_internal_levels(
     leaf_infos: Vec<(u64, Vec<u8>)>,
     backend: &mut dyn StorageBackend,
     cache: &PageCache,
-    next_page: u64,
-) -> Result<(u64, u64)> {
+    alloc: &mut PageAllocator,
+) -> Result<u64> {
     if leaf_infos.is_empty() {
         bail_coded!(
             ErrorCode::Int049,
             "build_internal_levels: no leaves".to_string()
         );
     }
-    let mut next_page = next_page;
     let mut current_level = leaf_infos;
 
     loop {
         if current_level.len() == 1 {
-            return Ok((
-                current_level
-                    .first()
-                    .ok_or_else(|| {
-                        err_coded!(
-                            ErrorCode::Int049,
-                            "current_level unexpectedly empty".to_string()
-                        )
-                    })?
-                    .0,
-                next_page,
-            ));
+            return Ok(current_level
+                .first()
+                .ok_or_else(|| {
+                    err_coded!(
+                        ErrorCode::Int049,
+                        "current_level unexpectedly empty".to_string()
+                    )
+                })?
+                .0);
         }
 
         let mut next_level: Vec<(u64, Vec<u8>)> = Vec::new();
@@ -408,9 +376,7 @@ fn build_internal_levels(
                 i += 1;
             }
 
-            let node_page_id = next_page;
-            write_internal_page(backend, cache, node_page_id, &child_ids, &sep_bytes)?;
-            next_page += 1;
+            let node_page_id = write_internal_page(backend, cache, alloc, &child_ids, &sep_bytes)?;
 
             let first_key = current_level
                 .get(i_start)
@@ -454,14 +420,14 @@ pub fn merge_sorted_vecs<T: Ord>(a: Vec<T>, b: Vec<T>) -> impl Iterator<Item = T
 
 /// Collect the raw leaf pages of the B+tree at `root_page_id`, in key order.
 ///
-/// `save()` calls this before writing anything: new fact pages overwrite the
-/// start of the old index region, so the old leaves must be snapshotted first.
-/// Leaves are found by walking child pointers depth-first, not by following
-/// the `next_leaf` chain, and their entries are not decoded.
+/// Leaves are found by walking child pointers depth-first, and their entries
+/// are not decoded. Every node visited is also pushed onto `nodes_out` (when
+/// given), so `save()` can free the whole old tree.
 pub fn collect_leaf_pages(
     root_page_id: u64,
     backend: &dyn StorageBackend,
     cache: &PageCache,
+    mut nodes_out: Option<&mut Vec<u64>>,
 ) -> Result<Vec<Arc<Vec<u8>>>> {
     // A tree cannot have more nodes than the file has pages; more visits
     // means a cycle in the child pointers.
@@ -480,6 +446,9 @@ pub fn collect_leaf_pages(
             );
         }
         let page = cache.get_or_load(page_id, backend)?;
+        if let Some(nodes) = nodes_out.as_deref_mut() {
+            nodes.push(page_id);
+        }
         match page.first().copied() {
             Some(PAGE_TYPE_LEAF) => {
                 validate_leaf_slots(&page[..], page_id)?;
@@ -502,8 +471,9 @@ pub fn collect_leaf_pages(
 
 /// Check a leaf's slot directory stays inside the page without decoding entries.
 ///
-/// Untouched leaves are copied verbatim and sealed under a fresh file checksum,
-/// so damage must be caught here instead of being carried forward.
+/// Untouched leaves are copied verbatim and resealed under a new page id and
+/// generation, so damage the page CRC cannot see must be caught here instead of
+/// being carried forward.
 #[allow(clippy::arithmetic_side_effects)]
 fn validate_leaf_slots(page: &[u8], page_id: u64) -> Result<()> {
     let count = read_u16_at(page, 2)? as usize;
@@ -551,50 +521,24 @@ where
     Ok(Some(key))
 }
 
-/// Writes leaf pages at consecutive page ids, linking each to the next.
-///
-/// One page is held back so its `next_leaf` can be set to the following page
-/// id, or to 0 once it is known to be the last leaf.
+/// Writes leaf pages at ids taken from an allocator, recording each leaf's id and
+/// first key for [`build_internal_levels`].
 struct LeafEmitter<'a> {
     backend: &'a mut dyn StorageBackend,
     cache: &'a PageCache,
-    next_page: u64,
-    held: Option<(u64, Vec<u8>)>,
+    alloc: &'a mut PageAllocator,
     infos: Vec<(u64, Vec<u8>)>,
 }
 
 impl LeafEmitter<'_> {
-    #[allow(clippy::arithmetic_side_effects)]
+    /// Write `page` (header type/count and body set; id, generation and CRC are
+    /// stamped here) at a new id.
     fn push(&mut self, page: Vec<u8>, first_key_bytes: Vec<u8>) -> Result<()> {
-        let page_id = self.next_page;
-        self.next_page += 1;
-        self.release_held(page_id)?;
-        self.held = Some((page_id, page));
+        let page_id = self.alloc.alloc()?;
+        self.alloc
+            .write(&mut *self.backend, self.cache, page_id, page)?;
         self.infos.push((page_id, first_key_bytes));
         Ok(())
-    }
-
-    fn release_held(&mut self, next_leaf: u64) -> Result<()> {
-        if let Some((page_id, mut page)) = self.held.take() {
-            page.get_mut(4..12)
-                .ok_or_else(|| {
-                    err_coded!(
-                        ErrorCode::Int049,
-                        "page too small to write next_leaf".to_string()
-                    )
-                })?
-                .copy_from_slice(&next_leaf.to_le_bytes());
-            self.backend.write_page(page_id, &page)?;
-            self.cache.put_dirty(page_id, page);
-        }
-        Ok(())
-    }
-
-    /// Write the last held leaf and return `(leaf_infos, next_free_page_id)`.
-    #[allow(clippy::type_complexity)]
-    fn finish(mut self) -> Result<(Vec<(u64, Vec<u8>)>, u64)> {
-        self.release_held(0)?;
-        Ok((self.infos, self.next_page))
     }
 }
 
@@ -637,7 +581,7 @@ fn emit_packed<K: Serialize>(
             let first = cur_first.take().ok_or_else(|| {
                 err_coded!(ErrorCode::Int049, "BUG: leaf without first key".to_string())
             })?;
-            emitter.push(encode_leaf_page(&cur, 0)?, first)?;
+            emitter.push(encode_leaf_page(&cur)?, first)?;
             cur.clear();
             cur_size = 0;
         }
@@ -648,28 +592,29 @@ fn emit_packed<K: Serialize>(
         cur.push(entry);
     }
     if let Some(first) = cur_first {
-        emitter.push(encode_leaf_page(&cur, 0)?, first)?;
+        emitter.push(encode_leaf_page(&cur)?, first)?;
     }
     Ok(())
 }
 
 /// Rebuild a B+tree from its old leaves plus sorted `pending` entries.
 ///
-/// Leaves that receive no pending entry are copied verbatim (only `next_leaf`
-/// is patched); only leaves that do are decoded, merged and repacked. Internal
+/// Leaves that receive no pending entry are copied verbatim (only the page id,
+/// generation and CRC are restamped); only leaves that do are decoded, merged
+/// and repacked. Internal
 /// levels are rebuilt from scratch. Pending keys route to leaf `i` when
 /// `first_key[i] <= key < first_key[i + 1]`; keys below the first leaf's first
 /// key go to leaf 0. With no non-empty old leaves this is a plain bulk build.
 ///
-/// `old_leaves` must be snapshotted (see [`collect_leaf_pages`]) before any
-/// page in `start_page_id..` is written. Returns `(root_page_id, next_free_page_id)`.
+/// Every page is written at an id from `alloc`, which never hands out a page
+/// the old tree uses. Returns the root page id.
 pub fn rebuild_btree_incremental<K>(
     old_leaves: Vec<Arc<Vec<u8>>>,
     pending: Vec<(K, FactRef)>,
     backend: &mut dyn StorageBackend,
     cache: &PageCache,
-    start_page_id: u64,
-) -> Result<(u64, u64)>
+    alloc: &mut PageAllocator,
+) -> Result<u64>
 where
     K: Serialize + for<'de> Deserialize<'de> + Ord,
 {
@@ -684,15 +629,14 @@ where
             btree_entries(pending.into_iter())?.into_iter(),
             backend,
             cache,
-            start_page_id,
+            alloc,
         );
     }
 
     let mut emitter = LeafEmitter {
         backend: &mut *backend,
         cache,
-        next_page: start_page_id,
-        held: None,
+        alloc: &mut *alloc,
         infos: Vec::new(),
     };
     let mut pending = pending.into_iter().peekable();
@@ -714,45 +658,11 @@ where
             emit_packed(&mut emitter, merge_sorted_vecs(old, batch))?;
         }
     }
-    let (leaf_infos, next_page) = emitter.finish()?;
-    build_internal_levels(leaf_infos, backend, cache, next_page)
+    let leaf_infos = emitter.infos;
+    build_internal_levels(leaf_infos, backend, cache, alloc)
 }
 
 // ─── Leaf traversal helpers ───────────────────────────────────────────────────
-
-/// Traverse internal nodes from `root` to find the leftmost (first) leaf page.
-#[cfg(test)]
-#[allow(clippy::arithmetic_side_effects)]
-fn find_leftmost_leaf(root: u64, backend: &dyn StorageBackend, cache: &PageCache) -> Result<u64> {
-    let mut page_id = root;
-    loop {
-        let page = cache.get_or_load(page_id, backend)?;
-        let page_type = page.first().copied().ok_or_else(|| {
-            err_coded!(
-                ErrorCode::Int049,
-                format!("empty page at page_id={page_id}")
-            )
-        })?;
-        match page_type {
-            PAGE_TYPE_LEAF => return Ok(page_id),
-            PAGE_TYPE_INTERNAL => {
-                let key_count = read_u16_at(&page[..], 2)? as usize;
-                if key_count == 0 {
-                    page_id = read_u64_at(&page[..], 4)?;
-                } else {
-                    page_id = read_u64_at(&page[..], INTERNAL_HEADER_SIZE)?;
-                }
-            }
-            t => bail_coded!(
-                ErrorCode::Int049,
-                format!(
-                    "find_leftmost_leaf: unexpected page type 0x{:02x} at page_id={}",
-                    t, page_id
-                )
-            ),
-        }
-    }
-}
 
 /// Read all `(K, FactRef)` entries from a leaf page's slot directory.
 #[allow(clippy::arithmetic_side_effects)]
@@ -798,7 +708,7 @@ fn internal_children(page: &[u8]) -> Result<Vec<u64>> {
     for i in 0..key_count {
         children.push(read_u64_at(page, INTERNAL_HEADER_SIZE + i * 8)?);
     }
-    children.push(read_u64_at(page, 4)?);
+    children.push(read_u64_at(page, RIGHTMOST_CHILD_OFFSET)?);
     Ok(children)
 }
 
@@ -828,7 +738,7 @@ impl Frame {
     #[allow(clippy::arithmetic_side_effects)]
     fn child(&self, i: usize) -> Result<u64> {
         if i == self.key_count {
-            read_u64_at(&self.page[..], 4)
+            read_u64_at(&self.page[..], RIGHTMOST_CHILD_OFFSET)
         } else {
             read_u64_at(&self.page[..], INTERNAL_HEADER_SIZE + i * 8)
         }
@@ -1129,10 +1039,6 @@ impl<B: StorageBackend> StorageBackend for MutexStorageBackend<B> {
     fn backend_name(&self) -> &'static str {
         unimplemented!("MutexStorageBackend is read-only; backend_name must not be called")
     }
-
-    fn is_new(&self) -> bool {
-        self.0.lock().map(|g| g.is_new()).unwrap_or(false)
-    }
 }
 
 // ─── OnDiskIndexReader ────────────────────────────────────────────────────────
@@ -1223,6 +1129,36 @@ impl<B: StorageBackend + 'static> crate::storage::CommittedIndexReader for OnDis
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `build_btree` appending from `start` in generation 1; returns
+    /// `(root, next_free_page_id)`.
+    fn build_btree_at(
+        entries: impl Iterator<Item = (Vec<u8>, Vec<u8>)>,
+        backend: &mut dyn StorageBackend,
+        cache: &PageCache,
+        start: u64,
+    ) -> Result<(u64, u64)> {
+        let mut alloc = PageAllocator::new(Vec::new(), start, 1);
+        let root = build_btree(entries, backend, cache, &mut alloc)?;
+        Ok((root, alloc.next_append()))
+    }
+
+    /// `rebuild_btree_incremental` appending from `start` in generation 1;
+    /// returns `(root, next_free_page_id)`.
+    fn rebuild_btree_incremental_at<K>(
+        old_leaves: Vec<Arc<Vec<u8>>>,
+        pending: Vec<(K, FactRef)>,
+        backend: &mut dyn StorageBackend,
+        cache: &PageCache,
+        start: u64,
+    ) -> Result<(u64, u64)>
+    where
+        K: Serialize + for<'de> Deserialize<'de> + Ord,
+    {
+        let mut alloc = PageAllocator::new(Vec::new(), start, 1);
+        let root = rebuild_btree_incremental(old_leaves, pending, backend, cache, &mut alloc)?;
+        Ok((root, alloc.next_append()))
+    }
     use crate::storage::backend::MemoryBackend;
     use crate::storage::index::{EavtKey, FactRef};
     use uuid::Uuid;
@@ -1286,10 +1222,10 @@ mod tests {
         let mut backend = MemoryBackend::new();
         let cache = PageCache::new(4096);
         let ser = btree_entries(committed.iter().cloned()).unwrap();
-        let (old_root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
-        let leaves = collect_leaf_pages(old_root, &backend, &cache).unwrap();
+        let (old_root, _) = build_btree_at(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        let leaves = collect_leaf_pages(old_root, &backend, &cache, None).unwrap();
         let (root, next_free) =
-            rebuild_btree_incremental(leaves, pending.to_vec(), &mut backend, &cache, start)
+            rebuild_btree_incremental_at(leaves, pending.to_vec(), &mut backend, &cache, start)
                 .unwrap();
         (backend, cache, root, next_free)
     }
@@ -1307,7 +1243,7 @@ mod tests {
         assert_eq!(got.len(), expected.len(), "entry count differs");
         assert!(got == expected, "streamed entries differ from expected");
 
-        let leaves = collect_leaf_pages(root, backend, cache).unwrap();
+        let leaves = collect_leaf_pages(root, backend, cache, None).unwrap();
         if expected.is_empty() {
             assert_eq!(leaves.len(), 1, "empty tree is one empty leaf");
         } else {
@@ -1337,16 +1273,8 @@ mod tests {
         let cache = PageCache::new(4096);
         let entries: Vec<_> = (0u128..500).map(|n| make_eavt(n, ":a", n as u64)).collect();
         let ser = btree_entries(entries.into_iter()).unwrap();
-        let (root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
-        let mut ids = vec![find_leftmost_leaf(root, &backend, &cache).unwrap()];
-        loop {
-            let page = cache.get_or_load(*ids.last().unwrap(), &backend).unwrap();
-            let next = read_u64_at(&page[..], 4).unwrap();
-            if next == 0 {
-                break;
-            }
-            ids.push(next);
-        }
+        let (root, _) = build_btree_at(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        let ids = leaf_ids(root, &backend, &cache);
         assert!(ids.len() >= 3, "fixture needs several leaves");
         (backend, cache, root, ids)
     }
@@ -1366,40 +1294,12 @@ mod tests {
         page[INTERNAL_HEADER_SIZE..INTERNAL_HEADER_SIZE + 8].copy_from_slice(&root.to_le_bytes());
         overwrite_page(&mut backend, &cache, root, page);
         assert!(
-            collect_leaf_pages(root, &backend, &cache).is_err(),
+            collect_leaf_pages(root, &backend, &cache, None).is_err(),
             "cycle must be rejected by collect_leaf_pages"
         );
         assert!(
             stream_all_entries::<EavtKey>(root, &backend, &cache).is_err(),
             "cycle must be rejected by the cursor"
-        );
-    }
-
-    #[test]
-    fn range_scan_ignores_next_leaf() {
-        // Zeroing every next_leaf pointer must not change any read: the cursor
-        // walks the tree, which a copy-on-write layout (#374) requires.
-        let (mut backend, cache, root, ids) = multi_leaf_tree();
-        let expected: Vec<(EavtKey, FactRef)> =
-            (0u128..500).map(|n| make_eavt(n, ":a", n as u64)).collect();
-        for &id in &ids {
-            let mut page = cache.get_or_load(id, &backend).unwrap().to_vec();
-            page[4..12].copy_from_slice(&0u64.to_le_bytes());
-            overwrite_page(&mut backend, &cache, id, page);
-        }
-        let got: Vec<(EavtKey, FactRef)> = stream_all_entries(root, &backend, &cache).unwrap();
-        assert!(got == expected, "stream must cover every leaf");
-        let refs = range_scan(root, &expected[0].0, None, &backend, &cache).unwrap();
-        assert_eq!(
-            refs.len(),
-            expected.len(),
-            "range_scan must cover every leaf"
-        );
-        let leaves = collect_leaf_pages(root, &backend, &cache).unwrap();
-        assert_eq!(
-            leaves.len(),
-            ids.len(),
-            "collect_leaf_pages must find every leaf"
         );
     }
 
@@ -1413,7 +1313,7 @@ mod tests {
         page[LEAF_HEADER_SIZE..LEAF_HEADER_SIZE + 2].copy_from_slice(&bad_offset.to_le_bytes());
         overwrite_page(&mut backend, &cache, ids[1], page);
         assert!(
-            collect_leaf_pages(root, &backend, &cache).is_err(),
+            collect_leaf_pages(root, &backend, &cache, None).is_err(),
             "slot pointing past the page end must be rejected"
         );
 
@@ -1422,7 +1322,7 @@ mod tests {
         page[2..4].copy_from_slice(&u16::MAX.to_le_bytes());
         overwrite_page(&mut backend, &cache, ids[2], page);
         assert!(
-            collect_leaf_pages(root, &backend, &cache).is_err(),
+            collect_leaf_pages(root, &backend, &cache, None).is_err(),
             "entry count overflowing the page must be rejected"
         );
     }
@@ -1435,9 +1335,10 @@ mod tests {
         let mut backend = MemoryBackend::new();
         let cache = PageCache::new(4096);
         let ser = btree_entries(committed.iter().cloned()).unwrap();
-        let (old_root, old_next) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
-        let old_leaves = collect_leaf_pages(old_root, &backend, &cache).unwrap();
-        let (root, _) = rebuild_btree_incremental(
+        let (old_root, old_next) =
+            build_btree_at(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        let old_leaves = collect_leaf_pages(old_root, &backend, &cache, None).unwrap();
+        let (root, _) = rebuild_btree_incremental_at(
             old_leaves.clone(),
             Vec::<(EavtKey, FactRef)>::new(),
             &mut backend,
@@ -1445,11 +1346,14 @@ mod tests {
             old_next,
         )
         .unwrap();
-        let new_leaves = collect_leaf_pages(root, &backend, &cache).unwrap();
+        let new_leaves = collect_leaf_pages(root, &backend, &cache, None).unwrap();
         assert_eq!(new_leaves.len(), old_leaves.len(), "leaf count changed");
         for (o, n) in old_leaves.iter().zip(new_leaves.iter()) {
-            assert!(o[..4] == n[..4], "leaf header prefix changed");
-            assert!(o[12..] == n[12..], "leaf body changed");
+            assert!(o[..4] == n[..4], "leaf type/count changed");
+            assert!(
+                o[LEAF_HEADER_SIZE..] == n[LEAF_HEADER_SIZE..],
+                "leaf body changed"
+            );
         }
         assert_tree_exact(root, &backend, &cache, &committed, &mut rng);
     }
@@ -1539,19 +1443,23 @@ mod tests {
         let cache = PageCache::new(4096);
         let mut expected = random_eavt(&mut rng, 3000, &mut ctr);
         let ser = btree_entries(expected.iter().cloned()).unwrap();
-        let (mut root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
-        let bulk_leaves = collect_leaf_pages(root, &backend, &cache).unwrap().len();
+        let (mut root, _) = build_btree_at(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        let bulk_leaves = collect_leaf_pages(root, &backend, &cache, None)
+            .unwrap()
+            .len();
         for _ in 0..600 {
             let pending = random_eavt(&mut rng, 1, &mut ctr);
-            let leaves = collect_leaf_pages(root, &backend, &cache).unwrap();
-            root = rebuild_btree_incremental(leaves, pending.clone(), &mut backend, &cache, 1)
+            let leaves = collect_leaf_pages(root, &backend, &cache, None).unwrap();
+            root = rebuild_btree_incremental_at(leaves, pending.clone(), &mut backend, &cache, 1)
                 .unwrap()
                 .0;
             expected = sorted_union(&expected, &pending);
         }
         assert_tree_exact(root, &backend, &cache, &expected, &mut rng);
         // 20% more entries; at >= ~37% fill that is at most ~2.5x the bulk leaf count.
-        let leaves = collect_leaf_pages(root, &backend, &cache).unwrap().len();
+        let leaves = collect_leaf_pages(root, &backend, &cache, None)
+            .unwrap()
+            .len();
         assert!(
             leaves <= bulk_leaves * 5 / 2,
             "leaf count grew from {bulk_leaves} to {leaves}"
@@ -1568,14 +1476,14 @@ mod tests {
         let cache = PageCache::new(4096);
         let mut expected = random_eavt(&mut rng, 1500, &mut ctr);
         let ser = btree_entries(expected.iter().cloned()).unwrap();
-        let (mut root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        let (mut root, _) = build_btree_at(ser.into_iter(), &mut backend, &cache, 1).unwrap();
         for round in 0..30u64 {
             let n_pending = 1 + (rng.next() % 150) as usize;
             let pending = random_eavt(&mut rng, n_pending, &mut ctr);
-            let leaves = collect_leaf_pages(root, &backend, &cache).unwrap();
+            let leaves = collect_leaf_pages(root, &backend, &cache, None).unwrap();
             let start = 1 + round % 3;
             let (r, _) =
-                rebuild_btree_incremental(leaves, pending.clone(), &mut backend, &cache, start)
+                rebuild_btree_incremental_at(leaves, pending.clone(), &mut backend, &cache, start)
                     .unwrap();
             root = r;
             expected = sorted_union(&expected, &pending);
@@ -1603,7 +1511,7 @@ mod tests {
         let cache = PageCache::new(64);
         let entries: Vec<(EavtKey, FactRef)> = vec![];
         let ser = btree_entries(entries.into_iter()).unwrap();
-        let (root, next_free) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        let (root, next_free) = build_btree_at(ser.into_iter(), &mut backend, &cache, 1).unwrap();
         assert_eq!(root, 1, "root must be at start_page_id");
         assert_eq!(next_free, 2, "single empty leaf = 1 page");
         // Verify it is a leaf page
@@ -1619,7 +1527,7 @@ mod tests {
         let cache = PageCache::new(64);
         let entries = vec![make_eavt(1, ":name", 1)];
         let ser = btree_entries(entries.into_iter()).unwrap();
-        let (root, next_free) = build_btree(ser.into_iter(), &mut backend, &cache, 5).unwrap();
+        let (root, next_free) = build_btree_at(ser.into_iter(), &mut backend, &cache, 5).unwrap();
         assert_eq!(root, 5);
         assert_eq!(next_free, 6);
         let page = cache.get_or_load(5, &backend).unwrap();
@@ -1633,12 +1541,12 @@ mod tests {
         let mut backend = MemoryBackend::new();
         let cache = PageCache::new(128);
         let entries1 = btree_entries((0u128..5).map(|n| make_eavt(n, ":a", n as u64 + 1))).unwrap();
-        let (_, next1) = build_btree(entries1.into_iter(), &mut backend, &cache, 1).unwrap();
+        let (_, next1) = build_btree_at(entries1.into_iter(), &mut backend, &cache, 1).unwrap();
 
         let entries2 =
             btree_entries((5u128..10).map(|n| make_eavt(n, ":b", n as u64 + 1))).unwrap();
         let (root2, next2) =
-            build_btree(entries2.into_iter(), &mut backend, &cache, next1).unwrap();
+            build_btree_at(entries2.into_iter(), &mut backend, &cache, next1).unwrap();
 
         assert!(root2 >= next1, "second tree must not overlap with first");
         assert!(next2 > root2);
@@ -1651,7 +1559,8 @@ mod tests {
         let cache = PageCache::new(256);
         let entries =
             btree_entries((0u128..100).map(|n| make_eavt(n, ":x", n as u64 + 1))).unwrap();
-        let (root, next_free) = build_btree(entries.into_iter(), &mut backend, &cache, 1).unwrap();
+        let (root, next_free) =
+            build_btree_at(entries.into_iter(), &mut backend, &cache, 1).unwrap();
 
         let empty_backend = MemoryBackend::new();
         for page_id in root..next_free {
@@ -1669,7 +1578,8 @@ mod tests {
             (0u128..200).map(|n| make_eavt(n, ":verylongattributename", n as u64 + 1)),
         )
         .unwrap();
-        let (root, next_free) = build_btree(entries.into_iter(), &mut backend, &cache, 1).unwrap();
+        let (root, next_free) =
+            build_btree_at(entries.into_iter(), &mut backend, &cache, 1).unwrap();
 
         for page_id in root..next_free {
             let page = cache.get_or_load(page_id, &backend).unwrap();
@@ -1688,7 +1598,7 @@ mod tests {
         // ~300 entries should force at least 2 leaf pages and 1 internal node
         let entries = (0u128..300).map(|n| make_eavt(n, ":attr", n as u64 + 1));
         let ser = btree_entries(entries).unwrap();
-        let (root, next_free) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        let (root, next_free) = build_btree_at(ser.into_iter(), &mut backend, &cache, 1).unwrap();
 
         let root_page = cache.get_or_load(root, &backend).unwrap();
         let pages_written = next_free - 1;
@@ -1721,54 +1631,20 @@ mod tests {
     }
 
     #[test]
-    fn test_build_btree_leaf_next_pointers_form_chain() {
-        // Build a tree with enough entries to require multiple leaf pages,
-        // then verify leaf[i].next_leaf == leaf[i+1].page_id
+    fn test_build_btree_spans_leaves_and_seals_every_page() {
+        // ~100 entries with long keys span several leaves. Every page written is
+        // sealed for generation 1 at its own id, and below next_free.
         let mut backend = MemoryBackend::new();
         let cache = PageCache::new(256);
-        // ~100 entries with long keys should span 4-6 leaf pages
         let entries = (0u128..100).map(|n| make_eavt(n, ":verylongattributename", n as u64 + 1));
         let ser = btree_entries(entries).unwrap();
-        let (root, next_free) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
-
-        // Collect leaf page IDs by following the chain from the leftmost leaf
-        // The root may be an internal node; find the leftmost leaf first
-        let root_page = cache.get_or_load(root, &backend).unwrap();
-        let mut leaf_pid = if root_page[0] == PAGE_TYPE_LEAF {
-            root
-        } else {
-            // leftmost leaf: follow first child of each internal node down
-            let mut pid = root;
-            loop {
-                let p = cache.get_or_load(pid, &backend).unwrap();
-                if p[0] == PAGE_TYPE_LEAF {
-                    break pid;
-                }
-                // first child is at child_array[0] = bytes 12..20
-                pid = read_u64_at(&p[..], 12).unwrap();
-            }
-        };
-
-        // Walk the chain and verify it's contiguous and terminates
-        let mut chain: Vec<u64> = vec![leaf_pid];
-        loop {
-            let p = cache.get_or_load(leaf_pid, &backend).unwrap();
-            assert_eq!(p[0], PAGE_TYPE_LEAF, "page {} should be leaf", leaf_pid);
-            let next = read_u64_at(&p[..], 4).unwrap();
-            if next == 0 {
-                break;
-            }
-            chain.push(next);
-            leaf_pid = next;
-        }
-
+        let (root, next_free) = build_btree_at(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        let leaves = leaf_ids(root, &backend, &cache);
         assert!(
-            chain.len() >= 2,
-            "100 long-key entries should span multiple leaves; got {} leaves",
-            chain.len()
+            leaves.len() >= 2,
+            "100 long-key entries should span multiple leaves"
         );
-        // Total entries across all leaves must equal 100
-        let total_entries: u64 = chain
+        let total_entries: u64 = leaves
             .iter()
             .map(|&pid| {
                 let p = cache.get_or_load(pid, &backend).unwrap();
@@ -1776,14 +1652,9 @@ mod tests {
             })
             .sum();
         assert_eq!(total_entries, 100);
-        // next_free must be > all leaf page IDs
-        for &pid in &chain {
-            assert!(
-                pid < next_free,
-                "leaf {} must be < next_free {}",
-                pid,
-                next_free
-            );
+        for pid in 1..next_free {
+            let raw = backend.read_page(pid).unwrap();
+            crate::storage::page::verify(&raw, pid, 1).expect("sealed page");
         }
     }
 
@@ -1803,7 +1674,7 @@ mod tests {
             .map(|n| make_eavt(n, ":name", n as u64 + 1))
             .collect();
         let ser = btree_entries(input.iter().cloned()).unwrap();
-        let (root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        let (root, _) = build_btree_at(ser.into_iter(), &mut backend, &cache, 1).unwrap();
 
         let output: Vec<(EavtKey, FactRef)> = stream_all_entries(root, &backend, &cache).unwrap();
 
@@ -1822,7 +1693,7 @@ mod tests {
         let cache = PageCache::new(16);
         let entries: Vec<(EavtKey, FactRef)> = vec![];
         let ser = btree_entries(entries.into_iter()).unwrap();
-        let (root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        let (root, _) = build_btree_at(ser.into_iter(), &mut backend, &cache, 1).unwrap();
         let out: Vec<(EavtKey, FactRef)> = stream_all_entries(root, &backend, &cache).unwrap();
         assert_eq!(out.len(), 0);
     }
@@ -1835,7 +1706,7 @@ mod tests {
             .map(|n| make_eavt(n, ":v", n as u64 + 1))
             .collect();
         let ser = btree_entries(input.iter().cloned()).unwrap();
-        let (root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        let (root, _) = build_btree_at(ser.into_iter(), &mut backend, &cache, 1).unwrap();
 
         let target_entity = Uuid::from_u128(42);
         let start = EavtKey {
@@ -1878,7 +1749,7 @@ mod tests {
             .map(|n| make_eavt(n, ":v", n as u64 + 1))
             .collect();
         let ser = btree_entries(input.iter().cloned()).unwrap();
-        let (root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        let (root, _) = build_btree_at(ser.into_iter(), &mut backend, &cache, 1).unwrap();
 
         let start = EavtKey {
             entity: Uuid::from_u128(999),
@@ -1901,7 +1772,7 @@ mod tests {
             .map(|n| make_eavt(n, ":v", n as u64 + 1))
             .collect();
         let ser = btree_entries(input.iter().cloned()).unwrap();
-        let (root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        let (root, _) = build_btree_at(ser.into_iter(), &mut backend, &cache, 1).unwrap();
 
         let start = EavtKey {
             entity: Uuid::from_u128(5),
@@ -1924,7 +1795,7 @@ mod tests {
             .map(|n| make_eavt(n, ":a", n as u64 + 1))
             .collect();
         let ser = btree_entries(input.iter().cloned()).unwrap();
-        let (root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        let (root, _) = build_btree_at(ser.into_iter(), &mut backend, &cache, 1).unwrap();
 
         let start = EavtKey {
             entity: Uuid::from_u128(100),
@@ -1975,8 +1846,6 @@ mod tests {
         let mut page = cache.get_or_load(root, &backend).unwrap().to_vec();
         assert_eq!(page[0], PAGE_TYPE_INTERNAL, "fixture root must be internal");
         // A page that is neither leaf nor internal (as a fact page would be).
-        // Well past every page build_btree wrote (MemoryBackend's page_count
-        // counts written pages, so it can equal the root's id).
         let bogus_id = root + 1_000;
         let mut bogus = vec![0u8; PAGE_SIZE];
         bogus[0] = crate::storage::packed_pages::PAGE_TYPE_PACKED;
@@ -2004,7 +1873,7 @@ mod tests {
             .map(|n| make_eavt(n, ":x", n as u64 + 1))
             .collect();
         let ser = btree_entries(input.iter().cloned()).unwrap();
-        let (eavt_root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        let (eavt_root, _) = build_btree_at(ser.into_iter(), &mut backend, &cache, 1).unwrap();
 
         let reader =
             OnDiskIndexReader::new(Arc::new(Mutex::new(backend)), cache, eavt_root, 0, 0, 0);
@@ -2048,7 +1917,7 @@ mod tests {
             .map(|n| make_eavt(n, ":x", n as u64 + 1))
             .collect();
         let ser = btree_entries(input.iter().cloned()).unwrap();
-        let (eavt_root, _) = build_btree(ser.into_iter(), &mut backend, &cache, 1).unwrap();
+        let (eavt_root, _) = build_btree_at(ser.into_iter(), &mut backend, &cache, 1).unwrap();
 
         // Wrap in Arc after build_btree is done — OnDiskIndexReader requires Arc<PageCache>
         let reader = Arc::new(OnDiskIndexReader::new(
@@ -2147,9 +2016,6 @@ mod tests {
         fn backend_name(&self) -> &'static str {
             "counting"
         }
-        fn is_new(&self) -> bool {
-            self.inner.is_new()
-        }
     }
 
     /// Entities `0, 2, 4, ...` so every odd entity is a key that is not in the tree.
@@ -2169,7 +2035,9 @@ mod tests {
         entries: &[(EavtKey, FactRef)],
     ) -> u64 {
         let ser = btree_entries(entries.iter().cloned()).unwrap();
-        build_btree(ser.into_iter(), backend, cache, 1).unwrap().0
+        build_btree_at(ser.into_iter(), backend, cache, 1)
+            .unwrap()
+            .0
     }
 
     fn drain(cursor: &mut LeafCursor<'_, EavtKey>) -> Vec<(EavtKey, FactRef)> {
@@ -2425,5 +2293,74 @@ mod tests {
             k == next_leaf_first,
             "seek lands on the sibling's first entry"
         );
+    }
+
+    /// An entry or separator too large for its page is an error, never a page
+    /// whose data region silently overlaps its slot directory.
+    #[test]
+    fn oversized_entry_or_separator_is_rejected() {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(0);
+        let mut alloc = PageAllocator::new(Vec::new(), 2, 1);
+        let big = vec![7u8; PAGE_SIZE - LEAF_HEADER_SIZE - SLOT_SIZE + 1];
+        assert!(encode_leaf_page(&[big]).is_err(), "leaf overflow");
+        let fits = vec![7u8; PAGE_SIZE - LEAF_HEADER_SIZE - SLOT_SIZE];
+        assert!(encode_leaf_page(&[fits]).is_ok(), "exact fit");
+
+        let sep = vec![7u8; PAGE_SIZE - INTERNAL_HEADER_SIZE - 8 - SLOT_SIZE + 1];
+        let err = write_internal_page(&mut backend, &cache, &mut alloc, &[2, 3], &[sep]);
+        assert!(err.is_err(), "internal overflow");
+        let sep = vec![7u8; PAGE_SIZE - INTERNAL_HEADER_SIZE - 8 - SLOT_SIZE];
+        write_internal_page(&mut backend, &cache, &mut alloc, &[2, 3], &[sep]).unwrap();
+    }
+
+    /// The largest key a maximum-size fact can produce fits in an internal node.
+    #[test]
+    fn max_size_fact_key_fits_an_internal_node() {
+        use crate::graph::types::{Fact, VALID_TIME_FOREVER, Value};
+        // tx_id 0 encodes in one byte: the smallest fact for a given key.
+        let attr = ":a".to_string();
+        let overhead = |n: usize| {
+            let f = Fact::with_valid_time(
+                uuid::Uuid::from_u128(u128::MAX),
+                attr.clone(),
+                Value::String("x".repeat(n)),
+                0,
+                u64::MAX,
+                i64::MIN,
+                VALID_TIME_FOREVER,
+            );
+            postcard::to_allocvec(&f).unwrap().len()
+        };
+        let mut n = crate::storage::packed_pages::MAX_FACT_BYTES;
+        while overhead(n) > crate::storage::packed_pages::MAX_FACT_BYTES {
+            n -= 1;
+        }
+        let f = Fact::with_valid_time(
+            uuid::Uuid::from_u128(u128::MAX),
+            attr,
+            Value::String("x".repeat(n)),
+            0,
+            u64::MAX,
+            i64::MIN,
+            VALID_TIME_FOREVER,
+        );
+        let keys = [
+            postcard::to_allocvec(&EavtKey::from_fact(&f))
+                .unwrap()
+                .len(),
+            postcard::to_allocvec(&crate::storage::index::AevtKey::from_fact(&f))
+                .unwrap()
+                .len(),
+            postcard::to_allocvec(&crate::storage::index::AvetKey::from_fact(&f))
+                .unwrap()
+                .len(),
+        ];
+        for k in keys {
+            assert!(
+                INTERNAL_HEADER_SIZE + 8 + SLOT_SIZE + k <= PAGE_SIZE,
+                "a max-size key must fit beside one child pointer"
+            );
+        }
     }
 }
