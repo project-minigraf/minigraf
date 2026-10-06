@@ -6,6 +6,7 @@
 ///
 /// Inspired by SQLite's VFS (Virtual File System) architecture.
 pub mod backend;
+pub(crate) mod btree;
 pub mod btree_v6;
 pub mod cache;
 pub(crate) mod dir_sync;

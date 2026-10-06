@@ -123,20 +123,25 @@ fn leaf_entry_len(shared: usize, key: &[u8], value: &[u8]) -> usize {
     varint_len(shared) + varint_len(suffix) + suffix + varint_len(value.len()) + value.len()
 }
 
+/// Bytes each entry adds to a leaf holding all of `entries`, its restart-array
+/// slot included.
+pub fn leaf_entry_sizes(entries: &[Entry]) -> Vec<usize> {
+    let mut prev: &[u8] = &[];
+    entries
+        .iter()
+        .enumerate()
+        .map(|(i, (k, v))| {
+            let restart = i % RESTART_INTERVAL == 0;
+            let shared = if restart { 0 } else { shared_len(prev, k) };
+            prev = k;
+            leaf_entry_len(shared, k, v) + if restart { 2 } else { 0 }
+        })
+        .collect()
+}
+
 /// Bytes a leaf holding `entries` needs, header and restart array included.
 pub fn leaf_size(entries: &[Entry]) -> usize {
-    let mut size = PAGE_HEADER_SIZE;
-    let mut prev: &[u8] = &[];
-    for (i, (k, v)) in entries.iter().enumerate() {
-        let restart = i % RESTART_INTERVAL == 0;
-        let shared = if restart { 0 } else { shared_len(prev, k) };
-        size += leaf_entry_len(shared, k, v);
-        if restart {
-            size += 2;
-        }
-        prev = k;
-    }
-    size
+    PAGE_HEADER_SIZE + leaf_entry_sizes(entries).iter().sum::<usize>()
 }
 
 /// Encode a leaf. Fails with INT-049 if the entries do not fit in a page.
