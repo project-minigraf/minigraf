@@ -146,6 +146,10 @@ with no `CodedError` anywhere in its chain.
 | STG-035 | Free-list inconsistency | Storage |
 | STG-036 | Dictionary entry missing | Storage |
 | STG-037 | Transaction with two timestamps | Storage |
+| STG-038 | Index disagrees with the committed facts | Storage |
+| STG-039 | Malformed tree | Storage |
+| STG-040 | Dictionary inconsistency | Storage |
+| STG-041 | Cannot rebuild indexes | Storage |
 | WAL-001 | Invalid WAL magic number | WAL |
 | WAL-002 | Unsupported WAL version | WAL |
 | WAL-003 | Value size exceeds maximum | WAL |
@@ -2083,10 +2087,11 @@ See the [file format section in README](../README.md#file-format) for version hi
 
 **Error text**: `Free list is inconsistent: {}`
 
-**Cause**: The chain of free-list pages loops, or holds a page id that is reserved or past the end of the file.
+**Cause**: The chain of free-list pages loops, or holds a page id that is reserved or past the end of the file. `Minigraf::verify()` also reports here a free-list count that disagrees with the meta page, a page listed twice, a free page that is still in use, a page used twice, and pages that are neither free nor in use (leaked).
 
 **Resolution**:
-- Restore from backup.
+- Run `Minigraf::rebuild_indexes()`: it derives a new free list from the pages the rebuilt file uses.
+- Restore from backup if the rebuild fails.
 
 **Scenario**: A corrupted free-list page whose `next` pointer points back at itself.
 
@@ -2115,6 +2120,60 @@ See the [file format section in README](../README.md#file-format) for version hi
 - Keep using the release that wrote the file and report the issue, with the transaction number from the message.
 
 **Scenario**: A v7 file whose facts were edited by an external tool so that two transactions share one `tx_count`.
+
+---
+
+### STG-038 Index disagrees with the committed facts
+
+**Error text**: `Index {} disagrees with the committed facts: {}`
+
+**Cause**: `Minigraf::verify()` found an index whose pages are intact (every checksum passes) but whose contents are wrong: it holds a different number of entries or different facts than EAVT, EAVT's entry count differs from the meta page's fact count, an entry belongs to a transaction newer than the last checkpoint, or a key's long value does not match the stored value. Queries that use that index can return wrong or missing results.
+
+**Resolution**:
+- Run `Minigraf::rebuild_indexes()`, which rebuilds all four indexes from an index that agrees with another one.
+- Restore from backup if the rebuild fails with STG-041.
+
+**Scenario**: A bug or a lost write leaves AVET without some entries that EAVT and AEVT hold.
+
+---
+
+### STG-039 Malformed tree
+
+**Error text**: `Tree {} is malformed: {}`
+
+**Cause**: `Minigraf::verify()` found a B+tree whose pages pass their checksums but whose structure is wrong: keys out of order, a key outside its parent's separator range, a page reached twice (from the same tree or from two trees), a tree deeper than any real tree can be, a node or an index key that does not decode.
+
+**Resolution**:
+- If the tree is EAVT, AEVT, AVET or VAET, run `Minigraf::rebuild_indexes()`.
+- If the tree is DICT, restore from backup: the dictionary holds the only copy of entity UUIDs and attribute names.
+
+**Scenario**: A misdirected write leaves an older, valid leaf where a newer one belonged, so two leaves of the tree overlap.
+
+---
+
+### STG-040 Dictionary inconsistency
+
+**Error text**: `Dictionary is inconsistent: {}`
+
+**Cause**: `Minigraf::verify()` found DICT entries that disagree with each other or with the meta page: the UUID → entity-id and entity-id → UUID maps (or the ident maps) are not inverse, an id is not below the meta page's next id, an entry has the wrong shape or an unknown tag, or a long value does not match its hash.
+
+**Resolution**:
+- Restore from backup. The dictionary cannot be rebuilt from the indexes.
+
+**Scenario**: A DICT leaf is replaced by an older valid copy, so an entity id maps to a UUID that maps to another id.
+
+---
+
+### STG-041 Cannot rebuild indexes
+
+**Error text**: `Cannot rebuild indexes: {}`
+
+**Cause**: `Minigraf::rebuild_indexes()` found no index to rebuild from. A source must be an intact index (EAVT, AEVT or AVET) that agrees with another intact index, or the only intact one. This error also means the dictionary is damaged. The file is not modified.
+
+**Resolution**:
+- Restore from backup.
+
+**Scenario**: EAVT, AEVT and AVET are all intact but each holds a different set of facts.
 
 ---
 

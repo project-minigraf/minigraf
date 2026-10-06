@@ -115,6 +115,7 @@ cargo run < demos/demo_negation.txt
    - `dict.rs`: `DictReader` (id ↔ UUID/ident, tx timestamps, long values) and `Encoder` (checkpoint-time id assignment and key building)
    - `value_pages.rs`: append-only value pages for strings over 64 bytes
    - `reader.rs`: `OnDiskReader` — covering reads of committed facts (`CommittedReader`)
+   - `verify.rs`: integrity walk for `Minigraf::verify` (tree order, index digests, DICT, page accounting) and the source choice for `rebuild_indexes` (#373)
    - `meta.rs` / `page.rs` / `freelist.rs`: meta pages A/B, the common page header and allocator, free-list chain
    - `cache.rs`: LRU page cache (`PageCache`, default 256 pages)
    - `dir_sync.rs`: `sync_parent_dir` — fsyncs the parent directory after creating the `.graph`/WAL or deleting the WAL (no-op off Unix)
@@ -137,7 +138,7 @@ cargo run < demos/demo_negation.txt
 
 5. **`src/repl.rs`** — Interactive REPL; TTY-aware (suppresses prompts/banner for piped input)
 
-6. **`src/db.rs`** — Public API: `Minigraf::open/execute/prepare/begin_write/checkpoint/save`, `WriteTransaction`, `OpenOptions::page_cache_size`
+6. **`src/db.rs`** — Public API: `Minigraf::open/execute/prepare/begin_write/checkpoint/save/verify/rebuild_indexes`, `WriteTransaction`, `IntegrityReport`, `OpenOptions::page_cache_size`
 
 7. **`src/wal.rs`** — Fact-level sidecar WAL, CRC32-protected entries, crash recovery
 
@@ -193,7 +194,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1238 tests** (1229 passing, 9 ignored; unit + integration + doc).
+**1248 tests** (1239 passing, 9 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.

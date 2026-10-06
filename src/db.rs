@@ -282,6 +282,27 @@ enum WriteContext {
     },
 }
 
+// ─── IntegrityReport ──────────────────────────────────────────────────────────
+
+/// The result of [`Minigraf::verify`].
+#[derive(Debug, Default)]
+#[non_exhaustive]
+pub struct IntegrityReport {
+    /// Facts in the committed file (EAVT entries).
+    pub facts: u64,
+    /// Pages checked.
+    pub pages: u64,
+    /// One structured error per finding; empty when the file is intact.
+    pub problems: Vec<MinigrafError>,
+}
+
+impl IntegrityReport {
+    /// True if no problem was found.
+    pub fn is_ok(&self) -> bool {
+        self.problems.is_empty()
+    }
+}
+
 // ─── Inner ────────────────────────────────────────────────────────────────────
 
 struct Inner {
@@ -731,6 +752,98 @@ impl Minigraf {
         Self::do_checkpoint(&self.inner.fact_storage, &mut ctx)
     }
 
+    // ── Integrity ────────────────────────────────────────────────────────────
+
+    /// Check the committed database file for damage that page checksums cannot
+    /// see.
+    ///
+    /// Every page read already checks its checksum, id and generation, so a
+    /// torn or rotted page is an error on the read that hits it. `verify` looks
+    /// for logical damage: an index holding different facts than EAVT, keys
+    /// out of order, an id with no dictionary entry, a page that is leaked,
+    /// listed free while in use, or used twice. Each finding is one structured
+    /// error in [`IntegrityReport::problems`] (codes STG-035, STG-036, STG-038,
+    /// STG-039, STG-040, or a page read error).
+    ///
+    /// Reads every page: O(file). Uncheckpointed writes are not checked here;
+    /// they live in memory and in the WAL, whose entries carry their own CRC.
+    /// Holds the write lock, so writes and checkpoints wait; queries keep
+    /// running. In-memory databases have no committed pages and always pass.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if the check cannot run (for example, the write
+    /// lock is poisoned). Damage is reported in the returned report.
+    pub fn verify(&self) -> Result<IntegrityReport, MinigrafError> {
+        self.verify_inner().map_err(MinigrafError::from)
+    }
+
+    fn verify_inner(&self) -> Result<IntegrityReport> {
+        let ctx = self
+            .inner
+            .write_lock
+            .lock()
+            .map_err(|_| err_coded!(ErrorCode::Api001))?;
+        match &*ctx {
+            WriteContext::Memory => Ok(IntegrityReport::default()),
+            #[cfg(not(target_arch = "wasm32"))]
+            WriteContext::File { pfs, .. } => {
+                let f = pfs.verify()?;
+                Ok(IntegrityReport {
+                    facts: f.facts,
+                    pages: f.pages,
+                    problems: f.problems.into_iter().map(MinigrafError::from).collect(),
+                })
+            }
+        }
+    }
+
+    /// Rebuild the four indexes (EAVT, AEVT, AVET, VAET) from an intact one,
+    /// and checkpoint.
+    ///
+    /// Use this when [`verify`](Self::verify) reports index damage (STG-038,
+    /// STG-039 on an index tree, a page read error inside an index, or a
+    /// free-list problem, STG-035). EAVT, AEVT and AVET each hold every fact.
+    /// The source is the first of them (in that order) that is intact and
+    /// agrees with another intact one, or else the only intact one. The free
+    /// list is derived again from the pages the rebuilt file uses.
+    ///
+    /// The rebuild commits like a checkpoint: uncheckpointed writes are
+    /// included, the WAL is deleted afterwards, and a crash at any point leaves
+    /// the previous checkpoint intact. It takes O(facts) time and memory, and
+    /// the file may grow by one copy of the indexes; the old pages are reused
+    /// by later checkpoints. No-op for in-memory databases.
+    ///
+    /// # Errors
+    ///
+    /// - STG-041 if no index can serve as the source, or the dictionary is
+    ///   damaged. The file is not modified; restore from backup.
+    /// - An I/O error from the rebuild or the WAL delete.
+    pub fn rebuild_indexes(&self) -> Result<(), MinigrafError> {
+        self.rebuild_indexes_inner().map_err(MinigrafError::from)
+    }
+
+    fn rebuild_indexes_inner(&self) -> Result<()> {
+        let mut ctx = self
+            .inner
+            .write_lock
+            .lock()
+            .map_err(|_| err_coded!(ErrorCode::Api001))?;
+        match &mut *ctx {
+            WriteContext::Memory => Ok(()),
+            #[cfg(not(target_arch = "wasm32"))]
+            WriteContext::File {
+                pfs,
+                wal,
+                db_path,
+                wal_entry_count,
+            } => {
+                pfs.rebuild_indexes()?;
+                Self::delete_wal(wal, db_path, wal_entry_count)
+            }
+        }
+    }
+
     /// Returns the current monotonic transaction counter.
     ///
     /// This is the value that `:as-of N` compares against. After a successful
@@ -775,21 +888,27 @@ impl Minigraf {
                 // the replayed facts would never reach the main file.
                 pfs.force_dirty();
                 pfs.save()?;
-
-                // Derive WAL path and delete the sidecar.
-                let wal_path = Self::wal_path_for(db_path);
-
-                // Close the WAL writer (drop it) before deleting the file.
-                *wal = None;
-
-                if wal_path.exists() {
-                    WalWriter::delete_file(&wal_path)?;
-                }
-
-                // WAL writer will be recreated lazily on the next write.
-                *wal_entry_count = 0;
+                Self::delete_wal(wal, db_path, wal_entry_count)?;
             }
         }
+        Ok(())
+    }
+
+    /// Delete the WAL sidecar after a commit made its entries durable in the
+    /// main file. The writer is recreated lazily on the next write.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn delete_wal(
+        wal: &mut Option<WalWriter>,
+        db_path: &Path,
+        wal_entry_count: &mut usize,
+    ) -> Result<()> {
+        let wal_path = Self::wal_path_for(db_path);
+        // Close the WAL writer (drop it) before deleting the file.
+        *wal = None;
+        if wal_path.exists() {
+            WalWriter::delete_file(&wal_path)?;
+        }
+        *wal_entry_count = 0;
         Ok(())
     }
 
