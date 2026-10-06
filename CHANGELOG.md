@@ -5,12 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## v2.0.3 — 2026-10-06
+
+Patch release on the v2.x line with two data-integrity fixes, under the [support policy](PHILOSOPHY.md#support-policy). File format is unchanged (v7). No API changes. Upgrading is recommended for every v2.x user.
 
 ### Fixed
 
 - **Queries returned wrong results with more than 65,535 uncheckpointed facts (#445).** Each fact not yet checkpointed was indexed by its position in memory, stored as a 16-bit number that stopped counting at 65,535. Every later fact was indexed as that same position, so entity-bound queries (`[:e :attr ?v]`) and attribute scans (`[?e :attr ?v]`) silently lost or duplicated facts. This affected in-memory databases with more than 65,535 facts and file databases with more than 65,535 facts written since the last checkpoint. The stored data was always intact, and a checkpoint made file databases correct again. Positions are now 32-bit and checked. Affected releases: v0.7.0 through v2.0.2. The file format is unchanged.
 - **Reopening next to an already-checkpointed WAL rewound the transaction counter (#447).** The WAL normally disappears after a checkpoint. It survives one only if the process crashes between the checkpoint's commit and the WAL delete, if the delete fails (WAL-006), or with `wal_checkpoint_threshold(usize::MAX)`. When such a WAL held only entries already in the file, replay skipped them all and then reset the transaction counter from the facts it had loaded, which were none, so it reset to 0. The next transactions reused `tx_count` values already in the file, `:as-of` answers mixed old and new transactions, and the next checkpoint made that history permanent. The counter now never moves backwards on replay. Affected releases: v0.5.0 through v2.0.2.
+
+### Known issues
+
+- Same-transaction multi-valued facts can read back as one value (#371, #287); the fix needs file format v8 and ships in v3.0.0. `save()` is not crash-atomic (#374). All v2.x known issues, with affected versions and workarounds, are listed in the pinned issue #421.
 
 ## v2.0.2 — 2026-09-27
 
