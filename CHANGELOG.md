@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **B+tree reads no longer follow leaf sibling links** (v8 storage format, PR 1 of 5; #374). Every index scan uses a cursor that walks down from the root and keeps the path, with a forward `seek` that climbs only as far as needed. This prepares for copy-on-write index pages, which cannot keep sibling links. The file format and query results are unchanged. Concurrent 100k-fact scans take 25–37 % less time and checkpointing after one fact at 10k facts 9 % less; single point lookups and attribute scans are 2–6 % slower (about 0.4 µs per lookup). A corrupted child pointer now fails with STG-013 (wrong page type) or INT-049 (cycle) instead of following a bad link.
 
+### Tests
+
+- **Golden-file compatibility corpus (#391).** `tests/golden/` holds v7 files written by minigraf 2.0.3, each with a JSON manifest of its CRC32, `tx_count` and expected query results. They cover one checkpoint, several checkpoints, indexes rebuilt on open, a WAL left by a crash, a WAL whose entries were already checkpointed, and same-transaction multi-values (#371). `tests/golden_corpus_test.rs` opens a copy of each file and checks its manifest after open, after a checkpoint and reopen, and after one more write. Golden files are never regenerated, only added; a new `golden-corpus` job in `policy.yml` fails a pull request that changes one. The generator is a standalone crate pinned to `minigraf = "=2.0.3"` (`tests/golden/gen/v7/`).
+
 ## v2.0.3 — 2026-10-06
 
 Patch release on the v2.x line with two data-integrity fixes, under the [support policy](PHILOSOPHY.md#support-policy). File format is unchanged (v7). No API changes. Upgrading is recommended for every v2.x user.
