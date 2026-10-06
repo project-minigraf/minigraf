@@ -504,6 +504,78 @@ fn pending_fact(d: &FactData, pos: usize) -> Result<Fact> {
 
 /// Production helpers on FactStorage: index-driven entity/attribute lookups used by the query executor.
 impl FactStorage {
+    /// Facts for a query's net-assert step: the pending facts of `scan` with
+    /// `tx_count <= as_of` (all when `None`), plus the committed facts of `scan`
+    /// that survive net-assert at `as_of` (#379).
+    ///
+    /// `net_asserted_facts` over the result equals `net_asserted_facts` over
+    /// every record of `scan` up to `as_of` (see
+    /// [`CommittedReader::live_facts`](crate::storage::CommittedReader::live_facts)),
+    /// but committed history is not translated into facts.
+    pub(crate) fn get_live_facts(
+        &self,
+        scan: crate::storage::Scan<'_>,
+        as_of: Option<u64>,
+    ) -> Result<Vec<Fact>> {
+        use crate::storage::Scan;
+        use crate::storage::index::{AevtKey, EavtKey};
+        let d = self.data.read().unwrap_or_else(|e| e.into_inner());
+        let mut facts = Vec::new();
+        let mut push = |pos: usize| -> Result<()> {
+            let f = pending_fact(&d, pos)?;
+            if as_of.is_none_or(|n| f.tx_count <= n) {
+                facts.push(f);
+            }
+            Ok(())
+        };
+        match scan {
+            Scan::All => {
+                for pos in 0..d.facts.len() {
+                    push(pos)?;
+                }
+            }
+            Scan::Entity(entity) => {
+                for (key, &pos) in d
+                    .pending_indexes
+                    .eavt
+                    .range(EavtKey::entity_start(*entity)..)
+                {
+                    if key.entity != *entity {
+                        break;
+                    }
+                    push(pos)?;
+                }
+            }
+            Scan::EntityAttribute(entity, attribute) => {
+                let start = EavtKey::entity_attribute_start(*entity, attribute);
+                for (key, &pos) in d.pending_indexes.eavt.range(start..) {
+                    if key.entity != *entity || key.attribute != attribute {
+                        break;
+                    }
+                    push(pos)?;
+                }
+            }
+            Scan::Attribute(attribute) => {
+                for (key, &pos) in d
+                    .pending_indexes
+                    .aevt
+                    .range(AevtKey::attribute_start(attribute)..)
+                {
+                    if key.attribute != attribute {
+                        break;
+                    }
+                    push(pos)?;
+                }
+            }
+        }
+        if let Some(reader) = &d.committed {
+            facts.extend(reader.live_facts(scan, as_of)?);
+        }
+        Ok(facts)
+    }
+
+    /// History read (every record); tests compare it with live reads and models.
+    #[cfg(test)]
     /// Get all facts for a specific entity (index-driven).
     pub(crate) fn get_facts_by_entity(&self, entity_id: &EntityId) -> Result<Vec<Fact>> {
         use crate::storage::index::EavtKey;
@@ -525,6 +597,8 @@ impl FactStorage {
         Ok(facts)
     }
 
+    /// History read (every record); tests compare it with live reads and models.
+    #[cfg(test)]
     /// Get every stored record for one `(entity, attribute)` pair (index-driven, #323).
     ///
     /// Reads only that pair's EAVT range, so other attributes of the same entity
@@ -551,6 +625,8 @@ impl FactStorage {
         Ok(facts)
     }
 
+    /// History read (every record); tests compare it with live reads and models.
+    #[cfg(test)]
     /// Get all facts for a specific attribute (index-driven).
     pub(crate) fn get_facts_by_attribute(&self, attribute: &Attribute) -> Result<Vec<Fact>> {
         use crate::storage::index::AevtKey;

@@ -114,7 +114,7 @@ cargo run < demos/demo_negation.txt
    - `btree.rs`: On-disk B+tree over byte keys (`build_btree`, `cow_insert`, `LeafCursor` with `seek`, `prefix_scan`, `get`, `MutexStorageBackend`)
    - `dict.rs`: `DictReader` (id ↔ UUID/ident, tx timestamps, long values) and `Encoder` (checkpoint-time id assignment and key building)
    - `value_pages.rs`: append-only value pages for strings over 64 bytes
-   - `reader.rs`: `OnDiskReader` — covering reads of committed facts (`CommittedReader`)
+   - `reader.rs`: `OnDiskReader` — covering reads of committed facts (`CommittedReader`); `live_facts` decides net-assert on index keys (#379)
    - `meta.rs` / `page.rs` / `freelist.rs`: meta pages A/B, the common page header and allocator, free-list chain
    - `cache.rs`: LRU page cache (`PageCache`, default 256 pages)
    - `dir_sync.rs`: `sync_parent_dir` — fsyncs the parent directory after creating the `.graph`/WAL or deleting the WAL (no-op off Unix)
@@ -193,7 +193,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1238 tests** (1229 passing, 9 ignored; unit + integration + doc).
+**1242 tests** (1233 passing, 9 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.

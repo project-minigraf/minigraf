@@ -1673,6 +1673,11 @@ fn bench_point_query_chain_depth(c: &mut Criterion) {
             "(query [:find ?v :where [:e/hot :other ?v]])",
         ),
         ("attr_scan", "(query [:find ?v :where [?e :hash ?v]])"),
+        // tx 2002 asserted h0: an :as-of point query on committed history (#379).
+        (
+            "churned_attr_as_of",
+            "(query [:find ?v :as-of 2002 :valid-at :any-valid-time :where [:e/hot :hash ?v]])",
+        ),
     ];
     for &(name, q) in QUERIES {
         let mut group = c.benchmark_group(format!("point_query_chain_depth/{name}"));

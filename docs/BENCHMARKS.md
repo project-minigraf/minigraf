@@ -50,6 +50,26 @@ One entity's `:hash` is retracted and reasserted `depth` times (exactly one live
 
 The churned attribute still scales with its own history on v2.x; see #379 for the v3.0.0 fix.
 
+### Net-Assert on Index Keys (#379, v3.0.0)
+
+**Date**: 2026-10-06 · **Command**: `cargo bench --bench minigraf_bench -- point_query_chain_depth --warm-up-time 1 --measurement-time 3` · same fixture as above, on format v8. "Before" is `v3` at `74310ee`; "after" decides net-assert on index keys and translates only surviving entries. The `:as-of` row is new: `[:find ?v :as-of 2002 :valid-at :any-valid-time :where [:e/hot :hash ?v]]`, which used to scan every fact in the file.
+
+| Query | Depth | Before | After |
+|---|---:|---:|---:|
+| `[:e/hot :hash ?v]` (churned attribute) | 1 | 19.9 µs | 21.1 µs |
+| | 500 | 1.10 ms | 262 µs |
+| | 2000 | 4.61 ms | 1.03 ms |
+| `[:e/hot :other ?v]` (sibling attribute) | 1 | 21.6 µs | 22.6 µs |
+| | 2000 | 28.8 µs | 30.1 µs |
+| `[?e :hash ?v]` (attribute scan) | 1 | 22.7 µs | 23.5 µs |
+| | 500 | 1.20 ms | 294 µs |
+| | 2000 | 5.87 ms | 1.24 ms |
+| `:as-of 2002` on the churned attribute | 1 | 5.59 ms | 23.4 µs |
+| | 500 | 6.30 ms | 216 µs |
+| | 2000 | 8.55 ms | 845 µs |
+
+Depth-1 differences are within run-to-run noise: two back-to-back A/B runs measured 19.0–19.3 µs before and 19.8–19.9 µs after for the churned attribute, and 22.6 µs before and 21.2–21.5 µs after for the sibling attribute. In this fixture every retraction and re-assertion uses a new value, so each history entry is its own two-entry triple. The remaining cost is the walk over those keys. A triple with a long history of its own is skipped with one seek.
+
 ### Checkpoint After One Dirty Fact (#315)
 
 **Date**: 2026-09-26 · **Command**: `cargo bench --bench minigraf_bench -- checkpoint/after_1_fact` · same host as above; file on tmpfs, so fsync cost is excluded.
