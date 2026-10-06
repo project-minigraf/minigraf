@@ -689,8 +689,8 @@ shipped.
 
 ### Task 1: Error surfacing
 
-- [ ] `selective_fact_fetch` propagates errors; `executor.rs` derived reads use `?`.
-- [ ] Corruption tests: damage an index leaf, an internal node, a DICT leaf, a value page
+- [x] `selective_fact_fetch` propagates errors; `executor.rs` derived reads use `?`.
+- [x] Corruption tests: damage an index leaf, an internal node, a DICT leaf, a value page
   and a free-list page in turn (bytes flipped, CRC left stale). Queries through
   `Minigraf` on a file, or a checkpoint, return the STG code (STG-029). They never
   return rows from the damaged page or silently fewer rows, and a failed checkpoint
@@ -698,23 +698,23 @@ shipped.
 
 ### Task 2: Size
 
-- [ ] `size_per_fact_in_433_shape` (100k, always) and `size_per_fact_1m` (ignored), both
+- [x] `size_per_fact_in_433_shape` (100k, always) and `size_per_fact_1m` (ignored), both
   at most 200 B per fact.
 
 ### Task 3: Benchmarks
 
-- [ ] `checkpoint/after_1_fact/1m` and `checkpoint/after_100k_facts/{10k,100k}`.
+- [x] `checkpoint/after_1_fact/1m` and `checkpoint/after_100k_facts/{10k,100k}`.
 
 ### Task 4: Read path
 
-- [ ] Seed the `DictReader` memo per call and share an ident and timestamp cache in
+- [x] Seed the `DictReader` memo per call and share an ident and timestamp cache in
   `OnDiskReader`, bounded in entries. Re-run `concurrent_btree_scan` and
   `btree_lookup/entity_point` against PR 4.
 
 ### Task 5: Docs and PR
 
-- [ ] `.wiki/Architecture.md` (format v8 and the read and checkpoint paths), ROADMAP,
+- [x] `.wiki/Architecture.md` (format v8 and the read and checkpoint paths), ROADMAP,
   CHANGELOG, CLAUDE.md, TEST_COVERAGE, and a status note at the top of the spec. Commit
   and push the wiki separately.
-- [ ] `cargo fmt`, clippy, `cargo test`; open the PR into `v3` with `Refs #374 #434 #388 #433`.
+- [x] `cargo fmt`, clippy, `cargo test`; open the PR into `v3` with `Refs #374 #434 #388 #433`.
   Own CI until green. Ask before merging.
