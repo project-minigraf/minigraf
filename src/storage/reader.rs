@@ -6,7 +6,7 @@
 use crate::graph::types::{EntityId, Fact};
 use crate::storage::btree::{LeafCursor, MutexStorageBackend, prefix_scan};
 use crate::storage::cache::PageCache;
-use crate::storage::dict::DictReader;
+use crate::storage::dict::{DictReader, SharedDictCache};
 use crate::storage::keys::{self, Index, KeyFact};
 use crate::storage::meta::MetaPage;
 use crate::storage::{CommittedReader, StorageBackend};
@@ -20,6 +20,7 @@ pub struct OnDiskReader<B: StorageBackend + 'static> {
     eavt_root: u64,
     aevt_root: u64,
     dict_root: u64,
+    shared: SharedDictCache,
 }
 
 impl<B: StorageBackend + 'static> OnDiskReader<B> {
@@ -30,11 +31,12 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
             eavt_root: meta.eavt_root,
             aevt_root: meta.aevt_root,
             dict_root: meta.dict_root,
+            shared: SharedDictCache::default(),
         }
     }
 
     fn dict(&self) -> DictReader<'_> {
-        DictReader::new(self.dict_root, &self.backend, &self.cache)
+        DictReader::new(self.dict_root, &self.backend, &self.cache).with_shared(&self.shared)
     }
 
     /// Facts of every `index` entry starting with `prefix`.
@@ -74,6 +76,7 @@ impl<B: StorageBackend + 'static> CommittedReader for OnDiskReader<B> {
         let Some(e) = dict.eid_of(entity)? else {
             return Ok(Vec::new());
         };
+        dict.seed_entity(e, *entity);
         self.scan(
             Index::Eavt,
             self.eavt_root,
@@ -87,6 +90,8 @@ impl<B: StorageBackend + 'static> CommittedReader for OnDiskReader<B> {
         let (Some(e), Some(a)) = (dict.eid_of(entity)?, dict.iid_of(attribute)?) else {
             return Ok(Vec::new());
         };
+        dict.seed_entity(e, *entity);
+        dict.seed_ident(a, attribute);
         let prefix = keys::entity_attribute_prefix(e, a);
         self.scan(Index::Eavt, self.eavt_root, &prefix, &mut dict)
     }
@@ -96,6 +101,7 @@ impl<B: StorageBackend + 'static> CommittedReader for OnDiskReader<B> {
         let Some(a) = dict.iid_of(attribute)? else {
             return Ok(Vec::new());
         };
+        dict.seed_ident(a, attribute);
         self.scan(
             Index::Aevt,
             self.aevt_root,
