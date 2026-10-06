@@ -294,17 +294,19 @@ impl FactStorage {
         Ok(true)
     }
 
-    /// Set tx_counter to max(tx_count) across all loaded facts.
+    /// Raise tx_counter to max(tx_count) across all loaded facts.
     ///
     /// Must be called after all `load_fact()` calls complete so that the next
-    /// `transact()` call picks up from the right sequence number.
+    /// `transact()` call picks up from the right sequence number. The counter
+    /// never moves backwards: it may already hold the file's checkpointed count,
+    /// and when WAL replay loads no facts that count must survive (#447).
     pub(crate) fn restore_tx_counter(&self) -> Result<()> {
         let d = self
             .data
             .read()
             .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
         let max = d.facts.iter().map(|f| f.tx_count).max().unwrap_or(0);
-        self.tx_counter.store(max, Ordering::SeqCst);
+        self.tx_counter.fetch_max(max, Ordering::SeqCst);
         Ok(())
     }
 
@@ -2502,5 +2504,24 @@ mod tests {
             assert!(pending_refs(base, 1).is_ok(), "u32::MAX is the last slot");
             assert!(pending_refs(base, 2).is_err(), "past u32::MAX is an error");
         }
+    }
+
+    /// #447: restoring the counter after loading facts never lowers it.
+    #[test]
+    fn restore_tx_counter_never_moves_backwards() {
+        let storage = FactStorage::new();
+        storage.restore_tx_counter_from(5);
+        storage.restore_tx_counter().unwrap();
+        assert_eq!(storage.current_tx_count(), 5, "no loaded facts: keep 5");
+        let mut f = Fact::new(
+            uuid::Uuid::from_u128(1),
+            ":a".to_string(),
+            Value::Integer(1),
+            1,
+        );
+        f.tx_count = 9;
+        storage.load_fact(f).unwrap();
+        storage.restore_tx_counter().unwrap();
+        assert_eq!(storage.current_tx_count(), 9, "a higher loaded count wins");
     }
 }
