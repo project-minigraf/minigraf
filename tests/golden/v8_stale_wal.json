@@ -1,14 +1,14 @@
 {
-  "file": "v7_stale_wal.graph",
-  "wal": "v7_stale_wal.graph.wal",
-  "format": 7,
-  "written_by": "minigraf 2.0.3 (crates.io), tests/golden/gen/v7 recipe stale_wal",
+  "file": "v8_stale_wal.graph",
+  "wal": "v8_stale_wal.graph.wal",
+  "format": 8,
+  "written_by": "minigraf v3 branch at 23aa57c (format v8 frozen), tests/golden/gen/v8 recipe stale_wal",
   "crc32": {
-    "graph": "0x15703fbe",
-    "wal": "0xd171e032"
+    "graph": "0xcb871f3e",
+    "wal": "0x2722a987"
   },
   "tx_count": 6,
-  "notes": "tx 5 and 6 are in the file and also in the v1 WAL, whose entries are all already checkpointed (#447 shape)",
+  "notes": "tx 5 and 6 are in the file and also in the v2 WAL, whose entries are all already checkpointed",
   "stale_wal": true,
   "queries": [
     {

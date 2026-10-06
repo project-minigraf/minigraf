@@ -1,15 +1,14 @@
 {
-  "file": "v7_stale_wal.graph",
-  "wal": "v7_stale_wal.graph.wal",
-  "format": 7,
-  "written_by": "minigraf 2.0.3 (crates.io), tests/golden/gen/v7 recipe stale_wal",
+  "file": "v8_migrated_from_v7.graph",
+  "wal": null,
+  "format": 8,
+  "written_by": "minigraf v3 branch at 23aa57c (format v8 frozen), tests/golden/gen/v8 recipe migrated_from_v7",
   "crc32": {
-    "graph": "0x15703fbe",
-    "wal": "0xd171e032"
+    "graph": "0x66c3671f",
+    "wal": null
   },
-  "tx_count": 6,
-  "notes": "tx 5 and 6 are in the file and also in the v1 WAL, whose entries are all already checkpointed (#447 shape)",
-  "stale_wal": true,
+  "tx_count": 7,
+  "notes": "v7_multi_checkpoint.graph migrated in place by the v3 build (v8 spec section 9)",
   "queries": [
     {
       "name": "all names",
@@ -23,9 +22,6 @@
         ],
         [
           "\"Carol\""
-        ],
-        [
-          "\"Dave\""
         ]
       ]
     },
@@ -44,10 +40,6 @@
         [
           "\"Carol\"",
           "-9223372036854775808"
-        ],
-        [
-          "\"Dave\"",
-          "25"
         ]
       ]
     },
@@ -238,7 +230,7 @@
       "query": "(query [:find (count ?e) :where [?e :person/name ?n]])",
       "rows": [
         [
-          "4"
+          "3"
         ]
       ]
     },
@@ -249,6 +241,10 @@
         [
           "\"Alice\"",
           "true"
+        ],
+        [
+          "\"Bob\"",
+          "false"
         ]
       ]
     },
@@ -261,18 +257,51 @@
         ],
         [
           "\"Carol\""
-        ],
-        [
-          "\"Dave\""
         ]
       ]
     },
     {
-      "name": "bob active as-of 5",
-      "query": "(query [:find ?b :as-of 5 :where [:bob :person/active ?b]])",
+      "name": "filler count",
+      "query": "(query [:find (count ?e) :where [?e :filler/n ?n]])",
       "rows": [
         [
-          "false"
+          "300"
+        ]
+      ]
+    },
+    {
+      "name": "filler group",
+      "query": "(query [:find (count ?e) :where [?e :filler/group :g/1]])",
+      "rows": [
+        [
+          "100"
+        ]
+      ]
+    },
+    {
+      "name": "filler sum",
+      "query": "(query [:find (sum ?n) :where [?e :filler/n ?n]])",
+      "rows": [
+        [
+          "44850"
+        ]
+      ]
+    },
+    {
+      "name": "filler point",
+      "query": "(query [:find ?g :where [:f/e250 :filler/group ?g]])",
+      "rows": [
+        [
+          ":g/1"
+        ]
+      ]
+    },
+    {
+      "name": "filler as-of 5",
+      "query": "(query [:find (count ?e) :as-of 5 :where [?e :filler/n ?n]])",
+      "rows": [
+        [
+          "100"
         ]
       ]
     }

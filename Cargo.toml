@@ -1,6 +1,6 @@
 [workspace]
 members = ["."]
-exclude = ["fuzz", "tests/golden/gen/v7"]
+exclude = ["fuzz", "tests/golden/gen/v7", "tests/golden/gen/v8"]
 resolver = "2"
 
 [package]

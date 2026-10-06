@@ -15,10 +15,10 @@ use minigraf::{Minigraf, QueryResult, Value};
 use serde_json::Value as Json;
 
 /// The major version of this reader, matched against a query's `min_reader`.
-const READER: u64 = 2;
+const READER: u64 = 3;
 
 /// The newest file format this reader opens. Manifests for newer formats are skipped.
-const MAX_FORMAT: u64 = 7;
+const MAX_FORMAT: u64 = 8;
 
 fn golden_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
@@ -43,6 +43,18 @@ fn render(v: &Value) -> String {
         // Entity ids are not a stable output; manifests never return them.
         Value::Ref(_) => "#ref".to_string(),
     }
+}
+
+/// True when meta slot A or B (pages 0 and 1) is a valid-looking v8 meta page:
+/// `"MGRF"`, version 8, `"META"` (v8 spec §4.1).
+fn has_v8_meta(path: &Path) -> bool {
+    let bytes = std::fs::read(path).unwrap();
+    bytes.chunks(4096).take(2).any(|page| {
+        page.len() >= 12
+            && &page[0..4] == b"MGRF"
+            && page[4..8] == 8u32.to_le_bytes()
+            && &page[8..12] == b"META"
+    })
 }
 
 fn parse_crc(s: &str) -> u32 {
@@ -168,12 +180,26 @@ fn check_manifest(m: &Manifest, failures: &mut Vec<String>) {
         };
         check_tx_count(m, &db, tx_count, "open", failures);
         check_queries(m, &db, "open", failures);
+    }
+
+    // On v3, the first open migrates a v7 file to v8 in place.
+    if !has_v8_meta(&path) {
+        failures.push(format!("{}: no v8 meta page after open", m.name));
+    }
+
+    // Reopen the migrated copy, then checkpoint.
+    {
+        let db = Minigraf::open(&path).unwrap();
+        check_tx_count(m, &db, tx_count, "migrated", failures);
+        check_queries(m, &db, "migrated", failures);
         db.checkpoint().unwrap();
     }
 
-    // 4. Persist: reopen after the checkpoint. v2.x leaves a WAL whose entries
-    // were all checkpointed already (`v7_stale_wal`) in place; v3 removes it.
-    if READER >= 3 && wal_path(&path).exists() {
+    // 4. Persist: reopen after the checkpoint, which removes the WAL. A WAL whose
+    // entries are all checkpointed already (`"stale_wal": true`) gives the
+    // checkpoint nothing to do, so it stays until the next write is checkpointed.
+    let stale_wal = m.json["stale_wal"].as_bool().unwrap_or(false);
+    if !stale_wal && wal_path(&path).exists() {
         failures.push(format!("{}: WAL still present after checkpoint", m.name));
     }
     {

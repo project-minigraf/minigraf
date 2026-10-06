@@ -79,6 +79,7 @@ v8 files (gen/v8, PR B, `v3` pinned at a commit after #452):
 | `v8_basic` | `base`, one checkpoint |
 | `v8_multi_checkpoint` | As for v7. COW checkpoints reuse pages from the free list and alternate meta slots A/B |
 | `v8_pending_wal` | As for v7. WAL version 2 with `base_generation` |
+| `v8_stale_wal` | As for v7, with a v2 WAL |
 | `v8_multivalue` | The #371 shape, written natively |
 | `v8_migrated_from_v7` | A copy of `v7_multi_checkpoint` opened by the pinned `v3` build, which migrates it, then closed |
 | `v8_large_values` | Values that need value pages, near `MAX_VALUE_BYTES` |
@@ -140,7 +141,7 @@ read. A recorded read would freeze a bug such as #371.
 6. **Untouched.** The committed fixture's bytes are unchanged. The harness only
    ever writes to the tempdir copy.
 
-PR B adds two `v3`-only checks:
+PR B adds these `v3`-only checks (as delivered, the WAL-gone check skips manifests marked `"stale_wal": true`: v3 also keeps an already-checkpointed WAL until the next write is checkpointed):
 
 - The first open of each v7 file migrates it. Opening the same copy again
   without a checkpoint gives the same results.

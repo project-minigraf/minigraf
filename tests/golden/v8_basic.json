@@ -1,15 +1,13 @@
 {
-  "file": "v7_stale_wal.graph",
-  "wal": "v7_stale_wal.graph.wal",
-  "format": 7,
-  "written_by": "minigraf 2.0.3 (crates.io), tests/golden/gen/v7 recipe stale_wal",
+  "file": "v8_basic.graph",
+  "wal": null,
+  "format": 8,
+  "written_by": "minigraf v3 branch at 23aa57c (format v8 frozen), tests/golden/gen/v8 recipe basic",
   "crc32": {
-    "graph": "0x15703fbe",
-    "wal": "0xd171e032"
+    "graph": "0x154ae019",
+    "wal": null
   },
-  "tx_count": 6,
-  "notes": "tx 5 and 6 are in the file and also in the v1 WAL, whose entries are all already checkpointed (#447 shape)",
-  "stale_wal": true,
+  "tx_count": 4,
   "queries": [
     {
       "name": "all names",
@@ -23,9 +21,6 @@
         ],
         [
           "\"Carol\""
-        ],
-        [
-          "\"Dave\""
         ]
       ]
     },
@@ -44,10 +39,6 @@
         [
           "\"Carol\"",
           "-9223372036854775808"
-        ],
-        [
-          "\"Dave\"",
-          "25"
         ]
       ]
     },
@@ -238,7 +229,7 @@
       "query": "(query [:find (count ?e) :where [?e :person/name ?n]])",
       "rows": [
         [
-          "4"
+          "3"
         ]
       ]
     },
@@ -249,6 +240,10 @@
         [
           "\"Alice\"",
           "true"
+        ],
+        [
+          "\"Bob\"",
+          "false"
         ]
       ]
     },
@@ -261,18 +256,6 @@
         ],
         [
           "\"Carol\""
-        ],
-        [
-          "\"Dave\""
-        ]
-      ]
-    },
-    {
-      "name": "bob active as-of 5",
-      "query": "(query [:find ?b :as-of 5 :where [:bob :person/active ?b]])",
-      "rows": [
-        [
-          "false"
         ]
       ]
     }
