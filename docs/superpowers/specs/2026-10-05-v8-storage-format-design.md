@@ -4,6 +4,7 @@
 checksums), #433 (format decisions for 1B facts)
 **Milestone:** v3.0.0, branch `v3`, file format v8 (unreleased; this redefines its layout)
 **Must land before:** #391 golden-file corpus freezes v8
+**Status:** implemented on `v3` in delivery PRs 1–5 (#442, #444, #449, #451 and PR 5); §5.1, §5.2 and §6.1–§6.3 carry the amendments made in PR 3. Measured: 142 B per fact at 1.15M facts in #433's shape; a checkpoint after one new fact takes 3.0 ms at 10k, 3.3 ms at 100k and 6.1 ms at 1M facts.
 **Builds on:** #315 / `2026-09-26-incremental-checkpoint-design.md` (balanced leaf split, routing)
 
 ## 1. Problem

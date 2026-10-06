@@ -26,11 +26,46 @@ use anyhow::Result;
 use std::collections::HashMap;
 use uuid::Uuid;
 
+/// Entries a [`SharedDictCache`] map holds before it is cleared.
+const SHARED_CACHE_LIMIT: usize = 65_536;
+
+/// Ident and transaction lookups shared by every read of one committed meta.
+/// They never change once committed, and there are few of them compared with
+/// entities, so they are cached across reads; each map is cleared when it
+/// reaches [`SHARED_CACHE_LIMIT`] entries.
+#[derive(Default)]
+pub struct SharedDictCache {
+    iids: std::sync::RwLock<HashMap<String, u32>>,
+    names: std::sync::RwLock<HashMap<u32, String>>,
+    tx_ids: std::sync::RwLock<HashMap<u64, u64>>,
+}
+
+fn shared_get<K: std::hash::Hash + Eq, V: Clone>(
+    map: &std::sync::RwLock<HashMap<K, V>>,
+    key: &K,
+) -> Option<V> {
+    map.read().ok()?.get(key).cloned()
+}
+
+fn shared_put<K: std::hash::Hash + Eq, V>(
+    map: &std::sync::RwLock<HashMap<K, V>>,
+    key: K,
+    value: V,
+) {
+    if let Ok(mut m) = map.write() {
+        if m.len() >= SHARED_CACHE_LIMIT {
+            m.clear();
+        }
+        m.insert(key, value);
+    }
+}
+
 /// Lookups in a committed DICT tree, memoised.
 pub struct DictReader<'a> {
     root: u64,
     backend: &'a dyn StorageBackend,
     cache: &'a PageCache,
+    shared: Option<&'a SharedDictCache>,
     uuids: HashMap<u64, Uuid>,
     names: HashMap<u32, String>,
     tx_ids: HashMap<u64, u64>,
@@ -44,11 +79,28 @@ impl<'a> DictReader<'a> {
             root,
             backend,
             cache,
+            shared: None,
             uuids: HashMap::new(),
             names: HashMap::new(),
             tx_ids: HashMap::new(),
             long_values: HashMap::new(),
         }
+    }
+
+    /// Consult and fill `shared` for idents and transaction timestamps.
+    pub fn with_shared(mut self, shared: &'a SharedDictCache) -> Self {
+        self.shared = Some(shared);
+        self
+    }
+
+    /// Record a known `eid → uuid` pair (the caller looked the eid up by it).
+    pub fn seed_entity(&mut self, eid: u64, uuid: Uuid) {
+        self.uuids.insert(eid, uuid);
+    }
+
+    /// Record a known `iid → ident` pair.
+    pub fn seed_ident(&mut self, iid: u32, ident: &str) {
+        self.names.insert(iid, ident.to_string());
     }
 
     fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
@@ -67,12 +119,23 @@ impl<'a> DictReader<'a> {
 
     /// The iid of `ident`, if it has one.
     pub fn iid_of(&self, ident: &str) -> Result<Option<u32>> {
-        self.get(&keys::dict_ident_key(ident))?
+        if let Some(i) = self
+            .shared
+            .and_then(|c| shared_get(&c.iids, &ident.to_string()))
+        {
+            return Ok(Some(i));
+        }
+        let found = self
+            .get(&keys::dict_ident_key(ident))?
             .map(|v| {
                 u32::try_from(keys::read_uint_bytes(&v)?)
                     .map_err(|_| err_coded!(ErrorCode::Int049, "iid out of range"))
             })
-            .transpose()
+            .transpose()?;
+        if let (Some(i), Some(c)) = (found, self.shared) {
+            shared_put(&c.iids, ident.to_string(), i);
+        }
+        Ok(found)
     }
 
     /// The timestamp recorded for `tx_count`, if any.
@@ -80,12 +143,19 @@ impl<'a> DictReader<'a> {
         if let Some(t) = self.tx_ids.get(&tx_count) {
             return Ok(Some(*t));
         }
+        if let Some(t) = self.shared.and_then(|c| shared_get(&c.tx_ids, &tx_count)) {
+            self.tx_ids.insert(tx_count, t);
+            return Ok(Some(t));
+        }
         let found = self
             .get(&keys::dict_tx_key(tx_count))?
             .map(|v| keys::read_uint_bytes(&v))
             .transpose()?;
         if let Some(t) = found {
             self.tx_ids.insert(tx_count, t);
+            if let Some(c) = self.shared {
+                shared_put(&c.tx_ids, tx_count, t);
+            }
         }
         Ok(found)
     }
@@ -107,12 +177,19 @@ impl<'a> DictReader<'a> {
         if let Some(n) = self.names.get(&iid) {
             return Ok(n.clone());
         }
+        if let Some(n) = self.shared.and_then(|c| shared_get(&c.names, &iid)) {
+            self.names.insert(iid, n.clone());
+            return Ok(n);
+        }
         let v = self
             .get(&keys::dict_iid_key(iid))?
             .ok_or_else(|| err_coded!(ErrorCode::Stg036, format!("ident id {iid}")))?;
         let n = String::from_utf8(v)
             .map_err(|_| err_coded!(ErrorCode::Stg036, format!("ident id {iid}: not UTF-8")))?;
         self.names.insert(iid, n.clone());
+        if let Some(c) = self.shared {
+            shared_put(&c.names, iid, n.clone());
+        }
         Ok(n)
     }
 
@@ -691,5 +768,41 @@ mod tests {
         };
         let err = dict.fact(&kf).unwrap_err();
         assert_eq!(crate::error::MinigrafError::from(err).code(), "STG-036");
+    }
+
+    /// A shared cache answers later readers without changing any result, and
+    /// clears itself at its size limit instead of growing.
+    #[test]
+    fn shared_cache_is_transparent_and_bounded() {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(256);
+        let facts = vec![
+            fact(1, ":name", Value::Keyword(":k/a".into()), 1),
+            fact(2, ":name", Value::Keyword(":k/b".into()), 2),
+        ];
+        let (root, enc) = checkpoint(&mut backend, &cache, 0, (1, 1), &facts);
+        let shared = SharedDictCache::default();
+        for _ in 0..2 {
+            let mut dict = DictReader::new(root, &backend, &cache).with_shared(&shared);
+            let got: Vec<Fact> = enc.index[0]
+                .iter()
+                .map(|(k, _)| {
+                    dict.fact(&KeyFact::decode(Index::Eavt, k).unwrap())
+                        .unwrap()
+                })
+                .collect();
+            assert!(
+                same_facts(got, facts.clone()),
+                "same facts with a warm cache"
+            );
+        }
+        assert!(shared.names.read().unwrap().len() >= 3, "idents cached");
+        assert_eq!(shared.tx_ids.read().unwrap().len(), 2, "timestamps cached");
+
+        let map = std::sync::RwLock::new(HashMap::new());
+        for i in 0..SHARED_CACHE_LIMIT as u64 + 10 {
+            shared_put(&map, i, i);
+        }
+        assert!(map.read().unwrap().len() <= SHARED_CACHE_LIMIT, "bounded");
     }
 }

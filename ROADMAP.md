@@ -41,8 +41,12 @@ This was the GitHub milestone named “2.0” before v2.0.0 used that version nu
 Scope — format and storage integrity:
 
 - v8 index keys with value bytes and v7→v8 migration (#371, #287; done on `v3`)
-- Per-page CRC32 checksums on fact pages and B+tree pages (#388)
-- Crash-atomic `save()`, with checkpoints proportional to the change (#374)
+- v8 storage format, done on `v3` in five PRs (#374, #434, #388, #433):
+  - per-page CRC32, page id and generation on every page (#388);
+  - two alternating meta pages; crash-atomic, copy-on-write checkpoints whose cost follows the change (#374, #434);
+  - covering byte-comparable keys with a dictionary and deduplicated long values, at about 142 bytes per fact (#433).
+
+  The format is frozen for the golden-file corpus (#391).
 - Index `verify` and public `rebuild_indexes()` (#373)
 - Net-assert on v8 keys before resolving facts, for O(live) point queries (#379)
 - `btree_page` fuzz target that reaches node decoding (#375)
