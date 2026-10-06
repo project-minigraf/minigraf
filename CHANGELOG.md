@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- **Queries returned wrong results with more than 65,535 uncheckpointed facts (#445).** Each fact not yet checkpointed was indexed by its position in memory, stored as a 16-bit number that stopped counting at 65,535. Every later fact was indexed as that same position, so entity-bound queries (`[:e :attr ?v]`) and attribute scans (`[?e :attr ?v]`) silently lost or duplicated facts. This affected in-memory databases with more than 65,535 facts and file databases with more than 65,535 facts written since the last checkpoint. The stored data was always intact, and a checkpoint made file databases correct again. Positions are now 32-bit and checked. Affected releases: v0.7.0 through v2.0.2. The file format is unchanged.
+
 ## v2.0.2 — 2026-09-27
 
 Final planned release on the v2.x line. File format is unchanged (v7). No breaking API changes; one new user-facing error code (API-010). v2.x gets data-integrity and security fixes for 12 months after v3.0.0 ships ([support policy](PHILOSOPHY.md#support-policy)).

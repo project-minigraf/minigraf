@@ -157,7 +157,7 @@ pub fn pack_facts(facts: &[Fact], start_page_id: u64) -> Result<(Vec<Vec<u8>>, V
         );
         fact_refs.push(FactRef {
             page_id,
-            slot_index: current_record_count,
+            slot_index: u32::from(current_record_count),
         });
         current_record_count = current_record_count.saturating_add(1);
     }
@@ -170,7 +170,7 @@ pub fn pack_facts(facts: &[Fact], start_page_id: u64) -> Result<(Vec<Vec<u8>>, V
 }
 
 /// Read a single fact from a packed page at the given slot index.
-pub fn read_slot(page: &[u8], slot: u16) -> Result<Fact> {
+pub fn read_slot(page: &[u8], slot: u32) -> Result<Fact> {
     if page.len() < PAGE_SIZE {
         bail_coded!(
             ErrorCode::Int024,
@@ -194,7 +194,7 @@ pub fn read_slot(page: &[u8], slot: u16) -> Result<Fact> {
         .get(3)
         .ok_or_else(|| err_coded!(ErrorCode::Int024, "too short for record_count byte 3"))?;
     let record_count = u16::from_le_bytes([b2, b3]);
-    if slot >= record_count {
+    if slot >= u32::from(record_count) {
         bail_coded!(
             ErrorCode::Int024,
             format!("Slot {slot} out of bounds (page has {record_count} records)")
@@ -202,7 +202,8 @@ pub fn read_slot(page: &[u8], slot: u16) -> Result<Fact> {
     }
     // dir_base = PACKED_HEADER_SIZE + slot * 4; slot < record_count <= u16::MAX,
     // so slot as usize * 4 <= (65534 * 4) which fits in usize.
-    let slot_usize = usize::from(slot);
+    let slot_usize = usize::try_from(slot)
+        .map_err(|_| err_coded!(ErrorCode::Int024, format!("slot {slot} overflows usize")))?;
     let dir_base = PACKED_HEADER_SIZE.saturating_add(slot_usize.saturating_mul(4));
     let db0 = *page
         .get(dir_base)
@@ -283,10 +284,10 @@ pub fn read_all_with_refs(
         let b3 = page.get(3).copied().unwrap_or(0);
         let record_count = u16::from_le_bytes([b2, b3]);
         for slot in 0..record_count {
-            facts.push(read_slot(&page, slot)?);
+            facts.push(read_slot(&page, u32::from(slot))?);
             refs.push(FactRef {
                 page_id,
-                slot_index: slot,
+                slot_index: u32::from(slot),
             });
         }
     }
