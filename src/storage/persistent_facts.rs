@@ -1710,8 +1710,8 @@ mod tests {
         let mem = MemoryBackend::new();
         let mut pfs = PersistentFactStorage::new(mem.clone(), 32).unwrap();
         let model = FactStorage::new();
-        let mut step = |pfs: &mut PersistentFactStorage<MemoryBackend>,
-                        next: &mut dyn FnMut(u64) -> u64| {
+        let step = |pfs: &mut PersistentFactStorage<MemoryBackend>,
+                    next: &mut dyn FnMut(u64) -> u64| {
             let mut tuples = Vec::new();
             for _ in 0..=next(3) {
                 let v = match next(5) {
