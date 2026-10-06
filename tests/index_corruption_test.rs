@@ -124,3 +124,32 @@ fn query_results_after_non_critical_corruption_match_original() {
         Err(_) => {}
     }
 }
+
+/// v8 (spec §11): a query that reaches a damaged page fails with STG-029. It
+/// never returns the page's rows, and never silently returns fewer rows.
+#[test]
+fn query_over_damaged_leaves_fails_with_stg_029() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("damaged.graph");
+    build_valid_db(&path, 300);
+    let bytes = std::fs::read(&path).unwrap();
+    let leaves: Vec<usize> = (2..bytes.len() / PAGE_SIZE)
+        .filter(|&id| bytes[id * PAGE_SIZE] == 0x61)
+        .collect();
+    assert!(!leaves.is_empty(), "the file has leaf pages");
+    for &id in &leaves {
+        corrupt_bytes_at(&path, (id * PAGE_SIZE + 2000) as u64, 1);
+    }
+    let db = Minigraf::open(&path).expect("open reads only the meta pages");
+    for q in [
+        "(query [:find ?e ?v :where [?e :idx ?v]])",
+        "(query [:find ?v :where [:e7 :idx ?v]])",
+        "(query [:find ?e ?a ?v :where [?e ?a ?v]])",
+    ] {
+        let err = db
+            .execute(q)
+            .err()
+            .expect("a query over damaged pages must fail");
+        assert_eq!(err.code(), "STG-029", "query fails with the checksum code");
+    }
+}

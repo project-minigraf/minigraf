@@ -1619,4 +1619,133 @@ mod tests {
         let (one, _) = checkpoint_writes(100_000, 1, true);
         assert!(one <= 20, "one fact at 100k writes {one} pages");
     }
+
+    // ── corruption surfacing (spec §11) ─────────────────────────────────────
+
+    /// A file with several checkpoints, long values and a free list.
+    fn corruptible() -> MemoryBackend {
+        let mem = MemoryBackend::new();
+        let mut pfs = PersistentFactStorage::new(mem.clone(), 0).unwrap();
+        for round in 0..4u64 {
+            let (asserts, retracts) = mixed_batch(round, 200);
+            pfs.storage().transact(asserts, None).unwrap();
+            pfs.storage().retract(retracts).unwrap();
+            pfs.mark_dirty();
+            pfs.save().unwrap();
+        }
+        assert!(pfs.meta().freelist_head != 0, "fixture has a free list");
+        mem
+    }
+
+    /// An independent copy of `mem` (`clone` shares the pages).
+    fn deep_copy(mem: &MemoryBackend) -> MemoryBackend {
+        let mut copy = MemoryBackend::new();
+        for id in 0..mem.page_count().unwrap() {
+            if let Ok(p) = mem.read_page(id) {
+                copy.write_page(id, &p).unwrap();
+            }
+        }
+        copy
+    }
+
+    /// Flip a body byte of `id`, leaving its CRC stale.
+    fn flip(mem: &mut MemoryBackend, id: u64) {
+        let mut p = mem.read_page(id).unwrap();
+        p[2000] ^= 0x5A;
+        mem.write_page(id, &p).unwrap();
+    }
+
+    fn leaves_of(root: u64, mem: &MemoryBackend) -> Vec<u64> {
+        let cache = PageCache::new(0);
+        let mut nodes = Vec::new();
+        collect_leaf_pages(root, mem, &cache, Some(&mut nodes)).unwrap();
+        nodes
+            .into_iter()
+            .filter(|&id| mem.read_page(id).unwrap()[0] == page::PAGE_TYPE_LEAF)
+            .collect()
+    }
+
+    /// Every committed read that reaches a damaged page fails with STG-029; it
+    /// never returns the page's data or silently fewer facts.
+    #[test]
+    fn damaged_pages_surface_as_stg_029_on_read() {
+        let mem = corruptible();
+        let m = open_mem(&mem, None).unwrap().meta();
+        let value_page = (2..m.page_count)
+            .find(|&id| mem.read_page(id).unwrap()[0] == page::PAGE_TYPE_VALUE)
+            .expect("fixture has a value page");
+        let eavt_leaf = *leaves_of(m.eavt_root, &mem).last().unwrap();
+        let dict_leaf = leaves_of(m.dict_root, &mem)[0];
+        let internal = m.eavt_root;
+        assert_eq!(
+            mem.read_page(internal).unwrap()[0],
+            page::PAGE_TYPE_INTERNAL
+        );
+        for (what, id) in [
+            ("EAVT leaf", eavt_leaf),
+            ("EAVT internal node", internal),
+            ("DICT leaf", dict_leaf),
+            ("value page", value_page),
+        ] {
+            let mut damaged = deep_copy(&mem);
+            flip(&mut damaged, id);
+            let pfs = PersistentFactStorage::open(damaged, 0, None).expect("open reads only metas");
+            let err = pfs
+                .storage()
+                .get_all_facts()
+                .err()
+                .unwrap_or_else(|| panic!("{what}: read must fail"));
+            assert_eq!(code(err), "STG-029", "{what}");
+        }
+        // An AEVT leaf: attribute scans that reach it fail; other reads still work.
+        let aevt_leaf = leaves_of(m.aevt_root, &mem)[0];
+        let mut damaged = deep_copy(&mem);
+        flip(&mut damaged, aevt_leaf);
+        let pfs = PersistentFactStorage::open(damaged, 0, None).unwrap();
+        let failures = (0..8)
+            .filter(|a| {
+                pfs.storage()
+                    .get_facts_by_attribute(&format!(":attr/{a}"))
+                    .is_err()
+            })
+            .count();
+        assert!(
+            failures > 0,
+            "the attribute stored in the damaged leaf fails"
+        );
+        assert!(pfs.storage().get_all_facts().is_ok(), "EAVT is intact");
+    }
+
+    /// A damaged free-list page fails the next checkpoint that pops from it. The
+    /// file is not changed in any way that matters: it still opens at its last
+    /// generation and every fact reads back.
+    #[test]
+    fn damaged_free_list_page_fails_the_checkpoint_not_the_file() {
+        let mem = corruptible();
+        let before = open_mem(&mem, None).unwrap();
+        let m = before.meta();
+        let all = as_set(before.storage().get_all_facts().unwrap());
+        drop(before);
+        let mut damaged = deep_copy(&mem);
+        flip(&mut damaged, m.freelist_head);
+        let mut pfs = PersistentFactStorage::open(damaged.clone(), 0, None).unwrap();
+        assert!(
+            as_set(pfs.storage().get_all_facts().unwrap()) == all,
+            "reads do not touch the free list"
+        );
+        let (asserts, _) = mixed_batch(9, 50);
+        pfs.storage().transact(asserts, None).unwrap();
+        pfs.mark_dirty();
+        let err = pfs.save().unwrap_err();
+        assert_eq!(code(err), "STG-029");
+        pfs.dirty = false;
+        drop(pfs);
+        let reopened = PersistentFactStorage::open(damaged, 0, None).unwrap();
+        assert_eq!(
+            reopened.generation(),
+            m.generation,
+            "the last checkpoint stands"
+        );
+        assert!(as_set(reopened.storage().get_all_facts().unwrap()) == all);
+    }
 }

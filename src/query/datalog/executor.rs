@@ -324,7 +324,7 @@ impl DatalogExecutor {
                 // rules require the full fact base to evaluate correctly.
                 if !query.uses_rules() {
                     let patterns = collect_all_patterns(&query.where_clauses);
-                    match self.selective_fact_fetch(&patterns, 4) {
+                    match self.selective_fact_fetch(&patterns, 4)? {
                         Some(facts) => facts,
                         None => self.storage.get_all_facts()?,
                     }
@@ -373,9 +373,15 @@ impl DatalogExecutor {
     /// back to a single whole-entity scan; only if that still exceeds `threshold` does this
     /// return `None`. Narrowing therefore never turns a selective query into a full scan.
     ///
+    /// A lookup error (a damaged page) is returned, never turned into a full scan.
+    ///
     /// Results are not deduplicated: the sole caller feeds them to `net_asserted_facts`,
     /// which is idempotent under duplicated records.
-    fn selective_fact_fetch(&self, patterns: &[Pattern], threshold: usize) -> Option<Vec<Fact>> {
+    fn selective_fact_fetch(
+        &self,
+        patterns: &[Pattern],
+        threshold: usize,
+    ) -> Result<Option<Vec<Fact>>> {
         use std::collections::{BTreeMap, BTreeSet};
 
         // Per bound entity: Some(attrs) = only these attributes are referenced;
@@ -408,7 +414,7 @@ impl DatalogExecutor {
             if let AttributeSpec::Real(EdnValue::Keyword(attr)) = &pattern.attribute {
                 attributes.insert(attr.clone());
             } else {
-                return None;
+                return Ok(None);
             }
         }
 
@@ -424,7 +430,7 @@ impl DatalogExecutor {
             entity_attrs.len() + attributes.len()
         };
         if total == 0 || total > threshold {
-            return None;
+            return Ok(None);
         }
 
         let mut all_facts: Vec<Fact> = Vec::new();
@@ -435,20 +441,19 @@ impl DatalogExecutor {
                     for attr in attrs {
                         all_facts.extend(
                             self.storage
-                                .get_facts_by_entity_attribute_indexed(uid, attr)
-                                .ok()?,
+                                .get_facts_by_entity_attribute_indexed(uid, attr)?,
                         );
                     }
                 }
-                _ => all_facts.extend(self.storage.get_facts_by_entity(uid).ok()?),
+                _ => all_facts.extend(self.storage.get_facts_by_entity(uid)?),
             }
         }
 
         for attr in &attributes {
-            all_facts.extend(self.storage.get_facts_by_attribute(attr).ok()?);
+            all_facts.extend(self.storage.get_facts_by_attribute(attr)?);
         }
 
-        Some(all_facts)
+        Ok(Some(all_facts))
     }
 
     /// Execute a query: find matching facts and return specified variables
@@ -708,8 +713,7 @@ impl DatalogExecutor {
 
         // Compute derived_facts Arc once; reuse for plan loop, or-clauses and not-post-filter.
         // Must use derived_storage (includes rule-derived facts), not filtered_facts (base only).
-        let derived_facts: Arc<[Fact]> =
-            Arc::from(derived_storage.get_asserted_facts().unwrap_or_default());
+        let derived_facts: Arc<[Fact]> = Arc::from(derived_storage.get_asserted_facts()?);
 
         let matcher =
             PatternMatcher::from_slice_with_valid_at(derived_facts.clone(), valid_at_value.clone());
