@@ -8,9 +8,15 @@
 //!
 //! ```text
 //! WAL header (32 bytes):
-//!   magic:    [u8; 4]  = b"MWAL"
-//!   version:  u32 LE   = 1
-//!   reserved: [u8; 24]
+//!   magic:           [u8; 4]  = b"MWAL"
+//!   version:         u32 LE   = 2
+//!   base_generation: u64 LE   generation of the meta page that was active when
+//!                             this WAL was created (v2; spec §4.1.1)
+//!   reserved:        [u8; 16]
+//!
+//! A version 1 header (v2.x) has no base_generation. It can only sit next to a
+//! file migrated from format v7 whose next checkpoint has not completed, so it
+//! reads as base generation 1.
 //!
 //! WAL entries (variable length, sequential):
 //!   checksum:  u32 LE  CRC32 of everything after this field in this entry
@@ -30,23 +36,27 @@ use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 const WAL_MAGIC: [u8; 4] = *b"MWAL";
-const WAL_VERSION: u32 = 1;
+const WAL_VERSION: u32 = 2;
+/// Format v7 (Minigraf v2.x) WAL version, read as base generation 1.
+const WAL_VERSION_V1: u32 = 1;
 const WAL_HEADER_SIZE: usize = 32;
 
 // ─── WAL Header ─────────────────────────────────────────────────────────────
 
-fn write_wal_header(file: &mut File) -> Result<()> {
+fn write_wal_header(file: &mut File, base_generation: u64) -> Result<()> {
     let mut buf = [0u8; WAL_HEADER_SIZE];
     buf[0..4].copy_from_slice(&WAL_MAGIC);
     buf[4..8].copy_from_slice(&WAL_VERSION.to_le_bytes());
-    // bytes 8..32 are reserved zeros
+    buf[8..16].copy_from_slice(&base_generation.to_le_bytes());
+    // bytes 16..32 are reserved zeros
     file.seek(SeekFrom::Start(0))?;
     file.write_all(&buf)?;
     file.sync_all()?;
     Ok(())
 }
 
-fn validate_wal_header(file: &mut File) -> Result<()> {
+/// Check magic and version and return the header's base generation.
+fn validate_wal_header(file: &mut File) -> Result<u64> {
     let mut buf = [0u8; WAL_HEADER_SIZE];
     file.seek(SeekFrom::Start(0))?;
     file.read_exact(&mut buf)?;
@@ -55,10 +65,15 @@ fn validate_wal_header(file: &mut File) -> Result<()> {
         bail_coded!(ErrorCode::Wal001);
     }
     let version = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
-    if version != WAL_VERSION {
-        bail_coded!(ErrorCode::Wal002, version, WAL_VERSION);
+    match version {
+        WAL_VERSION => {
+            let mut base = [0u8; 8];
+            base.copy_from_slice(&buf[8..16]);
+            Ok(u64::from_le_bytes(base))
+        }
+        WAL_VERSION_V1 => Ok(1),
+        _ => bail_coded!(ErrorCode::Wal002, version, WAL_VERSION),
     }
-    Ok(())
 }
 
 /// Whether an existing WAL file's header is intact, or too short to
@@ -135,11 +150,22 @@ pub struct WalWriter {
 }
 
 impl WalWriter {
+    /// [`WalWriter::open_or_create_at`] with base generation 1, for tests.
+    #[cfg(test)]
+    pub fn open_or_create(path: &Path, sync_mode: SyncMode) -> Result<Self> {
+        Self::open_or_create_at(path, sync_mode, 1)
+    }
+
     /// Open an existing WAL or create a new one.
     ///
-    /// If creating, writes the WAL header.
-    /// If opening, validates the header and seeks to the end for appending.
-    pub fn open_or_create(path: &Path, sync_mode: SyncMode) -> Result<Self> {
+    /// If creating, writes the WAL header with `base_generation`, the generation
+    /// of the meta page active now. If opening, validates the header (keeping its
+    /// base generation) and seeks to the end for appending.
+    pub fn open_or_create_at(
+        path: &Path,
+        sync_mode: SyncMode,
+        base_generation: u64,
+    ) -> Result<Self> {
         // Try atomic create-new first (no TOCTOU window)
         match OpenOptions::new()
             .read(true)
@@ -148,7 +174,7 @@ impl WalWriter {
             .open(path)
         {
             Ok(mut file) => {
-                write_wal_header(&mut file)?;
+                write_wal_header(&mut file, base_generation)?;
                 // The header is durable; make the WAL's directory entry
                 // durable too, or a power loss can lose the whole file (#389).
                 sync_parent_dir(path)?;
@@ -162,14 +188,16 @@ impl WalWriter {
         // File exists — validate its header and seek to end for appending
         let mut file = OpenOptions::new().read(true).write(true).open(path)?;
         match check_wal_header_length(&mut file)? {
-            WalHeaderState::Present => validate_wal_header(&mut file)?,
+            WalHeaderState::Present => {
+                validate_wal_header(&mut file)?;
+            }
             // A previous crash landed between this file's creation and its
             // header write completing; no entry could have been appended
             // yet, so re-initialize it as a fresh, empty WAL.
             // The crash may also have preceded the directory sync that
             // follows creation, so repeat it (#389).
             WalHeaderState::Absent => {
-                write_wal_header(&mut file)?;
+                write_wal_header(&mut file, base_generation)?;
                 sync_parent_dir(path)?;
             }
         }
@@ -239,23 +267,34 @@ impl WalWriter {
 /// Reads and validates WAL entries for crash recovery.
 pub struct WalReader {
     file: File,
+    base_generation: Option<u64>,
 }
 
 impl WalReader {
     /// Open the WAL at `path` for reading.
     pub fn open(path: &Path) -> Result<Self> {
         let mut file = File::open(path)?;
-        match check_wal_header_length(&mut file)? {
-            WalHeaderState::Present => validate_wal_header(&mut file)?,
+        let base_generation = match check_wal_header_length(&mut file)? {
+            WalHeaderState::Present => Some(validate_wal_header(&mut file)?),
             // Too short to contain a header, which can only mean a crash
             // landed before any entry was ever appended (see
             // `WalHeaderState::Absent`). `read_entries` already treats
             // hitting EOF while reading an entry as "no more entries", so
             // leaving the file as-is and letting that seek-past-end happen
             // naturally is correct -- there is nothing here to replay.
-            WalHeaderState::Absent => {}
-        }
-        Ok(WalReader { file })
+            WalHeaderState::Absent => None,
+        };
+        Ok(WalReader {
+            file,
+            base_generation,
+        })
+    }
+
+    /// The generation of the meta page active when this WAL was created, or
+    /// `None` for a header-less WAL (a crash before its header was written, so
+    /// it holds no entries and counts as no WAL).
+    pub fn base_generation(&self) -> Option<u64> {
+        self.base_generation
     }
 
     /// Read all valid entries from the WAL.
@@ -866,5 +905,41 @@ mod tests {
         );
 
         std::fs::remove_dir(&path).unwrap();
+    }
+
+    #[test]
+    fn test_wal_v2_header_records_base_generation() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("base.wal");
+        drop(WalWriter::open_or_create_at(&path, SyncMode::Full, 42).unwrap());
+        assert_eq!(WalReader::open(&path).unwrap().base_generation(), Some(42));
+        // Reopening for append keeps the original base generation.
+        drop(WalWriter::open_or_create_at(&path, SyncMode::Full, 99).unwrap());
+        assert_eq!(WalReader::open(&path).unwrap().base_generation(), Some(42));
+    }
+
+    #[test]
+    fn test_wal_v1_header_reads_as_base_generation_1() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("v1.wal");
+        let mut header = [0u8; WAL_HEADER_SIZE];
+        header[0..4].copy_from_slice(&WAL_MAGIC);
+        header[4..8].copy_from_slice(&1u32.to_le_bytes());
+        std::fs::write(&path, header).unwrap();
+        assert_eq!(WalReader::open(&path).unwrap().base_generation(), Some(1));
+        // A v2.x WAL can still be appended to.
+        let mut w = WalWriter::open_or_create_at(&path, SyncMode::Full, 5).unwrap();
+        w.append_entry(1, &[]).unwrap();
+        drop(w);
+        let mut r = WalReader::open(&path).unwrap();
+        assert_eq!(r.read_entries().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_wal_headerless_has_no_base_generation() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("short.wal");
+        std::fs::write(&path, [0u8; 5]).unwrap();
+        assert_eq!(WalReader::open(&path).unwrap().base_generation(), None);
     }
 }

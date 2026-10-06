@@ -108,7 +108,7 @@ fn wal_size_limit_oversized_fact_returns_wal_003() {
 
     let db = Minigraf::open(&db_path).unwrap();
 
-    // Comfortably over MAX_FACT_BYTES (~4080 bytes) but well under the
+    // Comfortably over MAX_FACT_BYTES (4052 bytes) but well under the
     // parser's own 1 MB string cap, so the parser accepts it and the WAL
     // layer is what rejects it.
     let huge_value = "a".repeat(20_000);

@@ -9,8 +9,11 @@ pub mod backend;
 pub mod btree_v6;
 pub mod cache;
 pub(crate) mod dir_sync;
+pub(crate) mod freelist;
 pub mod index;
+pub(crate) mod meta;
 pub mod packed_pages;
+pub(crate) mod page;
 pub mod persistent_facts;
 
 use crate::error::{ErrorCode, bail_coded, err_coded};
@@ -51,7 +54,8 @@ pub const FORMAT_VERSION: u32 = 8;
 /// opened with Minigraf v2.x, which upgrades them to v7 (see STG-028).
 pub const MIN_FORMAT_VERSION: u32 = 7;
 
-/// fact_page_format: packed pages (v5+).
+/// fact_page_format: packed pages (v5+), in the v7 header.
+#[cfg(test)]
 pub const FACT_PAGE_FORMAT_PACKED: u8 = 0x02;
 
 /// Storage backend trait.
@@ -89,15 +93,10 @@ pub trait StorageBackend: Send + Sync {
     /// Get a human-readable name for this backend (for debugging).
     #[allow(dead_code)]
     fn backend_name(&self) -> &'static str;
-
-    /// Returns true if this is a newly created empty storage.
-    ///
-    /// This is used to determine whether a header read failure should
-    /// create a fresh header (new storage) or return an error (corrupted existing storage).
-    fn is_new(&self) -> bool;
 }
 
-/// File header for .graph files — 84 bytes (v7 and v8 share the layout).
+/// The format v7 file header (84 bytes in page 0), read only to migrate a v7
+/// file to v8. Format v8 replaces it with two meta pages ([`meta`]).
 ///
 /// Layout (all fields little-endian):
 ///   0..4    magic ("MGRF")
@@ -114,8 +113,11 @@ pub trait StorageBackend: Send + Sync {
 ///   69..72  _padding ([u8; 3])
 ///   72..80  fact_page_count (u64)     — new in v6
 ///   80..84  header_checksum (u32)    — new in v7
+// Every v7 field is parsed so the layout stays documented in one place; the
+// migration reads only some of them.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
-pub struct FileHeader {
+pub struct LegacyHeaderV7 {
     pub magic: [u8; 4],
     pub version: u32,
     pub page_count: u64,
@@ -137,12 +139,13 @@ pub struct FileHeader {
     pub header_checksum: u32,
 }
 
-impl FileHeader {
-    /// Create a new file header with default values.
+impl LegacyHeaderV7 {
+    /// An empty v7 header, for building v7 fixtures in tests.
+    #[cfg(test)]
     pub fn new() -> Self {
-        FileHeader {
+        LegacyHeaderV7 {
             magic: MAGIC_NUMBER,
-            version: FORMAT_VERSION,
+            version: 7,
             page_count: 1, // Just the header page initially
             node_count: 0,
             last_checkpointed_tx_count: 0,
@@ -158,7 +161,8 @@ impl FileHeader {
         }
     }
 
-    /// Serialize the header to bytes.
+    /// Serialize the header to bytes (builds v7 fixtures in tests).
+    #[cfg(test)]
     pub fn to_bytes(self) -> Vec<u8> {
         let mut b = Vec::with_capacity(84);
         b.extend_from_slice(&self.magic);
@@ -210,7 +214,7 @@ impl FileHeader {
         let fact_page_count = read_u64_le(bytes, 72)?;
         let header_checksum = read_u32_le(bytes, 80)?;
 
-        Ok(FileHeader {
+        Ok(LegacyHeaderV7 {
             magic,
             version,
             page_count,
@@ -240,6 +244,60 @@ impl FileHeader {
         })
     }
 
+    /// Recognise page 0 of a v7 file.
+    ///
+    /// `None` when page 0 does not start with the magic or carries version 8
+    /// (a damaged or pre-release v8 file). Versions older than 7 fail with
+    /// STG-028 and newer than 8 with STG-006. A v7 header whose own CRC fails is
+    /// INT-053.
+    pub fn detect(page0: &[u8]) -> Result<Option<Self>> {
+        if page0.get(0..4) != Some(&MAGIC_NUMBER[..]) {
+            return Ok(None);
+        }
+        let version = read_u32_le(page0, 4)?;
+        if version == FORMAT_VERSION {
+            return Ok(None);
+        }
+        let header = Self::from_bytes(page0)?;
+        header.validate()?;
+        if header.header_checksum != Self::checksum_of_bytes(page0) {
+            bail_coded!(ErrorCode::Int053);
+        }
+        Ok(Some(header))
+    }
+
+    /// CRC32 over header bytes 0..80 (the checksum field at 80..84 excluded).
+    #[cfg(test)]
+    pub fn checksum(&self) -> u32 {
+        Self::checksum_of_bytes(&self.to_bytes())
+    }
+
+    fn checksum_of_bytes(bytes: &[u8]) -> u32 {
+        let mut hasher = crc32fast::Hasher::new();
+        hasher.update(bytes.get(..80).unwrap_or(bytes));
+        hasher.finalize()
+    }
+
+    /// Number of v7 fact pages from page 1: the header field, or (for files
+    /// that predate it) everything below the first index root.
+    pub fn fact_page_count_or_derived(&self) -> u64 {
+        if self.fact_page_count > 0 {
+            return self.fact_page_count;
+        }
+        [
+            self.eavt_root_page,
+            self.aevt_root_page,
+            self.avet_root_page,
+            self.vaet_root_page,
+        ]
+        .iter()
+        .filter(|&&p| p > 0)
+        .copied()
+        .min()
+        .unwrap_or(self.page_count)
+        .saturating_sub(1)
+    }
+
     /// Validate the header.
     pub fn validate(&self) -> Result<()> {
         if self.magic != MAGIC_NUMBER {
@@ -248,7 +306,7 @@ impl FileHeader {
         if self.version < MIN_FORMAT_VERSION {
             bail_coded!(ErrorCode::Stg028, self.version, MIN_FORMAT_VERSION);
         }
-        if self.version > FORMAT_VERSION {
+        if self.version >= FORMAT_VERSION {
             bail_coded!(ErrorCode::Stg006, self.version, FORMAT_VERSION);
         }
         // Validate logical relationships
@@ -265,7 +323,8 @@ impl FileHeader {
     }
 }
 
-impl Default for FileHeader {
+#[cfg(test)]
+impl Default for LegacyHeaderV7 {
     fn default() -> Self {
         Self::new()
     }
@@ -283,11 +342,8 @@ pub trait CommittedFactReader: Send + Sync {
         &self,
         fact_ref: crate::storage::index::FactRef,
     ) -> Result<crate::graph::types::Fact>;
-    /// Stream all committed facts (for full scans, checksum verification, migration).
+    /// Stream all committed facts (for full scans).
     fn stream_all(&self) -> Result<Vec<crate::graph::types::Fact>>;
-    /// Number of committed fact pages (used for checksum + iteration bounds).
-    #[allow(dead_code)]
-    fn committed_page_count(&self) -> u64;
 }
 
 /// Provides bounded range scans over the four committed (on-disk) covering indexes.
@@ -335,7 +391,7 @@ mod tests {
 
     #[test]
     fn test_file_header_validation() {
-        let header = FileHeader::new();
+        let header = LegacyHeaderV7::new();
         assert!(header.validate().is_ok());
 
         let mut invalid = header;
@@ -350,21 +406,22 @@ mod tests {
 
     #[test]
     fn test_validate_accepts_version_7() {
-        let mut h = FileHeader::new();
+        let mut h = LegacyHeaderV7::new();
         h.version = 7;
         assert!(h.validate().is_ok());
     }
 
     #[test]
-    fn test_validate_accepts_version_8() {
-        let mut h = FileHeader::new();
+    fn test_validate_rejects_version_8_legacy_header() {
+        // A v8 file has meta pages, not this header.
+        let mut h = LegacyHeaderV7::new();
         h.version = 8;
-        assert!(h.validate().is_ok());
+        assert!(h.validate().is_err());
     }
 
     #[test]
     fn test_validate_page_count_must_be_positive() {
-        let mut h = FileHeader::new();
+        let mut h = LegacyHeaderV7::new();
         h.page_count = 0;
         let result = h.validate();
         assert!(result.is_err());
@@ -373,7 +430,7 @@ mod tests {
 
     #[test]
     fn test_validate_eavt_root_page_bounds() {
-        let mut h = FileHeader::new();
+        let mut h = LegacyHeaderV7::new();
         h.page_count = 10;
         h.eavt_root_page = 10; // equal to page_count, should fail
         let result = h.validate();
@@ -391,7 +448,7 @@ mod tests {
 
     #[test]
     fn test_validate_fact_page_count_bounds() {
-        let mut h = FileHeader::new();
+        let mut h = LegacyHeaderV7::new();
         h.page_count = 10;
         h.fact_page_count = 11; // exceeds page_count
         let result = h.validate();
@@ -404,31 +461,54 @@ mod tests {
     }
 
     #[test]
-    fn test_new_header_has_version_8() {
-        let header = FileHeader::new();
-        assert_eq!(header.version, FORMAT_VERSION);
-        assert_eq!(header.version, 8);
+    fn test_new_legacy_header_has_version_7() {
+        assert_eq!(LegacyHeaderV7::new().version, 7);
+    }
+
+    #[test]
+    fn detect_recognises_only_a_checksummed_v7_header() {
+        let mut page = vec![0u8; PAGE_SIZE];
+        assert!(LegacyHeaderV7::detect(&page).unwrap().is_none(), "zeros");
+
+        let mut h = LegacyHeaderV7::new();
+        h.page_count = 3;
+        h.header_checksum = h.checksum();
+        page[..84].copy_from_slice(&h.to_bytes());
+        assert!(LegacyHeaderV7::detect(&page).unwrap().is_some());
+
+        // A pre-release v8 single header is not a v7 header.
+        page[4..8].copy_from_slice(&8u32.to_le_bytes());
+        assert!(LegacyHeaderV7::detect(&page).unwrap().is_none());
+
+        page[4..8].copy_from_slice(&7u32.to_le_bytes());
+        page[20] ^= 1; // body changed after checksumming
+        let err = LegacyHeaderV7::detect(&page).unwrap_err();
+        assert_eq!(crate::error::MinigrafError::from(err).code(), "INT-053");
+
+        page[4..8].copy_from_slice(&5u32.to_le_bytes());
+        let err = LegacyHeaderV7::detect(&page).unwrap_err();
+        assert_eq!(crate::error::MinigrafError::from(err).code(), "STG-028");
     }
 
     #[test]
     fn test_file_header_serialization_v7() {
-        let header = FileHeader::new();
+        let header = LegacyHeaderV7::new();
         let bytes = header.to_bytes();
         assert_eq!(bytes.len(), 84);
     }
 
     #[test]
     fn test_file_header_roundtrip_v7() {
-        let mut header = FileHeader::new();
+        let mut header = LegacyHeaderV7::new();
         header.header_checksum = 0xDEAD_BEEF;
         let bytes = header.to_bytes();
-        let parsed = FileHeader::from_bytes(&bytes).unwrap();
+        let parsed = LegacyHeaderV7::from_bytes(&bytes).unwrap();
         assert_eq!(parsed.header_checksum, 0xDEAD_BEEF);
     }
 
     #[test]
     fn test_file_header_v7_byte_layout_all_fields() {
-        let mut h = FileHeader::new();
+        let mut h = LegacyHeaderV7::new();
         h.page_count = 0x0102_0304_0506_0708_u64;
         h.node_count = 0x1112_1314_1516_1718_u64;
         h.last_checkpointed_tx_count = 0x2122_2324_2526_2728_u64;
@@ -446,7 +526,7 @@ mod tests {
         assert_eq!(b.len(), 84, "v7 header must be exactly 84 bytes");
 
         assert_eq!(&b[0..4], b"MGRF");
-        assert_eq!(&b[4..8], &FORMAT_VERSION.to_le_bytes());
+        assert_eq!(&b[4..8], &7u32.to_le_bytes());
         assert_eq!(&b[8..16], &0x0102_0304_0506_0708_u64.to_le_bytes());
         assert_eq!(&b[16..24], &0x1112_1314_1516_1718_u64.to_le_bytes());
         assert_eq!(&b[24..32], &0x2122_2324_2526_2728_u64.to_le_bytes());
@@ -466,16 +546,16 @@ mod tests {
         let mut bytes = vec![0u8; 80];
         bytes[0..4].copy_from_slice(b"MGRF");
         bytes[4..8].copy_from_slice(&7u32.to_le_bytes());
-        assert!(FileHeader::from_bytes(&bytes).is_err());
+        assert!(LegacyHeaderV7::from_bytes(&bytes).is_err());
     }
 
     #[test]
     fn test_file_header_v7_header_checksum_roundtrip() {
-        let mut h = FileHeader::new();
+        let mut h = LegacyHeaderV7::new();
         h.header_checksum = 42;
         let bytes = h.to_bytes();
         assert_eq!(bytes.len(), 84);
-        let parsed = FileHeader::from_bytes(&bytes).unwrap();
+        let parsed = LegacyHeaderV7::from_bytes(&bytes).unwrap();
         assert_eq!(parsed.header_checksum, 42);
     }
 
@@ -483,9 +563,9 @@ mod tests {
     //
     // STG-001/005 guard byte lengths (<64/<84) that the production
     // `FileBackend` path never actually produces -- it always hands
-    // `FileHeader::from_bytes` a full `PAGE_SIZE` (4096-byte) buffer,
+    // `LegacyHeaderV7::from_bytes` a full `PAGE_SIZE` (4096-byte) buffer,
     // whatever the real file's length beyond the minimum one page. These
-    // codes are only reachable by calling `FileHeader::from_bytes` directly
+    // codes are only reachable by calling `LegacyHeaderV7::from_bytes` directly
     // with a short slice, which `storage` being crate-private makes
     // possible only from inside the crate -- hence unit tests here rather
     // than an integration test against the public `Minigraf` API.
@@ -493,7 +573,7 @@ mod tests {
     #[test]
     fn from_bytes_too_short_returns_stg_001() {
         let bytes = vec![0u8; 10]; // < 64 bytes
-        let err = FileHeader::from_bytes(&bytes).expect_err("10 bytes is too short");
+        let err = LegacyHeaderV7::from_bytes(&bytes).expect_err("10 bytes is too short");
         let coded: crate::error::MinigrafError = err.into();
         assert_eq!(coded.code(), "STG-001");
     }
@@ -503,7 +583,7 @@ mod tests {
         let mut bytes = vec![0u8; 82]; // >= 80, < 84
         bytes[0..4].copy_from_slice(b"MGRF");
         bytes[4..8].copy_from_slice(&7u32.to_le_bytes()); // version = 7
-        let err = FileHeader::from_bytes(&bytes).expect_err("82 bytes is too short for v7");
+        let err = LegacyHeaderV7::from_bytes(&bytes).expect_err("82 bytes is too short for v7");
         let coded: crate::error::MinigrafError = err.into();
         assert_eq!(coded.code(), "STG-005");
     }
@@ -511,9 +591,10 @@ mod tests {
     #[test]
     fn from_bytes_pre_v7_returns_stg_028() {
         for version in 1u32..=6 {
-            let mut bytes = FileHeader::new().to_bytes();
+            let mut bytes = LegacyHeaderV7::new().to_bytes();
             bytes[4..8].copy_from_slice(&version.to_le_bytes());
-            let err = FileHeader::from_bytes(&bytes).expect_err("pre-v7 header must be rejected");
+            let err =
+                LegacyHeaderV7::from_bytes(&bytes).expect_err("pre-v7 header must be rejected");
             let coded: crate::error::MinigrafError = err.into();
             assert_eq!(coded.code(), "STG-028");
         }
@@ -521,7 +602,7 @@ mod tests {
 
     #[test]
     fn validate_pre_v7_returns_stg_028() {
-        let mut h = FileHeader::new();
+        let mut h = LegacyHeaderV7::new();
         h.version = 6;
         let err = h.validate().expect_err("v6 must be rejected");
         let coded: crate::error::MinigrafError = err.into();

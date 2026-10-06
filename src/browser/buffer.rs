@@ -84,8 +84,10 @@ impl StorageBackend for BrowserBufferBackend {
         Ok(()) // no-op: durability handled by IndexedDbBackend
     }
 
+    /// One past the highest page id held (0 when empty), like a file's length
+    /// in pages.
     fn page_count(&self) -> Result<u64> {
-        Ok(self.pages.len() as u64)
+        Ok(self.pages.keys().max().map_or(0, |m| m.saturating_add(1)))
     }
 
     fn close(&mut self) -> Result<()> {
@@ -94,10 +96,6 @@ impl StorageBackend for BrowserBufferBackend {
 
     fn backend_name(&self) -> &'static str {
         "browser-buffer"
-    }
-
-    fn is_new(&self) -> bool {
-        self.pages.is_empty()
     }
 }
 
@@ -134,12 +132,14 @@ mod tests {
     }
 
     #[test]
-    fn page_count_reflects_distinct_ids() {
+    fn page_count_is_high_water_mark() {
         let mut buf = BrowserBufferBackend::new();
         buf.write_page(0, &page(0)).unwrap();
         buf.write_page(1, &page(1)).unwrap();
         buf.write_page(0, &page(2)).unwrap(); // overwrite
         assert_eq!(buf.page_count().unwrap(), 2);
+        buf.write_page(5, &page(3)).unwrap(); // sparse
+        assert_eq!(buf.page_count().unwrap(), 6);
     }
 
     #[test]
@@ -159,15 +159,8 @@ mod tests {
     }
 
     #[test]
-    fn is_new_true_when_empty() {
-        assert!(BrowserBufferBackend::new().is_new());
-    }
-
-    #[test]
-    fn is_new_false_after_write() {
-        let mut buf = BrowserBufferBackend::new();
-        buf.write_page(0, &page(0)).unwrap();
-        assert!(!buf.is_new());
+    fn empty_buffer_has_no_pages() {
+        assert_eq!(BrowserBufferBackend::new().page_count().unwrap(), 0);
     }
 
     #[test]

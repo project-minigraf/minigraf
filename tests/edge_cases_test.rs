@@ -19,7 +19,7 @@ fn test_oversized_fact_rejected_at_insertion_file_backed() {
         .open()
         .unwrap();
 
-    let large_value = "x".repeat(8192); // well above MAX_FACT_BYTES = 4080
+    let large_value = "x".repeat(8192); // well above MAX_FACT_BYTES = 4052
     let cmd = format!("(transact [[:e :attr \"{}\"]])", large_value);
     let result = db.execute(&cmd);
 
@@ -29,8 +29,8 @@ fn test_oversized_fact_rejected_at_insertion_file_backed() {
     );
     let msg = format!("{}", result.unwrap_err());
     assert!(
-        msg.contains("4080"),
-        "error message must cite the 4080-byte limit; got: {}",
+        msg.contains("4052"),
+        "error message must cite the 4052-byte limit; got: {}",
         msg
     );
 }
@@ -59,8 +59,8 @@ fn test_oversized_fact_rejected_via_write_transaction() {
     );
     let msg = format!("{}", result.unwrap_err());
     assert!(
-        msg.contains("4080"),
-        "error message must cite the 4080-byte limit; got: {}",
+        msg.contains("4052"),
+        "error message must cite the 4052-byte limit; got: {}",
         msg
     );
 }

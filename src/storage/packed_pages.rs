@@ -1,13 +1,13 @@
-//! Packed fact page format (page_type = 0x02).
+//! Packed fact pages.
 //!
-//! Layout of a packed page:
+//! Format v8 (interim, page_type = 0x41, until fact pages are replaced by covering
+//! indexes) uses the common 24-byte page header ([`crate::storage::page`]), with
+//! `record_count` in its `count` field. Format v7 (page_type = 0x02) used a 12-byte
+//! header with a `next_page` field that was always 0; it is read only to migrate a
+//! v7 file.
+//!
+//! Layout after the header:
 //! ```text
-//! [12-byte header]
-//!   byte 0:    page_type  (0x02 = packed fact data)
-//!   byte 1:    _reserved  (0x00)
-//!   bytes 2-3: record_count  (u16 LE)
-//!   bytes 4-11: next_page   (u64 LE, 0 = no overflow)
-//!
 //! [record directory: record_count × 4 bytes each]
 //!   per entry: offset u16 LE | length u16 LE
 //!   (offset measured from page start)
@@ -25,19 +25,32 @@ use crate::storage::index::FactRef;
 use crate::storage::{PAGE_SIZE, StorageBackend};
 use anyhow::Result;
 
-/// Page type byte for packed fact pages.
-pub const PAGE_TYPE_PACKED: u8 = 0x02;
-/// Page type byte for overflow pages (reserved, not yet used).
-#[allow(dead_code)]
-pub const PAGE_TYPE_OVERFLOW: u8 = 0x03;
+/// Page type byte for format v8 (interim) packed fact pages.
+pub const PAGE_TYPE_PACKED: u8 = crate::storage::page::PAGE_TYPE_FACT_INTERIM;
+/// Page type byte for format v7 packed fact pages (read only, for migration).
+pub const PAGE_TYPE_PACKED_V7: u8 = 0x02;
 
-/// Packed page header size in bytes.
-pub const PACKED_HEADER_SIZE: usize = 12;
+/// Packed page header size in bytes (the common v8 page header).
+pub const PACKED_HEADER_SIZE: usize = crate::storage::page::PAGE_HEADER_SIZE;
+/// Format v7 packed page header size in bytes.
+const PACKED_HEADER_SIZE_V7: usize = 12;
+
+/// Header size of a packed page of either format, by its type byte.
+fn header_size_of(page_type: u8) -> Option<usize> {
+    match page_type {
+        PAGE_TYPE_PACKED => Some(PACKED_HEADER_SIZE),
+        PAGE_TYPE_PACKED_V7 => Some(PACKED_HEADER_SIZE_V7),
+        _ => None,
+    }
+}
 
 /// Maximum serialised size (postcard bytes) for a single fact in a packed page.
 ///
-/// Derived from the page layout: `PAGE_SIZE (4096) - PACKED_HEADER_SIZE (12) - 4`
-/// (4 bytes for one record-directory entry).
+/// Every index key derived from a fact is at least one byte smaller than the
+/// fact's own encoding (it drops `tx_id`), and one key must fit in a B+tree
+/// internal node beside its header, `rightmost_child`, one child pointer and
+/// one slot: `PAGE_SIZE (4096) - 24 - 8 - 8 - 4 = 4052`. That is tighter than
+/// the packed page's own bound (`4096 - 24 - 4`), so it is the limit.
 ///
 /// In practice the usable space for a `Value::String` is roughly 3 900–4 000 bytes
 /// after accounting for the fixed overhead of the other `Fact` fields (two UUIDs,
@@ -45,7 +58,7 @@ pub const PACKED_HEADER_SIZE: usize = 12;
 ///
 /// File-backed databases reject facts that exceed this limit at insertion time.
 /// In-memory databases (`Minigraf::in_memory()`) have no size constraint.
-pub const MAX_FACT_BYTES: usize = PAGE_SIZE - PACKED_HEADER_SIZE - 4;
+pub const MAX_FACT_BYTES: usize = PAGE_SIZE - PACKED_HEADER_SIZE - 8 - 8 - 4;
 
 /// Pack a slice of facts into packed pages.
 ///
@@ -184,9 +197,9 @@ pub fn read_slot(page: &[u8], slot: u16) -> Result<Fact> {
     let page_type = *page
         .first()
         .ok_or_else(|| err_coded!(ErrorCode::Int024, "packed page empty"))?;
-    if page_type != PAGE_TYPE_PACKED {
+    let Some(header_size) = header_size_of(page_type) else {
         bail_coded!(ErrorCode::Stg014, format!("{:02x}", page_type));
-    }
+    };
     let b2 = *page
         .get(2)
         .ok_or_else(|| err_coded!(ErrorCode::Int024, "too short for record_count byte 2"))?;
@@ -203,7 +216,7 @@ pub fn read_slot(page: &[u8], slot: u16) -> Result<Fact> {
     // dir_base = PACKED_HEADER_SIZE + slot * 4; slot < record_count <= u16::MAX,
     // so slot as usize * 4 <= (65534 * 4) which fits in usize.
     let slot_usize = usize::from(slot);
-    let dir_base = PACKED_HEADER_SIZE.saturating_add(slot_usize.saturating_mul(4));
+    let dir_base = header_size.saturating_add(slot_usize.saturating_mul(4));
     let db0 = *page
         .get(dir_base)
         .ok_or_else(|| err_coded!(ErrorCode::Int024, format!("dir entry {slot} out of bounds")))?;
@@ -246,26 +259,20 @@ pub fn read_slot(page: &[u8], slot: u16) -> Result<Fact> {
     Ok(fact)
 }
 
-/// Read all facts from a contiguous range of packed fact pages.
-///
-/// `first_page_id` is the backend page ID of the first packed fact page.
-/// `num_pages` is the number of pages to read.
-/// Non-packed pages (e.g., index pages) are silently skipped.
-pub fn read_all_from_pages(
-    backend: &dyn StorageBackend,
-    first_page_id: u64,
-    num_pages: u64,
-) -> Result<Vec<Fact>> {
-    Ok(read_all_with_refs(backend, first_page_id, num_pages)?.0)
+/// Read every fact on one packed page, in slot order.
+pub fn read_page_facts(page: &[u8]) -> Result<Vec<Fact>> {
+    let b2 = page.get(2).copied().unwrap_or(0);
+    let b3 = page.get(3).copied().unwrap_or(0);
+    (0..u16::from_le_bytes([b2, b3]))
+        .map(|slot| read_slot(page, slot))
+        .collect()
 }
 
-/// Read every fact from `num_pages` packed pages, together with the `FactRef` that
-/// addresses each fact at its actual on-disk location.
+/// Read every fact from the `num_pages` format v7 fact pages starting at
+/// `first_page_id`, together with the `FactRef` of its on-disk location.
 ///
-/// Unlike re-packing the facts with [`pack_facts`], the returned refs reflect the real
-/// page layout, which is not contiguous when the file was written by several `save()`
-/// calls (each starts a fresh page).
-pub fn read_all_with_refs(
+/// Used only to migrate a v7 file; pages that are not v7 fact pages are skipped.
+pub fn read_all_with_refs_v7(
     backend: &dyn StorageBackend,
     first_page_id: u64,
     num_pages: u64,
@@ -276,7 +283,7 @@ pub fn read_all_with_refs(
         let page_id = first_page_id.saturating_add(i);
         let page = backend.read_page(page_id)?;
         let page_type = page.first().copied().unwrap_or(0);
-        if page.len() < PAGE_SIZE || page_type != PAGE_TYPE_PACKED {
+        if page.len() < PAGE_SIZE || page_type != PAGE_TYPE_PACKED_V7 {
             continue;
         }
         let b2 = page.get(2).copied().unwrap_or(0);
@@ -303,7 +310,7 @@ fn new_packed_page() -> Vec<u8> {
     }
     // byte 1: reserved = 0x00 (already zero from vec initialisation)
     // bytes 2-3: record_count = 0 (written later via write_record_count)
-    // bytes 4-11: next_page = 0 (already zero)
+    // bytes 4-23: crc, page id, generation (set by `page::seal` when written)
     page
 }
 
@@ -369,15 +376,15 @@ mod tests {
     }
 
     #[test]
-    fn test_page_type_byte_is_0x02() {
+    fn test_page_type_byte_is_0x41() {
         let facts = vec![make_fact(1)];
         let (pages, _) = pack_facts(&facts, 1).unwrap();
         assert_eq!(pages[0][0], PAGE_TYPE_PACKED);
     }
 
-    /// Pin every field in the 12-byte page header to its canonical byte offset.
+    /// Pin the packed-page fields of the common 24-byte header to their byte offsets.
     ///
-    /// Like the FileHeader layout test, a roundtrip would not catch accidental
+    /// Like the v7 header layout test, a roundtrip would not catch accidental
     /// field swaps or `to_ne_bytes()` use on big-endian platforms.  We assert
     /// the raw bytes directly against the spec in the module doc comment.
     #[test]
@@ -386,8 +393,8 @@ mod tests {
         let (pages, _) = pack_facts(&facts, 1).unwrap();
         let page = &pages[0];
 
-        // byte 0: page_type = 0x02
-        assert_eq!(page[0], 0x02, "byte 0 must be PAGE_TYPE_PACKED (0x02)");
+        // byte 0: page_type = 0x41
+        assert_eq!(page[0], 0x41, "byte 0 must be PAGE_TYPE_PACKED (0x41)");
 
         // byte 1: _reserved = 0x00
         assert_eq!(page[1], 0x00, "byte 1 must be reserved zero");
@@ -399,27 +406,25 @@ mod tests {
         assert_eq!(page[2], 3, "record_count low byte at offset 2");
         assert_eq!(page[3], 0, "record_count high byte at offset 3");
 
-        // bytes 4..12: next_page (u64 LE) = 0 (no overflow in Phase 6.2)
-        let next_page = u64::from_le_bytes(page[4..12].try_into().unwrap());
-        assert_eq!(next_page, 0, "next_page at bytes 4-11 must be 0");
-        assert_eq!(&page[4..12], &0u64.to_le_bytes(), "next_page raw LE bytes");
+        // bytes 4..24: crc, page id, generation — zero until sealed on write
+        assert!(page[4..24].iter().all(|&b| b == 0), "unsealed header tail");
     }
 
     /// Verify the record directory entry layout: each entry is 4 bytes,
-    /// (offset: u16 LE, length: u16 LE), starting at byte 12.
+    /// (offset: u16 LE, length: u16 LE), starting at byte 24.
     #[test]
     fn test_packed_page_record_directory_layout() {
         let facts = vec![make_fact(1)];
         let (pages, _) = pack_facts(&facts, 1).unwrap();
         let page = &pages[0];
 
-        // With 1 fact, record_count = 1; directory entry at bytes 12..16.
+        // With 1 fact, record_count = 1; directory entry at bytes 24..28.
         let record_count = u16::from_le_bytes([page[2], page[3]]);
         assert_eq!(record_count, 1);
 
-        // Directory entry 0: offset (u16 LE) at bytes 12-13, length (u16 LE) at 14-15.
-        let offset = u16::from_le_bytes([page[12], page[13]]) as usize;
-        let length = u16::from_le_bytes([page[14], page[15]]) as usize;
+        // Directory entry 0: offset (u16 LE) at bytes 24-25, length (u16 LE) at 26-27.
+        let offset = u16::from_le_bytes([page[24], page[25]]) as usize;
+        let length = u16::from_le_bytes([page[26], page[27]]) as usize;
 
         // Offset must be within the page and after the header + directory.
         assert!(
@@ -434,27 +439,25 @@ mod tests {
 
         // Verify the bytes at the directory offset are the LE encoding of those values.
         assert_eq!(
-            &page[12..14],
+            &page[24..26],
             &(offset as u16).to_le_bytes(),
             "directory offset LE"
         );
         assert_eq!(
-            &page[14..16],
+            &page[26..28],
             &(length as u16).to_le_bytes(),
             "directory length LE"
         );
     }
 
     #[test]
-    fn test_read_all_from_pages_roundtrip() {
-        use crate::storage::backend::MemoryBackend;
+    fn test_read_page_facts_roundtrip() {
         let facts: Vec<Fact> = (0..60).map(make_fact).collect();
         let (pages, _refs) = pack_facts(&facts, 1).unwrap();
-        let mut backend = MemoryBackend::new();
-        for (i, page) in pages.iter().enumerate() {
-            backend.write_page((i + 1) as u64, page).unwrap();
-        }
-        let recovered = read_all_from_pages(&backend, 1, pages.len() as u64).unwrap();
+        let recovered: Vec<Fact> = pages
+            .iter()
+            .flat_map(|p| read_page_facts(p).unwrap())
+            .collect();
         assert_eq!(recovered.len(), 60);
         for (orig, rec) in facts.iter().zip(recovered.iter()) {
             assert_eq!(orig.entity, rec.entity);
@@ -463,7 +466,7 @@ mod tests {
 
     #[test]
     fn test_oversized_fact_returns_error() {
-        // Create a fact with a very large string value (>4080 bytes)
+        // Create a fact with a very large string value (> MAX_FACT_BYTES)
         let big_string = "x".repeat(5000);
         let fact = Fact::with_valid_time(
             Uuid::from_u128(999),
@@ -486,7 +489,7 @@ mod tests {
     fn read_slot_wrong_page_type_returns_stg_014() {
         let facts = vec![make_fact(1)];
         let (mut pages, _) = pack_facts(&facts, 1).unwrap();
-        pages[0][0] = 0x01; // corrupt: not PAGE_TYPE_PACKED (0x02)
+        pages[0][0] = 0x01; // corrupt: not a packed page type
         let err = read_slot(&pages[0], 0).expect_err("wrong page type must fail to read");
         let coded: crate::error::MinigrafError = err.into();
         assert_eq!(coded.code(), "STG-014");
@@ -499,13 +502,34 @@ mod tests {
     fn read_slot_record_beyond_page_boundary_returns_stg_015() {
         let facts = vec![make_fact(1)];
         let (mut pages, _) = pack_facts(&facts, 1).unwrap();
-        // Directory entry 0 is at bytes 12..16 (offset u16 LE, length u16 LE).
+        // Directory entry 0 is at bytes 24..28 (offset u16 LE, length u16 LE).
         // Corrupt the length field so offset + length > PAGE_SIZE.
-        pages[0][14] = 0xFF;
-        pages[0][15] = 0xFF;
+        pages[0][26] = 0xFF;
+        pages[0][27] = 0xFF;
         let err = read_slot(&pages[0], 0)
             .expect_err("a record extending past the page boundary must fail to read");
         let coded: crate::error::MinigrafError = err.into();
         assert_eq!(coded.code(), "STG-015");
+    }
+
+    /// A v7 page (type 0x02, 12-byte header) still reads, for migration.
+    #[test]
+    fn v7_page_reads_through_legacy_layout() {
+        use crate::storage::backend::MemoryBackend;
+        let facts: Vec<Fact> = (0..3).map(make_fact).collect();
+        let (pages, _) = pack_facts(&facts, 1).unwrap();
+        // Re-lay the v8 page as v7: same records, directory moved 12 bytes earlier.
+        let v8 = &pages[0];
+        let mut v7 = vec![0u8; PAGE_SIZE];
+        v7[0] = PAGE_TYPE_PACKED_V7;
+        v7[2..4].copy_from_slice(&v8[2..4]);
+        v7[12..12 + 3 * 4].copy_from_slice(&v8[24..24 + 3 * 4]);
+        v7[100..].copy_from_slice(&v8[100..]);
+        let mut backend = MemoryBackend::new();
+        backend.write_page(1, &v7).unwrap();
+        let (read, refs) = read_all_with_refs_v7(&backend, 1, 1).unwrap();
+        assert_eq!(read.len(), 3);
+        assert_eq!(refs[2].slot_index, 2);
+        assert_eq!(read[1].entity, facts[1].entity);
     }
 }

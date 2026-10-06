@@ -481,7 +481,7 @@ fn max_size_value_at_exact_boundary_checkpoint_and_read_back() {
     // with `big_a`. Same attribute name (`:blob`) as the real facts below:
     // the attribute string is part of the encoded fact size, so a
     // differently-sized attribute name would find a different boundary.
-    // `hi` starts comfortably above MAX_FACT_BYTES (4080), so it is
+    // `hi` starts comfortably above MAX_FACT_BYTES (4052), so it is
     // guaranteed to fail.
     let mut lo = 0usize;
     let mut hi = 4096usize;

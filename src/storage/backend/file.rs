@@ -1,7 +1,7 @@
 /// File-based storage backend for native platforms.
 use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::storage::dir_sync::sync_parent_dir;
-use crate::storage::{FileHeader, PAGE_SIZE, StorageBackend};
+use crate::storage::{PAGE_SIZE, StorageBackend};
 use anyhow::Result;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -140,8 +140,8 @@ const LOCK_RETRY_MAX_DELAY: std::time::Duration = std::time::Duration::from_mill
 /// File-based storage backend for native platforms.
 ///
 /// Stores graph data in a single `.graph` file with a page-based structure:
-/// - Page 0: File header (metadata)
-/// - Page 1+: Data pages (nodes, edges, indexes)
+/// - Pages 0 and 1: meta pages (interpreted by the storage layer, not here)
+/// - Page 2+: data pages (B+tree nodes, fact pages, free-list pages)
 ///
 /// Supports:
 /// - Linux, macOS, Windows (native desktop)
@@ -160,15 +160,15 @@ pub struct FileBackend {
     // declared before `file`.
     _path_guard: PathGuard,
     file: File,
-    header: FileHeader,
-    is_new: bool,
+    /// Whole pages in the file.
+    page_count: u64,
 }
 
 impl FileBackend {
     /// Open or create a .graph file at the given path.
     ///
-    /// If the file doesn't exist, creates it with an initial header.
-    /// If it exists, validates and loads the header.
+    /// If the file doesn't exist, creates it empty. Interpreting page 0 is
+    /// left to the storage layer.
     ///
     /// Takes a kernel file lock on the `.graph` file itself, which prevents
     /// both multi-process corruption and a second handle within this process.
@@ -195,7 +195,7 @@ impl FileBackend {
     pub fn open_with<P: AsRef<Path>>(path: P, allow_unlocked: bool) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
 
-        let mut file = OpenOptions::new()
+        let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
@@ -260,80 +260,25 @@ impl FileBackend {
             }
         };
 
-        // Check file size using the open file handle's metadata.
-        // This is more reliable than checking path metadata separately,
-        // as it uses the same file descriptor we'll be reading from.
+        // The page count is the file length in whole pages. A torn append can
+        // leave a partial last page; it is ignored, and the next append to that
+        // id rewrites it. Page 0 carries no meaning here: the meta pages are the
+        // storage layer's business.
         let file_len = file.metadata()?.len();
-
-        // Determine if this is an existing file with data or a new/empty one.
-        let is_new = file_len < PAGE_SIZE as u64;
-        let header = if file_len >= PAGE_SIZE as u64 {
-            // File has at least one page - try to read the header
-            match Self::read_header(&mut file) {
-                Ok(header) => header,
-                Err(e) => {
-                    // File has content but header is invalid - this is a real error.
-                    // If `e` already carries a more specific code (e.g. STG-002 for a
-                    // bad magic number, raised inside `FileHeader::from_bytes`/
-                    // `validate`), propagate it as-is rather than burying it under
-                    // the generic STG-010 label — `read_header` never wraps with
-                    // `.context()`, so a coded error from deeper down comes back
-                    // here unmodified and downcasts directly.
-                    if e.downcast_ref::<crate::error::CodedError>().is_some() {
-                        return Err(e);
-                    }
-                    bail_coded!(ErrorCode::Stg010, e);
-                }
-            }
-        } else {
-            // New file or empty file: write initial header, then make the
-            // file's directory entry durable. Without the directory sync a
-            // power loss can lose the whole file despite the header fsync
-            // (#389). An empty file left by a crash before this point takes
-            // this branch again on the next open, so the sync is repeated.
-            let header = FileHeader::new();
-            Self::write_header(&mut file, &header)?;
+        let page_count = file_len / PAGE_SIZE as u64;
+        if page_count == 0 {
+            // Make the new file's directory entry durable. Without the directory
+            // sync a power loss can lose the whole file despite later fsyncs
+            // (#389). An empty file left by a crash takes this branch again.
             sync_parent_dir(&path)?;
-            header
-        };
+        }
 
         Ok(FileBackend {
             path,
             file,
-            header,
-            is_new,
+            page_count,
             _path_guard: path_guard,
         })
-    }
-
-    /// Read the file header from page 0.
-    fn read_header(file: &mut File) -> Result<FileHeader> {
-        file.seek(SeekFrom::Start(0))?;
-
-        let mut header_bytes = vec![0u8; PAGE_SIZE];
-        file.read_exact(&mut header_bytes)?;
-
-        let header = FileHeader::from_bytes(&header_bytes)?;
-        header.validate()?;
-
-        Ok(header)
-    }
-
-    /// Write the file header to page 0.
-    fn write_header(file: &mut File, header: &FileHeader) -> Result<()> {
-        file.seek(SeekFrom::Start(0))?;
-
-        let header_bytes = header.to_bytes();
-        let mut page = vec![0u8; PAGE_SIZE];
-        let hlen = header_bytes.len();
-        page.get_mut(..hlen)
-            .ok_or_else(|| err_coded!(ErrorCode::Int049, "header bytes exceed page size"))?
-            .copy_from_slice(&header_bytes);
-
-        file.write_all(&page)?;
-        file.sync_all()?;
-
-        Ok(())
     }
 
     /// Get the file path.
@@ -358,43 +303,25 @@ impl StorageBackend for FileBackend {
         self.file.seek(SeekFrom::Start(offset))?;
         self.file.write_all(data)?;
 
-        // If writing page 0 (header), update our in-memory header
-        if page_id == 0 {
-            // Page 0 is the header itself, parse it to update our cached copy
-            self.header = FileHeader::from_bytes(data)?;
-        } else if page_id >= self.header.page_count {
-            // Bump and persist the page count so a plain reopen (no
-            // deliberate commit in between) still sees pages written this
-            // session -- callers like `test_file_backend_persistence`
-            // depend on that. #308: the bug here was writing the bumped
-            // page_count with a *stale* header_checksum left over from the
-            // last real commit, so a crash before that commit finished left
-            // a permanently checksum-invalid header with no recovery path.
-            // The fix is to recompute the checksum over the whole header
-            // every time, so the on-disk header is self-consistent at
-            // every single-page write, not just at the deliberate commits
-            // in `PersistentFactStorage::save`.
-            self.header.page_count = page_id.checked_add(1).ok_or_else(|| {
+        if page_id >= self.page_count {
+            self.page_count = page_id.checked_add(1).ok_or_else(|| {
                 err_coded!(
                     ErrorCode::Int048,
                     format!("page_count overflow for page_id {page_id}")
                 )
             })?;
-            self.header.header_checksum =
-                crate::storage::persistent_facts::compute_header_checksum(&self.header);
-            Self::write_header(&mut self.file, &self.header)?;
         }
 
         Ok(())
     }
 
     fn read_page(&self, page_id: u64) -> Result<Vec<u8>> {
-        if page_id >= self.header.page_count {
+        if page_id >= self.page_count {
             bail_coded!(
                 ErrorCode::Int049,
                 format!(
                     "Page {page_id} out of bounds (total pages: {})",
-                    self.header.page_count
+                    self.page_count
                 )
             );
         }
@@ -420,7 +347,7 @@ impl StorageBackend for FileBackend {
     }
 
     fn page_count(&self) -> Result<u64> {
-        Ok(self.header.page_count)
+        Ok(self.page_count)
     }
 
     fn close(&mut self) -> Result<()> {
@@ -429,10 +356,6 @@ impl StorageBackend for FileBackend {
 
     fn backend_name(&self) -> &'static str {
         "file"
-    }
-
-    fn is_new(&self) -> bool {
-        self.is_new
     }
 }
 
@@ -466,41 +389,36 @@ mod tests {
         FileBackend::open(&temp_path).unwrap();
     }
 
-    /// #308: whenever `write_page` bumps `page_count` for a newly appended
-    /// page (exactly what `save()`/`checkpoint()` do for every fact and
-    /// index page, ahead of the deliberate final header commit), the header
-    /// it persists to disk must have a `header_checksum` matching its own
-    /// content. Before this fix, the page_count byte moved but the checksum
-    /// was left stale from the last real commit -- a `SIGKILL` landing in
-    /// that window (which fires on nearly every appended page) left a
-    /// permanently checksum-invalid header with no recovery path.
+    /// The page count is the file length in whole pages: appends bump it, it
+    /// survives a reopen, and a torn partial page at the end is not counted.
+    /// Page 0 is never parsed or rewritten by the backend (#308 cannot recur).
     #[test]
-    fn test_write_page_keeps_disk_header_checksum_consistent_on_page_count_bump() {
+    fn test_page_count_follows_file_length() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test_header_atomicity.graph");
+        let path = dir.path().join("test_page_count.graph");
+        {
+            let mut backend = FileBackend::open(&path).unwrap();
+            assert_eq!(backend.page_count().unwrap(), 0);
+            backend.write_page(5, &vec![0xABu8; PAGE_SIZE]).unwrap();
+            assert_eq!(backend.page_count().unwrap(), 6);
+            assert!(backend.read_page(6).is_err(), "past the end must fail");
+            // Page 0 is a hole the backend never fills in.
+            assert!(backend.read_page(0).unwrap().iter().all(|&b| b == 0));
+        }
+        {
+            // Simulate a torn append: half a page past the end.
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap();
+            std::io::Write::write_all(&mut f, &[0xCDu8; PAGE_SIZE / 2]).unwrap();
+        }
         let mut backend = FileBackend::open(&path).unwrap();
-
-        // Append a page well beyond the current page_count (1) -- exactly
-        // the pattern save()/checkpoint() use when writing fact and index
-        // pages ahead of the final atomic header commit.
-        let page_data = vec![0xABu8; PAGE_SIZE];
-        backend.write_page(5, &page_data).unwrap();
-
-        // Read back through the same handle rather than opening the path
-        // independently: `backend` still holds the file lock, and Windows
-        // (unlike Unix) refuses a second, unrelated open of a locked file
-        // even from the same process.
-        let raw = backend.read_page(0).unwrap();
-        let on_disk = FileHeader::from_bytes(&raw).unwrap();
-        let computed = crate::storage::persistent_facts::compute_header_checksum(&on_disk);
-        assert_eq!(
-            on_disk.header_checksum, computed,
-            "on-disk header checksum must match its own content after a page-count bump"
-        );
-        assert_eq!(on_disk.page_count, 6);
-
-        // In-memory bookkeeping must agree with what's now on disk.
-        assert_eq!(backend.page_count().unwrap(), 6);
+        assert!(backend.page_count().unwrap() > 0);
+        assert_eq!(backend.page_count().unwrap(), 6, "partial page not counted");
+        backend.write_page(6, &vec![0x11u8; PAGE_SIZE]).unwrap();
+        assert_eq!(backend.read_page(6).unwrap()[PAGE_SIZE - 1], 0x11);
+        assert_eq!(backend.page_count().unwrap(), 7);
     }
 
     /// The child half of [`test_cross_process_lock_retries_then_fails_within_budget`]:
@@ -713,8 +631,12 @@ mod tests {
 
         let backend = FileBackend::open(&temp_path).unwrap();
         assert_eq!(backend.backend_name(), "file");
-        assert_eq!(backend.page_count().unwrap(), 1); // Header page
-        assert!(backend.is_new(), "newly created file should be new");
+        assert_eq!(backend.page_count().unwrap(), 0); // nothing written yet
+        assert_eq!(
+            backend.page_count().unwrap(),
+            0,
+            "newly created file is empty"
+        );
     }
 
     #[test]
@@ -723,21 +645,19 @@ mod tests {
         let temp_path = dir.path().join("test_minigraf_existing.graph");
 
         {
-            let backend = FileBackend::open(&temp_path).unwrap();
-            assert!(backend.is_new(), "first open should be new");
+            let mut backend = FileBackend::open(&temp_path).unwrap();
+            assert_eq!(backend.page_count().unwrap(), 0, "first open is empty");
+            backend.write_page(0, &vec![1u8; PAGE_SIZE]).unwrap();
         }
 
         {
             let backend = FileBackend::open(&temp_path).unwrap();
-            assert!(
-                !backend.is_new(),
-                "reopening existing file should not be new"
-            );
+            assert_eq!(backend.page_count().unwrap(), 1, "reopen sees the page");
         }
 
         {
             let backend = FileBackend::open(&temp_path).unwrap();
-            assert!(!backend.is_new(), "third open should still not be new");
+            assert_eq!(backend.page_count().unwrap(), 1, "third open too");
         }
     }
 
@@ -749,7 +669,7 @@ mod tests {
         let mut backend = FileBackend::open(&temp_path).unwrap();
 
         let data = vec![42u8; PAGE_SIZE];
-        backend.write_page(1, &data).unwrap(); // Page 0 is header
+        backend.write_page(1, &data).unwrap();
 
         let read_data = backend.read_page(1).unwrap();
         assert_eq!(data, read_data);
@@ -782,7 +702,7 @@ mod tests {
         let temp_path = dir.path().join("test_minigraf_page_count.graph");
 
         let mut backend = FileBackend::open(&temp_path).unwrap();
-        assert_eq!(backend.page_count().unwrap(), 1);
+        assert_eq!(backend.page_count().unwrap(), 0);
 
         backend.write_page(1, &vec![0u8; PAGE_SIZE]).unwrap();
         assert_eq!(backend.page_count().unwrap(), 2);
@@ -865,7 +785,7 @@ mod tests {
     // ── #389: parent-directory fsync ────────────────────────────────────────
 
     #[test]
-    fn test_create_syncs_parent_dir_after_header_write() {
+    fn test_create_syncs_parent_dir() {
         use crate::storage::dir_sync::take_sync_log;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("new.graph");
@@ -896,7 +816,10 @@ mod tests {
         use crate::storage::dir_sync::take_sync_log;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("existing.graph");
-        drop(FileBackend::open(&path).unwrap());
+        FileBackend::open(&path)
+            .unwrap()
+            .write_page(0, &vec![1u8; PAGE_SIZE])
+            .unwrap();
         take_sync_log();
 
         let backend = FileBackend::open(&path).unwrap();

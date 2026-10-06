@@ -384,26 +384,8 @@ impl FactStorage {
         Ok(all.into_iter().filter(|f| f.is_asserted()).collect())
     }
 
-    /// Clear all facts (for testing)
-    pub(crate) fn clear(&self) -> Result<()> {
-        let mut d = self
-            .data
-            .write()
-            .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
-        d.facts.clear();
-        d.pending_keys.clear();
-        d.pending_indexes = Indexes::new();
-        d.committed = None;
-        d.committed_index_reader = None;
-        self.tx_counter.store(0, Ordering::SeqCst);
-        Ok(())
-    }
-
-    /// Replace the pending in-memory indexes with a freshly rebuilt set.
-    ///
-    /// Used by `PersistentFactStorage` after detecting an index checksum
-    /// mismatch (e.g. after crash recovery).
-    #[allow(dead_code)]
+    /// Replace the pending in-memory indexes (tests install hand-built ones).
+    #[cfg(test)]
     pub(crate) fn replace_pending_indexes(&self, indexes: Indexes) {
         let mut d = self.data.write().unwrap_or_else(|e| e.into_inner());
         d.pending_indexes = indexes;
@@ -1488,9 +1470,6 @@ mod tests {
             fn stream_all(&self) -> anyhow::Result<Vec<Fact>> {
                 Ok(self.facts.clone())
             }
-            fn committed_page_count(&self) -> u64 {
-                1
-            }
         }
 
         let storage = FactStorage::new();
@@ -1584,9 +1563,6 @@ mod tests {
             }
             fn stream_all(&self) -> anyhow::Result<Vec<Fact>> {
                 Ok(self.facts.clone())
-            }
-            fn committed_page_count(&self) -> u64 {
-                1
             }
         }
 
@@ -2168,9 +2144,6 @@ mod tests {
             }
             fn stream_all(&self) -> anyhow::Result<Vec<Fact>> {
                 Ok(self.facts.clone())
-            }
-            fn committed_page_count(&self) -> u64 {
-                1
             }
         }
 

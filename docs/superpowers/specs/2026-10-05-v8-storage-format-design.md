@@ -127,8 +127,14 @@ Sidecar     <db>.wal — header gains base_generation (§4.1.1); entries unchang
 
 ### 4.1 Meta pages
 
-Each checkpoint writes the inactive slot, `slot = generation % 2`. On open, both slots
+Each checkpoint writes the inactive slot: odd generations go to page 0 (slot A) and even
+generations to page 1 (slot B), so `slot = (generation − 1) % 2`. On open, both slots
 are read and one is chosen by §4.1.1.
+
+A new file is created with an empty generation-1 meta in slot A, synced before anything
+else is written, so every file that can hold committed data has a valid meta. If
+neither slot is valid and the file has at most two pages, no commit can have written
+data (every commit with data writes a page ≥ 2), and open initialises the file again.
 
 | offset | field | notes |
 |---|---|---|
@@ -175,7 +181,11 @@ with two extra facts:
 1. **WAL `base_generation`.** The WAL header records the generation of the meta that
    was active when the WAL file was created; it is reserved bytes today, so this is
    WAL version 2. A WAL is deleted only after a commit is durable, so an interrupted
-   commit of `g+1` always leaves a WAL with `base_generation == g`.
+   commit of `g+1` always leaves a WAL with `base_generation ≤ g`. The base can be
+   below `g` when a crash came between a commit and the WAL delete: the reopened
+   session keeps appending to that WAL, which still holds every fact not in `g`.
+   A version 1 WAL (v2.x) can only sit next to a migrated file whose generation-2
+   commit has not finished, so it reads as base generation 1.
 2. **Evidence of `g+1` in the data pages.** Generation `g+1` can only have written to
    pages on `M_g`'s free list or at or above `M_g.page_count` (§8.1). A valid page in
    one of those places stamped `generation == g+1` means `g+1` wrote its data. A
@@ -185,7 +195,7 @@ with two extra facts:
 
 | WAL | page stamped `g+1` where `g+1` could write | meaning | action |
 |---|---|---|---|
-| `base_generation == g` | any | torn commit of `g+1`, or the older slot was damaged | open at `g`, replay the WAL |
+| `base_generation ≤ g` | any | torn commit of `g+1`, or the older slot was damaged | open at `g`, replay the WAL |
 | `base_generation > g` | any | a later commit existed and its meta is lost | error: meta damaged after commit |
 | none | found | `g+1` committed (its WAL was deleted), then its meta rotted | error: meta damaged after commit |
 | none | not found | the older slot was damaged, or `g == 1` with B empty | open at `g` |
@@ -254,6 +264,10 @@ alone tells a v8 page from a legacy one. A legacy page read where a v8 page is e
 fails the type check before the CRC is computed. #373's verify and salvage can classify
 any page from its first byte, and v7 migration never confuses an old page with a new
 one. Retired values stay reserved and are never reassigned.
+
+During development, between delivery PRs 2 and 3 (§14), fact pages still exist and use
+the interim type 0x41 with this header. Files carrying it are pre-release and are
+rejected like any other pre-release v8 file. 0x41 is retired with them.
 
 ### 4.3 B+tree nodes
 
@@ -444,7 +458,7 @@ several pages can come later behind a feature bit.
 ## 8. Checkpoint
 
 Let `M` be the active meta, with generation `g`. The new checkpoint commits generation
-`g' = g + 1` into slot `g' % 2`.
+`g' = g + 1` into slot `(g' − 1) % 2`.
 
 ### 8.1 Invariant
 
@@ -488,7 +502,7 @@ never freed. A test pins this down (§11).
 5. **Data sync.** All pages above have been written, each stamped with `g'` and its CRC.
    Call `backend.sync()`.
 6. **Commit.** Write meta `g'` (with the new roots, `next_eid` and `next_iid`) to slot
-   `g' % 2`, then call `backend.sync()`. This is the only commit point.
+   `(g' − 1) % 2`, then call `backend.sync()`. This is the only commit point.
 7. **Publish.** Swap the in-memory readers to the new roots and clear the pending facts.
    Then delete the WAL in `do_checkpoint`, as today.
 
@@ -640,9 +654,10 @@ TDD per component. No new dependencies. Test assert messages follow the CodeQL r
 
 - New STG codes: page checksum mismatch, page id mismatch, page generation ahead of
   meta, no valid meta page, meta damaged after commit (§4.1.1), unsupported file
-  feature (§4.1.2), free-list/allocator inconsistency. The codes for the removed paths
-  (header CRC mismatch `INT-053`, index rebuild) stay registered and are marked
-  deprecated, never recycled. Update `docs/ERROR_REFERENCE.md`.
+  feature (§4.1.2), free-list/allocator inconsistency. A page that does not start with
+  the magic in either meta slot is still `STG-002`. `INT-053` (header CRC mismatch)
+  stays in use for a v7 header whose own CRC fails, so it is not deprecated. Codes are
+  never recycled. Update `docs/ERROR_REFERENCE.md`.
 - WAL format version 2: the header gains `base_generation u64` at bytes 8..16, taken
   from the reserved bytes. A v1 WAL is accepted only next to a v7 file being migrated.
 - Public API: `MAX_FACT_BYTES` → `MAX_VALUE_BYTES` (§6.3). Committed scan order changes
@@ -689,10 +704,12 @@ TDD per component. No new dependencies. Test assert messages follow the CodeQL r
 1. **Cursor scans:** add `LeafCursor` with `seek` and move every scan onto it, still on
    the current format. Behaviour does not change.
 2. **v8 page format:** common page header with CRC/id/generation, verify on read, meta
-   pages A/B with meta selection, feature bits, WAL v2. `save()` still does a full
-   rebuild into fresh pages, which is atomic but O(N). (#388, #374 atomicity)
+   pages A/B with meta selection, feature bits, WAL v2, a full-rewrite free list, and
+   v7 migration with the backup meta (page 0 changes here, so migration must too).
+   `save()` rebuilds the trees into pages the active meta does not reference, which
+   is atomic but O(N). (#388, #374 atomicity)
 3. **Covering keys (#433):** byte-comparable key encoding, prefix-compressed nodes, DICT,
-   value pages, eid/iid assignment, covering reads, v7 migration.
+   value pages, eid/iid assignment, covering reads; migration moves to the new keys.
 4. **Copy-on-write insert, allocator, free list:** O(change) checkpoints. (#434)
 5. **Cost and crash test hardening, benchmarks, docs.**
 

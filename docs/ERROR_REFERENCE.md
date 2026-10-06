@@ -137,6 +137,13 @@ with no `CodedError` anywhere in its chain.
 | STG-026 | Database locked by another process | Storage |
 | STG-027 | Filesystem does not support file locking | Storage |
 | STG-028 | Format version no longer supported | Storage |
+| STG-029 | Page checksum mismatch | Storage |
+| STG-030 | Page id mismatch | Storage |
+| STG-031 | Page generation ahead of meta | Storage |
+| STG-032 | No valid meta page | Storage |
+| STG-033 | Meta page damaged after commit | Storage |
+| STG-034 | Unsupported file feature | Storage |
+| STG-035 | Free-list inconsistency | Storage |
 | WAL-001 | Invalid WAL magic number | WAL |
 | WAL-002 | Unsupported WAL version | WAL |
 | WAL-003 | Fact serialised size exceeds maximum | WAL |
@@ -2002,6 +2009,84 @@ See the [file format section in README](../README.md#file-format) for version hi
 - Open the file once with Minigraf v2.x, which upgrades it to format v7, then open it with this version. The file is not modified by the failed open.
 
 **Scenario**: A `.graph` file created with Minigraf v1.x and never opened with v2.x.
+
+### STG-029 Page checksum mismatch
+
+**Error text**: `Page {} checksum mismatch: the page is torn or corrupted`
+
+**Cause**: A page's stored CRC32 does not match its contents. The page was partly written (a torn write) or its bytes changed on disk after it was written.
+
+**Resolution**:
+- Restore from backup. If the damaged page belongs only to an unfinished checkpoint, the file opens at the previous checkpoint and the WAL replays the rest; this error means a page reachable from the committed meta page is damaged.
+
+**Scenario**: A disk sector holding a B+tree leaf is corrupted by the storage device.
+
+### STG-030 Page id mismatch
+
+**Error text**: `Page id mismatch: requested page {} but the page records id {}`
+
+**Cause**: A page's header records a different page id from the one that was read. The storage layer wrote the page to the wrong offset (a misdirected write), or the file was edited.
+
+**Resolution**:
+- Restore from backup. Check the storage device and filesystem for faults.
+
+**Scenario**: A faulty controller writes page 812's contents at the offset of page 640.
+
+### STG-031 Page generation ahead of meta
+
+**Error text**: `Page {} has generation {}, newer than the committed generation {}`
+
+**Cause**: A page reachable from the committed meta page records a checkpoint generation newer than the meta page itself. Pages are only written by the checkpoint that commits them, so this means a stale meta page, or a page from a later checkpoint written where an older page should be.
+
+**Resolution**:
+- Restore from backup.
+
+**Scenario**: A meta page restored from an old copy of the file, next to data pages from a newer one.
+
+### STG-032 No valid meta page
+
+**Error text**: `No valid meta page: the file is not a Minigraf v7 or v8 database, or both meta pages are damaged`
+
+**Cause**: Neither meta page (page 0 or page 1) passes its checksum, page 0 is not a valid format v7 header, and no migration backup meta page can be used. Pre-release v8 files written during v3.0.0 development are also rejected this way.
+
+**Resolution**:
+- Check that the path points to a Minigraf database.
+- Restore from backup. The file is not modified by the failed open.
+
+**Scenario**: Opening a file whose first two pages were overwritten, or a file from a v3.0.0 development build.
+
+### STG-033 Meta page damaged after commit
+
+**Error text**: `Meta page damaged after commit: generation {} is valid but a later commit existed ({}). Opening would silently drop that checkpoint`
+
+**Cause**: One meta page is valid and the other is damaged, and there is evidence that the damaged one held a newer, completed checkpoint: the WAL records a newer base generation, or there is no WAL and data pages from the newer generation exist. Opening at the older generation would lose the facts of the newest checkpoint, whose WAL is already deleted.
+
+**Resolution**:
+- Restore from backup. The file is not modified by the failed open.
+
+**Scenario**: A storage fault corrupts the most recent meta page after a successful checkpoint.
+
+### STG-034 Unsupported file feature
+
+**Error text**: `Unsupported file feature bits {}: the file was written by a newer Minigraf version`
+
+**Cause**: The meta page's `required_features` bitmask has bits this version does not know. A newer Minigraf v3.x release wrote structures this version cannot read.
+
+**Resolution**:
+- Open the file with the Minigraf version that wrote it, or a newer one. The file is not modified by the failed open.
+
+**Scenario**: A file written by a later v3.x release that enabled an optional on-disk structure, opened with v3.0.0.
+
+### STG-035 Free-list inconsistency
+
+**Error text**: `Free list is inconsistent: {}`
+
+**Cause**: The chain of free-list pages loops, or holds a page id that is reserved or past the end of the file.
+
+**Resolution**:
+- Restore from backup.
+
+**Scenario**: A corrupted free-list page whose `next` pointer points back at itself.
 
 ---
 
