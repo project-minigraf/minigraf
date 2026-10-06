@@ -425,7 +425,7 @@ fn bench_checkpoint_after_1_fact(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("checkpoint/after_1_fact");
     group.sample_size(20);
-    for &(label, n) in &[("10k", 10_000usize), ("100k", 100_000)] {
+    for &(label, n) in &[("10k", 10_000usize), ("100k", 100_000), ("1m", 1_000_000)] {
         let tmp = NamedTempFile::new().unwrap();
         let path = tmp.path().to_str().unwrap().to_string();
         helpers::populate_file_no_checkpoint(n, &path);
@@ -441,6 +441,46 @@ fn bench_checkpoint_after_1_fact(c: &mut Criterion) {
                 },
                 // One dirty fact per checkpoint: batched setups would leave
                 // every checkpoint after the first with nothing to do.
+                |()| db.checkpoint().unwrap(),
+                BatchSize::PerIteration,
+            );
+        });
+    }
+    group.finish();
+}
+
+// ── checkpoint/after_100k_facts (#434) ───────────────────────────────────────
+
+/// Checkpoint cost after 100,000 new facts on an already-checkpointed graph of
+/// `n` facts. With copy-on-write checkpoints the cost follows the 100,000 new
+/// facts, not `n`. Each sample adds 100,000 more facts, so the graph grows by
+/// the sample count over the run.
+fn bench_checkpoint_after_100k_facts(c: &mut Criterion) {
+    use criterion::BatchSize;
+    use tempfile::NamedTempFile;
+
+    let mut group = c.benchmark_group("checkpoint/after_100k_facts");
+    group.sample_size(10);
+    for &(label, n) in &[("10k", 10_000usize), ("100k", 100_000)] {
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        helpers::populate_file_no_checkpoint(n, &path);
+        let db = helpers::open_file_no_checkpoint(&path);
+        db.checkpoint().unwrap();
+        let mut round = 0u64;
+        group.bench_function(BenchmarkId::from_parameter(label), |b| {
+            b.iter_batched(
+                || {
+                    round += 1;
+                    for chunk in 0..100u64 {
+                        let mut cmd = String::from("(transact [");
+                        for i in 0..1_000u64 {
+                            cmd.push_str(&format!("[:ck{round}_{chunk}_{i} :val {i}]"));
+                        }
+                        cmd.push_str("])");
+                        db.execute(&cmd).unwrap();
+                    }
+                },
                 |()| db.checkpoint().unwrap(),
                 BatchSize::PerIteration,
             );
@@ -1828,6 +1868,7 @@ criterion_group!(
     bench_open,
     bench_checkpoint,
     bench_checkpoint_after_1_fact,
+    bench_checkpoint_after_100k_facts,
     bench_concurrent,
     bench_concurrent_file,
     bench_concurrent_btree_scan,
