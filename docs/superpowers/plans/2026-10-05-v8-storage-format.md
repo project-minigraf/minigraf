@@ -654,10 +654,67 @@ acceptance 1, 2, 4).
 - [x] `cargo fmt`, clippy, `cargo test`; open the PR into `v3` with `Refs #434 #374`. Own
   CI until green. Ask before merging.
 
-# PR 5 — Hardening, benchmarks, docs (outline)
+# PR 5 — Hardening, benchmarks, docs
 
-Spec §10, §11, §12.
+Spec §10, §11, §12. Branch `feat/v8-pr5-hardening`. The format does not change.
 
-- Benchmarks: `checkpoint/after_1_fact` and `checkpoint/after_100k_facts` at 10k/100k/1M, bytes written per checkpoint, the 1M size test (≤ 200 B per fact).
-- Corruption-surfacing tests for leaf, value page and free-list page.
-- Docs: rustdoc of `checkpoint`/`wal_checkpoint_threshold`, `CLAUDE.md` File Format, `.wiki/Architecture.md`, CHANGELOG, ROADMAP, `ERROR_REFERENCE.md`, TEST_COVERAGE.
+**Outcome:** the remaining acceptance checks of the spec. A damaged page surfaces as its
+STG code from every read and checkpoint path, never as wrong or missing data. The size
+and checkpoint-cost goals are measured at 1M facts. The docs describe format v8 as it
+shipped.
+
+**Shape decisions (from reading the v3 code after PR 4):**
+
+- **Error surfacing.** `DatalogExecutor::selective_fact_fetch` swallows lookup errors
+  (`.ok()?`) and falls back to a full scan, so a damaged AEVT or EAVT page could be
+  hidden behind another index. It now returns `Result<Option<_>>` and propagates. The
+  other `unwrap_or_default` reads are of in-memory derived storage, which has no pages,
+  but they become `?` where the function already returns `Result`.
+- **Size test.** A 100k-fact graph in #433's shape (about 10 attributes per entity, 20 %
+  multi-valued, 10 % retracted and re-asserted) runs in every test run and asserts at
+  most 200 B per fact. The 1M version is `#[ignore]` and runs in the scheduled job.
+- **Benchmarks.** `checkpoint/after_1_fact` gains 1M; a new `checkpoint/after_100k_facts`
+  runs at 10k and 100k. Pages written per checkpoint are pinned by the cost-bound test
+  from PR 4; its numbers go into the docs.
+- **Read path cost.** Each committed read builds a fresh `DictReader`, so a point lookup
+  pays for an eid lookup plus a UUID, ident and timestamp lookup per fact. Seed the
+  memo with what the caller already knows (the entity's UUID, the attribute's name), and
+  share a bounded cache of idents and transaction timestamps across reads. Neither
+  changes after commit.
+
+## Review Focus
+
+- No read path turns a page error into an empty or partial result.
+- The size and cost numbers match the spec's goals (§2 G2, G6).
+
+### Task 1: Error surfacing
+
+- [ ] `selective_fact_fetch` propagates errors; `executor.rs` derived reads use `?`.
+- [ ] Corruption tests: damage an index leaf, an internal node, a DICT leaf, a value page
+  and a free-list page in turn (bytes flipped, CRC left stale). Queries through
+  `Minigraf` on a file, or a checkpoint, return the STG code (STG-029). They never
+  return rows from the damaged page or silently fewer rows, and a failed checkpoint
+  leaves the file openable at its last generation.
+
+### Task 2: Size
+
+- [ ] `size_per_fact_in_433_shape` (100k, always) and `size_per_fact_1m` (ignored), both
+  at most 200 B per fact.
+
+### Task 3: Benchmarks
+
+- [ ] `checkpoint/after_1_fact/1m` and `checkpoint/after_100k_facts/{10k,100k}`.
+
+### Task 4: Read path
+
+- [ ] Seed the `DictReader` memo per call and share an ident and timestamp cache in
+  `OnDiskReader`, bounded in entries. Re-run `concurrent_btree_scan` and
+  `btree_lookup/entity_point` against PR 4.
+
+### Task 5: Docs and PR
+
+- [ ] `.wiki/Architecture.md` (format v8 and the read and checkpoint paths), ROADMAP,
+  CHANGELOG, CLAUDE.md, TEST_COVERAGE, and a status note at the top of the spec. Commit
+  and push the wiki separately.
+- [ ] `cargo fmt`, clippy, `cargo test`; open the PR into `v3` with `Refs #374 #434 #388 #433`.
+  Own CI until green. Ask before merging.
