@@ -786,9 +786,15 @@ mod tests {
             let mut dict = DictReader::new(root, &backend, &cache).with_shared(&shared);
             let got: Vec<Fact> = enc.index[0]
                 .iter()
-                .map(|(k, _)| dict.fact(&KeyFact::decode(Index::Eavt, k).unwrap()).unwrap())
+                .map(|(k, _)| {
+                    dict.fact(&KeyFact::decode(Index::Eavt, k).unwrap())
+                        .unwrap()
+                })
                 .collect();
-            assert!(same_facts(got, facts.clone()), "same facts with a warm cache");
+            assert!(
+                same_facts(got, facts.clone()),
+                "same facts with a warm cache"
+            );
         }
         assert!(shared.names.read().unwrap().len() >= 3, "idents cached");
         assert_eq!(shared.tx_ids.read().unwrap().len(), 2, "timestamps cached");
