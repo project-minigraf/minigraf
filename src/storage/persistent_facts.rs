@@ -1271,4 +1271,246 @@ mod tests {
         }
         assert!(points > 50, "expected many crash points");
     }
+
+    // ── covering reads (spec §7, §11) ───────────────────────────────────────
+
+    /// A fact's identity for set comparison (values via their canonical bytes).
+    type FactKey = (Uuid, String, Vec<u8>, u64, u64, i64, i64, bool);
+
+    fn fact_key(f: &Fact) -> FactKey {
+        (
+            f.entity,
+            f.attribute.clone(),
+            crate::storage::index::encode_value(&f.value),
+            f.tx_id,
+            f.tx_count,
+            f.valid_from,
+            f.valid_to,
+            f.asserted,
+        )
+    }
+
+    fn as_set(facts: Vec<Fact>) -> Vec<FactKey> {
+        let mut v: Vec<FactKey> = facts.iter().map(fact_key).collect();
+        v.sort();
+        v
+    }
+
+    /// Mixed facts: short and long strings (some repeated), keywords, refs,
+    /// numbers, multi-valued attributes and retractions.
+    fn mixed_batch(round: u64, n: u64) -> (Vec<(Uuid, String, Value)>, Vec<(Uuid, String, Value)>) {
+        let mut asserts = Vec::new();
+        let mut retracts = Vec::new();
+        for i in 0..n {
+            let k = round * 1000 + i;
+            let e = entity(u128::from(k % 37));
+            let a = format!(":attr/{}", k % 7);
+            let v = match k % 8 {
+                0 => Value::String(format!("short {k}")),
+                1 => Value::String(format!("{}{}", "long value ".repeat(10), k % 5)),
+                2 => Value::Keyword(format!(":kw/{}", k % 4)),
+                3 => Value::Ref(entity(u128::from(k % 41))),
+                4 => Value::Integer(i64::try_from(k).unwrap() - 500),
+                5 => Value::Float(k as f64 / 7.0),
+                6 => Value::Boolean(k % 2 == 0),
+                _ => Value::String("x".repeat(65 + (k % 3) as usize)),
+            };
+            if k % 11 == 0 {
+                retracts.push((e, a, v));
+            } else {
+                asserts.push((e, a, v));
+            }
+        }
+        (asserts, retracts)
+    }
+
+    fn assert_reads_match(pfs: &PersistentFactStorage<MemoryBackend>, model: &FactStorage) {
+        let s = pfs.storage();
+        assert!(
+            as_set(s.get_all_facts().unwrap()) == as_set(model.get_all_facts().unwrap()),
+            "all facts"
+        );
+        for i in 0..42u128 {
+            let e = entity(i);
+            assert!(
+                as_set(s.get_facts_by_entity(&e).unwrap())
+                    == as_set(model.get_facts_by_entity(&e).unwrap()),
+                "by entity"
+            );
+            for a in 0..7 {
+                let a = format!(":attr/{a}");
+                assert!(
+                    as_set(s.get_facts_by_entity_attribute_indexed(&e, &a).unwrap())
+                        == as_set(model.get_facts_by_entity_attribute_indexed(&e, &a).unwrap()),
+                    "by entity and attribute"
+                );
+            }
+        }
+        for a in 0..8 {
+            let a = format!(":attr/{a}");
+            assert!(
+                as_set(s.get_facts_by_attribute(&a).unwrap())
+                    == as_set(model.get_facts_by_attribute(&a).unwrap()),
+                "by attribute"
+            );
+        }
+    }
+
+    /// Committed reads return exactly what was written, across checkpoints
+    /// (new ids, reused ids, dedup) and a reopen.
+    #[test]
+    fn committed_reads_match_the_model_across_checkpoints() {
+        let mem = MemoryBackend::new();
+        let mut pfs = PersistentFactStorage::new(mem.clone(), 32).unwrap();
+        let model = FactStorage::new();
+        for round in 0..8u64 {
+            let (asserts, retracts) = mixed_batch(round, 120);
+            pfs.storage().transact(asserts, None).unwrap();
+            if !retracts.is_empty() {
+                pfs.storage().retract(retracts).unwrap();
+            }
+            for f in pfs.storage().get_pending_facts() {
+                model.load_fact(f).unwrap();
+            }
+            pfs.mark_dirty();
+            pfs.save().unwrap();
+            assert_reads_match(&pfs, &model);
+            assert_space_accounted(&pfs.meta(), &mem);
+            assert_indexes_exact(&pfs.meta(), &mem);
+        }
+        drop(pfs);
+        let pfs = PersistentFactStorage::new(mem, 32).unwrap();
+        assert_reads_match(&pfs, &model);
+    }
+
+    /// Records the id of every page read.
+    #[derive(Clone)]
+    struct ReadLog {
+        inner: MemoryBackend,
+        read: Arc<Mutex<Vec<u64>>>,
+    }
+
+    impl StorageBackend for ReadLog {
+        fn write_page(&mut self, page_id: u64, data: &[u8]) -> Result<()> {
+            self.inner.write_page(page_id, data)
+        }
+        fn read_page(&self, page_id: u64) -> Result<Vec<u8>> {
+            self.read.lock().unwrap().push(page_id);
+            self.inner.read_page(page_id)
+        }
+        fn sync(&mut self) -> Result<()> {
+            Ok(())
+        }
+        fn page_count(&self) -> Result<u64> {
+            self.inner.page_count()
+        }
+        fn close(&mut self) -> Result<()> {
+            Ok(())
+        }
+        fn backend_name(&self) -> &'static str {
+            "read-log"
+        }
+    }
+
+    /// Reading facts without long values touches only index and DICT pages.
+    #[test]
+    fn reads_without_long_values_touch_no_value_page() {
+        let log = ReadLog {
+            inner: MemoryBackend::new(),
+            read: Arc::new(Mutex::new(Vec::new())),
+        };
+        let reads = log.read.clone();
+        let mem = log.inner.clone();
+        let mut pfs = PersistentFactStorage::new(log, 0).unwrap();
+        let long = "L".repeat(500);
+        pfs.storage()
+            .transact(
+                vec![
+                    (entity(1), ":name".into(), Value::String("Ann".into())),
+                    (entity(1), ":tag".into(), Value::Keyword(":t/x".into())),
+                    (entity(2), ":bio".into(), Value::String(long.clone())),
+                ],
+                None,
+            )
+            .unwrap();
+        pfs.mark_dirty();
+        pfs.save().unwrap();
+        let page_type = |id: u64| mem.read_page(id).unwrap()[0];
+
+        reads.lock().unwrap().clear();
+        assert_eq!(
+            pfs.storage().get_facts_by_entity(&entity(1)).unwrap().len(),
+            2
+        );
+        let touched = std::mem::take(&mut *reads.lock().unwrap());
+        assert!(!touched.is_empty());
+        assert!(
+            touched
+                .iter()
+                .all(|&id| page_type(id) != page::PAGE_TYPE_VALUE),
+            "no value page read for short values"
+        );
+
+        let bio = pfs.storage().get_facts_by_entity(&entity(2)).unwrap();
+        assert!(matches!(&bio[0].value, Value::String(s) if *s == long));
+        let touched = std::mem::take(&mut *reads.lock().unwrap());
+        assert!(
+            touched
+                .iter()
+                .any(|&id| page_type(id) == page::PAGE_TYPE_VALUE),
+            "a long value is read from its value page"
+        );
+    }
+
+    fn value_page_count(mem: &MemoryBackend) -> usize {
+        (2..mem.page_count().unwrap())
+            .filter(|&id| mem.read_page(id).unwrap()[0] == page::PAGE_TYPE_VALUE)
+            .count()
+    }
+
+    /// Re-asserting or retracting a committed long value writes no value page.
+    #[test]
+    fn long_values_are_stored_once_across_checkpoints() {
+        let mem = MemoryBackend::new();
+        let mut pfs = PersistentFactStorage::new(mem.clone(), 16).unwrap();
+        let long = Value::String("y".repeat(300));
+        pfs.storage()
+            .transact(vec![(entity(1), ":doc".into(), long.clone())], None)
+            .unwrap();
+        pfs.mark_dirty();
+        pfs.save().unwrap();
+        assert_eq!(value_page_count(&mem), 1);
+        pfs.storage()
+            .retract(vec![(entity(1), ":doc".into(), long.clone())])
+            .unwrap();
+        pfs.storage()
+            .transact(vec![(entity(2), ":doc".into(), long)], None)
+            .unwrap();
+        pfs.mark_dirty();
+        pfs.save().unwrap();
+        assert_eq!(value_page_count(&mem), 1, "dedup: no new value page");
+        assert_eq!(pfs.storage().get_all_facts().unwrap().len(), 3);
+        assert_space_accounted(&pfs.meta(), &mem);
+    }
+
+    /// A v7 file with every value type, long strings, refs and retractions
+    /// migrates to exactly the same facts.
+    #[test]
+    fn v7_file_with_mixed_values_migrates_exactly() {
+        let model = FactStorage::new();
+        for round in 0..3 {
+            let (asserts, retracts) = mixed_batch(round, 90);
+            model.transact(asserts, None).unwrap();
+            model.retract(retracts).unwrap();
+        }
+        let facts = model.get_all_facts().unwrap();
+        let mem = v7_file(&facts, model.current_tx_count());
+        let pfs = open_mem(&mem, None).unwrap();
+        assert!(
+            as_set(pfs.storage().get_all_facts().unwrap()) == as_set(facts),
+            "migrated facts equal the v7 facts"
+        );
+        assert_indexes_exact(&pfs.meta(), &mem);
+        assert_space_accounted(&pfs.meta(), &mem);
+    }
 }

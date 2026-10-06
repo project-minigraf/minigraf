@@ -794,6 +794,33 @@ mod tests {
         assert_eq!(minigraf_err.code(), "WAL-003");
     }
 
+    /// Attributes and keyword values are capped at 1024 bytes (WAL-003), so a
+    /// DICT entry always fits in a node; 1024 itself is accepted.
+    #[test]
+    fn test_wal_ident_size_limit_is_wal_003() {
+        use crate::graph::types::{Fact, Value};
+        use uuid::Uuid;
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut writer =
+            WalWriter::open_or_create(&dir.path().join("ident.wal"), SyncMode::Full).unwrap();
+        let e = Uuid::new_v4();
+        let at = |n: usize| format!(":{}", "a".repeat(n - 1));
+        let ok = Fact::new(
+            e,
+            at(MAX_IDENT_BYTES),
+            Value::Keyword(at(MAX_IDENT_BYTES)),
+            1,
+        );
+        writer.append_entry(1, &[ok]).unwrap();
+        let long_attr = Fact::new(e, at(MAX_IDENT_BYTES + 1), Value::Integer(1), 2);
+        let long_kw = Fact::new(e, ":a".into(), Value::Keyword(at(MAX_IDENT_BYTES + 1)), 2);
+        for f in [long_attr, long_kw] {
+            let err = writer.append_entry(2, &[f]).unwrap_err();
+            assert_eq!(crate::error::MinigrafError::from(err).code(), "WAL-003");
+        }
+    }
+
     #[test]
     fn test_wal_delete_directory_error_code_is_wal_006() {
         let dir = tempfile::tempdir().unwrap();
