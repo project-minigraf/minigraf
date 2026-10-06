@@ -115,9 +115,10 @@ pub struct OpenOptions {
     /// Defaults to 1000. Lower values mean more frequent checkpoints (smaller WAL,
     /// more I/O). Higher values mean less frequent checkpoints (larger WAL, less I/O).
     ///
-    /// A checkpoint's cost grows with the total size of the database (see
-    /// [`Minigraf::checkpoint`]), while durability does not depend on it: the WAL
-    /// is crash-durable. Raise this for write-heavy workloads on large graphs.
+    /// A checkpoint's cost follows the facts written since the last one, not the
+    /// size of the database (see [`Minigraf::checkpoint`]), and durability does not
+    /// depend on it: the WAL is crash-durable. Lower values keep the WAL and reopen
+    /// time small; higher values batch more facts per checkpoint.
     pub wal_checkpoint_threshold: usize,
     /// Number of pages to hold in the LRU page cache. Default: 256 (= 1MB at 4KB pages).
     ///
@@ -706,10 +707,11 @@ impl Minigraf {
     /// crash-durable in the `<db>.wal` sidecar and are replayed on the next open.
     /// Checkpointing less often only makes that replay (reopen) slower.
     ///
-    /// Cost: every checkpoint rewrites the four covering indexes after the fact
-    /// pages, so it copies pages in proportion to the total index size; only the
-    /// index leaves that receive new entries are decoded and re-encoded. Prefer
-    /// checkpointing on a size or time budget over once per logical unit of work.
+    /// Cost: a checkpoint is copy-on-write. It writes only the index leaves that
+    /// receive new facts, their paths to the root, new long-string pages, a few
+    /// free-list pages and one meta page, so its cost follows the number of new
+    /// facts, not the size of the database. A crash at any point leaves the
+    /// previous checkpoint intact.
     ///
     /// No-op for in-memory databases.
     ///
