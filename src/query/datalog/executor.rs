@@ -308,8 +308,10 @@ impl DatalogExecutor {
     /// `execute_query_with_rules` call.
     ///
     /// Step 1 uses selective index-backed fetches when query patterns bind concrete entities
-    /// or attributes (up to 4 distinct lookups); falls back to `get_all_facts()` otherwise.
-    /// Step 2 (caching `net_asserted_facts()`) remains a future optimisation opportunity.
+    /// or attributes (up to 4 distinct lookups), and a full scan otherwise. Without a
+    /// transaction overlay, and for `:as-of` counters, committed history is already
+    /// reduced to its net-asserted records on index keys (#379); step 2 still runs over
+    /// the union with the pending facts, which gives the same result.
     fn filter_facts_for_query(&self, query: &DatalogQuery) -> Result<Arc<[Fact]>> {
         let now = self.read_now();
 
@@ -318,20 +320,10 @@ impl DatalogExecutor {
                 crate::graph::storage::filter_facts_as_of(facts.iter().cloned().collect(), as_of)
             }
             (Some(facts), None) => facts.iter().cloned().collect(),
+            // A counter is a key bound, so committed history is cut on index keys.
+            (None, Some(AsOf::Counter(n))) => self.live_source_facts(query, Some(*n))?,
             (None, Some(as_of)) => self.storage.get_facts_as_of(as_of)?,
-            (None, None) => {
-                // Selective fetch is only safe when no rule invocations are present —
-                // rules require the full fact base to evaluate correctly.
-                if !query.uses_rules() {
-                    let patterns = collect_all_patterns(&query.where_clauses);
-                    match self.selective_fact_fetch(&patterns, 4)? {
-                        Some(facts) => facts,
-                        None => self.storage.get_all_facts()?,
-                    }
-                } else {
-                    self.storage.get_all_facts()?
-                }
-            }
+            (None, None) => self.live_source_facts(query, None)?,
         };
 
         let tx_filtered = source_facts;
@@ -360,6 +352,20 @@ impl DatalogExecutor {
         Ok(Arc::from(valid_filtered))
     }
 
+    /// Step 1 without a transaction overlay: pending facts up to `as_of` plus the
+    /// committed facts that survive net-assert at `as_of` (#379), selectively when the
+    /// patterns allow it. Rules need the whole fact base, so they always get a full scan.
+    fn live_source_facts(&self, query: &DatalogQuery, as_of: Option<u64>) -> Result<Vec<Fact>> {
+        if !query.uses_rules() {
+            let patterns = collect_all_patterns(&query.where_clauses);
+            if let Some(facts) = self.selective_fact_fetch(&patterns, 4, as_of)? {
+                return Ok(facts);
+            }
+        }
+        self.storage
+            .get_live_facts(crate::storage::Scan::All, as_of)
+    }
+
     /// Attempt a selective index-backed fact fetch for the given patterns.
     ///
     /// Patterns with a bound entity literal (UUID or keyword → deterministic UUID) are
@@ -376,12 +382,15 @@ impl DatalogExecutor {
     /// A lookup error (a damaged page) is returned, never turned into a full scan.
     ///
     /// Results are not deduplicated: the sole caller feeds them to `net_asserted_facts`,
-    /// which is idempotent under duplicated records.
+    /// which is idempotent under duplicated records. Each lookup returns the pending facts
+    /// up to `as_of` and the committed facts live at `as_of` (`FactStorage::get_live_facts`).
     fn selective_fact_fetch(
         &self,
         patterns: &[Pattern],
         threshold: usize,
+        as_of: Option<u64>,
     ) -> Result<Option<Vec<Fact>>> {
+        use crate::storage::Scan;
         use std::collections::{BTreeMap, BTreeSet};
 
         // Per bound entity: Some(attrs) = only these attributes are referenced;
@@ -441,16 +450,16 @@ impl DatalogExecutor {
                     for attr in attrs {
                         all_facts.extend(
                             self.storage
-                                .get_facts_by_entity_attribute_indexed(uid, attr)?,
+                                .get_live_facts(Scan::EntityAttribute(uid, attr), as_of)?,
                         );
                     }
                 }
-                _ => all_facts.extend(self.storage.get_facts_by_entity(uid)?),
+                _ => all_facts.extend(self.storage.get_live_facts(Scan::Entity(uid), as_of)?),
             }
         }
 
         for attr in &attributes {
-            all_facts.extend(self.storage.get_facts_by_attribute(attr)?);
+            all_facts.extend(self.storage.get_live_facts(Scan::Attribute(attr), as_of)?);
         }
 
         Ok(Some(all_facts))

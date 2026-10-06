@@ -1639,6 +1639,192 @@ mod tests {
         );
     }
 
+    // ── live reads on index keys (#379) ─────────────────────────────────────
+
+    /// The scans a live read can take over the random-history domain.
+    fn live_scans(entities: &[Uuid], attrs: &[String]) -> Vec<crate::storage::Scan<'static>> {
+        use crate::storage::Scan;
+        let entities: &'static [Uuid] = Box::leak(entities.to_vec().into_boxed_slice());
+        let attrs: &'static [String] = Box::leak(attrs.to_vec().into_boxed_slice());
+        let mut scans = vec![Scan::All];
+        for e in entities {
+            scans.push(Scan::Entity(e));
+            for a in attrs {
+                scans.push(Scan::EntityAttribute(e, a));
+            }
+        }
+        for a in attrs {
+            scans.push(Scan::Attribute(a));
+        }
+        scans
+    }
+
+    /// Live reads from `pfs` agree with net-assert over the model's records, for
+    /// every scan and `as_of`. With nothing pending, the committed live read is
+    /// exactly the net-asserted set, not just equivalent after net-assert.
+    fn assert_live_reads_match(
+        pfs: &PersistentFactStorage<MemoryBackend>,
+        model: &FactStorage,
+        scans: &[crate::storage::Scan<'_>],
+        as_ofs: &[Option<u64>],
+    ) {
+        use crate::graph::storage::net_asserted_facts;
+        let exact = pfs.storage().get_pending_facts().is_empty();
+        for &scan in scans {
+            for &as_of in as_ofs {
+                let expected = as_set(net_asserted_facts(
+                    model.get_live_facts(scan, as_of).unwrap(),
+                ));
+                let got = pfs.storage().get_live_facts(scan, as_of).unwrap();
+                if exact {
+                    assert!(
+                        as_set(got.clone()) == expected,
+                        "committed live read is exact"
+                    );
+                }
+                assert!(
+                    as_set(net_asserted_facts(got)) == expected,
+                    "live read equals net-assert over every record"
+                );
+            }
+        }
+    }
+
+    /// Random histories: assertions in several valid-time windows, retractions,
+    /// re-assertions, several values per attribute, long values, many
+    /// transactions per checkpoint. Live reads match net-assert over every
+    /// record at every checkpoint, with pending facts on top, and after reopen.
+    #[test]
+    fn live_reads_match_net_assert_on_random_histories() {
+        use crate::graph::types::TransactOptions;
+        let mut seed = 0x379u64;
+        let mut next = move |n: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % n
+        };
+        let entities: Vec<Uuid> = (0..5).map(entity).collect();
+        let attrs: Vec<String> = (0..3).map(|a| format!(":h/{a}")).collect();
+        let scans = live_scans(&entities, &attrs);
+        let mem = MemoryBackend::new();
+        let mut pfs = PersistentFactStorage::new(mem.clone(), 32).unwrap();
+        let model = FactStorage::new();
+        let step = |pfs: &mut PersistentFactStorage<MemoryBackend>,
+                    next: &mut dyn FnMut(u64) -> u64| {
+            let mut tuples = Vec::new();
+            for _ in 0..=next(3) {
+                let v = match next(5) {
+                    0 => Value::String(format!("{}{}", "long history value ".repeat(5), next(2))),
+                    1 => Value::Keyword(format!(":k/{}", next(2))),
+                    n => Value::Integer(n as i64),
+                };
+                tuples.push((
+                    entities[next(5) as usize],
+                    attrs[next(3) as usize].clone(),
+                    v,
+                ));
+            }
+            if next(3) == 0 {
+                pfs.storage().retract(tuples).unwrap();
+            } else {
+                let opts = match next(4) {
+                    0 => None,
+                    1 => Some(TransactOptions::new(Some(10), Some(20))),
+                    2 => Some(TransactOptions::new(Some(20), None)),
+                    _ => Some(TransactOptions::new(Some(5), Some(15))),
+                };
+                pfs.storage().transact(tuples, opts).unwrap();
+            }
+            pfs.mark_dirty();
+        };
+        for _round in 0..6 {
+            for _ in 0..12 {
+                step(&mut pfs, &mut next);
+            }
+            for f in pfs.storage().get_pending_facts() {
+                model.load_fact(f).unwrap();
+            }
+            pfs.save().unwrap();
+            let now = pfs.storage().current_tx_count();
+            let as_ofs = [
+                None,
+                Some(0),
+                Some(now / 3),
+                Some(now / 2),
+                Some(now - 1),
+                Some(now),
+            ];
+            assert_live_reads_match(&pfs, &model, &scans, &as_ofs);
+        }
+        // Pending facts on top of committed ones.
+        for _ in 0..12 {
+            step(&mut pfs, &mut next);
+        }
+        for f in pfs.storage().get_pending_facts() {
+            model.load_fact(f).unwrap();
+        }
+        let now = pfs.storage().current_tx_count();
+        let as_ofs = [None, Some(now / 2), Some(now - 3), Some(now)];
+        assert_live_reads_match(&pfs, &model, &scans, &as_ofs);
+        pfs.save().unwrap();
+        drop(pfs);
+        let pfs = PersistentFactStorage::new(mem, 32).unwrap();
+        assert_live_reads_match(&pfs, &model, &scans, &[None, Some(now / 2)]);
+    }
+
+    /// A point read on a triple with a long history reads a few pages, not the
+    /// history: the retraction behind the current assertion skips the rest with
+    /// one seek, and `as_of` enters the triple with one seek.
+    #[test]
+    fn live_point_read_skips_superseded_history() {
+        use crate::storage::Scan;
+        let log = ReadLog {
+            inner: MemoryBackend::new(),
+            read: Arc::new(Mutex::new(Vec::new())),
+        };
+        let reads = log.read.clone();
+        let mut pfs = PersistentFactStorage::new(log, 0).unwrap();
+        let e = entity(1);
+        let fact = || vec![(e, ":status".to_string(), Value::Integer(7))];
+        for _ in 0..2000 {
+            pfs.storage().transact(fact(), None).unwrap();
+            pfs.storage().retract(fact()).unwrap();
+        }
+        pfs.storage().transact(fact(), None).unwrap();
+        let middle = 2000;
+        pfs.mark_dirty();
+        pfs.save().unwrap();
+        let s = pfs.storage();
+
+        reads.lock().unwrap().clear();
+        assert_eq!(s.get_facts_by_entity(&e).unwrap().len(), 4001);
+        let history = std::mem::take(&mut *reads.lock().unwrap()).len();
+
+        let live = s.get_live_facts(Scan::Entity(&e), None).unwrap();
+        assert_eq!(live.len(), 1, "only the current assertion");
+        let live_reads = std::mem::take(&mut *reads.lock().unwrap()).len();
+
+        let at = s.get_live_facts(Scan::Entity(&e), Some(middle)).unwrap();
+        assert!(at.is_empty(), "retracted at an even transaction");
+        let at = s
+            .get_live_facts(Scan::Entity(&e), Some(middle - 1))
+            .unwrap();
+        assert_eq!(at.len(), 1, "asserted at an odd transaction");
+        assert_eq!(at[0].tx_count, middle - 1);
+        let as_of_reads = std::mem::take(&mut *reads.lock().unwrap()).len();
+
+        assert!(history > 20, "the history spans many leaves");
+        assert!(
+            live_reads * 3 < history,
+            "live read: {live_reads} pages, history: {history}"
+        );
+        assert!(
+            as_of_reads * 3 < history * 2,
+            "two as-of reads: {as_of_reads} pages, history: {history}"
+        );
+    }
+
     fn value_page_count(mem: &MemoryBackend) -> usize {
         (2..mem.page_count().unwrap())
             .filter(|&id| mem.read_page(id).unwrap()[0] == page::PAGE_TYPE_VALUE)

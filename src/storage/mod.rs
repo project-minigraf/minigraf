@@ -358,6 +358,47 @@ pub trait CommittedReader: Send + Sync {
     ) -> Result<Vec<crate::graph::types::Fact>>;
     /// Every committed fact with `attribute` (an AEVT scan).
     fn facts_for_attribute(&self, attribute: &str) -> Result<Vec<crate::graph::types::Fact>>;
+
+    /// The committed facts of `scan` that survive net-assert among the
+    /// committed records with `tx_count <= as_of` (every record when `None`):
+    /// for each `(e, a, v)`, the newest assertion per valid-time window that is
+    /// newer than every retraction (#379).
+    ///
+    /// Applying `net_asserted_facts` to these plus the pending facts gives the
+    /// same result as applying it to every record, because each pending fact is
+    /// newer than each committed one and a record can only be hidden by a newer
+    /// one. This default reads the history and filters it; `OnDiskReader`
+    /// decides on index keys and translates only the survivors.
+    fn live_facts(
+        &self,
+        scan: Scan<'_>,
+        as_of: Option<u64>,
+    ) -> Result<Vec<crate::graph::types::Fact>> {
+        let history = match scan {
+            Scan::All => self.all_facts()?,
+            Scan::Entity(e) => self.facts_for_entity(e)?,
+            Scan::EntityAttribute(e, a) => self.facts_for_entity_attribute(e, a)?,
+            Scan::Attribute(a) => self.facts_for_attribute(a)?,
+        };
+        let in_window = history
+            .into_iter()
+            .filter(|f| as_of.is_none_or(|n| f.tx_count <= n))
+            .collect();
+        Ok(crate::graph::storage::net_asserted_facts(in_window))
+    }
+}
+
+/// The facts a read covers.
+#[derive(Debug, Clone, Copy)]
+pub enum Scan<'a> {
+    /// Every fact.
+    All,
+    /// The facts of one entity.
+    Entity(&'a crate::graph::types::EntityId),
+    /// The facts of one `(entity, attribute)` pair.
+    EntityAttribute(&'a crate::graph::types::EntityId, &'a str),
+    /// The facts with one attribute.
+    Attribute(&'a str),
 }
 
 #[cfg(test)]

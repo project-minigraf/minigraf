@@ -558,8 +558,6 @@ impl<'a> LeafCursor<'a> {
 
     /// Move forward to the first entry `>= key`. A key at or before the current
     /// position leaves the cursor where it is.
-    // Only tests call this until the streaming engine's joins (#432) do.
-    #[allow(dead_code)]
     pub(crate) fn seek(&mut self, key: &[u8]) -> Result<()> {
         if self.done {
             return Ok(());

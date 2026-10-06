@@ -90,6 +90,11 @@ impl<'a> Reader<'a> {
         self.pos >= self.buf.len()
     }
 
+    /// Bytes read so far.
+    pub fn position(&self) -> usize {
+        self.pos
+    }
+
     fn byte(&mut self) -> Result<u8> {
         let b = self
             .buf
@@ -361,6 +366,44 @@ impl Reader<'_> {
         })
     }
 
+    /// Move past one encoded value without decoding it.
+    pub fn skip_value(&mut self) -> Result<()> {
+        match self.byte()? {
+            TAG_NULL => {}
+            TAG_BOOL => {
+                self.byte()?;
+            }
+            TAG_INT => {
+                self.int()?;
+            }
+            TAG_FLOAT => {
+                self.take(8)?;
+            }
+            TAG_KEYWORD | TAG_REF => {
+                self.uint()?;
+            }
+            TAG_STRING => loop {
+                if self.byte()? != 0 {
+                    continue;
+                }
+                match self.byte()? {
+                    0xFF => {}
+                    0x00 => break,
+                    // hash u64, page u64, slot u16
+                    0x01 => {
+                        self.take(18)?;
+                        break;
+                    }
+                    other => {
+                        bail_coded!(ErrorCode::Int049, format!("bad string escape {other:#04x}"))
+                    }
+                }
+            },
+            tag => bail_coded!(ErrorCode::Int049, format!("bad value tag {tag:#04x}")),
+        }
+        Ok(())
+    }
+
     fn string(&mut self) -> Result<KeyValue> {
         let mut bytes = Vec::new();
         loop {
@@ -503,6 +546,31 @@ impl KeyFact {
             asserted,
         })
     }
+}
+
+/// Length of the leading triple of an `index` key: its three id/value
+/// components, everything before `tx↓`. Entries with the same triple bytes are
+/// the history of one `(e, a, v)`, newest first. The value is skipped, not decoded.
+pub fn triple_len(index: Index, key: &[u8]) -> Result<usize> {
+    let mut r = Reader::new(key);
+    match index {
+        Index::Eavt | Index::Aevt => {
+            r.uint()?;
+            r.uint()?;
+            r.skip_value()?;
+        }
+        Index::Avet => {
+            r.uint()?;
+            r.skip_value()?;
+            r.uint()?;
+        }
+        Index::Vaet => {
+            r.uint()?;
+            r.uint()?;
+            r.uint()?;
+        }
+    }
+    Ok(r.position())
 }
 
 /// Key prefix of every EAVT entry of entity `e`.
@@ -959,6 +1027,44 @@ mod tests {
             ..random_fact(&mut rng)
         };
         assert!(non_ref.key(Index::Vaet).is_none(), "VAET holds refs only");
+    }
+
+    /// `triple_len` ends exactly where `tx↓` starts, for every value type and
+    /// index, and the byte after the triple is below 0xFF, so `triple ‖ 0xFF`
+    /// sorts after the triple's whole history.
+    #[test]
+    fn triple_len_ends_where_the_transaction_starts() {
+        let mut rng = Rng(4321);
+        for _ in 0..3000 {
+            let f = random_fact(&mut rng);
+            let mut tail = Vec::new();
+            put_tx_desc(&mut tail, f.tx_count);
+            put_int(&mut tail, f.vf);
+            put_valid_to(&mut tail, f.vt);
+            tail.push(u8::from(f.asserted));
+            for index in Index::ALL {
+                let Some(k) = f.key(index) else { continue };
+                let n = triple_len(index, &k).unwrap();
+                assert_eq!(n, k.len() - tail.len(), "triple length");
+                assert!(k[n] < 0xFF, "tx byte sorts below 0xFF");
+            }
+        }
+        let long = long_str(&"x\0y".repeat(40), ValueRef { page: 7, slot: 2 });
+        let f = KeyFact {
+            e: 1,
+            a: 2,
+            v: long,
+            tx_count: 9,
+            vf: -3,
+            vt: VALID_TIME_FOREVER,
+            asserted: false,
+        };
+        let k = f.key(Index::Eavt).unwrap();
+        let mut r = Reader::new(&k);
+        r.uint().unwrap();
+        r.uint().unwrap();
+        r.value().unwrap();
+        assert_eq!(triple_len(Index::Eavt, &k).unwrap(), r.position());
     }
 
     #[test]
