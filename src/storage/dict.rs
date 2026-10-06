@@ -448,17 +448,14 @@ mod tests {
         let start = backend.page_count().unwrap().max(2);
         let mut alloc = PageAllocator::new(Vec::new(), start, 1);
         let encoded = enc.finish(&mut alloc, backend, cache).unwrap();
-        let leaves = if root == 0 {
-            Vec::new()
-        } else {
-            btree::collect_leaf_pages(root, &*backend, cache, None).unwrap()
-        };
-        let new_root = btree::rebuild_btree_incremental(
-            leaves,
+        let mut freed = Vec::new();
+        let new_root = btree::cow_insert(
+            root,
             encoded.dict.clone(),
             backend,
             cache,
             &mut alloc,
+            &mut freed,
         )
         .unwrap();
         (new_root, encoded)

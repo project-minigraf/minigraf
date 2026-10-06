@@ -265,6 +265,7 @@ impl PageAllocator {
 
     /// Free ids not handed out, in hand-out order. Chain pages not read yet are
     /// not included.
+    #[cfg(test)]
     pub fn take_unused_free(&mut self) -> Vec<u64> {
         let mut v = std::mem::take(&mut self.free);
         v.reverse();

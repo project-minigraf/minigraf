@@ -5,16 +5,16 @@
 //! empty values and DICT uses real ones. Leaves have no sibling pointers: scans
 //! use [`LeafCursor`], which keeps the path from the root.
 //!
-//! [`build_btree`] bulk-builds a tree from sorted entries. [`rebuild_btree_incremental`]
-//! rebuilds one from its old leaves plus new entries, copying untouched leaves
-//! (restamped) and splitting touched ones by balanced bytes. Every page comes
-//! from a [`PageAllocator`], so a rebuild never writes a page the old tree uses.
+//! [`build_btree`] bulk-builds a tree from sorted entries. [`cow_insert`] adds
+//! entries copy-on-write, rewriting only the touched leaves and their paths and
+//! splitting by balanced bytes. Every page comes from a [`PageAllocator`], so an
+//! insert never writes a page the old tree uses.
 
 use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::storage::cache::PageCache;
 use crate::storage::node::{
     Entry, Internal, decode_leaf, encode_internal, encode_leaf, internal_size, leaf_entry_sizes,
-    leaf_first_key, leaf_get, leaf_last_key, leaf_size, shortest_separator, validate_leaf,
+    leaf_get, leaf_size, shortest_separator,
 };
 use crate::storage::page::{PAGE_HEADER_SIZE, PAGE_TYPE_INTERNAL, PAGE_TYPE_LEAF, PageAllocator};
 use crate::storage::{PAGE_SIZE, StorageBackend};
@@ -220,66 +220,6 @@ fn merge_entries(old: Vec<Entry>, new: Vec<Entry>) -> Result<Vec<Entry>> {
         let next = if take_a { a.next() } else { b.next() };
         out.extend(next);
     }
-}
-
-/// Rebuild a B+tree from its old leaves (in key order) plus sorted `pending`
-/// entries with distinct keys.
-///
-/// A pending key routes to leaf `i` when `first_key[i] <= key < first_key[i + 1]`
-/// (keys below the first leaf go to leaf 0). Leaves that receive nothing are
-/// copied verbatim apart from the page id, generation and CRC; the others are
-/// decoded, merged and repacked. Internal levels are rebuilt. With no non-empty
-/// old leaf this is a bulk build. Returns the root page id.
-pub fn rebuild_btree_incremental(
-    old_leaves: Vec<Arc<Vec<u8>>>,
-    pending: Vec<Entry>,
-    backend: &mut dyn StorageBackend,
-    cache: &PageCache,
-    alloc: &mut PageAllocator,
-) -> Result<u64> {
-    check_sorted(&pending)?;
-    let mut leaves: Vec<(Arc<Vec<u8>>, Vec<u8>)> = Vec::with_capacity(old_leaves.len());
-    for page in old_leaves {
-        if let Some(first) = leaf_first_key(&page[..])? {
-            leaves.push((page, first));
-        }
-    }
-    if leaves.is_empty() {
-        return build_btree(pending, backend, cache, alloc);
-    }
-    let mut infos: Vec<NodeInfo> = Vec::new();
-    let mut pending = pending.into_iter().peekable();
-    for (i, (page, first)) in leaves.iter().enumerate() {
-        let upper = leaves.get(i + 1).map(|(_, k)| k);
-        let mut batch = Vec::new();
-        while let Some((key, _)) = pending.peek() {
-            if upper.is_some_and(|u| key >= u) {
-                break;
-            }
-            batch.extend(pending.next());
-        }
-        if batch.is_empty() {
-            let last = leaf_last_key(&page[..])?
-                .ok_or_else(|| err_coded!(ErrorCode::Int049, "non-empty leaf without entries"))?;
-            let id = alloc.alloc(&*backend, cache)?;
-            alloc.write(backend, cache, id, (**page).clone())?;
-            infos.push(NodeInfo {
-                id,
-                first: first.clone(),
-                last,
-            });
-        } else {
-            let old = decode_leaf(&page[..])?;
-            emit_leaves(
-                merge_entries(old, batch)?,
-                &mut infos,
-                backend,
-                cache,
-                alloc,
-            )?;
-        }
-    }
-    build_internal_levels(infos, backend, cache, alloc)
 }
 
 // ─── Copy-on-write insert (spec §8.3) ────────────────────────────────────────
@@ -504,6 +444,7 @@ pub fn cow_insert(
 /// Collect the leaf pages of the tree at `root`, in key order, each checked by
 /// a full decode. Every node visited is also pushed onto `nodes_out` (when
 /// given), so a checkpoint can free the whole old tree.
+#[cfg(test)]
 pub fn collect_leaf_pages(
     root: u64,
     backend: &dyn StorageBackend,
@@ -530,9 +471,7 @@ pub fn collect_leaf_pages(
         }
         match page.first().copied() {
             Some(PAGE_TYPE_LEAF) => {
-                // Untouched leaves are copied and resealed, so damage the CRC
-                // cannot see must be caught here, not carried forward.
-                validate_leaf(&page[..])?;
+                crate::storage::node::validate_leaf(&page[..])?;
                 leaves.push(page);
             }
             Some(PAGE_TYPE_INTERNAL) => {
@@ -885,31 +824,6 @@ mod tests {
         (root, alloc.next_append())
     }
 
-    fn rebuild_at(
-        leaves: Vec<Arc<Vec<u8>>>,
-        pending: Vec<Entry>,
-        backend: &mut dyn StorageBackend,
-        cache: &PageCache,
-        start: u64,
-    ) -> (u64, u64) {
-        let mut alloc = PageAllocator::new(Vec::new(), start, 1);
-        let root = rebuild_btree_incremental(leaves, pending, backend, cache, &mut alloc).unwrap();
-        (root, alloc.next_append())
-    }
-
-    fn build_then_incremental(
-        committed: &[Entry],
-        pending: &[Entry],
-        start: u64,
-    ) -> (MemoryBackend, PageCache, u64) {
-        let mut backend = MemoryBackend::new();
-        let cache = PageCache::new(4096);
-        let (old_root, _) = build_at(committed.to_vec(), &mut backend, &cache, 2);
-        let leaves = collect_leaf_pages(old_root, &backend, &cache, None).unwrap();
-        let (root, _) = rebuild_at(leaves, pending.to_vec(), &mut backend, &cache, start);
-        (backend, cache, root)
-    }
-
     /// Stream equality, no empty leaf in a non-empty tree, and prefix scans
     /// that agree with the expected set.
     fn assert_tree_exact(
@@ -1098,157 +1012,6 @@ mod tests {
         overwrite_page(&mut backend, &cache, ids[0], page);
         let err = stream_all_entries(root, &backend, &cache).unwrap_err();
         assert_eq!(crate::error::MinigrafError::from(err).code(), "STG-013");
-    }
-
-    #[test]
-    fn incremental_without_pending_copies_leaves_verbatim() {
-        let mut rng = Rng(0x315);
-        let mut ctr = 0;
-        let committed = random_entries(&mut rng, 3000, &mut ctr);
-        let mut backend = MemoryBackend::new();
-        let cache = PageCache::new(4096);
-        let (old_root, old_next) = build_at(committed.clone(), &mut backend, &cache, 2);
-        let old_leaves = collect_leaf_pages(old_root, &backend, &cache, None).unwrap();
-        let (root, _) = rebuild_at(
-            old_leaves.clone(),
-            Vec::new(),
-            &mut backend,
-            &cache,
-            old_next,
-        );
-        let new_leaves = collect_leaf_pages(root, &backend, &cache, None).unwrap();
-        assert_eq!(new_leaves.len(), old_leaves.len(), "leaf count changed");
-        for (o, n) in old_leaves.iter().zip(&new_leaves) {
-            assert!(o[..4] == n[..4], "leaf type/count changed");
-            assert!(
-                o[PAGE_HEADER_SIZE..] == n[PAGE_HEADER_SIZE..],
-                "leaf body changed"
-            );
-        }
-        assert_tree_exact(root, &backend, &cache, &committed, &mut rng);
-    }
-
-    #[test]
-    fn incremental_matches_merge_random() {
-        let mut rng = Rng(0xC0FFEE);
-        let mut ctr = 0;
-        for _ in 0..40 {
-            let (nc, np) = (rng.below(4000), rng.below(300));
-            let committed = random_entries(&mut rng, nc, &mut ctr);
-            let pending = random_entries(&mut rng, np, &mut ctr);
-            let (backend, cache, root) = build_then_incremental(&committed, &pending, 20_000);
-            let expected = sorted_union(&committed, &pending);
-            assert_tree_exact(root, &backend, &cache, &expected, &mut rng);
-        }
-    }
-
-    #[test]
-    fn incremental_pending_outside_old_range_and_into_one_leaf() {
-        let mut rng = Rng(7);
-        let committed: Vec<Entry> = (1000..3000).map(|n| entry(n, n)).collect();
-        let pending = vec![entry(1, 1), entry(2, 2), entry(9_000, 9), entry(9_001, 9)];
-        let (backend, cache, root) = build_then_incremental(&committed, &pending, 20_000);
-        assert_tree_exact(
-            root,
-            &backend,
-            &cache,
-            &sorted_union(&committed, &pending),
-            &mut rng,
-        );
-
-        // Committed 0, 10_000, …: every pending 0 < e < 10_000 routes to leaf 0,
-        // which must split into several balanced leaves.
-        let committed: Vec<Entry> = (0..2000).map(|n| entry(n * 10_000, n)).collect();
-        let pending: Vec<Entry> = (1..3000).map(|n| entry(n, 100_000 + n)).collect();
-        let (backend, cache, root) = build_then_incremental(&committed, &pending, 20_000);
-        assert_tree_exact(
-            root,
-            &backend,
-            &cache,
-            &sorted_union(&committed, &pending),
-            &mut rng,
-        );
-    }
-
-    #[test]
-    fn incremental_empty_old_tree_is_a_bulk_build() {
-        let mut rng = Rng(13);
-        let mut ctr = 0;
-        let pending = random_entries(&mut rng, 500, &mut ctr);
-        let (backend, cache, root) = build_then_incremental(&[], &pending, 20_000);
-        assert_tree_exact(root, &backend, &cache, &pending, &mut rng);
-        let (backend, cache, root) = build_then_incremental(&[], &[], 20_000);
-        assert_tree_exact(root, &backend, &cache, &[], &mut rng);
-    }
-
-    #[test]
-    fn incremental_keeps_shared_entries_once_and_rejects_conflicts() {
-        let committed: Vec<Entry> = (0..100).map(|n| entry(n, n)).collect();
-        let (backend, cache, root) = build_then_incremental(&committed, &committed[10..20], 5000);
-        assert_tree_exact(root, &backend, &cache, &committed, &mut Rng(3));
-
-        let mut backend = MemoryBackend::new();
-        let cache = PageCache::new(64);
-        let old = vec![(b"k".to_vec(), b"1".to_vec())];
-        let (root, next) = build_at(old, &mut backend, &cache, 2);
-        let leaves = collect_leaf_pages(root, &backend, &cache, None).unwrap();
-        let mut alloc = PageAllocator::new(Vec::new(), next, 1);
-        let conflict = vec![(b"k".to_vec(), b"2".to_vec())];
-        let err = rebuild_btree_incremental(leaves, conflict, &mut backend, &cache, &mut alloc)
-            .unwrap_err();
-        assert_eq!(crate::error::MinigrafError::from(err).code(), "INT-049");
-    }
-
-    #[test]
-    fn incremental_single_inserts_do_not_fragment_leaves() {
-        // One random insert per round, like one checkpoint per new fact: leaves
-        // must stay reasonably full instead of leaving a remainder each time.
-        let mut rng = Rng(23);
-        let mut ctr = 0;
-        let mut backend = MemoryBackend::new();
-        let cache = PageCache::new(4096);
-        let mut expected = random_entries(&mut rng, 3000, &mut ctr);
-        let (mut root, _) = build_at(expected.clone(), &mut backend, &cache, 2);
-        let bulk = collect_leaf_pages(root, &backend, &cache, None)
-            .unwrap()
-            .len();
-        let mut start = 10_000;
-        for _ in 0..600 {
-            let pending = random_entries(&mut rng, 1, &mut ctr);
-            let leaves = collect_leaf_pages(root, &backend, &cache, None).unwrap();
-            let (r, next) = rebuild_at(leaves, pending.clone(), &mut backend, &cache, start);
-            root = r;
-            start = next;
-            expected = sorted_union(&expected, &pending);
-        }
-        assert_tree_exact(root, &backend, &cache, &expected, &mut rng);
-        let leaves = collect_leaf_pages(root, &backend, &cache, None)
-            .unwrap()
-            .len();
-        assert!(
-            leaves <= bulk * 5 / 2,
-            "leaf count grew from {bulk} to {leaves}"
-        );
-    }
-
-    #[test]
-    fn incremental_repeated_rounds() {
-        let mut rng = Rng(19);
-        let mut ctr = 0;
-        let mut backend = MemoryBackend::new();
-        let cache = PageCache::new(4096);
-        let mut expected = random_entries(&mut rng, 1500, &mut ctr);
-        let (mut root, mut start) = build_at(expected.clone(), &mut backend, &cache, 2);
-        for _ in 0..30 {
-            let n = 1 + rng.below(150);
-            let pending = random_entries(&mut rng, n, &mut ctr);
-            let leaves = collect_leaf_pages(root, &backend, &cache, None).unwrap();
-            let (r, next) = rebuild_at(leaves, pending.clone(), &mut backend, &cache, start);
-            root = r;
-            start = next;
-            expected = sorted_union(&expected, &pending);
-            assert_tree_exact(root, &backend, &cache, &expected, &mut rng);
-        }
     }
 
     #[test]
@@ -1560,8 +1323,15 @@ mod tests {
         let old_nodes = node_ids(old_root, &backend, &cache);
         let mut alloc = PageAllocator::new(Vec::new(), next, 2);
         let mut freed = Vec::new();
-        let root = cow_insert(old_root, pending.to_vec(), &mut backend, &cache, &mut alloc, &mut freed)
-            .unwrap();
+        let root = cow_insert(
+            old_root,
+            pending.to_vec(),
+            &mut backend,
+            &cache,
+            &mut alloc,
+            &mut freed,
+        )
+        .unwrap();
         let expected = sorted_union(committed, pending);
         assert_tree_exact(root, &backend, &cache, &expected, rng);
         assert!(
@@ -1621,7 +1391,15 @@ mod tests {
         let mut alloc = PageAllocator::new(Vec::new(), 2, 1);
         let mut freed = Vec::new();
         let entries: Vec<Entry> = (0..500).map(|n| entry(n, n)).collect();
-        let root = cow_insert(0, entries.clone(), &mut backend, &cache, &mut alloc, &mut freed).unwrap();
+        let root = cow_insert(
+            0,
+            entries.clone(),
+            &mut backend,
+            &cache,
+            &mut alloc,
+            &mut freed,
+        )
+        .unwrap();
         assert!(freed.is_empty());
         assert!(stream_all_entries(root, &backend, &cache).unwrap() == entries);
     }
@@ -1650,18 +1428,32 @@ mod tests {
         let cache = PageCache::new(4096);
         let mut expected = random_entries(&mut rng, 3000, &mut ctr);
         let (mut root, next) = build_at(expected.clone(), &mut backend, &cache, 2);
-        let bulk = collect_leaf_pages(root, &backend, &cache, None).unwrap().len();
+        let bulk = collect_leaf_pages(root, &backend, &cache, None)
+            .unwrap()
+            .len();
         let mut alloc = PageAllocator::new(Vec::new(), next, 2);
         for _ in 0..600 {
             let pending = random_entries(&mut rng, 1, &mut ctr);
             let mut freed = Vec::new();
-            root = cow_insert(root, pending.clone(), &mut backend, &cache, &mut alloc, &mut freed)
-                .unwrap();
+            root = cow_insert(
+                root,
+                pending.clone(),
+                &mut backend,
+                &cache,
+                &mut alloc,
+                &mut freed,
+            )
+            .unwrap();
             expected = sorted_union(&expected, &pending);
         }
         assert_tree_exact(root, &backend, &cache, &expected, &mut rng);
-        let leaves = collect_leaf_pages(root, &backend, &cache, None).unwrap().len();
-        assert!(leaves <= bulk * 5 / 2, "leaf count grew from {bulk} to {leaves}");
+        let leaves = collect_leaf_pages(root, &backend, &cache, None)
+            .unwrap()
+            .len();
+        assert!(
+            leaves <= bulk * 5 / 2,
+            "leaf count grew from {bulk} to {leaves}"
+        );
     }
 
     #[test]
@@ -1673,8 +1465,15 @@ mod tests {
         let (root, next) = build_at(committed, &mut backend, &cache, 2);
         let mut alloc = PageAllocator::new(Vec::new(), next, 2);
         let mut freed = Vec::new();
-        cow_insert(root, vec![entry(77_777, 1)], &mut backend, &cache, &mut alloc, &mut freed)
-            .unwrap();
+        cow_insert(
+            root,
+            vec![entry(77_777, 1)],
+            &mut backend,
+            &cache,
+            &mut alloc,
+            &mut freed,
+        )
+        .unwrap();
         assert_eq!(alloc.next_append() - next, 3, "leaf + 2 internal nodes");
         assert_eq!(freed.len(), 3);
     }

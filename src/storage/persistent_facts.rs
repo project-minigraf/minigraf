@@ -9,7 +9,7 @@
 use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::graph::FactStorage;
 use crate::graph::types::Fact;
-use crate::storage::btree::{build_btree, collect_leaf_pages, rebuild_btree_incremental};
+use crate::storage::btree::{build_btree, cow_insert};
 use crate::storage::cache::PageCache;
 use crate::storage::dict::{DictReader, Encoded, Encoder};
 use crate::storage::meta::{MetaPage, SlotState, slot_page};
@@ -283,14 +283,16 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         }
     }
 
-    /// Commit pending facts as the next generation (spec §8.3, full-rewrite form).
+    /// Commit pending facts as the next generation, copy-on-write (spec §8.3).
     ///
-    /// New long values are appended to fresh value pages. The five trees are
-    /// rebuilt into pages the active meta does not reference (its free list
-    /// first, then appended). Every page of the old trees and the old free-list
-    /// chain joins the new free list. After a sync, the new meta goes to the
-    /// other slot and is synced: the only commit point. A failure at any step
-    /// leaves the active meta and all it references untouched.
+    /// New long values are appended to fresh value pages. Each of the five trees
+    /// gets a copy-on-write batch insert: only touched leaves and their paths to
+    /// the root are rewritten, at pages the active meta does not reference (its
+    /// free list, read lazily, then appended). The replaced pages and the free-list
+    /// pages read are pushed onto the free list in front of its unread tail. After
+    /// a sync, the new meta goes to the other slot and is synced: the only commit
+    /// point. A failure at any step leaves the active meta and all it references
+    /// untouched. The pages written depend on the change, not on the graph size.
     pub fn save(&mut self) -> Result<()> {
         if !self.dirty {
             return Ok(());
@@ -300,26 +302,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let next_gen = m.next_generation()?;
 
         let mut backend = self.lock()?;
-
-        // Snapshot the old trees (their leaves, and every node for freeing) and
-        // the old free list. Nothing here is written.
-        let mut freed: Vec<u64> = Vec::new();
-        let mut old_leaves = Vec::with_capacity(5);
-        for root in m.tree_roots() {
-            old_leaves.push(if root == 0 {
-                Vec::new()
-            } else {
-                collect_leaf_pages(root, &*backend, &self.page_cache, Some(&mut freed))?
-            });
-        }
-        let (old_free, old_chain) = if m.freelist_head != 0 {
-            freelist::read_chain(m.freelist_head, &*backend, &self.page_cache, m.page_count)?
-        } else {
-            (Vec::new(), Vec::new())
-        };
-        freed.extend(old_chain);
-
-        let mut alloc = PageAllocator::new(old_free, m.page_count, next_gen);
+        let mut alloc =
+            PageAllocator::from_chain(m.freelist_head, m.freelist_count, m.page_count, next_gen);
         let encoded = encode(
             &pending_facts,
             &m,
@@ -331,28 +315,21 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             u64::try_from(encoded.index[0].len()).map_err(|_| err_coded!(ErrorCode::Stg024))?;
         let (next_eid, next_iid) = (encoded.next_eid, encoded.next_iid);
         let Encoded { index, dict, .. } = encoded;
-        let mut roots = [0u64; 5];
-        for ((root, leaves), entries) in roots
-            .iter_mut()
-            .zip(old_leaves)
-            .zip(index.into_iter().chain([dict]))
-        {
-            *root = rebuild_btree_incremental(
-                leaves,
+        let mut freed: Vec<u64> = Vec::new();
+        let mut roots = m.tree_roots();
+        for (root, entries) in roots.iter_mut().zip(index.into_iter().chain([dict])) {
+            *root = cow_insert(
+                *root,
                 entries,
                 &mut *backend,
                 &self.page_cache,
                 &mut alloc,
+                &mut freed,
             )?;
         }
         let [eavt_root, aevt_root, avet_root, vaet_root, dict_root] = roots;
-
-        // New free list: what is left of the old one, plus everything the old
-        // meta referenced that the new one does not.
-        let mut new_free = alloc.take_unused_free();
-        new_free.extend(freed);
-        let (freelist_head, _) =
-            freelist::write_chain(&new_free, &mut alloc, &mut *backend, &self.page_cache)?;
+        let (freelist_head, freelist_count) =
+            alloc.finish_free_list(freed, &mut *backend, &self.page_cache)?;
 
         backend.sync()?;
 
@@ -372,8 +349,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             next_eid,
             next_iid,
             freelist_head,
-            freelist_count: u64::try_from(new_free.len())
-                .map_err(|_| err_coded!(ErrorCode::Int048, "free-list length"))?,
+            freelist_count,
             ..m
         };
         backend.write_page(slot_page(next_gen), &new_meta.encode())?;
@@ -560,6 +536,7 @@ mod tests {
     use crate::graph::types::Value;
     use crate::storage::backend::FaultInjectingBackend;
     use crate::storage::backend::MemoryBackend;
+    use crate::storage::btree::collect_leaf_pages;
     use crate::storage::keys::Index;
     use crate::storage::reader::all_entries_as_facts;
     use std::collections::BTreeSet;
