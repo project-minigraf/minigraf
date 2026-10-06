@@ -1508,4 +1508,115 @@ mod tests {
         assert_indexes_exact(&pfs.meta(), &mem);
         assert_space_accounted(&pfs.meta(), &mem);
     }
+
+    // ── checkpoint cost (spec §11, #434) ────────────────────────────────────
+
+    /// Depth of the tree at `root` (a lone leaf is depth 1).
+    fn depth(root: u64, backend: &dyn StorageBackend) -> u64 {
+        let cache = PageCache::new(0);
+        let mut d = 1;
+        let mut id = root;
+        loop {
+            let p = cache.get_or_load(id, backend).unwrap();
+            if p[0] != page::PAGE_TYPE_INTERNAL {
+                return d;
+            }
+            id = crate::storage::node::Internal::new(&p[..])
+                .unwrap()
+                .child(0)
+                .unwrap();
+            d += 1;
+        }
+    }
+
+    /// Entity `i` of the cost tests: spaced so that new UUIDs can fall between.
+    fn spaced(i: u64) -> Uuid {
+        Uuid::from_u128(u128::from(i) << 20)
+    }
+
+    /// Pages written by a checkpoint that adds `k` facts to a graph of `n`, and
+    /// the summed depth of the five trees. New facts get new entities; with
+    /// `sequential` their UUIDs and values follow the existing ones, otherwise
+    /// they are random.
+    fn checkpoint_writes(n: u64, k: u64, sequential: bool) -> (usize, u64) {
+        let rec = RecordingBackend {
+            inner: MemoryBackend::new(),
+            written: Arc::new(Mutex::new(Vec::new())),
+        };
+        let log = rec.written.clone();
+        let mem = rec.inner.clone();
+        let mut pfs = PersistentFactStorage::new(rec, 256).unwrap();
+        for chunk in (0..n).collect::<Vec<u64>>().chunks(5000) {
+            let batch = chunk
+                .iter()
+                .map(|&i| (spaced(i), ":n".to_string(), Value::Integer(i as i64 * 1000)))
+                .collect();
+            pfs.storage().transact(batch, None).unwrap();
+        }
+        pfs.mark_dirty();
+        pfs.save().unwrap();
+        let mut rng: u64 = 0x9E37_79B9_7F4A_7C15;
+        let batch = (0..k)
+            .map(|i| {
+                rng ^= rng << 13;
+                rng ^= rng >> 7;
+                rng ^= rng << 17;
+                if sequential {
+                    (
+                        spaced(n + i),
+                        ":n".to_string(),
+                        Value::Integer((n + i) as i64 * 1000),
+                    )
+                } else {
+                    // Between existing UUIDs and values, so every tree but the
+                    // ones keyed by new ids takes random-position inserts.
+                    let r = rng % n;
+                    (
+                        Uuid::from_u128(u128::from(r) << 20 | 1),
+                        ":n".to_string(),
+                        Value::Integer(r as i64 * 1000 + 1),
+                    )
+                }
+            })
+            .collect();
+        pfs.storage().transact(batch, None).unwrap();
+        pfs.mark_dirty();
+        log.lock().unwrap().clear();
+        pfs.save().unwrap();
+        let written = log.lock().unwrap().len();
+        let m = pfs.meta();
+        let depths = m
+            .tree_roots()
+            .iter()
+            .filter(|&&r| r != 0)
+            .map(|&r| depth(r, &mem))
+            .sum();
+        assert_space_accounted(&m, &mem);
+        (written, depths)
+    }
+
+    /// #434 acceptance: a checkpoint's cost depends on the change, not on the
+    /// graph. With keys at the right edge, 10x more facts costs at most the
+    /// extra tree depth; with random keys, at most one path per new entry per
+    /// tree.
+    #[test]
+    fn checkpoint_cost_does_not_grow_with_the_graph() {
+        for k in [1u64, 100] {
+            let (small, d_small) = checkpoint_writes(10_000, k, true);
+            let (large, d_large) = checkpoint_writes(100_000, k, true);
+            assert!(
+                large <= small + (d_large - d_small) as usize + 2,
+                "k={k}: {small} pages at 10k, {large} at 100k"
+            );
+            let (random, d) = checkpoint_writes(100_000, k, false);
+            // Five trees, one path each per new entry, plus a value-free
+            // allowance for free-list pages and the meta.
+            assert!(
+                random <= (k * d) as usize + 8,
+                "k={k}: {random} pages for random keys (depth sum {d})"
+            );
+        }
+        let (one, _) = checkpoint_writes(100_000, 1, true);
+        assert!(one <= 20, "one fact at 100k writes {one} pages");
+    }
 }
