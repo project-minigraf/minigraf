@@ -487,3 +487,77 @@ fn stress_open_write_loop_nightly() {
         h.join().expect("thread panicked in nightly stress");
     }
 }
+
+/// Copy-on-write checkpoints (#434, spec §8.1): queries running while the
+/// writer transacts and checkpoints never read a page a checkpoint is
+/// rewriting. Every read succeeds and sees a fact count that only grows.
+#[test]
+fn queries_during_copy_on_write_checkpoints_stay_consistent() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cow.graph");
+    let db = Arc::new(Minigraf::open(&path).unwrap());
+    let mut seed = String::from("(transact [");
+    for i in 0..2_000 {
+        seed.push_str(&format!("[:e{i} :n {i}] "));
+    }
+    seed.push_str("])");
+    db.execute(&seed).unwrap();
+    db.checkpoint().unwrap();
+
+    let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let readers: Vec<_> = (0..4)
+        .map(|r| {
+            let db = Arc::clone(&db);
+            let done = Arc::clone(&done);
+            thread::spawn(move || {
+                let mut last = 0i64;
+                let mut reads = 0u64;
+                while !done.load(std::sync::atomic::Ordering::Relaxed) || reads == 0 {
+                    let q = if r % 2 == 0 {
+                        "(query [:find (count ?e) :where [?e :n ?v]])".to_string()
+                    } else {
+                        format!("(query [:find ?v :where [:e{} :n ?v]])", reads % 2_000)
+                    };
+                    let res = db.execute(&q).expect("a read during checkpoints fails");
+                    if r % 2 == 0 {
+                        let QueryResult::QueryResults { results, .. } = res else {
+                            panic!("expected query results");
+                        };
+                        let n = match &results[0][0] {
+                            minigraf::Value::Integer(n) => *n,
+                            _ => panic!("expected a count"),
+                        };
+                        assert!(n >= last, "the fact count never goes backwards");
+                        last = n;
+                    }
+                    reads += 1;
+                }
+                reads
+            })
+        })
+        .collect();
+
+    for round in 0..40 {
+        let mut tx = String::from("(transact [");
+        for j in 0..25 {
+            tx.push_str(&format!("[:w{round}_{j} :n {}] ", 10_000 + round * 25 + j));
+        }
+        tx.push_str("])");
+        db.execute(&tx).unwrap();
+        db.checkpoint().unwrap();
+    }
+    done.store(true, std::sync::atomic::Ordering::Relaxed);
+    for r in readers {
+        assert!(r.join().unwrap() > 0, "every reader ran");
+    }
+    let QueryResult::QueryResults { results, .. } = db
+        .execute("(query [:find (count ?e) :where [?e :n ?v]])")
+        .unwrap()
+    else {
+        panic!("expected query results");
+    };
+    assert!(
+        matches!(results[0][0], minigraf::Value::Integer(3_000)),
+        "2,000 seed facts plus 40 rounds of 25"
+    );
+}

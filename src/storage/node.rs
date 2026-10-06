@@ -241,6 +241,7 @@ pub fn decode_leaf(page: &[u8]) -> Result<Vec<Entry>> {
 /// Check a leaf's structure without copying keys: every entry and the restart
 /// array stay inside the page, restart offsets match, and no entry shares more
 /// than its predecessor's length. Key order is not checked (decode does that).
+#[cfg(test)]
 pub fn validate_leaf(page: &[u8]) -> Result<()> {
     if page.first().copied() != Some(PAGE_TYPE_LEAF) {
         bail_coded!(ErrorCode::Int049, "not a leaf page");
@@ -275,24 +276,6 @@ pub fn validate_leaf(page: &[u8]) -> Result<()> {
         prev_len = shared + suffix;
     }
     Ok(())
-}
-
-/// The last key of a leaf, decoded from its last restart point; `None` if empty.
-pub fn leaf_last_key(page: &[u8]) -> Result<Option<Vec<u8>>> {
-    let count = node_count(page)?;
-    if count == 0 {
-        return Ok(None);
-    }
-    let restarts = count.div_ceil(RESTART_INTERVAL);
-    let end = PAGE_SIZE
-        .checked_sub(2 * restarts)
-        .ok_or_else(|| invalid("restart array overflows the leaf"))?;
-    let mut pos = get_u16(page, end + 2 * (restarts - 1))?;
-    let mut key: Vec<u8> = Vec::new();
-    for _ in (restarts - 1) * RESTART_INTERVAL..count {
-        key = read_leaf_entry(page, &mut pos, &key, end)?.0;
-    }
-    Ok(Some(key))
 }
 
 /// The value stored under `key` in a leaf, found by binary search over the
@@ -331,16 +314,6 @@ pub fn leaf_get(page: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>> {
         }
     }
     Ok(None)
-}
-
-/// The first key of a leaf, or `None` if it is empty.
-pub fn leaf_first_key(page: &[u8]) -> Result<Option<Vec<u8>>> {
-    if node_count(page)? == 0 {
-        return Ok(None);
-    }
-    let mut pos = PAGE_HEADER_SIZE;
-    let (k, _) = read_leaf_entry(page, &mut pos, &[], PAGE_SIZE)?;
-    Ok(Some(k))
 }
 
 // ─── Internal nodes ──────────────────────────────────────────────────────────
@@ -458,6 +431,7 @@ impl<'a> Internal<'a> {
     }
 
     /// All children in key order, `rightmost_child` last.
+    #[cfg(test)]
     pub fn children(&self) -> Result<Vec<u64>> {
         (0..=self.count).map(|i| self.child(i)).collect()
     }
@@ -549,14 +523,6 @@ mod tests {
             let page = encode_leaf(entries).unwrap();
             assert_eq!(page.len(), PAGE_SIZE);
             assert_eq!(decode_leaf(&page).unwrap(), entries, "round trip");
-            assert_eq!(
-                leaf_first_key(&page).unwrap(),
-                entries.first().map(|(k, _)| k.clone())
-            );
-            assert_eq!(
-                leaf_last_key(&page).unwrap(),
-                entries.last().map(|(k, _)| k.clone())
-            );
             validate_leaf(&page).unwrap();
             for (k, v) in entries {
                 assert_eq!(leaf_get(&page, k).unwrap().as_ref(), Some(v), "present key");
@@ -591,7 +557,6 @@ mod tests {
         let page = encode_leaf(&[]).unwrap();
         assert!(decode_leaf(&page).unwrap().is_empty());
         assert_eq!(leaf_get(&page, b"x").unwrap(), None);
-        assert_eq!(leaf_first_key(&page).unwrap(), None);
     }
 
     #[test]

@@ -111,7 +111,7 @@ cargo run < demos/demo_negation.txt
    - `index.rs`: pending (uncheckpointed) EAVT/AEVT keys over UUIDs and strings, `encode_value`
    - `keys.rs`: byte-comparable v8 keys (FDB integers, value tags, `tx↓`, FOREVER), DICT keys, `MAX_VALUE_BYTES`, `MAX_IDENT_BYTES`
    - `node.rs`: prefix-compressed leaf and shortest-separator internal node codecs
-   - `btree.rs`: On-disk B+tree over byte keys (`build_btree`, `rebuild_btree_incremental`, `LeafCursor` with `seek`, `prefix_scan`, `get`, `MutexStorageBackend`)
+   - `btree.rs`: On-disk B+tree over byte keys (`build_btree`, `cow_insert`, `LeafCursor` with `seek`, `prefix_scan`, `get`, `MutexStorageBackend`)
    - `dict.rs`: `DictReader` (id ↔ UUID/ident, tx timestamps, long values) and `Encoder` (checkpoint-time id assignment and key building)
    - `value_pages.rs`: append-only value pages for strings over 64 bytes
    - `reader.rs`: `OnDiskReader` — covering reads of committed facts (`CommittedReader`)
@@ -182,15 +182,18 @@ Sidecar:   <db>.wal — v2 header records the base generation; CRC32-protected e
 Covering indexes: every index entry is a whole fact as a byte-comparable key
 (`e a v tx↓ vf vt op` in EAVT order), with entities and idents as sequential ids from
 the DICT tree, assigned at checkpoint. Strings over 64 bytes live once in value pages.
-Committed scans return facts in id order. A checkpoint writes only pages the active
-meta does not reference, syncs, then writes the other meta page and syncs, so a crash
-at any point keeps the previous checkpoint.
+Committed scans return facts in id order. A checkpoint is copy-on-write: it rewrites
+only touched leaves and their paths (`btree::cow_insert`), takes pages from the free
+list lazily and pushes freed ones (`PageAllocator::from_chain` / `finish_free_list`),
+so its cost follows the change. It writes only pages the active meta does not
+reference, syncs, then writes the other meta page and syncs, so a crash at any point
+keeps the previous checkpoint.
 Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are rejected
 (STG-028). Design: `docs/superpowers/specs/2026-10-05-v8-storage-format-design.md`.
 
 ## Test Coverage
 
-**1226 tests** (1218 passing, 8 ignored; unit + integration + doc).
+**1230 tests** (1222 passing, 8 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.

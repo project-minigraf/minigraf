@@ -9,7 +9,7 @@
 use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::graph::FactStorage;
 use crate::graph::types::Fact;
-use crate::storage::btree::{build_btree, collect_leaf_pages, rebuild_btree_incremental};
+use crate::storage::btree::{build_btree, cow_insert};
 use crate::storage::cache::PageCache;
 use crate::storage::dict::{DictReader, Encoded, Encoder};
 use crate::storage::meta::{MetaPage, SlotState, slot_page};
@@ -283,14 +283,16 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         }
     }
 
-    /// Commit pending facts as the next generation (spec §8.3, full-rewrite form).
+    /// Commit pending facts as the next generation, copy-on-write (spec §8.3).
     ///
-    /// New long values are appended to fresh value pages. The five trees are
-    /// rebuilt into pages the active meta does not reference (its free list
-    /// first, then appended). Every page of the old trees and the old free-list
-    /// chain joins the new free list. After a sync, the new meta goes to the
-    /// other slot and is synced: the only commit point. A failure at any step
-    /// leaves the active meta and all it references untouched.
+    /// New long values are appended to fresh value pages. Each of the five trees
+    /// gets a copy-on-write batch insert: only touched leaves and their paths to
+    /// the root are rewritten, at pages the active meta does not reference (its
+    /// free list, read lazily, then appended). The replaced pages and the free-list
+    /// pages read are pushed onto the free list in front of its unread tail. After
+    /// a sync, the new meta goes to the other slot and is synced: the only commit
+    /// point. A failure at any step leaves the active meta and all it references
+    /// untouched. The pages written depend on the change, not on the graph size.
     pub fn save(&mut self) -> Result<()> {
         if !self.dirty {
             return Ok(());
@@ -300,26 +302,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let next_gen = m.next_generation()?;
 
         let mut backend = self.lock()?;
-
-        // Snapshot the old trees (their leaves, and every node for freeing) and
-        // the old free list. Nothing here is written.
-        let mut freed: Vec<u64> = Vec::new();
-        let mut old_leaves = Vec::with_capacity(5);
-        for root in m.tree_roots() {
-            old_leaves.push(if root == 0 {
-                Vec::new()
-            } else {
-                collect_leaf_pages(root, &*backend, &self.page_cache, Some(&mut freed))?
-            });
-        }
-        let (old_free, old_chain) = if m.freelist_head != 0 {
-            freelist::read_chain(m.freelist_head, &*backend, &self.page_cache, m.page_count)?
-        } else {
-            (Vec::new(), Vec::new())
-        };
-        freed.extend(old_chain);
-
-        let mut alloc = PageAllocator::new(old_free, m.page_count, next_gen);
+        let mut alloc =
+            PageAllocator::from_chain(m.freelist_head, m.freelist_count, m.page_count, next_gen);
         let encoded = encode(
             &pending_facts,
             &m,
@@ -331,28 +315,21 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             u64::try_from(encoded.index[0].len()).map_err(|_| err_coded!(ErrorCode::Stg024))?;
         let (next_eid, next_iid) = (encoded.next_eid, encoded.next_iid);
         let Encoded { index, dict, .. } = encoded;
-        let mut roots = [0u64; 5];
-        for ((root, leaves), entries) in roots
-            .iter_mut()
-            .zip(old_leaves)
-            .zip(index.into_iter().chain([dict]))
-        {
-            *root = rebuild_btree_incremental(
-                leaves,
+        let mut freed: Vec<u64> = Vec::new();
+        let mut roots = m.tree_roots();
+        for (root, entries) in roots.iter_mut().zip(index.into_iter().chain([dict])) {
+            *root = cow_insert(
+                *root,
                 entries,
                 &mut *backend,
                 &self.page_cache,
                 &mut alloc,
+                &mut freed,
             )?;
         }
         let [eavt_root, aevt_root, avet_root, vaet_root, dict_root] = roots;
-
-        // New free list: what is left of the old one, plus everything the old
-        // meta referenced that the new one does not.
-        let mut new_free = alloc.take_unused_free();
-        new_free.extend(freed);
-        let (freelist_head, _) =
-            freelist::write_chain(&new_free, &mut alloc, &mut *backend, &self.page_cache)?;
+        let (freelist_head, freelist_count) =
+            alloc.finish_free_list(freed, &mut *backend, &self.page_cache)?;
 
         backend.sync()?;
 
@@ -372,8 +349,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             next_eid,
             next_iid,
             freelist_head,
-            freelist_count: u64::try_from(new_free.len())
-                .map_err(|_| err_coded!(ErrorCode::Int048, "free-list length"))?,
+            freelist_count,
             ..m
         };
         backend.write_page(slot_page(next_gen), &new_meta.encode())?;
@@ -560,6 +536,7 @@ mod tests {
     use crate::graph::types::Value;
     use crate::storage::backend::FaultInjectingBackend;
     use crate::storage::backend::MemoryBackend;
+    use crate::storage::btree::collect_leaf_pages;
     use crate::storage::keys::Index;
     use crate::storage::reader::all_entries_as_facts;
     use std::collections::BTreeSet;
@@ -1530,5 +1507,116 @@ mod tests {
         );
         assert_indexes_exact(&pfs.meta(), &mem);
         assert_space_accounted(&pfs.meta(), &mem);
+    }
+
+    // ── checkpoint cost (spec §11, #434) ────────────────────────────────────
+
+    /// Depth of the tree at `root` (a lone leaf is depth 1).
+    fn depth(root: u64, backend: &dyn StorageBackend) -> u64 {
+        let cache = PageCache::new(0);
+        let mut d = 1;
+        let mut id = root;
+        loop {
+            let p = cache.get_or_load(id, backend).unwrap();
+            if p[0] != page::PAGE_TYPE_INTERNAL {
+                return d;
+            }
+            id = crate::storage::node::Internal::new(&p[..])
+                .unwrap()
+                .child(0)
+                .unwrap();
+            d += 1;
+        }
+    }
+
+    /// Entity `i` of the cost tests: spaced so that new UUIDs can fall between.
+    fn spaced(i: u64) -> Uuid {
+        Uuid::from_u128(u128::from(i) << 20)
+    }
+
+    /// Pages written by a checkpoint that adds `k` facts to a graph of `n`, and
+    /// the summed depth of the five trees. New facts get new entities; with
+    /// `sequential` their UUIDs and values follow the existing ones, otherwise
+    /// they are random.
+    fn checkpoint_writes(n: u64, k: u64, sequential: bool) -> (usize, u64) {
+        let rec = RecordingBackend {
+            inner: MemoryBackend::new(),
+            written: Arc::new(Mutex::new(Vec::new())),
+        };
+        let log = rec.written.clone();
+        let mem = rec.inner.clone();
+        let mut pfs = PersistentFactStorage::new(rec, 256).unwrap();
+        for chunk in (0..n).collect::<Vec<u64>>().chunks(5000) {
+            let batch = chunk
+                .iter()
+                .map(|&i| (spaced(i), ":n".to_string(), Value::Integer(i as i64 * 1000)))
+                .collect();
+            pfs.storage().transact(batch, None).unwrap();
+        }
+        pfs.mark_dirty();
+        pfs.save().unwrap();
+        let mut rng: u64 = 0x9E37_79B9_7F4A_7C15;
+        let batch = (0..k)
+            .map(|i| {
+                rng ^= rng << 13;
+                rng ^= rng >> 7;
+                rng ^= rng << 17;
+                if sequential {
+                    (
+                        spaced(n + i),
+                        ":n".to_string(),
+                        Value::Integer((n + i) as i64 * 1000),
+                    )
+                } else {
+                    // Between existing UUIDs and values, so every tree but the
+                    // ones keyed by new ids takes random-position inserts.
+                    let r = rng % n;
+                    (
+                        Uuid::from_u128(u128::from(r) << 20 | 1),
+                        ":n".to_string(),
+                        Value::Integer(r as i64 * 1000 + 1),
+                    )
+                }
+            })
+            .collect();
+        pfs.storage().transact(batch, None).unwrap();
+        pfs.mark_dirty();
+        log.lock().unwrap().clear();
+        pfs.save().unwrap();
+        let written = log.lock().unwrap().len();
+        let m = pfs.meta();
+        let depths = m
+            .tree_roots()
+            .iter()
+            .filter(|&&r| r != 0)
+            .map(|&r| depth(r, &mem))
+            .sum();
+        assert_space_accounted(&m, &mem);
+        (written, depths)
+    }
+
+    /// #434 acceptance: a checkpoint's cost depends on the change, not on the
+    /// graph. With keys at the right edge, 10x more facts costs at most the
+    /// extra tree depth; with random keys, at most one path per new entry per
+    /// tree.
+    #[test]
+    fn checkpoint_cost_does_not_grow_with_the_graph() {
+        for k in [1u64, 100] {
+            let (small, d_small) = checkpoint_writes(10_000, k, true);
+            let (large, d_large) = checkpoint_writes(100_000, k, true);
+            assert!(
+                large <= small + (d_large - d_small) as usize + 2,
+                "k={k}: {small} pages at 10k, {large} at 100k"
+            );
+            let (random, d) = checkpoint_writes(100_000, k, false);
+            // Five trees, one path each per new entry, plus a value-free
+            // allowance for free-list pages and the meta.
+            assert!(
+                random <= (k * d) as usize + 8,
+                "k={k}: {random} pages for random keys (depth sum {d})"
+            );
+        }
+        let (one, _) = checkpoint_writes(100_000, 1, true);
+        assert!(one <= 20, "one fact at 100k writes {one} pages");
     }
 }

@@ -156,23 +156,57 @@ pub fn new_page(page_type: u8, count: u16) -> Vec<u8> {
 
 /// Hands out page ids for one checkpoint generation and writes sealed pages.
 ///
-/// `alloc` takes the lowest id from the active meta's free list first, then
-/// appends at the high-water mark; `alloc_append` always appends. Every id it
-/// hands out is unreferenced by the active meta (spec §8.1), so writing it can
-/// never damage the committed state.
+/// `alloc` takes an id from the active meta's free list first, then appends at
+/// the high-water mark; `alloc_append` always appends. Every id it hands out is
+/// unreferenced by the active meta (spec §8.1), so writing it can never damage
+/// the committed state.
+///
+/// The free list comes either as a list of ids ([`PageAllocator::new`]) or as
+/// the meta's on-disk chain ([`PageAllocator::from_chain`]), whose pages are
+/// read one at a time, only when another id is needed (spec §4.4). A chain page
+/// that has been read is replaced: [`PageAllocator::finish_free_list`] pushes it,
+/// its unused ids and every freed page as new head pages in front of the unread
+/// tail, which is shared unchanged.
 pub struct PageAllocator {
-    /// Free ids, highest first, so `pop` yields the lowest.
+    /// Free ids ready to hand out, in reverse order (`pop` yields the next).
     free: Vec<u64>,
+    /// First chain page not read yet (0: none).
+    chain_next: u64,
+    /// Ids in the chain pages not read yet.
+    chain_tail_count: u64,
+    /// Chain pages read so far; each is free once the new meta commits.
+    chain_read: Vec<u64>,
+    /// Bound for chain page ids (the active meta's `page_count`).
+    chain_bound: u64,
     next_append: u64,
     generation: u64,
 }
 
 impl PageAllocator {
-    /// An allocator over `free` (any order) that appends from `next_append`.
+    /// An allocator over `free` (any order, lowest handed out first) that
+    /// appends from `next_append`.
     pub fn new(mut free: Vec<u64>, next_append: u64, generation: u64) -> Self {
         free.sort_unstable_by(|a, b| b.cmp(a));
         PageAllocator {
             free,
+            chain_next: 0,
+            chain_tail_count: 0,
+            chain_read: Vec::new(),
+            chain_bound: next_append,
+            next_append,
+            generation,
+        }
+    }
+
+    /// An allocator over the free-list chain at `head` holding `count` ids, in a
+    /// file whose committed `page_count` is `next_append`.
+    pub fn from_chain(head: u64, count: u64, next_append: u64, generation: u64) -> Self {
+        PageAllocator {
+            free: Vec::new(),
+            chain_next: head,
+            chain_tail_count: count,
+            chain_read: Vec::new(),
+            chain_bound: next_append,
             next_append,
             generation,
         }
@@ -189,11 +223,34 @@ impl PageAllocator {
         self.next_append
     }
 
-    /// A free id if any is left, otherwise a new one at the end.
-    pub fn alloc(&mut self) -> Result<u64> {
-        match self.free.pop() {
-            Some(id) => Ok(id),
-            None => self.alloc_append(),
+    /// A free id if any is left, otherwise a new one at the end. Reads the next
+    /// free-list chain page when the ids read so far are used up.
+    pub fn alloc(
+        &mut self,
+        backend: &dyn crate::storage::StorageBackend,
+        cache: &crate::storage::cache::PageCache,
+    ) -> Result<u64> {
+        loop {
+            if let Some(id) = self.free.pop() {
+                return Ok(id);
+            }
+            if self.chain_next == 0 {
+                return self.alloc_append();
+            }
+            if u64::try_from(self.chain_read.len()).unwrap_or(u64::MAX) >= self.chain_bound {
+                bail_coded!(ErrorCode::Stg035, "chain loops");
+            }
+            let id = self.chain_next;
+            let (mut ids, next) =
+                crate::storage::freelist::read_page(id, backend, cache, self.chain_bound)?;
+            self.chain_tail_count = self
+                .chain_tail_count
+                .checked_sub(u64::try_from(ids.len()).unwrap_or(u64::MAX))
+                .ok_or_else(|| err_coded!(ErrorCode::Stg035, "freelist_count too small"))?;
+            self.chain_read.push(id);
+            self.chain_next = next;
+            ids.reverse();
+            self.free = ids;
         }
     }
 
@@ -206,11 +263,56 @@ impl PageAllocator {
         Ok(id)
     }
 
-    /// Free ids not handed out, lowest first.
+    /// Free ids not handed out, in hand-out order. Chain pages not read yet are
+    /// not included.
+    #[cfg(test)]
     pub fn take_unused_free(&mut self) -> Vec<u64> {
         let mut v = std::mem::take(&mut self.free);
         v.reverse();
         v
+    }
+
+    /// Write the new free list and return `(head, count)`.
+    ///
+    /// The list is `freed` (pages the new meta no longer references), every
+    /// chain page read and the ids read but not handed out, as new head pages in
+    /// front of the unread tail. The head pages themselves are allocated here,
+    /// which may read more of the chain, so this repeats until the page count
+    /// covers the ids. Nothing listed here is handed out in this generation.
+    pub fn finish_free_list(
+        &mut self,
+        freed: Vec<u64>,
+        backend: &mut dyn crate::storage::StorageBackend,
+        cache: &crate::storage::cache::PageCache,
+    ) -> Result<(u64, u64)> {
+        use crate::storage::freelist::IDS_PER_PAGE;
+        let mut pages: Vec<u64> = Vec::new();
+        let ids = loop {
+            let mut ids = freed.clone();
+            ids.extend(self.chain_read.iter().copied());
+            ids.extend(self.free.iter().rev().copied());
+            // Use the first `k` allocated pages for the chain and list the rest
+            // as free: the smallest `k` whose pages hold every listed id.
+            let n = pages.len();
+            let mut k = 0usize;
+            while k <= n && (ids.len() + n - k).div_ceil(IDS_PER_PAGE) > k {
+                k += 1;
+            }
+            if k > n {
+                pages.push(self.alloc(&*backend, cache)?);
+                continue;
+            }
+            ids.extend(pages.get(k..).unwrap_or(&[]).iter().copied());
+            pages.truncate(k);
+            break ids;
+        };
+        let tail = self.chain_next;
+        let count = self
+            .chain_tail_count
+            .checked_add(u64::try_from(ids.len()).unwrap_or(u64::MAX))
+            .ok_or_else(|| err_coded!(ErrorCode::Int048, "free-list count overflow"))?;
+        crate::storage::freelist::write_pages(&ids, &pages, tail, self, backend, cache)?;
+        Ok((pages.first().copied().unwrap_or(tail), count))
     }
 
     /// Seal `page` as `page_id` in this generation, write it, and put it in the
@@ -298,12 +400,14 @@ mod tests {
 
     #[test]
     fn allocator_takes_lowest_free_then_appends() {
+        let b = crate::storage::backend::MemoryBackend::new();
+        let c = crate::storage::cache::PageCache::new(0);
         let mut a = PageAllocator::new(vec![9, 4, 7], 20, 2);
-        assert_eq!(a.alloc().unwrap(), 4);
+        assert_eq!(a.alloc(&b, &c).unwrap(), 4);
         assert_eq!(a.alloc_append().unwrap(), 20);
-        assert_eq!(a.alloc().unwrap(), 7);
+        assert_eq!(a.alloc(&b, &c).unwrap(), 7);
         assert_eq!(a.take_unused_free(), vec![9]);
-        assert_eq!(a.alloc().unwrap(), 21);
+        assert_eq!(a.alloc(&b, &c).unwrap(), 21);
         assert_eq!(a.next_append(), 22);
         assert_eq!(a.generation(), 2);
     }

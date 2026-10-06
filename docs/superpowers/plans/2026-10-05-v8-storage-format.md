@@ -541,15 +541,118 @@ is still a full rewrite (O(N)); PR 4 makes it O(change).
 - [ ] `cargo fmt`, clippy, `cargo test`; open the PR into `v3` with
   `Refs #433 #374 #434 #388`. Own CI until green. Ask before merging.
 
-# PR 4 — Copy-on-write insert, allocator, free list (outline)
+# PR 4 — Copy-on-write insert, allocator, free list
 
-Spec §4.4, §8.
+Spec §4.4, §8. Branch `feat/v8-pr4-cow`. The format does not change.
 
-- Allocator over `M`'s free list plus append. Free-list chain pop/push with copy-on-write head pages.
-- Copy-on-write batch insert per tree, reusing #315's balanced split and freeing replaced pages.
-- Reachability/free-list invariant checker, used in tests after every checkpoint.
-- Cost-bound test with a page-counting backend; a guard that pages referenced by the previous meta are never written.
-- Concurrency test: queries during checkpoints.
+**Outcome:** a checkpoint writes only new value pages, the copied path from each touched
+leaf to its root in each of the five trees, the free-list pages it pushes or rewrites,
+and one meta page. Its cost depends on the change, not on the graph size (#434
+acceptance 1, 2, 4).
+
+**Shape decisions (from reading the v3 code after PR 3):**
+
+- **Lazy free-list pop.** `PageAllocator` gains a chain source: it reads `M`'s free-list
+  pages one at a time, only when it needs another id, and hands out ids in page order.
+  A page whose ids are all handed out becomes free itself (it is unreferenced once the
+  new meta commits). `alloc` therefore needs read access to the backend and cache:
+  its signature becomes `alloc(&mut self, backend: &dyn StorageBackend, cache:
+  &PageCache)`. The eager `Vec` form stays for the migration and for tests.
+- **Push at the end of the checkpoint.** The pushed ids are:
+  - every page the checkpoint replaced (old tree nodes on copied paths);
+  - every chain page it emptied;
+  - the head page it partly consumed, plus that page's remaining ids.
+
+  They are written as new head pages whose `next` is the first untouched chain page,
+  so the untouched tail is shared. The new head pages are allocated through the same
+  allocator, which may pop more ids; that repeats until stable (it converges in one or
+  two rounds). Nothing pushed by this checkpoint is reused within it (§8.1).
+  `freelist_count` is computed as old count − ids in the pages read + ids pushed. The
+  cost is O(pages allocated + pages freed).
+- **Copy-on-write batch insert** (`btree::cow_insert(root, sorted entries, alloc, freed)`):
+  - **Descent and routing:** descend from the root, partitioning the entries by
+    `Internal::route`.
+  - **Leaves:** a touched leaf is merged with its entries and repacked with
+    `pack_leaves`, the balanced split from #315.
+  - **Internal nodes:** a touched internal node is rewritten with each touched child
+    replaced by its pieces. Separators between new pieces are the shortest separators
+    of the adjacent pieces' last and first keys; existing separators stay valid because
+    the routed keys lie within them. An internal node that outgrows a page is split,
+    balanced by bytes, and the separator at the cut moves up.
+  - **Root:** a root split adds a level.
+  - **Freeing:** every replaced page goes into `freed`; untouched subtrees are shared
+    by page id.
+  - **Edge cases:** an empty tree (root 0) is a bulk build. Nothing is ever removed
+    from a tree, so there is no merging.
+- **`save()`** no longer collects the old trees' leaves. It calls `cow_insert` on each
+  of the five trees, then pushes onto the free list. `rebuild_btree_incremental` and
+  the full-tree `collect_leaf_pages` snapshot leave the checkpoint path:
+  `collect_leaf_pages` stays for the reachability test helpers and for #373's verify.
+- **Concurrency (§8.1).** A query holds the `FactStorage` read guard for its whole
+  scan, and swapping in the new reader needs the write lock. So no query spans two
+  checkpoints, and pages freed by checkpoint N are written only by N + 1, after every
+  reader of N − 1 has finished. The page cache stays write-through.
+- **Browser (§12).** `BrowserBufferBackend` already tracks dirty pages per write, so a
+  flush is O(change) once checkpoints are. Verify it, with no code change expected.
+
+## Review Focus
+
+- A checkpoint never writes a page the previous meta references (tested on every save).
+- After every save, the reachable pages and the free ids are disjoint and cover
+  `2..page_count` exactly.
+- Copy-on-write insert equals a sorted merge, and the old root still streams its old
+  contents unchanged.
+
+### Task 1: Lazy chain allocator and push
+
+- [x] `PageAllocator::from_chain(head, count, next_append, generation)`; `alloc` reads
+  chain pages on demand; `finish_free_list(freed, backend, cache) -> (head, count)`
+  pushes and writes new head pages.
+- [x] Tests: pop across page boundaries; partial head rewrite; untouched tail shared
+  (same page ids); count arithmetic; no id handed out twice; pushed ids never handed
+  out in the same generation.
+
+### Task 2: `cow_insert`
+
+- [x] Recursive insert returning replacement pieces `(Option<separator>, page id,
+  first key, last key)`. Leaf merge and balanced split, internal rewrite and split,
+  root growth.
+- [x] Tests:
+  - random committed sets and pending batches (below the first key, above the last,
+    into one leaf, root splits), compared with a sorted union;
+  - the old root streams its old contents unchanged;
+  - `freed` equals exactly the old pages on the touched paths;
+  - single inserts do not fragment leaves;
+  - depth-1 to depth-4 trees.
+
+### Task 3: `save()` on copy-on-write
+
+- [x] Five `cow_insert` calls plus the free-list push. Remove `rebuild_btree_incremental`
+  from `save()`; port its tests to `cow_insert` or delete those that duplicate.
+- [x] The existing crash-at-every-point, space-accounting and never-write-committed-pages
+  tests keep passing.
+
+### Task 4: Cost bound
+
+- [x] A page-counting backend counts pages written by a checkpoint after k ∈ {1, 100}
+  facts on graphs of 10k and 100k facts. The 100k count may exceed the 10k count by at
+  most the tree-depth difference per tree plus the free-list pages.
+- [x] `checkpoint/after_1_fact` measured at 10k and 100k (3.1 / 3.3 ms). `after_100k_facts`
+  and 1M move to PR 5.
+
+### Task 5: Concurrency
+
+- [x] `concurrency_test`: reader threads query in a loop while the writer transacts
+  and checkpoints repeatedly. Every read succeeds (no CRC, page-id or generation
+  error) and sees a consistent fact count.
+
+### Task 6: Docs, PR
+
+- [x] CHANGELOG (checkpoint cost, with numbers), `checkpoint()` and
+  `wal_checkpoint_threshold` rustdoc ("copies pages in proportion to the total index
+  size" goes), CLAUDE.md, TEST_COVERAGE.
+- [x] `cargo fmt`, clippy, `cargo test`; open the PR into `v3` with `Refs #434 #374`. Own
+  CI until green. Ask before merging.
 
 # PR 5 — Hardening, benchmarks, docs (outline)
 
