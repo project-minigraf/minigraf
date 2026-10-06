@@ -366,17 +366,180 @@ stays O(N). PR 4 makes it O(change).
 - [ ] Open the PR into `v3` with `Refs #374 #388 #434`. Own CI until it is green. Ask the
   user before merging.
 
-# PR 3 — Covering keys and dictionaries (outline)
+# PR 3 — Covering keys and dictionaries
 
-Spec §4.3, §5, §6, §9. The format freezes after this PR.
+Spec §4.3, §5, §6, §9. Branch `feat/v8-pr3-covering-keys`. The format freezes after
+this PR.
 
-- Key codec module: FoundationDB-style integers, value tags, string escaping, long-value prefix + hash + ref, FOREVER byte, `tx↓`. Property tests: memcmp order equals logical order.
-- Node format: prefix-compressed leaves with restart points; internal nodes with shortest separators; generic `(key bytes, value bytes)` entries. `LeafCursor` moves to byte keys.
-- DICT tree with tags 0x01–0x06. Id assignment at transact time in WAL order (`FactStorage` pending index keyed by encoded keys). `next_eid`/`next_iid` in the meta page.
-- Value pages with dedup. `MAX_VALUE_BYTES` replaces `MAX_FACT_BYTES`.
-- Covering reads: `CommittedIndexReader` returns facts, translating ids through cached DICT lookups. Delete `FactRef`, fact pages, `CommittedFactReader`.
-- Retarget PR 2's v7 migration to covering keys, DICT and value pages; keep its crash tests.
-- Audit of result-order assumptions in tests and bindings.
+**Outcome:** the four index trees hold whole facts as byte-comparable keys, with
+sequential entity ids and ident ids from a DICT tree, and long strings in deduplicated
+value pages. Fact pages (0x41), `FactRef` and `CommittedFactReader` are gone. `save()`
+is still a full rewrite (O(N)); PR 4 makes it O(change).
+
+**Shape decisions (from reading the v3 code):**
+
+- **The query layer reads committed data through four paths only:** every fact
+  (`get_all_facts`), by entity, by entity and attribute (EAVT), and by attribute (AEVT).
+  AVET and VAET range scans are never called outside tests, and the matcher's
+  index-hint lookup only checks for emptiness before scanning every fact either way.
+  `CommittedFactReader` and `CommittedIndexReader` are therefore replaced by one
+  `CommittedReader` trait with those four methods, returning `Vec<Fact>`. AVET and VAET
+  are still written (spec §5.2, #373 `rebuild_indexes`, #432) and checked in tests.
+- **Ids, value refs and keys are assigned at checkpoint, not at transact (deviation from
+  spec §5.1).** A long value's ref exists only once its value page is written, which
+  happens at checkpoint, so a key containing it cannot be built earlier. Ids are never
+  persisted before the commit that also writes the dictionary entries and keys using
+  them, so assigning them at checkpoint, in pending order (which is WAL order), is
+  equally deterministic and crash-safe. The transact path does no dictionary I/O. The
+  pending side stays logical: `Vec<Fact>` plus `BTreeMap`s over the existing
+  UUID/string keys, mapping to `usize` positions. #432 merges pending and committed
+  streams at scan time. Spec §5.1 is amended.
+- **`tx↓` is the byte complement of the encoding of `tx_count` (deviation from spec
+  §6.1).** The integer encoding is prefix-free, so complementing every byte exactly
+  reverses the order, and a typical `tx_count` costs 2–4 bytes instead of the 9 bytes
+  of `u64::MAX − tx_count`. Spec §6.1 is amended.
+- **DICT 0x06 key is `tag ‖ hash64 ‖ value ref`, with an empty value,** so several
+  long values can share a hash. Dedup seeks to `tag ‖ hash64` and compares each
+  candidate's full value. `hash64` is FNV-1a 64: stable, no dependency. A collision
+  only costs an extra comparison, never a wrong match.
+- **DICT 0x03 keys hold the raw ident bytes.** Nothing follows them in the key, so they
+  need no escaping or terminator.
+- **Idents are capped at `MAX_IDENT_BYTES = 1024`.** The parser already caps keywords
+  at 1024 B. The cap is enforced at WAL write for every path, so a DICT entry always
+  fits in a node.
+- **Size limit:** strings are capped at `MAX_VALUE_BYTES = PAGE_SIZE − 24 − 4 = 4068`.
+  This replaces `MAX_FACT_BYTES` (crate-private, so not a public API change). WAL-003
+  keeps its code; its message now names the value. An index key is at most about
+  200 B.
+- **`tx_count → tx_id` (DICT 0x05).** Every commit path stamps one `tx_id` per
+  `tx_count`, and the v1→v2 migration grouped facts by `tx_id`. A checkpoint or
+  migration that finds two different `tx_id`s for one `tx_count` fails with a new STG
+  code rather than altering a timestamp.
+- **Node format (§4.3).** Leaves hold prefix-compressed entries,
+  `varint shared ‖ varint suffix_len ‖ suffix ‖ varint value_len ‖ value`, with a
+  restart point every 16 entries and a `u16` restart array at the end of the page.
+  Internal nodes hold `rightmost_child u64` at offset 24, then
+  `varint sep_len ‖ sep ‖ child u64` entries with a `u16` slot array at the end. The
+  separator between two subtrees is the shortest prefix of the right subtree's first
+  key that is greater than the left subtree's last key.
+- **btree_v6.rs becomes btree.rs** with byte keys: `build_btree`,
+  `rebuild_btree_incremental` (copy untouched leaves, restamped), `LeafCursor` (with
+  `seek`), `collect_leaf_pages`. Entries are `(Vec<u8>, Vec<u8>)`; the index trees use
+  empty values.
+- **Committed reads translate through a per-call `Dict` reader** that memoises
+  eid→UUID, iid→name, tx_count→tx_id and value-ref→string lookups. Memory is bounded by
+  one call's results, not by the dictionary.
+- **Migration** reuses the checkpoint pipeline from an empty dictionary and empty
+  trees, with facts sorted stably by `tx_count` (§9 step 2). Value pages and trees
+  append from the old `page_count`. The free list, backup meta and crash handling stay
+  as in PR 2.
+- **Committed scan order changes** to eid/iid order (§5.3). Tests that compare lists
+  sort first; §11's order audit covers the bindings.
+
+## Review Focus
+
+- memcmp order equals logical order for every component and value type.
+- The leaf and internal codecs reject any page overflow, and the separators satisfy
+  `max(left) < s ≤ min(right)`.
+- Every dictionary id is assigned exactly once and never reused, across checkpoints and
+  migration.
+- Committed reads return exactly the facts that were written (property test against
+  the pending model).
+
+### Task 1: Key codec — `src/storage/keys.rs`
+
+- [ ] FDB integers: `encode_uint`/`encode_int`/`decode_*`; FOREVER byte for `vt`;
+  `tx↓` as the complemented `tx_count` encoding.
+- [ ] Value encoding (§6.2): tags in cross-type order; short strings escaped with
+  `00 FF` and terminated by `00 00`; long strings as escaped 32-byte prefix,
+  `00 01`, `hash64`, value ref (`page u64 BE`, `slot u16 BE`); keyword = iid; ref =
+  eid; float transform with NaN canonicalised.
+- [ ] Index key builders and decoders for EAVT/AEVT/AVET/VAET over an `EncodedFact`
+  (`e, a, v, tx_count, vf, vt, op`). DICT key builders for tags 0x01–0x06.
+- [ ] `hash64` (FNV-1a), `MAX_VALUE_BYTES`, `MAX_IDENT_BYTES`.
+- [ ] Tests: random tuples, sorted by encoding versus by logical order, for every type,
+  negative/zero/large integers, NaN and ±0.0, strings containing 0x00, strings of 64
+  and 65 bytes, FOREVER. Round trip of every component. Complemented `tx` reverses
+  order.
+
+### Task 2: Node codecs
+
+- [ ] Leaf encode/decode with prefix compression and restarts. `lookup` uses binary
+  search over the restart points, then a scan of at most 16 entries.
+- [ ] Internal encode/decode with the slot array; `route(key)`.
+- [ ] `shortest_separator(left_last, right_first)`.
+- [ ] Tests: random keys round-trip through a leaf; lookup agrees with a linear scan;
+  separators satisfy the bound; an overflow is INT-049.
+
+### Task 3: `btree.rs` on byte keys
+
+- [ ] Port `build_btree`, `build_internal_levels` (infos carry first and last key),
+  `rebuild_btree_incremental`, `collect_leaf_pages`, `LeafCursor` (`next`, `seek`) and
+  `range_scan` to `(Vec<u8>, Vec<u8>)` entries. Equal keys merge to one entry.
+- [ ] Port the existing tree and cursor tests (incremental equivalence, splits,
+  repeated rounds, seek against a fresh descent, page-read counting, cycles,
+  corruption).
+
+### Task 4: Value pages — `src/storage/value_pages.rs`
+
+- [ ] 0x51 page: records end-to-start with a `(offset u16, len u16)` directory.
+  `ValueWriter` appends pages through the allocator (`alloc_append`); each checkpoint
+  starts a fresh page (§13). `read_value(ref)`.
+- [ ] Tests: round trip; a value of exactly `MAX_VALUE_BYTES`; a bad slot is an error.
+
+### Task 5: Dictionary — `src/storage/dict.rs`
+
+- [ ] `Dict` reader over the DICT root: `eid_of(uuid)`, `uuid_of(eid)`,
+  `iid_of(name)`, `name_of(iid)`, `tx_id_of(tx_count)`, `long_value_refs(hash)`, each
+  memoised per instance.
+- [ ] `DictWriter`: assigns new eids/iids from the meta's counters, records new tx
+  entries (STG conflict check), deduplicates long values against committed and new
+  ones, and emits the sorted new DICT entries.
+- [ ] Tests: assignment is deterministic and never reuses an id; a keyword used as an
+  attribute and as a value shares one iid; dedup of a re-asserted and retracted long
+  value adds no value page; a forced hash collision still finds the right value.
+
+### Task 6: Encode pipeline and save
+
+- [ ] `encode_facts(facts, dict_writer, value_writer) -> [Vec<key>; 4]` and the DICT
+  entries; `save()` and `migrate_v7` use it, then `rebuild_btree_incremental` on all
+  five trees. The meta gets `dict_root`, `next_eid` and `next_iid`.
+- [ ] Delete fact pages from v8: `append_fact_pages`, `pack_facts` for v8 and type 0x41
+  (stays reserved). `packed_pages.rs` keeps only the v7 reader.
+- [ ] The space-accounting and index-exactness test helpers walk DICT and value refs.
+
+### Task 7: Covering reads
+
+- [ ] `CommittedReader` trait (`all_facts`, `facts_for_entity`,
+  `facts_for_entity_attribute`, `facts_for_attribute`), implemented by
+  `OnDiskIndexReader` with EAVT/AEVT cursors and a `Dict`. An unknown UUID or attribute
+  means no committed facts.
+- [ ] `FactStorage`: one `committed` reader; pending maps hold `usize` positions; only
+  EAVT and AEVT pending maps remain. Delete `FactRef`, `CommittedFactReader`,
+  `resolve_fact_ref`, and the matcher's and optimizer's unused index plumbing.
+- [ ] Tests: a counting backend shows no value-page read for facts without long
+  values; a property test compares committed reads against the in-memory model across
+  checkpoints.
+
+### Task 8: Size limits and WAL
+
+- [ ] WAL write checks `MAX_VALUE_BYTES` for strings and `MAX_IDENT_BYTES` for
+  attributes and keywords (WAL-003). Update `edge_cases_test`, `multi_value_test` and
+  `error_codes_wal_test` boundaries.
+
+### Task 9: Migration retarget and crash tests
+
+- [ ] `migrate_v7` through the pipeline. Keep the PR 2 migration crash tests; add v7
+  fixtures with long strings, keywords, refs and retractions, compared as sets.
+
+### Task 10: Order audit, docs, PR
+
+- [ ] Run the whole suite; fix order-dependent tests by sorting. Grep the bindings
+  (`minigraf-*` repos are separate; record any order assumption found for the cascade).
+- [ ] Docs: spec amendments (§5.1, §6.1, §6.2 DICT 0x03/0x06), CHANGELOG (result order,
+  size limits), CLAUDE.md File Format and module list, ERROR_REFERENCE, TEST_COVERAGE.
+- [ ] `cargo fmt`, clippy, `cargo test`; open the PR into `v3` with
+  `Refs #433 #374 #434 #388`. Own CI until green. Ask before merging.
 
 # PR 4 — Copy-on-write insert, allocator, free list (outline)
 
