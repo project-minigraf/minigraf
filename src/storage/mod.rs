@@ -18,6 +18,7 @@ pub(crate) mod node;
 pub mod packed_pages;
 pub(crate) mod page;
 pub mod persistent_facts;
+pub(crate) mod value_pages;
 
 use crate::error::{ErrorCode, bail_coded, err_coded};
 use anyhow::Result;
