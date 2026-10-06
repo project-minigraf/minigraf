@@ -84,6 +84,12 @@ let results = db.execute(r#"
                    [?friend :person/name ?friend-name]])
 "#)?;
 
+// Cursor — read a large answer in batches; the answer is fixed at open
+let mut cursor = db.query("(query [:find ?name :where [?e :person/name ?name]])")?;
+while let Some(batch) = cursor.next_batch(1000)? {
+    for row in batch.rows() { /* row[0] is ?name */ }
+}
+
 // Explicit transaction — all-or-nothing
 let mut tx = db.begin_write()?;
 tx.execute(r#"(transact [[:alice :person/age 31]])"#)?;
@@ -105,7 +111,7 @@ let r2 = pq.execute(&[("tx", BindValue::TxCount(2)), ("entity", BindValue::Entit
 
 ```bash
 cargo run          # interactive Datalog REPL
-cargo test         # run 1267 tests
+cargo test         # run 1285 tests
 cargo run < demos/demo_recursive.txt   # recursive rules demo
 ```
 

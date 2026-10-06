@@ -15,6 +15,7 @@ use crate::graph::types::{Fact, TxId, VALID_TIME_FOREVER};
 /// in any practical context, avoiding the collision that `0` would have with the Unix
 /// epoch (1970-01-01T00:00:00Z), which is a legitimate `valid_from` value.
 pub(crate) const VALID_FROM_USE_TX_TIME: i64 = i64::MIN;
+use crate::cursor::Cursor;
 use crate::error::{ErrorCode, MinigrafError, bail_coded, err_coded};
 use crate::graph::FactStorage;
 use crate::graph::types::Value;
@@ -674,17 +675,58 @@ impl Minigraf {
             }
         } else {
             // Read-only: no lock needed
-            let mut executor = DatalogExecutor::new_with_rules_and_functions(
-                self.inner.fact_storage.clone(),
-                self.inner.rules.clone(),
-                self.inner.functions.clone(),
-            );
-            executor.set_limits(
-                self.inner.options.max_derived_facts,
-                self.inner.options.max_results,
-            );
-            executor.execute(cmd)
+            self.read_executor().execute(cmd)
         }
+    }
+
+    /// The executor for a read-only command: no lock, the database's limits.
+    fn read_executor(&self) -> DatalogExecutor {
+        let mut executor = DatalogExecutor::new_with_rules_and_functions(
+            self.inner.fact_storage.clone(),
+            self.inner.rules.clone(),
+            self.inner.functions.clone(),
+        );
+        executor.set_limits(
+            self.inner.options.max_derived_facts,
+            self.inner.options.max_results,
+        );
+        executor
+    }
+
+    /// Run a query and return a [`Cursor`] over its rows.
+    ///
+    /// The cursor's answer is fixed when this returns: writes that commit
+    /// while it is open do not change it. The cursor owns what it needs, so it
+    /// can outlive this handle and move to another thread. While the engine
+    /// computes the whole answer up front, `max_results` and
+    /// `max_derived_facts` apply exactly as they do to [`Minigraf::execute`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - A `WriteTransaction` is active on **this thread** (`INT-001`).
+    /// - Parsing fails.
+    /// - The command is not a `(query ...)` (`API-012`), or it has bind slots
+    ///   (`API-010`; use [`Minigraf::prepare`] and [`PreparedQuery::query`]).
+    /// - Execution fails.
+    ///
+    /// [`PreparedQuery::query`]: crate::PreparedQuery::query
+    pub fn query(&self, input: &str) -> Result<Cursor, MinigrafError> {
+        self.query_inner(input).map_err(MinigrafError::from)
+    }
+
+    fn query_inner(&self, input: &str) -> Result<Cursor> {
+        if is_write_tx_active() {
+            bail_coded!(ErrorCode::Int001);
+        }
+        let cmd = parse_datalog_command(input)?;
+        match &cmd {
+            DatalogCommand::Query(q) => reject_unbound_slots(q)?,
+            DatalogCommand::Transact(_) => bail_coded!(ErrorCode::Api012, "transact"),
+            DatalogCommand::Retract(_) => bail_coded!(ErrorCode::Api012, "retract"),
+            DatalogCommand::Rule(_) => bail_coded!(ErrorCode::Api012, "rule"),
+        }
+        Cursor::from_result(self.read_executor().execute(cmd)?)
     }
 
     // ── Explicit transaction ──────────────────────────────────────────────────

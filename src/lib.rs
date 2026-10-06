@@ -74,6 +74,8 @@
 //! - **Browser** (`wasm32-unknown-unknown` + `browser` feature) — `wasm-pack build --target web --features browser`
 //! - **WASI / server-side** (`wasm32-wasip1`) — `cargo build --target wasm32-wasip1 --release --bin minigraf`
 
+/// Incremental delivery of query results: [`Cursor`] and [`Batch`].
+pub mod cursor;
 pub mod db;
 pub mod error;
 pub(crate) mod graph;
@@ -97,7 +99,8 @@ pub use repl::Repl;
 // EAV value types — users construct and match on these
 pub use graph::types::{EntityId, Value};
 
-// Query result type
+// Query result types
+pub use cursor::{Batch, Cursor};
 pub use query::datalog::executor::QueryResult;
 
 // Bi-temporal query types
