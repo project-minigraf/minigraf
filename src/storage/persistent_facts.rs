@@ -1748,4 +1748,65 @@ mod tests {
         );
         assert!(as_set(reopened.storage().get_all_facts().unwrap()) == all);
     }
+
+    // ── size (spec §10.1, §11, #433) ────────────────────────────────────────
+
+    /// File bytes per fact for `entities` entities in #433's acceptance shape:
+    /// 10 attributes each, 20 % of attributes multi-valued, 10 % retracted and
+    /// re-asserted, written over 10 checkpoints.
+    fn bytes_per_fact(entities: u64) -> (u64, u64) {
+        let mem = MemoryBackend::new();
+        let mut pfs = PersistentFactStorage::new(mem.clone(), 256).unwrap();
+        let mut facts = 0u64;
+        let per_round = entities / 10;
+        for round in 0..10 {
+            let mut asserts = Vec::new();
+            for e in round * per_round..(round + 1) * per_round {
+                let ent = entity(u128::from(e));
+                for a in 0..10u64 {
+                    let attr = format!(":person/a{a}");
+                    let v = match a {
+                        0 => Value::String(format!("Name {e}")),
+                        1 => Value::Keyword(format!(":status/s{}", e % 4)),
+                        2 => Value::Ref(entity(u128::from((e * 7919) % entities))),
+                        3 => Value::Float(e as f64 / 3.0),
+                        _ => Value::Integer((e * 10 + a) as i64),
+                    };
+                    asserts.push((ent, attr.clone(), v));
+                    if (e + a) % 5 == 0 {
+                        // Multi-valued: a second value.
+                        asserts.push((ent, attr, Value::Integer(-((e * 100 + a) as i64) - 1)));
+                    }
+                }
+            }
+            facts += asserts.len() as u64;
+            let churn: Vec<_> = asserts.iter().step_by(10).cloned().collect();
+            pfs.storage().transact(asserts, None).unwrap();
+            pfs.storage().retract(churn.clone()).unwrap();
+            pfs.storage().transact(churn.clone(), None).unwrap();
+            facts += 2 * churn.len() as u64;
+            pfs.mark_dirty();
+            pfs.save().unwrap();
+        }
+        assert_eq!(pfs.meta().fact_count, facts);
+        let bytes = mem.page_count().unwrap() * PAGE_SIZE as u64;
+        (bytes / facts, facts)
+    }
+
+    /// Spec §11: at most 200 bytes per fact, history included (G6: 300 B at 1B).
+    #[test]
+    fn size_per_fact_in_433_shape() {
+        let (per_fact, facts) = bytes_per_fact(10_000);
+        assert!(facts > 100_000);
+        assert!(per_fact <= 200, "{per_fact} bytes per fact");
+    }
+
+    /// The same at 1M facts. Slow in a debug build: run by the scheduled job.
+    #[test]
+    #[ignore]
+    fn size_per_fact_in_433_shape_1m() {
+        let (per_fact, facts) = bytes_per_fact(80_000);
+        assert!(facts > 1_000_000);
+        assert!(per_fact <= 200, "{per_fact} bytes per fact");
+    }
 }

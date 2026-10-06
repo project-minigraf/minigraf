@@ -24,3 +24,8 @@ jobs:
         run: cargo test --test smoke_test -- --include-ignored --nocapture
         env:
           RUST_BACKTRACE: 1
+
+      - name: Size per fact at 1M facts (spec §11)
+        run: cargo test --lib size_per_fact_in_433_shape_1m -- --include-ignored --nocapture
+        env:
+          RUST_BACKTRACE: 1
