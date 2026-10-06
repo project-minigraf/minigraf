@@ -33,6 +33,7 @@ tests/golden/
   v7_multi_checkpoint.graph     + .json
   v7_index_rebuilt.graph        + .json
   v7_pending_wal.graph          + v7_pending_wal.graph.wal + .json
+  v7_stale_wal.graph            + v7_stale_wal.graph.wal + .json
   v7_multivalue.graph           + .json
   v8_*.graph / .wal / .json     (PR B)
   gen/v7/                       standalone crate, minigraf = "=2.0.3" (crates.io)
@@ -67,7 +68,8 @@ v7 files (gen/v7, minigraf 2.0.3):
 | `v7_basic` | `base`, one checkpoint |
 | `v7_multi_checkpoint` | `base` with a checkpoint after each transaction, then 300 filler entities in 3 transacts with checkpoints between them, so the facts span several fact pages and saves |
 | `v7_index_rebuilt` | Same as `v7_multi_checkpoint`, then flip byte 64 (`index_checksum`) and re-seal the header CRC (bytes 80..84), then open with 2.0.3, which rebuilds the indexes and rewrites the header (#370 path), then close |
-| `v7_pending_wal` | `base` checkpointed, then 2 more transacts (one with a retraction) under `wal_checkpoint_threshold(usize::MAX)`, so they stay in a v1 WAL and `Drop` does not checkpoint |
+| `v7_pending_wal` | `base` checkpointed, then 2 more transacts (one with a retraction) under `wal_checkpoint_threshold(usize::MAX)`, then `mem::forget` on the handle, as a crash would: the transactions live only in a v1 WAL |
+| `v7_stale_wal` | As `v7_pending_wal`, but the handle is dropped. 2.0.3's `PersistentFactStorage` saves on drop even under `usize::MAX`, so the facts reach the file and the WAL holds only already-checkpointed entries (#447 shape; also what a crash between a checkpoint's save and its WAL delete leaves) |
 | `v7_multivalue` | The #371 shape: `[:t/x :kind :k/a] [:t/x :kind :k/b]` plus 30 fillers in one transact, then `[:t/y :tag :g/a] [:t/y :tag :g/b]` and a batched retract of both, then checkpoint |
 
 v8 files (gen/v8, PR B, `v3` pinned at a commit after #452):
@@ -130,7 +132,9 @@ read. A recorded read would freeze a bug such as #371.
 3. **Open.** Copy the file (and WAL) into a tempdir and open it. Check
    `current_tx_count() == tx_count` and run every query.
 4. **Persist.** Checkpoint, close, reopen, and run the queries again. On `v3`, the
-   header must now be v8 and the WAL must be gone.
+   header must now be v8 and the WAL must be gone. (v2.x keeps an already-checkpointed
+   WAL after a checkpoint, because replay counted no new entries. The data is correct,
+   so `main` does not check this.)
 5. **Write after.** Transact one fact. `tx_count` becomes `tx_count + 1`. Reopen:
    the new fact is present and the counter has not rewound (#447).
 6. **Untouched.** The committed fixture's bytes are unchanged. The harness only

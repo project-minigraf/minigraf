@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Tests
+
+- **Golden-file compatibility corpus (#391).** `tests/golden/` holds v7 files written by minigraf 2.0.3, each with a JSON manifest of its CRC32, `tx_count` and expected query results. They cover one checkpoint, several checkpoints, indexes rebuilt on open, a WAL left by a crash, a WAL whose entries were already checkpointed, and same-transaction multi-values (#371). `tests/golden_corpus_test.rs` opens a copy of each file and checks its manifest after open, after a checkpoint and reopen, and after one more write. Golden files are never regenerated, only added; a new `golden-corpus` job in `policy.yml` fails a pull request that changes one. The generator is a standalone crate pinned to `minigraf = "=2.0.3"` (`tests/golden/gen/v7/`).
+
 ## v2.0.3 — 2026-10-06
 
 Patch release on the v2.x line with two data-integrity fixes, under the [support policy](PHILOSOPHY.md#support-policy). File format is unchanged (v7). No API changes. Upgrading is recommended for every v2.x user.

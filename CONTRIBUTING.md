@@ -100,6 +100,13 @@ Bugs that can lose, corrupt or hide data are handled so that users can always se
 
 At release time, the maintainer updates the pinned issue and closes the issues whose fixes are in the release.
 
+## Golden Files
+
+`tests/golden/` holds database files written by released versions, each with a manifest of the results it must give (#391). See [`tests/golden/README.md`](tests/golden/README.md).
+
+- Golden files are **never regenerated, only added**. CI fails a pull request that modifies, deletes or renames one.
+- Every release that changes on-disk behavior (a new format version, a new page or WAL shape, a migration) adds golden files for it, with the recipe in a generator crate under `tests/golden/gen/`.
+
 ## Philosophy Check
 
 Before submitting, ask yourself:
