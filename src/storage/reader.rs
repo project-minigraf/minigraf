@@ -11,7 +11,6 @@ use crate::storage::keys::{self, Index, KeyFact};
 use crate::storage::meta::MetaPage;
 use crate::storage::{CommittedReader, Scan, StorageBackend};
 use anyhow::Result;
-use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 /// [`CommittedReader`] over one committed meta's trees.
@@ -62,12 +61,12 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
     /// Facts of `index` entries starting with `prefix` that survive net-assert
     /// at `as_of`, decided on the key bytes (#379, spec §5.3).
     ///
-    /// The history of one triple is contiguous and newest first. Entries are
-    /// taken one transaction at a time: a transaction that holds a retraction
-    /// hides its own assertions and everything older in the triple. Otherwise
-    /// each assertion is kept if its valid-time window (`vf vt` bytes) has not
-    /// been seen in the triple yet. With `as_of`, entries newer than `as_of`
-    /// are passed over. Entries that are passed over are skipped one by one, and
+    /// The history of one triple is contiguous and newest first, so its first
+    /// transaction at or before `as_of` decides it (#435): a transaction that
+    /// holds a retraction hides the triple, otherwise its assertions are kept
+    /// (one, unless written before API-011 existed). Everything older in the
+    /// triple is hidden. With `as_of`, entries newer than `as_of` are passed
+    /// over. Entries that are passed over are skipped one by one, and
     /// after [`SEEK_AFTER`] of them in one triple the cursor seeks past the run,
     /// so a long history costs O(log) page visits while a short one costs no
     /// seek. Only kept entries are decoded and translated through the dictionary.
@@ -85,7 +84,6 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
         }
         let mut cursor = LeafCursor::new(root, Some(prefix), &self.backend, &self.cache)?;
         let mut triple: Vec<u8> = Vec::new();
-        let mut windows: HashSet<Vec<u8>> = HashSet::new();
         let mut group = TxGroup::default();
         // Entries of the current triple are hidden from here on.
         let mut dead = false;
@@ -102,30 +100,25 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
                         let tx = r.tx_desc()?;
                         let new_triple = key_triple != triple.as_slice();
                         if new_triple {
-                            group.flush(index, &mut windows, dict, &mut out)?;
+                            group.flush(index, dict, &mut out)?;
                             triple.clear();
                             triple.extend_from_slice(key_triple);
-                            windows.clear();
                             dead = false;
                             skipped = 0;
                         }
                         if as_of.is_some_and(|limit| tx > limit) {
                             Step::Pass(None)
                         } else {
-                            let window = rest
-                                .get(r.position()..rest.len().saturating_sub(1))
-                                .unwrap_or_default();
                             let retraction = k.last() == Some(&0);
                             Step::Entry {
                                 tx,
-                                window: window.to_vec(),
                                 key: (!retraction).then(|| k.clone()),
                             }
                         }
                     }
                 }
                 _ => {
-                    group.flush(index, &mut windows, dict, &mut out)?;
+                    group.flush(index, dict, &mut out)?;
                     return Ok(out);
                 }
             };
@@ -143,21 +136,18 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
                         cursor.seek(&target)?;
                     }
                 }
-                Step::Entry { tx, window, key } => {
-                    if group.tx != Some(tx) {
-                        if group.flush(index, &mut windows, dict, &mut out)? {
-                            // The retraction hides this older entry too.
-                            dead = true;
-                            skipped = 1;
-                            continue;
-                        }
-                        group = TxGroup {
-                            tx: Some(tx),
-                            ..TxGroup::default()
-                        };
+                Step::Entry { tx, key } => {
+                    if group.tx.is_some_and(|decided| decided != tx) {
+                        // The triple's newest transaction decided it; this
+                        // older entry and the rest of the triple are hidden.
+                        group.flush(index, dict, &mut out)?;
+                        dead = true;
+                        skipped = 1;
+                        continue;
                     }
+                    group.tx = Some(tx);
                     match key {
-                        Some(key) => group.assertions.push((window, key)),
+                        Some(key) => group.assertions.push(key),
                         None => group.retracted = true,
                     }
                 }
@@ -175,11 +165,7 @@ enum Step {
     /// (`0xFF`: past the whole triple), or `tx↓(as_of)` when `None`.
     Pass(Option<u8>),
     /// An entry at or before `as_of`; `key` is kept for assertions only.
-    Entry {
-        tx: u64,
-        window: Vec<u8>,
-        key: Option<Vec<u8>>,
-    },
+    Entry { tx: u64, key: Option<Vec<u8>> },
 }
 
 /// The entries of one triple with one `tx_count`.
@@ -187,31 +173,25 @@ enum Step {
 struct TxGroup {
     tx: Option<u64>,
     retracted: bool,
-    /// `(vf vt bytes, key)` of each assertion.
-    assertions: Vec<(Vec<u8>, Vec<u8>)>,
+    /// Key of each assertion (distinct windows, since keys are unique).
+    assertions: Vec<Vec<u8>>,
 }
 
 impl TxGroup {
-    /// Emit the surviving assertions; returns true if the group held a
-    /// retraction (so every older entry of the triple is hidden too). Resets
-    /// the group.
+    /// Emit the group's assertions unless it holds a retraction, and reset it.
     fn flush(
         &mut self,
         index: Index,
-        windows: &mut HashSet<Vec<u8>>,
         dict: &mut DictReader<'_>,
         out: &mut Vec<Fact>,
-    ) -> Result<bool> {
+    ) -> Result<()> {
         let group = std::mem::take(self);
-        if group.retracted {
-            return Ok(true);
-        }
-        for (window, key) in group.assertions {
-            if windows.insert(window) {
+        if !group.retracted {
+            for key in group.assertions {
                 out.push(dict.fact(&KeyFact::decode(index, &key)?)?);
             }
         }
-        Ok(false)
+        Ok(())
     }
 }
 

@@ -62,6 +62,7 @@ Scope — format and storage integrity:
   The format is frozen for the golden-file corpus (#391).
 - Index `verify` and public `rebuild_indexes()` (#373; done on `v3`)
 - Net-assert on v8 keys before resolving facts, for O(live) point queries (#379; done on `v3`)
+- One current valid-time window per `(e, a, v)`: a later assertion replaces the earlier window, and two windows of one fact in one transaction are `API-011` (#435; done on `v3`)
 - `btree_page` fuzz target that reaches node decoding (#375)
 
 Scope — release-gate testing and documentation:

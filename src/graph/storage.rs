@@ -1,4 +1,4 @@
-use crate::error::{ErrorCode, err_coded};
+use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::graph::types::{
     Attribute, EntityId, Fact, TransactOptions, TxId, VALID_TIME_FOREVER, Value, tx_id_now,
 };
@@ -129,24 +129,27 @@ impl FactStorage {
         opts: Option<TransactOptions>,
     ) -> Result<TxId> {
         let tx_id = tx_id_now();
-        let tx_count = self
-            .tx_counter
-            .fetch_add(1, Ordering::SeqCst)
-            .saturating_add(1);
         let opts = opts.unwrap_or_default();
 
-        let facts: Vec<Fact> = fact_tuples
+        let mut facts: Vec<Fact> = fact_tuples
             .into_iter()
             .map(|(entity, attribute, value)| {
                 let valid_from = opts
                     .valid_from
                     .unwrap_or_else(|| i64::try_from(tx_id).unwrap_or(i64::MAX));
                 let valid_to = opts.valid_to.unwrap_or(VALID_TIME_FOREVER);
-                Fact::with_valid_time(
-                    entity, attribute, value, tx_id, tx_count, valid_from, valid_to,
-                )
+                Fact::with_valid_time(entity, attribute, value, tx_id, 0, valid_from, valid_to)
             })
             .collect();
+        // Before allocating: a rejected transaction takes no tx_count.
+        check_one_window_per_triple(&facts)?;
+        let tx_count = self
+            .tx_counter
+            .fetch_add(1, Ordering::SeqCst)
+            .saturating_add(1);
+        for fact in &mut facts {
+            fact.tx_count = tx_count;
+        }
 
         let mut d = self
             .data
@@ -182,13 +185,9 @@ impl FactStorage {
         default_opts: Option<TransactOptions>,
     ) -> Result<(TxId, u64)> {
         let tx_id = tx_id_now();
-        let tx_count = self
-            .tx_counter
-            .fetch_add(1, Ordering::SeqCst)
-            .saturating_add(1);
         let default_opts = default_opts.unwrap_or_default();
 
-        let facts: Vec<Fact> = fact_tuples
+        let mut facts: Vec<Fact> = fact_tuples
             .into_iter()
             .map(|(entity, attribute, value, per_fact_opts)| {
                 let opts = per_fact_opts.unwrap_or_else(|| default_opts.clone());
@@ -196,11 +195,18 @@ impl FactStorage {
                     .valid_from
                     .unwrap_or_else(|| i64::try_from(tx_id).unwrap_or(i64::MAX));
                 let valid_to = opts.valid_to.unwrap_or(VALID_TIME_FOREVER);
-                Fact::with_valid_time(
-                    entity, attribute, value, tx_id, tx_count, valid_from, valid_to,
-                )
+                Fact::with_valid_time(entity, attribute, value, tx_id, 0, valid_from, valid_to)
             })
             .collect();
+        // Before allocating: a rejected transaction takes no tx_count.
+        check_one_window_per_triple(&facts)?;
+        let tx_count = self
+            .tx_counter
+            .fetch_add(1, Ordering::SeqCst)
+            .saturating_add(1);
+        for fact in &mut facts {
+            fact.tx_count = tx_count;
+        }
 
         let mut d = self
             .data
@@ -409,16 +415,20 @@ pub(crate) fn filter_facts_as_of(facts: Vec<Fact>, as_of: &AsOf) -> Vec<Fact> {
 
 /// Compute the net-asserted view of a fact set.
 ///
-/// For each unique `(entity, attribute, value)` triple:
-/// 1. Find the retraction with the highest `tx_count` (if any).
-/// 2. Keep all assertions whose `tx_count` is greater than that retraction.
-/// 3. Deduplicate surviving assertions by `(valid_from, valid_to)`, keeping the
-///    one with the highest `tx_count` for each validity window.
+/// For each unique `(entity, attribute, value)` triple (#435):
+/// 1. Find its latest assertion by `tx_count` and its latest retraction.
+/// 2. If the assertion is newer than the retraction, keep that transaction's
+///    assertion of the triple; otherwise keep nothing.
 ///
-/// This allows the same EAV triple to be asserted at multiple non-overlapping
-/// valid-time intervals (e.g., salary=$100k valid 2020–2022 AND 2024–2026).
-/// A retraction still cancels all prior assertions of that triple, but
-/// re-assertions after the retraction are preserved.
+/// At a given transaction time a triple has exactly one current valid-time
+/// window: a later assertion replaces the window of an earlier one, which stays
+/// visible through `:as-of` of the earlier transaction. Closing, extending or
+/// reopening a window is a `transact` of the same triple with the new bounds;
+/// a retraction withdraws the triple.
+///
+/// Writes reject two windows of one triple in one transaction
+/// ([`check_one_window_per_triple`]). Records written before that check may
+/// still hold them; all of that transaction's windows are kept then, once each.
 ///
 /// Uses [`encode_value`] for the value key to handle floating-point edge cases
 /// (NaN canonicalisation, ±0.0 disambiguation) consistently with the rest of
@@ -430,59 +440,105 @@ pub(crate) fn filter_facts_as_of(facts: Vec<Fact>, as_of: &AsOf) -> Vec<Fact> {
 /// # Implementation note
 ///
 /// Hot path for every non-`:as-of` query (#323). Each value is encoded once;
-/// the two group maps borrow `(entity, attribute, value_bytes)` from the input
+/// the group maps borrow `(entity, attribute, value_bytes)` from the input
 /// instead of cloning them. They keep std's randomly keyed hasher on purpose:
 /// values are often untrusted text (agent memory), and a fixed-seed fast hash
-/// would let crafted colliding values make every query quadratic. `by_window` stores the
-/// index and `tx_count` of the winning assertion per validity window; survivors
-/// are moved out of `facts` at the end, preserving input order.
+/// would let crafted colliding values make every query quadratic. `latest`
+/// stores the index and `tx_count` of the first latest assertion per triple,
+/// and whether another assertion ties with it; only tied triples take a second
+/// pass. Survivors are moved out of `facts` at the end, preserving input order.
 ///
-/// Idempotent under duplicated input records (a duplicate assertion ties with
-/// the original and loses; a duplicate retraction leaves the max unchanged).
+/// Idempotent under duplicated input records (a duplicate assertion is kept
+/// once per window; a duplicate retraction leaves the max unchanged).
 /// `selective_fact_fetch` relies on this instead of deduplicating.
 pub(crate) fn net_asserted_facts(facts: Vec<Fact>) -> Vec<Fact> {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
     type EavKey<'a> = (&'a EntityId, &'a str, &'a [u8]);
     type WindowKey<'a> = (&'a EntityId, &'a str, &'a [u8], i64, i64);
+
+    /// The first latest assertion of a triple.
+    struct Latest {
+        idx: usize,
+        tx_count: u64,
+        tied: bool,
+    }
 
     let encoded: Vec<Vec<u8>> = facts.iter().map(|f| encode_value(&f.value)).collect();
     let mut keep = vec![false; facts.len()];
 
     {
         let mut max_retract_tx: HashMap<EavKey<'_>, u64> = HashMap::new();
-        let mut by_window: HashMap<WindowKey<'_>, (usize, u64)> = HashMap::new();
+        let mut latest: HashMap<EavKey<'_>, Latest> = HashMap::new();
 
         for (idx, (fact, value_bytes)) in facts.iter().zip(encoded.iter()).enumerate() {
-            let entity = &fact.entity;
-            let attribute = fact.attribute.as_str();
-            let value = value_bytes.as_slice();
+            let key = (
+                &fact.entity,
+                fact.attribute.as_str(),
+                value_bytes.as_slice(),
+            );
             if fact.asserted {
-                by_window
-                    .entry((entity, attribute, value, fact.valid_from, fact.valid_to))
+                latest
+                    .entry(key)
                     .and_modify(|winner| {
-                        if fact.tx_count > winner.1 {
-                            *winner = (idx, fact.tx_count);
+                        if fact.tx_count > winner.tx_count {
+                            *winner = Latest {
+                                idx,
+                                tx_count: fact.tx_count,
+                                tied: false,
+                            };
+                        } else if fact.tx_count == winner.tx_count {
+                            winner.tied = true;
                         }
                     })
-                    .or_insert((idx, fact.tx_count));
+                    .or_insert(Latest {
+                        idx,
+                        tx_count: fact.tx_count,
+                        tied: false,
+                    });
             } else {
                 max_retract_tx
-                    .entry((entity, attribute, value))
+                    .entry(key)
                     .and_modify(|max_tx| *max_tx = (*max_tx).max(fact.tx_count))
                     .or_insert(fact.tx_count);
             }
         }
 
-        for ((entity, attribute, value, _, _), (idx, tx_count)) in &by_window {
-            let retract_tx = max_retract_tx
-                .get(&(*entity, *attribute, *value))
-                .copied()
-                .unwrap_or(0);
-            if *tx_count > retract_tx
-                && let Some(slot) = keep.get_mut(*idx)
-            {
+        let mut any_tied = false;
+        latest.retain(|key, winner| {
+            let retract_tx = max_retract_tx.get(key).copied().unwrap_or(0);
+            if winner.tx_count <= retract_tx {
+                return false;
+            }
+            if winner.tied {
+                any_tied = true;
+                return true;
+            }
+            if let Some(slot) = keep.get_mut(winner.idx) {
                 *slot = true;
+            }
+            false
+        });
+
+        // Tied triples (several records of the latest transaction): keep each
+        // window of that transaction once.
+        if any_tied {
+            let mut seen: HashSet<WindowKey<'_>> = HashSet::new();
+            for (idx, (fact, value_bytes)) in facts.iter().zip(encoded.iter()).enumerate() {
+                let key = (
+                    &fact.entity,
+                    fact.attribute.as_str(),
+                    value_bytes.as_slice(),
+                );
+                if fact.asserted
+                    && latest
+                        .get(&key)
+                        .is_some_and(|winner| winner.tx_count == fact.tx_count)
+                    && seen.insert((key.0, key.1, key.2, fact.valid_from, fact.valid_to))
+                    && let Some(slot) = keep.get_mut(idx)
+                {
+                    *slot = true;
+                }
             }
         }
     }
@@ -492,6 +548,30 @@ pub(crate) fn net_asserted_facts(facts: Vec<Fact>) -> Vec<Fact> {
         .zip(keep)
         .filter_map(|(fact, kept)| kept.then_some(fact))
         .collect()
+}
+
+/// Reject a transaction's facts if they assert one `(entity, attribute, value)`
+/// with two different valid-time windows (API-011, #435): that transaction
+/// would hold no single latest window for the triple. Run on stamped facts,
+/// before anything is written. Identical repeats are allowed.
+pub(crate) fn check_one_window_per_triple(facts: &[Fact]) -> Result<()> {
+    use std::collections::HashMap;
+    let mut windows: HashMap<(&EntityId, &str, Vec<u8>), (i64, i64)> = HashMap::new();
+    for fact in facts.iter().filter(|f| f.asserted) {
+        let window = (fact.valid_from, fact.valid_to);
+        let key = (
+            &fact.entity,
+            fact.attribute.as_str(),
+            encode_value(&fact.value),
+        );
+        if windows
+            .insert(key, window)
+            .is_some_and(|prev| prev != window)
+        {
+            bail_coded!(ErrorCode::Api011, fact.attribute);
+        }
+    }
+    Ok(())
 }
 
 /// The pending fact at `pos`, as indexed by `FactData::pending_indexes`.
@@ -1586,15 +1666,15 @@ mod tests {
         assert_eq!(result[0].tx_count, 6);
     }
 
-    /// A single retraction wipes all valid-time windows of the same EAV triple,
-    /// not just the window that was explicitly retracted.
+    /// A retraction withdraws the triple whatever window its latest
+    /// assertion had.
     ///
     /// Timeline:
     ///   tx=1  assert W1 (2020–2022)
-    ///   tx=2  assert W2 (2024–2026)
-    ///   tx=3  retract          → both windows must disappear
+    ///   tx=2  assert W2 (2024–)   → replaces W1
+    ///   tx=3  retract             → nothing live
     #[test]
-    fn test_net_asserted_retraction_wipes_all_windows() {
+    fn test_net_asserted_retraction_withdraws_triple() {
         let entity = uuid::Uuid::new_v4();
         let attr = ":salary";
         let value = Value::Integer(100_000);
@@ -1620,67 +1700,152 @@ mod tests {
         ];
 
         let result = net_asserted_facts(facts);
-        assert_eq!(
-            result.len(),
-            0,
-            "retraction should wipe all windows for the EAV triple"
-        );
+        assert_eq!(result.len(), 0, "retraction withdraws the triple");
     }
 
-    /// Pre-#323 implementation, kept verbatim as the oracle for the
-    /// randomized equivalence test.
+    /// A later assertion replaces the window of an earlier one (#435).
+    #[test]
+    fn test_net_asserted_later_window_replaces_earlier() {
+        let entity = uuid::Uuid::new_v4();
+        let value = Value::Integer(1);
+        let facts = vec![
+            make_assert(entity, ":a", value.clone(), 1, 1_000, 2_000),
+            make_assert(entity, ":a", value.clone(), 2, 5_000, VALID_TIME_FOREVER),
+        ];
+        let result = net_asserted_facts(facts);
+        assert_eq!(result.len(), 1, "one window per triple");
+        assert_eq!(result[0].tx_count, 2);
+        assert_eq!(result[0].valid_from, 5_000);
+    }
+
+    /// Closing an open window: `[vf, ∞)` then `[vf, D)` leaves only the
+    /// bounded window live (#435).
+    #[test]
+    fn test_net_asserted_closing_window() {
+        let entity = uuid::Uuid::new_v4();
+        let value = Value::Integer(1);
+        let facts = vec![
+            make_assert(entity, ":a", value.clone(), 1, 1_000, VALID_TIME_FOREVER),
+            make_assert(entity, ":a", value.clone(), 2, 1_000, 3_000),
+        ];
+        let result = net_asserted_facts(facts);
+        assert_eq!(result.len(), 1, "one window per triple");
+        assert_eq!(result[0].valid_to, 3_000);
+    }
+
+    /// Records written before API-011 can hold two windows of one triple in
+    /// one transaction; both stay live, once each, in input order.
+    #[test]
+    fn test_net_asserted_legacy_same_tx_windows_kept() {
+        let entity = uuid::Uuid::new_v4();
+        let value = Value::Integer(1);
+        let older = make_assert(entity, ":a", value.clone(), 1, 0, VALID_TIME_FOREVER);
+        let w1 = make_assert(entity, ":a", value.clone(), 2, 1_000, 2_000);
+        let w2 = make_assert(entity, ":a", value.clone(), 2, 5_000, 6_000);
+        let facts = vec![older, w1.clone(), w2.clone(), w1.clone()];
+        let result = net_asserted_facts(facts);
+        assert_eq!(result.len(), 2, "both windows of tx 2, once each");
+        assert_eq!(result[0].valid_from, 1_000);
+        assert_eq!(result[1].valid_from, 5_000);
+    }
+
+    /// A retraction in the triple's latest transaction hides that
+    /// transaction's assertion too.
+    #[test]
+    fn test_net_asserted_same_tx_retraction_hides() {
+        let entity = uuid::Uuid::new_v4();
+        let value = Value::Integer(1);
+        let facts = vec![
+            make_assert(entity, ":a", value.clone(), 1, 0, VALID_TIME_FOREVER),
+            make_assert(entity, ":a", value.clone(), 2, 0, VALID_TIME_FOREVER),
+            make_retract(entity, ":a", value.clone(), 2),
+        ];
+        assert!(net_asserted_facts(facts).is_empty(), "retracted in tx 2");
+    }
+
+    #[test]
+    fn check_one_window_per_triple_rejects_two_windows() {
+        let entity = uuid::Uuid::new_v4();
+        let value = Value::Integer(1);
+        let w1 = make_assert(entity, ":a", value.clone(), 1, 1_000, 2_000);
+        let w2 = make_assert(entity, ":a", value.clone(), 1, 5_000, 6_000);
+        let other_value = make_assert(entity, ":a", Value::Integer(2), 1, 5_000, 6_000);
+        let retraction = make_retract(entity, ":a", value.clone(), 1);
+
+        check_one_window_per_triple(&[w1.clone(), w1.clone()]).expect("identical repeat");
+        check_one_window_per_triple(&[w1.clone(), other_value]).expect("other value");
+        check_one_window_per_triple(&[w1.clone(), retraction]).expect("retraction");
+        let err = check_one_window_per_triple(&[w1, w2]).expect_err("two windows");
+        assert_eq!(crate::error::MinigrafError::from(err).code(), "API-011");
+    }
+
+    #[test]
+    fn transact_batch_rejects_two_windows_without_taking_a_tx() {
+        let storage = FactStorage::new();
+        let e = uuid::Uuid::from_u128(1);
+        let opts = |vf, vt| {
+            Some(TransactOptions {
+                valid_from: Some(vf),
+                valid_to: Some(vt),
+            })
+        };
+        let err = storage.transact_batch(
+            vec![
+                (e, ":a".to_string(), Value::Integer(1), opts(1_000, 2_000)),
+                (e, ":a".to_string(), Value::Integer(1), opts(5_000, 6_000)),
+            ],
+            None,
+        );
+        assert!(err.is_err(), "two windows rejected");
+        assert_eq!(storage.current_tx_count(), 0, "no tx_count taken");
+        assert_eq!(storage.fact_count(), 0, "nothing written");
+    }
+
+    /// Per-triple model, written for clarity: group each triple's records,
+    /// find its newest assertion and newest retraction, keep the newest
+    /// transaction's assertions (one per window) if they are newer (#435).
     fn net_asserted_facts_reference(facts: Vec<Fact>) -> Vec<Fact> {
-        use std::collections::HashMap;
+        use std::collections::BTreeMap;
 
         type EavKey = (EntityId, Attribute, Vec<u8>);
-        type WindowKey = (EntityId, Attribute, Vec<u8>, i64, i64);
-
-        let mut max_retract_tx: HashMap<EavKey, u64> = HashMap::new();
-        let mut by_window: HashMap<WindowKey, Fact> = HashMap::new();
-
+        let mut by_triple: BTreeMap<EavKey, Vec<Fact>> = BTreeMap::new();
         for fact in facts {
-            let eav_key = (
+            let key = (
                 fact.entity,
                 fact.attribute.clone(),
                 encode_value(&fact.value),
             );
-
-            if fact.asserted {
-                let window_key = (
-                    eav_key.0,
-                    eav_key.1,
-                    eav_key.2,
-                    fact.valid_from,
-                    fact.valid_to,
-                );
-                match by_window.get(&window_key) {
-                    None => {
-                        by_window.insert(window_key, fact);
-                    }
-                    Some(existing) if fact.tx_count > existing.tx_count => {
-                        by_window.insert(window_key, fact);
-                    }
-                    _ => {}
-                }
-            } else {
-                let tx_count = fact.tx_count;
-                max_retract_tx
-                    .entry(eav_key)
-                    .and_modify(|max_tx| *max_tx = (*max_tx).max(tx_count))
-                    .or_insert(tx_count);
-            }
+            by_triple.entry(key).or_default().push(fact);
         }
 
-        by_window
-            .into_iter()
-            .filter_map(|((entity, attribute, value, _, _), fact)| {
-                let retract_tx = max_retract_tx
-                    .get(&(entity, attribute, value))
-                    .copied()
-                    .unwrap_or(0);
-                (fact.tx_count > retract_tx).then_some(fact)
-            })
-            .collect()
+        let mut out = Vec::new();
+        for records in by_triple.into_values() {
+            let newest_assert = records
+                .iter()
+                .filter(|f| f.asserted)
+                .map(|f| f.tx_count)
+                .max();
+            let newest_retract = records
+                .iter()
+                .filter(|f| !f.asserted)
+                .map(|f| f.tx_count)
+                .max()
+                .unwrap_or(0);
+            let Some(tx) = newest_assert.filter(|tx| *tx > newest_retract) else {
+                continue;
+            };
+            let mut windows = Vec::new();
+            for f in records
+                .into_iter()
+                .filter(|f| f.asserted && f.tx_count == tx)
+            {
+                if !windows.contains(&(f.valid_from, f.valid_to)) {
+                    windows.push((f.valid_from, f.valid_to));
+                    out.push(f);
+                }
+            }
+        }
+        out
     }
 
     /// Order-independent comparison key for a fact set.
@@ -1753,7 +1918,7 @@ mod tests {
             let actual = sorted_keys(&net_asserted_facts(facts));
             assert_eq!(
                 actual, expected,
-                "new net_asserted_facts diverged from reference"
+                "net_asserted_facts diverged from the per-triple model"
             );
         }
     }

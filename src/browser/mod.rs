@@ -266,6 +266,9 @@ impl BrowserDb {
         let (dirty_pages, result_json) = {
             let mut inner = self.inner.borrow_mut();
 
+            // Before allocating: a rejected transaction takes no tx_count (#435).
+            crate::graph::storage::check_one_window_per_triple(&facts)
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let tx_count = inner.fact_storage.allocate_tx_count();
             let tx_id = tx_id_now();
 

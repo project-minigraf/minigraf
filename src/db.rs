@@ -626,6 +626,8 @@ impl Minigraf {
                 }
                 _ => return Err(err_coded!(ErrorCode::Api002)),
             };
+            // Before allocating: a rejected transaction takes no tx_count.
+            crate::graph::storage::check_one_window_per_triple(&stamped)?;
 
             let tx_count = self.inner.fact_storage.allocate_tx_count();
             let tx_id = crate::graph::types::tx_id_now();
@@ -1325,6 +1327,10 @@ impl<'a> WriteTransaction<'a> {
         let facts_to_commit = std::mem::take(&mut self.pending_facts);
 
         if !facts_to_commit.is_empty() {
+            // Before allocating: a rejected transaction takes no tx_count.
+            // Unresolved `valid_from`s all equal `VALID_FROM_USE_TX_TIME`, so
+            // they compare as they will after stamping.
+            crate::graph::storage::check_one_window_per_triple(&facts_to_commit)?;
             let tx_count = self.inner.fact_storage.allocate_tx_count();
             let tx_id = crate::graph::types::tx_id_now();
 

@@ -361,8 +361,8 @@ pub trait CommittedReader: Send + Sync {
 
     /// The committed facts of `scan` that survive net-assert among the
     /// committed records with `tx_count <= as_of` (every record when `None`):
-    /// for each `(e, a, v)`, the newest assertion per valid-time window that is
-    /// newer than every retraction (#379).
+    /// for each `(e, a, v)`, the assertion of its newest transaction, unless
+    /// that transaction holds a retraction (#379, #435).
     ///
     /// Applying `net_asserted_facts` to these plus the pending facts gives the
     /// same result as applying it to every record, because each pending fact is

@@ -4,6 +4,10 @@
 **Milestone:** v3.0.0, branch `v3`, file format v8 (no format change)
 **Builds on:** `2026-10-05-v8-storage-format-design.md` §5.3, §7
 
+> **Superseded in part by #435** (`2026-10-06-one-window-per-triple-design.md`): net-assert now
+> keeps each triple's newest transaction, not the newest assertion per window, so the walk
+> stops at the first transaction group of each triple. The per-window rule below is history.
+
 ## 1. Problem
 
 Every non-`:as-of` query fetches facts, then applies `net_asserted_facts` (keep an

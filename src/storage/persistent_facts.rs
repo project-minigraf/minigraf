@@ -1773,6 +1773,83 @@ mod tests {
         assert_live_reads_match(&pfs, &model, &scans, &[None, Some(now / 2)]);
     }
 
+    /// One window per triple on disk (#435): a later window replaces an
+    /// earlier one, a retraction in the newest transaction hides that
+    /// transaction's assertion, and records written before API-011 with two
+    /// windows in one transaction keep both. Committed live reads equal the
+    /// in-memory net-assert at every `as_of`, before and after reopen.
+    #[test]
+    fn live_reads_keep_one_transaction_per_triple() {
+        use crate::graph::types::{Fact, VALID_TIME_FOREVER};
+        let (e1, e2, e3) = (entity(1), entity(2), entity(3));
+        let rec = |e: Uuid, tx: u64, vf: i64, vt: i64, asserted: bool| {
+            let mut f = Fact::with_valid_time(
+                e,
+                ":d".to_string(),
+                Value::Integer(7),
+                1_000 + tx,
+                tx,
+                vf,
+                vt,
+            );
+            f.asserted = asserted;
+            f
+        };
+        let history = [
+            // e1: open window, then the same window closed.
+            rec(e1, 1, 100, VALID_TIME_FOREVER, true),
+            rec(e1, 2, 100, 300, true),
+            // e2: assertion, then assert + retract in one transaction.
+            rec(e2, 1, 100, VALID_TIME_FOREVER, true),
+            rec(e2, 3, 100, VALID_TIME_FOREVER, true),
+            rec(e2, 3, 0, VALID_TIME_FOREVER, false),
+            // e3: two windows in one transaction (pre-API-011 data).
+            rec(e3, 2, 100, 200, true),
+            rec(e3, 4, 100, 200, true),
+            rec(e3, 4, 500, 600, true),
+        ];
+        let mem = MemoryBackend::new();
+        let mut pfs = PersistentFactStorage::new(mem.clone(), 32).unwrap();
+        let model = FactStorage::new();
+        for f in history {
+            pfs.storage().load_fact(f.clone()).unwrap();
+            model.load_fact(f).unwrap();
+        }
+        pfs.storage().restore_tx_counter().unwrap();
+        pfs.mark_dirty();
+        pfs.save().unwrap();
+
+        let attrs = vec![":d".to_string()];
+        let scans = live_scans(&[e1, e2, e3], &attrs);
+        let as_ofs = [None, Some(1), Some(2), Some(3), Some(4)];
+        assert_live_reads_match(&pfs, &model, &scans, &as_ofs);
+
+        let live = pfs
+            .storage()
+            .get_live_facts(crate::storage::Scan::All, None)
+            .unwrap();
+        let windows = |e: Uuid| {
+            let mut w: Vec<(i64, i64)> = live
+                .iter()
+                .filter(|f| f.entity == e)
+                .map(|f| (f.valid_from, f.valid_to))
+                .collect();
+            w.sort_unstable();
+            w
+        };
+        assert_eq!(windows(e1), vec![(100, 300)], "closed window replaces open");
+        assert!(windows(e2).is_empty(), "same-transaction retraction hides");
+        assert_eq!(
+            windows(e3),
+            vec![(100, 200), (500, 600)],
+            "legacy pair kept"
+        );
+
+        drop(pfs);
+        let pfs = PersistentFactStorage::new(mem, 32).unwrap();
+        assert_live_reads_match(&pfs, &model, &scans, &as_ofs);
+    }
+
     /// A point read on a triple with a long history reads a few pages, not the
     /// history: the retraction behind the current assertion skips the rest with
     /// one seek, and `as_of` enters the triple with one seek.

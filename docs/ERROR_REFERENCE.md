@@ -166,6 +166,7 @@ with no `CodedError` anywhere in its chain.
 | API-008 | Function registry lock poisoned | Database API |
 | API-009 | WAL not initialized | Database API |
 | API-010 | Query with bind slots passed to execute() | Database API |
+| API-011 | Two valid-time windows for one fact in one transaction | Database API |
 | INT-000 | Unclassified internal error | Internal |
 | INT-001 | WriteTransaction already in progress on this thread | Internal |
 | INT-002 | Invalid entity (API layer) | Internal |
@@ -2427,6 +2428,29 @@ let result = pq.execute(&[
 - Or replace each `$name` with a literal value and keep using `execute()`.
 
 **Scenario**: A query copied from the prepared-query docs is pasted into the REPL or passed to `db.execute()` unchanged.
+
+### API-011 Two valid-time windows for one fact in one transaction
+
+**Error text**: `one transaction asserts the same value of {} with two valid-time windows; assert it once with its final window`
+
+**Cause**: One transaction asserts the same entity, attribute and value twice with different `:valid-from`/`:valid-to` bounds. At any transaction time a fact has exactly one current valid-time window, and the window of the latest transaction applies. Two windows in the same transaction leave no latest one, so the transaction is rejected and nothing is written. The `{}` is the attribute. This can come from one `(transact ...)` with per-fact bounds, or from several `execute()` calls inside one `WriteTransaction`.
+
+**Resolution**:
+- Assert the fact once per transaction, with the window it should have.
+- To change a window later (close it, extend it, reopen it), `transact` the same fact again with the new bounds. The earlier window stays visible through `:as-of`.
+- A fact that was true over two separate periods cannot have both windows live at once. Model each period as its own entity (for example an `:employment` entity with `:employment/salary`), or keep the latest period current and read earlier ones with `:as-of`.
+
+```clojure
+;; Rejected: two windows for [:alice :salary 100000] in one transaction
+(transact [[:alice :salary 100000 {:valid-from "2020-01-01" :valid-to "2022-01-01"}]
+           [:alice :salary 100000 {:valid-from "2024-01-01"}]])
+
+;; Accepted: close the open window in a later transaction
+(transact {:valid-from "2020-01-01"} [[:alice :salary 100000]])
+(transact {:valid-from "2020-01-01" :valid-to "2022-01-01"} [[:alice :salary 100000]])
+```
+
+**Scenario**: A batch import writes the same fact once per period it was true, all in one transaction.
 
 ---
 
