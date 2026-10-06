@@ -8,6 +8,19 @@ Completed releases and their implementation details live in the [CHANGELOG](CHAN
 
 ---
 
+## v2.0.3 — Data-Integrity Patch (released 2026-10-06)
+
+**First v2.x patch under the [support policy](PHILOSOPHY.md#support-policy).** File format stays v7 and the public API does not change. Details are in the [CHANGELOG](CHANGELOG.md).
+
+Shipped:
+
+- Indexed queries return correct results with more than 65,535 uncheckpointed facts (#445)
+- The transaction counter no longer rewinds when reopening next to an already-checkpointed WAL (#447)
+
+Further v2.x releases are data-integrity and security patches only.
+
+---
+
 ## v2.0.2 — Final Planned v2.x Release (released 2026-09-27)
 
 **The v2.x line (`main`) ends with a patch.** File format stays v7 and the public API does not change. All new feature work has moved to v3.x. Tracker: #383. Details are in the [CHANGELOG](CHANGELOG.md).
@@ -172,4 +185,4 @@ See [GitHub Issues](https://github.com/project-minigraf/minigraf/issues) for spe
 
 ---
 
-**Last updated**: September 2026 — v2.0.2, the final planned v2.x release, is the current release; v3.0.0 work, including the file-format v8 fix for #287/#371, is developed on the long-lived `v3` branch and merges into `main` at the v3.0.0 cut.
+**Last updated**: October 2026 — v2.0.3, a data-integrity patch on v2.x, is the current release; v3.0.0 work, including the file-format v8 fix for #287/#371, is developed on the long-lived `v3` branch and merges into `main` at the v3.0.0 cut.
