@@ -1,0 +1,13 @@
+[package]
+name = "minigraf-golden-gen-v7"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Records how the v7 golden files in tests/golden/ were written (#391). Never re-run to replace a committed file."
+
+# Standalone: not a member of the minigraf workspace.
+[workspace]
+
+[dependencies]
+minigraf = "=2.0.3"
+crc32fast = "1.4"
