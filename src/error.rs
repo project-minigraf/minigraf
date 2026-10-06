@@ -178,6 +178,10 @@ pub(crate) enum ErrorCode {
     Stg035,
     Stg036,
     Stg037,
+    Stg038,
+    Stg039,
+    Stg040,
+    Stg041,
     Wal001,
     Wal002,
     Wal003,
@@ -1013,6 +1017,30 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCategory::Storage,
     ),
     (
+        ErrorCode::Stg038,
+        "STG-038",
+        "Index {} disagrees with the committed facts: {}",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg039,
+        "STG-039",
+        "Tree {} is malformed: {}",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg040,
+        "STG-040",
+        "Dictionary is inconsistent: {}",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg041,
+        "STG-041",
+        "Cannot rebuild indexes: {}",
+        ErrorCategory::Storage,
+    ),
+    (
         ErrorCode::Wal001,
         "WAL-001",
         "Invalid WAL magic number: not a .wal file",
@@ -1836,6 +1864,10 @@ mod tests {
                 | ErrorCode::Stg035
                 | ErrorCode::Stg036
                 | ErrorCode::Stg037
+                | ErrorCode::Stg038
+                | ErrorCode::Stg039
+                | ErrorCode::Stg040
+                | ErrorCode::Stg041
                 | ErrorCode::Wal001
                 | ErrorCode::Wal002
                 | ErrorCode::Wal003
@@ -2037,6 +2069,10 @@ mod tests {
             ErrorCode::Stg035,
             ErrorCode::Stg036,
             ErrorCode::Stg037,
+            ErrorCode::Stg038,
+            ErrorCode::Stg039,
+            ErrorCode::Stg040,
+            ErrorCode::Stg041,
             ErrorCode::Wal001,
             ErrorCode::Wal002,
             ErrorCode::Wal003,

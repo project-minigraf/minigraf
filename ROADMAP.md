@@ -60,7 +60,7 @@ Scope — format and storage integrity:
   - covering byte-comparable keys with a dictionary and deduplicated long values, at about 142 bytes per fact (#433).
 
   The format is frozen for the golden-file corpus (#391).
-- Index `verify` and public `rebuild_indexes()` (#373)
+- Index `verify` and public `rebuild_indexes()` (#373; done on `v3`)
 - Net-assert on v8 keys before resolving facts, for O(live) point queries (#379)
 - `btree_page` fuzz target that reaches node decoding (#375)
 
