@@ -71,6 +71,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             Opened::Fresh => pfs.init_empty()?,
             Opened::Meta(m) => {
                 m.check_features()?;
+                m.check_layout()?;
                 m
             }
             Opened::LegacyV7(h) => pfs.migrate_v7(&h)?,
@@ -1105,6 +1106,23 @@ mod tests {
         mem.write_page(1, &vec![0u8; PAGE_SIZE]).unwrap();
         mem.write_page(2, &vec![0u8; PAGE_SIZE]).unwrap();
         assert_eq!(code(open_mem(&mem, None).err().unwrap()), "STG-032");
+    }
+
+    /// A file from a v3.0.0 development build before covering keys has valid
+    /// meta pages but trees without a dictionary: refused, never misread.
+    #[test]
+    fn pre_release_v8_meta_without_dictionary_is_stg_032() {
+        let mut mem = three_generations();
+        let mut m = match MetaPage::decode(&mem.read_page(slot_page(3)).unwrap()) {
+            SlotState::Valid(m) => m,
+            _ => panic!("gen 3 valid"),
+        };
+        m.dict_root = 0;
+        m.next_eid = 0;
+        mem.write_page(slot_page(3), &m.encode()).unwrap();
+        let before = snapshot(&mem);
+        assert_eq!(code(open_mem(&mem, None).err().unwrap()), "STG-032");
+        assert!(snapshot(&mem) == before, "file unchanged");
     }
 
     // ── v7 migration (spec §9) ──────────────────────────────────────────────

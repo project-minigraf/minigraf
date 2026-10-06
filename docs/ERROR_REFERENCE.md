@@ -2049,7 +2049,7 @@ See the [file format section in README](../README.md#file-format) for version hi
 
 **Error text**: `No valid meta page: the file is not a Minigraf v7 or v8 database, or both meta pages are damaged`
 
-**Cause**: Neither meta page (page 0 or page 1) passes its checksum, page 0 is not a valid format v7 header, and no migration backup meta page can be used. Pre-release v8 files written during v3.0.0 development are also rejected this way.
+**Cause**: Neither meta page (page 0 or page 1) passes its checksum, page 0 is not a valid format v7 header, and no migration backup meta page can be used. Pre-release v8 files written during v3.0.0 development are also rejected this way: those with a single 84-byte header, and those with meta pages but no dictionary tree (written before covering keys).
 
 **Resolution**:
 - Check that the path points to a Minigraf database.

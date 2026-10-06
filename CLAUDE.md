@@ -104,15 +104,21 @@ cargo run < demos/demo_negation.txt
    - `storage.rs`: `FactStorage` — in-memory store, `transact_batch`, `retract`, `get_facts_as_of`, `get_facts_valid_at`, `net_asserted_facts`, `get_facts_by_entity_attribute_indexed`
 
 2. **`src/storage/`** — Persistence layer
-   - `mod.rs`: `StorageBackend` trait, `FileHeader` v8 (84 bytes), `CommittedFactReader` / `CommittedIndexReader` traits
+   - `mod.rs`: `StorageBackend` trait, `LegacyHeaderV7` (v7 migration only), `CommittedReader` trait
    - `backend/file.rs`: Single `.graph` file backend (4KB pages, cross-platform)
    - `backend/memory.rs`: In-memory backend for testing
    - `backend/fault_inject.rs`: `FaultInjectingBackend` — injects I/O errors for durability tests (test builds only)
-   - `index.rs`: EAVT / AEVT / AVET / VAET key types, `FactRef`, `encode_value`
-   - `btree_v6.rs`: On-disk B+tree (`build_btree`, `rebuild_btree_incremental`, `OnDiskIndexReader`, `MutexStorageBackend`)
+   - `index.rs`: pending (uncheckpointed) EAVT/AEVT keys over UUIDs and strings, `encode_value`
+   - `keys.rs`: byte-comparable v8 keys (FDB integers, value tags, `tx↓`, FOREVER), DICT keys, `MAX_VALUE_BYTES`, `MAX_IDENT_BYTES`
+   - `node.rs`: prefix-compressed leaf and shortest-separator internal node codecs
+   - `btree.rs`: On-disk B+tree over byte keys (`build_btree`, `rebuild_btree_incremental`, `LeafCursor` with `seek`, `prefix_scan`, `get`, `MutexStorageBackend`)
+   - `dict.rs`: `DictReader` (id ↔ UUID/ident, tx timestamps, long values) and `Encoder` (checkpoint-time id assignment and key building)
+   - `value_pages.rs`: append-only value pages for strings over 64 bytes
+   - `reader.rs`: `OnDiskReader` — covering reads of committed facts (`CommittedReader`)
+   - `meta.rs` / `page.rs` / `freelist.rs`: meta pages A/B, the common page header and allocator, free-list chain
    - `cache.rs`: LRU page cache (`PageCache`, default 256 pages)
    - `dir_sync.rs`: `sync_parent_dir` — fsyncs the parent directory after creating the `.graph`/WAL or deleting the WAL (no-op off Unix)
-   - `packed_pages.rs`: Packed fact pages (~25 facts/4KB page), `MAX_FACT_BYTES`
+   - `packed_pages.rs`: v7 fact pages, read only for migration
    - `persistent_facts.rs`: `PersistentFactStorage` — v8 save/load, auto-migration v7→v8
 
 3. **`src/query/datalog/`** — Datalog engine
@@ -163,23 +169,28 @@ enum Value { String(String), Integer(i64), Float(f64), Boolean(bool),
 
 ```
 Page 0, 1: Meta pages A/B (alternating commits: odd generations in page 0, even in 1).
-           Magic "MGRF"/"META", generation, page_count, index roots, free-list head,
-           required_features; CRC over the whole page. The only commit point.
-Page 2+:   Any mix of fact pages (0x41, interim until covering indexes), B+tree
-           leaf/internal pages (0x61/0x62) and free-list pages (0x81). Every one has
-           a 24-byte header (type, count, CRC32, page id, generation), verified on load.
+           Magic "MGRF"/"META", generation, page_count, five tree roots (EAVT, AEVT,
+           AVET, VAET, DICT), free-list head, next_eid/next_iid, required_features;
+           CRC over the whole page. The only commit point.
+Page 2+:   Any mix of B+tree leaf/internal pages (0x61/0x62), value pages (0x51) and
+           free-list pages (0x81). Every one has a 24-byte header (type, count, CRC32,
+           page id, generation), verified on load.
 Sidecar:   <db>.wal — v2 header records the base generation; CRC32-protected entries;
            replayed on open; deleted on checkpoint
 ```
 
-A checkpoint writes only pages the active meta does not reference, syncs, then writes
-the other meta page and syncs, so a crash at any point keeps the previous checkpoint.
+Covering indexes: every index entry is a whole fact as a byte-comparable key
+(`e a v tx↓ vf vt op` in EAVT order), with entities and idents as sequential ids from
+the DICT tree, assigned at checkpoint. Strings over 64 bytes live once in value pages.
+Committed scans return facts in id order. A checkpoint writes only pages the active
+meta does not reference, syncs, then writes the other meta page and syncs, so a crash
+at any point keeps the previous checkpoint.
 Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are rejected
 (STG-028). Design: `docs/superpowers/specs/2026-10-05-v8-storage-format-design.md`.
 
 ## Test Coverage
 
-**1233 tests** (1225 passing, 8 ignored; unit + integration + doc).
+**1223 tests** (1215 passing, 8 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.

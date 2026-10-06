@@ -168,6 +168,16 @@ impl MetaPage {
         SlotState::Valid(meta)
     }
 
+    /// Fail with STG-032 for a pre-release v8 file: one written before covering
+    /// keys, whose trees have no dictionary. A committed file always has a DICT
+    /// tree once it has index trees.
+    pub fn check_layout(&self) -> Result<()> {
+        if self.eavt_root != 0 && self.dict_root == 0 {
+            bail_coded!(ErrorCode::Stg032);
+        }
+        Ok(())
+    }
+
     /// Fail with STG-034 if the file needs a feature this version lacks.
     pub fn check_features(&self) -> Result<()> {
         let unknown = self.required_features & !KNOWN_FEATURES;

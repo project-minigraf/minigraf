@@ -14,7 +14,7 @@ use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::storage::cache::PageCache;
 use crate::storage::node::{
     Entry, Internal, decode_leaf, encode_internal, encode_leaf, internal_size, leaf_entry_sizes,
-    leaf_first_key, leaf_get, leaf_size, shortest_separator,
+    leaf_first_key, leaf_get, leaf_last_key, leaf_size, shortest_separator, validate_leaf,
 };
 use crate::storage::page::{PAGE_HEADER_SIZE, PAGE_TYPE_INTERNAL, PAGE_TYPE_LEAF, PageAllocator};
 use crate::storage::{PAGE_SIZE, StorageBackend};
@@ -258,11 +258,8 @@ pub fn rebuild_btree_incremental(
             }
             batch.extend(pending.next());
         }
-        let old = decode_leaf(&page[..])?;
         if batch.is_empty() {
-            let last = old
-                .last()
-                .map(|(k, _)| k.clone())
+            let last = leaf_last_key(&page[..])?
                 .ok_or_else(|| err_coded!(ErrorCode::Int049, "non-empty leaf without entries"))?;
             let id = alloc.alloc()?;
             alloc.write(backend, cache, id, (**page).clone())?;
@@ -272,6 +269,7 @@ pub fn rebuild_btree_incremental(
                 last,
             });
         } else {
+            let old = decode_leaf(&page[..])?;
             emit_leaves(
                 merge_entries(old, batch)?,
                 &mut infos,
@@ -317,7 +315,7 @@ pub fn collect_leaf_pages(
             Some(PAGE_TYPE_LEAF) => {
                 // Untouched leaves are copied and resealed, so damage the CRC
                 // cannot see must be caught here, not carried forward.
-                decode_leaf(&page[..])?;
+                validate_leaf(&page[..])?;
                 leaves.push(page);
             }
             Some(PAGE_TYPE_INTERNAL) => {

@@ -238,6 +238,63 @@ pub fn decode_leaf(page: &[u8]) -> Result<Vec<Entry>> {
     Ok(entries)
 }
 
+/// Check a leaf's structure without copying keys: every entry and the restart
+/// array stay inside the page, restart offsets match, and no entry shares more
+/// than its predecessor's length. Key order is not checked (decode does that).
+pub fn validate_leaf(page: &[u8]) -> Result<()> {
+    if page.first().copied() != Some(PAGE_TYPE_LEAF) {
+        bail_coded!(ErrorCode::Int049, "not a leaf page");
+    }
+    let count = node_count(page)?;
+    let restarts = count.div_ceil(RESTART_INTERVAL);
+    let end = PAGE_SIZE
+        .checked_sub(2 * restarts)
+        .filter(|&e| e >= PAGE_HEADER_SIZE)
+        .ok_or_else(|| invalid("restart array overflows the leaf"))?;
+    let mut pos = PAGE_HEADER_SIZE;
+    let mut prev_len = 0usize;
+    for i in 0..count {
+        let restart = i % RESTART_INTERVAL == 0;
+        if restart && get_u16(page, end + 2 * (i / RESTART_INTERVAL))? != pos {
+            bail_coded!(ErrorCode::Int049, "leaf restart offset mismatch");
+        }
+        let shared = get_varint(page, &mut pos)?;
+        if shared > if restart { 0 } else { prev_len } {
+            bail_coded!(
+                ErrorCode::Int049,
+                "leaf entry shares more than its predecessor"
+            );
+        }
+        let suffix = get_varint(page, &mut pos)?;
+        get_slice(page, &mut pos, suffix)?;
+        let value = get_varint(page, &mut pos)?;
+        get_slice(page, &mut pos, value)?;
+        if pos > end {
+            bail_coded!(ErrorCode::Int049, "leaf entry overlaps the restart array");
+        }
+        prev_len = shared + suffix;
+    }
+    Ok(())
+}
+
+/// The last key of a leaf, decoded from its last restart point; `None` if empty.
+pub fn leaf_last_key(page: &[u8]) -> Result<Option<Vec<u8>>> {
+    let count = node_count(page)?;
+    if count == 0 {
+        return Ok(None);
+    }
+    let restarts = count.div_ceil(RESTART_INTERVAL);
+    let end = PAGE_SIZE
+        .checked_sub(2 * restarts)
+        .ok_or_else(|| invalid("restart array overflows the leaf"))?;
+    let mut pos = get_u16(page, end + 2 * (restarts - 1))?;
+    let mut key: Vec<u8> = Vec::new();
+    for _ in (restarts - 1) * RESTART_INTERVAL..count {
+        key = read_leaf_entry(page, &mut pos, &key, end)?.0;
+    }
+    Ok(Some(key))
+}
+
 /// The value stored under `key` in a leaf, found by binary search over the
 /// restart points and a scan of at most [`RESTART_INTERVAL`] entries.
 pub fn leaf_get(page: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>> {
@@ -496,6 +553,11 @@ mod tests {
                 leaf_first_key(&page).unwrap(),
                 entries.first().map(|(k, _)| k.clone())
             );
+            assert_eq!(
+                leaf_last_key(&page).unwrap(),
+                entries.last().map(|(k, _)| k.clone())
+            );
+            validate_leaf(&page).unwrap();
             for (k, v) in entries {
                 assert_eq!(leaf_get(&page, k).unwrap().as_ref(), Some(v), "present key");
             }
@@ -548,14 +610,14 @@ mod tests {
         let page = encode_leaf(&entries).unwrap();
         let mut bad = page.clone();
         bad[2] = 200; // count far beyond the data
-        assert!(decode_leaf(&bad).is_err());
+        assert!(decode_leaf(&bad).is_err() && validate_leaf(&bad).is_err());
         let mut bad = page.clone();
         bad[PAGE_HEADER_SIZE] = 9; // first entry claims a shared prefix
-        assert!(decode_leaf(&bad).is_err());
+        assert!(decode_leaf(&bad).is_err() && validate_leaf(&bad).is_err());
         let mut bad = page;
         let last = PAGE_SIZE - 2;
         bad[last] ^= 1; // restart offset
-        assert!(decode_leaf(&bad).is_err());
+        assert!(decode_leaf(&bad).is_err() && validate_leaf(&bad).is_err());
     }
 
     #[test]
