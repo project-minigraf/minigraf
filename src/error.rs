@@ -198,6 +198,7 @@ pub(crate) enum ErrorCode {
     Api008,
     Api009,
     Api010,
+    Api011,
     Int001,
     Int002,
     Int003,
@@ -1137,6 +1138,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCategory::Api,
     ),
     (
+        ErrorCode::Api011,
+        "API-011",
+        "one transaction asserts the same value of {} with two valid-time windows; assert it once with its final window",
+        ErrorCategory::Api,
+    ),
+    (
         ErrorCode::Int001,
         "INT-001",
         "a WriteTransaction is already in progress on this thread; use tx.execute() instead",
@@ -1884,6 +1891,7 @@ mod tests {
                 | ErrorCode::Api008
                 | ErrorCode::Api009
                 | ErrorCode::Api010
+                | ErrorCode::Api011
                 | ErrorCode::Int001
                 | ErrorCode::Int002
                 | ErrorCode::Int003
@@ -2089,6 +2097,7 @@ mod tests {
             ErrorCode::Api008,
             ErrorCode::Api009,
             ErrorCode::Api010,
+            ErrorCode::Api011,
             ErrorCode::Int001,
             ErrorCode::Int002,
             ErrorCode::Int003,
