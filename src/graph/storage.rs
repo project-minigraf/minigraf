@@ -1837,4 +1837,76 @@ mod tests {
         storage.restore_tx_counter().unwrap();
         assert_eq!(storage.current_tx_count(), 9, "a higher loaded count wins");
     }
+
+    /// #445: more than 65,535 pending facts must each resolve to their own fact
+    /// through the EAVT (entity) and AEVT (attribute) paths, for every write path.
+    #[test]
+    fn pending_facts_past_u16_resolve_to_themselves() {
+        const N: u32 = 70_000;
+        let entity = |i: u32| uuid::Uuid::from_u128(u128::from(i) + 1);
+
+        let storage = FactStorage::new();
+        storage
+            .transact_batch(
+                (0..N)
+                    .map(|i| {
+                        (
+                            entity(i),
+                            ":n".to_string(),
+                            Value::Integer(i64::from(i)),
+                            None,
+                        )
+                    })
+                    .collect(),
+                None,
+            )
+            .unwrap();
+        // One fact each through transact, retract and load_fact, all past slot 65,535.
+        storage
+            .transact(
+                vec![(entity(N), ":n".to_string(), Value::Integer(-1))],
+                None,
+            )
+            .unwrap();
+        storage
+            .retract(vec![(entity(N), ":n".to_string(), Value::Integer(-1))])
+            .unwrap();
+        let mut loaded = Fact::new(entity(N + 1), ":n".to_string(), Value::Integer(-2), 1);
+        loaded.tx_count = 99;
+        assert!(storage.load_fact(loaded).unwrap());
+
+        for i in [0, 65_534, 65_535, 65_536, N - 1] {
+            let facts = storage.get_facts_by_entity(&entity(i)).unwrap();
+            assert_eq!(facts.len(), 1, "one fact per entity");
+            assert_eq!(
+                facts[0].value,
+                Value::Integer(i64::from(i)),
+                "entity's own value"
+            );
+            let facts = storage
+                .get_facts_by_entity_attribute_indexed(&entity(i), &":n".to_string())
+                .unwrap();
+            assert_eq!(facts.len(), 1, "one fact per (entity, attribute)");
+            assert_eq!(
+                facts[0].value,
+                Value::Integer(i64::from(i)),
+                "entity's own value"
+            );
+        }
+        let retract_pair = storage.get_facts_by_entity(&entity(N)).unwrap();
+        assert_eq!(retract_pair.len(), 2, "assert and retract");
+        assert_eq!(
+            retract_pair.iter().filter(|f| !f.asserted).count(),
+            1,
+            "one retraction"
+        );
+        let loaded = storage.get_facts_by_entity(&entity(N + 1)).unwrap();
+        assert_eq!(loaded.len(), 1, "loaded fact");
+        assert_eq!(loaded[0].value, Value::Integer(-2), "loaded fact's value");
+
+        let by_attr = storage.get_facts_by_attribute(&":n".to_string()).unwrap();
+        assert_eq!(by_attr.len(), N as usize + 3, "every fact once");
+        let distinct: HashSet<PendingKey> = by_attr.iter().map(pending_key).collect();
+        assert_eq!(distinct.len(), N as usize + 3, "no fact returned twice");
+    }
 }
