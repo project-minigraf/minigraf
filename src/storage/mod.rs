@@ -13,6 +13,7 @@ pub(crate) mod freelist;
 pub mod index;
 pub(crate) mod keys;
 pub(crate) mod meta;
+pub(crate) mod node;
 pub mod packed_pages;
 pub(crate) mod page;
 pub mod persistent_facts;
