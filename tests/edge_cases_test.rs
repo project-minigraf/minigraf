@@ -4,6 +4,7 @@
 //! - Oversized fact rejected at insertion (file-backed, both execute() and commit() paths)
 //! - Oversized fact accepted in-memory (no page size constraint)
 //! - Stale WAL after checkpoint is replayed idempotently (no duplicate facts)
+//! - More than 65,535 uncheckpointed facts query correctly (#445)
 #![cfg(not(target_arch = "wasm32"))]
 
 use minigraf::{Minigraf, OpenOptions, QueryResult};
@@ -137,4 +138,68 @@ fn test_stale_wal_after_checkpoint_is_idempotent() {
         _ => panic!("expected QueryResults variant"),
     };
     assert_eq!(bob_rows.len(), 1, "bob:age must survive the checkpoint");
+}
+
+// ── More than 65,535 uncheckpointed facts (#445) ─────────────────────────────
+
+const PAST_U16: u32 = 70_000;
+
+fn transact_past_u16(db: &Minigraf) {
+    let mut batch = String::from("(transact [");
+    for i in 0..PAST_U16 {
+        batch.push_str(&format!("[:e{i} :n {i}] "));
+    }
+    batch.push_str("])");
+    db.execute(&batch).unwrap();
+}
+
+fn ints(r: QueryResult) -> Vec<i64> {
+    let QueryResult::QueryResults { results, .. } = r else {
+        panic!("expected query results");
+    };
+    results
+        .iter()
+        .flatten()
+        .map(|v| match v {
+            minigraf::Value::Integer(n) => *n,
+            _ => panic!("expected an integer"),
+        })
+        .collect()
+}
+
+fn assert_all_facts_visible(db: &Minigraf, when: &str) {
+    for i in [0u32, 65_535, 65_536, PAST_U16 - 1] {
+        let got = ints(
+            db.execute(&format!("(query [:find ?v :where [:e{i} :n ?v]])"))
+                .unwrap(),
+        );
+        assert_eq!(got, vec![i64::from(i)], "entity lookup {when}");
+    }
+    let got = ints(
+        db.execute("(query [:find (count ?e) (max ?v) :where [?e :n ?v]])")
+            .unwrap(),
+    );
+    assert_eq!(
+        got,
+        vec![i64::from(PAST_U16), i64::from(PAST_U16) - 1],
+        "attribute scan {when}"
+    );
+}
+
+#[test]
+fn test_more_than_u16_pending_facts_in_memory() {
+    let db = Minigraf::in_memory().unwrap();
+    transact_past_u16(&db);
+    assert_all_facts_visible(&db, "in memory");
+}
+
+#[test]
+fn test_more_than_u16_pending_facts_file_backed() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("test.graph");
+    let db = Minigraf::open(&path).unwrap();
+    transact_past_u16(&db);
+    assert_all_facts_visible(&db, "before checkpoint");
+    db.checkpoint().unwrap();
+    assert_all_facts_visible(&db, "after checkpoint");
 }

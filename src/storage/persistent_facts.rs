@@ -696,7 +696,9 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             let mut avet_map = std::collections::BTreeMap::new();
             let mut vaet_map = std::collections::BTreeMap::new();
             for (i, fact) in all_facts.iter().enumerate() {
-                let slot_index = u16::try_from(i).map_err(|_| err_coded!(ErrorCode::Stg020, i))?;
+                let slot_index = u16::try_from(i)
+                    .map(u32::from)
+                    .map_err(|_| err_coded!(ErrorCode::Stg020, i))?;
                 let fr = FactRef {
                     page_id: 1,
                     slot_index,

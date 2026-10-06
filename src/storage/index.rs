@@ -25,12 +25,16 @@ fn max_uuid() -> Uuid {
 
 /// Disk location of a fact.
 ///
-/// `slot_index` is always `0` in Phase 6.1 (one fact per page).
-/// In Phase 6.2 it identifies the record within a packed page.
+/// For a committed fact (`page_id > 0`), `slot_index` is the record within a
+/// packed page. For a pending fact (`page_id == 0`), it is the fact's position in
+/// `FactStorage`'s pending list, which can exceed `u16::MAX` (#445).
+///
+/// `slot_index` was a `u16` before #445. postcard writes `u16` and `u32` as the
+/// same varint, so index pages on disk are byte-for-byte unchanged.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct FactRef {
     pub page_id: u64,
-    pub slot_index: u16,
+    pub slot_index: u32,
 }
 
 // ─── Canonical Value Encoding ───────────────────────────────────────────────
@@ -512,5 +516,39 @@ mod tests {
         // NaN sorts above all positive finite values (it uses quiet NaN bit pattern)
         // Just verify it doesn't panic and produces a fixed-length result
         assert_eq!(nan1.len(), 9);
+    }
+
+    /// #445 widened `slot_index` from `u16` to `u32`. postcard must still write
+    /// and read exactly the bytes a `u16` slot produced, so v7 index pages are
+    /// unchanged on disk.
+    #[test]
+    fn fact_ref_encoding_matches_the_u16_layout() {
+        #[derive(Serialize, Deserialize)]
+        struct FactRefU16 {
+            page_id: u64,
+            slot_index: u16,
+        }
+        for (page_id, slot) in [
+            (0u64, 0u16),
+            (1, 1),
+            (7, 127),
+            (300, 128),
+            (u64::MAX, u16::MAX),
+        ] {
+            let old = postcard::to_allocvec(&FactRefU16 {
+                page_id,
+                slot_index: slot,
+            })
+            .unwrap();
+            let new = postcard::to_allocvec(&FactRef {
+                page_id,
+                slot_index: u32::from(slot),
+            })
+            .unwrap();
+            assert_eq!(old, new, "same bytes as the u16 layout");
+            let read: FactRef = postcard::from_bytes(&old).unwrap();
+            assert_eq!(read.page_id, page_id);
+            assert_eq!(read.slot_index, u32::from(slot));
+        }
     }
 }

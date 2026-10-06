@@ -156,15 +156,10 @@ impl FactStorage {
             .data
             .write()
             .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
-        for (slot, fact) in (u16::try_from(d.facts.len()).unwrap_or(u16::MAX)..).zip(facts.iter()) {
+        let refs = pending_refs(d.facts.len(), facts.len())?;
+        for (fact_ref, fact) in refs.into_iter().zip(facts.iter()) {
             d.pending_keys.insert(pending_key(fact));
-            d.pending_indexes.insert(
-                fact,
-                FactRef {
-                    page_id: 0,
-                    slot_index: slot,
-                },
-            );
+            d.pending_indexes.insert(fact, fact_ref);
         }
         d.facts.extend(facts);
 
@@ -215,15 +210,10 @@ impl FactStorage {
             .data
             .write()
             .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
-        for (slot, fact) in (u16::try_from(d.facts.len()).unwrap_or(u16::MAX)..).zip(facts.iter()) {
+        let refs = pending_refs(d.facts.len(), facts.len())?;
+        for (fact_ref, fact) in refs.into_iter().zip(facts.iter()) {
             d.pending_keys.insert(pending_key(fact));
-            d.pending_indexes.insert(
-                fact,
-                FactRef {
-                    page_id: 0,
-                    slot_index: slot,
-                },
-            );
+            d.pending_indexes.insert(fact, fact_ref);
         }
         d.facts.extend(facts);
 
@@ -264,17 +254,10 @@ impl FactStorage {
             .data
             .write()
             .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
-        for (slot, fact) in
-            (u16::try_from(d.facts.len()).unwrap_or(u16::MAX)..).zip(retractions.iter())
-        {
+        let refs = pending_refs(d.facts.len(), retractions.len())?;
+        for (fact_ref, fact) in refs.into_iter().zip(retractions.iter()) {
             d.pending_keys.insert(pending_key(fact));
-            d.pending_indexes.insert(
-                fact,
-                FactRef {
-                    page_id: 0,
-                    slot_index: slot,
-                },
-            );
+            d.pending_indexes.insert(fact, fact_ref);
         }
         d.facts.extend(retractions);
 
@@ -299,18 +282,14 @@ impl FactStorage {
         // Previously this was an O(n) linear scan over d.facts, causing O(n²)
         // total complexity when loading n facts (e.g. 1M-fact benchmarks).
         let key = pending_key(&fact);
-        if !d.pending_keys.insert(key) {
+        if d.pending_keys.contains(&key) {
             return Ok(false); // Already exists, not loaded
         }
-
-        let slot = u16::try_from(d.facts.len()).unwrap_or(u16::MAX);
-        d.pending_indexes.insert(
-            &fact,
-            FactRef {
-                page_id: 0,
-                slot_index: slot,
-            },
-        );
+        let fact_ref = pending_refs(d.facts.len(), 1)?
+            .pop()
+            .ok_or_else(|| err_coded!(ErrorCode::Int045, d.facts.len()))?;
+        d.pending_keys.insert(key);
+        d.pending_indexes.insert(&fact, fact_ref);
         d.facts.push(fact);
         Ok(true)
     }
@@ -577,6 +556,24 @@ pub(crate) fn net_asserted_facts(facts: Vec<Fact>) -> Vec<Fact> {
         .collect()
 }
 
+/// `FactRef`s for `count` pending facts appended at position `base`.
+///
+/// A pending fact's `slot_index` is its position in `FactData::facts`. Each one is
+/// distinct: a position that does not fit `u32` is an error, never a shared slot
+/// (#445: a saturating `u16` sent every fact past 65,535 to the same slot).
+fn pending_refs(base: usize, count: usize) -> Result<Vec<FactRef>> {
+    (0..count)
+        .map(|i| {
+            let pos = base.saturating_add(i);
+            let slot_index = u32::try_from(pos).map_err(|_| err_coded!(ErrorCode::Int045, pos))?;
+            Ok(FactRef {
+                page_id: 0,
+                slot_index,
+            })
+        })
+        .collect()
+}
+
 /// Resolve a [FactRef] to a [Fact] using the committed reader (for on-disk facts)
 /// or the pending facts vector (for in-memory facts with page_id=0).
 /// Used by the production index-driven lookup methods (`get_facts_by_entity`,
@@ -584,7 +581,7 @@ pub(crate) fn net_asserted_facts(facts: Vec<Fact>) -> Vec<Fact> {
 fn resolve_fact_ref(d: &FactData, fr: FactRef) -> Result<Fact> {
     if fr.page_id == 0 {
         d.facts
-            .get(fr.slot_index as usize)
+            .get(usize::try_from(fr.slot_index).unwrap_or(usize::MAX))
             .cloned()
             .ok_or_else(|| err_coded!(ErrorCode::Int045, fr.slot_index))
     } else {
@@ -2222,7 +2219,7 @@ mod tests {
                 f,
                 FactRef {
                     page_id: 1,
-                    slot_index: u16::try_from(slot).unwrap(),
+                    slot_index: u32::try_from(slot).unwrap(),
                 },
             );
         }
@@ -2417,6 +2414,93 @@ mod tests {
                 facts.iter().all(|f| f.attribute == attr),
                 "no sibling facts"
             );
+        }
+    }
+
+    /// #445: more than 65,535 pending facts must each resolve to their own fact
+    /// through the EAVT (entity) and AEVT (attribute) paths, for every write path.
+    #[test]
+    fn pending_facts_past_u16_resolve_to_themselves() {
+        const N: u32 = 70_000;
+        let entity = |i: u32| uuid::Uuid::from_u128(u128::from(i) + 1);
+
+        let storage = FactStorage::new();
+        storage
+            .transact_batch(
+                (0..N)
+                    .map(|i| {
+                        (
+                            entity(i),
+                            ":n".to_string(),
+                            Value::Integer(i64::from(i)),
+                            None,
+                        )
+                    })
+                    .collect(),
+                None,
+            )
+            .unwrap();
+        // One fact each through transact, retract and load_fact, all past slot 65,535.
+        storage
+            .transact(
+                vec![(entity(N), ":n".to_string(), Value::Integer(-1))],
+                None,
+            )
+            .unwrap();
+        storage
+            .retract(vec![(entity(N), ":n".to_string(), Value::Integer(-1))])
+            .unwrap();
+        let mut loaded = Fact::new(entity(N + 1), ":n".to_string(), Value::Integer(-2), 1);
+        loaded.tx_count = 99;
+        assert!(storage.load_fact(loaded).unwrap());
+
+        for i in [0, 65_534, 65_535, 65_536, N - 1] {
+            let facts = storage.get_facts_by_entity(&entity(i)).unwrap();
+            assert_eq!(facts.len(), 1, "one fact per entity");
+            assert_eq!(
+                facts[0].value,
+                Value::Integer(i64::from(i)),
+                "entity's own value"
+            );
+            let facts = storage
+                .get_facts_by_entity_attribute_indexed(&entity(i), &":n".to_string())
+                .unwrap();
+            assert_eq!(facts.len(), 1, "one fact per (entity, attribute)");
+            assert_eq!(
+                facts[0].value,
+                Value::Integer(i64::from(i)),
+                "entity's own value"
+            );
+        }
+        let retract_pair = storage.get_facts_by_entity(&entity(N)).unwrap();
+        assert_eq!(retract_pair.len(), 2, "assert and retract");
+        assert_eq!(
+            retract_pair.iter().filter(|f| !f.asserted).count(),
+            1,
+            "one retraction"
+        );
+        let loaded = storage.get_facts_by_entity(&entity(N + 1)).unwrap();
+        assert_eq!(loaded.len(), 1, "loaded fact");
+        assert_eq!(loaded[0].value, Value::Integer(-2), "loaded fact's value");
+
+        let by_attr = storage.get_facts_by_attribute(&":n".to_string()).unwrap();
+        assert_eq!(by_attr.len(), N as usize + 3, "every fact once");
+        let distinct: HashSet<PendingKey> = by_attr.iter().map(pending_key).collect();
+        assert_eq!(distinct.len(), N as usize + 3, "no fact returned twice");
+    }
+
+    #[test]
+    fn pending_refs_are_distinct_and_checked() {
+        let refs = pending_refs(65_534, 3).unwrap();
+        let slots: Vec<u32> = refs.iter().map(|r| r.slot_index).collect();
+        assert_eq!(slots, vec![65_534, 65_535, 65_536]);
+        assert!(
+            refs.iter().all(|r| r.page_id == 0),
+            "pending refs use page 0"
+        );
+        if let Ok(base) = usize::try_from(u64::from(u32::MAX)) {
+            assert!(pending_refs(base, 1).is_ok(), "u32::MAX is the last slot");
+            assert!(pending_refs(base, 2).is_err(), "past u32::MAX is an error");
         }
     }
 }
