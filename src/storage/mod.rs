@@ -11,6 +11,7 @@ pub mod cache;
 pub(crate) mod dir_sync;
 pub(crate) mod freelist;
 pub mod index;
+pub(crate) mod keys;
 pub(crate) mod meta;
 pub mod packed_pages;
 pub(crate) mod page;
