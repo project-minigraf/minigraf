@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Two values of the same attribute written in one transaction are both returned by every query path. Previously only one came back, and entity-bound and attribute-bound queries could return different ones (#371, #287).
 - A retract that removes several values of one attribute in one call now hides all of them (#371).
+- Queries no longer lose or duplicate facts when more than 65,535 facts are waiting for a checkpoint (#445; also fixed in v2.x).
 - Reopening next to a WAL whose entries were all already checkpointed no longer rewinds the transaction counter, so later transactions no longer reuse `tx_count` values and `:as-of` history stays correct (#447; also fixed in v2.x).
 
 ### Internal
