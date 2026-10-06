@@ -9,13 +9,13 @@
 use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::graph::FactStorage;
 use crate::graph::types::Fact;
-use crate::storage::btree::{build_btree, cow_insert};
+use crate::storage::btree::{MutexStorageBackend, build_btree, cow_insert};
 use crate::storage::cache::PageCache;
 use crate::storage::dict::{DictReader, Encoded, Encoder};
 use crate::storage::meta::{MetaPage, SlotState, slot_page};
 use crate::storage::page::PageAllocator;
 use crate::storage::reader::OnDiskReader;
-use crate::storage::{LegacyHeaderV7, PAGE_SIZE, StorageBackend, freelist, page};
+use crate::storage::{LegacyHeaderV7, PAGE_SIZE, StorageBackend, freelist, page, verify};
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
 
@@ -32,6 +32,10 @@ pub struct PersistentFactStorage<B: StorageBackend + 'static> {
     /// The active (last committed) meta page.
     meta: MetaPage,
 }
+
+/// Page cache size for the integrity walk: enough to keep a value page hot
+/// while its values are checked, without displacing the readers' cache.
+const VERIFY_CACHE_PAGES: usize = 64;
 
 /// What open found in the meta slots.
 enum Opened {
@@ -359,6 +363,184 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.dirty = false;
         self.activate(new_meta);
         // Clear pending — all data now on disk
+        self.storage.post_checkpoint_clear();
+        Ok(())
+    }
+
+    /// Check the committed file (#373). Never modifies it, and holds the
+    /// backend lock only for each page read, so queries keep running.
+    pub(crate) fn verify(&self) -> Result<verify::Findings> {
+        let backend = MutexStorageBackend(self.backend.clone());
+        let cache = PageCache::new(VERIFY_CACHE_PAGES);
+        cache.set_generation_bound(self.meta.generation);
+        Ok(verify::verify(&backend, &cache, self.meta))
+    }
+
+    /// Rebuild EAVT, AEVT, AVET and VAET from an intact index and commit them,
+    /// with the pending facts, as the next generation (#373).
+    ///
+    /// The source is chosen by [`verify::choose_source`]; with none, or with a
+    /// damaged DICT, this fails with STG-041 and writes nothing. Like
+    /// [`save`](Self::save), it writes only pages the active meta does not
+    /// reference: ids from its free list that no walked page uses, then new
+    /// pages at the end. The free list is derived again from the pages the new
+    /// meta reaches, so a leaked or wrong free list is repaired too. Memory is
+    /// O(facts): every index key is held for the bulk build.
+    pub(crate) fn rebuild_indexes(&mut self) -> Result<()> {
+        use crate::storage::btree::LeafCursor;
+        use crate::storage::keys::{Index, KeyFact};
+        use std::collections::BTreeSet;
+
+        let m = self.meta;
+        let next_gen = m.next_generation()?;
+        let pending_facts = self.storage.get_pending_facts();
+        let mut backend = self.lock()?;
+        let cache = PageCache::new(VERIFY_CACHE_PAGES);
+        cache.set_generation_bound(m.generation);
+
+        // Choose the source and the ids that are safe to overwrite.
+        let (source, pool) = {
+            let mut w = verify::Walker::new(&*backend, &cache, m);
+            let scans: Vec<verify::IndexScan> = [Index::Eavt, Index::Aevt, Index::Avet]
+                .into_iter()
+                .map(|i| w.scan_index(i))
+                .collect();
+            let vaet = w.scan_index(Index::Vaet);
+            let dict = w.scan_dict();
+            if !dict.clean {
+                bail_coded!(ErrorCode::Stg041, "the dictionary (DICT) is damaged");
+            }
+            let source = verify::choose_source(&scans).ok_or_else(|| {
+                err_coded!(
+                    ErrorCode::Stg041,
+                    "no intact index agrees with another and more than one is intact, or none is"
+                )
+            })?;
+            let mut keep: BTreeSet<u64> = dict.value_pages.clone();
+            for s in scans.iter().chain([&vaet]) {
+                keep.extend(s.nodes.iter().copied());
+            }
+            keep.extend(dict.nodes.iter().copied());
+            let pool: BTreeSet<u64> = w
+                .read_free_list()
+                .map(|(ids, _)| ids.into_iter().filter(|id| !keep.contains(id)).collect())
+                .unwrap_or_default();
+            (source, pool)
+        };
+
+        let mut alloc = PageAllocator::new(pool.into_iter().collect(), m.page_count, next_gen);
+        let encoded = encode(
+            &pending_facts,
+            &m,
+            &mut alloc,
+            &mut *backend,
+            &self.page_cache,
+        )?;
+        let (next_eid, next_iid) = (encoded.next_eid, encoded.next_iid);
+        let Encoded {
+            index: mut lists,
+            dict,
+            ..
+        } = encoded;
+
+        let source_root = match source {
+            Index::Eavt => m.eavt_root,
+            Index::Aevt => m.aevt_root,
+            Index::Avet => m.avet_root,
+            Index::Vaet => m.vaet_root,
+        };
+        if source_root != 0 {
+            let mut cursor = LeafCursor::new(source_root, None, &*backend, &cache)?;
+            while let Some((k, _)) = cursor.next_ref()? {
+                let kf = KeyFact::decode(source, k)?;
+                for (list, idx) in lists.iter_mut().zip(Index::ALL) {
+                    if let Some(key) = kf.key(idx) {
+                        list.push((key, Vec::new()));
+                    }
+                }
+            }
+        }
+        for list in &mut lists {
+            list.sort_unstable();
+            list.dedup();
+        }
+        let fact_count =
+            u64::try_from(lists[0].len()).map_err(|_| err_coded!(ErrorCode::Stg024))?;
+
+        let mut roots = [0u64; 5];
+        for (root, entries) in roots.iter_mut().zip(lists) {
+            *root = build_btree(entries, &mut *backend, &self.page_cache, &mut alloc)?;
+        }
+        let mut replaced = Vec::new();
+        roots[4] = cow_insert(
+            m.dict_root,
+            dict,
+            &mut *backend,
+            &self.page_cache,
+            &mut alloc,
+            &mut replaced,
+        )?;
+        let [eavt_root, aevt_root, avet_root, vaet_root, dict_root] = roots;
+        let mut new_meta = MetaPage {
+            generation: next_gen,
+            page_count: alloc.next_append(),
+            fact_count,
+            last_checkpointed_tx_count: self.storage.current_tx_count(),
+            eavt_root,
+            aevt_root,
+            avet_root,
+            vaet_root,
+            dict_root,
+            next_eid,
+            next_iid,
+            freelist_head: 0,
+            freelist_count: 0,
+            ..m
+        };
+
+        // Every page from 2 up that the new meta does not reach is free. The
+        // walk also checks what was just written.
+        let reached = {
+            let check = PageCache::new(VERIFY_CACHE_PAGES);
+            check.set_generation_bound(next_gen);
+            let mut w = verify::Walker::new(&*backend, &check, new_meta);
+            let mut reached: BTreeSet<u64> = BTreeSet::new();
+            for idx in Index::ALL {
+                let s = w.scan_index(idx);
+                if !s.clean {
+                    bail_coded!(ErrorCode::Int049, "rebuilt index fails its own check");
+                }
+                reached.extend(s.nodes);
+            }
+            let d = w.scan_dict();
+            if !d.clean {
+                bail_coded!(
+                    ErrorCode::Int049,
+                    "dictionary fails its check after rebuild"
+                );
+            }
+            reached.extend(d.nodes);
+            reached.extend(d.value_pages);
+            reached
+        };
+        let free: Vec<u64> = (2..alloc.next_append())
+            .filter(|p| !reached.contains(p))
+            .collect();
+        let mut chain_alloc = PageAllocator::new(Vec::new(), alloc.next_append(), next_gen);
+        let (freelist_head, _) =
+            freelist::write_chain(&free, &mut chain_alloc, &mut *backend, &self.page_cache)?;
+        new_meta.freelist_head = freelist_head;
+        new_meta.freelist_count = u64::try_from(free.len())
+            .map_err(|_| err_coded!(ErrorCode::Int048, "free-list length"))?;
+        new_meta.page_count = chain_alloc.next_append();
+
+        backend.sync()?;
+        backend.write_page(slot_page(next_gen), &new_meta.encode())?;
+        backend.sync()?;
+        drop(backend);
+
+        self.dirty = false;
+        self.activate(new_meta);
         self.storage.post_checkpoint_clear();
         Ok(())
     }
@@ -1933,6 +2115,394 @@ mod tests {
             "the last checkpoint stands"
         );
         assert!(as_set(reopened.storage().get_all_facts().unwrap()) == all);
+    }
+
+    // ── verify and rebuild_indexes (#373) ───────────────────────────────────
+
+    /// Rewrite leaf `id` in place with `f` applied to its entries, resealed so
+    /// that its CRC passes: logical damage that page checks cannot see.
+    fn rewrite_leaf(
+        mem: &MemoryBackend,
+        id: u64,
+        f: impl FnOnce(&mut Vec<crate::storage::node::Entry>),
+    ) {
+        let mut mem = mem.clone(); // shares the pages
+        let old = mem.read_page(id).unwrap();
+        let generation = page::page_generation(&old).unwrap();
+        let mut entries = crate::storage::node::decode_leaf(&old).unwrap();
+        f(&mut entries);
+        let mut p = crate::storage::node::encode_leaf(&entries).unwrap();
+        page::seal(&mut p, id, generation).unwrap();
+        mem.write_page(id, &p).unwrap();
+    }
+
+    /// Rewrite free-list chain page `id` with `f` applied to its ids.
+    fn rewrite_free_page(mem: &mut MemoryBackend, id: u64, f: impl FnOnce(&mut Vec<u64>)) {
+        let old = mem.read_page(id).unwrap();
+        let generation = page::page_generation(&old).unwrap();
+        let next = u64::from_le_bytes(old[24..32].try_into().unwrap());
+        let count = usize::from(page::page_count_field(&old).unwrap());
+        let mut ids: Vec<u64> = (0..count)
+            .map(|j| u64::from_le_bytes(old[32 + 8 * j..40 + 8 * j].try_into().unwrap()))
+            .collect();
+        f(&mut ids);
+        let mut p = page::new_page(page::PAGE_TYPE_FREELIST, ids.len() as u16);
+        p[24..32].copy_from_slice(&next.to_le_bytes());
+        for (j, id) in ids.iter().enumerate() {
+            p[32 + 8 * j..40 + 8 * j].copy_from_slice(&id.to_le_bytes());
+        }
+        page::seal(&mut p, id, generation).unwrap();
+        mem.write_page(id, &p).unwrap();
+    }
+
+    fn verify_codes(mem: &MemoryBackend) -> Vec<&'static str> {
+        let pfs = open_mem(mem, None).unwrap();
+        pfs.verify()
+            .unwrap()
+            .problems
+            .into_iter()
+            .map(code)
+            .collect()
+    }
+
+    /// Ids in the free list of `m` (all chain pages).
+    fn free_ids(m: &MetaPage, mem: &MemoryBackend) -> Vec<u64> {
+        freelist::read_chain(m.freelist_head, mem, &PageCache::new(0), m.page_count)
+            .unwrap()
+            .0
+    }
+
+    #[test]
+    fn intact_files_verify_clean() {
+        let mem = MemoryBackend::new();
+        let pfs = PersistentFactStorage::new(mem.clone(), 16).unwrap();
+        let f = pfs.verify().unwrap();
+        assert!(f.problems.is_empty(), "an empty file is intact");
+        assert_eq!(f.facts, 0);
+        drop(pfs);
+
+        let mem = corruptible();
+        let pfs = open_mem(&mem, None).unwrap();
+        let m = pfs.meta();
+        let f = pfs.verify().unwrap();
+        assert!(f.problems.is_empty(), "an intact file has no problems");
+        assert_eq!(f.facts, m.fact_count);
+        let in_use = (2..m.page_count).count() - free_ids(&m, &mem).len();
+        assert_eq!(f.pages as usize, in_use, "every page in use is checked");
+    }
+
+    /// Each kind of damage is found with its code, and `rebuild_indexes`
+    /// repairs it: verify is clean, every fact reads back, the indexes agree
+    /// and every page is accounted for.
+    #[test]
+    fn each_index_damage_is_found_and_repaired() {
+        type Damage = fn(&mut MemoryBackend, &MetaPage);
+        let cases: [(&str, Damage, &str); 9] = [
+            (
+                "a page in two trees",
+                |mem, m| {
+                    let shared = leaves_of(m.aevt_root, mem)[0];
+                    let meta = MetaPage {
+                        vaet_root: shared,
+                        ..*m
+                    };
+                    mem.write_page(slot_page(m.generation), &meta.encode())
+                        .unwrap();
+                },
+                "STG-039",
+            ),
+            (
+                "AVET leaf missing an entry",
+                |mem, m| {
+                    rewrite_leaf(mem, leaves_of(m.avet_root, mem)[0], |e| {
+                        e.remove(0);
+                    })
+                },
+                "STG-038",
+            ),
+            (
+                "EAVT leaf missing an entry",
+                |mem, m| {
+                    rewrite_leaf(mem, leaves_of(m.eavt_root, mem)[1], |e| {
+                        e.remove(3);
+                    })
+                },
+                "STG-038",
+            ),
+            (
+                "AEVT leaf missing an entry",
+                |mem, m| {
+                    rewrite_leaf(mem, leaves_of(m.aevt_root, mem)[0], |e| {
+                        e.pop();
+                    })
+                },
+                "STG-038",
+            ),
+            (
+                "VAET leaf missing an entry",
+                |mem, m| {
+                    rewrite_leaf(mem, leaves_of(m.vaet_root, mem)[0], |e| {
+                        e.remove(0);
+                    })
+                },
+                "STG-038",
+            ),
+            (
+                "AVET keys out of order",
+                |mem, m| rewrite_leaf(mem, leaves_of(m.avet_root, mem)[0], |e| e.swap(0, 1)),
+                "STG-039",
+            ),
+            (
+                "AEVT leaf rotted",
+                |mem, m| flip(mem, leaves_of(m.aevt_root, mem)[0]),
+                "STG-029",
+            ),
+            (
+                "free page still in use",
+                |mem, m| {
+                    let node = leaves_of(m.dict_root, mem)[0];
+                    rewrite_free_page(mem, m.freelist_head, |ids| ids[0] = node);
+                },
+                "STG-035",
+            ),
+            (
+                "leaked page",
+                |mem, m| {
+                    rewrite_free_page(mem, m.freelist_head, |ids| {
+                        ids.pop();
+                    })
+                },
+                "STG-035",
+            ),
+        ];
+        let mem = corruptible();
+        let (all, m) = {
+            let pfs = open_mem(&mem, None).unwrap();
+            (as_set(pfs.storage().get_all_facts().unwrap()), pfs.meta())
+        };
+        for (what, damage, expected) in cases {
+            let mut damaged = deep_copy(&mem);
+            damage(&mut damaged, &m);
+            let found = verify_codes(&damaged);
+            assert!(
+                found.contains(&expected),
+                "{what}: expected {expected}, got {found:?}"
+            );
+
+            let mut pfs = open_mem(&damaged, None).unwrap();
+            pfs.rebuild_indexes()
+                .unwrap_or_else(|e| panic!("{what}: rebuild failed: {e}"));
+            assert_eq!(pfs.generation(), m.generation + 1, "{what}");
+            drop(pfs);
+            assert!(
+                verify_codes(&damaged).is_empty(),
+                "{what}: clean after rebuild"
+            );
+            let pfs = open_mem(&damaged, None).unwrap();
+            assert!(
+                as_set(pfs.storage().get_all_facts().unwrap()) == all,
+                "{what}: every fact reads back"
+            );
+            assert_space_accounted(&pfs.meta(), &damaged);
+            assert_indexes_exact(&pfs.meta(), &damaged);
+        }
+    }
+
+    /// The source is an intact index that agrees with another one.
+    #[test]
+    fn rebuild_source_is_an_index_that_agrees_with_another() {
+        let mem = corruptible();
+        let pfs = open_mem(&mem, None).unwrap();
+        let m = pfs.meta();
+        let all = as_set(pfs.storage().get_all_facts().unwrap());
+        drop(pfs);
+        // EAVT and AEVT lose different entries; AVET agrees with neither, so
+        // there is no majority and two indexes are intact: refused.
+        let damaged = deep_copy(&mem);
+        rewrite_leaf(&damaged, leaves_of(m.eavt_root, &damaged)[0], |e| {
+            e.remove(0);
+        });
+        rewrite_leaf(&damaged, leaves_of(m.aevt_root, &damaged)[0], |e| {
+            e.remove(1);
+        });
+        rewrite_leaf(&damaged, leaves_of(m.avet_root, &damaged)[0], |e| {
+            e.remove(2);
+        });
+        let before = snapshot(&damaged);
+        let mut pfs = open_mem(&damaged, None).unwrap();
+        let err = pfs.rebuild_indexes().unwrap_err();
+        assert_eq!(code(err), "STG-041");
+        drop(pfs);
+        assert!(
+            snapshot(&damaged) == before,
+            "a refused rebuild writes nothing"
+        );
+
+        // EAVT and AEVT unreadable: AVET is the only intact index.
+        let mut damaged = deep_copy(&mem);
+        let id = leaves_of(m.eavt_root, &damaged)[0];
+        flip(&mut damaged, id);
+        let id = leaves_of(m.aevt_root, &damaged)[0];
+        flip(&mut damaged, id);
+        let mut pfs = open_mem(&damaged, None).unwrap();
+        pfs.rebuild_indexes().unwrap();
+        assert!(as_set(pfs.storage().get_all_facts().unwrap()) == all);
+        drop(pfs);
+        assert!(verify_codes(&damaged).is_empty());
+    }
+
+    /// DICT holds the only copy of UUIDs and idents: a damaged DICT is
+    /// reported and a rebuild refuses without writing.
+    #[test]
+    fn dictionary_damage_is_reported_and_not_rebuilt() {
+        let mem = corruptible();
+        let m = open_mem(&mem, None).unwrap().meta();
+        let tx_leaf = leaves_of(m.dict_root, &mem)
+            .into_iter()
+            .find(|&id| {
+                crate::storage::node::decode_leaf(&mem.read_page(id).unwrap())
+                    .unwrap()
+                    .iter()
+                    .any(|(k, _)| k[0] == crate::storage::keys::DICT_TX)
+            })
+            .unwrap();
+        let damaged = deep_copy(&mem);
+        rewrite_leaf(&damaged, tx_leaf, |e| {
+            let i = e
+                .iter()
+                .position(|(k, _)| k[0] == crate::storage::keys::DICT_TX)
+                .unwrap();
+            e.remove(i);
+        });
+        assert!(verify_codes(&damaged).contains(&"STG-036"));
+
+        // An entity id whose UUID maps back to another id.
+        let eid_leaf = leaves_of(m.dict_root, &mem)
+            .into_iter()
+            .find(|&id| {
+                crate::storage::node::decode_leaf(&mem.read_page(id).unwrap())
+                    .unwrap()
+                    .iter()
+                    .any(|(k, _)| k[0] == crate::storage::keys::DICT_EID_TO_UUID)
+            })
+            .unwrap();
+        let damaged = deep_copy(&mem);
+        rewrite_leaf(&damaged, eid_leaf, |e| {
+            let i = e
+                .iter()
+                .position(|(k, _)| k[0] == crate::storage::keys::DICT_EID_TO_UUID)
+                .unwrap();
+            e[i].1 = Uuid::from_u128(0xdead).as_bytes().to_vec();
+        });
+        assert!(verify_codes(&damaged).contains(&"STG-040"));
+
+        let mut damaged = deep_copy(&mem);
+        flip(&mut damaged, tx_leaf);
+        assert!(verify_codes(&damaged).contains(&"STG-029"));
+        let before = snapshot(&damaged);
+        let mut pfs = open_mem(&damaged, None).unwrap();
+        assert_eq!(code(pfs.rebuild_indexes().unwrap_err()), "STG-041");
+        drop(pfs);
+        assert!(
+            snapshot(&damaged) == before,
+            "a refused rebuild writes nothing"
+        );
+    }
+
+    /// Pending facts are committed by the rebuild, with new ids and long values.
+    #[test]
+    fn rebuild_commits_pending_facts() {
+        let mem = corruptible();
+        let m = open_mem(&mem, None).unwrap().meta();
+        rewrite_leaf(&mem, leaves_of(m.avet_root, &mem)[0], |e| {
+            e.remove(0);
+        });
+        let mut pfs = open_mem(&mem, None).unwrap();
+        let (asserts, retracts) = mixed_batch(7, 120);
+        let new_long = (
+            entity(9_000),
+            ":attr/new".to_string(),
+            Value::String("brand new long value ".repeat(5)),
+        );
+        pfs.storage()
+            .transact(asserts.into_iter().chain([new_long]).collect(), None)
+            .unwrap();
+        pfs.storage().retract(retracts).unwrap();
+        pfs.mark_dirty();
+        let expected = as_set(pfs.storage().get_all_facts().unwrap());
+        pfs.rebuild_indexes().unwrap();
+        assert!(!pfs.is_dirty());
+        assert!(pfs.storage().get_pending_facts().is_empty());
+        assert!(as_set(pfs.storage().get_all_facts().unwrap()) == expected);
+        assert_eq!(
+            pfs.last_checkpointed_tx_count(),
+            pfs.storage().current_tx_count()
+        );
+        drop(pfs);
+        let pfs = open_mem(&mem, None).unwrap();
+        assert!(as_set(pfs.storage().get_all_facts().unwrap()) == expected);
+        assert!(pfs.verify().unwrap().problems.is_empty());
+        assert_space_accounted(&pfs.meta(), &mem);
+        assert_indexes_exact(&pfs.meta(), &mem);
+    }
+
+    /// A crash at any write or sync of a rebuild reopens at the old generation
+    /// (unchanged) or the new one (repaired), and never loses a fact.
+    #[test]
+    fn crash_at_every_point_of_rebuild_keeps_every_fact() {
+        let base = corruptible();
+        let (all, m) = {
+            let pfs = open_mem(&base, None).unwrap();
+            (as_set(pfs.storage().get_all_facts().unwrap()), pfs.meta())
+        };
+        let mut points = 0;
+        for (write_kind, sync_kind, torn) in [
+            (true, false, None),
+            (true, false, Some(512usize)),
+            (false, true, None),
+        ] {
+            for k in 0u64.. {
+                let mem = deep_copy(&base);
+                let leaf = leaves_of(m.avet_root, &mem)[0];
+                rewrite_leaf(&mem, leaf, |e| {
+                    e.remove(0);
+                });
+                let (backend, config) = FaultInjectingBackend::with_config(mem.clone());
+                let mut pfs = PersistentFactStorage::new(backend, 16).unwrap();
+                {
+                    let mut cfg = config.lock().unwrap();
+                    cfg.fail_write_after = write_kind.then_some(k);
+                    cfg.fail_sync_after = sync_kind.then_some(k);
+                    cfg.torn_write_bytes = torn;
+                }
+                let rebuilt = pfs.rebuild_indexes().is_ok();
+                pfs.dirty = false;
+                drop(pfs);
+
+                let pfs = open_mem(&mem, None).expect("reopen after crash");
+                assert!(
+                    as_set(pfs.storage().get_all_facts().unwrap()) == all,
+                    "no fact lost"
+                );
+                let problems = pfs.verify().unwrap().problems;
+                if pfs.generation() == m.generation + 1 {
+                    assert!(problems.is_empty(), "the rebuilt generation is intact");
+                } else {
+                    assert_eq!(pfs.generation(), m.generation);
+                    assert!(!rebuilt, "a reported success must be durable");
+                    let codes: Vec<_> = problems.into_iter().map(code).collect();
+                    assert!(
+                        codes == ["STG-038"],
+                        "the old generation keeps exactly its old damage"
+                    );
+                }
+                if rebuilt {
+                    break;
+                }
+                points += 1;
+            }
+        }
+        assert!(points > 20, "expected many crash points");
     }
 
     // ── size (spec §10.1, §11, #433) ────────────────────────────────────────

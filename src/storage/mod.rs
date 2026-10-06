@@ -20,6 +20,7 @@ pub(crate) mod page;
 pub mod persistent_facts;
 pub(crate) mod reader;
 pub(crate) mod value_pages;
+pub(crate) mod verify;
 
 use crate::error::{ErrorCode, bail_coded, err_coded};
 use anyhow::Result;
