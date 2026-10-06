@@ -176,6 +176,8 @@ pub(crate) enum ErrorCode {
     Stg033,
     Stg034,
     Stg035,
+    Stg036,
+    Stg037,
     Wal001,
     Wal002,
     Wal003,
@@ -996,6 +998,18 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Stg035,
         "STG-035",
         "Free list is inconsistent: {}",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg036,
+        "STG-036",
+        "Dictionary entry missing: {}",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg037,
+        "STG-037",
+        "Transaction {} has two timestamps: {} and {}",
         ErrorCategory::Storage,
     ),
     (
@@ -1820,6 +1834,8 @@ mod tests {
                 | ErrorCode::Stg033
                 | ErrorCode::Stg034
                 | ErrorCode::Stg035
+                | ErrorCode::Stg036
+                | ErrorCode::Stg037
                 | ErrorCode::Wal001
                 | ErrorCode::Wal002
                 | ErrorCode::Wal003
@@ -2019,6 +2035,8 @@ mod tests {
             ErrorCode::Stg033,
             ErrorCode::Stg034,
             ErrorCode::Stg035,
+            ErrorCode::Stg036,
+            ErrorCode::Stg037,
             ErrorCode::Wal001,
             ErrorCode::Wal002,
             ErrorCode::Wal003,

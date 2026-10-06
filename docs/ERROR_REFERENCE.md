@@ -144,6 +144,8 @@ with no `CodedError` anywhere in its chain.
 | STG-033 | Meta page damaged after commit | Storage |
 | STG-034 | Unsupported file feature | Storage |
 | STG-035 | Free-list inconsistency | Storage |
+| STG-036 | Dictionary entry missing | Storage |
+| STG-037 | Transaction with two timestamps | Storage |
 | WAL-001 | Invalid WAL magic number | WAL |
 | WAL-002 | Unsupported WAL version | WAL |
 | WAL-003 | Fact serialised size exceeds maximum | WAL |
@@ -2087,6 +2089,32 @@ See the [file format section in README](../README.md#file-format) for version hi
 - Restore from backup.
 
 **Scenario**: A corrupted free-list page whose `next` pointer points back at itself.
+
+---
+
+### STG-036 Dictionary entry missing
+
+**Error text**: `Dictionary entry missing: {}`
+
+**Cause**: An index entry refers to an entity id, ident id, transaction or long value that has no entry in the file's dictionary (DICT tree). The file is damaged.
+
+**Resolution**:
+- Restore from backup.
+
+**Scenario**: A DICT leaf lost to a bad sector while the index trees that refer to its ids are intact.
+
+---
+
+### STG-037 Transaction with two timestamps
+
+**Error text**: `Transaction {} has two timestamps: {} and {}`
+
+**Cause**: A checkpoint or a v7 migration found facts with the same `tx_count` but different `tx_id` values. Format v8 records one timestamp per transaction, and Minigraf refuses to change a stored timestamp. Every write path stamps one `tx_id` per `tx_count`, so this means the facts were written outside those paths or the file is damaged.
+
+**Resolution**:
+- Keep using the release that wrote the file and report the issue, with the transaction number from the message.
+
+**Scenario**: A v7 file whose facts were edited by an external tool so that two transactions share one `tx_count`.
 
 ---
 

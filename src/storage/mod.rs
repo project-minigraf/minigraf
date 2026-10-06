@@ -9,6 +9,7 @@ pub mod backend;
 pub(crate) mod btree;
 pub mod btree_v6;
 pub mod cache;
+pub(crate) mod dict;
 pub(crate) mod dir_sync;
 pub(crate) mod freelist;
 pub mod index;
