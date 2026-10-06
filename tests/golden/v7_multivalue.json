@@ -1,0 +1,80 @@
+{
+  "file": "v7_multivalue.graph",
+  "wal": null,
+  "format": 7,
+  "written_by": "minigraf 2.0.3 (crates.io), tests/golden/gen/v7 recipe multivalue",
+  "crc32": {
+    "graph": "0xde15da22",
+    "wal": null
+  },
+  "tx_count": 3,
+  "queries": [
+    {
+      "name": "note",
+      "query": "(query [:find ?n :where [:t/x :note ?n]])",
+      "rows": [
+        [
+          "\"two\""
+        ]
+      ]
+    },
+    {
+      "name": "filler kinds",
+      "query": "(query [:find (count ?e) :where [?e :kind :k/c]])",
+      "rows": [
+        [
+          "30"
+        ]
+      ]
+    },
+    {
+      "name": "multi-value via eavt",
+      "query": "(query [:find ?v :where [:t/x :kind ?v]])",
+      "rows": [
+        [
+          ":k/a"
+        ],
+        [
+          ":k/b"
+        ]
+      ],
+      "min_reader": 3,
+      "known_issue": "#371: same-transaction multi-values read back as one value on v2.x"
+    },
+    {
+      "name": "multi-value via aevt",
+      "query": "(query [:find ?v :where [?e :kind ?v] [?e :note \"two\"]])",
+      "rows": [
+        [
+          ":k/a"
+        ],
+        [
+          ":k/b"
+        ]
+      ],
+      "min_reader": 3,
+      "known_issue": "#371: same-transaction multi-values read back as one value on v2.x"
+    },
+    {
+      "name": "batched retract",
+      "query": "(query [:find ?t :where [:t/y :tag ?t]])",
+      "rows": [],
+      "min_reader": 3,
+      "known_issue": "#371: same-transaction multi-values read back as one value on v2.x"
+    },
+    {
+      "name": "multi-value as-of 2",
+      "query": "(query [:find ?t :as-of 2 :where [:t/y :tag ?t]])",
+      "rows": [
+        [
+          ":g/a"
+        ],
+        [
+          ":g/b"
+        ]
+      ],
+      "min_reader": 3,
+      "known_issue": "#371: same-transaction multi-values read back as one value on v2.x"
+    }
+  ]
+}

@@ -4,6 +4,7 @@ name: Policy
 #   - msrv:          the crate builds and its unit tests pass on `rust-version`
 #   - semver-checks: no accidental public-API break against the latest release tag
 #   - cargo-deny:    dependency licenses, duplicate versions and sources (deny.toml)
+#   - golden-corpus: golden files in tests/golden/ are only ever added (#391)
 
 on:
   push:
@@ -88,3 +89,25 @@ jobs:
         with:
           # Advisories are covered by cargo-audit.yml and osv-scanner.yml.
           command: check bans licenses sources
+
+  golden-corpus:
+    name: Golden files are add-only
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Refuse modified, deleted or renamed golden files
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          changed=$(git diff --name-only --diff-filter=MDRT "origin/${BASE_REF}...HEAD" -- \
+            'tests/golden/*.graph' 'tests/golden/*.wal')
+          if [ -n "$changed" ]; then
+            echo "::error::Golden files are never regenerated, only added (tests/golden/README.md):"
+            echo "$changed"
+            exit 1
+          fi

@@ -1,0 +1,309 @@
+{
+  "file": "v8_migrated_from_v7.graph",
+  "wal": null,
+  "format": 8,
+  "written_by": "minigraf v3 branch at 23aa57c (format v8 frozen), tests/golden/gen/v8 recipe migrated_from_v7",
+  "crc32": {
+    "graph": "0x66c3671f",
+    "wal": null
+  },
+  "tx_count": 7,
+  "notes": "v7_multi_checkpoint.graph migrated in place by the v3 build (v8 spec section 9)",
+  "queries": [
+    {
+      "name": "all names",
+      "query": "(query [:find ?n :where [?e :person/name ?n]])",
+      "rows": [
+        [
+          "\"Alice\""
+        ],
+        [
+          "\"Bob\""
+        ],
+        [
+          "\"Carol\""
+        ]
+      ]
+    },
+    {
+      "name": "ages now",
+      "query": "(query [:find ?n ?a :where [?e :person/name ?n] [?e :person/age ?a]])",
+      "rows": [
+        [
+          "\"Alice\"",
+          "31"
+        ],
+        [
+          "\"Bob\"",
+          "42"
+        ],
+        [
+          "\"Carol\"",
+          "-9223372036854775808"
+        ]
+      ]
+    },
+    {
+      "name": "ages as-of 1",
+      "query": "(query [:find ?n ?a :as-of 1 :where [?e :person/name ?n] [?e :person/age ?a]])",
+      "rows": [
+        [
+          "\"Alice\"",
+          "30"
+        ],
+        [
+          "\"Bob\"",
+          "42"
+        ],
+        [
+          "\"Carol\"",
+          "-9223372036854775808"
+        ]
+      ]
+    },
+    {
+      "name": "ages as-of 3 (alice retracted)",
+      "query": "(query [:find ?n ?a :as-of 3 :where [?e :person/name ?n] [?e :person/age ?a]])",
+      "rows": [
+        [
+          "\"Bob\"",
+          "42"
+        ],
+        [
+          "\"Carol\"",
+          "-9223372036854775808"
+        ]
+      ]
+    },
+    {
+      "name": "eavt lookup",
+      "query": "(query [:find ?a :where [:alice :person/age ?a]])",
+      "rows": [
+        [
+          "31"
+        ]
+      ]
+    },
+    {
+      "name": "avet lookup",
+      "query": "(query [:find ?n :where [?e :person/role :role/admin] [?e :person/name ?n]])",
+      "rows": [
+        [
+          "\"Alice\""
+        ]
+      ]
+    },
+    {
+      "name": "keywords",
+      "query": "(query [:find ?n ?r :where [?e :person/role ?r] [?e :person/name ?n]])",
+      "rows": [
+        [
+          "\"Alice\"",
+          ":role/admin"
+        ],
+        [
+          "\"Bob\"",
+          ":role/user"
+        ]
+      ]
+    },
+    {
+      "name": "ref join",
+      "query": "(query [:find ?n :where [:alice :person/friend ?f] [?f :person/name ?n]])",
+      "rows": [
+        [
+          "\"Bob\""
+        ]
+      ]
+    },
+    {
+      "name": "ref join two hops",
+      "query": "(query [:find ?n :where [:alice :person/friend ?f] [?f :person/friend ?g] [?g :person/name ?n]])",
+      "rows": [
+        [
+          "\"Carol\""
+        ]
+      ]
+    },
+    {
+      "name": "vaet reverse ref",
+      "query": "(query [:find ?n :where [?e :person/friend :carol] [?e :person/name ?n]])",
+      "rows": [
+        [
+          "\"Bob\""
+        ]
+      ]
+    },
+    {
+      "name": "floats",
+      "query": "(query [:find ?n ?h :where [?e :person/name ?n] [?e :person/height ?h]])",
+      "rows": [
+        [
+          "\"Alice\"",
+          "1.5"
+        ],
+        [
+          "\"Bob\"",
+          "-0.25"
+        ]
+      ]
+    },
+    {
+      "name": "unicode",
+      "query": "(query [:find ?m :where [:alice :person/motto ?m]])",
+      "rows": [
+        [
+          "\"Zoë 🚀\""
+        ]
+      ]
+    },
+    {
+      "name": "i64 max",
+      "query": "(query [:find ?s :where [:carol :person/score ?s]])",
+      "rows": [
+        [
+          "9223372036854775807"
+        ]
+      ]
+    },
+    {
+      "name": "long string",
+      "query": "(query [:find ?b :where [:carol :person/bio ?b]])",
+      "rows": [
+        [
+          "\"01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789\""
+        ]
+      ]
+    },
+    {
+      "name": "valid-at inside window",
+      "query": "(query [:find ?s :valid-at \"2022-06-01\" :where [?e :employment/status ?s]])",
+      "rows": [
+        [
+          ":employee"
+        ],
+        [
+          ":contractor"
+        ]
+      ]
+    },
+    {
+      "name": "valid-at earlier window",
+      "query": "(query [:find ?s :valid-at \"2020-06-01\" :where [?e :employment/status ?s]])",
+      "rows": [
+        [
+          ":intern"
+        ]
+      ]
+    },
+    {
+      "name": "valid-at before all windows",
+      "query": "(query [:find ?s :valid-at \"2019-01-01\" :where [?e :employment/status ?s]])",
+      "rows": []
+    },
+    {
+      "name": "valid now",
+      "query": "(query [:find ?s :where [?e :employment/status ?s]])",
+      "rows": [
+        [
+          ":contractor"
+        ]
+      ]
+    },
+    {
+      "name": "any valid time",
+      "query": "(query [:find ?s :valid-at :any-valid-time :where [?e :employment/status ?s]])",
+      "rows": [
+        [
+          ":intern"
+        ],
+        [
+          ":employee"
+        ],
+        [
+          ":contractor"
+        ]
+      ]
+    },
+    {
+      "name": "count names",
+      "query": "(query [:find (count ?e) :where [?e :person/name ?n]])",
+      "rows": [
+        [
+          "3"
+        ]
+      ]
+    },
+    {
+      "name": "booleans",
+      "query": "(query [:find ?n ?b :where [?e :person/name ?n] [?e :person/active ?b]])",
+      "rows": [
+        [
+          "\"Alice\"",
+          "true"
+        ],
+        [
+          "\"Bob\"",
+          "false"
+        ]
+      ]
+    },
+    {
+      "name": "not",
+      "query": "(query [:find ?n :where [?e :person/name ?n] (not [?e :person/active true])])",
+      "rows": [
+        [
+          "\"Bob\""
+        ],
+        [
+          "\"Carol\""
+        ]
+      ]
+    },
+    {
+      "name": "filler count",
+      "query": "(query [:find (count ?e) :where [?e :filler/n ?n]])",
+      "rows": [
+        [
+          "300"
+        ]
+      ]
+    },
+    {
+      "name": "filler group",
+      "query": "(query [:find (count ?e) :where [?e :filler/group :g/1]])",
+      "rows": [
+        [
+          "100"
+        ]
+      ]
+    },
+    {
+      "name": "filler sum",
+      "query": "(query [:find (sum ?n) :where [?e :filler/n ?n]])",
+      "rows": [
+        [
+          "44850"
+        ]
+      ]
+    },
+    {
+      "name": "filler point",
+      "query": "(query [:find ?g :where [:f/e250 :filler/group ?g]])",
+      "rows": [
+        [
+          ":g/1"
+        ]
+      ]
+    },
+    {
+      "name": "filler as-of 5",
+      "query": "(query [:find (count ?e) :as-of 5 :where [?e :filler/n ?n]])",
+      "rows": [
+        [
+          "100"
+        ]
+      ]
+    }
+  ]
+}

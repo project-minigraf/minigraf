@@ -1,0 +1,14 @@
+[package]
+name = "minigraf-golden-gen-v8"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Records how the v8 golden files in tests/golden/ were written (#391). Never re-run to replace a committed file."
+
+# Standalone: not a member of the minigraf workspace.
+[workspace]
+
+[dependencies]
+# The `v3` branch after the v8 format froze (PRs #442-#452), before v3.0.0 was published.
+minigraf = { git = "https://github.com/project-minigraf/minigraf", rev = "23aa57c5e46e7e78fa823425cc74cff3764f1763" }
+crc32fast = "1.4"

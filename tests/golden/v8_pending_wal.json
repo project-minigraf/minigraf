@@ -1,0 +1,279 @@
+{
+  "file": "v8_pending_wal.graph",
+  "wal": "v8_pending_wal.graph.wal",
+  "format": 8,
+  "written_by": "minigraf v3 branch at 23aa57c (format v8 frozen), tests/golden/gen/v8 recipe pending_wal",
+  "crc32": {
+    "graph": "0xfb128823",
+    "wal": "0xadf4bcf8"
+  },
+  "tx_count": 6,
+  "notes": "tx 5 and 6 live only in the v2 WAL: the writing session ended without running destructors, as a crash would",
+  "queries": [
+    {
+      "name": "all names",
+      "query": "(query [:find ?n :where [?e :person/name ?n]])",
+      "rows": [
+        [
+          "\"Alice\""
+        ],
+        [
+          "\"Bob\""
+        ],
+        [
+          "\"Carol\""
+        ],
+        [
+          "\"Dave\""
+        ]
+      ]
+    },
+    {
+      "name": "ages now",
+      "query": "(query [:find ?n ?a :where [?e :person/name ?n] [?e :person/age ?a]])",
+      "rows": [
+        [
+          "\"Alice\"",
+          "31"
+        ],
+        [
+          "\"Bob\"",
+          "42"
+        ],
+        [
+          "\"Carol\"",
+          "-9223372036854775808"
+        ],
+        [
+          "\"Dave\"",
+          "25"
+        ]
+      ]
+    },
+    {
+      "name": "ages as-of 1",
+      "query": "(query [:find ?n ?a :as-of 1 :where [?e :person/name ?n] [?e :person/age ?a]])",
+      "rows": [
+        [
+          "\"Alice\"",
+          "30"
+        ],
+        [
+          "\"Bob\"",
+          "42"
+        ],
+        [
+          "\"Carol\"",
+          "-9223372036854775808"
+        ]
+      ]
+    },
+    {
+      "name": "ages as-of 3 (alice retracted)",
+      "query": "(query [:find ?n ?a :as-of 3 :where [?e :person/name ?n] [?e :person/age ?a]])",
+      "rows": [
+        [
+          "\"Bob\"",
+          "42"
+        ],
+        [
+          "\"Carol\"",
+          "-9223372036854775808"
+        ]
+      ]
+    },
+    {
+      "name": "eavt lookup",
+      "query": "(query [:find ?a :where [:alice :person/age ?a]])",
+      "rows": [
+        [
+          "31"
+        ]
+      ]
+    },
+    {
+      "name": "avet lookup",
+      "query": "(query [:find ?n :where [?e :person/role :role/admin] [?e :person/name ?n]])",
+      "rows": [
+        [
+          "\"Alice\""
+        ]
+      ]
+    },
+    {
+      "name": "keywords",
+      "query": "(query [:find ?n ?r :where [?e :person/role ?r] [?e :person/name ?n]])",
+      "rows": [
+        [
+          "\"Alice\"",
+          ":role/admin"
+        ],
+        [
+          "\"Bob\"",
+          ":role/user"
+        ]
+      ]
+    },
+    {
+      "name": "ref join",
+      "query": "(query [:find ?n :where [:alice :person/friend ?f] [?f :person/name ?n]])",
+      "rows": [
+        [
+          "\"Bob\""
+        ]
+      ]
+    },
+    {
+      "name": "ref join two hops",
+      "query": "(query [:find ?n :where [:alice :person/friend ?f] [?f :person/friend ?g] [?g :person/name ?n]])",
+      "rows": [
+        [
+          "\"Carol\""
+        ]
+      ]
+    },
+    {
+      "name": "vaet reverse ref",
+      "query": "(query [:find ?n :where [?e :person/friend :carol] [?e :person/name ?n]])",
+      "rows": [
+        [
+          "\"Bob\""
+        ]
+      ]
+    },
+    {
+      "name": "floats",
+      "query": "(query [:find ?n ?h :where [?e :person/name ?n] [?e :person/height ?h]])",
+      "rows": [
+        [
+          "\"Alice\"",
+          "1.5"
+        ],
+        [
+          "\"Bob\"",
+          "-0.25"
+        ]
+      ]
+    },
+    {
+      "name": "unicode",
+      "query": "(query [:find ?m :where [:alice :person/motto ?m]])",
+      "rows": [
+        [
+          "\"Zoë 🚀\""
+        ]
+      ]
+    },
+    {
+      "name": "i64 max",
+      "query": "(query [:find ?s :where [:carol :person/score ?s]])",
+      "rows": [
+        [
+          "9223372036854775807"
+        ]
+      ]
+    },
+    {
+      "name": "long string",
+      "query": "(query [:find ?b :where [:carol :person/bio ?b]])",
+      "rows": [
+        [
+          "\"01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789\""
+        ]
+      ]
+    },
+    {
+      "name": "valid-at inside window",
+      "query": "(query [:find ?s :valid-at \"2022-06-01\" :where [?e :employment/status ?s]])",
+      "rows": [
+        [
+          ":employee"
+        ],
+        [
+          ":contractor"
+        ]
+      ]
+    },
+    {
+      "name": "valid-at earlier window",
+      "query": "(query [:find ?s :valid-at \"2020-06-01\" :where [?e :employment/status ?s]])",
+      "rows": [
+        [
+          ":intern"
+        ]
+      ]
+    },
+    {
+      "name": "valid-at before all windows",
+      "query": "(query [:find ?s :valid-at \"2019-01-01\" :where [?e :employment/status ?s]])",
+      "rows": []
+    },
+    {
+      "name": "valid now",
+      "query": "(query [:find ?s :where [?e :employment/status ?s]])",
+      "rows": [
+        [
+          ":contractor"
+        ]
+      ]
+    },
+    {
+      "name": "any valid time",
+      "query": "(query [:find ?s :valid-at :any-valid-time :where [?e :employment/status ?s]])",
+      "rows": [
+        [
+          ":intern"
+        ],
+        [
+          ":employee"
+        ],
+        [
+          ":contractor"
+        ]
+      ]
+    },
+    {
+      "name": "count names",
+      "query": "(query [:find (count ?e) :where [?e :person/name ?n]])",
+      "rows": [
+        [
+          "4"
+        ]
+      ]
+    },
+    {
+      "name": "booleans",
+      "query": "(query [:find ?n ?b :where [?e :person/name ?n] [?e :person/active ?b]])",
+      "rows": [
+        [
+          "\"Alice\"",
+          "true"
+        ]
+      ]
+    },
+    {
+      "name": "not",
+      "query": "(query [:find ?n :where [?e :person/name ?n] (not [?e :person/active true])])",
+      "rows": [
+        [
+          "\"Bob\""
+        ],
+        [
+          "\"Carol\""
+        ],
+        [
+          "\"Dave\""
+        ]
+      ]
+    },
+    {
+      "name": "bob active as-of 5",
+      "query": "(query [:find ?b :as-of 5 :where [:bob :person/active ?b]])",
+      "rows": [
+        [
+          "false"
+        ]
+      ]
+    }
+  ]
+}
