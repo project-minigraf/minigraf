@@ -461,12 +461,10 @@ fn near_max_size_values_checkpoint_and_read_back() {
     assert_eq!(by_value.len(), 1, "AVET path must find the large value");
 }
 
-/// `near_max_size_values_checkpoint_and_read_back` above leaves roughly 230
-/// bytes of headroom below the real per-fact maximum (`MAX_FACT_BYTES` minus
-/// the fixed postcard overhead of the rest of the `Fact` struct, which isn't
-/// a public constant). This test locates the exact edge at runtime — the
-/// largest value length that still transacts — by searching downward from a
-/// length guaranteed to fail, and checkpoints/reads back exactly there.
+/// The largest string value is 4068 bytes, one value page's payload (spec
+/// §6.3), whatever the rest of the fact. This test finds the edge at runtime,
+/// by binary search from a length guaranteed to fail, checks it is exactly
+/// that limit, and checkpoints and reads back values there.
 #[test]
 fn max_size_value_at_exact_boundary_checkpoint_and_read_back() {
     let dir = tempfile::tempdir().unwrap();
@@ -481,8 +479,7 @@ fn max_size_value_at_exact_boundary_checkpoint_and_read_back() {
     // with `big_a`. Same attribute name (`:blob`) as the real facts below:
     // the attribute string is part of the encoded fact size, so a
     // differently-sized attribute name would find a different boundary.
-    // `hi` starts comfortably above MAX_FACT_BYTES (4052), so it is
-    // guaranteed to fail.
+    // `hi` starts above the 4068-byte limit, so it is guaranteed to fail.
     let mut lo = 0usize;
     let mut hi = 4096usize;
     while lo + 1 < hi {
@@ -495,10 +492,7 @@ fn max_size_value_at_exact_boundary_checkpoint_and_read_back() {
         }
     }
     let max_len = lo;
-    assert!(
-        max_len > 3_800,
-        "boundary search must find a length past the near-max test's headroom"
-    );
+    assert_eq!(max_len, 4068, "the value limit is one value page's payload");
 
     let big_a = "a".repeat(max_len);
     let big_b = "b".repeat(max_len);

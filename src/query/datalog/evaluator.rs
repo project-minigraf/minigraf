@@ -840,10 +840,7 @@ impl StratifiedEvaluator {
                 // Plan: assigns index hints + pushes Expr to earliest binding position.
                 // Not/NotJoin are excluded from plan_clauses above, so `deferred` is
                 // always empty here — rule bodies keep their existing not-filter path.
-                let (planned, _deferred) = crate::query::datalog::optimizer::plan(
-                    plan_clauses,
-                    &crate::storage::index::Indexes::new(),
-                );
+                let (planned, _deferred) = crate::query::datalog::optimizer::plan(plan_clauses);
 
                 // Process planned clauses in order: Pattern → join, Expr → filter/extend.
                 let fn_guard = self

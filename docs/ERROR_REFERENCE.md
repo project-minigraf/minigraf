@@ -144,9 +144,11 @@ with no `CodedError` anywhere in its chain.
 | STG-033 | Meta page damaged after commit | Storage |
 | STG-034 | Unsupported file feature | Storage |
 | STG-035 | Free-list inconsistency | Storage |
+| STG-036 | Dictionary entry missing | Storage |
+| STG-037 | Transaction with two timestamps | Storage |
 | WAL-001 | Invalid WAL magic number | WAL |
 | WAL-002 | Unsupported WAL version | WAL |
-| WAL-003 | Fact serialised size exceeds maximum | WAL |
+| WAL-003 | Value size exceeds maximum | WAL |
 | WAL-004 | Fact serialised size exceeds u32 range | WAL |
 | WAL-005 | WAL num_facts exceeds platform usize | WAL |
 | WAL-006 | Failed to delete WAL file | WAL |
@@ -2047,7 +2049,7 @@ See the [file format section in README](../README.md#file-format) for version hi
 
 **Error text**: `No valid meta page: the file is not a Minigraf v7 or v8 database, or both meta pages are damaged`
 
-**Cause**: Neither meta page (page 0 or page 1) passes its checksum, page 0 is not a valid format v7 header, and no migration backup meta page can be used. Pre-release v8 files written during v3.0.0 development are also rejected this way.
+**Cause**: Neither meta page (page 0 or page 1) passes its checksum, page 0 is not a valid format v7 header, and no migration backup meta page can be used. Pre-release v8 files written during v3.0.0 development are also rejected this way: those with a single 84-byte header, and those with meta pages but no dictionary tree (written before covering keys).
 
 **Resolution**:
 - Check that the path points to a Minigraf database.
@@ -2090,6 +2092,32 @@ See the [file format section in README](../README.md#file-format) for version hi
 
 ---
 
+### STG-036 Dictionary entry missing
+
+**Error text**: `Dictionary entry missing: {}`
+
+**Cause**: An index entry refers to an entity id, ident id, transaction or long value that has no entry in the file's dictionary (DICT tree). The file is damaged.
+
+**Resolution**:
+- Restore from backup.
+
+**Scenario**: A DICT leaf lost to a bad sector while the index trees that refer to its ids are intact.
+
+---
+
+### STG-037 Transaction with two timestamps
+
+**Error text**: `Transaction {} has two timestamps: {} and {}`
+
+**Cause**: A checkpoint or a v7 migration found facts with the same `tx_count` but different `tx_id` values. Format v8 records one timestamp per transaction, and Minigraf refuses to change a stored timestamp. Every write path stamps one `tx_id` per `tx_count`, so this means the facts were written outside those paths or the file is damaged.
+
+**Resolution**:
+- Keep using the release that wrote the file and report the issue, with the transaction number from the message.
+
+**Scenario**: A v7 file whose facts were edited by an external tool so that two transactions share one `tx_count`.
+
+---
+
 ## WAL — Write-Ahead Log Errors
 
 WAL errors relate to the sidecar `.wal` file written alongside the `.graph` file.
@@ -2120,11 +2148,11 @@ The WAL is replayed on open and deleted on checkpoint.
 
 **Scenario**: A `.wal` file written by a pre-release version of Minigraf is opened with the stable release, which uses a different WAL version number — e.g. `Unsupported WAL version: 3 (expected 2)`.
 
-### WAL-003 Fact serialised size exceeds maximum
+### WAL-003 Value size exceeds maximum
 
-**Error text**: `Fact serialised size {} bytes exceeds maximum {} bytes. Store large payloads externally and reference them with a Value::String URL/path or Value::Ref entity ID.`
+**Error text**: `Value of {} bytes exceeds the maximum of {} bytes. Store large payloads externally and reference them with a Value::String URL/path or Value::Ref entity ID.`
 
-**Cause**: A single fact's serialised size exceeds the WAL entry limit (~512 KB). This typically means a `Value::String` attribute value contains very large content such as raw document text, a base64-encoded image, or binary data.
+**Cause**: A string value is longer than `MAX_VALUE_BYTES` (4,068 bytes, one value page), or an attribute name or keyword value is longer than 1,024 bytes. This typically means a `Value::String` contains very large content such as raw document text, a base64-encoded image, or binary data. In-memory databases have no WAL and no limit.
 
 **Resolution**:
 - Store large payloads in an external file or object store.
@@ -2142,7 +2170,7 @@ The WAL is replayed on open and deleted on checkpoint.
 
 **Error text**: `fact serialised size {} exceeds u32 range`
 
-**Cause**: The serialised size of a single fact exceeds `u32::MAX` (~4 GB). This is practically unreachable — WAL-003's ~512 KB limit fires first.
+**Cause**: The serialised size of a single fact exceeds `u32::MAX` (~4 GB). This is practically unreachable: WAL-003's value limits fire first.
 
 **Resolution**:
 - This should not occur under normal operation.

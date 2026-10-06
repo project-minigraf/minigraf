@@ -1,9 +1,9 @@
-use crate::error::{ErrorCode, bail_coded, err_coded};
+use crate::error::{ErrorCode, err_coded};
 use crate::graph::types::{
     Attribute, EntityId, Fact, TransactOptions, TxId, VALID_TIME_FOREVER, Value, tx_id_now,
 };
 use crate::query::datalog::types::AsOf;
-use crate::storage::index::{FactRef, Indexes, encode_value};
+use crate::storage::index::{Indexes, encode_value};
 use anyhow::Result;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -45,12 +45,9 @@ struct FactData {
     /// fact sets (e.g. 1M-fact benchmark setup).
     pending_keys: HashSet<PendingKey>,
     pending_indexes: Indexes,
-    /// Resolves committed (on-disk) FactRefs to Fact objects.
-    /// None for in-memory databases or before load() is called.
-    committed: Option<Arc<dyn crate::storage::CommittedFactReader>>,
-    /// Provides bounded range scans over the four committed (on-disk) covering indexes.
-    /// Set by `set_committed_index_reader()` after open/migration/checkpoint.
-    committed_index_reader: Option<Arc<dyn crate::storage::CommittedIndexReader>>,
+    /// Reads committed (checkpointed) facts through the on-disk covering indexes.
+    /// None for in-memory databases. Set after every open, migration and checkpoint.
+    committed: Option<Arc<dyn crate::storage::CommittedReader>>,
 }
 
 /// In-memory storage for Datalog facts with transaction support
@@ -109,7 +106,6 @@ impl FactStorage {
                 pending_keys: HashSet::new(),
                 pending_indexes: Indexes::new(),
                 committed: None,
-                committed_index_reader: None,
             })),
             tx_counter: Arc::new(AtomicU64::new(0)),
         }
@@ -156,15 +152,10 @@ impl FactStorage {
             .data
             .write()
             .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
-        for (slot, fact) in (u16::try_from(d.facts.len()).unwrap_or(u16::MAX)..).zip(facts.iter()) {
+        let base = d.facts.len();
+        for (i, fact) in facts.iter().enumerate() {
             d.pending_keys.insert(pending_key(fact));
-            d.pending_indexes.insert(
-                fact,
-                FactRef {
-                    page_id: 0,
-                    slot_index: slot,
-                },
-            );
+            d.pending_indexes.insert(fact, base + i);
         }
         d.facts.extend(facts);
 
@@ -215,15 +206,10 @@ impl FactStorage {
             .data
             .write()
             .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
-        for (slot, fact) in (u16::try_from(d.facts.len()).unwrap_or(u16::MAX)..).zip(facts.iter()) {
+        let base = d.facts.len();
+        for (i, fact) in facts.iter().enumerate() {
             d.pending_keys.insert(pending_key(fact));
-            d.pending_indexes.insert(
-                fact,
-                FactRef {
-                    page_id: 0,
-                    slot_index: slot,
-                },
-            );
+            d.pending_indexes.insert(fact, base + i);
         }
         d.facts.extend(facts);
 
@@ -264,17 +250,10 @@ impl FactStorage {
             .data
             .write()
             .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
-        for (slot, fact) in
-            (u16::try_from(d.facts.len()).unwrap_or(u16::MAX)..).zip(retractions.iter())
-        {
+        let base = d.facts.len();
+        for (i, fact) in retractions.iter().enumerate() {
             d.pending_keys.insert(pending_key(fact));
-            d.pending_indexes.insert(
-                fact,
-                FactRef {
-                    page_id: 0,
-                    slot_index: slot,
-                },
-            );
+            d.pending_indexes.insert(fact, base + i);
         }
         d.facts.extend(retractions);
 
@@ -303,29 +282,25 @@ impl FactStorage {
             return Ok(false); // Already exists, not loaded
         }
 
-        let slot = u16::try_from(d.facts.len()).unwrap_or(u16::MAX);
-        d.pending_indexes.insert(
-            &fact,
-            FactRef {
-                page_id: 0,
-                slot_index: slot,
-            },
-        );
+        let pos = d.facts.len();
+        d.pending_indexes.insert(&fact, pos);
         d.facts.push(fact);
         Ok(true)
     }
 
-    /// Set tx_counter to max(tx_count) across all loaded facts.
+    /// Raise tx_counter to max(tx_count) across all loaded facts.
     ///
     /// Must be called after all `load_fact()` calls complete so that the next
-    /// `transact()` call picks up from the right sequence number.
+    /// `transact()` call picks up from the right sequence number. The counter
+    /// never moves backwards: it may already hold the file's checkpointed count,
+    /// and when WAL replay loads no facts that count must survive (#447).
     pub(crate) fn restore_tx_counter(&self) -> Result<()> {
         let d = self
             .data
             .read()
             .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
         let max = d.facts.iter().map(|f| f.tx_count).max().unwrap_or(0);
-        self.tx_counter.store(max, Ordering::SeqCst);
+        self.tx_counter.fetch_max(max, Ordering::SeqCst);
         Ok(())
     }
 
@@ -357,9 +332,9 @@ impl FactStorage {
             .read()
             .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
         let mut all = Vec::new();
-        // Committed facts first (on disk, via CommittedFactReader)
-        if let Some(loader) = &d.committed {
-            all.extend(loader.stream_all()?);
+        // Committed facts first (on disk, in EAVT order)
+        if let Some(reader) = &d.committed {
+            all.extend(reader.all_facts()?);
         }
         // Then pending facts (post-checkpoint, in memory)
         all.extend(d.facts.iter().cloned());
@@ -384,13 +359,6 @@ impl FactStorage {
         Ok(all.into_iter().filter(|f| f.is_asserted()).collect())
     }
 
-    /// Replace the pending in-memory indexes (tests install hand-built ones).
-    #[cfg(test)]
-    pub(crate) fn replace_pending_indexes(&self, indexes: Indexes) {
-        let mut d = self.data.write().unwrap_or_else(|e| e.into_inner());
-        d.pending_indexes = indexes;
-    }
-
     /// Return the pending (uncommitted) facts held in memory.
     pub(crate) fn get_pending_facts(&self) -> Vec<Fact> {
         let d = self.data.read().unwrap_or_else(|e| e.into_inner());
@@ -410,51 +378,18 @@ impl FactStorage {
         self.tx_counter.store(max, Ordering::SeqCst);
     }
 
-    /// Return a snapshot (clone) of the current pending in-memory indexes.
-    ///
-    /// Used by `PersistentFactStorage::save()` to write index B+tree pages.
-    /// Clones the BTreeMaps — acceptable since `save()` is not on the hot path.
-    pub(crate) fn pending_indexes_snapshot(&self) -> Indexes {
-        let d = self.data.read().unwrap_or_else(|e| e.into_inner());
-        Indexes {
-            eavt: d.pending_indexes.eavt.clone(),
-            aevt: d.pending_indexes.aevt.clone(),
-            avet: d.pending_indexes.avet.clone(),
-            vaet: d.pending_indexes.vaet.clone(),
-        }
-    }
-
-    /// Set the committed fact reader. Called by PersistentFactStorage::load() after
-    /// opening a v5 file so index-driven reads can resolve FactRefs via page cache.
-    pub(crate) fn set_committed_reader(
-        &self,
-        reader: Arc<dyn crate::storage::CommittedFactReader>,
-    ) {
+    /// Set the committed reader. Called by `PersistentFactStorage` after each
+    /// open, migration and checkpoint.
+    pub(crate) fn set_committed_reader(&self, reader: Arc<dyn crate::storage::CommittedReader>) {
         let mut d = self.data.write().unwrap_or_else(|e| e.into_inner());
         d.committed = Some(reader);
     }
 
-    /// Set the committed index reader. Called by PersistentFactStorage after
-    /// each open/migration/checkpoint so queries can range-scan the on-disk B+tree.
-    pub(crate) fn set_committed_index_reader(
-        &self,
-        reader: Arc<dyn crate::storage::CommittedIndexReader>,
-    ) {
-        let mut d = self.data.write().unwrap_or_else(|e| e.into_inner());
-        d.committed_index_reader = Some(reader);
-    }
-
-    /// Returns (eavt_len, aevt_len, avet_len, vaet_len) for the pending indexes.
-    /// Used in tests to verify pending index state.
-    #[allow(dead_code)]
-    pub(crate) fn pending_index_counts(&self) -> (usize, usize, usize, usize) {
+    /// Returns (eavt_len, aevt_len) for the pending indexes (tests).
+    #[cfg(test)]
+    pub(crate) fn pending_index_counts(&self) -> (usize, usize) {
         let d = self.data.read().unwrap_or_else(|e| e.into_inner());
-        (
-            d.pending_indexes.eavt.len(),
-            d.pending_indexes.aevt.len(),
-            d.pending_indexes.avet.len(),
-            d.pending_indexes.vaet.len(),
-        )
+        (d.pending_indexes.eavt.len(), d.pending_indexes.aevt.len())
     }
 }
 
@@ -559,22 +494,12 @@ pub(crate) fn net_asserted_facts(facts: Vec<Fact>) -> Vec<Fact> {
         .collect()
 }
 
-/// Resolve a [FactRef] to a [Fact] using the committed reader (for on-disk facts)
-/// or the pending facts vector (for in-memory facts with page_id=0).
-/// Used by the production index-driven lookup methods (`get_facts_by_entity`,
-/// `get_facts_by_attribute`).
-fn resolve_fact_ref(d: &FactData, fr: FactRef) -> Result<Fact> {
-    if fr.page_id == 0 {
-        d.facts
-            .get(fr.slot_index as usize)
-            .cloned()
-            .ok_or_else(|| err_coded!(ErrorCode::Int045, fr.slot_index))
-    } else {
-        match &d.committed {
-            Some(loader) => loader.resolve(fr),
-            None => bail_coded!(ErrorCode::Int046, fr.page_id),
-        }
-    }
+/// The pending fact at `pos`, as indexed by `FactData::pending_indexes`.
+fn pending_fact(d: &FactData, pos: usize) -> Result<Fact> {
+    d.facts
+        .get(pos)
+        .cloned()
+        .ok_or_else(|| err_coded!(ErrorCode::Int045, pos))
 }
 
 /// Production helpers on FactStorage: index-driven entity/attribute lookups used by the query executor.
@@ -583,63 +508,28 @@ impl FactStorage {
     pub(crate) fn get_facts_by_entity(&self, entity_id: &EntityId) -> Result<Vec<Fact>> {
         use crate::storage::index::EavtKey;
         let d = self.data.read().unwrap_or_else(|e| e.into_inner());
-
-        let start = EavtKey::entity_start(*entity_id);
-        let next_entity = uuid::Uuid::from_u128(entity_id.as_u128().wrapping_add(1));
-        let end = EavtKey::entity_start(next_entity);
-
-        // Fallback: no indexes built yet
-        if d.pending_indexes.eavt.is_empty() && d.committed_index_reader.is_none() {
-            if d.committed.is_none() {
-                return Ok(d
-                    .facts
-                    .iter()
-                    .filter(|f| &f.entity == entity_id)
-                    .cloned()
-                    .collect());
-            }
-            let mut result: Vec<Fact> = d
-                .facts
-                .iter()
-                .filter(|f| &f.entity == entity_id)
-                .cloned()
-                .collect();
-            if let Some(loader) = &d.committed {
-                for fact in loader.stream_all()? {
-                    if &fact.entity == entity_id {
-                        result.push(fact);
-                    }
-                }
-            }
-            return Ok(result);
-        }
-
         let mut facts = Vec::new();
-
-        // Pending: in-memory BTreeMap bounded range.
-        for (key, &fr) in d.pending_indexes.eavt.range(start.clone()..end.clone()) {
+        for (key, &pos) in d
+            .pending_indexes
+            .eavt
+            .range(EavtKey::entity_start(*entity_id)..)
+        {
             if key.entity != *entity_id {
                 break;
             }
-            facts.push(resolve_fact_ref(&d, fr)?);
+            facts.push(pending_fact(&d, pos)?);
         }
-
-        // Committed: on-disk B+tree range scan
-        if let Some(reader) = &d.committed_index_reader {
-            let committed_refs = reader.range_scan_eavt(&start, Some(&end))?;
-            for fr in committed_refs {
-                facts.push(resolve_fact_ref(&d, fr)?);
-            }
+        if let Some(reader) = &d.committed {
+            facts.extend(reader.facts_for_entity(entity_id)?);
         }
-
         Ok(facts)
     }
 
     /// Get every stored record for one `(entity, attribute)` pair (index-driven, #323).
     ///
-    /// Range-scans EAVT over exactly `[(e, a, …), (e, a + "\0", …))`, so other
-    /// attributes of the same entity — including prefix siblings such as `:ab` for
-    /// `:a` — and their version history are never resolved.
+    /// Reads only that pair's EAVT range, so other attributes of the same entity
+    /// (including prefix siblings such as `:ab` for `:a`) and their version
+    /// history are never read.
     pub(crate) fn get_facts_by_entity_attribute_indexed(
         &self,
         entity_id: &EntityId,
@@ -647,46 +537,17 @@ impl FactStorage {
     ) -> Result<Vec<Fact>> {
         use crate::storage::index::EavtKey;
         let d = self.data.read().unwrap_or_else(|e| e.into_inner());
-        let matches = |f: &Fact| &f.entity == entity_id && &f.attribute == attribute;
-
-        // Fallback: no indexes built yet
-        if d.pending_indexes.eavt.is_empty() && d.committed_index_reader.is_none() {
-            let mut result: Vec<Fact> = d.facts.iter().filter(|f| matches(f)).cloned().collect();
-            if let Some(loader) = &d.committed {
-                result.extend(loader.stream_all()?.into_iter().filter(|f| matches(f)));
-            }
-            return Ok(result);
-        }
-
         let start = EavtKey::entity_attribute_start(*entity_id, attribute);
-        // Exact successor of `attribute`: the smallest string that sorts after it is
-        // `attribute + "\0"`, so `[start, end)` holds exactly this (e, a) pair. Always
-        // valid UTF-8 — unlike incrementing the last byte, which fails for attributes
-        // ending in 0x7F or a character whose last UTF-8 byte is 0xBF (e.g. `:丿`).
-        let end = EavtKey::entity_attribute_start(*entity_id, &format!("{attribute}\0"));
-
         let mut facts = Vec::new();
-
-        // Pending: EAVT keys for the exact (e, a) are contiguous from `start`;
-        // the first key with a different entity or attribute ends the run.
-        for (key, &fr) in d.pending_indexes.eavt.range(start.clone()..) {
+        for (key, &pos) in d.pending_indexes.eavt.range(start..) {
             if key.entity != *entity_id || key.attribute != *attribute {
                 break;
             }
-            facts.push(resolve_fact_ref(&d, fr)?);
+            facts.push(pending_fact(&d, pos)?);
         }
-
-        // Committed: on-disk B+tree range scan over exactly this (e, a) pair; the
-        // post-filter is a cheap guard, not something the range relies on.
-        if let Some(reader) = &d.committed_index_reader {
-            for fr in reader.range_scan_eavt(&start, Some(&end))? {
-                let fact = resolve_fact_ref(&d, fr)?;
-                if matches(&fact) {
-                    facts.push(fact);
-                }
-            }
+        if let Some(reader) = &d.committed {
+            facts.extend(reader.facts_for_entity_attribute(entity_id, attribute)?);
         }
-
         Ok(facts)
     }
 
@@ -694,41 +555,20 @@ impl FactStorage {
     pub(crate) fn get_facts_by_attribute(&self, attribute: &Attribute) -> Result<Vec<Fact>> {
         use crate::storage::index::AevtKey;
         let d = self.data.read().unwrap_or_else(|e| e.into_inner());
-
-        // Fallback: no index
-        if d.pending_indexes.aevt.is_empty() && d.committed_index_reader.is_none() {
-            drop(d);
-            return Ok(self
-                .get_all_facts()?
-                .into_iter()
-                .filter(|f| &f.attribute == attribute)
-                .collect());
-        }
-
-        let start = AevtKey::attribute_start(attribute);
-        // Exact successor of `attribute` (see `get_facts_by_entity_attribute_indexed`):
-        // `[start, end)` holds exactly this attribute, never prefix siblings such as
-        // `:ab` for `:a`, and is valid UTF-8 for any attribute (#381).
-        let end = AevtKey::attribute_start(&format!("{attribute}\0"));
-
         let mut facts = Vec::new();
-
-        // Pending: AEVT keys for the exact attribute are contiguous from `start`.
-        for (_, &fr) in d.pending_indexes.aevt.range(start.clone()..end.clone()) {
-            facts.push(resolve_fact_ref(&d, fr)?);
-        }
-
-        // Committed: on-disk B+tree range scan over exactly this attribute; the
-        // post-filter is a cheap guard, not something the range relies on.
-        if let Some(reader) = &d.committed_index_reader {
-            for fr in reader.range_scan_aevt(&start, Some(&end))? {
-                let fact = resolve_fact_ref(&d, fr)?;
-                if &fact.attribute == attribute {
-                    facts.push(fact);
-                }
+        for (key, &pos) in d
+            .pending_indexes
+            .aevt
+            .range(AevtKey::attribute_start(attribute)..)
+        {
+            if key.attribute != *attribute {
+                break;
             }
+            facts.push(pending_fact(&d, pos)?);
         }
-
+        if let Some(reader) = &d.committed {
+            facts.extend(reader.facts_for_attribute(attribute)?);
+        }
         Ok(facts)
     }
 }
@@ -781,7 +621,7 @@ impl FactStorage {
         let committed_count = d
             .committed
             .as_ref()
-            .and_then(|l| l.stream_all().ok())
+            .and_then(|r| r.all_facts().ok())
             .map(|v| v.len())
             .unwrap_or(0);
         committed_count + d.facts.len()
@@ -792,15 +632,9 @@ impl FactStorage {
         self.get_asserted_facts().map(|v| v.len()).unwrap_or(0)
     }
 
-    /// Returns (eavt_len, aevt_len, avet_len, vaet_len). Test use only.
-    pub(crate) fn index_counts(&self) -> (usize, usize, usize, usize) {
-        let d = self.data.read().unwrap();
-        (
-            d.pending_indexes.eavt.len(),
-            d.pending_indexes.aevt.len(),
-            d.pending_indexes.avet.len(),
-            d.pending_indexes.vaet.len(),
-        )
+    /// Returns (eavt_len, aevt_len). Test use only.
+    pub(crate) fn index_counts(&self) -> (usize, usize) {
+        self.pending_index_counts()
     }
 }
 
@@ -1404,24 +1238,9 @@ mod tests {
                 None,
             )
             .unwrap();
-        let (eavt, aevt, avet, vaet) = storage.index_counts();
+        let (eavt, aevt) = storage.index_counts();
         assert_eq!(eavt, 2);
         assert_eq!(aevt, 2);
-        assert_eq!(avet, 2);
-        assert_eq!(vaet, 1, "Only Ref values go into VAET");
-    }
-
-    #[test]
-    fn test_slot_index_is_zero_in_6_1() {
-        use uuid::Uuid;
-
-        let storage = FactStorage::new();
-        let e = Uuid::new_v4();
-        storage
-            .transact(vec![(e, ":x".to_string(), Value::Integer(1))], None)
-            .unwrap();
-        let (eavt, _, _, _) = storage.index_counts();
-        assert_eq!(eavt, 1);
     }
 
     #[test]
@@ -1441,186 +1260,99 @@ mod tests {
         );
         storage.load_fact(fact).unwrap();
         storage.restore_tx_counter().unwrap();
-        let (eavt, _, _, _) = storage.index_counts();
+        let (eavt, _) = storage.index_counts();
         assert_eq!(eavt, 1);
     }
 
     // =========================================================================
-    // Phase 6.2: CommittedFactReader integration tests
+    // Committed reader integration
     // =========================================================================
 
-    #[test]
-    fn test_committed_reader_resolves_facts() {
-        use crate::storage::CommittedFactReader;
-        use crate::storage::index::{FactRef, Indexes};
-        use std::sync::Arc;
-        use uuid::Uuid;
+    /// A committed reader over a fixed fact list, answering by filtering.
+    struct MockReader(Vec<Fact>);
 
-        /// Mock loader: resolves FactRefs by slot_index into a fixed Vec<Fact>.
-        struct MockLoader {
-            facts: Vec<Fact>,
+    impl crate::storage::CommittedReader for MockReader {
+        fn all_facts(&self) -> anyhow::Result<Vec<Fact>> {
+            Ok(self.0.clone())
         }
-        impl CommittedFactReader for MockLoader {
-            fn resolve(&self, fr: FactRef) -> anyhow::Result<Fact> {
-                self.facts
-                    .get(fr.slot_index as usize)
-                    .cloned()
-                    .ok_or_else(|| anyhow::anyhow!("MockLoader: no fact at slot {}", fr.slot_index))
-            }
-            fn stream_all(&self) -> anyhow::Result<Vec<Fact>> {
-                Ok(self.facts.clone())
-            }
+        fn facts_for_entity(&self, e: &EntityId) -> anyhow::Result<Vec<Fact>> {
+            Ok(self.0.iter().filter(|f| f.entity == *e).cloned().collect())
         }
-
-        let storage = FactStorage::new();
-        let alice = Uuid::new_v4();
-        let committed_fact = Fact::with_valid_time(
-            alice,
-            ":name".to_string(),
-            Value::String("Alice".to_string()),
-            0,
-            1,
-            0,
-            VALID_TIME_FOREVER,
-        );
-        let loader = Arc::new(MockLoader {
-            facts: vec![committed_fact.clone()],
-        });
-
-        // Insert a committed FactRef into the indexes (page_id > 0 → committed path).
-        let mut indexes = Indexes::new();
-        indexes.insert(
-            &committed_fact,
-            FactRef {
-                page_id: 1,
-                slot_index: 0,
-            },
-        );
-        storage.replace_pending_indexes(indexes);
-        storage.set_committed_reader(loader);
-
-        // get_facts_by_entity must resolve via CommittedFactReader (EAVT range scan).
-        let entity_facts = storage.get_facts_by_entity(&alice).unwrap();
-        assert_eq!(
-            entity_facts.len(),
-            1,
-            "EAVT range scan should resolve committed fact"
-        );
-        assert_eq!(entity_facts[0].entity, alice);
-        assert_eq!(entity_facts[0].attribute, ":name");
-
-        // get_facts_by_attribute must resolve via CommittedFactReader (AEVT range scan).
-        let attr_facts = storage
-            .get_facts_by_attribute(&":name".to_string())
-            .unwrap();
-        assert_eq!(
-            attr_facts.len(),
-            1,
-            "AEVT range scan should resolve committed fact"
-        );
-        assert_eq!(attr_facts[0].value, Value::String("Alice".to_string()));
-
-        // get_all_facts must include committed facts via stream_all().
-        let all = storage.get_all_facts().unwrap();
-        assert_eq!(all.len(), 1, "get_all_facts must include committed facts");
-        assert_eq!(all[0].entity, alice);
-
-        // get_facts_as_of should see committed facts.
-        let as_of = storage
-            .get_facts_as_of(&crate::query::datalog::types::AsOf::Counter(10))
-            .unwrap();
-        assert_eq!(
-            as_of.len(),
-            1,
-            "get_facts_as_of should include committed facts"
-        );
-
-        // get_facts_valid_at should see committed facts valid at time 0.
-        let valid_at = storage.get_facts_valid_at(0).unwrap();
-        assert_eq!(
-            valid_at.len(),
-            1,
-            "get_facts_valid_at should include committed facts"
-        );
+        fn facts_for_entity_attribute(&self, e: &EntityId, a: &str) -> anyhow::Result<Vec<Fact>> {
+            Ok(self
+                .0
+                .iter()
+                .filter(|f| f.entity == *e && f.attribute == a)
+                .cloned()
+                .collect())
+        }
+        fn facts_for_attribute(&self, a: &str) -> anyhow::Result<Vec<Fact>> {
+            Ok(self
+                .0
+                .iter()
+                .filter(|f| f.attribute == a)
+                .cloned()
+                .collect())
+        }
     }
 
     #[test]
-    fn test_committed_reader_combined_with_pending() {
-        use crate::storage::CommittedFactReader;
-        use crate::storage::index::{FactRef, Indexes};
-        use std::sync::Arc;
-        use uuid::Uuid;
-
-        struct MockLoader {
-            facts: Vec<Fact>,
-        }
-        impl CommittedFactReader for MockLoader {
-            fn resolve(&self, fr: FactRef) -> anyhow::Result<Fact> {
-                self.facts
-                    .get(fr.slot_index as usize)
-                    .cloned()
-                    .ok_or_else(|| anyhow::anyhow!("slot {} not found", fr.slot_index))
-            }
-            fn stream_all(&self) -> anyhow::Result<Vec<Fact>> {
-                Ok(self.facts.clone())
-            }
-        }
-
+    fn committed_and_pending_facts_combine_in_every_lookup() {
+        let (e, other) = (uuid::Uuid::from_u128(1), uuid::Uuid::from_u128(2));
+        let committed = vec![
+            Fact::with_valid_time(
+                e,
+                ":a".into(),
+                Value::Integer(1),
+                10,
+                1,
+                0,
+                crate::graph::types::VALID_TIME_FOREVER,
+            ),
+            Fact::with_valid_time(
+                e,
+                ":b".into(),
+                Value::Integer(2),
+                10,
+                1,
+                0,
+                crate::graph::types::VALID_TIME_FOREVER,
+            ),
+            Fact::with_valid_time(
+                other,
+                ":a".into(),
+                Value::Integer(3),
+                10,
+                1,
+                0,
+                crate::graph::types::VALID_TIME_FOREVER,
+            ),
+        ];
         let storage = FactStorage::new();
-        let alice = Uuid::new_v4();
-        let bob = Uuid::new_v4();
-
-        // One committed fact (Alice, on disk)
-        let alice_fact = Fact::with_valid_time(
-            alice,
-            ":name".to_string(),
-            Value::String("Alice".to_string()),
-            1000,
-            1,
-            1000,
-            VALID_TIME_FOREVER,
-        );
-        let loader = Arc::new(MockLoader {
-            facts: vec![alice_fact.clone()],
-        });
-        let mut indexes = Indexes::new();
-        indexes.insert(
-            &alice_fact,
-            FactRef {
-                page_id: 1,
-                slot_index: 0,
-            },
-        );
-        storage.replace_pending_indexes(indexes);
-        storage.set_committed_reader(loader);
-
-        // Restore tx_counter so pending transact gets tx_count = 2
-        storage.restore_tx_counter_from(1);
-
-        // One pending fact (Bob, in memory)
+        storage.set_committed_reader(std::sync::Arc::new(MockReader(committed)));
         storage
-            .transact(
-                vec![(bob, ":name".to_string(), Value::String("Bob".to_string()))],
-                None,
-            )
+            .transact(vec![(e, ":a".to_string(), Value::Integer(4))], None)
             .unwrap();
-
-        // get_all_facts should see both
-        let all = storage.get_all_facts().unwrap();
+        assert_eq!(storage.get_all_facts().unwrap().len(), 4);
+        assert_eq!(storage.get_facts_by_entity(&e).unwrap().len(), 3);
+        let ea = storage
+            .get_facts_by_entity_attribute_indexed(&e, &":a".to_string())
+            .unwrap();
+        assert_eq!(ea.len(), 2, "one committed and one pending :a for e");
+        assert!(ea.iter().all(|f| f.entity == e && f.attribute == ":a"));
         assert_eq!(
-            all.len(),
-            2,
-            "Both committed and pending facts must be visible"
+            storage
+                .get_facts_by_attribute(&":a".to_string())
+                .unwrap()
+                .len(),
+            3
         );
-
-        // get_facts_by_attribute uses AEVT — must also see both
-        let name_facts = storage
-            .get_facts_by_attribute(&":name".to_string())
-            .unwrap();
         assert_eq!(
-            name_facts.len(),
-            2,
-            "AEVT scan must return both committed and pending facts"
+            storage
+                .get_facts_by_entity(&uuid::Uuid::from_u128(9))
+                .unwrap()
+                .len(),
+            0
         );
     }
 
@@ -1652,56 +1384,6 @@ mod tests {
             0,
             "pending facts cleared"
         );
-    }
-
-    #[test]
-    fn test_set_committed_index_reader_accepted() {
-        use crate::storage::CommittedIndexReader;
-        use crate::storage::index::{AevtKey, AvetKey, EavtKey, FactRef, VaetKey};
-        use std::sync::Arc;
-
-        struct NoopReader;
-        impl CommittedIndexReader for NoopReader {
-            fn range_scan_eavt(
-                &self,
-                _: &EavtKey,
-                _: Option<&EavtKey>,
-            ) -> anyhow::Result<Vec<FactRef>> {
-                Ok(vec![])
-            }
-            fn range_scan_aevt(
-                &self,
-                _: &AevtKey,
-                _: Option<&AevtKey>,
-            ) -> anyhow::Result<Vec<FactRef>> {
-                Ok(vec![])
-            }
-            fn range_scan_avet(
-                &self,
-                _: &AvetKey,
-                _: Option<&AvetKey>,
-            ) -> anyhow::Result<Vec<FactRef>> {
-                Ok(vec![])
-            }
-            fn range_scan_vaet(
-                &self,
-                _: &VaetKey,
-                _: Option<&VaetKey>,
-            ) -> anyhow::Result<Vec<FactRef>> {
-                Ok(vec![])
-            }
-        }
-
-        let storage = FactStorage::new();
-        // Verify set_committed_index_reader wires the reader (no panic, usable storage)
-        storage.set_committed_index_reader(Arc::new(NoopReader));
-        // After setting, get_facts_by_entity should use the index path without panicking
-        let result = storage.get_facts_by_entity(&uuid::Uuid::nil());
-        assert!(
-            result.is_ok(),
-            "storage should be usable after setting committed index reader"
-        );
-        assert_eq!(result.unwrap().len(), 0);
     }
 
     #[test]
@@ -2103,230 +1785,10 @@ mod tests {
         assert_eq!(facts[0].value, Value::Integer(1));
     }
 
-    #[test]
-    fn entity_attribute_indexed_no_index_fallback() {
-        // FactStorage with facts but empty pending indexes and no committed reader
-        // exercises the fallback branch.
-        let storage = FactStorage::new();
-        let e = uuid::Uuid::from_u128(1);
-        storage
-            .transact(
-                vec![
-                    (e, ":a".to_string(), Value::Integer(1)),
-                    (e, ":b".to_string(), Value::Integer(2)),
-                ],
-                None,
-            )
-            .unwrap();
-        storage.replace_pending_indexes(crate::storage::index::Indexes::new());
-        let facts = storage
-            .get_facts_by_entity_attribute_indexed(&e, &":b".to_string())
-            .unwrap();
-        assert_eq!(facts.len(), 1);
-        assert_eq!(facts[0].value, Value::Integer(2));
-    }
-
-    #[test]
-    fn entity_attribute_indexed_committed_and_pending() {
-        use crate::storage::CommittedFactReader;
-        use crate::storage::index::{FactRef, Indexes};
-        use std::sync::Arc;
-
-        struct MockLoader {
-            facts: Vec<Fact>,
-        }
-        impl CommittedFactReader for MockLoader {
-            fn resolve(&self, fr: FactRef) -> anyhow::Result<Fact> {
-                self.facts
-                    .get(fr.slot_index as usize)
-                    .cloned()
-                    .ok_or_else(|| anyhow::anyhow!("no fact at slot"))
-            }
-            fn stream_all(&self) -> anyhow::Result<Vec<Fact>> {
-                Ok(self.facts.clone())
-            }
-        }
-
-        let storage = FactStorage::new();
-        let e = uuid::Uuid::from_u128(1);
-        let committed = vec![
-            make_assert(e, ":a", Value::Integer(1), 1, 0, VALID_TIME_FOREVER),
-            make_assert(e, ":ab", Value::Integer(9), 1, 0, VALID_TIME_FOREVER),
-        ];
-        let mut indexes = Indexes::new();
-        for (slot, f) in committed.iter().enumerate() {
-            indexes.insert(
-                f,
-                FactRef {
-                    page_id: 1,
-                    slot_index: u16::try_from(slot).unwrap(),
-                },
-            );
-        }
-        storage.replace_pending_indexes(indexes);
-        storage.set_committed_reader(Arc::new(MockLoader { facts: committed }));
-
-        let facts = storage
-            .get_facts_by_entity_attribute_indexed(&e, &":a".to_string())
-            .unwrap();
-        assert_eq!(facts.len(), 1, "committed :a only, :ab excluded");
-        assert_eq!(facts[0].value, Value::Integer(1));
-    }
-
     /// #323 review: the committed EAVT range must end at the exact successor of
     /// `(e, a)` for every attribute — including ones whose last UTF-8 byte is 0xBF
     /// (e.g. `:丿`), where incrementing the last byte is not valid UTF-8 and the scan
     /// used to run unbounded to the end of the index.
-    #[test]
-    fn entity_attribute_indexed_committed_range_is_bounded_for_any_attribute() {
-        use crate::storage::CommittedIndexReader;
-        use crate::storage::index::{AevtKey, AvetKey, EavtKey, FactRef, VaetKey};
-        use std::sync::{Arc, Mutex};
-
-        struct RecordingReader {
-            eavt_bounds: Mutex<Vec<(EavtKey, Option<EavtKey>)>>,
-        }
-        impl CommittedIndexReader for RecordingReader {
-            fn range_scan_eavt(
-                &self,
-                start: &EavtKey,
-                end: Option<&EavtKey>,
-            ) -> anyhow::Result<Vec<FactRef>> {
-                self.eavt_bounds
-                    .lock()
-                    .unwrap()
-                    .push((start.clone(), end.cloned()));
-                Ok(vec![])
-            }
-            fn range_scan_aevt(
-                &self,
-                _: &AevtKey,
-                _: Option<&AevtKey>,
-            ) -> anyhow::Result<Vec<FactRef>> {
-                Ok(vec![])
-            }
-            fn range_scan_avet(
-                &self,
-                _: &AvetKey,
-                _: Option<&AvetKey>,
-            ) -> anyhow::Result<Vec<FactRef>> {
-                Ok(vec![])
-            }
-            fn range_scan_vaet(
-                &self,
-                _: &VaetKey,
-                _: Option<&VaetKey>,
-            ) -> anyhow::Result<Vec<FactRef>> {
-                Ok(vec![])
-            }
-        }
-
-        let reader = Arc::new(RecordingReader {
-            eavt_bounds: Mutex::new(Vec::new()),
-        });
-        let storage = FactStorage::new();
-        storage.set_committed_index_reader(reader.clone());
-        let e = uuid::Uuid::from_u128(5);
-
-        for attr in [":plain", ":\u{4e3f}", ":\u{bf}", ":a\u{7f}"] {
-            storage
-                .get_facts_by_entity_attribute_indexed(&e, &attr.to_string())
-                .unwrap();
-        }
-
-        let bounds = reader.eavt_bounds.lock().unwrap();
-        assert_eq!(bounds.len(), 4, "one committed scan per lookup");
-        for (start, end) in bounds.iter() {
-            let end = end
-                .as_ref()
-                .expect("committed EAVT scan must have an upper bound");
-            assert_eq!(end.entity, e, "upper bound must stay within the entity");
-            assert!(start < end, "range must be non-empty");
-            // No other attribute may sort between start and end.
-            let sibling = EavtKey {
-                attribute: format!("{}x", start.attribute),
-                ..start.clone()
-            };
-            assert!(
-                sibling >= *end,
-                "prefix sibling must fall outside the range"
-            );
-        }
-    }
-
-    #[test]
-    fn attribute_committed_range_is_bounded_for_any_attribute() {
-        use crate::storage::CommittedIndexReader;
-        use crate::storage::index::{AevtKey, AvetKey, EavtKey, FactRef, VaetKey};
-        use std::sync::{Arc, Mutex};
-
-        struct RecordingReader {
-            aevt_bounds: Mutex<Vec<(AevtKey, Option<AevtKey>)>>,
-        }
-        impl CommittedIndexReader for RecordingReader {
-            fn range_scan_eavt(
-                &self,
-                _: &EavtKey,
-                _: Option<&EavtKey>,
-            ) -> anyhow::Result<Vec<FactRef>> {
-                Ok(vec![])
-            }
-            fn range_scan_aevt(
-                &self,
-                start: &AevtKey,
-                end: Option<&AevtKey>,
-            ) -> anyhow::Result<Vec<FactRef>> {
-                self.aevt_bounds
-                    .lock()
-                    .unwrap()
-                    .push((start.clone(), end.cloned()));
-                Ok(vec![])
-            }
-            fn range_scan_avet(
-                &self,
-                _: &AvetKey,
-                _: Option<&AvetKey>,
-            ) -> anyhow::Result<Vec<FactRef>> {
-                Ok(vec![])
-            }
-            fn range_scan_vaet(
-                &self,
-                _: &VaetKey,
-                _: Option<&VaetKey>,
-            ) -> anyhow::Result<Vec<FactRef>> {
-                Ok(vec![])
-            }
-        }
-
-        let reader = Arc::new(RecordingReader {
-            aevt_bounds: Mutex::new(Vec::new()),
-        });
-        let storage = FactStorage::new();
-        storage.set_committed_index_reader(reader.clone());
-
-        for attr in [":plain", ":\u{4e3f}", ":\u{bf}", ":a\u{7f}"] {
-            storage.get_facts_by_attribute(&attr.to_string()).unwrap();
-        }
-
-        let bounds = reader.aevt_bounds.lock().unwrap();
-        assert_eq!(bounds.len(), 4, "one committed scan per lookup");
-        for (start, end) in bounds.iter() {
-            let end = end
-                .as_ref()
-                .expect("committed AEVT scan must have an upper bound");
-            assert!(start < end, "range must be non-empty");
-            // No other attribute may sort between start and end.
-            let sibling = AevtKey {
-                attribute: format!("{}x", start.attribute),
-                ..start.clone()
-            };
-            assert!(
-                sibling >= *end,
-                "prefix sibling must fall outside the range"
-            );
-        }
-    }
-
     #[test]
     fn attribute_scan_excludes_prefix_siblings_and_non_ascii_neighbours() {
         let storage = FactStorage::new();
@@ -2355,5 +1817,24 @@ mod tests {
                 "no sibling facts"
             );
         }
+    }
+
+    /// #447: restoring the counter after loading facts never lowers it.
+    #[test]
+    fn restore_tx_counter_never_moves_backwards() {
+        let storage = FactStorage::new();
+        storage.restore_tx_counter_from(5);
+        storage.restore_tx_counter().unwrap();
+        assert_eq!(storage.current_tx_count(), 5, "no loaded facts: keep 5");
+        let mut f = Fact::new(
+            uuid::Uuid::from_u128(1),
+            ":a".to_string(),
+            Value::Integer(1),
+            1,
+        );
+        f.tx_count = 9;
+        storage.load_fact(f).unwrap();
+        storage.restore_tx_counter().unwrap();
+        assert_eq!(storage.current_tx_count(), 9, "a higher loaded count wins");
     }
 }

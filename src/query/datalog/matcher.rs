@@ -2,7 +2,6 @@ use super::optimizer::IndexHint;
 use super::types::{AttributeSpec, EdnValue, Pattern, PseudoAttr};
 use crate::graph::FactStorage;
 use crate::graph::types::{EntityId, Fact, Value};
-use crate::storage::index::Indexes;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -22,18 +21,13 @@ pub struct PatternMatcher {
     storage: MatcherStorage,
     /// The `:db/valid-at` value for this query context (Value::Null when not set).
     pub(crate) valid_at_value: Value,
-    #[allow(dead_code)]
-    /// Indexes for index-guided lookups (Phase 6.2)
-    indexes: Arc<Indexes>,
 }
 
 impl PatternMatcher {
     pub fn new(storage: FactStorage) -> Self {
-        let indexes = storage.pending_indexes_snapshot();
         PatternMatcher {
             storage: MatcherStorage::Owned(storage),
             valid_at_value: Value::Null,
-            indexes: Arc::new(indexes),
         }
     }
 
@@ -45,7 +39,6 @@ impl PatternMatcher {
         PatternMatcher {
             storage: MatcherStorage::Slice(facts),
             valid_at_value: Value::Null,
-            indexes: Arc::new(Indexes::new()),
         }
     }
 
@@ -55,7 +48,6 @@ impl PatternMatcher {
         PatternMatcher {
             storage: MatcherStorage::Slice(facts),
             valid_at_value: valid_at,
-            indexes: Arc::new(Indexes::new()),
         }
     }
 
@@ -308,91 +300,10 @@ impl PatternMatcher {
         }
     }
 
-    /// Match a single pattern with an index hint for optimized lookup.
-    fn match_pattern_with_hint(&self, pattern: &Pattern, hint: &IndexHint) -> Vec<Bindings> {
-        // Get matching fact references from index
-        let fact_refs = self.lookup_with_hint(pattern, hint);
-
-        // If no index lookup possible, fall back to full scan
-        if fact_refs.is_empty() {
-            return self.match_pattern(pattern);
-        }
-
-        // Get all facts and filter by the fact refs from index lookup
-        let facts = self.get_facts();
-
-        let mut results = Vec::new();
-        for fact in &*facts {
-            if let Some(bindings) = self.match_fact_against_pattern(fact, pattern) {
-                results.push(bindings);
-            }
-        }
-
-        results
-    }
-
-    /// Look up fact references using the index based on pattern and hint.
-    fn lookup_with_hint(
-        &self,
-        pattern: &Pattern,
-        hint: &IndexHint,
-    ) -> Vec<crate::storage::index::FactRef> {
-        let indexes = &self.indexes;
-
-        match hint {
-            IndexHint::Eavt => {
-                // If entity is bound, use EAVT entity lookup
-                if let EdnValue::Uuid(entity) = &pattern.entity {
-                    return indexes.lookup_eavt_entity(*entity);
-                }
-                // Fall back to full scan
-                vec![]
-            }
-            IndexHint::Aevt => {
-                // If attribute is bound, use AEVT attribute lookup
-                if let AttributeSpec::Real(EdnValue::Keyword(attr)) = &pattern.attribute {
-                    return indexes.lookup_aevt_attr(attr);
-                }
-                // Fall back to full scan
-                vec![]
-            }
-            IndexHint::Avet => {
-                // If attribute and value are bound, use AVET
-                let attr_bound = match &pattern.attribute {
-                    AttributeSpec::Real(edn) => {
-                        if let EdnValue::Keyword(attr) = edn {
-                            Some(attr.clone())
-                        } else {
-                            None
-                        }
-                    }
-                    _ => None,
-                };
-                let value_bound = match &pattern.value {
-                    EdnValue::Keyword(k) => Some(Value::Keyword(k.clone())),
-                    EdnValue::String(s) => Some(Value::String(s.clone())),
-                    EdnValue::Integer(i) => Some(Value::Integer(*i)),
-                    EdnValue::Float(f) => Some(Value::Float(*f)),
-                    EdnValue::Boolean(b) => Some(Value::Boolean(*b)),
-                    EdnValue::Uuid(u) => Some(Value::Ref(*u)),
-                    _ => None,
-                };
-
-                if let (Some(attr), Some(value)) = (attr_bound, value_bound) {
-                    return indexes.lookup_avet_attr_value(&attr, &value);
-                }
-                // Fall back to full scan
-                vec![]
-            }
-            IndexHint::Vaet => {
-                // If value is a Ref, use VAET reverse lookup
-                if let EdnValue::Uuid(target) = &pattern.value {
-                    return indexes.lookup_vaet_ref(*target);
-                }
-                // Fall back to full scan
-                vec![]
-            }
-        }
+    /// Match a single pattern. Every pattern scans the matcher's facts; the
+    /// hint only orders patterns in the optimizer.
+    fn match_pattern_with_hint(&self, pattern: &Pattern, _hint: &IndexHint) -> Vec<Bindings> {
+        self.match_pattern(pattern)
     }
 
     /// Match multiple patterns starting from existing seed bindings.

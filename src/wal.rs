@@ -27,9 +27,9 @@
 
 use crate::db::SyncMode;
 use crate::error::{ErrorCode, bail_coded, err_coded};
-use crate::graph::types::Fact;
+use crate::graph::types::{Fact, Value};
 use crate::storage::dir_sync::sync_parent_dir;
-use crate::storage::packed_pages::MAX_FACT_BYTES;
+use crate::storage::keys::{MAX_IDENT_BYTES, MAX_VALUE_BYTES};
 use anyhow::Result;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -105,16 +105,32 @@ fn check_wal_header_length(file: &mut File) -> Result<WalHeaderState> {
 
 // ─── Entry serialization ────────────────────────────────────────────────────
 
+/// Reject a fact a checkpoint could not store (WAL-003): a string value longer
+/// than one value page's payload, or an attribute or keyword longer than an
+/// ident may be (spec §6.3).
+fn check_fact_size(fact: &Fact) -> Result<()> {
+    if fact.attribute.len() > MAX_IDENT_BYTES {
+        bail_coded!(ErrorCode::Wal003, fact.attribute.len(), MAX_IDENT_BYTES);
+    }
+    match &fact.value {
+        Value::String(s) if s.len() > MAX_VALUE_BYTES => {
+            bail_coded!(ErrorCode::Wal003, s.len(), MAX_VALUE_BYTES)
+        }
+        Value::Keyword(k) if k.len() > MAX_IDENT_BYTES => {
+            bail_coded!(ErrorCode::Wal003, k.len(), MAX_IDENT_BYTES)
+        }
+        _ => Ok(()),
+    }
+}
+
 fn serialize_entry(tx_count: u64, facts: &[Fact]) -> Result<Vec<u8>> {
     // Build payload (everything covered by the checksum)
     let mut payload: Vec<u8> = Vec::new();
     payload.extend_from_slice(&tx_count.to_le_bytes());
     payload.extend_from_slice(&(facts.len() as u64).to_le_bytes());
     for fact in facts {
+        check_fact_size(fact)?;
         let fact_bytes = postcard::to_allocvec(fact)?;
-        if fact_bytes.len() > MAX_FACT_BYTES {
-            bail_coded!(ErrorCode::Wal003, fact_bytes.len(), MAX_FACT_BYTES);
-        }
         let fact_len = u32::try_from(fact_bytes.len())
             .map_err(|_| err_coded!(ErrorCode::Wal004, fact_bytes.len()))?;
         payload.extend_from_slice(&fact_len.to_le_bytes());
@@ -769,13 +785,40 @@ mod tests {
         let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
 
         let entity = Uuid::new_v4();
-        let huge_string = "a".repeat(MAX_FACT_BYTES + 1000);
+        let huge_string = "a".repeat(MAX_VALUE_BYTES + 1);
         let fact = Fact::new(entity, ":test".to_string(), Value::String(huge_string), 1);
 
         let result = writer.append_entry(1, &[fact]);
         let err = result.expect_err("oversized fact should be rejected");
         let minigraf_err: crate::error::MinigrafError = err.into();
         assert_eq!(minigraf_err.code(), "WAL-003");
+    }
+
+    /// Attributes and keyword values are capped at 1024 bytes (WAL-003), so a
+    /// DICT entry always fits in a node; 1024 itself is accepted.
+    #[test]
+    fn test_wal_ident_size_limit_is_wal_003() {
+        use crate::graph::types::{Fact, Value};
+        use uuid::Uuid;
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut writer =
+            WalWriter::open_or_create(&dir.path().join("ident.wal"), SyncMode::Full).unwrap();
+        let e = Uuid::new_v4();
+        let at = |n: usize| format!(":{}", "a".repeat(n - 1));
+        let ok = Fact::new(
+            e,
+            at(MAX_IDENT_BYTES),
+            Value::Keyword(at(MAX_IDENT_BYTES)),
+            1,
+        );
+        writer.append_entry(1, &[ok]).unwrap();
+        let long_attr = Fact::new(e, at(MAX_IDENT_BYTES + 1), Value::Integer(1), 2);
+        let long_kw = Fact::new(e, ":a".into(), Value::Keyword(at(MAX_IDENT_BYTES + 1)), 2);
+        for f in [long_attr, long_kw] {
+            let err = writer.append_entry(2, &[f]).unwrap_err();
+            assert_eq!(crate::error::MinigrafError::from(err).code(), "WAL-003");
+        }
     }
 
     #[test]

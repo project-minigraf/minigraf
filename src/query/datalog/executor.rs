@@ -107,7 +107,6 @@ pub struct DatalogExecutor {
     rules: Arc<RwLock<RuleRegistry>>,
     // RwLock pre-wired for 7.7b register_aggregate API.
     functions: Arc<RwLock<FunctionRegistry>>,
-    indexes: Arc<crate::storage::index::Indexes>,
     max_derived_facts: usize,
     max_results: usize,
 }
@@ -121,7 +120,6 @@ impl DatalogExecutor {
             read_now_floor: None,
             rules: Arc::new(RwLock::new(RuleRegistry::new())),
             functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
-            indexes: Arc::new(crate::storage::index::Indexes::new()),
             max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
             max_results: crate::query::datalog::evaluator::DEFAULT_MAX_RESULTS,
         }
@@ -141,7 +139,6 @@ impl DatalogExecutor {
             read_now_floor: None,
             rules,
             functions,
-            indexes: Arc::new(crate::storage::index::Indexes::new()),
             max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
             max_results: crate::query::datalog::evaluator::DEFAULT_MAX_RESULTS,
         }
@@ -160,7 +157,6 @@ impl DatalogExecutor {
             read_now_floor: pending_read_now_floor,
             rules,
             functions,
-            indexes: Arc::new(crate::storage::index::Indexes::new()),
             max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
             max_results: crate::query::datalog::evaluator::DEFAULT_MAX_RESULTS,
         }
@@ -189,14 +185,12 @@ impl DatalogExecutor {
         max_derived_facts: usize,
         max_results: usize,
     ) -> Self {
-        let indexes = storage.pending_indexes_snapshot();
         DatalogExecutor {
             storage,
             facts_override: None,
             read_now_floor: None,
             rules,
             functions,
-            indexes: Arc::new(indexes),
             max_derived_facts,
             max_results,
         }
@@ -530,7 +524,7 @@ impl DatalogExecutor {
             .cloned()
             .collect();
 
-        let (planned, deferred_not_clauses) = optimizer::plan(plan_clauses, &self.indexes);
+        let (planned, deferred_not_clauses) = optimizer::plan(plan_clauses);
 
         // Process planned clauses in order: Pattern → expand bindings, Expr → filter/extend,
         // Not/NotJoin → shrink bindings as soon as their variables are bound (#248).
@@ -780,7 +774,7 @@ impl DatalogExecutor {
             plan_clauses.push(WhereClause::Pattern(pattern));
         }
 
-        let (planned, deferred_not_clauses) = optimizer::plan(plan_clauses, &self.indexes);
+        let (planned, deferred_not_clauses) = optimizer::plan(plan_clauses);
 
         // Process planned clauses in order: Pattern → expand, Expr → filter/extend,
         // Not/NotJoin → shrink bindings as soon as their variables are bound (#248).

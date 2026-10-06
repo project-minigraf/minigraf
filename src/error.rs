@@ -176,6 +176,8 @@ pub(crate) enum ErrorCode {
     Stg033,
     Stg034,
     Stg035,
+    Stg036,
+    Stg037,
     Wal001,
     Wal002,
     Wal003,
@@ -999,6 +1001,18 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCategory::Storage,
     ),
     (
+        ErrorCode::Stg036,
+        "STG-036",
+        "Dictionary entry missing: {}",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg037,
+        "STG-037",
+        "Transaction {} has two timestamps: {} and {}",
+        ErrorCategory::Storage,
+    ),
+    (
         ErrorCode::Wal001,
         "WAL-001",
         "Invalid WAL magic number: not a .wal file",
@@ -1013,7 +1027,7 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
     (
         ErrorCode::Wal003,
         "WAL-003",
-        "Fact serialised size {} bytes exceeds maximum {} bytes. Store large payloads externally and reference them with a Value::String URL/path or Value::Ref entity ID.",
+        "Value of {} bytes exceeds the maximum of {} bytes. Store large payloads externally and reference them with a Value::String URL/path or Value::Ref entity ID.",
         ErrorCategory::Wal,
     ),
     (
@@ -1820,6 +1834,8 @@ mod tests {
                 | ErrorCode::Stg033
                 | ErrorCode::Stg034
                 | ErrorCode::Stg035
+                | ErrorCode::Stg036
+                | ErrorCode::Stg037
                 | ErrorCode::Wal001
                 | ErrorCode::Wal002
                 | ErrorCode::Wal003
@@ -2019,6 +2035,8 @@ mod tests {
             ErrorCode::Stg033,
             ErrorCode::Stg034,
             ErrorCode::Stg035,
+            ErrorCode::Stg036,
+            ErrorCode::Stg037,
             ErrorCode::Wal001,
             ErrorCode::Wal002,
             ErrorCode::Wal003,

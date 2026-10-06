@@ -318,11 +318,15 @@ Cost is O(pages allocated + pages freed) per checkpoint, never O(free-list size)
   the first time it appears. Attribute and keyword values share one namespace, so the
   ident `:status/active` gets one id whether it is used as an attribute or a value.
   `next_iid` is stored in the meta page.
-- **Assignment time.** Ids are assigned in memory at transact time, in WAL order. WAL
-  replay reassigns them in the same order, starting from the meta page's counters, so the
-  result is deterministic and crash-safe without logging ids. Assignment at transact
-  time lets the in-memory pending index use the same encoded keys as the on-disk trees,
-  so merging pending and committed data is a plain merge of two sorted streams.
+- **Assignment time.** Ids are assigned at checkpoint time, in pending order (which is
+  WAL order), starting from the meta page's counters. *(Amended in delivery PR 3; the
+  first draft assigned them at transact time.)* A long value's ref (§6.2) exists only
+  once its value page is written, which happens at checkpoint, so a key that contains
+  it cannot be built earlier. Ids are never persisted before the commit that also
+  writes their DICT entries and the keys that use them, so checkpoint-time assignment
+  is deterministic and crash-safe without logging ids, and the transact path does no
+  dictionary I/O. The in-memory pending index keeps UUID- and string-keyed maps; a
+  streaming scan (#432) merges pending and committed facts at scan time.
 - **Translation boundary.** The query layer receives facts with UUIDs and strings, as
   today. The reader translates ids through cached dictionary lookups. The streaming
   engine (#432) should work on raw ids and translate only at output; this design keeps
@@ -350,10 +354,10 @@ DICT entries:
 |---|---|---|---|
 | 0x01 | `uuid[16]` | `eid` | UUID → eid (transact, query constants) |
 | 0x02 | `eid` | `uuid[16]` | eid → UUID (results) |
-| 0x03 | ident bytes (escaped) | `iid` | name → iid |
+| 0x03 | ident bytes (raw; nothing follows them) | `iid` | name → iid |
 | 0x04 | `iid` | ident bytes | iid → name |
 | 0x05 | `tx_count` | `tx_id` (wall-clock ms) | `Fact.tx_id`, once per transaction |
-| 0x06 | `hash64` of a long value | value ref | dedup of long values (§6.3) |
+| 0x06 | `hash64` of a long value ‖ value ref | — | dedup of long values (§6.3); several values may share a hash |
 
 Tags 0x02, 0x04 and 0x05 receive increasing keys, so their inserts touch only the
 rightmost path. Tags 0x01 and 0x06 are random-key inserts, but they happen once per new
@@ -389,7 +393,10 @@ negatives).
 - `eid`, `iid` and `tx_count` use the unsigned form.
 - `vt == VALID_TIME_FOREVER`, the common case, is the single byte `0xFF`. It sorts after
   every finite time.
-- `tx↓` is the encoding of `u64::MAX - tx_count`, so newer transactions sort first.
+- `tx↓` is the encoding of `tx_count` with every byte complemented, so newer
+  transactions sort first. The encoding is prefix-free, so complementing it reverses
+  the order exactly, and a typical `tx_count` costs 2–4 bytes. *(Amended in delivery
+  PR 3; the first draft encoded `u64::MAX − tx_count`, which always costs 9 bytes.)*
 
 ### 6.2 Values
 
@@ -401,7 +408,7 @@ cross-type ordering stays Null < Boolean < Integer < Float < String < Keyword < 
 | Null | — |
 | Boolean | 1 byte |
 | Integer | §6.1 signed |
-| Float | 8 bytes, the existing order-preserving bit transform, NaN canonicalised |
+| Float | 8 bytes, the existing order-preserving bit transform; NaN canonicalised to one value that sorts after +∞ |
 | String ≤ 64 B | bytes with 0x00 escaped as `00 FF`, terminated by `00 00` |
 | String > 64 B | first 32 bytes escaped, then marker `00 01`, `hash64`, value ref (`page u64` + `slot u16`) |
 | Keyword | `iid` (§6.1). Keywords sort by id, not by name |
@@ -424,12 +431,16 @@ pages. They are never rewritten and never freed, because a retraction stores the
 value again rather than deleting it. They are reachable only through value refs in index
 keys, so verify (#373) finds them by walking the indexes.
 
-**Dedup:** before a new long value is written, DICT tag 0x06 is looked up by `hash64`,
-and each candidate's full value is compared. A retraction or re-assertion of the same
+**Dedup:** before a new long value is written, DICT tag 0x06 is scanned for entries
+with its `hash64` (FNV-1a 64, stable across versions), and each candidate's full value
+is compared. A retraction or re-assertion of the same
 long value therefore costs no new value page. The 3.0.0 maximum value length is one
 value page's payload (4068 B). That is about today's limit, but it now applies to the
-value alone rather than the whole fact. `MAX_FACT_BYTES` is replaced by
-`MAX_VALUE_BYTES`, a public API change recorded in the CHANGELOG. Values spanning
+value alone rather than the whole fact. `MAX_FACT_BYTES` (crate-private) is replaced by
+`MAX_VALUE_BYTES`; the user-visible limit changes and is recorded in the CHANGELOG.
+Attribute names and keyword values are capped at 1024 bytes (the parser's keyword
+limit), so every DICT entry fits in a node. Both limits are enforced when the WAL entry
+is written (WAL-003). Values spanning
 several pages can come later behind a feature bit.
 
 ## 7. Reads
@@ -660,8 +671,11 @@ TDD per component. No new dependencies. Test assert messages follow the CodeQL r
   never recycled. Update `docs/ERROR_REFERENCE.md`.
 - WAL format version 2: the header gains `base_generation u64` at bytes 8..16, taken
   from the reserved bytes. A v1 WAL is accepted only next to a v7 file being migrated.
-- Public API: `MAX_FACT_BYTES` → `MAX_VALUE_BYTES` (§6.3). Committed scan order changes
-  (§5.3).
+- Size limits: string values ≤ 4068 bytes, attributes and keywords ≤ 1024 bytes,
+  replacing the 4052-byte fact limit (§6.3). Committed scan order changes (§5.3).
+- New STG codes from delivery PR 3: dictionary entry missing (STG-036), and one
+  `tx_count` with two `tx_id`s (STG-037), which a checkpoint or migration refuses rather
+  than altering a timestamp.
 - Browser: `BrowserBufferBackend` dirty sets become O(change). The IndexedDB flush must
   write the meta page in the same IDB transaction as the data pages. Verify this, and
   fix it if it is not already the case.

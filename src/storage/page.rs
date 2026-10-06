@@ -20,12 +20,9 @@ use anyhow::Result;
 /// Size of the common page header.
 pub const PAGE_HEADER_SIZE: usize = 24;
 
-/// Packed fact page. Interim: exists only until fact pages are removed by the
-/// covering-index change; files carrying it are pre-release and the value is
-/// then retired.
-pub const PAGE_TYPE_FACT_INTERIM: u8 = 0x41;
-/// Long-value page (spec §6.3). Not written yet.
-#[allow(dead_code)]
+// 0x41 was the interim fact page of pre-release v8 builds. It is retired and
+// never reused: such a page fails the known-type check.
+/// Long-value page (spec §6.3).
 pub const PAGE_TYPE_VALUE: u8 = 0x51;
 /// Value overflow page. Reserved, never written.
 #[allow(dead_code)]
@@ -44,8 +41,7 @@ const GEN_RANGE: std::ops::Range<usize> = 16..24;
 fn is_known_type(t: u8) -> bool {
     matches!(
         t,
-        PAGE_TYPE_FACT_INTERIM
-            | PAGE_TYPE_VALUE
+        PAGE_TYPE_VALUE
             | PAGE_TYPE_VALUE_OVERFLOW
             | PAGE_TYPE_LEAF
             | PAGE_TYPE_INTERNAL
