@@ -90,10 +90,6 @@ impl<'a> Reader<'a> {
         self.pos >= self.buf.len()
     }
 
-    pub fn rest(&self) -> &'a [u8] {
-        self.buf.get(self.pos..).unwrap_or(&[])
-    }
-
     fn byte(&mut self) -> Result<u8> {
         let b = self
             .buf

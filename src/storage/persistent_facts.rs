@@ -9,76 +9,15 @@
 use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::graph::FactStorage;
 use crate::graph::types::Fact;
-use crate::storage::btree_v6::{
-    LeafCursor, MutexStorageBackend, OnDiskIndexReader, btree_entries, build_btree,
-    collect_leaf_pages, rebuild_btree_incremental,
-};
+use crate::storage::btree::{build_btree, collect_leaf_pages, rebuild_btree_incremental};
 use crate::storage::cache::PageCache;
-use crate::storage::index::{AevtKey, AvetKey, EavtKey, FactRef, VaetKey};
+use crate::storage::dict::{DictReader, Encoded, Encoder};
 use crate::storage::meta::{MetaPage, SlotState, slot_page};
-use crate::storage::packed_pages::{PAGE_TYPE_PACKED, pack_facts};
 use crate::storage::page::PageAllocator;
+use crate::storage::reader::OnDiskReader;
 use crate::storage::{LegacyHeaderV7, PAGE_SIZE, StorageBackend, freelist, page};
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
-
-/// CommittedFactReader backed by a PageCache + shared backend.
-///
-/// Resolves FactRefs to Fact objects by reading packed pages through the page
-/// cache, so indexes can resolve committed facts without keeping the entire
-/// fact list in memory.
-struct CommittedFactLoaderImpl<B: StorageBackend> {
-    page_cache: Arc<PageCache>,
-    /// Pre-built adapter reused on every `resolve()` call; the backend mutex is
-    /// only acquired on cache misses (see `MutexStorageBackend`).
-    backend_adapter: MutexStorageBackend<B>,
-    /// EAVT root of the committed meta; `stream_all` finds the fact pages here.
-    eavt_root: u64,
-}
-
-impl<B: StorageBackend + 'static> crate::storage::CommittedFactReader
-    for CommittedFactLoaderImpl<B>
-{
-    fn resolve(
-        &self,
-        fact_ref: crate::storage::index::FactRef,
-    ) -> anyhow::Result<crate::graph::types::Fact> {
-        let page = self
-            .page_cache
-            .get_or_load(fact_ref.page_id, &self.backend_adapter)?;
-        crate::storage::packed_pages::read_slot(&page, fact_ref.slot_index)
-    }
-
-    /// Every committed fact, in insertion order.
-    ///
-    /// Fact pages are only ever appended, so ascending page id is insertion
-    /// order. The pages are found through EAVT, which references every fact.
-    fn stream_all(&self) -> anyhow::Result<Vec<crate::graph::types::Fact>> {
-        if self.eavt_root == 0 {
-            return Ok(Vec::new());
-        }
-        let mut page_ids = std::collections::BTreeSet::new();
-        let mut cursor = LeafCursor::<EavtKey>::new(
-            self.eavt_root,
-            None,
-            &self.backend_adapter,
-            &self.page_cache,
-        )?;
-        while let Some((_, fr)) = cursor.next_ref()? {
-            page_ids.insert(fr.page_id);
-        }
-        let mut facts = Vec::new();
-        for id in page_ids {
-            let page = self.page_cache.get_or_load(id, &self.backend_adapter)?;
-            let page_type = page.first().copied().unwrap_or(0);
-            if page_type != PAGE_TYPE_PACKED {
-                bail_coded!(ErrorCode::Stg014, format!("{page_type:02x}"));
-            }
-            facts.extend(crate::storage::packed_pages::read_page_facts(&page)?);
-        }
-        Ok(facts)
-    }
-}
 
 /// Persistent fact storage with page-based persistence.
 ///
@@ -221,29 +160,16 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         Ok(meta)
     }
 
-    /// Make `meta` the active state: cache bound and committed readers.
+    /// Make `meta` the active state: cache bound and committed reader.
     fn activate(&mut self, meta: MetaPage) {
         self.meta = meta;
         self.page_cache.set_generation_bound(meta.generation);
-        let loader: Arc<dyn crate::storage::CommittedFactReader> =
-            Arc::new(CommittedFactLoaderImpl {
-                page_cache: self.page_cache.clone(),
-                backend_adapter: MutexStorageBackend(self.backend.clone()),
-                eavt_root: meta.eavt_root,
-            });
-        self.storage.set_committed_reader(loader);
-        if meta.eavt_root != 0 {
-            let index_reader: Arc<dyn crate::storage::CommittedIndexReader> =
-                Arc::new(OnDiskIndexReader::new(
-                    self.backend.clone(),
-                    self.page_cache.clone(),
-                    meta.eavt_root,
-                    meta.aevt_root,
-                    meta.avet_root,
-                    meta.vaet_root,
-                ));
-            self.storage.set_committed_index_reader(index_reader);
-        }
+        let reader: Arc<dyn crate::storage::CommittedReader> = Arc::new(OnDiskReader::new(
+            self.backend.clone(),
+            self.page_cache.clone(),
+            &meta,
+        ));
+        self.storage.set_committed_reader(reader);
     }
 
     /// Migrate a format v7 file to v8 (spec §9).
@@ -256,8 +182,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     fn migrate_v7(&mut self, header: &LegacyHeaderV7) -> Result<MetaPage> {
         let mut backend = self.lock()?;
         let num_fact_pages = header.fact_page_count_or_derived();
-        let (facts, _) =
-            crate::storage::packed_pages::read_all_with_refs_v7(&*backend, 1, num_fact_pages)?;
+        let mut facts = crate::storage::packed_pages::read_all_v7(&*backend, 1, num_fact_pages)?;
 
         // Empty transactions allocate a tx_count without producing facts, so the
         // highest fact tx_count can undercount; never rewind past the header's
@@ -265,11 +190,28 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let max_fact_tx = facts.iter().map(|f| f.tx_count).max().unwrap_or(0);
         let max_tx = max_fact_tx.max(header.last_checkpointed_tx_count);
 
+        // Ids are assigned in transaction order (spec §9 step 2).
+        facts.sort_by_key(|f| f.tx_count);
         let old_page_count = header.page_count.max(2);
         let mut alloc = PageAllocator::new(Vec::new(), old_page_count, 1);
-        let refs = append_fact_pages(&facts, &mut alloc, &mut *backend, &self.page_cache)?;
-        let [eavt_root, aevt_root, avet_root, vaet_root] =
-            build_all_trees(&facts, &refs, &mut alloc, &mut *backend, &self.page_cache)?;
+        let encoded = encode(
+            &facts,
+            &MetaPage::empty(1),
+            &mut alloc,
+            &mut *backend,
+            &self.page_cache,
+        )?;
+        let fact_count =
+            u64::try_from(encoded.index[0].len()).map_err(|_| err_coded!(ErrorCode::Stg024))?;
+        let (next_eid, next_iid) = (encoded.next_eid, encoded.next_iid);
+        let [eavt_root, aevt_root, avet_root, vaet_root, dict_root] = {
+            let mut roots = [0u64; 5];
+            let Encoded { index, dict, .. } = encoded;
+            for (root, entries) in roots.iter_mut().zip(index.into_iter().chain([dict])) {
+                *root = build_btree(entries, &mut *backend, &self.page_cache, &mut alloc)?;
+            }
+            roots
+        };
 
         // Free list: old pages 2.. (page 1 is meta slot B) plus the backup page,
         // which is appended right after the chain's own pages.
@@ -294,12 +236,15 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let meta = MetaPage {
             generation: 1,
             page_count: alloc.next_append(),
-            fact_count: u64::try_from(facts.len()).map_err(|_| err_coded!(ErrorCode::Stg024))?,
+            fact_count,
             last_checkpointed_tx_count: max_tx,
             eavt_root,
             aevt_root,
             avet_root,
             vaet_root,
+            dict_root,
+            next_eid,
+            next_iid,
             freelist_head,
             freelist_count: u64::try_from(free.len())
                 .map_err(|_| err_coded!(ErrorCode::Int048, "free-list length"))?,
@@ -339,12 +284,12 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
 
     /// Commit pending facts as the next generation (spec §8.3, full-rewrite form).
     ///
-    /// Fact pages are appended. The four trees are rebuilt into pages the active
-    /// meta does not reference (its free list first, then appended). Every page of
-    /// the old trees and the old free-list chain joins the new free list. After a
-    /// sync, the new meta goes to the other slot and is synced: the only commit
-    /// point. A failure at any step leaves the active meta and all it references
-    /// untouched.
+    /// New long values are appended to fresh value pages. The five trees are
+    /// rebuilt into pages the active meta does not reference (its free list
+    /// first, then appended). Every page of the old trees and the old free-list
+    /// chain joins the new free list. After a sync, the new meta goes to the
+    /// other slot and is synced: the only commit point. A failure at any step
+    /// leaves the active meta and all it references untouched.
     pub fn save(&mut self) -> Result<()> {
         if !self.dirty {
             return Ok(());
@@ -358,8 +303,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         // Snapshot the old trees (their leaves, and every node for freeing) and
         // the old free list. Nothing here is written.
         let mut freed: Vec<u64> = Vec::new();
-        let mut old_leaves = Vec::with_capacity(4);
-        for root in m.index_roots() {
+        let mut old_leaves = Vec::with_capacity(5);
+        for root in m.tree_roots() {
             old_leaves.push(if root == 0 {
                 Vec::new()
             } else {
@@ -374,39 +319,32 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         freed.extend(old_chain);
 
         let mut alloc = PageAllocator::new(old_free, m.page_count, next_gen);
-        let refs = append_fact_pages(&pending_facts, &mut alloc, &mut *backend, &self.page_cache)?;
-        let (pending_eavt, pending_aevt, pending_avet, pending_vaet) =
-            build_sorted_index_entries(&pending_facts, &refs);
-
-        let mut old_leaves = old_leaves.into_iter();
-        let eavt_root = rebuild_btree_incremental(
-            old_leaves.next().unwrap_or_default(),
-            pending_eavt,
+        let encoded = encode(
+            &pending_facts,
+            &m,
+            &mut alloc,
             &mut *backend,
             &self.page_cache,
-            &mut alloc,
         )?;
-        let aevt_root = rebuild_btree_incremental(
-            old_leaves.next().unwrap_or_default(),
-            pending_aevt,
-            &mut *backend,
-            &self.page_cache,
-            &mut alloc,
-        )?;
-        let avet_root = rebuild_btree_incremental(
-            old_leaves.next().unwrap_or_default(),
-            pending_avet,
-            &mut *backend,
-            &self.page_cache,
-            &mut alloc,
-        )?;
-        let vaet_root = rebuild_btree_incremental(
-            old_leaves.next().unwrap_or_default(),
-            pending_vaet,
-            &mut *backend,
-            &self.page_cache,
-            &mut alloc,
-        )?;
+        let added =
+            u64::try_from(encoded.index[0].len()).map_err(|_| err_coded!(ErrorCode::Stg024))?;
+        let (next_eid, next_iid) = (encoded.next_eid, encoded.next_iid);
+        let Encoded { index, dict, .. } = encoded;
+        let mut roots = [0u64; 5];
+        for ((root, leaves), entries) in roots
+            .iter_mut()
+            .zip(old_leaves)
+            .zip(index.into_iter().chain([dict]))
+        {
+            *root = rebuild_btree_incremental(
+                leaves,
+                entries,
+                &mut *backend,
+                &self.page_cache,
+                &mut alloc,
+            )?;
+        }
+        let [eavt_root, aevt_root, avet_root, vaet_root, dict_root] = roots;
 
         // New free list: what is left of the old one, plus everything the old
         // meta referenced that the new one does not.
@@ -417,20 +355,21 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
 
         backend.sync()?;
 
-        let pending_len =
-            u64::try_from(pending_facts.len()).map_err(|_| err_coded!(ErrorCode::Stg024))?;
         let new_meta = MetaPage {
             generation: next_gen,
             page_count: alloc.next_append(),
             fact_count: m
                 .fact_count
-                .checked_add(pending_len)
+                .checked_add(added)
                 .ok_or_else(|| err_coded!(ErrorCode::Int048, "fact_count overflow"))?,
             last_checkpointed_tx_count: self.storage.current_tx_count(),
             eavt_root,
             aevt_root,
             avet_root,
             vaet_root,
+            dict_root,
+            next_eid,
+            next_iid,
             freelist_head,
             freelist_count: u64::try_from(new_free.len())
                 .map_err(|_| err_coded!(ErrorCode::Int048, "free-list length"))?,
@@ -595,115 +534,23 @@ fn is_torn_initial_meta(backend: &dyn StorageBackend, page0: &[u8]) -> Result<bo
     Ok(true)
 }
 
-/// Append packed pages for `facts` and return each fact's `FactRef`.
-///
-/// Fact pages always append, so ascending page id stays insertion order.
-fn append_fact_pages(
+/// Encode `facts` for a checkpoint on top of `m`'s dictionary: assign ids,
+/// write new long values to fresh value pages, and build every tree's entries.
+fn encode(
     facts: &[Fact],
+    m: &MetaPage,
     alloc: &mut PageAllocator,
     backend: &mut dyn StorageBackend,
     cache: &PageCache,
-) -> Result<Vec<FactRef>> {
-    if facts.is_empty() {
-        return Ok(Vec::new());
-    }
-    let start = alloc.next_append();
-    let (pages, refs) = pack_facts(facts, start)?;
-    for (i, page) in pages.into_iter().enumerate() {
-        let id = alloc.alloc_append()?;
-        let expected = u64::try_from(i)
-            .ok()
-            .and_then(|i| start.checked_add(i))
-            .ok_or_else(|| err_coded!(ErrorCode::Stg022))?;
-        if id != expected {
-            bail_coded!(ErrorCode::Int049, "fact pages must be contiguous appends");
+) -> Result<Encoded> {
+    let mut encoder = Encoder::new(m.next_eid, m.next_iid);
+    {
+        let mut dict = DictReader::new(m.dict_root, &*backend, cache);
+        for f in facts {
+            encoder.stage(f, &mut dict)?;
         }
-        alloc.write(backend, cache, id, page)?;
     }
-    Ok(refs)
-}
-
-/// Bulk-build all four trees from `facts` and return their roots
-/// (EAVT, AEVT, AVET, VAET).
-fn build_all_trees(
-    facts: &[Fact],
-    refs: &[FactRef],
-    alloc: &mut PageAllocator,
-    backend: &mut dyn StorageBackend,
-    cache: &PageCache,
-) -> Result<[u64; 4]> {
-    let (eavt, aevt, avet, vaet) = build_sorted_index_entries(facts, refs);
-    Ok([
-        build_btree(
-            btree_entries(eavt.into_iter())?.into_iter(),
-            backend,
-            cache,
-            alloc,
-        )?,
-        build_btree(
-            btree_entries(aevt.into_iter())?.into_iter(),
-            backend,
-            cache,
-            alloc,
-        )?,
-        build_btree(
-            btree_entries(avet.into_iter())?.into_iter(),
-            backend,
-            cache,
-            alloc,
-        )?,
-        build_btree(
-            btree_entries(vaet.into_iter())?.into_iter(),
-            backend,
-            cache,
-            alloc,
-        )?,
-    ])
-}
-
-/// Build sorted index entry vecs for a slice of facts and their corresponding FactRefs.
-///
-/// Returns `(eavt_entries, aevt_entries, avet_entries, vaet_entries)`, each sorted by their
-/// respective key type. The `vaet` vec only contains entries whose value is a `Value::Ref`.
-#[allow(clippy::type_complexity)]
-fn build_sorted_index_entries(
-    facts: &[Fact],
-    refs: &[FactRef],
-) -> (
-    Vec<(EavtKey, FactRef)>,
-    Vec<(AevtKey, FactRef)>,
-    Vec<(AvetKey, FactRef)>,
-    Vec<(VaetKey, FactRef)>,
-) {
-    let mut eavt: Vec<(EavtKey, FactRef)> = facts
-        .iter()
-        .zip(refs.iter())
-        .map(|(f, &fr)| (EavtKey::from_fact(f), fr))
-        .collect();
-    eavt.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-
-    let mut aevt: Vec<(AevtKey, FactRef)> = facts
-        .iter()
-        .zip(refs.iter())
-        .map(|(f, &fr)| (AevtKey::from_fact(f), fr))
-        .collect();
-    aevt.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-
-    let mut avet: Vec<(AvetKey, FactRef)> = facts
-        .iter()
-        .zip(refs.iter())
-        .map(|(f, &fr)| (AvetKey::from_fact(f), fr))
-        .collect();
-    avet.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-
-    let mut vaet: Vec<(VaetKey, FactRef)> = facts
-        .iter()
-        .zip(refs.iter())
-        .filter_map(|(f, &fr)| VaetKey::from_fact(f).map(|k| (k, fr)))
-        .collect();
-    vaet.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-
-    (eavt, aevt, avet, vaet)
+    encoder.finish(alloc, backend, cache)
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -712,7 +559,8 @@ mod tests {
     use crate::graph::types::Value;
     use crate::storage::backend::FaultInjectingBackend;
     use crate::storage::backend::MemoryBackend;
-    use crate::storage::btree_v6::stream_all_entries;
+    use crate::storage::keys::Index;
+    use crate::storage::reader::all_entries_as_facts;
     use std::collections::BTreeSet;
     use uuid::Uuid;
 
@@ -724,20 +572,25 @@ mod tests {
         crate::error::MinigrafError::from(e).code()
     }
 
-    /// Page ids the meta references: tree nodes, fact pages, free-list chain pages.
+    /// Page ids the meta references: tree nodes, value pages (through DICT's
+    /// long-value entries), free-list chain pages.
     fn reachable(meta: &MetaPage, backend: &dyn StorageBackend) -> BTreeSet<u64> {
         let cache = PageCache::new(0);
         let mut nodes = Vec::new();
-        for root in meta.index_roots() {
+        for root in meta.tree_roots() {
             if root != 0 {
                 collect_leaf_pages(root, backend, &cache, Some(&mut nodes)).unwrap();
             }
         }
         let mut set: BTreeSet<u64> = nodes.into_iter().collect();
-        if meta.eavt_root != 0 {
-            let entries: Vec<(EavtKey, FactRef)> =
-                stream_all_entries(meta.eavt_root, backend, &cache).unwrap();
-            set.extend(entries.iter().map(|(_, fr)| fr.page_id));
+        if meta.dict_root != 0 {
+            let prefix = [crate::storage::keys::DICT_LONG_VALUE];
+            for (k, _) in
+                crate::storage::btree::prefix_scan(meta.dict_root, &prefix, backend, &cache)
+                    .unwrap()
+            {
+                set.insert(crate::storage::keys::dict_long_value_ref(&k).unwrap().page);
+            }
         }
         if meta.freelist_head != 0 {
             let (_, chain) =
@@ -779,39 +632,49 @@ mod tests {
         }
     }
 
-    /// The four indexes equal a derivation from the facts EAVT references.
+    /// The four indexes hold the same facts (VAET: the ref facts), each in its
+    /// own key order, and EAVT holds `fact_count` entries.
     fn assert_indexes_exact(meta: &MetaPage, backend: &dyn StorageBackend) {
         let cache = PageCache::new(0);
-        let eavt: Vec<(EavtKey, FactRef)> =
-            stream_all_entries(meta.eavt_root, backend, &cache).unwrap();
-        let refs: Vec<FactRef> = eavt.iter().map(|(_, fr)| *fr).collect();
-        let facts: Vec<Fact> = refs
-            .iter()
-            .map(|fr| {
-                let p = cache.get_or_load(fr.page_id, backend).unwrap();
-                crate::storage::packed_pages::read_slot(&p, fr.slot_index).unwrap()
-            })
-            .collect();
-        let (e, a, av, v) = build_sorted_index_entries(&facts, &refs);
-        fn sorted<K: Ord>(mut v: Vec<(K, FactRef)>) -> Vec<(K, FactRef)> {
+        let facts = |index, root| {
+            let mut v: Vec<(Uuid, String, Vec<u8>, u64, i64, i64, bool)> =
+                all_entries_as_facts(index, root, meta.dict_root, backend, &cache)
+                    .unwrap()
+                    .into_iter()
+                    .map(|f| {
+                        (
+                            f.entity,
+                            f.attribute,
+                            crate::storage::index::encode_value(&f.value),
+                            f.tx_count,
+                            f.valid_from,
+                            f.valid_to,
+                            f.asserted,
+                        )
+                    })
+                    .collect();
             v.sort();
             v
-        }
-        let got_e: Vec<(EavtKey, FactRef)> =
-            stream_all_entries(meta.eavt_root, backend, &cache).unwrap();
-        let got_a: Vec<(AevtKey, FactRef)> =
-            stream_all_entries(meta.aevt_root, backend, &cache).unwrap();
-        let got_av: Vec<(AvetKey, FactRef)> =
-            stream_all_entries(meta.avet_root, backend, &cache).unwrap();
-        let got_v: Vec<(VaetKey, FactRef)> =
-            stream_all_entries(meta.vaet_root, backend, &cache).unwrap();
-        assert!(got_a.is_sorted_by(|x, y| x.0 <= y.0), "AEVT order");
-        assert!(got_av.is_sorted_by(|x, y| x.0 <= y.0), "AVET order");
-        assert!(got_v.is_sorted_by(|x, y| x.0 <= y.0), "VAET order");
-        assert!(sorted(got_e) == sorted(e), "EAVT differs from derivation");
-        assert!(sorted(got_a) == sorted(a), "AEVT differs from derivation");
-        assert!(sorted(got_av) == sorted(av), "AVET differs from derivation");
-        assert!(sorted(got_v) == sorted(v), "VAET differs from derivation");
+        };
+        let e = facts(Index::Eavt, meta.eavt_root);
+        assert_eq!(e.len() as u64, meta.fact_count, "fact_count");
+        assert!(
+            facts(Index::Aevt, meta.aevt_root) == e,
+            "AEVT differs from EAVT"
+        );
+        assert!(
+            facts(Index::Avet, meta.avet_root) == e,
+            "AVET differs from EAVT"
+        );
+        let refs: Vec<_> = e
+            .iter()
+            .filter(|f| f.2.first() == Some(&0x06))
+            .cloned()
+            .collect();
+        assert!(
+            facts(Index::Vaet, meta.vaet_root) == refs,
+            "VAET differs from EAVT refs"
+        );
     }
 
     /// One transact of `n` facts: new and reused entities, strings and refs.
@@ -1249,16 +1112,9 @@ mod tests {
     /// A v7 file: header in page 0 and v7 (0x02, 12-byte header) fact pages from 1.
     fn v7_file(facts: &[Fact], last_tx: u64) -> MemoryBackend {
         let mut mem = MemoryBackend::new();
-        let (pages, _) = pack_facts(facts, 1).unwrap();
-        for (i, v8) in pages.iter().enumerate() {
-            let count = usize::from(u16::from_le_bytes([v8[2], v8[3]]));
-            let mut v7 = vec![0u8; PAGE_SIZE];
-            v7[0] = crate::storage::packed_pages::PAGE_TYPE_PACKED_V7;
-            v7[2..4].copy_from_slice(&v8[2..4]);
-            v7[12..12 + 4 * count].copy_from_slice(&v8[24..24 + 4 * count]);
-            let data_start = 24 + 4 * count;
-            v7[data_start..].copy_from_slice(&v8[data_start..]);
-            mem.write_page(i as u64 + 1, &v7).unwrap();
+        let pages = crate::storage::packed_pages::pack_facts_v7(facts);
+        for (i, p) in pages.iter().enumerate() {
+            mem.write_page(i as u64 + 1, p).unwrap();
         }
         let mut h = LegacyHeaderV7::new();
         h.page_count = pages.len() as u64 + 1;

@@ -98,9 +98,9 @@ fn wal_replay_bad_version_returns_wal_002() {
     assert_eq!(err.code(), "WAL-002");
 }
 
-/// Size limit: a single fact whose serialised size exceeds the WAL's
-/// per-entry limit must be rejected at `transact` time as `WAL-003`, through
-/// the public `execute()` API — not just in the internal WAL unit tests.
+/// Size limit: a string value longer than 4068 bytes must be rejected at
+/// `transact` time as `WAL-003`, through the public `execute()` API, not just
+/// in the internal WAL unit tests.
 #[test]
 fn wal_size_limit_oversized_fact_returns_wal_003() {
     let dir = tempfile::tempdir().unwrap();
@@ -108,7 +108,7 @@ fn wal_size_limit_oversized_fact_returns_wal_003() {
 
     let db = Minigraf::open(&db_path).unwrap();
 
-    // Comfortably over MAX_FACT_BYTES (4052 bytes) but well under the
+    // Comfortably over the 4068-byte value limit but well under the
     // parser's own 1 MB string cap, so the parser accepts it and the WAL
     // layer is what rejects it.
     let huge_value = "a".repeat(20_000);

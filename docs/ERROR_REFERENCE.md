@@ -148,7 +148,7 @@ with no `CodedError` anywhere in its chain.
 | STG-037 | Transaction with two timestamps | Storage |
 | WAL-001 | Invalid WAL magic number | WAL |
 | WAL-002 | Unsupported WAL version | WAL |
-| WAL-003 | Fact serialised size exceeds maximum | WAL |
+| WAL-003 | Value size exceeds maximum | WAL |
 | WAL-004 | Fact serialised size exceeds u32 range | WAL |
 | WAL-005 | WAL num_facts exceeds platform usize | WAL |
 | WAL-006 | Failed to delete WAL file | WAL |
@@ -2148,11 +2148,11 @@ The WAL is replayed on open and deleted on checkpoint.
 
 **Scenario**: A `.wal` file written by a pre-release version of Minigraf is opened with the stable release, which uses a different WAL version number — e.g. `Unsupported WAL version: 3 (expected 2)`.
 
-### WAL-003 Fact serialised size exceeds maximum
+### WAL-003 Value size exceeds maximum
 
-**Error text**: `Fact serialised size {} bytes exceeds maximum {} bytes. Store large payloads externally and reference them with a Value::String URL/path or Value::Ref entity ID.`
+**Error text**: `Value of {} bytes exceeds the maximum of {} bytes. Store large payloads externally and reference them with a Value::String URL/path or Value::Ref entity ID.`
 
-**Cause**: A single fact's serialised size exceeds the WAL entry limit (~512 KB). This typically means a `Value::String` attribute value contains very large content such as raw document text, a base64-encoded image, or binary data.
+**Cause**: A string value is longer than `MAX_VALUE_BYTES` (4,068 bytes, one value page), or an attribute name or keyword value is longer than 1,024 bytes. This typically means a `Value::String` contains very large content such as raw document text, a base64-encoded image, or binary data. In-memory databases have no WAL and no limit.
 
 **Resolution**:
 - Store large payloads in an external file or object store.
@@ -2170,7 +2170,7 @@ The WAL is replayed on open and deleted on checkpoint.
 
 **Error text**: `fact serialised size {} exceeds u32 range`
 
-**Cause**: The serialised size of a single fact exceeds `u32::MAX` (~4 GB). This is practically unreachable — WAL-003's ~512 KB limit fires first.
+**Cause**: The serialised size of a single fact exceeds `u32::MAX` (~4 GB). This is practically unreachable: WAL-003's value limits fire first.
 
 **Resolution**:
 - This should not occur under normal operation.

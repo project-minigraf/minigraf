@@ -177,13 +177,14 @@ impl MetaPage {
         Ok(())
     }
 
-    /// The four index roots, in EAVT, AEVT, AVET, VAET order.
-    pub fn index_roots(&self) -> [u64; 4] {
+    /// All five tree roots: the four indexes, then DICT.
+    pub fn tree_roots(&self) -> [u64; 5] {
         [
             self.eavt_root,
             self.aevt_root,
             self.avet_root,
             self.vaet_root,
+            self.dict_root,
         ]
     }
 

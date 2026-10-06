@@ -7,7 +7,6 @@
 /// Inspired by SQLite's VFS (Virtual File System) architecture.
 pub mod backend;
 pub(crate) mod btree;
-pub mod btree_v6;
 pub mod cache;
 pub(crate) mod dict;
 pub(crate) mod dir_sync;
@@ -19,6 +18,7 @@ pub(crate) mod node;
 pub mod packed_pages;
 pub(crate) mod page;
 pub mod persistent_facts;
+pub(crate) mod reader;
 pub(crate) mod value_pages;
 
 use crate::error::{ErrorCode, bail_coded, err_coded};
@@ -335,59 +335,28 @@ impl Default for LegacyHeaderV7 {
     }
 }
 
-/// Reads committed (checkpointed) facts from persistent storage.
+/// Reads committed (checkpointed) facts through the on-disk covering indexes.
 ///
-/// Implemented by `CommittedFactLoaderImpl` in `persistent_facts.rs` and set on
-/// `FactStorage` after load, so index-driven reads resolve `FactRef`s to `Fact`
-/// objects via the page cache without keeping the entire fact list in memory.
-pub trait CommittedFactReader: Send + Sync {
-    /// Resolve a single committed fact by its disk reference.
-    #[allow(dead_code)]
-    fn resolve(
+/// Implemented by [`reader::OnDiskReader`] and set on `FactStorage` after every
+/// open, migration and checkpoint. These are the only committed read paths the
+/// query layer uses; results are in index order (eid, then iid), not insertion
+/// order.
+pub trait CommittedReader: Send + Sync {
+    /// Every committed fact (an EAVT scan).
+    fn all_facts(&self) -> Result<Vec<crate::graph::types::Fact>>;
+    /// Every committed fact of `entity`.
+    fn facts_for_entity(
         &self,
-        fact_ref: crate::storage::index::FactRef,
-    ) -> Result<crate::graph::types::Fact>;
-    /// Stream all committed facts (for full scans).
-    fn stream_all(&self) -> Result<Vec<crate::graph::types::Fact>>;
-}
-
-/// Provides bounded range scans over the four committed (on-disk) covering indexes.
-///
-/// Implemented by `OnDiskIndexReader` in `btree_v6.rs`. Set on `FactStorage`
-/// after load/migration/checkpoint so query methods can merge committed and
-/// pending index entries without loading the full index into RAM.
-pub trait CommittedIndexReader: Send + Sync {
-    /// Returns all committed EAVT entries in `[start, end)`. `end: None` means unbounded upper.
-    #[allow(dead_code)]
-    fn range_scan_eavt(
+        entity: &crate::graph::types::EntityId,
+    ) -> Result<Vec<crate::graph::types::Fact>>;
+    /// Every committed fact of `(entity, attribute)`.
+    fn facts_for_entity_attribute(
         &self,
-        start: &crate::storage::index::EavtKey,
-        end: Option<&crate::storage::index::EavtKey>,
-    ) -> anyhow::Result<Vec<crate::storage::index::FactRef>>;
-
-    /// Returns all committed AEVT entries in `[start, end)`. `end: None` means unbounded upper.
-    #[allow(dead_code)]
-    fn range_scan_aevt(
-        &self,
-        start: &crate::storage::index::AevtKey,
-        end: Option<&crate::storage::index::AevtKey>,
-    ) -> anyhow::Result<Vec<crate::storage::index::FactRef>>;
-
-    /// Returns all committed AVET entries in `[start, end)`. `end: None` means unbounded upper.
-    #[allow(dead_code)]
-    fn range_scan_avet(
-        &self,
-        start: &crate::storage::index::AvetKey,
-        end: Option<&crate::storage::index::AvetKey>,
-    ) -> anyhow::Result<Vec<crate::storage::index::FactRef>>;
-
-    /// Returns all committed VAET entries in `[start, end)`. `end: None` means unbounded upper.
-    #[allow(dead_code)]
-    fn range_scan_vaet(
-        &self,
-        start: &crate::storage::index::VaetKey,
-        end: Option<&crate::storage::index::VaetKey>,
-    ) -> anyhow::Result<Vec<crate::storage::index::FactRef>>;
+        entity: &crate::graph::types::EntityId,
+        attribute: &str,
+    ) -> Result<Vec<crate::graph::types::Fact>>;
+    /// Every committed fact with `attribute` (an AEVT scan).
+    fn facts_for_attribute(&self, attribute: &str) -> Result<Vec<crate::graph::types::Fact>>;
 }
 
 #[cfg(test)]

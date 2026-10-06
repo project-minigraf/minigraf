@@ -1027,7 +1027,7 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
     (
         ErrorCode::Wal003,
         "WAL-003",
-        "Fact serialised size {} bytes exceeds maximum {} bytes. Store large payloads externally and reference them with a Value::String URL/path or Value::Ref entity ID.",
+        "Value of {} bytes exceeds the maximum of {} bytes. Store large payloads externally and reference them with a Value::String URL/path or Value::Ref entity ID.",
         ErrorCategory::Wal,
     ),
     (

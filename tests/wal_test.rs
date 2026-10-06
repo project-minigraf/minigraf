@@ -148,6 +148,63 @@ fn test_no_duplicate_facts_after_post_checkpoint_crash() {
     );
 }
 
+/// #447: reopening next to a WAL whose entries are all checkpointed must not
+/// rewind the transaction counter. Before the fix, the next transactions
+/// reused tx 1 and 2, so `:as-of` saw them as part of history they never were.
+#[test]
+fn test_reopen_with_checkpointed_wal_does_not_reuse_tx_counts() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("rewind.graph");
+    let wal_path = wal_path_for(&db_path);
+    {
+        // usize::MAX: no close-time checkpoint, so the restored WAL survives drop.
+        let db = OpenOptions::default()
+            .wal_checkpoint_threshold(usize::MAX)
+            .path(db_path.to_str().unwrap())
+            .open()
+            .unwrap();
+        db.execute("(transact [[:alice :age 30]])").unwrap(); // tx 1
+        db.execute("(transact [[:alice :age 31]])").unwrap(); // tx 2
+        let stale = std::fs::read(&wal_path).unwrap();
+        db.checkpoint().unwrap();
+        // Crash between the checkpoint's commit and the WAL delete.
+        std::fs::write(&wal_path, &stale).unwrap();
+    }
+    let ages = |db: &Minigraf, q: &str| -> Vec<i64> {
+        let QueryResult::QueryResults { results, .. } = db.execute(q).unwrap() else {
+            panic!("expected query results");
+        };
+        let mut v: Vec<i64> = results
+            .iter()
+            .flatten()
+            .map(|v| match v {
+                minigraf::Value::Integer(n) => *n,
+                _ => panic!("expected an integer"),
+            })
+            .collect();
+        v.sort_unstable();
+        v
+    };
+    for reopen in 0..2 {
+        let db = Minigraf::open(&db_path).unwrap();
+        if reopen == 0 {
+            db.execute("(retract [[:alice :age 30]])").unwrap(); // tx 3
+            db.execute("(transact [[:alice :age 99]])").unwrap(); // tx 4
+        }
+        let when = if reopen == 0 {
+            "before reopen"
+        } else {
+            "after reopen"
+        };
+        let q = |n| format!("(query [:find ?a :as-of {n} :where [:alice :age ?a]])");
+        assert_eq!(ages(&db, &q(1)), vec![30], "as-of 1 {when}");
+        assert_eq!(ages(&db, &q(2)), vec![30, 31], "as-of 2 {when}");
+        assert_eq!(ages(&db, &q(3)), vec![31], "as-of 3 {when}");
+        let now = ages(&db, "(query [:find ?a :where [:alice :age ?a]])");
+        assert_eq!(now, vec![31, 99], "current {when}");
+    }
+}
+
 // ── 4. Partial WAL entry is discarded; earlier entries intact ─────────────────
 
 /// Write 1 fact, crash (no checkpoint), then append garbage bytes to the WAL

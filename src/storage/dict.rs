@@ -18,9 +18,7 @@ use crate::graph::types::{Fact, Value};
 use crate::storage::StorageBackend;
 use crate::storage::btree;
 use crate::storage::cache::PageCache;
-use crate::storage::keys::{
-    self, DICT_LONG_VALUE, Index, KeyFact, KeyValue, SHORT_STRING_MAX, ValueRef,
-};
+use crate::storage::keys::{self, Index, KeyFact, KeyValue, SHORT_STRING_MAX, ValueRef};
 use crate::storage::node::Entry;
 use crate::storage::page::PageAllocator;
 use crate::storage::value_pages::{ValueWriter, read_value};
@@ -407,8 +405,9 @@ impl Encoder {
 }
 
 /// True if `key` is a DICT long-value entry (its value ref keeps a value page alive).
+#[cfg(test)]
 pub fn is_long_value_entry(key: &[u8]) -> bool {
-    key.first() == Some(&DICT_LONG_VALUE)
+    key.first() == Some(&keys::DICT_LONG_VALUE)
 }
 
 #[cfg(test)]
