@@ -1,0 +1,85 @@
+name: WASM
+
+# Core's own tests and lints on the two wasm32 targets. The browser (`BrowserDb`,
+# `browser` feature) and WASI builds share the engine with native, but their
+# cfg-gated code only compiles for wasm32, so native CI never sees it. These jobs
+# ran here before the repo split (#231) moved packaging to minigraf-wasm, which
+# only builds; without them the wasm32 test build broke unnoticed for months.
+
+on:
+  push:
+    branches: [ "main", "v[0-9]*" ]
+  pull_request:
+    branches: [ "main", "v[0-9]*" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    name: Browser tests (headless ${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both browsers and their WebDriver binaries are preinstalled on
+        # ubuntu-latest; wasm-pack finds them on PATH.
+        browser: [firefox, chrome]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: wasm-bindgen tests (lib, incl. BrowserDb and IndexedDB)
+        run: wasm-pack test --headless --${{ matrix.browser }} --features browser
+
+  wasi:
+    name: WASI tests (Wasmtime)
+    runs-on: ubuntu-latest
+    env:
+      WASMTIME_VERSION: v49.0.2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - name: Install Wasmtime
+        run: |
+          curl -sSfL \
+            "https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz" \
+            -o /tmp/wasmtime.tar.xz
+          tar -xf /tmp/wasmtime.tar.xz -C /tmp
+          echo "/tmp/wasmtime-${WASMTIME_VERSION}-x86_64-linux" >> "$GITHUB_PATH"
+      - name: Unit and integration tests
+        # `--dir .` preopens the package root, where tests read fixtures
+        # such as tests/grammar/. File-backed tests are cfg'd off wasm32.
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: wasmtime run --dir .
+        run: cargo test --target wasm32-wasip1 --lib --tests
+      - name: Build the REPL binary
+        run: cargo build --target wasm32-wasip1 --release --bin minigraf
+
+  clippy:
+    name: Clippy (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: wasm32-unknown-unknown
+            features: --features browser
+          - target: wasm32-wasip1
+            features: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: clippy
+      - name: Clippy (strict — fails on warnings)
+        run: cargo clippy --target ${{ matrix.target }} ${{ matrix.features }} -- -D warnings

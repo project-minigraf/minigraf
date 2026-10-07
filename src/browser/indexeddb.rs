@@ -85,12 +85,11 @@ impl IndexedDbBackend {
         // Create the object store if this is a fresh database (version upgrade).
         let on_upgrade: Closure<dyn FnMut(web_sys::Event)> =
             Closure::once(move |event: web_sys::Event| {
-                let target = event.target().unwrap();
-                let request: web_sys::IdbOpenDbRequest = target.dyn_into().unwrap();
-                let db: IdbDatabase = request.result().unwrap().dyn_into().unwrap();
-                if !db.object_store_names().contains(&store_name_upgrade) {
-                    db.create_object_store(&store_name_upgrade).unwrap();
-                }
+                // A callback cannot return the error. If the store is not
+                // created, the first transaction on it fails instead, and
+                // that error reaches the caller; a panic would abort the
+                // whole wasm instance.
+                let _ = create_store(&event, &store_name_upgrade);
             });
         open_request.set_onupgradeneeded(Some(on_upgrade.as_ref().unchecked_ref()));
         on_upgrade.forget();
@@ -126,8 +125,8 @@ impl IndexedDbBackend {
             let key = keys_arr.get(i);
             let page_id = key
                 .as_f64()
-                .ok_or_else(|| JsValue::from_str("page_id is not a number"))?
-                as u64;
+                .and_then(page_id_from_f64)
+                .ok_or_else(|| JsValue::from_str("page_id is not a valid page number"))?;
             let val = vals_arr.get(i);
             let arr: Uint8Array = val.dyn_into()?;
             pages.insert(page_id, arr.to_vec());
@@ -171,5 +170,58 @@ impl IndexedDbBackend {
         // returning to the caller.
         JsFuture::from(transaction_to_promise(&tx)).await?;
         Ok(())
+    }
+}
+
+/// Create the object store `name` in the database an `upgradeneeded` event
+/// opens, unless it exists.
+fn create_store(event: &web_sys::Event, name: &str) -> Result<(), JsValue> {
+    let target = event
+        .target()
+        .ok_or_else(|| JsValue::from_str("upgradeneeded event has no target"))?;
+    let request: web_sys::IdbOpenDbRequest = target.dyn_into()?;
+    let db: IdbDatabase = request.result()?.dyn_into()?;
+    if !db.object_store_names().contains(name) {
+        db.create_object_store(name)?;
+    }
+    Ok(())
+}
+
+/// A page id stored as an IndexedDB key (a JS number): a whole, non-negative
+/// number that a JS number holds exactly (at most 2^53).
+fn page_id_from_f64(key: f64) -> Option<u64> {
+    const MAX_SAFE: f64 = 9_007_199_254_740_992.0; // 2^53
+    if key.fract() != 0.0 || !(0.0..=MAX_SAFE).contains(&key) {
+        return None;
+    }
+    // Checked above: whole and in range, so the cast is exact.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    Some(key as u64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::page_id_from_f64;
+    use wasm_bindgen_test::*;
+
+    #[wasm_bindgen_test]
+    fn page_id_accepts_whole_non_negative_numbers() {
+        assert_eq!(page_id_from_f64(0.0), Some(0));
+        assert_eq!(page_id_from_f64(42.0), Some(42));
+        assert_eq!(page_id_from_f64(9_007_199_254_740_992.0), Some(1 << 53));
+    }
+
+    #[wasm_bindgen_test]
+    fn page_id_rejects_fractions_negatives_and_non_finite() {
+        for bad in [
+            -1.0,
+            0.5,
+            9_007_199_254_740_994.0,
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ] {
+            assert_eq!(page_id_from_f64(bad), None);
+        }
     }
 }

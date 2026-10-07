@@ -9,6 +9,7 @@ pub mod backend;
 pub(crate) mod btree;
 pub mod cache;
 pub(crate) mod dict;
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod dir_sync;
 pub(crate) mod freelist;
 pub mod index;
@@ -20,6 +21,8 @@ pub(crate) mod page;
 pub mod persistent_facts;
 pub(crate) mod reader;
 pub(crate) mod value_pages;
+// `Minigraf::verify` / `rebuild_indexes` walk a file; not built for wasm32.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod verify;
 
 use crate::error::{ErrorCode, bail_coded, err_coded};

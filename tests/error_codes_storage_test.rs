@@ -8,6 +8,8 @@
 //! crate-private, so these tests cannot call `FileHeader`/`StorageBackend`
 //! directly — see the unit tests inside `src/storage/*.rs` for codes that
 //! are only reachable at that lower level).
+// File-backed (Minigraf::open, tempfile): native only, like the other file tests.
+#![cfg(not(target_arch = "wasm32"))]
 
 use minigraf::{ErrorCategory, Minigraf};
 use std::io::Write;

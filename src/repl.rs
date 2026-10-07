@@ -235,6 +235,10 @@ mod tests {
     use crate::db::Minigraf;
 
     #[test]
+    #[cfg_attr(
+        target_os = "wasi",
+        ignore = "spawns a child process, which WASI cannot"
+    )]
     fn run_public_method_exits_on_non_tty_stdin() {
         // Exercises the two otherwise-uncovered lines in the public `run()` wrapper
         // (is_terminal + run_impl call). `run()` reads the process's real stdin, which

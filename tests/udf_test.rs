@@ -259,6 +259,7 @@ fn unknown_predicate_runtime_error() {
 // ─── Test 9: thread safety ───────────────────────────────────────────────────
 
 #[test]
+#[cfg_attr(target_os = "wasi", ignore = "spawns threads; WASI has no threads")]
 fn thread_safety() {
     use std::sync::Arc;
 

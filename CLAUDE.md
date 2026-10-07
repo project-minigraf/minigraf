@@ -143,11 +143,11 @@ cargo run < demos/demo_negation.txt
    - `src/fact_log.rs`: `FactLog` / `FactFilter` / `FactRecord` / `FactOrder` — every fact version streamed by `Minigraf::fact_log` (#430): tx order (multi-pass, bounded window) or storage order, key-level filters; an open log pins the committed generation, deferring checkpoints (`API-013`)
    - `src/log_writer.rs`: `LogWriter` — builds a new file from `FactRecord`s with their tx and valid-time kept (#431): tx-ordered appends with holes (`API-015`/`API-016`), batched copy-on-write checkpoints at tx boundaries, no WAL, built at `<path>.partial` and renamed by `finish` (`STG-043` if the target exists)
 
-7. **`src/wal.rs`** — Fact-level sidecar WAL, CRC32-protected entries, crash recovery
+7. **`src/wal.rs`** — Fact-level sidecar WAL, CRC32-protected entries, crash recovery. Like `storage::verify` and `storage::dir_sync`, not compiled for wasm32 (no file backend there)
 
 8. **`src/error.rs`** — Structured error codes: `MinigrafError`, `ErrorCategory`, `ErrorCode` registry (PRS/QRY/STG/WAL/API/INT codes); must match `docs/ERROR_REFERENCE.md`. `MinigrafError::invalid_argument` (API-017) and `MinigrafError::closed` (API-018) exist for language bindings
 
-9. **`src/browser/`** — Browser WASM backend (`browser` feature): `buffer.rs` (`BrowserBufferBackend`, in-memory pages with dirty tracking), `indexeddb.rs` (IndexedDB persistence); `BrowserDb.query` returns a `BrowserCursor` (JSON row batches)
+9. **`src/browser/`** — Browser WASM backend (`browser` feature): `buffer.rs` (`BrowserBufferBackend`, in-memory pages with dirty tracking), `indexeddb.rs` (IndexedDB persistence); `BrowserDb.query` returns a `BrowserCursor` (JSON row batches). Tests here must be `#[wasm_bindgen_test]` (the module only builds for wasm32); `.github/workflows/wasm.yml` runs them in headless browsers, runs the WASI tests under Wasmtime, and lints both wasm targets. New file-backed integration test files need `#![cfg(not(target_arch = "wasm32"))]`
 
 ### Data Model
 

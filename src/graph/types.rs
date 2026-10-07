@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 // ============================================================================
@@ -20,10 +19,15 @@ pub(crate) fn tx_id_now() -> TxId {
         // On WASM browser targets, `std::time::SystemTime::now()` panics.
         // Use `js_sys::Date::now()` which returns milliseconds since the Unix
         // epoch as an f64 (same precision as `Date.now()` in JavaScript).
-        js_sys::Date::now() as u64
+        // It is a whole, non-negative number far below 2^53, and an `f64` to
+        // `u64` cast saturates (NaN gives 0), so the cast cannot misbehave.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let ms = js_sys::Date::now() as u64;
+        ms
     }
     #[cfg(not(all(target_arch = "wasm32", feature = "browser")))]
     {
+        use std::time::{SystemTime, UNIX_EPOCH};
         u64::try_from(
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)

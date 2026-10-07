@@ -9,13 +9,17 @@
 use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::graph::FactStorage;
 use crate::graph::types::Fact;
-use crate::storage::btree::{MutexStorageBackend, build_btree, cow_insert};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::storage::btree::MutexStorageBackend;
+use crate::storage::btree::{build_btree, cow_insert};
 use crate::storage::cache::PageCache;
 use crate::storage::dict::{DictReader, Encoded, Encoder};
 use crate::storage::meta::{MetaPage, SlotState, slot_page};
 use crate::storage::page::PageAllocator;
 use crate::storage::reader::OnDiskReader;
-use crate::storage::{LegacyHeaderV7, PAGE_SIZE, StorageBackend, freelist, page, verify};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::storage::verify;
+use crate::storage::{LegacyHeaderV7, PAGE_SIZE, StorageBackend, freelist, page};
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
 
@@ -35,6 +39,7 @@ pub struct PersistentFactStorage<B: StorageBackend + 'static> {
 
 /// Page cache size for the integrity walk: enough to keep a value page hot
 /// while its values are checked, without displacing the readers' cache.
+#[cfg(not(target_arch = "wasm32"))]
 const VERIFY_CACHE_PAGES: usize = 64;
 
 /// What open found in the meta slots.
@@ -80,6 +85,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         Ok(pfs)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     /// Open storage on `backend` without writing to it (#429).
     ///
     /// Meta selection is the same as [`open`](Self::open), but nothing is
@@ -119,6 +125,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     /// Read a format v7 file's facts into memory as uncheckpointed facts, on an
     /// empty committed state, for a read-only open. Returns the meta to
     /// activate: empty, with the v7 header's tx counter so WAL replay skips
@@ -431,6 +438,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         Ok(())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     /// Check the committed file (#373). Never modifies it, and holds the
     /// backend lock only for each page read, so queries keep running.
     pub(crate) fn verify(&self) -> Result<verify::Findings> {
@@ -440,6 +448,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         Ok(verify::verify(&backend, &cache, self.meta))
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     /// Rebuild EAVT, AEVT, AVET and VAET from an intact index and commit them,
     /// with the pending facts, as the next generation (#373).
     ///
@@ -625,6 +634,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         &self.storage
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     /// The `last_checkpointed_tx_count` recorded in the active meta page.
     ///
     /// Used by WAL replay to skip entries already present in the main file.
@@ -632,6 +642,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.meta.last_checkpointed_tx_count
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     /// The active meta page's generation. A WAL created now records it as its
     /// base generation.
     pub fn generation(&self) -> u64 {
@@ -644,11 +655,13 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.meta
     }
 
+    #[cfg(any(not(target_arch = "wasm32"), feature = "browser"))]
     /// Mark storage as dirty (needs saving)
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     /// Force the dirty flag to true regardless of current state.
     ///
     /// Used by checkpoint to ensure save() always writes even if no new
@@ -657,6 +670,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.mark_dirty();
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     /// Check if storage has unsaved changes
     pub fn is_dirty(&self) -> bool {
         self.dirty
@@ -678,7 +692,11 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     where
         F: FnOnce(&B) -> R,
     {
-        let guard = self.backend.lock().unwrap();
+        // wasm32 aborts on panic, so the lock is never poisoned.
+        let guard = self
+            .backend
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         f(&*guard)
     }
 
@@ -690,7 +708,10 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     where
         F: FnOnce(&mut B) -> R,
     {
-        let mut guard = self.backend.lock().unwrap();
+        let mut guard = self
+            .backend
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         f(&mut *guard)
     }
 }

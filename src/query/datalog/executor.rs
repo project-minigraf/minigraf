@@ -4698,6 +4698,10 @@ mod expr_eval_tests {
     }
 
     #[test]
+    #[cfg_attr(
+        target_os = "wasi",
+        ignore = "poisons the lock from a spawned thread; WASI has no threads"
+    )]
     fn execute_query_functions_lock_poisoned_error() {
         let storage = FactStorage::new();
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
@@ -4712,6 +4716,10 @@ mod expr_eval_tests {
     }
 
     #[test]
+    #[cfg_attr(
+        target_os = "wasi",
+        ignore = "poisons the lock from a spawned thread; WASI has no threads"
+    )]
     fn execute_rule_rules_lock_poisoned_error() {
         let storage = FactStorage::new();
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
@@ -4726,6 +4734,10 @@ mod expr_eval_tests {
     }
 
     #[test]
+    #[cfg_attr(
+        target_os = "wasi",
+        ignore = "poisons the lock from a spawned thread; WASI has no threads"
+    )]
     fn execute_query_with_rules_rules_lock_poisoned_error() {
         // Covers the magic-sets rewrite's rules.read() in execute_query_with_rules
         // (distinct call site from execute_rule's rules.write()).

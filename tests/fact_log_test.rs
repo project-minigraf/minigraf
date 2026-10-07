@@ -2,6 +2,8 @@
 //! valid-time bounds (#430). These tests check the records against a model of
 //! the writes, in every split between checkpointed and pending facts, both
 //! orders and small windows, the filters, the snapshot, and the checkpoint pin.
+// File-backed (Minigraf::open, tempfile): native only, like the other file tests.
+#![cfg(not(target_arch = "wasm32"))]
 
 use minigraf::{FactFilter, FactLog, FactOrder, FactRecord, Minigraf, OpenOptions, QueryResult};
 use std::path::Path;
