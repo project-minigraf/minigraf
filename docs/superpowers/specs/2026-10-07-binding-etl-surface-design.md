@@ -87,12 +87,12 @@ same code and text, and `docs/ERROR_REFERENCE.md` stays the one registry.
    (`i64`, `i32` for batch sizes): Kotlin's `ULong`/`UInt` are name-mangled and cannot
    be called from Java. A negative or oversized value is `API-017`. C and JSON use
    unsigned integers and `size_t`. An absent field keeps the Rust default.
-9. **Kotlin renames `close`.** UniFFI's Kotlin objects are `AutoCloseable`, and
+8. **Kotlin renames `close`.** UniFFI's Kotlin objects are `AutoCloseable`, and
    `close()` frees the Rust object, which releases a cursor or fact log and abandons an
    unfinished writer. The shim's own `close` methods clash with it, so the Kotlin
    bindings rename them in `uniffi.toml`: `release()` (cursor, fact log) and `abandon()`
    (writer).
-8. **Errors keep their code in the message.** Every binding already surfaces
+9. **Errors keep their code in the message.** Every binding already surfaces
    `[CODE] message` (the `Display` of `MinigrafError`), so API-014, API-015, API-017,
    API-018, STG-042 and STG-043 reach callers like every other code. (UniFFI wraps
    it: Python's `e.msg`, Kotlin's `Minigraf.errorMessage(e)`, Swift's `e.message`.)
