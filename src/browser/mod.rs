@@ -80,9 +80,17 @@ impl BrowserDb {
 
         let buffer = BrowserBufferBackend::load_pages(existing);
         // Page cache capacity 0 — see comment in `open_in_memory` above.
-        let pfs =
+        let mut pfs =
             PersistentFactStorage::new(buffer, 0).map_err(|e| JsValue::from_str(&e.to_string()))?;
         let fact_storage = pfs.storage().clone();
+
+        // Opening may have written pages: a v7 store is migrated to v8 (#411).
+        // Store them, and drop the free pages (after a migration, the whole v7
+        // region) from memory and from IndexedDB (#440). A v8 store with no
+        // free page bytes left writes nothing.
+        let free = pfs.free_page_ids().map_err(to_js_error)?;
+        let flush = take_flush(&mut pfs, free)?;
+        idb.write_pages(flush.puts, flush.deletes).await?;
 
         Ok(BrowserDb {
             inner: Rc::new(RefCell::new(BrowserDbInner {
@@ -161,23 +169,21 @@ impl BrowserDb {
     /// so `checkpoint()` is only needed after `import_graph()` or explicit bulk ops.
     /// No-op for in-memory databases.
     pub async fn checkpoint(&self) -> Result<(), JsValue> {
-        let (dirty_pages, idb) = {
+        let (flush, idb) = {
             let mut inner = self.inner.borrow_mut();
             inner
                 .pfs
                 .save()
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
-            let pages = take_dirty_pages(&mut inner.pfs)?;
+            let released = inner.pfs.take_released();
             (
-                pages,
+                take_flush(&mut inner.pfs, released)?,
                 inner.idb.as_ref().map(IndexedDbBackend::clone_handle),
             )
         };
 
-        if let Some(idb) = idb
-            && !dirty_pages.is_empty()
-        {
-            idb.write_pages(dirty_pages).await?;
+        if let Some(idb) = idb {
+            idb.write_pages(flush.puts, flush.deletes).await?;
         }
         Ok(())
     }
@@ -185,17 +191,21 @@ impl BrowserDb {
     /// Serialise the current database to a portable `.graph` blob.
     ///
     /// The blob is byte-for-bit compatible with native `.graph` files opened by
-    /// `Minigraf::open()`. Pages are always in ascending `page_id` order.
+    /// `Minigraf::open()`. Pages are always in ascending `page_id` order. Free
+    /// pages are written as zeros.
     ///
     /// Call `checkpoint()` on native before importing a file here to ensure
     /// no WAL entries are missing from the main file.
     #[wasm_bindgen(js_name = exportGraph)]
     pub fn export_graph(&self) -> Result<js_sys::Uint8Array, JsValue> {
         let inner = self.inner.borrow();
+        // Free pages hold no bytes (#440), so the trailing ones may be absent:
+        // the file is as long as the meta says.
         let page_count = inner
             .pfs
             .with_backend(|b| b.page_count_raw())
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            .map_err(|e| JsValue::from_str(&e.to_string()))?
+            .max(inner.pfs.committed_page_count());
         let capacity = usize::try_from(page_count)
             .ok()
             .and_then(|n| n.checked_mul(crate::storage::PAGE_SIZE))
@@ -205,7 +215,7 @@ impl BrowserDb {
         for id in 0..page_count {
             let page = inner
                 .pfs
-                .with_backend(|b| b.read_page_raw(id))
+                .with_backend(|b| b.export_page(id))
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             blob.extend_from_slice(&page);
         }
@@ -232,7 +242,7 @@ impl BrowserDb {
         }
 
         // ── Sync section ──────────────────────────────────────────────────────────
-        let (dirty_pages, idb) = {
+        let (flush, idb) = {
             let mut inner = self.inner.borrow_mut();
             let buffer = BrowserBufferBackend::load_pages_all_dirty(pages);
             // Page cache capacity 0 — see comment in `open_in_memory` above.
@@ -240,23 +250,33 @@ impl BrowserDb {
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let new_fact_storage = new_pfs.storage().clone();
 
-            // Drain dirty set and collect owned page bytes before swapping inner.
-            let dirty_pages = take_dirty_pages(&mut new_pfs)?;
+            // Drain dirty set and collect owned page bytes before swapping
+            // inner, leaving out the free pages (#440).
+            let free = new_pfs.free_page_ids().map_err(to_js_error)?;
+            let mut flush = take_flush(&mut new_pfs, free)?;
+            // Every page of the old database the new one does not hold must go
+            // too, or a reopen would load it next to the imported pages.
+            let new_ids: std::collections::HashSet<u64> =
+                new_pfs.with_backend(|b| b.page_ids().collect());
+            let stale: Vec<u64> = inner
+                .pfs
+                .with_backend(|b| b.page_ids().filter(|id| !new_ids.contains(id)).collect());
+            flush.deletes.extend(stale);
+            flush.deletes.sort_unstable();
+            flush.deletes.dedup();
 
             inner.pfs = new_pfs;
             inner.fact_storage = new_fact_storage;
 
             (
-                dirty_pages,
+                flush,
                 inner.idb.as_ref().map(IndexedDbBackend::clone_handle),
             )
         };
         // ── Borrow dropped ────────────────────────────────────────────────────────
 
-        if let Some(idb) = idb
-            && !dirty_pages.is_empty()
-        {
-            idb.write_pages(dirty_pages).await?;
+        if let Some(idb) = idb {
+            idb.write_pages(flush.puts, flush.deletes).await?;
         }
         Ok(())
     }
@@ -299,7 +319,7 @@ impl BrowserDb {
         use crate::graph::types::tx_id_now;
 
         // ── Sync section: hold borrow, do ALL sync work, collect owned data ──
-        let (dirty_pages, result_json) = {
+        let (flush, result_json) = {
             let mut inner = self.inner.borrow_mut();
 
             // Before allocating: a rejected transaction takes no tx_count (#435).
@@ -333,8 +353,10 @@ impl BrowserDb {
                 .save()
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
-            // Collect dirty pages as owned Vec<(u64, Vec<u8>)> — no borrows escape
-            let dirty_pages = take_dirty_pages(&mut inner.pfs)?;
+            // Collect dirty pages as owned Vec<(u64, Vec<u8>)> — no borrows
+            // escape — and drop the pages this commit freed (#440).
+            let released = inner.pfs.take_released();
+            let flush = take_flush(&mut inner.pfs, released)?;
 
             let json = if is_retract {
                 format!(r#"{{"retracted":{}}}"#, tx_id)
@@ -342,7 +364,7 @@ impl BrowserDb {
                 format!(r#"{{"transacted":{}}}"#, tx_id)
             };
 
-            (dirty_pages, json)
+            (flush, json)
         };
         // ── Borrow dropped here ───────────────────────────────────────────────
 
@@ -353,10 +375,8 @@ impl BrowserDb {
             .idb
             .as_ref()
             .map(IndexedDbBackend::clone_handle);
-        if let Some(idb) = idb
-            && !dirty_pages.is_empty()
-        {
-            idb.write_pages(dirty_pages).await?;
+        if let Some(idb) = idb {
+            idb.write_pages(flush.puts, flush.deletes).await?;
         }
 
         Ok(result_json)
@@ -426,6 +446,25 @@ fn take_dirty_pages(
             .collect::<anyhow::Result<Vec<_>>>()
     })
     .map_err(to_js_error)
+}
+
+/// What one commit sends to IndexedDB, in one transaction: the pages it wrote
+/// (its meta page among them) and the keys of the free pages it dropped.
+struct Flush {
+    puts: Vec<(u64, Vec<u8>)>,
+    deletes: Vec<u64>,
+}
+
+/// Drop the bytes of the free pages `free` (#440), then take the dirty pages.
+/// A free page is never read before it is written again, so its bytes are
+/// never needed.
+fn take_flush(
+    pfs: &mut PersistentFactStorage<BrowserBufferBackend>,
+    free: Vec<u64>,
+) -> Result<Flush, JsValue> {
+    let deletes = pfs.with_backend_mut(|b| b.release(free));
+    let puts = take_dirty_pages(pfs)?;
+    Ok(Flush { puts, deletes })
 }
 
 fn to_js_error(e: anyhow::Error) -> JsValue {
@@ -745,5 +784,237 @@ mod tests {
         let results = v["results"].as_array().unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0][0], serde_json::Value::String("eng".into()));
+    }
+    // ── #411 / #440: migrated pages are stored, free pages hold no bytes ──
+
+    /// Open `name` with its object store emptied, so earlier runs leave nothing.
+    async fn empty_store(name: &str) -> IndexedDbBackend {
+        let idb = IndexedDbBackend::open(name).await.expect("idb open");
+        let keys: Vec<u64> = idb
+            .load_all_pages()
+            .await
+            .expect("load")
+            .into_keys()
+            .collect();
+        idb.write_pages(Vec::new(), keys).await.expect("clear");
+        idb
+    }
+
+    /// Pages the active meta does not list as free: the only ones that should
+    /// hold bytes.
+    fn live_pages(db: &BrowserDb) -> usize {
+        let m = db.inner.borrow().pfs.meta();
+        usize::try_from(m.page_count - m.freelist_count).unwrap()
+    }
+
+    fn stored_pages(db: &BrowserDb) -> usize {
+        db.inner
+            .borrow()
+            .pfs
+            .with_backend(BrowserBufferBackend::stored_page_count)
+    }
+
+    async fn idb_keys(name: &str) -> std::collections::HashMap<u64, Vec<u8>> {
+        IndexedDbBackend::open(name)
+            .await
+            .expect("idb open")
+            .load_all_pages()
+            .await
+            .expect("load")
+    }
+
+    async fn count(db: &BrowserDb, q: &str) -> usize {
+        let r = db.execute(q.to_string()).await.expect("query");
+        let v: serde_json::Value = serde_json::from_str(&r).unwrap();
+        v["results"].as_array().unwrap().len()
+    }
+
+    #[wasm_bindgen_test]
+    async fn open_stores_migrated_v7_pages_and_drops_the_v7_region() {
+        let name = "minigraf-test-411-migrate";
+        let fixture: &[u8] = include_bytes!("../../tests/fixtures/compat.graph");
+        let v7_pages: Vec<(u64, Vec<u8>)> = fixture
+            .chunks(crate::storage::PAGE_SIZE)
+            .enumerate()
+            .map(|(i, c)| (i as u64, c.to_vec()))
+            .collect();
+        let idb = empty_store(name).await;
+        idb.write_pages(v7_pages, Vec::new())
+            .await
+            .expect("seed v7");
+
+        let db = BrowserDb::open(name).await.expect("open v7 store");
+        assert_eq!(
+            count(&db, "(query [:find ?n :where [?e :name ?n]])").await,
+            1,
+            "fixture fact readable"
+        );
+
+        let stored = idb_keys(name).await;
+        let page0 = stored.get(&0).expect("page 0 stored");
+        assert_eq!(&page0[0..4], b"MGRF");
+        assert_eq!(u32::from_le_bytes(page0[4..8].try_into().unwrap()), 8);
+        assert_eq!(&page0[8..12], b"META", "page 0 is a v8 meta in IndexedDB");
+        let m = db.inner.borrow().pfs.meta();
+        assert!(m.freelist_count > 0, "the v7 region is free");
+        assert_eq!(
+            stored.len(),
+            live_pages(&db),
+            "IndexedDB holds live pages only"
+        );
+        assert_eq!(
+            stored_pages(&db),
+            live_pages(&db),
+            "memory holds live pages only"
+        );
+        drop(db);
+
+        // The store is v8 now: reopening migrates nothing and writes nothing.
+        let db = BrowserDb::open(name).await.expect("reopen");
+        assert_eq!(db.inner.borrow().pfs.meta().generation, m.generation);
+        assert_eq!(idb_keys(name).await.len(), stored.len());
+        assert_eq!(
+            count(&db, "(query [:find ?a :where [?e :age ?a]])").await,
+            1,
+            "fixture fact readable after reopen"
+        );
+    }
+
+    #[wasm_bindgen_test]
+    async fn transacts_keep_only_live_pages() {
+        let name = "minigraf-test-440-churn";
+        let _ = empty_store(name).await;
+        let db = BrowserDb::open(name).await.expect("open");
+        let mut high_water = Vec::new();
+        for i in 0..60 {
+            db.execute(format!(r#"(transact [[:e{i} :n {i}] [:e{i} :s "v{i}"]])"#))
+                .await
+                .expect("transact");
+            assert_eq!(stored_pages(&db), live_pages(&db), "memory after tx {i}");
+            high_water.push(db.inner.borrow().pfs.meta().page_count);
+        }
+        assert_eq!(idb_keys(name).await.len(), live_pages(&db), "IndexedDB");
+        // Without reuse each commit abandons a path in all five trees, so the
+        // file would grow by several pages per transact. With reuse the last
+        // 30 transacts grow it by far less than one page each.
+        let grown = high_water[59] - high_water[29];
+        assert!(grown < 30, "page_count grew by {grown} over 30 transacts");
+
+        drop(db);
+        let db = BrowserDb::open(name).await.expect("reopen");
+        assert_eq!(count(&db, "(query [:find ?n :where [?e :n ?n]])").await, 60);
+        assert_eq!(stored_pages(&db), live_pages(&db), "memory after reopen");
+    }
+
+    #[wasm_bindgen_test]
+    async fn unflushed_commit_reopens_at_the_previous_one() {
+        let name = "minigraf-test-440-unflushed";
+        let _ = empty_store(name).await;
+        let db = BrowserDb::open(name).await.expect("open");
+        for i in 0..5 {
+            db.execute(format!("(transact [[:a{i} :n {i}]])"))
+                .await
+                .expect("transact");
+        }
+        // A commit that reaches the buffer but never IndexedDB, as when the tab
+        // closes before the flush: its writes and its deletes are both lost.
+        {
+            let mut inner = db.inner.borrow_mut();
+            let cmd = parse_datalog_command("(transact [[:lost :n 99]])").unwrap();
+            let DatalogCommand::Transact(tx) = cmd else {
+                panic!("transact")
+            };
+            let tx_count = inner.fact_storage.allocate_tx_count();
+            for mut f in crate::db::Minigraf::materialize_transaction(&tx).unwrap() {
+                f.tx_count = tx_count;
+                f.tx_id = crate::graph::types::tx_id_now();
+                f.valid_from = f.tx_id.cast_signed();
+                inner.fact_storage.load_fact(f).unwrap();
+            }
+            inner.pfs.mark_dirty();
+            inner.pfs.save().unwrap();
+            let released = inner.pfs.take_released();
+            let flush = take_flush(&mut inner.pfs, released).unwrap();
+            assert!(!flush.puts.is_empty(), "the commit wrote pages");
+        }
+        drop(db);
+
+        let db = BrowserDb::open(name).await.expect("reopen");
+        assert_eq!(count(&db, "(query [:find ?n :where [?e :n ?n]])").await, 5);
+        assert_eq!(stored_pages(&db), live_pages(&db));
+        db.execute("(transact [[:b :n 7]])".to_string())
+            .await
+            .expect("transact after reopen");
+        assert_eq!(count(&db, "(query [:find ?n :where [?e :n ?n]])").await, 6);
+        assert_eq!(idb_keys(name).await.len(), live_pages(&db));
+    }
+
+    #[wasm_bindgen_test]
+    async fn export_after_churn_pads_free_pages_and_imports_back() {
+        let db = BrowserDb::open_in_memory().expect("open");
+        for i in 0..30 {
+            db.execute(format!("(transact [[:e{i} :n {i}]])"))
+                .await
+                .expect("transact");
+        }
+        let m = db.inner.borrow().pfs.meta();
+        assert!(m.freelist_count > 0, "churn left free pages");
+        assert_eq!(stored_pages(&db), live_pages(&db));
+        let bytes = db.export_graph().expect("export").to_vec();
+        assert_eq!(
+            bytes.len(),
+            usize::try_from(m.page_count).unwrap() * crate::storage::PAGE_SIZE
+        );
+
+        let db2 = BrowserDb::open_in_memory().expect("open2");
+        db2.import_graph(js_sys::Uint8Array::from(bytes.as_slice()))
+            .await
+            .expect("import");
+        assert_eq!(
+            count(&db2, "(query [:find ?n :where [?e :n ?n]])").await,
+            30
+        );
+        assert_eq!(
+            stored_pages(&db2),
+            live_pages(&db2),
+            "import drops free pages"
+        );
+        db2.execute("(transact [[:x :n 100]])".to_string())
+            .await
+            .expect("transact after import");
+        assert_eq!(
+            count(&db2, "(query [:find ?n :where [?e :n ?n]])").await,
+            31
+        );
+    }
+
+    #[wasm_bindgen_test]
+    async fn import_deletes_the_old_databases_pages() {
+        let name = "minigraf-test-440-import";
+        let _ = empty_store(name).await;
+        let small = BrowserDb::open_in_memory().expect("small");
+        small
+            .execute(r#"(transact [[:only :n 1]])"#.to_string())
+            .await
+            .expect("transact");
+        let blob = small.export_graph().expect("export");
+
+        let db = BrowserDb::open(name).await.expect("open");
+        for i in 0..40 {
+            let long = "x".repeat(200 + i);
+            db.execute(format!(r#"(transact [[:e{i} :s "{long}"]])"#))
+                .await
+                .expect("transact");
+        }
+        let before = idb_keys(name).await.len();
+        db.import_graph(blob).await.expect("import");
+        let after = idb_keys(name).await;
+        assert!(after.len() < before, "the old pages are gone");
+        assert_eq!(after.len(), stored_pages(&db), "IndexedDB matches memory");
+        drop(db);
+
+        let db = BrowserDb::open(name).await.expect("reopen");
+        assert_eq!(count(&db, "(query [:find ?n :where [?e :n ?n]])").await, 1);
+        assert_eq!(count(&db, "(query [:find ?s :where [?e :s ?s]])").await, 0);
     }
 }

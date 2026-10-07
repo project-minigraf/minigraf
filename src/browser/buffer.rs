@@ -8,9 +8,16 @@ use std::collections::{HashMap, HashSet};
 /// Implements `StorageBackend` so it can be used with `PersistentFactStorage`.
 /// After `PersistentFactStorage::save()` writes updated pages here, call
 /// `take_dirty()` to retrieve the page IDs that must be flushed to IndexedDB.
+///
+/// A page on the free list holds no bytes (#440): [`release`](Self::release)
+/// drops them. Reading a released page is an error like any absent page; the
+/// allocator always writes a free page before anything reads it.
 pub struct BrowserBufferBackend {
     pages: HashMap<u64, Vec<u8>>,
     dirty: HashSet<u64>,
+    /// Free pages whose bytes were dropped. Only export reads this, to write
+    /// them as zeros.
+    released: HashSet<u64>,
 }
 
 impl BrowserBufferBackend {
@@ -19,6 +26,7 @@ impl BrowserBufferBackend {
         Self {
             pages: HashMap::new(),
             dirty: HashSet::new(),
+            released: HashSet::new(),
         }
     }
 
@@ -28,6 +36,7 @@ impl BrowserBufferBackend {
         Self {
             pages,
             dirty: HashSet::new(),
+            released: HashSet::new(),
         }
     }
 
@@ -35,13 +44,51 @@ impl BrowserBufferBackend {
     /// Used during `BrowserDb::import_graph()` so all pages are flushed to IDB.
     pub fn load_pages_all_dirty(pages: HashMap<u64, Vec<u8>>) -> Self {
         let dirty: HashSet<u64> = pages.keys().copied().collect();
-        Self { pages, dirty }
+        Self {
+            pages,
+            dirty,
+            released: HashSet::new(),
+        }
     }
 
     /// Drain and return the set of page IDs written since the last call.
     /// Clears the dirty set. Call after `pfs.save()` to get pages to flush.
     pub fn take_dirty(&mut self) -> HashSet<u64> {
         std::mem::take(&mut self.dirty)
+    }
+
+    /// Drop the bytes of the free pages `ids` and forget any unflushed write to
+    /// them. Returns the ids that held bytes: the IndexedDB keys to delete in
+    /// the same transaction as the commit's meta page.
+    pub fn release(&mut self, ids: impl IntoIterator<Item = u64>) -> Vec<u64> {
+        let mut dropped = Vec::new();
+        for id in ids {
+            self.dirty.remove(&id);
+            if self.pages.remove(&id).is_some() {
+                dropped.push(id);
+            }
+            self.released.insert(id);
+        }
+        dropped
+    }
+
+    /// Page `page_id` for export: a released page is all zeros, any other
+    /// absent page is an error.
+    pub fn export_page(&self, page_id: u64) -> Result<Vec<u8>> {
+        if !self.pages.contains_key(&page_id) && self.released.contains(&page_id) {
+            return Ok(vec![0u8; PAGE_SIZE]);
+        }
+        self.read_page(page_id)
+    }
+
+    /// The ids of the pages holding bytes.
+    pub fn page_ids(&self) -> impl Iterator<Item = u64> + '_ {
+        self.pages.keys().copied()
+    }
+
+    /// The number of pages holding bytes.
+    pub fn stored_page_count(&self) -> usize {
+        self.pages.len()
     }
 
     /// Mark `page_id` dirty without writing it, for tests of the flush path.
@@ -76,6 +123,7 @@ impl StorageBackend for BrowserBufferBackend {
         }
         self.pages.insert(page_id, data.to_vec());
         self.dirty.insert(page_id);
+        self.released.remove(&page_id);
         Ok(())
     }
 
@@ -176,6 +224,43 @@ mod tests {
     fn wrong_page_size_errors() {
         let mut buf = BrowserBufferBackend::new();
         assert!(buf.write_page(0, &[0u8; 100]).is_err());
+    }
+
+    #[wasm_bindgen_test]
+    fn release_drops_bytes_and_dirty_and_reports_stored_ids() {
+        let mut buf = BrowserBufferBackend::load_pages(HashMap::from([(2u64, page(2))]));
+        buf.write_page(3, &page(3)).unwrap();
+        let mut dropped = buf.release([2, 3, 4]);
+        dropped.sort_unstable();
+        assert_eq!(dropped, vec![2, 3], "page 4 held no bytes");
+        assert!(
+            buf.take_dirty().is_empty(),
+            "a released write is not flushed"
+        );
+        assert!(buf.read_page(2).is_err(), "a released page reads as absent");
+        assert_eq!(buf.stored_page_count(), 0);
+        assert!(
+            buf.release([2]).is_empty(),
+            "releasing twice deletes nothing"
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn export_page_zeroes_released_pages_only() {
+        let mut buf = BrowserBufferBackend::new();
+        buf.write_page(2, &page(9)).unwrap();
+        let _ = buf.release([2]);
+        assert_eq!(buf.export_page(2).unwrap(), page(0));
+        assert!(
+            buf.export_page(5).is_err(),
+            "an absent page that is not free"
+        );
+        buf.write_page(2, &page(7)).unwrap();
+        assert_eq!(
+            buf.export_page(2).unwrap(),
+            page(7),
+            "rewritten after reuse"
+        );
     }
 
     #[wasm_bindgen_test]

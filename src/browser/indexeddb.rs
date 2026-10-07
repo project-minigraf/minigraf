@@ -142,15 +142,22 @@ impl IndexedDbBackend {
         }
     }
 
-    /// Write a batch of pages to IndexedDB in a single `readwrite` transaction.
+    /// Write a batch of pages and delete a batch of page keys in a single
+    /// `readwrite` transaction.
     ///
-    /// All `put` operations are queued synchronously on the store, then we wait
-    /// for the transaction's `oncomplete` event. If any put fails, the transaction
-    /// is aborted and an error is returned.
+    /// All requests are queued synchronously on the store, then we wait for the
+    /// transaction's `oncomplete` event. If any request fails, the transaction
+    /// is aborted and an error is returned, so the pages of a commit, its meta
+    /// page and the keys of the pages it freed land together or not at all.
     ///
-    /// `pages` is a list of `(page_id, page_bytes)` pairs. Empty input is a no-op.
-    pub async fn write_pages(&self, pages: Vec<(u64, Vec<u8>)>) -> Result<(), JsValue> {
-        if pages.is_empty() {
+    /// `pages` is a list of `(page_id, page_bytes)` pairs; `deletes` is a list
+    /// of page ids. Both empty is a no-op.
+    pub async fn write_pages(
+        &self,
+        pages: Vec<(u64, Vec<u8>)>,
+        deletes: Vec<u64>,
+    ) -> Result<(), JsValue> {
+        if pages.is_empty() && deletes.is_empty() {
             return Ok(());
         }
         let tx = self
@@ -158,6 +165,9 @@ impl IndexedDbBackend {
             .transaction_with_str_and_mode(&self.store_name, IdbTransactionMode::Readwrite)?;
         let store = tx.object_store(&self.store_name)?;
 
+        for page_id in &deletes {
+            store.delete(&JsValue::from_f64(*page_id as f64))?;
+        }
         for (page_id, data) in &pages {
             let key = JsValue::from_f64(*page_id as f64);
             let arr = Uint8Array::from(data.as_slice());
@@ -165,8 +175,8 @@ impl IndexedDbBackend {
         }
 
         // Wait for the transaction to commit. The IDB transaction commits
-        // automatically once all put requests have been processed and no
-        // new requests are made. We wait here to ensure durability before
+        // automatically once all requests have been processed and no new
+        // requests are made. We wait here to ensure durability before
         // returning to the caller.
         JsFuture::from(transaction_to_promise(&tx)).await?;
         Ok(())
