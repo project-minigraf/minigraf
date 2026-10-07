@@ -11,7 +11,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use minigraf::{Minigraf, QueryResult, Value};
+use minigraf::{Minigraf, OpenOptions, QueryResult, Value};
 use serde_json::Value as Json;
 
 /// The major version of this reader, matched against a query's `min_reader`.
@@ -170,6 +170,30 @@ fn check_manifest(m: &Manifest, failures: &mut Vec<String>) {
         std::fs::write(wal_path(&path), b).unwrap();
     }
     let tx_count = m.json["tx_count"].as_u64().expect("tx_count");
+
+    // Read-only first (#429): the same view, and neither file changes.
+    {
+        let opts = OpenOptions::new().read_only(true);
+        match Minigraf::open_with_options(&path, opts) {
+            Ok(db) => {
+                check_tx_count(m, &db, tx_count, "read-only", failures);
+                check_queries(m, &db, "read-only", failures);
+            }
+            Err(e) => failures.push(format!(
+                "{}: read-only open failed with {}",
+                m.name,
+                e.code()
+            )),
+        }
+        if std::fs::read(&path).unwrap() != src_bytes {
+            failures.push(format!("{}: read-only open modified {file}", m.name));
+        }
+        let wal_now = std::fs::read(wal_path(&path)).ok();
+        if wal_now != wal_bytes {
+            failures.push(format!("{}: read-only open changed the WAL", m.name));
+        }
+    }
+
     {
         let db = match Minigraf::open(&path) {
             Ok(db) => db,

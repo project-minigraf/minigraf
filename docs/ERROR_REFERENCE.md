@@ -150,6 +150,7 @@ with no `CodedError` anywhere in its chain.
 | STG-039 | Malformed tree | Storage |
 | STG-040 | Dictionary inconsistency | Storage |
 | STG-041 | Cannot rebuild indexes | Storage |
+| STG-042 | Database file not found (read-only open) | Storage |
 | WAL-001 | Invalid WAL magic number | WAL |
 | WAL-002 | Unsupported WAL version | WAL |
 | WAL-003 | Value size exceeds maximum | WAL |
@@ -169,6 +170,7 @@ with no `CodedError` anywhere in its chain.
 | API-011 | Two valid-time windows for one fact in one transaction | Database API |
 | API-012 | Non-query command passed to query() | Database API |
 | API-013 | Checkpoint while a fact log is open | Database API |
+| API-014 | Write on a read-only handle | Database API |
 | INT-000 | Unclassified internal error | Internal |
 | INT-001 | WriteTransaction already in progress on this thread | Internal |
 | INT-002 | Invalid entity (API layer) | Internal |
@@ -225,6 +227,7 @@ with no `CodedError` anywhere in its chain.
 | INT-053 | Header checksum mismatch: possible file corruption | Internal |
 | INT-054 | Unstratifiable negative recursion cycle | Internal |
 | INT-055 | Rule predicate disappeared during rollback | Internal |
+| INT-056 | Write to a read-only storage backend | Internal |
 
 Deprecated codes: STG-003 and STG-004 (pre-v7 header sizes) are deprecated as of v3.0.0 and are no longer emitted, because formats v1–v6 are rejected with STG-028 before any header-size check. They stay registered and documented, and error codes are never removed or reused.
 
@@ -1974,6 +1977,8 @@ See the [file format section in README](../README.md#file-format) for version hi
 - Reuse the handle you already have. `Minigraf` is cheap to clone and all clones share one database.
 - If you cannot find the other handle, it is usually held by a longer-lived object than you expect — a cache, a registry, or a background task.
 
+Read-only handles (`OpenOptions::read_only`) share a file with each other, but not with a read-write handle: either kind refuses the other with this error.
+
 **Scenario**: A request handler calls `Minigraf::open` per request while a connection pool already holds the same path open.
 
 ---
@@ -1988,6 +1993,8 @@ See the [file format section in README](../README.md#file-format) for version hi
 - Wait for the other process to exit; the kernel releases the lock automatically, including when the process is killed.
 - There is no lock file to delete. If you find a stale `.graph.lock`, it is a leftover from a version before 2.0 and has no effect — it is not read or deleted, and should not be removed by hand in case an old process still depends on it.
 - If two services genuinely need the same file, put one in front of the other. Minigraf is embedded, not a server.
+
+A read-only handle (`OpenOptions::read_only`) in another process also refuses a read-write open, and a read-write handle refuses a read-only one. Read-only handles do not refuse each other.
 
 **Scenario**: A rolling deployment starts the new pod before the old one has exited, and both mount the same volume.
 
@@ -2177,6 +2184,20 @@ See the [file format section in README](../README.md#file-format) for version hi
 - Restore from backup.
 
 **Scenario**: EAVT, AEVT and AVET are all intact but each holds a different set of facts.
+
+---
+
+### STG-042 Database file not found (read-only open)
+
+**Error text**: `database file not found ({}); a read-only open does not create one`
+
+**Cause**: The database was opened with `OpenOptions::read_only` and no file exists at the path. A read-write open creates a new, empty database; a read-only open never creates or writes anything.
+
+**Resolution**:
+- Check the path. The `{}` is the path as given.
+- To create the database, open it once without `read_only`.
+
+**Scenario**: A migration tool is pointed at `memory.graph` from the wrong working directory.
 
 ---
 
@@ -2491,6 +2512,24 @@ db.checkpoint()?;
 ```
 
 **Scenario**: A backup job streams the fact log on a thread while the application calls `checkpoint()` on a timer.
+
+### API-014 Write on a read-only handle
+
+**Error text**: `database is open read-only; {} is not allowed`
+
+**Cause**: The database was opened with `OpenOptions::read_only`, and the call would write to the file or its WAL. The `{}` names the call: `transact`, `retract`, `begin_write`, `checkpoint` or `rebuild_indexes`. Nothing is written and no transaction number is used.
+
+**Resolution**:
+- Open the database without `read_only` to write. A read-write open waits for no one: it fails with STG-025 or STG-026 while any read-only handle holds the file, so close those first.
+- Queries, cursors, `fact_log()`, `verify()` and rule registration work on a read-only handle.
+
+```rust
+let src = Minigraf::open_with_options("old.graph", OpenOptions::new().read_only(true))?;
+let mut log = src.fact_log(&FactFilter::new())?;
+// ... copy the records elsewhere; src.execute("(transact ...)") would be API-014
+```
+
+**Scenario**: An offline migration tool opens its source read-only and, by mistake, runs a cleanup `retract` against it instead of against the destination.
 
 ---
 
@@ -3189,3 +3228,12 @@ this transaction, but the rule registry no longer contained it.
 **Resolution**:
 - File a bug report — this indicates a lifecycle bug in
   `WriteTransaction`'s rule-staging/rollback logic.
+
+### INT-056 Write to a read-only storage backend
+
+**Error text**: `write to a read-only storage backend: {}`
+
+**Cause**: A page write or sync reached the file backend of a handle opened with `OpenOptions::read_only`. The public API refuses every write on such a handle first (API-014), so this is a missed check, not a usage error. The `{}` is the page or `sync`. Nothing was written.
+
+**Resolution**:
+- File a bug report with the call that returned it.

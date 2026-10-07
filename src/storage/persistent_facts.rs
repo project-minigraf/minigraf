@@ -64,14 +64,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         page_cache_capacity: usize,
         wal_base_generation: Option<u64>,
     ) -> Result<Self> {
-        let mut pfs = PersistentFactStorage {
-            backend: Arc::new(Mutex::new(backend)),
-            page_cache: Arc::new(PageCache::new(page_cache_capacity)),
-            storage: FactStorage::new(),
-            dirty: false,
-            meta: MetaPage::empty(1),
-        };
-        let meta = match pfs.select_meta(wal_base_generation)? {
+        let mut pfs = Self::unopened(backend, page_cache_capacity);
+        let meta = match pfs.select_meta(wal_base_generation, false)? {
             Opened::Fresh => pfs.init_empty()?,
             Opened::Meta(m) => {
                 m.check_features()?;
@@ -84,6 +78,72 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         pfs.storage
             .restore_tx_counter_from(meta.last_checkpointed_tx_count);
         Ok(pfs)
+    }
+
+    /// Open storage on `backend` without writing to it (#429).
+    ///
+    /// Meta selection is the same as [`open`](Self::open), but nothing is
+    /// repaired or created: an empty file (or a torn initial meta) is an empty
+    /// database, a torn page 0 after migration is read through the backup meta
+    /// without restoring page 0, and a format v7 file is read into memory as
+    /// uncheckpointed facts instead of being migrated. The caller must never
+    /// call [`save`](Self::save).
+    pub fn open_read_only(
+        backend: B,
+        page_cache_capacity: usize,
+        wal_base_generation: Option<u64>,
+    ) -> Result<Self> {
+        let mut pfs = Self::unopened(backend, page_cache_capacity);
+        let meta = match pfs.select_meta(wal_base_generation, true)? {
+            Opened::Fresh => MetaPage::empty(1),
+            Opened::Meta(m) => {
+                m.check_features()?;
+                m.check_layout()?;
+                m
+            }
+            Opened::LegacyV7(h) => pfs.load_v7_in_memory(&h)?,
+        };
+        pfs.activate(meta);
+        pfs.storage
+            .restore_tx_counter_from(meta.last_checkpointed_tx_count);
+        Ok(pfs)
+    }
+
+    fn unopened(backend: B, page_cache_capacity: usize) -> Self {
+        PersistentFactStorage {
+            backend: Arc::new(Mutex::new(backend)),
+            page_cache: Arc::new(PageCache::new(page_cache_capacity)),
+            storage: FactStorage::new(),
+            dirty: false,
+            meta: MetaPage::empty(1),
+        }
+    }
+
+    /// Read a format v7 file's facts into memory as uncheckpointed facts, on an
+    /// empty committed state, for a read-only open. Returns the meta to
+    /// activate: empty, with the v7 header's tx counter so WAL replay skips
+    /// the entries the file already holds.
+    fn load_v7_in_memory(&mut self, header: &LegacyHeaderV7) -> Result<MetaPage> {
+        let mut facts = {
+            let backend = self.lock()?;
+            crate::storage::packed_pages::read_all_v7(
+                &*backend,
+                1,
+                header.fact_page_count_or_derived(),
+            )?
+        };
+        // As in `migrate_v7`: never rewind past the header's counter.
+        let max_fact_tx = facts.iter().map(|f| f.tx_count).max().unwrap_or(0);
+        let max_tx = max_fact_tx.max(header.last_checkpointed_tx_count);
+        // Pending facts are kept in tx order (the fact log relies on it).
+        facts.sort_by_key(|f| f.tx_count);
+        for fact in facts {
+            let _ = self.storage.load_fact(fact)?;
+        }
+        Ok(MetaPage {
+            last_checkpointed_tx_count: max_tx,
+            ..MetaPage::empty(1)
+        })
     }
 
     /// The LRU page cache capacity this storage was constructed with (for testing).
@@ -99,8 +159,9 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     }
 
     /// Choose the meta page to open at (spec §4.1.1). Never modifies the file,
-    /// except to restore page 0 from the migration backup meta (§9 step 5).
-    fn select_meta(&self, wal_base: Option<u64>) -> Result<Opened> {
+    /// except to restore page 0 from the migration backup meta (§9 step 5),
+    /// which `read_only` skips.
+    fn select_meta(&self, wal_base: Option<u64>, read_only: bool) -> Result<Opened> {
         let mut backend = self.lock()?;
         let page_count = backend.page_count()?;
         if page_count == 0 {
@@ -139,8 +200,10 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
                     && m.page_count == page_count
                 {
                     m.check_features()?;
-                    backend.write_page(0, &m.encode())?;
-                    backend.sync()?;
+                    if !read_only {
+                        backend.write_page(0, &m.encode())?;
+                        backend.sync()?;
+                    }
                     return Ok(Opened::Meta(m));
                 }
                 if page_count <= 2 && is_torn_initial_meta(&*backend, &page0)? {
@@ -1385,6 +1448,54 @@ mod tests {
             }
         }
         assert!(points > 20, "expected many crash points");
+    }
+
+    /// A backend over `mem` whose every write and sync fails.
+    fn no_writes(mem: &MemoryBackend) -> FaultInjectingBackend<MemoryBackend> {
+        let (backend, config) = FaultInjectingBackend::with_config(mem.clone());
+        let mut cfg = config.lock().unwrap();
+        cfg.fail_write_after = Some(0);
+        cfg.fail_sync_after = Some(0);
+        drop(cfg);
+        backend
+    }
+
+    /// Read-only open (#429) of a v7 file, at every point of an interrupted
+    /// migration (including a torn page 0 that only the backup meta can
+    /// repair): every fact is there, and nothing is written.
+    #[test]
+    fn read_only_open_at_every_point_of_migration_writes_nothing() {
+        let facts = sample_facts(120);
+        for torn in [None, Some(0usize), Some(20), Some(2048)] {
+            for k in 0u64.. {
+                let mem = v7_file(&facts, 120);
+                let (backend, config) = FaultInjectingBackend::with_config(mem.clone());
+                {
+                    let mut cfg = config.lock().unwrap();
+                    cfg.fail_write_after = Some(k);
+                    cfg.torn_write_bytes = torn;
+                }
+                let done = PersistentFactStorage::open(backend, 16, None).is_ok();
+                let before = snapshot(&mem);
+                let pfs = PersistentFactStorage::open_read_only(no_writes(&mem), 16, None)
+                    .expect("read-only open after an interrupted migration");
+                assert_eq!(count_n(&pfs), 120, "every v7 fact is visible");
+                assert!(pfs.storage().current_tx_count() >= 120);
+                drop(pfs);
+                assert!(snapshot(&mem) == before, "read-only open wrote");
+                if done {
+                    break;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn read_only_open_of_an_empty_backend_writes_nothing() {
+        let mem = MemoryBackend::new();
+        let pfs = PersistentFactStorage::open_read_only(no_writes(&mem), 16, None).unwrap();
+        assert_eq!(count_n(&pfs), 0);
+        assert_eq!(mem.page_count().unwrap(), 0);
     }
 
     // ── crash atomicity (spec §11) ──────────────────────────────────────────

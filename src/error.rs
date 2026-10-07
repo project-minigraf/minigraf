@@ -182,6 +182,7 @@ pub(crate) enum ErrorCode {
     Stg039,
     Stg040,
     Stg041,
+    Stg042,
     Wal001,
     Wal002,
     Wal003,
@@ -201,6 +202,7 @@ pub(crate) enum ErrorCode {
     Api011,
     Api012,
     Api013,
+    Api014,
     Int001,
     Int002,
     Int003,
@@ -256,6 +258,7 @@ pub(crate) enum ErrorCode {
     Int053,
     Int054,
     Int055,
+    Int056,
 }
 
 /// Single source of truth: (code, code string, message template, category).
@@ -1044,6 +1047,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCategory::Storage,
     ),
     (
+        ErrorCode::Stg042,
+        "STG-042",
+        "database file not found ({}); a read-only open does not create one",
+        ErrorCategory::Storage,
+    ),
+    (
         ErrorCode::Wal001,
         "WAL-001",
         "Invalid WAL magic number: not a .wal file",
@@ -1155,6 +1164,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Api013,
         "API-013",
         "checkpoint deferred while {} fact log(s) are open; close them and checkpoint again",
+        ErrorCategory::Api,
+    ),
+    (
+        ErrorCode::Api014,
+        "API-014",
+        "database is open read-only; {} is not allowed",
         ErrorCategory::Api,
     ),
     (
@@ -1485,6 +1500,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Int055,
         "INT-055",
         "rule predicate '{}' disappeared during rollback",
+        ErrorCategory::Internal,
+    ),
+    (
+        ErrorCode::Int056,
+        "INT-056",
+        "write to a read-only storage backend: {}",
         ErrorCategory::Internal,
     ),
 ];
@@ -1889,6 +1910,7 @@ mod tests {
                 | ErrorCode::Stg039
                 | ErrorCode::Stg040
                 | ErrorCode::Stg041
+                | ErrorCode::Stg042
                 | ErrorCode::Wal001
                 | ErrorCode::Wal002
                 | ErrorCode::Wal003
@@ -1908,6 +1930,7 @@ mod tests {
                 | ErrorCode::Api011
                 | ErrorCode::Api012
                 | ErrorCode::Api013
+                | ErrorCode::Api014
                 | ErrorCode::Int001
                 | ErrorCode::Int002
                 | ErrorCode::Int003
@@ -1962,7 +1985,8 @@ mod tests {
                 | ErrorCode::Int052
                 | ErrorCode::Int053
                 | ErrorCode::Int054
-                | ErrorCode::Int055 => assert_has_registry_entry(code),
+                | ErrorCode::Int055
+                | ErrorCode::Int056 => assert_has_registry_entry(code),
             }
         }
 
@@ -2097,6 +2121,7 @@ mod tests {
             ErrorCode::Stg039,
             ErrorCode::Stg040,
             ErrorCode::Stg041,
+            ErrorCode::Stg042,
             ErrorCode::Wal001,
             ErrorCode::Wal002,
             ErrorCode::Wal003,
@@ -2116,6 +2141,7 @@ mod tests {
             ErrorCode::Api011,
             ErrorCode::Api012,
             ErrorCode::Api013,
+            ErrorCode::Api014,
             ErrorCode::Int001,
             ErrorCode::Int002,
             ErrorCode::Int003,
@@ -2171,6 +2197,7 @@ mod tests {
             ErrorCode::Int053,
             ErrorCode::Int054,
             ErrorCode::Int055,
+            ErrorCode::Int056,
         ] {
             exhaustive(code);
         }
