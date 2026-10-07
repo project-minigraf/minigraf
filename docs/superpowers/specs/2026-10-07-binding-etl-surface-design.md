@@ -81,13 +81,21 @@ same code and text, and `docs/ERROR_REFERENCE.md` stays the one registry.
    drops it unfinished, which deletes `<path>.partial`, and is a no-op when already
    finished or closed. Every other call after `finish` or `close` is `API-018`.
    Python's context manager finishes on a clean exit and closes on an exception; Java's
-   `close()` (`AutoCloseable`) closes without finishing.
-7. **Options map onto `OpenOptions` builders.** Counts are 64-bit unsigned in the
-   bindings and convert to `usize`; a value that does not fit is `API-017`. An absent
-   field keeps the Rust default.
+   `close()` (`AutoCloseable`) frees the writer, which abandons an unfinished build.
+7. **Options map onto `OpenOptions` builders.** In the UniFFI shim every count
+   (options, `tx_count`, `tx_id`, batch sizes, filter bounds) is a signed integer
+   (`i64`, `i32` for batch sizes): Kotlin's `ULong`/`UInt` are name-mangled and cannot
+   be called from Java. A negative or oversized value is `API-017`. C and JSON use
+   unsigned integers and `size_t`. An absent field keeps the Rust default.
+9. **Kotlin renames `close`.** UniFFI's Kotlin objects are `AutoCloseable`, and
+   `close()` frees the Rust object, which releases a cursor or fact log and abandons an
+   unfinished writer. The shim's own `close` methods clash with it, so the Kotlin
+   bindings rename them in `uniffi.toml`: `release()` (cursor, fact log) and `abandon()`
+   (writer).
 8. **Errors keep their code in the message.** Every binding already surfaces
    `[CODE] message` (the `Display` of `MinigrafError`), so API-014, API-015, API-017,
-   API-018, STG-042 and STG-043 reach callers like every other code.
+   API-018, STG-042 and STG-043 reach callers like every other code. (UniFFI wraps
+   it: Python's `e.msg`, Kotlin's `Minigraf.errorMessage(e)`, Swift's `e.message`.)
 
 ### Not applicable
 
