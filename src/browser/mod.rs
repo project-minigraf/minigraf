@@ -139,6 +139,22 @@ impl BrowserDb {
         }
     }
 
+    /// Open a cursor over a `(query ...)` and return its rows in batches.
+    ///
+    /// The answer is fixed when the cursor opens: later writes do not change
+    /// it. Synchronous, since reading never touches IndexedDB.
+    ///
+    /// Throws `[API-012]` for a `transact`, `retract` or `rule`, and
+    /// `[API-010]` for a query with `$slot` bind slots.
+    #[wasm_bindgen(js_name = query)]
+    pub fn query(&self, datalog: &str) -> Result<BrowserCursor, JsValue> {
+        let cursor = self.query_inner(datalog).map_err(to_js_error)?;
+        Ok(BrowserCursor {
+            vars: cursor.vars().to_vec(),
+            cursor: Some(cursor),
+        })
+    }
+
     /// Flush all dirty pages to IndexedDB.
     ///
     /// Write-through means individual `execute()` calls already flush dirty pages,
@@ -249,6 +265,28 @@ impl BrowserDb {
 }
 
 impl BrowserDb {
+    fn query_inner(&self, datalog: &str) -> anyhow::Result<crate::Cursor> {
+        use crate::error::{ErrorCode, bail_coded};
+
+        let cmd = parse_datalog_command(datalog)?;
+        match &cmd {
+            DatalogCommand::Query(q) => crate::query::datalog::prepared::reject_unbound_slots(q)?,
+            DatalogCommand::Transact(_) => bail_coded!(ErrorCode::Api012, "transact"),
+            DatalogCommand::Retract(_) => bail_coded!(ErrorCode::Api012, "retract"),
+            DatalogCommand::Rule(_) => bail_coded!(ErrorCode::Api012, "rule"),
+        }
+        let result = {
+            let inner = self.inner.borrow();
+            DatalogExecutor::new_with_rules_and_functions(
+                inner.fact_storage.clone(),
+                inner.rules.clone(),
+                inner.functions.clone(),
+            )
+            .execute(cmd)?
+        };
+        crate::Cursor::from_result(result)
+    }
+
     /// Apply a batch of pre-materialized facts to the in-memory store and
     /// flush dirty pages to IndexedDB (if present).
     ///
@@ -331,6 +369,60 @@ impl BrowserDb {
     }
 }
 
+// ── BrowserCursor ───────────────────────────────────────────────────────────
+
+/// A cursor from `BrowserDb.query()`: the rows of one query answer, in batches.
+///
+/// ```js
+/// const cursor = db.query("(query [:find ?n :where [?e :name ?n]])");
+/// try {
+///   let batch;
+///   while ((batch = cursor.nextBatch(1000)) !== undefined) {
+///     for (const row of JSON.parse(batch)) console.log(row);
+///   }
+/// } finally {
+///   cursor.close();
+/// }
+/// ```
+#[wasm_bindgen]
+pub struct BrowserCursor {
+    vars: Vec<String>,
+    /// `None` after `close()`.
+    cursor: Option<crate::Cursor>,
+}
+
+#[wasm_bindgen]
+impl BrowserCursor {
+    /// The query's `:find` variables, in column order.
+    pub fn vars(&self) -> Vec<String> {
+        self.vars.clone()
+    }
+
+    /// The next batch of at most `maxRows` rows (`0` counts as 1), as a JSON
+    /// array of rows encoded like `execute()`'s `results`, or `undefined` at
+    /// the end. A batch is never empty. After `close()` it returns
+    /// `undefined`.
+    #[wasm_bindgen(js_name = nextBatch)]
+    pub fn next_batch(&mut self, max_rows: u32) -> Result<Option<String>, JsValue> {
+        let Some(cursor) = self.cursor.as_mut() else {
+            return Ok(None);
+        };
+        let batch = cursor
+            .next_batch(max_rows as usize)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        Ok(batch.map(|b| rows_to_json(b.rows())))
+    }
+
+    /// Release the cursor's rows. Later `nextBatch()` calls return `undefined`.
+    pub fn close(&mut self) {
+        self.cursor = None;
+    }
+}
+
+fn to_js_error(e: anyhow::Error) -> JsValue {
+    JsValue::from_str(&crate::MinigrafError::from(e).to_string())
+}
+
 // ── JSON serialisation helpers (free functions, not exported to WASM) ────────
 
 fn query_result_to_json(result: QueryResult) -> String {
@@ -353,6 +445,14 @@ fn query_result_to_json(result: QueryResult) -> String {
         }
     };
     val.to_string()
+}
+
+fn rows_to_json(rows: &[Vec<crate::graph::types::Value>]) -> String {
+    let rows: Vec<Vec<serde_json::Value>> = rows
+        .iter()
+        .map(|row| row.iter().map(value_to_json).collect())
+        .collect();
+    serde_json::Value::from(rows).to_string()
 }
 
 fn value_to_json(v: &crate::graph::types::Value) -> serde_json::Value {
@@ -396,6 +496,75 @@ mod tests {
         let results = v["results"].as_array().unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0][0], serde_json::Value::String("Alice".into()));
+    }
+
+    #[wasm_bindgen_test]
+    async fn cursor_batches_match_execute() {
+        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        for i in 0..20 {
+            db.execute(format!("(transact [[:e{i} :n {i}]])"))
+                .await
+                .expect("transact");
+        }
+        let q = "(query [:find ?n :where [?e :n ?n]])";
+        let all: serde_json::Value =
+            serde_json::from_str(&db.execute(q.to_string()).await.expect("execute")).unwrap();
+        let mut expected: Vec<i64> = all["results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r[0].as_i64().unwrap())
+            .collect();
+        expected.sort_unstable();
+        for size in [1u32, 7, 1000] {
+            let mut cursor = db.query(q).expect("query");
+            assert_eq!(cursor.vars(), vec!["?n".to_string()]);
+            let mut got = Vec::new();
+            while let Some(batch) = cursor.next_batch(size).expect("next_batch") {
+                let rows: Vec<Vec<i64>> = serde_json::from_str(&batch).unwrap();
+                assert!(!rows.is_empty() && rows.len() <= size as usize);
+                got.extend(rows.into_iter().map(|r| r[0]));
+            }
+            got.sort_unstable();
+            assert_eq!(got, expected, "batch size {size}");
+        }
+    }
+
+    #[wasm_bindgen_test]
+    async fn cursor_is_fixed_at_open_and_closes() {
+        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        db.execute(r#"(transact [[:a :n 1]])"#.to_string())
+            .await
+            .expect("transact");
+        let mut cursor = db
+            .query("(query [:find ?n :where [?e :n ?n]])")
+            .expect("query");
+        db.execute(r#"(transact [[:b :n 2]])"#.to_string())
+            .await
+            .expect("transact");
+        assert_eq!(
+            cursor.next_batch(10).expect("batch").as_deref(),
+            Some("[[1]]")
+        );
+        assert_eq!(cursor.next_batch(10).expect("end"), None);
+
+        let mut cursor = db
+            .query("(query [:find ?n :where [?e :n ?n]])")
+            .expect("query");
+        assert!(cursor.next_batch(1).expect("batch").is_some());
+        cursor.close();
+        assert_eq!(cursor.next_batch(1).expect("closed"), None);
+    }
+
+    #[wasm_bindgen_test]
+    fn cursor_rejects_non_queries() {
+        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        let err = db
+            .query(r#"(transact [[:a :n 1]])"#)
+            .err()
+            .and_then(|e| e.as_string())
+            .expect("error string");
+        assert!(err.starts_with("[API-012]"), "expected API-012");
     }
 
     #[wasm_bindgen_test]
