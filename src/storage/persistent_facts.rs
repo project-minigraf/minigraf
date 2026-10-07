@@ -669,17 +669,6 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.dirty = false;
     }
 
-    /// Capacity (in pages) of the internal LRU page cache passed to `new()`.
-    ///
-    /// Exposed only for the browser WASM layer's tests, which verify that
-    /// `BrowserDb` constructors pass `0` (cache disabled — see #275) since
-    /// `BrowserBufferBackend` is already an in-memory page store and the LRU
-    /// layer on top of it would be redundant.
-    #[cfg(all(target_arch = "wasm32", feature = "browser", test))]
-    pub(crate) fn page_cache_capacity(&self) -> usize {
-        self.page_cache.capacity()
-    }
-
     /// Run a closure with read access to the underlying storage backend.
     ///
     /// Used by the browser WASM layer to read pages after `save()` without

@@ -145,9 +145,9 @@ cargo run < demos/demo_negation.txt
 
 7. **`src/wal.rs`** — Fact-level sidecar WAL, CRC32-protected entries, crash recovery
 
-8. **`src/error.rs`** — Structured error codes: `MinigrafError`, `ErrorCategory`, `ErrorCode` registry (PRS/QRY/STG/WAL/API/INT codes); must match `docs/ERROR_REFERENCE.md`
+8. **`src/error.rs`** — Structured error codes: `MinigrafError`, `ErrorCategory`, `ErrorCode` registry (PRS/QRY/STG/WAL/API/INT codes); must match `docs/ERROR_REFERENCE.md`. `MinigrafError::invalid_argument` (API-017) and `MinigrafError::closed` (API-018) exist for language bindings
 
-9. **`src/browser/`** — Browser WASM backend (`browser` feature): `buffer.rs` (`BrowserBufferBackend`, in-memory pages with dirty tracking), `indexeddb.rs` (IndexedDB persistence)
+9. **`src/browser/`** — Browser WASM backend (`browser` feature): `buffer.rs` (`BrowserBufferBackend`, in-memory pages with dirty tracking), `indexeddb.rs` (IndexedDB persistence); `BrowserDb.query` returns a `BrowserCursor` (JSON row batches)
 
 ### Data Model
 
@@ -197,7 +197,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1345 tests** (1336 passing, 9 ignored; unit + integration + doc).
+**1346 tests** (1337 passing, 9 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.

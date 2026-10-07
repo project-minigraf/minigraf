@@ -174,6 +174,8 @@ with no `CodedError` anywhere in its chain.
 | API-014 | Write on a read-only handle | Database API |
 | API-015 | Log writer record out of transaction order | Database API |
 | API-016 | Log writer record with a second tx_id for one transaction | Database API |
+| API-017 | Invalid argument passed through a language binding | Database API |
+| API-018 | Call on a closed binding object | Database API |
 | INT-000 | Unclassified internal error | Internal |
 | INT-001 | WriteTransaction already in progress on this thread | Internal |
 | INT-002 | Invalid entity (API layer) | Internal |
@@ -2577,6 +2579,30 @@ let mut log = src.fact_log(&FactFilter::new())?;
 - Keep each record's `tx_id` as the source gave it. If a transform rewrites timestamps, give every record of one transaction the same new `tx_id`.
 
 **Scenario**: A transform sets `tx_id` from a per-record field instead of from the transaction.
+
+### API-017 Invalid argument passed through a language binding
+
+**Error text**: `invalid argument: {}`
+
+**Cause**: A language binding (Python, Java, Swift, Node.js, C and the others) received an argument it could not convert to the Rust type, such as an entity id or `Ref` value that is not a UUID string, or a negative or out-of-range number. The `{}` names the argument and the problem. The Rust API takes typed arguments and never returns this code. Nothing was changed.
+
+**Resolution**:
+- Pass entity ids and `Ref` values as the UUID strings that `fact_log` records and query results carry.
+- Check the binding's documentation for the argument's type and range.
+
+**Scenario**: A migration script builds a `FactRecord` with `entity="alice"` instead of the entity's UUID.
+
+### API-018 Call on a closed binding object
+
+**Error text**: `{} is closed`
+
+**Cause**: A language binding object was used after it was closed or finished, for example `append` or `finish` on a log writer after `finish` or `close`. Rust consumes these objects, so the Rust API never returns this code. Bindings cannot consume an object a caller still holds, so they return this error instead. A cursor or fact log reports the end (no more batches) after `close`, not this error. The `{}` names the object.
+
+**Resolution**:
+- Create a new object instead of reusing a finished one.
+- In Python, use the writer as a context manager so it is finished once, on exit.
+
+**Scenario**: A loader calls `finish()` in a `finally` block after it already called it on success.
 
 ---
 

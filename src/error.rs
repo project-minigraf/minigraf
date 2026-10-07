@@ -206,6 +206,8 @@ pub(crate) enum ErrorCode {
     Api014,
     Api015,
     Api016,
+    Api017,
+    Api018,
     Int001,
     Int002,
     Int003,
@@ -1194,6 +1196,18 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCategory::Api,
     ),
     (
+        ErrorCode::Api017,
+        "API-017",
+        "invalid argument: {}",
+        ErrorCategory::Api,
+    ),
+    (
+        ErrorCode::Api018,
+        "API-018",
+        "{} is closed",
+        ErrorCategory::Api,
+    ),
+    (
         ErrorCode::Int001,
         "INT-001",
         "a WriteTransaction is already in progress on this thread; use tx.execute() instead",
@@ -1700,6 +1714,20 @@ impl MinigrafError {
     pub fn code(&self) -> &'static str {
         self.code
     }
+
+    /// An argument a language binding could not convert, such as a malformed
+    /// entity UUID string (`API-017`). For binding authors; the Rust API
+    /// takes typed arguments and never returns it.
+    pub fn invalid_argument(detail: impl fmt::Display) -> Self {
+        MinigrafError::from(err_coded!(ErrorCode::Api017, detail))
+    }
+
+    /// A call on a binding object that was already closed or finished, such
+    /// as a log writer after `finish` (`API-018`). `object` names it. For
+    /// binding authors; the Rust API consumes such objects instead.
+    pub fn closed(object: impl fmt::Display) -> Self {
+        MinigrafError::from(err_coded!(ErrorCode::Api018, object))
+    }
 }
 
 impl fmt::Display for MinigrafError {
@@ -1955,6 +1983,8 @@ mod tests {
                 | ErrorCode::Api014
                 | ErrorCode::Api015
                 | ErrorCode::Api016
+                | ErrorCode::Api017
+                | ErrorCode::Api018
                 | ErrorCode::Int001
                 | ErrorCode::Int002
                 | ErrorCode::Int003
@@ -2169,6 +2199,8 @@ mod tests {
             ErrorCode::Api014,
             ErrorCode::Api015,
             ErrorCode::Api016,
+            ErrorCode::Api017,
+            ErrorCode::Api018,
             ErrorCode::Int001,
             ErrorCode::Int002,
             ErrorCode::Int003,
@@ -2228,6 +2260,22 @@ mod tests {
         ] {
             exhaustive(code);
         }
+    }
+
+    #[test]
+    fn binding_constructors_carry_their_codes() {
+        let e = MinigrafError::invalid_argument("entity \"alice\" is not a UUID");
+        assert_eq!(e.code(), "API-017");
+        assert_eq!(e.category(), ErrorCategory::Api);
+        assert_eq!(
+            e.to_string(),
+            "[API-017] invalid argument: entity \"alice\" is not a UUID"
+        );
+
+        let e = MinigrafError::closed("log writer");
+        assert_eq!(e.code(), "API-018");
+        assert_eq!(e.category(), ErrorCategory::Api);
+        assert_eq!(e.to_string(), "[API-018] log writer is closed");
     }
 
     #[test]
