@@ -151,15 +151,7 @@ impl BrowserDb {
                 .pfs
                 .save()
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
-            let dirty_ids = inner.pfs.with_backend_mut(|b| b.take_dirty());
-            let pages: Vec<(u64, Vec<u8>)> = dirty_ids
-                .into_iter()
-                .filter_map(|id| {
-                    inner
-                        .pfs
-                        .with_backend(|b| b.read_page_raw(id).ok().map(|d| (id, d)))
-                })
-                .collect();
+            let pages = take_dirty_pages(&mut inner.pfs)?;
             (pages, inner.idb.is_some())
         };
 
@@ -225,13 +217,7 @@ impl BrowserDb {
             let new_fact_storage = new_pfs.storage().clone();
 
             // Drain dirty set and collect owned page bytes before swapping inner.
-            let dirty_ids = new_pfs.with_backend_mut(|b| b.take_dirty());
-            let dirty_pages: Vec<(u64, Vec<u8>)> = dirty_ids
-                .into_iter()
-                .filter_map(|id| {
-                    new_pfs.with_backend(|b| b.read_page_raw(id).ok().map(|d| (id, d)))
-                })
-                .collect();
+            let dirty_pages = take_dirty_pages(&mut new_pfs)?;
 
             inner.pfs = new_pfs;
             inner.fact_storage = new_fact_storage;
@@ -295,15 +281,7 @@ impl BrowserDb {
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
             // Collect dirty pages as owned Vec<(u64, Vec<u8>)> — no borrows escape
-            let dirty_ids = inner.pfs.with_backend_mut(|b| b.take_dirty());
-            let dirty_pages: Vec<(u64, Vec<u8>)> = dirty_ids
-                .into_iter()
-                .filter_map(|id| {
-                    inner
-                        .pfs
-                        .with_backend(|b| b.read_page_raw(id).ok().map(|d| (id, d)))
-                })
-                .collect();
+            let dirty_pages = take_dirty_pages(&mut inner.pfs)?;
 
             let json = if is_retract {
                 format!(r#"{{"retracted":{}}}"#, tx_id)
@@ -329,6 +307,21 @@ impl BrowserDb {
 }
 
 // ── JSON serialisation helpers (free functions, not exported to WASM) ────────
+
+/// The bytes of every page the last `save()` dirtied, clearing the dirty set.
+/// A page that cannot be read is an error, never a page silently left out of
+/// the flush to IndexedDB.
+fn take_dirty_pages(
+    pfs: &mut PersistentFactStorage<BrowserBufferBackend>,
+) -> Result<Vec<(u64, Vec<u8>)>, JsValue> {
+    let ids = pfs.with_backend_mut(|b| b.take_dirty());
+    pfs.with_backend(|b| {
+        ids.into_iter()
+            .map(|id| b.read_page_raw(id).map(|d| (id, d)))
+            .collect::<anyhow::Result<Vec<_>>>()
+    })
+    .map_err(|e| JsValue::from_str(&crate::MinigrafError::from(e).to_string()))
+}
 
 fn query_result_to_json(result: QueryResult) -> String {
     use serde_json::{Value as JVal, json};
@@ -374,6 +367,28 @@ mod tests {
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
+
+    #[wasm_bindgen_test]
+    fn take_dirty_pages_returns_written_pages() {
+        use crate::storage::StorageBackend;
+        let mut pfs = PersistentFactStorage::new(BrowserBufferBackend::new(), 0).unwrap();
+        let _ = pfs.with_backend_mut(|b| b.take_dirty());
+        pfs.with_backend_mut(|b| b.write_page(3, &[7u8; crate::storage::PAGE_SIZE]))
+            .unwrap();
+        let pages = take_dirty_pages(&mut pfs).expect("dirty pages");
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].0, 3);
+        assert!(take_dirty_pages(&mut pfs).expect("second call").is_empty());
+    }
+
+    #[wasm_bindgen_test]
+    fn unreadable_dirty_page_is_an_error_not_skipped() {
+        let mut pfs = PersistentFactStorage::new(BrowserBufferBackend::new(), 0).unwrap();
+        // A dirty id with no page behind it: before the fix it was dropped
+        // from the flush and the caller still saw success.
+        pfs.with_backend_mut(|b| b.mark_dirty_for_test(99));
+        assert!(take_dirty_pages(&mut pfs).is_err());
+    }
 
     #[wasm_bindgen_test]
     async fn in_memory_transact_and_query() {
