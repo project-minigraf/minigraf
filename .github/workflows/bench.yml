@@ -1,14 +1,38 @@
 name: Nightly Benchmarks
 
+# Two branches alternate every 12 hours: main at 02:00 UTC, v3 at 14:00 UTC.
+# Scheduled runs always use this file from the default branch, so the branch
+# under test is chosen from the cron string that fired. The run name carries
+# the branch, so "Report regression" can find the previous run of the same
+# branch. Keep the cron strings here and in BENCH_REF/run-name identical.
+run-name: >-
+  Nightly Benchmarks (${{ github.event_name == 'workflow_dispatch' && inputs.ref
+  || (github.event.schedule == '0 14 * * *' && 'v3' || 'main') }})
+
 on:
   schedule:
-    - cron: '0 2 * * *'  # 02:00 UTC nightly
+    - cron: '0 2 * * *'   # main
+    - cron: '0 14 * * *'  # v3
   workflow_dispatch:       # allow manual runs
+    inputs:
+      ref:
+        description: Branch to benchmark
+        required: true
+        default: main
 
 permissions:
   contents: read
   issues: write
-  actions: read  # read the previous night's job logs to confirm an alert repeats
+  actions: read  # read the previous run's job logs to confirm an alert repeats
+
+env:
+  BENCH_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || (github.event.schedule == '0 14 * * *' && 'v3' || 'main') }}
+
+# One run at a time on the shared runners: a late run queues instead of
+# overlapping the next branch's run.
+concurrency:
+  group: bench
+  cancel-in-progress: false
 
 jobs:
   compile:
@@ -18,6 +42,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.BENCH_REF }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -183,6 +209,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.BENCH_REF }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -217,10 +245,16 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
+          # A branch other than main starts from main's history and thresholds.
+          start_point=()
+          if [ "$BENCH_REF" != main ]; then
+            start_point=(--start-point main --start-point-clone-thresholds)
+          fi
           bencher run \
             --project minigraf \
             --token "${{ secrets.BENCHER_API_TOKEN }}" \
-            --branch main \
+            --branch "$BENCH_REF" \
+            "${start_point[@]}" \
             --testbed ubuntu-latest \
             --threshold-measure latency \
             --threshold-test t_test \
@@ -246,7 +280,10 @@ jobs:
             const fs = require('fs');
             const { owner, repo } = context.repo;
             const suite = process.env.SUITE;
+            const ref = process.env.BENCH_REF;
             const jobName = `bench / ${suite}`;
+            // main keeps its existing issue titles; other branches get their own.
+            const label = ref === 'main' ? suite : `${suite}, ${ref}`;
 
             // Bencher lists each alert as "- <benchmark> (Latency): <.../alerts/<id>>".
             // The "View results" lines use /perf? URLs, so they do not match.
@@ -261,12 +298,14 @@ jobs:
               // Bencher failed without listing alerts (API or upload error).
               // Report it at once so a broken setup does not go unnoticed.
               body = [
-                `Bencher failed in the nightly benchmark run (${suite}) but listed no alerts. This is likely an API or upload error.`,
+                `Bencher failed in the nightly benchmark run (${label}) but listed no alerts. This is likely an API or upload error.`,
                 '',
                 `**Run:** ${runUrl}`,
               ].join('\n');
             } else {
-              // Find this suite's job in the previous completed run and read its alerts.
+              // Find this suite's job in the previous completed run of the same
+              // branch (by run name, see run-name) and read its alerts. Runs
+              // from before the branch was in the run name count as main.
               let previous = new Set();
               let previousUrl = null;
               try {
@@ -275,9 +314,14 @@ jobs:
                   workflow_id: 'bench.yml',
                   branch: 'main',
                   status: 'completed',
-                  per_page: 10,
+                  per_page: 20,
                 });
-                const prevRun = runs.workflow_runs.find(r => r.id !== context.runId);
+                const runRef = r => {
+                  const m = /\(([^)]+)\)$/.exec(r.display_title || '');
+                  return m ? m[1] : 'main';
+                };
+                const prevRun = runs.workflow_runs.find(
+                  r => r.id !== context.runId && runRef(r) === ref);
                 if (prevRun) {
                   previousUrl = prevRun.html_url;
                   const { data: jobs } = await github.rest.actions.listJobsForWorkflowRun({
@@ -299,10 +343,10 @@ jobs:
               console.log(`Alerts this run: ${[...current].join(', ')}`);
               console.log(`Alerts in previous run: ${[...previous].join(', ') || 'none'}`);
               if (repeated.length === 0) {
-                const msg = `Bencher flagged ${current.size} benchmark(s) in ${suite}, but none alerted on the previous run too. Not reporting.`;
+                const msg = `Bencher flagged ${current.size} benchmark(s) in ${label}, but none alerted on the previous run too. Not reporting.`;
                 core.warning(msg);
                 await core.summary
-                  .addHeading(`Benchmark alerts not reported (${suite})`, 3)
+                  .addHeading(`Benchmark alerts not reported (${label})`, 3)
                   .addRaw(msg, true)
                   .addList([...current].sort().map(b => `<code>${b}</code>`))
                   .write();
@@ -310,7 +354,7 @@ jobs:
               }
 
               body = [
-                `Bencher flagged these benchmarks in the nightly run (${suite}) on two runs in a row:`,
+                `Bencher flagged these benchmarks in the nightly run (${label}) on two runs in a row:`,
                 '',
                 ...repeated.map(b => `- \`${b}\``),
                 '',
@@ -327,7 +371,9 @@ jobs:
               state: 'open',
               per_page: 100,
             });
-            const title = `Benchmark regression: ${suite}`;
+            const title = ref === 'main'
+              ? `Benchmark regression: ${suite}`
+              : `Benchmark regression: ${suite} (${ref})`;
             const existing = openIssues.find(i => !i.pull_request && i.title === title);
             let reported;
             if (existing) {
@@ -344,7 +390,7 @@ jobs:
             }
             core.warning(`${title}. ${reported}.`);
             await core.summary
-              .addHeading(`Benchmark regression reported (${suite})`, 3)
+              .addHeading(`Benchmark regression reported (${label})`, 3)
               .addRaw(`${reported}.`, true)
               .addBreak()
               .addRaw(body, true)
