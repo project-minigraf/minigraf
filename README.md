@@ -96,6 +96,10 @@ while let Some(batch) = log.next_batch(1000)? {
     for rec in batch { /* rec.tx_count, rec.entity, rec.attribute, rec.value, rec.asserted */ }
 }
 
+// Read-only open — for backups and offline tools. Read-only handles share a file;
+// a read-write handle (like `db` on myapp.graph) excludes them.
+let archive = Minigraf::open_with_options("archive.graph", OpenOptions::new().read_only(true))?;
+
 // Explicit transaction — all-or-nothing
 let mut tx = db.begin_write()?;
 tx.execute(r#"(transact [[:alice :person/age 31]])"#)?;
@@ -117,7 +121,7 @@ let r2 = pq.execute(&[("tx", BindValue::TxCount(2)), ("entity", BindValue::Entit
 
 ```bash
 cargo run          # interactive Datalog REPL
-cargo test         # run 1309 tests
+cargo test         # run 1329 tests
 cargo run < demos/demo_recursive.txt   # recursive rules demo
 ```
 

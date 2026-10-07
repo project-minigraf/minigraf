@@ -68,7 +68,8 @@ Scope — format and storage integrity:
 Scope — query API:
 
 - Cursor API: `Minigraf::query` and `PreparedQuery::query` return an owned `Cursor` that delivers rows in batches, with the answer fixed at open (#432; Rust API done on `v3`, with the current evaluator computing the answer at open). The binding cursor objects follow. Streaming operators replace the evaluator behind the cursor in 3.x without further API changes; how operators bound their memory (spill, scratch pages in the `.graph` file, or a clear error) is still open.
-- Fact-log iterator: `Minigraf::fact_log(&FactFilter)` streams every fact version (assertions and retractions, with `tx_count`, `tx_id` and valid-time bounds) in transaction order or storage order, filtered by attribute, attribute prefix, entity and tx range, with memory bounded by a window rather than the database (#430; Rust API done on `v3`). An open log defers checkpoints (`API-013` for an explicit one). Read-only open (#429) and a raw log writer (#431) complete the extract-transform-load path; the binding objects follow with #462.
+- Fact-log iterator: `Minigraf::fact_log(&FactFilter)` streams every fact version (assertions and retractions, with `tx_count`, `tx_id` and valid-time bounds) in transaction order or storage order, filtered by attribute, attribute prefix, entity and tx range, with memory bounded by a window rather than the database (#430; Rust API done on `v3`). An open log defers checkpoints (`API-013` for an explicit one). A raw log writer (#431) completes the extract-transform-load path; the binding objects follow with #462.
+- Read-only open: `OpenOptions::read_only` takes a shared lock, so several readers can hold a file at once, writes nothing to the file or its WAL (a WAL is applied in memory, a v7 file is read without migrating), and refuses writes with `API-014` (#429; Rust API done on `v3`). The bindings' `open_with_options` follows.
 
 Scope — release-gate testing and documentation:
 

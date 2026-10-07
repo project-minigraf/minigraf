@@ -51,7 +51,7 @@ fn classify(result: Result<(), std::fs::TryLockError>, allow_unlocked: bool) -> 
     }
 }
 
-/// Canonicalised paths this process currently has open.
+/// Canonicalised paths this process currently has open, with who holds each.
 ///
 /// Correctness comes from the kernel lock, not this registry -- but this is
 /// no longer *purely* diagnostic. Two things read it: which error message to
@@ -63,10 +63,40 @@ fn classify(result: Result<(), std::fs::TryLockError>, allow_unlocked: bool) -> 
 /// `already_open_here` ever wrongly returned `true`, `open_with` would both
 /// report the wrong error *and* skip the retry that would have let it
 /// succeed.
-static OPEN_PATHS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<PathBuf>>> =
-    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+static OPEN_PATHS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<PathBuf, Holders>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
-/// Removes this backend's path from `OPEN_PATHS` when the backend drops.
+/// How a backend holds its file: one writer, or any number of readers (#429).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LockMode {
+    /// Read-write. Exclusive kernel lock; creates the file if missing.
+    Exclusive,
+    /// Read-only. Shared kernel lock; never creates or writes the file.
+    Shared,
+}
+
+/// Who in this process holds a path: one writer, or `n` readers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Holders {
+    Writer,
+    Readers(usize),
+}
+
+/// Record a holder of `path`, which the kernel lock already admitted.
+fn register(open: &mut std::collections::HashMap<PathBuf, Holders>, path: &Path, mode: LockMode) {
+    match (mode, open.get_mut(path)) {
+        (LockMode::Shared, Some(Holders::Readers(n))) => *n = n.saturating_add(1),
+        (LockMode::Shared, _) => {
+            open.insert(path.to_path_buf(), Holders::Readers(1));
+        }
+        (LockMode::Exclusive, _) => {
+            open.insert(path.to_path_buf(), Holders::Writer);
+        }
+    }
+}
+
+/// Removes this backend's claim on its path from `OPEN_PATHS` when the backend drops.
 struct PathGuard(Option<PathBuf>);
 
 impl Drop for PathGuard {
@@ -74,7 +104,12 @@ impl Drop for PathGuard {
         if let Some(path) = self.0.take()
             && let Ok(mut open) = OPEN_PATHS.lock()
         {
-            open.remove(&path);
+            match open.get_mut(&path) {
+                Some(Holders::Readers(n)) if *n > 1 => *n = n.saturating_sub(1),
+                _ => {
+                    open.remove(&path);
+                }
+            }
         }
     }
 }
@@ -83,16 +118,17 @@ impl Drop for PathGuard {
 ///
 /// Not diagnostic-only: besides choosing which error message to print, this
 /// also gates whether `open_with` retries a `WouldBlock` at all (see
-/// `OPEN_PATHS` above).
+/// `OPEN_PATHS` above). A `WouldBlock` always means a conflicting holder (a
+/// writer, or readers when we want to write), so any entry is one.
 fn already_open_here(path: &Path) -> bool {
     OPEN_PATHS
         .lock()
-        .map(|open| open.contains(path))
+        .map(|open| open.contains_key(path))
         .unwrap_or(false)
 }
 
-/// Atomically test-and-set `path` into `OPEN_PATHS`, admitting only the
-/// first caller.
+/// Atomically test-and-set `path` into `OPEN_PATHS`, admitting only callers
+/// that do not conflict with a holder: one writer, or any number of readers.
 ///
 /// Used by the `ProceedUnlocked` arm, where there is no kernel lock and this
 /// registry is the only thing preventing two handles on one unlockable path
@@ -104,10 +140,19 @@ fn already_open_here(path: &Path) -> bool {
 ///
 /// Split out from `open_with` so the race can be exercised directly (#330)
 /// instead of needing a genuinely lock-incapable filesystem.
-fn claim_unlocked_path(path: &Path) -> bool {
+fn claim_unlocked_path(path: &Path, mode: LockMode) -> bool {
     OPEN_PATHS
         .lock()
-        .map(|mut open| open.insert(path.to_path_buf()))
+        .map(|mut open| {
+            let free = matches!(
+                (mode, open.get(path)),
+                (_, None) | (LockMode::Shared, Some(Holders::Readers(_)))
+            );
+            if free {
+                register(&mut open, path, mode);
+            }
+            free
+        })
         .unwrap_or(false)
 }
 
@@ -162,6 +207,8 @@ pub struct FileBackend {
     file: File,
     /// Whole pages in the file.
     page_count: u64,
+    /// Opened with `LockMode::Shared`: `write_page` and `sync` refuse.
+    read_only: bool,
 }
 
 impl FileBackend {
@@ -184,7 +231,7 @@ impl FileBackend {
     /// convenience for the ~40 in-crate test call sites.
     #[cfg(test)]
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
-        Self::open_with(path, false)
+        Self::open_with(path, false, LockMode::Exclusive)
     }
 
     /// As `FileBackend::open` (test-only), but `allow_unlocked` permits opening on a
@@ -192,21 +239,47 @@ impl FileBackend {
     ///
     /// `allow_unlocked` does NOT override a lock held by someone else. It
     /// applies only when the filesystem rejects locking outright.
-    pub fn open_with<P: AsRef<Path>>(path: P, allow_unlocked: bool) -> Result<Self> {
+    ///
+    /// `LockMode::Shared` opens an existing file for reading only (STG-042 if
+    /// it is missing) under a shared lock, which other shared holders do not
+    /// conflict with, and the backend then refuses every write (#429).
+    pub fn open_with<P: AsRef<Path>>(
+        path: P,
+        allow_unlocked: bool,
+        mode: LockMode,
+    ) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
+        let read_only = mode == LockMode::Shared;
 
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(&path)?;
+        let file = if read_only {
+            match File::open(&path) {
+                Ok(f) => f,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    bail_coded!(ErrorCode::Stg042, path.display());
+                }
+                Err(e) => return Err(e.into()),
+            }
+        } else {
+            OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .open(&path)?
+        };
+        let try_lock = || {
+            if read_only {
+                file.try_lock_shared()
+            } else {
+                file.try_lock()
+            }
+        };
 
         // Canonicalise only after the file exists. Used for the diagnostic
         // registry; if it fails we fall back to the generic message.
         let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
 
-        let mut lock_result = file.try_lock();
+        let mut lock_result = try_lock();
 
         // Retry a `WouldBlock` with backoff, but ONLY when the conflict might
         // be with another process. If this process already has the path
@@ -222,7 +295,7 @@ impl FileBackend {
             let mut delay = LOCK_RETRY_INITIAL_DELAY;
             for _ in 0..LOCK_RETRY_ATTEMPTS {
                 std::thread::sleep(delay);
-                lock_result = file.try_lock();
+                lock_result = try_lock();
                 if !matches!(lock_result, Err(std::fs::TryLockError::WouldBlock)) {
                     break;
                 }
@@ -233,7 +306,7 @@ impl FileBackend {
         let path_guard = match classify(lock_result, allow_unlocked) {
             LockOutcome::Acquired => {
                 if let Ok(mut open) = OPEN_PATHS.lock() {
-                    open.insert(canonical.clone());
+                    register(&mut open, &canonical, mode);
                 }
                 PathGuard(Some(canonical))
             }
@@ -253,7 +326,7 @@ impl FileBackend {
                 // second handle in this process opens the same unlockable
                 // path. See `claim_unlocked_path` for why the check and
                 // insert must be one atomic operation.
-                if !claim_unlocked_path(&canonical) {
+                if !claim_unlocked_path(&canonical, mode) {
                     bail_coded!(ErrorCode::Stg025, path.display());
                 }
                 PathGuard(Some(canonical))
@@ -266,7 +339,7 @@ impl FileBackend {
         // storage layer's business.
         let file_len = file.metadata()?.len();
         let page_count = file_len / PAGE_SIZE as u64;
-        if page_count == 0 {
+        if page_count == 0 && !read_only {
             // Make the new file's directory entry durable. Without the directory
             // sync a power loss can lose the whole file despite later fsyncs
             // (#389). An empty file left by a crash takes this branch again.
@@ -277,6 +350,7 @@ impl FileBackend {
             path,
             file,
             page_count,
+            read_only,
             _path_guard: path_guard,
         })
     }
@@ -290,6 +364,9 @@ impl FileBackend {
 
 impl StorageBackend for FileBackend {
     fn write_page(&mut self, page_id: u64, data: &[u8]) -> Result<()> {
+        if self.read_only {
+            bail_coded!(ErrorCode::Int056, format!("page {page_id}"));
+        }
         if data.len() != PAGE_SIZE {
             bail_coded!(ErrorCode::Int051, data.len(), PAGE_SIZE);
         }
@@ -342,6 +419,9 @@ impl StorageBackend for FileBackend {
     }
 
     fn sync(&mut self) -> Result<()> {
+        if self.read_only {
+            bail_coded!(ErrorCode::Int056, "sync");
+        }
         self.file.sync_all()?;
         Ok(())
     }
@@ -351,6 +431,9 @@ impl StorageBackend for FileBackend {
     }
 
     fn close(&mut self) -> Result<()> {
+        if self.read_only {
+            return Ok(());
+        }
         self.sync()
     }
 
@@ -440,7 +523,12 @@ mod tests {
             .parse()
             .expect("hold millis is a number");
 
-        let backend = FileBackend::open(&db_path).expect("child holds lock");
+        let mode = if std::env::var("MINIGRAF_HOLD_SHARED").is_ok() {
+            LockMode::Shared
+        } else {
+            LockMode::Exclusive
+        };
+        let backend = FileBackend::open_with(&db_path, false, mode).expect("child holds lock");
         std::fs::write(&ready_marker, "").expect("write ready marker");
         std::thread::sleep(std::time::Duration::from_millis(millis));
         drop(backend);
@@ -763,7 +851,7 @@ mod tests {
                 let path = path.clone();
                 std::thread::spawn(move || {
                     barrier.wait();
-                    claim_unlocked_path(&path)
+                    claim_unlocked_path(&path, LockMode::Exclusive)
                 })
             })
             .collect();
@@ -780,6 +868,150 @@ mod tests {
             admitted, 1,
             "exactly one concurrent claimant should be admitted"
         );
+    }
+
+    // ── #429: shared (read-only) mode ───────────────────────────────────────
+
+    fn code_of(e: anyhow::Error) -> String {
+        crate::error::MinigrafError::from(e).code().to_string()
+    }
+
+    fn open_err(path: &Path, mode: LockMode) -> String {
+        match FileBackend::open_with(path, false, mode) {
+            Ok(_) => panic!("open must be refused"),
+            Err(e) => code_of(e),
+        }
+    }
+
+    #[test]
+    fn test_shared_refuses_writes_and_sync() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ro.graph");
+        {
+            let mut w = FileBackend::open(&path).unwrap();
+            w.write_page(0, &[7u8; PAGE_SIZE]).unwrap();
+            w.sync().unwrap();
+        }
+        let mut r = FileBackend::open_with(&path, false, LockMode::Shared).unwrap();
+        assert_eq!(r.page_count().unwrap(), 1);
+        assert_eq!(r.read_page(0).unwrap(), vec![7u8; PAGE_SIZE]);
+        assert_eq!(
+            code_of(r.write_page(0, &[0u8; PAGE_SIZE]).unwrap_err()),
+            "INT-056"
+        );
+        assert_eq!(
+            code_of(r.write_page(1, &[0u8; PAGE_SIZE]).unwrap_err()),
+            "INT-056"
+        );
+        assert_eq!(code_of(r.sync().unwrap_err()), "INT-056");
+        r.close().unwrap();
+        drop(r);
+        assert_eq!(std::fs::read(&path).unwrap(), vec![7u8; PAGE_SIZE]);
+    }
+
+    #[test]
+    fn test_shared_missing_file_is_stg_042() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("missing.graph");
+        assert_eq!(open_err(&path, LockMode::Shared), "STG-042");
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn test_shared_holders_coexist_and_exclude_a_writer() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("shared.graph");
+        drop(FileBackend::open(&path).unwrap());
+        let canonical = std::fs::canonicalize(&path).unwrap();
+
+        let a = FileBackend::open_with(&path, false, LockMode::Shared).unwrap();
+        let b = FileBackend::open_with(&path, false, LockMode::Shared).unwrap();
+        assert_eq!(
+            OPEN_PATHS.lock().unwrap().get(&canonical).copied(),
+            Some(Holders::Readers(2))
+        );
+        let start = std::time::Instant::now();
+        assert_eq!(open_err(&path, LockMode::Exclusive), "STG-025");
+        assert!(
+            start.elapsed() < std::time::Duration::from_millis(200),
+            "a same-process conflict is not retried"
+        );
+        drop(a);
+        assert_eq!(
+            OPEN_PATHS.lock().unwrap().get(&canonical).copied(),
+            Some(Holders::Readers(1))
+        );
+        assert_eq!(open_err(&path, LockMode::Exclusive), "STG-025");
+        drop(b);
+        assert!(!already_open_here(&canonical));
+
+        let w = FileBackend::open(&path).unwrap();
+        assert_eq!(open_err(&path, LockMode::Shared), "STG-025");
+        drop(w);
+        assert!(!already_open_here(&canonical));
+        drop(FileBackend::open_with(&path, false, LockMode::Shared).unwrap());
+        assert!(!already_open_here(&canonical));
+    }
+
+    #[test]
+    fn test_claim_unlocked_path_admits_readers_or_one_writer() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("unlocked.graph");
+        assert!(claim_unlocked_path(&path, LockMode::Shared));
+        assert!(claim_unlocked_path(&path, LockMode::Shared));
+        assert!(!claim_unlocked_path(&path, LockMode::Exclusive));
+        OPEN_PATHS.lock().unwrap().remove(path.as_path());
+        assert!(claim_unlocked_path(&path, LockMode::Exclusive));
+        assert!(!claim_unlocked_path(&path, LockMode::Shared));
+        assert!(!claim_unlocked_path(&path, LockMode::Exclusive));
+        OPEN_PATHS.lock().unwrap().remove(path.as_path());
+    }
+
+    /// A reader in another process shares the file with a reader here, and
+    /// refuses a writer here with the cross-process STG-026.
+    #[test]
+    fn test_cross_process_shared_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("cross_shared.graph");
+        drop(FileBackend::open(&db_path).unwrap());
+        let ready_marker = dir.path().join("cross_shared.ready");
+
+        let exe = std::env::current_exe().expect("test binary path");
+        let mut holder = std::process::Command::new(&exe)
+            .args([
+                "storage::backend::file::tests::hold_lock_entrypoint",
+                "--exact",
+                "--nocapture",
+            ])
+            .env("MINIGRAF_HOLD_DB", &db_path)
+            .env("MINIGRAF_HOLD_READY_MARKER", &ready_marker)
+            .env("MINIGRAF_HOLD_MILLIS", "3000")
+            .env("MINIGRAF_HOLD_SHARED", "1")
+            .spawn()
+            .expect("spawn lock holder");
+        let setup_deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !ready_marker.exists() {
+            assert!(
+                std::time::Instant::now() < setup_deadline,
+                "lock-holding child never signalled readiness"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+
+        // The writer first: with a reader open here too, the conflict would
+        // be this process's own (STG-025).
+        let writer_code = open_err(&db_path, LockMode::Exclusive);
+        let reader = FileBackend::open_with(&db_path, false, LockMode::Shared);
+        holder.kill().expect("kill lock holder");
+        holder.wait().expect("reap lock holder");
+
+        assert!(reader.is_ok(), "a second reader shares the file");
+        assert_eq!(
+            writer_code, "STG-026",
+            "a writer is refused while a reader holds it"
+        );
+        drop(reader);
+        FileBackend::open(&db_path).expect("writer opens once the readers are gone");
     }
 
     // ── #389: parent-directory fsync ────────────────────────────────────────

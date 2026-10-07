@@ -32,7 +32,7 @@ use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::types::{AttributeSpec, DatalogCommand, Transaction};
 use crate::storage::backend::MemoryBackend;
 #[cfg(not(target_arch = "wasm32"))]
-use crate::storage::backend::file::FileBackend;
+use crate::storage::backend::file::{FileBackend, LockMode};
 use crate::storage::persistent_facts::PersistentFactStorage;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::wal::WalWriter;
@@ -126,6 +126,10 @@ pub struct OpenOptions {
     /// **File-backed databases only.** In-memory databases (`Minigraf::in_memory`,
     /// `open_memory`) ignore this option — `MemoryBackend` serves every read and
     /// write directly from RAM and never consults the page cache.
+    ///
+    /// Every read of a committed page goes through this cache, including on a
+    /// [`read_only`](Self::read_only) handle. A tool that reads the whole file
+    /// can keep it resident with `file_size / 4096` pages.
     pub page_cache_size: usize,
     /// Maximum facts that can be derived per recursive rule iteration.
     /// Defaults to 1_000_000. Use to prevent runaway recursive rules.
@@ -151,6 +155,23 @@ pub struct OpenOptions {
     ///
     /// No effect on in-memory databases, which have no WAL.
     pub synchronous: SyncMode,
+    /// Open the database read-only. Defaults to `false`.
+    ///
+    /// Nothing done through the handle writes to the `.graph` file or its WAL:
+    /// a missing file is an error (`STG-042`) rather than created, a WAL left
+    /// by a previous session is applied in memory but not checkpointed or
+    /// deleted, and a format v7 file is read into memory instead of migrated.
+    /// The handle shows the same data a read-write open would.
+    ///
+    /// The file is locked in shared mode, so any number of read-only handles,
+    /// in this process or others, can hold it at once; a read-write open
+    /// excludes them and they exclude it (`STG-025`/`STG-026`).
+    ///
+    /// `transact`, `retract`, [`Minigraf::begin_write`],
+    /// [`Minigraf::checkpoint`] and [`Minigraf::rebuild_indexes`] fail with
+    /// `API-014`. Queries, cursors, [`Minigraf::fact_log`],
+    /// [`Minigraf::verify`] and rule registration (which lives in memory) work.
+    pub read_only: bool,
 }
 
 impl Default for OpenOptions {
@@ -162,6 +183,7 @@ impl Default for OpenOptions {
             max_results: DEFAULT_MAX_RESULTS,
             allow_unlocked: false,
             synchronous: SyncMode::Full,
+            read_only: false,
         }
     }
 }
@@ -224,6 +246,13 @@ impl OpenOptions {
         self
     }
 
+    /// Open the database read-only. See [`OpenOptions::read_only`].
+    #[must_use]
+    pub fn read_only(mut self, read_only: bool) -> Self {
+        self.read_only = read_only;
+        self
+    }
+
     /// Set the path for a file-backed database.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn path(self, path: impl AsRef<Path>) -> OpenOptionsWithPath {
@@ -281,6 +310,12 @@ enum WriteContext {
         /// Count of WAL entries written since the last checkpoint (or since open).
         wal_entry_count: usize,
     },
+    /// File-backed database opened with [`OpenOptions::read_only`]: the
+    /// storage (and with it the shared file lock), and no WAL writer.
+    #[cfg(not(target_arch = "wasm32"))]
+    ReadOnly {
+        pfs: PersistentFactStorage<FileBackend>,
+    },
 }
 
 // ─── IntegrityReport ──────────────────────────────────────────────────────────
@@ -327,7 +362,7 @@ impl Drop for Inner {
         // Errors are silently ignored (can't propagate from Drop).
         // Skip if wal_checkpoint_threshold is usize::MAX — that sentinel suppresses
         // all checkpointing (used by benchmarks to keep WAL entries pending).
-        if self.options.wal_checkpoint_threshold == usize::MAX {
+        if self.options.wal_checkpoint_threshold == usize::MAX || self.options.read_only {
             return;
         }
         if let Ok(mut ctx) = self.write_lock.lock() {
@@ -429,19 +464,37 @@ impl Minigraf {
 
         // Open the main .graph file. The WAL's base generation (if a WAL exists)
         // decides which meta page to trust when only one is valid.
-        let backend = FileBackend::open_with(&db_path, opts.allow_unlocked)?;
+        let mode = if opts.read_only {
+            LockMode::Shared
+        } else {
+            LockMode::Exclusive
+        };
+        let backend = FileBackend::open_with(&db_path, opts.allow_unlocked, mode)?;
         let wal_base = if wal_path.exists() {
             crate::wal::WalReader::open(&wal_path)?.base_generation()
         } else {
             None
         };
-        let pfs = PersistentFactStorage::open(backend, opts.page_cache_size, wal_base)?;
+        let pfs = if opts.read_only {
+            PersistentFactStorage::open_read_only(backend, opts.page_cache_size, wal_base)?
+        } else {
+            PersistentFactStorage::open(backend, opts.page_cache_size, wal_base)?
+        };
 
         // Share the fact storage
         let fact_storage = pfs.storage().clone();
 
         // Replay any existing WAL entries before opening the writer
         let wal_entry_count = Self::replay_wal(&wal_path, &fact_storage, &pfs)?;
+
+        if opts.read_only {
+            // The WAL was applied in memory; it is neither written nor deleted.
+            return Ok(Self::from_parts(
+                fact_storage,
+                WriteContext::ReadOnly { pfs },
+                opts,
+            ));
+        }
 
         // Open the WAL writer only if the WAL file already exists from a previous session.
         // Otherwise, create it lazily on the first write.
@@ -462,15 +515,27 @@ impl Minigraf {
             wal_entry_count,
         };
 
-        Ok(Minigraf {
+        Ok(Self::from_parts(fact_storage, ctx, opts))
+    }
+
+    fn from_parts(fact_storage: FactStorage, ctx: WriteContext, options: OpenOptions) -> Self {
+        Minigraf {
             inner: Arc::new(Inner {
                 fact_storage,
                 rules: Arc::new(RwLock::new(RuleRegistry::new())),
                 functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
                 write_lock: Mutex::new(ctx),
-                options: opts,
+                options,
             }),
-        })
+        }
+    }
+
+    /// Fail with API-014 if this handle was opened read-only.
+    fn reject_if_read_only(&self, op: &str) -> Result<()> {
+        if self.inner.options.read_only {
+            bail_coded!(ErrorCode::Api014, op);
+        }
+        Ok(())
     }
 
     /// Create an in-memory database (no WAL, no persistence). Suitable for tests and REPL.
@@ -503,15 +568,7 @@ impl Minigraf {
         // we just use the shared FactStorage directly.
         drop(pfs);
 
-        Ok(Minigraf {
-            inner: Arc::new(Inner {
-                fact_storage,
-                rules: Arc::new(RwLock::new(RuleRegistry::new())),
-                functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
-                write_lock: Mutex::new(WriteContext::Memory),
-                options: opts,
-            }),
-        })
+        Ok(Self::from_parts(fact_storage, WriteContext::Memory, opts))
     }
 
     // ── WAL replay helper ────────────────────────────────────────────────────
@@ -600,6 +657,11 @@ impl Minigraf {
         );
 
         if is_write {
+            match &cmd {
+                DatalogCommand::Transact(_) => self.reject_if_read_only("transact")?,
+                DatalogCommand::Retract(_) => self.reject_if_read_only("retract")?,
+                _ => {}
+            }
             let mut ctx = self
                 .inner
                 .write_lock
@@ -788,6 +850,7 @@ impl Minigraf {
         if is_write_tx_active() {
             bail_coded!(ErrorCode::Int001);
         }
+        self.reject_if_read_only("begin_write")?;
         let guard = self
             .inner
             .write_lock
@@ -830,6 +893,7 @@ impl Minigraf {
     }
 
     fn checkpoint_inner(&self) -> Result<()> {
+        self.reject_if_read_only("checkpoint")?;
         let mut ctx = self
             .inner
             .write_lock
@@ -873,7 +937,7 @@ impl Minigraf {
         match &*ctx {
             WriteContext::Memory => Ok(IntegrityReport::default()),
             #[cfg(not(target_arch = "wasm32"))]
-            WriteContext::File { pfs, .. } => {
+            WriteContext::File { pfs, .. } | WriteContext::ReadOnly { pfs } => {
                 let f = pfs.verify()?;
                 Ok(IntegrityReport {
                     facts: f.facts,
@@ -910,6 +974,7 @@ impl Minigraf {
     }
 
     fn rebuild_indexes_inner(&self) -> Result<()> {
+        self.reject_if_read_only("rebuild_indexes")?;
         let mut ctx = self
             .inner
             .write_lock
@@ -927,6 +992,8 @@ impl Minigraf {
                 pfs.rebuild_indexes()?;
                 Self::delete_wal(wal, db_path, wal_entry_count)
             }
+            #[cfg(not(target_arch = "wasm32"))]
+            WriteContext::ReadOnly { .. } => bail_coded!(ErrorCode::Api014, "rebuild_indexes"),
         }
     }
 
@@ -976,6 +1043,8 @@ impl Minigraf {
                 pfs.save()?;
                 Self::delete_wal(wal, db_path, wal_entry_count)?;
             }
+            #[cfg(not(target_arch = "wasm32"))]
+            WriteContext::ReadOnly { .. } => bail_coded!(ErrorCode::Api014, "checkpoint"),
         }
         Ok(())
     }
@@ -1502,6 +1571,8 @@ impl<'a> WriteTransaction<'a> {
 
                 Ok(*wal_entry_count >= opts.wal_checkpoint_threshold)
             }
+            #[cfg(not(target_arch = "wasm32"))]
+            WriteContext::ReadOnly { .. } => bail_coded!(ErrorCode::Api014, "transact"),
         }
     }
 
@@ -2046,6 +2117,7 @@ mod tests {
             max_results: 1_000_000,
             allow_unlocked: false,
             synchronous: SyncMode::Full,
+            read_only: false,
         };
         let db = Minigraf::open_with_options(&path, opts).unwrap();
         assert_eq!(db.inner.options.wal_checkpoint_threshold, 5);
@@ -2128,7 +2200,7 @@ mod tests {
                         "lazy-reopen call site should honor opts.synchronous"
                     );
                 }
-                WriteContext::Memory => panic!("expected file-backed WriteContext"),
+                _ => panic!("expected read-write file-backed WriteContext"),
             }
             drop(ctx);
             // Handle drops here without checkpointing: wal_checkpoint_threshold ==
@@ -2167,7 +2239,7 @@ mod tests {
                     "initial-open call site should honor opts.synchronous"
                 );
             }
-            WriteContext::Memory => panic!("expected file-backed WriteContext"),
+            _ => panic!("expected read-write file-backed WriteContext"),
         }
     }
 
