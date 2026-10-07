@@ -21,6 +21,11 @@ use crate::storage::reader::OnDiskReader;
 use crate::storage::verify;
 use crate::storage::{LegacyHeaderV7, PAGE_SIZE, StorageBackend, freelist, page};
 use anyhow::Result;
+
+// Page access for the browser layer, in its own file so that native builds,
+// and the native coverage report, never see it.
+#[cfg(all(target_arch = "wasm32", feature = "browser"))]
+mod browser_access;
 use std::sync::{Arc, Mutex};
 
 /// Persistent fact storage with page-based persistence.
@@ -681,38 +686,6 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn discard(&mut self) {
         self.dirty = false;
-    }
-
-    /// Run a closure with read access to the underlying storage backend.
-    ///
-    /// Used by the browser WASM layer to read pages after `save()` without
-    /// exposing the `Arc<Mutex<B>>` directly.
-    #[cfg(all(target_arch = "wasm32", feature = "browser"))]
-    pub(crate) fn with_backend<F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&B) -> R,
-    {
-        // wasm32 aborts on panic, so the lock is never poisoned.
-        let guard = self
-            .backend
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        f(&*guard)
-    }
-
-    /// Run a closure with mutable access to the underlying storage backend.
-    ///
-    /// Used by the browser WASM layer to drain dirty pages after `save()`.
-    #[cfg(all(target_arch = "wasm32", feature = "browser"))]
-    pub(crate) fn with_backend_mut<F, R>(&mut self, f: F) -> R
-    where
-        F: FnOnce(&mut B) -> R,
-    {
-        let mut guard = self
-            .backend
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        f(&mut *guard)
     }
 }
 
