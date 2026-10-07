@@ -573,6 +573,26 @@ pub fn triple_len(index: Index, key: &[u8]) -> Result<usize> {
     Ok(r.position())
 }
 
+/// `(e, a, tx_count)` of an EAVT or AEVT key, read without decoding the value.
+pub fn entity_attribute_tx(index: Index, key: &[u8]) -> Result<(u64, u64, u64)> {
+    let mut r = Reader::new(key);
+    let (e, a) = match index {
+        Index::Eavt => {
+            let e = r.uint()?;
+            (e, r.uint()?)
+        }
+        Index::Aevt => {
+            let a = r.uint()?;
+            (r.uint()?, a)
+        }
+        Index::Avet | Index::Vaet => {
+            bail_coded!(ErrorCode::Int049, "entity_attribute_tx: EAVT or AEVT only")
+        }
+    };
+    r.skip_value()?;
+    Ok((e, a, r.tx_desc()?))
+}
+
 /// Key prefix of every EAVT entry of entity `e`.
 pub fn entity_prefix(e: u64) -> Vec<u8> {
     let mut k = Vec::new();

@@ -168,6 +168,7 @@ with no `CodedError` anywhere in its chain.
 | API-010 | Query with bind slots passed to execute() | Database API |
 | API-011 | Two valid-time windows for one fact in one transaction | Database API |
 | API-012 | Non-query command passed to query() | Database API |
+| API-013 | Checkpoint while a fact log is open | Database API |
 | INT-000 | Unclassified internal error | Internal |
 | INT-001 | WriteTransaction already in progress on this thread | Internal |
 | INT-002 | Invalid entity (API layer) | Internal |
@@ -2471,6 +2472,25 @@ while let Some(batch) = cursor.next_batch(1000)? {
 ```
 
 **Scenario**: Code that dispatches every command string through one function switches from `execute()` to `query()` for all of them.
+
+### API-013 Checkpoint while a fact log is open
+
+**Error text**: `checkpoint deferred while {} fact log(s) are open; close them and checkpoint again`
+
+**Cause**: `db.fact_log()` returns a `FactLog` that reads the committed pages as they were when it opened. A checkpoint frees pages that a later checkpoint reuses, so while any fact log is open, checkpoints are deferred. Writes still succeed and stay in the WAL, and automatic checkpoints wait. `checkpoint()` or `rebuild_indexes()` with uncheckpointed writes, or `rebuild_indexes()` on a file database, returns this error. The `{}` is the number of open logs. Nothing is written.
+
+**Resolution**:
+- Finish reading, or call `close()` on the log (dropping it is the same), then checkpoint again.
+- Keep fact logs short-lived on a database that takes writes, because the WAL grows until they close.
+
+```rust
+let mut log = db.fact_log(&FactFilter::new())?;
+while let Some(batch) = log.next_batch(1000)? { /* ... */ }
+log.close();
+db.checkpoint()?;
+```
+
+**Scenario**: A backup job streams the fact log on a thread while the application calls `checkpoint()` on a timer.
 
 ---
 

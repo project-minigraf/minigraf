@@ -6,7 +6,7 @@ use crate::query::datalog::types::AsOf;
 use crate::storage::index::{Indexes, encode_value};
 use anyhow::Result;
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 
 /// Compact key for O(1) duplicate detection in `FactData::pending_keys`.
@@ -89,6 +89,18 @@ pub(crate) struct FactStorage {
     data: Arc<RwLock<FactData>>,
     /// Monotonically incrementing batch counter — increments once per transact/retract call.
     tx_counter: Arc<AtomicU64>,
+    /// Open fact logs (#430). While above zero, no checkpoint may publish a
+    /// new committed generation: a log reads pages of the one it opened on.
+    log_pins: Arc<AtomicUsize>,
+}
+
+/// Keeps checkpoints from running while a fact log is open; released on drop.
+pub(crate) struct LogPin(Arc<AtomicUsize>);
+
+impl Drop for LogPin {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 impl Default for FactStorage {
@@ -108,6 +120,7 @@ impl FactStorage {
                 committed: None,
             })),
             tx_counter: Arc::new(AtomicU64::new(0)),
+            log_pins: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -369,6 +382,41 @@ impl FactStorage {
     pub(crate) fn get_pending_facts(&self) -> Vec<Fact> {
         let d = self.data.read().unwrap_or_else(|e| e.into_inner());
         d.facts.clone()
+    }
+
+    /// The committed reader and the number of pending facts, read together.
+    ///
+    /// The pending list is append-only between checkpoints, so with a
+    /// [`LogPin`] held its first `len` entries stay where they are.
+    pub(crate) fn log_snapshot(
+        &self,
+    ) -> Result<(Option<Arc<dyn crate::storage::CommittedReader>>, usize)> {
+        let d = self
+            .data
+            .read()
+            .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
+        Ok((d.committed.clone(), d.facts.len()))
+    }
+
+    /// Clones of the pending facts at positions `from..to` (clamped).
+    pub(crate) fn pending_range(&self, from: usize, to: usize) -> Result<Vec<Fact>> {
+        let d = self
+            .data
+            .read()
+            .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
+        let to = to.min(d.facts.len());
+        Ok(d.facts.get(from.min(to)..to).unwrap_or(&[]).to_vec())
+    }
+
+    /// Register an open fact log; checkpoints are refused until it is dropped.
+    pub(crate) fn pin_log(&self) -> LogPin {
+        self.log_pins.fetch_add(1, Ordering::SeqCst);
+        LogPin(self.log_pins.clone())
+    }
+
+    /// The number of open fact logs.
+    pub(crate) fn log_pins(&self) -> usize {
+        self.log_pins.load(Ordering::SeqCst)
     }
 
     /// Clear pending facts and pending indexes after a successful checkpoint.

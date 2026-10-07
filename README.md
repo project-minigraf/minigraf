@@ -66,7 +66,7 @@ v2.x gets data-integrity and security fixes for 12 months after v3.0.0 ships. Se
 ## Quick Start
 
 ```rust
-use minigraf::{Minigraf, OpenOptions};
+use minigraf::{FactFilter, Minigraf, OpenOptions};
 
 // Open or create a file-backed database
 let db = OpenOptions::new().path("myapp.graph").open()?;
@@ -90,6 +90,12 @@ while let Some(batch) = cursor.next_batch(1000)? {
     for row in batch.rows() { /* row[0] is ?name */ }
 }
 
+// Fact log — every assertion and retraction, in transaction order, without Datalog
+let mut log = db.fact_log(&FactFilter::new().attribute_prefix(":person/"))?;
+while let Some(batch) = log.next_batch(1000)? {
+    for rec in batch { /* rec.tx_count, rec.entity, rec.attribute, rec.value, rec.asserted */ }
+}
+
 // Explicit transaction — all-or-nothing
 let mut tx = db.begin_write()?;
 tx.execute(r#"(transact [[:alice :person/age 31]])"#)?;
@@ -111,7 +117,7 @@ let r2 = pq.execute(&[("tx", BindValue::TxCount(2)), ("entity", BindValue::Entit
 
 ```bash
 cargo run          # interactive Datalog REPL
-cargo test         # run 1285 tests
+cargo test         # run 1309 tests
 cargo run < demos/demo_recursive.txt   # recursive rules demo
 ```
 

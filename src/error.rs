@@ -200,6 +200,7 @@ pub(crate) enum ErrorCode {
     Api010,
     Api011,
     Api012,
+    Api013,
     Int001,
     Int002,
     Int003,
@@ -1151,6 +1152,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCategory::Api,
     ),
     (
+        ErrorCode::Api013,
+        "API-013",
+        "checkpoint deferred while {} fact log(s) are open; close them and checkpoint again",
+        ErrorCategory::Api,
+    ),
+    (
         ErrorCode::Int001,
         "INT-001",
         "a WriteTransaction is already in progress on this thread; use tx.execute() instead",
@@ -1900,6 +1907,7 @@ mod tests {
                 | ErrorCode::Api010
                 | ErrorCode::Api011
                 | ErrorCode::Api012
+                | ErrorCode::Api013
                 | ErrorCode::Int001
                 | ErrorCode::Int002
                 | ErrorCode::Int003
@@ -2107,6 +2115,7 @@ mod tests {
             ErrorCode::Api010,
             ErrorCode::Api011,
             ErrorCode::Api012,
+            ErrorCode::Api013,
             ErrorCode::Int001,
             ErrorCode::Int002,
             ErrorCode::Int003,
