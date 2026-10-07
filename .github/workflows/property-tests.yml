@@ -12,9 +12,19 @@ permissions:
 
 jobs:
   proptest:
-    name: Property tests
+    name: Property tests (${{ matrix.test }})
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - test: property_test
+            cases: 8000000
+          # Model-based storage test (#385): each case runs up to 50 steps
+          # against a file, ~0.1 s per case.
+          - test: model_based_test
+            cases: 30000
 
     steps:
       - uses: actions/checkout@v4
@@ -26,9 +36,9 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          cargo test --test property_test -- --nocapture 2>&1 | tee proptest-output.txt
+          cargo test --test ${{ matrix.test }} -- --nocapture 2>&1 | tee proptest-output.txt
         env:
-          PROPTEST_CASES: 8000000
+          PROPTEST_CASES: ${{ matrix.cases }}
           RUST_BACKTRACE: 1
 
       - name: Record property-test failure
@@ -37,14 +47,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_TITLE: "Nightly property-test failure"
+          TEST_NAME: ${{ matrix.test }}
+          CASES: ${{ matrix.cases }}
         run: |
           report_file="property-test-failure.md"
           {
-            echo "The nightly property-test workflow failed."
+            echo "The nightly property-test workflow failed in \`$TEST_NAME\`."
             echo
             echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             echo "- Commit: $GITHUB_SHA"
-            echo "- Reproduce: \`PROPTEST_CASES=8000000 cargo test --test property_test -- --nocapture\`"
+            echo "- Reproduce: \`PROPTEST_CASES=$CASES cargo test --test $TEST_NAME -- --nocapture\`"
             echo
             echo "## Test output"
             echo
