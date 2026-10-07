@@ -360,6 +360,18 @@ impl FileBackend {
     pub fn path(&self) -> &Path {
         &self.path
     }
+
+    /// Cut the file to zero pages and sync, keeping the lock. Used to reuse
+    /// a log writer's `.partial` file left by an earlier build (#431).
+    pub(crate) fn truncate(&mut self) -> Result<()> {
+        if self.read_only {
+            bail_coded!(ErrorCode::Int056, "truncate");
+        }
+        self.file.set_len(0)?;
+        self.file.sync_all()?;
+        self.page_count = 0;
+        Ok(())
+    }
 }
 
 impl StorageBackend for FileBackend {

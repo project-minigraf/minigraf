@@ -81,6 +81,9 @@ pub mod error;
 /// Every fact version, streamed: [`FactLog`], [`FactFilter`], [`FactRecord`].
 pub mod fact_log;
 pub(crate) mod graph;
+/// Build a new database from explicit fact records: [`LogWriter`].
+#[cfg(not(target_arch = "wasm32"))]
+pub mod log_writer;
 pub(crate) mod query;
 /// Interactive REPL for exploring a [`Minigraf`] database from the command line.
 pub mod repl;
@@ -104,6 +107,8 @@ pub use graph::types::{EntityId, Value};
 // Query result types
 pub use cursor::{Batch, Cursor};
 pub use fact_log::{FactFilter, FactLog, FactOrder, FactRecord};
+#[cfg(not(target_arch = "wasm32"))]
+pub use log_writer::LogWriter;
 pub use query::datalog::executor::QueryResult;
 
 // Bi-temporal query types

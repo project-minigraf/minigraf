@@ -141,6 +141,7 @@ cargo run < demos/demo_negation.txt
 6. **`src/db.rs`** — Public API: `Minigraf::open/execute/query/fact_log/prepare/begin_write/checkpoint/save/verify/rebuild_indexes`, `WriteTransaction`, `IntegrityReport`, `OpenOptions::page_cache_size`, `OpenOptions::read_only` (#429: shared lock, nothing written, writes are `API-014`)
    - `src/cursor.rs`: `Cursor` / `Batch` — owned, `Send` cursor returned by `Minigraf::query` and `PreparedQuery::query` (#432); answer computed at open today, shaped for streaming operators
    - `src/fact_log.rs`: `FactLog` / `FactFilter` / `FactRecord` / `FactOrder` — every fact version streamed by `Minigraf::fact_log` (#430): tx order (multi-pass, bounded window) or storage order, key-level filters; an open log pins the committed generation, deferring checkpoints (`API-013`)
+   - `src/log_writer.rs`: `LogWriter` — builds a new file from `FactRecord`s with their tx and valid-time kept (#431): tx-ordered appends with holes (`API-015`/`API-016`), batched copy-on-write checkpoints at tx boundaries, no WAL, built at `<path>.partial` and renamed by `finish` (`STG-043` if the target exists)
 
 7. **`src/wal.rs`** — Fact-level sidecar WAL, CRC32-protected entries, crash recovery
 
@@ -196,7 +197,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1329 tests** (1320 passing, 9 ignored; unit + integration + doc).
+**1345 tests** (1336 passing, 9 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
