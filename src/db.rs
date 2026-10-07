@@ -662,8 +662,9 @@ impl Minigraf {
             }
 
             // Trigger auto-checkpoint AFTER facts are in FactStorage so the
-            // checkpoint captures the newly written facts.
-            if should_checkpoint {
+            // checkpoint captures the newly written facts. An open fact log
+            // defers it; the first write after the log closes runs it (#430).
+            if should_checkpoint && self.inner.fact_storage.log_pins() == 0 {
                 Minigraf::do_checkpoint(&self.inner.fact_storage, &mut ctx)?;
             }
 
@@ -727,6 +728,47 @@ impl Minigraf {
             DatalogCommand::Rule(_) => bail_coded!(ErrorCode::Api012, "rule"),
         }
         Cursor::from_result(self.read_executor().execute(cmd)?)
+    }
+
+    /// Stream every fact record (assertions and retractions, with their
+    /// transaction and valid-time bounds) that `filter` keeps, without Datalog.
+    ///
+    /// The log reads the database as it is when this returns; writes that
+    /// commit later are not in it. Memory does not grow with the database:
+    /// [`FactOrder::Tx`](crate::FactOrder::Tx) holds at most
+    /// [`FactFilter::window`](crate::FactFilter::window) records,
+    /// [`FactOrder::Storage`](crate::FactOrder::Storage) one batch.
+    ///
+    /// While a log is open, checkpoints are deferred: writes still succeed and
+    /// stay in the WAL, automatic checkpoints wait, and [`checkpoint`] and
+    /// [`rebuild_indexes`] fail with `API-013` if they have work to do. Close
+    /// or drop the log (or read it to the end) to release the database. The
+    /// log owns what it reads, so it can outlive this handle and move to
+    /// another thread; the database file stays open until it is dropped.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a `WriteTransaction` is active on **this thread**
+    /// (`INT-001`), or if the dictionary cannot be read.
+    ///
+    /// [`checkpoint`]: Self::checkpoint
+    /// [`rebuild_indexes`]: Self::rebuild_indexes
+    pub fn fact_log(&self, filter: &crate::FactFilter) -> Result<crate::FactLog, MinigrafError> {
+        self.fact_log_inner(filter).map_err(MinigrafError::from)
+    }
+
+    fn fact_log_inner(&self, filter: &crate::FactFilter) -> Result<crate::FactLog> {
+        if is_write_tx_active() {
+            bail_coded!(ErrorCode::Int001);
+        }
+        // Held while the log opens: no transaction is half applied and no
+        // checkpoint runs until the log's pin is registered.
+        let _ctx = self
+            .inner
+            .write_lock
+            .lock()
+            .map_err(|_| err_coded!(ErrorCode::Api001))?;
+        crate::FactLog::open(&self.inner.fact_storage, filter)
     }
 
     // ── Explicit transaction ──────────────────────────────────────────────────
@@ -1407,8 +1449,9 @@ impl<'a> WriteTransaction<'a> {
             }
 
             // Trigger auto-checkpoint AFTER facts are in FactStorage so the
-            // checkpoint captures the newly written facts.
-            if should_checkpoint {
+            // checkpoint captures the newly written facts. An open fact log
+            // defers it; the first write after the log closes runs it (#430).
+            if should_checkpoint && self.inner.fact_storage.log_pins() == 0 {
                 Minigraf::do_checkpoint(&self.inner.fact_storage, &mut self.guard)?;
             }
         }

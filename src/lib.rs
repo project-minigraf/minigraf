@@ -78,6 +78,8 @@
 pub mod cursor;
 pub mod db;
 pub mod error;
+/// Every fact version, streamed: [`FactLog`], [`FactFilter`], [`FactRecord`].
+pub mod fact_log;
 pub(crate) mod graph;
 pub(crate) mod query;
 /// Interactive REPL for exploring a [`Minigraf`] database from the command line.
@@ -101,6 +103,7 @@ pub use graph::types::{EntityId, Value};
 
 // Query result types
 pub use cursor::{Batch, Cursor};
+pub use fact_log::{FactFilter, FactLog, FactOrder, FactRecord};
 pub use query::datalog::executor::QueryResult;
 
 // Bi-temporal query types

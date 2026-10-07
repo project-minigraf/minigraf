@@ -3,13 +3,14 @@
 //! Every index entry holds a whole fact, so a read touches only index leaves,
 //! the DICT pages that translate its ids, and a value page for a long string.
 
+use crate::error::{ErrorCode, bail_coded};
 use crate::graph::types::{EntityId, Fact};
 use crate::storage::btree::{LeafCursor, MutexStorageBackend, prefix_scan};
 use crate::storage::cache::PageCache;
 use crate::storage::dict::{DictReader, SharedDictCache};
 use crate::storage::keys::{self, Index, KeyFact};
 use crate::storage::meta::MetaPage;
-use crate::storage::{CommittedReader, Scan, StorageBackend};
+use crate::storage::{CommittedReader, LogSource, Scan, StorageBackend};
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
 
@@ -20,6 +21,7 @@ pub struct OnDiskReader<B: StorageBackend + 'static> {
     eavt_root: u64,
     aevt_root: u64,
     dict_root: u64,
+    last_tx: u64,
     shared: SharedDictCache,
 }
 
@@ -31,6 +33,7 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
             eavt_root: meta.eavt_root,
             aevt_root: meta.aevt_root,
             dict_root: meta.dict_root,
+            last_tx: meta.last_checkpointed_tx_count,
             shared: SharedDictCache::default(),
         }
     }
@@ -195,7 +198,69 @@ impl TxGroup {
     }
 }
 
+impl<B: StorageBackend + 'static> LogSource for OnDiskReader<B> {
+    fn last_tx(&self) -> u64 {
+        self.last_tx
+    }
+
+    fn eid_of(&self, entity: &EntityId) -> Result<Option<u64>> {
+        self.dict().eid_of(entity)
+    }
+
+    fn iid_of(&self, ident: &str) -> Result<Option<u32>> {
+        self.dict().iid_of(ident)
+    }
+
+    fn ident_of(&self, iid: u32) -> Result<String> {
+        self.dict().name_of(iid)
+    }
+
+    fn walk(
+        &self,
+        index: Index,
+        prefix: &[u8],
+        after: Option<&[u8]>,
+        visit: &mut dyn FnMut(&[u8]) -> Result<bool>,
+    ) -> Result<()> {
+        let root = match index {
+            Index::Eavt => self.eavt_root,
+            Index::Aevt => self.aevt_root,
+            Index::Avet | Index::Vaet => {
+                bail_coded!(ErrorCode::Int049, "fact log walks EAVT or AEVT only")
+            }
+        };
+        if root == 0 {
+            return Ok(());
+        }
+        let mut cursor = LeafCursor::new(root, Some(prefix), &self.backend, &self.cache)?;
+        if let Some(after) = after {
+            // Keys are unique, so the first key after `after` is the first one
+            // at or above `after ‖ 0x00`.
+            let mut target = after.to_vec();
+            target.push(0);
+            cursor.seek(&target)?;
+        }
+        while let Some((k, _)) = cursor.next_ref()? {
+            if !k.starts_with(prefix) || !visit(k)? {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    fn decode(&self, index: Index, keys: &[Vec<u8>]) -> Result<Vec<Fact>> {
+        let mut dict = self.dict();
+        keys.iter()
+            .map(|k| dict.fact(&KeyFact::decode(index, k)?))
+            .collect()
+    }
+}
+
 impl<B: StorageBackend + 'static> CommittedReader for OnDiskReader<B> {
+    fn log_source(&self) -> Option<&dyn LogSource> {
+        Some(self)
+    }
+
     fn live_facts(&self, scan: Scan<'_>, as_of: Option<u64>) -> Result<Vec<Fact>> {
         let mut dict = self.dict();
         let (index, root, prefix) = match scan {

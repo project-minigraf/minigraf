@@ -386,6 +386,41 @@ pub trait CommittedReader: Send + Sync {
             .collect();
         Ok(crate::graph::storage::net_asserted_facts(in_window))
     }
+
+    /// Key-level access for the fact log, if this reader has keys.
+    fn log_source(&self) -> Option<&dyn LogSource> {
+        None
+    }
+}
+
+/// Key-level access to one committed generation, for the fact log (#430).
+///
+/// Implemented by [`reader::OnDiskReader`]. Only EAVT and AEVT are walked.
+pub trait LogSource {
+    /// The `last_checkpointed_tx_count` of this generation: every committed
+    /// fact has a `tx_count` at or below it.
+    fn last_tx(&self) -> u64;
+    /// The entity id of `entity`, if it has any committed fact.
+    fn eid_of(&self, entity: &crate::graph::types::EntityId) -> Result<Option<u64>>;
+    /// The ident id of `ident`, if it is in the dictionary.
+    fn iid_of(&self, ident: &str) -> Result<Option<u32>>;
+    /// The ident with id `iid`.
+    fn ident_of(&self, iid: u32) -> Result<String>;
+    /// Visit, in key order, the keys of `index` that start with `prefix` and
+    /// sort after `after` (all of them when `None`), until `visit` returns false.
+    fn walk(
+        &self,
+        index: keys::Index,
+        prefix: &[u8],
+        after: Option<&[u8]>,
+        visit: &mut dyn FnMut(&[u8]) -> Result<bool>,
+    ) -> Result<()>;
+    /// Translate `index` keys back into facts.
+    fn decode(
+        &self,
+        index: keys::Index,
+        keys: &[Vec<u8>],
+    ) -> Result<Vec<crate::graph::types::Fact>>;
 }
 
 /// The facts a read covers.

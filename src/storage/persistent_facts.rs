@@ -301,6 +301,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         if !self.dirty {
             return Ok(());
         }
+        self.refuse_while_logs_open()?;
         let pending_facts = self.storage.get_pending_facts();
         let m = self.meta;
         let next_gen = m.next_generation()?;
@@ -390,6 +391,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         use crate::storage::btree::LeafCursor;
         use crate::storage::keys::{Index, KeyFact};
         use std::collections::BTreeSet;
+
+        self.refuse_while_logs_open()?;
 
         let m = self.meta;
         let next_gen = m.next_generation()?;
@@ -543,6 +546,15 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.activate(new_meta);
         self.storage.post_checkpoint_clear();
         Ok(())
+    }
+
+    /// API-013 while a fact log is open: it reads pages of the active
+    /// generation, and a commit frees pages that the next one reuses (#430).
+    fn refuse_while_logs_open(&self) -> Result<()> {
+        match self.storage.log_pins() {
+            0 => Ok(()),
+            n => Err(err_coded!(ErrorCode::Api013, n)),
+        }
     }
 
     /// Get a reference to the underlying fact storage
