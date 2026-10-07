@@ -87,6 +87,11 @@ same code and text, and `docs/ERROR_REFERENCE.md` stays the one registry.
    (`i64`, `i32` for batch sizes): Kotlin's `ULong`/`UInt` are name-mangled and cannot
    be called from Java. A negative or oversized value is `API-017`. C and JSON use
    unsigned integers and `size_t`. An absent field keeps the Rust default.
+   Core's `wal_checkpoint_threshold == usize::MAX` sentinel (no automatic checkpoint
+   and none on close, #322) is out of reach of a signed count, so the UniFFI shim maps
+   `i64::MAX` to it, and Node, whose numbers stop at 2^53, maps
+   `Number.MAX_SAFE_INTEGER` and above. Bindings name it (`WAL_CHECKPOINT_NEVER`,
+   `walCheckpointNever`) and test that a closed handle keeps its WAL.
 8. **Kotlin renames `close`.** UniFFI's Kotlin objects are `AutoCloseable`, and
    `close()` frees the Rust object, which releases a cursor or fact log and abandons an
    unfinished writer. The shim's own `close` methods clash with it, so the Kotlin
