@@ -89,6 +89,8 @@ pub(crate) mod query;
 pub mod repl;
 pub(crate) mod storage;
 pub(crate) mod temporal;
+/// The sidecar WAL of file-backed databases; wasm32 targets have no file backend.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod wal;
 
 #[cfg(all(target_arch = "wasm32", feature = "browser"))]

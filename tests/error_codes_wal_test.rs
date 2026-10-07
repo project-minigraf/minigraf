@@ -11,6 +11,8 @@
 //! and `error::tests::every_error_code_variant_has_a_registry_entry`; there is
 //! no way to trigger them from the public API without an unrealistic (multi-GB)
 //! fixture, so they are intentionally not exercised here.
+// File-backed (Minigraf::open, tempfile): native only, like the other file tests.
+#![cfg(not(target_arch = "wasm32"))]
 
 use minigraf::{ErrorCategory, Minigraf, OpenOptions};
 use std::io::Write;

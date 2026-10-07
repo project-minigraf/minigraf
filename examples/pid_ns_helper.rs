@@ -34,6 +34,10 @@
 //! release by the library, nothing but whatever the kernel does on its own.
 //! That is the exact state #317 is about.
 
+#[cfg(target_arch = "wasm32")]
+fn main() {}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let path = &args[1];

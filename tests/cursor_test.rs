@@ -2,6 +2,8 @@
 //! the answer in batches (#432). These tests pin the public contract the
 //! streaming engine must keep: batches partition the `execute()` answer, the
 //! answer is fixed when the cursor opens, and non-queries are rejected.
+// File-backed (Minigraf::open, tempfile): native only, like the other file tests.
+#![cfg(not(target_arch = "wasm32"))]
 
 use minigraf::{BindValue, Cursor, Minigraf, OpenOptions, QueryResult, Value};
 

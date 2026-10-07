@@ -1156,6 +1156,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        target_os = "wasi",
+        ignore = "poisons the lock from a spawned thread; WASI has no threads"
+    )]
     fn evaluate_iteration_rule_registry_lock_poisoned_error() {
         let storage = create_test_storage();
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
@@ -1185,6 +1189,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        target_os = "wasi",
+        ignore = "poisons the lock from a spawned thread; WASI has no threads"
+    )]
     fn evaluate_rule_function_registry_lock_poisoned_error() {
         // Exercises evaluate_rule's function registry read (used to apply
         // Expr clauses in a rule body).
@@ -1217,6 +1225,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        target_os = "wasi",
+        ignore = "poisons the lock from a spawned thread; WASI has no threads"
+    )]
     fn stratified_evaluate_rule_registry_lock_poisoned_error() {
         let storage = create_test_storage();
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));

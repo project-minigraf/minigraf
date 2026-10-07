@@ -3,6 +3,8 @@
 //! every query, `:as-of` and fact-log read as the source does, survives a
 //! reopen with intact indexes (#370), and that holes, rejections, and the
 //! `.partial` build file behave as documented.
+// File-backed (Minigraf::open, tempfile): native only, like the other file tests.
+#![cfg(not(target_arch = "wasm32"))]
 
 use minigraf::{FactFilter, FactRecord, LogWriter, Minigraf, OpenOptions, QueryResult, Value};
 use std::path::{Path, PathBuf};

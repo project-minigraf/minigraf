@@ -161,26 +161,22 @@ impl BrowserDb {
     /// so `checkpoint()` is only needed after `import_graph()` or explicit bulk ops.
     /// No-op for in-memory databases.
     pub async fn checkpoint(&self) -> Result<(), JsValue> {
-        let (dirty_pages, has_idb) = {
+        let (dirty_pages, idb) = {
             let mut inner = self.inner.borrow_mut();
             inner
                 .pfs
                 .save()
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
-            let dirty_ids = inner.pfs.with_backend_mut(|b| b.take_dirty());
-            let pages: Vec<(u64, Vec<u8>)> = dirty_ids
-                .into_iter()
-                .filter_map(|id| {
-                    inner
-                        .pfs
-                        .with_backend(|b| b.read_page_raw(id).ok().map(|d| (id, d)))
-                })
-                .collect();
-            (pages, inner.idb.is_some())
+            let pages = take_dirty_pages(&mut inner.pfs)?;
+            (
+                pages,
+                inner.idb.as_ref().map(IndexedDbBackend::clone_handle),
+            )
         };
 
-        if has_idb && !dirty_pages.is_empty() {
-            let idb = self.inner.borrow().idb.as_ref().unwrap().clone_handle();
+        if let Some(idb) = idb
+            && !dirty_pages.is_empty()
+        {
             idb.write_pages(dirty_pages).await?;
         }
         Ok(())
@@ -199,10 +195,14 @@ impl BrowserDb {
         let page_count = inner
             .pfs
             .with_backend(|b| b.page_count_raw())
-            .map_err(|e| JsValue::from_str(&e.to_string()))? as usize;
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let capacity = usize::try_from(page_count)
+            .ok()
+            .and_then(|n| n.checked_mul(crate::storage::PAGE_SIZE))
+            .ok_or_else(|| JsValue::from_str("database is too large to export"))?;
 
-        let mut blob = Vec::with_capacity(page_count * crate::storage::PAGE_SIZE);
-        for id in 0..page_count as u64 {
+        let mut blob = Vec::with_capacity(capacity);
+        for id in 0..page_count {
             let page = inner
                 .pfs
                 .with_backend(|b| b.read_page_raw(id))
@@ -220,7 +220,7 @@ impl BrowserDb {
     #[wasm_bindgen(js_name = importGraph)]
     pub async fn import_graph(&self, data: js_sys::Uint8Array) -> Result<(), JsValue> {
         let bytes = data.to_vec();
-        if bytes.len() % crate::storage::PAGE_SIZE != 0 {
+        if !bytes.len().is_multiple_of(crate::storage::PAGE_SIZE) {
             return Err(JsValue::from_str(
                 "import data length is not a multiple of PAGE_SIZE",
             ));
@@ -232,7 +232,7 @@ impl BrowserDb {
         }
 
         // ── Sync section ──────────────────────────────────────────────────────────
-        let (dirty_pages, has_idb) = {
+        let (dirty_pages, idb) = {
             let mut inner = self.inner.borrow_mut();
             let buffer = BrowserBufferBackend::load_pages_all_dirty(pages);
             // Page cache capacity 0 — see comment in `open_in_memory` above.
@@ -241,23 +241,21 @@ impl BrowserDb {
             let new_fact_storage = new_pfs.storage().clone();
 
             // Drain dirty set and collect owned page bytes before swapping inner.
-            let dirty_ids = new_pfs.with_backend_mut(|b| b.take_dirty());
-            let dirty_pages: Vec<(u64, Vec<u8>)> = dirty_ids
-                .into_iter()
-                .filter_map(|id| {
-                    new_pfs.with_backend(|b| b.read_page_raw(id).ok().map(|d| (id, d)))
-                })
-                .collect();
+            let dirty_pages = take_dirty_pages(&mut new_pfs)?;
 
             inner.pfs = new_pfs;
             inner.fact_storage = new_fact_storage;
 
-            (dirty_pages, inner.idb.is_some())
+            (
+                dirty_pages,
+                inner.idb.as_ref().map(IndexedDbBackend::clone_handle),
+            )
         };
         // ── Borrow dropped ────────────────────────────────────────────────────────
 
-        if has_idb && !dirty_pages.is_empty() {
-            let idb = self.inner.borrow().idb.as_ref().unwrap().clone_handle();
+        if let Some(idb) = idb
+            && !dirty_pages.is_empty()
+        {
             idb.write_pages(dirty_pages).await?;
         }
         Ok(())
@@ -316,7 +314,7 @@ impl BrowserDb {
                     f.tx_id = tx_id;
                     f.tx_count = tx_count;
                     if f.asserted && f.valid_from == VALID_FROM_USE_TX_TIME {
-                        f.valid_from = tx_id as i64;
+                        f.valid_from = tx_id.cast_signed();
                     }
                     f
                 })
@@ -336,15 +334,7 @@ impl BrowserDb {
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
             // Collect dirty pages as owned Vec<(u64, Vec<u8>)> — no borrows escape
-            let dirty_ids = inner.pfs.with_backend_mut(|b| b.take_dirty());
-            let dirty_pages: Vec<(u64, Vec<u8>)> = dirty_ids
-                .into_iter()
-                .filter_map(|id| {
-                    inner
-                        .pfs
-                        .with_backend(|b| b.read_page_raw(id).ok().map(|d| (id, d)))
-                })
-                .collect();
+            let dirty_pages = take_dirty_pages(&mut inner.pfs)?;
 
             let json = if is_retract {
                 format!(r#"{{"retracted":{}}}"#, tx_id)
@@ -357,12 +347,16 @@ impl BrowserDb {
         // ── Borrow dropped here ───────────────────────────────────────────────
 
         // ── Async section: flush to IDB (no RefCell borrow held) ─────────────
-        if !dirty_pages.is_empty() {
-            let has_idb = self.inner.borrow().idb.is_some();
-            if has_idb {
-                let idb = self.inner.borrow().idb.as_ref().unwrap().clone_handle();
-                idb.write_pages(dirty_pages).await?;
-            }
+        let idb = self
+            .inner
+            .borrow()
+            .idb
+            .as_ref()
+            .map(IndexedDbBackend::clone_handle);
+        if let Some(idb) = idb
+            && !dirty_pages.is_empty()
+        {
+            idb.write_pages(dirty_pages).await?;
         }
 
         Ok(result_json)
@@ -417,6 +411,21 @@ impl BrowserCursor {
     pub fn close(&mut self) {
         self.cursor = None;
     }
+}
+
+/// The bytes of every page the last `save()` dirtied, clearing the dirty set.
+/// A page that cannot be read is an error, never a page silently left out of
+/// the flush to IndexedDB.
+fn take_dirty_pages(
+    pfs: &mut PersistentFactStorage<BrowserBufferBackend>,
+) -> Result<Vec<(u64, Vec<u8>)>, JsValue> {
+    let ids = pfs.with_backend_mut(|b| b.take_dirty());
+    pfs.with_backend(|b| {
+        ids.into_iter()
+            .map(|id| b.read_page_raw(id).map(|d| (id, d)))
+            .collect::<anyhow::Result<Vec<_>>>()
+    })
+    .map_err(to_js_error)
 }
 
 fn to_js_error(e: anyhow::Error) -> JsValue {

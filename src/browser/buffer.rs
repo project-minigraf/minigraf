@@ -101,13 +101,16 @@ impl StorageBackend for BrowserBufferBackend {
 
 #[cfg(test)]
 mod tests {
+    // The browser module only builds for wasm32, where the test runner runs
+    // `#[wasm_bindgen_test]` functions, not `#[test]` ones.
     use super::*;
+    use wasm_bindgen_test::wasm_bindgen_test;
 
     fn page(byte: u8) -> Vec<u8> {
         vec![byte; PAGE_SIZE]
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn write_marks_dirty() {
         let mut buf = BrowserBufferBackend::new();
         buf.write_page(0, &page(1)).unwrap();
@@ -115,7 +118,7 @@ mod tests {
         assert!(dirty.contains(&0));
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn take_dirty_clears_set() {
         let mut buf = BrowserBufferBackend::new();
         buf.write_page(0, &page(1)).unwrap();
@@ -123,7 +126,7 @@ mod tests {
         assert!(buf.take_dirty().is_empty());
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn read_after_write_returns_same_bytes() {
         let mut buf = BrowserBufferBackend::new();
         let p = page(42);
@@ -131,7 +134,7 @@ mod tests {
         assert_eq!(buf.read_page(3).unwrap(), p);
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn page_count_is_high_water_mark() {
         let mut buf = BrowserBufferBackend::new();
         buf.write_page(0, &page(0)).unwrap();
@@ -142,14 +145,14 @@ mod tests {
         assert_eq!(buf.page_count().unwrap(), 6);
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn load_pages_starts_with_no_dirty() {
         let pages = HashMap::from([(0u64, page(0)), (1u64, page(1))]);
         let mut buf = BrowserBufferBackend::load_pages(pages);
         assert!(buf.take_dirty().is_empty());
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn load_pages_all_dirty_marks_all() {
         let pages = HashMap::from([(0u64, page(0)), (1u64, page(1))]);
         let mut buf = BrowserBufferBackend::load_pages_all_dirty(pages);
@@ -158,18 +161,18 @@ mod tests {
         assert!(dirty.contains(&1));
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn empty_buffer_has_no_pages() {
         assert_eq!(BrowserBufferBackend::new().page_count().unwrap(), 0);
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn wrong_page_size_errors() {
         let mut buf = BrowserBufferBackend::new();
         assert!(buf.write_page(0, &[0u8; 100]).is_err());
     }
 
-    #[test]
+    #[wasm_bindgen_test]
     fn read_missing_page_errors() {
         let buf = BrowserBufferBackend::new();
         assert!(buf.read_page(99).is_err());
