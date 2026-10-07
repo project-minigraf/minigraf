@@ -208,7 +208,7 @@ mod tests {
         let handed: Vec<u64> = (0..take)
             .map(|_| alloc.alloc(&backend, &cache).unwrap())
             .collect();
-        let (new_head, count) = alloc
+        let (new_head, count, listed) = alloc
             .finish_free_list(freed.clone(), &mut backend, &cache)
             .unwrap();
         let (new_ids, new_chain) =
@@ -233,6 +233,16 @@ mod tests {
         let after: BTreeSet<u64> = h.union(&ni).chain(nc.iter()).copied().collect();
         let expected: BTreeSet<u64> = before.union(&appended).copied().collect();
         assert!(after == expected, "every page is accounted for");
+        // `listed` is the new head: every freed page, and nothing but ids that
+        // were already free besides (the unread tail is the rest).
+        let l = set(&listed);
+        assert_eq!(l.len(), listed.len(), "no duplicate listed id");
+        assert!(l.is_subset(&ni), "listed ids are on the new free list");
+        assert!(set(&freed).is_subset(&l), "every freed page is listed");
+        assert!(
+            ni.difference(&l).all(|id| old_ids.contains(id)),
+            "only the unread tail is left out"
+        );
         // Chain pages never read are shared unchanged (same ids, generation 1).
         let read_pages = take.div_ceil(IDS_PER_PAGE).max(usize::from(take > 0));
         for &id in old_chain.iter().skip(read_pages + 1) {
@@ -269,10 +279,11 @@ mod tests {
         let (head, chain) = write_chain(&ids, &mut a1, &mut backend, &cache).unwrap();
         // No allocation and nothing freed: the list is unchanged.
         let mut alloc = PageAllocator::from_chain(head, 3000, a1.next_append(), 2);
-        let (h, count) = alloc
+        let (h, count, listed) = alloc
             .finish_free_list(Vec::new(), &mut backend, &cache)
             .unwrap();
         assert_eq!((h, count), (head, 3000));
+        assert!(listed.is_empty(), "nothing newly listed");
         assert_eq!(alloc.next_append(), a1.next_append(), "nothing written");
         assert_eq!(chain.len(), 6);
     }

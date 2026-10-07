@@ -40,6 +40,10 @@ pub struct PersistentFactStorage<B: StorageBackend + 'static> {
     dirty: bool,
     /// The active (last committed) meta page.
     meta: MetaPage,
+    /// Ids the last `save()` put on the free list, for the browser layer to
+    /// drop (#440). The rest of the list was released by an earlier commit.
+    #[cfg(all(target_arch = "wasm32", feature = "browser"))]
+    released: Vec<u64>,
 }
 
 /// Page cache size for the integrity walk: enough to keep a value page hot
@@ -127,6 +131,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             storage: FactStorage::new(),
             dirty: false,
             meta: MetaPage::empty(1),
+            #[cfg(all(target_arch = "wasm32", feature = "browser"))]
+            released: Vec::new(),
         }
     }
 
@@ -408,7 +414,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             )?;
         }
         let [eavt_root, aevt_root, avet_root, vaet_root, dict_root] = roots;
-        let (freelist_head, freelist_count) =
+        let (freelist_head, freelist_count, listed) =
             alloc.finish_free_list(freed, &mut *backend, &self.page_cache)?;
 
         backend.sync()?;
@@ -438,6 +444,12 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
 
         self.dirty = false;
         self.activate(new_meta);
+        #[cfg(all(target_arch = "wasm32", feature = "browser"))]
+        {
+            self.released = listed;
+        }
+        #[cfg(not(all(target_arch = "wasm32", feature = "browser")))]
+        drop(listed);
         // Clear pending — all data now on disk
         self.storage.post_checkpoint_clear();
         Ok(())
@@ -1411,6 +1423,50 @@ mod tests {
             open_mem(&mem, None).unwrap().meta().page_count,
             m.page_count
         );
+    }
+
+    /// Overwrite every page on `m`'s free list with zeros.
+    fn zero_free_pages(m: &MetaPage, mem: &mut MemoryBackend) {
+        if m.freelist_head == 0 {
+            return;
+        }
+        let (free, _) =
+            freelist::read_chain(m.freelist_head, &*mem, &PageCache::new(0), m.page_count).unwrap();
+        for id in free {
+            mem.write_page(id, &[0u8; PAGE_SIZE]).unwrap();
+        }
+    }
+
+    /// The browser drops the bytes of free pages and exports them as zeros
+    /// (#440). That is only sound if nothing reads a free page before writing
+    /// it: a file whose free pages are zeros must open, verify clean and keep
+    /// committing. Covers the migrated generation-1 file (one valid meta slot,
+    /// so open probes the free pages) and a file after many saves.
+    #[test]
+    fn zeroed_free_pages_are_never_read() {
+        let mut mem = v7_file(&sample_facts(300), 300);
+        let pfs = open_mem(&mem, None).unwrap();
+        let migrated = pfs.meta();
+        drop(pfs);
+        zero_free_pages(&migrated, &mut mem);
+        let mut pfs = open_mem(&mem, None).unwrap();
+        assert_eq!(pfs.meta().generation, 1, "reopens at the migration commit");
+        assert_eq!(count_n(&pfs), 300);
+        assert!(pfs.verify().unwrap().problems.is_empty(), "migrated file");
+
+        let mut next_entity = 1000;
+        for round in 0..20u64 {
+            transact_mixed(&mut pfs, &mut next_entity, 10, round);
+            pfs.save().unwrap();
+            zero_free_pages(&pfs.meta(), &mut mem);
+        }
+        let expected = pfs.storage().get_all_facts().unwrap().len();
+        drop(pfs);
+        let pfs = open_mem(&mem, None).unwrap();
+        assert_eq!(pfs.storage().get_all_facts().unwrap().len(), expected);
+        assert!(pfs.verify().unwrap().problems.is_empty(), "after saves");
+        assert_space_accounted(&pfs.meta(), &mem);
+        assert_indexes_exact(&pfs.meta(), &mem);
     }
 
     #[test]

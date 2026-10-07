@@ -272,7 +272,9 @@ impl PageAllocator {
         v
     }
 
-    /// Write the new free list and return `(head, count)`.
+    /// Write the new free list and return `(head, count, listed)`, where
+    /// `listed` holds the ids in the new head pages (everything but the unread
+    /// tail).
     ///
     /// The list is `freed` (pages the new meta no longer references), every
     /// chain page read and the ids read but not handed out, as new head pages in
@@ -284,7 +286,7 @@ impl PageAllocator {
         freed: Vec<u64>,
         backend: &mut dyn crate::storage::StorageBackend,
         cache: &crate::storage::cache::PageCache,
-    ) -> Result<(u64, u64)> {
+    ) -> Result<(u64, u64, Vec<u64>)> {
         use crate::storage::freelist::IDS_PER_PAGE;
         let mut pages: Vec<u64> = Vec::new();
         let ids = loop {
@@ -312,7 +314,7 @@ impl PageAllocator {
             .checked_add(u64::try_from(ids.len()).unwrap_or(u64::MAX))
             .ok_or_else(|| err_coded!(ErrorCode::Int048, "free-list count overflow"))?;
         crate::storage::freelist::write_pages(&ids, &pages, tail, self, backend, cache)?;
-        Ok((pages.first().copied().unwrap_or(tail), count))
+        Ok((pages.first().copied().unwrap_or(tail), count, ids))
     }
 
     /// Seal `page` as `page_id` in this generation, write it, and put it in the
