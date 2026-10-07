@@ -84,7 +84,8 @@ pub(crate) fn take_sync_log() -> Vec<DirSync> {
     SYNC_LOG.with(|log| std::mem::take(&mut *log.borrow_mut()))
 }
 
-#[cfg(test)]
+// The tests use `tempfile`, a native-only dev-dependency.
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 

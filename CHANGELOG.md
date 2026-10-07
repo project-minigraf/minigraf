@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+
+- **`BrowserDb` no longer drops a dirty page it cannot read from the IndexedDB flush.** `checkpoint()`, `importGraph()` and every write collected dirty pages with `read_page_raw(id).ok()`, so a page that failed to read was left out of the flush while the call still reported success. The read error is now returned. No current code path leaves a dirty id without a page, so this guards against a future bug rather than fixing observed data loss. The browser unit tests compile again on wasm32 (a duplicate `page_cache_capacity` and `tempfile`-based `dir_sync` tests).
+
 ### Tests
 
 - **Golden-file compatibility corpus (#391).** `tests/golden/` holds v7 files written by minigraf 2.0.3, each with a JSON manifest of its CRC32, `tx_count` and expected query results. They cover one checkpoint, several checkpoints, indexes rebuilt on open, a WAL left by a crash, a WAL whose entries were already checkpointed, and same-transaction multi-values (#371). `tests/golden_corpus_test.rs` opens a copy of each file and checks its manifest after open, after a checkpoint and reopen, and after one more write. Golden files are never regenerated, only added; a new `golden-corpus` job in `policy.yml` fails a pull request that changes one. The generator is a standalone crate pinned to `minigraf = "=2.0.3"` (`tests/golden/gen/v7/`).

@@ -43,6 +43,12 @@ impl BrowserBufferBackend {
     pub fn take_dirty(&mut self) -> HashSet<u64> {
         std::mem::take(&mut self.dirty)
     }
+
+    /// Mark `page_id` dirty without writing it, for tests of the flush path.
+    #[cfg(test)]
+    pub(crate) fn mark_dirty_for_test(&mut self, page_id: u64) {
+        self.dirty.insert(page_id);
+    }
 }
 
 impl Default for BrowserBufferBackend {
