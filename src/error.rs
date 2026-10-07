@@ -208,6 +208,7 @@ pub(crate) enum ErrorCode {
     Api016,
     Api017,
     Api018,
+    Api019,
     Int001,
     Int002,
     Int003,
@@ -1162,7 +1163,7 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
     (
         ErrorCode::Api011,
         "API-011",
-        "one transaction asserts the same value of {} with two valid-time windows; assert it once with its final window",
+        "one (transact ...) asserts the same value of {} with two valid-time windows; assert it once with its final window",
         ErrorCategory::Api,
     ),
     (
@@ -1205,6 +1206,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Api018,
         "API-018",
         "{} is closed",
+        ErrorCategory::Api,
+    ),
+    (
+        ErrorCode::Api019,
+        "API-019",
+        "the valid-time window of {} ends at or before it starts; :valid-to must be later than :valid-from (the transaction time when :valid-from is omitted)",
         ErrorCategory::Api,
     ),
     (
@@ -1985,6 +1992,7 @@ mod tests {
                 | ErrorCode::Api016
                 | ErrorCode::Api017
                 | ErrorCode::Api018
+                | ErrorCode::Api019
                 | ErrorCode::Int001
                 | ErrorCode::Int002
                 | ErrorCode::Int003
@@ -2201,6 +2209,7 @@ mod tests {
             ErrorCode::Api016,
             ErrorCode::Api017,
             ErrorCode::Api018,
+            ErrorCode::Api019,
             ErrorCode::Int001,
             ErrorCode::Int002,
             ErrorCode::Int003,

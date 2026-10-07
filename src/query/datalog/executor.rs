@@ -5376,7 +5376,7 @@ mod expr_eval_tests {
         let storage = FactStorage::new();
         let executor = DatalogExecutor::new(storage);
         let cmd = parse_datalog_command(
-            r#"(transact {:valid-to "2025-01-01T00:00:00Z"} [[:alice :person/name "Alice"]])"#,
+            r#"(transact {:valid-to "2125-01-01T00:00:00Z"} [[:alice :person/name "Alice"]])"#,
         )
         .expect("parse with tx-level valid-to only should succeed");
         let result = executor.execute(cmd);
@@ -5393,7 +5393,7 @@ mod expr_eval_tests {
         let storage = FactStorage::new();
         let executor = DatalogExecutor::new(storage);
         let cmd = parse_datalog_command(
-            r#"(transact [[:alice :person/name "Alice" {:valid-to "2025-01-01T00:00:00Z"}]])"#,
+            r#"(transact [[:alice :person/name "Alice" {:valid-to "2125-01-01T00:00:00Z"}]])"#,
         )
         .expect("parse with per-fact valid-to only should succeed");
         let result = executor.execute(cmd);

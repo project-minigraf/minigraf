@@ -307,8 +307,9 @@ fn arb_transact() -> impl Strategy<Value = Stmt> {
         arb_window(),
         prop::collection::vec((arb_triple(), arb_window()), 1..6),
         prop::option::weighted(0.15, arb_window()),
+        prop::bool::weighted(0.9),
     )
-        .prop_map(|(window, facts, repeat)| {
+        .prop_map(|(window, facts, repeat, fix_windows)| {
             let mut facts: Vec<FactSpec> = facts
                 .into_iter()
                 .map(|((e, a, v), w)| FactSpec { e, a, v, window: w })
@@ -320,9 +321,10 @@ fn arb_transact() -> impl Strategy<Value = Stmt> {
                 again.window = w;
                 facts.push(again);
             }
-            // An empty or inverted window (#436) is rewritten to start in 2000;
-            // every `:valid-to` on the grid is later.
-            for f in &mut facts {
+            // Usually an empty or inverted window is rewritten to start in
+            // 2000 (every `:valid-to` on the grid is later); otherwise the
+            // statement is an API-019 rejection (#436).
+            for f in fix_windows.then_some(&mut facts).into_iter().flatten() {
                 if !window_is_valid(effective(window, f.window)) {
                     f.window.vf = Some(0);
                 }
@@ -350,7 +352,7 @@ fn arb_op() -> impl Strategy<Value = Op> {
         )
             .prop_map(|(mut stmts, retract_own, commit)| {
                 // Retract a triple this transaction asserts, before or after
-                // the assertion: the retraction wins either way.
+                // the assertion: the later statement wins (#477).
                 let own = stmts.iter().find_map(|s| match s {
                     Stmt::Transact { facts, .. } => Some(facts[0].clone()),
                     Stmt::Retract { .. } => None,
@@ -428,62 +430,84 @@ struct Model {
 }
 
 impl Model {
-    /// The records a committed transaction of `stmts` would add, or `None`
-    /// when the transaction is rejected with API-011 (one triple, two windows).
-    fn records(stmts: &[Stmt], tx: u64) -> Option<Vec<Record>> {
-        let mut out = Vec::new();
-        for stmt in stmts {
+    /// The error code a statement is rejected with, if any: API-019 for an
+    /// empty or inverted window (#436), then API-011 for one triple with two
+    /// windows in the statement.
+    fn verdict(stmt: &Stmt) -> Option<&'static str> {
+        let Stmt::Transact { window, facts } = stmt else {
+            return None;
+        };
+        let windows: Vec<Effective> = facts.iter().map(|f| effective(*window, f.window)).collect();
+        if !windows.iter().all(|w| window_is_valid(*w)) {
+            return Some("API-019");
+        }
+        for (i, x) in facts.iter().enumerate() {
+            for (j, y) in facts.iter().enumerate().skip(i + 1) {
+                if x.e == y.e && x.a == y.a && x.v == y.v && windows[i] != windows[j] {
+                    return Some("API-011");
+                }
+            }
+        }
+        None
+    }
+
+    /// The records a committed transaction of accepted `stmts` adds: each
+    /// triple's records from the last statement that wrote it (#477).
+    fn records(stmts: &[Stmt], tx: u64) -> Vec<Record> {
+        let mut out: Vec<(usize, Record)> = Vec::new();
+        for (n, stmt) in stmts.iter().enumerate() {
             match stmt {
                 Stmt::Transact { window, facts } => {
                     for f in facts {
-                        out.push(Record {
-                            tx,
-                            e: f.e,
-                            a: f.a,
-                            v: f.v.clone(),
-                            window: effective(*window, f.window),
-                            asserted: true,
-                        });
+                        out.push((
+                            n,
+                            Record {
+                                tx,
+                                e: f.e,
+                                a: f.a,
+                                v: f.v.clone(),
+                                window: effective(*window, f.window),
+                                asserted: true,
+                            },
+                        ));
                     }
                 }
                 Stmt::Retract { facts } => {
                     for (e, a, v) in facts {
-                        out.push(Record {
-                            tx,
-                            e: *e,
-                            a: *a,
-                            v: v.clone(),
-                            window: (None, FOREVER),
-                            asserted: false,
-                        });
+                        out.push((
+                            n,
+                            Record {
+                                tx,
+                                e: *e,
+                                a: *a,
+                                v: v.clone(),
+                                window: (None, FOREVER),
+                                asserted: false,
+                            },
+                        ));
                     }
                 }
             }
         }
-        let asserted: Vec<&Record> = out.iter().filter(|r| r.asserted).collect();
-        for (i, x) in asserted.iter().enumerate() {
-            for y in &asserted[i + 1..] {
-                if x.e == y.e && x.a == y.a && x.v == y.v && x.window != y.window {
-                    return None;
-                }
-            }
-        }
-        Some(out)
+        let last = |r: &Record| {
+            out.iter()
+                .filter(|(_, x)| x.e == r.e && x.a == r.a && x.v == r.v)
+                .map(|(n, _)| *n)
+                .max()
+        };
+        out.iter()
+            .filter(|(n, r)| last(r) == Some(*n))
+            .map(|(_, r)| r.clone())
+            .collect()
     }
 
-    /// Apply a committed transaction. Returns false when it is rejected.
-    fn commit(&mut self, stmts: &[Stmt]) -> bool {
+    /// Apply a committed transaction of accepted statements.
+    fn commit(&mut self, stmts: &[Stmt]) {
         if stmts.is_empty() {
-            return true;
+            return;
         }
-        match Self::records(stmts, self.tx_count + 1) {
-            Some(records) => {
-                self.tx_count += 1;
-                self.log.extend(records);
-                true
-            }
-            None => false,
-        }
+        self.tx_count += 1;
+        self.log.extend(Self::records(stmts, self.tx_count));
     }
 
     fn live(&self, as_of: Option<u64>) -> Vec<Live> {
@@ -535,8 +559,15 @@ struct Ctx {
 
 impl Ctx {
     fn rows(&self, db: &Minigraf, query: &str) -> Result<Vec<Vec<String>>, TestCaseError> {
-        let result = db
-            .execute(query)
+        self.result_rows(db.execute(query), query)
+    }
+
+    fn result_rows(
+        &self,
+        result: Result<QueryResult, MinigrafError>,
+        query: &str,
+    ) -> Result<Vec<Vec<String>>, TestCaseError> {
+        let result = result
             .map_err(|e| TestCaseError::fail(format!("query failed ({}): {query}", e.code())))?;
         match result {
             QueryResult::QueryResults { results, .. } => Ok(results
@@ -761,18 +792,18 @@ fn verify(db: &Minigraf, step: usize) -> Result<(), TestCaseError> {
     Ok(())
 }
 
-/// Expect `result` to match the model's verdict: Ok when accepted, API-011
-/// when rejected.
+/// Expect `result` to match the model's verdict: Ok when `None`, else that
+/// error code.
 fn expect_outcome<T>(
     result: Result<T, MinigrafError>,
-    accepted: bool,
+    verdict: Option<&str>,
     step: usize,
 ) -> Result<(), TestCaseError> {
-    match (result, accepted) {
-        (Ok(_), true) => Ok(()),
-        (Err(e), false) if e.code() == "API-011" => Ok(()),
-        (Ok(_), false) => Err(TestCaseError::fail(format!(
-            "step {step}: accepted, model expects API-011"
+    match (result, verdict) {
+        (Ok(_), None) => Ok(()),
+        (Err(e), Some(code)) if e.code() == code => Ok(()),
+        (Ok(_), Some(code)) => Err(TestCaseError::fail(format!(
+            "step {step}: accepted, model expects {code}"
         ))),
         (Err(e), _) => Err(TestCaseError::fail(format!(
             "step {step}: unexpected error {}",
@@ -780,6 +811,9 @@ fn expect_outcome<T>(
         ))),
     }
 }
+
+/// The current `(e, a, v)` of every fact, any valid time.
+const IN_TX_QUERY: &str = "(query [:find ?e ?a ?v :any-valid-time :where [?e ?a ?v]])";
 
 fn run(steps: &[Step]) -> Result<(), TestCaseError> {
     let dir = tempfile::tempdir().map_err(|_| TestCaseError::fail("tempdir"))?;
@@ -797,8 +831,11 @@ fn run(steps: &[Step]) -> Result<(), TestCaseError> {
                     .as_ref()
                     .ok_or_else(|| TestCaseError::fail("no handle"))?;
                 let result = handle.execute(&stmt.edn());
-                let accepted = model.commit(std::slice::from_ref(stmt));
-                expect_outcome(result, accepted, i)?;
+                let verdict = Model::verdict(stmt);
+                if verdict.is_none() {
+                    model.commit(std::slice::from_ref(stmt));
+                }
+                expect_outcome(result, verdict, i)?;
             }
             Op::WriteTx { stmts, commit } => {
                 let handle = db
@@ -807,14 +844,40 @@ fn run(steps: &[Step]) -> Result<(), TestCaseError> {
                 let mut tx = handle
                     .begin_write()
                     .map_err(|e| TestCaseError::fail(format!("begin_write ({})", e.code())))?;
+                // A rejected statement stages nothing; the rest still commit.
+                let mut accepted = Vec::new();
                 for stmt in stmts {
-                    tx.execute(&stmt.edn()).map_err(|e| {
-                        TestCaseError::fail(format!("step {i}: staged write ({})", e.code()))
-                    })?;
+                    let verdict = Model::verdict(stmt);
+                    expect_outcome(tx.execute(&stmt.edn()), verdict, i)?;
+                    if verdict.is_none() {
+                        accepted.push(stmt.clone());
+                    }
                 }
+                // Reads inside the transaction see what the commit will hold.
+                let mut after = Model {
+                    log: model.log.clone(),
+                    tx_count: model.tx_count,
+                };
+                after.commit(&accepted);
+                let got: Vec<String> = ctx
+                    .result_rows(tx.execute(IN_TX_QUERY), IN_TX_QUERY)?
+                    .into_iter()
+                    .map(|r| r.join(" "))
+                    .collect();
+                let want: Vec<String> = after
+                    .live(None)
+                    .iter()
+                    .map(|l| format!("r{} {} {}", l.e, attr_render(l.a), l.v.render()))
+                    .collect();
+                prop_assert_eq!(
+                    sorted(got),
+                    sorted(want),
+                    "step {}: reads inside the transaction",
+                    i
+                );
                 if *commit {
-                    let accepted = model.commit(stmts);
-                    expect_outcome(tx.commit(), accepted, i)?;
+                    model = after;
+                    expect_outcome(tx.commit(), None, i)?;
                 } else {
                     tx.rollback();
                 }

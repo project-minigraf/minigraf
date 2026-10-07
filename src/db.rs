@@ -690,10 +690,10 @@ impl Minigraf {
                 _ => return Err(err_coded!(ErrorCode::Api002)),
             };
             // Before allocating: a rejected transaction takes no tx_count.
-            crate::graph::storage::check_one_window_per_triple(&stamped)?;
-
-            let tx_count = self.inner.fact_storage.allocate_tx_count();
             let tx_id = crate::graph::types::tx_id_now();
+            crate::graph::storage::check_valid_windows(&stamped, tx_id)?;
+            crate::graph::storage::check_one_window_per_triple(&stamped)?;
+            let tx_count = self.inner.fact_storage.allocate_tx_count();
 
             let stamped: Vec<Fact> = stamped
                 .into_iter()
@@ -1388,7 +1388,14 @@ impl<'a> WriteTransaction<'a> {
 
         match cmd {
             DatalogCommand::Transact(tx) => {
-                self.stage_pending_facts(Minigraf::materialize_transaction(&tx)?);
+                // A rejected statement stages nothing; the transaction stays
+                // usable. `commit` checks windows again at the commit time.
+                let facts = Minigraf::materialize_transaction(&tx)?;
+                let staged_tx_id =
+                    std::cmp::max(crate::graph::types::tx_id_now(), self.next_pending_tx_id);
+                crate::graph::storage::check_valid_windows(&facts, staged_tx_id)?;
+                crate::graph::storage::check_one_window_per_triple(&facts)?;
+                self.stage_pending_facts(facts);
                 Ok(QueryResult::Ok)
             }
             DatalogCommand::Retract(tx) => {
@@ -1480,12 +1487,17 @@ impl<'a> WriteTransaction<'a> {
         let facts_to_commit = std::mem::take(&mut self.pending_facts);
 
         if !facts_to_commit.is_empty() {
+            // One tx_id cannot tell several versions of a fact apart, so the
+            // last statement that wrote a triple decides it, as reads inside
+            // the transaction already see (#477). Each statement passed
+            // API-011 when staged, so every triple left has one window.
+            let facts_to_commit = keep_last_statement(facts_to_commit);
             // Before allocating: a rejected transaction takes no tx_count.
-            // Unresolved `valid_from`s all equal `VALID_FROM_USE_TX_TIME`, so
-            // they compare as they will after stamping.
-            crate::graph::storage::check_one_window_per_triple(&facts_to_commit)?;
-            let tx_count = self.inner.fact_storage.allocate_tx_count();
+            // A default `valid_from` becomes the commit time, so the windows
+            // are checked again here (#436).
             let tx_id = crate::graph::types::tx_id_now();
+            crate::graph::storage::check_valid_windows(&facts_to_commit, tx_id)?;
+            let tx_count = self.inner.fact_storage.allocate_tx_count();
 
             // Stamp facts with tx_id and tx_count
             let stamped: Vec<Fact> = facts_to_commit
@@ -1612,6 +1624,36 @@ impl<'a> WriteTransaction<'a> {
     }
 }
 
+/// Keep, for each `(entity, attribute, value)`, only the staged records of
+/// the newest statement that wrote it (#477). Staged facts carry their
+/// statement's synthetic `tx_count`; the order of what is kept is unchanged.
+fn keep_last_statement(facts: Vec<Fact>) -> Vec<Fact> {
+    use crate::storage::index::encode_value;
+    use std::collections::HashMap;
+
+    let encoded: Vec<Vec<u8>> = facts.iter().map(|f| encode_value(&f.value)).collect();
+    let mut newest: HashMap<(&crate::graph::types::EntityId, &str, &[u8]), u64> = HashMap::new();
+    for (fact, value) in facts.iter().zip(&encoded) {
+        let slot = newest
+            .entry((&fact.entity, fact.attribute.as_str(), value.as_slice()))
+            .or_insert(fact.tx_count);
+        *slot = (*slot).max(fact.tx_count);
+    }
+    let keep: Vec<bool> = facts
+        .iter()
+        .zip(&encoded)
+        .map(|(fact, value)| {
+            newest.get(&(&fact.entity, fact.attribute.as_str(), value.as_slice()))
+                == Some(&fact.tx_count)
+        })
+        .collect();
+    facts
+        .into_iter()
+        .zip(keep)
+        .filter_map(|(fact, kept)| kept.then_some(fact))
+        .collect()
+}
+
 impl Drop for WriteTransaction<'_> {
     fn drop(&mut self) {
         if !self.committed {
@@ -1718,6 +1760,62 @@ mod tests {
 
         let facts = db.inner.fact_storage.get_asserted_facts().unwrap();
         assert_eq!(facts.len(), 0, "dropped transaction must act as rollback");
+    }
+
+    // ── same triple in several statements (#477) ─────────────────────────────
+
+    #[test]
+    fn keep_last_statement_drops_earlier_records_of_a_triple() {
+        let e = uuid::Uuid::from_u128(1);
+        let staged = |v: i64, tx_count: u64, asserted: bool| {
+            let mut f = if asserted {
+                Fact::new(e, ":a".to_string(), Value::Integer(v), 0)
+            } else {
+                Fact::retract(e, ":a".to_string(), Value::Integer(v), 0)
+            };
+            f.tx_count = tx_count;
+            f
+        };
+        let kept = keep_last_statement(vec![
+            staged(1, 10, true),
+            staged(2, 10, true),
+            staged(1, 11, false),
+            staged(3, 11, false),
+            staged(3, 12, true),
+            staged(3, 12, true),
+        ]);
+        let got: Vec<(i64, u64, bool)> = kept
+            .iter()
+            .map(|f| match f.value {
+                Value::Integer(v) => (v, f.tx_count, f.asserted),
+                _ => (0, 0, false),
+            })
+            .collect();
+        assert_eq!(
+            got,
+            vec![(2, 10, true), (1, 11, false), (3, 12, true), (3, 12, true)],
+            "each triple keeps its newest statement, in order"
+        );
+    }
+
+    /// A default `valid_from` becomes the commit time, so a `valid_to` that
+    /// was still ahead when staged but is behind at commit is API-019 (#436).
+    #[test]
+    fn commit_rejects_window_that_ended_before_commit_time() {
+        let db = Minigraf::in_memory().unwrap();
+        let mut tx = db.begin_write().unwrap();
+        tx.execute(r#"(transact [[:alice :person/age 30]])"#)
+            .unwrap();
+        let soon = crate::graph::types::tx_id_now().saturating_add(20);
+        for f in &mut tx.pending_facts {
+            f.valid_to = soon.cast_signed();
+        }
+        while crate::graph::types::tx_id_now() <= soon {
+            std::thread::yield_now();
+        }
+        let err = tx.commit().expect_err("window ends before the commit time");
+        assert_eq!(err.code(), "API-019");
+        assert_eq!(db.current_tx_count(), 0, "no tx_count taken");
     }
 
     // ── read-your-own-writes ──────────────────────────────────────────────────

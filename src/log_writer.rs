@@ -14,13 +14,11 @@
 use crate::db::OpenOptions;
 use crate::error::{ErrorCode, MinigrafError, bail_coded, err_coded};
 use crate::fact_log::FactRecord;
-use crate::graph::types::{EntityId, Fact};
+use crate::graph::types::Fact;
 use crate::storage::backend::file::{FileBackend, LockMode};
 use crate::storage::dir_sync::sync_parent_dir;
-use crate::storage::index::encode_value;
 use crate::storage::persistent_facts::PersistentFactStorage;
 use anyhow::Result;
-use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
@@ -62,8 +60,6 @@ pub struct LogWriter {
     tx_count: u64,
     /// The open transaction's `(tx_count, tx_id)`, if a record can join it.
     open_tx: Option<(u64, u64)>,
-    /// The open transaction's valid-time window per asserted `(e, a, v)`.
-    windows: HashMap<(EntityId, String, Vec<u8>), (i64, i64)>,
     /// Facts loaded since the last batch commit.
     pending: usize,
 }
@@ -106,7 +102,6 @@ impl LogWriter {
             partial,
             tx_count: 0,
             open_tx: None,
-            windows: HashMap::new(),
             pending: 0,
         })
     }
@@ -132,8 +127,6 @@ impl LogWriter {
     /// - `API-015` if `tx_count` is 0, below the writer's, or names a
     ///   transaction that is already closed.
     /// - `API-016` if it joins the open transaction with a different `tx_id`.
-    /// - `API-011` if it asserts an `(entity, attribute, value)` the open
-    ///   transaction already asserts with another valid-time window.
     /// - `WAL-003` if the attribute, a keyword or a string value is longer
     ///   than the format stores.
     ///
@@ -165,15 +158,9 @@ impl LogWriter {
             asserted: rec.asserted,
         };
         crate::wal::check_fact_size(&fact)?;
-        let key = (
-            fact.entity,
-            fact.attribute.clone(),
-            encode_value(&fact.value),
-        );
-        let window = (fact.valid_from, fact.valid_to);
-        if fact.asserted && joins && self.windows.get(&key).is_some_and(|w| *w != window) {
-            bail_coded!(ErrorCode::Api011, fact.attribute);
-        }
+        // Records are copied as they are (#477): one transaction may hold
+        // several records of a triple, as a source written before API-011 or
+        // API-019 can. Readers resolve them the same way in source and target.
 
         if !joins {
             self.close_tx();
@@ -182,9 +169,6 @@ impl LogWriter {
             }
             self.tx_count = rec.tx_count;
             self.open_tx = Some((rec.tx_count, rec.tx_id));
-        }
-        if fact.asserted {
-            self.windows.insert(key, window);
         }
         let pfs = self.pfs_mut()?;
         if pfs.storage().load_fact(fact)? {
@@ -255,7 +239,6 @@ impl LogWriter {
 
     fn close_tx(&mut self) {
         self.open_tx = None;
-        self.windows.clear();
     }
 
     /// Commit the pending records as the next generation of the file.

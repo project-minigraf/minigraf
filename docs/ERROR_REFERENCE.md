@@ -168,7 +168,7 @@ with no `CodedError` anywhere in its chain.
 | API-008 | Function registry lock poisoned | Database API |
 | API-009 | WAL not initialized | Database API |
 | API-010 | Query with bind slots passed to execute() | Database API |
-| API-011 | Two valid-time windows for one fact in one transaction | Database API |
+| API-011 | Two valid-time windows for one fact in one transact | Database API |
 | API-012 | Non-query command passed to query() | Database API |
 | API-013 | Checkpoint while a fact log is open | Database API |
 | API-014 | Write on a read-only handle | Database API |
@@ -176,6 +176,7 @@ with no `CodedError` anywhere in its chain.
 | API-016 | Log writer record with a second tx_id for one transaction | Database API |
 | API-017 | Invalid argument passed through a language binding | Database API |
 | API-018 | Call on a closed binding object | Database API |
+| API-019 | Empty or inverted valid-time window | Database API |
 | INT-000 | Unclassified internal error | Internal |
 | INT-001 | WriteTransaction already in progress on this thread | Internal |
 | INT-002 | Invalid entity (API layer) | Internal |
@@ -2476,11 +2477,11 @@ let result = pq.execute(&[
 
 **Scenario**: A query copied from the prepared-query docs is pasted into the REPL or passed to `db.execute()` unchanged.
 
-### API-011 Two valid-time windows for one fact in one transaction
+### API-011 Two valid-time windows for one fact in one transact
 
-**Error text**: `one transaction asserts the same value of {} with two valid-time windows; assert it once with its final window`
+**Error text**: `one (transact ...) asserts the same value of {} with two valid-time windows; assert it once with its final window`
 
-**Cause**: One transaction asserts the same entity, attribute and value twice with different `:valid-from`/`:valid-to` bounds. At any transaction time a fact has exactly one current valid-time window, and the window of the latest transaction applies. Two windows in the same transaction leave no latest one, so the transaction is rejected and nothing is written. The `{}` is the attribute. This can come from one `(transact ...)` with per-fact bounds, from several `execute()` calls inside one `WriteTransaction`, or from `LogWriter::append` records of one transaction (that record alone is rejected).
+**Cause**: One `(transact ...)` asserts the same entity, attribute and value twice with different `:valid-from`/`:valid-to` bounds. At any transaction time a fact has exactly one current valid-time window. Within one statement neither window comes later, so the statement is rejected and nothing is written. The `{}` is the attribute. Identical repeats are allowed and stored once. Inside a `WriteTransaction`, `tx.execute()` rejects the statement and stages nothing; the transaction stays usable. Across several statements of one `WriteTransaction` there is no error: the last statement that writes a fact decides it (#477). `LogWriter::append` copies records as they are and never returns this code.
 
 **Resolution**:
 - Assert the fact once per transaction, with the window it should have.
@@ -2488,7 +2489,7 @@ let result = pq.execute(&[
 - A fact that was true over two separate periods cannot have both windows live at once. Model each period as its own entity (for example an `:employment` entity with `:employment/salary`), or keep the latest period current and read earlier ones with `:as-of`.
 
 ```clojure
-;; Rejected: two windows for [:alice :salary 100000] in one transaction
+;; Rejected: two windows for [:alice :salary 100000] in one transact
 (transact [[:alice :salary 100000 {:valid-from "2020-01-01" :valid-to "2022-01-01"}]
            [:alice :salary 100000 {:valid-from "2024-01-01"}]])
 
@@ -2603,6 +2604,30 @@ let mut log = src.fact_log(&FactFilter::new())?;
 - In Python, use the writer as a context manager so it is finished once, on exit.
 
 **Scenario**: A loader calls `finish()` in a `finally` block after it already called it on success.
+
+### API-019 Empty or inverted valid-time window
+
+**Error text**: `the valid-time window of {} ends at or before it starts; :valid-to must be later than :valid-from (the transaction time when :valid-from is omitted)`
+
+**Cause**: A `transact` gives a fact a valid-time window whose end is at or before its start, so the fact could never match a `:valid-at` query. The check uses the effective window, after defaults: the fact's own bound, else the transaction's, else `:valid-from` is the transaction time and `:valid-to` is forever. A `:valid-to` in the past with no `:valid-from` is therefore rejected too. The whole transaction is rejected, nothing is written and no transaction number is used. The `{}` is the attribute. Inside a `WriteTransaction`, `tx.execute()` checks each statement. `commit()` checks again with the commit time, so a `:valid-to` that passed while staging can still fail at commit. Files written before this check, and records copied by `LogWriter`, are read as they are.
+
+**Resolution**:
+- Give `:valid-to` a later instant than `:valid-from`.
+- To record a fact that is no longer true, give it a `:valid-from` before its `:valid-to`, or `retract` it.
+- Check that a per-fact `:valid-from`/`:valid-to` does not invert the transaction-level window it overrides.
+
+```clojure
+;; Rejected: ends before it starts, and an empty window
+(transact {:valid-from "2026-08-21" :valid-to "2026-08-20"} [[:d/c :description "r"]])
+(transact {:valid-from "2026-08-21" :valid-to "2026-08-21"} [[:d/c :description "r"]])
+;; Rejected: valid-from defaults to now, which is after valid-to
+(transact {:valid-to "2020-01-01"} [[:d/c :description "r"]])
+
+;; Accepted
+(transact {:valid-from "2019-01-01" :valid-to "2020-01-01"} [[:d/c :description "r"]])
+```
+
+**Scenario**: An import sets `:valid-to` from a source's end date but leaves out `:valid-from`, so past end dates produce windows that end before the transaction time.
 
 ---
 

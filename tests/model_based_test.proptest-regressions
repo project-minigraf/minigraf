@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc ae0b4b21bae878a9b766b323137bb385a1736529adf2fa100ca840d3f378eaa3 # shrinks to steps = [Step { op: WriteTx { stmts: [Retract { facts: [(0, 0, Int(0))] }, Transact { window: Window { vf: None, vt: None }, facts: [FactSpec { e: 0, a: 0, v: Int(0), window: Window { vf: None, vt: None } }] }], commit: true }, probe: Probe { as_of: 0, at: 0, e: 0, a: 0, v: Int(0) } }]
