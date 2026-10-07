@@ -488,6 +488,28 @@ mod tests {
     wasm_bindgen_test_configure!(run_in_browser);
 
     #[wasm_bindgen_test]
+    fn take_dirty_pages_returns_written_pages() {
+        use crate::storage::StorageBackend;
+        let mut pfs = PersistentFactStorage::new(BrowserBufferBackend::new(), 0).unwrap();
+        let _ = pfs.with_backend_mut(|b| b.take_dirty());
+        pfs.with_backend_mut(|b| b.write_page(3, &[7u8; crate::storage::PAGE_SIZE]))
+            .unwrap();
+        let pages = take_dirty_pages(&mut pfs).expect("dirty pages");
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].0, 3);
+        assert!(take_dirty_pages(&mut pfs).expect("second call").is_empty());
+    }
+
+    #[wasm_bindgen_test]
+    fn unreadable_dirty_page_is_an_error_not_skipped() {
+        let mut pfs = PersistentFactStorage::new(BrowserBufferBackend::new(), 0).unwrap();
+        // A dirty id with no page behind it: before the fix it was dropped
+        // from the flush and the caller still saw success.
+        pfs.with_backend_mut(|b| b.mark_dirty_for_test(99));
+        assert!(take_dirty_pages(&mut pfs).is_err());
+    }
+
+    #[wasm_bindgen_test]
     async fn in_memory_transact_and_query() {
         let db = BrowserDb::open_in_memory().expect("open_in_memory");
         let transact_result = db
