@@ -65,6 +65,10 @@ Scope — format and storage integrity:
 - One current valid-time window per `(e, a, v)`: a later assertion replaces the earlier window, and two windows of one fact in one transaction are `API-011` (#435; done on `v3`)
 - `btree_page` fuzz target that reaches node decoding (#375)
 
+Scope — query API:
+
+- Cursor API: `Minigraf::query` and `PreparedQuery::query` return an owned `Cursor` that delivers rows in batches, with the answer fixed at open (#432; Rust API done on `v3`, with the current evaluator computing the answer at open). The binding cursor objects follow. Streaming operators replace the evaluator behind the cursor in 3.x without further API changes; how operators bound their memory (spill, scratch pages in the `.graph` file, or a clear error) is still open.
+
 Scope — release-gate testing and documentation:
 
 - Golden-file compatibility corpus for every format version (#391; done on `v3`: six v7 files from 2.0.3 checked after migration, seven v8 files frozen at `23aa57c`)

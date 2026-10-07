@@ -1,3 +1,4 @@
+use crate::cursor::Cursor;
 use crate::error::{ErrorCode, MinigrafError, bail_coded};
 use crate::graph::FactStorage;
 use crate::graph::types::Value;
@@ -101,6 +102,19 @@ impl PreparedQuery {
     /// - Type mismatch (e.g. `Val` supplied for an `:as-of` slot).
     pub fn execute(&self, bindings: &[(&str, BindValue)]) -> Result<QueryResult, MinigrafError> {
         self.execute_inner(bindings).map_err(MinigrafError::from)
+    }
+
+    /// Substitute bind values and return a [`Cursor`] over the rows.
+    ///
+    /// The cursor's answer is fixed when this returns; see
+    /// [`crate::Minigraf::query`].
+    ///
+    /// # Errors
+    /// The same as [`PreparedQuery::execute`].
+    pub fn query(&self, bindings: &[(&str, BindValue)]) -> Result<Cursor, MinigrafError> {
+        self.execute_inner(bindings)
+            .and_then(Cursor::from_result)
+            .map_err(MinigrafError::from)
     }
 
     fn execute_inner(&self, bindings: &[(&str, BindValue)]) -> Result<QueryResult> {

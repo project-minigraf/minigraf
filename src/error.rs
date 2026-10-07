@@ -199,6 +199,7 @@ pub(crate) enum ErrorCode {
     Api009,
     Api010,
     Api011,
+    Api012,
     Int001,
     Int002,
     Int003,
@@ -1144,6 +1145,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCategory::Api,
     ),
     (
+        ErrorCode::Api012,
+        "API-012",
+        "only (query ...) commands can be opened as a cursor; got {}",
+        ErrorCategory::Api,
+    ),
+    (
         ErrorCode::Int001,
         "INT-001",
         "a WriteTransaction is already in progress on this thread; use tx.execute() instead",
@@ -1892,6 +1899,7 @@ mod tests {
                 | ErrorCode::Api009
                 | ErrorCode::Api010
                 | ErrorCode::Api011
+                | ErrorCode::Api012
                 | ErrorCode::Int001
                 | ErrorCode::Int002
                 | ErrorCode::Int003
@@ -2098,6 +2106,7 @@ mod tests {
             ErrorCode::Api009,
             ErrorCode::Api010,
             ErrorCode::Api011,
+            ErrorCode::Api012,
             ErrorCode::Int001,
             ErrorCode::Int002,
             ErrorCode::Int003,

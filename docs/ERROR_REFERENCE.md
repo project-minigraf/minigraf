@@ -167,6 +167,7 @@ with no `CodedError` anywhere in its chain.
 | API-009 | WAL not initialized | Database API |
 | API-010 | Query with bind slots passed to execute() | Database API |
 | API-011 | Two valid-time windows for one fact in one transaction | Database API |
+| API-012 | Non-query command passed to query() | Database API |
 | INT-000 | Unclassified internal error | Internal |
 | INT-001 | WriteTransaction already in progress on this thread | Internal |
 | INT-002 | Invalid entity (API layer) | Internal |
@@ -2451,6 +2452,25 @@ let result = pq.execute(&[
 ```
 
 **Scenario**: A batch import writes the same fact once per period it was true, all in one transaction.
+
+### API-012 Non-query command passed to query()
+
+**Error text**: `only (query ...) commands can be opened as a cursor; got {}`
+
+**Cause**: `db.query()` returns a `Cursor` over the rows of a query. It was given a `transact`, `retract` or `rule` command, which has no rows. The `{}` names the command. Nothing is written or registered.
+
+**Resolution**:
+- Run writes and rule definitions with `db.execute()` (or inside a `WriteTransaction`), and open cursors only for `(query ...)` commands.
+
+```rust
+db.execute(r#"(transact [[:alice :person/name "Alice"]])"#)?;
+let mut cursor = db.query("(query [:find ?name :where [?e :person/name ?name]])")?;
+while let Some(batch) = cursor.next_batch(1000)? {
+    for row in batch.rows() { /* ... */ }
+}
+```
+
+**Scenario**: Code that dispatches every command string through one function switches from `execute()` to `query()` for all of them.
 
 ---
 
