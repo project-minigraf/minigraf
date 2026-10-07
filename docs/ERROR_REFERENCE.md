@@ -151,6 +151,7 @@ with no `CodedError` anywhere in its chain.
 | STG-040 | Dictionary inconsistency | Storage |
 | STG-041 | Cannot rebuild indexes | Storage |
 | STG-042 | Database file not found (read-only open) | Storage |
+| STG-043 | Log writer target already exists | Storage |
 | WAL-001 | Invalid WAL magic number | WAL |
 | WAL-002 | Unsupported WAL version | WAL |
 | WAL-003 | Value size exceeds maximum | WAL |
@@ -171,6 +172,8 @@ with no `CodedError` anywhere in its chain.
 | API-012 | Non-query command passed to query() | Database API |
 | API-013 | Checkpoint while a fact log is open | Database API |
 | API-014 | Write on a read-only handle | Database API |
+| API-015 | Log writer record out of transaction order | Database API |
+| API-016 | Log writer record with a second tx_id for one transaction | Database API |
 | INT-000 | Unclassified internal error | Internal |
 | INT-001 | WriteTransaction already in progress on this thread | Internal |
 | INT-002 | Invalid entity (API layer) | Internal |
@@ -2199,6 +2202,25 @@ A read-only handle (`OpenOptions::read_only`) in another process also refuses a 
 
 **Scenario**: A migration tool is pointed at `memory.graph` from the wrong working directory.
 
+
+### STG-043 Log writer target already exists
+
+**Error text**: `{} already exists; a log writer only creates a new database`
+
+**Cause**: `LogWriter::create` was given a path where a file, or that path's WAL (`<path>.wal`), already exists; or `LogWriter::finish` found that a file appeared at the path while the build ran. A log writer never overwrites or extends a database, and a stale WAL beside the new file would be replayed onto it. The `{}` is the path that exists. At `finish`, the existing file is left untouched and the build (`<path>.partial`) is deleted.
+
+**Resolution**:
+- Write to a new path, then replace the old database yourself once the new one is checked (`verify()`, your own audit).
+- If the old file and WAL are no longer needed, delete them first.
+- Do not create the target while a build runs.
+
+```rust
+let mut out = LogWriter::create("memory.v2.graph", OpenOptions::new())?;
+// ... append, then out.finish()?; then swap files
+```
+
+**Scenario**: A migration is re-run after a successful first run, with the same output path.
+
 ---
 
 ## WAL — Write-Ahead Log Errors
@@ -2235,7 +2257,7 @@ The WAL is replayed on open and deleted on checkpoint.
 
 **Error text**: `Value of {} bytes exceeds the maximum of {} bytes. Store large payloads externally and reference them with a Value::String URL/path or Value::Ref entity ID.`
 
-**Cause**: A string value is longer than `MAX_VALUE_BYTES` (4,068 bytes, one value page), or an attribute name or keyword value is longer than 1,024 bytes. This typically means a `Value::String` contains very large content such as raw document text, a base64-encoded image, or binary data. In-memory databases have no WAL and no limit.
+**Cause**: A string value is longer than `MAX_VALUE_BYTES` (4,068 bytes, one value page), or an attribute name or keyword value is longer than 1,024 bytes. This typically means a `Value::String` contains very large content such as raw document text, a base64-encoded image, or binary data. `LogWriter::append` checks the same limits. In-memory databases have no WAL and no limit.
 
 **Resolution**:
 - Store large payloads in an external file or object store.
@@ -2456,7 +2478,7 @@ let result = pq.execute(&[
 
 **Error text**: `one transaction asserts the same value of {} with two valid-time windows; assert it once with its final window`
 
-**Cause**: One transaction asserts the same entity, attribute and value twice with different `:valid-from`/`:valid-to` bounds. At any transaction time a fact has exactly one current valid-time window, and the window of the latest transaction applies. Two windows in the same transaction leave no latest one, so the transaction is rejected and nothing is written. The `{}` is the attribute. This can come from one `(transact ...)` with per-fact bounds, or from several `execute()` calls inside one `WriteTransaction`.
+**Cause**: One transaction asserts the same entity, attribute and value twice with different `:valid-from`/`:valid-to` bounds. At any transaction time a fact has exactly one current valid-time window, and the window of the latest transaction applies. Two windows in the same transaction leave no latest one, so the transaction is rejected and nothing is written. The `{}` is the attribute. This can come from one `(transact ...)` with per-fact bounds, from several `execute()` calls inside one `WriteTransaction`, or from `LogWriter::append` records of one transaction (that record alone is rejected).
 
 **Resolution**:
 - Assert the fact once per transaction, with the window it should have.
@@ -2530,6 +2552,31 @@ let mut log = src.fact_log(&FactFilter::new())?;
 ```
 
 **Scenario**: An offline migration tool opens its source read-only and, by mistake, runs a cleanup `retract` against it instead of against the destination.
+
+
+### API-015 Log writer record out of transaction order
+
+**Error text**: `tx_count {} is out of order: the log writer is at {}, and a record must open a later transaction or join the open one`
+
+**Cause**: `LogWriter::append` received a record whose `tx_count` is 0, lower than the writer's current `tx_count`, or equal to it after that transaction was closed (by `advance_tx_count`, or by a record of a later transaction). The same code is returned by `advance_tx_count` with a value below the writer's. Records must come in non-decreasing `tx_count` order, each transaction's records together. The record is not written and the writer stays usable.
+
+**Resolution**:
+- Read the source with `fact_log()` in the default `FactOrder::Tx`, which returns records in non-decreasing `tx_count` with each transaction's records together. `FactOrder::Storage` does not, so sort its records by `tx_count` first.
+- Gaps are allowed: skip a transaction's records to purge it.
+- Call `advance_tx_count` only after the last record, or with a value above every record still to come.
+
+**Scenario**: A transform step merges two sources and appends their records one source after the other.
+
+### API-016 Log writer record with a second tx_id for one transaction
+
+**Error text**: `transaction {} has tx_id {}; a record with tx_id {} cannot join it`
+
+**Cause**: `LogWriter::append` received a record with the open transaction's `tx_count` but a different `tx_id`. A transaction has one wall-clock time, which `:as-of` with a timestamp compares against. The record is not written and the writer stays usable.
+
+**Resolution**:
+- Keep each record's `tx_id` as the source gave it. If a transform rewrites timestamps, give every record of one transaction the same new `tx_id`.
+
+**Scenario**: A transform sets `tx_id` from a per-record field instead of from the transaction.
 
 ---
 

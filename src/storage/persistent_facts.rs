@@ -662,6 +662,13 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.dirty
     }
 
+    /// Forget unsaved changes, so dropping this storage commits nothing. Used
+    /// by an abandoned log writer, whose file is deleted next (#431).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn discard(&mut self) {
+        self.dirty = false;
+    }
+
     /// Capacity (in pages) of the internal LRU page cache passed to `new()`.
     ///
     /// Exposed only for the browser WASM layer's tests, which verify that

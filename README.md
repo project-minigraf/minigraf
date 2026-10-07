@@ -66,7 +66,7 @@ v2.x gets data-integrity and security fixes for 12 months after v3.0.0 ships. Se
 ## Quick Start
 
 ```rust
-use minigraf::{FactFilter, Minigraf, OpenOptions};
+use minigraf::{FactFilter, LogWriter, Minigraf, OpenOptions};
 
 // Open or create a file-backed database
 let db = OpenOptions::new().path("myapp.graph").open()?;
@@ -100,6 +100,16 @@ while let Some(batch) = log.next_batch(1000)? {
 // a read-write handle (like `db` on myapp.graph) excludes them.
 let archive = Minigraf::open_with_options("archive.graph", OpenOptions::new().read_only(true))?;
 
+// Log writer — copy records into a new file with their transactions and valid-time
+// windows kept; leave records out to purge them
+let mut out = LogWriter::create("archive-clean.graph", OpenOptions::new())?;
+for rec in archive.fact_log(&FactFilter::new())? {
+    let rec = rec?;
+    if rec.attribute != ":person/ssn" { out.append(&rec)?; }
+}
+out.advance_tx_count(archive.current_tx_count())?;
+out.finish()?;
+
 // Explicit transaction — all-or-nothing
 let mut tx = db.begin_write()?;
 tx.execute(r#"(transact [[:alice :person/age 31]])"#)?;
@@ -121,7 +131,7 @@ let r2 = pq.execute(&[("tx", BindValue::TxCount(2)), ("entity", BindValue::Entit
 
 ```bash
 cargo run          # interactive Datalog REPL
-cargo test         # run 1329 tests
+cargo test         # run 1345 tests
 cargo run < demos/demo_recursive.txt   # recursive rules demo
 ```
 

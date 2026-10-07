@@ -108,7 +108,7 @@ fn check_wal_header_length(file: &mut File) -> Result<WalHeaderState> {
 /// Reject a fact a checkpoint could not store (WAL-003): a string value longer
 /// than one value page's payload, or an attribute or keyword longer than an
 /// ident may be (spec §6.3).
-fn check_fact_size(fact: &Fact) -> Result<()> {
+pub(crate) fn check_fact_size(fact: &Fact) -> Result<()> {
     if fact.attribute.len() > MAX_IDENT_BYTES {
         bail_coded!(ErrorCode::Wal003, fact.attribute.len(), MAX_IDENT_BYTES);
     }

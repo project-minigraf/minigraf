@@ -183,6 +183,7 @@ pub(crate) enum ErrorCode {
     Stg040,
     Stg041,
     Stg042,
+    Stg043,
     Wal001,
     Wal002,
     Wal003,
@@ -203,6 +204,8 @@ pub(crate) enum ErrorCode {
     Api012,
     Api013,
     Api014,
+    Api015,
+    Api016,
     Int001,
     Int002,
     Int003,
@@ -1053,6 +1056,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCategory::Storage,
     ),
     (
+        ErrorCode::Stg043,
+        "STG-043",
+        "{} already exists; a log writer only creates a new database",
+        ErrorCategory::Storage,
+    ),
+    (
         ErrorCode::Wal001,
         "WAL-001",
         "Invalid WAL magic number: not a .wal file",
@@ -1170,6 +1179,18 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Api014,
         "API-014",
         "database is open read-only; {} is not allowed",
+        ErrorCategory::Api,
+    ),
+    (
+        ErrorCode::Api015,
+        "API-015",
+        "tx_count {} is out of order: the log writer is at {}, and a record must open a later transaction or join the open one",
+        ErrorCategory::Api,
+    ),
+    (
+        ErrorCode::Api016,
+        "API-016",
+        "transaction {} has tx_id {}; a record with tx_id {} cannot join it",
         ErrorCategory::Api,
     ),
     (
@@ -1911,6 +1932,7 @@ mod tests {
                 | ErrorCode::Stg040
                 | ErrorCode::Stg041
                 | ErrorCode::Stg042
+                | ErrorCode::Stg043
                 | ErrorCode::Wal001
                 | ErrorCode::Wal002
                 | ErrorCode::Wal003
@@ -1931,6 +1953,8 @@ mod tests {
                 | ErrorCode::Api012
                 | ErrorCode::Api013
                 | ErrorCode::Api014
+                | ErrorCode::Api015
+                | ErrorCode::Api016
                 | ErrorCode::Int001
                 | ErrorCode::Int002
                 | ErrorCode::Int003
@@ -2122,6 +2146,7 @@ mod tests {
             ErrorCode::Stg040,
             ErrorCode::Stg041,
             ErrorCode::Stg042,
+            ErrorCode::Stg043,
             ErrorCode::Wal001,
             ErrorCode::Wal002,
             ErrorCode::Wal003,
@@ -2142,6 +2167,8 @@ mod tests {
             ErrorCode::Api012,
             ErrorCode::Api013,
             ErrorCode::Api014,
+            ErrorCode::Api015,
+            ErrorCode::Api016,
             ErrorCode::Int001,
             ErrorCode::Int002,
             ErrorCode::Int003,
