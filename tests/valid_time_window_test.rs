@@ -191,9 +191,10 @@ fn same_transaction_repeat_or_other_value_accepted() {
 }
 
 /// Two windows of one triple across `execute` calls of one
-/// `WriteTransaction` are API-011 at commit, and nothing is written.
+/// `WriteTransaction`: the later statement's window is the one committed
+/// (#477).
 #[test]
-fn write_transaction_two_windows_rejected_at_commit() {
+fn write_transaction_two_windows_across_statements_last_wins() {
     for mode in &MODES {
         with_db(mode, &[], |db| {
             let mut tx = db.begin_write().unwrap();
@@ -203,15 +204,10 @@ fn write_transaction_two_windows_rejected_at_commit() {
             .unwrap();
             tx.execute(r#"(transact {:valid-from "2024-01-01"} [[:d/c :description "r"]])"#)
                 .unwrap();
-            let err = tx.commit().expect_err("two windows in one transaction");
-            assert_eq!(err.code(), "API-011");
-            assert!(!visible(db, "", "2020-06-01"), "nothing written");
-            assert!(!visible(db, "", "2024-06-01"), "nothing written");
-
-            // The database still takes writes.
-            db.execute(r#"(transact {:valid-from "2024-01-01"} [[:d/c :description "r"]])"#)
-                .unwrap();
-            assert!(visible(db, "", "2024-06-01"), "written after the rejection");
+            tx.commit().unwrap();
+            assert!(!visible(db, "", "2020-06-01"), "earlier statement dropped");
+            assert!(visible(db, "", "2024-06-01"), "later statement committed");
+            assert!(!visible(db, ":as-of 1", "2020-06-01"), "never in history");
         });
     }
 }
@@ -227,4 +223,74 @@ fn write_transaction_repeat_without_bounds_accepted() {
     tx.execute(r#"(transact [[:d/c :description "r"]])"#)
         .unwrap();
     tx.commit().unwrap();
+}
+
+// ── Empty or inverted windows (#436) ─────────────────────────────────────────
+
+/// Transacts whose effective window ends at or before it starts.
+const INVERTED: [&str; 5] = [
+    r#"(transact {:valid-from "2026-08-21" :valid-to "2026-08-20"} [[:d/c :description "r"]])"#,
+    r#"(transact {:valid-from "2026-08-21" :valid-to "2026-08-21"} [[:d/c :description "r"]])"#,
+    // valid-from defaults to the transaction time, after valid-to.
+    r#"(transact {:valid-to "2020-01-01"} [[:d/c :description "r"]])"#,
+    // A per-fact bound inverts the transaction's window.
+    r#"(transact {:valid-from "2020-01-01" :valid-to "2030-01-01"} [[:d/x :n 1] [:d/c :description "r" {:valid-to "2019-01-01"}]])"#,
+    r#"(transact [[:d/x :n 1] [:d/c :description "r" {:valid-from "2031-01-01" :valid-to "2030-01-01"}]])"#,
+];
+
+/// Each is API-019 from `execute`, writes nothing and takes no `tx_count`.
+#[test]
+fn inverted_window_rejected_by_execute() {
+    for mode in &MODES {
+        with_db(mode, &[r#"(transact [[:d/x :n 0]])"#], |db| {
+            for (i, w) in INVERTED.iter().enumerate() {
+                let err = db.execute(w).expect_err("inverted window");
+                assert_eq!(err.code(), "API-019", "case {i}");
+            }
+            assert_eq!(db.current_tx_count(), 1, "no tx_count taken");
+            assert_eq!(
+                count(
+                    db,
+                    r#"(query [:find ?e ?a ?v :any-valid-time :where [?e ?a ?v]])"#
+                ),
+                1,
+                "nothing written"
+            );
+        });
+    }
+}
+
+/// A window that ends after it starts, also in the past, is accepted.
+#[test]
+fn past_window_that_ends_after_it_starts_accepted() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute(
+        r#"(transact {:valid-from "2019-01-01" :valid-to "2020-01-01"} [[:d/c :description "r"]])"#,
+    )
+    .unwrap();
+    assert!(visible(&db, "", "2019-06-01"), "inside the window");
+    assert!(!visible(&db, "", "2020-01-01"), "end is exclusive");
+}
+
+/// `tx.execute` rejects an inverted statement and stages nothing; the
+/// transaction still commits its other statements.
+#[test]
+fn inverted_window_rejected_by_tx_execute() {
+    let db = Minigraf::in_memory().unwrap();
+    let mut tx = db.begin_write().unwrap();
+    tx.execute(r#"(transact [[:d/x :n 1]])"#).unwrap();
+    for (i, w) in INVERTED.iter().enumerate() {
+        let err = tx.execute(w).expect_err("inverted window");
+        assert_eq!(err.code(), "API-019", "case {i}");
+    }
+    tx.commit().unwrap();
+    assert_eq!(db.current_tx_count(), 1, "one transaction");
+    assert_eq!(
+        count(
+            &db,
+            r#"(query [:find ?e ?a ?v :any-valid-time :where [?e ?a ?v]])"#
+        ),
+        1,
+        "only the accepted statement"
+    );
 }

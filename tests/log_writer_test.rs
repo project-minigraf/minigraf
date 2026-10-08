@@ -381,10 +381,16 @@ fn rejected_records_change_nothing() {
     let mut other_window = rec(3, 300, ":a/x", 1);
     other_window.valid_to = 400;
     assert_eq!(code(w.append(&other_window)), "API-011", "two windows");
-    // A retraction with another window is a different record, not a conflict.
     let mut retraction = other_window.clone();
     retraction.asserted = false;
-    w.append(&retraction).unwrap();
+    assert_eq!(
+        code(w.append(&retraction)),
+        "API-020",
+        "retracting what the transaction asserts"
+    );
+    let mut inverted = rec(3, 300, ":a/z", 1);
+    inverted.valid_to = 300;
+    assert_eq!(code(w.append(&inverted)), "API-019", "empty window");
 
     let mut big = rec(3, 300, ":a/x", 0);
     big.value = Value::String("x".repeat(1 << 20));
@@ -413,10 +419,69 @@ fn rejected_records_change_nothing() {
     let mut got: Vec<String> = records(&db).iter().map(row).collect();
     got.sort();
     let want = vec![
-        "3 300 e1 :a/x Integer(1) 300 400 false".to_string(),
         "3 300 e1 :a/x Integer(1) 300 9223372036854775807 true".to_string(),
         "3 300 e1 :a/y Integer(9) 300 9223372036854775807 true".to_string(),
         "4 250 e1 :a/x Integer(6) 250 9223372036854775807 true".to_string(),
+    ];
+    assert_eq!(got, want);
+    assert!(db.verify().unwrap().is_ok(), "verify is clean");
+}
+
+/// Every file the writer builds keeps the rules of a normal write (#477):
+/// an inverted window, two windows of one fact in one transaction, and an
+/// assertion and a retraction of one fact in one transaction (either order)
+/// are rejected. Duplicate retractions, identical repeats, and the same fact
+/// in the next transaction are accepted.
+#[test]
+fn records_that_break_write_rules_are_rejected() {
+    let dir = Dir::new();
+    let out = dir.path("out.graph");
+    let mut w = LogWriter::create(&out, OpenOptions::new()).unwrap();
+    let code = |r: Result<(), minigraf::MinigrafError>| r.unwrap_err().code().to_string();
+    let retract = |mut r: FactRecord| {
+        r.asserted = false;
+        r
+    };
+
+    let mut inverted = rec(1, 100, ":a/w", 4);
+    inverted.valid_to = 50;
+    assert_eq!(
+        code(w.append(&inverted)),
+        "API-019",
+        "ends before it starts"
+    );
+    assert_eq!(w.tx_count(), 0, "a rejected record opens no transaction");
+
+    w.append(&retract(rec(1, 100, ":a/y", 2))).unwrap();
+    w.append(&retract(rec(1, 100, ":a/y", 2))).unwrap();
+    assert_eq!(
+        code(w.append(&rec(1, 100, ":a/y", 2))),
+        "API-020",
+        "retract then assert"
+    );
+    w.append(&rec(1, 100, ":a/x", 1)).unwrap();
+    w.append(&rec(1, 100, ":a/x", 1)).unwrap();
+    assert_eq!(
+        code(w.append(&retract(rec(1, 100, ":a/x", 1)))),
+        "API-020",
+        "assert then retract"
+    );
+    let mut second = rec(1, 100, ":a/x", 1);
+    second.valid_from = 50;
+    assert_eq!(code(w.append(&second)), "API-011", "second window");
+    // The next transaction may write the fact again, any way.
+    w.append(&retract(rec(2, 200, ":a/x", 1))).unwrap();
+    w.append(&rec(2, 200, ":a/y", 2)).unwrap();
+    w.finish().unwrap();
+
+    let db = Minigraf::open(&out).unwrap();
+    let mut got: Vec<String> = records(&db).iter().map(row).collect();
+    got.sort();
+    let want = vec![
+        "1 100 e1 :a/x Integer(1) 100 9223372036854775807 true".to_string(),
+        "1 100 e1 :a/y Integer(2) 100 9223372036854775807 false".to_string(),
+        "2 200 e1 :a/x Integer(1) 200 9223372036854775807 false".to_string(),
+        "2 200 e1 :a/y Integer(2) 200 9223372036854775807 true".to_string(),
     ];
     assert_eq!(got, want);
     assert!(db.verify().unwrap().is_ok(), "verify is clean");

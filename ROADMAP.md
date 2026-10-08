@@ -62,7 +62,9 @@ Scope — format and storage integrity:
   The format is frozen for the golden-file corpus (#391).
 - Index `verify` and public `rebuild_indexes()` (#373; done on `v3`)
 - Net-assert on v8 keys before resolving facts, for O(live) point queries (#379; done on `v3`)
-- One current valid-time window per `(e, a, v)`: a later assertion replaces the earlier window, and two windows of one fact in one transaction are `API-011` (#435; done on `v3`)
+- One current valid-time window per `(e, a, v)`: a later assertion replaces the earlier window, and two windows of one fact in one `transact` are `API-011` (#435; done on `v3`)
+- Empty or inverted valid-time windows rejected with `API-019` on every write path (#436; done on `v3`)
+- In a `WriteTransaction`, the last statement that writes a fact decides it, so reads inside the transaction match the commit; `LogWriter` keeps the same rules, with `API-020` for an assertion and retraction of one fact in one transaction (#477; done on `v3`)
 - `btree_page` fuzz target that reaches node decoding (#375)
 
 Scope — query API:

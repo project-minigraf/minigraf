@@ -322,11 +322,14 @@ impl BrowserDb {
         let (flush, result_json) = {
             let mut inner = self.inner.borrow_mut();
 
-            // Before allocating: a rejected transaction takes no tx_count (#435).
+            // Before allocating: a rejected transaction takes no tx_count
+            // (#435, #436).
+            let tx_id = tx_id_now();
+            crate::graph::storage::check_valid_windows(&facts, tx_id)
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
             crate::graph::storage::check_one_window_per_triple(&facts)
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
             let tx_count = inner.fact_storage.allocate_tx_count();
-            let tx_id = tx_id_now();
 
             let stamped: Vec<crate::graph::types::Fact> = facts
                 .into_iter()

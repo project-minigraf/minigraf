@@ -155,6 +155,7 @@ impl FactStorage {
             })
             .collect();
         // Before allocating: a rejected transaction takes no tx_count.
+        check_valid_windows(&facts, tx_id)?;
         check_one_window_per_triple(&facts)?;
         let tx_count = self
             .tx_counter
@@ -212,6 +213,7 @@ impl FactStorage {
             })
             .collect();
         // Before allocating: a rejected transaction takes no tx_count.
+        check_valid_windows(&facts, tx_id)?;
         check_one_window_per_triple(&facts)?;
         let tx_count = self
             .tx_counter
@@ -617,6 +619,25 @@ pub(crate) fn check_one_window_per_triple(facts: &[Fact]) -> Result<()> {
             .is_some_and(|prev| prev != window)
         {
             bail_coded!(ErrorCode::Api011, fact.attribute);
+        }
+    }
+    Ok(())
+}
+
+/// Reject a transaction's facts if an assertion's valid-time window ends at or
+/// before it starts (API-019, #436). A `valid_from` still holding
+/// `VALID_FROM_USE_TX_TIME` is checked as `tx_id`, the transaction time it
+/// will be stamped with. Run before anything is written.
+pub(crate) fn check_valid_windows(facts: &[Fact], tx_id: TxId) -> Result<()> {
+    let tx_time = i64::try_from(tx_id).unwrap_or(i64::MAX);
+    for fact in facts.iter().filter(|f| f.asserted) {
+        let valid_from = if fact.valid_from == crate::db::VALID_FROM_USE_TX_TIME {
+            tx_time
+        } else {
+            fact.valid_from
+        };
+        if fact.valid_to <= valid_from {
+            bail_coded!(ErrorCode::Api019, fact.attribute);
         }
     }
     Ok(())
@@ -1825,6 +1846,59 @@ mod tests {
         check_one_window_per_triple(&[w1.clone(), retraction]).expect("retraction");
         let err = check_one_window_per_triple(&[w1, w2]).expect_err("two windows");
         assert_eq!(crate::error::MinigrafError::from(err).code(), "API-011");
+    }
+
+    #[test]
+    fn check_valid_windows_rejects_empty_and_inverted_windows() {
+        let entity = uuid::Uuid::new_v4();
+        let value = Value::Integer(1);
+        let window = |vf: i64, vt: i64| make_assert(entity, ":a", value.clone(), 1, vf, vt);
+        let code = |r: Result<()>| crate::error::MinigrafError::from(r.unwrap_err()).code();
+        let tx_time = crate::db::VALID_FROM_USE_TX_TIME;
+
+        check_valid_windows(&[window(1_000, 2_000)], 5_000).expect("past window");
+        check_valid_windows(&[window(1_000, VALID_TIME_FOREVER)], 5_000).expect("forever");
+        check_valid_windows(&[window(tx_time, 5_001)], 5_000).expect("tx time to later");
+        check_valid_windows(&[window(tx_time, VALID_TIME_FOREVER)], 5_000).expect("default");
+        let mut retraction = make_retract(entity, ":a", value.clone(), 1);
+        retraction.valid_from = 9_000;
+        retraction.valid_to = 1_000;
+        check_valid_windows(&[retraction], 5_000).expect("retractions are not checked");
+
+        assert_eq!(
+            code(check_valid_windows(&[window(2_000, 1_000)], 5_000)),
+            "API-019"
+        );
+        assert_eq!(
+            code(check_valid_windows(&[window(2_000, 2_000)], 5_000)),
+            "API-019"
+        );
+        assert_eq!(
+            code(check_valid_windows(&[window(tx_time, 5_000)], 5_000)),
+            "API-019"
+        );
+        assert_eq!(
+            code(check_valid_windows(&[window(tx_time, 1_000)], 5_000)),
+            "API-019"
+        );
+        assert_eq!(
+            code(check_valid_windows(&[window(0, 9), window(9, 9)], 5_000)),
+            "API-019",
+            "any fact of the batch"
+        );
+    }
+
+    #[test]
+    fn transact_batch_rejects_inverted_window_without_taking_a_tx() {
+        let storage = FactStorage::new();
+        let entity = uuid::Uuid::new_v4();
+        let opts = TransactOptions::new(Some(2_000), Some(1_000));
+        let err = storage.transact_batch(
+            vec![(entity, ":a".to_string(), Value::Integer(1), Some(opts))],
+            None,
+        );
+        assert!(err.is_err(), "inverted window rejected");
+        assert_eq!(storage.current_tx_count(), 0, "no tx_count taken");
     }
 
     #[test]

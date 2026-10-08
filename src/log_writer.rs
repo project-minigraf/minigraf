@@ -27,6 +27,9 @@ use std::path::{Path, PathBuf};
 /// Pending facts after which the next transaction boundary commits a batch.
 const BATCH_FACTS: usize = 1 << 16;
 
+/// An `(entity, attribute, encoded value)` triple.
+type TripleKey = (EntityId, String, Vec<u8>);
+
 /// Writes explicit fact records into a new database file.
 ///
 /// Records must come in transaction order: each one either opens a new
@@ -62,8 +65,9 @@ pub struct LogWriter {
     tx_count: u64,
     /// The open transaction's `(tx_count, tx_id)`, if a record can join it.
     open_tx: Option<(u64, u64)>,
-    /// The open transaction's valid-time window per asserted `(e, a, v)`.
-    windows: HashMap<(EntityId, String, Vec<u8>), (i64, i64)>,
+    /// What the open transaction writes per `(e, a, v)`: its valid-time
+    /// window, or `None` for a retraction.
+    written: HashMap<TripleKey, Option<(i64, i64)>>,
     /// Facts loaded since the last batch commit.
     pending: usize,
 }
@@ -106,7 +110,7 @@ impl LogWriter {
             partial,
             tx_count: 0,
             open_tx: None,
-            windows: HashMap::new(),
+            written: HashMap::new(),
             pending: 0,
         })
     }
@@ -132,8 +136,12 @@ impl LogWriter {
     /// - `API-015` if `tx_count` is 0, below the writer's, or names a
     ///   transaction that is already closed.
     /// - `API-016` if it joins the open transaction with a different `tx_id`.
+    /// - `API-019` if it asserts a valid-time window that ends at or before
+    ///   it starts.
     /// - `API-011` if it asserts an `(entity, attribute, value)` the open
     ///   transaction already asserts with another valid-time window.
+    /// - `API-020` if it asserts an `(entity, attribute, value)` the open
+    ///   transaction retracts, or retracts one it asserts.
     /// - `WAL-003` if the attribute, a keyword or a string value is longer
     ///   than the format stores.
     ///
@@ -165,14 +173,26 @@ impl LogWriter {
             asserted: rec.asserted,
         };
         crate::wal::check_fact_size(&fact)?;
+        // The rules of a normal write hold for every file built here (#477):
+        // a source carrying older records that break them must be repaired
+        // before it is copied.
+        if fact.asserted && fact.valid_to <= fact.valid_from {
+            bail_coded!(ErrorCode::Api019, fact.attribute);
+        }
         let key = (
             fact.entity,
             fact.attribute.clone(),
             encode_value(&fact.value),
         );
-        let window = (fact.valid_from, fact.valid_to);
-        if fact.asserted && joins && self.windows.get(&key).is_some_and(|w| *w != window) {
-            bail_coded!(ErrorCode::Api011, fact.attribute);
+        let this = fact.asserted.then_some((fact.valid_from, fact.valid_to));
+        if joins && let Some(prev) = self.written.get(&key) {
+            match (prev, this) {
+                (Some(a), Some(b)) if *a != b => bail_coded!(ErrorCode::Api011, fact.attribute),
+                (Some(_), None) | (None, Some(_)) => {
+                    bail_coded!(ErrorCode::Api020, fact.attribute)
+                }
+                _ => {}
+            }
         }
 
         if !joins {
@@ -183,9 +203,7 @@ impl LogWriter {
             self.tx_count = rec.tx_count;
             self.open_tx = Some((rec.tx_count, rec.tx_id));
         }
-        if fact.asserted {
-            self.windows.insert(key, window);
-        }
+        self.written.insert(key, this);
         let pfs = self.pfs_mut()?;
         if pfs.storage().load_fact(fact)? {
             pfs.mark_dirty();
@@ -255,7 +273,7 @@ impl LogWriter {
 
     fn close_tx(&mut self) {
         self.open_tx = None;
-        self.windows.clear();
+        self.written.clear();
     }
 
     /// Commit the pending records as the next generation of the file.
