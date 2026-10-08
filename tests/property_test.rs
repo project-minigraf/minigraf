@@ -512,10 +512,6 @@ impl Query {
     }
 }
 
-fn arb_var() -> impl Strategy<Value = Var> {
-    prop_oneof![(0u8..3).prop_map(Var::E), (0u8..3).prop_map(Var::V)]
-}
-
 fn arb_e_term() -> impl Strategy<Value = Term> {
     prop_oneof![
         4 => (0u8..3).prop_map(|i| Term::Var(Var::E(i))),
