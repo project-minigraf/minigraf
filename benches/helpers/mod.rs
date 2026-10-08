@@ -28,6 +28,11 @@ pub fn populate_in_memory(n: usize) -> Arc<Minigraf> {
 /// so building the file each time rebuilt 1m facts ~11 times per benchmark and
 /// ran `insert_file` for hours (#393). The file for each `n` is built once and
 /// copied to `path`; every caller still gets a fresh, identical file.
+///
+/// The copy is fsynced before returning. Otherwise its dirty pages are still
+/// being written back while the benchmark runs, and every WAL fsync waits on
+/// that writeback: the 1m copy made `insert_file/*/1m` 3-10x slower on about
+/// half the nightly runs (#426).
 pub fn populate_file(n: usize, path: &str) {
     let mut fixtures = FILE_FIXTURES.lock().unwrap();
     let fixtures = fixtures.get_or_insert_with(|| FileFixtures {
@@ -47,6 +52,7 @@ pub fn populate_file(n: usize, path: &str) {
         template
     });
     std::fs::copy(template, path).unwrap();
+    std::fs::File::open(path).unwrap().sync_all().unwrap();
 }
 
 /// Delete the files built by [`populate_file`]. Statics are not dropped at
