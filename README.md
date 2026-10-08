@@ -141,7 +141,7 @@ See a working implementation of **temporal reasoning** with Minigraf at [github.
 
 The **[time travel visualizer](https://project-minigraf.github.io/minigraf-visualizer/)** runs Minigraf in your browser and draws its history. Step through transactions, move the valid-time cursor, and see each fact version on a bitemporal map. It opens `.graph` files too. For example, see [a salary that was recorded wrong and then corrected](https://project-minigraf.github.io/minigraf-visualizer/#sample=careers&tx=7&e=:alice&view=map).
 
-See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference) wiki page for the complete syntax.
+See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/) for the complete syntax.
 
 ## Why Minigraf?
 
@@ -166,10 +166,10 @@ No other database offers this combination:
 | Browser WASM | 2 (experimental) | `@minigraf/browser` on npm | `npm install @minigraf/browser` |
 | WASI | 2 (experimental) | `@minigraf/wasi` on npm | `npm install @minigraf/wasi` |
 | Node.js | 2 (experimental) | `minigraf` on npm | `npm install minigraf` |
-| Java/JVM | 2 (experimental) | `io.github.project-minigraf:minigraf-jvm` on Maven Central | see [wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) |
-| Android | 2 (experimental) | `io.github.project-minigraf:minigraf-android` (`.aar`) on Maven Central | see [wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) |
-| iOS / macOS | 2 (experimental) | `.xcframework` via Swift Package Manager ([minigraf-swift](https://github.com/project-minigraf/minigraf-swift)) | see [wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) |
-| C / FFI | 2 (experimental) | header + tarball on [minigraf-c releases](https://github.com/project-minigraf/minigraf-c/releases) | see [wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases) |
+| Java/JVM | 2 (experimental) | `io.github.project-minigraf:minigraf-jvm` on Maven Central | see [docs](https://project-minigraf.github.io/minigraf-docs/latest/use-cases/) |
+| Android | 2 (experimental) | `io.github.project-minigraf:minigraf-android` (`.aar`) on Maven Central | see [docs](https://project-minigraf.github.io/minigraf-docs/latest/use-cases/) |
+| iOS / macOS | 2 (experimental) | `.xcframework` via Swift Package Manager ([minigraf-swift](https://github.com/project-minigraf/minigraf-swift)) | see [docs](https://project-minigraf.github.io/minigraf-docs/latest/use-cases/) |
+| C / FFI | 2 (experimental) | header + tarball on [minigraf-c releases](https://github.com/project-minigraf/minigraf-c/releases) | see [docs](https://project-minigraf.github.io/minigraf-docs/latest/use-cases/) |
 
 **Tier 1** bindings are fully tested and released at the same time as every core release. **Tier 2** bindings are built and smoke-tested, released on a best-effort schedule, and experimental. A binding moves to Tier 1 when real users need it. Tier 1 operating systems and filesystems are Linux (ext4, xfs), macOS (APFS) and Windows (NTFS) on local disk; NFSv4 is supported with caveats, and NFSv3 `nolock` is unsupported for multiple writers. Details: [support tiers](PHILOSOPHY.md#support-tiers).
 
@@ -188,7 +188,7 @@ No other database offers this combination:
 | iOS/macOS | Swift bindings | [minigraf-swift](https://github.com/project-minigraf/minigraf-swift) |
 | C | C bindings | [minigraf-c](https://github.com/project-minigraf/minigraf-c) |
 
-See the [Comparison](https://github.com/project-minigraf/minigraf/wiki/Comparison) wiki page for detailed analysis including temporal vs. time-series databases.
+See the [Comparison](https://project-minigraf.github.io/minigraf-docs/latest/comparison/) page for detailed analysis including temporal vs. time-series databases.
 
 ### For AI Agents
 
@@ -216,15 +216,15 @@ try db.execute(datalog: #"(transact [[:alice :person/name "Alice"] [:alice :pers
 let json = try db.execute(datalog: "(query [:find ?name :where [?e :person/name ?name]])")
 ```
 
-See the [Mobile Integration](https://github.com/project-minigraf/minigraf/wiki/Use-Cases#mobile-apps) wiki section for full setup and usage docs (Gradle config, SPM integration, error handling, threading).
+See the [Mobile Integration](https://project-minigraf.github.io/minigraf-docs/latest/use-cases/#mobile-apps) section for full setup and usage docs (Gradle config, SPM integration, error handling, threading).
 
 ### For WASM / Browser
 
-Published as [`@minigraf/browser`](https://www.npmjs.com/package/@minigraf/browser) on npm (IndexedDB-backed, `wasm-pack`). WASI build (`wasm32-wasip1`) available as [`@minigraf/wasi`](https://www.npmjs.com/package/@minigraf/wasi) on npm and as a GitHub Releases artifact (Wasmtime / Wasmer). See the [Use Cases wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases). The [playground](https://minigraf-playground.vercel.app/) and the [time travel visualizer](https://project-minigraf.github.io/minigraf-visualizer/) are both built on `@minigraf/browser`.
+Published as [`@minigraf/browser`](https://www.npmjs.com/package/@minigraf/browser) on npm (IndexedDB-backed, `wasm-pack`). WASI build (`wasm32-wasip1`) available as [`@minigraf/wasi`](https://www.npmjs.com/package/@minigraf/wasi) on npm and as a GitHub Releases artifact (Wasmtime / Wasmer). See the [Use Cases](https://project-minigraf.github.io/minigraf-docs/latest/use-cases/). The [playground](https://minigraf-playground.vercel.app/) and the [time travel visualizer](https://project-minigraf.github.io/minigraf-visualizer/) are both built on `@minigraf/browser`.
 
 ### For Python / Node.js / Java / C
 
-Language bindings ship as `minigraf` on PyPI, `minigraf` on npm (Node.js native addon), `io.github.adityamukho:minigraf-jvm` on Maven Central, and a C header + prebuilt shared library on GitHub Releases. See the [Use Cases wiki](https://github.com/project-minigraf/minigraf/wiki/Use-Cases).
+Language bindings ship as `minigraf` on PyPI, `minigraf` on npm (Node.js native addon), `io.github.adityamukho:minigraf-jvm` on Maven Central, and a C header + prebuilt shared library on GitHub Releases. See the [Use Cases](https://project-minigraf.github.io/minigraf-docs/latest/use-cases/).
 
 ## Scope
 
@@ -239,7 +239,7 @@ Minigraf will **not** be (by design):
 - **Distributed** — no clustering, no sharding, no replication; each agent instance owns its own `.graph` file
 - **Client-server** — no network protocol in core
 - **Billion-node scale** — optimised for <1M nodes (like SQLite)
-- **A time-series database** — Minigraf is a *temporal* database; see [Comparison](https://github.com/project-minigraf/minigraf/wiki/Comparison#influxdb--prometheus--timescaledb-time-series-databases)
+- **A time-series database** — Minigraf is a *temporal* database; see [Comparison](https://project-minigraf.github.io/minigraf-docs/latest/comparison/#influxdb--prometheus--timescaledb-time-series-databases)
 
 ## Roadmap
 
@@ -254,7 +254,7 @@ See [BENCHMARKS.md](docs/BENCHMARKS.md) for the current reproducible local snaps
 
 File-backed databases enforce a maximum fact size of **4 080 serialised bytes** per fact. In-memory databases have no limit.
 
-**Durability tuning:** every write is `fsync`'d immediately by default (`SyncMode::Full`). Bulk loaders/migrations that can safely re-run from a checkpoint watermark on failure can trade that for throughput with `OpenOptions::new().synchronous(SyncMode::Normal)` — `checkpoint()` still fsyncs unconditionally in both modes. See the [Performance Tuning wiki page](https://github.com/project-minigraf/minigraf/wiki/Performance-Tuning#configuration-knobs) for the full tradeoff and the write-batching pattern that pairs with it.
+**Durability tuning:** every write is `fsync`'d immediately by default (`SyncMode::Full`). Bulk loaders/migrations that can safely re-run from a checkpoint watermark on failure can trade that for throughput with `OpenOptions::new().synchronous(SyncMode::Normal)` — `checkpoint()` still fsyncs unconditionally in both modes. See the [Performance Tuning](https://project-minigraf.github.io/minigraf-docs/latest/performance-tuning/#configuration-knobs) for the full tradeoff and the write-batching pattern that pairs with it.
 
 ## Contributing
 
