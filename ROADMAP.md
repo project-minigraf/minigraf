@@ -77,7 +77,7 @@ Scope — query API:
 Scope — release-gate testing and documentation:
 
 - Golden-file compatibility corpus for every format version (#391; done on `v3`: six v7 files from 2.0.3 checked after migration, seven v8 files frozen at `23aa57c`)
-- SIGKILL crash test that checks committed data through EAVT, AEVT and full scan (#384)
+- SIGKILL crash test that checks committed data through EAVT, AEVT and full scan (#384; done on `v3`: `tests/crash_kill_test.rs`, 100 rounds per OS nightly)
 - Model-based test of transact/retract/checkpoint/reopen (#385; done on `v3`: `tests/model_based_test.rs`, 30,000 cases nightly)
 - Wider property tests: file-backed, batched, retracts, temporal, joins (#386)
 - Persistent fuzz corpus and an operation-sequence target (#387)
