@@ -1,5 +1,13 @@
 name: SIGKILL crash-safety fuzz (nightly)
 
+# Two branches alternate every 12 hours: main at 03:17 UTC, v3 at 15:17 UTC.
+# Scheduled runs always use this file from the default branch, so the branch
+# under test is chosen from the cron string that fired (as in bench.yml).
+# Keep the cron strings here and in CRASH_REF/run-name identical.
+run-name: >-
+  SIGKILL crash-safety fuzz (${{ github.event_name == 'workflow_dispatch' && inputs.ref
+  || (github.event.schedule == '17 15 * * *' && 'v3' || 'main') }})
+
 # #308: an abrupt kill landing mid-checkpoint had a ~26% chance of leaving
 # the header on disk with a bumped page_count but a stale checksum --
 # permanent corruption with no recovery path. The bug was in the ordering
@@ -10,17 +18,26 @@ name: SIGKILL crash-safety fuzz (nightly)
 # workflow runs a much larger round count nightly for statistical
 # confidence on each OS. Since #384 each round also checks that the reopened
 # file holds exactly the transactions the child confirmed (EAVT, AEVT, AVET,
-# full scan, :as-of). The test prints its base seed; replay a
+# full scan, :as-of; verify on v3). The test prints its base seed; replay a
 # failure with MINIGRAF_CRASH_KILL_SEED.
 
 on:
   schedule:
-    - cron: "17 3 * * *"
+    - cron: "17 3 * * *"   # main
+    - cron: "17 15 * * *"  # v3
   workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch to test
+        required: true
+        default: main
 
 permissions:
   contents: read
   issues: write
+
+env:
+  CRASH_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || (github.event.schedule == '17 15 * * *' && 'v3' || 'main') }}
 
 jobs:
   crash-kill:
@@ -34,6 +51,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CRASH_REF }}
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -52,14 +71,14 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          ISSUE_TITLE: "Nightly SIGKILL crash-safety failure (${{ matrix.os }})"
+          ISSUE_TITLE: "Nightly SIGKILL crash-safety failure (${{ env.CRASH_REF }}, ${{ matrix.os }})"
         run: |
           report_file="crash-kill-failure.md"
           {
-            echo "The nightly SIGKILL crash-safety fuzz suite failed on ${{ matrix.os }}."
+            echo "The nightly SIGKILL crash-safety fuzz suite failed on ${{ env.CRASH_REF }} (${{ matrix.os }})."
             echo
             echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-            echo "- Commit: $GITHUB_SHA"
+            echo "- Commit: $(git rev-parse HEAD)"
             echo "- Reproduce: cargo test --test crash_kill_test -- --nocapture"
             echo "  (set MINIGRAF_CRASH_KILL_ROUNDS to raise the round count; MINIGRAF_CRASH_KILL_SEED to the printed base seed to replay)"
             echo
