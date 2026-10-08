@@ -63,7 +63,7 @@ Scope — format and storage integrity:
 Scope — release-gate testing and documentation:
 
 - Golden-file compatibility corpus for every format version, frozen before v8 work goes further (#391)
-- SIGKILL crash test that checks committed data through EAVT, AEVT and full scan (#384)
+- SIGKILL crash test that checks committed data through EAVT, AEVT and full scan (#384; also on v2.x, without the #371/#435 cases)
 - Model-based test of transact/retract/checkpoint/reopen (#385)
 - Wider property tests: file-backed, batched, retracts, temporal, joins (#386)
 - Persistent fuzz corpus and an operation-sequence target (#387)

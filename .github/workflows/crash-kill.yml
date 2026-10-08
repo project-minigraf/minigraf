@@ -8,7 +8,10 @@ name: SIGKILL crash-safety fuzz (nightly)
 # matrix rather than Linux only. tests/crash_kill_test.rs runs a small
 # smoke count in the per-PR suite (rust.yml, already cross-platform); this
 # workflow runs a much larger round count nightly for statistical
-# confidence on each OS.
+# confidence on each OS. Since #384 each round also checks that the reopened
+# file holds exactly the transactions the child confirmed (EAVT, AEVT, AVET,
+# full scan, :as-of). The test prints its base seed; replay a
+# failure with MINIGRAF_CRASH_KILL_SEED.
 
 on:
   schedule:
@@ -58,7 +61,7 @@ jobs:
             echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             echo "- Commit: $GITHUB_SHA"
             echo "- Reproduce: cargo test --test crash_kill_test -- --nocapture"
-            echo "  (set MINIGRAF_CRASH_KILL_ROUNDS to raise the round count)"
+            echo "  (set MINIGRAF_CRASH_KILL_ROUNDS to raise the round count; MINIGRAF_CRASH_KILL_SEED to the printed base seed to replay)"
             echo
             echo "## Test output"
             echo
