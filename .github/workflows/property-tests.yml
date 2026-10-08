@@ -19,8 +19,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Query properties (#386): 1M in-memory cases (~3 ms each) and a
+          # tenth as many file-backed ones (~57 ms each, checkpoint and
+          # reopen), plus 1M of each one-pattern property; ~1.6 h locally.
           - test: property_test
-            cases: 8000000
+            cases: 1000000
           # Model-based storage test (#385): each case runs up to 50 steps
           # against a file, ~0.1 s per case.
           - test: model_based_test
