@@ -216,7 +216,7 @@ with no `CodedError` anywhere in its chain.
 Parser errors occur when Minigraf cannot parse the Datalog/EDN input string.
 They are returned immediately from `db.execute()` before any fact is read or written.
 
-See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference) for syntax guidance.
+See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/) for syntax guidance.
 
 ### PRS-001 Unexpected end of input
 
@@ -260,7 +260,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Check surrounding delimiters for balance.
-- Consult the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference) for expected syntax at that position.
+- Consult the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/) for expected syntax at that position.
 
 **Example**:
 ```datalog
@@ -432,7 +432,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Add a value: `:as-of 5` (transaction count) or `:as-of "2024-01-01T00:00:00Z"` (ISO 8601 wall-clock time).
-- See the [Datalog Reference — Time Travel](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#bi-temporal-queries).
+- See the [Datalog Reference — Time Travel](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#bi-temporal-queries).
 
 **Example**:
 ```datalog
@@ -449,7 +449,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 **Resolution**:
 - Use a non-negative integer.
 - `:as-of 0` returns the database before any transaction; `:as-of 1` returns the state after the first transaction.
-- See the [Datalog Reference — Time Travel](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#bi-temporal-queries).
+- See the [Datalog Reference — Time Travel](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#bi-temporal-queries).
 
 **Example**:
 ```datalog
@@ -465,7 +465,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Use `42` (tx-count) or `"2024-01-01T00:00:00Z"` (wall-clock).
-- See the [Datalog Reference — Time Travel](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#bi-temporal-queries).
+- See the [Datalog Reference — Time Travel](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#bi-temporal-queries).
 
 **Example**:
 ```datalog
@@ -481,7 +481,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Add an ISO 8601 timestamp: `:valid-at "2024-06-01T00:00:00Z"`.
-- See the [Datalog Reference — Time Travel](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#bi-temporal-queries).
+- See the [Datalog Reference — Time Travel](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#bi-temporal-queries).
 
 **Example**:
 ```datalog
@@ -497,7 +497,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Use `"2024-06-01T00:00:00Z"` or `:any-valid-time`.
-- See the [Datalog Reference — Time Travel](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#bi-temporal-queries).
+- See the [Datalog Reference — Time Travel](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#bi-temporal-queries).
 
 **Example**:
 ```datalog
@@ -513,7 +513,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Use `"2024-01-01T00:00:00Z"` format.
-- See the [Datalog Reference — Time Travel](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#bi-temporal-queries).
+- See the [Datalog Reference — Time Travel](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#bi-temporal-queries).
 
 **Example**:
 ```datalog
@@ -530,7 +530,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 **Resolution**:
 - Use `"2024-12-31T23:59:59Z"` format.
 - To express "forever", omit `:valid-to` (the default is `VALID_TIME_FOREVER`).
-- See the [Datalog Reference — Time Travel](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#bi-temporal-queries).
+- See the [Datalog Reference — Time Travel](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#bi-temporal-queries).
 
 **Example**:
 ```datalog
@@ -546,7 +546,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Add an aggregate to `:find`, or remove `:with` if no aggregation is needed.
-- See the [Datalog Reference — Aggregates](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#aggregation).
+- See the [Datalog Reference — Aggregates](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#aggregation).
 
 **Example**:
 ```datalog
@@ -564,7 +564,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Add a `:where` clause that binds the variable, or remove it from `:with`.
-- See the [Datalog Reference — Aggregates](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#aggregation).
+- See the [Datalog Reference — Aggregates](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#aggregation).
 
 **Example**:
 ```datalog
@@ -582,7 +582,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Add a `:where` clause that binds the variable.
-- See the [Datalog Reference — Aggregates](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#aggregation).
+- See the [Datalog Reference — Aggregates](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#aggregation).
 
 **Example**:
 ```datalog
@@ -599,7 +599,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Use `(count ?e)`, `(sum ?amount)`, `(avg ?score)` — one function name, one variable.
-- See the [Datalog Reference — Aggregates](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#aggregation).
+- See the [Datalog Reference — Aggregates](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#aggregation).
 
 **Example**:
 ```datalog
@@ -616,7 +616,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Use `sum`, not `:sum`.
-- See the [Datalog Reference — Aggregates](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#aggregation).
+- See the [Datalog Reference — Aggregates](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#aggregation).
 
 **Example**:
 ```datalog
@@ -633,7 +633,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Use a `?variable`, not a literal value.
-- See the [Datalog Reference — Aggregates](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#aggregation).
+- See the [Datalog Reference — Aggregates](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#aggregation).
 
 **Example**:
 ```datalog
@@ -650,7 +650,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Add an `:over` clause: `(rank :over (:order-by ?score))`.
-- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
+- See the [Datalog Reference — Window Functions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#window-functions).
 
 **Example**:
 ```datalog
@@ -667,7 +667,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Provide at least `:order-by` or `:partition-by` inside the `:over` list.
-- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
+- See the [Datalog Reference — Window Functions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#window-functions).
 
 **Example**:
 ```datalog
@@ -684,7 +684,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Use `rank`, not `:rank`.
-- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
+- See the [Datalog Reference — Window Functions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#window-functions).
 
 **Example**:
 ```datalog
@@ -718,7 +718,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Drop the `:over` clause and use the function as a plain aggregate.
-- See the [Datalog Reference — Aggregates](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#aggregation).
+- See the [Datalog Reference — Aggregates](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#aggregation).
 
 **Example**:
 ```datalog
@@ -735,7 +735,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Add the variable argument before `:over`.
-- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
+- See the [Datalog Reference — Window Functions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#window-functions).
 
 **Example**:
 ```datalog
@@ -752,7 +752,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Add `:over` after the variable.
-- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
+- See the [Datalog Reference — Window Functions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#window-functions).
 
 **Example**:
 ```datalog
@@ -769,7 +769,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Remove the variable: `(rank :over (:order-by ?score))`.
-- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
+- See the [Datalog Reference — Window Functions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#window-functions).
 
 **Example**:
 ```datalog
@@ -786,7 +786,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Always follow `:over` with a list: `(rank :over (:order-by ?score))`.
-- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
+- See the [Datalog Reference — Window Functions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#window-functions).
 
 **Example**:
 ```datalog
@@ -803,7 +803,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - The window expression must end after the `:over` clause. Remove trailing tokens.
-- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
+- See the [Datalog Reference — Window Functions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#window-functions).
 
 **Example**:
 ```datalog
@@ -820,7 +820,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Use a `?variable`: `(rank :over (:partition-by ?dept :order-by ?score))`.
-- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
+- See the [Datalog Reference — Window Functions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#window-functions).
 
 **Example**:
 ```datalog
@@ -837,7 +837,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Use a `?variable`: `(rank :over (:order-by ?score))`.
-- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
+- See the [Datalog Reference — Window Functions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#window-functions).
 
 **Example**:
 ```datalog
@@ -854,7 +854,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Use only `:order-by` and `:partition-by`.
-- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
+- See the [Datalog Reference — Window Functions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#window-functions).
 
 **Example**:
 ```datalog
@@ -871,7 +871,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - The `:over` list must contain only `:order-by` / `:partition-by` followed by variables.
-- See the [Datalog Reference — Window Functions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#window-functions).
+- See the [Datalog Reference — Window Functions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#window-functions).
 
 **Example**:
 ```datalog
@@ -1025,7 +1025,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Remove the empty list or replace it with a valid clause.
-- See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference).
+- See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/).
 
 **Example**:
 ```datalog
@@ -1043,7 +1043,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 **Resolution**:
 - Double negation is logically equivalent to the positive pattern; use the pattern directly.
 - For complex negation use `not-join` with explicit join variables.
-- See the [Datalog Reference — Negation](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#negation).
+- See the [Datalog Reference — Negation](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#negation).
 
 **Example**:
 ```datalog
@@ -1060,7 +1060,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Add at least one pattern inside `(not ...)`.
-- See the [Datalog Reference — Negation](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#negation).
+- See the [Datalog Reference — Negation](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#negation).
 
 **Example**:
 ```datalog
@@ -1077,7 +1077,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Add at least one branch.
-- See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#disjunction).
+- See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#disjunction).
 
 **Example**:
 ```datalog
@@ -1094,7 +1094,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Use the form `(or-join [?e] [[?e :a 1]] [[?e :b 2]])`.
-- See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#disjunction).
+- See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#disjunction).
 
 **Example**:
 ```datalog
@@ -1111,7 +1111,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - The form is `(or-join [?var1 ?var2] ...)`.
-- See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#disjunction).
+- See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#disjunction).
 
 **Example**:
 ```datalog
@@ -1128,7 +1128,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Use `?variable` not `:keyword` or a string.
-- See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#disjunction).
+- See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#disjunction).
 
 **Example**:
 ```datalog
@@ -1146,7 +1146,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 **Resolution**:
 - Restructure branches so they all bind the same new variables.
 - Or use `or-join` to specify exactly which variables to share.
-- See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#disjunction).
+- See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#disjunction).
 
 **Example**:
 ```datalog
@@ -1164,7 +1164,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Add at least one clause inside `(and ...)`.
-- See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#disjunction).
+- See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#disjunction).
 
 **Example**:
 ```datalog
@@ -1181,7 +1181,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Use `(not-join [?e] [?e :deleted true])`.
-- See the [Datalog Reference — Negation](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#negation).
+- See the [Datalog Reference — Negation](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#negation).
 
 **Example**:
 ```datalog
@@ -1198,7 +1198,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Each `:where` element must be a vector `[e a v]`, a `(not ...)`, `(not-join ...)`, `(or ...)`, `(or-join ...)`, or expression `[(expr) ?out]`.
-- See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference).
+- See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/).
 
 **Example**:
 ```datalog
@@ -1216,7 +1216,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 **Resolution**:
 - Valid query map keys are `:find`, `:where`, `:with`, `:as-of`, `:valid-at`.
 - Check spelling.
-- See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference).
+- See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/).
 
 **Example**:
 ```datalog
@@ -1232,7 +1232,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Provide a function: `[(+ ?a ?b) ?sum]`.
-- See the [Datalog Reference — Expressions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#arithmetic--predicate-expressions).
+- See the [Datalog Reference — Expressions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#arithmetic--predicate-expressions).
 
 **Example**:
 ```datalog
@@ -1249,7 +1249,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Use `+` not `:+`.
-- See the [Datalog Reference — Expressions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#arithmetic--predicate-expressions).
+- See the [Datalog Reference — Expressions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#arithmetic--predicate-expressions).
 
 **Example**:
 ```datalog
@@ -1267,7 +1267,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 **Resolution**:
 - Check the argument count.
 - Single-argument operators: `abs`, `not`, `str` (for coercion).
-- See the [Datalog Reference — Expressions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#arithmetic--predicate-expressions).
+- See the [Datalog Reference — Expressions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#arithmetic--predicate-expressions).
 
 **Example**:
 ```datalog
@@ -1285,7 +1285,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 **Resolution**:
 - Check the argument count.
 - Two-argument operators: `+`, `-`, `*`, `/`, `mod`, `quot`, `=`, `!=`, `<`, `<=`, `>`, `>=`, `starts-with?`, `ends-with?`, `contains?`, `matches?`.
-- See the [Datalog Reference — Expressions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#arithmetic--predicate-expressions).
+- See the [Datalog Reference — Expressions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#arithmetic--predicate-expressions).
 
 **Example**:
 ```datalog
@@ -1302,7 +1302,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Pass the pattern as a string literal: `[(matches? ?name "alice.*")]`.
-- See the [Datalog Reference — Expressions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#arithmetic--predicate-expressions).
+- See the [Datalog Reference — Expressions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#arithmetic--predicate-expressions).
 
 **Example**:
 ```datalog
@@ -1320,7 +1320,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 **Resolution**:
 - Check spelling against the supported operator list above.
 - For missing operators, register a custom predicate via `db.register_predicate()`.
-- See the [Datalog Reference — Expressions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#arithmetic--predicate-expressions).
+- See the [Datalog Reference — Expressions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#arithmetic--predicate-expressions).
 
 **Example**:
 ```datalog
@@ -1337,7 +1337,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Ensure the expression is wrapped in exactly one outer `[...]`.
-- See the [Datalog Reference — Expressions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#arithmetic--predicate-expressions).
+- See the [Datalog Reference — Expressions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#arithmetic--predicate-expressions).
 
 **Example**:
 ```datalog
@@ -1354,7 +1354,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 
 **Resolution**:
 - Use a `?variable`: `[(+ ?a ?b) ?sum]`.
-- See the [Datalog Reference — Expressions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#arithmetic--predicate-expressions).
+- See the [Datalog Reference — Expressions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#arithmetic--predicate-expressions).
 
 **Example**:
 ```datalog
@@ -1372,7 +1372,7 @@ See the [Datalog Reference](https://github.com/project-minigraf/minigraf/wiki/Da
 **Resolution**:
 - Expressions accept variables (`?x`), integers, floats, strings, booleans, and keywords.
 - Restructure to avoid passing complex types.
-- See the [Datalog Reference — Expressions](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#arithmetic--predicate-expressions).
+- See the [Datalog Reference — Expressions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#arithmetic--predicate-expressions).
 
 **Example**:
 ```datalog
@@ -2029,7 +2029,7 @@ The WAL is replayed on open and deleted on checkpoint.
 - Store large payloads in an external file or object store.
 - Store the file path or URL as a `Value::String` attribute on the entity.
 - Or create a dedicated entity for the content and reference it with `Value::Ref`.
-- See the [Datalog Reference — Constraints and Limits](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#constraints-and-limits) for the size limit.
+- See the [Datalog Reference — Constraints and Limits](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#constraints-and-limits) for the size limit.
 
 **Example**:
 ```datalog

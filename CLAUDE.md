@@ -224,7 +224,7 @@ Applies to all `#[cfg(test)]` modules and all `tests/*.rs` files.
 6. **Think SQLite** — would SQLite do this?
 7. **Long-term vision** — building for decades
 8. **Keep documentation synchronized** — when a release or planned-work item changes, update and cross-check ALL of: `CLAUDE.md` (status line, test count), `ROADMAP.md`, `README.md`, `docs/TEST_COVERAGE.md`, `CHANGELOG.md`. No doc should contradict another.
-   Also update affected wiki pages in `.wiki/`: `Architecture.md` (module/format/model changes), `Datalog-Reference.md` (new syntax), `Comparison.md` (feature matrix), `Use-Cases.md` (deployment targets). Commit and push the wiki repo separately (`cd .wiki && git add -A && git commit -m "..." && git push`).
+   Also update the docs site, [project-minigraf/minigraf-docs](https://github.com/project-minigraf/minigraf-docs) (clone at `../minigraf-docs`): `content/architecture.md` (module/format/model changes), `content/datalog-reference.md` (new syntax), `content/comparison.md` (feature matrix), `content/use-cases.md` (deployment targets). It documents every release at once: wrap text that applies only from or until a version in `<!-- @since vX.Y.Z -->` / `<!-- @until vX.Y.Z -->` … `<!-- @end -->` rather than rewriting shared text, and add each release to its `site.toml` (`CHANGELOG.md` and `docs/ERROR_REFERENCE.md` are read from this repo per tag, never copied). Open a PR there; its CI checks every link in every version and deploys `main`. The GitHub wiki is retired: its pages only link to the site.
 9. **Tag every version bump** — after the final doc-sync commit: `git tag -a v<x.y.z> -m "<release> — <summary>"` then `git push origin v<x.y.z>`.
 
 ---
