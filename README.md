@@ -44,7 +44,7 @@ Minigraf is a **single-file embedded graph database** that lets you:
 
 ```toml
 [dependencies]
-minigraf = "2.0.3"
+minigraf = "2.0.4"
 ```
 
 Or via cargo:

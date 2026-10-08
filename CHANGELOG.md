@@ -5,16 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## v2.0.4 — 2026-10-08
+
+Patch release on the v2.x line under the [support policy](PHILOSOPHY.md#support-policy): one `BrowserDb` durability hardening fix, plus new compatibility and crash tests. File format is unchanged (v7). No API changes. Native and WASI builds behave exactly as in v2.0.3.
 
 ### Fixed
 
-- **`BrowserDb` no longer drops a dirty page it cannot read from the IndexedDB flush.** `checkpoint()`, `importGraph()` and every write collected dirty pages with `read_page_raw(id).ok()`, so a page that failed to read was left out of the flush while the call still reported success. The read error is now returned. No current code path leaves a dirty id without a page, so this guards against a future bug rather than fixing observed data loss. The browser unit tests compile again on wasm32 (a duplicate `page_cache_capacity` and `tempfile`-based `dir_sync` tests).
+- **`BrowserDb` no longer drops a dirty page it cannot read from the IndexedDB flush (#470).** `checkpoint()`, `importGraph()` and every write collected dirty pages with `read_page_raw(id).ok()`, so a page that failed to read was left out of the flush while the call still reported success. The read error is now returned. No current code path leaves a dirty id without a page, so this guards against a future bug rather than fixing observed data loss. Affected releases: v0.20.0 through v2.0.3, `BrowserDb` only. The browser unit tests compile again on wasm32 (a duplicate `page_cache_capacity` and `tempfile`-based `dir_sync` tests).
 
 ### Tests
 
 - **Golden-file compatibility corpus (#391).** `tests/golden/` holds v7 files written by minigraf 2.0.3, each with a JSON manifest of its CRC32, `tx_count` and expected query results. They cover one checkpoint, several checkpoints, indexes rebuilt on open, a WAL left by a crash, a WAL whose entries were already checkpointed, and same-transaction multi-values (#371). `tests/golden_corpus_test.rs` opens a copy of each file and checks its manifest after open, after a checkpoint and reopen, and after one more write. Golden files are never regenerated, only added; a new `golden-corpus` job in `policy.yml` fails a pull request that changes one. The generator is a standalone crate pinned to `minigraf = "=2.0.3"` (`tests/golden/gen/v7/`).
 - **SIGKILL crash test checks committed data (#384).** `tests/crash_kill_test.rs` used to check only that the file reopened and one attribute query ran, so it missed #370. The child now runs a seeded workload (batches over several entities and attributes, batched retracts, re-assertions after a retract) and logs each transaction after `execute` returns; it checkpoints after every transaction, every third, never (WAL replay), automatically every 2 writes, or every third with `SyncMode::Normal`. After a `SIGKILL` at a random point, the reopened file must hold exactly the model after the last logged transaction or the one in flight, through a full scan, attribute (AEVT), attribute+value (AVET) and entity-bound (EAVT) queries and `:as-of`; again after a second reopen and after a checkpoint plus reopen. On v2.x the workload avoids the known issues #371 (two values of one attribute in one transaction) and #435 (asserting a triple that is already live returns one row per assertion); the v3 version covers both. Per-PR CI runs 5 rounds; the nightly crash-kill workflow runs 100 per OS. `MINIGRAF_CRASH_KILL_SEED` replays a failure.
+
+### Known issues
+
+- Same-transaction multi-valued facts can read back as one value (#371, #287), a fact retracted and re-asserted in one `WriteTransaction` is lost at commit (#477), a later assertion does not replace an earlier valid-time window (#435), and `save()` is not crash-atomic (#374); all are fixed in v3.0.0. All v2.x known issues, with affected versions and workarounds, are listed in the pinned issue #421.
 
 ## v2.0.3 — 2026-10-06
 
