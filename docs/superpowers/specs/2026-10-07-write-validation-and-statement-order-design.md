@@ -22,15 +22,20 @@
    records from one statement only. Reads inside the transaction already follow statement
    order, so they now agree with the committed result. This replaces API-011's
    cross-statement rejection.
-4. **`LogWriter` copies records verbatim.** Without filters or middleware, an ETL target
-   must be identical to its source. The writer no longer collapses or rejects records
-   of one transaction (the API-011 check is removed). It keeps API-015 and API-016,
-   which protect transaction order. Readers keep their tie rules for transactions that
-   hold several records of one triple (a retraction in the group hides it; several
-   windows are kept once each), so source and target read the same.
+4. **`LogWriter` keeps the same rules.** Every file it builds satisfies rules 1–3, as if
+   written normally: an inverted window is API-019, a second window of one triple in one
+   transaction API-011, and an assertion plus a retraction of one triple in one
+   transaction (either order) the new **API-020**. Records of one transaction share a
+   `tx_id` and have no order, so the pair cannot say which came last; no normal write
+   produces it after rule 3. Each rejected record changes nothing, as with API-015 and
+   API-016. An unfiltered copy is identical to a source that keeps the rules. A source
+   written before them (v2.x via migration, earlier v3 builds) fails at the first such
+   record, and a middleware step must repair it (drop the assertions where a retraction
+   decides, keep one window, drop inverted windows).
 
-`load_fact`, WAL replay, migration and the log writer never check rules 1–3. Files that
-already contain such data open and read as before.
+`load_fact`, WAL replay and migration never check rules 1–3. Files that already contain
+such data open and read as before: readers keep their tie rules (a retraction in the
+group hides the triple; several windows are kept once each).
 
 ## 2. Changes
 
@@ -51,7 +56,9 @@ already contain such data open and read as before.
   `check_valid_windows` on what is left (a default `valid_from` moves to the commit time,
   so a `:valid-to` between staging and commit is caught here), then allocate the
   `tx_count` and write.
-- `src/log_writer.rs`: drop the window map and the API-011 check.
+- `src/log_writer.rs`: per open transaction, the window (or retraction) written for each
+  triple; API-019, API-011 and API-020 are checked before the record is loaded. New
+  **API-020** "Assertion and retraction of one fact in one log-writer transaction".
 
 ## 3. Tests
 
@@ -65,8 +72,9 @@ already contain such data open and read as before.
   `WriteTransaction` give the same rows before and after commit, in memory,
   checkpointed and reopened. API-011 inside one statement of a `WriteTransaction` is
   raised by `tx.execute`, and the transaction still commits its other statements.
-- `tests/log_writer_test.rs`: a record group with two windows and an assert plus
-  retract of one triple is copied verbatim and reads like the source.
+- `tests/log_writer_test.rs`: API-019, API-011 and API-020 (both orders), each leaving
+  the writer usable and the output exact; duplicate retractions, identical repeats and
+  the same triple in the next transaction are accepted.
 - `tests/model_based_test.rs`: the model applies rules 1–3 (rejections from `execute`
   and `tx.execute`, last statement wins at commit) and checks reads inside a write
   transaction against the committed result.

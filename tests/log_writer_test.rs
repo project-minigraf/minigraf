@@ -378,14 +378,19 @@ fn rejected_records_change_nothing() {
         "two tx_ids"
     );
 
-    // Records are copied as they are (#477): a second window and a
-    // retraction of the same triple in one transaction are kept.
     let mut other_window = rec(3, 300, ":a/x", 1);
     other_window.valid_to = 400;
-    w.append(&other_window).unwrap();
+    assert_eq!(code(w.append(&other_window)), "API-011", "two windows");
     let mut retraction = other_window.clone();
     retraction.asserted = false;
-    w.append(&retraction).unwrap();
+    assert_eq!(
+        code(w.append(&retraction)),
+        "API-020",
+        "retracting what the transaction asserts"
+    );
+    let mut inverted = rec(3, 300, ":a/z", 1);
+    inverted.valid_to = 300;
+    assert_eq!(code(w.append(&inverted)), "API-019", "empty window");
 
     let mut big = rec(3, 300, ":a/x", 0);
     big.value = Value::String("x".repeat(1 << 20));
@@ -414,8 +419,6 @@ fn rejected_records_change_nothing() {
     let mut got: Vec<String> = records(&db).iter().map(row).collect();
     got.sort();
     let want = vec![
-        "3 300 e1 :a/x Integer(1) 300 400 false".to_string(),
-        "3 300 e1 :a/x Integer(1) 300 400 true".to_string(),
         "3 300 e1 :a/x Integer(1) 300 9223372036854775807 true".to_string(),
         "3 300 e1 :a/y Integer(9) 300 9223372036854775807 true".to_string(),
         "4 250 e1 :a/x Integer(6) 250 9223372036854775807 true".to_string(),
@@ -424,54 +427,64 @@ fn rejected_records_change_nothing() {
     assert!(db.verify().unwrap().is_ok(), "verify is clean");
 }
 
-/// A source whose transactions hold several records of one triple, as files
-/// written before API-011 and API-019 can (two windows, an assertion and a
-/// retraction, an inverted window), is copied record for record, and the
-/// copy answers like the source (#477).
+/// Every file the writer builds keeps the rules of a normal write (#477):
+/// an inverted window, two windows of one fact in one transaction, and an
+/// assertion and a retraction of one fact in one transaction (either order)
+/// are rejected. Duplicate retractions, identical repeats, and the same fact
+/// in the next transaction are accepted.
 #[test]
-fn mixed_transactions_are_copied_verbatim() {
+fn records_that_break_write_rules_are_rejected() {
     let dir = Dir::new();
-    let src_path = dir.path("src.graph");
-    let mut w = LogWriter::create(&src_path, OpenOptions::new()).unwrap();
-    let mut records_in = vec![
-        rec(1, 100, ":a/x", 1),
-        rec(2, 200, ":a/x", 1),
-        rec(2, 200, ":a/y", 2),
-        rec(3, 300, ":a/z", 3),
-    ];
-    records_in[1].valid_to = 250; // two windows of :a/x 1 in tx 2
-    let mut second = rec(2, 200, ":a/x", 1);
+    let out = dir.path("out.graph");
+    let mut w = LogWriter::create(&out, OpenOptions::new()).unwrap();
+    let code = |r: Result<(), minigraf::MinigrafError>| r.unwrap_err().code().to_string();
+    let retract = |mut r: FactRecord| {
+        r.asserted = false;
+        r
+    };
+
+    let mut inverted = rec(1, 100, ":a/w", 4);
+    inverted.valid_to = 50;
+    assert_eq!(
+        code(w.append(&inverted)),
+        "API-019",
+        "ends before it starts"
+    );
+    assert_eq!(w.tx_count(), 0, "a rejected record opens no transaction");
+
+    w.append(&retract(rec(1, 100, ":a/y", 2))).unwrap();
+    w.append(&retract(rec(1, 100, ":a/y", 2))).unwrap();
+    assert_eq!(
+        code(w.append(&rec(1, 100, ":a/y", 2))),
+        "API-020",
+        "retract then assert"
+    );
+    w.append(&rec(1, 100, ":a/x", 1)).unwrap();
+    w.append(&rec(1, 100, ":a/x", 1)).unwrap();
+    assert_eq!(
+        code(w.append(&retract(rec(1, 100, ":a/x", 1)))),
+        "API-020",
+        "assert then retract"
+    );
+    let mut second = rec(1, 100, ":a/x", 1);
     second.valid_from = 50;
-    second.valid_to = 150;
-    records_in.insert(2, second);
-    let mut retracted = rec(2, 200, ":a/y", 2);
-    retracted.asserted = false; // :a/y 2 asserted and retracted in tx 2
-    records_in.push(retracted);
-    let mut inverted = rec(3, 300, ":a/w", 4);
-    inverted.valid_to = 200; // ends before it starts
-    records_in.push(inverted);
-    records_in.sort_by_key(|r| r.tx_count);
-    for r in &records_in {
-        w.append(r).unwrap();
-    }
+    assert_eq!(code(w.append(&second)), "API-011", "second window");
+    // The next transaction may write the fact again, any way.
+    w.append(&retract(rec(2, 200, ":a/x", 1))).unwrap();
+    w.append(&rec(2, 200, ":a/y", 2)).unwrap();
     w.finish().unwrap();
 
-    let src = Minigraf::open(&src_path).unwrap();
-    let mut want: Vec<String> = records_in.iter().map(row).collect();
-    want.sort();
-    assert_eq!(log_rows(&src), want, "source holds every record");
-
-    let out = dir.path("out.graph");
-    copy(&src, &out, |_| true);
-    let dst = Minigraf::open(&out).unwrap();
-    same_answers(&src, &dst);
-    for n in 0..=src.current_tx_count() {
-        let q = format!(
-            "(query [:find ?a ?v ?vf ?vt :as-of {n} :any-valid-time :where [?e ?a ?v] [?e :db/valid-from ?vf] [?e :db/valid-to ?vt]])"
-        );
-        assert_eq!(rows(&src, &q), rows(&dst, &q), "{q}");
-    }
-    assert!(dst.verify().unwrap().is_ok(), "verify is clean");
+    let db = Minigraf::open(&out).unwrap();
+    let mut got: Vec<String> = records(&db).iter().map(row).collect();
+    got.sort();
+    let want = vec![
+        "1 100 e1 :a/x Integer(1) 100 9223372036854775807 true".to_string(),
+        "1 100 e1 :a/y Integer(2) 100 9223372036854775807 false".to_string(),
+        "2 200 e1 :a/x Integer(1) 200 9223372036854775807 false".to_string(),
+        "2 200 e1 :a/y Integer(2) 200 9223372036854775807 true".to_string(),
+    ];
+    assert_eq!(got, want);
+    assert!(db.verify().unwrap().is_ok(), "verify is clean");
 }
 
 #[test]

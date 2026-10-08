@@ -177,6 +177,7 @@ with no `CodedError` anywhere in its chain.
 | API-017 | Invalid argument passed through a language binding | Database API |
 | API-018 | Call on a closed binding object | Database API |
 | API-019 | Empty or inverted valid-time window | Database API |
+| API-020 | Assertion and retraction of one fact in one log-writer transaction | Database API |
 | INT-000 | Unclassified internal error | Internal |
 | INT-001 | WriteTransaction already in progress on this thread | Internal |
 | INT-002 | Invalid entity (API layer) | Internal |
@@ -2481,7 +2482,7 @@ let result = pq.execute(&[
 
 **Error text**: `one (transact ...) asserts the same value of {} with two valid-time windows; assert it once with its final window`
 
-**Cause**: One `(transact ...)` asserts the same entity, attribute and value twice with different `:valid-from`/`:valid-to` bounds. At any transaction time a fact has exactly one current valid-time window. Within one statement neither window comes later, so the statement is rejected and nothing is written. The `{}` is the attribute. Identical repeats are allowed and stored once. Inside a `WriteTransaction`, `tx.execute()` rejects the statement and stages nothing; the transaction stays usable. Across several statements of one `WriteTransaction` there is no error: the last statement that writes a fact decides it (#477). `LogWriter::append` copies records as they are and never returns this code.
+**Cause**: One `(transact ...)` asserts the same entity, attribute and value twice with different `:valid-from`/`:valid-to` bounds. At any transaction time a fact has exactly one current valid-time window. Within one statement neither window comes later, so the statement is rejected and nothing is written. The `{}` is the attribute. Identical repeats are allowed and stored once. Inside a `WriteTransaction`, `tx.execute()` rejects the statement and stages nothing; the transaction stays usable. Across several statements of one `WriteTransaction` there is no error: the last statement that writes a fact decides it (#477). `LogWriter::append` returns this code for a record that asserts a fact the open transaction already asserts with another window; that record alone is rejected.
 
 **Resolution**:
 - Assert the fact once per transaction, with the window it should have.
@@ -2609,7 +2610,7 @@ let mut log = src.fact_log(&FactFilter::new())?;
 
 **Error text**: `the valid-time window of {} ends at or before it starts; :valid-to must be later than :valid-from (the transaction time when :valid-from is omitted)`
 
-**Cause**: A `transact` gives a fact a valid-time window whose end is at or before its start, so the fact could never match a `:valid-at` query. The check uses the effective window, after defaults: the fact's own bound, else the transaction's, else `:valid-from` is the transaction time and `:valid-to` is forever. A `:valid-to` in the past with no `:valid-from` is therefore rejected too. The whole transaction is rejected, nothing is written and no transaction number is used. The `{}` is the attribute. Inside a `WriteTransaction`, `tx.execute()` checks each statement. `commit()` checks again with the commit time, so a `:valid-to` that passed while staging can still fail at commit. Files written before this check, and records copied by `LogWriter`, are read as they are.
+**Cause**: A `transact` gives a fact a valid-time window whose end is at or before its start, so the fact could never match a `:valid-at` query. The check uses the effective window, after defaults: the fact's own bound, else the transaction's, else `:valid-from` is the transaction time and `:valid-to` is forever. A `:valid-to` in the past with no `:valid-from` is therefore rejected too. The whole transaction is rejected, nothing is written and no transaction number is used. The `{}` is the attribute. Inside a `WriteTransaction`, `tx.execute()` checks each statement. `commit()` checks again with the commit time, so a `:valid-to` that passed while staging can still fail at commit. `LogWriter::append` rejects such a record the same way; that record alone is rejected. Files written before this check are read as they are.
 
 **Resolution**:
 - Give `:valid-to` a later instant than `:valid-from`.
@@ -2628,6 +2629,18 @@ let mut log = src.fact_log(&FactFilter::new())?;
 ```
 
 **Scenario**: An import sets `:valid-to` from a source's end date but leaves out `:valid-from`, so past end dates produce windows that end before the transaction time.
+
+### API-020 Assertion and retraction of one fact in one log-writer transaction
+
+**Error text**: `one transaction both asserts and retracts the same value of {}; keep only the record that decides it`
+
+**Cause**: `LogWriter::append` was given a record that asserts an entity, attribute and value the open transaction retracts, or retracts one it asserts. Records of one transaction carry one `tx_id` and have no order, so the pair does not say which write came last. A normal write never produces such a transaction: in a `WriteTransaction` the last statement that writes a fact decides it (#477). The record alone is rejected, and the writer stays usable. The `{}` is the attribute. A source written by Minigraf 2.x, or by v3 builds before #477, can hold such transactions; copying one fails at the first such record.
+
+**Resolution**:
+- Keep only the record that decides the fact. Readers of the source hide the fact when its newest transaction holds a retraction, so dropping the transaction's assertions of that fact keeps every query result the same.
+- Repair the source's other old records the same way before appending them: a fact with two windows in one transaction (API-011) keeps the window it should have, and an assertion whose window ends before it starts (API-019) is dropped.
+
+**Scenario**: An offline purge copies a database migrated from v2.x through `fact_log()` and `LogWriter`, and one of its transactions retracted and re-asserted a fact.
 
 ---
 
