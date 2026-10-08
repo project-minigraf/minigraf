@@ -467,6 +467,16 @@ impl DatalogExecutor {
 
     /// Execute a query: find matching facts and return specified variables
     fn execute_query(&self, query: DatalogQuery) -> Result<QueryResult> {
+        // Resolve :find functions up front so an unknown name fails whether or
+        // not any row matches (#414).
+        {
+            let registry = self
+                .functions
+                .read()
+                .map_err(|_| err_coded!(ErrorCode::Qry008))?;
+            check_find_functions(&query.find, &registry)?;
+        }
+
         // Check if query uses rules
         if query.uses_rules() {
             // Use StratifiedEvaluator for queries with rule invocations (handles negation and strata)
@@ -2316,6 +2326,31 @@ fn eval_binop(op: &BinOp, l: Value, r: Value) -> Result<Value, ()> {
 
 /// Evaluate an Expr against a binding map.
 ///
+/// Rejects aggregate and window functions in `:find` that are neither
+/// built-in nor registered. Runs before execution, so the result does not
+/// depend on the data (#414).
+fn check_find_functions(find: &[FindSpec], registry: &FunctionRegistry) -> Result<()> {
+    for spec in find {
+        match spec {
+            FindSpec::Aggregate { func, .. } => {
+                if registry.get(func).is_none() {
+                    bail_coded!(ErrorCode::Qry010, func);
+                }
+            }
+            FindSpec::Window(ws) => {
+                if !matches!(ws.func, WindowFunc::Rank | WindowFunc::RowNumber) {
+                    let name = ws.func_name();
+                    if registry.get(&name).is_none() {
+                        bail_coded!(ErrorCode::Qry011, name);
+                    }
+                }
+            }
+            FindSpec::Variable(_) => {}
+        }
+    }
+    Ok(())
+}
+
 /// Returns `Err(())` on: unbound variable, type mismatch, division by zero, unknown UDF predicate.
 pub(crate) fn eval_expr(
     expr: &Expr,

@@ -70,7 +70,7 @@ fn bind_value_type_name(bv: &BindValue) -> &'static str {
 /// let db = Minigraf::in_memory().unwrap();
 /// db.execute(r#"(transact [[:alice :person/age 30] [:bob :person/age 25]])"#).unwrap();
 ///
-/// let pq = db.prepare("(query [:find ?name :where [?e :person/age $age]])").unwrap();
+/// let pq = db.prepare("(query [:find ?e :where [?e :person/age $age]])").unwrap();
 ///
 /// // Re-use the same prepared query with different bindings
 /// let young = pq.execute(&[("age", BindValue::Val(Value::Integer(25)))]).unwrap();

@@ -100,6 +100,7 @@ with no `CodedError` anywhere in its chain.
 | PRS-077 | Unexpected trailing input after a complete form | Parser |
 | PRS-078 | Query rejects unexpected trailing argument(s) | Parser |
 | PRS-079 | Rule rejects unexpected trailing argument(s) | Parser |
+| PRS-080 | :find variable not bound in :where | Parser |
 | QRY-001 | Invalid entity | Query Execution |
 | QRY-002 | Attribute must be a keyword | Query Execution |
 | QRY-003 | Cannot transact a pseudo-attribute | Query Execution |
@@ -109,6 +110,8 @@ with no `CodedError` anywhere in its chain.
 | QRY-007 | Unknown predicate | Query Execution |
 | QRY-008 | Functions lock poisoned | Query Execution |
 | QRY-009 | Rules lock poisoned | Query Execution |
+| QRY-010 | Unknown aggregate function | Query Execution |
+| QRY-011 | Unknown window function | Query Execution |
 | STG-001 | Invalid header: too short | Storage |
 | STG-002 | Invalid magic number: not a .graph file | Storage |
 | STG-003 | Invalid v4/v5/v6 header too short (deprecated) | Storage |
@@ -1555,6 +1558,22 @@ $<4097-char-slot-name>
 ```
 *Nothing may follow the rule vector; remove `:unexpected-extra`*
 
+### PRS-080 :find variable not bound in :where
+
+**Error text**: `:find variable {} not bound in :where`
+
+**Cause**: A variable in `:find` — a plain variable, or the argument, `:partition-by` or `:order-by` variable of a window function — is not bound by any `:where` clause. Variables count as bound when they appear in a pattern, a rule call, an expression binding (`[(+ ?a 1) ?b]`), an `or-join` join vector, or every branch of an `or`. Variables that appear only inside `not`/`not-join`, and `?_` wildcards, are not bound. Before v3.0.0 such a query returned no results, so a typo in `:find` looked the same as "no matching data".
+
+**Resolution**:
+- Check the variable name for typos against the `:where` clauses.
+- Add a clause that binds the variable, or remove it from `:find`.
+
+**Example**:
+```datalog
+(query [:find ?n :where [?e :person/name ?name]])
+```
+*`?n` is never bound; use `?name`*
+
 ---
 
 ## QRY — Query Execution Errors
@@ -1694,6 +1713,38 @@ predicate evaluation, or fact transacting.
 - File a bug with the rule text if the input appears valid.
 
 **Scenario**: `db.execute("(rule ...)")` panics; subsequent queries that reference rules return this error.
+
+### QRY-010 Unknown aggregate function
+
+**Error text**: `unknown aggregate function: '{}'`
+
+**Cause**: A `:find` aggregate names a function that is neither built-in (`count`, `count-distinct`, `sum`, `sum-distinct`, `avg`, `min`, `max`) nor registered with `db.register_aggregate()`. The name is resolved before the query runs, so the error does not depend on whether any row matches. Before v3.0.0 a query with no matching rows returned an empty result instead (see INT-029).
+
+**Resolution**:
+- Check the function name for typos.
+- Register a custom aggregate first: `db.register_aggregate("frob", init, step, finalise)?;`.
+
+**Example**:
+```datalog
+(query [:find (frob ?b) :where [?a :x ?b]])
+```
+*`frob` is not built-in; register it with `register_aggregate()` before querying*
+
+### QRY-011 Unknown window function
+
+**Error text**: `unknown window function '{}' — register it with register_aggregate() before querying`
+
+**Cause**: A `:find` window expression (`... :over (...)`) names a function that is neither a window built-in (`sum`, `count`, `min`, `max`, `avg`, `rank`, `row-number`) nor registered with `db.register_aggregate()`. The name is resolved before the query runs, so the error does not depend on whether any row matches. Before v3.0.0 a query with no matching rows returned an empty result instead (see INT-030).
+
+**Resolution**:
+- Check the function name for typos.
+- Register the function with `db.register_aggregate()` before using it in an `:over` clause.
+
+**Example**:
+```datalog
+(query [:find ?b (frob ?b :over (:order-by ?b)) :where [?a :x ?b]])
+```
+*`frob` is not a window built-in; register it first*
 
 ---
 
@@ -3031,6 +3082,10 @@ nor a user-defined function registered via `db.register_aggregate()`.
 - Check the function name for typos, or register it first with
   `db.register_aggregate()`.
 
+Since v3.0.0, `:find` aggregates are resolved before the query runs and an
+unknown name is reported as QRY-010. INT-029 now only signals an internal
+inconsistency (a name that passed that check but is missing at aggregation).
+
 ### INT-030 Unknown window function
 
 **Error text**: `unknown window function '{}' — register it with register_aggregate() before querying`
@@ -3041,6 +3096,10 @@ not a recognized window-compatible built-in and has not been registered.
 **Resolution**:
 - Register the function with `db.register_aggregate()` before using it in
   an `:over` clause.
+
+Since v3.0.0, window functions are resolved before the query runs and an
+unknown name is reported as QRY-011. INT-030 now only signals an internal
+inconsistency (a name that passed that check but is missing at evaluation).
 
 ### INT-031 or-join variable not bound in incoming scope
 

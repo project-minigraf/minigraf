@@ -920,12 +920,32 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
     check_not_join_safety(&where_clauses, &outer_bound)?;
     check_expr_safety(&where_clauses)?;
 
-    // Validate aggregate and :with vars are bound in :where
+    // Validate :find and :with vars are bound in :where. An unbound :find
+    // variable (e.g. a typo) would otherwise return an empty result (#406).
     for spec in &find_specs {
-        if let FindSpec::Aggregate { var, .. } = spec
-            && !outer_bound.contains(var)
-        {
-            bail_coded!(ErrorCode::Prs023, var);
+        match spec {
+            FindSpec::Variable(var) => {
+                if !outer_bound.contains(var) {
+                    bail_coded!(ErrorCode::Prs080, var);
+                }
+            }
+            FindSpec::Aggregate { var, .. } => {
+                if !outer_bound.contains(var) {
+                    bail_coded!(ErrorCode::Prs023, var);
+                }
+            }
+            FindSpec::Window(ws) => {
+                let window_vars = ws
+                    .var
+                    .iter()
+                    .chain(ws.partition_by.iter())
+                    .chain(std::iter::once(&ws.order_by));
+                for var in window_vars {
+                    if !outer_bound.contains(var) {
+                        bail_coded!(ErrorCode::Prs080, var);
+                    }
+                }
+            }
         }
     }
     for var in &with_vars {

@@ -367,6 +367,61 @@ fn prs_codes_cover_trailing_argument_rejection() {
     }
 }
 
+// ── PRS-080: a :find variable must be bound in :where (#406) ───────────────
+
+#[test]
+fn prs_080_rejects_unbound_find_variables() {
+    let cases: &[&str] = &[
+        // Plain :find variable that appears nowhere in :where (a typo).
+        r#"(query [:find ?n :where [?e :y ?v]])"#,
+        // One bound, one unbound.
+        r#"(query [:find ?e ?n :where [?e :y ?v]])"#,
+        // `?_` variables are wildcards and never bind.
+        r#"(query [:find ?_x :where [?_x :y 1]])"#,
+        // Window function argument, :partition-by and :order-by variables.
+        r#"(query [:find ?e (sum ?n :over (:order-by ?v)) :where [?e :y ?v]])"#,
+        r#"(query [:find ?e (rank :over (:partition-by ?p :order-by ?v)) :where [?e :y ?v]])"#,
+        r#"(query [:find ?e (row-number :over (:order-by ?o)) :where [?e :y ?v]])"#,
+    ];
+    for input in cases {
+        assert_execute_code(input, "PRS-080");
+        assert_prepare_code(input, "PRS-080");
+    }
+}
+
+#[test]
+fn prs_080_names_the_unbound_variable() {
+    let err = db()
+        .execute(r#"(query [:find ?e ?typo :where [?e :y ?v]])"#)
+        .expect_err("unbound :find variable must fail");
+    assert!(err.to_string().contains("?typo"), "message names ?typo");
+}
+
+#[test]
+fn find_variables_bound_by_any_binding_clause_are_accepted() {
+    let db = db();
+    db.execute(r#"(transact [[:a :y 1] [:a :z 2]])"#).unwrap();
+    db.execute(r#"(rule [(r ?x ?y) [?x :y ?y]])"#).unwrap();
+    let cases: &[&str] = &[
+        r#"(query [:find ?e ?v :where [?e :y ?v]])"#,
+        r#"(query [:find ?e ?a :where [?e ?a 1]])"#,
+        r#"(query [:find ?x ?y :where (r ?x ?y)])"#,
+        r#"(query [:find ?e ?w :where [?e :y ?v] [(+ ?v 1) ?w]])"#,
+        r#"(query [:find ?e ?v :where [?e :y ?v] (or-join [?e] [?e :z 2] [?e :y 3])])"#,
+        r#"(query [:find ?e ?v :where (or [?e :y ?v] [?e :z ?v])])"#,
+        r#"(query [:find ?e ?vf :any-valid-time :where [?e :y ?v] [?e :db/valid-from ?vf]])"#,
+        r#"(query [:find ?e (sum ?v :over (:partition-by ?e :order-by ?v)) :where [?e :y ?v]])"#,
+    ];
+    for input in cases {
+        db.execute(input).expect("query with bound :find variables");
+    }
+    let pq = db
+        .prepare(r#"(query [:find ?e :where [?e :y $v]])"#)
+        .expect("bind slots are values, not :find variables");
+    pq.execute(&[("v", minigraf::BindValue::Val(minigraf::Value::Integer(1)))])
+        .expect("prepared query executes");
+}
+
 // ── db.prepare() surfaces the same PRS codes as db.execute() ────────────────
 
 fn assert_prepare_code(input: &str, expected_code: &str) {

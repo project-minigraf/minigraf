@@ -4,6 +4,9 @@
 //! `QRY-00N` code documented in `docs/ERROR_REFERENCE.md` comes back through
 //! `MinigrafError::code()`.
 //!
+//! QRY-010/QRY-011 (unknown aggregate / window function, #414) are covered
+//! at the end of this file.
+//!
 //! Coverage note: only QRY-007 (unknown predicate) and QRY-008/QRY-009
 //! (function/rule registry lock poisoned) are reachable through
 //! `Minigraf::execute()` for a *query* — that path constructs a
@@ -106,4 +109,101 @@ fn aggregate_type_mismatch_returns_int041() {
     let result = db.execute(r#"(query [:find (sum ?s) :where [?e :score ?s]])"#);
     let err = result.expect_err("sum of strings must fail at runtime");
     assert_eq!(err.code(), "INT-041");
+}
+
+// ─── QRY-010 / QRY-011: unknown aggregate / window function (#414) ────────
+//
+// The function name is resolved before execution, so the error does not
+// depend on whether any row matches.
+
+fn assert_query_code(db: &Minigraf, query: &str, expected: &str) {
+    let err = db.execute(query).expect_err("query must fail");
+    assert_eq!(err.code(), expected);
+}
+
+const UNKNOWN_AGG: &str = r#"(query [:find (frob414 ?b) :where [?a :x ?b]])"#;
+const UNKNOWN_WINDOW: &str =
+    r#"(query [:find ?b (frob414 ?b :over (:order-by ?b)) :where [?a :x ?b]])"#;
+
+#[test]
+fn unknown_aggregate_on_empty_database_returns_qry_010() {
+    let db = Minigraf::in_memory().unwrap();
+    assert_query_code(&db, UNKNOWN_AGG, "QRY-010");
+}
+
+#[test]
+fn unknown_aggregate_with_no_matching_rows_returns_qry_010() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute(r#"(transact [[:a :y 1]])"#).unwrap();
+    assert_query_code(&db, UNKNOWN_AGG, "QRY-010");
+}
+
+#[test]
+fn unknown_aggregate_with_matching_rows_returns_qry_010() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute(r#"(transact [[:a :x 1]])"#).unwrap();
+    assert_query_code(&db, UNKNOWN_AGG, "QRY-010");
+}
+
+#[test]
+fn unknown_aggregate_in_rule_query_returns_qry_010() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute(r#"(rule [(p ?a ?b) [?a :x ?b]])"#).unwrap();
+    assert_query_code(
+        &db,
+        r#"(query [:find (frob414 ?b) :where (p ?a ?b)])"#,
+        "QRY-010",
+    );
+}
+
+#[test]
+fn unknown_window_function_on_empty_database_returns_qry_011() {
+    let db = Minigraf::in_memory().unwrap();
+    assert_query_code(&db, UNKNOWN_WINDOW, "QRY-011");
+}
+
+#[test]
+fn unknown_window_function_with_no_matching_rows_returns_qry_011() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute(r#"(transact [[:a :y 1]])"#).unwrap();
+    assert_query_code(&db, UNKNOWN_WINDOW, "QRY-011");
+}
+
+#[test]
+fn unknown_window_function_with_matching_rows_returns_qry_011() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute(r#"(transact [[:a :x 1]])"#).unwrap();
+    assert_query_code(&db, UNKNOWN_WINDOW, "QRY-011");
+}
+
+#[test]
+fn unknown_aggregate_via_prepared_query_returns_qry_010() {
+    let db = Minigraf::in_memory().unwrap();
+    let pq = db
+        .prepare(r#"(query [:find (frob414 ?b) :where [?a :x ?b] [?a :y $y]])"#)
+        .unwrap();
+    let err = pq
+        .execute(&[("y", minigraf::BindValue::Val(minigraf::Value::Integer(1)))])
+        .expect_err("prepared query must fail");
+    assert_eq!(err.code(), "QRY-010");
+}
+
+#[test]
+fn registered_udf_aggregate_and_window_on_empty_database_return_empty() {
+    let db = Minigraf::in_memory().unwrap();
+    db.register_aggregate(
+        "frob414",
+        || 0i64,
+        |acc: &mut i64, _v: &minigraf::Value| *acc += 1,
+        |acc: &i64, _n: usize| minigraf::Value::Integer(*acc),
+    )
+    .unwrap();
+    for q in [UNKNOWN_AGG, UNKNOWN_WINDOW] {
+        match db.execute(q).expect("registered UDF query must succeed") {
+            minigraf::QueryResult::QueryResults { results, .. } => {
+                assert!(results.is_empty(), "expected no rows")
+            }
+            _ => panic!("expected query results"),
+        }
+    }
 }

@@ -126,6 +126,7 @@ pub(crate) enum ErrorCode {
     Prs077,
     Prs078,
     Prs079,
+    Prs080,
     Qry001,
     Qry002,
     Qry003,
@@ -135,6 +136,8 @@ pub(crate) enum ErrorCode {
     Qry007,
     Qry008,
     Qry009,
+    Qry010,
+    Qry011,
     Int000,
     Stg001,
     Stg002,
@@ -748,6 +751,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCategory::Parser,
     ),
     (
+        ErrorCode::Prs080,
+        "PRS-080",
+        ":find variable {} not bound in :where",
+        ErrorCategory::Parser,
+    ),
+    (
         ErrorCode::Qry001,
         "QRY-001",
         "Invalid entity: {}",
@@ -799,6 +808,18 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Qry009,
         "QRY-009",
         "rules lock poisoned",
+        ErrorCategory::Query,
+    ),
+    (
+        ErrorCode::Qry010,
+        "QRY-010",
+        "unknown aggregate function: '{}'",
+        ErrorCategory::Query,
+    ),
+    (
+        ErrorCode::Qry011,
+        "QRY-011",
+        "unknown window function '{}' — register it with register_aggregate() before querying",
         ErrorCategory::Query,
     ),
     (
@@ -1923,6 +1944,7 @@ mod tests {
                 | ErrorCode::Prs077
                 | ErrorCode::Prs078
                 | ErrorCode::Prs079
+                | ErrorCode::Prs080
                 | ErrorCode::Qry001
                 | ErrorCode::Qry002
                 | ErrorCode::Qry003
@@ -1932,6 +1954,8 @@ mod tests {
                 | ErrorCode::Qry007
                 | ErrorCode::Qry008
                 | ErrorCode::Qry009
+                | ErrorCode::Qry010
+                | ErrorCode::Qry011
                 | ErrorCode::Stg001
                 | ErrorCode::Stg002
                 | ErrorCode::Stg003
@@ -2141,6 +2165,7 @@ mod tests {
             ErrorCode::Prs077,
             ErrorCode::Prs078,
             ErrorCode::Prs079,
+            ErrorCode::Prs080,
             ErrorCode::Qry001,
             ErrorCode::Qry002,
             ErrorCode::Qry003,
@@ -2150,6 +2175,8 @@ mod tests {
             ErrorCode::Qry007,
             ErrorCode::Qry008,
             ErrorCode::Qry009,
+            ErrorCode::Qry010,
+            ErrorCode::Qry011,
             ErrorCode::Stg001,
             ErrorCode::Stg002,
             ErrorCode::Stg003,
