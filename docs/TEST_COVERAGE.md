@@ -4,7 +4,9 @@
 
 **Verified**: 2026-10-08 with `cargo test`
 
-**Result**: 1,213 passing tests and 8 ignored tests (1,221 total), including the golden-file corpus (#391)
+**Result**: 1,215 passing tests and 8 ignored tests (1,223 total), including the golden-file corpus (#391)
+
+`tests/property_test.rs` writes random histories (batched transacts, retracts, write transactions, checkpoints) in memory and to a file, and compares random queries (one to three joined patterns, `not` or `not-join`, a comparison predicate, `:as-of`, `:valid-at` or `:any-valid-time`) with a reference evaluator, on the open file and after a reopen; a query error fails the test (#386). The histories leave out the v2.x known issues #371, #435 and #477.
 
 `tests/crash_kill_test.rs` kills a child process running a seeded workload under five checkpoint modes at a random point and checks that the reopened file holds exactly the transactions the child logged as committed, or those plus the one in flight, through full-scan, AEVT, AVET, EAVT and `:as-of` queries, again after a second reopen and after a checkpoint plus reopen (#384). The workload leaves out the v2.x known issues #371 and #435.
 

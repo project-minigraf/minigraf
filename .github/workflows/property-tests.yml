@@ -28,7 +28,10 @@ jobs:
           set -o pipefail
           cargo test --test property_test -- --nocapture 2>&1 | tee proptest-output.txt
         env:
-          PROPTEST_CASES: 8000000
+          # Query properties (#386): 1M in-memory cases (~3 ms each) and a
+          # tenth as many file-backed ones (~57 ms each, checkpoint and
+          # reopen), plus 1M of each one-pattern property; ~1.6 h locally.
+          PROPTEST_CASES: 1000000
           RUST_BACKTRACE: 1
 
       - name: Record property-test failure
@@ -44,7 +47,7 @@ jobs:
             echo
             echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             echo "- Commit: $GITHUB_SHA"
-            echo "- Reproduce: \`PROPTEST_CASES=8000000 cargo test --test property_test -- --nocapture\`"
+            echo "- Reproduce: \`PROPTEST_CASES=1000000 cargo test --test property_test -- --nocapture\`"
             echo
             echo "## Test output"
             echo
