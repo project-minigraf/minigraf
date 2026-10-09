@@ -76,7 +76,7 @@ Scope — format and storage integrity:
 - One current valid-time window per `(e, a, v)`: a later assertion replaces the earlier window, and two windows of one fact in one `transact` are `API-011` (#435; done on `v3`)
 - Empty or inverted valid-time windows rejected with `API-019` on every write path (#436; done on `v3`)
 - In a `WriteTransaction`, the last statement that writes a fact decides it, so reads inside the transaction match the commit; `LogWriter` keeps the same rules, with `API-020` for an assertion and retraction of one fact in one transaction (#477; done on `v3`)
-- `btree_page` fuzz target that reaches node decoding (#375)
+- `btree_page` fuzz target that reaches node decoding (#375; done on `v3` with #387: page targets rebuilt on real v8 files)
 
 Scope — query API:
 
@@ -91,7 +91,7 @@ Scope — release-gate testing and documentation:
 - SIGKILL crash test that checks committed data through EAVT, AEVT and full scan (#384; done on `v3`: `tests/crash_kill_test.rs`, 100 rounds per OS nightly)
 - Model-based test of transact/retract/checkpoint/reopen (#385; done on `v3`: `tests/model_based_test.rs`, 30,000 cases nightly)
 - Wider property tests: file-backed, batched, retracts, temporal, joins (#386)
-- Persistent fuzz corpus and an operation-sequence target (#387)
+- Persistent fuzz corpus and an operation-sequence target (#387; corpus caching, weekly `cmin` and the v8 page targets done on `v3`; `ops_sequence` and `corrupt_file` targets next)
 - Fault injection across save/WAL/recovery (#390)
 - Long-running soak test at scale (#392)
 - Benchmarks at 100K–10M facts and a published performance envelope (#394)
