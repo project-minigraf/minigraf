@@ -98,6 +98,10 @@ impl<B: StorageBackend> StorageBackend for FaultInjectingBackend<B> {
         self.inner.page_count()
     }
 
+    fn holds_every_page(&self) -> bool {
+        self.inner.holds_every_page()
+    }
+
     fn close(&mut self) -> Result<()> {
         let mut cfg = self.config.lock().unwrap();
         let limit = cfg.fail_close_after;

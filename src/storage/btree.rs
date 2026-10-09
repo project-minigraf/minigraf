@@ -741,6 +741,10 @@ impl<B: StorageBackend> StorageBackend for MutexStorageBackend<B> {
             .page_count()
     }
 
+    fn holds_every_page(&self) -> bool {
+        self.0.lock().map_or(true, |b| b.holds_every_page())
+    }
+
     fn close(&mut self) -> Result<()> {
         bail_coded!(ErrorCode::Int049, "MutexStorageBackend is read-only")
     }

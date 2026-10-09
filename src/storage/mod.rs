@@ -93,6 +93,15 @@ pub trait StorageBackend: Send + Sync {
     /// Get the total number of pages in the storage.
     fn page_count(&self) -> Result<u64>;
 
+    /// True if every page below [`page_count`](Self::page_count) is stored,
+    /// like a file's length. False for a sparse store that drops free pages
+    /// (the browser buffer, #440): its `page_count` can be below a meta's.
+    /// Open and commit check a meta's `page_count` against the store only
+    /// when this is true (#497).
+    fn holds_every_page(&self) -> bool {
+        true
+    }
+
     /// Close the storage backend.
     ///
     /// Performs final sync and cleanup.

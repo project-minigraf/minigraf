@@ -195,13 +195,13 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         match (slot_a, slot_b) {
             (SlotState::Valid(a), SlotState::Valid(b)) => {
                 let m = if a.generation >= b.generation { a } else { b };
-                check_fits(&m, page_count)?;
+                check_fits(&*backend, &m)?;
                 Ok(Opened::Meta(m))
             }
             (SlotState::Valid(m), _) | (_, SlotState::Valid(m)) => {
                 // Refuse an unreadable file before probing its pages.
                 m.check_features()?;
-                check_fits(&m, page_count)?;
+                check_fits(&*backend, &m)?;
                 check_single_valid(&*backend, m, wal_base)?;
                 Ok(Opened::Meta(m))
             }
@@ -718,8 +718,13 @@ impl<B: StorageBackend + 'static> Drop for PersistentFactStorage<B> {
 /// The other slot is not tried: a valid newer meta means its commit happened,
 /// and opening at the older one would silently drop it. Pages 0 and 1 are the
 /// meta slots, and a missing slot B reads as empty: a new file torn after its
-/// generation-1 meta but before page 1 counts as two pages.
-fn check_fits(m: &MetaPage, file_pages: u64) -> Result<()> {
+/// generation-1 meta but before page 1 counts as two pages. A sparse store
+/// (the browser buffer) has no length to check.
+fn check_fits(backend: &dyn StorageBackend, m: &MetaPage) -> Result<()> {
+    if !backend.holds_every_page() {
+        return Ok(());
+    }
+    let file_pages = backend.page_count()?;
     if m.page_count > file_pages.max(2) {
         bail_coded!(ErrorCode::Stg044, m.page_count, file_pages);
     }
@@ -729,6 +734,9 @@ fn check_fits(m: &MetaPage, file_pages: u64) -> Result<()> {
 /// Before a meta is written: every page it counts reached the backend, so
 /// [`check_fits`] holds for it on the next open (#497).
 fn check_written(backend: &dyn StorageBackend, m: &MetaPage) -> Result<()> {
+    if !backend.holds_every_page() {
+        return Ok(());
+    }
     let have = backend.page_count()?.max(2);
     if have < m.page_count {
         bail_coded!(

@@ -549,17 +549,22 @@ pub(crate) fn verify(backend: &dyn StorageBackend, cache: &PageCache, meta: Meta
     // bounds the scan, so a `page_count` past its end is reported and never
     // makes the check run longer than the file is big (#497).
     let all_clean = scans.iter().all(|s| s.clean) && dict.clean;
-    // Pages 0 and 1 are the meta slots; a missing slot B reads as empty.
-    let file_pages = match backend.page_count() {
-        Ok(n) => n.max(2),
-        Err(e) => {
-            w.problems.push(e);
-            0
+    // Pages 0 and 1 are the meta slots; a missing slot B reads as empty. A
+    // sparse store (the browser buffer) has no length to check.
+    let mut scan_end = meta.page_count;
+    if backend.holds_every_page() {
+        let file_pages = match backend.page_count() {
+            Ok(n) => n.max(2),
+            Err(e) => {
+                w.problems.push(e);
+                0
+            }
+        };
+        if meta.page_count > file_pages {
+            w.problems
+                .push(err_coded!(ErrorCode::Stg044, meta.page_count, file_pages));
         }
-    };
-    if meta.page_count > file_pages {
-        w.problems
-            .push(err_coded!(ErrorCode::Stg044, meta.page_count, file_pages));
+        scan_end = scan_end.min(file_pages);
     }
     let free = w.read_free_list();
     let mut pages = u64::try_from(w.seen.len()).unwrap_or(u64::MAX);
@@ -589,7 +594,7 @@ pub(crate) fn verify(backend: &dyn StorageBackend, cache: &PageCache, meta: Meta
             }
         }
         if all_clean {
-            let leaked = (2..meta.page_count.min(file_pages))
+            let leaked = (2..scan_end)
                 .filter(|p| !reached.contains(p) && !free_set.contains(p))
                 .count();
             if leaked > 0 {

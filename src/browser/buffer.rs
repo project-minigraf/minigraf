@@ -144,6 +144,12 @@ impl StorageBackend for BrowserBufferBackend {
         Ok(self.pages.keys().max().map_or(0, |m| m.saturating_add(1)))
     }
 
+    /// Released (free) pages are dropped, so the highest stored page can be
+    /// below the meta's `page_count`.
+    fn holds_every_page(&self) -> bool {
+        false
+    }
+
     fn close(&mut self) -> Result<()> {
         Ok(()) // no-op
     }
@@ -197,6 +203,9 @@ mod tests {
         assert_eq!(buf.page_count().unwrap(), 2);
         buf.write_page(5, &page(3)).unwrap(); // sparse
         assert_eq!(buf.page_count().unwrap(), 6);
+        // Free pages are dropped, so open does not check a meta's page_count
+        // against this one (#497).
+        assert!(!buf.holds_every_page());
     }
 
     #[wasm_bindgen_test]
