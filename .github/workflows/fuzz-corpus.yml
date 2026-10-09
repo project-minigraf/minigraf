@@ -1,0 +1,179 @@
+name: Fuzz corpus (weekly)
+
+# Minimizes each target's cached fuzz corpus (see fuzz.yml) with
+# `cargo fuzz cmin`, saves the result back to the cache, and proposes it as a
+# commit to the branch in a pull request from bot/fuzz-corpus-<branch> (#387).
+# Committed seed_* files are always kept: they are regression seeds.
+#
+# Two branches, as in fuzz.yml: main on Monday 08:00 UTC, v3 on Monday 20:00
+# UTC. Keep the cron strings here and in CORPUS_REF/run-name identical, and
+# keep this file the same on main and v3.
+#
+# Opening the pull request needs the repository setting "Allow GitHub Actions
+# to create and approve pull requests". Without it, the branch is still
+# pushed and the job summary links to it. Pull requests opened with
+# GITHUB_TOKEN do not start CI; they change only fuzz/corpus/.
+run-name: >-
+  Fuzz corpus (${{ github.event_name == 'workflow_dispatch' && inputs.ref
+  || (github.event.schedule == '0 20 * * 1' && 'v3' || 'main') }})
+
+on:
+  schedule:
+    - cron: "0 8 * * 1"   # main
+    - cron: "0 20 * * 1"  # v3
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch whose corpus to minimize
+        required: true
+        default: main
+
+permissions:
+  contents: read
+
+env:
+  CORPUS_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || (github.event.schedule == '0 20 * * 1' && 'v3' || 'main') }}
+  # Larger corpus files stay in the cache only.
+  MAX_COMMITTED_BYTES: "65536"
+
+jobs:
+  targets:
+    name: List fuzz targets
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.list.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CORPUS_REF }}
+
+      - name: Read the [[bin]] names
+        id: list
+        shell: bash
+        run: |
+          targets="$(sed -n 's/^name = "\(.*\)"$/\1/p' fuzz/Cargo.toml | grep -vx minigraf-fuzz \
+            | jq -R . | jq -sc .)"
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+
+  cmin:
+    name: Minimize ${{ matrix.target }}
+    needs: targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.targets.outputs.targets) }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CORPUS_REF }}
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache cargo-fuzz binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-fuzz
+          key: cargo-fuzz-${{ runner.os }}-${{ hashFiles('fuzz/Cargo.toml') }}
+
+      - name: Install cargo-fuzz
+        run: which cargo-fuzz || cargo install cargo-fuzz
+
+      - name: Restore corpus
+        uses: actions/cache/restore@v4
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ env.CORPUS_REF }}-${{ matrix.target }}-cmin-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: fuzz-corpus-${{ env.CORPUS_REF }}-${{ matrix.target }}-
+
+      - name: Minimize
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          dir="fuzz/corpus/$TARGET"
+          echo "Before: $(find "$dir" -type f | wc -l) files"
+          cargo fuzz cmin -O "$TARGET" "$dir"
+          # Put back every committed seed cmin dropped.
+          git ls-files -z "$dir" | grep -z '/seed_' | xargs -0 -r git checkout --
+          echo "After: $(find "$dir" -type f | wc -l) files"
+
+      - name: Save corpus
+        uses: actions/cache/save@v4
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ env.CORPUS_REF }}-${{ matrix.target }}-cmin-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Keep committable files
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          mkdir -p "committed/$TARGET"
+          find "fuzz/corpus/$TARGET" -maxdepth 1 -type f -size -"$((MAX_COMMITTED_BYTES + 1))"c \
+            -exec cp {} "committed/$TARGET/" \;
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: corpus-${{ matrix.target }}
+          path: committed/
+          retention-days: 7
+
+  propose:
+    name: Propose the minimized corpus
+    needs: cmin
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CORPUS_REF }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: corpus-*
+          path: minimized
+          merge-multiple: true
+
+      - name: Commit, push and open the pull request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="bot/fuzz-corpus-$CORPUS_REF"
+          for d in minimized/*/; do
+            target="$(basename "$d")"
+            rm -rf "fuzz/corpus/$target"
+            cp -r "$d" "fuzz/corpus/$target"
+          done
+          git add -A fuzz/corpus
+          if git diff --cached --quiet; then
+            echo "Corpus unchanged." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -q -m "fuzz: minimized corpus for $CORPUS_REF (weekly cmin)" \
+            -m "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            -m "Refs #387"
+          git push -f origin "HEAD:refs/heads/$branch"
+
+          body="Weekly \`cargo fuzz cmin\` of the cached corpus of every fuzz target on \`$CORPUS_REF\`, with all committed \`seed_*\` files kept. Files over $MAX_COMMITTED_BYTES bytes stay in the cache only. Generated by \`.github/workflows/fuzz-corpus.yml\` (#387).
+
+          Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          existing="$(gh pr list --head "$branch" --base "$CORPUS_REF" --state open --json number --jq '.[0].number')"
+          if [ -n "$existing" ]; then
+            echo "Updated pull request #$existing." | tee -a "$GITHUB_STEP_SUMMARY"
+          elif gh pr create --base "$CORPUS_REF" --head "$branch" \
+              --title "fuzz: minimized corpus for $CORPUS_REF" --body "$body"; then
+            echo "Opened a pull request from $branch." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            compare="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$CORPUS_REF...$branch?expand=1"
+            echo "Could not open the pull request (is \"Allow GitHub Actions to create and approve pull requests\" off?). Open it from $compare" \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
