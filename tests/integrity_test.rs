@@ -126,3 +126,79 @@ fn damaged_leaves_are_reported_and_index_damage_is_repaired() {
     assert!(repaired > 0, "index leaves are repaired");
     assert!(refused > 0, "DICT leaves are refused");
 }
+
+/// A checkpointed file closed cleanly, with no WAL: `(path, file length)`.
+fn checkpointed_file(dir: &std::path::Path, name: &str) -> (std::path::PathBuf, u64) {
+    let path = dir.join(name);
+    {
+        let db = Minigraf::open(&path).unwrap();
+        fill(&db, 0, 200);
+        db.checkpoint().unwrap();
+    }
+    assert!(!dir.join(format!("{name}.wal")).exists());
+    let len = std::fs::metadata(&path).unwrap().len();
+    (path, len)
+}
+
+fn open_code(path: &std::path::Path, read_only: bool) -> String {
+    let opts = minigraf::OpenOptions::new().read_only(read_only);
+    match Minigraf::open_with_options(path, opts) {
+        Ok(_) => "opened".to_string(),
+        Err(e) => e.code().to_string(),
+    }
+}
+
+/// A file cut short after its last checkpoint (an interrupted copy) is refused
+/// at open with STG-044, read-write and read-only, before a WAL exists to take
+/// writes it could never checkpoint; the file is left as it was (#497).
+#[test]
+fn truncated_file_is_refused_at_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let (path, len) = checkpointed_file(dir.path(), "cut.graph");
+    for pages_cut in [1, 3] {
+        let cut_len = len - pages_cut * PAGE_SIZE;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(cut_len)
+            .unwrap();
+        assert_eq!(open_code(&path, false), "STG-044");
+        assert_eq!(open_code(&path, true), "STG-044");
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), cut_len);
+        assert!(!dir.path().join("cut.graph.wal").exists(), "no WAL created");
+    }
+}
+
+/// A CRC-valid meta whose `page_count` is far past the end of the file is
+/// refused at open: it used to open, and its next checkpoint wrote at that
+/// page id, leaving a 4 EiB sparse file (#497).
+#[test]
+fn meta_page_count_past_end_is_refused_and_file_never_grows() {
+    let dir = tempfile::tempdir().unwrap();
+    let (path, len) = checkpointed_file(dir.path(), "forged.graph");
+    let mut bytes = std::fs::read(&path).unwrap();
+    let generation = |page: usize| -> u64 {
+        let off = page * PAGE_SIZE as usize;
+        u64::from_le_bytes(bytes[off + 16..off + 24].try_into().unwrap())
+    };
+    let active = if generation(0) >= generation(1) { 0 } else { 1 };
+    let meta = &mut bytes[active * PAGE_SIZE as usize..(active + 1) * PAGE_SIZE as usize];
+    meta[24..32].copy_from_slice(&(1u64 << 50).to_le_bytes());
+    meta[12..16].fill(0);
+    let crc = crc32fast::hash(meta);
+    meta[12..16].copy_from_slice(&crc.to_le_bytes());
+    std::fs::write(&path, &bytes).unwrap();
+
+    assert_eq!(open_code(&path, false), "STG-044");
+    assert_eq!(open_code(&path, true), "STG-044");
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().len(),
+        len,
+        "file not grown"
+    );
+    assert!(
+        !dir.path().join("forged.graph.wal").exists(),
+        "no WAL created"
+    );
+}
