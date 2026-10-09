@@ -13,6 +13,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 minigraf = { path = ".." }
 tempfile = "3"
+crc32fast = "1"
 
 [[bin]]
 name = "wal_entry"

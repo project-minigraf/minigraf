@@ -1,39 +1,49 @@
+//! Fuzz B+tree node decoding (leaf and internal, every tree) (#375).
+//!
+//! Input byte 0 picks the node: bit 7 an internal node (else a leaf), bits 0-6
+//! which one. Byte 1: bit 0 flips the type byte between leaf and internal, bit
+//! 1 opens read-only. Byte 2 picks the probe (`common::probe`). The remaining
+//! bytes overwrite the node's `count` field (offset 2) and body (offset 24).
+//! The type, page id and generation stay, and the page CRC is recomputed, so
+//! the page reaches the node decoder instead of failing the header check.
 #![no_main]
 use libfuzzer_sys::fuzz_target;
 
+#[path = "common/mod.rs"]
+mod common;
+use common::*;
+
 fuzz_target!(|data: &[u8]| {
-    let dir = match tempfile::tempdir() {
-        Ok(d) => d,
-        Err(_) => return,
-    };
-    let path = dir.path().join("fuzz.graph");
-    let mut content = vec![0u8; 4096 * 3];
-    content[0..4].copy_from_slice(b"MGRF");
-    // v8 header (v1-v6 are rejected; v7 would always force a full rebuild
-    // from fact pages and never touch the root page below, which is a
-    // different code path than the one this target means to fuzz).
-    content[4..8].copy_from_slice(&8u32.to_le_bytes());
-    // page_count = 3 (header page 0, unused page 1, fuzzed root page 2).
-    content[8..16].copy_from_slice(&3u64.to_le_bytes());
-    // eavt_root_page = 2: points `load()`'s index wiring, and the query
-    // below, at the fuzzed page as the EAVT B+tree root. fact_page_count is
-    // left at 0, so `load()` takes the "no facts, trust the root" branch
-    // and does not force a rebuild that would ignore this page.
-    content[32..40].copy_from_slice(&2u64.to_le_bytes());
-    // header_checksum (bytes 80-83) and index_checksum (bytes 64-67) are left
-    // zero: zero is the "unset" sentinel that skips checksum verification.
-    let copy_len = data.len().min(4096);
-    content[4096 * 2..4096 * 2 + copy_len].copy_from_slice(&data[..copy_len]);
-    if std::fs::write(&path, &content).is_err() {
+    let [sel, flags, pick, rest @ ..] = data else {
         return;
+    };
+    let t = template();
+    let pages = if sel & 0x80 != 0 {
+        &t.internals
+    } else {
+        &t.leaves
+    };
+    let id = pages[usize::from(sel & 0x7f) % pages.len()];
+
+    let mut bytes = t.bytes.clone();
+    let page = page_mut(&mut bytes, id);
+    if flags & 0x01 != 0 {
+        page[0] = if page[0] == PAGE_TYPE_LEAF {
+            PAGE_TYPE_INTERNAL
+        } else {
+            PAGE_TYPE_LEAF
+        };
     }
-    let Ok(db) = minigraf::db::Minigraf::open(&path) else {
+    let (count, body) = rest.split_at(rest.len().min(2));
+    page[2..2 + count.len()].copy_from_slice(count);
+    let n = body.len().min(PAGE_SIZE - 24);
+    page[24..24 + n].copy_from_slice(&body[..n]);
+    fix_page_crc(page);
+
+    let Ok(dir) = tempfile::tempdir() else {
         return;
     };
-    // `open()` alone only wires up `OnDiskIndexReader` against the root page —
-    // it never reads it. Run an entity-bound query so the EAVT range scan
-    // actually decodes the fuzzed page as a v8 B+tree leaf/internal node.
-    let _ = db.execute(
-        r#"(query [:find ?a ?v :where [#uuid "00000000-0000-0000-0000-000000000000" ?a ?v]])"#,
-    );
+    if let Some(db) = write_and_open(dir.path(), &bytes, flags & 0x02 != 0) {
+        probe(&db, *pick);
+    }
 });

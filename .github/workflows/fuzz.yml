@@ -1,22 +1,75 @@
 name: Fuzz (nightly)
 
+# Two branches alternate every 12 hours: main at 04:00 UTC, v3 at 16:00 UTC.
+# Scheduled runs always use this file from the default branch, so the branch
+# under test is chosen from the cron string that fired (as in bench.yml).
+# Keep the cron strings here and in FUZZ_REF/run-name identical, and keep this
+# file the same on main and v3.
+#
+# Each target runs in its own job, in parallel. The corpus a run grows is saved
+# in the Actions cache per branch and target, and the next run starts from it
+# (#387). fuzz-corpus.yml minimizes it weekly and proposes it as a commit.
+run-name: >-
+  Fuzz (${{ github.event_name == 'workflow_dispatch' && inputs.ref
+  || (github.event.schedule == '0 16 * * *' && 'v3' || 'main') }})
+
 on:
   schedule:
-    - cron: "0 4 * * *"
+    - cron: "0 4 * * *"   # main
+    - cron: "0 16 * * *"  # v3
   workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch to fuzz
+        required: true
+        default: main
+      seconds:
+        description: Seconds per target
+        required: true
+        default: "3300"
 
 permissions:
   contents: read
-  issues: write
+
+env:
+  FUZZ_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || (github.event.schedule == '0 16 * * *' && 'v3' || 'main') }}
+  FUZZ_SECONDS: ${{ github.event_name == 'workflow_dispatch' && inputs.seconds || '3300' }}
 
 jobs:
-  fuzz:
-    name: Fuzz targets
+  targets:
+    name: List fuzz targets
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    outputs:
+      targets: ${{ steps.list.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.FUZZ_REF }}
+
+      # Each branch fuzzes the targets its own fuzz/Cargo.toml declares.
+      - name: Read the [[bin]] names
+        id: list
+        shell: bash
+        run: |
+          targets="$(sed -n 's/^name = "\(.*\)"$/\1/p' fuzz/Cargo.toml | grep -vx minigraf-fuzz \
+            | jq -R . | jq -sc .)"
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+          echo "Targets on $FUZZ_REF: $targets"
+
+  fuzz:
+    name: Fuzz ${{ matrix.target }}
+    needs: targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.targets.outputs.targets) }}
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.FUZZ_REF }}
 
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@nightly
@@ -30,102 +83,77 @@ jobs:
       - name: Install cargo-fuzz
         run: which cargo-fuzz || cargo install cargo-fuzz
 
-      - name: Fuzz wal_entry (55m)
-        id: wal_entry
+      - name: Restore corpus
+        uses: actions/cache/restore@v4
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ env.FUZZ_REF }}-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: fuzz-corpus-${{ env.FUZZ_REF }}-${{ matrix.target }}-
+
+      - name: Build
+        run: cargo fuzz build -O ${{ matrix.target }}
+
+      # -timeout: one input running this long is a hang (libFuzzer's default
+      # of 1200 s would spend a third of the budget on it).
+      - name: Fuzz ${{ matrix.target }}
         shell: bash
         run: |
           set -o pipefail
-          cargo fuzz run wal_entry -- -max_total_time=3300 2>&1 | tee fuzz-wal_entry.log
-        continue-on-error: true
+          cargo fuzz run -O ${{ matrix.target }} fuzz/corpus/${{ matrix.target }} -- \
+            -max_total_time="$FUZZ_SECONDS" -timeout=60 2>&1 | tee fuzz-${{ matrix.target }}.log
 
-      - name: Fuzz file_header (55m)
-        id: file_header
-        shell: bash
-        run: |
-          set -o pipefail
-          cargo fuzz run file_header -- -max_total_time=3300 2>&1 | tee fuzz-file_header.log
-        continue-on-error: true
+      - name: Save corpus
+        if: ${{ always() }}
+        uses: actions/cache/save@v4
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ env.FUZZ_REF }}-${{ matrix.target }}-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - name: Fuzz fact_page (55m)
-        id: fact_page
-        shell: bash
-        run: |
-          set -o pipefail
-          cargo fuzz run fact_page -- -max_total_time=3300 2>&1 | tee fuzz-fact_page.log
-        continue-on-error: true
-
-      - name: Fuzz btree_page (55m)
-        id: btree_page
-        shell: bash
-        run: |
-          set -o pipefail
-          cargo fuzz run btree_page -- -max_total_time=3300 2>&1 | tee fuzz-btree_page.log
-        continue-on-error: true
-
-      - name: Fuzz datalog_parser (55m)
-        id: datalog_parser
-        shell: bash
-        run: |
-          set -o pipefail
-          cargo fuzz run datalog_parser -- -max_total_time=3300 2>&1 | tee fuzz-datalog_parser.log
-        continue-on-error: true
-
-      - name: Fuzz datalog_eval (55m)
-        id: datalog_eval
-        shell: bash
-        run: |
-          set -o pipefail
-          cargo fuzz run datalog_eval -- -max_total_time=3300 2>&1 | tee fuzz-datalog_eval.log
-        continue-on-error: true
-
-      - name: Upload fuzz failures
-        if: ${{ always() && (steps.wal_entry.outcome == 'failure' || steps.file_header.outcome == 'failure' || steps.fact_page.outcome == 'failure' || steps.btree_page.outcome == 'failure' || steps.datalog_parser.outcome == 'failure' || steps.datalog_eval.outcome == 'failure') }}
+      - name: Upload failure
+        if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
-          name: fuzz-failures-${{ github.run_id }}
+          name: fuzz-failure-${{ matrix.target }}
           path: |
-            fuzz/artifacts/
-            fuzz-*.log
+            fuzz/artifacts/${{ matrix.target }}/
+            fuzz-${{ matrix.target }}.log
           if-no-files-found: warn
           retention-days: 30
 
-      - name: Record fuzz failures
-        if: ${{ always() && (steps.wal_entry.outcome == 'failure' || steps.file_header.outcome == 'failure' || steps.fact_page.outcome == 'failure' || steps.btree_page.outcome == 'failure' || steps.datalog_parser.outcome == 'failure' || steps.datalog_eval.outcome == 'failure') }}
+  report:
+    name: Record fuzz failures
+    needs: fuzz
+    if: ${{ failure() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fuzz-failure-*
+          path: failures
+
+      - name: Open or update the issue
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          ISSUE_TITLE: "Nightly fuzz failure"
-          FAILED_TARGETS: >-
-            wal_entry=${{ steps.wal_entry.outcome }},
-            file_header=${{ steps.file_header.outcome }},
-            fact_page=${{ steps.fact_page.outcome }},
-            btree_page=${{ steps.btree_page.outcome }},
-            datalog_parser=${{ steps.datalog_parser.outcome }},
-            datalog_eval=${{ steps.datalog_eval.outcome }}
+          ISSUE_TITLE: "Nightly fuzz failure (${{ env.FUZZ_REF }})"
         run: |
           report_file="fuzz-failure.md"
-          artifact_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           {
-            echo "The nightly fuzz workflow found one or more failures."
+            echo "The nightly fuzz workflow found one or more failures on \`$FUZZ_REF\`."
             echo
-            echo "- Run and artifacts: $artifact_url"
-            echo "- Commit: $GITHUB_SHA"
-            echo "- Target outcomes: $FAILED_TARGETS"
-            echo "- Reproduce: \`cargo +nightly fuzz run <target> fuzz/artifacts/<target>/<crash-file>\`"
-            echo "- Full logs: see the \`fuzz-failures-$GITHUB_RUN_ID\` artifact on the run above"
+            echo "- Run and artifacts: $run_url"
+            echo "- Reproduce: check out \`$FUZZ_REF\` at the run's commit, then"
+            echo "  \`cargo +nightly fuzz run <target> fuzz/artifacts/<target>/<crash-file>\`"
             echo
             echo "## Fuzz logs (failed targets only, last 100 lines each)"
             echo
-
-            IFS=',' read -ra target_outcomes <<< "$FAILED_TARGETS"
-            for entry in "${target_outcomes[@]}"; do
-              entry="$(echo "$entry" | xargs)"
-              target="${entry%%=*}"
-              outcome="${entry#*=}"
-              [ "$outcome" = "failure" ] || continue
-              log="fuzz-${target}.log"
-              [ -e "$log" ] || continue
-              echo "### $log"
+            shopt -s nullglob
+            for log in failures/fuzz-failure-*/fuzz-*.log; do
+              echo "### $(basename "$log")"
               echo
               echo '```text'
               tail -n 100 "$log"
@@ -134,7 +162,7 @@ jobs:
             done
           } > "$report_file"
 
-          # Defensive hard cap: GitHub issue/comment bodies max out at 65536 chars.
+          # GitHub issue and comment bodies max out at 65536 characters.
           max_bytes=60000
           if [ "$(wc -c < "$report_file")" -gt "$max_bytes" ]; then
             head -c "$max_bytes" "$report_file" > "${report_file}.tmp"
@@ -142,7 +170,7 @@ jobs:
               echo
               echo "..."
               echo
-              echo "_Report truncated to fit GitHub's body size limit. See the run and artifact linked above for full logs._"
+              echo "_Report truncated to fit GitHub's body size limit. See the run linked above for full logs._"
             } >> "${report_file}.tmp"
             mv "${report_file}.tmp" "$report_file"
           fi
@@ -153,7 +181,7 @@ jobs:
             --search "$ISSUE_TITLE in:title" \
             --json number,title \
             --limit 100 \
-            --jq '.[] | select(.title == "Nightly fuzz failure") | .number' \
+            --jq ".[] | select(.title == \"$ISSUE_TITLE\") | .number" \
             | head -n 1)"
 
           if [ -n "$existing_issue" ]; then
@@ -161,7 +189,4 @@ jobs:
           else
             gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" --body-file "$report_file"
           fi
-
-      - name: Fail workflow when fuzzing finds a failure
-        if: ${{ always() && (steps.wal_entry.outcome == 'failure' || steps.file_header.outcome == 'failure' || steps.fact_page.outcome == 'failure' || steps.btree_page.outcome == 'failure' || steps.datalog_parser.outcome == 'failure' || steps.datalog_eval.outcome == 'failure') }}
-        run: exit 1
+          exit 1
