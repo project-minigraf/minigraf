@@ -97,8 +97,14 @@ jobs:
           dir="fuzz/corpus/$TARGET"
           echo "Before: $(find "$dir" -type f | wc -l) files"
           cargo fuzz cmin -O "$TARGET" "$dir"
-          # Put back every committed seed cmin dropped.
+          # Put back every committed seed cmin dropped. cmin names the files
+          # it keeps by the SHA-1 of their content, so a seed it kept is also
+          # there under that name: drop that copy.
           git ls-files -z "$dir" | grep -z '/seed_' | xargs -0 -r git checkout --
+          shopt -s nullglob
+          for seed in "$dir"/seed_*; do
+            rm -f "$dir/$(sha1sum < "$seed" | cut -c1-40)"
+          done
           echo "After: $(find "$dir" -type f | wc -l) files"
 
       - name: Save corpus
