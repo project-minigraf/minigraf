@@ -32,6 +32,8 @@ churn.
 `tests/soak_test.rs`, `#![cfg(not(target_arch = "wasm32"))]`, two tests:
 
 - `soak` (`#[ignore]`): the full run, tuned by environment variables.
+- `soak_full_scan_child`: a no-op unless the parent sets
+  `MINIGRAF_SOAK_SCAN_DB` (§6).
 - `soak_short` (runs in the per-PR suite): the same driver with a tiny
   configuration (about 20K facts, 3 reopens, 3 checks), a few seconds in a
   debug build. It keeps the harness compiling and correct.
@@ -41,8 +43,10 @@ churn.
 | `MINIGRAF_SOAK_MINUTES` | 20 | Wall-clock budget for the workload |
 | `MINIGRAF_SOAK_TARGET_FACTS` | 10,000,000 | Live facts the growth phase reaches |
 | `MINIGRAF_SOAK_CHECK_MINUTES` | 10 | Interval between sampled checks |
+| `MINIGRAF_SOAK_CHURN_TPS` | 50 | Write rate cap in the churn phase (§5) |
 | `MINIGRAF_SOAK_SEED` | random, printed | Replays a run |
 | `MINIGRAF_SOAK_METRICS` | `target/soak/metrics.jsonl` | Metrics output |
+| `MINIGRAF_SOAK_FULL_SCAN_MAX` | 3,000,000 | Largest live count the final full scan runs at (§6) |
 | `MINIGRAF_SOAK_DIR` | a temp dir | Where the `.graph` lives (the workflow points it at the runner's large disk) |
 
 It runs under `--profile bench` (optimized, `panic = "unwind"`). The release
@@ -69,10 +73,11 @@ Each fact of `content(n)` has a slot number. An entity is created in one
 transaction, and a batch holds several entities. The reference keeps:
 
 - `next_entity`: entities `0..next_entity` exist.
-- `flipped: HashSet<(u64 entity, u8 slot)>`: slots currently retracted.
+- `flipped`: slots `(entity, slot)` currently retracted, a `Vec` plus an
+  index map so a random one can be picked in O(1).
   A retract op picks a random existing entity and slot. If the slot is live it
   is retracted and inserted into `flipped`; if not it is re-asserted and
-  removed. The set's size is bounded by the number of retract ops.
+  removed.
 - `live_count`: total facts minus `flipped.len()`.
 
 The expected live facts of any entity, or of any shard, are computed from
@@ -82,7 +87,8 @@ The expected live facts of any entity, or of any shard, are computed from
 few of them: retract and re-assert `:h/state` (one of 8 values), and add or
 retract `:h/tag` values (multi-valued). The reference keeps every hot change
 as `(tx_count, triple, assert|retract)`, so `:as-of` at any past transaction
-can be checked. The history is a few hundred thousand records at most.
+can be checked. A record packs into one `u64`; a 5-hour run keeps a few
+million of them.
 
 **Transaction counter:** each `execute` increments the reference `tx`. After
 every reopen `current_tx_count()` must equal it.
@@ -97,12 +103,18 @@ One loop until the budget ends. Each step picks one op:
 | Op | Weight (growth / churn) | Detail |
 |---|---|---|
 | Grow | 70% / 10% | New entities; batch size log-uniform over 1–2,000 facts |
-| Retract/re-assert | 15% / 45% | 1–200 random ordinary slots in one `retract` or `transact` |
-| Hot churn | 15% / 45% | 1–20 changes on hot entities in one transaction |
+| Retract/re-assert | 15% / 50% | 1–50 random ordinary slots: live ones retracted in one `retract`, or retracted ones re-asserted in one `transact` |
+| Hot churn | 15% / 40% | 1–8 changes on hot entities in one `transact` or `retract` |
 
-The growth phase lasts until `live_count` reaches the target; the churn phase
-uses the rest of the budget. Churn keeps the live count roughly flat while the
-history keeps growing.
+The growth phase runs at full speed until `live_count` reaches the target
+(the run fails if the budget ends first). The churn phase uses the rest of the
+budget at a capped write rate, `MINIGRAF_SOAK_CHURN_TPS` (default 50
+transactions per second): at full speed it would add tens of millions of fact
+versions, more than main's in-memory store and disk can hold. Time between
+writes goes to extra checked reads: an EAVT (90%) or AVET (10%) lookup of a random entity,
+compared with the reference and timed like the scheduled checks. Re-asserts
+are chosen once `flipped` holds 200K slots, so the live count stays roughly
+flat while the history grows by a few million versions.
 
 Interleaved, by a seeded schedule:
 
@@ -120,18 +132,29 @@ Every `MINIGRAF_SOAK_CHECK_MINUTES`, after every reopen, and at the end:
 
 - **EAVT:** `[:e{n} ?a ?v]` for 200 random entities and all 32 hot entities;
   rendered rows equal the reference.
-- **AVET:** `[?e :p/name "name-{n}"]` for 50 of those entities: present
-  exactly when that slot is live.
+- **AVET:** `[?e :p/name "name-{n}"]` for 20 random entities: present
+  exactly when that slot is live. This shape scans the whole attribute today
+  (#518, about 0.5 s at 1M facts), so it is sampled less.
 - **AEVT:** `[?e :p/shard{k} ?v]` for 4 random shards; the result equals
   every live shard slot of that shard.
 - **`:as-of`:** for 4 hot entities and 3 random past transactions each, the
   rows equal the history replayed to that transaction.
 - **Counter:** `current_tx_count()` equals the reference.
 
-Only at the end, after a final reopen (it materializes every row):
+- **Full scan:** the row count of `[?e ?a ?v]` equals `live_count` plus the
+  hot entities' live facts. A query builds its whole answer when it opens
+  (#432), so a full scan costs memory per row: about 300 B at 1M simple
+  facts, about 1.1 KB here (2.2 GB at 2M); a `count` aggregate costs the same.
+  The allocator keeps that memory after the query, so in this process it would
+  hide a leak of that size from §8. The scan therefore runs in a child process
+  (the test binary re-run as `soak_full_scan_child`, as `crash_kill_test`
+  does) after a checkpoint, with the parent's handle closed: once, when the
+  live count first reaches 2M, and at the end only up to
+  `MINIGRAF_SOAK_FULL_SCAN_MAX` (default 3M) live facts. The child reports the
+  row count, the time and its peak RSS.
 
-- **Full scan:** `[:find (count ?e) :where [?e ?a ?v]]` equals `live_count`
-  plus the hot entities' live facts.
+At the end, after a final reopen:
+
 - **v3 only:** `verify()` reports no problems.
 
 Rendered rows never carry a `Uuid` (CLAUDE.md test conventions); failures name
@@ -144,12 +167,13 @@ The test appends one JSON line per check to the metrics file:
 ```json
 {"t_s": 3600, "phase": "churn", "tx": 41230, "live_facts": 10012345,
  "versions": 12500000, "file_bytes": 1234567890, "open_ms_file": 812, "open_ms_wal": 940,
- "checkpoints": 2100, "checkpoint_ms_p50": 210, "checkpoint_ms_max": 900,
+ "reopens": 40, "checkpoints": 2100, "checkpoint_ms_p50": 210, "checkpoint_ms_max": 900,
  "rss_bytes": 512000000, "peak_rss_bytes": 700000000,
  "query_us": {"eavt": [p50, p99], "avet": [...], "aevt": [...], "as_of": [...]}}
 ```
 
-The last line, written at the end, adds the full-scan time and the totals. RSS
+Lines written after a full scan also carry `full_scan_ms` and
+`full_scan_peak_rss_bytes` (the child's). RSS
 and peak RSS come from `/proc/self/status` (`VmRSS`, `VmHWM`); elsewhere they
 are `null`.
 
@@ -171,8 +195,8 @@ Weekly, alternating like `bench.yml` and `crash-kill.yml`: main on Saturday
 branches.
 
 - `ubuntu-latest`, `timeout-minutes: 360`.
-- Free disk first (remove the preinstalled toolchains that are not needed);
-  `MINIGRAF_SOAK_DIR` on the work disk.
+- `MINIGRAF_SOAK_DIR=/mnt/soak`: the runner's spare disk holds main's
+  multi-GB file.
 - `cargo test --profile bench --test soak_test soak -- --ignored --nocapture`
   with `MINIGRAF_SOAK_MINUTES=300`.
 - Always upload `metrics.jsonl` and the test log as artifacts (90-day
