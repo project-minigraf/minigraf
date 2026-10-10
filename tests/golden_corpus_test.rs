@@ -219,11 +219,9 @@ fn check_manifest(m: &Manifest, failures: &mut Vec<String>) {
         db.checkpoint().unwrap();
     }
 
-    // 4. Persist: reopen after the checkpoint, which removes the WAL. A WAL whose
-    // entries are all checkpointed already (`"stale_wal": true`) gives the
-    // checkpoint nothing to do, so it stays until the next write is checkpointed.
-    let stale_wal = m.json["stale_wal"].as_bool().unwrap_or(false);
-    if !stale_wal && wal_path(&path).exists() {
+    // 4. Persist: reopen after the checkpoint, which removes the WAL, including
+    // one whose entries are all checkpointed already (`"stale_wal": true`, #457).
+    if wal_path(&path).exists() {
         failures.push(format!("{}: WAL still present after checkpoint", m.name));
     }
     {

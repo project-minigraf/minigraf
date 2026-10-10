@@ -1076,8 +1076,14 @@ impl Minigraf {
                 // second handle in this one — #304/#314). The guard still matters where
                 // the filesystem cannot lock (e.g. NFSv3 without lockd, some FUSE
                 // mounts) and the caller set `allow_unlocked`.
+                //
+                // A WAL can still exist here with every entry already in the file
+                // (a crash between a checkpoint's commit and its WAL delete, or a
+                // failed delete): replay counts only the entries it applies. Each
+                // of those entries is at or below the committed tx count, so
+                // removing the file loses nothing (#457).
                 if *wal_entry_count == 0 && !pfs.is_dirty() {
-                    return Ok(());
+                    return Self::delete_wal(wal, db_path, wal_entry_count);
                 }
                 // `force_dirty` is needed for the WAL-replay case: facts were loaded
                 // into memory during `replay_wal` but `pfs.dirty` was not set because
