@@ -741,6 +741,54 @@ fn wal_corrupt_tail_never_applied() {
     assert_eq!(names.len(), 1, "fake entry must not create phantom facts");
 }
 
+/// A crash during an append leaves a torn entry at the end of the WAL. The
+/// next session's commits must not be appended after it, or recovery stops
+/// at the torn entry and loses them after a second crash (#513).
+#[test]
+fn wal_commit_after_torn_tail_survives_second_crash() {
+    // A second entry to tear: the WAL of a session that wrote two facts.
+    let (_template_dir, template_path, one_entry) = setup_db_with_one_fact();
+    run_crashing_child(
+        &template_path,
+        1000,
+        &[r#"(transact [[:e9 :name "Torn"]])"#],
+        CrashTx::Implicit,
+    );
+    let two_entries = read_wal_bytes(&template_path);
+    let second_entry = &two_entries[one_entry.len()..];
+    assert!(second_entry.len() > 12, "second entry too short to tear");
+    let mut bad_crc = second_entry.to_vec();
+    bad_crc[0] ^= 0xFF;
+
+    let tails: [(&str, Vec<u8>); 4] = [
+        ("partial checksum", second_entry[..2].to_vec()),
+        ("partial header", second_entry[..10].to_vec()),
+        (
+            "partial payload",
+            second_entry[..second_entry.len() - 3].to_vec(),
+        ),
+        ("bad checksum", bad_crc),
+    ];
+    for (name, tail) in tails {
+        let (_dir, db_path, mut torn) = setup_db_with_one_fact();
+        torn.extend_from_slice(&tail);
+        write_wal_bytes(&db_path, &torn);
+        run_crashing_child(
+            &db_path,
+            1000,
+            &[r#"(transact [[:e2 :name "Bob"]])"#],
+            CrashTx::Implicit,
+        );
+        let mut names = query_names(&db_path);
+        names.sort();
+        assert_eq!(
+            names,
+            ["Alice", "Bob"],
+            "a commit after a torn tail must survive ({name})"
+        );
+    }
+}
+
 // ══ #214 lock-leak tests ══════════════════════════════════════════════════
 
 #[test]

@@ -621,8 +621,11 @@ impl Minigraf {
     /// replay the facts on next open.
     ///
     /// If the WAL write fails, an error is returned and the in-memory store is
-    /// left unchanged. The database remains consistent for subsequent in-process
-    /// operations.
+    /// left unchanged. The WAL may then end in a partial entry, so later writes
+    /// through this handle fail with WAL-007 until the database is reopened or
+    /// a [`checkpoint`](Self::checkpoint) succeeds; reads keep working. Whether
+    /// the failed transaction is durable is unknown: after a reopen it is there
+    /// in full or not at all.
     ///
     /// Returns `Err` if called from the same thread that holds an active
     /// `WriteTransaction` (use `tx.execute()` instead).
@@ -2399,6 +2402,49 @@ mod tests {
             n, 1,
             "only Alice should be visible; Bob's failed commit must be rolled back"
         );
+    }
+
+    // ── #513: a failed WAL append ─────────────────────────────────────────────
+
+    /// A WAL append that fails part-way leaves its transaction unapplied and
+    /// refuses later writes with WAL-007, so nothing lands after the partial
+    /// entry. A checkpoint deletes the WAL and writes work again.
+    #[test]
+    fn test_failed_wal_append_refuses_writes_until_checkpoint() {
+        fn names(db: &Minigraf) -> usize {
+            match db
+                .execute("(query [:find ?n :where [?e :name ?n]])")
+                .unwrap()
+            {
+                QueryResult::QueryResults { results, .. } => results.len(),
+                _ => 0,
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.graph");
+        let db = Minigraf::open(&db_path).unwrap();
+        db.execute("(transact [[:a :name \"A\"]])").unwrap();
+
+        crate::wal::tear_next_append(9);
+        db.execute("(transact [[:b :name \"B\"]])")
+            .expect_err("the torn append fails");
+        assert_eq!(names(&db), 1, "the failed transaction is not applied");
+
+        let err = db
+            .execute("(transact [[:c :name \"C\"]])")
+            .expect_err("later writes are refused");
+        assert_eq!(err.code(), "WAL-007");
+        let mut tx = db.begin_write().unwrap();
+        tx.execute("(transact [[:c :name \"C\"]])").unwrap();
+        assert_eq!(tx.commit().unwrap_err().code(), "WAL-007");
+        assert_eq!(names(&db), 1);
+
+        db.checkpoint().unwrap();
+        db.execute("(transact [[:d :name \"D\"]])").unwrap();
+        assert_eq!(names(&db), 2);
+        drop(db);
+        let db = Minigraf::open(&db_path).unwrap();
+        assert_eq!(names(&db), 2, "A and D survive reopen");
     }
 
     // ── file-backed: checkpoint deletes WAL and updates main file ─────────────

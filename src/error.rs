@@ -195,6 +195,7 @@ pub(crate) enum ErrorCode {
     Wal004,
     Wal005,
     Wal006,
+    Wal007,
     Api001,
     Api002,
     Api003,
@@ -1137,6 +1138,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCategory::Wal,
     ),
     (
+        ErrorCode::Wal007,
+        "WAL-007",
+        "an earlier write to the WAL failed on this handle; reopen the database or call checkpoint() before writing again",
+        ErrorCategory::Wal,
+    ),
+    (
         ErrorCode::Api001,
         "API-001",
         "write lock is poisoned; database may be in an inconsistent state",
@@ -2021,6 +2028,7 @@ mod tests {
                 | ErrorCode::Wal004
                 | ErrorCode::Wal005
                 | ErrorCode::Wal006
+                | ErrorCode::Wal007
                 | ErrorCode::Api001
                 | ErrorCode::Api002
                 | ErrorCode::Api003
@@ -2244,6 +2252,7 @@ mod tests {
             ErrorCode::Wal004,
             ErrorCode::Wal005,
             ErrorCode::Wal006,
+            ErrorCode::Wal007,
             ErrorCode::Api001,
             ErrorCode::Api002,
             ErrorCode::Api003,

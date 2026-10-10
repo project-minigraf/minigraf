@@ -163,6 +163,7 @@ with no `CodedError` anywhere in its chain.
 | WAL-004 | Fact serialised size exceeds u32 range | WAL |
 | WAL-005 | WAL num_facts exceeds platform usize | WAL |
 | WAL-006 | Failed to delete WAL file | WAL |
+| WAL-007 | Earlier WAL write failed on this handle | WAL |
 | API-001 | Write lock poisoned | Database API |
 | API-002 | Unexpected command variant in write path | Database API |
 | API-003 | Attribute must be a keyword | Database API |
@@ -2389,6 +2390,23 @@ The WAL is replayed on open and deleted on checkpoint.
 - The `.wal` file is safe to delete manually — Minigraf will create a new one on the next write.
 
 **Scenario**: `db.checkpoint()` succeeds but the process lacks directory write permission, preventing deletion of `my-db.wal` — e.g. `failed to delete WAL file my-db.wal: permission denied`.
+
+---
+
+### WAL-007 Earlier WAL write failed on this handle
+
+**Error text**: `an earlier write to the WAL failed on this handle; reopen the database or call checkpoint() before writing again`
+
+**Cause**: A write or fsync of the `.wal` file failed earlier on this handle (for example a full disk or an I/O error), and that write returned its own error. The WAL may now end in a partial entry. Recovery stops at the first partial entry, so anything appended after it would be lost after a crash. Every later write through this WAL fails with WAL-007 instead.
+
+The transaction whose write failed was not applied in memory. Whether it is durable is unknown: if its entry reached the disk whole, it is replayed when the database is next opened; otherwise it is lost. It is never applied in part.
+
+**Resolution**:
+- Fix the cause (free disk space, check the device), then reopen the database. Opening cuts off a partial entry at the end of the WAL.
+- Or call `checkpoint()`. A successful checkpoint writes the committed facts to the `.graph` file and deletes the WAL; the next write starts a new one. The failed transaction is then gone for good.
+- If the failed transaction matters, check after reopening whether it is there, and write it again if it is not.
+
+**Scenario**: The disk fills during `db.execute("(transact ...)")`, which fails with an I/O error. The next `transact` fails with WAL-007 until the database is reopened or `checkpoint()` succeeds.
 
 ---
 
