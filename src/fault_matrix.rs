@@ -297,27 +297,12 @@ fn disk_full_halfway_through_a_checkpoint() {
         db.execute(&format!("(transact [[:bulk{i} :p/n {i}]])"))
             .unwrap();
     }
+    db.kill();
+    // Count the checkpoint's writes on a copy (Windows cannot copy a file
+    // that is open), then fill the disk at half of them.
+    let writes = checkpoint_calls(&path, Fault::Eio);
+    let db = open(&path, Op::Checkpoint);
     let live = snapshot(&db);
-
-    // Count the checkpoint's page writes on a copy, then fill the disk at
-    // half of them.
-    let writes = {
-        let copy_dir = tempfile::tempdir().unwrap();
-        let copy = copy_dir.path().join("f.graph");
-        std::fs::copy(&path, &copy).unwrap();
-        let mut wal = copy.as_os_str().to_owned();
-        wal.push(".wal");
-        let mut src_wal = path.as_os_str().to_owned();
-        src_wal.push(".wal");
-        std::fs::copy(&src_wal, &wal).unwrap();
-        let db2 = open(&copy, Op::Checkpoint);
-        fault::arm(Fault::Eio, u64::MAX);
-        db2.checkpoint().unwrap();
-        let n = fault::count();
-        fault::disarm();
-        db2.kill();
-        n
-    };
     assert!(writes > 4, "the checkpoint writes several pages");
 
     fault::arm(Fault::Enospc, writes / 2);
