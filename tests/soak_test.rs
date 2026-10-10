@@ -380,7 +380,8 @@ impl Config {
             checkpoint_every: (20, 200),
             churn_tps: Some(env_u64("MINIGRAF_SOAK_CHURN_TPS", 50) as f64),
             sample_entities: 200,
-            sample_names: 20,
+            // #518: an AVET lookup scans the whole attribute (~6 s at 10M).
+            sample_names: 5,
             sample_shards: 4,
             sample_as_of: 4,
             full_scan_at: 2_000_000,
@@ -887,7 +888,7 @@ impl Soak {
     /// One checked read between capped churn writes.
     fn read_step(&mut self) {
         let n = self.read_rng.below(self.rf.next_entity);
-        if self.read_rng.chance(0.9) {
+        if self.read_rng.chance(0.98) {
             self.check_entity(n);
         } else {
             self.check_name(n);

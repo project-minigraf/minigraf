@@ -111,7 +111,7 @@ The growth phase runs at full speed until `live_count` reaches the target
 budget at a capped write rate, `MINIGRAF_SOAK_CHURN_TPS` (default 50
 transactions per second): at full speed it would add tens of millions of fact
 versions, more than main's in-memory store and disk can hold. Time between
-writes goes to extra checked reads: an EAVT (90%) or AVET (10%) lookup of a random entity,
+writes goes to extra checked reads: an EAVT (98%) or AVET (2%) lookup of a random entity,
 compared with the reference and timed like the scheduled checks. Re-asserts
 are chosen once `flipped` holds 200K slots, so the live count stays roughly
 flat while the history grows by a few million versions.
@@ -132,9 +132,10 @@ Every `MINIGRAF_SOAK_CHECK_MINUTES`, after every reopen, and at the end:
 
 - **EAVT:** `[:e{n} ?a ?v]` for 200 random entities and all 32 hot entities;
   rendered rows equal the reference.
-- **AVET:** `[?e :p/name "name-{n}"]` for 20 random entities: present
+- **AVET:** `[?e :p/name "name-{n}"]` for 5 random entities: present
   exactly when that slot is live. This shape scans the whole attribute today
-  (#518, about 0.5 s at 1M facts), so it is sampled less.
+  (#518: 0.5 s at 1M facts, 6 s at 10M), so it is sampled sparingly; raise
+  the sample once #518 is fixed.
 - **AEVT:** `[?e :p/shard{k} ?v]` for 4 random shards; the result equals
   every live shard slot of that shard.
 - **`:as-of`:** for 4 hot entities and 3 random past transactions each, the
