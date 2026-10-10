@@ -188,6 +188,7 @@ pub(crate) enum ErrorCode {
     Stg042,
     Stg043,
     Stg044,
+    Stg045,
     Wal001,
     Wal002,
     Wal003,
@@ -1091,6 +1092,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Stg044,
         "STG-044",
         "File is shorter than its meta page: the meta counts {} pages but the file holds {} (truncated?)",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg045,
+        "STG-045",
+        "File is {} bytes, shorter than one page, and is not a new Minigraf database",
         ErrorCategory::Storage,
     ),
     (
@@ -2007,6 +2014,7 @@ mod tests {
                 | ErrorCode::Stg042
                 | ErrorCode::Stg043
                 | ErrorCode::Stg044
+                | ErrorCode::Stg045
                 | ErrorCode::Wal001
                 | ErrorCode::Wal002
                 | ErrorCode::Wal003
@@ -2229,6 +2237,7 @@ mod tests {
             ErrorCode::Stg042,
             ErrorCode::Stg043,
             ErrorCode::Stg044,
+            ErrorCode::Stg045,
             ErrorCode::Wal001,
             ErrorCode::Wal002,
             ErrorCode::Wal003,

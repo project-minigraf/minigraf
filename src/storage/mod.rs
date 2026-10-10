@@ -102,6 +102,15 @@ pub trait StorageBackend: Send + Sync {
         true
     }
 
+    /// The bytes past the last whole page, if any: a file whose length is not
+    /// a multiple of `PAGE_SIZE` ends in a partial page that `page_count`
+    /// leaves out. Open uses it to tell a torn first write of a new file from
+    /// a short file that is something else (#506). Backends without a byte
+    /// length return `None`.
+    fn partial_page(&self) -> Result<Option<Vec<u8>>> {
+        Ok(None)
+    }
+
     /// Close the storage backend.
     ///
     /// Performs final sync and cleanup.

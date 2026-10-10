@@ -183,6 +183,14 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let mut backend = self.lock()?;
         let page_count = backend.page_count()?;
         if page_count == 0 {
+            // A file shorter than one page is new only if it holds a torn
+            // first write of `init_empty`; anything else is not ours to
+            // re-initialise (#506).
+            if let Some(tail) = backend.partial_page()?
+                && !is_initial_meta_prefix(&tail)
+            {
+                bail_coded!(ErrorCode::Stg045, tail.len());
+            }
             return Ok(Opened::Fresh);
         }
         let page0 = backend.read_page(0)?;
@@ -796,18 +804,24 @@ fn check_single_valid(
 /// file: a prefix of its bytes, then zeros, with page 1 (if present) all zero.
 /// Such a file never committed anything, so it is safe to initialise again.
 fn is_torn_initial_meta(backend: &dyn StorageBackend, page0: &[u8]) -> Result<bool> {
-    let expected = MetaPage::empty(1).encode();
-    let written = page0
-        .iter()
-        .rposition(|&b| b != 0)
-        .map_or(0, |i| i.saturating_add(1));
-    if page0.get(..written) != expected.get(..written) {
+    if !is_initial_meta_prefix(page0) {
         return Ok(false);
     }
     if backend.page_count()? > 1 && backend.read_page(1)?.iter().any(|&b| b != 0) {
         return Ok(false);
     }
     Ok(true)
+}
+
+/// True if `bytes` are a prefix of the empty generation-1 meta, then zeros:
+/// what a torn write of `init_empty`'s page 0 can leave.
+fn is_initial_meta_prefix(bytes: &[u8]) -> bool {
+    let expected = MetaPage::empty(1).encode();
+    let written = bytes
+        .iter()
+        .rposition(|&b| b != 0)
+        .map_or(0, |i| i.saturating_add(1));
+    bytes.get(..written) == expected.get(..written)
 }
 
 /// Encode `facts` for a checkpoint on top of `m`'s dictionary: assign ids,
