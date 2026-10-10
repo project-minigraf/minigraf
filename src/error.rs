@@ -189,6 +189,7 @@ pub(crate) enum ErrorCode {
     Stg043,
     Stg044,
     Stg045,
+    Stg046,
     Wal001,
     Wal002,
     Wal003,
@@ -1099,6 +1100,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Stg045,
         "STG-045",
         "File is {} bytes, shorter than one page, and is not a new Minigraf database",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg046,
+        "STG-046",
+        "an earlier checkpoint failed on this handle and is not retried; reopen the database",
         ErrorCategory::Storage,
     ),
     (
@@ -2022,6 +2029,7 @@ mod tests {
                 | ErrorCode::Stg043
                 | ErrorCode::Stg044
                 | ErrorCode::Stg045
+                | ErrorCode::Stg046
                 | ErrorCode::Wal001
                 | ErrorCode::Wal002
                 | ErrorCode::Wal003
@@ -2246,6 +2254,7 @@ mod tests {
             ErrorCode::Stg043,
             ErrorCode::Stg044,
             ErrorCode::Stg045,
+            ErrorCode::Stg046,
             ErrorCode::Wal001,
             ErrorCode::Wal002,
             ErrorCode::Wal003,

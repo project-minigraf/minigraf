@@ -33,6 +33,12 @@ pub(crate) fn sync_parent_dir(child: &Path) -> io::Result<()> {
 
     #[cfg(test)]
     record(dir, child);
+    #[cfg(test)]
+    match crate::storage::fault::on(crate::storage::fault::Site::DirSync) {
+        crate::storage::fault::Action::Fail(e) => return Err(e),
+        crate::storage::fault::Action::Lose => return Err(crate::storage::fault::eio()),
+        _ => {}
+    }
 
     #[cfg(unix)]
     std::fs::File::open(dir)?.sync_all()?;

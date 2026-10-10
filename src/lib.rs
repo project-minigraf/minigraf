@@ -80,6 +80,8 @@ pub mod db;
 pub mod error;
 /// Every fact version, streamed: [`FactLog`], [`FactFilter`], [`FactRecord`].
 pub mod fact_log;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod fault_matrix;
 pub(crate) mod graph;
 /// Build a new database from explicit fact records: [`LogWriter`].
 #[cfg(not(target_arch = "wasm32"))]

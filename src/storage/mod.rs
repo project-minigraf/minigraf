@@ -11,6 +11,8 @@ pub mod cache;
 pub(crate) mod dict;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod dir_sync;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+pub(crate) mod fault;
 pub(crate) mod freelist;
 pub mod index;
 pub(crate) mod keys;

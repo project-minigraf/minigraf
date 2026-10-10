@@ -371,6 +371,24 @@ impl Drop for Inner {
     }
 }
 
+/// Refuse a write, before it takes a `tx_count`, on a handle where an earlier
+/// write failed: a checkpoint (STG-046) or a WAL append (WAL-007). See #390
+/// and #513.
+fn refuse_if_failed(ctx: &WriteContext) -> Result<()> {
+    #[cfg(not(target_arch = "wasm32"))]
+    if let WriteContext::File { pfs, wal, .. } = ctx {
+        if pfs.failed() {
+            bail_coded!(ErrorCode::Stg046);
+        }
+        if wal.as_ref().is_some_and(WalWriter::failed) {
+            bail_coded!(ErrorCode::Wal007);
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    let _ = ctx;
+    Ok(())
+}
+
 // ─── Fact size validation (moved to WAL serialization) ────────────────────────
 
 // ─── Minigraf ─────────────────────────────────────────────────────────────────
@@ -696,6 +714,7 @@ impl Minigraf {
             let tx_id = crate::graph::types::tx_id_now();
             crate::graph::storage::check_valid_windows(&stamped, tx_id)?;
             crate::graph::storage::check_one_window_per_triple(&stamped)?;
+            refuse_if_failed(&ctx)?;
             let tx_count = self.inner.fact_storage.allocate_tx_count();
 
             let stamped: Vec<Fact> = stamped
@@ -891,6 +910,16 @@ impl Minigraf {
     /// # Errors
     ///
     /// Returns an error if the write lock is poisoned or the checkpoint I/O fails.
+    ///
+    /// A failed checkpoint is never retried on the same handle: after a failed
+    /// `fsync` the operating system may have dropped the written pages, and a
+    /// retry could report success over them. Every later write, checkpoint
+    /// and index rebuild through the handle fails with STG-046; queries keep
+    /// working. Reopen the database: every committed transaction is still in
+    /// the WAL, and the file holds the previous checkpoint or the failed one
+    /// complete. The same applies to an automatic checkpoint, which fails the
+    /// `transact` or `commit` that triggered it after that transaction is
+    /// already durable in the WAL.
     pub fn checkpoint(&self) -> Result<(), MinigrafError> {
         self.checkpoint_inner().map_err(MinigrafError::from)
     }
@@ -1010,6 +1039,18 @@ impl Minigraf {
     /// regardless of how many facts the batch contains.
     pub fn current_tx_count(&self) -> u64 {
         self.inner.fact_storage.current_tx_count()
+    }
+
+    /// End the handle as a killed process would: no close-time checkpoint and
+    /// no save on drop. Whatever reached the file stays; the lock is released.
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    pub(crate) fn kill(self) {
+        let mut ctx = self.inner.write_lock.lock().unwrap();
+        if let WriteContext::File { mut pfs, .. } =
+            std::mem::replace(&mut *ctx, WriteContext::Memory)
+        {
+            pfs.discard();
+        }
     }
 
     /// Internal checkpoint logic (operates on an already-held write-lock guard).
@@ -1500,6 +1541,7 @@ impl<'a> WriteTransaction<'a> {
             // are checked again here (#436).
             let tx_id = crate::graph::types::tx_id_now();
             crate::graph::storage::check_valid_windows(&facts_to_commit, tx_id)?;
+            refuse_if_failed(&self.guard)?;
             let tx_count = self.inner.fact_storage.allocate_tx_count();
 
             // Stamp facts with tx_id and tx_count
@@ -2425,9 +2467,10 @@ mod tests {
         let db = Minigraf::open(&db_path).unwrap();
         db.execute("(transact [[:a :name \"A\"]])").unwrap();
 
-        crate::wal::tear_next_append(9);
+        crate::storage::fault::arm(crate::storage::fault::Fault::Torn(9), 0);
         db.execute("(transact [[:b :name \"B\"]])")
             .expect_err("the torn append fails");
+        crate::storage::fault::disarm();
         assert_eq!(names(&db), 1, "the failed transaction is not applied");
 
         let err = db

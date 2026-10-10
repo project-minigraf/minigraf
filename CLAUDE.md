@@ -108,6 +108,7 @@ cargo run < demos/demo_negation.txt
    - `backend/file.rs`: Single `.graph` file backend (4KB pages, cross-platform)
    - `backend/memory.rs`: In-memory backend for testing
    - `backend/fault_inject.rs`: `FaultInjectingBackend` — injects I/O errors for durability tests (test builds only)
+   - `fault.rs`: thread-local fault plan (test builds only, #390) — EIO, torn/short writes, sticky ENOSPC, failed fsync with or without lost writes, at the k-th write or sync of `FileBackend`, the WAL and `sync_parent_dir`; driven by `src/fault_matrix.rs`
    - `index.rs`: pending (uncheckpointed) EAVT/AEVT keys over UUIDs and strings, `encode_value`
    - `keys.rs`: byte-comparable v8 keys (FDB integers, value tags, `tx↓`, FOREVER), DICT keys, `MAX_VALUE_BYTES`, `MAX_IDENT_BYTES`
    - `node.rs`: prefix-compressed leaf and shortest-separator internal node codecs
@@ -197,7 +198,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1393 tests** (1384 passing, 9 ignored; unit + integration + doc).
+**1406 tests** (1397 passing, 9 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
