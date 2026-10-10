@@ -120,6 +120,11 @@ pub struct OpenOptions {
     /// size of the database (see [`Minigraf::checkpoint`]), and durability does not
     /// depend on it: the WAL is crash-durable. Lower values keep the WAL and reopen
     /// time small; higher values batch more facts per checkpoint.
+    ///
+    /// `usize::MAX` turns off every implicit checkpoint: no auto-checkpoint and
+    /// nothing written to the `.graph` file on close. Only an explicit
+    /// [`Minigraf::checkpoint`] writes it; until then the WAL holds the pending
+    /// facts, and the next open replays them.
     pub wal_checkpoint_threshold: usize,
     /// Number of pages to hold in the LRU page cache. Default: 256 (= 1MB at 4KB pages).
     ///
@@ -361,8 +366,19 @@ impl Drop for Inner {
         // On clean close, perform a best-effort checkpoint to reduce WAL size.
         // Errors are silently ignored (can't propagate from Drop).
         // Skip if wal_checkpoint_threshold is usize::MAX — that sentinel suppresses
-        // all checkpointing (used by benchmarks to keep WAL entries pending).
-        if self.options.wal_checkpoint_threshold == usize::MAX || self.options.read_only {
+        // all checkpointing (used by benchmarks to keep WAL entries pending),
+        // including the storage's own save on drop (#476). The WAL holds every
+        // pending fact, and the next open replays it.
+        if self.options.read_only {
+            return;
+        }
+        if self.options.wal_checkpoint_threshold == usize::MAX {
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Ok(mut ctx) = self.write_lock.lock()
+                && let WriteContext::File { pfs, .. } = &mut *ctx
+            {
+                pfs.discard();
+            }
             return;
         }
         if let Ok(mut ctx) = self.write_lock.lock() {
