@@ -1,0 +1,124 @@
+# Per-file coverage floors, checked on every push and PR by
+# .github/workflows/coverage-gates.yml (scripts/coverage_gates.py). The single
+# source of truth for the gates (#396).
+#
+# Percentages of lines and branches covered by `cargo llvm-cov --branch` with
+# the nightly pinned in that workflow, test modules included. Each floor is
+# the measured value rounded down, minus one point of slack (none at 100%).
+# A floor only goes up: raise it in the PR that adds the tests, and lower one
+# only with the reason in the PR. Target for the storage and WAL files: 90%
+# branches.
+#
+# Known uncovered paths, left on purpose:
+# - INT-049 bails in btree.rs and persistent_facts.rs (a leaf or node that
+#   cannot fit, an empty level, a tree deeper than MAX_TREE_DEPTH, a rebuilt
+#   index failing its own check): invariant checks that no input reaches
+#   without a bug elsewhere.
+# - persistent_facts.rs `check_fits` / `check_written` with
+#   `holds_every_page() == false`: only the browser buffer, covered by the
+#   wasm tests in wasm.yml, which this job does not measure.
+# - wal.rs `delete_file` retry sleep: Windows only (one attempt elsewhere).
+# - wal.rs `scan_entries` read error other than EOF: needs a failing read on a
+#   regular file, which the fault plan (storage/fault.rs) does not inject.
+
+# WAL and the public API
+
+[files."src/wal.rs"]
+lines = 97
+branches = 94
+
+[files."src/db.rs"]
+lines = 95
+branches = 87
+
+[files."src/fact_log.rs"]
+lines = 91
+branches = 97
+
+[files."src/log_writer.rs"]
+lines = 97
+branches = 100
+
+[files."src/graph/storage.rs"]
+lines = 97
+branches = 91
+
+# Storage engine
+
+[files."src/storage/backend/file.rs"]
+lines = 88
+branches = 74
+
+[files."src/storage/btree.rs"]
+lines = 94
+branches = 84
+
+[files."src/storage/cache.rs"]
+lines = 86  # the test-only BarrierBackend's unused trait methods count
+branches = 75
+
+[files."src/storage/dict.rs"]
+lines = 94
+branches = 89
+
+[files."src/storage/freelist.rs"]
+lines = 95
+branches = 59
+
+[files."src/storage/index.rs"]
+lines = 100
+branches = 74
+
+[files."src/storage/keys.rs"]
+lines = 94
+branches = 80
+
+[files."src/storage/meta.rs"]
+lines = 96
+branches = 74
+
+[files."src/storage/mod.rs"]
+lines = 84
+branches = 92
+
+[files."src/storage/node.rs"]
+lines = 90
+branches = 79
+
+[files."src/storage/packed_pages.rs"]
+lines = 97
+branches = 100
+
+[files."src/storage/page.rs"]
+lines = 90
+branches = 83
+
+[files."src/storage/persistent_facts.rs"]
+lines = 95
+branches = 86
+
+[files."src/storage/reader.rs"]
+lines = 97
+branches = 94
+
+[files."src/storage/value_pages.rs"]
+lines = 85
+branches = 80
+
+[files."src/storage/verify.rs"]
+lines = 79
+branches = 70
+
+# Query engine
+
+[files."src/query/datalog/evaluator.rs"]
+lines = 88
+branches = 84
+
+[files."src/query/datalog/executor.rs"]
+lines = 93
+branches = 76
+
+[files."src/query/datalog/stratification.rs"]
+lines = 100
+branches = 100

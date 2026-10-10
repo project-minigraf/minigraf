@@ -17,41 +17,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      # Branch coverage needs nightly. Pinned so a toolchain update cannot move
+      # the numbers under an unrelated PR; bump it on purpose and re-measure.
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2026-10-01
           components: llvm-tools-preview
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Generate coverage (text)
-        run: cargo llvm-cov --text 2>&1 > cov_text.txt || true
+      - name: Build the pid_ns_helper example used by lock tests
+        # cargo-llvm-cov puts test binaries where the lock tests' lookup of
+        # examples/ next to the test binary fails; same workaround as
+        # llvm-cov.yml.
+        run: cargo build --examples --target-dir /tmp/minigraf-lock-test-examples
 
+      # A failing test fails the job: a partial report must never be gated.
+      - name: Run the tests with branch coverage
+        env:
+          MINIGRAF_PID_NS_HELPER: /tmp/minigraf-lock-test-examples/debug/examples/pid_ns_helper
+        run: cargo llvm-cov --branch --no-report
+
+      - name: Summarize coverage
+        run: cargo llvm-cov report --branch --json --summary-only --output-path coverage.json
+
+      # Thresholds come from coverage-thresholds.toml (#396).
       - name: Check per-module thresholds
-        run: |
-          FAIL=0
-          check_module() {
-            local file=$1 threshold=$2
-            local pct
-            pct=$(grep "$file" cov_text.txt | grep -oP '\d+\.\d+(?=%)' | tail -1)
-            if [ -z "$pct" ]; then
-              echo "WARNING: $file not found in coverage report"
-              return 0
-            fi
-            if python3 -c "import sys; sys.exit(0 if float('$pct') >= $threshold else 1)"; then
-              echo "OK: $file: ${pct}% >= ${threshold}%"
-            else
-              echo "FAIL: $file: ${pct}% < ${threshold}%"
-              return 1
-            fi
-          }
-          # Thresholds from coverage-thresholds.toml
-          check_module "wal.rs"            75 || FAIL=1
-          check_module "db.rs"             70 || FAIL=1
-          check_module "persistent_facts"  70 || FAIL=1
-          check_module "btree_v6"          65 || FAIL=1
-          check_module "executor.rs"       75 || FAIL=1
-          check_module "evaluator.rs"      75 || FAIL=1
-          check_module "stratification"    75 || FAIL=1
-          exit $FAIL
+        run: python3 scripts/coverage_gates.py coverage-thresholds.toml coverage.json
