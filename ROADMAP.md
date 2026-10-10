@@ -91,7 +91,7 @@ Scope — release-gate testing and documentation:
 - SIGKILL crash test that checks committed data through EAVT, AEVT and full scan (#384; done on `v3`: `tests/crash_kill_test.rs`, 100 rounds per OS nightly)
 - Model-based test of transact/retract/checkpoint/reopen (#385; done on `v3`: `tests/model_based_test.rs`, 30,000 cases nightly)
 - Wider property tests: file-backed, batched, retracts, temporal, joins (#386)
-- Persistent fuzz corpus and an operation-sequence target (#387; corpus caching, weekly `cmin` and the v8 page targets done on `v3`; `ops_sequence` and `corrupt_file` targets next)
+- Persistent fuzz corpus and an operation-sequence target (#387; done on `v3`: corpus caching, weekly `cmin`, the v8 page targets, and the `ops_sequence` and `corrupt_file` targets)
 - Fault injection across save/WAL/recovery (#390)
 - Long-running soak test at scale (#392)
 - Benchmarks at 100K–10M facts and a published performance envelope (#394)
