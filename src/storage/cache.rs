@@ -272,6 +272,7 @@ mod tests {
     /// Two threads that miss the same page both load it; the second to take
     /// the write lock returns the first one's cached copy.
     #[test]
+    #[cfg_attr(target_os = "wasi", ignore = "spawns threads; WASI has no threads")]
     fn test_concurrent_misses_share_one_cached_copy() {
         let mut inner = MemoryBackend::new();
         inner.write_page(1, &make_page(1, 0x5A)).unwrap();
