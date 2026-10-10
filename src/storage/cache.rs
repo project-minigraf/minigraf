@@ -240,6 +240,57 @@ mod tests {
         p
     }
 
+    /// Holds every `read_page` until two are in flight, so two threads miss
+    /// the same page before either caches it.
+    struct BarrierBackend {
+        inner: MemoryBackend,
+        barrier: std::sync::Barrier,
+    }
+
+    impl StorageBackend for BarrierBackend {
+        fn write_page(&mut self, page_id: u64, data: &[u8]) -> Result<()> {
+            self.inner.write_page(page_id, data)
+        }
+        fn read_page(&self, page_id: u64) -> Result<Vec<u8>> {
+            self.barrier.wait();
+            self.inner.read_page(page_id)
+        }
+        fn sync(&mut self) -> Result<()> {
+            Ok(())
+        }
+        fn page_count(&self) -> Result<u64> {
+            self.inner.page_count()
+        }
+        fn close(&mut self) -> Result<()> {
+            Ok(())
+        }
+        fn backend_name(&self) -> &'static str {
+            "barrier"
+        }
+    }
+
+    /// Two threads that miss the same page both load it; the second to take
+    /// the write lock returns the first one's cached copy.
+    #[test]
+    fn test_concurrent_misses_share_one_cached_copy() {
+        let mut inner = MemoryBackend::new();
+        inner.write_page(1, &make_page(1, 0x5A)).unwrap();
+        let backend = BarrierBackend {
+            inner,
+            barrier: std::sync::Barrier::new(2),
+        };
+        let cache = PageCache::new(4);
+        let (a, b) = std::thread::scope(|s| {
+            let a = s.spawn(|| cache.get_or_load(1, &backend).unwrap());
+            let b = s.spawn(|| cache.get_or_load(1, &backend).unwrap());
+            (a.join().unwrap(), b.join().unwrap())
+        });
+        assert!(Arc::ptr_eq(&a, &b), "one copy cached and returned to both");
+        assert_eq!(a[MARK], 0x5A);
+        let cached = cache.get_or_load(1, &backend.inner).unwrap();
+        assert!(Arc::ptr_eq(&a, &cached));
+    }
+
     #[test]
     fn test_cache_miss_loads_from_backend() {
         let mut backend = MemoryBackend::new();
