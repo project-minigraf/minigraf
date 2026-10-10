@@ -286,6 +286,17 @@ impl FileBackend {
                 }
             }
         } else {
+            // A file shorter than one page is new only if it holds a torn
+            // write of the initial header below; anything else is not ours
+            // to overwrite (#506).
+            if file_len > 0 {
+                let mut tail = Vec::new();
+                file.seek(SeekFrom::Start(0))?;
+                (&mut file).take(PAGE_SIZE as u64).read_to_end(&mut tail)?;
+                if !is_initial_header_prefix(&tail) {
+                    bail_coded!(ErrorCode::Stg045, tail.len());
+                }
+            }
             // New file or empty file: write initial header, then make the
             // file's directory entry durable. Without the directory sync a
             // power loss can lose the whole file despite the header fsync
@@ -341,6 +352,17 @@ impl FileBackend {
     pub fn path(&self) -> &Path {
         &self.path
     }
+}
+
+/// True if `bytes` are a prefix of the initial header `open` writes to a new
+/// file, then zeros: what a torn write of that header can leave.
+fn is_initial_header_prefix(bytes: &[u8]) -> bool {
+    let expected = FileHeader::new().to_bytes();
+    let written = bytes
+        .iter()
+        .rposition(|&b| b != 0)
+        .map_or(0, |i| i.saturating_add(1));
+    bytes.get(..written) == expected.get(..written)
 }
 
 impl StorageBackend for FileBackend {

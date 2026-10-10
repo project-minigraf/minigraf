@@ -163,6 +163,7 @@ pub(crate) enum ErrorCode {
     Stg025,
     Stg026,
     Stg027,
+    Stg045,
     Wal001,
     Wal002,
     Wal003,
@@ -935,6 +936,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Stg027,
         "STG-027",
         "Failed to lock database at {}: {}. This filesystem does not support file locking (common on NFSv3 without lockd, and on some FUSE mounts). Set `allow_unlocked` in `OpenOptions` to open anyway — that accepts the risk that concurrent writers corrupt the file.",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg045,
+        "STG-045",
+        "File is {} bytes, shorter than one page, and is not a new Minigraf database",
         ErrorCategory::Storage,
     ),
     (
@@ -1751,6 +1758,7 @@ mod tests {
                 | ErrorCode::Stg025
                 | ErrorCode::Stg026
                 | ErrorCode::Stg027
+                | ErrorCode::Stg045
                 | ErrorCode::Wal001
                 | ErrorCode::Wal002
                 | ErrorCode::Wal003
@@ -1942,6 +1950,7 @@ mod tests {
             ErrorCode::Stg025,
             ErrorCode::Stg026,
             ErrorCode::Stg027,
+            ErrorCode::Stg045,
             ErrorCode::Wal001,
             ErrorCode::Wal002,
             ErrorCode::Wal003,

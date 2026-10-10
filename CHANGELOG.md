@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- **A file shorter than one page is refused at open with `STG-045` unless it is a torn first write (#506).** Open treated any file under 4 KiB as a new database and wrote a new header over it, so a database cut below one page by an interrupted copy, or an unrelated file at the path, was silently replaced. Such a file now opens as a new database only when its bytes are zeros or a prefix of the header a new database writes (what a crash during creation can leave); anything else is `STG-045` and the file is not modified. A zero-length file is still a new database. New code `STG-045`, numbered as in v3.0.0, which also fixes this.
+
 ## v2.0.4 — 2026-10-08
 
 Patch release on the v2.x line under the [support policy](PHILOSOPHY.md#support-policy): one `BrowserDb` durability hardening fix, plus new compatibility and crash tests. File format is unchanged (v7). No API changes. Native and WASI builds behave exactly as in v2.0.3.
