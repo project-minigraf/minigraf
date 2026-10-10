@@ -16,6 +16,9 @@ use anyhow::Result;
 
 /// Page type byte for format v7 packed fact pages.
 pub const PAGE_TYPE_PACKED_V7: u8 = 0x02;
+/// Page type bytes of v2.x B+tree leaf and internal index pages.
+const PAGE_TYPE_LEAF_V7: u8 = 0x21;
+const PAGE_TYPE_INTERNAL_V7: u8 = 0x22;
 /// Format v7 packed page header size in bytes.
 const PACKED_HEADER_SIZE_V7: usize = 12;
 
@@ -61,17 +64,28 @@ pub fn read_slot_v7(page: &[u8], slot: u16) -> Result<Fact> {
 }
 
 /// Read every fact from the `num_pages` v7 fact pages starting at
-/// `first_page_id`. Pages that are not v7 fact pages are skipped.
+/// `first_page_id`.
+///
+/// A v2.x writer fills `1..=fact_page_count` with fact pages only (it always
+/// writes at least one, even for no facts), so any other page type there is
+/// damage: STG-014, never a skip (#496). When the count is `derived` from the
+/// first index root instead, the range can also hold v2.x B+tree pages; only
+/// those are skipped.
 pub fn read_all_v7(
     backend: &dyn StorageBackend,
     first_page_id: u64,
     num_pages: u64,
+    derived: bool,
 ) -> Result<Vec<Fact>> {
     let mut facts = Vec::new();
     for i in 0..num_pages {
         let page = backend.read_page(first_page_id.saturating_add(i))?;
-        if page.len() < PAGE_SIZE || page.first().copied() != Some(PAGE_TYPE_PACKED_V7) {
+        let page_type = page.first().copied().unwrap_or(0);
+        if derived && matches!(page_type, PAGE_TYPE_LEAF_V7 | PAGE_TYPE_INTERNAL_V7) {
             continue;
+        }
+        if page_type != PAGE_TYPE_PACKED_V7 {
+            bail_coded!(ErrorCode::Stg014, format!("{page_type:02x}"));
         }
         for slot in 0..u16_at(&page, 2)? {
             facts.push(read_slot_v7(&page, slot)?);
@@ -140,7 +154,7 @@ mod tests {
                 .write_page(u64::try_from(i).unwrap() + 1, p)
                 .unwrap();
         }
-        let read = read_all_v7(&backend, 1, u64::try_from(pages.len()).unwrap()).unwrap();
+        let read = read_all_v7(&backend, 1, u64::try_from(pages.len()).unwrap(), false).unwrap();
         assert_eq!(read.len(), 300);
         assert!(
             read.iter().zip(&facts).all(|(a, b)| a == b),
@@ -159,5 +173,55 @@ mod tests {
         pages[0][15] = 0xFF;
         let err = read_slot_v7(&pages[0], 0).unwrap_err();
         assert_eq!(crate::error::MinigrafError::from(err).code(), "STG-015");
+    }
+
+    fn backend_with(pages: &[Vec<u8>]) -> MemoryBackend {
+        let mut backend = MemoryBackend::new();
+        for (i, p) in pages.iter().enumerate() {
+            backend
+                .write_page(u64::try_from(i).unwrap() + 1, p)
+                .unwrap();
+        }
+        backend
+    }
+
+    /// A page in the counted fact range with another type byte is damaged:
+    /// STG-014, never skipped (#496). Covers v2.x B+tree types too, and an
+    /// all-zero page.
+    #[test]
+    fn damaged_type_in_counted_range_is_stg_014() {
+        let pages = pack_facts_v7(&(0..300).map(make_fact).collect::<Vec<_>>());
+        let n = u64::try_from(pages.len()).unwrap();
+        for at in [0, pages.len() - 1] {
+            for ty in [0x00, 0x01, 0x21, 0x22, 0xFF] {
+                let mut damaged = pages.clone();
+                damaged[at][0] = ty;
+                let err = read_all_v7(&backend_with(&damaged), 1, n, false).unwrap_err();
+                assert_eq!(crate::error::MinigrafError::from(err).code(), "STG-014");
+            }
+        }
+        let mut zeroed = pages.clone();
+        zeroed[0] = vec![0u8; PAGE_SIZE];
+        let err = read_all_v7(&backend_with(&zeroed), 1, n, false).unwrap_err();
+        assert_eq!(crate::error::MinigrafError::from(err).code(), "STG-014");
+    }
+
+    /// A derived range (no `fact_page_count`) ends at the first index root, so
+    /// it can hold v2.x B+tree pages below it; those are skipped. Any other
+    /// type is still damage.
+    #[test]
+    fn derived_range_skips_only_v7_btree_pages() {
+        let mut pages = pack_facts_v7(&[make_fact(1), make_fact(2)]);
+        for ty in [0x21, 0x22] {
+            let mut p = vec![0u8; PAGE_SIZE];
+            p[0] = ty;
+            pages.push(p);
+        }
+        let n = u64::try_from(pages.len()).unwrap();
+        let read = read_all_v7(&backend_with(&pages), 1, n, true).unwrap();
+        assert_eq!(read.len(), 2);
+        pages[1][0] = 0x01;
+        let err = read_all_v7(&backend_with(&pages), 1, n, true).unwrap_err();
+        assert_eq!(crate::error::MinigrafError::from(err).code(), "STG-014");
     }
 }

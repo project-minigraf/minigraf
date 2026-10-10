@@ -129,3 +129,49 @@ fn wal_replay_after_migration_is_idempotent() {
     );
     assert_eq!(n, 2, "WAL replay after checkpoint must be idempotent");
 }
+
+/// A damaged type byte on a v7 fact page fails the open with STG-014, read-write
+/// and read-only, and leaves the file as it was (#496). Before, the page was
+/// skipped: the open succeeded with the page's facts missing, and the migration
+/// freed the page. Uses the golden v7 file, as the `fact_page` fuzz target does.
+#[test]
+fn damaged_v7_fact_page_fails_open_and_leaves_file_unchanged() {
+    use minigraf::OpenOptions;
+    let golden = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/v7_basic.graph"),
+    )
+    .unwrap();
+    // Page 1 with only its type byte changed, and page 1 overwritten with noise.
+    let mut type_byte = golden.clone();
+    type_byte[PAGE_SIZE] = 0x00;
+    let mut noise = golden.clone();
+    let mut x = 0x9E37_79B9u32;
+    for b in &mut noise[PAGE_SIZE..2 * PAGE_SIZE] {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        *b = x.to_le_bytes()[0];
+    }
+    noise[PAGE_SIZE] = 0xA5;
+    for bytes in [type_byte, noise] {
+        for read_only in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("damaged.graph");
+            std::fs::write(&path, &bytes).unwrap();
+            let err =
+                match Minigraf::open_with_options(&path, OpenOptions::new().read_only(read_only)) {
+                    Ok(_) => panic!("a damaged v7 fact page must fail the open"),
+                    Err(e) => e,
+                };
+            assert_eq!(err.code(), "STG-014");
+            assert!(
+                std::fs::read(&path).unwrap() == bytes,
+                "a rejected v7 file must be left unmodified"
+            );
+            assert!(
+                !dir.path().join("damaged.graph.wal").exists(),
+                "no WAL is created"
+            );
+        }
+    }
+}

@@ -148,6 +148,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
                 &*backend,
                 1,
                 header.fact_page_count_or_derived(),
+                header.fact_page_count == 0,
             )?
         };
         // As in `migrate_v7`: never rewind past the header's counter.
@@ -275,7 +276,9 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     fn migrate_v7(&mut self, header: &LegacyHeaderV7) -> Result<MetaPage> {
         let mut backend = self.lock()?;
         let num_fact_pages = header.fact_page_count_or_derived();
-        let mut facts = crate::storage::packed_pages::read_all_v7(&*backend, 1, num_fact_pages)?;
+        let derived = header.fact_page_count == 0;
+        let mut facts =
+            crate::storage::packed_pages::read_all_v7(&*backend, 1, num_fact_pages, derived)?;
 
         // Empty transactions allocate a tx_count without producing facts, so the
         // highest fact tx_count can undercount; never rewind past the header's
@@ -1721,6 +1724,33 @@ mod tests {
                     break;
                 }
             }
+        }
+    }
+
+    /// A v7 fact page with a damaged type byte fails the open with STG-014,
+    /// read-write and read-only, and the v7 file is left untouched (#496).
+    /// Before, the page was skipped and the migration freed it, losing its facts.
+    #[test]
+    fn v7_fact_page_with_damaged_type_fails_open_and_writes_nothing() {
+        let clean = v7_file(&sample_facts(300), 300);
+        let fact_pages = clean.page_count().unwrap() - 1;
+        assert!(fact_pages > 1, "fixture spans pages");
+        for page_id in [1, fact_pages] {
+            let mut mem = clean.clone();
+            let mut page = mem.read_page(page_id).unwrap();
+            page[0] = 0xA5;
+            mem.write_page(page_id, &page).unwrap();
+            let before = snapshot(&mem);
+            let err = open_mem(&mem, None)
+                .err()
+                .expect("read-write open must fail");
+            assert_eq!(code(err), "STG-014");
+            assert!(snapshot(&mem) == before, "read-write open wrote");
+            let err = PersistentFactStorage::open_read_only(no_writes(&mem), 16, None)
+                .err()
+                .expect("read-only open must fail");
+            assert_eq!(code(err), "STG-014");
+            assert!(snapshot(&mem) == before, "read-only open wrote");
         }
     }
 
