@@ -5,6 +5,7 @@
 //! - Oversized fact accepted in-memory (no page size constraint)
 //! - Stale WAL after checkpoint is replayed idempotently (no duplicate facts)
 //! - More than 65,535 uncheckpointed facts query correctly (#445)
+//! - A file shorter than one page is refused unless a torn first write (#506)
 #![cfg(not(target_arch = "wasm32"))]
 
 use minigraf::{Minigraf, OpenOptions, QueryResult};
@@ -202,4 +203,63 @@ fn test_more_than_u16_pending_facts_file_backed() {
     assert_all_facts_visible(&db, "before checkpoint");
     db.checkpoint().unwrap();
     assert_all_facts_visible(&db, "after checkpoint");
+}
+
+// ── File shorter than one page (#506) ─────────────────────────────────────────
+
+fn open_code(path: &std::path::Path) -> String {
+    match Minigraf::open(path) {
+        Ok(_) => "opened".to_string(),
+        Err(e) => e.code().to_string(),
+    }
+}
+
+/// A file shorter than one page opens as a new database only when it is a
+/// torn first write: zeros, or a prefix of the initial header. Any other short
+/// file (a database cut to under a page, or foreign bytes) is refused with
+/// STG-045 and left as it was; it used to be overwritten (#506).
+#[test]
+fn test_sub_page_file_refused_unless_torn_first_write() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("short.graph");
+    {
+        let db = Minigraf::open(&path).unwrap();
+        db.execute("(transact [[:a :b 1] [:a :c 2]])").unwrap();
+        db.checkpoint().unwrap();
+        // v8: a second checkpoint moves page 0 off the empty generation-1
+        // meta, which a cut below one page could not be told apart from.
+        db.execute("(transact [[:a :d 3]])").unwrap();
+        db.checkpoint().unwrap();
+    }
+    let saved = std::fs::read(&path).unwrap();
+    std::fs::remove_file(&path).unwrap();
+    let foreign = vec![0x5Au8; 100];
+    for bytes in [&saved[..2222], &saved[..20], &foreign[..]] {
+        std::fs::write(&path, bytes).unwrap();
+        assert_eq!(open_code(&path), "STG-045");
+        assert_eq!(std::fs::read(&path).unwrap(), bytes, "file unchanged");
+        assert!(
+            !dir.path().join("short.graph.wal").exists(),
+            "no WAL created"
+        );
+    }
+
+    // A torn first write: the initial header cut short, or zeros.
+    let fresh = dir.path().join("fresh.graph");
+    drop(Minigraf::open(&fresh).unwrap());
+    let initial = std::fs::read(&fresh).unwrap();
+    for bytes in [&initial[..4], &initial[..10], &[0u8; 300][..]] {
+        std::fs::write(&path, bytes).unwrap();
+        let db = Minigraf::open(&path).unwrap();
+        db.execute("(transact [[:a :b 1]])").unwrap();
+        db.checkpoint().unwrap();
+        drop(db);
+        let db = Minigraf::open(&path).unwrap();
+        match db.execute("(query [:find ?v :where [:a :b ?v]])").unwrap() {
+            QueryResult::QueryResults { results, .. } => assert_eq!(results.len(), 1),
+            _ => panic!("expected query results"),
+        }
+        drop(db);
+        std::fs::remove_file(&path).unwrap();
+    }
 }
