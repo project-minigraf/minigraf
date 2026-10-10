@@ -1,0 +1,76 @@
+# Per-file coverage floors, checked on every push and PR by
+# .github/workflows/coverage-gates.yml (scripts/coverage_gates.py). The single
+# source of truth for the gates (#396).
+#
+# Percentages of lines and branches covered by `cargo llvm-cov --branch` with
+# the nightly pinned in that workflow, test modules included. Each floor is
+# the measured value rounded down, minus one point of slack (none at 100%).
+# A floor only goes up: raise it in the PR that adds the tests, and lower one
+# only with the reason in the PR.
+#
+# v2.x (format v7) gets only data-integrity and security fixes, so these
+# floors hold the line rather than climb; v3 raises its own. `btree.rs` (the
+# v5 B+tree, read only for migration) is not gated.
+#
+# Known uncovered paths, left on purpose:
+# - wal.rs `delete_file` retry sleep: Windows only (one attempt elsewhere).
+# - wal.rs `scan_entries` read error other than EOF: needs a failing read on a
+#   regular file.
+
+# WAL and the public API
+
+[files."src/wal.rs"]
+lines = 97
+branches = 93
+
+[files."src/db.rs"]
+lines = 94
+branches = 77
+
+[files."src/graph/storage.rs"]
+lines = 91
+branches = 77
+
+# Storage engine
+
+[files."src/storage/backend/file.rs"]
+lines = 85
+branches = 62
+
+[files."src/storage/btree_v6.rs"]
+lines = 82
+branches = 81
+
+[files."src/storage/cache.rs"]
+lines = 85
+branches = 75
+
+[files."src/storage/index.rs"]
+lines = 92
+branches = 100
+
+[files."src/storage/mod.rs"]
+lines = 92
+branches = 92
+
+[files."src/storage/packed_pages.rs"]
+lines = 73
+branches = 71
+
+[files."src/storage/persistent_facts.rs"]
+lines = 88
+branches = 66
+
+# Query engine
+
+[files."src/query/datalog/evaluator.rs"]
+lines = 88
+branches = 84
+
+[files."src/query/datalog/executor.rs"]
+lines = 93
+branches = 75
+
+[files."src/query/datalog/stratification.rs"]
+lines = 100
+branches = 100

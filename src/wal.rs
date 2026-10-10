@@ -842,22 +842,44 @@ mod tests {
         writer.append_entry(1, &[fact]).unwrap();
         writer.file.sync_all().unwrap();
 
-        // Manually corrupt the WAL to have a fact larger than MAX_FACT_SIZE
+        // Overwrite the first fact's length, after the entry's checksum,
+        // tx_count and num_facts, with one just over MAX_FACT_SIZE.
         let mut file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
-        file.seek(std::io::SeekFrom::End(-20)).unwrap();
-        // Overwrite the fact length to be huge
-        let huge_len: u32 = (10 * 1024 * 1024 + 1) as u32; // Just over MAX_FACT_SIZE
+        file.seek(std::io::SeekFrom::Start(WAL_HEADER_SIZE as u64 + 20))
+            .unwrap();
+        let huge_len: u32 = (10 * 1024 * 1024 + 1) as u32;
         file.write_all(&huge_len.to_le_bytes()).unwrap();
 
         drop(file);
 
-        // Try to read - should fail gracefully
+        // Replay stops at the entry instead of allocating 10 MB.
         let mut reader = WalReader::open(&path).unwrap();
-        let result = reader.read_entries();
-        assert!(
-            result.is_err() || result.unwrap().is_empty(),
-            "Should fail or return empty on corrupted large fact"
-        );
+        assert!(reader.read_entries().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_wal_entry_with_too_many_facts_ends_replay() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.wal");
+        wal_with_entries(&path, 2);
+        let one_len = {
+            let p = dir.path().join("one.wal");
+            wal_with_entries(&p, 1).len()
+        };
+        // Entry 2's num_facts, after its checksum and tx_count.
+        let mut file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        file.seek(std::io::SeekFrom::Start(one_len as u64 + 12))
+            .unwrap();
+        file.write_all(&1_000_001u64.to_le_bytes()).unwrap();
+        drop(file);
+        assert_eq!(tx_counts(&path), [1]);
+    }
+
+    #[test]
+    fn test_wal_writer_open_fails_in_a_missing_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("missing").join("test.wal");
+        assert!(WalWriter::open_or_create(&path, SyncMode::Full).is_err());
     }
 
     // ── #360: WAL-0xx error code regression tests ──────────────────────────
