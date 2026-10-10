@@ -4,7 +4,7 @@
 
 **Verified**: 2026-10-10 with `cargo test`
 
-**Result**: 1,225 passing tests and 9 ignored tests (1,234 total), including the golden-file corpus (#391)
+**Result**: 1,228 passing tests and 9 ignored tests (1,237 total), including the golden-file corpus (#391)
 
 Since v2.0.4, `tests/edge_cases_test.rs` checks that a file of 1 to 4,095 bytes is `STG-045`, unchanged and with no WAL, when it is a database cut below one page or foreign bytes, and opens as a new database that takes a write and reads it back after reopen when it is a prefix of the initial header or all zeros (#506).
 
@@ -44,8 +44,13 @@ cargo test --quiet
 # Include the scheduled/ignored tests when the host supports them
 cargo test -- --include-ignored
 
-# Generate a local branch-coverage report (requires cargo-llvm-cov)
-cargo llvm-cov --branch --html
+# Generate a local branch-coverage report (requires cargo-llvm-cov and a nightly toolchain)
+cargo +nightly llvm-cov --branch --html
+
+# Check the per-file gates the way CI does
+cargo +nightly llvm-cov --branch --no-report
+cargo +nightly llvm-cov report --branch --json --summary-only --output-path coverage.json
+python3 scripts/coverage_gates.py coverage-thresholds.toml coverage.json
 ```
 
-Coverage percentages are intentionally not fixed in this document: they depend on the current toolchain and instrumentation. The CI coverage gates and the command above are the source of truth for the current measurement.
+Coverage percentages are intentionally not fixed in this document: they depend on the toolchain and instrumentation. `coverage-thresholds.toml` holds the per-file line and branch floors, measured with the nightly pinned in `.github/workflows/coverage-gates.yml`, and lists the paths left uncovered on purpose (#396). Delete `target/llvm-cov-target` after changing the toolchain or cargo-llvm-cov version: stale binaries from an older build are merged into the report and skew it.
