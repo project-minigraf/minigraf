@@ -163,6 +163,9 @@ pub struct WalEntry {
 pub struct WalWriter {
     file: File,
     sync_mode: SyncMode,
+    /// An append failed, so the file may end in a partial entry. Later
+    /// appends would land after it, where replay never reaches (#513).
+    failed: bool,
 }
 
 impl WalWriter {
@@ -195,7 +198,11 @@ impl WalWriter {
                 // durable too, or a power loss can lose the whole file (#389).
                 sync_parent_dir(path)?;
                 file.seek(SeekFrom::End(0))?;
-                return Ok(WalWriter { file, sync_mode });
+                return Ok(WalWriter {
+                    file,
+                    sync_mode,
+                    failed: false,
+                });
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(e) => return Err(e.into()),
@@ -206,6 +213,14 @@ impl WalWriter {
         match check_wal_header_length(&mut file)? {
             WalHeaderState::Present => {
                 validate_wal_header(&mut file)?;
+                // A crash during an append can leave a partial entry at the
+                // end. Replay stops there, so an entry appended after it
+                // would be lost: cut it off before appending (#513).
+                let (_, valid_end) = scan_entries(&mut file)?;
+                if file.metadata()?.len() > valid_end {
+                    file.set_len(valid_end)?;
+                    file.sync_all()?;
+                }
             }
             // A previous crash landed between this file's creation and its
             // header write completing; no entry could have been appended
@@ -218,7 +233,11 @@ impl WalWriter {
             }
         }
         file.seek(SeekFrom::End(0))?;
-        Ok(WalWriter { file, sync_mode })
+        Ok(WalWriter {
+            file,
+            sync_mode,
+            failed: false,
+        })
     }
 
     /// The `SyncMode` this writer was opened with. Used only in tests, to
@@ -233,9 +252,32 @@ impl WalWriter {
     /// The entry is written atomically from the caller's perspective:
     /// a partial write produces a bad CRC32, which the reader discards.
     /// Then flushes to disk, unless `sync_mode` is `SyncMode::Normal` — see [`SyncMode`].
+    ///
+    /// After a failed write or sync, every later append fails with WAL-007:
+    /// the file may end in a partial entry, and replay stops there (#513). A
+    /// new writer (after a checkpoint deletes the WAL, or on reopen) starts
+    /// clean. Whether the failed entry itself is durable is unknown: it is
+    /// replayed on reopen if it reached the disk whole, and lost otherwise.
     pub fn append_entry(&mut self, tx_count: u64, facts: &[Fact]) -> Result<()> {
+        if self.failed {
+            bail_coded!(ErrorCode::Wal007);
+        }
         let entry_bytes = serialize_entry(tx_count, facts)?;
-        self.file.write_all(&entry_bytes)?;
+        let written = self.write_entry(&entry_bytes);
+        if written.is_err() {
+            self.failed = true;
+        }
+        written
+    }
+
+    fn write_entry(&mut self, entry_bytes: &[u8]) -> Result<()> {
+        #[cfg(test)]
+        if let Some(n) = TEAR_NEXT_APPEND.take() {
+            self.file
+                .write_all(&entry_bytes[..n.min(entry_bytes.len())])?;
+            return Err(io::Error::other("test: torn WAL append").into());
+        }
+        self.file.write_all(entry_bytes)?;
         match self.sync_mode {
             SyncMode::Full => self.file.sync_data()?,
             SyncMode::Normal => {}
@@ -276,6 +318,20 @@ impl WalWriter {
                 .unwrap_or_else(|| "unknown error".to_string())
         ))
     }
+}
+
+// Test-only: the next append on this thread writes only the first `n` bytes
+// of its entry, then fails, as a short write or a full disk would.
+#[cfg(test)]
+thread_local! {
+    static TEAR_NEXT_APPEND: std::cell::Cell<Option<usize>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Make the next WAL append on this thread write `n` bytes and fail.
+#[cfg(test)]
+pub(crate) fn tear_next_append(n: usize) {
+    TEAR_NEXT_APPEND.set(Some(n));
 }
 
 // ─── WalReader ──────────────────────────────────────────────────────────────
@@ -319,95 +375,104 @@ impl WalReader {
     /// with an invalid CRC32 (partial write) or at EOF. Earlier entries are
     /// unaffected by a bad entry.
     pub fn read_entries(&mut self) -> Result<Vec<WalEntry>> {
-        self.file.seek(SeekFrom::Start(WAL_HEADER_SIZE as u64))?;
-        let mut entries = Vec::new();
+        Ok(scan_entries(&mut self.file)?.0)
+    }
+}
 
-        loop {
-            // Read checksum (4 bytes); EOF here means no more entries
-            let mut csum_buf = [0u8; 4];
-            match self.file.read_exact(&mut csum_buf) {
-                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
-                Err(e) => return Err(e.into()),
-                Ok(()) => {}
-            }
-            let expected_csum = u32::from_le_bytes(csum_buf);
+/// Read every valid entry after the header, stopping at the first truncated
+/// or corrupt one or at EOF. Also returns the offset where the valid entries
+/// end: the end of the header if there are none.
+fn scan_entries(file: &mut File) -> Result<(Vec<WalEntry>, u64)> {
+    file.seek(SeekFrom::Start(WAL_HEADER_SIZE as u64))?;
+    let mut entries = Vec::new();
+    let mut valid_end = WAL_HEADER_SIZE as u64;
 
-            // Read tx_count (8 bytes)
-            let mut tx_count_buf = [0u8; 8];
-            if self.file.read_exact(&mut tx_count_buf).is_err() {
-                break; // truncated
-            }
-            let tx_count = u64::from_le_bytes(tx_count_buf);
+    loop {
+        // Read checksum (4 bytes); EOF here means no more entries
+        let mut csum_buf = [0u8; 4];
+        match file.read_exact(&mut csum_buf) {
+            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
+            Err(e) => return Err(e.into()),
+            Ok(()) => {}
+        }
+        let expected_csum = u32::from_le_bytes(csum_buf);
 
-            // Read num_facts (8 bytes)
-            let mut num_facts_buf = [0u8; 8];
-            if self.file.read_exact(&mut num_facts_buf).is_err() {
-                break; // truncated
-            }
-            let num_facts = usize::try_from(u64::from_le_bytes(num_facts_buf))
-                .map_err(|_| err_coded!(ErrorCode::Wal005))?;
+        // Read tx_count (8 bytes)
+        let mut tx_count_buf = [0u8; 8];
+        if file.read_exact(&mut tx_count_buf).is_err() {
+            break; // truncated
+        }
+        let tx_count = u64::from_le_bytes(tx_count_buf);
 
-            // Sanity cap: no legitimate entry has more than 1M facts
-            const MAX_FACTS_PER_ENTRY: usize = 1_000_000;
-            if num_facts > MAX_FACTS_PER_ENTRY {
-                break; // treat as corrupt entry
-            }
+        // Read num_facts (8 bytes)
+        let mut num_facts_buf = [0u8; 8];
+        if file.read_exact(&mut num_facts_buf).is_err() {
+            break; // truncated
+        }
+        let num_facts = usize::try_from(u64::from_le_bytes(num_facts_buf))
+            .map_err(|_| err_coded!(ErrorCode::Wal005))?;
 
-            // Maximum fact size to prevent memory exhaustion from large facts
-            const MAX_FACT_SIZE: usize = 10 * 1024 * 1024; // 10MB
-
-            // Build payload for CRC32 verification
-            let mut payload = Vec::new();
-            payload.extend_from_slice(&tx_count_buf);
-            payload.extend_from_slice(&num_facts_buf);
-
-            // Read each fact
-            let mut facts = Vec::new(); // grow dynamically instead of pre-allocating
-            let mut truncated = false;
-            for _ in 0..num_facts {
-                let mut len_buf = [0u8; 4];
-                if self.file.read_exact(&mut len_buf).is_err() {
-                    truncated = true;
-                    break;
-                }
-                let fact_len = u32::from_le_bytes(len_buf) as usize;
-                if fact_len > MAX_FACT_SIZE {
-                    truncated = true;
-                    break;
-                }
-                payload.extend_from_slice(&len_buf);
-
-                let mut fact_bytes = vec![0u8; fact_len];
-                if self.file.read_exact(&mut fact_bytes).is_err() {
-                    truncated = true;
-                    break;
-                }
-                payload.extend_from_slice(&fact_bytes);
-
-                match postcard::from_bytes::<Fact>(&fact_bytes) {
-                    Ok(f) => facts.push(f),
-                    Err(_) => {
-                        truncated = true;
-                        break;
-                    }
-                }
-            }
-
-            if truncated {
-                break;
-            }
-
-            // Verify CRC32 over the full payload
-            let actual_csum = crc32fast::hash(&payload);
-            if expected_csum != actual_csum {
-                break; // corrupted entry — stop here
-            }
-
-            entries.push(WalEntry { tx_count, facts });
+        // Sanity cap: no legitimate entry has more than 1M facts
+        const MAX_FACTS_PER_ENTRY: usize = 1_000_000;
+        if num_facts > MAX_FACTS_PER_ENTRY {
+            break; // treat as corrupt entry
         }
 
-        Ok(entries)
+        // Maximum fact size to prevent memory exhaustion from large facts
+        const MAX_FACT_SIZE: usize = 10 * 1024 * 1024; // 10MB
+
+        // Build payload for CRC32 verification
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&tx_count_buf);
+        payload.extend_from_slice(&num_facts_buf);
+
+        // Read each fact
+        let mut facts = Vec::new(); // grow dynamically instead of pre-allocating
+        let mut truncated = false;
+        for _ in 0..num_facts {
+            let mut len_buf = [0u8; 4];
+            if file.read_exact(&mut len_buf).is_err() {
+                truncated = true;
+                break;
+            }
+            let fact_len = u32::from_le_bytes(len_buf) as usize;
+            if fact_len > MAX_FACT_SIZE {
+                truncated = true;
+                break;
+            }
+            payload.extend_from_slice(&len_buf);
+
+            let mut fact_bytes = vec![0u8; fact_len];
+            if file.read_exact(&mut fact_bytes).is_err() {
+                truncated = true;
+                break;
+            }
+            payload.extend_from_slice(&fact_bytes);
+
+            match postcard::from_bytes::<Fact>(&fact_bytes) {
+                Ok(f) => facts.push(f),
+                Err(_) => {
+                    truncated = true;
+                    break;
+                }
+            }
+        }
+
+        if truncated {
+            break;
+        }
+
+        // Verify CRC32 over the full payload
+        let actual_csum = crc32fast::hash(&payload);
+        if expected_csum != actual_csum {
+            break; // corrupted entry — stop here
+        }
+
+        entries.push(WalEntry { tx_count, facts });
+        valid_end = file.stream_position()?;
     }
+
+    Ok((entries, valid_end))
 }
 
 // ─── Unit tests ─────────────────────────────────────────────────────────────
@@ -677,6 +742,125 @@ mod tests {
         // Only the valid first entry should be returned
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].tx_count, 1);
+    }
+
+    // ── #513: torn tail and failed appends ─────────────────────────────────
+
+    /// The bytes of a WAL holding entries `1..=n`.
+    fn wal_with_entries(path: &Path, n: u64) -> Vec<u8> {
+        let mut writer = WalWriter::open_or_create(path, SyncMode::Full).unwrap();
+        for tx in 1..=n {
+            let fact = make_fact(Uuid::new_v4(), ":name", Value::Integer(tx as i64), tx);
+            writer.append_entry(tx, &[fact]).unwrap();
+        }
+        drop(writer);
+        std::fs::read(path).unwrap()
+    }
+
+    fn tx_counts(path: &Path) -> Vec<u64> {
+        let mut reader = WalReader::open(path).unwrap();
+        let entries = reader.read_entries().unwrap();
+        entries.iter().map(|e| e.tx_count).collect()
+    }
+
+    #[test]
+    fn test_wal_writer_cuts_off_torn_tail_before_appending() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.wal");
+        let two = wal_with_entries(&path, 2);
+        let one_len = {
+            let p = dir.path().join("one.wal");
+            wal_with_entries(&p, 1).len()
+        };
+        let second = two.len() - one_len;
+        for cut in [1, 4, 12, 20, second - 1] {
+            std::fs::write(&path, &two[..one_len + cut]).unwrap();
+            let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().len(),
+                one_len as u64,
+                "the partial entry is cut off on open"
+            );
+            let fact = make_fact(Uuid::new_v4(), ":name", Value::Integer(7), 7);
+            writer.append_entry(7, &[fact]).unwrap();
+            drop(writer);
+            assert_eq!(tx_counts(&path), [1, 7], "the new entry is reachable");
+        }
+    }
+
+    #[test]
+    fn test_wal_writer_cuts_off_entry_with_bad_checksum() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.wal");
+        let mut bytes = wal_with_entries(&path, 3);
+        let one_len = {
+            let p = dir.path().join("one.wal");
+            wal_with_entries(&p, 1).len()
+        };
+        // Damage entry 2; entry 3 after it is unreachable and goes too.
+        bytes[one_len] ^= 0xFF;
+        std::fs::write(&path, &bytes).unwrap();
+        let writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        drop(writer);
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), one_len as u64);
+        assert_eq!(tx_counts(&path), [1]);
+    }
+
+    #[test]
+    fn test_wal_writer_keeps_an_intact_wal() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.wal");
+        let bytes = wal_with_entries(&path, 3);
+        let writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        drop(writer);
+        assert!(std::fs::read(&path).unwrap() == bytes, "nothing to cut");
+    }
+
+    #[test]
+    fn test_wal_failed_append_refuses_later_appends_with_wal_007() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.wal");
+        let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        let fact = |tx: u64| make_fact(Uuid::new_v4(), ":name", Value::Integer(1), tx);
+        writer.append_entry(1, &[fact(1)]).unwrap();
+
+        tear_next_append(10);
+        writer
+            .append_entry(2, &[fact(2)])
+            .expect_err("the torn append fails");
+        let err: crate::error::MinigrafError = writer
+            .append_entry(3, &[fact(3)])
+            .expect_err("later appends are refused")
+            .into();
+        assert_eq!(err.code(), "WAL-007");
+        drop(writer);
+        assert_eq!(tx_counts(&path), [1], "nothing after the torn entry");
+
+        // A new writer cuts off the partial entry and appends normally.
+        let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        writer.append_entry(4, &[fact(4)]).unwrap();
+        drop(writer);
+        assert_eq!(tx_counts(&path), [1, 4]);
+    }
+
+    #[test]
+    fn test_wal_rejected_entry_does_not_poison_the_writer() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.wal");
+        let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        let huge = make_fact(
+            Uuid::new_v4(),
+            ":name",
+            Value::String("x".repeat(MAX_VALUE_BYTES + 1)),
+            1,
+        );
+        writer
+            .append_entry(1, &[huge])
+            .expect_err("WAL-003, before anything is written");
+        let fact = make_fact(Uuid::new_v4(), ":name", Value::Integer(1), 2);
+        writer.append_entry(2, &[fact]).unwrap();
+        drop(writer);
+        assert_eq!(tx_counts(&path), [2]);
     }
 
     #[test]
