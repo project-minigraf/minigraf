@@ -142,7 +142,8 @@ fn render_value(v: &Value, names: &HashMap<Uuid, String>) -> String {
 }
 
 /// The facts ordinary entity `n` is created with, in slot order: a unique
-/// name, a score, a sparse shard attribute, 1–4 tags in the same transaction,
+/// name, a score, two values of a sparse shard attribute, 1–4 tags (all in the
+/// same transaction, #371),
 /// a long string on every 50th entity, a ref on every 10th.
 fn content(seed: u64, n: u64) -> Vec<(String, Val)> {
     let h = mix(seed ^ n.wrapping_mul(0x2545_F491_4F6C_DD1D));
@@ -150,6 +151,7 @@ fn content(seed: u64, n: u64) -> Vec<(String, Val)> {
         (":p/name".to_string(), Val::Str(format!("name-{n}"))),
         (":p/score".to_string(), Val::Int((h % 1000) as i64)),
         (format!(":p/shard{}", n % SHARDS), Val::Int(n as i64)),
+        (format!(":p/shard{}", n % SHARDS), Val::Int(-(n as i64) - 1)),
     ];
     let start = (h >> 10) % 16;
     for i in 0..1 + (h >> 20) % 4 {
@@ -293,8 +295,12 @@ impl Reference {
     fn shard_rows(&self, k: u64) -> Vec<String> {
         let mut rows: Vec<String> = (k..self.next_entity)
             .step_by(SHARDS as usize)
-            .filter(|n| !self.is_flipped(*n, 2))
-            .map(|n| format!(":e{n} i{n}"))
+            .flat_map(|n| {
+                [(2, n as i64), (3, -(n as i64) - 1)]
+                    .into_iter()
+                    .filter(move |(slot, _)| !self.is_flipped(n, *slot))
+                    .map(move |(_, v)| format!(":e{n} i{v}"))
+            })
             .collect();
         rows.sort();
         rows
@@ -398,7 +404,7 @@ impl Config {
 
 // ── Metrics ───────────────────────────────────────────────────────────────────
 
-const PATHS: [&str; 5] = ["eavt", "avet", "aevt", "as_of", "hot"];
+const PATHS: [&str; 6] = ["eavt", "ea", "avet", "aevt", "as_of", "hot"];
 
 #[derive(Default)]
 struct Metrics {
@@ -833,6 +839,19 @@ impl Soak {
             &names,
         );
         self.expect_rows(&format!("EAVT :e{n}"), got, self.rf.entity_rows(n));
+        // Entity and attribute bound, on the multi-valued tags (#371).
+        let got = self.rows(
+            "ea",
+            &format!("(query [:find ?v :where [:e{n} :p/tag ?v]])"),
+            &HashMap::new(),
+        );
+        let want: Vec<String> = self
+            .rf
+            .entity_rows(n)
+            .into_iter()
+            .filter_map(|r| r.strip_prefix("k:p/tag ").map(str::to_string))
+            .collect();
+        self.expect_rows(&format!("EA :e{n} :p/tag"), got, want);
     }
 
     fn check_name(&mut self, n: u64) {

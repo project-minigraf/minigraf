@@ -63,8 +63,9 @@ function of `n` and the seed:
 
 - `:p/name "name-{n}"` (unique, for AVET lookups)
 - `:p/score` integer `hash(n) % 1000`
-- `:p/shard{n % 1024}` integer `n` (a sparse attribute: about 2,000 entities
-  each at 10M facts, so an AEVT scan of one shard is cheap to check exactly)
+- `:p/shard{n % 1024}`, two integers `n` and `-n - 1` in the same transaction
+  (a sparse, multi-valued attribute: about 1,700 entities each at 10M facts, so
+  an AEVT scan of one shard is cheap to check exactly)
 - `:p/tag`, 1–4 keyword values in the same transaction (multi-valued, #371)
 - every 50th entity: `:p/bio`, a string over 64 bytes (value pages)
 - every 10th entity: `:p/ref`, a ref to `:e{hash(n) % n}`
@@ -132,6 +133,9 @@ Every `MINIGRAF_SOAK_CHECK_MINUTES`, after every reopen, and at the end:
 
 - **EAVT:** `[:e{n} ?a ?v]` for 200 random entities and all 32 hot entities;
   rendered rows equal the reference.
+- **EA:** `[:e{n} :p/tag ?v]` for the same entities. With the multi-valued
+  shard attribute this is the shape #371 broke; on v2.0.4 the unmodified
+  workload fails these checks, so the test can see that bug.
 - **AVET:** `[?e :p/name "name-{n}"]` for 5 random entities: present
   exactly when that slot is live. This shape scans the whole attribute today
   (#518: 0.5 s at 1M facts, 6 s at 10M), so it is sampled sparingly; raise
