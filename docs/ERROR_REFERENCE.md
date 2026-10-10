@@ -136,6 +136,7 @@ with no `CodedError` anywhere in its chain.
 | STG-025 | Database already open in this process | Storage |
 | STG-026 | Database locked by another process | Storage |
 | STG-027 | Filesystem does not support file locking | Storage |
+| STG-045 | File shorter than one page and not a new database | Storage |
 | WAL-001 | Invalid WAL magic number | WAL |
 | WAL-002 | Unsupported WAL version | WAL |
 | WAL-003 | Fact serialised size exceeds maximum | WAL |
@@ -1986,6 +1987,19 @@ See the [file format section in README](../README.md#file-format) for version hi
 **Scenario**: A `.graph` file placed on an NFSv3 export whose `lockd` is not running.
 
 **NFSv3 `nolock` is not covered by this error — it is a silent, undetectable gap (#334).** An export explicitly mounted with `-o nolock` behaves differently from plain "no `lockd`": the Linux NFS client serves `flock`/OFD locks out of its own local, in-kernel lock table instead of going over NLM to the server. `try_lock` sees an ordinary local success, `classify` takes the same branch it would on a filesystem where locking genuinely works, and this error is never raised — `allow_unlocked` is never consulted because the code never learns the mount can't really lock. Two separate client hosts writing the same `nolock` export each get a false `Ok(())` from their own kernel with zero cross-host coordination, and can silently corrupt the file. There is no way to detect this from inside `try_lock`'s result, so `nolock` NFSv3 exports are an unsupported deployment for multi-writer use, the same way running mixed Minigraf versions against one file is unsupported (see the kernel-locking CHANGELOG entry) — avoid `nolock` exports rather than relying on this check to catch them.
+
+### STG-045 File shorter than one page and not a new database
+
+**Error text**: `File is {} bytes, shorter than one page, and is not a new Minigraf database`
+
+**Cause**: The file is longer than zero bytes but shorter than one 4 KiB page, and its bytes are not a torn first write of a new database. Creating a database writes its header page in one go, so a crash during that write can leave only a prefix of that page (or zeros); such a file is opened as a new, empty database. Any other short file is something else: a different file at the path, a database cut short by an interrupted copy, or a damaged file. Earlier versions opened it as a new database and overwrote it. The file is not modified. (Codes STG-028 to STG-044 belong to v3.0.0; this code has the same number and meaning there.)
+
+**Resolution**:
+- Check that the path points at the intended `.graph` file.
+- Copy the database again from its source, or restore it from backup.
+- If the file is not needed, delete it and open the path again to create a new database.
+
+**Scenario**: A copy of a `.graph` file stops after its first kilobyte, and the copy is opened.
 
 ---
 

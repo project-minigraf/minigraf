@@ -2,9 +2,11 @@
 
 ## v2.0.4 Coverage Summary
 
-**Verified**: 2026-10-08 with `cargo test`
+**Verified**: 2026-10-10 with `cargo test`
 
-**Result**: 1,215 passing tests and 8 ignored tests (1,223 total), including the golden-file corpus (#391)
+**Result**: 1,216 passing tests and 8 ignored tests (1,224 total), including the golden-file corpus (#391)
+
+Since v2.0.4, `tests/edge_cases_test.rs` checks that a file of 1 to 4,095 bytes is `STG-045`, unchanged and with no WAL, when it is a database cut below one page or foreign bytes, and opens as a new database that takes a write and reads it back after reopen when it is a prefix of the initial header or all zeros (#506).
 
 `tests/property_test.rs` writes random histories (batched transacts, retracts, write transactions, checkpoints) in memory and to a file, and compares random queries (one to three joined patterns, `not` or `not-join`, a comparison predicate, `:as-of`, `:valid-at` or `:any-valid-time`) with a reference evaluator, on the open file and after a reopen; a query error fails the test (#386). The histories leave out the v2.x known issues #371, #435 and #477.
 
