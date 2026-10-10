@@ -1439,6 +1439,80 @@ mod tests {
         assert_eq!(code(open_mem(&mem, None).err().unwrap()), "STG-032");
     }
 
+    /// The backup meta in the last page restores page 0 only if it is the
+    /// generation-1 meta of a file this long (spec §9 step 5).
+    #[test]
+    fn backup_meta_of_another_generation_or_length_is_not_used() {
+        let base = three_generations();
+        let last = base.page_count().unwrap() - 1;
+        let m3 = match MetaPage::decode(&base.read_page(slot_page(3)).unwrap()) {
+            SlotState::Valid(m) => m,
+            _ => panic!("gen 3 valid"),
+        };
+        let gen_2 = MetaPage {
+            generation: 2,
+            ..m3
+        };
+        let short = MetaPage::empty(1);
+        for backup in [gen_2, short] {
+            let mut mem = deep_copy(&base);
+            damage(&mut mem, 0);
+            damage(&mut mem, 1);
+            mem.write_page(last, &backup.encode()).unwrap();
+            let before = snapshot(&mem);
+            assert_eq!(code(open_mem(&mem, None).err().unwrap()), "STG-032");
+            assert!(snapshot(&mem) == before, "file unchanged");
+        }
+    }
+
+    /// A torn first meta write is a new file only while page 1 is blank.
+    #[test]
+    fn torn_initial_meta_with_data_in_page_1_is_stg_032() {
+        let mut mem = MemoryBackend::new();
+        let mut page0 = MetaPage::empty(1).encode();
+        let written = page0.iter().rposition(|&b| b != 0).unwrap();
+        page0[written..].fill(0);
+        mem.write_page(0, &page0).unwrap();
+        let mut page1 = vec![0u8; PAGE_SIZE];
+        page1[7] = 1;
+        mem.write_page(1, &page1).unwrap();
+        let before = snapshot(&mem);
+        assert_eq!(code(open_mem(&mem, None).err().unwrap()), "STG-032");
+        assert!(snapshot(&mem) == before, "file unchanged");
+    }
+
+    #[test]
+    fn save_with_nothing_pending_writes_nothing() {
+        let mem = three_generations();
+        let mut pfs = open_mem(&mem, None).unwrap();
+        let before = snapshot(&mem);
+        pfs.save().unwrap();
+        assert_eq!(pfs.generation(), 3);
+        assert!(snapshot(&mem) == before, "file unchanged");
+    }
+
+    #[test]
+    fn into_backend_saves_pending_changes() {
+        let mut pfs = PersistentFactStorage::new(MemoryBackend::new(), 16).unwrap();
+        put_batch(&mut pfs, 0..5);
+        let mem = pfs.into_backend().unwrap();
+        let pfs = open_mem(&mem, None).unwrap();
+        assert_eq!(pfs.generation(), 2);
+        assert_eq!(count_n(&pfs), 5);
+    }
+
+    #[test]
+    fn rebuild_with_nothing_checkpointed_commits_the_pending_facts() {
+        let mem = MemoryBackend::new();
+        let mut pfs = PersistentFactStorage::new(mem.clone(), 16).unwrap();
+        put_batch(&mut pfs, 0..5);
+        pfs.rebuild_indexes().unwrap();
+        drop(pfs);
+        let pfs = open_mem(&mem, None).unwrap();
+        assert_eq!(pfs.generation(), 2);
+        assert_eq!(count_n(&pfs), 5);
+    }
+
     /// A file from a v3.0.0 development build before covering keys has valid
     /// meta pages but trees without a dictionary: refused, never misread.
     #[test]

@@ -175,6 +175,15 @@ mod tests {
         assert_eq!(crate::error::MinigrafError::from(err).code(), "STG-015");
     }
 
+    #[test]
+    fn short_page_and_slot_past_the_count_are_int_024() {
+        let pages = pack_facts_v7(&[make_fact(1)]);
+        let err = read_slot_v7(&pages[0][..PAGE_SIZE - 1], 0).unwrap_err();
+        assert_eq!(crate::error::MinigrafError::from(err).code(), "INT-024");
+        let err = read_slot_v7(&pages[0], 1).unwrap_err();
+        assert_eq!(crate::error::MinigrafError::from(err).code(), "INT-024");
+    }
+
     fn backend_with(pages: &[Vec<u8>]) -> MemoryBackend {
         let mut backend = MemoryBackend::new();
         for (i, p) in pages.iter().enumerate() {

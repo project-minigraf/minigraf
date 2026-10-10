@@ -1486,4 +1486,102 @@ mod tests {
         assert_eq!(alloc.next_append() - next, 3, "leaf + 2 internal nodes");
         assert_eq!(freed.len(), 3);
     }
+
+    fn code(e: anyhow::Error) -> &'static str {
+        crate::error::MinigrafError::from(e).code()
+    }
+
+    #[test]
+    fn unsorted_or_repeated_input_is_int_049() {
+        let cache = PageCache::new(16);
+        for bad in [
+            vec![entry(2, 1), entry(1, 1)],
+            vec![entry(1, 1), entry(1, 1)],
+        ] {
+            let mut backend = MemoryBackend::new();
+            let mut alloc = PageAllocator::new(Vec::new(), 2, 1);
+            let err = build_btree(bad.clone(), &mut backend, &cache, &mut alloc).unwrap_err();
+            assert_eq!(code(err), "INT-049");
+            let (root, next) = build_at(vec![entry(5, 1)], &mut backend, &cache, 2);
+            let mut alloc = PageAllocator::new(Vec::new(), next, 2);
+            let mut freed = Vec::new();
+            let err =
+                cow_insert(root, bad, &mut backend, &cache, &mut alloc, &mut freed).unwrap_err();
+            assert_eq!(code(err), "INT-049");
+        }
+    }
+
+    #[test]
+    fn insert_of_a_stored_key_with_another_value_is_int_049() {
+        let cache = PageCache::new(16);
+        let mut backend = MemoryBackend::new();
+        let (root, next) = build_at(vec![entry(1, 1)], &mut backend, &cache, 2);
+        let mut alloc = PageAllocator::new(Vec::new(), next, 2);
+        let mut freed = Vec::new();
+        let same = cow_insert(
+            root,
+            vec![entry(1, 1)],
+            &mut backend,
+            &cache,
+            &mut alloc,
+            &mut freed,
+        )
+        .unwrap();
+        assert_eq!(stream_all_entries(same, &backend, &cache).unwrap().len(), 1);
+        let other = vec![(key(1, 1), vec![1u8])];
+        let err =
+            cow_insert(root, other, &mut backend, &cache, &mut alloc, &mut freed).unwrap_err();
+        assert_eq!(code(err), "INT-049");
+    }
+
+    /// A tree pointer to a page of another type (here a free-list page) is
+    /// STG-013 on every path that follows it.
+    #[test]
+    fn node_of_another_page_type_is_stg_013() {
+        let cache = PageCache::new(16);
+        let mut backend = MemoryBackend::new();
+        let id = 2;
+        let mut page = crate::storage::page::new_page(crate::storage::page::PAGE_TYPE_FREELIST, 0);
+        crate::storage::page::seal(&mut page, id, 1).unwrap();
+        backend.write_page(id, &page).unwrap();
+
+        assert_eq!(
+            code(get(id, &key(1, 1), &backend, &cache).unwrap_err()),
+            "STG-013"
+        );
+        assert_eq!(
+            code(collect_leaf_pages(id, &backend, &cache, None).unwrap_err()),
+            "STG-013"
+        );
+        let mut alloc = PageAllocator::new(Vec::new(), 3, 2);
+        let mut freed = Vec::new();
+        let err = cow_insert(
+            id,
+            vec![entry(1, 1)],
+            &mut backend,
+            &cache,
+            &mut alloc,
+            &mut freed,
+        )
+        .unwrap_err();
+        assert_eq!(code(err), "STG-013");
+    }
+
+    #[test]
+    fn mutex_backend_reads_and_refuses_writes() {
+        let mut inner = MemoryBackend::new();
+        inner.write_page(0, &[7u8; PAGE_SIZE]).unwrap();
+        let mut b = MutexStorageBackend(Arc::new(Mutex::new(inner)));
+        assert_eq!(b.read_page(0).unwrap()[0], 7);
+        assert_eq!(b.page_count().unwrap(), 1);
+        assert!(b.holds_every_page());
+        assert!(b.partial_page().unwrap().is_none());
+        assert_eq!(b.backend_name(), "mutex-adapter");
+        assert_eq!(
+            code(b.write_page(0, &[0u8; PAGE_SIZE]).unwrap_err()),
+            "INT-049"
+        );
+        assert_eq!(code(b.sync().unwrap_err()), "INT-049");
+        assert_eq!(code(b.close().unwrap_err()), "INT-049");
+    }
 }
