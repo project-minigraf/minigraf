@@ -194,15 +194,14 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         };
         match (slot_a, slot_b) {
             (SlotState::Valid(a), SlotState::Valid(b)) => {
-                Ok(Opened::Meta(if a.generation >= b.generation {
-                    a
-                } else {
-                    b
-                }))
+                let m = if a.generation >= b.generation { a } else { b };
+                check_fits(&*backend, &m)?;
+                Ok(Opened::Meta(m))
             }
             (SlotState::Valid(m), _) | (_, SlotState::Valid(m)) => {
                 // Refuse an unreadable file before probing its pages.
                 m.check_features()?;
+                check_fits(&*backend, &m)?;
                 check_single_valid(&*backend, m, wal_base)?;
                 Ok(Opened::Meta(m))
             }
@@ -338,6 +337,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         };
         let encoded = meta.encode();
         backend.write_page(backup_id, &encoded)?;
+        check_written(&*backend, &meta)?;
         backend.sync()?;
         backend.write_page(0, &encoded)?;
         backend.sync()?;
@@ -438,6 +438,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             freelist_count,
             ..m
         };
+        check_written(&*backend, &new_meta)?;
         backend.write_page(slot_page(next_gen), &new_meta.encode())?;
         backend.sync()?;
         drop(backend);
@@ -627,6 +628,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         new_meta.page_count = chain_alloc.next_append();
 
         backend.sync()?;
+        check_written(&*backend, &new_meta)?;
         backend.write_page(slot_page(next_gen), &new_meta.encode())?;
         backend.sync()?;
         drop(backend);
@@ -708,6 +710,44 @@ impl<B: StorageBackend + 'static> Drop for PersistentFactStorage<B> {
             let _ = self.save();
         }
     }
+}
+
+/// The chosen meta's `page_count` must not pass the end of the file, which
+/// holds `file_pages` pages (#497). Every commit writes its pages before its
+/// meta, so a shorter file lost its tail after the commit (an interrupted copy).
+/// The other slot is not tried: a valid newer meta means its commit happened,
+/// and opening at the older one would silently drop it. Pages 0 and 1 are the
+/// meta slots, and a missing slot B reads as empty: a new file torn after its
+/// generation-1 meta but before page 1 counts as two pages. A sparse store
+/// (the browser buffer) has no length to check.
+fn check_fits(backend: &dyn StorageBackend, m: &MetaPage) -> Result<()> {
+    if !backend.holds_every_page() {
+        return Ok(());
+    }
+    let file_pages = backend.page_count()?;
+    if m.page_count > file_pages.max(2) {
+        bail_coded!(ErrorCode::Stg044, m.page_count, file_pages);
+    }
+    Ok(())
+}
+
+/// Before a meta is written: every page it counts reached the backend, so
+/// [`check_fits`] holds for it on the next open (#497).
+fn check_written(backend: &dyn StorageBackend, m: &MetaPage) -> Result<()> {
+    if !backend.holds_every_page() {
+        return Ok(());
+    }
+    let have = backend.page_count()?.max(2);
+    if have < m.page_count {
+        bail_coded!(
+            ErrorCode::Int049,
+            format!(
+                "meta counts {} pages but only {have} were written",
+                m.page_count
+            )
+        );
+    }
+    Ok(())
 }
 
 /// Exactly one meta slot is valid, at generation `g`. Fail with STG-033 if a
@@ -1359,6 +1399,140 @@ mod tests {
         let before = snapshot(&mem);
         assert_eq!(code(open_mem(&mem, None).err().unwrap()), "STG-032");
         assert!(snapshot(&mem) == before, "file unchanged");
+    }
+
+    /// Set the newest meta's `page_count` and re-encode it with a valid CRC.
+    fn forge_page_count(mem: &mut MemoryBackend, page_count: u64) {
+        let mut m = match MetaPage::decode(&mem.read_page(slot_page(3)).unwrap()) {
+            SlotState::Valid(m) => m,
+            _ => panic!("gen 3 valid"),
+        };
+        m.page_count = page_count;
+        mem.write_page(slot_page(3), &m.encode()).unwrap();
+    }
+
+    /// A valid meta whose `page_count` is past the end of the file is refused
+    /// with STG-044, whether or not the other slot is valid (#497). Opening at
+    /// the other slot would drop a committed checkpoint.
+    #[test]
+    fn page_count_past_end_of_file_is_stg_044() {
+        for other_valid in [true, false] {
+            for page_count in [1u64 << 50, u64::MAX] {
+                let mut mem = three_generations();
+                let pages = mem.page_count().unwrap();
+                if !other_valid {
+                    damage(&mut mem, slot_page(2));
+                }
+                forge_page_count(&mut mem, page_count);
+                let before = snapshot(&mem);
+                assert_eq!(code(open_mem(&mem, None).err().unwrap()), "STG-044");
+                assert_eq!(
+                    code(open_mem(&mem, Some(3)).err().unwrap()),
+                    "STG-044",
+                    "a WAL does not make it fit"
+                );
+                assert!(snapshot(&mem) == before, "file unchanged");
+                assert_eq!(mem.page_count().unwrap(), pages, "file not grown");
+            }
+        }
+        // One past the end is refused; exactly the end opens.
+        let mut mem = three_generations();
+        let pages = mem.page_count().unwrap();
+        forge_page_count(&mut mem, pages + 1);
+        assert_eq!(code(open_mem(&mem, None).err().unwrap()), "STG-044");
+        forge_page_count(&mut mem, pages);
+        assert_eq!(open_mem(&mem, None).unwrap().generation(), 3);
+    }
+
+    /// A file cut short after its last commit (an interrupted copy) is refused
+    /// with STG-044 at open, before a WAL can take writes it could never
+    /// checkpoint (#497).
+    #[test]
+    fn truncated_file_is_stg_044() {
+        let mem = three_generations();
+        let pages = mem.page_count().unwrap();
+        assert!(pages > 3, "gen 3 has data pages");
+        for keep in [pages - 1, pages - 3, 3] {
+            let mut cut = MemoryBackend::new();
+            for id in 0..keep {
+                cut.write_page(id, &mem.read_page(id).unwrap()).unwrap();
+            }
+            let before = snapshot(&cut);
+            assert_eq!(code(open_mem(&cut, None).err().unwrap()), "STG-044");
+            assert_eq!(code(open_mem(&cut, Some(3)).err().unwrap()), "STG-044");
+            assert!(snapshot(&cut) == before, "file unchanged");
+        }
+    }
+
+    /// `verify` at a meta counting pages past the end of the file reports
+    /// STG-044 and stops at the end of the file rather than scanning to the
+    /// meta's count (#497).
+    #[test]
+    fn verify_reports_page_count_past_end_of_file() {
+        let mem = three_generations();
+        let mut m = open_mem(&mem, None).unwrap().meta();
+        let cache = PageCache::new(16);
+        cache.set_generation_bound(m.generation);
+        assert!(verify::verify(&mem, &cache, m).problems.is_empty());
+        m.page_count = u64::MAX;
+        let codes: Vec<&str> = verify::verify(&mem, &cache, m)
+            .problems
+            .into_iter()
+            .map(code)
+            .collect();
+        assert_eq!(codes, ["STG-044"]);
+    }
+
+    /// Drops every write at or past `limit`: a backend that loses appended pages.
+    #[derive(Clone)]
+    struct ShortBackend {
+        inner: MemoryBackend,
+        limit: Arc<Mutex<u64>>,
+    }
+
+    impl StorageBackend for ShortBackend {
+        fn write_page(&mut self, page_id: u64, data: &[u8]) -> Result<()> {
+            if page_id >= *self.limit.lock().unwrap() {
+                return Ok(());
+            }
+            self.inner.write_page(page_id, data)
+        }
+        fn read_page(&self, page_id: u64) -> Result<Vec<u8>> {
+            self.inner.read_page(page_id)
+        }
+        fn sync(&mut self) -> Result<()> {
+            Ok(())
+        }
+        fn page_count(&self) -> Result<u64> {
+            self.inner.page_count()
+        }
+        fn close(&mut self) -> Result<()> {
+            Ok(())
+        }
+        fn backend_name(&self) -> &'static str {
+            "short"
+        }
+    }
+
+    /// A checkpoint whose pages did not all reach the backend never writes a
+    /// meta counting them (#497): the file keeps opening at the previous one.
+    #[test]
+    fn checkpoint_refuses_a_meta_past_the_end_of_the_file() {
+        let short = ShortBackend {
+            inner: MemoryBackend::new(),
+            limit: Arc::new(Mutex::new(u64::MAX)),
+        };
+        let mut pfs = PersistentFactStorage::new(short.clone(), 16).unwrap();
+        put_batch(&mut pfs, 0..20);
+        pfs.save().unwrap();
+        assert_eq!(pfs.generation(), 2);
+        *short.limit.lock().unwrap() = short.inner.page_count().unwrap();
+        put_batch(&mut pfs, 20..40);
+        assert_eq!(code(pfs.save().unwrap_err()), "INT-049");
+        pfs.dirty = false;
+        let reopened = open_mem(&short.inner, None).unwrap();
+        assert_eq!(reopened.generation(), 2);
+        assert_eq!(count_n(&reopened), 20);
     }
 
     // ── v7 migration (spec §9) ──────────────────────────────────────────────

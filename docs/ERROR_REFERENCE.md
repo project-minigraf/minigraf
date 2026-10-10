@@ -155,6 +155,7 @@ with no `CodedError` anywhere in its chain.
 | STG-041 | Cannot rebuild indexes | Storage |
 | STG-042 | Database file not found (read-only open) | Storage |
 | STG-043 | Log writer target already exists | Storage |
+| STG-044 | File shorter than its meta page count | Storage |
 | WAL-001 | Invalid WAL magic number | WAL |
 | WAL-002 | Unsupported WAL version | WAL |
 | WAL-003 | Value size exceeds maximum | WAL |
@@ -2275,6 +2276,18 @@ let mut out = LogWriter::create("memory.v2.graph", OpenOptions::new())?;
 ```
 
 **Scenario**: A migration is re-run after a successful first run, with the same output path.
+
+### STG-044 File shorter than its meta page count
+
+**Error text**: `File is shorter than its meta page: the meta counts {} pages but the file holds {} (truncated?)`
+
+**Cause**: The meta page chosen on open records a `page_count` larger than the file. Every checkpoint writes and syncs its pages before its meta page, so a file that ends before that count lost its tail after the commit: an interrupted copy, a partial download, a full disk while copying, or an edit of the file. Opening it would fail later on a missing page, and writes would go to the WAL with no way to checkpoint them. Opening at the other meta page would silently drop the newest checkpoint, so the open is refused. The file is not modified.
+
+**Resolution**:
+- Copy the database again from its source, or restore it from backup.
+- Check the file size: a `.graph` file is a whole number of 4 KiB pages, at least as many as the first `{}`.
+
+**Scenario**: A `.graph` file is copied to another machine and the copy stops partway.
 
 ---
 

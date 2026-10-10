@@ -187,6 +187,7 @@ pub(crate) enum ErrorCode {
     Stg041,
     Stg042,
     Stg043,
+    Stg044,
     Wal001,
     Wal002,
     Wal003,
@@ -1084,6 +1085,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Stg043,
         "STG-043",
         "{} already exists; a log writer only creates a new database",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg044,
+        "STG-044",
+        "File is shorter than its meta page: the meta counts {} pages but the file holds {} (truncated?)",
         ErrorCategory::Storage,
     ),
     (
@@ -1999,6 +2006,7 @@ mod tests {
                 | ErrorCode::Stg041
                 | ErrorCode::Stg042
                 | ErrorCode::Stg043
+                | ErrorCode::Stg044
                 | ErrorCode::Wal001
                 | ErrorCode::Wal002
                 | ErrorCode::Wal003
@@ -2220,6 +2228,7 @@ mod tests {
             ErrorCode::Stg041,
             ErrorCode::Stg042,
             ErrorCode::Stg043,
+            ErrorCode::Stg044,
             ErrorCode::Wal001,
             ErrorCode::Wal002,
             ErrorCode::Wal003,
