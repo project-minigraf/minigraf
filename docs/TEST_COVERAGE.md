@@ -4,9 +4,11 @@
 
 **Verified**: 2026-10-10 with `cargo test`
 
-**Result**: 1,216 passing tests and 8 ignored tests (1,224 total), including the golden-file corpus (#391)
+**Result**: 1,223 passing tests and 8 ignored tests (1,231 total), including the golden-file corpus (#391)
 
 Since v2.0.4, `tests/edge_cases_test.rs` checks that a file of 1 to 4,095 bytes is `STG-045`, unchanged and with no WAL, when it is a database cut below one page or foreign bytes, and opens as a new database that takes a write and reads it back after reopen when it is a prefix of the initial header or all zeros (#506).
+
+Since v2.0.4, torn-WAL-tail tests (#513) check that opening a WAL writer cuts off a partial last entry (cut in the checksum, the header or the payload) or an entry with a bad checksum and everything after it, then appends where replay reaches, and leaves an intact WAL byte for byte; that an append that fails part-way makes every later append `WAL-007` while a rejected oversize fact (`WAL-003`, nothing written) does not; through `Minigraf`, that the failed transaction is not applied, later `transact` and `commit` are `WAL-007`, and a `checkpoint()` makes writes work again; and, in `tests/wal_test.rs`, that a commit made after reopening a crash-left WAL with each kind of torn tail survives a second crash.
 
 `tests/property_test.rs` writes random histories (batched transacts, retracts, write transactions, checkpoints) in memory and to a file, and compares random queries (one to three joined patterns, `not` or `not-join`, a comparison predicate, `:as-of`, `:valid-at` or `:any-valid-time`) with a reference evaluator, on the open file and after a reopen; a query error fails the test (#386). The histories leave out the v2.x known issues #371, #435 and #477.
 
