@@ -29,6 +29,8 @@ use crate::db::SyncMode;
 use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::graph::types::{Fact, Value};
 use crate::storage::dir_sync::sync_parent_dir;
+#[cfg(test)]
+use crate::storage::fault::{self, Action, Site};
 use crate::storage::keys::{MAX_IDENT_BYTES, MAX_VALUE_BYTES};
 use anyhow::Result;
 use std::fs::{File, OpenOptions};
@@ -50,9 +52,44 @@ fn write_wal_header(file: &mut File, base_generation: u64) -> Result<()> {
     buf[8..16].copy_from_slice(&base_generation.to_le_bytes());
     // bytes 16..32 are reserved zeros
     file.seek(SeekFrom::Start(0))?;
-    file.write_all(&buf)?;
-    file.sync_all()?;
+    wal_write(file, &buf)?;
+    wal_sync(file, true, 0)?;
     Ok(())
+}
+
+/// Write `bytes` at the file's position. Every WAL byte goes through here.
+fn wal_write(file: &mut File, bytes: &[u8]) -> io::Result<()> {
+    #[cfg(test)]
+    match fault::on(Site::WalWrite) {
+        Action::Fail(e) => return Err(e),
+        Action::Tear(n) => {
+            file.write_all(&bytes[..n.min(bytes.len())])?;
+            return Err(fault::eio());
+        }
+        Action::Proceed | Action::Lose => {}
+    }
+    file.write_all(bytes)
+}
+
+/// Sync the WAL (`sync_all` when `all`, else `sync_data`). `synced_len` is
+/// its length at the last good sync: a test fault that loses unsynced
+/// writes cuts the file back to it.
+#[cfg_attr(not(test), allow(unused_variables))]
+fn wal_sync(file: &mut File, all: bool, synced_len: u64) -> io::Result<()> {
+    #[cfg(test)]
+    match fault::on(Site::WalSync) {
+        Action::Fail(e) => return Err(e),
+        Action::Lose => {
+            file.set_len(synced_len)?;
+            return Err(fault::eio());
+        }
+        Action::Proceed | Action::Tear(_) => {}
+    }
+    if all {
+        file.sync_all()
+    } else {
+        file.sync_data()
+    }
 }
 
 /// Check magic and version and return the header's base generation.
@@ -166,6 +203,8 @@ pub struct WalWriter {
     /// An append failed, so the file may end in a partial entry. Later
     /// appends would land after it, where replay never reaches (#513).
     failed: bool,
+    /// The file's length after the last successful append.
+    end: u64,
 }
 
 impl WalWriter {
@@ -197,11 +236,12 @@ impl WalWriter {
                 // The header is durable; make the WAL's directory entry
                 // durable too, or a power loss can lose the whole file (#389).
                 sync_parent_dir(path)?;
-                file.seek(SeekFrom::End(0))?;
+                let end = file.seek(SeekFrom::End(0))?;
                 return Ok(WalWriter {
                     file,
                     sync_mode,
                     failed: false,
+                    end,
                 });
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
@@ -218,8 +258,14 @@ impl WalWriter {
                 // would be lost: cut it off before appending (#513).
                 let (_, valid_end) = scan_entries(&mut file)?;
                 if file.metadata()?.len() > valid_end {
+                    #[cfg(test)]
+                    if let Action::Fail(e) = fault::on(Site::WalTruncate) {
+                        return Err(e.into());
+                    }
                     file.set_len(valid_end)?;
-                    file.sync_all()?;
+                    // A lost sync here would bring the cut bytes back,
+                    // which the test fault cannot model: it fails instead.
+                    wal_sync(&mut file, true, valid_end)?;
                 }
             }
             // A previous crash landed between this file's creation and its
@@ -232,11 +278,12 @@ impl WalWriter {
                 sync_parent_dir(path)?;
             }
         }
-        file.seek(SeekFrom::End(0))?;
+        let end = file.seek(SeekFrom::End(0))?;
         Ok(WalWriter {
             file,
             sync_mode,
             failed: false,
+            end,
         })
     }
 
@@ -271,18 +318,18 @@ impl WalWriter {
     }
 
     fn write_entry(&mut self, entry_bytes: &[u8]) -> Result<()> {
-        #[cfg(test)]
-        if let Some(n) = TEAR_NEXT_APPEND.take() {
-            self.file
-                .write_all(&entry_bytes[..n.min(entry_bytes.len())])?;
-            return Err(io::Error::other("test: torn WAL append").into());
-        }
-        self.file.write_all(entry_bytes)?;
+        wal_write(&mut self.file, entry_bytes)?;
         match self.sync_mode {
-            SyncMode::Full => self.file.sync_data()?,
+            SyncMode::Full => wal_sync(&mut self.file, false, self.end)?,
             SyncMode::Normal => {}
         }
+        self.end = self.end.saturating_add(entry_bytes.len() as u64);
         Ok(())
+    }
+
+    /// Whether an append failed, so every later one is refused (WAL-007).
+    pub(crate) fn failed(&self) -> bool {
+        self.failed
     }
 
     /// Delete the WAL file at `path`. Called after a successful checkpoint.
@@ -297,6 +344,11 @@ impl WalWriter {
         let retries: u32 = if cfg!(windows) { 10 } else { 1 };
         let mut last_err = None;
         for i in 0..retries {
+            #[cfg(test)]
+            if let Action::Fail(e) = fault::on(Site::WalRemove) {
+                last_err = Some(e);
+                break;
+            }
             match std::fs::remove_file(path) {
                 Ok(()) => {
                     sync_parent_dir(path)?;
@@ -318,20 +370,6 @@ impl WalWriter {
                 .unwrap_or_else(|| "unknown error".to_string())
         ))
     }
-}
-
-// Test-only: the next append on this thread writes only the first `n` bytes
-// of its entry, then fails, as a short write or a full disk would.
-#[cfg(test)]
-thread_local! {
-    static TEAR_NEXT_APPEND: std::cell::Cell<Option<usize>> =
-        const { std::cell::Cell::new(None) };
-}
-
-/// Make the next WAL append on this thread write `n` bytes and fail.
-#[cfg(test)]
-pub(crate) fn tear_next_append(n: usize) {
-    TEAR_NEXT_APPEND.set(Some(n));
 }
 
 // ─── WalReader ──────────────────────────────────────────────────────────────
@@ -824,10 +862,11 @@ mod tests {
         let fact = |tx: u64| make_fact(Uuid::new_v4(), ":name", Value::Integer(1), tx);
         writer.append_entry(1, &[fact(1)]).unwrap();
 
-        tear_next_append(10);
+        fault::arm(fault::Fault::Torn(10), 0);
         writer
             .append_entry(2, &[fact(2)])
             .expect_err("the torn append fails");
+        assert_eq!(fault::disarm(), Some(Site::WalWrite));
         let err: crate::error::MinigrafError = writer
             .append_entry(3, &[fact(3)])
             .expect_err("later appends are refused")

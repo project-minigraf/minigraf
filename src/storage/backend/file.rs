@@ -209,6 +209,19 @@ pub struct FileBackend {
     page_count: u64,
     /// Opened with `LockMode::Shared`: `write_page` and `sync` refuse.
     read_only: bool,
+    /// Test-only: what the writes since the last sync replaced, so a fault
+    /// can lose them (`fault::Fault::SyncLost`).
+    #[cfg(test)]
+    unsynced: Unsynced,
+}
+
+/// Pages written since the last sync, with their earlier contents (`None`
+/// past the old end), and the file length at that sync.
+#[cfg(test)]
+#[derive(Default)]
+struct Unsynced {
+    pages: std::collections::BTreeMap<u64, Option<Vec<u8>>>,
+    synced_len: Option<u64>,
 }
 
 impl FileBackend {
@@ -352,6 +365,8 @@ impl FileBackend {
             page_count,
             read_only,
             _path_guard: path_guard,
+            #[cfg(test)]
+            unsynced: Unsynced::default(),
         })
     }
 
@@ -359,6 +374,43 @@ impl FileBackend {
     #[allow(dead_code)]
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Keep page `page_id`'s contents before its first write since the last
+    /// sync, and the file length at that sync.
+    #[cfg(test)]
+    fn remember_unsynced(&mut self, page_id: u64) -> Result<()> {
+        if self.unsynced.synced_len.is_none() {
+            self.unsynced.synced_len = Some(self.file.metadata()?.len());
+        }
+        if !self.unsynced.pages.contains_key(&page_id) {
+            let old = if page_id < self.page_count {
+                Some(self.read_page(page_id)?)
+            } else {
+                None
+            };
+            self.unsynced.pages.insert(page_id, old);
+        }
+        Ok(())
+    }
+
+    /// Undo every write since the last sync, as a kernel that dropped the
+    /// dirty pages of a failed fsync would.
+    #[cfg(test)]
+    fn lose_unsynced(&mut self) -> Result<()> {
+        let unsynced = std::mem::take(&mut self.unsynced);
+        for (page_id, old) in unsynced.pages {
+            if let Some(old) = old {
+                self.file
+                    .seek(SeekFrom::Start(page_id.saturating_mul(PAGE_SIZE as u64)))?;
+                self.file.write_all(&old)?;
+            }
+        }
+        if let Some(len) = unsynced.synced_len {
+            self.file.set_len(len)?;
+            self.page_count = len / PAGE_SIZE as u64;
+        }
+        Ok(())
     }
 
     /// Cut the file to zero pages and sync, keeping the lock. Used to reuse
@@ -389,6 +441,22 @@ impl StorageBackend for FileBackend {
                 format!("page offset overflow for page_id {page_id}")
             )
         })?;
+        #[cfg(test)]
+        {
+            use crate::storage::fault::{self, Action, Site};
+            if fault::armed() {
+                self.remember_unsynced(page_id)?;
+            }
+            match fault::on(Site::PageWrite) {
+                Action::Fail(e) => return Err(e.into()),
+                Action::Tear(n) => {
+                    self.file.seek(SeekFrom::Start(offset))?;
+                    self.file.write_all(&data[..n.min(data.len())])?;
+                    return Err(fault::eio().into());
+                }
+                Action::Proceed | Action::Lose => {}
+            }
+        }
         self.file.seek(SeekFrom::Start(offset))?;
         self.file.write_all(data)?;
 
@@ -434,7 +502,23 @@ impl StorageBackend for FileBackend {
         if self.read_only {
             bail_coded!(ErrorCode::Int056, "sync");
         }
+        #[cfg(test)]
+        {
+            use crate::storage::fault::{self, Action, Site};
+            match fault::on(Site::PageSync) {
+                Action::Fail(e) => return Err(e.into()),
+                Action::Lose => {
+                    self.lose_unsynced()?;
+                    return Err(fault::eio().into());
+                }
+                Action::Proceed | Action::Tear(_) => {}
+            }
+        }
         self.file.sync_all()?;
+        #[cfg(test)]
+        {
+            self.unsynced = Unsynced::default();
+        }
         Ok(())
     }
 

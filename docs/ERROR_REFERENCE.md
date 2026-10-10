@@ -157,6 +157,7 @@ with no `CodedError` anywhere in its chain.
 | STG-043 | Log writer target already exists | Storage |
 | STG-044 | File shorter than its meta page count | Storage |
 | STG-045 | File shorter than one page and not a new database | Storage |
+| STG-046 | Earlier checkpoint failed on this handle | Storage |
 | WAL-001 | Invalid WAL magic number | WAL |
 | WAL-002 | Unsupported WAL version | WAL |
 | WAL-003 | Value size exceeds maximum | WAL |
@@ -2304,6 +2305,22 @@ let mut out = LogWriter::create("memory.v2.graph", OpenOptions::new())?;
 - If the file is not needed, delete it and open the path again to create a new database.
 
 **Scenario**: A copy of a `.graph` file stops after its first kilobyte, and the copy is opened.
+
+---
+
+### STG-046 Earlier checkpoint failed on this handle
+
+**Error text**: `an earlier checkpoint failed on this handle and is not retried; reopen the database`
+
+**Cause**: A checkpoint (automatic, `checkpoint()`, `rebuild_indexes()`, or the one on close) failed with an I/O error after it may have written pages: a failed write, a full disk, or a failed `fsync`. After a failed `fsync` the operating system may have dropped the written pages while marking them clean, so a second `fsync` can report success for data that never reached the disk (the PostgreSQL "fsyncgate" problem). The checkpoint's meta page may also have reached the disk although the call failed; a retry would then overwrite pages that page references. So the handle never retries: every later write, checkpoint and index rebuild through it fails with STG-046.
+
+Nothing committed is lost. Every committed transaction is still in the WAL, and the `.graph` file holds either the previous checkpoint or the failed one complete. Queries through the handle keep working. The close-time checkpoint is skipped.
+
+**Resolution**:
+- Fix the cause (free disk space, check the device and the kernel log), then drop every clone of the handle and open the database again. Opening picks the newest complete checkpoint and replays the WAL.
+- Do not copy the `.graph` file without its `.wal` while the handle is in this state.
+
+**Scenario**: The disk fills during an automatic checkpoint, so the `transact` that triggered it fails with the I/O error (its transaction is already in the WAL and applied). The next `transact` fails with STG-046 until the database is reopened.
 
 ---
 

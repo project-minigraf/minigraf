@@ -38,6 +38,12 @@ pub struct PersistentFactStorage<B: StorageBackend + 'static> {
     page_cache: Arc<PageCache>,
     storage: FactStorage,
     dirty: bool,
+    /// A commit (`save` or `rebuild_indexes`) failed after it may have
+    /// written. Every later commit is refused with STG-046 (#390): after a
+    /// failed fsync the kernel may have dropped the written pages, and a
+    /// retry could report success over them, or overwrite pages of a meta
+    /// that did reach the disk. Reopening reads the file afresh.
+    failed: bool,
     /// The active (last committed) meta page.
     meta: MetaPage,
     /// Ids the last `save()` put on the free list, for the browser layer to
@@ -130,6 +136,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             page_cache: Arc::new(PageCache::new(page_cache_capacity)),
             storage: FactStorage::new(),
             dirty: false,
+            failed: false,
             meta: MetaPage::empty(1),
             #[cfg(all(target_arch = "wasm32", feature = "browser"))]
             released: Vec::new(),
@@ -389,7 +396,11 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     /// a sync, the new meta goes to the other slot and is synced: the only commit
     /// point. A failure at any step leaves the active meta and all it references
     /// untouched. The pages written depend on the change, not on the graph size.
+    ///
+    /// After a failure that may have written (anything past the checks
+    /// below), this and every later commit fail with STG-046.
     pub fn save(&mut self) -> Result<()> {
+        self.refuse_if_failed()?;
         if !self.dirty {
             return Ok(());
         }
@@ -397,6 +408,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let pending_facts = self.storage.get_pending_facts();
         let m = self.meta;
         let next_gen = m.next_generation()?;
+        // Cleared only when the commit completes.
+        self.failed = true;
 
         let mut backend = self.lock()?;
         let mut alloc =
@@ -455,6 +468,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         drop(backend);
 
         self.dirty = false;
+        self.failed = false;
         self.activate(new_meta);
         #[cfg(all(target_arch = "wasm32", feature = "browser"))]
         {
@@ -493,12 +507,18 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         use crate::storage::keys::{Index, KeyFact};
         use std::collections::BTreeSet;
 
+        self.refuse_if_failed()?;
         self.refuse_while_logs_open()?;
 
         let m = self.meta;
         let next_gen = m.next_generation()?;
         let pending_facts = self.storage.get_pending_facts();
-        let mut backend = self.lock()?;
+        // Locked through a clone of the handle, so `self.failed` can be set
+        // while the guard is held.
+        let backend_handle = Arc::clone(&self.backend);
+        let mut backend = backend_handle
+            .lock()
+            .map_err(|_| err_coded!(ErrorCode::Stg016))?;
         let cache = PageCache::new(VERIFY_CACHE_PAGES);
         cache.set_generation_bound(m.generation);
 
@@ -532,6 +552,9 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             (source, pool)
         };
 
+        // Nothing is written before this point (STG-041 leaves the file and
+        // this handle as they were). Cleared only when the commit completes.
+        self.failed = true;
         let mut alloc = PageAllocator::new(pool.into_iter().collect(), m.page_count, next_gen);
         let encoded = encode(
             &pending_facts,
@@ -645,6 +668,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         drop(backend);
 
         self.dirty = false;
+        self.failed = false;
         self.activate(new_meta);
         self.storage.post_checkpoint_clear();
         Ok(())
@@ -652,6 +676,19 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
 
     /// API-013 while a fact log is open: it reads pages of the active
     /// generation, and a commit frees pages that the next one reuses (#430).
+    fn refuse_if_failed(&self) -> Result<()> {
+        if self.failed {
+            bail_coded!(ErrorCode::Stg046);
+        }
+        Ok(())
+    }
+
+    /// Whether a commit failed after it may have written (STG-046).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn failed(&self) -> bool {
+        self.failed
+    }
+
     fn refuse_while_logs_open(&self) -> Result<()> {
         match self.storage.log_pins() {
             0 => Ok(()),
@@ -716,8 +753,9 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
 
 impl<B: StorageBackend + 'static> Drop for PersistentFactStorage<B> {
     fn drop(&mut self) {
-        // Auto-save on drop
-        if self.dirty {
+        // Auto-save on drop, unless an earlier commit failed: the WAL still
+        // holds everything, and the next open replays it.
+        if self.dirty && !self.failed {
             let _ = self.save();
         }
     }
@@ -2866,6 +2904,10 @@ mod tests {
         let before = snapshot(&damaged);
         let mut pfs = open_mem(&damaged, None).unwrap();
         assert_eq!(code(pfs.rebuild_indexes().unwrap_err()), "STG-041");
+        assert!(
+            !pfs.failed(),
+            "a refusal before any write keeps the handle usable"
+        );
         drop(pfs);
         assert!(
             snapshot(&damaged) == before,
