@@ -4,7 +4,7 @@
 
 **Verified**: 2026-10-10 with `cargo test`
 
-**Result**: 1,223 passing tests and 8 ignored tests (1,231 total), including the golden-file corpus (#391)
+**Result**: 1,225 passing tests and 9 ignored tests (1,234 total), including the golden-file corpus (#391)
 
 Since v2.0.4, `tests/edge_cases_test.rs` checks that a file of 1 to 4,095 bytes is `STG-045`, unchanged and with no WAL, when it is a database cut below one page or foreign bytes, and opens as a new database that takes a write and reads it back after reopen when it is a prefix of the initial header or all zeros (#506).
 
@@ -24,15 +24,16 @@ The v2.0.4 suite covers the public database API, the Datalog engine, storage and
 - **Storage correctness**: packed pages, B+tree indexes and range scans, cache behavior, file-header validation, migration, WAL replay, checksums, corruption handling, and fault injection.
 - **Reliability and concurrency**: concurrent reads and writes, rollback behavior, same-process handle exclusion, cross-process locking, PID namespaces, NFS and container lock behavior, and SIGKILL recovery.
 - **Public diagnostics**: structured parser, query, storage, WAL, API, and internal error codes; the error-code registry is checked against [`ERROR_REFERENCE.md`](ERROR_REFERENCE.md).
-- **Compatibility and quality**: golden-file corpus of released file formats, cross-platform format compatibility, property-based tests, long-haul smoke coverage, XTDB/Datomic semantic compatibility, grammar conformance, and rustdoc examples.
+- **Compatibility and quality**: golden-file corpus of released file formats, cross-platform format compatibility, property-based tests, long-haul smoke coverage, a weekly soak at 10M facts with a 5-hour churn (#392), XTDB/Datomic semantic compatibility, grammar conformance, and rustdoc examples.
 
 ### Ignored Tests
 
-The eight ignored tests are intentionally excluded from a normal local run:
+The nine ignored tests are intentionally excluded from a normal local run:
 
 - Six rustdoc examples that reference internal types and cannot compile as standalone examples.
 - One high-contention concurrency stress test intended for scheduled runs.
 - One long-haul smoke test intended for scheduled runs.
+- One soak test at 10M facts (`soak`), run weekly by `.github/workflows/soak.yml` (#392); `soak_short` runs the same driver at 20K facts in the normal suite.
 
 ### Reproducing
 

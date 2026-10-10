@@ -79,7 +79,7 @@ Scope — release-gate testing and documentation:
 - Wider property tests: file-backed, batched, retracts, temporal, joins (#386)
 - Persistent fuzz corpus and an operation-sequence target (#387)
 - Fault injection across save/WAL/recovery (#390)
-- Long-running soak test at scale (#392)
+- Long-running soak test at scale (#392; `tests/soak_test.rs`, 10M facts and a 5-hour churn weekly, alternating `main` and `v3`)
 - Benchmarks at 100K–10M facts and a published performance envelope (#394)
 - Higher storage/WAL coverage gates and branch-coverage gates (#396)
 - Durability, recovery and operations guide (#398)

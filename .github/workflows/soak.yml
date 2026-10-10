@@ -1,0 +1,125 @@
+name: Soak test (weekly)
+
+# Two branches alternate weekly: main on Saturday, v3 on Sunday, both 01:00 UTC.
+# Scheduled runs always use this file from the default branch, so the branch
+# under test is chosen from the cron string that fired (as in bench.yml and
+# crash-kill.yml). Keep the cron strings here and in SOAK_REF/run-name
+# identical.
+run-name: >-
+  Soak test (${{ github.event_name == 'workflow_dispatch' && inputs.ref
+  || (github.event.schedule == '0 1 * * 0' && 'v3' || 'main') }})
+
+# #392: grows a file-backed database to 10M+ facts, then churns it (retracts,
+# re-asserts, long hot-entity histories) for the rest of the budget, with
+# thousands of checkpoints and reopens every few minutes. Samples are checked
+# against a reference throughout; the metrics (file size, open and checkpoint
+# time, RSS, p50/p99 query latency) are uploaded for the performance envelope
+# (#394). The test prints its seed; MINIGRAF_SOAK_SEED replays the writes.
+
+on:
+  schedule:
+    - cron: "0 1 * * 6"  # main
+    - cron: "0 1 * * 0"  # v3
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch to test
+        required: true
+        default: main
+      minutes:
+        description: Workload budget in minutes
+        required: true
+        default: "300"
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  SOAK_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || (github.event.schedule == '0 1 * * 0' && 'v3' || 'main') }}
+
+jobs:
+  soak:
+    name: Soak at 10M facts
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOAK_REF }}
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      # The database grows to several GB on main (format v7); /mnt has the
+      # runner's spare disk.
+      - name: Prepare the data directory
+        run: |
+          sudo mkdir -p /mnt/soak
+          sudo chown "$USER" /mnt/soak
+          df -h / /mnt
+
+      - name: Build
+        run: cargo test --profile bench --test soak_test --no-run
+
+      - name: Run the soak test
+        shell: bash
+        env:
+          MINIGRAF_SOAK_MINUTES: ${{ github.event_name == 'workflow_dispatch' && inputs.minutes || '300' }}
+          MINIGRAF_SOAK_TARGET_FACTS: "10000000"
+          MINIGRAF_SOAK_METRICS: ${{ github.workspace }}/soak-metrics.jsonl
+          MINIGRAF_SOAK_DIR: /mnt/soak
+          RUST_BACKTRACE: 1
+        run: |
+          set -o pipefail
+          cargo test --profile bench --test soak_test soak -- --ignored --exact --nocapture 2>&1 | tee soak-output.txt
+
+      - name: Upload metrics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: soak-${{ env.SOAK_REF }}-${{ github.run_id }}
+          path: |
+            soak-metrics.jsonl
+            soak-output.txt
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Record soak failure
+        if: ${{ failure() }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_TITLE: "Weekly soak failure (${{ env.SOAK_REF }})"
+        run: |
+          report_file="soak-failure.md"
+          {
+            echo "The weekly soak test failed on ${{ env.SOAK_REF }}."
+            echo
+            echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "- Commit: $(git rev-parse HEAD)"
+            echo "- Reproduce: cargo test --profile bench --test soak_test soak -- --ignored --exact --nocapture"
+            echo "  (MINIGRAF_SOAK_SEED to the printed seed replays the writes; see tests/soak_test.rs for the other variables)"
+            echo
+            echo "## Test output"
+            echo
+            echo '```text'
+            tail -n 300 soak-output.txt 2>/dev/null || echo "(no output: the run failed before the test started)"
+            echo '```'
+          } > "$report_file"
+
+          existing_issue="$(gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --search "$ISSUE_TITLE in:title" \
+            --json number,title \
+            --limit 100 \
+            --jq ".[] | select(.title == \"$ISSUE_TITLE\") | .number" \
+            | head -n 1)"
+
+          if [ -n "$existing_issue" ]; then
+            gh issue comment "$existing_issue" --repo "$GITHUB_REPOSITORY" --body-file "$report_file"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" --body-file "$report_file"
+          fi
