@@ -1908,12 +1908,13 @@ See the [file format section in README](../README.md#file-format) for version hi
 
 **Error text**: `Expected packed page (0x02), got 0x{}`
 
-**Cause**: A page expected to contain packed facts has a different page type tag. Indicates that the page layout in the file does not match the header's page allocation records.
+**Cause**: A page expected to contain packed facts has a different page type tag. Indicates that the page layout in the file does not match the header's page allocation records. Opening a format v7 file (written by v2.x) checks every page in its fact-page range: a v2.x writer puts only fact pages there, so another type byte means the page is damaged. The open fails, read-write and read-only, and the v7 file is not modified or upgraded (#496).
 
 **Resolution**:
 - Restore from backup. See the [file format section in README](../README.md#file-format).
+- For a v7 file, the other v7 pages are unchanged: opening a copy with Minigraf v2.x, which skips the damaged page, reads the facts the other pages hold.
 
-**Scenario**: A fact page and an index page swapped positions in the file due to a storage driver bug.
+**Scenario**: A v7 file copied with a bad sector has a fact page whose first byte is no longer `0x02`. Before v3.0.0, the open skipped that page and the v7 → v8 upgrade freed it, losing its facts.
 
 ### STG-015 Record extends beyond page boundary
 
