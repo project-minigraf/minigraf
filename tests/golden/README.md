@@ -24,9 +24,9 @@ Manifests for a newer format than the reader supports are skipped.
   behavior, with a recipe in a generator crate.
 - **Expected rows are written by hand from the recipe**, not recorded from a read.
   A recorded read would freeze a bug as expected output.
-- `"stale_wal": true` marks a WAL whose entries are all already in the file. A
-  checkpoint then has nothing to do, so the WAL stays until the next write is
-  checkpointed; the test does not require it to be gone.
+- `"stale_wal": true` marks a WAL whose entries are all already in the file. It
+  describes the shape only: a checkpoint has no facts to flush but still removes
+  the WAL (#457), and the test requires it to be gone like any other.
 - A query that a release is known to get wrong carries `"min_reader"` (the first
   major version that gets it right) and `"known_issue"`.
 
