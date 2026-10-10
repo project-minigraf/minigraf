@@ -374,9 +374,7 @@ impl Drop for Inner {
         }
         if self.options.wal_checkpoint_threshold == usize::MAX {
             #[cfg(not(target_arch = "wasm32"))]
-            if let Ok(mut ctx) = self.write_lock.lock()
-                && let WriteContext::File { pfs, .. } = &mut *ctx
-            {
+            if let Ok(WriteContext::File { pfs, .. }) = self.write_lock.get_mut() {
                 pfs.discard();
             }
             return;
@@ -2336,6 +2334,19 @@ mod tests {
     }
 
     // ── file-backed: sync mode is plumbed through to both WalWriter call sites ──
+
+    /// #476: an in-memory handle under the `usize::MAX` sentinel closes
+    /// without a checkpoint and without touching any file storage.
+    #[test]
+    fn test_max_threshold_in_memory_drop() {
+        let db = Minigraf::in_memory_with_options(
+            OpenOptions::new().wal_checkpoint_threshold(usize::MAX),
+        )
+        .unwrap();
+        db.execute("(transact [[:e0 :a0 1]])").unwrap();
+        assert_eq!(db.current_tx_count(), 1, "write applied");
+        drop(db);
+    }
 
     #[test]
     fn test_normal_sync_mode_reaches_both_wal_writer_call_sites() {
