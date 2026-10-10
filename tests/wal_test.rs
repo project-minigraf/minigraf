@@ -907,3 +907,51 @@ fn test_v2_file_is_rejected() {
     };
     assert_eq!(err.code(), "STG-028", "v2 file must fail with STG-028");
 }
+
+/// #476: `wal_checkpoint_threshold(usize::MAX)` suppresses the close-time save
+/// as well as the checkpoint. Before the fix, dropping the handle still wrote
+/// every pending fact to the `.graph` file and left a fully checkpointed WAL.
+#[test]
+fn test_max_threshold_drop_leaves_graph_file_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("nosave.graph");
+    let wal_path = wal_path_for(&db_path);
+    {
+        let db = Minigraf::open(&db_path).unwrap();
+        db.execute("(transact [[:e0 :a0 0]])").unwrap();
+    }
+    assert!(!wal_path.exists(), "default close checkpoints");
+    let before = std::fs::read(&db_path).unwrap();
+    for sync in [minigraf::SyncMode::Full, minigraf::SyncMode::Normal] {
+        let db = OpenOptions::new()
+            .synchronous(sync)
+            .wal_checkpoint_threshold(usize::MAX)
+            .path(&db_path)
+            .open()
+            .unwrap();
+        db.execute("(transact [[:e0 :a0 1]])").unwrap();
+        db.execute("(transact [[:e0 :a0 2]])").unwrap();
+        drop(db);
+        assert!(
+            std::fs::read(&db_path).unwrap() == before,
+            ".graph file unchanged by drop"
+        );
+        assert!(wal_path.exists(), "WAL kept by drop");
+        std::fs::remove_file(&wal_path).unwrap();
+    }
+    // The WAL alone carries the writes: keep one, reopen, and they replay.
+    {
+        let db = OpenOptions::new()
+            .wal_checkpoint_threshold(usize::MAX)
+            .path(&db_path)
+            .open()
+            .unwrap();
+        db.execute("(transact [[:e0 :a0 1]])").unwrap();
+    }
+    let db = Minigraf::open(&db_path).unwrap();
+    assert_eq!(db.current_tx_count(), 2, "WAL entry replayed on reopen");
+    let r = db
+        .execute("(query [:find ?v :where [:e0 :a0 ?v]])")
+        .unwrap();
+    assert_eq!(count_results(r), 2, "both values visible after replay");
+}

@@ -744,7 +744,9 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     }
 
     /// Forget unsaved changes, so dropping this storage commits nothing. Used
-    /// by an abandoned log writer, whose file is deleted next (#431).
+    /// by an abandoned log writer, whose file is deleted next (#431), and on
+    /// close under `wal_checkpoint_threshold(usize::MAX)`, whose WAL keeps
+    /// the pending facts (#476).
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn discard(&mut self) {
         self.dirty = false;
