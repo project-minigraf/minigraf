@@ -14,6 +14,9 @@ libfuzzer-sys = "0.4"
 minigraf = { path = ".." }
 tempfile = "3"
 crc32fast = "1"
+# ops_sequence includes tests/reference_model, shared with the model-based test.
+proptest = "1"
+uuid = { version = "1.0", features = ["v5"] }
 
 [[bin]]
 name = "wal_entry"
@@ -48,5 +51,17 @@ doc = false
 [[bin]]
 name = "datalog_eval"
 path = "fuzz_targets/datalog_eval.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "ops_sequence"
+path = "fuzz_targets/ops_sequence.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "corrupt_file"
+path = "fuzz_targets/corrupt_file.rs"
 test = false
 doc = false
