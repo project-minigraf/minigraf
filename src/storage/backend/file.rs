@@ -442,6 +442,23 @@ impl StorageBackend for FileBackend {
         Ok(self.page_count)
     }
 
+    fn partial_page(&self) -> Result<Option<Vec<u8>>> {
+        let start = self
+            .page_count
+            .checked_mul(PAGE_SIZE as u64)
+            .ok_or_else(|| {
+                err_coded!(
+                    ErrorCode::Int048,
+                    format!("page offset overflow for page_count {}", self.page_count)
+                )
+            })?;
+        let mut file = &self.file;
+        file.seek(SeekFrom::Start(start))?;
+        let mut tail = Vec::new();
+        file.take(PAGE_SIZE as u64).read_to_end(&mut tail)?;
+        Ok((!tail.is_empty()).then_some(tail))
+    }
+
     fn close(&mut self) -> Result<()> {
         if self.read_only {
             return Ok(());
@@ -494,6 +511,7 @@ mod tests {
         {
             let mut backend = FileBackend::open(&path).unwrap();
             assert_eq!(backend.page_count().unwrap(), 0);
+            assert_eq!(backend.partial_page().unwrap(), None);
             backend.write_page(5, &vec![0xABu8; PAGE_SIZE]).unwrap();
             assert_eq!(backend.page_count().unwrap(), 6);
             assert!(backend.read_page(6).is_err(), "past the end must fail");
@@ -511,9 +529,14 @@ mod tests {
         let mut backend = FileBackend::open(&path).unwrap();
         assert!(backend.page_count().unwrap() > 0);
         assert_eq!(backend.page_count().unwrap(), 6, "partial page not counted");
+        assert_eq!(
+            backend.partial_page().unwrap(),
+            Some(vec![0xCDu8; PAGE_SIZE / 2])
+        );
         backend.write_page(6, &vec![0x11u8; PAGE_SIZE]).unwrap();
         assert_eq!(backend.read_page(6).unwrap()[PAGE_SIZE - 1], 0x11);
         assert_eq!(backend.page_count().unwrap(), 7);
+        assert_eq!(backend.partial_page().unwrap(), None, "tail overwritten");
     }
 
     /// The child half of [`test_cross_process_lock_retries_then_fails_within_budget`]:

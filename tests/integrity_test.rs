@@ -170,6 +170,53 @@ fn truncated_file_is_refused_at_open() {
     }
 }
 
+/// A file shorter than one page opens as a new database only when it is a
+/// torn first write: zeros, or a prefix of the empty generation-1 meta. Any
+/// other short file (here a database cut to under a page, or foreign bytes) is refused with STG-045, read-write and read-only, and is
+/// left as it was; it used to be re-initialised (#506).
+#[test]
+fn sub_page_file_is_refused_unless_a_torn_first_write() {
+    let dir = tempfile::tempdir().unwrap();
+    let (path, _) = checkpointed_file(dir.path(), "short.graph");
+    // A second checkpoint moves page 0 off the empty generation-1 meta. A
+    // file cut below a page after one checkpoint is indistinguishable from a
+    // torn first write, and holds nothing to keep: every tree lies past it.
+    {
+        let db = Minigraf::open(&path).unwrap();
+        fill(&db, 200, 210);
+        db.checkpoint().unwrap();
+    }
+    let template = std::fs::read(&path).unwrap();
+    std::fs::remove_file(&path).unwrap();
+    let foreign = vec![0x5Au8; 100];
+    for bytes in [&template[..2222], &template[..20], &foreign[..]] {
+        std::fs::write(&path, bytes).unwrap();
+        assert_eq!(open_code(&path, false), "STG-045");
+        assert_eq!(open_code(&path, true), "STG-045");
+        assert_eq!(std::fs::read(&path).unwrap(), bytes, "file unchanged");
+        assert!(
+            !dir.path().join("short.graph.wal").exists(),
+            "no WAL created"
+        );
+    }
+
+    // A torn first write: init_empty's page 0 cut short, or zeros.
+    let fresh = dir.path().join("fresh.graph");
+    drop(Minigraf::open(&fresh).unwrap());
+    let initial = std::fs::read(&fresh).unwrap();
+    std::fs::remove_file(&fresh).unwrap();
+    for bytes in [&initial[..8], &initial[..40], &[0u8; 300][..]] {
+        std::fs::write(&path, bytes).unwrap();
+        assert_eq!(open_code(&path, true), "opened");
+        let db = Minigraf::open(&path).unwrap();
+        db.execute("(transact [[:a :b 1]])").unwrap();
+        db.checkpoint().unwrap();
+        drop(db);
+        assert_eq!(std::fs::metadata(&path).unwrap().len() % PAGE_SIZE, 0);
+        std::fs::remove_file(&path).unwrap();
+    }
+}
+
 /// A CRC-valid meta whose `page_count` is far past the end of the file is
 /// refused at open: it used to open, and its next checkpoint wrote at that
 /// page id, leaving a 4 EiB sparse file (#497).

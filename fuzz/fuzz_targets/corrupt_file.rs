@@ -15,7 +15,9 @@
 //! Each query must fail or return exactly the answer of the last generation or
 //! of the one before it (the meta fallback when the active meta page is
 //! damaged), and every query that answers must agree on one generation. A
-//! mismatch panics. `verify()` runs too and may fail, but must not panic.
+//! mismatch panics. A file cut below one page must fail to open or open as a
+//! new, empty database (#506). `verify()` runs too and may fail, but must not
+//! panic.
 #![no_main]
 use libfuzzer_sys::fuzz_target;
 use minigraf::{Minigraf, OpenOptions, QueryResult};
@@ -162,11 +164,6 @@ fuzz_target!(|data: &[u8]| {
         2 => bytes.truncate(trunc),
         _ => {}
     }
-    // An empty file opens as a new, empty database. A file shorter than one
-    // page does too today (#506); skipped until that is fixed.
-    if bytes.len() < PAGE_SIZE {
-        return;
-    }
 
     let Ok(dir) = tempfile::tempdir() else {
         return;
@@ -179,6 +176,19 @@ fuzz_target!(|data: &[u8]| {
     let Ok(db) = Minigraf::open_with_options(&path, opts) else {
         return;
     };
+
+    // A file shorter than one page opens only as a new, empty database: when
+    // it is empty, or what is left is a prefix of a first meta write (#506).
+    if bytes.len() < PAGE_SIZE {
+        assert_eq!(db.current_tx_count(), 0, "short file opened with data");
+        for q in QUERIES {
+            assert!(
+                rows(&db, q).is_none_or(|r| r.is_empty()),
+                "short file answered with data"
+            );
+        }
+        return;
+    }
 
     // The last generation, or the one before it; narrowed by every answer.
     let mut candidates: Vec<&Answers> = t.generations[1..].iter().collect();

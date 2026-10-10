@@ -745,6 +745,13 @@ impl<B: StorageBackend> StorageBackend for MutexStorageBackend<B> {
         self.0.lock().map_or(true, |b| b.holds_every_page())
     }
 
+    fn partial_page(&self) -> Result<Option<Vec<u8>>> {
+        self.0
+            .lock()
+            .map_err(|_| err_coded!(ErrorCode::Int050, "MutexStorageBackend"))?
+            .partial_page()
+    }
+
     fn close(&mut self) -> Result<()> {
         bail_coded!(ErrorCode::Int049, "MutexStorageBackend is read-only")
     }

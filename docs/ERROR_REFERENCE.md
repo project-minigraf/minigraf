@@ -156,6 +156,7 @@ with no `CodedError` anywhere in its chain.
 | STG-042 | Database file not found (read-only open) | Storage |
 | STG-043 | Log writer target already exists | Storage |
 | STG-044 | File shorter than its meta page count | Storage |
+| STG-045 | File shorter than one page and not a new database | Storage |
 | WAL-001 | Invalid WAL magic number | WAL |
 | WAL-002 | Unsupported WAL version | WAL |
 | WAL-003 | Value size exceeds maximum | WAL |
@@ -2288,6 +2289,19 @@ let mut out = LogWriter::create("memory.v2.graph", OpenOptions::new())?;
 - Check the file size: a `.graph` file is a whole number of 4 KiB pages, at least as many as the first `{}`.
 
 **Scenario**: A `.graph` file is copied to another machine and the copy stops partway.
+
+### STG-045 File shorter than one page and not a new database
+
+**Error text**: `File is {} bytes, shorter than one page, and is not a new Minigraf database`
+
+**Cause**: The file is longer than zero bytes but shorter than one 4 KiB page, and its bytes are not a torn first write of a new database. Creating a database writes its first meta page in one go, so a crash during that write can leave only a prefix of that page (or zeros); such a file is opened as a new, empty database. Any other short file is something else: a different file at the path, a database cut short by an interrupted copy, or a damaged file. Earlier versions opened it as a new database and a read-write open overwrote it. The file is not modified, read-write or read-only.
+
+**Resolution**:
+- Check that the path points at the intended `.graph` file.
+- Copy the database again from its source, or restore it from backup.
+- If the file is not needed, delete it and open the path again to create a new database.
+
+**Scenario**: A copy of a `.graph` file stops after its first kilobyte, and the copy is opened.
 
 ---
 

@@ -102,6 +102,10 @@ impl<B: StorageBackend> StorageBackend for FaultInjectingBackend<B> {
         self.inner.holds_every_page()
     }
 
+    fn partial_page(&self) -> Result<Option<Vec<u8>>> {
+        self.inner.partial_page()
+    }
+
     fn close(&mut self) -> Result<()> {
         let mut cfg = self.config.lock().unwrap();
         let limit = cfg.fail_close_after;
