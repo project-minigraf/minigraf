@@ -2,6 +2,105 @@
 
 This document records reproducible local benchmark snapshots. Completed release-performance history belongs in the [CHANGELOG](../CHANGELOG.md); continuous CI history is available on [Bencher](https://bencher.dev/perf/minigraf/plots).
 
+## Performance Envelope (v3.0.0, #394)
+
+**Version**: `v3` branch (format v8), unreleased · **Date**: 2026-10-11 · **Command**: `cargo run --profile envelope --example perf_envelope -- --scales 100k,1m,10m` · Intel Core i7-1065G7 (4 cores / 8 threads, 16 GB RAM), Rust 1.94.0, Linux 6.12.108, on AC power and otherwise idle; the `.graph` file on an SSD with the OS page cache warm.
+
+This section lists the graph sizes and query shapes that are tested, with their p50 and p99 latency, and the ones that are not supported yet. Re-run it for each minor release (CONTRIBUTING.md).
+
+### What is supported
+
+| Workload | Tested up to | p50 / p99 at 10M facts | Notes |
+|---|---:|---:|---|
+| Point lookup: bound entity and attribute, including `:as-of` and `:valid-at` | 10M facts | 12–14 µs / 20–48 µs | Flat from 100K to 10M |
+| Entity with a long history (1,000 versions), current and `:as-of` | 10M facts | 0.26 ms / 0.30 ms | Grows with that entity's history, not the graph |
+| Open a checkpointed file | 10M facts | 0.12 ms, 3 MiB RSS | Indexes are paged in on demand |
+| Checkpoint after 1 new fact | 10M facts | 3.8 ms / 21 ms | Copy-on-write: cost follows the change |
+| Attribute scan, attribute + value, grouped aggregation, joins | 1M facts | see below | Linear in the facts of the attributes they touch: about 0.1–0.5 s at 1M facts, seconds at 10M |
+| Rule queries (recursion) | 100K facts | 2.7 s at 100K | Read the whole database (#529) |
+
+**Not supported yet:**
+
+- Rule queries on a database with 1,000,000 or more live facts fail with `INT-020`, whatever the size of the answer (#528). With the limit raised (`:max-results 3000000`), `recursive_ancestors` returns its 6 rows at 1M facts in 34 s.
+- Graphs over 10M facts are not tested.
+- Interactive latency for scans and joins at 10M facts. They take 3–21 s and materialize every fact of the attributes they touch, 0.7–3.6 GiB of RSS.
+
+### Storage
+
+| Metric | 100K | 1M | 10M |
+|---|---:|---:|---:|
+| File size | 10 MiB | 120 MiB | 1,202 MiB |
+| Build time (200-entity transactions, checkpoint every 200K facts) | 3.2 s | 12.7 s | 195 s |
+| Build peak RSS | 185 MiB | 403 MiB | 421 MiB |
+| Open | 120 µs | 136 µs | 124 µs |
+| RSS after open | 3 MiB | 3 MiB | 3 MiB |
+| Checkpoint, 1 new fact (p50 / p99) | 3.1 ms / 5.1 ms | 2.9 ms / 4.3 ms | 3.8 ms / 20.5 ms |
+| Checkpoint, 10K new facts | 41 ms | 83 ms | 722 ms |
+| Peak RSS (open + 21 checkpoints) | 20 MiB | 21 MiB | 21 MiB |
+
+### Query latency (p50 / p99)
+
+| Shape | Query | 100K | 1M | 10M |
+|---|---|---:|---:|---:|
+| `point_entity` | `[:p{m} :age ?a]` | 13 µs / 16 µs | 12 µs / 48 µs | 12 µs / 46 µs |
+| `as_of` | `:as-of {tx}`, `[:p{m/4} :age ?a]` | 14 µs / 36 µs | 14 µs / 20 µs | 14 µs / 30 µs |
+| `valid_at` | `:valid-at "2021-06-01…"`, `[:p{m} :status ?s]` | 15 µs / 49 µs | 14 µs / 20 µs | 14 µs / 23 µs |
+| `hot_current` | `[:hot :counter ?v]`, 1,000 versions | 263 µs / 301 µs | 256 µs / 293 µs | 268 µs / 300 µs |
+| `hot_as_of` | same, `:as-of` halfway | 257 µs / 284 µs | 262 µs / 293 µs | 264 µs / 304 µs |
+| `attribute_value` | `[?e :name "p{m}"]` (1 row) | 24.5 ms / 25.6 ms | 288 ms / 297 ms | 3.16 s / 3.16 s |
+| `attribute_scan` | `[?e :age ?a]` (N/6 rows) | 43.4 ms / 49.4 ms | 462 ms / 484 ms | 4.83 s / 5.18 s |
+| `count_grouped` | `[:find ?g (count ?e) :where [?e :group ?g]]` | 46.3 ms / 48.6 ms | 521 ms / 524 ms | 5.66 s / 6.20 s |
+| `join_2` | `[:p{m} :follows ?f] [?f :name ?n]` (1 row) | 54.0 ms / 63.0 ms | 606 ms / 610 ms | 6.50 s / 7.02 s |
+| `join_3_selective` | `[:p{m} :manager ?b] [?s :manager ?b] [?s :name ?n]` (10 rows) | 117 ms / 125 ms | 1.24 s / 1.28 s | 13.5 s / 13.8 s |
+| `join_3_scan` | `[?e :follows ?f] [?f :group 7] [?f :name ?n]` | 150 ms / 155 ms | 1.92 s / 1.96 s | 20.9 s / 21.2 s |
+| `recursive_ancestors` | `(boss :p{leaf} ?b)` over `:manager` (5–7 rows) | 2.71 s / 2.72 s | fails: `INT-020` | > 60 s (abandoned) |
+
+Below 100 runs, p99 is the slowest run. Shapes slower than about 75 ms ran fewer than 200 times; the full JSON report has run counts.
+
+Peak RSS per shape, each in its own process (baseline 4 MiB):
+
+| Shape | 100K | 1M | 10M |
+|---|---:|---:|---:|
+| point lookups, `:as-of`, `:valid-at`, hot entity | 4 MiB | 4 MiB | 4 MiB |
+| `attribute_value` | 22 MiB | 137 MiB | 729 MiB |
+| `attribute_scan` | 22 MiB | 169 MiB | 1,665 MiB |
+| `count_grouped` | 24 MiB | 198 MiB | 1,783 MiB |
+| `join_2` | 33 MiB | 307 MiB | 2,342 MiB |
+| `join_3_selective` | 45 MiB | 376 MiB | 2,856 MiB |
+| `join_3_scan` | 59 MiB | 456 MiB | 3,610 MiB |
+| `recursive_ancestors` | 375 MiB | 2,479 MiB | 4,832 MiB (at abandonment) |
+
+### Fixture
+
+`N` facts over `N/6` entities `:p{i}`, six facts each: `:name "p{i}"`, `:age i%90`, `:group i%100`, `:follows :p{(7919·i+1) mod E}`, `:manager :p{i/10}` (a tree with fan-out 10), and `:status` in two valid-time windows (`"a"` for 2020–2023, `"b"` from 2023). Plus `:hot :counter`, retracted and reasserted 1,000 times. `m = E/2`. Every query drains its cursor with `next_batch(1000)`. Shapes run in their own process on the fixture opened read-only. The storage rows use a copy.
+
+The harness builds with `--profile envelope`: `release` at opt-level 3, which is how an application's release build compiles the library. `release` and `bench` (which inherits it) are opt-level "z" for the REPL binary's size, and run these queries about 1.5× slower (`attribute_scan` at 1M facts: 703 ms against 462 ms). The Criterion numbers elsewhere in this file are opt-level "z".
+
+### Where the time goes (1M facts)
+
+`perf` with frame pointers on `attribute_scan` and `join_3_selective`:
+
+- **Up-front materialization (50–60%).** Before matching, the executor turns every live fact of each pattern's attribute into a `Fact` (`selective_fact_fetch` → `live_scan`). A pattern without a bound entity is read in full, so a selective join costs as much as scanning its widest attribute. The streaming engine (#473: `Scan` and `IndexNestedLoopJoin` operators) replaces this.
+- **DICT lookup per row (26–35%).** `uuid_of` does a B+tree `get` for every row's entity id (#530).
+- **Bindings as `HashMap<String, Value>` (about 25%).** SipHash insert, lookup and drop per row; #473's columnar batches replace them.
+- **`net_asserted_facts` over committed facts that `live_facts` already resolved (about 10%)** (#532).
+- **Keyword constants hashed to a UUID per fact (about 8% of the join)** (#531).
+- `attribute_value` reads the whole attribute instead of seeking AVET (#518).
+
+### Python FFI round trip
+
+**Command**: `python bench/envelope.py <fixture> --report envelope.json --scale <scale>` in [minigraf-python](https://github.com/project-minigraf/minigraf-python) (`v3`), on the same fixtures and report. The binding is built with `maturin develop --release` against this commit. It runs the same queries through `db.query(...)`, drains them with `next_batch(1000)`, and decodes each JSON batch with `json.loads`. Python 3.14.7.
+
+| Shape | Rust p50 (100K / 1M / 10M) | Python p50 (100K / 1M / 10M) | Python peak RSS at 10M |
+|---|---:|---:|---:|
+| `point_entity` | 13 µs / 12 µs / 12 µs | 77 µs / 84 µs / 88 µs | 21 MiB |
+| `hot_current` | 263 µs / 256 µs / 268 µs | 330 µs / 326 µs / 328 µs | 21 MiB |
+| `attribute_scan` | 43.4 ms / 462 ms / 4.83 s | 49.4 ms / 537 ms / 5.73 s | 1,601 MiB |
+| `count_grouped` | 46.3 ms / 521 ms / 5.66 s | 46.0 ms / 506 ms / 5.45 s | 1,736 MiB |
+| `join_3_scan` | 150 ms / 1.92 s / 20.9 s | 150 ms / 1.92 s / 21.3 s | 3,372 MiB |
+
+The binding adds about 70 µs per query, plus about 0.5 µs per returned row for the JSON batches (0.9 s for 1.67M rows). The interpreter adds about 16 MiB of RSS. Peak RSS is otherwise the cursor's: the answer is computed when the cursor opens. #473 re-measures this table as an acceptance test for the streaming engine.
+
 ## Current Local Snapshot
 
 **Version**: v2.0.0
@@ -92,6 +191,10 @@ For changes that may affect performance, record the exact command, version, tool
 ## Reproducing
 
 ```bash
+# The performance envelope (#394): builds and caches fixtures in target/perf-envelope
+# (10M facts: about 1.2 GiB on disk, 3 minutes to build, up to 5 GiB RSS while measuring).
+cargo run --profile envelope --example perf_envelope -- --scales 100k,1m,10m --json envelope.json
+
 # Run the current documented query snapshot.
 cargo bench -- 'query/(point_entity|point_attribute|join_3pattern)'
 
@@ -109,4 +212,4 @@ Criterion writes HTML reports to `target/criterion/`. A benchmark result should 
 
 - Results are measurements, not service-level guarantees.
 - The full suite intentionally includes expensive large-fixture and quadratic workloads; run focused groups during development and the complete suite for a release-level performance review.
-- Heap and RSS measurements require a separate profiler run and are not included in this snapshot.
+- The Criterion snapshots do not include heap or RSS; the performance envelope reports RSS from `/proc` (Linux only). The weekly soak test (#392) also records RSS, file size, and open and checkpoint time at 10M facts.

@@ -247,12 +247,20 @@ See [ROADMAP.md](ROADMAP.md) for planned work and current direction.
 
 ## Performance
 
-See [BENCHMARKS.md](docs/BENCHMARKS.md) for the current reproducible local snapshot and benchmark commands.
-| Point query at 1M facts | 4.3–4.5 s (selective B+tree lookup for bounded patterns; O(N) for full-attribute scans) |
-| Open time at 1M facts | 1.31 s (2.4× faster than v5 — indexes no longer loaded into RAM) |
-| Peak heap at 1M facts | 1.05 GB (~21% less than v5 — indexes paged in on demand) |
+Performance envelope on the `v3` branch (format v8), measured up to 10M facts on a laptop (Intel i7-1065G7, SSD, page cache warm; see [BENCHMARKS.md](docs/BENCHMARKS.md#performance-envelope-v300-394) for every shape, RSS and the method):
 
-File-backed databases enforce a maximum fact size of **4 080 serialised bytes** per fact. In-memory databases have no limit.
+| Workload | 100K facts | 1M facts | 10M facts |
+|---|---:|---:|---:|
+| Point lookup (bound entity + attribute, incl. `:as-of` / `:valid-at`), p50 / p99 | 13 µs / 16 µs | 12 µs / 48 µs | 12 µs / 46 µs |
+| Entity with 1,000 versions, p50 / p99 | 0.26 / 0.30 ms | 0.26 / 0.29 ms | 0.27 / 0.30 ms |
+| Open a file (RSS after open: 3 MiB) | 0.12 ms | 0.14 ms | 0.12 ms |
+| Checkpoint after 1 new fact, p50 / p99 | 3.1 / 5.1 ms | 2.9 / 4.3 ms | 3.8 / 21 ms |
+| Attribute scan (N/6 rows), p50 | 43 ms | 0.46 s | 4.8 s |
+| Selective 2-clause join (1 row), p50 | 54 ms | 0.61 s | 6.5 s |
+
+Point lookups and time travel on one entity stay flat at every tested size. Scans, aggregations and joins grow linearly with the facts of the attributes they touch, because a query materializes them before joining (#473). They are interactive up to about 100K facts. Not supported yet: rule queries on databases with 1M or more facts (#528), and graphs over 10M facts (not tested).
+
+File-backed databases limit string values to 4,068 bytes (`WAL-003`). In-memory databases have no limit.
 
 **Durability tuning:** every write is `fsync`'d immediately by default (`SyncMode::Full`). Bulk loaders/migrations that can safely re-run from a checkpoint watermark on failure can trade that for throughput with `OpenOptions::new().synchronous(SyncMode::Normal)` — `checkpoint()` still fsyncs unconditionally in both modes. See the [Performance Tuning](https://project-minigraf.github.io/minigraf-docs/latest/performance-tuning/#configuration-knobs) for the full tradeoff and the write-batching pattern that pairs with it.
 

@@ -43,22 +43,31 @@ sizes that are not supported yet. Find the top costs of the attribute scan and t
 Plus one hot entity `:hot` whose `:counter` is retracted and reasserted 1,000 times
 (#323, #379), so its history is the same at every scale.
 
-The fixture is cached at `target/perf-envelope/fixture-{N}.graph` (tagged with a
-fixture version) and copied for each measurement, because checkpoint measurements
-write to it.
+The fixture is cached at `target/perf-envelope/fixture-v{version}-{scale}.graph`, with
+its build metadata (entity count, the `:as-of` counters, build time and peak RSS) in a
+`.json` next to it. Bump the version when the fixture changes.
 
 ## Measurements
 
-Each scale is measured in a fresh child process, so RSS is not polluted by the build
-or by another scale.
+The harness builds with `--profile envelope`: `release` at opt-level 3, which is how
+an application's release build compiles the library. `release` (and `bench`, which
+inherits it) is opt-level "z" for the REPL binary's size and runs these queries about
+1.5× slower.
 
-- **Open**: `Minigraf::open` on the copy (OS page cache warm; a cold open needs root to
-  drop caches), RSS after open.
-- **Queries**: each shape runs 3 warm-up times, then until 200 runs or a 15 s budget,
-  at least 11 runs. Every run drains the cursor with `next_batch(1000)`. Reported:
-  p50, p99, max, run count, rows, and peak RSS (VmHWM, reset through
-  `/proc/self/clear_refs` before each shape).
-- **Checkpoint**: after 1 new fact (20 runs, p50/p99) and after 10K new facts.
+The build, the storage measurements and every query shape run in their own child
+process, so each peak RSS (VmHWM) is that step's alone. Opening costs about 0.1 ms,
+so a process per shape is cheap.
+
+- **Open**: `Minigraf::open` on a copy of the fixture (OS page cache warm; a cold open
+  needs root to drop caches), RSS after open.
+- **Checkpoint**: after 1 new fact (20 runs, p50/p99) and after 10K new facts, on the
+  same copy.
+- **Queries**: the fixture opened read-only. The first run checks the row count, and is
+  abandoned after `--cap-secs` (default 60): the shape is reported as capped. A query
+  error (such as INT-020) is reported as the shape's result. Then two more warm-up runs
+  if a run takes under a second, then runs until 200 or a 15 s budget, at least 5.
+  Every run drains the cursor with `next_batch(1000)`. Reported: p50, p99 (nearest
+  rank; the maximum below 100 runs), max, run count, rows, peak RSS.
 
 Query shapes: point entity; attribute + value; attribute scan; selective 2- and
 3-clause joins; whole-graph 3-clause join; recursive rule from a leaf (demand-driven);

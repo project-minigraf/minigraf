@@ -100,6 +100,13 @@ opt-level = "z"
 
 # uniffi-bindgen reads UNIFFI_META symbols from .symtab (not .dynsym).
 
+# examples/perf_envelope.rs (#394): opt-level 3, as an application's release
+# build compiles the library; `release` is tuned for the REPL binary's size.
+[profile.envelope]
+inherits = "release"
+opt-level = 3
+strip = "none"
+
 [profile.bench]
 strip = "none"
 debug = true

@@ -175,7 +175,13 @@ fn bench_insert_file(c: &mut Criterion) {
 // ── Task 5: query/ ────────────────────────────────────────────────────────────
 
 fn bench_query(c: &mut Criterion) {
-    const SCALES: &[(&str, usize)] = &[("1k", 1_000), ("10k", 10_000)];
+    // 100k and 1m track the performance envelope (#394) in the nightly run.
+    const SCALES: &[(&str, usize)] = &[
+        ("1k", 1_000),
+        ("10k", 10_000),
+        ("100k", 100_000),
+        ("1m", 1_000_000),
+    ];
 
     // point_entity: EAVT range scan on a known entity
     {

@@ -131,6 +131,7 @@ Releases are managed by the project maintainer. The process is documented in iss
 5. Tag pushed — CI publishes to crates.io, PyPI, npm, and Maven Central automatically
 6. Tier 1 bindings (Python) released alongside the core release; Tier 2 bindings follow on a best-effort schedule (see [support tiers](PHILOSOPHY.md#support-tiers))
 7. Known-issues issue updated, and `data-integrity`/`corruption`/`durability` issues fixed by this release closed with a link to it (see above)
+8. For a minor or major release: the performance envelope re-run and the snapshot in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) and the README refreshed (`cargo run --profile envelope --example perf_envelope`; see [Reproducing](docs/BENCHMARKS.md#reproducing))
 
 ## Code of Conduct
 

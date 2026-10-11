@@ -4,10 +4,14 @@
 //! Usage:
 //!
 //! ```text
-//! cargo run --release --example perf_envelope -- [--scales 100k,1m,10m]
+//! cargo run --profile envelope --example perf_envelope -- [--scales 100k,1m,10m]
 //!     [--dir target/perf-envelope] [--json out.json] [--budget-secs 15]
 //!     [--cap-secs 60] [--rebuild]
 //! ```
+//!
+//! The `envelope` profile is `release` at opt-level 3, which is how an
+//! application's release build compiles the library; `release` itself (and
+//! `bench`, which inherits it) is tuned for the REPL binary's size.
 //!
 //! Each fixture is built once and cached in `--dir`. The build, the storage
 //! measurements and every query shape run in their own child process, so each
@@ -155,6 +159,9 @@ fn run(args: &[String]) -> anyhow::Result<()> {
                     q["runs"],
                     q["rows"]
                 ),
+                None if q.get("error").is_some() => {
+                    eprintln!("  {:<20} fails: {}", shape.name, q["error"])
+                }
                 None => eprintln!("  {:<20} capped at {} ms", shape.name, q["capped_ms"]),
             }
             queries.push(q);
@@ -281,9 +288,10 @@ fn print_markdown(report: &Json) {
     for name in &names {
         row(&format!("`{name}`"), &|s| {
             let q = query(s, name);
-            match q["p50_ms"].as_f64() {
-                Some(p50) => format!("{} / {}", ms(p50), ms(q["p99_ms"].as_f64().unwrap())),
-                None => format!("> {} s", report["cap_secs"]),
+            match (q["p50_ms"].as_f64(), q["error"].as_str()) {
+                (Some(p50), _) => format!("{} / {}", ms(p50), ms(q["p99_ms"].as_f64().unwrap())),
+                (None, Some(e)) => format!("fails: {}", error_code(e)),
+                (None, None) => format!("> {} s", report["cap_secs"]),
             }
         });
     }
@@ -311,6 +319,14 @@ fn query<'a>(scale: &'a Json, name: &str) -> &'a Json {
         .iter()
         .find(|q| q["name"] == name)
         .unwrap()
+}
+
+/// The `[XXX-NNN]` code at the start of a `MinigrafError` message, or the message.
+#[cfg(not(target_arch = "wasm32"))]
+fn error_code(msg: &str) -> &str {
+    msg.strip_prefix('[')
+        .and_then(|m| m.split_once(']'))
+        .map_or(msg, |(code, _)| code)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -599,7 +615,13 @@ fn measure_query(
     }
     let mut out = json!({"name": shape.name, "query": shape.query});
     let (rows, first) = match rx.recv_timeout(Duration::from_secs(cap_secs)) {
-        Ok(r) => r?,
+        Ok(Ok(r)) => r,
+        // A query error (such as a result limit) is a result, not a harness failure.
+        Ok(Err(e)) => {
+            out["error"] = json!(e.to_string().lines().next().unwrap_or_default());
+            out["peak_rss_kb"] = json!(proc_status_kb("VmHWM"));
+            return Ok(out);
+        }
         Err(_) => {
             out["capped_ms"] = json!(cap_secs * 1000);
             out["peak_rss_kb"] = json!(proc_status_kb("VmHWM"));
