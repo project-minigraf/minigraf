@@ -411,13 +411,22 @@ impl FactStorage {
         d.pending_indexes = indexes;
     }
 
+    /// Exclusive access for a checkpoint (#558): no query reads the store
+    /// until the guard drops, so none sees the pages the checkpoint overwrites
+    /// or a state between its publishing steps.
+    pub(crate) fn lock_for_checkpoint(&self) -> CheckpointGuard<'_> {
+        CheckpointGuard(self.data.write().unwrap_or_else(|e| e.into_inner()))
+    }
+
     /// Return the pending (uncommitted) facts held in memory.
+    #[cfg(test)]
     pub(crate) fn get_pending_facts(&self) -> Vec<Fact> {
         let d = self.data.read().unwrap_or_else(|e| e.into_inner());
         d.facts.clone()
     }
 
     /// Clear pending facts and pending indexes after a successful checkpoint.
+    #[cfg(test)]
     pub(crate) fn post_checkpoint_clear(&self) {
         let mut d = self.data.write().unwrap_or_else(|e| e.into_inner());
         d.facts.clear();
@@ -657,6 +666,33 @@ impl FactStorage {
             });
         }
         Ok(facts)
+    }
+}
+
+/// [`FactStorage`] held exclusively by a checkpoint; see
+/// [`FactStorage::lock_for_checkpoint`]. Take it before the backend lock: a
+/// query holds the store's read lock while it reads pages.
+pub(crate) struct CheckpointGuard<'a>(std::sync::RwLockWriteGuard<'a, FactData>);
+
+impl CheckpointGuard<'_> {
+    /// The pending (uncommitted) facts held in memory.
+    pub(crate) fn pending_facts(&self) -> Vec<Fact> {
+        self.0.facts.clone()
+    }
+
+    /// Install the checkpoint's readers and drop the pending facts it wrote,
+    /// in one step.
+    pub(crate) fn publish(
+        &mut self,
+        reader: Arc<dyn crate::storage::CommittedFactReader>,
+        index_reader: Arc<dyn crate::storage::CommittedIndexReader>,
+    ) {
+        let d = &mut *self.0;
+        d.committed = Some(reader);
+        d.committed_index_reader = Some(index_reader);
+        d.facts.clear();
+        d.pending_keys.clear();
+        d.pending_indexes = Indexes::new();
     }
 }
 

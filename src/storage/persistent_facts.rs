@@ -870,8 +870,13 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             return Ok(());
         }
 
+        // Queries wait until the new state is published: the new fact pages
+        // overwrite the pages of the index they read (#558). Taken before the
+        // backend lock, the order queries use.
+        let mut store = self.storage.lock_for_checkpoint();
+
         // ── Step A: read current header + stream old B+tree entries BEFORE overwriting ──
-        let pending_facts = self.storage.get_pending_facts();
+        let pending_facts = store.pending_facts();
         let mut backend = self
             .backend
             .lock()
@@ -1035,7 +1040,6 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
                 committed_fact_pages: self.committed_fact_pages.clone(),
                 first_fact_page: 1,
             });
-        self.storage.set_committed_reader(loader);
 
         let index_reader: Arc<dyn crate::storage::CommittedIndexReader> =
             Arc::new(OnDiskIndexReader::new(
@@ -1046,10 +1050,9 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
                 avet_root,
                 vaet_root,
             ));
-        self.storage.set_committed_index_reader(index_reader);
-
-        // Clear pending — all data now on disk
-        self.storage.post_checkpoint_clear();
+        // Readers in place and pending cleared — all data now on disk — in
+        // one step under the checkpoint lock.
+        store.publish(loader, index_reader);
 
         Ok(())
     }

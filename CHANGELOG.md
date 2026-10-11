@@ -11,10 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A query on another thread sees each transaction whole (#554).** A commit wrote its WAL entry, then added the transaction's facts to the in-memory store one fact at a time, each under its own lock, so a query running on another thread could return part of the transaction. `execute("(transact ...)")`, `execute("(retract ...)")` and `WriteTransaction::commit` all did this. They now add the whole transaction under one lock, as does WAL replay. Stored data was never affected. Affected `WriteTransaction` since v0.5.0 and `execute` since v0.6.0. Also fixed in v3.0.0.
 - **All patterns of one query read the same state of the database (#555).** A query whose patterns name entities or attributes read each of them with its own lookup, each under its own lock, so a transaction that committed between two lookups was seen by some patterns and not others, and the query could return rows that match no state of the database. The lookups now run under one lock. Stored data was never affected. Affected every release since v1.1.0. Also fixed in v3.0.0.
+- **A query during a checkpoint no longer misses committed facts (#558).** A checkpoint wrote its new fact pages over the index pages that queries on other threads were still reading, then installed its new readers and cleared the pending facts in three separately locked steps. A query during a checkpoint, including the automatic one every `wal_checkpoint_threshold` WAL entries, could miss facts committed before it started or see part of a transaction. Queries now wait for a checkpoint to finish: it holds the store's write lock from its first page write until the new state is published. Stored data was never affected. Affected every release since v0.9.0; v3.0.0's copy-on-write checkpoints are not affected.
 
 ### Tests
 
-- `tests/snapshot_atomicity_test.rs` races a writer against a reader: a query must see each transaction whole, whether written with `execute` or a `WriteTransaction` (#554), and must read one state for all its patterns (#555), in memory and on file.
+- `tests/snapshot_atomicity_test.rs` races a writer against a reader: a query must see each transaction whole, whether written with `execute` or a `WriteTransaction` (#554), and must read one state for all its patterns (#555), in memory and on file, and must not miss committed facts while a checkpoint runs (#558).
 
 ## v2.0.5 — 2026-10-11
 
