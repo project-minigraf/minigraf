@@ -569,3 +569,72 @@ fn log_writer_is_send() {
     fn is_send<T: Send>() {}
     is_send::<LogWriter>();
 }
+
+/// The online backup in docs/DURABILITY.md: copy a live read-write handle,
+/// with an uncheckpointed transaction, while another thread keeps writing
+/// past the automatic checkpoint threshold. The copy holds exactly what the
+/// log returned, and the writes made meanwhile reach the source's file once
+/// the log is dropped.
+#[test]
+fn online_backup_while_writes_continue() {
+    let dir = Dir::new();
+    let path = dir.path("src.graph");
+    drop(source(&path));
+    let src =
+        Minigraf::open_with_options(&path, OpenOptions::new().wal_checkpoint_threshold(2)).unwrap();
+    src.execute(&format!("(transact [[{} :person/age 32]])", e(0)))
+        .unwrap();
+    let before = src.current_tx_count();
+
+    let log = src.fact_log(&FactFilter::new()).unwrap();
+    let tx_count = src.current_tx_count();
+    let writer = {
+        let db = src.clone();
+        std::thread::spawn(move || {
+            for i in 0..20 {
+                db.execute(&format!("(transact [[{} :person/visits {i}]])", e(3)))
+                    .unwrap();
+            }
+        })
+    };
+    let out = dir.path("backup.graph");
+    let mut w = LogWriter::create(&out, OpenOptions::new()).unwrap();
+    let mut copied = Vec::new();
+    for rec in log {
+        let rec = rec.unwrap();
+        copied.push(row(&rec));
+        w.append(&rec).unwrap();
+    }
+    w.advance_tx_count(tx_count).unwrap();
+    w.finish().unwrap();
+    writer.join().unwrap();
+    copied.sort();
+
+    let backup = Minigraf::open(&out).unwrap();
+    assert!(backup.verify().unwrap().is_ok(), "backup verifies");
+    assert_eq!(
+        log_rows(&backup),
+        copied,
+        "backup holds what the log returned"
+    );
+    assert_eq!(backup.current_tx_count(), tx_count, "backup tx count");
+    assert!(
+        copied.iter().any(|r| r.contains(":person/age Integer(32)")),
+        "the uncheckpointed transaction is in the backup"
+    );
+
+    // The log is gone: the deferred checkpoint runs and keeps every write.
+    src.checkpoint().unwrap();
+    drop(src);
+    let reopened = Minigraf::open(&path).unwrap();
+    assert_eq!(reopened.current_tx_count(), before + 20, "source tx count");
+    assert_eq!(
+        rows(
+            &reopened,
+            "(query [:find ?v :where [?e :person/visits ?v]])"
+        )
+        .len(),
+        20,
+        "every concurrent write survived"
+    );
+}
