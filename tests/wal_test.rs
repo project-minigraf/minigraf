@@ -205,6 +205,53 @@ fn test_reopen_with_checkpointed_wal_does_not_reuse_tx_counts() {
     }
 }
 
+/// #457: a checkpoint with nothing to flush still removes a WAL whose entries
+/// are all checkpointed already. Before the fix it stayed until a later write
+/// was checkpointed.
+#[test]
+fn test_checkpoint_removes_wal_whose_entries_are_all_checkpointed() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("stale.graph");
+    let wal_path = wal_path_for(&db_path);
+    {
+        // usize::MAX: no close-time checkpoint, so the restored WAL survives drop.
+        let db = OpenOptions::default()
+            .wal_checkpoint_threshold(usize::MAX)
+            .path(db_path.to_str().unwrap())
+            .open()
+            .unwrap();
+        db.execute("(transact [[:alice :age 30]])").unwrap();
+        let stale = std::fs::read(&wal_path).unwrap();
+        db.checkpoint().unwrap();
+        // Crash between the checkpoint's commit and the WAL delete.
+        std::fs::write(&wal_path, &stale).unwrap();
+    }
+    {
+        let db = OpenOptions::default()
+            .wal_checkpoint_threshold(usize::MAX)
+            .path(db_path.to_str().unwrap())
+            .open()
+            .unwrap();
+        assert!(wal_path.exists(), "stale WAL present after open");
+        db.checkpoint().unwrap();
+        assert!(!wal_path.exists(), "stale WAL removed by checkpoint");
+        // A second checkpoint with no WAL at all is still a no-op.
+        db.checkpoint().unwrap();
+    }
+    let db = Minigraf::open(&db_path).unwrap();
+    let n = count_results(
+        db.execute("(query [:find ?a :where [:alice :age ?a]])")
+            .unwrap(),
+    );
+    assert_eq!(n, 1, "fact kept after the stale WAL is removed");
+    db.execute("(transact [[:alice :age 31]])").unwrap();
+    let n = count_results(
+        db.execute("(query [:find ?a :as-of 1 :where [:alice :age ?a]])")
+            .unwrap(),
+    );
+    assert_eq!(n, 1, "the next write does not reuse tx 1");
+}
+
 // ── 4. Partial WAL entry is discarded; earlier entries intact ─────────────────
 
 /// Write 1 fact, crash (no checkpoint), then append garbage bytes to the WAL
@@ -891,4 +938,52 @@ fn test_v2_file_opens_and_upgrades_to_v3_on_checkpoint() {
         last_checkpointed_tx_count > 0,
         "last_checkpointed_tx_count must be set after checkpoint on v2→v6 upgrade"
     );
+}
+
+/// #476: `wal_checkpoint_threshold(usize::MAX)` suppresses the close-time save
+/// as well as the checkpoint. Before the fix, dropping the handle still wrote
+/// every pending fact to the `.graph` file and left a fully checkpointed WAL.
+#[test]
+fn test_max_threshold_drop_leaves_graph_file_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("nosave.graph");
+    let wal_path = wal_path_for(&db_path);
+    {
+        let db = Minigraf::open(&db_path).unwrap();
+        db.execute("(transact [[:e0 :a0 0]])").unwrap();
+    }
+    assert!(!wal_path.exists(), "default close checkpoints");
+    let before = std::fs::read(&db_path).unwrap();
+    for sync in [minigraf::SyncMode::Full, minigraf::SyncMode::Normal] {
+        let db = OpenOptions::new()
+            .synchronous(sync)
+            .wal_checkpoint_threshold(usize::MAX)
+            .path(&db_path)
+            .open()
+            .unwrap();
+        db.execute("(transact [[:e0 :a0 1]])").unwrap();
+        db.execute("(transact [[:e0 :a0 2]])").unwrap();
+        drop(db);
+        assert!(
+            std::fs::read(&db_path).unwrap() == before,
+            ".graph file unchanged by drop"
+        );
+        assert!(wal_path.exists(), "WAL kept by drop");
+        std::fs::remove_file(&wal_path).unwrap();
+    }
+    // The WAL alone carries the writes: keep one, reopen, and they replay.
+    {
+        let db = OpenOptions::new()
+            .wal_checkpoint_threshold(usize::MAX)
+            .path(&db_path)
+            .open()
+            .unwrap();
+        db.execute("(transact [[:e0 :a0 1]])").unwrap();
+    }
+    let db = Minigraf::open(&db_path).unwrap();
+    assert_eq!(db.current_tx_count(), 2, "WAL entry replayed on reopen");
+    let r = db
+        .execute("(query [:find ?v :where [:e0 :a0 ?v]])")
+        .unwrap();
+    assert_eq!(count_results(r), 2, "both values visible after replay");
 }

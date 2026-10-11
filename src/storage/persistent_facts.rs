@@ -1084,6 +1084,14 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.dirty
     }
 
+    /// Forget unsaved changes, so dropping this storage commits nothing. Used
+    /// on close under `wal_checkpoint_threshold(usize::MAX)`, whose WAL keeps
+    /// the pending facts (#476).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn discard(&mut self) {
+        self.dirty = false;
+    }
+
     /// Run a closure with read access to the underlying storage backend.
     ///
     /// Used by the browser WASM layer to read pages after `save()` without
