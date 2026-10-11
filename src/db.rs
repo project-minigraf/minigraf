@@ -128,7 +128,8 @@ pub struct OpenOptions {
     /// Maximum facts that can be derived per recursive rule iteration.
     /// Defaults to 1_000_000. Use to prevent runaway recursive rules.
     pub max_derived_facts: usize,
-    /// Maximum total query results. Defaults to 1_000_000.
+    /// Maximum facts a rule query may derive. Defaults to 1_000_000.
+    /// The database's own facts do not count against it.
     pub max_results: usize,
     /// Open even when the filesystem cannot lock files at all.
     ///
@@ -199,9 +200,10 @@ impl OpenOptions {
         self
     }
 
-    /// Set the maximum total query results.
+    /// Set the maximum number of facts a rule query may derive.
     ///
-    /// Defaults to 1_000_000. Use lower values to limit result set size.
+    /// Defaults to 1_000_000. The database's own facts do not count against it,
+    /// and queries without rules are not limited by it.
     pub fn max_results(mut self, n: usize) -> Self {
         self.max_results = n;
         self
