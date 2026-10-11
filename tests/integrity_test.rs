@@ -266,7 +266,11 @@ fn wal_from_a_later_checkpoint_is_refused() {
         let db = Minigraf::open_with_options(&path, opts()).unwrap();
         db.execute("(transact [[:a :n 1]])").unwrap();
         db.checkpoint().unwrap();
-        std::fs::copy(&path, &backup).unwrap();
+    }
+    // Offline backup: copy with no handle open (Windows refuses the read).
+    std::fs::copy(&path, &backup).unwrap();
+    {
+        let db = Minigraf::open_with_options(&path, opts()).unwrap();
         for n in 2..=3 {
             db.execute(&format!("(transact [[:a :n {n}]])")).unwrap();
             db.checkpoint().unwrap();
