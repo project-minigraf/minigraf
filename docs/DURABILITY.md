@@ -54,7 +54,7 @@ Batching is the other lever: `begin_write()`, several `execute()` calls and one 
 Opening a file-backed database:
 
 1. Takes the file lock (see [Where a database can live](#where-a-database-can-live)). A lock held by a crashed process is released by the kernel when it dies, so there is never a stale lock to clean up.
-2. Reads both meta pages and opens at the valid one with the higher generation. If only one is valid, the WAL's recorded base generation and the pages in the file are checked to make sure the damaged one did not hold a newer completed checkpoint; if it did, the open fails with `STG-033` instead of silently going back.
+2. Reads both meta pages and opens at the valid one with the higher generation. If only one is valid, the WAL's recorded base generation and the pages in the file are checked to make sure the damaged one did not hold a newer completed checkpoint; if it did, the open fails with `STG-033` instead of silently going back. If the WAL was created at a later generation than the newest meta page, it belongs to a later state of the file and the open fails with `STG-047` (#535).
 3. Checks the meta page against the file: unknown feature bits are `STG-034`, a file shorter than the meta page says is `STG-044`.
 4. Replays the WAL into memory, skipping entries at or below the file's checkpointed transaction count, and stopping at the first truncated or damaged entry.
 5. For a read-write open, cuts the WAL back to the end of its last valid entry and syncs it, so the next commit lands where replay will find it (#513).
@@ -134,7 +134,7 @@ A process that does not have the database open can do the same through a read-on
 
 1. Stop every process that uses the database.
 2. Move the current `app.graph` and `app.graph.wal` aside rather than deleting them.
-3. **Make sure no `app.graph.wal` is left in the directory**, then copy in the backup's `app.graph`, and its `app.graph.wal` if the backup has one. A WAL from a later state of the database, next to an older `app.graph`, is replayed on top of it today and leaves a gap in the history without an error (#535).
+3. **Make sure no `app.graph.wal` is left in the directory**, then copy in the backup's `app.graph`, and its `app.graph.wal` if the backup has one. A WAL from a later state of the database, next to an older `app.graph`, would leave a gap in the history; open refuses it with `STG-047` (#535). v2.x cannot detect it and replays it.
 4. Open the database and run `verify()` (below).
 
 ## Checking and repairing a file
@@ -191,13 +191,12 @@ Every error has a code (`MinigrafError::code()`); the [error reference](https://
 | **Use another library version.** The file is not modified | `STG-006` (format newer than this library), `STG-034` (feature bits from a newer v3.x), `STG-028` (format older than v7: open with v2.x first), `WAL-002` (WAL from another version: open with that version and `checkpoint()`) |
 | **Repair.** Found by `verify()` | `STG-035`, `STG-038`, `STG-039` → `rebuild_indexes()`. `STG-036`, `STG-040` → restore |
 | **Restore from backup.** The file is damaged or is not this database; a failed open leaves it unmodified | `STG-029`, `STG-030`, `STG-031` (a damaged page; inside an index, try `rebuild_indexes()` first), `STG-032`, `STG-033`, `STG-041`, `STG-044`, `STG-045`, `STG-002` (not a Minigraf file: check the path) |
-| **Restore, or accept losing the WAL** | `WAL-001` (the `.wal` file is not a WAL). Copy both files first. Deleting the `.wal` opens the database without the transactions since the last checkpoint |
+| **Restore, or accept losing the WAL** | `WAL-001` (the `.wal` file is not a WAL), `STG-047` (the `.wal` is from a later state than `app.graph`, usually a restore that left the current WAL in place: move the WAL aside, or restore the `app.graph` it belongs to). Copy both files first. Deleting the `.wal` opens the database without the transactions since the last checkpoint |
 
 A write that returns an I/O error may still have committed (see [Failures while running](#failures-while-running)); check before writing it again.
 
 ## Known limitations
 
-- **A WAL from a later checkpoint is replayed onto an older `.graph`** (#535, open). Restoring an old `app.graph` next to a newer `app.graph.wal` leaves a silent gap in the history. Workaround: remove every `.wal` before restoring, as in [Restoring](#restoring).
 - **A damaged WAL entry ends replay.** Replay stops at the first entry whose CRC fails, and a read-write open then cuts the WAL there, so a bit flip in the middle of the WAL loses that entry and every later one without an error. With `SyncMode::Full` this needs damage after the sync; a torn entry from a crash is always the last one.
 - **One writing process at a time.** A database is single-writer; a second process gets `STG-026`. Share one handle inside a process, or put one process in front of the database.
 - **No online backup from another process.** A read-only open needs every read-write handle closed. Copy from inside the writing process (see [Backups](#backups)), or use a volume snapshot.

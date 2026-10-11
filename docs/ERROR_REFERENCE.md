@@ -158,6 +158,7 @@ with no `CodedError` anywhere in its chain.
 | STG-044 | File shorter than its meta page count | Storage |
 | STG-045 | File shorter than one page and not a new database | Storage |
 | STG-046 | Earlier checkpoint failed on this handle | Storage |
+| STG-047 | WAL is from a later checkpoint | Storage |
 | WAL-001 | Invalid WAL magic number | WAL |
 | WAL-002 | Unsupported WAL version | WAL |
 | WAL-003 | Value size exceeds maximum | WAL |
@@ -2321,6 +2322,20 @@ Nothing committed is lost. Every committed transaction is still in the WAL, and 
 - Do not copy the `.graph` file without its `.wal` while the handle is in this state.
 
 **Scenario**: The disk fills during an automatic checkpoint, so the `transact` that triggered it fails with the I/O error (its transaction is already in the WAL and applied). The next `transact` fails with STG-046 until the database is reopened.
+
+---
+
+### STG-047 WAL is from a later checkpoint
+
+**Error text**: `WAL is from a later checkpoint: it was created at generation {} but the file is at generation {}. Replaying it would leave a gap in the history (was an older .graph restored next to a newer .wal?)`
+
+**Cause**: The `.wal` file's header records the generation of the checkpoint that was current when the WAL was created. A WAL is deleted after the next checkpoint commits, so it is never newer than the `.graph` file it belongs to. This WAL is newer than every meta page in the file: the `.graph` is an older copy of the database, such as a restored backup, and the WAL beside it came from the live database. Its entries start after a checkpoint this file does not have, so replaying them would apply the later transactions and silently skip the ones in between. Earlier versions did that. Neither file is modified, read-write or read-only. v2.x WALs record no generation, so v2.x cannot detect this.
+
+**Resolution**:
+- If you are restoring a backup: move the `.wal` aside and open again. The database opens at the backup.
+- If the `.graph` was replaced by mistake: put back the `.graph` that the WAL belongs to.
+
+**Scenario**: An operator copies last night's `app.graph` over the current one and leaves the current `app.graph.wal` in the directory.
 
 ---
 

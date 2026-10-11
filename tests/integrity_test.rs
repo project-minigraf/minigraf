@@ -249,3 +249,51 @@ fn meta_page_count_past_end_is_refused_and_file_never_grows() {
         "no WAL created"
     );
 }
+
+/// Restoring an older `.graph` next to the current `.wal` (#535): the WAL was
+/// created at a later checkpoint, so replaying it would leave a hole where the
+/// transactions between the two checkpoints were. Open refuses with STG-047,
+/// read-write and read-only, and leaves both files as they were.
+#[test]
+fn wal_from_a_later_checkpoint_is_refused() {
+    use minigraf::OpenOptions;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("a.graph");
+    let wal = dir.path().join("a.graph.wal");
+    let backup = dir.path().join("backup.graph");
+    let opts = || OpenOptions::new().wal_checkpoint_threshold(usize::MAX);
+    {
+        let db = Minigraf::open_with_options(&path, opts()).unwrap();
+        db.execute("(transact [[:a :n 1]])").unwrap();
+        db.checkpoint().unwrap();
+        std::fs::copy(&path, &backup).unwrap();
+        for n in 2..=3 {
+            db.execute(&format!("(transact [[:a :n {n}]])")).unwrap();
+            db.checkpoint().unwrap();
+        }
+        db.execute("(transact [[:a :n 4]])").unwrap();
+        // A usize::MAX threshold skips the close checkpoint: 4 stays in the WAL.
+        drop(db);
+    }
+    assert!(wal.exists(), "transaction 4 is in the WAL");
+    std::fs::copy(&backup, &path).unwrap();
+    let graph_before = std::fs::read(&path).unwrap();
+    let wal_before = std::fs::read(&wal).unwrap();
+
+    let err = Minigraf::open_with_options(&path, opts()).err().unwrap();
+    assert_eq!(err.code(), "STG-047");
+    let err = Minigraf::open_with_options(&path, opts().read_only(true))
+        .err()
+        .unwrap();
+    assert_eq!(err.code(), "STG-047");
+    assert!(
+        std::fs::read(&path).unwrap() == graph_before,
+        "file untouched"
+    );
+    assert!(std::fs::read(&wal).unwrap() == wal_before, "WAL untouched");
+
+    // Removing the WAL, as the durability guide says, opens the backup.
+    std::fs::remove_file(&wal).unwrap();
+    let db = Minigraf::open_with_options(&path, opts()).unwrap();
+    assert_eq!(count(&db, "(query [:find ?v :where [?e :n ?v]])"), 1);
+}
