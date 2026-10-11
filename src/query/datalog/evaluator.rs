@@ -68,7 +68,7 @@ pub struct RecursiveEvaluator {
     max_iterations: usize,
     /// Maximum facts that can be derived per iteration
     max_derived_facts: usize,
-    /// Maximum total query results
+    /// Maximum facts the rules may derive in one evaluation; base facts do not count
     max_results: usize,
 }
 
@@ -81,7 +81,7 @@ impl RecursiveEvaluator {
     /// * `functions` - Function registry for UDF predicates/aggregates
     /// * `max_iterations` - Safety limit (e.g., 1000)
     /// * `max_derived_facts` - Maximum facts per iteration
-    /// * `max_results` - Maximum total results
+    /// * `max_results` - Maximum facts the rules may derive (base facts do not count)
     pub fn new(
         storage: FactStorage,
         rules: Arc<RwLock<RuleRegistry>>,
@@ -133,6 +133,8 @@ impl RecursiveEvaluator {
                 (f.entity, f.attribute.clone(), encoded)
             })
             .collect();
+        // `max_results` limits the facts the rules derive, not the database (#528).
+        let base_count = seen_facts.len();
 
         let mut iteration = 0;
 
@@ -170,8 +172,8 @@ impl RecursiveEvaluator {
                 let encoded = encode_value(&fact.value);
                 let key = (fact.entity, fact.attribute.clone(), encoded);
                 if !seen_facts.contains(&key) {
-                    // Check total result limit
-                    if seen_facts.len() >= self.max_results {
+                    // Check total derived-fact limit
+                    if seen_facts.len() - base_count >= self.max_results {
                         return Err(err_coded!(
                             ErrorCode::Int020,
                             format!("Max query results ({}) exceeded.", self.max_results)

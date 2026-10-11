@@ -2540,7 +2540,8 @@ similar). The `{}` carries the specific underlying message.
 
 **Cause**: The recursive rule evaluator (semi-naive evaluation) exceeded its
 maximum iteration count, maximum derived facts per iteration, or maximum
-query result count — guards against infinite recursion/cycles or
+number of facts derived in total (`max_results`; the database's own facts do
+not count) — guards against infinite recursion/cycles or
 runaway-generating rules.
 
 **Resolution**:
