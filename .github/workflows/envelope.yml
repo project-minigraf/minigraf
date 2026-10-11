@@ -1,0 +1,65 @@
+name: Performance envelope
+
+# #394: builds 100K and 1M fact fixtures and measures open and checkpoint time,
+# RSS, and p50/p99 latency per query shape (examples/perf_envelope.rs). The
+# published envelope in docs/BENCHMARKS.md also has 10M facts, measured
+# locally. Runs on demand; on pull requests that touch the harness it runs a
+# 10K smoke pass so the harness keeps working.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch to measure
+        required: true
+        default: v3
+      scales:
+        description: Comma-separated fact counts
+        required: true
+        default: "100k,1m"
+  pull_request:
+    paths:
+      - examples/perf_envelope.rs
+      - .github/workflows/envelope.yml
+
+permissions:
+  contents: read
+
+jobs:
+  envelope:
+    name: Envelope (${{ github.event_name == 'pull_request' && '10k smoke' || inputs.scales }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || '' }}
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: cargo build --profile envelope --example perf_envelope
+
+      - name: Run
+        shell: bash
+        env:
+          SCALES: ${{ github.event_name == 'pull_request' && '10k' || inputs.scales }}
+          BUDGET: ${{ github.event_name == 'pull_request' && '1' || '15' }}
+        run: |
+          set -o pipefail
+          ./target/envelope/examples/perf_envelope --scales "$SCALES" \
+            --budget-secs "$BUDGET" --json envelope.json | tee envelope.md
+          cat envelope.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: envelope-${{ github.run_id }}
+          path: |
+            envelope.json
+            envelope.md
+          retention-days: 90
+          if-no-files-found: warn

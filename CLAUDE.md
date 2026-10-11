@@ -88,6 +88,9 @@ cargo test --test concurrency_test
 cargo run --example embedded
 cargo run --example file_storage
 
+# Performance envelope (#394): latency/RSS at 100K–10M facts; opt-level 3 profile
+cargo run --profile envelope --example perf_envelope -- --scales 100k,1m
+
 # Run demo scripts
 cargo run < demos/demo_commands.txt
 cargo run < demos/demo_recursive.txt
