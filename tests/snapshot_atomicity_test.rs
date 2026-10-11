@@ -114,7 +114,8 @@ fn checkpoint_never_shows_a_fact_twice() {
     let found = race(
         Arc::new(db),
         |db, i| {
-            db.execute(&format!("(transact [[:c{i} :ck/n {i}]])")).unwrap();
+            db.execute(&format!("(transact [[:c{i} :ck/n {i}]])"))
+                .unwrap();
             db.checkpoint().unwrap();
         },
         |db| {
@@ -146,8 +147,10 @@ fn patterns_see_one_state(db: Minigraf) {
     let found = race(
         Arc::new(db),
         |db, i| {
-            db.execute(&format!("(transact [[:p{i} :pair/x {i}] [:p{i} :pair/y {i}]])"))
-                .unwrap();
+            db.execute(&format!(
+                "(transact [[:p{i} :pair/x {i}] [:p{i} :pair/y {i}]])"
+            ))
+            .unwrap();
         },
         |db| {
             let r = rows(
