@@ -17,11 +17,11 @@ This section lists the graph sizes and query shapes that are tested, with their 
 | Open a checkpointed file | 10M facts | 0.12 ms, 3 MiB RSS | Indexes are paged in on demand |
 | Checkpoint after 1 new fact | 10M facts | 3.8 ms / 21 ms | Copy-on-write: cost follows the change |
 | Attribute scan, attribute + value, grouped aggregation, joins | 1M facts | see below | Linear in the facts of the attributes they touch: about 0.1–0.5 s at 1M facts, seconds at 10M |
-| Rule queries (recursion) | 100K facts | 2.7 s at 100K | Read the whole database (#529) |
+| Rule queries (recursion) | 1M facts | 2.7 s at 100K, 40 s at 1M | Read the whole database (#529); not interactive past 100K |
 
 **Not supported yet:**
 
-- Rule queries on a database with 1,000,000 or more live facts fail with `INT-020`, whatever the size of the answer (#528). With the limit raised (`:max-results 3000000`), `recursive_ancestors` returns its 6 rows at 1M facts in 34 s.
+- Interactive rule queries past 100K facts. `recursive_ancestors` takes 40 s and 3.2 GiB of RSS at 1M facts because rule evaluation reads the whole database (#529); before #528 was fixed it failed there with `INT-020`.
 - Graphs over 10M facts are not tested.
 - Interactive latency for scans and joins at 10M facts. They take 3–21 s and materialize every fact of the attributes they touch, 0.7–3.6 GiB of RSS.
 
@@ -53,9 +53,9 @@ This section lists the graph sizes and query shapes that are tested, with their 
 | `join_2` | `[:p{m} :follows ?f] [?f :name ?n]` (1 row) | 54.0 ms / 63.0 ms | 606 ms / 610 ms | 6.50 s / 7.02 s |
 | `join_3_selective` | `[:p{m} :manager ?b] [?s :manager ?b] [?s :name ?n]` (10 rows) | 117 ms / 125 ms | 1.24 s / 1.28 s | 13.5 s / 13.8 s |
 | `join_3_scan` | `[?e :follows ?f] [?f :group 7] [?f :name ?n]` | 150 ms / 155 ms | 1.92 s / 1.96 s | 20.9 s / 21.2 s |
-| `recursive_ancestors` | `(boss :p{leaf} ?b)` over `:manager` (5–7 rows) | 2.71 s / 2.72 s | fails: `INT-020` | > 60 s (abandoned) |
+| `recursive_ancestors` | `(boss :p{leaf} ?b)` over `:manager` (5–7 rows) | 2.71 s / 2.72 s | 40.1 s / 40.8 s | > 60 s (abandoned) |
 
-Below 100 runs, p99 is the slowest run. Shapes slower than about 75 ms ran fewer than 200 times; the full JSON report has run counts.
+`recursive_ancestors` at 1M was measured after the #528 fix, on the same machine and fixture. Below 100 runs, p99 is the slowest run. Shapes slower than about 75 ms ran fewer than 200 times; the full JSON report has run counts.
 
 Peak RSS per shape, each in its own process (baseline 4 MiB):
 
@@ -68,7 +68,7 @@ Peak RSS per shape, each in its own process (baseline 4 MiB):
 | `join_2` | 33 MiB | 307 MiB | 2,342 MiB |
 | `join_3_selective` | 45 MiB | 376 MiB | 2,856 MiB |
 | `join_3_scan` | 59 MiB | 456 MiB | 3,610 MiB |
-| `recursive_ancestors` | 375 MiB | 2,479 MiB | 4,832 MiB (at abandonment) |
+| `recursive_ancestors` | 375 MiB | 3,259 MiB | 4,832 MiB (at abandonment) |
 
 ### Fixture
 
