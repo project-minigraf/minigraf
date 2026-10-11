@@ -131,7 +131,7 @@ let r2 = pq.execute(&[("tx", BindValue::TxCount(2)), ("entity", BindValue::Entit
 
 ```bash
 cargo run          # interactive Datalog REPL
-cargo test         # run 1426 tests
+cargo test         # run 1427 tests
 cargo run < demos/demo_recursive.txt   # recursive rules demo
 ```
 
@@ -258,7 +258,7 @@ Performance envelope on the `v3` branch (format v8), measured up to 10M facts on
 | Attribute scan (N/6 rows), p50 | 43 ms | 0.46 s | 4.8 s |
 | Selective 2-clause join (1 row), p50 | 54 ms | 0.61 s | 6.5 s |
 
-Point lookups and time travel on one entity stay flat at every tested size. Scans, aggregations and joins grow linearly with the facts of the attributes they touch, because a query materializes them before joining (#473). They are interactive up to about 100K facts. Not supported yet: rule queries on databases with 1M or more facts (#528), and graphs over 10M facts (not tested).
+Point lookups and time travel on one entity stay flat at every tested size. Scans, aggregations and joins grow linearly with the facts of the attributes they touch, because a query materializes them before joining (#473). They are interactive up to about 100K facts. Rule queries read the whole database (#529): 2.7 s at 100K facts and 40 s at 1M. Graphs over 10M facts are not tested.
 
 File-backed databases limit string values to 4,068 bytes (`WAL-003`). In-memory databases have no limit.
 

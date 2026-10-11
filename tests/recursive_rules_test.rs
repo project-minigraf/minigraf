@@ -468,3 +468,38 @@ fn test_convergence_simple_graph() {
         _ => panic!("Expected QueryResults"),
     }
 }
+
+/// #528: `max_results` limits what the rules derive, not the size of the database.
+/// A rule query must answer on a database with more live facts than `max_results`.
+#[test]
+fn test_max_results_counts_derived_facts_not_base_facts() {
+    let db = minigraf::OpenOptions::new()
+        .max_results(10)
+        .open_memory()
+        .unwrap();
+    // A chain a -> b -> c -> d, plus 50 unrelated facts: 53 live facts in all.
+    exec(
+        &db,
+        "(transact [[:a :manager :b] [:b :manager :c] [:c :manager :d]])",
+    );
+    let filler: String = (0..50).map(|i| format!("[:p{i} :age {i}] ")).collect();
+    exec(&db, &format!("(transact [{filler}])"));
+    exec(&db, "(rule [(boss ?x ?y) [?x :manager ?y]])");
+    exec(&db, "(rule [(boss ?x ?y) [?x :manager ?m] (boss ?m ?y)])");
+
+    // Bound first argument (magic-sets path): b, c, d.
+    match exec(&db, "(query [:find ?y :where (boss :a ?y)])") {
+        QueryResult::QueryResults { results, .. } => assert_eq!(results.len(), 3),
+        _ => panic!("Expected QueryResults"),
+    }
+    // All free: 6 pairs.
+    match exec(&db, "(query [:find ?x ?y :where (boss ?x ?y)])") {
+        QueryResult::QueryResults { results, .. } => assert_eq!(results.len(), 6),
+        _ => panic!("Expected QueryResults"),
+    }
+    // The limit still stops a rule that derives more than it allows.
+    let err = db
+        .execute("(query [:find ?x ?y :where (boss ?x ?y) :max-results 5])")
+        .unwrap_err();
+    assert_eq!(err.code(), "INT-020");
+}
