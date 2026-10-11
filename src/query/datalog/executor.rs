@@ -382,6 +382,7 @@ impl DatalogExecutor {
     /// Results are not deduplicated: the sole caller feeds them to `net_asserted_facts`,
     /// which is idempotent under duplicated records.
     fn selective_fact_fetch(&self, patterns: &[Pattern], threshold: usize) -> Option<Vec<Fact>> {
+        use crate::graph::storage::Lookup;
         use std::collections::{BTreeMap, BTreeSet};
 
         // Per bound entity: Some(attrs) = only these attributes are referenced;
@@ -433,26 +434,19 @@ impl DatalogExecutor {
             return None;
         }
 
-        let mut all_facts: Vec<Fact> = Vec::new();
-
+        // Every lookup reads one state of the store, so a commit cannot land
+        // between two patterns of this query (#555).
+        let mut lookups: Vec<Lookup<'_>> = Vec::with_capacity(total);
         for (uid, attrs) in &entity_attrs {
             match attrs {
                 Some(attrs) if narrow => {
-                    for attr in attrs {
-                        all_facts.extend(
-                            self.storage
-                                .get_facts_by_entity_attribute_indexed(uid, attr)
-                                .ok()?,
-                        );
-                    }
+                    lookups.extend(attrs.iter().map(|a| Lookup::EntityAttribute(uid, a)));
                 }
-                _ => all_facts.extend(self.storage.get_facts_by_entity(uid).ok()?),
+                _ => lookups.push(Lookup::Entity(uid)),
             }
         }
-
-        for attr in &attributes {
-            all_facts.extend(self.storage.get_facts_by_attribute(attr).ok()?);
-        }
+        lookups.extend(attributes.iter().map(Lookup::Attribute));
+        let all_facts = self.storage.get_facts_for_lookups(&lookups).ok()?;
 
         Some(all_facts)
     }
