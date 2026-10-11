@@ -267,12 +267,11 @@ impl BrowserDb {
                 })
                 .collect();
 
-            for fact in &stamped {
-                inner
-                    .fact_storage
-                    .load_fact(fact.clone())
-                    .map_err(|e| JsValue::from_str(&e.to_string()))?;
-            }
+            // One batch, so no query sees part of the transaction (#554).
+            inner
+                .fact_storage
+                .load_facts(stamped.iter().cloned())
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
             inner.pfs.mark_dirty();
             inner
