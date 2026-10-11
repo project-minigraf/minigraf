@@ -309,6 +309,29 @@ impl FactStorage {
         Ok(true)
     }
 
+    /// Insert facts with their tx_id and tx_count preserved, all under one
+    /// write lock, so a query sees either none of them or all of them (#554).
+    ///
+    /// Commits and WAL replay use this for a whole transaction. Duplicates are
+    /// skipped as in [`Self::load_fact`]. Returns how many facts were loaded.
+    pub(crate) fn load_facts(&self, facts: impl IntoIterator<Item = Fact>) -> Result<usize> {
+        let mut d = self
+            .data
+            .write()
+            .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
+        let mut loaded = 0usize;
+        for fact in facts {
+            if !d.pending_keys.insert(pending_key(&fact)) {
+                continue;
+            }
+            let pos = d.facts.len();
+            d.pending_indexes.insert(&fact, pos);
+            d.facts.push(fact);
+            loaded = loaded.saturating_add(1);
+        }
+        Ok(loaded)
+    }
+
     /// Raise tx_counter to max(tx_count) across all loaded facts.
     ///
     /// Must be called after all `load_fact()` calls complete so that the next
@@ -1638,6 +1661,32 @@ mod tests {
         assert!(!storage.load_fact(fact1_dup).unwrap());
 
         // Count should remain the same
+        assert_eq!(storage.fact_count(), 2);
+    }
+
+    #[test]
+    fn load_facts_appends_a_batch_and_skips_duplicates() {
+        let storage = FactStorage::new();
+        let a = Fact::new(
+            uuid::Uuid::new_v4(),
+            ":t/a".to_string(),
+            Value::Integer(1),
+            1,
+        );
+        let b = Fact::new(
+            uuid::Uuid::new_v4(),
+            ":t/a".to_string(),
+            Value::Integer(2),
+            1,
+        );
+        assert_eq!(
+            storage
+                .load_facts(vec![a.clone(), b.clone(), a.clone()])
+                .unwrap(),
+            2
+        );
+        assert_eq!(storage.fact_count(), 2);
+        assert_eq!(storage.load_facts(vec![b]).unwrap(), 0);
         assert_eq!(storage.fact_count(), 2);
     }
 

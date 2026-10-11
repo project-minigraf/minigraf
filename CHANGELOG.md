@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reopening next to a WAL whose entries were all already checkpointed no longer rewinds the transaction counter, so later transactions no longer reuse `tx_count` values and `:as-of` history stays correct (#447; also fixed in v2.0.3).
 - `checkpoint()` removes a WAL whose entries are all already in the file (#457). When it had no facts to flush, it returned early and left the WAL until a later write was checkpointed. That WAL is left by a crash between a checkpoint's commit and its WAL delete, or by a failed delete (`WAL-006`). Its contents were always skipped on replay, so no data was affected; the sidecar file just stayed. Also fixed on the v2.x line (`main`, #540), not yet released.
 - Closing a handle opened with `wal_checkpoint_threshold(usize::MAX)` no longer writes its pending facts to the `.graph` file (#476). The sentinel was documented to suppress the close-time checkpoint, and `Minigraf`'s close did skip it, but the storage layer still saved on drop, leaving a WAL whose entries were all checkpointed. The file now stays as the last explicit `checkpoint()` left it, and the WAL keeps every pending fact for the next open to replay, so bulk loaders and benchmarks see the pending WAL they ask for. No data is lost either way. Also fixed on the v2.x line (`main`, #540), not yet released.
+- **A query on another thread sees each transaction whole** (#554). A commit wrote its WAL entry, then added the transaction's facts to the in-memory store one fact at a time, each under its own lock, so a query running on another thread could return part of the transaction. `execute("(transact ...)")`, `execute("(retract ...)")` and `WriteTransaction::commit` all did this. They now add the whole transaction under one lock, as does WAL replay. Stored data was never affected. Affected `WriteTransaction` since v0.5.0 and `execute` since v0.6.0.
 
 ### Internal
 
@@ -72,7 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Known issues
 
-- Same-transaction multi-valued facts can read back as one value (#371, #287), a fact retracted and re-asserted in one `WriteTransaction` is lost at commit (#477), a later assertion does not replace an earlier valid-time window (#435), and `save()` is not crash-atomic (#374); all are fixed in v3.0.0. All v2.x known issues, with affected versions and workarounds, are listed in the pinned issue #421.
+- Same-transaction multi-valued facts can read back as one value (#371, #287), a fact retracted and re-asserted in one `WriteTransaction` is lost at commit (#477), a later assertion does not replace an earlier valid-time window (#435), and `save()` is not crash-atomic (#374); all are fixed in v3.0.0. The patterns of one query can read different database states while another thread commits (#555); not yet fixed. All v2.x known issues, with affected versions and workarounds, are listed in the pinned issue #421.
 
 ## v2.0.4 — 2026-10-08
 

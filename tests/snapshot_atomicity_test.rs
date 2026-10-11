@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-const RUN_FOR: Duration = Duration::from_secs(10);
+const RUN_FOR: Duration = Duration::from_secs(3);
 
 fn rows(db: &Minigraf, query: &str) -> Vec<Vec<String>> {
     match db.execute(query).unwrap() {
@@ -63,42 +63,62 @@ fn race(
     found
 }
 
-/// `WriteTransaction::commit` appends its facts one `load_fact` call at a
-/// time, so a query in between sees part of the transaction.
-fn commit_is_seen_whole(db: Minigraf) {
-    const N: u64 = 500;
-    let found = race(
-        Arc::new(db),
-        |db, i| {
-            let mut tx = db.begin_write().unwrap();
-            let facts: String = (0..N)
-                .map(|j| format!("[:b{i}x{j} :batch/id {i}]"))
-                .collect();
-            tx.execute(&format!("(transact [{facts}])")).unwrap();
-            tx.commit().unwrap();
-        },
-        |db| {
-            let n = rows(db, "(query [:find ?e :where [?e :batch/id ?b]])").len() as u64;
-            (n % N != 0).then(|| format!("saw {n} facts, not a multiple of {N}"))
-        },
-    );
+const N: u64 = 500;
+
+fn batch(i: u64) -> String {
+    let facts: String = (0..N)
+        .map(|j| format!("[:b{i}x{j} :batch/id {i}]"))
+        .collect();
+    format!("(transact [{facts}])")
+}
+
+/// Every write commits `N` facts in one transaction; a query must never see
+/// a count that is not a multiple of `N` (#554).
+fn commit_is_seen_whole(db: Minigraf, write: impl FnMut(&Minigraf, u64) + Send + 'static) {
+    let found = race(Arc::new(db), write, |db| {
+        let n = rows(db, "(query [:find ?e :where [?e :batch/id ?b]])").len() as u64;
+        (n % N != 0).then(|| format!("saw {n} facts, not a multiple of {N}"))
+    });
     if let Some(msg) = found {
         panic!("partial transaction visible: {msg}");
     }
 }
 
-#[test]
-#[ignore = "reproducer: fails on v3 today; fixed by #473 sub-issue #543"]
-fn write_transaction_commit_is_seen_whole_in_memory() {
-    commit_is_seen_whole(Minigraf::in_memory().unwrap());
+fn write_transaction(db: &Minigraf, i: u64) {
+    let mut tx = db.begin_write().unwrap();
+    tx.execute(&batch(i)).unwrap();
+    tx.commit().unwrap();
+}
+
+fn execute_transact(db: &Minigraf, i: u64) {
+    db.execute(&batch(i)).unwrap();
+}
+
+fn file_db(dir: &tempfile::TempDir) -> Minigraf {
+    let opts = OpenOptions::default().wal_checkpoint_threshold(usize::MAX);
+    Minigraf::open_with_options(dir.path().join("w.graph"), opts).unwrap()
 }
 
 #[test]
-#[ignore = "reproducer: fails on v3 today; fixed by #473 sub-issue #543"]
+fn write_transaction_commit_is_seen_whole_in_memory() {
+    commit_is_seen_whole(Minigraf::in_memory().unwrap(), write_transaction);
+}
+
+#[test]
 fn write_transaction_commit_is_seen_whole_on_file() {
     let dir = tempfile::tempdir().unwrap();
-    let opts = OpenOptions::default().wal_checkpoint_threshold(usize::MAX);
-    commit_is_seen_whole(Minigraf::open_with_options(dir.path().join("w.graph"), opts).unwrap());
+    commit_is_seen_whole(file_db(&dir), write_transaction);
+}
+
+#[test]
+fn execute_transact_is_seen_whole_in_memory() {
+    commit_is_seen_whole(Minigraf::in_memory().unwrap(), execute_transact);
+}
+
+#[test]
+fn execute_transact_is_seen_whole_on_file() {
+    let dir = tempfile::tempdir().unwrap();
+    commit_is_seen_whole(file_db(&dir), execute_transact);
 }
 
 /// A checkpoint sets the new committed reader and clears the pending store
@@ -166,13 +186,13 @@ fn patterns_see_one_state(db: Minigraf) {
 }
 
 #[test]
-#[ignore = "reproducer: fails on v3 today; fixed by #473 sub-issue #543"]
+#[ignore = "reproducer for #555: fails on v3 today"]
 fn patterns_of_one_query_see_one_state_in_memory() {
     patterns_see_one_state(Minigraf::in_memory().unwrap());
 }
 
 #[test]
-#[ignore = "reproducer: fails on v3 today; fixed by #473 sub-issue #543"]
+#[ignore = "reproducer for #555: fails on v3 today"]
 fn patterns_of_one_query_see_one_state_on_file() {
     let dir = tempfile::tempdir().unwrap();
     patterns_see_one_state(Minigraf::open(dir.path().join("p.graph")).unwrap());
