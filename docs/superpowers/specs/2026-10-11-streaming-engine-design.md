@@ -10,8 +10,9 @@
 ## 1. Terms
 
 - **Committed facts**: facts in the B+trees that the active meta page references.
-- **Generation**: the number in a meta page. Each checkpoint writes a meta page with the next generation. A generation names one set of tree roots.
-- **Pending store**: `FactData` inside `FactStorage` (`src/graph/storage.rs`): an in-memory `Vec<Fact>` plus in-memory EAVT/AEVT `BTreeMap` indexes from key to position in that `Vec`. It holds every fact committed after the active generation. It is append-only between checkpoints; a checkpoint clears it (`post_checkpoint_clear`). For a file-backed database the WAL holds the same facts durably, and replay rebuilds the pending store on open. An in-memory database (`Minigraf::in_memory`) has no B+trees: every fact is in its pending store, permanently.
+- **Generation**: the `u64` in a meta page. Each checkpoint writes a meta page whose generation is one more than the active one, so generations are totally ordered by number, and a lower number is an older generation. A generation names one set of tree roots.
+- **`FactData`**: the struct behind `FactStorage`'s `Arc<RwLock<FactData>>` (`src/graph/storage.rs`). It holds the committed reader (`committed`, §4.1) and the pending store.
+- **Pending store**: the part of `FactData` that holds facts committed after the active generation: an in-memory `Vec<Fact>` (`facts`), a duplicate-detection set (`pending_keys`), and in-memory EAVT/AEVT `BTreeMap` indexes from key to position in `facts` (`pending_indexes`). It is append-only between checkpoints; a checkpoint clears it (`post_checkpoint_clear`). For a file-backed database the WAL holds the same facts durably, and replay rebuilds the pending store on open. An in-memory database (`Minigraf::in_memory`) has no B+trees: every fact is in its pending store, permanently.
 - **Checkpoint**: writes the pending store into the B+trees copy-on-write, writes a new meta page, deletes the WAL and clears the pending store. It runs when the WAL holds `wal_checkpoint_threshold` *entries* (transactions, default 1,000), on `Minigraf::checkpoint`, and on close.
 - **Statement**: one `transact` or `retract` command, i.e. one `execute` call. A `WriteTransaction` holds one or more statements.
 - **Chunk**: a bounded group of facts parsed from one statement (§8.1).
@@ -32,12 +33,19 @@ Memory therefore follows the facts read, not the rows returned:
 - `execute` parses a whole `transact` into one `Vec<Fact>`. A `WriteTransaction` keeps all its staged facts in `pending_facts` until commit. The commit writes one WAL entry and then appends every fact to the pending store, where they stay until the next checkpoint.
 - Closing a cursor early saves no work.
 
-A cursor has no snapshot of its own today; its answer is fixed only because it is computed at open. Once operators read lazily, two things can change under an open cursor:
+A cursor today retains no storage snapshot: `Minigraf::query` runs the executor to completion and then builds the cursor from the result (`db.rs:819–831`), so the answer cannot change. Once operators read lazily, two things can change under an open cursor:
 
 - A checkpoint clears the pending store.
-- A later checkpoint can reuse pages that the cursor's generation still references.
+- The pages a checkpoint stops referencing go on the free list, and a later checkpoint can hand them out and write new contents to them while the cursor still reads the older generation.
 
-`FactLog` (#430) avoids both by pinning: while a log is open, automatic checkpoints are skipped and `Minigraf::checkpoint` fails with `API-013`.
+`FactLog` (#430) avoids both today: while a log is open, `execute` skips the automatic checkpoint (`db.rs:764–769`), and `PersistentFactStorage::save` and `rebuild_indexes` fail with `API-013` (`persistent_facts.rs:417–423`, `707–712`).
+
+Two windows in today's code also matter once a snapshot can be taken at any moment:
+
+- `WriteTransaction::commit` appends its facts to the pending store one `load_fact` call at a time (`db.rs:1594–1597`), each under its own write lock, so a reader between two calls sees part of the transaction.
+- A checkpoint sets the new committed reader (`set_committed_reader`, via `activate`) and clears the pending store (`post_checkpoint_clear`) under two separate write locks, so a reader between the two sees the checkpointed facts both as committed and as pending.
+
+§4.1 removes both windows.
 
 ## 3. Goals and non-goals
 
@@ -46,8 +54,8 @@ Goals (#473):
 1. Memory follows operator state, not input size. A pipelined operator holds at most one batch. Only the operators in §6.2 hold more.
 2. Batches reach the caller as they are produced. `Limit` stops the work early, and `close` stops all work.
 3. Aggregates run in one pass over their input.
-4. A cursor's answer is the database as of the moment it opened, whatever is written or checkpointed afterwards.
-5. A `transact` of any size holds at most one chunk of parsed facts in memory (file-backed databases; §8.4).
+4. A cursor's answer is the database as it was when the cursor took its snapshot (§4.1): every transaction whose facts were in the pending store or the committed trees at that instant, and no other, whatever is written or checkpointed afterwards.
+5. A `transact` of any size holds at most `TX_CHUNK_FACTS` parsed facts in memory (file-backed databases; §8).
 
 Non-goals:
 
@@ -61,14 +69,21 @@ Non-goals:
 
 ### 4.1 Contents
 
-A cursor's snapshot is taken once, at open, while holding the pending store's read lock (`FactData`'s `RwLock`). It consists of:
+`FactData` changes shape: the pending store moves into its own `Arc<PendingStore>`, so that `FactData` holds `committed: Option<Arc<dyn CommittedReader>>` and `pending: Arc<PendingStore>`. `PendingStore` keeps `facts`, `pending_keys` and `pending_indexes` behind its own `RwLock`.
 
-1. **The committed reader**: the `Arc<dyn CommittedReader>` of the active generation. It reads only the roots of that generation. An in-memory database has none.
+A cursor's snapshot is taken once, at open, while holding `FactData`'s read lock. It is not taken under the database's write lock (`Inner::write_lock`), so opening a cursor never waits for a write transaction. The snapshot consists of:
+
+1. **The committed reader**: a clone of `committed`, the `Arc` of the active generation's reader. It reads only the roots of that generation. An in-memory database has none.
 2. **A pin** on that generation (§4.2), released when the cursor is closed or dropped.
-3. **The pending store as of open**: an `Arc` of the current `FactData` and its length `n` at open. The cursor reads pending positions `0..n` only (§4.3).
-4. **The valid-time "now"**: read once, at open, and used for the default `:valid-at`.
+3. **The pending store**: a clone of `pending`, and its length `n` (`facts.len()`). The cursor reads pending positions `0..n` only (§4.3).
+4. **The valid-time "now"**: read once, here, and used for the default `:valid-at`.
 
-The lock is held only while these four are taken. After that the cursor holds no lock across `next_batch` calls. Writers and checkpoints proceed.
+After that the cursor holds no lock across `next_batch` calls, and writers and checkpoints proceed.
+
+Two rules make every snapshot whole:
+
+- **A commit appends all of a transaction's facts to the pending store under one write lock.** `transact_batch` and `retract` already do (`storage.rs:172–177`, `274–279`). `WriteTransaction::commit` and WAL replay change from one `load_fact` per fact to one batch append.
+- **A checkpoint publishes in one step.** After the new meta page is synced, it sets `committed` to the new generation's reader and `pending` to a new, empty `PendingStore`, both under one write lock on `FactData`. It no longer calls `post_checkpoint_clear`.
 
 `Minigraf` handles and cursors share these objects by `Arc`. A cursor keeps the file and its lock open until the cursor is closed, as `FactLog` does today.
 
@@ -78,34 +93,39 @@ A checkpoint writes only pages that the active meta does not reference. The ids 
 
 `PersistentFactStorage` therefore keeps two in-memory structures:
 
-- **Pins**: a count of open cursors and fact logs per generation.
-- **Quarantine**: for each checkpoint, the generation `g` it produced and the ids in its `freed` list. Those ids are referenced by generations below `g`, and by none from `g` on.
+- **Pins**: for each generation, the number of open cursors and fact logs whose snapshot reads it.
+- **Quarantine**: for each checkpoint, the generation `g` it produced and the ids it stopped referencing: its `freed` list, plus every page of the trees that `rebuild_indexes` replaces. Generation `g − 1` references those ids; generations `g` and later do not. An id that was already free in generation `g − 1` is not in the entry: no pinned reader of `g − 1` or later reads it, and a reader older than `g − 1` is protected by the entry of the checkpoint that freed it.
 
-`PageAllocator::alloc` does not hand out an id that is in the quarantine entry of some generation `g`, while a pin on a generation below `g` exists. The id stays free on disk, and `finish_free_list` lists it again, as it already does for ids it read but did not hand out. When a pin is released, the quarantine entries no remaining pin needs are discarded.
+The rule: **an id in the entry of generation `g` is not handed out while any generation below `g` is pinned.** Equivalently, with `p` the lowest pinned generation, every entry with `g > p` is in force.
+
+- `PageAllocator::alloc` skips an id in force. The id stays free on disk, and `finish_free_list` lists it again, as it already does for ids it read but did not hand out.
+- `rebuild_indexes` builds its pool from the free list minus the pages it keeps (`persistent_facts.rs:540–567`). It also removes the ids in force.
+- When a pin is released and `p` rises, each entry with `g ≤ p` is discarded and its ids become ordinary free ids. With no pins, every entry is discarded.
 
 Properties:
 
 - **No format change.** On disk, a quarantined id is an ordinary free-list entry.
 - **After a crash or reopen** there are no pins and no quarantine, so every free id can be reused.
 - **File growth.** While a cursor is open, the file can grow by the pages that the checkpoints run meanwhile replace, as in LMDB with a long-lived reader. `verify()` still holds: quarantined ids are on the free list.
-- **Page cache.** An id is not rewritten while a pinned generation can read it, so `PageCache` never returns another generation's page to a pinned reader.
-- **Backends.** `FileBackend`, `MemoryBackend` and `BrowserBufferBackend` all go through `PageAllocator`, so the rule applies to each. A `BrowserDb` flush to IndexedDB writes only dirty pages, and a quarantined page is never dirty.
+- **Page cache.** An id in force is not rewritten, so `PageCache` never returns another generation's contents for it to a pinned reader.
+- **Backends.** `FileBackend`, `MemoryBackend` and `BrowserBufferBackend` all allocate through `PageAllocator`, so the rule applies to each.
+- **`BrowserDb`.** After each commit, `BrowserDb` today drops the bytes of the pages that commit freed, from the in-memory buffer and from IndexedDB (`take_released`, `BrowserBufferBackend::release`, `browser/mod.rs:358–362`, `464–470`; #440). That assumes a freed page is never read again, which a pinned cursor breaks. `take_released` will therefore withhold the ids in force and return them once their entry is discarded, so their bytes are released at a later commit. A quarantined page is not written, so it is never in the dirty set that a flush sends to IndexedDB.
 
 ### 4.3 Pending facts under a checkpoint
 
-A checkpoint today clears the pending store in place. It will instead replace `FactData`'s pending part (`facts`, `pending_keys`, `pending_indexes`) with a new, empty one. The old one stays alive while any cursor holds its `Arc`, and no writer appends to it after the swap.
+A checkpoint replaces `FactData`'s `pending` with a new, empty `PendingStore` (§4.1). The old `PendingStore` stays alive while any cursor holds its `Arc`, and no writer appends to it after the swap.
 
 A cursor's pending reads are therefore stable:
 
-- Positions `0..n` of its `FactData` never move, because the store is append-only.
+- Positions `0..n` of its `PendingStore` never move, because the store is append-only.
 - Positions `≥ n` are facts committed after the cursor opened, so they are skipped.
 - A pending index range is resumed by key after each batch, under a short read lock. A key inserted after open belongs to a position `≥ n`, so it is skipped too.
 
-The snapshot copies nothing, so an in-memory database, whose facts are all pending, opens a cursor in constant time. This is the mechanism `FactLog` uses today (`log_snapshot` returns the reader and the pending length), extended so that a checkpoint can proceed.
+The snapshot copies nothing, so an in-memory database, whose facts are all pending, opens a cursor in constant time. `FactLog` today snapshots the same way (`log_snapshot` returns the committed reader and the pending length), but it must block checkpoints because a checkpoint clears the pending store in place.
 
 ### 4.4 Fact log
 
-`Minigraf::fact_log` takes the same snapshot (§4.1) and the same pin. Checkpoints no longer wait for open logs: `log_pins()` no longer gates the automatic checkpoint (`db.rs:767`, `db.rs:1602`), and `Minigraf::checkpoint` and `rebuild_indexes` no longer fail with `API-013`. `API-013` stays in `ErrorCode` and in `docs/ERROR_REFERENCE.md`, marked deprecated, and is no longer raised. `rebuild_indexes` replaces every tree page, so with a pin held it grows the file by the size of the indexes until the pin is released.
+`Minigraf::fact_log` takes the same snapshot (§4.1) and the same pin. It no longer holds the write lock while it opens (`db.rs:866–871`); the two rules of §4.1 give it a whole snapshot. Checkpoints no longer wait for open logs: `execute` and `WriteTransaction::commit` no longer skip the automatic checkpoint when `log_pins()` is non-zero (`db.rs:767`, `db.rs:1602`), and `PersistentFactStorage::save` and `rebuild_indexes` no longer fail with `API-013`. `API-013` stays in `ErrorCode` and in `docs/ERROR_REFERENCE.md`, marked deprecated, and is no longer raised. `rebuild_indexes` replaces every tree page, so with a pin held it grows the file by the size of the indexes until the pin is released.
 
 ## 5. Rows
 
@@ -135,7 +155,7 @@ Pending facts hold UUIDs and strings, not ids. When a `Scan` reads a pending fac
 
 Every cell of a cursor is in one id space. Provisional ids are never written to disk. The provisional map is query state and counts towards the memory accounting of §7. For an in-memory database every entity and keyword is provisional, so the map grows with the distinct entities and keywords the query reads.
 
-Query literals are converted the same way when the plan is built. A literal that the DICT and the pending store both lack gets a provisional id that no fact carries, so its `Scan` returns nothing.
+Query literals are converted the same way when the plan is built, after the cross-kind expansion of §5.4: a keyword literal `:k` becomes both `Iid(:k)` and the `Eid` of `uuidv5(:k)`, and a UUID literal `u` becomes both `Eid(u)` and `Iid` of every keyword whose `uuidv5` is `u`, which the `Scan` finds through #518's `ValueKind::Keyword` range. Each converted form that the DICT and the pending store both lack gets a provisional id that no fact carries, so the range for that form is empty.
 
 ### 5.4 Matching across kinds
 
@@ -145,14 +165,17 @@ The new engine reproduces the matcher's rules exactly (`PatternMatcher::match_co
 - **UUID constant `u`** matches the value `Ref(u)` and any keyword value `:k` with `uuidv5(:k) = u`.
 - **`nil`** matches `Null`.
 - **Float constant** matches a float value within the matcher's epsilon. `Scan` reads every float of the attribute (#518's `ValueKind::Float`) and filters.
-- **Join keys.** A keyword cell `Iid(k)` is hashed and compared as `Eid` of `uuidv5(k)`: the DICT id if that UUID has one, else a provisional id. The row keeps the cell bound first, as `matcher.rs` keeps the value bound first.
+- **Join keys.** For hashing and equality only, a keyword cell `Iid(k)` is treated as the `Eid` of `uuidv5(k)`: the DICT id if that UUID has one, else a provisional id. The cell stored in the output row is not changed: it is one of the two input cells, and `Project` returns its kind (a keyword or a ref).
+- **Which input cell a row keeps.** When the two sides of a join hold different kinds for one variable, `matcher.rs` keeps the value bound by the pattern it evaluated first (`merged = existing`, `matcher.rs:428–453`). Evaluation order is the optimizer's order, so today the projected kind depends on the plan. #545 fixes one rule, defined on the query text rather than on operator order (the first pattern in `:where` order that binds the variable), and records the queries whose answer changes in `CHANGELOG.md`.
 - **Float join keys.** Today the hash-join path compares floats with `Value`'s `Eq` (exact), and the nested-loop path compares them with `match_component` (epsilon). Which one applies depends on the plan. #545 fixes one rule for both paths, using the oracle tests (§9) to find the queries whose answer changes. Any change goes in `CHANGELOG.md`.
 
 ### 5.5 Pseudo-attributes
 
-`:db/valid-from`, `:db/valid-to`, `:db/tx-count` and `:db/tx-id` read metadata of the fact matched by another pattern on the same entity. Today the matcher carries this metadata in hidden bindings named `__fvf_<uuid>`, `__fvt_<uuid>`, `__ftc_<uuid>` and `__fti_<uuid>`. In the new engine, `Scan` outputs these four values as `Meta` columns of the fact it matched, and the planner wires a pseudo-attribute pattern to them. `:db/valid-at` is a constant of the query.
+`:db/valid-from`, `:db/valid-to`, `:db/tx-count` and `:db/tx-id` read metadata of the fact matched by another pattern on the same entity. A query that uses one of these four without `:valid-at :any-valid-time` fails with `INT-026` before it reads anything (`executor.rs:502–507`); the new engine keeps that check. Today the matcher carries this metadata in hidden bindings named `__fvf_<uuid>`, `__fvt_<uuid>`, `__ftc_<uuid>` and `__fti_<uuid>`. In the new engine, `Scan` outputs these four values as `Meta` columns of the fact it matched, and the planner wires a pseudo-attribute pattern to them. `:db/valid-at` is a constant of the query.
 
 ## 6. Operators
+
+The new engine reproduces every observable behaviour of the existing executor, including the rules stated in this section; the oracle tests (§9) check it. Where today's answer depends on the plan (§5.4), the sub-issue named there fixes one rule.
 
 Every operator implements `open`, `next_batch() -> Result<Option<Batch>>` and `close`. `close` closes the operator's children. Closing a cursor therefore closes every operator under it, and no operator does further work.
 
@@ -166,10 +189,14 @@ Every operator implements `open`, `next_batch() -> Result<Option<Batch>>` and `c
   - `[?e :a C]` reads the AVET range of `C`, with #518's encoding rules for strings, floats, keywords and refs.
   - `IndexNestedLoopJoin` (below) uses `Scan` to read one range per outer row.
 - **`IndexNestedLoopJoin`**: for each outer batch, reads the inner pattern's range once per outer row, using the outer row's bound values.
-- **`Filter`**: keeps the rows whose expression clause (`WhereClause::Expr` without a binding) is true.
-- **`Bind`**: adds a column computed by an expression clause with a binding.
+- **`Filter`**: keeps the rows for which an expression clause without a binding (`WhereClause::Expr { binding: None }`) evaluates to a truthy value (`is_truthy`).
+- **`Bind`**: adds a column holding the value of an expression clause with a binding.
+- **Expression errors.** For `Filter` and `Bind`, a row whose expression fails to evaluate (a type mismatch, division by zero, an unbound variable) is dropped, not reported (`executor.rs:565–580`). An unknown function name is reported as an error when the query is planned, before any row is read (`executor.rs:521–531`).
 - **`Project`**: keeps the `:find` columns and converts cells to `Value`s (§5.2).
-- **`Union`**: concatenates the outputs of the branches of an `or` / `or-join`. It is followed by `Distinct` (§6.2), because `or` removes duplicate rows today (`apply_or_clauses`).
+- **`Union`**: for `or` and `or-join`. `apply_or_clauses` (`executor.rs:1833–2169`) evaluates them in one of two ways today, and the new engine reproduces each:
+  - **Seeded** (some branch contains `not` / `not-join`): each branch is evaluated with every incoming row as input; the branch outputs are concatenated, and duplicates are removed over the user-visible variables (names not starting with `__`).
+  - **Unseeded** (otherwise): each branch is evaluated once, without input rows, and the branch outputs are concatenated with duplicates removed. The result is then hash-joined with the incoming rows on the user-visible variables that both bind, by exact `Value` equality; a merged row keeps the incoming row's value for every variable the incoming row binds, and duplicates are removed over the merged row. When no variable is shared, the result replaces the incoming rows. Branches may be skipped once earlier branches cover every incoming row (#250).
+  - Both ways deduplicate, so `Union` is followed by `Distinct` (§6.2). Whether the two ways give the same rows for every query is not established; the oracle tests (§9) compare the new engine with whichever way today's executor takes.
 - **`Limit`** / **`Offset`**: `Limit` stops pulling from its child after `n` rows and closes it.
 
 ### 6.2 Operators that hold more than one batch
@@ -178,16 +205,19 @@ Each of these holds state whose size depends on the data. They are the only oper
 
 - **`HashJoin`**: builds a hash table on one input and streams the other. Used when neither input can be read by index for the join.
 - **`AntiJoin`**: for `not` and `not-join`. Builds a hash set of the inner rows' join keys, then streams the outer rows whose key is absent.
-- **`Distinct`**: a hash set of rows. Placed only where the engine removes duplicates today: after `or` / `or-join`, inside `count-distinct` and `sum-distinct`, and in the recursive relation. `:find` without these returns a bag, as today.
+- **`Distinct`**: a hash set of rows. Placed only where the engine removes duplicates today: after `or` / `or-join` (§6.1), inside `count-distinct` and `sum-distinct`, and in the recursive relation. A `:find` without these returns a bag, as today.
 - **`Sort`**: sorts its input in memory. The planner omits it when the input order already satisfies it. Under a `Limit` of `n`, it keeps the best `n` rows only.
 - **`Aggregate`**:
   - Without grouping variables it holds one accumulator per aggregate.
   - With grouping variables it holds one accumulator per group in a hash table.
   - When its input is ordered on the grouping variables, it holds one group at a time.
-- **`Window`**: holds one partition at a time, ordered by its `:order-by`.
+  - The grouping variables are the plain variables of `:find`, plus the `:with` variables when `:find` has no window function. With a window function, `:with` variables do not group (`executor.rs:1422–1443`).
+  - With no input rows, a query whose `:find` is only `count` / `count-distinct` aggregates returns one row of zeros; any other aggregate query returns no rows (`executor.rs:1405–1419`).
+  - `Null` inputs are skipped. Registered aggregates (`FunctionRegistry`) run through their init, step and finalise functions. Groups and errors are handled as `compute_aggregation` handles them (`executor.rs:1483–1525`).
+- **`Window`**: holds one partition at a time, ordered by its `:order-by`. It computes `sum`, `count`, `min`, `max`, `avg`, `rank`, `row-number` and registered window functions, with ties and output order as `apply_window_functions` computes them (`executor.rs:1540` onwards).
 - **`Recursive`**: evaluates one stratum by semi-naive iteration:
   - It holds the accumulated relation and the current delta as hash sets of id rows. These replace the `FactStorage` copy and `seen_facts`.
-  - Magic-set rewriting (`magic_sets.rs`) and stratification (`stratification.rs`) still run before planning.
+  - Its base facts are the snapshot's facts after the `:as-of` and `:valid-at` filters, as today (`executor.rs:686–729`). Magic-set rewriting (`magic_sets.rs`) and its seed facts, and stratification (`stratification.rs`), still run before planning; the seed facts are visible only to that query.
   - The three existing `INT-020` limits keep their meaning: 1,000 iterations; `max_derived_facts` new facts per iteration; `max_results` facts derived in total (base facts excluded, #528).
 
 ### 6.3 Planner
@@ -199,7 +229,7 @@ Each of these holds state whose size depends on the data. They are the only oper
 3. Omits `Sort` when the input order satisfies it, and chooses the ordered `Aggregate` when the input is ordered on the grouping variables.
 4. Places a `Limit` above a `Sort` inside the `Sort` (top `n`).
 
-`optimizer.rs` does not reorder joins under the `wasm` feature today. The planner keeps that rule for join order only; index choice and operator choice run on every target.
+Under the `wasm` feature the executor today orders by cost neither joins (`optimizer.rs`), nor `or` branches, nor deferred negation clauses (`executor.rs:625–629`, `1844–1850`). The planner keeps those three exceptions; index choice and operator choice run on every target.
 
 A `PreparedQuery` keeps its operator tree and converts only its bind values and literals on each execution.
 
@@ -226,57 +256,85 @@ The input text is the caller's string and is not counted; the bound is on parsed
 
 ### 8.2 Small and large transactions
 
-A transaction stays **small** while its staged facts number at most `TX_CHUNK_FACTS`. A small transaction commits exactly as today:
-1. `keep_last_statement`;
-2. one `tx_id` and `tx_count`;
+A `WriteTransaction` today stages each statement's facts in `pending_facts` with a **synthetic** `tx_count`, one per statement and increasing (`stage_pending_facts`, `db.rs:1524–1536`). Reads inside the transaction and `keep_last_statement` use these synthetic counters. At commit the transaction takes its one real `tx_count` and `tx_id`.
+
+A transaction stays **small** while its staged facts number at most `TX_CHUNK_FACTS`. A small transaction commits as today, except that step 4 is one batch append (§4.1):
+1. `keep_last_statement` over the staged facts;
+2. one real `tx_id` and `tx_count`, stamped on every fact;
 3. one WAL entry, written and synced;
-4. the facts appended to the pending store.
+4. the facts appended to the pending store under one write lock.
 
-When a staged fact would exceed `TX_CHUNK_FACTS`, the transaction becomes **large**, once and for good, while holding the write lock:
+When staging a fact would make the count exceed `TX_CHUNK_FACTS`, the transaction becomes **large**, once and for good. The write lock is held throughout, as for every `WriteTransaction` today.
 
-1. It fixes its `tx_count` (the next counter) and its `tx_id` (the current time). The write lock serialises transactions, so both are higher than every earlier transaction's.
-2. It stamps the facts staged so far and writes them, as in step 3.
-3. It writes each later chunk into **working trees**: copies of the active generation's five tree roots, extended copy-on-write with `btree::cow_insert` through the DICT `Encoder`, value pages and a `PageAllocator`. The working trees are the next generation's trees. Nothing moves their pages later. A page that a later chunk replaces is handled by its origin:
-   - one the active generation references goes to the `freed` list of the commit;
-   - one this transaction wrote returns to the transaction's allocator and can be reused within the transaction.
-4. **Commit** is a checkpoint:
-   - the pending store's facts are inserted into the same working trees;
-   - the pages are synced;
-   - the new meta page is written and synced;
-   - the WAL is deleted;
-   - the pending store is replaced (§4.3).
+1. It fixes its real `tx_count` (the next counter) and its `tx_id` (the current time). The write lock serialises transactions, so both are higher than every earlier transaction's.
+2. It applies `keep_last_statement` to the staged facts of the statements before the current one, stamps them, and inserts them into the **working trees**:
+   - The working trees start as the active generation's five tree roots and grow copy-on-write through `btree::cow_insert`, the DICT `Encoder`, value pages and a `PageAllocator` of the transaction's own.
+   - The working trees are the next generation's trees: no later step copies or moves their pages.
+3. It records the statement base for the current statement (§8.3), then inserts the current statement's staged facts, and each later chunk, by the rules of §8.3.
+4. A page that an insert replaces is handled by its origin:
+   - a page the active generation references goes to the commit's `freed` list;
+   - a page this transaction wrote returns to the transaction's allocator, except while a statement base references it (§8.3).
+5. **Commit** is a checkpoint, in this order:
+   1. The pending store's facts are inserted into the working trees.
+   2. All pages written are synced.
+   3. The new meta page is written and synced. Its `last_checkpointed_tx_count` is this transaction's `tx_count`. **This write is the commit point.**
+   4. `committed` and `pending` are published (§4.1).
+   5. The WAL is deleted, as a checkpoint deletes it.
 
-   Failure handling is that of a checkpoint today: a failure after anything may have been written marks the handle failed (`STG-046`), and the outcome is known only after reopening.
-5. **Rollback** (explicit, or by dropping the transaction) discards the working roots, the transaction's allocator and the DICT `Encoder`.
+**Crash recovery:**
+- A crash before step 3 completes leaves the previous meta page active. The transaction is absent, and the WAL replays the earlier transactions as usual.
+- A crash after step 3 leaves the new meta page active, and possibly the old WAL. Every WAL entry has a `tx_count` at most this transaction's, so replay skips all of them as already checkpointed. This is the existing rule for a WAL left behind by a checkpoint.
 
-Large transactions do not write to the WAL. Their durability point is the meta page write, as for a checkpoint.
+**Failures** are handled as for a checkpoint today:
+- A failure in steps 1–3, after any page may have been written, marks the handle failed (`STG-046`). Whether the transaction committed is known only after reopening, as when a WAL sync fails today.
+- A failure in step 5 happens after the commit point, so the transaction is committed, and the error is handled as a checkpoint's failed WAL deletion is today.
 
-`tx_id` changes meaning for large transactions only. It is the time the transaction became large, not the time it committed. Both lie inside the write lock, so the order of `tx_id`s and `tx_count`s across transactions is unchanged. `CHANGELOG.md` records this.
+6. **Rollback** (explicit, or by dropping the transaction) discards the working roots, the transaction's allocator and its DICT `Encoder`. Nothing on disk changes: every page the transaction wrote was free in the active generation, or lay beyond its `page_count`.
+
+Large transactions write nothing to the WAL. Their durability point is the meta page write.
+
+`tx_id` changes meaning for large transactions only: it is the time the transaction became large, not the time it committed. A default `valid_from` is that `tx_id`. Both times lie inside the write lock, so the order of `tx_id`s and `tx_count`s across transactions is unchanged. `CHANGELOG.md` records this.
 
 ### 8.3 Last statement wins, and API-011, across chunks
 
 Two rules apply to the facts of one transaction today:
 
-- **One window per triple within a statement**: a statement that asserts one `(e, a, v)` with two valid-time windows is rejected with `API-011`. A rejected statement stages nothing, and the transaction stays usable.
-- **The last statement wins**: when several statements write one `(e, a, v)`, only the last statement's facts for it are committed (`keep_last_statement`, #477).
+- **One window per triple within a statement.** A statement that asserts one `(e, a, v)` with two different valid-time windows is rejected with `API-011` (`check_one_window_per_triple`, which looks at assertions only, `storage.rs:607–621`). A rejected statement stages nothing, and the transaction stays usable.
+- **The last statement wins.** When several statements write records (assertions or retractions) of one `(e, a, v)`, only the records of the last of those statements are committed (`keep_last_statement`, `db.rs:1697–1722`, #477).
 
-A large transaction cannot keep its statements in memory, so it applies both rules to the working trees. When a statement starts, the transaction records the working roots as the **statement base**. Until the statement ends, pages that the base references are not reused (§4.2's rule, applied within the transaction).
+A `transact` statement holds only assertions and a `retract` statement only retractions, so the records of one triple within one statement are all of one kind.
 
-For each fact of triple `T` in a chunk:
+A large transaction cannot keep its statements in memory, so it applies both rules to the working trees. When a statement starts, the transaction records its **statement base**, the state that a rejected statement returns to:
+- the five working roots;
+- the allocator's state;
+- the DICT `Encoder`'s next ids;
+- the value-page append position.
 
-1. The EAVT keys of `T` with this transaction's `tx_count` that are in the statement base came from earlier statements. They are removed from the working trees in all four indexes. EAVT keys are covering, so each one gives the other three keys.
-2. The EAVT keys of `T` with this transaction's `tx_count` that are in the working trees but not in the base came from this statement. If one has a different window, the statement fails with `API-011`. The working roots are set back to the statement base, the pages written since are returned to the allocator, and the transaction stays usable.
+Until the statement ends, a page that the base references is not reused, even if the transaction wrote it.
 
-When the statement ends, its base is dropped.
+For each record of triple `T` in a chunk, in order:
+
+1. **Earlier statements.** The EAVT keys of `T` with this transaction's `tx_count` that are in the statement base came from earlier statements. They are removed from all four indexes of the working trees. EAVT keys are covering, so each one gives the other three keys.
+2. **This statement.** For an assertion: if the working trees hold an assertion key of `T` with this `tx_count` that is not in the base and has a different window, the statement fails with `API-011`. A key equal to one already present is not inserted again.
+3. Otherwise the record's keys are inserted into all four indexes.
+
+When a statement fails (`API-011`, or any other validation error), the transaction returns to the statement base:
+- the working roots are set back;
+- the allocator's ids handed out since the base return to its free set;
+- the `Encoder` forgets the ids it assigned since the base;
+- the value-page append position is set back;
+- the page-cache entries of the returned ids are dropped.
+
+The transaction stays usable. When a statement ends without failing, its base is dropped, and the pages the base alone referenced can be reused.
 
 This needs a copy-on-write delete in `btree.rs`, which does not exist today. #550 adds it, either as part of `cow_insert` or alongside it. A leaf that a delete leaves with no keys is removed from its parent. A leaf left with fewer keys stays as it is: `verify()` checks key order and separator bounds, not fill.
 
 ### 8.4 Reading your own writes
 
-A query inside a `WriteTransaction` reads a snapshot (§4.1) that consists of:
-- for a large transaction, the working trees, in place of the active generation;
-- the pending store;
-- the transaction's staged facts that are not yet in the working trees: all of them for a small transaction, at most one chunk for a large one.
+A query inside a `WriteTransaction` reads a snapshot (§4.1) whose parts are:
+- **committed:** the working trees for a large transaction, in place of the active generation;
+- **pending:** the pending store;
+- **staged:** the transaction's staged facts not yet in the working trees. For a small transaction that is all of them, with their synthetic counters as today. For a large transaction it is empty: a query runs between statements, and by then every finished statement is in the working trees.
 
 ### 8.5 Scope
 
@@ -325,6 +383,14 @@ The design approved on 2026-10-11 changed as follows when checked against the co
 3. **Last statement wins and `API-011` across chunks (§8.3)** need a statement base and a B+tree delete.
 4. **`max_results`** limits the facts rules derive (#528), not the rows a query returns. #473's text said otherwise.
 5. **Float join keys (§5.4)** differ between today's two join paths. #545 settles one rule.
+
+After an independent review against the code (Codex, 2026-10-11):
+
+6. **Snapshots are whole (§4.1).** `WriteTransaction::commit` and WAL replay append a transaction in one batch, and a checkpoint publishes the new committed reader and the empty pending store under one lock. Today both happen in steps (§2).
+7. **`rebuild_indexes` and `BrowserDb` respect the quarantine (§4.2).** `rebuild_indexes` builds its page pool from the free list, and `BrowserDb` drops the bytes of freed pages after each commit (#440); both would otherwise reuse or drop pages a pinned cursor reads.
+8. **`FactLog` no longer takes the write lock to open (§4.4).**
+9. **Behaviours of today's executor made explicit (§5.5, §6):** `INT-026` for pseudo-attributes, expression errors drop the row, the two `or` evaluation paths, `:with` grouping, the zero row for `count`-only queries, window functions, the `wasm` exceptions.
+10. **Large-transaction commit order, crash recovery and statement rollback stated in full (§8.2, §8.3).**
 
 ## 12. Delivery
 
