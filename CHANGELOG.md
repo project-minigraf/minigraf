@@ -5,7 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## v2.0.5 — 2026-10-11
+
+Patch release on the v2.x line under the [support policy](PHILOSOPHY.md#support-policy): two data-integrity fixes (#506, #513) and three bug fixes backported from v3.0.0 (#528, #457, #476), plus a weekly soak test and working coverage gates. File format is unchanged (v7). Two new error codes, `STG-045` and `WAL-007`, numbered as in v3.0.0; no other API changes. Upgrading is recommended for every v2.x user.
 
 ### Fixed
 
@@ -19,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Weekly soak test at scale (#392).** `tests/soak_test.rs` grows a file-backed database to 10M live facts in batches of 1–2,000 facts, then churns it for the rest of a 5-hour budget at 50 transactions a second (retracts, re-asserts, long histories on 32 hot entities), with a checkpoint every 20–200 transactions and a reopen every 2–10 minutes. Samples are checked against a reference through EAVT, entity and attribute, AVET, AEVT, `:as-of` and the transaction counter, with a full scan in a child process at 2M facts. RSS after a reopen is bounded relative to the fact versions held. Metrics go to a JSON-lines file that `.github/workflows/soak.yml` uploads weekly, alternating `main` (Saturday) and `v3` (Sunday). On v2.x no transaction writes two values of one entity and attribute, because of the known issue #371; the v3 workload fails here. It also checkpoints every 100–1,000 transactions and samples `:as-of` less, since both cost time in the database size on v2.x. `soak_short` runs the driver at 20K facts in the normal suite.
 - **Coverage gates that gate (#396).** The per-module gate in `coverage-gates.yml` had never checked anything: the instrumented test run failed (the lock tests could not find `pid_ns_helper`), the report it grepped was empty, and every module was skipped with a warning, so the job passed. It also read `cargo llvm-cov --text`, which has no per-file percentages. The job now runs the whole suite with branch coverage on a pinned nightly, fails if any test fails, and checks each file's line and branch percentage against `coverage-thresholds.toml` with `scripts/coverage_gates.py`; a file missing from the report, or without branch data, fails. The floors are the measured values less one point, for the WAL, `db.rs`, `graph/storage.rs`, the storage files (except the v5 B+tree kept for migration) and the evaluator, executor and stratification. New tests check that WAL replay stops at an entry whose first fact is over 10 MB (the old test changed bytes inside the fact and never reached the limit) or that claims more than 1M facts, that a WAL writer cannot be opened in a missing directory, and that two threads missing the same page in the page cache get the one cached copy (before, only a lucky race reached that path).
+
+### Known issues
+
+- Same-transaction multi-valued facts can read back as one value (#371, #287), a fact retracted and re-asserted in one `WriteTransaction` is lost at commit (#477), a later assertion does not replace an earlier valid-time window (#435), `save()` is not crash-atomic (#374), and a `.wal` from a later checkpoint is replayed onto an older `.graph` (#535); all are fixed in v3.0.0
 
 ## v2.0.4 — 2026-10-08
 
