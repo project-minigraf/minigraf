@@ -4,7 +4,7 @@
 
 **Verified**: 2026-10-11 with `cargo test`
 
-**Result**: 1,240 passing tests and 9 ignored tests (1,249 total), including the golden-file corpus (#391)
+**Result**: 1,241 passing tests and 9 ignored tests (1,250 total), including the golden-file corpus (#391)
 
 For v2.0.5, `tests/edge_cases_test.rs` checks that a file of 1 to 4,095 bytes is `STG-045`, unchanged and with no WAL, when it is a database cut below one page or foreign bytes, and opens as a new database that takes a write and reads it back after reopen when it is a prefix of the initial header or all zeros (#506).
 
@@ -22,7 +22,7 @@ The v2.0.5 suite covers the public database API, the Datalog engine, storage and
 
 - **Core database behavior**: in-memory and file-backed operation, transactions, checkpoints, retractions, bi-temporal queries, recursive rules, prepared statements, aggregation, expressions, disjunction, window functions, UDFs, and magic-sets evaluation.
 - **Storage correctness**: packed pages, B+tree indexes and range scans, cache behavior, file-header validation, migration, WAL replay, checksums, corruption handling, and fault injection.
-- **Reliability and concurrency**: concurrent reads and writes, rollback behavior, same-process handle exclusion, cross-process locking, PID namespaces, NFS and container lock behavior, and SIGKILL recovery, and queries seeing each concurrent transaction whole and reading one state for all their patterns (`tests/snapshot_atomicity_test.rs`, #554, #555).
+- **Reliability and concurrency**: concurrent reads and writes, rollback behavior, same-process handle exclusion, cross-process locking, PID namespaces, NFS and container lock behavior, and SIGKILL recovery, and queries seeing each concurrent transaction whole and reading one state for all their patterns, also during a checkpoint (`tests/snapshot_atomicity_test.rs`, #554, #555, #558).
 - **Public diagnostics**: structured parser, query, storage, WAL, API, and internal error codes; the error-code registry is checked against [`ERROR_REFERENCE.md`](ERROR_REFERENCE.md).
 - **Compatibility and quality**: golden-file corpus of released file formats, cross-platform format compatibility, property-based tests, long-haul smoke coverage, a weekly soak at 10M facts with a 5-hour churn (#392), XTDB/Datomic semantic compatibility, grammar conformance, and rustdoc examples.
 
