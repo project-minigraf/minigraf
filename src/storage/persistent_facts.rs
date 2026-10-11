@@ -199,6 +199,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             {
                 bail_coded!(ErrorCode::Stg045, tail.len());
             }
+            check_wal_not_later(1, wal_base)?;
             return Ok(Opened::Fresh);
         }
         let page0 = backend.read_page(0)?;
@@ -211,7 +212,17 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         match (slot_a, slot_b) {
             (SlotState::Valid(a), SlotState::Valid(b)) => {
                 let m = if a.generation >= b.generation { a } else { b };
+                check_wal_not_later(m.generation, wal_base)?;
                 check_fits(&*backend, &m)?;
+                Ok(Opened::Meta(m))
+            }
+            (SlotState::Valid(m), SlotState::Empty) | (SlotState::Empty, SlotState::Valid(m)) => {
+                // The other slot was never written, so no later generation
+                // was committed to this file.
+                check_wal_not_later(m.generation, wal_base)?;
+                m.check_features()?;
+                check_fits(&*backend, &m)?;
+                check_single_valid(&*backend, m, wal_base)?;
                 Ok(Opened::Meta(m))
             }
             (SlotState::Valid(m), _) | (_, SlotState::Valid(m)) => {
@@ -223,6 +234,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             }
             _ => {
                 if let Some(h) = LegacyHeaderV7::detect(&page0)? {
+                    // Migration opens at generation 1; a v2.x WAL reads as 1.
+                    check_wal_not_later(1, wal_base)?;
                     return Ok(Opened::LegacyV7(h));
                 }
                 // A torn page-0 write while committing a migration: the backup
@@ -232,6 +245,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
                     && m.generation == 1
                     && m.page_count == page_count
                 {
+                    check_wal_not_later(1, wal_base)?;
                     m.check_features()?;
                     if !read_only {
                         backend.write_page(0, &m.encode())?;
@@ -240,6 +254,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
                     return Ok(Opened::Meta(m));
                 }
                 if page_count <= 2 && is_torn_initial_meta(&*backend, &page0)? {
+                    check_wal_not_later(1, wal_base)?;
                     return Ok(Opened::Fresh);
                 }
                 if page0.get(0..4) != Some(&crate::storage::MAGIC_NUMBER[..]) {
@@ -801,6 +816,19 @@ fn check_written(backend: &dyn StorageBackend, m: &MetaPage) -> Result<()> {
     Ok(())
 }
 
+/// Fail with STG-047 if the WAL was created at a generation later than `g`,
+/// the newest this file holds (#535). A WAL is created at the generation
+/// active at the time and deleted after the next checkpoint commits, so its
+/// base is never newer than the file it belongs to: the file is an older copy,
+/// such as a restored backup. A base at or below `g` is fine (a crash between
+/// a checkpoint's commit and its WAL delete leaves an older base, #457).
+fn check_wal_not_later(g: u64, wal_base: Option<u64>) -> Result<()> {
+    match wal_base {
+        Some(b) if b > g => bail_coded!(ErrorCode::Stg047, b, g),
+        _ => Ok(()),
+    }
+}
+
 /// Exactly one meta slot is valid, at generation `g`. Fail with STG-033 if a
 /// later commit `g + 1` completed and its meta was lost (spec §4.1.1 table).
 fn check_single_valid(
@@ -1351,6 +1379,49 @@ mod tests {
         assert_eq!(count_n(&pfs), 20, "gen 2 holds the first batch only");
         // A WAL older than g holds every later fact too.
         assert_eq!(open_mem(&mem, Some(1)).unwrap().generation(), 2);
+    }
+
+    #[test]
+    fn wal_from_a_later_generation_is_stg_047() {
+        // Both slots valid (gens 2 and 3): a WAL created at gen 4 belongs to
+        // a later state of the file, such as the one this copy was taken from.
+        let mem = three_generations();
+        let before = snapshot(&mem);
+        assert_eq!(code(open_mem(&mem, Some(4)).err().unwrap()), "STG-047");
+        let ro = PersistentFactStorage::open_read_only(mem.clone(), 16, Some(4));
+        assert_eq!(code(ro.err().unwrap()), "STG-047");
+        assert!(
+            snapshot(&mem) == before,
+            "a failed open must not modify the file"
+        );
+        // A WAL at or below the chosen generation replays as before (#457).
+        for b in 1..=3 {
+            assert_eq!(open_mem(&mem, Some(b)).unwrap().generation(), 3);
+        }
+    }
+
+    #[test]
+    fn wal_later_than_a_single_generation_file_is_stg_047() {
+        // Gen 1 only: page 1 was never written as a meta page.
+        let mem = MemoryBackend::new();
+        assert_eq!(open_mem(&mem, None).unwrap().generation(), 1);
+        assert_eq!(open_mem(&mem, Some(1)).unwrap().generation(), 1);
+        assert_eq!(code(open_mem(&mem, Some(2)).err().unwrap()), "STG-047");
+    }
+
+    #[test]
+    fn wal_later_than_a_new_or_v7_file_is_stg_047() {
+        // An empty file next to a WAL from generation 2.
+        let mem = MemoryBackend::new();
+        assert_eq!(code(open_mem(&mem, Some(2)).err().unwrap()), "STG-047");
+        assert_eq!(mem.page_count().unwrap(), 0, "nothing initialised");
+        assert_eq!(open_mem(&mem, Some(1)).unwrap().generation(), 1);
+        // A v7 file migrates to generation 1; a v2.x WAL reads as base 1.
+        let v7 = v7_file(&sample_facts(3), 3);
+        let before = snapshot(&v7);
+        assert_eq!(code(open_mem(&v7, Some(2)).err().unwrap()), "STG-047");
+        assert!(snapshot(&v7) == before, "not migrated");
+        assert_eq!(open_mem(&v7, Some(1)).unwrap().generation(), 1);
     }
 
     #[test]

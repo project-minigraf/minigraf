@@ -190,6 +190,7 @@ pub(crate) enum ErrorCode {
     Stg044,
     Stg045,
     Stg046,
+    Stg047,
     Wal001,
     Wal002,
     Wal003,
@@ -1106,6 +1107,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Stg046,
         "STG-046",
         "an earlier checkpoint failed on this handle and is not retried; reopen the database",
+        ErrorCategory::Storage,
+    ),
+    (
+        ErrorCode::Stg047,
+        "STG-047",
+        "WAL is from a later checkpoint: it was created at generation {} but the file is at generation {}. Replaying it would leave a gap in the history (was an older .graph restored next to a newer .wal?)",
         ErrorCategory::Storage,
     ),
     (
@@ -2030,6 +2037,7 @@ mod tests {
                 | ErrorCode::Stg044
                 | ErrorCode::Stg045
                 | ErrorCode::Stg046
+                | ErrorCode::Stg047
                 | ErrorCode::Wal001
                 | ErrorCode::Wal002
                 | ErrorCode::Wal003
@@ -2255,6 +2263,7 @@ mod tests {
             ErrorCode::Stg044,
             ErrorCode::Stg045,
             ErrorCode::Stg046,
+            ErrorCode::Stg047,
             ErrorCode::Wal001,
             ErrorCode::Wal002,
             ErrorCode::Wal003,
