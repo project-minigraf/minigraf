@@ -630,9 +630,7 @@ impl Minigraf {
                 // Already present in the main file; skip.
                 continue;
             }
-            for fact in &entry.facts {
-                let _ = fact_storage.load_fact(fact.clone())?;
-            }
+            let _ = fact_storage.load_facts(entry.facts.iter().cloned())?;
             #[allow(clippy::arithmetic_side_effects)]
             {
                 replayed += 1;
@@ -756,10 +754,9 @@ impl Minigraf {
                 &stamped,
             )?;
 
-            // WAL succeeded — now apply facts to shared FactStorage.
-            for fact in &stamped {
-                let _ = self.inner.fact_storage.load_fact(fact.clone())?;
-            }
+            // WAL succeeded — now apply facts to shared FactStorage, in one
+            // batch so no query sees part of the transaction (#554).
+            let _ = self.inner.fact_storage.load_facts(stamped)?;
 
             // Trigger auto-checkpoint AFTER facts are in FactStorage so the
             // checkpoint captures the newly written facts. An open fact log
@@ -1591,10 +1588,9 @@ impl<'a> WriteTransaction<'a> {
                 &stamped,
             )?;
 
-            // WAL succeeded — now apply facts to shared FactStorage.
-            for fact in stamped {
-                let _ = self.inner.fact_storage.load_fact(fact)?;
-            }
+            // WAL succeeded — now apply facts to shared FactStorage, in one
+            // batch so no query sees part of the transaction (#554).
+            let _ = self.inner.fact_storage.load_facts(stamped)?;
 
             // Trigger auto-checkpoint AFTER facts are in FactStorage so the
             // checkpoint captures the newly written facts. An open fact log

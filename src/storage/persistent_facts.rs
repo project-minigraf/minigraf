@@ -163,9 +163,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let max_tx = max_fact_tx.max(header.last_checkpointed_tx_count);
         // Pending facts are kept in tx order (the fact log relies on it).
         facts.sort_by_key(|f| f.tx_count);
-        for fact in facts {
-            let _ = self.storage.load_fact(fact)?;
-        }
+        let _ = self.storage.load_facts(facts)?;
         Ok(MetaPage {
             last_checkpointed_tx_count: max_tx,
             ..MetaPage::empty(1)
