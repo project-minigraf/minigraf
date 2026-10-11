@@ -118,6 +118,11 @@ pub struct OpenOptions {
     /// A checkpoint's cost grows with the total size of the database (see
     /// [`Minigraf::checkpoint`]), while durability does not depend on it: the WAL
     /// is crash-durable. Raise this for write-heavy workloads on large graphs.
+    ///
+    /// `usize::MAX` turns off every implicit checkpoint: no auto-checkpoint and
+    /// nothing written to the `.graph` file on close. Only an explicit
+    /// [`Minigraf::checkpoint`] writes it; until then the WAL holds the pending
+    /// facts, and the next open replays them.
     pub wal_checkpoint_threshold: usize,
     /// Number of pages to hold in the LRU page cache. Default: 256 (= 1MB at 4KB pages).
     ///
@@ -305,8 +310,14 @@ impl Drop for Inner {
         // On clean close, perform a best-effort checkpoint to reduce WAL size.
         // Errors are silently ignored (can't propagate from Drop).
         // Skip if wal_checkpoint_threshold is usize::MAX — that sentinel suppresses
-        // all checkpointing (used by benchmarks to keep WAL entries pending).
+        // all checkpointing (used by benchmarks to keep WAL entries pending),
+        // including the storage's own save on drop (#476). The WAL holds every
+        // pending fact, and the next open replays it.
         if self.options.wal_checkpoint_threshold == usize::MAX {
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Ok(WriteContext::File { pfs, .. }) = self.write_lock.get_mut() {
+                pfs.discard();
+            }
             return;
         }
         if let Ok(mut ctx) = self.write_lock.lock() {
@@ -759,7 +770,18 @@ impl Minigraf {
                 // second handle in this one — #304/#314). The guard still matters where
                 // the filesystem cannot lock (e.g. NFSv3 without lockd, some FUSE
                 // mounts) and the caller set `allow_unlocked`.
+                //
+                // A WAL can still exist here with every entry already in the file
+                // (a crash between a checkpoint's commit and its WAL delete, or a
+                // failed delete): replay counts only the entries it applies. Each
+                // of those entries is at or below the committed tx count, so
+                // removing the file loses nothing (#457).
                 if *wal_entry_count == 0 && !pfs.is_dirty() {
+                    let wal_path = Self::wal_path_for(db_path);
+                    if wal_path.exists() {
+                        *wal = None;
+                        WalWriter::delete_file(&wal_path)?;
+                    }
                     return Ok(());
                 }
                 // `force_dirty` is needed for the WAL-replay case: facts were loaded
@@ -1878,6 +1900,19 @@ mod tests {
     }
 
     // ── file-backed: sync mode is plumbed through to both WalWriter call sites ──
+
+    /// #476: an in-memory handle under the `usize::MAX` sentinel closes
+    /// without a checkpoint and without touching any file storage.
+    #[test]
+    fn test_max_threshold_in_memory_drop() {
+        let db = Minigraf::in_memory_with_options(
+            OpenOptions::new().wal_checkpoint_threshold(usize::MAX),
+        )
+        .unwrap();
+        db.execute("(transact [[:e0 :a0 1]])").unwrap();
+        assert_eq!(db.current_tx_count(), 1, "write applied");
+        drop(db);
+    }
 
     #[test]
     fn test_normal_sync_mode_reaches_both_wal_writer_call_sites() {

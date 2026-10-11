@@ -171,9 +171,9 @@ fn check_manifest(m: &Manifest, failures: &mut Vec<String>) {
         db.checkpoint().unwrap();
     }
 
-    // 4. Persist: reopen after the checkpoint. v2.x leaves a WAL whose entries
-    // were all checkpointed already (`v7_stale_wal`) in place; v3 removes it.
-    if READER >= 3 && wal_path(&path).exists() {
+    // 4. Persist: reopen after the checkpoint, which removes the WAL, including
+    // one whose entries are all checkpointed already (`v7_stale_wal`, #457).
+    if wal_path(&path).exists() {
         failures.push(format!("{}: WAL still present after checkpoint", m.name));
     }
     {
