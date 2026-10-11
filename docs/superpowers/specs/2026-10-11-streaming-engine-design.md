@@ -218,7 +218,7 @@ Each of these holds state whose size depends on the data. They are the only oper
 - **`Recursive`**: evaluates one stratum by semi-naive iteration:
   - It holds the accumulated relation and the current delta as hash sets of id rows. These replace the `FactStorage` copy and `seen_facts`.
   - Its base facts are the snapshot's facts after the `:as-of` and `:valid-at` filters, as today (`executor.rs:686–729`). Magic-set rewriting (`magic_sets.rs`) and its seed facts, and stratification (`stratification.rs`), still run before planning; the seed facts are visible only to that query.
-  - The three existing `INT-020` limits keep their meaning: 1,000 iterations; `max_derived_facts` new facts per iteration; `max_results` facts derived in total (base facts excluded, #528).
+  - It raises `INT-020` at two limits: 1,000 iterations, and `max_derived_facts` facts derived in total, base facts not counted. #553 merges today's `max_results` (total derived facts, #528) and `max_derived_facts` (new facts per iteration) into that one limit, keeping `max_results` as a deprecated alias. If #553 has not landed when #548 does, `Recursive` enforces both of today's limits.
 
 ### 6.3 Planner
 
@@ -240,7 +240,7 @@ Each operator counts rows in, rows out, batches and, for §6.2 operators, bytes 
 - **No default limit and no spilling.** Only the §6.2 operators hold more than a batch, and the planner avoids them where index order allows.
 - **Accounting.** Each §6.2 operator, and the provisional id map (§5.3), keeps a count of the bytes it holds. It grows its tables with `try_reserve`, so an allocation the allocator refuses becomes an error instead of an abort. On Linux with memory overcommit the allocator seldom refuses, so the limit below is the dependable control.
 - **Optional limit.** `OpenOptions::query_memory_limit(bytes)` sets a limit, off by default (`usize::MAX`). When the bytes counted for one query would exceed it, the query fails with a new error, **`QRY-012` query memory limit exceeded**, naming the operator and the limit. The cursor is closed, and the database and other cursors are unaffected.
-- **`max_results`** keeps its current meaning: the number of facts rules may derive in one query (§6.2). A cursor has no limit on the rows it returns.
+- **`max_derived_facts`** (§6.2, #553) limits the facts rules derive in one query. Neither it nor `max_results` limits the rows a query returns, and a cursor has no such limit.
 - **Bindings.** Every binding gets `query_memory_limit` on its `OpenOptions` record and the `QRY-012` code. UniFFI shims map `usize::MAX` to `i64::MAX`, as for `wal_checkpoint_threshold`. A new `ErrorCode` variant breaks the UniFFI bindings until they regenerate, so the binding PRs follow the core PR.
 
 ## 8. Transactions
@@ -366,7 +366,7 @@ From #473. The `:limit` test moves to #306/#310, since it needs the syntax.
 
 - [ ] `count` over 10M facts holds memory independent of the number of facts.
 - [ ] Grouped `count` with 1M groups completes, holding memory proportional to the number of groups. With `query_memory_limit` below that, it fails with `QRY-012`.
-- [ ] A recursive rule deriving 5M facts completes, holding memory proportional to the derived relation. `max_derived_facts` and `max_results` still stop a runaway rule with `INT-020`.
+- [ ] A recursive rule deriving 5M facts completes, holding memory proportional to the derived relation. `max_derived_facts` (#553) still stops a runaway rule with `INT-020`.
 - [ ] Closing a cursor after its first batch: the operator counters show no further rows read.
 - [ ] A cursor's answer is unchanged by writes and checkpoints made while it is open, including checkpoints that free pages it reads. The same holds for a fact log.
 - [ ] A 1M-fact `transact` on a file-backed database holds at most `TX_CHUNK_FACTS` parsed facts at any time.
@@ -381,7 +381,7 @@ The design approved on 2026-10-11 changed as follows when checked against the co
 1. **Pending facts are shared, not copied, at open (§4.3).** An in-memory database keeps every fact pending, so a copy would copy the database.
 2. **Large transactions commit as a checkpoint (§8.2), not as WAL chunks.** Chunks in the WAL would still be appended to the pending store at commit, so a 1M-fact transaction would end up in memory. WAL chunks streamed straight into the trees at commit would also work, but would need a WAL format change, two writes per fact, and an unindexed WAL for reading your own writes (§8.4).
 3. **Last statement wins and `API-011` across chunks (§8.3)** need a statement base and a B+tree delete.
-4. **`max_results`** limits the facts rules derive (#528), not the rows a query returns. #473's text said otherwise.
+4. **`max_results`** limits the facts rules derive (#528), not the rows a query returns; #473's text said otherwise. #553 merges it into `max_derived_facts` (v3.0.0).
 5. **Float join keys (§5.4)** differ between today's two join paths. #545 settles one rule.
 
 After an independent review against the code (Codex, 2026-10-11):
