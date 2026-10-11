@@ -96,7 +96,7 @@ Scope — release-gate testing and documentation:
 - Long-running soak test at scale (#392; done on `v3`: `tests/soak_test.rs`, 10M facts and a 5-hour churn weekly, alternating `main` and `v3`)
 - Benchmarks at 100K–10M facts and a published performance envelope (#394; on `v3`: `examples/perf_envelope.rs`, results in `docs/BENCHMARKS.md`; follow-ups #528–#532)
 - Higher storage/WAL coverage gates and branch-coverage gates (#396; on `v3`: line and branch floors per file in `coverage-thresholds.toml`, checked on every PR)
-- Durability, recovery and operations guide (#398)
+- Durability, recovery and operations guide (#398; done on `v3`: `docs/DURABILITY.md`, also on the docs site; found #535)
 
 ---
 
