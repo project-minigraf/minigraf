@@ -383,7 +383,8 @@ impl DatalogExecutor {
     ///
     /// Results are not deduplicated: the sole caller feeds them to `net_asserted_facts`,
     /// which is idempotent under duplicated records. Each lookup returns the pending facts
-    /// up to `as_of` and the committed facts live at `as_of` (`FactStorage::get_live_facts`).
+    /// up to `as_of` and the committed facts live at `as_of`, and all lookups read one
+    /// state of the store (`FactStorage::get_live_facts_of_scans`, #555).
     fn selective_fact_fetch(
         &self,
         patterns: &[Pattern],
@@ -442,25 +443,19 @@ impl DatalogExecutor {
             return Ok(None);
         }
 
-        let mut all_facts: Vec<Fact> = Vec::new();
-
+        // Every scan reads one state of the store, so a commit cannot land
+        // between two patterns of this query (#555).
+        let mut scans: Vec<Scan<'_>> = Vec::with_capacity(total);
         for (uid, attrs) in &entity_attrs {
             match attrs {
                 Some(attrs) if narrow => {
-                    for attr in attrs {
-                        all_facts.extend(
-                            self.storage
-                                .get_live_facts(Scan::EntityAttribute(uid, attr), as_of)?,
-                        );
-                    }
+                    scans.extend(attrs.iter().map(|a| Scan::EntityAttribute(uid, a)));
                 }
-                _ => all_facts.extend(self.storage.get_live_facts(Scan::Entity(uid), as_of)?),
+                _ => scans.push(Scan::Entity(uid)),
             }
         }
-
-        for attr in &attributes {
-            all_facts.extend(self.storage.get_live_facts(Scan::Attribute(attr), as_of)?);
-        }
+        scans.extend(attributes.iter().map(|a| Scan::Attribute(a)));
+        let all_facts = self.storage.get_live_facts_of_scans(&scans, as_of)?;
 
         Ok(Some(all_facts))
     }

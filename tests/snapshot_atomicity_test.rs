@@ -159,10 +159,12 @@ fn checkpoint_never_shows_a_fact_twice() {
     }
 }
 
-/// A query fetches each attribute with its own `get_live_facts` call, each
-/// under its own read lock, so a transaction that commits between the two
-/// calls is seen by one pattern and not the other. Every transaction writes
-/// `:pair/x` and `:pair/y` for one entity together.
+/// A query fetched each attribute with its own `get_live_facts` call, each
+/// under its own read lock, so a transaction that committed between the two
+/// calls was seen by one pattern and not the other (#555). Every transaction
+/// writes `:pair/x` and `:pair/y` for one entity together, atomically (#554).
+/// Attributes are fetched in sorted order, so only the query whose positive
+/// pattern is `:pair/y` can catch a commit between the fetches; both are run.
 fn patterns_see_one_state(db: Minigraf) {
     let found = race(
         Arc::new(db),
@@ -173,11 +175,16 @@ fn patterns_see_one_state(db: Minigraf) {
             .unwrap();
         },
         |db| {
-            let r = rows(
-                db,
-                "(query [:find ?e :where [?e :pair/x ?x] (not [?e :pair/y ?x])])",
-            );
-            (!r.is_empty()).then(|| format!("{} entities with x but no y", r.len()))
+            for q in [
+                "(query [:find ?e :where [?e :pair/x ?v] (not [?e :pair/y ?v])])",
+                "(query [:find ?e :where [?e :pair/y ?v] (not [?e :pair/x ?v])])",
+            ] {
+                let n = rows(db, q).len();
+                if n != 0 {
+                    return Some(format!("{n} entities with one attribute of the pair: {q}"));
+                }
+            }
+            None
         },
     );
     if let Some(msg) = found {
@@ -186,13 +193,11 @@ fn patterns_see_one_state(db: Minigraf) {
 }
 
 #[test]
-#[ignore = "reproducer for #555: fails on v3 today"]
 fn patterns_of_one_query_see_one_state_in_memory() {
     patterns_see_one_state(Minigraf::in_memory().unwrap());
 }
 
 #[test]
-#[ignore = "reproducer for #555: fails on v3 today"]
 fn patterns_of_one_query_see_one_state_on_file() {
     let dir = tempfile::tempdir().unwrap();
     patterns_see_one_state(Minigraf::open(dir.path().join("p.graph")).unwrap());

@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `checkpoint()` removes a WAL whose entries are all already in the file (#457). When it had no facts to flush, it returned early and left the WAL until a later write was checkpointed. That WAL is left by a crash between a checkpoint's commit and its WAL delete, or by a failed delete (`WAL-006`). Its contents were always skipped on replay, so no data was affected; the sidecar file just stayed. Also fixed on the v2.x line (`main`, #540), not yet released.
 - Closing a handle opened with `wal_checkpoint_threshold(usize::MAX)` no longer writes its pending facts to the `.graph` file (#476). The sentinel was documented to suppress the close-time checkpoint, and `Minigraf`'s close did skip it, but the storage layer still saved on drop, leaving a WAL whose entries were all checkpointed. The file now stays as the last explicit `checkpoint()` left it, and the WAL keeps every pending fact for the next open to replay, so bulk loaders and benchmarks see the pending WAL they ask for. No data is lost either way. Also fixed on the v2.x line (`main`, #540), not yet released.
 - **A query on another thread sees each transaction whole** (#554). A commit wrote its WAL entry, then added the transaction's facts to the in-memory store one fact at a time, each under its own lock, so a query running on another thread could return part of the transaction. `execute("(transact ...)")`, `execute("(retract ...)")` and `WriteTransaction::commit` all did this. They now add the whole transaction under one lock, as does WAL replay. Stored data was never affected. Affected `WriteTransaction` since v0.5.0 and `execute` since v0.6.0.
+- **All patterns of one query read the same state of the database** (#555). A query whose patterns name entities or attributes read each of them with its own lookup, each under its own lock, so a transaction that committed between two lookups was seen by some patterns and not others, and the query could return rows that match no state of the database (an entity with one attribute but not another that was always written with it). The lookups now run under one lock. Stored data was never affected. Affected every release since v1.1.0.
 
 ### Internal
 
@@ -73,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Known issues
 
-- Same-transaction multi-valued facts can read back as one value (#371, #287), a fact retracted and re-asserted in one `WriteTransaction` is lost at commit (#477), a later assertion does not replace an earlier valid-time window (#435), and `save()` is not crash-atomic (#374); all are fixed in v3.0.0. The patterns of one query can read different database states while another thread commits (#555); not yet fixed. All v2.x known issues, with affected versions and workarounds, are listed in the pinned issue #421.
+- Same-transaction multi-valued facts can read back as one value (#371, #287), a fact retracted and re-asserted in one `WriteTransaction` is lost at commit (#477), a later assertion does not replace an earlier valid-time window (#435), and `save()` is not crash-atomic (#374); all are fixed in v3.0.0. All v2.x known issues, with affected versions and workarounds, are listed in the pinned issue #421.
 
 ## v2.0.4 — 2026-10-08
 

@@ -689,63 +689,90 @@ impl FactStorage {
         scan: crate::storage::Scan<'_>,
         as_of: Option<u64>,
     ) -> Result<Vec<Fact>> {
-        use crate::storage::Scan;
-        use crate::storage::index::{AevtKey, EavtKey};
+        self.get_live_facts_of_scans(&[scan], as_of)
+    }
+
+    /// [`Self::get_live_facts`] for several scans, all read from one state of
+    /// the store: no commit lands between two of them (#555). The results are
+    /// concatenated in `scans` order and not deduplicated.
+    pub(crate) fn get_live_facts_of_scans(
+        &self,
+        scans: &[crate::storage::Scan<'_>],
+        as_of: Option<u64>,
+    ) -> Result<Vec<Fact>> {
         let d = self.data.read().unwrap_or_else(|e| e.into_inner());
         let mut facts = Vec::new();
-        let mut push = |pos: usize| -> Result<()> {
-            let f = pending_fact(&d, pos)?;
-            if as_of.is_none_or(|n| f.tx_count <= n) {
-                facts.push(f);
-            }
-            Ok(())
-        };
-        match scan {
-            Scan::All => {
-                for pos in 0..d.facts.len() {
-                    push(pos)?;
-                }
-            }
-            Scan::Entity(entity) => {
-                for (key, &pos) in d
-                    .pending_indexes
-                    .eavt
-                    .range(EavtKey::entity_start(*entity)..)
-                {
-                    if key.entity != *entity {
-                        break;
-                    }
-                    push(pos)?;
-                }
-            }
-            Scan::EntityAttribute(entity, attribute) => {
-                let start = EavtKey::entity_attribute_start(*entity, attribute);
-                for (key, &pos) in d.pending_indexes.eavt.range(start..) {
-                    if key.entity != *entity || key.attribute != attribute {
-                        break;
-                    }
-                    push(pos)?;
-                }
-            }
-            Scan::Attribute(attribute) => {
-                for (key, &pos) in d
-                    .pending_indexes
-                    .aevt
-                    .range(AevtKey::attribute_start(attribute)..)
-                {
-                    if key.attribute != attribute {
-                        break;
-                    }
-                    push(pos)?;
-                }
-            }
-        }
-        if let Some(reader) = &d.committed {
-            facts.extend(reader.live_facts(scan, as_of)?);
+        for &scan in scans {
+            live_facts_of_scan(&d, scan, as_of, &mut facts)?;
         }
         Ok(facts)
     }
+}
 
+/// The pending facts of `scan` up to `as_of`, then its committed live facts,
+/// appended to `facts`. The caller holds `d`'s lock for the whole read.
+fn live_facts_of_scan(
+    d: &FactData,
+    scan: crate::storage::Scan<'_>,
+    as_of: Option<u64>,
+    facts: &mut Vec<Fact>,
+) -> Result<()> {
+    use crate::storage::Scan;
+    use crate::storage::index::{AevtKey, EavtKey};
+    let mut push = |pos: usize| -> Result<()> {
+        let f = pending_fact(d, pos)?;
+        if as_of.is_none_or(|n| f.tx_count <= n) {
+            facts.push(f);
+        }
+        Ok(())
+    };
+    match scan {
+        Scan::All => {
+            for pos in 0..d.facts.len() {
+                push(pos)?;
+            }
+        }
+        Scan::Entity(entity) => {
+            for (key, &pos) in d
+                .pending_indexes
+                .eavt
+                .range(EavtKey::entity_start(*entity)..)
+            {
+                if key.entity != *entity {
+                    break;
+                }
+                push(pos)?;
+            }
+        }
+        Scan::EntityAttribute(entity, attribute) => {
+            let start = EavtKey::entity_attribute_start(*entity, attribute);
+            for (key, &pos) in d.pending_indexes.eavt.range(start..) {
+                if key.entity != *entity || key.attribute != attribute {
+                    break;
+                }
+                push(pos)?;
+            }
+        }
+        Scan::Attribute(attribute) => {
+            for (key, &pos) in d
+                .pending_indexes
+                .aevt
+                .range(AevtKey::attribute_start(attribute)..)
+            {
+                if key.attribute != attribute {
+                    break;
+                }
+                push(pos)?;
+            }
+        }
+    }
+    if let Some(reader) = &d.committed {
+        facts.extend(reader.live_facts(scan, as_of)?);
+    }
+    Ok(())
+}
+
+impl FactStorage {
     /// History read (every record); tests compare it with live reads and models.
     #[cfg(test)]
     /// Get all facts for a specific entity (index-driven).
@@ -1662,6 +1689,28 @@ mod tests {
 
         // Count should remain the same
         assert_eq!(storage.fact_count(), 2);
+    }
+
+    #[test]
+    fn live_facts_of_scans_concatenates_each_scan_in_order() {
+        use crate::storage::Scan;
+        let storage = FactStorage::new();
+        let e = uuid::Uuid::new_v4();
+        let x = Fact::new(e, ":t/x".to_string(), Value::Integer(1), 1);
+        let y = Fact::new(e, ":t/y".to_string(), Value::Integer(2), 1);
+        storage.load_facts(vec![x, y]).unwrap();
+        let scans = [
+            Scan::Attribute(":t/y"),
+            Scan::Attribute(":t/x"),
+            Scan::Entity(&e),
+        ];
+        let attrs: Vec<String> = storage
+            .get_live_facts_of_scans(&scans, None)
+            .unwrap()
+            .into_iter()
+            .map(|f| f.attribute)
+            .collect();
+        assert_eq!(attrs, [":t/y", ":t/x", ":t/x", ":t/y"]);
     }
 
     #[test]
