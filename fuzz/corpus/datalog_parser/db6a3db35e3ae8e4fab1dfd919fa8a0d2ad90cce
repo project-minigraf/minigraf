@@ -1,0 +1,3 @@
+(query [::where(r [(ay)(rule [(?Cle() [(?y) []])[?:nt ]])
+()[]])
+[e man ?]])

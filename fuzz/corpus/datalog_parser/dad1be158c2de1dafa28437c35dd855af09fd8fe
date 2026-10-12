@@ -1,0 +1,1 @@
+(query [:where [?e :name ?WW][? :e ?n] (to ?e[g])])

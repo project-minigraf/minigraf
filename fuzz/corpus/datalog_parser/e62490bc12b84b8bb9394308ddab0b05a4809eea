@@ -1,0 +1,1 @@
+(query [: :where[?e:na ?_] (not [?We :sssed true])])

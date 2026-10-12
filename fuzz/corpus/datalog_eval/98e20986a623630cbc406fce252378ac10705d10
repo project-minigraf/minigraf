@@ -1,0 +1,1 @@
+(query [:finde?  :where [?not-joine vcolow ?c] (not-join [?e] [?tec :aive true])])

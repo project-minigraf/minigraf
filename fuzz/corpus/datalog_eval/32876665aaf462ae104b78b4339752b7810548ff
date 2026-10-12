@@ -1,0 +1,1 @@
+(query [:fine :where [?e sumlor ?c] (not-join [?_] [?u [:find ?]ue])])

@@ -1,0 +1,1 @@
+(query [:n :w :where [?e ? ?zeryn]  [?e ?name ?n] [(= ?n "Alice")]])

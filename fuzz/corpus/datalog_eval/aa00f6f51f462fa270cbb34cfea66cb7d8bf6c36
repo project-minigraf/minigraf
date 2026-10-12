@@ -1,0 +1,1 @@
+(query [:where(not[on-ijot?,e2 rau])(query [:find ?e :where [?e :color ?c]]) (nh?t-:__migic_oto) :where [?m l gmaaa?rsutreec] (not-jo :whe)])

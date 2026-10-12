@@ -1,0 +1,1 @@
+(query  [:ind:where (not-join [?e] [?tec :aivd true]=)])

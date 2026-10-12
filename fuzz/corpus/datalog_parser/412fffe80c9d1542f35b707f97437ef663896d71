@@ -1,0 +1,1 @@
+(rule [(p)[(aqnotaqin ?y)](p)[(a ?y)]( ?)[(-jo-join ?y)](p)[(a ?y)]( ?)[(-join ?y)](p)[(a ?y)]( ?)[(a ?y)]])

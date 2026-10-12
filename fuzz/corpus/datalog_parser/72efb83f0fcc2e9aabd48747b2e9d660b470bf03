@@ -1,0 +1,1 @@
+(rule [(rdy) [?y A ?y][?y t ?y]])

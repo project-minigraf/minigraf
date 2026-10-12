@@ -1,0 +1,1 @@
+(query [:finSsumm :where [<= l omaaa?rsuc] (nI= ?[?e] a ?:e[ctire tree]) :where [?m l omaaa?rsutreec] (not-join [?e] [?e :active tree])])

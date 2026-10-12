@@ -1,0 +1,1 @@
+(query [:where [ne ::namn] [(= ?n "Alice")]:fiw :where [ne mn:] [(= $n "Alice")] :w :where [ne mn:] [(= $n "Alice")]])

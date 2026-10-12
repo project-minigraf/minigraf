@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e :n:n] (not(query =y) (ulnt=:rena) (u) (arentA?:y) (arentA?[?(y) [?x :1
+]])[?x :ue])])

@@ -1,0 +1,1 @@
+(query [:sum :where [?e lo m?rsuc] (not-join[?Ind ?eOOOfind ?eOIIIIIIIIIfind ?eOOOojo-IIIIIIe] [?e :act drue])])

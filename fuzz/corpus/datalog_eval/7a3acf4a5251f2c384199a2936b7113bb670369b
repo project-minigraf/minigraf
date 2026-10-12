@@ -1,0 +1,1 @@
+(query [:col:where [:as :ne ?]])

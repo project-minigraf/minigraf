@@ -1,0 +1,1 @@
+(query [:fin?:where(nojto-i ?e [fe])])

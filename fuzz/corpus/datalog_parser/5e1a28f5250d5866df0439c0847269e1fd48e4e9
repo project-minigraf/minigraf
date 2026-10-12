@@ -1,0 +1,2 @@
+(query [:if?e :where [?e :ame ?n] (t? [u2])(u[:])
+])

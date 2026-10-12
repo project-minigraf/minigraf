@@ -1,0 +1,2 @@
+(query [:where [?e :coLor ?c] (not(?/query [:find hhh]))])
+

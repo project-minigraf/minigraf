@@ -1,0 +1,1 @@
+(query [:finY:where [?e ??ame ?n]])

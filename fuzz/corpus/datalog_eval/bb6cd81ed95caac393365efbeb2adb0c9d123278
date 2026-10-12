@@ -1,0 +1,1 @@
+(query [:finn :w :where [?e ?nam1 ?zeryn]  :where [?e ?name ?n] [(- ?n "ce")]])

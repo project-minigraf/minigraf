@@ -1,0 +1,1 @@
+(query [:find :where [?e :n?-me ?n] (not (or-join=*cy)[])])

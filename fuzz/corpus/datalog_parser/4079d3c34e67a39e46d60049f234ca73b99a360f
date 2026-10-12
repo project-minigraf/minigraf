@@ -1,0 +1,2 @@
+(
+query[:find(ntu>:over t)])

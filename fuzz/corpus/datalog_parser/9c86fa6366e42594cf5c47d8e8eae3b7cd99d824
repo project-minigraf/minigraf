@@ -1,0 +1,1 @@
+(query [::where [?e g n] (not [De ?_anne4d t])])

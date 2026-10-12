@@ -1,0 +1,5 @@
+(query [:de :where [?e wname ?n] (noe ?ss :
+[: [?e m ?]])
+(noe slsssn ?ss :i
+[: [?e aren1:aman ?]])
+[?e wame ?n] (noe* ?ss>sss?[ ug])])

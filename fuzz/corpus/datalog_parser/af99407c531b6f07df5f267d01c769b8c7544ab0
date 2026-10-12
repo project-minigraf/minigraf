@@ -1,0 +1,1 @@
+(query [:ind?:where [?e ::?n] (n [])])

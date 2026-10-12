@@ -1,0 +1,7 @@
+(query [:find ?e :where [?e :n?-me ?n](query [:find(nut =e) :e])
+  [?e :n?-me ?n] (not(query :
+[: [?e ?]])
+[?e wname ?n] (noea4= =y) (rnassss:ry :
+[: [?e:paWWWWWernt ?]])
+[?e ?_wname ?n] (noe ;ssssssssssuery :
+[: (not [au :banned true])]) [:b eaanned true])])

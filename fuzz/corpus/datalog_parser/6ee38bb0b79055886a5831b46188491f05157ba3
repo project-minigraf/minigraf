@@ -1,0 +1,1 @@
+(query [:e :where (not [d ? eruG])])

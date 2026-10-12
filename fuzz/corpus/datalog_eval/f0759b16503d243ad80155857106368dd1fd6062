@@ -1,0 +1,1 @@
+(query [:find  :where [Ue or ?c] (nd ?e :whe)])

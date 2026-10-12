@@ -1,0 +1,5 @@
+(query [:find ?n :where 
+
+
+
+[(+:fi?n "A")]])

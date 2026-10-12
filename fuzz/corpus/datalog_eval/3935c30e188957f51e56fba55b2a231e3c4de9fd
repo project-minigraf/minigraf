@@ -1,0 +1,1 @@
+(query [:fi?e :where  (not-join [?OO ?eOOOOOO ?eOOOOOO_IIIIIIe] [?ue])])

@@ -1,0 +1,1 @@
+(query [:fd :where[?e qnna em?] (not [?e:b trug])])

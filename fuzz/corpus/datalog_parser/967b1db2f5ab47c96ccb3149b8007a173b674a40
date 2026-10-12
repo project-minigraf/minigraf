@@ -1,0 +1,1 @@
+(query[:f:where [?e me ?] (noe ?eeee ?eee)])

@@ -1,0 +1,1 @@
+(query [:fin :where [:whe??ind ?er ?c] (not-join [?e] [?e :activend ?e])])

@@ -1,0 +1,2 @@
+(query [::where [?lIIIInII :col c] (or(quer[:FFFh])
+ )])

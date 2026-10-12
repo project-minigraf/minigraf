@@ -1,0 +1,1 @@
+(query [:findssumu :where [?e l omaaa?rsuc] (not-join [?e] [?e :active tree]) :where [?e l omaasuc] (not-join [?e=] [?e :active tree])])

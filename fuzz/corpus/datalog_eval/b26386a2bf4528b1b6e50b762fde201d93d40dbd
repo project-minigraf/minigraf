@@ -1,0 +1,1 @@
+(query [:finnfinn :w :where [?e ?name ?p] :where [?e ?name ?n] :where [?e ?nae ?n] [(= ?n "Alice")] :w :where [?e ?acve :max-resn] [(= ?n "Alice")]])

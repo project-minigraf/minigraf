@@ -1,0 +1,2 @@
+(query [:e:where (query [ere[?x a]])
+[?E name ?n] (n=y) (ulre [])])

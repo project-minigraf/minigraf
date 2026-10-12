@@ -1,0 +1,1 @@
+(query [:findsu :where [?e l omaaa?psuc] (not-join [?e] [?e :active treewwwwwwwwwwwe] [?e :actipe treewwwwwwwwwwwwwwwwww]) [?e l omaaa?rsuc] (nnt-join [?e] [?etree])])

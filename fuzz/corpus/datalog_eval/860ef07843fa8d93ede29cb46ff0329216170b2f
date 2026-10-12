@@ -1,0 +1,1 @@
+(query [:fin:where [?e : ?c] (not[?e :iind ?e])])

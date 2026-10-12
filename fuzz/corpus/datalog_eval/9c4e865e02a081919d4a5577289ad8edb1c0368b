@@ -1,0 +1,1 @@
+(query [  :where [?S߆ܤfe :name ?n] [(= ?n "Alice")]])

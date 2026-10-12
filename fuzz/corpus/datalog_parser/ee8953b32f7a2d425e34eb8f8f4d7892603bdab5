@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e ?W?-me ?n] (not(que [:(t*[ae :b true])]) [ae :db/tx-id(query [:find])])
+:f])

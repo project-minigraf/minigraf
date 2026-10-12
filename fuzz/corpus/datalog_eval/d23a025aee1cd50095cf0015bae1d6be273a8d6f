@@ -1,0 +1,1 @@
+(query [:fi :where (n/j [?E] ?e ?ei e[ctiv] [ey],)])

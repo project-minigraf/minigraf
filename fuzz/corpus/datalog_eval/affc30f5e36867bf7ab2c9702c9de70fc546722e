@@ -1,0 +1,1 @@
+(query [:?e :where [?e :color ?c] (not-Znot ?:a=e:)(ot-Znotnil ?:age:w e)])

@@ -1,0 +1,1 @@
+(query [:filtaid-ime :find ?d ?e ::fin-time :find0?e0::y-v?e ::fin-time :-vad ?e ])

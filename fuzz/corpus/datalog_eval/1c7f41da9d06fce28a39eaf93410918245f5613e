@@ -1,0 +1,1 @@
+(query [: :where [?e :colHr c?] (nZnot ?c>e :whert-Zn()otolor )e]) 

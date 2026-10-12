@@ -1,0 +1,1 @@
+(query [:fin:co:where [:asof?e :name ?n] [(= ?n "")]])

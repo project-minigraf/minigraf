@@ -1,0 +1,1 @@
+(rule [(pna t) [Arnt =:][?yy rt ?y][?y  t:?y]])

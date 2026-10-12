@@ -1,0 +1,1 @@
+(query[:find ?minn :where [?e :name ?wGn]])

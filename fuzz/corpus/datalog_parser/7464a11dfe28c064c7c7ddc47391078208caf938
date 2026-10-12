@@ -1,0 +1,1 @@
+(query [::where  [:e  n?a:em] (not [:e0(y:b)n])])

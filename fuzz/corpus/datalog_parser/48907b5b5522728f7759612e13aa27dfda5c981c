@@ -1,0 +1,2 @@
+(query [:where [?e ::n] (not [?e nned tue])(qry:ay?)
+])

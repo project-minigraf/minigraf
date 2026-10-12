@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :n?-me ?n] (not(ques ?_=y ?_=y) (u =ya) )])

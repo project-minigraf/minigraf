@@ -1,0 +1,2 @@
+(query [:fio:where(query [:findsu :where [?eA ma olaa?rsuc] []]) (not-join[?e] [?e :active tree]) :where [?e l omaaa?rsuc] (not-jo
+in [?e] [?e :active tree])])

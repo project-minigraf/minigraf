@@ -1,0 +1,1 @@
+(query [:f:where [?g stniegelor ?c] (not[?e :ar e])])

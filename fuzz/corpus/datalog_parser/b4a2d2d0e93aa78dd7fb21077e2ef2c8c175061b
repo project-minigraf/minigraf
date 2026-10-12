@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :n?-me false]  [?e :n?-me ?n] (not(ry [ :wh (n)]) [ae :banneed tru])])

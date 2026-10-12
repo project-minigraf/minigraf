@@ -1,0 +1,1 @@
+(query [:find:where [?e su?emlor ?c] (not-join [?e] [?e -Xqtiretr eu])])

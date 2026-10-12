@@ -1,0 +1,2 @@
+(query [:find ?:waere [?e :cofind :where [?e :r ?c] (not[] [u?tend true true]l:ty [:find ?e :where [?e :color ?c] (not[] [u?tend true true])])
+h] (n)])

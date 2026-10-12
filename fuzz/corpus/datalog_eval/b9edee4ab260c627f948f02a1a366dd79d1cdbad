@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e :color ?c](query 1 ?:agege:[:find ?ee:z hre [?e :color ?c] (not-join [] [?e :active trtrue])])
+ (not-join [] [?e :active trtrue])])

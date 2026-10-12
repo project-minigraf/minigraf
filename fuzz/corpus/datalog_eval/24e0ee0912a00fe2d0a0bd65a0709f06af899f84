@@ -1,0 +1,14 @@
+(query [:find ?n :where 
+
+
+
+
+
+
+
+
+
+
+
+
+[(starts-with? "Alice")]])

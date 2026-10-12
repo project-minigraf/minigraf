@@ -1,0 +1,1 @@
+(query [:fin?3e :where [?e ?__fe ?n]  :where [?e Enanm?e ?eOOOIind] [(= ?n "Alice")]])

@@ -1,0 +1,1 @@
+(query[:find ?хniln :where [?e :name ?whn]])

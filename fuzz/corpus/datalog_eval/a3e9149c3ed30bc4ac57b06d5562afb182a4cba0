@@ -1,0 +1,1 @@
+(query [:fin:where [?e :coTor ?c] (not[?e :ainde? trumine] [?e :aind ?etr55555umine])])

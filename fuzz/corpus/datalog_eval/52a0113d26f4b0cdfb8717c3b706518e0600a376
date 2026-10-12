@@ -1,0 +1,1 @@
+(query [:fiodsumm :where [?e l omaaa?suc] (nog-join [?e] [?e :active tree]) :where [?e l omaaa?rsuc] (nmt-join [?e :ree]) :where [?e l omaaa?rsuc] (nmt-join [?e :active tree]) :where [?e l omaaa?rsuc] (nmt-join [?pe] [?e :active tree]) :where [?e l omaaa?rsuc] (nmt[?e :] [?e :active tree])])

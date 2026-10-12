@@ -1,0 +1,2 @@
+(query [:0:where [?e :n qee?n] (ssqu::n t=?y) (u 
+ens)[(-: ?y)]])

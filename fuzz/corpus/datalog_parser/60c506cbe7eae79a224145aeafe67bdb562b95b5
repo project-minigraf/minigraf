@@ -1,0 +1,2 @@
+(query [:ur:where [r!=?ct] (e[[
+]]?)[?x rent 8]])
