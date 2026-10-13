@@ -210,6 +210,10 @@ pub(crate) enum ErrorCode {
     Api010,
     Api011,
     Api012,
+    // API-013 is deprecated since v3.0.0: fact logs no longer defer
+    // checkpoints; they pin their generation instead (#543). Kept so the code
+    // is never reused.
+    #[allow(dead_code)]
     Api013,
     Api014,
     Api015,

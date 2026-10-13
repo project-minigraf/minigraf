@@ -452,30 +452,47 @@ fn wal_exists(path: &Path) -> bool {
     Path::new(&p).exists()
 }
 
+/// Checkpoints that rewrite the leaves of entity e1 and free the old ones.
+fn churn(db: &Minigraf, rounds: usize) {
+    for i in 0..rounds {
+        let facts: String = (0..50)
+            .map(|j| format!("[#uuid \"{}\" :churn/n {}]", uuid(0), i * 100 + j))
+            .collect();
+        db.execute(&format!("(transact [{facts}])")).unwrap();
+        db.checkpoint().unwrap();
+    }
+}
+
 #[test]
-fn checkpoint_and_rebuild_are_api_013_while_a_log_is_open() {
+fn checkpoint_and_rebuild_run_while_a_log_is_open() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("pin.graph");
     let db = file_db(&path);
     let model = write(&db, Some(3));
-    let log = db.fact_log(&FactFilter::new()).unwrap();
+    // Window 2: tx order reads the committed index again for every window,
+    // after each checkpoint below.
+    let mut log = db.fact_log(&FactFilter::new().window(2)).unwrap();
+    let mut records = log.next_batch(1).unwrap().expect("a record");
 
-    let err = db.checkpoint().expect_err("checkpoint must be refused");
-    assert_eq!(err.code(), "API-013");
-    let err = db.rebuild_indexes().expect_err("rebuild must be refused");
-    assert_eq!(err.code(), "API-013");
-    assert!(db.verify().unwrap().is_ok(), "verify still runs");
-    assert!(wal_exists(&path), "nothing was checkpointed");
-
-    // The refused calls left the log intact.
-    let records: Vec<FactRecord> = log.map(Result::unwrap).collect();
-    assert_eq!(records.len(), model.len());
-
-    // Reading to the end released the database.
     db.checkpoint().unwrap();
-    assert!(!wal_exists(&path));
-    let rows: Vec<Row> = read(&db, &FactFilter::new(), 100).iter().map(row).collect();
+    assert!(!wal_exists(&path), "checkpoint ran");
+    churn(&db, 6);
+    db.rebuild_indexes().unwrap();
+    churn(&db, 3);
+    assert!(
+        db.verify().unwrap().is_ok(),
+        "verify clean with the log open"
+    );
+
+    // The log still returns the database as it was when it opened.
+    while let Some(batch) = log.next_batch(3).unwrap() {
+        records.extend(batch);
+        churn(&db, 1);
+    }
+    assert_tx_ordered(&records);
+    let rows: Vec<Row> = records.iter().map(row).collect();
     assert_eq!(sorted(rows), sorted(model));
+    assert!(db.verify().unwrap().is_ok());
 }
 
 #[test]
@@ -487,42 +504,54 @@ fn checkpoint_with_nothing_to_write_is_allowed_while_a_log_is_open() {
     db.checkpoint().unwrap();
 }
 
-#[test]
-fn close_releases_the_database() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("close.graph");
-    let db = file_db(&path);
-    write(&db, None);
-    let mut log = db.fact_log(&FactFilter::new()).unwrap();
-    assert!(log.next_batch(1).unwrap().is_some());
-    log.close();
-    db.checkpoint().unwrap();
-    assert!(!wal_exists(&path));
+fn file_len(path: &Path) -> u64 {
+    std::fs::metadata(path).unwrap().len()
 }
 
 #[test]
-fn auto_checkpoint_waits_for_the_log() {
+fn pages_held_by_a_log_are_reused_after_close() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("close.graph");
+    let db = file_db(&path);
+    write(&db, Some(steps().len()));
+    churn(&db, 4);
+    // Growth over the same rounds of writes: with no log, with a log open,
+    // and after it closes.
+    let grow = |db: &Minigraf| {
+        let before = file_len(&path);
+        churn(db, 4);
+        file_len(&path) - before
+    };
+    let free = grow(&db);
+    let mut log = db.fact_log(&FactFilter::new()).unwrap();
+    assert!(log.next_batch(1).unwrap().is_some());
+    let held = grow(&db);
+    log.close();
+    let after = grow(&db);
+    eprintln!("growth: free {free}, held {held}, after {after}");
+    assert!(held > free, "pages the log may read are not reused");
+    assert!(after < held, "after close they are reused");
+    assert!(db.verify().unwrap().is_ok());
+}
+
+#[test]
+fn auto_checkpoint_runs_while_a_log_is_open() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("auto.graph");
     let opts = OpenOptions::default().wal_checkpoint_threshold(2);
     let db = OpenOptions::path(opts, &path).open().unwrap();
     db.execute(r#"(transact [[:a :n 1]])"#).unwrap();
     let log = db.fact_log(&FactFilter::new()).unwrap();
-    for i in 2..6 {
+    for i in 2..=6 {
         db.execute(&format!("(transact [[:a :n {i}]])")).unwrap();
     }
-    assert!(wal_exists(&path), "auto-checkpoint must wait");
-    drop(log);
-    db.execute(r#"(transact [[:a :n 6]])"#).unwrap();
-    assert!(
-        !wal_exists(&path),
-        "the first write after close checkpoints"
-    );
+    assert!(!wal_exists(&path), "auto-checkpoint ran");
+    assert_eq!(log.count(), 1, "the log keeps its snapshot");
     assert_eq!(read(&db, &FactFilter::new(), 100).len(), 6);
 }
 
 #[test]
-fn write_transaction_commit_defers_auto_checkpoint() {
+fn write_transaction_commit_checkpoints_while_a_log_is_open() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("wtx.graph");
     let opts = OpenOptions::default().wal_checkpoint_threshold(1);
@@ -531,9 +560,86 @@ fn write_transaction_commit_defers_auto_checkpoint() {
     let mut tx = db.begin_write().unwrap();
     tx.execute(r#"(transact [[:a :n 1]])"#).unwrap();
     tx.commit().unwrap();
-    assert!(wal_exists(&path), "commit's auto-checkpoint must wait");
-    drop(log);
+    assert!(!wal_exists(&path), "commit's auto-checkpoint ran");
+    assert_eq!(log.count(), 0, "the log keeps its snapshot");
     assert_eq!(read(&db, &FactFilter::new(), 100).len(), 1);
+}
+
+/// Logs opened while one thread writes transactions of `PER_TX` facts and
+/// checkpoints see whole transactions, and every one up to the last they see.
+#[test]
+fn log_opened_during_writes_and_checkpoints_sees_whole_transactions() {
+    const PER_TX: usize = 7;
+    const TXS: usize = 60;
+    let dir = tempfile::tempdir().unwrap();
+    let db = file_db(&dir.path().join("race.graph"));
+    let writer = {
+        let db = db.clone();
+        std::thread::spawn(move || {
+            for t in 0..TXS {
+                let facts: String = (0..PER_TX)
+                    .map(|j| format!("[:w :n {}]", t * 100 + j))
+                    .collect();
+                if t % 3 == 0 {
+                    let mut tx = db.begin_write().unwrap();
+                    tx.execute(&format!("(transact [{facts}])")).unwrap();
+                    tx.commit().unwrap();
+                } else {
+                    db.execute(&format!("(transact [{facts}])")).unwrap();
+                }
+                if t % 4 == 3 {
+                    db.checkpoint().unwrap();
+                }
+            }
+        })
+    };
+    let mut opened = 0;
+    loop {
+        let done = writer.is_finished();
+        let records: Vec<FactRecord> = read(&db, &FactFilter::new().window(5), 4);
+        let mut per_tx = std::collections::BTreeMap::<u64, usize>::new();
+        for r in &records {
+            *per_tx.entry(r.tx_count).or_default() += 1;
+        }
+        assert!(
+            per_tx.values().all(|&n| n == PER_TX),
+            "a partial transaction"
+        );
+        let max = per_tx.keys().next_back().copied().unwrap_or(0);
+        assert_eq!(per_tx.len() as u64, max, "a transaction is missing");
+        opened += 1;
+        if done {
+            assert_eq!(max, TXS as u64);
+            break;
+        }
+    }
+    writer.join().unwrap();
+    assert!(opened > 1);
+}
+
+#[test]
+fn in_memory_log_opens_while_another_thread_writes() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute(r#"(transact [[:a :n 1]])"#).unwrap();
+    let (held_tx, held_rx) = std::sync::mpsc::channel();
+    let (go_tx, go_rx) = std::sync::mpsc::channel::<()>();
+    let writer = {
+        let db = db.clone();
+        std::thread::spawn(move || {
+            let mut tx = db.begin_write().unwrap();
+            tx.execute(r#"(transact [[:a :n 2]])"#).unwrap();
+            held_tx.send(()).unwrap();
+            go_rx.recv().unwrap();
+            tx.commit().unwrap();
+        })
+    };
+    held_rx.recv().unwrap();
+    // The write lock is held on the other thread; the log opens anyway.
+    let log = db.fact_log(&FactFilter::new()).unwrap();
+    go_tx.send(()).unwrap();
+    writer.join().unwrap();
+    assert_eq!(log.count(), 1, "the uncommitted write is not in the log");
+    assert_eq!(read(&db, &FactFilter::new(), 10).len(), 2);
 }
 
 #[test]
@@ -566,4 +672,24 @@ fn log_is_send_and_outlives_the_database_handle() {
     let db = file_db(&path);
     let rows: Vec<Row> = read(&db, &FactFilter::new(), 100).iter().map(row).collect();
     assert_eq!(sorted(rows), sorted(model));
+}
+
+#[test]
+fn close_time_checkpoint_runs_while_a_log_outlives_the_handle() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("close_cp.graph");
+    let model = {
+        let db = Minigraf::open(&path).unwrap();
+        let model = write(&db, Some(4));
+        let log = db.fact_log(&FactFilter::new().window(2)).unwrap();
+        drop(db); // checkpoints the pending writes
+        assert!(!wal_exists(&path), "close-time checkpoint ran");
+        let rows: Vec<Row> = log.map(|r| row(&r.unwrap())).collect();
+        assert_eq!(sorted(rows), sorted(model.clone()));
+        model
+    };
+    let db = Minigraf::open(&path).unwrap();
+    let rows: Vec<Row> = read(&db, &FactFilter::new(), 100).iter().map(row).collect();
+    assert_eq!(sorted(rows), sorted(model));
+    assert!(db.verify().unwrap().is_ok());
 }

@@ -413,6 +413,9 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     /// point. A failure at any step leaves the active meta and all it references
     /// untouched. The pages written depend on the change, not on the graph size.
     ///
+    /// Pages an open snapshot may still read (freed by an earlier checkpoint
+    /// after the generation it pins) are not reused; they stay on the free list.
+    ///
     /// After a failure that may have written (anything past the checks
     /// below), this and every later commit fail with STG-046.
     pub fn save(&mut self) -> Result<()> {
@@ -420,7 +423,6 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         if !self.dirty {
             return Ok(());
         }
-        self.refuse_while_logs_open()?;
         let pending_facts = self.storage.get_pending_facts();
         let m = self.meta;
         let next_gen = m.next_generation()?;
@@ -429,7 +431,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
 
         let mut backend = self.lock()?;
         let mut alloc =
-            PageAllocator::from_chain(m.freelist_head, m.freelist_count, m.page_count, next_gen);
+            PageAllocator::from_chain(m.freelist_head, m.freelist_count, m.page_count, next_gen)
+                .with_quarantine(self.storage.pages_in_force());
         let encoded = encode(
             &pending_facts,
             &m,
@@ -454,6 +457,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             )?;
         }
         let [eavt_root, aevt_root, avet_root, vaet_root, dict_root] = roots;
+        let quarantine = freed.clone();
         let (freelist_head, freelist_count, listed) =
             alloc.finish_free_list(freed, &mut *backend, &self.page_cache)?;
 
@@ -486,6 +490,9 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.dirty = false;
         self.failed = false;
         let reader = self.activate(new_meta);
+        // `listed` includes quarantined ids. Nothing pins a generation on
+        // the browser yet (it has no fact log); before its cursors pin, ids in
+        // force must be withheld here (#543 plan step 8).
         #[cfg(all(target_arch = "wasm32", feature = "browser"))]
         {
             self.released = listed;
@@ -494,7 +501,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         drop(listed);
         // All pending facts are now in `reader`.
         self.storage
-            .publish(reader, new_meta.generation, pending_facts.len());
+            .publish(reader, new_meta.generation, pending_facts.len(), quarantine);
         Ok(())
     }
 
@@ -518,14 +525,14 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     /// reference: ids from its free list that no walked page uses, then new
     /// pages at the end. The free list is derived again from the pages the new
     /// meta reaches, so a leaked or wrong free list is repaired too. Memory is
-    /// O(facts): every index key is held for the bulk build.
+    /// O(facts): every index key is held for the bulk build. As in `save`, pages
+    /// an open snapshot may still read are not reused.
     pub(crate) fn rebuild_indexes(&mut self) -> Result<()> {
         use crate::storage::btree::LeafCursor;
         use crate::storage::keys::{Index, KeyFact};
         use std::collections::BTreeSet;
 
         self.refuse_if_failed()?;
-        self.refuse_while_logs_open()?;
 
         let m = self.meta;
         let next_gen = m.next_generation()?;
@@ -539,8 +546,10 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let cache = PageCache::new(VERIFY_CACHE_PAGES);
         cache.set_generation_bound(m.generation);
 
-        // Choose the source and the ids that are safe to overwrite.
-        let (source, pool) = {
+        // Choose the source and the ids that are safe to overwrite: free, not
+        // walked, and not readable through an open snapshot.
+        let in_force = self.storage.pages_in_force();
+        let (source, pool, keep) = {
             let mut w = verify::Walker::new(&*backend, &cache, m);
             let scans: Vec<verify::IndexScan> = [Index::Eavt, Index::Aevt, Index::Avet]
                 .into_iter()
@@ -564,9 +573,13 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             keep.extend(dict.nodes.iter().copied());
             let pool: BTreeSet<u64> = w
                 .read_free_list()
-                .map(|(ids, _)| ids.into_iter().filter(|id| !keep.contains(id)).collect())
+                .map(|(ids, _)| {
+                    ids.into_iter()
+                        .filter(|id| !keep.contains(id) && !in_force.contains(id))
+                        .collect()
+                })
                 .unwrap_or_default();
-            (source, pool)
+            (source, pool, keep)
         };
 
         // Nothing is written before this point (STG-041 leaves the file and
@@ -670,6 +683,9 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let free: Vec<u64> = (2..alloc.next_append())
             .filter(|p| !reached.contains(p))
             .collect();
+        // Pages the active generation used that the new one does not: a
+        // snapshot on it may still read them.
+        let quarantine: Vec<u64> = keep.difference(&reached).copied().collect();
         let mut chain_alloc = PageAllocator::new(Vec::new(), alloc.next_append(), next_gen);
         let (freelist_head, _) =
             freelist::write_chain(&free, &mut chain_alloc, &mut *backend, &self.page_cache)?;
@@ -688,12 +704,10 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.failed = false;
         let reader = self.activate(new_meta);
         self.storage
-            .publish(reader, new_meta.generation, pending_facts.len());
+            .publish(reader, new_meta.generation, pending_facts.len(), quarantine);
         Ok(())
     }
 
-    /// API-013 while a fact log is open: it reads pages of the active
-    /// generation, and a commit frees pages that the next one reuses (#430).
     fn refuse_if_failed(&self) -> Result<()> {
         if self.failed {
             bail_coded!(ErrorCode::Stg046);
@@ -705,13 +719,6 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn failed(&self) -> bool {
         self.failed
-    }
-
-    fn refuse_while_logs_open(&self) -> Result<()> {
-        match self.storage.log_pins() {
-            0 => Ok(()),
-            n => Err(err_coded!(ErrorCode::Api013, n)),
-        }
     }
 
     /// Get a reference to the underlying fact storage
@@ -1150,6 +1157,119 @@ mod tests {
         // of the trees per save.
         let m = pfs.meta();
         assert!(m.freelist_count > 0, "old tree pages are on the free list");
+    }
+
+    // ── pins and quarantine (#543) ──────────────────────────────────────────
+
+    /// Pages a reader of `meta` reads: `reachable` without the free-list chain.
+    fn read_pages(meta: &MetaPage, backend: &dyn StorageBackend) -> BTreeSet<u64> {
+        let mut set = reachable(meta, backend);
+        if meta.freelist_head != 0 {
+            let (_, chain) = freelist::read_chain(
+                meta.freelist_head,
+                backend,
+                &PageCache::new(0),
+                meta.page_count,
+            )
+            .unwrap();
+            for id in chain {
+                set.remove(&id);
+            }
+        }
+        set
+    }
+
+    fn committed_set(snap: &crate::graph::storage::Snapshot) -> Vec<FactKey> {
+        as_set(
+            snap.committed
+                .as_ref()
+                .expect("a committed reader")
+                .all_facts()
+                .unwrap(),
+        )
+    }
+
+    /// Pin a generation, then run `commit` (a save or a rebuild) repeatedly:
+    /// no commit writes a page the pinned generation reads, the pinned reader
+    /// still returns its facts, and space stays accounted for. Once the pin is
+    /// dropped, the next commits reuse the pages it held.
+    fn check_pin_holds_pages(commit: impl Fn(&mut PersistentFactStorage<RecordingBackend>)) {
+        let rec = RecordingBackend {
+            inner: MemoryBackend::new(),
+            written: Arc::new(Mutex::new(Vec::new())),
+        };
+        let log = rec.written.clone();
+        let mem = rec.inner.clone();
+        let mut pfs = PersistentFactStorage::new(rec, 64).unwrap();
+        let mut next_entity = 0;
+        for round in 0..4u64 {
+            transact_mixed(&mut pfs, &mut next_entity, 40, round);
+            pfs.save().unwrap();
+        }
+        let snap = pfs.storage().snapshot().unwrap();
+        let pinned = read_pages(&pfs.meta(), &mem);
+        let expect = committed_set(&snap);
+        let mut released: BTreeSet<u64> = BTreeSet::new();
+        for round in 4..14u64 {
+            log.lock().unwrap().clear();
+            transact_mixed(&mut pfs, &mut next_entity, 30, round);
+            commit(&mut pfs);
+            for id in log.lock().unwrap().iter() {
+                assert!(!pinned.contains(id), "a commit wrote a page the pin reads");
+            }
+            assert!(committed_set(&snap) == expect, "pinned reader changed");
+            let m = pfs.meta();
+            assert_space_accounted(&m, &mem);
+            assert!(pfs.verify().unwrap().problems.is_empty(), "verify clean");
+            released.extend(pinned.difference(&read_pages(&m, &mem)));
+        }
+        assert!(!released.is_empty(), "commits freed pinned pages");
+
+        drop(snap);
+        assert!(
+            pfs.storage().pages_in_force().is_empty(),
+            "quarantine dropped"
+        );
+        // Every id the pin held is free and may be handed out again: commit
+        // until the file grows, which takes the ids before any append.
+        log.lock().unwrap().clear();
+        let mut round = 14u64;
+        let start = pfs.meta().page_count;
+        while pfs.meta().page_count == start {
+            transact_mixed(&mut pfs, &mut next_entity, 30, round);
+            commit(&mut pfs);
+            assert_space_accounted(&pfs.meta(), &mem);
+            round += 1;
+        }
+        let written: BTreeSet<u64> = log.lock().unwrap().iter().copied().collect();
+        assert!(
+            !written.is_disjoint(&released),
+            "pages held by the pin are reused once it is dropped"
+        );
+        assert!(pfs.verify().unwrap().problems.is_empty());
+    }
+
+    #[test]
+    fn pinned_generation_pages_survive_saves() {
+        check_pin_holds_pages(|pfs| pfs.save().unwrap());
+    }
+
+    #[test]
+    fn pinned_generation_pages_survive_rebuilds() {
+        check_pin_holds_pages(|pfs| pfs.rebuild_indexes().unwrap());
+    }
+
+    #[test]
+    fn pinned_generation_pages_survive_saves_and_rebuilds() {
+        let flip = std::cell::Cell::new(false);
+        check_pin_holds_pages(|pfs| {
+            flip.set(!flip.get());
+            if flip.get() {
+                pfs.save().unwrap()
+            } else {
+                pfs.rebuild_indexes().unwrap()
+            }
+        });
     }
 
     #[test]

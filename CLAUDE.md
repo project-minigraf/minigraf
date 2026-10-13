@@ -120,7 +120,8 @@ cargo run < demos/demo_negation.txt
    - `value_pages.rs`: append-only value pages for strings over 64 bytes
    - `reader.rs`: `OnDiskReader` — covering reads of committed facts (`CommittedReader`); `live_facts` decides net-assert on index keys (#379)
    - `verify.rs`: integrity walk for `Minigraf::verify` (tree order, index digests, DICT, page accounting) and the source choice for `rebuild_indexes` (#373)
-   - `meta.rs` / `page.rs` / `freelist.rs`: meta pages A/B, the common page header and allocator, free-list chain
+   - `meta.rs` / `page.rs` / `freelist.rs`: meta pages A/B, the common page header and allocator (skips quarantined ids), free-list chain
+   - `pins.rs`: `Pins` / `GenerationPin` — generations held by open snapshots and the quarantine of pages checkpoints freed after them (#543)
    - `cache.rs`: LRU page cache (`PageCache`, default 256 pages)
    - `dir_sync.rs`: `sync_parent_dir` — fsyncs the parent directory after creating the `.graph`/WAL or deleting the WAL (no-op off Unix)
    - `packed_pages.rs`: v7 fact pages, read only for migration
@@ -144,7 +145,7 @@ cargo run < demos/demo_negation.txt
 
 6. **`src/db.rs`** — Public API: `Minigraf::open/execute/query/fact_log/prepare/begin_write/checkpoint/save/verify/rebuild_indexes`, `WriteTransaction`, `IntegrityReport`, `OpenOptions::page_cache_size`, `OpenOptions::read_only` (#429: shared lock, nothing written, writes are `API-014`)
    - `src/cursor.rs`: `Cursor` / `Batch` — owned, `Send` cursor returned by `Minigraf::query` and `PreparedQuery::query` (#432); answer computed at open today, shaped for streaming operators
-   - `src/fact_log.rs`: `FactLog` / `FactFilter` / `FactRecord` / `FactOrder` — every fact version streamed by `Minigraf::fact_log` (#430): tx order (multi-pass, bounded window) or storage order, key-level filters; an open log pins the committed generation, deferring checkpoints (`API-013`)
+   - `src/fact_log.rs`: `FactLog` / `FactFilter` / `FactRecord` / `FactOrder` — every fact version streamed by `Minigraf::fact_log` (#430): tx order (multi-pass, bounded window) or storage order, key-level filters; an open log pins the committed generation (`storage::pins`), so checkpoints run but do not reuse its pages (`API-013` deprecated, #543)
    - `src/log_writer.rs`: `LogWriter` — builds a new file from `FactRecord`s with their tx and valid-time kept (#431): tx-ordered appends with holes (`API-015`/`API-016`), batched copy-on-write checkpoints at tx boundaries, no WAL, built at `<path>.partial` and renamed by `finish` (`STG-043` if the target exists)
 
 7. **`src/wal.rs`** — Fact-level sidecar WAL, CRC32-protected entries, crash recovery. Like `storage::verify` and `storage::dir_sync`, not compiled for wasm32 (no file backend there)
@@ -201,7 +202,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1446 tests** (1436 passing, 10 ignored; unit + integration + doc).
+**1458 tests** (1448 passing, 10 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.

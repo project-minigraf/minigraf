@@ -110,6 +110,9 @@ the rest of the docs.
   the pin holds pages (no reuse) until the cursor is dropped.
 
 ### 6. Fact log
+- PR 2 adds `Snapshot` with only what the log needs (`committed`, the pin, the
+  pending store and its length, `pending_range`) and `FactStorage::snapshot()`;
+  step 5 adds `now`, the read methods and `Clone` (pin in an `Arc`).
 - `FactLog` holds a `Snapshot` instead of `LogPin` + `FactStorage` + `pending_end`;
   pending reads go to `snapshot.pending_range`. `Minigraf::fact_log` no longer takes
   `write_lock`. Remove `LogPin`, `pin_log`, `log_pins`, `log_snapshot`.
