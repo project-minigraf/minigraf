@@ -1,6 +1,11 @@
 codecov:
   require_ci_to_pass: false
 
+# Fuzz harnesses run under cargo-fuzz, never under cargo test, so their lines
+# can only show as uncovered.
+ignore:
+  - "fuzz/**"
+
 coverage:
   status:
     project:
