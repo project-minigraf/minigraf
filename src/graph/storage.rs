@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 
-/// Compact key for O(1) duplicate detection in `FactData::pending_keys`.
+/// Compact key for O(1) duplicate detection in `PendingStore::keys`.
 ///
 /// Mirrors the equality predicate used by `load_fact`:
 /// (entity, attribute, encoded_value, valid_from, valid_to, tx_count, asserted).
@@ -33,21 +33,68 @@ fn pending_key(f: &Fact) -> PendingKey {
 // Datalog Fact Storage (Phase 3+)
 // ============================================================================
 
-/// Private container that co-locates the fact list and all four indexes under
-/// a single `RwLock`. This ensures facts and indexes are always updated together
-/// without needing a second lock.
-struct FactData {
+/// The facts written since the last checkpoint, with their duplicate-check set
+/// and indexes, always updated together under one lock.
+///
+/// Append-only while it is the active store: a checkpoint publishes a new
+/// empty one ([`FactStorage::publish`]) instead of clearing it, so a reader
+/// holding this one keeps its positions.
+struct PendingStore {
     facts: Vec<Fact>,
     /// O(1) duplicate-detection set for `load_fact`.
     ///
     /// Maintained in sync with `facts` by every method that appends to `facts`.
     /// Replaces the O(n) linear scan that made `load_fact` O(n²) for large
     /// fact sets (e.g. 1M-fact benchmark setup).
-    pending_keys: HashSet<PendingKey>,
-    pending_indexes: Indexes,
+    keys: HashSet<PendingKey>,
+    indexes: Indexes,
+}
+
+impl PendingStore {
+    fn new() -> Arc<RwLock<Self>> {
+        Arc::new(RwLock::new(PendingStore {
+            facts: Vec::new(),
+            keys: HashSet::new(),
+            indexes: Indexes::new(),
+        }))
+    }
+
+    /// Append `fact` unless it is already here; returns whether it was added.
+    fn push(&mut self, fact: Fact) -> bool {
+        if !self.keys.insert(pending_key(&fact)) {
+            return false;
+        }
+        self.indexes.insert(&fact, self.facts.len());
+        self.facts.push(fact);
+        true
+    }
+
+    /// Append `facts` without the duplicate check (fresh writes: each has a
+    /// new tx_count, so none can repeat a stored one).
+    fn extend(&mut self, facts: Vec<Fact>) {
+        let base = self.facts.len();
+        for (i, fact) in facts.iter().enumerate() {
+            self.keys.insert(pending_key(fact));
+            self.indexes.insert(fact, base + i);
+        }
+        self.facts.extend(facts);
+    }
+}
+
+/// The state a read sees: the committed generation and the pending store
+/// that follows it. A checkpoint replaces all three under this lock's write
+/// side (#473 spec §4.1), so no read sees the new committed facts together
+/// with the pending facts they came from.
+///
+/// Lock order: `FactData`, then its `pending`. Appends hold `FactData`'s read
+/// side while they write `pending`, so none lands in a store being replaced.
+struct FactData {
     /// Reads committed (checkpointed) facts through the on-disk covering indexes.
     /// None for in-memory databases. Set after every open, migration and checkpoint.
     committed: Option<Arc<dyn crate::storage::CommittedReader>>,
+    /// Generation of `committed`; 0 while there is none.
+    generation: u64,
+    pending: Arc<RwLock<PendingStore>>,
 }
 
 /// In-memory storage for Datalog facts with transaction support
@@ -114,10 +161,9 @@ impl FactStorage {
     pub(crate) fn new() -> Self {
         FactStorage {
             data: Arc::new(RwLock::new(FactData {
-                facts: Vec::new(),
-                pending_keys: HashSet::new(),
-                pending_indexes: Indexes::new(),
                 committed: None,
+                generation: 0,
+                pending: PendingStore::new(),
             })),
             tx_counter: Arc::new(AtomicU64::new(0)),
             log_pins: Arc::new(AtomicUsize::new(0)),
@@ -165,16 +211,7 @@ impl FactStorage {
             fact.tx_count = tx_count;
         }
 
-        let mut d = self
-            .data
-            .write()
-            .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
-        let base = d.facts.len();
-        for (i, fact) in facts.iter().enumerate() {
-            d.pending_keys.insert(pending_key(fact));
-            d.pending_indexes.insert(fact, base + i);
-        }
-        d.facts.extend(facts);
+        self.write_pending(|p| p.extend(facts))?;
 
         Ok(tx_id)
     }
@@ -223,16 +260,7 @@ impl FactStorage {
             fact.tx_count = tx_count;
         }
 
-        let mut d = self
-            .data
-            .write()
-            .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
-        let base = d.facts.len();
-        for (i, fact) in facts.iter().enumerate() {
-            d.pending_keys.insert(pending_key(fact));
-            d.pending_indexes.insert(fact, base + i);
-        }
-        d.facts.extend(facts);
+        self.write_pending(|p| p.extend(facts))?;
 
         Ok((tx_id, tx_count))
     }
@@ -267,16 +295,7 @@ impl FactStorage {
             })
             .collect();
 
-        let mut d = self
-            .data
-            .write()
-            .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
-        let base = d.facts.len();
-        for (i, fact) in retractions.iter().enumerate() {
-            d.pending_keys.insert(pending_key(fact));
-            d.pending_indexes.insert(fact, base + i);
-        }
-        d.facts.extend(retractions);
+        self.write_pending(|p| p.extend(retractions))?;
 
         Ok((tx_id, tx_count))
     }
@@ -290,23 +309,7 @@ impl FactStorage {
     /// Checks for duplicate facts before loading (based on entity, attribute, value,
     /// valid_from, valid_to, tx_count, and asserted).
     pub(crate) fn load_fact(&self, fact: Fact) -> Result<bool> {
-        let mut d = self
-            .data
-            .write()
-            .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
-
-        // O(1) duplicate check via the pending_keys HashSet.
-        // Previously this was an O(n) linear scan over d.facts, causing O(n²)
-        // total complexity when loading n facts (e.g. 1M-fact benchmarks).
-        let key = pending_key(&fact);
-        if !d.pending_keys.insert(key) {
-            return Ok(false); // Already exists, not loaded
-        }
-
-        let pos = d.facts.len();
-        d.pending_indexes.insert(&fact, pos);
-        d.facts.push(fact);
-        Ok(true)
+        self.write_pending(|p| p.push(fact))
     }
 
     /// Insert facts with their tx_id and tx_count preserved, all under one
@@ -315,21 +318,26 @@ impl FactStorage {
     /// Commits and WAL replay use this for a whole transaction. Duplicates are
     /// skipped as in [`Self::load_fact`]. Returns how many facts were loaded.
     pub(crate) fn load_facts(&self, facts: impl IntoIterator<Item = Fact>) -> Result<usize> {
-        let mut d = self
+        self.write_pending(|p| {
+            facts.into_iter().fold(
+                0usize,
+                |n, fact| if p.push(fact) { n.saturating_add(1) } else { n },
+            )
+        })
+    }
+
+    /// Run `f` on the active pending store under its write lock, with
+    /// `FactData`'s read lock held so no checkpoint replaces the store meanwhile.
+    fn write_pending<R>(&self, f: impl FnOnce(&mut PendingStore) -> R) -> Result<R> {
+        let d = self
             .data
-            .write()
+            .read()
             .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
-        let mut loaded = 0usize;
-        for fact in facts {
-            if !d.pending_keys.insert(pending_key(&fact)) {
-                continue;
-            }
-            let pos = d.facts.len();
-            d.pending_indexes.insert(&fact, pos);
-            d.facts.push(fact);
-            loaded = loaded.saturating_add(1);
-        }
-        Ok(loaded)
+        let mut p = d
+            .pending
+            .write()
+            .map_err(|_| err_coded!(ErrorCode::Int050, "pending"))?;
+        Ok(f(&mut p))
     }
 
     /// Raise tx_counter to max(tx_count) across all loaded facts.
@@ -343,7 +351,11 @@ impl FactStorage {
             .data
             .read()
             .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
-        let max = d.facts.iter().map(|f| f.tx_count).max().unwrap_or(0);
+        let p = d
+            .pending
+            .read()
+            .map_err(|_| err_coded!(ErrorCode::Int050, "pending"))?;
+        let max = p.facts.iter().map(|f| f.tx_count).max().unwrap_or(0);
         self.tx_counter.fetch_max(max, Ordering::SeqCst);
         Ok(())
     }
@@ -381,7 +393,11 @@ impl FactStorage {
             all.extend(reader.all_facts()?);
         }
         // Then pending facts (post-checkpoint, in memory)
-        all.extend(d.facts.iter().cloned());
+        let p = d
+            .pending
+            .read()
+            .map_err(|_| err_coded!(ErrorCode::Int050, "pending"))?;
+        all.extend(p.facts.iter().cloned());
         Ok(all)
     }
 
@@ -406,7 +422,8 @@ impl FactStorage {
     /// Return the pending (uncommitted) facts held in memory.
     pub(crate) fn get_pending_facts(&self) -> Vec<Fact> {
         let d = self.data.read().unwrap_or_else(|e| e.into_inner());
-        d.facts.clone()
+        let p = d.pending.read().unwrap_or_else(|e| e.into_inner());
+        p.facts.clone()
     }
 
     /// The committed reader and the number of pending facts, read together.
@@ -420,7 +437,11 @@ impl FactStorage {
             .data
             .read()
             .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
-        Ok((d.committed.clone(), d.facts.len()))
+        let p = d
+            .pending
+            .read()
+            .map_err(|_| err_coded!(ErrorCode::Int050, "pending"))?;
+        Ok((d.committed.clone(), p.facts.len()))
     }
 
     /// Clones of the pending facts at positions `from..to` (clamped).
@@ -429,8 +450,12 @@ impl FactStorage {
             .data
             .read()
             .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
-        let to = to.min(d.facts.len());
-        Ok(d.facts.get(from.min(to)..to).unwrap_or(&[]).to_vec())
+        let p = d
+            .pending
+            .read()
+            .map_err(|_| err_coded!(ErrorCode::Int050, "pending"))?;
+        let to = to.min(p.facts.len());
+        Ok(p.facts.get(from.min(to)..to).unwrap_or(&[]).to_vec())
     }
 
     /// Register an open fact log; checkpoints are refused until it is dropped.
@@ -444,31 +469,54 @@ impl FactStorage {
         self.log_pins.load(Ordering::SeqCst)
     }
 
-    /// Clear pending facts and pending indexes after a successful checkpoint.
-    pub(crate) fn post_checkpoint_clear(&self) {
-        let mut d = self.data.write().unwrap_or_else(|e| e.into_inner());
-        d.facts.clear();
-        d.pending_keys.clear();
-        d.pending_indexes = Indexes::new();
-    }
-
     /// Set the tx_counter to `max` (used on load to restore from persisted state).
     pub(crate) fn restore_tx_counter_from(&self, max: u64) {
         self.tx_counter.store(max, Ordering::SeqCst);
     }
 
-    /// Set the committed reader. Called by `PersistentFactStorage` after each
-    /// open, migration and checkpoint.
-    pub(crate) fn set_committed_reader(&self, reader: Arc<dyn crate::storage::CommittedReader>) {
+    /// Set the committed reader of generation `generation`, keeping the
+    /// pending store. Called by `PersistentFactStorage` after open and
+    /// migration, where the pending facts are not in `reader`.
+    pub(crate) fn set_committed(
+        &self,
+        reader: Arc<dyn crate::storage::CommittedReader>,
+        generation: u64,
+    ) {
         let mut d = self.data.write().unwrap_or_else(|e| e.into_inner());
         d.committed = Some(reader);
+        d.generation = generation;
+    }
+
+    /// Publish a checkpoint: `reader` (generation `generation`) now holds every
+    /// pending fact, and an empty pending store replaces the old one, all under
+    /// one write lock, so no read sees a checkpointed fact twice (#473 spec
+    /// §4.1). The old store is left intact for readers that hold it.
+    pub(crate) fn publish(
+        &self,
+        reader: Arc<dyn crate::storage::CommittedReader>,
+        generation: u64,
+    ) {
+        let mut d = self.data.write().unwrap_or_else(|e| e.into_inner());
+        d.committed = Some(reader);
+        d.generation = generation;
+        d.pending = PendingStore::new();
+    }
+
+    /// Generation of the committed reader; 0 while there is none.
+    #[cfg(test)]
+    pub(crate) fn generation(&self) -> u64 {
+        self.data
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .generation
     }
 
     /// Returns (eavt_len, aevt_len) for the pending indexes (tests).
     #[cfg(test)]
     pub(crate) fn pending_index_counts(&self) -> (usize, usize) {
         let d = self.data.read().unwrap_or_else(|e| e.into_inner());
-        (d.pending_indexes.eavt.len(), d.pending_indexes.aevt.len())
+        let p = d.pending.read().unwrap_or_else(|e| e.into_inner());
+        (p.indexes.eavt.len(), p.indexes.aevt.len())
     }
 }
 
@@ -666,9 +714,9 @@ pub(crate) fn check_valid_windows(facts: &[Fact], tx_id: TxId) -> Result<()> {
     Ok(())
 }
 
-/// The pending fact at `pos`, as indexed by `FactData::pending_indexes`.
-fn pending_fact(d: &FactData, pos: usize) -> Result<Fact> {
-    d.facts
+/// The pending fact at `pos`, as indexed by `PendingStore::indexes`.
+fn pending_fact(p: &PendingStore, pos: usize) -> Result<Fact> {
+    p.facts
         .get(pos)
         .cloned()
         .ok_or_else(|| err_coded!(ErrorCode::Int045, pos))
@@ -701,18 +749,20 @@ impl FactStorage {
         as_of: Option<u64>,
     ) -> Result<Vec<Fact>> {
         let d = self.data.read().unwrap_or_else(|e| e.into_inner());
+        let p = d.pending.read().unwrap_or_else(|e| e.into_inner());
         let mut facts = Vec::new();
         for &scan in scans {
-            live_facts_of_scan(&d, scan, as_of, &mut facts)?;
+            live_facts_of_scan(&d, &p, scan, as_of, &mut facts)?;
         }
         Ok(facts)
     }
 }
 
 /// The pending facts of `scan` up to `as_of`, then its committed live facts,
-/// appended to `facts`. The caller holds `d`'s lock for the whole read.
+/// appended to `facts`. The caller holds `d`'s and `p`'s locks for the whole read.
 fn live_facts_of_scan(
     d: &FactData,
+    p: &PendingStore,
     scan: crate::storage::Scan<'_>,
     as_of: Option<u64>,
     facts: &mut Vec<Fact>,
@@ -720,7 +770,7 @@ fn live_facts_of_scan(
     use crate::storage::Scan;
     use crate::storage::index::{AevtKey, EavtKey};
     let mut push = |pos: usize| -> Result<()> {
-        let f = pending_fact(d, pos)?;
+        let f = pending_fact(p, pos)?;
         if as_of.is_none_or(|n| f.tx_count <= n) {
             facts.push(f);
         }
@@ -728,16 +778,12 @@ fn live_facts_of_scan(
     };
     match scan {
         Scan::All => {
-            for pos in 0..d.facts.len() {
+            for pos in 0..p.facts.len() {
                 push(pos)?;
             }
         }
         Scan::Entity(entity) => {
-            for (key, &pos) in d
-                .pending_indexes
-                .eavt
-                .range(EavtKey::entity_start(*entity)..)
-            {
+            for (key, &pos) in p.indexes.eavt.range(EavtKey::entity_start(*entity)..) {
                 if key.entity != *entity {
                     break;
                 }
@@ -746,7 +792,7 @@ fn live_facts_of_scan(
         }
         Scan::EntityAttribute(entity, attribute) => {
             let start = EavtKey::entity_attribute_start(*entity, attribute);
-            for (key, &pos) in d.pending_indexes.eavt.range(start..) {
+            for (key, &pos) in p.indexes.eavt.range(start..) {
                 if key.entity != *entity || key.attribute != attribute {
                     break;
                 }
@@ -754,11 +800,7 @@ fn live_facts_of_scan(
             }
         }
         Scan::Attribute(attribute) => {
-            for (key, &pos) in d
-                .pending_indexes
-                .aevt
-                .range(AevtKey::attribute_start(attribute)..)
-            {
+            for (key, &pos) in p.indexes.aevt.range(AevtKey::attribute_start(attribute)..) {
                 if key.attribute != attribute {
                     break;
                 }
@@ -779,16 +821,13 @@ impl FactStorage {
     pub(crate) fn get_facts_by_entity(&self, entity_id: &EntityId) -> Result<Vec<Fact>> {
         use crate::storage::index::EavtKey;
         let d = self.data.read().unwrap_or_else(|e| e.into_inner());
+        let p = d.pending.read().unwrap_or_else(|e| e.into_inner());
         let mut facts = Vec::new();
-        for (key, &pos) in d
-            .pending_indexes
-            .eavt
-            .range(EavtKey::entity_start(*entity_id)..)
-        {
+        for (key, &pos) in p.indexes.eavt.range(EavtKey::entity_start(*entity_id)..) {
             if key.entity != *entity_id {
                 break;
             }
-            facts.push(pending_fact(&d, pos)?);
+            facts.push(pending_fact(&p, pos)?);
         }
         if let Some(reader) = &d.committed {
             facts.extend(reader.facts_for_entity(entity_id)?);
@@ -810,13 +849,14 @@ impl FactStorage {
     ) -> Result<Vec<Fact>> {
         use crate::storage::index::EavtKey;
         let d = self.data.read().unwrap_or_else(|e| e.into_inner());
+        let p = d.pending.read().unwrap_or_else(|e| e.into_inner());
         let start = EavtKey::entity_attribute_start(*entity_id, attribute);
         let mut facts = Vec::new();
-        for (key, &pos) in d.pending_indexes.eavt.range(start..) {
+        for (key, &pos) in p.indexes.eavt.range(start..) {
             if key.entity != *entity_id || key.attribute != *attribute {
                 break;
             }
-            facts.push(pending_fact(&d, pos)?);
+            facts.push(pending_fact(&p, pos)?);
         }
         if let Some(reader) = &d.committed {
             facts.extend(reader.facts_for_entity_attribute(entity_id, attribute)?);
@@ -830,16 +870,13 @@ impl FactStorage {
     pub(crate) fn get_facts_by_attribute(&self, attribute: &Attribute) -> Result<Vec<Fact>> {
         use crate::storage::index::AevtKey;
         let d = self.data.read().unwrap_or_else(|e| e.into_inner());
+        let p = d.pending.read().unwrap_or_else(|e| e.into_inner());
         let mut facts = Vec::new();
-        for (key, &pos) in d
-            .pending_indexes
-            .aevt
-            .range(AevtKey::attribute_start(attribute)..)
-        {
+        for (key, &pos) in p.indexes.aevt.range(AevtKey::attribute_start(attribute)..) {
             if key.attribute != *attribute {
                 break;
             }
-            facts.push(pending_fact(&d, pos)?);
+            facts.push(pending_fact(&p, pos)?);
         }
         if let Some(reader) = &d.committed {
             facts.extend(reader.facts_for_attribute(attribute)?);
@@ -899,7 +936,7 @@ impl FactStorage {
             .and_then(|r| r.all_facts().ok())
             .map(|v| v.len())
             .unwrap_or(0);
-        committed_count + d.facts.len()
+        committed_count + d.pending.read().unwrap().facts.len()
     }
 
     /// Get the count of currently asserted facts. Test use only.
@@ -1604,7 +1641,7 @@ mod tests {
             ),
         ];
         let storage = FactStorage::new();
-        storage.set_committed_reader(std::sync::Arc::new(MockReader(committed)));
+        storage.set_committed(std::sync::Arc::new(MockReader(committed)), 1);
         storage
             .transact(vec![(e, ":a".to_string(), Value::Integer(4))], None)
             .unwrap();
@@ -1632,7 +1669,7 @@ mod tests {
     }
 
     #[test]
-    fn test_post_checkpoint_clear_clears_indexes() {
+    fn publish_replaces_pending_store_and_reader_together() {
         use uuid::Uuid;
         let storage = FactStorage::new();
         let e = Uuid::new_v4();
@@ -1642,23 +1679,45 @@ mod tests {
                 None,
             )
             .unwrap();
-
         assert_eq!(
             storage.pending_index_counts().0,
             1,
             "one pending EAVT entry"
         );
-        storage.post_checkpoint_clear();
+        let checkpointed = storage.get_pending_facts();
+
+        storage.publish(std::sync::Arc::new(MockReader(checkpointed)), 2);
+        assert_eq!(storage.generation(), 2);
         assert_eq!(
-            storage.pending_index_counts().0,
-            0,
-            "pending indexes cleared"
+            storage.pending_index_counts(),
+            (0, 0),
+            "new pending indexes"
         );
-        assert_eq!(
-            storage.get_pending_facts().len(),
-            0,
-            "pending facts cleared"
-        );
+        assert!(storage.get_pending_facts().is_empty(), "new pending store");
+        assert_eq!(storage.get_all_facts().unwrap().len(), 1, "fact read once");
+
+        // Appends after the publish land in the new store.
+        storage
+            .transact(vec![(e, ":age".to_string(), Value::Integer(30))], None)
+            .unwrap();
+        assert_eq!(storage.get_pending_facts().len(), 1);
+        assert_eq!(storage.get_all_facts().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn set_committed_keeps_pending_store() {
+        use uuid::Uuid;
+        let storage = FactStorage::new();
+        assert_eq!(storage.generation(), 0, "no committed reader yet");
+        storage
+            .transact(
+                vec![(Uuid::new_v4(), ":a".to_string(), Value::Integer(1))],
+                None,
+            )
+            .unwrap();
+        storage.set_committed(std::sync::Arc::new(MockReader(Vec::new())), 1);
+        assert_eq!(storage.generation(), 1);
+        assert_eq!(storage.get_pending_facts().len(), 1, "pending kept");
     }
 
     #[test]
