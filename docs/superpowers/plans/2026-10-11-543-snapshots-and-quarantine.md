@@ -1,7 +1,17 @@
 # Snapshots and page quarantine (#543) — Plan
 
 Spec: `docs/superpowers/specs/2026-10-11-streaming-engine-design.md` §4 (#473, part 1 of 9).
-Branch `feat/543-snapshots` → `v3`, one PR. No closing keyword for #473, #554 or #555.
+Three PRs to `v3` (split agreed 2026-10-13; the first draft had one), each leaving
+`v3` with no unused code. No closing keyword for #473, #543, #554 or #555.
+
+| PR | Steps | Branch |
+|---|---|---|
+| 1 | 1: `PendingStore` and the one-lock publish | `feat/543-snapshots` |
+| 2 | 2, 3, 4, 6, 7: pins, allocator quarantine, checkpoint/rebuild entries, fact log on the pin, `API-013` deprecated | `feat/543-pins` |
+| 3 | 5, 8, 9, 10: query and cursor snapshots, `BrowserDb`, crash test, docs | `feat/543-snapshots-read` |
+
+Each PR updates the test counts and `CHANGELOG.md` for what it ships; step 10 holds
+the rest of the docs.
 
 ## Already done
 
