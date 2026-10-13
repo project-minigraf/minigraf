@@ -417,6 +417,8 @@ struct Metrics {
     open_ms_wal: Option<u64>,
     /// Peak RSS of the last full-scan child process.
     full_scan_rss: Option<u64>,
+    /// RSS of the last memory-probe child process (spec §8).
+    probe_rss: Option<u64>,
     out: Option<File>,
 }
 
@@ -475,7 +477,7 @@ struct Soak {
     checkpoint_due: u64,
     next_check: u64,
     next_reopen: u64,
-    /// RSS right after the first reopen-after-checkpoint of the churn phase.
+    /// The memory probe's RSS at the start of the churn phase.
     rss_baseline: Option<u64>,
     full_scanned: bool,
 }
@@ -948,6 +950,9 @@ impl Soak {
             self.checkpoint();
         }
         drop(self.db.take());
+        if after_checkpoint && self.phase == Phase::Churn {
+            self.check_memory();
+        }
         let t = Instant::now();
         self.db = Some(open(&self.path));
         let ms = t.elapsed().as_millis() as u64;
@@ -958,15 +963,32 @@ impl Soak {
             self.metrics.open_ms_wal = Some(ms);
         }
         self.check_all();
-        if after_checkpoint && self.phase == Phase::Churn {
-            self.check_memory();
-        }
     }
 
     /// Spec §8: a fresh handle on a checkpointed file stays near the
-    /// baseline taken when the churn phase began.
+    /// baseline taken when the churn phase began. The handle is measured in
+    /// a child process: this one holds the reference, and the allocator keeps
+    /// what its attribute scans freed (#518), both growing with the data
+    /// (#542).
     fn check_memory(&mut self) {
-        let Some((now, _)) = rss() else { return };
+        let line = self.child(
+            "soak_memory_child",
+            &[
+                (
+                    "MINIGRAF_SOAK_PROBE_DB",
+                    self.path.as_os_str().to_os_string(),
+                ),
+                (
+                    "MINIGRAF_SOAK_PROBE_ENTITIES",
+                    self.rf.next_entity.to_string().into(),
+                ),
+            ],
+            "soak-memory: ",
+        );
+        let Some(now) = child_field(&line, "rss") else {
+            return;
+        };
+        self.metrics.probe_rss = Some(now);
         let Some(base) = self.rss_baseline else {
             self.rss_baseline = Some(now);
             eprintln!("soak: memory baseline {} MiB", now >> 20);
@@ -1015,6 +1037,7 @@ impl Soak {
             "query_us": query_us,
             "full_scan_ms": full_scan_ms,
             "full_scan_peak_rss_bytes": self.metrics.full_scan_rss,
+            "probe_rss_bytes": self.metrics.probe_rss,
         });
         eprintln!("soak: {line}");
         if let Some(out) = self.metrics.out.as_mut() {
@@ -1030,25 +1053,17 @@ impl Soak {
     fn full_scan(&mut self) -> u64 {
         self.checkpoint();
         drop(self.db.take());
-        let out = Command::new(std::env::current_exe().expect("test binary path"))
-            .args(["soak_full_scan_child", "--exact", "--nocapture"])
-            .env("MINIGRAF_SOAK_SCAN_DB", &self.path)
-            .output()
-            .expect("spawn full-scan child");
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        let Some(line) = stdout.lines().find_map(|l| l.strip_prefix("soak-scan: ")) else {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            let tail: Vec<&str> = stderr.lines().rev().take(20).collect();
-            panic!("full-scan child failed: {tail:?}; {}", self.context());
-        };
-        let field = |name: &str| -> Option<u64> {
-            let mut words = line.split_whitespace();
-            words.find(|w| *w == name)?;
-            words.next()?.parse().ok()
-        };
-        let rows = field("rows").expect("child row count");
-        let ms = field("ms").expect("child time");
-        self.metrics.full_scan_rss = field("peak");
+        let line = self.child(
+            "soak_full_scan_child",
+            &[(
+                "MINIGRAF_SOAK_SCAN_DB",
+                self.path.as_os_str().to_os_string(),
+            )],
+            "soak-scan: ",
+        );
+        let rows = child_field(&line, "rows").expect("child row count");
+        let ms = child_field(&line, "ms").expect("child time");
+        self.metrics.full_scan_rss = child_field(&line, "peak");
         self.db = Some(open(&self.path));
         assert_eq!(
             rows,
@@ -1057,6 +1072,23 @@ impl Soak {
             self.context()
         );
         ms
+    }
+
+    /// Runs the test binary's `test` with `env` and returns the text after
+    /// `prefix` on its stdout. The caller has closed its handle.
+    fn child(&self, test: &str, env: &[(&str, std::ffi::OsString)], prefix: &str) -> String {
+        let out = Command::new(std::env::current_exe().expect("test binary path"))
+            .args([test, "--exact", "--nocapture"])
+            .envs(env.iter().map(|(k, v)| (k, v)))
+            .output()
+            .unwrap_or_else(|e| panic!("spawn {test}: {e}"));
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let Some(line) = stdout.lines().find_map(|l| l.strip_prefix(prefix)) else {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            let tail: Vec<&str> = stderr.lines().rev().take(20).collect();
+            panic!("{test} failed: {tail:?}; {}", self.context());
+        };
+        line.to_string()
     }
 
     fn finish(&mut self) {
@@ -1102,6 +1134,13 @@ fn run(cfg: Config) {
     Soak::new(cfg, path).run();
 }
 
+/// The number after `name` in a child's `name value ...` line.
+fn child_field(line: &str, name: &str) -> Option<u64> {
+    let mut words = line.split_whitespace();
+    words.find(|w| *w == name)?;
+    words.next()?.parse().ok()
+}
+
 /// The driver at a size a debug build runs in seconds.
 #[test]
 fn soak_short() {
@@ -1132,4 +1171,39 @@ fn soak_full_scan_child() {
     let ms = t.elapsed().as_millis();
     let peak = rss().map_or(0, |(_, peak)| peak);
     println!("soak-scan: rows {rows} ms {ms} peak {peak}");
+}
+
+/// Child half of `Soak::check_memory`: opens the checkpointed file, runs
+/// point reads whose cost does not grow with the data, and prints its RSS
+/// (`null` off Linux). A no-op when `MINIGRAF_SOAK_PROBE_DB` is absent.
+#[test]
+fn soak_memory_child() {
+    let Some(path) = std::env::var_os("MINIGRAF_SOAK_PROBE_DB") else {
+        return;
+    };
+    let entities: u64 = std::env::var("MINIGRAF_SOAK_PROBE_ENTITIES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .expect("MINIGRAF_SOAK_PROBE_ENTITIES");
+    let db = open(Path::new(&path));
+    let mut rows = 0;
+    for i in 0..200 {
+        let n = i * entities / 200;
+        rows += point_rows(&db, &format!("(query [:find ?a ?v :where [:e{n} ?a ?v]])"));
+    }
+    for h in 0..HOT {
+        rows += point_rows(&db, &format!("(query [:find ?a ?v :where [:h{h} ?a ?v]])"));
+    }
+    match rss() {
+        Some((now, _)) => println!("soak-memory: rows {rows} rss {now}"),
+        None => println!("soak-memory: rows {rows} rss null"),
+    }
+}
+
+fn point_rows(db: &Minigraf, query: &str) -> usize {
+    match db.execute(query) {
+        Ok(QueryResult::QueryResults { results, .. }) => results.len(),
+        Ok(_) => panic!("memory probe: not a query result"),
+        Err(e) => panic!("memory probe failed ({})", e.code()),
+    }
 }
