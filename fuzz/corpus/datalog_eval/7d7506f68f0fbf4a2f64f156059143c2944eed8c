@@ -1,0 +1,1 @@
+(query [:where [?e :na5e ?n] [(= ?n "A,")]])

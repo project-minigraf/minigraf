@@ -1,0 +1,2 @@
+(query [: :where [?e :or ?c] (oo,e[] i ?)(query [:]n)
+])

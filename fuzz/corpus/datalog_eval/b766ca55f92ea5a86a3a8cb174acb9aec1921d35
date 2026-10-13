@@ -1,0 +1,1 @@
+(query [:fe:where [?e zcolor ?c] (not-join[?e] [_ o?v e])])

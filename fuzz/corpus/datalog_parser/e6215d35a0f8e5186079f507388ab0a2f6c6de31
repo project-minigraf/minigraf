@@ -1,0 +1,1 @@
+(query [:find ?e  ?e :where [?e :name ?n] (nt [?e anned true]):where [?e :name ?n] :where [?e a ?_][Ee a  _][?e?e aa aa?_][Ee a  _][ZZZZZZZZZ-Y aaaaaaaae ?_] (nl [e])])

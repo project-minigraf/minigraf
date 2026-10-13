@@ -1,0 +1,1 @@
+(query [:find (uat ?e) :where[?e ae ?n]])

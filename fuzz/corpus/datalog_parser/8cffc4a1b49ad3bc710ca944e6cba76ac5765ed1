@@ -1,0 +1,1 @@
+(query [:f31?e0:where [7 :n ?n] (or(en:)(and>) ) [2x ?y]])

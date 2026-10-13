@@ -1,0 +1,2 @@
+(query [:where [?e :name ?n] (N56: ?y) [_;x :pen
+? ty]])

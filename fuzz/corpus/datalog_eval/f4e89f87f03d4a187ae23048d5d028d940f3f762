@@ -1,0 +1,1 @@
+(query [:fidne :where [(=:rue"Alice")](query [find?x ]):where [?eJ:name ?n ][(integer?!= ?n:a)]])

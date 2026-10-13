@@ -1,0 +1,3 @@
+(query [:i?ewh :where [?e :name ?n] (nwo
+
+? :p) [?e :name ?n] (no ? :)])

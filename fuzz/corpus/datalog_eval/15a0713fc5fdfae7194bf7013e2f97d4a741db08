@@ -1,0 +1,2 @@
+(query [:finde :where [(=:rue"Alice")](query [find?n ]):where [?eJ:name ?n ][(!= ?n:active)]])
+

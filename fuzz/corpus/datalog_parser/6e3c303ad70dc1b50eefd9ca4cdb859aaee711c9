@@ -1,0 +1,1 @@
+(transact [[:WWWW :name"Al"][:e :name "lice"][:e2 :name "Al"]])

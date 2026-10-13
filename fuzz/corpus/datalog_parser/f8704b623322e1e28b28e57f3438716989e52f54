@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e e ?n] (on$rte u2$4892$mi343345222$13$mi$67576 ?y) [?x :pa0ent ?y]])

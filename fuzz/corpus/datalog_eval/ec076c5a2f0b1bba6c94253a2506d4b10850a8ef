@@ -1,0 +1,1 @@
+(query [:where[::nn :w][:ine:  :w][:ine: :w] :w])

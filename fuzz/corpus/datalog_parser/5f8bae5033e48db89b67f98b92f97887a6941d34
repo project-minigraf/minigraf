@@ -1,0 +1,7 @@
+(query [:find :e:whernd :e:where [?e :e ?n] (not(qu1ry tEEEEEEEEEEE[e with ? :where(noSSSSSS)])
+(qu:ryEEEEU[e with ? :where(noSSSSSS)])
+) [?e :e ?] :e:whernd :e:where [?e :e ?n] (not(qu2ry tEEEEEEEEEEE[e with ? :where(noSSSSSS)])
+) [?e :e ?n] (not(qu:ryEEEEU[e with ? :where(noSSSSSS)])
+) [?e :e ?] (not(qu0ry t)
+) (not(qu0ry t)
+)])

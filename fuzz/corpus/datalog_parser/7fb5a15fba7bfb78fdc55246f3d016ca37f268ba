@@ -1,0 +1,1 @@
+(query [:find ?e  ?e :where  (not [?e :banne true]) (nmt [?e :ue]):where [?e :name ?n] (not [?e :1banzd trueؑ߉])])

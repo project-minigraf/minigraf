@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :nale " Allcsaee"][:e/0 :n ?n] (or-join) [? :xcc]])

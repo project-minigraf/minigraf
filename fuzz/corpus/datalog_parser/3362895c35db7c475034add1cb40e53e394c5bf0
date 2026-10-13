@@ -1,0 +1,1 @@
+(query [:find ?e  ?e :where [?e :me ?] (not[?e anne e]):where [?e :nam ?n] (not[?e anne e]):where [?e :name n] (non[?eؑ߉]?iiii)])

@@ -1,0 +1,1 @@
+(query [:where [?e olo ?](nt:nd$6 :,fr)])

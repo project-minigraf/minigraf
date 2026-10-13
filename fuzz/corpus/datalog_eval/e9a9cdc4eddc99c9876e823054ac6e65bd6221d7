@@ -1,0 +1,1 @@
+(query [:find :惃_nere:find ?e :where [?e ?lynnueFFFF ?c]  [?e ?lynnueFFFF ?c] (not-join [?e] [?e Dnnuivar ?hec])])

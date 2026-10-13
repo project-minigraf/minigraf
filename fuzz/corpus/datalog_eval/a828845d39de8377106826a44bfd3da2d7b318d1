@@ -1,0 +1,2 @@
+(query [:fin :where(otoi-[(q:n)
+e])])

@@ -1,0 +1,1 @@
+(query [:where [? :ckc ?][?e :ckporc ?] (tho ?[tivue])])

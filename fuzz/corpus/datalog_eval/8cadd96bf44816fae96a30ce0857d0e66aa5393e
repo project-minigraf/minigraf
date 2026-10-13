@@ -1,0 +1,2 @@
+(query [: :where [?e :ocr ,aomx?c] (ne ?n ?_e[ebooAe])(qe ?n ?_qqquery [:ne ])
+])

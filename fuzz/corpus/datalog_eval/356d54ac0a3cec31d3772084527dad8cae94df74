@@ -1,0 +1,2 @@
+(query [:find ?e :where:find ?e :where [?e ?lyneFFFFqfe ?c]    [?e ?lynnueFFnnyneFFFFqfn ?k]  [?e ?lynEEEEdEEqnyneFFFFqfn ?k]  [?e ?lynEEEEdEEqFFqfn ?k]  [?e ?lynEEEEEEEEEEEEEqfn ?c]  [?e ?lysnunnFFnnueFFFF ?e] (not-join [?e] [5qDa ?hec])[?e ?lyfn ?b]  [?e ?lynnufn ?c]  [?e ?lynnuennyFnFeFFFFqfEEEEdEEqfn ?g]  [?e ?lynnufn ?c
+]  [?e ?lynnueFFnnynFFFqfn ?k]  [?e ?lynEEEEEEEEEEEEEqfn ?c]  [?e ?lysnunnFFnnueFFFF ?e] (not-join [?e] [4qDa ?hec])[?e ?lynEEEEEEEEEEdEEqfn ?g]  [?e ?dynnufn ?uc]  [?e ?lynnueFFnnyneFFFFqfn ?k]  [?e ?lynEueFFFF ?e] (not-join [?e] [4qDa ?hec])])

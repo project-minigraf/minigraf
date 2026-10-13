@@ -8,6 +8,19 @@ Completed releases and their implementation details live in the [CHANGELOG](CHAN
 
 ---
 
+## v2.0.5 — Data-Integrity Patch (released 2026-10-11)
+
+File format stays v7. Two new error codes (`STG-045`, `WAL-007`); no other API changes. Details are in the [CHANGELOG](CHANGELOG.md).
+
+Shipped:
+
+- A file shorter than one page is refused with `STG-045` unless it is a torn first write (#506)
+- A commit made after a torn WAL entry is no longer lost on recovery; a failed append makes later writes `WAL-007` until reopen or checkpoint (#513)
+- Backported from v3.0.0: rule queries count only derived facts against `max_results` (#528), `checkpoint()` removes an all-checkpointed WAL (#457), `usize::MAX` checkpoint threshold skips the close-time save (#476)
+- Weekly 10M-fact soak test (#392) and per-file coverage gates that actually gate (#396)
+
+---
+
 ## v2.0.4 — Browser Durability Patch (released 2026-10-08)
 
 File format stays v7 and the public API does not change. Details are in the [CHANGELOG](CHANGELOG.md).
@@ -206,4 +219,4 @@ See [GitHub Issues](https://github.com/project-minigraf/minigraf/issues) for spe
 
 ---
 
-**Last updated**: October 2026 — v2.0.4, a browser durability patch on v2.x, is the current release; v3.0.0 work, including the file-format v8 fix for #287/#371, is developed on the long-lived `v3` branch and merges into `main` at the v3.0.0 cut.
+**Last updated**: October 2026 — v2.0.5, a data-integrity patch on v2.x, is the current release; v3.0.0 work, including the file-format v8 fix for #287/#371, is developed on the long-lived `v3` branch and merges into `main` at the v3.0.0 cut.

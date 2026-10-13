@@ -1,0 +1,2 @@
+(query [:find  [?e :color ?c] ($z$h[:find ?e :where [?e :color ?c] (not-$z$hoie e l[?] ?[ve true]t-hoie e [?] ?[e:active true:tive true]t[e:active true])])
+e e ] ?[ve true]*e [?] ?[e:active true:active true]t-h ?[ true])]?_)

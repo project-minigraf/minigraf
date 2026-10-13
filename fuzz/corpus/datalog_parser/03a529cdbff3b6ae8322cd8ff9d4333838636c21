@@ -1,0 +1,1 @@
+(query [:nd  :where [?e :nme ?n] (not [?e:banu e])(not [?e :band true])])

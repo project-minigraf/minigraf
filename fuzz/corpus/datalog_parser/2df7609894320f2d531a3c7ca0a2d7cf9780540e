@@ -1,0 +1,1 @@
+(query [:where(nt o[u*:b+d ])])

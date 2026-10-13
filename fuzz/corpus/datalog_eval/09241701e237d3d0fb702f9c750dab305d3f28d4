@@ -1,0 +1,3 @@
+(query [ :where [?e zcolor ?c] (not-join [?e] [_YYYYYYYYYYYYYYYnjotno-eKYYYYYYYYYYYYYYYYYYYYY o?ict?ve e]) (not-join [?e] [_YYYY o?6666666665EEEEEEqfn ?c](query [ :where [?e zcolor ?c] (not-join [?e] [YYYYYnjotno-eKYYYYYYYYYYYYYYYYYYYYY ?lynnueFFnnueFt?ve e])])
+  [?_?e ?lysnufn ?c]  [?e ?lu?qfn ?c](query [ :where [?e zcolor ?c] (not-join [?e] [_YYYYYYYYYYYYYYYnjotno-eKYYYYYYYYYYYYYYYYYYYYY o?ict?ve e]) (not-join [?EEEEEqfn ?c]  [?_?e ?lysnufn ?c]  [?e ?lu?lynnueFFnnueFt?ve e])])
+  [?_?e lynnueFFnnueFt?ve e])])

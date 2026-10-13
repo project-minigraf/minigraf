@@ -1,0 +1,1 @@
+(query [:fine :where [?e :?Nne:] (not [?m,:d true][?e :bazd tru߉])])

@@ -1,0 +1,2 @@
+(query [:find :e:where[De :e ?n] (not(qu1675)(>>>)(q8674)(E:fiEE)
+)])

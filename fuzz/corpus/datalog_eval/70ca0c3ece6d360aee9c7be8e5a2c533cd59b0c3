@@ -1,0 +1,1 @@
+(query [:where [TTT:db/valid-to:] (not [-*noije][G?e :ac:u] [G?e :ac:u])])

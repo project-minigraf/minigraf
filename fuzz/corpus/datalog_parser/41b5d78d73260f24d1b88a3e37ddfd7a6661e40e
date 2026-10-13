@@ -1,0 +1,1 @@
+(query [:fi:where(que:dD) [n?:eame ?n] (OA :he ?e )])

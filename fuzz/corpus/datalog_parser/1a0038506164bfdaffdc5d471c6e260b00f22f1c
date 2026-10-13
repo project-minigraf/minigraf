@@ -1,0 +1,1 @@
+(query[:where [?e: ?n] (no(trn[[ :name "Al"][:e1"ece"]])XX)])
