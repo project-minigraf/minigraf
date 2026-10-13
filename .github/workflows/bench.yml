@@ -245,6 +245,12 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
+          # The t-test compares a run with the last 30 runs of its branch, not
+          # all history. Without a window, a correct step change (#445's
+          # predicate_pushdown, #476's checkpoint and wal_replay fixtures) kept
+          # alerting for weeks; with 30, a lasting change alerts on about five
+          # runs (enough for the two-in-a-row issue below), then becomes the
+          # baseline.
           # A branch other than main starts from main's history and thresholds.
           start_point=()
           if [ "$BENCH_REF" != main ]; then
@@ -258,6 +264,7 @@ jobs:
             --testbed ubuntu-latest \
             --threshold-measure latency \
             --threshold-test t_test \
+            --threshold-max-sample-size 30 \
             --threshold-upper-boundary ${{ matrix.threshold }} \
             --err \
             --adapter rust_criterion \
@@ -266,10 +273,11 @@ jobs:
 
       # Shared CI runners are noisy, so one alert on its own is usually a slow
       # runner, not a regression. Report only benchmarks that also alerted in
-      # this suite on the previous run. Each suite has its own issue: if one is
-      # open, add a comment to it instead of skipping. Every outcome, including
-      # an alert that is not reported, goes in the job summary, because the
-      # Bencher step is continue-on-error and the run stays green (#393).
+      # this suite on the previous run. Each suite and branch has its own issue,
+      # titled with the branch like the nightly fuzz issue: if one is open, add
+      # a comment to it instead of skipping. Every outcome, including an alert
+      # that is not reported, goes in the job summary, because the Bencher step
+      # is continue-on-error and the run stays green (#393).
       - name: Report regression
         if: steps.bencher.outcome == 'failure'
         uses: actions/github-script@v9
@@ -282,8 +290,7 @@ jobs:
             const suite = process.env.SUITE;
             const ref = process.env.BENCH_REF;
             const jobName = `bench / ${suite}`;
-            // main keeps its existing issue titles; other branches get their own.
-            const label = ref === 'main' ? suite : `${suite}, ${ref}`;
+            const label = `${suite}, ${ref}`;
 
             // Bencher lists each alert as "- <benchmark> (Latency): <.../alerts/<id>>".
             // The "View results" lines use /perf? URLs, so they do not match.
@@ -300,6 +307,7 @@ jobs:
               body = [
                 `Bencher failed in the nightly benchmark run (${label}) but listed no alerts. This is likely an API or upload error.`,
                 '',
+                `**Branch:** \`${ref}\``,
                 `**Run:** ${runUrl}`,
               ].join('\n');
             } else {
@@ -358,6 +366,7 @@ jobs:
                 '',
                 ...repeated.map(b => `- \`${b}\``),
                 '',
+                `**Branch:** \`${ref}\``,
                 `**Run:** ${runUrl}`,
                 `**Previous run:** ${previousUrl}`,
                 '',
@@ -371,12 +380,20 @@ jobs:
               state: 'open',
               per_page: 100,
             });
-            const title = ref === 'main'
-              ? `Benchmark regression: ${suite}`
-              : `Benchmark regression: ${suite} (${ref})`;
-            const existing = openIssues.find(i => !i.pull_request && i.title === title);
+            const title = `Benchmark regression: ${suite} (${ref})`;
+            // Issues for main used to be titled without the branch. Keep
+            // commenting on such an open issue, and give it the new title.
+            const legacyTitle = ref === 'main' ? `Benchmark regression: ${suite}` : null;
+            const existing =
+              openIssues.find(i => !i.pull_request && i.title === title) ||
+              openIssues.find(i => !i.pull_request && legacyTitle && i.title === legacyTitle);
             let reported;
             if (existing) {
+              if (existing.title !== title) {
+                await github.rest.issues.update({
+                  owner, repo, issue_number: existing.number, title,
+                });
+              }
               await github.rest.issues.createComment({
                 owner, repo, issue_number: existing.number, body,
               });

@@ -7,7 +7,7 @@
 
 use minigraf::{Minigraf, OpenOptions, QueryResult};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -201,4 +201,48 @@ fn patterns_of_one_query_see_one_state_in_memory() {
 fn patterns_of_one_query_see_one_state_on_file() {
     let dir = tempfile::tempdir().unwrap();
     patterns_see_one_state(Minigraf::open(dir.path().join("p.graph")).unwrap());
+}
+
+/// A checkpoint wrote its new fact pages over the index pages queries were
+/// reading, and published its new readers in three locked steps, so a query
+/// during a checkpoint could miss committed facts or see half a transaction
+/// (#558, v2.x only: v3's copy-on-write checkpoints never overwrite pages
+/// a published reader uses). Every write here is followed by a checkpoint.
+#[test]
+fn checkpoint_never_hides_committed_facts() {
+    let dir = tempfile::tempdir().unwrap();
+    let committed = Arc::new(AtomicU64::new(0));
+    let found = {
+        let written = Arc::clone(&committed);
+        race(
+            Arc::new(file_db(&dir)),
+            move |db, i| {
+                db.execute(&format!(
+                    "(transact [[:c{i} :pair/x {i}] [:c{i} :pair/y {i}]])"
+                ))
+                .unwrap();
+                written.store(i + 1, Ordering::SeqCst);
+                db.checkpoint().unwrap();
+            },
+            |db| {
+                let before = committed.load(Ordering::SeqCst) as usize;
+                let half = rows(
+                    db,
+                    "(query [:find ?e :where [?e :pair/y ?v] (not [?e :pair/x ?v])])",
+                )
+                .len();
+                let seen = rows(db, "(query [:find ?e :where [?e :pair/x ?v]])").len();
+                if half != 0 {
+                    Some(format!("{half} entities with y and no x"))
+                } else if seen < before {
+                    Some(format!("{seen} entities seen, {before} committed before"))
+                } else {
+                    None
+                }
+            },
+        )
+    };
+    if let Some(msg) = found {
+        panic!("a query during a checkpoint saw the wrong state: {msg}");
+    }
 }
