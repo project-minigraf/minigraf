@@ -1,0 +1,1 @@
+(query [:with ?e ?e ? ?c:fc:where [?e :moo l] (io-yrn [?]e ? ?c:)])

@@ -1,0 +1,1 @@
+(query [:fin:where [?e :lor ??e] [d?:iactveva trwhc] (not-join [?e] [?:a rkeie])])

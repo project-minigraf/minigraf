@@ -1,0 +1,3 @@
+(query [:find joti-[? e[] c] (njotnoi-[? e[] (query [:(not-jo [?e] [?e :rue])])
+?e ? e[]vehtrue])(query [:(non?o[etive true])])
+?e[]ve])

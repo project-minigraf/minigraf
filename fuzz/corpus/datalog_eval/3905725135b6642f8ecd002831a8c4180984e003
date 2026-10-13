@@ -1,0 +1,1 @@
+(query [:f?e :where [?e : ,c] (not [ie=e ] [?e iac:Finacr] [?e :ac:Finacdtr] [?e :ac:Findtrue])])

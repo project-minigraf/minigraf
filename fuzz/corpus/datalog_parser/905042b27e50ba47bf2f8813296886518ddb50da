@@ -1,0 +1,2 @@
+(query [:fe:where [?e : n] (not(ZZZew:rh[e [] ()])
+)])

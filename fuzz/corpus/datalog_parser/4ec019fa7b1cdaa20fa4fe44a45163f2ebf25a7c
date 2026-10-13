@@ -1,0 +1,1 @@
+(query [:find (csum ?e0):where [?e 0n]])

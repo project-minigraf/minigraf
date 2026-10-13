@@ -1,0 +1,1 @@
+(query [ :where [e?A  k:?cn-] (not [-?*noue])])

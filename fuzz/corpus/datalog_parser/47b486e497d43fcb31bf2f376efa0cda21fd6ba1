@@ -1,0 +1,1 @@
+(query [:?e :where [?e :Name ?n] (nrueot [?e :bannee]):where [?e :name ?n] (nmt [?e :d true]):where [?e :n1ame ?n] (sot [?e :bannzd trueؑ߉]):where [?e ame ?n] (nmt :[ue])])

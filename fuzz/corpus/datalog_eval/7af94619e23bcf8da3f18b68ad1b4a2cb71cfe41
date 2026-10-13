@@ -1,0 +1,2 @@
+(query [:find ?:where  (not-join [?] (ntrVuej i ?K[?e]-))]
+)

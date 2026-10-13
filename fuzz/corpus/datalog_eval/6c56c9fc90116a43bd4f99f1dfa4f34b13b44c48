@@ -1,0 +1,1 @@
+(query[:find ?e :where [?e :clor ?c] (jotno-e[] i ?[440.?e :aAe])])

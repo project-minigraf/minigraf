@@ -1,0 +1,2 @@
+(query [:fc:where(not[?e :oloE ?c] (i- o/////-- ?K[?e]-))]
+)

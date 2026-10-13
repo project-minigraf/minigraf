@@ -1,0 +1,1 @@
+(query [:fin?e :where [?e :Ne ?n] (not [?_?e :d true]):where (not [?e :bannzd trueؑ߉])])

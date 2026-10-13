@@ -1,0 +1,1 @@
+(query [:fin?e :where [?e ?lyFF ?c] (not-join [?e] [?:age ?hec])])

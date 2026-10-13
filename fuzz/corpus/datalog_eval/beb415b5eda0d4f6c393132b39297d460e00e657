@@ -1,0 +1,2 @@
+(query [:fnd:wit:where [?e :color ?c] (not (i- oe[?e]-))]
+)

@@ -1,0 +1,1 @@
+(query [:R:where [:e :lor ?c]  :where [:e :color ?c] (n)])

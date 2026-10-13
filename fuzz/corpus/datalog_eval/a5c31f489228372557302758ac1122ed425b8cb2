@@ -1,0 +1,2 @@
+(query [:find:where (not-join [?eruo]()
+of:d)])

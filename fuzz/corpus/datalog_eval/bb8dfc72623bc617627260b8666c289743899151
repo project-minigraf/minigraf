@@ -1,0 +1,1 @@
+(query [:gd  :where[?e ?/r ?c](njotn)[?e D2color ?c] (not [*7-n])(qqer)[?e D2color ?c] (not [*7-noije] [?e :dcani:Ftrue])])

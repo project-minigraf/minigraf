@@ -1,0 +1,1 @@
+(query [:f :where [?e :ror ?c] (not [?_*n] [?e nlcani:Ftr])])

@@ -1,0 +1,2 @@
+(query [ :where [(=:rue"ide") ?n/ ]:where [(=:rue"Alide") ?u ][(!= ?n:active)?_1][(!= ?n:active)]])
+

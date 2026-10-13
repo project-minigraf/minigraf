@@ -1,0 +1,2 @@
+(query [:where [?e :a ?p] (n
+ ? tb[])])

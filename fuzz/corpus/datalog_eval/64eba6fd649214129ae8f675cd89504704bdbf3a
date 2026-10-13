@@ -1,0 +1,1 @@
+(query[:where [?or /c] (n:-*?/):::where [?or /c] (no:-)::::::::])

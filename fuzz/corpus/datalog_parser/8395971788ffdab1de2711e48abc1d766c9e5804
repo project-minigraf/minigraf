@@ -1,0 +1,2 @@
+(query[:find ?e:where[?e: n?](not(ery [:])
+)])

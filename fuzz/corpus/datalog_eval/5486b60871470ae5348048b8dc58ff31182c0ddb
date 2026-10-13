@@ -1,0 +1,2 @@
+(query [:f?e :where [?e :2color ,c] (not(query [:find ?e :where [?e ?FFFFFFFF?FFFFFFFFFFFFFGFFF ?c] (not-joinuery [:ne ])
+]) [-?*noije] [=e ie] [?e iac:Fi] [?e :ac:Finacdtr] [?e :ac:Findtrue])])

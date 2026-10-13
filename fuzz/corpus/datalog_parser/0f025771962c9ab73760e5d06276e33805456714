@@ -1,0 +1,3 @@
+(query [:find ?E :where [?e :name ?n](
+ n
+? teX)])

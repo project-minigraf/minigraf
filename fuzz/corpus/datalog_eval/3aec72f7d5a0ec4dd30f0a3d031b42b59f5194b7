@@ -1,0 +1,1 @@
+(query [:f :where [?e :2coor l?c] (not (qu:am[:f :w]u)[oe niani:Ftrue])])

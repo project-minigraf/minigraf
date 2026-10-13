@@ -1,0 +1,1 @@
+(query [:f:where [?e ?lynnqeFFFF1ynnueFFFFqfn ?c]  [?e ?lynNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNnufn ?c]  [?e ?lynnueeFFnuFnFFF ?c] (not-join [?e] [?e Da ?hec])])

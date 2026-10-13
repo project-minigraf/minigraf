@@ -1,0 +1,1 @@
+(query [:fie :where [?e ??lqfn ?g]  [?e ?lynnufn ?c]  [?g ?_ynnuquer000000624056FF ?e] (not-join [?e] [?e ZX ?hec])])

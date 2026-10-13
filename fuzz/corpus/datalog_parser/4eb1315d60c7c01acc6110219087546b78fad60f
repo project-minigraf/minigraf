@@ -1,0 +1,1 @@
+(query [:wi:with ?e   ?e  ?e ?o:where [?e :Name ?n] :with?e ])

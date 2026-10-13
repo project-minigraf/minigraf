@@ -1,0 +1,1 @@
+(query [:find ?e :where (ru[(par>{i =======}nc00)])])

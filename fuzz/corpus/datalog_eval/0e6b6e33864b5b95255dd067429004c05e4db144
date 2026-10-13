@@ -1,0 +1,1 @@
+(query [:find :where [?:r ?_] (not-join [?e*][?d tr])])

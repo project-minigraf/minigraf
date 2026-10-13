@@ -1,0 +1,2 @@
+(query [:find :where [?_W m ?n] (not [u :d t](q )
+-X)])

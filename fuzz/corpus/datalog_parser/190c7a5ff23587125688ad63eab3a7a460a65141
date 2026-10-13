@@ -1,0 +1,2 @@
+(query [:where [?e :na ?] (o0(rule[ (nt ?x3>>>>>>1)])
+ ?y) ])

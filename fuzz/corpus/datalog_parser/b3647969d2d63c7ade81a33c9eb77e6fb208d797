@@ -1,0 +1,1 @@
+(query[:where [? a ?n] (not [?e ?nb:neray0ue])])

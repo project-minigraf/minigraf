@@ -1,0 +1,1 @@
+(query [ :where [?mee :lorI ?c] (notnoe,[] ?true[] ??[:acti])])

@@ -1,0 +1,1 @@
+(query[ :where[6? a3 ] (tw ?e:r)])

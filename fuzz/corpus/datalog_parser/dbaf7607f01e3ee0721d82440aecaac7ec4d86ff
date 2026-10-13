@@ -1,0 +1,1 @@
+(query [: :where [?e :n ?n] (not [?_ ?_anb:n] (e:0 =y) [?x:r1rrrrr(no)])])

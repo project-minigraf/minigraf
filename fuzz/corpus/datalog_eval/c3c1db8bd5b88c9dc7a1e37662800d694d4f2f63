@@ -1,0 +1,1 @@
+(query [:find ?e:with ?c:where [?e :c ?c] (e )])

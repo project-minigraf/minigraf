@@ -1,0 +1,1 @@
+(query [:find ?e  ?e :where [?eH:name ?n] (not [?e ed ?e?e]):where [?e :name ?n] :where [? a  _nil][?e?e aaa aa?_][Ee0 aaaaaaaae ?_] (nlt [e])])

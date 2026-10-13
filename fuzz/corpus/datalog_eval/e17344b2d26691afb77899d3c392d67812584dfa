@@ -1,0 +1,1 @@
+(query [:find?n :where [?eJ:namme ?n ][(!= ?n "Alci")][(!= ?n "A?lAlci")][(!= ?n "Ai")]])

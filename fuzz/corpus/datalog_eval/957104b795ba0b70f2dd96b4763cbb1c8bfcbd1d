@@ -1,0 +1,3 @@
+(query [:where [?e uerlor ?c] (not-join [?e] (query:bwith [:fin(jo5惃_)?])
+[:
+: caeFidtMrue])])
