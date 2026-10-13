@@ -178,17 +178,28 @@ The test appends one JSON line per check to the metrics file:
 ```
 
 Lines written after a full scan also carry `full_scan_ms` and
-`full_scan_peak_rss_bytes` (the child's). RSS
+`full_scan_peak_rss_bytes` (the child's). `probe_rss_bytes` is the last memory-probe
+child's RSS (§8). RSS
 and peak RSS come from `/proc/self/status` (`VmRSS`, `VmHWM`); elsewhere they
 are `null`.
 
 ## 8. Memory bound
 
-After the growth phase the test records a baseline: RSS right after a reopen.
-At each later post-reopen check:
+The bound measures a fresh handle on a checkpointed file, in a child process
+(the test binary re-run as `soak_memory_child`, with the parent's handle
+closed): the child opens the file, runs 200 EAVT point reads spread over the
+entities and one read per hot entity, and reports its RSS. The parent is not
+measured: its reference grows with the data, and the allocator keeps what its
+attribute scans freed. Those scans read the whole attribute until #518, so the
+retained memory grows with the entity count, which the churn phase roughly
+triples (#542: 534 MiB against a bound of 455 MiB at 30M live facts).
+
+At the first reopen after a checkpoint in the churn phase, the child's RSS is
+the baseline. At each later one:
 
 - **v3:** RSS must stay below `1.25 × baseline + 256 MiB`. The page cache is
-  bounded and the reference grows only slowly, so the steady state is flat.
+  bounded and the child's reads cost the same at any size, so the steady
+  state is flat.
 - **main:** v2 keeps facts in memory, so RSS rightly grows with history. RSS
   per fact version must stay below `1.25 ×` the baseline ratio, plus 256 MiB.
 
