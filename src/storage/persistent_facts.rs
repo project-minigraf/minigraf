@@ -493,7 +493,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         #[cfg(not(all(target_arch = "wasm32", feature = "browser")))]
         drop(listed);
         // All pending facts are now in `reader`.
-        self.storage.publish(reader, new_meta.generation);
+        self.storage
+            .publish(reader, new_meta.generation, pending_facts.len());
         Ok(())
     }
 
@@ -686,7 +687,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.dirty = false;
         self.failed = false;
         let reader = self.activate(new_meta);
-        self.storage.publish(reader, new_meta.generation);
+        self.storage
+            .publish(reader, new_meta.generation, pending_facts.len());
         Ok(())
     }
 

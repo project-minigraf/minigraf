@@ -487,19 +487,33 @@ impl FactStorage {
         d.generation = generation;
     }
 
-    /// Publish a checkpoint: `reader` (generation `generation`) now holds every
-    /// pending fact, and an empty pending store replaces the old one, all under
-    /// one write lock, so no read sees a checkpointed fact twice (#473 spec
-    /// §4.1). The old store is left intact for readers that hold it.
+    /// Publish a checkpoint: `reader` (generation `generation`) now holds the
+    /// first `checkpointed` pending facts, and a new pending store replaces the
+    /// old one, all under one write lock, so no read sees a checkpointed fact
+    /// twice (#473 spec §4.1). The old store is left intact for readers that
+    /// hold it.
+    ///
+    /// Facts appended after the checkpoint read the pending store (positions
+    /// `checkpointed..`) move to the new store, so none is lost. The database's
+    /// write lock keeps that range empty today; this does not depend on it.
     pub(crate) fn publish(
         &self,
         reader: Arc<dyn crate::storage::CommittedReader>,
         generation: u64,
+        checkpointed: usize,
     ) {
         let mut d = self.data.write().unwrap_or_else(|e| e.into_inner());
+        let pending = PendingStore::new();
+        {
+            let old = d.pending.read().unwrap_or_else(|e| e.into_inner());
+            let mut new = pending.write().unwrap_or_else(|e| e.into_inner());
+            for fact in old.facts.get(checkpointed..).unwrap_or(&[]) {
+                new.push(fact.clone());
+            }
+        }
         d.committed = Some(reader);
         d.generation = generation;
-        d.pending = PendingStore::new();
+        d.pending = pending;
     }
 
     /// Generation of the committed reader; 0 while there is none.
@@ -1686,7 +1700,8 @@ mod tests {
         );
         let checkpointed = storage.get_pending_facts();
 
-        storage.publish(std::sync::Arc::new(MockReader(checkpointed)), 2);
+        let n = checkpointed.len();
+        storage.publish(std::sync::Arc::new(MockReader(checkpointed)), 2, n);
         assert_eq!(storage.generation(), 2);
         assert_eq!(
             storage.pending_index_counts(),
@@ -1702,6 +1717,29 @@ mod tests {
             .unwrap();
         assert_eq!(storage.get_pending_facts().len(), 1);
         assert_eq!(storage.get_all_facts().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn publish_keeps_facts_appended_after_the_checkpoint_read() {
+        use uuid::Uuid;
+        let storage = FactStorage::new();
+        let e = Uuid::new_v4();
+        storage
+            .transact(vec![(e, ":a".to_string(), Value::Integer(1))], None)
+            .unwrap();
+        let checkpointed = storage.get_pending_facts();
+        // A write lands after the checkpoint read the pending facts.
+        storage
+            .transact(vec![(e, ":a".to_string(), Value::Integer(2))], None)
+            .unwrap();
+
+        let n = checkpointed.len();
+        storage.publish(std::sync::Arc::new(MockReader(checkpointed)), 2, n);
+        let pending = storage.get_pending_facts();
+        assert_eq!(pending.len(), 1, "late fact carried over");
+        assert_eq!(pending[0].value, Value::Integer(2));
+        assert_eq!(storage.pending_index_counts(), (1, 1), "and indexed");
+        assert_eq!(storage.get_all_facts().unwrap().len(), 2, "each fact once");
     }
 
     #[test]
