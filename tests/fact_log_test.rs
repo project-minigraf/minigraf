@@ -673,3 +673,23 @@ fn log_is_send_and_outlives_the_database_handle() {
     let rows: Vec<Row> = read(&db, &FactFilter::new(), 100).iter().map(row).collect();
     assert_eq!(sorted(rows), sorted(model));
 }
+
+#[test]
+fn close_time_checkpoint_runs_while_a_log_outlives_the_handle() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("close_cp.graph");
+    let model = {
+        let db = Minigraf::open(&path).unwrap();
+        let model = write(&db, Some(4));
+        let log = db.fact_log(&FactFilter::new().window(2)).unwrap();
+        drop(db); // checkpoints the pending writes
+        assert!(!wal_exists(&path), "close-time checkpoint ran");
+        let rows: Vec<Row> = log.map(|r| row(&r.unwrap())).collect();
+        assert_eq!(sorted(rows), sorted(model.clone()));
+        model
+    };
+    let db = Minigraf::open(&path).unwrap();
+    let rows: Vec<Row> = read(&db, &FactFilter::new(), 100).iter().map(row).collect();
+    assert_eq!(sorted(rows), sorted(model));
+    assert!(db.verify().unwrap().is_ok());
+}

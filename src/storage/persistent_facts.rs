@@ -490,6 +490,9 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.dirty = false;
         self.failed = false;
         let reader = self.activate(new_meta);
+        // `listed` includes quarantined ids. Nothing pins a generation on
+        // the browser yet (it has no fact log); before its cursors pin, ids in
+        // force must be withheld here (#543 plan step 8).
         #[cfg(all(target_arch = "wasm32", feature = "browser"))]
         {
             self.released = listed;
