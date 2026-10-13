@@ -505,12 +505,17 @@ impl FactStorage {
             .data
             .read()
             .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
-        let pending_len = d
-            .pending
-            .read()
-            .map_err(|_| err_coded!(ErrorCode::Int050, "pending"))?
-            .facts
-            .len();
+        let (pending_len, now) = {
+            let p = d
+                .pending
+                .read()
+                .map_err(|_| err_coded!(ErrorCode::Int050, "pending"))?;
+            // Read with the cutoff, under the lock no append can hold: every
+            // fact in the snapshot was stamped by then, and none appended
+            // after it. A transaction stamped earlier but appended later is
+            // left out, as it is from any read in that interval.
+            (p.facts.len(), tx_id_now().cast_signed())
+        };
         Ok(Snapshot {
             committed: d.committed.clone(),
             _pin: d
@@ -519,8 +524,7 @@ impl FactStorage {
                 .map(|_| Arc::new(self.pins.pin(d.generation))),
             pending: Arc::clone(&d.pending),
             pending_len,
-            // After the facts it holds were appended, so none is in its future.
-            now: tx_id_now().cast_signed(),
+            now,
         })
     }
 
