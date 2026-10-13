@@ -1,0 +1,1 @@
+(query [::where [?e :n_m ?] (not [-?e :an true]):where(Dnot [])])

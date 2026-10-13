@@ -1,0 +1,2 @@
+(query [:fi:where [?e ?loFFFFFFF ?c] (not(q)[
+*?e:ee])])

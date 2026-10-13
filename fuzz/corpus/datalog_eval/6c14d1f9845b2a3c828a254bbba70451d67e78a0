@@ -1,0 +1,1 @@
+(query [:fe :where [?e:lor ??] [?:activevi to] (not[?:aveva wh])])

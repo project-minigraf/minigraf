@@ -1,0 +1,2 @@
+(query [:d :where [e :e ?n] :any-valid-time(not(E[e wh ])
+)])

@@ -1,0 +1,1 @@
+(query [ :where [?e zcolo ?c] (not[_ o?ict e]):fe :where [?e +zc] (not-join [?e] [_ o?ict?ve e])])

@@ -1,0 +1,3 @@
+(rule[(rle[::e:::re ])
+[?e :colr ?c] (not[?e color ?c] (oo-o-))]
+)

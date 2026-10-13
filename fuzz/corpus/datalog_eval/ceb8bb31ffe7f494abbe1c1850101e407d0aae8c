@@ -1,0 +1,1 @@
+(query [:v:find ?e :where [?e ?lynnueFFFF ?ctiVer ]  [?e?n ?lynnueFFFF ?cfalse] (not-join [?e] [? ever ?che])])

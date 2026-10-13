@@ -1,0 +1,3 @@
+(query [:find ?e :where [?e :c? orc] (njot-[? e (query [:(not-nijo [y [>find ?e (njot-[? e[] (quey-)])
+] ue])])
+?e ? e[]veh])])

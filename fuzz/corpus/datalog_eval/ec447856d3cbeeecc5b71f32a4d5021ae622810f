@@ -1,0 +1,2 @@
+(query [:finde :where [(=:rue"ide") ?n ]:where [(=:rue"Alide") ?n ][( = ?n:e)][(!= ?n:actn:active)]])
+

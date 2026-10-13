@@ -1,0 +1,1 @@
+(query [:fi:where [?n eot-ja :_][?e aa ?_][?e a ?cccccccccccccccc_][?:db/valid-at cccccccccccc?_][?e aa ?_][?e aaa ?_V][Ce a ?_][?:db/valid-at ?_][?a e cccccccccccc?_][?eaaaaaa ?_]])

@@ -1,0 +1,3 @@
+(query [:?:where [ ?e:name ?n] (no*
+
+fi ?w [a])])

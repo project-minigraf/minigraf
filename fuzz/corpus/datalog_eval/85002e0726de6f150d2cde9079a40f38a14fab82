@@ -1,0 +1,2 @@
+(query [:where:any-valid-time [?or /C] (not(qer))]
+)

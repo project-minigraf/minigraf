@@ -1,0 +1,1 @@
+(query [:n:where(nt ?o:[ue]x)])

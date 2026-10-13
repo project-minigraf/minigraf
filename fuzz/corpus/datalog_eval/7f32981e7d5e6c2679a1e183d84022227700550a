@@ -1,0 +1,2 @@
+(query [:find ?n :where [?e ame([]minn "Aice")](qru[:fhn(ne nil[?re]?e -:we nil[?rue])])
+])

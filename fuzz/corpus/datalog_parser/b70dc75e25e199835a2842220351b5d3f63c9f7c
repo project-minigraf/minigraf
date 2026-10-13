@@ -1,0 +1,7 @@
+(query[:where [?e e ?n] (on
+?
+
+
+
+
+?:[ZZ]Z)])

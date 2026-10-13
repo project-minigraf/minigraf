@@ -1,0 +1,1 @@
+(query [:find ?e0:where [?e:na  ?n](onned (rrt)? ?t5(rule)?ue0) [?x :p ?y]])

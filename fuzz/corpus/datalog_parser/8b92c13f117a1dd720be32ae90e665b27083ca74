@@ -1,0 +1,1 @@
+(query [:find ?e5:where  (ot0.49144.(rul)? ?y) [?x:t y]])

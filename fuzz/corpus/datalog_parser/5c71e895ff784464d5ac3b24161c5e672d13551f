@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e :name ?n] (onne$rte22$0034$01
+ ?y) [? :pa0ent ?y]])

@@ -1,0 +1,1 @@
+(query [:fd:where [?: rc][?e ol or](j 2not)])

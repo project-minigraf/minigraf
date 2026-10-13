@@ -1,0 +1,1 @@
+(query [::where[?:colo ?c] (n$1- [?] [?ve true])])

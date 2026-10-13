@@ -1,0 +1,1 @@
+(query [:fin?e :where [?DDDDDDDDDDDDDDe :Nme ?n] (not [?e :banned true]):where [?e :name ?n] (not [?e :bantned eؑ߉])])

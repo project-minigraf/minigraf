@@ -1,0 +1,2 @@
+(query [:finde :where [(=:rue"Alide") ?n ][(!= ?f ?ne)]])
+

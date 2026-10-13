@@ -1,0 +1,5 @@
+(query [:find ?e  ?e :where [?e :Name  gn] (not [?e :d no?etrue]):(query [: :where [?e :name ?n] (onu08642$30004455771023452221$3$mi$351e [?e :name ?n] (not [(query [:find ?e :w+ [?e :name ?n] (onu222223$0034455771033452221$3$mi$351531ne$rte u222223$00003445577103345222$13$mi$3515310(rule [(pa33)])
+ ?y) ?e :ban44nzd trueؑ߉])]5577103345222$13$mi$3515310(ru [(par,Fn t?x33)]))
+ ?y) [?xpa :0ent ?y]])[?x :pa0e
+
+nt ?y]])

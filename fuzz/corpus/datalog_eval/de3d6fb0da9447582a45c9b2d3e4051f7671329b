@@ -1,0 +1,1 @@
+(query [:n :where [?e ?lo ?c] (not-join [?e] [?De aC ?chdreie])])

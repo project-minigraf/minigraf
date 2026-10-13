@@ -1,0 +1,1 @@
+(query [::where [e noa ?_][?e aaa ?_][? a ?_][?e aaaaaaaa Ġ][?e aaaaa ?_]])

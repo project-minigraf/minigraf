@@ -1,0 +1,4 @@
+(query [:e? :where;;{;n e
+ [?e :c ?c] (or(query *[:fie :where [(/:ru!= ?n:active)]])
+):]
+)

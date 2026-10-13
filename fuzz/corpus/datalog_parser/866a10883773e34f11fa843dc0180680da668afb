@@ -1,0 +1,1 @@
+(query [:with ?e   ?e  ?e ?o:where [?e :Nae ?n] (not [?e :banne true]):])

@@ -1,0 +1,1 @@
+(query [:rat:where [?e :color ?c] (e l[?] ?[e:true]ti e [?] ?[e])])

@@ -1,0 +1,1 @@
+(query [:find :where [?e :col ?c] (not-join [?e] [?:rAcnd:ue])])

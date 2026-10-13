@@ -1,0 +1,1 @@
+(query [:find:where [>e:co] (not:fihere [grue])])

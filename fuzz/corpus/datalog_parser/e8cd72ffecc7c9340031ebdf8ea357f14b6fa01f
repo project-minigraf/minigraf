@@ -1,0 +1,1 @@
+(query [:where [? aie ?n] (not [? a rue])])

@@ -1,0 +1,2 @@
+(query [::where [?e :name n] (no
+?zfd ?e :wh)])

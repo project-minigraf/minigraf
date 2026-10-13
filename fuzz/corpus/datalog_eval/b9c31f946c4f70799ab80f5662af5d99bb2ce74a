@@ -1,0 +1,1 @@
+(query [:fi :where [?:color ?c] (njotnoi- []):find ?e :where [?e :cr ?c] (njotnoi- [])])

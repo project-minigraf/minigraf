@@ -1,0 +1,1 @@
+(query [:find    :where [?e ::difd?n] (not[?e :d true]):where [?e :name ?n] (not [?e :ed tnue])])
