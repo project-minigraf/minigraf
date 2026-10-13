@@ -104,3 +104,52 @@ proptest! {
         run(&steps, Checks::All)?;
     }
 }
+
+/// The #564 nightly input: one transact, then a crash copy after every step.
+/// Under libFuzzer one copy failed with an unreported error; `crash_copy` now
+/// retries `Interrupted` and names the file and error kind.
+#[test]
+fn repeated_crash_copies_match_model() {
+    let probe = Probe {
+        as_of: 0,
+        at: 3,
+        e: 3,
+        a: 0,
+        v: V::Int(i64::MIN),
+        pick: 15,
+    };
+    let mut steps = vec![Step {
+        op: Op::Exec(Stmt::Transact {
+            window: Window {
+                vf: None,
+                vt: Some(3),
+            },
+            facts: vec![FactSpec {
+                e: 3,
+                a: 0,
+                v: V::Int(i64::MIN),
+                window: Window::default(),
+            }],
+        }),
+        probe: probe.clone(),
+    }];
+    for _ in 0..8 {
+        steps.push(Step {
+            op: Op::Crash(OpenMode::Default),
+            probe: probe.clone(),
+        });
+    }
+    run(&steps, Checks::All).expect("crash copies match the model");
+}
+
+/// A failed copy says which file and why.
+#[test]
+fn crash_copy_names_the_failing_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("missing.graph");
+    let err = crash_copy(&missing, &dir.path().join("to.graph"), 7).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("step 7"), "message names the step");
+    assert!(msg.contains("database file"), "message names the file");
+    assert!(msg.contains("NotFound"), "message carries the error kind");
+}
