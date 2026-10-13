@@ -94,7 +94,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             }
             Opened::LegacyV7(h) => pfs.migrate_v7(&h)?,
         };
-        pfs.activate(meta);
+        let reader = pfs.activate(meta);
+        pfs.storage.set_committed(reader, meta.generation);
         pfs.storage
             .restore_tx_counter_from(meta.last_checkpointed_tx_count);
         Ok(pfs)
@@ -124,7 +125,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
             }
             Opened::LegacyV7(h) => pfs.load_v7_in_memory(&h)?,
         };
-        pfs.activate(meta);
+        let reader = pfs.activate(meta);
+        pfs.storage.set_committed(reader, meta.generation);
         pfs.storage
             .restore_tx_counter_from(meta.last_checkpointed_tx_count);
         Ok(pfs)
@@ -274,16 +276,17 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         Ok(meta)
     }
 
-    /// Make `meta` the active state: cache bound and committed reader.
-    fn activate(&mut self, meta: MetaPage) {
+    /// Make `meta` the active state (cache bound) and return its committed
+    /// reader. The caller hands the reader to `FactStorage`: `set_committed`
+    /// after open and migration, `publish` after a checkpoint.
+    fn activate(&mut self, meta: MetaPage) -> Arc<dyn crate::storage::CommittedReader> {
         self.meta = meta;
         self.page_cache.set_generation_bound(meta.generation);
-        let reader: Arc<dyn crate::storage::CommittedReader> = Arc::new(OnDiskReader::new(
+        Arc::new(OnDiskReader::new(
             self.backend.clone(),
             self.page_cache.clone(),
             &meta,
-        ));
-        self.storage.set_committed_reader(reader);
+        ))
     }
 
     /// Migrate a format v7 file to v8 (spec §9).
@@ -482,15 +485,16 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
 
         self.dirty = false;
         self.failed = false;
-        self.activate(new_meta);
+        let reader = self.activate(new_meta);
         #[cfg(all(target_arch = "wasm32", feature = "browser"))]
         {
             self.released = listed;
         }
         #[cfg(not(all(target_arch = "wasm32", feature = "browser")))]
         drop(listed);
-        // Clear pending — all data now on disk
-        self.storage.post_checkpoint_clear();
+        // All pending facts are now in `reader`.
+        self.storage
+            .publish(reader, new_meta.generation, pending_facts.len());
         Ok(())
     }
 
@@ -682,8 +686,9 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
 
         self.dirty = false;
         self.failed = false;
-        self.activate(new_meta);
-        self.storage.post_checkpoint_clear();
+        let reader = self.activate(new_meta);
+        self.storage
+            .publish(reader, new_meta.generation, pending_facts.len());
         Ok(())
     }
 

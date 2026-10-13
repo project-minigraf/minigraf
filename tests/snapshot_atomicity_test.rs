@@ -126,7 +126,6 @@ fn execute_transact_is_seen_whole_on_file() {
 /// facts twice. Every fact here has its own entity, so a repeated row is a
 /// fact read twice.
 #[test]
-#[ignore = "reproducer: fails on v3 today; fixed by #473 sub-issue #543"]
 fn checkpoint_never_shows_a_fact_twice() {
     let dir = tempfile::tempdir().unwrap();
     let opts = OpenOptions::default().wal_checkpoint_threshold(usize::MAX);
