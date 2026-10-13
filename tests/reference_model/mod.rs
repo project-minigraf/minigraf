@@ -737,20 +737,31 @@ pub fn open(path: &Path, mode: OpenMode) -> Result<Minigraf, TestCaseError> {
 /// Copy the database file and its WAL as they are on disk right now. On
 /// Windows, where locks are mandatory, the caller closes the handle first,
 /// which turns the step into a plain reopen.
+///
+/// `fs::copy` can fail with `Interrupted` under libFuzzer, whose `-timeout`
+/// alarm signal is installed without `SA_RESTART`, so the copy retries that.
+/// Any other error names the file and the error kind (#564).
 pub fn crash_copy(from: &Path, to: &Path, step: usize) -> Result<(), TestCaseError> {
     let wal = |p: &Path| {
         let mut s = p.as_os_str().to_owned();
         s.push(".wal");
         std::path::PathBuf::from(s)
     };
-    let copy = |a: &Path, b: &Path| {
-        std::fs::copy(a, b)
-            .map(|_| ())
-            .map_err(|_| TestCaseError::fail(format!("step {step}: copy failed")))
+    let copy = |a: &Path, b: &Path, what: &str| loop {
+        match std::fs::copy(a, b) {
+            Ok(_) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => {
+                return Err(TestCaseError::fail(format!(
+                    "step {step}: copy of the {what} failed ({:?})",
+                    e.kind()
+                )));
+            }
+        }
     };
-    copy(from, to)?;
+    copy(from, to, "database file")?;
     if wal(from).exists() {
-        copy(&wal(from), &wal(to))?;
+        copy(&wal(from), &wal(to), "WAL")?;
     }
     Ok(())
 }
