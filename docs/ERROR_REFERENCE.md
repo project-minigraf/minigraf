@@ -178,7 +178,7 @@ with no `CodedError` anywhere in its chain.
 | API-010 | Query with bind slots passed to execute() | Database API |
 | API-011 | Two valid-time windows for one fact in one transact | Database API |
 | API-012 | Non-query command passed to query() | Database API |
-| API-013 | Checkpoint while a fact log is open | Database API |
+| API-013 | Checkpoint while a fact log is open (deprecated) | Database API |
 | API-014 | Write on a read-only handle | Database API |
 | API-015 | Log writer record out of transaction order | Database API |
 | API-016 | Log writer record with a second tx_id for one transaction | Database API |
@@ -244,7 +244,7 @@ with no `CodedError` anywhere in its chain.
 | INT-055 | Rule predicate disappeared during rollback | Internal |
 | INT-056 | Write to a read-only storage backend | Internal |
 
-Deprecated codes: STG-003 and STG-004 (pre-v7 header sizes) are deprecated as of v3.0.0 and are no longer emitted, because formats v1–v6 are rejected with STG-028 before any header-size check. They stay registered and documented, and error codes are never removed or reused.
+Deprecated codes: STG-003 and STG-004 (pre-v7 header sizes) are deprecated as of v3.0.0 and are no longer emitted, because formats v1–v6 are rejected with STG-028 before any header-size check. API-013 (checkpoint while a fact log is open) is deprecated as of v3.0.0 and is no longer emitted, because checkpoints run while fact logs are open. They stay registered and documented, and error codes are never removed or reused.
 
 ---
 
@@ -2650,6 +2650,8 @@ while let Some(batch) = cursor.next_batch(1000)? {
 **Scenario**: Code that dispatches every command string through one function switches from `execute()` to `query()` for all of them.
 
 ### API-013 Checkpoint while a fact log is open
+
+> **Deprecated in v3.0.0.** No longer emitted: a fact log pins the committed generation it opened on, and checkpoints run while it is open without reusing the pages it reads. Kept for reference; this code will not be reused.
 
 **Error text**: `checkpoint deferred while {} fact log(s) are open; close them and checkpoint again`
 

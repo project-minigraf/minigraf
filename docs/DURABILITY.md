@@ -122,7 +122,7 @@ out.advance_tx_count(tx_count)?;
 out.finish()?;
 ```
 
-- The log reads the database as it was when it opened, uncheckpointed transactions included. Writes go on meanwhile; they stay in the WAL, and checkpoints wait until the log is dropped (`checkpoint()` with work to do fails with `API-013`).
+- The log reads the database as it was when it opened, uncheckpointed transactions included. Writes and checkpoints go on meanwhile. The log pins the committed generation it opened on, so checkpoints do not reuse the pages it reads: on a database taking many writes, the file grows by the pages checkpoints replace until the log is dropped, and later checkpoints reuse them.
 - Read the transaction count after opening the log, so it covers every logged transaction. The copy keeps every fact version with its `tx_count`, `tx_id` and valid-time window, so `:as-of` and `:valid-at` answer the same; internal ids and page layout are new.
 - The copy is built at `backup/app.graph.partial` and renamed into place by `finish()`, so an interrupted backup never leaves a partial file under the final name.
 
@@ -185,7 +185,7 @@ Every error has a code (`MinigrafError::code()`); the [error reference](https://
 
 | What to do | Codes |
 |---|---|
-| **Retry later.** Nothing is wrong with the file | `STG-026` (another process holds the database: wait for it to exit), `API-013` (a fact log is open: drop it, then checkpoint) |
+| **Retry later.** Nothing is wrong with the file | `STG-026` (another process holds the database: wait for it to exit) |
 | **Fix the setup.** The file is fine | `STG-025` (this process already has the file open: reuse that handle), `STG-027` (the filesystem cannot lock), `STG-042` (no file at the path, read-only open), `STG-043` (the log writer's target exists), `WAL-006` (the WAL could not be deleted after a checkpoint, usually directory permissions; nothing is lost) |
 | **Reopen.** The handle refuses writes; every committed transaction is in the WAL | `STG-046`, `WAL-007`, an I/O error from a write or checkpoint (fix the cause first), `API-001` (a thread panicked while holding the write lock) |
 | **Use another library version.** The file is not modified | `STG-006` (format newer than this library), `STG-034` (feature bits from a newer v3.x), `STG-028` (format older than v7: open with v2.x first), `WAL-002` (WAL from another version: open with that version and `checkpoint()`) |

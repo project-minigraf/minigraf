@@ -4,9 +4,10 @@ use crate::graph::types::{
 };
 use crate::query::datalog::types::AsOf;
 use crate::storage::index::{Indexes, encode_value};
+use crate::storage::pins::{GenerationPin, Pins};
 use anyhow::Result;
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 /// Compact key for O(1) duplicate detection in `PendingStore::keys`.
@@ -136,17 +137,39 @@ pub(crate) struct FactStorage {
     data: Arc<RwLock<FactData>>,
     /// Monotonically incrementing batch counter — increments once per transact/retract call.
     tx_counter: Arc<AtomicU64>,
-    /// Open fact logs (#430). While above zero, no checkpoint may publish a
-    /// new committed generation: a log reads pages of the one it opened on.
-    log_pins: Arc<AtomicUsize>,
+    /// Generations held by open snapshots, and the pages checkpoints freed
+    /// that they may still read (#473 spec §4.2).
+    pins: Arc<Pins>,
 }
 
-/// Keeps checkpoints from running while a fact log is open; released on drop.
-pub(crate) struct LogPin(Arc<AtomicUsize>);
+/// The database as one read sees it: a committed generation, pinned so no
+/// checkpoint reuses its pages, and the first `pending_len` facts of the
+/// pending store that followed it. Taken under one `FactData` lock, so it
+/// never holds part of a transaction or of a checkpoint.
+pub(crate) struct Snapshot {
+    pub(crate) committed: Option<Arc<dyn crate::storage::CommittedReader>>,
+    /// None for in-memory databases: there are no pages to hold.
+    _pin: Option<GenerationPin>,
+    pending: Arc<RwLock<PendingStore>>,
+    pending_len: usize,
+}
 
-impl Drop for LogPin {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::SeqCst);
+impl Snapshot {
+    /// The number of pending facts in the snapshot.
+    pub(crate) fn pending_len(&self) -> usize {
+        self.pending_len
+    }
+
+    /// Clones of the snapshot's pending facts at positions `from..to`
+    /// (clamped). The store is append-only and never cleared, so these are
+    /// the facts that were there when the snapshot was taken.
+    pub(crate) fn pending_range(&self, from: usize, to: usize) -> Result<Vec<Fact>> {
+        let p = self
+            .pending
+            .read()
+            .map_err(|_| err_coded!(ErrorCode::Int050, "pending"))?;
+        let to = to.min(self.pending_len).min(p.facts.len());
+        Ok(p.facts.get(from.min(to)..to).unwrap_or(&[]).to_vec())
     }
 }
 
@@ -166,7 +189,7 @@ impl FactStorage {
                 pending: PendingStore::new(),
             })),
             tx_counter: Arc::new(AtomicU64::new(0)),
-            log_pins: Arc::new(AtomicUsize::new(0)),
+            pins: Pins::new(),
         }
     }
 
@@ -426,47 +449,31 @@ impl FactStorage {
         p.facts.clone()
     }
 
-    /// The committed reader and the number of pending facts, read together.
-    ///
-    /// The pending list is append-only between checkpoints, so with a
-    /// [`LogPin`] held its first `len` entries stay where they are.
-    pub(crate) fn log_snapshot(
-        &self,
-    ) -> Result<(Option<Arc<dyn crate::storage::CommittedReader>>, usize)> {
+    /// Take a [`Snapshot`] of the current state: the committed reader, pinned,
+    /// and the pending store with its length, all under `FactData`'s lock.
+    pub(crate) fn snapshot(&self) -> Result<Snapshot> {
         let d = self
             .data
             .read()
             .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
-        let p = d
+        let pending_len = d
             .pending
             .read()
-            .map_err(|_| err_coded!(ErrorCode::Int050, "pending"))?;
-        Ok((d.committed.clone(), p.facts.len()))
+            .map_err(|_| err_coded!(ErrorCode::Int050, "pending"))?
+            .facts
+            .len();
+        Ok(Snapshot {
+            committed: d.committed.clone(),
+            _pin: d.committed.as_ref().map(|_| self.pins.pin(d.generation)),
+            pending: Arc::clone(&d.pending),
+            pending_len,
+        })
     }
 
-    /// Clones of the pending facts at positions `from..to` (clamped).
-    pub(crate) fn pending_range(&self, from: usize, to: usize) -> Result<Vec<Fact>> {
-        let d = self
-            .data
-            .read()
-            .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
-        let p = d
-            .pending
-            .read()
-            .map_err(|_| err_coded!(ErrorCode::Int050, "pending"))?;
-        let to = to.min(p.facts.len());
-        Ok(p.facts.get(from.min(to)..to).unwrap_or(&[]).to_vec())
-    }
-
-    /// Register an open fact log; checkpoints are refused until it is dropped.
-    pub(crate) fn pin_log(&self) -> LogPin {
-        self.log_pins.fetch_add(1, Ordering::SeqCst);
-        LogPin(self.log_pins.clone())
-    }
-
-    /// The number of open fact logs.
-    pub(crate) fn log_pins(&self) -> usize {
-        self.log_pins.load(Ordering::SeqCst)
+    /// Ids freed by checkpoints that an open snapshot may still read. A
+    /// checkpoint must not hand any of them out.
+    pub(crate) fn pages_in_force(&self) -> HashSet<u64> {
+        self.pins.in_force()
     }
 
     /// Set the tx_counter to `max` (used on load to restore from persisted state).
@@ -491,7 +498,8 @@ impl FactStorage {
     /// first `checkpointed` pending facts, and a new pending store replaces the
     /// old one, all under one write lock, so no read sees a checkpointed fact
     /// twice (#473 spec §4.1). The old store is left intact for readers that
-    /// hold it.
+    /// hold it. `freed` (pages the previous generation referenced and this one
+    /// does not) stays in quarantine while an older generation is pinned.
     ///
     /// Facts appended after the checkpoint read the pending store (positions
     /// `checkpointed..`) move to the new store, so none is lost. The database's
@@ -501,8 +509,10 @@ impl FactStorage {
         reader: Arc<dyn crate::storage::CommittedReader>,
         generation: u64,
         checkpointed: usize,
+        freed: Vec<u64>,
     ) {
         let mut d = self.data.write().unwrap_or_else(|e| e.into_inner());
+        self.pins.record(generation, freed);
         let pending = PendingStore::new();
         {
             let old = d.pending.read().unwrap_or_else(|e| e.into_inner());
@@ -1701,7 +1711,12 @@ mod tests {
         let checkpointed = storage.get_pending_facts();
 
         let n = checkpointed.len();
-        storage.publish(std::sync::Arc::new(MockReader(checkpointed)), 2, n);
+        storage.publish(
+            std::sync::Arc::new(MockReader(checkpointed)),
+            2,
+            n,
+            Vec::new(),
+        );
         assert_eq!(storage.generation(), 2);
         assert_eq!(
             storage.pending_index_counts(),
@@ -1734,7 +1749,12 @@ mod tests {
             .unwrap();
 
         let n = checkpointed.len();
-        storage.publish(std::sync::Arc::new(MockReader(checkpointed)), 2, n);
+        storage.publish(
+            std::sync::Arc::new(MockReader(checkpointed)),
+            2,
+            n,
+            Vec::new(),
+        );
         let pending = storage.get_pending_facts();
         assert_eq!(pending.len(), 1, "late fact carried over");
         assert_eq!(pending[0].value, Value::Integer(2));

@@ -21,6 +21,7 @@ pub(crate) mod node;
 pub mod packed_pages;
 pub(crate) mod page;
 pub mod persistent_facts;
+pub(crate) mod pins;
 pub(crate) mod reader;
 pub(crate) mod value_pages;
 // `Minigraf::verify` / `rebuild_indexes` walk a file; not built for wasm32.

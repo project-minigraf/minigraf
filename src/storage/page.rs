@@ -167,9 +167,17 @@ pub fn new_page(page_type: u8, count: u16) -> Vec<u8> {
 /// that has been read is replaced: [`PageAllocator::finish_free_list`] pushes it,
 /// its unused ids and every freed page as new head pages in front of the unread
 /// tail, which is shared unchanged.
+///
+/// Ids in the quarantine ([`PageAllocator::with_quarantine`]) are free but may
+/// still be read by a pinned generation (#473 spec §4.2): they are never
+/// handed out, and the new free list keeps them.
 pub struct PageAllocator {
     /// Free ids ready to hand out, in reverse order (`pop` yields the next).
     free: Vec<u64>,
+    /// Ids that must not be handed out in this generation.
+    quarantine: std::collections::HashSet<u64>,
+    /// Free ids passed over because they are in the quarantine.
+    skipped: Vec<u64>,
     /// First chain page not read yet (0: none).
     chain_next: u64,
     /// Ids in the chain pages not read yet.
@@ -189,6 +197,8 @@ impl PageAllocator {
         free.sort_unstable_by(|a, b| b.cmp(a));
         PageAllocator {
             free,
+            quarantine: std::collections::HashSet::new(),
+            skipped: Vec::new(),
             chain_next: 0,
             chain_tail_count: 0,
             chain_read: Vec::new(),
@@ -203,6 +213,8 @@ impl PageAllocator {
     pub fn from_chain(head: u64, count: u64, next_append: u64, generation: u64) -> Self {
         PageAllocator {
             free: Vec::new(),
+            quarantine: std::collections::HashSet::new(),
+            skipped: Vec::new(),
             chain_next: head,
             chain_tail_count: count,
             chain_read: Vec::new(),
@@ -210,6 +222,16 @@ impl PageAllocator {
             next_append,
             generation,
         }
+    }
+
+    /// Never hand out an id in `ids`; any such free id is listed again by
+    /// [`finish_free_list`](Self::finish_free_list).
+    pub fn with_quarantine(mut self, ids: std::collections::HashSet<u64>) -> Self {
+        let (skipped, free) = self.free.into_iter().partition(|id| ids.contains(id));
+        self.free = free;
+        self.skipped = skipped;
+        self.quarantine = ids;
+        self
     }
 
     /// The generation every page written through this allocator is stamped with.
@@ -232,6 +254,10 @@ impl PageAllocator {
     ) -> Result<u64> {
         loop {
             if let Some(id) = self.free.pop() {
+                if self.quarantine.contains(&id) {
+                    self.skipped.push(id);
+                    continue;
+                }
                 return Ok(id);
             }
             if self.chain_next == 0 {
@@ -263,8 +289,8 @@ impl PageAllocator {
         Ok(id)
     }
 
-    /// Free ids not handed out, in hand-out order. Chain pages not read yet are
-    /// not included.
+    /// Free ids not handed out, in hand-out order. Chain pages not read yet and
+    /// quarantined ids are not included.
     #[cfg(test)]
     pub fn take_unused_free(&mut self) -> Vec<u64> {
         let mut v = std::mem::take(&mut self.free);
@@ -277,7 +303,8 @@ impl PageAllocator {
     /// tail).
     ///
     /// The list is `freed` (pages the new meta no longer references), every
-    /// chain page read and the ids read but not handed out, as new head pages in
+    /// chain page read, the quarantined ids passed over and the ids read but not
+    /// handed out, as new head pages in
     /// front of the unread tail. The head pages themselves are allocated here,
     /// which may read more of the chain, so this repeats until the page count
     /// covers the ids. Nothing listed here is handed out in this generation.
@@ -292,6 +319,7 @@ impl PageAllocator {
         let ids = loop {
             let mut ids = freed.clone();
             ids.extend(self.chain_read.iter().copied());
+            ids.extend(self.skipped.iter().copied());
             ids.extend(self.free.iter().rev().copied());
             // Use the first `k` allocated pages for the chain and list the rest
             // as free: the smallest `k` whose pages hold every listed id.
@@ -412,5 +440,56 @@ mod tests {
         assert_eq!(a.alloc(&b, &c).unwrap(), 21);
         assert_eq!(a.next_append(), 22);
         assert_eq!(a.generation(), 2);
+    }
+
+    #[test]
+    fn quarantined_ids_are_never_handed_out_and_stay_listed() {
+        let b = crate::storage::backend::MemoryBackend::new();
+        let c = crate::storage::cache::PageCache::new(0);
+        let mut a = PageAllocator::new(vec![9, 4, 7, 5], 20, 2).with_quarantine([4, 9, 30].into());
+        assert_eq!(a.alloc(&b, &c).unwrap(), 5);
+        assert_eq!(a.alloc(&b, &c).unwrap(), 7);
+        assert_eq!(a.alloc(&b, &c).unwrap(), 20, "4 and 9 are skipped");
+        assert_eq!(a.take_unused_free(), Vec::<u64>::new());
+    }
+
+    #[test]
+    fn quarantined_chain_ids_are_listed_by_finish_free_list() {
+        use crate::storage::backend::MemoryBackend;
+        use crate::storage::freelist;
+        let mut b = MemoryBackend::new();
+        let c = crate::storage::cache::PageCache::new(0);
+        // A chain at generation 1 listing ids 3..=8, written from page 10 up.
+        let free: Vec<u64> = (3..=8).collect();
+        let mut chain = PageAllocator::new(Vec::new(), 10, 1);
+        let (head, _) = freelist::write_chain(&free, &mut chain, &mut b, &c).unwrap();
+        let end = chain.next_append();
+
+        let mut a = PageAllocator::from_chain(head, 6, end, 2).with_quarantine([3, 5, 8].into());
+        let mut handed = Vec::new();
+        for _ in 0..4 {
+            handed.push(a.alloc(&b, &c).unwrap());
+        }
+        assert_eq!(
+            handed,
+            vec![4, 6, 7, end],
+            "only ids out of quarantine, then append"
+        );
+        let (new_head, count, listed) = a.finish_free_list(vec![], &mut b, &c).unwrap();
+        for id in [3, 5, 8] {
+            assert!(listed.contains(&id), "quarantined id listed again");
+            assert!(!handed.contains(&id), "quarantined id never handed out");
+        }
+        let (read, _) = freelist::read_chain(new_head, &b, &c, a.next_append()).unwrap();
+        assert_eq!(
+            u64::try_from(read.len()).unwrap(),
+            count,
+            "count matches the list"
+        );
+        let mut read = read;
+        read.sort_unstable();
+        let mut want = listed.clone();
+        want.sort_unstable();
+        assert_eq!(read, want);
     }
 }

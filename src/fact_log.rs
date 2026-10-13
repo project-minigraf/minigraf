@@ -5,13 +5,13 @@
 //! bounds), filtered by a [`FactFilter`]. It reads the index trees directly,
 //! without Datalog, and its memory does not grow with the database.
 //!
-//! The log reads the database as it was when it opened. While any log is open,
-//! checkpoints are deferred: writes still succeed and stay in the WAL, and
-//! [`crate::Minigraf::checkpoint`] fails with `API-013`. Close the log, or drop
-//! it, to release the database.
+//! The log reads the database as it was when it opened. Writes and checkpoints
+//! go on meanwhile: the log pins the committed generation it opened on, so no
+//! checkpoint reuses the pages it reads, and those pages stay allocated in the
+//! file until the log is closed or dropped (#473 spec §4.2).
 
 use crate::error::{ErrorCode, MinigrafError, err_coded};
-use crate::graph::storage::{FactStorage, LogPin};
+use crate::graph::storage::{FactStorage, Snapshot};
 use crate::graph::types::{EntityId, Fact, Value};
 use crate::storage::keys::{self, Index};
 use crate::storage::{CommittedReader, LogSource};
@@ -197,8 +197,9 @@ impl FactFilter {
 /// A forward-only stream of fact records, from [`crate::Minigraf::fact_log`].
 ///
 /// Pull records with [`FactLog::next_batch`] or iterate over them. The log
-/// holds the database as it was when it opened and defers checkpoints until
-/// it is closed or dropped, or has returned its last record.
+/// holds the database as it was when it opened. Checkpoints still run, but
+/// the pages they replace stay allocated until the log is closed or dropped,
+/// or has returned its last record.
 ///
 /// ```
 /// # use minigraf::{FactFilter, Minigraf};
@@ -216,12 +217,11 @@ impl FactFilter {
 pub struct FactLog {
     filter: FactFilter,
     committed: Option<Committed>,
-    storage: FactStorage,
-    /// Next pending fact to read, and the end of the snapshot.
+    /// The state the log reads; None once it is finished.
+    snapshot: Option<Snapshot>,
+    /// Next pending fact of the snapshot to read.
     pending_pos: usize,
-    pending_end: usize,
     done: bool,
-    pin: Option<LogPin>,
 }
 
 impl std::fmt::Debug for FactLog {
@@ -234,23 +234,20 @@ impl std::fmt::Debug for FactLog {
 }
 
 impl FactLog {
-    /// Open a log over the current state of `storage`. The caller holds the
-    /// write lock, so no transaction is half applied and no checkpoint runs.
+    /// Open a log over a snapshot of `storage`: whole transactions only, and
+    /// a committed generation no checkpoint can take away.
     pub(crate) fn open(storage: &FactStorage, filter: &FactFilter) -> anyhow::Result<Self> {
-        let pin = storage.pin_log();
-        let (reader, pending_end) = storage.log_snapshot()?;
-        let committed = match reader {
-            Some(reader) => Committed::new(reader, filter)?,
+        let snapshot = storage.snapshot()?;
+        let committed = match &snapshot.committed {
+            Some(reader) => Committed::new(Arc::clone(reader), filter)?,
             None => None,
         };
         Ok(FactLog {
             filter: filter.clone(),
             committed,
-            storage: storage.clone(),
+            snapshot: Some(snapshot),
             pending_pos: 0,
-            pending_end,
             done: false,
-            pin: Some(pin),
         })
     }
 
@@ -284,7 +281,7 @@ impl FactLog {
     fn finish(&mut self) {
         self.done = true;
         self.committed = None;
-        self.pin = None;
+        self.snapshot = None;
     }
 
     fn fill(&mut self, n: usize) -> anyhow::Result<Vec<FactRecord>> {
@@ -295,15 +292,19 @@ impl FactLog {
                 self.committed = None;
             }
         }
-        while out.len() < n && self.pending_pos < self.pending_end {
+        let Some(snapshot) = &self.snapshot else {
+            return Ok(out);
+        };
+        let pending_end = snapshot.pending_len();
+        while out.len() < n && self.pending_pos < pending_end {
             let end = self
                 .pending_pos
                 .saturating_add(n - out.len())
-                .min(self.pending_end);
-            let facts = self.storage.pending_range(self.pending_pos, end)?;
+                .min(pending_end);
+            let facts = snapshot.pending_range(self.pending_pos, end)?;
             if facts.is_empty() {
                 // The snapshot ends here; nothing past it can appear.
-                self.pending_pos = self.pending_end;
+                self.pending_pos = pending_end;
                 break;
             }
             self.pending_pos = self.pending_pos.saturating_add(facts.len());
