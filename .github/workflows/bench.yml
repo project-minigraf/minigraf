@@ -245,6 +245,12 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
+          # The t-test compares a run with the last 30 runs of its branch, not
+          # all history. Without a window, a correct step change (#445's
+          # predicate_pushdown, #476's checkpoint and wal_replay fixtures) kept
+          # alerting for weeks; with 30, a lasting change alerts on about five
+          # runs (enough for the two-in-a-row issue below), then becomes the
+          # baseline.
           # A branch other than main starts from main's history and thresholds.
           start_point=()
           if [ "$BENCH_REF" != main ]; then
@@ -258,6 +264,7 @@ jobs:
             --testbed ubuntu-latest \
             --threshold-measure latency \
             --threshold-test t_test \
+            --threshold-max-sample-size 30 \
             --threshold-upper-boundary ${{ matrix.threshold }} \
             --err \
             --adapter rust_criterion \
