@@ -72,11 +72,23 @@ fn join_rows_bound(s: &str) -> u64 {
 }
 
 /// The first three tokens of every innermost `[...]` holding at least three.
+/// Brackets inside string literals are text, not vectors.
 fn patterns(s: &str) -> Vec<[&str; 3]> {
     let mut out = Vec::new();
     let mut start = None;
+    let (mut in_string, mut escaped) = (false, false);
     for (i, ch) in s.char_indices() {
+        if in_string {
+            match ch {
+                _ if escaped => escaped = false,
+                '\\' => escaped = true,
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
         match ch {
+            '"' => in_string = true,
             '[' => start = Some(i + 1),
             '(' | ')' => start = None,
             ']' => {
