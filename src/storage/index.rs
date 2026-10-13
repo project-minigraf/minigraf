@@ -467,6 +467,50 @@ mod tests {
         assert_eq!(indexes.vaet.len(), 1);
     }
 
+    /// `lookup_vaet_ref` was covered only when a proptest query happened to
+    /// plan `[?e ?a <entity>]` first, so the coverage gate flaked (#563).
+    #[test]
+    fn test_lookup_vaet_ref_returns_only_refs_to_target() {
+        let alice = Uuid::new_v4();
+        let bob = Uuid::new_v4();
+        let target = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let mut indexes = Indexes::new();
+        let facts = [
+            (alice, ":friend", target, 1),
+            (bob, ":manager", target, 2),
+            (alice, ":friend", other, 3),
+        ];
+        for (source, attr, ref_target, page_id) in facts {
+            let fact = Fact::with_valid_time(
+                source,
+                attr.to_string(),
+                Value::Ref(ref_target),
+                0,
+                page_id,
+                0,
+                VALID_TIME_FOREVER,
+            );
+            indexes.insert(
+                &fact,
+                FactRef {
+                    page_id,
+                    slot_index: 0,
+                },
+            );
+        }
+
+        let mut pages: Vec<u64> = indexes
+            .lookup_vaet_ref(target)
+            .iter()
+            .map(|r| r.page_id)
+            .collect();
+        pages.sort_unstable();
+        assert_eq!(pages, vec![1, 2]);
+        assert_eq!(indexes.lookup_vaet_ref(other).len(), 1);
+        assert!(indexes.lookup_vaet_ref(Uuid::new_v4()).is_empty());
+    }
+
     #[test]
     fn test_indexes_insert_populates_all_four() {
         let entity = Uuid::new_v4();
