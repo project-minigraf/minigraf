@@ -13,6 +13,7 @@
 //! [`Cursor::next_batch`] can fail.
 
 use crate::error::{ErrorCode, MinigrafError, err_coded};
+use crate::graph::storage::Snapshot;
 use crate::graph::types::Value;
 use crate::query::datalog::executor::QueryResult;
 
@@ -42,16 +43,21 @@ use crate::query::datalog::executor::QueryResult;
 pub struct Cursor {
     vars: Vec<String>,
     rows: std::vec::IntoIter<Vec<Value>>,
+    /// The state the answer was read from. It pins the committed generation,
+    /// so no checkpoint reuses its pages while the cursor is open (#543). The
+    /// answer is computed at open today; a streaming engine (#544) reads it.
+    _snapshot: Snapshot,
 }
 
 impl Cursor {
-    /// Wrap the answer of a query. Any other result is a write, which the
-    /// callers reject before executing.
-    pub(crate) fn from_result(result: QueryResult) -> anyhow::Result<Self> {
+    /// Wrap the answer of a query read from `snapshot`. Any other result is a
+    /// write, which the callers reject before executing.
+    pub(crate) fn from_result(result: QueryResult, snapshot: Snapshot) -> anyhow::Result<Self> {
         match result {
             QueryResult::QueryResults { vars, results } => Ok(Cursor {
                 vars,
                 rows: results.into_iter(),
+                _snapshot: snapshot,
             }),
             _ => Err(err_coded!(ErrorCode::Api002)),
         }

@@ -279,3 +279,83 @@ fn close_after_first_batch() {
     // The database is unaffected.
     assert_eq!(execute_rows(&db, AGES).1.len(), 10);
 }
+
+fn file_len(path: &std::path::Path) -> u64 {
+    std::fs::metadata(path).unwrap().len()
+}
+
+/// Checkpoints that rewrite the leaves of one entity and free the old ones.
+fn churn(db: &Minigraf, rounds: usize) {
+    for i in 0..rounds {
+        let facts: String = (0..50)
+            .map(|j| format!("[:churn :churn/n {}]", i * 100 + j))
+            .collect();
+        db.execute(&format!("(transact [{facts}])")).unwrap();
+        db.checkpoint().unwrap();
+    }
+}
+
+#[test]
+fn cursor_open_across_checkpoints_keeps_its_answer_and_pages() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pin.graph");
+    let db = Minigraf::open(&path).unwrap();
+    let facts: String = (0..200)
+        .map(|i| format!("[:p{i} :person/age {i}]"))
+        .collect();
+    db.execute(&format!("(transact [{facts}])")).unwrap();
+    churn(&db, 4);
+    // Growth over the same rounds of checkpoints: with no cursor, with one
+    // open, and after it closes.
+    let grow = |db: &Minigraf| {
+        let before = file_len(&path);
+        churn(db, 4);
+        file_len(&path) - before
+    };
+    let free = grow(&db);
+
+    let expected = sorted(execute_rows(&db, AGES).1);
+    let mut cursor = db.query(AGES).unwrap();
+    let mut rows = cursor.next_batch(7).unwrap().expect("a batch").into_rows();
+    let held = grow(&db);
+    db.execute("(transact [[:late :person/age 999]])").unwrap();
+    db.rebuild_indexes().unwrap();
+    assert!(
+        db.verify().unwrap().is_ok(),
+        "verify clean with the cursor open"
+    );
+    rows.extend(drain(&mut cursor, 7));
+    assert_eq!(sorted(rows), expected, "the answer at open");
+
+    cursor.close();
+    let after = grow(&db);
+    eprintln!("growth: free {free}, held {held}, after {after}");
+    assert!(
+        held > 4 * free.max(4096),
+        "pages the cursor pins are not reused"
+    );
+    assert!(after < held, "after close they are reused");
+    assert!(db.verify().unwrap().is_ok());
+}
+
+#[test]
+fn prepared_cursor_pins_like_a_query_cursor() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("prepared.graph");
+    let db = Minigraf::open(&path).unwrap();
+    let facts: String = (0..50)
+        .map(|i| format!("[:p{i} :person/age {i}]"))
+        .collect();
+    db.execute(&format!("(transact [{facts}])")).unwrap();
+    db.checkpoint().unwrap();
+    let pq = db
+        .prepare("(query [:find ?a :where [?e :person/age ?a] [(< ?a $max)]])")
+        .unwrap();
+    let mut cursor = pq
+        .query(&[("max", BindValue::Val(Value::Integer(10)))])
+        .unwrap();
+    churn(&db, 3);
+    db.execute("(transact [[:p0 :person/age 5]])").unwrap();
+    assert_eq!(drain(&mut cursor, 3).len(), 10, "the answer at open");
+    assert!(db.verify().unwrap().is_ok());
+}

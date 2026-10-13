@@ -1,6 +1,7 @@
 use crate::cursor::Cursor;
 use crate::error::{ErrorCode, MinigrafError, bail_coded};
 use crate::graph::FactStorage;
+use crate::graph::storage::Snapshot;
 use crate::graph::types::Value;
 use crate::query::datalog::executor::{DatalogExecutor, QueryResult};
 use crate::query::datalog::functions::FunctionRegistry;
@@ -101,7 +102,10 @@ impl PreparedQuery {
     /// - Missing bind value for a slot present in the query.
     /// - Type mismatch (e.g. `Val` supplied for an `:as-of` slot).
     pub fn execute(&self, bindings: &[(&str, BindValue)]) -> Result<QueryResult, MinigrafError> {
-        self.execute_inner(bindings).map_err(MinigrafError::from)
+        self.fact_storage
+            .snapshot()
+            .and_then(|snapshot| self.execute_inner(bindings, snapshot))
+            .map_err(MinigrafError::from)
     }
 
     /// Substitute bind values and return a [`Cursor`] over the rows.
@@ -112,12 +116,20 @@ impl PreparedQuery {
     /// # Errors
     /// The same as [`PreparedQuery::execute`].
     pub fn query(&self, bindings: &[(&str, BindValue)]) -> Result<Cursor, MinigrafError> {
-        self.execute_inner(bindings)
-            .and_then(Cursor::from_result)
-            .map_err(MinigrafError::from)
+        let run = || {
+            let snapshot = self.fact_storage.snapshot()?;
+            let result = self.execute_inner(bindings, snapshot.clone())?;
+            Cursor::from_result(result, snapshot)
+        };
+        run().map_err(MinigrafError::from)
     }
 
-    fn execute_inner(&self, bindings: &[(&str, BindValue)]) -> Result<QueryResult> {
+    /// Run the query with `bindings`, reading every fact from `snapshot`.
+    fn execute_inner(
+        &self,
+        bindings: &[(&str, BindValue)],
+        snapshot: Snapshot,
+    ) -> Result<QueryResult> {
         let binding_map: HashMap<&str, &BindValue> =
             bindings.iter().map(|(name, val)| (*name, val)).collect();
 
@@ -129,11 +141,12 @@ impl PreparedQuery {
 
         let filled_query = substitute(&self.template, &binding_map)?;
 
-        let executor = DatalogExecutor::new_with_rules_and_functions(
+        let mut executor = DatalogExecutor::new_with_rules_and_functions(
             self.fact_storage.clone(),
             self.rules.clone(),
             self.functions.clone(),
         );
+        executor.set_snapshot(snapshot);
         executor.execute(DatalogCommand::Query(filled_query))
     }
 }

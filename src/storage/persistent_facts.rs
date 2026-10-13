@@ -490,9 +490,8 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.dirty = false;
         self.failed = false;
         let reader = self.activate(new_meta);
-        // `listed` includes quarantined ids. Nothing pins a generation on
-        // the browser yet (it has no fact log); before its cursors pin, ids in
-        // force must be withheld here (#543 plan step 8).
+        // `listed` includes quarantined ids; the browser layer withholds
+        // those in force from release (`pins::split_released`).
         #[cfg(all(target_arch = "wasm32", feature = "browser"))]
         {
             self.released = listed;
@@ -2142,6 +2141,101 @@ mod tests {
             }
         }
         assert!(points > 50, "expected many crash points");
+    }
+
+    /// A crash in a save while a snapshot pins an old generation (#543): the
+    /// save writes no page the pinned reader reads, and the ids its
+    /// quarantine kept are on the free list, so a reopen (which has no pins)
+    /// loses no fact and no page, and its checkpoints reuse those ids.
+    #[test]
+    fn crash_in_save_with_a_pinned_generation_keeps_every_fact_and_page() {
+        const PER_BATCH: u128 = 60;
+        const BATCHES: u128 = 6;
+        let old_total = (BATCHES * PER_BATCH) as usize;
+        let new_total = old_total + PER_BATCH as usize;
+        let mut points = 0;
+        for torn in [None, Some(512usize)] {
+            for k in 0u64.. {
+                let mem = MemoryBackend::new();
+                let (backend, config) = FaultInjectingBackend::with_config(mem.clone());
+                let mut pfs = PersistentFactStorage::new(backend, 16).unwrap();
+                for b in 0..BATCHES {
+                    put_batch(&mut pfs, b * PER_BATCH..(b + 1) * PER_BATCH);
+                    pfs.save().unwrap();
+                }
+                let snap = pfs.storage().snapshot().unwrap();
+                let expect = committed_set(&snap);
+                for b in 0..2u64 {
+                    let mut e = 0;
+                    transact_mixed(&mut pfs, &mut e, 40, b);
+                    pfs.save().unwrap();
+                }
+                let quarantined: BTreeSet<u64> =
+                    pfs.storage().pages_in_force().into_iter().collect();
+                assert!(!quarantined.is_empty(), "saves freed pinned pages");
+                let g = pfs.generation();
+                let before = count_n(&pfs);
+                assert_eq!(before, old_total);
+                put_batch(&mut pfs, BATCHES * PER_BATCH..(BATCHES + 1) * PER_BATCH);
+                {
+                    let mut cfg = config.lock().unwrap();
+                    cfg.fail_write_after = Some(k);
+                    cfg.torn_write_bytes = torn;
+                }
+                let saved = pfs.save().is_ok();
+                assert!(committed_set(&snap) == expect, "pinned reader changed");
+                pfs.dirty = false; // simulated kill: no auto-save on drop
+                drop(pfs);
+                drop(snap);
+
+                let pfs = open_mem(&mem, Some(g)).expect("reopen after crash");
+                let count = count_n(&pfs);
+                if pfs.generation() == g + 1 {
+                    assert_eq!(count, new_total, "new generation sees all facts");
+                } else {
+                    assert_eq!(pfs.generation(), g, "otherwise the old generation");
+                    assert_eq!(count, old_total, "old generation sees the old facts");
+                    assert!(!saved, "a reported success must be durable");
+                }
+                assert!(pfs.verify().unwrap().problems.is_empty(), "verify clean");
+                assert_space_accounted(&pfs.meta(), &mem);
+                assert!(pfs.storage().pages_in_force().is_empty(), "no pins");
+                let live = read_pages(&pfs.meta(), &mem);
+                assert!(
+                    quarantined.is_disjoint(&live),
+                    "quarantined ids are free after reopen"
+                );
+                if !saved {
+                    points += 1;
+                    continue;
+                }
+                // Checkpoints after the reopen hand the quarantined ids out
+                // before they append.
+                drop(pfs);
+                let rec = RecordingBackend {
+                    inner: mem.clone(),
+                    written: Arc::new(Mutex::new(Vec::new())),
+                };
+                let log = rec.written.clone();
+                let mut pfs = PersistentFactStorage::open(rec, 16, None).unwrap();
+                let start = pfs.meta().page_count;
+                let mut e = 0;
+                let mut round = 10u64;
+                while pfs.meta().page_count == start {
+                    transact_mixed(&mut pfs, &mut e, 40, round);
+                    pfs.save().unwrap();
+                    round += 1;
+                }
+                let written: BTreeSet<u64> = log.lock().unwrap().iter().copied().collect();
+                assert!(
+                    !written.is_disjoint(&quarantined),
+                    "quarantined ids are reused after reopen"
+                );
+                assert!(pfs.verify().unwrap().problems.is_empty());
+                break;
+            }
+        }
+        assert!(points > 100, "expected many crash points");
     }
 
     // ── covering reads (spec §7, §11) ───────────────────────────────────────

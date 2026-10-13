@@ -104,7 +104,7 @@ cargo run < demos/demo_negation.txt
 
 1. **`src/graph/`** — EAV fact store with bi-temporal support
    - `types.rs`: `Fact`, `Value`, `EntityId`, `TxId`, `VALID_TIME_FOREVER`
-   - `storage.rs`: `FactStorage` — in-memory store, `transact_batch`, `retract`, `get_facts_as_of`, `get_facts_valid_at`, `net_asserted_facts`, `get_facts_by_entity_attribute_indexed`
+   - `storage.rs`: `FactStorage` — in-memory store, `snapshot()` → `Snapshot` (committed reader + pin + pending prefix; every query/cursor/log read goes through one), `transact_batch`, `retract`, `get_facts_as_of`, `get_facts_valid_at`, `net_asserted_facts`, `get_facts_by_entity_attribute_indexed`
 
 2. **`src/storage/`** — Persistence layer
    - `mod.rs`: `StorageBackend` trait, `LegacyHeaderV7` (v7 migration only), `CommittedReader` trait
@@ -144,7 +144,7 @@ cargo run < demos/demo_negation.txt
 5. **`src/repl.rs`** — Interactive REPL; TTY-aware (suppresses prompts/banner for piped input)
 
 6. **`src/db.rs`** — Public API: `Minigraf::open/execute/query/fact_log/prepare/begin_write/checkpoint/save/verify/rebuild_indexes`, `WriteTransaction`, `IntegrityReport`, `OpenOptions::page_cache_size`, `OpenOptions::read_only` (#429: shared lock, nothing written, writes are `API-014`)
-   - `src/cursor.rs`: `Cursor` / `Batch` — owned, `Send` cursor returned by `Minigraf::query` and `PreparedQuery::query` (#432); answer computed at open today, shaped for streaming operators
+   - `src/cursor.rs`: `Cursor` / `Batch` — owned, `Send` cursor returned by `Minigraf::query` and `PreparedQuery::query` (#432); answer computed at open today, shaped for streaming operators; holds a `Snapshot` (one state of the store, its committed generation pinned, #543) until dropped
    - `src/fact_log.rs`: `FactLog` / `FactFilter` / `FactRecord` / `FactOrder` — every fact version streamed by `Minigraf::fact_log` (#430): tx order (multi-pass, bounded window) or storage order, key-level filters; an open log pins the committed generation (`storage::pins`), so checkpoints run but do not reuse its pages (`API-013` deprecated, #543)
    - `src/log_writer.rs`: `LogWriter` — builds a new file from `FactRecord`s with their tx and valid-time kept (#431): tx-ordered appends with holes (`API-015`/`API-016`), batched copy-on-write checkpoints at tx boundaries, no WAL, built at `<path>.partial` and renamed by `finish` (`STG-043` if the target exists)
 
@@ -152,7 +152,7 @@ cargo run < demos/demo_negation.txt
 
 8. **`src/error.rs`** — Structured error codes: `MinigrafError`, `ErrorCategory`, `ErrorCode` registry (PRS/QRY/STG/WAL/API/INT codes); must match `docs/ERROR_REFERENCE.md`. `MinigrafError::invalid_argument` (API-017) and `MinigrafError::closed` (API-018) exist for language bindings
 
-9. **`src/browser/`** — Browser WASM backend (`browser` feature): `buffer.rs` (`BrowserBufferBackend`, in-memory pages with dirty tracking), `indexeddb.rs` (IndexedDB persistence); `BrowserDb.query` returns a `BrowserCursor` (JSON row batches). Tests here must be `#[wasm_bindgen_test]` (the module only builds for wasm32); `.github/workflows/wasm.yml` runs them in headless browsers, runs the WASI tests under Wasmtime, and lints both wasm targets. New file-backed integration test files need `#![cfg(not(target_arch = "wasm32"))]`
+9. **`src/browser/`** — Browser WASM backend (`browser` feature): `buffer.rs` (`BrowserBufferBackend`, in-memory pages with dirty tracking; free pages a pinned generation may read are withheld from release, `pins::split_released`), `indexeddb.rs` (IndexedDB persistence); `BrowserDb.query` returns a `BrowserCursor` (JSON row batches). Tests here must be `#[wasm_bindgen_test]` (the module only builds for wasm32); `.github/workflows/wasm.yml` runs them in headless browsers, runs the WASI tests under Wasmtime, and lints both wasm targets. New file-backed integration test files need `#![cfg(not(target_arch = "wasm32"))]`
 
 ### Data Model
 
@@ -202,7 +202,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1458 tests** (1448 passing, 10 ignored; unit + integration + doc).
+**1466 tests** (1456 passing, 10 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.

@@ -113,6 +113,25 @@ impl Drop for GenerationPin {
     }
 }
 
+/// Which free ids the browser may drop the bytes of after a commit (#440):
+/// the ids the commit listed free (`listed`) and those withheld by earlier
+/// commits (`withheld`), split into `(release, withheld)`. An id in force
+/// stays withheld, since a pinned generation may still read it; a withheld id
+/// the commit wrote (`written`) was handed out again and is live, so it is in
+/// neither. A listed id is never written by the commit that lists it.
+#[cfg(any(test, all(target_arch = "wasm32", feature = "browser")))]
+pub(crate) fn split_released(
+    listed: Vec<u64>,
+    withheld: Vec<u64>,
+    in_force: &HashSet<u64>,
+    written: impl Fn(u64) -> bool,
+) -> (Vec<u64>, Vec<u64>) {
+    let mut free: std::collections::BTreeSet<u64> =
+        withheld.into_iter().filter(|&id| !written(id)).collect();
+    free.extend(listed);
+    free.into_iter().partition(|id| !in_force.contains(id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,5 +199,39 @@ mod tests {
         assert_eq!(ids(&pins), vec![5]);
         drop(b);
         assert!(ids(&pins).is_empty());
+    }
+
+    #[test]
+    fn split_released_withholds_ids_in_force() {
+        let in_force: HashSet<u64> = [3, 5].into_iter().collect();
+        let (release, withheld) = split_released(vec![2, 3, 4], vec![], &in_force, |_| false);
+        assert_eq!(release, vec![2, 4]);
+        assert_eq!(withheld, vec![3]);
+    }
+
+    #[test]
+    fn split_released_frees_withheld_ids_once_out_of_force() {
+        let in_force: HashSet<u64> = [7].into_iter().collect();
+        // 3 is out of force and still free (not listed again: it sits in the
+        // unread tail of the list); 7 is still in force.
+        let (release, withheld) = split_released(vec![9], vec![3, 7], &in_force, |_| false);
+        assert_eq!(release, vec![3, 9]);
+        assert_eq!(withheld, vec![7]);
+    }
+
+    #[test]
+    fn split_released_drops_withheld_ids_written_again() {
+        let none = HashSet::new();
+        let (release, withheld) = split_released(vec![1], vec![4, 6], &none, |id| id == 4);
+        assert_eq!(release, vec![1, 6], "4 holds a live page now");
+        assert!(withheld.is_empty());
+    }
+
+    #[test]
+    fn split_released_lists_an_id_once() {
+        let in_force: HashSet<u64> = [5].into_iter().collect();
+        let (release, withheld) = split_released(vec![5, 6], vec![5, 6], &in_force, |_| false);
+        assert_eq!(release, vec![6]);
+        assert_eq!(withheld, vec![5]);
     }
 }

@@ -57,6 +57,11 @@ impl BrowserBufferBackend {
         std::mem::take(&mut self.dirty)
     }
 
+    /// Whether `page_id` was written since the last [`take_dirty`](Self::take_dirty).
+    pub fn is_dirty(&self, page_id: u64) -> bool {
+        self.dirty.contains(&page_id)
+    }
+
     /// Drop the bytes of the free pages `ids` and forget any unflushed write to
     /// them. Returns the ids that held bytes: the IndexedDB keys to delete in
     /// the same transaction as the commit's meta page.
