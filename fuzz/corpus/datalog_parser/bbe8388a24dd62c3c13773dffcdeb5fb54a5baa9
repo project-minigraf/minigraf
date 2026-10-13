@@ -1,0 +1,3 @@
+(query [:fe :where [?e :n?-me ne?n]  [?e :n?-me ?n] (not(qum =[: [?e ?]])
+[?e wname ?n])(not(quLLpLLLLLLLry :
+[: [?e ?]]))])

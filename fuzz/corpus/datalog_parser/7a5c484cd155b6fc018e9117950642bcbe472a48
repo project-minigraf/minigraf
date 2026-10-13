@@ -1,0 +1,2 @@
+(query [:where [?e:me ?n] ,(not [:e d tr])::where [?e :n ?n] (qr[:e ])
+])

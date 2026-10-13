@@ -1,0 +1,1 @@
+(query [:finSsumm :where [<= l omaara?suc] (nI= ?eOIIfindIIICIIIIIIIIIIIIIfind ?__[?e] a ?:e[ctive tree]) :where [?m l omaoraa?rsutreec] (not-join [?e] [?e :active uree])])

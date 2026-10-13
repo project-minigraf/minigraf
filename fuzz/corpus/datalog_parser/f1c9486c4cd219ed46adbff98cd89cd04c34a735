@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e : ?n] (not(q?_	) [ae :baed ue])])

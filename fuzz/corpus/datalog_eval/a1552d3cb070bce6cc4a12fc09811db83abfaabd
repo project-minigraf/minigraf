@@ -1,0 +1,1 @@
+(query [:fi:where [?e :color ?g] (not[?e :aind ?etrumine] [?e :aind ?etrumine])])

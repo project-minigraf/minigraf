@@ -1,0 +1,1 @@
+(query [:finn :w :where [?e ?me ?n] [(< ?n "Ali [")]])

@@ -1,0 +1,1 @@
+(query [:where (noj [?E] ?a: e[cc::::*:3:gy])])

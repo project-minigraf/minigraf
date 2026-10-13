@@ -1,0 +1,9 @@
+(query [:finde :where (query :
+[: [?e aren6:naman ?]])
+[?e wname ?n] (noe ?ssuery :
+[: [?Apene :naman ?]])
+[?e wname ?n] (noe ?ss :
+[: [?e ?]])
+[?e wname ?n] (noe ?ssssssssssssuery :
+[: [?e :naman ?]])
+[?e wname ?n] (ns_ssssssssssssre [?ug])])

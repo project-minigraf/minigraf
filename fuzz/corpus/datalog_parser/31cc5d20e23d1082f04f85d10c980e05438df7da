@@ -1,0 +1,4 @@
+(query [::wherd(rule [([(?ntA le() [ [?r ax?3
+]])[?x:re?]])
+ ()[]])
+ [?e ]])

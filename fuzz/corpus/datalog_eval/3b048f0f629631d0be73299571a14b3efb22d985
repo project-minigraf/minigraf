@@ -1,0 +1,1 @@
+(query [:find ?nt// :where [7. "Alice"n] [(= 7. "Alice")]])

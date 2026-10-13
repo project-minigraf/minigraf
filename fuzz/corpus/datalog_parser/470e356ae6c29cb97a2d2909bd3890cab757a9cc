@@ -1,0 +1,3 @@
+(query [:fi:where (que:as-ofry [:8(rule 0)
+ [??]])
+[?e wname ?n] (noe ?s[?ug])])

@@ -1,0 +1,1 @@
+(query [::where [?eA : true?c] (not-join [?eA] [:?e :nndve true])])

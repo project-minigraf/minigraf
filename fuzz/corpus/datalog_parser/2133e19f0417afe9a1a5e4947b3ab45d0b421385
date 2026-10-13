@@ -1,0 +1,3 @@
+(query [:e:where (nn ?o
+2.6)(n ?o
+0.)])

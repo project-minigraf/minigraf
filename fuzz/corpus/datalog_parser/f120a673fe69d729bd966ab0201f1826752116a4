@@ -1,0 +1,1 @@
+(query [:find ?e :where [?:n?-me ?n] (not(quematches?ssssssrr-) [ae :band true])])

@@ -1,0 +1,1 @@
+(query [:finn :w :where [?e ?naoe ?] [(* ?e "cnlAi")]])

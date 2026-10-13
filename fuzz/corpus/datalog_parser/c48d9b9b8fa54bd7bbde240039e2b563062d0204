@@ -1,0 +1,1 @@
+(query [: :where [?e:amn?  en] (not [e :ebnnd true][ae :d true])])

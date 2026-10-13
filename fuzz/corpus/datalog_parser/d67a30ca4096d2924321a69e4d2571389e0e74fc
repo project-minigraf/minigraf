@@ -1,0 +1,5 @@
+(query [:find ?e :where (query [::where(rule [(?y) (arentA?e [?(y) [?x :parent ?
+5]])[?x :yarent ?3]])
+(query [:find ? (not(y [:find ?e :where [?e :name ?n] (n[ae :banrue])]) [ae :banned true])])
+ []])
+[?e wname ?n] (ooe ?ƀhere [?ug])])

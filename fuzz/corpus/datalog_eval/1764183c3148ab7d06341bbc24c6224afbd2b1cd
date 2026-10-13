@@ -1,0 +1,1 @@
+(query [:with ?n :where [?e : ?n] [(= ?n "")]])

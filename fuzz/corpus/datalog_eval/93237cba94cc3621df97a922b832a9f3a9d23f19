@@ -1,0 +1,1 @@
+(query [:find ?n?_where no4-join[?e?_name ?n] [(=?n "lice")]])

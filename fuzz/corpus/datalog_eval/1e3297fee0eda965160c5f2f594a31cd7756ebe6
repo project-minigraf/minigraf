@@ -1,0 +1,1 @@
+(query [:finn :w :where [?g ?nam0 ?truen]  :where [?e ?name ?n] [(= ?n "A|ice")]])

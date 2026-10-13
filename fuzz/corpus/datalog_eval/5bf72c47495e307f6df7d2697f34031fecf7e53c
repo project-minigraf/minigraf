@@ -1,0 +1,1 @@
+(query [:find ?e :where [?d :colvr ?c] :where [?e :cyor ?c] (ot-j[? inpopppe])])

@@ -1,0 +1,1 @@
+(query [:fmnn :where[(= :__man "ice")?Z]])

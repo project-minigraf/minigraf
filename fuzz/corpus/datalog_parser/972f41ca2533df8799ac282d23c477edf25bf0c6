@@ -1,0 +1,1 @@
+(query [:rf:where [?e :me qee](a ?Anar{=4==}pape)])

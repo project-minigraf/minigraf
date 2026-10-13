@@ -1,0 +1,1 @@
+(query [:e :where [? :n?-me n] (not(queles?) [ae :ed true])])

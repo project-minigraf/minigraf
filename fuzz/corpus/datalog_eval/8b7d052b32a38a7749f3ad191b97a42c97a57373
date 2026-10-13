@@ -1,0 +1,2 @@
+(query [:fiie :where [?e ::rlco] (to-join [?e] [?e :e$true])(E [n] )])
+

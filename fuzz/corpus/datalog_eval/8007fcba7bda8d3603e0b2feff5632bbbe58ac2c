@@ -1,0 +1,2 @@
+(query [::where [?lIIIInII :color c] (or(quer[:FFFh])
+ )])

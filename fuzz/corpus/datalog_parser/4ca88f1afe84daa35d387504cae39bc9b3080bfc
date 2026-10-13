@@ -1,0 +1,1 @@
+(query [:where [?e :ne ?n](not(q y) (or) (u=y ) [ae :])])

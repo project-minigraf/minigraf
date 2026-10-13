@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e :color ?c] (not[(uery [:find ?e :where [?e :color ?c] (not[]false [u?tend true true])])
+e true])])

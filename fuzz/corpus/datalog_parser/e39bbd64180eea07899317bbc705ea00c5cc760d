@@ -1,0 +1,2 @@
+(query [:yur0:where  (*r tn?) (ue[ [?x 
+]])[x :nt 4]])

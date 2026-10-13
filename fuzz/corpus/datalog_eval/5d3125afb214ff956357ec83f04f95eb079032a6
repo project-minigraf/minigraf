@@ -1,0 +1,1 @@
+(query [:fnn::where[?e:wh,2]])

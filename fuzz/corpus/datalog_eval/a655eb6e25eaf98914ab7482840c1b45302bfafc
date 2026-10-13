@@ -1,0 +1,1 @@
+(query [ :i?n :where [?S:name ?n] [(= ?n:ifa?)]])

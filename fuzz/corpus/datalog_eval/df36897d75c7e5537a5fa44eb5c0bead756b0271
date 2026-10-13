@@ -1,0 +1,1 @@
+(query [:fd:rulew :where [?e ?nam5 ?zeryn] [?eq ?name ?n] [(= ?n "A|ice")?Z]])

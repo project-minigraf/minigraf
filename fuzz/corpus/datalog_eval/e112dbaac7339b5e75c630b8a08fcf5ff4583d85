@@ -1,0 +1,2 @@
+(query [:where (query [:::as-of"#[Tr[؅f"0])
+[ne :?m ?n] [ a?=(n "Alice")]:fin :w :where [ne mn:?? ] [(= :dnif?n "Alice")]])

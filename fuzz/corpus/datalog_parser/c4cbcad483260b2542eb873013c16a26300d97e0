@@ -1,0 +1,1 @@
+(query [:where[q e qee] (or(que)e)])

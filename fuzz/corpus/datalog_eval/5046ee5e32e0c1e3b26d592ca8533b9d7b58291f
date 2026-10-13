@@ -1,0 +1,1 @@
+(query [:fin:clo:where [?e ?namu ?n](q[ ]) [(!= ?n "Aclie")]])

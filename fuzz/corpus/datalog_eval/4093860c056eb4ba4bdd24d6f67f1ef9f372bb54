@@ -1,0 +1,1 @@
+(query [:where [ne :?m ?nf4-] [(= ?n "Alice")]:fin:w:where [ne :?m ?n] [(= ?n "Alice")]])

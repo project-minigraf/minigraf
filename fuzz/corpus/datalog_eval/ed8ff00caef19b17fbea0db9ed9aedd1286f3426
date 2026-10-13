@@ -1,0 +1,1 @@
+(query [:dsumm :where [<= l omMaa?rsuc] (nI========rrrrrrrrrn [?e] a ?:e[]) (not-join [?e] [?e :active tree])])

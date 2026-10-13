@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e e ?n] (not(q?x-r:[]) [qe :ned true])])

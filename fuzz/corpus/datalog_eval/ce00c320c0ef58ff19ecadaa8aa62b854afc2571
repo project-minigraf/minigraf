@@ -1,0 +1,1 @@
+(query [:fiw :where [?e :name ?p]  :where :where [?e :name ?p]  :whe7e :wh:where [?e na?em ?n] [(= ?n "Alice")]])

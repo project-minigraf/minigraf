@@ -1,0 +1,1 @@
+(query [:fiu :where [:colOa ?e moAlaa?rsuc] (not-join [?e] [?not-joie :active tree]) :where [?e l omaaa?rsuc] (not-join [?e] [?e :active tree])])

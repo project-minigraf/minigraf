@@ -1,0 +1,1 @@
+(query [::where [Ue :name ?n] (??_??_ssss)])

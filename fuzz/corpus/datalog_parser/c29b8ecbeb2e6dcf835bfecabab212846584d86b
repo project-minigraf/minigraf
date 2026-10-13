@@ -1,0 +1,1 @@
+(query [:with ?t ? ? w (k)])

@@ -1,0 +1,1 @@
+(query [:fin :where (ntoroin d ?n re[?e :e])])

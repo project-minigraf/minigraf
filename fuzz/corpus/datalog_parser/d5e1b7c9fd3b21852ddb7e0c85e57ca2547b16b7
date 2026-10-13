@@ -1,0 +1,1 @@
+(query [:wite :where  [?e:amn?  en] (not [ae :banned tru7e]) :where [?e:amn?  en][?e:amn?  en] (not [e :banned tru7e]) :where[?e:amn?  en] (not [ae :b:wheretrue])])

@@ -1,0 +1,1 @@
+(query [:fin?e :where(not-join [?e] [?e :actiretr eu])])

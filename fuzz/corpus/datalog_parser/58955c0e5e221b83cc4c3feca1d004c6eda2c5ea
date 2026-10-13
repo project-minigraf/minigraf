@@ -1,0 +1,5 @@
+(query [:re:where (nonoe ?
+8) (nonoe ?
+5)(oe ?
+4)(no ?
+41)])

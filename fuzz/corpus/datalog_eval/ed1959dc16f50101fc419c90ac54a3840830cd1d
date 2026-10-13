@@ -1,0 +1,1 @@
+(query [:finn :w :where [?e ?nam0e ?n] [,(= :__ "A|e")?Z]])

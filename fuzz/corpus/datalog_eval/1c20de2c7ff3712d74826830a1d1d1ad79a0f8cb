@@ -1,0 +1,1 @@
+(query [:where [ne ::namn] [(= ?n "")]::w :where [ne cn:?? ] [(= ?n "Aliace")]])

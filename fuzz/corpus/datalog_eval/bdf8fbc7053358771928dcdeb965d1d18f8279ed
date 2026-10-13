@@ -1,0 +1,1 @@
+(query [:findsu :where [?e l o-aaa?suc] (oin ?[e]) :where [?eqq qqqqqql o-aaa?suc] (oin ?[e] [?e :active tree]) :where [?eqq qqqqqqqql omaaa?rsuc]])

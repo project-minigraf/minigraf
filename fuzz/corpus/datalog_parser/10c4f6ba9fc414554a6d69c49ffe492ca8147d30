@@ -1,0 +1,2 @@
+(query [:ih:find ?ed ?ed ?e :?e :where [e :n0e q] (*f
+)])

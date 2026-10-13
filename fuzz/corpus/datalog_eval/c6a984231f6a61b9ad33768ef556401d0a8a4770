@@ -1,0 +1,1 @@
+(query [:where [ne :?m ?n] [(= ?n "Alice")]:in :w0:where [ne bbbm ?n] [(= ?n "Alice")]:fin :wA:where [UUUUUUUUU:?m ?n] [(= ?n "Alice")]:fin :w0:where [ne bbbm ?n] [IIIInbbbbbbbbbbbbbbbbbbbbUUUU:ueryUUUUUUUUUUUUUUUUUUbbbbbIIIInbbbbbbbbbbbbbbbbb:?n] [(= ?n "Alice(=:findAlie")]])

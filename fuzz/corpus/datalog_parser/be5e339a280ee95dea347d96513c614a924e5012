@@ -1,0 +1,2 @@
+(query [:where [q e qee?_] (or(?)[
+] (sssue,n))])

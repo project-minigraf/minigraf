@@ -1,0 +1,1 @@
+(query [::where [?e olam aa?] (not-join [][ ?e? nhhhfXrive tree]) :where [?e l omaaa?ruc] (not-join [?_?e] [?e :active ?Zee])])

@@ -1,0 +1,1 @@
+(query [:find ?:where  (not[b=true])])
