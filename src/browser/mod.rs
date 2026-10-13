@@ -31,6 +31,9 @@ struct BrowserDbInner {
     pfs: PersistentFactStorage<BrowserBufferBackend>,
     /// `None` for in-memory databases (no IDB backing).
     idb: Option<IndexedDbBackend>,
+    /// Free pages whose bytes are kept because an open cursor's generation
+    /// may read them (#543); dropped by a later commit once out of force.
+    withheld: Vec<u64>,
 }
 
 /// Browser-only Minigraf database handle backed by IndexedDB.
@@ -65,6 +68,7 @@ impl BrowserDb {
                 functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
                 pfs,
                 idb: None,
+                withheld: Vec::new(),
             })),
         })
     }
@@ -99,6 +103,7 @@ impl BrowserDb {
                 functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
                 pfs,
                 idb: Some(idb),
+                withheld: Vec::new(),
             })),
         })
     }
@@ -175,9 +180,8 @@ impl BrowserDb {
                 .pfs
                 .save()
                 .map_err(|e| JsValue::from_str(&e.to_string()))?;
-            let released = inner.pfs.take_released();
             (
-                take_flush(&mut inner.pfs, released)?,
+                take_commit_flush(&mut inner)?,
                 inner.idb.as_ref().map(IndexedDbBackend::clone_handle),
             )
         };
@@ -267,6 +271,8 @@ impl BrowserDb {
 
             inner.pfs = new_pfs;
             inner.fact_storage = new_fact_storage;
+            // Ids of the old database. Its open cursors keep its buffer alive.
+            inner.withheld.clear();
 
             (
                 flush,
@@ -293,16 +299,18 @@ impl BrowserDb {
             DatalogCommand::Retract(_) => bail_coded!(ErrorCode::Api012, "retract"),
             DatalogCommand::Rule(_) => bail_coded!(ErrorCode::Api012, "rule"),
         }
-        let result = {
+        let (result, snapshot) = {
             let inner = self.inner.borrow();
-            DatalogExecutor::new_with_rules_and_functions(
+            let snapshot = inner.fact_storage.snapshot()?;
+            let mut executor = DatalogExecutor::new_with_rules_and_functions(
                 inner.fact_storage.clone(),
                 inner.rules.clone(),
                 inner.functions.clone(),
-            )
-            .execute(cmd)?
+            );
+            executor.set_snapshot(snapshot.clone());
+            (executor.execute(cmd)?, snapshot)
         };
-        crate::Cursor::from_result(result)
+        crate::Cursor::from_result(result, snapshot)
     }
 
     /// Apply a batch of pre-materialized facts to the in-memory store and
@@ -357,8 +365,7 @@ impl BrowserDb {
 
             // Collect dirty pages as owned Vec<(u64, Vec<u8>)> — no borrows
             // escape — and drop the pages this commit freed (#440).
-            let released = inner.pfs.take_released();
-            let flush = take_flush(&mut inner.pfs, released)?;
+            let flush = take_commit_flush(&mut inner)?;
 
             let json = if is_retract {
                 format!(r#"{{"retracted":{}}}"#, tx_id)
@@ -457,9 +464,23 @@ struct Flush {
     deletes: Vec<u64>,
 }
 
+/// The flush of a commit: drop the bytes of the pages it freed and of those
+/// withheld earlier, except the ids still in force, which a pinned generation
+/// (an open cursor's) may read (#543); those stay withheld.
+fn take_commit_flush(inner: &mut BrowserDbInner) -> Result<Flush, JsValue> {
+    let listed = inner.pfs.take_released();
+    let in_force = inner.pfs.storage().pages_in_force();
+    let withheld = std::mem::take(&mut inner.withheld);
+    let (free, withheld) = inner.pfs.with_backend(|b| {
+        crate::storage::pins::split_released(listed, withheld, &in_force, |id| b.is_dirty(id))
+    });
+    inner.withheld = withheld;
+    take_flush(&mut inner.pfs, free)
+}
+
 /// Drop the bytes of the free pages `free` (#440), then take the dirty pages.
-/// A free page is never read before it is written again, so its bytes are
-/// never needed.
+/// No reader needs them: the caller leaves out pages a pinned generation may
+/// read, and any other free page is written before it is read again.
 fn take_flush(
     pfs: &mut PersistentFactStorage<BrowserBufferBackend>,
     free: Vec<u64>,
@@ -832,6 +853,44 @@ mod tests {
     }
 
     #[wasm_bindgen_test]
+    async fn pages_an_open_cursor_pins_keep_their_bytes_until_it_closes() {
+        let db = BrowserDb::open_in_memory().expect("open");
+        for i in 0..20 {
+            db.execute(format!("(transact [[:e :n {i}]])"))
+                .await
+                .expect("transact");
+        }
+        let q = "(query [:find ?n :where [?e :n ?n]])";
+        let mut cursor = db.query(q).expect("query");
+        // A second reader of the same generation, which reads its pages.
+        let snap = db.inner.borrow().fact_storage.snapshot().expect("snapshot");
+        let at_open = snap.all_facts().expect("read").len();
+        for i in 20..40 {
+            db.execute(format!("(transact [[:e :n {i}]])"))
+                .await
+                .expect("transact");
+        }
+        assert!(
+            !db.inner.borrow().withheld.is_empty(),
+            "commits freed pinned pages"
+        );
+        assert_eq!(
+            snap.all_facts().expect("pinned pages still read").len(),
+            at_open
+        );
+        assert!(cursor.next_batch(100).expect("batch").is_some());
+
+        cursor.close();
+        drop(snap);
+        db.execute("(transact [[:e :n 40]])".to_string())
+            .await
+            .expect("transact");
+        assert!(db.inner.borrow().withheld.is_empty(), "released at last");
+        assert_eq!(stored_pages(&db), live_pages(&db));
+        assert_eq!(count(&db, q).await, 41);
+    }
+
+    #[wasm_bindgen_test]
     async fn open_stores_migrated_v7_pages_and_drops_the_v7_region() {
         let name = "minigraf-test-411-migrate";
         let fixture: &[u8] = include_bytes!("../../tests/fixtures/compat.graph");
@@ -935,8 +994,7 @@ mod tests {
             }
             inner.pfs.mark_dirty();
             inner.pfs.save().unwrap();
-            let released = inner.pfs.take_released();
-            let flush = take_flush(&mut inner.pfs, released).unwrap();
+            let flush = take_commit_flush(&mut inner).unwrap();
             assert!(!flush.puts.is_empty(), "the commit wrote pages");
         }
         drop(db);

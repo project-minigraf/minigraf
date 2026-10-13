@@ -9,6 +9,7 @@ use super::types::{
 };
 use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::graph::FactStorage;
+use crate::graph::storage::Snapshot;
 use crate::graph::types::{Fact, TransactOptions, TxId, Value, tx_id_now};
 use anyhow::Result;
 use std::collections::HashMap;
@@ -102,6 +103,9 @@ pub enum QueryResult {
 /// Executor for Datalog commands
 pub struct DatalogExecutor {
     storage: FactStorage,
+    /// The state every read of this executor sees; when `None`, each read
+    /// takes its own snapshot of `storage`.
+    snapshot: Option<Snapshot>,
     facts_override: Option<Arc<[Fact]>>,
     read_now_floor: Option<i64>,
     rules: Arc<RwLock<RuleRegistry>>,
@@ -116,6 +120,7 @@ impl DatalogExecutor {
     pub fn new(storage: FactStorage) -> Self {
         DatalogExecutor {
             storage,
+            snapshot: None,
             facts_override: None,
             read_now_floor: None,
             rules: Arc::new(RwLock::new(RuleRegistry::new())),
@@ -135,6 +140,7 @@ impl DatalogExecutor {
     ) -> Self {
         DatalogExecutor {
             storage,
+            snapshot: None,
             facts_override: None,
             read_now_floor: None,
             rules,
@@ -153,6 +159,7 @@ impl DatalogExecutor {
     ) -> Self {
         DatalogExecutor {
             storage: FactStorage::new(),
+            snapshot: None,
             facts_override: Some(facts),
             read_now_floor: pending_read_now_floor,
             rules,
@@ -187,6 +194,7 @@ impl DatalogExecutor {
     ) -> Self {
         DatalogExecutor {
             storage,
+            snapshot: None,
             facts_override: None,
             read_now_floor: None,
             rules,
@@ -202,13 +210,31 @@ impl DatalogExecutor {
         self.max_results = max_results;
     }
 
-    /// Read-time "now" for query visibility.
+    /// Read every fact from `snapshot`, so the queries of this executor see
+    /// one state of the store and pin its committed generation (#543).
+    pub(crate) fn set_snapshot(&mut self, snapshot: Snapshot) {
+        self.snapshot = Some(snapshot);
+    }
+
+    /// The snapshot reads go to: the executor's, or a new one of `storage`.
+    fn read_snapshot(&self) -> Result<Snapshot> {
+        match &self.snapshot {
+            Some(s) => Ok(s.clone()),
+            None => self.storage.snapshot(),
+        }
+    }
+
+    /// Read-time "now" for query visibility: the snapshot's time when the
+    /// executor has one, otherwise the wall clock.
     ///
     /// Overlay reads floor the wall clock to the newest staged fact so buffered
     /// writes remain visible even if their synthetic metadata is slightly ahead
     /// of the current millisecond.
     fn read_now(&self) -> i64 {
-        let now = tx_id_now().cast_signed();
+        let now = self
+            .snapshot
+            .as_ref()
+            .map_or_else(|| tx_id_now().cast_signed(), Snapshot::now);
         self.read_now_floor.map_or(now, |floor| now.max(floor))
     }
 
@@ -322,7 +348,7 @@ impl DatalogExecutor {
             (Some(facts), None) => facts.iter().cloned().collect(),
             // A counter is a key bound, so committed history is cut on index keys.
             (None, Some(AsOf::Counter(n))) => self.live_source_facts(query, Some(*n))?,
-            (None, Some(as_of)) => self.storage.get_facts_as_of(as_of)?,
+            (None, Some(as_of)) => self.read_snapshot()?.facts_as_of(as_of)?,
             (None, None) => self.live_source_facts(query, None)?,
         };
 
@@ -362,8 +388,8 @@ impl DatalogExecutor {
                 return Ok(facts);
             }
         }
-        self.storage
-            .get_live_facts(crate::storage::Scan::All, as_of)
+        self.read_snapshot()?
+            .live_facts_of_scans(&[crate::storage::Scan::All], as_of)
     }
 
     /// Attempt a selective index-backed fact fetch for the given patterns.
@@ -384,7 +410,7 @@ impl DatalogExecutor {
     /// Results are not deduplicated: the sole caller feeds them to `net_asserted_facts`,
     /// which is idempotent under duplicated records. Each lookup returns the pending facts
     /// up to `as_of` and the committed facts live at `as_of`, and all lookups read one
-    /// state of the store (`FactStorage::get_live_facts_of_scans`, #555).
+    /// state of the store (`Snapshot::live_facts_of_scans`, #555).
     fn selective_fact_fetch(
         &self,
         patterns: &[Pattern],
@@ -455,7 +481,7 @@ impl DatalogExecutor {
             }
         }
         scans.extend(attributes.iter().map(|a| Scan::Attribute(a)));
-        let all_facts = self.storage.get_live_facts_of_scans(&scans, as_of)?;
+        let all_facts = self.read_snapshot()?.live_facts_of_scans(&scans, as_of)?;
 
         Ok(Some(all_facts))
     }

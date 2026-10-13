@@ -146,12 +146,27 @@ pub(crate) struct FactStorage {
 /// checkpoint reuses its pages, and the first `pending_len` facts of the
 /// pending store that followed it. Taken under one `FactData` lock, so it
 /// never holds part of a transaction or of a checkpoint.
+///
+/// Clones share the pin; the generation is released when the last one drops.
+#[derive(Clone)]
 pub(crate) struct Snapshot {
     pub(crate) committed: Option<Arc<dyn crate::storage::CommittedReader>>,
     /// None for in-memory databases: there are no pages to hold.
-    _pin: Option<GenerationPin>,
+    _pin: Option<Arc<GenerationPin>>,
     pending: Arc<RwLock<PendingStore>>,
     pending_len: usize,
+    /// Wall-clock time when the snapshot was taken (Unix ms): the "now" of
+    /// valid-time reads, so every fact in the snapshot was stamped by then.
+    now: i64,
+}
+
+impl std::fmt::Debug for Snapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Snapshot")
+            .field("pending_len", &self.pending_len)
+            .field("now", &self.now)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Snapshot {
@@ -160,16 +175,65 @@ impl Snapshot {
         self.pending_len
     }
 
+    /// Wall-clock time when the snapshot was taken (Unix ms).
+    pub(crate) fn now(&self) -> i64 {
+        self.now
+    }
+
+    fn read_pending(&self) -> Result<std::sync::RwLockReadGuard<'_, PendingStore>> {
+        self.pending
+            .read()
+            .map_err(|_| err_coded!(ErrorCode::Int050, "pending"))
+    }
+
     /// Clones of the snapshot's pending facts at positions `from..to`
     /// (clamped). The store is append-only and never cleared, so these are
     /// the facts that were there when the snapshot was taken.
     pub(crate) fn pending_range(&self, from: usize, to: usize) -> Result<Vec<Fact>> {
-        let p = self
-            .pending
-            .read()
-            .map_err(|_| err_coded!(ErrorCode::Int050, "pending"))?;
+        let p = self.read_pending()?;
         let to = to.min(self.pending_len).min(p.facts.len());
         Ok(p.facts.get(from.min(to)..to).unwrap_or(&[]).to_vec())
+    }
+
+    /// Every record of the snapshot (assertions and retractions): committed
+    /// facts first, in EAVT order, then the pending facts in append order.
+    pub(crate) fn all_facts(&self) -> Result<Vec<Fact>> {
+        let mut all = Vec::new();
+        if let Some(reader) = &self.committed {
+            all.extend(reader.all_facts()?);
+        }
+        all.extend(self.pending_range(0, self.pending_len)?);
+        Ok(all)
+    }
+
+    /// The records of the snapshot visible as of `as_of`.
+    pub(crate) fn facts_as_of(&self, as_of: &AsOf) -> Result<Vec<Fact>> {
+        Ok(filter_facts_as_of(self.all_facts()?, as_of))
+    }
+
+    /// Facts for a query's net-assert step, for each of `scans`: the
+    /// snapshot's pending facts of the scan with `tx_count <= as_of` (all when
+    /// `None`), then the committed facts of the scan that survive net-assert
+    /// at `as_of` (#379). Concatenated in `scans` order, not deduplicated.
+    ///
+    /// `net_asserted_facts` over one scan's facts equals `net_asserted_facts`
+    /// over every record of the scan up to `as_of` (see
+    /// [`CommittedReader::live_facts`](crate::storage::CommittedReader::live_facts)),
+    /// but committed history is not translated into facts.
+    pub(crate) fn live_facts_of_scans(
+        &self,
+        scans: &[crate::storage::Scan<'_>],
+        as_of: Option<u64>,
+    ) -> Result<Vec<Fact>> {
+        let p = self.read_pending()?;
+        let mut facts = Vec::new();
+        for &scan in scans {
+            pending_facts_of_scan(&p, self.pending_len, scan, as_of, &mut facts)?;
+            if let Some(reader) = &self.committed {
+                facts.extend(reader.live_facts(scan, as_of)?);
+            }
+        }
+        Ok(facts)
     }
 }
 
@@ -406,31 +470,16 @@ impl FactStorage {
     /// asserted=true and take the most recent fact for each (E, A) pair.
     /// Includes both committed (on-disk) facts and pending (in-memory) facts.
     pub(crate) fn get_all_facts(&self) -> Result<Vec<Fact>> {
-        let d = self
-            .data
-            .read()
-            .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
-        let mut all = Vec::new();
-        // Committed facts first (on disk, in EAVT order)
-        if let Some(reader) = &d.committed {
-            all.extend(reader.all_facts()?);
-        }
-        // Then pending facts (post-checkpoint, in memory)
-        let p = d
-            .pending
-            .read()
-            .map_err(|_| err_coded!(ErrorCode::Int050, "pending"))?;
-        all.extend(p.facts.iter().cloned());
-        Ok(all)
+        self.snapshot()?.all_facts()
     }
 
     /// Return all facts visible as of the given transaction point.
     ///
     /// * `AsOf::Counter(n)` — include facts whose `tx_count <= n`
     /// * `AsOf::Timestamp(t)` — include facts whose `tx_id <= t as u64`
+    #[cfg(test)]
     pub(crate) fn get_facts_as_of(&self, as_of: &AsOf) -> Result<Vec<Fact>> {
-        let all = self.get_all_facts()?;
-        Ok(filter_facts_as_of(all, as_of))
+        self.snapshot()?.facts_as_of(as_of)
     }
 
     /// Get all asserted facts (filters out retractions)
@@ -456,17 +505,26 @@ impl FactStorage {
             .data
             .read()
             .map_err(|_| err_coded!(ErrorCode::Int050, "data"))?;
-        let pending_len = d
-            .pending
-            .read()
-            .map_err(|_| err_coded!(ErrorCode::Int050, "pending"))?
-            .facts
-            .len();
+        let (pending_len, now) = {
+            let p = d
+                .pending
+                .read()
+                .map_err(|_| err_coded!(ErrorCode::Int050, "pending"))?;
+            // Read with the cutoff, under the lock no append can hold: every
+            // fact in the snapshot was stamped by then, and none appended
+            // after it. A transaction stamped earlier but appended later is
+            // left out, as it is from any read in that interval.
+            (p.facts.len(), tx_id_now().cast_signed())
+        };
         Ok(Snapshot {
             committed: d.committed.clone(),
-            _pin: d.committed.as_ref().map(|_| self.pins.pin(d.generation)),
+            _pin: d
+                .committed
+                .as_ref()
+                .map(|_| Arc::new(self.pins.pin(d.generation))),
             pending: Arc::clone(&d.pending),
             pending_len,
+            now,
         })
     }
 
@@ -746,47 +804,23 @@ fn pending_fact(p: &PendingStore, pos: usize) -> Result<Fact> {
         .ok_or_else(|| err_coded!(ErrorCode::Int045, pos))
 }
 
-/// Production helpers on FactStorage: index-driven entity/attribute lookups used by the query executor.
 impl FactStorage {
-    /// Facts for a query's net-assert step: the pending facts of `scan` with
-    /// `tx_count <= as_of` (all when `None`), plus the committed facts of `scan`
-    /// that survive net-assert at `as_of` (#379).
-    ///
-    /// `net_asserted_facts` over the result equals `net_asserted_facts` over
-    /// every record of `scan` up to `as_of` (see
-    /// [`CommittedReader::live_facts`](crate::storage::CommittedReader::live_facts)),
-    /// but committed history is not translated into facts.
+    /// [`Snapshot::live_facts_of_scans`] for one scan of a new snapshot (tests).
+    #[cfg(test)]
     pub(crate) fn get_live_facts(
         &self,
         scan: crate::storage::Scan<'_>,
         as_of: Option<u64>,
     ) -> Result<Vec<Fact>> {
-        self.get_live_facts_of_scans(&[scan], as_of)
-    }
-
-    /// [`Self::get_live_facts`] for several scans, all read from one state of
-    /// the store: no commit lands between two of them (#555). The results are
-    /// concatenated in `scans` order and not deduplicated.
-    pub(crate) fn get_live_facts_of_scans(
-        &self,
-        scans: &[crate::storage::Scan<'_>],
-        as_of: Option<u64>,
-    ) -> Result<Vec<Fact>> {
-        let d = self.data.read().unwrap_or_else(|e| e.into_inner());
-        let p = d.pending.read().unwrap_or_else(|e| e.into_inner());
-        let mut facts = Vec::new();
-        for &scan in scans {
-            live_facts_of_scan(&d, &p, scan, as_of, &mut facts)?;
-        }
-        Ok(facts)
+        self.snapshot()?.live_facts_of_scans(&[scan], as_of)
     }
 }
 
-/// The pending facts of `scan` up to `as_of`, then its committed live facts,
-/// appended to `facts`. The caller holds `d`'s and `p`'s locks for the whole read.
-fn live_facts_of_scan(
-    d: &FactData,
+/// The pending facts of `scan` among the first `len` of `p`, up to `as_of`,
+/// appended to `facts`.
+fn pending_facts_of_scan(
     p: &PendingStore,
+    len: usize,
     scan: crate::storage::Scan<'_>,
     as_of: Option<u64>,
     facts: &mut Vec<Fact>,
@@ -794,6 +828,9 @@ fn live_facts_of_scan(
     use crate::storage::Scan;
     use crate::storage::index::{AevtKey, EavtKey};
     let mut push = |pos: usize| -> Result<()> {
+        if pos >= len {
+            return Ok(());
+        }
         let f = pending_fact(p, pos)?;
         if as_of.is_none_or(|n| f.tx_count <= n) {
             facts.push(f);
@@ -802,7 +839,7 @@ fn live_facts_of_scan(
     };
     match scan {
         Scan::All => {
-            for pos in 0..p.facts.len() {
+            for pos in 0..len.min(p.facts.len()) {
                 push(pos)?;
             }
         }
@@ -831,9 +868,6 @@ fn live_facts_of_scan(
                 push(pos)?;
             }
         }
-    }
-    if let Some(reader) = &d.committed {
-        facts.extend(reader.live_facts(scan, as_of)?);
     }
     Ok(())
 }
@@ -1822,12 +1856,50 @@ mod tests {
             Scan::Entity(&e),
         ];
         let attrs: Vec<String> = storage
-            .get_live_facts_of_scans(&scans, None)
+            .snapshot()
+            .unwrap()
+            .live_facts_of_scans(&scans, None)
             .unwrap()
             .into_iter()
             .map(|f| f.attribute)
             .collect();
         assert_eq!(attrs, [":t/y", ":t/x", ":t/x", ":t/y"]);
+    }
+
+    #[test]
+    fn snapshot_reads_leave_out_later_appends() {
+        use crate::storage::Scan;
+        let storage = FactStorage::new();
+        let e = uuid::Uuid::new_v4();
+        storage
+            .load_facts(vec![Fact::new(e, ":t/x".to_string(), Value::Integer(1), 1)])
+            .unwrap();
+        let snap = storage.snapshot().unwrap();
+        storage
+            .load_facts(vec![
+                Fact::new(e, ":t/x".to_string(), Value::Integer(2), 2),
+                Fact::new(e, ":t/y".to_string(), Value::Integer(3), 2),
+            ])
+            .unwrap();
+        for scan in [
+            Scan::All,
+            Scan::Entity(&e),
+            Scan::EntityAttribute(&e, ":t/x"),
+            Scan::Attribute(":t/x"),
+        ] {
+            assert_eq!(snap.live_facts_of_scans(&[scan], None).unwrap().len(), 1);
+        }
+        assert!(
+            snap.live_facts_of_scans(&[Scan::Attribute(":t/y")], None)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(snap.all_facts().unwrap().len(), 1);
+        assert_eq!(snap.facts_as_of(&AsOf::Counter(5)).unwrap().len(), 1);
+        assert_eq!(storage.get_all_facts().unwrap().len(), 3);
+        // Clones share one state.
+        assert_eq!(snap.clone().all_facts().unwrap().len(), 1);
+        assert!(snap.now() > 0);
     }
 
     #[test]

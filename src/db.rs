@@ -18,6 +18,7 @@ pub(crate) const VALID_FROM_USE_TX_TIME: i64 = i64::MIN;
 use crate::cursor::Cursor;
 use crate::error::{ErrorCode, MinigrafError, bail_coded, err_coded};
 use crate::graph::FactStorage;
+use crate::graph::storage::Snapshot;
 use crate::graph::types::Value;
 use crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS;
 use crate::query::datalog::evaluator::DEFAULT_MAX_RESULTS;
@@ -772,12 +773,14 @@ impl Minigraf {
             }
         } else {
             // Read-only: no lock needed
-            self.read_executor().execute(cmd)
+            let snapshot = self.inner.fact_storage.snapshot()?;
+            self.read_executor(snapshot).execute(cmd)
         }
     }
 
-    /// The executor for a read-only command: no lock, the database's limits.
-    fn read_executor(&self) -> DatalogExecutor {
+    /// The executor for a read-only command: no lock, the database's limits,
+    /// every read from `snapshot`.
+    fn read_executor(&self, snapshot: Snapshot) -> DatalogExecutor {
         let mut executor = DatalogExecutor::new_with_rules_and_functions(
             self.inner.fact_storage.clone(),
             self.inner.rules.clone(),
@@ -787,6 +790,7 @@ impl Minigraf {
             self.inner.options.max_derived_facts,
             self.inner.options.max_results,
         );
+        executor.set_snapshot(snapshot);
         executor
     }
 
@@ -823,7 +827,9 @@ impl Minigraf {
             DatalogCommand::Retract(_) => bail_coded!(ErrorCode::Api012, "retract"),
             DatalogCommand::Rule(_) => bail_coded!(ErrorCode::Api012, "rule"),
         }
-        Cursor::from_result(self.read_executor().execute(cmd)?)
+        let snapshot = self.inner.fact_storage.snapshot()?;
+        let result = self.read_executor(snapshot.clone()).execute(cmd)?;
+        Cursor::from_result(result, snapshot)
     }
 
     /// Stream every fact record (assertions and retractions, with their

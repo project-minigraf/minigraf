@@ -122,7 +122,7 @@ out.advance_tx_count(tx_count)?;
 out.finish()?;
 ```
 
-- The log reads the database as it was when it opened, uncheckpointed transactions included. Writes and checkpoints go on meanwhile. The log pins the committed generation it opened on, so checkpoints do not reuse the pages it reads: on a database taking many writes, the file grows by the pages checkpoints replace until the log is dropped, and later checkpoints reuse them.
+- The log reads the database as it was when it opened, uncheckpointed transactions included. Writes and checkpoints go on meanwhile. The log pins the committed generation it opened on, so checkpoints do not reuse the pages it reads: on a database taking many writes, the file grows by the pages checkpoints replace until the log is dropped, and later checkpoints reuse them. A query cursor (`Minigraf::query`) pins the same way until it is closed or dropped.
 - Read the transaction count after opening the log, so it covers every logged transaction. The copy keeps every fact version with its `tx_count`, `tx_id` and valid-time window, so `:as-of` and `:valid-at` answer the same; internal ids and page layout are new.
 - The copy is built at `backup/app.graph.partial` and renamed into place by `finish()`, so an interrupted backup never leaves a partial file under the final name.
 
@@ -201,6 +201,6 @@ A write that returns an I/O error may still have committed (see [Failures while 
 - **One writing process at a time.** A database is single-writer; a second process gets `STG-026`. Share one handle inside a process, or put one process in front of the database.
 - **No online backup from another process.** A read-only open needs every read-write handle closed. Copy from inside the writing process (see [Backups](#backups)), or use a volume snapshot.
 - **Rules and registered functions are not stored** in the file (#241). Register them after every open.
-- **Uncheckpointed transactions are held in memory.** A very large `wal_checkpoint_threshold`, or a fact log left open for a long time, grows memory and WAL replay time with the pending transactions.
+- **Uncheckpointed transactions are held in memory.** A very large `wal_checkpoint_threshold` grows memory and WAL replay time with the pending transactions. A fact log or cursor left open keeps the transactions that were uncheckpointed when it opened in memory, and the pages later checkpoints replace in the file, until it is dropped; a crash or reopen frees those pages.
 
 Open bugs that affect stored data or recovery carry the [`data-integrity`](https://github.com/project-minigraf/minigraf/issues?q=is%3Aopen+label%3Adata-integrity) and [`durability`](https://github.com/project-minigraf/minigraf/issues?q=is%3Aopen+label%3Adurability) labels; a fix merged for an unreleased version stays open until it ships. Bugs in the current published release, with workarounds and fix versions, are listed in [#421](https://github.com/project-minigraf/minigraf/issues/421).
