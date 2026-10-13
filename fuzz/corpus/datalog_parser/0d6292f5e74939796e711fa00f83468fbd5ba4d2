@@ -1,0 +1,2 @@
+(query [:fi:where (rule [[x :pa0 ?]])
+[?e :name ?n] (nd tr54)(>>>>>>?>>>)])

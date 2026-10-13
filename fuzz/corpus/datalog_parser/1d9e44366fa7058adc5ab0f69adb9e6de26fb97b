@@ -1,0 +1,1 @@
+(query [:fine :where [?e :name ?n] (n[?e :e]):where [?d :?name n] (not [?e ɝanndet rue])])

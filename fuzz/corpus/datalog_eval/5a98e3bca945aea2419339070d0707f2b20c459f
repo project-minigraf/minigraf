@@ -1,0 +1,1 @@
+(query [:where [?e :2color ܢ] (not [-?*e] [?e ::Fi] [?e :ac:Fidtrue])])

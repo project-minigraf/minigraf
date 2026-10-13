@@ -1,0 +1,2 @@
+(query [:c:where [?e :color ?c] (not[?e :color ?c] (i- --- i ?Ka$u$u?00000q :nam$qches?0000y:))]
+)

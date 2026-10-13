@@ -1,0 +1,2 @@
+(query [:f :where [qe :Q2co $c] (not [(query [e :w(E)])acn])])
+

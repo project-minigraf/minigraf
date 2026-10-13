@@ -1,0 +1,2 @@
+(query [:fe0:where [?e :name ?n] (or(AAAnsac=) [2:name n] (or(eol
+y) ) [2:nam ?n] (OAAAd) ) [2xa5ent ?y]])

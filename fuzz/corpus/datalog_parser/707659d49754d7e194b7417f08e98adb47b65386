@@ -1,0 +1,1 @@
+(query [::where [?e :Yname ?_] (not [?e :bd te])])

@@ -1,0 +1,6 @@
+(query[:find ?e :where [?e e ?n] (no
+:
+
+
+
+?)])

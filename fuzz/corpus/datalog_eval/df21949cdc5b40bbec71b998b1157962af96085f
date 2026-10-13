@@ -1,0 +1,1 @@
+(query [::where [?elOr ? ?c] (not-join [?e] [q:- t?])])

@@ -1,0 +1,1 @@
+(query [:fi:where [?e ae ?_][Ee a  _][?e aaa? e ](-ot[?e ]e)])

@@ -1,0 +1,1 @@
+(query [:Ee :where [?e :o$c] (not [o-*?niFtrue])])

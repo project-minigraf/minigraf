@@ -1,0 +1,1 @@
+(query [:where [? r ?c][? r ?c] (- [_n])])

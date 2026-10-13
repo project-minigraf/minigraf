@@ -1,0 +1,1 @@
+(query [:f?n :where [?e :name ?n] [(nil? "A")7603]])

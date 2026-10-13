@@ -1,0 +1,1 @@
+(query [:f?x31:where [?e :name ?n] (or[n? :e/me :/] (OA>) ) [2e ?y]])

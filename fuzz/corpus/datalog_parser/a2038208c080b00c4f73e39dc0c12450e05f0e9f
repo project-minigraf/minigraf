@@ -1,0 +1,1 @@
+(query [: :where [?:na ?n] (not [?_ ?hanb:?n] (e:0n) [?x :db/tx-count(not [?yeu])])])

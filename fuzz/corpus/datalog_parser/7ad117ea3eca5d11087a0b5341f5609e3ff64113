@@ -1,0 +1,2 @@
+(query [:where [?e :na ?n] (not (5(rule [(par,)])
+ ?y) [?xrrrr(not [?_?e])])])

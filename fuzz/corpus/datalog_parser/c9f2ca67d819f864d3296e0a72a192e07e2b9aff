@@ -1,0 +1,2 @@
+(query [:find ?e:where [?e :e ?n] (t: ( [?LK [?re]*])
+):max-results])

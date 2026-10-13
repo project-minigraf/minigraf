@@ -1,0 +1,1 @@
+(query [:fi :where[?el: ?c] (n[?e ::ac])])

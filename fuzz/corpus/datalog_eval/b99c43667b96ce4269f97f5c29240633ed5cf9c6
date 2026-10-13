@@ -1,0 +1,1 @@
+(query [:findET?e:where [?e ?FFFFFF ?c] (not-join [?e ?_diver?e] [?ei_ false rce?ereie])])

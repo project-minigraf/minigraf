@@ -1,0 +1,2 @@
+(query [:f:where [?e :r ?c] (not-join[?er ?=] (nt?K[?e]-))]
+)

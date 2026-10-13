@@ -1,0 +1,1 @@
+(query [:fine :where [?e:cv ?c] (d ?e:nd ?e :re)])

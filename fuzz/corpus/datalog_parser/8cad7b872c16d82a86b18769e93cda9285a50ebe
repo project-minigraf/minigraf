@@ -1,0 +1,1 @@
+(query [ :where  (not [:e a? true]):where [?e :name_me n] (not [:e nned true])])

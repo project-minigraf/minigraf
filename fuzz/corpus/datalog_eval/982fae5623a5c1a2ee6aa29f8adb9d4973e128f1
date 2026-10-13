@@ -1,0 +1,1 @@
+(query [:fi :where [?e ?nmEEnc ?]  [?e ?l2e ?n] [(>=nil"e")?]])

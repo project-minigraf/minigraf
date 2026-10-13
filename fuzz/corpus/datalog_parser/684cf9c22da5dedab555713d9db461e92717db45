@@ -1,0 +1,4 @@
+(query [:find ?e :where (rule [(t ?x ?OOOOOOy) [?x :pa0 ?y]])
+[?e :name ?n] (nq(query [:find ?e :where E[?e :name ?n] (?[ o(qu[:find ?e :wher (nt? ===== nil$ned t===-7?o:[==?=== nil$ned t:where [?e :name ?n] (?[ o=Eb anned tr=u=== nil$nein?= =l$ned true]x)r{e,t}ue]x)])e
+]x)])
+>>>>>>>> ?_>>>>>>>>>>>>>>>>>205 [:find > (noned true00000865)])])

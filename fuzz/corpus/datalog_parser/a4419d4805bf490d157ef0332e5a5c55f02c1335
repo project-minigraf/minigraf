@@ -1,0 +1,1 @@
+(query [:find ?e  ?e:any-valid-time :where [?e :Name ?n] (not [?e :banne true]):where  [?e :Name ?n] (not [cequ:banDzd trueؑω]):where[?e :nname ?n] (not [?e :bann?d trueؑω]):where [?e name ?] (not [?e d true])])

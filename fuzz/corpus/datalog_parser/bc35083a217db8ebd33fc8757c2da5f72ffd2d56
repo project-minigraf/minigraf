@@ -1,0 +1,2 @@
+(query [:whe(qry [?e[:find (u ?)W:wheee :nme ?n] 3(not [? r[ :na? n?n]])
+e])])

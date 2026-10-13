@@ -1,0 +1,2 @@
+(query [:fin :where (query [:where [?e _nafae5e ?n] [(=?n "A")]])[nhl:orc ?] (or-join[?][e:activ
+=])])

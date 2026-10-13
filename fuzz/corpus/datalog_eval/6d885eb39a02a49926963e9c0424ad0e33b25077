@@ -1,0 +1,1 @@
+(query [:where [?e c ?k] (not-join [?e] [?e ?cd:atu])])

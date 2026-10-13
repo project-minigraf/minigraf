@@ -1,0 +1,1 @@
+(rule[ (pa,TTTTTT)[(fx ?y)  ?n] (nr)[(fx ?y) ?] ])

@@ -1,0 +1,1 @@
+(query [:find ?e :where:fin:where [?e ?lynnueFFFF ?ctiver ]  [?e?n ?lynnueFFFF ?qQuenamc] (not-join [?e] [?e Dactiver ?che])])

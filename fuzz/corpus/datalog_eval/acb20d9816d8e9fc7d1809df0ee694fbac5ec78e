@@ -1,0 +1,1 @@
+(query [:with ?e ? ?c:where [?e :oO ?ol] (io-zmn [?]e ? ?c:)])

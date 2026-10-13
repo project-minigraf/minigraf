@@ -1,0 +1,1 @@
+(query [:f:where [?:c o][?e :c?ol or](j cfind ?e E)])

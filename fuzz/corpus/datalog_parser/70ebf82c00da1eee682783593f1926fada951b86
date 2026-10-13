@@ -1,0 +1,1 @@
+(query [:fe :where [?e :Name ?n] (nQt [?e true]):where  [?e:Name ?n] (not [Ge :banne true]):where [?e name v?n] (not [?e :banDzd ؑω]):where[?e :Name ?n] (not [?e Ɣ true]):where [?e :name ?n] (not [?e :bannzd trueؑω]):where [?e nawme ?n] (not [?e :bannzd true])])

@@ -1,0 +1,1 @@
+(query [:f:where[$e na ?]])
