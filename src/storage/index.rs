@@ -248,7 +248,8 @@ mod tests {
         assert!(floats.windows(2).all(|w| w[0] < w[1]), "floats in order");
         let null = encode_value(&Value::Null);
         let b = encode_value(&Value::Boolean(false));
-        assert!(null < b && b < ints[2], "cross-type order");
+        assert!(null < b, "null before boolean");
+        assert!(b < ints[2], "boolean before integer");
         assert_eq!(
             encode_value(&Value::Float(f64::NAN)),
             encode_value(&Value::Float(-f64::NAN)),

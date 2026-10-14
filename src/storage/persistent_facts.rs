@@ -1163,17 +1163,15 @@ mod tests {
     /// Pages a reader of `meta` reads: `reachable` without the free-list chain.
     fn read_pages(meta: &MetaPage, backend: &dyn StorageBackend) -> BTreeSet<u64> {
         let mut set = reachable(meta, backend);
-        if meta.freelist_head != 0 {
-            let (_, chain) = freelist::read_chain(
-                meta.freelist_head,
-                backend,
-                &PageCache::new(0),
-                meta.page_count,
-            )
-            .unwrap();
-            for id in chain {
-                set.remove(&id);
-            }
+        let (_, chain) = freelist::read_chain(
+            meta.freelist_head,
+            backend,
+            &PageCache::new(0),
+            meta.page_count,
+        )
+        .unwrap();
+        for id in chain {
+            set.remove(&id);
         }
         set
     }
@@ -1320,7 +1318,14 @@ mod tests {
             let mut page = vec![0u8; PAGE_SIZE];
             page[..n].copy_from_slice(&MetaPage::empty(1).encode()[..n]);
             mem.write_page(0, &page).unwrap();
-            let pfs = PersistentFactStorage::new(mem, 16).expect("re-init");
+            let pfs = PersistentFactStorage::new(mem.clone(), 16).expect("re-init");
+            assert_eq!(pfs.generation(), 1);
+            drop(pfs);
+            // Also with a blank page 1 (torn before page 1 was written).
+            let mut mem = MemoryBackend::new();
+            mem.write_page(0, &page).unwrap();
+            mem.write_page(1, &[0u8; PAGE_SIZE]).unwrap();
+            let pfs = PersistentFactStorage::new(mem, 16).expect("re-init with page 1");
             assert_eq!(pfs.generation(), 1);
         }
         // Foreign bytes are never overwritten.
@@ -1604,6 +1609,24 @@ mod tests {
         let pfs = open_mem(&mem, None).unwrap();
         assert_eq!(pfs.generation(), 3);
         assert_eq!(count_n(&pfs), 40);
+        drop(pfs);
+        // A page the backend cannot read past `page_count` (a hole in a sparse
+        // store) is no evidence either.
+        let end = mem.page_count().unwrap();
+        mem.write_page(end + 1, &[0u8; PAGE_SIZE]).unwrap();
+        assert_eq!(open_mem(&mem, None).unwrap().generation(), 3);
+    }
+
+    /// Dropping a store with unsaved changes saves them.
+    #[test]
+    fn drop_saves_a_dirty_store() {
+        let mem = MemoryBackend::new();
+        let mut pfs = PersistentFactStorage::new(mem.clone(), 16).unwrap();
+        put_batch(&mut pfs, 0..5);
+        drop(pfs);
+        let pfs = open_mem(&mem, None).unwrap();
+        assert_eq!(pfs.generation(), 2);
+        assert_eq!(count_n(&pfs), 5);
     }
 
     #[test]
@@ -1925,9 +1948,6 @@ mod tests {
 
     /// Overwrite every page on `m`'s free list with zeros.
     fn zero_free_pages(m: &MetaPage, mem: &mut MemoryBackend) {
-        if m.freelist_head == 0 {
-            return;
-        }
         let (free, _) =
             freelist::read_chain(m.freelist_head, &*mem, &PageCache::new(0), m.page_count).unwrap();
         for id in free {
@@ -2332,9 +2352,7 @@ mod tests {
         for round in 0..8u64 {
             let (asserts, retracts) = mixed_batch(round, 120);
             pfs.storage().transact(asserts, None).unwrap();
-            if !retracts.is_empty() {
-                pfs.storage().retract(retracts).unwrap();
-            }
+            pfs.storage().retract(retracts).unwrap();
             for f in pfs.storage().get_pending_facts() {
                 model.load_fact(f).unwrap();
             }
@@ -2418,7 +2436,7 @@ mod tests {
         );
 
         let bio = pfs.storage().get_facts_by_entity(&entity(2)).unwrap();
-        assert!(matches!(&bio[0].value, Value::String(s) if *s == long));
+        assert!(bio[0].value == Value::String(long.clone()));
         let touched = std::mem::take(&mut *reads.lock().unwrap());
         assert!(
             touched

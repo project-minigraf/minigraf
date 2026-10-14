@@ -184,10 +184,8 @@ pub fn build_btree(
 }
 
 fn check_sorted(entries: &[Entry]) -> Result<()> {
-    for w in entries.windows(2) {
-        if let [(a, _), (b, _)] = w
-            && a >= b
-        {
+    for ((a, _), (b, _)) in entries.iter().zip(entries.iter().skip(1)) {
+        if a >= b {
             bail_coded!(ErrorCode::Int049, "entries not sorted and distinct");
         }
     }
@@ -253,50 +251,45 @@ fn write_internal_pieces(
         .collect();
     let total: usize = sizes.iter().sum();
     let body = internal_size([]);
-    let mut parts = if body + total <= PAGE_SIZE {
+    let parts = if body + total <= PAGE_SIZE {
         1
     } else {
         total.div_ceil(PAGE_FILL_BYTES - body).max(2)
     };
     // Group `g` ends where the running size reaches (g + 1) / parts of the
-    // total. A group's first separator moves up, so it does not count.
-    let groups = loop {
-        let mut bounds = Vec::with_capacity(parts);
-        let mut running = 0usize;
-        for (i, size) in sizes.iter().enumerate() {
-            let g = bounds.len();
-            if i > 0 && g + 1 < parts && (running + size) * parts > total * (g + 1) {
-                bounds.push(i);
-            }
-            running += size;
+    // total. A group's first separator moves up, so it does not count. A cut
+    // goes before the first element whose running size passes the group's
+    // share, so the separators a group keeps add up to at most `total / parts`,
+    // which `parts` keeps within `PAGE_FILL_BYTES - body`: one pass fits.
+    let mut bounds = Vec::with_capacity(parts);
+    let mut running = 0usize;
+    for (i, size) in sizes.iter().enumerate() {
+        let g = bounds.len();
+        if i > 0 && g + 1 < parts && (running + size) * parts > total * (g + 1) {
+            bounds.push(i);
         }
-        bounds.push(elems.len());
-        let mut start = 0;
-        let mut fits = true;
-        for &end in &bounds {
-            let seps = sizes
-                .get(start + 1..end)
-                .unwrap_or(&[])
-                .iter()
-                .sum::<usize>();
-            fits &= body + seps <= PAGE_SIZE;
-            start = end;
+        running += size;
+    }
+    bounds.push(elems.len());
+    let mut start = 0;
+    for &end in &bounds {
+        let seps = sizes
+            .get(start + 1..end)
+            .unwrap_or(&[])
+            .iter()
+            .sum::<usize>();
+        if body + seps > PAGE_SIZE {
+            bail_coded!(ErrorCode::Int049, "separators do not fit in a node");
         }
-        if fits {
-            let mut groups: Vec<Vec<(Option<Vec<u8>>, u64)>> = Vec::with_capacity(bounds.len());
-            let mut it = elems.into_iter();
-            let mut start = 0;
-            for end in bounds {
-                groups.push(it.by_ref().take(end - start).collect());
-                start = end;
-            }
-            break groups;
-        }
-        if parts >= elems.len() {
-            bail_coded!(ErrorCode::Int049, "a separator does not fit in a node");
-        }
-        parts += 1;
-    };
+        start = end;
+    }
+    let mut groups: Vec<Vec<(Option<Vec<u8>>, u64)>> = Vec::with_capacity(bounds.len());
+    let mut it = elems.into_iter();
+    let mut start = 0;
+    for end in bounds {
+        groups.push(it.by_ref().take(end - start).collect());
+        start = end;
+    }
     let mut pieces = Vec::with_capacity(groups.len());
     for (g, group) in groups.into_iter().enumerate() {
         let mut seps = Vec::with_capacity(group.len());
@@ -940,6 +933,82 @@ mod tests {
     }
 
     #[test]
+    fn empty_tree_passes_the_exact_check() {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(64);
+        let (root, _) = build_at(Vec::new(), &mut backend, &cache, 2);
+        assert_tree_exact(root, &backend, &cache, &[], &mut Rng(1));
+    }
+
+    /// `(key n, value of len bytes)`, keys in order of `n`.
+    fn sized(n: u8, len: usize) -> Entry {
+        (vec![0x10, n], vec![b'v'; len])
+    }
+
+    #[test]
+    fn pack_leaves_recuts_around_a_large_last_entry() {
+        // Small entries, then one larger than half the total: the first cut
+        // (two parts) leaves everything in one overfull leaf and an empty one,
+        // so the packer tries three parts.
+        let mut entries: Vec<Entry> = (0..15).map(|n| sized(n, 100)).collect();
+        entries.push(sized(15, 3000));
+        let groups = pack_leaves(entries.clone()).unwrap();
+        assert_eq!(groups.len(), 2, "two leaves");
+        for g in &groups {
+            assert!(!g.is_empty(), "no empty leaf");
+            assert!(leaf_size(g) <= PAGE_SIZE, "every leaf fits");
+        }
+        assert!(groups.concat() == entries, "order and content kept");
+    }
+
+    #[test]
+    fn pack_leaves_rejects_an_entry_larger_than_a_page() {
+        let err = pack_leaves(vec![sized(0, PAGE_SIZE)]).unwrap_err();
+        assert_eq!(crate::error::MinigrafError::from(err).code(), "INT-049");
+    }
+
+    #[test]
+    fn build_with_separators_over_the_fill_target() {
+        // Keys sharing a 3400-byte prefix, with values too large for a second
+        // entry in a leaf: one per leaf, and every separator alone is over
+        // PAGE_FILL_BYTES, so internal nodes take two children.
+        let key = |n: u64| {
+            let mut k = vec![b'p'; 3400];
+            k.extend(format!("{n:08}").into_bytes());
+            k
+        };
+        let entries: Vec<Entry> = (0..10).map(|n| (key(n), vec![b'v'; 400])).collect();
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(64);
+        let (root, _) = build_at(entries.clone(), &mut backend, &cache, 2);
+        assert_eq!(leaf_ids(root, &backend, &cache).len(), 10, "one per leaf");
+        assert_tree_exact(root, &backend, &cache, &entries, &mut Rng(3));
+    }
+
+    #[test]
+    fn cow_insert_into_a_cycle_is_int_049() {
+        // The root's rightmost child is the root: an insert past every key
+        // descends forever without the depth check.
+        let (mut backend, cache, root, _) = multi_leaf_tree();
+        let mut page = cache.get_or_load(root, &backend).unwrap().to_vec();
+        page[RIGHTMOST_CHILD_OFFSET..RIGHTMOST_CHILD_OFFSET + 8]
+            .copy_from_slice(&root.to_le_bytes());
+        overwrite_page(&mut backend, &cache, root, page);
+        let next = backend.page_count().unwrap();
+        let mut alloc = PageAllocator::new(Vec::new(), next, 2);
+        let err = cow_insert(
+            root,
+            vec![entry(1_000_000, 1)],
+            &mut backend,
+            &cache,
+            &mut alloc,
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+        assert_eq!(crate::error::MinigrafError::from(err).code(), "INT-049");
+    }
+
+    #[test]
     fn build_spans_levels_and_seals_every_page() {
         let mut backend = MemoryBackend::new();
         let cache = PageCache::new(0);
@@ -993,8 +1062,10 @@ mod tests {
         page[RIGHTMOST_CHILD_OFFSET..RIGHTMOST_CHILD_OFFSET + 8]
             .copy_from_slice(&root.to_le_bytes());
         overwrite_page(&mut backend, &cache, root, page);
-        assert!(
-            collect_leaf_pages(root, &backend, &cache, None).is_err(),
+        let err = collect_leaf_pages(root, &backend, &cache, None).unwrap_err();
+        assert_eq!(
+            crate::error::MinigrafError::from(err).code(),
+            "INT-049",
             "cycle"
         );
         assert!(
@@ -1221,7 +1292,8 @@ mod tests {
         let l3_first = leaf_keys(leaves[3], &backend, &cache)[0].clone();
         let mut gap = l2_last.clone();
         gap.push(0);
-        assert!(gap > l2_last && gap < l3_first);
+        assert!(gap > l2_last);
+        assert!(gap < l3_first);
         let mut cursor = LeafCursor::new(root, None, &backend, &cache).unwrap();
         cursor.seek(&gap).unwrap();
         assert!(cursor.next().unwrap().unwrap().0 == l3_first, "gap seek");
