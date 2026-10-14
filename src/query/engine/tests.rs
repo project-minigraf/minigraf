@@ -194,6 +194,38 @@ fn queries(tx: u64) -> Vec<String> {
             "[?e :person/age ?v] [?e :db/tx-count _]  [?e :db/tx-count ?t]",
         ),
     ];
+    // Pseudo-attributes across joins (#545): the metadata of the last
+    // pattern before them, in plan order, that matched their entity, chosen
+    // per row; pseudo-attribute patterns with no such pattern before them
+    // join with every fact of their entity.
+    let pseudo_joins = [
+        "[?e :person/name ?n] [?e :person/age ?a] [?e :db/tx-count ?t]",
+        "[?e :person/age ?a] [?e :db/tx-count ?t] [?e :person/name ?n] [?e :db/valid-from ?f]",
+        "[?e :person/friend ?f] [?f :person/name ?n] [?f :db/tx-count ?t]",
+        "[?e :person/friend ?f] [?f :person/name ?n] [?e :db/valid-from ?t]",
+        "[?e :person/self ?x] [?x :person/age ?a] [?e :db/tx-count ?t]",
+        "[?e :person/friend ?x] [?x :person/self ?y] [?x :db/valid-to ?t]",
+        "[:p1 :person/age ?a] [?e :person/friend :p1] [:p1 :db/tx-count ?t]",
+        "[?e :person/friend :p1] [:p1 :person/age ?a] [?e :db/tx-count ?t]",
+        "[?e :db/tx-count ?t] [?e :person/age ?a]",
+        "[?e :db/tx-count 1] [?e :person/name ?n]",
+        "[?e :db/tx-count 2] [?f :db/tx-count 2] [?e :person/self ?f]",
+        "[?e :db/valid-from ?f] [?e :db/valid-to ?u]",
+        "[:p1 :db/tx-count ?t]",
+        "[?e :person/age ?a] [?f :person/age ?a] [?f :db/tx-count ?t] [?e :db/tx-count ?t]",
+        "[?e :person/age ?a] [(+ ?a 1) ?b] [?e :db/tx-id ?t] [(> ?t 0)]",
+    ];
+    // `:db/valid-at`: the query's valid time, once per visible fact of the
+    // entity.
+    let valid_at = [
+        "[?e :person/name ?n] [?e :db/valid-at ?t]",
+        "[?e :db/valid-at ?t]",
+        "[:p1 :db/valid-at ?t] [:p1 :person/age ?a]",
+        "[?e :person/friend ?f] [?f :db/valid-at ?t]",
+        "[?e :person/name ?n] [?e :db/valid-at nil]",
+        "[?e :person/name ?n] [?e :db/valid-at 5]",
+        "[?e :person/age ?a] [?e :db/valid-at ?a]",
+    ];
     let pseudo_temporals = [
         ":valid-at :any-valid-time".to_string(),
         format!(":as-of {} :valid-at :any-valid-time", tx / 2),
@@ -215,6 +247,22 @@ fn queries(tx: u64) -> Vec<String> {
     }
     for (find, clauses) in pseudo {
         for temporal in &pseudo_temporals {
+            out.push(format!(
+                "(query [:find {find} {temporal} :where {clauses}])"
+            ));
+        }
+    }
+    for clauses in pseudo_joins {
+        let find = vars_of(clauses);
+        for temporal in &pseudo_temporals {
+            out.push(format!(
+                "(query [:find {find} {temporal} :where {clauses}])"
+            ));
+        }
+    }
+    for clauses in valid_at {
+        let find = vars_of(clauses);
+        for temporal in temporals(tx) {
             out.push(format!(
                 "(query [:find {find} {temporal} :where {clauses}])"
             ));
@@ -363,9 +411,10 @@ fn engine_reads_many_batches() {
     assert_eq!(rows(&db, "(query [:find ?e :where [?e :big/n 2999]])"), 1);
 }
 
-/// The executor still runs what the engine does not: aggregates, `:as-of` a timestamp, `:db/valid-at`, pseudo-attributes of
-/// another entity, a pseudo-attribute pattern planned first, an expression
-/// rebinding the entity before a pseudo-attribute pattern.
+/// The executor still runs what the engine does not: aggregates, `:as-of` a
+/// timestamp, a pseudo-attribute pattern whose metadata comes from a pattern
+/// chosen per row in a way the engine does not reproduce (another entity's
+/// pattern before it, a `_` entity), an expression rebinding an entity.
 #[test]
 fn other_queries_stay_on_the_executor() {
     let db = Minigraf::in_memory().unwrap();
@@ -373,18 +422,16 @@ fn other_queries_stay_on_the_executor() {
     for q in [
         "(query [:find (count ?e) :where [?e :person/name ?n]])",
         "(query [:find ?e :as-of \"2099-01-01T00:00:00Z\" :where [?e :person/name ?n]])",
-        "(query [:find ?e ?t :where [?e :person/name ?n] [?e :db/valid-at ?t]])",
         "(query [:find ?e ?t :valid-at :any-valid-time \
          :where [?e :person/friend ?f] [?f :db/tx-count ?t]])",
-        "(query [:find ?e ?t :valid-at :any-valid-time \
-         :where [?e :db/tx-count 1] [?e :person/name ?t]])",
         "(query [:find ?e ?t :valid-at :any-valid-time \
          :where [_ :person/name ?e] [_ :db/tx-count ?t]])",
         "(query [:find ?n ?t :valid-at :any-valid-time \
          :where [?e :person/name ?n] [(+ 1 2) ?e] [?e :db/tx-count ?t]])",
-        // Pseudo-attributes across joins wait for #545's last part.
         "(query [:find ?e ?t :valid-at :any-valid-time \
-         :where [?e :person/name ?n] [?e :person/age ?a] [?e :db/tx-count ?t]])",
+         :where [?e :person/name \"n1\"] [_ :person/age ?a] [?e :db/tx-count ?t]])",
+        "(query [:find ?e ?t :valid-at :any-valid-time \
+         :where [?e :person/age ?a] [(+ ?a 1) ?b] [?b :db/tx-count ?t]])",
     ] {
         let before = runs();
         db.execute(q).unwrap();
