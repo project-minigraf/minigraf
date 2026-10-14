@@ -85,7 +85,20 @@ The harness builds with `--profile envelope`: `release` at opt-level 3, which is
 - **Bindings as `HashMap<String, Value>` (about 25%).** SipHash insert, lookup and drop per row; #473's columnar batches replace them.
 - **`net_asserted_facts` over committed facts that `live_facts` already resolved (about 10%)** (#532).
 - **Keyword constants hashed to a UUID per fact (about 8% of the join)** (#531).
-- `attribute_value` reads the whole attribute instead of seeking AVET (#518).
+- `attribute_value` reads the whole attribute instead of seeking AVET (#518). Fixed by the streaming engine's `Scan` (#544): see below.
+
+### Streaming engine (#544)
+
+Single-pattern queries run on the streaming engine since #544 (with expressions and pseudo-attributes since its second PR); a cursor pulls one batch of up to 1,024 rows at a time. A/B on an otherwise idle two-socket server, each run pinned to its own NUMA node, base and change on different sockets and swapped between rounds; `v3` before #544 PR 3 (ce2e320) against #544 PR 3, two rounds each, p50 shown (the table above is an older run on a different machine).
+
+| Shape | 100K | 1M | 10M |
+|---|---:|---:|---:|
+| `attribute_value` p50 (both sides, since PR 1) | 24 µs | 22 µs | 22 µs |
+| `attribute_scan` p50, `v3` → PR 3 | 24.0 → 23.2 ms | 268 → 248 ms | 3.12 → 2.59 s |
+| `attribute_scan` peak RSS, `v3` → PR 3 | 11 → 6 MiB | 58 → 7 MiB | 458 → 7 MiB |
+| point, `:as-of`, `:valid-at`, hot entity | unchanged (16–26 µs; hot 0.3 ms) | unchanged | unchanged |
+
+`attribute_value` reads only the AVET range of its value since #544 PR 1 (#518): 22–24 µs at every scale here, where the table above, before #544, has 24.5 ms, 288 ms and 3.16 s. An attribute scan drained with `next_batch(1000)` now holds one batch: peak RSS no longer grows with the number of rows (1.67M rows at 10M facts in 7 MiB, against a 4 MiB baseline). Before PR 3 the cursor held the whole answer, and in PR 3's first commit the query's id cache still held every entity it returned (189 MiB at 10M). Joins, aggregates and rules still run on the executor and are unchanged (#545–#548).
 
 ### Python FFI round trip
 
