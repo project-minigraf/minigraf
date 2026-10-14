@@ -509,6 +509,42 @@ impl DatalogExecutor {
             return Err(err_coded!(ErrorCode::Int027));
         }
 
+        // The streaming engine runs the queries it has operators for (#473).
+        // Reads inside a write transaction (`facts_override`) stay here (#550).
+        if self.facts_override.is_none()
+            && let Some(plan) = crate::query::engine::plan(&query)
+        {
+            let snapshot = self.read_snapshot()?;
+            if let Some(result) = crate::query::engine::run(&snapshot, plan) {
+                #[cfg(any(test, feature = "test-oracle"))]
+                crate::query::engine::oracle::check(
+                    &result,
+                    &self.oracle(snapshot).execute_query_on_executor(query),
+                );
+                return result;
+            }
+        }
+        self.execute_query_on_executor(query)
+    }
+
+    /// This executor over `snapshot`, for the engine's oracle (#473 spec §9).
+    #[cfg(any(test, feature = "test-oracle"))]
+    fn oracle(&self, snapshot: Snapshot) -> DatalogExecutor {
+        DatalogExecutor {
+            storage: self.storage.clone(),
+            snapshot: Some(snapshot),
+            facts_override: None,
+            read_now_floor: self.read_now_floor,
+            rules: self.rules.clone(),
+            functions: self.functions.clone(),
+            max_derived_facts: self.max_derived_facts,
+            max_results: self.max_results,
+        }
+    }
+
+    /// [`Self::execute_query`] on this executor, after the checks every
+    /// query passes first.
+    fn execute_query_on_executor(&self, query: DatalogQuery) -> Result<QueryResult> {
         // Compute query-level valid_at value for :db/valid-at pseudo-attribute binding.
         let now = self.read_now();
         let valid_at_value = match &query.valid_at {

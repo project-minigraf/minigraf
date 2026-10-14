@@ -83,6 +83,9 @@ harness = false
 [features]
 default = []
 wasm = []
+# Run the existing executor beside the streaming engine and compare every
+# answer (#473 spec §9). Tests only.
+test-oracle = []
 browser = [
     "dep:wasm-bindgen",
     "dep:wasm-bindgen-futures",
