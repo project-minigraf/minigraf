@@ -169,6 +169,7 @@ impl Stream {
             return Ok(None);
         }
         let rows = self.pull();
+        self.ids.end_pull();
         if !matches!(rows, Ok(Some(_))) {
             self.close();
         }

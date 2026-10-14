@@ -532,3 +532,29 @@ fn cursor_returns_gathered_rows_before_a_read_error() {
     assert!(cursor.next().expect("the error").is_err());
     assert!(cursor.next().is_none());
 }
+
+/// DICT lookups are cached for one pull only, so a cursor's memory does not
+/// grow with the rows it returns; pending entities keep their ids.
+#[test]
+fn dict_cache_is_dropped_after_each_pull() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Minigraf::open(dir.path().join("ids.graph")).unwrap();
+    let facts: String = (0..3000)
+        .map(|i| format!("[:p{i} :person/age {i}]"))
+        .collect();
+    db.execute(&format!("(transact [{facts}])")).unwrap();
+    db.checkpoint().unwrap();
+    db.execute("(transact [[:new :person/age 1] [:new :person/age 2]])")
+        .unwrap();
+    let mut cursor = db
+        .query("(query [:find ?e ?a :where [?e :person/age ?a]])")
+        .unwrap();
+    let mut rows = 0;
+    while let Some(batch) = cursor.next_batch(500).unwrap() {
+        rows += batch.len();
+        if let Some(stream) = cursor.stream_mut() {
+            assert_eq!(stream.ids.dict_cached(), 0, "no DICT lookups kept");
+        }
+    }
+    assert_eq!(rows, 3002);
+}

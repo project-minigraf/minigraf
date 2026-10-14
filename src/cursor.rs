@@ -96,6 +96,12 @@ impl Cursor {
         }
     }
 
+    /// The engine stream, while it has rows to give.
+    #[cfg(test)]
+    pub(crate) fn stream_mut(&mut self) -> Option<&mut Stream> {
+        self.stream.as_deref_mut()
+    }
+
     /// The engine's operator counters (spec §6.3); empty once the stream is
     /// done or for an answer computed at open.
     #[cfg(test)]
