@@ -17,8 +17,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Branch coverage needs nightly. Pinned so a toolchain update cannot move
-      # the numbers under an unrelated PR; bump it on purpose and re-measure.
+      # Branch coverage needs nightly. Pinned, with cargo-llvm-cov below, so a
+      # tool update cannot move the numbers under an unrelated PR; bump them on
+      # purpose and re-measure.
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@master
         with:
@@ -26,7 +27,11 @@ jobs:
           components: llvm-tools-preview
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          # 0.8.x misses the lib test binary under this nightly's build-dir
+          # layout and reports far lower numbers.
+          tool: cargo-llvm-cov@0.9.1
 
       - name: Build the pid_ns_helper example used by lock tests
         # cargo-llvm-cov puts test binaries where the lock tests' lookup of

@@ -10,10 +10,15 @@
 # branches.
 #
 # Known uncovered paths, left on purpose:
-# - INT-049 bails in btree.rs and persistent_facts.rs (a leaf or node that
-#   cannot fit, an empty level, a tree deeper than MAX_TREE_DEPTH, a rebuilt
-#   index failing its own check): invariant checks that no input reaches
-#   without a bug elsewhere.
+# - INT-049 bails in btree.rs and persistent_facts.rs (separators that do not
+#   fit in an internal node, which one pass always avoids, see
+#   write_internal_pieces; an empty level; a migration backup page at the wrong
+#   id; a rebuilt index or dictionary failing its own check): invariant checks
+#   that no input reaches without a bug elsewhere.
+# - btree.rs `let ... else` on a leaf group (pack_leaves never returns an
+#   empty one) and on `nodes.next()` right after a successful `peek()`.
+# - btree.rs `collect_leaf_pages` (test only) depth check: a cycle trips its
+#   visit count first.
 # - persistent_facts.rs `check_fits` / `check_written` with
 #   `holds_every_page() == false`: only the browser buffer, covered by the
 #   wasm tests in wasm.yml, which this job does not measure.
@@ -50,8 +55,8 @@ lines = 88
 branches = 74
 
 [files."src/storage/btree.rs"]
-lines = 94
-branches = 84
+lines = 96
+branches = 94
 
 [files."src/storage/cache.rs"]
 lines = 86  # the test-only BarrierBackend's unused trait methods count
@@ -67,7 +72,7 @@ branches = 59
 
 [files."src/storage/index.rs"]
 lines = 100
-branches = 74
+branches = 100
 
 [files."src/storage/keys.rs"]
 lines = 94
@@ -94,8 +99,8 @@ lines = 90
 branches = 83
 
 [files."src/storage/persistent_facts.rs"]
-lines = 95
-branches = 86
+lines = 96
+branches = 90
 
 [files."src/storage/reader.rs"]
 lines = 97
