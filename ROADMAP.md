@@ -119,7 +119,7 @@ Additive features, kept out of v3.0.0 so the #371 fix is not held up by them:
 
 - Rule persistence — design first (#241)
 - Query profiler (#185)
-- Native `:limit N` / `:offset` for plain `:find` queries (#306, #310)
+- Native `:limit N` / `:offset` for plain `:find` queries (#306)
 - Set membership predicates (#316)
 - `lag`/`lead` window functions (#182)
 - Sliding row frames — `:rows N preceding` (#183; builds on #182)

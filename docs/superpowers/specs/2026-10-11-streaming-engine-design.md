@@ -4,7 +4,7 @@
 **Sub-issues:** #543–#551 (§12)
 **Milestone:** v3.0.0, branch `v3`. The `.graph` file format stays v8 and the WAL format stays v2.
 **Folds in:** #518 (AVET reads, parked on branch `perf/518-avet-lookup`), #530 (ids until projection)
-**Followed by:** #306/#310 (`:limit`/`:offset` syntax and the 10M-fact `:limit` acceptance test), #185 (profiler)
+**Followed by:** #306 (`:limit`/`:offset` syntax and the 10M-fact `:limit` acceptance test), #185 (profiler)
 **Status:** design approved 2026-10-11, revised the same day (§11 lists the changes from the approved summary); not implemented
 
 ## 1. Terms
@@ -362,7 +362,7 @@ Schema validation and the v8 multi-value fix (#371, #287) are unaffected.
 
 ## 10. Acceptance tests
 
-From #473. The `:limit` test moves to #306/#310, since it needs the syntax.
+From #473. The `:limit` test moves to #306, since it needs the syntax.
 
 - [ ] `count` over 10M facts holds memory independent of the number of facts.
 - [ ] Grouped `count` with 1M groups completes, holding memory proportional to the number of groups. With `query_memory_limit` below that, it fails with `QRY-012`.
@@ -406,4 +406,4 @@ Sub-issues of #473, in order. Each is one or more PRs to `v3`, and none uses a c
 8. **#550 Streaming transactions** (§8): chunked parser, large transactions, statement bases, the B+tree delete.
 9. **#551 Removal and measurement**: delete the existing executor and the oracle, envelope at 100K/1M/10M, documentation.
 
-After #473: `:limit`/`:offset` syntax with the 10M-fact acceptance test (#306/#310), then the profiler (#185).
+After #473: `:limit`/`:offset` syntax with the 10M-fact acceptance test (#306), then the profiler (#185).
