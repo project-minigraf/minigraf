@@ -174,8 +174,8 @@ fn engine_reads_many_batches() {
     assert_eq!(rows(&db, "(query [:find ?e :where [?e :big/n 2999]])"), 1);
 }
 
-/// The executor still runs what the engine does not: two patterns, rules,
-/// aggregates, `:as-of` a timestamp.
+/// The executor still runs what the engine does not: two patterns,
+/// aggregates, `:as-of` a timestamp, expressions, keyword and float constants.
 #[test]
 fn other_queries_stay_on_the_executor() {
     let db = Minigraf::in_memory().unwrap();
@@ -186,6 +186,8 @@ fn other_queries_stay_on_the_executor() {
         "(query [:find ?e :as-of \"2099-01-01T00:00:00Z\" :where [?e :person/name ?n]])",
         "(query [:find ?v :where [?e :person/status ?v] [(= ?v :s1)]])",
         "(query [:find ?e :where [?e :person/status :s1]])",
+        // Floats match within an epsilon, not by key (PR 2).
+        "(query [:find ?e :where [?e :person/age 21.0]])",
     ] {
         let before = runs();
         db.execute(q).unwrap();
