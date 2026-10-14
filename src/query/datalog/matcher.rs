@@ -246,7 +246,7 @@ impl PatternMatcher {
 
         // Join with each subsequent pattern
         for pattern in patterns.get(1..).unwrap_or(&[]) {
-            results = self.join_with_pattern(results, pattern);
+            results = self.join_with_pattern(results, pattern, &[]);
         }
 
         results
@@ -267,7 +267,7 @@ impl PatternMatcher {
 
         // Join with each subsequent pattern
         for (pattern, _hint) in patterns.get(1..).unwrap_or(&[]) {
-            results = self.join_with_pattern(results, pattern);
+            results = self.join_with_pattern(results, pattern, &[]);
         }
 
         results
@@ -282,11 +282,16 @@ impl PatternMatcher {
     /// - Empty seed (`[]`): returns empty immediately.
     ///
     /// Used by the executor and evaluator incremental plan loops introduced in #207.
+    ///
+    /// `rebind` names variables the seed binds whose value this pattern
+    /// replaces with its own (#545): an equal value of another kind, a keyword
+    /// for a ref or the reverse.
     pub(crate) fn match_with_hint_seeded(
         &self,
         seed: Vec<Bindings>,
         pattern: &Pattern,
         hint: &IndexHint,
+        rebind: &[String],
     ) -> Vec<Bindings> {
         if seed.is_empty() {
             return vec![];
@@ -296,7 +301,7 @@ impl PatternMatcher {
             self.match_pattern_with_hint(pattern, hint)
         } else {
             // Subsequent pattern — join_with_pattern uses hash-join when possible.
-            self.join_with_pattern(seed, pattern)
+            self.join_with_pattern(seed, pattern, rebind)
         }
     }
 
@@ -325,7 +330,7 @@ impl PatternMatcher {
 
         let mut results = seed;
         for pattern in patterns {
-            results = self.join_with_pattern(results, pattern);
+            results = self.join_with_pattern(results, pattern, &[]);
         }
         results
     }
@@ -341,6 +346,7 @@ impl PatternMatcher {
         &self,
         existing_bindings: Vec<Bindings>,
         pattern: &Pattern,
+        rebind: &[String],
     ) -> Vec<Bindings> {
         if existing_bindings.is_empty() {
             return vec![];
@@ -389,7 +395,7 @@ impl PatternMatcher {
             // No join variable detected: fall back to nested-loop scan.
             let mut results = Vec::new();
             for existing in existing_bindings {
-                let new_matches = self.match_pattern_with_bindings(pattern, &existing);
+                let new_matches = self.match_pattern_with_bindings(pattern, &existing, rebind);
                 results.extend(new_matches);
             }
             return results;
@@ -419,7 +425,7 @@ impl PatternMatcher {
         for existing in existing_bindings {
             let Some(probe_val) = existing.get(&jvar) else {
                 // Outer binding doesn't have the join var yet — fall back to scan for this row.
-                let new_matches = self.match_pattern_with_bindings(pattern, &existing);
+                let new_matches = self.match_pattern_with_bindings(pattern, &existing, rebind);
                 results.extend(new_matches);
                 continue;
             };
@@ -444,6 +450,9 @@ impl PatternMatcher {
                             {
                                 consistent = false;
                                 break;
+                            }
+                            if rebind.contains(var) {
+                                merged.insert(var.clone(), val.clone());
                             }
                         } else {
                             merged.insert(var.clone(), val.clone());
@@ -477,7 +486,12 @@ impl PatternMatcher {
 
     /// Match a pattern given existing variable bindings
     /// Returns new bindings that extend the existing ones
-    fn match_pattern_with_bindings(&self, pattern: &Pattern, existing: &Bindings) -> Vec<Bindings> {
+    fn match_pattern_with_bindings(
+        &self,
+        pattern: &Pattern,
+        existing: &Bindings,
+        rebind: &[String],
+    ) -> Vec<Bindings> {
         // Fast path for pseudo-attr patterns: when a preceding real-attr pattern stored
         // hidden fact-metadata keys (e.g. `__fvf_<uuid>`), use them directly instead of
         // scanning all facts and cross-joining. This ensures pseudo-attr patterns are
@@ -501,7 +515,7 @@ impl PatternMatcher {
                     // the normal scan path so each fact produces one binding (all
                     // identical). Task 5 (executor) will inject the correct value.
                     PseudoAttr::ValidAt => {
-                        return self.match_pattern_with_bindings_scan(pattern, existing);
+                        return self.match_pattern_with_bindings_scan(pattern, existing, &[]);
                     }
                 };
                 if let Some(stored_value) = existing.get(&hidden_key) {
@@ -514,8 +528,13 @@ impl PatternMatcher {
             }
         }
 
-        // Default: scan all facts
-        self.match_pattern_with_bindings_scan(pattern, existing)
+        // Default: scan all facts. Pseudo-attribute patterns never replace a
+        // value (#545).
+        let rebind = match &pattern.attribute {
+            AttributeSpec::Real(_) => rebind,
+            AttributeSpec::Pseudo(_) => &[],
+        };
+        self.match_pattern_with_bindings_scan(pattern, existing, rebind)
     }
 
     /// Default join implementation: iterate all facts and try to match.
@@ -523,6 +542,7 @@ impl PatternMatcher {
         &self,
         pattern: &Pattern,
         existing: &Bindings,
+        rebind: &[String],
     ) -> Vec<Bindings> {
         let mut results = Vec::new();
 
@@ -556,12 +576,34 @@ impl PatternMatcher {
                 if consistent {
                     // Merge bindings (hidden keys are overwritten by the new fact's values)
                     new_bindings.extend(additional_bindings);
+                    // A substituted variable matched as a constant; take the
+                    // fact's value at its first position instead.
+                    for var in rebind {
+                        if let Some(v) = Self::fact_value_of(pattern, fact, var) {
+                            new_bindings.insert(var.clone(), v);
+                        }
+                    }
                     results.push(new_bindings);
                 }
             }
         }
 
         results
+    }
+
+    /// The value `fact` gives the variable `var` at its first position in
+    /// `pattern` (entity, attribute, value).
+    fn fact_value_of(pattern: &Pattern, fact: &Fact, var: &str) -> Option<Value> {
+        let is_var = |c: &EdnValue| matches!(c, EdnValue::Symbol(s) if s == var);
+        if is_var(&pattern.entity) {
+            return Some(Value::Ref(fact.entity));
+        }
+        if let AttributeSpec::Real(a) = &pattern.attribute
+            && is_var(a)
+        {
+            return Some(Value::Keyword(fact.attribute.clone()));
+        }
+        is_var(&pattern.value).then(|| fact.value.clone())
     }
 
     /// Apply existing bindings to a pattern, replacing bound variables with their values
@@ -1282,7 +1324,7 @@ mod tests {
             EdnValue::Symbol("?v".to_string()),
         );
         let unit_seed = vec![HashMap::new()];
-        let results = matcher.match_with_hint_seeded(unit_seed, &p, &IndexHint::Aevt);
+        let results = matcher.match_with_hint_seeded(unit_seed, &p, &IndexHint::Aevt, &[]);
         assert_eq!(
             results.len(),
             1,
@@ -1313,7 +1355,7 @@ mod tests {
             m.insert("?other".to_string(), Value::Integer(99));
             m
         }];
-        let results = matcher.match_with_hint_seeded(seed, &p, &IndexHint::Eavt);
+        let results = matcher.match_with_hint_seeded(seed, &p, &IndexHint::Eavt, &[]);
         assert_eq!(
             results.len(),
             1,
@@ -1335,7 +1377,7 @@ mod tests {
             EdnValue::Symbol("?v".to_string()),
         );
         // Completely empty seed (no rows at all)
-        let results = matcher.match_with_hint_seeded(vec![], &p, &IndexHint::Aevt);
+        let results = matcher.match_with_hint_seeded(vec![], &p, &IndexHint::Aevt, &[]);
         assert!(results.is_empty(), "empty seed must produce empty results");
     }
 }

@@ -662,6 +662,7 @@ impl DatalogExecutor {
             .cloned()
             .collect();
 
+        let mut binders = Binders::new(&query.where_clauses, Vec::new());
         let (planned, deferred_not_clauses) = optimizer::plan(plan_clauses);
 
         // Process planned clauses in order: Pattern → expand bindings, Expr → filter/extend,
@@ -670,13 +671,18 @@ impl DatalogExecutor {
         for (clause, hint) in planned {
             match clause {
                 WhereClause::Pattern(p) => {
+                    let rebind = binders.pattern(&p);
                     bindings = matcher.match_with_hint_seeded(
                         bindings,
                         &p,
                         hint.as_ref().unwrap_or(&optimizer::IndexHint::Eavt),
+                        &rebind,
                     );
                 }
                 WhereClause::Expr { expr, binding: out } => {
+                    if let Some(var) = &out {
+                        binders.expression(var);
+                    }
                     bindings = bindings
                         .into_iter()
                         .filter_map(|mut b| match eval_expr(&expr, &b, Some(&registry)) {
@@ -881,7 +887,18 @@ impl DatalogExecutor {
             .cloned()
             .collect();
 
-        for (predicate, args) in query.get_top_level_rule_invocations() {
+        let rule_positions = query
+            .where_clauses
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| matches!(c, WhereClause::RuleInvocation { .. }))
+            .map(|(i, _)| i);
+        let mut rule_patterns = Vec::new();
+        for ((predicate, args), at) in query
+            .get_top_level_rule_invocations()
+            .into_iter()
+            .zip(rule_positions)
+        {
             let pattern = match args.len() {
                 1 => {
                     #[allow(clippy::indexing_slicing)]
@@ -903,9 +920,11 @@ impl DatalogExecutor {
                     return Err(err_coded!(ErrorCode::Int028, predicate, n));
                 }
             };
+            rule_patterns.push((pattern.clone(), at));
             plan_clauses.push(WhereClause::Pattern(pattern));
         }
 
+        let mut binders = Binders::new(&query.where_clauses, rule_patterns);
         let (planned, deferred_not_clauses) = optimizer::plan(plan_clauses);
 
         // Process planned clauses in order: Pattern → expand, Expr → filter/extend,
@@ -914,13 +933,18 @@ impl DatalogExecutor {
         for (clause, hint) in planned {
             match clause {
                 WhereClause::Pattern(p) => {
+                    let rebind = binders.pattern(&p);
                     bindings = matcher.match_with_hint_seeded(
                         bindings,
                         &p,
                         hint.as_ref().unwrap_or(&optimizer::IndexHint::Eavt),
+                        &rebind,
                     );
                 }
                 WhereClause::Expr { expr, binding: out } => {
+                    if let Some(var) = &out {
+                        binders.expression(var);
+                    }
                     bindings = bindings
                         .into_iter()
                         .filter_map(|mut b| match eval_expr(&expr, &b, Some(&registry)) {
@@ -1460,6 +1484,84 @@ fn extract_variables(
 }
 
 type Binding = std::collections::HashMap<String, Value>;
+
+/// Which clause of a query's top-level `:where` gave each variable its value
+/// (#545, #473 spec §5.4).
+///
+/// A variable that several patterns bind takes its value from the first of
+/// them in the query text, whatever order the planner runs them in: a
+/// keyword and the ref of the entity it names are equal in a join, but are
+/// returned as they were bound. An expression binding overwrites the value
+/// where the planner places it, and later patterns keep it. A
+/// pseudo-attribute pattern never replaces a value.
+struct Binders {
+    /// Each top-level pattern (rule calls as patterns) and its position in
+    /// `:where`; taken as the planner hands them out.
+    text: Vec<(Pattern, usize)>,
+    /// The position of the pattern each variable's value came from; `None`
+    /// once an expression has bound it.
+    by_var: HashMap<String, Option<usize>>,
+}
+
+impl Binders {
+    fn new(where_clauses: &[WhereClause], rule_patterns: Vec<(Pattern, usize)>) -> Self {
+        let mut text: Vec<(Pattern, usize)> = where_clauses
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| match c {
+                WhereClause::Pattern(p) => Some((p.clone(), i)),
+                _ => None,
+            })
+            .collect();
+        text.extend(rule_patterns);
+        Binders {
+            text,
+            by_var: HashMap::new(),
+        }
+    }
+
+    /// Record the pattern `p`, run next, and return the variables whose
+    /// value it replaces.
+    fn pattern(&mut self, p: &Pattern) -> Vec<String> {
+        let at = match self.text.iter().position(|(q, _)| q == p) {
+            Some(i) => self.text.swap_remove(i).1,
+            None => usize::MAX,
+        };
+        let real = matches!(p.attribute, AttributeSpec::Real(_));
+        let attribute = match &p.attribute {
+            AttributeSpec::Real(a) => Some(a),
+            AttributeSpec::Pseudo(_) => None,
+        };
+        let mut rebind = Vec::new();
+        for c in [Some(&p.entity), attribute, Some(&p.value)]
+            .into_iter()
+            .flatten()
+        {
+            let EdnValue::Symbol(v) = c else { continue };
+            if !v.starts_with('?') || v.starts_with("?_") {
+                continue;
+            }
+            match self.by_var.get(v) {
+                None => {
+                    self.by_var.insert(v.clone(), Some(at));
+                }
+                Some(Some(b)) if real && at < *b => {
+                    self.by_var.insert(v.clone(), Some(at));
+                    if !rebind.contains(v) {
+                        rebind.push(v.clone());
+                    }
+                }
+                Some(_) => {}
+            }
+        }
+        rebind
+    }
+
+    /// Record an expression binding `var`.
+    fn expression(&mut self, var: &str) {
+        self.by_var.insert(var.to_string(), None);
+    }
+}
 
 /// Unified post-processing: handles plain-variable extraction, aggregation,
 /// window functions, and mixed (aggregate + window) queries.

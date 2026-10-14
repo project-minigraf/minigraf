@@ -858,6 +858,8 @@ impl StratifiedEvaluator {
                                 &p,
                                 hint.as_ref()
                                     .unwrap_or(&crate::query::datalog::optimizer::IndexHint::Eavt),
+                                // Rule bodies keep today's rule until #548.
+                                &[],
                             );
                         }
                         WhereClause::Expr { expr, binding: out } => {
