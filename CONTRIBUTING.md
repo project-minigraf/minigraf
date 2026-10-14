@@ -94,7 +94,7 @@ Run branch coverage to check overall project health before submitting a PR.
 Bugs that can lose, corrupt or hide data are handled so that users can always see them before they adopt a release:
 
 - An issue labelled `data-integrity`, `corruption` or `durability` whose fix ships in a patch to a published line (such as v2.0.x) stays **open until that patch release is published**, not just merged. The closing comment links that release.
-- A fix merged to a development branch whose first release has not shipped yet (such as `v3` before v3.0.0) closes its issue on merge: no released version of that line has the bug. If the bug also affects a published release, its entry in the pinned issue stays, with the fix version, until that release leaves support or gets the fix.
+- A fix merged to a development branch whose first release has not shipped yet (such as `v3` before v3.0.0) closes its issue on merge: no released version of that line has the bug. If the bug also affects a published release, it keeps its entry in the pinned issue, as below.
 - Every such bug that affects a published release also gets the `known-issue` label and an entry in the pinned [Known issues in the current release](https://github.com/project-minigraf/minigraf/issues/421) issue: affected versions, symptom, workaround and fix version. The entry is removed when the fix ships.
 - For bugs found downstream, the issue title or body states the affected version range (for example, "v0.6.0 – v2.0.1").
 - The README links to the pinned issue from its "Known issues" section.
