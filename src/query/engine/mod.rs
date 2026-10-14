@@ -8,6 +8,7 @@
 
 mod batch;
 mod cell;
+mod filter;
 mod ids;
 #[cfg(any(test, feature = "test-oracle"))]
 pub(crate) mod oracle;
@@ -19,6 +20,7 @@ mod tests;
 
 use crate::graph::storage::Snapshot;
 use crate::query::datalog::executor::QueryResult;
+use crate::query::datalog::functions::FunctionRegistry;
 use crate::storage::KeySource;
 use anyhow::Result;
 use ids::IdSpace;
@@ -40,30 +42,53 @@ pub(crate) struct Ctx<'a> {
     /// database.
     keys: Option<&'a dyn KeySource>,
     ids: IdSpace,
+    /// Predicates for expression clauses.
+    functions: &'a FunctionRegistry,
 }
 
 /// Run `plan` over `snapshot`, or `None` when the snapshot's committed
 /// reader has no keys (a test reader) and the executor must run it.
-pub(crate) fn run(snapshot: &Snapshot, plan: Plan) -> Option<Result<QueryResult>> {
+pub(crate) fn run(
+    snapshot: &Snapshot,
+    plan: Plan,
+    functions: &FunctionRegistry,
+) -> Option<Result<QueryResult>> {
     let keys = match &snapshot.committed {
         Some(reader) => Some(reader.key_source()?),
         None => None,
     };
     #[cfg(test)]
     RUNS.with(|r| r.set(r.get() + 1));
-    Some(execute(snapshot, keys, plan))
+    Some(execute(snapshot, keys, plan, functions))
 }
 
-fn execute(snapshot: &Snapshot, keys: Option<&dyn KeySource>, plan: Plan) -> Result<QueryResult> {
-    let Plan { scan, find, vars } = plan;
+fn execute(
+    snapshot: &Snapshot,
+    keys: Option<&dyn KeySource>,
+    plan: Plan,
+    functions: &FunctionRegistry,
+) -> Result<QueryResult> {
+    let Plan {
+        scan,
+        steps,
+        find,
+        vars,
+    } = plan;
     let mut results = Vec::new();
     let mut ctx = Ctx {
         snapshot,
         keys,
         ids: IdSpace::new(keys),
+        functions,
     };
     let mut scan = scan::Scan::new(scan);
-    while let Some(batch) = scan.next_batch(&mut ctx)? {
+    while let Some(mut batch) = scan.next_batch(&mut ctx)? {
+        for step in &steps {
+            if batch.len == 0 {
+                break;
+            }
+            batch = filter::apply(step, batch, &mut ctx)?;
+        }
         results.extend(project::project(&batch, &find, &mut ctx)?);
     }
     Ok(QueryResult::QueryResults { vars, results })

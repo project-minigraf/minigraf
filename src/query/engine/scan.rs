@@ -3,20 +3,19 @@
 //! Every pending fact is newer than every committed one, so a triple with a
 //! pending record in the snapshot (at or before `:as-of`) is decided by its
 //! pending records alone, and a triple without one by its committed keys
-//! (#379). `Scan` reads the committed range first, leaving out the triples a
+//! (#379). `Scan` reads the committed ranges first, leaving out the triples a
 //! pending record decides (the shadow set), then the pending range.
 
 use super::batch::Batch;
 use super::cell::{Cell, Scalar};
-use super::plan::{ScanSpec, Term, Valid};
+use super::plan::{Meta, ScanSpec, Term, Valid, ValueConst, names};
 use super::{BATCH_ROWS, Ctx};
 use crate::graph::storage::PendingResume;
-use crate::graph::types::{Fact, Value};
-use crate::storage::keys::{self, Index, KeyFact, KeyValue, SHORT_STRING_MAX};
+use crate::graph::types::{EntityId, Fact, Value};
+use crate::storage::keys::{self, Index, KeyFact, KeyValue, SHORT_STRING_MAX, ValueKind};
 use crate::storage::{KeySource, Scan as Range};
 use anyhow::Result;
-use std::collections::HashSet;
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
 
 pub(crate) struct Scan {
     spec: ScanSpec,
@@ -34,13 +33,46 @@ enum State {
 
 /// The committed half of the read.
 struct Committed {
-    index: Index,
-    prefix: Vec<u8>,
+    /// Key ranges as `(index, prefix)`, read in turn from `next`.
+    ranges: Vec<(Index, Vec<u8>)>,
+    next: usize,
     resume: Option<Vec<u8>>,
-    /// The value constant when the range does not fix it.
-    value: Option<KeyValue>,
+    /// The value constant when the ranges do not fix it.
+    test: Option<KeyTest>,
     /// Triples a pending record decides, as [`keys::entity_attribute_value_prefix`].
     shadow: HashSet<Vec<u8>>,
+}
+
+/// A value constant over committed key values, with ids resolved.
+enum KeyTest {
+    Exact(KeyValue),
+    /// A keyword constant: the keyword's ident id, the named entity's id.
+    Keyword(Option<u32>, Option<u64>),
+    /// A UUID constant: its entity id; whether each keyword names it.
+    Uuid(EntityId, Option<u64>, HashMap<u32, bool>),
+    Float(f64),
+}
+
+impl KeyTest {
+    fn matches(&mut self, keys: &dyn KeySource, v: &KeyValue) -> Result<bool> {
+        Ok(match (self, v) {
+            (KeyTest::Exact(c), v) => c == v,
+            (KeyTest::Keyword(Some(i), _), KeyValue::Keyword(fi)) => i == fi,
+            (KeyTest::Keyword(_, Some(e)) | KeyTest::Uuid(_, Some(e), _), KeyValue::Ref(fe)) => {
+                e == fe
+            }
+            (KeyTest::Uuid(u, _, seen), KeyValue::Keyword(i)) => match seen.get(i) {
+                Some(&m) => m,
+                None => {
+                    let m = names(&keys.ident_of(*i)?, u);
+                    seen.insert(*i, m);
+                    m
+                }
+            },
+            (KeyTest::Float(f), KeyValue::Float(ff)) => (*f - ff).abs() < f64::EPSILON,
+            _ => false,
+        })
+    }
 }
 
 impl Scan {
@@ -63,20 +95,26 @@ impl Scan {
                         self.state = State::Pending(None);
                         continue;
                     };
+                    let Some((index, prefix)) = c.ranges.get(c.next) else {
+                        self.state = State::Pending(None);
+                        continue;
+                    };
                     self.keys_buf.clear();
                     c.resume = keys.live_keys(
-                        c.index,
-                        &c.prefix,
+                        *index,
+                        prefix,
                         c.resume.as_deref(),
                         self.spec.as_of,
                         BATCH_ROWS,
                         &mut self.keys_buf,
                     )?;
+                    if c.resume.is_none() {
+                        c.next += 1;
+                    }
                     let valid = valid_at(self.spec.valid, ctx);
                     let mut row = vec![None; self.spec.width];
                     for kf in &self.keys_buf {
                         if !visible(valid, kf.vf, kf.vt)
-                            || c.value.as_ref().is_some_and(|v| *v != kf.v)
                             || (!c.shadow.is_empty()
                                 && c.shadow.contains(&keys::entity_attribute_value_prefix(
                                     kf.e, kf.a, &kf.v,
@@ -84,16 +122,27 @@ impl Scan {
                         {
                             continue;
                         }
+                        if let Some(t) = &mut c.test
+                            && !t.matches(keys, &kf.v)?
+                        {
+                            continue;
+                        }
                         if fill(&self.spec.e, &mut row, || Ok(Cell::Eid(kf.e)))?
                             && fill(&self.spec.a, &mut row, || Ok(Cell::Iid(u64::from(kf.a))))?
                             && fill(&self.spec.v, &mut row, || Ok(Cell::of_key(&kf.v)))?
                         {
+                            for &(m, slot) in &self.spec.meta {
+                                let n = match m {
+                                    Meta::ValidFrom => kf.vf,
+                                    Meta::ValidTo => kf.vt,
+                                    Meta::TxCount => kf.tx_count.cast_signed(),
+                                    Meta::TxId => keys.tx_id_of(kf.tx_count)?.cast_signed(),
+                                };
+                                set(&mut row, slot, n);
+                            }
                             batch.push(&mut row);
                         }
                         row.iter_mut().for_each(|c| *c = None);
-                    }
-                    if c.resume.is_none() {
-                        self.state = State::Pending(None);
                     }
                 }
                 State::Pending(resume) => {
@@ -109,7 +158,7 @@ impl Scan {
                     let mut row = vec![None; self.spec.width];
                     for f in &self.facts_buf {
                         if !visible(valid, f.valid_from, f.valid_to)
-                            || matches!(&self.spec.v, Term::Const(v) if *v != f.value)
+                            || matches!(&self.spec.v, Term::Const(v) if !v.matches(&f.value))
                         {
                             continue;
                         }
@@ -119,8 +168,18 @@ impl Scan {
                             Ok(Cell::Eid(ids.eid(keys, &f.entity)?))
                         })? && fill(&self.spec.a, &mut row, || {
                             Ok(Cell::Iid(ids.iid(keys, &f.attribute)?))
-                        })? && fill(&self.spec.v, &mut row, || value_cell(ids, keys, &f.value))?
-                        {
+                        })? && fill(&self.spec.v, &mut row, || {
+                            Cell::of_value(ids, keys, &f.value)
+                        })? {
+                            for &(m, slot) in &self.spec.meta {
+                                let n = match m {
+                                    Meta::ValidFrom => f.valid_from,
+                                    Meta::ValidTo => f.valid_to,
+                                    Meta::TxCount => f.tx_count.cast_signed(),
+                                    Meta::TxId => f.tx_id.cast_signed(),
+                                };
+                                set(&mut row, slot, n);
+                            }
                             batch.push(&mut row);
                         }
                         row.iter_mut().for_each(|c| *c = None);
@@ -138,8 +197,14 @@ impl Scan {
     }
 }
 
-/// Resolve the committed range of `spec` and the pending triples that
-/// shadow it.
+fn set(row: &mut [Option<Cell>], slot: usize, n: i64) {
+    if let Some(s) = row.get_mut(slot) {
+        *s = Some(Cell::Val(Scalar::Int(n)));
+    }
+}
+
+/// Resolve the committed ranges of `spec` and the pending triples that
+/// shadow them.
 fn open(spec: &ScanSpec, ctx: &mut Ctx<'_>) -> Result<State> {
     let Some(keys) = ctx.keys else {
         return Ok(State::Pending(None));
@@ -159,24 +224,23 @@ fn open(spec: &ScanSpec, ctx: &mut Ctx<'_>) -> Result<State> {
         },
         _ => None,
     };
-    let v = match &spec.v {
-        Term::Const(value) => match key_value(keys, value)? {
-            Some(v) => Some(v),
+    let test = match &spec.v {
+        Term::Const(c) => match key_test(keys, c)? {
+            Some(t) => Some(t),
             None => return Ok(pending),
         },
         _ => None,
     };
-    let (index, prefix, value) = match (e, a, v) {
-        (Some(e), Some(a), Some(v)) => (
-            Index::Eavt,
-            keys::entity_attribute_value_prefix(e, a, &v),
+    let (ranges, test) = match (e, a, test) {
+        (Some(e), Some(a), Some(KeyTest::Exact(v))) => (
+            vec![(Index::Eavt, keys::entity_attribute_value_prefix(e, a, &v))],
             None,
         ),
-        (Some(e), Some(a), None) => (Index::Eavt, keys::entity_attribute_prefix(e, a), None),
-        (Some(e), None, v) => (Index::Eavt, keys::entity_prefix(e), v),
-        (None, Some(a), Some(v)) => (Index::Avet, keys::attribute_value_prefix(a, &v), None),
-        (None, Some(a), None) => (Index::Aevt, keys::attribute_prefix(a), None),
-        (None, None, v) => (Index::Eavt, Vec::new(), v),
+        (Some(e), Some(a), t) => (vec![(Index::Eavt, keys::entity_attribute_prefix(e, a))], t),
+        (Some(e), None, t) => (vec![(Index::Eavt, keys::entity_prefix(e))], t),
+        (None, Some(a), Some(t)) => avet(a, t),
+        (None, Some(a), None) => (vec![(Index::Aevt, keys::attribute_prefix(a))], None),
+        (None, None, t) => (vec![(Index::Eavt, Vec::new())], t),
     };
     let mut shadow = HashSet::new();
     for f in ctx.snapshot.pending_records(range(spec), spec.as_of)? {
@@ -185,12 +249,53 @@ fn open(spec: &ScanSpec, ctx: &mut Ctx<'_>) -> Result<State> {
         }
     }
     Ok(State::Committed(Committed {
-        index,
-        prefix,
+        ranges,
+        next: 0,
         resume: None,
-        value,
+        test,
         shadow,
     }))
+}
+
+/// The AVET ranges of attribute `a` that hold every value `t` matches, and
+/// the test left for the values they read.
+fn avet(a: u32, t: KeyTest) -> (Vec<(Index, Vec<u8>)>, Option<KeyTest>) {
+    let value = |v: KeyValue| (Index::Avet, keys::attribute_value_prefix(a, &v));
+    let kind = |k: ValueKind| (Index::Avet, keys::attribute_kind_prefix(a, k));
+    match t {
+        KeyTest::Exact(v) => (vec![value(v)], None),
+        KeyTest::Keyword(i, e) => {
+            let ranges = i
+                .map(|i| value(KeyValue::Keyword(i)))
+                .into_iter()
+                .chain(e.map(|e| value(KeyValue::Ref(e))))
+                .collect();
+            (ranges, None)
+        }
+        KeyTest::Uuid(u, e, seen) => {
+            let ranges = e
+                .map(|e| value(KeyValue::Ref(e)))
+                .into_iter()
+                .chain([kind(ValueKind::Keyword)])
+                .collect();
+            (ranges, Some(KeyTest::Uuid(u, e, seen)))
+        }
+        KeyTest::Float(f) => (vec![kind(ValueKind::Float)], Some(KeyTest::Float(f))),
+    }
+}
+
+/// The test of a value constant over committed keys, or `None` when no
+/// committed key can match it.
+fn key_test(keys: &dyn KeySource, c: &ValueConst) -> Result<Option<KeyTest>> {
+    Ok(match c {
+        ValueConst::Exact(v) => key_value(keys, v)?.map(KeyTest::Exact),
+        ValueConst::Keyword(k, u) => match (keys.iid_of(k)?, keys.eid_of(u)?) {
+            (None, None) => None,
+            (i, e) => Some(KeyTest::Keyword(i, e)),
+        },
+        ValueConst::Uuid(u) => Some(KeyTest::Uuid(*u, keys.eid_of(u)?, HashMap::new())),
+        ValueConst::Float(f) => Some(KeyTest::Float(*f)),
+    })
 }
 
 /// The pending range of `spec`.
@@ -224,23 +329,6 @@ fn key_value(keys: &dyn KeySource, value: &Value) -> Result<Option<KeyValue>> {
         Value::String(s) => keys.long_value_ref(s)?.map(|vref| keys::long_str(s, vref)),
         Value::Keyword(k) => keys.iid_of(k)?.map(KeyValue::Keyword),
         Value::Ref(u) => keys.eid_of(u)?.map(KeyValue::Ref),
-    })
-}
-
-/// The cell of a pending fact's value.
-fn value_cell(
-    ids: &mut super::ids::IdSpace,
-    keys: Option<&dyn KeySource>,
-    value: &Value,
-) -> Result<Cell> {
-    Ok(match value {
-        Value::Null => Cell::Val(Scalar::Null),
-        Value::Boolean(b) => Cell::Val(Scalar::Bool(*b)),
-        Value::Integer(n) => Cell::Val(Scalar::Int(*n)),
-        Value::Float(f) => Cell::Val(Scalar::Float(*f)),
-        Value::String(s) => Cell::Val(Scalar::Str(Arc::from(s.as_str()))),
-        Value::Keyword(k) => Cell::Iid(ids.iid(keys, k)?),
-        Value::Ref(u) => Cell::Eid(ids.eid(keys, u)?),
     })
 }
 

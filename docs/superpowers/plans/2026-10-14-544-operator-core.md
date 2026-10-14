@@ -189,6 +189,25 @@ for what it ships.
   attribute: keyword only; other constants → no rows, as `match_component` gives).
 - Oracle tests for each (the issue's "cross-kind matching rules pinned by oracle tests").
 
+### PR 2 deviations
+- `:db/valid-at` patterns stay on the executor. Its matcher binds `:db/valid-at` by
+  scanning every fact of the entity (rows are a bag, one per fact), so it is a join, not
+  a constant column (#545).
+- A pseudo-attribute pattern runs on the engine only if its entity is the scan
+  pattern's entity term (the same variable, or a constant naming the same entity), it
+  is planned after the scan pattern, and no expression rebinds that variable: the
+  executor's hidden-key fast path applies only then; otherwise it joins (#545).
+- Steps run in `optimizer::plan` order, and a binding expression overwrites a bound
+  variable as the executor does (`[(+ ?v 1) ?v]` is accepted by the parser).
+- `INT-026` and `QRY-007` are raised before the engine runs, by the executor's own
+  checks (`check_clauses`); the executor path keeps its order of errors.
+- `attribute_string_prefix` is not ported: an exact long string resolves its value ref
+  through the DICT and uses `attribute_value_prefix`, so nothing would call it.
+- With the attribute unbound, cross-kind constants read EAVT (the entity's prefix, or
+  the whole index) with a residual test, not VAET: a keyword or UUID constant also
+  matches keyword values, which VAET does not hold.
+- `KeySource::tx_id_of` added for `:db/tx-id` on committed rows (decision 5 listed it).
+
 ### 10. Lazy cursor (PR 3)
 - `Cursor` holds the operator tree and the snapshot; `next_batch(max_rows)` pulls
   internal batches until `max_rows` rows are ready; errors surface from `next_batch`

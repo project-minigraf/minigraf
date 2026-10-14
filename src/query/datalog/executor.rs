@@ -15,6 +15,39 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+/// `INT-026`: per-fact pseudo-attributes require `:any-valid-time`.
+fn check_per_fact_pseudo_attrs(query: &DatalogQuery) -> Result<()> {
+    if query_uses_per_fact_pseudo_attr(query)
+        && !matches!(query.valid_at, Some(ValidAt::AnyValidTime))
+    {
+        return Err(err_coded!(ErrorCode::Int026));
+    }
+    Ok(())
+}
+
+/// `QRY-007`: surface unknown UDF predicates as errors before processing any
+/// rows (matches the behaviour of the former apply_expr_clauses post-pass).
+fn check_udf_predicates(query: &DatalogQuery, registry: &FunctionRegistry) -> Result<()> {
+    for clause in &query.where_clauses {
+        if let WhereClause::Expr {
+            expr: Expr::UnaryOp(UnaryOp::Udf(name), _),
+            ..
+        } = clause
+            && registry.get_predicate(name).is_none()
+        {
+            bail_coded!(ErrorCode::Qry007, name);
+        }
+    }
+    Ok(())
+}
+
+/// The clause checks of the executor's own path, for a query the streaming
+/// engine runs: its errors come first, from the same code (#473).
+fn check_clauses(query: &DatalogQuery, registry: &FunctionRegistry) -> Result<()> {
+    check_per_fact_pseudo_attrs(query)?;
+    check_udf_predicates(query, registry)
+}
+
 /// Returns true if any where clause (at any depth) contains a per-fact
 /// pseudo-attribute pattern (ValidFrom / ValidTo / TxCount / TxId).
 /// Used to enforce the `:any-valid-time` requirement.
@@ -514,8 +547,15 @@ impl DatalogExecutor {
         if self.facts_override.is_none()
             && let Some(plan) = crate::query::engine::plan(&query)
         {
+            let registry = self
+                .functions
+                .read()
+                .map_err(|_| err_coded!(ErrorCode::Qry008))?;
+            check_clauses(&query, &registry)?;
             let snapshot = self.read_snapshot()?;
-            if let Some(result) = crate::query::engine::run(&snapshot, plan) {
+            let result = crate::query::engine::run(&snapshot, plan, &registry);
+            drop(registry);
+            if let Some(result) = result {
                 #[cfg(any(test, feature = "test-oracle"))]
                 crate::query::engine::oracle::check(
                     &result,
@@ -556,12 +596,7 @@ impl DatalogExecutor {
             None => Value::Integer(now),
         };
 
-        // Hard-error: per-fact pseudo-attrs require :any-valid-time.
-        if query_uses_per_fact_pseudo_attr(&query)
-            && !matches!(query.valid_at, Some(ValidAt::AnyValidTime))
-        {
-            return Err(err_coded!(ErrorCode::Int026));
-        }
+        check_per_fact_pseudo_attrs(&query)?;
 
         // Apply temporal filters before pattern matching
         let filtered_facts = self.filter_facts_for_query(&query)?;
@@ -575,18 +610,7 @@ impl DatalogExecutor {
             .read()
             .map_err(|_| err_coded!(ErrorCode::Qry008))?;
 
-        // Pre-validate UDF predicate names: surface unknown predicates as errors before
-        // processing any rows (matches the behaviour of the former apply_expr_clauses post-pass).
-        for clause in &query.where_clauses {
-            if let WhereClause::Expr {
-                expr: Expr::UnaryOp(UnaryOp::Udf(name), _),
-                ..
-            } = clause
-                && registry.get_predicate(name).is_none()
-            {
-                bail_coded!(ErrorCode::Qry007, name);
-            }
-        }
+        check_udf_predicates(&query, &registry)?;
 
         // Collect Pattern, Expr, Not, and NotJoin top-level clauses for the planner.
         // Or/OrJoin are extracted separately below and applied as a post-pass.
@@ -733,12 +757,7 @@ impl DatalogExecutor {
             None => Value::Integer(now),
         };
 
-        // Hard-error: per-fact pseudo-attrs require :any-valid-time.
-        if query_uses_per_fact_pseudo_attr(&query)
-            && !matches!(query.valid_at, Some(ValidAt::AnyValidTime))
-        {
-            return Err(err_coded!(ErrorCode::Int026));
-        }
+        check_per_fact_pseudo_attrs(&query)?;
 
         // Apply temporal filters before evaluating recursive rules
         let filtered_facts = self.filter_facts_for_query(&query)?;

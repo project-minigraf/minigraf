@@ -629,6 +629,25 @@ pub fn attribute_value_prefix(a: u32, v: &KeyValue) -> Vec<u8> {
     k
 }
 
+/// A kind of value whose matches a constant cannot name by one key: floats
+/// match within an epsilon, keywords match a UUID constant by the entity
+/// they name (#544).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValueKind {
+    Float,
+    Keyword,
+}
+
+/// Key prefix of every AVET entry of attribute `a` with a value of `kind`.
+pub fn attribute_kind_prefix(a: u32, kind: ValueKind) -> Vec<u8> {
+    let mut k = attribute_prefix(a);
+    k.push(match kind {
+        ValueKind::Float => TAG_FLOAT,
+        ValueKind::Keyword => TAG_KEYWORD,
+    });
+    k
+}
+
 // ─── DICT keys (§5.2) ────────────────────────────────────────────────────────
 
 pub const DICT_UUID_TO_EID: u8 = 0x01;
@@ -1121,6 +1140,52 @@ mod tests {
         let aevt = f.key(Index::Aevt).unwrap();
         assert!(aevt.starts_with(&attribute_prefix(7)));
         assert!(!aevt.starts_with(&attribute_prefix(700)));
+    }
+
+    #[test]
+    fn kind_prefixes_bound_exactly_their_kind() {
+        let floats = attribute_kind_prefix(7, ValueKind::Float);
+        let keywords = attribute_kind_prefix(7, ValueKind::Keyword);
+        let other_attr = attribute_kind_prefix(8, ValueKind::Float);
+        let values = [
+            KeyValue::Float(f64::NEG_INFINITY),
+            KeyValue::Float(-0.0),
+            KeyValue::Float(0.0),
+            KeyValue::Float(1.5),
+            KeyValue::Float(f64::NAN),
+            KeyValue::Keyword(3),
+            KeyValue::Int(1),
+            KeyValue::Ref(3),
+            KeyValue::Null,
+            KeyValue::Str("x".into()),
+        ];
+        // (in the float range, in the keyword range, in attribute 8's floats)
+        let got: Vec<(bool, bool, bool)> = values
+            .into_iter()
+            .filter_map(|v| {
+                KeyFact {
+                    e: 300,
+                    a: 7,
+                    v,
+                    tx_count: 5,
+                    vf: 0,
+                    vt: VALID_TIME_FOREVER,
+                    asserted: true,
+                }
+                .key(Index::Avet)
+            })
+            .map(|k| {
+                (
+                    k.starts_with(&floats),
+                    k.starts_with(&keywords),
+                    k.starts_with(&other_attr),
+                )
+            })
+            .collect();
+        let mut want = vec![(true, false, false); 5];
+        want.push((false, true, false));
+        want.extend([(false, false, false); 4]);
+        assert_eq!(got, want);
     }
 
     #[test]
