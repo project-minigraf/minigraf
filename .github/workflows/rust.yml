@@ -36,3 +36,14 @@ jobs:
       env:
         RUSTDOCFLAGS: "--cfg docsrs"
       run: cargo doc --all-features --no-deps
+
+  # The streaming engine (#473) runs beside the existing executor until #551.
+  # With this feature every query the engine runs is also run by the executor,
+  # and a different answer fails the test, so the whole suite (model-based,
+  # property, golden corpus, integration) checks the engine.
+  oracle:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Run tests with the executor as the engine's oracle
+      run: cargo test --features test-oracle

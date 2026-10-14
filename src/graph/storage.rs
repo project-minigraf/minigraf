@@ -246,6 +246,156 @@ impl Snapshot {
     }
 }
 
+/// Where a pending walk ([`Snapshot::pending_live`]) resumes: after this
+/// index key, the last of the last whole run it returned.
+#[derive(Debug, Clone)]
+pub(crate) enum PendingResume {
+    Eavt(crate::storage::index::EavtKey),
+    Aevt(crate::storage::index::AevtKey),
+}
+
+impl Snapshot {
+    /// The pending records of `scan` in the snapshot with `tx_count <= as_of`
+    /// (all when `None`), assertions and retractions, in no set order.
+    pub(crate) fn pending_records(
+        &self,
+        scan: crate::storage::Scan<'_>,
+        as_of: Option<u64>,
+    ) -> Result<Vec<Fact>> {
+        let p = self.read_pending()?;
+        let mut facts = Vec::new();
+        pending_facts_of_scan(&p, self.pending_len, scan, as_of, &mut facts)?;
+        Ok(facts)
+    }
+
+    /// The pending facts of `scan` in the snapshot that survive net-assert at
+    /// `as_of` among the pending records, appended to `out` in pending index
+    /// order (EAVT, or AEVT for [`Scan::Attribute`](crate::storage::Scan)).
+    ///
+    /// Reads whole `(entity, attribute)` runs, so every record of a triple is
+    /// decided together, and stops after the run that brings the facts out to
+    /// `max` or more. Starts after `resume` and sets it to where the next call
+    /// starts; returns false once the range is done. Holds the pending read
+    /// lock for one call only.
+    pub(crate) fn pending_live(
+        &self,
+        scan: crate::storage::Scan<'_>,
+        as_of: Option<u64>,
+        resume: &mut Option<PendingResume>,
+        max: usize,
+        out: &mut Vec<Fact>,
+    ) -> Result<bool> {
+        use crate::storage::Scan;
+        use crate::storage::index::{AevtKey, EavtKey};
+        use std::ops::Bound::{Excluded, Included, Unbounded};
+        let p = self.read_pending()?;
+        let walk = RunWalk {
+            p: &p,
+            len: self.pending_len,
+            as_of,
+            max,
+        };
+        let stopped = match scan {
+            Scan::Attribute(attribute) => {
+                let from = match resume.take() {
+                    Some(PendingResume::Aevt(k)) => Excluded(k),
+                    _ => Included(AevtKey::attribute_start(attribute)),
+                };
+                walk.run(
+                    p.indexes.aevt.range((from, Unbounded)),
+                    |k| k.attribute == attribute,
+                    |k| (&k.entity, k.attribute.as_str()),
+                    out,
+                )?
+                .map(PendingResume::Aevt)
+            }
+            Scan::All | Scan::Entity(_) | Scan::EntityAttribute(..) => {
+                let start = match scan {
+                    Scan::Entity(e) => EavtKey::entity_start(*e),
+                    Scan::EntityAttribute(e, a) => EavtKey::entity_attribute_start(*e, a),
+                    _ => EavtKey::entity_start(EntityId::nil()),
+                };
+                let from = match resume.take() {
+                    Some(PendingResume::Eavt(k)) => Excluded(k),
+                    _ => Included(start),
+                };
+                walk.run(
+                    p.indexes.eavt.range((from, Unbounded)),
+                    |k| match scan {
+                        Scan::Entity(e) => k.entity == *e,
+                        Scan::EntityAttribute(e, a) => k.entity == *e && k.attribute == a,
+                        _ => true,
+                    },
+                    |k| (&k.entity, k.attribute.as_str()),
+                    out,
+                )?
+                .map(PendingResume::Eavt)
+            }
+        };
+        let more = stopped.is_some();
+        *resume = stopped;
+        Ok(more)
+    }
+}
+
+/// One call of [`Snapshot::pending_live`] over one pending index.
+struct RunWalk<'a> {
+    p: &'a PendingStore,
+    len: usize,
+    as_of: Option<u64>,
+    max: usize,
+}
+
+impl<'a> RunWalk<'a> {
+    /// Walk `entries` while `in_range`, deciding each `(entity, attribute)` run
+    /// (`run_of`) with [`net_asserted_facts`]. Returns the last key of the
+    /// last run when it stopped early, `None` when the range is done.
+    fn run<K: Clone + 'a>(
+        &self,
+        entries: impl Iterator<Item = (&'a K, &'a usize)>,
+        in_range: impl Fn(&K) -> bool,
+        run_of: impl Fn(&K) -> (&EntityId, &str),
+        out: &mut Vec<Fact>,
+    ) -> Result<Option<K>> {
+        let mut run: Vec<Fact> = Vec::new();
+        let mut first: Option<&K> = None;
+        let mut last: Option<&K> = None;
+        let mut emitted = 0usize;
+        for (k, &pos) in entries {
+            if !in_range(k) {
+                break;
+            }
+            if let (Some(f), Some(l)) = (first, last)
+                && run_of(f) != run_of(k)
+            {
+                emitted += flush_run(&mut run, out);
+                if emitted >= self.max {
+                    return Ok(Some(l.clone()));
+                }
+                first = None;
+            }
+            first.get_or_insert(k);
+            last = Some(k);
+            if pos < self.len {
+                let f = pending_fact(self.p, pos)?;
+                if self.as_of.is_none_or(|n| f.tx_count <= n) {
+                    run.push(f);
+                }
+            }
+        }
+        flush_run(&mut run, out);
+        Ok(None)
+    }
+}
+
+/// Move the net-asserted facts of `run` onto `out`; returns how many.
+fn flush_run(run: &mut Vec<Fact>, out: &mut Vec<Fact>) -> usize {
+    let live = net_asserted_facts(std::mem::take(run));
+    let n = live.len();
+    out.extend(live);
+    n
+}
+
 impl Default for FactStorage {
     fn default() -> Self {
         Self::new()

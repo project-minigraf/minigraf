@@ -214,7 +214,7 @@ impl<'a> DictReader<'a> {
     }
 
     /// The committed long value equal to `s`, if any (§6.3 dedup).
-    fn find_long_value(&mut self, s: &str) -> Result<Option<ValueRef>> {
+    pub fn find_long_value(&mut self, s: &str) -> Result<Option<ValueRef>> {
         if self.root == 0 {
             return Ok(None);
         }

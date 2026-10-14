@@ -415,21 +415,57 @@ pub trait CommittedReader: Send + Sync {
     fn log_source(&self) -> Option<&dyn LogSource> {
         None
     }
+
+    /// Key-level access for the query engine, if this reader has keys.
+    fn key_source(&self) -> Option<&dyn KeySource> {
+        None
+    }
+}
+
+/// Key-level reads of one committed generation: the dictionary and the live
+/// keys of each index (#473 spec §5, §6.1).
+///
+/// Implemented by [`reader::OnDiskReader`].
+pub trait KeySource: Send + Sync {
+    /// `(next_eid, next_iid)` of this generation: every DICT id is below them.
+    fn next_ids(&self) -> (u64, u32);
+    /// The entity id of `entity`, if it has any committed fact.
+    fn eid_of(&self, entity: &crate::graph::types::EntityId) -> Result<Option<u64>>;
+    /// The ident id of `ident`, if it is in the dictionary.
+    fn iid_of(&self, ident: &str) -> Result<Option<u32>>;
+    /// The entity with id `eid`.
+    fn uuid_of(&self, eid: u64) -> Result<crate::graph::types::EntityId>;
+    /// The ident with id `iid`.
+    fn ident_of(&self, iid: u32) -> Result<String>;
+    /// The long string stored at `vref`.
+    fn long_value(&self, vref: keys::ValueRef) -> Result<String>;
+    /// Where the long string `s` is stored, if a committed fact holds it.
+    fn long_value_ref(&self, s: &str) -> Result<Option<keys::ValueRef>>;
+    /// The keys of `index` that start with `prefix` and survive net-assert at
+    /// `as_of`, decoded, appended to `out` in key order.
+    ///
+    /// Starts after the triple `resume` (from the start when `None`). Stops
+    /// at the first triple boundary once `max` keys are out, and returns the
+    /// last whole triple read, to resume after; `None` when the range is done.
+    /// A triple's decision therefore never spans two calls.
+    fn live_keys(
+        &self,
+        index: keys::Index,
+        prefix: &[u8],
+        resume: Option<&[u8]>,
+        as_of: Option<u64>,
+        max: usize,
+        out: &mut Vec<keys::KeyFact>,
+    ) -> Result<Option<Vec<u8>>>;
 }
 
 /// Key-level access to one committed generation, for the fact log (#430).
 ///
 /// Implemented by [`reader::OnDiskReader`]. Only EAVT and AEVT are walked.
-pub trait LogSource {
+pub trait LogSource: KeySource {
     /// The `last_checkpointed_tx_count` of this generation: every committed
     /// fact has a `tx_count` at or below it.
     fn last_tx(&self) -> u64;
-    /// The entity id of `entity`, if it has any committed fact.
-    fn eid_of(&self, entity: &crate::graph::types::EntityId) -> Result<Option<u64>>;
-    /// The ident id of `ident`, if it is in the dictionary.
-    fn iid_of(&self, ident: &str) -> Result<Option<u32>>;
-    /// The ident with id `iid`.
-    fn ident_of(&self, iid: u32) -> Result<String>;
     /// Visit, in key order, the keys of `index` that start with `prefix` and
     /// sort after `after` (all of them when `None`), until `visit` returns false.
     fn walk(

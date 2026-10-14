@@ -614,6 +614,21 @@ pub fn attribute_prefix(a: u32) -> Vec<u8> {
     k
 }
 
+/// Key prefix of every EAVT entry of `(e, a, v)`: the same bytes for every
+/// record of one triple, whichever index it was read from.
+pub fn entity_attribute_value_prefix(e: u64, a: u32, v: &KeyValue) -> Vec<u8> {
+    let mut k = entity_attribute_prefix(e, a);
+    put_value(&mut k, v);
+    k
+}
+
+/// Key prefix of every AVET entry of attribute `a` with value `v` (#518).
+pub fn attribute_value_prefix(a: u32, v: &KeyValue) -> Vec<u8> {
+    let mut k = attribute_prefix(a);
+    put_value(&mut k, v);
+    k
+}
+
 // ─── DICT keys (§5.2) ────────────────────────────────────────────────────────
 
 pub const DICT_UUID_TO_EID: u8 = 0x01;

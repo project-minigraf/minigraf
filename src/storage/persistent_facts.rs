@@ -2497,6 +2497,76 @@ mod tests {
         }
     }
 
+    /// The committed live read of `scan` taken by `live_keys` in calls of at
+    /// most `max` keys, resumed after each, equals one `live_facts` read: the
+    /// same records in the same order, for every `max`.
+    fn assert_live_keys_resume(
+        pfs: &PersistentFactStorage<MemoryBackend>,
+        scans: &[crate::storage::Scan<'_>],
+        as_ofs: &[Option<u64>],
+    ) {
+        use crate::storage::Scan;
+        use crate::storage::keys::{self, Index};
+        let snap = pfs.storage().snapshot().unwrap();
+        let reader = snap.committed.as_ref().expect("a committed generation");
+        let src = reader.key_source().expect("keys");
+        for &scan in scans {
+            let (index, prefix) = match scan {
+                Scan::All => (Index::Eavt, Vec::new()),
+                Scan::Entity(e) => match src.eid_of(e).unwrap() {
+                    Some(e) => (Index::Eavt, keys::entity_prefix(e)),
+                    None => continue,
+                },
+                Scan::EntityAttribute(e, a) => {
+                    match (src.eid_of(e).unwrap(), src.iid_of(a).unwrap()) {
+                        (Some(e), Some(a)) => (Index::Eavt, keys::entity_attribute_prefix(e, a)),
+                        _ => continue,
+                    }
+                }
+                Scan::Attribute(a) => match src.iid_of(a).unwrap() {
+                    Some(a) => (Index::Aevt, keys::attribute_prefix(a)),
+                    None => continue,
+                },
+            };
+            for &as_of in as_ofs {
+                let whole: Vec<_> = reader
+                    .live_facts(scan, as_of)
+                    .unwrap()
+                    .into_iter()
+                    .map(|f| (f.entity, f.attribute, f.tx_count, f.valid_from, f.valid_to))
+                    .collect();
+                for max in [1, 2, 7, 1024] {
+                    let mut got = Vec::new();
+                    let mut resume = None;
+                    let mut calls = 0;
+                    loop {
+                        let mut out = Vec::new();
+                        resume = src
+                            .live_keys(index, &prefix, resume.as_deref(), as_of, max, &mut out)
+                            .unwrap();
+                        calls += 1;
+                        for kf in out {
+                            got.push((
+                                src.uuid_of(kf.e).unwrap(),
+                                src.ident_of(kf.a).unwrap(),
+                                kf.tx_count,
+                                kf.vf,
+                                kf.vt,
+                            ));
+                        }
+                        if resume.is_none() {
+                            break;
+                        }
+                    }
+                    assert!(got == whole, "resumed live_keys equal one live read");
+                    if max == 1 && whole.len() > 2 {
+                        assert!(calls > 1, "a small max splits the read");
+                    }
+                }
+            }
+        }
+    }
+
     /// Random histories: assertions in several valid-time windows, retractions,
     /// re-assertions, several values per attribute, long values, many
     /// transactions per checkpoint. Live reads match net-assert over every
@@ -2563,6 +2633,7 @@ mod tests {
                 Some(now),
             ];
             assert_live_reads_match(&pfs, &model, &scans, &as_ofs);
+            assert_live_keys_resume(&pfs, &scans, &as_ofs);
         }
         // Pending facts on top of committed ones.
         for _ in 0..12 {

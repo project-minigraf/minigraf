@@ -8,9 +8,9 @@ use crate::graph::types::{EntityId, Fact};
 use crate::storage::btree::{LeafCursor, MutexStorageBackend, prefix_scan};
 use crate::storage::cache::PageCache;
 use crate::storage::dict::{DictReader, SharedDictCache};
-use crate::storage::keys::{self, Index, KeyFact};
+use crate::storage::keys::{self, Index, KeyFact, ValueRef};
 use crate::storage::meta::MetaPage;
-use crate::storage::{CommittedReader, LogSource, Scan, StorageBackend};
+use crate::storage::{CommittedReader, KeySource, LogSource, Scan, StorageBackend};
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
 
@@ -20,7 +20,11 @@ pub struct OnDiskReader<B: StorageBackend + 'static> {
     cache: Arc<PageCache>,
     eavt_root: u64,
     aevt_root: u64,
+    avet_root: u64,
+    vaet_root: u64,
     dict_root: u64,
+    next_eid: u64,
+    next_iid: u32,
     last_tx: u64,
     shared: SharedDictCache,
 }
@@ -32,7 +36,11 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
             cache,
             eavt_root: meta.eavt_root,
             aevt_root: meta.aevt_root,
+            avet_root: meta.avet_root,
+            vaet_root: meta.vaet_root,
             dict_root: meta.dict_root,
+            next_eid: meta.next_eid,
+            next_iid: meta.next_iid,
             last_tx: meta.last_checkpointed_tx_count,
             shared: SharedDictCache::default(),
         }
@@ -62,17 +70,8 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
 
 impl<B: StorageBackend + 'static> OnDiskReader<B> {
     /// Facts of `index` entries starting with `prefix` that survive net-assert
-    /// at `as_of`, decided on the key bytes (#379, spec §5.3).
-    ///
-    /// The history of one triple is contiguous and newest first, so its first
-    /// transaction at or before `as_of` decides it (#435): a transaction that
-    /// holds a retraction hides the triple, otherwise its assertions are kept
-    /// (one, unless written before API-011 existed). Everything older in the
-    /// triple is hidden. With `as_of`, entries newer than `as_of` are passed
-    /// over. Entries that are passed over are skipped one by one, and
-    /// after [`SEEK_AFTER`] of them in one triple the cursor seeks past the run,
-    /// so a long history costs O(log) page visits while a short one costs no
-    /// seek. Only kept entries are decoded and translated through the dictionary.
+    /// at `as_of`, decided on the key bytes (#379, spec §5.3). Only kept
+    /// entries are decoded and translated through the dictionary.
     fn live_scan(
         &self,
         index: Index,
@@ -82,12 +81,63 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
         dict: &mut DictReader<'_>,
     ) -> Result<Vec<Fact>> {
         let mut out = Vec::new();
+        self.live_walk(index, root, prefix, None, as_of, usize::MAX, &mut |k| {
+            out.push(dict.fact(&KeyFact::decode(index, k)?)?);
+            Ok(())
+        })?;
+        Ok(out)
+    }
+
+    fn root(&self, index: Index) -> u64 {
+        match index {
+            Index::Eavt => self.eavt_root,
+            Index::Aevt => self.aevt_root,
+            Index::Avet => self.avet_root,
+            Index::Vaet => self.vaet_root,
+        }
+    }
+
+    /// Visit the keys of `index` entries starting with `prefix` that survive
+    /// net-assert at `as_of`, in key order, starting after the triple `resume`.
+    ///
+    /// The history of one triple is contiguous and newest first, so its first
+    /// transaction at or before `as_of` decides it (#435): a transaction that
+    /// holds a retraction hides the triple, otherwise its assertions are kept
+    /// (one, unless written before API-011 existed). Everything older in the
+    /// triple is hidden. With `as_of`, entries newer than `as_of` are passed
+    /// over. Entries that are passed over are skipped one by one, and
+    /// after [`SEEK_AFTER`] of them in one triple the cursor seeks past the run,
+    /// so a long history costs O(log) page visits while a short one costs no
+    /// seek.
+    ///
+    /// Stops at the first triple boundary once `max` keys were visited and
+    /// returns the last whole triple, to resume after; `None` when the range
+    /// is done.
+    #[allow(clippy::too_many_arguments)]
+    fn live_walk(
+        &self,
+        index: Index,
+        root: u64,
+        prefix: &[u8],
+        resume: Option<&[u8]>,
+        as_of: Option<u64>,
+        max: usize,
+        visit: &mut dyn FnMut(&[u8]) -> Result<()>,
+    ) -> Result<Option<Vec<u8>>> {
         if root == 0 {
-            return Ok(out);
+            return Ok(None);
         }
         let mut cursor = LeafCursor::new(root, Some(prefix), &self.backend, &self.cache)?;
+        if let Some(after) = resume {
+            // Past every entry of the triple: `tx↓` starts below 0xFF, and the
+            // next triple differs from this one within its length.
+            let mut target = after.to_vec();
+            target.push(0xFF);
+            cursor.seek(&target)?;
+        }
         let mut triple: Vec<u8> = Vec::new();
         let mut group = TxGroup::default();
+        let mut visited = 0usize;
         // Entries of the current triple are hidden from here on.
         let mut dead = false;
         let mut skipped = 0usize;
@@ -103,7 +153,10 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
                         let tx = r.tx_desc()?;
                         let new_triple = key_triple != triple.as_slice();
                         if new_triple {
-                            group.flush(index, dict, &mut out)?;
+                            visited += group.flush(visit)?;
+                            if visited >= max && !triple.is_empty() {
+                                return Ok(Some(triple));
+                            }
                             triple.clear();
                             triple.extend_from_slice(key_triple);
                             dead = false;
@@ -121,8 +174,8 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
                     }
                 }
                 _ => {
-                    group.flush(index, dict, &mut out)?;
-                    return Ok(out);
+                    group.flush(visit)?;
+                    return Ok(None);
                 }
             };
             match step {
@@ -143,7 +196,7 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
                     if group.tx.is_some_and(|decided| decided != tx) {
                         // The triple's newest transaction decided it; this
                         // older entry and the rest of the triple are hidden.
-                        group.flush(index, dict, &mut out)?;
+                        visited += group.flush(visit)?;
                         dead = true;
                         skipped = 1;
                         continue;
@@ -181,26 +234,23 @@ struct TxGroup {
 }
 
 impl TxGroup {
-    /// Emit the group's assertions unless it holds a retraction, and reset it.
-    fn flush(
-        &mut self,
-        index: Index,
-        dict: &mut DictReader<'_>,
-        out: &mut Vec<Fact>,
-    ) -> Result<()> {
+    /// Visit the group's assertions unless it holds a retraction, and reset
+    /// it. Returns the number visited.
+    fn flush(&mut self, visit: &mut dyn FnMut(&[u8]) -> Result<()>) -> Result<usize> {
         let group = std::mem::take(self);
-        if !group.retracted {
-            for key in group.assertions {
-                out.push(dict.fact(&KeyFact::decode(index, &key)?)?);
-            }
+        if group.retracted {
+            return Ok(0);
         }
-        Ok(())
+        for key in &group.assertions {
+            visit(key)?;
+        }
+        Ok(group.assertions.len())
     }
 }
 
-impl<B: StorageBackend + 'static> LogSource for OnDiskReader<B> {
-    fn last_tx(&self) -> u64 {
-        self.last_tx
+impl<B: StorageBackend + 'static> KeySource for OnDiskReader<B> {
+    fn next_ids(&self) -> (u64, u32) {
+        (self.next_eid, self.next_iid)
     }
 
     fn eid_of(&self, entity: &EntityId) -> Result<Option<u64>> {
@@ -211,8 +261,42 @@ impl<B: StorageBackend + 'static> LogSource for OnDiskReader<B> {
         self.dict().iid_of(ident)
     }
 
+    fn uuid_of(&self, eid: u64) -> Result<EntityId> {
+        self.dict().uuid_of(eid)
+    }
+
     fn ident_of(&self, iid: u32) -> Result<String> {
         self.dict().name_of(iid)
+    }
+
+    fn long_value(&self, vref: ValueRef) -> Result<String> {
+        self.dict().long_value(vref)
+    }
+
+    fn long_value_ref(&self, s: &str) -> Result<Option<ValueRef>> {
+        self.dict().find_long_value(s)
+    }
+
+    fn live_keys(
+        &self,
+        index: Index,
+        prefix: &[u8],
+        resume: Option<&[u8]>,
+        as_of: Option<u64>,
+        max: usize,
+        out: &mut Vec<KeyFact>,
+    ) -> Result<Option<Vec<u8>>> {
+        let root = self.root(index);
+        self.live_walk(index, root, prefix, resume, as_of, max, &mut |k| {
+            out.push(KeyFact::decode(index, k)?);
+            Ok(())
+        })
+    }
+}
+
+impl<B: StorageBackend + 'static> LogSource for OnDiskReader<B> {
+    fn last_tx(&self) -> u64 {
+        self.last_tx
     }
 
     fn walk(
@@ -258,6 +342,10 @@ impl<B: StorageBackend + 'static> LogSource for OnDiskReader<B> {
 
 impl<B: StorageBackend + 'static> CommittedReader for OnDiskReader<B> {
     fn log_source(&self) -> Option<&dyn LogSource> {
+        Some(self)
+    }
+
+    fn key_source(&self) -> Option<&dyn KeySource> {
         Some(self)
     }
 
