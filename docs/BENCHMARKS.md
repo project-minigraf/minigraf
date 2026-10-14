@@ -114,7 +114,21 @@ Queries of several patterns run on the engine since #545 PR 2: an `IndexNestedLo
 | `join_3_scan` peak RSS | 48–67 → 14 MiB | 468–480 → 42 MiB |
 | point, `:as-of`, `:valid-at`, hot entity, attribute scan | unchanged | unchanged |
 
-`join_2` probes one entity's range for its one outer row. `join_3_selective` joins on the value position, so it is a `HashJoin` that reads every `:manager` fact into its table: a value probe would need AVET over pending facts, which the pending store does not have (decision 3 of the #545 plan). `join_3_scan` scans the AVET range of `:group 7`, joins `:follows` on its value with a `HashJoin` built on those rows (it streams every `:follows` fact), then probes `:name` per row. 10M runs with #545's last PR.
+`join_2` probes one entity's range for its one outer row. `join_3_selective` joins on the value position, so it is a `HashJoin` that reads every `:manager` fact into its table: a value probe would need AVET over pending facts, which the pending store does not have (decision 3 of the #545 plan). `join_3_scan` scans the AVET range of `:group 7`, joins `:follows` on its value with a `HashJoin` built on those rows (it streams every `:follows` fact), then probes `:name` per row.
+
+At 10M facts with PR 3 (same server, two rounds; the PR 2 code is unchanged for these shapes, and both builds agree within 2%): `join_2` 51 µs and 4 MiB; `join_3_selective` 2.48–2.52 s and 66 MiB, its `HashJoin` table holding the 10M-fact graph's 1.67M `:manager` facts; `join_3_scan` 13.6 s and 59–63 MiB. The 10M figures in the first table above, before #545 and on the laptop, are 6.50 s, 13.5 s and 20.9 s with 2.3–3.6 GiB of RSS.
+
+#### Pseudo-attributes across joins (#545 PR 3)
+
+`join_2_pseudo` is `[:p{m} :follows ?f] [?f :name ?n] [?f :db/tx-count ?t]` with `:valid-at :any-valid-time` (1 row). Before PR 3 a pseudo-attribute pattern in a query of several patterns sent the whole query to the executor, which materialises every fact. A/B on the same idle server, `v3` (86ad20b, with the envelope shape added) on one socket and PR 3 on the other, swapped for the second round; p50 of each round, peak RSS.
+
+| `join_2_pseudo` | 100K | 1M | 10M |
+|---|---:|---:|---:|
+| p50, `v3` → PR 3 | 211 ms → 40–58 µs | 3.19 s → 55–56 µs | 33.8–34.1 s → 56 µs |
+| peak RSS | 122 → 4 MiB | 857–858 → 4 MiB | 6.0–7.5 GiB → 4 MiB |
+| every other shape | unchanged | unchanged | unchanged |
+
+The pseudo-attribute pattern reads the `:db/tx-count` column that the `:name` probe fills for its one row.
 
 ### Python FFI round trip
 

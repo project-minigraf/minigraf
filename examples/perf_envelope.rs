@@ -489,6 +489,14 @@ fn shapes(e: usize, tx_half: u64, hot_tx_half: u64) -> Vec<Shape> {
             rows: usize::MAX,
         },
         Shape {
+            name: "join_2_pseudo",
+            query: format!(
+                "[:find ?n ?t :valid-at :any-valid-time \
+                 :where [:p{m} :follows ?f] [?f :name ?n] [?f :db/tx-count ?t]]"
+            ),
+            rows: 1,
+        },
+        Shape {
             name: "recursive_ancestors",
             query: format!("[:find ?b :where (boss :p{leaf} ?b)]"),
             rows: depth,

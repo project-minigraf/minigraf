@@ -169,10 +169,11 @@ impl Operator for Scan {
                         {
                             for &(m, slot) in &self.spec.meta {
                                 let n = match m {
-                                    Meta::ValidFrom => kf.vf,
-                                    Meta::ValidTo => kf.vt,
-                                    Meta::TxCount => kf.tx_count.cast_signed(),
-                                    Meta::TxId => keys.tx_id_of(kf.tx_count)?.cast_signed(),
+                                    Meta::ValidFrom => Some(kf.vf),
+                                    Meta::ValidTo => Some(kf.vt),
+                                    Meta::TxCount => Some(kf.tx_count.cast_signed()),
+                                    Meta::TxId => Some(keys.tx_id_of(kf.tx_count)?.cast_signed()),
+                                    Meta::ValidAt => valid,
                                 };
                                 set(&mut row, slot, n);
                             }
@@ -210,10 +211,11 @@ impl Operator for Scan {
                         })? {
                             for &(m, slot) in &self.spec.meta {
                                 let n = match m {
-                                    Meta::ValidFrom => f.valid_from,
-                                    Meta::ValidTo => f.valid_to,
-                                    Meta::TxCount => f.tx_count.cast_signed(),
-                                    Meta::TxId => f.tx_id.cast_signed(),
+                                    Meta::ValidFrom => Some(f.valid_from),
+                                    Meta::ValidTo => Some(f.valid_to),
+                                    Meta::TxCount => Some(f.tx_count.cast_signed()),
+                                    Meta::TxId => Some(f.tx_id.cast_signed()),
+                                    Meta::ValidAt => valid,
                                 };
                                 set(&mut row, slot, n);
                             }
@@ -245,9 +247,11 @@ impl Operator for Scan {
     }
 }
 
-fn set(row: &mut [Option<Cell>], slot: usize, n: i64) {
+/// Fill a metadata slot: an integer, or `nil` for the valid time under
+/// `:any-valid-time`.
+fn set(row: &mut [Option<Cell>], slot: usize, n: Option<i64>) {
     if let Some(s) = row.get_mut(slot) {
-        *s = Some(Cell::Val(Scalar::Int(n)));
+        *s = Some(Cell::Val(n.map_or(Scalar::Null, Scalar::Int)));
     }
 }
 
