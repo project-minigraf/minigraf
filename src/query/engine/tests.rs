@@ -206,6 +206,8 @@ fn queries(tx: u64) -> Vec<String> {
         "[?e :person/self ?x] [?x :person/age ?a] [?e :db/tx-count ?t]",
         "[?e :person/friend ?x] [?x :person/self ?y] [?x :db/valid-to ?t]",
         "[:p1 :person/age ?a] [?e :person/friend :p1] [:p1 :db/tx-count ?t]",
+        "[?e :person/self ?x] [:p1 :person/age ?a] [:p1 :db/tx-count ?t]",
+        "[?e :person/self ?x] [:p1 :person/age ?a] [?e :db/tx-count ?t]",
         "[?e :person/friend :p1] [:p1 :person/age ?a] [?e :db/tx-count ?t]",
         "[?e :db/tx-count ?t] [?e :person/age ?a]",
         "[?e :db/tx-count 1] [?e :person/name ?n]",
