@@ -96,6 +96,10 @@ impl std::hash::Hash for Value {
             Value::Float(f) => {
                 if f.is_nan() {
                     0_u8.hash(state);
+                } else if *f == 0.0 {
+                    // `-0.0 == 0.0`, so both must hash alike (#545).
+                    2_u8.hash(state);
+                    0_u64.hash(state);
                 } else if f.is_sign_negative() {
                     1_u8.hash(state);
                     (-f).to_bits().hash(state);
@@ -727,5 +731,22 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Equal values hash alike (#545): `-0.0 == 0.0`.
+    #[test]
+    fn equal_floats_hash_alike() {
+        use std::hash::{BuildHasher, RandomState};
+        let h = RandomState::new();
+        assert_eq!(
+            h.hash_one(Value::Float(-0.0)),
+            h.hash_one(Value::Float(0.0)),
+            "-0.0 and 0.0"
+        );
+        assert_ne!(
+            h.hash_one(Value::Float(-1.0)),
+            h.hash_one(Value::Float(1.0)),
+            "-1.0 and 1.0"
+        );
     }
 }
