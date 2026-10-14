@@ -4,18 +4,63 @@
 //! An expression sees only the variables it reads, turned into values for
 //! the row; a binding expression's result becomes a cell again.
 
-use super::Ctx;
 use super::batch::Batch;
 use super::cell::{Cell, Scalar};
 use super::plan::{Step, Term, Vars};
 use super::project::value;
+use super::{Counters, Ctx, Operator};
 use crate::query::datalog::executor::{eval_expr, is_truthy};
 use crate::query::datalog::types::Expr;
 use anyhow::Result;
 use std::collections::HashMap;
 
+/// One clause after the scan, over the batches of its child.
+pub(crate) struct Apply {
+    child: Box<dyn Operator>,
+    step: Step,
+    counters: Counters,
+}
+
+impl Apply {
+    pub(crate) fn new(child: Box<dyn Operator>, step: Step) -> Self {
+        let op = match step {
+            Step::Pseudo { .. } => "Pseudo",
+            Step::Filter(..) => "Filter",
+            Step::Bind(..) => "Bind",
+        };
+        Apply {
+            child,
+            step,
+            counters: Counters::new(op),
+        }
+    }
+}
+
+impl Operator for Apply {
+    fn next_batch(&mut self, ctx: &mut Ctx<'_>) -> Result<Option<Batch>> {
+        while let Some(batch) = self.child.next_batch(ctx)? {
+            self.counters.rows_in += batch.len as u64;
+            let batch = apply(&self.step, batch, ctx)?;
+            if batch.len > 0 {
+                self.counters.out(&batch);
+                return Ok(Some(batch));
+            }
+        }
+        Ok(None)
+    }
+
+    fn close(&mut self) {
+        self.child.close();
+    }
+
+    fn counters(&self, out: &mut Vec<Counters>) {
+        out.push(self.counters);
+        self.child.counters(out);
+    }
+}
+
 /// Apply `step` to `batch`.
-pub(crate) fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<Batch> {
+fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<Batch> {
     match step {
         Step::Pseudo { col, value } => {
             let meta = batch.cols.get(*col).cloned().unwrap_or_default();
@@ -51,7 +96,7 @@ pub(crate) fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<
             for i in 0..batch.len {
                 match eval(expr, vars, &batch, i, ctx)? {
                     Some(v) => {
-                        out.push(Cell::of_value(&mut ctx.ids, ctx.keys, &v)?);
+                        out.push(Cell::of_value(ctx.ids, ctx.keys, &v)?);
                         keep.push(true);
                     }
                     None => keep.push(false),
