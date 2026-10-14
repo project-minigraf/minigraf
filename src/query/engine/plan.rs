@@ -1,20 +1,26 @@
-//! Planner v1 (#473 spec §6.3): which queries the engine runs, and their
+//! Planner v2 (#473 spec §6.3): which queries the engine runs, and their
 //! operator trees.
 //!
-//! #544 runs a query whose `:where` is one pattern with a stored attribute,
-//! followed by pseudo-attribute patterns on the same entity and expression
-//! clauses, and whose `:find` holds plain variables. Every other query runs
-//! on the existing executor (spec §9).
+//! The engine runs a query whose `:where` holds patterns with a stored
+//! attribute and expression clauses, and whose `:find` holds plain
+//! variables (#545); or one such pattern, pseudo-attribute patterns on its
+//! entity and expression clauses (#544). Every other query runs on the
+//! existing executor (spec §9).
 //!
 //! Clauses run in the order `optimizer::plan` gives the executor, so an
 //! expression sees the same variables, and a binding expression overwrites a
-//! variable at the same point, as it does there.
+//! variable at the same point, as it does there. The first pattern is a
+//! `Scan`; each later one a join: an `IndexNestedLoopJoin` when its entity is
+//! a variable already bound, a `HashJoin` otherwise (decision 3 of the #545
+//! plan).
 
 use crate::graph::types::{EntityId, Value};
+use crate::query::datalog::executor::Binders;
 use crate::query::datalog::matcher::edn_to_entity_id;
 use crate::query::datalog::optimizer;
 use crate::query::datalog::types::{
-    AsOf, AttributeSpec, DatalogQuery, EdnValue, Expr, FindSpec, PseudoAttr, ValidAt, WhereClause,
+    AsOf, AttributeSpec, DatalogQuery, EdnValue, Expr, FindSpec, Pattern, PseudoAttr, ValidAt,
+    WhereClause,
 };
 use std::collections::HashMap;
 
@@ -111,6 +117,49 @@ pub(crate) enum Step {
     /// `[(f …) ?out]`: binds (or overwrites) the slot; drops the rows where
     /// the expression fails.
     Bind(Expr, Vars, usize),
+    /// A later pattern, joined with the rows so far.
+    Join(JoinSpec),
+}
+
+/// A join of the rows so far (the outer side) with one pattern (spec §6.2).
+#[derive(Debug, Clone)]
+pub(crate) struct JoinSpec {
+    /// The pattern, over slots of its own: its variables in order of first
+    /// occurrence. A variable repeated inside it compares exactly, as in one
+    /// pattern alone.
+    pub(crate) inner: ScanSpec,
+    pub(crate) kind: JoinKind,
+    /// The variables both sides bind.
+    pub(crate) keys: Vec<Key>,
+    /// The inner slots of the variables the outer side lacks, in the order
+    /// they are added after the outer slots.
+    pub(crate) new: Vec<usize>,
+    /// `(inner, outer)`: outer slots whose cell the inner one replaces, for a
+    /// variable whose first binding in the query text is this pattern
+    /// (decision 2 of the #545 plan).
+    pub(crate) replace: Vec<(usize, usize)>,
+    /// Number of slots of an outer row.
+    pub(crate) outer_width: usize,
+}
+
+/// One variable both sides of a join bind.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Key {
+    pub(crate) inner: usize,
+    pub(crate) outer: usize,
+    /// Whether a keyword equals a ref to the entity it names here: everywhere
+    /// but between two attribute positions.
+    pub(crate) normalise: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum JoinKind {
+    /// `IndexNestedLoopJoin`: the inner pattern's entity is `keys[k]`; one
+    /// entity range per outer row.
+    Probe(usize),
+    /// `HashJoin`: a table of the side with the smaller estimate, probed by
+    /// the other.
+    Hash { build_inner: bool },
 }
 
 /// The variables an expression reads that are bound when it runs, by slot.
@@ -125,17 +174,26 @@ pub(crate) struct Plan {
     pub(crate) vars: Vec<String>,
 }
 
+/// Positions a slot's cells come from.
+const ATTRIBUTE: u8 = 1;
+const OTHER: u8 = 2;
+
 /// Variable slots, in the order clauses bind them.
 #[derive(Default)]
 struct Slots {
     by_var: HashMap<String, usize>,
-    len: usize,
+    /// For each slot: the positions its cells may come from.
+    kinds: Vec<u8>,
 }
 
 impl Slots {
-    fn add(&mut self) -> usize {
-        self.len += 1;
-        self.len - 1
+    fn add(&mut self, kind: u8) -> usize {
+        self.kinds.push(kind);
+        self.kinds.len() - 1
+    }
+
+    fn len(&self) -> usize {
+        self.kinds.len()
     }
 }
 
@@ -160,6 +218,20 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
     {
         return None;
     }
+    // Pseudo-attribute patterns read the fact of the one real pattern; across
+    // joins they wait for #545's last part.
+    let real = query
+        .where_clauses
+        .iter()
+        .filter(|c| matches!(c, WhereClause::Pattern(p) if matches!(p.attribute, AttributeSpec::Real(_))))
+        .count();
+    let pseudo = query.where_clauses.iter().any(
+        |c| matches!(c, WhereClause::Pattern(p) if matches!(p.attribute, AttributeSpec::Pseudo(_))),
+    );
+    if real > 1 && pseudo {
+        return None;
+    }
+    let mut binders = Binders::new(&query.where_clauses, Vec::new());
     let (planned, _) = optimizer::plan(query.where_clauses.clone());
     let mut planned = planned.into_iter().map(|(c, _)| c);
     let Some(WhereClause::Pattern(p)) = planned.next() else {
@@ -168,18 +240,13 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
     let AttributeSpec::Real(attribute) = &p.attribute else {
         return None;
     };
+    binders.pattern(&p);
     let rest: Vec<WhereClause> = planned.collect();
 
     let mut slots = Slots::default();
-    let e = term(&p.entity, &mut slots, |c| match c {
-        EdnValue::Keyword(_) | EdnValue::Uuid(_) => edn_to_entity_id(c).ok(),
-        _ => None,
-    })?;
-    let a = term(attribute, &mut slots, |c| match c {
-        EdnValue::Keyword(k) => Some(k.clone()),
-        _ => None,
-    })?;
-    let v = term(&p.value, &mut slots, value_const)?;
+    let e = term(&p.entity, &mut slots, OTHER, entity_const)?;
+    let a = term(attribute, &mut slots, ATTRIBUTE, attribute_const)?;
+    let v = term(&p.value, &mut slots, OTHER, value_const)?;
 
     // A pseudo-attribute pattern reads the metadata of the fact the scan
     // matched only when its entity is the scan's entity term; any other
@@ -189,15 +256,15 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
         let WhereClause::Pattern(q) = c else {
             continue;
         };
-        let m = match &q.attribute {
-            AttributeSpec::Pseudo(pa) => meta_of(pa)?,
-            AttributeSpec::Real(_) => return None,
+        let AttributeSpec::Pseudo(pa) = &q.attribute else {
+            continue;
         };
+        let m = meta_of(pa)?;
         if !same_entity(&p.entity, &q.entity) {
             return None;
         }
         if !meta.iter().any(|(mm, _)| *mm == m) {
-            meta.push((m, slots.add()));
+            meta.push((m, slots.add(OTHER)));
         }
     }
     // An expression that rebinds the entity variable would send a later
@@ -210,34 +277,59 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
     {
         return None;
     }
-    let width = slots.len;
+    let scan = ScanSpec {
+        e,
+        a,
+        v,
+        meta: meta.clone(),
+        as_of,
+        valid,
+        width: slots.len(),
+    };
 
+    let mut outer_patterns = vec![WhereClause::Pattern(p.clone())];
     let mut steps = Vec::with_capacity(rest.len());
     for c in rest {
         steps.push(match c {
-            WhereClause::Pattern(q) => {
-                let AttributeSpec::Pseudo(pa) = &q.attribute else {
-                    return None;
-                };
-                let m = meta_of(pa)?;
-                let col = meta.iter().find(|(mm, _)| *mm == m)?.1;
-                let value = term(&q.value, &mut slots, |c| {
-                    Some(match c {
-                        EdnValue::Integer(n) => Some(*n),
-                        _ => None,
-                    })
-                })?;
-                Step::Pseudo { col, value }
-            }
+            WhereClause::Pattern(q) => match &q.attribute {
+                AttributeSpec::Pseudo(pa) => {
+                    binders.pattern(&q);
+                    let m = meta_of(pa)?;
+                    let col = meta.iter().find(|(mm, _)| *mm == m)?.1;
+                    let value = term(&q.value, &mut slots, OTHER, |c| {
+                        Some(match c {
+                            EdnValue::Integer(n) => Some(*n),
+                            _ => None,
+                        })
+                    })?;
+                    Step::Pseudo { col, value }
+                }
+                AttributeSpec::Real(attribute) => {
+                    let rebind = binders.pattern(&q);
+                    let mut join = join(&q, attribute, &mut slots, &rebind, as_of, valid)?;
+                    if let JoinKind::Hash { build_inner } = &mut join.kind {
+                        *build_inner = optimizer::branch_cost(&[WhereClause::Pattern(q.clone())])
+                            <= optimizer::branch_cost(&outer_patterns);
+                    }
+                    outer_patterns.push(WhereClause::Pattern(q));
+                    Step::Join(join)
+                }
+            },
             WhereClause::Expr { expr, binding } => {
                 let vars = expr_vars(&expr, &slots);
                 match binding {
                     None => Step::Filter(expr, vars),
                     Some(out) => {
+                        binders.expression(&out);
                         let slot = match slots.by_var.get(&out) {
-                            Some(&s) => s,
+                            Some(&s) => {
+                                if let Some(k) = slots.kinds.get_mut(s) {
+                                    *k |= OTHER;
+                                }
+                                s
+                            }
                             None => {
-                                let s = slots.add();
+                                let s = slots.add(OTHER);
                                 slots.by_var.insert(out, s);
                                 s
                             }
@@ -259,19 +351,110 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
         find.push(*slots.by_var.get(var)?);
     }
     Some(Plan {
-        scan: ScanSpec {
-            e,
-            a,
-            v,
-            meta,
-            as_of,
-            valid,
-            width,
-        },
+        scan,
         steps,
         find,
         vars: query.find.iter().map(FindSpec::display_name).collect(),
     })
+}
+
+/// The join of the rows so far, whose variables are `slots`, with the
+/// pattern `q`; adds the slots of its new variables. `rebind` names the
+/// variables whose value `q` gives (decision 2 of the #545 plan).
+fn join(
+    q: &Pattern,
+    attribute: &EdnValue,
+    slots: &mut Slots,
+    rebind: &[String],
+    as_of: Option<u64>,
+    valid: Valid,
+) -> Option<JoinSpec> {
+    let outer_width = slots.len();
+    let mut local = Slots::default();
+    let e = term(&q.entity, &mut local, OTHER, entity_const)?;
+    let a = term(attribute, &mut local, ATTRIBUTE, attribute_const)?;
+    let v = term(&q.value, &mut local, OTHER, value_const)?;
+
+    let mut keys = Vec::new();
+    let mut new = Vec::new();
+    let mut replace = Vec::new();
+    let mut probe = None;
+    // Each variable at its first position in the pattern.
+    for (position, (edn, kind)) in [
+        (&q.entity, OTHER),
+        (attribute, ATTRIBUTE),
+        (&q.value, OTHER),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let EdnValue::Symbol(var) = edn else {
+            continue;
+        };
+        let Some(&inner) = local.by_var.get(var) else {
+            continue;
+        };
+        if keys.iter().any(|k: &Key| k.inner == inner) || new.contains(&inner) {
+            continue;
+        }
+        match slots.by_var.get(var) {
+            Some(&outer) => {
+                let held = slots.kinds.get(outer).copied().unwrap_or(OTHER);
+                if position == 0 {
+                    probe = Some(keys.len());
+                }
+                keys.push(Key {
+                    inner,
+                    outer,
+                    normalise: !(kind == ATTRIBUTE && held == ATTRIBUTE),
+                });
+                if rebind.contains(var) {
+                    replace.push((inner, outer));
+                    if let Some(k) = slots.kinds.get_mut(outer) {
+                        *k |= kind;
+                    }
+                }
+            }
+            None => {
+                new.push(inner);
+                let s = slots.add(kind);
+                slots.by_var.insert(var.clone(), s);
+            }
+        }
+    }
+    Some(JoinSpec {
+        inner: ScanSpec {
+            e,
+            a,
+            v,
+            meta: Vec::new(),
+            as_of,
+            valid,
+            width: local.len(),
+        },
+        kind: match probe {
+            Some(k) => JoinKind::Probe(k),
+            None => JoinKind::Hash { build_inner: true },
+        },
+        keys,
+        new,
+        replace,
+        outer_width,
+    })
+}
+
+fn entity_const(c: &EdnValue) -> Option<EntityId> {
+    match c {
+        EdnValue::Keyword(_) | EdnValue::Uuid(_) => edn_to_entity_id(c).ok(),
+        _ => None,
+    }
+}
+
+fn attribute_const(c: &EdnValue) -> Option<String> {
+    match c {
+        EdnValue::Keyword(k) => Some(k.clone()),
+        _ => None,
+    }
 }
 
 fn value_const(c: &EdnValue) -> Option<ValueConst> {
@@ -346,6 +529,7 @@ fn expr_vars(expr: &Expr, slots: &Slots) -> Vars {
 fn term<C>(
     edn: &EdnValue,
     slots: &mut Slots,
+    kind: u8,
     konst: impl Fn(&EdnValue) -> Option<C>,
 ) -> Option<Term<C>> {
     match edn {
@@ -353,7 +537,7 @@ fn term<C>(
         EdnValue::Symbol(s) if s.starts_with('?') => Some(match slots.by_var.get(s) {
             Some(&slot) => Term::Eq(slot),
             None => {
-                let slot = slots.add();
+                let slot = slots.add(kind);
                 slots.by_var.insert(s.clone(), slot);
                 Term::Bind(slot)
             }

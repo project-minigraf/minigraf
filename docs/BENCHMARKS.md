@@ -98,7 +98,23 @@ Single-pattern queries run on the streaming engine since #544 (with expressions 
 | `attribute_scan` peak RSS, `v3` → PR 3 | 11 → 6 MiB | 58 → 7 MiB | 458 → 7 MiB |
 | point, `:as-of`, `:valid-at`, hot entity | unchanged (16–26 µs; hot 0.3 ms) | unchanged | unchanged |
 
-`attribute_value` reads only the AVET range of its value since #544 PR 1 (#518): 22–24 µs at every scale here, where the table above, before #544, has 24.5 ms, 288 ms and 3.16 s. An attribute scan drained with `next_batch(1000)` now holds one batch: peak RSS no longer grows with the number of rows (1.67M rows at 10M facts in 7 MiB, against a 4 MiB baseline). Before PR 3 the cursor held the whole answer, and in PR 3's first commit the query's id cache still held every entity it returned (189 MiB at 10M). Joins, aggregates and rules still run on the executor and are unchanged (#545–#548).
+`attribute_value` reads only the AVET range of its value since #544 PR 1 (#518): 22–24 µs at every scale here, where the table above, before #544, has 24.5 ms, 288 ms and 3.16 s. An attribute scan drained with `next_batch(1000)` now holds one batch: peak RSS no longer grows with the number of rows (1.67M rows at 10M facts in 7 MiB, against a 4 MiB baseline). Before PR 3 the cursor held the whole answer, and in PR 3's first commit the query's id cache still held every entity it returned (189 MiB at 10M). Aggregates and rules still run on the executor and are unchanged (#546–#548). Joins: see below.
+
+### Joins on the streaming engine (#545)
+
+Queries of several patterns run on the engine since #545 PR 2: an `IndexNestedLoopJoin` when the next pattern's entity is bound, a `HashJoin` otherwise. A/B on the same idle server, unpinned, `v3` before PR 2 (eab15bb) and PR 2 run one after the other, two rounds each; p50 of the two rounds, peak RSS per shape.
+
+| Shape | 100K | 1M |
+|---|---:|---:|
+| `join_2` p50, `v3` → PR 2 | 58.2 ms → 51 µs | 796 ms → 50 µs |
+| `join_2` peak RSS | 38 → 4 MiB | 322 → 4 MiB |
+| `join_3_selective` p50 | 125 ms → 10.6 ms | 1.67 s → 148 ms |
+| `join_3_selective` peak RSS | 40–41 → 7 MiB | 392–462 → 14 MiB |
+| `join_3_scan` p50 | 165 ms → 41.1 ms | 2.64 s → 1.12 s |
+| `join_3_scan` peak RSS | 48–67 → 14 MiB | 468–480 → 42 MiB |
+| point, `:as-of`, `:valid-at`, hot entity, attribute scan | unchanged | unchanged |
+
+`join_2` probes one entity's range for its one outer row. `join_3_selective` joins on the value position, so it is a `HashJoin` that reads every `:manager` fact into its table: a value probe would need AVET over pending facts, which the pending store does not have (decision 3 of the #545 plan). `join_3_scan` scans the AVET range of `:group 7`, joins `:follows` on its value with a `HashJoin` built on those rows (it streams every `:follows` fact), then probes `:name` per row. 10M runs with #545's last PR.
 
 ### Python FFI round trip
 

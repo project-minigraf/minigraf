@@ -27,6 +27,7 @@ impl Apply {
             Step::Pseudo { .. } => "Pseudo",
             Step::Filter(..) => "Filter",
             Step::Bind(..) => "Bind",
+            Step::Join(_) => "Join",
         };
         Apply {
             child,
@@ -105,6 +106,8 @@ fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<Batch> {
             batch.retain(&keep);
             batch.set_col(*slot, out);
         }
+        // Joins are operators of their own (`join::Join`).
+        Step::Join(_) => {}
     }
     Ok(batch)
 }

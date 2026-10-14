@@ -19,6 +19,12 @@ use std::collections::{HashMap, HashSet};
 
 pub(crate) struct Scan {
     spec: ScanSpec,
+    /// The entity of the current probe of a join's inner scan, by UUID and
+    /// DICT id (`None` for an entity only pending facts hold).
+    probe: Option<(EntityId, Option<u64>)>,
+    /// The DICT ids of the attribute and value constants, resolved once for
+    /// every probe; `Some(None)` when no committed key can match them.
+    consts: Option<Option<Consts>>,
     state: State,
     keys_buf: Vec<KeyFact>,
     facts_buf: Vec<Fact>,
@@ -45,7 +51,15 @@ struct Committed {
     shadow: HashSet<Vec<u8>>,
 }
 
+/// The attribute and value constants of a scan, against the DICT.
+#[derive(Clone)]
+struct Consts {
+    a: Option<u32>,
+    test: Option<KeyTest>,
+}
+
 /// A value constant over committed key values, with ids resolved.
+#[derive(Clone)]
 enum KeyTest {
     Exact(KeyValue),
     /// A keyword constant: the keyword's ident id, the named entity's id.
@@ -81,11 +95,20 @@ impl Scan {
     pub(crate) fn new(spec: ScanSpec) -> Self {
         Scan {
             spec,
+            probe: None,
+            consts: None,
             state: State::Start,
             keys_buf: Vec::new(),
             facts_buf: Vec::new(),
             counters: Counters::new("Scan"),
         }
+    }
+
+    /// Start again, over the facts of the entity `uuid` (DICT id `eid`)
+    /// only: one probe of an `IndexNestedLoopJoin`.
+    pub(crate) fn probe(&mut self, uuid: EntityId, eid: Option<u64>) {
+        self.probe = Some((uuid, eid));
+        self.state = State::Start;
     }
 }
 
@@ -94,7 +117,14 @@ impl Operator for Scan {
         loop {
             let mut batch = Batch::new(self.spec.width);
             match &mut self.state {
-                State::Start => self.state = open(&self.spec, ctx)?,
+                State::Start => {
+                    if self.consts.is_none()
+                        && let Some(keys) = ctx.keys
+                    {
+                        self.consts = Some(consts(&self.spec, keys)?);
+                    }
+                    self.state = open(&self.spec, self.probe.as_ref(), self.consts.as_ref(), ctx)?;
+                }
                 State::Committed(c) => {
                     let Some(keys) = ctx.keys else {
                         self.state = State::Pending(None);
@@ -154,7 +184,7 @@ impl Operator for Scan {
                 State::Pending(resume) => {
                     self.facts_buf.clear();
                     let more = ctx.snapshot.pending_live(
-                        range(&self.spec),
+                        range(&self.spec, self.probe.as_ref()),
                         self.spec.as_of,
                         resume,
                         BATCH_ROWS,
@@ -221,33 +251,47 @@ fn set(row: &mut [Option<Cell>], slot: usize, n: i64) {
     }
 }
 
-/// Resolve the committed ranges of `spec` and the pending triples that
-/// shadow them.
-fn open(spec: &ScanSpec, ctx: &mut Ctx<'_>) -> Result<State> {
-    let Some(keys) = ctx.keys else {
-        return Ok(State::Pending(None));
-    };
-    let pending = State::Pending(None);
-    let e = match &spec.e {
-        Term::Const(u) => match keys.eid_of(u)? {
-            Some(e) => Some(e),
-            None => return Ok(pending),
-        },
-        _ => None,
-    };
+/// The DICT ids of the constants of `spec`, or `None` when no committed key
+/// can match them.
+fn consts(spec: &ScanSpec, keys: &dyn KeySource) -> Result<Option<Consts>> {
     let a = match &spec.a {
         Term::Const(name) => match keys.iid_of(name)? {
             Some(a) => Some(a),
-            None => return Ok(pending),
+            None => return Ok(None),
         },
         _ => None,
     };
     let test = match &spec.v {
         Term::Const(c) => match key_test(keys, c)? {
             Some(t) => Some(t),
-            None => return Ok(pending),
+            None => return Ok(None),
         },
         _ => None,
+    };
+    Ok(Some(Consts { a, test }))
+}
+
+/// Resolve the committed ranges of `spec` (of the entity `probe`, when
+/// given) and the pending triples that shadow them.
+fn open(
+    spec: &ScanSpec,
+    probe: Option<&(EntityId, Option<u64>)>,
+    consts: Option<&Option<Consts>>,
+    ctx: &mut Ctx<'_>,
+) -> Result<State> {
+    let pending = State::Pending(None);
+    let (Some(keys), Some(Some(Consts { a, test }))) = (ctx.keys, consts) else {
+        return Ok(pending);
+    };
+    let (a, test) = (*a, test.clone());
+    let e = match (probe, &spec.e) {
+        (Some((_, Some(e))), _) => Some(*e),
+        (Some((_, None)), _) => return Ok(pending),
+        (None, Term::Const(u)) => match keys.eid_of(u)? {
+            Some(e) => Some(e),
+            None => return Ok(pending),
+        },
+        (None, _) => None,
     };
     let (ranges, test) = match (e, a, test) {
         (Some(e), Some(a), Some(KeyTest::Exact(v))) => (
@@ -261,7 +305,10 @@ fn open(spec: &ScanSpec, ctx: &mut Ctx<'_>) -> Result<State> {
         (None, None, t) => (vec![(Index::Eavt, Vec::new())], t),
     };
     let mut shadow = HashSet::new();
-    for f in ctx.snapshot.pending_records(range(spec), spec.as_of)? {
+    for f in ctx
+        .snapshot
+        .pending_records(range(spec, probe), spec.as_of)?
+    {
         if let Some(t) = committed_triple(keys, &f)? {
             shadow.insert(t);
         }
@@ -316,13 +363,17 @@ fn key_test(keys: &dyn KeySource, c: &ValueConst) -> Result<Option<KeyTest>> {
     })
 }
 
-/// The pending range of `spec`.
-fn range(spec: &ScanSpec) -> Range<'_> {
-    match (&spec.e, &spec.a) {
-        (Term::Const(e), Term::Const(a)) => Range::EntityAttribute(e, a),
-        (Term::Const(e), _) => Range::Entity(e),
-        (_, Term::Const(a)) => Range::Attribute(a),
-        _ => Range::All,
+/// The pending range of `spec` (of the entity `probe`, when given).
+fn range<'a>(spec: &'a ScanSpec, probe: Option<&'a (EntityId, Option<u64>)>) -> Range<'a> {
+    let e = match (probe, &spec.e) {
+        (Some((u, _)), _) | (None, Term::Const(u)) => Some(u),
+        _ => None,
+    };
+    match (e, &spec.a) {
+        (Some(e), Term::Const(a)) => Range::EntityAttribute(e, a),
+        (Some(e), _) => Range::Entity(e),
+        (None, Term::Const(a)) => Range::Attribute(a),
+        (None, _) => Range::All,
     }
 }
 

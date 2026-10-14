@@ -139,7 +139,7 @@ cargo run < demos/demo_negation.txt
    - `prepared.rs`: `BindValue`, `PreparedQuery` — parse-once/execute-many with named `$slot` bind slots; `prepare_query`, `substitute`
    - `magic_sets.rs`: Magic-sets rewriting for demand-driven recursive rule evaluation (not applied to rules with `not`/`not-join`)
 
-3a. **`src/query/engine/`** — Streaming query engine (#473), beside the executor until #551: `plan.rs` (which queries it runs: one pattern, then per-fact pseudo-attribute patterns on its entity and expression clauses in `optimizer::plan` order, plain `:find` variables, today), `scan.rs` (one pattern over committed key ranges via `CommittedReader::key_source`/`live_keys`, AVET ranges for cross-kind constants, then the pending range by whole runs), `filter.rs` (`Filter`/`Bind` and pseudo-attribute columns over batches), `cell.rs`/`batch.rs` (id cells in columnar batches of 1,024), `ids.rs` (DICT and provisional ids), `project.rs` (ids → values for returned rows only), `oracle.rs` (with `cfg(test)` or the `test-oracle` feature, every engine query also runs on the executor and must agree). `mod.rs`: `Operator` (`next_batch`/`close`/`counters`), `Stream` (the operator tree over an owned `Snapshot`, pulled one batch at a time). `DatalogExecutor::open` / `execute_query` try it first: a cursor gets the `Stream` (`Answer::Stream`), `execute` drains it.
+3a. **`src/query/engine/`** — Streaming query engine (#473), beside the executor until #551: `plan.rs` (which queries it runs: patterns with stored attributes and expression clauses in `optimizer::plan` order, or one pattern with per-fact pseudo-attribute patterns on its entity; plain `:find` variables, today), `scan.rs` (one pattern over committed key ranges via `CommittedReader::key_source`/`live_keys`, AVET ranges for cross-kind constants, then the pending range by whole runs; one entity per probe for a join), `join.rs` (`IndexNestedLoopJoin` when the pattern's entity is bound, `HashJoin` otherwise; `JoinKey`: floats by IEEE `==`, a keyword equals a ref to the entity it names), `filter.rs` (`Filter`/`Bind` and pseudo-attribute columns over batches), `cell.rs`/`batch.rs` (id cells in columnar batches of 1,024), `ids.rs` (DICT and provisional ids, `keyword_eid`), `project.rs` (ids → values for returned rows only), `oracle.rs` (with `cfg(test)` or the `test-oracle` feature, every engine query also runs on the executor and must agree). `mod.rs`: `Operator` (`next_batch`/`close`/`counters`), `Stream` (the operator tree over an owned `Snapshot`, pulled one batch at a time). `DatalogExecutor::open` / `execute_query` try it first: a cursor gets the `Stream` (`Answer::Stream`), `execute` drains it.
 
 4. **`src/temporal.rs`** — UTC-only timestamp parsing (avoids chrono CVE GHSA-wcg3-cvx6-7396)
 
@@ -204,7 +204,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1500 tests** (1490 passing, 10 ignored; unit + integration + doc).
+**1503 tests** (1493 passing, 10 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.

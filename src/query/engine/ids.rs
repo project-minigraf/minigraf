@@ -12,6 +12,8 @@
 
 use crate::error::{ErrorCode, err_coded};
 use crate::graph::types::EntityId;
+use crate::query::datalog::matcher::edn_to_entity_id;
+use crate::query::datalog::types::EdnValue;
 use crate::storage::KeySource;
 use anyhow::Result;
 use std::collections::HashMap;
@@ -35,6 +37,8 @@ struct Maps {
     uuid_by_eid: HashMap<u64, EntityId>,
     iid_by_name: HashMap<Arc<str>, u64>,
     name_by_iid: HashMap<u64, Arc<str>>,
+    /// The entity each keyword names, as an entity id.
+    eid_by_keyword: HashMap<u64, u64>,
 }
 
 impl IdSpace {
@@ -134,6 +138,30 @@ impl IdSpace {
         Ok(u)
     }
 
+    /// The id of the entity the keyword with id `iid` names
+    /// (`edn_to_entity_id`): a keyword and a ref to that entity are equal in
+    /// a join (#545).
+    pub(crate) fn keyword_eid(&mut self, keys: Option<&dyn KeySource>, iid: u64) -> Result<u64> {
+        for maps in [&self.provisional, &self.dict] {
+            if let Some(&e) = maps.eid_by_keyword.get(&iid) {
+                return Ok(e);
+            }
+        }
+        let name = self.name(keys, iid)?;
+        let uuid = edn_to_entity_id(&EdnValue::Keyword(name.to_string()))
+            .map_err(|e| err_coded!(ErrorCode::Int049, format!("query engine: {e}")))?;
+        let e = self.eid(keys, &uuid)?;
+        // Kept as long as the shorter-lived of the two ids.
+        let provisional = iid >= self.dict_iids && e >= self.dict_eids;
+        self.maps(provisional).eid_by_keyword.insert(iid, e);
+        Ok(e)
+    }
+
+    /// `eid` as a DICT id, or `None` for a provisional one.
+    pub(crate) fn dict_eid(&self, eid: u64) -> Option<u64> {
+        (eid < self.dict_eids).then_some(eid)
+    }
+
     /// The ident with id `iid`.
     pub(crate) fn name(&mut self, keys: Option<&dyn KeySource>, iid: u64) -> Result<Arc<str>> {
         let maps = self.maps(iid >= self.dict_iids);
@@ -171,5 +199,22 @@ mod tests {
         assert!(ids.uuid(None, ea).unwrap() == a, "round trip");
         assert_eq!(&*ids.name(None, ia).unwrap(), ":a");
         assert!(ids.uuid(None, 99).is_err(), "unknown id");
+    }
+
+    /// A keyword's entity id is the id of the UUID it names, whether that
+    /// UUID was met first as an entity or not.
+    #[test]
+    fn keyword_eid_is_the_named_entitys_id() {
+        let mut ids = IdSpace::new(None);
+        let named = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, b":alice");
+        let e = ids.eid(None, &named).unwrap();
+        let k = ids.iid(None, ":alice").unwrap();
+        assert_eq!(ids.keyword_eid(None, k).unwrap(), e);
+        ids.end_pull();
+        assert_eq!(ids.keyword_eid(None, k).unwrap(), e);
+        let u = uuid::Uuid::from_u128(7);
+        let k = ids.iid(None, &format!(":{u}")).unwrap();
+        let e = ids.keyword_eid(None, k).unwrap();
+        assert!(ids.uuid(None, e).unwrap() == u, "UUID keyword");
     }
 }

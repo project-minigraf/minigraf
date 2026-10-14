@@ -1,9 +1,10 @@
 //! Cells: the values operators exchange (#473 spec §5.2).
 
+use super::Ctx;
 use super::ids::IdSpace;
 use crate::graph::types::Value;
 use crate::storage::KeySource;
-use crate::storage::keys::{KeyValue, ValueRef};
+use crate::storage::keys::{KeyValue, SHORT_STRING_MAX, ValueRef};
 use anyhow::Result;
 use std::sync::Arc;
 
@@ -47,7 +48,9 @@ impl Cell {
         }
     }
 
-    /// The cell of a value, with ids from `ids`.
+    /// The cell of a value, with ids from `ids`. A string over 64 bytes
+    /// that the committed value pages hold is `Long`, as a committed key
+    /// holds it, so that equal strings are equal cells (#545).
     pub(crate) fn of_value(
         ids: &mut IdSpace,
         keys: Option<&dyn KeySource>,
@@ -58,9 +61,63 @@ impl Cell {
             Value::Boolean(b) => Cell::Val(Scalar::Bool(*b)),
             Value::Integer(n) => Cell::Val(Scalar::Int(*n)),
             Value::Float(f) => Cell::Val(Scalar::Float(*f)),
+            Value::String(s) if s.len() > SHORT_STRING_MAX => {
+                match keys.map(|k| k.long_value_ref(s)).transpose()?.flatten() {
+                    Some(vref) => Cell::Val(Scalar::Long(vref)),
+                    None => Cell::Val(Scalar::Str(Arc::from(s.as_str()))),
+                }
+            }
             Value::String(s) => Cell::Val(Scalar::Str(Arc::from(s.as_str()))),
             Value::Keyword(k) => Cell::Iid(ids.iid(keys, k)?),
             Value::Ref(u) => Cell::Eid(ids.eid(keys, u)?),
         })
     }
+}
+
+/// A cell as a join compares it (#473 spec §5.4): equal keys are
+/// join-equal cells.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) enum JoinKey {
+    Eid(u64),
+    Iid(u64),
+    Null,
+    Bool(bool),
+    Int(i64),
+    /// A float's bits, `-0.0` as `0.0`; never NaN.
+    Float(u64),
+    Str(Arc<str>),
+    Long(ValueRef),
+}
+
+impl JoinKey {
+    /// The key of `cell`, or `None` for a NaN, which equals nothing. With
+    /// `normalise`, a keyword is the entity it names, so that it equals a
+    /// ref to that entity; without, it equals the same keyword only.
+    pub(crate) fn of(cell: &Cell, normalise: bool, ctx: &mut Ctx<'_>) -> Result<Option<JoinKey>> {
+        Ok(Some(match cell {
+            Cell::Eid(e) => JoinKey::Eid(*e),
+            Cell::Iid(i) if normalise => JoinKey::Eid(ctx.ids.keyword_eid(ctx.keys, *i)?),
+            Cell::Iid(i) => JoinKey::Iid(*i),
+            Cell::Val(Scalar::Null) => JoinKey::Null,
+            Cell::Val(Scalar::Bool(b)) => JoinKey::Bool(*b),
+            Cell::Val(Scalar::Int(n)) => JoinKey::Int(*n),
+            Cell::Val(Scalar::Float(f)) if f.is_nan() => return Ok(None),
+            Cell::Val(Scalar::Float(f)) => JoinKey::Float(if *f == 0.0 { 0 } else { f.to_bits() }),
+            Cell::Val(Scalar::Str(s)) => JoinKey::Str(s.clone()),
+            Cell::Val(Scalar::Long(vref)) => JoinKey::Long(*vref),
+        }))
+    }
+}
+
+/// Whether `a` and `b` are join-equal (#473 spec §5.4).
+pub(crate) fn join_eq(a: &Cell, b: &Cell, normalise: bool, ctx: &mut Ctx<'_>) -> Result<bool> {
+    Ok(
+        match (
+            JoinKey::of(a, normalise, ctx)?,
+            JoinKey::of(b, normalise, ctx)?,
+        ) {
+            (Some(a), Some(b)) => a == b,
+            _ => false,
+        },
+    )
 }
