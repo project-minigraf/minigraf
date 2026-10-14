@@ -92,6 +92,13 @@ fn collect_all_patterns(clauses: &[WhereClause]) -> Vec<Pattern> {
     patterns
 }
 
+/// What [`DatalogExecutor::open`] gives a cursor: a whole result, or a
+/// query on the streaming engine to pull rows from.
+pub(crate) enum Answer {
+    Result(QueryResult),
+    Stream(Box<crate::query::engine::Stream>),
+}
+
 /// The result of executing a Datalog command via [`crate::db::Minigraf::execute`].
 ///
 /// Pattern-match on this to distinguish query results from write confirmations:
@@ -521,6 +528,22 @@ impl DatalogExecutor {
 
     /// Execute a query: find matching facts and return specified variables
     fn execute_query(&self, query: DatalogQuery) -> Result<QueryResult> {
+        match self.open_query(query)? {
+            Answer::Result(result) => Ok(result),
+            Answer::Stream(stream) => stream.collect(),
+        }
+    }
+
+    /// Run `command` for a cursor: a query the streaming engine runs is
+    /// opened, not run; anything else runs as [`Self::execute`] runs it.
+    pub(crate) fn open(&self, command: DatalogCommand) -> Result<Answer> {
+        match command {
+            DatalogCommand::Query(query) => self.open_query(query),
+            command => self.execute(command).map(Answer::Result),
+        }
+    }
+
+    fn open_query(&self, query: DatalogQuery) -> Result<Answer> {
         // Resolve :find functions up front so an unknown name fails whether or
         // not any row matches (#414).
         {
@@ -534,7 +557,7 @@ impl DatalogExecutor {
         // Check if query uses rules
         if query.uses_rules() {
             // Use StratifiedEvaluator for queries with rule invocations (handles negation and strata)
-            return self.execute_query_with_rules(query);
+            return self.execute_query_with_rules(query).map(Answer::Result);
         }
 
         // Warn about queries with no binding mechanism
@@ -547,24 +570,34 @@ impl DatalogExecutor {
         if self.facts_override.is_none()
             && let Some(plan) = crate::query::engine::plan(&query)
         {
-            let registry = self
-                .functions
-                .read()
-                .map_err(|_| err_coded!(ErrorCode::Qry008))?;
-            check_clauses(&query, &registry)?;
+            {
+                let registry = self
+                    .functions
+                    .read()
+                    .map_err(|_| err_coded!(ErrorCode::Qry008))?;
+                check_clauses(&query, &registry)?;
+            }
             let snapshot = self.read_snapshot()?;
-            let result = crate::query::engine::run(&snapshot, plan, &registry);
-            drop(registry);
-            if let Some(result) = result {
+            if let Some(stream) =
+                crate::query::engine::open(snapshot.clone(), plan, self.functions.clone())
+            {
+                #[cfg(test)]
+                crate::query::engine::RUNS.with(|r| r.set(r.get() + 1));
+                // The comparison drains a second stream, so the one returned
+                // stays unread.
                 #[cfg(any(test, feature = "test-oracle"))]
-                crate::query::engine::oracle::check(
-                    &result,
-                    &self.oracle(snapshot).execute_query_on_executor(query),
-                );
-                return result;
+                if let Some(again) = crate::query::engine::plan(&query).and_then(|plan| {
+                    crate::query::engine::open(snapshot.clone(), plan, self.functions.clone())
+                }) {
+                    crate::query::engine::oracle::check(
+                        &again.collect(),
+                        &self.oracle(snapshot).execute_query_on_executor(query),
+                    );
+                }
+                return Ok(Answer::Stream(Box::new(stream)));
             }
         }
-        self.execute_query_on_executor(query)
+        self.execute_query_on_executor(query).map(Answer::Result)
     }
 
     /// This executor over `snapshot`, for the engine's oracle (#473 spec §9).

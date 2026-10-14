@@ -299,7 +299,7 @@ impl BrowserDb {
             DatalogCommand::Retract(_) => bail_coded!(ErrorCode::Api012, "retract"),
             DatalogCommand::Rule(_) => bail_coded!(ErrorCode::Api012, "rule"),
         }
-        let (result, snapshot) = {
+        let (answer, snapshot) = {
             let inner = self.inner.borrow();
             let snapshot = inner.fact_storage.snapshot()?;
             let mut executor = DatalogExecutor::new_with_rules_and_functions(
@@ -308,9 +308,9 @@ impl BrowserDb {
                 inner.functions.clone(),
             );
             executor.set_snapshot(snapshot.clone());
-            (executor.execute(cmd)?, snapshot)
+            (executor.open(cmd)?, snapshot)
         };
-        crate::Cursor::from_result(result, snapshot)
+        crate::Cursor::open(answer, snapshot)
     }
 
     /// Apply a batch of pre-materialized facts to the in-memory store and

@@ -118,8 +118,8 @@ impl PreparedQuery {
     pub fn query(&self, bindings: &[(&str, BindValue)]) -> Result<Cursor, MinigrafError> {
         let run = || {
             let snapshot = self.fact_storage.snapshot()?;
-            let result = self.execute_inner(bindings, snapshot.clone())?;
-            Cursor::from_result(result, snapshot)
+            let (executor, command) = self.bind(bindings, snapshot.clone())?;
+            Cursor::open(executor.open(command)?, snapshot)
         };
         run().map_err(MinigrafError::from)
     }
@@ -130,6 +130,16 @@ impl PreparedQuery {
         bindings: &[(&str, BindValue)],
         snapshot: Snapshot,
     ) -> Result<QueryResult> {
+        let (executor, command) = self.bind(bindings, snapshot)?;
+        executor.execute(command)
+    }
+
+    /// The query with `bindings`, and an executor reading from `snapshot`.
+    fn bind(
+        &self,
+        bindings: &[(&str, BindValue)],
+        snapshot: Snapshot,
+    ) -> Result<(DatalogExecutor, DatalogCommand)> {
         let binding_map: HashMap<&str, &BindValue> =
             bindings.iter().map(|(name, val)| (*name, val)).collect();
 
@@ -147,7 +157,7 @@ impl PreparedQuery {
             self.functions.clone(),
         );
         executor.set_snapshot(snapshot);
-        executor.execute(DatalogCommand::Query(filled_query))
+        Ok((executor, DatalogCommand::Query(filled_query)))
     }
 }
 

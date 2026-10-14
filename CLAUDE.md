@@ -139,14 +139,14 @@ cargo run < demos/demo_negation.txt
    - `prepared.rs`: `BindValue`, `PreparedQuery` — parse-once/execute-many with named `$slot` bind slots; `prepare_query`, `substitute`
    - `magic_sets.rs`: Magic-sets rewriting for demand-driven recursive rule evaluation (not applied to rules with `not`/`not-join`)
 
-3a. **`src/query/engine/`** — Streaming query engine (#473), beside the executor until #551: `plan.rs` (which queries it runs: one pattern, then per-fact pseudo-attribute patterns on its entity and expression clauses in `optimizer::plan` order, plain `:find` variables, today), `scan.rs` (one pattern over committed key ranges via `CommittedReader::key_source`/`live_keys`, AVET ranges for cross-kind constants, then the pending range by whole runs), `filter.rs` (`Filter`/`Bind` and pseudo-attribute columns over batches), `cell.rs`/`batch.rs` (id cells in columnar batches of 1,024), `ids.rs` (DICT and provisional ids), `project.rs` (ids → values for returned rows only), `oracle.rs` (with `cfg(test)` or the `test-oracle` feature, every engine query also runs on the executor and must agree). `DatalogExecutor::execute_query` tries it first.
+3a. **`src/query/engine/`** — Streaming query engine (#473), beside the executor until #551: `plan.rs` (which queries it runs: one pattern, then per-fact pseudo-attribute patterns on its entity and expression clauses in `optimizer::plan` order, plain `:find` variables, today), `scan.rs` (one pattern over committed key ranges via `CommittedReader::key_source`/`live_keys`, AVET ranges for cross-kind constants, then the pending range by whole runs), `filter.rs` (`Filter`/`Bind` and pseudo-attribute columns over batches), `cell.rs`/`batch.rs` (id cells in columnar batches of 1,024), `ids.rs` (DICT and provisional ids), `project.rs` (ids → values for returned rows only), `oracle.rs` (with `cfg(test)` or the `test-oracle` feature, every engine query also runs on the executor and must agree). `mod.rs`: `Operator` (`next_batch`/`close`/`counters`), `Stream` (the operator tree over an owned `Snapshot`, pulled one batch at a time). `DatalogExecutor::open` / `execute_query` try it first: a cursor gets the `Stream` (`Answer::Stream`), `execute` drains it.
 
 4. **`src/temporal.rs`** — UTC-only timestamp parsing (avoids chrono CVE GHSA-wcg3-cvx6-7396)
 
 5. **`src/repl.rs`** — Interactive REPL; TTY-aware (suppresses prompts/banner for piped input)
 
 6. **`src/db.rs`** — Public API: `Minigraf::open/execute/query/fact_log/prepare/begin_write/checkpoint/save/verify/rebuild_indexes`, `WriteTransaction`, `IntegrityReport`, `OpenOptions::page_cache_size`, `OpenOptions::read_only` (#429: shared lock, nothing written, writes are `API-014`)
-   - `src/cursor.rs`: `Cursor` / `Batch` — owned, `Send` cursor returned by `Minigraf::query` and `PreparedQuery::query` (#432); answer computed at open today, shaped for streaming operators; holds a `Snapshot` (one state of the store, its committed generation pinned, #543) until dropped
+   - `src/cursor.rs`: `Cursor` / `Batch` — owned, `Send` cursor returned by `Minigraf::query` and `PreparedQuery::query` (#432); pulls engine queries one internal batch at a time (`close`/drop stops the work; a read error after some rows comes on the next call), other queries computed at open; holds a `Snapshot` (one state of the store, its committed generation pinned, #543) until dropped
    - `src/fact_log.rs`: `FactLog` / `FactFilter` / `FactRecord` / `FactOrder` — every fact version streamed by `Minigraf::fact_log` (#430): tx order (multi-pass, bounded window) or storage order, key-level filters; an open log pins the committed generation (`storage::pins`), so checkpoints run but do not reuse its pages (`API-013` deprecated, #543)
    - `src/log_writer.rs`: `LogWriter` — builds a new file from `FactRecord`s with their tx and valid-time kept (#431): tx-ordered appends with holes (`API-015`/`API-016`), batched copy-on-write checkpoints at tx boundaries, no WAL, built at `<path>.partial` and renamed by `finish` (`STG-043` if the target exists)
 
@@ -204,7 +204,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1481 tests** (1471 passing, 10 ignored; unit + integration + doc).
+**1489 tests** (1479 passing, 10 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.

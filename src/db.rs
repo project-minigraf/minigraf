@@ -798,9 +798,10 @@ impl Minigraf {
     ///
     /// The cursor's answer is fixed when this returns: writes that commit
     /// while it is open do not change it. The cursor owns what it needs, so it
-    /// can outlive this handle and move to another thread. While the engine
-    /// computes the whole answer up front, `max_results` and
-    /// `max_derived_facts` apply exactly as they do to [`Minigraf::execute`].
+    /// can outlive this handle and move to another thread. Queries the
+    /// streaming engine runs produce rows as they are pulled; others compute
+    /// the whole answer here, and `max_results` and `max_derived_facts` apply
+    /// exactly as they do to [`Minigraf::execute`].
     ///
     /// # Errors
     ///
@@ -828,8 +829,8 @@ impl Minigraf {
             DatalogCommand::Rule(_) => bail_coded!(ErrorCode::Api012, "rule"),
         }
         let snapshot = self.inner.fact_storage.snapshot()?;
-        let result = self.read_executor(snapshot.clone()).execute(cmd)?;
-        Cursor::from_result(result, snapshot)
+        let answer = self.read_executor(snapshot.clone()).open(cmd)?;
+        Cursor::open(answer, snapshot)
     }
 
     /// Stream every fact record (assertions and retractions, with their

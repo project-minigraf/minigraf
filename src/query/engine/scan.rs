@@ -9,7 +9,7 @@
 use super::batch::Batch;
 use super::cell::{Cell, Scalar};
 use super::plan::{Meta, ScanSpec, Term, Valid, ValueConst, names};
-use super::{BATCH_ROWS, Ctx};
+use super::{BATCH_ROWS, Counters, Ctx, Operator};
 use crate::graph::storage::PendingResume;
 use crate::graph::types::{EntityId, Fact, Value};
 use crate::storage::keys::{self, Index, KeyFact, KeyValue, SHORT_STRING_MAX, ValueKind};
@@ -22,6 +22,8 @@ pub(crate) struct Scan {
     state: State,
     keys_buf: Vec<KeyFact>,
     facts_buf: Vec<Fact>,
+    /// `rows_in` counts the live keys and pending facts read.
+    counters: Counters,
 }
 
 enum State {
@@ -82,10 +84,13 @@ impl Scan {
             state: State::Start,
             keys_buf: Vec::new(),
             facts_buf: Vec::new(),
+            counters: Counters::new("Scan"),
         }
     }
+}
 
-    pub(crate) fn next_batch(&mut self, ctx: &mut Ctx<'_>) -> Result<Option<Batch>> {
+impl Operator for Scan {
+    fn next_batch(&mut self, ctx: &mut Ctx<'_>) -> Result<Option<Batch>> {
         loop {
             let mut batch = Batch::new(self.spec.width);
             match &mut self.state {
@@ -111,6 +116,7 @@ impl Scan {
                     if c.resume.is_none() {
                         c.next += 1;
                     }
+                    self.counters.rows_in += self.keys_buf.len() as u64;
                     let valid = valid_at(self.spec.valid, ctx);
                     let mut row = vec![None; self.spec.width];
                     for kf in &self.keys_buf {
@@ -154,6 +160,7 @@ impl Scan {
                         BATCH_ROWS,
                         &mut self.facts_buf,
                     )?;
+                    self.counters.rows_in += self.facts_buf.len() as u64;
                     let valid = valid_at(self.spec.valid, ctx);
                     let mut row = vec![None; self.spec.width];
                     for f in &self.facts_buf {
@@ -163,7 +170,7 @@ impl Scan {
                             continue;
                         }
                         let keys = ctx.keys;
-                        let ids = &mut ctx.ids;
+                        let ids = &mut *ctx.ids;
                         if fill(&self.spec.e, &mut row, || {
                             Ok(Cell::Eid(ids.eid(keys, &f.entity)?))
                         })? && fill(&self.spec.a, &mut row, || {
@@ -191,9 +198,20 @@ impl Scan {
                 State::Done => return Ok(None),
             }
             if batch.len > 0 {
+                self.counters.out(&batch);
                 return Ok(Some(batch));
             }
         }
+    }
+
+    fn close(&mut self) {
+        self.state = State::Done;
+        self.keys_buf = Vec::new();
+        self.facts_buf = Vec::new();
+    }
+
+    fn counters(&self, out: &mut Vec<Counters>) {
+        out.push(self.counters);
     }
 }
 

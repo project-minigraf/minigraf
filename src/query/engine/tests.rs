@@ -457,3 +457,104 @@ fn cross_kind_constants_read_their_avet_ranges() {
     drop(file);
     check(&Minigraf::open(&path).unwrap());
 }
+
+/// Gives `rows` integers in one batch, then fails.
+struct FailAfter {
+    rows: i64,
+    sent: bool,
+    closed: bool,
+}
+
+impl super::Operator for FailAfter {
+    fn next_batch(&mut self, _: &mut super::Ctx<'_>) -> anyhow::Result<Option<super::Batch>> {
+        assert!(!self.closed, "no pull after close");
+        if self.sent {
+            anyhow::bail!("read failed");
+        }
+        self.sent = true;
+        let mut batch = super::Batch::new(1);
+        for n in 0..self.rows {
+            batch.push(&mut [Some(super::cell::Cell::Val(super::cell::Scalar::Int(n)))]);
+        }
+        Ok(Some(batch))
+    }
+
+    fn close(&mut self) {
+        self.closed = true;
+    }
+
+    fn counters(&self, _: &mut Vec<super::Counters>) {}
+}
+
+fn failing_cursor(rows: i64) -> crate::Cursor {
+    let snapshot = crate::graph::storage::FactStorage::new()
+        .snapshot()
+        .unwrap();
+    let stream = super::Stream::for_test(
+        snapshot.clone(),
+        Box::new(FailAfter {
+            rows,
+            sent: false,
+            closed: false,
+        }),
+    );
+    crate::Cursor::open(
+        crate::query::datalog::executor::Answer::Stream(Box::new(stream)),
+        snapshot,
+    )
+    .unwrap()
+}
+
+#[test]
+fn cursor_returns_gathered_rows_before_a_read_error() {
+    let mut cursor = failing_cursor(3);
+    assert_eq!(cursor.next_batch(10).unwrap().expect("rows first").len(), 3);
+    assert!(cursor.next_batch(10).is_err(), "then the error");
+    assert!(cursor.next_batch(10).unwrap().is_none(), "then done");
+
+    let mut cursor = failing_cursor(3);
+    assert_eq!(cursor.next_batch(3).unwrap().expect("rows").len(), 3);
+    assert!(
+        cursor.next_batch(3).is_err(),
+        "an error with no rows gathered"
+    );
+    assert!(cursor.next_batch(3).unwrap().is_none());
+
+    let items: Vec<bool> = failing_cursor(2).map(|r| r.is_ok()).collect();
+    assert_eq!(
+        items,
+        [true, true, false],
+        "the iterator ends after the error"
+    );
+
+    let mut cursor = failing_cursor(2);
+    assert_eq!(cursor.next_batch(5).unwrap().expect("rows").len(), 2);
+    assert!(cursor.next().expect("the error").is_err());
+    assert!(cursor.next().is_none());
+}
+
+/// DICT lookups are cached for one pull only, so a cursor's memory does not
+/// grow with the rows it returns; pending entities keep their ids.
+#[test]
+fn dict_cache_is_dropped_after_each_pull() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Minigraf::open(dir.path().join("ids.graph")).unwrap();
+    let facts: String = (0..3000)
+        .map(|i| format!("[:p{i} :person/age {i}]"))
+        .collect();
+    db.execute(&format!("(transact [{facts}])")).unwrap();
+    db.checkpoint().unwrap();
+    db.execute("(transact [[:new :person/age 1] [:new :person/age 2]])")
+        .unwrap();
+    let mut cursor = db
+        .query("(query [:find ?e ?a :where [?e :person/age ?a]])")
+        .unwrap();
+    let mut rows = 0;
+    while let Some(batch) = cursor.next_batch(500).unwrap() {
+        rows += batch.len();
+        if let Some(stream) = cursor.stream_mut() {
+            assert_eq!(stream.ids.dict_cached(), 0, "no DICT lookups kept");
+        }
+    }
+    assert_eq!(rows, 3002);
+}
