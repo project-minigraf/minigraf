@@ -139,7 +139,7 @@ cargo run < demos/demo_negation.txt
    - `prepared.rs`: `BindValue`, `PreparedQuery` — parse-once/execute-many with named `$slot` bind slots; `prepare_query`, `substitute`
    - `magic_sets.rs`: Magic-sets rewriting for demand-driven recursive rule evaluation (not applied to rules with `not`/`not-join`)
 
-3a. **`src/query/engine/`** — Streaming query engine (#473), beside the executor until #551: `plan.rs` (which queries it runs: one pattern, plain `:find` variables, today), `scan.rs` (one pattern over a committed key range via `CommittedReader::key_source`/`live_keys`, then the pending range by whole runs), `cell.rs`/`batch.rs` (id cells in columnar batches of 1,024), `ids.rs` (DICT and provisional ids), `project.rs` (ids → values for returned rows only), `oracle.rs` (with `cfg(test)` or the `test-oracle` feature, every engine query also runs on the executor and must agree). `DatalogExecutor::execute_query` tries it first.
+3a. **`src/query/engine/`** — Streaming query engine (#473), beside the executor until #551: `plan.rs` (which queries it runs: one pattern, then per-fact pseudo-attribute patterns on its entity and expression clauses in `optimizer::plan` order, plain `:find` variables, today), `scan.rs` (one pattern over committed key ranges via `CommittedReader::key_source`/`live_keys`, AVET ranges for cross-kind constants, then the pending range by whole runs), `filter.rs` (`Filter`/`Bind` and pseudo-attribute columns over batches), `cell.rs`/`batch.rs` (id cells in columnar batches of 1,024), `ids.rs` (DICT and provisional ids), `project.rs` (ids → values for returned rows only), `oracle.rs` (with `cfg(test)` or the `test-oracle` feature, every engine query also runs on the executor and must agree). `DatalogExecutor::execute_query` tries it first.
 
 4. **`src/temporal.rs`** — UTC-only timestamp parsing (avoids chrono CVE GHSA-wcg3-cvx6-7396)
 
@@ -204,7 +204,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1477 tests** (1467 passing, 10 ignored; unit + integration + doc).
+**1481 tests** (1471 passing, 10 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
