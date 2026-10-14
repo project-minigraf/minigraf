@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v2.0.6 — 2026-10-14
+
+Patch release on the v2.x line under the [support policy](PHILOSOPHY.md#support-policy): three data-integrity fixes for queries that run on another thread while a transaction commits or a checkpoint runs (#554, #555, #558). File format is unchanged (v7). No API changes. Stored data was never affected. Upgrading is recommended for every v2.x user who queries and writes from different threads.
+
 ### Fixed
 
 - **A query on another thread sees each transaction whole (#554).** A commit wrote its WAL entry, then added the transaction's facts to the in-memory store one fact at a time, each under its own lock, so a query running on another thread could return part of the transaction. `execute("(transact ...)")`, `execute("(retract ...)")` and `WriteTransaction::commit` all did this. They now add the whole transaction under one lock, as does WAL replay. Stored data was never affected. Affected `WriteTransaction` since v0.5.0 and `execute` since v0.6.0. Also fixed in v3.0.0.
@@ -16,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Tests
 
 - `tests/snapshot_atomicity_test.rs` races a writer against a reader: a query must see each transaction whole, whether written with `execute` or a `WriteTransaction` (#554), and must read one state for all its patterns (#555), in memory and on file, and must not miss committed facts while a checkpoint runs (#558).
+
+### Known issues
+
+- Same-transaction multi-valued facts can read back as one value (#371, #287), a fact retracted and re-asserted in one `WriteTransaction` is lost at commit (#477), a later assertion does not replace an earlier valid-time window (#435), `save()` is not crash-atomic (#374), and a `.wal` from a later checkpoint is replayed onto an older `.graph` (#535); all are fixed in v3.0.0. All v2.x known issues, with affected versions and workarounds, are listed in the pinned issue #421.
 
 ## v2.0.5 — 2026-10-11
 
