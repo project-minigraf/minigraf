@@ -1144,39 +1144,48 @@ mod tests {
 
     #[test]
     fn kind_prefixes_bound_exactly_their_kind() {
-        let avet = |v: KeyValue| {
-            KeyFact {
-                e: 300,
-                a: 7,
-                v,
-                tx_count: 5,
-                vf: 0,
-                vt: VALID_TIME_FOREVER,
-                asserted: true,
-            }
-            .key(Index::Avet)
-            .unwrap()
-        };
         let floats = attribute_kind_prefix(7, ValueKind::Float);
         let keywords = attribute_kind_prefix(7, ValueKind::Keyword);
-        for f in [f64::NEG_INFINITY, -0.0, 0.0, 1.5, f64::NAN] {
-            let k = avet(KeyValue::Float(f));
-            assert!(k.starts_with(&floats) && !k.starts_with(&keywords));
-        }
-        let k = avet(KeyValue::Keyword(3));
-        assert!(k.starts_with(&keywords) && !k.starts_with(&floats));
-        for other in [
+        let other_attr = attribute_kind_prefix(8, ValueKind::Float);
+        let values = [
+            KeyValue::Float(f64::NEG_INFINITY),
+            KeyValue::Float(-0.0),
+            KeyValue::Float(0.0),
+            KeyValue::Float(1.5),
+            KeyValue::Float(f64::NAN),
+            KeyValue::Keyword(3),
             KeyValue::Int(1),
             KeyValue::Ref(3),
             KeyValue::Null,
             KeyValue::Str("x".into()),
-        ] {
-            let k = avet(other);
-            assert!(!k.starts_with(&floats) && !k.starts_with(&keywords));
-        }
-        assert!(
-            !avet(KeyValue::Float(1.0)).starts_with(&attribute_kind_prefix(8, ValueKind::Float))
-        );
+        ];
+        // (in the float range, in the keyword range, in attribute 8's floats)
+        let got: Vec<(bool, bool, bool)> = values
+            .into_iter()
+            .filter_map(|v| {
+                KeyFact {
+                    e: 300,
+                    a: 7,
+                    v,
+                    tx_count: 5,
+                    vf: 0,
+                    vt: VALID_TIME_FOREVER,
+                    asserted: true,
+                }
+                .key(Index::Avet)
+            })
+            .map(|k| {
+                (
+                    k.starts_with(&floats),
+                    k.starts_with(&keywords),
+                    k.starts_with(&other_attr),
+                )
+            })
+            .collect();
+        let mut want = vec![(true, false, false); 5];
+        want.push((false, true, false));
+        want.extend([(false, false, false); 4]);
+        assert_eq!(got, want);
     }
 
     #[test]
