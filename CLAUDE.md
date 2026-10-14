@@ -118,7 +118,7 @@ cargo run < demos/demo_negation.txt
    - `btree.rs`: On-disk B+tree over byte keys (`build_btree`, `cow_insert`, `LeafCursor` with `seek`, `prefix_scan`, `get`, `MutexStorageBackend`)
    - `dict.rs`: `DictReader` (id ↔ UUID/ident, tx timestamps, long values) and `Encoder` (checkpoint-time id assignment and key building)
    - `value_pages.rs`: append-only value pages for strings over 64 bytes
-   - `reader.rs`: `OnDiskReader` — covering reads of committed facts (`CommittedReader`); `live_facts` decides net-assert on index keys (#379)
+   - `reader.rs`: `OnDiskReader` — covering reads of committed facts (`CommittedReader`, `KeySource`); `live_facts` and the resumable `live_keys` decide net-assert on index keys (#379)
    - `verify.rs`: integrity walk for `Minigraf::verify` (tree order, index digests, DICT, page accounting) and the source choice for `rebuild_indexes` (#373)
    - `meta.rs` / `page.rs` / `freelist.rs`: meta pages A/B, the common page header and allocator (skips quarantined ids), free-list chain
    - `pins.rs`: `Pins` / `GenerationPin` — generations held by open snapshots and the quarantine of pages checkpoints freed after them (#543)
@@ -138,6 +138,8 @@ cargo run < demos/demo_negation.txt
    - `optimizer.rs`: Selectivity-based join reordering; disabled under `wasm` feature
    - `prepared.rs`: `BindValue`, `PreparedQuery` — parse-once/execute-many with named `$slot` bind slots; `prepare_query`, `substitute`
    - `magic_sets.rs`: Magic-sets rewriting for demand-driven recursive rule evaluation (not applied to rules with `not`/`not-join`)
+
+3a. **`src/query/engine/`** — Streaming query engine (#473), beside the executor until #551: `plan.rs` (which queries it runs: one pattern, plain `:find` variables, today), `scan.rs` (one pattern over a committed key range via `CommittedReader::key_source`/`live_keys`, then the pending range by whole runs), `cell.rs`/`batch.rs` (id cells in columnar batches of 1,024), `ids.rs` (DICT and provisional ids), `project.rs` (ids → values for returned rows only), `oracle.rs` (with `cfg(test)` or the `test-oracle` feature, every engine query also runs on the executor and must agree). `DatalogExecutor::execute_query` tries it first.
 
 4. **`src/temporal.rs`** — UTC-only timestamp parsing (avoids chrono CVE GHSA-wcg3-cvx6-7396)
 
@@ -202,7 +204,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1473 tests** (1463 passing, 10 ignored; unit + integration + doc).
+**1477 tests** (1467 passing, 10 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
