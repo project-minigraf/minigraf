@@ -1494,7 +1494,7 @@ type Binding = std::collections::HashMap<String, Value>;
 /// returned as they were bound. An expression binding overwrites the value
 /// where the planner places it, and later patterns keep it. A
 /// pseudo-attribute pattern never replaces a value.
-struct Binders {
+pub(crate) struct Binders {
     /// Each top-level pattern (rule calls as patterns) and its position in
     /// `:where`; taken as the planner hands them out.
     text: Vec<(Pattern, usize)>,
@@ -1504,7 +1504,7 @@ struct Binders {
 }
 
 impl Binders {
-    fn new(where_clauses: &[WhereClause], rule_patterns: Vec<(Pattern, usize)>) -> Self {
+    pub(crate) fn new(where_clauses: &[WhereClause], rule_patterns: Vec<(Pattern, usize)>) -> Self {
         let mut text: Vec<(Pattern, usize)> = where_clauses
             .iter()
             .enumerate()
@@ -1522,7 +1522,7 @@ impl Binders {
 
     /// Record the pattern `p`, run next, and return the variables whose
     /// value it replaces.
-    fn pattern(&mut self, p: &Pattern) -> Vec<String> {
+    pub(crate) fn pattern(&mut self, p: &Pattern) -> Vec<String> {
         let at = match self.text.iter().position(|(q, _)| q == p) {
             Some(i) => self.text.swap_remove(i).1,
             None => usize::MAX,
@@ -1558,7 +1558,7 @@ impl Binders {
     }
 
     /// Record an expression binding `var`.
-    fn expression(&mut self, var: &str) {
+    pub(crate) fn expression(&mut self, var: &str) {
         self.by_var.insert(var.to_string(), None);
     }
 }

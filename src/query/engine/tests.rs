@@ -15,7 +15,7 @@ fn runs() -> usize {
 /// Rows of `query`, which must run on the engine.
 fn rows(db: &Minigraf, query: &str) -> usize {
     let before = runs();
-    let QueryResult::QueryResults { results, .. } = db.execute(query).unwrap() else {
+    let QueryResult::QueryResults { results, .. } = db.execute(query).expect(query) else {
         panic!("expected query results");
     };
     assert_eq!(runs(), before + 1, "query ran on the engine");
@@ -33,7 +33,8 @@ fn uuid_of(entity: &str) -> uuid::Uuid {
 
 /// One batch of history, numbered `round`: assertions, retractions,
 /// re-assertions in new windows, refs, keywords (one naming an entity by its
-/// UUID), floats, long strings.
+/// UUID, one naming an attribute), floats, long strings, attributes that
+/// name entities.
 fn write_round(db: &Minigraf, round: u32) {
     let scores = ["0.30000000000000004", "1.5", "-0.0", "0.0", "2.5"];
     for p in 0..6u32 {
@@ -44,7 +45,7 @@ fn write_round(db: &Minigraf, round: u32) {
              [:p{p} :person/friend :p{f}] [:p{p} :person/name \"n{p}\"] \
              [:p{p} :person/bio \"{bio}\"] [:p{p} :person/ok {ok}] [:p{p} :person/self :p{p}] \
              [:p{p} :person/boss #uuid \"{boss}\"] [:p{p} :person/alias :{alias}] \
-             [:p{p} :person/score {score}]])",
+             [:p{p} :person/score {score}] [:p{p} :person/attr :person/age] [:p{p} :p{f} {p}]])",
             age = 20 + round % 4,
             bio = long(p % 2),
             ok = (round + p) % 2 == 0,
@@ -204,6 +205,14 @@ fn queries(tx: u64) -> Vec<String> {
             ));
         }
     }
+    for clauses in joins() {
+        let find = vars_of(clauses);
+        for temporal in temporals(tx) {
+            out.push(format!(
+                "(query [:find {find} {temporal} :where {clauses}])"
+            ));
+        }
+    }
     for (find, clauses) in pseudo {
         for temporal in &pseudo_temporals {
             out.push(format!(
@@ -212,6 +221,65 @@ fn queries(tx: u64) -> Vec<String> {
         }
     }
     out
+}
+
+/// Join shapes (#545): on the entity, value and attribute positions, cross
+/// products, keywords and refs of one entity in both text orders, floats,
+/// long strings, three patterns, expressions between joins.
+fn joins() -> Vec<&'static str> {
+    vec![
+        // IndexNestedLoopJoin: the entity is bound.
+        "[?e :person/name ?n] [?e :person/age ?a]",
+        "[?e :person/age ?a] [?e ?b ?v]",
+        "[?e :person/name ?n] [?e :person/name ?n]",
+        // ... by a keyword value naming it, or a ref.
+        "[?e :person/friend ?f] [?f :person/name ?n]",
+        "[?f :person/name ?n] [?e :person/friend ?f]",
+        "[?e :person/boss ?f] [?f :person/name ?n]",
+        "[?e :person/alias ?x] [?x :person/age ?a]",
+        "[?e :person/friend ?f] [?f :person/friend ?g] [?g :person/name ?n]",
+        "[?e :person/self ?x] [?x :person/self ?x]",
+        "[?e :person/friend ?f] [?f :person/self ?e]",
+        "[?e :person/age ?a] [?e :person/score 0.0]",
+        // HashJoin on the value position: keywords and refs, both orders.
+        "[?e :person/boss ?b] [?f :person/friend ?b]",
+        "[?f :person/friend ?b] [?e :person/boss ?b]",
+        "[?e :person/alias ?b] [?f :person/boss ?b]",
+        "[?e :person/friend ?b] [?b :person/self ?b]",
+        "[?a :person/age ?v] [?b :person/age ?v]",
+        "[?a :person/score ?s] [?b :person/score ?s]",
+        "[?a :person/bio ?s] [?b :person/bio ?s]",
+        "[?a :person/status ?s] [:p1 :person/status ?s]",
+        "[:p0 :person/friend ?f] [?e :person/friend ?f]",
+        // ... on the attribute position, from attributes or entities.
+        "[?e ?a 21] [:p1 ?a ?w]",
+        "[?e :person/boss ?x] [?y ?x ?v]",
+        "[?e :person/friend ?x] [?y ?x ?v]",
+        "[?e :person/attr ?x] [?y ?x ?v]",
+        // Cross products.
+        "[?e :person/ok true] [?f :person/status :s1]",
+        "[:p1 :person/age ?a] [:p2 :person/age ?b]",
+        "[?e :person/null ?x] [?f :person/null ?y]",
+        // Expressions between joins.
+        "[?e :person/age ?a] [?f :person/age ?b] [(< ?a ?b)]",
+        "[?e :person/age ?a] [(+ ?a 1) ?b] [?f :person/age ?b]",
+        "[?e :person/friend ?s] [(= ?s :p1)] [?f :person/boss ?s]",
+        "[?e :person/name ?s] [(= ?s \"n2\")] [?f :person/name ?s]",
+        "[?e :person/score ?s] [(- 0.0 ?s) ?t] [?f :person/score ?t]",
+        "[?e :person/boss ?b] [(+ 18 3) ?b] [?f :person/age ?b]",
+        "[?e :person/age ?a] [(+ ?a 1) ?a] [?f :person/age ?a]",
+    ]
+}
+
+/// The variables of `clauses`, in order.
+fn vars_of(clauses: &str) -> String {
+    let mut vars: Vec<&str> = Vec::new();
+    for t in clauses.split(|c: char| c.is_whitespace() || "[]()".contains(c)) {
+        if t.starts_with('?') && !t.starts_with("?_") && !vars.contains(&t) {
+            vars.push(t);
+        }
+    }
+    vars.join(" ")
 }
 
 fn temporals(tx: u64) -> [String; 6] {
@@ -295,8 +363,7 @@ fn engine_reads_many_batches() {
     assert_eq!(rows(&db, "(query [:find ?e :where [?e :big/n 2999]])"), 1);
 }
 
-/// The executor still runs what the engine does not: two patterns,
-/// aggregates, `:as-of` a timestamp, `:db/valid-at`, pseudo-attributes of
+/// The executor still runs what the engine does not: aggregates, `:as-of` a timestamp, `:db/valid-at`, pseudo-attributes of
 /// another entity, a pseudo-attribute pattern planned first, an expression
 /// rebinding the entity before a pseudo-attribute pattern.
 #[test]
@@ -304,7 +371,6 @@ fn other_queries_stay_on_the_executor() {
     let db = Minigraf::in_memory().unwrap();
     write_round(&db, 0);
     for q in [
-        "(query [:find ?e ?n :where [?e :person/name ?n] [?e :person/age ?a]])",
         "(query [:find (count ?e) :where [?e :person/name ?n]])",
         "(query [:find ?e :as-of \"2099-01-01T00:00:00Z\" :where [?e :person/name ?n]])",
         "(query [:find ?e ?t :where [?e :person/name ?n] [?e :db/valid-at ?t]])",
@@ -316,6 +382,9 @@ fn other_queries_stay_on_the_executor() {
          :where [_ :person/name ?e] [_ :db/tx-count ?t]])",
         "(query [:find ?n ?t :valid-at :any-valid-time \
          :where [?e :person/name ?n] [(+ 1 2) ?e] [?e :db/tx-count ?t]])",
+        // Pseudo-attributes across joins wait for #545's last part.
+        "(query [:find ?e ?t :valid-at :any-valid-time \
+         :where [?e :person/name ?n] [?e :person/age ?a] [?e :db/tx-count ?t]])",
     ] {
         let before = runs();
         db.execute(q).unwrap();
@@ -557,4 +626,106 @@ fn dict_cache_is_dropped_after_each_pull() {
         }
     }
     assert_eq!(rows, 3002);
+}
+
+/// The planner's join choice (decision 3 of the #545 plan): an
+/// `IndexNestedLoopJoin` when the entity is bound, a `HashJoin` otherwise,
+/// built on the side with the smaller estimate.
+#[test]
+fn planner_chooses_the_join() {
+    use super::plan::{JoinKind, Step, plan};
+    use crate::query::datalog::parser::parse_datalog_command;
+    use crate::query::datalog::types::DatalogCommand;
+    let kinds = |q: &str| -> Vec<String> {
+        let Ok(DatalogCommand::Query(query)) = parse_datalog_command(q) else {
+            panic!("expected a query");
+        };
+        let plan = plan(&query).expect("an engine plan");
+        plan.steps
+            .iter()
+            .filter_map(|s| match s {
+                Step::Join(j) => Some(match j.kind {
+                    JoinKind::Probe(_) => "probe".to_string(),
+                    JoinKind::Hash { build_inner } => format!("hash inner={build_inner}"),
+                }),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(
+        kinds("(query [:find ?e :where [?e :a ?x] [?e :b ?y]])"),
+        ["probe"]
+    );
+    assert_eq!(
+        kinds("(query [:find ?e :where [?e :a ?x] [?f :b ?x]])"),
+        ["hash inner=true"]
+    );
+    assert_eq!(
+        kinds("(query [:find ?e :where [?e :a 1] [?f :b ?y] [?f :c ?e]])"),
+        ["hash inner=false", "probe"]
+    );
+    assert_eq!(
+        kinds("(query [:find ?e :where [?e :a ?x] [?f ?x ?y]])"),
+        ["hash inner=false"]
+    );
+}
+
+/// Joins whose answers span many batches: one probe with more than a batch
+/// of matches, a cross product, a table built on the outer side, over
+/// committed and pending facts.
+#[test]
+fn engine_joins_read_many_batches() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Minigraf::open(dir.path().join("joins.graph")).unwrap();
+    let facts: String = (0..2000)
+        .map(|i| {
+            format!(
+                "[:e{i} :big/n {i}] [:e{i} :big/tag :t{}] [:hub :big/has :e{i}]",
+                i % 7
+            )
+        })
+        .collect();
+    db.execute(&format!("(transact [{facts}])")).unwrap();
+    db.checkpoint().unwrap();
+    let more: String = (2000..2600)
+        .map(|i| format!("[:e{i} :big/n {i}] [:hub :big/has :e{i}]"))
+        .collect();
+    db.execute(&format!("(transact [{more}])")).unwrap();
+    db.execute("(retract [[:e5 :big/n 5] [:e2001 :big/n 2001]])")
+        .unwrap();
+    assert_eq!(
+        rows(
+            &db,
+            "(query [:find ?e ?n ?t :where [?e :big/n ?n] [?e :big/tag ?t]])"
+        ),
+        1999
+    );
+    assert_eq!(
+        rows(
+            &db,
+            "(query [:find ?x ?n :where [:hub :big/has ?x] [?x :big/n ?n]])"
+        ),
+        2598
+    );
+    assert_eq!(
+        rows(
+            &db,
+            "(query [:find ?h ?x :where [?h :big/has ?x] [?x :big/tag :t3]])"
+        ),
+        286
+    );
+    assert_eq!(
+        rows(
+            &db,
+            "(query [:find ?a ?b :where [?a :big/tag :t1] [?b :big/tag :t2] [(< 0 1)]])"
+        ),
+        286 * 286
+    );
+    assert_eq!(
+        rows(
+            &db,
+            "(query [:find ?a ?b :where [?a :big/tag ?t] [?b :big/tag ?t]])"
+        ),
+        5 * 286 * 286 + 2 * 285 * 285
+    );
 }

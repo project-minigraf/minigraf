@@ -10,6 +10,7 @@ mod batch;
 mod cell;
 mod filter;
 mod ids;
+mod join;
 #[cfg(any(test, feature = "test-oracle"))]
 pub(crate) mod oracle;
 mod plan;
@@ -131,7 +132,10 @@ pub(crate) fn open(
     } = plan;
     let mut root: Box<dyn Operator> = Box::new(scan::Scan::new(scan));
     for step in steps {
-        root = Box::new(filter::Apply::new(root, step));
+        root = match step {
+            plan::Step::Join(spec) => Box::new(join::Join::new(root, spec)),
+            step => Box::new(filter::Apply::new(root, step)),
+        };
     }
     Some(Stream {
         snapshot,
