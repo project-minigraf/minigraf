@@ -277,6 +277,10 @@ impl<B: StorageBackend + 'static> KeySource for OnDiskReader<B> {
         self.dict().find_long_value(s)
     }
 
+    fn tx_id_of(&self, tx_count: u64) -> Result<u64> {
+        self.dict().tx_id_of(tx_count)
+    }
+
     fn live_keys(
         &self,
         index: Index,

@@ -629,6 +629,25 @@ pub fn attribute_value_prefix(a: u32, v: &KeyValue) -> Vec<u8> {
     k
 }
 
+/// A kind of value whose matches a constant cannot name by one key: floats
+/// match within an epsilon, keywords match a UUID constant by the entity
+/// they name (#544).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValueKind {
+    Float,
+    Keyword,
+}
+
+/// Key prefix of every AVET entry of attribute `a` with a value of `kind`.
+pub fn attribute_kind_prefix(a: u32, kind: ValueKind) -> Vec<u8> {
+    let mut k = attribute_prefix(a);
+    k.push(match kind {
+        ValueKind::Float => TAG_FLOAT,
+        ValueKind::Keyword => TAG_KEYWORD,
+    });
+    k
+}
+
 // ─── DICT keys (§5.2) ────────────────────────────────────────────────────────
 
 pub const DICT_UUID_TO_EID: u8 = 0x01;
@@ -1121,6 +1140,43 @@ mod tests {
         let aevt = f.key(Index::Aevt).unwrap();
         assert!(aevt.starts_with(&attribute_prefix(7)));
         assert!(!aevt.starts_with(&attribute_prefix(700)));
+    }
+
+    #[test]
+    fn kind_prefixes_bound_exactly_their_kind() {
+        let avet = |v: KeyValue| {
+            KeyFact {
+                e: 300,
+                a: 7,
+                v,
+                tx_count: 5,
+                vf: 0,
+                vt: VALID_TIME_FOREVER,
+                asserted: true,
+            }
+            .key(Index::Avet)
+            .unwrap()
+        };
+        let floats = attribute_kind_prefix(7, ValueKind::Float);
+        let keywords = attribute_kind_prefix(7, ValueKind::Keyword);
+        for f in [f64::NEG_INFINITY, -0.0, 0.0, 1.5, f64::NAN] {
+            let k = avet(KeyValue::Float(f));
+            assert!(k.starts_with(&floats) && !k.starts_with(&keywords));
+        }
+        let k = avet(KeyValue::Keyword(3));
+        assert!(k.starts_with(&keywords) && !k.starts_with(&floats));
+        for other in [
+            KeyValue::Int(1),
+            KeyValue::Ref(3),
+            KeyValue::Null,
+            KeyValue::Str("x".into()),
+        ] {
+            let k = avet(other);
+            assert!(!k.starts_with(&floats) && !k.starts_with(&keywords));
+        }
+        assert!(
+            !avet(KeyValue::Float(1.0)).starts_with(&attribute_kind_prefix(8, ValueKind::Float))
+        );
     }
 
     #[test]

@@ -27,4 +27,21 @@ impl Batch {
         }
         self.len += 1;
     }
+
+    /// Keep the rows whose entry in `keep` is true.
+    pub(crate) fn retain(&mut self, keep: &[bool]) {
+        for col in &mut self.cols {
+            let mut k = keep.iter();
+            col.retain(|_| k.next().copied().unwrap_or(false));
+        }
+        self.len = keep.iter().filter(|&&k| k).count();
+    }
+
+    /// Set the column of `slot`: the next new slot, or one already filled.
+    pub(crate) fn set_col(&mut self, slot: usize, col: Vec<Cell>) {
+        match self.cols.get_mut(slot) {
+            Some(c) => *c = col,
+            None => self.cols.push(col),
+        }
+    }
 }

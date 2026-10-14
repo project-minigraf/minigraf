@@ -441,6 +441,8 @@ pub trait KeySource: Send + Sync {
     fn long_value(&self, vref: keys::ValueRef) -> Result<String>;
     /// Where the long string `s` is stored, if a committed fact holds it.
     fn long_value_ref(&self, s: &str) -> Result<Option<keys::ValueRef>>;
+    /// The `tx_id` of the committed transaction `tx_count`.
+    fn tx_id_of(&self, tx_count: u64) -> Result<u64>;
     /// The keys of `index` that start with `prefix` and survive net-assert at
     /// `as_of`, decoded, appended to `out` in key order.
     ///

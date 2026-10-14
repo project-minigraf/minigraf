@@ -26,7 +26,8 @@ pub(crate) fn project(batch: &Batch, find: &[usize], ctx: &mut Ctx<'_>) -> Resul
     Ok(rows)
 }
 
-fn value(cell: &Cell, ctx: &mut Ctx<'_>) -> Result<Value> {
+/// The value of `cell`.
+pub(crate) fn value(cell: &Cell, ctx: &mut Ctx<'_>) -> Result<Value> {
     Ok(match cell {
         Cell::Eid(e) => Value::Ref(ctx.ids.uuid(ctx.keys, *e)?),
         Cell::Iid(i) => Value::Keyword(ctx.ids.name(ctx.keys, *i)?.to_string()),
