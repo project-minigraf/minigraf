@@ -515,7 +515,7 @@ impl PatternMatcher {
                     // the normal scan path so each fact produces one binding (all
                     // identical). Task 5 (executor) will inject the correct value.
                     PseudoAttr::ValidAt => {
-                        return self.match_pattern_with_bindings_scan(pattern, existing, &[]);
+                        return self.match_pattern_with_bindings_scan(pattern, existing, rebind);
                     }
                 };
                 if let Some(stored_value) = existing.get(&hidden_key) {
@@ -528,12 +528,7 @@ impl PatternMatcher {
             }
         }
 
-        // Default: scan all facts. Pseudo-attribute patterns never replace a
-        // value (#545).
-        let rebind = match &pattern.attribute {
-            AttributeSpec::Real(_) => rebind,
-            AttributeSpec::Pseudo(_) => &[],
-        };
+        // Default: scan all facts
         self.match_pattern_with_bindings_scan(pattern, existing, rebind)
     }
 

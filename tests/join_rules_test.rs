@@ -136,3 +136,43 @@ fn keyword_or_ref_in_a_rule_query() {
     assert_eq!(r.len(), 1);
     assert!(is_keyword(&r[0][0], ":bob"), "keyword from the rule call");
 }
+
+#[test]
+fn keyword_or_ref_after_a_rule_call() {
+    let db = friends_db();
+    db.execute("(rule [(knows ?a ?b) [?a :friend ?b]])")
+        .unwrap();
+    let r = query(&db, r#"[:find ?b :where [?b :name "Bob"] (knows ?a ?b)]"#);
+    assert_eq!(r.len(), 1);
+    assert!(is_ref_to(&r[0][0], ":bob"), "ref from the first pattern");
+}
+
+#[test]
+fn keyword_or_ref_with_a_repeated_pattern() {
+    let db = friends_db();
+    let r = query(
+        &db,
+        r#"[:find ?b :where [?a :friend ?b] [?b :name "Bob"] [?a :friend ?b]]"#,
+    );
+    assert_eq!(r.len(), 1);
+    assert!(
+        is_keyword(&r[0][0], ":bob"),
+        "keyword from the first pattern"
+    );
+}
+
+#[test]
+fn pseudo_attribute_pattern_never_replaces_a_value() {
+    let db = friends_db();
+    // `[?b :db/valid-at ?t]` is first in the text and the planner runs it
+    // last, matching every fact of `:bob`; it keeps `?b` as bound.
+    let r = query(
+        &db,
+        r#"[:find ?b ?t :where [?b :db/valid-at ?t] [?a :friend ?b] [?b :name "Bob"]]"#,
+    );
+    assert_eq!(r.len(), 1);
+    assert!(
+        is_keyword(&r[0][0], ":bob"),
+        "keyword from the first real pattern"
+    );
+}
