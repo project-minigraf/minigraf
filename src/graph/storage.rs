@@ -190,19 +190,28 @@ impl Snapshot {
     /// (clamped). The store is append-only and never cleared, so these are
     /// the facts that were there when the snapshot was taken.
     pub(crate) fn pending_range(&self, from: usize, to: usize) -> Result<Vec<Fact>> {
+        let mut facts = Vec::new();
+        self.extend_with_pending(from, to, &mut facts)?;
+        Ok(facts)
+    }
+
+    /// [`Self::pending_range`] cloned straight onto the end of `facts`, with
+    /// no intermediate vector: the pending store can hold millions of facts.
+    fn extend_with_pending(&self, from: usize, to: usize, facts: &mut Vec<Fact>) -> Result<()> {
         let p = self.read_pending()?;
         let to = to.min(self.pending_len).min(p.facts.len());
-        Ok(p.facts.get(from.min(to)..to).unwrap_or(&[]).to_vec())
+        facts.extend_from_slice(p.facts.get(from.min(to)..to).unwrap_or(&[]));
+        Ok(())
     }
 
     /// Every record of the snapshot (assertions and retractions): committed
     /// facts first, in EAVT order, then the pending facts in append order.
     pub(crate) fn all_facts(&self) -> Result<Vec<Fact>> {
-        let mut all = Vec::new();
-        if let Some(reader) = &self.committed {
-            all.extend(reader.all_facts()?);
-        }
-        all.extend(self.pending_range(0, self.pending_len)?);
+        let mut all = match &self.committed {
+            Some(reader) => reader.all_facts()?,
+            None => Vec::new(),
+        };
+        self.extend_with_pending(0, self.pending_len, &mut all)?;
         Ok(all)
     }
 
