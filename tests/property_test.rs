@@ -898,7 +898,20 @@ fn check_queries(
 fn ctx() -> Ctx {
     Ctx {
         uuids: (0..ENTITIES).map(|i| (entity_uuid(i), i)).collect(),
+        rerun: source_order(),
     }
+}
+
+/// With `test-oracle`, every query also runs without clause reordering and
+/// must give the same rows (#596).
+fn source_order() -> Option<Rerun> {
+    #[cfg(feature = "test-oracle")]
+    return Some(|db, q| {
+        let _off = minigraf::__reorder(false);
+        db.execute(q)
+    });
+    #[cfg(not(feature = "test-oracle"))]
+    None
 }
 
 fn run_in_memory(history: &[HistoryOp], queries: &[Query]) -> Result<(), TestCaseError> {

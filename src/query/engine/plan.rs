@@ -6,8 +6,9 @@
 //! runs on the existing executor (spec §9).
 //!
 //! Clauses run in the order `optimizer::plan` gives the executor, so an
-//! expression sees the same variables, and a binding expression overwrites a
-//! variable at the same point, as it does there. The first pattern is a
+//! expression sees the same variables as it does there. A binding expression
+//! whose variable is already bound keeps the rows where its result is equal
+//! (#596). The first pattern is a
 //! `Scan`; each later one a join: an `IndexNestedLoopJoin` when its entity is
 //! a variable already bound, a `HashJoin` otherwise (decision 3 of the #545
 //! plan).
@@ -133,9 +134,9 @@ pub(crate) enum Step {
     },
     /// `[(pred …)]`: keeps the rows where the expression is truthy.
     Filter(Expr, Vars),
-    /// `[(f …) ?out]`: binds (or overwrites) the slot; drops the rows where
-    /// the expression fails.
-    Bind(Expr, Vars, usize),
+    /// `[(f …) ?out]`: binds the slot, or keeps the rows where the result is
+    /// equal to its cell; drops the rows where the expression fails.
+    Bind(Expr, Vars, usize, Out),
     /// A later pattern, joined with the rows so far.
     Join(JoinSpec),
 }
@@ -179,6 +180,19 @@ pub(crate) enum JoinKind {
     /// `HashJoin`: a table of the side with the smaller estimate, probed by
     /// the other.
     Hash { build_inner: bool },
+}
+
+/// What a binding expression does with its slot (#596).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Out {
+    /// The slot is new: the result fills it.
+    New,
+    /// The slot is bound: keep the rows where the result is join-equal.
+    Check,
+    /// As `Check`, and the result replaces the cell: the expression is
+    /// earlier in the text than the clause that bound it (decision 2 of the
+    /// #545 plan).
+    Replace,
 }
 
 /// The variables an expression reads that are bound when it runs, by slot.
@@ -314,8 +328,12 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
                         metas.push((m, slots.add(OTHER)));
                     }
                     if let JoinKind::Hash { build_inner } = &mut join.kind {
-                        *build_inner = optimizer::branch_cost(&[WhereClause::Pattern(q.clone())])
-                            <= optimizer::branch_cost(&outer_patterns);
+                        // With the test switch off, always the inner pattern
+                        // (decision 3 of the #596 plan); `wasm` keeps the cost choice.
+                        let cost = optimizer::reorder() || cfg!(feature = "wasm");
+                        *build_inner = !cost
+                            || optimizer::branch_cost(&[WhereClause::Pattern(q.clone())])
+                                <= optimizer::branch_cost(&outer_patterns);
                     }
                     steps.push(Step::Join(join));
                 }
@@ -337,21 +355,22 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
                 let step = match binding {
                     None => Step::Filter(expr, vars),
                     Some(out) => {
-                        binders.expression(&out);
-                        let slot = match slots.by_var.get(&out) {
-                            Some(&s) => {
+                        let replace = binders.expression(&expr, &out);
+                        let (slot, mode) = match slots.by_var.get(&out) {
+                            Some(&s) if replace => {
                                 if let Some(k) = slots.kinds.get_mut(s) {
                                     *k |= OTHER;
                                 }
-                                s
+                                (s, Out::Replace)
                             }
+                            Some(&s) => (s, Out::Check),
                             None => {
                                 let s = slots.add(OTHER);
                                 slots.by_var.insert(out, s);
-                                s
+                                (s, Out::New)
                             }
                         };
-                        Step::Bind(expr, vars, slot)
+                        Step::Bind(expr, vars, slot, mode)
                     }
                 };
                 scan.as_ref()?;

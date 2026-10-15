@@ -388,6 +388,8 @@ fn test_or_join_does_not_return_duplicate_bindings() {
 /// before merging, so a branch can't smuggle in a new distinguishing variable):
 /// once the cheap branch covers every incoming join-var key, the expensive branch
 /// (guarded by a call-counting predicate) must never run.
+// The #250 short-circuits are native-only (`optimizer::reorder`).
+#[cfg(not(feature = "wasm"))]
 #[test]
 fn test_or_join_short_circuits_expensive_branch_when_fully_covered() {
     let db = db();
@@ -476,6 +478,8 @@ fn test_or_join_falls_back_to_expensive_branch_when_not_fully_covered() {
 /// is 1). If `branch_cost`-based sorting were broken (e.g. reverted to declaration
 /// order), the expensive branch — written first — would run before coverage is
 /// established and invoke the counter.
+// The #250 short-circuits are native-only (`optimizer::reorder`).
+#[cfg(not(feature = "wasm"))]
 #[test]
 fn test_or_join_short_circuit_relies_on_cost_sort_not_declaration_order() {
     let db = db();
@@ -526,6 +530,8 @@ fn test_or_join_short_circuit_relies_on_cost_sort_not_declaration_order() {
 
 /// (21) Plain `or` short-circuits too, when it's a pure filter (no branch introduces
 /// a variable beyond what's already bound in the incoming scope).
+// The #250 short-circuits are native-only (`optimizer::reorder`).
+#[cfg(not(feature = "wasm"))]
 #[test]
 fn test_or_short_circuits_pure_filter_when_fully_covered() {
     let db = db();

@@ -318,6 +318,13 @@ fn joins() -> Vec<&'static str> {
         "[?e :person/score ?s] [(- 0.0 ?s) ?t] [?f :person/score ?t]",
         "[?e :person/boss ?b] [(+ 18 3) ?b] [?f :person/age ?b]",
         "[?e :person/age ?a] [(+ ?a 1) ?a] [?f :person/age ?a]",
+        // An expression binding a bound variable unifies (#596).
+        "[?e :person/age ?a] [:p1 :person/age ?x] [(+ ?a 1) ?x]",
+        "[?e :person/age ?a] [(+ ?a 0) ?a]",
+        "[?e :person/age ?a] [(* ?a 2) ?x] [(+ ?a ?a) ?x]",
+        "[?e :person/age ?a] [(* ?a 2) ?x] [(+ ?a 1) ?x]",
+        "[?e :person/score ?s] [(* ?s 1.0) ?s]",
+        "[?e :person/score ?s] [(- 0.0 ?s) ?t] [?f :person/score ?t] [(- 0.0 ?t) ?s]",
     ]
 }
 
@@ -716,6 +723,57 @@ fn planner_chooses_the_join() {
     assert_eq!(
         kinds("(query [:find ?e :where [?e :a ?x] [?f ?x ?y]])"),
         ["hash inner=false"]
+    );
+    // With the test switch off the table is always built on the inner
+    // pattern (`wasm` keeps the cost choice).
+    let _off = crate::query::datalog::optimizer::set_reorder(false);
+    if !cfg!(feature = "wasm") {
+        assert_eq!(
+            kinds("(query [:find ?e :where [?e :a 1] [?f :b ?y] [?f :c ?e]])"),
+            ["hash inner=true", "probe"]
+        );
+    }
+}
+
+#[test]
+fn planner_binds_checks_or_replaces_an_expression_output() {
+    use super::plan::{Out, Step, plan};
+    use crate::query::datalog::parser::parse_datalog_command;
+    use crate::query::datalog::types::DatalogCommand;
+    let modes = |q: &str| -> Vec<Out> {
+        let Ok(DatalogCommand::Query(query)) = parse_datalog_command(q) else {
+            panic!("expected a query");
+        };
+        let plan = plan(&query).expect("an engine plan");
+        plan.steps
+            .iter()
+            .filter_map(|s| match s {
+                Step::Bind(_, _, _, m) => Some(*m),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(
+        modes("(query [:find ?b :where [?e :a ?a] [(+ ?a 1) ?b]])"),
+        [Out::New]
+    );
+    // The pattern binding ?x is first in the text and in the plan.
+    assert_eq!(
+        modes("(query [:find ?x :where [?f :b ?x] [?e :a ?a] [(+ ?a 1) ?x]])"),
+        [Out::Check]
+    );
+    // [:p :b ?x] runs first (natively), but the expression is earlier in the text.
+    let _on = crate::query::datalog::optimizer::set_reorder(true);
+    if crate::query::datalog::optimizer::reorder() {
+        assert_eq!(
+            modes("(query [:find ?x :where [?e :a ?a] [(+ ?a 1) ?x] [:p :b ?x]])"),
+            [Out::Replace]
+        );
+    }
+    let _off = crate::query::datalog::optimizer::set_reorder(false);
+    assert_eq!(
+        modes("(query [:find ?x :where [?e :a ?a] [(+ ?a 1) ?x] [:p :b ?x]])"),
+        [Out::New]
     );
 }
 

@@ -448,13 +448,32 @@ impl Model {
 
 // ── Checks ────────────────────────────────────────────────────────────────────
 
+/// Runs a query another way, e.g. without clause reordering (#596).
+pub type Rerun = fn(&Minigraf, &str) -> Result<QueryResult, MinigrafError>;
+
 pub struct Ctx {
     pub uuids: HashMap<Uuid, usize>,
+    /// When set, every query also runs this way and must give the same bag.
+    pub rerun: Option<Rerun>,
 }
 
 impl Ctx {
     pub fn rows(&self, db: &Minigraf, query: &str) -> Result<Vec<Vec<String>>, TestCaseError> {
-        self.result_rows(db.execute(query), query)
+        let rows = self.result_rows(db.execute(query), query)?;
+        if let Some(rerun) = self.rerun {
+            let mut again = self.result_rows(rerun(db, query), query)?;
+            let mut first = rows.clone();
+            first.sort();
+            again.sort();
+            if again != first {
+                return Err(TestCaseError::fail(format!(
+                    "rows depend on the plan ({} vs {}): {query}",
+                    first.len(),
+                    again.len()
+                )));
+            }
+        }
+        Ok(rows)
     }
 
     pub fn result_rows(
@@ -798,10 +817,16 @@ pub fn expect_outcome<T>(
 pub const IN_TX_QUERY: &str = "(query [:find ?e ?a ?v :any-valid-time :where [?e ?a ?v]])";
 
 pub fn run(steps: &[Step], checks: Checks) -> Result<(), TestCaseError> {
+    run_with(steps, checks, None)
+}
+
+/// [`run`], with every query also run by `rerun` ([`Ctx::rerun`]).
+pub fn run_with(steps: &[Step], checks: Checks, rerun: Option<Rerun>) -> Result<(), TestCaseError> {
     let dir = tempfile::tempdir().map_err(|_| TestCaseError::fail("tempdir"))?;
     let mut path = dir.path().join("model.graph");
     let ctx = Ctx {
         uuids: (0..ENTITIES).map(|i| (entity_uuid(i), i)).collect(),
+        rerun,
     };
     let mut model = Model::default();
     let mut db = Some(open(&path, OpenMode::Default)?);

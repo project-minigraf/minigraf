@@ -2,8 +2,49 @@
 //!
 //! `plan()` is the single entry point. It assigns an `IndexHint` to each
 //! pattern and (outside the `wasm` feature) sorts patterns by selectivity.
+//!
+//! [`reorder`] says whether this build reorders: patterns, `not`/`not-join`
+//! clauses and `or` branches by cost, the `or` short-circuits (#250), and the
+//! engine's `HashJoin` build side. Tests turn it off per thread to check that
+//! no answer depends on the plan (#596).
 
 use crate::query::datalog::types::{AttributeSpec, EdnValue, Expr, Pattern, WhereClause};
+
+#[cfg(any(test, feature = "test-oracle"))]
+thread_local! {
+    /// Whether queries on this thread reorder; tests only.
+    static REORDER: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+}
+
+/// Whether queries reorder clauses by cost: never under the `wasm` feature,
+/// and, in tests, only while this thread's switch is on ([`set_reorder`]).
+#[inline]
+pub(crate) fn reorder() -> bool {
+    #[cfg(any(test, feature = "test-oracle"))]
+    if !REORDER.with(std::cell::Cell::get) {
+        return false;
+    }
+    !cfg!(feature = "wasm")
+}
+
+/// Turns reordering on or off for queries on this thread until the guard
+/// drops, which restores the previous setting.
+#[cfg(any(test, feature = "test-oracle"))]
+pub(crate) fn set_reorder(on: bool) -> ReorderGuard {
+    ReorderGuard(REORDER.with(|r| r.replace(on)))
+}
+
+/// Restores the previous [`set_reorder`] setting on drop.
+#[cfg(any(test, feature = "test-oracle"))]
+#[must_use = "reordering is restored when the guard drops"]
+pub struct ReorderGuard(bool);
+
+#[cfg(any(test, feature = "test-oracle"))]
+impl Drop for ReorderGuard {
+    fn drop(&mut self) {
+        REORDER.with(|r| r.set(self.0));
+    }
+}
 
 /// Which covering index to use for a given pattern.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,10 +81,10 @@ fn attr_is_index_bound(a: &AttributeSpec) -> bool {
 /// Count the number of non-variable components in a pattern.
 /// Higher score = more selective.
 ///
-/// Gated on non-wasm: WASM/browser targets typically work with small datasets where
-/// the overhead of computing scores and sorting can equal or exceed the benefit.
-/// Source order is preserved on WASM for deterministic, debuggable query behaviour.
-#[cfg(not(feature = "wasm"))]
+/// Not used under the `wasm` feature ([`reorder`]): WASM/browser targets typically
+/// work with small datasets where the overhead of computing scores and sorting can
+/// equal or exceed the benefit. Source order is preserved there for deterministic,
+/// debuggable query behaviour.
 fn selectivity_score(p: &Pattern) -> u8 {
     let e = !is_variable(&p.entity);
     let a = attr_is_index_bound(&p.attribute);
@@ -188,17 +229,18 @@ pub fn plan(
         }
     }
 
-    // Stable sort patterns by selectivity descending (non-wasm only).
+    // Stable sort patterns by selectivity descending (when reordering).
     // Preserves original order for ties, ensuring deterministic output.
     // WASM omission: see selectivity_score() — small datasets, determinism.
-    #[cfg(not(feature = "wasm"))]
-    patterns.sort_by_key(|(clause, _)| {
-        if let WhereClause::Pattern(p) = clause {
-            std::cmp::Reverse(selectivity_score(p))
-        } else {
-            std::cmp::Reverse(0u8)
-        }
-    });
+    if reorder() {
+        patterns.sort_by_key(|(clause, _)| {
+            if let WhereClause::Pattern(p) = clause {
+                std::cmp::Reverse(selectivity_score(p))
+            } else {
+                std::cmp::Reverse(0u8)
+            }
+        });
+    }
 
     // Start with sorted patterns only.
     let mut result: Vec<(WhereClause, Option<IndexHint>)> = patterns
@@ -239,8 +281,9 @@ pub fn plan(
     // processing in descending cost order lands the cheapest clause at `pos` last —
     // i.e. final relative order at any shared insertion point comes out ascending
     // (cheapest first), mirroring the executor's previous post-filter ordering.
-    #[cfg(not(feature = "wasm"))]
-    not_clauses.sort_by_key(|c| std::cmp::Reverse(clause_cost(c)));
+    if reorder() {
+        not_clauses.sort_by_key(|c| std::cmp::Reverse(clause_cost(c)));
+    }
 
     let mut deferred: Vec<WhereClause> = Vec::new();
     for nc in not_clauses {
@@ -295,9 +338,7 @@ pub fn plan(
 /// Static 4-tier cardinality estimate for a single pattern.
 ///
 /// Derived from selectivity_score but returns u64 cost (lower = cheaper) rather
-/// than a selectivity score. Available on all targets; on WASM the dead_code lint
-/// is suppressed because the sorting call-sites are omitted there.
-#[cfg_attr(feature = "wasm", allow(dead_code))]
+/// than a selectivity score.
 fn pattern_cost(p: &Pattern) -> u64 {
     let e = !is_variable(&p.entity);
     let a = attr_is_index_bound(&p.attribute);
@@ -316,10 +357,6 @@ fn pattern_cost(p: &Pattern) -> u64 {
 ///
 /// Rationale for `min`: In a multi-pattern join the most selective pattern dominates —
 /// the join cannot produce more rows than the smallest input.
-///
-/// Available on all targets; on WASM the dead_code lint is suppressed because
-/// the sorting call-sites are omitted there.
-#[cfg_attr(feature = "wasm", allow(dead_code))]
 pub fn branch_cost(branch: &[WhereClause]) -> u64 {
     branch
         .iter()
@@ -345,10 +382,6 @@ pub fn branch_cost(branch: &[WhereClause]) -> u64 {
 /// | `Or(branches)`     | sum of `branch_cost` per branch |
 /// | `OrJoin{branches}` | sum of `branch_cost` per branch |
 /// | other              | `u64::MAX` (defensive; not expected in practice) |
-///
-/// Available on all targets; on WASM the dead_code lint is suppressed because
-/// the sorting call-sites are omitted there.
-#[cfg_attr(feature = "wasm", allow(dead_code))]
 pub fn clause_cost(clause: &WhereClause) -> u64 {
     match clause {
         WhereClause::Pattern(p) => pattern_cost(p),
@@ -457,6 +490,46 @@ mod tests {
             second_attr, p1_attr,
             "Lower-selectivity pattern must be second"
         );
+    }
+
+    #[test]
+    fn test_reorder_off_keeps_source_order() {
+        let p1 = make_pattern(var("e"), kw(":age"), var("a"));
+        let p2 = make_pattern(entity_lit(), kw(":name"), var("v"));
+        let _off = set_reorder(false);
+        assert!(!reorder());
+        let (planned, _deferred) = plan(vec![
+            WhereClause::Pattern(p1.clone()),
+            WhereClause::Pattern(p2.clone()),
+        ]);
+        let order: Vec<&Pattern> = planned
+            .iter()
+            .filter_map(|(c, _)| match c {
+                WhereClause::Pattern(p) => Some(p),
+                _ => None,
+            })
+            .collect();
+        assert!(order == vec![&p1, &p2], "source order kept");
+    }
+
+    #[test]
+    fn test_reorder_switch_is_per_thread_and_restored() {
+        {
+            let _off = set_reorder(false);
+            assert!(!reorder());
+            // wasm32 test runners have no threads.
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let other = std::thread::spawn(reorder).join().unwrap();
+                assert_eq!(other, !cfg!(feature = "wasm"), "other thread unaffected");
+            }
+            {
+                let _on = set_reorder(true);
+                assert_eq!(reorder(), !cfg!(feature = "wasm"));
+            }
+            assert!(!reorder(), "inner guard restores off");
+        }
+        assert_eq!(reorder(), !cfg!(feature = "wasm"), "restored on drop");
     }
 
     // ── expr_vars() ──────────────────────────────────────────────────────────
