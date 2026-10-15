@@ -117,9 +117,17 @@ the row.
 **Returned value.** A variable bound by several clauses returns the value of the first of
 them in text order (`Binders`, #545 decision 2). Expressions become ordinary binders in
 that order: `Binders::expression` records the expression's text position instead of
-marking the variable as overwritten. This matters only for a keyword and a ref that are
-equal. The returned value stays one of the equal values; which one is decided by text
-order.
+marking the variable as overwritten, and the representative is kept in both directions:
+
+- A binder earlier in the text that runs later replaces the value when it matches. This
+  is the `rebind` list patterns already get from `Binders::pattern`. An expression gets
+  the same treatment.
+- A binder later in the text that runs later only checks.
+
+This matters only for a keyword and a ref that are equal. Within rule bodies, patterns
+keep today's representative rule until #548 (`evaluator.rs` passes no `rebind`), and
+expressions there follow the same rule: they unify, and the value a rule body returns
+for an equal keyword/ref pair is #548's to fix.
 
 ### 3.6 `:db/valid-at`
 
@@ -136,12 +144,18 @@ parsed `query` (`:where`), every `rule` body, and every prepared query (which is
 the same way). It walks each clause list with a stack of enclosing lists (§3.1, §3.2)
 and, for each per-fact pseudo-attribute pattern:
 
-- finds the source, or fails with PRS-081;
+- finds the source, or fails with PRS-081 (for a prepared query, on the template, before
+  any `$slot` is substituted: slot entity terms compare by slot name, never by the value
+  bound later, so one template resolves the same for every execution);
 - gives the source a **hidden metadata variable** for that pseudo-attribute, recorded on
   the source pattern (`Pattern::meta: Vec<(PseudoAttr, String)>`, one entry per distinct
   pseudo-attribute that reads it);
 - rewrites `P` to read that variable (`Pattern::pseudo_source: Option<String>`, the hidden
   variable's name).
+
+Both fields are new on the crate-internal `Pattern` (`query` is `pub(crate)`). Its
+constructors (`Pattern::new`, `Pattern::pseudo`, `Pattern::from_edn`) leave them empty
+until the pass fills them.
 
 A hidden variable's name is `?#<n>.<pseudo-attribute>`, with `<n>` the source's position
 in a walk of the whole query. `#` and `.` cannot appear in a symbol the tokenizer produces
@@ -159,7 +173,17 @@ After the pass, a pseudo-attribute reference is an ordinary variable reference:
   fact, like any other variable it binds.
 - `P` is an equality between its value term and the hidden variable (§3.3).
 - Inside `not`/`or`, the hidden variable is an outer variable the body references. It
-  flows in like any other outer variable.
+  flows in like any other outer variable. The paths that evaluate a body apart from the
+  outer row cannot see it:
+  - `apply_not_clause`/`apply_not_join_clause` match body patterns once, independently
+    (the exclusion set).
+  - The `or` fast path in `apply_or_clauses` evaluates each branch from an empty seed
+    and joins back on shared variables.
+
+  A body or branch whose pseudo-attribute pattern reads an outer source therefore takes
+  the seeded, per-row path each of them already has: `not_body_matches` for `not`, the
+  seeded `evaluate_branch` loop for `or`. The seeded loop is used today when a branch
+  holds a `not`.
 - Inside a `not-join`/`or-join` crossed by §3.2, the pass appends the hidden variable to
   the join variables. Only variables the user listed are visible to the rest of the
   query. The added ones change nothing else, because they are functionally dependent on
@@ -169,6 +193,17 @@ This replaces the per-entity `__fvf_`/`__fvt_`/`__ftc_`/`__fti_` keys and the fa
 fallback code in `PatternMatcher::match_pattern_with_bindings`. It also replaces the
 `retain(|k, _| !k.starts_with("__f"))` filters in `apply_not_clause` and
 `apply_not_join_clause`.
+
+**Row identity.** Results are a bag: `extract_variables` keeps every binding. Only `or`
+deduplicates, keeping the first binding per key, and its key skips names starting with
+`__`.
+
+- Hidden variables start with `?`, so they are part of that key. With the `__f` keys
+  gone, the key covers the whole binding.
+- So which duplicate survives cannot change the answer, whatever order the branches run
+  in (natively they are sorted by cost).
+- Two incoming rows that differ only in a source's metadata stay two rows. Today the
+  `__f` keys are excluded and they collapse. This is part of breaking change 1 (§6).
 
 ### 4.2 Ordering
 
@@ -205,8 +240,17 @@ each runs after its source with no new ordering rule. Two cases need a change:
     row.
   - `Binders::expression` takes the clause's text position.
   - `query_uses_per_fact_pseudo_attr` (INT-026) is unchanged.
-- `evaluator.rs`: `apply_expr_clauses_in_evaluator` unifies the same way. Rule-body
-  patterns carry their own hidden variables. The rule head never includes them.
+- `evaluator.rs`: every expression path unifies the same way:
+  - `apply_expr_clauses_in_evaluator`, used by `RecursiveEvaluator` after it matches all
+    body patterns;
+  - the planned loop of the stratified evaluator for rules with negation (the
+    `WhereClause::Expr` arm next to `match_with_hint_seeded(..., &[])`);
+  - the expression handling in `evaluate_not_join`.
+
+  Rule-body patterns carry their own hidden variables. The rule head never includes them.
+  Magic-sets rewriting copies body clauses with their `meta`/`pseudo_source` fields
+  unchanged; it adds no pattern before a pseudo-attribute pattern that could become its
+  source, because sources are fixed before it runs.
 
 ### 4.4 Streaming engine (`src/query/engine/`)
 
@@ -225,6 +269,10 @@ each runs after its source with no new ordering rule. Two cases need a change:
   - `:db/valid-at` keeps its `[e _ _]` join.
 - `filter.rs`: `Step::Bind` on a slot already bound becomes an equality check with
   `cell::join_eq` (normalising).
+- Which queries the engine runs is unchanged by this work: no `not`, `or`, `or-join` or
+  rule invocations, and plain `:find` variables only. Every other shape, and every
+  prepared query of those shapes, runs on the executor. There, §3–4.3 apply, and the
+  differential test (§7) covers it through the same `Minigraf::query` calls.
 - Engine support for `not`, `or` and rules is unchanged by this work. When #546 adds
   `not`, the hidden variables are ordinary outer variables of the body.
 
