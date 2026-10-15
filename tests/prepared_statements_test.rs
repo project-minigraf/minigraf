@@ -439,3 +439,63 @@ fn write_transaction_execute_rejects_bind_slots() {
     assert_eq!(err.code(), "API-010");
     tx.rollback();
 }
+
+// ─── Literal time travel in a prepared query (#603) ──────────────────────────
+
+/// Rows of `q` through `execute` and a prepared `execute` with no bind
+/// values; both must agree.
+fn both_ways(db: &Minigraf, q: &str) -> usize {
+    let direct = match db.execute(q).unwrap() {
+        QueryResult::QueryResults { results, .. } => results.len(),
+        _ => panic!("expected QueryResults"),
+    };
+    let prepared = match db.prepare(q).unwrap().execute(&[]).unwrap() {
+        QueryResult::QueryResults { results, .. } => results.len(),
+        _ => panic!("expected QueryResults"),
+    };
+    assert_eq!(prepared, direct, "prepared execute agrees with execute");
+    direct
+}
+
+#[test]
+fn prepared_literal_as_of_and_valid_at_are_kept() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute(r#"(transact {:valid-from "2020-01-01" :valid-to "2021-01-01"} [[:a :n 1]])"#)
+        .unwrap();
+    db.execute("(transact [[:a :n 2]])").unwrap();
+    assert_eq!(
+        both_ways(
+            &db,
+            "(query [:find ?v :as-of 1 :valid-at :any-valid-time :where [:a :n ?v]])"
+        ),
+        1
+    );
+    assert_eq!(
+        both_ways(
+            &db,
+            r#"(query [:find ?v :as-of "2000-01-01T00:00:00Z" :any-valid-time :where [:a :n ?v]])"#
+        ),
+        0
+    );
+    assert_eq!(
+        both_ways(
+            &db,
+            r#"(query [:find ?v :valid-at "2020-06-01T00:00:00Z" :where [:a :n ?v]])"#
+        ),
+        1
+    );
+    assert_eq!(
+        both_ways(&db, "(query [:find ?v :any-valid-time :where [:a :n ?v]])"),
+        2
+    );
+    assert_eq!(both_ways(&db, "(query [:find ?v :where [:a :n ?v]])"), 1);
+    // A per-fact pseudo-attribute needs :any-valid-time; a prepared query
+    // keeps it (INT-026 before the fix).
+    assert_eq!(
+        both_ways(
+            &db,
+            "(query [:find ?v ?t :any-valid-time :where [:a :n ?v] [:a :db/tx-count ?t]])"
+        ),
+        2
+    );
+}
