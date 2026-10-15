@@ -680,24 +680,12 @@ impl DatalogExecutor {
                     );
                 }
                 WhereClause::Expr { expr, binding: out } => {
-                    if let Some(var) = &out {
-                        binders.expression(var);
-                    }
+                    let replace = out
+                        .as_deref()
+                        .is_some_and(|var| binders.expression(&expr, var));
                     bindings = bindings
                         .into_iter()
-                        .filter_map(|mut b| match eval_expr(&expr, &b, Some(&registry)) {
-                            Ok(v) => {
-                                if let Some(var) = &out {
-                                    b.insert(var.clone(), v);
-                                    Some(b)
-                                } else if is_truthy(&v) {
-                                    Some(b)
-                                } else {
-                                    None
-                                }
-                            }
-                            Err(_) => None,
-                        })
+                        .filter_map(|b| apply_expr(&expr, out.as_deref(), b, &registry, replace))
                         .collect();
                 }
                 WhereClause::Not(body) => {
@@ -942,24 +930,12 @@ impl DatalogExecutor {
                     );
                 }
                 WhereClause::Expr { expr, binding: out } => {
-                    if let Some(var) = &out {
-                        binders.expression(var);
-                    }
+                    let replace = out
+                        .as_deref()
+                        .is_some_and(|var| binders.expression(&expr, var));
                     bindings = bindings
                         .into_iter()
-                        .filter_map(|mut b| match eval_expr(&expr, &b, Some(&registry)) {
-                            Ok(v) => {
-                                if let Some(var) = &out {
-                                    b.insert(var.clone(), v);
-                                    Some(b)
-                                } else if is_truthy(&v) {
-                                    Some(b)
-                                } else {
-                                    None
-                                }
-                            }
-                            Err(_) => None,
-                        })
+                        .filter_map(|b| apply_expr(&expr, out.as_deref(), b, &registry, replace))
                         .collect();
                 }
                 WhereClause::Not(body) => {
@@ -1491,16 +1467,18 @@ type Binding = std::collections::HashMap<String, Value>;
 /// A variable that several patterns bind takes its value from the first of
 /// them in the query text, whatever order the planner runs them in: a
 /// keyword and the ref of the entity it names are equal in a join, but are
-/// returned as they were bound. An expression binding overwrites the value
-/// where the planner places it, and later patterns keep it. A
-/// pseudo-attribute pattern never replaces a value.
+/// returned as they were bound. An expression binding is a binder like a
+/// pattern: when the variable is already bound it keeps the rows where its
+/// result is equal (#596), and gives the value when it is first in the text.
+/// A pseudo-attribute pattern never replaces a value.
 pub(crate) struct Binders {
     /// Each top-level pattern (rule calls as patterns) and its position in
     /// `:where`; taken as the planner hands them out.
     text: Vec<(Pattern, usize)>,
-    /// The position of the pattern each variable's value came from; `None`
-    /// once an expression has bound it.
-    by_var: HashMap<String, Option<usize>>,
+    /// Each top-level binding expression, its variable and its position.
+    exprs: Vec<(Expr, String, usize)>,
+    /// The position of the clause each variable's value came from.
+    by_var: HashMap<String, usize>,
 }
 
 impl Binders {
@@ -1514,8 +1492,20 @@ impl Binders {
             })
             .collect();
         text.extend(rule_patterns);
+        let exprs = where_clauses
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| match c {
+                WhereClause::Expr {
+                    expr,
+                    binding: Some(var),
+                } => Some((expr.clone(), var.clone(), i)),
+                _ => None,
+            })
+            .collect();
         Binders {
             text,
+            exprs,
             by_var: HashMap::new(),
         }
     }
@@ -1543,10 +1533,10 @@ impl Binders {
             }
             match self.by_var.get(v) {
                 None => {
-                    self.by_var.insert(v.clone(), Some(at));
+                    self.by_var.insert(v.clone(), at);
                 }
-                Some(Some(b)) if real && at < *b => {
-                    self.by_var.insert(v.clone(), Some(at));
+                Some(b) if real && at < *b => {
+                    self.by_var.insert(v.clone(), at);
                     if !rebind.contains(v) {
                         rebind.push(v.clone());
                     }
@@ -1557,9 +1547,29 @@ impl Binders {
         rebind
     }
 
-    /// Record an expression binding `var`.
-    pub(crate) fn expression(&mut self, var: &str) {
-        self.by_var.insert(var.to_string(), None);
+    /// Record the expression `expr` binding `var`, run next, and return
+    /// whether its value replaces the one a clause already gave `var`: when
+    /// that clause is later in the text.
+    pub(crate) fn expression(&mut self, expr: &Expr, var: &str) -> bool {
+        let at = match self
+            .exprs
+            .iter()
+            .position(|(e, v, _)| e == expr && v == var)
+        {
+            Some(i) => self.exprs.swap_remove(i).2,
+            None => usize::MAX,
+        };
+        match self.by_var.get(var) {
+            None => {
+                self.by_var.insert(var.to_string(), at);
+                false
+            }
+            Some(b) if at < *b => {
+                self.by_var.insert(var.to_string(), at);
+                true
+            }
+            Some(_) => false,
+        }
     }
 }
 
@@ -2606,7 +2616,8 @@ pub(crate) fn eval_expr(
 /// Apply all WhereClause::Expr clauses from `where_clauses` to `bindings`.
 ///
 /// Filter-form (`binding: None`) drops the row if the expr is not truthy or errors.
-/// Binding-form (`binding: Some(var)`) extends the row with the computed value.
+/// Binding-form (`binding: Some(var)`) extends the row with the computed value,
+/// or keeps it only if an existing value of the variable is equal (#596).
 /// Type mismatches and errors silently drop the row.
 ///
 /// Pre-validates UDF predicate names: returns `Err` if a named UDF predicate is not
@@ -2632,23 +2643,45 @@ pub(crate) fn apply_expr_clauses(
         if let WhereClause::Expr { expr, binding: out } = clause {
             bindings = bindings
                 .into_iter()
-                .filter_map(|mut b| match eval_expr(expr, &b, Some(registry)) {
-                    Ok(v) => {
-                        if let Some(var) = out {
-                            b.insert(var.clone(), v);
-                            Some(b)
-                        } else if is_truthy(&v) {
-                            Some(b)
-                        } else {
-                            None
-                        }
-                    }
-                    Err(()) => None,
-                })
+                .filter_map(|b| apply_expr(expr, out.as_deref(), b, registry, false))
                 .collect();
         }
     }
     Ok(bindings)
+}
+
+/// One expression clause over the row `b`: `None` drops the row.
+///
+/// A filter (`out` is `None`) keeps the row when the result is truthy. A
+/// binding keeps it with `out` bound to the result, or, when `b` already binds
+/// `out`, only if the two are equal as a join compares them (#596): floats by
+/// IEEE `==`, a keyword equal to a ref to the entity it names, an integer
+/// never equal to a float. `replace` then takes the result as the value
+/// (`Binders::expression`). A failing expression drops the row.
+pub(crate) fn apply_expr(
+    expr: &Expr,
+    out: Option<&str>,
+    mut b: Binding,
+    registry: &FunctionRegistry,
+    replace: bool,
+) -> Option<Binding> {
+    let v = eval_expr(expr, &b, Some(registry)).ok()?;
+    let Some(var) = out else {
+        return is_truthy(&v).then_some(b);
+    };
+    match b.get(var) {
+        Some(old)
+            if PatternMatcher::normalize_join_value(old)
+                != PatternMatcher::normalize_join_value(&v) =>
+        {
+            None
+        }
+        Some(_) if !replace => Some(b),
+        _ => {
+            b.insert(var.to_string(), v);
+            Some(b)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -4595,6 +4628,109 @@ mod expr_eval_tests {
             apply_expr_clauses(bindings, &clauses, &FunctionRegistry::with_builtins()).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].get("?v"), Some(&Value::Integer(50)));
+    }
+
+    /// `apply_expr` of a literal bound to `?x` over a row binding `?x` to
+    /// `old`: whether the row is kept, and `?x` afterwards.
+    fn unify(old: Value, new: Value, replace: bool) -> Option<Value> {
+        let row = apply_expr(
+            &Expr::Lit(new),
+            Some("?x"),
+            b(&[("?x", old)]),
+            &FunctionRegistry::with_builtins(),
+            replace,
+        )?;
+        row.get("?x").cloned()
+    }
+
+    #[test]
+    fn test_apply_expr_unifies_a_bound_variable() {
+        // #596: equal keeps the row, different drops it.
+        assert_eq!(
+            unify(Value::Integer(41), Value::Integer(41), false),
+            Some(Value::Integer(41))
+        );
+        assert!(unify(Value::Integer(41), Value::Integer(31), false).is_none());
+        assert!(unify(Value::Integer(41), Value::Integer(31), true).is_none());
+        // An integer never equals a float; NaN equals nothing.
+        assert!(unify(Value::Integer(1), Value::Float(1.0), false).is_none());
+        assert!(unify(Value::Float(f64::NAN), Value::Float(f64::NAN), false).is_none());
+        // IEEE `==`: -0.0 equals 0.0; the old value stays unless `replace`.
+        assert!(matches!(
+            unify(Value::Float(-0.0), Value::Float(0.0), false),
+            Some(Value::Float(f)) if f.is_sign_negative()
+        ));
+        assert!(matches!(
+            unify(Value::Float(-0.0), Value::Float(0.0), true),
+            Some(Value::Float(f)) if f.is_sign_positive()
+        ));
+    }
+
+    #[test]
+    fn test_apply_expr_unifies_keyword_with_ref() {
+        let bob = crate::query::datalog::matcher::edn_to_entity_id(&EdnValue::Keyword(
+            ":bob".to_string(),
+        ))
+        .unwrap();
+        let kw = || Value::Keyword(":bob".to_string());
+        assert!(matches!(
+            unify(Value::Ref(bob), kw(), false),
+            Some(Value::Ref(_))
+        ));
+        assert!(matches!(
+            unify(Value::Ref(bob), kw(), true),
+            Some(Value::Keyword(_))
+        ));
+        assert!(matches!(
+            unify(kw(), Value::Ref(bob), false),
+            Some(Value::Keyword(_))
+        ));
+        assert!(unify(Value::Keyword(":carol".to_string()), Value::Ref(bob), false).is_none());
+    }
+
+    #[test]
+    fn test_apply_expr_failure_drops_row() {
+        let div = Expr::BinOp(
+            BinOp::Div,
+            Box::new(Expr::Lit(Value::Integer(1))),
+            Box::new(Expr::Lit(Value::Integer(0))),
+        );
+        let row = apply_expr(
+            &div,
+            Some("?x"),
+            b(&[]),
+            &FunctionRegistry::with_builtins(),
+            false,
+        );
+        assert!(row.is_none());
+    }
+
+    #[test]
+    fn test_binders_expression_replaces_only_when_earlier_in_text() {
+        use crate::query::datalog::types::WhereClause;
+        let expr = Expr::Lit(Value::Integer(1));
+        let bind = WhereClause::Expr {
+            expr: expr.clone(),
+            binding: Some("?x".to_string()),
+        };
+        let pat = Pattern::new(
+            EdnValue::Symbol("?e".to_string()),
+            EdnValue::Keyword(":score".to_string()),
+            EdnValue::Symbol("?x".to_string()),
+        );
+        // The expression is first in the text and runs after the pattern.
+        let mut binders = Binders::new(&[bind.clone(), WhereClause::Pattern(pat.clone())], vec![]);
+        assert!(binders.pattern(&pat).is_empty());
+        assert!(binders.expression(&expr, "?x"), "earlier in the text");
+        // The pattern is first in the text: the expression only checks.
+        let mut binders = Binders::new(&[WhereClause::Pattern(pat.clone()), bind.clone()], vec![]);
+        assert!(binders.pattern(&pat).is_empty());
+        assert!(!binders.expression(&expr, "?x"), "later in the text");
+        // An expression that runs first binds; a later-run, text-earlier
+        // pattern then gives the value.
+        let mut binders = Binders::new(&[WhereClause::Pattern(pat.clone()), bind], vec![]);
+        assert!(!binders.expression(&expr, "?x"));
+        assert_eq!(binders.pattern(&pat), vec!["?x".to_string()]);
     }
 
     #[test]

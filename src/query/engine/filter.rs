@@ -6,7 +6,7 @@
 
 use super::batch::Batch;
 use super::cell::{Cell, join_eq};
-use super::plan::{Entity, Step, Term, Vars};
+use super::plan::{Entity, Out, Step, Term, Vars};
 use super::project::value;
 use super::{Counters, Ctx, Operator};
 use crate::query::datalog::executor::{eval_expr, is_truthy};
@@ -95,16 +95,30 @@ fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<Batch> {
             }
             batch.retain(&keep);
         }
-        Step::Bind(expr, vars, slot) => {
+        Step::Bind(expr, vars, slot, mode) => {
             let mut keep = Vec::with_capacity(batch.len);
             let mut out = Vec::with_capacity(batch.len);
             for i in 0..batch.len {
-                match eval(expr, vars, &batch, i, ctx)? {
-                    Some(v) => {
-                        out.push(Cell::of_value(ctx.ids, ctx.keys, &v)?);
+                let Some(v) = eval(expr, vars, &batch, i, ctx)? else {
+                    keep.push(false);
+                    continue;
+                };
+                let cell = Cell::of_value(ctx.ids, ctx.keys, &v)?;
+                let old = match mode {
+                    Out::New => None,
+                    Out::Check | Out::Replace => batch.cols.get(*slot).and_then(|c| c.get(i)),
+                };
+                match old {
+                    // The executor normalises every bound variable (#596).
+                    Some(old) if !join_eq(old, &cell, true, ctx)? => keep.push(false),
+                    Some(old) if *mode == Out::Check => {
+                        out.push(old.clone());
                         keep.push(true);
                     }
-                    None => keep.push(false),
+                    _ => {
+                        out.push(cell);
+                        keep.push(true);
+                    }
                 }
             }
             batch.retain(&keep);

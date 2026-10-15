@@ -517,8 +517,12 @@ mod tests {
         {
             let _off = set_reorder(false);
             assert!(!reorder());
-            let other = std::thread::spawn(reorder).join().unwrap();
-            assert_eq!(other, !cfg!(feature = "wasm"), "other thread unaffected");
+            // wasm32 test runners have no threads.
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let other = std::thread::spawn(reorder).join().unwrap();
+                assert_eq!(other, !cfg!(feature = "wasm"), "other thread unaffected");
+            }
             {
                 let _on = set_reorder(true);
                 assert_eq!(reorder(), !cfg!(feature = "wasm"));

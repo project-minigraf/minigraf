@@ -475,7 +475,7 @@ impl PatternMatcher {
     /// to the same key. Used only for key comparison — does NOT affect what is
     /// stored in merged output bindings (the original `val` is always inserted into
     /// the result binding, never the normalized form).
-    fn normalize_join_value(val: &Value) -> Value {
+    pub(crate) fn normalize_join_value(val: &Value) -> Value {
         if let Value::Keyword(k) = val
             && let Ok(uuid) = edn_to_entity_id(&EdnValue::Keyword(k.clone()))
         {

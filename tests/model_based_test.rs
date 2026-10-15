@@ -19,6 +19,18 @@ mod reference_model;
 use proptest::prelude::*;
 use reference_model::*;
 
+/// With `test-oracle`, every query also runs without clause reordering and
+/// must give the same rows (#596).
+fn source_order() -> Option<Rerun> {
+    #[cfg(feature = "test-oracle")]
+    return Some(|db, q| {
+        let _off = minigraf::__reorder(false);
+        db.execute(q)
+    });
+    #[cfg(not(feature = "test-oracle"))]
+    None
+}
+
 // ── Strategies ────────────────────────────────────────────────────────────────
 
 fn arb_op() -> impl Strategy<Value = Op> {
@@ -101,7 +113,7 @@ proptest! {
     /// Every read after every step matches the reference model.
     #[test]
     fn file_backed_db_matches_model(steps in arb_steps()) {
-        run(&steps, Checks::All)?;
+        run_with(&steps, Checks::All, source_order())?;
     }
 }
 

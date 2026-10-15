@@ -109,16 +109,27 @@ fn keyword_or_ref_through_the_attribute_position() {
 }
 
 #[test]
-fn expression_binding_is_kept_by_later_joins() {
+fn expression_binding_unifies_and_the_first_binder_gives_the_value() {
     let db = Minigraf::in_memory().unwrap();
     db.execute("(transact [[:f :m 0.0] [:e :n 0.0] [:g :k 0.0]])")
         .unwrap();
-    // Plan: `[:f :m ?v]` binds `?v`, `[:e :n ?w]`, the expression
-    // overwrites `?v` with -0.0, then `[?g :k ?v]` joins on it. That pattern
-    // comes first in the text, but an expression's value is kept.
+    // Plan: `[:f :m ?v]` binds `?v`, `[:e :n ?w]`, the expression's -0.0
+    // equals it (#596), then `[?g :k ?v]` joins on it. That pattern comes
+    // first in the text, so its 0.0 is returned.
     let r = query(
         &db,
         "[:find ?v :where [?g :k ?v] [:f :m ?v] [:e :n ?w] [(* ?w -1.0) ?v]]",
+    );
+    assert_eq!(r.len(), 1);
+    assert!(
+        matches!(r[0][0], Value::Float(f) if f == 0.0 && f.is_sign_positive()),
+        "the first pattern's 0.0"
+    );
+    // Natively `[:f :m ?v]` runs first; the expression, earlier in the
+    // text, gives its -0.0.
+    let r = query(
+        &db,
+        "[:find ?v :where [?x :n ?w] [(* ?w -1.0) ?v] [:f :m ?v]]",
     );
     assert_eq!(r.len(), 1);
     assert!(

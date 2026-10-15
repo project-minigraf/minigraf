@@ -569,31 +569,20 @@ pub fn evaluate_not_join(
 /// Apply WhereClause::Expr clauses to a list of bindings.
 ///
 /// Filter-form (`binding: None`) drops rows where the expr is not truthy or errors.
-/// Binding-form (`binding: Some(var)`) extends the row with the computed value.
+/// Binding-form (`binding: Some(var)`) extends the row with the computed value,
+/// or keeps it only if an existing value of the variable is equal (#596).
 fn apply_expr_clauses_in_evaluator(
     bindings: Vec<Bindings>,
     expr_clauses: &[&WhereClause],
     registry: &FunctionRegistry,
 ) -> Vec<Bindings> {
-    use crate::query::datalog::executor::{eval_expr, is_truthy};
+    use crate::query::datalog::executor::apply_expr;
     bindings
         .into_iter()
         .filter_map(|mut b| {
             for clause in expr_clauses {
                 if let WhereClause::Expr { expr, binding: out } = clause {
-                    match eval_expr(expr, &b, Some(registry)) {
-                        Ok(value) => match out {
-                            None => {
-                                if !is_truthy(&value) {
-                                    return None;
-                                }
-                            }
-                            Some(var) => {
-                                b.insert(var.clone(), value);
-                            }
-                        },
-                        Err(_) => return None,
-                    }
+                    b = apply_expr(expr, out.as_deref(), b, registry, false)?;
                 }
             }
             Some(b)
@@ -862,21 +851,11 @@ impl StratifiedEvaluator {
                             );
                         }
                         WhereClause::Expr { expr, binding: out } => {
-                            use crate::query::datalog::executor::{eval_expr, is_truthy};
+                            use crate::query::datalog::executor::apply_expr;
                             candidates = candidates
                                 .into_iter()
-                                .filter_map(|mut b| match eval_expr(&expr, &b, Some(&fn_guard)) {
-                                    Ok(v) => {
-                                        if let Some(var) = &out {
-                                            b.insert(var.clone(), v);
-                                            Some(b)
-                                        } else if is_truthy(&v) {
-                                            Some(b)
-                                        } else {
-                                            None
-                                        }
-                                    }
-                                    Err(_) => None,
+                                .filter_map(|b| {
+                                    apply_expr(&expr, out.as_deref(), b, &fn_guard, false)
                                 })
                                 .collect();
                         }
