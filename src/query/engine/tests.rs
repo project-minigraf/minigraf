@@ -194,10 +194,9 @@ fn queries(tx: u64) -> Vec<String> {
             "[?e :person/age ?v] [?e :db/tx-count _]  [?e :db/tx-count ?t]",
         ),
     ];
-    // Pseudo-attributes across joins (#545): the metadata of the last
-    // pattern before them, in plan order, that matched their entity, chosen
-    // per row; pseudo-attribute patterns with no such pattern before them
-    // join with every fact of their entity.
+    // Pseudo-attributes across joins (#545, #594): the metadata of their
+    // source, the nearest pattern before them in the text with the same
+    // entity term, whatever the plan runs first.
     let pseudo_joins = [
         "[?e :person/name ?n] [?e :person/age ?a] [?e :db/tx-count ?t]",
         "[?e :person/age ?a] [?e :db/tx-count ?t] [?e :person/name ?n] [?e :db/valid-from ?f]",
@@ -209,11 +208,15 @@ fn queries(tx: u64) -> Vec<String> {
         "[?e :person/self ?x] [:p1 :person/age ?a] [:p1 :db/tx-count ?t]",
         "[?e :person/self ?x] [:p1 :person/age ?a] [?e :db/tx-count ?t]",
         "[?e :person/friend :p1] [:p1 :person/age ?a] [?e :db/tx-count ?t]",
-        "[?e :db/tx-count ?t] [?e :person/age ?a]",
-        "[?e :db/tx-count 1] [?e :person/name ?n]",
-        "[?e :db/tx-count 2] [?f :db/tx-count 2] [?e :person/self ?f]",
-        "[?e :db/valid-from ?f] [?e :db/valid-to ?u]",
-        "[:p1 :db/tx-count ?t]",
+        "[?e ?b _] [?e :db/tx-count ?t] [?e :person/age ?a]",
+        "[?e ?b _] [?e :db/tx-count 1] [?e :person/name ?n]",
+        "[?e ?b _] [?e :db/tx-count 2] [?f ?c _] [?f :db/tx-count 2] [?e :person/self ?f]",
+        "[?e ?b _] [?e :db/valid-from ?f] [?e :db/valid-to ?u]",
+        "[:p1 ?b _] [:p1 :db/tx-count ?t]",
+        "[:p1 :person/age ?a] [#uuid \"{p1}\" :db/tx-count ?t]",
+        "[?e :person/name ?n] [(+ 1 2) ?e] [?e :db/tx-count ?t]",
+        "[?e :person/name \"n1\"] [_ :person/age ?a] [?e :db/tx-count ?t]",
+        "[?e :person/age ?a] [?e :person/name ?n] [?e :db/tx-count ?t] [?e :db/tx-id ?i]",
         "[?e :person/age ?a] [?f :person/age ?a] [?f :db/tx-count ?t] [?e :db/tx-count ?t]",
         "[?e :person/age ?a] [(+ ?a 1) ?b] [?e :db/tx-id ?t] [(> ?t 0)]",
     ];
@@ -255,7 +258,8 @@ fn queries(tx: u64) -> Vec<String> {
         }
     }
     for clauses in pseudo_joins {
-        let find = vars_of(clauses);
+        let clauses = clauses.replace("{p1}", &uuid_of(":p1").to_string());
+        let find = vars_of(&clauses);
         for temporal in &pseudo_temporals {
             out.push(format!(
                 "(query [:find {find} {temporal} :where {clauses}])"
@@ -421,9 +425,7 @@ fn engine_reads_many_batches() {
 }
 
 /// The executor still runs what the engine does not: aggregates, `:as-of` a
-/// timestamp, a pseudo-attribute pattern whose metadata comes from a pattern
-/// chosen per row in a way the engine does not reproduce (another entity's
-/// pattern before it, a `_` entity), an expression rebinding an entity.
+/// timestamp.
 #[test]
 fn other_queries_stay_on_the_executor() {
     let db = Minigraf::in_memory().unwrap();
@@ -431,20 +433,32 @@ fn other_queries_stay_on_the_executor() {
     for q in [
         "(query [:find (count ?e) :where [?e :person/name ?n]])",
         "(query [:find ?e :as-of \"2099-01-01T00:00:00Z\" :where [?e :person/name ?n]])",
-        "(query [:find ?e ?t :valid-at :any-valid-time \
-         :where [?e :person/friend ?f] [?f :db/tx-count ?t]])",
-        "(query [:find ?e ?t :valid-at :any-valid-time \
-         :where [_ :person/name ?e] [_ :db/tx-count ?t]])",
-        "(query [:find ?n ?t :valid-at :any-valid-time \
-         :where [?e :person/name ?n] [(+ 1 2) ?e] [?e :db/tx-count ?t]])",
-        "(query [:find ?e ?t :valid-at :any-valid-time \
-         :where [?e :person/name \"n1\"] [_ :person/age ?a] [?e :db/tx-count ?t]])",
-        "(query [:find ?e ?t :valid-at :any-valid-time \
-         :where [?e :person/age ?a] [(+ ?a 1) ?b] [?b :db/tx-count ?t]])",
     ] {
         let before = runs();
         db.execute(q).unwrap();
         assert_eq!(runs(), before, "query stayed on the executor");
+    }
+}
+
+/// A pseudo-attribute pattern with no source is refused at parse time
+/// (#594): another entity's pattern before it, a `_` entity, an entity an
+/// expression binds, none before it.
+#[test]
+fn pseudo_attributes_without_a_source_are_prs_081() {
+    let db = Minigraf::in_memory().unwrap();
+    write_round(&db, 0);
+    for q in [
+        "(query [:find ?e ?t :valid-at :any-valid-time \
+         :where [?e :person/friend ?f] [?f :db/tx-count ?t]])",
+        "(query [:find ?e ?t :valid-at :any-valid-time \
+         :where [_ :person/name ?e] [_ :db/tx-count ?t]])",
+        "(query [:find ?e ?t :valid-at :any-valid-time \
+         :where [?e :person/age ?a] [(+ ?a 1) ?b] [?b :db/tx-count ?t]])",
+        "(query [:find ?e ?t :valid-at :any-valid-time \
+         :where [?e :db/tx-count ?t] [?e :person/age ?a]])",
+    ] {
+        let err = db.execute(q).unwrap_err();
+        assert_eq!(crate::MinigrafError::from(err).code(), "PRS-081");
     }
 }
 

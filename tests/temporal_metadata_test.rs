@@ -458,12 +458,20 @@ fn pseudo_attr_as_sole_pattern() {
     db.execute(r#"(transact {:valid-from "2022-01-01"} [[:alice :person/name "Alice"]])"#)
         .unwrap();
 
+    // With no pattern before it, a pseudo-attribute has no fact to read
+    // (#594): PRS-081.
+    let err = db
+        .execute(r#"(query [:find ?vf :any-valid-time :where [:alice :db/valid-from ?vf]])"#)
+        .unwrap_err();
+    assert_eq!(err.code(), "PRS-081");
+
+    // `[:alice ?a _]` reads every fact of the entity.
     let r = db
         .execute(
             r#"
         (query [:find ?vf
                 :any-valid-time
-                :where [:alice :db/valid-from ?vf]])
+                :where [:alice ?a _] [:alice :db/valid-from ?vf]])
     "#,
         )
         .unwrap();

@@ -336,9 +336,27 @@ pub struct Pattern {
     pub valid_from: Option<i64>,
     /// Per-fact valid-time override (millis since epoch). None = use transaction-level default.
     pub valid_to: Option<i64>,
+    /// The hidden metadata variables this pattern binds from the fact it
+    /// matches, one per per-fact pseudo-attribute that reads it (#594): set by
+    /// `parser::resolve_pseudo_sources`, empty otherwise.
+    pub meta: Vec<(PseudoAttr, String)>,
+    /// For a per-fact pseudo-attribute pattern: the hidden variable of its
+    /// source pattern (a symbol), which it reads from the row instead of
+    /// scanning facts (#594), or the metadata itself once a `not` body or a
+    /// prepared query has substituted the variable (an integer).
+    pub pseudo_source: Option<EdnValue>,
 }
 
 impl Pattern {
+    /// The hidden metadata variables this pattern binds, and the one it
+    /// reads (#594).
+    pub(crate) fn hidden_vars(&self) -> impl Iterator<Item = &str> {
+        self.meta
+            .iter()
+            .map(|(_, v)| v.as_str())
+            .chain(self.pseudo_source.iter().filter_map(|s| s.as_variable()))
+    }
+
     pub fn new(entity: EdnValue, attribute: EdnValue, value: EdnValue) -> Self {
         Pattern {
             entity,
@@ -346,6 +364,8 @@ impl Pattern {
             value,
             valid_from: None,
             valid_to: None,
+            meta: Vec::new(),
+            pseudo_source: None,
         }
     }
 
@@ -357,6 +377,8 @@ impl Pattern {
             value,
             valid_from: None,
             valid_to: None,
+            meta: Vec::new(),
+            pseudo_source: None,
         }
     }
 
@@ -369,6 +391,8 @@ impl Pattern {
             value,
             valid_from: None,
             valid_to: None,
+            meta: Vec::new(),
+            pseudo_source: None,
         }
     }
 
@@ -386,6 +410,8 @@ impl Pattern {
             value,
             valid_from,
             valid_to,
+            meta: Vec::new(),
+            pseudo_source: None,
         }
     }
 
@@ -415,6 +441,8 @@ impl Pattern {
                 .ok_or_else(|| "Pattern missing value (index 2)".to_string())?,
             valid_from: None,
             valid_to: None,
+            meta: Vec::new(),
+            pseudo_source: None,
         })
     }
 }

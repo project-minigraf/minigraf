@@ -155,6 +155,9 @@ fn pattern_bound_vars(p: &Pattern) -> Vec<String> {
     {
         vars.push(s.clone());
     }
+    // The hidden metadata variables a source binds, or a pseudo-attribute
+    // pattern reads (#594).
+    vars.extend(p.hidden_vars().map(str::to_string));
     vars
 }
 
@@ -213,11 +216,15 @@ pub fn plan(
 ) -> (Vec<(WhereClause, Option<IndexHint>)>, Vec<WhereClause>) {
     // Separate into patterns (with hints), exprs, and not/not-join clauses.
     let mut patterns: Vec<(WhereClause, IndexHint)> = Vec::new();
+    let mut pseudos: Vec<WhereClause> = Vec::new();
     let mut exprs: Vec<WhereClause> = Vec::new();
     let mut not_clauses: Vec<WhereClause> = Vec::new();
 
     for clause in clauses {
         match &clause {
+            WhereClause::Pattern(p) if matches!(&p.attribute, AttributeSpec::Pseudo(a) if a.is_per_fact()) => {
+                pseudos.push(clause)
+            }
             WhereClause::Pattern(p) => {
                 let hint = select_index(p);
                 patterns.push((clause, hint));
@@ -247,6 +254,44 @@ pub fn plan(
         .into_iter()
         .map(|(clause, hint)| (clause, Some(hint)))
         .collect();
+
+    // Place each per-fact pseudo-attribute pattern (#594) after the pattern
+    // that binds the metadata it reads (its source) and, when another pattern
+    // binds its value variable, after that one too, so that it checks rather
+    // than binds. It scans nothing, so selectivity does not order it.
+    let pattern_vars: std::collections::HashSet<String> = result
+        .iter()
+        .filter_map(|(c, _)| match c {
+            WhereClause::Pattern(p) => Some(pattern_bound_vars(p)),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    for clause in pseudos {
+        let WhereClause::Pattern(p) = &clause else {
+            continue;
+        };
+        let mut required: std::collections::HashSet<String> =
+            p.hidden_vars().map(str::to_string).collect();
+        if let EdnValue::Symbol(v) = &p.value
+            && pattern_vars.contains(v)
+        {
+            required.insert(v.clone());
+        }
+        let hint = select_index(p);
+        let mut bound: std::collections::HashSet<String> = Default::default();
+        let mut insert_pos = result.len();
+        for (pos, (c, _)) in result.iter().enumerate() {
+            if let WhereClause::Pattern(q) = c {
+                bound.extend(pattern_bound_vars(q));
+                if required.is_subset(&bound) {
+                    insert_pos = pos + 1;
+                    break;
+                }
+            }
+        }
+        result.insert(insert_pos, (clause, Some(hint)));
+    }
 
     // Push each Expr to the earliest position where all its variables are bound.
     for expr_clause in exprs {
@@ -401,6 +446,8 @@ mod tests {
     use crate::query::datalog::types::{BinOp, EdnValue, Expr, Pattern, WhereClause};
     use uuid::Uuid;
 
+    use crate::query::datalog::types::PseudoAttr;
+
     fn make_pattern(entity: EdnValue, attribute: EdnValue, value: EdnValue) -> Pattern {
         Pattern::new(entity, attribute, value)
     }
@@ -490,6 +537,39 @@ mod tests {
             second_attr, p1_attr,
             "Lower-selectivity pattern must be second"
         );
+    }
+
+    #[test]
+    fn test_pseudo_attribute_runs_after_its_source() {
+        // [?e :age ?a] (source) [?e :db/tx-count ?t] [:p :score ?t]: the
+        // pseudo-attribute waits for its source and for the pattern that
+        // binds ?t, whatever the selectivity order (#594).
+        let mut source = make_pattern(var("e"), kw(":age"), var("a"));
+        source.meta = vec![(PseudoAttr::TxCount, "?#0.tx-count".to_string())];
+        let mut pseudo = Pattern::pseudo(var("e"), PseudoAttr::TxCount, var("t"));
+        pseudo.pseudo_source = Some(EdnValue::Symbol("?#0.tx-count".to_string()));
+        let score = make_pattern(entity_lit(), kw(":score"), var("t"));
+        let (planned, _) = plan(vec![
+            WhereClause::Pattern(source.clone()),
+            WhereClause::Pattern(pseudo.clone()),
+            WhereClause::Pattern(score.clone()),
+        ]);
+        let at = |p: &Pattern| {
+            planned
+                .iter()
+                .position(|(c, _)| matches!(c, WhereClause::Pattern(q) if q == p))
+                .unwrap()
+        };
+        assert!(at(&pseudo) > at(&source));
+        assert!(at(&pseudo) > at(&score));
+        // A `not` whose body reads the source waits for it too.
+        let mut in_not = pseudo.clone();
+        in_not.value = EdnValue::Integer(1);
+        let (planned, _) = plan(vec![
+            WhereClause::Pattern(source.clone()),
+            WhereClause::Not(vec![WhereClause::Pattern(in_not)]),
+        ]);
+        assert!(matches!(planned[1].0, WhereClause::Not(_)));
     }
 
     #[test]

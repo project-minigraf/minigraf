@@ -1143,9 +1143,12 @@ fn apply_not_clause(
     valid_at_value: Value,
     registry: &FunctionRegistry,
 ) -> Vec<Binding> {
+    // Expressions, and pseudo-attributes that may read an outer source
+    // (#594), need the outer row: no exclusion set matched without it.
     let has_expr = not_body
         .iter()
-        .any(|c| matches!(c, WhereClause::Expr { .. }));
+        .any(|c| matches!(c, WhereClause::Expr { .. }))
+        || reads_metadata(not_body);
     let patterns: Vec<Pattern> = not_body
         .iter()
         .filter_map(|c| match c {
@@ -1175,8 +1178,7 @@ fn apply_not_clause(
     let exclusion_set: std::collections::HashSet<Vec<(String, Value)>> = matcher
         .match_patterns(&patterns)
         .into_iter()
-        .map(|mut b| {
-            b.retain(|k, _| !k.starts_with("__f"));
+        .map(|b| {
             let mut kv: Vec<(String, Value)> = b
                 .into_iter()
                 .map(|(k, v)| (k, normalize_value(&v)))
@@ -1232,9 +1234,12 @@ fn apply_not_join_clause(
     valid_at_value: Value,
     registry: &FunctionRegistry,
 ) -> Vec<Binding> {
+    // Expressions, and pseudo-attributes that may read an outer source
+    // (#594), need the outer row: no exclusion set matched without it.
     let has_expr = nj_clauses
         .iter()
-        .any(|c| matches!(c, WhereClause::Expr { .. }));
+        .any(|c| matches!(c, WhereClause::Expr { .. }))
+        || reads_metadata(nj_clauses);
     let patterns: Vec<Pattern> = nj_clauses
         .iter()
         .filter_map(|c| match c {
@@ -1419,6 +1424,20 @@ fn apply_not_clause_derived(
             )
         })
         .collect()
+}
+
+/// Whether `clauses`, or any clause list inside them, holds a per-fact
+/// pseudo-attribute pattern (#594), which reads metadata a source bound,
+/// possibly outside `clauses`.
+pub(crate) fn reads_metadata(clauses: &[WhereClause]) -> bool {
+    clauses.iter().any(|c| match c {
+        WhereClause::Pattern(p) => p.pseudo_source.is_some(),
+        WhereClause::Not(body) | WhereClause::NotJoin { clauses: body, .. } => reads_metadata(body),
+        WhereClause::Or(branches) | WhereClause::OrJoin { branches, .. } => {
+            branches.iter().any(|b| reads_metadata(b))
+        }
+        WhereClause::Expr { .. } | WhereClause::RuleInvocation { .. } => false,
+    })
 }
 
 /// Filter `bindings` through a single `(not-join [...] ...)` body for the rules query
@@ -2076,9 +2095,12 @@ pub(crate) fn apply_or_clauses(
                 // If any branch contains Not/NotJoin clauses (which need bound variables
                 // from the outer scope to evaluate correctly), fall back to the classic
                 // seeded-branch evaluation to preserve correctness.
+                // So does a branch whose pseudo-attribute may read an outer
+                // source's metadata (#594).
                 let any_branch_has_not = sorted_or_branches.iter().any(|b| {
                     b.iter()
                         .any(|c| matches!(c, WhereClause::Not(_) | WhereClause::NotJoin { .. }))
+                        || reads_metadata(b)
                 });
 
                 if any_branch_has_not {
@@ -2307,6 +2329,50 @@ pub(crate) fn apply_or_clauses(
                     if !outer_keys.contains(jv.as_str()) {
                         bail_coded!(ErrorCode::Int031, jv);
                     }
+                }
+
+                // A branch whose pseudo-attribute may read an outer source's
+                // metadata (#594) needs it from the outer row: evaluate the
+                // branches per row, seeded with its join variables only (the
+                // others are fresh inside), and keep the distinct rows some
+                // branch matches, as the joined path below does.
+                if sorted_oj_branches.iter().any(|b| reads_metadata(b)) {
+                    let mut seen: std::collections::HashSet<Vec<(String, Value)>> =
+                        std::collections::HashSet::new();
+                    let mut result: Vec<Binding> = Vec::new();
+                    for incoming in &bindings {
+                        let seed: Binding = join_vars
+                            .iter()
+                            .filter_map(|v| incoming.get(v).map(|val| (v.clone(), val.clone())))
+                            .collect();
+                        let mut matched = false;
+                        for branch in &sorted_oj_branches {
+                            if !evaluate_branch(
+                                branch,
+                                vec![seed.clone()],
+                                storage.clone(),
+                                rules,
+                                as_of.clone(),
+                                valid_at.clone(),
+                                registry,
+                            )?
+                            .is_empty()
+                            {
+                                matched = true;
+                                break;
+                            }
+                        }
+                        let mut key: Vec<_> = incoming
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.clone()))
+                            .collect();
+                        key.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+                        if matched && seen.insert(key) {
+                            result.push(incoming.clone());
+                        }
+                    }
+                    bindings = result;
+                    continue;
                 }
 
                 let empty_seed: Vec<Binding> = vec![HashMap::new()];
@@ -5560,7 +5626,7 @@ mod expr_eval_tests {
         // Lines 348-350: hard-error guard in execute_query_with_rules
         // Per-fact pseudo-attr without :any-valid-time in a rules query
         let err_cmd = parse_datalog_command(
-            "(query [:find ?e ?vf :where (tagged ?e) [?e :db/valid-from ?vf]])",
+            "(query [:find ?e ?vf :where (tagged ?e) [?e ?a _] [?e :db/valid-from ?vf]])",
         )
         .expect("err query parse failed");
         let err_result = executor.execute(err_cmd);

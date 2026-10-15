@@ -127,6 +127,7 @@ pub(crate) enum ErrorCode {
     Prs078,
     Prs079,
     Prs080,
+    Prs081,
     Qry001,
     Qry002,
     Qry003,
@@ -763,6 +764,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Prs080,
         "PRS-080",
         ":find variable {} not bound in :where",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs081,
+        "PRS-081",
+        "{} on {} has no pattern before it, with the same entity, that reads a stored attribute; add one (e.g. [{} ?a _]) before it",
         ErrorCategory::Parser,
     ),
     (
@@ -1984,6 +1991,7 @@ mod tests {
                 | ErrorCode::Prs078
                 | ErrorCode::Prs079
                 | ErrorCode::Prs080
+                | ErrorCode::Prs081
                 | ErrorCode::Qry001
                 | ErrorCode::Qry002
                 | ErrorCode::Qry003
@@ -2210,6 +2218,7 @@ mod tests {
             ErrorCode::Prs078,
             ErrorCode::Prs079,
             ErrorCode::Prs080,
+            ErrorCode::Prs081,
             ErrorCode::Qry001,
             ErrorCode::Qry002,
             ErrorCode::Qry003,

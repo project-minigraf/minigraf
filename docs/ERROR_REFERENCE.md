@@ -101,6 +101,7 @@ with no `CodedError` anywhere in its chain.
 | PRS-078 | Query rejects unexpected trailing argument(s) | Parser |
 | PRS-079 | Rule rejects unexpected trailing argument(s) | Parser |
 | PRS-080 | :find variable not bound in :where | Parser |
+| PRS-081 | Pseudo-attribute has no source pattern | Parser |
 | QRY-001 | Invalid entity | Query Execution |
 | QRY-002 | Attribute must be a keyword | Query Execution |
 | QRY-003 | Cannot transact a pseudo-attribute | Query Execution |
@@ -1578,6 +1579,22 @@ $<4097-char-slot-name>
 (query [:find ?n :where [?e :person/name ?name]])
 ```
 *`?n` is never bound; use `?name`*
+
+### PRS-081 Pseudo-attribute has no source pattern
+
+**Error text**: `{} on {} has no pattern before it, with the same entity, that reads a stored attribute; add one (e.g. [{} ?a _]) before it`
+
+**Cause**: A per-fact pseudo-attribute pattern (`:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`) reads the metadata of one fact: the fact matched by its *source*, the nearest pattern before it in the query text with the same entity term and a stored attribute (a keyword, or a variable such as `[?e ?a ?v]`). The search starts in the pseudo-attribute's own clause list and continues outwards, before each enclosing `not`, `or`, `not-join` or `or-join`; it crosses a `not-join` or `or-join` only for an entity variable listed in its join variables, and it stops at a rule body, which never reads its caller's patterns. A pattern after the pseudo-attribute never counts, a sibling `or` branch is never searched, and a `_` entity never has a source. Entity terms are the same when they are the same variable, the same `$slot`, or constants naming the same entity (`:alice` and its UUID). Before v3.0.0 such a pattern matched every visible fact of the entity instead, and which fact a pseudo-attribute read could depend on the plan.
+
+**Resolution**:
+- Put a pattern with the same entity term before the pseudo-attribute pattern.
+- To read the metadata of every fact of an entity, write `[?e ?a _]` before it.
+
+**Example**:
+```datalog
+(query [:find ?t :any-valid-time :where [?e :db/tx-count ?t] [?e :person/name "Alice"]])
+```
+*Move `[?e :person/name "Alice"]` before `[?e :db/tx-count ?t]`*
 
 ---
 
