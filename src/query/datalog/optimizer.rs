@@ -1,7 +1,7 @@
 //! Query optimizer: index selection and join ordering for Datalog patterns.
 //!
 //! `plan()` is the single entry point. It assigns an `IndexHint` to each
-//! pattern and (outside the `wasm` feature) sorts patterns by selectivity.
+//! pattern and sorts patterns by selectivity, on every build.
 //!
 //! [`reorder`] says whether this build reorders: patterns, `not`/`not-join`
 //! clauses and `or` branches by cost, the `or` short-circuits (#250), and the
@@ -16,15 +16,16 @@ thread_local! {
     static REORDER: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
 }
 
-/// Whether queries reorder clauses by cost: never under the `wasm` feature,
-/// and, in tests, only while this thread's switch is on ([`set_reorder`]).
+/// Whether queries reorder clauses by cost: always, except in tests while
+/// this thread's switch is off ([`set_reorder`]). The `wasm` feature no
+/// longer turns it off: no answer depends on the plan (#594, #596).
 #[inline]
 pub(crate) fn reorder() -> bool {
     #[cfg(any(test, feature = "test-oracle"))]
     if !REORDER.with(std::cell::Cell::get) {
         return false;
     }
-    !cfg!(feature = "wasm")
+    true
 }
 
 /// Turns reordering on or off for queries on this thread until the guard
@@ -81,10 +82,6 @@ fn attr_is_index_bound(a: &AttributeSpec) -> bool {
 /// Count the number of non-variable components in a pattern.
 /// Higher score = more selective.
 ///
-/// Not used under the `wasm` feature ([`reorder`]): WASM/browser targets typically
-/// work with small datasets where the overhead of computing scores and sorting can
-/// equal or exceed the benefit. Source order is preserved there for deterministic,
-/// debuggable query behaviour.
 fn selectivity_score(p: &Pattern) -> u8 {
     let e = !is_variable(&p.entity);
     let a = attr_is_index_bound(&p.attribute);
@@ -238,7 +235,6 @@ pub fn plan(
 
     // Stable sort patterns by selectivity descending (when reordering).
     // Preserves original order for ties, ensuring deterministic output.
-    // WASM omission: see selectivity_score() — small datasets, determinism.
     if reorder() {
         patterns.sort_by_key(|(clause, _)| {
             if let WhereClause::Pattern(p) = clause {
@@ -508,8 +504,6 @@ mod tests {
         let p = make_pattern(var("e"), var("a"), var("v"));
         assert_eq!(select_index(&p), IndexHint::Eavt);
     }
-
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_join_ordering_moves_selective_pattern_first() {
         let p1 = make_pattern(var("e"), kw(":age"), var("a")); // selectivity 1 (attr only)
@@ -601,15 +595,15 @@ mod tests {
             #[cfg(not(target_arch = "wasm32"))]
             {
                 let other = std::thread::spawn(reorder).join().unwrap();
-                assert_eq!(other, !cfg!(feature = "wasm"), "other thread unaffected");
+                assert!(other, "other thread unaffected");
             }
             {
                 let _on = set_reorder(true);
-                assert_eq!(reorder(), !cfg!(feature = "wasm"));
+                assert!(reorder());
             }
             assert!(!reorder(), "inner guard restores off");
         }
-        assert_eq!(reorder(), !cfg!(feature = "wasm"), "restored on drop");
+        assert!(reorder(), "restored on drop");
     }
 
     // ── expr_vars() ──────────────────────────────────────────────────────────
@@ -666,7 +660,6 @@ mod tests {
 
     #[test]
     fn test_plan_pattern_carries_some_hint() {
-        #[cfg(not(feature = "wasm"))]
         {
             let p = WhereClause::Pattern(make_pattern(var("e"), kw(":val"), var("v")));
             let (planned, _deferred) = plan(vec![p]);
@@ -679,7 +672,6 @@ mod tests {
 
     #[test]
     fn test_plan_expr_carries_none_hint() {
-        #[cfg(not(feature = "wasm"))]
         {
             let p = WhereClause::Pattern(make_pattern(var("e"), kw(":val"), var("v")));
             let expr = WhereClause::Expr {
@@ -697,8 +689,6 @@ mod tests {
             );
         }
     }
-
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_expr_pushed_after_binding_pattern() {
         // Three patterns with equal selectivity (1 attr bound each) — stable sort preserves
@@ -728,8 +718,6 @@ mod tests {
             "p3 must be at index 3"
         );
     }
-
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_expr_no_vars_goes_to_end() {
         let p1 = WhereClause::Pattern(make_pattern(var("e"), kw(":val"), var("v")));
@@ -744,8 +732,6 @@ mod tests {
             "no-var Expr must be last"
         );
     }
-
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_expr_unbound_var_goes_to_end() {
         // ?x is never bound by any pattern
@@ -767,8 +753,6 @@ mod tests {
     }
 
     // ── Not/NotJoin push-down (#248) ─────────────────────────────────────
-
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_not_pushed_after_binding_pattern() {
         // p1 binds ?e/?n, p2 binds ?e/?v. Not body needs ?v, bound at p2 (pos 1).
@@ -793,8 +777,6 @@ mod tests {
             "p3 must be pushed after the not clause"
         );
     }
-
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_not_with_unbound_var_is_deferred() {
         // Not body references ?z, which no pattern in this list ever binds
@@ -814,8 +796,6 @@ mod tests {
         assert_eq!(deferred.len(), 1, "unplaceable not clause must be deferred");
         assert_eq!(deferred[0], not_clause);
     }
-
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_not_join_pushed_to_correct_position() {
         // not-join requires only ?e bound (join_vars), which p1 binds at pos 0.
@@ -838,8 +818,6 @@ mod tests {
             "NotJoin must be placed right after the pattern binding ?e (index 0)"
         );
     }
-
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_not_join_unbound_join_var_is_deferred() {
         let p1 = WhereClause::Pattern(make_pattern(var("e"), kw(":name"), var("n")));
@@ -859,8 +837,6 @@ mod tests {
             "not-join with unbound join var must be deferred"
         );
     }
-
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_not_with_no_required_vars_goes_first() {
         // Not body is fully self-contained (no outer vars referenced) — safe to run
@@ -879,8 +855,6 @@ mod tests {
             "Not clause with no required vars must be placed first"
         );
     }
-
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_not_wildcard_var_does_not_block_placement() {
         // `?_x` is the wildcard idiom — it must not count as an outer dependency,
@@ -904,8 +878,6 @@ mod tests {
             "Not must be pushed right after the pattern binding ?e, not deferred to the end"
         );
     }
-
-    #[cfg(not(feature = "wasm"))]
     #[test]
     fn test_multiple_not_clauses_at_same_position_stay_cheapest_first() {
         // Both Not bodies need only ?e (bound by p1) and land at the same insertion

@@ -172,6 +172,10 @@ const MATRIX: &[&str] = &[
     r#"[:find ?n :any-valid-time :where [?e :name ?n] (or [?e :db/tx-count 1] [?e :age 40])]"#,
     r#"[:find ?n :any-valid-time :where [?e :name ?n] (or-join [?e] [?e :db/tx-count 1] [?e :friend _])]"#,
     r#"[:find ?e ?t :any-valid-time :where (stamped ?e ?t) [?e :age ?a]]"#,
+    // `:db/valid-at` first in the text: it never gives a variable's value.
+    // (A fixed `:valid-at`: by default `?t` is each query's "now".)
+    r#"[:find ?b ?t :valid-at "2030-01-01T00:00:00Z" :where [?b :db/valid-at ?t] [?a :friend ?b] [?b :name ?n]]"#,
+    r#"[:find ?b :where [?b :db/valid-at ?t] [?a :friend ?b]]"#,
     // Time travel.
     r#"[:find ?n :as-of 1 :where [?e :name ?n] [?e :age ?a]]"#,
     r#"[:find ?n ?a :valid-at "2020-06-01T00:00:00Z" :where [?e :name ?n] [?e :age ?a]]"#,

@@ -135,7 +135,7 @@ cargo run < demos/demo_negation.txt
    - `stratification.rs`: `DependencyGraph`, `stratify()` — negative edges + cycle detection
    - `rules.rs`: `RuleRegistry` — thread-safe rule management
    - `types.rs`: `EdnValue`, `Pattern`, `DatalogQuery`, `AsOf`, `ValidAt`, `WhereClause` (incl. `Not`, `NotJoin`); `PseudoAttr` enum, `AttributeSpec` wrapper
-   - `optimizer.rs`: Selectivity-based join reordering; disabled under `wasm` feature. `reorder()` gates every reordering site; tests turn it off per thread (`set_reorder`, `minigraf::__reorder` under `test-oracle`, #596)
+   - `optimizer.rs`: Selectivity-based join reordering on every build (the `wasm` feature is a deprecated no-op). `reorder()` gates every reordering site; tests turn it off per thread (`set_reorder`, `minigraf::__reorder` under `test-oracle`, #596)
    - `prepared.rs`: `BindValue`, `PreparedQuery` — parse-once/execute-many with named `$slot` bind slots; `prepare_query`, `substitute`
    - `magic_sets.rs`: Magic-sets rewriting for demand-driven recursive rule evaluation (not applied to rules with `not`/`not-join`)
 
