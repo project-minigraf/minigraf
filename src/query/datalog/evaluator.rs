@@ -798,7 +798,6 @@ impl StratifiedEvaluator {
                     }
                 }
 
-                #[cfg_attr(feature = "wasm", allow(unused_mut))]
                 let mut not_clauses: Vec<Vec<WhereClause>> = rule
                     .body
                     .iter()
@@ -808,7 +807,6 @@ impl StratifiedEvaluator {
                     })
                     .collect();
 
-                #[cfg_attr(feature = "wasm", allow(unused_mut))]
                 let mut not_join_clauses: Vec<(Vec<String>, Vec<WhereClause>)> = rule
                     .body
                     .iter()
@@ -821,18 +819,19 @@ impl StratifiedEvaluator {
                     .collect();
 
                 // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
-                #[cfg(not(feature = "wasm"))]
-                not_clauses.sort_by_key(|body| {
-                    crate::query::datalog::optimizer::clause_cost(&WhereClause::Not(body.clone()))
-                });
-                // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
-                #[cfg(not(feature = "wasm"))]
-                not_join_clauses.sort_by_key(|(vars, clauses)| {
-                    crate::query::datalog::optimizer::clause_cost(&WhereClause::NotJoin {
-                        join_vars: vars.clone(),
-                        clauses: clauses.clone(),
-                    })
-                });
+                if crate::query::datalog::optimizer::reorder() {
+                    not_clauses.sort_by_key(|body| {
+                        crate::query::datalog::optimizer::clause_cost(&WhereClause::Not(
+                            body.clone(),
+                        ))
+                    });
+                    not_join_clauses.sort_by_key(|(vars, clauses)| {
+                        crate::query::datalog::optimizer::clause_cost(&WhereClause::NotJoin {
+                            join_vars: vars.clone(),
+                            clauses: clauses.clone(),
+                        })
+                    });
+                }
 
                 // Compute once; reuse for plan loop, apply_or_clauses, not-body matching.
                 let accumulated_facts: Arc<[Fact]> = Arc::from(accumulated.get_asserted_facts()?);

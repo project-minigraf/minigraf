@@ -314,8 +314,10 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
                         metas.push((m, slots.add(OTHER)));
                     }
                     if let JoinKind::Hash { build_inner } = &mut join.kind {
-                        *build_inner = optimizer::branch_cost(&[WhereClause::Pattern(q.clone())])
-                            <= optimizer::branch_cost(&outer_patterns);
+                        // Off: always the inner pattern (decision 3 of the #596 plan).
+                        *build_inner = !optimizer::reorder()
+                            || optimizer::branch_cost(&[WhereClause::Pattern(q.clone())])
+                                <= optimizer::branch_cost(&outer_patterns);
                     }
                     steps.push(Step::Join(join));
                 }

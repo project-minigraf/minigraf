@@ -742,10 +742,10 @@ impl DatalogExecutor {
         // Apply Not/NotJoin clauses the planner couldn't place inline (#248) — their
         // variables are only bound by the Or/OrJoin pass above, so they must run here,
         // after it. Sorted cheapest-first, same as the pre-#248 post-filter ordering.
-        #[cfg_attr(feature = "wasm", allow(unused_mut))]
         let mut deferred_not_clauses = deferred_not_clauses;
-        #[cfg(not(feature = "wasm"))]
-        deferred_not_clauses.sort_by_key(optimizer::clause_cost);
+        if optimizer::reorder() {
+            deferred_not_clauses.sort_by_key(optimizer::clause_cost);
+        }
         for clause in deferred_not_clauses {
             bindings = match clause {
                 WhereClause::Not(body) => apply_not_clause(
@@ -1004,10 +1004,10 @@ impl DatalogExecutor {
         // variables are only bound by the Or/OrJoin pass above. (The StratifiedEvaluator
         // handles `not`/`not-join` in rule bodies; this handles them appearing directly
         // in the query body alongside rule invocations.)
-        #[cfg_attr(feature = "wasm", allow(unused_mut))]
         let mut deferred_not_clauses = deferred_not_clauses;
-        #[cfg(not(feature = "wasm"))]
-        deferred_not_clauses.sort_by_key(optimizer::clause_cost);
+        if optimizer::reorder() {
+            deferred_not_clauses.sort_by_key(optimizer::clause_cost);
+        }
         for clause in deferred_not_clauses {
             bindings = match clause {
                 WhereClause::Not(body) => apply_not_clause_derived(
@@ -2054,13 +2054,13 @@ pub(crate) fn apply_or_clauses(
         match clause {
             WhereClause::Or(branches) => {
                 let sorted_or_branches: Vec<&Vec<WhereClause>> = {
-                    #[cfg_attr(feature = "wasm", allow(unused_mut))]
                     let mut b: Vec<&Vec<WhereClause>> = branches.iter().collect();
                     // Sort branches by cost ascending so cheaper branches evaluate first,
                     // maximizing the chance the short-circuit below fires early (#250).
                     // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
-                    #[cfg(not(feature = "wasm"))]
-                    b.sort_by_key(|br| optimizer::branch_cost(br));
+                    if optimizer::reorder() {
+                        b.sort_by_key(|br| optimizer::branch_cost(br));
+                    }
                     b
                 };
                 // If any branch contains Not/NotJoin clauses (which need bound variables
@@ -2112,12 +2112,16 @@ pub(crate) fn apply_or_clauses(
 
                 // Variable names already bound in the incoming scope — used below to detect
                 // whether a branch introduces a *new* variable (#250 short-circuit gating).
-                #[cfg(not(feature = "wasm"))]
-                let incoming_var_names: std::collections::HashSet<String> = bindings
-                    .iter()
-                    .flat_map(|b| b.keys().cloned())
-                    .filter(|k| !k.starts_with("__"))
-                    .collect();
+                let reorder = optimizer::reorder();
+                let incoming_var_names: std::collections::HashSet<String> = if reorder {
+                    bindings
+                        .iter()
+                        .flat_map(|b| b.keys().cloned())
+                        .filter(|k| !k.starts_with("__"))
+                        .collect()
+                } else {
+                    Default::default()
+                };
 
                 for branch in &sorted_or_branches {
                     let branch_result = evaluate_branch(
@@ -2151,8 +2155,7 @@ pub(crate) fn apply_or_clauses(
                     // scope — i.e. this `or` is a pure filter (all branches bind the same
                     // new-var set per the parser's or-safety check), so any further match on
                     // an already-covered key would just re-derive an identical row.
-                    #[cfg(not(feature = "wasm"))]
-                    {
+                    if reorder {
                         let branch_var_names: std::collections::HashSet<&str> = union_bindings
                             .iter()
                             .flat_map(|bb| bb.keys().map(|k| k.as_str()))
@@ -2275,13 +2278,13 @@ pub(crate) fn apply_or_clauses(
                     continue;
                 }
                 let sorted_oj_branches: Vec<&Vec<WhereClause>> = {
-                    #[cfg_attr(feature = "wasm", allow(unused_mut))]
                     let mut b: Vec<&Vec<WhereClause>> = branches.iter().collect();
                     // Sort branches by cost ascending so cheaper branches evaluate first,
                     // maximizing the chance the short-circuit below fires early (#250).
                     // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
-                    #[cfg(not(feature = "wasm"))]
-                    b.sort_by_key(|br| optimizer::branch_cost(br));
+                    if optimizer::reorder() {
+                        b.sort_by_key(|br| optimizer::branch_cost(br));
+                    }
                     b
                 };
                 let outer_keys: std::collections::HashSet<String> =
@@ -2309,16 +2312,20 @@ pub(crate) fn apply_or_clauses(
                 // only add a row identical to one already merged, which the dedup below
                 // would drop anyway — unlike plain `or`, this holds regardless of what the
                 // branch itself binds internally.
-                #[cfg(not(feature = "wasm"))]
-                let required_keys: std::collections::HashSet<Vec<(String, Value)>> = bindings
-                    .iter()
-                    .map(|incoming| {
-                        join_vars
-                            .iter()
-                            .filter_map(|v| incoming.get(v).map(|val| (v.clone(), val.clone())))
-                            .collect::<Vec<_>>()
-                    })
-                    .collect();
+                let reorder = optimizer::reorder();
+                let required_keys: std::collections::HashSet<Vec<(String, Value)>> = if reorder {
+                    bindings
+                        .iter()
+                        .map(|incoming| {
+                            join_vars
+                                .iter()
+                                .filter_map(|v| incoming.get(v).map(|val| (v.clone(), val.clone())))
+                                .collect::<Vec<_>>()
+                        })
+                        .collect()
+                } else {
+                    Default::default()
+                };
 
                 for branch in &sorted_oj_branches {
                     let branch_result = evaluate_branch(
@@ -2348,8 +2355,7 @@ pub(crate) fn apply_or_clauses(
                         }
                     }
 
-                    #[cfg(not(feature = "wasm"))]
-                    if required_keys.iter().all(|k| branch_map.contains_key(k)) {
+                    if reorder && required_keys.iter().all(|k| branch_map.contains_key(k)) {
                         break;
                     }
                 }

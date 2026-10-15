@@ -120,3 +120,17 @@ pub use query::datalog::types::{AsOf, ValidAt};
 
 // Prepared statements
 pub use query::datalog::prepared::{BindValue, PreparedQuery};
+
+// Plan-independence tests (#596): run queries without reordering.
+#[cfg(feature = "test-oracle")]
+#[doc(hidden)]
+pub use query::datalog::optimizer::ReorderGuard;
+
+/// Turns clause reordering on or off for queries on this thread until the
+/// returned guard drops. Only for tests that check no answer depends on the
+/// plan (#596); built with the `test-oracle` feature only.
+#[cfg(feature = "test-oracle")]
+#[doc(hidden)]
+pub fn __reorder(on: bool) -> ReorderGuard {
+    query::datalog::optimizer::set_reorder(on)
+}
