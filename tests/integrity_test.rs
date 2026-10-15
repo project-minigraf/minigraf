@@ -127,6 +127,77 @@ fn damaged_leaves_are_reported_and_index_damage_is_repaired() {
     assert!(refused > 0, "DICT leaves are refused");
 }
 
+/// Every internal node whose rightmost child is redirected to itself, in turn:
+/// a scan comes back to leaves it already read. Each query fails with INT-049
+/// or answers; it never resumes from a key it saw and runs forever (#597).
+///
+/// Not run with the `test-oracle` feature: on a damaged file the engine and
+/// the executor read different pages (the executor also looks up each fact's
+/// tx timestamp), so one can fail where the other answers.
+#[test]
+#[cfg_attr(
+    feature = "test-oracle",
+    ignore = "plans read different pages of a damaged file"
+)]
+fn internal_node_pointing_at_itself_fails_the_scan_instead_of_looping() {
+    const PAGE_TYPE_INTERNAL: u8 = 0x62;
+    const RIGHTMOST_CHILD: usize = 24;
+    let dir = tempfile::tempdir().unwrap();
+    let clean = dir.path().join("clean.graph");
+    {
+        let db = Minigraf::open(&clean).unwrap();
+        // More facts than one engine batch (1,024), so scans resume.
+        fill(&db, 0, 1500);
+        db.checkpoint().unwrap();
+    }
+    let bytes = std::fs::read(&clean).unwrap();
+    let internals: Vec<u64> = (2..bytes.len() as u64 / PAGE_SIZE)
+        .filter(|&p| bytes[(p * PAGE_SIZE) as usize] == PAGE_TYPE_INTERNAL)
+        .collect();
+    assert!(!internals.is_empty(), "fixture has internal nodes");
+    let mut refused = 0;
+    for (i, &node) in internals.iter().enumerate() {
+        let mut damaged = bytes.clone();
+        let page = &mut damaged[(node * PAGE_SIZE) as usize..((node + 1) * PAGE_SIZE) as usize];
+        page[RIGHTMOST_CHILD..RIGHTMOST_CHILD + 8].copy_from_slice(&node.to_le_bytes());
+        page[4..8].fill(0);
+        let crc = crc32fast::hash(page);
+        page[4..8].copy_from_slice(&crc.to_le_bytes());
+        let path = dir.path().join(format!("cycle{i}.graph"));
+        std::fs::write(&path, &damaged).unwrap();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let codes: Vec<String> = Minigraf::open(&path)
+                .map(|db| {
+                    [
+                        "(query [:find ?e ?a ?v :where [?e ?a ?v]])",
+                        "(query [:find ?e ?n :where [?e :person/name ?n]])",
+                        "(query [:find ?e ?f :where [?e :person/friend ?f]])",
+                    ]
+                    .iter()
+                    .map(|q| match db.execute(q) {
+                        Ok(_) => "ok".to_string(),
+                        Err(e) => e.code().to_string(),
+                    })
+                    .collect()
+                })
+                .unwrap_or_else(|e| vec![e.code().to_string()]);
+            let _ = tx.send(codes);
+        });
+        let codes = rx
+            .recv_timeout(std::time::Duration::from_secs(60))
+            .expect("queries over a cyclic tree finish");
+        for code in &codes {
+            assert!(code == "ok" || code == "INT-049", "unexpected error code");
+        }
+        if codes.iter().any(|c| c == "INT-049") {
+            refused += 1;
+        }
+    }
+    assert!(refused > 0, "a cycle under a scanned index is refused");
+}
+
 /// A checkpointed file closed cleanly, with no WAL: `(path, file length)`.
 fn checkpointed_file(dir: &std::path::Path, name: &str) -> (std::path::PathBuf, u64) {
     let path = dir.join(name);

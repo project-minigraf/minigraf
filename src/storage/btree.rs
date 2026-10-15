@@ -497,6 +497,11 @@ impl Frame {
 /// Holds the path from the root as a stack of internal nodes, so moving to the
 /// next leaf or seeking forward re-reads only the pages below the lowest
 /// ancestor that still covers the target.
+///
+/// Keys come out strictly increasing and never below the start or the last
+/// seek target, or the cursor fails with INT-049. A damaged tree (a child
+/// pointing back up, say) would otherwise return a leaf again, and a caller
+/// that resumes from a key it saw would never finish (#597).
 pub(crate) struct LeafCursor<'a> {
     backend: &'a dyn StorageBackend,
     cache: &'a PageCache,
@@ -505,6 +510,8 @@ pub(crate) struct LeafCursor<'a> {
     pos: usize,
     /// Set once the cursor has moved past the last leaf.
     done: bool,
+    /// The start or the last seek target: no key below it is returned.
+    floor: Vec<u8>,
 }
 
 impl<'a> LeafCursor<'a> {
@@ -522,6 +529,7 @@ impl<'a> LeafCursor<'a> {
             entries: Vec::new(),
             pos: 0,
             done: false,
+            floor: start.map(<[u8]>::to_vec).unwrap_or_default(),
         };
         cursor.descend(root, start)?;
         Ok(cursor)
@@ -555,11 +563,16 @@ impl<'a> LeafCursor<'a> {
         if self.done {
             return Ok(());
         }
-        if let Some((next_key, _)) = self.entries.get(self.pos)
-            && key <= next_key.as_slice()
-        {
+        // The next entry, or past the leaf its last one, bounds what is left.
+        let ahead = match self.entries.get(self.pos) {
+            Some((next_key, _)) => Some(next_key),
+            None => self.entries.last().map(|(k, _)| k),
+        };
+        if ahead.is_some_and(|k| key <= k.as_slice()) {
             return Ok(());
         }
+        self.floor.clear();
+        self.floor.extend_from_slice(key);
         // Find the lowest node whose range covers `key`. The child a frame is
         // in ends at that frame's separator `child_idx`; a rightmost child
         // inherits its parent's bound. `reroute` is the frame to route `key` in
@@ -604,7 +617,17 @@ impl<'a> LeafCursor<'a> {
             if top.child_idx < top.count {
                 top.child_idx += 1;
                 let child = top.node()?.child(top.child_idx)?;
+                let passed = std::mem::take(&mut self.entries);
                 self.descend(child, None)?;
+                let first = self.entries.first().map(|(k, _)| k.as_slice());
+                let last = passed.last().map(|(k, _)| k.as_slice());
+                if first.is_some_and(|f| f < self.floor.as_slice() || last.is_some_and(|l| f <= l))
+                {
+                    bail_coded!(
+                        ErrorCode::Int049,
+                        format!("keys out of order at leaf page_id={child}")
+                    );
+                }
                 return Ok(true);
             }
             self.stack.pop();
@@ -626,6 +649,13 @@ impl<'a> LeafCursor<'a> {
             match page.first().copied() {
                 Some(PAGE_TYPE_LEAF) => {
                     self.entries = decode_leaf(&page[..])?;
+                    // Only an empty tree has an empty leaf, as its root.
+                    if self.entries.is_empty() && !self.stack.is_empty() {
+                        bail_coded!(
+                            ErrorCode::Int049,
+                            format!("empty leaf below an internal node at page_id={page_id}")
+                        );
+                    }
                     self.pos = key.map_or(0, |k| {
                         self.entries.partition_point(|(e, _)| e.as_slice() < k)
                     });
@@ -1006,6 +1036,90 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(crate::error::MinigrafError::from(err).code(), "INT-049");
+    }
+
+    /// Point child `i` of the internal page `node` at `to`.
+    fn redirect_child(
+        backend: &mut MemoryBackend,
+        cache: &PageCache,
+        node: u64,
+        i: usize,
+        to: u64,
+    ) {
+        let mut page = cache.get_or_load(node, &*backend).unwrap().to_vec();
+        let at = {
+            let n = Internal::new(&page[..]).unwrap();
+            if i == n.count() {
+                RIGHTMOST_CHILD_OFFSET
+            } else {
+                // Entry `i`: slot offset, varint separator length, separator, child.
+                let slot = PAGE_SIZE - 2 * n.count() + 2 * i;
+                let mut pos = usize::from(u16::from_le_bytes([page[slot], page[slot + 1]]));
+                let len = n.sep(i).unwrap().len();
+                pos += crate::storage::node::varint_len(len) + len;
+                pos
+            }
+        };
+        page[at..at + 8].copy_from_slice(&to.to_le_bytes());
+        overwrite_page(backend, cache, node, page);
+    }
+
+    /// Drain `cursor` into `seen`, returning the error code that stopped it.
+    fn drain_to_error(cursor: &mut LeafCursor<'_>, seen: &mut Vec<Vec<u8>>) -> Option<String> {
+        loop {
+            match cursor.next_ref() {
+                Ok(Some((k, _))) => seen.push(k.clone()),
+                Ok(None) => return None,
+                Err(e) => return Some(crate::error::MinigrafError::from(e).code().to_string()),
+            }
+        }
+    }
+
+    #[test]
+    fn cursor_through_a_cycle_is_int_049_without_repeating_a_key() {
+        // The root's rightmost child is the root: the next leaf after the last
+        // one is the first leaf again (#597).
+        let (mut backend, cache, root, _) = multi_leaf_tree();
+        let count = Internal::new(&cache.get_or_load(root, &backend).unwrap()[..])
+            .unwrap()
+            .count();
+        redirect_child(&mut backend, &cache, root, count, root);
+        let mut seen = Vec::new();
+        let mut cursor = LeafCursor::new(root, None, &backend, &cache).unwrap();
+        let code = drain_to_error(&mut cursor, &mut seen);
+        assert_eq!(code.as_deref(), Some("INT-049"), "cycle is refused");
+        assert!(
+            seen.windows(2).all(|w| w[0] < w[1]),
+            "keys strictly increase until the error"
+        );
+    }
+
+    #[test]
+    fn cursor_never_returns_a_key_below_its_seek_target() {
+        // Child 2 points at leaf 0: a seek into child 1's range past its last
+        // key moves on to child 2, whose keys are below the target. A caller
+        // that resumes after a key it saw would read them again forever.
+        let (mut backend, cache, root, leaves) = multi_leaf_tree();
+        redirect_child(&mut backend, &cache, root, 2, leaves[0]);
+        let leaf1 = leaf_keys(leaves[1], &backend, &cache);
+        let mut target = leaf1.last().unwrap().clone();
+        target.push(0xFF);
+        let mut cursor = LeafCursor::new(root, Some(&leaf1[0]), &backend, &cache).unwrap();
+        cursor.seek(&target).unwrap();
+        let mut seen = Vec::new();
+        let code = drain_to_error(&mut cursor, &mut seen);
+        assert_eq!(code.as_deref(), Some("INT-049"), "stale leaf is refused");
+        assert!(seen.is_empty(), "no key below the target");
+    }
+
+    #[test]
+    fn cursor_into_an_empty_leaf_below_the_root_is_int_049() {
+        let (mut backend, cache, root, leaves) = multi_leaf_tree();
+        overwrite_page(&mut backend, &cache, leaves[1], encode_leaf(&[]).unwrap());
+        let mut seen = Vec::new();
+        let mut cursor = LeafCursor::new(root, None, &backend, &cache).unwrap();
+        let code = drain_to_error(&mut cursor, &mut seen);
+        assert_eq!(code.as_deref(), Some("INT-049"), "empty leaf is refused");
     }
 
     #[test]
