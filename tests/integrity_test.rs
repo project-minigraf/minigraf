@@ -130,7 +130,15 @@ fn damaged_leaves_are_reported_and_index_damage_is_repaired() {
 /// Every internal node whose rightmost child is redirected to itself, in turn:
 /// a scan comes back to leaves it already read. Each query fails with INT-049
 /// or answers; it never resumes from a key it saw and runs forever (#597).
+///
+/// Not run with the `test-oracle` feature: on a damaged file the engine and
+/// the executor read different pages (the executor also looks up each fact's
+/// tx timestamp), so one can fail where the other answers.
 #[test]
+#[cfg_attr(
+    feature = "test-oracle",
+    ignore = "plans read different pages of a damaged file"
+)]
 fn internal_node_pointing_at_itself_fails_the_scan_instead_of_looping() {
     const PAGE_TYPE_INTERNAL: u8 = 0x62;
     const RIGHTMOST_CHILD: usize = 24;
