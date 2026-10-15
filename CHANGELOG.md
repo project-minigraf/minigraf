@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A prepared query keeps a literal `:as-of`, `:valid-at` or `:any-valid-time`** (#603). Binding a prepared query's slots dropped any `:as-of` or `:valid-at` that was not itself a slot, so `PreparedQuery::execute` ran at the current transaction time and valid now: `(query [:find ?v :as-of 1 :where [:a :n ?v]])` prepared returned the current rows, not those at transaction 1, and a prepared per-fact pseudo-attribute query with `:any-valid-time` failed with `INT-026`. Slot forms (`:as-of $tx`, `:valid-at $t`) were not affected. Present since 2026-04-04 (v1.x and every v2.x release).
+
 ## v2.0.6 — 2026-10-14
 
 Patch release on the v2.x line under the [support policy](PHILOSOPHY.md#support-policy): three data-integrity fixes for queries that run on another thread while a transaction commits or a checkpoint runs (#554, #555, #558). File format is unchanged (v7). No API changes. Stored data was never affected. Upgrading is recommended for every v2.x user who queries and writes from different threads.

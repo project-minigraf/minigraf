@@ -4,7 +4,7 @@
 
 **Verified**: 2026-10-14 with `cargo test`
 
-**Result**: 1,242 passing tests and 9 ignored tests (1,251 total), including the golden-file corpus (#391)
+**Result**: 1,244 passing tests and 9 ignored tests (1,253 total), including the golden-file corpus (#391)
 
 For v2.0.5, `tests/edge_cases_test.rs` checks that a file of 1 to 4,095 bytes is `STG-045`, unchanged and with no WAL, when it is a database cut below one page or foreign bytes, and opens as a new database that takes a write and reads it back after reopen when it is a prefix of the initial header or all zeros (#506).
 
