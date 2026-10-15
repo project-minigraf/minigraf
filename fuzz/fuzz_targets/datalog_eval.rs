@@ -9,14 +9,17 @@ const FACTS: [[&str; 3]; 3] = [
     [":alice", ":age", "30"],
 ];
 
-/// Inputs whose patterns could join to more rows than this are skipped.
+/// Inputs whose patterns could build more bindings than this are skipped.
 const MAX_JOIN_ROWS: u64 = 50_000;
 
 fuzz_target!(|data: &[u8]| {
     if let Ok(s) = std::str::from_utf8(data) {
         // The executor holds every intermediate binding, so patterns that share no
         // variables build their whole cross product: 3^k rows over these 3 facts.
-        // That is a known limit, not a new bug (#575, fixed by #473/#549).
+        // Negation bodies still run there, pattern by pattern in text order, so a
+        // long body builds every partial binding even when its last pattern
+        // matches nothing (#597). That is a known limit, not a new bug (#575,
+        // fixed by #473/#549, and #546 for negation).
         if join_rows_bound(s) > MAX_JOIN_ROWS {
             return;
         }
@@ -30,7 +33,8 @@ fuzz_target!(|data: &[u8]| {
     }
 });
 
-/// An upper estimate of the rows a cross product of the input's patterns yields.
+/// An upper estimate of the bindings the input's patterns build, partial ones
+/// included.
 ///
 /// Every innermost vector of three or more tokens counts as a pattern. Patterns are
 /// grouped by the variables they share (`_` and `?_…` are wildcards and share
@@ -123,14 +127,15 @@ fn find(parent: &mut [usize], mut i: usize) -> usize {
     i
 }
 
-/// Counts the group's join over `FACTS` depth first, stopping past `MAX_JOIN_ROWS`.
+/// Counts the bindings the group's join over `FACTS` builds in text order, after
+/// each pattern and not only after the last one, depth first, stopping past
+/// `MAX_JOIN_ROWS`.
 fn count_join<'a>(
     group: &[[&'a str; 3]],
     bound: &mut Vec<(&'a str, &'static str)>,
     rows: &mut u64,
 ) {
     let Some((pattern, rest)) = group.split_first() else {
-        *rows += 1;
         return;
     };
     for fact in &FACTS {
@@ -154,6 +159,7 @@ fn count_join<'a>(
             }
         });
         if matches {
+            *rows += 1;
             count_join(rest, bound, rows);
         }
         bound.truncate(mark);
