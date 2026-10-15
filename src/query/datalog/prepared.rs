@@ -308,12 +308,13 @@ fn substitute(
 ) -> Result<DatalogQuery> {
     let mut query = template.clone();
 
-    if let Some(AsOf::Slot(name)) = query.as_of.take() {
-        query.as_of = Some(resolve_as_of_slot(&name, bindings)?);
+    // Only a slot is replaced; a literal `:as-of` / `:valid-at` is kept (#603).
+    if let Some(AsOf::Slot(name)) = &query.as_of {
+        query.as_of = Some(resolve_as_of_slot(name, bindings)?);
     }
 
-    if let Some(ValidAt::Slot(name)) = query.valid_at.take() {
-        query.valid_at = Some(resolve_valid_at_slot(&name, bindings)?);
+    if let Some(ValidAt::Slot(name)) = &query.valid_at {
+        query.valid_at = Some(resolve_valid_at_slot(name, bindings)?);
     }
 
     for clause in &mut query.where_clauses {
@@ -722,6 +723,24 @@ mod tests {
             filled.valid_at,
             Some(ValidAt::Timestamp(1_685_577_600_000))
         ));
+    }
+
+    #[test]
+    fn test_substitute_keeps_literal_as_of_and_valid_at() {
+        // #603: only a slot is replaced.
+        let mut q = make_query_entity_slot();
+        q.as_of = Some(AsOf::Counter(3));
+        q.valid_at = Some(ValidAt::AnyValidTime);
+        let bv = BindValue::Entity(uuid::Uuid::nil());
+        let bindings: HashMap<&str, &BindValue> = [("entity", &bv)].into();
+        let filled = substitute(&q, &bindings).unwrap();
+        assert!(matches!(filled.as_of, Some(AsOf::Counter(3))));
+        assert!(matches!(filled.valid_at, Some(ValidAt::AnyValidTime)));
+        q.as_of = Some(AsOf::Timestamp(5));
+        q.valid_at = Some(ValidAt::Timestamp(7));
+        let filled = substitute(&q, &bindings).unwrap();
+        assert!(matches!(filled.as_of, Some(AsOf::Timestamp(5))));
+        assert!(matches!(filled.valid_at, Some(ValidAt::Timestamp(7))));
     }
 
     #[test]
