@@ -739,14 +739,12 @@ fn planner_chooses_the_join() {
         ["hash inner=false"]
     );
     // With the test switch off the table is always built on the inner
-    // pattern (`wasm` keeps the cost choice).
+    // pattern.
     let _off = crate::query::datalog::optimizer::set_reorder(false);
-    if !cfg!(feature = "wasm") {
-        assert_eq!(
-            kinds("(query [:find ?e :where [?e :a 1] [?f :b ?y] [?f :c ?e]])"),
-            ["hash inner=true", "probe"]
-        );
-    }
+    assert_eq!(
+        kinds("(query [:find ?e :where [?e :a 1] [?f :b ?y] [?f :c ?e]])"),
+        ["hash inner=true", "probe"]
+    );
 }
 
 #[test]

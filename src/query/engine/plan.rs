@@ -315,9 +315,8 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
                     }
                     if let JoinKind::Hash { build_inner } = &mut join.kind {
                         // With the test switch off, always the inner pattern
-                        // (decision 3 of the #596 plan); `wasm` keeps the cost choice.
-                        let cost = optimizer::reorder() || cfg!(feature = "wasm");
-                        *build_inner = !cost
+                        // (decision 3 of the #596 plan).
+                        *build_inner = !optimizer::reorder()
                             || optimizer::branch_cost(&[WhereClause::Pattern(q.clone())])
                                 <= optimizer::branch_cost(&outer_patterns);
                     }

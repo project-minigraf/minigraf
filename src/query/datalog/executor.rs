@@ -1489,7 +1489,8 @@ type Binding = std::collections::HashMap<String, Value>;
 /// returned as they were bound. An expression binding is a binder like a
 /// pattern: when the variable is already bound it keeps the rows where its
 /// result is equal (#596), and gives the value when it is first in the text.
-/// A pseudo-attribute pattern never replaces a value.
+/// A pseudo-attribute pattern never gives a variable its value: a real
+/// pattern that binds it replaces its value, wherever it is (#606).
 pub(crate) struct Binders {
     /// Each top-level pattern (rule calls as patterns) and its position in
     /// `:where`; taken as the planner hands them out.
@@ -1532,11 +1533,17 @@ impl Binders {
     /// Record the pattern `p`, run next, and return the variables whose
     /// value it replaces.
     pub(crate) fn pattern(&mut self, p: &Pattern) -> Vec<String> {
+        let real = matches!(p.attribute, AttributeSpec::Real(_));
         let at = match self.text.iter().position(|(q, _)| q == p) {
-            Some(i) => self.text.swap_remove(i).1,
+            // A pseudo-attribute pattern never gives a variable its value: it
+            // ranks after every real pattern, whatever runs first (#606).
+            Some(i) if real => self.text.swap_remove(i).1,
+            Some(i) => {
+                self.text.swap_remove(i);
+                usize::MAX
+            }
             None => usize::MAX,
         };
-        let real = matches!(p.attribute, AttributeSpec::Real(_));
         let attribute = match &p.attribute {
             AttributeSpec::Real(a) => Some(a),
             AttributeSpec::Pseudo(_) => None,
@@ -2086,7 +2093,6 @@ pub(crate) fn apply_or_clauses(
                     let mut b: Vec<&Vec<WhereClause>> = branches.iter().collect();
                     // Sort branches by cost ascending so cheaper branches evaluate first,
                     // maximizing the chance the short-circuit below fires early (#250).
-                    // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
                     if optimizer::reorder() {
                         b.sort_by_key(|br| optimizer::branch_cost(br));
                     }
@@ -2313,7 +2319,6 @@ pub(crate) fn apply_or_clauses(
                     let mut b: Vec<&Vec<WhereClause>> = branches.iter().collect();
                     // Sort branches by cost ascending so cheaper branches evaluate first,
                     // maximizing the chance the short-circuit below fires early (#250).
-                    // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
                     if optimizer::reorder() {
                         b.sort_by_key(|br| optimizer::branch_cost(br));
                     }

@@ -172,9 +172,7 @@ fn keyword_or_ref_with_a_repeated_pattern() {
     );
 }
 
-// Under `wasm` the planner keeps source order, so the pseudo-attribute
-// pattern runs first and binds `?b` itself, as the entity's ref.
-#[cfg(not(feature = "wasm"))]
+// Whatever runs first, the first real pattern gives `?b` its value (#606).
 #[test]
 fn pseudo_attribute_pattern_never_replaces_a_value() {
     let db = friends_db();

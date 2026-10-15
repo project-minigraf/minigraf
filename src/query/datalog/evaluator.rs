@@ -810,7 +810,6 @@ impl StratifiedEvaluator {
                     })
                     .collect();
 
-                // WASM omission: small datasets + determinism — see optimizer::selectivity_score().
                 if crate::query::datalog::optimizer::reorder() {
                     not_clauses.sort_by_key(|body| {
                         crate::query::datalog::optimizer::clause_cost(&WhereClause::Not(
