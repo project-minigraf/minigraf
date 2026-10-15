@@ -911,6 +911,8 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
         i += 1;
     }
 
+    resolve_pseudo_sources(&mut where_clauses)?;
+
     // Safety check: all variables in (not ...) and (not-join ...) must be bound by outer clauses
     let outer_bound: std::collections::HashSet<String> = where_clauses
         .iter()
@@ -1597,6 +1599,7 @@ fn outer_vars_from_clause(clause: &WhereClause) -> Vec<String> {
             {
                 vars.push(name.to_string());
             }
+            vars.extend(p.hidden_vars().map(str::to_string));
             vars
         }
         WhereClause::RuleInvocation { args, .. } => args
@@ -1652,7 +1655,13 @@ fn outer_vars_from_clause(clause: &WhereClause) -> Vec<String> {
 /// Collect all variable names that appear inside a Not clause.
 fn vars_in_not(clause: &WhereClause) -> Vec<String> {
     match clause {
-        WhereClause::Not(inner) => inner.iter().flat_map(outer_vars_from_clause).collect(),
+        // Hidden metadata variables (#594) are resolved by construction: a
+        // body may bind its own, which no outer clause binds.
+        WhereClause::Not(inner) => inner
+            .iter()
+            .flat_map(outer_vars_from_clause)
+            .filter(|v| !v.starts_with("?#"))
+            .collect(),
         _ => vec![],
     }
 }
@@ -1809,6 +1818,238 @@ fn check_expr_safety_with_bound(
     Ok(())
 }
 
+// ── Pseudo-attribute sources (#594) ──────────────────────────────────────────
+
+/// An entity term as the source search compares it (spec §2 of the #594
+/// design): variables and `$slot`s by name, constants by the entity they name.
+#[derive(Clone, PartialEq)]
+enum EntityTerm {
+    Var(String),
+    Slot(String),
+    Eid(Uuid),
+}
+
+fn entity_term(e: &EdnValue) -> Option<EntityTerm> {
+    match e {
+        EdnValue::Symbol(s) if s.starts_with('?') && !s.starts_with("?_") => {
+            Some(EntityTerm::Var(s.clone()))
+        }
+        EdnValue::BindSlot(n) => Some(EntityTerm::Slot(n.clone())),
+        EdnValue::Keyword(_) | EdnValue::Uuid(_) => {
+            crate::query::datalog::matcher::edn_to_entity_id(e)
+                .ok()
+                .map(EntityTerm::Eid)
+        }
+        _ => None,
+    }
+}
+
+/// A pattern with a stored attribute, a possible source.
+#[derive(Clone)]
+struct Candidate {
+    path: Vec<usize>,
+    term: EntityTerm,
+    /// Its position in a walk of the whole query: names its hidden variables.
+    n: usize,
+}
+
+/// A clause list's containing clause, as seen from inside it.
+struct Level {
+    /// The candidates before the containing clause, in the enclosing list.
+    before: Vec<Candidate>,
+    /// `Some` for `not-join` / `or-join`: only these variables cross it.
+    join: Option<Vec<String>>,
+    /// The containing clause.
+    at: Vec<usize>,
+}
+
+/// One per-fact pseudo-attribute pattern and its source.
+struct Resolved {
+    pseudo: Vec<usize>,
+    source: Vec<usize>,
+    n: usize,
+    attr: PseudoAttr,
+    /// The `not-join` / `or-join` clauses between them.
+    crossed: Vec<Vec<usize>>,
+}
+
+/// The nearest candidate for `term`: in the list so far, then outwards before
+/// each containing clause, crossing a `-join` only for a listed variable.
+fn find_source<'a>(
+    term: &EntityTerm,
+    here: &'a [Candidate],
+    stack: &'a [Level],
+) -> Option<(&'a Candidate, Vec<Vec<usize>>)> {
+    if let Some(c) = here.iter().rev().find(|c| c.term == *term) {
+        return Some((c, Vec::new()));
+    }
+    let mut crossed = Vec::new();
+    for level in stack.iter().rev() {
+        if let Some(vars) = &level.join {
+            match term {
+                EntityTerm::Var(v) if vars.contains(v) => crossed.push(level.at.clone()),
+                _ => return None,
+            }
+        }
+        if let Some(c) = level.before.iter().rev().find(|c| c.term == *term) {
+            return Some((c, crossed));
+        }
+    }
+    None
+}
+
+fn entity_text(e: &EdnValue) -> String {
+    match e {
+        EdnValue::Symbol(s) => s.clone(),
+        EdnValue::Keyword(k) => k.clone(),
+        EdnValue::Uuid(u) => format!("#uuid \"{u}\""),
+        EdnValue::BindSlot(n) => format!("${n}"),
+        _ => "_".to_string(),
+    }
+}
+
+fn walk_sources(
+    list: &[WhereClause],
+    prefix: &[usize],
+    stack: &mut Vec<Level>,
+    next: &mut usize,
+    out: &mut Vec<Resolved>,
+) -> Result<()> {
+    let mut here: Vec<Candidate> = Vec::new();
+    for (i, clause) in list.iter().enumerate() {
+        let mut path = prefix.to_vec();
+        path.push(i);
+        match clause {
+            WhereClause::Pattern(p) => match &p.attribute {
+                AttributeSpec::Pseudo(attr) if attr.is_per_fact() => {
+                    let found = entity_term(&p.entity).and_then(|t| {
+                        find_source(&t, &here, stack).map(|(c, crossed)| (c.clone(), crossed))
+                    });
+                    let Some((source, crossed)) = found else {
+                        let e = entity_text(&p.entity);
+                        bail_coded!(ErrorCode::Prs081, attr.as_keyword(), e, e);
+                    };
+                    out.push(Resolved {
+                        pseudo: path,
+                        source: source.path,
+                        n: source.n,
+                        attr: attr.clone(),
+                        crossed,
+                    });
+                }
+                AttributeSpec::Pseudo(_) => {}
+                AttributeSpec::Real(_) => {
+                    if let Some(term) = entity_term(&p.entity) {
+                        here.push(Candidate {
+                            path,
+                            term,
+                            n: *next,
+                        });
+                        *next += 1;
+                    }
+                }
+            },
+            WhereClause::Not(body) => {
+                stack.push(Level {
+                    before: here.clone(),
+                    join: None,
+                    at: path.clone(),
+                });
+                let r = walk_sources(body, &path, stack, next, out);
+                stack.pop();
+                r?;
+            }
+            WhereClause::NotJoin { join_vars, clauses } => {
+                stack.push(Level {
+                    before: here.clone(),
+                    join: Some(join_vars.clone()),
+                    at: path.clone(),
+                });
+                let r = walk_sources(clauses, &path, stack, next, out);
+                stack.pop();
+                r?;
+            }
+            WhereClause::Or(branches) | WhereClause::OrJoin { branches, .. } => {
+                let join = match clause {
+                    WhereClause::OrJoin { join_vars, .. } => Some(join_vars.clone()),
+                    _ => None,
+                };
+                for (b, branch) in branches.iter().enumerate() {
+                    let mut branch_path = path.clone();
+                    branch_path.push(b);
+                    stack.push(Level {
+                        before: here.clone(),
+                        join: join.clone(),
+                        at: path.clone(),
+                    });
+                    let r = walk_sources(branch, &branch_path, stack, next, out);
+                    stack.pop();
+                    r?;
+                }
+            }
+            WhereClause::RuleInvocation { .. } | WhereClause::Expr { .. } => {}
+        }
+    }
+    Ok(())
+}
+
+/// The clause at `path`: a clause index per list, and a branch index after
+/// each `or` / `or-join`.
+fn clause_at_mut<'a>(list: &'a mut [WhereClause], path: &[usize]) -> Option<&'a mut WhereClause> {
+    let (&i, rest) = path.split_first()?;
+    let clause = list.get_mut(i)?;
+    if rest.is_empty() {
+        return Some(clause);
+    }
+    match clause {
+        WhereClause::Not(body) | WhereClause::NotJoin { clauses: body, .. } => {
+            clause_at_mut(body, rest)
+        }
+        WhereClause::Or(branches) | WhereClause::OrJoin { branches, .. } => {
+            let (&b, rest) = rest.split_first()?;
+            clause_at_mut(branches.get_mut(b)?, rest)
+        }
+        _ => None,
+    }
+}
+
+/// Give every per-fact pseudo-attribute pattern in `clauses` (a query's
+/// `:where` or a rule body) its source (#594): the nearest pattern before it
+/// in the text with the same entity term and a stored attribute, in its own
+/// clause list and then outwards before each containing `not` / `or`
+/// (`not-join` / `or-join` only for a listed entity variable). The source
+/// binds a hidden variable `?#<n>.<attr>` to its fact's metadata; the pseudo
+/// pattern reads it; a crossed `-join` lists it. PRS-081 when there is none.
+pub(crate) fn resolve_pseudo_sources(clauses: &mut [WhereClause]) -> Result<()> {
+    let mut resolved = Vec::new();
+    walk_sources(clauses, &[], &mut Vec::new(), &mut 0, &mut resolved)?;
+    for r in resolved {
+        let name = format!(
+            "?#{}.{}",
+            r.n,
+            r.attr.as_keyword().trim_start_matches(":db/")
+        );
+        if let Some(WhereClause::Pattern(source)) = clause_at_mut(clauses, &r.source)
+            && !source.meta.iter().any(|(a, _)| *a == r.attr)
+        {
+            source.meta.push((r.attr.clone(), name.clone()));
+        }
+        if let Some(WhereClause::Pattern(p)) = clause_at_mut(clauses, &r.pseudo) {
+            p.pseudo_source = Some(EdnValue::Symbol(name.clone()));
+        }
+        for at in &r.crossed {
+            if let Some(
+                WhereClause::NotJoin { join_vars, .. } | WhereClause::OrJoin { join_vars, .. },
+            ) = clause_at_mut(clauses, at)
+                && !join_vars.contains(&name)
+            {
+                join_vars.push(name.clone());
+            }
+        }
+    }
+    Ok(())
+}
+
 fn parse_rule(elements: &[EdnValue]) -> Result<DatalogCommand> {
     // Rule syntax: (rule [(predicate ?args) [pattern1] [pattern2] ...])
     // elements[0] = Vector with head (list) + body (patterns/rule calls)
@@ -1890,6 +2131,8 @@ fn parse_rule(elements: &[EdnValue]) -> Result<DatalogCommand> {
             "Rule must have at least one pattern or rule invocation in body"
         );
     }
+
+    resolve_pseudo_sources(&mut body_clauses)?;
 
     // Safety check: variables in (not ...) must be bound by the rule head or outer body clauses
     let mut outer_bound: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -3078,6 +3321,92 @@ mod tests {
     // Helper used by parse_expr tests (Task 2 / Phase 7.2b)
     fn parse(s: &str) -> Result<DatalogCommand> {
         parse_datalog_command(s)
+    }
+
+    fn where_of(s: &str) -> Vec<WhereClause> {
+        match parse(s).expect("parse") {
+            DatalogCommand::Query(q) => q.where_clauses,
+            _ => panic!("expected a query"),
+        }
+    }
+
+    fn pattern_of(c: &WhereClause) -> &Pattern {
+        match c {
+            WhereClause::Pattern(p) => p,
+            _ => panic!("expected a pattern"),
+        }
+    }
+
+    fn reads(p: &Pattern) -> Option<&str> {
+        p.pseudo_source.as_ref().and_then(|s| s.as_variable())
+    }
+
+    #[test]
+    fn pseudo_source_is_the_nearest_earlier_same_entity_pattern() {
+        let w = where_of(
+            "(query [:find ?t :any-valid-time :where \
+             [?e :a ?x] [?f :b ?y] [?e :c ?z] [?e :db/tx-count ?t] [?e :db/valid-to ?u]])",
+        );
+        // Candidates are numbered in walk order: [?e :c ?z] is #2.
+        let source = pattern_of(&w[2]);
+        assert_eq!(
+            source.meta,
+            vec![
+                (PseudoAttr::TxCount, "?#2.tx-count".to_string()),
+                (PseudoAttr::ValidTo, "?#2.valid-to".to_string()),
+            ]
+        );
+        assert!(pattern_of(&w[0]).meta.is_empty());
+        assert_eq!(reads(pattern_of(&w[3])), Some("?#2.tx-count"));
+        assert_eq!(reads(pattern_of(&w[4])), Some("?#2.valid-to"));
+    }
+
+    #[test]
+    fn pseudo_source_crossing_a_not_join_is_listed() {
+        let w = where_of(
+            "(query [:find ?e :any-valid-time :where \
+             [?e :a ?x] (not-join [?e] [?e :db/tx-count 1])])",
+        );
+        let WhereClause::NotJoin { join_vars, clauses } = &w[1] else {
+            panic!("expected not-join");
+        };
+        assert_eq!(
+            join_vars,
+            &vec!["?e".to_string(), "?#0.tx-count".to_string()]
+        );
+        assert_eq!(reads(pattern_of(&clauses[0])), Some("?#0.tx-count"));
+        // Through `not` nothing is listed.
+        let w = where_of(
+            "(query [:find ?e :any-valid-time :where [?e :a ?x] (not [?e :db/tx-count 1])])",
+        );
+        let WhereClause::Not(body) = &w[1] else {
+            panic!("expected not");
+        };
+        assert_eq!(reads(pattern_of(&body[0])), Some("?#0.tx-count"));
+    }
+
+    #[test]
+    fn pseudo_source_in_an_or_branch_is_its_own_or_outer() {
+        let w = where_of(
+            "(query [:find ?e :any-valid-time :where \
+             [?e :a ?x] (or [?e :b 1] [?e :db/tx-count 1])])",
+        );
+        let WhereClause::Or(branches) = &w[1] else {
+            panic!("expected or");
+        };
+        // The second branch reads the outer pattern, not the first branch's.
+        assert_eq!(reads(pattern_of(&branches[1][0])), Some("?#0.tx-count"));
+        assert!(pattern_of(&branches[0][0]).meta.is_empty());
+    }
+
+    #[test]
+    fn pseudo_source_missing_is_prs_081() {
+        let err =
+            parse("(query [:find ?t :any-valid-time :where [?e :db/tx-count ?t] [?e :a ?x]])")
+                .expect_err("no source");
+        assert!(err.to_string().contains(":db/tx-count on ?e"));
+        let err = parse("(rule [(r ?e ?t) [?e :db/tx-id ?t]])").expect_err("rule body closed");
+        assert!(err.to_string().contains(":db/tx-id on ?e"));
     }
 
     #[test]

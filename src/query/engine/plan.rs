@@ -13,14 +13,12 @@
 //! a variable already bound, a `HashJoin` otherwise (decision 3 of the #545
 //! plan).
 //!
-//! A per-fact pseudo-attribute pattern reads, as the executor does, the fact
-//! of the last pattern with a stored attribute before it that matched the
-//! same entity (decision 4 of the #545 plan): one of the metadata columns
-//! those patterns' scans fill, chosen per row. The engine runs it when the
-//! pattern's entity term is the entity term of such a pattern, so that one
-//! always exists, or when no such pattern runs before it. A pseudo-attribute
-//! pattern of the second kind, and every `:db/valid-at` pattern, joins with
-//! every visible fact of its entity, as `[e _ _]` does.
+//! A per-fact pseudo-attribute pattern reads the metadata of the fact its
+//! source matched (#594): the parser names the source, which binds a hidden
+//! variable per pseudo-attribute, and its scan or join fills that slot from
+//! the fact's key. The pseudo-attribute pattern binds or checks its value
+//! against the slot. A `:db/valid-at` pattern joins with every visible fact
+//! of its entity, as `[e _ _]` does, with the query's valid time as a column.
 
 use super::cell::Scalar;
 use crate::graph::types::{EntityId, Value};
@@ -99,13 +97,6 @@ pub(crate) enum Meta {
     ValidAt,
 }
 
-/// The entity a pattern matched, in a row: a slot, or a constant.
-#[derive(Debug, Clone)]
-pub(crate) enum Entity {
-    Slot(usize),
-    Const(EntityId),
-}
-
 /// What a `Scan` reads.
 #[derive(Debug, Clone)]
 pub(crate) struct ScanSpec {
@@ -123,13 +114,10 @@ pub(crate) struct ScanSpec {
 /// A clause after the scan, in the executor's order.
 #[derive(Debug, Clone)]
 pub(crate) enum Step {
-    /// A pseudo-attribute pattern: its value term over a metadata column.
-    /// The row's column is the first of `cols` with no entity, or whose
-    /// entity is join-equal to `entity`. A constant other than an integer or
-    /// `nil` never matches.
+    /// A pseudo-attribute pattern: its value term over the metadata column
+    /// `col`. A constant other than an integer or `nil` never matches.
     Pseudo {
-        cols: Vec<(Option<Entity>, usize)>,
-        entity: Option<Entity>,
+        col: usize,
         value: Term<Option<Scalar>>,
     },
     /// `[(pred …)]`: keeps the rows where the expression is truthy.
@@ -254,44 +242,25 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
     let mut binders = Binders::new(&query.where_clauses, Vec::new());
     let (planned, _) = optimizer::plan(query.where_clauses.clone());
     let all: Vec<WhereClause> = planned.into_iter().map(|(c, _)| c).collect();
-    let (forms, needs) = pseudo_forms(&all)?;
-
     let mut slots = Slots::default();
-    // Each clause placed so far.
-    let mut done: Vec<Ran> = Vec::with_capacity(all.len());
     let mut outer_patterns: Vec<WhereClause> = Vec::new();
     let mut scan = None;
     let mut steps = Vec::with_capacity(all.len());
-    for (i, c) in all.into_iter().enumerate() {
-        let need = needs.get(i).map_or(&[][..], Vec::as_slice);
-        let mut metas: Vec<(Meta, usize)> = Vec::new();
-        let mut entity = None;
+    for c in all {
         match c {
             WhereClause::Pattern(q) => {
                 let rebind = binders.pattern(&q);
-                let form = forms.get(&i);
-                if let Some(PseudoForm::Fast { cols }) = form {
-                    let cols = cols
-                        .iter()
-                        .map(|&(j, compare)| {
-                            let (metas, entity) = done.get(j)?;
-                            let col = metas.iter().find(|(m, _)| Some(*m) == meta(&q))?.1;
-                            let entity = if compare { Some(entity.clone()?) } else { None };
-                            Some((entity, col))
-                        })
-                        .collect::<Option<Vec<_>>>()?;
-                    let entity = entity_of(&q.entity, &slots);
+                let pseudo = meta(&q);
+                if pseudo.is_some_and(|m| m != Meta::ValidAt) {
+                    // Reads the hidden variable its source's scan filled.
+                    let source = q.pseudo_source.as_ref()?.as_variable()?;
+                    let col = *slots.by_var.get(source)?;
                     let value = term(&q.value, &mut slots, OTHER, pseudo_const)?;
-                    steps.push(Step::Pseudo {
-                        cols,
-                        entity,
-                        value,
-                    });
-                    done.push((metas, None));
+                    steps.push(Step::Pseudo { col, value });
                     continue;
                 }
-                // A pattern with a stored attribute, or a pseudo-attribute
-                // pattern read as `[e _ _]` and its metadata.
+                // A pattern with a stored attribute, or `:db/valid-at` read
+                // as `[e _ _]` and the query's valid time.
                 let any = EdnValue::Symbol("_".to_string());
                 let (attribute, scanned) = match &q.attribute {
                     AttributeSpec::Real(a) => (a.clone(), q.clone()),
@@ -300,15 +269,28 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
                         Pattern::new(q.entity.clone(), any.clone(), any.clone()),
                     ),
                 };
-                let mut wants: Vec<Meta> = need.to_vec();
-                if let Some(m) = form.and(meta(&q)) {
-                    wants.push(m);
+                // The metadata columns: the hidden variables of a source, or
+                // the valid time.
+                let mut wants: Vec<(Meta, Option<&str>)> = q
+                    .meta
+                    .iter()
+                    .map(|(a, v)| (meta_of(a), Some(v.as_str())))
+                    .collect();
+                if pseudo.is_some() {
+                    wants.push((Meta::ValidAt, None));
                 }
+                let mut metas: Vec<(Meta, usize)> = Vec::new();
                 if scan.is_none() {
                     let e = term(&scanned.entity, &mut slots, OTHER, entity_const)?;
                     let a = term(&attribute, &mut slots, ATTRIBUTE, attribute_const)?;
                     let v = term(&scanned.value, &mut slots, OTHER, value_const)?;
-                    metas = wants.iter().map(|&m| (m, slots.add(OTHER))).collect();
+                    for &(m, var) in &wants {
+                        let slot = slots.add(OTHER);
+                        if let Some(var) = var {
+                            slots.by_var.insert(var.to_string(), slot);
+                        }
+                        metas.push((m, slot));
+                    }
                     scan = Some(ScanSpec {
                         e,
                         a,
@@ -320,12 +302,16 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
                     });
                 } else {
                     let mut join = join(&scanned, &attribute, &mut slots, &rebind, as_of, valid)?;
-                    for &m in &wants {
+                    for &(m, var) in &wants {
                         let local = join.inner.width;
                         join.inner.width += 1;
                         join.inner.meta.push((m, local));
                         join.new.push(local);
-                        metas.push((m, slots.add(OTHER)));
+                        let slot = slots.add(OTHER);
+                        if let Some(var) = var {
+                            slots.by_var.insert(var.to_string(), slot);
+                        }
+                        metas.push((m, slot));
                     }
                     if let JoinKind::Hash { build_inner } = &mut join.kind {
                         // With the test switch off, always the inner pattern
@@ -337,16 +323,11 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
                     }
                     steps.push(Step::Join(join));
                 }
-                entity = entity_of(&q.entity, &slots);
                 outer_patterns.push(WhereClause::Pattern(q.clone()));
-                if form.is_some() {
+                if pseudo.is_some() {
                     let col = metas.last()?.1;
                     let value = term(&q.value, &mut slots, OTHER, pseudo_const)?;
-                    steps.push(Step::Pseudo {
-                        cols: vec![(None, col)],
-                        entity: None,
-                        value,
-                    });
+                    steps.push(Step::Pseudo { col, value });
                 }
             }
             WhereClause::Expr { expr, binding } => {
@@ -378,7 +359,6 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
             }
             _ => return None,
         }
-        done.push((metas, entity));
     }
     let scan = scan?;
 
@@ -516,105 +496,16 @@ fn meta(p: &Pattern) -> Option<Meta> {
     let AttributeSpec::Pseudo(pa) = &p.attribute else {
         return None;
     };
-    Some(match pa {
+    Some(meta_of(pa))
+}
+
+fn meta_of(pa: &PseudoAttr) -> Meta {
+    match pa {
         PseudoAttr::ValidFrom => Meta::ValidFrom,
         PseudoAttr::ValidTo => Meta::ValidTo,
         PseudoAttr::TxCount => Meta::TxCount,
         PseudoAttr::TxId => Meta::TxId,
         PseudoAttr::ValidAt => Meta::ValidAt,
-    })
-}
-
-/// A clause the planner has placed: the metadata slots its scan fills, and
-/// its entity.
-type Ran = (Vec<(Meta, usize)>, Option<Entity>);
-
-/// The form of each pseudo-attribute pattern, by clause index.
-type Forms = HashMap<usize, PseudoForm>;
-
-/// How a pseudo-attribute pattern runs.
-enum PseudoForm {
-    /// It reads the metadata of an earlier pattern: of the first of `cols`
-    /// (clause indexes, last first) that matched its entity, where the flag
-    /// says whether the entity must be compared. The last one is the latest
-    /// pattern with the same entity term, which always did.
-    Fast { cols: Vec<(usize, bool)> },
-    /// It joins with every visible fact of its entity.
-    Join,
-}
-
-/// The form of each pseudo-attribute pattern of `all` (clauses in plan
-/// order), by index, and the metadata each pattern's scan must fill; `None`
-/// when one of them reads a pattern chosen by the row in a way the engine
-/// does not reproduce, so the executor runs the query.
-fn pseudo_forms(all: &[WhereClause]) -> Option<(Forms, Vec<Vec<Meta>>)> {
-    let pattern = |c: &WhereClause| match c {
-        WhereClause::Pattern(p) => Some(p.clone()),
-        _ => None,
-    };
-    let patterns: Vec<Option<Pattern>> = all.iter().map(pattern).collect();
-    let mut forms = HashMap::new();
-    let mut needs = vec![Vec::new(); all.len()];
-    for (i, q) in patterns.iter().enumerate() {
-        let Some(m) = q.as_ref().and_then(meta) else {
-            continue;
-        };
-        let Some(q) = q else { continue };
-        // Earlier patterns with a stored attribute: the executor's per-entity
-        // metadata of the fact each matched, the latest kept.
-        let reals: Vec<(usize, &Pattern)> = patterns
-            .iter()
-            .take(i)
-            .enumerate()
-            .filter_map(|(j, p)| p.as_ref().map(|p| (j, p)))
-            .filter(|(_, p)| matches!(p.attribute, AttributeSpec::Real(_)))
-            .collect();
-        if m == Meta::ValidAt || reals.is_empty() {
-            forms.insert(i, PseudoForm::Join);
-            continue;
-        }
-        let last = reals
-            .iter()
-            .rposition(|(_, p)| same_entity(&p.entity, &q.entity))?;
-        let mut cols = Vec::new();
-        for &(j, p) in reals.iter().skip(last + 1).rev() {
-            match (&p.entity, &q.entity) {
-                (EdnValue::Symbol(s), _) if s == "_" || s.starts_with("?_") => return None,
-                (EdnValue::Symbol(_), _) | (_, EdnValue::Symbol(_)) => cols.push((j, true)),
-                // Two constants naming different entities.
-                _ => {}
-            }
-        }
-        cols.push((reals.get(last)?.0, false));
-        for &(j, _) in &cols {
-            if let Some(n) = needs.get_mut(j)
-                && !n.contains(&m)
-            {
-                n.push(m);
-            }
-        }
-        forms.insert(i, PseudoForm::Fast { cols });
-    }
-    // An expression that rebinds an entity variable would send a later
-    // pseudo-attribute pattern to the metadata of another entity.
-    if !forms.is_empty()
-        && all.iter().any(|c| {
-            matches!(c, WhereClause::Expr { binding: Some(out), .. }
-                if patterns.iter().flatten().any(
-                    |p| matches!(&p.entity, EdnValue::Symbol(s) if s == out)))
-        })
-    {
-        return None;
-    }
-    Some((forms, needs))
-}
-
-/// The entity `edn` gives a row: a bound variable's slot, or a constant.
-fn entity_of(edn: &EdnValue, slots: &Slots) -> Option<Entity> {
-    match edn {
-        EdnValue::Symbol(s) => slots.by_var.get(s).map(|&s| Entity::Slot(s)),
-        EdnValue::Keyword(_) | EdnValue::Uuid(_) => edn_to_entity_id(edn).ok().map(Entity::Const),
-        _ => None,
     }
 }
 
@@ -627,20 +518,6 @@ fn pseudo_const(c: &EdnValue) -> Option<Option<Scalar>> {
         EdnValue::Nil => Some(Scalar::Null),
         _ => None,
     })
-}
-
-/// Whether two entity terms name the same entity in every row: one
-/// variable, or constants naming one entity.
-fn same_entity(a: &EdnValue, b: &EdnValue) -> bool {
-    match (a, b) {
-        (EdnValue::Symbol(s), EdnValue::Symbol(t)) => {
-            s.starts_with('?') && !s.starts_with("?_") && s == t
-        }
-        (EdnValue::Keyword(_) | EdnValue::Uuid(_), EdnValue::Keyword(_) | EdnValue::Uuid(_)) => {
-            edn_to_entity_id(a).ok() == edn_to_entity_id(b).ok()
-        }
-        _ => false,
-    }
 }
 
 /// The variables of `expr` bound so far, with their slots. A variable bound

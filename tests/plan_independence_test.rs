@@ -6,10 +6,7 @@
 //! (`minigraf::__reorder`), and all four answers must be the same bag. With
 //! the `test-oracle` feature, every query the streaming engine runs is also
 //! run by the executor and must agree, so each run compares the two as well.
-//!
-//! Per-fact pseudo-attributes (`:db/valid-from`, `:db/valid-to`,
-//! `:db/tx-count`, `:db/tx-id`) whose source depends on the plan are #594 and
-//! are left out of this matrix until it is fixed.
+//! Per-fact pseudo-attributes read the source the parser names (#594).
 #![cfg(all(feature = "test-oracle", not(target_arch = "wasm32")))]
 
 use minigraf::{Minigraf, QueryResult, Value};
@@ -113,6 +110,8 @@ fn people(db: &Minigraf) {
         .unwrap();
     db.execute("(rule [(lonely ?e) [?e :name _] (not [?e :friend _])])")
         .unwrap();
+    db.execute("(rule [(stamped ?e ?t) [?e :name _] [?e :db/tx-count ?t]])")
+        .unwrap();
 }
 
 /// Queries whose answers must not depend on the plan.
@@ -160,6 +159,19 @@ const MATRIX: &[&str] = &[
     r#"[:find ?n :where [?e :name ?n] [?e :age ?a] (not-join [?a] [?f :age ?a] [?f :friend :carol])]"#,
     // Aggregates.
     r#"[:find ?a (count ?e) :where [?e :age ?a] [?e :name _]]"#,
+    // Per-fact pseudo-attributes (#594): #594's example in both text orders,
+    // across joins, in `not`, `not-join`, `or`, `or-join` and rule bodies.
+    r#"[:find ?n ?t :any-valid-time :where [?e :name ?n] [?e :age ?a] [?e :db/tx-count ?t]]"#,
+    r#"[:find ?n ?t :any-valid-time :where [?e :age ?a] [?e :name ?n] [?e :db/tx-count ?t]]"#,
+    r#"[:find ?n ?t :any-valid-time :where [?e :name "Alice"] [?e :age ?a] [?e :name ?n] [?e :db/tx-id ?t]]"#,
+    r#"[:find ?e ?t ?f :any-valid-time :where [?e :friend ?b] [?b :name ?n] [?e :db/tx-count ?t] [?e :db/valid-from ?f]]"#,
+    r#"[:find ?e ?a ?t :any-valid-time :where [?e ?a _] [?e :db/tx-count ?t]]"#,
+    r#"[:find ?e ?t :any-valid-time :where [?e :age ?a] [?p :score ?t] [?e :db/tx-count ?t]]"#,
+    r#"[:find ?n :any-valid-time :where [?e :name ?n] (not [?e :db/tx-count 1])]"#,
+    r#"[:find ?n :any-valid-time :where [?e :name ?n] (not-join [?e] [?e :db/valid-to ?u] [(< ?u 0)])]"#,
+    r#"[:find ?n :any-valid-time :where [?e :name ?n] (or [?e :db/tx-count 1] [?e :age 40])]"#,
+    r#"[:find ?n :any-valid-time :where [?e :name ?n] (or-join [?e] [?e :db/tx-count 1] [?e :friend _])]"#,
+    r#"[:find ?e ?t :any-valid-time :where (stamped ?e ?t) [?e :age ?a]]"#,
     // Time travel.
     r#"[:find ?n :as-of 1 :where [?e :name ?n] [?e :age ?a]]"#,
     r#"[:find ?n ?a :valid-at "2020-06-01T00:00:00Z" :where [?e :name ?n] [?e :age ?a]]"#,
@@ -202,6 +214,8 @@ fn matrix_file_backed_after_checkpoint() {
     db.execute("(rule [(knows ?a ?c) [?a :friend ?b] (knows ?b ?c)])")
         .unwrap();
     db.execute("(rule [(lonely ?e) [?e :name _] (not [?e :friend _])])")
+        .unwrap();
+    db.execute("(rule [(stamped ?e ?t) [?e :name _] [?e :db/tx-count ?t]])")
         .unwrap();
     run_matrix(&db);
 }

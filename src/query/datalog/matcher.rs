@@ -61,6 +61,12 @@ impl PatternMatcher {
     /// Match a single pattern against all facts in storage
     /// Returns a list of bindings, one for each matching fact
     pub fn match_pattern(&self, pattern: &Pattern) -> Vec<Bindings> {
+        if Self::reads_source(pattern) {
+            return self
+                .match_pseudo(pattern, &HashMap::new())
+                .into_iter()
+                .collect();
+        }
         let mut results = Vec::new();
 
         // Get all currently asserted facts
@@ -99,41 +105,63 @@ impl PatternMatcher {
                 if !self.match_component(&pattern.value, &fact.value, &mut bindings) {
                     return None;
                 }
-                // Store hidden fact-metadata keys so that subsequent pseudo-attr patterns
-                // for the same entity can read per-fact temporal/tx metadata without
-                // cross-joining against every other fact for the entity.
-                // Keys are prefixed with `__f` and namespaced by entity UUID to avoid
-                // collisions across entities. They are never referenced in :find, so they
-                // are silently filtered out during result extraction.
-                let eid = fact.entity.to_string();
-                bindings.insert(format!("__fvf_{}", eid), Value::Integer(fact.valid_from));
-                bindings.insert(format!("__fvt_{}", eid), Value::Integer(fact.valid_to));
-                bindings.insert(
-                    format!("__ftc_{}", eid),
-                    Value::Integer(fact.tx_count.cast_signed()),
-                );
-                bindings.insert(
-                    format!("__fti_{}", eid),
-                    Value::Integer(fact.tx_id.cast_signed()),
-                );
+                // A source of pseudo-attribute patterns binds its hidden
+                // metadata variables from this fact (#594).
+                for (attr, var) in &pattern.meta {
+                    bindings.insert(var.clone(), Self::metadata(fact, attr));
+                }
             }
-            AttributeSpec::Pseudo(pseudo) => {
-                // Pseudo-attribute: skip stored attribute match; bind fact metadata
-                // field to the value position variable (or match against a constant).
-                let pseudo_value = match pseudo {
-                    PseudoAttr::ValidFrom => Value::Integer(fact.valid_from),
-                    PseudoAttr::ValidTo => Value::Integer(fact.valid_to),
-                    PseudoAttr::TxCount => Value::Integer(fact.tx_count.cast_signed()),
-                    PseudoAttr::TxId => Value::Integer(fact.tx_id.cast_signed()),
-                    PseudoAttr::ValidAt => self.valid_at_value.clone(),
-                };
-                if !self.match_component(&pattern.value, &pseudo_value, &mut bindings) {
+            AttributeSpec::Pseudo(_) => {
+                // `:db/valid-at`: the query's valid time, with every fact of
+                // the entity, as `[e _ _]` would. Per-fact pseudo-attributes
+                // read their source (`match_pseudo`) and never get here.
+                if !self.match_component(&pattern.value, &self.valid_at_value, &mut bindings) {
                     return None;
                 }
             }
         }
 
         Some(bindings)
+    }
+
+    /// The metadata `attr` of `fact`. `:db/valid-at` is not per fact; it
+    /// never names a hidden variable.
+    fn metadata(fact: &Fact, attr: &PseudoAttr) -> Value {
+        Value::Integer(match attr {
+            PseudoAttr::ValidFrom | PseudoAttr::ValidAt => fact.valid_from,
+            PseudoAttr::ValidTo => fact.valid_to,
+            PseudoAttr::TxCount => fact.tx_count.cast_signed(),
+            PseudoAttr::TxId => fact.tx_id.cast_signed(),
+        })
+    }
+
+    /// Whether `pattern` is a per-fact pseudo-attribute pattern, which reads
+    /// its source's metadata (#594) instead of matching facts.
+    fn reads_source(pattern: &Pattern) -> bool {
+        matches!(&pattern.attribute, AttributeSpec::Pseudo(a) if a.is_per_fact())
+    }
+
+    /// A per-fact pseudo-attribute pattern over the row `existing`: its value
+    /// term bound to, or compared with, the metadata its source bound (the
+    /// hidden variable, or the integer a substitution put in its place). No
+    /// row when the source did not bind it, which the parser rules out.
+    fn match_pseudo(&self, pattern: &Pattern, existing: &Bindings) -> Option<Bindings> {
+        let meta = match pattern.pseudo_source.as_ref()? {
+            EdnValue::Symbol(v) => existing.get(v)?.clone(),
+            other => edn_to_value(other).ok()?,
+        };
+        let mut row = existing.clone();
+        match &pattern.value {
+            EdnValue::Symbol(v) if v.starts_with('?') && !v.starts_with("?_") => match row.get(v) {
+                Some(old) => (Self::normalize_join_value(old) == Self::normalize_join_value(&meta))
+                    .then_some(row),
+                None => {
+                    row.insert(v.clone(), meta);
+                    Some(row)
+                }
+            },
+            other => self.match_component(other, &meta, &mut row).then_some(row),
+        }
     }
 
     /// Match a pattern component (entity, attribute, or value) against a fact value
@@ -436,10 +464,6 @@ impl PatternMatcher {
                     let mut merged = existing.clone();
                     let mut consistent = true;
                     for (var, val) in candidate {
-                        if var.starts_with("__f") {
-                            merged.insert(var.clone(), val.clone());
-                            continue;
-                        }
                         if let Some(merged_val) = merged.get(var) {
                             // Compare using normalized values so that keyword entity
                             // references (e.g., Keyword(":d-bad") stored as a value in
@@ -492,40 +516,8 @@ impl PatternMatcher {
         existing: &Bindings,
         rebind: &[String],
     ) -> Vec<Bindings> {
-        // Fast path for pseudo-attr patterns: when a preceding real-attr pattern stored
-        // hidden fact-metadata keys (e.g. `__fvf_<uuid>`), use them directly instead of
-        // scanning all facts and cross-joining. This ensures pseudo-attr patterns are
-        // correlated with the specific fact matched by the preceding real-attr pattern.
-        if let AttributeSpec::Pseudo(pseudo) = &pattern.attribute {
-            // Resolve the entity component to a UUID using existing bindings
-            let resolved_entity = self.apply_binding_to_component(&pattern.entity, existing);
-            let entity_uuid_opt: Option<uuid::Uuid> = match &resolved_entity {
-                EdnValue::Uuid(u) => Some(*u),
-                EdnValue::Keyword(k) => edn_to_entity_id(&EdnValue::Keyword(k.clone())).ok(),
-                _ => None,
-            };
-            if let Some(uuid) = entity_uuid_opt {
-                let eid = uuid.to_string();
-                let hidden_key = match pseudo {
-                    PseudoAttr::ValidFrom => format!("__fvf_{}", eid),
-                    PseudoAttr::ValidTo => format!("__fvt_{}", eid),
-                    PseudoAttr::TxCount => format!("__ftc_{}", eid),
-                    PseudoAttr::TxId => format!("__fti_{}", eid),
-                    // ValidAt is a query-level constant (not per-fact); fall through to
-                    // the normal scan path so each fact produces one binding (all
-                    // identical). Task 5 (executor) will inject the correct value.
-                    PseudoAttr::ValidAt => {
-                        return self.match_pattern_with_bindings_scan(pattern, existing, rebind);
-                    }
-                };
-                if let Some(stored_value) = existing.get(&hidden_key) {
-                    let mut new_bindings = existing.clone();
-                    if self.match_component(&pattern.value, stored_value, &mut new_bindings) {
-                        return vec![new_bindings];
-                    }
-                    return vec![];
-                }
-            }
+        if Self::reads_source(pattern) {
+            return self.match_pseudo(pattern, existing).into_iter().collect();
         }
 
         // Default: scan all facts
@@ -554,14 +546,8 @@ impl PatternMatcher {
                 self.match_fact_against_pattern(fact, &resolved_pattern)
             {
                 // Check that additional bindings are consistent with existing.
-                // Hidden fact-metadata keys (prefixed `__f`) are always overwritten
-                // and are excluded from the consistency check.
                 let mut consistent = true;
                 for (var, val) in &additional_bindings {
-                    if var.starts_with("__f") {
-                        // Hidden metadata keys: always overwrite, never conflict-check.
-                        continue;
-                    }
                     if matches!(existing.get(var), Some(existing_val) if existing_val != val) {
                         consistent = false;
                         break;
@@ -569,7 +555,6 @@ impl PatternMatcher {
                 }
 
                 if consistent {
-                    // Merge bindings (hidden keys are overwritten by the new fact's values)
                     new_bindings.extend(additional_bindings);
                     // A substituted variable matched as a constant; take the
                     // fact's value at its first position instead.
@@ -613,8 +598,11 @@ impl PatternMatcher {
             entity: self.apply_binding_to_component(&pattern.entity, bindings),
             attribute,
             value: self.apply_binding_to_component(&pattern.value, bindings),
-            valid_from: pattern.valid_from,
-            valid_to: pattern.valid_to,
+            pseudo_source: pattern
+                .pseudo_source
+                .as_ref()
+                .map(|v| self.apply_binding_to_component(v, bindings)),
+            ..pattern.clone()
         }
     }
 
@@ -1121,13 +1109,15 @@ mod tests {
             Arc::from(net_asserted_facts(storage.get_all_facts().unwrap()));
         let matcher = PatternMatcher::from_slice(all_facts.clone());
 
-        // First pattern: [?e :item/label _]
+        // First pattern: [?e :item/label _], the source of the second (#594).
         let p1 = Pattern {
             entity: EdnValue::Symbol("?e".to_string()),
             attribute: AttributeSpec::Real(EdnValue::Keyword(":item/label".to_string())),
             value: EdnValue::Symbol("_".to_string()),
             valid_from: None,
             valid_to: None,
+            meta: vec![(PseudoAttr::ValidFrom, "?#0.valid-from".to_string())],
+            pseudo_source: None,
         };
         let r1 = matcher.match_pattern(&p1);
         assert_eq!(r1.len(), 1, "first pattern should bind ?e");
@@ -1139,6 +1129,8 @@ mod tests {
             value: EdnValue::Symbol("?vf".to_string()),
             valid_from: None,
             valid_to: None,
+            meta: Vec::new(),
+            pseudo_source: Some(EdnValue::Symbol("?#0.valid-from".to_string())),
         };
         let r2 = matcher.match_patterns_seeded(&[p2], r1);
         assert_eq!(r2.len(), 1, "second pattern should bind ?vf");
@@ -1146,9 +1138,9 @@ mod tests {
     }
 
     #[test]
-    fn test_pseudo_attr_valid_to_tx_count_tx_id_scan_path() {
-        // Exercises matcher.rs lines 120-122: ValidTo/TxCount/TxId arms in
-        // match_fact_against_pattern (scan path — no hidden keys seeded).
+    fn test_pseudo_attr_valid_to_tx_count_tx_id_read_their_source() {
+        // A source binds one hidden variable per pseudo-attribute that reads
+        // it; each pseudo-attribute pattern reads its own (#594).
         use crate::graph::storage::net_asserted_facts;
         use crate::graph::types::Value as GValue;
         use std::sync::Arc;
@@ -1168,49 +1160,58 @@ mod tests {
 
         let all_facts: Arc<[Fact]> =
             Arc::from(net_asserted_facts(storage.get_all_facts().unwrap()));
+        let fact = all_facts[0].clone();
         let matcher = PatternMatcher::from_slice(all_facts);
 
-        // Each test uses a UUID entity + wildcard value so the entity check passes
-        // and no hidden key is seeded → falls through to scan → hits line 120/121/122.
-
-        // Line 120: ValidTo
-        let p_vt = Pattern {
+        let source = Pattern {
             entity: EdnValue::Uuid(alice_id),
-            attribute: AttributeSpec::Pseudo(PseudoAttr::ValidTo),
-            value: EdnValue::Symbol("?vt".to_string()),
+            attribute: AttributeSpec::Real(EdnValue::Keyword(":item/label".to_string())),
+            value: EdnValue::Symbol("_".to_string()),
             valid_from: None,
             valid_to: None,
+            meta: vec![
+                (PseudoAttr::ValidTo, "?#0.valid-to".to_string()),
+                (PseudoAttr::TxCount, "?#0.tx-count".to_string()),
+                (PseudoAttr::TxId, "?#0.tx-id".to_string()),
+            ],
+            pseudo_source: None,
         };
-        let r_vt = matcher.match_pattern(&p_vt);
-        assert_eq!(r_vt.len(), 1, "ValidTo scan should bind one result");
-
-        // Line 121: TxCount
-        let p_tc = Pattern {
+        let reader = |attr: PseudoAttr, var: &str, hidden: &str| Pattern {
             entity: EdnValue::Uuid(alice_id),
-            attribute: AttributeSpec::Pseudo(PseudoAttr::TxCount),
-            value: EdnValue::Symbol("?tc".to_string()),
+            attribute: AttributeSpec::Pseudo(attr),
+            value: EdnValue::Symbol(var.to_string()),
             valid_from: None,
             valid_to: None,
+            meta: Vec::new(),
+            pseudo_source: Some(EdnValue::Symbol(hidden.to_string())),
         };
-        let r_tc = matcher.match_pattern(&p_tc);
-        assert_eq!(r_tc.len(), 1, "TxCount scan should bind one result");
-
-        // Line 122: TxId
-        let p_ti = Pattern {
-            entity: EdnValue::Uuid(alice_id),
-            attribute: AttributeSpec::Pseudo(PseudoAttr::TxId),
-            value: EdnValue::Symbol("?ti".to_string()),
-            valid_from: None,
-            valid_to: None,
-        };
-        let r_ti = matcher.match_pattern(&p_ti);
-        assert_eq!(r_ti.len(), 1, "TxId scan should bind one result");
+        let rows = matcher.match_patterns_seeded(
+            &[
+                source,
+                reader(PseudoAttr::ValidTo, "?vt", "?#0.valid-to"),
+                reader(PseudoAttr::TxCount, "?tc", "?#0.tx-count"),
+                reader(PseudoAttr::TxId, "?ti", "?#0.tx-id"),
+            ],
+            vec![HashMap::new()],
+        );
+        assert_eq!(rows.len(), 1, "one row, from the source's one fact");
+        assert_eq!(rows[0].get("?vt"), Some(&GValue::Integer(fact.valid_to)));
+        assert_eq!(
+            rows[0].get("?tc"),
+            Some(&GValue::Integer(fact.tx_count.cast_signed()))
+        );
+        assert_eq!(
+            rows[0].get("?ti"),
+            Some(&GValue::Integer(fact.tx_id.cast_signed()))
+        );
     }
 
     #[test]
-    fn test_pseudo_attr_entity_non_uuid_non_keyword_falls_through() {
-        // Exercises matcher.rs line 302: `_ => None` when resolved entity is
-        // neither Uuid nor Keyword — falls through to scan path.
+    fn test_pseudo_attr_without_source_matches_nothing() {
+        // A per-fact pseudo-attribute pattern never scans facts: with no
+        // source (the parser refuses that, PRS-081), or a source variable the
+        // row does not bind, it gives no row (#594). A substituted source
+        // (an integer) is compared directly.
         use crate::graph::storage::net_asserted_facts;
         use crate::graph::types::Value as GValue;
         use std::sync::Arc;
@@ -1232,25 +1233,29 @@ mod tests {
             Arc::from(net_asserted_facts(storage.get_all_facts().unwrap()));
         let matcher = PatternMatcher::from_slice(all_facts);
 
-        // Entity is an Integer — neither Uuid nor Keyword → `_ => None` path
-        let pattern = Pattern {
-            entity: EdnValue::Integer(99),
+        let pattern = |source: Option<EdnValue>, value: EdnValue| Pattern {
+            entity: EdnValue::Uuid(alice_id),
             attribute: AttributeSpec::Pseudo(PseudoAttr::ValidFrom),
-            value: EdnValue::Symbol("?vf".to_string()),
+            value,
             valid_from: None,
             valid_to: None,
+            meta: Vec::new(),
+            pseudo_source: source,
         };
-        // Falls through to scan; Integer entity won't match any stored UUID → 0 results
-        let results = matcher.match_pattern(&pattern);
-        assert_eq!(
-            results.len(),
-            0,
-            "non-uuid/keyword entity should yield no matches"
-        );
+        let vf = || EdnValue::Symbol("?vf".to_string());
+        assert!(matcher.match_pattern(&pattern(None, vf())).is_empty());
+        let unbound = pattern(Some(EdnValue::Symbol("?#0.valid-from".to_string())), vf());
+        assert!(matcher.match_pattern(&unbound).is_empty());
+        let substituted = pattern(Some(EdnValue::Integer(7)), vf());
+        let rows = matcher.match_pattern(&substituted);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].get("?vf"), Some(&GValue::Integer(7)));
+        let other = pattern(Some(EdnValue::Integer(7)), EdnValue::Integer(8));
+        assert!(matcher.match_pattern(&other).is_empty());
     }
 
     #[test]
-    fn test_pseudo_attr_hidden_key_value_mismatch_returns_empty() {
+    fn test_pseudo_attr_hidden_var_value_mismatch_returns_empty() {
         // Exercises matcher.rs line 323: `return vec![]` when the stored hidden-key
         // value doesn't match the pattern value component.
         use crate::graph::storage::net_asserted_facts;
@@ -1274,25 +1279,29 @@ mod tests {
             Arc::from(net_asserted_facts(storage.get_all_facts().unwrap()));
         let matcher = PatternMatcher::from_slice(all_facts.clone());
 
-        // Seed bindings with the real-attr pattern so hidden keys are populated
+        // Seed bindings with the source, which binds the hidden variable.
         let p1 = Pattern {
             entity: EdnValue::Symbol("?e".to_string()),
             attribute: AttributeSpec::Real(EdnValue::Keyword(":item/label".to_string())),
             value: EdnValue::Symbol("_".to_string()),
             valid_from: None,
             valid_to: None,
+            meta: vec![(PseudoAttr::ValidFrom, "?#0.valid-from".to_string())],
+            pseudo_source: None,
         };
         let seeded = matcher.match_pattern(&p1);
         assert_eq!(seeded.len(), 1, "seed should match one fact");
 
         // Ask for :db/valid-from with an impossible constant value (-999)
-        // The hidden key exists but -999 won't match the real valid_from → vec![]
+        // The hidden variable is bound but -999 won't match it → vec![]
         let p2 = Pattern {
             entity: EdnValue::Symbol("?e".to_string()),
             attribute: AttributeSpec::Pseudo(PseudoAttr::ValidFrom),
             value: EdnValue::Integer(-999),
             valid_from: None,
             valid_to: None,
+            meta: Vec::new(),
+            pseudo_source: Some(EdnValue::Symbol("?#0.valid-from".to_string())),
         };
         let results = matcher.match_patterns_seeded(&[p2], seeded);
         assert_eq!(

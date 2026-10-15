@@ -442,8 +442,11 @@ pub fn substitute_pattern(pattern: &Pattern, binding: &Bindings) -> Pattern {
         entity: substitute_value(&pattern.entity, binding),
         attribute,
         value: substitute_value(&pattern.value, binding),
-        valid_from: pattern.valid_from,
-        valid_to: pattern.valid_to,
+        pseudo_source: pattern
+            .pseudo_source
+            .as_ref()
+            .map(|v| substitute_value(v, binding)),
+        ..pattern.clone()
     }
 }
 

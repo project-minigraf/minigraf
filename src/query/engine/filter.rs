@@ -6,7 +6,7 @@
 
 use super::batch::Batch;
 use super::cell::{Cell, join_eq};
-use super::plan::{Entity, Out, Step, Term, Vars};
+use super::plan::{Out, Step, Term, Vars};
 use super::project::value;
 use super::{Counters, Ctx, Operator};
 use crate::query::datalog::executor::{eval_expr, is_truthy};
@@ -63,12 +63,8 @@ impl Operator for Apply {
 /// Apply `step` to `batch`.
 fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<Batch> {
     match step {
-        Step::Pseudo {
-            cols,
-            entity,
-            value,
-        } => {
-            let meta = pick(cols, entity.as_ref(), &batch, ctx)?;
+        Step::Pseudo { col, value } => {
+            let meta = batch.cols.get(*col).cloned().unwrap_or_default();
             match value {
                 Term::Any => {}
                 Term::Bind(slot) => batch.set_col(*slot, meta),
@@ -128,57 +124,6 @@ fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<Batch> {
         Step::Join(_) => {}
     }
     Ok(batch)
-}
-
-/// The metadata a pseudo-attribute pattern reads in each row of `batch`:
-/// from the first of `cols` with no entity, or whose entity is join-equal to
-/// `entity` (decision 4 of the #545 plan).
-fn pick(
-    cols: &[(Option<Entity>, usize)],
-    entity: Option<&Entity>,
-    batch: &Batch,
-    ctx: &mut Ctx<'_>,
-) -> Result<Vec<Cell>> {
-    if let [(None, col)] = cols {
-        return Ok(batch.cols.get(*col).cloned().unwrap_or_default());
-    }
-    let mut out = Vec::with_capacity(batch.len);
-    for i in 0..batch.len {
-        let want = match entity {
-            Some(e) => entity_cell(e, batch, i, ctx)?,
-            None => None,
-        };
-        for (e, col) in cols {
-            let matched = match (e, &want) {
-                (None, _) => true,
-                (Some(e), Some(w)) => match entity_cell(e, batch, i, ctx)? {
-                    Some(c) => join_eq(&c, w, true, ctx)?,
-                    None => false,
-                },
-                (Some(_), None) => false,
-            };
-            if matched {
-                if let Some(c) = batch.cols.get(*col).and_then(|c| c.get(i)) {
-                    out.push(c.clone());
-                }
-                break;
-            }
-        }
-    }
-    Ok(out)
-}
-
-/// The cell of `entity` in row `i`.
-fn entity_cell(
-    entity: &Entity,
-    batch: &Batch,
-    i: usize,
-    ctx: &mut Ctx<'_>,
-) -> Result<Option<Cell>> {
-    Ok(match entity {
-        Entity::Slot(s) => batch.cols.get(*s).and_then(|c| c.get(i)).cloned(),
-        Entity::Const(u) => Some(Cell::Eid(ctx.ids.eid(ctx.keys, u)?)),
-    })
 }
 
 /// `expr` over row `i`, or `None` where the executor's evaluation fails.

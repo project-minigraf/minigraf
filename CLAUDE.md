@@ -128,7 +128,7 @@ cargo run < demos/demo_negation.txt
    - `persistent_facts.rs`: `PersistentFactStorage` — v8 save/load, auto-migration v7→v8
 
 3. **`src/query/datalog/`** — Datalog engine
-   - `parser.rs`: EDN/Datalog parser — `transact`, `retract`, `query`, `rule`, `:as-of`, `:valid-at`, `not`, `not-join`
+   - `parser.rs`: EDN/Datalog parser — `transact`, `retract`, `query`, `rule`, `:as-of`, `:valid-at`, `not`, `not-join`; `resolve_pseudo_sources` names each per-fact pseudo-attribute's source (nearest earlier same-entity pattern, lexical scope) and its hidden metadata variable `?#<n>.<attr>`, else PRS-081 (#594)
    - `executor.rs`: Query executor — temporal filter (tx-time → net-assert → valid-time), not/not-join post-filter
    - `matcher.rs`: Pattern matching with variable unification; `edn_to_value`, `edn_to_entity_id`
    - `evaluator.rs`: `RecursiveEvaluator` (semi-naive), `StratifiedEvaluator`, `evaluate_not_join`
@@ -139,7 +139,7 @@ cargo run < demos/demo_negation.txt
    - `prepared.rs`: `BindValue`, `PreparedQuery` — parse-once/execute-many with named `$slot` bind slots; `prepare_query`, `substitute`
    - `magic_sets.rs`: Magic-sets rewriting for demand-driven recursive rule evaluation (not applied to rules with `not`/`not-join`)
 
-3a. **`src/query/engine/`** — Streaming query engine (#473), beside the executor until #551: `plan.rs` (which queries it runs: patterns and expression clauses in `optimizer::plan` order; a pseudo-attribute pattern reads the metadata column of the last earlier pattern that matched its entity, chosen per row, or joins as `[e _ _]` when none runs before it, as `:db/valid-at` always does; plain `:find` variables, today), `scan.rs` (one pattern over committed key ranges via `CommittedReader::key_source`/`live_keys`, AVET ranges for cross-kind constants, then the pending range by whole runs; one entity per probe for a join), `join.rs` (`IndexNestedLoopJoin` when the pattern's entity is bound, `HashJoin` otherwise; `JoinKey`: floats by IEEE `==`, a keyword equals a ref to the entity it names), `filter.rs` (`Filter`/`Bind` and pseudo-attribute steps over batches; a `Bind` on a bound slot keeps the rows where the result is join-equal, #596), `cell.rs`/`batch.rs` (id cells in columnar batches of 1,024), `ids.rs` (DICT and provisional ids, `keyword_eid`), `project.rs` (ids → values for returned rows only), `oracle.rs` (with `cfg(test)` or the `test-oracle` feature, every engine query also runs on the executor and must agree). `mod.rs`: `Operator` (`next_batch`/`close`/`counters`), `Stream` (the operator tree over an owned `Snapshot`, pulled one batch at a time). `DatalogExecutor::open` / `execute_query` try it first: a cursor gets the `Stream` (`Answer::Stream`), `execute` drains it.
+3a. **`src/query/engine/`** — Streaming query engine (#473), beside the executor until #551: `plan.rs` (which queries it runs: patterns and expression clauses in `optimizer::plan` order; a per-fact pseudo-attribute pattern reads the metadata column its source's scan fills (the hidden variable the parser named, #594), and `:db/valid-at` joins as `[e _ _]`; plain `:find` variables, today), `scan.rs` (one pattern over committed key ranges via `CommittedReader::key_source`/`live_keys`, AVET ranges for cross-kind constants, then the pending range by whole runs; one entity per probe for a join), `join.rs` (`IndexNestedLoopJoin` when the pattern's entity is bound, `HashJoin` otherwise; `JoinKey`: floats by IEEE `==`, a keyword equals a ref to the entity it names), `filter.rs` (`Filter`/`Bind` and pseudo-attribute steps over batches; a `Bind` on a bound slot keeps the rows where the result is join-equal, #596), `cell.rs`/`batch.rs` (id cells in columnar batches of 1,024), `ids.rs` (DICT and provisional ids, `keyword_eid`), `project.rs` (ids → values for returned rows only), `oracle.rs` (with `cfg(test)` or the `test-oracle` feature, every engine query also runs on the executor and must agree). `mod.rs`: `Operator` (`next_batch`/`close`/`counters`), `Stream` (the operator tree over an owned `Snapshot`, pulled one batch at a time). `DatalogExecutor::open` / `execute_query` try it first: a cursor gets the `Stream` (`Answer::Stream`), `execute` drains it.
 
 4. **`src/temporal.rs`** — UTC-only timestamp parsing (avoids chrono CVE GHSA-wcg3-cvx6-7396)
 
@@ -204,7 +204,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1514 tests** (1504 passing, 10 ignored; unit + integration + doc).
+**1532 tests** (1522 passing, 10 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
