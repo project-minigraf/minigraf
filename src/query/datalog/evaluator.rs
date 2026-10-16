@@ -507,13 +507,15 @@ pub(crate) fn rule_invocation_to_pattern(predicate: &str, args: &[EdnValue]) -> 
 ///    - Pattern → substitute join_vars via substitute_pattern.
 ///    - RuleInvocation → convert to Pattern via rule_invocation_to_pattern, then substitute.
 ///      Rule-derived facts are already present in `storage` (accumulated) from lower strata.
-/// 3. Run PatternMatcher::match_patterns on all resulting patterns against `storage`.
+/// 3. Run PatternMatcher::match_patterns on all resulting patterns against `storage`,
+///    with `valid_at` as the value a `:db/valid-at` pattern binds (#615).
 /// 4. Any complete match → body is satisfiable → return true (reject outer binding).
 pub fn evaluate_not_join(
     join_vars: &[String],
     clauses: &[WhereClause],
     binding: &Bindings,
     storage: Arc<[Fact]>,
+    valid_at: Value,
     functions: &FunctionRegistry,
 ) -> bool {
     // Build a partial binding containing only the join variables
@@ -542,7 +544,7 @@ pub fn evaluate_not_join(
         .filter(|c| matches!(c, WhereClause::Expr { .. }))
         .collect();
 
-    let matcher = PatternMatcher::from_slice(storage.clone());
+    let matcher = PatternMatcher::from_slice_with_valid_at(storage.clone(), valid_at);
     let mut not_bindings: Vec<Bindings> = if substituted.is_empty() {
         // Expr-only not-join body: seed with the partial binding so variables resolve.
         vec![partial.clone()]
@@ -985,6 +987,7 @@ impl StratifiedEvaluator {
                             nj_clauses,
                             &binding,
                             accumulated_facts.clone(),
+                            Value::Null,
                             &fn_guard,
                         ) {
                             continue 'binding;
@@ -1411,6 +1414,7 @@ mod tests {
             &[expr_clause],
             &binding,
             facts,
+            Value::Null,
             &FunctionRegistry::with_builtins(),
         );
         assert!(
