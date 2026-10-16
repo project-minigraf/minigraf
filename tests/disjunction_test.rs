@@ -670,3 +670,73 @@ fn test_rule_with_or_join_body_no_matches_returns_empty() {
         .expect("rule with or-join and no colored entities must not error");
     assert_eq!(result_count(&r), 0, "no colored entities");
 }
+
+fn edge_db() -> Minigraf {
+    let db = db();
+    db.execute(r#"(transact [[:a :edge :b] [:b :edge :c]])"#)
+        .unwrap();
+    db
+}
+
+/// #610: an `or` sharing no variable with the earlier clauses joins as a cross product.
+#[test]
+fn test_or_with_no_shared_variable_is_cross_product() {
+    let db = edge_db();
+    let r = db
+        .execute(r#"(query [:find ?x ?p :where [?x :edge ?z] (or [?p :edge :b] [?p :edge :c])])"#)
+        .unwrap();
+    assert_eq!(result_count(&r), 4, "?x in {{a, b}} times ?p in {{a, b}}");
+
+    // Clause order does not change the answer.
+    let r = db
+        .execute(r#"(query [:find ?x ?p :where (or [?p :edge :b] [?p :edge :c]) [?x :edge ?z]])"#)
+        .unwrap();
+    assert_eq!(result_count(&r), 4, "or first: same cross product");
+}
+
+/// #610: the cross product keeps the earlier clauses' variables.
+#[test]
+fn test_or_cross_product_keeps_incoming_variables() {
+    let db = edge_db();
+    let r = db
+        .execute(r#"(query [:find ?z ?p :where [?x :edge ?z] (or [?p :edge :c])])"#)
+        .unwrap();
+    assert_eq!(result_count(&r), 2, "two ?z values, one ?p value");
+}
+
+/// #610: an `or` whose branches match nothing still empties the answer.
+#[test]
+fn test_or_with_no_shared_variable_and_no_match_is_empty() {
+    let db = edge_db();
+    let r = db
+        .execute(r#"(query [:find ?x ?p :where [?x :edge ?z] (or [?p :edge :zz] [?p :edge :yy])])"#)
+        .unwrap();
+    assert_eq!(result_count(&r), 0, "no branch matches");
+}
+
+/// #610: the seeded path (a branch with `not`) gives the same cross product.
+#[test]
+fn test_or_with_not_branch_and_no_shared_variable_is_cross_product() {
+    let db = edge_db();
+    let r = db
+        .execute(
+            r#"(query [:find ?x ?p
+                       :where [?x :edge ?z]
+                              (or (and [?p :edge :b] (not [?p :edge :zz]))
+                                  [?p :edge :c])])"#,
+        )
+        .unwrap();
+    assert_eq!(result_count(&r), 4, "seeded path: cross product");
+}
+
+/// #610: the same `or` in a rule body.
+#[test]
+fn test_rule_with_or_and_no_shared_variable_is_cross_product() {
+    let db = edge_db();
+    db.execute(r#"(rule [(pair ?x ?p) [?x :edge ?z] (or [?p :edge :b] [?p :edge :c])])"#)
+        .unwrap();
+    let r = db
+        .execute(r#"(query [:find ?x ?p :where (pair ?x ?p)])"#)
+        .unwrap();
+    assert_eq!(result_count(&r), 4, "rule body: cross product");
+}
