@@ -519,3 +519,38 @@ fn test_not_join_valid_at_in_rule_query_binds_query_valid_time() {
         "rule-query not-join with expr excludes both"
     );
 }
+
+/// #615: a `not-join` whose `?e` only an `or` binds runs after the `or`, on
+/// the rules query path's deferred pass, and binds the query's valid time too.
+#[test]
+fn test_not_join_valid_at_deferred_in_rule_query_binds_query_valid_time() {
+    let db = in_memory_db();
+    db.execute("(transact [[:a :n 1] [:b :n 2]])").unwrap();
+    db.execute("(rule [(numbered ?e) [?e :n _]])").unwrap();
+
+    let result = db
+        .execute(
+            r#"(query [:find ?x ?e :valid-at "2030-01-01"
+                       :where (numbered ?x)
+                              (or [?e :n 1] [?e :n 2])
+                              (not-join [?e] [?e :db/valid-at ?t] [(> ?t 0)])])"#,
+        )
+        .unwrap();
+    assert_eq!(
+        result_count(&result),
+        0,
+        "deferred not-join excludes every ?e"
+    );
+}
+
+/// A `not-join` body holding only an expression filters on the join variables.
+#[test]
+fn test_not_join_expression_only_body() {
+    let db = in_memory_db();
+    db.execute("(transact [[:a :n 1] [:b :n 2]])").unwrap();
+
+    let result = db
+        .execute("(query [:find ?e :where [?e :n ?v] (not-join [?v] [(> ?v 1)])])")
+        .unwrap();
+    assert_eq!(result_count(&result), 1, "only :a has ?v <= 1");
+}
