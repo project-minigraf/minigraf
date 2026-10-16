@@ -84,7 +84,9 @@ engine reproduces this. Reporting it (`QRY-007`) would be a separate change.
 ### 3.4 `:db/valid-at` in bodies
 
 A `:db/valid-at` pattern in a body or branch binds the query's valid time, as at the top
-level. Today `evaluate_not_join` matches with `PatternMatcher::from_slice`, whose valid
+level. On the engine, a body or branch plan is built with the query's `as_of` and
+`Valid` (`plan.rs`), as every scan and join of the query is, so its `:db/valid-at` join
+reads the same valid time. Today `evaluate_not_join` matches with `PatternMatcher::from_slice`, whose valid
 time is `nil`, so the answer changes with the path taken (§3.6).
 
 ### 3.5 `or` and `or-join` (PR 2)
@@ -105,8 +107,10 @@ All are breaking changes for v3.0.0 and listed in `CHANGELOG.md`:
 
 1. **Floats imported into a `not`/`not-join` body.** The executor's per-row path
    (`not_body_matches`, `evaluate_not_join`, and their rule-query variants) substitutes
-   the outer value as a literal, so it matches within `f64::EPSILON`; its exclusion-set
-   path compares exactly. The path depends on whether the body holds an expression, so
+   the outer value as a literal, so a float matches within `f64::EPSILON`; its
+   exclusion-set path (`apply_not_clause`, `apply_not_join_clause`) compares
+   `normalize_value` keys, so floats by IEEE `==` and keywords as the refs they name.
+   The path depends on whether the body holds an expression, so
    on `v3` today
 
    ```
@@ -200,9 +204,11 @@ seed. `Union` concatenates the branches' merged rows.
 
 ### 5.2 `Distinct`
 
-`Union` is followed by `Distinct`, a hash set of rows over the user-visible variables (not
-starting with `__`) and the hidden metadata variables, as both of today's paths
-deduplicate (`seen`, `seen_result`). Duplicate outer rows therefore collapse to one, as
+`Union` is followed by `Distinct`, a hash set of rows over every variable of the merged
+row, the hidden metadata variables included. Today's paths deduplicate on the variables
+not starting with `__` (`or`: `seen`, `seen_keys`) or on all of them (`seen_result`,
+`or-join`: `seen_proj`); since #594 no `:where` binding starts with `__` (only
+aggregate results do, after `:where`), so these are the same set. Duplicate outer rows therefore collapse to one, as
 today. No other operator deduplicates; `:find` stays a bag.
 
 ### 5.3 Executor
