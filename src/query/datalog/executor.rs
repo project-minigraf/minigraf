@@ -821,6 +821,7 @@ impl DatalogExecutor {
                         &join_vars,
                         &clauses,
                         derived_facts.clone(),
+                        valid_at_value.clone(),
                         &registry,
                     );
                 }
@@ -866,6 +867,7 @@ impl DatalogExecutor {
                     &join_vars,
                     &clauses,
                     derived_facts.clone(),
+                    valid_at_value.clone(),
                     &registry,
                 ),
                 _ => bindings,
@@ -1115,7 +1117,14 @@ fn apply_not_join_clause(
         return bindings
             .into_iter()
             .filter(|b| {
-                !evaluate_not_join(join_vars, nj_clauses, b, filtered_facts.clone(), registry)
+                !evaluate_not_join(
+                    join_vars,
+                    nj_clauses,
+                    b,
+                    filtered_facts.clone(),
+                    valid_at_value.clone(),
+                    registry,
+                )
             })
             .collect();
     }
@@ -1170,6 +1179,7 @@ fn apply_not_join_clause(
                 nj_clauses,
                 binding,
                 filtered_facts.clone(),
+                valid_at_value.clone(),
                 registry,
             )
         })
@@ -1297,11 +1307,21 @@ fn apply_not_join_clause_derived(
     join_vars: &[String],
     nj_clauses: &[WhereClause],
     derived_facts: Arc<[Fact]>,
+    valid_at_value: Value,
     registry: &FunctionRegistry,
 ) -> Vec<Binding> {
     bindings
         .into_iter()
-        .filter(|b| !evaluate_not_join(join_vars, nj_clauses, b, derived_facts.clone(), registry))
+        .filter(|b| {
+            !evaluate_not_join(
+                join_vars,
+                nj_clauses,
+                b,
+                derived_facts.clone(),
+                valid_at_value.clone(),
+                registry,
+            )
+        })
         .collect()
 }
 
@@ -1786,8 +1806,14 @@ pub(crate) fn evaluate_branch(
                     }
                 }
                 for (join_vars, nj_clauses) in &not_join_clauses {
-                    if evaluate_not_join(join_vars, nj_clauses, binding, storage.clone(), registry)
-                    {
+                    if evaluate_not_join(
+                        join_vars,
+                        nj_clauses,
+                        binding,
+                        storage.clone(),
+                        branch_valid_at_value.clone(),
+                        registry,
+                    ) {
                         return false;
                     }
                 }
