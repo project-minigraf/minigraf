@@ -8,43 +8,26 @@ use uuid::Uuid;
 /// Return type for `rewrite()`: rewritten rule registry + seed facts to preload.
 type RewriteResult = (RuleRegistry, Vec<(EntityId, String, Value)>);
 
-/// Classify each arg in rule invocations as bound ('b') or free ('f').
-/// Single left-to-right pass; all variables in Pattern entity/value positions are
-/// considered grounded after the pattern (Datalog: pattern binds all its variables).
-pub(crate) fn compute_query_adornments(
-    where_clauses: &[WhereClause],
-) -> HashMap<String, Vec<char>> {
-    let mut grounded: HashSet<String> = HashSet::new();
-    let mut adornments: HashMap<String, Vec<char>> = HashMap::new();
+/// Adornment of a rule call in the query's top-level `:where`: `'b'` where the
+/// argument is a literal a seed fact can carry (an entity for arg0, a value for
+/// arg1), `'f'` elsewhere. A variable is `'f'` even when an earlier pattern binds
+/// it: its values are not known when the seeds are built.
+pub(crate) fn query_call_adornment(args: &[EdnValue]) -> Vec<char> {
+    args.iter()
+        .enumerate()
+        .map(|(i, arg)| if is_carried_literal(i, arg) { 'b' } else { 'f' })
+        .collect()
+}
 
-    for clause in where_clauses {
-        match clause {
-            WhereClause::Pattern(p) => {
-                if let Some(var) = p.entity.as_variable() {
-                    grounded.insert(var.to_string());
-                }
-                if let Some(var) = p.value.as_variable() {
-                    grounded.insert(var.to_string());
-                }
-            }
-            WhereClause::RuleInvocation { predicate, args } => {
-                let adornment: Vec<char> = args
-                    .iter()
-                    .map(|arg| {
-                        if let Some(var) = arg.as_variable() {
-                            if grounded.contains(var) { 'b' } else { 'f' }
-                        } else {
-                            'b' // literal
-                        }
-                    })
-                    .collect();
-                adornments.entry(predicate.clone()).or_insert(adornment);
-            }
-            _ => {}
+/// True if `arg` is a literal a seed or magic fact can carry in argument position
+/// `i`: an entity for arg0, a value for arg1.
+fn is_carried_literal(i: usize, arg: &EdnValue) -> bool {
+    arg.as_variable().is_none()
+        && match i {
+            0 => edn_to_entity_id(arg).is_ok(),
+            1 => edn_to_value(arg).is_ok(),
+            _ => false,
         }
-    }
-
-    adornments
 }
 
 /// Returns true if at least one position in the adornment is bound.
@@ -321,88 +304,183 @@ pub(crate) fn build_propagation_rules(
     result
 }
 
-/// Propagate adornments transitively through rule bodies (handles mutual recursion).
-/// Starting from `initial`, expands until fixed point.
-pub(crate) fn propagate_adornments(
-    initial: &HashMap<String, Vec<char>>,
+/// Position-wise meet: `'b'` only where both adornments are bound.
+fn meet(a: &[char], b: &[char]) -> Vec<char> {
+    if a.len() != b.len() {
+        return vec!['f'; a.len().max(b.len())];
+    }
+    a.iter()
+        .zip(b)
+        .map(|(&x, &y)| if x == 'b' && y == 'b' { 'b' } else { 'f' })
+        .collect()
+}
+
+/// Keep the first bound position only, and only arg0 or arg1: a seed or magic
+/// fact carries one bound value (entity for `bf`, value for `fb`). `None` when no
+/// position is left bound — the predicate is then evaluated unguarded.
+fn normalize(adornment: &[char]) -> Option<Vec<char>> {
+    let first = adornment
+        .iter()
+        .position(|&c| c == 'b')
+        .filter(|&i| i < 2)?;
+    Some(
+        (0..adornment.len())
+            .map(|i| if i == first { 'b' } else { 'f' })
+            .collect(),
+    )
+}
+
+fn has_negation(rule: &Rule) -> bool {
+    rule.body
+        .iter()
+        .any(|c| matches!(c, WhereClause::Not(_) | WhereClause::NotJoin { .. }))
+}
+
+/// Predicates the query can reach through rule calls, at any nesting depth.
+fn reachable_predicates(query: &DatalogQuery, registry: &RuleRegistry) -> Vec<String> {
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut order = Vec::new();
+    let mut stack: Vec<String> = query
+        .where_clauses
+        .iter()
+        .flat_map(|c| c.rule_invocations())
+        .map(str::to_string)
+        .collect();
+    while let Some(pred) = stack.pop() {
+        if !seen.insert(pred.clone()) {
+            continue;
+        }
+        for rule in registry.get_rules(&pred) {
+            stack.extend(
+                rule.body
+                    .iter()
+                    .flat_map(|c| c.rule_invocations())
+                    .map(str::to_string),
+            );
+        }
+        order.push(pred);
+    }
+    order
+}
+
+/// Adornment of each predicate whose rules get a magic guard.
+///
+/// A guarded predicate derives only the facts its magic predicate demands, so the
+/// rewrite is sound only if every call site that reads it supplies that demand: a
+/// seeded call in the query, or a call in the body of a guarded rule (which gets a
+/// propagation rule) with every guarded position bound before the call (#608).
+/// Any other call site — a call with that argument free, a call inside `or`,
+/// `or-join`, `not` or `not-join`, or a call from an unguarded rule — needs every
+/// fact, and weakens the adornment.
+///
+/// Starts from all-bound and weakens to the greatest fixpoint: each round the
+/// adornment becomes its meet with every call site's, then `normalize`; a
+/// predicate with no bound position left is dropped. Adornments only lose bound
+/// positions, so this terminates.
+pub(crate) fn solve_adornments(
+    query: &DatalogQuery,
     registry: &RuleRegistry,
 ) -> HashMap<String, Vec<char>> {
-    let mut adorned = initial.clone();
-    let mut changed = true;
+    let reachable = reachable_predicates(query, registry);
+    let mut adorned: HashMap<String, Vec<char>> = reachable
+        .iter()
+        .filter_map(|pred| {
+            let arity = registry
+                .get_rules(pred)
+                .first()?
+                .head
+                .len()
+                .checked_sub(1)?;
+            Some((pred.clone(), vec!['b'; arity]))
+        })
+        .collect();
 
-    while changed {
-        changed = false;
-        // Collect to avoid borrowing issues in the loop
-        let preds_with_adornments: Vec<(String, Vec<char>)> = adorned
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+    loop {
+        let mut demand: HashMap<String, Vec<char>> = HashMap::new();
+        let mut note = |pred: &str, ad: Vec<char>| {
+            demand
+                .entry(pred.to_string())
+                .and_modify(|d| *d = meet(d, &ad))
+                .or_insert(ad);
+        };
+        let free = |n: usize| vec!['f'; n];
 
-        for (pred, adornment) in &preds_with_adornments {
-            for rule in registry.get_rules(pred) {
-                if rule
-                    .body
-                    .iter()
-                    .any(|c| matches!(c, WhereClause::Not(_) | WhereClause::NotJoin { .. }))
-                {
-                    continue;
+        for clause in &query.where_clauses {
+            match clause {
+                WhereClause::RuleInvocation { predicate, args } => {
+                    note(predicate, query_call_adornment(args));
                 }
-                // Seed grounded vars with bound-position vars from the rule head
+                nested => nested
+                    .rule_invocations()
+                    .into_iter()
+                    .for_each(|p| note(p, free(0))),
+            }
+        }
+
+        for pred in &reachable {
+            let head_adornment = adorned.get(pred);
+            for rule in registry.get_rules(pred) {
+                let guarded = head_adornment.filter(|_| !has_negation(&rule));
                 let mut grounded: HashSet<String> = HashSet::new();
-                for (i, &ch) in adornment.iter().enumerate() {
-                    if ch == 'b'
-                        && let Some(v) = rule.head.get(i + 1).and_then(|e| e.as_variable())
-                    {
-                        grounded.insert(v.to_string());
+                if let Some(ad) = guarded {
+                    for (i, &ch) in ad.iter().enumerate() {
+                        if ch == 'b'
+                            && let Some(v) = rule.head.get(i + 1).and_then(|e| e.as_variable())
+                        {
+                            grounded.insert(v.to_string());
+                        }
                     }
                 }
                 for clause in &rule.body {
                     match clause {
                         WhereClause::Pattern(p) => {
-                            if let Some(v) = p.entity.as_variable() {
-                                grounded.insert(v.to_string());
-                            }
-                            if let Some(v) = p.value.as_variable() {
-                                grounded.insert(v.to_string());
-                            }
-                        }
-                        WhereClause::RuleInvocation {
-                            predicate: called,
-                            args,
-                        } => {
-                            let call_adornment: Vec<char> = args
-                                .iter()
-                                .map(|a| match a.as_variable() {
-                                    Some(v) if grounded.contains(v) => 'b',
-                                    Some(_) => 'f',
-                                    None => 'b', // literals are always bound
-                                })
-                                .collect();
-                            // First-writer-wins: if a predicate is already adorned from another call site,
-                            // we keep the first adornment. In programs with multiple call sites for the same
-                            // predicate, this may miss more-permissive adornments from later call sites.
-                            // This is an acceptable simplification — worst case is less pruning, not wrong results.
-                            if has_bound_arg(&call_adornment)
-                                && !adorned.contains_key(called.as_str())
+                            for v in [p.entity.as_variable(), p.value.as_variable()]
+                                .into_iter()
+                                .flatten()
                             {
-                                adorned.insert(called.clone(), call_adornment);
-                                changed = true;
-                            }
-                            // After a RuleInvocation, the output vars become grounded
-                            for a in args {
-                                if let Some(v) = a.as_variable() {
-                                    grounded.insert(v.to_string());
-                                }
+                                grounded.insert(v.to_string());
                             }
                         }
-                        _ => {}
+                        WhereClause::RuleInvocation { predicate, args } => {
+                            let ad = if guarded.is_some() {
+                                args.iter()
+                                    .enumerate()
+                                    .map(|(i, a)| match a.as_variable() {
+                                        Some(v) if grounded.contains(v) => 'b',
+                                        Some(_) => 'f',
+                                        None if is_carried_literal(i, a) => 'b',
+                                        None => 'f',
+                                    })
+                                    .collect()
+                            } else {
+                                free(args.len())
+                            };
+                            note(predicate, ad);
+                            for v in args.iter().filter_map(|a| a.as_variable()) {
+                                grounded.insert(v.to_string());
+                            }
+                        }
+                        nested => nested
+                            .rule_invocations()
+                            .into_iter()
+                            .for_each(|p| note(p, free(0))),
                     }
                 }
             }
         }
-    }
 
-    adorned
+        let next: HashMap<String, Vec<char>> = adorned
+            .iter()
+            .filter_map(|(pred, ad)| {
+                let site = demand.get(pred)?;
+                normalize(&meet(ad, site)).map(|n| (pred.clone(), n))
+            })
+            .collect();
+        if next == adorned {
+            return adorned;
+        }
+        adorned = next;
+    }
 }
 
 /// Build rewritten registry: copy all rules with magic guards injected for adorned
@@ -441,27 +519,16 @@ fn build_rewritten_registry(
 }
 
 pub(crate) fn rewrite(query: &DatalogQuery, registry: &RuleRegistry) -> Option<RewriteResult> {
-    let initial = compute_query_adornments(&query.where_clauses);
-    let initial_bound: HashMap<String, Vec<char>> = initial
-        .into_iter()
-        .filter(|(_, ad)| has_bound_arg(ad))
-        .collect();
-
-    if initial_bound.is_empty() {
+    // Only a literal argument in a top-level call can seed demand.
+    let any_seedable = query.where_clauses.iter().any(|c| {
+        matches!(c, WhereClause::RuleInvocation { args, .. }
+            if has_bound_arg(&query_call_adornment(args)))
+    });
+    if !any_seedable {
         return None;
     }
 
-    // Fast-path: magic sets only helps when at least one adorned predicate has a free
-    // position. Fully-bound adornments (e.g. "bb") provide no demand-driven benefit
-    // and the current seed encoding only supports arg0-bound or arg1-only-bound cases.
-    // NOTE: this guard is redundant with the downstream `seeds.is_empty()` check, but
-    // is retained as an early exit that avoids the `propagate_adornments` traversal.
-    let any_free = initial_bound.values().any(|ad| ad.contains(&'f'));
-    if !any_free {
-        return None;
-    }
-
-    let adorned = propagate_adornments(&initial_bound, registry);
+    let adorned = solve_adornments(query, registry);
     let seeds = build_seed_facts(&query.where_clauses, &adorned);
     if seeds.is_empty() {
         return None;
@@ -524,37 +591,77 @@ mod tests {
         }
     }
 
+    fn kw(k: &str) -> EdnValue {
+        EdnValue::Keyword(k.to_string())
+    }
+
+    fn var(v: &str) -> EdnValue {
+        EdnValue::Symbol(v.to_string())
+    }
+
+    /// Adornments of the query's top-level calls, as `rewrite` seeds them.
+    fn query_adornments(clauses: &[WhereClause]) -> HashMap<String, Vec<char>> {
+        clauses
+            .iter()
+            .filter_map(|c| match c {
+                WhereClause::RuleInvocation { predicate, args } => {
+                    Some((predicate.clone(), query_call_adornment(args)))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     #[test]
     fn test_literal_arg_is_bound() {
-        let clauses = vec![rule_inv("ancestor", &["abc123", "?y"])];
-        let adornments = compute_query_adornments(&clauses);
-        assert_eq!(adornments.get("ancestor"), Some(&vec!['b', 'f']));
+        assert_eq!(
+            query_call_adornment(&[kw(":alice"), var("?y")]),
+            vec!['b', 'f']
+        );
+        assert_eq!(
+            query_call_adornment(&[var("?x"), kw(":alice")]),
+            vec!['f', 'b']
+        );
     }
 
     #[test]
     fn test_free_var_is_free() {
-        let clauses = vec![rule_inv("ancestor", &["?x", "?y"])];
-        let adornments = compute_query_adornments(&clauses);
-        assert_eq!(adornments.get("ancestor"), Some(&vec!['f', 'f']));
+        assert_eq!(
+            query_call_adornment(&[var("?x"), var("?y")]),
+            vec!['f', 'f']
+        );
     }
 
     #[test]
-    fn test_var_grounded_by_preceding_pattern() {
-        // [?x :name "Alice"] (ancestor ?x ?y) → ?x grounded → bf
-        let clauses = vec![
-            pat("?x", ":name", "Alice"),
-            rule_inv("ancestor", &["?x", "?y"]),
-        ];
-        let adornments = compute_query_adornments(&clauses);
-        assert_eq!(adornments.get("ancestor"), Some(&vec!['b', 'f']));
+    fn test_var_grounded_by_preceding_pattern_is_free() {
+        // [?x :name "Alice"] (ancestor ?x ?y): ?x is bound, but no seed can carry
+        // its values, so the call is not demand-restricted.
+        assert_eq!(
+            query_call_adornment(&[var("?x"), var("?y")]),
+            vec!['f', 'f']
+        );
     }
 
     #[test]
-    fn test_all_free_has_no_bound() {
-        let clauses = vec![rule_inv("ancestor", &["?x", "?y"])];
-        let adornments = compute_query_adornments(&clauses);
-        let ad = adornments.get("ancestor").unwrap();
-        assert!(!has_bound_arg(ad));
+    fn test_unseedable_literal_is_free() {
+        // A string cannot name an entity, so it cannot seed arg0.
+        let args = [EdnValue::String("abc".to_string()), var("?y")];
+        assert_eq!(query_call_adornment(&args), vec!['f', 'f']);
+    }
+
+    #[test]
+    fn test_normalize_keeps_one_bound_position() {
+        assert_eq!(normalize(&['b', 'b']), Some(vec!['b', 'f']));
+        assert_eq!(normalize(&['f', 'b']), Some(vec!['f', 'b']));
+        assert_eq!(normalize(&['b']), Some(vec!['b']));
+        assert_eq!(normalize(&['f', 'f']), None);
+        assert_eq!(normalize(&['f', 'f', 'b']), None);
+    }
+
+    #[test]
+    fn test_meet_of_different_lengths_is_free() {
+        assert_eq!(meet(&['b', 'b'], &[]), vec!['f', 'f']);
+        assert_eq!(meet(&['b', 'f'], &['b', 'b']), vec!['b', 'f']);
     }
 
     #[test]
@@ -568,7 +675,7 @@ mod tests {
                 EdnValue::Symbol("?y".to_string()),
             ],
         }];
-        let adornments = compute_query_adornments(&clauses);
+        let adornments = query_adornments(&clauses);
         let seeds = build_seed_facts(&clauses, &adornments);
         assert_eq!(seeds.len(), 1);
         let (entity, attr, value) = &seeds[0];
@@ -584,7 +691,7 @@ mod tests {
     #[test]
     fn test_no_seed_for_all_free() {
         let clauses = vec![rule_inv("ancestor", &["?x", "?y"])];
-        let adornments = compute_query_adornments(&clauses);
+        let adornments = query_adornments(&clauses);
         let seeds = build_seed_facts(&clauses, &adornments);
         assert!(seeds.is_empty());
     }
@@ -777,13 +884,117 @@ mod tests {
             "odd".to_string(),
             make_rule("odd", &["?n"], vec![rule_inv("even", &["?n"])]),
         );
-        let initial: HashMap<String, Vec<char>> =
-            [("even".to_string(), vec!['b'])].into_iter().collect();
-        let propagated = propagate_adornments(&initial, &registry);
+        let query = DatalogQuery::new(
+            vec![FindSpec::Variable("?x".to_string())],
+            vec![WhereClause::RuleInvocation {
+                predicate: "even".to_string(),
+                args: vec![kw(":n")],
+            }],
+        );
+        let propagated = solve_adornments(&query, &registry);
+        assert_eq!(propagated.get("even"), Some(&vec!['b']));
         assert!(
             propagated.contains_key("odd"),
             "odd should be adorned via SCC"
         );
+    }
+
+    /// `a → b → c` shapes from #608: `link`, `chain` calling only rules, `any`.
+    fn chain_registry() -> RuleRegistry {
+        let mut registry = RuleRegistry::new();
+        let reg = |r: &mut RuleRegistry, pred: &str, rule: Rule| {
+            r.register_rule_unchecked(pred.to_string(), rule)
+        };
+        reg(
+            &mut registry,
+            "link",
+            make_rule("link", &["?x", "?y"], vec![pat("?x", ":edge", "?y")]),
+        );
+        reg(
+            &mut registry,
+            "chain",
+            make_rule(
+                "chain",
+                &["?x", "?y"],
+                vec![rule_inv("link", &["?x", "?y"])],
+            ),
+        );
+        reg(
+            &mut registry,
+            "chain",
+            make_rule(
+                "chain",
+                &["?x", "?y"],
+                vec![
+                    rule_inv("link", &["?x", "?m"]),
+                    rule_inv("chain", &["?m", "?y"]),
+                ],
+            ),
+        );
+        reg(
+            &mut registry,
+            "any",
+            make_rule("any", &["?x", "?y"], vec![rule_inv("link", &["?x", "?y"])]),
+        );
+        registry
+    }
+
+    fn query_of(clauses: Vec<WhereClause>) -> DatalogQuery {
+        DatalogQuery::new(vec![FindSpec::Variable("?x".to_string())], clauses)
+    }
+
+    fn call(pred: &str, args: Vec<EdnValue>) -> WhereClause {
+        WhereClause::RuleInvocation {
+            predicate: pred.to_string(),
+            args,
+        }
+    }
+
+    #[test]
+    fn test_608_unbound_call_argument_unguards_callee() {
+        // (chain ?x :c): chain is fb, but `(link ?x ?m)` in its body has ?m
+        // unbound, so link must stay unguarded.
+        let query = query_of(vec![call("chain", vec![var("?x"), kw(":c")])]);
+        let adorned = solve_adornments(&query, &chain_registry());
+        assert_eq!(adorned.get("chain"), Some(&vec!['f', 'b']));
+        assert!(!adorned.contains_key("link"));
+    }
+
+    #[test]
+    fn test_608_bound_first_argument_keeps_callee_guarded() {
+        // (chain :a ?y): every call to link and chain has arg0 bound.
+        let query = query_of(vec![call("chain", vec![kw(":a"), var("?y")])]);
+        let adorned = solve_adornments(&query, &chain_registry());
+        assert_eq!(adorned.get("chain"), Some(&vec!['b', 'f']));
+        assert_eq!(adorned.get("link"), Some(&vec!['b', 'f']));
+    }
+
+    #[test]
+    fn test_608_free_query_call_unguards_predicate() {
+        let query = query_of(vec![
+            call("link", vec![var("?x"), kw(":c")]),
+            call("link", vec![var("?p"), var("?q")]),
+        ]);
+        assert!(solve_adornments(&query, &chain_registry()).is_empty());
+        assert!(rewrite(&query, &chain_registry()).is_none());
+    }
+
+    #[test]
+    fn test_608_unguarded_caller_unguards_callee() {
+        let query = query_of(vec![
+            call("link", vec![var("?x"), kw(":c")]),
+            call("any", vec![var("?p"), var("?q")]),
+        ]);
+        assert!(solve_adornments(&query, &chain_registry()).is_empty());
+    }
+
+    #[test]
+    fn test_608_nested_call_unguards_predicate() {
+        let query = query_of(vec![
+            call("link", vec![var("?x"), kw(":c")]),
+            WhereClause::Not(vec![call("link", vec![kw(":a"), var("?x")])]),
+        ]);
+        assert!(solve_adornments(&query, &chain_registry()).is_empty());
     }
 
     #[test]

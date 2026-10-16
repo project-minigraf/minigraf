@@ -373,3 +373,157 @@ fn test_left_recursive_intermediate_variable_bound_by_rule_call() {
     let bound = extract_keywords(exec(&db, r#"(query [:find ?y :where (path :a ?y)])"#));
     assert_eq!(bound, vec![":b".to_string(), ":c".to_string()]);
 }
+
+// ── #608: every call site of a guarded predicate must be covered by its demand ──
+
+/// Rows of a query result as sorted strings. Entities named by the keywords
+/// `:a`..`:d` (their UUIDs are derived from the keyword) print as the keyword.
+fn rows(result: QueryResult) -> Vec<String> {
+    let QueryResult::QueryResults { results, .. } = result else {
+        panic!("Expected QueryResults");
+    };
+    let name = |u: &Uuid| {
+        [":a", ":b", ":c", ":d"]
+            .into_iter()
+            .find(|k| Uuid::new_v5(&Uuid::NAMESPACE_OID, k.as_bytes()) == *u)
+            .expect("entity named by a test keyword")
+            .to_string()
+    };
+    let mut rows: Vec<String> = results
+        .into_iter()
+        .map(|row| {
+            row.iter()
+                .map(|v| match v {
+                    Value::Ref(u) => name(u),
+                    Value::Keyword(k) => k.clone(),
+                    _ => panic!("unexpected value type in result"),
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect();
+    rows.sort();
+    rows
+}
+
+fn query_rows(db: &Minigraf, query: &str) -> Vec<String> {
+    rows(exec(db, query))
+}
+
+/// `a → b → c`, a one-step `link`, its transitive `chain` written with a rule
+/// call only, and `any`, which calls `link` with both arguments free.
+fn edge_db() -> Minigraf {
+    let db = open_db();
+    exec(&db, r#"(transact [[:a :edge :b] [:b :edge :c]])"#);
+    exec(&db, r#"(rule [(link ?x ?y) [?x :edge ?y]])"#);
+    exec(&db, r#"(rule [(chain ?x ?y) (link ?x ?y)])"#);
+    exec(&db, r#"(rule [(chain ?x ?y) (link ?x ?m) (chain ?m ?y)])"#);
+    exec(&db, r#"(rule [(any ?x ?y) (link ?x ?y)])"#);
+    db
+}
+
+/// #608 — `chain` adorned `fb` calls `link` with `?m`, which nothing binds before
+/// the call: the demand on `link` cannot be propagated (it was INT-022).
+#[test]
+fn test_608_rule_call_with_unbound_argument() {
+    let db = edge_db();
+    assert_eq!(
+        query_rows(&db, r#"(query [:find ?x :where (chain ?x :c)])"#),
+        vec![":a", ":b"]
+    );
+    assert_eq!(
+        query_rows(&db, r#"(query [:find ?y :where (chain :a ?y)])"#),
+        vec![":b", ":c"]
+    );
+}
+
+/// #608 — the same predicate called twice in a query, once with a literal and
+/// once with free arguments: the free call needs every `link` fact.
+#[test]
+fn test_608_same_predicate_bound_and_free_in_query() {
+    let db = edge_db();
+    assert_eq!(
+        query_rows(
+            &db,
+            r#"(query [:find ?x ?p ?q :where (link ?x :c) (link ?p ?q)])"#
+        ),
+        vec![":b :a :b", ":b :b :c"]
+    );
+    assert_eq!(
+        query_rows(
+            &db,
+            r#"(query [:find ?y ?p ?q :where (link :a ?y) (link ?p ?q)])"#
+        ),
+        vec![":b :a :b", ":b :b :c"]
+    );
+}
+
+/// #608 — a rule the query calls with free arguments (`any`) calls a predicate
+/// the query also calls with a literal.
+#[test]
+fn test_608_unadorned_rule_calls_adorned_predicate() {
+    let db = edge_db();
+    assert_eq!(
+        query_rows(
+            &db,
+            r#"(query [:find ?x ?p ?q :where (link ?x :c) (any ?p ?q)])"#
+        ),
+        vec![":b :a :b", ":b :b :c"]
+    );
+}
+
+/// #608 — a call inside `or` is not seeded, so it needs every fact.
+#[test]
+fn test_608_call_inside_or() {
+    let db = edge_db();
+    exec(&db, r#"(transact [[:b :edge :e]])"#);
+    assert_eq!(
+        query_rows(
+            &db,
+            r#"(query [:find ?x :where (link ?x :c) (or (link ?x :e) (link ?x :d))])"#
+        ),
+        vec![":b"]
+    );
+}
+
+/// #608 — a call inside `not` is not seeded either.
+#[test]
+fn test_608_call_inside_not() {
+    let db = edge_db();
+    // link(:a, :b) holds, so ?x = :b is removed.
+    assert_eq!(
+        query_rows(
+            &db,
+            r#"(query [:find ?x :where (link ?x :c) (not (link :a ?x))])"#
+        ),
+        Vec::<String>::new()
+    );
+}
+
+/// #608 — a query call with both arguments literal (`bb`) beside one that has a
+/// free argument.
+#[test]
+fn test_608_fully_bound_call_beside_bound_free_call() {
+    let db = edge_db();
+    assert_eq!(
+        query_rows(
+            &db,
+            r#"(query [:find ?x :where (link ?x :c) (chain :a :c)])"#
+        ),
+        vec![":b"]
+    );
+}
+
+/// #608 — a call bound only by a variable cannot be seeded; it must not be
+/// guarded when another call in the query is seeded.
+#[test]
+fn test_608_variable_bound_call_beside_literal_call() {
+    let db = edge_db();
+    assert_eq!(
+        query_rows(
+            &db,
+            r#"(query [:find ?s ?y ?q :where [?s :edge :b] (link ?s ?y) (chain ?q :c)])"#
+        ),
+        vec![":a :b :a", ":a :b :b"]
+    );
+}
