@@ -7,11 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v2.0.7 — 2026-10-16
+
+Patch release on the v2.x line under the [support policy](PHILOSOPHY.md#support-policy): one data-integrity fix for prepared queries (#603) and two query fixes for rules with literal arguments (#608) and `or` clauses that share no variable with the earlier clauses (#610). File format is unchanged (v7). No API changes. Upgrading is recommended for every v2.x user who uses prepared queries with a literal `:as-of` or `:valid-at`, rule calls with a literal argument, or `or`.
+
 ### Fixed
 
 - **Rule queries with a literal argument return every row** (#608). Magic-sets rewriting restricts a rule to the facts its callers demand, but it took each rule's bound arguments from the first call it saw and assumed every other call matched. A call that did not — the same rule called with free arguments elsewhere in the query, a call inside `or` or `not`, a call from a rule the query calls with free arguments, or a rule-body call whose argument nothing bound yet — either failed with `INT-022` (`(chain ?x :c)` with `(chain ?x ?y) :- (link ?x ?m) (chain ?m ?y)`) or silently returned too few rows (`(link ?x :c) (link ?p ?q)` returned only the `:c` edges for `?p ?q`). A query with both arguments literal next to another rule call also lost its rows. The demand on each rule is now the one every call site supplies, and a rule some call site reads in full is evaluated in full. Present since v1.2.0; also fixed on v3.
 - **An `or` that shares no variable with the earlier clauses returns its cross product** (#610). Such an `or` — `[?x :edge ?z] (or [?p :edge :b] [?p :edge :c])` — returned no rows when no branch had `not` or `not-join`, because the incoming rows were replaced by the branch results. Each incoming row now joins every branch row, in queries and rule bodies. `or-join` still refuses a join variable no earlier clause binds (`INT-018`): it filters, it does not bind. Also fixed on v3.
 - **A prepared query keeps a literal `:as-of`, `:valid-at` or `:any-valid-time`** (#603). Binding a prepared query's slots dropped any `:as-of` or `:valid-at` that was not itself a slot, so `PreparedQuery::execute` ran at the current transaction time and valid now: `(query [:find ?v :as-of 1 :where [:a :n ?v]])` prepared returned the current rows, not those at transaction 1, and a prepared per-fact pseudo-attribute query with `:any-valid-time` failed with `INT-026`. Slot forms (`:as-of $tx`, `:valid-at $t`) were not affected. Present since 2026-04-04 (v1.x and every v2.x release).
+
+### Tests
+
+- `tests/prepared_statements_test.rs` checks that a prepared query with a literal `:as-of`, `:valid-at` or `:any-valid-time` returns the same rows as the unprepared query (#603); `tests/magic_sets_test.rs` checks rule calls with a literal argument where some call site cannot carry the demand (#608); `tests/disjunction_test.rs` checks the cross product of an `or` that shares no variable with the earlier clauses, in queries and rule bodies (#610).
+
+### Known issues
+
+- Same-transaction multi-valued facts can read back as one value (#371, #287), a fact retracted and re-asserted in one `WriteTransaction` is lost at commit (#477), a later assertion does not replace an earlier valid-time window (#435), `save()` is not crash-atomic (#374), and a `.wal` from a later checkpoint is replayed onto an older `.graph` (#535); all are fixed in v3.0.0. All v2.x known issues, with affected versions and workarounds, are listed in the pinned issue #421.
 
 ## v2.0.6 — 2026-10-14
 

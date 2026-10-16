@@ -8,6 +8,18 @@ Completed releases and their implementation details live in the [CHANGELOG](CHAN
 
 ---
 
+## v2.0.7 — Query Patch (released 2026-10-16)
+
+File format stays v7 and the public API does not change. Details are in the [CHANGELOG](CHANGELOG.md).
+
+Shipped:
+
+- A prepared query keeps a literal `:as-of`, `:valid-at` or `:any-valid-time` (#603)
+- Rule queries with a literal argument return every row (#608)
+- An `or` that shares no variable with the earlier clauses returns its cross product (#610)
+
+---
+
 ## v2.0.6 — Concurrent-Query Patch (released 2026-10-14)
 
 File format stays v7 and the public API does not change. Details are in the [CHANGELOG](CHANGELOG.md).
@@ -217,4 +229,4 @@ See [GitHub Issues](https://github.com/project-minigraf/minigraf/issues) for spe
 
 ---
 
-**Last updated**: October 2026 — v2.0.6, a data-integrity patch on v2.x, is the current release; v3.0.0 work, including the file-format v8 fix for #287/#371, is developed on the long-lived `v3` branch and merges into `main` at the v3.0.0 cut.
+**Last updated**: October 2026 — v2.0.7, a query patch on v2.x, is the current release; v3.0.0 work, including the file-format v8 fix for #287/#371, is developed on the long-lived `v3` branch and merges into `main` at the v3.0.0 cut.
