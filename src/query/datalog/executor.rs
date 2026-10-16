@@ -829,7 +829,8 @@ impl DatalogExecutor {
             1000, // max iterations
             effective_max_derived,
             effective_max_results,
-        );
+        )
+        .with_valid_at(valid_at_value.clone());
 
         let derived_storage = evaluator.evaluate(&predicates)?;
 

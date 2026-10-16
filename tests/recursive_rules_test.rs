@@ -503,3 +503,121 @@ fn test_max_results_counts_derived_facts_not_base_facts() {
         .unwrap_err();
     assert_eq!(err.code(), "INT-020");
 }
+
+/// 2030-01-01T00:00:00Z in Unix ms.
+const VALID_AT_2030: i64 = 1_893_456_000_000;
+
+fn result_rows(r: QueryResult) -> Vec<Vec<Value>> {
+    match r {
+        QueryResult::QueryResults { results, .. } => results,
+        _ => panic!("expected QueryResults"),
+    }
+}
+
+/// #617: a `:db/valid-at` pattern in a rule body binds the query's valid time,
+/// not `nil` (which failed the head with INT-022).
+#[test]
+fn test_rule_body_valid_at_binds_query_valid_time() {
+    let db = Minigraf::in_memory().unwrap();
+    exec(&db, "(transact [[:a :n 1]])");
+    exec(&db, "(rule [(vt ?e ?t) [?e :n _] [?e :db/valid-at ?t]])");
+
+    let rows = result_rows(exec(
+        &db,
+        r#"(query [:find ?t :valid-at "2030-01-01" :where (vt ?e ?t)])"#,
+    ));
+    assert_eq!(rows, vec![vec![Value::Integer(VALID_AT_2030)]]);
+
+    // Bound first argument: the magic-sets path.
+    let rows = result_rows(exec(
+        &db,
+        r#"(query [:find ?t :valid-at "2030-01-01" :where (vt :a ?t)])"#,
+    ));
+    assert_eq!(rows, vec![vec![Value::Integer(VALID_AT_2030)]]);
+
+    // No :valid-at: the current time, as outside a rule.
+    let rows = result_rows(exec(&db, "(query [:find ?t :where (vt ?e ?t)])"));
+    assert_eq!(rows.len(), 1, "one row");
+    assert!(
+        matches!(rows[0][0], Value::Integer(t) if t > VALID_AT_2030 / 2),
+        "current time bound"
+    );
+}
+
+/// #617: the same in a recursive rule, evaluated semi-naively.
+#[test]
+fn test_recursive_rule_body_valid_at_binds_query_valid_time() {
+    let db = Minigraf::in_memory().unwrap();
+    exec(&db, "(transact [[:a :next :b] [:b :next :c]])");
+    exec(
+        &db,
+        "(rule [(reach ?x ?y) [?x :next ?y] [?x :db/valid-at ?t] [(> ?t 0)]])",
+    );
+    exec(&db, "(rule [(reach ?x ?y) [?x :next ?z] (reach ?z ?y)])");
+
+    let rows = result_rows(exec(
+        &db,
+        r#"(query [:find ?y :valid-at "2030-01-01" :where (reach :a ?y)])"#,
+    ));
+    assert_eq!(rows.len(), 2, ":a reaches :b and :c");
+}
+
+/// #617: a `not` body inside a rule binds the query's valid time, so it
+/// excludes the entity whose `:t` equals it.
+#[test]
+fn test_rule_not_body_valid_at_binds_query_valid_time() {
+    let db = Minigraf::in_memory().unwrap();
+    exec(
+        &db,
+        "(transact [[:a :t 1893456000000] [:a :n 1] [:b :t 5] [:b :n 2]])",
+    );
+    exec(
+        &db,
+        "(rule [(other ?e ?v) [?e :t ?t] [?e :n ?v] (not [?e :db/valid-at ?t])])",
+    );
+
+    let rows = result_rows(exec(
+        &db,
+        r#"(query [:find ?v :valid-at "2030-01-01" :where (other ?e ?v)])"#,
+    ));
+    assert_eq!(rows, vec![vec![Value::Integer(2)]], "not body excludes :a");
+}
+
+/// #617: the same for a `not-join` body inside a rule.
+#[test]
+fn test_rule_not_join_body_valid_at_binds_query_valid_time() {
+    let db = Minigraf::in_memory().unwrap();
+    exec(&db, "(transact [[:a :n 1] [:b :n 2]])");
+    exec(
+        &db,
+        "(rule [(fresh ?e) [?e :n _] (not-join [?e] [?e :db/valid-at ?t] [(> ?t 0)])])",
+    );
+
+    let rows = result_rows(exec(
+        &db,
+        r#"(query [:find ?e :valid-at "2030-01-01" :where (fresh ?e)])"#,
+    ));
+    assert_eq!(rows.len(), 0, "not-join body excludes both");
+}
+
+/// #617: an `or` branch inside a rule binds the query's valid time, not the
+/// current time.
+#[test]
+fn test_rule_or_branch_valid_at_binds_query_valid_time() {
+    let db = Minigraf::in_memory().unwrap();
+    exec(&db, "(transact [[:a :n 1] [:b :n 2]])");
+    exec(
+        &db,
+        "(rule [(vt ?e ?t) [?e :n _] (or (and [?e :n 1] [?e :db/valid-at ?t]) (and [?e :n 2] [?e :db/valid-at ?t]))])",
+    );
+
+    let rows = result_rows(exec(
+        &db,
+        r#"(query [:find ?t :valid-at "2030-01-01" :where (vt ?e ?t)])"#,
+    ));
+    assert_eq!(
+        rows,
+        vec![vec![Value::Integer(VALID_AT_2030)]; 2],
+        "one row per entity"
+    );
+}
