@@ -740,3 +740,17 @@ fn test_rule_with_or_and_no_shared_variable_is_cross_product() {
         .unwrap();
     assert_eq!(result_count(&r), 4, "rule body: cross product");
 }
+
+/// #610: incoming rows carrying fact metadata (a pseudo-attribute) still join.
+#[test]
+fn test_or_cross_product_after_pseudo_attribute() {
+    let db = edge_db();
+    let r = db
+        .execute(
+            r#"(query [:find ?x ?t ?p :any-valid-time
+                       :where [?x :edge ?z] [?x :db/tx-count ?t]
+                              (or [?p :edge :c])])"#,
+        )
+        .unwrap();
+    assert_eq!(result_count(&r), 2, "two edges, one tx-count each, one ?p");
+}
