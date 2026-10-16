@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A `:db/valid-at` pattern in a `not-join` body binds the query's valid time on every path** (#615). When the body also held an expression, sat in an `or` branch, or ran in a query that invokes a rule, the body bound `nil`, so `(not-join [?e] [?e :db/valid-at ?t] [(> ?t 0)])` never matched and excluded nothing; without the expression the same body excluded every entity. It now binds the query's `:valid-at` value (or the current time) as the other paths do. Present since v0.13.1.
+
 ## v2.0.7 — 2026-10-16
 
 Patch release on the v2.x line under the [support policy](PHILOSOPHY.md#support-policy): one data-integrity fix for prepared queries (#603) and two query fixes for rules with literal arguments (#608) and `or` clauses that share no variable with the earlier clauses (#610). File format is unchanged (v7). No API changes. Upgrading is recommended for every v2.x user who uses prepared queries with a literal `:as-of` or `:valid-at`, rule calls with a literal argument, or `or`.
