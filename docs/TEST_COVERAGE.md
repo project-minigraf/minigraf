@@ -2,9 +2,9 @@
 
 ## v2.0.6 Coverage Summary
 
-**Verified**: 2026-10-14 with `cargo test`
+**Verified**: 2026-10-16 with `cargo test`
 
-**Result**: 1,258 passing tests and 9 ignored tests (1,267 total), including the golden-file corpus (#391)
+**Result**: 1,264 passing tests and 9 ignored tests (1,273 total), including the golden-file corpus (#391)
 
 For v2.0.5, `tests/edge_cases_test.rs` checks that a file of 1 to 4,095 bytes is `STG-045`, unchanged and with no WAL, when it is a database cut below one page or foreign bytes, and opens as a new database that takes a write and reads it back after reopen when it is a prefix of the initial header or all zeros (#506).
 
@@ -15,6 +15,8 @@ For v2.0.5, torn-WAL-tail tests (#513) check that opening a WAL writer cuts off 
 `tests/crash_kill_test.rs` kills a child process running a seeded workload under five checkpoint modes at a random point and checks that the reopened file holds exactly the transactions the child logged as committed, or those plus the one in flight, through full-scan, AEVT, AVET, EAVT and `:as-of` queries, again after a second reopen and after a checkpoint plus reopen (#384). The workload leaves out the v2.x known issues #371 and #435.
 
 `tests/magic_sets_test.rs` checks rule queries with a literal argument where some call site cannot carry the magic-sets demand (#608): a rule-body call with an argument nothing binds yet, the same rule called with free arguments, a call from a rule called with free arguments, calls inside `or` and `not`, a fully literal call, and a call bound only by a variable; `magic_sets.rs` unit tests check the adornment each shape solves to.
+
+`tests/disjunction_test.rs` checks that an `or` sharing no variable with the earlier clauses joins as a cross product (#610), before or after them, through the seeded path (a branch with `not`) and in a rule body, keeps the earlier clauses' variables and fact metadata (a pseudo-attribute), and gives no rows when no branch matches.
 
 Not counted above: the `BrowserDb` tests run only on wasm32 with `wasm-bindgen-test` in a browser. Two of them check that the IndexedDB flush returns every page a write dirtied, and that a dirty page that cannot be read is an error rather than left out.
 

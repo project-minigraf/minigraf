@@ -1977,20 +1977,8 @@ pub(crate) fn apply_or_clauses(
                     .filter(|v| !v.starts_with("__") && branch_var_names.contains(v.as_str()))
                     .collect();
 
-                if shared_vars.is_empty() {
-                    // No shared user-visible variables between incoming bindings and branch
-                    // results. This is semantically equivalent to a cross-join, which only
-                    // makes sense when `bindings` carries no meaningful state yet (i.e. it
-                    // is a single empty binding — the query start state — or all incoming
-                    // variables are fact-metadata keys that the branch does not reference).
-                    // In that case the cross-join degenerates to "replace with branch union",
-                    // which is what the original seeded evaluation produced. Incoming bindings
-                    // that carry user-visible variables but none matching any branch variable
-                    // would be silently dropped here — that situation should not arise given
-                    // that `or` must share at least one variable with the surrounding clause.
-                    bindings = union_bindings;
-                    continue;
-                }
+                // With no shared variable every key is empty, so each incoming
+                // row joins every branch row: a cross product (#610).
 
                 // Build HashMap: shared-key tuple → Vec<branch Binding>
                 let mut branch_map: HashMap<Vec<(String, Value)>, Vec<Binding>> = HashMap::new();
