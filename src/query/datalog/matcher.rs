@@ -35,6 +35,7 @@ impl PatternMatcher {
     /// asserted facts. The caller is responsible for ensuring the slice contains
     /// only currently asserted facts (equivalent to `FactStorage::get_asserted_facts()`
     /// at the snapshot moment). No additional filtering is applied at match time.
+    #[cfg(test)]
     pub(crate) fn from_slice(facts: Arc<[Fact]>) -> Self {
         PatternMatcher {
             storage: MatcherStorage::Slice(facts),
@@ -49,6 +50,12 @@ impl PatternMatcher {
             storage: MatcherStorage::Slice(facts),
             valid_at_value: valid_at,
         }
+    }
+
+    /// Set the value a `:db/valid-at` pattern binds.
+    pub(crate) fn with_valid_at(mut self, valid_at: Value) -> Self {
+        self.valid_at_value = valid_at;
+        self
     }
 
     fn get_facts(&self) -> Cow<'_, [Fact]> {

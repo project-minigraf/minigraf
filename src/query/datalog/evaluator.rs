@@ -26,7 +26,7 @@
 use super::functions::FunctionRegistry;
 use super::matcher::{Bindings, PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::rules::RuleRegistry;
-use super::types::{AttributeSpec, EdnValue, Pattern, Rule, WhereClause};
+use super::types::{AttributeSpec, EdnValue, Pattern, Rule, ValidAt, WhereClause};
 use crate::error::{ErrorCode, err_coded};
 use crate::graph::FactStorage;
 use crate::graph::types::{Fact, Value};
@@ -70,6 +70,8 @@ pub struct RecursiveEvaluator {
     max_derived_facts: usize,
     /// Maximum facts the rules may derive in one evaluation; base facts do not count
     max_results: usize,
+    /// The value a `:db/valid-at` pattern in a rule body binds (#617)
+    valid_at: Value,
 }
 
 impl RecursiveEvaluator {
@@ -97,7 +99,15 @@ impl RecursiveEvaluator {
             max_iterations,
             max_derived_facts,
             max_results,
+            valid_at: Value::Null,
         }
+    }
+
+    /// Set the value a `:db/valid-at` pattern in a rule body binds: the
+    /// query's valid time (#617). Without it the pattern binds `nil`.
+    pub fn with_valid_at(mut self, valid_at: Value) -> Self {
+        self.valid_at = valid_at;
+        self
     }
 
     /// Evaluate rules for given predicates using semi-naive fixed-point iteration.
@@ -286,7 +296,8 @@ impl RecursiveEvaluator {
             return Ok(derived);
         }
 
-        let matcher = PatternMatcher::new(current_facts.clone());
+        let matcher =
+            PatternMatcher::new(current_facts.clone()).with_valid_at(self.valid_at.clone());
         let bindings = if patterns.is_empty() {
             // Expr-only rule body: seed with empty binding
             vec![Bindings::new()]
@@ -607,6 +618,8 @@ pub struct StratifiedEvaluator {
     max_iterations: usize,
     max_derived_facts: usize,
     max_results: usize,
+    /// The value a `:db/valid-at` pattern in a rule body binds (#617)
+    valid_at: Value,
 }
 
 impl StratifiedEvaluator {
@@ -625,7 +638,16 @@ impl StratifiedEvaluator {
             max_iterations,
             max_derived_facts,
             max_results,
+            valid_at: Value::Null,
         }
+    }
+
+    /// Set the value a `:db/valid-at` pattern binds in rule bodies and their
+    /// `not` / `not-join` bodies and `or` branches: the query's `:valid-at`
+    /// value, the current time without one, `nil` for `:any-valid-time` (#617).
+    pub fn with_valid_at(mut self, valid_at: Value) -> Self {
+        self.valid_at = valid_at;
+        self
     }
 
     /// Derive all facts for the given predicates, respecting stratification order.
@@ -727,7 +749,8 @@ impl StratifiedEvaluator {
                     self.max_iterations,
                     self.max_derived_facts,
                     self.max_results,
-                );
+                )
+                .with_valid_at(self.valid_at.clone());
                 let derived = sub_eval.evaluate_recursive_rules(&stratum_preds)?;
                 // Snapshot existing fact keys so we only load truly new (derived) facts
                 let existing: HashSet<(uuid::Uuid, String, Vec<u8>)> = accumulated
@@ -829,7 +852,10 @@ impl StratifiedEvaluator {
                 // Compute once; reuse for plan loop, apply_or_clauses, not-body matching.
                 let accumulated_facts: Arc<[Fact]> = Arc::from(accumulated.get_asserted_facts()?);
 
-                let matcher = PatternMatcher::from_slice(accumulated_facts.clone());
+                let matcher = PatternMatcher::from_slice_with_valid_at(
+                    accumulated_facts.clone(),
+                    self.valid_at.clone(),
+                );
 
                 // Plan: assigns index hints + pushes Expr to earliest binding position.
                 // Not/NotJoin are excluded from plan_clauses above, so `deferred` is
@@ -880,13 +906,19 @@ impl StratifiedEvaluator {
                     // FunctionRegistry (UDF registration happens at the db layer). Use the
                     // built-in-only registry so or-branches can still use built-in predicates.
                     let fn_registry = FunctionRegistry::with_builtins();
+                    // An or branch binds `:db/valid-at` from a `ValidAt`, the
+                    // inverse of the executor's mapping to `self.valid_at`.
+                    let branch_valid_at = match &self.valid_at {
+                        Value::Integer(t) => ValidAt::Timestamp(*t),
+                        _ => ValidAt::AnyValidTime,
+                    };
                     let expanded = apply_or_clauses(
                         &rule.body,
                         candidates,
                         accumulated_facts.clone(),
                         &registry_guard,
                         None,
-                        None,
+                        Some(branch_valid_at),
                         &fn_registry,
                     )?;
                     drop(registry_guard);
@@ -941,7 +973,10 @@ impl StratifiedEvaluator {
                             })
                             .collect();
 
-                        let not_matcher = PatternMatcher::from_slice(accumulated_facts.clone());
+                        let not_matcher = PatternMatcher::from_slice_with_valid_at(
+                            accumulated_facts.clone(),
+                            self.valid_at.clone(),
+                        );
                         let mut not_bindings: Vec<Bindings> = if substituted.is_empty() {
                             vec![binding.clone()]
                         } else {
@@ -987,7 +1022,7 @@ impl StratifiedEvaluator {
                             nj_clauses,
                             &binding,
                             accumulated_facts.clone(),
-                            Value::Null,
+                            self.valid_at.clone(),
                             &fn_guard,
                         ) {
                             continue 'binding;
