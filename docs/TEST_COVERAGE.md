@@ -4,9 +4,9 @@
 
 **Verified**: 2026-10-16 with `cargo test`
 
-**Result**: 1,264 passing tests and 9 ignored tests (1,273 total), including the golden-file corpus (#391)
+**Result**: 1,274 passing tests and 9 ignored tests (1,283 total), including the golden-file corpus (#391)
 
-For v2.0.5, `tests/edge_cases_test.rs` checks that a file of 1 to 4,095 bytes is `STG-045`, unchanged and with no WAL, when it is a database cut below one page or foreign bytes, and opens as a new database that takes a write and reads it back after reopen when it is a prefix of the initial header or all zeros (#506).
+For v2.0.5, `tests/edge_cases_test.rs` checks that a file of 1 to 4,095 bytes is `STG-045`, unchanged and with no WAL, when it is a database cut below one page or foreign bytes, and opens as a new database that takes a write and reads it back after reopen when it is a prefix of the initial header or all zeros (#506). Rule-body tests in `tests/recursive_rules_test.rs` check that a `:db/valid-at` pattern in a rule definition, in its `not` and `not-join` bodies and in its `or` branches binds the query's valid time, on the semi-naive, stratified and magic-sets paths (#617).
 
 For v2.0.5, torn-WAL-tail tests (#513) check that opening a WAL writer cuts off a partial last entry (cut in the checksum, the header or the payload) or an entry with a bad checksum and everything after it, then appends where replay reaches, and leaves an intact WAL byte for byte; that an append that fails part-way makes every later append `WAL-007` while a rejected oversize fact (`WAL-003`, nothing written) does not; through `Minigraf`, that the failed transaction is not applied, later `transact` and `commit` are `WAL-007`, and a `checkpoint()` makes writes work again; and, in `tests/wal_test.rs`, that a commit made after reopening a crash-left WAL with each kind of torn tail survives a second crash.
 
