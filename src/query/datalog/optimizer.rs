@@ -81,7 +81,7 @@ pub fn select_index(p: &Pattern) -> IndexHint {
 }
 
 /// Collect all logic-variable names (`?foo`) referenced in an Expr tree.
-fn expr_vars(expr: &Expr) -> Vec<String> {
+pub(crate) fn expr_vars(expr: &Expr) -> Vec<String> {
     match expr {
         Expr::Var(s) => vec![s.clone()],
         Expr::Lit(_) | Expr::Slot(_) => vec![],
@@ -96,7 +96,7 @@ fn expr_vars(expr: &Expr) -> Vec<String> {
 
 /// Collect the logic-variable names bound (output) by a Pattern.
 /// Only Symbol values starting with `?` count — literals never bind.
-fn pattern_bound_vars(p: &Pattern) -> Vec<String> {
+pub(crate) fn pattern_bound_vars(p: &Pattern) -> Vec<String> {
     let mut vars = Vec::new();
     if is_variable(&p.entity)
         && let EdnValue::Symbol(s) = &p.entity

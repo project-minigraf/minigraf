@@ -754,3 +754,115 @@ fn test_or_cross_product_after_pseudo_attribute() {
         .unwrap();
     assert_eq!(result_count(&r), 2, "two edges, one tx-count each, one ?p");
 }
+
+// ── #620: an `or` branch whose expression reads an outer variable ────────────
+
+fn n_db() -> Minigraf {
+    let db = db();
+    db.execute("(transact [[:a :n 1] [:b :n 2]])").unwrap();
+    db
+}
+
+/// The query's rows, each as comma-joined integers, sorted.
+fn int_rows(db: &Minigraf, q: &str) -> Vec<String> {
+    let QueryResult::QueryResults { results, .. } = db.execute(q).unwrap() else {
+        panic!("expected QueryResults");
+    };
+    let mut rows: Vec<String> = results
+        .iter()
+        .map(|r| {
+            r.iter()
+                .map(|v| match v {
+                    Value::Integer(i) => i.to_string(),
+                    _ => panic!("expected integers"),
+                })
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+        .collect();
+    rows.sort();
+    rows
+}
+
+#[test]
+fn test_or_branch_expression_reads_outer_variable() {
+    let db = n_db();
+    let r = int_rows(
+        &db,
+        "(query [:find ?v :where [?e :n ?v] (or [(> ?v 1)] [(< ?v 0)])])",
+    );
+    assert_eq!(r, vec!["2"], "only ?v = 2 is over 1");
+    let r = int_rows(
+        &db,
+        "(query [:find ?w :where [?e :n ?v] (or (and [(= ?v 1)] [?e :n ?w]) (and [(= ?v 2)] [?e :n ?w]))])",
+    );
+    assert_eq!(r, vec!["1", "2"], "each row matches one branch");
+    let r = int_rows(
+        &db,
+        "(query [:find ?v :where [?e :n ?v] (or (and [?e :n ?v] [(> ?v 1)]) [(< ?v 0)])])",
+    );
+    assert_eq!(r, vec!["2"], "mixed branches");
+}
+
+#[test]
+fn test_or_branch_expression_binds_from_outer_variable() {
+    let db = n_db();
+    let r = int_rows(
+        &db,
+        "(query [:find ?v ?w :where [?e :n ?v] (or [(+ ?v 10) ?w] [(- ?v 10) ?w])])",
+    );
+    assert_eq!(
+        r,
+        vec!["1,-9", "1,11", "2,-8", "2,12"],
+        "both branches bind ?w from ?v"
+    );
+}
+
+#[test]
+fn test_nested_or_expression_reads_variable_of_enclosing_branch() {
+    let db = n_db();
+    let r = int_rows(
+        &db,
+        "(query [:find ?v :where [?e :n ?v] (or (and [?e :n ?v] (or [(> ?v 1)] [(< ?v 0)])) [?e :n 5])])",
+    );
+    assert_eq!(r, vec!["2"], "the inner or sees ?v");
+    let r = int_rows(
+        &db,
+        "(query [:find ?v :where [?e :n ?v] (or (or [(> ?v 1)] [(< ?v 0)]) [?e :n 5])])",
+    );
+    assert_eq!(r, vec!["2"], "the inner or sees the outer ?v");
+}
+
+#[test]
+fn test_or_join_branch_expression_reads_join_variable() {
+    let db = n_db();
+    let r = int_rows(
+        &db,
+        "(query [:find ?v :where [?e :n ?v] (or-join [?v] [(> ?v 1)] [(< ?v 0)])])",
+    );
+    assert_eq!(r, vec!["2"], "only ?v = 2 is over 1");
+    let r = int_rows(
+        &db,
+        "(query [:find ?v :where [?e :n ?v] (or-join [?v] (and [?x :n ?y] [(> ?v ?y)]) [(< ?v 0)])])",
+    );
+    assert_eq!(r, vec!["2"], "2 is over some ?y, 1 is not");
+}
+
+#[test]
+fn test_or_branch_expression_reads_outer_variable_in_rule_body() {
+    let db = n_db();
+    db.execute("(rule [(big ?e) [?e :n ?v] (or [(> ?v 1)] [(< ?v 0)])])")
+        .unwrap();
+    db.execute("(rule [(big2 ?e) [?e :n ?v] (or-join [?v] [(> ?v 1)] [(< ?v 0)])])")
+        .unwrap();
+    db.execute(
+        "(rule [(pick ?e ?w) [?e :n ?v] (or (and [(= ?v 1)] [?e :n ?w]) (and [(= ?v 2)] [?e :n ?w]))])",
+    )
+    .unwrap();
+    let r = int_rows(&db, "(query [:find ?v :where (big ?e) [?e :n ?v]])");
+    assert_eq!(r, vec!["2"], "or in a rule body");
+    let r = int_rows(&db, "(query [:find ?v :where (big2 ?e) [?e :n ?v]])");
+    assert_eq!(r, vec!["2"], "or-join in a rule body");
+    let r = int_rows(&db, "(query [:find ?w :where (pick ?e ?w)])");
+    assert_eq!(r, vec!["1", "2"], "or-and in a rule body");
+}
