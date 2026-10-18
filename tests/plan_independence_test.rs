@@ -294,3 +294,104 @@ fn unify_negative_zero_equals_zero() {
     );
     assert_eq!(r.len(), 1, "0.0 unifies with -0.0");
 }
+
+// ── #620: an `or` branch whose expression reads an outer variable ────────────
+
+fn issue_620_data(db: &Minigraf) {
+    db.execute("(transact [[:a :n 1] [:b :n 2]])").unwrap();
+}
+
+fn ints(rows: &[Vec<String>]) -> Vec<String> {
+    let mut v: Vec<String> = rows.iter().map(|r| r.join(",")).collect();
+    v.sort();
+    v
+}
+
+#[test]
+fn or_branch_expression_reads_outer_variable() {
+    let db = Minigraf::in_memory().unwrap();
+    issue_620_data(&db);
+    let r = same(
+        &db,
+        "(query [:find ?v :where [?e :n ?v] (or [(> ?v 1)] [(< ?v 0)])])",
+    );
+    assert_eq!(ints(&r), vec!["i:2"], "only ?v = 2 is over 1");
+    let r = same(
+        &db,
+        "(query [:find ?w :where [?e :n ?v] (or (and [(= ?v 1)] [?e :n ?w]) (and [(= ?v 2)] [?e :n ?w]))])",
+    );
+    assert_eq!(ints(&r), vec!["i:1", "i:2"], "each row matches one branch");
+    // One branch binds ?v itself, the other only reads it.
+    let r = same(
+        &db,
+        "(query [:find ?v :where [?e :n ?v] (or (and [?e :n ?v] [(> ?v 1)]) [(< ?v 0)])])",
+    );
+    assert_eq!(ints(&r), vec!["i:2"], "mixed branches");
+}
+
+#[test]
+fn or_branch_expression_binds_from_outer_variable() {
+    let db = Minigraf::in_memory().unwrap();
+    issue_620_data(&db);
+    let r = same(
+        &db,
+        "(query [:find ?v ?w :where [?e :n ?v] (or [(+ ?v 10) ?w] [(- ?v 10) ?w])])",
+    );
+    assert_eq!(
+        ints(&r),
+        vec!["i:1,i:-9", "i:1,i:11", "i:2,i:-8", "i:2,i:12"],
+        "both branches bind ?w from ?v"
+    );
+}
+
+#[test]
+fn nested_or_expression_reads_variable_of_enclosing_branch() {
+    let db = Minigraf::in_memory().unwrap();
+    issue_620_data(&db);
+    let r = same(
+        &db,
+        "(query [:find ?v :where [?e :n ?v] (or (and [?e :n ?v] (or [(> ?v 1)] [(< ?v 0)])) [?e :n 5])])",
+    );
+    assert_eq!(ints(&r), vec!["i:2"], "the inner or sees ?v");
+    let r = same(
+        &db,
+        "(query [:find ?v :where [?e :n ?v] (or (or [(> ?v 1)] [(< ?v 0)]) [?e :n 5])])",
+    );
+    assert_eq!(ints(&r), vec!["i:2"], "the inner or sees the outer ?v");
+}
+
+#[test]
+fn or_join_branch_expression_reads_join_variable() {
+    let db = Minigraf::in_memory().unwrap();
+    issue_620_data(&db);
+    let r = same(
+        &db,
+        "(query [:find ?v :where [?e :n ?v] (or-join [?v] [(> ?v 1)] [(< ?v 0)])])",
+    );
+    assert_eq!(ints(&r), vec!["i:2"], "only ?v = 2 is over 1");
+    let r = same(
+        &db,
+        "(query [:find ?v :where [?e :n ?v] (or-join [?v] (and [?x :n ?y] [(> ?v ?y)]) [(< ?v 0)])])",
+    );
+    assert_eq!(ints(&r), vec!["i:2"], "2 is over some ?y, 1 is not");
+}
+
+#[test]
+fn or_branch_expression_reads_outer_variable_in_rule_body() {
+    let db = Minigraf::in_memory().unwrap();
+    issue_620_data(&db);
+    db.execute("(rule [(big ?e) [?e :n ?v] (or [(> ?v 1)] [(< ?v 0)])])")
+        .unwrap();
+    db.execute("(rule [(big2 ?e) [?e :n ?v] (or-join [?v] [(> ?v 1)] [(< ?v 0)])])")
+        .unwrap();
+    db.execute(
+        "(rule [(pick ?e ?w) [?e :n ?v] (or (and [(= ?v 1)] [?e :n ?w]) (and [(= ?v 2)] [?e :n ?w]))])",
+    )
+    .unwrap();
+    let r = same(&db, "(query [:find ?v :where (big ?e) [?e :n ?v]])");
+    assert_eq!(ints(&r), vec!["i:2"], "or in a rule body");
+    let r = same(&db, "(query [:find ?v :where (big2 ?e) [?e :n ?v]])");
+    assert_eq!(ints(&r), vec!["i:2"], "or-join in a rule body");
+    let r = same(&db, "(query [:find ?w :where (pick ?e ?w)])");
+    assert_eq!(ints(&r), vec!["i:1", "i:2"], "or-and in a rule body");
+}

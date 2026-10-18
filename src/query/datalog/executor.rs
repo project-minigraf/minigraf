@@ -1451,6 +1451,49 @@ pub(crate) fn reads_metadata(clauses: &[WhereClause]) -> bool {
     })
 }
 
+/// The variables an `or` / `or-join` branch's expressions read that the branch
+/// itself never binds — by a pattern, a rule invocation or an expression output,
+/// its own or an enclosing nested branch's. Only the outer row can bind them, so
+/// a branch with any must be seeded with that row, not evaluated from an empty
+/// binding and joined afterwards (#620).
+pub(crate) fn branch_outer_reads(branch: &[WhereClause]) -> std::collections::HashSet<String> {
+    let mut bound = std::collections::HashSet::new();
+    for c in branch {
+        match c {
+            WhereClause::Pattern(p) => bound.extend(optimizer::pattern_bound_vars(p)),
+            WhereClause::RuleInvocation { args, .. } => {
+                for a in args {
+                    if let EdnValue::Symbol(s) = a
+                        && s.starts_with('?')
+                    {
+                        bound.insert(s.clone());
+                    }
+                }
+            }
+            WhereClause::Expr {
+                binding: Some(b), ..
+            } => {
+                bound.insert(b.clone());
+            }
+            _ => {}
+        }
+    }
+    let mut reads = std::collections::HashSet::new();
+    for c in branch {
+        match c {
+            WhereClause::Expr { expr, .. } => reads.extend(optimizer::expr_vars(expr)),
+            WhereClause::Or(branches) | WhereClause::OrJoin { branches, .. } => {
+                for b in branches {
+                    reads.extend(branch_outer_reads(b));
+                }
+            }
+            _ => {}
+        }
+    }
+    reads.retain(|v| !bound.contains(v));
+    reads
+}
+
 /// Filter `bindings` through a single `(not-join [...] ...)` body for the rules query
 /// path — no exclusion-set fast path here (matches the pre-#248 post-filter, which
 /// never had one for this path either).
@@ -2129,11 +2172,13 @@ pub(crate) fn apply_or_clauses(
                 // from the outer scope to evaluate correctly), fall back to the classic
                 // seeded-branch evaluation to preserve correctness.
                 // So does a branch whose pseudo-attribute may read an outer
-                // source's metadata (#594).
+                // source's metadata (#594), or whose expression reads a variable
+                // only the outer row binds (#620).
                 let any_branch_has_not = sorted_or_branches.iter().any(|b| {
                     b.iter()
                         .any(|c| matches!(c, WhereClause::Not(_) | WhereClause::NotJoin { .. }))
                         || reads_metadata(b)
+                        || !branch_outer_reads(b).is_empty()
                 });
 
                 if any_branch_has_not {
@@ -2355,8 +2400,13 @@ pub(crate) fn apply_or_clauses(
                 // metadata (#594) needs it from the outer row: evaluate the
                 // branches per row, seeded with its join variables only (the
                 // others are fresh inside), and keep the distinct rows some
-                // branch matches, as the joined path below does.
-                if sorted_oj_branches.iter().any(|b| reads_metadata(b)) {
+                // branch matches, as the joined path below does. So does a
+                // branch whose expression reads a join variable it does not
+                // bind itself (#620).
+                if sorted_oj_branches
+                    .iter()
+                    .any(|b| reads_metadata(b) || !branch_outer_reads(b).is_empty())
+                {
                     let mut seen: std::collections::HashSet<Vec<(String, Value)>> =
                         std::collections::HashSet::new();
                     let mut result: Vec<Binding> = Vec::new();
@@ -5529,6 +5579,46 @@ mod expr_eval_tests {
     }
 
     // ── evaluate_branch / apply_or_clauses edge cases ────────────────────────
+
+    /// The branches of the query's last `or` / `or-join` clause.
+    fn last_or_branches(q: &str) -> Vec<Vec<WhereClause>> {
+        let DatalogCommand::Query(query) = parse_datalog_command(q).expect("parse failed") else {
+            panic!("expected a query");
+        };
+        match query.where_clauses.last() {
+            Some(WhereClause::Or(b)) | Some(WhereClause::OrJoin { branches: b, .. }) => b.clone(),
+            _ => panic!("expected an or clause last"),
+        }
+    }
+
+    #[test]
+    fn test_branch_outer_reads() {
+        let b = last_or_branches(
+            "(query [:find ?v :where [?e :n ?v] (or [(> ?v 1)] (and [?e :n ?v] [(< ?v 0)]))])",
+        );
+        assert!(branch_outer_reads(&b[0]).contains("?v"), "reads outer ?v");
+        assert!(branch_outer_reads(&b[1]).is_empty(), "binds ?v itself");
+
+        // A nested branch's private variable is not an outer read; the
+        // enclosing branch's variable is bound for the nested one.
+        let b = last_or_branches(
+            "(query [:find ?v :where [?e :n ?v] (or (and [?e :n ?v] (or-join [?v] (and [?x :n ?y] [(> ?y ?v)]))) [?e :n 5])])",
+        );
+        assert!(branch_outer_reads(&b[0]).is_empty(), "nested reads bound");
+        let b = last_or_branches(
+            "(query [:find ?v :where [?e :n ?v] (or (or [(> ?v 1)] [(< ?v 0)]) [?e :n 5])])",
+        );
+        assert!(
+            branch_outer_reads(&b[0]).contains("?v"),
+            "nested reads outer"
+        );
+
+        // An expression output is bound by the branch.
+        let b = last_or_branches(
+            "(query [:find ?w :where [?e :n ?v] (or (and [?e :n ?v] [(+ ?v 1) ?w] [(> ?w 1)]) [?e :n ?w])])",
+        );
+        assert!(branch_outer_reads(&b[0]).is_empty(), "?w bound by output");
+    }
 
     #[test]
     fn test_evaluate_branch_with_timestamp_valid_at() {
