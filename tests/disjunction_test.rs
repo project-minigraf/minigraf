@@ -904,3 +904,58 @@ fn test_expression_after_or_reads_or_bound_variable_with_rules() {
     let r = db.execute("(query [:find ?x :where (big ?e ?x)])").unwrap();
     assert_eq!(result_count(&r), 1, "rule body");
 }
+
+// ── #637: an `or` branch meets a keyword value as the entity it names ────────
+
+fn issue_637_db() -> Minigraf {
+    let db = db();
+    db.execute(
+        r#"(transact [[:alice :friend :bob] [:bob :name "B"]
+                      [:a :e :b] [:b :e :c] [:c :e :d] [:d :e :f] [:f :tail true]])"#,
+    )
+    .unwrap();
+    db
+}
+
+#[test]
+fn test_or_branch_entity_from_keyword_value() {
+    let db = issue_637_db();
+    let r = db
+        .execute("(query [:find ?e ?n :where [?e :friend ?f] (or [?f :name ?n] [?f :alias ?n])])")
+        .unwrap();
+    assert_eq!(result_count(&r), 1, "keyword :bob meets entity :bob");
+    let r = db
+        .execute("(query [:find ?x ?y :where [?x :e ?y] (or [?y :e _] [?y :tail true])])")
+        .unwrap();
+    assert_eq!(result_count(&r), 4, "pure-filter or");
+}
+
+#[test]
+fn test_or_branch_keyword_value_from_entity() {
+    // The other direction: the outer row holds the ref, the branch the keyword.
+    let db = issue_637_db();
+    let r = db
+        .execute(r#"(query [:find ?e :where [?f :name "B"] (or [?e :friend ?f] [?e :enemy ?f])])"#)
+        .unwrap();
+    assert_eq!(result_count(&r), 1, "entity :bob meets keyword :bob");
+}
+
+#[test]
+fn test_or_join_entity_from_keyword_value() {
+    let db = issue_637_db();
+    let r = db
+        .execute("(query [:find ?x ?y :where [?x :e ?y] (or-join [?y] [?y :e _] [?y :tail true])])")
+        .unwrap();
+    assert_eq!(result_count(&r), 4, "or-join on a keyword value");
+}
+
+#[test]
+fn test_or_in_rule_entity_from_keyword_value() {
+    let db = issue_637_db();
+    db.execute("(rule [(next ?x ?y) [?x :e ?y] (or [?y :e _] [?y :tail true])])")
+        .unwrap();
+    let r = db
+        .execute("(query [:find ?x ?y :where (next ?x ?y)])")
+        .unwrap();
+    assert_eq!(result_count(&r), 4, "or in a rule body");
+}
