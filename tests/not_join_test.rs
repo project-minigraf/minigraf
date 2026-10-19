@@ -641,3 +641,63 @@ fn test_rule_calling_or_rule() {
         .unwrap();
     assert_eq!(result_count(&r), 2, "rule calling the or rule");
 }
+
+// ── #633: recursion through a rule with `not` / `not-join` / `or` ────────────
+
+fn issue_633_db() -> Minigraf {
+    let db = in_memory_db();
+    db.execute("(transact [[:a :e :b] [:b :e :c] [:c :e :d] [:d :e :f]])")
+        .unwrap();
+    db
+}
+
+#[test]
+fn test_recursion_through_not_rule() {
+    let db = issue_633_db();
+    db.execute("(rule [(reach ?x ?y) [?x :e ?y]])").unwrap();
+    db.execute("(rule [(reach ?x ?y) [?x :e ?z] (reach ?z ?y) (not [?y :blocked true])])")
+        .unwrap();
+    let r = db
+        .execute("(query [:find ?x ?y :where (reach ?x ?y)])")
+        .unwrap();
+    assert_eq!(result_count(&r), 10, "every pair along the chain");
+
+    // The `not` still filters what the recursion derives: (a d) and (b d) go.
+    db.execute("(transact [[:d :blocked true]])").unwrap();
+    let r = db
+        .execute("(query [:find ?x ?y :where (reach ?x ?y)])")
+        .unwrap();
+    assert_eq!(result_count(&r), 8, "pairs ending at :d only by one edge");
+}
+
+#[test]
+fn test_mutual_recursion_through_not_join_rule() {
+    let db = issue_633_db();
+    db.execute("(rule [(p ?x ?y) [?x :e ?y]])").unwrap();
+    db.execute("(rule [(p ?x ?y) [?x :e ?z] (q ?z ?y)])")
+        .unwrap();
+    db.execute("(rule [(q ?x ?y) (p ?x ?y) (not-join [?y] [?y :blocked true])])")
+        .unwrap();
+    let r = db
+        .execute("(query [:find ?x ?y :where (p ?x ?y)])")
+        .unwrap();
+    assert_eq!(result_count(&r), 10, "p through q");
+    let r = db
+        .execute("(query [:find ?x ?y :where (q ?x ?y)])")
+        .unwrap();
+    assert_eq!(result_count(&r), 10, "q through p");
+}
+
+#[test]
+fn test_recursion_through_or_rule() {
+    // The `or` reads `?x`, which an entity pattern binds: on v2.x an `or`
+    // branch compares a keyword and a ref exactly (changed in v3.0.0, #546).
+    let db = issue_633_db();
+    db.execute("(rule [(reach ?x ?y) [?x :e ?y]])").unwrap();
+    db.execute("(rule [(reach ?x ?y) [?x :e ?z] (reach ?z ?y) (or [?x :e _] [?x :tail true])])")
+        .unwrap();
+    let r = db
+        .execute("(query [:find ?x ?y :where (reach ?x ?y)])")
+        .unwrap();
+    assert_eq!(result_count(&r), 10, "every pair along the chain");
+}
