@@ -162,7 +162,7 @@ pub(crate) fn pattern_bound_vars(p: &Pattern) -> Vec<String> {
 /// clauses — used to determine a `Not`/`NotJoin` clause's dependency on preceding
 /// bindings. Walks `Pattern` positions, `Expr` trees (+ output binding), nested
 /// `Not`/`NotJoin` bodies, and `RuleInvocation` arguments.
-fn clause_ref_vars(clauses: &[WhereClause]) -> std::collections::HashSet<String> {
+pub(crate) fn clause_ref_vars(clauses: &[WhereClause]) -> std::collections::HashSet<String> {
     let mut vars = std::collections::HashSet::new();
     for clause in clauses {
         match clause {

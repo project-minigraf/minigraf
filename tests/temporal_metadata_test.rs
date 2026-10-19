@@ -507,7 +507,7 @@ fn pseudo_attr_constant_filter_no_match() {
 }
 
 /// Gap 5: not-join body containing a pseudo-attr pattern.
-/// Exercises evaluator.rs line 361 (substitute_pattern Pseudo arm in evaluate_not_join).
+/// Exercises a per-fact pseudo-attribute in a seeded `not-join` body (`evaluate_not_join`).
 #[test]
 fn not_join_body_with_pseudo_attr() {
     let db = db();
@@ -519,7 +519,7 @@ fn not_join_body_with_pseudo_attr() {
 
     // Find entities whose valid-from is NOT 2020-01-01 (= 1577836800000).
     // The not-join body contains a pseudo-attr pattern [:db/valid-from 1577836800000],
-    // which triggers substitute_pattern's Pseudo arm.
+    // whose source is the outer `[?e :person/name _]`.
     let r = db
         .execute(
             r#"
