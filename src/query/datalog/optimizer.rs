@@ -262,6 +262,11 @@ pub(crate) fn clause_ref_vars(clauses: &[WhereClause]) -> std::collections::Hash
 /// clause, which the executor applies after this plan) and must be evaluated by the
 /// executor's post-filter instead, to avoid running it before its dependency is bound.
 ///
+/// An `Expr` reading a variable that no pattern in the list and no `Expr` placed
+/// before it binds is deferred the same way (#625), ahead of the deferred
+/// `Not`/`NotJoin` clauses and in text order, since a deferred `not` may read what
+/// it binds.
+///
 /// Returns `(interleaved, deferred)` where `interleaved` pairs each Pattern with
 /// `Some(hint)` and each Expr/Not/NotJoin with `None`.
 pub fn plan(
@@ -361,16 +366,31 @@ pub(crate) fn plan_seeded(
     }
 
     // Push each Expr to the earliest position where all its variables are bound.
+    // An Expr reading a variable that no pattern here and no Expr placed before
+    // it binds depends on a source outside this list (an Or/OrJoin, #625): it is
+    // deferred, ahead of the deferred nots, which may read what it binds.
+    let mut deferred: Vec<WhereClause> = Vec::new();
+    let mut placeable: std::collections::HashSet<String> = seeded.clone();
+    placeable.extend(result.iter().flat_map(|(c, _)| match c {
+        WhereClause::Pattern(p) => pattern_bound_vars(p),
+        _ => Vec::new(),
+    }));
     for expr_clause in exprs {
-        let vars: std::collections::HashSet<String> =
-            if let WhereClause::Expr { expr, .. } = &expr_clause {
-                expr_vars(expr).into_iter().collect()
+        let (vars, out): (std::collections::HashSet<String>, Option<String>) =
+            if let WhereClause::Expr { expr, binding } = &expr_clause {
+                (expr_vars(expr).into_iter().collect(), binding.clone())
             } else {
                 Default::default()
             };
+        if !vars.is_subset(&placeable) {
+            deferred.push(expr_clause);
+            continue;
+        }
+        placeable.extend(out);
 
         let mut bound = seeded.clone();
-        // Default: append at end (covers no-var Exprs and vars never bound by any pattern).
+        // Default: append at end (covers no-var Exprs and Exprs reading what an
+        // Expr placed earlier binds).
         let mut insert_pos = result.len();
 
         if !vars.is_empty() && vars.is_subset(&bound) {
@@ -399,7 +419,6 @@ pub(crate) fn plan_seeded(
         not_clauses.sort_by_key(|c| std::cmp::Reverse(clause_cost(c)));
     }
 
-    let mut deferred: Vec<WhereClause> = Vec::new();
     for nc in not_clauses {
         let required: std::collections::HashSet<String> = match &nc {
             // `?_`-prefixed vars are the wildcard idiom (e.g. `(not [?e :attr ?_x])`)
@@ -860,24 +879,42 @@ mod tests {
             "no-var Expr must be last"
         );
     }
-    #[test]
-    fn test_expr_unbound_var_goes_to_end() {
-        // ?x is never bound by any pattern
-        let p1 = WhereClause::Pattern(make_pattern(var("e"), kw(":val"), var("v")));
-        let expr = WhereClause::Expr {
+    fn gt(v: &str, n: i64, binding: Option<&str>) -> WhereClause {
+        WhereClause::Expr {
             expr: Expr::BinOp(
                 BinOp::Gt,
-                Box::new(Expr::Var("?x".to_string())),
-                Box::new(Expr::Lit(Value::Integer(0))),
+                Box::new(Expr::Var(v.to_string())),
+                Box::new(Expr::Lit(Value::Integer(n))),
             ),
-            binding: None,
-        };
-        let (planned, _deferred) = plan(vec![p1, expr]);
-        assert_eq!(planned.len(), 2);
-        assert!(
-            matches!(planned[1].0, WhereClause::Expr { .. }),
-            "Expr with unbound var must be last"
-        );
+            binding: binding.map(str::to_string),
+        }
+    }
+    #[test]
+    fn test_expr_unbound_var_is_deferred() {
+        // ?x is never bound by any pattern: an Or binds it, after the plan (#625).
+        let p1 = WhereClause::Pattern(make_pattern(var("e"), kw(":val"), var("v")));
+        let expr = gt("?x", 0, None);
+        let (planned, deferred) = plan(vec![p1, expr.clone()]);
+        assert_eq!(planned.len(), 1, "the Expr must not be planned");
+        assert_eq!(deferred, vec![expr]);
+    }
+    #[test]
+    fn test_expr_reading_placed_expr_output_is_planned() {
+        // ?y comes from an Expr whose input a pattern binds: both are planned.
+        let p1 = WhereClause::Pattern(make_pattern(var("e"), kw(":val"), var("v")));
+        let (bind, read) = (gt("?v", 0, Some("?y")), gt("?y", 0, None));
+        let (planned, deferred) = plan(vec![p1, bind, read]);
+        assert!(deferred.is_empty());
+        assert_eq!(planned.len(), 3);
+    }
+    #[test]
+    fn test_deferred_exprs_come_before_deferred_nots_in_text_order() {
+        let p1 = WhereClause::Pattern(make_pattern(var("e"), kw(":val"), var("v")));
+        let not_clause = WhereClause::Not(vec![gt("?y", 0, None)]);
+        let (bind, read) = (gt("?x", 0, Some("?y")), gt("?y", 0, None));
+        let (planned, deferred) = plan(vec![p1, not_clause.clone(), bind.clone(), read.clone()]);
+        assert_eq!(planned.len(), 1);
+        assert_eq!(deferred, vec![bind, read, not_clause]);
     }
 
     // ── Not/NotJoin push-down (#248) ─────────────────────────────────────

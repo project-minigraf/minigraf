@@ -824,9 +824,10 @@ impl StratifiedEvaluator {
                 );
 
                 // Plan: assigns index hints + pushes Expr to earliest binding position.
-                // Not/NotJoin are excluded from plan_clauses above, so `deferred` is
-                // always empty here — rule bodies keep their existing not-filter path.
-                let (planned, _deferred) = crate::query::datalog::optimizer::plan(plan_clauses);
+                // Not/NotJoin are excluded from plan_clauses above, so `deferred` holds
+                // only expressions whose variables an Or/OrJoin binds (#625); they run
+                // after the or pass. Rule bodies keep their existing not-filter path.
+                let (planned, deferred) = crate::query::datalog::optimizer::plan(plan_clauses);
 
                 // Process planned clauses in order: Pattern → join, Expr → filter/extend.
                 let fn_guard = self
@@ -889,6 +890,27 @@ impl StratifiedEvaluator {
                     )?;
                     drop(registry_guard);
                     expanded
+                };
+                let candidates = if deferred.is_empty() {
+                    candidates
+                } else {
+                    use crate::query::datalog::executor::apply_expr;
+                    let fn_guard = self
+                        .functions
+                        .read()
+                        .map_err(|_| err_coded!(ErrorCode::Qry008))?;
+                    let mut candidates = candidates;
+                    for clause in deferred {
+                        if let WhereClause::Expr { expr, binding: out } = clause {
+                            candidates = candidates
+                                .into_iter()
+                                .filter_map(|b| {
+                                    apply_expr(&expr, out.as_deref(), b, &fn_guard, false)
+                                })
+                                .collect();
+                        }
+                    }
+                    candidates
                 };
 
                 // Build temp_eval once per rule (outside the binding loop);
