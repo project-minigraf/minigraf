@@ -4,7 +4,7 @@
 //! evaluator. The first three properties write one fact per `transact` and run
 //! one-pattern queries. The others write random histories (batched transacts,
 //! retractions, write transactions, checkpoints) and run random queries with
-//! joins, `not`/`not-join`, predicates, `:as-of`, `:valid-at` and
+//! joins, `not`/`not-join`, `or`/`or-join`, predicates, `:as-of`, `:valid-at` and
 //! `:any-valid-time`, in memory and against a file that is reopened.
 //!
 //! Run: cargo test --test property_test
@@ -389,6 +389,19 @@ enum Neg {
     },
 }
 
+/// A disjunction over bound variables (#546): it filters, and the rows it
+/// keeps are deduplicated.
+#[derive(Clone, Debug)]
+enum Disj {
+    Or(Pat, Pat),
+    /// `(or-join [?x] [?x a v] [?x a' v'])`, with `v` a fresh `?z` when
+    /// `None`.
+    OrJoin {
+        var: Var,
+        arms: [(usize, Option<V>); 2],
+    },
+}
+
 #[derive(Clone, Copy, Debug)]
 enum CmpOp {
     Lt,
@@ -444,6 +457,7 @@ enum At {
 struct Query {
     pats: Vec<Pat>,
     neg: Option<Neg>,
+    disj: Option<Disj>,
     pred: Option<Pred>,
     temporal: Temporal,
     /// The variables in `:find`, in order.
@@ -480,6 +494,22 @@ impl Query {
                 let v = v.as_ref().map_or("?z".to_string(), V::edn);
                 let x = var.name();
                 clauses.push(format!("(not-join [{x}] [{x} {} {v}])", ATTRS[*a]));
+            }
+        }
+        match &self.disj {
+            None => {}
+            Some(Disj::Or(p, q)) => clauses.push(format!("(or {} {})", p.edn(), q.edn())),
+            Some(Disj::OrJoin { var, arms }) => {
+                let x = var.name();
+                let arm = |(a, v): &(usize, Option<V>)| {
+                    let v = v.as_ref().map_or("?z".to_string(), V::edn);
+                    format!("[{x} {} {v}]", ATTRS[*a])
+                };
+                clauses.push(format!(
+                    "(or-join [{x}] {} {})",
+                    arm(&arms[0]),
+                    arm(&arms[1])
+                ));
             }
         }
         if let Some(p) = &self.pred {
@@ -552,6 +582,7 @@ fn arb_cmp() -> impl Strategy<Value = CmpOp> {
 type RawQuery = (
     Vec<Pat>,
     Option<(bool, Pat, usize, Option<V>)>,
+    Option<(bool, Pat, Pat, [(usize, Option<V>); 2])>,
     Option<(CmpOp, bool, V)>,
     Temporal,
     Vec<bool>,
@@ -582,6 +613,18 @@ fn arb_query() -> impl Strategy<Value = Query> {
                 prop::option::of(arb_dense_v()),
             ),
         ),
+        prop::option::weighted(
+            0.3,
+            (
+                any::<bool>(),
+                arb_pat(),
+                arb_pat(),
+                [
+                    (0..ATTRS.len(), prop::option::of(arb_dense_v())),
+                    (0..ATTRS.len(), prop::option::of(arb_dense_v())),
+                ],
+            ),
+        ),
         prop::option::weighted(0.35, (arb_cmp(), any::<bool>(), arb_dense_v())),
         arb_temporal(),
         prop::collection::vec(any::<bool>(), 8),
@@ -597,7 +640,7 @@ fn pick(vars: &[Var], n: usize, ok: impl Fn(Var) -> bool) -> Option<Var> {
 }
 
 fn build_query(raw: RawQuery) -> Query {
-    let (mut pats, neg, pred, temporal, find_mask, (n1, n2)) = raw;
+    let (mut pats, neg, disj, pred, temporal, find_mask, (n1, n2)) = raw;
 
     // At least one variable, so `:find` is not empty.
     if bound_vars(&pats).is_empty() {
@@ -621,24 +664,39 @@ fn build_query(raw: RawQuery) -> Query {
     }
     let bound = bound_vars(&pats);
 
-    let neg = neg.and_then(|(plain, mut p, a, v)| {
-        if plain {
-            // `not` over bound variables only: an unbound one becomes `_`.
-            let fix = |t: &mut Term, pos_e: bool| {
-                if let Term::Var(x) = *t
-                    && (!bound.contains(&x) || (pos_e && matches!(x, Var::V(_))))
-                {
-                    *t = if pos_e { Term::Entity(0) } else { Term::Blank };
-                }
-            };
-            fix(&mut p.e, true);
-            fix(&mut p.v, false);
-            if p.a.is_none() && !bound.contains(&Var::A) {
-                p.a = Some(a);
+    // A pattern over bound variables only: an unbound one becomes `_` (an
+    // entity for the entity position, a constant attribute for `?a`).
+    let over_bound = |mut p: Pat, a: usize| {
+        let fix = |t: &mut Term, pos_e: bool| {
+            if let Term::Var(x) = *t
+                && (!bound.contains(&x) || (pos_e && matches!(x, Var::V(_))))
+            {
+                *t = if pos_e { Term::Entity(0) } else { Term::Blank };
             }
-            Some(Neg::Not(p))
+        };
+        fix(&mut p.e, true);
+        fix(&mut p.v, false);
+        if p.a.is_none() && !bound.contains(&Var::A) {
+            p.a = Some(a);
+        }
+        p
+    };
+
+    let neg = neg.and_then(|(plain, p, a, v)| {
+        if plain {
+            Some(Neg::Not(over_bound(p, a)))
         } else {
             pick(&bound, n2, |x| matches!(x, Var::E(_))).map(|var| Neg::NotJoin { var, a, v })
+        }
+    });
+
+    // Branches over bound variables bind nothing new, as every branch of an
+    // `or` must bind the same new variables (PRS-057).
+    let disj = disj.and_then(|(plain, p, q, arms)| {
+        if plain {
+            Some(Disj::Or(over_bound(p, arms[0].0), over_bound(q, arms[1].0)))
+        } else {
+            pick(&bound, n1 ^ n2, |x| matches!(x, Var::E(_))).map(|var| Disj::OrJoin { var, arms })
         }
     });
 
@@ -668,6 +726,7 @@ fn build_query(raw: RawQuery) -> Query {
     Query {
         pats,
         neg,
+        disj,
         pred,
         temporal,
         find,
@@ -783,6 +842,28 @@ fn ref_query(model: &Model, q: &Query) -> Vec<String> {
                 })
             });
         }
+    }
+    if let Some(d) = &q.disj {
+        let arm = |b: &Binding, var: Var, (a, v): &(usize, Option<V>)| {
+            let x = lookup(b, var);
+            facts.iter().any(|f| {
+                x == Some(&B::Val(V::Ref(f.e))) && f.a == *a && v.as_ref().is_none_or(|v| *v == f.v)
+            })
+        };
+        bindings.retain(|b| match d {
+            Disj::Or(p, q) => facts
+                .iter()
+                .any(|f| match_fact(b, p, f).is_some() || match_fact(b, q, f).is_some()),
+            Disj::OrJoin { var, arms } => arms.iter().any(|a| arm(b, *var, a)),
+        });
+        // The rows an `or` keeps are distinct (spec §5.2).
+        let mut distinct: Vec<Binding> = Vec::with_capacity(bindings.len());
+        for b in bindings {
+            if !distinct.contains(&b) {
+                distinct.push(b);
+            }
+        }
+        bindings = distinct;
     }
     if let Some(p) = &q.pred {
         bindings.retain(|b| {
