@@ -3,7 +3,9 @@
 //!
 //! Each query runs through `Minigraf::execute` and through a drained
 //! `Minigraf::query` cursor, with clause reordering on and off
-//! (`minigraf::__reorder`), and all four answers must be the same bag. With
+//! (`minigraf::__reorder`), and with the engine's `not` bodies chosen,
+//! forced hashed and forced correlated (`minigraf::__subplans`, #546); all
+//! twelve answers must be the same bag. With
 //! the `test-oracle` feature, every query the streaming engine runs is also
 //! run by the executor and must agree, so each run compares the two as well.
 //! Per-fact pseudo-attributes read the source the parser names (#594).
@@ -48,31 +50,29 @@ fn pulled(db: &Minigraf, q: &str) -> Vec<Vec<String>> {
 
 /// The answer to `q`, or how the plans disagree.
 fn check(db: &Minigraf, q: &str) -> Result<Vec<Vec<String>>, String> {
+    use minigraf::Subplans;
     let on = {
         let _g = minigraf::__reorder(true);
         executed(db, q)
     };
-    let runs = [
-        ("cursor, reordering", {
-            let _g = minigraf::__reorder(true);
-            pulled(db, q)
-        }),
-        ("execute, source order", {
-            let _g = minigraf::__reorder(false);
-            executed(db, q)
-        }),
-        ("cursor, source order", {
-            let _g = minigraf::__reorder(false);
-            pulled(db, q)
-        }),
-    ];
-    for (name, rows) in runs {
-        if rows != on {
-            return Err(format!(
-                "{name}: {} rows, reordering execute: {} rows, for {q}",
-                rows.len(),
-                on.len()
-            ));
+    for mode in [Subplans::Choose, Subplans::Hash, Subplans::Correlated] {
+        let _m = minigraf::__subplans(mode);
+        for reorder in [true, false] {
+            let _g = minigraf::__reorder(reorder);
+            for (how, rows) in [("execute", executed(db, q)), ("cursor", pulled(db, q))] {
+                if rows != on {
+                    let order = if reorder {
+                        "reordering"
+                    } else {
+                        "source order"
+                    };
+                    return Err(format!(
+                        "{how}, {order}, bodies {mode:?}: {} rows, reordering execute: {} rows, for {q}",
+                        rows.len(),
+                        on.len()
+                    ));
+                }
+            }
         }
     }
     Ok(on)
@@ -97,7 +97,8 @@ fn people(db: &Minigraf) {
                       [:dave :name "Dave"] [:dave :age 25]
                       [:p1 :score 41] [:p2 :score 31] [:p3 :score 41.0]
                       [:alice :x 0.0] [:bob :y -0.0] [:carol :x 1.5] [:dave :y 1.5]
-                      [:alice :bio "{long_a}"] [:bob :motto "{long_a}"] [:carol :motto "{long_b}"]])"#,
+                      [:alice :bio "{long_a}"] [:bob :motto "{long_a}"] [:carol :motto "{long_b}"]
+                      [:z1 :tiny 0.00000000000000000001] [:z2 :tiny2 0.00000000000000000002]])"#,
         bob().as_hyphenated()
     ))
     .unwrap();
@@ -157,6 +158,26 @@ const MATRIX: &[&str] = &[
     r#"[:find ?n :where [?e :name ?n] (not-join [?e] [?e :friend ?f] [?f :age 40])]"#,
     r#"[:find ?n :where [?e :name ?n] (or [?e :age ?a] [?e :score ?a]) (not [(> ?a 35)])]"#,
     r#"[:find ?n :where [?e :name ?n] [?e :age ?a] (not-join [?a] [?f :age ?a] [?f :friend :carol])]"#,
+    // #546: imported floats by IEEE `==` (0.0 and -0.0 equal; 1e-20 and
+    // 2e-20 not), keywords and refs of one entity, long strings, bodies that
+    // read an imported variable they do not bind, no variable at all, or
+    // the valid time.
+    r#"[:find ?e :where [?e :x ?v] (not-join [?v] [?f :y ?v])]"#,
+    r#"[:find ?e :where [?e :x ?v] (not-join [?v] [?f :y ?v] [(>= ?v 0.0)])]"#,
+    r#"[:find ?e :where [?e :x ?v] (not [:bob :y ?v])]"#,
+    r#"[:find ?e :where [?e :x ?v] (not [:bob :y ?v] [(< ?v 1.0)])]"#,
+    r#"[:find ?e :where [?e :tiny ?v] (not-join [?v] [?f :tiny2 ?v])]"#,
+    r#"[:find ?e :where [?e :tiny ?v] (not-join [?v] [?f :tiny2 ?v] [(> ?v 0.0)])]"#,
+    r#"[:find ?a :where [?a :friend ?b] (not [?b :age 40])]"#,
+    r#"[:find ?a :where [?a :friend ?b] (not-join [?b] [?b :age ?x] [(> ?x 35)])]"#,
+    r#"[:find ?b :where [?b :name ?n] (not-join [?b] [?a :friend ?b])]"#,
+    r#"[:find ?b :where [?b :name ?n] (not-join [?b] [?a :friend ?b] [?a :age 30])]"#,
+    r#"[:find ?e :where [?e :bio ?s] (not-join [?s] [?f :motto ?s])]"#,
+    r#"[:find ?n :where [?e :name ?n] [?e :age ?a] (not-join [?a] [?f :age ?b] [(< ?b ?a)])]"#,
+    r#"[:find ?n :where [?e :name ?n] (not [:alice :age 30])]"#,
+    r#"[:find ?n :where [?e :name ?n] (not-join [?e] [?x :age 25])]"#,
+    r#"[:find ?n :valid-at "2030-01-01T00:00:00Z" :where [?e :name ?n] (not-join [?e] [?e :db/valid-at ?t] [(> ?t 0)])]"#,
+    r#"[:find ?n :valid-at "2030-01-01T00:00:00Z" :where [?e :name ?n] (not-join [?e] [?e :db/valid-at ?t])]"#,
     // Aggregates.
     r#"[:find ?a (count ?e) :where [?e :age ?a] [?e :name _]]"#,
     // Per-fact pseudo-attributes (#594): #594's example in both text orders,

@@ -26,7 +26,7 @@
 use super::functions::FunctionRegistry;
 use super::matcher::{Bindings, PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::rules::RuleRegistry;
-use super::types::{AttributeSpec, EdnValue, Pattern, Rule, ValidAt, WhereClause};
+use super::types::{EdnValue, Pattern, Rule, ValidAt, WhereClause};
 use crate::error::{ErrorCode, err_coded};
 use crate::graph::FactStorage;
 use crate::graph::types::{Fact, Value};
@@ -443,36 +443,6 @@ pub fn value_to_edn(value: &Value) -> EdnValue {
     }
 }
 
-/// Substitute bound variables in a Pattern, returning a new Pattern with concrete values.
-pub fn substitute_pattern(pattern: &Pattern, binding: &Bindings) -> Pattern {
-    let attribute = match &pattern.attribute {
-        AttributeSpec::Real(edn) => AttributeSpec::Real(substitute_value(edn, binding)),
-        AttributeSpec::Pseudo(p) => AttributeSpec::Pseudo(p.clone()),
-    };
-    Pattern {
-        entity: substitute_value(&pattern.entity, binding),
-        attribute,
-        value: substitute_value(&pattern.value, binding),
-        pseudo_source: pattern
-            .pseudo_source
-            .as_ref()
-            .map(|v| substitute_value(v, binding)),
-        ..pattern.clone()
-    }
-}
-
-/// Substitute a single value: if it's a bound variable, replace it; otherwise clone.
-pub fn substitute_value(value: &EdnValue, binding: &Bindings) -> EdnValue {
-    if let Some(var) = value.as_variable() {
-        binding
-            .get(var)
-            .map(value_to_edn)
-            .unwrap_or_else(|| value.clone())
-    } else {
-        value.clone()
-    }
-}
-
 /// Convert a predicate name + argument list to a Pattern.
 ///
 /// 1-arg: `(blocked ?x)` → `[?x :blocked ?_rule_value]`
@@ -507,20 +477,52 @@ pub(crate) fn rule_invocation_to_pattern(predicate: &str, args: &[EdnValue]) -> 
     }
 }
 
+/// The outer row's values of the variables a `not` body imports: every
+/// variable the body names, `?_` ones aside (spec §2 of the #546 design).
+pub(crate) fn not_seed(body: &[WhereClause], outer: &Bindings) -> Bindings {
+    crate::query::datalog::optimizer::clause_ref_vars(body)
+        .into_iter()
+        .filter(|v| !v.starts_with("?_"))
+        .filter_map(|v| outer.get(&v).map(|val| (v, val.clone())))
+        .collect()
+}
+
+/// The rows of a negation body's patterns and rule invocations, matched from
+/// `seed`, the outer row's values of the variables the body imports. A seeded
+/// variable is compared as a join compares it (`normalize_join_value`: floats
+/// by IEEE `==`, a keyword equal to a ref to the entity it names), never
+/// substituted as a literal (#546). Every row carries the seed; the caller
+/// applies the body's expressions.
+pub(crate) fn seeded_body_rows(
+    body: &[WhereClause],
+    seed: Bindings,
+    storage: Arc<[Fact]>,
+    valid_at: Value,
+) -> Vec<Bindings> {
+    let patterns: Vec<Pattern> = body
+        .iter()
+        .filter_map(|c| match c {
+            WhereClause::Pattern(p) => Some(p.clone()),
+            // Rule-derived facts are already in `storage` (accumulated) from
+            // lower strata.
+            WhereClause::RuleInvocation { predicate, args } => {
+                rule_invocation_to_pattern(predicate, args).ok()
+            }
+            _ => None,
+        })
+        .collect();
+    PatternMatcher::from_slice_with_valid_at(storage, valid_at)
+        .match_patterns_seeded(&patterns, vec![seed])
+}
+
 /// Test whether a `not-join` body is satisfiable given a current binding.
 ///
 /// Returns `true` if the body IS satisfiable → outer binding should be **rejected**.
 /// Returns `false` if the body cannot be satisfied → outer binding survives.
 ///
-/// Algorithm:
-/// 1. Build a partial binding containing only the join_vars entries.
-/// 2. For each clause:
-///    - Pattern → substitute join_vars via substitute_pattern.
-///    - RuleInvocation → convert to Pattern via rule_invocation_to_pattern, then substitute.
-///      Rule-derived facts are already present in `storage` (accumulated) from lower strata.
-/// 3. Run PatternMatcher::match_patterns on all resulting patterns against `storage`,
-///    with `valid_at` as the value a `:db/valid-at` pattern binds (#615).
-/// 4. Any complete match → body is satisfiable → return true (reject outer binding).
+/// The body is matched from the binding's join variables ([`seeded_body_rows`]),
+/// with `valid_at` as the value a `:db/valid-at` pattern binds (#615), and its
+/// expressions applied; any row left means the body is satisfiable.
 pub fn evaluate_not_join(
     join_vars: &[String],
     clauses: &[WhereClause],
@@ -529,52 +531,16 @@ pub fn evaluate_not_join(
     valid_at: Value,
     functions: &FunctionRegistry,
 ) -> bool {
-    // Build a partial binding containing only the join variables
-    let partial: Bindings = join_vars
+    let seed: Bindings = join_vars
         .iter()
         .filter_map(|v| binding.get(v.as_str()).map(|val| (v.clone(), val.clone())))
         .collect();
-
-    // Convert Pattern and RuleInvocation clauses to patterns (excluding Expr)
-    let substituted: Vec<Pattern> = clauses
-        .iter()
-        .filter_map(|c| match c {
-            WhereClause::Pattern(p) => Some(substitute_pattern(p, &partial)),
-            WhereClause::RuleInvocation { predicate, args } => {
-                rule_invocation_to_pattern(predicate, args)
-                    .ok()
-                    .map(|p| substitute_pattern(&p, &partial))
-            }
-            _ => None,
-        })
-        .collect();
-
-    // Collect Expr clauses from the not-join body
     let expr_clauses: Vec<&WhereClause> = clauses
         .iter()
         .filter(|c| matches!(c, WhereClause::Expr { .. }))
         .collect();
-
-    let matcher = PatternMatcher::from_slice_with_valid_at(storage.clone(), valid_at);
-    let mut not_bindings: Vec<Bindings> = if substituted.is_empty() {
-        // Expr-only not-join body: seed with the partial binding so variables resolve.
-        vec![partial.clone()]
-    } else {
-        matcher
-            .match_patterns(&substituted)
-            .into_iter()
-            .map(|mut nb| {
-                for (k, v) in &partial {
-                    nb.entry(k.clone()).or_insert_with(|| v.clone());
-                }
-                nb
-            })
-            .collect()
-    };
-
-    // Apply Expr clauses to filter not_bindings
-    not_bindings = apply_expr_clauses_in_evaluator(not_bindings, &expr_clauses, functions);
-    !not_bindings.is_empty()
+    let rows = seeded_body_rows(clauses, seed, storage, valid_at);
+    !apply_expr_clauses_in_evaluator(rows, &expr_clauses, functions).is_empty()
 }
 
 // NOTE: This mirrors apply_expr_clauses in executor.rs but uses the evaluator's
@@ -938,59 +904,12 @@ impl StratifiedEvaluator {
 
                 'binding: for binding in candidates {
                     for not_body in &not_clauses {
-                        let substituted: Vec<Pattern> = not_body
-                            .iter()
-                            .filter_map(|c| match c {
-                                WhereClause::Pattern(p) => Some(substitute_pattern(p, &binding)),
-                                WhereClause::RuleInvocation { predicate, args } => {
-                                    let subst_args: Vec<EdnValue> = args
-                                        .iter()
-                                        .map(|a| substitute_value(a, &binding))
-                                        .collect();
-                                    match subst_args.len() {
-                                        1 => subst_args.first().map(|a0| {
-                                            Pattern::new(
-                                                a0.clone(),
-                                                EdnValue::Keyword(format!(":{}", predicate)),
-                                                EdnValue::Symbol("?_rule_value".to_string()),
-                                            )
-                                        }),
-                                        2 => subst_args.first().and_then(|a0| {
-                                            subst_args.get(1).map(|a1| {
-                                                Pattern::new(
-                                                    a0.clone(),
-                                                    EdnValue::Keyword(format!(":{}", predicate)),
-                                                    a1.clone(),
-                                                )
-                                            })
-                                        }),
-                                        _ => None,
-                                    }
-                                }
-                                WhereClause::Not(_) | WhereClause::NotJoin { .. } => None,
-                                WhereClause::Expr { .. } => None,
-                                WhereClause::Or(_) | WhereClause::OrJoin { .. } => None, // Or/OrJoin inside not bodies: rejected at parse time (see parser.rs).
-                            })
-                            .collect();
-
-                        let not_matcher = PatternMatcher::from_slice_with_valid_at(
+                        let not_bindings = seeded_body_rows(
+                            not_body,
+                            not_seed(not_body, &binding),
                             accumulated_facts.clone(),
                             self.valid_at.clone(),
                         );
-                        let mut not_bindings: Vec<Bindings> = if substituted.is_empty() {
-                            vec![binding.clone()]
-                        } else {
-                            not_matcher
-                                .match_patterns(&substituted)
-                                .into_iter()
-                                .map(|mut nb| {
-                                    for (k, v) in &binding {
-                                        nb.entry(k.clone()).or_insert_with(|| v.clone());
-                                    }
-                                    nb
-                                })
-                                .collect()
-                        };
 
                         // Apply Expr clauses from the not body
                         let not_body_expr_clauses: Vec<&WhereClause> = not_body
@@ -1001,7 +920,7 @@ impl StratifiedEvaluator {
                             .functions
                             .read()
                             .map_err(|_| err_coded!(ErrorCode::Qry008))?;
-                        not_bindings = apply_expr_clauses_in_evaluator(
+                        let not_bindings = apply_expr_clauses_in_evaluator(
                             not_bindings,
                             &not_body_expr_clauses,
                             &fn_guard,

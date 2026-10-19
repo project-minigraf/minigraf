@@ -134,3 +134,18 @@ pub use query::datalog::optimizer::ReorderGuard;
 pub fn __reorder(on: bool) -> ReorderGuard {
     query::datalog::optimizer::set_reorder(on)
 }
+
+// Plan-independence tests (#546): force how negation bodies run.
+#[cfg(feature = "test-oracle")]
+#[doc(hidden)]
+pub use query::datalog::optimizer::{Subplans, SubplansGuard};
+
+/// Forces how the streaming engine runs `not` / `not-join` bodies (hashed or
+/// correlated) on this thread until the returned guard drops. Only for tests
+/// that check both forms give the same rows (#546); built with the
+/// `test-oracle` feature only.
+#[cfg(feature = "test-oracle")]
+#[doc(hidden)]
+pub fn __subplans(mode: Subplans) -> SubplansGuard {
+    query::datalog::optimizer::set_subplans(mode)
+}

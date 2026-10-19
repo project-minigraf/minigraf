@@ -496,6 +496,28 @@ fn shapes(e: usize, tx_half: u64, hot_tx_half: u64) -> Vec<Shape> {
             ),
             rows: 1,
         },
+        // #546: a `not` probed once per outer row (its entity is imported).
+        Shape {
+            name: "not_probe",
+            query: "[:find ?e :where [?e :group 7] (not [?e :age 7])]".into(),
+            rows: (0..e).filter(|i| i % 100 == 7 && i % 90 != 7).count(),
+        },
+        // #546: a closed `not-join` keyed on a value: its body read once.
+        Shape {
+            name: "not_join_hash",
+            query: "[:find ?e :where [?e :group 7] [?e :age ?a] \
+                    (not-join [?a] [?f :group 17] [?f :age ?a] [(< ?a 50)])]"
+                .into(),
+            rows: {
+                let ages: std::collections::HashSet<usize> = (0..e)
+                    .filter(|i| i % 100 == 17 && i % 90 < 50)
+                    .map(|i| i % 90)
+                    .collect();
+                (0..e)
+                    .filter(|i| i % 100 == 7 && !ages.contains(&(i % 90)))
+                    .count()
+            },
+        },
         Shape {
             name: "recursive_ancestors",
             query: format!("[:find ?b :where (boss :p{leaf} ?b)]"),

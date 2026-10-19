@@ -29,7 +29,7 @@ use crate::query::datalog::types::{
     AsOf, AttributeSpec, DatalogQuery, EdnValue, Expr, FindSpec, Pattern, PseudoAttr, ValidAt,
     WhereClause,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// One position of a pattern.
 #[derive(Debug, Clone)]
@@ -127,6 +127,32 @@ pub(crate) enum Step {
     Bind(Expr, Vars, usize, Out),
     /// A later pattern, joined with the rows so far.
     Join(JoinSpec),
+    /// `not` / `not-join`: keeps the rows for which the body has no row
+    /// (#546).
+    Anti(Body),
+}
+
+/// A `not` / `not-join` body (#546 spec §4).
+#[derive(Debug, Clone)]
+pub(crate) enum Body {
+    /// Run once per outer row, from a seed of its cells at `imports` (in
+    /// seed slots `0..imports.len()`).
+    Correlated {
+        plan: Box<Plan>,
+        imports: Vec<usize>,
+    },
+    /// Run once; a body row matches the outer rows whose cells at each
+    /// `keys[k].outer` are join-equal to its cells at `keys[k].inner`.
+    Hashed { plan: Box<Plan>, keys: Vec<Key> },
+}
+
+/// Where a plan's rows start.
+#[derive(Debug, Clone)]
+pub(crate) enum Source {
+    /// The first pattern.
+    Scan(ScanSpec),
+    /// One row: the cells a correlated body imports, in its first slots.
+    Seed,
 }
 
 /// A join of the rows so far (the outer side) with one pattern (spec §6.2).
@@ -186,11 +212,11 @@ pub(crate) enum Out {
 /// The variables an expression reads that are bound when it runs, by slot.
 pub(crate) type Vars = Vec<(String, usize)>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Plan {
-    pub(crate) scan: ScanSpec,
+    pub(crate) source: Source,
     pub(crate) steps: Vec<Step>,
-    /// The slot of each `:find` variable.
+    /// The slot of each `:find` variable; empty for a body.
     pub(crate) find: Vec<usize>,
     pub(crate) vars: Vec<String>,
 }
@@ -216,6 +242,10 @@ impl Slots {
     fn len(&self) -> usize {
         self.kinds.len()
     }
+
+    fn kind(&self, slot: usize) -> u8 {
+        self.kinds.get(slot).copied().unwrap_or(OTHER)
+    }
 }
 
 /// The plan of `query`, or `None` when the engine does not run it yet.
@@ -232,32 +262,111 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
         Some(ValidAt::AnyValidTime) => Valid::Any,
         Some(ValidAt::Slot(_)) => return None,
     };
-    if !query
-        .where_clauses
-        .iter()
-        .all(|c| matches!(c, WhereClause::Pattern(_) | WhereClause::Expr { .. }))
-    {
+    if !query.where_clauses.iter().all(|c| {
+        matches!(
+            c,
+            WhereClause::Pattern(_)
+                | WhereClause::Expr { .. }
+                | WhereClause::Not(_)
+                | WhereClause::NotJoin { .. }
+        )
+    }) {
         return None;
     }
-    let mut binders = Binders::new(&query.where_clauses, Vec::new());
-    let (planned, _) = optimizer::plan(query.where_clauses.clone());
-    let all: Vec<WhereClause> = planned.into_iter().map(|(c, _)| c).collect();
-    let mut slots = Slots::default();
-    let mut outer_patterns: Vec<WhereClause> = Vec::new();
-    let mut scan = None;
-    let mut steps = Vec::with_capacity(all.len());
-    for c in all {
+    let mut b = Builder::new(
+        Some(Binders::new(&query.where_clauses, Vec::new())),
+        as_of,
+        valid,
+    );
+    let (planned, mut deferred) = optimizer::plan(query.where_clauses.clone());
+    for (c, _) in planned {
+        b.clause(c)?;
+    }
+    // A `not` whose variables only an expression binds runs last, as on the
+    // executor.
+    if optimizer::reorder() {
+        deferred.sort_by_key(optimizer::clause_cost);
+    }
+    for c in deferred {
+        b.clause(c)?;
+    }
+
+    let mut find = Vec::with_capacity(query.find.len());
+    for spec in &query.find {
+        let FindSpec::Variable(var) = spec else {
+            return None;
+        };
+        // The parser rejects a variable no clause binds (PRS-080).
+        find.push(*b.slots.by_var.get(var)?);
+    }
+    let mut plan = b.finish()?;
+    plan.find = find;
+    plan.vars = query.find.iter().map(FindSpec::display_name).collect();
+    Some(plan)
+}
+
+/// Builds the operator steps of one clause list: a query's `:where`, or a
+/// body.
+struct Builder {
+    slots: Slots,
+    /// Which pattern or expression gives a variable its value; `None` in a
+    /// body, where no join or expression replaces a cell (decision 10 of the
+    /// #546 plan).
+    binders: Option<Binders>,
+    as_of: Option<u64>,
+    valid: Valid,
+    source: Option<Source>,
+    steps: Vec<Step>,
+    /// `not`s planned before the first pattern (they read no variable): they
+    /// run right after it, which does not change the rows (decision 9).
+    front: Vec<Step>,
+    /// The stored-attribute patterns so far, for the `HashJoin` build side.
+    outer_patterns: Vec<WhereClause>,
+}
+
+impl Builder {
+    fn new(binders: Option<Binders>, as_of: Option<u64>, valid: Valid) -> Self {
+        Builder {
+            slots: Slots::default(),
+            binders,
+            as_of,
+            valid,
+            source: None,
+            steps: Vec::new(),
+            front: Vec::new(),
+            outer_patterns: Vec::new(),
+        }
+    }
+
+    fn finish(self) -> Option<Plan> {
+        if !self.front.is_empty() {
+            return None;
+        }
+        Some(Plan {
+            source: self.source?,
+            steps: self.steps,
+            find: Vec::new(),
+            vars: Vec::new(),
+        })
+    }
+
+    /// Add the steps of `c`; `None` when the engine cannot run it.
+    fn clause(&mut self, c: WhereClause) -> Option<()> {
+        let (as_of, valid) = (self.as_of, self.valid);
         match c {
             WhereClause::Pattern(q) => {
-                let rebind = binders.pattern(&q);
+                let rebind = match &mut self.binders {
+                    Some(b) => b.pattern(&q),
+                    None => Vec::new(),
+                };
                 let pseudo = meta(&q);
                 if pseudo.is_some_and(|m| m != Meta::ValidAt) {
                     // Reads the hidden variable its source's scan filled.
                     let source = q.pseudo_source.as_ref()?.as_variable()?;
-                    let col = *slots.by_var.get(source)?;
-                    let value = term(&q.value, &mut slots, OTHER, pseudo_const)?;
-                    steps.push(Step::Pseudo { col, value });
-                    continue;
+                    let col = *self.slots.by_var.get(source)?;
+                    let value = term(&q.value, &mut self.slots, OTHER, pseudo_const)?;
+                    self.steps.push(Step::Pseudo { col, value });
+                    return Some(());
                 }
                 // A pattern with a stored attribute, or `:db/valid-at` read
                 // as `[e _ _]` and the query's valid time.
@@ -279,11 +388,12 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
                 if pseudo.is_some() {
                     wants.push((Meta::ValidAt, None));
                 }
+                let slots = &mut self.slots;
                 let mut metas: Vec<(Meta, usize)> = Vec::new();
-                if scan.is_none() {
-                    let e = term(&scanned.entity, &mut slots, OTHER, entity_const)?;
-                    let a = term(&attribute, &mut slots, ATTRIBUTE, attribute_const)?;
-                    let v = term(&scanned.value, &mut slots, OTHER, value_const)?;
+                if self.source.is_none() {
+                    let e = term(&scanned.entity, slots, OTHER, entity_const)?;
+                    let a = term(&attribute, slots, ATTRIBUTE, attribute_const)?;
+                    let v = term(&scanned.value, slots, OTHER, value_const)?;
                     for &(m, var) in &wants {
                         let slot = slots.add(OTHER);
                         if let Some(var) = var {
@@ -291,7 +401,7 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
                         }
                         metas.push((m, slot));
                     }
-                    scan = Some(ScanSpec {
+                    self.source = Some(Source::Scan(ScanSpec {
                         e,
                         a,
                         v,
@@ -299,9 +409,10 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
                         as_of,
                         valid,
                         width: slots.len(),
-                    });
+                    }));
+                    self.steps.append(&mut self.front);
                 } else {
-                    let mut join = join(&scanned, &attribute, &mut slots, &rebind, as_of, valid)?;
+                    let mut join = join(&scanned, &attribute, slots, &rebind, as_of, valid)?;
                     for &(m, var) in &wants {
                         let local = join.inner.width;
                         join.inner.width += 1;
@@ -315,66 +426,178 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
                     }
                     if let JoinKind::Hash { build_inner } = &mut join.kind {
                         // With the test switch off, always the inner pattern
-                        // (decision 3 of the #596 plan).
+                        // (decision 3 of the #596 plan). After a seed and no
+                        // pattern, the seed (`branch_cost` of nothing is 0).
                         *build_inner = !optimizer::reorder()
                             || optimizer::branch_cost(&[WhereClause::Pattern(q.clone())])
-                                <= optimizer::branch_cost(&outer_patterns);
+                                <= optimizer::branch_cost(&self.outer_patterns);
                     }
-                    steps.push(Step::Join(join));
+                    self.steps.push(Step::Join(join));
                 }
-                outer_patterns.push(WhereClause::Pattern(q.clone()));
+                self.outer_patterns.push(WhereClause::Pattern(q.clone()));
                 if pseudo.is_some() {
                     let col = metas.last()?.1;
-                    let value = term(&q.value, &mut slots, OTHER, pseudo_const)?;
-                    steps.push(Step::Pseudo { col, value });
+                    let value = term(&q.value, &mut self.slots, OTHER, pseudo_const)?;
+                    self.steps.push(Step::Pseudo { col, value });
                 }
             }
             WhereClause::Expr { expr, binding } => {
                 // A clause before the first pattern sees no variable.
-                let vars = expr_vars(&expr, &slots);
+                self.source.as_ref()?;
+                let vars = expr_vars(&expr, &self.slots);
                 let step = match binding {
                     None => Step::Filter(expr, vars),
                     Some(out) => {
-                        let replace = binders.expression(&expr, &out);
-                        let (slot, mode) = match slots.by_var.get(&out) {
+                        let replace = match &mut self.binders {
+                            Some(b) => b.expression(&expr, &out),
+                            None => false,
+                        };
+                        let (slot, mode) = match self.slots.by_var.get(&out) {
                             Some(&s) if replace => {
-                                if let Some(k) = slots.kinds.get_mut(s) {
+                                if let Some(k) = self.slots.kinds.get_mut(s) {
                                     *k |= OTHER;
                                 }
                                 (s, Out::Replace)
                             }
                             Some(&s) => (s, Out::Check),
                             None => {
-                                let s = slots.add(OTHER);
-                                slots.by_var.insert(out, s);
+                                let s = self.slots.add(OTHER);
+                                self.slots.by_var.insert(out, s);
                                 (s, Out::New)
                             }
                         };
                         Step::Bind(expr, vars, slot, mode)
                     }
                 };
-                scan.as_ref()?;
-                steps.push(step);
+                self.steps.push(step);
+            }
+            WhereClause::Not(body) => {
+                // Every variable the body names that the rows bind; the
+                // others are the body's own (its sources' hidden variables).
+                let imports = optimizer::clause_ref_vars(&body);
+                let step = self.anti(&body, imports.into_iter().collect())?;
+                self.push_anti(step);
+            }
+            WhereClause::NotJoin { join_vars, clauses } => {
+                let step = self.anti(&clauses, join_vars)?;
+                self.push_anti(step);
             }
             _ => return None,
         }
+        Some(())
     }
-    let scan = scan?;
 
-    let mut find = Vec::with_capacity(query.find.len());
-    for spec in &query.find {
-        let FindSpec::Variable(var) = spec else {
-            return None;
-        };
-        // The parser rejects a variable no clause binds (PRS-080).
-        find.push(*slots.by_var.get(var)?);
+    fn push_anti(&mut self, step: Step) {
+        if self.source.is_some() {
+            self.steps.push(step);
+        } else {
+            self.front.push(step);
+        }
     }
-    Some(Plan {
-        scan,
-        steps,
-        find,
-        vars: query.find.iter().map(FindSpec::display_name).collect(),
-    })
+
+    /// The `AntiJoin` of `body`, whose variables `vars` the outer row gives
+    /// where it binds them (spec §2), hashed or correlated (spec §4.4).
+    fn anti(&self, body: &[WhereClause], vars: Vec<String>) -> Option<Step> {
+        if !body
+            .iter()
+            .all(|c| matches!(c, WhereClause::Pattern(_) | WhereClause::Expr { .. }))
+        {
+            return None;
+        }
+        let mut imports: Vec<(String, usize)> = vars
+            .into_iter()
+            .filter_map(|v| self.slots.by_var.get(&v).map(|&s| (v, s)))
+            .collect();
+        imports.sort_by_key(|&(_, s)| s);
+        let seeded: HashSet<String> = imports.iter().map(|(v, _)| v.clone()).collect();
+        let (seeded_order, _) = optimizer::plan_seeded(body.to_vec(), &seeded);
+        // A probe per outer row holds nothing: correlated when the first
+        // pattern's entity is imported.
+        let probe = seeded_order
+            .iter()
+            .find_map(|(c, _)| match c {
+                WhereClause::Pattern(p) if !per_fact(p) => Some(p),
+                _ => None,
+            })
+            .and_then(|p| p.entity.as_variable())
+            .is_some_and(|e| seeded.contains(e));
+        let hashable = closed(body);
+        let hash = match optimizer::subplans() {
+            optimizer::Subplans::Choose => hashable && !probe,
+            optimizer::Subplans::Hash => hashable,
+            optimizer::Subplans::Correlated => false,
+        };
+        let (as_of, valid) = (self.as_of, self.valid);
+        if hash {
+            let mut b = Builder::new(None, as_of, valid);
+            for (c, _) in optimizer::plan(body.to_vec()).0 {
+                b.clause(c)?;
+            }
+            let keys = imports
+                .iter()
+                .filter_map(|(v, outer)| {
+                    let inner = *b.slots.by_var.get(v)?;
+                    let both =
+                        self.slots.kind(*outer) == ATTRIBUTE && b.slots.kind(inner) == ATTRIBUTE;
+                    Some(Key {
+                        inner,
+                        outer: *outer,
+                        normalise: !both,
+                    })
+                })
+                .collect();
+            return Some(Step::Anti(Body::Hashed {
+                plan: Box::new(b.finish()?),
+                keys,
+            }));
+        }
+        let mut b = Builder::new(None, as_of, valid);
+        for (v, outer) in &imports {
+            let s = b.slots.add(self.slots.kind(*outer));
+            b.slots.by_var.insert(v.clone(), s);
+        }
+        b.source = Some(Source::Seed);
+        for (c, _) in seeded_order {
+            b.clause(c)?;
+        }
+        Some(Step::Anti(Body::Correlated {
+            plan: Box::new(b.finish()?),
+            imports: imports.into_iter().map(|(_, s)| s).collect(),
+        }))
+    }
+}
+
+/// Whether `p` is a per-fact pseudo-attribute pattern (it scans nothing).
+fn per_fact(p: &Pattern) -> bool {
+    matches!(&p.attribute, AttributeSpec::Pseudo(a) if a.is_per_fact())
+}
+
+/// Whether `body` has the same rows for every outer row (spec §2): it has a
+/// pattern to scan, and every variable its expressions and per-fact
+/// pseudo-attributes read is bound by one of its other patterns (decision 6
+/// of the #546 plan).
+fn closed(body: &[WhereClause]) -> bool {
+    let bound: HashSet<String> = body
+        .iter()
+        .filter_map(|c| match c {
+            WhereClause::Pattern(p) if !per_fact(p) => Some(optimizer::pattern_bound_vars(p)),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    body.iter()
+        .any(|c| matches!(c, WhereClause::Pattern(p) if !per_fact(p)))
+        && body.iter().all(|c| match c {
+            WhereClause::Expr { expr, .. } => {
+                optimizer::expr_vars(expr).iter().all(|v| bound.contains(v))
+            }
+            WhereClause::Pattern(p) if per_fact(p) => p
+                .pseudo_source
+                .as_ref()
+                .and_then(EdnValue::as_variable)
+                .is_some_and(|v| bound.contains(v)),
+            _ => true,
+        })
 }
 
 /// The join of the rows so far, whose variables are `slots`, with the

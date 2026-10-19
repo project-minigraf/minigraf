@@ -47,6 +47,58 @@ impl Drop for ReorderGuard {
     }
 }
 
+/// How the engine runs a `not` / `not-join` body (#546): the planner's
+/// choice, or one form forced by a test.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(
+    not(any(test, feature = "test-oracle")),
+    allow(dead_code, reason = "only tests force a form")
+)]
+pub enum Subplans {
+    /// Hashed when the body allows it and no probe is cheaper (spec §4.4).
+    Choose,
+    /// Hashed whenever the body allows it.
+    Hash,
+    /// Always correlated: run once per outer row.
+    Correlated,
+}
+
+#[cfg(any(test, feature = "test-oracle"))]
+thread_local! {
+    /// How bodies on this thread run; tests only.
+    static SUBPLANS: std::cell::Cell<Subplans> = const { std::cell::Cell::new(Subplans::Choose) };
+}
+
+/// How the engine runs a negation body: [`Subplans::Choose`], except in
+/// tests while this thread forces a form ([`set_subplans`]). Both forms give
+/// the same rows.
+#[inline]
+pub(crate) fn subplans() -> Subplans {
+    #[cfg(any(test, feature = "test-oracle"))]
+    return SUBPLANS.with(std::cell::Cell::get);
+    #[cfg(not(any(test, feature = "test-oracle")))]
+    Subplans::Choose
+}
+
+/// Forces how bodies run on this thread until the guard drops, which
+/// restores the previous setting.
+#[cfg(any(test, feature = "test-oracle"))]
+pub(crate) fn set_subplans(mode: Subplans) -> SubplansGuard {
+    SubplansGuard(SUBPLANS.with(|s| s.replace(mode)))
+}
+
+/// Restores the previous [`set_subplans`] setting on drop.
+#[cfg(any(test, feature = "test-oracle"))]
+#[must_use = "the setting is restored when the guard drops"]
+pub struct SubplansGuard(Subplans);
+
+#[cfg(any(test, feature = "test-oracle"))]
+impl Drop for SubplansGuard {
+    fn drop(&mut self) {
+        SUBPLANS.with(|s| s.set(self.0));
+    }
+}
+
 /// Which covering index to use for a given pattern.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IndexHint {
@@ -79,13 +131,17 @@ fn attr_is_index_bound(a: &AttributeSpec) -> bool {
     }
 }
 
-/// Count the number of non-variable components in a pattern.
-/// Higher score = more selective.
-///
-fn selectivity_score(p: &Pattern) -> u8 {
-    let e = !is_variable(&p.entity);
-    let a = attr_is_index_bound(&p.attribute);
-    let v = !is_variable(&p.value);
+/// Count the components of a pattern that are constants or variables in
+/// `bound`. Higher score = more selective.
+fn selectivity_score(p: &Pattern, bound: &std::collections::HashSet<String>) -> u8 {
+    let fixed =
+        |v: &EdnValue| !is_variable(v) || v.as_variable().is_some_and(|n| bound.contains(n));
+    let e = fixed(&p.entity);
+    let a = match &p.attribute {
+        AttributeSpec::Real(edn) => fixed(edn),
+        AttributeSpec::Pseudo(_) => false,
+    };
+    let v = fixed(&p.value);
     (e as u8).saturating_add(a as u8).saturating_add(v as u8)
 }
 
@@ -162,7 +218,7 @@ pub(crate) fn pattern_bound_vars(p: &Pattern) -> Vec<String> {
 /// clauses — used to determine a `Not`/`NotJoin` clause's dependency on preceding
 /// bindings. Walks `Pattern` positions, `Expr` trees (+ output binding), nested
 /// `Not`/`NotJoin` bodies, and `RuleInvocation` arguments.
-fn clause_ref_vars(clauses: &[WhereClause]) -> std::collections::HashSet<String> {
+pub(crate) fn clause_ref_vars(clauses: &[WhereClause]) -> std::collections::HashSet<String> {
     let mut vars = std::collections::HashSet::new();
     for clause in clauses {
         match clause {
@@ -211,6 +267,17 @@ fn clause_ref_vars(clauses: &[WhereClause]) -> std::collections::HashSet<String>
 pub fn plan(
     clauses: Vec<WhereClause>,
 ) -> (Vec<(WhereClause, Option<IndexHint>)>, Vec<WhereClause>) {
+    plan_seeded(clauses, &Default::default())
+}
+
+/// [`plan`] for a body whose variables in `seeded` come bound from the outer
+/// row (#546): they count as constants for selectivity, and a clause that
+/// reads only them may run before every pattern. Cost only: no answer
+/// depends on the order.
+pub(crate) fn plan_seeded(
+    clauses: Vec<WhereClause>,
+    seeded: &std::collections::HashSet<String>,
+) -> (Vec<(WhereClause, Option<IndexHint>)>, Vec<WhereClause>) {
     // Separate into patterns (with hints), exprs, and not/not-join clauses.
     let mut patterns: Vec<(WhereClause, IndexHint)> = Vec::new();
     let mut pseudos: Vec<WhereClause> = Vec::new();
@@ -238,7 +305,7 @@ pub fn plan(
     if reorder() {
         patterns.sort_by_key(|(clause, _)| {
             if let WhereClause::Pattern(p) = clause {
-                std::cmp::Reverse(selectivity_score(p))
+                std::cmp::Reverse(selectivity_score(p, seeded))
             } else {
                 std::cmp::Reverse(0u8)
             }
@@ -275,9 +342,13 @@ pub fn plan(
             required.insert(v.clone());
         }
         let hint = select_index(p);
-        let mut bound: std::collections::HashSet<String> = Default::default();
+        let mut bound = seeded.clone();
         let mut insert_pos = result.len();
         for (pos, (c, _)) in result.iter().enumerate() {
+            if required.is_subset(&bound) {
+                insert_pos = pos;
+                break;
+            }
             if let WhereClause::Pattern(q) = c {
                 bound.extend(pattern_bound_vars(q));
                 if required.is_subset(&bound) {
@@ -298,11 +369,13 @@ pub fn plan(
                 Default::default()
             };
 
-        let mut bound: std::collections::HashSet<String> = Default::default();
+        let mut bound = seeded.clone();
         // Default: append at end (covers no-var Exprs and vars never bound by any pattern).
         let mut insert_pos = result.len();
 
-        if !vars.is_empty() {
+        if !vars.is_empty() && vars.is_subset(&bound) {
+            insert_pos = 0;
+        } else if !vars.is_empty() {
             for (pos, (clause, _)) in result.iter().enumerate() {
                 if let WhereClause::Pattern(p) = clause {
                     bound.extend(pattern_bound_vars(p));
@@ -352,9 +425,12 @@ pub fn plan(
             continue;
         }
 
-        let mut bound: std::collections::HashSet<String> = Default::default();
-        let mut insert_pos: Option<usize> = None;
+        let mut bound = seeded.clone();
+        let mut insert_pos: Option<usize> = required.is_subset(&bound).then_some(0);
         for (pos, (clause, _)) in result.iter().enumerate() {
+            if insert_pos.is_some() {
+                break;
+            }
             if let WhereClause::Pattern(p) = clause {
                 bound.extend(pattern_bound_vars(p));
                 if required.is_subset(&bound) {
@@ -459,6 +535,58 @@ mod tests {
     }
     fn entity_lit() -> EdnValue {
         EdnValue::Uuid(Uuid::new_v4())
+    }
+
+    #[test]
+    fn plan_seeded_counts_seeded_variables_as_bound() {
+        let body = vec![
+            WhereClause::Pattern(make_pattern(var("x"), kw(":a"), var("y"))),
+            WhereClause::Pattern(make_pattern(var("e"), kw(":b"), var("x"))),
+            WhereClause::Expr {
+                expr: Expr::BinOp(
+                    crate::query::datalog::types::BinOp::Gt,
+                    Box::new(Expr::Var("?e".to_string())),
+                    Box::new(Expr::Lit(crate::graph::types::Value::Integer(1))),
+                ),
+                binding: None,
+            },
+        ];
+        let first = |planned: &[(WhereClause, Option<IndexHint>)]| -> Vec<String> {
+            planned
+                .iter()
+                .map(|(c, _)| match c {
+                    WhereClause::Pattern(p) => p.entity.as_variable().unwrap_or("").to_string(),
+                    _ => "expr".to_string(),
+                })
+                .collect()
+        };
+        let (plain, _) = plan(body.clone());
+        assert_eq!(first(&plain)[0], "?x");
+        let seeded: std::collections::HashSet<String> = ["?e".to_string()].into();
+        let (planned, _) = plan_seeded(body.clone(), &seeded);
+        // The expression reads only the seed; the imported entity sorts first.
+        assert_eq!(first(&planned)[0], "expr");
+        assert_eq!(first(&planned)[1], "?e");
+        let _off = set_reorder(false);
+        let (planned, _) = plan_seeded(body, &seeded);
+        assert_eq!(first(&planned)[1], "?x", "text order");
+    }
+
+    #[test]
+    fn subplans_switch_is_per_thread_and_restored() {
+        assert_eq!(subplans(), Subplans::Choose);
+        {
+            let _h = set_subplans(Subplans::Hash);
+            assert_eq!(subplans(), Subplans::Hash);
+            // WASI has no threads.
+            #[cfg(not(target_arch = "wasm32"))]
+            std::thread::spawn(|| assert_eq!(subplans(), Subplans::Choose))
+                .join()
+                .unwrap();
+            let _c = set_subplans(Subplans::Correlated);
+            assert_eq!(subplans(), Subplans::Correlated);
+        }
+        assert_eq!(subplans(), Subplans::Choose);
     }
 
     #[test]

@@ -1081,6 +1081,9 @@ fn normalize_value(v: &Value) -> Value {
 /// Evaluate a `not` body against the current outer binding.
 ///
 /// Returns true if the body "matches" (i.e., the outer binding should be excluded).
+/// The body is matched from the outer values of the variables it names
+/// (`seeded_body_rows`, #546). Rule invocations in it match the rule-derived
+/// facts `storage` holds on the rules path.
 fn not_body_matches(
     not_body: &[WhereClause],
     outer: &Binding,
@@ -1088,47 +1091,13 @@ fn not_body_matches(
     valid_at: Value,
     registry: &FunctionRegistry,
 ) -> bool {
-    use crate::query::datalog::evaluator::substitute_pattern;
-
-    let patterns: Vec<_> = not_body
-        .iter()
-        .filter_map(|c| match c {
-            WhereClause::Pattern(p) => Some(substitute_pattern(p, outer)),
-            // INVARIANT: not_body_matches is only called from execute_query, which is
-            // only reached when query.uses_rules() is false. uses_rules() descends into
-            // Not bodies via rule_invocations(), so any not body containing a
-            // RuleInvocation is routed to execute_query_with_rules instead.
-            // WhereClause::Expr clauses are handled by apply_expr_clauses below.
-            _ => None,
-        })
-        .collect();
-
-    let matcher = crate::query::datalog::matcher::PatternMatcher::from_slice_with_valid_at(
-        storage.clone(),
-        valid_at,
-    );
-    let mut not_bindings: Vec<Binding> = if patterns.is_empty() {
-        // Expr-only not body: start with the outer binding so variables resolve.
-        vec![outer.clone()]
-    } else {
-        // Merge outer binding with pattern-match results.
-        matcher
-            .match_patterns(&patterns)
-            .into_iter()
-            .map(|mut nb| {
-                for (k, v) in outer {
-                    nb.entry(k.clone()).or_insert_with(|| v.clone());
-                }
-                nb
-            })
-            .collect()
-    };
-
-    // Apply Expr clauses from the not body.
+    use crate::query::datalog::evaluator::{not_seed, seeded_body_rows};
+    let rows = seeded_body_rows(not_body, not_seed(not_body, outer), storage, valid_at);
     // Errors (e.g. unknown UDF predicate) are treated as "no match" — same as an
     // empty result — so the outer row is kept (not-condition not violated).
-    not_bindings = apply_expr_clauses(not_bindings, not_body, registry).unwrap_or_default();
-    !not_bindings.is_empty()
+    !apply_expr_clauses(rows, not_body, registry)
+        .unwrap_or_default()
+        .is_empty()
 }
 
 /// Filter `bindings` through a single `(not ...)` body, for the rule-free query path
@@ -1324,98 +1293,8 @@ fn apply_not_join_clause(
         .collect()
 }
 
-/// Returns true if `not_body` is satisfied against `binding` (i.e. the outer binding
-/// should be excluded) — for the rules query path (`execute_query_with_rules`), where
-/// a `not` body may contain `WhereClause::RuleInvocation` against `derived_facts`
-/// (all referenced rules are pre-evaluated by the `StratifiedEvaluator` before this
-/// runs). No exclusion-set precomputation here: rule-invocation args are resolved
-/// per binding, same as the pre-#248 post-filter.
-fn not_clause_violated_via_rules(
-    not_body: &[WhereClause],
-    binding: &Binding,
-    derived_facts: Arc<[Fact]>,
-    valid_at_value: Value,
-    registry: &FunctionRegistry,
-) -> bool {
-    use crate::query::datalog::evaluator::substitute_pattern;
-
-    let substituted: Vec<Pattern> = not_body
-        .iter()
-        .filter_map(|c| match c {
-            WhereClause::Pattern(p) => Some(substitute_pattern(p, binding)),
-            WhereClause::RuleInvocation { predicate, args } => {
-                // Convert rule invocation to a pattern against derived storage.
-                // Apply the current binding to any variables in args first.
-                let resolved_args: Vec<EdnValue> = args
-                    .iter()
-                    .map(|a| match a {
-                        EdnValue::Symbol(s) if s.starts_with('?') => {
-                            // Look up the bound value and convert back to EdnValue
-                            binding
-                                .get(s)
-                                .map(|v| match v {
-                                    Value::Keyword(k) => EdnValue::Keyword(k.clone()),
-                                    Value::String(s) => EdnValue::String(s.clone()),
-                                    Value::Integer(i) => EdnValue::Integer(*i),
-                                    Value::Float(f) => EdnValue::Float(*f),
-                                    Value::Boolean(b) => EdnValue::Boolean(*b),
-                                    Value::Ref(u) => EdnValue::Uuid(*u),
-                                    Value::Null => EdnValue::Nil,
-                                })
-                                .unwrap_or_else(|| a.clone())
-                        }
-                        other => other.clone(),
-                    })
-                    .collect();
-                // Safety: match arms guarantee len()==1 or len()==2.
-                let pattern = match resolved_args.len() {
-                    1 => {
-                        #[allow(clippy::indexing_slicing)]
-                        let entity = resolved_args[0].clone();
-                        Pattern::new(
-                            entity,
-                            EdnValue::Keyword(format!(":{}", predicate)),
-                            EdnValue::Symbol("?_rule_value".to_string()),
-                        )
-                    }
-                    2 => {
-                        #[allow(clippy::indexing_slicing)]
-                        let entity = resolved_args[0].clone();
-                        #[allow(clippy::indexing_slicing)]
-                        let value = resolved_args[1].clone();
-                        Pattern::new(entity, EdnValue::Keyword(format!(":{}", predicate)), value)
-                    }
-                    _ => return None,
-                };
-                Some(substitute_pattern(&pattern, binding))
-            }
-            _ => None,
-        })
-        .collect();
-
-    let m = PatternMatcher::from_slice_with_valid_at(derived_facts.clone(), valid_at_value);
-    let mut not_bindings: Vec<Binding> = if substituted.is_empty() {
-        vec![binding.clone()]
-    } else {
-        m.match_patterns(&substituted)
-            .into_iter()
-            .map(|mut nb| {
-                for (k, v) in binding {
-                    nb.entry(k.clone()).or_insert_with(|| v.clone());
-                }
-                nb
-            })
-            .collect()
-    };
-
-    // Apply Expr clauses from the not body. Errors (e.g. unknown UDF predicate) are
-    // treated as "no match" so the outer row is kept (not-condition not violated).
-    not_bindings = apply_expr_clauses(not_bindings, not_body, registry).unwrap_or_default();
-    !not_bindings.is_empty()
-}
-
-/// Filter `bindings` through a single `(not ...)` body for the rules query path.
-/// See [`not_clause_violated_via_rules`].
+/// Filter `bindings` through a single `(not ...)` body for the rules query path,
+/// where rule invocations in the body match `derived_facts`.
 fn apply_not_clause_derived(
     bindings: Vec<Binding>,
     not_body: &[WhereClause],
@@ -1426,7 +1305,7 @@ fn apply_not_clause_derived(
     bindings
         .into_iter()
         .filter(|b| {
-            !not_clause_violated_via_rules(
+            !not_body_matches(
                 not_body,
                 b,
                 derived_facts.clone(),
