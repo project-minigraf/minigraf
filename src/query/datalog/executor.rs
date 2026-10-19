@@ -2194,34 +2194,43 @@ pub(crate) fn apply_or_clauses(
                     }
                 }
 
-                // Determine shared variable names: variables present in both
-                // incoming bindings and branch results.
-                // Exclude internal metadata keys (prefixed with `__`) — those are
-                // fact-specific and differ between patterns for the same entity.
-                let branch_var_names: std::collections::HashSet<&str> = union_bindings
+                // Each branch row meets an incoming row on the variables both
+                // bind: the row's own, since branches may name different
+                // outer variables (#546). Exclude internal metadata keys
+                // (prefixed with `__`) — those are fact-specific and differ
+                // between patterns for the same entity.
+                let outer_vars: std::collections::HashSet<&str> = bindings
                     .iter()
                     .flat_map(|b| b.keys().map(|k| k.as_str()))
                     .filter(|k| !k.starts_with("__"))
-                    .collect();
-                let shared_vars: Vec<String> = bindings
-                    .iter()
-                    .flat_map(|b| b.keys().cloned())
-                    .collect::<std::collections::HashSet<_>>()
-                    .into_iter()
-                    .filter(|v| !v.starts_with("__") && branch_var_names.contains(v.as_str()))
                     .collect();
 
                 // With no shared variable every key is empty, so each incoming
                 // row joins every branch row: a cross product (#610).
 
-                // Build HashMap: shared-key tuple → Vec<branch Binding>
-                let mut branch_map: HashMap<Vec<(String, Value)>, Vec<Binding>> = HashMap::new();
+                // Group the branch rows by their shared variables, then key
+                // each group's rows on them.
+                type Groups = Vec<(Vec<String>, HashMap<Vec<(String, Value)>, Vec<Binding>>)>;
+                let mut groups: Groups = Vec::new();
                 for b in union_bindings {
-                    let key: Vec<(String, Value)> = shared_vars
+                    let mut shared: Vec<String> = b
+                        .keys()
+                        .filter(|k| outer_vars.contains(k.as_str()))
+                        .cloned()
+                        .collect();
+                    shared.sort_unstable();
+                    let key: Vec<(String, Value)> = shared
                         .iter()
                         .filter_map(|v| b.get(v).map(|val| (v.clone(), join_value(val))))
                         .collect();
-                    branch_map.entry(key).or_default().push(b);
+                    let g = match groups.iter().position(|(vars, _)| *vars == shared) {
+                        Some(g) => g,
+                        None => {
+                            groups.push((shared, HashMap::new()));
+                            groups.len() - 1
+                        }
+                    };
+                    groups[g].1.entry(key).or_default().push(b);
                 }
 
                 // For each incoming binding, look up matching branch results and merge.
@@ -2229,11 +2238,14 @@ pub(crate) fn apply_or_clauses(
                 let mut seen_result: std::collections::HashSet<Vec<(String, Value)>> =
                     std::collections::HashSet::new();
                 for incoming in &bindings {
-                    let key: Vec<(String, Value)> = shared_vars
-                        .iter()
-                        .filter_map(|v| incoming.get(v).map(|val| (v.clone(), join_value(val))))
-                        .collect();
-                    if let Some(matches) = branch_map.get(&key) {
+                    for (shared, branch_map) in &groups {
+                        let key: Vec<(String, Value)> = shared
+                            .iter()
+                            .filter_map(|v| incoming.get(v).map(|val| (v.clone(), join_value(val))))
+                            .collect();
+                        let Some(matches) = branch_map.get(&key) else {
+                            continue;
+                        };
                         for branch_binding in matches {
                             // Merge: start with incoming, extend with branch-introduced vars.
                             let mut merged = incoming.clone();

@@ -137,3 +137,24 @@ fn branch_float_meets_outer_float_by_ieee_equality() {
         assert_eq!(rows(&db, q, &[":a", ":b"]), vec![":a"], "{q}");
     }
 }
+
+#[test]
+fn branches_naming_different_outer_variables() {
+    // The unseeded path keyed every branch row on the outer variables any
+    // branch names, so a row of a branch naming only some of them met no
+    // outer row; the seeded path (a branch with `not`) matched it (#546).
+    let db = Minigraf::in_memory().unwrap();
+    db.execute("(transact [[:p :link :q] [:p :a 1] [:q :b 2]])")
+        .unwrap();
+    for q in [
+        "[:find ?e ?f ?x :where [?e :link ?f] (or [?e :a ?x] [?f :b ?x])]",
+        "[:find ?e ?f ?x :where [?e :link ?f] \
+         (or (and [?e :a ?x] (not [?e :zz 1])) [?f :b ?x])]",
+    ] {
+        assert_eq!(
+            rows(&db, q, &[":p", ":q"]),
+            vec![":p kw:q 1", ":p kw:q 2"],
+            "{q}"
+        );
+    }
+}
