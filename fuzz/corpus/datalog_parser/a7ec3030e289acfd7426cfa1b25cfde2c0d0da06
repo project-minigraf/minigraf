@@ -1,0 +1,2 @@
+(query [::where [?q e qen] (or
+ [es tru])(-:me5(n_-)e)])

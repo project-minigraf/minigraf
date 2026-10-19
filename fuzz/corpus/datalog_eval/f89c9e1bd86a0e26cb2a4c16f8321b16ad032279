@@ -1,1 +1,0 @@
-(query [:where [ne :?m ?n] [(= ?n "Alice")]:fin :where [ne bbbbbbbbbbbbbb:?n] [(= ?n "Alice(=:findAlie")]])

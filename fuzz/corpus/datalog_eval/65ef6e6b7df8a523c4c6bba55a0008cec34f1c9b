@@ -1,0 +1,1 @@
+(query [:finnfinn :w :where [?ena ?m2e ?p]  :where :where [?E ?name ?o] [?e ?nameEery?name ?n]  :where :where [? ?naname ?n] [(= ?"Alcie")]])

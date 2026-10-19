@@ -1,1 +1,0 @@
-(query [:find ?e :where [? elms ?c] (not-join [?e] [?e tire rue])])

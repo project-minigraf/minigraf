@@ -1,1 +1,0 @@
-(query [:fi :where (no [?e][?e :activ] [?ey])])

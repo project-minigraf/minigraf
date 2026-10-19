@@ -1,0 +1,1 @@
+(query [:n:where[?e e in](not [e ?_ ?_an])])

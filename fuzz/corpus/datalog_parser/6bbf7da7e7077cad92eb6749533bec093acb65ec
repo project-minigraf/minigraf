@@ -1,1 +1,0 @@
-(query [::where [?e :jame WWWWWWWn] (not [?WW:bed e])])

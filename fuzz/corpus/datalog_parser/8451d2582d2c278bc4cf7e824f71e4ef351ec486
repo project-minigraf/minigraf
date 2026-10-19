@@ -1,0 +1,1 @@
+(query [:fid  :where (not( =y) (u =) )])

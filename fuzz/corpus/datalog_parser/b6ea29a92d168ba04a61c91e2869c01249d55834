@@ -1,1 +1,0 @@
-(query[:find ?e :where :any-valid-time[?e :n?-e ?f] (not(qu[(ssss)]) [ae :bd t])])

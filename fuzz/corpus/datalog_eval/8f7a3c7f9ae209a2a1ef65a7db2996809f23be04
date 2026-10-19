@@ -1,1 +1,0 @@
-(query [:fin :w :where [?e ?namen 7]  :where [?e ?name ?n] [(= ?n "e")]])

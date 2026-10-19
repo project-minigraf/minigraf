@@ -1,1 +1,0 @@
-(query [: :where [? :name ?n] (not [BBBBB4WW:an t])])

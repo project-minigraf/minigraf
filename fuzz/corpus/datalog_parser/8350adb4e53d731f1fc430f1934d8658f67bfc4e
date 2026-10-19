@@ -1,3 +1,0 @@
-(query [:where  (ss:fInd )(nil?
-:yu:fInd )(n?ye[[?x 
-]]?)[?x :p-rent BBBB4]])

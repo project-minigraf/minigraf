@@ -1,3 +1,0 @@
-(query [:where [?e :ne ?n] (not(rule A)
- [qsssssss[] (novt )])
-])

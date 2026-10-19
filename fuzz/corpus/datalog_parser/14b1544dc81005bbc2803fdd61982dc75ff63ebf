@@ -1,0 +1,2 @@
+(query [::where (nn ?o
+-2.6)])

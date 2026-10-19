@@ -1,1 +1,0 @@
-(query [:indn :where [?e :name ?n] [(= nil"Alice")]])

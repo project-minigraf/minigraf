@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e :-me ?n] (not(que==-=============================c) [ae :banned true])])

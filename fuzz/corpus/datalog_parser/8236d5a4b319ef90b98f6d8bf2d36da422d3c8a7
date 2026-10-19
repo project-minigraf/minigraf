@@ -1,0 +1,1 @@
+(rule [(y)[(ends-with? y n)]])

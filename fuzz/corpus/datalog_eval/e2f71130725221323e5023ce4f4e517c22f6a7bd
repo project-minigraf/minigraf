@@ -1,2 +1,0 @@
-(query [:find :where [:colO?eA ma ola] (not-join [?e] [?e :active tree]) :where [?e l omaa?rsuc] (not(query z[::n_0])
-)])

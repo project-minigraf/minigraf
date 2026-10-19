@@ -1,0 +1,1 @@
+(query[:where [we ?e ?,](not [aind ?a rzug]):where [we ?e ?,] (no)])

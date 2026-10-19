@@ -1,1 +1,0 @@
-(query [:find ?e :where [$e :c ?c] (no [?ee?[  ]:e])])

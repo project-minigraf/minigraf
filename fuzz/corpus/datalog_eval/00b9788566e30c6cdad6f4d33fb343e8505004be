@@ -1,0 +1,1 @@
+(query[:f :where [?m :e ?n] [:w? name ?n] [:w? =(n "ce")]])

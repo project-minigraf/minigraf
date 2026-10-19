@@ -1,0 +1,2 @@
+(query [:c:?e :where [?e :c?oo lc] (or(and[:fw])
+ )])

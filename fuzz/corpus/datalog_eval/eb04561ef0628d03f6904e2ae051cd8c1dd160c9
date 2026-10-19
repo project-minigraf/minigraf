@@ -1,0 +1,1 @@
+(query [: :where [?e :colmr ?c] (nond ?e :whe)])

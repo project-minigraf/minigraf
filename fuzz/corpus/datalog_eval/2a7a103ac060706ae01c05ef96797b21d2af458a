@@ -1,1 +1,0 @@
-(query [:f?e :where [?g sintegelor ?c] (not[?e :ar e])])

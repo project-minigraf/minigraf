@@ -1,1 +1,0 @@
-(query [:with ?e :where [? emmsuor ?c] (not-jo[?ni e] [?e :a])])

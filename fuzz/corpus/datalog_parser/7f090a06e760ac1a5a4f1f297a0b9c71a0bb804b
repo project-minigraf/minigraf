@@ -1,0 +1,2 @@
+(query [:e :where(q)
+[?e wm ?n] ( h )])

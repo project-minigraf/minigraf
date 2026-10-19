@@ -1,1 +1,0 @@
-(query [:f:where [?:db/valid-at ?n] (t?)])

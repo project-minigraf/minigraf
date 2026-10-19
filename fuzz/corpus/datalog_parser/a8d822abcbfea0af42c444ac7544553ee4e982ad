@@ -1,2 +1,0 @@
-(query [:find ?e :where [?e :name ?n] (not(qr=y) (ul-0000:0237:3tAy) (arentA?:y) (arentA?:fin:re[?(y) [farent ?0
-]])[?x ::banned true])])

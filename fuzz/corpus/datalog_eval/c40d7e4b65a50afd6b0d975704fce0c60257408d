@@ -1,0 +1,1 @@
+(query [:find ?nt/lse/ :where [?e :name ?n] [(= ?n "Alice")]])

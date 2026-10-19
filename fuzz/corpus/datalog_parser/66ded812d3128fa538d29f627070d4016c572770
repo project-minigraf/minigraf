@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e :n?-me ?ne?n]  [?e :n?-me ?n] (not(qu-) [ae :banned true])(not(que)
+[?e :db/valid-at ?n] (noearpae= =[ :wh (not [ue])]) [aind ?e :wherru])])

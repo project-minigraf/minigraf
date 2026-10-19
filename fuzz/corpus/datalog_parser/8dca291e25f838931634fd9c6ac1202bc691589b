@@ -1,0 +1,1 @@
+(query [::where  (or(L [ :w]) [aes truenee?])(o(q[her])e)])

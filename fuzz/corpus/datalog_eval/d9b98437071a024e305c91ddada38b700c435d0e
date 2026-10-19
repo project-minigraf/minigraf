@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :co ?s] (not(query [:fio:wher []]) (or-join[?n e] [G?e]) :where [? w]oto[-itree])])

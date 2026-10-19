@@ -1,0 +1,1 @@
+(query [:?1:where [m e n] (or(L=t ? ?yL))(ont()d)])

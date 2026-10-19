@@ -1,1 +1,0 @@
-(query [:finnfinn :w :where [?e :name ?p]  :wh__fvt_e340ebba-e050-5d3b-8c2e-5388ce184a79ere :where [?e ?name ?n] [(= ?n "Alaaaaaaaaaaaaaaaaice")] :w :where [?e ?Vacveame ?n]  :where [?e ?name? n] [(= ?n "Alice")]])

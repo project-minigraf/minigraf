@@ -1,0 +1,1 @@
+(query [:where(not[n-ije:a >] [?e 2,raue])])

@@ -1,1 +1,0 @@
-(query [:where[qmw:name e?n](*)[x nt BB]])

@@ -1,2 +1,0 @@
-(query [:where(not [a:ba e])(rdsq[([r])])
-])

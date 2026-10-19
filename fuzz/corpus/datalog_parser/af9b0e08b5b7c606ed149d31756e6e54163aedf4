@@ -1,1 +1,0 @@
-(query [:find?e :where [?e :name ?n] (not [?WWWWWWWWWWWWWWWWWWWWWWE :baned u])])

@@ -1,0 +1,1 @@
+(query [:fin:where [?e olor ?c] (not-join [?e] [?_ ?:reau])])

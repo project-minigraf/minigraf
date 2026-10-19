@@ -1,0 +1,1 @@
+(query [:where [q e n] (or(ry))(ont(qi))])

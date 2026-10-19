@@ -1,1 +1,0 @@
-(query [::where  [:e :e ?n] (not [::withn:n])[He :e ?n] :where  [:?Ue :e ?n] ])

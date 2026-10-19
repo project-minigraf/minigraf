@@ -1,0 +1,2 @@
+(query [:where [?e e ?n] (no)(que:yr[ ])(que:yr[fi:])(que:yr[ f  ])
+])

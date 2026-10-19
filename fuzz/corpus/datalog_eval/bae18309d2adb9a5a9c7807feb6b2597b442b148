@@ -1,1 +1,0 @@
-(query [:finn?-?2e :where [?e ?__fe ?f]  :where [?ee ?__fe ?n]  :where [?e Ename ?n?eOOO-IIIIIIIind] [(= ?n "Alice")]])

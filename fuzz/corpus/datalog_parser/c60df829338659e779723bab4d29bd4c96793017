@@ -1,0 +1,1 @@
+(query  [:?1:where (or(---)(not(q9 3[ :wh (no)]) [a :(lot [au ])]))])

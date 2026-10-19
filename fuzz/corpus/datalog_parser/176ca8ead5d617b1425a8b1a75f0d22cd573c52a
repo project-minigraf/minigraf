@@ -1,0 +1,4 @@
+(query [:finde :where [?e e ?n] (not(query :
+[: [?e ?]])
+[?e me ?n] (noe =y) (r)
+[?e ?_ ?n] (nb) [:b eaaned tre])])

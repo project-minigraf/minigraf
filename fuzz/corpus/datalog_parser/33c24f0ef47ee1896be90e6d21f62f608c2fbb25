@@ -1,4 +1,0 @@
-(query [:finde :where (qry :
-[: : [?qenaman ?]]) (noe ?ssss :
-[: [?e ]])
-[?e wname ?n] (noe sss:___ssssssssss [?ug])])

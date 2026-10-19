@@ -1,1 +1,0 @@
-(query [ :where,[?e wm ?n] (oe ?h2:w)])

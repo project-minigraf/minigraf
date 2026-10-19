@@ -1,0 +1,1 @@
+(query [:where(o )[?ef: ?n][ff:ff2 ?n]])

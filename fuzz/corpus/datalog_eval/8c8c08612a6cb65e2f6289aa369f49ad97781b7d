@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e :colop ?c] (IIfind ?OIIIfind ?eOOOOOOOONO :e)])

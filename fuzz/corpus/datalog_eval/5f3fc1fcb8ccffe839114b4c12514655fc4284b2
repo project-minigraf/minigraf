@@ -1,1 +1,0 @@
-(query [:find ?e :where [?d :color ?c] (nh?:fa--??O:wh ?ee)])

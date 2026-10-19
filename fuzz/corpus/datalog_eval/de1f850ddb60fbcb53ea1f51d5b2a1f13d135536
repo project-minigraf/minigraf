@@ -1,0 +1,1 @@
+(query [:fin:clo:where[?e :name ?n](query [:f (nt-)])[(!= ?n "Aclie")]])

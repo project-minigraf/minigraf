@@ -1,1 +1,0 @@
-(query [:where [?Ted ?e :whn] (not [?e ?_ true])])

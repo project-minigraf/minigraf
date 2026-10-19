@@ -1,0 +1,1 @@
+(query [::where [?e lor ?c] (nind ?e e ?:e )])

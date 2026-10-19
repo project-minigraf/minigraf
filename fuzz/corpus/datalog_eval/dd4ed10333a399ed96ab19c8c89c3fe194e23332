@@ -1,1 +1,0 @@
-(query [:finn :w :where [?g ?nRRam ?n] [(= ?n "")]])

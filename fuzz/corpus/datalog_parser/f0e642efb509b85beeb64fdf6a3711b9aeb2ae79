@@ -1,0 +1,3 @@
+(query [:find ?e :where (query [::e(rule [(?y) (*retA?e [?(y) [ ]])[ ?7]])
+(query [(not*(y [: :where [n] (n[e])]) [1eE])])
+ []g])])

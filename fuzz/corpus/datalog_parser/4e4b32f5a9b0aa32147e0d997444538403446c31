@@ -1,1 +1,0 @@
-(query [:where [?e:na ?n] (not [:e :b:n])])

@@ -1,0 +1,1 @@
+(query [:find ?e :where  [:l rocoe ?c] (not-join [?OOeOOOOOO ?eOOOOOOIeOOIeOOOojtI ?eOOOojto-IIIIIIII ?eOOItofir ?c?oOOOOIIind ?eOOOOojtI ?OOojto-IIIIIIII ?eOOOojto-IItofir ?c?oOOIIIIIIII ?eOOOojto-IItofiIIIIIICIIIIIIIIf-ind ?eOOII?_IIIIIIIe] [?tend ?n : trUe])])

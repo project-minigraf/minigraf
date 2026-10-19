@@ -1,0 +1,1 @@
+(query [:findu :where [?eA l omaaa?rsuc] (not-join [?e] [?e :active tree]) :where [?e l omaaauc] (not-join [?e] [?e :active tree])])

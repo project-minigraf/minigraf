@@ -1,0 +1,1 @@
+(query [:fid :where [? e ?n] (not (or-join=*[]))])

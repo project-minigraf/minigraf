@@ -1,0 +1,1 @@
+(query [:  :where [?e :n?mn? e3] (not(s*)[Ac?x :pnt e?n](**?) [ae :ed true])])

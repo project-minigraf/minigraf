@@ -1,0 +1,1 @@
+(query [::any-valid-time :fine ::any-valid-time i2d ?e ])

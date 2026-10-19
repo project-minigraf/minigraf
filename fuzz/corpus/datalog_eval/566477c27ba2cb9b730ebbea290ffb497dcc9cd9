@@ -1,0 +1,1 @@
+(query [:IIII  :where [?e ?name ?n?oIdd] [(boolean?= ?n "Ace")]])

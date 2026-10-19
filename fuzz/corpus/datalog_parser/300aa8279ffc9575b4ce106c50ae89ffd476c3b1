@@ -1,1 +1,0 @@
-(query [:yu:where [?UUUUUUU:name ?n] (loM[?e])])

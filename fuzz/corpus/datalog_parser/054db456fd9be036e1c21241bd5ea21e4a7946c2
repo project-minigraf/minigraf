@@ -1,0 +1,1 @@
+(query [:find ?ed ? ?e:where(*f)])

@@ -1,1 +1,0 @@
-(query [:findsumm :where [<= l omsuc] (nIot-join [?e] a ?:e[ctive tree]) :where [?e l omsuc] (not-join [?e] [?e :ae tree])])

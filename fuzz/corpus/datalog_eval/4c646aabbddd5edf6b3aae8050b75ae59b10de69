@@ -1,1 +1,0 @@
-(query [:find ?n:find ?nzYYYYY:where [?e ??amenot-join ?n][?e ?EEEEEEEEEEEEEE?ame ?n]])

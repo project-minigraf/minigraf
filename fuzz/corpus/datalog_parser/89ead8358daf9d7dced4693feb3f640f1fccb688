@@ -1,0 +1,1 @@
+(rule [(p)[(t-join ?y)](p)[(a ?y)]( ?:f)[(-join ?y)](p)[(a ?y)]( ?)[(a ?y)]])

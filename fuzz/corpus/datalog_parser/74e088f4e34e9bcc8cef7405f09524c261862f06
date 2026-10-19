@@ -1,0 +1,1 @@
+(query[:?1:where [?8q e ?n] (or(es?[w]))(-n)])

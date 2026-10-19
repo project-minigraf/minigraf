@@ -1,1 +1,0 @@
-(query [: :where (query[::wh]) (noe ?:eh)])

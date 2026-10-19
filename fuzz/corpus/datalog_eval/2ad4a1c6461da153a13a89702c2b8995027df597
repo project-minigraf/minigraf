@@ -1,1 +1,0 @@
-(query [:find ?:where [?e :color ?c] (nind ?e e ?:e [colo])])

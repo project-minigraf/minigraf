@@ -1,0 +1,1 @@
+(query [:ne :where (not[(a :__m)](LmRR ) [ru])])

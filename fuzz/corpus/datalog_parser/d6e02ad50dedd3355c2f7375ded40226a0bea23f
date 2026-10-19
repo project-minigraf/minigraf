@@ -1,1 +1,0 @@
-(query [:f:where [?:n?-me? n ](not(r:[y]) [aetru+e])])

@@ -1,1 +1,0 @@
-(query [::where [:e :ame ?] (not [:e :ban:n])])

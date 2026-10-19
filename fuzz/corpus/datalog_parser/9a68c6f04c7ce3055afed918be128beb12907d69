@@ -1,1 +1,0 @@
-(rule [(y) (a ?y:+b/valid-to) (w)[?x :pt ?4]])

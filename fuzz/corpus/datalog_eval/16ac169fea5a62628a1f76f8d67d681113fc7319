@@ -1,0 +1,1 @@
+(query [:find ?nd ?end ?nd ?e :where [?e cr ?c] (ide [ :e])])

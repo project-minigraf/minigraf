@@ -1,0 +1,1 @@
+(query [: :where[?e:a ?_] (not [?We d te])])

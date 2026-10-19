@@ -1,0 +1,1 @@
+(query[:with ?e:find ?:where [?e t ?B]])

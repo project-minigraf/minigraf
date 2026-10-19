@@ -1,1 +1,0 @@
-(query [:where [q e qee?n] (or(e[])[o?r]x)])

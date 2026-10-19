@@ -1,0 +1,1 @@
+(query [:where [?e:me ?] (not(qnne ths?Us$sss?r) [e : tree])])

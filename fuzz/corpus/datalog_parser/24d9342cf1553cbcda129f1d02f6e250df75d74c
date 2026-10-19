@@ -1,1 +1,0 @@
-(query [::where [? m ?_] [?e me ?_](no)])

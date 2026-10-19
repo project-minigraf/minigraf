@@ -1,0 +1,2 @@
+(query[:?e :where [?l?c ?doLo?_r ?c] (or(q:whezey=r ?[:fintkeFhraw])
+ )])

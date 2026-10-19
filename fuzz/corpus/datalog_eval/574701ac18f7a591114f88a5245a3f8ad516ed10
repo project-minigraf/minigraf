@@ -1,0 +1,2 @@
+(query [:f :where [?e l omaaa?rsuc] (not(query [::] (nog-join [?eetree]) :where [?e0])
+)])

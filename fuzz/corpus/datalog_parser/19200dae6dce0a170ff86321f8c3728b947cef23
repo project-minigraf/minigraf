@@ -1,1 +1,0 @@
-(query [:find ?e(0?n:over::f ):f])

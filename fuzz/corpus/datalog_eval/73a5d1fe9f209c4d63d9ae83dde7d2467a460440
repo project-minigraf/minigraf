@@ -1,1 +1,0 @@
-(query [:findsstmu :where [?e l omaauc] (not-join [?e] [?e :active tree][?e :e tree]YYYYYYYY)])
