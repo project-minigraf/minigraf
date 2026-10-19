@@ -29,6 +29,8 @@ impl Apply {
             Step::Bind(..) => "Bind",
             Step::Join(_) => "Join",
             Step::Anti(_) => "AntiJoin",
+            Step::Union(_) => "Union",
+            Step::Distinct(_) => "Distinct",
         };
         Apply {
             child,
@@ -125,8 +127,9 @@ fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<Batch> {
             batch.retain(&keep);
             batch.set_col(*slot, out);
         }
-        // Joins are operators of their own (`join::Join`, `anti::AntiJoin`).
-        Step::Join(_) | Step::Anti(_) => {}
+        // Joins are operators of their own (`join::Join`, `anti::AntiJoin`,
+        // `union::Union`, `distinct::Distinct`).
+        Step::Join(_) | Step::Anti(_) | Step::Union(_) | Step::Distinct(_) => {}
     }
     Ok(batch)
 }

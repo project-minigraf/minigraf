@@ -110,6 +110,27 @@ The exclusion-set paths (`apply_not_clause`, `apply_not_join_clause`) already co
    replacing a cell could not change an answer; this matches the executor, whose body
    paths pass `replace = false`.
 
+11. **Which `or`s the engine runs (PR 2).** A branch is planned by the same code as a
+   `not` body (`Builder::sub`), with its `not`s, placed or deferred, as in a query. The
+   executor keeps:
+   - a branch holding a rule invocation or a nested `or` / `or-join` (the executor
+     evaluates a nested one unseeded inside the branch, where a join variable bound only
+     outside it is an `INT-031`);
+   - a branch with a predicate the function registry may lack: the executor reports
+     `QRY-007` only when a row reaches it;
+   - an `or` whose branches bind different hidden metadata variables (each branch's own
+     sources): the executor's rows keep them;
+   - a branch whose `not` reads a variable only the branch's expression binds: the
+     executor applies a branch's `not`s before its expressions.
+
+   Three more executor answers depended on the path; the per-row path, taken when a
+   branch reads the outer row, gave the spec's answer. (a) and (b) came up while
+   comparing the two paths for this plan, (c) from the oracle. PR 2 fixes them in the
+   executor: (a) a branch naming different outer variables than another met no outer
+   row on the joined path; (b) an `or-join` branch that does not bind every join
+   variable lost its rows on the joined path; (c) `:db/valid-at` in a branch read the
+   wall clock, not the query's "now".
+
 ## Steps
 
 ### 1. Executor: seeded bodies (PR 1)

@@ -993,9 +993,8 @@ fn planner_chooses_the_body_form() {
     assert_eq!(forms(constant), ["correlated"]);
 }
 
-/// Which negations the engine runs (#546 PR 1): every `not` / `not-join`
-/// without a rule invocation; a query with `or` stays on the executor
-/// until PR 2.
+/// Which negations the engine runs (#546): every `not` / `not-join`
+/// without a rule invocation.
 #[test]
 fn negation_routing() {
     let db = Minigraf::in_memory().unwrap();
@@ -1009,10 +1008,7 @@ fn negation_routing() {
     ] {
         rows(&db, q);
     }
-    for q in [
-        "(query [:find ?e :where [?e :person/name ?n] (not (okay ?e))])",
-        "(query [:find ?e :where [?e :person/name ?n] (or [?e :person/ok true] [?e :person/age 21])])",
-    ] {
+    for q in ["(query [:find ?e :where [?e :person/name ?n] (not (okay ?e))])"] {
         let before = runs();
         db.execute(q).unwrap();
         assert_eq!(runs(), before, "query stayed on the executor");
@@ -1087,4 +1083,326 @@ fn negation_bodies_run_per_row_or_once() {
     // The outer scan, the body's scan and its probes: each key read once.
     let read: u64 = c.iter().filter(|c| c.op == "Scan").map(|c| c.rows_in).sum();
     assert!(read <= 150, "the body is read once");
+}
+
+/// `or` / `or-join` shapes (#546 PR 2), as `(find, clauses)`: branches
+/// probed and keyed, new variables, keywords meeting refs, attributes, floats
+/// and long strings as keys, branches reading outer variables, metadata and
+/// the valid time, a branch with `not`, branches naming different outer
+/// variables or no join variable, an `or` with nothing before it, a cross
+/// product, deferred `not`s and expressions after an `or`.
+fn disjunctions() -> Vec<(&'static str, &'static str)> {
+    vec![
+        // Correlated: the branch's entity is imported.
+        (
+            "?e ?n",
+            "[?e :person/name ?n] (or [?e :person/ok true] [?e :person/age 21])",
+        ),
+        (
+            "?e ?x",
+            "[?e :person/name ?n] (or [?e :person/age ?x] [?e :person/score ?x])",
+        ),
+        (
+            "?e",
+            "[?e :person/friend ?f] (or [?f :person/ok true] [?f :person/status :s1])",
+        ),
+        // Hashed: keyed on a value, a ref, an attribute, a float, a long
+        // string.
+        (
+            "?e ?f",
+            "[?e :person/age ?a] (or [?f :person/age ?a] [?f :person/score ?a])",
+        ),
+        (
+            "?e",
+            "[?e :person/age ?a] (or-join [?a] (and [?f :person/age ?a] [?f :person/ok true]) [?f :person/score ?a])",
+        ),
+        (
+            "?e ?b",
+            "[?e :person/boss ?b] (or-join [?b] [?x :person/friend ?b] [?x :person/self ?b])",
+        ),
+        (
+            "?e",
+            "[?e :person/alias ?b] (or-join [?b] [?x :person/boss ?b] [?x :person/friend ?b])",
+        ),
+        (
+            "?e ?x",
+            "[?e :person/attr ?x] (or-join [?x] [:p1 ?x 21] [:p2 ?x 22])",
+        ),
+        (
+            "?e ?s",
+            "[?e :person/score ?s] (or-join [?s] [?f :person/score ?s] [?f :person/age ?s])",
+        ),
+        (
+            "?e",
+            "[?e :person/bio ?b] (or-join [?b] (and [?f :person/bio ?b] [?f :person/ok true]) [?f :person/name ?b])",
+        ),
+        // A branch reading an outer variable it does not bind.
+        (
+            "?e",
+            "[?e :person/age ?a] (or [(> ?a 21)] [?e :person/ok true])",
+        ),
+        (
+            "?e",
+            "[?e :person/age ?a] (or-join [?a] (and [?f :person/age ?b] [(< ?b ?a)]) [?f :person/score ?a])",
+        ),
+        // A branch with `not`.
+        (
+            "?e ?a",
+            "[?e :person/name ?n] (or (and [?e :person/age ?a] (not [?e :person/ok true])) [?e :person/score ?a])",
+        ),
+        (
+            "?e",
+            "[?e :person/age ?a] (or-join [?a] (and [?f :person/age ?a] (not-join [?f] [?f :person/ok true])) [?f :person/score ?a])",
+        ),
+        // Branches naming different outer variables; a branch binding no
+        // join variable.
+        (
+            "?e ?f",
+            "[?e :person/friend ?f] (or [?e :person/ok true] [?f :person/ok false])",
+        ),
+        (
+            "?e",
+            "[?e :person/name ?n] (or-join [?e] [?x :person/age 23] [?e :person/ok true])",
+        ),
+        // Nothing before the `or`; a cross product.
+        ("?e", "(or [?e :person/ok true] [?e :person/age 21])"),
+        (
+            "?e ?f",
+            "[?e :person/ok true] (or [?f :person/age 21] [?f :person/age 22])",
+        ),
+        // Metadata of an outer source, and the valid time.
+        (
+            "?e",
+            "[?e :person/name ?n] (or-join [?e] (and [?e :db/tx-count ?t] [(> ?t 3)]) [?e :person/ok true])",
+        ),
+        (
+            "?e ?t",
+            "[?e :person/name ?n] (or [?e :db/valid-at ?t] [?e :person/age ?t])",
+        ),
+        // A `not` and an expression on what the `or` binds; two `or`s.
+        (
+            "?e ?a",
+            "[?e :person/name ?n] (or [?e :person/age ?a] [?e :person/score ?a]) (not-join [?a] [?f :person/age ?a] [?f :person/ok true])",
+        ),
+        (
+            "?e ?a",
+            "[?e :person/name ?n] (or [?e :person/age ?a] [?e :person/score ?a]) [(> ?a 0)]",
+        ),
+        (
+            "?e",
+            "[?e :person/name ?n] (or [?e :person/ok true] [?e :person/age 21]) (or-join [?e] [?e :person/status :s0] [?e :person/status :s2])",
+        ),
+        // Duplicate outer rows collapse.
+        (
+            "?e",
+            "[?e :person/friend ?f] [?g :person/friend ?f] (or [?e :person/ok true] [?e :person/ok false])",
+        ),
+    ]
+}
+
+fn disjunction_queries(tx: u64) -> Vec<String> {
+    let mut out = Vec::new();
+    for (find, clauses) in disjunctions() {
+        for temporal in temporals(tx) {
+            // Per-fact metadata needs `:any-valid-time` (INT-026).
+            if clauses.contains(":db/tx-count") && !temporal.contains(":any-valid-time") {
+                continue;
+            }
+            out.push(format!(
+                "(query [:find {find} {temporal} :where {clauses}])"
+            ));
+        }
+    }
+    out
+}
+
+/// Every disjunction shape with each branch form forced and reordering on
+/// and off; the oracle compares each run with the executor.
+fn check_disjunctions(db: &Minigraf) -> usize {
+    use crate::query::datalog::optimizer::{Subplans, set_reorder, set_subplans};
+    let tx = db.current_tx_count();
+    let mut total = 0;
+    for mode in [Subplans::Choose, Subplans::Hash, Subplans::Correlated] {
+        for on in [true, false] {
+            let _m = set_subplans(mode);
+            let _r = set_reorder(on);
+            total += disjunction_queries(tx)
+                .iter()
+                .map(|q| rows(db, q))
+                .sum::<usize>();
+        }
+    }
+    total
+}
+
+#[test]
+fn disjunction_matches_executor() {
+    let dir = tempfile::tempdir().unwrap();
+    let mem = Minigraf::in_memory().unwrap();
+    let file = Minigraf::open(dir.path().join("or.graph")).unwrap();
+    for round in 0..3 {
+        write_round(&mem, round);
+        assert!(check_disjunctions(&mem) > 0, "disjunctions return rows");
+        write_round(&file, round);
+        check_disjunctions(&file);
+        file.checkpoint().unwrap();
+        check_disjunctions(&file);
+    }
+}
+
+/// Which disjunctions the engine runs (#546 PR 2): `or` / `or-join` whose
+/// branches hold patterns, expressions and `not`s; a rule invocation, a
+/// nested `or`, a predicate the registry may lack, an `or` whose branches
+/// bind their own sources' metadata, and a branch `not` reading what only
+/// the branch's expression binds stay on the executor (decision 11).
+#[test]
+fn disjunction_routing() {
+    let db = Minigraf::in_memory().unwrap();
+    write_round(&db, 0);
+    db.execute("(rule [(okay ?e) [?e :person/ok true]])")
+        .unwrap();
+    for q in [
+        "(query [:find ?e :where [?e :person/name ?n] (or [?e :person/ok true] [?e :person/age 21])])",
+        "(query [:find ?e :where (or [?e :person/ok true] [?e :person/age 21])])",
+        "(query [:find ?e :where [?e :person/name ?n] (or (and [?e :person/ok true] (not [?e :person/age 21])) [?e :person/age 22])])",
+        "(query [:find ?e :any-valid-time :where [?e :person/name ?n] (or-join [?e] (and [?f :person/age ?a] [?f :db/tx-count ?t]) [?e :person/ok true])])",
+    ] {
+        rows(&db, q);
+    }
+    for q in [
+        "(query [:find ?e :where [?e :person/name ?n] (or (okay ?e) [?e :person/age 21])])",
+        "(query [:find ?e :where [?e :person/name ?n] (or (or [?e :person/ok true] [?e :person/age 22]) [?e :person/age 21])])",
+        "(query [:find ?e :where [?e :person/age ?a] (or (and [?e :person/ok true] [(no-such-pred? ?a)]) [?e :person/age 21])])",
+        "(query [:find ?e :any-valid-time :where [?e :person/name ?n] (or (and [?e :person/age ?a] [?e :db/tx-count ?t]) (and [?e :person/score ?a] [?e :db/tx-id ?t]))])",
+        "(query [:find ?e :where [?e :person/age ?a] (or (and [(+ ?a 1) ?b] (not [?f :person/age ?b])) (and [(+ ?a 2) ?b] [?e :person/ok true]))])",
+    ] {
+        let before = runs();
+        let _ = db.execute(q);
+        assert_eq!(runs(), before, "query stayed on the executor");
+    }
+}
+
+/// The branch forms the planner chooses: as a `not` body's (spec §4.4,
+/// §5.1), with a branch's `not` reading an imported variable the branch's
+/// patterns do not bind keeping it correlated.
+#[test]
+fn planner_chooses_the_branch_form() {
+    use super::plan::{Body, Step, plan};
+    use crate::query::datalog::parser::parse_datalog_command;
+    use crate::query::datalog::types::DatalogCommand;
+    let forms = |q: &str| -> Vec<&'static str> {
+        let Ok(DatalogCommand::Query(query)) = parse_datalog_command(q) else {
+            panic!("expected a query");
+        };
+        let plan = plan(&query).expect("an engine plan");
+        plan.steps
+            .iter()
+            .flat_map(|s| match s {
+                Step::Union(branches) => branches
+                    .iter()
+                    .map(|b| match b.body {
+                        Body::Hashed { .. } => "hashed",
+                        Body::Correlated { .. } => "correlated",
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            })
+            .collect()
+    };
+    assert_eq!(
+        forms("(query [:find ?e :where [?e :a ?x] (or-join [?e ?x] [?e :b 1] [?f :c ?x])])"),
+        ["correlated", "hashed"]
+    );
+    assert_eq!(
+        forms(
+            "(query [:find ?e :where [?e :a ?x] (or-join [?x] [?f :b ?x] (and [?f :c ?y] [(< ?y ?x)]))])"
+        ),
+        ["hashed", "correlated"]
+    );
+    assert_eq!(
+        forms(
+            "(query [:find ?e :where [?e :a ?x] (or-join [?x] (and [?f :b ?x] (not [?f :c 1])) (and [?f :b ?y] (not [?f :c ?x])))])"
+        ),
+        ["hashed", "correlated"]
+    );
+    assert_eq!(
+        forms("(query [:find ?e :where (or [?e :b 1] [?e :c 2])])"),
+        ["hashed", "hashed"]
+    );
+}
+
+/// `Distinct` after `Union` collapses equal rows, as the executor's `or`
+/// does, and keeps rows that differ only in a variable `:find` leaves out;
+/// `-0.0` equals `0.0`, a keyword never equals a ref.
+#[test]
+fn disjunction_rows_are_distinct() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute(
+        "(transact [[:a :n 1] [:a :m 1] [:a :k :b] [:a :k #uuid \"8bd6a0fe-0f33-5b3c-a8c4-0b5ba4ea0d42\"] \
+         [:z :f 0.0] [:z :f -0.0] [:y :f 0.0]])",
+    )
+    .unwrap();
+    // Both branches give `:a`: one row.
+    assert_eq!(
+        rows(
+            &db,
+            "(query [:find ?e :where [?e :n _] (or [?e :n 1] [?e :m 1])])"
+        ),
+        1
+    );
+    // Rows differing in `?k` (a keyword and a ref) are two rows.
+    assert_eq!(
+        rows(
+            &db,
+            "(query [:find ?e :where [?e :k ?k] (or [?e :n 1] [?e :m 1])])"
+        ),
+        2
+    );
+    // `-0.0` and `0.0`: `:z` has two facts but one row per `?f` value.
+    assert_eq!(
+        rows(
+            &db,
+            "(query [:find ?e ?f :where [?e :f ?f] (or [?e :f 0.0] [?e :f 1.0])])"
+        ),
+        2
+    );
+}
+
+/// A correlated branch runs per outer row from its seed; a hashed one is
+/// read once (#546 spec §5.1); with no new variable an outer row is
+/// returned once, from the first branch that has a row.
+#[test]
+fn disjunction_branches_run_per_row_or_once() {
+    let db = Minigraf::in_memory().unwrap();
+    let facts: String = (0..50)
+        .map(|i| format!("[:e{i} :n {i}] [:e{i} :tag :t{}]", i % 5))
+        .collect();
+    db.execute(&format!("(transact [{facts}])")).unwrap();
+    let ops = |q: &str| {
+        // One pull reads every outer row: there are fewer than a batch.
+        let mut cursor = db.query(q).unwrap();
+        cursor.next_batch(1).unwrap().expect("a row");
+        cursor.counters()
+    };
+    let c = ops("(query [:find ?e :where [?e :n ?v] (or [?e :tag :t0] [?e :tag :t1])])");
+    let union = c.iter().find(|c| c.op == "Union").expect("a Union");
+    assert_eq!(union.rows_in, 50);
+    assert_eq!(union.rows_out, 20);
+    assert_eq!(
+        c.iter()
+            .filter(|c| c.op == "Seed")
+            .map(|c| c.rows_out)
+            .sum::<u64>(),
+        50 + 40,
+        "the second branch runs only for rows the first did not match"
+    );
+
+    let c = ops(
+        "(query [:find ?e :where [?e :n ?v] (or-join [?v] (and [?f :n ?v] [?f :tag :t0]) (and [?f :n ?v] [?f :tag :t1]))])",
+    );
+    assert!(!c.iter().any(|c| c.op == "Seed"), "hashed: no seed");
+    let union = c.iter().find(|c| c.op == "Union").expect("a Union");
+    assert_eq!(union.rows_out, 20);
+    let read: u64 = c.iter().filter(|c| c.op == "Scan").map(|c| c.rows_in).sum();
+    assert!(read <= 250, "each branch is read once");
 }

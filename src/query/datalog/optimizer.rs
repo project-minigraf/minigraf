@@ -69,7 +69,7 @@ thread_local! {
     static SUBPLANS: std::cell::Cell<Subplans> = const { std::cell::Cell::new(Subplans::Choose) };
 }
 
-/// How the engine runs a negation body: [`Subplans::Choose`], except in
+/// How the engine runs a negation body or an `or` branch: [`Subplans::Choose`], except in
 /// tests while this thread forces a form ([`set_subplans`]). Both forms give
 /// the same rows.
 #[inline]

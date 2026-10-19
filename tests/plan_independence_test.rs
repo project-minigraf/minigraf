@@ -178,6 +178,25 @@ const MATRIX: &[&str] = &[
     r#"[:find ?n :where [?e :name ?n] (not-join [?e] [?x :age 25])]"#,
     r#"[:find ?n :valid-at "2030-01-01T00:00:00Z" :where [?e :name ?n] (not-join [?e] [?e :db/valid-at ?t] [(> ?t 0)])]"#,
     r#"[:find ?n :valid-at "2030-01-01T00:00:00Z" :where [?e :name ?n] (not-join [?e] [?e :db/valid-at ?t])]"#,
+    // #546: `or` / `or-join` by join equality (a keyword meets a ref to the
+    // entity it names; floats by IEEE `==`), branches naming different outer
+    // variables or no join variable, a branch with `not`, an `or` with
+    // nothing before it, a cross product, and what follows an `or`.
+    r#"[:find ?a ?n :where [?a :friend ?b] (or [?b :name ?n] [?b :motto ?n])]"#,
+    r#"[:find ?a :where [?a :friend ?b] (or-join [?b] [?b :age 40] [?b :motto _])]"#,
+    r#"[:find ?a :where [?a :friend ?b] (or-join [?b] [?x :friend ?b] [?b :age 25])]"#,
+    r#"[:find ?e :where [?e :x ?v] (or-join [?v] [?f :y ?v] [?f :tiny ?v])]"#,
+    r#"[:find ?e :where [?e :tiny ?v] (or-join [?v] [?f :tiny2 ?v] [?f :x ?v])]"#,
+    r#"[:find ?e :where [?e :bio ?s] (or-join [?s] [?f :motto ?s] [?f :name ?s])]"#,
+    r#"[:find ?a ?b ?x :where [?a :friend ?b] (or [?a :age ?x] [?b :age ?x])]"#,
+    r#"[:find ?n :where [?e :name ?n] (or-join [?e] [?x :score 41] [?e :age 99])]"#,
+    r#"[:find ?n ?a :where [?e :name ?n] (or (and [?e :age ?a] (not [?e :friend :bob])) [?e :score ?a])]"#,
+    r#"[:find ?n :where [?e :name ?n] [?e :age ?a] (or [(> ?a 35)] [?e :friend :bob])]"#,
+    r#"[:find ?e :where (or [?e :age 40] [?e :score 41])]"#,
+    r#"[:find ?e ?p :where [?e :age 40] (or [?p :score 41] [?p :score 31])]"#,
+    r#"[:find ?n ?a :where [?e :name ?n] (or [?e :age ?a] [?e :score ?a]) [(> ?a 30)]]"#,
+    r#"[:find ?n :where [?e :name ?n] (or [?e :age 40] [?e :age 30]) (or-join [?e] [?e :friend :carol] [?e :x _])]"#,
+    r#"[:find ?n ?t :valid-at "2030-01-01T00:00:00Z" :where [?e :name ?n] (or [?e :db/valid-at ?t] [?e :age ?t])]"#,
     // Aggregates.
     r#"[:find ?a (count ?e) :where [?e :age ?a] [?e :name _]]"#,
     // Per-fact pseudo-attributes (#594): #594's example in both text orders,

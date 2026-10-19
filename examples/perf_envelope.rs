@@ -518,6 +518,24 @@ fn shapes(e: usize, tx_half: u64, hot_tx_half: u64) -> Vec<Shape> {
                     .count()
             },
         },
+        // #546: an `or-join` of two closed branches over different
+        // groups, each read once and keyed on a value.
+        Shape {
+            name: "or_2",
+            query: "[:find ?e :where [?e :group 7] [?e :age ?a] \
+                    (or-join [?a] (and [?f :group 17] [?f :age ?a] [(< ?a 30)]) \
+                    (and [?g :group 27] [?g :age ?a] [(> ?a 60)]))]"
+                .into(),
+            rows: {
+                let ages: std::collections::HashSet<usize> = (0..e)
+                    .filter(|i| (i % 100 == 17 && i % 90 < 30) || (i % 100 == 27 && i % 90 > 60))
+                    .map(|i| i % 90)
+                    .collect();
+                (0..e)
+                    .filter(|i| i % 100 == 7 && ages.contains(&(i % 90)))
+                    .count()
+            },
+        },
         Shape {
             name: "recursive_ancestors",
             query: format!("[:find ?b :where (boss :p{leaf} ?b)]"),

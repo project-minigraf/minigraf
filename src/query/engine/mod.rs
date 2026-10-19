@@ -9,6 +9,7 @@
 mod anti;
 mod batch;
 mod cell;
+mod distinct;
 mod filter;
 mod ids;
 mod join;
@@ -20,6 +21,7 @@ mod scan;
 mod seed;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests;
+mod union;
 
 use crate::error::{ErrorCode, err_coded};
 use crate::graph::storage::Snapshot;
@@ -159,6 +161,8 @@ pub(crate) fn build(source: plan::Source, steps: Vec<plan::Step>) -> Box<dyn Ope
         root = match step {
             plan::Step::Join(spec) => Box::new(join::Join::new(root, spec)),
             plan::Step::Anti(body) => Box::new(anti::AntiJoin::new(root, body)),
+            plan::Step::Union(branches) => Box::new(union::Union::new(root, branches)),
+            plan::Step::Distinct(slots) => Box::new(distinct::Distinct::new(root, slots)),
             step => Box::new(filter::Apply::new(root, step)),
         };
     }

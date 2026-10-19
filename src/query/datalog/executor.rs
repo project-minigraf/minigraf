@@ -722,7 +722,7 @@ impl DatalogExecutor {
             filtered_facts.clone(),
             &rules_guard,
             query.as_of.clone(),
-            query.valid_at.clone(),
+            Some(branch_valid_at(&valid_at_value)),
             &registry,
         )?;
         drop(rules_guard);
@@ -973,7 +973,7 @@ impl DatalogExecutor {
             derived_facts.clone(),
             &rules_guard,
             query.as_of.clone(),
-            query.valid_at.clone(),
+            Some(branch_valid_at(&valid_at_value)),
             &registry,
         )?;
         drop(rules_guard);
@@ -1330,12 +1330,9 @@ pub(crate) fn reads_metadata(clauses: &[WhereClause]) -> bool {
     })
 }
 
-/// The variables an `or` / `or-join` branch's expressions read that the branch
-/// itself never binds — by a pattern, a rule invocation or an expression output,
-/// its own or an enclosing nested branch's. Only the outer row can bind them, so
-/// a branch with any must be seeded with that row, not evaluated from an empty
-/// binding and joined afterwards (#620).
-pub(crate) fn branch_outer_reads(branch: &[WhereClause]) -> std::collections::HashSet<String> {
+/// The variables an `or` / `or-join` branch binds itself: by a pattern, a
+/// rule invocation or an expression output.
+fn branch_binds(branch: &[WhereClause]) -> std::collections::HashSet<String> {
     let mut bound = std::collections::HashSet::new();
     for c in branch {
         match c {
@@ -1357,6 +1354,16 @@ pub(crate) fn branch_outer_reads(branch: &[WhereClause]) -> std::collections::Ha
             _ => {}
         }
     }
+    bound
+}
+
+/// The variables an `or` / `or-join` branch's expressions read that the branch
+/// itself never binds — by a pattern, a rule invocation or an expression output,
+/// its own or an enclosing nested branch's. Only the outer row can bind them, so
+/// a branch with any must be seeded with that row, not evaluated from an empty
+/// binding and joined afterwards (#620).
+pub(crate) fn branch_outer_reads(branch: &[WhereClause]) -> std::collections::HashSet<String> {
+    let bound = branch_binds(branch);
     let mut reads = std::collections::HashSet::new();
     for c in branch {
         match c {
@@ -1889,6 +1896,15 @@ fn project_find_specs(bindings: &[Binding], find_specs: &[FindSpec]) -> Vec<Vec<
     results
 }
 
+/// The valid time an `or` branch binds `:db/valid-at` from: the query's,
+/// with "now" read once for the whole query (#546), not again per branch.
+fn branch_valid_at(valid_at_value: &Value) -> ValidAt {
+    match valid_at_value {
+        Value::Integer(t) => ValidAt::Timestamp(*t),
+        _ => ValidAt::AnyValidTime,
+    }
+}
+
 /// Evaluate a single branch of an `or`/`or-join` against incoming bindings.
 ///
 /// Processing order (note: top-level execute_query now uses an interleaved plan loop
@@ -2026,6 +2042,13 @@ pub(crate) fn evaluate_branch(
 /// Non-Or/OrJoin clauses are ignored (handled elsewhere).
 /// For `Or`: union results from all branches (deduplicated by full binding map).
 /// For `OrJoin`: union results, then project out branch-private variables.
+/// A branch row meets an outer row by join equality (#546, spec §5.3): a
+/// keyword equals a ref to the entity it names; floats compare by IEEE `==`
+/// (`Value`'s own equality). Dedup keys stay exact `Value`s.
+fn join_value(v: &Value) -> Value {
+    PatternMatcher::normalize_join_value(v)
+}
+
 pub(crate) fn apply_or_clauses(
     clauses: &[WhereClause],
     mut bindings: Vec<Binding>,
@@ -2162,7 +2185,8 @@ pub(crate) fn apply_or_clauses(
                                         let mut k: Vec<(String, Value)> = branch_var_names
                                             .iter()
                                             .filter_map(|v| {
-                                                b.get(*v).map(|val| (v.to_string(), val.clone()))
+                                                b.get(*v)
+                                                    .map(|val| (v.to_string(), join_value(val)))
                                             })
                                             .collect();
                                         k.sort_unstable_by(|a, b| a.0.cmp(&b.0));
@@ -2173,7 +2197,7 @@ pub(crate) fn apply_or_clauses(
                                 let mut k: Vec<(String, Value)> = branch_var_names
                                     .iter()
                                     .filter_map(|v| {
-                                        incoming.get(*v).map(|val| (v.to_string(), val.clone()))
+                                        incoming.get(*v).map(|val| (v.to_string(), join_value(val)))
                                     })
                                     .collect();
                                 k.sort_unstable_by(|a, b| a.0.cmp(&b.0));
@@ -2186,34 +2210,41 @@ pub(crate) fn apply_or_clauses(
                     }
                 }
 
-                // Determine shared variable names: variables present in both
-                // incoming bindings and branch results.
-                // Exclude internal metadata keys (prefixed with `__`) — those are
-                // fact-specific and differ between patterns for the same entity.
-                let branch_var_names: std::collections::HashSet<&str> = union_bindings
+                // Each branch row meets an incoming row on the variables both
+                // bind: the row's own, since branches may name different
+                // outer variables (#546). Exclude internal metadata keys
+                // (prefixed with `__`) — those are fact-specific and differ
+                // between patterns for the same entity.
+                let outer_vars: std::collections::HashSet<&str> = bindings
                     .iter()
                     .flat_map(|b| b.keys().map(|k| k.as_str()))
                     .filter(|k| !k.starts_with("__"))
-                    .collect();
-                let shared_vars: Vec<String> = bindings
-                    .iter()
-                    .flat_map(|b| b.keys().cloned())
-                    .collect::<std::collections::HashSet<_>>()
-                    .into_iter()
-                    .filter(|v| !v.starts_with("__") && branch_var_names.contains(v.as_str()))
                     .collect();
 
                 // With no shared variable every key is empty, so each incoming
                 // row joins every branch row: a cross product (#610).
 
-                // Build HashMap: shared-key tuple → Vec<branch Binding>
-                let mut branch_map: HashMap<Vec<(String, Value)>, Vec<Binding>> = HashMap::new();
+                // Group the branch rows by their shared variables, then key
+                // each group's rows on them.
+                type Groups = Vec<(Vec<String>, HashMap<Vec<(String, Value)>, Vec<Binding>>)>;
+                let mut groups: Groups = Vec::new();
                 for b in union_bindings {
-                    let key: Vec<(String, Value)> = shared_vars
-                        .iter()
-                        .filter_map(|v| b.get(v).map(|val| (v.clone(), val.clone())))
+                    let mut shared: Vec<String> = b
+                        .keys()
+                        .filter(|k| outer_vars.contains(k.as_str()))
+                        .cloned()
                         .collect();
-                    branch_map.entry(key).or_default().push(b);
+                    shared.sort_unstable();
+                    let key: Vec<(String, Value)> = shared
+                        .iter()
+                        .filter_map(|v| b.get(v).map(|val| (v.clone(), join_value(val))))
+                        .collect();
+                    if !groups.iter().any(|(vars, _)| *vars == shared) {
+                        groups.push((shared.clone(), HashMap::new()));
+                    }
+                    if let Some((_, map)) = groups.iter_mut().find(|(vars, _)| *vars == shared) {
+                        map.entry(key).or_default().push(b);
+                    }
                 }
 
                 // For each incoming binding, look up matching branch results and merge.
@@ -2221,11 +2252,14 @@ pub(crate) fn apply_or_clauses(
                 let mut seen_result: std::collections::HashSet<Vec<(String, Value)>> =
                     std::collections::HashSet::new();
                 for incoming in &bindings {
-                    let key: Vec<(String, Value)> = shared_vars
-                        .iter()
-                        .filter_map(|v| incoming.get(v).map(|val| (v.clone(), val.clone())))
-                        .collect();
-                    if let Some(matches) = branch_map.get(&key) {
+                    for (shared, branch_map) in &groups {
+                        let key: Vec<(String, Value)> = shared
+                            .iter()
+                            .filter_map(|v| incoming.get(v).map(|val| (v.clone(), join_value(val))))
+                            .collect();
+                        let Some(matches) = branch_map.get(&key) else {
+                            continue;
+                        };
                         for branch_binding in matches {
                             // Merge: start with incoming, extend with branch-introduced vars.
                             let mut merged = incoming.clone();
@@ -2281,11 +2315,13 @@ pub(crate) fn apply_or_clauses(
                 // others are fresh inside), and keep the distinct rows some
                 // branch matches, as the joined path below does. So does a
                 // branch whose expression reads a join variable it does not
-                // bind itself (#620).
-                if sorted_oj_branches
-                    .iter()
-                    .any(|b| reads_metadata(b) || !branch_outer_reads(b).is_empty())
-                {
+                // bind itself (#620), and one that does not bind every join
+                // variable: the joined path would drop its rows (#546).
+                if sorted_oj_branches.iter().any(|b| {
+                    reads_metadata(b)
+                        || !branch_outer_reads(b).is_empty()
+                        || !join_vars.iter().all(|v| branch_binds(b).contains(v))
+                }) {
                     let mut seen: std::collections::HashSet<Vec<(String, Value)>> =
                         std::collections::HashSet::new();
                     let mut result: Vec<Binding> = Vec::new();
@@ -2344,7 +2380,9 @@ pub(crate) fn apply_or_clauses(
                         .map(|incoming| {
                             join_vars
                                 .iter()
-                                .filter_map(|v| incoming.get(v).map(|val| (v.clone(), val.clone())))
+                                .filter_map(|v| {
+                                    incoming.get(v).map(|val| (v.clone(), join_value(val)))
+                                })
                                 .collect::<Vec<_>>()
                         })
                         .collect()
@@ -2374,7 +2412,7 @@ pub(crate) fn apply_or_clauses(
                         if seen_proj.insert(key) {
                             let bkey: Vec<(String, Value)> = join_vars
                                 .iter()
-                                .filter_map(|v| b.get(v).map(|val| (v.clone(), val.clone())))
+                                .filter_map(|v| b.get(v).map(|val| (v.clone(), join_value(val))))
                                 .collect();
                             branch_map.entry(bkey).or_default().push(b);
                         }
@@ -2391,7 +2429,7 @@ pub(crate) fn apply_or_clauses(
                 for incoming in &bindings {
                     let key: Vec<(String, Value)> = join_vars
                         .iter()
-                        .filter_map(|v| incoming.get(v).map(|val| (v.clone(), val.clone())))
+                        .filter_map(|v| incoming.get(v).map(|val| (v.clone(), join_value(val))))
                         .collect();
                     if let Some(matches) = branch_map.get(&key) {
                         for branch_binding in matches {
