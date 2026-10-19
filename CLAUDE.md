@@ -132,7 +132,7 @@ cargo run < demos/demo_negation.txt
    - `executor.rs`: Query executor — temporal filter (tx-time → net-assert → valid-time), not/not-join post-filter
    - `matcher.rs`: Pattern matching with variable unification; `edn_to_value`, `edn_to_entity_id`
    - `evaluator.rs`: `RecursiveEvaluator` (semi-naive), `StratifiedEvaluator`, `evaluate_not_join`
-   - `stratification.rs`: `DependencyGraph`, `stratify()` — negative edges + cycle detection
+   - `stratification.rs`: `DependencyGraph`, `stratify()` — negative edges + cycle detection; a positive edge to a rule with `not`/`not-join`/`or`/`or-join` also raises the caller, off a cycle (#628)
    - `rules.rs`: `RuleRegistry` — thread-safe rule management
    - `types.rs`: `EdnValue`, `Pattern`, `DatalogQuery`, `AsOf`, `ValidAt`, `WhereClause` (incl. `Not`, `NotJoin`); `PseudoAttr` enum, `AttributeSpec` wrapper
    - `optimizer.rs`: Selectivity-based join reordering on every build (the `wasm` feature is a deprecated no-op). `reorder()` gates every reordering site; tests turn it off per thread (`set_reorder`, `minigraf::__reorder` under `test-oracle`, #596); `plan_seeded` orders a body with its imported variables counted as bound, and `subplans()` lets tests force the engine's negation bodies and `or` branches hashed or correlated (`set_subplans`, `minigraf::__subplans`, #546)
@@ -204,7 +204,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1592 tests** (1582 passing, 10 ignored; unit + integration + doc).
+**1599 tests** (1589 passing, 10 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
