@@ -595,15 +595,20 @@ impl DatalogExecutor {
         )?;
         drop(rules_guard);
 
-        // Apply Not/NotJoin clauses the planner couldn't place inline (#248) — their
-        // variables are only bound by the Or/OrJoin pass above, so they must run here,
-        // after it. Sorted cheapest-first, same as the pre-#248 post-filter ordering.
+        // Apply Not/NotJoin clauses the planner couldn't place inline (#248), and
+        // expressions (#625) — their variables are only bound by the Or/OrJoin pass
+        // above, so they must run here, after it. Sorted cheapest-first, same as the
+        // pre-#248 post-filter ordering; expressions cost 0 and come first, so a
+        // stable sort keeps them ahead of the nots, in text order.
         #[cfg_attr(feature = "wasm", allow(unused_mut))]
         let mut deferred_not_clauses = deferred_not_clauses;
         #[cfg(not(feature = "wasm"))]
         deferred_not_clauses.sort_by_key(optimizer::clause_cost);
         for clause in deferred_not_clauses {
             bindings = match clause {
+                c @ WhereClause::Expr { .. } => {
+                    apply_expr_clauses(bindings, std::slice::from_ref(&c), &registry)?
+                }
                 WhereClause::Not(body) => apply_not_clause(
                     bindings,
                     &body,
@@ -846,8 +851,9 @@ impl DatalogExecutor {
         )?;
         drop(rules_guard);
 
-        // Apply Not/NotJoin clauses the planner couldn't place inline (#248) — their
-        // variables are only bound by the Or/OrJoin pass above. (The StratifiedEvaluator
+        // Apply Not/NotJoin clauses the planner couldn't place inline (#248), and
+        // expressions (#625) — their variables are only bound by the Or/OrJoin pass
+        // above. Expressions come first, as above. (The StratifiedEvaluator
         // handles `not`/`not-join` in rule bodies; this handles them appearing directly
         // in the query body alongside rule invocations.)
         #[cfg_attr(feature = "wasm", allow(unused_mut))]
@@ -856,6 +862,9 @@ impl DatalogExecutor {
         deferred_not_clauses.sort_by_key(optimizer::clause_cost);
         for clause in deferred_not_clauses {
             bindings = match clause {
+                c @ WhereClause::Expr { .. } => {
+                    apply_expr_clauses(bindings, std::slice::from_ref(&c), &registry)?
+                }
                 WhereClause::Not(body) => apply_not_clause_derived(
                     bindings,
                     &body,

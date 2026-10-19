@@ -866,3 +866,41 @@ fn test_or_branch_expression_reads_outer_variable_in_rule_body() {
     let r = int_rows(&db, "(query [:find ?w :where (pick ?e ?w)])");
     assert_eq!(r, vec!["1", "2"], "or-and in a rule body");
 }
+
+// ── #625: an expression reading a variable only an `or` binds ────────────────
+
+fn issue_625_db() -> Minigraf {
+    let db = db();
+    db.execute("(transact [[:a :n 1] [:b :n 2] [:c :ok true]])")
+        .unwrap();
+    db
+}
+
+#[test]
+fn test_expression_after_or_reads_or_bound_variable() {
+    let db = issue_625_db();
+    let r = db
+        .execute("(query [:find ?e ?x :where [?e :n _] (or [?e :n ?x] [?e :ok ?x]) [(> ?x 1)]])")
+        .unwrap();
+    assert_eq!(result_count(&r), 1, "only :b has ?x over 1");
+    let r = db
+        .execute(
+            "(query [:find ?y :where [?e :n _] (or [?e :n ?x] [?e :ok ?x]) [(+ ?x 10) ?y] (not [(> ?y 11)])])",
+        )
+        .unwrap();
+    assert_eq!(result_count(&r), 1, "the not sees the expression's ?y");
+}
+
+#[test]
+fn test_expression_after_or_reads_or_bound_variable_with_rules() {
+    let db = issue_625_db();
+    db.execute("(rule [(num ?e) [?e :n _]])").unwrap();
+    db.execute("(rule [(big ?e ?x) [?e :n _] (or [?e :n ?x] [?e :ok ?x]) [(> ?x 1)]])")
+        .unwrap();
+    let r = db
+        .execute("(query [:find ?x :where (num ?e) (or [?e :n ?x] [?e :ok ?x]) [(> ?x 1)]])")
+        .unwrap();
+    assert_eq!(result_count(&r), 1, "query calling a rule");
+    let r = db.execute("(query [:find ?x :where (big ?e ?x)])").unwrap();
+    assert_eq!(result_count(&r), 1, "rule body");
+}
