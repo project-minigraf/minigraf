@@ -135,7 +135,7 @@ pub fn __reorder(on: bool) -> ReorderGuard {
     query::datalog::optimizer::set_reorder(on)
 }
 
-// Plan-independence tests (#546): force how negation bodies run.
+// Plan-independence tests (#546): force how negation bodies and `or` branches run.
 #[cfg(feature = "test-oracle")]
 #[doc(hidden)]
 pub use query::datalog::optimizer::{Subplans, SubplansGuard};
