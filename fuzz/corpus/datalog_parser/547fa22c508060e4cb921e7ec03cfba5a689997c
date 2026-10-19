@@ -1,0 +1,1 @@
+(query[::where [?e ea ?n] (not [?_ na:n] (ny) [? rr()])])

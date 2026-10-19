@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e :name ?n] (ony222223$0057715700000$3$mi33452221$2$mi$351531) [?x :pa0ent ?y]])

@@ -1,1 +1,0 @@
-(query [: :where [?e :color ?c] (no[?] ?[e:ave true]t-hoie e [e true])])

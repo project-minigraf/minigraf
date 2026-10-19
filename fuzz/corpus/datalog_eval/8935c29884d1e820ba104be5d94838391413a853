@@ -1,2 +1,0 @@
-(query [ :where [?e zcolor ?c] (not-join [?e] (query [:f?n :whe[?e :name ?n] [(minn "Alycewhere [?e :")]])
-[_ o?ict?ve e]):fe :where [?e zcolor ?c] (not-join [?e] [_ o?ict?ve e])])

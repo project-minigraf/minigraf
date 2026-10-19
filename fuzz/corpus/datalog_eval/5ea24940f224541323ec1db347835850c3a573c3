@@ -1,4 +1,0 @@
-(query [:finde(query [:find ?e [?e :color ?] (njo+noretract?[207175.(query [:find ?tr:where(query [::where [?e :color ?] (njotnoret[444440.?e ctive trAe])])
- [?e :col] (njotnmrect?[444440.?er?e trAa])])
-?e :active trAe])])
- [?e :color ?c] (njotnmrect?[444440.?er])])

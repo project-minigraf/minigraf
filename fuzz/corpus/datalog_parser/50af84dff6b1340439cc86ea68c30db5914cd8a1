@@ -1,0 +1,3 @@
+
+(query [::where [?e ?:aenn] (N ?y) [?x ?
+y]])

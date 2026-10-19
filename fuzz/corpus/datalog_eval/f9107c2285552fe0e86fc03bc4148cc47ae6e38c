@@ -1,0 +1,1 @@
+(query [:fi:where(notno ? ?[cee])])

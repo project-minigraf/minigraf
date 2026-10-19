@@ -1,0 +1,2 @@
+(query [:where (not (4(m)
+) [])])

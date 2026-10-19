@@ -1,2 +1,0 @@
-(query [:finde :where [(=:rue"A") ?n ][(!= ?n ?ntive)]])
-

@@ -1,2 +1,0 @@
-(query [:where [?or /C]:where [?or /C] (not(q<CCCC<<<<qmquer)) (not(qqmquer))]
-)

@@ -1,0 +1,1 @@
+(query [:with:find ?n :where [?e ?nmfn ?q]  [?2e ?e ?n] [(>=?n "e")?]])

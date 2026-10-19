@@ -1,0 +1,10 @@
+(query[: :where [?e :na ?n] (not [?_ ?hb:neran] (or-joinX
+
+
+X
+
+
+
+
+
+ ?  ?) [?0x rr(nS [?nru])])])

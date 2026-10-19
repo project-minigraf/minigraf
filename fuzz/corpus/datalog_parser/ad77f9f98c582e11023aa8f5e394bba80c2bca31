@@ -1,2 +1,0 @@
-(query [:fin:where [?e :e ?n](quy [: (nt ?oe x)])
- (nt? ?o:[]x)])

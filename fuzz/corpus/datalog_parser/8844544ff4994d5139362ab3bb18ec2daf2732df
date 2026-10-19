@@ -1,0 +1,1 @@
+(query [:find ?e:any-valid-time :where [?e me ?] (not [?e :2 rueؑω]):where (not[?e d  true])])

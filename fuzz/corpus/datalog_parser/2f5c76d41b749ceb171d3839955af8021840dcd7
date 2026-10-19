@@ -1,5 +1,0 @@
-(query [:where [?e:e ?n] (n
-?n
-
-
-)])

@@ -1,0 +1,1 @@
+(query [:find  (ofit:ndft:nd16:wnd- 00 ?)])

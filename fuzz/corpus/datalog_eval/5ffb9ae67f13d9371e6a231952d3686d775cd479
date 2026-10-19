@@ -1,1 +1,0 @@
-(query [:find ?e :wh:find ?e :where [?e :cmlor ?c] (njoi-[? e])])

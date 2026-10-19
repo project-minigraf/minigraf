@@ -1,0 +1,1 @@
+(query [:fin :where [nil:Sc ?] (or-join[?/][e:activ=])])

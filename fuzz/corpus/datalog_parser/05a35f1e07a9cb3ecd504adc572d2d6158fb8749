@@ -1,1 +1,0 @@
-(query [: :where(not [?e d true])(t []u )])

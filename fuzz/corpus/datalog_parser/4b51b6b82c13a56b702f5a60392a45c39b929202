@@ -1,1 +1,0 @@
-(query [:where [?e :name ?n] (or(enod ule a[])(,?e?y) ) ])

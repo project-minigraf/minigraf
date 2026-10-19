@@ -1,0 +1,1 @@
+(query [: :where [?e ame ?n](not [?e :d t]):where (o+ [ true])])

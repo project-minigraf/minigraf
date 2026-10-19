@@ -1,0 +1,1 @@
+(query [:fi:where(q ?x ddddddDD) [n :e ?n] (O2 ?x dddddddd[?u a])])

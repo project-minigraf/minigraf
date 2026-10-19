@@ -1,1 +1,0 @@
-(query [:f :where(q[:f :wher(n)])[?e :2color ?c] (not[?_ :dcani:true])])

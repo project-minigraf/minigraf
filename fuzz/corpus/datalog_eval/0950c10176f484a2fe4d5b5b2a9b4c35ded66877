@@ -1,0 +1,1 @@
+(query [:find ?:where [?e c:oloc] (not-join [?ee])])

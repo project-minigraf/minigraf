@@ -1,1 +1,0 @@
-(query [:fe :where [?e ?o:] (n[]ne ?[ctie 4rue])])

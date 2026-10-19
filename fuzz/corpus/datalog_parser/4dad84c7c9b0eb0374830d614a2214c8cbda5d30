@@ -1,1 +1,0 @@
-(query [: :where [?e :n_ ?n] (not [-?e :ed tru]):where [?e :name ?n] (not[?e :d true])])

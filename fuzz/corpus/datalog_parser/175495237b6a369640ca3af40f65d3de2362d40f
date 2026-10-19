@@ -1,0 +1,1 @@
+(query [:where [?e nia a?][Ce a ?_][*:db/valid-at ?_][?e a cccccc?_][?e aa ?_][?e aaa cccc?_][je aaa ?_][Cl a ?_][?e aaaaaa :nal?_][?e aaaa ?_]])

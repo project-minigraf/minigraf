@@ -1,1 +1,0 @@
-(query [ :where [?e zcolor ?c] (not-join [?e] [_YYYYYYY:anyimee e]):0fe :where [O?e zcolor ?c] (not-join [?e] [_ o?ict?ve e])])

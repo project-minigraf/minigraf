@@ -1,0 +1,3 @@
+(rule[(rle[(2q)w])(u:(2q)e:::)(query[:re ])
+[?e :colr ?c] (not[?e color ?c] (or o-))]
+)

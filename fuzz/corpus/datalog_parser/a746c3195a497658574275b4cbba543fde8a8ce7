@@ -1,1 +1,0 @@
-(query [:find ?e :where (pd ?e :hee)(Xd ?e :wre-)])

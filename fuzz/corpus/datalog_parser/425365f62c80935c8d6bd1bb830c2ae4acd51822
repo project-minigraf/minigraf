@@ -1,1 +1,0 @@
-(query [:find ?e0:where [?e :name ?n] (onned (rule a[rp(e,nt ?x73)])?TTTTTT ?trTTTTTTT ?true44TTT ?trTTTTTT ?true4444(rule a[rp(e,nt ?x31)])??y) [?x :pa0ent ?y]])

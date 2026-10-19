@@ -1,0 +1,1 @@
+(query [:fiErye?e :where [?e :Name ?n] (neot [?e :banne true]):where [?e :name ?n] (nmt ?[e]):where [?e : ?n] (nmt ?[:banne true]):where [?e :name ?n] (nmt ?[e :d true :banne trAue]):where [?e :name ?n] (nmt ?[e :d ue]):where [?e :name ?n] (sot [?ee]):where [?e :name ?n] (sot [?e :bannzd tAueؑ߉]):where [?e e ?n] (set [?o :ban])])

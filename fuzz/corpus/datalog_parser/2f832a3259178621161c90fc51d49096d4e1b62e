@@ -1,0 +1,1 @@
+(query [:fi:where [?e not_a a?_][e aa ?_][?e aaa ?][Ce a ?_][?:db/valid-at ?_][?e a ccccccccc?_][?:db/valid-at ?_][?e a cccccccccccc?][Ce a ?_][?:db/valid-at ?_][?e a cccccccccccccc?_][?:db/valid-at ?_][?e aaaaaaaaaaaaaaaaa ?_]])

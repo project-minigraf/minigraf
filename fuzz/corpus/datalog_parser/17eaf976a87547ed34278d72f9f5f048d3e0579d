@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e0:n ?n] (not [?e :ed tru]):where [n?a ?:ne] (nl)])

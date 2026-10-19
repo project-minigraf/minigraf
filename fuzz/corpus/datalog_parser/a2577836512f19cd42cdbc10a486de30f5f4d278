@@ -1,1 +1,0 @@
-(query [:fnd :where [?e:e ?n] (n o)])

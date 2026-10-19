@@ -1,2 +1,0 @@
-(query [:fine:where [?b :colo ?c] (not-join [?_] (query [:find ?e :wnd ?e :w[?e NueF?e] (not-join [?eDa ?hec])])
-)])

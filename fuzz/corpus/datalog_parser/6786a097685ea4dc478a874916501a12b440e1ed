@@ -1,4 +1,0 @@
-(query [:find :e:whernd :e:where [?e :e ?n] (not(q51ry E[e with ? :e(noSSSSS)])
-) [?e :e ?n] (not(qu:EEU[:where(noSSSSSS)])
-) [?e :e ?] (not(qu0yr t)
-)])

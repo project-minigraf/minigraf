@@ -1,1 +1,0 @@
-(query [:fin?:where [?e :name ?3] (not [?ep:nned troe]) [e0:e ?n] (noe ?t [:ba])])

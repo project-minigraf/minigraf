@@ -1,0 +1,1 @@
+(query [:where [?e aa aaaaeaa?_](not [?e d trutrasa])])

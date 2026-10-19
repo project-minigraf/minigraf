@@ -1,0 +1,3 @@
+(query[:fi:where (n
+
+ e:[rte]0:+0 :--:e :)])

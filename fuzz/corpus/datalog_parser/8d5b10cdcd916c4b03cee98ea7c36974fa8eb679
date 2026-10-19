@@ -1,2 +1,0 @@
-(query [:where [?:name ?n] (N56: ?y) [_;x 
-? :/tx-county]])

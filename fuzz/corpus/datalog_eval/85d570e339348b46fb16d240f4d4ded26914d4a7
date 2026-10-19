@@ -1,0 +1,1 @@
+(query [:fan :where [?e ?_?lynnufn ?] (or-join[?][e:activ=])])

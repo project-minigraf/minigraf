@@ -1,2 +1,0 @@
-(query [:fnd :where [?e e ?n] (not(qu>>>?e EE[])
-)])

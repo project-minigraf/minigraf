@@ -1,0 +1,1 @@
+(query [:1M:where (or[n::/] (OA>) ) [2e ?y]])

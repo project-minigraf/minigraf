@@ -1,0 +1,1 @@
+(query [:in?e :where [?_______e :nale "Ae"][?___:db/valid-at"Ae"][:e :nor-joinal8 ?y][:e/0 :nae "AA"][:e/5 :nal8 ?y]])

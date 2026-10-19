@@ -1,1 +1,0 @@
-(query [:find ?e  ?e :where(not [?e d true]):where [?e :nam ?n] (nlt [e])])

@@ -1,0 +1,2 @@
+(query [:finde:where [?e :colr ?c] (not (or o-))]
+)

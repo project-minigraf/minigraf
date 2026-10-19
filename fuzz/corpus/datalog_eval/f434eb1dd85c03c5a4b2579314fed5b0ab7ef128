@@ -1,2 +1,0 @@
-(query [:find ?e :where [?e ?FFFFFFFFFF?FFFFFFFFFFFF ?c] (not-join [?e] [?__ ?ivteez ?chere6e](que:db/tx-idry :[where [?quenamnor /C] (nean$m[q:witue])]*B))]
-)

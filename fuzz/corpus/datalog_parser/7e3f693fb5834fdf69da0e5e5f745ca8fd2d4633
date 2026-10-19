@@ -1,0 +1,1 @@
+(query [:fin :where (not [?:e n] (not[u]):w[])])

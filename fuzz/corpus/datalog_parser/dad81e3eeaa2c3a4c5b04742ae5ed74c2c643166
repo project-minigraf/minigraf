@@ -1,1 +1,0 @@
-(query [:fe :where [?e :Na2e ?n] (n?yo:t [?e :branka,e true]):where (not[?_e?  :d true]):where [?e :name ?n] (no0t [?erue]?iiii)])

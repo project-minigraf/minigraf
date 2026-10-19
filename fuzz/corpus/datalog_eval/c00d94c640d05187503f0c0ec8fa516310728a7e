@@ -1,2 +1,0 @@
-(query [ :where [am? nee ?n ][(!= ?n "Ali")](quer[:f])
-])

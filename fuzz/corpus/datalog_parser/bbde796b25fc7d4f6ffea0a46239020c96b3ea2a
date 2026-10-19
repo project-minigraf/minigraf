@@ -1,0 +1,1 @@
+(query[:where (r2)(d ?e ?e:h>r)])

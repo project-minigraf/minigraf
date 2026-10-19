@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e :ame ?n] (ony22220057715700000$3$mi33452221$3$mh$not-join$2$m52221$22223$00303345222$13$mi$35153y) [?x :pa0ent ?y]])

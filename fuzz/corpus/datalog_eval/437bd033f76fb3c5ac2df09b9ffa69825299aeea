@@ -1,1 +1,0 @@
-(query [:fin :where [?e ?lynnufn q0matk?] (or-join[?][e:activ=])])

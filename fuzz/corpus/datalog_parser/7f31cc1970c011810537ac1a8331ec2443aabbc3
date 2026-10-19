@@ -1,3 +1,0 @@
-(query [:where [?e:e ?n] (not(qEeE[e])
-) [?e :e ?n] (not(EEEEEE[e ])
-)])

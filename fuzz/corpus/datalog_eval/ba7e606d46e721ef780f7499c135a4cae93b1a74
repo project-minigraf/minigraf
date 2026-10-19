@@ -1,3 +1,0 @@
-(query [:where [?or /C](not(q[(ce t[iree])])
-(u [(m$i)]))]
-)

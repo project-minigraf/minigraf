@@ -1,0 +1,2 @@
+(query [:fe:where(not(ew:r[e ()])
+)])

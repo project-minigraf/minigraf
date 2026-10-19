@@ -1,3 +1,0 @@
-(query [:where [?or /C] (not(q[(/[tiee])]:ac)
-(query [:]*))]
-)

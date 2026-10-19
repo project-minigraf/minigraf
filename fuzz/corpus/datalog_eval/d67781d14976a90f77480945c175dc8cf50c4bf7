@@ -1,0 +1,1 @@
+(query [:find (mt:: ?:n t:)])

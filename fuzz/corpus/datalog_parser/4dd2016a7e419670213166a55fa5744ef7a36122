@@ -1,3 +1,0 @@
-(query [:where [? E n] (not(q[])(q [[?j :Nn] (not(q[:])
-)])
-)])

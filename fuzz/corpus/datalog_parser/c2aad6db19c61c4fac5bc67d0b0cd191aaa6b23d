@@ -1,0 +1,1 @@
+(query [:f :where [?e :a ?n] (not [?e :bad e]) [?e :n ?]])

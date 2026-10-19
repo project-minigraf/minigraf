@@ -1,2 +1,0 @@
-(query [::where [?e :ame ?n ][(!= ?n "Alice")](query =[:e [ueynE]])
-])

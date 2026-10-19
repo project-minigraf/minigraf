@@ -1,0 +1,2 @@
+(query [:?c:where [?e ?golore ?c] (not[?_?e :c ?c] (i- ?e:wie A[?ae :vje]?_-))]
+)

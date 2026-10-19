@@ -1,0 +1,1 @@
+(query [:where [?:le "eee"][:e/0 ?e  ?y]])

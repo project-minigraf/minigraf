@@ -1,0 +1,1 @@
+(query [: :where [?e :n ?n] (not[?_ ?_a:n] (e0 ) [?x:r(no)])])

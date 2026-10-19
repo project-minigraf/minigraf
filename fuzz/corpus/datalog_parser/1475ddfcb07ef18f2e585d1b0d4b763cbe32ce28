@@ -1,0 +1,1 @@
+(query [:fi:where [??e:name ?n] (not [?e :baned true]):where [?:name ?n] :where [Ae aaaeaa ?_][?e a _][?:db/valid-to ??__]])

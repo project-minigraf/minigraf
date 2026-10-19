@@ -1,1 +1,0 @@
-(query [:fin:nqueR:where [:e : ?c]  :where [:e :color ?c] :where [:e lor ?c] (nj-[?n]-[?e])])

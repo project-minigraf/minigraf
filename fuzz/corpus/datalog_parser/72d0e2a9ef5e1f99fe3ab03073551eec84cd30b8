@@ -1,1 +1,0 @@
-(query [:wh :where [?e :name ?n] (nwo ? e[n tr]) [?e me ?n] (no ? pe:[brue])])

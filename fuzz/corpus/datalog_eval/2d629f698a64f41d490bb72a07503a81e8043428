@@ -1,1 +1,0 @@
-(query [,,,,:where [? :cv ?cfind] (noi_n:db/tx-ie [5?e$e t])])

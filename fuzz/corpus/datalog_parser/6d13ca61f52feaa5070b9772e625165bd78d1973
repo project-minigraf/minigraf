@@ -1,0 +1,1 @@
+(query[:fe0:where [? : n] (or[n ::/])[2x ?y]])

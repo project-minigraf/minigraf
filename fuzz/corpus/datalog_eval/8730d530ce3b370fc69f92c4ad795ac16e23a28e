@@ -1,0 +1,1 @@
+(query [:fie :where [?u ?lynnueFFFF ?c]  [?e ?lFnuynnueFFFF ?c]  [?e ?leFFFF ?sumc] (not-join [?e] [?otnoienu Dactiver ?hec])])

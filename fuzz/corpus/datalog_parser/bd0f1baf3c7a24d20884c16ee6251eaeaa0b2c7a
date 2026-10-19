@@ -1,0 +1,3 @@
+(query [:find ?E :where [?e e ?m](
+ n
+? te)])

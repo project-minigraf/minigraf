@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e :n ne?q] (not [:na1a ae ?_][Ej e ?_][Ej 222ee])])

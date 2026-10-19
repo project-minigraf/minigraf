@@ -1,0 +1,1 @@
+(query [:f:where [?e:name ?n] (not [?e:banned tre]):where [Ae aaaaaaaaa ?_][Ee a  _][-0ae ?_] (nlt [])])

@@ -1,0 +1,1 @@
+(query [::where [G:a ?n?] (not [?_?x:db/tx-count(n,[e])])])

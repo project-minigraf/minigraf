@@ -1,2 +1,0 @@
-(query [:find ?e:with ?c:where [?e :color ?c] (not-join [?er ?c] (?_e[ebooA?ebooAe ])(or-join :))]
-)

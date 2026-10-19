@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e :ne ?n] (onned tue4444714) [FFFFFF?x :pa ?y]])

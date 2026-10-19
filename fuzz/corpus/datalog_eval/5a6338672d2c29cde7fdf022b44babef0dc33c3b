@@ -1,0 +1,1 @@
+(query [:finw:?c:where [? :c ?c] (or-join [?:e] [oue])2])

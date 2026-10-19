@@ -1,2 +1,0 @@
-(query [: :where [?e :ocr ?maxc](n?[?ebooe])(ry :fin)(query [:ne ])
-])

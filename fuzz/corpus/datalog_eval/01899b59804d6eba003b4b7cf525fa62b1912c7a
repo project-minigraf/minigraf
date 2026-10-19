@@ -1,2 +1,0 @@
-(query [:finde :where [?e :cr ?c] (njo [cet5m()]) (nof:f[t ]? vee)
-])

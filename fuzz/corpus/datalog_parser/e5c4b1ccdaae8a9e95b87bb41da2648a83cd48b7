@@ -1,0 +1,1 @@
+(query [:where (pd ?e020:he)(d ?:w)])

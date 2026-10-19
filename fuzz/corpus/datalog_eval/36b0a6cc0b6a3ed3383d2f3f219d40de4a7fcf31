@@ -1,2 +1,0 @@
-(query [:where [?or /c] (not-*?/)::::where [?or /c] (query [:wheeeeee::::])
-(nilfot-j?/)::])

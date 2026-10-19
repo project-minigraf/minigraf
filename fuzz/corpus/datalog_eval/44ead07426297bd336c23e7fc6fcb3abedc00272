@@ -1,0 +1,1 @@
+(query [:fine :where [e? ?_eFF ?_?c]  [?e ?lynnueFFnnueFF ?c] (not-join [?e] [?e Da ?heb])])

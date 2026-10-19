@@ -1,0 +1,2 @@
+(query [:where[?:name ?n] (N6: ?y) [_;x 
+? :]])

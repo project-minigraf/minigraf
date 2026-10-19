@@ -1,1 +1,0 @@
-(query [:fi:where [u n:db/valid-from][?e etL]])

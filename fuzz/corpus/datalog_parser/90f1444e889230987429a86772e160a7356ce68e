@@ -1,2 +1,0 @@
-(rule [(?x ?y) [?x :parenh:?y](rul?y) [?x :areh:?](rule [[p]])
-])

@@ -1,1 +1,0 @@
-(query [:with ?e:with ?c:where [?e :color ?c] (u$uq e:__maqQqw?_bb)])

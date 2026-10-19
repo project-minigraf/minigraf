@@ -1,1 +1,0 @@
-(query [:find ?e:nge0:where [?e me ?n] (or(en) )[6xnt ?y]])

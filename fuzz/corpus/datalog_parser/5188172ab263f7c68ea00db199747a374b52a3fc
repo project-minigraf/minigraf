@@ -1,9 +1,0 @@
-(query [:we  :where [?e :name ?n] (no
-
-
-
-
-
-
-?
-w ? pe:[b:an true])])

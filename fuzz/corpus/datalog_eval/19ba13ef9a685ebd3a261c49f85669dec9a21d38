@@ -1,0 +1,1 @@
+(query [:fin :where [?c?ere ?lynnunf ?] (or-join[?][?luere ?here =])])

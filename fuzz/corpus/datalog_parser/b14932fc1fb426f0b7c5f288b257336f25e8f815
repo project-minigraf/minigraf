@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :Xe ?n] (n-(trans[[ {?=======dddn:}e "Alice"]])HX)])

@@ -1,0 +1,1 @@
+(query [:fi:where [?e naaa ?_V][$e aaa cccc?_][?e aa ?_][$e v ?_][$e aaaaaaaaaa ?_]])

@@ -1,0 +1,4 @@
+(rule[(rle[::e:::ree:::re ])
+[?e :colr ?c] (not[?e lor ?cn? ])
+[?e :colr ?c] (not[?e lor ?cn??_e] (oolr ))]
+)

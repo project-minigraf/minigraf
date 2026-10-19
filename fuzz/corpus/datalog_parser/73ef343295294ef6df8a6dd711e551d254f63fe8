@@ -1,8 +1,0 @@
-(query [:where [?e :name ?n] (no
-
-w ?
-w p) [a :name ?n] (no
-
-w  p:e[e]) [? :me ?n] (no
-
-)])

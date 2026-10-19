@@ -1,1 +1,0 @@
-(query [:h :where [?ame 5n] (or(erlg)(qa)(q?):)])

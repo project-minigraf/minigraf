@@ -1,0 +1,1 @@
+(query [:f :where (rCd ?e75)(qCd ?e :h/ed ?eh)])

@@ -1,0 +1,1 @@
+(query [:find ?e :wre:find ?e :where [?e ?lyu ?c] (not-join [?c] [?e Da ?ec])])

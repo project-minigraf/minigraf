@@ -1,1 +1,0 @@
-(query [:fe :where [?e:lor ??e] [?:activeva to] (not-join [?e] [?:ava trwh])])

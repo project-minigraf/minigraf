@@ -1,1 +1,0 @@
-(query [:fi:where(q00-00ddd ?x ddddddDD) [n? :eame ?n] (OAA1-00ddd ?x ddddddddddd[?u a])])

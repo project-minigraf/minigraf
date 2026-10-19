@@ -1,1 +1,0 @@
-(query [:where [in /c] (no?):where [r /c-] (not-j?/):::::])

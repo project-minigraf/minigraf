@@ -1,0 +1,2 @@
+(query[: :where [?e :oclr ?m] (Aeo[n])(q:wh[?e ?()]?[?eboo])(q:age [:ne ])
+])

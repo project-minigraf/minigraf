@@ -1,0 +1,2 @@
+(query [:?e:where (X?[ o(query[:e [?e ?n] (nt? t=-6?[[n] (?[nile]x)r{e,d}e]x)])
+])])

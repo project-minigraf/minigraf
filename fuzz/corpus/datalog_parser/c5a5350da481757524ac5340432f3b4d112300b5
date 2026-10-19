@@ -1,0 +1,1 @@
+(query [:where :any-valid-time[?:me ?n] (or(?x[rp]D>>>) ) [2x ?y]])

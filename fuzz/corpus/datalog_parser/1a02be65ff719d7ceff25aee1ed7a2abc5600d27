@@ -1,0 +1,1 @@
+(query [: :where [?e :n_me ?n](not [u :tu e](qe [:])):where (not[?e ned tg])])

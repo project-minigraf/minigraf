@@ -1,1 +1,0 @@
-(query [: :where [?e ?FFFFFFF ?c] (not-join [?e ?_ct?e ?_] [? ?tc_eiver ?cheie])])

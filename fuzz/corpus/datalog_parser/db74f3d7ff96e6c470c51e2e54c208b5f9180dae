@@ -1,0 +1,1 @@
+(query [:find ?e :where(not [? :de e]):where [?:nam ?n] (not [??2 :de tque]):where [?:name ?n] (no01t [])])

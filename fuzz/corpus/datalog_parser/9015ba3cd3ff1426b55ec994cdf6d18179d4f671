@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :nam en] (o34455712?0$103345944$i$66$m* ?y) ])
