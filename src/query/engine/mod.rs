@@ -6,6 +6,7 @@
 //! `test-oracle` feature, every query run here is also run by the executor
 //! and the answers are compared ([`oracle`]).
 
+mod anti;
 mod batch;
 mod cell;
 mod filter;
@@ -16,6 +17,7 @@ pub(crate) mod oracle;
 mod plan;
 mod project;
 mod scan;
+mod seed;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests;
 
@@ -80,6 +82,10 @@ impl Counters {
 /// batch; after `close`, it returns `None` and reads nothing.
 pub(crate) trait Operator: Send {
     fn next_batch(&mut self, ctx: &mut Ctx<'_>) -> Result<Option<Batch>>;
+    /// Start again from the beginning, reopening a closed operator, with
+    /// `seed` as the row of the plan's [`seed::Seed`], if it has one (#546).
+    /// Only a correlated body's plan is rewound.
+    fn rewind(&mut self, seed: &[cell::Cell]);
     /// Stop: release what the operator holds and close its children.
     fn close(&mut self);
     /// This operator's counters, then its children's.
@@ -125,18 +131,12 @@ pub(crate) fn open(
     };
     let ids = IdSpace::new(keys);
     let Plan {
-        scan,
+        source,
         steps,
         find,
         vars,
     } = plan;
-    let mut root: Box<dyn Operator> = Box::new(scan::Scan::new(scan));
-    for step in steps {
-        root = match step {
-            plan::Step::Join(spec) => Box::new(join::Join::new(root, spec)),
-            step => Box::new(filter::Apply::new(root, step)),
-        };
-    }
+    let root = build(source, steps);
     Some(Stream {
         snapshot,
         ids,
@@ -147,6 +147,22 @@ pub(crate) fn open(
         project: Counters::new("Project"),
         closed: false,
     })
+}
+
+/// The operator tree of a plan's source and steps.
+pub(crate) fn build(source: plan::Source, steps: Vec<plan::Step>) -> Box<dyn Operator> {
+    let mut root: Box<dyn Operator> = match source {
+        plan::Source::Scan(spec) => Box::new(scan::Scan::new(spec)),
+        plan::Source::Seed => Box::new(seed::Seed::new()),
+    };
+    for step in steps {
+        root = match step {
+            plan::Step::Join(spec) => Box::new(join::Join::new(root, spec)),
+            plan::Step::Anti(body) => Box::new(anti::AntiJoin::new(root, body)),
+            step => Box::new(filter::Apply::new(root, step)),
+        };
+    }
+    root
 }
 
 impl Stream {

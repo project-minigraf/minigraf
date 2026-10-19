@@ -28,6 +28,7 @@ impl Apply {
             Step::Filter(..) => "Filter",
             Step::Bind(..) => "Bind",
             Step::Join(_) => "Join",
+            Step::Anti(_) => "AntiJoin",
         };
         Apply {
             child,
@@ -48,6 +49,10 @@ impl Operator for Apply {
             }
         }
         Ok(None)
+    }
+
+    fn rewind(&mut self, seed: &[Cell]) {
+        self.child.rewind(seed);
     }
 
     fn close(&mut self) {
@@ -120,8 +125,8 @@ fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<Batch> {
             batch.retain(&keep);
             batch.set_col(*slot, out);
         }
-        // Joins are operators of their own (`join::Join`).
-        Step::Join(_) => {}
+        // Joins are operators of their own (`join::Join`, `anti::AntiJoin`).
+        Step::Join(_) | Step::Anti(_) => {}
     }
     Ok(batch)
 }

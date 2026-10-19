@@ -362,6 +362,12 @@ impl Operator for Join {
         Ok(Some(out))
     }
 
+    fn rewind(&mut self, seed: &[Cell]) {
+        self.state = State::Start;
+        self.outer.rewind(seed);
+        self.inner.rewind(&[]);
+    }
+
     fn close(&mut self) {
         self.state = State::Done;
         self.outer.close();

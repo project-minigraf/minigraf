@@ -269,6 +269,10 @@ fn queries(tx: u64) -> Vec<String> {
     for clauses in valid_at {
         let find = vars_of(clauses);
         for temporal in temporals(tx) {
+            // Per-fact metadata needs `:any-valid-time` (INT-026).
+            if clauses.contains(":db/tx-count") && !temporal.contains(":any-valid-time") {
+                continue;
+            }
             out.push(format!(
                 "(query [:find {find} {temporal} :where {clauses}])"
             ));
@@ -618,6 +622,8 @@ impl super::Operator for FailAfter {
         Ok(Some(batch))
     }
 
+    fn rewind(&mut self, _: &[super::cell::Cell]) {}
+
     fn close(&mut self) {
         self.closed = true;
     }
@@ -847,4 +853,238 @@ fn engine_joins_read_many_batches() {
         ),
         5 * 286 * 286 + 2 * 285 * 285
     );
+}
+
+/// `not` / `not-join` shapes (#546): hashed and correlated bodies, keys on
+/// the entity, value and attribute positions, floats and keywords imported
+/// into a body, expressions over imported variables, per-fact
+/// pseudo-attributes and `:db/valid-at` in bodies, deferred and
+/// variable-free negations.
+fn negations() -> Vec<&'static str> {
+    vec![
+        // Correlated: the body's entity is imported.
+        "[?e :person/name ?n] (not [?e :person/ok true])",
+        "[?e :person/friend ?f] (not [?f :person/ok true])",
+        "[?e :person/name ?n] (not-join [?e] [?e :person/friend ?f] [?f :person/ok true])",
+        "[?e :person/age ?a] (not-join [?e] [?e :person/score ?s] [(> ?s 1.0)])",
+        // Hashed: keyed on a value or an attribute.
+        "[?e :person/age ?a] (not-join [?a] [?f :person/age ?a] [?f :person/ok true])",
+        "[?e :person/score ?s] (not-join [?s] [?f :person/score ?s] [?f :person/ok false])",
+        "[?e :person/boss ?b] (not-join [?b] [?x :person/friend ?b])",
+        "[?e :person/alias ?b] (not-join [?b] [?x :person/boss ?b])",
+        "[?e :person/bio ?b] (not-join [?b] [?f :person/bio ?b] [?f :person/ok true])",
+        "[?e :person/attr ?x] (not-join [?x] [:p1 ?x 21])",
+        "[?e ?a 21] (not-join [?a] [?x :person/attr ?a])",
+        // A body that reads an imported variable it does not bind.
+        "[?e :person/age ?a] (not-join [?a] [?f :person/age ?b] [(< ?b ?a)])",
+        "[?e :person/age ?a] (not [(> ?a 21)])",
+        // A body binding no join variable; one reading no variable.
+        "[?e :person/name ?n] (not-join [?e] [?x :person/ok true])",
+        "[?e :person/name ?n] (not [:p1 :person/ok true])",
+        // Metadata of an outer source, and the valid time.
+        "[?e :person/name ?n] (not-join [?e] [?e :db/tx-count ?t] [(> ?t 3)])",
+        "[?e :person/name ?n] (not-join [?e] [?e :db/valid-at ?t] [(> ?t 0)])",
+        "[?e :person/name ?n] (not-join [?e] [?e :db/valid-at ?t])",
+        // Deferred: an expression binds the join variable.
+        "[?e :person/age ?a] [(+ ?a 1) ?b] (not-join [?b] [?f :person/age ?b])",
+        // Two negations.
+        "[?e :person/name ?n] (not [?e :person/ok true]) (not [?e :person/status :s1])",
+    ]
+}
+
+fn negation_queries(tx: u64) -> Vec<String> {
+    let mut out = Vec::new();
+    for clauses in negations() {
+        let find = vars_of(clauses.split(" (not").next().unwrap_or(clauses));
+        let find = find
+            .split(' ')
+            .filter(|v| !v.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        for temporal in temporals(tx) {
+            // Per-fact metadata needs `:any-valid-time` (INT-026).
+            if clauses.contains(":db/tx-count") && !temporal.contains(":any-valid-time") {
+                continue;
+            }
+            out.push(format!(
+                "(query [:find {find} {temporal} :where {clauses}])"
+            ));
+        }
+    }
+    out
+}
+
+/// Every negation shape with each body form forced and reordering on and
+/// off; the oracle compares each run with the executor.
+fn check_negations(db: &Minigraf) -> usize {
+    use crate::query::datalog::optimizer::{Subplans, set_reorder, set_subplans};
+    let tx = db.current_tx_count();
+    let mut total = 0;
+    for mode in [Subplans::Choose, Subplans::Hash, Subplans::Correlated] {
+        for on in [true, false] {
+            let _m = set_subplans(mode);
+            let _r = set_reorder(on);
+            total += negation_queries(tx)
+                .iter()
+                .map(|q| rows(db, q))
+                .sum::<usize>();
+        }
+    }
+    total
+}
+
+#[test]
+fn negation_matches_executor() {
+    let dir = tempfile::tempdir().unwrap();
+    let mem = Minigraf::in_memory().unwrap();
+    let file = Minigraf::open(dir.path().join("not.graph")).unwrap();
+    for round in 0..3 {
+        write_round(&mem, round);
+        assert!(check_negations(&mem) > 0, "negations keep some rows");
+        write_round(&file, round);
+        check_negations(&file);
+        file.checkpoint().unwrap();
+        check_negations(&file);
+    }
+}
+
+/// The body forms the planner chooses (#546 spec §4.4, decision 7 of the
+/// plan): correlated when the first pattern's entity is imported or the
+/// body reads an outer variable it does not bind, hashed otherwise; the
+/// test switch forces either where the body allows it.
+#[test]
+fn planner_chooses_the_body_form() {
+    use super::plan::{Body, Step, plan};
+    use crate::query::datalog::optimizer::{Subplans, set_subplans};
+    use crate::query::datalog::parser::parse_datalog_command;
+    use crate::query::datalog::types::DatalogCommand;
+    let forms = |q: &str| -> Vec<&'static str> {
+        let Ok(DatalogCommand::Query(query)) = parse_datalog_command(q) else {
+            panic!("expected a query");
+        };
+        let plan = plan(&query).expect("an engine plan");
+        plan.steps
+            .iter()
+            .filter_map(|s| match s {
+                Step::Anti(Body::Hashed { .. }) => Some("hashed"),
+                Step::Anti(Body::Correlated { .. }) => Some("correlated"),
+                _ => None,
+            })
+            .collect()
+    };
+    let probe = "(query [:find ?e :where [?e :a ?x] (not [?e :b 1])])";
+    let keyed = "(query [:find ?e :where [?e :a ?x] (not-join [?x] [?f :b ?x])])";
+    let open = "(query [:find ?e :where [?e :a ?x] (not-join [?x] [?f :b ?y] [(< ?y ?x)])])";
+    let expr_only = "(query [:find ?e :where [?e :a ?x] (not [(> ?x 1)])])";
+    let constant = "(query [:find ?e :where [?e :a ?x] (not [:p :b 1])])";
+    assert_eq!(forms(probe), ["correlated"]);
+    assert_eq!(forms(keyed), ["hashed"]);
+    assert_eq!(forms(open), ["correlated"]);
+    assert_eq!(forms(expr_only), ["correlated"]);
+    assert_eq!(forms(constant), ["hashed"]);
+    {
+        let _h = set_subplans(Subplans::Hash);
+        assert_eq!(forms(probe), ["hashed"]);
+        assert_eq!(forms(open), ["correlated"], "not closed: never hashed");
+        assert_eq!(forms(expr_only), ["correlated"], "nothing to scan");
+    }
+    let _c = set_subplans(Subplans::Correlated);
+    assert_eq!(forms(keyed), ["correlated"]);
+    assert_eq!(forms(constant), ["correlated"]);
+}
+
+/// Which negations the engine runs (#546 PR 1): every `not` / `not-join`
+/// without a rule invocation; a query with `or` stays on the executor
+/// until PR 2.
+#[test]
+fn negation_routing() {
+    let db = Minigraf::in_memory().unwrap();
+    write_round(&db, 0);
+    db.execute("(rule [(okay ?e) [?e :person/ok true]])")
+        .unwrap();
+    for q in [
+        "(query [:find ?e :where [?e :person/name ?n] (not [?e :person/ok true])])",
+        "(query [:find ?e :where [?e :person/name ?n] (not [:p1 :person/ok true])])",
+        "(query [:find ?e :where [?e :person/age ?a] [(+ ?a 1) ?b] (not-join [?b] [?f :person/age ?b])])",
+    ] {
+        rows(&db, q);
+    }
+    for q in [
+        "(query [:find ?e :where [?e :person/name ?n] (not (okay ?e))])",
+        "(query [:find ?e :where [?e :person/name ?n] (or [?e :person/ok true] [?e :person/age 21])])",
+    ] {
+        let before = runs();
+        db.execute(q).unwrap();
+        assert_eq!(runs(), before, "query stayed on the executor");
+    }
+}
+
+/// `not` filters and never deduplicates (spec §3.1): rows with the same
+/// `:find` values both survive. A failing expression drops its body row, so
+/// it cannot exclude the outer row (spec §3.3).
+#[test]
+fn negation_keeps_multiplicity() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute("(transact [[:a :n 1] [:b :n 1] [:c :n 2] [:d :x 0.0]])")
+        .unwrap();
+    assert_eq!(
+        rows(
+            &db,
+            "(query [:find ?v :where [?e :n ?v] (not-join [?v] [?f :n ?v] [(> ?v 1)])])"
+        ),
+        2
+    );
+    assert_eq!(
+        rows(
+            &db,
+            "(query [:find ?e :where [?e :x ?v] (not-join [?v] [?f :x ?v] [(/ 1 0) ?z])])"
+        ),
+        1
+    );
+}
+
+/// An unknown predicate in a body fails on every body row, so the `not`
+/// keeps every outer row (spec §3.3), on the engine as on the executor.
+#[test]
+fn negation_unknown_predicate_keeps_rows() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute("(transact [[:a :n 1] [:b :n 2]])").unwrap();
+    assert_eq!(
+        rows(
+            &db,
+            "(query [:find ?e :where [?e :n ?v] (not [?e :n ?v] [(no-such-pred? ?v)])])"
+        ),
+        2
+    );
+}
+
+/// A correlated body probes once per outer row from its seed; a hashed one
+/// is read once, however many outer rows there are (#546 spec §4.2, §4.3).
+#[test]
+fn negation_bodies_run_per_row_or_once() {
+    let db = Minigraf::in_memory().unwrap();
+    let facts: String = (0..50)
+        .map(|i| format!("[:e{i} :n {i}] [:e{i} :tag :t{}]", i % 5))
+        .collect();
+    db.execute(&format!("(transact [{facts}])")).unwrap();
+    let ops = |q: &str| {
+        let mut cursor = db.query(q).unwrap();
+        cursor.next_batch(1).unwrap().expect("a row");
+        cursor.counters()
+    };
+    let c = ops("(query [:find ?e :where [?e :n ?v] (not [?e :tag :t0])])");
+    let seed = c.iter().find(|c| c.op == "Seed").expect("a seed");
+    let anti = c.iter().find(|c| c.op == "AntiJoin").expect("an AntiJoin");
+    assert_eq!(seed.rows_out, 50, "one seed row per outer row");
+    assert_eq!(anti.rows_in, 50);
+    assert_eq!(anti.rows_out, 40);
+    assert!(c.iter().any(|c| c.op == "IndexNestedLoopJoin"));
+
+    let c = ops("(query [:find ?e :where [?e :n ?v] (not-join [?v] [?f :n ?v] [?f :tag :t0])])");
+    assert!(!c.iter().any(|c| c.op == "Seed"), "hashed: no seed");
+    let anti = c.iter().find(|c| c.op == "AntiJoin").expect("an AntiJoin");
+    assert_eq!(anti.rows_out, 40);
+    // The outer scan, the body's scan and its probes: each key read once.
+    let read: u64 = c.iter().filter(|c| c.op == "Scan").map(|c| c.rows_in).sum();
+    assert!(read <= 150, "the body is read once");
 }

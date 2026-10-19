@@ -236,6 +236,12 @@ impl Operator for Scan {
         }
     }
 
+    /// Start again; the constants resolved against the DICT are kept.
+    fn rewind(&mut self, _seed: &[Cell]) {
+        self.probe = None;
+        self.state = State::Start;
+    }
+
     fn close(&mut self) {
         self.state = State::Done;
         self.keys_buf = Vec::new();
