@@ -891,26 +891,13 @@ impl StratifiedEvaluator {
                     drop(registry_guard);
                     expanded
                 };
-                let candidates = if deferred.is_empty() {
-                    candidates
-                } else {
-                    use crate::query::datalog::executor::apply_expr;
+                let candidates = {
                     let fn_guard = self
                         .functions
                         .read()
                         .map_err(|_| err_coded!(ErrorCode::Qry008))?;
-                    let mut candidates = candidates;
-                    for clause in deferred {
-                        if let WhereClause::Expr { expr, binding: out } = clause {
-                            candidates = candidates
-                                .into_iter()
-                                .filter_map(|b| {
-                                    apply_expr(&expr, out.as_deref(), b, &fn_guard, false)
-                                })
-                                .collect();
-                        }
-                    }
-                    candidates
+                    let exprs: Vec<&WhereClause> = deferred.iter().collect();
+                    apply_expr_clauses_in_evaluator(candidates, &exprs, &fn_guard)
                 };
 
                 // Build temp_eval once per rule (outside the binding loop);
