@@ -83,8 +83,11 @@ The exclusion-set paths (`apply_not_clause`, `apply_not_join_clause`) already co
    pattern of the body. A body with no stored-attribute pattern is never hashed (there
    is nothing to scan once).
 7. **Hash or correlated (spec §4.4).** Correlated when the body is not closed, has no
-   stored-attribute pattern, or its first pattern in `optimizer::plan` order has a
-   constant or imported entity; hashed otherwise. A test switch beside `REORDER`,
+   stored-attribute pattern, or its first pattern in `optimizer::plan_seeded` order has an
+   imported entity; hashed otherwise. Deviation from spec §4.4: a first pattern with a
+   *constant* entity (and no imported one) is hashed, not correlated. Such a body reads
+   one entity range whatever the outer row, so reading it once and holding its few rows
+   is cheaper than probing the same range for every outer row. A test switch beside `REORDER`,
    `optimizer::SUBPLANS` (`Option<Mode>`, `None` = choose), forces one or the other,
    with `minigraf::__subplans(Mode) -> SubplanGuard` under `test-oracle` only. Forcing
    `Hash` on a body that cannot be hashed (not closed, or no pattern) leaves it
