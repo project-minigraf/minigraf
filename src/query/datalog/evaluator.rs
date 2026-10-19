@@ -725,16 +725,7 @@ impl StratifiedEvaluator {
 
             for pred in &stratum_preds {
                 for rule in registry.get_rules(pred) {
-                    let has_not = rule.body.iter().any(|c| {
-                        matches!(
-                            c,
-                            WhereClause::Not(_)
-                                | WhereClause::NotJoin { .. }
-                                | WhereClause::Or(_)
-                                | WhereClause::OrJoin { .. }
-                        )
-                    });
-                    if has_not {
+                    if crate::query::datalog::stratification::has_mixed_clause(&rule.body) {
                         mixed_rules.push((pred.clone(), rule));
                     } else {
                         positive_rules.push((pred.clone(), rule));
