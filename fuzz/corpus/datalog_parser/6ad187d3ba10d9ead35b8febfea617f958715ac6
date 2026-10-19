@@ -1,0 +1,1 @@
+(query [:where [e :m qee](a ?Ana{=4==}e)])

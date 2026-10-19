@@ -1,0 +1,1 @@
+(query [:finn :where [? ?na ?n]  [?e ?nae ?n] [(= ?n "f")]])

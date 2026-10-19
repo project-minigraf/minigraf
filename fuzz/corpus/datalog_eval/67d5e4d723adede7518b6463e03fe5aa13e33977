@@ -1,0 +1,1 @@
+(query [::w:where [?g ?name ?n] [(!= ?n "A|ce$")]])

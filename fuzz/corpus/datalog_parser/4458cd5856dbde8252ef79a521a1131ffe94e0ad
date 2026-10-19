@@ -1,0 +1,1 @@
+(query[:u:where(s ?p y) (ler:urnarpare= =y)])

@@ -1,1 +1,0 @@
-(query [:where [?e :name ?n] (not [ 1?eabnned e])])

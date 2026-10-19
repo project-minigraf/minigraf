@@ -1,0 +1,3 @@
+(query[:?1:where [q -e q](or
+[?e name e]) [q -e q](or
+[?e name e])])

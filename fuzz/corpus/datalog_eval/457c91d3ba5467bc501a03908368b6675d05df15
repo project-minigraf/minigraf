@@ -1,0 +1,1 @@
+(query [:f?e :where [?e : ?s] (not[false:age >] [?e :,e])])

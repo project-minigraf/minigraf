@@ -1,1 +1,0 @@
-(query [:findsumm :where (not-join [?e] [?e :active tree]) :where [?e9 l otrmaaa?rsuc] (noin [?e] [?e :ae nee])])

@@ -1,0 +1,5 @@
+(query [:find ?e :where [?e :nme ?n] (not(ry
+[: [?e are]])
+[?e :db/valid-to ?n] (noe ;ss 2ry :
+[4 [?em]])
+[?e wnme ?n] (noearpae= =) [aind ?e :wherru])])

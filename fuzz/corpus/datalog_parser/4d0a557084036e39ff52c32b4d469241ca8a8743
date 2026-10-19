@@ -1,0 +1,1 @@
+(query [::where [?_?e w ?f] (not [n ?e ru])])

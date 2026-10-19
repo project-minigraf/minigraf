@@ -1,0 +1,2 @@
+(query [:f:where [?e :ne ?n] (not [?e :nd eue])(e:e:yrss)(que:y[z])
+])

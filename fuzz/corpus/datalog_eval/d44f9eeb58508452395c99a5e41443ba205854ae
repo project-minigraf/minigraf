@@ -1,1 +1,0 @@
-(query [:fin:where [?e :color ?c] (not[?e :d ?etrumine] [?e :aind mine])])

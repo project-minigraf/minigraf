@@ -1,0 +1,1 @@
+(query [:where [?, :colo ?c] (not-join [?] [?_ :afindve truee])])

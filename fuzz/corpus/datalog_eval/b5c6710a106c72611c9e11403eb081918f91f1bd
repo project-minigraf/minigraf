@@ -1,0 +1,1 @@
+(query [:find ?n:fd:where[?e ??amEnot-join ?n][?0000000000000000000000e ??amEnot- ?n][?000000000000000000ua00?099 ??suame ?n]]) 

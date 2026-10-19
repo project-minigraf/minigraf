@@ -1,0 +1,1 @@
+(query[:d :where  (not(p=  p) [b n:ae])])

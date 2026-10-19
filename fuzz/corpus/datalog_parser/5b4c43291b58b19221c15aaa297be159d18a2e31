@@ -1,0 +1,1 @@
+(query [:find ?e :where[? -me ?n] (not(q?_??_??_ry ) [aind ?e :wherru])])

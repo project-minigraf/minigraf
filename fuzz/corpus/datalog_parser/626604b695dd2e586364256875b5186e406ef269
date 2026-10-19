@@ -1,0 +1,1 @@
+(query [:find (o ?)(c ?) :wh:find (co ?)[]])

@@ -1,2 +1,0 @@
-(query [:find ?e :where (query [:find ?e :where [?e :co? rlo] (not-joiay:[uzctive$true])])
-[?e :co? rlo] (not-joiay:[uzctfind ?e :where (query(query [:find ?e  [?e :co? rlo] (not-joiay:[uzctive$true])])joiay:[uzctive$true])ive$true])])

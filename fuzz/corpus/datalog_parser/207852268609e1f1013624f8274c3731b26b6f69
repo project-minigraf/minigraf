@@ -1,2 +1,0 @@
-(query [:with ?e ?x:where [?e ame ?n](le [(  
-?y) [?]])[?x :parent ?]])

@@ -1,0 +1,3 @@
+(query [:binwhere [?e ::wherl:(query [:firr[ruey(=8.n "Alic")e]])
+:::::c::::::::::::::(query [:fir[ruey(=8.n "@lic")e]])
+:::::::::::::::::::::::::co] (sot-join [?e] [?e :active$true])])

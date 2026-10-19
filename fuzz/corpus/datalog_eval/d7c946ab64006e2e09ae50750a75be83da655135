@@ -1,1 +1,0 @@
-(query [:fie :where (not-join [?e] [(query [:])?u e])])

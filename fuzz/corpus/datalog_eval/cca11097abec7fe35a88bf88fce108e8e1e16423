@@ -1,1 +1,0 @@
-(query [:find ?e :with ?e :where [ ?e :w ?c] (noe nil)])

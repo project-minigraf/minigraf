@@ -1,0 +1,1 @@
+(query [:find ?e :where [?o :color ?s] (no4-oji?nr[]e (no4?r[]e e : yor ?[]) : yor ?[])])

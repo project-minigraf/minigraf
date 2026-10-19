@@ -1,1 +1,0 @@
-(query [:find:where [?e :n?-e ?n] (not(que-c[]) )])

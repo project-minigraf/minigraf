@@ -1,0 +1,1 @@
+(query [::where [?e suolor ?c] (not-join [](query :hw[e(not-join [] [:? a rue])]) [:? a rue])])

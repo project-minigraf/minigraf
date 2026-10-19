@@ -1,3 +1,0 @@
-(query [ :where [?:db/valid-at ?n] ( M[u0+g])
- [ :
-:e ?n] (not [:e :b:n])])

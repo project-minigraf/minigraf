@@ -1,1 +1,0 @@
-(query [::where  [:e :e ?n] (not [:e Ʀan:n])[:e :e ?n] :where  [:e :e ?n] (not [:e Ʀan:n])])

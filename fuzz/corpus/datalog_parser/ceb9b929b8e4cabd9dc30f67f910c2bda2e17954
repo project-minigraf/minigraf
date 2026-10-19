@@ -1,0 +1,1 @@
+(query [:fi:where [?e :p?-me ?n] (not(s::ey)(a r= p  p) [ae :b e])])

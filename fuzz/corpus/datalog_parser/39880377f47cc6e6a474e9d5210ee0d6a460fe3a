@@ -1,0 +1,1 @@
+(query [:find ?e :where [?:n?me ?n]:any-valid-time (not(q [ :wh (not [au :anedt rue])]) [ae banned trte])(not(quess) [ae :ban true])(not(s[ wh (not [a:ban:ned true])]) [ae :b tru])])

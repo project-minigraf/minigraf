@@ -1,1 +1,0 @@
-(query [:findsumm :where [?_?e ma?a laorsuc] (nmt-join [?2=0015-298-2-77=800-0008015-29-2- tree])])

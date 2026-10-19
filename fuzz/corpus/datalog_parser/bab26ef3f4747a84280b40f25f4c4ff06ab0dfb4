@@ -1,0 +1,1 @@
+(query [:where (ru)[x:db/tx-count BBBB]:any-valid-time])

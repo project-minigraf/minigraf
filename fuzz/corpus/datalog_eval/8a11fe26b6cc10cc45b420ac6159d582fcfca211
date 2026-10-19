@@ -1,0 +1,1 @@
+(query [:f?e :where [?e :color ?s] (not[on-ie:age >] [?e :,e])])

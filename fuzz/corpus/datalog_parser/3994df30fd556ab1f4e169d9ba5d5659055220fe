@@ -1,0 +1,3 @@
+(query [:find ?e :where [?e :name1 ?n] (fot [ae :banned true])])(query [:ffind (count ?e) :wh#ere [?e f""""""""""""""""ttttttttttttt"""""""""""""""""""""
+"""""""n] (fot [ae :bann true])])(query [:find (count ?e) :wh#ere [?e f"""""""""""""""""""""""""""""""""""""
+""""""" :banned true])fffff :bnned true])fffff [:find ?e :where [?e :name1 ?l] (fot [ae :banned true]:name ?n]])

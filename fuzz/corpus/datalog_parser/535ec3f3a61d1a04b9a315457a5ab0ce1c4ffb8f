@@ -1,1 +1,0 @@
-(query [:find :where [?e e nil?n] (not [?e ?_ane ?_annee])])

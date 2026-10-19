@@ -1,0 +1,3 @@
+(query [:find ?e :where (query [:find ?ee [?u :crlo] (not-joiay:[uzcue])])
+[?e :co? rlo] (not-joi:__magi:__mag)
+[?e :co? rlo] (not-joiay:[uzctive:name])])

@@ -1,3 +1,0 @@
-(query [: :where (not(rule A)
- [?_?:bne dntrue][s[nae  ?n] (not )])
-])

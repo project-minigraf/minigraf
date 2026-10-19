@@ -1,1 +1,0 @@
-(query [:fi:max-results [?(?="Alice")]])

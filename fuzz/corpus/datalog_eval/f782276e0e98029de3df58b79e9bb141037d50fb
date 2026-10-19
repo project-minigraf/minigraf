@@ -1,0 +1,1 @@
+(query [:finn :w :where [?e ?nRRRRRRRame ?n]  :where [?e ?nue"Alice"] [(= ?n "Alice")]])

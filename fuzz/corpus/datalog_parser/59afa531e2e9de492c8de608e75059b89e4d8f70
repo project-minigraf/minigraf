@@ -1,1 +1,0 @@
-(query [:find ?(couzt ?el):wh:find (couzt ?)eee [ f ?n]])

@@ -1,9 +1,0 @@
-(query [:finde :where (quesue)
-[?e wname ?n] (noe ?ss :
-[: [?e aren6:?]])
-[?e wname ?n] (noe ?sssMssssssss:
-[: [?n :n ?]])
-[?e wnate ?n] (noe ?ssssssssss:
-[: [?e : ?]])
-[?e wname ?n] (noe ?ss :
-[: ?ug])])

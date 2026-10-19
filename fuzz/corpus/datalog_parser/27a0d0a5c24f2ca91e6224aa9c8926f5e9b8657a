@@ -1,0 +1,1 @@
+(query [:w :where[?e:n n] (not [ae :na t]) :where[e:a? mn] (not [: njactaba t])])

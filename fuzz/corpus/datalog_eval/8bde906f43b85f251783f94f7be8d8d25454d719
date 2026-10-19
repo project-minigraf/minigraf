@@ -1,1 +1,0 @@
-(query [:find ?e0:::any-vltaid-ime :fin-tvalid:any-vltaid-ime :Fe ])

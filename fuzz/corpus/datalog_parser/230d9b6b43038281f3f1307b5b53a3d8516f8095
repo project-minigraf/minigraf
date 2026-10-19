@@ -1,1 +1,0 @@
-(query[ :where [ue:name ?a?n] (*:dind)(?y[[]]*)[?x :ep ?B5]])

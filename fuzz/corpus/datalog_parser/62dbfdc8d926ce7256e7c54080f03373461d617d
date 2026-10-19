@@ -1,1 +1,0 @@
-(query [: :where [?e :e ?n] (not(que) (+++r))])

@@ -1,1 +1,0 @@
-(query [:?e :where [?e olor ?c] (or ?[?rue])])

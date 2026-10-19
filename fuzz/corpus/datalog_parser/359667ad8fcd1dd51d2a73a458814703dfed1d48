@@ -1,1 +1,0 @@
-(query [:r:where [?:e ?n] (lot M[?nd t0+00ug])])

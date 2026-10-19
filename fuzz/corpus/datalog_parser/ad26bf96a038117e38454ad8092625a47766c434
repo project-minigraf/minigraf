@@ -1,0 +1,1 @@
+(query [:with ?e ?x ?x:where [?e ea _?n](le)[?x :pt ?]])

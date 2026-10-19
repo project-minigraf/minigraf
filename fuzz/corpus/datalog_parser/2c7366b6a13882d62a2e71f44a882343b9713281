@@ -1,4 +1,0 @@
-(query [:?e :where [?e :n?-me ?n] (not(lu:
-[: [?e aren0:nama ?]])
-[?e wname ?n] (n?[: [?em:ana n ?]])
-[?e me ?n] (noearpry [ :wh (nGot)]) [Ye :banned true])])

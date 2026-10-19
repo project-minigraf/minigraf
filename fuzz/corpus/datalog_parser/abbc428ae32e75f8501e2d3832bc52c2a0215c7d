@@ -1,1 +1,0 @@
-(query [:find (zt ?e):wl:find (couzt ?e):where [?e fffff ?n]])

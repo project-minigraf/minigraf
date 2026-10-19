@@ -1,1 +1,0 @@
-(query [ :where [U e ?n](lo$s:f[?])])

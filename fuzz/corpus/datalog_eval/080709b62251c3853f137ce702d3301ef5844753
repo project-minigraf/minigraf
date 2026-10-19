@@ -1,1 +1,0 @@
-(query [:find ?e :where  [e :color ?c] (not-join [?OO ?eOOOOOO ?eOOOOOnd ?eO?_IIIIind ?eOOOOOOIind ?IIIIIIIIIfind ?eOOOfind ?eOOOojtofir ?c?olor ?c>et-Zn()otodf ?eOOOoIIIICIIIII?_IIIIIIIe] [?tend ?n : trUe])])

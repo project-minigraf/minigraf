@@ -1,1 +1,0 @@
-(query [:wit:find ? ?e ?e ?ed ?w])

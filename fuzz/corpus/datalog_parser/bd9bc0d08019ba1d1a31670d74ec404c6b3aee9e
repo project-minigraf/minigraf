@@ -1,0 +1,1 @@
+(query [:find (cou-t ?e):wh:find (uzt ?e):where [?e fffd ?] (co ?e):wh:iwh:find (cuzt ?e) (zt ?):wh:find (c/zt ?e):wh])

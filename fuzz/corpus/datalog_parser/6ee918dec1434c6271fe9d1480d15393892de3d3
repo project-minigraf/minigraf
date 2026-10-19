@@ -1,1 +1,0 @@
-(query[:be :where[?e ae ?n] (countnor)])

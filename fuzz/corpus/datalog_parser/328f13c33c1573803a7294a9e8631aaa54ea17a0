@@ -1,1 +1,0 @@
-(query [:where(not [:b an e])])

@@ -1,0 +1,1 @@
+(query [:fi:where [?-?:Ame ?n] (not(qmatches?ssssssrr) [:b +e])])

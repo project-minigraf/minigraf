@@ -1,1 +1,0 @@
-(query [:su :where [?e l om?rsuc] (not-join[??IIIIIIind ?IIIIIIIfind ?eOOOojto-IIIIIKIIIIIIICIIIIIIIIIIIIIfind ?eOOOojtnd ?eOOOojto-IIIIIIIIIIIIe] [?e :act drue])])

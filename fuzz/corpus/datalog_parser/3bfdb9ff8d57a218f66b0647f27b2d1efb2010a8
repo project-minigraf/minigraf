@@ -1,0 +1,1 @@
+(query [:where(sc):any-valid-time(?n ):any-valid-time[?x :p]])

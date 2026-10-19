@@ -1,1 +1,0 @@
-(query [:?e :where [?e :color ?c] (not-not-Znot ?:age:whern-t)(otZnot ?:age:wh)])

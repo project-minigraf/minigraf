@@ -1,1 +1,0 @@
-(query [:finffinn :w :where [?e ?nam2e ?p]  :where :where [?E ?name ?o]  :where [?7e ?nameEery ?n] [(= ?n "Alicez")] :w :where [?e ?name ?n]  :where :where [?e ?namne ?]  :where [?e ?naname ?n] [(= ?"Alcie")]])

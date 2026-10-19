@@ -1,1 +1,0 @@
-(query [:where (rucccc)[x :db/tx-count BBBBB]:any-valid-time])

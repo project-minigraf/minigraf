@@ -1,0 +1,3 @@
+(query [ :where [?e w ?n] (noe ?s:
+[])
+[?e e ?n] (noe* ?ss>sss?[ ug])])

@@ -1,0 +1,4 @@
+(query [:e:where (no5)(n ?o
+_?
+5)(n ?o
+2.)])

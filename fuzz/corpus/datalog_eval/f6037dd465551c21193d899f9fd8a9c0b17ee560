@@ -1,1 +1,0 @@
-(query [:fin/n :w :where [?---e ?name ?n]  :where [?e ?name ?neOOOtIIIIIIIIIIIIIIIIIIind] [(= ?n "Alice")]])

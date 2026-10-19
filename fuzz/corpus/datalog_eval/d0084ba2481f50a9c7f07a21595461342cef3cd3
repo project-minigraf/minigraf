@@ -1,1 +1,0 @@
-(query [:find ?e :where  [e :comor ?c] (not-join [?OO ?eOOOOOO ?eIIIIind ?eOOOOIIIIIIIICIInd ?eOOOOOOIII?_IIIIIIIe] [?tend ?n : true])])

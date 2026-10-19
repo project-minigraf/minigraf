@@ -1,1 +1,0 @@
-(query [:dssumu :where [?e l om] (not-join [?e] [?e :active tee][?e :active te])])

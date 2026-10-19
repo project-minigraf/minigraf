@@ -1,0 +1,1 @@
+(query [:finn :w :where [?g ?am0 ?jeryn]  :where [?e ?name ?n] [(!= ?n "A|ce$u?")]])

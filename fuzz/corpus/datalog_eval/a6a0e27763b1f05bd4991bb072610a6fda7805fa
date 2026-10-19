@@ -1,1 +1,0 @@
-(query [:fin:where [?e :lroco ?c] (not[?e :ainde? trumine] [?e :dde? trumine] [?e :de? trumi55umine])])

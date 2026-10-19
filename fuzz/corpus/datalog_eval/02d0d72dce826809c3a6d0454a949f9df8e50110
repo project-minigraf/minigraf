@@ -1,1 +1,0 @@
-(query[:findsum :where [?e l om?rsuc] (not-join [?e](query [:findrum ]) [?e :active tree])])

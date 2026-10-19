@@ -1,1 +1,0 @@
-(query [:wit :where [?:mn?  en] (not [aeBFBBBB: tru])  (not [ae :banne true])])

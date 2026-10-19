@@ -1,1 +1,0 @@
-(query [:where  ( t=?y (ulnrat=y)+u)[(a ?y)]])

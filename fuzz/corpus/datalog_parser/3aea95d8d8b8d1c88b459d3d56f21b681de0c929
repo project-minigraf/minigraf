@@ -1,1 +1,0 @@
-(query [:y:where [q e $n] (or:u)[?:6]])

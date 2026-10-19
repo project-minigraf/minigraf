@@ -1,0 +1,1 @@
+(query [:f :where  [e :color ?c] (not-join [?OO ?8888?IIIIII?_IIIMI ?eIIind ?eOOOIIIIe] [?tetrue])])

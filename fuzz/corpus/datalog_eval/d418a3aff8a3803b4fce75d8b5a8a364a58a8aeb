@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e :cor ?c] (not-join [?eeyru] [? :active true])])

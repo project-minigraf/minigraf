@@ -1,2 +1,0 @@
-(query [:find :where [?e :ne ?n] (not [?e :d bennatRue])(query[(-++ )])
-])

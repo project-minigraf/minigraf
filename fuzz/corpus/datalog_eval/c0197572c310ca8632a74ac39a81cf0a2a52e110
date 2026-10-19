@@ -1,0 +1,1 @@
+(query [::where [?e :color ?c] (not-join [?pppppppppppm?pmmmmmmmmmmmmmmmmmmmmmmm?e ?name ?n] [(= ?n "Alic%") ?n] :w :erNe :where [?e ?naend true true])])
