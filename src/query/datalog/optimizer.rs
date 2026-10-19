@@ -578,6 +578,8 @@ mod tests {
         {
             let _h = set_subplans(Subplans::Hash);
             assert_eq!(subplans(), Subplans::Hash);
+            // WASI has no threads.
+            #[cfg(not(target_arch = "wasm32"))]
             std::thread::spawn(|| assert_eq!(subplans(), Subplans::Choose))
                 .join()
                 .unwrap();
