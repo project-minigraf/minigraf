@@ -158,3 +158,31 @@ fn branches_naming_different_outer_variables() {
         );
     }
 }
+
+#[test]
+fn or_join_branch_without_a_join_variable() {
+    // A branch that does not bind `?e` constrains nothing about it: it
+    // matches every outer row when it has a row. The joined path dropped its
+    // rows; the per-row path (taken for a branch reading outer metadata or
+    // an outer variable in an expression) kept them (#546).
+    let db = Minigraf::in_memory().unwrap();
+    db.execute("(transact [[:p :n 1] [:q :n 1] [:q :zz 2] [:r :a 1]])")
+        .unwrap();
+    let names = &[":p", ":q"];
+    for (q, want) in [
+        (
+            "[:find ?e :where [?e :n _] (or-join [?e] [?x :a 1] [?e :zz 9])]",
+            vec![":p", ":q"],
+        ),
+        (
+            "[:find ?e :where [?e :n _] (or-join [?e] (and [?x :a 1] (not [?e :zz 2])) [?e :zz 9])]",
+            vec![":p"],
+        ),
+        (
+            "[:find ?e :where [?e :n _] (or-join [?e] [?x :b 1] [?e :zz 9])]",
+            vec![],
+        ),
+    ] {
+        assert_eq!(rows(&db, q, names), want, "{q}");
+    }
+}

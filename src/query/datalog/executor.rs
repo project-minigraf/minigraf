@@ -1330,12 +1330,9 @@ pub(crate) fn reads_metadata(clauses: &[WhereClause]) -> bool {
     })
 }
 
-/// The variables an `or` / `or-join` branch's expressions read that the branch
-/// itself never binds — by a pattern, a rule invocation or an expression output,
-/// its own or an enclosing nested branch's. Only the outer row can bind them, so
-/// a branch with any must be seeded with that row, not evaluated from an empty
-/// binding and joined afterwards (#620).
-pub(crate) fn branch_outer_reads(branch: &[WhereClause]) -> std::collections::HashSet<String> {
+/// The variables an `or` / `or-join` branch binds itself: by a pattern, a
+/// rule invocation or an expression output.
+fn branch_binds(branch: &[WhereClause]) -> std::collections::HashSet<String> {
     let mut bound = std::collections::HashSet::new();
     for c in branch {
         match c {
@@ -1357,6 +1354,16 @@ pub(crate) fn branch_outer_reads(branch: &[WhereClause]) -> std::collections::Ha
             _ => {}
         }
     }
+    bound
+}
+
+/// The variables an `or` / `or-join` branch's expressions read that the branch
+/// itself never binds — by a pattern, a rule invocation or an expression output,
+/// its own or an enclosing nested branch's. Only the outer row can bind them, so
+/// a branch with any must be seeded with that row, not evaluated from an empty
+/// binding and joined afterwards (#620).
+pub(crate) fn branch_outer_reads(branch: &[WhereClause]) -> std::collections::HashSet<String> {
+    let bound = branch_binds(branch);
     let mut reads = std::collections::HashSet::new();
     for c in branch {
         match c {
@@ -2301,11 +2308,13 @@ pub(crate) fn apply_or_clauses(
                 // others are fresh inside), and keep the distinct rows some
                 // branch matches, as the joined path below does. So does a
                 // branch whose expression reads a join variable it does not
-                // bind itself (#620).
-                if sorted_oj_branches
-                    .iter()
-                    .any(|b| reads_metadata(b) || !branch_outer_reads(b).is_empty())
-                {
+                // bind itself (#620), and one that does not bind every join
+                // variable: the joined path would drop its rows (#546).
+                if sorted_oj_branches.iter().any(|b| {
+                    reads_metadata(b)
+                        || !branch_outer_reads(b).is_empty()
+                        || !join_vars.iter().all(|v| branch_binds(b).contains(v))
+                }) {
                     let mut seen: std::collections::HashSet<Vec<(String, Value)>> =
                         std::collections::HashSet::new();
                     let mut result: Vec<Binding> = Vec::new();
