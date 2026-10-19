@@ -722,7 +722,7 @@ impl DatalogExecutor {
             filtered_facts.clone(),
             &rules_guard,
             query.as_of.clone(),
-            query.valid_at.clone(),
+            Some(branch_valid_at(&valid_at_value)),
             &registry,
         )?;
         drop(rules_guard);
@@ -973,7 +973,7 @@ impl DatalogExecutor {
             derived_facts.clone(),
             &rules_guard,
             query.as_of.clone(),
-            query.valid_at.clone(),
+            Some(branch_valid_at(&valid_at_value)),
             &registry,
         )?;
         drop(rules_guard);
@@ -1894,6 +1894,15 @@ fn project_find_specs(bindings: &[Binding], find_specs: &[FindSpec]) -> Vec<Vec<
         }
     }
     results
+}
+
+/// The valid time an `or` branch binds `:db/valid-at` from: the query's,
+/// with "now" read once for the whole query (#546), not again per branch.
+fn branch_valid_at(valid_at_value: &Value) -> ValidAt {
+    match valid_at_value {
+        Value::Integer(t) => ValidAt::Timestamp(*t),
+        _ => ValidAt::AnyValidTime,
+    }
 }
 
 /// Evaluate a single branch of an `or`/`or-join` against incoming bindings.
