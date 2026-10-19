@@ -435,3 +435,60 @@ fn or_branch_expression_reads_outer_variable_in_rule_body() {
     let r = same(&db, "(query [:find ?w :where (pick ?e ?w)])");
     assert_eq!(ints(&r), vec!["i:1", "i:2"], "or-and in a rule body");
 }
+
+// ── #625: an expression reading a variable only an `or` binds ────────────────
+
+fn issue_625_data(db: &Minigraf) {
+    db.execute("(transact [[:a :n 1] [:b :n 2] [:c :ok true]])")
+        .unwrap();
+}
+
+#[test]
+fn expression_reads_variable_bound_only_by_or() {
+    let db = Minigraf::in_memory().unwrap();
+    issue_625_data(&db);
+    let r = same(
+        &db,
+        "(query [:find ?e ?x :where [?e :n _] (or [?e :n ?x] [?e :ok ?x]) [(> ?x 1)]])",
+    );
+    assert_eq!(r.len(), 1, "only :b has ?x over 1");
+    // Mixed: one variable from a pattern, the other from the or.
+    let r = same(
+        &db,
+        "(query [:find ?x :where [?e :n ?v] (or [?e :n ?x] [?e :ok ?x]) [(= ?x ?v)]])",
+    );
+    assert_eq!(ints(&r), vec!["i:1", "i:2"], "?x equals ?v on both rows");
+}
+
+#[test]
+fn expression_chain_on_variable_bound_only_by_or() {
+    let db = Minigraf::in_memory().unwrap();
+    issue_625_data(&db);
+    let r = same(
+        &db,
+        "(query [:find ?y :where [?e :n _] (or [?e :n ?x] [?e :ok ?x]) [(+ ?x 10) ?y] [(> ?y 11)]])",
+    );
+    assert_eq!(ints(&r), vec!["i:12"], "?y from ?x, then filtered");
+    // A not reading the expression's output runs after it.
+    let r = same(
+        &db,
+        "(query [:find ?y :where [?e :n _] (or [?e :n ?x] [?e :ok ?x]) [(+ ?x 10) ?y] (not [(> ?y 11)])])",
+    );
+    assert_eq!(ints(&r), vec!["i:11"], "the not sees ?y");
+}
+
+#[test]
+fn expression_reads_variable_bound_only_by_or_with_rules() {
+    let db = Minigraf::in_memory().unwrap();
+    issue_625_data(&db);
+    db.execute("(rule [(num ?e) [?e :n _]])").unwrap();
+    let r = same(
+        &db,
+        "(query [:find ?x :where (num ?e) (or [?e :n ?x] [?e :ok ?x]) [(> ?x 1)]])",
+    );
+    assert_eq!(ints(&r), vec!["i:2"], "query calling a rule");
+    db.execute("(rule [(big ?e ?x) [?e :n _] (or [?e :n ?x] [?e :ok ?x]) [(> ?x 1)]])")
+        .unwrap();
+    let r = same(&db, "(query [:find ?x :where (big ?e ?x)])");
+    assert_eq!(ints(&r), vec!["i:2"], "rule body");
+}

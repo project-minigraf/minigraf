@@ -307,8 +307,8 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
             b.clause(c.clone())?;
         }
     }
-    // A `not` whose variables only an `or` binds runs last, as on the
-    // executor.
+    // An expression or a `not` whose variables only an `or` binds runs
+    // last, expressions first, as on the executor (#625).
     for c in sorted(deferred) {
         b.clause(c)?;
     }

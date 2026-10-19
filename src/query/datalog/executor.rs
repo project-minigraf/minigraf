@@ -727,15 +727,26 @@ impl DatalogExecutor {
         )?;
         drop(rules_guard);
 
-        // Apply Not/NotJoin clauses the planner couldn't place inline (#248) — their
-        // variables are only bound by the Or/OrJoin pass above, so they must run here,
-        // after it. Sorted cheapest-first, same as the pre-#248 post-filter ordering.
+        // Apply Not/NotJoin clauses the planner couldn't place inline (#248), and
+        // expressions (#625) — their variables are only bound by the Or/OrJoin pass
+        // above, so they must run here, after it. Sorted cheapest-first, same as the
+        // pre-#248 post-filter ordering; expressions cost 0 and come first, so a
+        // stable sort keeps them ahead of the nots, in text order.
         let mut deferred_not_clauses = deferred_not_clauses;
         if optimizer::reorder() {
             deferred_not_clauses.sort_by_key(optimizer::clause_cost);
         }
         for clause in deferred_not_clauses {
             bindings = match clause {
+                WhereClause::Expr { expr, binding: out } => {
+                    let replace = out
+                        .as_deref()
+                        .is_some_and(|var| binders.expression(&expr, var));
+                    bindings
+                        .into_iter()
+                        .filter_map(|b| apply_expr(&expr, out.as_deref(), b, &registry, replace))
+                        .collect()
+                }
                 WhereClause::Not(body) => apply_not_clause(
                     bindings,
                     &body,
@@ -978,8 +989,9 @@ impl DatalogExecutor {
         )?;
         drop(rules_guard);
 
-        // Apply Not/NotJoin clauses the planner couldn't place inline (#248) — their
-        // variables are only bound by the Or/OrJoin pass above. (The StratifiedEvaluator
+        // Apply Not/NotJoin clauses the planner couldn't place inline (#248), and
+        // expressions (#625) — their variables are only bound by the Or/OrJoin pass
+        // above. Expressions come first, as above. (The StratifiedEvaluator
         // handles `not`/`not-join` in rule bodies; this handles them appearing directly
         // in the query body alongside rule invocations.)
         let mut deferred_not_clauses = deferred_not_clauses;
@@ -988,6 +1000,15 @@ impl DatalogExecutor {
         }
         for clause in deferred_not_clauses {
             bindings = match clause {
+                WhereClause::Expr { expr, binding: out } => {
+                    let replace = out
+                        .as_deref()
+                        .is_some_and(|var| binders.expression(&expr, var));
+                    bindings
+                        .into_iter()
+                        .filter_map(|b| apply_expr(&expr, out.as_deref(), b, &registry, replace))
+                        .collect()
+                }
                 WhereClause::Not(body) => apply_not_clause_derived(
                     bindings,
                     &body,
