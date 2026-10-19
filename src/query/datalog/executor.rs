@@ -2026,6 +2026,13 @@ pub(crate) fn evaluate_branch(
 /// Non-Or/OrJoin clauses are ignored (handled elsewhere).
 /// For `Or`: union results from all branches (deduplicated by full binding map).
 /// For `OrJoin`: union results, then project out branch-private variables.
+/// A branch row meets an outer row by join equality (#546, spec §5.3): a
+/// keyword equals a ref to the entity it names; floats compare by IEEE `==`
+/// (`Value`'s own equality). Dedup keys stay exact `Value`s.
+fn join_value(v: &Value) -> Value {
+    PatternMatcher::normalize_join_value(v)
+}
+
 pub(crate) fn apply_or_clauses(
     clauses: &[WhereClause],
     mut bindings: Vec<Binding>,
@@ -2162,7 +2169,8 @@ pub(crate) fn apply_or_clauses(
                                         let mut k: Vec<(String, Value)> = branch_var_names
                                             .iter()
                                             .filter_map(|v| {
-                                                b.get(*v).map(|val| (v.to_string(), val.clone()))
+                                                b.get(*v)
+                                                    .map(|val| (v.to_string(), join_value(val)))
                                             })
                                             .collect();
                                         k.sort_unstable_by(|a, b| a.0.cmp(&b.0));
@@ -2173,7 +2181,7 @@ pub(crate) fn apply_or_clauses(
                                 let mut k: Vec<(String, Value)> = branch_var_names
                                     .iter()
                                     .filter_map(|v| {
-                                        incoming.get(*v).map(|val| (v.to_string(), val.clone()))
+                                        incoming.get(*v).map(|val| (v.to_string(), join_value(val)))
                                     })
                                     .collect();
                                 k.sort_unstable_by(|a, b| a.0.cmp(&b.0));
@@ -2211,7 +2219,7 @@ pub(crate) fn apply_or_clauses(
                 for b in union_bindings {
                     let key: Vec<(String, Value)> = shared_vars
                         .iter()
-                        .filter_map(|v| b.get(v).map(|val| (v.clone(), val.clone())))
+                        .filter_map(|v| b.get(v).map(|val| (v.clone(), join_value(val))))
                         .collect();
                     branch_map.entry(key).or_default().push(b);
                 }
@@ -2223,7 +2231,7 @@ pub(crate) fn apply_or_clauses(
                 for incoming in &bindings {
                     let key: Vec<(String, Value)> = shared_vars
                         .iter()
-                        .filter_map(|v| incoming.get(v).map(|val| (v.clone(), val.clone())))
+                        .filter_map(|v| incoming.get(v).map(|val| (v.clone(), join_value(val))))
                         .collect();
                     if let Some(matches) = branch_map.get(&key) {
                         for branch_binding in matches {
@@ -2344,7 +2352,9 @@ pub(crate) fn apply_or_clauses(
                         .map(|incoming| {
                             join_vars
                                 .iter()
-                                .filter_map(|v| incoming.get(v).map(|val| (v.clone(), val.clone())))
+                                .filter_map(|v| {
+                                    incoming.get(v).map(|val| (v.clone(), join_value(val)))
+                                })
                                 .collect::<Vec<_>>()
                         })
                         .collect()
@@ -2374,7 +2384,7 @@ pub(crate) fn apply_or_clauses(
                         if seen_proj.insert(key) {
                             let bkey: Vec<(String, Value)> = join_vars
                                 .iter()
-                                .filter_map(|v| b.get(v).map(|val| (v.clone(), val.clone())))
+                                .filter_map(|v| b.get(v).map(|val| (v.clone(), join_value(val))))
                                 .collect();
                             branch_map.entry(bkey).or_default().push(b);
                         }
@@ -2391,7 +2401,7 @@ pub(crate) fn apply_or_clauses(
                 for incoming in &bindings {
                     let key: Vec<(String, Value)> = join_vars
                         .iter()
-                        .filter_map(|v| incoming.get(v).map(|val| (v.clone(), val.clone())))
+                        .filter_map(|v| incoming.get(v).map(|val| (v.clone(), join_value(val))))
                         .collect();
                     if let Some(matches) = branch_map.get(&key) {
                         for branch_binding in matches {
