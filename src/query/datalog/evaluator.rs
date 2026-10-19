@@ -661,6 +661,8 @@ impl StratifiedEvaluator {
         drop(registry); // release read lock before recursive calls
 
         let accumulated = self.storage.clone();
+        // Facts the mixed rules derive, for `max_results` across repeated passes.
+        let mut mixed_derived = 0usize;
 
         for stratum in 0..=max_stratum {
             let registry = self
@@ -692,269 +694,340 @@ impl StratifiedEvaluator {
             }
             drop(registry);
 
-            // Evaluate positive-only rules via RecursiveEvaluator
-            if !positive_rules.is_empty() {
-                let mut sub_registry = RuleRegistry::new();
-                for (pred, rule) in &positive_rules {
-                    sub_registry.register_rule_unchecked(pred.clone(), rule.clone());
-                }
-                let sub_rules = Arc::new(RwLock::new(sub_registry));
-                let sub_eval = RecursiveEvaluator::new(
-                    accumulated.clone(),
-                    sub_rules,
-                    self.functions.clone(),
-                    self.max_iterations,
-                    self.max_derived_facts,
-                    self.max_results,
-                )
-                .with_valid_at(self.valid_at.clone());
-                let derived = sub_eval.evaluate_recursive_rules(&stratum_preds)?;
-                // Snapshot existing fact keys so we only load truly new (derived) facts
-                let existing: HashSet<(uuid::Uuid, String, Vec<u8>)> = accumulated
-                    .get_asserted_facts()?
-                    .into_iter()
-                    .map(|f| {
-                        let encoded = encode_value(&f.value);
-                        (f.entity, f.attribute, encoded)
-                    })
-                    .collect();
-                for fact in derived.get_asserted_facts()? {
-                    let key = (
-                        fact.entity,
-                        fact.attribute.clone(),
-                        encode_value(&fact.value),
-                    );
-                    if !existing.contains(&key) {
-                        let _ = accumulated.load_fact(fact);
-                    }
-                }
-                accumulated.restore_tx_counter()?;
-            }
+            // Recursion through a mixed rule stays in this stratum (#633): some
+            // rule here calls a mixed predicate of the stratum. Then the mixed
+            // rules' output feeds the positive rules and themselves, so the
+            // stratum repeats until the mixed pass derives nothing new. Every
+            // negated predicate sits in a lower, complete stratum, so this is
+            // monotone.
+            let mixed_preds: HashSet<&str> = mixed_rules.iter().map(|(p, _)| p.as_str()).collect();
+            let repeat = positive_rules
+                .iter()
+                .chain(&mixed_rules)
+                .flat_map(|(_, rule)| rule.body.iter().flat_map(|c| c.rule_invocations()))
+                .any(|dep| mixed_preds.contains(dep));
 
-            // Evaluate mixed rules (with not-filter)
-            for (_pred, rule) in &mixed_rules {
-                // Collect Pattern and Expr clauses for the planner.
-                // RuleInvocations are converted to Pattern; Not/NotJoin/Or/OrJoin extracted separately.
-                let mut plan_clauses: Vec<WhereClause> = Vec::new();
-                for c in &rule.body {
-                    match c {
-                        WhereClause::Pattern(_) | WhereClause::Expr { .. } => {
-                            plan_clauses.push(c.clone());
+            let mut pass = 0;
+            loop {
+                pass += 1;
+                if pass > self.max_iterations {
+                    return Err(err_coded!(
+                        ErrorCode::Int020,
+                        format!(
+                            "Max iterations ({}) exceeded. Possible infinite recursion or cycle in rules.",
+                            self.max_iterations
+                        )
+                    ));
+                }
+
+                // Evaluate positive-only rules via RecursiveEvaluator
+                if !positive_rules.is_empty() {
+                    let mut sub_registry = RuleRegistry::new();
+                    for (pred, rule) in &positive_rules {
+                        sub_registry.register_rule_unchecked(pred.clone(), rule.clone());
+                    }
+                    let sub_rules = Arc::new(RwLock::new(sub_registry));
+                    let sub_eval = RecursiveEvaluator::new(
+                        accumulated.clone(),
+                        sub_rules,
+                        self.functions.clone(),
+                        self.max_iterations,
+                        self.max_derived_facts,
+                        self.max_results,
+                    )
+                    .with_valid_at(self.valid_at.clone());
+                    let derived = sub_eval.evaluate_recursive_rules(&stratum_preds)?;
+                    // Snapshot existing fact keys so we only load truly new (derived) facts
+                    let existing: HashSet<(uuid::Uuid, String, Vec<u8>)> = accumulated
+                        .get_asserted_facts()?
+                        .into_iter()
+                        .map(|f| {
+                            let encoded = encode_value(&f.value);
+                            (f.entity, f.attribute, encoded)
+                        })
+                        .collect();
+                    for fact in derived.get_asserted_facts()? {
+                        let key = (
+                            fact.entity,
+                            fact.attribute.clone(),
+                            encode_value(&fact.value),
+                        );
+                        if !existing.contains(&key) {
+                            let _ = accumulated.load_fact(fact);
                         }
-                        WhereClause::RuleInvocation { predicate, args } => {
-                            let pattern = match args.len() {
-                                1 => args.first().map(|a0| {
-                                    Pattern::new(
-                                        a0.clone(),
-                                        EdnValue::Keyword(format!(":{}", predicate)),
-                                        EdnValue::Symbol("?_rule_value".to_string()),
-                                    )
-                                }),
-                                2 => args.first().and_then(|a0| {
-                                    args.get(1).map(|a1| {
+                    }
+                    accumulated.restore_tx_counter()?;
+                }
+
+                // Evaluate mixed rules (with not-filter). A head already in
+                // `accumulated` is skipped, so a repeated pass sees what is new.
+                let mut known: HashSet<(uuid::Uuid, String, Vec<u8>)> = HashSet::new();
+                if !mixed_rules.is_empty() {
+                    known = accumulated
+                        .get_asserted_facts()?
+                        .into_iter()
+                        .map(|f| {
+                            let encoded = encode_value(&f.value);
+                            (f.entity, f.attribute, encoded)
+                        })
+                        .collect();
+                }
+                let mut new_in_pass = 0usize;
+                for (_pred, rule) in &mixed_rules {
+                    // Collect Pattern and Expr clauses for the planner.
+                    // RuleInvocations are converted to Pattern; Not/NotJoin/Or/OrJoin extracted separately.
+                    let mut plan_clauses: Vec<WhereClause> = Vec::new();
+                    for c in &rule.body {
+                        match c {
+                            WhereClause::Pattern(_) | WhereClause::Expr { .. } => {
+                                plan_clauses.push(c.clone());
+                            }
+                            WhereClause::RuleInvocation { predicate, args } => {
+                                let pattern = match args.len() {
+                                    1 => args.first().map(|a0| {
                                         Pattern::new(
                                             a0.clone(),
                                             EdnValue::Keyword(format!(":{}", predicate)),
-                                            a1.clone(),
+                                            EdnValue::Symbol("?_rule_value".to_string()),
                                         )
-                                    })
-                                }),
-                                _ => None,
-                            };
-                            if let Some(p) = pattern {
-                                plan_clauses.push(WhereClause::Pattern(p));
+                                    }),
+                                    2 => args.first().and_then(|a0| {
+                                        args.get(1).map(|a1| {
+                                            Pattern::new(
+                                                a0.clone(),
+                                                EdnValue::Keyword(format!(":{}", predicate)),
+                                                a1.clone(),
+                                            )
+                                        })
+                                    }),
+                                    _ => None,
+                                };
+                                if let Some(p) = pattern {
+                                    plan_clauses.push(WhereClause::Pattern(p));
+                                }
                             }
+                            WhereClause::Not(_)
+                            | WhereClause::NotJoin { .. }
+                            | WhereClause::Or(_)
+                            | WhereClause::OrJoin { .. } => {}
                         }
-                        WhereClause::Not(_)
-                        | WhereClause::NotJoin { .. }
-                        | WhereClause::Or(_)
-                        | WhereClause::OrJoin { .. } => {}
                     }
-                }
 
-                let mut not_clauses: Vec<Vec<WhereClause>> = rule
-                    .body
-                    .iter()
-                    .filter_map(|c| match c {
-                        WhereClause::Not(inner) => Some(inner.clone()),
-                        _ => None,
-                    })
-                    .collect();
-
-                let mut not_join_clauses: Vec<(Vec<String>, Vec<WhereClause>)> = rule
-                    .body
-                    .iter()
-                    .filter_map(|c| match c {
-                        WhereClause::NotJoin { join_vars, clauses } => {
-                            Some((join_vars.clone(), clauses.clone()))
-                        }
-                        _ => None,
-                    })
-                    .collect();
-
-                if crate::query::datalog::optimizer::reorder() {
-                    not_clauses.sort_by_key(|body| {
-                        crate::query::datalog::optimizer::clause_cost(&WhereClause::Not(
-                            body.clone(),
-                        ))
-                    });
-                    not_join_clauses.sort_by_key(|(vars, clauses)| {
-                        crate::query::datalog::optimizer::clause_cost(&WhereClause::NotJoin {
-                            join_vars: vars.clone(),
-                            clauses: clauses.clone(),
+                    let mut not_clauses: Vec<Vec<WhereClause>> = rule
+                        .body
+                        .iter()
+                        .filter_map(|c| match c {
+                            WhereClause::Not(inner) => Some(inner.clone()),
+                            _ => None,
                         })
-                    });
-                }
+                        .collect();
 
-                // Compute once; reuse for plan loop, apply_or_clauses, not-body matching.
-                let accumulated_facts: Arc<[Fact]> = Arc::from(accumulated.get_asserted_facts()?);
+                    let mut not_join_clauses: Vec<(Vec<String>, Vec<WhereClause>)> = rule
+                        .body
+                        .iter()
+                        .filter_map(|c| match c {
+                            WhereClause::NotJoin { join_vars, clauses } => {
+                                Some((join_vars.clone(), clauses.clone()))
+                            }
+                            _ => None,
+                        })
+                        .collect();
 
-                let matcher = PatternMatcher::from_slice_with_valid_at(
-                    accumulated_facts.clone(),
-                    self.valid_at.clone(),
-                );
-
-                // Plan: assigns index hints + pushes Expr to earliest binding position.
-                // Not/NotJoin are excluded from plan_clauses above, so `deferred` holds
-                // only expressions whose variables an Or/OrJoin binds (#625); they run
-                // after the or pass. Rule bodies keep their existing not-filter path.
-                let (planned, deferred) = crate::query::datalog::optimizer::plan(plan_clauses);
-
-                // Process planned clauses in order: Pattern → join, Expr → filter/extend.
-                let fn_guard = self
-                    .functions
-                    .read()
-                    .map_err(|_| err_coded!(ErrorCode::Qry008))?;
-                let mut candidates: Vec<Bindings> = vec![Bindings::new()];
-                for (clause, hint) in planned {
-                    match clause {
-                        WhereClause::Pattern(p) => {
-                            candidates = matcher.match_with_hint_seeded(
-                                candidates,
-                                &p,
-                                hint.as_ref()
-                                    .unwrap_or(&crate::query::datalog::optimizer::IndexHint::Eavt),
-                                // Rule bodies keep today's rule until #548.
-                                &[],
-                            );
-                        }
-                        WhereClause::Expr { expr, binding: out } => {
-                            use crate::query::datalog::executor::apply_expr;
-                            candidates = candidates
-                                .into_iter()
-                                .filter_map(|b| {
-                                    apply_expr(&expr, out.as_deref(), b, &fn_guard, false)
-                                })
-                                .collect();
-                        }
-                        _ => {}
+                    if crate::query::datalog::optimizer::reorder() {
+                        not_clauses.sort_by_key(|body| {
+                            crate::query::datalog::optimizer::clause_cost(&WhereClause::Not(
+                                body.clone(),
+                            ))
+                        });
+                        not_join_clauses.sort_by_key(|(vars, clauses)| {
+                            crate::query::datalog::optimizer::clause_cost(&WhereClause::NotJoin {
+                                join_vars: vars.clone(),
+                                clauses: clauses.clone(),
+                            })
+                        });
                     }
-                }
-                drop(fn_guard);
 
-                // Apply Or/OrJoin clauses (unchanged, applied after the plan loop).
-                let candidates = {
-                    use crate::query::datalog::executor::apply_or_clauses;
-                    use crate::query::datalog::functions::FunctionRegistry;
-                    let registry_guard = self
-                        .rules
-                        .read()
-                        .map_err(|_| err_coded!(ErrorCode::Qry009))?;
-                    // Rule bodies in the semi-naive evaluator don't have access to a
-                    // FunctionRegistry (UDF registration happens at the db layer). Use the
-                    // built-in-only registry so or-branches can still use built-in predicates.
-                    let fn_registry = FunctionRegistry::with_builtins();
-                    // An or branch binds `:db/valid-at` from a `ValidAt`, the
-                    // inverse of the executor's mapping to `self.valid_at`.
-                    let branch_valid_at = match &self.valid_at {
-                        Value::Integer(t) => ValidAt::Timestamp(*t),
-                        _ => ValidAt::AnyValidTime,
-                    };
-                    let expanded = apply_or_clauses(
-                        &rule.body,
-                        candidates,
+                    // Compute once; reuse for plan loop, apply_or_clauses, not-body matching.
+                    let accumulated_facts: Arc<[Fact]> =
+                        Arc::from(accumulated.get_asserted_facts()?);
+
+                    let matcher = PatternMatcher::from_slice_with_valid_at(
                         accumulated_facts.clone(),
-                        &registry_guard,
-                        None,
-                        Some(branch_valid_at),
-                        &fn_registry,
-                    )?;
-                    drop(registry_guard);
-                    expanded
-                };
-                let candidates = {
+                        self.valid_at.clone(),
+                    );
+
+                    // Plan: assigns index hints + pushes Expr to earliest binding position.
+                    // Not/NotJoin are excluded from plan_clauses above, so `deferred` holds
+                    // only expressions whose variables an Or/OrJoin binds (#625); they run
+                    // after the or pass. Rule bodies keep their existing not-filter path.
+                    let (planned, deferred) = crate::query::datalog::optimizer::plan(plan_clauses);
+
+                    // Process planned clauses in order: Pattern → join, Expr → filter/extend.
                     let fn_guard = self
                         .functions
                         .read()
                         .map_err(|_| err_coded!(ErrorCode::Qry008))?;
-                    let exprs: Vec<&WhereClause> = deferred.iter().collect();
-                    apply_expr_clauses_in_evaluator(candidates, &exprs, &fn_guard)
-                };
+                    let mut candidates: Vec<Bindings> = vec![Bindings::new()];
+                    for (clause, hint) in planned {
+                        match clause {
+                            WhereClause::Pattern(p) => {
+                                candidates = matcher.match_with_hint_seeded(
+                                    candidates,
+                                    &p,
+                                    hint.as_ref().unwrap_or(
+                                        &crate::query::datalog::optimizer::IndexHint::Eavt,
+                                    ),
+                                    // Rule bodies keep today's rule until #548.
+                                    &[],
+                                );
+                            }
+                            WhereClause::Expr { expr, binding: out } => {
+                                use crate::query::datalog::executor::apply_expr;
+                                candidates = candidates
+                                    .into_iter()
+                                    .filter_map(|b| {
+                                        apply_expr(&expr, out.as_deref(), b, &fn_guard, false)
+                                    })
+                                    .collect();
+                            }
+                            _ => {}
+                        }
+                    }
+                    drop(fn_guard);
 
-                // Build temp_eval once per rule (outside the binding loop);
-                // instantiate_head_public only uses storage, not the registry.
-                let temp_eval = RecursiveEvaluator::new(
-                    accumulated.clone(),
-                    Arc::clone(&self.rules),
-                    Arc::clone(&self.functions),
-                    1,
-                    self.max_derived_facts,
-                    self.max_results,
-                );
-
-                'binding: for binding in candidates {
-                    for not_body in &not_clauses {
-                        let not_bindings = seeded_body_rows(
-                            not_body,
-                            not_seed(not_body, &binding),
+                    // Apply Or/OrJoin clauses (unchanged, applied after the plan loop).
+                    let candidates = {
+                        use crate::query::datalog::executor::apply_or_clauses;
+                        use crate::query::datalog::functions::FunctionRegistry;
+                        let registry_guard = self
+                            .rules
+                            .read()
+                            .map_err(|_| err_coded!(ErrorCode::Qry009))?;
+                        // Rule bodies in the semi-naive evaluator don't have access to a
+                        // FunctionRegistry (UDF registration happens at the db layer). Use the
+                        // built-in-only registry so or-branches can still use built-in predicates.
+                        let fn_registry = FunctionRegistry::with_builtins();
+                        // An or branch binds `:db/valid-at` from a `ValidAt`, the
+                        // inverse of the executor's mapping to `self.valid_at`.
+                        let branch_valid_at = match &self.valid_at {
+                            Value::Integer(t) => ValidAt::Timestamp(*t),
+                            _ => ValidAt::AnyValidTime,
+                        };
+                        let expanded = apply_or_clauses(
+                            &rule.body,
+                            candidates,
                             accumulated_facts.clone(),
-                            self.valid_at.clone(),
-                        );
-
-                        // Apply Expr clauses from the not body
-                        let not_body_expr_clauses: Vec<&WhereClause> = not_body
-                            .iter()
-                            .filter(|c| matches!(c, WhereClause::Expr { .. }))
-                            .collect();
+                            &registry_guard,
+                            None,
+                            Some(branch_valid_at),
+                            &fn_registry,
+                        )?;
+                        drop(registry_guard);
+                        expanded
+                    };
+                    let candidates = {
                         let fn_guard = self
                             .functions
                             .read()
                             .map_err(|_| err_coded!(ErrorCode::Qry008))?;
-                        let not_bindings = apply_expr_clauses_in_evaluator(
-                            not_bindings,
-                            &not_body_expr_clauses,
-                            &fn_guard,
-                        );
-                        drop(fn_guard);
-                        if !not_bindings.is_empty() {
-                            continue 'binding; // not condition violated -> discard binding
+                        let exprs: Vec<&WhereClause> = deferred.iter().collect();
+                        apply_expr_clauses_in_evaluator(candidates, &exprs, &fn_guard)
+                    };
+
+                    // Build temp_eval once per rule (outside the binding loop);
+                    // instantiate_head_public only uses storage, not the registry.
+                    let temp_eval = RecursiveEvaluator::new(
+                        accumulated.clone(),
+                        Arc::clone(&self.rules),
+                        Arc::clone(&self.functions),
+                        1,
+                        self.max_derived_facts,
+                        self.max_results,
+                    );
+
+                    'binding: for binding in candidates {
+                        for not_body in &not_clauses {
+                            let not_bindings = seeded_body_rows(
+                                not_body,
+                                not_seed(not_body, &binding),
+                                accumulated_facts.clone(),
+                                self.valid_at.clone(),
+                            );
+
+                            // Apply Expr clauses from the not body
+                            let not_body_expr_clauses: Vec<&WhereClause> = not_body
+                                .iter()
+                                .filter(|c| matches!(c, WhereClause::Expr { .. }))
+                                .collect();
+                            let fn_guard = self
+                                .functions
+                                .read()
+                                .map_err(|_| err_coded!(ErrorCode::Qry008))?;
+                            let not_bindings = apply_expr_clauses_in_evaluator(
+                                not_bindings,
+                                &not_body_expr_clauses,
+                                &fn_guard,
+                            );
+                            drop(fn_guard);
+                            if !not_bindings.is_empty() {
+                                continue 'binding; // not condition violated -> discard binding
+                            }
+                        }
+
+                        for (join_vars, nj_clauses) in &not_join_clauses {
+                            let fn_guard = self
+                                .functions
+                                .read()
+                                .map_err(|_| err_coded!(ErrorCode::Qry008))?;
+                            if evaluate_not_join(
+                                join_vars,
+                                nj_clauses,
+                                &binding,
+                                accumulated_facts.clone(),
+                                self.valid_at.clone(),
+                                &fn_guard,
+                            ) {
+                                continue 'binding;
+                            }
+                        }
+
+                        // All Not / NotJoin conditions held -> derive head fact
+                        if let Ok(fact) = temp_eval.instantiate_head_public(&rule.head, &binding) {
+                            let key = (
+                                fact.entity,
+                                fact.attribute.clone(),
+                                encode_value(&fact.value),
+                            );
+                            if !known.insert(key) {
+                                continue;
+                            }
+                            new_in_pass += 1;
+                            if new_in_pass > self.max_derived_facts {
+                                return Err(err_coded!(
+                                    ErrorCode::Int020,
+                                    format!(
+                                        "Max derived facts per iteration ({}) exceeded. Rule may be generating too many facts.",
+                                        self.max_derived_facts
+                                    )
+                                ));
+                            }
+                            mixed_derived += 1;
+                            if mixed_derived > self.max_results {
+                                return Err(err_coded!(
+                                    ErrorCode::Int020,
+                                    format!("Max query results ({}) exceeded.", self.max_results)
+                                ));
+                            }
+                            // Use transact (not load_fact) so derived facts get a proper
+                            // tx_id and incremented tx_count, matching spec step (d).
+                            let _ = accumulated
+                                .transact(vec![(fact.entity, fact.attribute, fact.value)], None);
                         }
                     }
+                }
 
-                    for (join_vars, nj_clauses) in &not_join_clauses {
-                        let fn_guard = self
-                            .functions
-                            .read()
-                            .map_err(|_| err_coded!(ErrorCode::Qry008))?;
-                        if evaluate_not_join(
-                            join_vars,
-                            nj_clauses,
-                            &binding,
-                            accumulated_facts.clone(),
-                            self.valid_at.clone(),
-                            &fn_guard,
-                        ) {
-                            continue 'binding;
-                        }
-                    }
-
-                    // All Not / NotJoin conditions held -> derive head fact
-                    if let Ok(fact) = temp_eval.instantiate_head_public(&rule.head, &binding) {
-                        // Use transact (not load_fact) so derived facts get a proper
-                        // tx_id and incremented tx_count, matching spec step (d).
-                        let _ = accumulated
-                            .transact(vec![(fact.entity, fact.attribute, fact.value)], None);
-                    }
+                if !repeat || new_in_pass == 0 {
+                    break;
                 }
             }
         }
@@ -1586,5 +1659,61 @@ mod tests {
             .filter(|f| f.attribute.contains("eligible"))
             .collect();
         assert_eq!(eligible.len(), 1, "only e2 is eligible (e3 is blocked)");
+    }
+
+    /// A counter that recurses through a rule with `not` (#633).
+    fn counter_evaluator(
+        guard: &str,
+        max_iterations: usize,
+        max_results: usize,
+    ) -> StratifiedEvaluator {
+        let storage = FactStorage::new();
+        storage
+            .transact(
+                vec![(Uuid::new_v4(), ":start".to_string(), Value::Integer(0))],
+                None,
+            )
+            .unwrap();
+        let rules = Arc::new(RwLock::new(RuleRegistry::new()));
+        let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
+        register_test_rule(&rules, "(rule [(n ?x ?v) [?x :start ?v]])");
+        register_test_rule(
+            &rules,
+            &format!("(rule [(n ?x ?w) (n ?x ?v) {guard} [(+ ?v 1) ?w] (not [?x :stop true])])"),
+        );
+        StratifiedEvaluator::new(
+            storage,
+            rules,
+            functions,
+            max_iterations,
+            DEFAULT_MAX_DERIVED_FACTS,
+            max_results,
+        )
+    }
+
+    #[test]
+    fn test_recursion_through_mixed_rule_reaches_fixpoint() {
+        let derived = counter_evaluator("[(< ?v 3)]", DEFAULT_MAX_ITERATIONS, DEFAULT_MAX_RESULTS)
+            .evaluate(&["n".to_string()])
+            .unwrap();
+        let n = derived
+            .get_asserted_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.attribute == ":n")
+            .count();
+        assert_eq!(n, 4, "n is 0, 1, 2 and 3");
+    }
+
+    #[test]
+    fn test_recursion_through_mixed_rule_max_iterations() {
+        let result = counter_evaluator("", 5, DEFAULT_MAX_RESULTS).evaluate(&["n".to_string()]);
+        assert_eq!(expect_err_code(result), "INT-020");
+    }
+
+    #[test]
+    fn test_recursion_through_mixed_rule_max_results() {
+        let result = counter_evaluator("", DEFAULT_MAX_ITERATIONS, 3).evaluate(&["n".to_string()]);
+        assert_eq!(expect_err_code(result), "INT-020");
     }
 }

@@ -131,7 +131,7 @@ cargo run < demos/demo_negation.txt
    - `parser.rs`: EDN/Datalog parser — `transact`, `retract`, `query`, `rule`, `:as-of`, `:valid-at`, `not`, `not-join`; `resolve_pseudo_sources` names each per-fact pseudo-attribute's source (nearest earlier same-entity pattern, lexical scope) and its hidden metadata variable `?#<n>.<attr>`, else PRS-081 (#594)
    - `executor.rs`: Query executor — temporal filter (tx-time → net-assert → valid-time), not/not-join post-filter
    - `matcher.rs`: Pattern matching with variable unification; `edn_to_value`, `edn_to_entity_id`
-   - `evaluator.rs`: `RecursiveEvaluator` (semi-naive), `StratifiedEvaluator`, `evaluate_not_join`
+   - `evaluator.rs`: `RecursiveEvaluator` (semi-naive), `StratifiedEvaluator` (repeats a stratum whose rules recurse through a `not`/`or` rule until it derives nothing new, #633), `evaluate_not_join`
    - `stratification.rs`: `DependencyGraph`, `stratify()` — negative edges + cycle detection; a positive edge to a rule with `not`/`not-join`/`or`/`or-join` also raises the caller, off a cycle (#628)
    - `rules.rs`: `RuleRegistry` — thread-safe rule management
    - `types.rs`: `EdnValue`, `Pattern`, `DatalogQuery`, `AsOf`, `ValidAt`, `WhereClause` (incl. `Not`, `NotJoin`); `PseudoAttr` enum, `AttributeSpec` wrapper
@@ -204,7 +204,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1599 tests** (1589 passing, 10 ignored; unit + integration + doc).
+**1605 tests** (1595 passing, 10 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
