@@ -554,3 +554,90 @@ fn test_not_join_expression_only_body() {
         .unwrap();
     assert_eq!(result_count(&result), 1, "only :a has ?v <= 1");
 }
+
+// ── #628: a rule calling a rule with `not` / `not-join` / `or` ───────────────
+
+fn issue_628_db() -> Minigraf {
+    let db = in_memory_db();
+    db.execute(
+        "(transact [[:m1 :msg/actor :a1]
+                    [:r1 :run/actor :a1] [:r1 :run/to :s1]
+                    [:r2 :run/actor :a1] [:r2 :run/to :s2] [:r2 :run/done true]])",
+    )
+    .unwrap();
+    db
+}
+
+#[test]
+fn test_rule_calling_not_join_rule() {
+    let db = issue_628_db();
+    db.execute(
+        "(rule [(cur ?a ?s) [?r :run/actor ?a] [?r :run/to ?s] (not-join [?r] [?r :run/done true])])",
+    )
+    .unwrap();
+    db.execute("(rule [(st ?m ?s) [?m :msg/actor ?a] (cur ?a ?s)])")
+        .unwrap();
+    db.execute("(rule [(st3 ?a ?s) (cur ?a ?s)])").unwrap();
+
+    let r = db
+        .execute("(query [:find ?m ?s :where [?m :msg/actor ?a] (cur ?a ?s)])")
+        .unwrap();
+    assert_eq!(result_count(&r), 1, "query calling the not-join rule");
+    let r = db
+        .execute("(query [:find ?m ?s :where (st ?m ?s)])")
+        .unwrap();
+    assert_eq!(result_count(&r), 1, "rule calling the not-join rule");
+    let r = db.execute("(query [:find ?s :where (st :m1 ?s)])").unwrap();
+    assert_eq!(result_count(&r), 1, "literal argument");
+    let r = db
+        .execute("(query [:find ?a ?s :where (st3 ?a ?s)])")
+        .unwrap();
+    assert_eq!(result_count(&r), 1, "forwarding rule");
+}
+
+#[test]
+fn test_rule_calling_not_rule() {
+    let db = issue_628_db();
+    db.execute("(rule [(cur ?a ?s) [?r :run/actor ?a] [?r :run/to ?s] (not [?r :run/done true])])")
+        .unwrap();
+    db.execute("(rule [(st ?m ?s) [?m :msg/actor ?a] (cur ?a ?s)])")
+        .unwrap();
+    let r = db
+        .execute("(query [:find ?m ?s :where (st ?m ?s)])")
+        .unwrap();
+    assert_eq!(result_count(&r), 1, "rule calling the not rule");
+}
+
+#[test]
+fn test_mixed_rule_calling_mixed_rule() {
+    let db = issue_628_db();
+    db.execute(
+        "(rule [(cur ?a ?s) [?r :run/actor ?a] [?r :run/to ?s] (not-join [?r] [?r :run/done true])])",
+    )
+    .unwrap();
+    db.execute(
+        "(rule [(stm ?m ?s) [?m :msg/actor ?a] (cur ?a ?s) (not-join [?m] [?m :nope true])])",
+    )
+    .unwrap();
+    let r = db
+        .execute("(query [:find ?m ?s :where (stm ?m ?s)])")
+        .unwrap();
+    assert_eq!(result_count(&r), 1, "caller alone");
+    let r = db
+        .execute("(query [:find ?m ?s :where (cur ?a ?x) (stm ?m ?s)])")
+        .unwrap();
+    assert_eq!(result_count(&r), 1, "callee asked first");
+}
+
+#[test]
+fn test_rule_calling_or_rule() {
+    let db = issue_628_db();
+    db.execute("(rule [(dest ?a ?s) [?r :run/actor ?a] (or [?r :run/to ?s] [?r :run/from ?s])])")
+        .unwrap();
+    db.execute("(rule [(st ?m ?s) [?m :msg/actor ?a] (dest ?a ?s)])")
+        .unwrap();
+    let r = db
+        .execute("(query [:find ?m ?s :where (st ?m ?s)])")
+        .unwrap();
+    assert_eq!(result_count(&r), 2, "rule calling the or rule");
+}
