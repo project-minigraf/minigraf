@@ -296,6 +296,23 @@ mod tests {
     }
 
     #[test]
+    fn test_caller_of_recursive_mixed_predicate_raised() {
+        // p →⁺ q, where q has a `not` and calls itself: q's cycle does not
+        // reach p, so p still sits above q.
+        let (_, neg) = negative_rule("q", "r");
+        let (_, rec) = positive_rule("q", "q");
+        let mut mixed_rec = neg;
+        mixed_rec.body.extend(rec.body);
+        let mut registry = make_registry_with_rules(vec![positive_rule("p", "q")]);
+        registry.register_rule_unchecked("q".to_string(), mixed_rec);
+        let strata = DependencyGraph::from_rules(&registry).stratify().unwrap();
+        assert!(
+            strata["p"] > strata["q"],
+            "p above its recursive mixed callee"
+        );
+    }
+
+    #[test]
     fn test_negative_cycle_returns_error() {
         // p →⁻ q, q →⁻ p
         let registry =
