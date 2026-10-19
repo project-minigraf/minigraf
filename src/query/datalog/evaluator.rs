@@ -868,9 +868,10 @@ impl StratifiedEvaluator {
                 );
 
                 // Plan: assigns index hints + pushes Expr to earliest binding position.
-                // Not/NotJoin are excluded from plan_clauses above, so `deferred` is
-                // always empty here — rule bodies keep their existing not-filter path.
-                let (planned, _deferred) = crate::query::datalog::optimizer::plan(
+                // Not/NotJoin are excluded from plan_clauses above, so `deferred` holds
+                // only expressions whose variables an Or/OrJoin binds (#625); they run
+                // after the or pass. Rule bodies keep their existing not-filter path.
+                let (planned, deferred) = crate::query::datalog::optimizer::plan(
                     plan_clauses,
                     &crate::storage::index::Indexes::new(),
                 );
@@ -944,6 +945,14 @@ impl StratifiedEvaluator {
                     )?;
                     drop(registry_guard);
                     expanded
+                };
+                let candidates = {
+                    let fn_guard = self
+                        .functions
+                        .read()
+                        .map_err(|_| err_coded!(ErrorCode::Qry008))?;
+                    let exprs: Vec<&WhereClause> = deferred.iter().collect();
+                    apply_expr_clauses_in_evaluator(candidates, &exprs, &fn_guard)
                 };
 
                 // Build temp_eval once per rule (outside the binding loop);
