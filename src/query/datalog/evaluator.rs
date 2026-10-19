@@ -661,8 +661,9 @@ impl StratifiedEvaluator {
         drop(registry); // release read lock before recursive calls
 
         let accumulated = self.storage.clone();
-        // Facts the mixed rules derive, for `max_results` across repeated passes.
-        let mut mixed_derived = 0usize;
+        // Facts the rules derive, for `max_results` across strata and repeated
+        // passes (each pass's `RecursiveEvaluator` sees earlier ones as base).
+        let mut derived_total = 0usize;
 
         for stratum in 0..=max_stratum {
             let registry = self
@@ -753,6 +754,13 @@ impl StratifiedEvaluator {
                             encode_value(&fact.value),
                         );
                         if !existing.contains(&key) {
+                            derived_total += 1;
+                            if derived_total > self.max_results {
+                                return Err(err_coded!(
+                                    ErrorCode::Int020,
+                                    format!("Max query results ({}) exceeded.", self.max_results)
+                                ));
+                            }
                             let _ = accumulated.load_fact(fact);
                         }
                     }
@@ -1011,8 +1019,8 @@ impl StratifiedEvaluator {
                                     )
                                 ));
                             }
-                            mixed_derived += 1;
-                            if mixed_derived > self.max_results {
+                            derived_total += 1;
+                            if derived_total > self.max_results {
                                 return Err(err_coded!(
                                     ErrorCode::Int020,
                                     format!("Max query results ({}) exceeded.", self.max_results)
@@ -1714,6 +1722,40 @@ mod tests {
     #[test]
     fn test_recursion_through_mixed_rule_max_results() {
         let result = counter_evaluator("", DEFAULT_MAX_ITERATIONS, 3).evaluate(&["n".to_string()]);
+        assert_eq!(expect_err_code(result), "INT-020");
+    }
+
+    #[test]
+    fn test_recursion_through_mixed_rule_max_results_counts_every_pass() {
+        // n0 → m0 → n1 → m1 → n2 → m2 → n3: seven facts, three from the mixed
+        // rule and one from each positive pass.
+        let rules = Arc::new(RwLock::new(RuleRegistry::new()));
+        register_test_rule(&rules, "(rule [(n ?x ?v) [?x :start ?v]])");
+        register_test_rule(&rules, "(rule [(n ?x ?w) (m ?x ?v) [(+ ?v 1) ?w]])");
+        register_test_rule(
+            &rules,
+            "(rule [(m ?x ?v) (n ?x ?v) [(< ?v 3)] (not [?x :stop true])])",
+        );
+        let evaluator = |max_results| {
+            // The evaluator adds what it derives to this storage.
+            let storage = FactStorage::new();
+            storage
+                .transact(
+                    vec![(Uuid::new_v4(), ":start".to_string(), Value::Integer(0))],
+                    None,
+                )
+                .unwrap();
+            StratifiedEvaluator::new(
+                storage,
+                Arc::clone(&rules),
+                Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
+                DEFAULT_MAX_ITERATIONS,
+                DEFAULT_MAX_DERIVED_FACTS,
+                max_results,
+            )
+        };
+        evaluator(7).evaluate(&["n".to_string()]).unwrap();
+        let result = evaluator(6).evaluate(&["n".to_string()]);
         assert_eq!(expect_err_code(result), "INT-020");
     }
 }
