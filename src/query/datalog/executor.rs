@@ -2239,14 +2239,12 @@ pub(crate) fn apply_or_clauses(
                         .iter()
                         .filter_map(|v| b.get(v).map(|val| (v.clone(), join_value(val))))
                         .collect();
-                    let g = match groups.iter().position(|(vars, _)| *vars == shared) {
-                        Some(g) => g,
-                        None => {
-                            groups.push((shared, HashMap::new()));
-                            groups.len() - 1
-                        }
-                    };
-                    groups[g].1.entry(key).or_default().push(b);
+                    if !groups.iter().any(|(vars, _)| *vars == shared) {
+                        groups.push((shared.clone(), HashMap::new()));
+                    }
+                    if let Some((_, map)) = groups.iter_mut().find(|(vars, _)| *vars == shared) {
+                        map.entry(key).or_default().push(b);
+                    }
                 }
 
                 // For each incoming binding, look up matching branch results and merge.

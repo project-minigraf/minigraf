@@ -1,5 +1,6 @@
 //! `Seed` (#546): the one row a correlated body starts from, the cells it
-//! imports from the outer row.
+//! imports from the outer row; or the empty row an `or` extends when nothing
+//! runs before it.
 
 use super::batch::Batch;
 use super::cell::Cell;
@@ -14,11 +15,12 @@ pub(crate) struct Seed {
 }
 
 impl Seed {
-    /// A seed with no row until the first rewind.
+    /// A seed of the empty row, until a rewind gives it another (#546: a
+    /// query whose first clause to run is an `or` starts from it).
     pub(crate) fn new() -> Self {
         Seed {
             row: Vec::new(),
-            done: true,
+            done: false,
             counters: Counters::new("Seed"),
         }
     }

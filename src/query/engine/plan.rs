@@ -26,8 +26,8 @@ use crate::query::datalog::executor::Binders;
 use crate::query::datalog::matcher::edn_to_entity_id;
 use crate::query::datalog::optimizer;
 use crate::query::datalog::types::{
-    AsOf, AttributeSpec, DatalogQuery, EdnValue, Expr, FindSpec, Pattern, PseudoAttr, ValidAt,
-    WhereClause,
+    AsOf, AttributeSpec, DatalogQuery, EdnValue, Expr, FindSpec, Pattern, PseudoAttr, UnaryOp,
+    ValidAt, WhereClause,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -130,6 +130,12 @@ pub(crate) enum Step {
     /// `not` / `not-join`: keeps the rows for which the body has no row
     /// (#546).
     Anti(Body),
+    /// `or` / `or-join`: each row once per row of each branch, extended by
+    /// the branch's cells of the new variables (#546 spec §5.1).
+    Union(Vec<Branch>),
+    /// Keeps the first of the rows whose cells at these slots are equal as
+    /// the executor's values are (#546 spec §5.2).
+    Distinct(Vec<usize>),
 }
 
 /// A `not` / `not-join` body (#546 spec §4).
@@ -146,12 +152,22 @@ pub(crate) enum Body {
     Hashed { plan: Box<Plan>, keys: Vec<Key> },
 }
 
+/// One branch of an `or` / `or-join` (#546 spec §5.1).
+#[derive(Debug, Clone)]
+pub(crate) struct Branch {
+    pub(crate) body: Body,
+    /// The body slots whose cells extend the outer row, in the order of the
+    /// slots they fill; empty for an `or-join`.
+    pub(crate) new: Vec<usize>,
+}
+
 /// Where a plan's rows start.
 #[derive(Debug, Clone)]
 pub(crate) enum Source {
     /// The first pattern.
     Scan(ScanSpec),
-    /// One row: the cells a correlated body imports, in its first slots.
+    /// One row: the cells a correlated body imports, in its first slots;
+    /// for a query whose first clause to run is an `or`, the empty row.
     Seed,
 }
 
@@ -269,6 +285,8 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
                 | WhereClause::Expr { .. }
                 | WhereClause::Not(_)
                 | WhereClause::NotJoin { .. }
+                | WhereClause::Or(_)
+                | WhereClause::OrJoin { .. }
         )
     }) {
         return None;
@@ -278,16 +296,20 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
         as_of,
         valid,
     );
-    let (planned, mut deferred) = optimizer::plan(query.where_clauses.clone());
+    let (planned, deferred) = optimizer::plan(query.where_clauses.clone());
     for (c, _) in planned {
         b.clause(c)?;
     }
-    // A `not` whose variables only an expression binds runs last, as on the
-    // executor.
-    if optimizer::reorder() {
-        deferred.sort_by_key(optimizer::clause_cost);
+    // `or` / `or-join` after the clauses the plan places, in text order, as
+    // on the executor (spec §5.1).
+    for c in &query.where_clauses {
+        if matches!(c, WhereClause::Or(_) | WhereClause::OrJoin { .. }) {
+            b.clause(c.clone())?;
+        }
     }
-    for c in deferred {
+    // A `not` whose variables only an `or` binds runs last, as on the
+    // executor.
+    for c in sorted(deferred) {
         b.clause(c)?;
     }
 
@@ -482,6 +504,11 @@ impl Builder {
                 let step = self.anti(&clauses, join_vars)?;
                 self.push_anti(step);
             }
+            WhereClause::Or(branches) => self.union(&branches, None)?,
+            WhereClause::OrJoin {
+                join_vars,
+                branches,
+            } => self.union(&branches, Some(join_vars))?,
             _ => return None,
         }
         Some(())
@@ -496,7 +523,7 @@ impl Builder {
     }
 
     /// The `AntiJoin` of `body`, whose variables `vars` the outer row gives
-    /// where it binds them (spec §2), hashed or correlated (spec §4.4).
+    /// where it binds them (spec §2).
     fn anti(&self, body: &[WhereClause], vars: Vec<String>) -> Option<Step> {
         if !body
             .iter()
@@ -504,13 +531,91 @@ impl Builder {
         {
             return None;
         }
+        Some(Step::Anti(self.sub(body, vars)?.0))
+    }
+
+    /// The `Union` and `Distinct` of an `or` (`join` is `None`) or an
+    /// `or-join` (spec §5).
+    fn union(&mut self, branches: &[Vec<WhereClause>], join: Option<Vec<String>>) -> Option<()> {
+        if self.source.is_none() {
+            // Nothing before the `or` binds a variable: its outer side is
+            // the empty row.
+            self.source = Some(Source::Seed);
+            self.steps.append(&mut self.front);
+        }
+        let mut subs = Vec::with_capacity(branches.len());
+        for branch in branches {
+            let vars: Vec<String> = match &join {
+                // The parser requires every join variable bound before
+                // (INT-031 on the executor otherwise).
+                Some(j) if j.iter().all(|v| self.slots.by_var.contains_key(v)) => j.clone(),
+                Some(_) => return None,
+                None => optimizer::clause_ref_vars(branch).into_iter().collect(),
+            };
+            let imports: HashSet<String> = vars
+                .iter()
+                .filter(|v| self.slots.by_var.contains_key(*v))
+                .cloned()
+                .collect();
+            if !runs_branch(branch, &imports) {
+                return None;
+            }
+            subs.push(self.sub(branch, vars)?);
+        }
+        // The variables a branch binds that the rows do not. Every branch of
+        // an `or` binds the same (PRS-057), but their sources' hidden
+        // variables differ; the executor keeps those, so such an `or` stays
+        // there. An `or-join` keeps none.
+        let mut names: Vec<String> = Vec::new();
+        if join.is_none() {
+            for (k, (_, slots)) in subs.iter().enumerate() {
+                let mut own: Vec<String> = slots
+                    .by_var
+                    .keys()
+                    .filter(|v| !self.slots.by_var.contains_key(*v))
+                    .cloned()
+                    .collect();
+                own.sort();
+                if k == 0 {
+                    names = own;
+                } else if own != names {
+                    return None;
+                }
+            }
+        }
+        let mut arms = Vec::with_capacity(subs.len());
+        let mut kinds = vec![0u8; names.len()];
+        for (body, slots) in subs {
+            let mut new = Vec::with_capacity(names.len());
+            for (n, kind) in names.iter().zip(kinds.iter_mut()) {
+                let inner = *slots.by_var.get(n)?;
+                *kind |= slots.kind(inner);
+                new.push(inner);
+            }
+            arms.push(Branch { body, new });
+        }
+        for (n, kind) in names.into_iter().zip(kinds) {
+            let s = self.slots.add(kind);
+            self.slots.by_var.insert(n, s);
+        }
+        self.steps.push(Step::Union(arms));
+        let mut slots: Vec<usize> = self.slots.by_var.values().copied().collect();
+        slots.sort_unstable();
+        self.steps.push(Step::Distinct(slots));
+        Some(())
+    }
+
+    /// The plan of a `not` body or an `or` branch whose variables `vars`
+    /// the outer row gives where it binds them (spec §2), hashed or
+    /// correlated (spec §4.4), and its slots.
+    fn sub(&self, body: &[WhereClause], vars: Vec<String>) -> Option<(Body, Slots)> {
         let mut imports: Vec<(String, usize)> = vars
             .into_iter()
             .filter_map(|v| self.slots.by_var.get(&v).map(|&s| (v, s)))
             .collect();
         imports.sort_by_key(|&(_, s)| s);
         let seeded: HashSet<String> = imports.iter().map(|(v, _)| v.clone()).collect();
-        let (seeded_order, _) = optimizer::plan_seeded(body.to_vec(), &seeded);
+        let (seeded_order, seeded_deferred) = optimizer::plan_seeded(body.to_vec(), &seeded);
         // A probe per outer row holds nothing: correlated when the first
         // pattern's entity is imported.
         let probe = seeded_order
@@ -521,7 +626,7 @@ impl Builder {
             })
             .and_then(|p| p.entity.as_variable())
             .is_some_and(|e| seeded.contains(e));
-        let hashable = closed(body);
+        let hashable = closed(body, &seeded);
         let hash = match optimizer::subplans() {
             optimizer::Subplans::Choose => hashable && !probe,
             optimizer::Subplans::Hash => hashable,
@@ -530,7 +635,11 @@ impl Builder {
         let (as_of, valid) = (self.as_of, self.valid);
         if hash {
             let mut b = Builder::new(None, as_of, valid);
-            for (c, _) in optimizer::plan(body.to_vec()).0 {
+            let (planned, deferred) = optimizer::plan(body.to_vec());
+            for (c, _) in planned {
+                b.clause(c)?;
+            }
+            for c in sorted(deferred) {
                 b.clause(c)?;
             }
             let keys = imports
@@ -546,10 +655,9 @@ impl Builder {
                     })
                 })
                 .collect();
-            return Some(Step::Anti(Body::Hashed {
-                plan: Box::new(b.finish()?),
-                keys,
-            }));
+            let slots = std::mem::take(&mut b.slots);
+            let plan = Box::new(b.finish()?);
+            return Some((Body::Hashed { plan, keys }, slots));
         }
         let mut b = Builder::new(None, as_of, valid);
         for (v, outer) in &imports {
@@ -560,11 +668,61 @@ impl Builder {
         for (c, _) in seeded_order {
             b.clause(c)?;
         }
-        Some(Step::Anti(Body::Correlated {
-            plan: Box::new(b.finish()?),
-            imports: imports.into_iter().map(|(_, s)| s).collect(),
-        }))
+        for c in sorted(seeded_deferred) {
+            b.clause(c)?;
+        }
+        let slots = std::mem::take(&mut b.slots);
+        let plan = Box::new(b.finish()?);
+        Some((
+            Body::Correlated {
+                plan,
+                imports: imports.into_iter().map(|(_, s)| s).collect(),
+            },
+            slots,
+        ))
     }
+}
+
+/// Deferred `not`s, cheapest first when reordering, as on the executor.
+fn sorted(mut deferred: Vec<WhereClause>) -> Vec<WhereClause> {
+    if optimizer::reorder() {
+        deferred.sort_by_key(optimizer::clause_cost);
+    }
+    deferred
+}
+
+/// Whether the engine runs `branch` of an `or` whose rows give `imports`
+/// (decision 11 of the #546 plan). It holds patterns, expressions and
+/// `not`s only (a rule invocation or a nested `or` stays on the executor),
+/// and no predicate the registry may lack: the executor reports that only
+/// when a row reaches it. The executor applies a branch's `not`s before its
+/// expressions, so a `not` must not read a variable only an expression of
+/// the branch binds.
+fn runs_branch(branch: &[WhereClause], imports: &HashSet<String>) -> bool {
+    let mut by_pattern: HashSet<String> = imports.clone();
+    let mut by_expr: HashSet<&str> = HashSet::new();
+    for c in branch {
+        match c {
+            WhereClause::Pattern(p) => by_pattern.extend(optimizer::pattern_bound_vars(p)),
+            WhereClause::Expr {
+                expr: Expr::UnaryOp(UnaryOp::Udf(_), _),
+                ..
+            } => return false,
+            WhereClause::Expr { binding, .. } => by_expr.extend(binding.as_deref()),
+            WhereClause::Not(_) | WhereClause::NotJoin { .. } => {}
+            _ => return false,
+        }
+    }
+    branch.iter().all(|c| {
+        let reads: Vec<String> = match c {
+            WhereClause::Not(body) => optimizer::clause_ref_vars(body).into_iter().collect(),
+            WhereClause::NotJoin { join_vars, .. } => join_vars.clone(),
+            _ => return true,
+        };
+        reads
+            .iter()
+            .all(|v| by_pattern.contains(v) || !by_expr.contains(v.as_str()))
+    })
 }
 
 /// Whether `p` is a per-fact pseudo-attribute pattern (it scans nothing).
@@ -573,10 +731,11 @@ fn per_fact(p: &Pattern) -> bool {
 }
 
 /// Whether `body` has the same rows for every outer row (spec §2): it has a
-/// pattern to scan, and every variable its expressions and per-fact
-/// pseudo-attributes read is bound by one of its other patterns (decision 6
-/// of the #546 plan).
-fn closed(body: &[WhereClause]) -> bool {
+/// pattern to scan, every variable its expressions and per-fact
+/// pseudo-attributes read is bound by one of its other patterns, and every
+/// variable of `imports` a nested `not` reads is too (decision 6 of the #546
+/// plan).
+fn closed(body: &[WhereClause], imports: &HashSet<String>) -> bool {
     let bound: HashSet<String> = body
         .iter()
         .filter_map(|c| match c {
@@ -596,6 +755,12 @@ fn closed(body: &[WhereClause]) -> bool {
                 .as_ref()
                 .and_then(EdnValue::as_variable)
                 .is_some_and(|v| bound.contains(v)),
+            WhereClause::Not(inner) => optimizer::clause_ref_vars(inner)
+                .iter()
+                .all(|v| !imports.contains(v) || bound.contains(v)),
+            WhereClause::NotJoin { join_vars, .. } => join_vars
+                .iter()
+                .all(|v| !imports.contains(v) || bound.contains(v)),
             _ => true,
         })
 }
