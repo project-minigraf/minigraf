@@ -23,6 +23,7 @@ mod seed;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests;
 mod union;
+mod window;
 
 use crate::error::{ErrorCode, err_coded};
 use crate::graph::storage::Snapshot;
@@ -108,6 +109,10 @@ pub(crate) struct Stream {
     find: Vec<usize>,
     vars: Vec<String>,
     project: Counters,
+    /// Keep the DICT lookups until the stream ends: a `Window` turns every
+    /// row's ids into values in its first pull, and the rows it returns
+    /// later read the same ids again (#547).
+    hold_ids: bool,
     closed: bool,
 }
 
@@ -139,6 +144,7 @@ pub(crate) fn open(
         find,
         vars,
     } = plan;
+    let hold_ids = steps.iter().any(|s| matches!(s, plan::Step::Window { .. }));
     let root = build(source, steps);
     Some(Stream {
         snapshot,
@@ -148,6 +154,7 @@ pub(crate) fn open(
         find,
         vars,
         project: Counters::new("Project"),
+        hold_ids,
         closed: false,
     })
 }
@@ -169,6 +176,9 @@ pub(crate) fn build(source: plan::Source, steps: Vec<plan::Step>) -> Box<dyn Ope
                 aggs,
                 zero_row,
             } => Box::new(aggregate::Aggregate::new(root, groups, aggs, zero_row)),
+            plan::Step::Window { find, named, keep } => {
+                Box::new(window::Window::new(root, find, named, keep))
+            }
             step => Box::new(filter::Apply::new(root, step)),
         };
     }
@@ -187,6 +197,7 @@ impl Stream {
             find: vec![0],
             vars: vec!["?x".to_string()],
             project: Counters::new("Project"),
+            hold_ids: false,
             closed: false,
         }
     }
@@ -199,8 +210,11 @@ impl Stream {
             return Ok(None);
         }
         let rows = self.pull();
-        self.ids.end_pull();
-        if !matches!(rows, Ok(Some(_))) {
+        let more = matches!(rows, Ok(Some(_)));
+        if !self.hold_ids || !more {
+            self.ids.end_pull();
+        }
+        if !more {
             self.close();
         }
         rows

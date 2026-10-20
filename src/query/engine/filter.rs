@@ -32,6 +32,7 @@ impl Apply {
             Step::Union(_) => "Union",
             Step::Distinct(_) => "Distinct",
             Step::Aggregate { .. } => "Aggregate",
+            Step::Window { .. } => "Window",
         };
         Apply {
             child,
@@ -134,7 +135,8 @@ fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<Batch> {
         | Step::Anti(_)
         | Step::Union(_)
         | Step::Distinct(_)
-        | Step::Aggregate { .. } => {}
+        | Step::Aggregate { .. }
+        | Step::Window { .. } => {}
     }
     Ok(batch)
 }

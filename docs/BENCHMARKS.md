@@ -144,6 +144,18 @@ The pseudo-attribute pattern reads the `:db/tx-count` column that the `:name` pr
 
 An ungrouped aggregate holds one set of accumulators, and `count` reads no value, so memory is flat across scales; a grouped one holds one entry per group.
 
+### Windows on the streaming engine (#547 PR 3)
+
+`window` is `[:find ?e (rank :over (:order-by ?a)) :where [?e :age ?a]]` (every `:age` row: 16,666, 166,666 and 1,666,666 rows). Before PR 3 every window query ran on the executor. A/B on the same idle server, `v3` (58c19dd, with the `window` shape added) and PR 3 run in parallel on different sockets, swapping nodes between the two rounds; p50 and peak RSS, mean of the rounds.
+
+| Shape | 100K | 1M | 10M |
+|---|---:|---:|---:|
+| `window` p50, `v3` → PR 3 | 41.5 → 32.8 ms | 601 → 434 ms | 7.89 → 5.65 s |
+| `window` peak RSS | 19 → 16 MiB | 140 → 109 MiB | 1,257 → 1,030 MiB |
+| every other shape | unchanged | unchanged | unchanged |
+
+A window needs its whole partition, so `Window` holds every row and memory grows with the input. It turns each row's ids into values in its first pull, for the windows' sort; the stream keeps those DICT lookups until it ends, so returning the rows does not look them up again. Without that, the first measurement of PR 3 was 17% slower than the executor at 100K (48.2 ms).
+
 ### Python FFI round trip
 
 **Command**: `python bench/envelope.py <fixture> --report envelope.json --scale <scale>` in [minigraf-python](https://github.com/project-minigraf/minigraf-python) (`v3`), on the same fixtures and report. The binding is built with `maturin develop --release` against this commit. It runs the same queries through `db.query(...)`, drains them with `next_batch(1000)`, and decodes each JSON batch with `json.loads`. Python 3.14.7.

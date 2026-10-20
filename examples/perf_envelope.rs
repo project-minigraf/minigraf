@@ -563,6 +563,13 @@ fn shapes(e: usize, tx_half: u64, hot_tx_half: u64) -> Vec<Shape> {
             query: "[:find ?g (count ?e) :where [?e :group ?g]]".into(),
             rows: 100.min(e),
         },
+        // #547: a window over every row of an attribute, held until the
+        // input ends.
+        Shape {
+            name: "window",
+            query: "[:find ?e (rank :over (:order-by ?a)) :where [?e :age ?a]]".into(),
+            rows: e,
+        },
         Shape {
             name: "hot_current",
             query: "[:find ?v :where [:hot :counter ?v]]".into(),

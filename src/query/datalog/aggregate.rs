@@ -3,7 +3,7 @@
 //! does not depend on the order of its input.
 
 use super::functions::{AggImpl, Builtin, FunctionRegistry, UdfFinaliseFn, UdfStepFn};
-use super::types::{FindSpec, WindowSpec};
+use super::types::{FindSpec, Order, WindowFunc, WindowSpec};
 use crate::error::{ErrorCode, err_coded};
 use crate::graph::types::Value;
 use anyhow::Result;
@@ -589,6 +589,105 @@ impl Running {
             Running::Udf(u) => u.value(),
         }
     }
+}
+
+/// The value of each window of `find` for each row (spec §4), one list per
+/// window in `:find` order, by row position. `rows` holds each row's
+/// values of the [`named_vars`] of `find`, which hold every variable a
+/// window reads.
+///
+/// Each partition (by `Value`'s `Ord`) is sorted by its `:order-by` value
+/// under [`value_order`], then by the named variables, then by position
+/// (spec §4.1). Rows with order-equal `:order-by` values are peers: `rank`
+/// is equal for them, and a running aggregate gives every peer its value at
+/// the last peer (spec §4.2). Used by the executor and the engine.
+pub(crate) fn windows(
+    find: &[FindSpec],
+    rows: &[Vec<Value>],
+    registry: &FunctionRegistry,
+) -> Result<Vec<Vec<Value>>> {
+    static NULL: Value = Value::Null;
+    let named = named_vars(find);
+    let col = |var: &str| named.iter().position(|v| v == var);
+    let read = |r: usize, c: Option<usize>| {
+        rows.get(r)
+            .zip(c)
+            .and_then(|(row, c)| row.get(c))
+            .unwrap_or(&NULL)
+    };
+    let mut out = Vec::new();
+    for spec in find {
+        let FindSpec::Window(ws) = spec else {
+            continue;
+        };
+        let var = ws.var.as_deref().and_then(col);
+        let order = col(&ws.order_by);
+        let mut partitions: BTreeMap<&Value, Vec<usize>> = BTreeMap::new();
+        for r in 0..rows.len() {
+            let part = ws.partition_by.as_deref().and_then(col);
+            partitions.entry(read(r, part)).or_default().push(r);
+        }
+
+        let mut values = vec![Value::Null; rows.len()];
+        for mut keyed in partitions.into_values() {
+            keyed.sort_by(|&a, &b| {
+                let by_key = match ws.order {
+                    Order::Asc => value_order(read(a, order), read(b, order)),
+                    Order::Desc => value_order(read(b, order), read(a, order)),
+                };
+                by_key
+                    .then_with(|| {
+                        rows.get(a)
+                            .into_iter()
+                            .flatten()
+                            .zip(rows.get(b).into_iter().flatten())
+                            .map(|(x, y)| value_order(x, y))
+                            .find(|o| o.is_ne())
+                            .unwrap_or(Ordering::Equal)
+                    })
+                    .then(a.cmp(&b))
+            });
+
+            let mut running = match ws.func {
+                WindowFunc::Rank | WindowFunc::RowNumber => None,
+                _ => Some(Running::new(ws, registry)?),
+            };
+            let mut start = 0;
+            while let Some(&first) = keyed.get(start) {
+                let end = keyed
+                    .iter()
+                    .skip(start + 1)
+                    .position(|&r| value_order(read(r, order), read(first, order)).is_ne())
+                    .map_or(keyed.len(), |n| start + 1 + n);
+                let peers = keyed.get(start..end).unwrap_or(&[]);
+                if let Some(acc) = running.as_mut() {
+                    for &r in peers {
+                        acc.step(read(r, var));
+                    }
+                }
+                for (pos, &r) in (start..end).zip(peers) {
+                    let value = match (&running, &ws.func) {
+                        (Some(acc), _) => acc.value(),
+                        (None, WindowFunc::RowNumber) => position(pos)?,
+                        (None, _) => position(start)?,
+                    };
+                    if let Some(v) = values.get_mut(r) {
+                        *v = value;
+                    }
+                }
+                start = end;
+            }
+        }
+        out.push(values);
+    }
+    Ok(out)
+}
+
+/// The 1-based position `pos + 1` as an integer.
+fn position(pos: usize) -> Result<Value> {
+    i64::try_from(pos + 1)
+        .map(Value::Integer)
+        .map_err(|_| err_coded!(ErrorCode::Int032, "row number overflow"))
 }
 
 /// The variables a window's tie-break reads (spec §2, "named variables"),
