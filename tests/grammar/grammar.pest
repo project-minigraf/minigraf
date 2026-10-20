@@ -5,6 +5,28 @@ WHITESPACE = _{ " " | "\t" | "\n" | "\r" | "," }
 // Used in negative lookaheads to enforce keyword boundaries.
 word_cont = _{ ASCII_ALPHANUMERIC | "?" | "_" | "-" | "/" }
 
+// Literal keywords: atomic, so that no whitespace is skipped before the
+// boundary check (":find?x" is one keyword, as the parser reads it).
+kw_find                = @{ ":find" ~ !word_cont }
+kw_where               = @{ ":where" ~ !word_cont }
+kw_with                = @{ ":with" ~ !word_cont }
+kw_as_of               = @{ ":as-of" ~ !word_cont }
+kw_valid_at            = @{ ":valid-at" ~ !word_cont }
+kw_any_valid_time      = @{ ":any-valid-time" ~ !word_cont }
+kw_max_derived_facts   = @{ ":max-derived-facts" ~ !word_cont }
+kw_max_results         = @{ ":max-results" ~ !word_cont }
+kw_over                = @{ ":over" ~ !word_cont }
+kw_partition_by        = @{ ":partition-by" ~ !word_cont }
+kw_order_by            = @{ ":order-by" ~ !word_cont }
+kw_desc                = @{ ":desc" ~ !word_cont }
+kw_asc                 = @{ ":asc" ~ !word_cont }
+kw_valid_from          = @{ ":valid-from" ~ !word_cont }
+kw_valid_to            = @{ ":valid-to" ~ !word_cont }
+
+// Reserved list heads: the parser reads these lists as clauses, never as rule calls.
+reserved_head = @{ ("not-join" | "not" | "or-join" | "or") ~ !word_cont }
+and_head      = @{ "and" ~ !word_cont }
+
 // ── EDN PRIMITIVES ────────────────────────────────────────────────────────
 
 // boolean: "true" or "false" — only when NOT followed by a word character
@@ -59,6 +81,9 @@ edn_list   = { "(" ~ edn_value* ~ ")" }
 edn_vector = { "[" ~ edn_value* ~ "]" }
 edn_map    = { "{" ~ (edn_value ~ edn_value)* ~ "}" }
 
+// One EDN value and nothing else: the lexical oracle of the parser verifier (#643).
+edn_value_only = { SOI ~ edn_value ~ EOI }
+
 // ── TOP-LEVEL COMMAND ─────────────────────────────────────────────────────
 command = { SOI ~ (transact_cmd | retract_cmd | query_cmd | rule_cmd) ~ EOI }
 
@@ -69,18 +94,20 @@ transact_cmd = {
 }
 
 // ── RETRACT ───────────────────────────────────────────────────────────────
-retract_cmd = { "(" ~ "retract" ~ fact_vector ~ ")" }
+retract_cmd = { "(" ~ "retract" ~ "[" ~ retract_fact* ~ "]" ~ ")" }
 
 // Fact vector: a vector of individual fact vectors
 fact_vector = { "[" ~ fact* ~ "]" }
 
-// A single fact: permissive (edn_value+) so arity violations are semantic, not syntax.
-// The real parser enforces [E A V] or [E A V {map}]; pest only requires ≥1 element.
-fact = { "[" ~ edn_value+ ~ "]" }
+// A single fact: exactly [E A V] or [E A V {valid-time map}].
+fact = { "[" ~ edn_value ~ edn_value ~ edn_value ~ valid_time_map? ~ "]" }
+
+// A retracted fact: exactly [E A V].
+retract_fact = { "[" ~ edn_value ~ edn_value ~ edn_value ~ "]" }
 
 // Transaction-level valid-time options map
 valid_time_map  = { "{" ~ valid_time_pair* ~ "}" }
-valid_time_pair = { (":valid-from" | ":valid-to") ~ string_lit }
+valid_time_pair = { (kw_valid_from | kw_valid_to) ~ string_lit }
 
 // ── QUERY ─────────────────────────────────────────────────────────────────
 query_cmd    = { "(" ~ "query" ~ query_vector ~ ")" }
@@ -95,7 +122,7 @@ query_section = {
 
 // ── FIND SECTION ──────────────────────────────────────────────────────────
 // :find accepts variables, aggregates, and window functions
-find_section = { ":find" ~ find_spec+ }
+find_section = { kw_find ~ find_spec+ }
 find_spec    = { window_expr | aggregate_expr | variable }
 
 // Aggregate: (func-name ?var) — e.g. (count ?e), (sum ?salary)
@@ -103,17 +130,17 @@ aggregate_expr = { "(" ~ (op_sym | plain_sym) ~ variable ~ ")" }
 
 // Window function: (func ?var :over (...)) or (func :over (...)) for rank/row-number
 window_expr = {
-    "(" ~ (op_sym | plain_sym) ~ (variable ~ ":over" | ":over") ~ over_clause ~ ")"
+    "(" ~ (op_sym | plain_sym) ~ (variable ~ kw_over | kw_over) ~ over_clause ~ ")"
 }
 over_clause = { "(" ~ over_option* ~ ")" }
 over_option = {
-    ":partition-by" ~ variable |
-    ":order-by" ~ variable |
-    ":desc" | ":asc"
+    kw_partition_by ~ variable |
+    kw_order_by ~ variable |
+    kw_desc | kw_asc
 }
 
 // ── WHERE SECTION ─────────────────────────────────────────────────────────
-where_section = { ":where" ~ where_clause+ }
+where_section = { kw_where ~ where_clause+ }
 
 // where_clause covers all clause forms
 where_clause = {
@@ -136,11 +163,11 @@ not_join_clause = { "(" ~ "not-join" ~ join_vars ~ where_clause+ ~ ")" }
 or_clause      = { "(" ~ "or" ~ or_branch+ ~ ")" }
 or_join_clause = { "(" ~ "or-join" ~ join_vars ~ or_branch+ ~ ")" }
 join_vars      = { "[" ~ variable* ~ "]" }
-or_branch      = { and_branch | where_clause }
+or_branch      = { and_branch | !("(" ~ and_head) ~ where_clause }
 and_branch     = { "(" ~ "and" ~ where_clause+ ~ ")" }
 
 // Rule invocation: (predicate-name args...)
-rule_invocation = { "(" ~ plain_sym ~ edn_value* ~ ")" }
+rule_invocation = { "(" ~ !reserved_head ~ plain_sym ~ edn_value* ~ ")" }
 
 // ── EXPRESSIONS ───────────────────────────────────────────────────────────
 expr        = { "(" ~ expr_body ~ ")" }
@@ -158,12 +185,12 @@ expr_arg = {
 }
 
 // ── TEMPORAL / WITH SECTIONS ───────────────────────────────────────────────
-as_of_section          = { ":as-of" ~ (integer_lit | string_lit | bind_slot) }
-valid_at_section       = { ":valid-at" ~ (string_lit | ":any-valid-time" | bind_slot) }
-any_valid_time_section = { ":any-valid-time" }
-with_section           = { ":with" ~ variable+ }
-max_derived_facts_section = { ":max-derived-facts" ~ integer_lit }
-max_results_section       = { ":max-results" ~ integer_lit }
+as_of_section          = { kw_as_of ~ (integer_lit | string_lit | bind_slot) }
+valid_at_section       = { kw_valid_at ~ (string_lit | kw_any_valid_time | bind_slot) }
+any_valid_time_section = { kw_any_valid_time }
+with_section           = { kw_with ~ variable+ }
+max_derived_facts_section = { kw_max_derived_facts ~ integer_lit }
+max_results_section       = { kw_max_results ~ integer_lit }
 
 // ── RULE ──────────────────────────────────────────────────────────────────
 // (rule [(head ?args) body-clause ...])
