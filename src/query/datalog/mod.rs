@@ -1,3 +1,4 @@
+pub(crate) mod aggregate;
 pub mod evaluator;
 pub mod executor;
 pub mod functions;

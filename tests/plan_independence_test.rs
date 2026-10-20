@@ -117,6 +117,15 @@ fn people(db: &Minigraf) {
 
 /// Queries whose answers must not depend on the plan.
 const MATRIX: &[&str] = &[
+    // Aggregates and windows (#547): exact sums, peers, the total value order.
+    r#"[:find ?a (count ?e) :where [?e :age ?a]]"#,
+    r#"[:find (sum ?s) (count-distinct ?s) :where [?p :score ?s]]"#,
+    r#"[:find (sum ?v) (min ?v) (max ?v) (count-distinct ?v) :where [?e ?attr ?v] [(float? ?v)]]"#,
+    r#"[:find ?n (row-number :over (:order-by ?a)) :where [?e :age ?a] [?e :name ?n]]"#,
+    r#"[:find ?n (sum ?a :over (:order-by ?a)) (rank :over (:order-by ?a :desc)) :where [?e :name ?n] [?e :age ?a]]"#,
+    r#"[:find ?e (rank :over (:order-by ?b)) (row-number :over (:order-by ?b)) :where [?e :friend ?b]]"#,
+    r#"[:find ?a (count ?e) (row-number :over (:order-by ?a :desc)) :where [?e :age ?a]]"#,
+    r#"[:find ?a (count ?b) :where (knows ?a ?b)]"#,
     // Patterns, joins, cross products.
     r#"[:find ?n ?a :where [?e :name ?n] [?e :age ?a]]"#,
     r#"[:find ?n ?a :where [?e :age ?a] [?e :name ?n]]"#,

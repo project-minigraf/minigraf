@@ -253,23 +253,40 @@ fn row_number_desc_ordering() {
 #[test]
 fn mixed_aggregate_and_window_in_same_find() {
     let db = setup_employees();
-    // count(e) collapses by dept, then sum runs over collapsed rows
+    // count(e) collapses by dept, then the window runs over the dept rows,
+    // reading only the grouping variable ?dept (#547).
     let result = db
         .execute(
-            r#"(query [:find ?dept (count ?e) (sum ?salary :over (:order-by ?salary))
-                   :with ?e ?salary
+            r#"(query [:find ?dept (count ?e) (rank :over (:order-by ?dept :desc))
                    :where [?e :employee/dept ?dept]
                           [?e :employee/salary ?salary]])"#,
         )
         .expect("query");
     let rows = get_results(result);
     assert_eq!(rows.len(), 2, "expected one row per dept");
-    // Each dept row has [dept, count, cumulative-sum]
     let eng = rows
         .iter()
         .find(|r| r[0] == Value::String("Engineering".into()))
         .unwrap();
     assert_eq!(eng[1], Value::Integer(2), "Engineering has 2 employees");
+    assert_eq!(eng[2], Value::Integer(2), "Product ranks first under :desc");
+}
+
+#[test]
+fn window_in_aggregate_query_reading_a_non_grouping_variable_is_rejected() {
+    // Before #547 ?salary read nil on every dept row, so the window summed
+    // nothing; now it is PRS-082.
+    let db = setup_employees();
+    let err = db
+        .execute(
+            r#"(query [:find ?dept (count ?e) (sum ?salary :over (:order-by ?salary))
+                   :with ?e ?salary
+                   :where [?e :employee/dept ?dept]
+                          [?e :employee/salary ?salary]])"#,
+        )
+        .err()
+        .expect("rejected");
+    assert_eq!(err.code(), "PRS-082");
 }
 
 // ── single-row partition edge case ─────────────────────────────────────────
