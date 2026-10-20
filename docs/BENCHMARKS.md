@@ -17,11 +17,10 @@ This section lists the graph sizes and query shapes that are tested, with their 
 | Open a checkpointed file | 10M facts | 0.12 ms, 3 MiB RSS | Indexes are paged in on demand |
 | Checkpoint after 1 new fact | 10M facts | 3.8 ms / 21 ms | Copy-on-write: cost follows the change |
 | Attribute scan, attribute + value, grouped aggregation, joins | 1M facts | see below | Linear in the facts of the attributes they touch: about 0.1–0.5 s at 1M facts, seconds at 10M |
-| Rule queries (recursion) | 1M facts | 2.7 s at 100K, 40 s at 1M | Read the whole database (#529); not interactive past 100K |
+| Rule queries (recursion) | 10M facts | see below | On the streaming engine (#548): a rule with a constant (magic sets) takes 1.5–3 ms; a whole transitive closure grows with the facts it derives, about 3–5 µs and 250 bytes of RSS per derived fact |
 
 **Not supported yet:**
 
-- Interactive rule queries past 100K facts. `recursive_ancestors` takes 40 s and 3.2 GiB of RSS at 1M facts because rule evaluation reads the whole database (#529); before #528 was fixed it failed there with `INT-020`.
 - Graphs over 10M facts are not tested.
 - Interactive latency for scans and joins at 10M facts. They take 3–21 s and materialize every fact of the attributes they touch, 0.7–3.6 GiB of RSS.
 
@@ -155,6 +154,22 @@ An ungrouped aggregate holds one set of accumulators, and `count` reads no value
 | every other shape | unchanged | unchanged | unchanged |
 
 A window needs its whole partition, so `Window` holds every row and memory grows with the input. It turns each row's ids into values in its first pull, for the windows' sort; the stream keeps those DICT lookups until it ends, so returning the rows does not look them up again. Without that, the first measurement of PR 3 was 17% slower than the executor at 100K (48.2 ms).
+
+### Rule queries on the streaming engine (#548)
+
+`recursive_ancestors` is `(boss :p{leaf} ?b)` (5–7 rows, through the magic-set rewrite); `recursive` is `[:find ?x ?b :where (boss ?x ?b)]`, the whole transitive closure of `:manager` with no constant, so every entity's chain up to `:p0` is derived (72,219, 888,885 and 10,555,551 rows). `boss` is the two-rule closure over `:manager`; the envelope opens with `max_derived_facts` unlimited. A/B on the same idle server (2026-10-21), `v3` before PR 2 (84ac845, rule queries on the executor, with the `recursive` shape added) and PR 3 run in parallel on different sockets, swapped for the second round; p50 of either round (they agree within 2%) and peak RSS. The executor runs were stopped after 60 s at 10M.
+
+| Shape | 100K | 1M | 10M |
+|---|---:|---:|---:|
+| `recursive_ancestors` p50, executor → engine | 2.71 s → 1.45 ms | 43.9 s → 2.14 ms | > 60 s → 3.04 ms |
+| `recursive_ancestors` peak RSS | 253 → 4 MiB | 2,663 → 4 MiB | > 8.8 GiB → 4 MiB |
+| `recursive` p50 | 3.04 s → 211 ms | 51.0 s → 3.21 s | > 60 s → 53.8 s |
+| `recursive` peak RSS | 484 → 45 MiB | 4,786 → 318 MiB | > 8.8 GiB → 2,557 MiB |
+| every other shape | unchanged | unchanged | unchanged |
+
+The executor copied the database into a `FactStorage` for every rule query; the engine reads the stored facts where they are and holds only the derived relations (about 250 bytes per derived fact at 10M), so `recursive` memory follows its 10.6M derived facts and not the 10M stored ones. The point queries (#379) are bimodal per process on this server, about 20 µs or about 50 µs at 1M facts, in both builds: six fresh processes of each shape per build gave the same medians within 7 µs.
+
+The acceptance test (`tests/recursive_acceptance_test.rs`, ignored; the nightly smoke workflow runs it) derives 4,882,500 `reach` facts over a layered graph of 155,000 edges (63 layers of 50 nodes, complete bipartite between neighbours) in 62 rounds: 226 s and 169 bytes of RSS per derived fact on a laptop. Each fact is derived through 50 middle nodes, so the rounds probe about 250M candidate rows; the time is in those entity probes and the identity set, not in memory.
 
 ### Python FFI round trip
 
