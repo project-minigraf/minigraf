@@ -1,0 +1,99 @@
+name: Grammar verifier (nightly)
+
+# Two branches, 12 hours apart: main at 05:30 UTC, v3 at 17:30 UTC.
+# Scheduled runs always use this file from the default branch, so the branch
+# under test is chosen from the cron string that fired (as in soak.yml). Keep
+# the cron strings here and in VERIFIER_REF/run-name identical.
+run-name: >-
+  Grammar verifier (${{ github.event_name == 'workflow_dispatch' && inputs.ref
+  || (github.event.schedule == '30 17 * * *' && 'v3' || 'main') }})
+
+# #643: checks the parser against tests/grammar/grammar.pest on every input up
+# to a bound (src/query/datalog/parser/verifier.rs). `cargo test` runs the
+# structural level at k = 3; this job runs k = 4 (~22 CPU-minutes, ~6 minutes
+# on 4 cores).
+
+on:
+  schedule:
+    - cron: "30 5 * * *"   # main
+    - cron: "30 17 * * *"  # v3
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch to test
+        required: true
+        default: main
+      bound:
+        description: Structural bound k (MINIGRAF_GRAMMAR_BOUND)
+        required: true
+        default: "4"
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  VERIFIER_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || (github.event.schedule == '30 17 * * *' && 'v3' || 'main') }}
+  MINIGRAF_GRAMMAR_BOUND: ${{ github.event_name == 'workflow_dispatch' && inputs.bound || '4' }}
+
+jobs:
+  verifier:
+    name: Grammar verifier
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VERIFIER_REF }}
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: cargo test --lib --no-run
+
+      - name: Run the verifier
+        shell: bash
+        env:
+          RUST_BACKTRACE: 1
+        run: |
+          set -o pipefail
+          cargo test --lib query::datalog::parser::verifier -- --nocapture 2>&1 | tee verifier-output.txt
+
+      - name: Record verifier failure
+        if: ${{ failure() }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_TITLE: "Nightly grammar verifier failure (${{ env.VERIFIER_REF }})"
+        run: |
+          report_file="verifier-failure.md"
+          {
+            echo "The nightly grammar verifier failed on ${{ env.VERIFIER_REF }}."
+            echo
+            echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "- Commit: $(git rev-parse HEAD)"
+            echo "- Reproduce: \`MINIGRAF_GRAMMAR_BOUND=$MINIGRAF_GRAMMAR_BOUND cargo test --lib query::datalog::parser::verifier -- --nocapture\`"
+            echo
+            echo "## Test output"
+            echo
+            echo '```text'
+            tail -n 300 verifier-output.txt 2>/dev/null || echo "(no output: the run failed before the test started)"
+            echo '```'
+          } > "$report_file"
+
+          existing_issue="$(gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --search "$ISSUE_TITLE in:title" \
+            --json number,title \
+            --limit 100 \
+            --jq ".[] | select(.title == \"$ISSUE_TITLE\") | .number" \
+            | head -n 1)"
+
+          if [ -n "$existing_issue" ]; then
+            gh issue comment "$existing_issue" --repo "$GITHUB_REPOSITORY" --body-file "$report_file"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" --body-file "$report_file"
+          fi

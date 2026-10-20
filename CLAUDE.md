@@ -118,6 +118,7 @@ cargo run < demos/demo_negation.txt
 
 3. **`src/query/datalog/`** — Datalog engine
    - `parser.rs`: EDN/Datalog parser — `transact`, `retract`, `query`, `rule`, `:as-of`, `:valid-at`, `not`, `not-join`
+   - `parser/verifier.rs`: test-only (not wasm32) bounded-exhaustive check of the parser against `tests/grammar/grammar.pest` (#643): every 1–3 character string (`parse_edn`) and every balanced token filler up to `MINIGRAF_GRAMMAR_BOUND` (default 3) in 15 command templates (`parse_datalog_command`); pest rejects ⇒ parser rejects, pest accepts ⇒ parser accepts or raises a `SEMANTIC` code (`INT-019` counts as semantic on v2.x); today's drift is `KNOWN_DRIFT`, one entry per cause, removed by its fix (#650, #651); `grammar-verifier.yml` runs bound 4 nightly
    - `executor.rs`: Query executor — temporal filter (tx-time → net-assert → valid-time), not/not-join post-filter
    - `matcher.rs`: Pattern matching with variable unification; `edn_to_value`, `edn_to_entity_id`
    - `evaluator.rs`: `RecursiveEvaluator` (semi-naive), `StratifiedEvaluator` (repeats a stratum whose rules recurse through a `not`/`or` rule until it derives nothing new, #633), `evaluate_not_join`
@@ -174,7 +175,7 @@ Auto-migrates v1/v2/v3/v4/v5/v6 → v7 on open/checkpoint.
 
 ## Test Coverage
 
-**1313 tests** (1304 passing, 9 ignored; unit + integration + doc).
+**1317 tests** (1308 passing, 9 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
