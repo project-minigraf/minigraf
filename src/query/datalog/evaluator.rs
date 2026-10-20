@@ -131,13 +131,10 @@ impl RecursiveEvaluator {
         // Create storage for derived facts
         let derived = FactStorage::new();
 
-        // Add base facts to derived storage
-        for fact in &base_facts {
-            derived.transact(
-                vec![(fact.entity, fact.attribute.clone(), fact.value.clone())],
-                None,
-            )?;
-        }
+        // Add base facts to derived storage as stored: a pseudo-attribute in a
+        // rule body reads their valid time and transaction (#661).
+        derived.load_facts(base_facts.iter().cloned())?;
+        derived.restore_tx_counter()?;
 
         // Track facts we've seen (for delta computation) using BTreeSet with canonical encoding.
         let mut seen_facts: BTreeSet<(uuid::Uuid, String, Vec<u8>)> = base_facts

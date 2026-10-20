@@ -622,3 +622,62 @@ fn test_rule_or_branch_valid_at_binds_query_valid_time() {
         "one row per entity"
     );
 }
+
+/// #661: a per-fact pseudo-attribute in a rule body reads the stored fact's
+/// metadata, as it does in a query body. Positive rules used to read the
+/// evaluator's working copy: valid-from was the time the query ran,
+/// valid-to forever, and tx-count / tx-id the copy's.
+#[test]
+fn test_pseudo_attributes_in_rule_bodies_read_the_stored_fact() {
+    let db = Minigraf::in_memory().unwrap();
+    exec(
+        &db,
+        r#"(transact {:valid-from "2020-01-01T00:00:00Z" :valid-to "2021-01-01T00:00:00Z"} [[:a :edge :b]])"#,
+    );
+    exec(&db, "(transact [[:b :edge :c]])");
+    exec(&db, "(transact [[:c :edge :d]])");
+    let direct = |attr: &str| {
+        let mut rows = result_rows(exec(
+            &db,
+            &format!(
+                "(query [:find ?x ?m :valid-at :any-valid-time :where [?x :edge ?y] [?x {attr} ?m]])"
+            ),
+        ));
+        rows.sort();
+        rows
+    };
+    for (i, attr) in [
+        ":db/valid-from",
+        ":db/valid-to",
+        ":db/tx-count",
+        ":db/tx-id",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        // A positive rule, and a recursive one whose later iterations read
+        // the base facts again.
+        exec(
+            &db,
+            &format!("(rule [(m{i} ?x ?m) [?x :edge ?y] [?x {attr} ?m]])"),
+        );
+        exec(
+            &db,
+            &format!("(rule [(r{i} ?x ?m) [?x :edge ?y] [?x {attr} ?m]])"),
+        );
+        exec(
+            &db,
+            &format!("(rule [(r{i} ?x ?m) [?x :edge ?y] [?x {attr} ?m] (r{i} ?y ?n)])"),
+        );
+        let expected = direct(attr);
+        assert_eq!(expected.len(), 3, "three :edge facts");
+        for rule in [format!("m{i}"), format!("r{i}")] {
+            let mut rows = result_rows(exec(
+                &db,
+                &format!("(query [:find ?x ?m :valid-at :any-valid-time :where ({rule} ?x ?m)])"),
+            ));
+            rows.sort();
+            assert!(rows == expected, "a rule body reads the stored metadata");
+        }
+    }
+}
