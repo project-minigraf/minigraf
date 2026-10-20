@@ -103,6 +103,31 @@ with no `CodedError` anywhere in its chain.
 | PRS-080 | :find variable not bound in :where | Parser |
 | PRS-081 | Pseudo-attribute has no source pattern | Parser |
 | PRS-082 | Window reads a non-grouping variable | Parser |
+| PRS-083 | Bind slot without a name | Parser |
+| PRS-084 | Window without :order-by | Parser |
+| PRS-085 | Query argument is not a vector | Parser |
+| PRS-086 | :with holds a non-variable | Parser |
+| PRS-087 | :find element is not a variable or aggregate | Parser |
+| PRS-088 | Unknown key in valid-time map | Parser |
+| PRS-089 | Retract fact is not a vector | Parser |
+| PRS-090 | Retract fact must have 3 elements | Parser |
+| PRS-091 | Invalid regex pattern | Parser |
+| PRS-092 | Item inside (not) is not a clause | Parser |
+| PRS-093 | not-join inside not or not-join | Parser |
+| PRS-094 | not-join without a join-variable vector | Parser |
+| PRS-095 | not-join join variable is not a variable | Parser |
+| PRS-096 | Item inside (not-join) is not a clause | Parser |
+| PRS-097 | Rule invocation without a predicate name | Parser |
+| PRS-098 | Pattern must have 3 elements | Parser |
+| PRS-099 | Item inside or branch is not a clause | Parser |
+| PRS-100 | Rule without a body | Parser |
+| PRS-101 | Rule body is not a vector | Parser |
+| PRS-102 | Rule body is empty | Parser |
+| PRS-103 | Rule head is not a list | Parser |
+| PRS-104 | Rule head is empty | Parser |
+| PRS-105 | Rule head without a predicate name | Parser |
+| PRS-106 | Rule body clause is not a vector or list | Parser |
+| PRS-107 | Rule body has no clause | Parser |
 | QRY-001 | Invalid entity | Query Execution |
 | QRY-002 | Attribute must be a keyword | Query Execution |
 | QRY-003 | Cannot transact a pseudo-attribute | Query Execution |
@@ -1613,6 +1638,381 @@ $<4097-char-slot-name>
 ```
 *`?salary` is aggregated, not a group: order by `?dept`, or drop `(sum ?salary)`*
 
+### PRS-083 Bind slot without a name
+
+**Error text**: `Bind slot '$' must be followed by an identifier (e.g. $entity)`
+
+**Cause**: A `$` in a query is not followed by an identifier. Bind slots name the value supplied at execution time, as `$entity` or `$min-age`. Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Name the slot: `$name`, then pass a value for `name` when executing the prepared query.
+
+**Example**:
+```datalog
+(query [:find ?e :where [?e :name $]])
+```
+*Write `$name` and bind `name`*
+
+### PRS-084 Window without :order-by
+
+**Error text**: `':order-by' is required in the ':over' clause`
+
+**Cause**: A window function's `:over` clause has no `:order-by`. Every window orders its rows; `:partition-by` is optional, `:order-by` is not. Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Add `(:order-by ?var)` to the `:over` clause.
+
+**Example**:
+```datalog
+(query [:find ?e (rank :over (:partition-by ?d)) :where [?e :dept ?d]])
+```
+*Add `:order-by`, e.g. `(:partition-by ?d :order-by ?e)`*
+
+### PRS-085 Query argument is not a vector
+
+**Error text**: `Query argument must be a vector`
+
+**Cause**: The argument of `(query ...)` is not a vector. A query is one vector holding `:find`, optional `:with`, `:where` and the temporal keywords. Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Wrap the query in square brackets: `(query [:find ... :where ...])`.
+
+**Example**:
+```datalog
+(query (:find ?e :where [?e :a ?v]))
+```
+*Use `[` `]`, not `(` `)`*
+
+### PRS-086 :with holds a non-variable
+
+**Error text**: `':with' clause accepts only variables, got {}`
+
+**Cause**: An element of `:with` is not a logic variable. `:with` lists variables that keep otherwise identical rows apart before aggregation. Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- List only `?variables` after `:with`.
+
+**Example**:
+```datalog
+(query [:find (count ?e) :with 7 :where [?e :a ?v]])
+```
+*`7` is not a variable; write `:with ?v`*
+
+### PRS-087 :find element is not a variable or aggregate
+
+**Error text**: `Expected variable or aggregate expression in :find clause, got {}`
+
+**Cause**: An element of `:find` is neither a logic variable nor an aggregate or window expression such as `(count ?e)`. Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Return variables bound in `:where`, or aggregate them.
+
+**Example**:
+```datalog
+(query [:find 7 :where [?e :a ?v]])
+```
+*`7` is a constant; return a variable*
+
+### PRS-088 Unknown key in valid-time map
+
+**Error text**: `Unknown key in valid-time map: {}; expected :valid-from or :valid-to`
+
+**Cause**: The map before a `transact`'s facts, or the fourth element of a fact, holds a key other than `:valid-from` or `:valid-to`. Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Use only `:valid-from` and `:valid-to`; both are optional.
+
+**Example**:
+```datalog
+(transact {:valid-at "2024-01-01"} [[:alice :name "Alice"]])
+```
+*Write `:valid-from`*
+
+### PRS-089 Retract fact is not a vector
+
+**Error text**: `Each fact must be a vector [e a v]`
+
+**Cause**: An element of the `(retract [...])` vector is not a fact vector. Each fact to retract is a vector `[entity attribute value]`. Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Wrap each fact in its own vector: `(retract [[:alice :name "Alice"]])`.
+
+**Example**:
+```datalog
+(retract [:alice])
+```
+*Write `[[:alice :name "Alice"]]`*
+
+### PRS-090 Retract fact must have 3 elements
+
+**Error text**: `Retract fact must have exactly 3 elements (E A V), got {}`
+
+**Cause**: A fact in `(retract [...])` does not have exactly three elements. A retraction names one fact by entity, attribute and value; it takes no valid-time map. Before v3.0.0 this was `INT-000`.
+
+**Resolution**:
+- Give entity, attribute and value: `[:alice :name "Alice"]`.
+
+**Example**:
+```datalog
+(retract [[:alice :name]])
+```
+*The value is missing*
+
+### PRS-091 Invalid regex pattern
+
+**Error text**: `invalid regex pattern {}: {}`
+
+**Cause**: The pattern given to `matches?` is not a valid regular expression. The error shows the pattern and the regex error. Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Fix the pattern; escape regex metacharacters such as `(`, `[` and `.` with `\\` inside the string.
+
+**Example**:
+```datalog
+(query [:find ?e :where [?e :name ?n] [(matches? ?n "(")]])
+```
+*`(` opens a group that never closes; write `"\\("`*
+
+### PRS-092 Item inside (not) is not a clause
+
+**Error text**: `expected pattern or rule invocation inside (not), got {}`
+
+**Cause**: An item inside `(not ...)` is neither a vector (a pattern or an expression clause) nor a list (a rule invocation or another clause form). Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Put patterns `[?e :attr ?v]` or rule calls `(rule-name ?x)` inside `not`.
+
+**Example**:
+```datalog
+(query [:find ?e :where [?e :a ?v] (not 7)])
+```
+*`7` is not a clause*
+
+### PRS-093 not-join inside not or not-join
+
+**Error text**: `(not-join ...) cannot appear inside another (not ...) or (not-join ...)`
+
+**Cause**: A `(not-join ...)` appears inside another `(not ...)` or `(not-join ...)`. Negations do not nest. Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Move the inner negation out, or express it as a rule and call the rule inside the outer `not`.
+
+**Example**:
+```datalog
+(query [:find ?e :where [?e :a ?v] (not (not-join [?e] [?e :b 1]))])
+```
+*Write the inner `not-join` as a rule, or move it to the top level*
+
+### PRS-094 not-join without a join-variable vector
+
+**Error text**: `(not-join) first argument must be a vector of join variables`
+
+**Cause**: The first argument of `(not-join ...)` is not a vector. `not-join` takes the variables it shares with the outer query as a vector, then its clauses. Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Write the join variables in square brackets: `(not-join [?e] ...)`.
+
+**Example**:
+```datalog
+(query [:find ?e :where [?e :a ?v] (not-join ?e [?e :b 1])])
+```
+*Write `[?e]`*
+
+### PRS-095 not-join join variable is not a variable
+
+**Error text**: `(not-join) join variables must be logic variables, got {}`
+
+**Cause**: An element of `not-join`'s join-variable vector is not a logic variable. Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- List only `?variables` in the vector.
+
+**Example**:
+```datalog
+(query [:find ?e :where [?e :a ?v] (not-join [7] [?e :b 1])])
+```
+*`7` is not a variable*
+
+### PRS-096 Item inside (not-join) is not a clause
+
+**Error text**: `expected pattern or rule invocation inside (not-join), got {}`
+
+**Cause**: An item after `not-join`'s join variables is neither a vector (a pattern or an expression clause) nor a list (a rule invocation or another clause form). Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Put patterns `[?e :attr ?v]` or rule calls `(rule-name ?x)` after the join variables.
+
+**Example**:
+```datalog
+(query [:find ?e :where [?e :a ?v] (not-join [?e] 7)])
+```
+*`7` is not a clause*
+
+### PRS-097 Rule invocation without a predicate name
+
+**Error text**: `Rule invocation must start with predicate name (symbol), got {}`
+
+**Cause**: A list in `:where` or a rule body does not start with a symbol, so it is not a rule invocation (nor `not`, `or` or another clause form). Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Start the list with the rule's name: `(reachable ?a ?b)`.
+
+**Example**:
+```datalog
+(query [:find ?e :where [?e :a ?v] (7 ?e)])
+```
+*`7` is not a rule name*
+
+### PRS-098 Pattern must have 3 elements
+
+**Error text**: `Pattern must have exactly 3 elements (E A V), got {}`
+
+**Cause**: A pattern vector in `:where`, a rule body, or a `not`/`or` body does not have exactly three elements: entity, attribute and value. Use `_` for a position you do not care about. Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Give all three positions: `[?e :attr ?v]` or `[?e :attr _]`.
+
+**Example**:
+```datalog
+(query [:find ?e :where [?e :a ?v] [?e :b]])
+```
+*Write `[?e :b _]`*
+
+### PRS-099 Item inside or branch is not a clause
+
+**Error text**: `expected clause inside or branch, got {}`
+
+**Cause**: An item inside `(or ...)`, `(or-join ...)` or `(and ...)` is neither a vector (a pattern or an expression clause) nor a list (a rule invocation or another clause form). Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Make each branch a pattern, a rule call, or an `(and ...)` of clauses.
+
+**Example**:
+```datalog
+(query [:find ?e :where [?e :a ?v] (or 7)])
+```
+*`7` is not a clause*
+
+### PRS-100 Rule without a body
+
+**Error text**: `Rule must have a body`
+
+**Cause**: `(rule)` has no argument. A rule is one vector: a head list, then one or more body clauses. Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Write `(rule [(name ?args) clause ...])`.
+
+**Example**:
+```datalog
+(rule)
+```
+*Add the rule vector*
+
+### PRS-101 Rule body is not a vector
+
+**Error text**: `Rule body must be a vector`
+
+**Cause**: The argument of `(rule ...)` is not a vector. The head and body go inside one vector. Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Wrap head and body in square brackets: `(rule [(reachable ?a ?b) [?a :edge ?b]])`.
+
+**Example**:
+```datalog
+(rule (reachable ?a ?b))
+```
+*Put the head and its clauses in `[` `]`*
+
+### PRS-102 Rule body is empty
+
+**Error text**: `Rule body cannot be empty`
+
+**Cause**: The rule vector is empty: it has no head and no clauses. Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Write the head list, then at least one clause.
+
+**Example**:
+```datalog
+(rule [])
+```
+*Add `(name ?args)` and a clause*
+
+### PRS-103 Rule head is not a list
+
+**Error text**: `Rule head must be a list: (predicate ?args)`
+
+**Cause**: The first element of the rule vector is not a list. The head names the rule and its arguments: `(predicate ?args)`. Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Write the head as a list: `(reachable ?a ?b)`.
+
+**Example**:
+```datalog
+(rule [reachable [?a :edge ?b]])
+```
+*Write `(reachable ?a ?b)`*
+
+### PRS-104 Rule head is empty
+
+**Error text**: `Rule head cannot be empty`
+
+**Cause**: The rule head is `()`: it has no predicate name. Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Name the rule and its arguments: `(reachable ?a ?b)`.
+
+**Example**:
+```datalog
+(rule [() [?a :edge ?b]])
+```
+*Write `(reachable ?a ?b)`*
+
+### PRS-105 Rule head without a predicate name
+
+**Error text**: `Rule head must start with a symbol (predicate name)`
+
+**Cause**: The rule head does not start with a symbol, so the rule has no name. Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Start the head with the rule's name: `(reachable ?a ?b)`.
+
+**Example**:
+```datalog
+(rule [(7 ?a) [?a :edge ?b]])
+```
+*`7` is not a name*
+
+### PRS-106 Rule body clause is not a vector or list
+
+**Error text**: `Rule body clause must be a vector (pattern) or list (rule invocation / not), got {}`
+
+**Cause**: An element after the rule head is neither a vector (a pattern or an expression clause) nor a list (a rule invocation, `not`, `or` or another clause form). Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Write each body clause as `[?e :attr ?v]` or `(name ?args)`.
+
+**Example**:
+```datalog
+(rule [(reachable ?a) 7])
+```
+*`7` is not a clause*
+
+### PRS-107 Rule body has no clause
+
+**Error text**: `Rule must have at least one pattern or rule invocation in body`
+
+**Cause**: The rule vector holds a head and nothing else. A rule derives its head from at least one body clause. Before v3.0.0 this was `INT-019`.
+
+**Resolution**:
+- Add a pattern or rule invocation after the head.
+
+**Example**:
+```datalog
+(rule [(reachable ?a)])
+```
+*Add a clause, e.g. `[?a :edge ?b]`*
+
 ---
 
 ## QRY — Query Execution Errors
@@ -3060,14 +3460,16 @@ earlier clause in the query.
 
 **Error text**: `datalog parser: {}`
 
-**Cause**: A shared catch-all for the parser's remaining long-tail syntax
-and structural errors (malformed `:with`/`:find` clauses, malformed
-fact/rule/pattern vectors, invalid regex literals in `matches?`, and
-similar). The `{}` carries the specific underlying message.
+**Cause**: An invariant inside the parser does not hold. No input is known
+to reach it; if you see it, please report it with the input.
+
+Before v3.0.0 this code was also the parser's catch-all for long-tail syntax
+and structural errors. From v3.0.0 those carry their own codes: `PRS-083` to
+`PRS-107` (`PRS-090` replaced `INT-000` for the retract arity). Code that
+matches on `INT-019` for those errors must match the new codes.
 
 **Resolution**:
-- Read the wrapped message text for the specific syntax problem and correct
-  the input accordingly.
+- Report the input that raised it as a bug.
 
 ### INT-020 Evaluator iteration/result limit exceeded
 
