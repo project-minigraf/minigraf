@@ -141,7 +141,9 @@ pub struct OpenOptions {
     /// runaway recursive rule with `INT-020`; it never limits returned rows.
     pub max_derived_facts: usize,
     /// Deprecated alias of [`max_derived_facts`](Self::max_derived_facts):
-    /// the lower of the two applies (#553). It never limited returned rows.
+    /// the lower of the two applies (#553). Defaults to `usize::MAX`, no
+    /// limit of its own, so it can lower the limit but not raise it; raise
+    /// `max_derived_facts` instead. It never limited returned rows.
     #[deprecated(
         since = "3.0.0",
         note = "use `max_derived_facts`; the lower of the two applies"
@@ -192,7 +194,7 @@ impl Default for OpenOptions {
             wal_checkpoint_threshold: 1000,
             page_cache_size: 256,
             max_derived_facts: DEFAULT_MAX_DERIVED_FACTS,
-            max_results: DEFAULT_MAX_DERIVED_FACTS,
+            max_results: usize::MAX,
             allow_unlocked: false,
             synchronous: SyncMode::Full,
             read_only: false,
@@ -237,7 +239,8 @@ impl OpenOptions {
     }
 
     /// Deprecated alias of [`max_derived_facts`](Self::max_derived_facts):
-    /// the lower of the two applies (#553). It never limited the rows a query
+    /// the lower of the two applies (#553), so it can lower the limit but not
+    /// raise it above `max_derived_facts`. It never limited the rows a query
     /// returns.
     #[deprecated(
         since = "3.0.0",
@@ -2908,6 +2911,22 @@ mod tests {
                 .max_results(14),
         );
         assert_eq!(chain_code(&db, CHAIN_QUERY), int020, "max_results lower");
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn max_derived_facts_alone_raises_the_limit_above_the_default() {
+        // The alias has no limit of its own unless set (#553).
+        let opts = OpenOptions::default().max_derived_facts(2_000_000);
+        assert_eq!(opts.derived_fact_limit(), 2_000_000);
+        assert_eq!(OpenOptions::default().derived_fact_limit(), 1_000_000);
+        assert_eq!(
+            OpenOptions::default()
+                .max_results(2_000_000)
+                .derived_fact_limit(),
+            1_000_000,
+            "the alias does not raise the limit"
+        );
     }
 
     #[test]
