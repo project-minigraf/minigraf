@@ -16,7 +16,7 @@ use super::cell::{Cell, JoinKey, Scalar};
 use super::project::value;
 use super::{BATCH_ROWS, Counters, Ctx, Operator};
 use crate::graph::types::Value;
-use crate::query::datalog::aggregate::{Agg, value_order};
+use crate::query::datalog::aggregate::{Agg, Groups, finish_groups, value_order};
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 
@@ -53,14 +53,12 @@ impl Acc {
         Ok(())
     }
 
-    /// As [`Agg::finish`]: `None` drops the group.
-    fn finish(self, func: &str) -> Result<Option<Value>> {
+    /// The accumulator as an [`Agg`], whose `finish` gives its result.
+    fn into_agg(self) -> Agg {
         match self {
-            Acc::Count(n) => Ok(Some(Value::Integer(n))),
-            Acc::CountDistinct(set) => Ok(Some(Value::Integer(
-                i64::try_from(set.len()).unwrap_or(i64::MAX),
-            ))),
-            Acc::Values(agg) => agg.finish(func),
+            Acc::Count(n) => Agg::Count(n),
+            Acc::CountDistinct(set) => Agg::Count(i64::try_from(set.len()).unwrap_or(i64::MAX)),
+            Acc::Values(agg) => agg,
         }
     }
 }
@@ -78,7 +76,9 @@ pub(crate) struct Aggregate {
     /// Each aggregate's function and argument slot.
     aggs: Vec<(String, usize)>,
     zero_row: bool,
-    table: HashMap<Vec<JoinKey>, Group>,
+    /// Each group's index in `rows`, by its key.
+    table: HashMap<Vec<JoinKey>, usize>,
+    rows: Vec<Group>,
     /// The finished rows, last first, once the input has ended.
     out: Option<Vec<Vec<Cell>>>,
     counters: Counters,
@@ -97,6 +97,7 @@ impl Aggregate {
             aggs,
             zero_row,
             table: HashMap::new(),
+            rows: Vec::new(),
             out: None,
             counters: Counters::new("Aggregate"),
         }
@@ -114,8 +115,8 @@ impl Aggregate {
                 .iter()
                 .map(|&s| JoinKey::group(cell(s, i).unwrap_or(&null)))
                 .collect();
-            let group = match self.table.entry(key) {
-                std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+            let at = match self.table.entry(key) {
+                std::collections::hash_map::Entry::Occupied(e) => *e.get(),
                 std::collections::hash_map::Entry::Vacant(e) => {
                     let accs = self
                         .aggs
@@ -127,8 +128,12 @@ impl Aggregate {
                         .iter()
                         .map(|&s| cell(s, i).unwrap_or(&null).clone())
                         .collect();
-                    e.insert(Group { cells, accs })
+                    self.rows.push(Group { cells, accs });
+                    *e.insert(self.rows.len() - 1)
                 }
+            };
+            let Some(group) = self.rows.get_mut(at) else {
+                continue;
             };
             // Of the floats a key finds equal, the group returns the least
             // by `value_order`, as the executor does: the only cells that
@@ -158,26 +163,28 @@ impl Aggregate {
             row.extend(vec![Cell::Val(Scalar::Int(0)); self.aggs.len()]);
             return Ok(vec![row]);
         }
-        let mut groups = Vec::with_capacity(self.table.len());
-        for (_, group) in std::mem::take(&mut self.table) {
+        // Sorted and finished as the executor's groups are.
+        let mut groups = Groups::new();
+        for group in std::mem::take(&mut self.rows) {
             let values = group
                 .cells
                 .iter()
                 .map(|c| value(c, ctx))
                 .collect::<Result<Vec<Value>>>()?;
-            groups.push((values, group));
+            let accs = group.accs.into_iter().map(Acc::into_agg).collect();
+            groups.insert(values.clone(), (values, accs));
         }
-        groups.sort_by(|(a, _), (b, _)| a.cmp(b));
+        self.table.clear();
+        let funcs: Vec<&str> = self.aggs.iter().map(|(f, _)| f.as_str()).collect();
         let mut rows = Vec::with_capacity(groups.len());
-        'group: for (_, group) in groups {
-            let mut row = group.cells;
-            for (acc, (func, _)) in group.accs.into_iter().zip(&self.aggs) {
-                match acc.finish(func)? {
-                    Some(v) => row.push(Cell::of_value(ctx.ids, ctx.keys, &v)?),
-                    None => continue 'group,
-                }
-            }
-            rows.push(row);
+        for (shown, results) in finish_groups(groups, &funcs)? {
+            rows.push(
+                shown
+                    .iter()
+                    .chain(&results)
+                    .map(|v| Cell::of_value(ctx.ids, ctx.keys, v))
+                    .collect::<Result<Vec<Cell>>>()?,
+            );
         }
         rows.reverse();
         Ok(rows)
@@ -209,12 +216,14 @@ impl Operator for Aggregate {
 
     fn rewind(&mut self, seed: &[Cell]) {
         self.table.clear();
+        self.rows.clear();
         self.out = None;
         self.child.rewind(seed);
     }
 
     fn close(&mut self) {
         self.table = HashMap::new();
+        self.rows = Vec::new();
         self.out = Some(Vec::new());
         self.child.close();
     }

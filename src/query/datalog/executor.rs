@@ -1,4 +1,4 @@
-use super::aggregate::{Agg, Running, named_vars, value_order};
+use super::aggregate::{Agg, Groups, Running, finish_groups, named_vars, value_order};
 use super::evaluator::{StratifiedEvaluator, evaluate_not_join};
 use super::functions::FunctionRegistry;
 use super::matcher::{PatternMatcher, edn_to_entity_id, edn_to_value};
@@ -1676,8 +1676,7 @@ fn compute_aggregation(
     // Groups in key order, as `Value`'s `Ord` compares keys. Each holds the
     // values it returns: of the key values `Ord` finds equal (`-0.0` and
     // `0.0`, NaNs), the least by `value_order`, whatever the input order.
-    use std::collections::BTreeMap;
-    let mut groups: BTreeMap<Vec<Value>, (Vec<Value>, Vec<Agg>)> = BTreeMap::new();
+    let mut groups = Groups::new();
     for b in bindings {
         let key: Vec<Value> = group_var_names
             .iter()
@@ -1719,19 +1718,15 @@ fn compute_aggregation(
         })
         .collect();
 
+    let funcs: Vec<&str> = aggs.iter().map(|(_, func, _)| *func).collect();
     let mut results: Vec<Binding> = Vec::new();
-    'group: for (shown, accs) in groups.into_values() {
+    for (shown, values) in finish_groups(groups, &funcs)? {
         let mut binding = Binding::new();
         for (v, val) in plain.iter().zip(shown) {
             binding.insert((*v).to_string(), val);
         }
-        for (acc, (i, func, _)) in accs.into_iter().zip(&aggs) {
-            match acc.finish(func)? {
-                Some(v) => {
-                    binding.insert(format!("__agg_{}", i), v);
-                }
-                None => continue 'group,
-            }
+        for (v, (i, _, _)) in values.into_iter().zip(&aggs) {
+            binding.insert(format!("__agg_{}", i), v);
         }
         results.push(binding);
     }
