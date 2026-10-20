@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v2.0.8 — 2026-10-20
+
+Patch release on the v2.x line under the [support policy](PHILOSOPHY.md#support-policy): seven data-integrity fixes for queries that silently returned too few or too many rows — `:db/valid-at` in `not-join` bodies (#615) and rule definitions (#617), `or` / `or-join` branches (#620, #625, #637), and rules that call or recurse through a rule with `not`, `not-join`, `or` or `or-join` (#628, #633). File format is unchanged (v7). No API changes. Stored data was never affected. Upgrading is recommended for every v2.x user who uses `or`, `not-join`, `:db/valid-at` or rules with negation or disjunction.
+
 ### Fixed
 
 - **A `:db/valid-at` pattern in a `not-join` body binds the query's valid time on every path** (#615). When the body also held an expression, sat in an `or` branch, or ran in a query that invokes a rule, the body bound `nil`, so `(not-join [?e] [?e :db/valid-at ?t] [(> ?t 0)])` never matched and excluded nothing; without the expression the same body excluded every entity. It now binds the query's `:valid-at` value (or the current time) as the other paths do. Present since v0.13.1.
@@ -16,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Recursion through a rule with `not`, `not-join`, `or` or `or-join` returns all its rows** (#633). Within a stratum such a rule ran once, after the rules without those clauses had reached their fixpoint, so its rows never fed back into the recursion: `(rule [(reach ?x ?y) [?x :e ?z] (reach ?z ?y) (not [?y :blocked true])])` stopped after one step and returned 7 of 10 pairs on a four-edge chain, with no error. A stratum whose rules call such a rule in it now repeats until that rule derives nothing new, bounded by the rule limits (INT-020), and the rule no longer adds a row it already derived. `max_results` now counts every fact the rules derive in one evaluation, across strata and repeated passes, as documented; it used to count each stratum's rules without those clauses separately and not the rules with them at all.
 - **An `or` / `or-join` branch meets a keyword value as the entity it names** (#637). Unless a branch held a `not` or an expression reading an outer variable, the executor ran each branch alone and joined its rows to the outer rows by exact value, so a keyword never met the ref of the entity it names: with `[:alice :friend :bob] [:bob :name "B"]`, `[:find ?e ?n :where [?e :friend ?f] (or [?f :name ?n] [?f :alias ?n])]` returned no rows instead of `:alice "B"`, with no error, in queries and in rule bodies. The join now compares them as a join between patterns and a `not-join` already did.
 - **An `or` / `or-join` branch whose expression reads an outer variable matches** (#620). A branch such as `[(> ?v 1)]` in `[?e :n ?v] (or [(> ?v 1)] [(< ?v 0)])` was evaluated on its own from an empty binding and joined back afterwards, so its expression saw `?v` unbound and the branch matched nothing: the `or` silently dropped rows it should keep, in queries and in rule bodies. A branch whose expression reads a variable the branch does not bind itself is now seeded with each incoming row (an `or-join` branch with the row's join variables).
+
+### Tests
+
+- `tests/not_join_test.rs` checks `:db/valid-at` in `not-join` bodies on the per-row path (#615), rules calling a rule with `not`, `not-join` or `or` (#628), and recursion through such a rule (#633); `tests/recursive_rules_test.rs` checks `:db/valid-at` in rule definitions, their negation bodies and `or` branches (#617); `tests/disjunction_test.rs` checks `or` branches whose expressions read an outer variable (#620), expressions reading a variable only an `or` binds (#625), and keyword values meeting the entity they name (#637). Stratification, evaluator and optimizer unit tests cover the new strata, the repeated passes and their limits, and expression placement.
+
+### Known issues
+
+- Same-transaction multi-valued facts can read back as one value (#371, #287), a fact retracted and re-asserted in one `WriteTransaction` is lost at commit (#477), a later assertion does not replace an earlier valid-time window (#435), `save()` is not crash-atomic (#374), and a `.wal` from a later checkpoint is replayed onto an older `.graph` (#535); all are fixed in v3.0.0. All v2.x known issues, with affected versions and workarounds, are listed in the pinned issue #421.
 
 ## v2.0.7 — 2026-10-16
 

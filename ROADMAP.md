@@ -8,6 +8,20 @@ Completed releases and their implementation details live in the [CHANGELOG](CHAN
 
 ---
 
+## v2.0.8 — Query Data-Integrity Patch (released 2026-10-20)
+
+File format stays v7 and the public API does not change. Details are in the [CHANGELOG](CHANGELOG.md).
+
+Shipped:
+
+- A `:db/valid-at` pattern in a `not-join` body (#615) or a rule definition (#617) binds the query's valid time
+- An `or` / `or-join` branch whose expression reads an outer variable matches (#620)
+- An expression reading a variable only an `or` binds keeps its rows (#625)
+- An `or` / `or-join` branch meets a keyword value as the entity it names (#637)
+- A rule calling a rule with `not`, `not-join`, `or` or `or-join` gets all its rows (#628), and recursion through such a rule returns all its rows (#633)
+
+---
+
 ## v2.0.7 — Query Patch (released 2026-10-16)
 
 File format stays v7 and the public API does not change. Details are in the [CHANGELOG](CHANGELOG.md).
@@ -229,4 +243,4 @@ See [GitHub Issues](https://github.com/project-minigraf/minigraf/issues) for spe
 
 ---
 
-**Last updated**: October 2026 — v2.0.7, a query patch on v2.x, is the current release; v3.0.0 work, including the file-format v8 fix for #287/#371, is developed on the long-lived `v3` branch and merges into `main` at the v3.0.0 cut.
+**Last updated**: October 2026 — v2.0.8, a query data-integrity patch on v2.x, is the current release; v3.0.0 work, including the file-format v8 fix for #287/#371, is developed on the long-lived `v3` branch and merges into `main` at the v3.0.0 cut.
