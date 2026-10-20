@@ -434,11 +434,7 @@ fn engine_reads_many_batches() {
 fn other_queries_stay_on_the_executor() {
     let db = Minigraf::in_memory().unwrap();
     write_round(&db, 0);
-    for q in [
-        "(query [:find ?e (rank :over (:order-by ?n)) :where [?e :person/name ?n]])",
-        "(query [:find ?n (count ?e) (rank :over (:order-by ?n)) :where [?e :person/name ?n]])",
-        "(query [:find ?e :as-of \"2099-01-01T00:00:00Z\" :where [?e :person/name ?n]])",
-    ] {
+    for q in ["(query [:find ?e :as-of \"2099-01-01T00:00:00Z\" :where [?e :person/name ?n]])"] {
         let before = runs();
         db.execute(q).unwrap();
         assert_eq!(runs(), before, "query stayed on the executor");
@@ -1576,4 +1572,162 @@ fn grouped_aggregate_orders_groups_and_fails_in_a_later_group() {
         panic!("expected query results");
     };
     assert!(results.is_empty(), "the group with no value is dropped");
+}
+
+/// Window shapes (#547 PR 3): every built-in window over each kind of
+/// value, partitions by keywords, refs, booleans, floats (`-0.0` and `0.0`
+/// one partition) and long strings, ties broken by the named variables,
+/// `:desc`, and windows over an aggregate's groups.
+fn windows() -> Vec<(&'static str, &'static str)> {
+    vec![
+        (
+            "?e (row-number :over (:order-by ?g))",
+            "[?e :person/age ?g]",
+        ),
+        (
+            "?e ?g (rank :over (:order-by ?g :desc)) (sum ?g :over (:order-by ?g))",
+            "[?e :person/age ?g]",
+        ),
+        (
+            "?s (count ?e :over (:partition-by ?s :order-by ?n)) (min ?n :over (:partition-by ?s :order-by ?n))",
+            "[?e :person/status ?s] [?e :person/name ?n]",
+        ),
+        (
+            "?f (max ?b :over (:partition-by ?f :order-by ?b :desc))",
+            "[?e :person/friend ?f] [?e :person/bio ?b]",
+        ),
+        (
+            "?x (sum ?x :over (:order-by ?x)) (avg ?x :over (:order-by ?x)) (row-number :over (:partition-by ?x :order-by ?x))",
+            "[?e :person/score ?x]",
+        ),
+        (
+            "?ok ?k (rank :over (:partition-by ?ok :order-by ?k))",
+            "[?e :person/ok ?ok] [?e :person/alias ?k]",
+        ),
+        (
+            "?v (count ?v :over (:order-by ?v)) (min ?v :over (:order-by ?v)) (max ?v :over (:order-by ?v))",
+            "[?e ?a ?v]",
+        ),
+        (
+            "?n (row-number :over (:order-by ?n))",
+            "[?e :person/null ?n]",
+        ),
+        (
+            "?s (count ?e) (rank :over (:order-by ?s :desc))",
+            "[?e :person/status ?s]",
+        ),
+        (
+            "?f (sum ?g) (sum ?f2 :over (:order-by ?f2)) ?f2",
+            "[?e :person/friend ?f] [?e :person/age ?g] [?e :person/age ?f2]",
+        ),
+        (
+            "?s (sum ?g) (row-number :over (:order-by ?s)) :with ?e",
+            "[?e :person/status ?s] [?e :person/age ?g]",
+        ),
+    ]
+}
+
+fn check_windows(db: &Minigraf) -> usize {
+    let tx = db.current_tx_count();
+    let mut n = 0;
+    for (find, clauses) in windows() {
+        for t in temporals(tx) {
+            n += rows(db, &format!("(query [:find {find} {t} :where {clauses}])"));
+        }
+    }
+    n
+}
+
+#[test]
+fn windows_match_executor() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("win.graph");
+    {
+        let db = Minigraf::open(&path).unwrap();
+        for round in 0..3 {
+            write_round(&db, round);
+        }
+        assert!(check_windows(&db) > 0, "some rows");
+        db.checkpoint().unwrap();
+        write_round(&db, 3);
+        check_windows(&db);
+    }
+    let db = Minigraf::open(&path).unwrap();
+    check_windows(&db);
+}
+
+/// `Window` returns each input row once, in input order, over several
+/// batches; every row of a partition sees the whole partition, and peers
+/// share a running value (#547 spec §4.2).
+#[test]
+fn window_returns_every_row_in_input_order() {
+    let db = Minigraf::in_memory().unwrap();
+    let facts: String = (0..3000)
+        .map(|i| format!("[:e{i} :k {}] [:e{i} :n {}]", i % 3, i / 2))
+        .collect();
+    db.execute(&format!("(transact [{facts}])")).unwrap();
+    let mut cursor = db
+        .query(
+            "(query [:find ?e (sum ?n :over (:partition-by ?k :order-by ?n)) \
+             (row-number :over (:order-by ?n)) :where [?e :k ?k] [?e :n ?n]])",
+        )
+        .unwrap();
+    let mut rows = cursor.next_batch(1000).unwrap().expect("rows").into_rows();
+    let c = cursor.counters();
+    let window = c.iter().find(|c| c.op == "Window").expect("a Window");
+    assert_eq!(window.rows_in, 3000, "the whole input is held");
+    assert_eq!(window.batches, 1, "one batch passed on so far");
+    while let Some(batch) = cursor.next_batch(1000).unwrap() {
+        rows.extend(batch.into_rows());
+    }
+    assert_eq!(rows.len(), 3000);
+
+    let mut numbers: Vec<i64> = rows
+        .iter()
+        .map(|r| match r.get(2) {
+            Some(crate::Value::Integer(n)) => *n,
+            _ => -1,
+        })
+        .collect();
+    numbers.sort_unstable();
+    assert_eq!(
+        numbers,
+        (1..=3000).collect::<Vec<_>>(),
+        "each row numbered once"
+    );
+    // A partition's last peers' running sum is the sum of the partition.
+    let total = |k: i64| -> i64 { (0..3000).filter(|i| i % 3 == k).map(|i| i / 2).sum() };
+    let max = rows
+        .iter()
+        .filter_map(|r| match r.get(1) {
+            Some(crate::Value::Integer(n)) => Some(*n),
+            _ => None,
+        })
+        .max();
+    assert_eq!(
+        max,
+        (0..3).map(total).max(),
+        "the last peers see the whole partition"
+    );
+}
+
+/// Windows run on the engine, over an aggregate's groups too, and an empty
+/// input gives no row.
+#[test]
+fn window_routing() {
+    let db = Minigraf::in_memory().unwrap();
+    write_round(&db, 0);
+    for q in [
+        "(query [:find ?e (rank :over (:order-by ?n)) :where [?e :person/name ?n]])",
+        "(query [:find ?n (count ?e) (rank :over (:order-by ?n)) :where [?e :person/name ?n]])",
+    ] {
+        assert!(rows(&db, q) > 0, "rows");
+    }
+    assert_eq!(
+        rows(
+            &db,
+            "(query [:find ?e (rank :over (:order-by ?n)) :where [?e :person/name ?n] [(= ?n \"none\")]])",
+        ),
+        0
+    );
 }

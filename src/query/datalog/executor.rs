@@ -1,12 +1,12 @@
-use super::aggregate::{Agg, Groups, Running, finish_groups, named_vars, value_order};
+use super::aggregate::{Agg, Groups, finish_groups, named_vars, value_order, windows};
 use super::evaluator::{StratifiedEvaluator, evaluate_not_join};
 use super::functions::FunctionRegistry;
 use super::matcher::{PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::optimizer;
 use super::rules::RuleRegistry;
 use super::types::{
-    AsOf, AttributeSpec, BinOp, DatalogCommand, DatalogQuery, EdnValue, Expr, FindSpec, Order,
-    Pattern, Rule, Transaction, UnaryOp, ValidAt, WhereClause, WindowFunc,
+    AsOf, AttributeSpec, BinOp, DatalogCommand, DatalogQuery, EdnValue, Expr, FindSpec, Pattern,
+    Rule, Transaction, UnaryOp, ValidAt, WhereClause, WindowFunc,
 };
 use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::graph::FactStorage;
@@ -1735,117 +1735,36 @@ fn compute_aggregation(
 }
 
 /// Compute window function values for each row and store under `"__win_{i}"`.
-/// Modifies `bindings` in place; rows keep their order.
-///
-/// Each partition (by `Value`'s `Ord`) is sorted by its `:order-by` value
-/// under [`value_order`], then by the named variables, then by input
-/// position (#547 spec §4.1). Rows with order-equal `:order-by` values are
-/// peers: `rank` is equal for them, and a running aggregate gives every
-/// peer its value at the last peer (spec §4.2).
+/// Modifies `bindings` in place; rows keep their order. The values come
+/// from [`windows`], over each binding's named variables (`nil` when
+/// absent).
 fn apply_window_functions(
     bindings: &mut [Binding],
     find_specs: &[FindSpec],
     registry: &FunctionRegistry,
 ) -> Result<()> {
     let named = named_vars(find_specs);
-    let read = |b: &Binding, var: &str| b.get(var).cloned().unwrap_or(Value::Null);
-    // Each row's named-variable values, for the tie-break.
-    let tiebreak: Vec<Vec<Value>> = bindings
+    let rows: Vec<Vec<Value>> = bindings
         .iter()
-        .map(|b| named.iter().map(|v| read(b, v)).collect())
+        .map(|b| {
+            named
+                .iter()
+                .map(|v| b.get(v).cloned().unwrap_or(Value::Null))
+                .collect()
+        })
         .collect();
-
-    for (i, spec) in find_specs.iter().enumerate() {
-        let FindSpec::Window(ws) = spec else {
-            continue;
-        };
+    let positions = find_specs
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| matches!(s, FindSpec::Window(_)))
+        .map(|(i, _)| i);
+    for (i, values) in positions.zip(windows(find_specs, &rows, registry)?) {
         let key = format!("__win_{}", i);
-
-        let mut partitions: std::collections::BTreeMap<Value, Vec<usize>> =
-            std::collections::BTreeMap::new();
-        for (row, binding) in bindings.iter().enumerate() {
-            let part = ws
-                .partition_by
-                .as_ref()
-                .map_or(Value::Null, |pv| read(binding, pv));
-            partitions.entry(part).or_default().push(row);
-        }
-
-        let mut out: Vec<(usize, Value)> = Vec::with_capacity(bindings.len());
-        for rows in partitions.into_values() {
-            let mut keyed: Vec<(Value, usize)> = rows
-                .into_iter()
-                .filter_map(|r| bindings.get(r).map(|b| (read(b, &ws.order_by), r)))
-                .collect();
-            keyed.sort_by(|(a, ra), (b, rb)| {
-                let by_key = match ws.order {
-                    Order::Asc => value_order(a, b),
-                    Order::Desc => value_order(b, a),
-                };
-                by_key
-                    .then_with(|| {
-                        let (ta, tb) = (tiebreak.get(*ra), tiebreak.get(*rb));
-                        ta.into_iter()
-                            .flatten()
-                            .zip(tb.into_iter().flatten())
-                            .map(|(x, y)| value_order(x, y))
-                            .find(|o| o.is_ne())
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
-                    .then(ra.cmp(rb))
-            });
-
-            let mut running = match ws.func {
-                WindowFunc::Rank | WindowFunc::RowNumber => None,
-                _ => Some(Running::new(ws, registry)?),
-            };
-            let mut start = 0;
-            while start < keyed.len() {
-                let peers_end = keyed
-                    .iter()
-                    .skip(start + 1)
-                    .position(|(k, _)| {
-                        keyed
-                            .get(start)
-                            .is_none_or(|(s, _)| value_order(k, s).is_ne())
-                    })
-                    .map_or(keyed.len(), |n| start + 1 + n);
-                let peers = keyed.get(start..peers_end).unwrap_or(&[]);
-                if let Some(acc) = running.as_mut() {
-                    for (_, r) in peers {
-                        let v = ws
-                            .var
-                            .as_ref()
-                            .and_then(|var| bindings.get(*r).and_then(|b| b.get(var)))
-                            .unwrap_or(&Value::Null);
-                        acc.step(v);
-                    }
-                }
-                for (pos, (_, r)) in (start..peers_end).zip(peers) {
-                    let value = match (&running, &ws.func) {
-                        (Some(acc), _) => acc.value(),
-                        (None, WindowFunc::RowNumber) => position(pos)?,
-                        (None, _) => position(start)?,
-                    };
-                    out.push((*r, value));
-                }
-                start = peers_end;
-            }
-        }
-        for (r, value) in out {
-            if let Some(b) = bindings.get_mut(r) {
-                b.insert(key.clone(), value);
-            }
+        for (b, v) in bindings.iter_mut().zip(values) {
+            b.insert(key.clone(), v);
         }
     }
     Ok(())
-}
-
-/// The 1-based position `pos + 1` as an integer.
-fn position(pos: usize) -> Result<Value> {
-    i64::try_from(pos + 1)
-        .map(Value::Integer)
-        .map_err(|_| err_coded!(ErrorCode::Int032, "row number overflow"))
 }
 
 /// Project binding maps to output rows in find-spec order.

@@ -23,6 +23,7 @@ mod seed;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests;
 mod union;
+mod window;
 
 use crate::error::{ErrorCode, err_coded};
 use crate::graph::storage::Snapshot;
@@ -169,6 +170,9 @@ pub(crate) fn build(source: plan::Source, steps: Vec<plan::Step>) -> Box<dyn Ope
                 aggs,
                 zero_row,
             } => Box::new(aggregate::Aggregate::new(root, groups, aggs, zero_row)),
+            plan::Step::Window { find, named, keep } => {
+                Box::new(window::Window::new(root, find, named, keep))
+            }
             step => Box::new(filter::Apply::new(root, step)),
         };
     }

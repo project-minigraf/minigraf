@@ -23,6 +23,7 @@
 
 use super::cell::Scalar;
 use crate::graph::types::{EntityId, Value};
+use crate::query::datalog::aggregate::named_vars;
 use crate::query::datalog::executor::Binders;
 use crate::query::datalog::matcher::edn_to_entity_id;
 use crate::query::datalog::optimizer;
@@ -146,6 +147,14 @@ pub(crate) enum Step {
         /// Whether no input row gives one row of zeros: a query of `count`s
         /// and `count-distinct`s and no plain `:find` variable.
         zero_row: bool,
+    },
+    /// The last step of a query with windows (#547 spec §4): each row once,
+    /// in input order, holding its cells at `keep` and then the value of
+    /// each window of `find`, over the named variables at `named`.
+    Window {
+        find: Vec<FindSpec>,
+        named: Vec<usize>,
+        keep: Vec<usize>,
     },
 }
 
@@ -328,14 +337,17 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
     // The parser rejects a variable no clause binds (PRS-080, PRS-022,
     // PRS-023); one only some `or` branches bind has no slot here.
     let slot = |var: &String| b.slots.by_var.get(var).copied();
-    let mut find = Vec::with_capacity(query.find.len());
+    // The column of each `:find` element that is not a window.
+    let mut cols: Vec<Option<usize>> = Vec::with_capacity(query.find.len());
     let aggregate = query
         .find
         .iter()
         .any(|s| matches!(s, FindSpec::Aggregate { .. }));
+    let window = query.find.iter().any(|s| matches!(s, FindSpec::Window(_)));
     if aggregate {
         // The rows of `Aggregate`: the grouping cells (the plain variables
-        // in `:find` order, then `:with`), then the aggregates.
+        // in `:find` order, then `:with`), then the aggregates. With
+        // windows, `:with` does not group, as on the executor.
         let plain: Vec<&String> = query
             .find
             .iter()
@@ -344,8 +356,9 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
                 _ => None,
             })
             .collect();
+        let with: &[String] = if window { &[] } else { &query.with_vars };
         let mut groups = Vec::new();
-        for var in plain.iter().copied().chain(&query.with_vars) {
+        for var in plain.iter().copied().chain(with) {
             groups.push(slot(var)?);
         }
         let (mut next_plain, mut next_agg) = (0, groups.len());
@@ -353,16 +366,15 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
         for spec in &query.find {
             match spec {
                 FindSpec::Variable(_) => {
-                    find.push(next_plain);
+                    cols.push(Some(next_plain));
                     next_plain += 1;
                 }
                 FindSpec::Aggregate { func, var } => {
-                    find.push(next_agg);
+                    cols.push(Some(next_agg));
                     next_agg += 1;
                     aggs.push((func.clone(), slot(var)?));
                 }
-                // Windows run on the executor until PR 3 of #547.
-                FindSpec::Window(_) => return None,
+                FindSpec::Window(_) => cols.push(None),
             }
         }
         let zero_row = plain.is_empty()
@@ -376,11 +388,51 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
         });
     } else {
         for spec in &query.find {
-            let FindSpec::Variable(var) = spec else {
-                return None;
-            };
-            find.push(slot(var)?);
+            cols.push(match spec {
+                FindSpec::Variable(var) => Some(slot(var)?),
+                _ => None,
+            });
         }
+    }
+    let mut find = Vec::with_capacity(query.find.len());
+    if window {
+        // A named variable's column: in an aggregate query, the plain
+        // variable's column of `Aggregate` (the parser allows no other,
+        // PRS-082); otherwise its slot.
+        let column = |var: &String| {
+            if aggregate {
+                query
+                    .find
+                    .iter()
+                    .zip(&cols)
+                    .find(|(s, _)| matches!(s, FindSpec::Variable(v) if v == var))
+                    .and_then(|(_, c)| *c)
+            } else {
+                slot(var)
+            }
+        };
+        let named = named_vars(&query.find)
+            .iter()
+            .map(column)
+            .collect::<Option<Vec<usize>>>()?;
+        let keep: Vec<usize> = cols.iter().flatten().copied().collect();
+        let (mut next_kept, mut next_window) = (0, keep.len());
+        for c in &cols {
+            if c.is_some() {
+                find.push(next_kept);
+                next_kept += 1;
+            } else {
+                find.push(next_window);
+                next_window += 1;
+            }
+        }
+        b.steps.push(Step::Window {
+            find: query.find.clone(),
+            named,
+            keep,
+        });
+    } else {
+        find = cols.into_iter().collect::<Option<Vec<usize>>>()?;
     }
     let mut plan = b.finish()?;
     plan.find = find;
