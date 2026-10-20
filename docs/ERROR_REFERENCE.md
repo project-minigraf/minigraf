@@ -100,6 +100,7 @@ with no `CodedError` anywhere in its chain.
 | PRS-077 | Unexpected trailing input after a complete form | Parser |
 | PRS-078 | Query rejects unexpected trailing argument(s) | Parser |
 | PRS-079 | Rule rejects unexpected trailing argument(s) | Parser |
+| PRS-108 | Fact has more than 4 elements | Parser |
 | QRY-001 | Invalid entity | Query Execution |
 | QRY-002 | Attribute must be a keyword | Query Execution |
 | QRY-003 | Cannot transact a pseudo-attribute | Query Execution |
@@ -1527,6 +1528,27 @@ $<4097-char-slot-name>
 (rule [(reachable ?a ?b) [?a :edge ?b]] :unexpected-extra)
 ```
 *Nothing may follow the rule vector; remove `:unexpected-extra`*
+
+### PRS-108 Fact has more than 4 elements
+
+**Error text**: `Fact must have at most 4 elements (E A V and an optional map), got {}`
+
+**Cause**: A fact vector in `transact` has more than four elements. A fact is
+`[E A V]` or `[E A V {:valid-from ... :valid-to ...}]`. Through v2.0.8, a
+fact whose 4th element was a map had every element after the map dropped
+without an error (#649), and one whose 4th element was not a map was rejected
+with `PRS-047`. Added in v2.0.9, numbered as in v3.0.0.
+
+**Resolution**:
+- Check the brackets: two facts run together,
+  `(transact [[e a v {} e2 a2 v2]])`, are two vectors in the facts vector,
+  `(transact [[e a v {}] [e2 a2 v2]])`.
+
+**Example**:
+```datalog
+(transact [[:alice :person/age 1 {} 99 :junk]])
+```
+*Remove `99 :junk`, or make it its own fact*
 
 ---
 

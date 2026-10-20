@@ -996,6 +996,9 @@ fn parse_transact(elements: &[EdnValue]) -> Result<DatalogCommand> {
         if fact_vec.len() < 3 {
             bail_coded!(ErrorCode::Prs046, fact_vec.len());
         }
+        if fact_vec.len() > 4 {
+            bail_coded!(ErrorCode::Prs108, fact_vec.len());
+        }
 
         // SAFETY: len >= 3 check above guarantees indices 0, 1, 2 exist
         #[allow(clippy::indexing_slicing)]

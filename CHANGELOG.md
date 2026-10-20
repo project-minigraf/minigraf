@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A fact with more than four elements is rejected** (#649). `transact` read a fact's 4th element as its optional valid-time map and ignored everything after it, so `[[:alice :person/age 1 {} 99 :junk]]` stored `[:alice :person/age 1]` and dropped the rest without an error; two facts run together by a misplaced bracket lost one. A fact of more than four elements now fails with the new `PRS-108`, numbered as in v3.0.0, and the transaction writes nothing. A fact of five or more elements whose 4th is not a map now gets `PRS-108` instead of `PRS-047`. Present since v0.4.0.
+
 ## v2.0.8 — 2026-10-20
 
 Patch release on the v2.x line under the [support policy](PHILOSOPHY.md#support-policy): seven data-integrity fixes for queries that silently returned too few or too many rows — `:db/valid-at` in `not-join` bodies (#615) and rule definitions (#617), `or` / `or-join` branches (#620, #625, #637), and rules that call or recurse through a rule with `not`, `not-join`, `or` or `or-join` (#628, #633). File format is unchanged (v7). No API changes. Stored data was never affected. Upgrading is recommended for every v2.x user who uses `or`, `not-join`, `:db/valid-at` or rules with negation or disjunction.

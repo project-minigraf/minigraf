@@ -126,6 +126,7 @@ pub(crate) enum ErrorCode {
     Prs077,
     Prs078,
     Prs079,
+    Prs108,
     Qry001,
     Qry002,
     Qry003,
@@ -715,6 +716,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Prs079,
         "PRS-079",
         "rule takes (rule [...]); found {} unexpected trailing argument(s)",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs108,
+        "PRS-108",
+        "Fact must have at most 4 elements (E A V and an optional map), got {}",
         ErrorCategory::Parser,
     ),
     (
@@ -1729,6 +1736,7 @@ mod tests {
                 | ErrorCode::Prs077
                 | ErrorCode::Prs078
                 | ErrorCode::Prs079
+                | ErrorCode::Prs108
                 | ErrorCode::Qry001
                 | ErrorCode::Qry002
                 | ErrorCode::Qry003
@@ -1922,6 +1930,7 @@ mod tests {
             ErrorCode::Prs077,
             ErrorCode::Prs078,
             ErrorCode::Prs079,
+            ErrorCode::Prs108,
             ErrorCode::Qry001,
             ErrorCode::Qry002,
             ErrorCode::Qry003,

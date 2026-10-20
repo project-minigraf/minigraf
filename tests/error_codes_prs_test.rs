@@ -421,3 +421,51 @@ fn prepare_rejects_transact_command_not_prs() {
     // Transact command, it's just the wrong command kind for prepare().
     assert_ne!(err.category(), ErrorCategory::Parser);
 }
+
+// ── PRS-108: a fact with more than four elements (#649) ─────────────────────
+
+/// Execute `input` and assert it fails with `expected_code` and a message
+/// containing `needle`.
+fn assert_code_and_message(input: &str, expected_code: &str, needle: &str) {
+    assert_execute_code(input, expected_code);
+    let err = db().execute(input).expect_err("input must be rejected");
+    assert!(
+        err.to_string().contains(needle),
+        "message for {} lacks {}",
+        expected_code,
+        needle
+    );
+}
+
+#[test]
+fn prs_108_fact_with_more_than_four_elements() {
+    assert_code_and_message(
+        "(transact [[:alice :person/age 1 {} 99 :junk]])",
+        "PRS-108",
+        "got 6",
+    );
+    assert_code_and_message(
+        r#"(transact [[:alice :name "Alice" "bogus" 7]])"#,
+        "PRS-108",
+        "got 5",
+    );
+}
+
+#[test]
+fn prs_108_rejects_the_whole_transaction() {
+    // Before #649 the elements after the map were dropped and the fact stored.
+    let db = db();
+    db.execute(r#"(transact [[:bob :person/age 2] [:alice :person/age 1 {} 99 :junk]])"#)
+        .expect_err("a 6-element fact must be rejected");
+    let result = db
+        .execute("(query [:find ?e ?v :where [?e :person/age ?v]])")
+        .expect("query must run");
+    let minigraf::QueryResult::QueryResults { results, .. } = result else {
+        panic!("expected query results");
+    };
+    assert_eq!(
+        results.len(),
+        0,
+        "no fact of the rejected transaction is stored"
+    );
+}
