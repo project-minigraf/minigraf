@@ -795,11 +795,8 @@ fn test_derived_facts_have_nil_metadata() {
                 "(query [:find ?x ?m :valid-at :any-valid-time :where (leaf ?x) [?x :leaf ?v] [?x {attr} ?m]])"
             ),
         ));
-        assert_eq!(
-            rows,
-            vec![vec![rows[0][0].clone(), Value::Null]],
-            "one leaf, nil"
-        );
+        assert_eq!(rows.len(), 1, "one leaf");
+        assert_eq!(rows[0][1], Value::Null, "a derived leaf binds nil");
     }
 
     let rows = result_rows(exec(
