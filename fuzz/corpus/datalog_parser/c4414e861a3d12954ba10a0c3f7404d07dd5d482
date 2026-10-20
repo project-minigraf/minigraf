@@ -1,0 +1,1 @@
+(query [::where [?e : _] (not[?KKKKKKKKKKKKdb/valid-at: t])])

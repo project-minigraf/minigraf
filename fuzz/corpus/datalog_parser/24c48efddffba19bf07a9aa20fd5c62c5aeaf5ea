@@ -1,0 +1,1 @@
+(query [:fi:where[? aaa ?_][?e a ?_][?e ae ?_] (-[e])])

@@ -1,1 +1,0 @@
-(query [:where [?e :nae ?n] (onrt2$00t2$0034437 ?y) :wh?])

@@ -1,1 +1,0 @@
-(query [:where [?e n an][?e aaa ?_][?e a ?_][nsact?:db/valid-at cc]])

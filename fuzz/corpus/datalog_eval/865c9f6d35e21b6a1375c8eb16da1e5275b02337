@@ -1,2 +1,0 @@
-(query [:where [?e olor ?c] (not[?e : r?c] (not j))]
-)

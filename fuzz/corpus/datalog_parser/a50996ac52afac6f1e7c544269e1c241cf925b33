@@ -1,2 +1,0 @@
-(query [:find ?e :where (rule [(parl) [? x:a0 ]])
-[?e :namE ?n] (>>{i =======}>{i =======}01e>[:fin>>])])

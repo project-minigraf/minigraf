@@ -1,0 +1,1 @@
+(query [:i:where [Deaia a  _][e:db/valid-at U] (-otppp)])

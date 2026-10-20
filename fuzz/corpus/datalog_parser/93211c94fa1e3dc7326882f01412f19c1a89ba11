@@ -1,0 +1,1 @@
+(query [:find(uFt ?e):where[?e::en]])

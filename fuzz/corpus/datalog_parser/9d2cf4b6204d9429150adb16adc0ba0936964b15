@@ -1,0 +1,1 @@
+(query [:i:where [?eia a _][? e ?_][Ee:db/valid-at U] (-ot [?ec ]e)])

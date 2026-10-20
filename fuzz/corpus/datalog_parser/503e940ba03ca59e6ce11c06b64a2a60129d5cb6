@@ -1,1 +1,0 @@
-(query [:with ?e  ?e ?o:where [?e :Na ?n] (not [?e :banne true]):with    ?e  ?o:where [?e :Name ?n] (not [?e :banne true]):with ?e  ?e ?:where [?e :Name ?n] (not [?e :banne true]):with ?e ?e ?o?e ?o:where])

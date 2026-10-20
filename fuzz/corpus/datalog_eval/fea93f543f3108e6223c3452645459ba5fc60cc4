@@ -1,0 +1,1 @@
+(query [:n:any-valid-time :any-valid-time (g)(g)?])

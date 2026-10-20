@@ -1,0 +1,1 @@
+(query [:fi:where [? aea a?_][?:db/valid-to ?_]])

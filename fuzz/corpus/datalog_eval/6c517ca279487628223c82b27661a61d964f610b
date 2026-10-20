@@ -1,0 +1,4 @@
+(query [:e? :where;;{;n e
+ [?e :c ?ynsufun?c] (or(query [:])
+):]
+)

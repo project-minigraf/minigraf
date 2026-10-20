@@ -1,2 +1,0 @@
-(query [:find?e :where(query [:fin ?e])
- [?e :colr ?c] (nt-f e)])

@@ -1,1 +1,0 @@
-(query [:f:where [?_W e ?] (not [?u d t])])

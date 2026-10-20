@@ -1,0 +1,1 @@
+(query [:where [? valid-to ?_][$0?aeaaaaeaao ?_][$0?aea ?_][$0?a ?_][$0?aeaaa ?_][false:db/valid-to ?_][ 0?aeaaa :al?_]])

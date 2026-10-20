@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e :orc ?] (n(query [: :where [?e ?FFGFFFF ?c] (not-join [?e ?_ct?6EEEEEEqfn ?c]  [?_?e ?lEEneFunufn ?c]  [?e ?lynnueFF- 00000.0=0.0=00.0e=00.00[evecive true666666666666e ?_] [?e ?_:Findtruehei]e])])
+)])

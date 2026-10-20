@@ -1,2 +1,0 @@
-(query [:find ?e :where (rule [(parlen$OOOOy) [?x :pa0 ?y]])
-[?e :name ?n] (nd tru+00=677350)(qu675)(que>>>>> ?_>>>>>>8275)(qu675)(que>>>)])

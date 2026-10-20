@@ -1,1 +1,0 @@
-(query [:e:where [?e :me ?n] (nd 0243)(q [i ])])

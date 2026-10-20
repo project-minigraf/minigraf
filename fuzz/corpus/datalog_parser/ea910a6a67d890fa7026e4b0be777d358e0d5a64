@@ -1,0 +1,1 @@
+(query[:find (count ?e) :r/:find (count ?e) :where :where [?e m en]:wher:find (count ?e) :r/:find (count ?e):find (count,?e) :where :where [?e m en]])

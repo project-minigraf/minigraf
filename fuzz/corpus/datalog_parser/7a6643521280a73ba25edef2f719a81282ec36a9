@@ -1,0 +1,2 @@
+(query [:fi :where (
+e2)[(f ?) ?] ])

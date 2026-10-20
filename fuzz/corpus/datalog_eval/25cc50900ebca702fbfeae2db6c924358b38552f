@@ -1,0 +1,2 @@
+(query [:find ?e:with2?c:where [?e :cfsaolo ?c] (not[?e ?_olor ?c] (-ef/))]
+)

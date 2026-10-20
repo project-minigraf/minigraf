@@ -1,0 +1,2 @@
+(query [ :where [?e me n] (no
+_>>?)])

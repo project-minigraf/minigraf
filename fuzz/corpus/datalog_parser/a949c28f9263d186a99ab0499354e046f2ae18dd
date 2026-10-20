@@ -1,1 +1,0 @@
-(query [:fin :where [?e :Name ?n] (not [?e :e true]):where [?e:name ?n] (not [?e0 :d te]):where [?e :name ?n] (o[])])

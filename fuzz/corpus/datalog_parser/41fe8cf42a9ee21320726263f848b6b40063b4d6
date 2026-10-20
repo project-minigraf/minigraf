@@ -1,0 +1,2 @@
+(query [:fin:where [?e :e ?e?o] (not(q) [n? a ccc_][?e aa ?_][?e aaa ?_][C:db/tx-count cccccppp?n] (OA<A)
+)])

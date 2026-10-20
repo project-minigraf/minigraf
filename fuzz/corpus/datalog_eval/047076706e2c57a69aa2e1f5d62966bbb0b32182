@@ -1,0 +1,1 @@
+(query [:where [e :4:] (not[-?*noije][G?e :ac:u] [G?e ac:u])])

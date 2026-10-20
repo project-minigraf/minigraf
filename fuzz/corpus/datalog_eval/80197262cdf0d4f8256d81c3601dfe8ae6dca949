@@ -1,1 +1,0 @@
-(query [:find ?eere:find  :where [?d ?lynnueFFF:db/tx-id ] nd ?e :wh(not-jo[?e] [?e Dqctive ?che])])

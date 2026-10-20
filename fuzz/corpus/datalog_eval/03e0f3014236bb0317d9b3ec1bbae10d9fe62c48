@@ -1,2 +1,0 @@
-(query [:finde :where [(-:r:biry) ?n ]:e])
-

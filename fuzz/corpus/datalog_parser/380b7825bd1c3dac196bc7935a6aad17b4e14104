@@ -1,0 +1,1 @@
+(query[:find (nt ?e) :r-:find (count ?e):find (c ?e) ?_here :where [?e m e?]])

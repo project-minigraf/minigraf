@@ -1,0 +1,1 @@
+(query [::where[?:lo ?c] (n$1-[?ve true])])

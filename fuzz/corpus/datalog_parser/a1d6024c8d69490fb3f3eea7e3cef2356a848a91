@@ -1,0 +1,2 @@
+(query [:where[?e :e ?n] (not(rDD) [n? e ?n] (O)
+)])

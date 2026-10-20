@@ -1,0 +1,1 @@
+(query [: :where [?e ?FFFFFANF ?c] (not-join [?e ?e ?_ctppFnnuee ?_] [?e ?_:db/tx-count])])

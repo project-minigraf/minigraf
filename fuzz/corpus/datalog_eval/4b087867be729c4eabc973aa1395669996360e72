@@ -1,1 +1,0 @@
-(query [:fin?e:where [?e :r ??e] [?: trc] (nm- [?j:])])

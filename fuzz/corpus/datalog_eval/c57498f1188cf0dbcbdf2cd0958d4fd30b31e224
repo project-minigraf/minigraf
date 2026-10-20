@@ -1,1 +1,0 @@
-(query [ :where [?e :1color $c] (not [-?*no] [?u iac:F] [?e :a:nam])])

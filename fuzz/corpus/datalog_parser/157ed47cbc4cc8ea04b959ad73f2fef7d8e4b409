@@ -1,0 +1,1 @@
+(query [: :where [?e aaaaa:d5en] (no[?e :banned ?e?e]) [?e 888890en] (not [$1:db/tx-id ?e?e]):where [?e :name ?n] :where [?e 3115en] ])

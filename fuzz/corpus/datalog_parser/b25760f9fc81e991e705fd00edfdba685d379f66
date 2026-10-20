@@ -1,2 +1,0 @@
-(query [:?e :where (rule [(parly) [?x y]])
-[?e :nane ?n] (nd tru75{i =======}t=>[:>])])

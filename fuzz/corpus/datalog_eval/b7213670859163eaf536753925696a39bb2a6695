@@ -1,0 +1,1 @@
+(query [:fin:where [?e :coor ?_] (n:a""Y""""""sum""?mn[?e][ true])])

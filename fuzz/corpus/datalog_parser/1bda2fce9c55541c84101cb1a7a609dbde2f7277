@@ -1,0 +1,2 @@
+(query [:v:where [?e?x :pa0 "Aesae"][:e/5 :taltse1e "Ali"][:e/5 :taltse1e "Al)"][:e/parent ?
+y]])

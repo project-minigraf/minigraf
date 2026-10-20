@@ -1,0 +1,1 @@
+(query [:find:where (A*le 38675)(_?> >>6AA)(d 5)(AAA>(one)U)])

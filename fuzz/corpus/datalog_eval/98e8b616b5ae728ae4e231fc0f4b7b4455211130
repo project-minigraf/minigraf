@@ -1,0 +1,2 @@
+(query [:fine :where [?e :lor ?c](query [:find ?e :where [?e :lor ?c] (not?:t{}ive-joC[?:t{}ivev(qUe[:fitu])e trwe])])
+])

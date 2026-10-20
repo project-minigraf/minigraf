@@ -1,6 +1,0 @@
-(query [:find ?e :where [?e ?FFFFFFFF ?c] (not-join [?e] [?e ?_ctivez ?](query [:where [?or /C] (not(q[(/fq[? ivree])])
-(query [:findumindume :where (m$in:nam$na)])
-m$q[? ivree])])
-(query [:findqueRu: mewhere (m$innjor$u$i)])
-(query [:fre (m$in:m$innjor$6$u$uq :nam$nam$q[e:witue])]*B))]
-)

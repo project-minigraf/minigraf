@@ -1,0 +1,1 @@
+(query [:f:fk:where [?:db/valid-at _]:where [?:db/vOnsyd-t _]])

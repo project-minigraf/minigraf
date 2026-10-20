@@ -1,1 +1,0 @@
-(query [:where[?e :e ?n] (o:[Eu{e,t}e]x)])

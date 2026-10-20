@@ -1,1 +1,0 @@
-(query [:fi:where(ry A:fiDDODD) [n? :e ?n] (n oD) [n? :eame ?n] (O oEt[?u a])])

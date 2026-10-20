@@ -1,0 +1,1 @@
+(query [:R:where [:e : ?c]  :where [:e cr ?c] (n)])

@@ -1,1 +1,0 @@
-(query [ :where [?e olczor ?c] (not-join [?ecoor ?c] (not-join [?e] [_Y?ve e]):0fe e [_ o?ict?ve e])])

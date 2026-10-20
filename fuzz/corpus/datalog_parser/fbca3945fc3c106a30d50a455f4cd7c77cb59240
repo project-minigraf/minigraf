@@ -1,1 +1,0 @@
-(query [:fi:where [?e[a ]  _][?meaj a  _][?e1 a ae?_] (-[?ec ]e)])

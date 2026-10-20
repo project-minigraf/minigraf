@@ -1,1 +1,0 @@
-(query [:f?e :where [?e :Q2color $c] (not [-?*noije] [?e :ac:Findtr] [?e :ac:Findtrue])])

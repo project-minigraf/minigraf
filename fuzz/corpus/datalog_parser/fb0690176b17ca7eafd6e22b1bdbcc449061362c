@@ -1,1 +1,0 @@
-(query [:find:where[?e:name J](or(?Y)) [4xand ?y]])

@@ -1,0 +1,2 @@
+(query [:find ?e:with ?c:where [?e :color ?c] (not-join [?er ?c] (ntrue?jquery:where  n??_e[ebooAe])(qe ?_e[ebooAe])(qqqqq?e :whereqqqqqqqqqqqqqreqqqqqqqqqqqqqqqqqqqq??_e[ebooAe])(qe  nqqqq[?ebooAe])(e  n??_e[ebooAe])(qqqqq?e :whereqqqqq  n??_o[ebooAe])(qqqqq?e :where [?e ])(qqqQq?e :))]
+)

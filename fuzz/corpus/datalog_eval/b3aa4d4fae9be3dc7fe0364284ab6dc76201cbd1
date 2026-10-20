@@ -1,0 +1,2 @@
+(query [:fic:where [?e r Wc] (not[: e?cor ?_] (find ?e:))]
+)

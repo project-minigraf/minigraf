@@ -1,0 +1,1 @@
+(query [:wi0:where [:?e e ?ban?n] (or(DDDD) [n?: ?n] (OOO) ) [6:a ?y]])

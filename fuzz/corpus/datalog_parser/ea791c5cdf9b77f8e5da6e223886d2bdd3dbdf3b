@@ -1,0 +1,1 @@
+(rule[ (AAOTTTT)(query [ e ?n] )[?e :e ?n] (not(qE) ) [2x5 ?y]])

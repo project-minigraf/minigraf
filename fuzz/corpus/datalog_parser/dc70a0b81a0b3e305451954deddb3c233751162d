@@ -1,0 +1,1 @@
+(query [:f?:any-valid-time :where [?e :e ?n] (not [?e :b t])])

@@ -1,0 +1,3 @@
+(query [:fin:e/:where [?e :e :db/tx-id?n] (not(quOAAAdddddddddAAA>>>>>>tr>>>>00000012053386ccccccddDDDDDDD)[:?  Neame ?n] (OAAAAA>>>>A>>3386DDDDDDDDDDDDDtranDD)[:?  Neame ?n] (OAAAAD000-000000000000000006DDDDDDDDDDD)[:?  Neame ?n] (A>>>>A>>3386DDDDDDDDDDDDDtransactDD)[:?  Neame ?n] (OAAAADDDDDXDDDDDDDDDDDD00000000)[:?  Neame ?n] (OAAADDDDDDD)[:?  Neame ?n] (>>>>>transact>>>DDDDDDDDDDDD)[:?  Neame nn] (OAAAAA000006632sact>>>DDDDDDDDDDDD)[:?  Neame ?n] (O><>>:DDDDDDDDDDXDDDDDDDDDDDD5EEEEEEEEEEEE[e with ? :where(noSSSSSS)])
+) [?e :e ?n] (not(qu0z)
+)])

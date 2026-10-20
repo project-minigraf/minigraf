@@ -1,1 +1,0 @@
-(query [:find   ?e :where [?e :que ?n] (not(query [:fin?e :wreehw [?e ?n] (no [ true])]) [?e :bYnned true]):where [?e :name ?n] (not [?e :banned true])])

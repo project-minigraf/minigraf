@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e :nale "Ae"][:e/0 :nae "Ae"][:1 :nale "A"][:e/0 :nal88888 ?y]])

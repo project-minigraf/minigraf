@@ -1,0 +1,1 @@
+(query [:fi:where[?e noa an][?e a ?_][?e a ?_][?e -at ?_][?e a ccccccc_]])

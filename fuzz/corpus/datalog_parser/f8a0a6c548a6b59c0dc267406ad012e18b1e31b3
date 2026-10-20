@@ -1,2 +1,0 @@
-(query [:find ?e  ?e :where [?e :Name ?n] (not(t [[:e1 :name "Alittctce"]])
- [?e :banne true]):where [?e :name ?n] (nmt D[?e :d true]):where [?e :name ?n] (not [-e :banDzd trueؑω]):where[?e :name ?] [?e name n] (not [?e d true])])

@@ -1,1 +1,0 @@
-(query [:fi:where [2? a?_][?e a ?_][?e a _][?_]])

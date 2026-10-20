@@ -1,1 +1,0 @@
-(query [:find ?e :where [Fe :color ?_] (not-join [?e] [?d acte true])])

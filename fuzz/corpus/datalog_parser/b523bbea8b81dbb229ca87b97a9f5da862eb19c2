@@ -1,0 +1,2 @@
+(query [:where  (or(eod 1) [(qun:)]
+  ) ])

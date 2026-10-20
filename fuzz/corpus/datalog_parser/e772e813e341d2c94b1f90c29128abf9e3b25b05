@@ -1,2 +1,0 @@
-(query [:find ?e :where [?e :namXe ?n] (n-(transact [[ {boolean?=============,,,,r,,,y fin:}me "Alice"]])
-----XXX)])

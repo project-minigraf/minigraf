@@ -1,0 +1,1 @@
+(query [ ::1fe :where [?e zcolIvb ?_] [z?e ve ?_][z?e Dactor ?c] (noT[ t?ve e])])

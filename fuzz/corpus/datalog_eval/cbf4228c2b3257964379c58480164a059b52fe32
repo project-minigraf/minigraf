@@ -1,0 +1,1 @@
+(query [:fin:where(/ur[:]) [?e :colr c] (n e [])])

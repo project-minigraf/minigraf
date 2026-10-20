@@ -1,1 +1,0 @@
-(query [: :where [?:na ?n] (not [?_?x :db/tx-count(not [ue])])])

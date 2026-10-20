@@ -1,0 +1,2 @@
+(query[:where [?e1:s1e true][:e/pZr?e1:se1e true][:e/pZr0: true][:e/pZ0: true][C ?
+y]])

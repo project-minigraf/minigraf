@@ -1,0 +1,1 @@
+(query [:fi:where [?e not-a an][?e aaa ?_][?e a ?_][?e aa ?_a_][Ce a ?_][?e aaaaaa ?_][?e aaaaoaaaoi ?][Ce ? a_][*:db/valid-at ?_][?e a cccccccccccccccc?_][?e aa ?5en] (not [$1:db/tx-id ?e?e]):where [?e :name ?n] :where [?e 3l?_][?d aaaaaaa0aaaaaaaaaa ?_]])

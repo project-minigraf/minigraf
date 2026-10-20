@@ -1,1 +1,0 @@
-(query [:fi:where [?e not-joi?_a an][?:db/valid-at ?_][?e a ccccccccccccc?_][?:db/valid-at ?_][?e a ccccccccccccccccccccccccccccccccccc?_][?e aa ?_][?e aaa ?][Ce a ?_][?:db/valid-at ?_][?e a cccccccccccccclccccccccccc?_][?e aa ?_][?e aa ??_][?:db/vaa cccccccccccccccccccc?_][?:db/valid-at ?_][?e a cccccccccccccccccccccc0nal?_][?e aaaaaaaaaa ?_]])

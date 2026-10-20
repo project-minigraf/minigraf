@@ -1,4 +1,0 @@
-(query [:find ?e :where [?e ?FFFFFFFF?FFFFFF ?c] (not-join [?e] [?e ?_ctivez ?chere2e](que:db/tx-idry [:where [?or /C] (no(query [:vindumume :where (am$na)])
-m$q[? ivree])]
-uq)(ery [:findqueRuere (m$am$nam$q[e:witue])]*B))]
-)

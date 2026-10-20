@@ -1,0 +1,2 @@
+(query [:fe:wh:where(not(TTTTTTT)[(fx ?y)] (x2)
+)])

@@ -1,0 +1,1 @@
+(query [:fi:where(or(0le)) []])

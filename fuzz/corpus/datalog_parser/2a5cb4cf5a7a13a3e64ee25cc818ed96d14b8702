@@ -1,1 +1,0 @@
-(query [:find ?e    ?e :with ?e :where [?e:nae ?dd] :th])

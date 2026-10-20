@@ -1,0 +1,1 @@
+(query [:fi:where [? ae ?_][?:db/aeaa ?_][?:db/valid-to ?_][?:db/valid-to ?_][?:db/valid-to ?_][ 0?aeaa ??_][ =id-id-ta :al?_]])

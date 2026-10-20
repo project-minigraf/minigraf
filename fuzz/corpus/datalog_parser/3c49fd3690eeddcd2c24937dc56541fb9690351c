@@ -1,2 +1,0 @@
-(query [: :where  (query [:(n [(r:)])])
-(not [(r:)])])

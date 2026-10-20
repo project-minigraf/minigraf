@@ -1,1 +1,0 @@
-(query [:where [TToTTTTTTTT:db/valid-to:findrc][oe :col :] (not [in*?])])

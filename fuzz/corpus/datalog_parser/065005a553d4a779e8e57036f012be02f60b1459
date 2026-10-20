@@ -1,0 +1,1 @@
+(query [:fi:e :where (r)(AAAACd ?e ?e :he676)(AAAACd ?e :ry [:f> (none)])])

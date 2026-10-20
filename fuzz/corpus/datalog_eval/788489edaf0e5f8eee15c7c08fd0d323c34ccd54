@@ -1,1 +1,0 @@
-(rule[(rule[(2q)w])(query(2q)he[?= :r ?c]) (not-join [?e] [?= :])])

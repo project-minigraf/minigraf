@@ -1,1 +1,0 @@
-(query [:?e:where[?e :name ?n] (or(ena[])(,?e?y) )])

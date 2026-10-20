@@ -1,0 +1,1 @@
+(query [:where [bbbb ?nm ?n] [(- ?n ".e")]])

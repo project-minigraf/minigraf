@@ -1,0 +1,1 @@
+(query [:where [e:ame ?n] (or(mnod ule a[])(,?e?y) ) ])

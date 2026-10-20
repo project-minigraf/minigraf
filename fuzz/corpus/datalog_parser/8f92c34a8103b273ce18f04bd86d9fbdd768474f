@@ -1,0 +1,1 @@
+(query [:fi:where [?:db/valid-at 2][?e aa ?cc]])

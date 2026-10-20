@@ -1,1 +1,0 @@
-(query [:::where (ury D) [n? ame ?n][n? :ee ?n] ])

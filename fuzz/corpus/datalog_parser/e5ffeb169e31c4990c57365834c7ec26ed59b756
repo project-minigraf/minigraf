@@ -1,0 +1,6 @@
+(query [:where (or(en 1) [(qun:)]
+  )   (or(e1(enodd 1) [(qun:)]
+  )  (or(e1) [(qun:)]
+  )   (or(eno) ) [(qun:)]
+  )   (or(eno) [(qun:)]
+  ) ])

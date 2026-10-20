@@ -1,2 +1,0 @@
-(query [:find ?e:with2?c:where [?e :cfalseolor ?c] (not[?e ?_olor ?c] (-ef/))]
-)

@@ -1,0 +1,3 @@
+(query [:find ?e :where [?e ?FF ?c] (not-join [?e] [?c_ ?ivteez ?chere4e](q[where [?or /C] (not(q[(/fq[? ivree])e (m$in:nama$n)])
+m$q[? ivree])]B))]
+)

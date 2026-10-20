@@ -1,0 +1,3 @@
+(query [:f?x?e0:where [?e :n ?n] (or(>
+) [?e e ?n] (not(q)
+) [?e :e ?n] (>>>>>) ) [15xeent ?y]])

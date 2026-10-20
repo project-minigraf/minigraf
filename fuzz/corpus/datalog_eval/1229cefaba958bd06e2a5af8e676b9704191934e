@@ -1,1 +1,0 @@
-(query [:find ?e :where(etc) [?e :colr ?c] (n[])])

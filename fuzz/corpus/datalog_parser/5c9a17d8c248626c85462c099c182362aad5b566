@@ -1,0 +1,1 @@
+(query [:fin?e :where [?______e :nale "Ae"][?W__:db/vat"Ae"][:e:8 ?y][:e/0 :e "Ae"][:1 :nale "A"][:e/5 :nal8 ?y]])

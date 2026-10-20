@@ -1,0 +1,1 @@
+(rule[ (pTT)[(fx ?y) ?n] (nr)[(fx ?) ?] ])

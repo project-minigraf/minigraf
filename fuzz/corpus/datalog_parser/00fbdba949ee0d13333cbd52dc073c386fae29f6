@@ -1,0 +1,2 @@
+(query [:fin:where [?ee:nle ?n] (rt [nned(y [f( )wde( )wk[ ]r[ ]?rue])]
+)])

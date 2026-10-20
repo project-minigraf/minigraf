@@ -1,0 +1,1 @@
+(query [ :where [ƒ:n ?_](not [?e a te])])

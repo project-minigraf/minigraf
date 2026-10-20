@@ -1,0 +1,1 @@
+(query [:where [:alice(>=nil"e")?]])

@@ -1,0 +1,1 @@
+(query [:f?:where [?e :ame ?n] (or(-D) [?e ?_me ?n] (ddd>) ) [2x5 ?y]])

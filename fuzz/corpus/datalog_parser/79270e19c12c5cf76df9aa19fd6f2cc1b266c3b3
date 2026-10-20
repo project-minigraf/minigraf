@@ -1,0 +1,1 @@
+(query [:find ?e  ?e :where [?e :name ?n] (nmt ?[e :dtrue]):where :any-valid-time[?e :name ?n] (sot [?e :bannzd trueؑ߉nnue]):where :any-valid-time[?e :name ?n] (sottlA[rue]):wher :any-valid-time[?e :name ?n] (sot [?e :bann1dؑ߉])])

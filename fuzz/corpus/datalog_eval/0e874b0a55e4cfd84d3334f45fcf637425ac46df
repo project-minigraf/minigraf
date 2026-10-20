@@ -1,0 +1,2 @@
+(query [:finde :where [(=:rue"i9e") ?n ]:where [(=:rue"Alide") ?u ][(!=:ne"ifalsede") ?f ]:where [(=:rue"Alide") ?u?_ ][(!=:n:ace)]])
+

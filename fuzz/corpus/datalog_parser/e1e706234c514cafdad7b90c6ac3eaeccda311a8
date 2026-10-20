@@ -1,0 +1,1 @@
+(query[ :where[?e :?ne:] (not [?e,:d true][?e :bazd ؑ߉])])

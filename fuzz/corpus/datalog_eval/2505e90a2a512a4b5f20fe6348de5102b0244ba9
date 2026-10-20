@@ -1,1 +1,0 @@
-(query [:find  (ofit:ndft:nd  -:wnd- 16:wnd- 00 ?)])

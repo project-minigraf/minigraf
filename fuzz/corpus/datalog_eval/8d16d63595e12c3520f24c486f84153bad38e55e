@@ -1,0 +1,20 @@
+(query [:fin :where [?e ?lynnufn ?] (or-join[?e
+
+
+
+?q
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+?][?lynnuF=]z)])

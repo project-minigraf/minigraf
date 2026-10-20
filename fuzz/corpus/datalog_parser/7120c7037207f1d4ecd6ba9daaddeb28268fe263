@@ -1,1 +1,0 @@
-(query [::where [?e aa ?_][?e a ?_][?e aaaaaaaae :?_] (-ot [?])])

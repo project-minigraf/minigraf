@@ -1,0 +1,1 @@
+(query [: :where [? :n ?n] (not [-?d tr+]):where [?en ? :] (not [,e=:])])

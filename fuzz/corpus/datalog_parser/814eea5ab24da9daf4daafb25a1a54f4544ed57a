@@ -1,1 +1,0 @@
-(query [:find ?e0:where(or(en a[rp])(?y) )[?e  n?:] (or(e=)(,?e?y) ) ])
