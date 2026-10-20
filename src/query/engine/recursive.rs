@@ -1,0 +1,218 @@
+//! `Recursive` (#548 spec §5.3): the relations of a rule query, derived
+//! stratum by stratum by semi-naive rounds before its body runs.
+//!
+//! Round 1 runs every rule with every read `Full`. A later round runs each
+//! rule once per top-level invocation of its stratum, that invocation read
+//! as `Delta`, those before it `Old` and those after it `Full`, so every head
+//! it gives uses a fact the last round derived; a naive rule runs in full
+//! every round. A head is new when its relation does not know it; new heads
+//! are appended when the round ends, and a round that appends nothing ends
+//! the stratum.
+
+use super::cell::{Cell, JoinKey, Scalar};
+use super::ids::IdSpace;
+use super::plan::{HeadArg, RuleRun, RulesPlan, ScanSpec, Term};
+use super::relation::Relations;
+use super::scan::Scan;
+use super::{Ctx, Operator, build};
+use crate::error::{ErrorCode, err_coded};
+use crate::graph::storage::Snapshot;
+use crate::query::datalog::evaluator::{derived_facts_exceeded, iterations_exceeded};
+use crate::query::datalog::functions::FunctionRegistry;
+use crate::storage::KeySource;
+use anyhow::Result;
+use std::collections::HashSet;
+
+/// The limits of one rule query (spec §3.5).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Limits {
+    pub(crate) max_iterations: usize,
+    /// Facts the rules may derive in total; stored facts and magic seeds do
+    /// not count.
+    pub(crate) max_derived_facts: usize,
+}
+
+/// What every body run reads.
+pub(crate) struct Reads<'a> {
+    pub(crate) snapshot: &'a Snapshot,
+    pub(crate) keys: Option<&'a dyn KeySource>,
+    pub(crate) functions: &'a FunctionRegistry,
+}
+
+/// Derive every relation of `plan` into `rels`.
+pub(crate) fn evaluate(
+    plan: &RulesPlan,
+    rels: &mut Relations,
+    reads: &Reads<'_>,
+    ids: &mut IdSpace,
+    limits: Limits,
+) -> Result<()> {
+    let mut derived = 0usize;
+    for (stratum_rels, rules) in &plan.strata {
+        for &rel in stratum_rels {
+            know_stored(plan, rel, rels, reads, ids)?;
+        }
+        let mut round = 0;
+        loop {
+            round += 1;
+            if round > limits.max_iterations {
+                return Err(iterations_exceeded(limits.max_iterations));
+            }
+            for rule in rules {
+                let runs: &[RuleRun] = if round == 1 || rule.naive {
+                    std::slice::from_ref(&rule.full)
+                } else {
+                    &rule.deltas
+                };
+                for run in runs {
+                    for row in heads(run, &rule.predicate, rule.rel, rels, reads, ids)? {
+                        if rels.add(rule.rel, row) {
+                            derived += 1;
+                            if derived > limits.max_derived_facts {
+                                return Err(derived_facts_exceeded(limits.max_derived_facts));
+                            }
+                        }
+                    }
+                }
+            }
+            if !rels.end_round() {
+                break;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Record the stored facts of relation `rel`, so that a head equal to one
+/// is not derived (spec §5.1).
+fn know_stored(
+    plan: &RulesPlan,
+    rel: usize,
+    rels: &mut Relations,
+    reads: &Reads<'_>,
+    ids: &mut IdSpace,
+) -> Result<()> {
+    let Some(attr) = plan.evaluated.attrs.get(rel) else {
+        return Ok(());
+    };
+    let mut scan = Scan::new(ScanSpec {
+        e: Term::Bind(0),
+        a: Term::Const(attr.clone()),
+        v: Term::Bind(1),
+        meta: Vec::new(),
+        as_of: plan.as_of,
+        valid: plan.valid,
+        width: 2,
+        derived: None,
+    });
+    let mut stored = Vec::new();
+    {
+        let mut ctx = ctx(reads, ids, None);
+        while let Some(batch) = scan.next_batch(&mut ctx)? {
+            let (Some(es), Some(vs)) = (batch.cols.first(), batch.cols.get(1)) else {
+                continue;
+            };
+            stored.extend(es.iter().cloned().zip(vs.iter().cloned()));
+        }
+    }
+    ids.end_pull();
+    for (e, v) in stored {
+        rels.know(rel, &[e, v]);
+    }
+    Ok(())
+}
+
+/// The heads one run of a rule's body gives that `rels` does not know yet,
+/// each once.
+fn heads(
+    run: &RuleRun,
+    predicate: &str,
+    rel: usize,
+    rels: &Relations,
+    reads: &Reads<'_>,
+    ids: &mut IdSpace,
+) -> Result<Vec<[Cell; 2]>> {
+    let mut out = Vec::new();
+    let mut seen: HashSet<[JoinKey; 2]> = HashSet::new();
+    {
+        let mut ctx = ctx(reads, ids, Some(rels));
+        let mut root = build(run.plan.source.clone(), run.plan.steps.clone());
+        while let Some(batch) = root.next_batch(&mut ctx)? {
+            for i in 0..batch.len {
+                let cell = |slot: usize| batch.cols.get(slot).and_then(|c| c.get(i));
+                let row = [
+                    entity(&run.entity, predicate, cell, &mut ctx)?,
+                    value(run.value.as_ref(), cell)?,
+                ];
+                if !rels.known(rel, &row)
+                    && seen.insert([JoinKey::ident(&row[0]), JoinKey::ident(&row[1])])
+                {
+                    out.push(row);
+                }
+            }
+        }
+        root.close();
+    }
+    ids.end_pull();
+    Ok(out)
+}
+
+fn ctx<'a>(reads: &Reads<'a>, ids: &'a mut IdSpace, derived: Option<&'a Relations>) -> Ctx<'a> {
+    Ctx {
+        snapshot: reads.snapshot,
+        keys: reads.keys,
+        ids,
+        functions: reads.functions,
+        derived,
+    }
+}
+
+/// The head's entity cell (spec §5.3): an entity, or the entity a keyword
+/// names; anything else is `QRY-013`.
+fn entity<'c>(
+    arg: &HeadArg,
+    predicate: &str,
+    cell: impl Fn(usize) -> Option<&'c Cell>,
+    ctx: &mut Ctx<'_>,
+) -> Result<Cell> {
+    let kind = match arg {
+        HeadArg::Unbound(v) => return Err(unbound(v)),
+        HeadArg::Slot(s) => match cell(*s) {
+            Some(Cell::Eid(e)) => return Ok(Cell::Eid(*e)),
+            Some(Cell::Iid(i)) => return Ok(Cell::Eid(ctx.ids.keyword_eid(ctx.keys, *i)?)),
+            Some(Cell::Val(v)) => match v {
+                // The executor reads a `nil` back as a symbol.
+                Scalar::Null => "symbol",
+                Scalar::Bool(_) => "Boolean",
+                Scalar::Int(_) => "Integer",
+                Scalar::Float(_) => "Float",
+                Scalar::Str(_) | Scalar::Long(_) => "String",
+            },
+            None => return Err(unbound("?")),
+        },
+    };
+    Err(err_coded!(ErrorCode::Qry013, predicate, kind))
+}
+
+/// The head's value cell: any value but `nil`, which the executor cannot
+/// read back (`INT-022`); `true` for a one-argument head.
+fn value<'c>(arg: Option<&HeadArg>, cell: impl Fn(usize) -> Option<&'c Cell>) -> Result<Cell> {
+    match arg {
+        None => Ok(Cell::Val(Scalar::Bool(true))),
+        Some(HeadArg::Unbound(v)) => Err(unbound(v)),
+        Some(HeadArg::Slot(s)) => match cell(*s) {
+            Some(Cell::Val(Scalar::Null)) | None => Err(err_coded!(
+                ErrorCode::Int022,
+                "Failed to convert value: nil"
+            )),
+            Some(c) => Ok(c.clone()),
+        },
+    }
+}
+
+fn unbound(var: &str) -> anyhow::Error {
+    err_coded!(
+        ErrorCode::Int022,
+        format!("Unbound variable in rule head: {var}")
+    )
+}

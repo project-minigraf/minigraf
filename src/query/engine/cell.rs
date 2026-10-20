@@ -129,6 +129,17 @@ impl JoinKey {
     }
 }
 
+impl JoinKey {
+    /// The key of `cell` as a relation tells facts apart (#548 spec §3.2):
+    /// as [`JoinKey::group`], except that `-0.0` is not `0.0`.
+    pub(crate) fn ident(cell: &Cell) -> JoinKey {
+        match cell {
+            Cell::Val(Scalar::Float(f)) if !f.is_nan() => JoinKey::Float(f.to_bits()),
+            cell => JoinKey::group(cell),
+        }
+    }
+}
+
 /// Whether `a` and `b` are join-equal (#473 spec §5.4).
 pub(crate) fn join_eq(a: &Cell, b: &Cell, normalise: bool, ctx: &mut Ctx<'_>) -> Result<bool> {
     Ok(

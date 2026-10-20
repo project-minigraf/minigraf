@@ -1020,8 +1020,8 @@ fn planner_chooses_the_body_form() {
     assert_eq!(forms(constant), ["correlated"]);
 }
 
-/// Which negations the engine runs (#546): every `not` / `not-join`
-/// without a rule invocation.
+/// Which negations the engine runs (#546): every `not` / `not-join`, with
+/// a rule invocation too since rule queries run here (#548).
 #[test]
 fn negation_routing() {
     let db = Minigraf::in_memory().unwrap();
@@ -1032,13 +1032,9 @@ fn negation_routing() {
         "(query [:find ?e :where [?e :person/name ?n] (not [?e :person/ok true])])",
         "(query [:find ?e :where [?e :person/name ?n] (not [:p1 :person/ok true])])",
         "(query [:find ?e :where [?e :person/age ?a] [(+ ?a 1) ?b] (not-join [?b] [?f :person/age ?b])])",
+        "(query [:find ?e :where [?e :person/name ?n] (not (okay ?e))])",
     ] {
         rows(&db, q);
-    }
-    for q in ["(query [:find ?e :where [?e :person/name ?n] (not (okay ?e))])"] {
-        let before = runs();
-        db.execute(q).unwrap();
-        assert_eq!(runs(), before, "query stayed on the executor");
     }
 }
 
@@ -1278,8 +1274,8 @@ fn disjunction_matches_executor() {
 }
 
 /// Which disjunctions the engine runs (#546 PR 2): `or` / `or-join` whose
-/// branches hold patterns, expressions and `not`s; a rule invocation, a
-/// nested `or`, a predicate the registry may lack, an `or` whose branches
+/// branches hold patterns, expressions, `not`s and rule invocations (#548);
+/// a nested `or`, a predicate the registry may lack, an `or` whose branches
 /// bind their own sources' metadata, and a branch `not` reading what only
 /// the branch's expression binds stay on the executor (decision 11).
 #[test]
@@ -1293,11 +1289,11 @@ fn disjunction_routing() {
         "(query [:find ?e :where (or [?e :person/ok true] [?e :person/age 21])])",
         "(query [:find ?e :where [?e :person/name ?n] (or (and [?e :person/ok true] (not [?e :person/age 21])) [?e :person/age 22])])",
         "(query [:find ?e :any-valid-time :where [?e :person/name ?n] (or-join [?e] (and [?f :person/age ?a] [?f :db/tx-count ?t]) [?e :person/ok true])])",
+        "(query [:find ?e :where [?e :person/name ?n] (or (okay ?e) [?e :person/age 21])])",
     ] {
         rows(&db, q);
     }
     for q in [
-        "(query [:find ?e :where [?e :person/name ?n] (or (okay ?e) [?e :person/age 21])])",
         "(query [:find ?e :where [?e :person/name ?n] (or (or [?e :person/ok true] [?e :person/age 22]) [?e :person/age 21])])",
         "(query [:find ?e :where [?e :person/age ?a] (or (and [?e :person/ok true] [(no-such-pred? ?a)]) [?e :person/age 21])])",
         "(query [:find ?e :any-valid-time :where [?e :person/name ?n] (or (and [?e :person/age ?a] [?e :db/tx-count ?t]) (and [?e :person/score ?a] [?e :db/tx-id ?t]))])",
@@ -1773,4 +1769,86 @@ fn window_routing() {
         ),
         0
     );
+}
+
+/// Which rule queries the engine runs (#548 spec §5.5): those whose body and
+/// every evaluated rule body it plans, outside a write transaction and
+/// without an `:as-of` timestamp.
+#[test]
+fn rule_query_routing() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute("(transact [[:a :e :b] [:b :e :c] [:c :n 1]])")
+        .unwrap();
+    for rule in [
+        "(rule [(reach ?x ?y) [?x :e ?y]])",
+        "(rule [(reach ?x ?z) [?x :e ?y] (reach ?y ?z)])",
+        "(rule [(one ?x ?v) [(+ 0 1) ?v] [(+ 0 2) ?x]])",
+        "(rule [(deep ?x ?y) [?x :e ?y] (or (or [?y :e ?x] [?y :n 1]) [?x :n 2])])",
+    ] {
+        db.execute(rule).unwrap();
+    }
+    assert_eq!(rows(&db, "(query [:find ?x ?y :where (reach ?x ?y)])"), 3);
+    assert_eq!(rows(&db, "(query [:find ?y :where (reach :a ?y)])"), 2);
+    assert_eq!(
+        rows(
+            &db,
+            "(query [:find ?x :where [?x :e ?y] (not-join [?y] (reach ?y ?z))])"
+        ),
+        1
+    );
+    for q in [
+        "(query [:find ?x ?y :as-of \"2020-01-01T00:00:00Z\" :where (reach ?x ?y)])",
+        "(query [:find ?x ?v :where (one ?x ?v)])",
+        "(query [:find ?x :where (deep ?x ?y)])",
+        "(query [:find ?x :where (reach ?x ?y ?z)])",
+    ] {
+        let before = runs();
+        let _ = db.execute(q);
+        assert_eq!(runs(), before, "query stayed on the executor");
+    }
+    let before = runs();
+    let mut tx = db.begin_write().unwrap();
+    tx.execute("(transact [[:c :e :d]])").unwrap();
+    tx.execute("(query [:find ?x ?y :where (reach ?x ?y)])")
+        .unwrap();
+    tx.rollback();
+    assert_eq!(runs(), before, "a write transaction reads on the executor");
+}
+
+/// The relations a rule query derives are read after the committed and
+/// pending facts, in batches, on every scan kind (#548 spec §5.2).
+#[test]
+fn rule_queries_read_derived_rows_in_batches() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Minigraf::open(dir.path().join("rules.graph")).unwrap();
+    // A chain of 60 nodes: 1,770 reach facts, more than one batch.
+    let edges: String = (0..59)
+        .map(|i| format!("[:n{i} :e :n{}]", i + 1))
+        .collect::<Vec<_>>()
+        .join(" ");
+    db.execute(&format!("(transact [{edges}])")).unwrap();
+    db.execute("(rule [(reach ?x ?y) [?x :e ?y]])").unwrap();
+    db.execute("(rule [(reach ?x ?z) (reach ?x ?y) [?y :e ?z]])")
+        .unwrap();
+    for _ in 0..2 {
+        assert_eq!(
+            rows(&db, "(query [:find ?x ?y :where (reach ?x ?y)])"),
+            1770
+        );
+        assert_eq!(rows(&db, "(query [:find ?y :where (reach :n0 ?y)])"), 59);
+        assert_eq!(
+            rows(&db, "(query [:find ?x ?a :where [?x :e :n5] [?x ?a ?y]])"),
+            1,
+            "no rule invoked: no derived rows"
+        );
+        assert_eq!(
+            rows(
+                &db,
+                "(query [:find ?x ?y :where [?x :reach ?y] (reach ?x ?y)])"
+            ),
+            1770,
+            "a pattern of the relation"
+        );
+        db.checkpoint().unwrap();
+    }
 }

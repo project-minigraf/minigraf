@@ -22,16 +22,21 @@
 //! of its entity, as `[e _ _]` does, with the query's valid time as a column.
 
 use super::cell::Scalar;
+use super::relation::{Derived, Range};
 use crate::graph::types::{EntityId, Value};
 use crate::query::datalog::aggregate::named_vars;
+use crate::query::datalog::evaluator::rule_invocation_to_pattern;
 use crate::query::datalog::executor::Binders;
 use crate::query::datalog::matcher::edn_to_entity_id;
 use crate::query::datalog::optimizer;
+use crate::query::datalog::rules::RuleRegistry;
+use crate::query::datalog::stratification::DependencyGraph;
 use crate::query::datalog::types::{
     AsOf, AttributeSpec, DatalogQuery, EdnValue, Expr, FindSpec, Pattern, PseudoAttr, UnaryOp,
     ValidAt, WhereClause,
 };
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 /// One position of a pattern.
 #[derive(Debug, Clone)]
@@ -111,6 +116,9 @@ pub(crate) struct ScanSpec {
     pub(crate) valid: Valid,
     /// Number of slots the scan fills.
     pub(crate) width: usize,
+    /// In a rule query, the derived rows read after the stored facts
+    /// (#548 spec §5.2).
+    pub(crate) derived: Option<Derived>,
 }
 
 /// A clause after the scan, in the executor's order.
@@ -285,12 +293,13 @@ impl Slots {
     }
 }
 
-/// The plan of `query`, or `None` when the engine does not run it yet.
-pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
+/// The `:as-of` counter and valid-time test of `query`, or `None` when the
+/// engine does not run it: a timestamp is not a key bound, and a slot is
+/// resolved before this.
+fn temporal(query: &DatalogQuery) -> Option<(Option<u64>, Valid)> {
     let as_of = match &query.as_of {
         None => None,
         Some(AsOf::Counter(n)) => Some(*n),
-        // A timestamp is not a key bound; a slot is resolved before this.
         Some(AsOf::Timestamp(_) | AsOf::Slot(_)) => return None,
     };
     let valid = match &query.valid_at {
@@ -299,7 +308,20 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
         Some(ValidAt::AnyValidTime) => Valid::Any,
         Some(ValidAt::Slot(_)) => return None,
     };
-    if !query.where_clauses.iter().all(|c| {
+    Some((as_of, valid))
+}
+
+/// The plan of `query`, or `None` when the engine does not run it yet.
+pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
+    plan_with(query, None)
+}
+
+/// Add the steps of `clauses`, a `:where` or a rule body, to `b`: the
+/// clauses `optimizer::plan` places, in its order, then the `or`s, then the
+/// deferred ones. With `first`, that pattern runs first (a rule body's delta,
+/// #548 spec §5.3).
+fn clauses(b: &mut Builder, clauses: &[WhereClause], first: Option<&Pattern>) -> Option<()> {
+    if !clauses.iter().all(|c| {
         matches!(
             c,
             WhereClause::Pattern(_)
@@ -312,18 +334,21 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
     }) {
         return None;
     }
-    let mut b = Builder::new(
-        Some(Binders::new(&query.where_clauses, Vec::new())),
-        as_of,
-        valid,
-    );
-    let (planned, deferred) = optimizer::plan(query.where_clauses.clone());
+    let (mut planned, deferred) = optimizer::plan(clauses.to_vec());
+    if let Some(p) = first.filter(|_| optimizer::reorder())
+        && let Some(i) = planned
+            .iter()
+            .position(|(c, _)| matches!(c, WhereClause::Pattern(q) if q == p))
+    {
+        let c = planned.remove(i);
+        planned.insert(0, c);
+    }
     for (c, _) in planned {
         b.clause(c)?;
     }
     // `or` / `or-join` after the clauses the plan places, in text order, as
     // on the executor (spec §5.1).
-    for c in &query.where_clauses {
+    for c in clauses {
         if matches!(c, WhereClause::Or(_) | WhereClause::OrJoin { .. }) {
             b.clause(c.clone())?;
         }
@@ -333,6 +358,20 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
     for c in sorted(deferred) {
         b.clause(c)?;
     }
+    Some(())
+}
+
+/// The plan of `query`, whose scans also read the relations `evaluated`
+/// when it is a rule query (#548).
+fn plan_with(query: &DatalogQuery, evaluated: Option<Arc<Evaluated>>) -> Option<Plan> {
+    let (as_of, valid) = temporal(query)?;
+    let mut b = Builder::new(
+        Some(Binders::new(&query.where_clauses, Vec::new())),
+        as_of,
+        valid,
+        evaluated,
+    );
+    clauses(&mut b, &query.where_clauses, None)?;
 
     // The parser rejects a variable no clause binds (PRS-080, PRS-022,
     // PRS-023); one only some `or` branches bind has no slot here.
@@ -440,6 +479,275 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
     Some(plan)
 }
 
+/// A rule query on the engine (#548 spec §5): the relations, the rules of
+/// each stratum in ascending order, and the query body.
+#[derive(Debug, Clone)]
+pub(crate) struct RulesPlan {
+    pub(crate) evaluated: Arc<Evaluated>,
+    /// Each stratum with rules: its relations, and its rules.
+    pub(crate) strata: Vec<(Vec<usize>, Vec<RulePlan>)>,
+    pub(crate) as_of: Option<u64>,
+    pub(crate) valid: Valid,
+    pub(crate) body: Plan,
+}
+
+/// One rule: its runs in round 1 and the rounds after (spec §5.3).
+#[derive(Debug, Clone)]
+pub(crate) struct RulePlan {
+    /// The relation of its head.
+    pub(crate) rel: usize,
+    pub(crate) predicate: String,
+    /// Every read `Full`: round 1, and every round of a naive rule.
+    pub(crate) full: RuleRun,
+    /// One run per top-level invocation of its stratum, for rounds after
+    /// the first; empty for a rule without one, which runs in round 1 only.
+    pub(crate) deltas: Vec<RuleRun>,
+    pub(crate) naive: bool,
+}
+
+/// A rule body's plan and where its rows hold the head's arguments.
+#[derive(Debug, Clone)]
+pub(crate) struct RuleRun {
+    pub(crate) plan: Plan,
+    pub(crate) entity: HeadArg,
+    /// `None` for a one-argument head, whose value is `true`.
+    pub(crate) value: Option<HeadArg>,
+}
+
+/// A head argument: a variable (PRS-114 rejects any other).
+#[derive(Debug, Clone)]
+pub(crate) enum HeadArg {
+    Slot(usize),
+    /// A variable the body does not bind (`INT-022` once a row reaches it).
+    Unbound(String),
+}
+
+/// The plan of a rule query: `query` and every rule it evaluates in
+/// `registry` (the magic-set rewrite's, when it ran), whose relations also
+/// hold the attributes `seeds` (magic seeds). `None` when the engine does not
+/// run it: a body it does not plan, an `:as-of` timestamp, a slot, a
+/// stratification error or an invocation of three or more arguments, which
+/// the executor reports.
+pub(crate) fn plan_rules(
+    query: &DatalogQuery,
+    registry: &RuleRegistry,
+    seeds: &[&str],
+) -> Option<RulesPlan> {
+    let (as_of, valid) = temporal(query)?;
+    let strata = DependencyGraph::from_rules(registry).stratify().ok()?;
+    // Every predicate the query invokes, and those their rules invoke, as
+    // `StratifiedEvaluator::evaluate` collects them.
+    let mut preds: Vec<String> = Vec::new();
+    for (p, _) in query.get_rule_invocations() {
+        if !preds.contains(&p) {
+            preds.push(p);
+        }
+    }
+    let mut i = 0;
+    while let Some(p) = preds.get(i).cloned() {
+        for rule in registry.get_rules(&p) {
+            for c in &rule.body {
+                for dep in c.rule_invocations() {
+                    if !preds.iter().any(|q| q == dep) {
+                        preds.push(dep.to_string());
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+    let mut attrs: Vec<String> = preds.iter().map(|p| format!(":{p}")).collect();
+    for a in seeds {
+        if !attrs.iter().any(|b| b == a) {
+            attrs.push((*a).to_string());
+        }
+    }
+    let evaluated = Arc::new(Evaluated {
+        by_attr: attrs
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (a.clone(), i))
+            .collect(),
+        attrs,
+    });
+    let stratum = |p: &str| strata.get(p).copied().unwrap_or(0);
+    let top = preds.iter().map(|p| stratum(p)).max().unwrap_or(0);
+    let mut planned = Vec::new();
+    for s in 0..=top {
+        let in_stratum: HashSet<String> = preds
+            .iter()
+            .filter(|p| stratum(p) == s)
+            .map(|p| format!(":{p}"))
+            .collect();
+        let mut rels = Vec::new();
+        let mut rules = Vec::new();
+        for (rel, p) in preds.iter().enumerate().filter(|(_, p)| stratum(p) == s) {
+            rels.push(rel);
+            for rule in registry.get_rules(p) {
+                rules.push(rule_plan(
+                    &rule.head,
+                    &rule.body,
+                    rel,
+                    p,
+                    &in_stratum,
+                    as_of,
+                    valid,
+                    &evaluated,
+                )?);
+            }
+        }
+        if !rels.is_empty() {
+            planned.push((rels, rules));
+        }
+    }
+    let mut body_query = query.clone();
+    body_query.where_clauses = calls_as_patterns(&query.where_clauses)?;
+    let body = plan_with(&body_query, Some(evaluated.clone()))?;
+    Some(RulesPlan {
+        evaluated,
+        strata: planned,
+        as_of,
+        valid,
+        body,
+    })
+}
+
+/// The plan of one rule of predicate `predicate` (relation `rel`), whose
+/// stratum holds the relations of the attributes `stratum`.
+#[allow(clippy::too_many_arguments)]
+fn rule_plan(
+    head: &[EdnValue],
+    body: &[WhereClause],
+    rel: usize,
+    predicate: &str,
+    stratum: &HashSet<String>,
+    as_of: Option<u64>,
+    valid: Valid,
+    evaluated: &Arc<Evaluated>,
+) -> Option<RulePlan> {
+    // The executor reports a head without arguments; a fourth is ignored
+    // there.
+    if !(2..=3).contains(&head.len()) {
+        return None;
+    }
+    let naive = naive(body, stratum, false);
+    let clauses = calls_as_patterns(body)?;
+    // The top-level invocations of the stratum, in text order.
+    let own: Vec<Pattern> = body
+        .iter()
+        .filter_map(|c| match c {
+            WhereClause::RuleInvocation { predicate, args }
+                if stratum.contains(&format!(":{predicate}")) =>
+            {
+                rule_invocation_to_pattern(predicate, args).ok()
+            }
+            _ => None,
+        })
+        .collect();
+    let run = |ranges: Vec<(Pattern, Range)>, first: Option<&Pattern>| -> Option<RuleRun> {
+        let mut b = Builder::new(None, as_of, valid, Some(evaluated.clone()));
+        b.ranges = ranges;
+        self::clauses(&mut b, &clauses, first)?;
+        let slots = std::mem::take(&mut b.slots.by_var);
+        let arg = |e: &EdnValue| match e {
+            EdnValue::Symbol(v) if v.starts_with('?') => Some(match slots.get(v) {
+                Some(&s) => HeadArg::Slot(s),
+                None => HeadArg::Unbound(v.clone()),
+            }),
+            _ => None,
+        };
+        Some(RuleRun {
+            entity: arg(head.get(1)?)?,
+            value: match head.get(2) {
+                Some(v) => Some(arg(v)?),
+                None => None,
+            },
+            plan: b.finish()?,
+        })
+    };
+    let full = run(Vec::new(), None)?;
+    let mut deltas = Vec::new();
+    if !naive {
+        for (i, delta) in own.iter().enumerate() {
+            let ranges = own
+                .iter()
+                .enumerate()
+                .map(|(j, p)| {
+                    let range = match j.cmp(&i) {
+                        std::cmp::Ordering::Less => Range::Old,
+                        std::cmp::Ordering::Equal => Range::Delta,
+                        std::cmp::Ordering::Greater => Range::Full,
+                    };
+                    (p.clone(), range)
+                })
+                .collect();
+            deltas.push(run(ranges, Some(delta))?);
+        }
+    }
+    Some(RulePlan {
+        rel,
+        predicate: predicate.to_string(),
+        full,
+        deltas,
+        naive,
+    })
+}
+
+/// Whether a rule body reads a relation of its stratum (the attributes
+/// `stratum`) other than through a top-level invocation, outside `not` and
+/// `not-join` (spec §5.3): it is then evaluated in full every round.
+fn naive(body: &[WhereClause], stratum: &HashSet<String>, in_or: bool) -> bool {
+    body.iter().any(|c| match c {
+        WhereClause::Pattern(p) => match &p.attribute {
+            AttributeSpec::Real(EdnValue::Keyword(a)) => stratum.contains(a),
+            AttributeSpec::Real(_) => true,
+            AttributeSpec::Pseudo(pa) => !pa.is_per_fact(),
+        },
+        WhereClause::RuleInvocation { predicate, .. } => {
+            in_or && stratum.contains(&format!(":{predicate}"))
+        }
+        WhereClause::Or(branches) | WhereClause::OrJoin { branches, .. } => {
+            branches.iter().any(|b| naive(b, stratum, true))
+        }
+        WhereClause::Not(_) | WhereClause::NotJoin { .. } | WhereClause::Expr { .. } => false,
+    })
+}
+
+/// `clauses` with every rule invocation, at any depth, read as its pattern
+/// (`rule_invocation_to_pattern`), as the executor matches it.
+fn calls_as_patterns(clauses: &[WhereClause]) -> Option<Vec<WhereClause>> {
+    let all = |branches: &[Vec<WhereClause>]| {
+        branches
+            .iter()
+            .map(|b| calls_as_patterns(b))
+            .collect::<Option<Vec<_>>>()
+    };
+    clauses
+        .iter()
+        .map(|c| {
+            Some(match c {
+                WhereClause::RuleInvocation { predicate, args } => {
+                    WhereClause::Pattern(rule_invocation_to_pattern(predicate, args).ok()?)
+                }
+                WhereClause::Not(body) => WhereClause::Not(calls_as_patterns(body)?),
+                WhereClause::NotJoin { join_vars, clauses } => WhereClause::NotJoin {
+                    join_vars: join_vars.clone(),
+                    clauses: calls_as_patterns(clauses)?,
+                },
+                WhereClause::Or(branches) => WhereClause::Or(all(branches)?),
+                WhereClause::OrJoin {
+                    join_vars,
+                    branches,
+                } => WhereClause::OrJoin {
+                    join_vars: join_vars.clone(),
+                    branches: all(branches)?,
+                },
+                c => c.clone(),
+            })
+        })
+        .collect()
+}
+
 /// Builds the operator steps of one clause list: a query's `:where`, or a
 /// body.
 struct Builder {
@@ -457,10 +765,60 @@ struct Builder {
     front: Vec<Step>,
     /// The stored-attribute patterns so far, for the `HashJoin` build side.
     outer_patterns: Vec<WhereClause>,
+    /// In a rule query, the evaluated predicates every scan also reads
+    /// (#548 spec §5.2); bodies inherit them.
+    evaluated: Option<Arc<Evaluated>>,
+    /// The ranges of this clause list's own patterns that do not read
+    /// `Full`, taken by the first equal pattern planned (a rule body's
+    /// top-level invocations, spec §5.3). Equal patterns may take each
+    /// other's range: a join does not depend on their order.
+    ranges: Vec<(Pattern, Range)>,
+}
+
+/// The relations of a rule query, by attribute.
+#[derive(Debug, Default)]
+pub(crate) struct Evaluated {
+    /// The relation of each evaluated predicate `p`, by `:p`.
+    pub(crate) by_attr: HashMap<String, usize>,
+    /// The attributes of the relations, in relation order.
+    pub(crate) attrs: Vec<String>,
+}
+
+impl Evaluated {
+    /// What a scan of `attribute` in pattern `q` reads of the relations.
+    fn derived(
+        &self,
+        q: &Pattern,
+        attribute: &EdnValue,
+        ranges: &mut Vec<(Pattern, Range)>,
+    ) -> Option<Derived> {
+        match attribute {
+            EdnValue::Keyword(a) => {
+                let rel = *self.by_attr.get(a)?;
+                let range = match ranges.iter().position(|(p, _)| p == q) {
+                    Some(i) => ranges.swap_remove(i).1,
+                    None => Range::Full,
+                };
+                Some(Derived {
+                    rels: vec![rel],
+                    range,
+                })
+            }
+            _ => Some(Derived {
+                rels: (0..self.attrs.len()).collect(),
+                range: Range::Full,
+            }),
+        }
+    }
 }
 
 impl Builder {
-    fn new(binders: Option<Binders>, as_of: Option<u64>, valid: Valid) -> Self {
+    fn new(
+        binders: Option<Binders>,
+        as_of: Option<u64>,
+        valid: Valid,
+        evaluated: Option<Arc<Evaluated>>,
+    ) -> Self {
         Builder {
             slots: Slots::default(),
             binders,
@@ -470,6 +828,8 @@ impl Builder {
             steps: Vec::new(),
             front: Vec::new(),
             outer_patterns: Vec::new(),
+            evaluated,
+            ranges: Vec::new(),
         }
     }
 
@@ -523,6 +883,10 @@ impl Builder {
                 if pseudo.is_some() {
                     wants.push((Meta::ValidAt, None));
                 }
+                let derived = match &self.evaluated {
+                    Some(e) => e.derived(&q, &attribute, &mut self.ranges),
+                    None => None,
+                };
                 let slots = &mut self.slots;
                 let mut metas: Vec<(Meta, usize)> = Vec::new();
                 if self.source.is_none() {
@@ -544,10 +908,12 @@ impl Builder {
                         as_of,
                         valid,
                         width: slots.len(),
+                        derived,
                     }));
                     self.steps.append(&mut self.front);
                 } else {
                     let mut join = join(&scanned, &attribute, slots, &rebind, as_of, valid)?;
+                    join.inner.derived = derived;
                     for &(m, var) in &wants {
                         let local = join.inner.width;
                         join.inner.width += 1;
@@ -747,7 +1113,7 @@ impl Builder {
         };
         let (as_of, valid) = (self.as_of, self.valid);
         if hash {
-            let mut b = Builder::new(None, as_of, valid);
+            let mut b = Builder::new(None, as_of, valid, self.evaluated.clone());
             let (planned, deferred) = optimizer::plan(body.to_vec());
             for (c, _) in planned {
                 b.clause(c)?;
@@ -772,7 +1138,7 @@ impl Builder {
             let plan = Box::new(b.finish()?);
             return Some((Body::Hashed { plan, keys }, slots));
         }
-        let mut b = Builder::new(None, as_of, valid);
+        let mut b = Builder::new(None, as_of, valid, self.evaluated.clone());
         for (v, outer) in &imports {
             let s = b.slots.add(self.slots.kind(*outer));
             b.slots.by_var.insert(v.clone(), s);
@@ -951,6 +1317,7 @@ fn join(
             as_of,
             valid,
             width: local.len(),
+            derived: None,
         },
         kind: match probe {
             Some(k) => JoinKind::Probe(k),
