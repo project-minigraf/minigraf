@@ -150,11 +150,11 @@ An ungrouped aggregate holds one set of accumulators, and `count` reads no value
 
 | Shape | 100K | 1M | 10M |
 |---|---:|---:|---:|
-| `window` p50, `v3` → PR 3 | 41.2 → 48.2 ms | 600 → 593 ms | 7.91 → 7.32 s |
-| `window` peak RSS | 19 → 17 MiB | 140 → 113 MiB | 1,257 → 1,044 MiB |
+| `window` p50, `v3` → PR 3 | 41.5 → 32.8 ms | 601 → 434 ms | 7.89 → 5.65 s |
+| `window` peak RSS | 19 → 16 MiB | 140 → 109 MiB | 1,257 → 1,030 MiB |
 | every other shape | unchanged | unchanged | unchanged |
 
-A window needs its whole partition, so `Window` holds every row and memory grows with the input. It turns each row's ids into values for the windows' sort, and the projection turns them again when the row is returned; at 100K that second conversion costs more than the engine's scan saves.
+A window needs its whole partition, so `Window` holds every row and memory grows with the input. It turns each row's ids into values in its first pull, for the windows' sort; the stream keeps those DICT lookups until it ends, so returning the rows does not look them up again. Without that, the first measurement of PR 3 was 17% slower than the executor at 100K (48.2 ms).
 
 ### Python FFI round trip
 
