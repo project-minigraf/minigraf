@@ -129,6 +129,31 @@ pub(crate) enum ErrorCode {
     Prs080,
     Prs081,
     Prs082,
+    Prs083,
+    Prs084,
+    Prs085,
+    Prs086,
+    Prs087,
+    Prs088,
+    Prs089,
+    Prs090,
+    Prs091,
+    Prs092,
+    Prs093,
+    Prs094,
+    Prs095,
+    Prs096,
+    Prs097,
+    Prs098,
+    Prs099,
+    Prs100,
+    Prs101,
+    Prs102,
+    Prs103,
+    Prs104,
+    Prs105,
+    Prs106,
+    Prs107,
     Qry001,
     Qry002,
     Qry003,
@@ -777,6 +802,156 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Prs082,
         "PRS-082",
         "{} in {} must be a plain :find variable when the query has aggregates",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs083,
+        "PRS-083",
+        "Bind slot '$' must be followed by an identifier (e.g. $entity)",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs084,
+        "PRS-084",
+        "':order-by' is required in the ':over' clause",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs085,
+        "PRS-085",
+        "Query argument must be a vector",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs086,
+        "PRS-086",
+        "':with' clause accepts only variables, got {}",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs087,
+        "PRS-087",
+        "Expected variable or aggregate expression in :find clause, got {}",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs088,
+        "PRS-088",
+        "Unknown key in valid-time map: {}; expected :valid-from or :valid-to",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs089,
+        "PRS-089",
+        "Each fact must be a vector [e a v]",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs090,
+        "PRS-090",
+        "Retract fact must have exactly 3 elements (E A V), got {}",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs091,
+        "PRS-091",
+        "invalid regex pattern {}: {}",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs092,
+        "PRS-092",
+        "expected pattern or rule invocation inside (not), got {}",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs093,
+        "PRS-093",
+        "(not-join ...) cannot appear inside another (not ...) or (not-join ...)",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs094,
+        "PRS-094",
+        "(not-join) first argument must be a vector of join variables",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs095,
+        "PRS-095",
+        "(not-join) join variables must be logic variables, got {}",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs096,
+        "PRS-096",
+        "expected pattern or rule invocation inside (not-join), got {}",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs097,
+        "PRS-097",
+        "Rule invocation must start with predicate name (symbol), got {}",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs098,
+        "PRS-098",
+        "Pattern must have exactly 3 elements (E A V), got {}",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs099,
+        "PRS-099",
+        "expected clause inside or branch, got {}",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs100,
+        "PRS-100",
+        "Rule must have a body",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs101,
+        "PRS-101",
+        "Rule body must be a vector",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs102,
+        "PRS-102",
+        "Rule body cannot be empty",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs103,
+        "PRS-103",
+        "Rule head must be a list: (predicate ?args)",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs104,
+        "PRS-104",
+        "Rule head cannot be empty",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs105,
+        "PRS-105",
+        "Rule head must start with a symbol (predicate name)",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs106,
+        "PRS-106",
+        "Rule body clause must be a vector (pattern) or list (rule invocation / not), got {}",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs107,
+        "PRS-107",
+        "Rule must have at least one pattern or rule invocation in body",
         ErrorCategory::Parser,
     ),
     (
@@ -2000,6 +2175,31 @@ mod tests {
                 | ErrorCode::Prs080
                 | ErrorCode::Prs081
                 | ErrorCode::Prs082
+                | ErrorCode::Prs083
+                | ErrorCode::Prs084
+                | ErrorCode::Prs085
+                | ErrorCode::Prs086
+                | ErrorCode::Prs087
+                | ErrorCode::Prs088
+                | ErrorCode::Prs089
+                | ErrorCode::Prs090
+                | ErrorCode::Prs091
+                | ErrorCode::Prs092
+                | ErrorCode::Prs093
+                | ErrorCode::Prs094
+                | ErrorCode::Prs095
+                | ErrorCode::Prs096
+                | ErrorCode::Prs097
+                | ErrorCode::Prs098
+                | ErrorCode::Prs099
+                | ErrorCode::Prs100
+                | ErrorCode::Prs101
+                | ErrorCode::Prs102
+                | ErrorCode::Prs103
+                | ErrorCode::Prs104
+                | ErrorCode::Prs105
+                | ErrorCode::Prs106
+                | ErrorCode::Prs107
                 | ErrorCode::Qry001
                 | ErrorCode::Qry002
                 | ErrorCode::Qry003
@@ -2228,6 +2428,31 @@ mod tests {
             ErrorCode::Prs080,
             ErrorCode::Prs081,
             ErrorCode::Prs082,
+            ErrorCode::Prs083,
+            ErrorCode::Prs084,
+            ErrorCode::Prs085,
+            ErrorCode::Prs086,
+            ErrorCode::Prs087,
+            ErrorCode::Prs088,
+            ErrorCode::Prs089,
+            ErrorCode::Prs090,
+            ErrorCode::Prs091,
+            ErrorCode::Prs092,
+            ErrorCode::Prs093,
+            ErrorCode::Prs094,
+            ErrorCode::Prs095,
+            ErrorCode::Prs096,
+            ErrorCode::Prs097,
+            ErrorCode::Prs098,
+            ErrorCode::Prs099,
+            ErrorCode::Prs100,
+            ErrorCode::Prs101,
+            ErrorCode::Prs102,
+            ErrorCode::Prs103,
+            ErrorCode::Prs104,
+            ErrorCode::Prs105,
+            ErrorCode::Prs106,
+            ErrorCode::Prs107,
             ErrorCode::Qry001,
             ErrorCode::Qry002,
             ErrorCode::Qry003,

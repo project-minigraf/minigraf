@@ -476,3 +476,247 @@ fn prepare_rejects_transact_command_not_prs() {
     // Transact command, it's just the wrong command kind for prepare().
     assert_ne!(err.category(), ErrorCategory::Parser);
 }
+
+// ── PRS-083..PRS-107: parse errors that were INT-019 (#643) ─────────────────
+
+/// Execute `input`, assert the Parser-category `expected_code`, and that the
+/// message carries `needle` (the error's argument, or its fixed text).
+fn assert_code_and_message(input: &str, expected_code: &str, needle: &str) {
+    assert_execute_code(input, expected_code);
+    let err = db().execute(input).expect_err("input must be rejected");
+    let text = err.to_string();
+    assert!(
+        text.contains(needle),
+        "message for {} lacks {}: {}",
+        expected_code,
+        needle,
+        text
+    );
+    assert!(
+        !text.contains("datalog parser:"),
+        "{} message keeps the INT-019 prefix",
+        expected_code
+    );
+}
+
+#[test]
+fn prs_083_bind_slot_without_name() {
+    assert_code_and_message(
+        "(query [:find ?e :where [?e :name $]])",
+        "PRS-083",
+        "Bind slot '$'",
+    );
+}
+
+#[test]
+fn prs_084_over_without_order_by() {
+    assert_code_and_message(
+        "(query [:find ?e (rank :over (:partition-by ?d)) :where [?e :dept ?d]])",
+        "PRS-084",
+        "':order-by' is required",
+    );
+}
+
+#[test]
+fn prs_085_query_argument_not_a_vector() {
+    assert_code_and_message(
+        "(query (:find ?e :where [?e :a ?v]))",
+        "PRS-085",
+        "Query argument must be a vector",
+    );
+}
+
+#[test]
+fn prs_086_with_takes_only_variables() {
+    assert_code_and_message(
+        "(query [:find (count ?e) :with 7 :where [?e :a ?v]])",
+        "PRS-086",
+        "7",
+    );
+}
+
+#[test]
+fn prs_087_find_element_not_variable_or_aggregate() {
+    assert_code_and_message("(query [:find 7 :where [?e :a ?v]])", "PRS-087", "7");
+}
+
+#[test]
+fn prs_088_unknown_valid_time_key() {
+    assert_code_and_message(
+        r#"(transact {:valid-at "2024-01-01"} [[:alice :name "Alice"]])"#,
+        "PRS-088",
+        ":valid-at",
+    );
+}
+
+#[test]
+fn prs_089_retract_fact_not_a_vector() {
+    assert_code_and_message(
+        "(retract [:alice])",
+        "PRS-089",
+        "Each fact must be a vector",
+    );
+}
+
+#[test]
+fn prs_090_retract_fact_wrong_arity() {
+    assert_code_and_message("(retract [[:alice :name]])", "PRS-090", "got 2");
+    assert_code_and_message(
+        r#"(retract [[:alice :name "Alice" 1]])"#,
+        "PRS-090",
+        "got 4",
+    );
+}
+
+#[test]
+fn prs_091_invalid_regex() {
+    assert_code_and_message(
+        r#"(query [:find ?e :where [?e :name ?n] [(matches? ?n "(")]])"#,
+        "PRS-091",
+        "\"(\"",
+    );
+}
+
+#[test]
+fn prs_092_not_body_item_not_a_clause() {
+    assert_code_and_message(
+        "(query [:find ?e :where [?e :a ?v] (not 7)])",
+        "PRS-092",
+        "7",
+    );
+}
+
+#[test]
+fn prs_093_not_join_nested_in_not() {
+    assert_code_and_message(
+        "(query [:find ?e :where [?e :a ?v] (not (not-join [?e] [?e :b 1]))])",
+        "PRS-093",
+        "cannot appear inside another",
+    );
+}
+
+#[test]
+fn prs_094_not_join_first_argument_not_a_vector() {
+    assert_code_and_message(
+        "(query [:find ?e :where [?e :a ?v] (not-join ?e [?e :b 1])])",
+        "PRS-094",
+        "first argument must be a vector",
+    );
+}
+
+#[test]
+fn prs_095_not_join_variable_not_logic_variable() {
+    assert_code_and_message(
+        "(query [:find ?e :where [?e :a ?v] (not-join [7] [?e :b 1])])",
+        "PRS-095",
+        "7",
+    );
+}
+
+#[test]
+fn prs_096_not_join_body_item_not_a_clause() {
+    assert_code_and_message(
+        "(query [:find ?e :where [?e :a ?v] (not-join [?e] 7)])",
+        "PRS-096",
+        "7",
+    );
+}
+
+#[test]
+fn prs_097_rule_invocation_head_not_a_symbol() {
+    assert_code_and_message(
+        "(query [:find ?e :where [?e :a ?v] (7 ?e)])",
+        "PRS-097",
+        "7",
+    );
+}
+
+#[test]
+fn prs_098_pattern_wrong_arity() {
+    assert_code_and_message(
+        "(query [:find ?e :where [?e :a ?v] [?e :b]])",
+        "PRS-098",
+        "got 2",
+    );
+}
+
+#[test]
+fn prs_099_or_branch_item_not_a_clause() {
+    assert_code_and_message(
+        "(query [:find ?e :where [?e :a ?v] (or 7)])",
+        "PRS-099",
+        "7",
+    );
+}
+
+#[test]
+fn prs_100_rule_without_body() {
+    assert_code_and_message("(rule)", "PRS-100", "Rule must have a body");
+}
+
+#[test]
+fn prs_101_rule_body_not_a_vector() {
+    assert_code_and_message(
+        "(rule (reachable ?a ?b))",
+        "PRS-101",
+        "Rule body must be a vector",
+    );
+}
+
+#[test]
+fn prs_102_rule_body_empty() {
+    assert_code_and_message("(rule [])", "PRS-102", "Rule body cannot be empty");
+}
+
+#[test]
+fn prs_103_rule_head_not_a_list() {
+    assert_code_and_message(
+        "(rule [reachable [?a :edge ?b]])",
+        "PRS-103",
+        "Rule head must be a list",
+    );
+}
+
+#[test]
+fn prs_104_rule_head_empty() {
+    assert_code_and_message(
+        "(rule [() [?a :edge ?b]])",
+        "PRS-104",
+        "Rule head cannot be empty",
+    );
+}
+
+#[test]
+fn prs_105_rule_head_not_a_symbol() {
+    assert_code_and_message(
+        "(rule [(7 ?a) [?a :edge ?b]])",
+        "PRS-105",
+        "Rule head must start with a symbol",
+    );
+}
+
+#[test]
+fn prs_106_rule_body_clause_not_vector_or_list() {
+    assert_code_and_message("(rule [(reachable ?a) 7])", "PRS-106", "7");
+}
+
+#[test]
+fn prs_107_rule_body_has_no_clause() {
+    assert_code_and_message(
+        "(rule [(reachable ?a)])",
+        "PRS-107",
+        "at least one pattern or rule invocation",
+    );
+}
+
+#[test]
+fn prs_083_to_107_reach_through_prepare() {
+    let cases: &[(&str, &str)] = &[
+        ("(query [:find ?e :where [?e :name $]])", "PRS-083"),
+        ("(query [:find 7 :where [?e :a ?v]])", "PRS-087"),
+        ("(query [:find ?e :where [?e :a ?v] [?e :b]])", "PRS-098"),
+    ];
+    for (input, code) in cases {
+        assert_prepare_code(input, code);
+    }
+}
