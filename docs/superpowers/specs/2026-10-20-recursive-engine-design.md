@@ -202,7 +202,10 @@ cells. Within a stratum:
   A per-fact pseudo-attribute pattern (`:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`)
   reads its source's metadata and scans nothing, so it does not make a rule naive. `not` / `not-join`
   bodies only read lower strata through invocations (`stratify()` guarantees it), and their patterns read
-  `Full`, so they never make a rule naive.
+  `Full`, so they never make a rule naive. A `not` body *pattern* that names a predicate of the same
+  stratum (`(not [?x :p ?y])`, or a variable attribute) is outside stratification: on either engine its
+  answer depends on how far the stratum has got. It is not defined by this design, and no test relies on
+  it; making it an error is a possible follow-up.
 - Each head row is checked against the identity set; new rows are appended at the end of the round, and
   each one counts against `max_derived_facts`. A round that appends nothing ends the stratum.
 
