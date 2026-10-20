@@ -31,6 +31,7 @@ impl Apply {
             Step::Anti(_) => "AntiJoin",
             Step::Union(_) => "Union",
             Step::Distinct(_) => "Distinct",
+            Step::Aggregate { .. } => "Aggregate",
         };
         Apply {
             child,
@@ -129,7 +130,11 @@ fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<Batch> {
         }
         // Joins are operators of their own (`join::Join`, `anti::AntiJoin`,
         // `union::Union`, `distinct::Distinct`).
-        Step::Join(_) | Step::Anti(_) | Step::Union(_) | Step::Distinct(_) => {}
+        Step::Join(_)
+        | Step::Anti(_)
+        | Step::Union(_)
+        | Step::Distinct(_)
+        | Step::Aggregate { .. } => {}
     }
     Ok(batch)
 }

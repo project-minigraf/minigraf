@@ -130,6 +130,20 @@ At 10M facts with PR 3 (same server, two rounds; the PR 2 code is unchanged for 
 
 The pseudo-attribute pattern reads the `:db/tx-count` column that the `:name` probe fills for its one row.
 
+### Aggregates on the streaming engine (#547 PR 2)
+
+`count` is `[:find (count ?v) :where [?e ?a ?v]]` (every fact, 1 row); `count_grouped` is `[:find ?g (count ?e) :where [?e :group ?g]]` (100 rows). Before PR 2 every aggregate query ran on the executor, which holds every binding before grouping. A/B on the same idle server, `v3` (234cc3e, with the `count` shape added) then PR 2; p50 and peak RSS.
+
+| Shape | 100K | 1M | 10M |
+|---|---:|---:|---:|
+| `count` p50, `v3` → PR 2 | 207 → 44 ms | 3.01 s → 457 ms | 29.6 s → 4.46 s |
+| `count` peak RSS | 97 → 7 MiB | 728 → 7 MiB | 6,619 → 7 MiB |
+| `count_grouped` p50 | 31.4 → 5.9 ms | 397 → 61 ms | 4.51 s → 614 ms |
+| `count_grouped` peak RSS | 14 → 5 MiB | 97 → 7 MiB | 901 → 7 MiB |
+| every other shape | unchanged | unchanged | unchanged |
+
+An ungrouped aggregate holds one set of accumulators, and `count` reads no value, so memory is flat across scales; a grouped one holds one entry per group.
+
 ### Python FFI round trip
 
 **Command**: `python bench/envelope.py <fixture> --report envelope.json --scale <scale>` in [minigraf-python](https://github.com/project-minigraf/minigraf-python) (`v3`), on the same fixtures and report. The binding is built with `maturin develop --release` against this commit. It runs the same queries through `db.query(...)`, drains them with `next_batch(1000)`, and decodes each JSON batch with `json.loads`. Python 3.14.7.

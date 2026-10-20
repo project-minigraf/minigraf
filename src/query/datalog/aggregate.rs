@@ -9,7 +9,7 @@ use crate::graph::types::Value;
 use anyhow::Result;
 use std::any::Any;
 use std::cmp::Ordering;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The class of a value in [`value_order`]: numbers, strings, booleans,
 /// refs, keywords, `nil`.
@@ -503,6 +503,33 @@ impl Agg {
             Agg::Udf(u) => u.value(),
         }))
     }
+}
+
+/// The groups of an aggregate query, by their grouping values as `Value`'s
+/// `Ord` compares them: the values each group returns, and one accumulator
+/// per aggregate, in `:find` order.
+pub(crate) type Groups = BTreeMap<Vec<Value>, (Vec<Value>, Vec<Agg>)>;
+
+/// Finish `groups` in key order (spec §3.3): each group's values and its
+/// aggregates' results. A group whose aggregate gives `INT-042` is dropped;
+/// any other error, the first in `:find` order of the first group, fails.
+/// `funcs` names each aggregate, for the messages.
+pub(crate) fn finish_groups(
+    groups: Groups,
+    funcs: &[&str],
+) -> Result<Vec<(Vec<Value>, Vec<Value>)>> {
+    let mut out = Vec::with_capacity(groups.len());
+    'group: for (shown, accs) in groups.into_values() {
+        let mut results = Vec::with_capacity(accs.len());
+        for (acc, func) in accs.into_iter().zip(funcs) {
+            match acc.finish(func)? {
+                Some(v) => results.push(v),
+                None => continue 'group,
+            }
+        }
+        out.push((shown, results));
+    }
+    Ok(out)
 }
 
 /// A window function's running value over a sorted partition (spec §4.2).

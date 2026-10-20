@@ -126,6 +126,9 @@ const MATRIX: &[&str] = &[
     r#"[:find ?e (rank :over (:order-by ?b)) (row-number :over (:order-by ?b)) :where [?e :friend ?b]]"#,
     r#"[:find ?a (count ?e) (row-number :over (:order-by ?a :desc)) :where [?e :age ?a]]"#,
     r#"[:find ?a (count ?b) :where (knows ?a ?b)]"#,
+    // A group of `0.0` and `-0.0` returns `-0.0`, the least by value order.
+    r#"[:find ?v (count ?e) :where [?e ?attr ?v] [(float? ?v)]]"#,
+    r#"[:find ?v (count ?e) :with ?attr :where [?e ?attr ?v] [(float? ?v)]]"#,
     // Patterns, joins, cross products.
     r#"[:find ?n ?a :where [?e :name ?n] [?e :age ?a]]"#,
     r#"[:find ?n ?a :where [?e :age ?a] [?e :name ?n]]"#,

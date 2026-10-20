@@ -345,3 +345,41 @@ fn aggregate_with_as_of() {
         .unwrap();
     assert_eq!(results(&r)[0][0], Value::Integer(2));
 }
+
+// ── group values ─────────────────────────────────────────────────────────────
+
+/// A group of floats `Value`'s `Ord` finds equal returns the least of them
+/// by value order (`-0.0` before `0.0`), whatever order the facts are met
+/// in (#547 PR 2).
+#[test]
+fn float_group_returns_least_value() {
+    for facts in [
+        "[[:a :x 0.0] [:b :x -0.0] [:c :x 0.0]]",
+        "[[:a :x -0.0] [:b :x 0.0] [:c :x 0.0]]",
+    ] {
+        let db = db();
+        db.execute(&format!("(transact {facts})")).unwrap();
+        let r = db
+            .execute("(query [:find ?v (count ?e) :where [?e :x ?v]])")
+            .unwrap();
+        let rows = results(&r);
+        assert_eq!(rows.len(), 1, "one group");
+        match rows[0].as_slice() {
+            [Value::Float(v), Value::Integer(3)] => {
+                assert!(*v == 0.0 && v.is_sign_negative(), "the group shows -0.0")
+            }
+            _ => panic!("expected a float and a count"),
+        }
+    }
+    let db = db();
+    db.execute("(transact [[:a :x 0.0] [:b :x 0.0]])").unwrap();
+    let r = db
+        .execute("(query [:find ?v (count ?e) :where [?e :x ?v]])")
+        .unwrap();
+    match results(&r)[0].as_slice() {
+        [Value::Float(v), Value::Integer(2)] => {
+            assert!(v.is_sign_positive(), "a group of 0.0 shows 0.0")
+        }
+        _ => panic!("expected a float and a count"),
+    }
+}

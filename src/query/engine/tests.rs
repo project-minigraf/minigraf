@@ -428,14 +428,15 @@ fn engine_reads_many_batches() {
     assert_eq!(rows(&db, "(query [:find ?e :where [?e :big/n 2999]])"), 1);
 }
 
-/// The executor still runs what the engine does not: aggregates, `:as-of` a
+/// The executor still runs what the engine does not: windows, `:as-of` a
 /// timestamp.
 #[test]
 fn other_queries_stay_on_the_executor() {
     let db = Minigraf::in_memory().unwrap();
     write_round(&db, 0);
     for q in [
-        "(query [:find (count ?e) :where [?e :person/name ?n]])",
+        "(query [:find ?e (rank :over (:order-by ?n)) :where [?e :person/name ?n]])",
+        "(query [:find ?n (count ?e) (rank :over (:order-by ?n)) :where [?e :person/name ?n]])",
         "(query [:find ?e :as-of \"2099-01-01T00:00:00Z\" :where [?e :person/name ?n]])",
     ] {
         let before = runs();
@@ -1405,4 +1406,174 @@ fn disjunction_branches_run_per_row_or_once() {
     assert_eq!(union.rows_out, 20);
     let read: u64 = c.iter().filter(|c| c.op == "Scan").map(|c| c.rows_in).sum();
     assert!(read <= 250, "each branch is read once");
+}
+
+/// Aggregate shapes (#547 PR 2): ungrouped and grouped, by keywords, refs,
+/// booleans, floats (`-0.0` and `0.0` one group) and long strings; every
+/// built-in aggregate over each kind of value, `nil` values, `:with`.
+fn aggregates() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("(count ?e)", "[?e :person/name ?n]"),
+        ("(count ?v) (count-distinct ?v)", "[?e ?a ?v]"),
+        ("(count ?v) (count-distinct ?v)", "[?e :person/null ?v]"),
+        ("?s (count ?e)", "[?e :person/status ?s]"),
+        (
+            "?f (count ?e) (min ?g) (max ?g)",
+            "[?e :person/friend ?f] [?e :person/age ?g]",
+        ),
+        (
+            "?ok (sum ?g) (sum-distinct ?g)",
+            "[?e :person/ok ?ok] [?e :person/age ?g]",
+        ),
+        (
+            "?b (count ?e) (min ?n) (max ?n)",
+            "[?e :person/bio ?b] [?e :person/name ?n]",
+        ),
+        ("?b (count-distinct ?b)", "[?e :person/bio ?b]"),
+        ("(count-distinct ?b)", "[?e :person/bio ?b]"),
+        (
+            "(sum ?x) (min ?x) (max ?x) (count-distinct ?x) (sum-distinct ?x)",
+            "[?e :person/score ?x]",
+        ),
+        ("?x (count ?e)", "[?e :person/score ?x]"),
+        ("(count-distinct ?k)", "[?e :person/alias ?k]"),
+        (
+            "(count-distinct ?k)",
+            "(or [?e :person/alias ?k] [?e :person/boss ?k])",
+        ),
+        ("(count-distinct ?a)", "[?e ?a ?v]"),
+        ("(sum ?g) :with ?e", "[?e :person/age ?g]"),
+        (
+            "?s (sum ?g) :with ?e",
+            "[?e :person/status ?s] [?e :person/age ?g]",
+        ),
+        ("(count ?g) :with ?e", "[?e :person/age ?g] [(> ?g 100)]"),
+        (
+            "(count ?e) (count-distinct ?e)",
+            "[?e :person/age ?g] [(> ?g 100)]",
+        ),
+        ("(sum ?g)", "[?e :person/age ?g] [(> ?g 100)]"),
+        ("?e (count ?g)", "[?e :person/age ?g] [(> ?g 100)]"),
+        ("(min ?n) (count ?e)", "[?e :person/null ?n]"),
+    ]
+}
+
+fn check_aggregates(db: &Minigraf) -> usize {
+    let tx = db.current_tx_count();
+    let mut n = 0;
+    for (find, clauses) in aggregates() {
+        for t in temporals(tx) {
+            n += rows(db, &format!("(query [:find {find} {t} :where {clauses}])"));
+        }
+    }
+    n += rows(
+        db,
+        "(query [:find ?e (sum ?t) (max ?t) :any-valid-time :where [?e :person/name ?n] [?e :db/tx-count ?t]])",
+    );
+    n
+}
+
+#[test]
+fn aggregates_match_executor() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("agg.graph");
+    {
+        let db = Minigraf::open(&path).unwrap();
+        for round in 0..3 {
+            write_round(&db, round);
+        }
+        assert!(check_aggregates(&db) > 0, "some groups");
+        db.checkpoint().unwrap();
+        write_round(&db, 3);
+        check_aggregates(&db);
+    }
+    let db = Minigraf::open(&path).unwrap();
+    check_aggregates(&db);
+}
+
+/// An ungrouped aggregate holds one accumulator: it reads every row and
+/// returns one; empty input gives the zero row of a `count`-only query, and
+/// no row otherwise (#547 spec §5.2).
+#[test]
+fn ungrouped_aggregate_returns_one_row() {
+    let db = Minigraf::in_memory().unwrap();
+    let facts: String = (0..3000).map(|i| format!("[:e{i} :n {i}]")).collect();
+    db.execute(&format!("(transact [{facts}])")).unwrap();
+    let mut cursor = db
+        .query("(query [:find (count ?e) (sum ?v) :where [?e :n ?v]])")
+        .unwrap();
+    let batch = cursor.next_batch(1).unwrap().expect("a row");
+    assert_eq!(batch.len(), 1);
+    let c = cursor.counters();
+    let agg = c
+        .iter()
+        .find(|c| c.op == "Aggregate")
+        .expect("an Aggregate");
+    assert_eq!(agg.rows_in, 3000);
+    assert_eq!(agg.rows_out, 1);
+    assert_eq!(agg.batches, 1);
+
+    let result = |q: &str| {
+        let before = runs();
+        let QueryResult::QueryResults { results, .. } = db.execute(q).unwrap() else {
+            panic!("expected query results");
+        };
+        assert_eq!(runs(), before + 1, "query ran on the engine");
+        results
+    };
+    let zero =
+        result("(query [:find (count ?e) (count-distinct ?v) :where [?e :n ?v] [(< ?v 0)]])");
+    assert_eq!(
+        zero,
+        vec![vec![crate::Value::Integer(0), crate::Value::Integer(0)]]
+    );
+    let zero = result("(query [:find (count ?e) :with ?v :where [?e :n ?v] [(< ?v 0)]])");
+    assert_eq!(zero, vec![vec![crate::Value::Integer(0)]]);
+    assert!(result("(query [:find (sum ?v) :where [?e :n ?v] [(< ?v 0)]])").is_empty());
+    assert!(result("(query [:find ?e (count ?v) :where [?e :n ?v] [(< ?v 0)]])").is_empty());
+}
+
+/// Groups come out in the order of their values, over several batches; an
+/// error in a later group fails the query, and `min` of no value drops its
+/// group (#547 spec §3.3, §5.3).
+#[test]
+fn grouped_aggregate_orders_groups_and_fails_in_a_later_group() {
+    let db = Minigraf::in_memory().unwrap();
+    let facts: String = (0..3000)
+        .map(|i| format!("[:e{i} :k {}] [:e{i} :n {i}]", 3000 - i))
+        .collect();
+    db.execute(&format!("(transact [{facts}])")).unwrap();
+    let QueryResult::QueryResults { results, .. } = db
+        .execute("(query [:find ?k (count ?e) :where [?e :k ?k]])")
+        .unwrap()
+    else {
+        panic!("expected query results");
+    };
+    assert_eq!(results.len(), 3000);
+    let keys: Vec<i64> = results
+        .iter()
+        .map(|r| match r.first() {
+            Some(crate::Value::Integer(k)) => *k,
+            _ => -1,
+        })
+        .collect();
+    assert_eq!(keys, (1..=3000).collect::<Vec<_>>(), "groups in key order");
+
+    db.execute("(transact [[:x :k 2999] [:x :n \"text\"] [:y :k 5] [:y :n nil]])")
+        .unwrap();
+    let before = runs();
+    let err = db
+        .execute("(query [:find ?k (sum ?n) :where [?e :k ?k] [?e :n ?n]])")
+        .unwrap_err();
+    assert_eq!(crate::MinigrafError::from(err).code(), "INT-041");
+    assert_eq!(runs(), before + 1, "query ran on the engine");
+
+    db.execute("(transact [[:z :k 7] [:z :m nil]])").unwrap();
+    let QueryResult::QueryResults { results, .. } = db
+        .execute("(query [:find ?k (min ?m) :where [?e :k ?k] [?e :m ?m]])")
+        .unwrap()
+    else {
+        panic!("expected query results");
+    };
+    assert!(results.is_empty(), "the group with no value is dropped");
 }

@@ -83,7 +83,8 @@ pub(crate) enum JoinKey {
     Null,
     Bool(bool),
     Int(i64),
-    /// A float's bits, `-0.0` as `0.0`; never NaN.
+    /// A float's bits, `-0.0` as `0.0`; a NaN only in a [`JoinKey::group`]
+    /// key, as one NaN.
     Float(u64),
     Str(Arc<str>),
     Long(ValueRef),
@@ -106,6 +107,25 @@ impl JoinKey {
             Cell::Val(Scalar::Str(s)) => JoinKey::Str(s.clone()),
             Cell::Val(Scalar::Long(vref)) => JoinKey::Long(*vref),
         }))
+    }
+}
+
+impl JoinKey {
+    /// The key of `cell` as `Value`'s `Ord` compares values, for groups and
+    /// distinct sets (#547 spec §2): as [`JoinKey::of`] without
+    /// normalising, except that every NaN is one key.
+    pub(crate) fn group(cell: &Cell) -> JoinKey {
+        match cell {
+            Cell::Eid(e) => JoinKey::Eid(*e),
+            Cell::Iid(i) => JoinKey::Iid(*i),
+            Cell::Val(Scalar::Null) => JoinKey::Null,
+            Cell::Val(Scalar::Bool(b)) => JoinKey::Bool(*b),
+            Cell::Val(Scalar::Int(n)) => JoinKey::Int(*n),
+            Cell::Val(Scalar::Float(f)) if f.is_nan() => JoinKey::Float(f64::NAN.to_bits()),
+            Cell::Val(Scalar::Float(f)) => JoinKey::Float(if *f == 0.0 { 0 } else { f.to_bits() }),
+            Cell::Val(Scalar::Str(s)) => JoinKey::Str(s.clone()),
+            Cell::Val(Scalar::Long(vref)) => JoinKey::Long(*vref),
+        }
     }
 }
 
