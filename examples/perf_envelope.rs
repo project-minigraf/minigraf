@@ -554,6 +554,11 @@ fn shapes(e: usize, tx_half: u64, hot_tx_half: u64) -> Vec<Shape> {
             rows: 1,
         },
         Shape {
+            name: "count",
+            query: "[:find (count ?v) :where [?e ?a ?v]]".into(),
+            rows: 1,
+        },
+        Shape {
             name: "count_grouped",
             query: "[:find ?g (count ?e) :where [?e :group ?g]]".into(),
             rows: 100.min(e),
