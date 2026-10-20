@@ -1,5 +1,6 @@
+use super::aggregate::{Agg, Running, named_vars, value_order};
 use super::evaluator::{StratifiedEvaluator, evaluate_not_join};
-use super::functions::{AggImpl, FunctionRegistry, apply_builtin_aggregate, value_cmp};
+use super::functions::FunctionRegistry;
 use super::matcher::{PatternMatcher, edn_to_entity_id, edn_to_value};
 use super::optimizer;
 use super::rules::RuleRegistry;
@@ -1610,6 +1611,11 @@ fn apply_post_processing(
 
 /// Group bindings by non-aggregate find vars + with_vars, apply aggregate functions,
 /// return one binding map per group. Aggregate results stored under `"__agg_{i}"`.
+///
+/// Each group holds one accumulator per aggregate (#547 spec §3.2), so the
+/// result does not depend on the order of the bindings. Groups finish in
+/// key order; the first aggregate in `:find` order whose result is an error
+/// fails the query, except `INT-042`, which drops the group (spec §3.3).
 fn compute_aggregation(
     bindings: Vec<Binding>,
     find_specs: &[FindSpec],
@@ -1638,11 +1644,9 @@ fn compute_aggregation(
     }
 
     // In a mixed aggregate+window query, :with vars must NOT be added to the
-    // grouping key. The window phase runs after aggregation, so :with vars that
-    // are used only by window specs (var, order_by) would otherwise inflate the
-    // number of groups. Even :with vars used by aggregate specs (e.g. ?e in
-    // count(?e)) should not split groups — the aggregate operates over all rows
-    // in the base group determined by the Variable find specs.
+    // grouping key. The window phase runs after aggregation and reads only
+    // the grouping variables (PRS-082), so :with vars would only inflate the
+    // number of groups.
     let has_windows = find_specs.iter().any(|s| matches!(s, FindSpec::Window(_)));
 
     // Grouping key = Variable find specs (in find order).
@@ -1656,236 +1660,184 @@ fn compute_aggregation(
         })
         .collect();
     if !has_windows {
-        // Pure aggregate: with_vars add to grouping key.
         group_var_names.extend(with_vars.iter().map(|s| s.as_str()));
     }
 
-    // Group using BTreeMap keyed by group key (O(log g) instead of O(g) per binding).
+    // The aggregates of :find: their position, function and argument.
+    let aggs: Vec<(usize, &str, &str)> = find_specs
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| match s {
+            FindSpec::Aggregate { func, var } => Some((i, func.as_str(), var.as_str())),
+            _ => None,
+        })
+        .collect();
+
+    // Groups in key order, as `Value`'s `Ord` compares keys.
     use std::collections::BTreeMap;
-    let mut groups: BTreeMap<Vec<Value>, Vec<Binding>> = BTreeMap::new();
+    let mut groups: BTreeMap<Vec<Value>, Vec<Agg>> = BTreeMap::new();
     for b in bindings {
         let key: Vec<Value> = group_var_names
             .iter()
             .map(|v| b.get(*v).cloned().unwrap_or(Value::Null))
             .collect();
-        groups.entry(key).or_default().push(b);
-    }
-
-    // Build a position map for Variable specs only (indices 0..n_vars in the key vector).
-    // with_vars occupy key positions n_vars..end and are used only for grouping, not for output.
-    // Map of Variable spec name → its index in the group key Vec.
-    let mut group_key_idx: std::collections::HashMap<&str, usize> =
-        std::collections::HashMap::new();
-    {
-        let mut var_pos = 0usize;
-        for spec in find_specs {
-            if let FindSpec::Variable(v) = spec {
-                group_key_idx.insert(v.as_str(), var_pos);
-                var_pos += 1;
+        let accs = match groups.entry(key) {
+            std::collections::btree_map::Entry::Occupied(e) => e.into_mut(),
+            std::collections::btree_map::Entry::Vacant(e) => e.insert(
+                aggs.iter()
+                    .map(|(_, func, _)| Agg::new(func, registry))
+                    .collect::<Result<Vec<_>>>()?,
+            ),
+        };
+        for (acc, (_, _, var)) in accs.iter_mut().zip(&aggs) {
+            if let Some(v) = b.get(*var) {
+                acc.step(v);
             }
         }
     }
+
+    // The plain :find variables occupy the first key positions; with_vars
+    // follow and only group.
+    let plain: Vec<&str> = find_specs
+        .iter()
+        .filter_map(|s| match s {
+            FindSpec::Variable(v) => Some(v.as_str()),
+            _ => None,
+        })
+        .collect();
 
     let mut results: Vec<Binding> = Vec::new();
-    for (key, group_bindings) in groups.iter() {
+    'group: for (key, accs) in groups {
         let mut binding = Binding::new();
-        let mut skip = false;
-
-        // Plain variable values from group key.
-        for (v, &idx) in &group_key_idx {
-            if let Some(val) = key.get(idx) {
-                binding.insert((*v).to_string(), val.clone());
-            }
+        for (v, val) in plain.iter().zip(key) {
+            binding.insert((*v).to_string(), val);
         }
-
-        // Aggregate values stored under "__agg_{i}".
-        for (i, spec) in find_specs.iter().enumerate() {
-            if let FindSpec::Aggregate { func, var } = spec {
-                let non_null: Vec<&Value> = group_bindings
-                    .iter()
-                    .filter_map(|b| b.get(var.as_str()))
-                    .filter(|v| !matches!(v, Value::Null))
-                    .collect();
-                let agg_val: anyhow::Result<Value> = match registry.get(func.as_str()) {
-                    Some(desc) if desc.is_builtin => {
-                        // Built-in: use batch path which enforces strict type-error semantics.
-                        apply_builtin_aggregate(func, &non_null)
-                    }
-                    Some(desc) => {
-                        if let AggImpl::Udf(ops) = &desc.impl_ {
-                            if non_null.is_empty() {
-                                Ok(Value::Null)
-                            } else {
-                                let mut acc = (ops.init)();
-                                for v in &non_null {
-                                    (ops.step)(&mut acc, v);
-                                }
-                                Ok((ops.finalise)(&acc, non_null.len()))
-                            }
-                        } else {
-                            // AggImpl::Builtin with is_builtin=false shouldn't happen
-                            apply_builtin_aggregate(func, &non_null)
-                        }
-                    }
-                    None => Err(err_coded!(ErrorCode::Int029, func)),
-                };
-                match agg_val {
-                    Ok(v) => {
-                        binding.insert(format!("__agg_{}", i), v);
-                    }
-                    Err(e) => {
-                        let msg = e.to_string();
-                        if msg.contains("no non-null values in group") {
-                            skip = true;
-                            break;
-                        }
-                        return Err(e);
-                    }
+        for (acc, (i, func, _)) in accs.into_iter().zip(&aggs) {
+            match acc.finish(func)? {
+                Some(v) => {
+                    binding.insert(format!("__agg_{}", i), v);
                 }
+                None => continue 'group,
             }
         }
-
-        if !skip {
-            results.push(binding);
-        }
+        results.push(binding);
     }
 
     Ok(results)
 }
 
 /// Compute window function values for each row and store under `"__win_{i}"`.
-/// Modifies `bindings` in place.
+/// Modifies `bindings` in place; rows keep their order.
+///
+/// Each partition (by `Value`'s `Ord`) is sorted by its `:order-by` value
+/// under [`value_order`], then by the named variables, then by input
+/// position (#547 spec §4.1). Rows with order-equal `:order-by` values are
+/// peers: `rank` is equal for them, and a running aggregate gives every
+/// peer its value at the last peer (spec §4.2).
 fn apply_window_functions(
     bindings: &mut [Binding],
     find_specs: &[FindSpec],
     registry: &FunctionRegistry,
 ) -> Result<()> {
+    let named = named_vars(find_specs);
+    let read = |b: &Binding, var: &str| b.get(var).cloned().unwrap_or(Value::Null);
+    // Each row's named-variable values, for the tie-break.
+    let tiebreak: Vec<Vec<Value>> = bindings
+        .iter()
+        .map(|b| named.iter().map(|v| read(b, v)).collect())
+        .collect();
+
     for (i, spec) in find_specs.iter().enumerate() {
         let FindSpec::Window(ws) = spec else {
             continue;
         };
         let key = format!("__win_{}", i);
 
-        // Build partitions: (partition_key, sorted row indices).
-        let mut partitions: HashMap<Option<Value>, Vec<usize>> = HashMap::new();
-        for (row_idx, binding) in bindings.iter().enumerate() {
-            let part_key = ws
+        let mut partitions: std::collections::BTreeMap<Value, Vec<usize>> =
+            std::collections::BTreeMap::new();
+        for (row, binding) in bindings.iter().enumerate() {
+            let part = ws
                 .partition_by
                 .as_ref()
-                .and_then(|pv| binding.get(pv))
-                .cloned();
-            partitions.entry(part_key).or_default().push(row_idx);
+                .map_or(Value::Null, |pv| read(binding, pv));
+            partitions.entry(part).or_default().push(row);
         }
 
-        // For each partition: sort, compute window values, write back.
-        for row_indices in partitions.values_mut() {
-            // Pre-extract order_by values into a contiguous Vec so the sort
-            // comparator never touches the HashMap — O(n) lookups here instead
-            // of O(n log n) random HashMap accesses inside sort_by.
-            // Safety: row_indices are populated from 0..bindings.len() enumeration above,
-            // so all indices are valid.
-            #[allow(clippy::indexing_slicing)]
-            let mut keyed: Vec<(Value, usize)> = row_indices
-                .iter()
-                .map(|&i| {
-                    let k = bindings[i]
-                        .get(&ws.order_by)
-                        .cloned()
-                        .unwrap_or(Value::Null);
-                    (k, i)
-                })
+        let mut out: Vec<(usize, Value)> = Vec::with_capacity(bindings.len());
+        for rows in partitions.into_values() {
+            let mut keyed: Vec<(Value, usize)> = rows
+                .into_iter()
+                .filter_map(|r| bindings.get(r).map(|b| (read(b, &ws.order_by), r)))
                 .collect();
-            keyed.sort_by(|(a, _), (b, _)| {
-                let cmp = value_cmp(a, b);
-                match ws.order {
-                    Order::Asc => cmp,
-                    Order::Desc => cmp.reverse(),
-                }
+            keyed.sort_by(|(a, ra), (b, rb)| {
+                let by_key = match ws.order {
+                    Order::Asc => value_order(a, b),
+                    Order::Desc => value_order(b, a),
+                };
+                by_key
+                    .then_with(|| {
+                        let (ta, tb) = (tiebreak.get(*ra), tiebreak.get(*rb));
+                        ta.into_iter()
+                            .flatten()
+                            .zip(tb.into_iter().flatten())
+                            .map(|(x, y)| value_order(x, y))
+                            .find(|o| o.is_ne())
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .then(ra.cmp(rb))
             });
-            // Rewrite row_indices in sorted order for the write-back step.
-            for (dest, (_, src)) in row_indices.iter_mut().zip(keyed.iter()) {
-                *dest = *src;
-            }
 
-            // Compute one window value per row in sorted order.
-            let window_values: Vec<Value> = match ws.func {
-                WindowFunc::RowNumber => {
-                    let mut values = Vec::with_capacity(keyed.len());
-                    for pos in 1..=keyed.len() {
-                        values.push(Value::Integer(i64::try_from(pos).map_err(|_| {
-                            err_coded!(ErrorCode::Int032, "row number overflow")
-                        })?));
-                    }
-                    values
-                }
-
-                WindowFunc::Rank => {
-                    // Reuse pre-extracted keys for tie-detection — no extra HashMap lookups.
-                    let mut values = Vec::with_capacity(keyed.len());
-                    let mut rank = 1i64;
-                    let mut prev: Option<&Value> = None;
-                    for (row_num, (key, _)) in (1i64..).zip(keyed.iter()) {
-                        if prev != Some(key) {
-                            rank = row_num;
-                            prev = Some(key);
-                        }
-                        values.push(Value::Integer(rank));
-                    }
-                    values
-                }
-
-                _ => {
-                    // Accumulator-based: built-ins (sum, count, min, max, avg) and UDF aggregates.
-                    // UDF aggregates (WindowFunc::Udf) also route here via registry lookup.
-                    let func_name = ws.func_name();
-                    let desc = registry
-                        .get(&func_name)
-                        .ok_or_else(|| err_coded!(ErrorCode::Int030, func_name.clone()))?;
-
-                    let mut values = Vec::with_capacity(keyed.len());
-                    // Safety: row_idx values come from enumerate() over bindings, so indices are valid.
-                    #[allow(clippy::indexing_slicing)]
-                    match &desc.impl_ {
-                        AggImpl::Builtin(ops) => {
-                            let mut acc = (ops.init)();
-                            for (_, row_idx) in keyed.iter() {
-                                let val = ws
-                                    .var
-                                    .as_ref()
-                                    .and_then(|v| bindings[*row_idx].get(v))
-                                    .unwrap_or(&Value::Null);
-                                (ops.step)(&mut acc, val);
-                                values.push((ops.finalise)(&acc));
-                            }
-                        }
-                        AggImpl::Udf(ops) => {
-                            let mut acc = (ops.init)();
-                            let mut row_count = 0usize;
-                            for (_, row_idx) in keyed.iter() {
-                                let val = ws
-                                    .var
-                                    .as_ref()
-                                    .and_then(|v| bindings[*row_idx].get(v))
-                                    .unwrap_or(&Value::Null);
-                                (ops.step)(&mut acc, val);
-                                row_count += 1;
-                                values.push((ops.finalise)(&acc, row_count));
-                            }
-                        }
-                    }
-                    values
-                }
+            let mut running = match ws.func {
+                WindowFunc::Rank | WindowFunc::RowNumber => None,
+                _ => Some(Running::new(ws, registry)?),
             };
-
-            // Write window values back to rows.
-            // Safety: row_idx values come from enumerate() over bindings, so indices are valid.
-            for (&row_idx, window_val) in row_indices.iter().zip(window_values) {
-                #[allow(clippy::indexing_slicing)]
-                bindings[row_idx].insert(key.clone(), window_val);
+            let mut start = 0;
+            while start < keyed.len() {
+                let peers_end = keyed
+                    .iter()
+                    .skip(start + 1)
+                    .position(|(k, _)| {
+                        keyed
+                            .get(start)
+                            .is_none_or(|(s, _)| value_order(k, s).is_ne())
+                    })
+                    .map_or(keyed.len(), |n| start + 1 + n);
+                let peers = keyed.get(start..peers_end).unwrap_or(&[]);
+                if let Some(acc) = running.as_mut() {
+                    for (_, r) in peers {
+                        let v = ws
+                            .var
+                            .as_ref()
+                            .and_then(|var| bindings.get(*r).and_then(|b| b.get(var)))
+                            .unwrap_or(&Value::Null);
+                        acc.step(v);
+                    }
+                }
+                for (pos, (_, r)) in (start..peers_end).zip(peers) {
+                    let value = match (&running, &ws.func) {
+                        (Some(acc), _) => acc.value(),
+                        (None, WindowFunc::RowNumber) => position(pos)?,
+                        (None, _) => position(start)?,
+                    };
+                    out.push((*r, value));
+                }
+                start = peers_end;
+            }
+        }
+        for (r, value) in out {
+            if let Some(b) = bindings.get_mut(r) {
+                b.insert(key.clone(), value);
             }
         }
     }
     Ok(())
+}
+
+/// The 1-based position `pos + 1` as an integer.
+fn position(pos: usize) -> Result<Value> {
+    i64::try_from(pos + 1)
+        .map(Value::Integer)
+        .map_err(|_| err_coded!(ErrorCode::Int032, "row number overflow"))
 }
 
 /// Project binding maps to output rows in find-spec order.
@@ -2513,9 +2465,9 @@ fn eval_binop(op: &BinOp, l: Value, r: Value) -> Result<Value, ()> {
     }
 
     match op {
-        // Ordering comparisons. Strings order lexicographically, matching value_lt /
-        // value_cmp — which min/max and :order-by already use — so the same two strings
-        // order the same way whether compared by a predicate or by an aggregate.
+        // Ordering comparisons. Strings order lexicographically, matching
+        // aggregate::value_order — which min/max and :order-by use — so the same two
+        // strings order the same way whether compared by a predicate or by an aggregate.
         // Numbers order numerically with int/float promotion via to_float_pair.
         // Mixed types (string vs number) remain a type error.
         BinOp::Lt | BinOp::Gt | BinOp::Lte | BinOp::Gte => {

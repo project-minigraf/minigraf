@@ -128,6 +128,7 @@ pub(crate) enum ErrorCode {
     Prs079,
     Prs080,
     Prs081,
+    Prs082,
     Qry001,
     Qry002,
     Qry003,
@@ -770,6 +771,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Prs081,
         "PRS-081",
         "{} on {} has no pattern before it, with the same entity, that reads a stored attribute; add one (e.g. [{} ?a _]) before it",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs082,
+        "PRS-082",
+        "{} in {} must be a plain :find variable when the query has aggregates",
         ErrorCategory::Parser,
     ),
     (
@@ -1992,6 +1999,7 @@ mod tests {
                 | ErrorCode::Prs079
                 | ErrorCode::Prs080
                 | ErrorCode::Prs081
+                | ErrorCode::Prs082
                 | ErrorCode::Qry001
                 | ErrorCode::Qry002
                 | ErrorCode::Qry003
@@ -2219,6 +2227,7 @@ mod tests {
             ErrorCode::Prs079,
             ErrorCode::Prs080,
             ErrorCode::Prs081,
+            ErrorCode::Prs082,
             ErrorCode::Qry001,
             ErrorCode::Qry002,
             ErrorCode::Qry003,

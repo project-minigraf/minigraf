@@ -950,6 +950,34 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
             }
         }
     }
+    // In a query with aggregates, windows run over the groups, which hold
+    // only the plain :find variables (#547 spec §4.4).
+    if find_specs
+        .iter()
+        .any(|s| matches!(s, FindSpec::Aggregate { .. }))
+    {
+        let plain: Vec<&String> = find_specs
+            .iter()
+            .filter_map(|s| match s {
+                FindSpec::Variable(v) => Some(v),
+                _ => None,
+            })
+            .collect();
+        for spec in &find_specs {
+            if let FindSpec::Window(ws) = spec {
+                let vars = ws
+                    .var
+                    .iter()
+                    .chain(ws.partition_by.iter())
+                    .chain(std::iter::once(&ws.order_by));
+                for var in vars {
+                    if !plain.contains(&var) {
+                        bail_coded!(ErrorCode::Prs082, var, spec.display_name());
+                    }
+                }
+            }
+        }
+    }
     for var in &with_vars {
         if !outer_bound.contains(var) {
             bail_coded!(ErrorCode::Prs022, var);
@@ -3934,17 +3962,37 @@ mod window_parse_tests {
     #[test]
     fn parse_mixed_aggregate_and_window_allowed() {
         let cmd = parse_datalog_command(
-            r#"(query [:find (count ?e) (sum ?v :over (:order-by ?v))
+            r#"(query [:find ?v (count ?e) (sum ?v :over (:order-by ?v))
                        :where [?e :x ?v]])"#,
         );
         assert!(cmd.is_ok(), "parse failed");
         if let Ok(DatalogCommand::Query(q)) = cmd {
-            assert_eq!(q.find.len(), 2);
-            assert!(matches!(&q.find[0], FindSpec::Aggregate { func, .. } if func == "count"));
-            assert!(matches!(&q.find[1], FindSpec::Window(ws) if ws.func == WindowFunc::Sum));
+            assert_eq!(q.find.len(), 3);
+            assert!(matches!(&q.find[1], FindSpec::Aggregate { func, .. } if func == "count"));
+            assert!(matches!(&q.find[2], FindSpec::Window(ws) if ws.func == WindowFunc::Sum));
         } else {
             panic!("expected Query");
         }
+    }
+
+    #[test]
+    fn window_in_aggregate_query_reads_only_plain_find_variables() {
+        // PRS-082 (#547 spec §4.4): the argument, :partition-by and :order-by
+        // of a window in an aggregate query must be plain :find variables;
+        // :with variables do not count.
+        for q in [
+            r#"(query [:find (count ?e) (sum ?v :over (:order-by ?v)) :where [?e :x ?v]])"#,
+            r#"(query [:find ?d (count ?e) (rank :over (:order-by ?v)) :where [?e :x ?v] [?e :d ?d]])"#,
+            r#"(query [:find ?d (count ?e) (sum ?d :over (:partition-by ?v :order-by ?d)) :where [?e :x ?v] [?e :d ?d]])"#,
+            r#"(query [:find ?d (count ?e) (sum ?v :over (:order-by ?d)) :with ?v :where [?e :x ?v] [?e :d ?d]])"#,
+        ] {
+            let err = parse_datalog_command(q).err().expect("rejected");
+            assert_eq!(crate::MinigrafError::from(err).code(), "PRS-082");
+        }
+        parse_datalog_command(
+            r#"(query [:find ?d (count ?e) (rank :over (:partition-by ?d :order-by ?d)) :where [?e :d ?d]])"#,
+        )
+        .expect("grouping variables are allowed");
     }
 
     #[test]

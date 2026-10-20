@@ -102,6 +102,7 @@ with no `CodedError` anywhere in its chain.
 | PRS-079 | Rule rejects unexpected trailing argument(s) | Parser |
 | PRS-080 | :find variable not bound in :where | Parser |
 | PRS-081 | Pseudo-attribute has no source pattern | Parser |
+| PRS-082 | Window reads a non-grouping variable | Parser |
 | QRY-001 | Invalid entity | Query Execution |
 | QRY-002 | Attribute must be a keyword | Query Execution |
 | QRY-003 | Cannot transact a pseudo-attribute | Query Execution |
@@ -1595,6 +1596,22 @@ $<4097-char-slot-name>
 (query [:find ?t :any-valid-time :where [?e :db/tx-count ?t] [?e :person/name "Alice"]])
 ```
 *Move `[?e :person/name "Alice"]` before `[?e :db/tx-count ?t]`*
+
+### PRS-082 Window reads a non-grouping variable
+
+**Error text**: `{} in {} must be a plain :find variable when the query has aggregates`
+
+**Cause**: In a query whose `:find` holds an aggregate, window functions run over the groups the aggregation produces, after it. Each group row holds only the plain `:find` variables and the aggregate results, so a window's argument, `:partition-by` and `:order-by` must each be a plain `:find` variable. `:with` variables do not count: they do not group when `:find` holds a window. Before v3.0.0 such a variable read `nil` on every group row, so the window ordered or summed nothing.
+
+**Resolution**:
+- Add the variable to `:find` as a plain variable, so it groups.
+- Or run the window in a query without aggregates.
+
+**Example**:
+```datalog
+(query [:find ?dept (sum ?salary) (rank :over (:order-by ?salary)) :where [?e :dept ?dept] [?e :salary ?salary]])
+```
+*`?salary` is aggregated, not a group: order by `?dept`, or drop `(sum ?salary)`*
 
 ---
 

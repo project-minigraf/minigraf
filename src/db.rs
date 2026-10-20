@@ -1288,6 +1288,16 @@ impl Minigraf {
     /// It is type-erased internally. The function is usable in both `:find`
     /// grouping position and `:over` (window) position.
     ///
+    /// As an aggregate, `step` receives the group's non-`nil` values in the
+    /// order the query produces them, and `finalise` receives their count;
+    /// with no values the result is `nil`. In a window, `step` receives
+    /// every value, `nil` included, in the window's order, and `finalise`
+    /// is called once per set of rows with equal `:order-by` values, with
+    /// the number of rows stepped so far. The order of an aggregate's
+    /// values can differ between equivalent queries, so a function whose
+    /// result depends on that order (anything but a commutative,
+    /// associative combination) may answer them differently.
+    ///
     /// # Errors
     ///
     /// Returns an error if `name` is already registered (built-in or UDF)
@@ -1349,7 +1359,6 @@ impl Minigraf {
                 step: step_boxed,
                 finalise: finalise_boxed,
             }),
-            is_builtin: false,
         };
         self.inner
             .functions
