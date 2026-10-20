@@ -128,6 +128,7 @@ with no `CodedError` anywhere in its chain.
 | PRS-105 | Rule head without a predicate name | Parser |
 | PRS-106 | Rule body clause is not a vector or list | Parser |
 | PRS-107 | Rule body has no clause | Parser |
+| PRS-108 | Fact has more than 4 elements | Parser |
 | QRY-001 | Invalid entity | Query Execution |
 | QRY-002 | Attribute must be a keyword | Query Execution |
 | QRY-003 | Cannot transact a pseudo-attribute | Query Execution |
@@ -2012,6 +2013,26 @@ $<4097-char-slot-name>
 (rule [(reachable ?a)])
 ```
 *Add a clause, e.g. `[?a :edge ?b]`*
+
+### PRS-108 Fact has more than 4 elements
+
+**Error text**: `Fact must have at most 4 elements (E A V and an optional map), got {}`
+
+**Cause**: A fact vector in `transact` has more than four elements. A fact is
+`[E A V]` or `[E A V {:valid-from ... :valid-to ...}]`. Through v2.0.8, a
+fact whose 4th element was a map had every element after the map dropped
+without an error (#649), and one whose 4th element was not a map was rejected
+with `PRS-047`.
+
+**Resolution**:
+- Check the brackets: two facts run together, `[e a v {} e2 a2 v2]`, are two
+  vectors, `[e a v {}] [e2 a2 v2]`.
+
+**Example**:
+```datalog
+(transact [[:alice :person/age 1 {} 99 :junk]])
+```
+*Remove `99 :junk`, or make it its own fact*
 
 ---
 

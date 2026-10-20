@@ -720,3 +720,38 @@ fn prs_083_to_107_reach_through_prepare() {
         assert_prepare_code(input, code);
     }
 }
+
+// ── PRS-108: a fact with more than four elements (#649) ─────────────────────
+
+#[test]
+fn prs_108_fact_with_more_than_four_elements() {
+    assert_code_and_message(
+        "(transact [[:alice :person/age 1 {} 99 :junk]])",
+        "PRS-108",
+        "got 6",
+    );
+    assert_code_and_message(
+        r#"(transact [[:alice :name "Alice" "bogus" 7]])"#,
+        "PRS-108",
+        "got 5",
+    );
+}
+
+#[test]
+fn prs_108_rejects_the_whole_transaction() {
+    // Before #649 the elements after the map were dropped and the fact stored.
+    let db = db();
+    db.execute(r#"(transact [[:bob :person/age 2] [:alice :person/age 1 {} 99 :junk]])"#)
+        .expect_err("a 6-element fact must be rejected");
+    let result = db
+        .execute("(query [:find ?e ?v :where [?e :person/age ?v]])")
+        .expect("query must run");
+    let minigraf::QueryResult::QueryResults { results, .. } = result else {
+        panic!("expected query results");
+    };
+    assert_eq!(
+        results.len(),
+        0,
+        "no fact of the rejected transaction is stored"
+    );
+}
