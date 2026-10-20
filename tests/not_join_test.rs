@@ -690,14 +690,14 @@ fn test_mutual_recursion_through_not_join_rule() {
 
 #[test]
 fn test_recursion_through_or_rule() {
-    // The `or` reads `?x`, which an entity pattern binds: on v2.x an `or`
-    // branch compares a keyword and a ref exactly (changed in v3.0.0, #546).
     let db = issue_633_db();
+    db.execute("(transact [[:f :g :h]])").unwrap();
     db.execute("(rule [(reach ?x ?y) [?x :e ?y]])").unwrap();
-    db.execute("(rule [(reach ?x ?y) [?x :e ?z] (reach ?z ?y) (or [?x :e _] [?x :tail true])])")
+    db.execute("(rule [(reach ?x ?y) (or [?x :e ?z] [?x :g ?z]) (reach ?z ?y)])")
         .unwrap();
+    db.execute("(rule [(reach ?x ?y) [?x :g ?y]])").unwrap();
     let r = db
         .execute("(query [:find ?x ?y :where (reach ?x ?y)])")
         .unwrap();
-    assert_eq!(result_count(&r), 10, "every pair along the chain");
+    assert_eq!(result_count(&r), 15, "every pair along the chain a..h");
 }

@@ -2017,7 +2017,9 @@ pub(crate) fn apply_or_clauses(
                                         let mut k: Vec<(String, Value)> = branch_var_names
                                             .iter()
                                             .filter_map(|v| {
-                                                b.get(*v).map(|val| (v.to_string(), val.clone()))
+                                                b.get(*v).map(|val| {
+                                                    (v.to_string(), normalize_value(val))
+                                                })
                                             })
                                             .collect();
                                         k.sort_unstable_by(|a, b| a.0.cmp(&b.0));
@@ -2028,7 +2030,9 @@ pub(crate) fn apply_or_clauses(
                                 let mut k: Vec<(String, Value)> = branch_var_names
                                     .iter()
                                     .filter_map(|v| {
-                                        incoming.get(*v).map(|val| (v.to_string(), val.clone()))
+                                        incoming
+                                            .get(*v)
+                                            .map(|val| (v.to_string(), normalize_value(val)))
                                     })
                                     .collect();
                                 k.sort_unstable_by(|a, b| a.0.cmp(&b.0));
@@ -2059,14 +2063,16 @@ pub(crate) fn apply_or_clauses(
                     .collect();
 
                 // With no shared variable every key is empty, so each incoming
-                // row joins every branch row: a cross product (#610).
+                // row joins every branch row: a cross product (#610). Keys hold
+                // `normalize_value`s, so a keyword meets the ref of the entity it
+                // names, as a join between patterns does (#637).
 
                 // Build HashMap: shared-key tuple → Vec<branch Binding>
                 let mut branch_map: HashMap<Vec<(String, Value)>, Vec<Binding>> = HashMap::new();
                 for b in union_bindings {
                     let key: Vec<(String, Value)> = shared_vars
                         .iter()
-                        .filter_map(|v| b.get(v).map(|val| (v.clone(), val.clone())))
+                        .filter_map(|v| b.get(v).map(|val| (v.clone(), normalize_value(val))))
                         .collect();
                     branch_map.entry(key).or_default().push(b);
                 }
@@ -2078,7 +2084,9 @@ pub(crate) fn apply_or_clauses(
                 for incoming in &bindings {
                     let key: Vec<(String, Value)> = shared_vars
                         .iter()
-                        .filter_map(|v| incoming.get(v).map(|val| (v.clone(), val.clone())))
+                        .filter_map(|v| {
+                            incoming.get(v).map(|val| (v.clone(), normalize_value(val)))
+                        })
                         .collect();
                     if let Some(matches) = branch_map.get(&key) {
                         for branch_binding in matches {
@@ -2178,6 +2186,7 @@ pub(crate) fn apply_or_clauses(
                     continue;
                 }
 
+                // Join keys hold `normalize_value`s, as for `or` (#637).
                 let empty_seed: Vec<Binding> = vec![HashMap::new()];
                 let mut seen_proj: std::collections::HashSet<Vec<(String, Value)>> =
                     std::collections::HashSet::new();
@@ -2197,7 +2206,9 @@ pub(crate) fn apply_or_clauses(
                     .map(|incoming| {
                         join_vars
                             .iter()
-                            .filter_map(|v| incoming.get(v).map(|val| (v.clone(), val.clone())))
+                            .filter_map(|v| {
+                                incoming.get(v).map(|val| (v.clone(), normalize_value(val)))
+                            })
                             .collect::<Vec<_>>()
                     })
                     .collect();
@@ -2224,7 +2235,9 @@ pub(crate) fn apply_or_clauses(
                         if seen_proj.insert(key) {
                             let bkey: Vec<(String, Value)> = join_vars
                                 .iter()
-                                .filter_map(|v| b.get(v).map(|val| (v.clone(), val.clone())))
+                                .filter_map(|v| {
+                                    b.get(v).map(|val| (v.clone(), normalize_value(val)))
+                                })
                                 .collect();
                             branch_map.entry(bkey).or_default().push(b);
                         }
@@ -2242,7 +2255,9 @@ pub(crate) fn apply_or_clauses(
                 for incoming in &bindings {
                     let key: Vec<(String, Value)> = join_vars
                         .iter()
-                        .filter_map(|v| incoming.get(v).map(|val| (v.clone(), val.clone())))
+                        .filter_map(|v| {
+                            incoming.get(v).map(|val| (v.clone(), normalize_value(val)))
+                        })
                         .collect();
                     if let Some(matches) = branch_map.get(&key) {
                         for branch_binding in matches {
