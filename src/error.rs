@@ -1636,7 +1636,7 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
     (
         ErrorCode::Int020,
         "INT-020",
-        "evaluator: iteration or result limit exceeded: {}",
+        "evaluator: iteration or derived-fact limit exceeded: {}",
         ErrorCategory::Internal,
     ),
     (

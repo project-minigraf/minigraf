@@ -152,8 +152,8 @@ pub struct DatalogExecutor {
     rules: Arc<RwLock<RuleRegistry>>,
     // RwLock pre-wired for 7.7b register_aggregate API.
     functions: Arc<RwLock<FunctionRegistry>>,
+    /// The most facts a rule query may derive, base facts not counted (#553).
     max_derived_facts: usize,
-    max_results: usize,
 }
 
 impl DatalogExecutor {
@@ -167,7 +167,6 @@ impl DatalogExecutor {
             rules: Arc::new(RwLock::new(RuleRegistry::new())),
             functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
             max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
-            max_results: crate::query::datalog::evaluator::DEFAULT_MAX_RESULTS,
         }
     }
 
@@ -187,7 +186,6 @@ impl DatalogExecutor {
             rules,
             functions,
             max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
-            max_results: crate::query::datalog::evaluator::DEFAULT_MAX_RESULTS,
         }
     }
 
@@ -206,7 +204,6 @@ impl DatalogExecutor {
             rules,
             functions,
             max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
-            max_results: crate::query::datalog::evaluator::DEFAULT_MAX_RESULTS,
         }
     }
 
@@ -231,7 +228,6 @@ impl DatalogExecutor {
         rules: Arc<RwLock<RuleRegistry>>,
         functions: Arc<RwLock<FunctionRegistry>>,
         max_derived_facts: usize,
-        max_results: usize,
     ) -> Self {
         DatalogExecutor {
             storage,
@@ -241,14 +237,13 @@ impl DatalogExecutor {
             rules,
             functions,
             max_derived_facts,
-            max_results,
         }
     }
 
-    /// Set complexity limits on an existing executor.
-    pub fn set_limits(&mut self, max_derived_facts: usize, max_results: usize) {
+    /// Set the most facts a rule query may derive, base facts not counted
+    /// (`OpenOptions::max_derived_facts`, #553).
+    pub fn set_limits(&mut self, max_derived_facts: usize) {
         self.max_derived_facts = max_derived_facts;
-        self.max_results = max_results;
     }
 
     /// Read every fact from `snapshot`, so the queries of this executor see
@@ -612,7 +607,6 @@ impl DatalogExecutor {
             rules: self.rules.clone(),
             functions: self.functions.clone(),
             max_derived_facts: self.max_derived_facts,
-            max_results: self.max_results,
         }
     }
 
@@ -809,9 +803,13 @@ impl DatalogExecutor {
             filtered_storage.load_fact(fact)?;
         }
 
-        // Compute effective limits: per-query override takes precedence over executor default.
-        let effective_max_derived = query.max_derived_facts.unwrap_or(self.max_derived_facts);
-        let effective_max_results = query.max_results.unwrap_or(self.max_results);
+        // A per-query limit replaces the executor's; `:max-results` is a
+        // deprecated alias of `:max-derived-facts`, and the lower of the two
+        // applies (#553).
+        let effective_max_derived = match (query.max_derived_facts, query.max_results) {
+            (None, None) => self.max_derived_facts,
+            (a, b) => a.unwrap_or(usize::MAX).min(b.unwrap_or(usize::MAX)),
+        };
 
         // Apply magic sets rewriting for demand-driven recursive evaluation.
         // Returns None for all-free queries — zero overhead path.
@@ -840,7 +838,6 @@ impl DatalogExecutor {
             self.functions.clone(),
             1000, // max iterations
             effective_max_derived,
-            effective_max_results,
         )
         .with_valid_at(valid_at_value.clone());
 
@@ -4178,7 +4175,7 @@ mod tests {
             rules.clone(),
             functions.clone(),
         );
-        executor.set_limits(1_000_000, 1_000_000);
+        executor.set_limits(1_000_000);
 
         executor
             .execute(parse_datalog_command(r#"(rule [(reachable ?x ?y) [?x :edge ?y]])"#).unwrap())

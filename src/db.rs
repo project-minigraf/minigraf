@@ -21,7 +21,6 @@ use crate::graph::FactStorage;
 use crate::graph::storage::Snapshot;
 use crate::graph::types::Value;
 use crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS;
-use crate::query::datalog::evaluator::DEFAULT_MAX_RESULTS;
 use crate::query::datalog::executor::DatalogExecutor;
 use crate::query::datalog::executor::QueryResult;
 use crate::query::datalog::functions::{
@@ -137,11 +136,18 @@ pub struct OpenOptions {
     /// [`read_only`](Self::read_only) handle. A tool that reads the whole file
     /// can keep it resident with `file_size / 4096` pages.
     pub page_cache_size: usize,
-    /// Maximum facts that can be derived per recursive rule iteration.
-    /// Defaults to 1_000_000. Use to prevent runaway recursive rules.
+    /// Maximum facts the rules of one query may derive in total; the
+    /// database's own facts do not count. Defaults to 1_000_000. Stops a
+    /// runaway recursive rule with `INT-020`; it never limits returned rows.
     pub max_derived_facts: usize,
-    /// Maximum facts a rule query may derive. Defaults to 1_000_000.
-    /// The database's own facts do not count against it.
+    /// Deprecated alias of [`max_derived_facts`](Self::max_derived_facts):
+    /// the lower of the two applies (#553). Defaults to `usize::MAX`, no
+    /// limit of its own, so it can lower the limit but not raise it; raise
+    /// `max_derived_facts` instead. It never limited returned rows.
+    #[deprecated(
+        since = "3.0.0",
+        note = "use `max_derived_facts`; the lower of the two applies"
+    )]
     pub max_results: usize,
     /// Open even when the filesystem cannot lock files at all.
     ///
@@ -181,13 +187,14 @@ pub struct OpenOptions {
     pub read_only: bool,
 }
 
+#[allow(deprecated)] // `max_results`, kept as an alias until it is removed
 impl Default for OpenOptions {
     fn default() -> Self {
         OpenOptions {
             wal_checkpoint_threshold: 1000,
             page_cache_size: 256,
             max_derived_facts: DEFAULT_MAX_DERIVED_FACTS,
-            max_results: DEFAULT_MAX_RESULTS,
+            max_results: usize::MAX,
             allow_unlocked: false,
             synchronous: SyncMode::Full,
             read_only: false,
@@ -220,23 +227,36 @@ impl OpenOptions {
         self
     }
 
-    /// Set the maximum facts that can be derived per recursive rule iteration.
+    /// Set the maximum facts the rules of one query may derive in total.
     ///
-    /// Defaults to 1_000_000. Use lower values to prevent runaway recursive rules
-    /// from consuming excessive memory. Can be overridden per-query using
-    /// `:max-derived-facts N` in the query vector.
+    /// Defaults to 1_000_000. The database's own facts do not count against it,
+    /// and queries without rules are not limited by it. A query that derives
+    /// more fails with `INT-020`, which stops a runaway recursive rule. Can be
+    /// overridden per query with `:max-derived-facts N` in the query vector.
     pub fn max_derived_facts(mut self, n: usize) -> Self {
         self.max_derived_facts = n;
         self
     }
 
-    /// Set the maximum number of facts a rule query may derive.
-    ///
-    /// Defaults to 1_000_000. The database's own facts do not count against it,
-    /// and queries without rules are not limited by it.
+    /// Deprecated alias of [`max_derived_facts`](Self::max_derived_facts):
+    /// the lower of the two applies (#553), so it can lower the limit but not
+    /// raise it above `max_derived_facts`. It never limited the rows a query
+    /// returns.
+    #[deprecated(
+        since = "3.0.0",
+        note = "use `max_derived_facts`; the lower of the two applies"
+    )]
+    #[allow(deprecated)]
     pub fn max_results(mut self, n: usize) -> Self {
         self.max_results = n;
         self
+    }
+
+    /// The limit rule queries run with: the lower of `max_derived_facts` and
+    /// its deprecated alias `max_results` (#553).
+    #[allow(deprecated)]
+    fn derived_fact_limit(&self) -> usize {
+        self.max_derived_facts.min(self.max_results)
     }
 
     /// Open even when the filesystem cannot lock files. See
@@ -786,10 +806,7 @@ impl Minigraf {
             self.inner.rules.clone(),
             self.inner.functions.clone(),
         );
-        executor.set_limits(
-            self.inner.options.max_derived_facts,
-            self.inner.options.max_results,
-        );
+        executor.set_limits(self.inner.options.derived_fact_limit());
         executor.set_snapshot(snapshot);
         executor
     }
@@ -800,8 +817,8 @@ impl Minigraf {
     /// while it is open do not change it. The cursor owns what it needs, so it
     /// can outlive this handle and move to another thread. Queries the
     /// streaming engine runs produce rows as they are pulled; others compute
-    /// the whole answer here, and `max_results` and `max_derived_facts` apply
-    /// exactly as they do to [`Minigraf::execute`].
+    /// the whole answer here, and `max_derived_facts` applies exactly as it
+    /// does to [`Minigraf::execute`].
     ///
     /// # Errors
     ///
@@ -1491,10 +1508,7 @@ impl<'a> WriteTransaction<'a> {
                 self.inner.rules.clone(),
                 self.inner.functions.clone(),
             );
-            executor.set_limits(
-                self.inner.options.max_derived_facts,
-                self.inner.options.max_results,
-            );
+            executor.set_limits(self.inner.options.derived_fact_limit());
             return executor.execute(cmd);
         }
 
@@ -1505,10 +1519,7 @@ impl<'a> WriteTransaction<'a> {
             self.inner.rules.clone(),
             self.inner.functions.clone(),
         );
-        executor.set_limits(
-            self.inner.options.max_derived_facts,
-            self.inner.options.max_results,
-        );
+        executor.set_limits(self.inner.options.derived_fact_limit());
         executor.execute(cmd)
     }
 
@@ -1521,10 +1532,7 @@ impl<'a> WriteTransaction<'a> {
             self.inner.rules.clone(),
             self.inner.functions.clone(),
         );
-        executor.set_limits(
-            self.inner.options.max_derived_facts,
-            self.inner.options.max_results,
-        );
+        executor.set_limits(self.inner.options.derived_fact_limit());
         executor.execute(DatalogCommand::Rule(rule))
     }
 
@@ -2277,6 +2285,7 @@ mod tests {
     // ── file-backed: open_with_options custom threshold ───────────────────────
 
     #[test]
+    #[allow(deprecated)] // every field, `max_results` too
     fn test_open_with_options_custom_threshold() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.graph");
@@ -2755,9 +2764,7 @@ mod tests {
     fn test_max_derived_facts_limit_enforced() {
         // Recursive rule will derive many facts
         // Low limit should trigger error
-        let low_opts = OpenOptions::default()
-            .max_derived_facts(5)
-            .max_results(1_000_000);
+        let low_opts = OpenOptions::default().max_derived_facts(5);
         let db_low = Minigraf::in_memory_with_options(low_opts).unwrap();
 
         // Add base edges in a chain
@@ -2784,9 +2791,7 @@ mod tests {
         );
 
         // Same query with higher limit should succeed
-        let high_opts = OpenOptions::default()
-            .max_derived_facts(100_000)
-            .max_results(1_000_000);
+        let high_opts = OpenOptions::default().max_derived_facts(100_000);
         let db_high = Minigraf::in_memory_with_options(high_opts).unwrap();
 
         db_high.execute("(transact [[:a :edge :b] [:b :edge :c] [:c :edge :d] [:d :edge :e] [:e :edge :f]])").unwrap();
@@ -2844,6 +2849,112 @@ mod tests {
         assert!(
             result.is_ok(),
             "query with :max-results should parse and execute"
+        );
+    }
+
+    /// A chain a → b → c → d → e → f and transitive `reachable`: 15 pairs
+    /// derived, never more than 5 new in one iteration.
+    fn chain_db(opts: OpenOptions) -> Minigraf {
+        let db = Minigraf::in_memory_with_options(opts).unwrap();
+        db.execute(
+            "(transact [[:a :edge :b] [:b :edge :c] [:c :edge :d] [:d :edge :e] [:e :edge :f]])",
+        )
+        .unwrap();
+        db.execute("(rule [(reachable ?x ?y) [?x :edge ?y]])")
+            .unwrap();
+        db.execute("(rule [(reachable ?x ?y) [?x :edge ?z] (reachable ?z ?y)])")
+            .unwrap();
+        db
+    }
+
+    const CHAIN_QUERY: &str = "(query [:find ?x ?y :where (reachable ?x ?y)])";
+
+    fn chain_code(db: &Minigraf, query: &str) -> Option<String> {
+        db.execute(query).err().map(|e| e.code().to_string())
+    }
+
+    #[test]
+    fn max_derived_facts_limits_the_total_not_one_iteration() {
+        // #553: the limit counts every fact derived, across iterations.
+        let db = chain_db(OpenOptions::default().max_derived_facts(15));
+        assert_eq!(chain_code(&db, CHAIN_QUERY), None, "15 derived facts fit");
+        let db = chain_db(OpenOptions::default().max_derived_facts(14));
+        let err = db.execute(CHAIN_QUERY).unwrap_err();
+        assert_eq!(err.code(), "INT-020");
+        assert!(
+            err.to_string().contains("Max derived facts (14) exceeded"),
+            "INT-020 names derived facts"
+        );
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn max_results_is_an_alias_and_the_lower_limit_applies() {
+        let int020 = Some("INT-020".to_string());
+        let db = chain_db(OpenOptions::default().max_results(14));
+        assert_eq!(chain_code(&db, CHAIN_QUERY), int020, "alias alone");
+        let db = chain_db(OpenOptions::default().max_results(15));
+        assert_eq!(chain_code(&db, CHAIN_QUERY), None, "alias alone, enough");
+        let db = chain_db(
+            OpenOptions::default()
+                .max_derived_facts(14)
+                .max_results(1_000),
+        );
+        assert_eq!(
+            chain_code(&db, CHAIN_QUERY),
+            int020,
+            "max_derived_facts lower"
+        );
+        let db = chain_db(
+            OpenOptions::default()
+                .max_derived_facts(1_000)
+                .max_results(14),
+        );
+        assert_eq!(chain_code(&db, CHAIN_QUERY), int020, "max_results lower");
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn max_derived_facts_alone_raises_the_limit_above_the_default() {
+        // The alias has no limit of its own unless set (#553).
+        let opts = OpenOptions::default().max_derived_facts(2_000_000);
+        assert_eq!(opts.derived_fact_limit(), 2_000_000);
+        assert_eq!(OpenOptions::default().derived_fact_limit(), 1_000_000);
+        assert_eq!(
+            OpenOptions::default()
+                .max_results(2_000_000)
+                .derived_fact_limit(),
+            1_000_000,
+            "the alias does not raise the limit"
+        );
+    }
+
+    #[test]
+    fn per_query_limits_replace_the_database_limit_and_the_lower_applies() {
+        let int020 = Some("INT-020".to_string());
+        let q = |opts: &str| format!("(query [:find ?x ?y :where (reachable ?x ?y) {opts}])");
+        let db = chain_db(OpenOptions::default().max_derived_facts(14));
+        assert_eq!(
+            chain_code(&db, &q(":max-derived-facts 15")),
+            None,
+            "replaces"
+        );
+        assert_eq!(
+            chain_code(&db, &q(":max-results 15")),
+            None,
+            "alias replaces"
+        );
+        let db = chain_db(OpenOptions::default());
+        assert_eq!(chain_code(&db, &q(":max-results 14")), int020, "alias");
+        assert_eq!(
+            chain_code(&db, &q(":max-derived-facts 15 :max-results 14")),
+            int020,
+            ":max-results lower"
+        );
+        assert_eq!(
+            chain_code(&db, &q(":max-derived-facts 14 :max-results 15")),
+            int020,
+            ":max-derived-facts lower"
         );
     }
 
