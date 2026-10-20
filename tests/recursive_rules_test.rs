@@ -469,12 +469,13 @@ fn test_convergence_simple_graph() {
     }
 }
 
-/// #528: `max_results` limits what the rules derive, not the size of the database.
-/// A rule query must answer on a database with more live facts than `max_results`.
+/// #528, #553: `max_derived_facts` limits what the rules derive, not the size
+/// of the database. A rule query must answer on a database with more live
+/// facts than the limit.
 #[test]
-fn test_max_results_counts_derived_facts_not_base_facts() {
+fn test_max_derived_facts_counts_derived_facts_not_base_facts() {
     let db = minigraf::OpenOptions::new()
-        .max_results(10)
+        .max_derived_facts(10)
         .open_memory()
         .unwrap();
     // A chain a -> b -> c -> d, plus 50 unrelated facts: 53 live facts in all.
@@ -499,7 +500,7 @@ fn test_max_results_counts_derived_facts_not_base_facts() {
     }
     // The limit still stops a rule that derives more than it allows.
     let err = db
-        .execute("(query [:find ?x ?y :where (boss ?x ?y) :max-results 5])")
+        .execute("(query [:find ?x ?y :where (boss ?x ?y) :max-derived-facts 5])")
         .unwrap_err();
     assert_eq!(err.code(), "INT-020");
 }

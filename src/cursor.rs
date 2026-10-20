@@ -8,7 +8,7 @@
 //! Queries the streaming engine runs (#473) produce rows as they are pulled,
 //! one internal batch at a time: closing or dropping the cursor stops the
 //! work. Other queries compute the whole answer when the cursor opens, so
-//! `max_results` and `max_derived_facts` apply exactly as they do to
+//! `max_derived_facts` applies exactly as it does to
 //! [`crate::Minigraf::execute`]. Either way a cursor is owned (it borrows
 //! nothing from the database handle), and [`Cursor::next_batch`] can fail.
 

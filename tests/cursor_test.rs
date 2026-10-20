@@ -225,7 +225,10 @@ fn query_on_a_write_transaction_thread_is_int_001() {
 
 #[test]
 fn rule_limits_apply_while_the_engine_materialises() {
-    let db = OpenOptions::new().max_results(3).open_memory().unwrap();
+    let db = OpenOptions::new()
+        .max_derived_facts(3)
+        .open_memory()
+        .unwrap();
     db.execute("(transact [[:a :next :b] [:b :next :c] [:c :next :d] [:d :next :e]])")
         .unwrap();
     db.execute("(rule [(reach ?x ?y) [?x :next ?y]])").unwrap();
