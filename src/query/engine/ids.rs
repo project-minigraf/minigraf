@@ -9,6 +9,9 @@
 //! or ident keeps its id. DICT lookups are only cached until the next pull
 //! ([`IdSpace::end_pull`]): a DICT id never changes, and a cache that grew
 //! with every row a cursor returns would hold the whole answer.
+//! A stream that ends in a `Window` keeps them until it ends: the window
+//! already looked up every row's ids in its first pull, and holds the whole
+//! answer anyway (#547).
 
 use crate::error::{ErrorCode, err_coded};
 use crate::graph::types::EntityId;

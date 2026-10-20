@@ -701,6 +701,36 @@ fn dict_cache_is_dropped_after_each_pull() {
     assert_eq!(rows, 3002);
 }
 
+/// A stream that ends in a `Window` keeps its DICT lookups until it ends:
+/// the window looked up every row's ids in its first pull, and the rows it
+/// returns later read them from the cache (#547).
+#[test]
+fn window_stream_keeps_dict_cache_until_it_ends() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Minigraf::open(dir.path().join("ids.graph")).unwrap();
+    let facts: String = (0..3000)
+        .map(|i| format!("[:p{i} :person/age {}]", i % 7))
+        .collect();
+    db.execute(&format!("(transact [{facts}])")).unwrap();
+    db.checkpoint().unwrap();
+    let mut cursor = db
+        .query("(query [:find ?e (rank :over (:order-by ?a)) :where [?e :person/age ?a]])")
+        .unwrap();
+    let mut rows = 0;
+    while let Some(batch) = cursor.next_batch(500).unwrap() {
+        rows += batch.len();
+        if let Some(stream) = cursor.stream_mut()
+            && rows < 3000
+        {
+            assert!(stream.ids.dict_cached() >= 3000, "every row's entity kept");
+        }
+    }
+    assert_eq!(rows, 3000);
+    if let Some(stream) = cursor.stream_mut() {
+        assert_eq!(stream.ids.dict_cached(), 0, "dropped at the end");
+    }
+}
+
 /// The planner's join choice (decision 3 of the #545 plan): an
 /// `IndexNestedLoopJoin` when the entity is bound, a `HashJoin` otherwise,
 /// built on the side with the smaller estimate.
