@@ -2,8 +2,9 @@
 //! operator trees.
 //!
 //! The engine runs a query whose `:where` holds patterns and expression
-//! clauses, and whose `:find` holds plain variables (#545). Every other query
-//! runs on the existing executor (spec §9).
+//! clauses, and whose `:find` holds plain variables (#545), or aggregates
+//! with plain variables and a `:with` (#547). Every other query runs on the
+//! existing executor (spec §9).
 //!
 //! Clauses run in the order `optimizer::plan` gives the executor, so an
 //! expression sees the same variables as it does there. A binding expression
@@ -136,6 +137,16 @@ pub(crate) enum Step {
     /// Keeps the first of the rows whose cells at these slots are equal as
     /// the executor's values are (#546 spec §5.2).
     Distinct(Vec<usize>),
+    /// The last step of an aggregate query (#547 spec §5): one row per group
+    /// of the cells at `groups`, holding those cells and then the result of
+    /// each aggregate `(function, argument slot)`.
+    Aggregate {
+        groups: Vec<usize>,
+        aggs: Vec<(String, usize)>,
+        /// Whether no input row gives one row of zeros: a query of `count`s
+        /// and `count-distinct`s and no plain `:find` variable.
+        zero_row: bool,
+    },
 }
 
 /// A `not` / `not-join` body (#546 spec §4).
@@ -232,7 +243,8 @@ pub(crate) type Vars = Vec<(String, usize)>;
 pub(crate) struct Plan {
     pub(crate) source: Source,
     pub(crate) steps: Vec<Step>,
-    /// The slot of each `:find` variable; empty for a body.
+    /// The column of each `:find` element in the rows of the last step: a
+    /// variable's slot, or a column of `Aggregate`; empty for a body.
     pub(crate) find: Vec<usize>,
     pub(crate) vars: Vec<String>,
 }
@@ -313,13 +325,62 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
         b.clause(c)?;
     }
 
+    // The parser rejects a variable no clause binds (PRS-080, PRS-022,
+    // PRS-023); one only some `or` branches bind has no slot here.
+    let slot = |var: &String| b.slots.by_var.get(var).copied();
     let mut find = Vec::with_capacity(query.find.len());
-    for spec in &query.find {
-        let FindSpec::Variable(var) = spec else {
-            return None;
-        };
-        // The parser rejects a variable no clause binds (PRS-080).
-        find.push(*b.slots.by_var.get(var)?);
+    let aggregate = query
+        .find
+        .iter()
+        .any(|s| matches!(s, FindSpec::Aggregate { .. }));
+    if aggregate {
+        // The rows of `Aggregate`: the grouping cells (the plain variables
+        // in `:find` order, then `:with`), then the aggregates.
+        let plain: Vec<&String> = query
+            .find
+            .iter()
+            .filter_map(|s| match s {
+                FindSpec::Variable(v) => Some(v),
+                _ => None,
+            })
+            .collect();
+        let mut groups = Vec::new();
+        for var in plain.iter().copied().chain(&query.with_vars) {
+            groups.push(slot(var)?);
+        }
+        let (mut next_plain, mut next_agg) = (0, groups.len());
+        let mut aggs = Vec::new();
+        for spec in &query.find {
+            match spec {
+                FindSpec::Variable(_) => {
+                    find.push(next_plain);
+                    next_plain += 1;
+                }
+                FindSpec::Aggregate { func, var } => {
+                    find.push(next_agg);
+                    next_agg += 1;
+                    aggs.push((func.clone(), slot(var)?));
+                }
+                // Windows run on the executor until PR 3 of #547.
+                FindSpec::Window(_) => return None,
+            }
+        }
+        let zero_row = plain.is_empty()
+            && aggs
+                .iter()
+                .all(|(f, _)| f == "count" || f == "count-distinct");
+        b.steps.push(Step::Aggregate {
+            groups,
+            aggs,
+            zero_row,
+        });
+    } else {
+        for spec in &query.find {
+            let FindSpec::Variable(var) = spec else {
+                return None;
+            };
+            find.push(slot(var)?);
+        }
     }
     let mut plan = b.finish()?;
     plan.find = find;

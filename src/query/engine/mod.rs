@@ -6,6 +6,7 @@
 //! `test-oracle` feature, every query run here is also run by the executor
 //! and the answers are compared ([`oracle`]).
 
+mod aggregate;
 mod anti;
 mod batch;
 mod cell;
@@ -103,7 +104,7 @@ pub(crate) struct Stream {
     /// registered (`INT-040`), so the answer does not change between pulls.
     functions: Arc<RwLock<FunctionRegistry>>,
     root: Box<dyn Operator>,
-    /// The slot of each `:find` variable.
+    /// The column of each `:find` element in the root's rows.
     find: Vec<usize>,
     vars: Vec<String>,
     project: Counters,
@@ -163,6 +164,11 @@ pub(crate) fn build(source: plan::Source, steps: Vec<plan::Step>) -> Box<dyn Ope
             plan::Step::Anti(body) => Box::new(anti::AntiJoin::new(root, body)),
             plan::Step::Union(branches) => Box::new(union::Union::new(root, branches)),
             plan::Step::Distinct(slots) => Box::new(distinct::Distinct::new(root, slots)),
+            plan::Step::Aggregate {
+                groups,
+                aggs,
+                zero_row,
+            } => Box::new(aggregate::Aggregate::new(root, groups, aggs, zero_row)),
             step => Box::new(filter::Apply::new(root, step)),
         };
     }

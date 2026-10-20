@@ -1673,22 +1673,35 @@ fn compute_aggregation(
         })
         .collect();
 
-    // Groups in key order, as `Value`'s `Ord` compares keys.
+    // Groups in key order, as `Value`'s `Ord` compares keys. Each holds the
+    // values it returns: of the key values `Ord` finds equal (`-0.0` and
+    // `0.0`, NaNs), the least by `value_order`, whatever the input order.
     use std::collections::BTreeMap;
-    let mut groups: BTreeMap<Vec<Value>, Vec<Agg>> = BTreeMap::new();
+    let mut groups: BTreeMap<Vec<Value>, (Vec<Value>, Vec<Agg>)> = BTreeMap::new();
     for b in bindings {
         let key: Vec<Value> = group_var_names
             .iter()
             .map(|v| b.get(*v).cloned().unwrap_or(Value::Null))
             .collect();
-        let accs = match groups.entry(key) {
+        let (shown, accs) = match groups.entry(key) {
             std::collections::btree_map::Entry::Occupied(e) => e.into_mut(),
-            std::collections::btree_map::Entry::Vacant(e) => e.insert(
-                aggs.iter()
-                    .map(|(_, func, _)| Agg::new(func, registry))
-                    .collect::<Result<Vec<_>>>()?,
-            ),
+            std::collections::btree_map::Entry::Vacant(e) => {
+                let shown = e.key().clone();
+                e.insert((
+                    shown,
+                    aggs.iter()
+                        .map(|(_, func, _)| Agg::new(func, registry))
+                        .collect::<Result<Vec<_>>>()?,
+                ))
+            }
         };
+        for (s, v) in shown.iter_mut().zip(&group_var_names) {
+            if let Some(v) = b.get(*v)
+                && value_order(v, s).is_lt()
+            {
+                *s = v.clone();
+            }
+        }
         for (acc, (_, _, var)) in accs.iter_mut().zip(&aggs) {
             if let Some(v) = b.get(*var) {
                 acc.step(v);
@@ -1707,9 +1720,9 @@ fn compute_aggregation(
         .collect();
 
     let mut results: Vec<Binding> = Vec::new();
-    'group: for (key, accs) in groups {
+    'group: for (shown, accs) in groups.into_values() {
         let mut binding = Binding::new();
-        for (v, val) in plain.iter().zip(key) {
+        for (v, val) in plain.iter().zip(shown) {
             binding.insert((*v).to_string(), val);
         }
         for (acc, (i, func, _)) in accs.into_iter().zip(&aggs) {
