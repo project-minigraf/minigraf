@@ -128,20 +128,31 @@ For every generated input `s`:
 1. pest rejects `s` ⇒ the parser rejects `s`;
 2. pest accepts `s` ⇒ the parser accepts `s`, or rejects it with a semantic code.
 
-The semantic codes are a `const` list in the verifier. Each entry carries a **witness**:
-an input that pest accepts and the parser rejects with exactly that code. A test checks
-every witness, so a code cannot sit in the list without proof that the grammar accepts
-something that raises it. A syntax code wrongly marked semantic would hide drift, and the
-witness rule is what guards against that.
+The semantic codes are a `const` list in the verifier. Two rules keep the list narrow:
 
-The class of a code that is reached from both a pest-accepted and a pest-rejected input
-(for example the valid-time map key check, §3.1) is semantic.
+- **Witness.** Each entry carries an input that pest accepts and the parser rejects with
+  exactly that code, and a test checks every witness. A code cannot sit in the list
+  without proof that the grammar accepts something that raises it.
+- **One meaning per code.** A witness proves only that *one* site of a code is semantic.
+  If a code had a syntax site too, listing it would exempt both, and the syntax drift
+  would go unseen. So every site that raises a listed code must be semantic. Codes raised
+  at more than one site (for example `INT-018`, `PRS-080`) list each site, with the
+  reason, in a comment beside the entry. The plan reviews every site of every listed
+  code.
+
+Clause 1 needs no classification: whenever pest rejects, the parser must reject, with
+any code. So a code reached both from inputs pest accepts and from inputs it rejects is
+still one meaning when every pest-accepted path is semantic. The valid-time map key check
+(§3.1) is such a code: pest rejects an unknown key in the transaction-level map and
+accepts it in a per-fact map, which `fact` leaves loose.
 
 ## 5. Generated inputs
 
-All generation is deterministic: fixed alphabets, fixed templates, fixed bounds, and
-inputs produced shortest first then in alphabet order, so the first failure reported is a
-smallest one. No randomness.
+All generation is deterministic: fixed alphabets, fixed templates and fixed bounds, with
+no randomness. Each level orders its inputs by length, then lexicographically by
+alphabet position. Length is the character count at the lexical level and the token count
+at the structural level (per template). The first failure reported is therefore a
+smallest one *within its level and template*; the two levels are not compared.
 
 ### 5.1 Lexical level
 
@@ -155,20 +166,30 @@ letters, the bare `:`, the lone `-`, number forms and string escapes.
 
 ### 5.2 Structural level
 
-Templates with holes, each hole filled by every bracket-balanced sequence of up to `k`
-tokens from a fixed token alphabet:
+Templates with holes, each hole filled by every balanced sequence of up to `k` tokens
+from a fixed token alphabet:
 
-- templates: `(query [ _ ])`, `(transact [ _ ])`, `(transact { _ } [ _ ])`,
+- 12 templates: `(query [ _ ])`, `(transact [ _ ])`, `(transact { _ } [ _ ])`,
   `(retract [ _ ])`, `(rule [ _ ])`, and a clause hole inside `:where`, `(not _)`,
   `(not-join [?x] _)`, `(or _)`, `(or-join [?x] _)`, `(and _)` and `:over ( _ )`, each
   inside an otherwise valid query;
-- tokens (about 25): `(` `)` `[` `]` `{` `}`, the heads `query` `transact` `rule` `not`
-  `not-join` `or` `and`, the keywords `:find` `:where` `:with` `:as-of` `:valid-at`
-  `:any-valid-time` `:over` `:order-by` `:valid-from`, an unknown keyword `:foo`, `?x`,
-  `?y`, `foo`, `1`, `1.5`, `"2024-01-01T00:00:00Z"`, `<`, `$s`, and
+- 32 tokens: 6 brackets, `(` `)` `[` `]` `{` `}`; 7 heads, `query` `transact` `rule`
+  `not` `not-join` `or` `and`; 10 keywords, `:find` `:where` `:with` `:as-of` `:valid-at`
+  `:any-valid-time` `:over` `:order-by` `:valid-from` and an unknown `:foo`; 9 others,
+  `?x` `?y` `foo` `1` `1.5` `"2024-01-01T00:00:00Z"` `<` `$s`
   `#uuid "550e8400-e29b-41d4-a716-446655440000"`.
 
+**Balanced** means the bracket tokens, read alone, form a well-nested sequence of the
+three kinds: no closer without an open bracket of its kind on top of the stack, and none
+left open at the end. Unbalanced fillers are not generated: their only outcome is
+"both reject" (`PRS-003`/`PRS-004`/`PRS-005`/`PRS-006`), which the lexical level and the
+#233 corpus already cover.
+
 Tokens are joined with one space. Gluing (`:find?e`) is the lexical level's job.
+
+Cost: with 26 non-bracket tokens and 3 bracket kinds, the balanced sequences of up to `k`
+tokens number 18,516 for `k = 3`, 487,678 for `k = 4` and 12,898,674 for `k = 5`. Over 12
+templates that is about 0.22M, 5.9M and 155M inputs, each parsed twice (pest and parser).
 
 ### 5.3 Known drift
 
@@ -176,9 +197,12 @@ Drift that exists when the verifier lands is listed in `KNOWN_DRIFT`. An entry i
 the issue that tracks it, and a predicate over the input (for example "contains `;`" or
 "contains a non-ASCII character"), because one drift shows up in many generated inputs.
 
-- Every failing input must match some entry, or the test fails and prints the input.
+- Every failing input must match **exactly one** entry. No match fails the test and prints
+  the input; two matches fail it and name both entries, so overlapping predicates cannot
+  hide each other or claim unrelated failures.
 - Every entry must match at least one failing input, or the test fails and names the
   entry. A fix PR therefore has to remove its entry.
+- On failure the test reports, per entry, how many inputs it matched and the first one.
 
 The initial entries are the drift in #643 that the generated inputs reach.
 
@@ -192,7 +216,10 @@ The initial entries are the drift in #643 that the generated inputs reach.
   `main`, one for `v3`. It is a shared CI change, so it lands on both branches as
   separate PRs.
 - Targets: under a minute in a debug `cargo test` by default; under 30 minutes for the
-  scheduled bound. The first implementation PR measures and sets both values.
+  scheduled bound. Tests run in the debug profile (the release profile's `panic = "abort"`
+  breaks `cargo test --release`). The starting points are `k = 3` by default and `k = 4`
+  scheduled (§5.2); the first implementation PR measures the time per input and sets both
+  values, `k = 5` scheduled if it fits.
 - The module is `#[cfg(all(test, not(target_arch = "wasm32")))]`. `wasm.yml` runs
   `cargo test --target wasm32-wasip1 --lib --tests` under Wasmtime, and the parser is the
   same code on every target.
