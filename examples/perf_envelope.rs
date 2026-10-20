@@ -445,13 +445,15 @@ struct Shape {
 fn shapes(e: usize, tx_half: u64, hot_tx_half: u64) -> Vec<Shape> {
     let m = e / 2;
     let leaf = e - 1;
-    // :manager depth from the leaf to :p0.
-    let mut depth = 0;
-    let mut i = leaf;
-    while i > 0 {
-        i /= 10;
-        depth += 1;
-    }
+    // :manager depth from :p{i} to :p0.
+    let depth = |mut i: usize| {
+        let mut d = 0;
+        while i > 0 {
+            i /= 10;
+            d += 1;
+        }
+        d
+    };
     // Entities whose manager is :p{m / 10}: 10 siblings, all below `e` for m = e/2.
     let siblings = (10 * (m / 10)..10 * (m / 10) + 10)
         .filter(|&s| s > 0)
@@ -539,7 +541,14 @@ fn shapes(e: usize, tx_half: u64, hot_tx_half: u64) -> Vec<Shape> {
         Shape {
             name: "recursive_ancestors",
             query: format!("[:find ?b :where (boss :p{leaf} ?b)]"),
-            rows: depth,
+            rows: depth(leaf),
+        },
+        // #548: the whole transitive closure of :manager. No constant, so no
+        // magic sets: every entity's chain up to :p0 is derived.
+        Shape {
+            name: "recursive",
+            query: "[:find ?x ?b :where (boss ?x ?b)]".into(),
+            rows: (1..e).map(depth).sum(),
         },
         Shape {
             name: "as_of",
@@ -656,7 +665,12 @@ fn measure_query(
     cap_secs: u64,
 ) -> anyhow::Result<Json> {
     let shape = fixture_shapes(&read_meta(fixture)?).swap_remove(index);
-    let db = OpenOptions::new().read_only(true).path(fixture).open()?;
+    // `recursive` derives about as many facts as the fixture holds.
+    let db = OpenOptions::new()
+        .read_only(true)
+        .max_derived_facts(usize::MAX)
+        .path(fixture)
+        .open()?;
     db.execute("(rule [(boss ?x ?y) [?x :manager ?y]])")?;
     db.execute("(rule [(boss ?x ?z) [?x :manager ?y] (boss ?y ?z)])")?;
     let q = format!("(query {})", shape.query);

@@ -29,3 +29,21 @@ jobs:
         run: cargo test --lib size_per_fact_in_433_shape_1m -- --include-ignored --nocapture
         env:
           RUST_BACKTRACE: 1
+
+  # #548: a recursive rule deriving about 5M facts completes, and its peak
+  # RSS follows the derived relation.
+  recursive-acceptance:
+    name: Recursive rules at 5M derived facts
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run the acceptance test
+        run: cargo test --profile bench --test recursive_acceptance_test -- --ignored --nocapture
+        env:
+          RUST_BACKTRACE: 1
