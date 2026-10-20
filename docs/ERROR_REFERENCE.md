@@ -240,7 +240,7 @@ with no `CodedError` anywhere in its chain.
 | INT-017 | Pseudo-attribute not valid in this position | Internal |
 | INT-018 | Variable not bound by any outer/earlier clause | Internal |
 | INT-019 | Datalog parser internal error | Internal |
-| INT-020 | Evaluator iteration/result limit exceeded | Internal |
+| INT-020 | Evaluator iteration/derived-fact limit exceeded | Internal |
 | INT-021 | Evaluator: unsupported where-clause in evaluate_rule | Internal |
 | INT-022 | Datalog evaluator internal error | Internal |
 | INT-023 | Packed page: fact exceeds slot capacity | Internal |
@@ -3591,20 +3591,27 @@ matches on `INT-019` for those errors must match the new codes.
 **Resolution**:
 - Report the input that raised it as a bug.
 
-### INT-020 Evaluator iteration/result limit exceeded
+### INT-020 Evaluator iteration/derived-fact limit exceeded
 
-**Error text**: `evaluator: iteration or result limit exceeded: {}`
+**Error text**: `evaluator: iteration or derived-fact limit exceeded: {}`
 
-**Cause**: The recursive rule evaluator (semi-naive evaluation) exceeded its
-maximum iteration count, maximum derived facts per iteration, or maximum
-number of facts derived in total (`max_results`; the database's own facts do
-not count) — guards against infinite recursion/cycles or
-runaway-generating rules.
+**Cause**: The recursive rule evaluator exceeded its maximum iteration count
+(1,000), or its rules derived more facts in total than `max_derived_facts`
+allows (`OpenOptions::max_derived_facts` or `:max-derived-facts`, default
+1,000,000; the database's own facts do not count) — guards against infinite
+recursion/cycles or runaway-generating rules. `max_results` / `:max-results`
+are deprecated aliases of that limit; when both are given, the lower applies.
+Neither limits the rows a query returns.
+
+Before v3.0.0, `max_derived_facts` limited the facts derived in one iteration,
+`max_results` limited the total, and the text read `iteration or result limit
+exceeded`. From v3.0.0 there is one limit, on the total (#553).
 
 **Resolution**:
 - Check the rule for an unintended cycle (e.g. `(ancestor ?x ?y) [?x
-  :parent ?y]` combined with a cyclic `:parent` graph). Raise the relevant
-  limit via query options if the workload is legitimately large.
+  :parent ?y]` combined with a cyclic `:parent` graph). Raise
+  `max_derived_facts` (or `:max-derived-facts` on the query) if the workload
+  is legitimately large.
 
 ### INT-021 Evaluator: unsupported where-clause in evaluate_rule
 

@@ -39,10 +39,19 @@ use std::sync::{Arc, RwLock};
 /// Default maximum iterations for recursive evaluation (kept for reference).
 #[allow(dead_code)]
 pub const DEFAULT_MAX_ITERATIONS: usize = 1000;
-/// Default maximum facts that can be derived per iteration
+/// Default maximum facts the rules of one query may derive in total; base
+/// facts do not count (#553).
 pub const DEFAULT_MAX_DERIVED_FACTS: usize = 1_000_000;
-/// Default maximum total query results
-pub const DEFAULT_MAX_RESULTS: usize = 1_000_000;
+
+/// `INT-020` for a rule query that derived more than `limit` facts (#553).
+fn derived_facts_exceeded(limit: usize) -> anyhow::Error {
+    err_coded!(
+        ErrorCode::Int020,
+        format!(
+            "Max derived facts ({limit}) exceeded. The rules derived more facts than the limit; base facts do not count."
+        )
+    )
+}
 
 /// Recursive evaluator for Datalog rules using semi-naive evaluation.
 ///
@@ -66,10 +75,8 @@ pub struct RecursiveEvaluator {
     functions: Arc<RwLock<FunctionRegistry>>,
     /// Maximum iterations before giving up (prevents infinite loops)
     max_iterations: usize,
-    /// Maximum facts that can be derived per iteration
-    max_derived_facts: usize,
     /// Maximum facts the rules may derive in one evaluation; base facts do not count
-    max_results: usize,
+    max_derived_facts: usize,
     /// The value a `:db/valid-at` pattern in a rule body binds (#617)
     valid_at: Value,
 }
@@ -82,15 +89,13 @@ impl RecursiveEvaluator {
     /// * `rules` - Rule registry
     /// * `functions` - Function registry for UDF predicates/aggregates
     /// * `max_iterations` - Safety limit (e.g., 1000)
-    /// * `max_derived_facts` - Maximum facts per iteration
-    /// * `max_results` - Maximum facts the rules may derive (base facts do not count)
+    /// * `max_derived_facts` - Maximum facts the rules may derive (base facts do not count)
     pub fn new(
         storage: FactStorage,
         rules: Arc<RwLock<RuleRegistry>>,
         functions: Arc<RwLock<FunctionRegistry>>,
         max_iterations: usize,
         max_derived_facts: usize,
-        max_results: usize,
     ) -> Self {
         RecursiveEvaluator {
             storage,
@@ -98,7 +103,6 @@ impl RecursiveEvaluator {
             functions,
             max_iterations,
             max_derived_facts,
-            max_results,
             valid_at: Value::Null,
         }
     }
@@ -143,7 +147,8 @@ impl RecursiveEvaluator {
                 (f.entity, f.attribute.clone(), encoded)
             })
             .collect();
-        // `max_results` limits the facts the rules derive, not the database (#528).
+        // `max_derived_facts` limits the facts the rules derive, not the
+        // database (#528, #553).
         let base_count = seen_facts.len();
 
         let mut iteration = 0;
@@ -165,17 +170,6 @@ impl RecursiveEvaluator {
             // Evaluate rules once, get new facts
             let new_facts = self.evaluate_iteration(predicates, &derived)?;
 
-            // Check per-iteration fact limit
-            if new_facts.len() > self.max_derived_facts {
-                return Err(err_coded!(
-                    ErrorCode::Int020,
-                    format!(
-                        "Max derived facts per iteration ({}) exceeded. Rule may be generating too many facts.",
-                        self.max_derived_facts
-                    )
-                ));
-            }
-
             // Compute delta: facts not yet seen
             let mut delta = Vec::new();
             for fact in new_facts {
@@ -183,11 +177,8 @@ impl RecursiveEvaluator {
                 let key = (fact.entity, fact.attribute.clone(), encoded);
                 if !seen_facts.contains(&key) {
                     // Check total derived-fact limit
-                    if seen_facts.len() - base_count >= self.max_results {
-                        return Err(err_coded!(
-                            ErrorCode::Int020,
-                            format!("Max query results ({}) exceeded.", self.max_results)
-                        ));
+                    if seen_facts.len() - base_count >= self.max_derived_facts {
+                        return Err(derived_facts_exceeded(self.max_derived_facts));
                     }
                     seen_facts.insert(key);
                     delta.push(fact);
@@ -582,8 +573,9 @@ pub struct StratifiedEvaluator {
     rules: Arc<RwLock<RuleRegistry>>,
     functions: Arc<RwLock<FunctionRegistry>>,
     max_iterations: usize,
+    /// Maximum facts the rules may derive in one evaluation, across strata
+    /// and repeated passes; base facts do not count (#553)
     max_derived_facts: usize,
-    max_results: usize,
     /// The value a `:db/valid-at` pattern in a rule body binds (#617)
     valid_at: Value,
 }
@@ -595,7 +587,6 @@ impl StratifiedEvaluator {
         functions: Arc<RwLock<FunctionRegistry>>,
         max_iterations: usize,
         max_derived_facts: usize,
-        max_results: usize,
     ) -> Self {
         StratifiedEvaluator {
             storage,
@@ -603,7 +594,6 @@ impl StratifiedEvaluator {
             functions,
             max_iterations,
             max_derived_facts,
-            max_results,
             valid_at: Value::Null,
         }
     }
@@ -661,7 +651,7 @@ impl StratifiedEvaluator {
         drop(registry); // release read lock before recursive calls
 
         let accumulated = self.storage.clone();
-        // Facts the rules derive, for `max_results` across strata and repeated
+        // Facts the rules derive, for `max_derived_facts` across strata and repeated
         // passes (each pass's `RecursiveEvaluator` sees earlier ones as base).
         let mut derived_total = 0usize;
 
@@ -734,7 +724,6 @@ impl StratifiedEvaluator {
                         self.functions.clone(),
                         self.max_iterations,
                         self.max_derived_facts,
-                        self.max_results,
                     )
                     .with_valid_at(self.valid_at.clone());
                     let derived = sub_eval.evaluate_recursive_rules(&stratum_preds)?;
@@ -755,11 +744,8 @@ impl StratifiedEvaluator {
                         );
                         if !existing.contains(&key) {
                             derived_total += 1;
-                            if derived_total > self.max_results {
-                                return Err(err_coded!(
-                                    ErrorCode::Int020,
-                                    format!("Max query results ({}) exceeded.", self.max_results)
-                                ));
+                            if derived_total > self.max_derived_facts {
+                                return Err(derived_facts_exceeded(self.max_derived_facts));
                             }
                             let _ = accumulated.load_fact(fact);
                         }
@@ -780,7 +766,7 @@ impl StratifiedEvaluator {
                         })
                         .collect();
                 }
-                let mut new_in_pass = 0usize;
+                let mut new_in_pass = false;
                 for (_pred, rule) in &mixed_rules {
                     // Collect Pattern and Expr clauses for the planner.
                     // RuleInvocations are converted to Pattern; Not/NotJoin/Or/OrJoin extracted separately.
@@ -950,7 +936,6 @@ impl StratifiedEvaluator {
                         Arc::clone(&self.functions),
                         1,
                         self.max_derived_facts,
-                        self.max_results,
                     );
 
                     'binding: for binding in candidates {
@@ -1009,22 +994,10 @@ impl StratifiedEvaluator {
                             if !known.insert(key) {
                                 continue;
                             }
-                            new_in_pass += 1;
-                            if new_in_pass > self.max_derived_facts {
-                                return Err(err_coded!(
-                                    ErrorCode::Int020,
-                                    format!(
-                                        "Max derived facts per iteration ({}) exceeded. Rule may be generating too many facts.",
-                                        self.max_derived_facts
-                                    )
-                                ));
-                            }
+                            new_in_pass = true;
                             derived_total += 1;
-                            if derived_total > self.max_results {
-                                return Err(err_coded!(
-                                    ErrorCode::Int020,
-                                    format!("Max query results ({}) exceeded.", self.max_results)
-                                ));
+                            if derived_total > self.max_derived_facts {
+                                return Err(derived_facts_exceeded(self.max_derived_facts));
                             }
                             // Use transact (not load_fact) so derived facts get a proper
                             // tx_id and incremented tx_count, matching spec step (d).
@@ -1034,7 +1007,7 @@ impl StratifiedEvaluator {
                     }
                 }
 
-                if !repeat || new_in_pass == 0 {
+                if !repeat || !new_in_pass {
                     break;
                 }
             }
@@ -1096,14 +1069,8 @@ mod tests {
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
         let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
 
-        let _evaluator = RecursiveEvaluator::new(
-            storage,
-            rules,
-            functions,
-            1000,
-            DEFAULT_MAX_DERIVED_FACTS,
-            DEFAULT_MAX_RESULTS,
-        );
+        let _evaluator =
+            RecursiveEvaluator::new(storage, rules, functions, 1000, DEFAULT_MAX_DERIVED_FACTS);
         // Note: RecursiveEvaluator uses evaluate_recursive_rules, not evaluate
         // let derived = _evaluator.evaluate(&["p".to_string()]).unwrap();
     }
@@ -1146,7 +1113,6 @@ mod tests {
             functions.clone(),
             0,
             DEFAULT_MAX_DERIVED_FACTS,
-            DEFAULT_MAX_RESULTS,
         );
         let result = evaluator.evaluate_recursive_rules(&["reachable".to_string()]);
         let code = expect_err_code(result);
@@ -1159,7 +1125,7 @@ mod tests {
     #[test]
     fn test_max_derived_facts_exceeded_returns_int020() {
         // Same rationale as test_max_iterations_exceeded_returns_error above:
-        // "Max derived facts per iteration exceeded" shares INT-020.
+        // "Max derived facts exceeded" shares INT-020.
         let storage = create_test_storage();
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
         register_test_rule(&rules, r#"(rule [(reachable ?x ?y) [?x :connected ?y]])"#);
@@ -1168,10 +1134,8 @@ mod tests {
             r#"(rule [(reachable ?x ?y) [?x :connected ?z] (reachable ?z ?y)])"#,
         );
         let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
-        // max_derived_facts=0 means the very first iteration's derived facts
-        // (there are 2 base :connected facts) exceed the limit.
-        let evaluator =
-            RecursiveEvaluator::new(storage, rules, functions, 1000, 0, DEFAULT_MAX_RESULTS);
+        // max_derived_facts=0 means the first derived fact exceeds the limit.
+        let evaluator = RecursiveEvaluator::new(storage, rules, functions, 1000, 0);
         let result = evaluator.evaluate_recursive_rules(&["reachable".to_string()]);
         let code = expect_err_code(result);
         assert_eq!(code, "INT-020");
@@ -1203,7 +1167,6 @@ mod tests {
             functions,
             DEFAULT_MAX_ITERATIONS,
             DEFAULT_MAX_DERIVED_FACTS,
-            DEFAULT_MAX_RESULTS,
         );
         let result = evaluator.evaluate_recursive_rules(&["reachable".to_string()]);
         let code = expect_err_code(result);
@@ -1239,7 +1202,6 @@ mod tests {
             functions,
             DEFAULT_MAX_ITERATIONS,
             DEFAULT_MAX_DERIVED_FACTS,
-            DEFAULT_MAX_RESULTS,
         );
         let result = evaluator.evaluate_recursive_rules(&["over_ten".to_string()]);
         let code = expect_err_code(result);
@@ -1272,7 +1234,6 @@ mod tests {
             functions,
             DEFAULT_MAX_ITERATIONS,
             DEFAULT_MAX_DERIVED_FACTS,
-            DEFAULT_MAX_RESULTS,
         );
         let result = evaluator.evaluate(&["reachable".to_string()]);
         let code = expect_err_code(result);
@@ -1285,14 +1246,8 @@ mod tests {
         let storage = FactStorage::new();
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
         let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
-        let evaluator = RecursiveEvaluator::new(
-            storage,
-            rules,
-            functions,
-            1000,
-            DEFAULT_MAX_DERIVED_FACTS,
-            DEFAULT_MAX_RESULTS,
-        );
+        let evaluator =
+            RecursiveEvaluator::new(storage, rules, functions, 1000, DEFAULT_MAX_DERIVED_FACTS);
         let result = evaluator.rule_invocation_to_pattern(&[]);
         assert!(
             result.is_err(),
@@ -1306,14 +1261,8 @@ mod tests {
         let storage = FactStorage::new();
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
         let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
-        let evaluator = RecursiveEvaluator::new(
-            storage,
-            rules,
-            functions,
-            1000,
-            DEFAULT_MAX_DERIVED_FACTS,
-            DEFAULT_MAX_RESULTS,
-        );
+        let evaluator =
+            RecursiveEvaluator::new(storage, rules, functions, 1000, DEFAULT_MAX_DERIVED_FACTS);
         let head = vec![EdnValue::Symbol("predicate".to_string())]; // only 1 element
         let binding = std::collections::HashMap::new();
         let result = evaluator.instantiate_head(&head, &binding);
@@ -1342,14 +1291,8 @@ mod tests {
         };
         registry.register_rule_unchecked("empty-body-pred".to_string(), rule);
         let rules = Arc::new(RwLock::new(registry));
-        let evaluator = RecursiveEvaluator::new(
-            storage,
-            rules,
-            functions,
-            1000,
-            DEFAULT_MAX_DERIVED_FACTS,
-            DEFAULT_MAX_RESULTS,
-        );
+        let evaluator =
+            RecursiveEvaluator::new(storage, rules, functions, 1000, DEFAULT_MAX_DERIVED_FACTS);
         let result = evaluator.evaluate_recursive_rules(&["empty-body-pred".to_string()]);
         // Should succeed (returns base facts only, derives nothing)
         assert!(result.is_ok(), "empty body rule should not fail");
@@ -1388,14 +1331,8 @@ mod tests {
         };
         registry.register_rule_unchecked("expr-only-pred".to_string(), rule);
         let rules = Arc::new(RwLock::new(registry));
-        let evaluator = RecursiveEvaluator::new(
-            storage,
-            rules,
-            functions,
-            1000,
-            DEFAULT_MAX_DERIVED_FACTS,
-            DEFAULT_MAX_RESULTS,
-        );
+        let evaluator =
+            RecursiveEvaluator::new(storage, rules, functions, 1000, DEFAULT_MAX_DERIVED_FACTS);
         // This exercises the expr-only path. The expr evaluates to false → no facts derived.
         let result = evaluator.evaluate_recursive_rules(&["expr-only-pred".to_string()]);
         assert!(result.is_ok(), "expr-only rule body should not fail");
@@ -1483,7 +1420,6 @@ mod tests {
             functions,
             1000,
             DEFAULT_MAX_DERIVED_FACTS,
-            DEFAULT_MAX_RESULTS,
         );
         // Ask for both "a" and "nonexistent" — nonexistent has no rules → stratum_preds may be empty
         let result = evaluator.evaluate(&["a".to_string(), "nonexistent".to_string()]);
@@ -1555,7 +1491,6 @@ mod tests {
             functions,
             1000,
             DEFAULT_MAX_DERIVED_FACTS,
-            DEFAULT_MAX_RESULTS,
         );
         let result = evaluator.evaluate(&["big".to_string()]);
         assert!(
@@ -1574,30 +1509,6 @@ mod tests {
     }
 
     #[test]
-    fn test_stratified_max_results_limit() {
-        let storage = create_test_storage();
-        let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
-        let rules = Arc::new(RwLock::new(RuleRegistry::new()));
-
-        register_test_rule(&rules, "(rule [(all ?x) [?x :connected _]])");
-
-        let evaluator = StratifiedEvaluator::new(
-            storage,
-            rules,
-            functions,
-            100,
-            DEFAULT_MAX_DERIVED_FACTS,
-            1, // very low max_results
-        );
-
-        let result = evaluator.evaluate(&["all".to_string()]);
-        assert!(
-            result.is_err(),
-            "stratified should error when max_results exceeded"
-        );
-    }
-
-    #[test]
     fn test_stratified_max_derived_facts_limit() {
         let storage = create_test_storage();
         let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
@@ -1606,12 +1517,7 @@ mod tests {
         register_test_rule(&rules, "(rule [(all ?x) [?x :connected _]])");
 
         let evaluator = StratifiedEvaluator::new(
-            storage,
-            rules,
-            functions,
-            100,
-            1, // very low max_derived_facts
-            DEFAULT_MAX_RESULTS,
+            storage, rules, functions, 100, 1, // very low max_derived_facts
         );
 
         let result = evaluator.evaluate(&["all".to_string()]);
@@ -1657,7 +1563,6 @@ mod tests {
             Arc::clone(&functions),
             DEFAULT_MAX_ITERATIONS,
             DEFAULT_MAX_DERIVED_FACTS,
-            DEFAULT_MAX_RESULTS,
         );
 
         let derived = evaluator.evaluate(&["eligible".to_string()]).unwrap();
@@ -1673,7 +1578,7 @@ mod tests {
     fn counter_evaluator(
         guard: &str,
         max_iterations: usize,
-        max_results: usize,
+        max_derived_facts: usize,
     ) -> StratifiedEvaluator {
         let storage = FactStorage::new();
         storage
@@ -1689,21 +1594,18 @@ mod tests {
             &rules,
             &format!("(rule [(n ?x ?w) (n ?x ?v) {guard} [(+ ?v 1) ?w] (not [?x :stop true])])"),
         );
-        StratifiedEvaluator::new(
-            storage,
-            rules,
-            functions,
-            max_iterations,
-            DEFAULT_MAX_DERIVED_FACTS,
-            max_results,
-        )
+        StratifiedEvaluator::new(storage, rules, functions, max_iterations, max_derived_facts)
     }
 
     #[test]
     fn test_recursion_through_mixed_rule_reaches_fixpoint() {
-        let derived = counter_evaluator("[(< ?v 3)]", DEFAULT_MAX_ITERATIONS, DEFAULT_MAX_RESULTS)
-            .evaluate(&["n".to_string()])
-            .unwrap();
+        let derived = counter_evaluator(
+            "[(< ?v 3)]",
+            DEFAULT_MAX_ITERATIONS,
+            DEFAULT_MAX_DERIVED_FACTS,
+        )
+        .evaluate(&["n".to_string()])
+        .unwrap();
         let n = derived
             .get_asserted_facts()
             .unwrap()
@@ -1715,18 +1617,19 @@ mod tests {
 
     #[test]
     fn test_recursion_through_mixed_rule_max_iterations() {
-        let result = counter_evaluator("", 5, DEFAULT_MAX_RESULTS).evaluate(&["n".to_string()]);
+        let result =
+            counter_evaluator("", 5, DEFAULT_MAX_DERIVED_FACTS).evaluate(&["n".to_string()]);
         assert_eq!(expect_err_code(result), "INT-020");
     }
 
     #[test]
-    fn test_recursion_through_mixed_rule_max_results() {
+    fn test_recursion_through_mixed_rule_max_derived_facts() {
         let result = counter_evaluator("", DEFAULT_MAX_ITERATIONS, 3).evaluate(&["n".to_string()]);
         assert_eq!(expect_err_code(result), "INT-020");
     }
 
     #[test]
-    fn test_recursion_through_mixed_rule_max_results_counts_every_pass() {
+    fn test_recursion_through_mixed_rule_max_derived_facts_counts_every_pass() {
         // n0 → m0 → n1 → m1 → n2 → m2 → n3: seven facts, three from the mixed
         // rule and one from each positive pass.
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
@@ -1736,7 +1639,7 @@ mod tests {
             &rules,
             "(rule [(m ?x ?v) (n ?x ?v) [(< ?v 3)] (not [?x :stop true])])",
         );
-        let evaluator = |max_results| {
+        let evaluator = |max_derived_facts| {
             // The evaluator adds what it derives to this storage.
             let storage = FactStorage::new();
             storage
@@ -1750,8 +1653,7 @@ mod tests {
                 Arc::clone(&rules),
                 Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
                 DEFAULT_MAX_ITERATIONS,
-                DEFAULT_MAX_DERIVED_FACTS,
-                max_results,
+                max_derived_facts,
             )
         };
         evaluator(7).evaluate(&["n".to_string()]).unwrap();

@@ -558,11 +558,12 @@ pub struct DatalogQuery {
     pub valid_at: Option<ValidAt>,
     /// Grouping variables that participate in grouping but are excluded from output rows.
     pub with_vars: Vec<String>,
-    /// Per-query override for maximum derived facts per recursive rule iteration.
-    /// `None` falls back to the executor's configured limit (from `OpenOptions`).
+    /// Per-query `:max-derived-facts`: the most facts the query's rules may
+    /// derive in total, base facts not counted (#553). With neither this nor
+    /// `max_results`, the executor's limit (from `OpenOptions`) applies.
     pub max_derived_facts: Option<usize>,
-    /// Per-query override for maximum total query results.
-    /// `None` falls back to the executor's configured limit (from `OpenOptions`).
+    /// Per-query `:max-results`, a deprecated alias of `:max-derived-facts`;
+    /// with both, the lower applies (#553). It never limited returned rows.
     pub max_results: Option<usize>,
 }
 
