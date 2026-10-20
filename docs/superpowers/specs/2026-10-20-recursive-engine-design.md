@@ -75,9 +75,9 @@ with the same attribute, once those facts exist. Concretely, as today:
 - a rule body that reads `[?x :q ?y]`, with `q` a predicate of a lower stratum, sees `q`'s derived facts;
   with `q` in a higher stratum it sees none (that stratum has not run).
 
-When the magic-set rewrite runs (a top-level invocation with a literal argument), predicates derive only
-the facts their callers demand, so the second and third cases see fewer facts than in the same query
-without a literal. This is kept as it is on both engines, and `CHANGELOG.md` and the docs site's rule
+When the magic-set rewrite runs (a top-level invocation with a literal argument), the rules it guards
+(every adorned rule without `not`/`not-join`, `inject_magic_guard`) derive only the facts their callers
+demand, so the second and third cases can see fewer facts than in the same query without a literal. This is kept as it is on both engines, and `CHANGELOG.md` and the docs site's rule
 section say so; changing it is out of scope (the rewrite stays as is).
 
 ### 3.2 Identity of a derived fact
@@ -87,8 +87,7 @@ value, values compared as `encode_value` encodes them: kinds distinct (a keyword
 entity it names), integers and floats distinct, `-0.0` distinct from `0.0`, every NaN one value, strings
 by content. This is `seen_facts`'s key today. Relations are sets: a fact derived twice is one fact.
 
-Rows of the query body are a bag, as on the rest of the engine: a stored fact visible in several
-valid-time windows (`:any-valid-time`) is matched once per window, as today.
+Rows of the query body are a bag, as on the rest of the engine; only relations are sets.
 
 ### 3.3 Metadata
 
@@ -164,8 +163,10 @@ rest of the query and counted by the memory accounting of #549.
 ### 5.2 Scans in a rule query
 
 `ScanSpec` gains a derived source: which predicates' rows it reads, and which range — `Full`, `Old` or
-`Delta` — for a same-stratum relation. A scan reads the committed range, then the pending range, then the
-rows of:
+`Delta` — for a same-stratum relation. A `Full` or `Old` read is the stored facts (committed and pending
+ranges, as today) followed by the derived rows `..end_k` or `..start_k`; a `Delta` read is the derived rows
+`start_k..end_k` only, never stored facts. A read of a relation of a lower stratum is always `Full`. A
+scan reads the committed range, then the pending range (both skipped for `Delta`), then the rows of:
 
 - the predicate `p` for attribute `:p`, if `p` is evaluated;
 - every evaluated predicate, for a variable or `_` attribute, with the attribute cell the ident of `:p`.
@@ -183,14 +184,25 @@ For each rule it builds a body plan with the existing `Builder` (patterns, expre
 `or`/`or-join`, pseudo-attributes, in `optimizer::plan` order) whose last step projects the head's two
 cells. Within a stratum:
 
-- **Round 1** runs every rule once, every relation read `Full` (stored facts only, or lower strata).
+- **Round 1** runs every rule once, every read `Full`: the stored facts of every relation (same-stratum
+  predicates included: a stored `[:e :q :v]` matches `(q ?x ?y)` in round 1), and the derived rows of
+  lower strata; the stratum has no derived rows yet.
 - **Round `k > 1`**, for a rule whose same-stratum reads are all top-level invocations `o_1 … o_m`: one
-  variant per `o_i`, reading `o_i` as `Delta`, `o_j` for `j < i` as `Old` and for `j > i` as `Full`. A rule
-  with no same-stratum read runs only in round 1.
-- **Naive rules** run every round with every read `Full`: a rule with a same-stratum read inside an `or`
-  / `or-join` branch, or through a pattern (`[?x :p ?y]` with `p` in the stratum, or a variable or `_`
-  attribute while the stratum has predicates). `not` / `not-join` bodies only read lower strata
-  (`stratify()` guarantees it), so they never make a rule naive.
+  variant per `o_i`, reading `o_i` as `Delta`, `o_j` for `j < i` as `Old` and for `j > i` as `Full`, where
+  `Old` and `Full` include the stored facts (§5.2). A body row that uses no delta row was produced in an
+  earlier round, so the variants together give every head derivable from round `k`'s relations that was not
+  derivable from round `k - 1`'s. A rule with no same-stratum read runs only in round 1.
+- **Naive rules** run every round with every read `Full`. A rule is naive when its body, as parsed
+  (before planning), holds at any depth outside `not` / `not-join`:
+  - an invocation of a predicate of its stratum inside an `or` / `or-join` branch;
+  - a pattern whose attribute is a keyword `:p` with `p` a predicate of its stratum;
+  - a pattern whose attribute is a variable or `_`;
+  - a `:db/valid-at` pattern, which joins with every visible fact of its entity (`[e _ _]`).
+
+  A per-fact pseudo-attribute pattern (`:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`)
+  reads its source's metadata and scans nothing, so it does not make a rule naive. `not` / `not-join`
+  bodies only read lower strata through invocations (`stratify()` guarantees it), and their patterns read
+  `Full`, so they never make a rule naive.
 - Each head row is checked against the identity set; new rows are appended at the end of the round, and
   each one counts against `max_derived_facts`. A round that appends nothing ends the stratum.
 
