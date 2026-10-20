@@ -1624,6 +1624,14 @@ fn windows() -> Vec<(&'static str, &'static str)> {
             "?s (sum ?g) (row-number :over (:order-by ?s)) :with ?e",
             "[?e :person/status ?s] [?e :person/age ?g]",
         ),
+        (
+            "?g ?g (rank :over (:order-by ?g)) ?e",
+            "[?e :person/age ?g]",
+        ),
+        (
+            "?e (row-number :over (:order-by ?k))",
+            "(or [?e :person/alias ?k] [?e :person/boss ?k])",
+        ),
     ]
 }
 
@@ -1635,6 +1643,11 @@ fn check_windows(db: &Minigraf) -> usize {
             n += rows(db, &format!("(query [:find {find} {t} :where {clauses}])"));
         }
     }
+    n += rows(
+        db,
+        "(query [:find ?e (max ?t :over (:partition-by ?e :order-by ?t)) :any-valid-time \
+         :where [?e :person/name ?n] [?e :db/tx-count ?t]])",
+    );
     n
 }
 
