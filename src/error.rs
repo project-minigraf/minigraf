@@ -155,6 +155,12 @@ pub(crate) enum ErrorCode {
     Prs106,
     Prs107,
     Prs108,
+    Prs109,
+    Prs110,
+    Prs111,
+    Prs112,
+    Prs113,
+    Prs114,
     Qry001,
     Qry002,
     Qry003,
@@ -959,6 +965,42 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Prs108,
         "PRS-108",
         "Fact must have at most 4 elements (E A V and an optional map), got {}",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs109,
+        "PRS-109",
+        "Unterminated string literal",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs110,
+        "PRS-110",
+        "Keyword has no name after ':'",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs111,
+        "PRS-111",
+        "Query vector is empty",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs112,
+        "PRS-112",
+        "Query section {} is empty",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs113,
+        "PRS-113",
+        "Unknown query keyword {}",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs114,
+        "PRS-114",
+        "Rule head argument must be a variable, got {}",
         ErrorCategory::Parser,
     ),
     (
@@ -2208,6 +2250,12 @@ mod tests {
                 | ErrorCode::Prs106
                 | ErrorCode::Prs107
                 | ErrorCode::Prs108
+                | ErrorCode::Prs109
+                | ErrorCode::Prs110
+                | ErrorCode::Prs111
+                | ErrorCode::Prs112
+                | ErrorCode::Prs113
+                | ErrorCode::Prs114
                 | ErrorCode::Qry001
                 | ErrorCode::Qry002
                 | ErrorCode::Qry003
@@ -2462,6 +2510,12 @@ mod tests {
             ErrorCode::Prs106,
             ErrorCode::Prs107,
             ErrorCode::Prs108,
+            ErrorCode::Prs109,
+            ErrorCode::Prs110,
+            ErrorCode::Prs111,
+            ErrorCode::Prs112,
+            ErrorCode::Prs113,
+            ErrorCode::Prs114,
             ErrorCode::Qry001,
             ErrorCode::Qry002,
             ErrorCode::Qry003,

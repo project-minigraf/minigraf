@@ -1,0 +1,1 @@
+(query [:find (count ?e) :with :where [?e :person/name ?n]])

@@ -129,6 +129,12 @@ with no `CodedError` anywhere in its chain.
 | PRS-106 | Rule body clause is not a vector or list | Parser |
 | PRS-107 | Rule body has no clause | Parser |
 | PRS-108 | Fact has more than 4 elements | Parser |
+| PRS-109 | Unterminated string literal | Parser |
+| PRS-110 | Keyword without a name | Parser |
+| PRS-111 | Empty query vector | Parser |
+| PRS-112 | Empty query section | Parser |
+| PRS-113 | Unknown query keyword | Parser |
+| PRS-114 | Rule head argument is not a variable | Parser |
 | QRY-001 | Invalid entity | Query Execution |
 | QRY-002 | Attribute must be a keyword | Query Execution |
 | QRY-003 | Cannot transact a pseudo-attribute | Query Execution |
@@ -677,7 +683,7 @@ See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/lat
 
 **Error text**: `Aggregate function name must be a symbol, got {}`
 
-**Cause**: The aggregate function name must be an unqualified symbol, not a keyword.
+**Cause**: The aggregate function name must be an unqualified symbol, not a keyword or a variable. Through v2.0.x a variable, `(?f ?x)`, was read as a function named `?f` and failed when the query ran (#651).
 
 **Resolution**:
 - Use `sum`, not `:sum`.
@@ -745,7 +751,7 @@ See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/lat
 
 **Error text**: `window function name must be a symbol`
 
-**Cause**: The window function name token is not a symbol (e.g. a keyword was used).
+**Cause**: The window function name token is not a symbol (e.g. a keyword was used), or is a variable. Through v2.0.x a variable was read as a function named after it and failed when the query ran (#651).
 
 **Resolution**:
 - Use `rank`, not `:rank`.
@@ -1276,18 +1282,17 @@ See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/lat
 
 **Error text**: `Unexpected element in query: {}`
 
-**Cause**: An unrecognised key appeared at the top level of the query map.
+**Cause**: A value in the query vector belongs to no section: it comes before the first keyword, or after an option and its argument (`:as-of N`, `:valid-at "…"`, `:any-valid-time`, `:max-derived-facts N`, `:max-results N`). Through v2.0.x a value after an option joined the section before the option, so `[:find ?a :any-valid-time ?b :where …]` returned `?b` as a second column (#651).
 
 **Resolution**:
-- Valid query map keys are `:find`, `:where`, `:with`, `:as-of`, `:valid-at`.
-- Check spelling.
+- Put every `:find` spec after `:find` and every clause after `:where`, before or after the options.
 - See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/).
 
 **Example**:
 ```datalog
-(query {:find [?e] :where [[?e :name ?n]] :limit 10})
+(query [:find ?a :any-valid-time ?b :where [?a :edge ?b]])
 ```
-*`:limit` is not supported; results are not paginated in this version*
+*Write `[:find ?a ?b :any-valid-time :where [?a :edge ?b]]`*
 
 ### PRS-062 Expression list cannot be empty
 
@@ -1310,7 +1315,7 @@ See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/lat
 
 **Error text**: `expression head must be a symbol, got {}`
 
-**Cause**: The first element of an expression must be a symbol naming a function, not a keyword.
+**Cause**: The first element of an expression must be a symbol naming a function, not a keyword or a variable. Through v2.0.x a variable, `[(?f ?x) ?y]`, was read as a function named `?f` and failed when the query ran (#651).
 
 **Resolution**:
 - Use `+` not `:+`.
@@ -1853,10 +1858,11 @@ $<4097-char-slot-name>
 
 **Error text**: `Rule invocation must start with predicate name (symbol), got {}`
 
-**Cause**: A list in `:where` or a rule body does not start with a symbol, so it is not a rule invocation (nor `not`, `or` or another clause form). Before v3.0.0 this was `INT-019`.
+**Cause**: A list in `:where` or a rule body does not start with a rule name, so it is not a rule invocation (nor `not`, `or` or another clause form). A rule name is a symbol that is not a variable or an operator. Before v3.0.0 this was `INT-019`, and a list headed by a variable or an operator, such as `(< ?a ?b)`, was a call of a rule of that name, which matched nothing: the query returned no rows (#651).
 
 **Resolution**:
 - Start the list with the rule's name: `(reachable ?a ?b)`.
+- Write a comparison as an expression clause, in a vector: `[(< ?a ?b)]`.
 
 **Example**:
 ```datalog
@@ -1973,7 +1979,7 @@ $<4097-char-slot-name>
 
 **Error text**: `Rule head must start with a symbol (predicate name)`
 
-**Cause**: The rule head does not start with a symbol, so the rule has no name. Before v3.0.0 this was `INT-019`.
+**Cause**: The rule head does not start with a rule name: a symbol that is not a variable or an operator. Before v3.0.0 this was `INT-019`, and a variable or an operator such as `(?r ?a)` or `(< ?a)` was accepted as a name (#651).
 
 **Resolution**:
 - Start the head with the rule's name: `(reachable ?a ?b)`.
@@ -2034,6 +2040,98 @@ with `PRS-047`.
 (transact [[:alice :person/age 1 {} 99 :junk]])
 ```
 *Remove `99 :junk`, or make it its own fact*
+
+### PRS-109 Unterminated string literal
+
+**Error text**: `Unterminated string literal`
+
+**Cause**: A string has no closing `"`. Through v2.0.x the string ran to the end of the input, and the command was read without its closing brackets (#651).
+
+**Resolution**:
+- Close the string. A `"` inside a string is written `\"`.
+
+**Example**:
+```datalog
+(transact [[:alice :person/name "Alice]])
+```
+*Write `"Alice"`*
+
+### PRS-110 Keyword without a name
+
+**Error text**: `Keyword has no name after ':'`
+
+**Cause**: A `:` is not followed by a letter, digit or one of `- _ / ?`, so the keyword has no name. Through v2.0.x this was the keyword `:` (#651).
+
+**Resolution**:
+- Write the keyword's name right after the colon: `:person/name`, not `: person/name`.
+- An operator in an expression is a symbol: `(+ ?a 1)`, not `(:+ ?a 1)`.
+
+**Example**:
+```datalog
+(transact [[:alice : "Alice"]])
+```
+*`:` alone is not a keyword*
+
+### PRS-111 Empty query vector
+
+**Error text**: `Query vector is empty`
+
+**Cause**: The query is `(query [])`. Through v2.0.x it was accepted (#651).
+
+**Resolution**:
+- Add a `:find` and a `:where` section: `(query [:find ?e :where [?e :person/name ?n]])`.
+
+**Example**:
+```datalog
+(query [])
+```
+
+### PRS-112 Empty query section
+
+**Error text**: `Query section {} is empty`
+
+**Cause**: `:find`, `:where` or `:with` is followed by another keyword or by the end of the query vector. Through v2.0.x an empty `:find` returned one empty row and an empty `:where` or `:with` was ignored (#651).
+
+**Resolution**:
+- Add what the section is for: variables or aggregates after `:find`, clauses after `:where`, variables after `:with`; or remove the keyword.
+
+**Example**:
+```datalog
+(query [:find :where [?e :person/name ?n]])
+```
+*Write `[:find ?e :where …]`*
+
+### PRS-113 Unknown query keyword
+
+**Error text**: `Unknown query keyword {}`
+
+**Cause**: The query vector holds a keyword it does not know. The query keywords are `:find`, `:where`, `:with`, `:as-of`, `:valid-at`, `:any-valid-time`, `:max-derived-facts` and `:max-results`. Through v2.0.x an unknown keyword followed by another keyword was ignored, and one followed by a value raised `PRS-061` (#651).
+
+**Resolution**:
+- Check the spelling.
+- `:in` is not supported: pass inputs through bind slots (`$name`) of a prepared query.
+- `:limit` is not supported yet (#306).
+
+**Example**:
+```datalog
+(query [:find ?e :limit 10 :where [?e :person/name ?n]])
+```
+*`:limit` is not a query keyword*
+
+### PRS-114 Rule head argument is not a variable
+
+**Error text**: `Rule head argument must be a variable, got {}`
+
+**Cause**: An argument in a rule head is not a variable. Through v2.0.x a constant was accepted, `(r ?a :c)`, and a call `(r ?a ?x)` bound `?x` to it (#651).
+
+**Resolution**:
+- Use a variable in the head and bind it in the body, e.g. with a pattern or an expression clause: `(rule [(r ?a ?x) [?a :edge ?x] [(= ?x :c)]])`.
+
+**Example**:
+```datalog
+(rule [(reachable-5 ?a ?b 0) [?a :edge ?b]])
+```
+*`0` is not a variable*
 
 ---
 

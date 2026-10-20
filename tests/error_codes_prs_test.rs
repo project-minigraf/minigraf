@@ -286,7 +286,7 @@ fn prs_codes_cover_expressions() {
     let cases: &[(&str, &str)] = &[
         (r#"(query [:find ?x :where [?x :a ?v] [()]])"#, "PRS-062"),
         (
-            r#"(query [:find ?x :where [?x :a ?v] [(:+ ?v 1)]])"#,
+            r#"(query [:find ?x :where [?x :a ?v] [(:plus ?v 1)]])"#,
             "PRS-063",
         ),
         (
@@ -451,7 +451,7 @@ fn prs_codes_reach_through_prepare() {
         ("(query [:find ?e :where [?e :name ?n] :as-of])", "PRS-014"),
         (r#"(query [:find ?x :where [?x :a ?v] 42])"#, "PRS-060"),
         (
-            r#"(query [:find ?x :where [?x :a ?v] [(:+ ?v 1)]])"#,
+            r#"(query [:find ?x :where [?x :a ?v] [(:plus ?v 1)]])"#,
             "PRS-063",
         ),
         (
@@ -754,4 +754,125 @@ fn prs_108_rejects_the_whole_transaction() {
         0,
         "no fact of the rejected transaction is stored"
     );
+}
+
+// ── #651: inputs the parser accepted and the grammar rejects ───────────────
+
+#[test]
+fn prs_109_unterminated_string() {
+    assert_code_and_message(r#"(transact [[:a :b "abc]])"#, "PRS-109", "Unterminated");
+    assert_execute_code(r#"(transact [[:a :b "abc\"#, "PRS-109");
+}
+
+#[test]
+fn prs_110_keyword_without_a_name() {
+    assert_code_and_message("(transact [[:a : 1]])", "PRS-110", "':'");
+    assert_execute_code("(query [:find ?e :where [?e :(]])", "PRS-110");
+}
+
+#[test]
+fn prs_111_empty_query_vector() {
+    assert_code_and_message("(query [])", "PRS-111", "empty");
+}
+
+#[test]
+fn prs_112_empty_query_section() {
+    assert_code_and_message("(query [:find :where [?e :a ?v]])", "PRS-112", ":find");
+    assert_code_and_message("(query [:find ?e :where])", "PRS-112", ":where");
+    assert_code_and_message("(query [:where])", "PRS-112", ":where");
+    assert_code_and_message(
+        "(query [:find (count ?e) :with :where [?e :a ?v]])",
+        "PRS-112",
+        ":with",
+    );
+    assert_execute_code("(query [:find ?e :where [?e :a ?v] :with])", "PRS-112");
+}
+
+#[test]
+fn prs_113_unknown_query_keyword() {
+    assert_code_and_message(
+        "(query [:find ?e :foo :where [?e :a ?v]])",
+        "PRS-113",
+        ":foo",
+    );
+    // With a value after it the keyword used to open a section of its own (PRS-061).
+    assert_code_and_message(
+        "(query [:find ?e :in ?v :where [?e :a ?v]])",
+        "PRS-113",
+        ":in",
+    );
+}
+
+#[test]
+fn prs_114_rule_head_argument_not_a_variable() {
+    assert_code_and_message("(rule [(r ?a :c) [?a :edge :c]])", "PRS-114", ":c");
+    assert_execute_code("(rule [(r ?a 0) [?a :edge ?b]])", "PRS-114");
+}
+
+#[test]
+fn prs_105_rule_name_is_a_variable_or_an_operator() {
+    assert_execute_code("(rule [(?r ?a) [?a :edge ?b]])", "PRS-105");
+    assert_execute_code("(rule [(< ?a) [?a :edge ?b]])", "PRS-105");
+}
+
+#[test]
+fn prs_061_value_after_a_query_option() {
+    // A value after an option and its argument used to join the section before it.
+    for q in [
+        "(query [:find ?a :any-valid-time ?b :where [?a :edge ?b]])",
+        "(query [:find ?a :as-of 1 ?b :where [?a :edge ?b]])",
+        r#"(query [:find ?a :valid-at "2024-01-01T00:00:00Z" ?b :where [?a :edge ?b]])"#,
+        "(query [:find ?a :max-results 5 ?b :where [?a :edge ?b]])",
+        "(query [:find ?a :where [?a :edge ?b] :max-derived-facts 5 [?b :edge ?c]])",
+    ] {
+        assert_execute_code(q, "PRS-061");
+    }
+}
+
+#[test]
+fn prs_097_call_head_is_a_variable_or_an_operator() {
+    // `(< ?a ?b)` as a clause was a call of a rule named `<` and returned no rows.
+    for q in [
+        "(query [:find ?a :where [?a :edge ?b] (< ?a ?b)])",
+        "(query [:find ?a :where [?a :edge ?b] (?r ?a)])",
+        "(query [:find ?a :where [?a :edge ?b] (not (?r ?a))])",
+        "(query [:find ?a :where [?a :edge ?b] (or (?r ?a) [?a :x 1])])",
+    ] {
+        assert_execute_code(q, "PRS-097");
+    }
+    assert_execute_code("(rule [(r ?a) [?a :edge ?b] (= ?a ?b)])", "PRS-097");
+}
+
+#[test]
+fn prs_025_029_063_function_named_by_a_variable() {
+    assert_execute_code("(query [:find (?f ?a) :where [?a :edge ?b]])", "PRS-025");
+    assert_execute_code(
+        "(query [:find ?a (?f ?b :over (:order-by ?b)) :where [?a :edge ?b]])",
+        "PRS-029",
+    );
+    assert_execute_code(
+        "(query [:find ?a :where [?a :edge ?b] [(?f ?a) ?z]])",
+        "PRS-063",
+    );
+}
+
+#[test]
+fn accepted_forms_next_to_the_tightened_ones() {
+    let db = db();
+    db.execute("(transact [[:a :edge :b] [:a :n 5]])").unwrap();
+    for q in [
+        // An option between sections, then a keyword: the next section starts.
+        "(query [:find ?a :any-valid-time :where [?a :edge ?b]])",
+        "(query [:find ?a :as-of 1 :where [?a :edge ?b]])",
+        // `-` alone is the subtraction operator.
+        "(query [:find ?d :where [?a :n ?n] [(- ?n 1) ?d]])",
+        // A rule call named by a symbol, and an aggregate named by an operator-free symbol.
+        "(query [:find (count ?a) :where [?a :edge ?b]])",
+    ] {
+        db.execute(q).expect("query must parse and run");
+    }
+    db.execute("(rule [(linked ?a ?b) [?a :edge ?b]])").unwrap();
+    db.execute("(rule [(none) [?a :edge ?b]])").unwrap();
+    db.execute("(query [:find ?a :where (linked ?a ?b)])")
+        .unwrap();
 }

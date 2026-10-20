@@ -41,7 +41,8 @@ uuid-lit    ::= "#uuid" string-lit
 bind-slot   ::= "$" (letter | numeral | "_" | "-")+  (* token *)
 keyword     ::= ":" word-cont+  (* token *)
 variable    ::= "?" word-cont*  (* token *)
-op-sym      ::= "<=" | ">=" | "!=" | "<" | ">" | "=" | "+" | "*" | "/"  (* token *)
+op-sym      ::= "<=" | ">=" | "!=" | "<" | ">" | "=" | "+" | "*" | "/"
+              | "-" (* not followed by word-cont *)  (* token *)
 plain-sym   ::= (* not followed by boolean-lit *) (* not followed by nil-lit *) (letter | "_") word-cont*
               | "-" (* not followed by numeral *) word-cont+  (* token *)
 
