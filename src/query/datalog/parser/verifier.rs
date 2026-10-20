@@ -221,12 +221,8 @@ fn is_semantic(code: &str) -> bool {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Cause {
     // Lexical.
-    /// `;` starts a line comment in the parser; the grammar has no comments.
-    Comment,
     /// A string with no closing quote reads to the end of the input.
     UnterminatedString,
-    /// A non-ASCII letter or digit in a symbol or keyword (the grammar is ASCII).
-    UnicodeLetter,
     /// `:` with no keyword character after it is the keyword `:`.
     BareColon,
     /// `-` with no word character after it is the symbol `-`.
@@ -257,11 +253,7 @@ enum Cause {
 impl Cause {
     fn level(self) -> Level {
         match self {
-            Cause::Comment
-            | Cause::UnterminatedString
-            | Cause::UnicodeLetter
-            | Cause::BareColon
-            | Cause::LoneMinus => Level::Lexical,
+            Cause::UnterminatedString | Cause::BareColon | Cause::LoneMinus => Level::Lexical,
             _ => Level::Structural,
         }
     }
@@ -276,18 +268,8 @@ struct Drift {
 
 const KNOWN_DRIFT: &[Drift] = &[
     Drift {
-        cause: Cause::Comment,
-        issue: 650,
-        min_k: 0,
-    },
-    Drift {
         cause: Cause::UnterminatedString,
         issue: 651,
-        min_k: 0,
-    },
-    Drift {
-        cause: Cause::UnicodeLetter,
-        issue: 650,
         min_k: 0,
     },
     Drift {
@@ -370,14 +352,12 @@ fn lexical_cause(text: &str) -> Option<Cause> {
                     }
                 }
             }
-            ';' => return Some(Cause::Comment),
             ':' if !next.is_some_and(symbol_char) => return Some(Cause::BareColon),
             '-' if !next.is_some_and(symbol_char)
                 && !(i > 0 && (symbol_char(c[i - 1]) || matches!(c[i - 1], ':' | '#' | '$'))) =>
             {
                 return Some(Cause::LoneMinus);
             }
-            ch if !ch.is_ascii() && ch.is_alphanumeric() => return Some(Cause::UnicodeLetter),
             _ => {}
         }
         i += 1;
@@ -455,11 +435,14 @@ fn query_cause(items: &[EdnValue]) -> Option<Cause> {
 
 /// Whether pest's `plain_sym` reads all of `s`.
 fn is_plain_symbol(s: &str) -> bool {
-    let word = |c: char| c.is_ascii_alphanumeric() || matches!(c, '?' | '_' | '-' | '/');
     let mut chars = s.chars();
     match chars.next() {
-        Some(c) if c.is_ascii_alphabetic() || c == '_' => chars.all(word),
-        Some('-') => !chars.as_str().is_empty() && chars.all(word),
+        Some(c) if c.is_alphabetic() || c == '_' => chars.all(symbol_char),
+        Some('-') => {
+            !chars.as_str().is_empty()
+                && !chars.as_str().starts_with(char::is_numeric)
+                && chars.all(symbol_char)
+        }
         _ => false,
     }
 }
