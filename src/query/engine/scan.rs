@@ -5,10 +5,15 @@
 //! pending records alone, and a triple without one by its committed keys
 //! (#379). `Scan` reads the committed ranges first, leaving out the triples a
 //! pending record decides (the shadow set), then the pending range.
+//!
+//! In a rule query, a scan then reads the rows of the relations its pattern
+//! names (#548 spec §5.2); a `Delta` read reads those rows only. A derived
+//! row is visible at every time and has no metadata (`nil`).
 
 use super::batch::Batch;
 use super::cell::{Cell, Scalar};
 use super::plan::{Meta, ScanSpec, Term, Valid, ValueConst, names};
+use super::relation::Range as Rows;
 use super::{BATCH_ROWS, Counters, Ctx, Operator};
 use crate::graph::storage::PendingResume;
 use crate::graph::types::{EntityId, Fact, Value};
@@ -36,7 +41,21 @@ enum State {
     Start,
     Committed(Committed),
     Pending(Option<PendingResume>),
+    Derived(Derived),
     Done,
+}
+
+/// Where the read of derived rows is.
+#[derive(Default)]
+struct Derived {
+    /// The relation read, as an index into the spec's.
+    k: usize,
+    /// The next position: in the relation's rows, or in its rows of the
+    /// entity read.
+    at: usize,
+    /// The entity read (a probe's, or a constant's) and the cell of an
+    /// exact value constant, resolved on the first pull.
+    resolved: Option<(Option<u64>, Option<Cell>)>,
 }
 
 /// The committed half of the read.
@@ -117,6 +136,15 @@ impl Operator for Scan {
         loop {
             let mut batch = Batch::new(self.spec.width);
             match &mut self.state {
+                State::Start
+                    if self
+                        .spec
+                        .derived
+                        .as_ref()
+                        .is_some_and(|d| d.range == Rows::Delta) =>
+                {
+                    self.state = State::Derived(Derived::default());
+                }
                 State::Start => {
                     if self.consts.is_none()
                         && let Some(keys) = ctx.keys
@@ -224,6 +252,15 @@ impl Operator for Scan {
                         row.iter_mut().for_each(|c| *c = None);
                     }
                     if !more {
+                        self.state = if self.spec.derived.is_some() {
+                            State::Derived(Derived::default())
+                        } else {
+                            State::Done
+                        };
+                    }
+                }
+                State::Derived(d) => {
+                    if !derived(&self.spec, self.probe.as_ref(), d, &mut batch, ctx)? {
                         self.state = State::Done;
                     }
                 }
@@ -251,6 +288,97 @@ impl Operator for Scan {
     fn counters(&self, out: &mut Vec<Counters>) {
         out.push(self.counters);
     }
+}
+
+/// Read derived rows of `spec` into `batch` until it is full; `false` once
+/// every relation has been read.
+fn derived(
+    spec: &ScanSpec,
+    probe: Option<&(EntityId, Option<u64>)>,
+    d: &mut Derived,
+    batch: &mut Batch,
+    ctx: &mut Ctx<'_>,
+) -> Result<bool> {
+    let (Some(read), Some(rels)) = (&spec.derived, ctx.derived) else {
+        return Ok(false);
+    };
+    let (target, exact) = match &d.resolved {
+        Some(r) => r.clone(),
+        None => {
+            let target = match (probe, &spec.e) {
+                (Some((u, _)), _) | (None, Term::Const(u)) => Some(ctx.ids.eid(ctx.keys, u)?),
+                _ => None,
+            };
+            let exact = match &spec.v {
+                Term::Const(ValueConst::Exact(v)) => Some(Cell::of_value(ctx.ids, ctx.keys, v)?),
+                _ => None,
+            };
+            d.resolved = Some((target, exact.clone()));
+            (target, exact)
+        }
+    };
+    let valid = valid_at(spec.valid, ctx);
+    let mut row = vec![None; spec.width];
+    while batch.len < BATCH_ROWS {
+        let Some(&rel) = read.rels.get(d.k) else {
+            return Ok(false);
+        };
+        let span = rels.span(rel, read.range);
+        let pos = match target {
+            Some(e) => rels.of_entity(rel, e).get(d.at).copied(),
+            None => Some(span.start + d.at).filter(|p| *p < span.end),
+        };
+        let Some(pos) = pos else {
+            d.k += 1;
+            d.at = 0;
+            continue;
+        };
+        d.at += 1;
+        let (Some(r), Some(iid)) = (rels.row(rel, pos), rels.iid(rel)) else {
+            continue;
+        };
+        if !span.contains(&pos) {
+            continue;
+        }
+        let keeps = match (&spec.v, &exact) {
+            (_, Some(c)) => r[1] == *c,
+            (Term::Const(c), None) => cell_matches(c, &r[1], ctx)?,
+            _ => true,
+        };
+        if keeps
+            && fill(&spec.e, &mut row, || Ok(r[0].clone()))?
+            && fill(&spec.a, &mut row, || Ok(Cell::Iid(iid)))?
+            && fill(&spec.v, &mut row, || Ok(r[1].clone()))?
+        {
+            for &(m, slot) in &spec.meta {
+                set(
+                    &mut row,
+                    slot,
+                    if m == Meta::ValidAt { valid } else { None },
+                );
+            }
+            // `set` gives `nil` for `None`; the valid time under
+            // `:any-valid-time` is `nil` too.
+            batch.push(&mut row);
+        }
+        row.iter_mut().for_each(|c| *c = None);
+    }
+    Ok(true)
+}
+
+/// Whether the derived cell `cell` matches the value constant `c`, as
+/// [`ValueConst::matches`] matches its value.
+fn cell_matches(c: &ValueConst, cell: &Cell, ctx: &mut Ctx<'_>) -> Result<bool> {
+    Ok(match (c, cell) {
+        (ValueConst::Exact(v), cell) => Cell::of_value(ctx.ids, ctx.keys, v)? == *cell,
+        (ValueConst::Keyword(k, _), Cell::Iid(i)) => *ctx.ids.name(ctx.keys, *i)? == **k,
+        (ValueConst::Keyword(_, u) | ValueConst::Uuid(u), Cell::Eid(e)) => {
+            ctx.ids.uuid(ctx.keys, *e)? == *u
+        }
+        (ValueConst::Uuid(u), Cell::Iid(i)) => names(&ctx.ids.name(ctx.keys, *i)?, u),
+        (ValueConst::Float(f), Cell::Val(Scalar::Float(ff))) => (f - ff).abs() < f64::EPSILON,
+        _ => false,
+    })
 }
 
 /// Fill a metadata slot: an integer, or `nil` for the valid time under

@@ -14,10 +14,11 @@ jobs:
     name: Check release binary size
     runs-on: ubuntu-latest
     env:
-      # 1230 KiB: 1200 KiB (raised from 1 MiB for #277's structured error codes) plus a
-      # temporary 30 KiB while the streaming engine and the executor both ship (#473).
-      # Back to 1200 KiB when #551 removes the executor's query path. See PHILOSOPHY.md §4.
-      SIZE_LIMIT_BYTES: 1259520
+      # 1260 KiB: 1200 KiB (raised from 1 MiB for #277's structured error codes) plus a
+      # temporary 60 KiB while the streaming engine and the executor both ship (#473;
+      # 30 KiB more for rule queries on the engine, #548). Back to 1200 KiB when #551
+      # removes the executor's query path. See PHILOSOPHY.md §4.
+      SIZE_LIMIT_BYTES: 1290240
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

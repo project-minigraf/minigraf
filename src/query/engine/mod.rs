@@ -18,6 +18,8 @@ mod join;
 pub(crate) mod oracle;
 mod plan;
 mod project;
+mod recursive;
+mod relation;
 mod scan;
 mod seed;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -27,14 +29,15 @@ mod window;
 
 use crate::error::{ErrorCode, err_coded};
 use crate::graph::storage::Snapshot;
-use crate::graph::types::Value;
+use crate::graph::types::{EntityId, Value};
 use crate::query::datalog::executor::QueryResult;
 use crate::query::datalog::functions::FunctionRegistry;
 use crate::storage::{CommittedReader, KeySource};
 use anyhow::Result;
 use batch::Batch;
 use ids::IdSpace;
-pub(crate) use plan::{Plan, plan};
+pub(crate) use plan::{Plan, plan, plan_rules};
+pub(crate) use recursive::Limits;
 use std::sync::{Arc, RwLock};
 
 #[cfg(test)]
@@ -55,6 +58,8 @@ pub(crate) struct Ctx<'a> {
     ids: &'a mut IdSpace,
     /// Predicates for expression clauses.
     functions: &'a FunctionRegistry,
+    /// In a rule query, the relations its rules derived (#548).
+    derived: Option<&'a relation::Relations>,
 }
 
 /// What one operator has done (spec §6.3): rows it read or received, rows
@@ -113,6 +118,8 @@ pub(crate) struct Stream {
     /// row's ids into values in its first pull, and the rows it returns
     /// later read the same ids again (#547).
     hold_ids: bool,
+    /// In a rule query, the relations its rules derived (#548).
+    relations: Option<relation::Relations>,
     closed: bool,
 }
 
@@ -138,6 +145,73 @@ pub(crate) fn open(
         None => None,
     };
     let ids = IdSpace::new(keys);
+    Some(stream(snapshot, ids, plan, functions, None))
+}
+
+/// Open the rule query `plan` over `snapshot`: derive its relations, with
+/// the magic seeds `seeds` as rows, then open its body (#548). `None` as
+/// [`open`]; an error from the rules fails the query here.
+pub(crate) fn open_rules(
+    snapshot: Snapshot,
+    plan: plan::RulesPlan,
+    seeds: &[(EntityId, String, Value)],
+    functions: Arc<RwLock<FunctionRegistry>>,
+    limits: recursive::Limits,
+) -> Result<Option<Stream>> {
+    let (ids, relations) = {
+        let keys = match &snapshot.committed {
+            Some(reader) => match reader.key_source() {
+                Some(k) => Some(k),
+                None => return Ok(None),
+            },
+            None => None,
+        };
+        let mut ids = IdSpace::new(keys);
+        let iids = plan
+            .evaluated
+            .attrs
+            .iter()
+            .map(|a| ids.iid(keys, a))
+            .collect::<Result<Vec<u64>>>()?;
+        let mut rels = relation::Relations::new(iids);
+        for (e, a, v) in seeds {
+            if let Some(&rel) = plan.evaluated.by_attr.get(a) {
+                let row = [
+                    cell::Cell::Eid(ids.eid(keys, e)?),
+                    cell::Cell::of_value(&mut ids, keys, v)?,
+                ];
+                rels.add(rel, row);
+            }
+        }
+        rels.end_round();
+        let functions = functions
+            .read()
+            .map_err(|_| err_coded!(ErrorCode::Qry008))?;
+        let reads = recursive::Reads {
+            snapshot: &snapshot,
+            keys,
+            functions: &functions,
+        };
+        recursive::evaluate(&plan, &mut rels, &reads, &mut ids, limits)?;
+        (ids, rels)
+    };
+    Ok(Some(stream(
+        snapshot,
+        ids,
+        plan.body,
+        functions,
+        Some(relations),
+    )))
+}
+
+/// The stream of `plan` over `snapshot`.
+fn stream(
+    snapshot: Snapshot,
+    ids: IdSpace,
+    plan: Plan,
+    functions: Arc<RwLock<FunctionRegistry>>,
+    relations: Option<relation::Relations>,
+) -> Stream {
     let Plan {
         source,
         steps,
@@ -146,7 +220,7 @@ pub(crate) fn open(
     } = plan;
     let hold_ids = steps.iter().any(|s| matches!(s, plan::Step::Window { .. }));
     let root = build(source, steps);
-    Some(Stream {
+    Stream {
         snapshot,
         ids,
         functions,
@@ -155,8 +229,9 @@ pub(crate) fn open(
         vars,
         project: Counters::new("Project"),
         hold_ids,
+        relations,
         closed: false,
-    })
+    }
 }
 
 /// The operator tree of a plan's source and steps.
@@ -198,6 +273,7 @@ impl Stream {
             vars: vec!["?x".to_string()],
             project: Counters::new("Project"),
             hold_ids: false,
+            relations: None,
             closed: false,
         }
     }
@@ -234,6 +310,7 @@ impl Stream {
                 .and_then(CommittedReader::key_source),
             ids: &mut self.ids,
             functions: &functions,
+            derived: self.relations.as_ref(),
         };
         let Some(batch) = self.root.next_batch(&mut ctx)? else {
             return Ok(None);

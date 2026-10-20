@@ -552,6 +552,13 @@ impl DatalogExecutor {
 
         // Check if query uses rules
         if query.uses_rules() {
+            // The engine runs the rule queries it plans (#548); reads inside
+            // a write transaction stay here (#550).
+            if self.facts_override.is_none()
+                && let Some(answer) = self.open_rule_query(&query)?
+            {
+                return Ok(answer);
+            }
             // Use StratifiedEvaluator for queries with rule invocations (handles negation and strata)
             return self.execute_query_with_rules(query).map(Answer::Result);
         }
@@ -594,6 +601,86 @@ impl DatalogExecutor {
             }
         }
         self.execute_query_on_executor(query).map(Answer::Result)
+    }
+
+    /// A rule query on the streaming engine (#548), or `None` when the
+    /// engine does not plan it. Its errors come in the executor's order:
+    /// pseudo-attributes, then the rules, then unknown predicates.
+    fn open_rule_query(&self, query: &DatalogQuery) -> Result<Option<Answer>> {
+        let plan = {
+            let registry = self
+                .rules
+                .read()
+                .map_err(|_| err_coded!(ErrorCode::Qry009))?;
+            match crate::query::datalog::magic_sets::rewrite(query, &registry) {
+                Some((rewritten, seeds)) => {
+                    let attrs: Vec<&str> = seeds.iter().map(|(_, a, _)| a.as_str()).collect();
+                    crate::query::engine::plan_rules(query, &rewritten, &attrs)
+                        .map(|plan| (plan, seeds))
+                }
+                None => {
+                    crate::query::engine::plan_rules(query, &registry, &[]).map(|p| (p, vec![]))
+                }
+            }
+        };
+        let Some((plan, seeds)) = plan else {
+            return Ok(None);
+        };
+        check_per_fact_pseudo_attrs(query)?;
+        let limits = crate::query::engine::Limits {
+            max_iterations: crate::query::datalog::evaluator::DEFAULT_MAX_ITERATIONS,
+            max_derived_facts: self.derived_limit(query),
+        };
+        let snapshot = self.read_snapshot()?;
+        let open = |plan| -> Result<Option<crate::query::engine::Stream>> {
+            let stream = crate::query::engine::open_rules(
+                snapshot.clone(),
+                plan,
+                &seeds,
+                self.functions.clone(),
+                limits,
+            )?;
+            if stream.is_some() {
+                let registry = self
+                    .functions
+                    .read()
+                    .map_err(|_| err_coded!(ErrorCode::Qry008))?;
+                check_udf_predicates(query, &registry)?;
+            }
+            Ok(stream)
+        };
+        // The comparison drains a second stream, so the one returned stays
+        // unread.
+        #[cfg(any(test, feature = "test-oracle"))]
+        {
+            let again = open(plan.clone());
+            if !matches!(again, Ok(None)) {
+                crate::query::engine::oracle::check(
+                    &again.and_then(|s| {
+                        s.map_or_else(|| Err(err_coded!(ErrorCode::Int049)), |s| s.collect())
+                    }),
+                    &self
+                        .oracle(snapshot.clone())
+                        .execute_query_with_rules(query.clone()),
+                );
+            }
+        }
+        let Some(stream) = open(plan)? else {
+            return Ok(None);
+        };
+        #[cfg(test)]
+        crate::query::engine::RUNS.with(|r| r.set(r.get() + 1));
+        Ok(Some(Answer::Stream(Box::new(stream))))
+    }
+
+    /// The most facts `query`'s rules may derive: a per-query limit replaces
+    /// the executor's; `:max-results` is a deprecated alias of
+    /// `:max-derived-facts`, and the lower of the two applies (#553).
+    fn derived_limit(&self, query: &DatalogQuery) -> usize {
+        match (query.max_derived_facts, query.max_results) {
+            (None, None) => self.max_derived_facts,
+            (a, b) => a.unwrap_or(usize::MAX).min(b.unwrap_or(usize::MAX)),
+        }
     }
 
     /// This executor over `snapshot`, for the engine's oracle (#473 spec §9).
@@ -803,13 +890,7 @@ impl DatalogExecutor {
             filtered_storage.load_fact(fact)?;
         }
 
-        // A per-query limit replaces the executor's; `:max-results` is a
-        // deprecated alias of `:max-derived-facts`, and the lower of the two
-        // applies (#553).
-        let effective_max_derived = match (query.max_derived_facts, query.max_results) {
-            (None, None) => self.max_derived_facts,
-            (a, b) => a.unwrap_or(usize::MAX).min(b.unwrap_or(usize::MAX)),
-        };
+        let effective_max_derived = self.derived_limit(&query);
 
         // Apply magic sets rewriting for demand-driven recursive evaluation.
         // Returns None for all-free queries — zero overhead path.

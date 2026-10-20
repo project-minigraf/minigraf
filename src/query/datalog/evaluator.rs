@@ -44,11 +44,21 @@ pub const DEFAULT_MAX_ITERATIONS: usize = 1000;
 pub const DEFAULT_MAX_DERIVED_FACTS: usize = 1_000_000;
 
 /// `INT-020` for a rule query that derived more than `limit` facts (#553).
-fn derived_facts_exceeded(limit: usize) -> anyhow::Error {
+pub(crate) fn derived_facts_exceeded(limit: usize) -> anyhow::Error {
     err_coded!(
         ErrorCode::Int020,
         format!(
             "Max derived facts ({limit}) exceeded. The rules derived more facts than the limit; base facts do not count."
+        )
+    )
+}
+
+/// `INT-020` for a stratum still deriving facts after `limit` rounds.
+pub(crate) fn iterations_exceeded(limit: usize) -> anyhow::Error {
+    err_coded!(
+        ErrorCode::Int020,
+        format!(
+            "Max iterations ({limit}) exceeded. Possible infinite recursion or cycle in rules."
         )
     )
 }
@@ -155,13 +165,7 @@ impl RecursiveEvaluator {
             iteration += 1;
 
             if iteration > self.max_iterations {
-                return Err(err_coded!(
-                    ErrorCode::Int020,
-                    format!(
-                        "Max iterations ({}) exceeded. Possible infinite recursion or cycle in rules.",
-                        self.max_iterations
-                    )
-                ));
+                return Err(iterations_exceeded(self.max_iterations));
             }
 
             // Evaluate rules once, get new facts
@@ -701,13 +705,7 @@ impl StratifiedEvaluator {
             loop {
                 pass += 1;
                 if pass > self.max_iterations {
-                    return Err(err_coded!(
-                        ErrorCode::Int020,
-                        format!(
-                            "Max iterations ({}) exceeded. Possible infinite recursion or cycle in rules.",
-                            self.max_iterations
-                        )
-                    ));
+                    return Err(iterations_exceeded(self.max_iterations));
                 }
 
                 // Evaluate positive-only rules via RecursiveEvaluator

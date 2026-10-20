@@ -113,9 +113,9 @@ SQLite's success comes from a clear philosophy: be a library, not a server. Be s
   #277's structured error codes — 130 documented codes across 6 categories
   cannot fit in 1MB even with opt-level="z", LTO, codegen-units=1, and
   strip=symbols all already applied; see CI's `binary-size.yml` for the
-  enforced limit). On the v3 branch the gate allows a temporary 30 KiB more
-  (1,230 KiB) while the streaming engine and the old executor both ship
-  (#473); it returns to 1,200 KiB when #551 removes the executor's query path
+  enforced limit). On the v3 branch the gate allows a temporary 60 KiB more
+  (1,260 KiB) while the streaming engine and the old executor both ship
+  (#473; rule queries on the engine added 30 KiB, #548); it returns to 1,200 KiB when #551 removes the executor's query path
 - No runtime dependencies (no JVM, no Python, no Node.js)
 
 **Anti-pattern**: Requiring external services, libraries, or runtimes to function.
