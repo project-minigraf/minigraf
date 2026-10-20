@@ -255,8 +255,6 @@ enum Cause {
     /// A rule head whose name is not a plain symbol or whose argument is not a
     /// variable.
     RuleHead,
-    /// A fact `[e a v {…} x …]`: the parser drops everything after the map.
-    FactArity,
 }
 
 impl Cause {
@@ -350,11 +348,6 @@ const KNOWN_DRIFT: &[Drift] = &[
         issue: 651,
         min_k: 1,
     },
-    Drift {
-        cause: Cause::FactArity,
-        issue: 649,
-        min_k: 3,
-    },
 ];
 
 /// Characters the parser reads as part of a symbol after its first.
@@ -405,10 +398,6 @@ fn structural_cause(text: &str) -> Option<Cause> {
     match cmd.first()? {
         EdnValue::Symbol(s) if s == "query" => query_cause(arg?.as_vector()?),
         EdnValue::Symbol(s) if s == "rule" => rule_cause(arg?.as_vector()?),
-        EdnValue::Symbol(s) if s == "transact" => cmd.last()?.as_vector()?.iter().find_map(|f| {
-            let f = f.as_vector()?;
-            (f.len() > 4 && f[3].is_map()).then_some(Cause::FactArity)
-        }),
         _ => None,
     }
 }

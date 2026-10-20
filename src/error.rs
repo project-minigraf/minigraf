@@ -154,6 +154,7 @@ pub(crate) enum ErrorCode {
     Prs105,
     Prs106,
     Prs107,
+    Prs108,
     Qry001,
     Qry002,
     Qry003,
@@ -952,6 +953,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Prs107,
         "PRS-107",
         "Rule must have at least one pattern or rule invocation in body",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs108,
+        "PRS-108",
+        "Fact must have at most 4 elements (E A V and an optional map), got {}",
         ErrorCategory::Parser,
     ),
     (
@@ -2200,6 +2207,7 @@ mod tests {
                 | ErrorCode::Prs105
                 | ErrorCode::Prs106
                 | ErrorCode::Prs107
+                | ErrorCode::Prs108
                 | ErrorCode::Qry001
                 | ErrorCode::Qry002
                 | ErrorCode::Qry003
@@ -2453,6 +2461,7 @@ mod tests {
             ErrorCode::Prs105,
             ErrorCode::Prs106,
             ErrorCode::Prs107,
+            ErrorCode::Prs108,
             ErrorCode::Qry001,
             ErrorCode::Qry002,
             ErrorCode::Qry003,
