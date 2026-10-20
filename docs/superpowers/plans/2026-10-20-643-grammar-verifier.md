@@ -170,19 +170,22 @@ rejects it and the verifier reports it. The fix for pest's literal-keyword bound
     bool }`, where `Input` carries the text and, at the structural level, the template
     and filler tokens. The predicates read tokens, not text. Initial entries for `v3`:
 
-    | id | Level | min_k | Matches |
-    |---|---|---|---|
-    | `comment` | lexical | – | contains `;` |
-    | `unicode-letter` | lexical | – | contains a non-ASCII alphanumeric |
-    | `bare-colon` | lexical | – | `:` not followed by a keyword character |
-    | `lone-minus` | lexical | – | `-` not followed by a word character or digit |
-    | `empty-find` | structural | 1 | `:find` followed by a keyword or the vector's end |
-    | `empty-with` | structural | 1 | `:with` followed by a keyword or the end |
-    | `unknown-keyword` | structural | 1 | a keyword outside the query keywords at the query vector's top level, with no value after it |
-    | `rule-head-args` | structural | 2 | T14 with a non-variable after the head symbol, or a variable as the head |
-    | `call-head` | structural | 3 | a clause list whose first token is a variable or `<` |
-    | `udf-var-head` | structural | 5 | `[ ( ?v … ) … ]` with a variable as the function |
-    | `fact-arity` | structural | 3 | T11 with a filler of a map then one or more values |
+    Every initial entry fails clause 1: pest rejects, the parser accepts (each witness
+    was checked against both on 2026-10-20, in #643's audit).
+
+    | id | Level | min_k | Matches | Witness |
+    |---|---|---|---|---|
+    | `comment` | lexical | – | contains `;` | `1;` |
+    | `unicode-letter` | lexical | – | contains a non-ASCII alphanumeric | `é` |
+    | `bare-colon` | lexical | – | `:` not followed by a keyword character | `:` |
+    | `lone-minus` | lexical | – | `-` not followed by a word character or digit | `-` |
+    | `empty-find` | structural | 1 | `:find` followed by a keyword or the vector's end | T1 `:find` |
+    | `empty-with` | structural | 1 | `:with` followed by a keyword or the end | T3 `:with` |
+    | `unknown-keyword` | structural | 1 | a keyword outside the query keywords at the query vector's top level, with no value after it | T3 `:foo` |
+    | `rule-head-args` | structural | 2 | T14 with a non-variable after the head symbol, or a variable as the head | T14 `foo 1` |
+    | `call-head` | structural | 3 | a clause list whose first token is a variable or `<` | T3 `( ?x )` |
+    | `udf-var-head` | structural | 5 | `[ ( ?v … ) … ]` with a variable as the function | T3 `[ ( ?x ?y ) ]` |
+    | `fact-arity` | structural | 3 | T11 with a filler of a map then one or more values (the parser accepts and drops them) | T11 `{ } 1` |
 
     These are the ones I expect. The first run decides the real list. Each entry must
     reproduce an input from #643's audit, and overlaps are split until every failure
