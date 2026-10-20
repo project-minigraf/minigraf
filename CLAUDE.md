@@ -129,7 +129,7 @@ cargo run < demos/demo_negation.txt
 
 3. **`src/query/datalog/`** — Datalog engine
    - `parser.rs`: EDN/Datalog parser — `transact`, `retract`, `query`, `rule`, `:as-of`, `:valid-at`, `not`, `not-join`; `resolve_pseudo_sources` names each per-fact pseudo-attribute's source (nearest earlier same-entity pattern, lexical scope) and its hidden metadata variable `?#<n>.<attr>`, else PRS-081 (#594)
-   - `parser/verifier.rs`: test-only (not wasm32) bounded-exhaustive check of the parser against `tests/grammar/grammar.pest` (#643): every 1–3 character string (`parse_edn`) and every balanced token filler up to `MINIGRAF_GRAMMAR_BOUND` (default 3) in 15 command templates (`parse_datalog_command`); pest rejects ⇒ parser rejects, pest accepts ⇒ parser accepts or raises a `SEMANTIC` code; today's drift is `KNOWN_DRIFT`, one entry per cause, removed by its fix (#650, #651; #649 fixed)
+   - `parser/verifier.rs`: test-only (not wasm32) bounded-exhaustive check of the parser against `tests/grammar/grammar.pest` (#643): every 1–3 character string (`parse_edn`) and every balanced token filler up to `MINIGRAF_GRAMMAR_BOUND` (default 3) in 15 command templates (`parse_datalog_command`); pest rejects ⇒ parser rejects, pest accepts ⇒ parser accepts or raises a `SEMANTIC` code; today's drift is `KNOWN_DRIFT`, one entry per cause, removed by its fix (#650; #649, #651 fixed)
    - `executor.rs`: Query executor — temporal filter (tx-time → net-assert → valid-time), not/not-join post-filter
    - `matcher.rs`: Pattern matching with variable unification; `edn_to_value`, `edn_to_entity_id`
    - `aggregate.rs`: `Agg` (one aggregate of one group) and `Running` (a window's running value), shared by the executor and the engine; exact sums (`i128` integers saturated once, fixed-point floats rounded once), `value_order` (one total order of values for window sorts, peers, `rank` and `min`/`max`), `named_vars` (a window's tie-break variables), `windows` (each window's value per row: partitions, sort, peers) (#547)
@@ -206,7 +206,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1661 tests** (1651 passing, 10 ignored; unit + integration + doc).
+**1671 tests** (1661 passing, 10 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.

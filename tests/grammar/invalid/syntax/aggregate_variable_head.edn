@@ -1,0 +1,1 @@
+(query [:find (?f ?b) :where [?a :edge ?b]])

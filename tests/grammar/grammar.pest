@@ -60,8 +60,9 @@ keyword = @{ ":" ~ word_cont+ }
 // Logic variable: starts with "?"
 variable = @{ "?" ~ word_cont* }
 
-// Operator symbols used in expressions
-op_sym = @{ "<=" | ">=" | "!=" | "<" | ">" | "=" | "+" | "*" | "/" }
+// Operator symbols used in expressions. A "-" followed by a word character starts a
+// symbol, and one followed by a digit a number.
+op_sym = @{ "<=" | ">=" | "!=" | "<" | ">" | "=" | "+" | "*" | "/" | "-" ~ !word_cont }
 
 // Plain symbol: letter or underscore start; or "-" followed by at least one word char.
 // Negative lookaheads prevent "true", "false", "nil" from matching as plain symbols.

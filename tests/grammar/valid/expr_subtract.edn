@@ -1,0 +1,1 @@
+(query [:find ?d :where [?a :n ?n] [(- ?n 1) ?d]])

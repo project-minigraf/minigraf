@@ -1,0 +1,1 @@
+(query [:find ?a :where [?a :age ?x] [?b :age ?y] (< ?x ?y)])

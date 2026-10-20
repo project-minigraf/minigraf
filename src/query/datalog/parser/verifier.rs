@@ -21,7 +21,6 @@
 
 use super::{parse_datalog_command, parse_edn};
 use crate::error::MinigrafError;
-use crate::query::datalog::types::EdnValue;
 use pest::Parser as _;
 use std::fmt::Write as _;
 
@@ -226,46 +225,14 @@ enum Cause {
     // Lexical.
     /// `;` starts a line comment in the parser; the grammar has no comments.
     Comment,
-    /// A string with no closing quote reads to the end of the input.
-    UnterminatedString,
     /// A non-ASCII letter or digit in a symbol or keyword (the grammar is ASCII).
     UnicodeLetter,
-    /// `:` with no keyword character after it is the keyword `:`.
-    BareColon,
-    /// `-` with no word character after it is the symbol `-`.
-    LoneMinus,
-    // Structural.
-    /// `(query [])`.
-    EmptyQuery,
-    /// `:find` with no find spec before the next keyword or the end.
-    EmptyFind,
-    /// `:where` with no clause before the next keyword or the end.
-    EmptyWhere,
-    /// `:with` with no variable before the next keyword or the end.
-    EmptyWith,
-    /// A keyword the query vector does not know, with no value after it, is ignored.
-    UnknownKeyword,
-    /// A value after `:as-of`, `:valid-at`, `:any-valid-time` or `:max-*` and its
-    /// argument continues the section before that keyword.
-    ResumedSection,
-    /// A clause list whose head is a variable or an operator is read as a rule call.
-    CallHead,
-    /// A `:find` list whose head is a variable is read as an aggregate.
-    AggregateHead,
-    /// A rule head whose name is not a plain symbol or whose argument is not a
-    /// variable.
-    RuleHead,
 }
 
 impl Cause {
     fn level(self) -> Level {
         match self {
-            Cause::Comment
-            | Cause::UnterminatedString
-            | Cause::UnicodeLetter
-            | Cause::BareColon
-            | Cause::LoneMinus => Level::Lexical,
-            _ => Level::Structural,
+            Cause::Comment | Cause::UnicodeLetter => Level::Lexical,
         }
     }
 }
@@ -284,102 +251,29 @@ const KNOWN_DRIFT: &[Drift] = &[
         min_k: 0,
     },
     Drift {
-        cause: Cause::UnterminatedString,
-        issue: 651,
-        min_k: 0,
-    },
-    Drift {
         cause: Cause::UnicodeLetter,
         issue: 650,
         min_k: 0,
     },
-    Drift {
-        cause: Cause::BareColon,
-        issue: 651,
-        min_k: 0,
-    },
-    Drift {
-        cause: Cause::LoneMinus,
-        issue: 651,
-        min_k: 0,
-    },
-    Drift {
-        cause: Cause::EmptyQuery,
-        issue: 651,
-        min_k: 0,
-    },
-    Drift {
-        cause: Cause::EmptyFind,
-        issue: 651,
-        min_k: 0,
-    },
-    Drift {
-        cause: Cause::EmptyWhere,
-        issue: 651,
-        min_k: 1,
-    },
-    Drift {
-        cause: Cause::EmptyWith,
-        issue: 651,
-        min_k: 1,
-    },
-    Drift {
-        cause: Cause::UnknownKeyword,
-        issue: 651,
-        min_k: 1,
-    },
-    Drift {
-        cause: Cause::ResumedSection,
-        issue: 651,
-        min_k: 3,
-    },
-    Drift {
-        cause: Cause::CallHead,
-        issue: 651,
-        min_k: 3,
-    },
-    Drift {
-        cause: Cause::AggregateHead,
-        issue: 651,
-        min_k: 4,
-    },
-    Drift {
-        cause: Cause::RuleHead,
-        issue: 651,
-        min_k: 1,
-    },
 ];
-
-/// Characters the parser reads as part of a symbol after its first.
-fn symbol_char(c: char) -> bool {
-    c.is_alphanumeric() || matches!(c, '?' | '_' | '-' | '/')
-}
 
 /// The first cause, in text order, of a lexical failure.
 fn lexical_cause(text: &str) -> Option<Cause> {
     let c: Vec<char> = text.chars().collect();
     let mut i = 0;
     while i < c.len() {
-        let next = c.get(i + 1).copied();
         match c[i] {
             '"' => {
                 i += 1;
-                loop {
-                    match c.get(i) {
-                        None => return Some(Cause::UnterminatedString),
-                        Some('\\') => i += 2,
-                        Some('"') => break,
-                        Some(_) => i += 1,
+                while let Some(&ch) = c.get(i) {
+                    match ch {
+                        '\\' => i += 2,
+                        '"' => break,
+                        _ => i += 1,
                     }
                 }
             }
             ';' => return Some(Cause::Comment),
-            ':' if !next.is_some_and(symbol_char) => return Some(Cause::BareColon),
-            '-' if !next.is_some_and(symbol_char)
-                && !(i > 0 && (symbol_char(c[i - 1]) || matches!(c[i - 1], ':' | '#' | '$'))) =>
-            {
-                return Some(Cause::LoneMinus);
-            }
             ch if !ch.is_ascii() && ch.is_alphanumeric() => return Some(Cause::UnicodeLetter),
             _ => {}
         }
@@ -388,137 +282,11 @@ fn lexical_cause(text: &str) -> Option<Cause> {
     None
 }
 
-/// The first cause, in text order, of a structural failure, read from the parser's
-/// EDN tree of the input (glued tokens split as the parser splits them).
-fn structural_cause(text: &str) -> Option<Cause> {
-    let EdnValue::List(cmd) = parse_edn(text).ok()? else {
-        return None;
-    };
-    let arg = cmd.get(1);
-    match cmd.first()? {
-        EdnValue::Symbol(s) if s == "query" => query_cause(arg?.as_vector()?),
-        EdnValue::Symbol(s) if s == "rule" => rule_cause(arg?.as_vector()?),
-        _ => None,
-    }
-}
-
-/// Walks the query vector's sections as `parse_query` does.
-fn query_cause(items: &[EdnValue]) -> Option<Cause> {
-    if items.is_empty() {
-        return Some(Cause::EmptyQuery);
-    }
-    let value_at = |j: usize| items.get(j).is_some_and(|v| v.as_keyword().is_none());
-    // The section that values go to: `:find`, `:where`, or an unknown keyword.
-    let mut section: Option<&str> = None;
-    let mut i = 0;
-    while i < items.len() {
-        let Some(k) = items[i].as_keyword() else {
-            let cause = match section {
-                Some(":where") => clause_cause(&items[i]),
-                Some(":find") => find_cause(&items[i]),
-                _ => None,
-            };
-            if cause.is_some() {
-                return cause;
-            }
-            i += 1;
-            continue;
-        };
-        match k {
-            ":as-of" | ":valid-at" | ":max-derived-facts" | ":max-results" | ":any-valid-time" => {
-                i += if k == ":any-valid-time" { 1 } else { 2 };
-                if section.is_some() && value_at(i) {
-                    return Some(Cause::ResumedSection);
-                }
-            }
-            ":with" => {
-                if !value_at(i + 1) {
-                    return Some(Cause::EmptyWith);
-                }
-                i += 1;
-                while value_at(i) {
-                    i += 1;
-                }
-            }
-            _ if !value_at(i + 1) => {
-                return Some(match k {
-                    ":find" => Cause::EmptyFind,
-                    ":where" => Cause::EmptyWhere,
-                    _ => Cause::UnknownKeyword,
-                });
-            }
-            _ => {
-                section = Some(k);
-                i += 1;
-            }
-        }
-    }
+/// The first cause, in text order, of a structural failure. No structural drift is
+/// known (#651 removed the last); a new cause is read here from the parser's EDN tree
+/// of the input ([`parse_edn`]), which splits glued tokens as the parser does.
+fn structural_cause(_text: &str) -> Option<Cause> {
     None
-}
-
-/// Whether pest's `plain_sym` reads all of `s`.
-fn is_plain_symbol(s: &str) -> bool {
-    let word = |c: char| c.is_ascii_alphanumeric() || matches!(c, '?' | '_' | '-' | '/');
-    let mut chars = s.chars();
-    match chars.next() {
-        Some(c) if c.is_ascii_alphabetic() || c == '_' => chars.all(word),
-        Some('-') => !chars.as_str().is_empty() && chars.all(word),
-        _ => false,
-    }
-}
-
-/// Whether pest's `op_sym` reads all of `s`.
-fn is_op_symbol(s: &str) -> bool {
-    matches!(s, "<=" | ">=" | "!=" | "<" | ">" | "=" | "+" | "*" | "/")
-}
-
-/// The cause in a `:find` spec: an aggregate or window list must start with a name.
-fn find_cause(spec: &EdnValue) -> Option<Cause> {
-    match spec.as_list()?.first()? {
-        EdnValue::Symbol(f) if !is_plain_symbol(f) && !is_op_symbol(f) => {
-            Some(Cause::AggregateHead)
-        }
-        _ => None,
-    }
-}
-
-/// The first cause in a `:where` clause, a negation or disjunction body, or a rule body.
-fn clause_cause(clause: &EdnValue) -> Option<Cause> {
-    let list = clause.as_list()?;
-    let EdnValue::Symbol(head) = list.first()? else {
-        return None;
-    };
-    let rest = &list[1..];
-    match head.as_str() {
-        "not" => rest.iter().find_map(clause_cause),
-        "not-join" => rest.get(1..)?.iter().find_map(clause_cause),
-        "or" => rest.iter().find_map(branch_cause),
-        "or-join" => rest.get(1..)?.iter().find_map(branch_cause),
-        h if !is_plain_symbol(h) => Some(Cause::CallHead),
-        _ => None,
-    }
-}
-
-fn branch_cause(branch: &EdnValue) -> Option<Cause> {
-    match branch.as_list().map(Vec::as_slice) {
-        Some([EdnValue::Symbol(and), body @ ..]) if and == "and" => {
-            body.iter().find_map(clause_cause)
-        }
-        _ => clause_cause(branch),
-    }
-}
-
-fn rule_cause(rule: &[EdnValue]) -> Option<Cause> {
-    let head = rule.first()?.as_list()?;
-    let name_ok = matches!(head.first(), Some(EdnValue::Symbol(s)) if is_plain_symbol(s));
-    let args_ok = head
-        .iter()
-        .skip(1)
-        .all(|a| matches!(a, EdnValue::Symbol(s) if s.starts_with('?')));
-    if !(name_ok && args_ok) {
-        return Some(Cause::RuleHead);
-    }
-    rule[1..].iter().find_map(clause_cause)
 }
 
 // ── The check ─────────────────────────────────────────────────────────────

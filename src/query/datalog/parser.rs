@@ -70,9 +70,11 @@ fn tokenize(input: &str) -> Result<Vec<Token>> {
             '"' => {
                 chars.next(); // consume opening quote
                 let mut string = String::new();
+                let mut closed = false;
                 while let Some(&ch) = chars.peek() {
                     if ch == '"' {
                         chars.next(); // consume closing quote
+                        closed = true;
                         break;
                     } else if ch == '\\' {
                         chars.next();
@@ -96,6 +98,9 @@ fn tokenize(input: &str) -> Result<Vec<Token>> {
                         chars.next();
                     }
                 }
+                if !closed {
+                    bail_coded!(ErrorCode::Prs109);
+                }
                 tokens.push(Token::String(string));
             }
             // Keywords (start with :)
@@ -115,6 +120,9 @@ fn tokenize(input: &str) -> Result<Vec<Token>> {
                     } else {
                         break;
                     }
+                }
+                if keyword.len() == 1 {
+                    bail_coded!(ErrorCode::Prs110);
                 }
                 tokens.push(Token::Keyword(keyword));
             }
@@ -533,7 +541,7 @@ fn parse_aggregate(elems: &[EdnValue]) -> Result<FindSpec> {
     // SAFETY: len == 2 check above guarantees indices 0 and 1 exist
     #[allow(clippy::indexing_slicing)]
     let func_name = match &elems[0] {
-        EdnValue::Symbol(s) => s.clone(),
+        EdnValue::Symbol(s) if !s.starts_with('?') => s.clone(),
         other => {
             let repr = format!("{:?}", other);
             bail_coded!(ErrorCode::Prs025, repr);
@@ -572,7 +580,7 @@ fn parse_window_expr(elems: &[EdnValue]) -> Result<FindSpec> {
     // SAFETY: is_empty() check above guarantees index 0 exists
     #[allow(clippy::indexing_slicing)]
     let func_name = match &elems[0] {
-        EdnValue::Symbol(s) => s.as_str(),
+        EdnValue::Symbol(s) if !s.starts_with('?') => s.as_str(),
         _ => bail_coded!(ErrorCode::Prs029),
     };
 
@@ -702,6 +710,15 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
     let query_vector = elements[0]
         .as_vector()
         .ok_or_else(|| err_coded!(ErrorCode::Prs085))?;
+    if query_vector.is_empty() {
+        bail_coded!(ErrorCode::Prs111);
+    }
+    // Whether the item at `j` is a value, not a keyword or the end of the vector.
+    let value_at = |j: usize| {
+        query_vector
+            .get(j)
+            .is_some_and(|v| v.as_keyword().is_none())
+    };
 
     let mut find_specs: Vec<FindSpec> = Vec::new();
     let mut with_vars: Vec<String> = Vec::new();
@@ -720,6 +737,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
         if let Some(keyword) = current_item.as_keyword() {
             match keyword {
                 ":as-of" => {
+                    current_clause = None;
                     // Next element is the value
                     i += 1;
                     let as_of_val = query_vector
@@ -750,6 +768,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
                     continue;
                 }
                 ":valid-at" => {
+                    current_clause = None;
                     i += 1;
                     let valid_at_val = query_vector
                         .get(i)
@@ -771,6 +790,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
                     continue;
                 }
                 ":any-valid-time" => {
+                    current_clause = None;
                     // Shorthand for `:valid-at :any-valid-time`; disables automatic
                     // valid-time filtering so pseudo-attribute patterns are accessible.
                     query_valid_at = Some(ValidAt::AnyValidTime);
@@ -778,6 +798,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
                     continue;
                 }
                 ":max-derived-facts" => {
+                    current_clause = None;
                     if query_max_derived_facts.is_some() {
                         bail_coded!(ErrorCode::Int012, ":max-derived-facts");
                     }
@@ -803,6 +824,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
                     continue;
                 }
                 ":max-results" => {
+                    current_clause = None;
                     if query_max_results.is_some() {
                         bail_coded!(ErrorCode::Int012, ":max-results");
                     }
@@ -829,6 +851,9 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
                 }
                 ":with" => {
                     // Collect ?-prefixed symbols until the next keyword or end of vector
+                    if !value_at(i + 1) {
+                        bail_coded!(ErrorCode::Prs112, ":with");
+                    }
                     i += 1;
                     while i < query_vector.len() {
                         let with_item = query_vector.get(i).ok_or_else(|| {
@@ -847,10 +872,16 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
                     }
                     continue;
                 }
-                _ => {
+                ":find" | ":where" => {
+                    if !value_at(i + 1) {
+                        bail_coded!(ErrorCode::Prs112, keyword);
+                    }
                     current_clause = Some(keyword);
                     i += 1;
                     continue;
+                }
+                other => {
+                    bail_coded!(ErrorCode::Prs113, other);
                 }
             }
         }
@@ -1174,7 +1205,7 @@ fn parse_expr(list: &[EdnValue]) -> Result<Expr> {
     // SAFETY: is_empty() check above guarantees index 0 exists
     #[allow(clippy::indexing_slicing)]
     let head = match &list[0] {
-        EdnValue::Symbol(s) => s.as_str(),
+        EdnValue::Symbol(s) if !s.starts_with('?') => s.as_str(),
         other => {
             let repr = format!("{:?}", other);
             bail_coded!(ErrorCode::Prs063, repr);
@@ -1317,6 +1348,12 @@ fn parse_expr_clause(vec: &[EdnValue]) -> Result<WhereClause> {
 
 /// Parse a list item (EDN List) appearing in a :where clause or rule body.
 /// Returns Err if the list is empty, has an unknown form, or contains nested `not`.
+/// Whether `s` can name a rule: a symbol that is neither a variable nor an operator
+/// (the grammar's `plain_sym`).
+fn is_name(s: &str) -> bool {
+    s.starts_with(|c: char| c.is_alphabetic() || c == '_') || (s.len() > 1 && s.starts_with('-'))
+}
+
 fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<WhereClause> {
     if list.is_empty() {
         bail_coded!(ErrorCode::Prs050);
@@ -1459,7 +1496,7 @@ fn parse_list_as_where_clause(list: &[EdnValue], allow_not: bool) -> Result<Wher
                 branches,
             })
         }
-        EdnValue::Symbol(predicate) => {
+        EdnValue::Symbol(predicate) if is_name(predicate) => {
             let args = list
                 .get(1..)
                 .ok_or_else(|| err_coded!(ErrorCode::Int011, "rule invocation"))?
@@ -2069,8 +2106,16 @@ fn parse_rule(elements: &[EdnValue]) -> Result<DatalogCommand> {
     // SAFETY: is_empty() check above guarantees index 0 exists
     #[allow(clippy::indexing_slicing)]
     match &head_list[0] {
-        EdnValue::Symbol(_) => {}
+        EdnValue::Symbol(name) if is_name(name) => {}
         _ => bail_coded!(ErrorCode::Prs105),
+    }
+    // SAFETY: head_list is non-empty, so [1..] is valid
+    #[allow(clippy::indexing_slicing)]
+    if let Some(arg) = head_list[1..]
+        .iter()
+        .find(|a| !matches!(a, EdnValue::Symbol(s) if s.starts_with('?')))
+    {
+        bail_coded!(ErrorCode::Prs114, format!("{arg:?}"));
     }
 
     // Rest of body_vec are patterns, rule invocations, or (not ...) clauses
