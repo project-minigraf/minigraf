@@ -1,9 +1,13 @@
 // ── WHITESPACE (auto-skipped between every token) ─────────────────────────
 WHITESPACE = _{ " " | "\t" | "\n" | "\r" | "," }
 
+// Line comment: ";" to the end of the line, skipped like whitespace (#650).
+COMMENT = _{ ";" ~ (!"\n" ~ ANY)* }
+
 // ── WORD-BOUNDARY HELPER ──────────────────────────────────────────────────
-// Used in negative lookaheads to enforce keyword boundaries.
-word_cont = _{ ASCII_ALPHANUMERIC | "?" | "_" | "-" | "/" }
+// Used in negative lookaheads to enforce keyword boundaries. Letters and numerals are
+// Unicode's (Alphabetic; Nd, Nl, No), as the parser reads them (#650).
+word_cont = _{ ALPHABETIC | NUMBER | "?" | "_" | "-" | "/" }
 
 // Literal keywords: atomic, so that no whitespace is skipped before the
 // boundary check (":find?x" is one keyword, as the parser reads it).
@@ -52,7 +56,7 @@ string_lit = @{ "\"" ~ str_char* ~ "\"" }
 uuid_lit = { "#uuid" ~ string_lit }
 
 // Prepared-query bind slot: $name
-bind_slot = @{ "$" ~ (ASCII_ALPHANUMERIC | "_" | "-")+ }
+bind_slot = @{ "$" ~ (ALPHABETIC | NUMBER | "_" | "-")+ }
 
 // Keyword: starts with ":", followed by word constituents (incl. "?")
 keyword = @{ ":" ~ word_cont+ }
@@ -63,11 +67,12 @@ variable = @{ "?" ~ word_cont* }
 // Operator symbols used in expressions
 op_sym = @{ "<=" | ">=" | "!=" | "<" | ">" | "=" | "+" | "*" | "/" }
 
-// Plain symbol: letter or underscore start; or "-" followed by at least one word char.
+// Plain symbol: letter or underscore start; or "-" followed by at least one word char
+// that is not a numeral (after "-" the parser reads a numeral as a number).
 // Negative lookaheads prevent "true", "false", "nil" from matching as plain symbols.
 plain_sym = @{
-    !boolean_lit ~ !nil_lit ~ (ASCII_ALPHA | "_") ~ word_cont*
-    | "-" ~ word_cont+
+    !boolean_lit ~ !nil_lit ~ (ALPHABETIC | "_") ~ word_cont*
+    | "-" ~ !NUMBER ~ word_cont+
 }
 
 // ── EDN VALUE (any EDN atom or container) ─────────────────────────────────
