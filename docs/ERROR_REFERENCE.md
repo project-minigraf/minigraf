@@ -2025,8 +2025,9 @@ without an error (#649), and one whose 4th element was not a map was rejected
 with `PRS-047`.
 
 **Resolution**:
-- Check the brackets: two facts run together, `[e a v {} e2 a2 v2]`, are two
-  vectors, `[e a v {}] [e2 a2 v2]`.
+- Check the brackets: two facts run together,
+  `(transact [[e a v {} e2 a2 v2]])`, are two vectors in the facts vector,
+  `(transact [[e a v {}] [e2 a2 v2]])`.
 
 **Example**:
 ```datalog
