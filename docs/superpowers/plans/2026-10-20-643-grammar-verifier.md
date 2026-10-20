@@ -44,9 +44,10 @@ Each PR updates the test counts (`CLAUDE.md`, `docs/TEST_COVERAGE.md`) and
    (for example `[ ( ?x ?y ) ]`). Its entry would fail the "matches at least one" rule
    at the default `k = 3`. An entry declares `min_k`, and that rule applies only when
    `k ≥ min_k`.
-5. **Correction to spec §3.2: no binding impact.** `ErrorCode` is `pub(crate)`
-   (`error.rs:49`). Bindings see only the code string, and none of the seven binding repos or the
-   playground mentions `INT-019`.
+5. **Correction to spec §3.2: no binding build impact.** `ErrorCode` is `pub(crate)`
+   (`error.rs:49`), so bindings see only the code string. None of the seven binding
+   repos or the playground matches `INT-019`. Users who match code strings are covered
+   by PR 2's `CHANGELOG.md` entry.
 
 ## What the property cannot see
 
