@@ -681,3 +681,146 @@ fn test_pseudo_attributes_in_rule_bodies_read_the_stored_fact() {
         }
     }
 }
+
+/// The error code of a command that must fail.
+fn err_code(db: &Minigraf, input: &str) -> String {
+    match db.execute(input) {
+        Ok(_) => panic!("expected an error for {input}"),
+        Err(e) => e.code().to_string(),
+    }
+}
+
+/// #548: a rule head whose entity is not a ref or a keyword fails the query
+/// with QRY-013 on every path: a positive rule (was INT-022), the magic-sets
+/// rewrite, and rules with `not` or `or` (which dropped the row).
+#[test]
+fn test_rule_head_entity_not_an_entity_is_qry013() {
+    let db = Minigraf::in_memory().unwrap();
+    exec(&db, r#"(transact [[:a :name "alice"] [:b :alias 7]])"#);
+    exec(&db, "(rule [(named ?n ?e) [?e :name ?n]])");
+    exec(
+        &db,
+        "(rule [(visible ?n ?e) [?e :name ?n] (not [?e :hidden true])])",
+    );
+    exec(
+        &db,
+        "(rule [(called ?n ?e) (or [?e :name ?n] [?e :alias ?n])])",
+    );
+    exec(
+        &db,
+        "(rule [(unnamed ?n ?e) [?e :name ?n] (not-join [?e] [?e :hidden true])])",
+    );
+    for query in [
+        "(query [:find ?e :where (named ?n ?e)])",
+        r#"(query [:find ?e :where (named "alice" ?e)])"#,
+        "(query [:find ?e :where (visible ?n ?e)])",
+        "(query [:find ?e :where (called ?n ?e)])",
+        "(query [:find ?e :where (unnamed ?n ?e)])",
+        "(query [:find ?e :where [?e :name _] (not-join [?e] (visible ?n ?e))])",
+    ] {
+        assert_eq!(err_code(&db, query), "QRY-013", "head entity is a value");
+    }
+}
+
+/// #548: a keyword or ref head entity names an entity on every path.
+#[test]
+fn test_rule_head_keyword_and_ref_entities_derive() {
+    let db = Minigraf::in_memory().unwrap();
+    exec(
+        &db,
+        "(transact [[:a :likes :b] [:a :likes :c] [:c :hidden true]])",
+    );
+    exec(&db, "(rule [(liked ?y ?x) [?x :likes ?y]])");
+    exec(
+        &db,
+        "(rule [(shown ?y ?x) [?x :likes ?y] (not [?y :hidden true])])",
+    );
+    let rows = result_rows(exec(&db, "(query [:find ?y :where (liked ?y ?x)])"));
+    assert_eq!(rows.len(), 2, "two liked entities");
+    let rows = result_rows(exec(&db, "(query [:find ?y :where (shown ?y ?x)])"));
+    assert_eq!(rows.len(), 1, "one shown entity");
+}
+
+/// #548: a head variable the body does not bind fails with INT-022 on the
+/// `not`/`or` path too, which dropped the row.
+#[test]
+fn test_rule_head_unbound_variable_is_int022_on_every_path() {
+    let db = Minigraf::in_memory().unwrap();
+    exec(&db, r#"(transact [[:a :name "alice"]])"#);
+    exec(&db, "(rule [(loose ?x ?y) [?x :name _]])");
+    exec(
+        &db,
+        "(rule [(looser ?x ?y) [?x :name _] (not [?x :hidden true])])",
+    );
+    for query in [
+        "(query [:find ?x :where (loose ?x ?y)])",
+        "(query [:find ?x :where (looser ?x ?y)])",
+    ] {
+        assert_eq!(err_code(&db, query), "INT-022", "unbound head variable");
+    }
+}
+
+/// #548: a derived fact has no metadata. A per-fact pseudo-attribute whose
+/// source matched one binds nil (the row is kept), and a constant never
+/// matches it; a stored fact of the same attribute keeps its own. Facts
+/// derived by positive rules and by rules with `not` alike.
+#[test]
+fn test_derived_facts_have_nil_metadata() {
+    let db = Minigraf::in_memory().unwrap();
+    exec(&db, "(transact [[:a :edge :b] [:b :edge :c]])");
+    exec(&db, "(transact [[:z :reach :w]])");
+    exec(&db, "(rule [(reach ?x ?y) [?x :edge ?y]])");
+    exec(&db, "(rule [(reach ?x ?y) [?x :edge ?z] (reach ?z ?y)])");
+    exec(&db, "(rule [(leaf ?x) [?y :edge ?x] (not [?x :edge _])])");
+
+    for attr in [
+        ":db/valid-from",
+        ":db/valid-to",
+        ":db/tx-count",
+        ":db/tx-id",
+    ] {
+        let rows = result_rows(exec(
+            &db,
+            &format!(
+                "(query [:find ?x ?y ?m :valid-at :any-valid-time :where (reach ?x ?y) [?x :reach ?y] [?x {attr} ?m]])"
+            ),
+        ));
+        assert_eq!(rows.len(), 4, "three derived facts and a stored one");
+        let nils = rows.iter().filter(|r| r[2] == Value::Null).count();
+        assert_eq!(nils, 3, "derived facts bind nil");
+
+        let rows = result_rows(exec(
+            &db,
+            &format!(
+                "(query [:find ?x ?m :valid-at :any-valid-time :where (leaf ?x) [?x :leaf ?v] [?x {attr} ?m]])"
+            ),
+        ));
+        assert_eq!(rows.len(), 1, "one leaf");
+        assert_eq!(rows[0][1], Value::Null, "a derived leaf binds nil");
+    }
+
+    let rows = result_rows(exec(
+        &db,
+        "(query [:find ?x :valid-at :any-valid-time :where (reach ?x ?y) [?x :reach ?y] [?x :db/tx-count 2]])",
+    ));
+    assert_eq!(rows.len(), 1, "a constant matches the stored fact only");
+}
+
+/// #548: an `or` branch in a rule body knows the database's registered
+/// predicates, not the built-ins only.
+#[test]
+fn test_rule_or_branch_uses_registered_predicates() {
+    let db = Minigraf::in_memory().unwrap();
+    db.register_predicate("big?", |v| matches!(v, Value::Integer(n) if *n > 100))
+        .unwrap();
+    exec(
+        &db,
+        "(transact [[:a :n 500] [:b :n 5] [:c :n 6] [:c :special true]])",
+    );
+    exec(
+        &db,
+        "(rule [(notable ?x) [?x :n ?v] (or [(big? ?v)] [?x :special true])])",
+    );
+    let rows = result_rows(exec(&db, "(query [:find ?x :where (notable ?x)])"));
+    assert_eq!(rows.len(), 2, "a by the predicate, c by the branch pattern");
+}

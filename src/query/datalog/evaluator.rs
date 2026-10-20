@@ -187,13 +187,8 @@ impl RecursiveEvaluator {
                 break;
             }
 
-            // Add delta facts to derived storage
-            for fact in delta {
-                derived.transact(
-                    vec![(fact.entity, fact.attribute.clone(), fact.value.clone())],
-                    None,
-                )?;
-            }
+            // Add delta facts to derived storage, as derived (tx-count 0)
+            derived.load_facts(delta)?;
         }
 
         Ok(derived)
@@ -368,8 +363,14 @@ impl RecursiveEvaluator {
             .get(1)
             .ok_or_else(|| err_coded!(ErrorCode::Int022, "Rule head missing entity argument"))?;
         let entity_edn = self.substitute_variable(head_1, binding)?;
-        let entity = edn_to_entity_id(&entity_edn)
-            .map_err(|e| err_coded!(ErrorCode::Int022, format!("Failed to convert entity: {e}")))?;
+        // Only a ref or a keyword names an entity; anything else fails the
+        // query, on every path (#548).
+        let entity = edn_to_entity_id(&entity_edn).map_err(|_| {
+            let kind = edn_to_value(&entity_edn)
+                .map(|v| crate::query::datalog::aggregate::type_name(&v))
+                .unwrap_or("symbol");
+            err_coded!(ErrorCode::Qry013, predicate, kind)
+        })?;
 
         let value = if head.len() >= 3 {
             // 2-arg head: (reachable ?from ?to) — value is head[2]
@@ -389,7 +390,8 @@ impl RecursiveEvaluator {
         // Use ":predicate-name" as the attribute for derived facts
         let attribute = format!(":{}", predicate);
 
-        // Create the fact (no tx_id yet, will be added when transacted)
+        // A derived fact has no metadata: tx-count 0, which no stored fact
+        // has, makes a per-fact pseudo-attribute read `nil` from it (#548).
         Ok(Fact::new(entity, attribute, value, 0))
     }
 
@@ -889,15 +891,16 @@ impl StratifiedEvaluator {
                     // Apply Or/OrJoin clauses (unchanged, applied after the plan loop).
                     let candidates = {
                         use crate::query::datalog::executor::apply_or_clauses;
-                        use crate::query::datalog::functions::FunctionRegistry;
                         let registry_guard = self
                             .rules
                             .read()
                             .map_err(|_| err_coded!(ErrorCode::Qry009))?;
-                        // Rule bodies in the semi-naive evaluator don't have access to a
-                        // FunctionRegistry (UDF registration happens at the db layer). Use the
-                        // built-in-only registry so or-branches can still use built-in predicates.
-                        let fn_registry = FunctionRegistry::with_builtins();
+                        // The database's functions: a registered predicate in
+                        // an or branch is known there too (#548).
+                        let fn_registry = self
+                            .functions
+                            .read()
+                            .map_err(|_| err_coded!(ErrorCode::Qry008))?;
                         // An or branch binds `:db/valid-at` from a `ValidAt`, the
                         // inverse of the executor's mapping to `self.valid_at`.
                         let branch_valid_at = match &self.valid_at {
@@ -982,25 +985,24 @@ impl StratifiedEvaluator {
                         }
 
                         // All Not / NotJoin conditions held -> derive head fact
-                        if let Ok(fact) = temp_eval.instantiate_head_public(&rule.head, &binding) {
-                            let key = (
-                                fact.entity,
-                                fact.attribute.clone(),
-                                encode_value(&fact.value),
-                            );
-                            if !known.insert(key) {
-                                continue;
-                            }
-                            new_in_pass = true;
-                            derived_total += 1;
-                            if derived_total > self.max_derived_facts {
-                                return Err(derived_facts_exceeded(self.max_derived_facts));
-                            }
-                            // Use transact (not load_fact) so derived facts get a proper
-                            // tx_id and incremented tx_count, matching spec step (d).
-                            let _ = accumulated
-                                .transact(vec![(fact.entity, fact.attribute, fact.value)], None);
+                        // A head that is not an entity, or names an unbound
+                        // variable, fails the query as on the positive path (#548).
+                        let fact = temp_eval.instantiate_head_public(&rule.head, &binding)?;
+                        let key = (
+                            fact.entity,
+                            fact.attribute.clone(),
+                            encode_value(&fact.value),
+                        );
+                        if !known.insert(key) {
+                            continue;
                         }
+                        new_in_pass = true;
+                        derived_total += 1;
+                        if derived_total > self.max_derived_facts {
+                            return Err(derived_facts_exceeded(self.max_derived_facts));
+                        }
+                        // Loaded as derived (tx-count 0): no metadata (#548).
+                        accumulated.load_fact(fact)?;
                     }
                 }
 
@@ -1267,6 +1269,37 @@ mod tests {
             result.is_err(),
             "head with only predicate and no arg should fail"
         );
+    }
+
+    #[test]
+    fn test_head_entity_must_be_an_entity() {
+        // A value or a bare symbol as the head entity is QRY-013 (#548).
+        let evaluator = RecursiveEvaluator::new(
+            FactStorage::new(),
+            Arc::new(RwLock::new(RuleRegistry::new())),
+            Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
+            1000,
+            DEFAULT_MAX_DERIVED_FACTS,
+        );
+        let binding = std::collections::HashMap::new();
+        for entity in [
+            EdnValue::String("x".to_string()),
+            EdnValue::Integer(1),
+            EdnValue::Symbol("foo".to_string()),
+        ] {
+            let head = vec![EdnValue::Symbol("p".to_string()), entity];
+            let err: crate::error::MinigrafError = evaluator
+                .instantiate_head(&head, &binding)
+                .unwrap_err()
+                .into();
+            assert_eq!(err.code(), "QRY-013", "not an entity");
+        }
+        let head = vec![
+            EdnValue::Symbol("p".to_string()),
+            EdnValue::Keyword(":a".to_string()),
+        ];
+        let fact = evaluator.instantiate_head(&head, &binding).unwrap();
+        assert_eq!(fact.tx_count, 0, "a derived fact has tx-count 0");
     }
 
     #[test]

@@ -314,7 +314,7 @@ fn canonical(v: &Value) -> Value {
 }
 
 /// The type name used in error messages.
-fn type_name(v: &Value) -> &'static str {
+pub(crate) fn type_name(v: &Value) -> &'static str {
     match v {
         Value::String(_) => "String",
         Value::Integer(_) => "Integer",

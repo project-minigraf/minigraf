@@ -172,6 +172,8 @@ pub(crate) enum ErrorCode {
     Qry009,
     Qry010,
     Qry011,
+    // QRY-012 is reserved for the query memory limit (#549).
+    Qry013,
     Int000,
     Stg001,
     Stg002,
@@ -1067,6 +1069,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Qry011,
         "QRY-011",
         "unknown window function '{}' — register it with register_aggregate() before querying",
+        ErrorCategory::Query,
+    ),
+    (
+        ErrorCode::Qry013,
+        "QRY-013",
+        "rule head entity is not an entity: rule '{}' gives a {} where a ref or a keyword is needed",
         ErrorCategory::Query,
     ),
     (
@@ -2267,6 +2275,7 @@ mod tests {
                 | ErrorCode::Qry009
                 | ErrorCode::Qry010
                 | ErrorCode::Qry011
+                | ErrorCode::Qry013
                 | ErrorCode::Stg001
                 | ErrorCode::Stg002
                 | ErrorCode::Stg003
@@ -2527,6 +2536,7 @@ mod tests {
             ErrorCode::Qry009,
             ErrorCode::Qry010,
             ErrorCode::Qry011,
+            ErrorCode::Qry013,
             ErrorCode::Stg001,
             ErrorCode::Stg002,
             ErrorCode::Stg003,
