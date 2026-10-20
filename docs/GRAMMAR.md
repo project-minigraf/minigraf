@@ -4,13 +4,13 @@
 
 This EBNF is the structural syntax of Minigraf's Datalog commands. It is generated from `tests/grammar/grammar.pest`, the grammar the parser is tested against: for every input up to a size bound, a test checks that the parser rejects what the grammar rejects, and accepts what it accepts unless a semantic rule rejects it. To change this page, edit the grammar and run `UPDATE_GRAMMAR_DOC=1 cargo test --test grammar_doc`.
 
-Between tokens the parser skips spaces, tabs, newlines, carriage returns and commas. Inside a rule marked `(* token *)` nothing is skipped, and the rules it uses are read the same way.
+Between tokens the parser skips spaces, tabs, newlines, carriage returns and commas. It also skips comments: `;` and the rest of its line. Inside a rule marked `(* token *)` nothing is skipped, and the rules it uses are read the same way.
 
 EBNF has no lookahead, so a pest lookahead appears as a comment: `(* not followed by x *)` means the next characters must not match `x`, and nothing is read. Literals have no escapes: `"\"` is one backslash and `'"'` one double quote.
 
 ```ebnf
 (* ── WORD-BOUNDARY HELPER ── *)
-word-cont            ::= letter | digit | "?" | "_" | "-" | "/"
+word-cont            ::= letter | numeral | "?" | "_" | "-" | "/"
 kw-find              ::= ":find" (* not followed by word-cont *)  (* token *)
 kw-where             ::= ":where" (* not followed by word-cont *)  (* token *)
 kw-with              ::= ":with" (* not followed by word-cont *)  (* token *)
@@ -38,13 +38,13 @@ str-char    ::= "\" ("n" | "t" | "r" | '"' | "\" | any-char)
               | (* not followed by '"' | "\" *) any-char
 string-lit  ::= '"' str-char* '"'  (* token *)
 uuid-lit    ::= "#uuid" string-lit
-bind-slot   ::= "$" (letter | digit | "_" | "-")+  (* token *)
+bind-slot   ::= "$" (letter | numeral | "_" | "-")+  (* token *)
 keyword     ::= ":" word-cont+  (* token *)
 variable    ::= "?" word-cont*  (* token *)
 op-sym      ::= "<=" | ">=" | "!=" | "<" | ">" | "=" | "+" | "*" | "/"
               | "-" (* not followed by word-cont *)  (* token *)
 plain-sym   ::= (* not followed by boolean-lit *) (* not followed by nil-lit *) (letter | "_") word-cont*
-              | "-" word-cont+  (* token *)
+              | "-" (* not followed by numeral *) word-cont+  (* token *)
 
 (* ── EDN VALUE (any EDN atom or container) ── *)
 edn-value  ::= uuid-lit | boolean-lit | nil-lit | float-lit | integer-lit | string-lit
@@ -122,7 +122,7 @@ rule-cmd    ::= "(" "rule" rule-vector ")"
 rule-vector ::= "[" rule-head where-clause* "]"
 rule-head   ::= "(" plain-sym variable* ")"
 
-(* letter = "a".."z" | "A".."Z"; digit = "0".."9"; any-char = any one character *)
+(* letter = a character Unicode calls Alphabetic; numeral = a character in Unicode's number categories (Nd, Nl, No), digits included; digit = "0".."9"; any-char = any one character *)
 ```
 
 Input that matches this grammar can still be rejected: the parser also enforces the rules in the Semantic Constraints section of the Datalog reference (variable safety, binding, aggregate and window compatibility, UUID and timestamp formats).

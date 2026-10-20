@@ -219,21 +219,15 @@ fn is_semantic(code: &str) -> bool {
 
 // ── Known drift ───────────────────────────────────────────────────────────
 
-/// The cause a failing input is put down to.
+/// The cause a failing input is put down to. No drift is known today (#649, #650 and
+/// #651 fixed the last); a new cause gets a variant, an entry in [`KNOWN_DRIFT`] and an
+/// arm in [`lexical_cause`] or [`structural_cause`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Cause {
-    // Lexical.
-    /// `;` starts a line comment in the parser; the grammar has no comments.
-    Comment,
-    /// A non-ASCII letter or digit in a symbol or keyword (the grammar is ASCII).
-    UnicodeLetter,
-}
+enum Cause {}
 
 impl Cause {
     fn level(self) -> Level {
-        match self {
-            Cause::Comment | Cause::UnicodeLetter => Level::Lexical,
-        }
+        match self {}
     }
 }
 
@@ -244,47 +238,15 @@ struct Drift {
     min_k: usize,
 }
 
-const KNOWN_DRIFT: &[Drift] = &[
-    Drift {
-        cause: Cause::Comment,
-        issue: 650,
-        min_k: 0,
-    },
-    Drift {
-        cause: Cause::UnicodeLetter,
-        issue: 650,
-        min_k: 0,
-    },
-];
+const KNOWN_DRIFT: &[Drift] = &[];
 
 /// The first cause, in text order, of a lexical failure.
-fn lexical_cause(text: &str) -> Option<Cause> {
-    let c: Vec<char> = text.chars().collect();
-    let mut i = 0;
-    while i < c.len() {
-        match c[i] {
-            '"' => {
-                i += 1;
-                while let Some(&ch) = c.get(i) {
-                    match ch {
-                        '\\' => i += 2,
-                        '"' => break,
-                        _ => i += 1,
-                    }
-                }
-            }
-            ';' => return Some(Cause::Comment),
-            ch if !ch.is_ascii() && ch.is_alphanumeric() => return Some(Cause::UnicodeLetter),
-            _ => {}
-        }
-        i += 1;
-    }
+fn lexical_cause(_text: &str) -> Option<Cause> {
     None
 }
 
-/// The first cause, in text order, of a structural failure. No structural drift is
-/// known (#651 removed the last); a new cause is read here from the parser's EDN tree
-/// of the input ([`parse_edn`]), which splits glued tokens as the parser does.
+/// The first cause, in text order, of a structural failure, read from the parser's EDN
+/// tree of the input ([`parse_edn`]), which splits glued tokens as the parser does.
 fn structural_cause(_text: &str) -> Option<Cause> {
     None
 }

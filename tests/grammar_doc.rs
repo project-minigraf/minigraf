@@ -37,11 +37,8 @@ fn kebab(name: &str) -> String {
 fn builtin(name: &str) -> Option<Node> {
     Some(match name {
         "ASCII_DIGIT" => Node::Name("digit".into()),
-        "ASCII_ALPHA" => Node::Name("letter".into()),
-        "ASCII_ALPHANUMERIC" => Node::Alt(vec![
-            Node::Name("letter".into()),
-            Node::Name("digit".into()),
-        ]),
+        "ALPHABETIC" => Node::Name("letter".into()),
+        "NUMBER" => Node::Name("numeral".into()),
         "ANY" => Node::Name("any-char".into()),
         _ => return None,
     })
@@ -125,7 +122,7 @@ fn inline(e: &Expr) -> String {
 fn quote(s: &str) -> String {
     assert!(
         s.chars().all(|c| !c.is_control()),
-        "grammar_doc: control character in a literal outside WHITESPACE"
+        "grammar_doc: control character in a literal outside WHITESPACE and COMMENT"
     );
     if s.contains('"') {
         assert!(!s.contains('\''), "grammar_doc: literal with both quotes");
@@ -224,10 +221,23 @@ fn whitespace_note(expr: &Expr) -> String {
         Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
         None => unreachable!(),
     };
-    format!(
-        "Between tokens the parser skips {list}. Inside a rule marked `(* token *)` \
-         nothing is skipped, and the rules it uses are read the same way."
-    )
+    format!("Between tokens the parser skips {list}.")
+}
+
+/// What `COMMENT` skips, as a sentence. Only a line comment is described.
+fn comment_note(expr: &Expr) -> String {
+    let Expr::Seq(start, rest) = expr else {
+        panic!("grammar_doc: COMMENT is not a start and a rest");
+    };
+    let line_rest = matches!(&**rest, Expr::Rep(e) if matches!(&**e,
+        Expr::Seq(not, any) if matches!(&**not, Expr::NegPred(nl) if matches!(&**nl, Expr::Str(s) if s == "\n"))
+            && matches!(&**any, Expr::Ident(a) if a == "ANY")));
+    match &**start {
+        Expr::Str(s) if line_rest => {
+            format!("It also skips comments: `{s}` and the rest of its line.")
+        }
+        _ => panic!("grammar_doc: COMMENT is not a line comment"),
+    }
 }
 
 /// The title of a `// ── X ──` line.
@@ -264,6 +274,7 @@ fn render(src: &str) -> String {
             pending = Some(title.to_string());
         } else if let Some(name) = defined_rule(line)
             && name != "WHITESPACE"
+            && name != "COMMENT"
             && !SKIPPED.contains(&name)
             && let Some(title) = pending.take()
         {
@@ -273,10 +284,15 @@ fn render(src: &str) -> String {
 
     // Rules grouped into sections; names are aligned within a section.
     let mut note = None;
+    let mut comment = None;
     let mut sections: Vec<(Option<String>, Vec<(String, Node, bool)>)> = Vec::new();
     for rule in &rules {
         if rule.name == "WHITESPACE" {
             note = Some(whitespace_note(&rule.expr));
+            continue;
+        }
+        if rule.name == "COMMENT" {
+            comment = Some(comment_note(&rule.expr));
             continue;
         }
         if SKIPPED.contains(&rule.name.as_str()) {
@@ -311,7 +327,8 @@ fn render(src: &str) -> String {
         ebnf.push(String::new());
     }
     ebnf.push(
-        "(* letter = \"a\"..\"z\" | \"A\"..\"Z\"; digit = \"0\"..\"9\"; \
+        "(* letter = a character Unicode calls Alphabetic; numeral = a character in \
+         Unicode's number categories (Nd, Nl, No), digits included; digit = \"0\"..\"9\"; \
          any-char = any one character *)"
             .into(),
     );
@@ -344,7 +361,18 @@ fn render(src: &str) -> String {
          (variable safety, binding, aggregate and window compatibility, UUID and \
          timestamp formats).\n",
         ebnf.join("\n").trim_end(),
-        note = note.expect("grammar.pest defines WHITESPACE"),
+        note = match comment {
+            Some(comment) => format!(
+                "{} {comment} Inside a rule marked `(* token *)` nothing is skipped, and the \
+                 rules it uses are read the same way.",
+                note.expect("grammar.pest defines WHITESPACE")
+            ),
+            None => format!(
+                "{} Inside a rule marked `(* token *)` nothing is skipped, and the rules it \
+                 uses are read the same way.",
+                note.expect("grammar.pest defines WHITESPACE")
+            ),
+        },
     )
 }
 
@@ -399,9 +427,9 @@ fn renders_sequence_choice_and_grouping() {
 #[test]
 fn renders_names_builtins_and_drops_soi_eoi() {
     let ebnf = ebnf_of(&format!(
-        "{WS}top_rule = {{ SOI ~ ASCII_ALPHANUMERIC ~ ASCII_DIGIT ~ ASCII_ALPHA ~ ANY ~ EOI }}\n"
+        "{WS}top_rule = {{ SOI ~ ALPHABETIC ~ NUMBER ~ ASCII_DIGIT ~ ANY ~ EOI }}\n"
     ));
-    assert!(ebnf.contains("top-rule ::= (letter | digit) digit letter any-char\n"));
+    assert!(ebnf.contains("top-rule ::= letter numeral digit any-char\n"));
 }
 
 #[test]
@@ -464,6 +492,16 @@ fn whitespace_becomes_the_note() {
     let src = "WHITESPACE = _{ \" \" | \"\\t\" | \"\\n\" | \"\\r\" | \",\" }\na = { \"a\" }\n";
     assert!(render(src).contains(
         "Between tokens the parser skips spaces, tabs, newlines, carriage returns and commas."
+    ));
+    assert_eq!(ebnf_of(src).lines().next(), Some("a ::= \"a\""));
+}
+
+#[test]
+fn comment_joins_the_note() {
+    let src = "WHITESPACE = _{ \" \" }\nCOMMENT = _{ \";\" ~ (!\"\\n\" ~ ANY)* }\na = { \"a\" }\n";
+    assert!(render(src).contains(
+        "Between tokens the parser skips spaces. It also skips comments: `;` and the rest of \
+         its line. Inside a rule"
     ));
     assert_eq!(ebnf_of(src).lines().next(), Some("a ::= \"a\""));
 }
