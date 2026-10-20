@@ -1901,6 +1901,9 @@ fn parse_rule(elements: &[EdnValue]) -> Result<DatalogCommand> {
     }))
 }
 
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod verifier;
+
 #[cfg(test)]
 mod tests {
     use super::*;
