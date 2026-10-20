@@ -351,12 +351,15 @@ fn render(src: &str) -> String {
 #[test]
 fn grammar_doc_is_current() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/GRAMMAR.md");
-    let rendered = render(GRAMMAR);
+    // A Windows checkout may turn either file's line endings into CRLF.
+    let rendered = render(&GRAMMAR.replace("\r\n", "\n"));
     if std::env::var_os("UPDATE_GRAMMAR_DOC").is_some_and(|v| v == "1") {
         std::fs::write(&path, &rendered).expect("write docs/GRAMMAR.md");
         return;
     }
-    let current = std::fs::read_to_string(&path).unwrap_or_default();
+    let current = std::fs::read_to_string(&path)
+        .unwrap_or_default()
+        .replace("\r\n", "\n");
     if current != rendered {
         let (n, want, have) = rendered
             .lines()
