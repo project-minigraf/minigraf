@@ -146,6 +146,7 @@ with no `CodedError` anywhere in its chain.
 | QRY-009 | Rules lock poisoned | Query Execution |
 | QRY-010 | Unknown aggregate function | Query Execution |
 | QRY-011 | Unknown window function | Query Execution |
+| QRY-013 | Rule head entity is not an entity | Query Execution |
 | STG-001 | Invalid header: too short | Storage |
 | STG-002 | Invalid magic number: not a .graph file | Storage |
 | STG-003 | Invalid v4/v5/v6 header too short (deprecated) | Storage |
@@ -2304,6 +2305,23 @@ predicate evaluation, or fact transacting.
 (query [:find ?b (frob ?b :over (:order-by ?b)) :where [?a :x ?b]])
 ```
 *`frob` is not a window built-in; register it first*
+
+### QRY-013 Rule head entity is not an entity
+
+**Error text**: `rule head entity is not an entity: rule '{}' gives a {} where a ref or a keyword is needed`
+
+**Cause**: A rule produced a head whose first argument, the entity of the fact it derives, is not an entity: a string, a number, a boolean or `nil`. Only a ref, or a keyword (which names the entity `uuidv5(keyword)`), is an entity. The head's second argument, the value, may be any value. The query that invoked the rule fails, whether the rule has `not`/`not-join`/`or`/`or-join` clauses or not. Before v3.0.0 a positive rule failed with INT-022 and a rule with `not`/`or` clauses silently dropped the row. (QRY-012 is reserved.)
+
+**Resolution**:
+- Put an entity variable first in the head: `(owner ?item ?person)`, not `(owner ?name ?item)` where `?name` binds a string.
+- To derive a fact about a value, keep the entity first and the value second.
+
+**Example**:
+```datalog
+(rule [(named ?n ?e) [?e :name ?n]])
+(query [:find ?e :where (named ?n ?e)])
+```
+*`?n` binds a string, so rule `named` gives a String as its entity*
 
 ---
 

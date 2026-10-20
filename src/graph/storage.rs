@@ -428,6 +428,10 @@ impl FactStorage {
     ///
     /// # Returns
     /// The TxId (timestamp) assigned to these facts
+    ///
+    /// Test-only since rules stopped transacting derived facts (#548);
+    /// writes go through `transact_batch`.
+    #[cfg(test)]
     pub(crate) fn transact(
         &self,
         fact_tuples: Vec<(EntityId, Attribute, Value)>,

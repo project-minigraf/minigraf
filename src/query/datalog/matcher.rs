@@ -132,8 +132,12 @@ impl PatternMatcher {
     }
 
     /// The metadata `attr` of `fact`. `:db/valid-at` is not per fact; it
-    /// never names a hidden variable.
+    /// never names a hidden variable. A fact a rule derived (tx-count 0,
+    /// which no stored fact has) has no metadata: `nil` (#548).
     fn metadata(fact: &Fact, attr: &PseudoAttr) -> Value {
+        if fact.tx_count == 0 {
+            return Value::Null;
+        }
         Value::Integer(match attr {
             PseudoAttr::ValidFrom | PseudoAttr::ValidAt => fact.valid_from,
             PseudoAttr::ValidTo => fact.valid_to,
