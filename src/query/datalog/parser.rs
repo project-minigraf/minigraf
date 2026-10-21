@@ -31,309 +31,343 @@ enum Token {
 }
 
 /// Tokenize EDN input
+#[cfg(test)]
 fn tokenize(input: &str) -> Result<Vec<Token>> {
-    let mut tokens = Vec::new();
-    let mut chars = input.chars().peekable();
-
-    while let Some(&ch) = chars.peek() {
-        match ch {
-            // Whitespace
-            ' ' | '\t' | '\n' | '\r' | ',' => {
-                chars.next();
-            }
-            // Parens and brackets
-            '(' => {
-                tokens.push(Token::LeftParen);
-                chars.next();
-            }
-            ')' => {
-                tokens.push(Token::RightParen);
-                chars.next();
-            }
-            '[' => {
-                tokens.push(Token::LeftBracket);
-                chars.next();
-            }
-            ']' => {
-                tokens.push(Token::RightBracket);
-                chars.next();
-            }
-            '{' => {
-                tokens.push(Token::LeftBrace);
-                chars.next();
-            }
-            '}' => {
-                tokens.push(Token::RightBrace);
-                chars.next();
-            }
-            // String literals
-            '"' => {
-                chars.next(); // consume opening quote
-                let mut string = String::new();
-                let mut closed = false;
-                while let Some(&ch) = chars.peek() {
-                    if ch == '"' {
-                        chars.next(); // consume closing quote
-                        closed = true;
-                        break;
-                    } else if ch == '\\' {
-                        chars.next();
-                        // Handle escape sequences
-                        if let Some(&escaped) = chars.peek() {
-                            chars.next();
-                            match escaped {
-                                'n' => string.push('\n'),
-                                't' => string.push('\t'),
-                                'r' => string.push('\r'),
-                                '"' => string.push('"'),
-                                '\\' => string.push('\\'),
-                                _ => string.push(escaped),
-                            }
-                        }
-                    } else {
-                        if string.len() >= MAX_STRING_LENGTH {
-                            bail_coded!(ErrorCode::Prs007, MAX_STRING_LENGTH);
-                        }
-                        string.push(ch);
-                        chars.next();
-                    }
-                }
-                if !closed {
-                    bail_coded!(ErrorCode::Prs109);
-                }
-                tokens.push(Token::String(string));
-            }
-            // Keywords (start with :)
-            ':' => {
-                chars.next();
-                let mut keyword = String::from(":");
-                while let Some(&ch) = chars.peek() {
-                    // '?' is a constituent character, matching symbols (see below) and
-                    // EDN itself — predicate-style names like :person/alive? are idiomatic.
-                    // A keyword can never be a query variable, so there is no ambiguity.
-                    if ch.is_alphanumeric() || ch == '/' || ch == '-' || ch == '_' || ch == '?' {
-                        if keyword.len() >= MAX_KEYWORD_LENGTH {
-                            bail_coded!(ErrorCode::Prs008, MAX_KEYWORD_LENGTH);
-                        }
-                        keyword.push(ch);
-                        chars.next();
-                    } else {
-                        break;
-                    }
-                }
-                if keyword.len() == 1 {
-                    bail_coded!(ErrorCode::Prs110);
-                }
-                tokens.push(Token::Keyword(keyword));
-            }
-            // Tagged literals (start with #)
-            '#' => {
-                chars.next();
-                let mut tag = String::new();
-                while let Some(&ch) = chars.peek() {
-                    if ch.is_alphanumeric() || ch == '-' {
-                        if tag.len() >= MAX_SYMBOL_LENGTH {
-                            bail_coded!(ErrorCode::Prs009, MAX_SYMBOL_LENGTH);
-                        }
-                        tag.push(ch);
-                        chars.next();
-                    } else {
-                        break;
-                    }
-                }
-                tokens.push(Token::TaggedLiteral(tag));
-            }
-            // Numbers or symbols starting with -
-            '-' => {
-                let start_pos = chars.clone();
-                chars.next();
-                if let Some(&next_ch) = chars.peek() {
-                    if next_ch.is_numeric() {
-                        // It's a negative number
-                        let mut num_str = String::from("-");
-                        let (is_float, num) = parse_number(&mut chars, &mut num_str)?;
-                        if is_float {
-                            let f: f64 = num
-                                .parse()
-                                .map_err(|_| err_coded!(ErrorCode::Int007, num.clone()))?;
-                            tokens.push(Token::Float(f));
-                        } else {
-                            let i: i64 = num
-                                .parse()
-                                .map_err(|_| err_coded!(ErrorCode::Int008, num.clone()))?;
-                            tokens.push(Token::Integer(i));
-                        }
-                    } else {
-                        // It's a symbol starting with -
-                        chars = start_pos;
-                        chars.next();
-                        let symbol = parse_symbol(&mut chars, '-')?;
-                        tokens.push(Token::Symbol(symbol));
-                    }
-                } else {
-                    // Just a - symbol
-                    tokens.push(Token::Symbol("-".to_string()));
-                }
-            }
-            // Numbers
-            '0'..='9' => {
-                let mut num_str = String::new();
-                let (is_float, num) = parse_number(&mut chars, &mut num_str)?;
-                if is_float {
-                    let f: f64 = num
-                        .parse()
-                        .map_err(|_| err_coded!(ErrorCode::Int007, num.clone()))?;
-                    tokens.push(Token::Float(f));
-                } else {
-                    let i: i64 = num
-                        .parse()
-                        .map_err(|_| err_coded!(ErrorCode::Int008, num.clone()))?;
-                    tokens.push(Token::Integer(i));
-                }
-            }
-            // Symbols (including variables starting with ?)
-            _ if ch.is_alphabetic() || ch == '?' || ch == '_' => {
-                let mut symbol = String::new();
-                while let Some(&ch) = chars.peek() {
-                    if ch.is_alphanumeric() || ch == '?' || ch == '_' || ch == '-' || ch == '/' {
-                        if symbol.len() >= MAX_SYMBOL_LENGTH {
-                            bail_coded!(ErrorCode::Int009, MAX_SYMBOL_LENGTH);
-                        }
-                        symbol.push(ch);
-                        chars.next();
-                    } else {
-                        break;
-                    }
-                }
-
-                // Check for special symbols
-                match symbol.as_str() {
-                    "true" => tokens.push(Token::Boolean(true)),
-                    "false" => tokens.push(Token::Boolean(false)),
-                    "nil" => tokens.push(Token::Nil),
-                    _ => tokens.push(Token::Symbol(symbol)),
-                }
-            }
-            // Operator symbols: <, <=, >, >=, =, !=, +, *, /
-            '<' | '>' | '=' | '+' | '*' | '/' => {
-                chars.next();
-                let mut sym = String::from(ch);
-                // Consume a trailing '=' to form <=, >=
-                if (ch == '<' || ch == '>') && chars.peek() == Some(&'=') {
-                    sym.push('=');
-                    chars.next();
-                }
-                tokens.push(Token::Symbol(sym));
-            }
-            '!' => {
-                chars.next();
-                if chars.peek() == Some(&'=') {
-                    chars.next();
-                    tokens.push(Token::Symbol("!=".to_string()));
-                } else {
-                    bail_coded!(ErrorCode::Prs002, '!');
-                }
-            }
-            // EDN line comment: skip from ';' to the next newline (or end of input)
-            ';' => {
-                chars.next(); // consume ';'
-                while let Some(&c) = chars.peek() {
-                    if c == '\n' {
-                        break;
-                    }
-                    chars.next();
-                }
-            }
-            '$' => {
-                chars.next(); // consume '$'
-                let mut name = String::new();
-                while let Some(&ch) = chars.peek() {
-                    if ch.is_alphanumeric() || ch == '_' || ch == '-' {
-                        if name.len() >= MAX_SYMBOL_LENGTH {
-                            bail_coded!(ErrorCode::Prs074, MAX_SYMBOL_LENGTH);
-                        }
-                        name.push(ch);
-                        chars.next();
-                    } else {
-                        break;
-                    }
-                }
-                if name.is_empty() {
-                    bail_coded!(ErrorCode::Prs083);
-                }
-                tokens.push(Token::BindSlot(name));
-            }
-            _ => {
-                bail_coded!(ErrorCode::Prs002, ch);
-            }
-        }
-    }
-
+    let mut lexer = Lexer::new(input);
+    let tokens = lexer.by_ref().collect();
+    lexer.finish()?;
     Ok(tokens)
 }
 
-fn parse_number(
-    chars: &mut std::iter::Peekable<std::str::Chars>,
-    num_str: &mut String,
-) -> Result<(bool, String)> {
-    let mut is_float = false;
-
-    while let Some(&ch) = chars.peek() {
-        if ch.is_numeric() {
-            num_str.push(ch);
-            chars.next();
-        } else if ch == '.' && !is_float {
-            is_float = true;
-            num_str.push(ch);
-            chars.next();
-        } else {
-            break;
-        }
-    }
-
-    Ok((is_float, num_str.clone()))
-}
-
-fn parse_symbol(chars: &mut std::iter::Peekable<std::str::Chars>, first: char) -> Result<String> {
-    let mut symbol = String::from(first);
-    while let Some(&ch) = chars.peek() {
-        if ch.is_alphanumeric() || ch == '?' || ch == '_' || ch == '-' || ch == '/' {
-            if symbol.len() >= MAX_SYMBOL_LENGTH {
-                bail_coded!(ErrorCode::Int009, MAX_SYMBOL_LENGTH);
-            }
-            symbol.push(ch);
-            chars.next();
-        } else {
-            break;
-        }
-    }
-    Ok(symbol)
-}
-
-/// Parser for EDN values
-struct Parser {
-    tokens: Vec<Token>,
+/// Reads EDN tokens from `input` one at a time (#550). After its first error
+/// it yields nothing more and keeps the error.
+struct Lexer<'a> {
+    input: &'a str,
+    /// Byte offset of the next character.
     pos: usize,
-    depth: usize,
+    error: Option<anyhow::Error>,
 }
 
-impl Parser {
-    fn new(tokens: Vec<Token>) -> Self {
-        Parser {
-            tokens,
-            pos: 0,
-            depth: 0,
+impl<'a> Lexer<'a> {
+    fn new(input: &'a str) -> Self {
+        Self::at(input, 0)
+    }
+
+    /// A lexer that starts at byte `pos` of `input`, which must be a token
+    /// boundary.
+    fn at(input: &'a str, pos: usize) -> Self {
+        Lexer {
+            input,
+            pos,
+            error: None,
         }
     }
 
-    fn peek(&self) -> Option<&Token> {
-        self.tokens.get(self.pos)
+    /// Lex the rest of the input, keeping nothing: its first error, if any.
+    fn finish(&mut self) -> Result<()> {
+        while self.next().is_some() {}
+        match self.error.take() {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+
+    fn peek_char(&self) -> Option<char> {
+        self.input.get(self.pos..)?.chars().next()
+    }
+
+    fn bump(&mut self) {
+        if let Some(ch) = self.peek_char() {
+            self.pos += ch.len_utf8();
+        }
+    }
+
+    /// The next token, or `None` at the end of the input.
+    fn lex(&mut self) -> Result<Option<Token>> {
+        while let Some(ch) = self.peek_char() {
+            let token = match ch {
+                // Whitespace
+                ' ' | '\t' | '\n' | '\r' | ',' => {
+                    self.bump();
+                    continue;
+                }
+                // Parens and brackets
+                '(' => {
+                    self.bump();
+                    Token::LeftParen
+                }
+                ')' => {
+                    self.bump();
+                    Token::RightParen
+                }
+                '[' => {
+                    self.bump();
+                    Token::LeftBracket
+                }
+                ']' => {
+                    self.bump();
+                    Token::RightBracket
+                }
+                '{' => {
+                    self.bump();
+                    Token::LeftBrace
+                }
+                '}' => {
+                    self.bump();
+                    Token::RightBrace
+                }
+                // String literals
+                '"' => {
+                    self.bump(); // consume opening quote
+                    let mut string = String::new();
+                    let mut closed = false;
+                    while let Some(ch) = self.peek_char() {
+                        if ch == '"' {
+                            self.bump(); // consume closing quote
+                            closed = true;
+                            break;
+                        } else if ch == '\\' {
+                            self.bump();
+                            // Handle escape sequences
+                            if let Some(escaped) = self.peek_char() {
+                                self.bump();
+                                match escaped {
+                                    'n' => string.push('\n'),
+                                    't' => string.push('\t'),
+                                    'r' => string.push('\r'),
+                                    '"' => string.push('"'),
+                                    '\\' => string.push('\\'),
+                                    _ => string.push(escaped),
+                                }
+                            }
+                        } else {
+                            if string.len() >= MAX_STRING_LENGTH {
+                                bail_coded!(ErrorCode::Prs007, MAX_STRING_LENGTH);
+                            }
+                            string.push(ch);
+                            self.bump();
+                        }
+                    }
+                    if !closed {
+                        bail_coded!(ErrorCode::Prs109);
+                    }
+                    Token::String(string)
+                }
+                // Keywords (start with :)
+                ':' => {
+                    self.bump();
+                    let mut keyword = String::from(":");
+                    while let Some(ch) = self.peek_char() {
+                        // '?' is a constituent character, matching symbols (see below) and
+                        // EDN itself — predicate-style names like :person/alive? are idiomatic.
+                        // A keyword can never be a query variable, so there is no ambiguity.
+                        if ch.is_alphanumeric() || ch == '/' || ch == '-' || ch == '_' || ch == '?'
+                        {
+                            if keyword.len() >= MAX_KEYWORD_LENGTH {
+                                bail_coded!(ErrorCode::Prs008, MAX_KEYWORD_LENGTH);
+                            }
+                            keyword.push(ch);
+                            self.bump();
+                        } else {
+                            break;
+                        }
+                    }
+                    if keyword.len() == 1 {
+                        bail_coded!(ErrorCode::Prs110);
+                    }
+                    Token::Keyword(keyword)
+                }
+                // Tagged literals (start with #)
+                '#' => {
+                    self.bump();
+                    let mut tag = String::new();
+                    while let Some(ch) = self.peek_char() {
+                        if ch.is_alphanumeric() || ch == '-' {
+                            if tag.len() >= MAX_SYMBOL_LENGTH {
+                                bail_coded!(ErrorCode::Prs009, MAX_SYMBOL_LENGTH);
+                            }
+                            tag.push(ch);
+                            self.bump();
+                        } else {
+                            break;
+                        }
+                    }
+                    Token::TaggedLiteral(tag)
+                }
+                // Numbers or symbols starting with -
+                '-' => {
+                    self.bump();
+                    match self.peek_char() {
+                        // It's a negative number
+                        Some(next_ch) if next_ch.is_numeric() => self.number(String::from("-"))?,
+                        // It's a symbol starting with -
+                        Some(_) => Token::Symbol(self.symbol(String::from("-"))?),
+                        // Just a - symbol
+                        None => Token::Symbol("-".to_string()),
+                    }
+                }
+                // Numbers
+                '0'..='9' => self.number(String::new())?,
+                // Symbols (including variables starting with ?)
+                _ if ch.is_alphabetic() || ch == '?' || ch == '_' => {
+                    let symbol = self.symbol(String::new())?;
+                    // Check for special symbols
+                    match symbol.as_str() {
+                        "true" => Token::Boolean(true),
+                        "false" => Token::Boolean(false),
+                        "nil" => Token::Nil,
+                        _ => Token::Symbol(symbol),
+                    }
+                }
+                // Operator symbols: <, <=, >, >=, =, !=, +, *, /
+                '<' | '>' | '=' | '+' | '*' | '/' => {
+                    self.bump();
+                    let mut sym = String::from(ch);
+                    // Consume a trailing '=' to form <=, >=
+                    if (ch == '<' || ch == '>') && self.peek_char() == Some('=') {
+                        sym.push('=');
+                        self.bump();
+                    }
+                    Token::Symbol(sym)
+                }
+                '!' => {
+                    self.bump();
+                    if self.peek_char() == Some('=') {
+                        self.bump();
+                        Token::Symbol("!=".to_string())
+                    } else {
+                        bail_coded!(ErrorCode::Prs002, '!');
+                    }
+                }
+                // EDN line comment: skip from ';' to the next newline (or end of input)
+                ';' => {
+                    self.bump(); // consume ';'
+                    while let Some(c) = self.peek_char() {
+                        if c == '\n' {
+                            break;
+                        }
+                        self.bump();
+                    }
+                    continue;
+                }
+                '$' => {
+                    self.bump(); // consume '$'
+                    let mut name = String::new();
+                    while let Some(ch) = self.peek_char() {
+                        if ch.is_alphanumeric() || ch == '_' || ch == '-' {
+                            if name.len() >= MAX_SYMBOL_LENGTH {
+                                bail_coded!(ErrorCode::Prs074, MAX_SYMBOL_LENGTH);
+                            }
+                            name.push(ch);
+                            self.bump();
+                        } else {
+                            break;
+                        }
+                    }
+                    if name.is_empty() {
+                        bail_coded!(ErrorCode::Prs083);
+                    }
+                    Token::BindSlot(name)
+                }
+                _ => {
+                    bail_coded!(ErrorCode::Prs002, ch);
+                }
+            };
+            return Ok(Some(token));
+        }
+        Ok(None)
+    }
+
+    /// A number whose text starts with `num` (`""` or `"-"`).
+    fn number(&mut self, mut num: String) -> Result<Token> {
+        let mut is_float = false;
+        while let Some(ch) = self.peek_char() {
+            if ch.is_numeric() {
+                num.push(ch);
+                self.bump();
+            } else if ch == '.' && !is_float {
+                is_float = true;
+                num.push(ch);
+                self.bump();
+            } else {
+                break;
+            }
+        }
+        if is_float {
+            let f: f64 = num
+                .parse()
+                .map_err(|_| err_coded!(ErrorCode::Int007, num.clone()))?;
+            Ok(Token::Float(f))
+        } else {
+            let i: i64 = num
+                .parse()
+                .map_err(|_| err_coded!(ErrorCode::Int008, num.clone()))?;
+            Ok(Token::Integer(i))
+        }
+    }
+
+    /// The rest of a symbol whose text starts with `symbol`.
+    fn symbol(&mut self, mut symbol: String) -> Result<String> {
+        while let Some(ch) = self.peek_char() {
+            if ch.is_alphanumeric() || ch == '?' || ch == '_' || ch == '-' || ch == '/' {
+                if symbol.len() >= MAX_SYMBOL_LENGTH {
+                    bail_coded!(ErrorCode::Int009, MAX_SYMBOL_LENGTH);
+                }
+                symbol.push(ch);
+                self.bump();
+            } else {
+                break;
+            }
+        }
+        Ok(symbol)
+    }
+}
+
+impl Iterator for Lexer<'_> {
+    type Item = Token;
+
+    fn next(&mut self) -> Option<Token> {
+        if self.error.is_some() {
+            return None;
+        }
+        match self.lex() {
+            Ok(token) => token,
+            Err(e) => {
+                self.error = Some(e);
+                None
+            }
+        }
+    }
+}
+
+/// Parser for EDN values, reading tokens from a [`Lexer`] as it needs them.
+struct Parser<'a> {
+    lexer: Lexer<'a>,
+    peeked: Option<Token>,
+    depth: usize,
+    /// When false, vectors, lists and maps are checked but hold no elements.
+    keep: bool,
+}
+
+impl<'a> Parser<'a> {
+    fn new(lexer: Lexer<'a>) -> Self {
+        Parser {
+            lexer,
+            peeked: None,
+            depth: 0,
+            keep: true,
+        }
+    }
+
+    fn peek(&mut self) -> Option<&Token> {
+        if self.peeked.is_none() {
+            self.peeked = self.lexer.next();
+        }
+        self.peeked.as_ref()
     }
 
     fn advance(&mut self) -> Option<Token> {
-        let token = self.tokens.get(self.pos)?.clone();
-        self.pos += 1;
-        Some(token)
+        self.peeked.take().or_else(|| self.lexer.next())
     }
 
     fn parse_map(&mut self) -> Result<EdnValue> {
@@ -347,7 +381,9 @@ impl Parser {
             }
             let key = self.parse_value()?;
             let val = self.parse_value()?;
-            pairs.push((key, val));
+            if self.keep {
+                pairs.push((key, val));
+            }
         }
 
         bail_coded!(ErrorCode::Prs006);
@@ -459,7 +495,10 @@ impl Parser {
                 self.advance(); // consume ]
                 return Ok(EdnValue::Vector(elements));
             }
-            elements.push(self.parse_value()?);
+            let value = self.parse_value()?;
+            if self.keep {
+                elements.push(value);
+            }
         }
 
         bail_coded!(ErrorCode::Prs004);
@@ -474,7 +513,10 @@ impl Parser {
                 self.advance(); // consume )
                 return Ok(EdnValue::List(elements));
             }
-            elements.push(self.parse_value()?);
+            let value = self.parse_value()?;
+            if self.keep {
+                elements.push(value);
+            }
         }
 
         bail_coded!(ErrorCode::Prs005);
@@ -483,11 +525,16 @@ impl Parser {
 
 /// Parse EDN input into EdnValue
 pub fn parse_edn(input: &str) -> Result<EdnValue> {
-    let tokens = tokenize(input)?;
-    let mut parser = Parser::new(tokens);
-    let value = parser.parse_value()?;
-    if let Some(token) = parser.peek() {
-        let repr = format!("{:?}", token);
+    let mut parser = Parser::new(Lexer::new(input));
+    let value = parser.parse_value();
+    let trailing = match value {
+        Ok(_) => parser.peek().map(|token| format!("{:?}", token)),
+        Err(_) => None,
+    };
+    // A lexer error anywhere in the input comes before a structure error.
+    parser.lexer.finish()?;
+    let value = value?;
+    if let Some(repr) = trailing {
         bail_coded!(ErrorCode::Prs077, repr);
     }
     Ok(value)
@@ -495,6 +542,16 @@ pub fn parse_edn(input: &str) -> Result<EdnValue> {
 
 /// Parse a Datalog command from EDN
 pub fn parse_datalog_command(input: &str) -> Result<DatalogCommand> {
+    if let Some(kind) = statement::kind_of(input) {
+        return statement::parse(input, kind);
+    }
+    parse_whole_command(input)
+}
+
+/// Parse a command read whole into one [`EdnValue`]. `transact` and `retract`
+/// go to [`statement`] instead; their whole-input parsers stay for its
+/// differential tests.
+fn parse_whole_command(input: &str) -> Result<DatalogCommand> {
     let edn = parse_edn(input)?;
 
     match edn {
@@ -513,7 +570,9 @@ pub fn parse_datalog_command(input: &str) -> Result<DatalogCommand> {
             let rest = &elements[1..];
             match command {
                 "query" => parse_query(rest),
+                #[cfg(test)]
                 "transact" => parse_transact(rest),
+                #[cfg(test)]
                 "retract" => parse_retract(rest),
                 "rule" => parse_rule(rest),
                 _ => bail_coded!(ErrorCode::Prs011, command),
@@ -1016,6 +1075,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
     Ok(DatalogCommand::Query(query))
 }
 
+#[cfg(test)]
 fn parse_transact(elements: &[EdnValue]) -> Result<DatalogCommand> {
     // Parse (transact [facts]) or (transact {opts} [facts])
     if elements.is_empty() {
@@ -1145,6 +1205,7 @@ fn parse_valid_time_map(pairs: &[(EdnValue, EdnValue)]) -> Result<(Option<i64>, 
     Ok((valid_from, valid_to))
 }
 
+#[cfg(test)]
 fn parse_retract(elements: &[EdnValue]) -> Result<DatalogCommand> {
     // Same structure as transact
     if elements.is_empty() {
@@ -2173,6 +2234,7 @@ fn parse_rule(elements: &[EdnValue]) -> Result<DatalogCommand> {
     }))
 }
 
+pub(crate) mod statement;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod verifier;
 

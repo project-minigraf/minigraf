@@ -5,10 +5,10 @@
 //! empty values and DICT uses real ones. Leaves have no sibling pointers: scans
 //! use [`LeafCursor`], which keeps the path from the root.
 //!
-//! [`build_btree`] bulk-builds a tree from sorted entries. [`cow_insert`] adds
-//! entries copy-on-write, rewriting only the touched leaves and their paths and
-//! splitting by balanced bytes. Every page comes from a [`PageAllocator`], so an
-//! insert never writes a page the old tree uses.
+//! [`build_btree`] bulk-builds a tree from sorted entries. [`cow_update`] adds
+//! and deletes entries copy-on-write, rewriting only the touched leaves and
+//! their paths and splitting by balanced bytes. Every page comes from a
+//! [`PageAllocator`], so an update never writes a page the old tree uses.
 
 use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::storage::cache::PageCache;
@@ -316,11 +316,56 @@ fn write_internal_pieces(
     Ok(pieces)
 }
 
-/// Insert sorted `entries` below `page_id`, copy-on-write. Returns the pieces
-/// that replace the node; the node itself goes into `freed`.
-fn insert_node(
+/// Route sorted `items` to the children of `node`: one run per child, in
+/// child order.
+fn route_runs<T>(
+    node: &Internal<'_>,
+    items: Vec<T>,
+    key: impl Fn(&T) -> &[u8],
+) -> Result<Vec<(usize, Vec<T>)>> {
+    let mut runs: Vec<(usize, Vec<T>)> = Vec::new();
+    let mut from = 0usize;
+    for item in items {
+        let c = node.route(key(&item), from)?;
+        from = c;
+        match runs.last_mut() {
+            Some((last, run)) if *last == c => run.push(item),
+            _ => runs.push((c, vec![item])),
+        }
+    }
+    Ok(runs)
+}
+
+/// Remove sorted `deletes` from sorted `entries`; each must be there.
+fn remove_keys(entries: Vec<Entry>, deletes: &[Vec<u8>]) -> Result<Vec<Entry>> {
+    let mut out = Vec::with_capacity(entries.len().saturating_sub(deletes.len()));
+    let mut del = deletes.iter().peekable();
+    for entry in entries {
+        if del.peek().is_some_and(|k| **k == entry.0) {
+            del.next();
+        } else if del
+            .peek()
+            .is_some_and(|k| k.as_slice() < entry.0.as_slice())
+        {
+            bail_coded!(ErrorCode::Int049, "delete of a key not in the tree");
+        } else {
+            out.push(entry);
+        }
+    }
+    if del.next().is_some() {
+        bail_coded!(ErrorCode::Int049, "delete of a key not in the tree");
+    }
+    Ok(out)
+}
+
+/// Apply sorted `deletes`, then sorted `inserts`, below `page_id`,
+/// copy-on-write. Returns the pieces that replace the node, none if nothing is
+/// left below it; the node itself goes into `freed`.
+#[allow(clippy::too_many_arguments)]
+fn update_node(
     page_id: u64,
-    entries: Vec<Entry>,
+    inserts: Vec<Entry>,
+    deletes: Vec<Vec<u8>>,
     depth: usize,
     backend: &mut dyn StorageBackend,
     cache: &PageCache,
@@ -337,9 +382,11 @@ fn insert_node(
     freed.push(page_id);
     match page.first().copied() {
         Some(PAGE_TYPE_LEAF) => {
-            let merged = merge_entries(decode_leaf(&page[..])?, entries)?;
+            let kept = remove_keys(decode_leaf(&page[..])?, &deletes)?;
+            let merged = merge_entries(kept, inserts)?;
             let mut pieces = Vec::new();
             let mut prev_last: Option<Vec<u8>> = None;
+            // A leaf left empty packs into no group, so it returns no pieces.
             for group in pack_leaves(merged)? {
                 let (Some((first, _)), Some((last, _))) = (group.first(), group.last()) else {
                     continue;
@@ -357,19 +404,14 @@ fn insert_node(
         Some(PAGE_TYPE_INTERNAL) => {
             let node = Internal::new(&page[..])?;
             let count = node.count();
-            // Route the entries: they are sorted, so each child takes a run.
-            let mut runs: Vec<(usize, Vec<Entry>)> = Vec::new();
-            let mut from = 0usize;
-            for entry in entries {
-                let c = node.route(&entry.0, from)?;
-                from = c;
-                match runs.last_mut() {
-                    Some((last, run)) if *last == c => run.push(entry),
-                    _ => runs.push((c, vec![entry])),
-                }
-            }
-            let mut elems: Vec<(Option<Vec<u8>>, u64)> = Vec::with_capacity(count + runs.len() + 1);
-            let mut runs = runs.into_iter().peekable();
+            // The entries and keys are sorted, so each child takes a run.
+            let mut ins = route_runs(&node, inserts, |e| e.0.as_slice())?
+                .into_iter()
+                .peekable();
+            let mut del = route_runs(&node, deletes, Vec::as_slice)?
+                .into_iter()
+                .peekable();
+            let mut elems: Vec<(Option<Vec<u8>>, u64)> = Vec::with_capacity(count + 2);
             for i in 0..=count {
                 let sep_before = if i == 0 {
                     None
@@ -377,22 +419,42 @@ fn insert_node(
                     Some(node.sep(i - 1)?.to_vec())
                 };
                 let child = node.child(i)?;
-                if runs.peek().is_some_and(|(c, _)| *c == i) {
-                    let (_, run) = runs
-                        .next()
-                        .ok_or_else(|| err_coded!(ErrorCode::Int049, "routed run missing"))?;
-                    let pieces = insert_node(child, run, depth + 1, backend, cache, alloc, freed)?;
-                    for (k, piece) in pieces.into_iter().enumerate() {
-                        let sep = if k == 0 {
-                            sep_before.clone()
-                        } else {
-                            piece.sep
-                        };
-                        elems.push((sep, piece.id));
-                    }
-                } else {
+                let child_ins = match ins.next_if(|(c, _)| *c == i) {
+                    Some((_, run)) => run,
+                    None => Vec::new(),
+                };
+                let child_del = match del.next_if(|(c, _)| *c == i) {
+                    Some((_, run)) => run,
+                    None => Vec::new(),
+                };
+                if child_ins.is_empty() && child_del.is_empty() {
                     elems.push((sep_before, child));
+                    continue;
                 }
+                let pieces = update_node(
+                    child,
+                    child_ins,
+                    child_del,
+                    depth + 1,
+                    backend,
+                    cache,
+                    alloc,
+                    freed,
+                )?;
+                // A child with nothing left drops out with its separator. When
+                // it was the first, the next child's separator now leads, and
+                // `write_internal_pieces` ignores a leading separator.
+                for (k, piece) in pieces.into_iter().enumerate() {
+                    let sep = if k == 0 {
+                        sep_before.clone()
+                    } else {
+                        piece.sep
+                    };
+                    elems.push((sep, piece.id));
+                }
+            }
+            if elems.is_empty() {
+                return Ok(Vec::new());
             }
             write_internal_pieces(elems, backend, cache, alloc)
         }
@@ -400,12 +462,8 @@ fn insert_node(
     }
 }
 
-/// Insert sorted, distinct `entries` into the tree at `root`, copy-on-write
-/// (spec §8.3): only the touched leaves and their paths to the root are
-/// rewritten, at ids from `alloc`; every page they replace goes into `freed`.
-/// Untouched subtrees are shared with the old tree, which stays readable. A
-/// root split adds a level. Root 0 (no tree) is a bulk build. Returns the new
-/// root.
+/// Insert sorted, distinct `entries` into the tree at `root`, copy-on-write:
+/// [`cow_update`] with no deletes.
 pub fn cow_insert(
     root: u64,
     entries: Vec<Entry>,
@@ -414,14 +472,46 @@ pub fn cow_insert(
     alloc: &mut PageAllocator,
     freed: &mut Vec<u64>,
 ) -> Result<u64> {
-    check_sorted(&entries)?;
-    if root == 0 {
-        return build_btree(entries, backend, cache, alloc);
+    cow_update(root, entries, Vec::new(), backend, cache, alloc, freed)
+}
+
+/// Delete sorted, distinct `deletes` from the tree at `root`, then insert
+/// sorted, distinct `inserts`, copy-on-write (spec §8.3; #550 spec §6): only
+/// the touched leaves and their paths to the root are rewritten, at ids from
+/// `alloc`; every page they replace goes into `freed`. Untouched subtrees are
+/// shared with the old tree, which stays readable. A root split adds a level.
+///
+/// A delete of a key not in the tree is `INT-049`. A leaf left empty is removed
+/// from its parent, and an internal node left with no children in turn; a leaf
+/// left with fewer keys stays as it is, and separators are not rewritten. A
+/// tree left with no keys is empty: root 0. Root 0 (no tree) is a bulk build of
+/// `inserts`. Returns the new root.
+pub fn cow_update(
+    root: u64,
+    inserts: Vec<Entry>,
+    deletes: Vec<Vec<u8>>,
+    backend: &mut dyn StorageBackend,
+    cache: &PageCache,
+    alloc: &mut PageAllocator,
+    freed: &mut Vec<u64>,
+) -> Result<u64> {
+    check_sorted(&inserts)?;
+    if deletes.windows(2).any(|w| matches!(w, [a, b] if a >= b)) {
+        bail_coded!(ErrorCode::Int049, "deletes not sorted and distinct");
     }
-    if entries.is_empty() {
+    if root == 0 {
+        if !deletes.is_empty() {
+            bail_coded!(ErrorCode::Int049, "delete of a key not in the tree");
+        }
+        return build_btree(inserts, backend, cache, alloc);
+    }
+    if inserts.is_empty() && deletes.is_empty() {
         return Ok(root);
     }
-    let mut pieces = insert_node(root, entries, 0, backend, cache, alloc, freed)?;
+    let mut pieces = update_node(root, inserts, deletes, 0, backend, cache, alloc, freed)?;
+    if pieces.is_empty() {
+        return Ok(0);
+    }
     while pieces.len() > 1 {
         let elems = pieces.into_iter().map(|p| (p.sep, p.id)).collect();
         pieces = write_internal_pieces(elems, backend, cache, alloc)?;
@@ -429,7 +519,7 @@ pub fn cow_insert(
     pieces
         .pop()
         .map(|p| p.id)
-        .ok_or_else(|| err_coded!(ErrorCode::Int049, "insert produced no root"))
+        .ok_or_else(|| err_coded!(ErrorCode::Int049, "update produced no root"))
 }
 
 // ─── Reading ─────────────────────────────────────────────────────────────────
@@ -1769,5 +1859,278 @@ mod tests {
         );
         assert_eq!(code(b.sync().unwrap_err()), "INT-049");
         assert_eq!(code(b.close().unwrap_err()), "INT-049");
+    }
+
+    // ─── cow_update (#550 spec §6) ───────────────────────────────────────────
+
+    /// Walk the tree at `root` as `verify` does: keys strictly ascending and
+    /// within their parent's separators, no empty leaf below the root, every
+    /// page reached once. Returns its entries and node ids.
+    fn walk_checked(
+        root: u64,
+        backend: &dyn StorageBackend,
+        cache: &PageCache,
+    ) -> (Vec<Entry>, BTreeSet<u64>) {
+        type Visit = (u64, usize, Option<Vec<u8>>, Option<Vec<u8>>);
+        let (mut entries, mut nodes) = (Vec::new(), BTreeSet::new());
+        if root == 0 {
+            return (entries, nodes);
+        }
+        let mut stack: Vec<Visit> = vec![(root, 0, None, None)];
+        while let Some((id, depth, lo, hi)) = stack.pop() {
+            assert!(nodes.insert(id), "a page is reached twice");
+            assert!(depth <= MAX_TREE_DEPTH, "too deep");
+            let page = cache.get_or_load(id, backend).unwrap();
+            if page[0] == PAGE_TYPE_LEAF {
+                let leaf = decode_leaf(&page[..]).unwrap();
+                assert!(depth == 0 || !leaf.is_empty(), "empty leaf below the root");
+                for (k, v) in leaf {
+                    assert!(lo.as_ref().is_none_or(|l| &k >= l), "key below its range");
+                    assert!(hi.as_ref().is_none_or(|h| &k < h), "key above its range");
+                    assert!(
+                        entries.last().is_none_or(|(p, _): &Entry| p < &k),
+                        "keys out of order"
+                    );
+                    entries.push((k, v));
+                }
+            } else {
+                let node = Internal::new(&page[..]).unwrap();
+                let n = node.count();
+                let mut children = Vec::new();
+                for i in 0..=n {
+                    let c_lo = if i == 0 {
+                        lo.clone()
+                    } else {
+                        Some(node.sep(i - 1).unwrap().to_vec())
+                    };
+                    let c_hi = if i < n {
+                        Some(node.sep(i).unwrap().to_vec())
+                    } else {
+                        hi.clone()
+                    };
+                    children.push((node.child(i).unwrap(), depth + 1, c_lo, c_hi));
+                }
+                stack.extend(children.into_iter().rev());
+            }
+        }
+        (entries, nodes)
+    }
+
+    /// The bytes of every page the tree at `root` reaches.
+    fn page_bytes(
+        root: u64,
+        backend: &dyn StorageBackend,
+        cache: &PageCache,
+    ) -> Vec<(u64, Vec<u8>)> {
+        let (_, nodes) = walk_checked(root, backend, cache);
+        nodes
+            .into_iter()
+            .map(|id| (id, backend.read_page(id).unwrap()))
+            .collect()
+    }
+
+    /// One `cow_update` on the tree at `root`, checked against `model`: the
+    /// new tree holds the model's keys, the old tree's pages are unchanged and
+    /// it still holds `before`, `freed` is exactly the old nodes the new tree
+    /// dropped, and the new tree's other nodes are new pages.
+    #[allow(clippy::too_many_arguments)]
+    fn update_checked(
+        root: u64,
+        inserts: Vec<Entry>,
+        deletes: Vec<Vec<u8>>,
+        model: &mut BTreeSet<Vec<u8>>,
+        backend: &mut MemoryBackend,
+        cache: &PageCache,
+        next: &mut u64,
+        generation: u64,
+    ) -> u64 {
+        let old_pages = page_bytes(root, backend, cache);
+        let (before, old_nodes) = walk_checked(root, backend, cache);
+        let mut alloc = PageAllocator::new(Vec::new(), *next, generation);
+        let mut freed = Vec::new();
+        let changed = !inserts.is_empty() || !deletes.is_empty();
+        for k in &deletes {
+            model.remove(k);
+        }
+        model.extend(inserts.iter().map(|(k, _)| k.clone()));
+        let new_root = cow_update(
+            root, inserts, deletes, backend, cache, &mut alloc, &mut freed,
+        )
+        .unwrap();
+        let start = *next;
+        *next = alloc.next_append();
+        let (after, new_nodes) = walk_checked(new_root, backend, cache);
+        let want: Vec<Entry> = model.iter().map(|k| (k.clone(), Vec::new())).collect();
+        assert!(after == want, "the tree differs from the model");
+        if model.is_empty() && root != 0 {
+            assert_eq!(new_root, 0, "an emptied tree is root 0");
+        }
+        for (id, bytes) in &old_pages {
+            assert!(
+                backend.read_page(*id).unwrap() == *bytes,
+                "an old page was written"
+            );
+        }
+        assert!(
+            walk_checked(root, backend, cache).0 == before,
+            "the old tree still reads"
+        );
+        let freed: BTreeSet<u64> = freed.into_iter().collect();
+        let dropped: BTreeSet<u64> = old_nodes.difference(&new_nodes).copied().collect();
+        if changed && root != 0 {
+            assert!(freed == dropped, "freed is exactly the replaced old nodes");
+        } else {
+            assert!(freed.is_empty(), "nothing freed");
+        }
+        for id in new_nodes.difference(&old_nodes) {
+            assert!(*id >= start, "new nodes are new pages");
+        }
+        new_root
+    }
+
+    #[test]
+    fn cow_update_matches_a_model_over_random_steps() {
+        let mut rng = Rng(0x550);
+        let mut ctr = 0;
+        for round in 0..6 {
+            let mut backend = MemoryBackend::new();
+            let cache = PageCache::new(8192);
+            let mut model = BTreeSet::new();
+            let start =
+                random_entries(&mut rng, [0, 1, 300, 3000, 20_000, 60_000][round], &mut ctr);
+            model.extend(start.iter().map(|(k, _)| k.clone()));
+            let (mut root, mut next) = build_at(start, &mut backend, &cache, 2);
+            for step in 0..30u64 {
+                let keys: Vec<Vec<u8>> = model.iter().cloned().collect();
+                let mut deletes: Vec<Vec<u8>> = match rng.below(4) {
+                    // A random sample.
+                    0 | 1 if !keys.is_empty() => (0..rng.below(400))
+                        .map(|_| keys[rng.below(keys.len() as u64)].clone())
+                        .collect(),
+                    // A contiguous run: whole leaves and subtrees go.
+                    2 if !keys.is_empty() => {
+                        let a = rng.below(keys.len() as u64);
+                        let b = (a + 1 + rng.below(4000)).min(keys.len());
+                        keys[a..b].to_vec()
+                    }
+                    _ => Vec::new(),
+                };
+                deletes.sort();
+                deletes.dedup();
+                let n = rng.below(300);
+                let mut inserts = random_entries(&mut rng, n, &mut ctr);
+                // Sometimes a deleted key comes straight back.
+                if let Some(k) = deletes.first().filter(|_| rng.below(3) == 0) {
+                    inserts.push((k.clone(), Vec::new()));
+                    inserts.sort();
+                    inserts.dedup_by(|a, b| a.0 == b.0);
+                }
+                root = update_checked(
+                    root,
+                    inserts,
+                    deletes,
+                    &mut model,
+                    &mut backend,
+                    &cache,
+                    &mut next,
+                    step + 3,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn cow_update_deleting_everything_is_root_zero() {
+        for n in [1u64, 200, 3000, 60_000] {
+            let mut backend = MemoryBackend::new();
+            let cache = PageCache::new(8192);
+            let entries: Vec<Entry> = (0..n).map(|i| entry(i * 2, i)).collect();
+            let mut model: BTreeSet<Vec<u8>> = entries.iter().map(|(k, _)| k.clone()).collect();
+            let (root, mut next) = build_at(entries.clone(), &mut backend, &cache, 2);
+            // Half first, from the front, so first children drop out.
+            let half: Vec<Vec<u8>> = entries[..entries.len() / 2]
+                .iter()
+                .map(|(k, _)| k.clone())
+                .collect();
+            let root = update_checked(
+                root,
+                Vec::new(),
+                half,
+                &mut model,
+                &mut backend,
+                &cache,
+                &mut next,
+                3,
+            );
+            let rest: Vec<Vec<u8>> = model.iter().cloned().collect();
+            let root = update_checked(
+                root,
+                Vec::new(),
+                rest,
+                &mut model,
+                &mut backend,
+                &cache,
+                &mut next,
+                4,
+            );
+            assert_eq!(root, 0, "empty");
+            // Root 0 takes inserts as a bulk build.
+            let again = vec![entry(7, 7)];
+            let root = update_checked(
+                root,
+                again,
+                Vec::new(),
+                &mut model,
+                &mut backend,
+                &cache,
+                &mut next,
+                5,
+            );
+            assert_ne!(root, 0, "a tree again");
+        }
+    }
+
+    #[test]
+    fn cow_update_rejects_bad_deletes() {
+        let cache = PageCache::new(4096);
+        let mut backend = MemoryBackend::new();
+        let entries: Vec<Entry> = (0..3000).map(|n| entry(n * 2, n)).collect();
+        let (root, next) = build_at(entries, &mut backend, &cache, 2);
+        let cases: [(u64, Vec<Vec<u8>>); 5] = [
+            // A missing key between stored ones, past the last, and on root 0.
+            (root, vec![key(1, 0)]),
+            (root, vec![key(0, 0), key(1, 0)]),
+            (root, vec![key(10_000_000, 0)]),
+            (0, vec![key(0, 0)]),
+            // Unsorted or repeated deletes.
+            (root, vec![key(2, 1), key(0, 0)]),
+        ];
+        for (at, deletes) in cases {
+            let mut alloc = PageAllocator::new(Vec::new(), next, 3);
+            let mut freed = Vec::new();
+            let err = cow_update(
+                at,
+                Vec::new(),
+                deletes,
+                &mut backend,
+                &cache,
+                &mut alloc,
+                &mut freed,
+            )
+            .unwrap_err();
+            assert_eq!(code(err), "INT-049");
+        }
+        let mut alloc = PageAllocator::new(Vec::new(), next, 3);
+        let err = cow_update(
+            root,
+            Vec::new(),
+            vec![key(0, 0), key(0, 0)],
+            &mut backend,
+            &cache,
+            &mut alloc,
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+        assert_eq!(code(err), "INT-049");
     }
 }

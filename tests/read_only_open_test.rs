@@ -380,6 +380,22 @@ fn in_memory_read_only_refuses_writes() {
     assert!(names(&db).is_empty());
 }
 
+/// A statement's parse errors come before API-014, and its materialisation and
+/// window errors after it, as they did before the statement reader (#550).
+#[test]
+fn read_only_comes_between_parse_and_materialise_errors() {
+    let db = OpenOptions::new().read_only(true).open_memory().unwrap();
+    let code = |input: &str| db.execute(input).expect_err(input).code();
+    assert_eq!(code("(transact [[:a :b]])"), "PRS-046");
+    assert_eq!(code("(retract [[:a :b 1] 5])"), "PRS-089");
+    assert_eq!(code("(transact [[1 :b 1]])"), "API-014");
+    assert_eq!(code("(retract [[:a b 1]])"), "API-014");
+    assert_eq!(
+        code(r#"(transact [[:a :b 1 {:valid-to "2001-01-01T00:00:00Z"}]])"#),
+        "API-014"
+    );
+}
+
 #[test]
 fn builder_path_open_is_read_only() {
     let dir = tempfile::tempdir().unwrap();

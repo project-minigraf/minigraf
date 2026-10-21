@@ -115,7 +115,7 @@ cargo run < demos/demo_negation.txt
    - `index.rs`: pending (uncheckpointed) EAVT/AEVT keys over UUIDs and strings, `encode_value`
    - `keys.rs`: byte-comparable v8 keys (FDB integers, value tags, `tx↓`, FOREVER), DICT keys, `MAX_VALUE_BYTES`, `MAX_IDENT_BYTES`
    - `node.rs`: prefix-compressed leaf and shortest-separator internal node codecs
-   - `btree.rs`: On-disk B+tree over byte keys (`build_btree`, `cow_insert`, `LeafCursor` with `seek`, `prefix_scan`, `get`, `MutexStorageBackend`)
+   - `btree.rs`: On-disk B+tree over byte keys (`build_btree`, `cow_update` (copy-on-write inserts and deletes; an emptied leaf or node leaves its parent, an emptied tree is root 0; #550) and `cow_insert`, `LeafCursor` with `seek`, `prefix_scan`, `get`, `MutexStorageBackend`)
    - `dict.rs`: `DictReader` (id ↔ UUID/ident, tx timestamps, long values) and `Encoder` (checkpoint-time id assignment and key building)
    - `value_pages.rs`: append-only value pages for strings over 64 bytes
    - `reader.rs`: `OnDiskReader` — covering reads of committed facts (`CommittedReader`, `KeySource`); `live_facts` and the resumable `live_keys` decide net-assert on index keys (#379)
@@ -129,6 +129,7 @@ cargo run < demos/demo_negation.txt
 
 3. **`src/query/datalog/`** — Datalog engine
    - `parser.rs`: EDN/Datalog parser — `transact`, `retract`, `query`, `rule`, `:as-of`, `:valid-at`, `not`, `not-join`; `resolve_pseudo_sources` names each per-fact pseudo-attribute's source (nearest earlier same-entity pattern, lexical scope) and its hidden metadata variable `?#<n>.<attr>`, else PRS-081 (#594)
+   - `parser/statement.rs`: `transact`/`retract` read one fact at a time (#550): `kind_of` dispatches on the first two tokens; one pass keeps today's error order (phases 1 tokens … 6 valid windows, the earliest phase's first error, phase 3 in today's check order); `read_statement` (pass 1) keeps at most `TX_CHUNK_FACTS` materialised facts and the offset after the last, and returns phase 5–6 errors from `Statement::facts`, which runs pass 2 from that offset for a larger statement; `set_tx_chunk_facts` for tests. The `Parser` reads tokens on demand from a `Lexer` (`keep` off checks structure without holding it); `parse_transact`/`parse_retract` remain under `cfg(test)` for the differential tests
    - `parser/verifier.rs`: test-only (not wasm32) bounded-exhaustive check of the parser against `tests/grammar/grammar.pest` (#643): every 1–3 character string (`parse_edn`) and every balanced token filler up to `MINIGRAF_GRAMMAR_BOUND` (default 3) in 15 command templates (`parse_datalog_command`); pest rejects ⇒ parser rejects, pest accepts ⇒ parser accepts or raises a `SEMANTIC` code; today's drift is `KNOWN_DRIFT`, one entry per cause, removed by its fix (empty: #649, #650, #651 fixed)
    - `executor.rs`: Query executor — temporal filter (tx-time → net-assert → valid-time), not/not-join post-filter
    - `matcher.rs`: Pattern matching with variable unification; `edn_to_value`, `edn_to_entity_id`
