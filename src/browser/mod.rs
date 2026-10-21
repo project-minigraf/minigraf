@@ -54,8 +54,7 @@ impl BrowserDb {
         // Page cache capacity 0: `BrowserBufferBackend` is already an in-memory
         // page store, so the LRU cache would only duplicate pages and add
         // HashMap overhead for zero benefit. See #275.
-        let pfs =
-            PersistentFactStorage::new(buffer, 0).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let pfs = PersistentFactStorage::new(buffer, 0).map_err(to_js_error)?;
         let fact_storage = pfs.storage().clone();
 
         Ok(BrowserDb {
@@ -80,8 +79,7 @@ impl BrowserDb {
 
         let buffer = BrowserBufferBackend::load_pages(existing);
         // Page cache capacity 0 — see comment in `open_in_memory` above.
-        let pfs =
-            PersistentFactStorage::new(buffer, 0).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let pfs = PersistentFactStorage::new(buffer, 0).map_err(to_js_error)?;
         let fact_storage = pfs.storage().clone();
 
         Ok(BrowserDb {
@@ -104,7 +102,7 @@ impl BrowserDb {
     /// - Rule: `{"ok": true}`
     #[wasm_bindgen(js_name = execute)]
     pub async fn execute(&self, datalog: String) -> Result<String, JsValue> {
-        let cmd = parse_datalog_command(&datalog).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let cmd = parse_datalog_command(&datalog).map_err(to_js_error)?;
 
         // Peek at the discriminant before consuming `cmd`.
         let is_read = matches!(cmd, DatalogCommand::Query(_) | DatalogCommand::Rule(_));
@@ -118,20 +116,20 @@ impl BrowserDb {
                     inner.functions.clone(),
                 )
                 .execute(cmd)
-                .map_err(|e| JsValue::from_str(&e.to_string()))?
+                .map_err(to_js_error)?
             };
             return Ok(query_result_to_json(result));
         }
 
         match cmd {
             DatalogCommand::Transact(tx) => {
-                let facts = crate::db::Minigraf::materialize_transaction(&tx)
-                    .map_err(|e| JsValue::from_str(&e.to_string()))?;
+                let facts =
+                    crate::db::Minigraf::materialize_transaction(&tx).map_err(to_js_error)?;
                 self.apply_write(facts, false).await
             }
             DatalogCommand::Retract(tx) => {
-                let facts = crate::db::Minigraf::materialize_retraction(&tx)
-                    .map_err(|e| JsValue::from_str(&e.to_string()))?;
+                let facts =
+                    crate::db::Minigraf::materialize_retraction(&tx).map_err(to_js_error)?;
                 self.apply_write(facts, true).await
             }
             // Handled above; unreachable but required for exhaustiveness.
@@ -147,10 +145,7 @@ impl BrowserDb {
     pub async fn checkpoint(&self) -> Result<(), JsValue> {
         let (dirty_pages, has_idb) = {
             let mut inner = self.inner.borrow_mut();
-            inner
-                .pfs
-                .save()
-                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            inner.pfs.save().map_err(to_js_error)?;
             let pages = take_dirty_pages(&mut inner.pfs)?;
             (pages, inner.idb.is_some())
         };
@@ -175,14 +170,14 @@ impl BrowserDb {
         let page_count = inner
             .pfs
             .with_backend(|b| b.page_count_raw())
-            .map_err(|e| JsValue::from_str(&e.to_string()))? as usize;
+            .map_err(to_js_error)? as usize;
 
         let mut blob = Vec::with_capacity(page_count * crate::storage::PAGE_SIZE);
         for id in 0..page_count as u64 {
             let page = inner
                 .pfs
                 .with_backend(|b| b.read_page_raw(id))
-                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+                .map_err(to_js_error)?;
             blob.extend_from_slice(&page);
         }
         Ok(js_sys::Uint8Array::from(blob.as_slice()))
@@ -212,8 +207,7 @@ impl BrowserDb {
             let mut inner = self.inner.borrow_mut();
             let buffer = BrowserBufferBackend::load_pages_all_dirty(pages);
             // Page cache capacity 0 — see comment in `open_in_memory` above.
-            let mut new_pfs = PersistentFactStorage::new(buffer, 0)
-                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            let mut new_pfs = PersistentFactStorage::new(buffer, 0).map_err(to_js_error)?;
             let new_fact_storage = new_pfs.storage().clone();
 
             // Drain dirty set and collect owned page bytes before swapping inner.
@@ -271,13 +265,10 @@ impl BrowserDb {
             inner
                 .fact_storage
                 .load_facts(stamped.iter().cloned())
-                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+                .map_err(to_js_error)?;
 
             inner.pfs.mark_dirty();
-            inner
-                .pfs
-                .save()
-                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            inner.pfs.save().map_err(to_js_error)?;
 
             // Collect dirty pages as owned Vec<(u64, Vec<u8>)> — no borrows escape
             let dirty_pages = take_dirty_pages(&mut inner.pfs)?;
@@ -319,7 +310,13 @@ fn take_dirty_pages(
             .map(|id| b.read_page_raw(id).map(|d| (id, d)))
             .collect::<anyhow::Result<Vec<_>>>()
     })
-    .map_err(|e| JsValue::from_str(&crate::MinigrafError::from(e).to_string()))
+    .map_err(to_js_error)
+}
+
+/// Every error a `BrowserDb` method rejects with goes through this, so the
+/// message carries its code (`[PRS-001] ...`), as on every other API (#673).
+fn to_js_error(e: anyhow::Error) -> JsValue {
+    JsValue::from_str(&crate::MinigrafError::from(e).to_string())
 }
 
 fn query_result_to_json(result: QueryResult) -> String {
@@ -387,6 +384,30 @@ mod tests {
         // from the flush and the caller still saw success.
         pfs.with_backend_mut(|b| b.mark_dirty_for_test(99));
         assert!(take_dirty_pages(&mut pfs).is_err());
+    }
+
+    // #673: a rejection carries the same error code as the native API.
+    #[wasm_bindgen_test]
+    async fn execute_errors_carry_their_code() {
+        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        for (datalog, code) in [
+            ("(nosuchcommand [])", "[PRS-011] "),
+            (
+                "(query [:find ?x :where [?e :a ?x] [(nosuchfn ?x)]])",
+                "[QRY-007] ",
+            ),
+            ("(transact [[:a :b]])", "[PRS-046] "),
+        ] {
+            let err = db
+                .execute(datalog.to_string())
+                .await
+                .expect_err("invalid command must reject");
+            let text = err.as_string().expect("rejection is a string");
+            assert!(
+                text.starts_with(code),
+                "rejection does not start with {code}"
+            );
+        }
     }
 
     #[wasm_bindgen_test]
