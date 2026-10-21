@@ -562,24 +562,26 @@ mod tests {
         assert!(take_dirty_pages(&mut pfs).is_err());
     }
 
-    // #673: a rejection carries the error code, like every other API.
+    // #673: a rejection carries the same error code as the native API.
     #[wasm_bindgen_test]
     async fn execute_errors_carry_their_code() {
         let db = BrowserDb::open_in_memory().expect("open_in_memory");
         for (datalog, code) in [
-            ("(nosuchcommand [])", "[PRS-"),
-            ("(query [:find ?x :where [?e :a ?x] [(nosuchfn ?x)]])", "["),
-            ("(transact [[:a :b]])", "["),
+            ("(nosuchcommand [])", "[PRS-011] "),
+            (
+                "(query [:find ?x :where [?e :a ?x] [(nosuchfn ?x)]])",
+                "[QRY-007] ",
+            ),
+            ("(transact [[:a :b]])", "[PRS-046] "),
         ] {
             let err = db
                 .execute(datalog.to_string())
                 .await
                 .expect_err("invalid command must reject");
             let text = err.as_string().expect("rejection is a string");
-            assert!(text.starts_with(code), "rejection has no error code");
             assert!(
-                text.len() > 10 && text.as_bytes()[4] == b'-' && text.as_bytes()[8] == b']',
-                "rejection does not start with [XXX-NNN]"
+                text.starts_with(code),
+                "rejection does not start with {code}"
             );
         }
     }
