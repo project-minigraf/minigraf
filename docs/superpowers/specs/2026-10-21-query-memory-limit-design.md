@@ -34,7 +34,9 @@ Settled with the maintainer on 2026-10-21:
 The engine runs every query `engine::plan` / `engine::plan_rules` accepts. The executor still runs:
 
 - queries inside a write transaction (`facts_override`, #550);
-- shapes the planner returns `None` for.
+- shapes the planner returns `None` for;
+- planned queries over a snapshot whose committed reader has no key source (`engine::open` returns
+  `None`; only test readers lack one).
 
 None of these are counted. Each moves to the engine in #550 / #551, and so comes under the limit then.
 
@@ -49,7 +51,9 @@ it, including those in `not` bodies, `or` branches and rewound correlated sub-pl
 ordering suffices. Each operator also keeps its own `bytes_held` in its `Counters` (spec §6.3, for the
 profiler #185).
 
-Before it inserts an entry, an operator calls `meter.charge(op, bytes)`:
+Before it inserts an entry, an operator calls `meter.charge(op, bytes)`, with `bytes` computed from the
+key and row it is about to insert. Those values exist before the charge, so one entry's worth can be held
+uncounted at a time. That excess is bounded and is not counted.
 
 1. If `used + bytes > limit`, it returns `QRY-012` naming `op` and the limit, and counts nothing.
 2. Otherwise it adds `bytes` to `used` and to the operator's `bytes_held`.
@@ -73,15 +77,22 @@ spare capacity at hashbrown's 7/8 load factor, rounded up). A vector entry costs
 | `Join` (`HashJoin` build side) | a new key's bucket: its key, a `usize`, a `Vec<Row>` header and the overhead; each row: its cells |
 | `AntiJoin` (hashed body) | each distinct key: its `Vec<JoinKey>` |
 | `Union` (hashed branch) | as `Join` |
+| `Union` (`At.rows`) | each branch row buffered for the current outer row (a correlated branch appends all its rows for that outer row); released as they are returned |
 | `Distinct` | each kept row's key |
 | `Aggregate` | each new group: key, index, the `Group` (its cells and accumulators); each new member of a `count-distinct` set: its key; the finished output rows |
 | `Window` | each row's cells and values |
 | `Relations` (rule queries) | each derived row: the row, its identity key, its entity-index slot, its `next` slot |
-| `IdSpace` | each provisional id: both directions of its map, with the UUID or the name |
+| `Recursive` temporaries | `know_stored`'s buffer of stored rows; `heads`' candidate rows (`out`) and their keys (`seen`); released when the function returns |
+| `IdSpace`, provisional | each provisional id: both directions of its map, with the UUID or the name |
+| `IdSpace`, DICT cache | each cached lookup, in all five maps (`eid_by_keyword` included); released by `end_pull` |
 
-`IdSpace`'s DICT cache is cleared after every pull and is not charged, because it holds at most one batch.
-Batches passing between operators, and the rows of the current batch inside an operator, are bounded by
-`BATCH_ROWS` and are not charged.
+The DICT cache is charged because one pull can read the whole input: `Aggregate` and `Window` drain their
+child in their first pull, a rule body's run reads all of its input before `end_pull`, and a stream with a
+`Window` keeps the cache until it ends (`hold_ids`).
+
+Batches passing between operators, the rows of the current batch inside an operator, and an
+`IndexNestedLoopJoin`'s inner rows of one probe (one inner batch at a time) are bounded by `BATCH_ROWS`
+and are not charged.
 
 The estimate is checked against measured RSS in the acceptance tests (§6). It is meant to be within a
 factor of two of the real figure, not exact.
@@ -121,11 +132,28 @@ WASM and C take the option where they expose `OpenOptions`.
 
 ### 6.1 Build side of a keyless join
 
-A `HashJoin` with no join key is a cartesian product, and the outer input's size is the product of its
-patterns' sizes, not that of its cheapest pattern. For such a join the planner compares the inner pattern's
-`pattern_cost` with the saturating product of the outer patterns' `pattern_cost`s, and builds on the
-smaller. Joins with keys keep today's `branch_cost` comparison. With the reorder test switch off it still
-builds on the inner pattern (#596 decision 3). Answers do not change, only the build side.
+Today the planner builds a `HashJoin` on the inner pattern when
+`branch_cost([inner]) <= branch_cost(outer_patterns)` (`plan.rs:928–935`), and `branch_cost` is the
+cheapest pattern's cost. For a join with no join key (a cartesian product) that underestimates the outer
+side: its size is up to the product of its patterns' sizes.
+
+New rule, for a `HashJoin` whose `keys` is empty only: the outer estimate is the product of
+`pattern_cost` over `outer_patterns`, saturating at `u64::MAX` (0 when there is none, as after a seed). The
+join builds on the inner pattern when `pattern_cost(inner) <= ` that product, otherwise on the outer side.
+
+- The product counts outer patterns that are joined to each other by keys too, so it can overestimate
+  the outer side. That only moves a keyless join toward building on its inner pattern, which is a single
+  scan and so bounded by the data.
+- A tie still builds on the inner pattern, as today.
+- Joins with keys keep today's comparison.
+- With the reorder test switch off, the join still builds on the inner pattern (#596 decision 3).
+
+Answers do not change, only the build side. In the #575 shape the planner puts the one pattern with a
+constant attribute first, `[?e0 :n ?n]` (cost 100), and the others are `[?eN ?aN ?vN]` (cost 10,000).
+Today every later join compares 10,000 with `branch_cost` 100 and builds on the outer side, so the last
+join holds 3^(k−1) rows (531K at k = 13). Under the new rule the outer product is at least 100 × 10,000 from
+the second join on, and every join builds on its 3-row inner pattern. A selective outer side, such as
+`[?e :name "x"] [?p ?q ?r]`, still builds on the outer side (10 < 10,000).
 
 ### 6.2 Acceptance tests
 
