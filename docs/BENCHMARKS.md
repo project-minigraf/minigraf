@@ -171,6 +171,19 @@ The executor copied the database into a `FactStorage` for every rule query; the 
 
 The acceptance test (`tests/recursive_acceptance_test.rs`, ignored; the nightly smoke workflow runs it) derives 4,882,500 `reach` facts over a layered graph of 155,000 edges (63 layers of 50 nodes, complete bipartite between neighbours) in 62 rounds: 226 s and 169 bytes of RSS per derived fact on a laptop. Each fact is derived through 50 middle nodes, so the rounds probe about 250M candidate rows; the time is in those entity probes and the identity set, not in memory.
 
+### Query memory accounting (#549)
+
+**Command**: `cargo test --profile bench --test memory_limit_acceptance_test -- --ignored --nocapture --test-threads=1` (the nightly smoke workflow runs it) and `cargo test --profile bench --lib meter_peak_against_rss -- --ignored --nocapture`, on a dedicated 88-vCPU Linux server, pinned to one NUMA node, three runs each.
+
+| Shape | Rows | Time | Meter peak | Peak RSS added |
+|---|---:|---:|---:|---:|
+| 1M groups, `[:find ?g (count ?e) :where [?e :g ?g]]` | 1,000,000 | 3.5–3.6 s | 435 MiB | 542–549 MiB |
+| #575 cartesian, 13 patterns sharing no variable over 3 facts | 1,594,323 | 2.6 s | 4 KiB | 9.6–9.7 MiB in a fresh process; under 50 KiB after another query |
+
+The meter's estimate is within the spec's factor of two of the RSS a query adds (1.25× for the groups). The rest is allocator rounding, hash-table capacity beyond its entries, and the reader's pages, which no holder counts. The cartesian product held more than 5.7 GB on the executor (#575); on the engine every join builds on its 3-row inner pattern and the 1.6M rows stream through, so what a fresh process adds is the reader and the cursor, not the rows. With `query_memory_limit` at 32 MiB the groups query stops with `QRY-012` naming `Aggregate`, and at 64 bytes the product stops with `QRY-012` naming `HashJoin`.
+
+Measuring this found that `Aggregate` built its sorted map of groups uncharged while its hash table was still alive: the meter read 282 MiB against 651 MiB of RSS. The map is now charged, and the table goes first, which also cut the real peak to the figure above.
+
 ### Python FFI round trip
 
 **Command**: `python bench/envelope.py <fixture> --report envelope.json --scale <scale>` in [minigraf-python](https://github.com/project-minigraf/minigraf-python) (`v3`), on the same fixtures and report. The binding is built with `maturin develop --release` against this commit. It runs the same queries through `db.query(...)`, drains them with `next_batch(1000)`, and decodes each JSON batch with `json.loads`. Python 3.14.7.
