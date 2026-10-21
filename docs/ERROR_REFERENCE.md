@@ -146,6 +146,7 @@ with no `CodedError` anywhere in its chain.
 | QRY-009 | Rules lock poisoned | Query Execution |
 | QRY-010 | Unknown aggregate function | Query Execution |
 | QRY-011 | Unknown window function | Query Execution |
+| QRY-012 | Query memory limit exceeded | Query Execution |
 | QRY-013 | Rule head entity is not an entity | Query Execution |
 | STG-001 | Invalid header: too short | Storage |
 | STG-002 | Invalid magic number: not a .graph file | Storage |
@@ -2306,11 +2307,35 @@ predicate evaluation, or fact transacting.
 ```
 *`frob` is not a window built-in; register it first*
 
+### QRY-012 Query memory limit exceeded
+
+**Error text**: `query memory limit exceeded: {}`
+
+The text after the colon takes one of two forms:
+- `{op} needs {n} more bytes and the query already holds {used} of its {limit}-byte limit`
+- `the allocator refused {n} bytes for {op}`
+
+**Cause**: A query held more state than `OpenOptions::query_memory_limit` allows, or the allocator refused memory one of its operators asked for. `{op}` names the operator that would have held the bytes: `HashJoin`, `AntiJoin`, `Union`, `Distinct`, `Aggregate`, `Window`, `Relations` or `Recursive` (a rule query's derived facts), or `IdSpace` (the query's entity and ident ids). Each operator counts an estimate of what it holds, per entry, so the count is the same on every platform. The limit is off by default (`usize::MAX`), so the first form only comes when a limit is set. The second form can come without one: it replaces the abort the process would otherwise suffer. A query inside a write transaction that has staged writes is not counted yet.
+
+After the error the query's state is freed. The database, other queries and other cursors are unaffected. Through a cursor, the rows already returned stay returned and the error comes on the next call. A rule query can fail when it is opened, while its rules are evaluated.
+
+**Resolution**:
+- Raise `OpenOptions::query_memory_limit`, or leave it at the default.
+- Narrow the query: bind a constant, add a join variable between patterns that share none (a cartesian product holds one side in full), or group by fewer variables.
+- Read a large answer through `Minigraf::query` instead of `execute`, which holds every row.
+
+**Example**:
+```rust
+let db = Minigraf::open_with_options("app.graph", OpenOptions::new().query_memory_limit(64))?;
+db.execute("(query [:find ?g (count ?e) :where [?e :g ?g]])")?;
+```
+*`Aggregate` needs more than 64 bytes for its first group*
+
 ### QRY-013 Rule head entity is not an entity
 
 **Error text**: `rule head entity is not an entity: rule '{}' gives a {} where a ref or a keyword is needed`
 
-**Cause**: A rule produced a head whose first argument, the entity of the fact it derives, is not an entity: a string, a number, a boolean or `nil`. Only a ref, or a keyword (which names the entity `uuidv5(keyword)`), is an entity. The head's second argument, the value, may be any value. The query that invoked the rule fails, whether the rule has `not`/`not-join`/`or`/`or-join` clauses or not. Before v3.0.0 a positive rule failed with INT-022 and a rule with `not`/`or` clauses silently dropped the row. (QRY-012 is reserved.)
+**Cause**: A rule produced a head whose first argument, the entity of the fact it derives, is not an entity: a string, a number, a boolean or `nil`. Only a ref, or a keyword (which names the entity `uuidv5(keyword)`), is an entity. The head's second argument, the value, may be any value. The query that invoked the rule fails, whether the rule has `not`/`not-join`/`or`/`or-join` clauses or not. Before v3.0.0 a positive rule failed with INT-022 and a rule with `not`/`or` clauses silently dropped the row.
 
 **Resolution**:
 - Put an entity variable first in the head: `(owner ?item ?person)`, not `(owner ?name ?item)` where `?name` binds a string.

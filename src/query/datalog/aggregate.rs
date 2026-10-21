@@ -442,6 +442,17 @@ impl Agg {
         })
     }
 
+    /// Whether [`step`](Self::step) would add `v` to a distinct set, so a
+    /// caller can count it first (#549).
+    pub(crate) fn would_add(&self, v: &Value) -> bool {
+        match self {
+            Agg::CountDistinct(set) | Agg::SumDistinct(set) => {
+                !matches!(v, Value::Null) && !set.contains(&canonical(v))
+            }
+            _ => false,
+        }
+    }
+
     /// Take one value; `nil` is skipped by every aggregate.
     pub(crate) fn step(&mut self, v: &Value) {
         if matches!(v, Value::Null) {

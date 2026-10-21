@@ -11,6 +11,7 @@
 
 use super::cell::{Cell, JoinKey, Scalar};
 use super::ids::IdSpace;
+use super::meter::{HASH_ENTRY_OVERHEAD, Held, Meter, cell_bytes, growth, key_bytes};
 use super::plan::{HeadArg, RuleRun, RulesPlan, ScanSpec, Term};
 use super::relation::Relations;
 use super::scan::Scan;
@@ -22,6 +23,8 @@ use crate::query::datalog::functions::FunctionRegistry;
 use crate::storage::KeySource;
 use anyhow::Result;
 use std::collections::HashSet;
+use std::mem::size_of;
+use std::sync::Arc;
 
 /// The limits of one rule query (spec §3.5).
 #[derive(Debug, Clone, Copy)]
@@ -30,6 +33,8 @@ pub(crate) struct Limits {
     /// Facts the rules may derive in total; stored facts and magic seeds do
     /// not count.
     pub(crate) max_derived_facts: usize,
+    /// The most bytes the query may hold (#549).
+    pub(crate) query_memory: usize,
 }
 
 /// What every body run reads.
@@ -46,11 +51,12 @@ pub(crate) fn evaluate(
     reads: &Reads<'_>,
     ids: &mut IdSpace,
     limits: Limits,
+    meter: &Arc<Meter>,
 ) -> Result<()> {
     let mut derived = 0usize;
     for (stratum_rels, rules) in &plan.strata {
         for &rel in stratum_rels {
-            know_stored(plan, rel, rels, reads, ids)?;
+            know_stored(plan, rel, rels, reads, ids, meter)?;
         }
         let mut round = 0;
         loop {
@@ -65,8 +71,12 @@ pub(crate) fn evaluate(
                     &rule.deltas
                 };
                 for run in runs {
-                    for row in heads(run, &rule.predicate, rule.rel, rels, reads, ids)? {
-                        if rels.add(rule.rel, row) {
+                    let (rows, mut held) =
+                        heads(run, &rule.predicate, rule.rel, rels, reads, ids, meter)?;
+                    for row in rows {
+                        // From the candidates to the relation.
+                        held.uncharge(head_bytes(&row));
+                        if rels.add(rule.rel, row)? {
                             derived += 1;
                             if derived > limits.max_derived_facts {
                                 return Err(derived_facts_exceeded(limits.max_derived_facts));
@@ -91,6 +101,7 @@ fn know_stored(
     rels: &mut Relations,
     reads: &Reads<'_>,
     ids: &mut IdSpace,
+    meter: &Arc<Meter>,
 ) -> Result<()> {
     let Some(attr) = plan.evaluated.attrs.get(rel) else {
         return Ok(());
@@ -105,25 +116,34 @@ fn know_stored(
         width: 2,
         derived: None,
     });
-    let mut stored = Vec::new();
+    let mut stored: Vec<(Cell, Cell)> = Vec::new();
+    // The buffer of stored rows, released on return (#549 spec §3.2).
+    let mut held = Held::new(meter, "Recursive");
     {
         let mut ctx = ctx(reads, ids, None);
         while let Some(batch) = scan.next_batch(&mut ctx)? {
             let (Some(es), Some(vs)) = (batch.cols.first(), batch.cols.get(1)) else {
                 continue;
             };
-            stored.extend(es.iter().cloned().zip(vs.iter().cloned()));
+            for (e, v) in es.iter().zip(vs) {
+                let n = cell_bytes(e) + cell_bytes(v);
+                held.charge(n)?;
+                let refused = growth(stored.capacity(), size_of::<(Cell, Cell)>());
+                held.reserve(stored.try_reserve(1), n, refused)?;
+                stored.push((e.clone(), v.clone()));
+            }
         }
     }
     ids.end_pull();
     for (e, v) in stored {
-        rels.know(rel, &[e, v]);
+        rels.know(rel, &[e, v])?;
     }
     Ok(())
 }
 
 /// The heads one run of a rule's body gives that `rels` does not know yet,
-/// each once.
+/// each once, and what they hold on the meter until the caller drops it.
+#[allow(clippy::too_many_arguments)]
 fn heads(
     run: &RuleRun,
     predicate: &str,
@@ -131,12 +151,14 @@ fn heads(
     rels: &Relations,
     reads: &Reads<'_>,
     ids: &mut IdSpace,
-) -> Result<Vec<[Cell; 2]>> {
-    let mut out = Vec::new();
+    meter: &Arc<Meter>,
+) -> Result<(Vec<[Cell; 2]>, Held)> {
+    let mut out: Vec<[Cell; 2]> = Vec::new();
     let mut seen: HashSet<[JoinKey; 2]> = HashSet::new();
+    let mut held = Held::new(meter, "Recursive");
     {
         let mut ctx = ctx(reads, ids, Some(rels));
-        let mut root = build(run.plan.source.clone(), run.plan.steps.clone());
+        let mut root = build(run.plan.source.clone(), run.plan.steps.clone(), meter);
         while let Some(batch) = root.next_batch(&mut ctx)? {
             for i in 0..batch.len {
                 let cell = |slot: usize| batch.cols.get(slot).and_then(|c| c.get(i));
@@ -144,17 +166,35 @@ fn heads(
                     entity(&run.entity, predicate, cell, &mut ctx)?,
                     value(run.value.as_ref(), cell)?,
                 ];
-                if !rels.known(rel, &row)
-                    && seen.insert([JoinKey::ident(&row[0]), JoinKey::ident(&row[1])])
-                {
-                    out.push(row);
+                if rels.known(rel, &row) {
+                    continue;
                 }
+                let k = [JoinKey::ident(&row[0]), JoinKey::ident(&row[1])];
+                if seen.contains(&k) {
+                    continue;
+                }
+                // The candidate row and its key (#549 spec §3.2).
+                let n = head_bytes(&row);
+                held.charge(n)?;
+                let key = key_bytes(&k[0]) + key_bytes(&k[1]) + HASH_ENTRY_OVERHEAD;
+                let refused = growth(seen.capacity(), key)
+                    .saturating_add(growth(out.capacity(), size_of::<[Cell; 2]>()));
+                let reserved = seen.try_reserve(1).and_then(|()| out.try_reserve(1));
+                held.reserve(reserved, n, refused)?;
+                seen.insert(k);
+                out.push(row);
             }
         }
         root.close();
     }
     ids.end_pull();
-    Ok(out)
+    Ok((out, held))
+}
+
+/// A candidate head and its key in `heads`' set.
+fn head_bytes(row: &[Cell; 2]) -> usize {
+    let key = key_bytes(&JoinKey::ident(&row[0])) + key_bytes(&JoinKey::ident(&row[1]));
+    cell_bytes(&row[0]) + cell_bytes(&row[1]) + key + HASH_ENTRY_OVERHEAD
 }
 
 fn ctx<'a>(reads: &Reads<'a>, ids: &'a mut IdSpace, derived: Option<&'a Relations>) -> Ctx<'a> {

@@ -9,11 +9,14 @@
 
 use super::batch::Batch;
 use super::cell::{Cell, JoinKey, join_eq};
+use super::meter::{HASH_ENTRY_OVERHEAD, Held, Meter, growth, keys_bytes, row_bytes};
 use super::plan::{JoinKind, JoinSpec, Key};
 use super::scan::Scan;
 use super::{BATCH_ROWS, Counters, Ctx, Operator};
 use anyhow::Result;
 use std::collections::HashMap;
+use std::mem::size_of;
+use std::sync::Arc;
 
 type Row = Vec<Cell>;
 
@@ -26,6 +29,8 @@ pub(crate) struct Join {
     replace: Vec<(usize, usize)>,
     outer_width: usize,
     state: State,
+    /// The build side's table (#549 spec §3.2).
+    held: Held,
     /// `rows_in` counts the outer rows received.
     counters: Counters,
 }
@@ -74,7 +79,7 @@ enum Side {
 }
 
 impl Join {
-    pub(crate) fn new(outer: Box<dyn Operator>, spec: JoinSpec) -> Self {
+    pub(crate) fn new(outer: Box<dyn Operator>, spec: JoinSpec, meter: &Arc<Meter>) -> Self {
         let op = match spec.kind {
             JoinKind::Probe(_) => "IndexNestedLoopJoin",
             JoinKind::Hash { .. } => "HashJoin",
@@ -88,6 +93,7 @@ impl Join {
             replace: spec.replace,
             outer_width: spec.outer_width,
             state: State::Start,
+            held: Held::new(meter, op),
             counters: Counters::new(op),
         }
     }
@@ -153,12 +159,33 @@ impl Join {
                 let Some(key) = self.key(&row, side, ctx)? else {
                     continue;
                 };
-                let next = table.buckets.len();
-                let b = *table.by_key.entry(key).or_insert(next);
-                if b == next {
-                    table.buckets.push(Vec::new());
-                }
+                let found = table.by_key.get(&key).copied();
+                // A new key's bucket: the key, its index, the bucket's
+                // header; then the row's cells.
+                let bucket_bytes = keys_bytes(&key)
+                    + size_of::<usize>()
+                    + size_of::<Vec<Row>>()
+                    + HASH_ENTRY_OVERHEAD;
+                let n = row_bytes(&row) + if found.is_none() { bucket_bytes } else { 0 };
+                self.held.charge(n)?;
+                let b = match found {
+                    Some(b) => b,
+                    None => {
+                        let refused = growth(table.by_key.capacity(), bucket_bytes);
+                        let reserved = table
+                            .by_key
+                            .try_reserve(1)
+                            .and_then(|()| table.buckets.try_reserve(1));
+                        self.held.reserve(reserved, n, refused)?;
+                        let next = table.buckets.len();
+                        table.by_key.insert(key, next);
+                        table.buckets.push(Vec::new());
+                        next
+                    }
+                };
                 if let Some(bucket) = table.buckets.get_mut(b) {
+                    let refused = growth(bucket.capacity(), size_of::<Row>());
+                    self.held.reserve(bucket.try_reserve(1), n, refused)?;
                     bucket.push(row);
                 }
             }
@@ -364,18 +391,23 @@ impl Operator for Join {
 
     fn rewind(&mut self, seed: &[Cell]) {
         self.state = State::Start;
+        self.held.release();
         self.outer.rewind(seed);
         self.inner.rewind(&[]);
     }
 
     fn close(&mut self) {
         self.state = State::Done;
+        self.held.release();
         self.outer.close();
         self.inner.close();
     }
 
     fn counters(&self, out: &mut Vec<Counters>) {
-        out.push(self.counters);
+        out.push(Counters {
+            bytes_held: self.held.bytes() as u64,
+            ..self.counters
+        });
         self.inner.counters(out);
         self.outer.counters(out);
     }
