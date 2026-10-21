@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Prepared queries use the database's rule limits** (#679), backported from v3.0.0. `PreparedQuery::execute` ran a rule query with the default `max_derived_facts` and `max_results` of 1,000,000 whatever `OpenOptions` set, so a lower limit set to stop a runaway recursive rule did not apply to prepared queries, and a higher one set for a large derivation failed with `INT-020` where `execute` of the same query succeeded. It now uses the database's limits, as `execute` does. `:max-derived-facts` and `:max-results` written in the query text were always applied. Present since v0.19.0.
+
 ## v2.0.9 — 2026-10-21
 
 Patch release on the v2.x line under the [support policy](PHILOSOPHY.md#support-policy): two data-integrity fixes, for a pseudo-attribute in a rule body that read the wrong valid time and tx metadata (#661) and for a fact of more than four elements whose extra elements were silently dropped (#649), plus error codes in `BrowserDb` rejections (#673). File format is unchanged (v7). No API changes; a fact of more than four elements, which used to be stored truncated, now fails with `PRS-108`. Upgrading is recommended for every v2.x user who reads `:db/valid-from`, `:db/valid-to`, `:db/tx-count` or `:db/tx-id` in rules.

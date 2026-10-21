@@ -852,6 +852,10 @@ impl Minigraf {
             self.inner.fact_storage.clone(),
             self.inner.rules.clone(),
             self.inner.functions.clone(),
+            (
+                self.inner.options.max_derived_facts,
+                self.inner.options.max_results,
+            ),
         )
     }
 
