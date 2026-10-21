@@ -172,7 +172,7 @@ pub(crate) enum ErrorCode {
     Qry009,
     Qry010,
     Qry011,
-    // QRY-012 is reserved for the query memory limit (#549).
+    Qry012,
     Qry013,
     Int000,
     Stg001,
@@ -1069,6 +1069,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Qry011,
         "QRY-011",
         "unknown window function '{}' — register it with register_aggregate() before querying",
+        ErrorCategory::Query,
+    ),
+    (
+        ErrorCode::Qry012,
+        "QRY-012",
+        "query memory limit exceeded: {}",
         ErrorCategory::Query,
     ),
     (
@@ -2275,6 +2281,7 @@ mod tests {
                 | ErrorCode::Qry009
                 | ErrorCode::Qry010
                 | ErrorCode::Qry011
+                | ErrorCode::Qry012
                 | ErrorCode::Qry013
                 | ErrorCode::Stg001
                 | ErrorCode::Stg002
@@ -2536,6 +2543,7 @@ mod tests {
             ErrorCode::Qry009,
             ErrorCode::Qry010,
             ErrorCode::Qry011,
+            ErrorCode::Qry012,
             ErrorCode::Qry013,
             ErrorCode::Stg001,
             ErrorCode::Stg002,

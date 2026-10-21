@@ -154,6 +154,8 @@ pub struct DatalogExecutor {
     functions: Arc<RwLock<FunctionRegistry>>,
     /// The most facts a rule query may derive, base facts not counted (#553).
     max_derived_facts: usize,
+    /// The most bytes an engine query may hold (#549).
+    query_memory_limit: usize,
 }
 
 impl DatalogExecutor {
@@ -167,6 +169,7 @@ impl DatalogExecutor {
             rules: Arc::new(RwLock::new(RuleRegistry::new())),
             functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
             max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
+            query_memory_limit: usize::MAX,
         }
     }
 
@@ -186,6 +189,7 @@ impl DatalogExecutor {
             rules,
             functions,
             max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
+            query_memory_limit: usize::MAX,
         }
     }
 
@@ -204,6 +208,7 @@ impl DatalogExecutor {
             rules,
             functions,
             max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
+            query_memory_limit: usize::MAX,
         }
     }
 
@@ -237,13 +242,16 @@ impl DatalogExecutor {
             rules,
             functions,
             max_derived_facts,
+            query_memory_limit: usize::MAX,
         }
     }
 
     /// Set the most facts a rule query may derive, base facts not counted
-    /// (`OpenOptions::max_derived_facts`, #553).
-    pub fn set_limits(&mut self, max_derived_facts: usize) {
+    /// (`OpenOptions::max_derived_facts`, #553), and the most bytes a query
+    /// on the engine may hold (`OpenOptions::query_memory_limit`, #549).
+    pub fn set_limits(&mut self, max_derived_facts: usize, query_memory_limit: usize) {
         self.max_derived_facts = max_derived_facts;
+        self.query_memory_limit = query_memory_limit;
     }
 
     /// Read every fact from `snapshot`, so the queries of this executor see
@@ -581,16 +589,24 @@ impl DatalogExecutor {
                 check_clauses(&query, &registry)?;
             }
             let snapshot = self.read_snapshot()?;
-            if let Some(stream) =
-                crate::query::engine::open(snapshot.clone(), plan, self.functions.clone())
-            {
+            if let Some(stream) = crate::query::engine::open(
+                snapshot.clone(),
+                plan,
+                self.functions.clone(),
+                self.query_memory_limit,
+            ) {
                 #[cfg(test)]
                 crate::query::engine::RUNS.with(|r| r.set(r.get() + 1));
                 // The comparison drains a second stream, so the one returned
                 // stays unread.
                 #[cfg(any(test, feature = "test-oracle"))]
                 if let Some(again) = crate::query::engine::plan(&query).and_then(|plan| {
-                    crate::query::engine::open(snapshot.clone(), plan, self.functions.clone())
+                    crate::query::engine::open(
+                        snapshot.clone(),
+                        plan,
+                        self.functions.clone(),
+                        self.query_memory_limit,
+                    )
                 }) {
                     crate::query::engine::oracle::check(
                         &again.collect(),
@@ -630,6 +646,7 @@ impl DatalogExecutor {
         let limits = crate::query::engine::Limits {
             max_iterations: crate::query::datalog::evaluator::DEFAULT_MAX_ITERATIONS,
             max_derived_facts: self.derived_limit(query),
+            query_memory: self.query_memory_limit,
         };
         let snapshot = self.read_snapshot()?;
         let open = |plan| -> Result<Option<crate::query::engine::Stream>> {
@@ -694,6 +711,7 @@ impl DatalogExecutor {
             rules: self.rules.clone(),
             functions: self.functions.clone(),
             max_derived_facts: self.max_derived_facts,
+            query_memory_limit: self.query_memory_limit,
         }
     }
 
@@ -4256,7 +4274,7 @@ mod tests {
             rules.clone(),
             functions.clone(),
         );
-        executor.set_limits(1_000_000);
+        executor.set_limits(1_000_000, usize::MAX);
 
         executor
             .execute(parse_datalog_command(r#"(rule [(reachable ?x ?y) [?x :edge ?y]])"#).unwrap())

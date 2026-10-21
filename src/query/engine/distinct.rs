@@ -5,24 +5,28 @@
 
 use super::batch::Batch;
 use super::cell::{Cell, JoinKey};
+use super::meter::{HASH_ENTRY_OVERHEAD, Held, Meter, growth, keys_bytes};
 use super::{Counters, Ctx, Operator};
 use anyhow::Result;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 pub(crate) struct Distinct {
     child: Box<dyn Operator>,
     slots: Vec<usize>,
     /// The rows returned since the last rewind.
     seen: HashSet<Vec<JoinKey>>,
+    held: Held,
     counters: Counters,
 }
 
 impl Distinct {
-    pub(crate) fn new(child: Box<dyn Operator>, slots: Vec<usize>) -> Self {
+    pub(crate) fn new(child: Box<dyn Operator>, slots: Vec<usize>, meter: &Arc<Meter>) -> Self {
         Distinct {
             child,
             slots,
             seen: HashSet::new(),
+            held: Held::new(meter, "Distinct"),
             counters: Counters::new("Distinct"),
         }
     }
@@ -39,6 +43,13 @@ impl Distinct {
             };
             key.push(k);
         }
+        if self.seen.contains(&key) {
+            return Ok(false);
+        }
+        let n = keys_bytes(&key) + HASH_ENTRY_OVERHEAD;
+        self.held.charge(n)?;
+        let refused = growth(self.seen.capacity(), n);
+        self.held.reserve(self.seen.try_reserve(1), n, refused)?;
         Ok(self.seen.insert(key))
     }
 }
@@ -62,16 +73,21 @@ impl Operator for Distinct {
 
     fn rewind(&mut self, seed: &[Cell]) {
         self.seen.clear();
+        self.held.release();
         self.child.rewind(seed);
     }
 
     fn close(&mut self) {
         self.seen = HashSet::new();
+        self.held.release();
         self.child.close();
     }
 
     fn counters(&self, out: &mut Vec<Counters>) {
-        out.push(self.counters);
+        out.push(Counters {
+            bytes_held: self.held.bytes() as u64,
+            ..self.counters
+        });
         self.child.counters(out);
     }
 }

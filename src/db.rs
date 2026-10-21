@@ -185,6 +185,23 @@ pub struct OpenOptions {
     /// `API-014`. Queries, cursors, [`Minigraf::fact_log`],
     /// [`Minigraf::verify`] and rule registration (which lives in memory) work.
     pub read_only: bool,
+    /// The most bytes one query may hold, or `usize::MAX` (the default) for
+    /// no limit (#549).
+    ///
+    /// A query that would hold more fails with `QRY-012` instead, and frees
+    /// what it held; the database and other queries are unaffected. Each
+    /// operator that keeps state — a hash join's build side, a negation or
+    /// `or` table, a distinct set, the groups of an aggregate, the rows of
+    /// a window, the facts a rule query derives, and the query's entity and
+    /// ident ids — counts an estimate of its bytes per entry, the same on
+    /// every platform. Rows passing between operators are not counted, and
+    /// neither is the answer [`Minigraf::execute`] collects; read a large
+    /// answer through [`Minigraf::query`]. `0` fails any query that keeps
+    /// state.
+    ///
+    /// Queries inside a [`WriteTransaction`] that has staged writes are not
+    /// counted yet.
+    pub query_memory_limit: usize,
 }
 
 #[allow(deprecated)] // `max_results`, kept as an alias until it is removed
@@ -198,6 +215,7 @@ impl Default for OpenOptions {
             allow_unlocked: false,
             synchronous: SyncMode::Full,
             read_only: false,
+            query_memory_limit: usize::MAX,
         }
     }
 }
@@ -249,6 +267,14 @@ impl OpenOptions {
     #[allow(deprecated)]
     pub fn max_results(mut self, n: usize) -> Self {
         self.max_results = n;
+        self
+    }
+
+    /// Set the most bytes one query may hold. See
+    /// [`OpenOptions::query_memory_limit`].
+    #[must_use]
+    pub fn query_memory_limit(mut self, bytes: usize) -> Self {
+        self.query_memory_limit = bytes;
         self
     }
 
@@ -806,7 +832,10 @@ impl Minigraf {
             self.inner.rules.clone(),
             self.inner.functions.clone(),
         );
-        executor.set_limits(self.inner.options.derived_fact_limit());
+        executor.set_limits(
+            self.inner.options.derived_fact_limit(),
+            self.inner.options.query_memory_limit,
+        );
         executor.set_snapshot(snapshot);
         executor
     }
@@ -1193,6 +1222,10 @@ impl Minigraf {
             self.inner.fact_storage.clone(),
             self.inner.rules.clone(),
             self.inner.functions.clone(),
+            (
+                self.inner.options.derived_fact_limit(),
+                self.inner.options.query_memory_limit,
+            ),
         )
     }
 
@@ -1508,7 +1541,10 @@ impl<'a> WriteTransaction<'a> {
                 self.inner.rules.clone(),
                 self.inner.functions.clone(),
             );
-            executor.set_limits(self.inner.options.derived_fact_limit());
+            executor.set_limits(
+                self.inner.options.derived_fact_limit(),
+                self.inner.options.query_memory_limit,
+            );
             return executor.execute(cmd);
         }
 
@@ -1519,7 +1555,10 @@ impl<'a> WriteTransaction<'a> {
             self.inner.rules.clone(),
             self.inner.functions.clone(),
         );
-        executor.set_limits(self.inner.options.derived_fact_limit());
+        executor.set_limits(
+            self.inner.options.derived_fact_limit(),
+            self.inner.options.query_memory_limit,
+        );
         executor.execute(cmd)
     }
 
@@ -1532,7 +1571,10 @@ impl<'a> WriteTransaction<'a> {
             self.inner.rules.clone(),
             self.inner.functions.clone(),
         );
-        executor.set_limits(self.inner.options.derived_fact_limit());
+        executor.set_limits(
+            self.inner.options.derived_fact_limit(),
+            self.inner.options.query_memory_limit,
+        );
         executor.execute(DatalogCommand::Rule(rule))
     }
 
@@ -2298,6 +2340,7 @@ mod tests {
             allow_unlocked: false,
             synchronous: SyncMode::Full,
             read_only: false,
+            query_memory_limit: usize::MAX,
         };
         let db = Minigraf::open_with_options(&path, opts).unwrap();
         assert_eq!(db.inner.options.wal_checkpoint_threshold, 5);

@@ -83,6 +83,8 @@ pub struct PreparedQuery {
     fact_storage: FactStorage,
     rules: Arc<RwLock<RuleRegistry>>,
     functions: Arc<RwLock<FunctionRegistry>>,
+    /// The database's `max_derived_facts` and `query_memory_limit`.
+    limits: (usize, usize),
 }
 
 impl std::fmt::Debug for PreparedQuery {
@@ -156,6 +158,7 @@ impl PreparedQuery {
             self.rules.clone(),
             self.functions.clone(),
         );
+        executor.set_limits(self.limits.0, self.limits.1);
         executor.set_snapshot(snapshot);
         Ok((executor, DatalogCommand::Query(filled_query)))
     }
@@ -168,6 +171,7 @@ pub(crate) fn prepare_query(
     fact_storage: FactStorage,
     rules: Arc<RwLock<RuleRegistry>>,
     functions: Arc<RwLock<FunctionRegistry>>,
+    limits: (usize, usize),
 ) -> Result<PreparedQuery> {
     validate_no_attribute_slots(&query)?;
     let slot_names = collect_slot_names(&query);
@@ -177,6 +181,7 @@ pub(crate) fn prepare_query(
         fact_storage,
         rules,
         functions,
+        limits,
     })
 }
 

@@ -1852,3 +1852,342 @@ fn rule_queries_read_derived_rows_in_batches() {
         db.checkpoint().unwrap();
     }
 }
+
+// ── #549: query memory accounting ──────────────────────────────────────────
+
+/// A checkpointed database of `n` entities, each with integers `:a` and
+/// `:b`, both its number. Queries over variable attributes
+/// read ids straight from keys, so their first holder is an operator rather
+/// than the query's `IdSpace`.
+fn memory_db(dir: &std::path::Path, n: usize, limit: usize) -> Minigraf {
+    let path = dir.join("memory.graph");
+    {
+        let db = Minigraf::open(&path).unwrap();
+        let facts: String = (0..n)
+            .map(|i| format!("[:p{i} :a {i}] [:p{i} :b {i}]"))
+            .collect();
+        db.execute(&format!("(transact [{facts}])")).unwrap();
+        db.checkpoint().unwrap();
+    }
+    crate::OpenOptions::new()
+        .query_memory_limit(limit)
+        .path(&path)
+        .open()
+        .unwrap()
+}
+
+/// One shape per operator that holds state, the operator that holds it
+/// first, and the entities its database needs: more than one batch of
+/// answer rows, few enough that the executor oracle's cross joins stay fast.
+const MEMORY_SHAPES: [(&str, usize, &str); 5] = [
+    (
+        "HashJoin",
+        300,
+        "(query [:find ?e :where [?e ?a ?x] [?f ?b ?x]])",
+    ),
+    (
+        "AntiJoin",
+        300,
+        "(query [:find ?e :where [?e ?a ?x] (not-join [?x] [?f ?b ?x] [(< ?x 100)])])",
+    ),
+    (
+        "Union",
+        300,
+        "(query [:find ?e ?f :where [?e ?a ?x] \
+         (or (and [?f ?b ?x] [(> ?x 5)]) (and [?f ?b ?x] [(< ?x 9)]))])",
+    ),
+    (
+        "Aggregate",
+        1100,
+        "(query [:find ?x (count ?e) :where [?e ?a ?x]])",
+    ),
+    (
+        "Window",
+        1100,
+        "(query [:find ?e (rank :over (:order-by ?x)) :where [?e ?a ?x]])",
+    ),
+];
+
+/// Every holder charges while it holds state, and the meter is back at 0
+/// once the stream is drained or dropped early (#549 spec §6.2).
+#[test]
+fn holders_charge_and_the_meter_returns_to_zero() {
+    for (op, n, query) in MEMORY_SHAPES {
+        let dir = tempfile::tempdir().unwrap();
+        let db = memory_db(dir.path(), n, usize::MAX);
+        let mut cursor = db.query(query).unwrap();
+        let meter = cursor.stream_mut().expect("engine").meter().clone();
+        assert!(cursor.next_batch(1).unwrap().is_some(), "{op}: a row");
+        assert!(meter.peak() > 0, "{op}: charged");
+        if op != "Union" {
+            let held = cursor
+                .stream_mut()
+                .expect("engine")
+                .counters()
+                .iter()
+                .filter(|c| c.op == op)
+                .map(|c| c.bytes_held)
+                .sum::<u64>();
+            assert!(held > 0, "{op}: holds state between pulls");
+        }
+        while cursor.next_batch(4096).unwrap().is_some() {}
+        assert_eq!(meter.used(), 0, "{op}: drained");
+
+        let mut cursor = db.query(query).unwrap();
+        let meter = cursor.stream_mut().expect("engine").meter().clone();
+        cursor.next_batch(1).unwrap();
+        drop(cursor);
+        assert_eq!(meter.used(), 0, "{op}: dropped early");
+    }
+}
+
+/// The holder that would go over the limit is named (#549 spec §4).
+#[test]
+fn qry_012_names_the_holder_over_the_limit() {
+    for (op, n, query) in MEMORY_SHAPES {
+        let dir = tempfile::tempdir().unwrap();
+        let db = memory_db(dir.path(), n, 1);
+        let err = db.execute(query).expect_err(op);
+        assert_eq!(err.code(), "QRY-012", "{op}");
+        let text = err.to_string();
+        assert!(text.contains(&format!("{op} needs")), "{op}: {text}");
+        assert!(text.contains("of its 1-byte limit"), "{op}: {text}");
+    }
+
+    // Pending entities take provisional ids.
+    let db = crate::OpenOptions::new()
+        .query_memory_limit(1)
+        .open_memory()
+        .unwrap();
+    db.execute("(transact [[:x :a 1]])").unwrap();
+    let err = db
+        .execute("(query [:find ?e :where [?e :a ?v]])")
+        .expect_err("ids");
+    assert!(err.to_string().contains("IdSpace needs"), "IdSpace");
+
+    // A rule query's candidate heads: enough for its ids, not its rows.
+    let dir = tempfile::tempdir().unwrap();
+    let db = memory_db(dir.path(), 300, 2000);
+    db.execute("(rule [(r ?x ?y) [?x :a ?y]])").unwrap();
+    let err = db
+        .execute("(query [:find ?x ?y :where (r ?x ?y)])")
+        .expect_err("rules");
+    assert_eq!(err.code(), "QRY-012");
+    assert!(err.to_string().contains("Recursive needs"), "Recursive");
+}
+
+/// A refused allocation is `QRY-012` naming the holder (spec §4, second
+/// form), through the test hook.
+#[test]
+fn qry_012_allocator_form() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = memory_db(dir.path(), 300, usize::MAX);
+    for (op, _, query) in MEMORY_SHAPES {
+        super::meter::FAIL_RESERVE.with(|f| f.set(Some(op)));
+        let err = db.execute(query).expect_err(op);
+        super::meter::FAIL_RESERVE.with(|f| f.set(None));
+        assert_eq!(err.code(), "QRY-012", "{op}");
+        let text = err.to_string();
+        assert!(
+            text.contains("the allocator refused") && text.ends_with(&format!("bytes for {op}")),
+            "{op}: {text}"
+        );
+        db.execute(query).expect("the next query runs");
+    }
+}
+
+/// A cursor that returned rows and then reaches the limit gives the error
+/// on the next call; the database then answers other queries.
+#[test]
+fn cursor_returns_rows_then_qry_012() {
+    let db = crate::OpenOptions::new()
+        .query_memory_limit(120_000)
+        .open_memory()
+        .unwrap();
+    let facts: String = (0..3000).map(|i| format!("[:p{i} :a {i}]")).collect();
+    db.execute(&format!("(transact [{facts}])")).unwrap();
+    // Each new pending entity takes a provisional id, held to the end.
+    let mut cursor = db.query("(query [:find ?e :where [?e :a ?v]])").unwrap();
+    let mut rows = 0;
+    let err = loop {
+        match cursor.next_batch(1024) {
+            Ok(Some(batch)) => rows += batch.len(),
+            Ok(None) => panic!("expected QRY-012"),
+            Err(e) => break e,
+        }
+    };
+    assert!(rows >= 1024, "rows before the error");
+    assert_eq!(err.code(), "QRY-012");
+    assert!(cursor.next_batch(1024).unwrap().is_none(), "then done");
+    let QueryResult::QueryResults { results, .. } =
+        db.execute("(query [:find ?v :where [:p1 :a ?v]])").unwrap()
+    else {
+        panic!("expected query results");
+    };
+    assert_eq!(results.len(), 1, "the database answers");
+}
+
+/// Integers `0..n` in slot 0, in batches.
+struct Ints {
+    n: i64,
+    at: i64,
+}
+
+impl super::Operator for Ints {
+    fn next_batch(&mut self, _: &mut super::Ctx<'_>) -> anyhow::Result<Option<super::Batch>> {
+        if self.at >= self.n {
+            return Ok(None);
+        }
+        let mut batch = super::Batch::new(1);
+        while batch.len < super::BATCH_ROWS && self.at < self.n {
+            batch.push(&mut [Some(super::cell::Cell::Val(super::cell::Scalar::Int(
+                self.at,
+            )))]);
+            self.at += 1;
+        }
+        Ok(Some(batch))
+    }
+
+    fn rewind(&mut self, _: &[super::cell::Cell]) {
+        self.at = 0;
+    }
+
+    fn close(&mut self) {
+        self.at = self.n;
+    }
+
+    fn counters(&self, _: &mut Vec<super::Counters>) {}
+}
+
+/// Pull `op` once with a fresh context over `meter`.
+fn pull_once(
+    op: &mut dyn super::Operator,
+    meter: &std::sync::Arc<super::Meter>,
+) -> anyhow::Result<Option<super::Batch>> {
+    let snapshot = crate::graph::storage::FactStorage::new()
+        .snapshot()
+        .unwrap();
+    let functions = crate::query::datalog::functions::FunctionRegistry::with_builtins();
+    let mut ids = super::ids::IdSpace::new(None, meter);
+    let mut ctx = super::Ctx {
+        snapshot: &snapshot,
+        keys: None,
+        ids: &mut ids,
+        functions: &functions,
+        derived: None,
+    };
+    op.next_batch(&mut ctx)
+}
+
+/// `rewind` and `close` release what an operator holds (spec §3.1).
+#[test]
+fn rewind_and_close_release() {
+    let meter = super::Meter::unlimited();
+    let ints = || Box::new(Ints { n: 3000, at: 0 });
+    let mut distinct = super::distinct::Distinct::new(ints(), vec![0], &meter);
+    let mut aggregate = super::aggregate::Aggregate::new(
+        ints(),
+        vec![0],
+        vec![("count".to_string(), 0)],
+        false,
+        &meter,
+    );
+    let ops: [&mut dyn super::Operator; 2] = [&mut distinct, &mut aggregate];
+    for op in ops {
+        pull_once(op, &meter).unwrap().expect("a batch");
+        assert!(meter.used() > 0, "held after a pull");
+        op.rewind(&[]);
+        assert_eq!(meter.used(), 0, "released by rewind");
+        pull_once(op, &meter).unwrap().expect("a batch");
+        assert!(meter.used() > 0, "held again");
+        op.close();
+        assert_eq!(meter.used(), 0, "released by close");
+    }
+}
+
+/// Each operator over a small limit names itself; a rule query's relation
+/// too.
+#[test]
+fn small_limit_in_each_holder() {
+    let meter = super::Meter::new(100);
+    let mut distinct =
+        super::distinct::Distinct::new(Box::new(Ints { n: 10, at: 0 }), vec![0], &meter);
+    let err = pull_once(&mut distinct, &meter).unwrap_err();
+    assert!(err.to_string().contains("Distinct needs"), "Distinct");
+    super::Operator::close(&mut distinct);
+    assert_eq!(meter.used(), 0, "nothing counted after the error and close");
+
+    let mut aggregate = super::aggregate::Aggregate::new(
+        Box::new(Ints { n: 10, at: 0 }),
+        vec![0],
+        vec![("count".to_string(), 0)],
+        false,
+        &meter,
+    );
+    let err = pull_once(&mut aggregate, &meter).unwrap_err();
+    assert!(err.to_string().contains("Aggregate needs"), "Aggregate");
+
+    let meter = super::Meter::new(300);
+    let mut rels = super::relation::Relations::new([7], &meter);
+    let row = |n| {
+        [
+            super::cell::Cell::Eid(n),
+            super::cell::Cell::Val(super::cell::Scalar::Int(1)),
+        ]
+    };
+    rels.add(0, row(1)).unwrap();
+    let err = (2..10)
+        .find_map(|n| rels.add(0, row(n)).err())
+        .expect("limit");
+    assert!(err.to_string().contains("Relations needs"), "Relations");
+    assert!(meter.used() > 0);
+    drop(rels);
+    assert_eq!(meter.used(), 0, "released on drop");
+}
+
+/// A join with no key builds on its inner pattern unless the outer side's
+/// product estimate is smaller (#549 spec §6.1).
+#[test]
+fn planner_builds_a_keyless_join_on_the_smaller_product() {
+    use super::plan::{JoinKind, Step, plan};
+    use crate::query::datalog::parser::parse_datalog_command;
+    use crate::query::datalog::types::DatalogCommand;
+    let sides = |q: &str| -> Vec<bool> {
+        let Ok(DatalogCommand::Query(query)) = parse_datalog_command(q) else {
+            panic!("expected a query");
+        };
+        plan(&query)
+            .expect("an engine plan")
+            .steps
+            .iter()
+            .filter_map(|s| match s {
+                Step::Join(j) => match j.kind {
+                    JoinKind::Hash { build_inner } => Some(build_inner),
+                    JoinKind::Probe(_) => None,
+                },
+                _ => None,
+            })
+            .collect()
+    };
+    // #575: the outer side is 100 rows, then at least 100 × 10,000.
+    assert_eq!(
+        sides("(query [:find ?n :where [?e0 :n ?n] [?e1 ?a1 ?v1] [?e2 ?a2 ?v2] [?e3 ?a3 ?v3]])"),
+        [false, true, true]
+    );
+    assert_eq!(
+        sides("(query [:find ?e :where [?e :name \"x\"] [?p ?q ?r]])"),
+        [false],
+        "a selective outer side"
+    );
+    assert_eq!(
+        sides("(query [:find ?e :where [?e :a ?x] [?f :b ?y]])"),
+        [true],
+        "a tie builds inner"
+    );
+    let _off = crate::query::datalog::optimizer::set_reorder(false);
+    assert_eq!(
+        sides("(query [:find ?n :where [?e0 :n ?n] [?e1 ?a1 ?v1] [?e2 ?a2 ?v2]])"),
+        [true, true],
+        "reorder off builds inner"
+    );
+}

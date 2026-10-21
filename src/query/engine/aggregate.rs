@@ -13,12 +13,18 @@
 
 use super::batch::Batch;
 use super::cell::{Cell, JoinKey, Scalar};
+use super::meter::{
+    HASH_ENTRY_OVERHEAD, Held, Meter, cell_bytes, growth, key_bytes, keys_bytes, row_bytes,
+    value_bytes,
+};
 use super::project::value;
 use super::{BATCH_ROWS, Counters, Ctx, Operator};
 use crate::graph::types::Value;
 use crate::query::datalog::aggregate::{Agg, Groups, finish_groups, value_order};
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
+use std::mem::size_of;
+use std::sync::Arc;
 
 /// One aggregate of one group.
 enum Acc {
@@ -39,16 +45,30 @@ impl Acc {
         })
     }
 
-    fn step(&mut self, cell: &Cell, ctx: &mut Ctx<'_>) -> Result<()> {
+    /// Take `cell`, counting a new member of a distinct set on `held`.
+    fn step(&mut self, cell: &Cell, held: &mut Held, ctx: &mut Ctx<'_>) -> Result<()> {
         if matches!(cell, Cell::Val(Scalar::Null)) {
             return Ok(());
         }
         match self {
             Acc::Count(n) => *n = n.saturating_add(1),
             Acc::CountDistinct(set) => {
-                set.insert(JoinKey::group(cell));
+                let k = JoinKey::group(cell);
+                if !set.contains(&k) {
+                    let n = key_bytes(&k) + HASH_ENTRY_OVERHEAD;
+                    held.charge(n)?;
+                    let refused = growth(set.capacity(), n);
+                    held.reserve(set.try_reserve(1), n, refused)?;
+                    set.insert(k);
+                }
             }
-            Acc::Values(agg) => agg.step(&value(cell, ctx)?),
+            Acc::Values(agg) => {
+                let v = value(cell, ctx)?;
+                if agg.would_add(&v) {
+                    held.charge(value_bytes(&v) + HASH_ENTRY_OVERHEAD)?;
+                }
+                agg.step(&v);
+            }
         }
         Ok(())
     }
@@ -81,6 +101,10 @@ pub(crate) struct Aggregate {
     rows: Vec<Group>,
     /// The finished rows, last first, once the input has ended.
     out: Option<Vec<Vec<Cell>>>,
+    /// The groups (#549 spec §3.2).
+    held: Held,
+    /// The finished rows, released as they are returned.
+    finished: Held,
     counters: Counters,
 }
 
@@ -90,6 +114,7 @@ impl Aggregate {
         groups: Vec<usize>,
         aggs: Vec<(String, usize)>,
         zero_row: bool,
+        meter: &Arc<Meter>,
     ) -> Self {
         Aggregate {
             child,
@@ -99,6 +124,8 @@ impl Aggregate {
             table: HashMap::new(),
             rows: Vec::new(),
             out: None,
+            held: Held::new(meter, "Aggregate"),
+            finished: Held::new(meter, "Aggregate"),
             counters: Counters::new("Aggregate"),
         }
     }
@@ -115,21 +142,37 @@ impl Aggregate {
                 .iter()
                 .map(|&s| JoinKey::group(cell(s, i).unwrap_or(&null)))
                 .collect();
-            let at = match self.table.entry(key) {
-                std::collections::hash_map::Entry::Occupied(e) => *e.get(),
-                std::collections::hash_map::Entry::Vacant(e) => {
+            let at = match self.table.get(&key) {
+                Some(&at) => at,
+                None => {
                     let accs = self
                         .aggs
                         .iter()
                         .map(|(func, _)| Acc::new(func, ctx))
                         .collect::<Result<Vec<_>>>()?;
-                    let cells = self
+                    let cells: Vec<Cell> = self
                         .groups
                         .iter()
                         .map(|&s| cell(s, i).unwrap_or(&null).clone())
                         .collect();
+                    // The key, its index, the group: its cells and
+                    // accumulators.
+                    let entry = keys_bytes(&key) + size_of::<usize>() + HASH_ENTRY_OVERHEAD;
+                    let group = size_of::<Group>()
+                        + cells.iter().map(cell_bytes).sum::<usize>()
+                        + accs.len() * size_of::<Acc>();
+                    let n = entry + group;
+                    self.held.charge(n)?;
+                    let refused = growth(self.table.capacity(), entry)
+                        .saturating_add(growth(self.rows.capacity(), size_of::<Group>()));
+                    let reserved = self
+                        .table
+                        .try_reserve(1)
+                        .and_then(|()| self.rows.try_reserve(1));
+                    self.held.reserve(reserved, n, refused)?;
                     self.rows.push(Group { cells, accs });
-                    *e.insert(self.rows.len() - 1)
+                    self.table.insert(key, self.rows.len() - 1);
+                    self.rows.len() - 1
                 }
             };
             let Some(group) = self.rows.get_mut(at) else {
@@ -148,7 +191,7 @@ impl Aggregate {
             }
             for (acc, (_, slot)) in group.accs.iter_mut().zip(&self.aggs) {
                 if let Some(c) = cell(*slot, i) {
-                    acc.step(c, ctx)?;
+                    acc.step(c, &mut self.held, ctx)?;
                 }
             }
         }
@@ -176,16 +219,20 @@ impl Aggregate {
         }
         self.table.clear();
         let funcs: Vec<&str> = self.aggs.iter().map(|(f, _)| f.as_str()).collect();
-        let mut rows = Vec::with_capacity(groups.len());
+        let mut rows = Vec::new();
         for (shown, results) in finish_groups(groups, &funcs)? {
-            rows.push(
-                shown
-                    .iter()
-                    .chain(&results)
-                    .map(|v| Cell::of_value(ctx.ids, ctx.keys, v))
-                    .collect::<Result<Vec<Cell>>>()?,
-            );
+            let row = shown
+                .iter()
+                .chain(&results)
+                .map(|v| Cell::of_value(ctx.ids, ctx.keys, v))
+                .collect::<Result<Vec<Cell>>>()?;
+            let n = row_bytes(&row);
+            self.finished.charge(n)?;
+            let refused = growth(rows.capacity(), size_of::<Vec<Cell>>());
+            self.finished.reserve(rows.try_reserve(1), n, refused)?;
+            rows.push(row);
         }
+        self.held.release();
         rows.reverse();
         Ok(rows)
     }
@@ -208,6 +255,7 @@ impl Operator for Aggregate {
         while batch.len < BATCH_ROWS
             && let Some(row) = rows.pop()
         {
+            self.finished.uncharge(row_bytes(&row));
             batch.push(&mut row.into_iter().map(Some).collect::<Vec<_>>());
         }
         self.counters.out(&batch);
@@ -218,6 +266,8 @@ impl Operator for Aggregate {
         self.table.clear();
         self.rows.clear();
         self.out = None;
+        self.held.release();
+        self.finished.release();
         self.child.rewind(seed);
     }
 
@@ -225,11 +275,16 @@ impl Operator for Aggregate {
         self.table = HashMap::new();
         self.rows = Vec::new();
         self.out = Some(Vec::new());
+        self.held.release();
+        self.finished.release();
         self.child.close();
     }
 
     fn counters(&self, out: &mut Vec<Counters>) {
-        out.push(self.counters);
+        out.push(Counters {
+            bytes_held: (self.held.bytes() + self.finished.bytes()) as u64,
+            ..self.counters
+        });
         self.child.counters(out);
     }
 }

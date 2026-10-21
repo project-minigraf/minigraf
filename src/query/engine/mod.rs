@@ -14,6 +14,7 @@ mod distinct;
 mod filter;
 mod ids;
 mod join;
+mod meter;
 #[cfg(any(test, feature = "test-oracle"))]
 pub(crate) mod oracle;
 mod plan;
@@ -36,6 +37,7 @@ use crate::storage::{CommittedReader, KeySource};
 use anyhow::Result;
 use batch::Batch;
 use ids::IdSpace;
+pub(crate) use meter::Meter;
 pub(crate) use plan::{Plan, plan, plan_rules};
 pub(crate) use recursive::Limits;
 use std::sync::{Arc, RwLock};
@@ -63,13 +65,14 @@ pub(crate) struct Ctx<'a> {
 }
 
 /// What one operator has done (spec §6.3): rows it read or received, rows
-/// and batches it passed on.
+/// and batches it passed on, and the bytes it holds (#549).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Counters {
     pub(crate) op: &'static str,
     pub(crate) rows_in: u64,
     pub(crate) rows_out: u64,
     pub(crate) batches: u64,
+    pub(crate) bytes_held: u64,
 }
 
 impl Counters {
@@ -110,6 +113,10 @@ pub(crate) struct Stream {
     /// registered (`INT-040`), so the answer does not change between pulls.
     functions: Arc<RwLock<FunctionRegistry>>,
     root: Box<dyn Operator>,
+    /// The bytes the query's holders count (#549); each holder keeps its
+    /// own reference, so the stream keeps one for tests only.
+    #[cfg(test)]
+    meter: Arc<Meter>,
     /// The column of each `:find` element in the root's rows.
     find: Vec<usize>,
     vars: Vec<String>,
@@ -133,19 +140,22 @@ impl std::fmt::Debug for Stream {
     }
 }
 
-/// Open `plan` over `snapshot`, or `None` when the snapshot's committed
-/// reader has no keys (a test reader) and the executor must run it.
+/// Open `plan` over `snapshot`, holding at most `memory_limit` bytes, or
+/// `None` when the snapshot's committed reader has no keys (a test reader)
+/// and the executor must run it.
 pub(crate) fn open(
     snapshot: Snapshot,
     plan: Plan,
     functions: Arc<RwLock<FunctionRegistry>>,
+    memory_limit: usize,
 ) -> Option<Stream> {
     let keys = match &snapshot.committed {
         Some(reader) => Some(reader.key_source()?),
         None => None,
     };
-    let ids = IdSpace::new(keys);
-    Some(stream(snapshot, ids, plan, functions, None))
+    let meter = Meter::new(memory_limit);
+    let ids = IdSpace::new(keys, &meter);
+    Some(stream(snapshot, ids, plan, functions, None, meter))
 }
 
 /// Open the rule query `plan` over `snapshot`: derive its relations, with
@@ -158,6 +168,7 @@ pub(crate) fn open_rules(
     functions: Arc<RwLock<FunctionRegistry>>,
     limits: recursive::Limits,
 ) -> Result<Option<Stream>> {
+    let meter = Meter::new(limits.query_memory);
     let (ids, relations) = {
         let keys = match &snapshot.committed {
             Some(reader) => match reader.key_source() {
@@ -166,21 +177,21 @@ pub(crate) fn open_rules(
             },
             None => None,
         };
-        let mut ids = IdSpace::new(keys);
+        let mut ids = IdSpace::new(keys, &meter);
         let iids = plan
             .evaluated
             .attrs
             .iter()
             .map(|a| ids.iid(keys, a))
             .collect::<Result<Vec<u64>>>()?;
-        let mut rels = relation::Relations::new(iids);
+        let mut rels = relation::Relations::new(iids, &meter);
         for (e, a, v) in seeds {
             if let Some(&rel) = plan.evaluated.by_attr.get(a) {
                 let row = [
                     cell::Cell::Eid(ids.eid(keys, e)?),
                     cell::Cell::of_value(&mut ids, keys, v)?,
                 ];
-                rels.add(rel, row);
+                rels.add(rel, row)?;
             }
         }
         rels.end_round();
@@ -192,7 +203,7 @@ pub(crate) fn open_rules(
             keys,
             functions: &functions,
         };
-        recursive::evaluate(&plan, &mut rels, &reads, &mut ids, limits)?;
+        recursive::evaluate(&plan, &mut rels, &reads, &mut ids, limits, &meter)?;
         (ids, rels)
     };
     Ok(Some(stream(
@@ -201,6 +212,7 @@ pub(crate) fn open_rules(
         plan.body,
         functions,
         Some(relations),
+        meter,
     )))
 }
 
@@ -211,6 +223,7 @@ fn stream(
     plan: Plan,
     functions: Arc<RwLock<FunctionRegistry>>,
     relations: Option<relation::Relations>,
+    meter: Arc<Meter>,
 ) -> Stream {
     let Plan {
         source,
@@ -219,12 +232,14 @@ fn stream(
         vars,
     } = plan;
     let hold_ids = steps.iter().any(|s| matches!(s, plan::Step::Window { .. }));
-    let root = build(source, steps);
+    let root = build(source, steps, &meter);
     Stream {
         snapshot,
         ids,
         functions,
         root,
+        #[cfg(test)]
+        meter,
         find,
         vars,
         project: Counters::new("Project"),
@@ -234,25 +249,32 @@ fn stream(
     }
 }
 
-/// The operator tree of a plan's source and steps.
-pub(crate) fn build(source: plan::Source, steps: Vec<plan::Step>) -> Box<dyn Operator> {
+/// The operator tree of a plan's source and steps, its holders counting on
+/// `meter`.
+pub(crate) fn build(
+    source: plan::Source,
+    steps: Vec<plan::Step>,
+    meter: &Arc<Meter>,
+) -> Box<dyn Operator> {
     let mut root: Box<dyn Operator> = match source {
         plan::Source::Scan(spec) => Box::new(scan::Scan::new(spec)),
         plan::Source::Seed => Box::new(seed::Seed::new()),
     };
     for step in steps {
         root = match step {
-            plan::Step::Join(spec) => Box::new(join::Join::new(root, spec)),
-            plan::Step::Anti(body) => Box::new(anti::AntiJoin::new(root, body)),
-            plan::Step::Union(branches) => Box::new(union::Union::new(root, branches)),
-            plan::Step::Distinct(slots) => Box::new(distinct::Distinct::new(root, slots)),
+            plan::Step::Join(spec) => Box::new(join::Join::new(root, spec, meter)),
+            plan::Step::Anti(body) => Box::new(anti::AntiJoin::new(root, body, meter)),
+            plan::Step::Union(branches) => Box::new(union::Union::new(root, branches, meter)),
+            plan::Step::Distinct(slots) => Box::new(distinct::Distinct::new(root, slots, meter)),
             plan::Step::Aggregate {
                 groups,
                 aggs,
                 zero_row,
-            } => Box::new(aggregate::Aggregate::new(root, groups, aggs, zero_row)),
+            } => Box::new(aggregate::Aggregate::new(
+                root, groups, aggs, zero_row, meter,
+            )),
             plan::Step::Window { find, named, keep } => {
-                Box::new(window::Window::new(root, find, named, keep))
+                Box::new(window::Window::new(root, find, named, keep, meter))
             }
             step => Box::new(filter::Apply::new(root, step)),
         };
@@ -264,11 +286,13 @@ impl Stream {
     /// A stream of `root`'s batches, projecting slot 0 as `?x`.
     #[cfg(test)]
     pub(crate) fn for_test(snapshot: Snapshot, root: Box<dyn Operator>) -> Self {
+        let meter = Meter::unlimited();
         Stream {
             snapshot,
-            ids: IdSpace::new(None),
+            ids: IdSpace::new(None, &meter),
             functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
             root,
+            meter,
             find: vec![0],
             vars: vec!["?x".to_string()],
             project: Counters::new("Project"),
@@ -321,12 +345,27 @@ impl Stream {
         Ok(Some(rows))
     }
 
-    /// Stop every operator. Idempotent; dropping the stream does the same.
+    /// Stop every operator and release what the query holds. Idempotent;
+    /// dropping the stream does the same.
     pub(crate) fn close(&mut self) {
         if !self.closed {
             self.closed = true;
             self.root.close();
+            // Drop the tree, which releases what every operator holds (a
+            // hashed body keeps its table across a close, for its next
+            // rewind), and keep its counters.
+            let mut counters = Vec::new();
+            self.root.counters(&mut counters);
+            self.root = Box::new(Closed(counters));
+            self.ids.release();
+            self.relations = None;
         }
+    }
+
+    /// The query's meter.
+    #[cfg(test)]
+    pub(crate) fn meter(&self) -> &Arc<Meter> {
+        &self.meter
     }
 
     pub(crate) fn vars(&self) -> &[String] {
@@ -350,6 +389,23 @@ impl Stream {
             vars: std::mem::take(&mut self.vars),
             results,
         })
+    }
+}
+
+/// What is left of a closed stream's operators: their counters.
+struct Closed(Vec<Counters>);
+
+impl Operator for Closed {
+    fn next_batch(&mut self, _: &mut Ctx<'_>) -> Result<Option<Batch>> {
+        Ok(None)
+    }
+
+    fn rewind(&mut self, _: &[cell::Cell]) {}
+
+    fn close(&mut self) {}
+
+    fn counters(&self, out: &mut Vec<Counters>) {
+        out.extend_from_slice(&self.0);
     }
 }
 

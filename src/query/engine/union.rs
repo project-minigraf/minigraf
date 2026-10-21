@@ -13,10 +13,13 @@
 
 use super::batch::Batch;
 use super::cell::{Cell, JoinKey};
+use super::meter::{HASH_ENTRY_OVERHEAD, Held, Meter, growth, keys_bytes, row_bytes};
 use super::plan::{Body as Spec, Branch, Key};
 use super::{BATCH_ROWS, Counters, Ctx, Operator, build};
 use anyhow::Result;
 use std::collections::HashMap;
+use std::mem::size_of;
+use std::sync::Arc;
 
 pub(crate) struct Union {
     outer: Box<dyn Operator>,
@@ -25,6 +28,11 @@ pub(crate) struct Union {
     width: usize,
     /// The outer batch being extended.
     at: Option<At>,
+    /// The hashed branches' tables (#549 spec §3.2), counted as long as
+    /// they are kept: until the operator drops.
+    tables: Held,
+    /// `At.rows`, released as they are returned.
+    buffered: Held,
     /// `rows_in` counts the outer rows received.
     counters: Counters,
 }
@@ -62,19 +70,19 @@ enum Body {
 }
 
 impl Union {
-    pub(crate) fn new(outer: Box<dyn Operator>, branches: Vec<Branch>) -> Self {
+    pub(crate) fn new(outer: Box<dyn Operator>, branches: Vec<Branch>, meter: &Arc<Meter>) -> Self {
         let width = branches.first().map_or(0, |b| b.new.len());
         let arms = branches
             .into_iter()
             .map(|Branch { body, new }| Arm {
                 body: match body {
                     Spec::Correlated { plan, imports } => Body::Correlated {
-                        root: build(plan.source, plan.steps),
+                        root: build(plan.source, plan.steps, meter),
                         imports,
                         seed: Vec::new(),
                     },
                     Spec::Hashed { plan, keys } => Body::Hashed {
-                        root: build(plan.source, plan.steps),
+                        root: build(plan.source, plan.steps, meter),
                         keys,
                         table: None,
                     },
@@ -87,6 +95,8 @@ impl Union {
             arms,
             width,
             at: None,
+            tables: Held::new(meter, "Union"),
+            buffered: Held::new(meter, "Union"),
             counters: Counters::new("Union"),
         }
     }
@@ -99,13 +109,17 @@ fn cell(batch: &Batch, slot: usize, i: usize) -> Option<&Cell> {
 
 impl Arm {
     /// Append the new cells of the branch's rows for row `i` of `batch` to
-    /// `out`; with `one`, at most one row.
+    /// `out`, counted on `buffered`; with `one`, at most one row. A hashed
+    /// branch's table is counted on `tables`.
+    #[allow(clippy::too_many_arguments)]
     fn rows(
         &mut self,
         batch: &Batch,
         i: usize,
         one: bool,
         out: &mut Vec<Vec<Cell>>,
+        tables: &mut Held,
+        buffered: &mut Held,
         ctx: &mut Ctx<'_>,
     ) -> Result<()> {
         let new = &self.new;
@@ -125,11 +139,13 @@ impl Arm {
                 root.rewind(seed);
                 'pull: while let Some(b) = root.next_batch(ctx)? {
                     for j in 0..b.len {
-                        out.push(
+                        buffer(
+                            out,
                             new.iter()
                                 .filter_map(|&s| cell(&b, s, j).cloned())
                                 .collect(),
-                        );
+                            buffered,
+                        )?;
                         if one {
                             break 'pull;
                         }
@@ -139,7 +155,7 @@ impl Arm {
             }
             Body::Hashed { root, keys, table } => {
                 if table.is_none() {
-                    *table = Some(collect(root.as_mut(), keys, new, one, ctx)?);
+                    *table = Some(collect(root.as_mut(), keys, new, one, tables, ctx)?);
                 }
                 let Some(table) = table else {
                     return Ok(());
@@ -156,9 +172,12 @@ impl Arm {
                     key.push(j);
                 }
                 if let Some(rows) = table.get(&key) {
-                    match rows.first() {
-                        Some(r) if one => out.push(r.clone()),
-                        _ => out.extend(rows.iter().cloned()),
+                    let rows = match rows.first() {
+                        Some(first) if one => std::slice::from_ref(first),
+                        _ => rows.as_slice(),
+                    };
+                    for r in rows {
+                        buffer(out, r.clone(), buffered)?;
                     }
                 }
             }
@@ -179,13 +198,24 @@ impl Arm {
     }
 }
 
+/// Append `row` to `out`, counted on `held`.
+fn buffer(out: &mut Vec<Vec<Cell>>, row: Vec<Cell>, held: &mut Held) -> Result<()> {
+    let n = row_bytes(&row);
+    held.charge(n)?;
+    let refused = growth(out.capacity(), size_of::<Vec<Cell>>());
+    held.reserve(out.try_reserve(1), n, refused)?;
+    out.push(row);
+    Ok(())
+}
+
 /// Every row of a hashed branch: its new cells by the keys of `keys`' inner
-/// slots. With `one`, one row per key.
+/// slots, counted on `held`. With `one`, one row per key.
 fn collect(
     root: &mut dyn Operator,
     keys: &[Key],
     new: &[usize],
     one: bool,
+    held: &mut Held,
     ctx: &mut Ctx<'_>,
 ) -> Result<HashMap<Vec<JoinKey>, Vec<Vec<Cell>>>> {
     let mut table: HashMap<Vec<JoinKey>, Vec<Vec<Cell>>> = HashMap::new();
@@ -202,14 +232,26 @@ fn collect(
                 };
                 key.push(j);
             }
-            let rows = table.entry(key).or_default();
-            if !one || rows.is_empty() {
-                rows.push(
-                    new.iter()
-                        .filter_map(|&s| cell(&b, s, i).cloned())
-                        .collect(),
-                );
+            let found = table.contains_key(&key);
+            if one && found {
+                continue;
             }
+            let row: Vec<Cell> = new
+                .iter()
+                .filter_map(|&s| cell(&b, s, i).cloned())
+                .collect();
+            // A new key's entry: the key and its rows' header; then the row.
+            let entry = keys_bytes(&key) + size_of::<Vec<Vec<Cell>>>() + HASH_ENTRY_OVERHEAD;
+            let n = row_bytes(&row) + if found { 0 } else { entry };
+            held.charge(n)?;
+            if !found {
+                let refused = growth(table.capacity(), entry);
+                held.reserve(table.try_reserve(1), n, refused)?;
+            }
+            let rows = table.entry(key).or_default();
+            let refused = growth(rows.capacity(), size_of::<Vec<Cell>>());
+            held.reserve(rows.try_reserve(1), n, refused)?;
+            rows.push(row);
         }
     }
     root.close();
@@ -239,6 +281,9 @@ impl Operator for Union {
             };
             let out = out.get_or_insert_with(|| Batch::new(at.batch.cols.len() + self.width));
             while at.done < at.rows.len() && out.len < BATCH_ROWS {
+                if let Some(new) = at.rows.get(at.done) {
+                    self.buffered.uncharge(row_bytes(new));
+                }
                 let mut row: Vec<Option<Cell>> = at
                     .batch
                     .cols
@@ -262,8 +307,17 @@ impl Operator for Union {
             at.next += 1;
             at.rows.clear();
             at.done = 0;
+            self.buffered.release();
             for arm in &mut self.arms {
-                arm.rows(&at.batch, at.row, one, &mut at.rows, ctx)?;
+                arm.rows(
+                    &at.batch,
+                    at.row,
+                    one,
+                    &mut at.rows,
+                    &mut self.tables,
+                    &mut self.buffered,
+                    ctx,
+                )?;
                 if one && !at.rows.is_empty() {
                     break;
                 }
@@ -280,11 +334,13 @@ impl Operator for Union {
 
     fn rewind(&mut self, seed: &[Cell]) {
         self.at = None;
+        self.buffered.release();
         self.outer.rewind(seed);
     }
 
     fn close(&mut self) {
         self.at = None;
+        self.buffered.release();
         self.outer.close();
         for arm in &mut self.arms {
             arm.root_mut().close();
@@ -292,7 +348,10 @@ impl Operator for Union {
     }
 
     fn counters(&self, out: &mut Vec<Counters>) {
-        out.push(self.counters);
+        out.push(Counters {
+            bytes_held: (self.tables.bytes() + self.buffered.bytes()) as u64,
+            ..self.counters
+        });
         for arm in &self.arms {
             arm.root().counters(out);
         }
