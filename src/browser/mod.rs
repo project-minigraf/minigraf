@@ -57,8 +57,7 @@ impl BrowserDb {
         // Page cache capacity 0: `BrowserBufferBackend` is already an in-memory
         // page store, so the LRU cache would only duplicate pages and add
         // HashMap overhead for zero benefit. See #275.
-        let pfs =
-            PersistentFactStorage::new(buffer, 0).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let pfs = PersistentFactStorage::new(buffer, 0).map_err(to_js_error)?;
         let fact_storage = pfs.storage().clone();
 
         Ok(BrowserDb {
@@ -84,8 +83,7 @@ impl BrowserDb {
 
         let buffer = BrowserBufferBackend::load_pages(existing);
         // Page cache capacity 0 — see comment in `open_in_memory` above.
-        let mut pfs =
-            PersistentFactStorage::new(buffer, 0).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let mut pfs = PersistentFactStorage::new(buffer, 0).map_err(to_js_error)?;
         let fact_storage = pfs.storage().clone();
 
         // Opening may have written pages: a v7 store is migrated to v8 (#411).
@@ -117,7 +115,7 @@ impl BrowserDb {
     /// - Rule: `{"ok": true}`
     #[wasm_bindgen(js_name = execute)]
     pub async fn execute(&self, datalog: String) -> Result<String, JsValue> {
-        let cmd = parse_datalog_command(&datalog).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let cmd = parse_datalog_command(&datalog).map_err(to_js_error)?;
 
         // Peek at the discriminant before consuming `cmd`.
         let is_read = matches!(cmd, DatalogCommand::Query(_) | DatalogCommand::Rule(_));
@@ -131,20 +129,20 @@ impl BrowserDb {
                     inner.functions.clone(),
                 )
                 .execute(cmd)
-                .map_err(|e| JsValue::from_str(&e.to_string()))?
+                .map_err(to_js_error)?
             };
             return Ok(query_result_to_json(result));
         }
 
         match cmd {
             DatalogCommand::Transact(tx) => {
-                let facts = crate::db::Minigraf::materialize_transaction(&tx)
-                    .map_err(|e| JsValue::from_str(&e.to_string()))?;
+                let facts =
+                    crate::db::Minigraf::materialize_transaction(&tx).map_err(to_js_error)?;
                 self.apply_write(facts, false).await
             }
             DatalogCommand::Retract(tx) => {
-                let facts = crate::db::Minigraf::materialize_retraction(&tx)
-                    .map_err(|e| JsValue::from_str(&e.to_string()))?;
+                let facts =
+                    crate::db::Minigraf::materialize_retraction(&tx).map_err(to_js_error)?;
                 self.apply_write(facts, true).await
             }
             // Handled above; unreachable but required for exhaustiveness.
@@ -176,10 +174,7 @@ impl BrowserDb {
     pub async fn checkpoint(&self) -> Result<(), JsValue> {
         let (flush, idb) = {
             let mut inner = self.inner.borrow_mut();
-            inner
-                .pfs
-                .save()
-                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            inner.pfs.save().map_err(to_js_error)?;
             (
                 take_commit_flush(&mut inner)?,
                 inner.idb.as_ref().map(IndexedDbBackend::clone_handle),
@@ -208,7 +203,7 @@ impl BrowserDb {
         let page_count = inner
             .pfs
             .with_backend(|b| b.page_count_raw())
-            .map_err(|e| JsValue::from_str(&e.to_string()))?
+            .map_err(to_js_error)?
             .max(inner.pfs.committed_page_count());
         let capacity = usize::try_from(page_count)
             .ok()
@@ -220,7 +215,7 @@ impl BrowserDb {
             let page = inner
                 .pfs
                 .with_backend(|b| b.export_page(id))
-                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+                .map_err(to_js_error)?;
             blob.extend_from_slice(&page);
         }
         Ok(js_sys::Uint8Array::from(blob.as_slice()))
@@ -250,8 +245,7 @@ impl BrowserDb {
             let mut inner = self.inner.borrow_mut();
             let buffer = BrowserBufferBackend::load_pages_all_dirty(pages);
             // Page cache capacity 0 — see comment in `open_in_memory` above.
-            let mut new_pfs = PersistentFactStorage::new(buffer, 0)
-                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            let mut new_pfs = PersistentFactStorage::new(buffer, 0).map_err(to_js_error)?;
             let new_fact_storage = new_pfs.storage().clone();
 
             // Drain dirty set and collect owned page bytes before swapping
@@ -333,10 +327,8 @@ impl BrowserDb {
             // Before allocating: a rejected transaction takes no tx_count
             // (#435, #436).
             let tx_id = tx_id_now();
-            crate::graph::storage::check_valid_windows(&facts, tx_id)
-                .map_err(|e| JsValue::from_str(&e.to_string()))?;
-            crate::graph::storage::check_one_window_per_triple(&facts)
-                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            crate::graph::storage::check_valid_windows(&facts, tx_id).map_err(to_js_error)?;
+            crate::graph::storage::check_one_window_per_triple(&facts).map_err(to_js_error)?;
             let tx_count = inner.fact_storage.allocate_tx_count();
 
             let stamped: Vec<crate::graph::types::Fact> = facts
@@ -355,13 +347,10 @@ impl BrowserDb {
             inner
                 .fact_storage
                 .load_facts(stamped)
-                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+                .map_err(to_js_error)?;
 
             inner.pfs.mark_dirty();
-            inner
-                .pfs
-                .save()
-                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            inner.pfs.save().map_err(to_js_error)?;
 
             // Collect dirty pages as owned Vec<(u64, Vec<u8>)> — no borrows
             // escape — and drop the pages this commit freed (#440).
@@ -490,6 +479,8 @@ fn take_flush(
     Ok(Flush { puts, deletes })
 }
 
+/// Every error a `BrowserDb` method rejects with goes through this, so the
+/// message carries its code (`[PRS-001] ...`), as on every other API (#673).
 fn to_js_error(e: anyhow::Error) -> JsValue {
     JsValue::from_str(&crate::MinigrafError::from(e).to_string())
 }
@@ -569,6 +560,30 @@ mod tests {
         // from the flush and the caller still saw success.
         pfs.with_backend_mut(|b| b.mark_dirty_for_test(99));
         assert!(take_dirty_pages(&mut pfs).is_err());
+    }
+
+    // #673: a rejection carries the same error code as the native API.
+    #[wasm_bindgen_test]
+    async fn execute_errors_carry_their_code() {
+        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        for (datalog, code) in [
+            ("(nosuchcommand [])", "[PRS-011] "),
+            (
+                "(query [:find ?x :where [?e :a ?x] [(nosuchfn ?x)]])",
+                "[QRY-007] ",
+            ),
+            ("(transact [[:a :b]])", "[PRS-046] "),
+        ] {
+            let err = db
+                .execute(datalog.to_string())
+                .await
+                .expect_err("invalid command must reject");
+            let text = err.as_string().expect("rejection is a string");
+            assert!(
+                text.starts_with(code),
+                "rejection does not start with {code}"
+            );
+        }
     }
 
     #[wasm_bindgen_test]
