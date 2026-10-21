@@ -113,19 +113,38 @@ impl Relations {
         if r.ident.contains(&k) {
             return Ok(false);
         }
-        // The row in `next` then `rows`, its key, and its entity slot.
+        // The row in `next` then `rows`, its key, its entity slot, and a
+        // new entity's entry in `by_entity`.
+        let entity = match row[0] {
+            Cell::Eid(e) => Some(e),
+            _ => None,
+        };
+        let new_entity = entity.is_some_and(|e| !r.by_entity.contains_key(&e));
+        let entry = size_of::<u64>() + size_of::<Vec<usize>>() + HASH_ENTRY_OVERHEAD;
         let cells = cell_bytes(&row[0]) + cell_bytes(&row[1]);
-        let n = 2 * cells + ident_bytes(&k) + size_of::<usize>();
+        let n =
+            2 * cells + ident_bytes(&k) + size_of::<usize>() + if new_entity { entry } else { 0 };
         self.held.charge(n)?;
         let refused = growth(r.ident.capacity(), ident_bytes(&k))
             .saturating_add(growth(r.next.capacity(), cells))
-            .saturating_add(growth(r.rows.capacity(), cells));
+            .saturating_add(growth(r.rows.capacity(), cells))
+            .saturating_add(growth(r.by_entity.capacity(), entry));
         let reserved = r
             .ident
             .try_reserve(1)
             .and_then(|()| r.next.try_reserve(1))
-            .and_then(|()| r.rows.try_reserve(r.next.len() + 1));
+            .and_then(|()| r.rows.try_reserve(r.next.len() + 1))
+            .and_then(|()| r.by_entity.try_reserve(1));
         self.held.reserve(reserved, n, refused)?;
+        if let Some(e) = entity {
+            // The row's position once the round ends; until then `row`
+            // returns `None` for it.
+            let at = r.rows.len() + r.next.len();
+            let slots = r.by_entity.entry(e).or_default();
+            let refused = growth(slots.capacity(), size_of::<usize>());
+            self.held.reserve(slots.try_reserve(1), n, refused)?;
+            slots.push(at);
+        }
         r.ident.insert(k);
         r.next.push(row);
         Ok(true)
@@ -138,12 +157,8 @@ impl Relations {
         for r in &mut self.rels {
             r.start = r.end;
             any |= !r.next.is_empty();
-            for row in r.next.drain(..) {
-                if let Cell::Eid(e) = row[0] {
-                    r.by_entity.entry(e).or_default().push(r.rows.len());
-                }
-                r.rows.push(row);
-            }
+            // `rows` has room: `add` reserved it, and indexed each entity.
+            r.rows.append(&mut r.next);
             r.end = r.rows.len();
         }
         any
@@ -161,7 +176,8 @@ impl Relations {
         }
     }
 
-    /// The positions of `rel`'s rows whose entity is `eid`, in any range.
+    /// The positions of `rel`'s rows whose entity is `eid`, in any range,
+    /// and those of the round under way, which `row` does not return yet.
     pub(crate) fn of_entity(&self, rel: usize, eid: u64) -> &[usize] {
         self.rels
             .get(rel)
