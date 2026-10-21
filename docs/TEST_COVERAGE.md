@@ -14,7 +14,7 @@ For v2.0.5, torn-WAL-tail tests (#513) check that opening a WAL writer cuts off 
 
 `tests/crash_kill_test.rs` kills a child process running a seeded workload under five checkpoint modes at a random point and checks that the reopened file holds exactly the transactions the child logged as committed, or those plus the one in flight, through full-scan, AEVT, AVET, EAVT and `:as-of` queries, again after a second reopen and after a checkpoint plus reopen (#384). The workload leaves out the v2.x known issues #371 and #435.
 
-`tests/prepared_statements_test.rs` checks that a prepared query with a literal `:as-of`, `:valid-at` or `:any-valid-time` returns the same rows as the unprepared query (#603).
+`tests/prepared_statements_test.rs` checks that a prepared query with a literal `:as-of`, `:valid-at` or `:any-valid-time` returns the same rows as the unprepared query (#603), and that a prepared rule query fails with `INT-020` one below the database's `max_derived_facts` or `max_results` and succeeds at it, as `execute` does (#679).
 
 `tests/magic_sets_test.rs` checks rule queries with a literal argument where some call site cannot carry the magic-sets demand (#608): a rule-body call with an argument nothing binds yet, the same rule called with free arguments, a call from a rule called with free arguments, calls inside `or` and `not`, a fully literal call, and a call bound only by a variable; `magic_sets.rs` unit tests check the adornment each shape solves to.
 

@@ -499,3 +499,54 @@ fn prepared_literal_as_of_and_valid_at_are_kept() {
         2
     );
 }
+
+// ─── Database limits (#679) ───────────────────────────────────────────────────
+
+/// A friend chain a -> b -> c -> d -> e with a recursive `reach` rule:
+/// 10 derived facts in all, and the last pass derives all 10 again.
+fn reach_db(opts: minigraf::OpenOptions) -> Minigraf {
+    let db = opts.open_memory().unwrap();
+    db.execute("(transact [[:a :friend :b] [:b :friend :c] [:c :friend :d] [:d :friend :e]])")
+        .unwrap();
+    db.execute("(rule [(reach ?x ?y) [?x :friend ?y]])")
+        .unwrap();
+    db.execute("(rule [(reach ?x ?z) (reach ?x ?y) [?y :friend ?z]])")
+        .unwrap();
+    db
+}
+
+fn execute_reach(db: &Minigraf) -> Result<QueryResult, minigraf::MinigrafError> {
+    db.execute("(query [:find ?x ?y :where (reach ?x ?y) [?y :friend :e]])")
+}
+
+fn prepared_reach(db: &Minigraf) -> Result<QueryResult, minigraf::MinigrafError> {
+    db.prepare("(query [:find ?x ?y :where (reach ?x ?y) [?y :friend $z]])")
+        .unwrap()
+        .execute(&[("z", BindValue::Val(Value::Keyword(":e".to_string())))])
+}
+
+#[test]
+fn prepared_rule_queries_use_the_database_max_derived_facts() {
+    let db = reach_db(minigraf::OpenOptions::new().max_derived_facts(9));
+    assert_eq!(execute_reach(&db).expect_err("10 > 9").code(), "INT-020");
+    assert_eq!(prepared_reach(&db).expect_err("10 > 9").code(), "INT-020");
+}
+
+#[test]
+fn prepared_rule_queries_use_the_database_max_results() {
+    let db = reach_db(minigraf::OpenOptions::new().max_results(9));
+    assert_eq!(execute_reach(&db).expect_err("10 > 9").code(), "INT-020");
+    assert_eq!(prepared_reach(&db).expect_err("10 > 9").code(), "INT-020");
+}
+
+#[test]
+fn prepared_rule_queries_succeed_at_the_database_limits() {
+    // Exactly at both limits.
+    let db = reach_db(
+        minigraf::OpenOptions::new()
+            .max_derived_facts(10)
+            .max_results(10),
+    );
+    execute_reach(&db).unwrap();
+    prepared_reach(&db).unwrap();
+}
