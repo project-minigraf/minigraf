@@ -125,7 +125,7 @@ Commit is a checkpoint, in this order (#473 spec §8.2 step 5):
 
 **Rollback** (explicit, by drop, or by a failure before any page is written) discards the working roots, the allocator, the `written` set and the statement base, and sets the cache bound back to `g`. Nothing that generation `g` references changed. The pages the transaction wrote are free in `g` or lie past its `page_count`. The handle is marked dirty (`force_dirty`), so its next checkpoint commits a new meta even with nothing pending (§4.5). The WAL guard stays until then.
 
-`PageAllocator::write` puts every page it writes into the cache (`page.rs:350`), so a reused id never serves stale bytes. A cache hit is not checked against the generation bound (`cache.rs:104`), so a rolled-back transaction removes the ids in `written` from the cache. No reader of `g` reaches those ids, but the cache should not hold pages of a generation that never existed. Ids a failed statement releases stay cached. The transaction writes them again before it reads them.
+`PageAllocator::write` puts every page it writes into the cache (`page.rs:350`), so a reused id never serves stale bytes. A cache hit is not checked against the generation bound (`cache.rs:118`), so a rolled-back transaction removes the ids in `written` from the cache. No reader of `g` reaches those ids, but the cache should not hold pages of a generation that never existed. Ids a failed statement releases stay cached. The transaction writes them again before it reads them.
 
 **Failures** after a page may have been written, in steps 1–3 of §4.3 or while writing a chunk, mark the handle failed (`STG-046`), as a failed checkpoint does. A failure in step 5 comes after the commit point and is handled as a checkpoint's failed WAL deletion is today. A statement error (`API-011`, or a phase 1–6 error in a chunk of pass 2) is not a failure: the statement returns to its base (§5.3).
 
@@ -138,7 +138,7 @@ The #473 spec says that a crash before the commit point "leaves the previous met
 Two rules keep the inference sound:
 
 1. **A large transaction creates the WAL before its first page write** (§4.1 step 1). On open, `check_single_valid` then sees a WAL base `≤ g` and opens at `g`. The WAL has no entries this transaction wrote, so replay applies only the entries of earlier transactions, if any.
-2. **A WAL is deleted only after a meta of a later generation than its base is durable.** The allocator never hands out a free-list chain page of `g` (they go to `chain_read`, `page.rs:269`), so `g`'s free list stays readable until then. Two code paths change:
+2. **A WAL is deleted only after a meta of a later generation than its base is durable.** The allocator never hands out a free-list chain page of `g` (they go to `chain_read`, `page.rs:276`), so `g`'s free list stays readable until then. Two code paths change:
    - after a rollback, the handle is marked dirty (§4.4);
    - on open, when a WAL file exists, the handle is marked dirty even if replay applied no entry (`db.rs:569`), so the first checkpoint writes a meta before `delete_wal`. Today `do_checkpoint` deletes such a WAL without a new meta (`db.rs:1152`, #457). That is still safe today, but would not be after a crash in a large transaction. The cost is one meta write on the first checkpoint after an unclean shutdown.
 
