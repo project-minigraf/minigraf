@@ -1102,6 +1102,12 @@ impl Minigraf {
         self.inner.fact_storage.current_tx_count()
     }
 
+    /// One state of the store, for tests that open the engine directly.
+    #[cfg(test)]
+    pub(crate) fn snapshot(&self) -> Result<Snapshot> {
+        self.inner.fact_storage.snapshot()
+    }
+
     /// End the handle as a killed process would: no close-time checkpoint and
     /// no save on drop. Whatever reached the file stays; the lock is released.
     #[cfg(all(test, not(target_arch = "wasm32")))]

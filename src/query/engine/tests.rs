@@ -2191,3 +2191,127 @@ fn planner_builds_a_keyless_join_on_the_smaller_product() {
         "reorder off builds inner"
     );
 }
+
+/// The two acceptance shapes of `tests/memory_limit_acceptance_test.rs`:
+/// a checkpointed database at `path`, and the query.
+fn acceptance_shape(name: &str, path: &std::path::Path) -> String {
+    let db = Minigraf::open(path).unwrap();
+    if name == "groups" {
+        for chunk in 0..10 {
+            let facts: String = (chunk * 100_000..(chunk + 1) * 100_000)
+                .map(|i| format!("[:e{i} :g {i}]"))
+                .collect();
+            db.execute(&format!("(transact [{facts}])")).unwrap();
+            db.checkpoint().unwrap();
+        }
+        "(query [:find ?g (count ?e) :where [?e :g ?g]])".to_string()
+    } else {
+        db.execute(r#"(transact [[:alice :name "Alice"] [:bob :name "Bob"] [:alice :age 30]])"#)
+            .unwrap();
+        db.checkpoint().unwrap();
+        let patterns: String = (0..13).map(|i| format!("[?e{i} ?a{i} ?v{i}]")).collect();
+        format!("(query [:find ?v0 :where {patterns}])")
+    }
+}
+
+/// A `kB` field of `/proc/self/status`; 0 where it does not exist.
+fn proc_status_kb(field: &str) -> usize {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .find_map(|l| l.strip_prefix(field)?.strip_prefix(':').map(str::to_owned))
+        })
+        .and_then(|v| v.trim().trim_end_matches("kB").trim().parse().ok())
+        .unwrap_or(0)
+}
+
+/// The meter's peak against the peak RSS the query adds, for both
+/// acceptance shapes (#549 spec §3.2: the estimate is meant to be within a
+/// factor of two). Opens the engine directly, without the executor oracle,
+/// which would run out of memory on the cartesian shape. Prints only; run
+/// alone, as the high-water mark is per process:
+///
+/// ```text
+/// cargo test --profile bench --lib meter_peak_against_rss -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore]
+fn meter_peak_against_rss() {
+    use crate::query::datalog::functions::FunctionRegistry;
+    use crate::query::datalog::parser::parse_datalog_command;
+    use crate::query::datalog::types::DatalogCommand;
+    for name in ["groups", "cartesian"] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("shape.graph");
+        let query = acceptance_shape(name, &path);
+        let db = Minigraf::open(&path).unwrap();
+        let Ok(DatalogCommand::Query(query)) = parse_datalog_command(&query) else {
+            panic!("expected a query");
+        };
+        let plan = super::plan(&query).expect("an engine plan");
+        let functions =
+            std::sync::Arc::new(std::sync::RwLock::new(FunctionRegistry::with_builtins()));
+        let snapshot = db.snapshot().unwrap();
+        let reset = std::fs::write("/proc/self/clear_refs", "5").is_ok();
+        let before_kb = proc_status_kb("VmRSS");
+        let mut stream =
+            super::open(snapshot, plan, functions, usize::MAX).expect("the engine runs it");
+        let meter = stream.meter().clone();
+        let mut rows = 0;
+        while let Some(batch) = stream.next_rows().unwrap() {
+            rows += batch.len();
+        }
+        drop(stream);
+        let added_kb = proc_status_kb("VmHWM").saturating_sub(before_kb);
+        eprintln!(
+            "{name}: {rows} rows; meter peak {} KiB, peak RSS added {added_kb} KiB{}",
+            meter.peak() / 1024,
+            if reset {
+                ""
+            } else {
+                " (high-water mark not reset)"
+            }
+        );
+        assert_eq!(meter.used(), 0, "released after the drain");
+    }
+}
+
+/// `Aggregate::finish` charges its sorted map of groups until every row is
+/// built, and lets the hash table and group rows go first, so once rows are
+/// returned only the ones not yet returned stay charged (#549).
+#[test]
+fn aggregate_finish_charges_its_sorted_groups() {
+    use super::meter::{HASH_ENTRY_OVERHEAD, row_bytes, value_bytes};
+    use crate::graph::types::Value;
+    use crate::query::datalog::aggregate::Agg;
+    use std::mem::size_of;
+    let n = 3000;
+    let meter = super::Meter::unlimited();
+    let mut aggregate = super::aggregate::Aggregate::new(
+        Box::new(Ints { n, at: 0 }),
+        vec![0],
+        vec![("count".to_string(), 0)],
+        false,
+        &meter,
+    );
+    let batch = pull_once(&mut aggregate, &meter).unwrap().expect("a batch");
+    let row = [
+        super::cell::Cell::Val(super::cell::Scalar::Int(0)),
+        super::cell::Cell::Val(super::cell::Scalar::Int(1)),
+    ];
+    let n = usize::try_from(n).unwrap();
+    assert_eq!(
+        meter.used(),
+        (n - batch.len) * row_bytes(&row),
+        "only the rows not yet returned"
+    );
+    let sorted = 2 * (size_of::<Vec<Value>>() + value_bytes(&Value::Integer(0)))
+        + size_of::<Vec<Agg>>()
+        + size_of::<Agg>()
+        + HASH_ENTRY_OVERHEAD;
+    assert!(
+        meter.peak() >= n * (sorted + row_bytes(&row)),
+        "the sorted groups and the finished rows at once"
+    );
+}
