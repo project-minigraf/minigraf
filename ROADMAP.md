@@ -8,6 +8,19 @@ Completed releases and their implementation details live in the [CHANGELOG](CHAN
 
 ---
 
+## v2.0.9 — Rule and Parser Data-Integrity Patch (released 2026-10-21)
+
+File format stays v7 and the public API does not change. Details are in the [CHANGELOG](CHANGELOG.md).
+
+Shipped:
+
+- A pseudo-attribute in a rule body reads the stored fact's valid time and tx metadata (#661)
+- A fact of more than four elements is rejected with `PRS-108` instead of being stored truncated (#649)
+- `BrowserDb` rejections carry their error code (#673)
+- Every binding package is installed and used before it is published and again after; the check fixed packaging bugs in the Node, Android, Swift, C, Java and WASM 2.0.8 packages
+
+---
+
 ## v2.0.8 — Query Data-Integrity Patch (released 2026-10-20)
 
 File format stays v7 and the public API does not change. Details are in the [CHANGELOG](CHANGELOG.md).
@@ -243,4 +256,4 @@ See [GitHub Issues](https://github.com/project-minigraf/minigraf/issues) for spe
 
 ---
 
-**Last updated**: October 2026 — v2.0.8, a query data-integrity patch on v2.x, is the current release; v3.0.0 work, including the file-format v8 fix for #287/#371, is developed on the long-lived `v3` branch and merges into `main` at the v3.0.0 cut.
+**Last updated**: October 2026 — v2.0.9, a rule and parser data-integrity patch on v2.x, is the current release; v3.0.0 work, including the file-format v8 fix for #287/#371, is developed on the long-lived `v3` branch and merges into `main` at the v3.0.0 cut.

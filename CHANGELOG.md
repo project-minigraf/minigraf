@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v2.0.9 — 2026-10-21
+
+Patch release on the v2.x line under the [support policy](PHILOSOPHY.md#support-policy): two data-integrity fixes, for a pseudo-attribute in a rule body that read the wrong valid time and tx metadata (#661) and for a fact of more than four elements whose extra elements were silently dropped (#649), plus error codes in `BrowserDb` rejections (#673). File format is unchanged (v7). No API changes; a fact of more than four elements, which used to be stored truncated, now fails with `PRS-108`. Upgrading is recommended for every v2.x user who reads `:db/valid-from`, `:db/valid-to`, `:db/tx-count` or `:db/tx-id` in rules.
+
+This is also the first release whose language packages are installed and used, the way a user installs them, before they are published and again after (binding consumer tests). That check found and fixed packaging bugs in the 2.0.8 packages: the npm `minigraf` package did not load, the Android AAR had no classes, the Swift package did not compile, the C macOS library pointed at the CI build path and the Windows archive had no import library, the Java jar did not load on Alpine or Windows arm64, and the C and WASM packages shipped no license files. Use 2.0.9 or later of every binding.
+
 ### Fixed
 
 - **`BrowserDb` errors carry their error code** (#673). The browser API (`@minigraf/browser`) rejected with the error's top-level message only, such as `Unknown command: nosuchcommand`, while every other API reports `[PRS-001] Unknown command: nosuchcommand`. Every `BrowserDb` rejection now goes through `MinigrafError`, so it starts with its code. Host errors that have no code yet (no IndexedDB, an import blob whose length is not a multiple of the page size) are unchanged.
@@ -17,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parser vs grammar verifier (#643), backported from v3.0.0.** `src/query/datalog/parser/verifier.rs` checks, for every generated input, that the parser rejects what `tests/grammar/grammar.pest` rejects, and accepts what it accepts unless the error code is semantic (a listed code with a witness pest accepts). It runs every string of 1 to 3 characters over 102 characters (ASCII, `\t \n \r`, four non-ASCII stand-ins) through `parse_edn`, and every bracket-balanced sequence of up to `MINIGRAF_GRAMMAR_BOUND` (default 3) of 32 tokens in 15 command templates through `parse_datalog_command`, also with no separators up to 3 tokens. Deterministic; about 40 s by default in a debug build. On v2.x `INT-019` still mixes syntax and semantic parse errors (v3.0.0 splits it into `PRS-083`–`PRS-107`), so it counts as semantic here, and a syntax error coded `INT-019` that pest accepts is not caught (v3.0.0 checks that too). The drift it found is the same as on v3 and is listed in `KNOWN_DRIFT` by cause (comments and non-ASCII letters #650, since documented: see below; empty sections, ignored keywords, rule and call heads, a lone `:` or `-`, unterminated strings #651; a fact of more than four elements, #649, is fixed above).
 - **The grammar documents comments and non-ASCII identifiers** (#650), backported from v3.0.0. The parser has always accepted both; `tests/grammar/grammar.pest` now says so. A `;` starts a comment that runs to the end of the line and is skipped like whitespace. Symbols, variables, keywords and bind slots take Unicode letters and numerals (`:person/名前`, `?ñ`), as Rust's `char::is_alphabetic` and `char::is_numeric` define them; a symbol starts with a letter or `_`, and `-` followed by a numeral starts a number, not a symbol. Nothing the parser accepts or rejects changes. `grammar.pest` now says what the parser means: a fact is exactly `[e a v]` plus an optional valid-time map and a retracted fact exactly `[e a v]`; `not`, `not-join`, `or`, `or-join` (and `and` inside an `or`) are never rule names; literal keywords end at a word boundary (`:find?x` is one keyword). A nightly workflow, `grammar-verifier.yml`, runs it at bound 4 on `main` and on `v3`, and opens or comments on an issue when it fails.
+
+### Known issues
+
+- Same-transaction multi-valued facts can read back as one value (#371, #287), a fact retracted and re-asserted in one `WriteTransaction` is lost at commit (#477), a later assertion does not replace an earlier valid-time window (#435), `save()` is not crash-atomic (#374), and a `.wal` from a later checkpoint is replayed onto an older `.graph` (#535); all are fixed in v3.0.0. All v2.x known issues, with affected versions and workarounds, are listed in the pinned issue #421.
 
 ## v2.0.8 — 2026-10-20
 
