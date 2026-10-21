@@ -8,14 +8,19 @@
 
 use super::batch::Batch;
 use super::cell::{Cell, JoinKey};
+use super::meter::{HASH_ENTRY_OVERHEAD, Held, Meter, growth, keys_bytes};
 use super::plan::{Body as Spec, Key};
 use super::{Counters, Ctx, Operator, build};
 use anyhow::Result;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 pub(crate) struct AntiJoin {
     outer: Box<dyn Operator>,
     body: Body,
+    /// A hashed body's set (#549 spec §3.2), counted as long as the set is
+    /// kept: until the operator drops.
+    held: Held,
     /// `rows_in` counts the outer rows received.
     counters: Counters,
 }
@@ -42,15 +47,15 @@ struct Set {
 }
 
 impl AntiJoin {
-    pub(crate) fn new(outer: Box<dyn Operator>, spec: Spec) -> Self {
+    pub(crate) fn new(outer: Box<dyn Operator>, spec: Spec, meter: &Arc<Meter>) -> Self {
         let body = match spec {
             Spec::Correlated { plan, imports } => Body::Correlated {
-                root: build(plan.source, plan.steps),
+                root: build(plan.source, plan.steps, meter),
                 imports,
                 seed: Vec::new(),
             },
             Spec::Hashed { plan, keys } => Body::Hashed {
-                root: build(plan.source, plan.steps),
+                root: build(plan.source, plan.steps, meter),
                 keys,
                 set: None,
             },
@@ -58,6 +63,7 @@ impl AntiJoin {
         AntiJoin {
             outer,
             body,
+            held: Held::new(meter, "AntiJoin"),
             counters: Counters::new("AntiJoin"),
         }
     }
@@ -70,7 +76,13 @@ fn cell(batch: &Batch, slot: usize, i: usize) -> Option<&Cell> {
 
 impl Body {
     /// Whether the body has a row for row `i` of `batch`.
-    fn matches(&mut self, batch: &Batch, i: usize, ctx: &mut Ctx<'_>) -> Result<bool> {
+    fn matches(
+        &mut self,
+        batch: &Batch,
+        i: usize,
+        held: &mut Held,
+        ctx: &mut Ctx<'_>,
+    ) -> Result<bool> {
         match self {
             Body::Correlated {
                 root,
@@ -91,7 +103,7 @@ impl Body {
             }
             Body::Hashed { root, keys, set } => {
                 if set.is_none() {
-                    *set = Some(collect(root.as_mut(), keys, ctx)?);
+                    *set = Some(collect(root.as_mut(), keys, held, ctx)?);
                 }
                 let Some(set) = set else {
                     return Ok(false);
@@ -129,7 +141,12 @@ impl Body {
 }
 
 /// Every row of a hashed body, as the keys of `keys`' inner slots.
-fn collect(root: &mut dyn Operator, keys: &[Key], ctx: &mut Ctx<'_>) -> Result<Set> {
+fn collect(
+    root: &mut dyn Operator,
+    keys: &[Key],
+    held: &mut Held,
+    ctx: &mut Ctx<'_>,
+) -> Result<Set> {
     let mut set = Set {
         keys: HashSet::new(),
         any: false,
@@ -151,6 +168,13 @@ fn collect(root: &mut dyn Operator, keys: &[Key], ctx: &mut Ctx<'_>) -> Result<S
                 };
                 key.push(j);
             }
+            if set.keys.contains(&key) {
+                continue;
+            }
+            let n = keys_bytes(&key) + HASH_ENTRY_OVERHEAD;
+            held.charge(n)?;
+            let refused = growth(set.keys.capacity(), n);
+            held.reserve(set.keys.try_reserve(1), n, refused)?;
             set.keys.insert(key);
         }
     }
@@ -164,7 +188,7 @@ impl Operator for AntiJoin {
             self.counters.rows_in += batch.len as u64;
             let mut keep = Vec::with_capacity(batch.len);
             for i in 0..batch.len {
-                keep.push(!self.body.matches(&batch, i, ctx)?);
+                keep.push(!self.body.matches(&batch, i, &mut self.held, ctx)?);
             }
             batch.retain(&keep);
             if batch.len > 0 {
@@ -185,7 +209,10 @@ impl Operator for AntiJoin {
     }
 
     fn counters(&self, out: &mut Vec<Counters>) {
-        out.push(self.counters);
+        out.push(Counters {
+            bytes_held: self.held.bytes() as u64,
+            ..self.counters
+        });
         self.body.root().counters(out);
         self.outer.counters(out);
     }

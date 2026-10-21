@@ -928,10 +928,16 @@ impl Builder {
                     if let JoinKind::Hash { build_inner } = &mut join.kind {
                         // With the test switch off, always the inner pattern
                         // (decision 3 of the #596 plan). After a seed and no
-                        // pattern, the seed (`branch_cost` of nothing is 0).
+                        // pattern, the seed (both costs of nothing are 0).
+                        // With no key, the outer side is up to the product
+                        // of its patterns (#549 spec §6.1).
+                        let outer = if join.keys.is_empty() {
+                            optimizer::product_cost(&self.outer_patterns)
+                        } else {
+                            optimizer::branch_cost(&self.outer_patterns)
+                        };
                         *build_inner = !optimizer::reorder()
-                            || optimizer::branch_cost(&[WhereClause::Pattern(q.clone())])
-                                <= optimizer::branch_cost(&self.outer_patterns);
+                            || optimizer::branch_cost(&[WhereClause::Pattern(q.clone())]) <= outer;
                     }
                     self.steps.push(Step::Join(join));
                 }

@@ -13,6 +13,7 @@
 //! already looked up every row's ids in its first pull, and holds the whole
 //! answer anyway (#547).
 
+use super::meter::{HASH_ENTRY_OVERHEAD, Held, Meter, growth};
 use crate::error::{ErrorCode, err_coded};
 use crate::graph::types::EntityId;
 use crate::query::datalog::matcher::edn_to_entity_id;
@@ -20,6 +21,7 @@ use crate::query::datalog::types::EdnValue;
 use crate::storage::KeySource;
 use anyhow::Result;
 use std::collections::HashMap;
+use std::mem::size_of;
 use std::sync::Arc;
 
 pub(crate) struct IdSpace {
@@ -32,6 +34,9 @@ pub(crate) struct IdSpace {
     provisional: Maps,
     /// DICT lookups, until the next pull.
     dict: Maps,
+    /// What `provisional` and `dict` hold (#549 spec §3.2).
+    held_provisional: Held,
+    held_dict: Held,
 }
 
 #[derive(Default)]
@@ -45,7 +50,7 @@ struct Maps {
 }
 
 impl IdSpace {
-    pub(crate) fn new(keys: Option<&dyn KeySource>) -> Self {
+    pub(crate) fn new(keys: Option<&dyn KeySource>, meter: &Arc<Meter>) -> Self {
         let (eids, iids) = keys.map_or((0, 0), |k| {
             let (e, i) = k.next_ids();
             (e, u64::from(i))
@@ -57,12 +62,45 @@ impl IdSpace {
             next_iid: iids,
             provisional: Maps::default(),
             dict: Maps::default(),
+            held_provisional: Held::new(meter, "IdSpace"),
+            held_dict: Held::new(meter, "IdSpace"),
         }
     }
 
     /// Forget the DICT lookups of the last pull.
     pub(crate) fn end_pull(&mut self) {
         self.dict = Maps::default();
+        self.held_dict.release();
+    }
+
+    /// Forget every id, when the query ends.
+    pub(crate) fn release(&mut self) {
+        self.end_pull();
+        self.provisional = Maps::default();
+        self.held_provisional.release();
+    }
+
+    /// Count an entry of `bytes` about to go into the maps that hold
+    /// provisional ids or DICT lookups, and make room in `grow`.
+    fn charge(
+        &mut self,
+        provisional: bool,
+        bytes: usize,
+        grow: impl FnOnce(
+            &mut Maps,
+        ) -> (
+            std::result::Result<(), std::collections::TryReserveError>,
+            usize,
+        ),
+    ) -> Result<()> {
+        let (maps, held) = if provisional {
+            (&mut self.provisional, &mut self.held_provisional)
+        } else {
+            (&mut self.dict, &mut self.held_dict)
+        };
+        held.charge(bytes)?;
+        let (r, refused) = grow(maps);
+        held.reserve(r, bytes, refused)
     }
 
     /// DICT lookups cached now.
@@ -95,6 +133,7 @@ impl IdSpace {
                 (e, true)
             }
         };
+        self.charge(provisional, EID_ENTRY, grow_eid)?;
         let maps = self.maps(provisional);
         maps.eid_by_uuid.insert(*uuid, e);
         maps.uuid_by_eid.insert(e, *uuid);
@@ -116,6 +155,7 @@ impl IdSpace {
                 (i, true)
             }
         };
+        self.charge(provisional, iid_entry(name), grow_iid)?;
         let name: Arc<str> = Arc::from(name);
         let maps = self.maps(provisional);
         maps.iid_by_name.insert(name.clone(), i);
@@ -136,6 +176,7 @@ impl IdSpace {
             ));
         };
         let u = k.uuid_of(eid)?;
+        self.charge(false, EID_ENTRY, grow_eid)?;
         self.dict.uuid_by_eid.insert(eid, u);
         self.dict.eid_by_uuid.insert(u, eid);
         Ok(u)
@@ -156,6 +197,10 @@ impl IdSpace {
         let e = self.eid(keys, &uuid)?;
         // Kept as long as the shorter-lived of the two ids.
         let provisional = iid >= self.dict_iids && e >= self.dict_eids;
+        self.charge(provisional, KEYWORD_ENTRY, |m| {
+            let cap = m.eid_by_keyword.capacity();
+            (m.eid_by_keyword.try_reserve(1), growth(cap, KEYWORD_ENTRY))
+        })?;
         self.maps(provisional).eid_by_keyword.insert(iid, e);
         Ok(e)
     }
@@ -179,10 +224,50 @@ impl IdSpace {
             ));
         };
         let n: Arc<str> = Arc::from(k.ident_of(i)?);
+        self.charge(false, iid_entry(&n), grow_iid)?;
         self.dict.name_by_iid.insert(iid, n.clone());
         self.dict.iid_by_name.insert(n.clone(), iid);
         Ok(n)
     }
+}
+
+/// An entity in both directions of its map.
+const EID_ENTRY: usize = 2 * (size_of::<EntityId>() + size_of::<u64>() + HASH_ENTRY_OVERHEAD);
+
+/// A keyword's entity.
+const KEYWORD_ENTRY: usize = 2 * size_of::<u64>() + HASH_ENTRY_OVERHEAD;
+
+/// An ident in both directions of its map, with its name.
+fn iid_entry(name: &str) -> usize {
+    2 * (size_of::<Arc<str>>() + size_of::<u64>() + HASH_ENTRY_OVERHEAD) + name.len()
+}
+
+fn grow_eid(
+    m: &mut Maps,
+) -> (
+    std::result::Result<(), std::collections::TryReserveError>,
+    usize,
+) {
+    let cap = m.eid_by_uuid.capacity();
+    let r = m
+        .eid_by_uuid
+        .try_reserve(1)
+        .and_then(|()| m.uuid_by_eid.try_reserve(1));
+    (r, growth(cap, EID_ENTRY))
+}
+
+fn grow_iid(
+    m: &mut Maps,
+) -> (
+    std::result::Result<(), std::collections::TryReserveError>,
+    usize,
+) {
+    let cap = m.iid_by_name.capacity();
+    let r = m
+        .iid_by_name
+        .try_reserve(1)
+        .and_then(|()| m.name_by_iid.try_reserve(1));
+    (r, growth(cap, iid_entry("")))
 }
 
 #[cfg(test)]
@@ -191,7 +276,7 @@ mod tests {
 
     #[test]
     fn provisional_ids_outlive_a_pull() {
-        let mut ids = IdSpace::new(None);
+        let mut ids = IdSpace::new(None, &Meter::unlimited());
         let (a, b) = (uuid::Uuid::from_u128(1), uuid::Uuid::from_u128(2));
         let ea = ids.eid(None, &a).unwrap();
         let ia = ids.iid(None, ":a").unwrap();
@@ -208,7 +293,7 @@ mod tests {
     /// UUID was met first as an entity or not.
     #[test]
     fn keyword_eid_is_the_named_entitys_id() {
-        let mut ids = IdSpace::new(None);
+        let mut ids = IdSpace::new(None, &Meter::unlimited());
         let named = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, b":alice");
         let e = ids.eid(None, &named).unwrap();
         let k = ids.iid(None, ":alice").unwrap();

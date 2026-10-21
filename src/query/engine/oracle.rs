@@ -1,12 +1,14 @@
 //! The existing executor as an oracle for the engine (#473 spec §9).
 
+use crate::error::{CodedError, ErrorCode};
 use crate::query::datalog::executor::QueryResult;
 use crate::storage::index::encode_value;
 use anyhow::Result;
 
 /// Panic unless `engine` and `oracle` give the same answer: both errors, or
-/// the same columns and the same rows as a bag. Messages hold counts and
-/// column names only, never values.
+/// the same columns and the same rows as a bag. An engine `QRY-012` agrees
+/// with any answer, as the executor does not count memory (#549). Messages
+/// hold counts and column names only, never values.
 ///
 /// Built only for tests (`cfg(test)`, the `test-oracle` feature), where a
 /// panic is how a disagreement fails the test.
@@ -14,6 +16,8 @@ use anyhow::Result;
 pub(crate) fn check(engine: &Result<QueryResult>, oracle: &Result<QueryResult>) {
     match (engine, oracle) {
         (Err(_), Err(_)) => {}
+        (Err(e), Ok(_))
+            if e.downcast_ref::<CodedError>().map(CodedError::code) == Some(ErrorCode::Qry012) => {}
         (
             Ok(QueryResult::QueryResults {
                 vars: v1,

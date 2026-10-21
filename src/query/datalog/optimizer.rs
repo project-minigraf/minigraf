@@ -487,6 +487,21 @@ fn pattern_cost(p: &Pattern) -> u64 {
     }
 }
 
+/// Estimated size of the join of a slice's patterns when nothing joins them:
+/// the product of their `pattern_cost`s, saturating; 0 for no pattern. The
+/// engine builds a keyless hash join on its inner pattern when that pattern
+/// costs no more than this of the outer patterns (#549 spec §6.1).
+pub(crate) fn product_cost(branch: &[WhereClause]) -> u64 {
+    let mut costs = branch.iter().filter_map(|c| match c {
+        WhereClause::Pattern(p) => Some(pattern_cost(p)),
+        _ => None,
+    });
+    let Some(first) = costs.next() else {
+        return 0;
+    };
+    costs.fold(first, u64::saturating_mul)
+}
+
 /// Estimated cost for a body/branch slice — the minimum `pattern_cost` across all
 /// Pattern clauses, or 0 if the body contains no patterns (expr-only bodies are
 /// cheap pure computation).
