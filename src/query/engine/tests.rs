@@ -2315,3 +2315,30 @@ fn aggregate_finish_charges_its_sorted_groups() {
         "the sorted groups and the finished rows at once"
     );
 }
+
+/// A `sum-distinct` set's members stay charged once, in the sorted map,
+/// until the rows are built (#549).
+#[test]
+fn aggregate_finish_keeps_sum_distinct_members_charged_once() {
+    use super::meter::row_bytes;
+    let n = 3000;
+    let meter = super::Meter::unlimited();
+    let mut aggregate = super::aggregate::Aggregate::new(
+        Box::new(Ints { n, at: 0 }),
+        vec![],
+        vec![("sum-distinct".to_string(), 0)],
+        false,
+        &meter,
+    );
+    pull_once(&mut aggregate, &meter).unwrap().expect("a batch");
+    assert_eq!(meter.used(), 0, "the one row returned, nothing held");
+    let members = usize::try_from(n).unwrap()
+        * (super::meter::value_bytes(&crate::graph::types::Value::Integer(0))
+            + super::meter::HASH_ENTRY_OVERHEAD);
+    let row = [super::cell::Cell::Val(super::cell::Scalar::Int(0))];
+    assert!(meter.peak() >= members, "members charged");
+    assert!(
+        meter.peak() < 2 * members + row_bytes(&row),
+        "members not counted twice"
+    );
+}

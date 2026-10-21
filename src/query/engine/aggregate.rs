@@ -74,6 +74,18 @@ impl Acc {
     }
 
     /// The accumulator as an [`Agg`], whose `finish` gives its result.
+    /// The bytes `step` charged for the members of a set that stays in the
+    /// `Agg`: `sum-distinct`'s. A `count-distinct` set ends as its count.
+    fn member_bytes(&self) -> usize {
+        match self {
+            Acc::Values(Agg::SumDistinct(set)) => set
+                .iter()
+                .map(|v| value_bytes(v) + HASH_ENTRY_OVERHEAD)
+                .sum(),
+            _ => 0,
+        }
+    }
+
     fn into_agg(self) -> Agg {
         match self {
             Acc::Count(n) => Agg::Count(n),
@@ -207,8 +219,9 @@ impl Aggregate {
             return Ok(vec![row]);
         }
         // Sorted and finished as the executor's groups are. The sorted map
-        // holds each group's values twice and its accumulators until every
-        // row is built, so it is charged as `finished` too.
+        // holds each group's values twice and its accumulators, with their
+        // `sum-distinct` members, until every row is built, so it is charged
+        // as `finished` too.
         self.table = HashMap::new();
         let mut groups = Groups::new();
         let mut sorted = 0;
@@ -218,10 +231,15 @@ impl Aggregate {
                 .iter()
                 .map(|c| value(c, ctx))
                 .collect::<Result<Vec<Value>>>()?;
+            let members: usize = group.accs.iter().map(Acc::member_bytes).sum();
             let n = 2 * (size_of::<Vec<Value>>() + values.iter().map(value_bytes).sum::<usize>())
                 + size_of::<Vec<Agg>>()
                 + group.accs.len() * size_of::<Agg>()
+                + members
                 + HASH_ENTRY_OVERHEAD;
+            // The members move from `held` to `finished`, so they are not
+            // counted twice.
+            self.held.uncharge(members);
             self.finished.charge(n)?;
             sorted += n;
             let accs = group.accs.into_iter().map(Acc::into_agg).collect();
