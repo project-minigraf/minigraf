@@ -1092,6 +1092,39 @@ mod tests {
         assert!(db.verify().unwrap().is_ok());
     }
 
+    /// `OpenOptions::transaction_chunk_facts` sets the chunk size, kept
+    /// between 1 and the most facts a WAL entry holds.
+    #[test]
+    fn the_chunk_size_is_an_open_option() {
+        use crate::query::datalog::parser::statement::{
+            DEFAULT_TX_CHUNK_FACTS, MAX_TX_CHUNK_FACTS, tx_chunk_facts,
+        };
+        assert_eq!(OpenOptions::default().transaction_chunk_facts, 65_536);
+        assert_eq!(DEFAULT_TX_CHUNK_FACTS, 65_536);
+        assert_eq!(tx_chunk_facts(0), 1);
+        assert_eq!(tx_chunk_facts(usize::MAX), MAX_TX_CHUNK_FACTS);
+        assert_eq!(MAX_TX_CHUNK_FACTS, crate::wal::MAX_FACTS_PER_ENTRY);
+        let dir = tempfile::tempdir().unwrap();
+        for (chunk, large) in [(2, true), (3, false), (0, true)] {
+            let path = dir.path().join(format!("t{chunk}.graph"));
+            let db = OpenOptions::new()
+                .transaction_chunk_facts(chunk)
+                .path(&path)
+                .open()
+                .unwrap();
+            db.execute("(transact [[:a :n 1] [:b :n 2] [:c :n 3]])")
+                .unwrap();
+            // A large statement commits as a checkpoint and deletes the WAL.
+            assert_eq!(!wal_of(&path).exists(), large, "chunk {chunk}");
+            let mut tx = db.begin_write().unwrap();
+            tx.execute("(transact [[:d :n 1] [:e :n 2]])").unwrap();
+            tx.execute("(transact [[:f :n 1] [:g :n 2]])").unwrap();
+            tx.commit().unwrap();
+            assert_eq!(records(&db).len(), 7);
+            assert!(db.verify().unwrap().is_ok());
+        }
+    }
+
     #[test]
     fn a_large_statement_returns_its_tx_id_and_answers_as_of() {
         let dir = tempfile::tempdir().unwrap();

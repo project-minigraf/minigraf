@@ -199,10 +199,22 @@ pub struct OpenOptions {
     /// neither is the answer [`Minigraf::execute`] collects; read a large
     /// answer through [`Minigraf::query`]. `0` fails any query that keeps
     /// state.
-    ///
-    /// Queries inside a [`WriteTransaction`] that has staged writes are not
-    /// counted yet.
     pub query_memory_limit: usize,
+    /// The most facts a transaction holds in memory on a file database, and
+    /// so its chunk size (#550). Defaults to 65,536.
+    ///
+    /// A transaction whose facts would pass it is *large*: it writes them a
+    /// chunk at a time into the file's index trees and commits as a
+    /// checkpoint, with no WAL entry, so its memory stays at one chunk
+    /// whatever its size. At 1M facts the default held 40–55 MiB; 16,384
+    /// held under 10 MiB but took up to twice as long when the facts were
+    /// spread over many entities. A large transaction's `tx_id` is the time
+    /// it became large.
+    ///
+    /// Kept between 1 and 1,000,000 (the most facts one WAL entry holds). In-memory
+    /// databases never write chunks; a statement is still read a chunk at a
+    /// time.
+    pub transaction_chunk_facts: usize,
 }
 
 #[allow(deprecated)] // `max_results`, kept as an alias until it is removed
@@ -217,6 +229,7 @@ impl Default for OpenOptions {
             synchronous: SyncMode::Full,
             read_only: false,
             query_memory_limit: usize::MAX,
+            transaction_chunk_facts: statement::DEFAULT_TX_CHUNK_FACTS,
         }
     }
 }
@@ -276,6 +289,14 @@ impl OpenOptions {
     #[must_use]
     pub fn query_memory_limit(mut self, bytes: usize) -> Self {
         self.query_memory_limit = bytes;
+        self
+    }
+
+    /// Set the most facts a transaction holds in memory. See
+    /// [`OpenOptions::transaction_chunk_facts`].
+    #[must_use]
+    pub fn transaction_chunk_facts(mut self, facts: usize) -> Self {
+        self.transaction_chunk_facts = facts;
         self
     }
 
@@ -773,7 +794,12 @@ impl Minigraf {
     fn execute_statement(&self, input: &str, kind: Kind) -> Result<QueryResult> {
         // Before the lock, as parsing is: a malformed statement never waits.
         // Its materialisation and window errors come with its facts, below.
-        let statement = statement::read_statement(input, kind, crate::graph::types::tx_id_now())?;
+        let statement = statement::read_statement(
+            input,
+            kind,
+            crate::graph::types::tx_id_now(),
+            self.chunk_facts(),
+        )?;
         self.reject_if_read_only(kind.name())?;
         {
             let mut ctx = self
@@ -903,6 +929,11 @@ impl Minigraf {
             *wal = Some(WalWriter::open_or_create_at(&wal_path, sync, generation)?);
         }
         wal.as_mut().ok_or_else(|| err_coded!(ErrorCode::Api009))
+    }
+
+    /// The statement chunk size (`OpenOptions::transaction_chunk_facts`).
+    fn chunk_facts(&self) -> usize {
+        statement::tx_chunk_facts(self.inner.options.transaction_chunk_facts)
     }
 
     /// The executor for a read-only command: no lock, the database's limits,
@@ -1579,7 +1610,8 @@ impl<'a> WriteTransaction<'a> {
             #[cfg(not(target_arch = "wasm32"))]
             if let Some(tx) = &self.large {
                 // Every fact is stamped with the transaction's tx_id.
-                let statement = statement::read_statement(input, kind, tx.tx_id())?;
+                let chunk = statement::tx_chunk_facts(self.inner.options.transaction_chunk_facts);
+                let statement = statement::read_statement(input, kind, tx.tx_id(), chunk)?;
                 let chunks = statement.chunks()?;
                 refuse_if_failed(&self.guard)?;
                 self.write_statement(chunks)?;
@@ -1590,7 +1622,8 @@ impl<'a> WriteTransaction<'a> {
             // checks them again at the commit time.
             let staged_tx_id =
                 std::cmp::max(crate::graph::types::tx_id_now(), self.next_pending_tx_id);
-            let statement = statement::read_statement(input, kind, staged_tx_id)?;
+            let chunk = statement::tx_chunk_facts(self.inner.options.transaction_chunk_facts);
+            let statement = statement::read_statement(input, kind, staged_tx_id, chunk)?;
             #[cfg(not(target_arch = "wasm32"))]
             let file = matches!(*self.guard, WriteContext::File { .. });
             #[cfg(not(target_arch = "wasm32"))]
@@ -1601,10 +1634,7 @@ impl<'a> WriteTransaction<'a> {
             let facts = statement.facts()?;
             crate::graph::storage::check_one_window_per_triple(&facts)?;
             #[cfg(not(target_arch = "wasm32"))]
-            if file
-                && self.pending_facts.len().saturating_add(facts.len())
-                    > statement::tx_chunk_facts()
-            {
+            if file && self.pending_facts.len().saturating_add(facts.len()) > chunk {
                 self.become_large(Current::Small(facts))?;
                 return Ok(QueryResult::Ok);
             }
@@ -2540,6 +2570,7 @@ mod tests {
             synchronous: SyncMode::Full,
             read_only: false,
             query_memory_limit: usize::MAX,
+            transaction_chunk_facts: 65_536,
         };
         let db = Minigraf::open_with_options(&path, opts).unwrap();
         assert_eq!(db.inner.options.wal_checkpoint_threshold, 5);

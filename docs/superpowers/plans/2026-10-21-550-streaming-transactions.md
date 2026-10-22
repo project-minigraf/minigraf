@@ -408,9 +408,12 @@ ones unique 100-byte strings. RSS is `VmHWM` above the peak while the input text
 | 10 statements, random, long | 22.3 s, 2,402 MiB, 82,678 | 51.3 s, 0, 139,352 | 41.3 s, 0, 146,629 | 34.0 s, 54, 150,977 |
 
 At 100K facts every chunk size is within 2.3× of `v3` before in time and under 110 MiB of RSS
-(before: 142–260 MiB). **`TX_CHUNK_FACTS` stays 16,384**: memory first (spec decision 2), 4,096
-is up to 3× slower than 16,384 with random entities, and 65,536 holds 40–55 MiB more for about
-half the time with random entities. Two costs the measurement shows: random entities are slower
+(before: 142–260 MiB). **The chunk size becomes `OpenOptions::transaction_chunk_facts`,
+default 65,536** (user decision, 2026-10-22: configurable, default optimised for speed; this
+deviates from spec decision 2's memory first): 65,536 takes about half the time of 16,384 with
+random entities for 40–55 MiB more, and 4,096 is up to 3× slower than 16,384. Values are kept
+between 1 and 1,000,000, the most facts WAL replay reads from one entry (`wal.rs`
+`MAX_FACTS_PER_ENTRY`), since a small transaction is one entry (#686). Two costs the measurement shows: random entities are slower
 than before (each chunk rewrites leaves all over each tree, spec §8.2), and a transaction of
 several statements over random entities leaves a file up to 1.8× larger, since every page its
 base references and a statement replaces stays held until the statement ends (§4.2 step 3);
@@ -432,6 +435,8 @@ the space is free in the file afterwards. #551's envelope records the result.
    model-based test).
 8. Inside a large transaction, `:as-of` its own `tx_count` sees every finished statement; in a
    small one each staged statement has its own synthetic count until `commit`.
+9. The chunk size is an open option, `OpenOptions::transaction_chunk_facts`, default 65,536,
+   not a constant (spec §8.1, decision 2; user decision after the measurement).
 
 ### PR 3 steps
 

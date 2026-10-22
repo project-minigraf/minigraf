@@ -37,6 +37,11 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
+/// The most facts replay reads from one entry; a larger count is taken as
+/// damage. A small transaction is one entry of at most
+/// `OpenOptions::transaction_chunk_facts` facts, which is kept below this.
+pub(crate) const MAX_FACTS_PER_ENTRY: usize = 1_000_000;
+
 const WAL_MAGIC: [u8; 4] = *b"MWAL";
 const WAL_VERSION: u32 = 2;
 /// Format v7 (Minigraf v2.x) WAL version, read as base generation 1.
@@ -451,7 +456,6 @@ fn scan_entries(file: &mut File) -> Result<(Vec<WalEntry>, u64)> {
             .map_err(|_| err_coded!(ErrorCode::Wal005))?;
 
         // Sanity cap: no legitimate entry has more than 1M facts
-        const MAX_FACTS_PER_ENTRY: usize = 1_000_000;
         if num_facts > MAX_FACTS_PER_ENTRY {
             break; // treat as corrupt entry
         }
