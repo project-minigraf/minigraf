@@ -147,8 +147,6 @@ pub struct DatalogExecutor {
     /// The state every read of this executor sees; when `None`, each read
     /// takes its own snapshot of `storage`.
     snapshot: Option<Snapshot>,
-    facts_override: Option<Arc<[Fact]>>,
-    read_now_floor: Option<i64>,
     rules: Arc<RwLock<RuleRegistry>>,
     // RwLock pre-wired for 7.7b register_aggregate API.
     functions: Arc<RwLock<FunctionRegistry>>,
@@ -164,8 +162,6 @@ impl DatalogExecutor {
         DatalogExecutor {
             storage,
             snapshot: None,
-            facts_override: None,
-            read_now_floor: None,
             rules: Arc::new(RwLock::new(RuleRegistry::new())),
             functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
             max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
@@ -184,27 +180,6 @@ impl DatalogExecutor {
         DatalogExecutor {
             storage,
             snapshot: None,
-            facts_override: None,
-            read_now_floor: None,
-            rules,
-            functions,
-            max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
-            query_memory_limit: usize::MAX,
-        }
-    }
-
-    /// Create a `DatalogExecutor` over a merged fact slice while sharing rules and functions.
-    pub(crate) fn new_from_facts_with_rules_and_functions(
-        facts: Arc<[Fact]>,
-        pending_read_now_floor: Option<i64>,
-        rules: Arc<RwLock<RuleRegistry>>,
-        functions: Arc<RwLock<FunctionRegistry>>,
-    ) -> Self {
-        DatalogExecutor {
-            storage: FactStorage::new(),
-            snapshot: None,
-            facts_override: Some(facts),
-            read_now_floor: pending_read_now_floor,
             rules,
             functions,
             max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
@@ -237,8 +212,6 @@ impl DatalogExecutor {
         DatalogExecutor {
             storage,
             snapshot: None,
-            facts_override: None,
-            read_now_floor: None,
             rules,
             functions,
             max_derived_facts,
@@ -269,17 +242,12 @@ impl DatalogExecutor {
     }
 
     /// Read-time "now" for query visibility: the snapshot's time when the
-    /// executor has one, otherwise the wall clock.
-    ///
-    /// Overlay reads floor the wall clock to the newest staged fact so buffered
-    /// writes remain visible even if their synthetic metadata is slightly ahead
-    /// of the current millisecond.
+    /// executor has one, otherwise the wall clock. A write transaction's
+    /// snapshot is at or after its newest staged fact (#550 spec §7).
     fn read_now(&self) -> i64 {
-        let now = self
-            .snapshot
+        self.snapshot
             .as_ref()
-            .map_or_else(|| tx_id_now().cast_signed(), Snapshot::now);
-        self.read_now_floor.map_or(now, |floor| now.max(floor))
+            .map_or_else(|| tx_id_now().cast_signed(), Snapshot::now)
     }
 
     /// Execute a Datalog command
@@ -385,15 +353,11 @@ impl DatalogExecutor {
     fn filter_facts_for_query(&self, query: &DatalogQuery) -> Result<Arc<[Fact]>> {
         let now = self.read_now();
 
-        let source_facts: Vec<Fact> = match (&self.facts_override, query.as_of.as_ref()) {
-            (Some(facts), Some(as_of)) => {
-                crate::graph::storage::filter_facts_as_of(facts.iter().cloned().collect(), as_of)
-            }
-            (Some(facts), None) => facts.iter().cloned().collect(),
+        let source_facts: Vec<Fact> = match query.as_of.as_ref() {
             // A counter is a key bound, so committed history is cut on index keys.
-            (None, Some(AsOf::Counter(n))) => self.live_source_facts(query, Some(*n))?,
-            (None, Some(as_of)) => self.read_snapshot()?.facts_as_of(as_of)?,
-            (None, None) => self.live_source_facts(query, None)?,
+            Some(AsOf::Counter(n)) => self.live_source_facts(query, Some(*n))?,
+            Some(as_of) => self.read_snapshot()?.facts_as_of(as_of)?,
+            None => self.live_source_facts(query, None)?,
         };
 
         let tx_filtered = source_facts;
@@ -560,11 +524,8 @@ impl DatalogExecutor {
 
         // Check if query uses rules
         if query.uses_rules() {
-            // The engine runs the rule queries it plans (#548); reads inside
-            // a write transaction stay here (#550).
-            if self.facts_override.is_none()
-                && let Some(answer) = self.open_rule_query(&query)?
-            {
+            // The engine runs the rule queries it plans (#548).
+            if let Some(answer) = self.open_rule_query(&query)? {
                 return Ok(answer);
             }
             // Use StratifiedEvaluator for queries with rule invocations (handles negation and strata)
@@ -577,10 +538,7 @@ impl DatalogExecutor {
         }
 
         // The streaming engine runs the queries it has operators for (#473).
-        // Reads inside a write transaction (`facts_override`) stay here (#550).
-        if self.facts_override.is_none()
-            && let Some(plan) = crate::query::engine::plan(&query)
-        {
+        if let Some(plan) = crate::query::engine::plan(&query) {
             {
                 let registry = self
                     .functions
@@ -706,8 +664,6 @@ impl DatalogExecutor {
         DatalogExecutor {
             storage: self.storage.clone(),
             snapshot: Some(snapshot),
-            facts_override: None,
-            read_now_floor: self.read_now_floor,
             rules: self.rules.clone(),
             functions: self.functions.clone(),
             max_derived_facts: self.max_derived_facts,

@@ -24,7 +24,10 @@
 //! With the `test-oracle` feature a sixth variant makes most transactions
 //! large (#550): they write pages and commit as a checkpoint, with no WAL
 //! entry, and every fourth one is followed by a large statement that fails
-//! after writing pages and rolls back. The kill lands during a large
+//! after writing pages and rolls back. Every third runs as a
+//! `WriteTransaction` of three statements: the opposite of the transaction,
+//! that failing statement, then the transaction itself, which the last
+//! statement decides (statement bases). The kill lands during a large
 //! transaction, after its commit point, or after a rollback before the next
 //! checkpoint.
 //!
@@ -178,9 +181,10 @@ enum Variant {
     AutoCheckpoint,
     /// As `CheckpointEvery3`, with `SyncMode::Normal` (no WAL fsync).
     NormalSync,
-    /// Statements of more than [`LARGE_CHUNK`] facts are large (#550), and a
-    /// failing large statement follows every fourth transaction;
-    /// `checkpoint()` after every fifth.
+    /// Statements of more than [`LARGE_CHUNK`] facts are large (#550), a
+    /// failing large statement follows every fourth transaction, every third
+    /// is a `WriteTransaction` ([`in_write_tx`]); `checkpoint()` after every
+    /// fifth.
     #[cfg(feature = "test-oracle")]
     Large,
 }
@@ -203,6 +207,25 @@ const LARGE_CHUNK: usize = 2;
 #[cfg(feature = "test-oracle")]
 const FAILS_LARGE: &str = r#"(transact [[:e0 :a0 0 {:valid-from "2020-01-01T00:00:00Z"}] [:e1 :a0 0]
     [:e2 :a0 0] [:e0 :a0 0 {:valid-from "2021-01-01T00:00:00Z"}]])"#;
+
+/// Run `stmt` as a `WriteTransaction` with the same result: the opposite
+/// statement over the same triples, [`FAILS_LARGE`] (rejected, the
+/// transaction stays usable), then `stmt`, which wins every triple.
+#[cfg(feature = "test-oracle")]
+fn in_write_tx(db: &Minigraf, stmt: &str) {
+    let opposite = match stmt.strip_prefix("(transact ") {
+        Some(rest) => format!("(retract {rest}"),
+        None => stmt.replacen("(retract ", "(transact ", 1),
+    };
+    let mut tx = db.begin_write().expect("child begin_write");
+    tx.execute(&opposite).expect("child statement");
+    let e = tx
+        .execute(FAILS_LARGE)
+        .expect_err("a failing large statement");
+    assert_eq!(e.code(), "API-011");
+    tx.execute(stmt).expect("child statement");
+    tx.commit().expect("child commit");
+}
 
 impl Variant {
     fn options(self) -> OpenOptions {
@@ -481,6 +504,13 @@ fn crash_kill_child_entrypoint() {
     let mut live = BTreeSet::new();
     for k in 1.. {
         let (stmt, next) = next_tx(&mut rng, &live);
+        #[cfg(feature = "test-oracle")]
+        if large && k % 3 == 0 {
+            in_write_tx(&db, &stmt);
+        } else {
+            db.execute(&stmt).expect("child transaction");
+        }
+        #[cfg(not(feature = "test-oracle"))]
         db.execute(&stmt).expect("child transaction");
         log.write_all(format!("{k}\n").as_bytes())
             .expect("child logs transaction");

@@ -110,11 +110,10 @@ fn the_database_answers_after_qry_012() {
     assert_eq!(rows(result), 1, "a small query still runs");
 }
 
-/// A query inside a write transaction that has staged writes runs on the
-/// executor, which does not count yet (#549 spec §2); before any write it
-/// runs on the engine and is counted.
+/// A query inside a write transaction runs on the engine and is counted,
+/// before and after a staged write (#550 spec §7).
 #[test]
-fn write_transactions_with_staged_writes_are_not_counted_yet() {
+fn write_transaction_queries_are_counted() {
     let db = db(0);
     let mut tx = db.begin_write().unwrap();
     assert_eq!(
@@ -122,7 +121,10 @@ fn write_transactions_with_staged_writes_are_not_counted_yet() {
         "QRY-012"
     );
     tx.execute("(transact [[:p50 :age 50]])").unwrap();
-    assert_eq!(rows(tx.execute(QUERY).unwrap()), 51);
+    assert_eq!(
+        tx.execute(QUERY).expect_err("a staged write").code(),
+        "QRY-012"
+    );
     tx.rollback();
 }
 

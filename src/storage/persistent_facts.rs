@@ -30,7 +30,7 @@ mod browser_access;
 #[cfg(not(target_arch = "wasm32"))]
 mod large_tx;
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) use large_tx::ChunkError;
+pub(crate) use large_tx::{ChunkError, LargeTx};
 use std::sync::{Arc, Mutex};
 
 /// Persistent fact storage with page-based persistence.

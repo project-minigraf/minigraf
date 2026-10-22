@@ -1029,6 +1029,8 @@ impl Minigraf {
             next_pending_tx_count: self.inner.fact_storage.current_tx_count().saturating_add(1),
             next_pending_tx_id: crate::graph::types::tx_id_now(),
             committed: false,
+            #[cfg(not(target_arch = "wasm32"))]
+            large: None,
         })
     }
 
@@ -1541,6 +1543,19 @@ pub struct WriteTransaction<'a> {
     next_pending_tx_id: TxId,
     /// Set to `true` after a successful `commit()` to suppress rollback in `Drop`.
     committed: bool,
+    /// The working state once the transaction is large (#550 spec §4): its
+    /// statements are then in copy-on-write working trees, not staged.
+    #[cfg(not(target_arch = "wasm32"))]
+    large: Option<crate::storage::persistent_facts::LargeTx>,
+}
+
+/// A statement that makes a `WriteTransaction` large (#550 plan decision 25).
+#[cfg(not(target_arch = "wasm32"))]
+enum Current<'s> {
+    /// At most one chunk of facts, checked through `API-011`.
+    Small(Vec<Fact>),
+    /// A statement of more than one chunk.
+    Large(statement::Statement<'s>),
 }
 
 impl<'a> WriteTransaction<'a> {
@@ -1561,13 +1576,38 @@ impl<'a> WriteTransaction<'a> {
 
     fn execute_inner(&mut self, input: &str) -> Result<QueryResult> {
         if let Some(kind) = statement::kind_of(input) {
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(tx) = &self.large {
+                // Every fact is stamped with the transaction's tx_id.
+                let statement = statement::read_statement(input, kind, tx.tx_id())?;
+                let chunks = statement.chunks()?;
+                refuse_if_failed(&self.guard)?;
+                self.write_statement(chunks)?;
+                return Ok(QueryResult::Ok);
+            }
             // A rejected statement stages nothing; the transaction stays
             // usable. Pass 1 checks windows at the staging time; `commit`
             // checks them again at the commit time.
             let staged_tx_id =
                 std::cmp::max(crate::graph::types::tx_id_now(), self.next_pending_tx_id);
-            let facts = statement::read_statement(input, kind, staged_tx_id)?.facts()?;
+            let statement = statement::read_statement(input, kind, staged_tx_id)?;
+            #[cfg(not(target_arch = "wasm32"))]
+            let file = matches!(*self.guard, WriteContext::File { .. });
+            #[cfg(not(target_arch = "wasm32"))]
+            if file && statement.is_large() {
+                self.become_large(Current::Large(statement))?;
+                return Ok(QueryResult::Ok);
+            }
+            let facts = statement.facts()?;
             crate::graph::storage::check_one_window_per_triple(&facts)?;
+            #[cfg(not(target_arch = "wasm32"))]
+            if file
+                && self.pending_facts.len().saturating_add(facts.len())
+                    > statement::tx_chunk_facts()
+            {
+                self.become_large(Current::Small(facts))?;
+                return Ok(QueryResult::Ok);
+            }
             self.stage_pending_facts(facts);
             return Ok(QueryResult::Ok);
         }
@@ -1586,23 +1626,8 @@ impl<'a> WriteTransaction<'a> {
     }
 
     fn execute_read_command(&self, cmd: DatalogCommand) -> Result<QueryResult> {
-        if self.pending_facts.is_empty() {
-            let mut executor = DatalogExecutor::new_with_rules_and_functions(
-                self.inner.fact_storage.clone(),
-                self.inner.rules.clone(),
-                self.inner.functions.clone(),
-            );
-            executor.set_limits(
-                self.inner.options.derived_fact_limit(),
-                self.inner.options.query_memory_limit,
-            );
-            return executor.execute(cmd);
-        }
-
-        let merged_facts = self.merged_query_facts()?;
-        let mut executor = DatalogExecutor::new_from_facts_with_rules_and_functions(
-            merged_facts,
-            self.pending_read_now_floor(),
+        let mut executor = DatalogExecutor::new_with_rules_and_functions(
+            self.inner.fact_storage.clone(),
             self.inner.rules.clone(),
             self.inner.functions.clone(),
         );
@@ -1610,7 +1635,130 @@ impl<'a> WriteTransaction<'a> {
             self.inner.options.derived_fact_limit(),
             self.inner.options.query_memory_limit,
         );
+        executor.set_snapshot(self.read_snapshot()?);
         executor.execute(cmd)
+    }
+
+    /// The state a query inside the transaction reads (#550 spec §7): for a
+    /// large transaction its working trees, which hold every committed and
+    /// pending fact and its finished statements; otherwise the database with
+    /// the staged facts after its pending ones.
+    fn read_snapshot(&self) -> Result<Snapshot> {
+        let snapshot = self.inner.fact_storage.snapshot()?;
+        #[cfg(not(target_arch = "wasm32"))]
+        if let (Some(tx), WriteContext::File { pfs, .. }) = (&self.large, &*self.guard) {
+            return Ok(snapshot.with_committed(pfs.large_reader(tx)));
+        }
+        // A default `valid_from` stays the sentinel until the commit stamps
+        // it; reads see it as the fact's own staged tx_id.
+        let staged = self
+            .pending_facts
+            .iter()
+            .cloned()
+            .map(|mut f| {
+                if f.asserted && f.valid_from == VALID_FROM_USE_TX_TIME {
+                    f.valid_from = f.tx_id.cast_signed();
+                }
+                f
+            })
+            .collect();
+        Ok(snapshot.with_staged(staged))
+    }
+
+    /// Make the transaction large with `current`, the statement that takes
+    /// it over `TX_CHUNK_FACTS` staged facts (#550 spec §4.1, plan decision
+    /// 26). The staged statements are checked at the transaction's `tx_id`
+    /// first: a failure rejects `current` and leaves the transaction small.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn become_large(&mut self, current: Current<'_>) -> Result<()> {
+        let tx_id = crate::graph::types::tx_id_now();
+        let keep = last_statement_mask(&self.pending_facts);
+        let kept = || {
+            self.pending_facts
+                .iter()
+                .zip(&keep)
+                .filter_map(|(f, k)| k.then_some(f))
+        };
+        for f in kept() {
+            crate::graph::storage::check_valid_windows(std::slice::from_ref(f), tx_id)?;
+        }
+        for f in kept() {
+            crate::wal::check_fact_size(f)?;
+        }
+        refuse_if_failed(&self.guard)?;
+        let WriteContext::File {
+            pfs, wal, db_path, ..
+        } = &mut *self.guard
+        else {
+            bail_coded!(ErrorCode::Int019, "a large transaction without a file");
+        };
+        // The WAL guard (§4.5), before any page is written.
+        Minigraf::open_wal(
+            wal,
+            db_path,
+            self.inner.options.synchronous,
+            pfs.generation(),
+        )?;
+        let mut tx = pfs.begin_large(tx_id)?;
+        let mut staged: Vec<Fact> = std::mem::take(&mut self.pending_facts)
+            .into_iter()
+            .zip(keep)
+            .filter_map(|(f, k)| k.then_some(f))
+            .collect();
+        let written = if staged.is_empty() {
+            Ok(())
+        } else {
+            pfs.write_staged_chunk(&mut tx, &mut staged)
+        };
+        drop(staged);
+        // After a failure the transaction stays open: `commit` refuses it
+        // (STG-046), and a rollback or drop discards it.
+        self.large = Some(tx);
+        written?;
+        match current {
+            Current::Small(facts) => self.write_statement(std::iter::once(Ok(facts))),
+            Current::Large(statement) => self.write_statement(statement.chunks()?),
+        }
+    }
+
+    /// Write one statement of a large transaction a chunk at a time, under
+    /// a statement base (#550 spec §5): a rejected statement returns the
+    /// working trees to it and leaves the transaction usable.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn write_statement<C>(&mut self, chunks: impl IntoIterator<Item = Result<C>>) -> Result<()>
+    where
+        C: std::ops::DerefMut<Target = [Fact]>,
+    {
+        use crate::storage::persistent_facts::ChunkError;
+        let (WriteContext::File { pfs, .. }, Some(tx)) = (&mut *self.guard, self.large.as_mut())
+        else {
+            bail_coded!(
+                ErrorCode::Int019,
+                "a large statement without a large transaction"
+            );
+        };
+        pfs.begin_statement(tx);
+        for chunk in chunks {
+            let written = match chunk {
+                Ok(mut chunk) => pfs.write_large_chunk(tx, &mut chunk),
+                Err(e) => Err(ChunkError::Statement(e)),
+            };
+            if let Err(ChunkError::Statement(e) | ChunkError::Failure(e)) = written {
+                // A failure has failed the handle already; the base is
+                // restored either way.
+                let _ = pfs.end_statement(tx, false);
+                return Err(e);
+            }
+        }
+        pfs.end_statement(tx, true)
+    }
+
+    /// Discard the working state of a large transaction (#550 spec §4.4).
+    #[cfg(not(target_arch = "wasm32"))]
+    fn rollback_large(&mut self) {
+        if let (Some(tx), WriteContext::File { pfs, .. }) = (self.large.take(), &mut *self.guard) {
+            pfs.rollback_large(tx);
+        }
     }
 
     fn execute_rule_command(
@@ -1659,6 +1807,31 @@ impl<'a> WriteTransaction<'a> {
     }
 
     fn commit_inner(mut self) -> Result<()> {
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.large.is_some() {
+            // A failed handle is refused; the drop rolls the transaction back.
+            refuse_if_failed(&self.guard)?;
+            // No statement wrote a fact: nothing to commit, no tx_count taken.
+            if !self.large.as_ref().is_some_and(|tx| tx.wrote()) {
+                self.rollback_large();
+            }
+            if let (
+                Some(tx),
+                WriteContext::File {
+                    pfs,
+                    wal,
+                    db_path,
+                    wal_entry_count,
+                },
+            ) = (self.large.take(), &mut *self.guard)
+            {
+                pfs.commit_large(tx)?;
+                Minigraf::delete_wal(wal, db_path, wal_entry_count)?;
+            }
+            self.committed = true;
+            set_write_tx_active(false);
+            return Ok(());
+        }
         let facts_to_commit = std::mem::take(&mut self.pending_facts);
 
         if !facts_to_commit.is_empty() {
@@ -1756,37 +1929,11 @@ impl<'a> WriteTransaction<'a> {
 
     /// Explicitly roll back the transaction. Also happens implicitly on drop.
     pub fn rollback(mut self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        self.rollback_large();
         self.pending_facts.clear();
         self.committed = true; // Suppress rollback in Drop
         set_write_tx_active(false);
-    }
-
-    /// Build a merged fact snapshot for transactional reads.
-    ///
-    /// Pending facts still carry `VALID_FROM_USE_TX_TIME` for assertions where no
-    /// explicit `valid_from` was supplied (the sentinel is left intact so `commit()`
-    /// can stamp it with the real commit timestamp).  We resolve it here using each
-    /// fact's own staged `tx_id` so transactional queries see a coherent valid-time.
-    fn merged_query_facts(&self) -> Result<Arc<[Fact]>> {
-        let committed = self.inner.fact_storage.get_all_facts()?;
-        let mut merged =
-            Vec::with_capacity(committed.len().saturating_add(self.pending_facts.len()));
-        merged.extend(committed);
-        merged.extend(self.pending_facts.iter().cloned().map(|mut f| {
-            if f.asserted && f.valid_from == VALID_FROM_USE_TX_TIME {
-                f.valid_from = f.tx_id.cast_signed();
-            }
-            f
-        }));
-        Ok(Arc::from(merged))
-    }
-
-    /// Return the read-time floor implied by pending facts only.
-    fn pending_read_now_floor(&self) -> Option<i64> {
-        self.pending_facts
-            .iter()
-            .map(|fact| fact.tx_id.cast_signed())
-            .max()
     }
 }
 
@@ -1794,6 +1941,16 @@ impl<'a> WriteTransaction<'a> {
 /// the newest statement that wrote it (#477). Staged facts carry their
 /// statement's synthetic `tx_count`; the order of what is kept is unchanged.
 fn keep_last_statement(facts: Vec<Fact>) -> Vec<Fact> {
+    let keep = last_statement_mask(&facts);
+    facts
+        .into_iter()
+        .zip(keep)
+        .filter_map(|(fact, kept)| kept.then_some(fact))
+        .collect()
+}
+
+/// For each of `facts`, whether [`keep_last_statement`] keeps it.
+fn last_statement_mask(facts: &[Fact]) -> Vec<bool> {
     use crate::storage::index::encode_value;
     use std::collections::HashMap;
 
@@ -1805,18 +1962,13 @@ fn keep_last_statement(facts: Vec<Fact>) -> Vec<Fact> {
             .or_insert(fact.tx_count);
         *slot = (*slot).max(fact.tx_count);
     }
-    let keep: Vec<bool> = facts
+    facts
         .iter()
         .zip(&encoded)
         .map(|(fact, value)| {
             newest.get(&(&fact.entity, fact.attribute.as_str(), value.as_slice()))
                 == Some(&fact.tx_count)
         })
-        .collect();
-    facts
-        .into_iter()
-        .zip(keep)
-        .filter_map(|(fact, kept)| kept.then_some(fact))
         .collect()
 }
 
@@ -1825,7 +1977,10 @@ impl Drop for WriteTransaction<'_> {
         if !self.committed {
             // Implicit rollback: pending facts are simply discarded.
             // No changes were made to the shared FactStorage during buffering,
-            // so no cleanup is required there.
+            // so no cleanup is required there. A large transaction's working
+            // pages are discarded (#550 spec §4.4).
+            #[cfg(not(target_arch = "wasm32"))]
+            self.rollback_large();
             self.pending_facts.clear();
             set_write_tx_active(false);
         }

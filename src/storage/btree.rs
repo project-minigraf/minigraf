@@ -567,6 +567,37 @@ pub fn collect_leaf_pages(
     Ok(leaves)
 }
 
+/// The ids of every node of the tree at `root` (none for root 0), so a tree
+/// that only one statement used can give its pages back (#550).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn tree_pages(root: u64, backend: &dyn StorageBackend, cache: &PageCache) -> Result<Vec<u64>> {
+    let mut out = Vec::new();
+    let mut stack = if root == 0 {
+        vec![]
+    } else {
+        vec![(root, 0usize)]
+    };
+    while let Some((page_id, depth)) = stack.pop() {
+        if depth > MAX_TREE_DEPTH {
+            bail_coded!(
+                ErrorCode::Int049,
+                format!("tree deeper than {MAX_TREE_DEPTH} below page_id={root}")
+            );
+        }
+        let page = cache.get_or_load(page_id, backend)?;
+        out.push(page_id);
+        match page.first().copied() {
+            Some(PAGE_TYPE_LEAF) => {}
+            Some(PAGE_TYPE_INTERNAL) => {
+                let children = Internal::new(&page[..])?.children()?;
+                stack.extend(children.into_iter().map(|c| (c, depth + 1)));
+            }
+            _ => bail_coded!(ErrorCode::Stg013, page_id),
+        }
+    }
+    Ok(out)
+}
+
 /// One internal node on the cursor's path from the root.
 struct Frame {
     page: Arc<Vec<u8>>,
@@ -1706,6 +1737,28 @@ mod tests {
         cow_check(&committed, &[], &mut rng);
         // Shared entries are kept once.
         cow_check(&committed, &committed[5..50], &mut rng);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn tree_pages_lists_every_node_a_tree_reaches() {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(64);
+        let mut alloc = PageAllocator::new(Vec::new(), 2, 1);
+        assert!(tree_pages(0, &backend, &cache).unwrap().is_empty());
+        let mut freed = Vec::new();
+        let entries: Vec<Entry> = (0..3000).map(|n| entry(n, n)).collect();
+        let root = cow_insert(0, entries, &mut backend, &cache, &mut alloc, &mut freed).unwrap();
+        let more: Vec<Entry> = (3000..3100).map(|n| entry(n, n)).collect();
+        let root = cow_insert(root, more, &mut backend, &cache, &mut alloc, &mut freed).unwrap();
+        let mut nodes = Vec::new();
+        collect_leaf_pages(root, &backend, &cache, Some(&mut nodes)).unwrap();
+        assert!(nodes.len() > 3, "a tree of more than one level");
+        let mut got = tree_pages(root, &backend, &cache).unwrap();
+        got.sort_unstable();
+        nodes.sort_unstable();
+        assert_eq!(got, nodes);
+        assert!(got.iter().all(|id| !freed.contains(id)), "no replaced page");
     }
 
     #[test]

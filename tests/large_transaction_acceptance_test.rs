@@ -17,7 +17,7 @@
 use minigraf::{Minigraf, QueryResult};
 
 const FACTS: usize = 1_000_000;
-/// `TX_CHUNK_FACTS` until #550 PR 3's measurement sets it.
+/// `TX_CHUNK_FACTS` (`src/query/datalog/parser/statement.rs`).
 const TX_CHUNK_FACTS: usize = 16_384;
 
 /// A `kB` field of `/proc/self/status`; 0 where it does not exist.

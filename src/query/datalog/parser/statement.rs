@@ -19,7 +19,10 @@ use crate::query::datalog::types::{AttributeSpec, DatalogCommand, EdnValue, Patt
 use anyhow::Result;
 
 /// Most facts a statement holds materialised at once; a statement with more
-/// is read again in chunks of this many (spec §3.3).
+/// is read again in chunks of this many (spec §3.3), and a transaction with
+/// more is large (§4). Set by measurement (#550 plan, PR 3 results): 4,096
+/// was up to 3× slower with random entities, 65,536 held 40–55 MiB more at
+/// 1M facts.
 const TX_CHUNK_FACTS: usize = 16_384;
 
 #[cfg(any(test, feature = "test-oracle"))]

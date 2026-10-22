@@ -190,6 +190,9 @@ pub struct PageAllocator {
     generation: u64,
     /// Every id handed out since [`tracking`](Self::tracking), when on.
     handed: Option<std::collections::HashSet<u64>>,
+    /// The ids handed out since [`begin_base`](Self::begin_base) and not
+    /// released again, when on (#550 spec §5.1).
+    since: Option<std::collections::HashSet<u64>>,
 }
 
 impl PageAllocator {
@@ -208,6 +211,7 @@ impl PageAllocator {
             next_append,
             generation,
             handed: None,
+            since: None,
         }
     }
 
@@ -225,6 +229,7 @@ impl PageAllocator {
             next_append,
             generation,
             handed: None,
+            since: None,
         }
     }
 
@@ -264,7 +269,31 @@ impl PageAllocator {
     /// out again, [`finish_free_list`](Self::finish_free_list) lists it free.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn release(&mut self, id: u64) {
+        if let Some(s) = self.since.as_mut() {
+            s.remove(&id);
+        }
         self.free.push(id);
+    }
+
+    /// Record, from now on, the ids handed out and not released again: a
+    /// statement's base (#550 spec §5.1). Replaces any set already recording.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn begin_base(&mut self) {
+        self.since = Some(std::collections::HashSet::new());
+    }
+
+    /// Whether `id` was handed out since [`begin_base`](Self::begin_base) and
+    /// not released since.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn handed_since(&self, id: u64) -> bool {
+        self.since.as_ref().is_some_and(|s| s.contains(&id))
+    }
+
+    /// Stop recording and return the ids [`handed_since`](Self::handed_since)
+    /// held.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn end_base(&mut self) -> std::collections::HashSet<u64> {
+        self.since.take().unwrap_or_default()
     }
 
     /// The generation every page written through this allocator is stamped with.
@@ -291,9 +320,7 @@ impl PageAllocator {
                     self.skipped.push(id);
                     continue;
                 }
-                if let Some(h) = self.handed.as_mut() {
-                    h.insert(id);
-                }
+                self.record(id);
                 return Ok(id);
             }
             if self.chain_next == 0 {
@@ -322,10 +349,17 @@ impl PageAllocator {
         self.next_append = id
             .checked_add(1)
             .ok_or_else(|| err_coded!(ErrorCode::Int048, "page id overflow"))?;
+        self.record(id);
+        Ok(id)
+    }
+
+    fn record(&mut self, id: u64) {
         if let Some(h) = self.handed.as_mut() {
             h.insert(id);
         }
-        Ok(id)
+        if let Some(s) = self.since.as_mut() {
+            s.insert(id);
+        }
     }
 
     /// Free ids not handed out, in hand-out order. Chain pages not read yet and
@@ -560,6 +594,27 @@ mod tests {
             vec![7, 9],
             "an unused released id is free"
         );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn handed_since_covers_ids_after_begin_base_until_released() {
+        let b = crate::storage::backend::MemoryBackend::new();
+        let c = crate::storage::cache::PageCache::new(0);
+        let mut a = PageAllocator::new(vec![3, 4], 10, 2).tracking();
+        let before = a.alloc(&b, &c).unwrap();
+        a.begin_base();
+        let free = a.alloc(&b, &c).unwrap();
+        let appended = a.alloc_append().unwrap();
+        let released = a.alloc(&b, &c).unwrap();
+        a.release(released);
+        assert!(!a.handed_since(before), "handed out before the base");
+        assert!(a.handed_since(free) && a.handed_since(appended));
+        assert!(!a.handed_since(released), "released again");
+        assert!(a.handed(released), "still in the transaction's set");
+        let since = a.end_base();
+        assert_eq!(since, [free, appended].into_iter().collect());
+        assert!(!a.handed_since(free), "no base after end_base");
     }
 
     #[cfg(not(target_arch = "wasm32"))]

@@ -63,8 +63,9 @@ enum Op {
     /// A large transaction (#550): chunks written into working trees and
     /// committed as a checkpoint. `one_slot`: on a file never checkpointed,
     /// with one valid meta slot; else on the file `build` makes. `wal`: with
-    /// entries pending in the WAL beforehand, else with no WAL.
-    Large { one_slot: bool, wal: bool },
+    /// entries pending in the WAL beforehand, else with no WAL. `tx`: as a
+    /// `WriteTransaction` of several statements (statement bases).
+    Large { one_slot: bool, wal: bool, tx: bool },
 }
 
 impl Op {
@@ -79,6 +80,7 @@ impl Op {
     /// The transaction the operation writes, and how many records it leaves.
     fn x(self) -> (&'static str, usize) {
         match self {
+            Op::Large { tx: true, .. } => (X_LARGE, X_TX_FACTS),
             Op::Large { .. } => (X_LARGE, X_LARGE_FACTS),
             _ => (X, X_FACTS),
         }
@@ -97,6 +99,31 @@ const X_LARGE: &str = r#"(transact [[:x1 :p/x 1] [:x1 :p/x 2] [:x1 :p/x 3]
     [:x4 :p/x 4] [:x5 :p/x 5] [:x1 :p/x 1] [:x6 :p/xref :x1] [:x7 :p/x 7] [:x8 :p/x 8]])"#;
 const X_LARGE_FACTS: usize = 10;
 const LARGE_CHUNK: usize = 3;
+
+/// A `WriteTransaction` around [`X_LARGE`]: a staged statement first, then,
+/// after it, a statement that fails `API-011` after writing a chunk and one
+/// that repeats and changes earlier statements' triples. It leaves
+/// [`X_TX_FACTS`] records.
+const X_TX_BEFORE: &str = "(transact [[:x1 :p/x 1] [:x9 :p/x 9]])";
+const X_TX_FAILS: &str = r#"(transact [[:x11 :p/x 1 {:valid-from "2020-01-01T00:00:00Z"}]
+    [:x12 :p/x 1] [:x13 :p/x 1] [:x11 :p/x 1 {:valid-from "2021-01-01T00:00:00Z"}]])"#;
+const X_TX_AFTER: &str =
+    r#"(transact [[:x1 :p/x 2 {:valid-from "2020-01-01T00:00:00Z"}] [:x10 :p/x 10] [:x9 :p/x 9]])"#;
+const X_TX_FACTS: usize = 12;
+
+/// Run the `WriteTransaction` of `Op::Large { tx: true, .. }`.
+fn large_write_tx(db: &Minigraf) -> Result<(), crate::MinigrafError> {
+    let mut tx = db.begin_write()?;
+    tx.execute(X_TX_BEFORE)?;
+    tx.execute(X_LARGE)?;
+    match tx.execute(X_TX_FAILS) {
+        Err(e) if e.code() == "API-011" => {}
+        Err(e) => return Err(e),
+        Ok(_) => panic!("a statement with two windows of a triple was accepted"),
+    }
+    tx.execute(X_TX_AFTER)?;
+    tx.commit()
+}
 
 fn open(path: &Path, op: Op) -> Minigraf {
     let threshold = if op == Op::AutoCheckpoint { 3 } else { 1000 };
@@ -133,6 +160,7 @@ fn build(path: &Path, op: Op) -> Minigraf {
     if let Op::Large {
         one_slot: true,
         wal,
+        ..
     } = op
     {
         if wal {
@@ -214,10 +242,15 @@ fn run(op: Op, f: Fault) -> u64 {
             Op::Transact | Op::TransactNewWal | Op::AutoCheckpoint => {
                 (db.execute(X).map(|_| ()), Some(db))
             }
-            Op::Large { .. } => {
+            Op::Large { tx, .. } => {
                 let _chunk =
                     crate::query::datalog::parser::statement::set_tx_chunk_facts(Some(LARGE_CHUNK));
-                (db.execute(X_LARGE).map(|_| ()), Some(db))
+                let result = if tx {
+                    large_write_tx(&db)
+                } else {
+                    db.execute(X_LARGE).map(|_| ())
+                };
+                (result, Some(db))
             }
             Op::Checkpoint => (db.checkpoint(), Some(db)),
             Op::Rebuild => (db.rebuild_indexes(), Some(db)),
@@ -336,6 +369,7 @@ fn faults_during_a_large_transaction() {
     run_all(Op::Large {
         one_slot: false,
         wal: true,
+        tx: false,
     });
 }
 
@@ -344,6 +378,7 @@ fn faults_during_a_large_transaction_that_creates_the_wal() {
     run_all(Op::Large {
         one_slot: false,
         wal: false,
+        tx: false,
     });
 }
 
@@ -354,6 +389,7 @@ fn faults_during_a_large_transaction_on_a_new_file() {
     run_all(Op::Large {
         one_slot: true,
         wal: false,
+        tx: false,
     });
 }
 
@@ -362,6 +398,43 @@ fn faults_during_a_large_transaction_on_a_new_file_with_a_wal() {
     run_all(Op::Large {
         one_slot: true,
         wal: true,
+        tx: false,
+    });
+}
+
+#[test]
+fn faults_during_a_large_write_transaction() {
+    run_all(Op::Large {
+        one_slot: false,
+        wal: true,
+        tx: true,
+    });
+}
+
+#[test]
+fn faults_during_a_large_write_transaction_that_creates_the_wal() {
+    run_all(Op::Large {
+        one_slot: false,
+        wal: false,
+        tx: true,
+    });
+}
+
+#[test]
+fn faults_during_a_large_write_transaction_on_a_new_file() {
+    run_all(Op::Large {
+        one_slot: true,
+        wal: false,
+        tx: true,
+    });
+}
+
+#[test]
+fn faults_during_a_large_write_transaction_on_a_new_file_with_a_wal() {
+    run_all(Op::Large {
+        one_slot: true,
+        wal: true,
+        tx: true,
     });
 }
 
