@@ -90,11 +90,13 @@ impl EdnValue {
     }
 
     /// Check if this is a map
+    #[cfg(test)]
     pub fn is_map(&self) -> bool {
         matches!(self, EdnValue::Map(_))
     }
 
     /// Get the map contents if this is a map
+    #[cfg(test)]
     pub fn as_map(&self) -> Option<&Vec<(EdnValue, EdnValue)>> {
         match self {
             EdnValue::Map(m) => Some(m),

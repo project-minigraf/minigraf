@@ -6,7 +6,7 @@
 //! - `Minigraf::begin_write()` / `WriteTransaction` for explicit transactions
 //! - `Minigraf::checkpoint()` for manual WAL compaction
 
-use crate::graph::types::{Fact, TxId, VALID_TIME_FOREVER};
+use crate::graph::types::{Fact, TxId};
 
 /// Sentinel value used in `materialize_transaction` to signal "no explicit `valid_from`
 /// was provided; use the transaction timestamp at commit time."
@@ -27,9 +27,10 @@ use crate::query::datalog::functions::{
     AggImpl, AggregateDesc, FunctionRegistry, PredicateDesc, UdfFinaliseFn, UdfOps, UdfStepFn,
 };
 use crate::query::datalog::parser::parse_datalog_command;
+use crate::query::datalog::parser::statement::{self, Kind};
 use crate::query::datalog::prepared::reject_unbound_slots;
 use crate::query::datalog::rules::RuleRegistry;
-use crate::query::datalog::types::{AttributeSpec, DatalogCommand, Transaction};
+use crate::query::datalog::types::DatalogCommand;
 use crate::storage::backend::MemoryBackend;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::storage::backend::file::{FileBackend, LockMode};
@@ -726,51 +727,57 @@ impl Minigraf {
             bail_coded!(ErrorCode::Int001);
         }
 
-        let cmd = parse_datalog_command(input)?;
-        if let DatalogCommand::Query(q) = &cmd {
-            reject_unbound_slots(q)?;
+        if let Some(kind) = statement::kind_of(input) {
+            return self.execute_statement(input, kind);
         }
-
-        // Determine if this is a read-only command (query only).
-        // Rule registration is treated as a write because it mutates the shared RuleRegistry.
-        let is_write = matches!(
-            cmd,
-            DatalogCommand::Transact(_) | DatalogCommand::Retract(_) | DatalogCommand::Rule(_)
-        );
-
-        if is_write {
-            match &cmd {
-                DatalogCommand::Transact(_) => self.reject_if_read_only("transact")?,
-                DatalogCommand::Retract(_) => self.reject_if_read_only("retract")?,
-                _ => {}
+        let cmd = parse_datalog_command(input)?;
+        match cmd {
+            DatalogCommand::Query(ref q) => {
+                reject_unbound_slots(q)?;
+                // Read-only: no lock needed
+                let snapshot = self.inner.fact_storage.snapshot()?;
+                self.read_executor(snapshot).execute(cmd)
             }
+            DatalogCommand::Rule(_) => {
+                // Rule registration is a write: it mutates the shared
+                // RuleRegistry, so it runs under write_lock (no WAL needed).
+                let _ctx = self
+                    .inner
+                    .write_lock
+                    .lock()
+                    .map_err(|_| err_coded!(ErrorCode::Api001))?;
+                let executor = DatalogExecutor::new_with_rules_and_functions(
+                    self.inner.fact_storage.clone(),
+                    self.inner.rules.clone(),
+                    self.inner.functions.clone(),
+                );
+                executor.execute(cmd)
+            }
+            DatalogCommand::Transact(_) | DatalogCommand::Retract(_) => {
+                Err(err_coded!(ErrorCode::Api002))
+            }
+        }
+    }
+
+    /// Execute a `transact` or `retract` with correct WAL-first ordering:
+    /// 1. Read the statement (pass 1, #550) and materialize its facts (no storage mutation yet)
+    /// 2. Allocate tx_count + tx_id and stamp facts
+    /// 3. Write WAL entry FIRST — if this fails, FactStorage is unchanged
+    /// 4. Apply facts to shared FactStorage
+    fn execute_statement(&self, input: &str, kind: Kind) -> Result<QueryResult> {
+        // Before the lock, as parsing is: a malformed statement never waits.
+        // Its materialisation and window errors come with its facts, below.
+        let statement = statement::read_statement(input, kind, crate::graph::types::tx_id_now())?;
+        self.reject_if_read_only(kind.name())?;
+        {
             let mut ctx = self
                 .inner
                 .write_lock
                 .lock()
                 .map_err(|_| err_coded!(ErrorCode::Api001))?;
 
-            // Handle write commands with correct WAL-first ordering for Transact/Retract:
-            // 1. Materialize facts (no storage mutation yet)
-            // 2. Allocate tx_count + tx_id and stamp facts
-            // 3. Write WAL entry FIRST — if this fails, FactStorage is unchanged
-            // 4. Apply facts to shared FactStorage
-            // For Rule registration: acquire lock to serialize rule changes, no WAL needed
-            let (stamped, is_retract) = match &cmd {
-                DatalogCommand::Transact(tx) => (Minigraf::materialize_transaction(tx)?, false),
-                DatalogCommand::Retract(tx) => (Minigraf::materialize_retraction(tx)?, true),
-                DatalogCommand::Rule(_) => {
-                    // Rule registration: execute while holding write_lock to serialize
-                    // rule registry changes (no WAL needed for rules)
-                    let executor = DatalogExecutor::new_with_rules_and_functions(
-                        self.inner.fact_storage.clone(),
-                        self.inner.rules.clone(),
-                        self.inner.functions.clone(),
-                    );
-                    return executor.execute(cmd);
-                }
-                _ => return Err(err_coded!(ErrorCode::Api002)),
-            };
+            let stamped = statement.facts()?;
+            let is_retract = kind == Kind::Retract;
             // Before allocating: a rejected transaction takes no tx_count.
             let tx_id = crate::graph::types::tx_id_now();
             crate::graph::storage::check_valid_windows(&stamped, tx_id)?;
@@ -817,10 +824,6 @@ impl Minigraf {
             } else {
                 Ok(QueryResult::Transacted(tx_id))
             }
-        } else {
-            // Read-only: no lock needed
-            let snapshot = self.inner.fact_storage.snapshot()?;
-            self.read_executor(snapshot).execute(cmd)
         }
     }
 
@@ -1270,70 +1273,25 @@ impl Minigraf {
 
     /// Convert a `Transaction` into a list of assertion `Fact`s (tx_id and tx_count
     /// are set to 0 as placeholders; they are assigned at commit time).
-    pub(crate) fn materialize_transaction(tx: &Transaction) -> Result<Vec<Fact>> {
-        use crate::query::datalog::matcher::{edn_to_entity_id, edn_to_value};
-        use crate::query::datalog::types::EdnValue;
-
-        let tx_valid_from = tx.valid_from;
-        let tx_valid_to = tx.valid_to;
-        let mut facts = Vec::new();
-
-        for pattern in &tx.facts {
-            let entity =
-                edn_to_entity_id(&pattern.entity).map_err(|e| err_coded!(ErrorCode::Int002, e))?;
-
-            let attr = match &pattern.attribute {
-                AttributeSpec::Real(EdnValue::Keyword(k)) => k.clone(),
-                AttributeSpec::Real(_) => bail_coded!(ErrorCode::Api003),
-                AttributeSpec::Pseudo(_) => bail_coded!(ErrorCode::Api004),
-            };
-
-            let value =
-                edn_to_value(&pattern.value).map_err(|e| err_coded!(ErrorCode::Int003, e))?;
-
-            let valid_from = pattern
-                .valid_from
-                .or(tx_valid_from)
-                .unwrap_or(VALID_FROM_USE_TX_TIME);
-            let valid_to = pattern
-                .valid_to
-                .or(tx_valid_to)
-                .unwrap_or(VALID_TIME_FOREVER);
-
-            facts.push(Fact::with_valid_time(
-                entity, attr, value, 0, 0, valid_from, valid_to,
-            ));
-        }
-
-        Ok(facts)
+    #[cfg(any(test, all(target_arch = "wasm32", feature = "browser")))]
+    pub(crate) fn materialize_transaction(
+        tx: &crate::query::datalog::types::Transaction,
+    ) -> Result<Vec<Fact>> {
+        tx.facts
+            .iter()
+            .map(|pattern| statement::materialize_assertion(pattern, tx.valid_from, tx.valid_to))
+            .collect()
     }
 
     /// Convert a `Transaction` into a list of retraction `Fact`s.
-    pub(crate) fn materialize_retraction(tx: &Transaction) -> Result<Vec<Fact>> {
-        use crate::query::datalog::matcher::{edn_to_entity_id, edn_to_value};
-        use crate::query::datalog::types::EdnValue;
-
-        let mut facts = Vec::new();
-
-        for pattern in &tx.facts {
-            let entity =
-                edn_to_entity_id(&pattern.entity).map_err(|e| err_coded!(ErrorCode::Int002, e))?;
-
-            let attr = match &pattern.attribute {
-                AttributeSpec::Real(EdnValue::Keyword(k)) => k.clone(),
-                AttributeSpec::Real(_) => bail_coded!(ErrorCode::Api003),
-                AttributeSpec::Pseudo(_) => bail_coded!(ErrorCode::Api004),
-            };
-
-            let value =
-                edn_to_value(&pattern.value).map_err(|e| err_coded!(ErrorCode::Int003, e))?;
-
-            let mut f = Fact::retract(entity, attr, value, 0);
-            f.tx_count = 0;
-            facts.push(f);
-        }
-
-        Ok(facts)
+    #[cfg(any(test, all(target_arch = "wasm32", feature = "browser")))]
+    pub(crate) fn materialize_retraction(
+        tx: &crate::query::datalog::types::Transaction,
+    ) -> Result<Vec<Fact>> {
+        tx.facts
+            .iter()
+            .map(statement::materialize_retraction_of)
+            .collect()
     }
 
     // ── UDF registration ─────────────────────────────────────────────────────
@@ -1514,23 +1472,22 @@ impl<'a> WriteTransaction<'a> {
     }
 
     fn execute_inner(&mut self, input: &str) -> Result<QueryResult> {
+        if let Some(kind) = statement::kind_of(input) {
+            // A rejected statement stages nothing; the transaction stays
+            // usable. Pass 1 checks windows at the staging time; `commit`
+            // checks them again at the commit time.
+            let staged_tx_id =
+                std::cmp::max(crate::graph::types::tx_id_now(), self.next_pending_tx_id);
+            let facts = statement::read_statement(input, kind, staged_tx_id)?.facts()?;
+            crate::graph::storage::check_one_window_per_triple(&facts)?;
+            self.stage_pending_facts(facts);
+            return Ok(QueryResult::Ok);
+        }
         let cmd = parse_datalog_command(input)?;
 
         match cmd {
-            DatalogCommand::Transact(tx) => {
-                // A rejected statement stages nothing; the transaction stays
-                // usable. `commit` checks windows again at the commit time.
-                let facts = Minigraf::materialize_transaction(&tx)?;
-                let staged_tx_id =
-                    std::cmp::max(crate::graph::types::tx_id_now(), self.next_pending_tx_id);
-                crate::graph::storage::check_valid_windows(&facts, staged_tx_id)?;
-                crate::graph::storage::check_one_window_per_triple(&facts)?;
-                self.stage_pending_facts(facts);
-                Ok(QueryResult::Ok)
-            }
-            DatalogCommand::Retract(tx) => {
-                self.stage_pending_facts(Minigraf::materialize_retraction(&tx)?);
-                Ok(QueryResult::Ok)
+            DatalogCommand::Transact(_) | DatalogCommand::Retract(_) => {
+                Err(err_coded!(ErrorCode::Api002))
             }
             DatalogCommand::Query(ref q) => {
                 reject_unbound_slots(q)?;
@@ -1800,6 +1757,7 @@ impl Drop for WriteTransaction<'_> {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+    use crate::graph::types::VALID_TIME_FOREVER;
 
     // ── repl factory ────────────────────────────────────────────────────────
 
