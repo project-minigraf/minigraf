@@ -543,7 +543,8 @@ mod tests {
         assert_eq!(a.alloc(&b, &c).unwrap(), 7);
         assert_eq!(a.alloc_append().unwrap(), 20);
         assert!(!a.handed(4), "handed out before tracking");
-        assert!(a.handed(7) && a.handed(20));
+        assert!(a.handed(7));
+        assert!(a.handed(20));
         assert!(!a.handed(9), "never handed out");
 
         a.release(20);
@@ -570,7 +571,8 @@ mod tests {
         let id = a.alloc(&b, &c).unwrap();
         a.release(id);
         let (head, _, listed) = a.finish_free_list(vec![], &mut b, &c).unwrap();
-        // It holds the new list or is listed on it: not leaked.
-        assert!(head == id || listed.contains(&id), "released id leaked");
+        // The new list's one page: handed out again, not leaked.
+        assert_eq!(head, id, "the released id holds the new free list");
+        assert!(listed.is_empty());
     }
 }
