@@ -26,6 +26,11 @@ use anyhow::Result;
 // and the native coverage report, never see it.
 #[cfg(all(target_arch = "wasm32", feature = "browser"))]
 mod browser_access;
+// Large transactions (#550): file databases only.
+#[cfg(not(target_arch = "wasm32"))]
+mod large_tx;
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) use large_tx::ChunkError;
 use std::sync::{Arc, Mutex};
 
 /// Persistent fact storage with page-based persistence.
