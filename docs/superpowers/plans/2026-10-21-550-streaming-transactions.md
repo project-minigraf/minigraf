@@ -139,8 +139,9 @@ statement takes today's path:
     allocates (the writable `Minigraf` paths that call `allocate_tx_count`, `db.rs:786` and `db.rs:1588`, hold it; `FactStorage::transact` is called only by tests), so the
     transaction uses `current_tx_count() + 1` and calls `allocate_tx_count` just after its meta
     write, which must return the same value (`INT-049` otherwise). A rolled-back large
-    transaction then takes no `tx_count`, as a rejected small one takes none today
-    (`db.rs:781`).
+    transaction then takes no `tx_count`, as a small one rejected before its WAL entry takes
+    none today (`db.rs:781`); a small one rejected with `WAL-003` takes one, since the WAL
+    entry checks sizes after the allocation.
 15. **Where it lives.** `src/storage/persistent_facts/large_tx.rs`, a child module of
     `persistent_facts` (as `browser_access.rs` is), so it uses `PersistentFactStorage`'s
     private fields (`backend`, `page_cache`, `meta`, `failed`, `dirty`) and `activate`.
@@ -264,7 +265,7 @@ statement takes today's path:
     transaction killed after writing pages on a new file reopens (WAL base `g`) and, without
     the guard WAL, is `STG-033`. Cursor and fact log opened before, during (between chunks,
     from a test hook in `write_chunk`) and after a large transaction see their snapshot
-    only. `tests/model_based_test.rs` under `test-oracle` runs with the chunk size at 3.
+    only. `tests/model_based_test.rs` under `test-oracle` runs with the chunk size at 2 (spec §8.1: 3), so its retractions, of 1–3 facts, are large too.
 15. **Acceptance and docs.** `tests/large_transaction_acceptance_test.rs` (`test-oracle`,
     ignored, `.github/workflows/smoke.yml` nightly as `memory_limit_acceptance_test` is): a
     1M-fact `transact` on a file database; the high-water mark is at most `TX_CHUNK_FACTS`;
