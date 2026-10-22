@@ -64,7 +64,7 @@ jobs:
           args: --lib -j --output-format terse -Z unstable-options --harness-timeout 10m
 
       - name: Record Kani failure
-        if: ${{ failure() && github.event_name != 'pull_request' }}
+        if: ${{ failure() && github.event_name == 'schedule' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
