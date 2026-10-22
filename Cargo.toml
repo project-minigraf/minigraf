@@ -128,6 +128,10 @@ lto = "thin"
 [lints]
 workspace = true
 
+[workspace.lints.rust]
+# Kani proof harnesses (#627): `cargo kani` sets cfg(kani).
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
+
 [workspace.lints.clippy]
 # Panic prevention — use Result/? or debug_assert! instead
 unwrap_used              = "deny"
