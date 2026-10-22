@@ -408,7 +408,6 @@ mod tests {
     use crate::db::{Minigraf, OpenOptions};
     use crate::fact_log::FactFilter;
     use crate::query::datalog::parser::statement::set_tx_chunk_facts;
-    use crate::storage::meta::{MetaPage, SlotState};
     use std::cell::RefCell;
     use std::path::Path;
 
@@ -455,20 +454,6 @@ mod tests {
         let mut wal = path.as_os_str().to_owned();
         wal.push(".wal");
         wal.into()
-    }
-
-    /// The highest generation of a valid meta slot in the file at `path`.
-    fn file_generation(path: &Path) -> u64 {
-        let bytes = std::fs::read(path).unwrap();
-        bytes
-            .chunks(crate::storage::PAGE_SIZE)
-            .take(2)
-            .filter_map(|p| match MetaPage::decode(p) {
-                SlotState::Valid(m) => Some(m.generation),
-                _ => None,
-            })
-            .max()
-            .unwrap()
     }
 
     fn code(r: Result<crate::QueryResult, crate::MinigrafError>) -> String {
@@ -602,7 +587,7 @@ mod tests {
             db.checkpoint().unwrap();
             db.execute("(transact [[:h :n 1]])").unwrap();
             let before = records(&db);
-            let generation = file_generation(&path);
+            let generation = db.generation();
 
             let small = code(db.execute(&stmt));
             assert_eq!(small, want, "small path");
@@ -619,14 +604,14 @@ mod tests {
             assert_eq!(db.current_tx_count(), tx_count, "no tx_count taken");
             assert!(records(&db) == before);
             assert!(db.verify().unwrap().is_ok());
-            assert_eq!(file_generation(&path), generation, "no meta written");
+            assert_eq!(db.generation(), generation, "no meta written");
             assert!(wal_of(&path).exists(), "the WAL stays");
 
             // The transaction stays usable, and the next checkpoint commits
             // a meta before it deletes the WAL.
             db.execute("(transact [[:i :n 1]])").unwrap();
             db.checkpoint().unwrap();
-            assert_eq!(file_generation(&path), generation + 1);
+            assert_eq!(db.generation(), generation + 1);
             assert!(!wal_of(&path).exists());
             let after = records(&db);
             drop(db);
@@ -645,10 +630,10 @@ mod tests {
         let stmt = r#"(transact [[:a :n 1 {:valid-from "2020-01-01T00:00:00Z"}]
                         [:a :n 1 {:valid-from "2021-01-01T00:00:00Z"}]])"#;
         assert_eq!(code(db.execute(stmt)), "API-011");
-        assert_eq!(file_generation(&path), 1);
+        assert_eq!(db.generation(), 1);
         assert!(wal_of(&path).exists(), "the WAL guard");
         db.checkpoint().unwrap();
-        assert_eq!(file_generation(&path), 2, "a meta before the WAL goes");
+        assert_eq!(db.generation(), 2, "a meta before the WAL goes");
         assert!(!wal_of(&path).exists());
     }
 
@@ -667,7 +652,7 @@ mod tests {
                 .unwrap();
         let db = Minigraf::open(&path).unwrap();
         db.checkpoint().unwrap();
-        assert_eq!(file_generation(&path), 3);
+        assert_eq!(db.generation(), 3);
         assert!(!wal_of(&path).exists());
     }
 

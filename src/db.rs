@@ -1189,6 +1189,16 @@ impl Minigraf {
         self.inner.fact_storage.snapshot()
     }
 
+    /// The active meta page's generation (0 without a file), for tests that
+    /// check when a checkpoint commits.
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    pub(crate) fn generation(&self) -> u64 {
+        match &*self.inner.write_lock.lock().unwrap() {
+            WriteContext::File { pfs, .. } | WriteContext::ReadOnly { pfs } => pfs.generation(),
+            WriteContext::Memory => 0,
+        }
+    }
+
     /// End the handle as a killed process would: no close-time checkpoint and
     /// no save on drop. Whatever reached the file stays; the lock is released.
     #[cfg(all(test, not(target_arch = "wasm32")))]
