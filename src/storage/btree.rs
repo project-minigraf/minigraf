@@ -641,6 +641,23 @@ impl<'a> LeafCursor<'a> {
         }
     }
 
+    /// The next entry in key order without moving past it, or `None` past
+    /// the last one.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn peek_ref(&mut self) -> Result<Option<&Entry>> {
+        loop {
+            if self.done {
+                return Ok(None);
+            }
+            if self.pos < self.entries.len() {
+                return Ok(self.entries.get(self.pos));
+            }
+            if !self.advance_leaf()? {
+                return Ok(None);
+            }
+        }
+    }
+
     /// Like [`next_ref`](Self::next_ref), but clones the entry.
     #[cfg(test)]
     pub(crate) fn next(&mut self) -> Result<Option<Entry>> {
@@ -1200,6 +1217,27 @@ mod tests {
         let code = drain_to_error(&mut cursor, &mut seen);
         assert_eq!(code.as_deref(), Some("INT-049"), "stale leaf is refused");
         assert!(seen.is_empty(), "no key below the target");
+    }
+
+    #[test]
+    fn peek_returns_the_next_entry_across_leaves_without_consuming_it() {
+        let (backend, cache, root, leaves) = multi_leaf_tree();
+        let leaf0 = leaf_keys(leaves[0], &backend, &cache);
+        let leaf1 = leaf_keys(leaves[1], &backend, &cache);
+        let mut cursor =
+            LeafCursor::new(root, leaf0.last().map(Vec::as_slice), &backend, &cache).unwrap();
+        assert_eq!(
+            cursor.next_ref().unwrap().unwrap().0,
+            *leaf0.last().unwrap()
+        );
+        for _ in 0..2 {
+            assert_eq!(cursor.peek_ref().unwrap().unwrap().0, leaf1[0], "next leaf");
+        }
+        assert_eq!(
+            cursor.next_ref().unwrap().unwrap().0,
+            leaf1[0],
+            "not consumed"
+        );
     }
 
     #[test]

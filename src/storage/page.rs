@@ -188,6 +188,8 @@ pub struct PageAllocator {
     chain_bound: u64,
     next_append: u64,
     generation: u64,
+    /// Every id handed out since [`tracking`](Self::tracking), when on.
+    handed: Option<std::collections::HashSet<u64>>,
 }
 
 impl PageAllocator {
@@ -205,6 +207,7 @@ impl PageAllocator {
             chain_bound: next_append,
             next_append,
             generation,
+            handed: None,
         }
     }
 
@@ -221,6 +224,7 @@ impl PageAllocator {
             chain_bound: next_append,
             next_append,
             generation,
+            handed: None,
         }
     }
 
@@ -232,6 +236,35 @@ impl PageAllocator {
         self.skipped = skipped;
         self.quarantine = ids;
         self
+    }
+
+    /// Record every id handed out from now on, for [`handed`](Self::handed) and
+    /// [`handed_ids`](Self::handed_ids): a large transaction tells the pages
+    /// it wrote from those generation `g` references (#550 spec §4.2).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn tracking(mut self) -> Self {
+        self.handed = Some(std::collections::HashSet::new());
+        self
+    }
+
+    /// Whether `id` was handed out since [`tracking`](Self::tracking).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn handed(&self, id: u64) -> bool {
+        self.handed.as_ref().is_some_and(|h| h.contains(&id))
+    }
+
+    /// Every id handed out since [`tracking`](Self::tracking), released or not.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn handed_ids(&self) -> Option<&std::collections::HashSet<u64>> {
+        self.handed.as_ref()
+    }
+
+    /// Hand `id` out again, next: a page this allocator handed out that no
+    /// tree references any more (#550 spec §4.2 step 3). If it is not handed
+    /// out again, [`finish_free_list`](Self::finish_free_list) lists it free.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn release(&mut self, id: u64) {
+        self.free.push(id);
     }
 
     /// The generation every page written through this allocator is stamped with.
@@ -257,6 +290,9 @@ impl PageAllocator {
                 if self.quarantine.contains(&id) {
                     self.skipped.push(id);
                     continue;
+                }
+                if let Some(h) = self.handed.as_mut() {
+                    h.insert(id);
                 }
                 return Ok(id);
             }
@@ -286,6 +322,9 @@ impl PageAllocator {
         self.next_append = id
             .checked_add(1)
             .ok_or_else(|| err_coded!(ErrorCode::Int048, "page id overflow"))?;
+        if let Some(h) = self.handed.as_mut() {
+            h.insert(id);
+        }
         Ok(id)
     }
 
@@ -491,5 +530,45 @@ mod tests {
         let mut want = listed.clone();
         want.sort_unstable();
         assert_eq!(read, want);
+    }
+
+    #[test]
+    fn tracking_records_every_id_handed_out_and_release_hands_it_out_next() {
+        let b = crate::storage::backend::MemoryBackend::new();
+        let c = crate::storage::cache::PageCache::new(0);
+        let mut a = PageAllocator::new(vec![4, 7, 9], 20, 2);
+        assert_eq!(a.alloc(&b, &c).unwrap(), 4);
+        let mut a = a.tracking();
+        assert_eq!(a.alloc(&b, &c).unwrap(), 7);
+        assert_eq!(a.alloc_append().unwrap(), 20);
+        assert!(!a.handed(4), "handed out before tracking");
+        assert!(a.handed(7) && a.handed(20));
+        assert!(!a.handed(9), "never handed out");
+
+        a.release(20);
+        assert_eq!(a.alloc(&b, &c).unwrap(), 20, "a released id comes next");
+        a.release(7);
+        assert_eq!(
+            a.handed_ids().unwrap().len(),
+            2,
+            "released ids stay recorded"
+        );
+        assert_eq!(
+            a.take_unused_free(),
+            vec![7, 9],
+            "an unused released id is free"
+        );
+    }
+
+    #[test]
+    fn a_released_id_not_handed_out_again_stays_free() {
+        let mut b = crate::storage::backend::MemoryBackend::new();
+        let c = crate::storage::cache::PageCache::new(0);
+        let mut a = PageAllocator::new(Vec::new(), 10, 2).tracking();
+        let id = a.alloc(&b, &c).unwrap();
+        a.release(id);
+        let (head, _, listed) = a.finish_free_list(vec![], &mut b, &c).unwrap();
+        // It holds the new list or is listed on it: not leaked.
+        assert!(head == id || listed.contains(&id), "released id leaked");
     }
 }
