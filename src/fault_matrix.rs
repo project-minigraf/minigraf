@@ -60,17 +60,43 @@ enum Op {
     Close,
     /// `rebuild_indexes()` with entries pending.
     Rebuild,
+    /// A large transaction (#550): chunks written into working trees and
+    /// committed as a checkpoint. `one_slot`: on a file never checkpointed,
+    /// with one valid meta slot; else on the file `build` makes. `wal`: with
+    /// entries pending in the WAL beforehand, else with no WAL.
+    Large { one_slot: bool, wal: bool },
 }
 
 impl Op {
     /// Whether the operation writes its own transaction (`X`).
     fn writes_x(self) -> bool {
-        matches!(self, Op::Transact | Op::TransactNewWal | Op::AutoCheckpoint)
+        matches!(
+            self,
+            Op::Transact | Op::TransactNewWal | Op::AutoCheckpoint | Op::Large { .. }
+        )
+    }
+
+    /// The transaction the operation writes, and how many records it leaves.
+    fn x(self) -> (&'static str, usize) {
+        match self {
+            Op::Large { .. } => (X_LARGE, X_LARGE_FACTS),
+            _ => (X, X_FACTS),
+        }
     }
 }
 
 const X: &str = r#"(transact [[:x1 :p/x 1] [:x1 :p/x 2] [:x2 :p/xlong "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]])"#;
 const X_FACTS: usize = 3;
+
+/// A large transaction at a chunk size of [`LARGE_CHUNK`]: several values of
+/// one attribute, long values shared by two facts, and a repeated fact, which
+/// is stored once.
+const X_LARGE: &str = r#"(transact [[:x1 :p/x 1] [:x1 :p/x 2] [:x1 :p/x 3]
+    [:x2 :p/xlong "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+    [:x3 :p/xlong "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"]
+    [:x4 :p/x 4] [:x5 :p/x 5] [:x1 :p/x 1] [:x6 :p/xref :x1] [:x7 :p/x 7] [:x8 :p/x 8]])"#;
+const X_LARGE_FACTS: usize = 10;
+const LARGE_CHUNK: usize = 3;
 
 fn open(path: &Path, op: Op) -> Minigraf {
     let threshold = if op == Op::AutoCheckpoint { 3 } else { 1000 };
@@ -104,6 +130,18 @@ fn bulk(prefix: &str, n: usize) -> String {
 /// `TransactNewWal`, two entries pending in the WAL.
 fn build(path: &Path, op: Op) -> Minigraf {
     let db = open(path, op);
+    if let Op::Large {
+        one_slot: true,
+        wal,
+    } = op
+    {
+        if wal {
+            db.execute(&bulk("c", 20)).unwrap();
+            db.execute(r#"(transact [[:e1 :p/tag "c"] [:e3 :p/ref :e1]])"#)
+                .unwrap();
+        }
+        return db;
+    }
     db.execute(&bulk("a", 150)).unwrap();
     db.execute(r#"(transact [[:e1 :p/tag "a"] [:e1 :p/tag "b"] [:e2 :p/n 1]])"#)
         .unwrap();
@@ -112,7 +150,7 @@ fn build(path: &Path, op: Op) -> Minigraf {
     db.execute(r#"(retract [[:e1 :p/tag "a"] [:a7 :p/n 7]])"#)
         .unwrap();
     db.checkpoint().unwrap();
-    if op != Op::TransactNewWal {
+    if !matches!(op, Op::TransactNewWal | Op::Large { wal: false, .. }) {
         db.execute(&bulk("c", 20)).unwrap();
         db.execute(r#"(transact [[:e1 :p/tag "c"] [:e3 :p/ref :e1]])"#)
             .unwrap();
@@ -130,9 +168,9 @@ fn extra(before: &[Rec], after: &[Rec]) -> Option<Vec<Rec>> {
     Some(rest)
 }
 
-/// Whether `recs` is exactly one whole `X` transaction.
-fn is_whole_x(recs: &[Rec]) -> bool {
-    recs.len() == X_FACTS
+/// Whether `recs` is exactly one whole `X` transaction of `op`.
+fn is_whole_x(recs: &[Rec], op: Op) -> bool {
+    recs.len() == op.x().1
         && recs.iter().all(|r| r.1.starts_with(":p/x") && r.7)
         && recs.iter().all(|r| r.3 == recs[0].3)
 }
@@ -146,7 +184,7 @@ fn reopen_and_check(path: &Path, op: Op, live: &[Rec], x_failed: bool) {
     let reopened = snapshot(&db);
     let more = extra(live, &reopened).expect("a fact the handle held was lost");
     assert!(
-        more.is_empty() || (x_failed && is_whole_x(&more)),
+        more.is_empty() || (x_failed && is_whole_x(&more, op)),
         "reopened file holds facts the handle never committed, or part of one"
     );
     let report = db.verify().unwrap();
@@ -176,6 +214,11 @@ fn run(op: Op, f: Fault) -> u64 {
             Op::Transact | Op::TransactNewWal | Op::AutoCheckpoint => {
                 (db.execute(X).map(|_| ()), Some(db))
             }
+            Op::Large { .. } => {
+                let _chunk =
+                    crate::query::datalog::parser::statement::set_tx_chunk_facts(Some(LARGE_CHUNK));
+                (db.execute(X_LARGE).map(|_| ()), Some(db))
+            }
             Op::Checkpoint => (db.checkpoint(), Some(db)),
             Op::Rebuild => (db.rebuild_indexes(), Some(db)),
             Op::Close => {
@@ -191,11 +234,14 @@ fn run(op: Op, f: Fault) -> u64 {
                 let applied = extra(&before, &live).expect("the handle lost a fact");
                 if op.writes_x() {
                     assert!(
-                        applied.is_empty() || is_whole_x(&applied),
+                        applied.is_empty() || is_whole_x(&applied, op),
                         "the handle applied part of a transaction"
                     );
                     if result.is_ok() {
-                        assert!(is_whole_x(&applied), "a committed transaction is missing");
+                        assert!(
+                            is_whole_x(&applied, op),
+                            "a committed transaction is missing"
+                        );
                     }
                 } else {
                     assert!(applied.is_empty(), "a checkpoint changed the facts");
@@ -283,6 +329,40 @@ fn faults_during_close() {
 #[test]
 fn faults_during_rebuild_indexes() {
     run_all(Op::Rebuild);
+}
+
+#[test]
+fn faults_during_a_large_transaction() {
+    run_all(Op::Large {
+        one_slot: false,
+        wal: true,
+    });
+}
+
+#[test]
+fn faults_during_a_large_transaction_that_creates_the_wal() {
+    run_all(Op::Large {
+        one_slot: false,
+        wal: false,
+    });
+}
+
+/// One valid meta slot: without the WAL guard, a fault after the first page
+/// write would leave a file refused with STG-033 (#550 spec §4.5).
+#[test]
+fn faults_during_a_large_transaction_on_a_new_file() {
+    run_all(Op::Large {
+        one_slot: true,
+        wal: false,
+    });
+}
+
+#[test]
+fn faults_during_a_large_transaction_on_a_new_file_with_a_wal() {
+    run_all(Op::Large {
+        one_slot: true,
+        wal: true,
+    });
 }
 
 /// The disk fills part-way through a checkpoint: every write from then on
