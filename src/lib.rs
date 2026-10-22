@@ -135,6 +135,29 @@ pub fn __reorder(on: bool) -> ReorderGuard {
     query::datalog::optimizer::set_reorder(on)
 }
 
+// Large-transaction tests (#550): statements read and written in small chunks.
+#[cfg(feature = "test-oracle")]
+#[doc(hidden)]
+pub use query::datalog::parser::statement::TxChunkGuard;
+
+/// Sets how many facts a `transact` or `retract` materialises at once on this
+/// thread until the returned guard drops (`None`: the built-in size), so a
+/// statement with more facts takes the large-transaction path (#550). Only
+/// for tests; built with the `test-oracle` feature only.
+#[cfg(feature = "test-oracle")]
+#[doc(hidden)]
+pub fn __tx_chunk_facts(n: Option<usize>) -> TxChunkGuard {
+    query::datalog::parser::statement::set_tx_chunk_facts(n)
+}
+
+/// The most materialised statement facts this thread held at once since the
+/// last call (#550 acceptance). Built with the `test-oracle` feature only.
+#[cfg(feature = "test-oracle")]
+#[doc(hidden)]
+pub fn __statement_facts_high_water() -> usize {
+    query::datalog::parser::statement::take_held_high_water()
+}
+
 // Plan-independence tests (#546): force how negation bodies and `or` branches run.
 #[cfg(feature = "test-oracle")]
 #[doc(hidden)]

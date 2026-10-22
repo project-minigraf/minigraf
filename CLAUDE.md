@@ -126,10 +126,11 @@ cargo run < demos/demo_negation.txt
    - `dir_sync.rs`: `sync_parent_dir` — fsyncs the parent directory after creating the `.graph`/WAL or deleting the WAL (no-op off Unix)
    - `packed_pages.rs`: v7 fact pages, read only for migration
    - `persistent_facts.rs`: `PersistentFactStorage` — v8 save/load, auto-migration v7→v8
+   - `persistent_facts/large_tx.rs`: large transactions (#550): `Minigraf::execute` of a statement over `TX_CHUNK_FACTS` facts on a file database becomes large (WAL guard: the WAL exists, header only, before any page; cache generation bound `g + 1`; next `tx_count` reserved, allocated at the commit point; `tx_id` fixed), writes each chunk into copy-on-write working trees (per-chunk `Encoder` over the working DICT, no `SharedDictCache`; a fact an earlier chunk wrote kept once, another window of its triple `API-011`; replaced pages it wrote released to the allocator, `g`'s freed), and commits as a checkpoint (pending store included, meta `g + 1`, WAL deleted). A statement error rolls back (cache bound `g`, written pages evicted, handle dirty so the next checkpoint writes a meta before deleting the WAL); an I/O failure also marks the handle failed (`STG-046`). A WAL found at open also marks the handle dirty. `WriteTransaction` stays on the staged path until #550 PR 3
 
 3. **`src/query/datalog/`** — Datalog engine
    - `parser.rs`: EDN/Datalog parser — `transact`, `retract`, `query`, `rule`, `:as-of`, `:valid-at`, `not`, `not-join`; `resolve_pseudo_sources` names each per-fact pseudo-attribute's source (nearest earlier same-entity pattern, lexical scope) and its hidden metadata variable `?#<n>.<attr>`, else PRS-081 (#594)
-   - `parser/statement.rs`: `transact`/`retract` read one fact at a time (#550): `kind_of` dispatches on the first two tokens; one pass keeps today's error order (phases 1 tokens … 6 valid windows, the earliest phase's first error, phase 3 in today's check order); `read_statement` (pass 1) keeps at most `TX_CHUNK_FACTS` materialised facts and the offset after the last, and returns phase 5–6 errors from `Statement::facts`, which runs pass 2 from that offset for a larger statement; `set_tx_chunk_facts` for tests. The `Parser` reads tokens on demand from a `Lexer` (`keep` off checks structure without holding it); `parse_transact`/`parse_retract` remain under `cfg(test)` for the differential tests
+   - `parser/statement.rs`: `transact`/`retract` read one fact at a time (#550): `kind_of` dispatches on the first two tokens; one pass keeps today's error order (phases 1 tokens … 6 valid windows, the earliest phase's first error, phase 3 in today's check order); `read_statement` (pass 1) keeps at most `TX_CHUNK_FACTS` materialised facts and the offset after the last, and returns phase 5–6 errors from `Statement::facts`/`Statement::chunks` (one `Chunk` at a time; pass 2 from that offset for a larger statement); `set_tx_chunk_facts` for tests (`minigraf::__tx_chunk_facts` and `__statement_facts_high_water` under `test-oracle`). The `Parser` reads tokens on demand from a `Lexer` (`keep` off checks structure without holding it); `parse_transact`/`parse_retract` remain under `cfg(test)` for the differential tests
    - `parser/verifier.rs`: test-only (not wasm32) bounded-exhaustive check of the parser against `tests/grammar/grammar.pest` (#643): every 1–3 character string (`parse_edn`) and every balanced token filler up to `MINIGRAF_GRAMMAR_BOUND` (default 3) in 15 command templates (`parse_datalog_command`); pest rejects ⇒ parser rejects, pest accepts ⇒ parser accepts or raises a `SEMANTIC` code; today's drift is `KNOWN_DRIFT`, one entry per cause, removed by its fix (empty: #649, #650, #651 fixed)
    - `executor.rs`: Query executor — temporal filter (tx-time → net-assert → valid-time), not/not-join post-filter
    - `matcher.rs`: Pattern matching with variable unification; `edn_to_value`, `edn_to_entity_id`
@@ -207,7 +208,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1735 tests** (1721 passing, 14 ignored; unit + integration + doc).
+**1752 tests** (1738 passing, 14 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.

@@ -22,24 +22,101 @@ use anyhow::Result;
 /// is read again in chunks of this many (spec §3.3).
 const TX_CHUNK_FACTS: usize = 16_384;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-oracle"))]
 thread_local! {
     static CHUNK_FACTS: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+    /// Facts in [`Chunk`]s alive on this thread, and the most there have been.
+    static HELD: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
 }
 
 /// Set this thread's chunk size (`None`: [`TX_CHUNK_FACTS`]), so tests reach
-/// pass 2 with small statements.
-#[cfg(test)]
-pub(crate) fn set_tx_chunk_facts(n: Option<usize>) {
-    CHUNK_FACTS.with(|c| c.set(n));
+/// pass 2 and the large path with small statements.
+#[cfg(any(test, feature = "test-oracle"))]
+pub(crate) fn set_tx_chunk_facts(n: Option<usize>) -> TxChunkGuard {
+    TxChunkGuard(CHUNK_FACTS.with(|c| c.replace(n)))
 }
 
-fn tx_chunk_facts() -> usize {
-    #[cfg(test)]
+/// Restores the previous [`set_tx_chunk_facts`] setting on drop.
+#[cfg(any(test, feature = "test-oracle"))]
+#[must_use = "the chunk size is restored when the guard drops"]
+pub struct TxChunkGuard(Option<usize>);
+
+#[cfg(any(test, feature = "test-oracle"))]
+impl Drop for TxChunkGuard {
+    fn drop(&mut self) {
+        CHUNK_FACTS.with(|c| c.set(self.0));
+    }
+}
+
+/// The most facts [`Chunk`]s held at once on this thread since the last call
+/// (#550 spec §8.1 acceptance), then start counting again from those held now.
+#[cfg(any(test, feature = "test-oracle"))]
+pub(crate) fn take_held_high_water() -> usize {
+    HELD.with(|h| {
+        let (now, high) = h.get();
+        h.set((now, now));
+        high
+    })
+}
+
+pub(crate) fn tx_chunk_facts() -> usize {
+    #[cfg(any(test, feature = "test-oracle"))]
     if let Some(n) = CHUNK_FACTS.with(std::cell::Cell::get) {
         return n.max(1);
     }
     TX_CHUNK_FACTS
+}
+
+/// At most one chunk of a statement's materialised facts. With `test` or
+/// `test-oracle`, the facts alive in chunks are counted for the acceptance
+/// test's high-water mark.
+pub(crate) struct Chunk(Vec<Fact>);
+
+impl Chunk {
+    fn new(facts: Vec<Fact>) -> Self {
+        #[cfg(any(test, feature = "test-oracle"))]
+        HELD.with(|h| {
+            let (now, high) = h.get();
+            let now = now.saturating_add(facts.len());
+            h.set((now, high.max(now)));
+        });
+        Chunk(facts)
+    }
+
+    /// The facts, no longer counted.
+    pub(crate) fn into_vec(mut self) -> Vec<Fact> {
+        let facts = std::mem::take(&mut self.0);
+        #[cfg(any(test, feature = "test-oracle"))]
+        HELD.with(|h| {
+            let (now, high) = h.get();
+            h.set((now.saturating_sub(facts.len()), high));
+        });
+        facts
+    }
+}
+
+#[cfg(any(test, feature = "test-oracle"))]
+impl Drop for Chunk {
+    fn drop(&mut self) {
+        let n = self.0.len();
+        HELD.with(|h| {
+            let (now, high) = h.get();
+            h.set((now.saturating_sub(n), high));
+        });
+    }
+}
+
+impl std::ops::Deref for Chunk {
+    type Target = [Fact];
+    fn deref(&self) -> &[Fact] {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Chunk {
+    fn deref_mut(&mut self) -> &mut [Fact] {
+        &mut self.0
+    }
 }
 
 /// Which statement a command is.
@@ -414,7 +491,7 @@ pub(crate) struct Statement<'a> {
     defaults: Defaults,
     chunk: usize,
     /// The first facts, at most `chunk` of them.
-    kept: Vec<Fact>,
+    kept: Chunk,
     /// When more facts follow the kept ones (a large statement): the byte
     /// offset just after the last kept fact, where pass 2 resumes.
     resume: Option<usize>,
@@ -462,27 +539,67 @@ pub(crate) fn read_statement(input: &str, kind: Kind, tx_id: TxId) -> Result<Sta
         kind,
         defaults,
         chunk,
-        kept,
+        kept: Chunk::new(kept),
         resume,
         deferred: first.error,
     })
 }
 
 impl<'a> Statement<'a> {
+    /// Whether the statement has more facts than one chunk (spec §2).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn is_large(&self) -> bool {
+        self.resume.is_some()
+    }
+
     /// Every fact of the statement, or its phase 5–6 error. A large statement
     /// is read again (pass 2) from where pass 1 stopped keeping facts.
     pub(crate) fn facts(self) -> Result<Vec<Fact>> {
+        let mut facts = Vec::new();
+        for chunk in self.chunks()? {
+            facts.extend(chunk?.into_vec());
+        }
+        Ok(facts)
+    }
+
+    /// The statement's facts a chunk at a time: the kept facts, then pass 2
+    /// from where pass 1 stopped keeping them. Or its phase 5–6 error.
+    pub(crate) fn chunks(self) -> Result<Chunks<'a>> {
         if let Some(e) = self.deferred {
             return Err(e);
         }
-        let mut facts = self.kept;
-        if let Some(pos) = self.resume {
-            let mut rest = Pass2::new(self.input, pos, self.kind, self.defaults);
-            while let Some(chunk) = rest.next_chunk(self.chunk)? {
-                facts.extend(chunk);
-            }
+        Ok(Chunks {
+            kept: Some(self.kept),
+            rest: self
+                .resume
+                .map(|pos| Pass2::new(self.input, pos, self.kind, self.defaults)),
+            chunk: self.chunk,
+        })
+    }
+}
+
+/// A statement's facts, one [`Chunk`] at a time ([`Statement::chunks`]). An
+/// error ends it.
+pub(crate) struct Chunks<'a> {
+    kept: Option<Chunk>,
+    rest: Option<Pass2<'a>>,
+    chunk: usize,
+}
+
+impl Iterator for Chunks<'_> {
+    type Item = Result<Chunk>;
+
+    fn next(&mut self) -> Option<Result<Chunk>> {
+        if let Some(kept) = self.kept.take()
+            && !kept.is_empty()
+        {
+            return Some(Ok(kept));
         }
-        Ok(facts)
+        let next = self.rest.as_mut()?.next_chunk(self.chunk);
+        if !matches!(next, Ok(Some(_))) {
+            self.rest = None;
+        }
+        next.transpose()
     }
 }
 
@@ -505,7 +622,7 @@ impl<'a> Pass2<'a> {
 
     /// The next at most `chunk` facts, `None` at the end of the facts vector.
     /// Pass 1 has checked every phase, so an error here is one it did not see.
-    fn next_chunk(&mut self, chunk: usize) -> Result<Option<Vec<Fact>>> {
+    fn next_chunk(&mut self, chunk: usize) -> Result<Option<Chunk>> {
         let Some(p) = self.parser.as_mut() else {
             return Ok(None);
         };
@@ -528,7 +645,7 @@ impl<'a> Pass2<'a> {
             let pattern = fact_pattern(self.kind, &fact, self.defaults)?;
             facts.push(materialize(self.kind, &pattern)?);
         }
-        Ok((!facts.is_empty()).then_some(facts))
+        Ok((!facts.is_empty()).then(|| Chunk::new(facts)))
     }
 }
 
@@ -590,9 +707,10 @@ mod tests {
         let tx_id = crate::graph::types::tx_id_now();
         let old = outcome(old_write(input, tx_id));
         for chunk in [None, Some(1), Some(2), Some(3)] {
-            set_tx_chunk_facts(chunk);
-            let new = outcome(new_write(input, kind, tx_id));
-            set_tx_chunk_facts(None);
+            let new = {
+                let _chunk = set_tx_chunk_facts(chunk);
+                outcome(new_write(input, kind, tx_id))
+            };
             assert!(old == new, "write differs at chunk {chunk:?}: {input}");
         }
         old.map(|facts| facts.len()).map_err(|(code, _)| code)
@@ -764,9 +882,10 @@ mod tests {
     #[test]
     fn large_statements_resume_after_the_last_kept_fact() {
         let input = "(transact [[:a :n 1] [:a :n 2] [:a :n 3] [:a :n 4] [:a :n 5]])";
-        set_tx_chunk_facts(Some(2));
-        let statement = read_statement(input, Kind::Transact, 1).unwrap();
-        set_tx_chunk_facts(None);
+        let statement = {
+            let _chunk = set_tx_chunk_facts(Some(2));
+            read_statement(input, Kind::Transact, 1).unwrap()
+        };
         assert_eq!(statement.kept.len(), 2, "kept facts");
         let resume = statement.resume.expect("large");
         assert_eq!(
@@ -778,12 +897,69 @@ mod tests {
             .map(|c| c.len())
             .collect();
         assert_eq!(sizes, vec![2, 1], "chunk sizes");
+        #[cfg(not(target_arch = "wasm32"))]
+        assert!(statement.is_large());
+        let sizes: Vec<usize> = statement
+            .chunks()
+            .unwrap()
+            .map(|c| c.unwrap().len())
+            .collect();
+        assert_eq!(sizes, vec![2, 2, 1], "kept facts, then pass 2");
 
-        set_tx_chunk_facts(Some(5));
-        let exact = read_statement(input, Kind::Transact, 1).unwrap();
-        set_tx_chunk_facts(None);
+        let exact = {
+            let _chunk = set_tx_chunk_facts(Some(5));
+            read_statement(input, Kind::Transact, 1).unwrap()
+        };
         assert!(exact.resume.is_none(), "five facts fit a chunk of five");
         assert_eq!(exact.facts().unwrap().len(), 5, "facts");
+    }
+
+    #[test]
+    fn chunks_hold_at_most_one_chunk_of_facts_at_once() {
+        let input: String = (0..10).map(|i| format!("[:a :n {i}]")).collect();
+        let input = format!("(transact [{input}])");
+        let _chunk = set_tx_chunk_facts(Some(3));
+        let _ = take_held_high_water();
+        let statement = read_statement(&input, Kind::Transact, 1).unwrap();
+        let mut n = 0;
+        for chunk in statement.chunks().unwrap() {
+            n += chunk.unwrap().len();
+        }
+        assert_eq!(n, 10);
+        assert_eq!(take_held_high_water(), 3, "one chunk at a time");
+        let held: Vec<Chunk> = read_statement(&input, Kind::Transact, 1)
+            .unwrap()
+            .chunks()
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(held.len(), 4);
+        assert_eq!(take_held_high_water(), 10, "every chunk kept is counted");
+        drop(held);
+        assert_eq!(take_held_high_water(), 10, "held when the count restarted");
+        assert_eq!(take_held_high_water(), 0, "dropped chunks are not counted");
+    }
+
+    #[test]
+    fn a_pass_2_error_ends_the_chunks() {
+        // Pass 1 never sees this input past the kept facts: pass 2 resumes
+        // into a string a test cuts short.
+        let input = "(transact [[:a :n 1] [:a :n 2] [:a :n 3]])";
+        let statement = {
+            let _chunk = set_tx_chunk_facts(Some(1));
+            read_statement(input, Kind::Transact, 1).unwrap()
+        };
+        let short = &input[..input.len() - 8];
+        let mut chunks = Chunks {
+            kept: None,
+            rest: statement
+                .resume
+                .map(|pos| Pass2::new(short, pos, Kind::Transact, Defaults::default())),
+            chunk: 1,
+        };
+        assert_eq!(chunks.next().unwrap().unwrap().len(), 1);
+        assert!(chunks.next().unwrap().is_err(), "cut short");
+        assert!(chunks.next().is_none(), "nothing after an error");
     }
 
     #[test]

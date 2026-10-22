@@ -203,6 +203,15 @@ impl PageCache {
         inner.order.retain(|&id| id != page_id);
     }
 
+    /// Remove every page in `ids` from the cache, in one pass over the LRU
+    /// order: the pages a rolled-back large transaction wrote (#550 spec §4.4).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn evict(&self, ids: &std::collections::HashSet<u64>) {
+        let mut inner = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        inner.entries.retain(|id, _| !ids.contains(id));
+        inner.order.retain(|id| !ids.contains(id));
+    }
+
     /// Number of pages currently cached (for testing).
     #[allow(dead_code)]
     pub fn cached_page_count(&self) -> usize {
@@ -459,5 +468,19 @@ mod tests {
         cache.set_generation_bound(5);
         cache.get_or_load(1, &backend).unwrap();
         assert_eq!(cache.cached_page_count(), 1);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn evict_drops_only_the_given_pages() {
+        let cache = PageCache::new(8);
+        for id in 1..=4 {
+            cache.put_dirty(id, make_page(id, 0x11));
+        }
+        cache.evict(&[2, 4, 9].into());
+        assert_eq!(cache.cached_page_count(), 2);
+        let backend = MemoryBackend::new();
+        assert!(cache.get_or_load(2, &backend).is_err(), "2 is read again");
+        assert_eq!(cache.get_or_load(1, &backend).unwrap()[MARK], 0x11);
     }
 }

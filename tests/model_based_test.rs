@@ -110,9 +110,13 @@ fn cases() -> u32 {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(cases()))]
 
-    /// Every read after every step matches the reference model.
+    /// Every read after every step matches the reference model. With
+    /// `test-oracle`, statements of more than two facts are large (#550):
+    /// written in chunks and committed as a checkpoint.
     #[test]
     fn file_backed_db_matches_model(steps in arb_steps()) {
+        #[cfg(feature = "test-oracle")]
+        let _chunk = minigraf::__tx_chunk_facts(Some(2));
         run_with(&steps, Checks::All, source_order())?;
     }
 }

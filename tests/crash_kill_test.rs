@@ -21,7 +21,14 @@
 //! This also covers the original #308 report (a kill mid-checkpoint left a
 //! header checksum mismatch): every round must reopen.
 //!
-//! Round count: `MINIGRAF_CRASH_KILL_ROUNDS` (default 5, one per variant;
+//! With the `test-oracle` feature a sixth variant makes most transactions
+//! large (#550): they write pages and commit as a checkpoint, with no WAL
+//! entry, and every fourth one is followed by a large statement that fails
+//! after writing pages and rolls back. The kill lands during a large
+//! transaction, after its commit point, or after a rollback before the next
+//! checkpoint.
+//!
+//! Round count: `MINIGRAF_CRASH_KILL_ROUNDS` (default one per variant;
 //! `.github/workflows/crash-kill.yml` runs 100 nightly on each OS). Replay a
 //! failure with the base seed it prints: `MINIGRAF_CRASH_KILL_SEED`.
 //!
@@ -37,13 +44,11 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
-const DEFAULT_ROUNDS: usize = 5;
-
 fn rounds() -> usize {
     std::env::var("MINIGRAF_CRASH_KILL_ROUNDS")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(DEFAULT_ROUNDS)
+        .unwrap_or(VARIANTS.len())
 }
 
 // ── Workload ──────────────────────────────────────────────────────────────────
@@ -173,15 +178,31 @@ enum Variant {
     AutoCheckpoint,
     /// As `CheckpointEvery3`, with `SyncMode::Normal` (no WAL fsync).
     NormalSync,
+    /// Statements of more than [`LARGE_CHUNK`] facts are large (#550), and a
+    /// failing large statement follows every fourth transaction;
+    /// `checkpoint()` after every fifth.
+    #[cfg(feature = "test-oracle")]
+    Large,
 }
 
-const VARIANTS: [Variant; 5] = [
+const VARIANTS: &[Variant] = &[
     Variant::CheckpointEach,
     Variant::CheckpointEvery3,
     Variant::WalOnly,
     Variant::AutoCheckpoint,
     Variant::NormalSync,
+    #[cfg(feature = "test-oracle")]
+    Variant::Large,
 ];
+
+/// The chunk size of the `Large` variant's child.
+#[cfg(feature = "test-oracle")]
+const LARGE_CHUNK: usize = 2;
+
+/// Fails with API-011 in its second chunk, after the first is written.
+#[cfg(feature = "test-oracle")]
+const FAILS_LARGE: &str = r#"(transact [[:e0 :a0 0 {:valid-from "2020-01-01T00:00:00Z"}] [:e1 :a0 0]
+    [:e2 :a0 0] [:e0 :a0 0 {:valid-from "2021-01-01T00:00:00Z"}]])"#;
 
 impl Variant {
     fn options(self) -> OpenOptions {
@@ -191,6 +212,8 @@ impl Variant {
             Variant::AutoCheckpoint => opts.wal_checkpoint_threshold(2),
             Variant::NormalSync => opts.synchronous(SyncMode::Normal),
             Variant::CheckpointEach | Variant::CheckpointEvery3 => opts,
+            #[cfg(feature = "test-oracle")]
+            Variant::Large => opts,
         }
     }
 
@@ -199,6 +222,8 @@ impl Variant {
             Variant::CheckpointEach => true,
             Variant::CheckpointEvery3 | Variant::NormalSync => k % 3 == 0,
             Variant::WalOnly | Variant::AutoCheckpoint => false,
+            #[cfg(feature = "test-oracle")]
+            Variant::Large => k % 5 == 0,
         }
     }
 }
@@ -448,6 +473,10 @@ fn crash_kill_child_entrypoint() {
         .expect("child opens log");
 
     let db = Minigraf::open_with_options(&db_path, variant.options()).expect("child opens db");
+    #[cfg(feature = "test-oracle")]
+    let large = matches!(variant, Variant::Large);
+    #[cfg(feature = "test-oracle")]
+    let _chunk = large.then(|| minigraf::__tx_chunk_facts(Some(LARGE_CHUNK)));
     let mut rng = Rng::new(seed);
     let mut live = BTreeSet::new();
     for k in 1.. {
@@ -456,6 +485,13 @@ fn crash_kill_child_entrypoint() {
         log.write_all(format!("{k}\n").as_bytes())
             .expect("child logs transaction");
         live = next;
+        #[cfg(feature = "test-oracle")]
+        if large && k % 4 == 0 {
+            let e = db
+                .execute(FAILS_LARGE)
+                .expect_err("a failing large statement");
+            assert_eq!(e.code(), "API-011");
+        }
         if variant.checkpoint_after(k) {
             db.checkpoint().expect("child checkpoint");
         }

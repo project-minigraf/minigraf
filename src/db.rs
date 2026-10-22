@@ -557,7 +557,7 @@ impl Minigraf {
         } else {
             None
         };
-        let pfs = if opts.read_only {
+        let mut pfs = if opts.read_only {
             PersistentFactStorage::open_read_only(backend, opts.page_cache_size, wal_base)?
         } else {
             PersistentFactStorage::open(backend, opts.page_cache_size, wal_base)?
@@ -581,6 +581,12 @@ impl Minigraf {
         // Open the WAL writer only if the WAL file already exists from a previous session.
         // Otherwise, create it lazily on the first write.
         let wal = if wal_path.exists() {
+            // A WAL is deleted only after a meta of a later generation than
+            // its base is durable: the first checkpoint commits one even with
+            // nothing to write. A large transaction that crashed left pages of
+            // `g + 1` behind this WAL, and without it a file with one valid
+            // meta slot would be refused (#550 spec §4.5).
+            pfs.force_dirty();
             Some(WalWriter::open_or_create_at(
                 &wal_path,
                 opts.synchronous,
@@ -776,6 +782,11 @@ impl Minigraf {
                 .lock()
                 .map_err(|_| err_coded!(ErrorCode::Api001))?;
 
+            #[cfg(not(target_arch = "wasm32"))]
+            if statement.is_large() && matches!(*ctx, WriteContext::File { .. }) {
+                return self.execute_large(&mut ctx, statement, kind);
+            }
+
             let stamped = statement.facts()?;
             let is_retract = kind == Kind::Retract;
             // Before allocating: a rejected transaction takes no tx_count.
@@ -825,6 +836,73 @@ impl Minigraf {
                 Ok(QueryResult::Transacted(tx_id))
             }
         }
+    }
+
+    /// A statement with more facts than one chunk, on a file database (#550
+    /// spec §4): written a chunk at a time into copy-on-write working trees
+    /// and committed as a checkpoint, with no WAL entry. Its `tx_id` is the
+    /// time it became large.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn execute_large(
+        &self,
+        ctx: &mut WriteContext,
+        statement: statement::Statement<'_>,
+        kind: Kind,
+    ) -> Result<QueryResult> {
+        use crate::storage::persistent_facts::ChunkError;
+        let chunks = statement.chunks()?;
+        refuse_if_failed(ctx)?;
+        let WriteContext::File {
+            pfs,
+            wal,
+            db_path,
+            wal_entry_count,
+        } = ctx
+        else {
+            bail_coded!(ErrorCode::Int019, "a large statement without a file");
+        };
+        // The WAL guard: a crash before the commit point finds a WAL whose
+        // base is this generation, never an orphan `g + 1` page (§4.5).
+        Self::open_wal(
+            wal,
+            db_path,
+            self.inner.options.synchronous,
+            pfs.generation(),
+        )?;
+        let mut tx = pfs.begin_large(crate::graph::types::tx_id_now())?;
+        for chunk in chunks {
+            let written = match chunk {
+                Ok(mut chunk) => pfs.write_large_chunk(&mut tx, &mut chunk),
+                Err(e) => Err(ChunkError::Statement(e)),
+            };
+            if let Err(ChunkError::Statement(e) | ChunkError::Failure(e)) = written {
+                pfs.rollback_large(tx);
+                return Err(e);
+            }
+        }
+        let tx_id = tx.tx_id();
+        pfs.commit_large(tx)?;
+        Self::delete_wal(wal, db_path, wal_entry_count)?;
+        Ok(match kind {
+            Kind::Retract => QueryResult::Retracted(tx_id),
+            Kind::Transact => QueryResult::Transacted(tx_id),
+        })
+    }
+
+    /// The WAL writer, opening the file (or creating it with the header only,
+    /// base generation `generation`) if it is not open.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn open_wal<'w>(
+        wal: &'w mut Option<WalWriter>,
+        db_path: &Path,
+        sync: SyncMode,
+        generation: u64,
+    ) -> Result<&'w mut WalWriter> {
+        if wal.is_none() {
+            let wal_path = Self::wal_path_for(db_path);
+            *wal = Some(WalWriter::open_or_create_at(&wal_path, sync, generation)?);
+        }
+        wal.as_mut().ok_or_else(|| err_coded!(ErrorCode::Api009))
     }
 
     /// The executor for a read-only command: no lock, the database's limits,
@@ -1109,6 +1187,16 @@ impl Minigraf {
     #[cfg(test)]
     pub(crate) fn snapshot(&self) -> Result<Snapshot> {
         self.inner.fact_storage.snapshot()
+    }
+
+    /// The active meta page's generation (0 without a file), for tests that
+    /// check when a checkpoint commits.
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    pub(crate) fn generation(&self) -> u64 {
+        match &*self.inner.write_lock.lock().unwrap() {
+            WriteContext::File { pfs, .. } | WriteContext::ReadOnly { pfs } => pfs.generation(),
+            WriteContext::Memory => 0,
+        }
     }
 
     /// End the handle as a killed process would: no close-time checkpoint and
@@ -1653,16 +1741,8 @@ impl<'a> WriteTransaction<'a> {
                 wal_entry_count,
             } => {
                 // Lazily open the WAL writer if not already open.
-                if wal.is_none() {
-                    let wal_path = Minigraf::wal_path_for(db_path);
-                    *wal = Some(WalWriter::open_or_create_at(
-                        &wal_path,
-                        opts.synchronous,
-                        pfs.generation(),
-                    )?);
-                }
-
-                let wal_writer = wal.as_mut().ok_or_else(|| err_coded!(ErrorCode::Api009))?;
+                let wal_writer =
+                    Minigraf::open_wal(wal, db_path, opts.synchronous, pfs.generation())?;
                 wal_writer.append_entry(tx_count, facts)?;
                 pfs.mark_dirty();
                 *wal_entry_count = wal_entry_count.saturating_add(1);
