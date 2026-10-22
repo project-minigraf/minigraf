@@ -273,8 +273,202 @@ statement takes today's path:
     `CLAUDE.md`'s module notes for `large_tx.rs`. No `CHANGELOG.md` or docs-site change
     (PR 3).
 
-## PR 3
+## PR 3: statement bases, large `WriteTransaction`s, reads
 
-Planned in detail when PR 2 is merged, against the code it leaves: spec §5 and §7, the large
-path for every `WriteTransaction` statement (decision 12), the measurement on the bench
-machine, the final `TX_CHUNK_FACTS`, and the docs listed in spec §9.
+Checked against `v3` at `75a3faca` (PR 2 merged as `9ecc02f5`). Line numbers are from that
+commit.
+
+### Scope
+
+- A `WriteTransaction` on a writable file database becomes large (spec §2, §4.1) and keeps its
+  `LargeTx` across `execute` calls; `commit`, `rollback` and drop go through `commit_large` and
+  `rollback_large`. In-memory databases stay small, as for `execute` (PR 2 scope).
+- Statement bases (spec §5) for every statement of a large transaction after its first write.
+- Every `WriteTransaction` query reads a `Snapshot` (spec §7); `merged_query_facts`
+  (`db.rs:1770`) and the executor's `facts_override` (`executor.rs:150`) go.
+- The measurement (spec §8.2), the final `TX_CHUNK_FACTS`, and the docs of spec §9.
+
+Not in PR 3: #686 (WAL entries over 1M facts, its own v3 PR and v2.x backport), #687
+(`crash-kill.yml` on `main`), #551.
+
+### Decisions not fixed by the spec (PR 3)
+
+25. **When a `WriteTransaction` becomes large.** `WriteTransaction` gains `large:
+    Option<LargeTx>` (not wasm32). A statement read by pass 1 makes a small transaction on a
+    `WriteContext::File` large when it is large itself (`Statement::is_large`) or when its
+    facts plus the staged ones number more than `tx_chunk_facts()` (spec §2). A small
+    statement's phase 5–7 errors (`Statement::facts`, `check_one_window_per_triple`) are
+    reported before the switch, so a statement rejected as today leaves the transaction small,
+    as today. A large statement's errors come from its chunks, after the switch.
+26. **Order of the switch** (spec §4.1). `tx_id = tx_id_now()`; then step 5's checks, before
+    steps 1–4: the staged facts reduced by `keep_last_statement` are checked by
+    `check_valid_windows` at `tx_id` and `wal::check_fact_size` (the checks `check_chunk`,
+    `large_tx.rs:290`, runs; each statement passed `API-011` and the reduction leaves one
+    statement per triple). A failure rejects the current statement with nothing to undo: no WAL
+    guard, no bound, the staged facts as they were. Then `refuse_if_failed` (`STG-046` /
+    `WAL-007`: a large transaction writes pages, so a failed handle is refused here, not at
+    commit), the WAL guard, `begin_large(tx_id)`, and the staged facts as one chunk, taken from
+    the transaction only now. An error writing them is a failure: they passed every statement
+    check, and the fast path (§5.2) finds no key of this `tx_count`.
+27. **The pending store is written when the transaction becomes large, not at commit** (spec
+    §4.3 step 1). `begin_large` writes `get_pending_facts()` (own `tx_count`s, no checks) as
+    its first chunk and records their number in `LargeTx::pending_len`; `commit_large` publishes
+    with it. A query inside a large transaction (§7) then reads the working trees alone: the
+    engine's scan treats the committed reader as older than the pending part (a committed
+    triple with a pending record is shadowed, `scan.rs:448-456`) and so does the executor's
+    net-assert over committed survivors plus pending records (`storage.rs:232`); with pending
+    facts older than the working trees' newest, both would let a pending assertion hide this
+    transaction's retraction. No fact joins the pending store while the write lock is held
+    (`execute_statement`, `commit_inner` and WAL replay at open append under it), so the length
+    at `begin_large` is the publish count. One path for `Minigraf::execute` and
+    `WriteTransaction`; an error writing the pending chunk fails the handle and rolls back.
+28. **The base** (spec §5.1). `Base { roots: [u64; 5], next_eid, next_iid, fact_count,
+    freed_len, held: Vec<u64>, claims: u64 }` in `LargeTx`, recorded when a statement of a
+    large `WriteTransaction` starts (decision 33). `PageAllocator::begin_base` starts a second
+    id set beside `handed`, `since`: `alloc` and `alloc_append` add to it, `release` removes
+    from it; `handed_since(id)`; `end_base()` takes it.
+29. **Replaced pages with a base** (spec §4.2 step 3): `handed_since` → released (and out of
+    `since`); not `handed` (generation `g` references it) → `freed`; otherwise → `held`.
+30. **Which statement wrote a key: claims** (deviation from spec §5.2). Spec §5.2 step 2 says a
+    key of this `tx_count` that is in the base's EAVT tree came from an earlier statement. Not
+    when this statement wrote the same key in an earlier chunk: statement 1 asserts `[:a :n 1]`,
+    statement 2 asserts `[:a :n 1]` in chunk 1 (§5.2 deletes statement 1's key and inserts the
+    same bytes) and `[:a :n 1 {other window}]` in chunk 2. The key is in the base, so chunk 2
+    would delete it and accept the statement; a small transaction rejects it with `API-011`.
+    The base holds the keys, not who wrote them last. So a statement also keeps **claims**: a
+    copy-on-write B+tree (root 0 at the base, pages from the allocator, so in `since`) of the
+    triples (EAVT key prefix up to `keys::triple_len`) whose base keys it deleted. For each
+    triple `T` of a chunk, with `R` its working EAVT keys of this `tx_count` (`repeats`' run):
+    - `R` empty, the fast path, or `T` in claims: `R` is this statement's (repeat or `API-011`,
+      as in PR 2);
+    - otherwise, if `R`'s first key is in the base's EAVT tree (`btree::get`): `R` is earlier
+      statements' (this statement never touched `T`, or it would be in claims; and before it
+      touches `T` every key of `T` is the base's) — every key of `R` and its AEVT, AVET and
+      VAET keys go into the chunk's deletes, the records are inserted, and `T` joins claims;
+    - otherwise `R` is this statement's: the base has no key of `T`, so it never will.
+    Claims hold only triples two statements of the transaction share, on pages, not in memory.
+    Their replaced pages are released at once. At the end of the statement every claims page
+    is released (`btree::tree_pages`, new: the ids of a tree's nodes).
+31. **A failed statement restores `freed`** (spec §5.3 gap). Pages of `g` that the statement
+    replaced went to `freed`; the restored roots reference them again, so `freed` is truncated
+    to its length at the base. Success releases `held` and the claims pages; failure restores
+    the roots, counters and `fact_count`, truncates `freed`, releases `since` (claims pages
+    included), keeps `held`.
+32. **Statement errors and failures in a large `WriteTransaction`.** Statement errors
+    (`API-011`, `API-019` at the fixed `tx_id`, `WAL-003`, pass 2 errors) restore the base; the
+    transaction stays large and usable. Failures (decision 18) fail the handle; the transaction
+    stays open, `commit` returns `STG-046` and rolls back, as `rollback` and drop do.
+33. **Every statement of a large `WriteTransaction` gets a base**, the first written one
+    included. A statement error in a first large statement must leave the transaction usable,
+    which PR 2's rollback does not (`execute_large` ends the transaction). In the fast path
+    (§5.2: no earlier statement in the working trees) the claims stay empty, since it never
+    deletes. `Minigraf::execute`'s one statement keeps PR 2's rollback and no base (decision
+    13). The staged chunk of decision 26 is written without a base: it cannot fail but as a
+    failure.
+34. **Phase 6 of a large transaction's later statements** runs in pass 1 at the fixed `tx_id`,
+    which every fact is stamped with; a small transaction keeps the staging time.
+35. **Reads** (spec §7). `Snapshot` gains `staged: Option<Arc<PendingStore>>`, built from the
+    staged facts with each default `valid_from` resolved to its staged `tx_id`
+    (`merged_query_facts`' rule), and `now` raised to the newest staged `tx_id`
+    (`pending_read_now_floor`'s rule). Every pending read (`all_facts`, `live_facts_of_scans`,
+    `pending_records`, `pending_live`, `pending_range`, `pending_len`) reads the pending store's
+    first `pending_len` facts and then `staged` as one store: positions `pending_len..` are
+    staged, and index walks merge the two `BTreeMap`s in key order, so `pending_live` decides a
+    triple over both. Keys never collide: staged `tx_count`s are above every pending one. A
+    large transaction's snapshot has `committed` = an `OnDiskReader` over the working meta
+    (`last_checkpointed_tx_count` = its `tx_count`), unpinned working pages (the pin `snapshot()`
+    takes on `g` stays; it costs nothing under the write lock), `pending_len` 0 (decision 27)
+    and no `staged`. `DatalogExecutor::new_from_facts_with_rules_and_functions`,
+    `facts_override` and `read_now_floor` are removed; `WriteTransaction` queries run on the
+    engine where it plans them, with the oracle under `test`.
+36. **Measurement** is a program outside the repository (public API only, so it builds on `v3`
+    before #550, `d24fb585`, and on this branch), one process per run for `VmHWM`; pages
+    written from `/proc/self/io` `write_bytes` / 4096 (WAL included). The chunk size is set by
+    building with each value of the constant. Results (no machine details) go in the PR and in
+    this plan.
+
+### Measurement results (step 22)
+
+`v3` before #550 (`d24fb585`) against this branch at each chunk size, 1M facts, an idle 88-vCPU
+machine, one process per run, `opt-level = 3`. Facts are `[:e<k> :a<i % 10> v]`: sequential
+entities `k = i / 10`, random entities `k` uniform over 100K; short values are integers, long
+ones unique 100-byte strings. RSS is `VmHWM` above the peak while the input text was built
+(the input itself is 31–475 MiB); 0 means no rise above it. Pages written are
+`write_bytes / 4096`, WAL included; file pages after the commit and a checkpoint.
+
+| Shape | v3 before | 4,096 | 16,384 | 65,536 |
+|---|---|---|---|---|
+| `execute`, sequential, short | 9.1 s, 1,312 MiB, 21,075 | 4.9 s, 0, 23,423 | 4.2 s, 0, 22,006 | 3.9 s, 0, 21,933 |
+| `execute`, sequential, long | 15.2 s, 2,102 MiB, 90,715 | 21.8 s, 0, 95,855 | 20.2 s, 0, 95,284 | 21.0 s, 0, 98,430 |
+| `execute`, random, short | 11.4 s, 1,293 MiB, 20,394 | 36.4 s, 0, 24,751 | 18.5 s, 0, 26,605 | 9.5 s, 0, 28,110 |
+| `execute`, random, long | 17.6 s, 2,087 MiB, 82,678 | 51.0 s, 0, 90,095 | 39.7 s, 0, 97,778 | 28.1 s, 0, 104,613 |
+| 10 statements, sequential, short | 10.1 s, 1,391 MiB, 21,075 | 5.0 s, 0, 24,195 | 4.5 s, 4, 22,920 | 3.8 s, 41, 22,832 |
+| 10 statements, sequential, long | 17.5 s, 2,419 MiB, 90,715 | 22.1 s, 0, 109,067 | 20.6 s, 0, 107,432 | 18.9 s, 47, 107,477 |
+| 10 statements, random, short | 12.0 s, 1,372 MiB, 20,394 | 38.2 s, 0, 36,912 | 22.5 s, 7, 38,596 | 10.1 s, 41, 41,418 |
+| 10 statements, random, long | 22.3 s, 2,402 MiB, 82,678 | 51.3 s, 0, 139,352 | 41.3 s, 0, 146,629 | 34.0 s, 54, 150,977 |
+
+At 100K facts every chunk size is within 2.3× of `v3` before in time and under 110 MiB of RSS
+(before: 142–260 MiB). **`TX_CHUNK_FACTS` stays 16,384**: memory first (spec decision 2), 4,096
+is up to 3× slower than 16,384 with random entities, and 65,536 holds 40–55 MiB more for about
+half the time with random entities. Two costs the measurement shows: random entities are slower
+than before (each chunk rewrites leaves all over each tree, spec §8.2), and a transaction of
+several statements over random entities leaves a file up to 1.8× larger, since every page its
+base references and a statement replaces stays held until the statement ends (§4.2 step 3);
+the space is free in the file afterwards. #551's envelope records the result.
+
+### Deviations from the spec (PR 3)
+
+1. Step 5's checks run before steps 1–4, so a rejected statement has nothing to undo (decision
+   26; spec §4.1 step 5).
+2. The pending store is written when the transaction becomes large (decision 27; spec §4.3
+   step 1).
+3. Claims decide which statement wrote a key, not membership in the base alone (decision 30;
+   spec §5.2 step 2).
+4. A failed statement truncates `freed` (decision 31; spec §5.3 does not cover it).
+5. A small statement's `API-011` is checked before the switch (decision 25).
+6. Every statement of a large `WriteTransaction` has a base, the fast path included (decision 33).
+7. A large transaction in which no statement wrote a fact commits nothing and takes no
+   `tx_count`, as a small one with nothing staged: `commit` rolls it back (found by the
+   model-based test).
+8. Inside a large transaction, `:as-of` its own `tx_count` sees every finished statement; in a
+   small one each staged statement has its own synthetic count until `commit`.
+
+### PR 3 steps
+
+16. **Allocator and B+tree.** `PageAllocator::begin_base`, `handed_since`, `end_base`
+    (decision 28); `btree::tree_pages`. Unit tests: `since` covers ids handed after
+    `begin_base` and not before, `release` removes from it, `tree_pages` lists exactly the
+    pages a `cow_update`d tree reaches.
+17. **Pending chunk at the switch** (decision 27): `begin_large` writes the pending store;
+    `commit_large` publishes `tx.pending_len`. PR 2's tests pass unchanged.
+18. **Bases and claims** (decisions 28–31, 33) in `large_tx.rs`: `begin_statement`,
+    `end_statement(ok)`, `repeats` generalised to `resolve` (drops, deletes for the four
+    index trees, claims), `apply_chunk` with deletes and `fact_count` decremented. Unit tests on
+    the file backend with chunk sizes 1–4: statement sequences in one large transaction
+    against the same statements in a small one (records equal, `API-011` in the same
+    statements), a failed statement leaves the trees, counters and `freed` at its base and the
+    transaction usable, a rolled-back transaction leaves `verify` clean and every page
+    accounted for after the next checkpoint.
+19. **`WriteTransaction` large path** (decisions 25, 26, 32, 34): `execute_inner`,
+    `commit_inner`, `rollback`, `Drop`. Tests: a `WriteTransaction` differential at chunk sizes
+    1–4 (`large_statements_store_what_small_ones_do` with the workload's statements in one
+    transaction, and split over several), the step 5 `API-019` case (a staged window that ends
+    between staging and the switch), a failed handle refused at the switch, commit after a
+    failure is `STG-046`.
+20. **Reads** (decision 35): `Snapshot::staged`, the merged pending walk, the large
+    transaction's working-tree snapshot, the executor's override removed. Tests:
+    read-your-own-writes, `:as-of` of staged counts, retract-then-assert (#477) and
+    assert-then-retract across statements, small and large, each against the committed result;
+    a staged retraction hides a pending assertion of the same triple and vice versa; the
+    existing `db.rs` transaction read tests pass on the engine.
+21. **Crash and faults.** Fault matrix: `Op::Large { tx: true, .. }` (a `WriteTransaction` of
+    a staged statement, the large `X`, a statement that fails `API-011` after writing a chunk,
+    and one that repeats and changes earlier statements' triples; chunk size 3), on one and two
+    meta slots, with and without a WAL. Crash-kill `Large` variant: every third transaction is a
+    `WriteTransaction` of the opposite statement, the failing large statement and the
+    transaction itself. The model-based test covers bases through its `WriteTransaction` steps
+    at chunk size 2.
+22. **Measurement and `TX_CHUNK_FACTS`** (decision 36): set the constant here and in
+    `tests/large_transaction_acceptance_test.rs`.
+23. **Docs.** `CHANGELOG.md`, `docs/TEST_COVERAGE.md`, `CLAUDE.md` (module notes, counts), and a
+    docs-site PR (`content/architecture.md`, `<!-- @since v3.0.0 -->`).
