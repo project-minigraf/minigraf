@@ -664,42 +664,45 @@ mod tests {
 
     #[test]
     fn statements_match_the_whole_input_parser() {
-        // One thread per template; each returns its codes and most facts.
-        let results = std::thread::scope(|scope| {
+        // One run per template: its codes and most facts.
+        let run = |&(prefix, suffix): &(&str, &str)| {
+            let mut text = String::new();
+            let mut codes = std::collections::BTreeSet::new();
+            let mut most_facts = 0;
+            for len in 0..=3 {
+                each_sequence(len, &mut |seq| {
+                    text.clear();
+                    text.push_str(prefix);
+                    for &t in seq {
+                        text.push(' ');
+                        text.push_str(TOKENS[t]);
+                    }
+                    text.push(' ');
+                    text.push_str(suffix);
+                    match check_same(&text) {
+                        Ok(n) => most_facts = most_facts.max(n),
+                        Err(code) => {
+                            codes.insert(code);
+                        }
+                    }
+                });
+            }
+            (codes, most_facts)
+        };
+        // A thread per template where there are threads (not on wasm32).
+        #[cfg(not(target_arch = "wasm32"))]
+        let results: Vec<_> = std::thread::scope(|scope| {
             let workers: Vec<_> = TEMPLATES
                 .iter()
-                .map(|&(prefix, suffix)| {
-                    scope.spawn(move || {
-                        let mut text = String::new();
-                        let mut codes = std::collections::BTreeSet::new();
-                        let mut most_facts = 0;
-                        for len in 0..=3 {
-                            each_sequence(len, &mut |seq| {
-                                text.clear();
-                                text.push_str(prefix);
-                                for &t in seq {
-                                    text.push(' ');
-                                    text.push_str(TOKENS[t]);
-                                }
-                                text.push(' ');
-                                text.push_str(suffix);
-                                match check_same(&text) {
-                                    Ok(n) => most_facts = most_facts.max(n),
-                                    Err(code) => {
-                                        codes.insert(code);
-                                    }
-                                }
-                            });
-                        }
-                        (codes, most_facts)
-                    })
-                })
+                .map(|t| scope.spawn(move || run(t)))
                 .collect();
             workers
                 .into_iter()
                 .map(|w| w.join().expect("differential worker panicked"))
-                .collect::<Vec<_>>()
+                .collect()
         });
+        #[cfg(target_arch = "wasm32")]
+        let results: Vec<_> = TEMPLATES.iter().map(run).collect();
         let most_facts = results.iter().map(|(_, n)| *n).max().unwrap_or(0);
         let codes: std::collections::BTreeSet<String> =
             results.into_iter().flat_map(|(c, _)| c).collect();
