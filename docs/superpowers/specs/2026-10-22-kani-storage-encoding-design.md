@@ -15,7 +15,7 @@
 
 - **Harness**: a `#[kani::proof]` function. Kani turns it and everything it calls into a CBMC program; CBMC proves its assertions for every value of the inputs drawn with `kani::any()`, within the loop bound `#[kani::unwind(n)]`.
 - **Proved**: CBMC reports `VERIFICATION:- SUCCESSFUL`. Kani adds an unwinding assertion to every loop, so a success also shows the bound was never reached: the proof covers every input, not only those up to a bound.
-- **Order-preserving**: for all inputs `a`, `b`, `a.cmp(&b) == enc(a).cmp(&enc(b))`, where `enc` is the encoder and the right side compares bytes. This also proves the encoder injective: `enc(a) == enc(b)` only if `a == b`.
+- **Order-preserving**: for all inputs `a`, `b` in the harness's domain, `a.cmp(&b) == enc(a).cmp(&enc(b))`, where `enc` is the encoder and the right side compares bytes. Where the input order is equal only for identical inputs (integers, UUIDs, and non-NaN floats under `total_cmp`), this also proves the encoder injective on that domain. NaN is outside it: every NaN encodes the same on purpose, which `float_bits_nan_sorts_last` and `encode_value_nan_is_canonical` prove.
 
 ## 3. Harnesses
 
@@ -84,7 +84,13 @@ Making the decoders provable would need an error-free inner decoder (`Option` in
 
 `encode_value` writes NaN as `0x7FF8_0000_0000_0000` without the sign transform it applies to every other float, so NaN sorts between two negative subnormals, before `-0.0` and every positive float, not after `+∞` as `Value::cmp` orders it. A harness `encode_value(non-NaN) < encode_value(NaN)` fails in 1.5 s with a counterexample. `keys.rs` on `v3` is correct: `float_bits` maps NaN to `0xFFF8…` (§3.1, `float_bits_nan_sorts_last`).
 
-Every lookup by `encode_value` bytes is an exact match (`start..=end` with the same `value_bytes`), and every other use compares for equality or sorts only to compare two sets in tests, so no result depends on where NaN sorts. On `main`, changing the encoding would reorder AVET keys in existing v7 files. So it is filed as its own low-severity issue, not data-integrity: state the NaN position in the doc comment on both branches, and leave the encoding as it is. No harness asserts the wrong order.
+No result depends on where NaN sorts:
+
+- AVET lookups by value are exact matches (`start..=end` with the same `value_bytes`, e.g. `lookup_avet_attr_value` on `main`).
+- The pending EAVT and AEVT indexes (`src/graph/storage.rs`, `RunWalk::run`) order `value_bytes` after entity, attribute, valid times and `tx_count`, so it orders facts only within one `(entity, attribute)` run. A walk stops only between runs, and each run is decided as a whole by `net_asserted_facts`, which groups by hash. The value order changes the order of rows within a run, which is unspecified.
+- Every other use compares for equality (net-assert grouping in `db.rs`, the log writer), or sorts only to compare two sets in tests (`dict.rs`, `cursor.rs`).
+
+On `main`, changing the encoding would reorder AVET keys in existing v7 files. So it is filed as its own low-severity issue (#688), not data-integrity: state the NaN position in the doc comment on both branches, and leave the encoding as it is. No harness asserts the wrong order.
 
 ## 7. Delivery
 
