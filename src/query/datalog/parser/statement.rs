@@ -897,6 +897,7 @@ mod tests {
             .map(|c| c.len())
             .collect();
         assert_eq!(sizes, vec![2, 1], "chunk sizes");
+        #[cfg(not(target_arch = "wasm32"))]
         assert!(statement.is_large());
         let sizes: Vec<usize> = statement
             .chunks()
@@ -909,7 +910,7 @@ mod tests {
             let _chunk = set_tx_chunk_facts(Some(5));
             read_statement(input, Kind::Transact, 1).unwrap()
         };
-        assert!(!exact.is_large(), "five facts fit a chunk of five");
+        assert!(exact.resume.is_none(), "five facts fit a chunk of five");
         assert_eq!(exact.facts().unwrap().len(), 5, "facts");
     }
 

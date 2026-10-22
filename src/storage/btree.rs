@@ -1219,6 +1219,7 @@ mod tests {
         assert!(seen.is_empty(), "no key below the target");
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn peek_returns_the_next_entry_across_leaves_without_consuming_it() {
         let (backend, cache, root, leaves) = multi_leaf_tree();

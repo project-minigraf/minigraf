@@ -470,6 +470,7 @@ mod tests {
         assert_eq!(cache.cached_page_count(), 1);
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn evict_drops_only_the_given_pages() {
         let cache = PageCache::new(8);

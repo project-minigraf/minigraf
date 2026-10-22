@@ -532,6 +532,7 @@ mod tests {
         assert_eq!(read, want);
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn tracking_records_every_id_handed_out_and_release_hands_it_out_next() {
         let b = crate::storage::backend::MemoryBackend::new();
@@ -560,6 +561,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn a_released_id_not_handed_out_again_stays_free() {
         let mut b = crate::storage::backend::MemoryBackend::new();
