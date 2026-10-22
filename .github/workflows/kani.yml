@@ -1,0 +1,97 @@
+name: Kani proofs
+
+# Two branches, 12 hours apart: main at 06:00 UTC, v3 at 18:00 UTC.
+# Scheduled runs always use this file from the default branch, so the branch
+# under test is chosen from the cron string that fired (as in
+# grammar-verifier.yml). Keep the cron strings here and in KANI_REF/run-name
+# identical.
+run-name: >-
+  Kani proofs (${{ github.event_name == 'pull_request' && github.head_ref
+  || github.event_name == 'workflow_dispatch' && inputs.ref
+  || (github.event.schedule == '0 18 * * *' && 'v3' || 'main') }})
+
+# #627: proves the byte encoders that order index keys (src/storage/keys/
+# verification.rs, src/storage/index/verification.rs). The whole set takes
+# about 30 seconds of proof time and ~1 GB of memory. Kani upgrades are
+# deliberate PRs that re-run the set.
+
+on:
+  pull_request:
+    paths:
+      - "src/storage/keys.rs"
+      - "src/storage/keys/**"
+      - "src/storage/index.rs"
+      - "src/storage/index/**"
+      - "src/graph/types.rs"
+      - "Cargo.toml"
+      - ".github/workflows/kani.yml"
+  schedule:
+    - cron: "0 6 * * *"   # main
+    - cron: "0 18 * * *"  # v3
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch to prove
+        required: true
+        default: main
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  KANI_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || (github.event.schedule == '0 18 * * *' && 'v3' || 'main') }}
+
+jobs:
+  kani:
+    name: Kani proofs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        if: ${{ github.event_name == 'pull_request' }}
+
+      - uses: actions/checkout@v4
+        if: ${{ github.event_name != 'pull_request' }}
+        with:
+          ref: ${{ env.KANI_REF }}
+
+      - name: Run Kani
+        uses: model-checking/kani-github-action@v1.1
+        with:
+          kani-version: 0.68.0
+          args: --lib -j --output-format terse -Z unstable-options --harness-timeout 10m
+
+      - name: Record Kani failure
+        if: ${{ failure() && github.event_name != 'pull_request' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_TITLE: "Nightly Kani failure (${{ env.KANI_REF }})"
+        run: |
+          report_file="kani-failure.md"
+          {
+            echo "The Kani proofs failed on ${{ env.KANI_REF }}."
+            echo
+            echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "- Commit: $(git rev-parse HEAD)"
+            echo "- Reproduce: \`cargo kani --lib -j --output-format terse -Z unstable-options --harness-timeout 10m\` (Kani 0.68.0)"
+            echo
+            echo "The failing harness and its counterexample are in the run log."
+          } > "$report_file"
+
+          existing_issue="$(gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --search "$ISSUE_TITLE in:title" \
+            --json number,title \
+            --limit 100 \
+            --jq ".[] | select(.title == \"$ISSUE_TITLE\") | .number" \
+            | head -n 1)"
+
+          if [ -n "$existing_issue" ]; then
+            gh issue comment "$existing_issue" --repo "$GITHUB_REPOSITORY" --body-file "$report_file"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" --body-file "$report_file"
+          fi
