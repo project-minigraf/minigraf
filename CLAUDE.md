@@ -84,6 +84,10 @@ cargo test --test complex_queries_test -- --nocapture
 cargo test --test recursive_rules_test -- --nocapture
 cargo test --test concurrency_test
 
+# Kani proofs of the value encoding (#627); ~1 GB. Never add decoder/string harnesses
+# without a bench-machine run first: they went past 27 GB without finishing
+cargo kani --lib -j --output-format terse -Z unstable-options --harness-timeout 10m
+
 # Run examples
 cargo run --example embedded
 cargo run --example file_storage
@@ -108,7 +112,7 @@ cargo run < demos/demo_negation.txt
    - `backend/file.rs`: Single `.graph` file backend (4KB pages, cross-platform)
    - `backend/memory.rs`: In-memory backend for testing
    - `backend/fault_inject.rs`: `FaultInjectingBackend` — injects I/O errors for durability tests (test builds only)
-   - `index.rs`: EAVT / AEVT / AVET / VAET key types, `FactRef`, `encode_value`
+   - `index.rs`: EAVT / AEVT / AVET / VAET key types, `FactRef`, `encode_value`; `index/verification.rs`: Kani proofs of `encode_value` (`#[cfg(kani)]`, #627; `kani.yml` runs them on encoder PRs and nightly)
    - `btree_v6.rs`: On-disk B+tree (`build_btree`, `rebuild_btree_incremental`, `OnDiskIndexReader`, `MutexStorageBackend`)
    - `btree.rs`: Legacy v5 B+tree (migration only)
    - `cache.rs`: LRU page cache (`PageCache`, default 256 pages)
