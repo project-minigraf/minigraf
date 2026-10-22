@@ -734,6 +734,9 @@ pub fn read_uint_bytes(bytes: &[u8]) -> Result<u64> {
     Ok(v)
 }
 
+#[cfg(kani)]
+mod verification;
+
 #[cfg(test)]
 mod tests {
     use super::*;

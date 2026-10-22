@@ -84,6 +84,10 @@ cargo test --test complex_queries_test -- --nocapture
 cargo test --test recursive_rules_test -- --nocapture
 cargo test --test concurrency_test
 
+# Kani proofs of the encoders (#627); ~1 GB. Never add decoder/string harnesses
+# without a bench-machine run first: they went past 27 GB without finishing
+cargo kani --lib -j --output-format terse -Z unstable-options --harness-timeout 10m
+
 # Run examples
 cargo run --example embedded
 cargo run --example file_storage
@@ -112,8 +116,8 @@ cargo run < demos/demo_negation.txt
    - `backend/memory.rs`: In-memory backend for testing
    - `backend/fault_inject.rs`: `FaultInjectingBackend` — injects I/O errors for durability tests (test builds only)
    - `fault.rs`: thread-local fault plan (test builds only, #390) — EIO, torn/short writes, sticky ENOSPC, failed fsync with or without lost writes, at the k-th write or sync of `FileBackend`, the WAL and `sync_parent_dir`; driven by `src/fault_matrix.rs`
-   - `index.rs`: pending (uncheckpointed) EAVT/AEVT keys over UUIDs and strings, `encode_value`
-   - `keys.rs`: byte-comparable v8 keys (FDB integers, value tags, `tx↓`, FOREVER), DICT keys, `MAX_VALUE_BYTES`, `MAX_IDENT_BYTES`
+   - `index.rs`: pending (uncheckpointed) EAVT/AEVT keys over UUIDs and strings, `encode_value`; `index/verification.rs`: Kani proofs of `encode_value` (`#[cfg(kani)]`, #627)
+   - `keys.rs`: byte-comparable v8 keys (FDB integers, value tags, `tx↓`, FOREVER), DICT keys, `MAX_VALUE_BYTES`, `MAX_IDENT_BYTES`; `keys/verification.rs`: Kani proofs that the key encoders preserve order (`#[cfg(kani)]`, #627; `kani.yml` runs them on encoder PRs and nightly)
    - `node.rs`: prefix-compressed leaf and shortest-separator internal node codecs
    - `btree.rs`: On-disk B+tree over byte keys (`build_btree`, `cow_update` (copy-on-write inserts and deletes; an emptied leaf or node leaves its parent, an emptied tree is root 0; #550) and `cow_insert`, `LeafCursor` with `seek`, `prefix_scan`, `get`, `MutexStorageBackend`)
    - `dict.rs`: `DictReader` (id ↔ UUID/ident, tx timestamps, long values) and `Encoder` (checkpoint-time id assignment and key building)
