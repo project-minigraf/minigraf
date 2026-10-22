@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Prepared queries use the database's rule limits** (#679), backported from v3.0.0. `PreparedQuery::execute` ran a rule query with the default `max_derived_facts` and `max_results` of 1,000,000 whatever `OpenOptions` set, so a lower limit set to stop a runaway recursive rule did not apply to prepared queries, and a higher one set for a large derivation failed with `INT-020` where `execute` of the same query succeeded. It now uses the database's limits, as `execute` does. `:max-derived-facts` and `:max-results` written in the query text were always applied. Present since v0.19.0.
 
+### Tests
+
+- **Kani proofs of the value encoding (#627), backported from v3.0.0.** `src/storage/index/verification.rs` holds 5 Kani harnesses, compiled only under `cfg(kani)`. They prove for every input that `encode_value`, the value part of the v7 index keys, gives each of `Null`, `Boolean`, `Integer`, `Float` and `Ref` its own type byte and keeps each one's order, and that every NaN encodes to the same bytes. `.github/workflows/kani.yml` runs them on pull requests that touch the encoder and nightly on `main` and `v3`. Strings, keywords, decoders, fact pages and the WAL are not covered: the model checker does not finish on them. Test-only; `Cargo.toml` declares the `kani` cfg so normal builds do not warn.
+
 ## v2.0.9 — 2026-10-21
 
 Patch release on the v2.x line under the [support policy](PHILOSOPHY.md#support-policy): two data-integrity fixes, for a pseudo-attribute in a rule body that read the wrong valid time and tx metadata (#661) and for a fact of more than four elements whose extra elements were silently dropped (#649), plus error codes in `BrowserDb` rejections (#673). File format is unchanged (v7). No API changes; a fact of more than four elements, which used to be stored truncated, now fails with `PRS-108`. Upgrading is recommended for every v2.x user who reads `:db/valid-from`, `:db/valid-to`, `:db/tx-count` or `:db/tx-id` in rules.

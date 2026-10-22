@@ -35,6 +35,7 @@ The v2.0.9 suite covers the public database API, the Datalog engine, storage and
 - **Core database behavior**: in-memory and file-backed operation, transactions, checkpoints, retractions, bi-temporal queries, recursive rules, prepared statements, aggregation, expressions, disjunction, window functions, UDFs, and magic-sets evaluation.
 - **Storage correctness**: packed pages, B+tree indexes and range scans, cache behavior, file-header validation, migration, WAL replay, checksums, corruption handling, and fault injection.
 - **Reliability and concurrency**: concurrent reads and writes, rollback behavior, same-process handle exclusion, cross-process locking, PID namespaces, NFS and container lock behavior, and SIGKILL recovery, and queries seeing each concurrent transaction whole and reading one state for all their patterns, also during a checkpoint (`tests/snapshot_atomicity_test.rs`, #554, #555, #558).
+- **Kani proofs of the value encoding** (#627; not `#[test]`s, run by `cargo kani` and `.github/workflows/kani.yml`): 5 harnesses in `src/storage/index/verification.rs` prove, for every input, that `encode_value` (the `value_bytes` of the v7 indexes) writes `Null` as `[0x00]` and each of `Boolean`, `Integer`, `Float` and `Ref` with its own type byte and in its own order (non-NaN floats by IEEE total order, so `-0.0` before `0.0`), and every NaN to the same bytes. Each harness fails when its encoder is broken on purpose. Where NaN sorts is not asserted (#688). Strings, keywords, decoders, fact pages and the WAL are left out: the model checker does not finish on them, so the fuzz and property tests cover them. v3.0.0 adds proofs of its key encoders.
 - **Public diagnostics**: structured parser, query, storage, WAL, API, and internal error codes; the error-code registry is checked against [`ERROR_REFERENCE.md`](ERROR_REFERENCE.md).
 - **Compatibility and quality**: golden-file corpus of released file formats, cross-platform format compatibility, property-based tests, long-haul smoke coverage, a weekly soak at 10M facts with a 5-hour churn (#392), XTDB/Datomic semantic compatibility, grammar conformance, and rustdoc examples.
 
@@ -55,6 +56,10 @@ cargo test --quiet
 
 # Include the scheduled/ignored tests when the host supports them
 cargo test -- --include-ignored
+
+# Kani proofs of the value encoding (#627): ~10 s and ~1 GB with -j; Kani pins its own nightly
+cargo install --locked kani-verifier && cargo kani setup
+cargo kani --lib -j --output-format terse -Z unstable-options --harness-timeout 10m
 
 # Generate a local branch-coverage report (requires cargo-llvm-cov and a nightly toolchain)
 cargo +nightly llvm-cov --branch --html
