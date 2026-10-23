@@ -1186,6 +1186,52 @@ fn no_pattern_first() {
     }
 }
 
+/// A `not` body is planned as a `:where` is (#551 plan, step 8), hashed or
+/// correlated, with a rule invocation in it; the parser rejects a nested
+/// `not`, `not-join` or `or` before the planner sees one.
+#[test]
+fn not_bodies_plan_as_clause_lists() {
+    use crate::query::datalog::optimizer::{Subplans, set_subplans};
+    let db = Minigraf::in_memory().unwrap();
+    db.execute(
+        "(transact [[:a :n 1] [:a :ok true] [:b :n 2] [:c :n 3] [:c :ok true] [:d :n 4] [:d :tag :x]])",
+    )
+    .unwrap();
+    db.execute("(rule [(okay ?e) [?e :ok true]])").unwrap();
+    db.execute("(rule [(plain ?e) [?e :n ?v] (not (okay ?e) [(< ?v 3)])])")
+        .unwrap();
+    for (q, code) in [
+        (
+            "[:find ?e :where [?e :n ?v] (not [?e :ok true] (not [?e :tag :x]))]",
+            "PRS-051",
+        ),
+        (
+            "[:find ?e :where [?e :n ?v] (not [?f :n ?w] (not-join [?f] [?f :ok true]))]",
+            "PRS-093",
+        ),
+        (
+            "[:find ?e :where [?e :n ?v] (not (or [?e :ok true] [?e :tag :x]))]",
+            "INT-016",
+        ),
+    ] {
+        let err = db.execute(&format!("(query {q})")).expect_err(q);
+        assert_eq!(err.code(), code, "{q}");
+    }
+    for mode in [Subplans::Choose, Subplans::Hash, Subplans::Correlated] {
+        let _m = set_subplans(mode);
+        for (q, n) in [
+            ("[:find ?e :where [?e :n ?v] (not (okay ?e) [(< ?v 3)])]", 3),
+            ("[:find ?e :where (plain ?e)]", 3),
+            (
+                "[:find ?e :where [?e :n ?v] (not-join [?v] (okay ?f) [?f :n ?w] [(> ?w ?v)])]",
+                2,
+            ),
+        ] {
+            assert_eq!(rows(&db, &format!("(query {q})")), n, "{q}");
+        }
+    }
+}
+
 /// A correlated body probes once per outer row from its seed; a hashed one
 /// is read once, however many outer rows there are (#546 spec §4.2, §4.3).
 #[test]

@@ -67,8 +67,6 @@ pub(crate) enum Cause {
     BranchVars,
     /// H: an `or-join` variable no earlier clause binds.
     UnboundJoin,
-    /// I: a `not` body holding more than patterns and expressions.
-    NotBody,
     /// K: a rule head of no arguments, or of more than two.
     HeadArity,
     /// L: a stratification error.
@@ -1151,12 +1149,6 @@ impl Builder {
     /// The `AntiJoin` of `body`, whose variables `vars` the outer row gives
     /// where it binds them (spec §2).
     fn anti(&self, body: &[WhereClause], vars: Vec<String>) -> Result<Step, Refusal> {
-        if !body
-            .iter()
-            .all(|c| matches!(c, WhereClause::Pattern(_) | WhereClause::Expr { .. }))
-        {
-            return no(NotBody);
-        }
         Ok(Step::Anti(self.sub(body, vars)?.0))
     }
 
@@ -1348,7 +1340,7 @@ fn closed(body: &[WhereClause], imports: &HashSet<String>) -> bool {
                 .as_ref()
                 .and_then(EdnValue::as_variable)
                 .is_some_and(|v| bound.contains(v)),
-            WhereClause::Not(inner) => optimizer::clause_ref_vars(inner)
+            WhereClause::Not(inner) => reads(inner)
                 .iter()
                 .all(|v| !imports.contains(v) || bound.contains(v)),
             WhereClause::NotJoin { join_vars, .. } => join_vars
