@@ -81,6 +81,11 @@ uuid = { version = "1.0", features = ["v4", "js"] }
 name = "minigraf_bench"
 harness = false
 
+# `cargo test` runs the envelope harness's unit tests (the -irregular fixture, #551).
+[[example]]
+name = "perf_envelope"
+test = true
+
 [features]
 default = []
 # Deprecated, does nothing since v3.0.0: every build reorders query clauses
