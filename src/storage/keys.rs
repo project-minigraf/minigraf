@@ -629,9 +629,9 @@ pub fn attribute_value_prefix(a: u32, v: &KeyValue) -> Vec<u8> {
     k
 }
 
-/// A kind of value whose matches a constant cannot name by one key: floats
-/// match within an epsilon, keywords match a UUID constant by the entity
-/// they name (#544).
+/// A kind of value whose matches a constant cannot name by one key: a float
+/// matches `0.0` and `-0.0` alike (#706), keywords match a UUID constant by
+/// the entity they name (#544).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValueKind {
     Float,

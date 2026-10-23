@@ -97,7 +97,7 @@ fn queries(tx: u64) -> Vec<String> {
         "[?e :person/name \"no such name\"]",
         // Cross-kind constants (#544 PR 2): a keyword matches the keyword and
         // a ref to the entity it names; a UUID matches the ref and keywords
-        // that name it; floats match within an epsilon.
+        // that name it; floats match by IEEE `==` (#706).
         "[?e :person/status :s1]",
         "[?e :person/friend :p2]",
         "[?e :person/boss :p2]",

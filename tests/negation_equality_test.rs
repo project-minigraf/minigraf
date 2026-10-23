@@ -135,14 +135,16 @@ fn imported_keyword_equals_ref_to_its_entity() {
 }
 
 #[test]
-fn body_float_constant_keeps_epsilon_match() {
+fn body_float_constant_matches_equal_floats_only() {
     let db = Minigraf::in_memory().unwrap();
-    db.execute("(transact [[:a :x 1.0] [:b :x 2.0] [:a :y 1.0]])")
+    db.execute("(transact [[:a :x 1.0] [:b :x 2.0] [:a :y 0.0] [:b :y 0.00000000000000001]])")
         .unwrap();
-    // A literal in the body still matches within `f64::EPSILON`.
+    // A literal in the body matches equal floats only (#706): `1e-17` is
+    // within `f64::EPSILON` of `0.0` but not equal to it.
     for q in [
-        "[:find ?e :where [?e :x _] (not [?e :y 1.0000000000000001])]",
-        "[:find ?e :where [?e :x ?v] (not [?e :y 1.0000000000000001] [(> ?v 0.0)])]",
+        "[:find ?e :where [?e :x _] (not [?e :y 0.0])]",
+        "[:find ?e :where [?e :x ?v] (not [?e :y 0.0] [(> ?v 0.0)])]",
+        "[:find ?e :where [?e :x _] (not [?e :y -0.0])]",
     ] {
         assert_eq!(entities(&db, q, &[":a", ":b"]), vec![":b"], "{q}");
     }
