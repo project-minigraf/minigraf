@@ -8,6 +8,19 @@ Completed releases and their implementation details live in the [CHANGELOG](CHAN
 
 ---
 
+## v2.0.10 — WAL and Float-Constant Data-Integrity Patch (released 2026-10-23)
+
+File format stays v7 and the public API does not change. Details are in the [CHANGELOG](CHANGELOG.md).
+
+Shipped:
+
+- WAL entries of more than 1,000,000 facts replay, so the transaction and every later one survive a crash or close without a checkpoint (#686)
+- A float constant in a pattern matches equal floats only, not every float within `f64::EPSILON` (#706)
+- Prepared queries use the database's `max_derived_facts` and `max_results` (#679)
+- Kani proofs of the value encoding, backported from v3.0.0 (#627)
+
+---
+
 ## v2.0.9 — Rule and Parser Data-Integrity Patch (released 2026-10-21)
 
 File format stays v7 and the public API does not change. Details are in the [CHANGELOG](CHANGELOG.md).
@@ -256,4 +269,4 @@ See [GitHub Issues](https://github.com/project-minigraf/minigraf/issues) for spe
 
 ---
 
-**Last updated**: October 2026 — v2.0.9, a rule and parser data-integrity patch on v2.x, is the current release; v3.0.0 work, including the file-format v8 fix for #287/#371, is developed on the long-lived `v3` branch and merges into `main` at the v3.0.0 cut.
+**Last updated**: October 2026 — v2.0.10, a WAL and float-constant data-integrity patch on v2.x, is the current release; v3.0.0 work, including the file-format v8 fix for #287/#371, is developed on the long-lived `v3` branch and merges into `main` at the v3.0.0 cut.

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v2.0.10 — 2026-10-23
+
+Patch release on the v2.x line under the [support policy](PHILOSOPHY.md#support-policy): two data-integrity fixes, for WAL entries of more than 1,000,000 facts that replay dropped along with every later transaction (#686) and for float constants that matched any float within `f64::EPSILON` (#706), plus prepared queries that ignored the database's rule limits (#679). File format is unchanged (v7). No API changes. Upgrading is recommended for every v2.x user who commits transactions of more than 1,000,000 facts or matches float constants in patterns.
+
 ### Fixed
 
 - **A float constant in a pattern matches equal floats only** (#706), backported from v3.0.0. A float written in a pattern's value position, or bound to a `$slot` of a prepared query, matched every stored float within an absolute `f64::EPSILON` (about `2.2e-16`), so `[?e :m/x 0.0]` returned an entity whose `:m/x` is `1e-17`, while `[?e :m/x ?v] [(= ?v 0.0)]` did not. Above 1.0 the epsilon is smaller than the gap between adjacent floats, so only floats smaller than about `2.2e-16` in magnitude were affected: every one of them matched `0.0`, and `1e-20` matched `5e-20`. Float constants now compare by IEEE `==`, as joins, predicates and the indexes do: `0.0` matches `-0.0` and nothing else changes. The fix covers patterns in queries, rule bodies and `not` / `or` bodies. Nothing stored was wrong.
@@ -16,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Tests
 
 - **Kani proofs of the value encoding (#627), backported from v3.0.0.** `src/storage/index/verification.rs` holds 5 Kani harnesses, compiled only under `cfg(kani)`. They prove for every input that `encode_value`, the value part of the v7 index keys, gives each of `Null`, `Boolean`, `Integer`, `Float` and `Ref` its own type byte and keeps each one's order, and that every NaN encodes to the same bytes. `.github/workflows/kani.yml` runs them on pull requests that touch the encoder and nightly on `main` and `v3`. Strings, keywords, decoders, fact pages and the WAL are not covered: the model checker does not finish on them. Test-only; `Cargo.toml` declares the `kani` cfg so normal builds do not warn.
+
+### Known issues
+
+- Same-transaction multi-valued facts can read back as one value (#371, #287), a fact retracted and re-asserted in one `WriteTransaction` is lost at commit (#477), a later assertion does not replace an earlier valid-time window (#435), `save()` is not crash-atomic (#374), and a `.wal` from a later checkpoint is replayed onto an older `.graph` (#535); all are fixed in v3.0.0. All v2.x known issues, with affected versions and workarounds, are listed in the pinned issue #421.
 
 ## v2.0.9 — 2026-10-21
 
