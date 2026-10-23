@@ -1,4 +1,4 @@
-# Per-file coverage floors, checked on every push and PR by
+# Coverage floors, whole crate and per file, checked on every push and PR by
 # .github/workflows/coverage-gates.yml (scripts/coverage_gates.py). The single
 # source of truth for the gates (#396).
 #
@@ -25,6 +25,12 @@
 # - wal.rs `delete_file` retry sleep: Windows only (one attempt elsewhere).
 # - wal.rs `scan_entries` read error other than EOF: needs a failing read on a
 #   regular file, which the fault plan (storage/fault.rs) does not inject.
+
+# The whole crate, all files measured (fuzz/ is not built by cargo test).
+# Codecov's project status (codecov.yml) uses the same line floor.
+[total]
+lines = 94  # 95.22 measured on v3, 2026-10-23
+branches = 84  # 85.33
 
 # WAL and the public API
 
