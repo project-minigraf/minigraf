@@ -1,0 +1,33 @@
+name: Lint
+
+# rustfmt and clippy in one job: formatting takes a second once the toolchain
+# is installed. Clippy lints the library and binary with every feature; tests,
+# examples and benches are not linted (the panic-prevention lints in Cargo.toml
+# would need thousands of changes there). wasm.yml lints the wasm targets.
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: rustfmt and clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+      - name: Run clippy
+        run: cargo clippy --all-features -- -D warnings
