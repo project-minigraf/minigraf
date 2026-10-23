@@ -47,6 +47,16 @@ pub struct FactRef {
 ///
 /// Within each type, big-endian layout ensures byte-wise comparison matches
 /// the natural order of the type.
+///
+/// Except for NaN (#688). Every NaN encodes to `0x03` followed by
+/// `0x7FF8_0000_0000_0000`, without the sign transform the other floats get.
+/// Those are also the bytes of the negative subnormal
+/// `f64::from_bits(0x8007_FFFF_FFFF_FFFF)` (about `-1.1125e-308`), so NaN sorts
+/// among the negative subnormals, before `-0.0` and every positive float, and
+/// is byte-equal to that one value. `Value::cmp` instead puts NaN after `+∞`.
+/// The encoding is the `value_bytes` of on-disk v7 AVET keys, so it stays as it
+/// is: don't build a range scan by value on these bytes that assumes NaN sorts
+/// last, or an equality that must tell NaN from that subnormal.
 pub fn encode_value(v: &Value) -> Vec<u8> {
     match v {
         Value::Null => vec![0x00],
@@ -65,7 +75,8 @@ pub fn encode_value(v: &Value) -> Vec<u8> {
             let mut bytes = Vec::with_capacity(9);
             bytes.push(0x03);
             let bits = if f.is_nan() {
-                // Canonicalize all NaN to a single bit pattern (quiet NaN, positive)
+                // Canonicalize all NaN to a single bit pattern. It is not
+                // sign-transformed, so NaN sorts among the negative subnormals.
                 0x7FF8_0000_0000_0000u64
             } else {
                 let raw = f.to_bits();
@@ -560,9 +571,27 @@ mod tests {
         let nan2 = encode_value(&Value::Float(f64::NAN));
         // All NaN values produce the same bytes
         assert_eq!(nan1, nan2);
-        // NaN sorts above all positive finite values (it uses quiet NaN bit pattern)
-        // Just verify it doesn't panic and produces a fixed-length result
         assert_eq!(nan1.len(), 9);
+    }
+
+    /// The NaN position `encode_value`'s doc comment states (#688). These are
+    /// v7 on-disk bytes, so this pins them as they are rather than as they
+    /// should sort.
+    #[test]
+    fn test_encode_value_nan_sorts_among_negative_subnormals() {
+        let nan = encode_value(&Value::Float(f64::NAN));
+        assert_eq!(nan, [0x03, 0x7F, 0xF8, 0, 0, 0, 0, 0, 0]);
+        let twin = encode_value(&Value::Float(f64::from_bits(0x8007_FFFF_FFFF_FFFF)));
+        assert_eq!(nan, twin, "NaN is byte-equal to one negative subnormal");
+        let below = encode_value(&Value::Float(f64::from_bits(0x8008_0000_0000_0000)));
+        let above = encode_value(&Value::Float(f64::from_bits(0x8007_FFFF_FFFF_FFFE)));
+        assert!(below < nan, "NaN sorts after a smaller negative subnormal");
+        assert!(nan < above, "NaN sorts before a larger negative subnormal");
+        assert!(nan < encode_value(&Value::Float(-0.0)), "NaN < -0.0");
+        assert!(
+            nan < encode_value(&Value::Float(f64::INFINITY)),
+            "NaN < +inf"
+        );
     }
 
     /// #445 widened `slot_index` from `u16` to `u32`. postcard must still write
