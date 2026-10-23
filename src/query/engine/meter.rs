@@ -63,6 +63,11 @@ pub(crate) struct Held {
 }
 
 impl Held {
+    /// A new holder on the same meter, for the same operator, holding nothing.
+    pub(crate) fn sibling(&self) -> Self {
+        Held::new(&self.meter, self.op)
+    }
+
     pub(crate) fn new(meter: &Arc<Meter>, op: &'static str) -> Self {
         Held {
             meter: meter.clone(),

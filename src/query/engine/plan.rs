@@ -252,6 +252,11 @@ pub(crate) enum JoinKind {
     /// `IndexNestedLoopJoin`: the inner pattern's entity is `keys[k]`; one
     /// entity range per outer row.
     Probe(usize),
+    /// `IndexNestedLoopJoin` on the value (#721): the inner pattern's
+    /// attribute is a constant and its value is `keys[k]`; per outer row,
+    /// the AVET ranges of the values that join-equal it, and the pending
+    /// facts with its key.
+    ProbeValue(usize),
     /// `HashJoin`: a table of the side with the smaller estimate, probed by
     /// the other.
     Hash { build_inner: bool },
@@ -1003,6 +1008,11 @@ impl Builder {
                     self.steps.append(&mut self.front);
                 } else {
                     let mut join = join(&scanned, &attribute, slots, &rebind, valid)?;
+                    // Relations are indexed by entity only: a value join on
+                    // one hashes (#721).
+                    if derived.is_some() && matches!(join.kind, JoinKind::ProbeValue(_)) {
+                        join.kind = JoinKind::Hash { build_inner: true };
+                    }
                     join.inner.derived = derived;
                     for &(m, var) in &wants {
                         let local = join.inner.width;
@@ -1340,6 +1350,7 @@ fn join(
     let mut new = Vec::new();
     let mut replace = Vec::new();
     let mut probe = None;
+    let mut probe_value = None;
     // Each variable at its first position in the pattern.
     for (position, (edn, kind)) in [
         (&q.entity, OTHER),
@@ -1363,6 +1374,11 @@ fn join(
                 let held = slots.kinds.get(outer).copied().unwrap_or(OTHER);
                 if position == 0 {
                     probe = Some(keys.len());
+                } else if position == 2
+                    && matches!(a, Term::Const(_))
+                    && !matches!(e, Term::Const(_))
+                {
+                    probe_value = Some(keys.len());
                 }
                 keys.push(Key {
                     inner,
@@ -1393,9 +1409,10 @@ fn join(
             width: local.len(),
             derived: None,
         },
-        kind: match probe {
-            Some(k) => JoinKind::Probe(k),
-            None => JoinKind::Hash { build_inner: true },
+        kind: match (probe, probe_value) {
+            (Some(k), _) => JoinKind::Probe(k),
+            (None, Some(k)) => JoinKind::ProbeValue(k),
+            (None, None) => JoinKind::Hash { build_inner: true },
         },
         keys,
         new,

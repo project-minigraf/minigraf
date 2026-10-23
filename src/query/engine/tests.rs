@@ -862,6 +862,7 @@ fn planner_chooses_the_join() {
             .filter_map(|s| match s {
                 Step::Join(j) => Some(match j.kind {
                     JoinKind::Probe(_) => "probe".to_string(),
+                    JoinKind::ProbeValue(_) => "probe value".to_string(),
                     JoinKind::Hash { build_inner } => format!("hash inner={build_inner}"),
                 }),
                 _ => None,
@@ -872,9 +873,15 @@ fn planner_chooses_the_join() {
         kinds("(query [:find ?e :where [?e :a ?x] [?e :b ?y]])"),
         ["probe"]
     );
+    // On a bound value with a constant attribute, a probe of its AVET
+    // ranges (#721); with no constant attribute, a hash join.
     assert_eq!(
         kinds("(query [:find ?e :where [?e :a ?x] [?f :b ?x]])"),
-        ["hash inner=true"]
+        ["probe value"]
+    );
+    assert_eq!(
+        kinds("(query [:find ?e :where [?e :a ?x] [?f ?b ?x]])"),
+        ["hash inner=false"]
     );
     assert_eq!(
         kinds("(query [:find ?e :where [?e :a 1] [?f :b ?y] [?f :c ?e]])"),
@@ -890,6 +897,12 @@ fn planner_chooses_the_join() {
     assert_eq!(
         kinds("(query [:find ?e :where [?e :a 1] [?f :b ?y] [?f :c ?e]])"),
         ["hash inner=true", "probe"]
+    );
+    // A constant entity reads one entity's range: a hash join, not a
+    // probe of the value's.
+    assert_eq!(
+        kinds("(query [:find ?e :where [?e :a ?x] [:k :b ?x]])"),
+        ["hash inner=true"]
     );
 }
 
@@ -2237,6 +2250,170 @@ fn rule_delta_runs_join_on_a_bound_variable() {
     assert_eq!(rows(&db, "(query [:find ?to :where (reach :n1 ?to)])"), 10);
 }
 
+/// #721: after the magic-set rewrite of `(boss :leaf ?b)` over a tree, the
+/// run from the `boss` delta joins `[?x :manager ?y]` on its value. It
+/// probes the AVET range of each `?y` instead of hashing every `:manager`
+/// fact in every round; a pattern that reads a relation keeps its hash join.
+#[test]
+fn rule_delta_probes_a_bound_value() {
+    use super::plan::{JoinKind, Step};
+    use crate::query::datalog::parser::parse_datalog_command;
+    use crate::query::datalog::rules::RuleRegistry;
+    use crate::query::datalog::types::DatalogCommand;
+    let mut registry = RuleRegistry::new();
+    for rule in [
+        "(rule [(boss ?x ?y) [?x :manager ?y]])",
+        "(rule [(boss ?x ?z) [?x :manager ?y] (boss ?y ?z)])",
+    ] {
+        let DatalogCommand::Rule(r) = parse_datalog_command(rule).unwrap() else {
+            panic!("expected a rule");
+        };
+        registry.register_rule("boss".to_string(), r).unwrap();
+    }
+    let DatalogCommand::Query(query) =
+        parse_datalog_command("(query [:find ?b :where (boss :p99 ?b)])").unwrap()
+    else {
+        panic!("expected a query");
+    };
+    let (rewritten, seeds) =
+        crate::query::datalog::magic_sets::rewrite(&query, &registry).expect("magic sets apply");
+    let attrs: Vec<&str> = seeds.iter().map(|(_, a, _)| a.as_str()).collect();
+    let plan = super::plan_rules(&query, &rewritten, &attrs).expect("the engine plans it");
+    let mut value_probes = 0;
+    for (_, rules) in &plan.strata {
+        for rule in rules {
+            for run in &rule.deltas {
+                for step in &run.plan.steps {
+                    let Step::Join(j) = step else { continue };
+                    match j.kind {
+                        JoinKind::ProbeValue(_) => {
+                            assert!(
+                                j.inner.derived.is_none(),
+                                "a relation is not probed by value"
+                            );
+                            value_probes += 1;
+                        }
+                        JoinKind::Hash { .. } => assert!(
+                            j.inner.derived.is_some(),
+                            "a delta run of {} hashes a stored attribute",
+                            rule.predicate
+                        ),
+                        JoinKind::Probe(_) => {}
+                    }
+                }
+            }
+        }
+    }
+    assert!(value_probes >= 1, "the boss delta probes :manager by value");
+
+    // The answers on the tree: :p99's managers are :p9 and :p0.
+    let db = Minigraf::in_memory().unwrap();
+    let facts: String = (1..200)
+        .map(|i| format!("[:p{i} :manager :p{}]", i / 10))
+        .collect();
+    db.execute(&format!("(transact [{facts}])")).unwrap();
+    db.execute("(rule [(boss ?x ?y) [?x :manager ?y]])")
+        .unwrap();
+    db.execute("(rule [(boss ?x ?z) [?x :manager ?y] (boss ?y ?z)])")
+        .unwrap();
+    assert_eq!(rows(&db, "(query [:find ?b :where (boss :p99 ?b)])"), 2);
+    assert_eq!(rows(&db, "(query [:find ?b :where (boss :p199 ?b)])"), 3);
+}
+
+/// #721: a join on a bound value probes the AVET ranges of the values that
+/// join-equal it, not every fact of the attribute, on committed and on
+/// pending facts.
+#[test]
+fn value_probe_reads_only_the_probed_keys() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Minigraf::open(dir.path().join("probe.graph")).unwrap();
+    let facts: String = (0..1000)
+        .map(|i| format!("[:e{i} :boss :b{}]", i % 100))
+        .collect();
+    db.execute(&format!("(transact [{facts}])")).unwrap();
+    db.checkpoint().unwrap();
+    // Pending: one more report of :b5, and one of :b5's committed reports
+    // retracted.
+    db.execute("(transact [[:n1 :boss :b5]])").unwrap();
+    db.execute("(retract [[:e105 :boss :b5]])").unwrap();
+    let q = "(query [:find ?s :where [:e5 :boss ?b] [?s :boss ?b]])";
+    assert_eq!(
+        rows(&db, q),
+        10,
+        "nine of :b5's ten committed reports, and :n1"
+    );
+    // The counters of the open stream; its one probe has read every match.
+    let mut cursor = db.query(q).unwrap();
+    cursor.next_batch(1).unwrap().expect("a row");
+    let c = cursor.counters();
+    assert!(
+        c.iter().any(|c| c.op == "IndexNestedLoopJoin"),
+        "a probe, not a hash join"
+    );
+    let read: u64 = c.iter().filter(|c| c.op == "Scan").map(|c| c.rows_in).sum();
+    assert!(read < 30, "reads the probed keys only, not 1,000 facts");
+}
+
+/// #721: a value probe matches as a join does: a keyword and a ref to the
+/// entity it names, from either side; `0.0` and `-0.0`; long strings; with
+/// `:as-of` and valid time; in memory, checkpointed and pending.
+#[test]
+fn value_probe_matches_as_joins_do() {
+    let x = uuid_of(":x");
+    let long = long(1);
+    let first = format!(
+        "(transact [[:a :v :x] [:b :w :x] [:x :name \"X\"] \
+         [:f1 :n 0.0] [:f2 :m -0.0] [:f3 :m 0.0] [:f4 :m 1.0] \
+         [:l1 :t \"{long}\"] [:l2 :u \"{long}\"]])"
+    );
+    let second = format!("(transact [[:c :w #uuid \"{x}\"] [:d :w :y] [:l3 :u \"{long}\"]])");
+    let expired = "(transact {:valid-from \"2020-01-01\" :valid-to \"2021-01-01\"} [[:old :w :x] [:q :v :x]])";
+    let queries = [
+        // A keyword outer value: the keyword and the ref.
+        ("(query [:find ?s :where [:a :v ?k] [?s :w ?k]])", 2),
+        // An entity outer value: the ref and the keyword naming it.
+        ("(query [:find ?s :where [?k :name \"X\"] [?s :w ?k]])", 2),
+        ("(query [:find ?s :where [:f1 :n ?z] [?s :m ?z]])", 2),
+        ("(query [:find ?s :where [:l1 :t ?t] [?s :u ?t]])", 2),
+        // Before the second transaction: the keyword only.
+        (
+            "(query [:find ?s :as-of 1 :where [:a :v ?k] [?s :w ?k]])",
+            1,
+        ),
+        // In 2020: only the facts valid then.
+        (
+            "(query [:find ?s :valid-at \"2020-06-01\" :where [:q :v ?k] [?s :w ?k]])",
+            1,
+        ),
+    ];
+    let check = |db: &Minigraf, mode: &str| {
+        for (q, n) in queries {
+            assert_eq!(rows(db, q), n, "{mode}: {q}");
+        }
+    };
+
+    let db = Minigraf::in_memory().unwrap();
+    for cmd in [first.as_str(), second.as_str(), expired] {
+        db.execute(cmd).unwrap();
+    }
+    check(&db, "in memory");
+
+    let dir = tempfile::tempdir().unwrap();
+    for (name, checkpoint_after) in [("all.graph", 3), ("half.graph", 1)] {
+        let db = Minigraf::open(dir.path().join(name)).unwrap();
+        for (i, cmd) in [first.as_str(), second.as_str(), expired]
+            .into_iter()
+            .enumerate()
+        {
+            db.execute(cmd).unwrap();
+            if i + 1 == checkpoint_after {
+                db.checkpoint().unwrap();
+            }
+        }
+        check(&db, name);
+    }
+}
+
 // ── #549: query memory accounting ──────────────────────────────────────────
 
 /// A checkpointed database of `n` entities, each with integers `:a` and
@@ -2548,7 +2725,7 @@ fn planner_builds_a_keyless_join_on_the_smaller_product() {
             .filter_map(|s| match s {
                 Step::Join(j) => match j.kind {
                     JoinKind::Hash { build_inner } => Some(build_inner),
-                    JoinKind::Probe(_) => None,
+                    JoinKind::Probe(_) | JoinKind::ProbeValue(_) => None,
                 },
                 _ => None,
             })

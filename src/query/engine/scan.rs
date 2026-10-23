@@ -11,7 +11,8 @@
 //! row is visible at every time and has no metadata (`nil`).
 
 use super::batch::Batch;
-use super::cell::{Cell, Scalar};
+use super::cell::{Cell, JoinKey, Scalar};
+use super::meter::{HASH_ENTRY_OVERHEAD, Held, key_bytes, value_bytes};
 use super::plan::{Meta, ScanSpec, Term, Valid, ValueConst, names};
 use super::relation::Range as Rows;
 use super::{BATCH_ROWS, Counters, Ctx, Operator};
@@ -21,6 +22,8 @@ use crate::storage::keys::{self, Index, KeyFact, KeyValue, SHORT_STRING_MAX, Val
 use crate::storage::{KeySource, Scan as Range};
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
+use std::mem::size_of;
+use std::sync::Arc;
 
 pub(crate) struct Scan {
     spec: ScanSpec,
@@ -33,14 +36,33 @@ pub(crate) struct Scan {
     state: State,
     keys_buf: Vec<KeyFact>,
     facts_buf: Vec<Fact>,
+    /// What a value probe reads besides its key ranges (#721), built on the
+    /// first one, and the join key of the current one.
+    values: Option<Values>,
+    value_key: Option<JoinKey>,
     /// `rows_in` counts the live keys and pending facts read.
     counters: Counters,
+}
+
+/// The reads a value probe shares with every later one (#721), charged to
+/// `held`.
+struct Values {
+    /// The attribute's live pending facts, by the join key of their value.
+    pending: HashMap<JoinKey, Vec<Fact>>,
+    /// The committed triples a pending record of the attribute decides.
+    shadow: Arc<HashSet<Vec<u8>>>,
+    /// The keyword idents among the attribute's committed values, by the
+    /// entity each names; read on the first probe by an entity.
+    named: Option<HashMap<u64, Vec<u32>>>,
+    held: Held,
 }
 
 enum State {
     Start,
     Committed(Committed),
     Pending(Option<PendingResume>),
+    /// A value probe's pending facts.
+    Bucket(Vec<Fact>),
     Derived(Derived),
     Done,
 }
@@ -67,7 +89,7 @@ struct Committed {
     /// The value constant when the ranges do not fix it.
     test: Option<KeyTest>,
     /// Triples a pending record decides, as [`keys::entity_attribute_value_prefix`].
-    shadow: HashSet<Vec<u8>>,
+    shadow: Arc<HashSet<Vec<u8>>>,
 }
 
 /// The attribute and value constants of a scan, against the DICT.
@@ -119,6 +141,8 @@ impl Scan {
             state: State::Start,
             keys_buf: Vec::new(),
             facts_buf: Vec::new(),
+            values: None,
+            value_key: None,
             counters: Counters::new("Scan"),
         }
     }
@@ -127,8 +151,229 @@ impl Scan {
     /// only: one probe of an `IndexNestedLoopJoin`.
     pub(crate) fn probe(&mut self, uuid: EntityId, eid: Option<u64>) {
         self.probe = Some((uuid, eid));
+        self.value_key = None;
         self.state = State::Start;
     }
+
+    /// Start again, over the facts whose value may join-equal `cell` only:
+    /// one probe of an `IndexNestedLoopJoin` on the value (#721). The
+    /// committed facts come from the AVET ranges of the values equal to
+    /// `cell` under the join rules, the pending ones from the attribute's
+    /// facts with its key; the join checks every key, so these need only
+    /// hold every match. `held` is charged for what the probes share.
+    pub(crate) fn probe_value(
+        &mut self,
+        cell: &Cell,
+        held: &Held,
+        ctx: &mut Ctx<'_>,
+    ) -> Result<()> {
+        self.probe = None;
+        self.value_key = None;
+        self.state = State::Done;
+        let Term::Const(attribute) = &self.spec.a else {
+            return Ok(());
+        };
+        if self.spec.never() {
+            return Ok(());
+        }
+        if self.consts.is_none()
+            && let Some(keys) = ctx.keys
+        {
+            self.consts = Some(consts(&self.spec, keys)?);
+        }
+        if self.values.is_none() {
+            self.values = Some(values(attribute, held.sibling(), ctx)?);
+        }
+        let Some(key) = JoinKey::of(cell, true, ctx)? else {
+            return Ok(());
+        };
+        let a = match (&self.consts, ctx.keys) {
+            (Some(Some(Consts { a: Some(a), .. })), Some(_)) => Some(*a),
+            _ => None,
+        };
+        let ranges = match a {
+            Some(a) => self.value_ranges(cell, a, ctx)?,
+            None => Vec::new(),
+        };
+        self.value_key = Some(key);
+        self.state = if ranges.is_empty() {
+            self.bucket()
+        } else {
+            let shadow = self
+                .values
+                .as_ref()
+                .map_or_else(Arc::default, |v| v.shadow.clone());
+            State::Committed(Committed {
+                ranges,
+                next: 0,
+                resume: None,
+                test: None,
+                shadow,
+            })
+        };
+        Ok(())
+    }
+
+    /// The AVET ranges of attribute `a` holding every committed value that
+    /// join-equals `cell`.
+    fn value_ranges(
+        &mut self,
+        cell: &Cell,
+        a: u32,
+        ctx: &mut Ctx<'_>,
+    ) -> Result<Vec<(Index, Vec<u8>)>> {
+        let Some(keys) = ctx.keys else {
+            return Ok(Vec::new());
+        };
+        let mut kvs = Vec::new();
+        match cell {
+            // A keyword, and a ref to the entity it names.
+            Cell::Iid(i) => {
+                if let Some(di) = ctx.ids.dict_iid(*i) {
+                    kvs.push(KeyValue::Keyword(di));
+                }
+                let e = ctx.ids.keyword_eid(ctx.keys, *i)?;
+                if let Some(de) = ctx.ids.dict_eid(e) {
+                    kvs.push(KeyValue::Ref(de));
+                }
+            }
+            // A ref, and the keyword that names the entity.
+            Cell::Eid(e) => {
+                if let Some(de) = ctx.ids.dict_eid(*e) {
+                    kvs.push(KeyValue::Ref(de));
+                }
+                if let Some(v) = &mut self.values
+                    && v.named.is_none()
+                {
+                    v.named = Some(named(a, &mut v.held, ctx)?);
+                }
+                if let Some(idents) = self
+                    .values
+                    .as_ref()
+                    .and_then(|v| v.named.as_ref())
+                    .and_then(|n| n.get(e))
+                {
+                    kvs.extend(idents.iter().map(|&i| KeyValue::Keyword(i)));
+                }
+            }
+            // `-0.0` equals `0.0`; NaN has no key and never gets here.
+            Cell::Val(Scalar::Float(f)) => {
+                kvs.push(KeyValue::Float(*f));
+                if *f == 0.0 {
+                    kvs.push(KeyValue::Float(-*f));
+                }
+            }
+            Cell::Val(_) => {
+                let v = super::project::value(cell, ctx)?;
+                kvs.extend(key_value(keys, &v)?);
+            }
+        }
+        Ok(kvs
+            .iter()
+            .map(|v| (Index::Avet, keys::attribute_value_prefix(a, v)))
+            .collect())
+    }
+
+    /// After the committed ranges: a value probe's pending facts, or the
+    /// pending range.
+    fn bucket(&self) -> State {
+        match (&self.value_key, &self.values) {
+            (Some(k), Some(v)) => State::Bucket(v.pending.get(k).cloned().unwrap_or_default()),
+            (Some(_), None) => State::Done,
+            _ => State::Pending(None),
+        }
+    }
+}
+
+/// The live pending facts of `attribute` by the join key of their value,
+/// and the committed triples its pending records decide (#721).
+fn values(attribute: &str, mut held: Held, ctx: &mut Ctx<'_>) -> Result<Values> {
+    let mut pending: HashMap<JoinKey, Vec<Fact>> = HashMap::new();
+    let mut resume = None;
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        let more = ctx.snapshot.pending_live(
+            Range::Attribute(attribute),
+            ctx.bound,
+            &mut resume,
+            BATCH_ROWS,
+            &mut buf,
+        )?;
+        for f in buf.drain(..) {
+            let cell = Cell::of_value(ctx.ids, ctx.keys, &f.value)?;
+            let Some(k) = JoinKey::of(&cell, true, ctx)? else {
+                continue;
+            };
+            held.charge(
+                HASH_ENTRY_OVERHEAD
+                    + key_bytes(&k)
+                    + size_of::<Fact>()
+                    + f.entity.as_bytes().len()
+                    + f.attribute.len()
+                    + value_bytes(&f.value),
+            )?;
+            pending.entry(k).or_default().push(f);
+        }
+        if !more {
+            break;
+        }
+    }
+    let mut shadow = HashSet::new();
+    if let Some(keys) = ctx.keys {
+        for f in ctx
+            .snapshot
+            .pending_records(Range::Attribute(attribute), ctx.bound)?
+        {
+            if let Some(t) = committed_triple(keys, &f)? {
+                held.charge(HASH_ENTRY_OVERHEAD + size_of::<Vec<u8>>() + t.len())?;
+                shadow.insert(t);
+            }
+        }
+    }
+    Ok(Values {
+        pending,
+        shadow: Arc::new(shadow),
+        named: None,
+        held,
+    })
+}
+
+/// The keyword idents among the live committed values of attribute `a`, by
+/// the entity each names (#721).
+fn named(a: u32, held: &mut Held, ctx: &mut Ctx<'_>) -> Result<HashMap<u64, Vec<u32>>> {
+    let mut by_entity: HashMap<u64, Vec<u32>> = HashMap::new();
+    let Some(keys) = ctx.keys else {
+        return Ok(by_entity);
+    };
+    let prefix = keys::attribute_kind_prefix(a, ValueKind::Keyword);
+    let mut seen = HashSet::new();
+    let mut resume: Option<Vec<u8>> = None;
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        resume = keys.live_keys(
+            Index::Avet,
+            &prefix,
+            resume.as_deref(),
+            ctx.bound,
+            BATCH_ROWS,
+            &mut buf,
+        )?;
+        for kf in &buf {
+            if let KeyValue::Keyword(i) = kf.v
+                && seen.insert(i)
+            {
+                let e = ctx.ids.keyword_eid(ctx.keys, u64::from(i))?;
+                held.charge(HASH_ENTRY_OVERHEAD + size_of::<(u64, Vec<u32>)>() + size_of::<u32>())?;
+                by_entity.entry(e).or_default().push(i);
+            }
+        }
+        if resume.is_none() {
+            break;
+        }
+    }
+    Ok(by_entity)
 }
 
 impl Operator for Scan {
@@ -156,11 +401,11 @@ impl Operator for Scan {
                 }
                 State::Committed(c) => {
                     let Some(keys) = ctx.keys else {
-                        self.state = State::Pending(None);
+                        self.state = self.bucket();
                         continue;
                     };
                     let Some((index, prefix)) = c.ranges.get(c.next) else {
-                        self.state = State::Pending(None);
+                        self.state = self.bucket();
                         continue;
                     };
                     self.keys_buf.clear();
@@ -221,43 +466,22 @@ impl Operator for Scan {
                         &mut self.facts_buf,
                     )?;
                     self.counters.rows_in += self.facts_buf.len() as u64;
-                    let valid = valid_at(self.spec.valid, ctx);
-                    let mut row = vec![None; self.spec.width];
-                    for f in &self.facts_buf {
-                        if !visible(valid, f.valid_from, f.valid_to)
-                            || matches!(&self.spec.v, Term::Const(v) if !v.matches(&f.value))
-                        {
-                            continue;
-                        }
-                        let keys = ctx.keys;
-                        let ids = &mut *ctx.ids;
-                        if fill(&self.spec.e, &mut row, || {
-                            Ok(Cell::Eid(ids.eid(keys, &f.entity)?))
-                        })? && fill(&self.spec.a, &mut row, || {
-                            Ok(Cell::Iid(ids.iid(keys, &f.attribute)?))
-                        })? && fill(&self.spec.v, &mut row, || {
-                            Cell::of_value(ids, keys, &f.value)
-                        })? {
-                            for &(m, slot) in &self.spec.meta {
-                                let n = match m {
-                                    Meta::ValidFrom => Some(f.valid_from),
-                                    Meta::ValidTo => Some(f.valid_to),
-                                    Meta::TxCount => Some(f.tx_count.cast_signed()),
-                                    Meta::TxId => Some(f.tx_id.cast_signed()),
-                                    Meta::ValidAt => valid,
-                                };
-                                set(&mut row, slot, n);
-                            }
-                            batch.push(&mut row);
-                        }
-                        row.iter_mut().for_each(|c| *c = None);
-                    }
+                    push_facts(&self.spec, &self.facts_buf, &mut batch, ctx)?;
                     if !more {
                         self.state = if self.spec.derived.is_some() {
                             State::Derived(Derived::default())
                         } else {
                             State::Done
                         };
+                    }
+                }
+                State::Bucket(facts) => {
+                    let rest = facts.split_off(facts.len().min(BATCH_ROWS));
+                    let now = std::mem::replace(facts, rest);
+                    self.counters.rows_in += now.len() as u64;
+                    push_facts(&self.spec, &now, &mut batch, ctx)?;
+                    if now.is_empty() {
+                        self.state = State::Done;
                     }
                 }
                 State::Derived(d) => {
@@ -277,6 +501,7 @@ impl Operator for Scan {
     /// Start again; the constants resolved against the DICT are kept.
     fn rewind(&mut self, _seed: &[Cell]) {
         self.probe = None;
+        self.value_key = None;
         self.state = State::Start;
     }
 
@@ -284,11 +509,48 @@ impl Operator for Scan {
         self.state = State::Done;
         self.keys_buf = Vec::new();
         self.facts_buf = Vec::new();
+        self.values = None;
+        self.value_key = None;
     }
 
     fn counters(&self, out: &mut Vec<Counters>) {
         out.push(self.counters);
     }
+}
+
+/// Push the rows of pending `facts` that match `spec` and are visible.
+fn push_facts(spec: &ScanSpec, facts: &[Fact], batch: &mut Batch, ctx: &mut Ctx<'_>) -> Result<()> {
+    let valid = valid_at(spec.valid, ctx);
+    let mut row = vec![None; spec.width];
+    for f in facts {
+        if !visible(valid, f.valid_from, f.valid_to)
+            || matches!(&spec.v, Term::Const(v) if !v.matches(&f.value))
+        {
+            continue;
+        }
+        let keys = ctx.keys;
+        let ids = &mut *ctx.ids;
+        if fill(&spec.e, &mut row, || {
+            Ok(Cell::Eid(ids.eid(keys, &f.entity)?))
+        })? && fill(&spec.a, &mut row, || {
+            Ok(Cell::Iid(ids.iid(keys, &f.attribute)?))
+        })? && fill(&spec.v, &mut row, || Cell::of_value(ids, keys, &f.value))?
+        {
+            for &(m, slot) in &spec.meta {
+                let n = match m {
+                    Meta::ValidFrom => Some(f.valid_from),
+                    Meta::ValidTo => Some(f.valid_to),
+                    Meta::TxCount => Some(f.tx_count.cast_signed()),
+                    Meta::TxId => Some(f.tx_id.cast_signed()),
+                    Meta::ValidAt => valid,
+                };
+                set(&mut row, slot, n);
+            }
+            batch.push(&mut row);
+        }
+        row.iter_mut().for_each(|c| *c = None);
+    }
+    Ok(())
 }
 
 /// Read derived rows of `spec` into `batch` until it is full; `false` once
@@ -457,7 +719,7 @@ fn open(
         next: 0,
         resume: None,
         test,
-        shadow,
+        shadow: Arc::new(shadow),
     }))
 }
 
