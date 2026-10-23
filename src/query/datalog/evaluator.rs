@@ -23,17 +23,28 @@
 /// // Iteration 1: Apply rules, derive {A->C}, delta = {A->C}
 /// // Iteration 2: No new facts, delta = {}, STOP
 /// ```
+#[cfg(any(test, feature = "test-oracle"))]
 use super::functions::FunctionRegistry;
+#[cfg(any(test, feature = "test-oracle"))]
 use super::matcher::{Bindings, PatternMatcher, edn_to_entity_id, edn_to_value};
+#[cfg(any(test, feature = "test-oracle"))]
 use super::rules::RuleRegistry;
-use super::types::{EdnValue, Pattern, Rule, ValidAt, WhereClause};
+use super::types::{EdnValue, Pattern};
+#[cfg(any(test, feature = "test-oracle"))]
+use super::types::{Rule, ValidAt, WhereClause};
 use crate::error::{ErrorCode, err_coded};
+#[cfg(any(test, feature = "test-oracle"))]
 use crate::graph::FactStorage;
+#[cfg(any(test, feature = "test-oracle"))]
 use crate::graph::types::{Fact, Value};
+#[cfg(any(test, feature = "test-oracle"))]
 use crate::storage::index::encode_value;
 use anyhow::Result;
+#[cfg(any(test, feature = "test-oracle"))]
 use std::collections::BTreeSet;
+#[cfg(any(test, feature = "test-oracle"))]
 use std::collections::HashSet;
+#[cfg(any(test, feature = "test-oracle"))]
 use std::sync::{Arc, RwLock};
 
 /// Default maximum iterations for recursive evaluation (kept for reference).
@@ -76,6 +87,7 @@ pub(crate) fn iterations_exceeded(limit: usize) -> anyhow::Error {
 ///
 /// let derived_facts = evaluator.evaluate_recursive_rules(&["reachable"])?;
 /// ```
+#[cfg(any(test, feature = "test-oracle"))]
 pub struct RecursiveEvaluator {
     /// Base fact storage
     storage: FactStorage,
@@ -91,6 +103,7 @@ pub struct RecursiveEvaluator {
     valid_at: Value,
 }
 
+#[cfg(any(test, feature = "test-oracle"))]
 impl RecursiveEvaluator {
     /// Create a new recursive evaluator.
     ///
@@ -100,6 +113,7 @@ impl RecursiveEvaluator {
     /// * `functions` - Function registry for UDF predicates/aggregates
     /// * `max_iterations` - Safety limit (e.g., 1000)
     /// * `max_derived_facts` - Maximum facts the rules may derive (base facts do not count)
+    #[cfg(any(test, feature = "test-oracle"))]
     pub fn new(
         storage: FactStorage,
         rules: Arc<RwLock<RuleRegistry>>,
@@ -119,6 +133,7 @@ impl RecursiveEvaluator {
 
     /// Set the value a `:db/valid-at` pattern in a rule body binds: the
     /// query's valid time (#617). Without it the pattern binds `nil`.
+    #[cfg(any(test, feature = "test-oracle"))]
     pub fn with_valid_at(mut self, valid_at: Value) -> Self {
         self.valid_at = valid_at;
         self
@@ -134,6 +149,7 @@ impl RecursiveEvaluator {
     ///
     /// # Errors
     /// Returns error if max iterations exceeded or evaluation fails
+    #[cfg(any(test, feature = "test-oracle"))]
     pub fn evaluate_recursive_rules(&self, predicates: &[String]) -> Result<FactStorage> {
         // Start with base facts as initial delta
         let base_facts = self.storage.get_asserted_facts()?;
@@ -202,6 +218,7 @@ impl RecursiveEvaluator {
     ///
     /// This is a single iteration of the fixed-point loop.
     /// It applies each rule to the current derived facts and returns newly derived facts.
+    #[cfg(any(test, feature = "test-oracle"))]
     fn evaluate_iteration(
         &self,
         predicates: &[String],
@@ -233,6 +250,7 @@ impl RecursiveEvaluator {
     /// 1. Convert body patterns and rule invocations to Pattern structs
     /// 2. Use PatternMatcher to find all bindings
     /// 3. For each binding, instantiate rule head to create derived fact
+    #[cfg(any(test, feature = "test-oracle"))]
     fn evaluate_rule(&self, rule: &Rule, current_facts: &FactStorage) -> Result<Vec<Fact>> {
         let mut derived = Vec::new();
 
@@ -311,6 +329,7 @@ impl RecursiveEvaluator {
     ///
     /// Example: (reachable ?x ?y) -> [?x :reachable ?y]
     /// Example: (blocked ?x) -> [?x :blocked ?_rule_value]
+    #[cfg(any(test, feature = "test-oracle"))]
     fn rule_invocation_to_pattern(&self, list: &[EdnValue]) -> Result<Pattern> {
         if list.is_empty() {
             return Err(err_coded!(
@@ -343,6 +362,7 @@ impl RecursiveEvaluator {
     /// Head: (reachable ?x ?y)
     /// Bindings: {?x -> alice_uuid, ?y -> bob_uuid}
     /// Result: Fact(alice_uuid, ":reachable", Ref(bob_uuid))
+    #[cfg(any(test, feature = "test-oracle"))]
     fn instantiate_head(&self, head: &[EdnValue], binding: &Bindings) -> Result<Fact> {
         if head.len() < 2 {
             return Err(err_coded!(
@@ -400,6 +420,7 @@ impl RecursiveEvaluator {
     }
 
     /// Substitute a variable with its binding, or return as-is if not a variable.
+    #[cfg(any(test, feature = "test-oracle"))]
     fn substitute_variable(&self, edn: &EdnValue, binding: &Bindings) -> Result<EdnValue> {
         match edn {
             EdnValue::Symbol(s) if s.starts_with('?') => {
@@ -419,12 +440,14 @@ impl RecursiveEvaluator {
     }
 
     /// Public version of instantiate_head for use by StratifiedEvaluator.
+    #[cfg(any(test, feature = "test-oracle"))]
     pub fn instantiate_head_public(&self, head: &[EdnValue], binding: &Bindings) -> Result<Fact> {
         self.instantiate_head(head, binding)
     }
 }
 
 /// Convert a stored Value back to EdnValue.
+#[cfg(any(test, feature = "test-oracle"))]
 pub fn value_to_edn(value: &Value) -> EdnValue {
     match value {
         Value::String(s) => EdnValue::String(s.clone()),
@@ -473,6 +496,7 @@ pub(crate) fn rule_invocation_to_pattern(predicate: &str, args: &[EdnValue]) -> 
 
 /// The outer row's values of the variables a `not` body imports: every
 /// variable the body names, `?_` ones aside (spec §2 of the #546 design).
+#[cfg(any(test, feature = "test-oracle"))]
 pub(crate) fn not_seed(body: &[WhereClause], outer: &Bindings) -> Bindings {
     crate::query::datalog::optimizer::clause_ref_vars(body)
         .into_iter()
@@ -487,6 +511,7 @@ pub(crate) fn not_seed(body: &[WhereClause], outer: &Bindings) -> Bindings {
 /// by IEEE `==`, a keyword equal to a ref to the entity it names), never
 /// substituted as a literal (#546). Every row carries the seed; the caller
 /// applies the body's expressions.
+#[cfg(any(test, feature = "test-oracle"))]
 pub(crate) fn seeded_body_rows(
     body: &[WhereClause],
     seed: Bindings,
@@ -517,6 +542,7 @@ pub(crate) fn seeded_body_rows(
 /// The body is matched from the binding's join variables ([`seeded_body_rows`]),
 /// with `valid_at` as the value a `:db/valid-at` pattern binds (#615), and its
 /// expressions applied; any row left means the body is satisfiable.
+#[cfg(any(test, feature = "test-oracle"))]
 pub fn evaluate_not_join(
     join_vars: &[String],
     clauses: &[WhereClause],
@@ -547,6 +573,7 @@ pub fn evaluate_not_join(
 /// Filter-form (`binding: None`) drops rows where the expr is not truthy or errors.
 /// Binding-form (`binding: Some(var)`) extends the row with the computed value,
 /// or keeps it only if an existing value of the variable is equal (#596).
+#[cfg(any(test, feature = "test-oracle"))]
 fn apply_expr_clauses_in_evaluator(
     bindings: Vec<Bindings>,
     expr_clauses: &[&WhereClause],
@@ -571,6 +598,7 @@ fn apply_expr_clauses_in_evaluator(
 /// Strata are evaluated in ascending order. Within each stratum, positive-only
 /// rules are handled by RecursiveEvaluator; rules containing `not` clauses are
 /// handled by an inner loop that applies `not` filters to candidate bindings.
+#[cfg(any(test, feature = "test-oracle"))]
 pub struct StratifiedEvaluator {
     storage: FactStorage,
     rules: Arc<RwLock<RuleRegistry>>,
@@ -583,7 +611,9 @@ pub struct StratifiedEvaluator {
     valid_at: Value,
 }
 
+#[cfg(any(test, feature = "test-oracle"))]
 impl StratifiedEvaluator {
+    #[cfg(any(test, feature = "test-oracle"))]
     pub fn new(
         storage: FactStorage,
         rules: Arc<RwLock<RuleRegistry>>,
@@ -604,12 +634,14 @@ impl StratifiedEvaluator {
     /// Set the value a `:db/valid-at` pattern binds in rule bodies and their
     /// `not` / `not-join` bodies and `or` branches: the query's `:valid-at`
     /// value, the current time without one, `nil` for `:any-valid-time` (#617).
+    #[cfg(any(test, feature = "test-oracle"))]
     pub fn with_valid_at(mut self, valid_at: Value) -> Self {
         self.valid_at = valid_at;
         self
     }
 
     /// Derive all facts for the given predicates, respecting stratification order.
+    #[cfg(any(test, feature = "test-oracle"))]
     pub fn evaluate(&self, predicates: &[String]) -> Result<FactStorage> {
         use crate::query::datalog::stratification::DependencyGraph;
 

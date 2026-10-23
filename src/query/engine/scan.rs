@@ -136,6 +136,7 @@ impl Operator for Scan {
         loop {
             let mut batch = Batch::new(self.spec.width);
             match &mut self.state {
+                State::Start if self.spec.never() => self.state = State::Done,
                 State::Start
                     if self
                         .spec
@@ -167,7 +168,7 @@ impl Operator for Scan {
                         *index,
                         prefix,
                         c.resume.as_deref(),
-                        self.spec.as_of,
+                        ctx.bound,
                         BATCH_ROWS,
                         &mut self.keys_buf,
                     )?;
@@ -214,7 +215,7 @@ impl Operator for Scan {
                     self.facts_buf.clear();
                     let more = ctx.snapshot.pending_live(
                         range(&self.spec, self.probe.as_ref()),
-                        self.spec.as_of,
+                        ctx.bound,
                         resume,
                         BATCH_ROWS,
                         &mut self.facts_buf,
@@ -445,7 +446,7 @@ fn open(
     let mut shadow = HashSet::new();
     for f in ctx
         .snapshot
-        .pending_records(range(spec, probe), spec.as_of)?
+        .pending_records(range(spec, probe), ctx.bound)?
     {
         if let Some(t) = committed_triple(keys, &f)? {
             shadow.insert(t);
@@ -561,6 +562,7 @@ fn fill(
 ) -> Result<bool> {
     match term {
         Term::Any | Term::Const(_) => Ok(true),
+        Term::Never => Ok(false),
         Term::Bind(slot) => {
             if let Some(s) = row.get_mut(*slot) {
                 *s = Some(cell()?);

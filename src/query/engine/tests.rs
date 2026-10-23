@@ -428,16 +428,117 @@ fn engine_reads_many_batches() {
     assert_eq!(rows(&db, "(query [:find ?e :where [?e :big/n 2999]])"), 1);
 }
 
-/// The executor still runs what the engine does not: windows, `:as-of` a
-/// timestamp.
+/// A file built by `LogWriter` whose transaction `i + 1` has `tx_id`
+/// `tx_ids[i]`: `:a :n 1` asserted, then retracted, `:a :n 2` and `:b :n 3`
+/// asserted, `:b :n 3` retracted, `:a :n 1` asserted again.
+fn written(dir: &std::path::Path, name: &str, tx_ids: [u64; 6]) -> std::path::PathBuf {
+    use crate::{FactRecord, LogWriter, Value};
+    let path = dir.join(name);
+    let mut w = LogWriter::create(&path, crate::OpenOptions::new()).unwrap();
+    let ops = [
+        (":a", 1, true),
+        (":a", 1, false),
+        (":a", 2, true),
+        (":b", 3, true),
+        (":b", 3, false),
+        (":a", 1, true),
+    ];
+    for (i, ((e, v, asserted), tx_id)) in ops.into_iter().zip(tx_ids).enumerate() {
+        w.append(&FactRecord {
+            entity: uuid_of(e),
+            attribute: ":n".to_string(),
+            value: Value::Integer(v),
+            tx_count: i as u64 + 1,
+            tx_id,
+            valid_from: 0,
+            valid_to: i64::MAX,
+            asserted,
+        })
+        .unwrap();
+    }
+    w.finish().unwrap();
+    path
+}
+
+/// `:as-of` a timestamp runs on the engine (#551 plan, step 4) and keeps the
+/// versions the executor's `tx_id <= t` filter keeps: on a file whose
+/// `tx_id`s rise and on one whose `tx_id`s fall and rise (a `LogWriter`
+/// copy), at timestamps before, between, at and after its transactions,
+/// with committed, pending and staged facts, in plain and rule queries,
+/// point and attribute scans. The oracle checks every answer.
 #[test]
-fn other_queries_stay_on_the_executor() {
-    let db = Minigraf::in_memory().unwrap();
-    write_round(&db, 0);
-    for q in ["(query [:find ?e :as-of \"2099-01-01T00:00:00Z\" :where [?e :person/name ?n]])"] {
-        let before = runs();
-        db.execute(q).unwrap();
-        assert_eq!(runs(), before, "query stayed on the executor");
+fn as_of_timestamps_run_on_the_engine() {
+    let dir = tempfile::tempdir().unwrap();
+    let iso = |ms: i64| {
+        let secs = ms.div_euclid(1000);
+        let (days, rem) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
+        // Days since 1970-01-01 to a civil date (Howard Hinnant's algorithm).
+        let z = days + 719_468;
+        let era = z.div_euclid(146_097);
+        let doe = z - era * 146_097;
+        let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+        let y = yoe + era * 400 + i64::from(m <= 2);
+        format!(
+            "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.{:03}Z",
+            rem / 3600,
+            rem % 3600 / 60,
+            rem % 60,
+            ms.rem_euclid(1000)
+        )
+    };
+    let base: u64 = 1_600_000_000_000;
+    let files = [
+        ("rising.graph", [1, 2, 3, 4, 5, 6].map(|k| base + k * 1000)),
+        ("falling.graph", [3, 1, 4, 2, 6, 5].map(|k| base + k * 1000)),
+    ];
+    let mut stamps: Vec<i64> = vec![-1, 0, 1_000_000_000_000, 253_402_300_799_000];
+    for k in 0..=7 {
+        let t = (base + k * 1000) as i64;
+        stamps.extend([t - 500, t, t + 1]);
+    }
+    let queries = [
+        "[:find ?e ?v :as-of \"{t}\" :where [?e :n ?v]]",
+        "[:find ?v :as-of \"{t}\" :where [:a :n ?v]]",
+        "[:find ?e :as-of \"{t}\" :where [?e :n 1]]",
+        "[:find ?e ?v :as-of \"{t}\" :where (has ?e ?v)]",
+    ];
+    for (name, tx_ids) in files {
+        let path = written(dir.path(), name, tx_ids);
+        let db = Minigraf::open(&path).unwrap();
+        db.execute("(rule [(has ?e ?v) [?e :n ?v]])").unwrap();
+        let run_all = |db: &Minigraf| {
+            for q in queries {
+                for &t in &stamps {
+                    let q = format!("(query {})", q.replace("{t}", &iso(t)));
+                    rows(db, &q);
+                }
+            }
+        };
+        // Committed facts only.
+        run_all(&db);
+        // Pending facts on top, stamped now: after every committed one.
+        db.execute("(transact [[:c :n 4] [:a :n 2]])").unwrap();
+        db.execute("(retract [[:a :n 1]])").unwrap();
+        run_all(&db);
+        // The same, checkpointed into a new committed generation.
+        db.checkpoint().unwrap();
+        run_all(&db);
+        // Staged facts in a write transaction.
+        let mut tx = db.begin_write().unwrap();
+        tx.execute("(transact [[:d :n 5]])").unwrap();
+        for q in queries {
+            for t in [stamps[3], (base + 3500) as i64] {
+                let q = format!("(query {})", q.replace("{t}", &iso(t)));
+                let before = runs();
+                tx.execute(&q).unwrap();
+                assert_eq!(runs(), before + 1, "staged reads run on the engine");
+            }
+        }
+        tx.rollback();
     }
 }
 
@@ -1062,19 +1163,221 @@ fn negation_keeps_multiplicity() {
     );
 }
 
-/// An unknown predicate in a body fails on every body row, so the `not`
-/// keeps every outer row (spec §3.3), on the engine as on the executor.
+/// A clause list with no pattern to scan first starts from the empty row
+/// (#551 plan, step 7): an expression before any pattern, in source order
+/// and reordered; a `not` with nothing but an expression after it; an `or`
+/// of expression-only branches; a rule body that binds before its pattern.
 #[test]
-fn negation_unknown_predicate_keeps_rows() {
+fn no_pattern_first() {
     let db = Minigraf::in_memory().unwrap();
     db.execute("(transact [[:a :n 1] [:b :n 2]])").unwrap();
-    assert_eq!(
-        rows(
-            &db,
-            "(query [:find ?e :where [?e :n ?v] (not [?e :n ?v] [(no-such-pred? ?v)])])"
+    db.execute("(rule [(two ?e ?k) [(+ 1 1) ?k] [?e :n ?k]])")
+        .unwrap();
+    for reorder in [false, true] {
+        let _g = crate::query::datalog::optimizer::set_reorder(reorder);
+        for (q, n) in [
+            ("[:find ?e ?k :where [(+ 1 1) ?k] [?e :n ?k]]", 1),
+            ("[:find ?k :where (not [:a :n 7]) [(+ 1 1) ?k]]", 1),
+            ("[:find ?k :where (not [:a :n 1]) [(+ 1 1) ?k]]", 0),
+            ("[:find ?k :where [(+ 1 1) ?k] (not [:a :n 1])]", 0),
+            ("[:find ?k :where (or [(+ 1 1) ?k] [(+ 2 2) ?k])]", 2),
+            ("[:find ?e :where (two ?e 2)]", 1),
+            ("[:find ?e ?k :where (two ?e ?k)]", 1),
+        ] {
+            assert_eq!(rows(&db, &format!("(query {q})")), n, "{q}");
+        }
+    }
+}
+
+/// A `not` body is planned as a `:where` is (#551 plan, step 8), hashed or
+/// correlated, with a rule invocation in it; the parser rejects a nested
+/// `not`, `not-join` or `or` before the planner sees one.
+#[test]
+fn not_bodies_plan_as_clause_lists() {
+    use crate::query::datalog::optimizer::{Subplans, set_subplans};
+    let db = Minigraf::in_memory().unwrap();
+    db.execute(
+        "(transact [[:a :n 1] [:a :ok true] [:b :n 2] [:c :n 3] [:c :ok true] [:d :n 4] [:d :tag :x]])",
+    )
+    .unwrap();
+    db.execute("(rule [(okay ?e) [?e :ok true]])").unwrap();
+    db.execute("(rule [(plain ?e) [?e :n ?v] (not (okay ?e) [(< ?v 3)])])")
+        .unwrap();
+    for (q, code) in [
+        (
+            "[:find ?e :where [?e :n ?v] (not [?e :ok true] (not [?e :tag :x]))]",
+            "PRS-051",
         ),
-        2
+        (
+            "[:find ?e :where [?e :n ?v] (not [?f :n ?w] (not-join [?f] [?f :ok true]))]",
+            "PRS-093",
+        ),
+        (
+            "[:find ?e :where [?e :n ?v] (not (or [?e :ok true] [?e :tag :x]))]",
+            "INT-016",
+        ),
+    ] {
+        let err = db.execute(&format!("(query {q})")).expect_err(q);
+        assert_eq!(err.code(), code, "{q}");
+    }
+    for mode in [Subplans::Choose, Subplans::Hash, Subplans::Correlated] {
+        let _m = set_subplans(mode);
+        for (q, n) in [
+            ("[:find ?e :where [?e :n ?v] (not (okay ?e) [(< ?v 3)])]", 3),
+            ("[:find ?e :where (plain ?e)]", 3),
+            (
+                "[:find ?e :where [?e :n ?v] (not-join [?v] (okay ?f) [?f :n ?w] [(> ?w ?v)])]",
+                2,
+            ),
+        ] {
+            assert_eq!(rows(&db, &format!("(query {q})")), n, "{q}");
+        }
+    }
+}
+
+/// Constants the planner used to refuse run on the engine (#551 plan, step
+/// 9): a magic-set head constant (#608), a value constant in an
+/// invocation's entity position, and every constant no cell can equal.
+#[test]
+fn constants_run_on_the_engine() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute("(transact [[:a :link :b] [:b :link :c] [:a :n 1] [:b :n 2]])")
+        .unwrap();
+    for rule in [
+        "(rule [(chain ?x ?y) [?x :link ?y]])",
+        "(rule [(chain ?x ?z) [?x :link ?y] (chain ?y ?z)])",
+        "(rule [(named ?n ?e) [?e :name ?n]])",
+    ] {
+        db.execute(rule).unwrap();
+    }
+    assert_eq!(rows(&db, "(query [:find ?x :where (chain ?x :c)])"), 2);
+    assert_eq!(rows(&db, "(query [:find ?y :where (chain :a ?y)])"), 2);
+    // No rule derives a row: nothing to match.
+    assert_eq!(
+        rows(&db, r#"(query [:find ?e :where (named "alice" ?e)])"#),
+        0
     );
+    for q in [
+        r#"[:find ?v :where ["a" :n ?v]]"#,
+        "[:find ?v :where [1 :n ?v]]",
+        "[:find ?v :where [true :n ?v]]",
+        "[:find ?v :where [nil :n ?v]]",
+        "[:find ?v :where [1.5 :n ?v]]",
+        r#"[:find ?e :where [?e "n" ?v]]"#,
+        "[:find ?e :where [?e 3 ?v]]",
+        "[:find ?e :where [?e :n [1 2]]]",
+        "[:find ?e :where [?e :n {:a 1}]]",
+        "[:find ?e :where [?e :n (1 2)]]",
+        "[:find ?e :where [?e :link ?b] [?b :n [1]]]",
+    ] {
+        assert_eq!(rows(&db, &format!("(query {q})")), 0, "{q}");
+    }
+    // A derived head entity that is a value fails the query, as on the
+    // executor.
+    db.execute(r#"(transact [[:p :name "alice"]])"#).unwrap();
+    let err = db
+        .execute(r#"(query [:find ?e :where (named "alice" ?e)])"#)
+        .expect_err("a string head entity");
+    assert_eq!(err.code(), "QRY-013");
+}
+
+/// The errors the planner raises keep the codes the executor reports (#551
+/// plan, step 10), after the pseudo-attribute check and before unknown
+/// predicates; the parser rejects the other shapes first.
+#[test]
+fn planner_errors_keep_their_codes() {
+    use crate::query::datalog::parser::parse_datalog_command;
+    use crate::query::datalog::types::DatalogCommand;
+    let db = Minigraf::in_memory().unwrap();
+    db.execute("(transact [[:a :e :b] [:b :e :c] [:a :n 1]])")
+        .unwrap();
+    for rule in [
+        "(rule [(reach ?x ?y) [?x :e ?y]])",
+        "(rule [(none) [?x :e ?y]])",
+        "(rule [(wide ?x ?y ?z) [?x :e ?y] [?y :e ?z]])",
+    ] {
+        db.execute(rule).unwrap();
+    }
+    // Arguments after a head's second are ignored, as on the executor.
+    assert_eq!(rows(&db, "(query [:find ?x ?y :where (wide ?x ?y)])"), 1);
+    for (q, code) in [
+        ("[:find ?x :where (reach ?x ?y ?z)]", "INT-028"),
+        (
+            "[:find ?x :where [?x :n ?v] (or-join [?x] (reach ?x ?y ?z) [?x :n 1])]",
+            "INT-028",
+        ),
+        ("[:find ?x :where (none ?x)]", "INT-022"),
+        // G and H: the parser rejects them first.
+        (
+            "[:find ?x :where [?x :n ?v] (or (reach ?x ?y ?z) [?x :n 1])]",
+            "PRS-057",
+        ),
+        (
+            "[:find ?x :where [?x :n ?v] (or-join [?q] [?q :n 1] [?q :e :b])]",
+            "INT-018",
+        ),
+        // Pseudo-attributes, then the rules, then unknown predicates.
+        (
+            "[:find ?x :where [?x :n ?v] [?x :db/tx-count ?t] (reach ?x ?y ?z) [(no-such? ?v)]]",
+            "INT-026",
+        ),
+        (
+            "[:find ?x :where [?x :n ?v] (reach ?x ?y ?z) [(no-such? ?v)]]",
+            "INT-028",
+        ),
+        (
+            "[:find ?x :where [?x :n ?v] [?x :db/tx-count ?t] [(no-such? ?v)]]",
+            "INT-026",
+        ),
+        (
+            "[:find ?x :where [?x :n ?v] (reach ?x ?y) [(no-such? ?v)]]",
+            "QRY-007",
+        ),
+    ] {
+        let err = db.execute(&format!("(query {q})")).expect_err(q);
+        assert_eq!(err.code(), code, "{q}");
+    }
+    // Slots, which a prepared query substitutes first.
+    for (q, code) in [
+        (
+            "(query [:find ?e :valid-at $t :where [?e :n ?v]])",
+            "INT-025",
+        ),
+        ("(query [:find ?e :as-of $t :where [?e :n ?v]])", "INT-032"),
+    ] {
+        let Ok(DatalogCommand::Query(query)) = parse_datalog_command(q) else {
+            panic!("a query");
+        };
+        match super::plan(&query) {
+            Err(e) => {
+                assert_eq!(crate::MinigrafError::from(e).code(), code, "{q}")
+            }
+            _ => panic!("a planner error"),
+        }
+    }
+    // A registry no definition builds (`register_rule` rejects it): the
+    // stratification error, INT-054.
+    let mut registry = crate::query::datalog::rules::RuleRegistry::new();
+    for (p, text) in [
+        ("p", "(rule [(p ?x ?y) [?x :e ?y] (not (q ?x ?y))])"),
+        ("q", "(rule [(q ?x ?y) [?x :e ?y] (not (p ?x ?y))])"),
+    ] {
+        let Ok(DatalogCommand::Rule(rule)) = parse_datalog_command(text) else {
+            panic!("a rule");
+        };
+        registry.insert_unchecked(p, rule);
+    }
+    let Ok(DatalogCommand::Query(query)) =
+        parse_datalog_command("(query [:find ?x :where (p ?x ?y)])")
+    else {
+        panic!("a query");
+    };
+    match super::plan_rules(&query, &registry, &[]) {
+        Err(e) => {
+            assert_eq!(crate::MinigrafError::from(e).code(), "INT-054")
+        }
+        _ => panic!("a planner error"),
+    }
 }
 
 /// A correlated body probes once per outer row from its seed; a hashed one
@@ -1274,10 +1577,9 @@ fn disjunction_matches_executor() {
 }
 
 /// Which disjunctions the engine runs (#546 PR 2): `or` / `or-join` whose
-/// branches hold patterns, expressions, `not`s and rule invocations (#548);
-/// a nested `or`, a predicate the registry may lack, an `or` whose branches
-/// bind their own sources' metadata, and a branch `not` reading what only
-/// the branch's expression binds stay on the executor (decision 11).
+/// branches hold patterns, expressions, `not`s, rule invocations (#548),
+/// nested `or`s and predicates (#551). An `or` whose branches bind their own
+/// sources' metadata is rejected by the parser (PRS-057).
 #[test]
 fn disjunction_routing() {
     let db = Minigraf::in_memory().unwrap();
@@ -1290,19 +1592,14 @@ fn disjunction_routing() {
         "(query [:find ?e :where [?e :person/name ?n] (or (and [?e :person/ok true] (not [?e :person/age 21])) [?e :person/age 22])])",
         "(query [:find ?e :any-valid-time :where [?e :person/name ?n] (or-join [?e] (and [?f :person/age ?a] [?f :db/tx-count ?t]) [?e :person/ok true])])",
         "(query [:find ?e :where [?e :person/name ?n] (or (okay ?e) [?e :person/age 21])])",
+        "(query [:find ?e :where [?e :person/name ?n] (or (or [?e :person/ok true] [?e :person/age 22]) [?e :person/age 21])])",
     ] {
         rows(&db, q);
     }
-    for q in [
-        "(query [:find ?e :where [?e :person/name ?n] (or (or [?e :person/ok true] [?e :person/age 22]) [?e :person/age 21])])",
-        "(query [:find ?e :where [?e :person/age ?a] (or (and [?e :person/ok true] [(no-such-pred? ?a)]) [?e :person/age 21])])",
-        "(query [:find ?e :any-valid-time :where [?e :person/name ?n] (or (and [?e :person/age ?a] [?e :db/tx-count ?t]) (and [?e :person/score ?a] [?e :db/tx-id ?t]))])",
-        "(query [:find ?e :where [?e :person/age ?a] (or (and [(+ ?a 1) ?b] (not [?f :person/age ?b])) (and [(+ ?a 2) ?b] [?e :person/ok true]))])",
-    ] {
-        let before = runs();
-        let _ = db.execute(q);
-        assert_eq!(runs(), before, "query stayed on the executor");
-    }
+    let err = db
+        .execute("(query [:find ?e :any-valid-time :where [?e :person/name ?n] (or (and [?e :person/age ?a] [?e :db/tx-count ?t]) (and [?e :person/score ?a] [?e :db/tx-id ?t]))])")
+        .expect_err("hidden variables differ");
+    assert_eq!(err.code(), "PRS-057");
 }
 
 /// The branch forms the planner chooses: as a `not` body's (spec §4.4,
@@ -1789,6 +2086,17 @@ fn rule_query_routing() {
     }
     assert_eq!(rows(&db, "(query [:find ?x ?y :where (reach ?x ?y)])"), 3);
     assert_eq!(rows(&db, "(query [:find ?y :where (reach :a ?y)])"), 2);
+    assert_eq!(rows(&db, "(query [:find ?x :where (deep ?x ?y)])"), 1);
+    // A body with no pattern runs on the engine, which finds its head
+    // entity is a number, as the executor does.
+    let err = db
+        .execute("(query [:find ?x ?v :where (one ?x ?v)])")
+        .expect_err("an integer head entity");
+    assert_eq!(err.code(), "QRY-013");
+    for (at, n) in [("2020-01-01T00:00:00Z", 0), ("2100-01-01T00:00:00Z", 3)] {
+        let q = format!("(query [:find ?x ?y :as-of \"{at}\" :where (reach ?x ?y)])");
+        assert_eq!(rows(&db, &q), n, "an :as-of timestamp runs on the engine");
+    }
     assert_eq!(
         rows(
             &db,
@@ -1796,16 +2104,11 @@ fn rule_query_routing() {
         ),
         1
     );
-    for q in [
-        "(query [:find ?x ?y :as-of \"2020-01-01T00:00:00Z\" :where (reach ?x ?y)])",
-        "(query [:find ?x ?v :where (one ?x ?v)])",
-        "(query [:find ?x :where (deep ?x ?y)])",
-        "(query [:find ?x :where (reach ?x ?y ?z)])",
-    ] {
-        let before = runs();
-        let _ = db.execute(q);
-        assert_eq!(runs(), before, "query stayed on the executor");
-    }
+    // Three arguments: the executor's INT-028, from the planner.
+    let err = db
+        .execute("(query [:find ?x :where (reach ?x ?y ?z)])")
+        .expect_err("three arguments");
+    assert_eq!(err.code(), "INT-028");
     let before = runs();
     let mut tx = db.begin_write().unwrap();
     tx.execute("(transact [[:c :e :d]])").unwrap();
@@ -2144,6 +2447,7 @@ fn pull_once(
         ids: &mut ids,
         functions: &functions,
         derived: None,
+        bound: &crate::storage::TxBound::All,
     };
     op.next_batch(&mut ctx)
 }

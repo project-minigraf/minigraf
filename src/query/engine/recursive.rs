@@ -18,9 +18,11 @@ use super::scan::Scan;
 use super::{Ctx, Operator, build};
 use crate::error::{ErrorCode, err_coded};
 use crate::graph::storage::Snapshot;
+use crate::query::datalog::aggregate::type_name;
 use crate::query::datalog::evaluator::{derived_facts_exceeded, iterations_exceeded};
 use crate::query::datalog::functions::FunctionRegistry;
-use crate::storage::KeySource;
+use crate::query::datalog::matcher::{edn_to_entity_id, edn_to_value};
+use crate::storage::{KeySource, TxBound};
 use anyhow::Result;
 use std::collections::HashSet;
 use std::mem::size_of;
@@ -42,6 +44,8 @@ pub(crate) struct Reads<'a> {
     pub(crate) snapshot: &'a Snapshot,
     pub(crate) keys: Option<&'a dyn KeySource>,
     pub(crate) functions: &'a FunctionRegistry,
+    /// The versions the query's `:as-of` keeps.
+    pub(crate) bound: &'a TxBound,
 }
 
 /// Derive every relation of `plan` into `rels`.
@@ -111,7 +115,6 @@ fn know_stored(
         a: Term::Const(attr.clone()),
         v: Term::Bind(1),
         meta: Vec::new(),
-        as_of: plan.as_of,
         valid: plan.valid,
         width: 2,
         derived: None,
@@ -159,12 +162,14 @@ fn heads(
     {
         let mut ctx = ctx(reads, ids, Some(rels));
         let mut root = build(run.plan.source.clone(), run.plan.steps.clone(), meter);
+        // Constant head arguments' cells, read at the first row.
+        let mut konst: [Option<Cell>; 2] = [None, None];
         while let Some(batch) = root.next_batch(&mut ctx)? {
             for i in 0..batch.len {
                 let cell = |slot: usize| batch.cols.get(slot).and_then(|c| c.get(i));
                 let row = [
-                    entity(&run.entity, predicate, cell, &mut ctx)?,
-                    value(run.value.as_ref(), cell)?,
+                    entity(&run.entity, predicate, cell, &mut ctx, &mut konst[0])?,
+                    value(run.value.as_ref(), cell, &mut ctx, &mut konst[1])?,
                 ];
                 if rels.known(rel, &row) {
                     continue;
@@ -204,19 +209,36 @@ fn ctx<'a>(reads: &Reads<'a>, ids: &'a mut IdSpace, derived: Option<&'a Relation
         ids,
         functions: reads.functions,
         derived,
+        bound: reads.bound,
     }
 }
 
 /// The head's entity cell (spec §5.3): an entity, or the entity a keyword
-/// names; anything else is `QRY-013`.
+/// names; anything else is `QRY-013`. A constant's is kept in `konst`.
 fn entity<'c>(
     arg: &HeadArg,
     predicate: &str,
     cell: impl Fn(usize) -> Option<&'c Cell>,
     ctx: &mut Ctx<'_>,
+    konst: &mut Option<Cell>,
 ) -> Result<Cell> {
     let kind = match arg {
         HeadArg::Unbound(v) => return Err(unbound(v)),
+        HeadArg::Const(c) => {
+            if let Some(k) = konst {
+                return Ok(k.clone());
+            }
+            // As the executor reads a head (`evaluator.rs`).
+            let k = match edn_to_entity_id(c) {
+                Ok(u) => Cell::Eid(ctx.ids.eid(ctx.keys, &u)?),
+                Err(_) => {
+                    let kind = edn_to_value(c).map_or("symbol", |v| type_name(&v));
+                    return Err(err_coded!(ErrorCode::Qry013, predicate, kind));
+                }
+            };
+            *konst = Some(k.clone());
+            return Ok(k);
+        }
         HeadArg::Slot(s) => match cell(*s) {
             Some(Cell::Eid(e)) => return Ok(Cell::Eid(*e)),
             Some(Cell::Iid(i)) => return Ok(Cell::Eid(ctx.ids.keyword_eid(ctx.keys, *i)?)),
@@ -235,11 +257,28 @@ fn entity<'c>(
 }
 
 /// The head's value cell: any value but `nil`, which the executor cannot
-/// read back (`INT-022`); `true` for a one-argument head.
-fn value<'c>(arg: Option<&HeadArg>, cell: impl Fn(usize) -> Option<&'c Cell>) -> Result<Cell> {
+/// read back (`INT-022`); `true` for a one-argument head. A constant's is
+/// kept in `konst`.
+fn value<'c>(
+    arg: Option<&HeadArg>,
+    cell: impl Fn(usize) -> Option<&'c Cell>,
+    ctx: &mut Ctx<'_>,
+    konst: &mut Option<Cell>,
+) -> Result<Cell> {
     match arg {
         None => Ok(Cell::Val(Scalar::Bool(true))),
         Some(HeadArg::Unbound(v)) => Err(unbound(v)),
+        Some(HeadArg::Const(c)) => {
+            if let Some(k) = konst {
+                return Ok(k.clone());
+            }
+            let v = edn_to_value(c).map_err(|e| {
+                err_coded!(ErrorCode::Int022, format!("Failed to convert value: {e}"))
+            })?;
+            let k = Cell::of_value(ctx.ids, ctx.keys, &v)?;
+            *konst = Some(k.clone());
+            Ok(k)
+        }
         Some(HeadArg::Slot(s)) => match cell(*s) {
             Some(Cell::Val(Scalar::Null)) | None => Err(err_coded!(
                 ErrorCode::Int022,

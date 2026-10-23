@@ -1,10 +1,9 @@
 //! Streaming query engine (#473): operators that pass batches of id cells
 //! over one [`Snapshot`].
 //!
-//! Built beside the existing executor (spec §9): [`plan`] says which queries
-//! run here, and the executor runs the rest. Under `cfg(test)` and the
-//! `test-oracle` feature, every query run here is also run by the executor
-//! and the answers are compared ([`oracle`]).
+//! Every query runs here (#551). Under `cfg(test)` and the `test-oracle`
+//! feature, every query is also run by the executor's query path, which is
+//! built for that only, and the answers are compared ([`oracle`]).
 
 mod aggregate;
 mod anti;
@@ -33,12 +32,12 @@ use crate::graph::storage::Snapshot;
 use crate::graph::types::{EntityId, Value};
 use crate::query::datalog::executor::QueryResult;
 use crate::query::datalog::functions::FunctionRegistry;
-use crate::storage::{CommittedReader, KeySource};
+use crate::storage::{CommittedReader, KeySource, TxBound};
 use anyhow::Result;
 use batch::Batch;
 use ids::IdSpace;
 pub(crate) use meter::Meter;
-pub(crate) use plan::{Plan, plan, plan_rules};
+pub(crate) use plan::{Plan, plan, plan_rules, udfs};
 pub(crate) use recursive::Limits;
 use std::sync::{Arc, RwLock};
 
@@ -62,6 +61,8 @@ pub(crate) struct Ctx<'a> {
     functions: &'a FunctionRegistry,
     /// In a rule query, the relations its rules derived (#548).
     derived: Option<&'a relation::Relations>,
+    /// The versions the query's `:as-of` keeps (#551).
+    bound: &'a TxBound,
 }
 
 /// What one operator has done (spec §6.3): rows it read or received, rows
@@ -127,6 +128,10 @@ pub(crate) struct Stream {
     hold_ids: bool,
     /// In a rule query, the relations its rules derived (#548).
     relations: Option<relation::Relations>,
+    /// The versions the query's `:as-of` keeps, and the bytes its ranges
+    /// hold (#551).
+    bound: TxBound,
+    bound_held: meter::Held,
     closed: bool,
 }
 
@@ -140,43 +145,68 @@ impl std::fmt::Debug for Stream {
     }
 }
 
-/// Open `plan` over `snapshot`, holding at most `memory_limit` bytes, or
-/// `None` when the snapshot's committed reader has no keys (a test reader)
-/// and the executor must run it.
+/// The key-level reads of `snapshot`'s committed generation, if it has one.
+fn keys(snapshot: &Snapshot) -> Result<Option<&dyn KeySource>> {
+    match &snapshot.committed {
+        Some(reader) => match reader.key_source() {
+            Some(k) => Ok(Some(k)),
+            // Only a test reader has none (#551 plan, decision 12).
+            None => Err(err_coded!(
+                ErrorCode::Int049,
+                "a committed reader without keys"
+            )),
+        },
+        None => Ok(None),
+    }
+}
+
+/// Open `plan` over `snapshot`, holding at most `memory_limit` bytes.
 pub(crate) fn open(
     snapshot: Snapshot,
     plan: Plan,
     functions: Arc<RwLock<FunctionRegistry>>,
     memory_limit: usize,
-) -> Option<Stream> {
-    let keys = match &snapshot.committed {
-        Some(reader) => Some(reader.key_source()?),
-        None => None,
-    };
+) -> Result<Stream> {
+    let keys = keys(&snapshot)?;
     let meter = Meter::new(memory_limit);
+    let bound = resolve(&snapshot, plan.as_of, &meter)?;
     let ids = IdSpace::new(keys, &meter);
-    Some(stream(snapshot, ids, plan, functions, None, meter))
+    Ok(stream(snapshot, ids, plan, functions, None, meter, bound))
+}
+
+/// The versions `as_of` keeps in `snapshot`, and its ranges charged to
+/// `meter` (#551 plan, decision 6).
+fn resolve(
+    snapshot: &Snapshot,
+    as_of: plan::AsOfSpec,
+    meter: &Arc<Meter>,
+) -> Result<(TxBound, meter::Held)> {
+    let mut held = meter::Held::new(meter, "AsOf");
+    let bound = match as_of {
+        plan::AsOfSpec::None => TxBound::All,
+        plan::AsOfSpec::Counter(n) => TxBound::Upto(n),
+        plan::AsOfSpec::Timestamp(t) => snapshot.tx_bound(t)?,
+    };
+    if let TxBound::Timestamp { committed, .. } = &bound {
+        held.charge(std::mem::size_of_val::<[(u64, u64)]>(committed))?;
+    }
+    Ok((bound, held))
 }
 
 /// Open the rule query `plan` over `snapshot`: derive its relations, with
-/// the magic seeds `seeds` as rows, then open its body (#548). `None` as
-/// [`open`]; an error from the rules fails the query here.
+/// the magic seeds `seeds` as rows, then open its body (#548). An error from
+/// the rules fails the query here.
 pub(crate) fn open_rules(
     snapshot: Snapshot,
     plan: plan::RulesPlan,
     seeds: &[(EntityId, String, Value)],
     functions: Arc<RwLock<FunctionRegistry>>,
     limits: recursive::Limits,
-) -> Result<Option<Stream>> {
+) -> Result<Stream> {
     let meter = Meter::new(limits.query_memory);
+    let bound = resolve(&snapshot, plan.as_of, &meter)?;
     let (ids, relations) = {
-        let keys = match &snapshot.committed {
-            Some(reader) => match reader.key_source() {
-                Some(k) => Some(k),
-                None => return Ok(None),
-            },
-            None => None,
-        };
+        let keys = keys(&snapshot)?;
         let mut ids = IdSpace::new(keys, &meter);
         let iids = plan
             .evaluated
@@ -202,18 +232,20 @@ pub(crate) fn open_rules(
             snapshot: &snapshot,
             keys,
             functions: &functions,
+            bound: &bound.0,
         };
         recursive::evaluate(&plan, &mut rels, &reads, &mut ids, limits, &meter)?;
         (ids, rels)
     };
-    Ok(Some(stream(
+    Ok(stream(
         snapshot,
         ids,
         plan.body,
         functions,
         Some(relations),
         meter,
-    )))
+        bound,
+    ))
 }
 
 /// The stream of `plan` over `snapshot`.
@@ -224,12 +256,14 @@ fn stream(
     functions: Arc<RwLock<FunctionRegistry>>,
     relations: Option<relation::Relations>,
     meter: Arc<Meter>,
+    (bound, bound_held): (TxBound, meter::Held),
 ) -> Stream {
     let Plan {
         source,
         steps,
         find,
         vars,
+        as_of: _,
     } = plan;
     let hold_ids = steps.iter().any(|s| matches!(s, plan::Step::Window { .. }));
     let root = build(source, steps, &meter);
@@ -245,6 +279,8 @@ fn stream(
         project: Counters::new("Project"),
         hold_ids,
         relations,
+        bound,
+        bound_held,
         closed: false,
     }
 }
@@ -287,6 +323,7 @@ impl Stream {
     #[cfg(test)]
     pub(crate) fn for_test(snapshot: Snapshot, root: Box<dyn Operator>) -> Self {
         let meter = Meter::unlimited();
+        let bound_held = meter::Held::new(&meter, "AsOf");
         Stream {
             snapshot,
             ids: IdSpace::new(None, &meter),
@@ -298,6 +335,8 @@ impl Stream {
             project: Counters::new("Project"),
             hold_ids: false,
             relations: None,
+            bound: TxBound::All,
+            bound_held,
             closed: false,
         }
     }
@@ -335,6 +374,7 @@ impl Stream {
             ids: &mut self.ids,
             functions: &functions,
             derived: self.relations.as_ref(),
+            bound: &self.bound,
         };
         let Some(batch) = self.root.next_batch(&mut ctx)? else {
             return Ok(None);
@@ -359,6 +399,8 @@ impl Stream {
             self.root = Box::new(Closed(counters));
             self.ids.release();
             self.relations = None;
+            self.bound = TxBound::All;
+            self.bound_held.release();
         }
     }
 

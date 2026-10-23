@@ -30,6 +30,7 @@ pub(crate) mod verify;
 
 use crate::error::{ErrorCode, bail_coded, err_coded};
 use anyhow::Result;
+use std::sync::Arc;
 
 /// Read a 4-byte little-endian u32 from `bytes` at `offset`.
 fn read_u32_le(bytes: &[u8], offset: usize) -> anyhow::Result<u32> {
@@ -368,19 +369,23 @@ impl Default for LegacyHeaderV7 {
 /// order.
 pub trait CommittedReader: Send + Sync {
     /// Every committed fact (an EAVT scan).
+    #[cfg(any(test, feature = "test-oracle"))]
     fn all_facts(&self) -> Result<Vec<crate::graph::types::Fact>>;
     /// Every committed fact of `entity`.
+    #[cfg(any(test, feature = "test-oracle"))]
     fn facts_for_entity(
         &self,
         entity: &crate::graph::types::EntityId,
     ) -> Result<Vec<crate::graph::types::Fact>>;
     /// Every committed fact of `(entity, attribute)`.
+    #[cfg(any(test, feature = "test-oracle"))]
     fn facts_for_entity_attribute(
         &self,
         entity: &crate::graph::types::EntityId,
         attribute: &str,
     ) -> Result<Vec<crate::graph::types::Fact>>;
     /// Every committed fact with `attribute` (an AEVT scan).
+    #[cfg(any(test, feature = "test-oracle"))]
     fn facts_for_attribute(&self, attribute: &str) -> Result<Vec<crate::graph::types::Fact>>;
 
     /// The committed facts of `scan` that survive net-assert among the
@@ -393,6 +398,7 @@ pub trait CommittedReader: Send + Sync {
     /// newer than each committed one and a record can only be hidden by a newer
     /// one. This default reads the history and filters it; `OnDiskReader`
     /// decides on index keys and translates only the survivors.
+    #[cfg(any(test, feature = "test-oracle"))]
     fn live_facts(
         &self,
         scan: Scan<'_>,
@@ -422,6 +428,81 @@ pub trait CommittedReader: Send + Sync {
     }
 }
 
+/// The fact versions a read keeps, by transaction (#551 plan, decision 3).
+#[derive(Debug, Clone)]
+pub enum TxBound {
+    /// Every version.
+    All,
+    /// The versions with `tx_count <= n`.
+    Upto(u64),
+    /// `:as-of t` where `tx_id` does not rise with `tx_count`: committed
+    /// keys whose `tx_count` is in one of the sorted, disjoint, inclusive
+    /// ranges `committed` (the transactions with `tx_id <= t`, from the
+    /// DICT, which holds one `tx_id` per `tx_count`), and pending and staged
+    /// facts with `tx_id <= t`.
+    Timestamp {
+        t: u64,
+        committed: Arc<[(u64, u64)]>,
+    },
+}
+
+impl TxBound {
+    /// The bound of a counter `:as-of`, or of none.
+    #[cfg(any(test, feature = "test-oracle"))]
+    pub fn of(as_of: Option<u64>) -> Self {
+        match as_of {
+            Some(n) => TxBound::Upto(n),
+            None => TxBound::All,
+        }
+    }
+
+    /// Whether a committed key of transaction `tx` is kept.
+    pub fn keeps_key(&self, tx: u64) -> bool {
+        match self {
+            TxBound::All => true,
+            TxBound::Upto(n) => tx <= *n,
+            TxBound::Timestamp { committed, .. } => {
+                let i = committed.partition_point(|&(_, last)| last < tx);
+                committed.get(i).is_some_and(|&(first, _)| first <= tx)
+            }
+        }
+    }
+
+    /// The newest transaction before `tx` whose committed keys are kept, if
+    /// any: where a walk past the newer ones seeks to.
+    pub fn kept_below(&self, tx: u64) -> Option<u64> {
+        let below = tx.checked_sub(1)?;
+        match self {
+            TxBound::All => Some(below),
+            TxBound::Upto(n) => Some(below.min(*n)),
+            TxBound::Timestamp { committed, .. } => {
+                let i = committed.partition_point(|&(first, _)| first <= below);
+                let (_, last) = *committed.get(i.checked_sub(1)?)?;
+                Some(last.min(below))
+            }
+        }
+    }
+
+    /// Whether a pending or staged fact is kept.
+    pub fn keeps_fact(&self, f: &crate::graph::types::Fact) -> bool {
+        match self {
+            TxBound::All => true,
+            TxBound::Upto(n) => f.tx_count <= *n,
+            TxBound::Timestamp { t, .. } => f.tx_id <= *t,
+        }
+    }
+}
+
+/// How the `tx_id`s of a generation's transactions run (#551 plan,
+/// decision 6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TxOrder {
+    /// Whether no `tx_id` is below the one of an earlier `tx_count`.
+    pub monotonic: bool,
+    /// The `(tx_count, tx_id)` of the newest transaction, if there is one.
+    pub last: Option<(u64, u64)>,
+}
+
 /// Key-level reads of one committed generation: the dictionary and the live
 /// keys of each index (#473 spec §5, §6.1).
 ///
@@ -443,8 +524,18 @@ pub trait KeySource: Send + Sync {
     fn long_value_ref(&self, s: &str) -> Result<Option<keys::ValueRef>>;
     /// The `tx_id` of the committed transaction `tx_count`.
     fn tx_id_of(&self, tx_count: u64) -> Result<u64>;
-    /// The keys of `index` that start with `prefix` and survive net-assert at
-    /// `as_of`, decoded, appended to `out` in key order.
+    /// How this generation's `tx_id`s run; one walk of the DICT's
+    /// transactions per reader.
+    fn tx_order(&self) -> Result<TxOrder>;
+    /// The newest `tx_count` whose `tx_id <= t`, 0 if none. Only for a
+    /// generation whose `tx_order` is monotonic.
+    fn last_tx_at(&self, t: u64) -> Result<u64>;
+    /// Append to `out` the transactions with `tx_id <= t` as sorted,
+    /// disjoint, inclusive `tx_count` ranges.
+    fn tx_runs(&self, t: u64, out: &mut Vec<(u64, u64)>) -> Result<()>;
+    /// The keys of `index` that start with `prefix` and survive net-assert
+    /// among the versions `bound` keeps, decoded, appended to `out` in key
+    /// order.
     ///
     /// Starts after the triple `resume` (from the start when `None`). Stops
     /// at the first triple boundary once `max` keys are out, and returns the
@@ -455,7 +546,7 @@ pub trait KeySource: Send + Sync {
         index: keys::Index,
         prefix: &[u8],
         resume: Option<&[u8]>,
-        as_of: Option<u64>,
+        bound: &TxBound,
         max: usize,
         out: &mut Vec<keys::KeyFact>,
     ) -> Result<Option<Vec<u8>>>;

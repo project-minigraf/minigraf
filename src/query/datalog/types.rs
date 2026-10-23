@@ -263,6 +263,7 @@ impl FindSpec {
 
     /// The logic variable this spec draws values from.
     /// For rank/row-number (no var), returns a synthetic placeholder.
+    #[cfg(any(test, feature = "test-oracle"))]
     pub fn var(&self) -> &str {
         match self {
             FindSpec::Variable(v) => v.as_str(),
@@ -650,6 +651,7 @@ impl DatalogQuery {
     ///
     /// Used by execute_query_with_rules to build positive patterns from rule heads;
     /// rule invocations inside `not` are handled by the not-post-filter, not here.
+    #[cfg(any(test, feature = "test-oracle"))]
     pub fn get_top_level_rule_invocations(&self) -> Vec<(String, Vec<EdnValue>)> {
         self.where_clauses
             .iter()

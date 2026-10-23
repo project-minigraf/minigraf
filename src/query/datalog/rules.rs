@@ -80,6 +80,16 @@ impl RuleRegistry {
         Ok(())
     }
 
+    /// Register `rule` without the stratification check: a registry no
+    /// definition can build, for the planner's tests (#551).
+    #[cfg(test)]
+    pub(crate) fn insert_unchecked(&mut self, predicate: &str, rule: Rule) {
+        self.rules
+            .entry(predicate.to_string())
+            .or_default()
+            .push(rule);
+    }
+
     /// Get all rules for a given predicate.
     ///
     /// Returns an empty vector if no rules are registered for the predicate.

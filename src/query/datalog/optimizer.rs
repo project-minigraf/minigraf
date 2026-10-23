@@ -269,6 +269,7 @@ pub(crate) fn clause_ref_vars(clauses: &[WhereClause]) -> std::collections::Hash
 ///
 /// Returns `(interleaved, deferred)` where `interleaved` pairs each Pattern with
 /// `Some(hint)` and each Expr/Not/NotJoin with `None`.
+#[cfg(any(test, feature = "test-oracle"))]
 pub fn plan(
     clauses: Vec<WhereClause>,
 ) -> (Vec<(WhereClause, Option<IndexHint>)>, Vec<WhereClause>) {

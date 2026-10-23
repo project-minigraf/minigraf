@@ -94,11 +94,13 @@ impl<'a> DictReader<'a> {
     }
 
     /// Record a known `eid → uuid` pair (the caller looked the eid up by it).
+    #[cfg(any(test, feature = "test-oracle"))]
     pub fn seed_entity(&mut self, eid: u64, uuid: Uuid) {
         self.uuids.insert(eid, uuid);
     }
 
     /// Record a known `iid → ident` pair.
+    #[cfg(any(test, feature = "test-oracle"))]
     pub fn seed_ident(&mut self, iid: u32, ident: &str) {
         self.names.insert(iid, ident.to_string());
     }

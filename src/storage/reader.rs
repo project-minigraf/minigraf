@@ -5,14 +5,18 @@
 
 use crate::error::{ErrorCode, bail_coded};
 use crate::graph::types::{EntityId, Fact};
-use crate::storage::btree::{LeafCursor, MutexStorageBackend, prefix_scan};
+#[cfg(any(test, feature = "test-oracle"))]
+use crate::storage::Scan;
+#[cfg(any(test, feature = "test-oracle"))]
+use crate::storage::btree::prefix_scan;
+use crate::storage::btree::{LeafCursor, MutexStorageBackend};
 use crate::storage::cache::PageCache;
 use crate::storage::dict::{DictReader, SharedDictCache};
 use crate::storage::keys::{self, Index, KeyFact, ValueRef};
 use crate::storage::meta::MetaPage;
-use crate::storage::{CommittedReader, KeySource, LogSource, Scan, StorageBackend};
+use crate::storage::{CommittedReader, KeySource, LogSource, StorageBackend, TxBound, TxOrder};
 use anyhow::Result;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// [`CommittedReader`] over one committed meta's trees.
 pub struct OnDiskReader<B: StorageBackend + 'static> {
@@ -27,6 +31,8 @@ pub struct OnDiskReader<B: StorageBackend + 'static> {
     next_iid: u32,
     last_tx: u64,
     shared: SharedDictCache,
+    /// How the generation's `tx_id`s run, read on first use (#551).
+    tx_order: OnceLock<TxOrder>,
 }
 
 impl<B: StorageBackend + 'static> OnDiskReader<B> {
@@ -43,6 +49,7 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
             next_iid: meta.next_iid,
             last_tx: meta.last_checkpointed_tx_count,
             shared: SharedDictCache::default(),
+            tx_order: OnceLock::new(),
         }
     }
 
@@ -51,6 +58,7 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
     }
 
     /// Facts of every `index` entry starting with `prefix`.
+    #[cfg(any(test, feature = "test-oracle"))]
     fn scan(
         &self,
         index: Index,
@@ -69,9 +77,38 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
 }
 
 impl<B: StorageBackend + 'static> OnDiskReader<B> {
+    /// Visit the DICT's transactions `(tx_count, tx_id)` in `tx_count` order,
+    /// from `from` on (all when `None`), until `visit` returns false.
+    fn dict_txs(
+        &self,
+        from: Option<u64>,
+        visit: &mut dyn FnMut(u64, u64) -> Result<bool>,
+    ) -> Result<()> {
+        if self.dict_root == 0 {
+            return Ok(());
+        }
+        let prefix = [keys::DICT_TX];
+        let mut cursor =
+            LeafCursor::new(self.dict_root, Some(&prefix), &self.backend, &self.cache)?;
+        if let Some(m) = from {
+            cursor.seek(&keys::dict_tx_key(m))?;
+        }
+        while let Some((k, v)) = cursor.next_ref()? {
+            let Some(rest) = k.strip_prefix(&prefix) else {
+                break;
+            };
+            let tx_count = keys::Reader::new(rest).uint()?;
+            if !visit(tx_count, keys::read_uint_bytes(v)?)? {
+                break;
+            }
+        }
+        Ok(())
+    }
+
     /// Facts of `index` entries starting with `prefix` that survive net-assert
     /// at `as_of`, decided on the key bytes (#379, spec §5.3). Only kept
     /// entries are decoded and translated through the dictionary.
+    #[cfg(any(test, feature = "test-oracle"))]
     fn live_scan(
         &self,
         index: Index,
@@ -81,7 +118,8 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
         dict: &mut DictReader<'_>,
     ) -> Result<Vec<Fact>> {
         let mut out = Vec::new();
-        self.live_walk(index, root, prefix, None, as_of, usize::MAX, &mut |k| {
+        let bound = TxBound::of(as_of);
+        self.live_walk(index, root, prefix, None, &bound, usize::MAX, &mut |k| {
             out.push(dict.fact(&KeyFact::decode(index, k)?)?);
             Ok(())
         })?;
@@ -98,14 +136,15 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
     }
 
     /// Visit the keys of `index` entries starting with `prefix` that survive
-    /// net-assert at `as_of`, in key order, starting after the triple `resume`.
+    /// net-assert among the versions `bound` keeps, in key order, starting
+    /// after the triple `resume`.
     ///
     /// The history of one triple is contiguous and newest first, so its first
-    /// transaction at or before `as_of` decides it (#435): a transaction that
+    /// transaction `bound` keeps decides it (#435): a transaction that
     /// holds a retraction hides the triple, otherwise its assertions are kept
     /// (one, unless written before API-011 existed). Everything older in the
-    /// triple is hidden. With `as_of`, entries newer than `as_of` are passed
-    /// over. Entries that are passed over are skipped one by one, and
+    /// triple is hidden. Entries of transactions `bound` does not keep are
+    /// passed over. Entries that are passed over are skipped one by one, and
     /// after [`SEEK_AFTER`] of them in one triple the cursor seeks past the run,
     /// so a long history costs O(log) page visits while a short one costs no
     /// seek.
@@ -120,7 +159,7 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
         root: u64,
         prefix: &[u8],
         resume: Option<&[u8]>,
-        as_of: Option<u64>,
+        bound: &TxBound,
         max: usize,
         visit: &mut dyn FnMut(&[u8]) -> Result<()>,
     ) -> Result<Option<Vec<u8>>> {
@@ -145,7 +184,7 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
             let step = match cursor.next_ref()? {
                 Some((k, _)) if k.starts_with(prefix) => {
                     if dead && k.starts_with(&triple) {
-                        Step::Pass(Some(0xFF))
+                        Step::Pass(Seek::Triple)
                     } else {
                         let n = keys::triple_len(index, k)?;
                         let (key_triple, rest) = k.split_at(n);
@@ -162,8 +201,11 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
                             dead = false;
                             skipped = 0;
                         }
-                        if as_of.is_some_and(|limit| tx > limit) {
-                            Step::Pass(None)
+                        if !bound.keeps_key(tx) {
+                            Step::Pass(match bound.kept_below(tx) {
+                                Some(older) => Seek::Tx(older),
+                                None => Seek::Triple,
+                            })
                         } else {
                             let retraction = k.last() == Some(&0);
                             Step::Entry {
@@ -184,10 +226,9 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
                     if skipped >= SEEK_AFTER {
                         skipped = 0;
                         let mut target = triple.clone();
-                        match (past, as_of) {
-                            (Some(b), _) => target.push(b),
-                            (None, Some(limit)) => keys::put_tx_desc(&mut target, limit),
-                            (None, None) => {}
+                        match past {
+                            Seek::Triple => target.push(0xFF),
+                            Seek::Tx(older) => keys::put_tx_desc(&mut target, older),
                         }
                         cursor.seek(&target)?;
                     }
@@ -217,11 +258,19 @@ const SEEK_AFTER: usize = 8;
 
 /// What the walk does with one entry.
 enum Step {
-    /// Pass over it; a seek past the run appends this byte to the triple
-    /// (`0xFF`: past the whole triple), or `tx↓(as_of)` when `None`.
-    Pass(Option<u8>),
-    /// An entry at or before `as_of`; `key` is kept for assertions only.
+    /// Pass over it; a seek past the run goes to `Seek`.
+    Pass(Seek),
+    /// An entry of a transaction the bound keeps; `key` is kept for
+    /// assertions only.
     Entry { tx: u64, key: Option<Vec<u8>> },
+}
+
+/// Where a seek past passed-over entries of one triple goes.
+enum Seek {
+    /// Past the whole triple.
+    Triple,
+    /// To the triple's entries of this transaction and older.
+    Tx(u64),
 }
 
 /// The entries of one triple with one `tx_count`.
@@ -281,17 +330,76 @@ impl<B: StorageBackend + 'static> KeySource for OnDiskReader<B> {
         self.dict().tx_id_of(tx_count)
     }
 
+    fn tx_order(&self) -> Result<TxOrder> {
+        if let Some(order) = self.tx_order.get() {
+            return Ok(*order);
+        }
+        let mut order = TxOrder {
+            monotonic: true,
+            last: None,
+        };
+        self.dict_txs(None, &mut |tx_count, tx_id| {
+            if order.last.is_some_and(|(_, last)| tx_id < last) {
+                order.monotonic = false;
+            }
+            order.last = Some((tx_count, tx_id));
+            Ok(true)
+        })?;
+        Ok(*self.tx_order.get_or_init(|| order))
+    }
+
+    fn last_tx_at(&self, t: u64) -> Result<u64> {
+        // The first transaction at or after `m`, if its `tx_id` is at most
+        // `t`: true up to the newest transaction with `tx_id <= t`, false
+        // after it, since `tx_id`s rise with `tx_count` here.
+        let at_or_before = |m: u64| -> Result<bool> {
+            let mut kept = false;
+            self.dict_txs(Some(m), &mut |_, tx_id| {
+                kept = tx_id <= t;
+                Ok(false)
+            })?;
+            Ok(kept)
+        };
+        // The least `m` in `1..=newest + 1` whose first transaction at or
+        // after it is not kept; that transaction is `m - 1`.
+        let newest = self.tx_order()?.last.map_or(0, |(tx_count, _)| tx_count);
+        let (mut lo, mut hi) = (1u64, newest.saturating_add(1));
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if at_or_before(mid)? {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        Ok(lo - 1)
+    }
+
+    fn tx_runs(&self, t: u64, out: &mut Vec<(u64, u64)>) -> Result<()> {
+        let mut open: Option<(u64, u64)> = None;
+        self.dict_txs(None, &mut |tx_count, tx_id| {
+            match (tx_id <= t, open.as_mut()) {
+                (true, Some(run)) => run.1 = tx_count,
+                (true, None) => open = Some((tx_count, tx_count)),
+                (false, _) => out.extend(open.take()),
+            }
+            Ok(true)
+        })?;
+        out.extend(open);
+        Ok(())
+    }
+
     fn live_keys(
         &self,
         index: Index,
         prefix: &[u8],
         resume: Option<&[u8]>,
-        as_of: Option<u64>,
+        bound: &TxBound,
         max: usize,
         out: &mut Vec<KeyFact>,
     ) -> Result<Option<Vec<u8>>> {
         let root = self.root(index);
-        self.live_walk(index, root, prefix, resume, as_of, max, &mut |k| {
+        self.live_walk(index, root, prefix, resume, bound, max, &mut |k| {
             out.push(KeyFact::decode(index, k)?);
             Ok(())
         })
@@ -353,6 +461,7 @@ impl<B: StorageBackend + 'static> CommittedReader for OnDiskReader<B> {
         Some(self)
     }
 
+    #[cfg(any(test, feature = "test-oracle"))]
     fn live_facts(&self, scan: Scan<'_>, as_of: Option<u64>) -> Result<Vec<Fact>> {
         let mut dict = self.dict();
         let (index, root, prefix) = match scan {
@@ -387,6 +496,7 @@ impl<B: StorageBackend + 'static> CommittedReader for OnDiskReader<B> {
         self.live_scan(index, root, &prefix, as_of, &mut dict)
     }
 
+    #[cfg(any(test, feature = "test-oracle"))]
     fn all_facts(&self) -> Result<Vec<Fact>> {
         if self.eavt_root == 0 {
             return Ok(Vec::new());
@@ -400,6 +510,7 @@ impl<B: StorageBackend + 'static> CommittedReader for OnDiskReader<B> {
         Ok(facts)
     }
 
+    #[cfg(any(test, feature = "test-oracle"))]
     fn facts_for_entity(&self, entity: &EntityId) -> Result<Vec<Fact>> {
         let mut dict = self.dict();
         let Some(e) = dict.eid_of(entity)? else {
@@ -414,6 +525,7 @@ impl<B: StorageBackend + 'static> CommittedReader for OnDiskReader<B> {
         )
     }
 
+    #[cfg(any(test, feature = "test-oracle"))]
     fn facts_for_entity_attribute(&self, entity: &EntityId, attribute: &str) -> Result<Vec<Fact>> {
         let mut dict = self.dict();
         let (Some(e), Some(a)) = (dict.eid_of(entity)?, dict.iid_of(attribute)?) else {
@@ -425,6 +537,7 @@ impl<B: StorageBackend + 'static> CommittedReader for OnDiskReader<B> {
         self.scan(Index::Eavt, self.eavt_root, &prefix, &mut dict)
     }
 
+    #[cfg(any(test, feature = "test-oracle"))]
     fn facts_for_attribute(&self, attribute: &str) -> Result<Vec<Fact>> {
         let mut dict = self.dict();
         let Some(a) = dict.iid_of(attribute)? else {

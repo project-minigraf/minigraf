@@ -86,8 +86,8 @@ default = []
 # Deprecated, does nothing since v3.0.0: every build reorders query clauses
 # (#594, #596). Kept so that builds naming it still resolve.
 wasm = []
-# Run the existing executor beside the streaming engine and compare every
-# answer (#473 spec §9). Tests only.
+# Build the executor's query path and run it beside the streaming engine,
+# comparing every answer (#473 spec §9, #551). Tests only.
 test-oracle = []
 browser = [
     "dep:wasm-bindgen",

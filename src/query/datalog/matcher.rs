@@ -1,29 +1,43 @@
+#[cfg(any(test, feature = "test-oracle"))]
 use super::optimizer::IndexHint;
-use super::types::{AttributeSpec, EdnValue, Pattern, PseudoAttr};
+use super::types::EdnValue;
+#[cfg(any(test, feature = "test-oracle"))]
+use super::types::{AttributeSpec, Pattern, PseudoAttr};
+#[cfg(any(test, feature = "test-oracle"))]
 use crate::graph::FactStorage;
-use crate::graph::types::{EntityId, Fact, Value};
+#[cfg(any(test, feature = "test-oracle"))]
+use crate::graph::types::Fact;
+use crate::graph::types::{EntityId, Value};
+#[cfg(any(test, feature = "test-oracle"))]
 use std::borrow::Cow;
+#[cfg(any(test, feature = "test-oracle"))]
 use std::collections::HashMap;
+#[cfg(any(test, feature = "test-oracle"))]
 use std::sync::Arc;
 use uuid::Uuid;
 
 /// Variable bindings for query execution
 /// Maps variable names (e.g., "?name") to their bound values
+#[cfg(any(test, feature = "test-oracle"))]
 pub type Bindings = HashMap<String, Value>;
 
+#[cfg(any(test, feature = "test-oracle"))]
 enum MatcherStorage {
     Owned(FactStorage),
     Slice(Arc<[Fact]>),
 }
 
 /// Pattern matcher that finds facts matching a pattern and produces bindings
+#[cfg(any(test, feature = "test-oracle"))]
 pub struct PatternMatcher {
     storage: MatcherStorage,
     /// The `:db/valid-at` value for this query context (Value::Null when not set).
     pub(crate) valid_at_value: Value,
 }
 
+#[cfg(any(test, feature = "test-oracle"))]
 impl PatternMatcher {
+    #[cfg(any(test, feature = "test-oracle"))]
     pub fn new(storage: FactStorage) -> Self {
         PatternMatcher {
             storage: MatcherStorage::Owned(storage),
@@ -45,6 +59,7 @@ impl PatternMatcher {
 
     /// Constructs a matcher with an explicit `:db/valid-at` binding value.
     /// Used by the executor when the query has a known `valid_at` point.
+    #[cfg(any(test, feature = "test-oracle"))]
     pub(crate) fn from_slice_with_valid_at(facts: Arc<[Fact]>, valid_at: Value) -> Self {
         PatternMatcher {
             storage: MatcherStorage::Slice(facts),
@@ -53,6 +68,7 @@ impl PatternMatcher {
     }
 
     /// Set the value a `:db/valid-at` pattern binds.
+    #[cfg(any(test, feature = "test-oracle"))]
     pub(crate) fn with_valid_at(mut self, valid_at: Value) -> Self {
         self.valid_at_value = valid_at;
         self
@@ -272,6 +288,7 @@ impl PatternMatcher {
 
     /// Match multiple patterns with variable unification
     /// Returns bindings that satisfy all patterns simultaneously
+    #[cfg(any(test, feature = "test-oracle"))]
     pub fn match_patterns(&self, patterns: &[Pattern]) -> Vec<Bindings> {
         if patterns.is_empty() {
             return vec![HashMap::new()];
@@ -325,6 +342,7 @@ impl PatternMatcher {
     /// `rebind` names variables the seed binds whose value this pattern
     /// replaces with its own (#545): an equal value of another kind, a keyword
     /// for a ref or the reverse.
+    #[cfg(any(test, feature = "test-oracle"))]
     pub(crate) fn match_with_hint_seeded(
         &self,
         seed: Vec<Bindings>,
@@ -355,6 +373,7 @@ impl PatternMatcher {
     /// For each seed binding, extends it by matching all patterns in sequence.
     /// Returns all extended bindings that satisfy every pattern.
     /// If `seed` is empty, returns empty. If `patterns` is empty, returns `seed` unchanged.
+    #[cfg(any(test, feature = "test-oracle"))]
     pub(crate) fn match_patterns_seeded(
         &self,
         patterns: &[Pattern],
