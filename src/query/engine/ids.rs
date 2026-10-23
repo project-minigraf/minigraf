@@ -37,8 +37,10 @@ pub(crate) struct IdSpace {
     /// What `provisional` and `dict` hold (#549 spec §3.2).
     held_provisional: Held,
     held_dict: Held,
-    /// What value probes read once for the whole query (#721).
-    pub(crate) probes: super::scan::Probes,
+    /// What value probes read once for the whole query (#721), made by the
+    /// first query that needs it: boxed, it keeps every `Stream` within the
+    /// allocator's thread cache.
+    probes: Option<Box<super::scan::Probes>>,
 }
 
 #[derive(Default)]
@@ -66,7 +68,7 @@ impl IdSpace {
             dict: Maps::default(),
             held_provisional: Held::new(meter, "IdSpace"),
             held_dict: Held::new(meter, "IdSpace"),
-            probes: super::scan::Probes::new(meter),
+            probes: None,
         }
     }
 
@@ -81,7 +83,19 @@ impl IdSpace {
         self.end_pull();
         self.provisional = Maps::default();
         self.held_provisional.release();
-        self.probes = super::scan::Probes::new(self.held_provisional.meter());
+        self.probes = None;
+    }
+
+    /// What value probes have read so far, if any.
+    pub(crate) fn probes(&self) -> Option<&super::scan::Probes> {
+        self.probes.as_deref()
+    }
+
+    /// What value probes read, to add to.
+    pub(crate) fn probes_mut(&mut self) -> &mut super::scan::Probes {
+        let meter = self.held_provisional.meter();
+        self.probes
+            .get_or_insert_with(|| Box::new(super::scan::Probes::new(meter)))
     }
 
     /// Count an entry of `bytes` about to go into the maps that hold

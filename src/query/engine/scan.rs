@@ -273,10 +273,10 @@ impl Scan {
 /// and the committed triples its pending records decide (#721): read once
 /// per query.
 fn values(attribute: &str, ctx: &mut Ctx<'_>) -> Result<Arc<Values>> {
-    if let Some(v) = ctx.ids.probes.values.get(attribute) {
+    if let Some(v) = ctx.ids.probes().and_then(|p| p.values.get(attribute)) {
         return Ok(v.clone());
     }
-    let mut held = Held::new(ctx.ids.probes.held.meter(), "IndexNestedLoopJoin");
+    let mut held = Held::new(ctx.ids.probes_mut().held.meter(), "IndexNestedLoopJoin");
     let mut pending: HashMap<Vec<u8>, Vec<Fact>> = HashMap::new();
     let mut keywords = false;
     let mut resume = None;
@@ -326,7 +326,7 @@ fn values(attribute: &str, ctx: &mut Ctx<'_>) -> Result<Arc<Values>> {
         shadow: Arc::new(shadow),
     });
     held.charge(HASH_ENTRY_OVERHEAD + size_of::<(String, Arc<Values>)>() + attribute.len())?;
-    let probes = &mut ctx.ids.probes;
+    let probes = ctx.ids.probes_mut();
     probes.held.absorb(held);
     probes.values.insert(attribute.to_string(), v.clone());
     Ok(v)
@@ -353,7 +353,7 @@ fn candidates(
         }
         Cell::Eid(e) => {
             let mut v = vec![Value::Ref(ctx.ids.uuid(ctx.keys, *e)?)];
-            match ctx.ids.probes.named.get(e).copied() {
+            match ctx.ids.probes().and_then(|p| p.named.get(e)).copied() {
                 Some(i) => v.push(Value::Keyword(ctx.ids.name(ctx.keys, i)?.to_string())),
                 None if pending_keywords => return Ok(None),
                 None => match a {
@@ -372,7 +372,7 @@ fn candidates(
 /// Whether any live committed value of attribute `a` is a keyword: read
 /// once per query.
 fn has_keywords(a: u32, ctx: &mut Ctx<'_>) -> Result<bool> {
-    if let Some(&k) = ctx.ids.probes.keywords.get(&a) {
+    if let Some(&k) = ctx.ids.probes().and_then(|p| p.keywords.get(&a)) {
         return Ok(k);
     }
     let Some(keys) = ctx.keys else {
@@ -388,7 +388,7 @@ fn has_keywords(a: u32, ctx: &mut Ctx<'_>) -> Result<bool> {
         &mut buf,
     )?;
     let k = !buf.is_empty();
-    let probes = &mut ctx.ids.probes;
+    let probes = ctx.ids.probes_mut();
     probes
         .held
         .charge(HASH_ENTRY_OVERHEAD + size_of::<(u32, bool)>())?;

@@ -219,7 +219,7 @@ pub(crate) fn open_rules(
             )
             .map_err(|e| err_coded!(ErrorCode::Int049, format!("query engine: {e}")))?;
             let (e, i) = (ids.eid(keys, &e)?, ids.iid(keys, k)?);
-            ids.probes.note(e, i)?;
+            ids.probes_mut().note(e, i)?;
         }
         let mut rels = relation::Relations::new(iids, &meter);
         for (e, a, v) in seeds {
