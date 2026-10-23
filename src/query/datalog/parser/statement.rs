@@ -25,8 +25,8 @@ use anyhow::Result;
 /// up to twice as long with random entities, for 40–55 MiB less at 1M facts.
 pub(crate) const DEFAULT_TX_CHUNK_FACTS: usize = 65_536;
 
-/// The largest chunk: a small transaction is one WAL entry, and replay
-/// refuses an entry of more facts than this (`wal.rs`, #686).
+/// The largest chunk, which bounds the facts a small transaction holds in
+/// memory and writes as one WAL entry.
 pub(crate) const MAX_TX_CHUNK_FACTS: usize = 1_000_000;
 
 #[cfg(any(test, feature = "test-oracle"))]

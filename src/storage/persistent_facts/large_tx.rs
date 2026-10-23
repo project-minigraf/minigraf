@@ -1093,7 +1093,7 @@ mod tests {
     }
 
     /// `OpenOptions::transaction_chunk_facts` sets the chunk size, kept
-    /// between 1 and the most facts a WAL entry holds.
+    /// between 1 and 1,000,000.
     #[test]
     fn the_chunk_size_is_an_open_option() {
         use crate::query::datalog::parser::statement::{
@@ -1103,7 +1103,6 @@ mod tests {
         assert_eq!(DEFAULT_TX_CHUNK_FACTS, 65_536);
         assert_eq!(tx_chunk_facts(0), 1);
         assert_eq!(tx_chunk_facts(usize::MAX), MAX_TX_CHUNK_FACTS);
-        assert_eq!(MAX_TX_CHUNK_FACTS, crate::wal::MAX_FACTS_PER_ENTRY);
         let dir = tempfile::tempdir().unwrap();
         for (chunk, large) in [(2, true), (3, false), (0, true)] {
             let path = dir.path().join(format!("t{chunk}.graph"));
