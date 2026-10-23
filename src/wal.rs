@@ -330,6 +330,7 @@ impl WalReader {
 /// or corrupt one or at EOF. Also returns the offset where the valid entries
 /// end: the end of the header if there are none.
 fn scan_entries(file: &mut File) -> Result<(Vec<WalEntry>, u64)> {
+    let file_len = file.metadata()?.len();
     file.seek(SeekFrom::Start(WAL_HEADER_SIZE as u64))?;
     let mut entries = Vec::new();
     let mut valid_end = WAL_HEADER_SIZE as u64;
@@ -356,14 +357,14 @@ fn scan_entries(file: &mut File) -> Result<(Vec<WalEntry>, u64)> {
         if file.read_exact(&mut num_facts_buf).is_err() {
             break; // truncated
         }
-        let num_facts = usize::try_from(u64::from_le_bytes(num_facts_buf))
-            .map_err(|_| err_coded!(ErrorCode::Wal005))?;
-
-        // Sanity cap: no legitimate entry has more than 1M facts
-        const MAX_FACTS_PER_ENTRY: usize = 1_000_000;
-        if num_facts > MAX_FACTS_PER_ENTRY {
+        // Every fact takes at least its 4-byte length, so a count the bytes
+        // left cannot hold is damage. Entries have no count limit (#686).
+        let num_facts = u64::from_le_bytes(num_facts_buf);
+        let left = file_len.saturating_sub(file.stream_position()?);
+        if num_facts > left / 4 {
             break; // treat as corrupt entry
         }
+        let num_facts = usize::try_from(num_facts).map_err(|_| err_coded!(ErrorCode::Wal005))?;
 
         // Maximum fact size to prevent memory exhaustion from large facts
         const MAX_FACT_SIZE: usize = 10 * 1024 * 1024; // 10MB
@@ -857,22 +858,60 @@ mod tests {
         assert!(reader.read_entries().unwrap().is_empty());
     }
 
+    /// A `num_facts` too large for the bytes after it (each fact has at least
+    /// its 4-byte length) is damage: replay ends at that entry.
     #[test]
-    fn test_wal_entry_with_too_many_facts_ends_replay() {
+    fn test_wal_entry_with_more_facts_than_bytes_left_ends_replay() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.wal");
-        wal_with_entries(&path, 2);
+        let bytes = wal_with_entries(&path, 2);
         let one_len = {
             let p = dir.path().join("one.wal");
             wal_with_entries(&p, 1).len()
         };
         // Entry 2's num_facts, after its checksum and tx_count.
-        let mut file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
-        file.seek(std::io::SeekFrom::Start(one_len as u64 + 12))
-            .unwrap();
-        file.write_all(&1_000_001u64.to_le_bytes()).unwrap();
-        drop(file);
+        let count_at = one_len as u64 + 12;
+        let left = bytes.len() as u64 - (count_at + 8);
+        for num_facts in [left / 4 + 1, u64::MAX] {
+            let mut file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+            file.seek(std::io::SeekFrom::Start(count_at)).unwrap();
+            file.write_all(&num_facts.to_le_bytes()).unwrap();
+            drop(file);
+            assert_eq!(tx_counts(&path), [1]);
+        }
+
+        // Reopening the writer cuts the WAL off at that entry.
+        drop(WalWriter::open_or_create(&path, SyncMode::Full).unwrap());
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), one_len as u64);
         assert_eq!(tx_counts(&path), [1]);
+    }
+
+    /// An entry of more than 1,000,000 facts replays, and so do the entries
+    /// after it; the writer's tail cut at open keeps them (#686).
+    #[test]
+    fn test_wal_entry_of_more_than_a_million_facts_replays() {
+        const N: usize = 1_000_001;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.wal");
+        let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        let fact = make_fact(Uuid::new_v4(), ":n", Value::Integer(1), 1);
+        writer.append_entry(1, &vec![fact; N]).unwrap();
+        let fact = make_fact(Uuid::new_v4(), ":n", Value::Integer(2), 2);
+        writer.append_entry(2, &[fact]).unwrap();
+        drop(writer);
+        let len = std::fs::metadata(&path).unwrap().len();
+
+        // Reopening cuts off nothing, and an append lands after both.
+        let mut writer = WalWriter::open_or_create(&path, SyncMode::Full).unwrap();
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), len);
+        let fact = make_fact(Uuid::new_v4(), ":n", Value::Integer(3), 3);
+        writer.append_entry(3, &[fact]).unwrap();
+        drop(writer);
+
+        let entries = WalReader::open(&path).unwrap().read_entries().unwrap();
+        let counts: Vec<u64> = entries.iter().map(|e| e.tx_count).collect();
+        assert_eq!(counts, [1, 2, 3]);
+        assert_eq!(entries[0].facts.len(), N);
     }
 
     #[test]
