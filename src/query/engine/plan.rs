@@ -394,6 +394,7 @@ fn clauses(
     b: &mut Builder,
     clauses: &[WhereClause],
     first: Option<&Pattern>,
+    seeded: &HashSet<String>,
 ) -> Result<(), Refusal> {
     if !clauses.iter().all(|c| {
         matches!(
@@ -429,7 +430,7 @@ fn clauses(
             planned.insert(0, (head, None));
             (planned, deferred)
         }
-        None => optimizer::plan(clauses.to_vec()),
+        None => optimizer::plan_seeded(clauses.to_vec(), seeded),
     };
     for (c, _) in planned {
         b.clause(c)?;
@@ -458,7 +459,7 @@ fn plan_with(query: &DatalogQuery, evaluated: Option<Arc<Evaluated>>) -> Result<
         valid,
         evaluated,
     );
-    clauses(&mut b, &query.where_clauses, None)?;
+    clauses(&mut b, &query.where_clauses, None, &HashSet::new())?;
 
     // The parser rejects a variable no clause binds (PRS-080, PRS-022,
     // PRS-023).
@@ -743,7 +744,7 @@ fn rule_plan(
         |ranges: Vec<(Pattern, Range)>, first: Option<&Pattern>| -> Result<RuleRun, Refusal> {
             let mut b = Builder::new(None, valid, Some(evaluated.clone()));
             b.ranges = ranges;
-            self::clauses(&mut b, &clauses, first)?;
+            self::clauses(&mut b, &clauses, first, &HashSet::new())?;
             let slots = std::mem::take(&mut b.slots.by_var);
             let arg = |e: &EdnValue| match e {
                 EdnValue::Symbol(v) if v.starts_with('?') => Ok(match slots.get(v) {
@@ -1091,7 +1092,7 @@ impl Builder {
             WhereClause::Not(body) => {
                 // Every variable the body names that the rows bind; the
                 // others are the body's own (its sources' hidden variables).
-                let imports = optimizer::clause_ref_vars(&body);
+                let imports = reads(&body);
                 let step = self.anti(&body, imports.into_iter().collect())?;
                 self.push_anti(step);
             }
@@ -1151,7 +1152,7 @@ impl Builder {
                 // (INT-031 on the executor otherwise).
                 Some(j) if j.iter().all(|v| self.slots.by_var.contains_key(v)) => j.clone(),
                 Some(_) => return no(UnboundJoin),
-                None => optimizer::clause_ref_vars(branch).into_iter().collect(),
+                None => reads(branch).into_iter().collect(),
             };
             let imports: HashSet<String> = vars
                 .iter()
@@ -1219,7 +1220,7 @@ impl Builder {
             .collect();
         imports.sort_by_key(|&(_, s)| s);
         let seeded: HashSet<String> = imports.iter().map(|(v, _)| v.clone()).collect();
-        let (seeded_order, seeded_deferred) = optimizer::plan_seeded(body.to_vec(), &seeded);
+        let (seeded_order, _) = optimizer::plan_seeded(body.to_vec(), &seeded);
         // A probe per outer row holds nothing: correlated when the first
         // pattern's entity is imported.
         let probe = seeded_order
@@ -1239,13 +1240,7 @@ impl Builder {
         let valid = self.valid;
         if hash {
             let mut b = Builder::new(None, valid, self.evaluated.clone());
-            let (planned, deferred) = optimizer::plan(body.to_vec());
-            for (c, _) in planned {
-                b.clause(c)?;
-            }
-            for c in sorted(deferred) {
-                b.clause(c)?;
-            }
+            clauses(&mut b, body, None, &HashSet::new())?;
             let keys = imports
                 .iter()
                 .filter_map(|(v, outer)| {
@@ -1269,12 +1264,7 @@ impl Builder {
             b.slots.by_var.insert(v.clone(), s);
         }
         b.source = Some(Source::Seed);
-        for (c, _) in seeded_order {
-            b.clause(c)?;
-        }
-        for c in sorted(seeded_deferred) {
-            b.clause(c)?;
-        }
+        clauses(&mut b, body, None, &seeded)?;
         let slots = std::mem::take(&mut b.slots);
         let plan = Box::new(b.finish()?);
         Ok((
@@ -1296,37 +1286,61 @@ fn sorted(mut deferred: Vec<WhereClause>) -> Vec<WhereClause> {
 }
 
 /// Whether the engine runs `branch` of an `or` whose rows give `imports`
-/// (decision 11 of the #546 plan). It holds patterns, expressions and
-/// `not`s only (a rule invocation or a nested `or` stays on the executor),
-/// and no predicate the registry may lack: the executor reports that only
-/// when a row reaches it. The executor applies a branch's `not`s before its
-/// expressions, so a `not` must not read a variable only an expression of
-/// the branch binds.
+/// as the executor does (decision 11 of the #546 plan). The executor reports
+/// an unknown predicate only when a row reaches it, so a branch names none at
+/// any depth; and it applies a branch's `not`s and nested `or`s before its
+/// expressions, so none of them may read a variable only an expression of
+/// the branch binds. Both change in step 6 (#551 spec §4).
 fn runs_branch(branch: &[WhereClause], imports: &HashSet<String>) -> bool {
+    fn udf(clauses: &[WhereClause]) -> bool {
+        clauses.iter().any(|c| match c {
+            WhereClause::Expr {
+                expr: Expr::UnaryOp(UnaryOp::Udf(_), _),
+                ..
+            } => true,
+            WhereClause::Not(body) | WhereClause::NotJoin { clauses: body, .. } => udf(body),
+            WhereClause::Or(branches) | WhereClause::OrJoin { branches, .. } => {
+                branches.iter().any(|b| udf(b))
+            }
+            _ => false,
+        })
+    }
+    if udf(branch) {
+        return false;
+    }
     let mut by_pattern: HashSet<String> = imports.clone();
     let mut by_expr: HashSet<&str> = HashSet::new();
     for c in branch {
         match c {
             WhereClause::Pattern(p) => by_pattern.extend(optimizer::pattern_bound_vars(p)),
-            WhereClause::Expr {
-                expr: Expr::UnaryOp(UnaryOp::Udf(_), _),
-                ..
-            } => return false,
             WhereClause::Expr { binding, .. } => by_expr.extend(binding.as_deref()),
-            WhereClause::Not(_) | WhereClause::NotJoin { .. } => {}
-            _ => return false,
+            _ => {}
         }
     }
-    branch.iter().all(|c| {
-        let reads: Vec<String> = match c {
-            WhereClause::Not(body) => optimizer::clause_ref_vars(body).into_iter().collect(),
-            WhereClause::NotJoin { join_vars, .. } => join_vars.clone(),
-            _ => return true,
-        };
-        reads
+    branch.iter().all(|c| match c {
+        WhereClause::Pattern(_) | WhereClause::Expr { .. } | WhereClause::RuleInvocation { .. } => {
+            true
+        }
+        c => reads(std::slice::from_ref(c))
             .iter()
-            .all(|v| by_pattern.contains(v) || !by_expr.contains(v.as_str()))
+            .all(|v| by_pattern.contains(v) || !by_expr.contains(v.as_str())),
     })
+}
+
+/// Every variable `clauses` name, at any depth: an `or-join` names its join
+/// variables only. What a `not` body or `or` branch may import.
+fn reads(clauses: &[WhereClause]) -> HashSet<String> {
+    let mut vars = HashSet::new();
+    for c in clauses {
+        match c {
+            WhereClause::Or(branches) => vars.extend(branches.iter().flat_map(|b| reads(b))),
+            WhereClause::OrJoin { join_vars, .. } => vars.extend(join_vars.iter().cloned()),
+            WhereClause::Not(body) => vars.extend(reads(body)),
+            WhereClause::NotJoin { join_vars, .. } => vars.extend(join_vars.iter().cloned()),
+            c => vars.extend(optimizer::clause_ref_vars(std::slice::from_ref(c))),
+        }
+    }
+    vars
 }
 
 /// Whether `p` is a per-fact pseudo-attribute pattern (it scans nothing).
@@ -1363,6 +1377,9 @@ fn closed(body: &[WhereClause], imports: &HashSet<String>) -> bool {
                 .iter()
                 .all(|v| !imports.contains(v) || bound.contains(v)),
             WhereClause::NotJoin { join_vars, .. } => join_vars
+                .iter()
+                .all(|v| !imports.contains(v) || bound.contains(v)),
+            c @ (WhereClause::Or(_) | WhereClause::OrJoin { .. }) => reads(std::slice::from_ref(c))
                 .iter()
                 .all(|v| !imports.contains(v) || bound.contains(v)),
             _ => true,

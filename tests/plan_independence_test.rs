@@ -448,6 +448,44 @@ fn or_branch_expression_reads_outer_variable_in_rule_body() {
     assert_eq!(ints(&r), vec!["i:1", "i:2"], "or-and in a rule body");
 }
 
+// ── #551: nested `or`s in branches run on the engine ────────────────────────
+
+/// A nested `or` / `or-join` in a branch, one reading outer variables the
+/// branch's patterns do not bind (so the branch cannot be hashed), and a
+/// rule whose branch nests an `or` around a rule invocation: every plan,
+/// hashed or correlated, gives the executor's answer (#551 plan, step 5).
+#[test]
+fn nested_or_in_a_branch() {
+    let db = Minigraf::in_memory().unwrap();
+    people(&db);
+    db.execute(
+        "(rule [(deep ?x ?y) [?x :friend ?y] (or (or (knows ?y ?x) [?y :age 40]) [?x :age 30])])",
+    )
+    .unwrap();
+    for (q, n) in [
+        (
+            "[:find ?n :where [?e :name ?n] (or-join [?e] (and [?e :age ?a] (or [(> ?a 35)] [?e :friend :bob])) [?e :x 1.5])]",
+            3,
+        ),
+        (
+            "[:find ?n :where [?e :name ?n] [?e :age ?a] (or-join [?e ?a] (and [?f :age ?b] (or [(= ?a ?b)] [?e :friend ?f])) [?e :x 1.5])]",
+            3,
+        ),
+        (
+            "[:find ?n :where [?e :name ?n] (or-join [?e] (and [?e :age ?a] (or-join [?a] [(> ?a 35)] [(< ?a 31)])) [?e :y _])]",
+            4,
+        ),
+        (
+            "[:find ?n :where [?e :name ?n] [?e :age ?a] (or-join [?e ?a] (and [?f :age ?b] (or [(< ?a ?b)] [(> ?a 39)])) [?e :x 1.5])]",
+            3,
+        ),
+        ("[:find ?x ?y :where (deep ?x ?y)]", 3),
+    ] {
+        let r = same(&db, &format!("(query {q})"));
+        assert_eq!(r.len(), n, "{q}");
+    }
+}
+
 // ── #625: an expression reading a variable only an `or` binds ────────────────
 
 fn issue_625_data(db: &Minigraf) {

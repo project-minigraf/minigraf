@@ -1372,10 +1372,11 @@ fn disjunction_matches_executor() {
 }
 
 /// Which disjunctions the engine runs (#546 PR 2): `or` / `or-join` whose
-/// branches hold patterns, expressions, `not`s and rule invocations (#548);
-/// a nested `or`, a predicate the registry may lack, an `or` whose branches
-/// bind their own sources' metadata, and a branch `not` reading what only
-/// the branch's expression binds stay on the executor (decision 11).
+/// branches hold patterns, expressions, `not`s, rule invocations (#548) and
+/// nested `or`s (#551); a predicate the registry may lack, an `or` whose
+/// branches bind their own sources' metadata, and a branch `not` reading
+/// what only the branch's expression binds stay on the executor (decision
+/// 11).
 #[test]
 fn disjunction_routing() {
     let db = Minigraf::in_memory().unwrap();
@@ -1388,11 +1389,11 @@ fn disjunction_routing() {
         "(query [:find ?e :where [?e :person/name ?n] (or (and [?e :person/ok true] (not [?e :person/age 21])) [?e :person/age 22])])",
         "(query [:find ?e :any-valid-time :where [?e :person/name ?n] (or-join [?e] (and [?f :person/age ?a] [?f :db/tx-count ?t]) [?e :person/ok true])])",
         "(query [:find ?e :where [?e :person/name ?n] (or (okay ?e) [?e :person/age 21])])",
+        "(query [:find ?e :where [?e :person/name ?n] (or (or [?e :person/ok true] [?e :person/age 22]) [?e :person/age 21])])",
     ] {
         rows(&db, q);
     }
     for q in [
-        "(query [:find ?e :where [?e :person/name ?n] (or (or [?e :person/ok true] [?e :person/age 22]) [?e :person/age 21])])",
         "(query [:find ?e :where [?e :person/age ?a] (or (and [?e :person/ok true] [(no-such-pred? ?a)]) [?e :person/age 21])])",
         "(query [:find ?e :any-valid-time :where [?e :person/name ?n] (or (and [?e :person/age ?a] [?e :db/tx-count ?t]) (and [?e :person/score ?a] [?e :db/tx-id ?t]))])",
         "(query [:find ?e :where [?e :person/age ?a] (or (and [(+ ?a 1) ?b] (not [?f :person/age ?b])) (and [(+ ?a 2) ?b] [?e :person/ok true]))])",
@@ -1887,6 +1888,7 @@ fn rule_query_routing() {
     }
     assert_eq!(rows(&db, "(query [:find ?x ?y :where (reach ?x ?y)])"), 3);
     assert_eq!(rows(&db, "(query [:find ?y :where (reach :a ?y)])"), 2);
+    assert_eq!(rows(&db, "(query [:find ?x :where (deep ?x ?y)])"), 1);
     for (at, n) in [("2020-01-01T00:00:00Z", 0), ("2100-01-01T00:00:00Z", 3)] {
         let q = format!("(query [:find ?x ?y :as-of \"{at}\" :where (reach ?x ?y)])");
         assert_eq!(rows(&db, &q), n, "an :as-of timestamp runs on the engine");
@@ -1900,7 +1902,6 @@ fn rule_query_routing() {
     );
     for (q, cause) in [
         ("(query [:find ?x ?v :where (one ?x ?v)])", Cause::NoPattern),
-        ("(query [:find ?x :where (deep ?x ?y)])", Cause::Branch),
         (
             "(query [:find ?x :where (reach ?x ?y ?z)])",
             Cause::WideCall,
