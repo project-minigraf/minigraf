@@ -56,19 +56,21 @@ jobs:
           cargo llvm-cov report --branch --json --summary-only --output-path coverage.json
           cargo llvm-cov report --branch --lcov --output-path lcov.info
 
-      # Uploaded before the gates so a failing gate still shows on Codecov.
+      # Thresholds come from coverage-thresholds.toml (#396).
+      - name: Check coverage thresholds
+        run: python3 scripts/coverage_gates.py coverage-thresholds.toml coverage.json
+
+      # After the gates, so an upload failure (no token on a fork PR) cannot
+      # stop them, and run whatever they decided, so a failing gate still
+      # shows on Codecov.
       - name: Upload coverage to Codecov
-        if: github.actor != 'dependabot[bot]'
+        if: ${{ !cancelled() && github.actor != 'dependabot[bot]' }}
         uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./lcov.info
           disable_search: 'true'
           fail_ci_if_error: true
-
-      # Thresholds come from coverage-thresholds.toml (#396).
-      - name: Check coverage thresholds
-        run: python3 scripts/coverage_gates.py coverage-thresholds.toml coverage.json
 
       - name: Generate HTML report
         if: ${{ !cancelled() && github.event_name == 'push' }}
