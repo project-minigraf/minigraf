@@ -6,15 +6,18 @@ codecov:
 ignore:
   - "fuzz/**"
 
+# The report is cargo-llvm-cov's, from coverage-gates.yml. The project target
+# is the whole-crate line floor in coverage-thresholds.toml; that workflow's
+# gate is the one that fails CI.
 coverage:
   status:
     project:
       default:
-        target: 75%
-        threshold: 2%
+        target: 90%
+        threshold: 1%
     patch:
       default:
-        target: 75%
+        target: 85%
         threshold: 2%
 
 comment:
