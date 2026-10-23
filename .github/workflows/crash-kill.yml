@@ -64,7 +64,11 @@ jobs:
           RUST_BACKTRACE: 1
         run: |
           set -o pipefail
-          cargo test --test crash_kill_test -- --nocapture 2>&1 | tee crash-kill-output.txt
+          # v3's large-transaction variant (#550) needs the test hooks; pass
+          # the feature wherever the checked-out Cargo.toml defines it.
+          features=""
+          if grep -q '^test-oracle = ' Cargo.toml; then features="--features test-oracle"; fi
+          cargo test $features --test crash_kill_test -- --nocapture 2>&1 | tee crash-kill-output.txt
 
       - name: Record SIGKILL crash-safety failure
         if: ${{ failure() }}
@@ -79,7 +83,7 @@ jobs:
             echo
             echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             echo "- Commit: $(git rev-parse HEAD)"
-            echo "- Reproduce: cargo test --test crash_kill_test -- --nocapture"
+            echo "- Reproduce: cargo test --test crash_kill_test -- --nocapture (add --features test-oracle where Cargo.toml defines it)"
             echo "  (set MINIGRAF_CRASH_KILL_ROUNDS to raise the round count; MINIGRAF_CRASH_KILL_SEED to the printed base seed to replay)"
             echo
             echo "## Test output"
