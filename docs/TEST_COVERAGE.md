@@ -463,9 +463,9 @@ None of these are counted in the summary. The wasm32 targets run in CI (`.github
 
 ## Ignored Tests
 
-The fourteen ignored tests are intentionally excluded from a normal local run:
+The twelve ignored tests (thirteen with `test-hooks`) are intentionally excluded from a normal local run:
 
-- Six rustdoc examples that reference internal types and cannot compile as standalone examples.
+- Four rustdoc examples that reference internal types and cannot compile as standalone examples.
 - One high-contention concurrency stress test intended for scheduled runs.
 - One long-haul smoke test intended for scheduled runs.
 - One soak test at 10M facts (`soak`), run weekly by `.github/workflows/soak.yml` (#392). `soak_short` runs the same driver at 20K facts in the normal suite. The memory bound is measured in a child process (`soak_memory_child`, #542).
@@ -474,6 +474,7 @@ The fourteen ignored tests are intentionally excluded from a normal local run:
 - Two query-memory acceptance tests (`tests/memory_limit_acceptance_test.rs`, #549, #575), run one at a time by the nightly smoke workflow:
   - 1M aggregate groups return 1M rows, and with `query_memory_limit` at 32 MiB stop with `QRY-012` naming `Aggregate`, after which the database answers;
   - 13 patterns sharing no variable over the fuzz harness's 3 facts stream 3^13 rows with peak RSS under 64 MiB, and with a 64-byte limit stop with `QRY-012` naming `HashJoin`.
+- One large-transaction acceptance test (`tests/large_transaction_acceptance_test.rs`, #550; `test-hooks` only), run by the nightly smoke workflow (see [Large transactions](#large-transactions-550)).
 - One measurement test (`meter_peak_against_rss`, `src/query/engine/tests.rs`, #549): prints the meter's peak against the peak RSS for the same two shapes, opening the engine directly.
 
 ## Reproducing
