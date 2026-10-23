@@ -1160,6 +1160,32 @@ fn negation_keeps_multiplicity() {
     );
 }
 
+/// A clause list with no pattern to scan first starts from the empty row
+/// (#551 plan, step 7): an expression before any pattern, in source order
+/// and reordered; a `not` with nothing but an expression after it; an `or`
+/// of expression-only branches; a rule body that binds before its pattern.
+#[test]
+fn no_pattern_first() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute("(transact [[:a :n 1] [:b :n 2]])").unwrap();
+    db.execute("(rule [(two ?e ?k) [(+ 1 1) ?k] [?e :n ?k]])")
+        .unwrap();
+    for reorder in [false, true] {
+        let _g = crate::query::datalog::optimizer::set_reorder(reorder);
+        for (q, n) in [
+            ("[:find ?e ?k :where [(+ 1 1) ?k] [?e :n ?k]]", 1),
+            ("[:find ?k :where (not [:a :n 7]) [(+ 1 1) ?k]]", 1),
+            ("[:find ?k :where (not [:a :n 1]) [(+ 1 1) ?k]]", 0),
+            ("[:find ?k :where [(+ 1 1) ?k] (not [:a :n 1])]", 0),
+            ("[:find ?k :where (or [(+ 1 1) ?k] [(+ 2 2) ?k])]", 2),
+            ("[:find ?e :where (two ?e 2)]", 1),
+            ("[:find ?e ?k :where (two ?e ?k)]", 1),
+        ] {
+            assert_eq!(rows(&db, &format!("(query {q})")), n, "{q}");
+        }
+    }
+}
+
 /// A correlated body probes once per outer row from its seed; a hashed one
 /// is read once, however many outer rows there are (#546 spec §4.2, §4.3).
 #[test]
@@ -1867,6 +1893,17 @@ fn rule_query_routing() {
     assert_eq!(rows(&db, "(query [:find ?x ?y :where (reach ?x ?y)])"), 3);
     assert_eq!(rows(&db, "(query [:find ?y :where (reach :a ?y)])"), 2);
     assert_eq!(rows(&db, "(query [:find ?x :where (deep ?x ?y)])"), 1);
+    // A body with no pattern runs on the engine, which finds its head
+    // entity is a number, as the executor does.
+    FALLBACKS.with(|f| f.borrow_mut().clear());
+    let err = db
+        .execute("(query [:find ?x ?v :where (one ?x ?v)])")
+        .expect_err("an integer head entity");
+    assert_eq!(err.code(), "QRY-013");
+    assert!(
+        FALLBACKS.with(|f| f.borrow().is_empty()),
+        "the engine planned it"
+    );
     for (at, n) in [("2020-01-01T00:00:00Z", 0), ("2100-01-01T00:00:00Z", 3)] {
         let q = format!("(query [:find ?x ?y :as-of \"{at}\" :where (reach ?x ?y)])");
         assert_eq!(rows(&db, &q), n, "an :as-of timestamp runs on the engine");
@@ -1878,13 +1915,10 @@ fn rule_query_routing() {
         ),
         1
     );
-    for (q, cause) in [
-        ("(query [:find ?x ?v :where (one ?x ?v)])", Cause::NoPattern),
-        (
-            "(query [:find ?x :where (reach ?x ?y ?z)])",
-            Cause::WideCall,
-        ),
-    ] {
+    for (q, cause) in [(
+        "(query [:find ?x :where (reach ?x ?y ?z)])",
+        Cause::WideCall,
+    )] {
         let before = runs();
         FALLBACKS.with(|f| f.borrow_mut().clear());
         let _ = db.execute(q);

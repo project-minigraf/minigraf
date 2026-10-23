@@ -57,8 +57,6 @@ impl From<anyhow::Error> for Refusal {
 /// What the engine does not run yet, by the letter of #551 spec §2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Cause {
-    /// C: a clause list with no pattern before an expression, or none at all.
-    NoPattern,
     /// D: a constant in a rule head.
     HeadConstant,
     /// E: a constant of a kind its pattern position does not take.
@@ -71,8 +69,6 @@ pub(crate) enum Cause {
     UnboundJoin,
     /// I: a `not` body holding more than patterns and expressions.
     NotBody,
-    /// J: `not`s and no pattern after them.
-    Front,
     /// K: a rule head of no arguments, or of more than two.
     HeadArity,
     /// L: a stratification error.
@@ -957,13 +953,10 @@ impl Builder {
         }
     }
 
-    fn finish(self) -> Result<Plan, Refusal> {
-        if !self.front.is_empty() {
-            return no(Front);
-        }
-        let Some(source) = self.source else {
-            return no(NoPattern);
-        };
+    fn finish(mut self) -> Result<Plan, Refusal> {
+        // `not`s and no pattern: they run on the empty row (#551).
+        self.seed();
+        let source = self.source.unwrap_or(Source::Seed);
         Ok(Plan {
             source,
             steps: self.steps,
@@ -1085,10 +1078,9 @@ impl Builder {
                 }
             }
             WhereClause::Expr { expr, binding } => {
-                // A clause before the first pattern sees no variable.
-                if self.source.is_none() {
-                    return no(NoPattern);
-                }
+                // A clause before the first pattern sees no variable: it
+                // runs once, on the empty row (#551).
+                self.seed();
                 let vars = expr_vars(&expr, &self.slots);
                 let step = match binding {
                     None => Step::Filter(expr, vars),
@@ -1139,6 +1131,15 @@ impl Builder {
         Ok(())
     }
 
+    /// Start from the empty row if nothing was planned to scan first, and
+    /// run the `not`s planned before it.
+    fn seed(&mut self) {
+        if self.source.is_none() {
+            self.source = Some(Source::Seed);
+            self.steps.append(&mut self.front);
+        }
+    }
+
     fn push_anti(&mut self, step: Step) {
         if self.source.is_some() {
             self.steps.push(step);
@@ -1166,12 +1167,9 @@ impl Builder {
         branches: &[Vec<WhereClause>],
         join: Option<Vec<String>>,
     ) -> Result<(), Refusal> {
-        if self.source.is_none() {
-            // Nothing before the `or` binds a variable: its outer side is
-            // the empty row.
-            self.source = Some(Source::Seed);
-            self.steps.append(&mut self.front);
-        }
+        // Nothing before the `or` binds a variable: its outer side is the
+        // empty row.
+        self.seed();
         let mut subs = Vec::with_capacity(branches.len());
         for branch in branches {
             let vars: Vec<String> = match &join {
