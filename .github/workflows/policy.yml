@@ -3,6 +3,7 @@ name: Policy
 # Release-policy checks (#395):
 #   - msrv:          the crate builds and its unit tests pass on `rust-version`
 #   - semver-checks: no accidental public-API break against the latest release tag
+#                    (on a major-version branch: the API changes each PR makes)
 #   - cargo-deny:    dependency advisories (RustSec), licenses, duplicate versions
 #                    and sources (deny.toml); also weekly, for new advisories
 #   - golden-corpus: golden files in tests/golden/ are only ever added (#391)
@@ -59,29 +60,40 @@ jobs:
 
   semver-checks:
     name: Public API semver check
-    if: github.event_name != 'schedule'
+    # On `main` every push and PR is checked against the latest release tag,
+    # and a break fails it. A major-version branch (e.g. `v3`) may break the
+    # API, and its tags stop at the split from `main`, so a PR to it is checked
+    # against its base instead: the job shows exactly the API changes that PR
+    # makes (for the CHANGELOG), without failing it. Pushes there are skipped.
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_name == 'main')
     runs-on: ubuntu-latest
-    # A breaking change is only allowed on a major-version branch (e.g. `v3`).
-    # There the job still runs, so the break is visible, but it cannot fail
-    # the PR or the branch push. On `main` it is a hard gate.
-    continue-on-error: ${{ (github.event_name == 'pull_request' && github.base_ref != 'main') || (github.event_name == 'push' && github.ref_name != 'main') }}
+    continue-on-error: ${{ github.event_name == 'pull_request' && github.base_ref != 'main' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Find latest release tag
+      - name: Find the baseline
         id: baseline
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*')
-          echo "Baseline: $tag"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ -n "$BASE_REF" ] && [ "$BASE_REF" != main ]; then
+            # The PR checkout is the merge of the PR into its base; its first
+            # parent is the base as merged, so only the PR's changes show.
+            rev=$(git rev-parse HEAD^1)
+            echo "Baseline: $BASE_REF at $rev"
+          else
+            rev=$(git describe --tags --abbrev=0 --match 'v[0-9]*')
+            echo "Baseline: $rev"
+          fi
+          echo "rev=$rev" >> "$GITHUB_OUTPUT"
 
       - name: Run cargo-semver-checks
         uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
-          baseline-rev: ${{ steps.baseline.outputs.tag }}
+          baseline-rev: ${{ steps.baseline.outputs.rev }}
 
   cargo-deny:
     name: Dependency policy (cargo-deny)
