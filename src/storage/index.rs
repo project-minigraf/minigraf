@@ -283,10 +283,8 @@ mod tests {
         assert_eq!(nan, twin, "NaN is byte-equal to one negative subnormal");
         let below = encode_value(&Value::Float(f64::from_bits(0x8008_0000_0000_0000)));
         let above = encode_value(&Value::Float(f64::from_bits(0x8007_FFFF_FFFF_FFFE)));
-        assert!(
-            below < nan && nan < above,
-            "NaN sits among negative subnormals"
-        );
+        assert!(below < nan, "NaN sorts after a smaller negative subnormal");
+        assert!(nan < above, "NaN sorts before a larger negative subnormal");
         assert!(nan < encode_value(&Value::Float(-0.0)), "NaN < -0.0");
         assert!(
             nan < encode_value(&Value::Float(f64::INFINITY)),
