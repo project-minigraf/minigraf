@@ -888,6 +888,30 @@ mod tests {
         assert_eq!(tx_counts(&path), [1]);
     }
 
+    /// A count the bytes after it could hold, whose facts are cut short, ends
+    /// replay at that entry: at a fact's length or inside its bytes.
+    #[test]
+    fn test_wal_entry_with_facts_cut_short_ends_replay() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.wal");
+        let one_len = {
+            let p = dir.path().join("one.wal");
+            wal_with_entries(&p, 1).len() as u64
+        };
+
+        // Entry 2 claims a second fact; the file ends where its length would be.
+        let bytes = wal_with_entries(&path, 2);
+        let mut file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        file.seek(std::io::SeekFrom::Start(one_len + 12)).unwrap();
+        file.write_all(&2u64.to_le_bytes()).unwrap();
+        drop(file);
+        assert_eq!(tx_counts(&path), [1]);
+
+        // Entry 2's only fact loses its last bytes.
+        std::fs::write(&path, &bytes[..bytes.len() - 3]).unwrap();
+        assert_eq!(tx_counts(&path), [1]);
+    }
+
     /// An entry of more than 1,000,000 facts replays, and so do the entries
     /// after it; the writer's tail cut at open keeps them (#686).
     #[test]
