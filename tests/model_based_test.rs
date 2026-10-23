@@ -19,15 +19,15 @@ mod reference_model;
 use proptest::prelude::*;
 use reference_model::*;
 
-/// With `test-oracle`, every query also runs without clause reordering and
+/// With `test-hooks`, every query also runs without clause reordering and
 /// must give the same rows (#596).
 fn source_order() -> Option<Rerun> {
-    #[cfg(feature = "test-oracle")]
+    #[cfg(feature = "test-hooks")]
     return Some(|db, q| {
         let _off = minigraf::__reorder(false);
         db.execute(q)
     });
-    #[cfg(not(feature = "test-oracle"))]
+    #[cfg(not(feature = "test-hooks"))]
     None
 }
 
@@ -111,11 +111,11 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(cases()))]
 
     /// Every read after every step matches the reference model. With
-    /// `test-oracle`, statements of more than two facts are large (#550):
+    /// `test-hooks`, statements of more than two facts are large (#550):
     /// written in chunks and committed as a checkpoint.
     #[test]
     fn file_backed_db_matches_model(steps in arb_steps()) {
-        #[cfg(feature = "test-oracle")]
+        #[cfg(feature = "test-hooks")]
         let _chunk = minigraf::__tx_chunk_facts(Some(2));
         run_with(&steps, Checks::All, source_order())?;
     }

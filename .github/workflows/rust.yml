@@ -44,13 +44,12 @@ jobs:
     - name: Check docs.rs build
       run: cargo docs-rs --target ${{ matrix.target }}
 
-  # The streaming engine (#473) runs beside the existing executor until #551.
-  # With this feature every query the engine runs is also run by the executor,
-  # and a different answer fails the test, so the whole suite (model-based,
-  # property, golden corpus, integration) checks the engine.
-  oracle:
+  # The tests that need the test-only switches: plan independence (#596),
+  # forced `not`/`or` body forms (#546) and small transaction chunks (#550)
+  # in the model-based, property and crash tests.
+  test-hooks:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - name: Run tests with the executor as the engine's oracle
-      run: cargo test --features test-oracle
+    - name: Run tests with the test-only switches
+      run: cargo test --features test-hooks

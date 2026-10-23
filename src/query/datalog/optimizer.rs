@@ -11,7 +11,7 @@
 
 use crate::query::datalog::types::{AttributeSpec, EdnValue, Expr, Pattern, WhereClause};
 
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 thread_local! {
     /// Whether queries on this thread reorder; tests only.
     static REORDER: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
@@ -22,7 +22,7 @@ thread_local! {
 /// longer turns it off: no answer depends on the plan (#594, #596).
 #[inline]
 pub(crate) fn reorder() -> bool {
-    #[cfg(any(test, feature = "test-oracle"))]
+    #[cfg(any(test, feature = "test-hooks"))]
     if !REORDER.with(std::cell::Cell::get) {
         return false;
     }
@@ -31,17 +31,17 @@ pub(crate) fn reorder() -> bool {
 
 /// Turns reordering on or off for queries on this thread until the guard
 /// drops, which restores the previous setting.
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 pub(crate) fn set_reorder(on: bool) -> ReorderGuard {
     ReorderGuard(REORDER.with(|r| r.replace(on)))
 }
 
 /// Restores the previous [`set_reorder`] setting on drop.
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 #[must_use = "reordering is restored when the guard drops"]
 pub struct ReorderGuard(bool);
 
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 impl Drop for ReorderGuard {
     fn drop(&mut self) {
         REORDER.with(|r| r.set(self.0));
@@ -52,7 +52,7 @@ impl Drop for ReorderGuard {
 /// choice, or one form forced by a test.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    not(any(test, feature = "test-oracle")),
+    not(any(test, feature = "test-hooks")),
     allow(dead_code, reason = "only tests force a form")
 )]
 pub enum Subplans {
@@ -64,7 +64,7 @@ pub enum Subplans {
     Correlated,
 }
 
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 thread_local! {
     /// How bodies on this thread run; tests only.
     static SUBPLANS: std::cell::Cell<Subplans> = const { std::cell::Cell::new(Subplans::Choose) };
@@ -75,25 +75,25 @@ thread_local! {
 /// the same rows.
 #[inline]
 pub(crate) fn subplans() -> Subplans {
-    #[cfg(any(test, feature = "test-oracle"))]
+    #[cfg(any(test, feature = "test-hooks"))]
     return SUBPLANS.with(std::cell::Cell::get);
-    #[cfg(not(any(test, feature = "test-oracle")))]
+    #[cfg(not(any(test, feature = "test-hooks")))]
     Subplans::Choose
 }
 
 /// Forces how bodies run on this thread until the guard drops, which
 /// restores the previous setting.
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 pub(crate) fn set_subplans(mode: Subplans) -> SubplansGuard {
     SubplansGuard(SUBPLANS.with(|s| s.replace(mode)))
 }
 
 /// Restores the previous [`set_subplans`] setting on drop.
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 #[must_use = "the setting is restored when the guard drops"]
 pub struct SubplansGuard(Subplans);
 
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 impl Drop for SubplansGuard {
     fn drop(&mut self) {
         SUBPLANS.with(|s| s.set(self.0));

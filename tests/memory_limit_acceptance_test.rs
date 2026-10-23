@@ -11,8 +11,7 @@
 //! ```
 //!
 //! Peak RSS comes from `/proc/self/status` (Linux only): the high-water mark
-//! is reset just before the query. Without the `test-oracle` feature, as the
-//! executor would itself run out of memory on the cartesian shape.
+//! is reset just before the query.
 //
 // File-backed (Minigraf::open, tempfile): native only, like the other file tests.
 #![cfg(not(target_arch = "wasm32"))]

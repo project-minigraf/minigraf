@@ -9,7 +9,7 @@
 //! answer must also be the one recorded while the executor still checked it
 //! (`tests/answers/`, #551).
 //! Per-fact pseudo-attributes read the source the parser names (#594).
-#![cfg(all(feature = "test-oracle", not(target_arch = "wasm32")))]
+#![cfg(all(feature = "test-hooks", not(target_arch = "wasm32")))]
 
 mod answers;
 

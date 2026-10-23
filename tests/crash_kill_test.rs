@@ -21,7 +21,7 @@
 //! This also covers the original #308 report (a kill mid-checkpoint left a
 //! header checksum mismatch): every round must reopen.
 //!
-//! With the `test-oracle` feature a sixth variant makes most transactions
+//! With the `test-hooks` feature a sixth variant makes most transactions
 //! large (#550): they write pages and commit as a checkpoint, with no WAL
 //! entry, and every fourth one is followed by a large statement that fails
 //! after writing pages and rolls back. Every third runs as a
@@ -185,7 +185,7 @@ enum Variant {
     /// failing large statement follows every fourth transaction, every third
     /// is a `WriteTransaction` ([`in_write_tx`]); `checkpoint()` after every
     /// fifth.
-    #[cfg(feature = "test-oracle")]
+    #[cfg(feature = "test-hooks")]
     Large,
 }
 
@@ -195,23 +195,23 @@ const VARIANTS: &[Variant] = &[
     Variant::WalOnly,
     Variant::AutoCheckpoint,
     Variant::NormalSync,
-    #[cfg(feature = "test-oracle")]
+    #[cfg(feature = "test-hooks")]
     Variant::Large,
 ];
 
 /// The chunk size of the `Large` variant's child.
-#[cfg(feature = "test-oracle")]
+#[cfg(feature = "test-hooks")]
 const LARGE_CHUNK: usize = 2;
 
 /// Fails with API-011 in its second chunk, after the first is written.
-#[cfg(feature = "test-oracle")]
+#[cfg(feature = "test-hooks")]
 const FAILS_LARGE: &str = r#"(transact [[:e0 :a0 0 {:valid-from "2020-01-01T00:00:00Z"}] [:e1 :a0 0]
     [:e2 :a0 0] [:e0 :a0 0 {:valid-from "2021-01-01T00:00:00Z"}]])"#;
 
 /// Run `stmt` as a `WriteTransaction` with the same result: the opposite
 /// statement over the same triples, [`FAILS_LARGE`] (rejected, the
 /// transaction stays usable), then `stmt`, which wins every triple.
-#[cfg(feature = "test-oracle")]
+#[cfg(feature = "test-hooks")]
 fn in_write_tx(db: &Minigraf, stmt: &str) {
     let opposite = match stmt.strip_prefix("(transact ") {
         Some(rest) => format!("(retract {rest}"),
@@ -235,7 +235,7 @@ impl Variant {
             Variant::AutoCheckpoint => opts.wal_checkpoint_threshold(2),
             Variant::NormalSync => opts.synchronous(SyncMode::Normal),
             Variant::CheckpointEach | Variant::CheckpointEvery3 => opts,
-            #[cfg(feature = "test-oracle")]
+            #[cfg(feature = "test-hooks")]
             Variant::Large => opts,
         }
     }
@@ -245,7 +245,7 @@ impl Variant {
             Variant::CheckpointEach => true,
             Variant::CheckpointEvery3 | Variant::NormalSync => k % 3 == 0,
             Variant::WalOnly | Variant::AutoCheckpoint => false,
-            #[cfg(feature = "test-oracle")]
+            #[cfg(feature = "test-hooks")]
             Variant::Large => k % 5 == 0,
         }
     }
@@ -496,26 +496,26 @@ fn crash_kill_child_entrypoint() {
         .expect("child opens log");
 
     let db = Minigraf::open_with_options(&db_path, variant.options()).expect("child opens db");
-    #[cfg(feature = "test-oracle")]
+    #[cfg(feature = "test-hooks")]
     let large = matches!(variant, Variant::Large);
-    #[cfg(feature = "test-oracle")]
+    #[cfg(feature = "test-hooks")]
     let _chunk = large.then(|| minigraf::__tx_chunk_facts(Some(LARGE_CHUNK)));
     let mut rng = Rng::new(seed);
     let mut live = BTreeSet::new();
     for k in 1.. {
         let (stmt, next) = next_tx(&mut rng, &live);
-        #[cfg(feature = "test-oracle")]
+        #[cfg(feature = "test-hooks")]
         if large && k % 3 == 0 {
             in_write_tx(&db, &stmt);
         } else {
             db.execute(&stmt).expect("child transaction");
         }
-        #[cfg(not(feature = "test-oracle"))]
+        #[cfg(not(feature = "test-hooks"))]
         db.execute(&stmt).expect("child transaction");
         log.write_all(format!("{k}\n").as_bytes())
             .expect("child logs transaction");
         live = next;
-        #[cfg(feature = "test-oracle")]
+        #[cfg(feature = "test-hooks")]
         if large && k % 4 == 0 {
             let e = db
                 .execute(FAILS_LARGE)

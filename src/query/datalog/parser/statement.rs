@@ -29,7 +29,7 @@ pub(crate) const DEFAULT_TX_CHUNK_FACTS: usize = 65_536;
 /// memory and writes as one WAL entry.
 pub(crate) const MAX_TX_CHUNK_FACTS: usize = 1_000_000;
 
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 thread_local! {
     static CHUNK_FACTS: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
     /// Facts in [`Chunk`]s alive on this thread, and the most there have been.
@@ -38,17 +38,17 @@ thread_local! {
 
 /// Set this thread's chunk size (`None`: the database's), so tests reach
 /// pass 2 and the large path with small statements.
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 pub(crate) fn set_tx_chunk_facts(n: Option<usize>) -> TxChunkGuard {
     TxChunkGuard(CHUNK_FACTS.with(|c| c.replace(n)))
 }
 
 /// Restores the previous [`set_tx_chunk_facts`] setting on drop.
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 #[must_use = "the chunk size is restored when the guard drops"]
 pub struct TxChunkGuard(Option<usize>);
 
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 impl Drop for TxChunkGuard {
     fn drop(&mut self) {
         CHUNK_FACTS.with(|c| c.set(self.0));
@@ -57,7 +57,7 @@ impl Drop for TxChunkGuard {
 
 /// The most facts [`Chunk`]s held at once on this thread since the last call
 /// (#550 spec §8.1 acceptance), then start counting again from those held now.
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 pub(crate) fn take_held_high_water() -> usize {
     HELD.with(|h| {
         let (now, high) = h.get();
@@ -69,7 +69,7 @@ pub(crate) fn take_held_high_water() -> usize {
 /// The chunk size for a database configured with `configured`: this
 /// thread's test setting if any, kept between 1 and [`MAX_TX_CHUNK_FACTS`].
 pub(crate) fn tx_chunk_facts(configured: usize) -> usize {
-    #[cfg(any(test, feature = "test-oracle"))]
+    #[cfg(any(test, feature = "test-hooks"))]
     if let Some(n) = CHUNK_FACTS.with(std::cell::Cell::get) {
         return n.clamp(1, MAX_TX_CHUNK_FACTS);
     }
@@ -77,13 +77,13 @@ pub(crate) fn tx_chunk_facts(configured: usize) -> usize {
 }
 
 /// At most one chunk of a statement's materialised facts. With `test` or
-/// `test-oracle`, the facts alive in chunks are counted for the acceptance
+/// `test-hooks`, the facts alive in chunks are counted for the acceptance
 /// test's high-water mark.
 pub(crate) struct Chunk(Vec<Fact>);
 
 impl Chunk {
     fn new(facts: Vec<Fact>) -> Self {
-        #[cfg(any(test, feature = "test-oracle"))]
+        #[cfg(any(test, feature = "test-hooks"))]
         HELD.with(|h| {
             let (now, high) = h.get();
             let now = now.saturating_add(facts.len());
@@ -95,7 +95,7 @@ impl Chunk {
     /// The facts, no longer counted.
     pub(crate) fn into_vec(mut self) -> Vec<Fact> {
         let facts = std::mem::take(&mut self.0);
-        #[cfg(any(test, feature = "test-oracle"))]
+        #[cfg(any(test, feature = "test-hooks"))]
         HELD.with(|h| {
             let (now, high) = h.get();
             h.set((now.saturating_sub(facts.len()), high));
@@ -104,7 +104,7 @@ impl Chunk {
     }
 }
 
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 impl Drop for Chunk {
     fn drop(&mut self) {
         let n = self.0.len();
