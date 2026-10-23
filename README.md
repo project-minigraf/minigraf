@@ -163,7 +163,7 @@ No other database offers this combination:
 |---|---|---|---|
 | Rust (native) | 1 | `minigraf` on crates.io | `cargo add minigraf` |
 | Python | 1 | `minigraf` on PyPI | `pip install minigraf` |
-| Browser WASM | 2 (experimental) | `@minigraf/browser` on npm | `npm install @minigraf/browser` |
+| Browser WASM | 1 (from v3.0.0) | `@minigraf/browser` on npm | `npm install @minigraf/browser` |
 | WASI | 2 (experimental) | `@minigraf/wasi` on npm | `npm install @minigraf/wasi` |
 | Node.js | 2 (experimental) | `minigraf` on npm | `npm install minigraf` |
 | Java/JVM | 2 (experimental) | `io.github.project-minigraf:minigraf-jvm` on Maven Central | see [docs](https://project-minigraf.github.io/minigraf-docs/latest/use-cases/) |
@@ -171,7 +171,7 @@ No other database offers this combination:
 | iOS / macOS | 2 (experimental) | `.xcframework` via Swift Package Manager ([minigraf-swift](https://github.com/project-minigraf/minigraf-swift)) | see [docs](https://project-minigraf.github.io/minigraf-docs/latest/use-cases/) |
 | C / FFI | 2 (experimental) | header + tarball on [minigraf-c releases](https://github.com/project-minigraf/minigraf-c/releases) | see [docs](https://project-minigraf.github.io/minigraf-docs/latest/use-cases/) |
 
-**Tier 1** bindings are fully tested and released at the same time as every core release. **Tier 2** bindings are built and smoke-tested, released on a best-effort schedule, and experimental. A binding moves to Tier 1 when real users need it. Tier 1 operating systems and filesystems are Linux (ext4, xfs), macOS (APFS) and Windows (NTFS) on local disk; NFSv4 is supported with caveats, and NFSv3 `nolock` is unsupported for multiple writers. Details: [support tiers](PHILOSOPHY.md#support-tiers).
+**Tier 1** bindings are fully tested and released at the same time as every core release. **Tier 2** bindings are built and smoke-tested, released on a best-effort schedule, and experimental. The Rust crate and Python are Tier 1; browser WASM joins them from v3.0.0. A binding moves to Tier 1 when real users need it, including the project's own published tools. Tier 1 operating systems and filesystems are Linux (ext4, xfs), macOS (APFS) and Windows (NTFS) on local disk; NFSv4 is supported with caveats, and NFSv3 `nolock` is unsupported for multiple writers. Details: [support tiers](PHILOSOPHY.md#support-tiers).
 
 **Embedded graph memory for agents, mobile, and the browser — SQLite's simplicity + Datomic's temporal model.**
 
