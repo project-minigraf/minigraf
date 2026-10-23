@@ -70,6 +70,20 @@ impl PendingStore {
         true
     }
 
+    /// A store of `facts`, duplicates skipped: a `WriteTransaction`'s staged
+    /// facts for one query (#550 spec §7).
+    fn of(facts: Vec<Fact>) -> Self {
+        let mut store = PendingStore {
+            facts: Vec::with_capacity(facts.len()),
+            keys: HashSet::new(),
+            indexes: Indexes::new(),
+        };
+        for fact in facts {
+            store.push(fact);
+        }
+        store
+    }
+
     /// Append `facts` without the duplicate check (fresh writes: each has a
     /// new tx_count, so none can repeat a stored one).
     fn extend(&mut self, facts: Vec<Fact>) {
@@ -155,9 +169,93 @@ pub(crate) struct Snapshot {
     _pin: Option<Arc<GenerationPin>>,
     pending: Arc<RwLock<PendingStore>>,
     pending_len: usize,
+    /// A `WriteTransaction`'s staged facts, read after the pending facts as
+    /// one store with them (#550 spec §7). Their `tx_count`s are above every
+    /// pending one.
+    staged: Option<Arc<PendingStore>>,
     /// Wall-clock time when the snapshot was taken (Unix ms): the "now" of
     /// valid-time reads, so every fact in the snapshot was stamped by then.
     now: i64,
+}
+
+/// The pending part of a snapshot: the first `len` facts of the pending store
+/// at positions `0..len`, then the staged facts at `len..`.
+struct PendingView<'a> {
+    p: &'a PendingStore,
+    len: usize,
+    staged: Option<&'a PendingStore>,
+}
+
+impl<'a> PendingView<'a> {
+    fn total(&self) -> usize {
+        self.len
+            .saturating_add(self.staged.map_or(0, |s| s.facts.len()))
+    }
+
+    fn fact(&self, pos: usize) -> Result<Fact> {
+        match pos.checked_sub(self.len) {
+            None => pending_fact(self.p, pos),
+            Some(i) => match self.staged {
+                Some(s) => pending_fact(s, i),
+                None => Err(err_coded!(ErrorCode::Int045, pos)),
+            },
+        }
+    }
+
+    /// The facts at positions `from..to` (clamped), cloned onto `out`.
+    fn extend(&self, from: usize, to: usize, out: &mut Vec<Fact>) {
+        let to = to.min(self.total());
+        let first = self.p.facts.get(from.min(self.len)..to.min(self.len));
+        out.extend_from_slice(first.unwrap_or(&[]));
+        if let Some(s) = self.staged {
+            let (from, to) = (from.saturating_sub(self.len), to.saturating_sub(self.len));
+            out.extend_from_slice(s.facts.get(from.min(to)..to).unwrap_or(&[]));
+        }
+    }
+
+    /// The EAVT entries from `from` on, of both stores in key order, with
+    /// their view positions.
+    fn eavt(
+        &self,
+        from: std::ops::Bound<&crate::storage::index::EavtKey>,
+    ) -> impl Iterator<Item = (&'a crate::storage::index::EavtKey, usize)> + use<'a> {
+        let range = (from, std::ops::Bound::Unbounded);
+        let staged = self.staged.map(|s| s.indexes.eavt.range(range));
+        merged(self.len, self.p.indexes.eavt.range(range), staged)
+    }
+
+    /// [`Self::eavt`] for AEVT.
+    fn aevt(
+        &self,
+        from: std::ops::Bound<&crate::storage::index::AevtKey>,
+    ) -> impl Iterator<Item = (&'a crate::storage::index::AevtKey, usize)> + use<'a> {
+        let range = (from, std::ops::Bound::Unbounded);
+        let staged = self.staged.map(|s| s.indexes.aevt.range(range));
+        merged(self.len, self.p.indexes.aevt.range(range), staged)
+    }
+}
+
+/// Merge one index of the pending store (positions below `len` only) and of
+/// the staged facts (positions offset by `len`) in key order.
+fn merged<'a, K: Ord + 'a>(
+    len: usize,
+    pending: impl Iterator<Item = (&'a K, &'a usize)>,
+    staged: Option<impl Iterator<Item = (&'a K, &'a usize)>>,
+) -> impl Iterator<Item = (&'a K, usize)> {
+    let mut a = pending
+        .filter(move |&(_, &pos)| pos < len)
+        .map(|(k, &pos)| (k, pos))
+        .peekable();
+    let mut b = staged
+        .into_iter()
+        .flatten()
+        .map(move |(k, &pos)| (k, pos.saturating_add(len)))
+        .peekable();
+    std::iter::from_fn(move || match (a.peek(), b.peek()) {
+        (Some((ka, _)), Some((kb, _))) if kb < ka => b.next(),
+        (Some(_), _) => a.next(),
+        (None, _) => b.next(),
+    })
 }
 
 impl std::fmt::Debug for Snapshot {
@@ -170,9 +268,42 @@ impl std::fmt::Debug for Snapshot {
 }
 
 impl Snapshot {
-    /// The number of pending facts in the snapshot.
+    /// The number of pending facts in the snapshot, staged ones included.
     pub(crate) fn pending_len(&self) -> usize {
         self.pending_len
+            .saturating_add(self.staged.as_ref().map_or(0, |s| s.facts.len()))
+    }
+
+    /// This snapshot with `facts` staged after its pending ones (#550 spec
+    /// §7), its `now` raised to the newest of their `tx_id`s.
+    pub(crate) fn with_staged(mut self, facts: Vec<Fact>) -> Self {
+        if let Some(newest) = facts.iter().map(|f| f.tx_id.cast_signed()).max() {
+            self.now = self.now.max(newest);
+            self.staged = Some(Arc::new(PendingStore::of(facts)));
+        }
+        self
+    }
+
+    /// This snapshot with `reader` as its committed facts and no pending ones:
+    /// a large transaction's working trees, which hold the pending store's
+    /// facts too (#550 spec §7).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn with_committed(
+        mut self,
+        reader: Arc<dyn crate::storage::CommittedReader>,
+    ) -> Self {
+        self.committed = Some(reader);
+        self.pending_len = 0;
+        self.staged = None;
+        self
+    }
+
+    fn view<'a>(&'a self, p: &'a PendingStore) -> PendingView<'a> {
+        PendingView {
+            p,
+            len: self.pending_len.min(p.facts.len()),
+            staged: self.staged.as_deref(),
+        }
     }
 
     /// Wall-clock time when the snapshot was taken (Unix ms).
@@ -199,8 +330,7 @@ impl Snapshot {
     /// no intermediate vector: the pending store can hold millions of facts.
     fn extend_with_pending(&self, from: usize, to: usize, facts: &mut Vec<Fact>) -> Result<()> {
         let p = self.read_pending()?;
-        let to = to.min(self.pending_len).min(p.facts.len());
-        facts.extend_from_slice(p.facts.get(from.min(to)..to).unwrap_or(&[]));
+        self.view(&p).extend(from, to, facts);
         Ok(())
     }
 
@@ -211,7 +341,7 @@ impl Snapshot {
             Some(reader) => reader.all_facts()?,
             None => Vec::new(),
         };
-        self.extend_with_pending(0, self.pending_len, &mut all)?;
+        self.extend_with_pending(0, usize::MAX, &mut all)?;
         Ok(all)
     }
 
@@ -235,9 +365,10 @@ impl Snapshot {
         as_of: Option<u64>,
     ) -> Result<Vec<Fact>> {
         let p = self.read_pending()?;
+        let view = self.view(&p);
         let mut facts = Vec::new();
         for &scan in scans {
-            pending_facts_of_scan(&p, self.pending_len, scan, as_of, &mut facts)?;
+            pending_facts_of_scan(&view, scan, as_of, &mut facts)?;
             if let Some(reader) = &self.committed {
                 facts.extend(reader.live_facts(scan, as_of)?);
             }
@@ -264,7 +395,7 @@ impl Snapshot {
     ) -> Result<Vec<Fact>> {
         let p = self.read_pending()?;
         let mut facts = Vec::new();
-        pending_facts_of_scan(&p, self.pending_len, scan, as_of, &mut facts)?;
+        pending_facts_of_scan(&self.view(&p), scan, as_of, &mut facts)?;
         Ok(facts)
     }
 
@@ -287,11 +418,11 @@ impl Snapshot {
     ) -> Result<bool> {
         use crate::storage::Scan;
         use crate::storage::index::{AevtKey, EavtKey};
-        use std::ops::Bound::{Excluded, Included, Unbounded};
+        use std::ops::Bound::{Excluded, Included};
         let p = self.read_pending()?;
+        let view = self.view(&p);
         let walk = RunWalk {
-            p: &p,
-            len: self.pending_len,
+            view: &view,
             as_of,
             max,
         };
@@ -302,7 +433,7 @@ impl Snapshot {
                     _ => Included(AevtKey::attribute_start(attribute)),
                 };
                 walk.run(
-                    p.indexes.aevt.range((from, Unbounded)),
+                    view.aevt(from.as_ref()),
                     |k| k.attribute == attribute,
                     |k| (&k.entity, k.attribute.as_str()),
                     out,
@@ -320,7 +451,7 @@ impl Snapshot {
                     _ => Included(start),
                 };
                 walk.run(
-                    p.indexes.eavt.range((from, Unbounded)),
+                    view.eavt(from.as_ref()),
                     |k| match scan {
                         Scan::Entity(e) => k.entity == *e,
                         Scan::EntityAttribute(e, a) => k.entity == *e && k.attribute == a,
@@ -340,8 +471,7 @@ impl Snapshot {
 
 /// One call of [`Snapshot::pending_live`] over one pending index.
 struct RunWalk<'a> {
-    p: &'a PendingStore,
-    len: usize,
+    view: &'a PendingView<'a>,
     as_of: Option<u64>,
     max: usize,
 }
@@ -352,7 +482,7 @@ impl<'a> RunWalk<'a> {
     /// last run when it stopped early, `None` when the range is done.
     fn run<K: Clone + 'a>(
         &self,
-        entries: impl Iterator<Item = (&'a K, &'a usize)>,
+        entries: impl Iterator<Item = (&'a K, usize)>,
         in_range: impl Fn(&K) -> bool,
         run_of: impl Fn(&K) -> (&EntityId, &str),
         out: &mut Vec<Fact>,
@@ -361,7 +491,7 @@ impl<'a> RunWalk<'a> {
         let mut first: Option<&K> = None;
         let mut last: Option<&K> = None;
         let mut emitted = 0usize;
-        for (k, &pos) in entries {
+        for (k, pos) in entries {
             if !in_range(k) {
                 break;
             }
@@ -376,11 +506,9 @@ impl<'a> RunWalk<'a> {
             }
             first.get_or_insert(k);
             last = Some(k);
-            if pos < self.len {
-                let f = pending_fact(self.p, pos)?;
-                if self.as_of.is_none_or(|n| f.tx_count <= n) {
-                    run.push(f);
-                }
+            let f = self.view.fact(pos)?;
+            if self.as_of.is_none_or(|n| f.tx_count <= n) {
+                run.push(f);
             }
         }
         flush_run(&mut run, out);
@@ -687,6 +815,7 @@ impl FactStorage {
                 .map(|_| Arc::new(self.pins.pin(d.generation))),
             pending: Arc::clone(&d.pending),
             pending_len,
+            staged: None,
             now,
         })
     }
@@ -767,7 +896,7 @@ impl FactStorage {
 
 /// Apply transaction-time snapshot semantics to a batch of facts.
 ///
-/// Shared by `FactStorage::get_facts_as_of()` and transactional overlay reads.
+/// Used by `Snapshot::facts_as_of`.
 pub(crate) fn filter_facts_as_of(facts: Vec<Fact>, as_of: &AsOf) -> Vec<Fact> {
     facts
         .into_iter()
@@ -979,22 +1108,18 @@ impl FactStorage {
     }
 }
 
-/// The pending facts of `scan` among the first `len` of `p`, up to `as_of`,
-/// appended to `facts`.
+/// The pending facts of `scan` in `view`, up to `as_of`, appended to `facts`.
 fn pending_facts_of_scan(
-    p: &PendingStore,
-    len: usize,
+    view: &PendingView<'_>,
     scan: crate::storage::Scan<'_>,
     as_of: Option<u64>,
     facts: &mut Vec<Fact>,
 ) -> Result<()> {
     use crate::storage::Scan;
     use crate::storage::index::{AevtKey, EavtKey};
+    use std::ops::Bound::Included;
     let mut push = |pos: usize| -> Result<()> {
-        if pos >= len {
-            return Ok(());
-        }
-        let f = pending_fact(p, pos)?;
+        let f = view.fact(pos)?;
         if as_of.is_none_or(|n| f.tx_count <= n) {
             facts.push(f);
         }
@@ -1002,12 +1127,12 @@ fn pending_facts_of_scan(
     };
     match scan {
         Scan::All => {
-            for pos in 0..len.min(p.facts.len()) {
+            for pos in 0..view.total() {
                 push(pos)?;
             }
         }
         Scan::Entity(entity) => {
-            for (key, &pos) in p.indexes.eavt.range(EavtKey::entity_start(*entity)..) {
+            for (key, pos) in view.eavt(Included(&EavtKey::entity_start(*entity))) {
                 if key.entity != *entity {
                     break;
                 }
@@ -1016,7 +1141,7 @@ fn pending_facts_of_scan(
         }
         Scan::EntityAttribute(entity, attribute) => {
             let start = EavtKey::entity_attribute_start(*entity, attribute);
-            for (key, &pos) in p.indexes.eavt.range(start..) {
+            for (key, pos) in view.eavt(Included(&start)) {
                 if key.entity != *entity || key.attribute != attribute {
                     break;
                 }
@@ -1024,7 +1149,7 @@ fn pending_facts_of_scan(
             }
         }
         Scan::Attribute(attribute) => {
-            for (key, &pos) in p.indexes.aevt.range(AevtKey::attribute_start(attribute)..) {
+            for (key, pos) in view.aevt(Included(&AevtKey::attribute_start(attribute))) {
                 if key.attribute != attribute {
                     break;
                 }

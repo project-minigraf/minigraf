@@ -1812,7 +1812,10 @@ fn rule_query_routing() {
     tx.execute("(query [:find ?x ?y :where (reach ?x ?y)])")
         .unwrap();
     tx.rollback();
-    assert_eq!(runs(), before, "a write transaction reads on the executor");
+    assert!(
+        runs() > before,
+        "a write transaction reads on the engine (#550 spec §7)"
+    );
 }
 
 /// The relations a rule query derives are read after the committed and

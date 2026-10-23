@@ -108,7 +108,7 @@ cargo run < demos/demo_negation.txt
 
 1. **`src/graph/`** — EAV fact store with bi-temporal support
    - `types.rs`: `Fact`, `Value`, `EntityId`, `TxId`, `VALID_TIME_FOREVER`
-   - `storage.rs`: `FactStorage` — in-memory store, `snapshot()` → `Snapshot` (committed reader + pin + pending prefix; every query/cursor/log read goes through one), `transact_batch`, `retract`, `get_facts_as_of`, `get_facts_valid_at`, `net_asserted_facts`, `get_facts_by_entity_attribute_indexed`
+   - `storage.rs`: `FactStorage` — in-memory store, `snapshot()` → `Snapshot` (committed reader + pin + pending prefix, and a `WriteTransaction`'s staged facts read with the pending ones as one store, #550; every query/cursor/log read goes through one), `transact_batch`, `retract`, `get_facts_as_of`, `get_facts_valid_at`, `net_asserted_facts`, `get_facts_by_entity_attribute_indexed`
 
 2. **`src/storage/`** — Persistence layer
    - `mod.rs`: `StorageBackend` trait, `LegacyHeaderV7` (v7 migration only), `CommittedReader` trait
@@ -130,7 +130,7 @@ cargo run < demos/demo_negation.txt
    - `dir_sync.rs`: `sync_parent_dir` — fsyncs the parent directory after creating the `.graph`/WAL or deleting the WAL (no-op off Unix)
    - `packed_pages.rs`: v7 fact pages, read only for migration
    - `persistent_facts.rs`: `PersistentFactStorage` — v8 save/load, auto-migration v7→v8
-   - `persistent_facts/large_tx.rs`: large transactions (#550): `Minigraf::execute` of a statement over `TX_CHUNK_FACTS` facts on a file database becomes large (WAL guard: the WAL exists, header only, before any page; cache generation bound `g + 1`; next `tx_count` reserved, allocated at the commit point; `tx_id` fixed), writes each chunk into copy-on-write working trees (per-chunk `Encoder` over the working DICT, no `SharedDictCache`; a fact an earlier chunk wrote kept once, another window of its triple `API-011`; replaced pages it wrote released to the allocator, `g`'s freed), and commits as a checkpoint (pending store included, meta `g + 1`, WAL deleted). A statement error rolls back (cache bound `g`, written pages evicted, handle dirty so the next checkpoint writes a meta before deleting the WAL); an I/O failure also marks the handle failed (`STG-046`). A WAL found at open also marks the handle dirty. `WriteTransaction` stays on the staged path until #550 PR 3
+   - `persistent_facts/large_tx.rs`: large transactions (#550): a transaction whose staged facts would pass `OpenOptions::transaction_chunk_facts` (default 65,536, clamped to 1..=1,000,000, the WAL entry limit) on a file database (`Minigraf::execute` of a larger statement, or a `WriteTransaction` statement that takes it over) becomes large (WAL guard: the WAL exists, header only, before any page; cache generation bound `g + 1`; next `tx_count` reserved, allocated at the commit point; `tx_id` fixed; the pending store written as the first chunk, so in-transaction reads see the working trees alone), writes each chunk into copy-on-write working trees (per-chunk `Encoder` over the working DICT, no `SharedDictCache`; a fact the statement wrote kept once, another window of its triple `API-011`; an earlier statement's keys of a triple it writes deleted, and the triple recorded in the statement's claims tree; replaced pages: written since the statement's base released, written before it held, `g`'s freed), and commits as a checkpoint (meta `g + 1`, WAL deleted). In a `WriteTransaction` each statement has a base (roots, counters, `freed` length, `PageAllocator::begin_base` ids): a rejected statement returns to it and the transaction stays usable; staged statements are written as one chunk when it becomes large (their windows checked at its `tx_id` first). `Minigraf::execute`'s statement error rolls back (cache bound `g`, written pages evicted, handle dirty so the next checkpoint writes a meta before deleting the WAL); an I/O failure also marks the handle failed (`STG-046`). A WAL found at open also marks the handle dirty
 
 3. **`src/query/datalog/`** — Datalog engine
    - `parser.rs`: EDN/Datalog parser — `transact`, `retract`, `query`, `rule`, `:as-of`, `:valid-at`, `not`, `not-join`; `resolve_pseudo_sources` names each per-fact pseudo-attribute's source (nearest earlier same-entity pattern, lexical scope) and its hidden metadata variable `?#<n>.<attr>`, else PRS-081 (#594)
@@ -153,7 +153,7 @@ cargo run < demos/demo_negation.txt
 
 5. **`src/repl.rs`** — Interactive REPL; TTY-aware (suppresses prompts/banner for piped input)
 
-6. **`src/db.rs`** — Public API: `Minigraf::open/execute/query/fact_log/prepare/begin_write/checkpoint/save/verify/rebuild_indexes`, `WriteTransaction`, `IntegrityReport`, `OpenOptions::page_cache_size`, `OpenOptions::read_only` (#429: shared lock, nothing written, writes are `API-014`), `OpenOptions::query_memory_limit` (#549: `QRY-012`, off by default)
+6. **`src/db.rs`** — Public API: `Minigraf::open/execute/query/fact_log/prepare/begin_write/checkpoint/save/verify/rebuild_indexes`, `WriteTransaction`, `IntegrityReport`, `OpenOptions::page_cache_size`, `OpenOptions::read_only` (#429: shared lock, nothing written, writes are `API-014`), `OpenOptions::query_memory_limit` (#549: `QRY-012`, off by default), `OpenOptions::transaction_chunk_facts` (#550)
    - `src/cursor.rs`: `Cursor` / `Batch` — owned, `Send` cursor returned by `Minigraf::query` and `PreparedQuery::query` (#432); pulls engine queries one internal batch at a time (`close`/drop stops the work; a read error after some rows comes on the next call), other queries computed at open; holds a `Snapshot` (one state of the store, its committed generation pinned, #543) until dropped
    - `src/fact_log.rs`: `FactLog` / `FactFilter` / `FactRecord` / `FactOrder` — every fact version streamed by `Minigraf::fact_log` (#430): tx order (multi-pass, bounded window) or storage order, key-level filters; an open log pins the committed generation (`storage::pins`), so checkpoints run but do not reuse its pages (`API-013` deprecated, #543)
    - `src/log_writer.rs`: `LogWriter` — builds a new file from `FactRecord`s with their tx and valid-time kept (#431): tx-ordered appends with holes (`API-015`/`API-016`), batched copy-on-write checkpoints at tx boundaries, no WAL, built at `<path>.partial` and renamed by `finish` (`STG-043` if the target exists)
@@ -212,7 +212,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1752 tests** (1738 passing, 14 ignored; unit + integration + doc).
+**1767 tests** (1753 passing, 14 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.

@@ -431,7 +431,7 @@ impl<'a> Internal<'a> {
     }
 
     /// All children in key order, `rightmost_child` last.
-    #[cfg(test)]
+    #[cfg(any(test, not(target_arch = "wasm32")))]
     pub fn children(&self) -> Result<Vec<u64>> {
         (0..=self.count).map(|i| self.child(i)).collect()
     }

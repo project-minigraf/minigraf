@@ -17,8 +17,8 @@
 use minigraf::{Minigraf, QueryResult};
 
 const FACTS: usize = 1_000_000;
-/// `TX_CHUNK_FACTS` until #550 PR 3's measurement sets it.
-const TX_CHUNK_FACTS: usize = 16_384;
+/// The default `OpenOptions::transaction_chunk_facts`.
+const TX_CHUNK_FACTS: usize = 65_536;
 
 /// A `kB` field of `/proc/self/status`; 0 where it does not exist.
 fn proc_status_kb(field: &str) -> usize {

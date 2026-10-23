@@ -18,9 +18,16 @@ use crate::query::datalog::matcher::{edn_to_entity_id, edn_to_value};
 use crate::query::datalog::types::{AttributeSpec, DatalogCommand, EdnValue, Pattern, Transaction};
 use anyhow::Result;
 
-/// Most facts a statement holds materialised at once; a statement with more
-/// is read again in chunks of this many (spec §3.3).
-const TX_CHUNK_FACTS: usize = 16_384;
+/// The default of `OpenOptions::transaction_chunk_facts`: the most facts a
+/// statement holds materialised at once; a statement with more is read again
+/// in chunks of this many (spec §3.3), and a transaction with more is large
+/// (§4). Set by measurement (#550 plan, PR 3 results) for speed: 16,384 took
+/// up to twice as long with random entities, for 40–55 MiB less at 1M facts.
+pub(crate) const DEFAULT_TX_CHUNK_FACTS: usize = 65_536;
+
+/// The largest chunk: a small transaction is one WAL entry, and replay
+/// refuses an entry of more facts than this (`wal.rs`, #686).
+pub(crate) const MAX_TX_CHUNK_FACTS: usize = 1_000_000;
 
 #[cfg(any(test, feature = "test-oracle"))]
 thread_local! {
@@ -29,7 +36,7 @@ thread_local! {
     static HELD: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
 }
 
-/// Set this thread's chunk size (`None`: [`TX_CHUNK_FACTS`]), so tests reach
+/// Set this thread's chunk size (`None`: the database's), so tests reach
 /// pass 2 and the large path with small statements.
 #[cfg(any(test, feature = "test-oracle"))]
 pub(crate) fn set_tx_chunk_facts(n: Option<usize>) -> TxChunkGuard {
@@ -59,12 +66,14 @@ pub(crate) fn take_held_high_water() -> usize {
     })
 }
 
-pub(crate) fn tx_chunk_facts() -> usize {
+/// The chunk size for a database configured with `configured`: this
+/// thread's test setting if any, kept between 1 and [`MAX_TX_CHUNK_FACTS`].
+pub(crate) fn tx_chunk_facts(configured: usize) -> usize {
     #[cfg(any(test, feature = "test-oracle"))]
     if let Some(n) = CHUNK_FACTS.with(std::cell::Cell::get) {
-        return n.max(1);
+        return n.clamp(1, MAX_TX_CHUNK_FACTS);
     }
-    TX_CHUNK_FACTS
+    configured.clamp(1, MAX_TX_CHUNK_FACTS)
 }
 
 /// At most one chunk of a statement's materialised facts. With `test` or
@@ -501,10 +510,15 @@ pub(crate) struct Statement<'a> {
 }
 
 /// Pass 1 over the statement `input` of kind `kind`: phases 1–6, with
-/// `tx_id` as the time an unset `valid_from` takes. A phase 1–4 error is
-/// returned here; a phase 5–6 one by [`Statement::facts`].
-pub(crate) fn read_statement(input: &str, kind: Kind, tx_id: TxId) -> Result<Statement<'_>> {
-    let chunk = tx_chunk_facts();
+/// `tx_id` as the time an unset `valid_from` takes, keeping at most `chunk`
+/// facts (from [`tx_chunk_facts`]). A phase 1–4 error is returned here; a
+/// phase 5–6 one by [`Statement::facts`].
+pub(crate) fn read_statement(
+    input: &str,
+    kind: Kind,
+    tx_id: TxId,
+    chunk: usize,
+) -> Result<Statement<'_>> {
     let mut kept: Vec<Fact> = Vec::new();
     let mut last_end = 0usize;
     let mut resume = None;
@@ -682,7 +696,8 @@ mod tests {
 
     /// The write path through the statement reader.
     fn new_write(input: &str, kind: Kind, tx_id: TxId) -> Result<Vec<Fact>> {
-        let facts = read_statement(input, kind, tx_id)?.facts()?;
+        let facts =
+            read_statement(input, kind, tx_id, tx_chunk_facts(DEFAULT_TX_CHUNK_FACTS))?.facts()?;
         check_valid_windows(&facts, tx_id)?;
         check_one_window_per_triple(&facts)?;
         Ok(facts)
@@ -884,7 +899,13 @@ mod tests {
         let input = "(transact [[:a :n 1] [:a :n 2] [:a :n 3] [:a :n 4] [:a :n 5]])";
         let statement = {
             let _chunk = set_tx_chunk_facts(Some(2));
-            read_statement(input, Kind::Transact, 1).unwrap()
+            read_statement(
+                input,
+                Kind::Transact,
+                1,
+                tx_chunk_facts(DEFAULT_TX_CHUNK_FACTS),
+            )
+            .unwrap()
         };
         assert_eq!(statement.kept.len(), 2, "kept facts");
         let resume = statement.resume.expect("large");
@@ -908,7 +929,13 @@ mod tests {
 
         let exact = {
             let _chunk = set_tx_chunk_facts(Some(5));
-            read_statement(input, Kind::Transact, 1).unwrap()
+            read_statement(
+                input,
+                Kind::Transact,
+                1,
+                tx_chunk_facts(DEFAULT_TX_CHUNK_FACTS),
+            )
+            .unwrap()
         };
         assert!(exact.resume.is_none(), "five facts fit a chunk of five");
         assert_eq!(exact.facts().unwrap().len(), 5, "facts");
@@ -920,19 +947,30 @@ mod tests {
         let input = format!("(transact [{input}])");
         let _chunk = set_tx_chunk_facts(Some(3));
         let _ = take_held_high_water();
-        let statement = read_statement(&input, Kind::Transact, 1).unwrap();
+        let statement = read_statement(
+            &input,
+            Kind::Transact,
+            1,
+            tx_chunk_facts(DEFAULT_TX_CHUNK_FACTS),
+        )
+        .unwrap();
         let mut n = 0;
         for chunk in statement.chunks().unwrap() {
             n += chunk.unwrap().len();
         }
         assert_eq!(n, 10);
         assert_eq!(take_held_high_water(), 3, "one chunk at a time");
-        let held: Vec<Chunk> = read_statement(&input, Kind::Transact, 1)
-            .unwrap()
-            .chunks()
-            .unwrap()
-            .map(Result::unwrap)
-            .collect();
+        let held: Vec<Chunk> = read_statement(
+            &input,
+            Kind::Transact,
+            1,
+            tx_chunk_facts(DEFAULT_TX_CHUNK_FACTS),
+        )
+        .unwrap()
+        .chunks()
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
         assert_eq!(held.len(), 4);
         assert_eq!(take_held_high_water(), 10, "every chunk kept is counted");
         drop(held);
@@ -947,7 +985,13 @@ mod tests {
         let input = "(transact [[:a :n 1] [:a :n 2] [:a :n 3]])";
         let statement = {
             let _chunk = set_tx_chunk_facts(Some(1));
-            read_statement(input, Kind::Transact, 1).unwrap()
+            read_statement(
+                input,
+                Kind::Transact,
+                1,
+                tx_chunk_facts(DEFAULT_TX_CHUNK_FACTS),
+            )
+            .unwrap()
         };
         let short = &input[..input.len() - 8];
         let mut chunks = Chunks {
@@ -965,17 +1009,28 @@ mod tests {
     #[test]
     fn materialisation_and_window_errors_come_with_the_facts() {
         let code = |r: Result<Vec<Fact>>| MinigrafError::from(r.unwrap_err()).code();
-        let statement =
-            read_statement("(transact [[1 :b 1]])", Kind::Transact, 1).expect("phases 1-4 pass");
+        let statement = read_statement(
+            "(transact [[1 :b 1]])",
+            Kind::Transact,
+            1,
+            tx_chunk_facts(DEFAULT_TX_CHUNK_FACTS),
+        )
+        .expect("phases 1-4 pass");
         assert_eq!(code(statement.facts()), "INT-002");
         let statement = read_statement(
             "(transact [[:a :b 1 {:valid-to \"2001-01-01T00:00:00Z\"}]])",
             Kind::Transact,
             crate::graph::types::tx_id_now(),
+            tx_chunk_facts(DEFAULT_TX_CHUNK_FACTS),
         )
         .expect("phases 1-4 pass");
         assert_eq!(code(statement.facts()), "API-019");
-        let shape = read_statement("(transact [[:a :b]])", Kind::Transact, 1);
+        let shape = read_statement(
+            "(transact [[:a :b]])",
+            Kind::Transact,
+            1,
+            tx_chunk_facts(DEFAULT_TX_CHUNK_FACTS),
+        );
         assert_eq!(
             MinigrafError::from(shape.err().expect("phase 4")).code(),
             "PRS-046"
