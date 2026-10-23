@@ -2551,10 +2551,9 @@ mod tests {
         ] {
             let pfs = with_txs(txs, &[]);
             let snap = pfs.storage().snapshot().unwrap();
-            let Some(reader) = snap.committed.as_ref() else {
-                assert!(txs.is_empty(), "a committed generation");
-                continue;
-            };
+            // An empty save writes a generation too: its DICT has no
+            // transactions.
+            let reader = snap.committed.as_ref().expect("a committed generation");
             let src = reader.key_source().expect("keys");
             let order = src.tx_order().unwrap();
             assert_eq!(order.monotonic, monotonic, "tx_order");
@@ -2591,10 +2590,8 @@ mod tests {
                 }
                 let mut runs = Vec::new();
                 src.tx_runs(t, &mut runs).unwrap();
-                assert!(
-                    runs.windows(2).all(|w| w[0].1 < w[1].0) && runs.iter().all(|r| r.0 <= r.1),
-                    "sorted, disjoint, inclusive"
-                );
+                assert!(runs.windows(2).all(|w| w[0].1 < w[1].0), "sorted, disjoint");
+                assert!(runs.iter().all(|r| r.0 <= r.1), "inclusive");
                 let bound = TxBound::Timestamp {
                     t,
                     committed: runs.into(),
@@ -2605,7 +2602,8 @@ mod tests {
                 for tx in 0..12 {
                     let below = (0..tx).rev().find(|&c| kept.contains(&c));
                     if let Some(b) = bound.kept_below(tx) {
-                        assert!(below.is_none_or(|k| k <= b) && b < tx, "seek target");
+                        assert!(below <= Some(b), "the newest kept below or later");
+                        assert!(b < tx, "below the passed-over transaction");
                         assert!((b + 1..tx).all(|c| !kept.contains(&c)), "skips none kept");
                     } else {
                         assert!(below.is_none(), "nothing kept below");
