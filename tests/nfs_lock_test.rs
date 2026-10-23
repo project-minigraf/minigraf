@@ -23,9 +23,9 @@ use std::process::{Command, Output};
 /// Path to `examples/pid_ns_helper`.
 ///
 /// `MINIGRAF_PID_NS_HELPER`, if set, is used as-is. Needed under `cargo
-/// tarpaulin`, which deletes `target/debug/examples/` as part of its own
-/// instrumented build regardless of when it was built, so the helper has to
-/// live in a target dir tarpaulin never touches; `.github/workflows/coverage.yml`
+/// llvm-cov`, whose instrumented build puts test binaries where the
+/// `examples/`-relative lookup below fails, so the helper has to live in
+/// a target dir it never touches; `.github/workflows/coverage-gates.yml`
 /// builds it there and sets this variable. Otherwise resolved relative to the
 /// test binary at `target/debug/deps/nfs_lock_test-<hash>`, the same shape as
 /// `tests/pid_namespace_test.rs::helper_binary`.

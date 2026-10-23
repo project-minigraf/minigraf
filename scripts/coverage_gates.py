@@ -1,27 +1,36 @@
 #!/usr/bin/env python3
-"""Check per-file coverage floors from coverage-thresholds.toml (#396).
+"""Check coverage floors from coverage-thresholds.toml (#396).
 
 Usage: coverage_gates.py <thresholds.toml> <llvm-cov summary.json>
 
-The JSON is `cargo llvm-cov report --branch --json --summary-only`. Every file
-named in the thresholds must be in the report, with branch data when it has a
-branch floor; a missing file or missing branch data fails the gate instead of
-being skipped, so an empty or partial report can never pass.
+The JSON is `cargo llvm-cov report --branch --json --summary-only`. The
+`[total]` floors apply to the whole crate, the `[files."<path>"]` floors to one
+file each. Every file named in the thresholds must be in the report, with
+branch data when it has a branch floor; a missing file or missing branch data
+fails the gate instead of being skipped, so an empty or partial report can
+never pass.
 """
 
 import json
 import sys
 import tomllib
 
+TOTAL = "(total)"
+
 
 def main() -> int:
     thresholds_path, report_path = sys.argv[1], sys.argv[2]
     with open(thresholds_path, "rb") as f:
-        floors = tomllib.load(f)["files"]
+        thresholds = tomllib.load(f)
     with open(report_path) as f:
         report = json.load(f)
 
-    by_path = {}
+    floors = {}
+    if "total" in thresholds:
+        floors[TOTAL] = thresholds["total"]
+    floors.update(thresholds["files"])
+
+    by_path = {TOTAL: report["data"][0]["totals"]}
     for entry in report["data"][0]["files"]:
         name = entry["filename"].replace("\\", "/")
         for path in floors:
