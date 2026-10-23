@@ -3,7 +3,8 @@ name: Policy
 # Release-policy checks (#395):
 #   - msrv:          the crate builds and its unit tests pass on `rust-version`
 #   - semver-checks: no accidental public-API break against the latest release tag
-#   - cargo-deny:    dependency licenses, duplicate versions and sources (deny.toml)
+#   - cargo-deny:    dependency advisories (RustSec), licenses, duplicate versions
+#                    and sources (deny.toml); also weekly, for new advisories
 #   - golden-corpus: golden files in tests/golden/ are only ever added (#391)
 
 on:
@@ -13,6 +14,9 @@ on:
     # Major-version branches (e.g. `v3`) run the same checks, but a semver
     # break is allowed there — see the semver-checks job.
     branches: [ "main", "v[0-9]*" ]
+  # A new advisory can land without a change here (default branch only).
+  schedule:
+    - cron: '0 0 * * 0'
 
 env:
   CARGO_TERM_COLOR: always
@@ -23,6 +27,7 @@ permissions:
 jobs:
   msrv:
     name: MSRV (Rust 1.89)
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     env:
       MSRV: "1.89"
@@ -54,6 +59,7 @@ jobs:
 
   semver-checks:
     name: Public API semver check
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     # A breaking change is only allowed on a major-version branch (e.g. `v3`).
     # There the job still runs, so the break is visible, but it cannot fail
@@ -80,6 +86,9 @@ jobs:
   cargo-deny:
     name: Dependency policy (cargo-deny)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -87,8 +96,24 @@ jobs:
       - name: Run cargo-deny
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          # Advisories are covered by cargo-audit.yml and osv-scanner.yml.
-          command: check bans licenses sources
+          command: check advisories bans licenses sources
+
+      - name: Record weekly failure
+        if: ${{ failure() && github.event_name == 'schedule' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_TITLE: "Weekly dependency check failure"
+        run: |
+          body="The weekly cargo-deny run failed: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID (commit $GITHUB_SHA)."
+          existing_issue="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "$ISSUE_TITLE in:title" --json number,title --limit 100 \
+            --jq ".[] | select(.title == \"$ISSUE_TITLE\") | .number" | head -n 1)"
+          if [ -n "$existing_issue" ]; then
+            gh issue comment "$existing_issue" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" --body "$body"
+          fi
 
   golden-corpus:
     name: Golden files are add-only
