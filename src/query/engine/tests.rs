@@ -2963,7 +2963,7 @@ fn aggregate_finish_keeps_sum_distinct_members_charged_once() {
 /// up to 1,032 bytes from a per-thread cache and larger ones through its
 /// locked bins, which cost a point query about 5% (#721 grew the stream to
 /// 1,056 bytes). State a query may not need belongs behind a `Box`.
-#[cfg(target_pointer_width = "64")]
+#[cfg(all(target_os = "linux", target_env = "gnu", target_pointer_width = "64"))]
 #[test]
 fn stream_fits_the_allocator_thread_cache() {
     let size = std::mem::size_of::<super::Stream>();
