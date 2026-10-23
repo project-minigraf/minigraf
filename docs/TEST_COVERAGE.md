@@ -4,11 +4,11 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,701 | 1,717 |
+| **Passing** | 1,702 | 1,718 |
 | **Ignored** | 12 | 13 |
-| **Total** | 1,713 | 1,730 |
+| **Total** | 1,714 | 1,731 |
 
-**Verified**: 2026-10-23 with `cargo test --quiet`.
+**Verified**: 2026-10-24 with `cargo test --quiet`.
 
 #551 PR 2 deleted the executor's query path, with the 73 unit tests of its internals and the oracle. Two engine tests replace shapes no other test covered, and a storage unit test covers the reads only the executor made.
 
@@ -415,6 +415,7 @@ These tests compare the database against an independent answer rather than a sin
   - Engine unit tests check routing (`:as-of` timestamps, a rule body with no pattern, a three-argument call and a write transaction) and derived rows read across batches before and after a checkpoint. `relation.rs` unit tests check row identity and the `Old` / `Delta` / `Full` ranges.
   - Every delta run of the magic-set rewrite of a recursive rule joins each clause on a variable bound before it, with no keyless join (`rule_delta_runs_join_on_a_bound_variable`, #694). An optimizer unit test checks `plan_after`'s connected order.
   - A join on a bound value probes its AVET ranges and pending facts (#721): the delta run of the ancestors shape probes `[?x :manager ?y]` by value, in memory and on a half-checkpointed file (`rule_delta_probes_a_bound_value`); a value join reads only the probed keys, through a pending retraction (`value_probe_reads_only_the_probed_keys`); keyword and ref from either side, an entity cell no keyword was recorded for (the hash-join fallback), `0.0`/`-0.0`, long strings, `:as-of` and `:valid-at`, in memory, checkpointed and pending (`value_probe_matches_as_joins_do`); a fallback in the middle of a batch joins the rows before it, the rest of the batch and later batches once each (`value_probe_falls_back_mid_batch`).
+  - A query's boxed `Stream` stays within the 1,032 bytes glibc serves from its per-thread cache (`stream_fits_the_allocator_thread_cache`, 64-bit): #721's value-probe state, kept inline, had grown it to 1,056 bytes and a point query by about 5% (#721 follow-up).
 - **`:db/valid-at` in rule bodies** (`tests/recursive_rules_test.rs`, #617): a `:db/valid-at` pattern in a rule definition, in its `not` and `not-join` bodies and in its `or` branches binds the query's valid time, on the semi-naive, stratified and magic-sets paths.
 - **Rules calling `not` / `or` rules** (`tests/not_join_test.rs`, #628)
   - A rule calling a rule with `not-join`, `not` or `or` returns that rule's rows, with a free and a literal argument and through a forwarding rule.
