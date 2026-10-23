@@ -1,6 +1,5 @@
 # cargo-deny policy for Minigraf dependencies (#395).
-# Run locally with: cargo deny check bans licenses sources
-# Advisories are covered by cargo-audit.yml and osv-scanner.yml.
+# Run locally with: cargo deny check advisories bans licenses sources
 
 [graph]
 # Check the native targets plus the browser WASM target, so the
