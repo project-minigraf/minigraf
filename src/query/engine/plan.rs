@@ -334,15 +334,27 @@ fn clauses(b: &mut Builder, clauses: &[WhereClause], first: Option<&Pattern>) ->
     }) {
         return None;
     }
-    let (mut planned, deferred) = optimizer::plan(clauses.to_vec());
-    if let Some(p) = first.filter(|_| optimizer::reorder())
-        && let Some(i) = planned
+    // With `first`, the rest are ordered after it, its variables bound, each
+    // joining on a variable bound before it where one can (#694).
+    let at = first.filter(|_| optimizer::reorder()).and_then(|p| {
+        clauses
             .iter()
-            .position(|(c, _)| matches!(c, WhereClause::Pattern(q) if q == p))
-    {
-        let c = planned.remove(i);
-        planned.insert(0, c);
-    }
+            .position(|c| matches!(c, WhereClause::Pattern(q) if q == p))
+    });
+    let (planned, deferred) = match at {
+        Some(i) => {
+            let mut rest = clauses.to_vec();
+            let head = rest.remove(i);
+            let seeded: HashSet<String> = match &head {
+                WhereClause::Pattern(p) => optimizer::pattern_bound_vars(p).into_iter().collect(),
+                _ => HashSet::new(),
+            };
+            let (mut planned, deferred) = optimizer::plan_after(rest, &seeded);
+            planned.insert(0, (head, None));
+            (planned, deferred)
+        }
+        None => optimizer::plan(clauses.to_vec()),
+    };
     for (c, _) in planned {
         b.clause(c)?;
     }
@@ -669,7 +681,7 @@ fn rule_plan(
     let mut deltas = Vec::new();
     if !naive {
         for (i, delta) in own.iter().enumerate() {
-            let ranges = own
+            let mut ranges: Vec<(Pattern, Range)> = own
                 .iter()
                 .enumerate()
                 .map(|(j, p)| {
@@ -681,6 +693,10 @@ fn rule_plan(
                     (p.clone(), range)
                 })
                 .collect();
+            // The delta's range first: the pattern planned first takes it
+            // even when an equal invocation comes before it (#694).
+            let d = ranges.remove(i);
+            ranges.insert(0, d);
             deltas.push(run(ranges, Some(delta))?);
         }
     }
