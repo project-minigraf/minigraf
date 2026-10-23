@@ -124,8 +124,9 @@ struct Committed {
     resume: Option<Vec<u8>>,
     /// The value constant when the ranges do not fix it.
     test: Option<KeyTest>,
-    /// Triples a pending record decides, as [`keys::entity_attribute_value_prefix`].
-    shadow: Arc<HashSet<Vec<u8>>>,
+    /// Triples a pending record decides, as [`keys::entity_attribute_value_prefix`];
+    /// `None` for none, so a scan with no pending record allocates nothing for it.
+    shadow: Option<Arc<HashSet<Vec<u8>>>>,
 }
 
 /// The attribute and value constants of a scan, against the DICT.
@@ -237,10 +238,7 @@ impl Scan {
         self.state = if ranges.is_empty() {
             self.bucket()
         } else {
-            let shadow = self
-                .values
-                .as_ref()
-                .map_or_else(Arc::default, |v| v.shadow.clone());
+            let shadow = self.values.as_ref().map(|v| v.shadow.clone());
             State::Committed(Committed {
                 ranges,
                 next: 0,
@@ -445,10 +443,12 @@ impl Operator for Scan {
                     let mut row = vec![None; self.spec.width];
                     for kf in &self.keys_buf {
                         if !visible(valid, kf.vf, kf.vt)
-                            || (!c.shadow.is_empty()
-                                && c.shadow.contains(&keys::entity_attribute_value_prefix(
-                                    kf.e, kf.a, &kf.v,
-                                )))
+                            || c.shadow.as_ref().is_some_and(|s| {
+                                !s.is_empty()
+                                    && s.contains(&keys::entity_attribute_value_prefix(
+                                        kf.e, kf.a, &kf.v,
+                                    ))
+                            })
                         {
                             continue;
                         }
@@ -739,7 +739,7 @@ fn open(
         next: 0,
         resume: None,
         test,
-        shadow: Arc::new(shadow),
+        shadow: (!shadow.is_empty()).then(|| Arc::new(shadow)),
     }))
 }
 
