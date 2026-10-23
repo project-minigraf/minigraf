@@ -1,9 +1,7 @@
 //! Streaming query engine (#473): operators that pass batches of id cells
 //! over one [`Snapshot`].
 //!
-//! Every query runs here (#551). Under `cfg(test)` and the `test-oracle`
-//! feature, every query is also run by the executor's query path, which is
-//! built for that only, and the answers are compared ([`oracle`]).
+//! Every query runs here (#551).
 
 mod aggregate;
 mod anti;
@@ -14,8 +12,6 @@ mod filter;
 mod ids;
 mod join;
 mod meter;
-#[cfg(any(test, feature = "test-oracle"))]
-pub(crate) mod oracle;
 mod plan;
 mod project;
 mod recursive;

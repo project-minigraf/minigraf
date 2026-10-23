@@ -1,10 +1,12 @@
 //! Rule queries on the streaming engine (#548 spec §7). Each query runs on
 //! an in-memory database, on a file with its facts pending, and on the same
-//! file after a checkpoint; under the `test-oracle` feature the executor
-//! runs it too and must agree.
+//! file after a checkpoint, and its answer must be the one recorded while the
+//! executor still checked it (`tests/answers/`, #551).
 //
 // File-backed (Minigraf::open, tempfile): native only, like the other file tests.
 #![cfg(not(target_arch = "wasm32"))]
+
+mod answers;
 
 use minigraf::{Minigraf, QueryResult, Value};
 
@@ -43,6 +45,7 @@ impl Dbs {
         all.push(sorted(rows(&self.file, query)));
         assert!(all[0] == all[1], "in memory and pending agree");
         assert!(all[1] == all[2], "pending and committed agree");
+        answers::check("recursive_engine_test", query, &all[0]);
         all.swap_remove(0)
     }
 
@@ -315,6 +318,28 @@ fn limits() {
         db.err("(query [:find ?n :where (cnt ?c ?n) :max-derived-facts 5])"),
         "INT-020",
         "derived facts"
+    );
+}
+
+/// The derived-fact limit counts every fact of a stratum that recurses
+/// through a `not` rule (#633): n0, m0, n1, m1, n2, m2, n3 are seven.
+#[test]
+fn limit_counts_every_fact_through_a_not_rule() {
+    let db = Dbs::new(&[
+        "(transact [[:c :start 0]])",
+        "(rule [(n ?x ?v) [?x :start ?v]])",
+        "(rule [(n ?x ?w) (m ?x ?v) [(+ ?v 1) ?w]])",
+        "(rule [(m ?x ?v) (n ?x ?v) [(< ?v 3)] (not [?x :stop true])])",
+    ]);
+    assert!(
+        db.rows("(query [:find ?v :where (n ?x ?v) :max-derived-facts 7])")
+            == (0..4).map(|v| vec![Value::Integer(v)]).collect::<Vec<_>>(),
+        "seven facts fit: n0 to n3"
+    );
+    assert_eq!(
+        db.err("(query [:find ?v :where (n ?x ?v) :max-derived-facts 6])"),
+        "INT-020",
+        "six do not"
     );
 }
 

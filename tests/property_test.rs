@@ -983,17 +983,17 @@ fn ctx() -> Ctx {
     }
 }
 
-/// With `test-oracle`, every query also runs without clause reordering
+/// With `test-hooks`, every query also runs without clause reordering
 /// (#596) and with `not` bodies hashed where the engine would probe them
 /// (#546), and must give the same rows.
 fn source_order() -> Option<Rerun> {
-    #[cfg(feature = "test-oracle")]
+    #[cfg(feature = "test-hooks")]
     return Some(|db, q| {
         let _off = minigraf::__reorder(false);
         let _hash = minigraf::__subplans(minigraf::Subplans::Hash);
         db.execute(q)
     });
-    #[cfg(not(feature = "test-oracle"))]
+    #[cfg(not(feature = "test-hooks"))]
     None
 }
 

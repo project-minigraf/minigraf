@@ -346,7 +346,7 @@ fn test_or_with_rule_invocation_positive_dep() {
 /// The bug: HashMap::iter() returns entries in non-deterministic order. Two bindings
 /// that are logically identical can produce different Vec orderings, causing
 /// BTreeSet::insert to treat them as distinct and failing to deduplicate.
-/// The fix: sort the key before inserting into BTreeSet (apply_or_clauses lines ~1205, ~1247).
+/// The fix sorted the key before inserting into the BTreeSet.
 #[test]
 fn test_or_does_not_return_duplicate_bindings() {
     let db = db();

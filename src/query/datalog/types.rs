@@ -260,17 +260,6 @@ impl FindSpec {
             },
         }
     }
-
-    /// The logic variable this spec draws values from.
-    /// For rank/row-number (no var), returns a synthetic placeholder.
-    #[cfg(any(test, feature = "test-oracle"))]
-    pub fn var(&self) -> &str {
-        match self {
-            FindSpec::Variable(v) => v.as_str(),
-            FindSpec::Aggregate { var, .. } => var.as_str(),
-            FindSpec::Window(ws) => ws.var.as_deref().unwrap_or("__window_var"),
-        }
-    }
 }
 
 /// Built-in pseudo-attributes — reserved `:db/*` keywords that bind fact metadata
@@ -645,23 +634,6 @@ impl DatalogQuery {
     /// Helper: Get all rule invocations from where clauses, including inside Not bodies
     pub fn get_rule_invocations(&self) -> Vec<(String, Vec<EdnValue>)> {
         Self::collect_rule_invocations_recursive(&self.where_clauses)
-    }
-
-    /// Get only top-level rule invocations — those NOT nested inside a Not body.
-    ///
-    /// Used by execute_query_with_rules to build positive patterns from rule heads;
-    /// rule invocations inside `not` are handled by the not-post-filter, not here.
-    #[cfg(any(test, feature = "test-oracle"))]
-    pub fn get_top_level_rule_invocations(&self) -> Vec<(String, Vec<EdnValue>)> {
-        self.where_clauses
-            .iter()
-            .filter_map(|c| match c {
-                WhereClause::RuleInvocation { predicate, args } => {
-                    Some((predicate.clone(), args.clone()))
-                }
-                _ => None,
-            })
-            .collect()
     }
 
     /// Check if this query uses any rules (including inside Not bodies at any depth)
@@ -1083,48 +1055,18 @@ mod tests {
     }
 
     #[test]
-    fn test_get_top_level_rule_invocations_excludes_not_join_body() {
-        // not-join body rule invocations are NOT top-level
-        let query = DatalogQuery::new(
-            vec![FindSpec::Variable("?e".to_string())],
-            vec![
-                WhereClause::RuleInvocation {
-                    predicate: "reachable".to_string(),
-                    args: vec![
-                        EdnValue::Symbol("?e".to_string()),
-                        EdnValue::Symbol("?x".to_string()),
-                    ],
-                },
-                WhereClause::NotJoin {
-                    join_vars: vec!["?e".to_string()],
-                    clauses: vec![WhereClause::RuleInvocation {
-                        predicate: "blocked".to_string(),
-                        args: vec![EdnValue::Symbol("?e".to_string())],
-                    }],
-                },
-            ],
-        );
-        let top_level = query.get_top_level_rule_invocations();
-        // Only "reachable" is top-level; "blocked" is inside not-join
-        assert_eq!(top_level.len(), 1);
-        assert_eq!(top_level[0].0, "reachable");
-    }
-
-    #[test]
-    fn test_find_spec_variable_display_and_var() {
+    fn test_find_spec_variable_display() {
         let spec = FindSpec::Variable("?name".to_string());
         assert_eq!(spec.display_name(), "?name");
-        assert_eq!(spec.var(), "?name");
     }
 
     #[test]
-    fn test_find_spec_aggregate_display_and_var() {
+    fn test_find_spec_aggregate_display() {
         let spec = FindSpec::Aggregate {
             func: "count-distinct".to_string(),
             var: "?e".to_string(),
         };
         assert_eq!(spec.display_name(), "(count-distinct ?e)");
-        assert_eq!(spec.var(), "?e");
     }
 
     #[test]
@@ -1192,7 +1134,7 @@ mod tests {
     }
 
     #[test]
-    fn test_find_spec_window_display_and_var() {
+    fn test_find_spec_window_display() {
         let ws_with_var = WindowSpec {
             func: WindowFunc::Sum,
             var: Some("?salary".to_string()),
@@ -1202,7 +1144,6 @@ mod tests {
         };
         let spec = FindSpec::Window(ws_with_var);
         assert_eq!(spec.display_name(), "(sum ?salary :over ...)");
-        assert_eq!(spec.var(), "?salary");
 
         let ws_no_var = WindowSpec {
             func: WindowFunc::Rank,
@@ -1213,7 +1154,6 @@ mod tests {
         };
         let spec2 = FindSpec::Window(ws_no_var);
         assert_eq!(spec2.display_name(), "(rank :over ...)");
-        assert_eq!(spec2.var(), "__window_var");
     }
 
     #[test]

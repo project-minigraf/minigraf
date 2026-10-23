@@ -1398,6 +1398,37 @@ mod tests {
         );
     }
 
+    /// A committed live read of an entity or attribute the DICT does not
+    /// hold reads nothing.
+    #[test]
+    fn live_facts_of_unknown_ids_are_empty() {
+        use crate::storage::Scan;
+        let mut pfs = PersistentFactStorage::new(MemoryBackend::new(), 256).unwrap();
+        pfs.storage()
+            .transact(
+                vec![(entity(1), ":name".to_string(), Value::Integer(1))],
+                None,
+            )
+            .unwrap();
+        pfs.mark_dirty();
+        pfs.save().unwrap();
+        let snap = pfs.storage().snapshot().unwrap();
+        let reader = snap.committed.as_ref().expect("a committed generation");
+        let (known, unknown) = (entity(1), entity(2));
+        for scan in [
+            Scan::Entity(&unknown),
+            Scan::EntityAttribute(&unknown, ":name"),
+            Scan::EntityAttribute(&known, ":age"),
+            Scan::Attribute(":age"),
+        ] {
+            assert!(reader.live_facts(scan, None).unwrap().is_empty());
+        }
+        assert_eq!(
+            reader.live_facts(Scan::Entity(&known), None).unwrap().len(),
+            1
+        );
+    }
+
     #[test]
     fn save_and_reopen_preserve_facts_tx_id_and_tx_count() {
         let mut pfs = PersistentFactStorage::new(MemoryBackend::new(), 256).unwrap();

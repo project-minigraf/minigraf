@@ -86,9 +86,10 @@ default = []
 # Deprecated, does nothing since v3.0.0: every build reorders query clauses
 # (#594, #596). Kept so that builds naming it still resolve.
 wasm = []
-# Build the executor's query path and run it beside the streaming engine,
-# comparing every answer (#473 spec §9, #551). Tests only.
-test-oracle = []
+# Test-only switches for integration tests: clause reordering, `not`/`or`
+# body forms, transaction chunk size and its high-water mark (#596, #546,
+# #550; `minigraf::__reorder` and the rest). Tests only.
+test-hooks = []
 browser = [
     "dep:wasm-bindgen",
     "dep:wasm-bindgen-futures",

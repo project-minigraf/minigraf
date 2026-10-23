@@ -14,16 +14,7 @@ jobs:
     name: Check release binary size
     runs-on: ubuntu-latest
     env:
-      # 1260 KiB: 1200 KiB (raised from 1 MiB for #277's structured error codes) plus a
-      # temporary 60 KiB while the streaming engine and the executor both ship (#473;
-      # 30 KiB more for rule queries on the engine, #548). Back to 1200 KiB when #551
-      # removes the executor's query path. See PHILOSOPHY.md §4.
-      SIZE_LIMIT_BYTES: 1290240
-      # Temporarily report-only on v3: #549 left the binary at 1259 of 1260 KiB with
-      # #549 PR 2, #550 and #551 still to land while both query paths ship. A size over
-      # the limit is a warning, not a failure. Set back to "fail", with a limit of
-      # 1228800 (1200 KiB), when #551 removes the executor's query path.
-      SIZE_GATE: report
+      SIZE_LIMIT_BYTES: 1228800  # 1200 KiB — raised from 1 MiB for #277's structured error codes; see PHILOSOPHY.md §4
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -42,10 +33,6 @@ jobs:
           LIMIT_KB=$(( SIZE_LIMIT_BYTES / 1024 ))
           echo "Binary size: ${SIZE_KB} KiB (limit: ${LIMIT_KB} KiB)"
           if [ "$SIZE" -gt "$SIZE_LIMIT_BYTES" ]; then
-            if [ "$SIZE_GATE" = "report" ]; then
-              echo "::warning::binary size ${SIZE_KB} KiB exceeds limit of ${LIMIT_KB} KiB (gate is report-only until #551)"
-              exit 0
-            fi
             echo "FAIL: binary size ${SIZE_KB} KiB exceeds limit of ${LIMIT_KB} KiB"
             exit 1
           fi

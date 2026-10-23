@@ -340,8 +340,8 @@ fn v7_multivalue_fixture_migrates_and_reads_correctly() {
 /// in one transaction they are API-011 (#435); written in two, the second
 /// replaces the first, so a `:valid-at` query inside the second window returns
 /// exactly one row on every selective path, the first window is visible only
-/// `:as-of` tx 1, and `:any-valid-time` sees one stint. A full scan does not
-/// go through `selective_fact_fetch` and serves as the control.
+/// `:as-of` tx 1, and `:any-valid-time` sees one stint. A full scan serves as
+/// the control.
 #[test]
 fn multi_value_time_stints_visible_at_correct_valid_time_on_every_path() {
     let db = Minigraf::in_memory().unwrap();

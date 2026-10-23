@@ -1,8 +1,7 @@
 //! Aggregate and window answers that do not depend on the plan (#547, spec
 //! `docs/superpowers/specs/2026-10-20-aggregate-window-engine-design.md` §3.4).
 //! `plan_independence_test.rs` runs the same shapes with reordering on and
-//! off; these check the values themselves, without the `test-oracle`
-//! feature.
+//! off; these check the values themselves.
 
 use minigraf::{Minigraf, QueryResult, Value};
 

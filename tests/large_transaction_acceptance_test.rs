@@ -5,14 +5,14 @@
 //! Ignored by default; `.github/workflows/smoke.yml` runs it nightly:
 //!
 //! ```text
-//! cargo test --profile bench --features test-oracle --test large_transaction_acceptance_test -- --ignored --nocapture
+//! cargo test --profile bench --features test-hooks --test large_transaction_acceptance_test -- --ignored --nocapture
 //! ```
 //!
 //! The count of facts held comes from a high-water mark the statement reader
-//! keeps (`minigraf::__statement_facts_high_water`, `test-oracle` only). Peak
+//! keeps (`minigraf::__statement_facts_high_water`, `test-hooks` only). Peak
 //! RSS comes from `/proc/self/status` (Linux only) and is printed, not
 //! checked: the bound is on facts, and the input string alone is about 25 MB.
-#![cfg(all(feature = "test-oracle", not(target_arch = "wasm32")))]
+#![cfg(all(feature = "test-hooks", not(target_arch = "wasm32")))]
 
 use minigraf::{Minigraf, QueryResult};
 

@@ -144,7 +144,7 @@ fn test_not_join_in_rule_body() {
 /// 5. not-join in a two-stage rule chain.
 ///
 /// LIMITATION: When rule B positively invokes rule A (both in the same stratum)
-/// and rule A contains a not-join, the StratifiedEvaluator processes all mixed
+/// and rule A contains a not-join, the old executor processed all mixed
 /// rules within a stratum in a single pass in declaration order.  Because
 /// `approved` is declared before `eligible`, its positive-pattern match for
 /// `[?x :eligible ?_rule_value]` finds no facts yet, producing an empty result.

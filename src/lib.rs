@@ -74,6 +74,10 @@
 //! - **Browser** (`wasm32-unknown-unknown` + `browser` feature) — `wasm-pack build --target web --features browser`
 //! - **WASI / server-side** (`wasm32-wasip1`) — `cargo build --target wasm32-wasip1 --release --bin minigraf`
 
+// The engine's unit tests share `tests/answers/`, which names the crate.
+#[cfg(all(test, not(target_arch = "wasm32")))]
+extern crate self as minigraf;
+
 /// Incremental delivery of query results: [`Cursor`] and [`Batch`].
 pub mod cursor;
 pub mod db;
@@ -122,52 +126,52 @@ pub use query::datalog::types::{AsOf, ValidAt};
 pub use query::datalog::prepared::{BindValue, PreparedQuery};
 
 // Plan-independence tests (#596): run queries without reordering.
-#[cfg(feature = "test-oracle")]
+#[cfg(feature = "test-hooks")]
 #[doc(hidden)]
 pub use query::datalog::optimizer::ReorderGuard;
 
 /// Turns clause reordering on or off for queries on this thread until the
 /// returned guard drops. Only for tests that check no answer depends on the
-/// plan (#596); built with the `test-oracle` feature only.
-#[cfg(feature = "test-oracle")]
+/// plan (#596); built with the `test-hooks` feature only.
+#[cfg(feature = "test-hooks")]
 #[doc(hidden)]
 pub fn __reorder(on: bool) -> ReorderGuard {
     query::datalog::optimizer::set_reorder(on)
 }
 
 // Large-transaction tests (#550): statements read and written in small chunks.
-#[cfg(feature = "test-oracle")]
+#[cfg(feature = "test-hooks")]
 #[doc(hidden)]
 pub use query::datalog::parser::statement::TxChunkGuard;
 
 /// Sets how many facts a `transact` or `retract` materialises at once on this
 /// thread until the returned guard drops (`None`: the built-in size), so a
 /// statement with more facts takes the large-transaction path (#550). Only
-/// for tests; built with the `test-oracle` feature only.
-#[cfg(feature = "test-oracle")]
+/// for tests; built with the `test-hooks` feature only.
+#[cfg(feature = "test-hooks")]
 #[doc(hidden)]
 pub fn __tx_chunk_facts(n: Option<usize>) -> TxChunkGuard {
     query::datalog::parser::statement::set_tx_chunk_facts(n)
 }
 
 /// The most materialised statement facts this thread held at once since the
-/// last call (#550 acceptance). Built with the `test-oracle` feature only.
-#[cfg(feature = "test-oracle")]
+/// last call (#550 acceptance). Built with the `test-hooks` feature only.
+#[cfg(feature = "test-hooks")]
 #[doc(hidden)]
 pub fn __statement_facts_high_water() -> usize {
     query::datalog::parser::statement::take_held_high_water()
 }
 
 // Plan-independence tests (#546): force how negation bodies and `or` branches run.
-#[cfg(feature = "test-oracle")]
+#[cfg(feature = "test-hooks")]
 #[doc(hidden)]
 pub use query::datalog::optimizer::{Subplans, SubplansGuard};
 
 /// Forces how the streaming engine runs `not` / `not-join` bodies (hashed or
 /// correlated) on this thread until the returned guard drops. Only for tests
 /// that check both forms give the same rows (#546); built with the
-/// `test-oracle` feature only.
-#[cfg(feature = "test-oracle")]
+/// `test-hooks` feature only.
+#[cfg(feature = "test-hooks")]
 #[doc(hidden)]
 pub fn __subplans(mode: Subplans) -> SubplansGuard {
     query::datalog::optimizer::set_subplans(mode)

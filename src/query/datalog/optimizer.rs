@@ -1,6 +1,7 @@
 //! Query optimizer: index selection and join ordering for Datalog patterns.
 //!
-//! `plan()` is the single entry point. It assigns an `IndexHint` to each
+//! `plan_seeded` and `plan_after` order the engine's clause lists (`plan`,
+//! for tests, has nothing seeded). Each assigns an `IndexHint` to each
 //! pattern and sorts patterns by selectivity, on every build.
 //!
 //! [`reorder`] says whether this build reorders: patterns, `not`/`not-join`
@@ -10,7 +11,7 @@
 
 use crate::query::datalog::types::{AttributeSpec, EdnValue, Expr, Pattern, WhereClause};
 
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 thread_local! {
     /// Whether queries on this thread reorder; tests only.
     static REORDER: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
@@ -21,7 +22,7 @@ thread_local! {
 /// longer turns it off: no answer depends on the plan (#594, #596).
 #[inline]
 pub(crate) fn reorder() -> bool {
-    #[cfg(any(test, feature = "test-oracle"))]
+    #[cfg(any(test, feature = "test-hooks"))]
     if !REORDER.with(std::cell::Cell::get) {
         return false;
     }
@@ -30,17 +31,17 @@ pub(crate) fn reorder() -> bool {
 
 /// Turns reordering on or off for queries on this thread until the guard
 /// drops, which restores the previous setting.
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 pub(crate) fn set_reorder(on: bool) -> ReorderGuard {
     ReorderGuard(REORDER.with(|r| r.replace(on)))
 }
 
 /// Restores the previous [`set_reorder`] setting on drop.
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 #[must_use = "reordering is restored when the guard drops"]
 pub struct ReorderGuard(bool);
 
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 impl Drop for ReorderGuard {
     fn drop(&mut self) {
         REORDER.with(|r| r.set(self.0));
@@ -51,7 +52,7 @@ impl Drop for ReorderGuard {
 /// choice, or one form forced by a test.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    not(any(test, feature = "test-oracle")),
+    not(any(test, feature = "test-hooks")),
     allow(dead_code, reason = "only tests force a form")
 )]
 pub enum Subplans {
@@ -63,7 +64,7 @@ pub enum Subplans {
     Correlated,
 }
 
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 thread_local! {
     /// How bodies on this thread run; tests only.
     static SUBPLANS: std::cell::Cell<Subplans> = const { std::cell::Cell::new(Subplans::Choose) };
@@ -74,25 +75,25 @@ thread_local! {
 /// the same rows.
 #[inline]
 pub(crate) fn subplans() -> Subplans {
-    #[cfg(any(test, feature = "test-oracle"))]
+    #[cfg(any(test, feature = "test-hooks"))]
     return SUBPLANS.with(std::cell::Cell::get);
-    #[cfg(not(any(test, feature = "test-oracle")))]
+    #[cfg(not(any(test, feature = "test-hooks")))]
     Subplans::Choose
 }
 
 /// Forces how bodies run on this thread until the guard drops, which
 /// restores the previous setting.
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 pub(crate) fn set_subplans(mode: Subplans) -> SubplansGuard {
     SubplansGuard(SUBPLANS.with(|s| s.replace(mode)))
 }
 
 /// Restores the previous [`set_subplans`] setting on drop.
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 #[must_use = "the setting is restored when the guard drops"]
 pub struct SubplansGuard(Subplans);
 
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(any(test, feature = "test-hooks"))]
 impl Drop for SubplansGuard {
     fn drop(&mut self) {
         SUBPLANS.with(|s| s.set(self.0));
@@ -253,14 +254,14 @@ pub(crate) fn clause_ref_vars(clauses: &[WhereClause]) -> std::collections::Hash
 /// by selectivity.
 ///
 /// `Pattern`, `Expr`, `Not`, and `NotJoin` variants may be passed in. `Or`, `OrJoin`,
-/// and top-level `RuleInvocation` are handled by the executor and must not appear here.
+/// and top-level `RuleInvocation` are planned around this list and must not appear here.
 ///
 /// A `Not`/`NotJoin` clause whose required variables (all body variables for `Not`;
 /// `join_vars` for `NotJoin`) are never fully bound by any prefix of the planned
 /// patterns is returned in the second element (`deferred`) rather than being placed —
 /// it depends on a binding source outside this clause list (e.g. an `Or`/`OrJoin`
-/// clause, which the executor applies after this plan) and must be evaluated by the
-/// executor's post-filter instead, to avoid running it before its dependency is bound.
+/// clause, which runs after this plan) and runs after that instead, to avoid running
+/// it before its dependency is bound.
 ///
 /// An `Expr` reading a variable that no pattern in the list and no `Expr` placed
 /// before it binds is deferred the same way (#625), ahead of the deferred
@@ -269,7 +270,7 @@ pub(crate) fn clause_ref_vars(clauses: &[WhereClause]) -> std::collections::Hash
 ///
 /// Returns `(interleaved, deferred)` where `interleaved` pairs each Pattern with
 /// `Some(hint)` and each Expr/Not/NotJoin with `None`.
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(test)]
 pub fn plan(
     clauses: Vec<WhereClause>,
 ) -> (Vec<(WhereClause, Option<IndexHint>)>, Vec<WhereClause>) {

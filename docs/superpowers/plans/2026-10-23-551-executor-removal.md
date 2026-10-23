@@ -7,7 +7,7 @@ called "the spec" below. PRs target `v3`, merge commits. None uses a closing key
 | PR | Steps | Branch |
 |---|---|---|
 | 1 | 1–13: the engine runs every query (spec §3, §4) | `feat/551-engine-everywhere` |
-| 2 | delete the executor's query path and the oracle, `test-hooks`, size gate (spec §5) | planned after PR 1 |
+| 2 | 14–21: delete the executor's query path and the oracle, `test-hooks`, size gate (spec §5) | `feat/551-delete-executor` |
 | 3 | measurement, acceptance, docs (spec §6, §7) | planned after PR 2 |
 
 Each PR leaves `v3` with no unused code outside `cfg(test)` and the oracle's `cfg`, and updates
@@ -170,3 +170,114 @@ the executor's answer for the shape, through the oracle, and the step then keeps
 13. **Docs and size:** `CLAUDE.md` module notes (engine runs every query, executor path is the
     oracle), test counts in `CLAUDE.md` and `docs/TEST_COVERAGE.md`; the release binary's size in
     the PR description.
+
+## Decisions not fixed by the spec (PR 2)
+
+PR 1 left everything PR 2 deletes under `cfg(any(test, feature = "test-oracle"))`: the release
+binary already lacks it (1,140 KiB), so PR 2 is a deletion with no answer change, and every item
+under that `cfg` is classified as one of:
+
+- **oracle**: reached only from the oracle (`engine/oracle.rs`, `DatalogExecutor::oracle`, the
+  executor's query path, `PatternMatcher`, the two evaluators, `evaluate_not_join`). Deleted.
+- **test helper**: also used by `cfg(test)` code outside the oracle (for example
+  `FactStorage::get_all_facts` in `persistent_facts.rs`' tests, `get_asserted_facts` in
+  `db.rs`' tests, `Fact::new` in `wal.rs`' tests). Its `cfg` becomes `cfg(test)`. A helper used
+  only by its own unit tests is deleted with them.
+- **test hook**: the thread-local switches behind `__reorder`, `__subplans`,
+  `__tx_chunk_facts` and `__statement_facts_high_water`. Their `cfg` becomes
+  `cfg(any(test, feature = "test-hooks"))`.
+
+13. **Unit tests that query through `DatalogExecutor::execute` stay where they are (deviation 6).**
+    After PR 1, `execute` runs a query on the engine (`execute_query` → `open_query`), so these
+    tests already check the engine's answer; moving them to `Minigraf::in_memory` (spec §5.2)
+    would change only their setup. Tests that call a deleted function
+    (`execute_query_on_executor`, `execute_query_with_rules`, `filter_facts_for_query`,
+    `apply_post_processing`, `apply_expr_clauses`, `evaluate_branch`, `branch_outer_reads`,
+    `apply_window_functions`, `selective_fact_fetch` and the like) are deleted, except that a
+    test whose query and expected answer are not already checked on the engine elsewhere is
+    rewritten to run that query through `execute` and keep its expected answer. The PR lists
+    each deleted test and the engine test that covers its shape.
+14. **The two answer-change tests keep only the engine's answer.** Each asserted the executor's
+    answer through the oracle and the engine's; the executor's answer becomes a comment, with
+    the spec §4 item it documents. `oracle::exempt` goes with the oracle.
+15. **`RUNS` stays** (`cfg(test)`): the routing tests assert with it that a query ran on the
+    engine and how often, which still guards against a second path coming back.
+16. **CI.** `rust.yml`'s `oracle` job becomes `test-hooks` (`cargo test --features test-hooks`):
+    `plan_independence_test` and the `__subplans`/`__tx_chunk_facts` variants of the model,
+    property and crash tests still need the feature. `smoke.yml` passes `--features test-hooks`.
+    `crash-kill.yml` checks `^test-hooks = ` on `v3` and, in a separate PR, on `main`, so the
+    file stays the same on both (#687); `main` defines neither feature, so its run is unchanged.
+17. **Coverage floors.** Deleting tested code changes the per-file and whole-crate ratios. If a
+    floor in the coverage workflow fails, the PR reports the new figure; a floor is lowered only
+    for a file whose remaining code is no less covered than before (checked line by line).
+
+18. **Frozen answers (found in step 15).** `query::engine::tests`, `tests/recursive_engine_test.rs`
+    and `tests/plan_independence_test.rs` checked their answers through the oracle only (the
+    engine unit tests' `rows()` returns a row count). Before the oracle goes, each of their
+    queries' answers is recorded, on the commit before step 15 with the oracle on, in
+    `tests/answers/<suite>.txt`: one line per test, query digest and answer (row count and a
+    digest of the rows as a bag). After it, each answer must be one of its query's recorded
+    ones in that test. Integers within a week of now (wall-clock `tx-id`s, default
+    `valid-from`s, a query's own `valid-at`) compare as "now". `MINIGRAF_BLESS_ANSWERS=1`
+    records instead; a changed file is a changed answer, justified in review.
+
+## Deviations from the spec (PR 2)
+
+6. §5.2's move of executor-level query tests to `Minigraf::in_memory` is not needed: they run
+   on the engine already (decision 13).
+7. §5.2 assumed only the model-based, property and golden suites had their own oracle; three
+   more suites relied on the executor, and keep its answers frozen (decision 18).
+8. §5.4's `SIZE_GATE: fail` is the gate without `SIZE_GATE`: the report-only branch goes with
+   it, so `binary-size.yml` differs from `main`'s only in its branch filters.
+
+## PR 2 steps
+
+Each step builds and passes clippy on all targets and features (`cargo clippy --all-targets`,
+with `--features test-oracle`/`test-hooks`, `--no-default-features`, `wasm32-unknown-unknown`
+with `browser`, `wasm32-wasip1`) and leaves the suite passing with and without the feature.
+
+14. **Plan.** This section.
+15. **The oracle goes** (decisions 14, 15): `engine/oracle.rs`, the `check` blocks in
+    `open_query` and `open_rule_query`, `DatalogExecutor::oracle`; the two answer-change tests
+    keep the engine's answer. The `engine/mod.rs` docs say the engine is the only query path.
+16. **The executor's query path goes** (decision 13): every `oracle` item in `executor.rs`
+    (`execute_query_on_executor`, `execute_query_with_rules`, `filter_facts_for_query`,
+    `live_source_facts`, `selective_fact_fetch`, `evaluate_branch`, `apply_or_clauses`,
+    `apply_expr_clauses`, `apply_post_processing` and every helper only they call), the imports
+    only they use, and their unit tests (`selective_lookup_tests`, `pushdown_tests` and the
+    rest, per decision 13). `eval_expr`, `is_truthy` and `Binders` stay; where the engine is
+    their only user they move to `query/engine/` (spec §5.1) in the same step.
+17. **`PatternMatcher` and the evaluators go:** `matcher.rs` keeps `edn_to_value` and
+    `edn_to_entity_id` and their tests; `evaluator.rs` keeps `rule_invocation_to_pattern`,
+    `DEFAULT_MAX_ITERATIONS`, `DEFAULT_MAX_DERIVED_FACTS`, `derived_facts_exceeded`,
+    `iterations_exceeded` and their tests. Comments that name the deleted types
+    (`tests/error_codes_qry_test.rs`, `tests/not_join_test.rs`, `benches/minigraf_bench.rs`,
+    `stratification.rs`, `prepared.rs`, `plan.rs`, `db.rs`, `browser/mod.rs`) name what runs the
+    query now.
+18. **Storage and type helpers** (classification above): in `graph/storage.rs`
+    (`all_facts`, `facts_as_of`, `live_facts_of_scans`, `get_all_facts`, `get_asserted_facts`,
+    `filter_facts_as_of`, `load_fact`/`restore_tx_counter`'s `cfg`), `storage/mod.rs`
+    (`CommittedReader::all_facts`, `facts_for_entity`, `facts_for_entity_attribute`,
+    `facts_for_attribute`, `live_facts`; `TxBound::of`), `storage/reader.rs` (their
+    implementations, `scan`, `live_scan`), `storage/dict.rs` (`seed_entity`, `seed_ident`),
+    `graph/types.rs` (`Fact::new`, `is_asserted`), `datalog/types.rs` (`FindSpec::var`,
+    `get_top_level_rule_invocations`), `optimizer.rs` (`plan`), `aggregate.rs` imports. After
+    this step no `test-oracle` `cfg` remains outside the hooks.
+19. **`test-oracle` → `test-hooks`** (decision 16): `Cargo.toml`, `lib.rs`'s four hooks, the
+    hook `cfg`s in `optimizer.rs` and `parser/statement.rs`, the integration tests' `cfg`s and
+    doc comments (`crash_kill_test`, `model_based_test`, `property_test`, `integrity_test`,
+    `plan_independence_test`, `large_transaction_acceptance_test`, `memory_limit_acceptance_test`,
+    `recursive_engine_test`, `aggregate_window_rules_test`), `rust.yml`, `smoke.yml`,
+    `crash-kill.yml`; the unreleased `CHANGELOG.md` entries that name `test-oracle` (#596, #546).
+    A separate PR to `main` changes `crash-kill.yml`'s check; `git diff main v3 --
+    .github/workflows/crash-kill.yml` is empty after both.
+20. **Size gate** (spec §5.4): `binary-size.yml` on `v3` sets `SIZE_GATE: fail` and
+    `SIZE_LIMIT_BYTES: 1228800`, its temporary comment goes, and PHILOSOPHY.md §4's v3 note goes
+    (#680). If the release binary is over 1,200 KiB, stop and report `cargo bloat --release
+    --crates` and `-n 30` before any change to the limit.
+21. **Docs, counts, verification:** `CLAUDE.md` module notes (`executor.rs` without its query
+    path, `matcher.rs`, `evaluator.rs`, `engine/oracle.rs` gone, `test-hooks`), test counts in
+    `CLAUDE.md` and `docs/TEST_COVERAGE.md` (its oracle notes too); the full suite plain and with
+    `--features test-hooks`, the wasm targets and the coverage workflow's commands on the bench
+    machine; the release binary's size and the deleted-test list (decision 13) in the PR
+    description. `CHANGELOG.md`'s migration notes and the docs site stay for PR 3.

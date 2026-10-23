@@ -5,11 +5,13 @@
 //! `Minigraf::query` cursor, with clause reordering on and off
 //! (`minigraf::__reorder`), and with the engine's `not` bodies chosen,
 //! forced hashed and forced correlated (`minigraf::__subplans`, #546); all
-//! twelve answers must be the same bag. With
-//! the `test-oracle` feature, every query the streaming engine runs is also
-//! run by the executor and must agree, so each run compares the two as well.
+//! twelve answers must be the same bag. The
+//! answer must also be the one recorded while the executor still checked it
+//! (`tests/answers/`, #551).
 //! Per-fact pseudo-attributes read the source the parser names (#594).
-#![cfg(all(feature = "test-oracle", not(target_arch = "wasm32")))]
+#![cfg(all(feature = "test-hooks", not(target_arch = "wasm32")))]
+
+mod answers;
 
 use minigraf::{Minigraf, QueryResult, Value};
 
@@ -53,7 +55,13 @@ fn check(db: &Minigraf, q: &str) -> Result<Vec<Vec<String>>, String> {
     use minigraf::Subplans;
     let on = {
         let _g = minigraf::__reorder(true);
-        executed(db, q)
+        match db.execute(q).expect("query") {
+            QueryResult::QueryResults { results, .. } => {
+                answers::check("plan_independence_test", q, &results);
+                bag(&results)
+            }
+            _ => panic!("expected QueryResults"),
+        }
     };
     for mode in [Subplans::Choose, Subplans::Hash, Subplans::Correlated] {
         let _m = minigraf::__subplans(mode);
