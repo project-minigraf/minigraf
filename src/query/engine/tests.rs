@@ -1283,6 +1283,107 @@ fn constants_run_on_the_engine() {
     );
 }
 
+/// The errors the planner raises keep the codes the executor reports (#551
+/// plan, step 10), after the pseudo-attribute check and before unknown
+/// predicates; the parser rejects the other shapes first.
+#[test]
+fn planner_errors_keep_their_codes() {
+    use crate::query::datalog::parser::parse_datalog_command;
+    use crate::query::datalog::types::DatalogCommand;
+    let db = Minigraf::in_memory().unwrap();
+    db.execute("(transact [[:a :e :b] [:b :e :c] [:a :n 1]])")
+        .unwrap();
+    for rule in [
+        "(rule [(reach ?x ?y) [?x :e ?y]])",
+        "(rule [(none) [?x :e ?y]])",
+        "(rule [(wide ?x ?y ?z) [?x :e ?y] [?y :e ?z]])",
+    ] {
+        db.execute(rule).unwrap();
+    }
+    // Arguments after a head's second are ignored, as on the executor.
+    assert_eq!(rows(&db, "(query [:find ?x ?y :where (wide ?x ?y)])"), 1);
+    for (q, code) in [
+        ("[:find ?x :where (reach ?x ?y ?z)]", "INT-028"),
+        (
+            "[:find ?x :where [?x :n ?v] (or-join [?x] (reach ?x ?y ?z) [?x :n 1])]",
+            "INT-028",
+        ),
+        ("[:find ?x :where (none ?x)]", "INT-022"),
+        // G and H: the parser rejects them first.
+        (
+            "[:find ?x :where [?x :n ?v] (or (reach ?x ?y ?z) [?x :n 1])]",
+            "PRS-057",
+        ),
+        (
+            "[:find ?x :where [?x :n ?v] (or-join [?q] [?q :n 1] [?q :e :b])]",
+            "INT-018",
+        ),
+        // Pseudo-attributes, then the rules, then unknown predicates.
+        (
+            "[:find ?x :where [?x :n ?v] [?x :db/tx-count ?t] (reach ?x ?y ?z) [(no-such? ?v)]]",
+            "INT-026",
+        ),
+        (
+            "[:find ?x :where [?x :n ?v] (reach ?x ?y ?z) [(no-such? ?v)]]",
+            "INT-028",
+        ),
+        (
+            "[:find ?x :where [?x :n ?v] [?x :db/tx-count ?t] [(no-such? ?v)]]",
+            "INT-026",
+        ),
+        (
+            "[:find ?x :where [?x :n ?v] (reach ?x ?y) [(no-such? ?v)]]",
+            "QRY-007",
+        ),
+    ] {
+        FALLBACKS.with(|f| f.borrow_mut().clear());
+        let err = db.execute(&format!("(query {q})")).expect_err(q);
+        assert_eq!(err.code(), code, "{q}");
+        assert!(FALLBACKS.with(|f| f.borrow().is_empty()), "{q}");
+    }
+    // Slots, which a prepared query substitutes first.
+    for (q, code) in [
+        (
+            "(query [:find ?e :valid-at $t :where [?e :n ?v]])",
+            "INT-025",
+        ),
+        ("(query [:find ?e :as-of $t :where [?e :n ?v]])", "INT-032"),
+    ] {
+        let Ok(DatalogCommand::Query(query)) = parse_datalog_command(q) else {
+            panic!("a query");
+        };
+        match super::plan(&query) {
+            Err(super::Refusal::Fail(e)) => {
+                assert_eq!(crate::MinigrafError::from(e).code(), code, "{q}")
+            }
+            _ => panic!("a planner error"),
+        }
+    }
+    // A registry no definition builds (`register_rule` rejects it): the
+    // stratification error, INT-054.
+    let mut registry = crate::query::datalog::rules::RuleRegistry::new();
+    for (p, text) in [
+        ("p", "(rule [(p ?x ?y) [?x :e ?y] (not (q ?x ?y))])"),
+        ("q", "(rule [(q ?x ?y) [?x :e ?y] (not (p ?x ?y))])"),
+    ] {
+        let Ok(DatalogCommand::Rule(rule)) = parse_datalog_command(text) else {
+            panic!("a rule");
+        };
+        registry.insert_unchecked(p, rule);
+    }
+    let Ok(DatalogCommand::Query(query)) =
+        parse_datalog_command("(query [:find ?x :where (p ?x ?y)])")
+    else {
+        panic!("a query");
+    };
+    match super::plan_rules(&query, &registry, &[]) {
+        Err(super::Refusal::Fail(e)) => {
+            assert_eq!(crate::MinigrafError::from(e).code(), "INT-054")
+        }
+        _ => panic!("a planner error"),
+    }
+}
+
 /// A correlated body probes once per outer row from its seed; a hashed one
 /// is read once, however many outer rows there are (#546 spec §4.2, §4.3).
 #[test]
@@ -2012,20 +2113,16 @@ fn rule_query_routing() {
         ),
         1
     );
-    for (q, cause) in [(
-        "(query [:find ?x :where (reach ?x ?y ?z)])",
-        Cause::WideCall,
-    )] {
-        let before = runs();
-        FALLBACKS.with(|f| f.borrow_mut().clear());
-        let _ = db.execute(q);
-        assert_eq!(runs(), before, "query stayed on the executor");
-        assert_eq!(
-            FALLBACKS.with(|f| f.borrow().first().copied()),
-            Some(cause),
-            "the planner names why"
-        );
-    }
+    // Three arguments: the executor's INT-028, from the planner.
+    FALLBACKS.with(|f| f.borrow_mut().clear());
+    let err = db
+        .execute("(query [:find ?x :where (reach ?x ?y ?z)])")
+        .expect_err("three arguments");
+    assert_eq!(err.code(), "INT-028");
+    assert!(
+        FALLBACKS.with(|f| f.borrow().is_empty()),
+        "the planner raised it"
+    );
     let before = runs();
     let mut tx = db.begin_write().unwrap();
     tx.execute("(transact [[:c :e :d]])").unwrap();

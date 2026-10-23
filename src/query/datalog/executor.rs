@@ -555,7 +555,13 @@ impl DatalogExecutor {
         }
 
         // The streaming engine runs the queries it has operators for (#473).
-        if let Some(plan) = crate::query::engine::supported(crate::query::engine::plan(&query))? {
+        // A planner error comes after the pseudo-attribute check (#473 spec
+        // §5.5).
+        let planned = crate::query::engine::plan(&query);
+        if matches!(planned, Err(crate::query::engine::Refusal::Fail(_))) {
+            check_per_fact_pseudo_attrs(&query)?;
+        }
+        if let Some(plan) = crate::query::engine::supported(planned)? {
             {
                 let registry = self
                     .functions
@@ -614,6 +620,9 @@ impl DatalogExecutor {
                 }
             }
         };
+        if matches!(plan, Err(crate::query::engine::Refusal::Fail(_))) {
+            check_per_fact_pseudo_attrs(query)?;
+        }
         let Some((plan, seeds)) = crate::query::engine::supported(plan)? else {
             return Ok(None);
         };

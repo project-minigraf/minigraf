@@ -57,27 +57,8 @@ impl From<anyhow::Error> for Refusal {
 /// What the engine does not run yet, by the letter of #551 spec §2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Cause {
-    /// F: a rule invocation of three or more arguments.
-    WideCall,
-    /// G: `or` branches whose own variables differ.
-    BranchVars,
-    /// H: an `or-join` variable no earlier clause binds.
-    UnboundJoin,
-    /// K: a rule head of no arguments, or of more than two.
-    HeadArity,
-    /// L: a stratification error.
-    Strata,
     /// M: a committed reader without keys.
     NoKeys,
-    /// N: an `:as-of` or `:valid-at` slot.
-    Slot,
-}
-
-use Cause::*;
-
-/// The engine does not run it yet.
-fn no<T>(cause: Cause) -> Result<T, Refusal> {
-    Err(Refusal::Unsupported(cause))
 }
 
 /// A planner invariant that does not hold (#551 plan, decision 2).
@@ -372,13 +353,15 @@ fn temporal(query: &DatalogQuery) -> Result<(AsOfSpec, Valid), Refusal> {
         None => AsOfSpec::None,
         Some(AsOf::Counter(n)) => AsOfSpec::Counter(*n),
         Some(AsOf::Timestamp(t)) => AsOfSpec::Timestamp(*t),
-        Some(AsOf::Slot(_)) => return no(Slot),
+        // A prepared query substitutes every slot first.
+        Some(AsOf::Slot(_)) => return Err(invariant("an :as-of slot reached the planner")),
     };
     let valid = match &query.valid_at {
         None => Valid::Now,
         Some(ValidAt::Timestamp(t)) => Valid::At(*t),
         Some(ValidAt::AnyValidTime) => Valid::Any,
-        Some(ValidAt::Slot(_)) => return no(Slot),
+        // As the executor reports one.
+        Some(ValidAt::Slot(_)) => return Err(Refusal::Fail(err_coded!(ErrorCode::Int025))),
     };
     Ok((as_of, valid))
 }
@@ -638,9 +621,7 @@ pub(crate) fn plan_rules(
     seeds: &[&str],
 ) -> Result<RulesPlan, Refusal> {
     let (as_of, valid) = temporal(query)?;
-    let Ok(strata) = DependencyGraph::from_rules(registry).stratify() else {
-        return no(Strata);
-    };
+    let strata = DependencyGraph::from_rules(registry).stratify()?;
     // Every predicate the query invokes, and those their rules invoke, as
     // `StratifiedEvaluator::evaluate` collects them.
     let mut preds: Vec<String> = Vec::new();
@@ -755,10 +736,13 @@ fn rule_plan(
     valid: Valid,
     evaluated: &Arc<Evaluated>,
 ) -> Result<RulePlan, Refusal> {
-    // The executor reports a head without arguments; a fourth is ignored
-    // there.
-    if !(2..=3).contains(&head.len()) {
-        return no(HeadArity);
+    // As on the executor: a head without arguments is an error, and
+    // arguments after the second are ignored.
+    if head.len() < 2 {
+        return Err(Refusal::Fail(err_coded!(
+            ErrorCode::Int022,
+            "Rule head must have at least 2 elements: (predicate ?arg1)"
+        )));
     }
     let naive = naive(body, stratum, false);
     let clauses = calls_as_patterns(body)?;
@@ -859,10 +843,7 @@ fn calls_as_patterns(clauses: &[WhereClause]) -> Result<Vec<WhereClause>, Refusa
         .map(|c| {
             Ok(match c {
                 WhereClause::RuleInvocation { predicate, args } => {
-                    match rule_invocation_to_pattern(predicate, args) {
-                        Ok(p) => WhereClause::Pattern(p),
-                        Err(_) => return no(WideCall),
-                    }
+                    WhereClause::Pattern(rule_invocation_to_pattern(predicate, args)?)
                 }
                 WhereClause::Not(body) => WhereClause::Not(calls_as_patterns(body)?),
                 WhereClause::NotJoin { join_vars, clauses } => WhereClause::NotJoin {
@@ -1178,7 +1159,14 @@ impl Builder {
                 // The parser requires every join variable bound before
                 // (INT-031 on the executor otherwise).
                 Some(j) if j.iter().all(|v| self.slots.by_var.contains_key(v)) => j.clone(),
-                Some(_) => return no(UnboundJoin),
+                // The parser rejects it first (INT-018).
+                Some(j) => {
+                    let v = j.iter().find(|v| !self.slots.by_var.contains_key(*v));
+                    return Err(Refusal::Fail(err_coded!(
+                        ErrorCode::Int031,
+                        v.map_or("?", String::as_str)
+                    )));
+                }
                 None => reads(branch).into_iter().collect(),
             };
             subs.push(self.sub(branch, vars)?);
@@ -1200,7 +1188,8 @@ impl Builder {
                 if k == 0 {
                     names = own;
                 } else if own != names {
-                    return no(BranchVars);
+                    // The parser rejects it first (PRS-057).
+                    return Err(invariant("or branches bind different variables"));
                 }
             }
         }
