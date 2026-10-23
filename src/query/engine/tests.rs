@@ -2435,6 +2435,37 @@ fn value_probe_matches_as_joins_do() {
     }
 }
 
+/// #721: a value probe that meets an entity no recorded keyword names, in
+/// the middle of a batch, finishes as a hash join: the rows probed before
+/// it, the rest of that batch and every later batch each join once.
+#[test]
+fn value_probe_falls_back_mid_batch() {
+    // Six :tag values are refs, the others keywords, so probes by keyword
+    // run before the first ref; each names the :x of one :w fact.
+    let facts = |lo: usize, hi: usize| -> String {
+        (lo..hi)
+            .map(|i| {
+                let k = if i % 500 == 7 {
+                    format!("#uuid \"{}\"", uuid_of(&format!(":x{i}")))
+                } else {
+                    format!(":x{i}")
+                };
+                format!("[:s{i} :tag {k}] [:t{i} :w :x{i}]")
+            })
+            .collect()
+    };
+    let q = "(query [:find ?s ?t :where [?s :tag ?k] [?t :w ?k]])";
+    let db = Minigraf::in_memory().unwrap();
+    db.execute(&format!("(transact [{}])", facts(0, 3000))).unwrap();
+    assert_eq!(rows(&db, q), 3000, "in memory");
+    let dir = tempfile::tempdir().unwrap();
+    let db = Minigraf::open(dir.path().join("mixed.graph")).unwrap();
+    db.execute(&format!("(transact [{}])", facts(0, 2000))).unwrap();
+    db.checkpoint().unwrap();
+    db.execute(&format!("(transact [{}])", facts(2000, 3000))).unwrap();
+    assert_eq!(rows(&db, q), 3000, "two thirds checkpointed");
+}
+
 // ── #549: query memory accounting ──────────────────────────────────────────
 
 /// A checkpointed database of `n` entities, each with integers `:a` and
