@@ -57,10 +57,6 @@ impl From<anyhow::Error> for Refusal {
 /// What the engine does not run yet, by the letter of #551 spec §2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Cause {
-    /// D: a constant in a rule head.
-    HeadConstant,
-    /// E: a constant of a kind its pattern position does not take.
-    Constant,
     /// F: a rule invocation of three or more arguments.
     WideCall,
     /// G: `or` branches whose own variables differ.
@@ -99,6 +95,10 @@ pub(crate) enum Term<C> {
     /// A later occurrence of a variable: must equal its slot.
     Eq(usize),
     Const(C),
+    /// A constant no cell can equal (#551 plan, decision 7): an entity that
+    /// is not a keyword or UUID, an attribute that is not a keyword, a
+    /// vector, list or map value. A scan with one reads nothing.
+    Never,
 }
 
 /// A constant in the value position, with the executor's matching rules
@@ -169,6 +169,16 @@ pub(crate) struct ScanSpec {
     /// In a rule query, the derived rows read after the stored facts
     /// (#548 spec §5.2).
     pub(crate) derived: Option<Derived>,
+}
+
+impl ScanSpec {
+    /// Whether a position is a constant no cell equals: the scan reads
+    /// nothing.
+    pub(crate) fn never(&self) -> bool {
+        matches!(self.e, Term::Never)
+            || matches!(self.a, Term::Never)
+            || matches!(self.v, Term::Never)
+    }
 }
 
 /// A clause after the scan, in the executor's order.
@@ -608,12 +618,15 @@ pub(crate) struct RuleRun {
     pub(crate) value: Option<HeadArg>,
 }
 
-/// A head argument: a variable (PRS-114 rejects any other).
+/// A head argument.
 #[derive(Debug, Clone)]
 pub(crate) enum HeadArg {
     Slot(usize),
     /// A variable the body does not bind (`INT-022` once a row reaches it).
     Unbound(String),
+    /// A constant: only the magic-set rewrite writes one (PRS-114 rejects
+    /// it in a rule the user defines, #608).
+    Const(EdnValue),
 }
 
 /// The plan of a rule query: `query` and every rule it evaluates in
@@ -768,18 +781,15 @@ fn rule_plan(
             self::clauses(&mut b, &clauses, first, &HashSet::new())?;
             let slots = std::mem::take(&mut b.slots.by_var);
             let arg = |e: &EdnValue| match e {
-                EdnValue::Symbol(v) if v.starts_with('?') => Ok(match slots.get(v) {
+                EdnValue::Symbol(v) if v.starts_with('?') => match slots.get(v) {
                     Some(&s) => HeadArg::Slot(s),
                     None => HeadArg::Unbound(v.clone()),
-                }),
-                _ => no(HeadConstant),
+                },
+                c => HeadArg::Const(c.clone()),
             };
             Ok(RuleRun {
-                entity: arg(&head[1])?,
-                value: match head.get(2) {
-                    Some(v) => Some(arg(v)?),
-                    None => None,
-                },
+                entity: arg(&head[1]),
+                value: head.get(2).map(arg),
                 plan: b.finish()?,
             })
         };
@@ -1520,8 +1530,8 @@ fn expr_vars(expr: &Expr, slots: &Slots) -> Vars {
     out
 }
 
-/// The term of one pattern position: a constant `konst` takes, or a
-/// variable.
+/// The term of one pattern position: a variable, a constant `konst` takes,
+/// or `Never` for one it does not.
 fn term<C>(
     edn: &EdnValue,
     slots: &mut Slots,
@@ -1540,9 +1550,6 @@ fn term<C>(
         }),
         // The parser reads no other symbol in a pattern.
         EdnValue::Symbol(_) => Err(invariant("a symbol that is not a variable")),
-        c => match konst(c) {
-            Some(c) => Ok(Term::Const(c)),
-            None => no(Constant),
-        },
+        c => Ok(konst(c).map_or(Term::Never, Term::Const)),
     }
 }

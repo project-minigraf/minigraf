@@ -82,6 +82,7 @@ fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<Batch> {
                     let keep: Vec<bool> = meta.iter().map(|c| want.as_ref() == Some(c)).collect();
                     batch.retain(&keep);
                 }
+                Term::Never => batch.retain(&vec![false; batch.len]),
                 Term::Eq(slot) => {
                     let other = batch.cols.get(*slot);
                     let keep: Vec<bool> = meta

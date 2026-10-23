@@ -136,6 +136,7 @@ impl Operator for Scan {
         loop {
             let mut batch = Batch::new(self.spec.width);
             match &mut self.state {
+                State::Start if self.spec.never() => self.state = State::Done,
                 State::Start
                     if self
                         .spec
@@ -561,6 +562,7 @@ fn fill(
 ) -> Result<bool> {
     match term {
         Term::Any | Term::Const(_) => Ok(true),
+        Term::Never => Ok(false),
         Term::Bind(slot) => {
             if let Some(s) = row.get_mut(*slot) {
                 *s = Some(cell()?);

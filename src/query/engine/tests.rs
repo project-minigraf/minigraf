@@ -1232,6 +1232,57 @@ fn not_bodies_plan_as_clause_lists() {
     }
 }
 
+/// Constants the planner used to refuse run on the engine (#551 plan, step
+/// 9): a magic-set head constant (#608), a value constant in an
+/// invocation's entity position, and every constant no cell can equal.
+#[test]
+fn constants_run_on_the_engine() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute("(transact [[:a :link :b] [:b :link :c] [:a :n 1] [:b :n 2]])")
+        .unwrap();
+    for rule in [
+        "(rule [(chain ?x ?y) [?x :link ?y]])",
+        "(rule [(chain ?x ?z) [?x :link ?y] (chain ?y ?z)])",
+        "(rule [(named ?n ?e) [?e :name ?n]])",
+    ] {
+        db.execute(rule).unwrap();
+    }
+    assert_eq!(rows(&db, "(query [:find ?x :where (chain ?x :c)])"), 2);
+    assert_eq!(rows(&db, "(query [:find ?y :where (chain :a ?y)])"), 2);
+    // No rule derives a row: nothing to match.
+    assert_eq!(
+        rows(&db, r#"(query [:find ?e :where (named "alice" ?e)])"#),
+        0
+    );
+    for q in [
+        r#"[:find ?v :where ["a" :n ?v]]"#,
+        "[:find ?v :where [1 :n ?v]]",
+        "[:find ?v :where [true :n ?v]]",
+        "[:find ?v :where [nil :n ?v]]",
+        "[:find ?v :where [1.5 :n ?v]]",
+        r#"[:find ?e :where [?e "n" ?v]]"#,
+        "[:find ?e :where [?e 3 ?v]]",
+        "[:find ?e :where [?e :n [1 2]]]",
+        "[:find ?e :where [?e :n {:a 1}]]",
+        "[:find ?e :where [?e :n (1 2)]]",
+        "[:find ?e :where [?e :link ?b] [?b :n [1]]]",
+    ] {
+        assert_eq!(rows(&db, &format!("(query {q})")), 0, "{q}");
+    }
+    // A derived head entity that is a value fails the query, as on the
+    // executor.
+    db.execute(r#"(transact [[:p :name "alice"]])"#).unwrap();
+    FALLBACKS.with(|f| f.borrow_mut().clear());
+    let err = db
+        .execute(r#"(query [:find ?e :where (named "alice" ?e)])"#)
+        .expect_err("a string head entity");
+    assert_eq!(err.code(), "QRY-013");
+    assert!(
+        FALLBACKS.with(|f| f.borrow().is_empty()),
+        "the engine planned it"
+    );
+}
+
 /// A correlated body probes once per outer row from its seed; a hashed one
 /// is read once, however many outer rows there are (#546 spec §4.2, §4.3).
 #[test]
