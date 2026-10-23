@@ -12,7 +12,7 @@
 
 use super::batch::Batch;
 use super::cell::{Cell, JoinKey, Scalar};
-use super::meter::{HASH_ENTRY_OVERHEAD, Held, key_bytes, value_bytes};
+use super::meter::{HASH_ENTRY_OVERHEAD, Held, Meter, key_bytes, value_bytes};
 use super::plan::{Meta, ScanSpec, Term, Valid, ValueConst, names};
 use super::relation::Range as Rows;
 use super::{BATCH_ROWS, Counters, Ctx, Operator};
@@ -36,25 +36,57 @@ pub(crate) struct Scan {
     state: State,
     keys_buf: Vec<KeyFact>,
     facts_buf: Vec<Fact>,
-    /// What a value probe reads besides its key ranges (#721), built on the
-    /// first one, and the join key of the current one.
-    values: Option<Values>,
+    /// What a value probe reads besides its key ranges (#721), from the
+    /// query's [`Probes`], and the join key of the current probe.
+    values: Option<Arc<Values>>,
     value_key: Option<JoinKey>,
     /// `rows_in` counts the live keys and pending facts read.
     counters: Counters,
 }
 
-/// The reads a value probe shares with every later one (#721), charged to
-/// `held`.
-struct Values {
-    /// The attribute's live pending facts, by the join key of their value.
-    pending: HashMap<JoinKey, Vec<Fact>>,
-    /// The committed triples a pending record of the attribute decides.
-    shadow: Arc<HashSet<Vec<u8>>>,
-    /// The keyword idents among the attribute's committed values, by the
-    /// entity each names; read on the first probe by an entity.
-    named: Option<HashMap<u64, Vec<u32>>>,
+/// What value probes read once for the whole query (#721), so that a rule
+/// run in every round, or a body run per outer row, reads it once.
+pub(crate) struct Probes {
+    /// Per attribute, its pending facts and the committed triples they
+    /// decide.
+    values: HashMap<String, Arc<Values>>,
+    /// Per attribute id, whether any of its live committed values is a
+    /// keyword.
+    keywords: HashMap<u32, bool>,
+    /// The keyword that names an entity, where the query made the entity
+    /// from the keyword (a rule head, #548 spec §5.3). A keyword's entity
+    /// is a hash of its name, so no index leads back from the entity.
+    named: HashMap<u64, u64>,
     held: Held,
+}
+
+impl Probes {
+    pub(crate) fn new(meter: &Arc<Meter>) -> Self {
+        Probes {
+            values: HashMap::new(),
+            keywords: HashMap::new(),
+            named: HashMap::new(),
+            held: Held::new(meter, "IndexNestedLoopJoin"),
+        }
+    }
+
+    /// Record that the keyword with id `iid` names the entity `eid`.
+    pub(crate) fn note(&mut self, eid: u64, iid: u64) -> Result<()> {
+        if let std::collections::hash_map::Entry::Vacant(v) = self.named.entry(eid) {
+            self.held
+                .charge(HASH_ENTRY_OVERHEAD + size_of::<(u64, u64)>())?;
+            v.insert(iid);
+        }
+        Ok(())
+    }
+}
+
+/// An attribute's reads for value probes.
+struct Values {
+    /// Its live pending facts, by the join key of their value.
+    pending: HashMap<JoinKey, Vec<Fact>>,
+    /// The committed triples a pending record of it decides.
+    shadow: Arc<HashSet<Vec<u8>>>,
 }
 
 enum State {
@@ -160,21 +192,18 @@ impl Scan {
     /// committed facts come from the AVET ranges of the values equal to
     /// `cell` under the join rules, the pending ones from the attribute's
     /// facts with its key; the join checks every key, so these need only
-    /// hold every match. `held` is charged for what the probes share.
-    pub(crate) fn probe_value(
-        &mut self,
-        cell: &Cell,
-        held: &Held,
-        ctx: &mut Ctx<'_>,
-    ) -> Result<()> {
+    /// hold every match. `false`, and nothing to read, when the scan cannot
+    /// find them: `cell` is an entity no keyword the query met names, and
+    /// the attribute has committed keyword values, any of which may name it.
+    pub(crate) fn probe_value(&mut self, cell: &Cell, ctx: &mut Ctx<'_>) -> Result<bool> {
         self.probe = None;
         self.value_key = None;
         self.state = State::Done;
         let Term::Const(attribute) = &self.spec.a else {
-            return Ok(());
+            return Ok(true);
         };
         if self.spec.never() {
-            return Ok(());
+            return Ok(true);
         }
         if self.consts.is_none()
             && let Some(keys) = ctx.keys
@@ -182,17 +211,20 @@ impl Scan {
             self.consts = Some(consts(&self.spec, keys)?);
         }
         if self.values.is_none() {
-            self.values = Some(values(attribute, held.sibling(), ctx)?);
+            self.values = Some(values(attribute, ctx)?);
         }
         let Some(key) = JoinKey::of(cell, true, ctx)? else {
-            return Ok(());
+            return Ok(true);
         };
         let a = match (&self.consts, ctx.keys) {
             (Some(Some(Consts { a: Some(a), .. })), Some(_)) => Some(*a),
             _ => None,
         };
         let ranges = match a {
-            Some(a) => self.value_ranges(cell, a, ctx)?,
+            Some(a) => match value_ranges(cell, a, ctx)? {
+                Some(r) => r,
+                None => return Ok(false),
+            },
             None => Vec::new(),
         };
         self.value_key = Some(key);
@@ -211,67 +243,7 @@ impl Scan {
                 shadow,
             })
         };
-        Ok(())
-    }
-
-    /// The AVET ranges of attribute `a` holding every committed value that
-    /// join-equals `cell`.
-    fn value_ranges(
-        &mut self,
-        cell: &Cell,
-        a: u32,
-        ctx: &mut Ctx<'_>,
-    ) -> Result<Vec<(Index, Vec<u8>)>> {
-        let Some(keys) = ctx.keys else {
-            return Ok(Vec::new());
-        };
-        let mut kvs = Vec::new();
-        match cell {
-            // A keyword, and a ref to the entity it names.
-            Cell::Iid(i) => {
-                if let Some(di) = ctx.ids.dict_iid(*i) {
-                    kvs.push(KeyValue::Keyword(di));
-                }
-                let e = ctx.ids.keyword_eid(ctx.keys, *i)?;
-                if let Some(de) = ctx.ids.dict_eid(e) {
-                    kvs.push(KeyValue::Ref(de));
-                }
-            }
-            // A ref, and the keyword that names the entity.
-            Cell::Eid(e) => {
-                if let Some(de) = ctx.ids.dict_eid(*e) {
-                    kvs.push(KeyValue::Ref(de));
-                }
-                if let Some(v) = &mut self.values
-                    && v.named.is_none()
-                {
-                    v.named = Some(named(a, &mut v.held, ctx)?);
-                }
-                if let Some(idents) = self
-                    .values
-                    .as_ref()
-                    .and_then(|v| v.named.as_ref())
-                    .and_then(|n| n.get(e))
-                {
-                    kvs.extend(idents.iter().map(|&i| KeyValue::Keyword(i)));
-                }
-            }
-            // `-0.0` equals `0.0`; NaN has no key and never gets here.
-            Cell::Val(Scalar::Float(f)) => {
-                kvs.push(KeyValue::Float(*f));
-                if *f == 0.0 {
-                    kvs.push(KeyValue::Float(-*f));
-                }
-            }
-            Cell::Val(_) => {
-                let v = super::project::value(cell, ctx)?;
-                kvs.extend(key_value(keys, &v)?);
-            }
-        }
-        Ok(kvs
-            .iter()
-            .map(|v| (Index::Avet, keys::attribute_value_prefix(a, v)))
-            .collect())
+        Ok(true)
     }
 
     /// After the committed ranges: a value probe's pending facts, or the
@@ -286,8 +258,13 @@ impl Scan {
 }
 
 /// The live pending facts of `attribute` by the join key of their value,
-/// and the committed triples its pending records decide (#721).
-fn values(attribute: &str, mut held: Held, ctx: &mut Ctx<'_>) -> Result<Values> {
+/// and the committed triples its pending records decide (#721): read once
+/// per query.
+fn values(attribute: &str, ctx: &mut Ctx<'_>) -> Result<Arc<Values>> {
+    if let Some(v) = ctx.ids.probes.values.get(attribute) {
+        return Ok(v.clone());
+    }
+    let mut held = Held::new(ctx.ids.probes.held.meter(), "IndexNestedLoopJoin");
     let mut pending: HashMap<JoinKey, Vec<Fact>> = HashMap::new();
     let mut resume = None;
     let mut buf = Vec::new();
@@ -331,49 +308,94 @@ fn values(attribute: &str, mut held: Held, ctx: &mut Ctx<'_>) -> Result<Values> 
             }
         }
     }
-    Ok(Values {
+    let v = Arc::new(Values {
         pending,
         shadow: Arc::new(shadow),
-        named: None,
-        held,
-    })
+    });
+    held.charge(HASH_ENTRY_OVERHEAD + size_of::<(String, Arc<Values>)>() + attribute.len())?;
+    let probes = &mut ctx.ids.probes;
+    probes.held.absorb(held);
+    probes.values.insert(attribute.to_string(), v.clone());
+    Ok(v)
 }
 
-/// The keyword idents among the live committed values of attribute `a`, by
-/// the entity each names (#721).
-fn named(a: u32, held: &mut Held, ctx: &mut Ctx<'_>) -> Result<HashMap<u64, Vec<u32>>> {
-    let mut by_entity: HashMap<u64, Vec<u32>> = HashMap::new();
+/// Key ranges as `(index, prefix)`.
+type Ranges = Vec<(Index, Vec<u8>)>;
+
+/// The AVET ranges of attribute `a` holding every committed value that
+/// join-equals `cell`, or `None` when they cannot be found (see
+/// [`Scan::probe_value`]).
+fn value_ranges(cell: &Cell, a: u32, ctx: &mut Ctx<'_>) -> Result<Option<Ranges>> {
     let Some(keys) = ctx.keys else {
-        return Ok(by_entity);
+        return Ok(Some(Vec::new()));
     };
-    let prefix = keys::attribute_kind_prefix(a, ValueKind::Keyword);
-    let mut seen = HashSet::new();
-    let mut resume: Option<Vec<u8>> = None;
-    let mut buf = Vec::new();
-    loop {
-        buf.clear();
-        resume = keys.live_keys(
-            Index::Avet,
-            &prefix,
-            resume.as_deref(),
-            ctx.bound,
-            BATCH_ROWS,
-            &mut buf,
-        )?;
-        for kf in &buf {
-            if let KeyValue::Keyword(i) = kf.v
-                && seen.insert(i)
-            {
-                let e = ctx.ids.keyword_eid(ctx.keys, u64::from(i))?;
-                held.charge(HASH_ENTRY_OVERHEAD + size_of::<(u64, Vec<u32>)>() + size_of::<u32>())?;
-                by_entity.entry(e).or_default().push(i);
+    let mut kvs = Vec::new();
+    match cell {
+        // A keyword, and a ref to the entity it names.
+        Cell::Iid(i) => {
+            if let Some(di) = ctx.ids.dict_iid(*i) {
+                kvs.push(KeyValue::Keyword(di));
+            }
+            let e = ctx.ids.keyword_eid(ctx.keys, *i)?;
+            if let Some(de) = ctx.ids.dict_eid(e) {
+                kvs.push(KeyValue::Ref(de));
             }
         }
-        if resume.is_none() {
-            break;
+        // A ref, and the keyword that names the entity.
+        Cell::Eid(e) => {
+            if let Some(de) = ctx.ids.dict_eid(*e) {
+                kvs.push(KeyValue::Ref(de));
+            }
+            match ctx.ids.probes.named.get(e).copied() {
+                Some(i) => kvs.extend(ctx.ids.dict_iid(i).map(KeyValue::Keyword)),
+                None if has_keywords(a, ctx)? => return Ok(None),
+                None => {}
+            }
+        }
+        // `-0.0` equals `0.0`; NaN has no key and never gets here.
+        Cell::Val(Scalar::Float(f)) => {
+            kvs.push(KeyValue::Float(*f));
+            if *f == 0.0 {
+                kvs.push(KeyValue::Float(-*f));
+            }
+        }
+        Cell::Val(_) => {
+            let v = super::project::value(cell, ctx)?;
+            kvs.extend(key_value(keys, &v)?);
         }
     }
-    Ok(by_entity)
+    Ok(Some(
+        kvs.iter()
+            .map(|v| (Index::Avet, keys::attribute_value_prefix(a, v)))
+            .collect(),
+    ))
+}
+
+/// Whether any live committed value of attribute `a` is a keyword: read
+/// once per query.
+fn has_keywords(a: u32, ctx: &mut Ctx<'_>) -> Result<bool> {
+    if let Some(&k) = ctx.ids.probes.keywords.get(&a) {
+        return Ok(k);
+    }
+    let Some(keys) = ctx.keys else {
+        return Ok(false);
+    };
+    let mut buf = Vec::new();
+    keys.live_keys(
+        Index::Avet,
+        &keys::attribute_kind_prefix(a, ValueKind::Keyword),
+        None,
+        ctx.bound,
+        1,
+        &mut buf,
+    )?;
+    let k = !buf.is_empty();
+    let probes = &mut ctx.ids.probes;
+    probes
+        .held
+        .charge(HASH_ENTRY_OVERHEAD + size_of::<(u32, bool)>())?;
+    probes.keywords.insert(a, k);
+    Ok(k)
 }
 
 impl Operator for Scan {

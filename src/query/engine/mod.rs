@@ -191,11 +191,14 @@ fn resolve(
 
 /// Open the rule query `plan` over `snapshot`: derive its relations, with
 /// the magic seeds `seeds` as rows, then open its body (#548). An error from
-/// the rules fails the query here.
+/// the rules fails the query here. `keywords` are the keyword constants the
+/// query's rule calls name as entities: value probes find their facts from
+/// the entity (#721).
 pub(crate) fn open_rules(
     snapshot: Snapshot,
     plan: plan::RulesPlan,
     seeds: &[(EntityId, String, Value)],
+    keywords: &[String],
     functions: Arc<RwLock<FunctionRegistry>>,
     limits: recursive::Limits,
 ) -> Result<Stream> {
@@ -210,6 +213,14 @@ pub(crate) fn open_rules(
             .iter()
             .map(|a| ids.iid(keys, a))
             .collect::<Result<Vec<u64>>>()?;
+        for k in keywords {
+            let e = crate::query::datalog::matcher::edn_to_entity_id(
+                &crate::query::datalog::types::EdnValue::Keyword(k.clone()),
+            )
+            .map_err(|e| err_coded!(ErrorCode::Int049, format!("query engine: {e}")))?;
+            let (e, i) = (ids.eid(keys, &e)?, ids.iid(keys, k)?);
+            ids.probes.note(e, i)?;
+        }
         let mut rels = relation::Relations::new(iids, &meter);
         for (e, a, v) in seeds {
             if let Some(&rel) = plan.evaluated.by_attr.get(a) {

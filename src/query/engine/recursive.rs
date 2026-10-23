@@ -22,6 +22,7 @@ use crate::query::datalog::aggregate::type_name;
 use crate::query::datalog::evaluator::{derived_facts_exceeded, iterations_exceeded};
 use crate::query::datalog::functions::FunctionRegistry;
 use crate::query::datalog::matcher::{edn_to_entity_id, edn_to_value};
+use crate::query::datalog::types::EdnValue;
 use crate::storage::{KeySource, TxBound};
 use anyhow::Result;
 use std::collections::HashSet;
@@ -230,7 +231,16 @@ fn entity<'c>(
             }
             // As the executor reads a head (`evaluator.rs`).
             let k = match edn_to_entity_id(c) {
-                Ok(u) => Cell::Eid(ctx.ids.eid(ctx.keys, &u)?),
+                Ok(u) => {
+                    let e = ctx.ids.eid(ctx.keys, &u)?;
+                    // Value probes find this keyword's facts from the
+                    // entity (#721).
+                    if let EdnValue::Keyword(name) = c {
+                        let i = ctx.ids.iid(ctx.keys, name)?;
+                        ctx.ids.probes.note(e, i)?;
+                    }
+                    Cell::Eid(e)
+                }
                 Err(_) => {
                     let kind = edn_to_value(c).map_or("symbol", |v| type_name(&v));
                     return Err(err_coded!(ErrorCode::Qry013, predicate, kind));
@@ -241,7 +251,11 @@ fn entity<'c>(
         }
         HeadArg::Slot(s) => match cell(*s) {
             Some(Cell::Eid(e)) => return Ok(Cell::Eid(*e)),
-            Some(Cell::Iid(i)) => return Ok(Cell::Eid(ctx.ids.keyword_eid(ctx.keys, *i)?)),
+            Some(Cell::Iid(i)) => {
+                let e = ctx.ids.keyword_eid(ctx.keys, *i)?;
+                ctx.ids.probes.note(e, *i)?;
+                return Ok(Cell::Eid(e));
+            }
             Some(Cell::Val(v)) => match v {
                 // The executor reads a `nil` back as a symbol.
                 Scalar::Null => "symbol",

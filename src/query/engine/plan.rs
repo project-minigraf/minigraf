@@ -253,10 +253,11 @@ pub(crate) enum JoinKind {
     /// entity range per outer row.
     Probe(usize),
     /// `IndexNestedLoopJoin` on the value (#721): the inner pattern's
-    /// attribute is a constant and its value is `keys[k]`; per outer row,
+    /// attribute is a constant and its value is `keys[key]`; per outer row,
     /// the AVET ranges of the values that join-equal it, and the pending
-    /// facts with its key.
-    ProbeValue(usize),
+    /// facts with its key. When a probe cannot find a row's matches, a
+    /// `HashJoin` built on the side `build_inner` names.
+    ProbeValue { key: usize, build_inner: bool },
     /// `HashJoin`: a table of the side with the smaller estimate, probed by
     /// the other.
     Hash { build_inner: bool },
@@ -1010,7 +1011,7 @@ impl Builder {
                     let mut join = join(&scanned, &attribute, slots, &rebind, valid)?;
                     // Relations are indexed by entity only: a value join on
                     // one hashes (#721).
-                    if derived.is_some() && matches!(join.kind, JoinKind::ProbeValue(_)) {
+                    if derived.is_some() && matches!(join.kind, JoinKind::ProbeValue { .. }) {
                         join.kind = JoinKind::Hash { build_inner: true };
                     }
                     join.inner.derived = derived;
@@ -1025,7 +1026,9 @@ impl Builder {
                         }
                         metas.push((m, slot));
                     }
-                    if let JoinKind::Hash { build_inner } = &mut join.kind {
+                    if let JoinKind::Hash { build_inner }
+                    | JoinKind::ProbeValue { build_inner, .. } = &mut join.kind
+                    {
                         // With the test switch off, always the inner pattern
                         // (decision 3 of the #596 plan). After a seed and no
                         // pattern, the seed (both costs of nothing are 0).
@@ -1411,7 +1414,10 @@ fn join(
         },
         kind: match (probe, probe_value) {
             (Some(k), _) => JoinKind::Probe(k),
-            (None, Some(k)) => JoinKind::ProbeValue(k),
+            (None, Some(k)) => JoinKind::ProbeValue {
+                key: k,
+                build_inner: true,
+            },
             (None, None) => JoinKind::Hash { build_inner: true },
         },
         keys,

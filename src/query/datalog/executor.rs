@@ -399,6 +399,18 @@ impl DatalogExecutor {
             query_memory: self.query_memory_limit,
         };
         let snapshot = self.read_snapshot()?;
+        // The keywords the query's rule calls name as entities (#721).
+        let keywords: Vec<String> = query
+            .where_clauses
+            .iter()
+            .filter_map(|c| match c {
+                WhereClause::RuleInvocation { args, .. } => match args.first() {
+                    Some(EdnValue::Keyword(k)) => Some(k.clone()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect();
         // The query's predicates, then its rules' (#551 plan, decision 9).
         let mut names = Vec::new();
         crate::query::engine::udfs(&query.where_clauses, &mut names);
@@ -408,6 +420,7 @@ impl DatalogExecutor {
                 snapshot.clone(),
                 plan,
                 &seeds,
+                &keywords,
                 self.functions.clone(),
                 limits,
             )?;

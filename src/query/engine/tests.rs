@@ -862,7 +862,7 @@ fn planner_chooses_the_join() {
             .filter_map(|s| match s {
                 Step::Join(j) => Some(match j.kind {
                     JoinKind::Probe(_) => "probe".to_string(),
-                    JoinKind::ProbeValue(_) => "probe value".to_string(),
+                    JoinKind::ProbeValue { .. } => "probe value".to_string(),
                     JoinKind::Hash { build_inner } => format!("hash inner={build_inner}"),
                 }),
                 _ => None,
@@ -2286,7 +2286,7 @@ fn rule_delta_probes_a_bound_value() {
                 for step in &run.plan.steps {
                     let Step::Join(j) = step else { continue };
                     match j.kind {
-                        JoinKind::ProbeValue(_) => {
+                        JoinKind::ProbeValue { .. } => {
                             assert!(
                                 j.inner.derived.is_none(),
                                 "a relation is not probed by value"
@@ -2318,6 +2318,27 @@ fn rule_delta_probes_a_bound_value() {
         .unwrap();
     assert_eq!(rows(&db, "(query [:find ?b :where (boss :p99 ?b)])"), 2);
     assert_eq!(rows(&db, "(query [:find ?b :where (boss :p199 ?b)])"), 3);
+
+    // On a file, half checkpointed: the probes read committed keyword
+    // values through the keywords the rule heads named, and pending ones.
+    let dir = tempfile::tempdir().unwrap();
+    let db = Minigraf::open(dir.path().join("tree.graph")).unwrap();
+    let reports = |odd: usize| -> String {
+        (1..200)
+            .filter(|i| i % 2 == odd)
+            .map(|i| format!("[:p{i} :manager :p{}]", i / 10))
+            .collect()
+    };
+    db.execute(&format!("(transact [{}])", reports(0))).unwrap();
+    db.checkpoint().unwrap();
+    db.execute(&format!("(transact [{}])", reports(1))).unwrap();
+    db.execute("(rule [(boss ?x ?y) [?x :manager ?y]])")
+        .unwrap();
+    db.execute("(rule [(boss ?x ?z) [?x :manager ?y] (boss ?y ?z)])")
+        .unwrap();
+    assert_eq!(rows(&db, "(query [:find ?b :where (boss :p99 ?b)])"), 2);
+    assert_eq!(rows(&db, "(query [:find ?b :where (boss :p199 ?b)])"), 3);
+    assert_eq!(rows(&db, "(query [:find ?b :where (boss :p198 ?b)])"), 3);
 }
 
 /// #721: a join on a bound value probes the AVET ranges of the values that
@@ -2725,7 +2746,7 @@ fn planner_builds_a_keyless_join_on_the_smaller_product() {
             .filter_map(|s| match s {
                 Step::Join(j) => match j.kind {
                     JoinKind::Hash { build_inner } => Some(build_inner),
-                    JoinKind::Probe(_) | JoinKind::ProbeValue(_) => None,
+                    JoinKind::Probe(_) | JoinKind::ProbeValue { .. } => None,
                 },
                 _ => None,
             })
