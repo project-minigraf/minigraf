@@ -14,7 +14,7 @@
 
 Not counted above: the browser tests and the WASI run (see [Browser and WASI](#browser-and-wasi)).
 
-**Scope**: the unreleased file-format-v8 work (#287, #371): the index-key value-collision fix, the v7→v8 migration, and the drop of formats v1–v6. Otherwise the public database API, the Datalog engine, storage and recovery paths, and v2.0.0's locking and structured-error-code changes. Tests merged from the v2.x line are marked *(v2.x)*.
+**Scope**: the unreleased file-format-v8 work (#287, #371): the index-key value-collision fix, the v7→v8 migration, and the drop of formats v1–v6. Otherwise the public database API, the Datalog engine, storage and recovery paths, v2.0.0's locking and structured-error-code changes, and v2.0.1's regression test for rebuilding indexes on open after several checkpoints (#370). Tests merged from the v2.x line are marked *(v2.x)*.
 
 ## Covered Areas
 
