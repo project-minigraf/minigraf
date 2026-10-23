@@ -4,7 +4,7 @@
 //! index choice, net-assert across committed and pending records, `:as-of`,
 //! valid time, long strings, and cross-kind values.
 
-use super::{Cause, FALLBACKS, RUNS};
+use super::RUNS;
 use crate::QueryResult;
 use crate::db::Minigraf;
 
@@ -1272,15 +1272,10 @@ fn constants_run_on_the_engine() {
     // A derived head entity that is a value fails the query, as on the
     // executor.
     db.execute(r#"(transact [[:p :name "alice"]])"#).unwrap();
-    FALLBACKS.with(|f| f.borrow_mut().clear());
     let err = db
         .execute(r#"(query [:find ?e :where (named "alice" ?e)])"#)
         .expect_err("a string head entity");
     assert_eq!(err.code(), "QRY-013");
-    assert!(
-        FALLBACKS.with(|f| f.borrow().is_empty()),
-        "the engine planned it"
-    );
 }
 
 /// The errors the planner raises keep the codes the executor reports (#551
@@ -1336,10 +1331,8 @@ fn planner_errors_keep_their_codes() {
             "QRY-007",
         ),
     ] {
-        FALLBACKS.with(|f| f.borrow_mut().clear());
         let err = db.execute(&format!("(query {q})")).expect_err(q);
         assert_eq!(err.code(), code, "{q}");
-        assert!(FALLBACKS.with(|f| f.borrow().is_empty()), "{q}");
     }
     // Slots, which a prepared query substitutes first.
     for (q, code) in [
@@ -1353,7 +1346,7 @@ fn planner_errors_keep_their_codes() {
             panic!("a query");
         };
         match super::plan(&query) {
-            Err(super::Refusal::Fail(e)) => {
+            Err(e) => {
                 assert_eq!(crate::MinigrafError::from(e).code(), code, "{q}")
             }
             _ => panic!("a planner error"),
@@ -1377,7 +1370,7 @@ fn planner_errors_keep_their_codes() {
         panic!("a query");
     };
     match super::plan_rules(&query, &registry, &[]) {
-        Err(super::Refusal::Fail(e)) => {
+        Err(e) => {
             assert_eq!(crate::MinigrafError::from(e).code(), "INT-054")
         }
         _ => panic!("a planner error"),
@@ -2093,15 +2086,10 @@ fn rule_query_routing() {
     assert_eq!(rows(&db, "(query [:find ?x :where (deep ?x ?y)])"), 1);
     // A body with no pattern runs on the engine, which finds its head
     // entity is a number, as the executor does.
-    FALLBACKS.with(|f| f.borrow_mut().clear());
     let err = db
         .execute("(query [:find ?x ?v :where (one ?x ?v)])")
         .expect_err("an integer head entity");
     assert_eq!(err.code(), "QRY-013");
-    assert!(
-        FALLBACKS.with(|f| f.borrow().is_empty()),
-        "the engine planned it"
-    );
     for (at, n) in [("2020-01-01T00:00:00Z", 0), ("2100-01-01T00:00:00Z", 3)] {
         let q = format!("(query [:find ?x ?y :as-of \"{at}\" :where (reach ?x ?y)])");
         assert_eq!(rows(&db, &q), n, "an :as-of timestamp runs on the engine");
@@ -2114,15 +2102,10 @@ fn rule_query_routing() {
         1
     );
     // Three arguments: the executor's INT-028, from the planner.
-    FALLBACKS.with(|f| f.borrow_mut().clear());
     let err = db
         .execute("(query [:find ?x :where (reach ?x ?y ?z)])")
         .expect_err("three arguments");
     assert_eq!(err.code(), "INT-028");
-    assert!(
-        FALLBACKS.with(|f| f.borrow().is_empty()),
-        "the planner raised it"
-    );
     let before = runs();
     let mut tx = db.begin_write().unwrap();
     tx.execute("(transact [[:c :e :d]])").unwrap();

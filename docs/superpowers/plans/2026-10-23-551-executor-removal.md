@@ -116,6 +116,10 @@ the executor's answer for the shape, through the oracle, and the step then keeps
    `not-join` body is `QRY-007` at open. The executor evaluated it per body row, where it
    failed, so the `not` kept every outer row. Spec §3.2's "every predicate a query names" covers
    it, but §4 does not list it; PR 3's CHANGELOG lists it with the other two.
+5. Decision 6 in the code: `first_irregular` also marks a falling `tx_count` (a read-only v7
+   open's pending facts need not be in `tx_count` order), and `KeySource::tx_order` returns
+   whether the DICT's `tx_id`s rise together with the newest `(tx_count, tx_id)`, which
+   `last_tx_at` searches up to instead of the meta's counter.
 
 ## PR 1 steps
 

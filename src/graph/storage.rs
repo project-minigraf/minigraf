@@ -2,6 +2,7 @@ use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::graph::types::{
     Attribute, EntityId, Fact, TransactOptions, TxId, VALID_TIME_FOREVER, Value, tx_id_now,
 };
+#[cfg(any(test, feature = "test-oracle"))]
 use crate::query::datalog::types::AsOf;
 use crate::storage::TxBound;
 use crate::storage::index::{Indexes, encode_value};
@@ -425,6 +426,7 @@ impl Snapshot {
 
     /// Every record of the snapshot (assertions and retractions): committed
     /// facts first, in EAVT order, then the pending facts in append order.
+    #[cfg(any(test, feature = "test-oracle"))]
     pub(crate) fn all_facts(&self) -> Result<Vec<Fact>> {
         let mut all = match &self.committed {
             Some(reader) => reader.all_facts()?,
@@ -435,6 +437,7 @@ impl Snapshot {
     }
 
     /// The records of the snapshot visible as of `as_of`.
+    #[cfg(any(test, feature = "test-oracle"))]
     pub(crate) fn facts_as_of(&self, as_of: &AsOf) -> Result<Vec<Fact>> {
         Ok(filter_facts_as_of(self.all_facts()?, as_of))
     }
@@ -448,6 +451,7 @@ impl Snapshot {
     /// over every record of the scan up to `as_of` (see
     /// [`CommittedReader::live_facts`](crate::storage::CommittedReader::live_facts)),
     /// but committed history is not translated into facts.
+    #[cfg(any(test, feature = "test-oracle"))]
     pub(crate) fn live_facts_of_scans(
         &self,
         scans: &[crate::storage::Scan<'_>],
@@ -776,6 +780,7 @@ impl FactStorage {
     ///
     /// Checks for duplicate facts before loading (based on entity, attribute, value,
     /// valid_from, valid_to, tx_count, and asserted).
+    #[cfg(any(test, feature = "test-oracle", not(target_arch = "wasm32")))]
     pub(crate) fn load_fact(&self, fact: Fact) -> Result<bool> {
         self.write_pending(|p| p.push(fact))
     }
@@ -814,6 +819,7 @@ impl FactStorage {
     /// `transact()` call picks up from the right sequence number. The counter
     /// never moves backwards: it may already hold the file's checkpointed count,
     /// and when WAL replay loads no facts that count must survive (#447).
+    #[cfg(any(test, feature = "test-oracle", not(target_arch = "wasm32")))]
     pub(crate) fn restore_tx_counter(&self) -> Result<()> {
         let d = self
             .data
@@ -850,6 +856,7 @@ impl FactStorage {
     /// Returns the complete append-only log. For current state, filter by
     /// asserted=true and take the most recent fact for each (E, A) pair.
     /// Includes both committed (on-disk) facts and pending (in-memory) facts.
+    #[cfg(any(test, feature = "test-oracle"))]
     pub(crate) fn get_all_facts(&self) -> Result<Vec<Fact>> {
         self.snapshot()?.all_facts()
     }
@@ -867,6 +874,7 @@ impl FactStorage {
     ///
     /// Returns only facts where asserted=true. This gives you the currently
     /// valid facts, but includes all historical versions.
+    #[cfg(any(test, feature = "test-oracle"))]
     pub(crate) fn get_asserted_facts(&self) -> Result<Vec<Fact>> {
         let all = self.get_all_facts()?;
         Ok(all.into_iter().filter(|f| f.is_asserted()).collect())
@@ -987,6 +995,7 @@ impl FactStorage {
 /// Apply transaction-time snapshot semantics to a batch of facts.
 ///
 /// Used by `Snapshot::facts_as_of`.
+#[cfg(any(test, feature = "test-oracle"))]
 pub(crate) fn filter_facts_as_of(facts: Vec<Fact>, as_of: &AsOf) -> Vec<Fact> {
     facts
         .into_iter()

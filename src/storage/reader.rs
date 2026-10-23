@@ -5,14 +5,16 @@
 
 use crate::error::{ErrorCode, bail_coded};
 use crate::graph::types::{EntityId, Fact};
-use crate::storage::btree::{LeafCursor, MutexStorageBackend, prefix_scan};
+#[cfg(any(test, feature = "test-oracle"))]
+use crate::storage::Scan;
+#[cfg(any(test, feature = "test-oracle"))]
+use crate::storage::btree::prefix_scan;
+use crate::storage::btree::{LeafCursor, MutexStorageBackend};
 use crate::storage::cache::PageCache;
 use crate::storage::dict::{DictReader, SharedDictCache};
 use crate::storage::keys::{self, Index, KeyFact, ValueRef};
 use crate::storage::meta::MetaPage;
-use crate::storage::{
-    CommittedReader, KeySource, LogSource, Scan, StorageBackend, TxBound, TxOrder,
-};
+use crate::storage::{CommittedReader, KeySource, LogSource, StorageBackend, TxBound, TxOrder};
 use anyhow::Result;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -56,6 +58,7 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
     }
 
     /// Facts of every `index` entry starting with `prefix`.
+    #[cfg(any(test, feature = "test-oracle"))]
     fn scan(
         &self,
         index: Index,
@@ -105,6 +108,7 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
     /// Facts of `index` entries starting with `prefix` that survive net-assert
     /// at `as_of`, decided on the key bytes (#379, spec §5.3). Only kept
     /// entries are decoded and translated through the dictionary.
+    #[cfg(any(test, feature = "test-oracle"))]
     fn live_scan(
         &self,
         index: Index,
@@ -457,6 +461,7 @@ impl<B: StorageBackend + 'static> CommittedReader for OnDiskReader<B> {
         Some(self)
     }
 
+    #[cfg(any(test, feature = "test-oracle"))]
     fn live_facts(&self, scan: Scan<'_>, as_of: Option<u64>) -> Result<Vec<Fact>> {
         let mut dict = self.dict();
         let (index, root, prefix) = match scan {
@@ -491,6 +496,7 @@ impl<B: StorageBackend + 'static> CommittedReader for OnDiskReader<B> {
         self.live_scan(index, root, &prefix, as_of, &mut dict)
     }
 
+    #[cfg(any(test, feature = "test-oracle"))]
     fn all_facts(&self) -> Result<Vec<Fact>> {
         if self.eavt_root == 0 {
             return Ok(Vec::new());
@@ -504,6 +510,7 @@ impl<B: StorageBackend + 'static> CommittedReader for OnDiskReader<B> {
         Ok(facts)
     }
 
+    #[cfg(any(test, feature = "test-oracle"))]
     fn facts_for_entity(&self, entity: &EntityId) -> Result<Vec<Fact>> {
         let mut dict = self.dict();
         let Some(e) = dict.eid_of(entity)? else {
@@ -518,6 +525,7 @@ impl<B: StorageBackend + 'static> CommittedReader for OnDiskReader<B> {
         )
     }
 
+    #[cfg(any(test, feature = "test-oracle"))]
     fn facts_for_entity_attribute(&self, entity: &EntityId, attribute: &str) -> Result<Vec<Fact>> {
         let mut dict = self.dict();
         let (Some(e), Some(a)) = (dict.eid_of(entity)?, dict.iid_of(attribute)?) else {
@@ -529,6 +537,7 @@ impl<B: StorageBackend + 'static> CommittedReader for OnDiskReader<B> {
         self.scan(Index::Eavt, self.eavt_root, &prefix, &mut dict)
     }
 
+    #[cfg(any(test, feature = "test-oracle"))]
     fn facts_for_attribute(&self, attribute: &str) -> Result<Vec<Fact>> {
         let mut dict = self.dict();
         let Some(a) = dict.iid_of(attribute)? else {

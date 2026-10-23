@@ -369,19 +369,23 @@ impl Default for LegacyHeaderV7 {
 /// order.
 pub trait CommittedReader: Send + Sync {
     /// Every committed fact (an EAVT scan).
+    #[cfg(any(test, feature = "test-oracle"))]
     fn all_facts(&self) -> Result<Vec<crate::graph::types::Fact>>;
     /// Every committed fact of `entity`.
+    #[cfg(any(test, feature = "test-oracle"))]
     fn facts_for_entity(
         &self,
         entity: &crate::graph::types::EntityId,
     ) -> Result<Vec<crate::graph::types::Fact>>;
     /// Every committed fact of `(entity, attribute)`.
+    #[cfg(any(test, feature = "test-oracle"))]
     fn facts_for_entity_attribute(
         &self,
         entity: &crate::graph::types::EntityId,
         attribute: &str,
     ) -> Result<Vec<crate::graph::types::Fact>>;
     /// Every committed fact with `attribute` (an AEVT scan).
+    #[cfg(any(test, feature = "test-oracle"))]
     fn facts_for_attribute(&self, attribute: &str) -> Result<Vec<crate::graph::types::Fact>>;
 
     /// The committed facts of `scan` that survive net-assert among the
@@ -394,6 +398,7 @@ pub trait CommittedReader: Send + Sync {
     /// newer than each committed one and a record can only be hidden by a newer
     /// one. This default reads the history and filters it; `OnDiskReader`
     /// decides on index keys and translates only the survivors.
+    #[cfg(any(test, feature = "test-oracle"))]
     fn live_facts(
         &self,
         scan: Scan<'_>,
@@ -443,6 +448,7 @@ pub enum TxBound {
 
 impl TxBound {
     /// The bound of a counter `:as-of`, or of none.
+    #[cfg(any(test, feature = "test-oracle"))]
     pub fn of(as_of: Option<u64>) -> Self {
         match as_of {
             Some(n) => TxBound::Upto(n),

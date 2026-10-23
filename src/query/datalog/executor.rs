@@ -1,17 +1,26 @@
+#[cfg(any(test, feature = "test-oracle"))]
 use super::aggregate::{Agg, Groups, finish_groups, named_vars, value_order, windows};
+#[cfg(any(test, feature = "test-oracle"))]
 use super::evaluator::{StratifiedEvaluator, evaluate_not_join};
 use super::functions::FunctionRegistry;
-use super::matcher::{PatternMatcher, edn_to_entity_id, edn_to_value};
+#[cfg(any(test, feature = "test-oracle"))]
+use super::matcher::PatternMatcher;
+use super::matcher::{edn_to_entity_id, edn_to_value};
+#[cfg(any(test, feature = "test-oracle"))]
 use super::optimizer;
 use super::rules::RuleRegistry;
+#[cfg(any(test, feature = "test-oracle"))]
+use super::types::AsOf;
 use super::types::{
-    AsOf, AttributeSpec, BinOp, DatalogCommand, DatalogQuery, EdnValue, Expr, FindSpec, Pattern,
-    Rule, Transaction, UnaryOp, ValidAt, WhereClause, WindowFunc,
+    AttributeSpec, BinOp, DatalogCommand, DatalogQuery, EdnValue, Expr, FindSpec, Pattern, Rule,
+    Transaction, UnaryOp, ValidAt, WhereClause, WindowFunc,
 };
 use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::graph::FactStorage;
 use crate::graph::storage::Snapshot;
-use crate::graph::types::{Fact, TransactOptions, TxId, Value, tx_id_now};
+#[cfg(any(test, feature = "test-oracle"))]
+use crate::graph::types::{Fact, tx_id_now};
+use crate::graph::types::{TransactOptions, TxId, Value};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -28,6 +37,7 @@ fn check_per_fact_pseudo_attrs(query: &DatalogQuery) -> Result<()> {
 
 /// `QRY-007`: surface unknown UDF predicates as errors before processing any
 /// rows (matches the behaviour of the former apply_expr_clauses post-pass).
+#[cfg(any(test, feature = "test-oracle"))]
 fn check_udf_predicates(query: &DatalogQuery, registry: &FunctionRegistry) -> Result<()> {
     for clause in &query.where_clauses {
         if let WhereClause::Expr {
@@ -90,6 +100,7 @@ fn query_uses_per_fact_pseudo_attr(query: &DatalogQuery) -> bool {
 /// including those nested inside `Not`, `NotJoin`, `Or`, and `OrJoin` bodies.
 /// Used by `selective_fact_fetch` to ensure every pattern that references a fact
 /// (including not-body patterns) is considered when deciding which indexes to query.
+#[cfg(any(test, feature = "test-oracle"))]
 fn collect_all_patterns(clauses: &[WhereClause]) -> Vec<Pattern> {
     let mut patterns = Vec::new();
     for clause in clauses {
@@ -261,6 +272,7 @@ impl DatalogExecutor {
     /// Read-time "now" for query visibility: the snapshot's time when the
     /// executor has one, otherwise the wall clock. A write transaction's
     /// snapshot is at or after its newest staged fact (#550 spec §7).
+    #[cfg(any(test, feature = "test-oracle"))]
     fn read_now(&self) -> i64 {
         self.snapshot
             .as_ref()
@@ -367,6 +379,7 @@ impl DatalogExecutor {
     /// transaction overlay, and for `:as-of` counters, committed history is already
     /// reduced to its net-asserted records on index keys (#379); step 2 still runs over
     /// the union with the pending facts, which gives the same result.
+    #[cfg(any(test, feature = "test-oracle"))]
     fn filter_facts_for_query(&self, query: &DatalogQuery) -> Result<Arc<[Fact]>> {
         let now = self.read_now();
 
@@ -406,6 +419,7 @@ impl DatalogExecutor {
     /// Step 1 without a transaction overlay: pending facts up to `as_of` plus the
     /// committed facts that survive net-assert at `as_of` (#379), selectively when the
     /// patterns allow it. Rules need the whole fact base, so they always get a full scan.
+    #[cfg(any(test, feature = "test-oracle"))]
     fn live_source_facts(&self, query: &DatalogQuery, as_of: Option<u64>) -> Result<Vec<Fact>> {
         if !query.uses_rules() {
             let patterns = collect_all_patterns(&query.where_clauses);
@@ -436,6 +450,7 @@ impl DatalogExecutor {
     /// which is idempotent under duplicated records. Each lookup returns the pending facts
     /// up to `as_of` and the committed facts live at `as_of`, and all lookups read one
     /// state of the store (`Snapshot::live_facts_of_scans`, #555).
+    #[cfg(any(test, feature = "test-oracle"))]
     fn selective_fact_fetch(
         &self,
         patterns: &[Pattern],
@@ -539,14 +554,9 @@ impl DatalogExecutor {
             check_find_functions(&query.find, &registry)?;
         }
 
-        // Check if query uses rules
+        // A rule query (#548).
         if query.uses_rules() {
-            // The engine runs the rule queries it plans (#548).
-            if let Some(answer) = self.open_rule_query(&query)? {
-                return Ok(answer);
-            }
-            // Use StratifiedEvaluator for queries with rule invocations (handles negation and strata)
-            return self.execute_query_with_rules(query).map(Answer::Result);
+            return self.open_rule_query(&query);
         }
 
         // Warn about queries with no binding mechanism
@@ -554,56 +564,54 @@ impl DatalogExecutor {
             return Err(err_coded!(ErrorCode::Int027));
         }
 
-        // The streaming engine runs the queries it has operators for (#473).
-        // A planner error comes after the pseudo-attribute check (#473 spec
-        // §5.5).
-        let planned = crate::query::engine::plan(&query);
-        if matches!(planned, Err(crate::query::engine::Refusal::Fail(_))) {
-            check_per_fact_pseudo_attrs(&query)?;
-        }
-        if let Some(plan) = crate::query::engine::supported(planned)? {
-            {
-                let registry = self
-                    .functions
-                    .read()
-                    .map_err(|_| err_coded!(ErrorCode::Qry008))?;
-                check_clauses(&query, &registry)?;
+        // The streaming engine runs every query (#473, #551). A planner
+        // error comes after the pseudo-attribute check (#473 spec §5.5).
+        let plan = match crate::query::engine::plan(&query) {
+            Ok(plan) => plan,
+            Err(e) => {
+                check_per_fact_pseudo_attrs(&query)?;
+                return Err(e);
             }
-            let snapshot = self.read_snapshot()?;
-            if let Some(stream) = crate::query::engine::supported(crate::query::engine::open(
-                snapshot.clone(),
-                plan,
-                self.functions.clone(),
-                self.query_memory_limit,
-            ))? {
-                #[cfg(test)]
-                crate::query::engine::RUNS.with(|r| r.set(r.get() + 1));
-                // The comparison drains a second stream, so the one returned
-                // stays unread.
-                #[cfg(any(test, feature = "test-oracle"))]
-                if let Ok(again) = crate::query::engine::plan(&query).and_then(|plan| {
+        };
+        {
+            let registry = self
+                .functions
+                .read()
+                .map_err(|_| err_coded!(ErrorCode::Qry008))?;
+            check_clauses(&query, &registry)?;
+        }
+        let snapshot = self.read_snapshot()?;
+        let stream = crate::query::engine::open(
+            snapshot.clone(),
+            plan,
+            self.functions.clone(),
+            self.query_memory_limit,
+        )?;
+        #[cfg(test)]
+        crate::query::engine::RUNS.with(|r| r.set(r.get() + 1));
+        // The comparison drains a second stream, so the one returned stays
+        // unread.
+        #[cfg(any(test, feature = "test-oracle"))]
+        crate::query::engine::oracle::check(
+            &crate::query::engine::plan(&query)
+                .and_then(|plan| {
                     crate::query::engine::open(
                         snapshot.clone(),
                         plan,
                         self.functions.clone(),
                         self.query_memory_limit,
                     )
-                }) {
-                    crate::query::engine::oracle::check(
-                        &again.collect(),
-                        &self.oracle(snapshot).execute_query_on_executor(query),
-                    );
-                }
-                return Ok(Answer::Stream(Box::new(stream)));
-            }
-        }
-        self.execute_query_on_executor(query).map(Answer::Result)
+                })
+                .and_then(crate::query::engine::Stream::collect),
+            &self.oracle(snapshot).execute_query_on_executor(query),
+        );
+        Ok(Answer::Stream(Box::new(stream)))
     }
 
-    /// A rule query on the streaming engine (#548), or `None` when the
-    /// engine does not plan it. Its errors come in the executor's order:
-    /// pseudo-attributes, then the rules, then unknown predicates.
-    fn open_rule_query(&self, query: &DatalogQuery) -> Result<Option<Answer>> {
+    /// A rule query on the streaming engine (#548). Its errors come in the
+    /// executor's order: pseudo-attributes, then the rules, then unknown
+    /// predicates.
+    fn open_rule_query(&self, query: &DatalogQuery) -> Result<Answer> {
         let plan = {
             let registry = self
                 .rules
@@ -620,11 +628,12 @@ impl DatalogExecutor {
                 }
             }
         };
-        if matches!(plan, Err(crate::query::engine::Refusal::Fail(_))) {
-            check_per_fact_pseudo_attrs(query)?;
-        }
-        let Some((plan, seeds)) = crate::query::engine::supported(plan)? else {
-            return Ok(None);
+        let (plan, seeds) = match plan {
+            Ok(planned) => planned,
+            Err(e) => {
+                check_per_fact_pseudo_attrs(query)?;
+                return Err(e);
+            }
         };
         check_per_fact_pseudo_attrs(query)?;
         let limits = crate::query::engine::Limits {
@@ -637,45 +646,34 @@ impl DatalogExecutor {
         let mut names = Vec::new();
         crate::query::engine::udfs(&query.where_clauses, &mut names);
         names.extend(plan.predicates.iter().cloned());
-        let open = |plan| -> Result<Option<crate::query::engine::Stream>> {
-            let stream = crate::query::engine::supported(crate::query::engine::open_rules(
+        let open = |plan| -> Result<crate::query::engine::Stream> {
+            let stream = crate::query::engine::open_rules(
                 snapshot.clone(),
                 plan,
                 &seeds,
                 self.functions.clone(),
                 limits,
-            ))?;
-            if stream.is_some() {
-                let registry = self
-                    .functions
-                    .read()
-                    .map_err(|_| err_coded!(ErrorCode::Qry008))?;
-                check_predicates(&names, &registry)?;
-            }
+            )?;
+            let registry = self
+                .functions
+                .read()
+                .map_err(|_| err_coded!(ErrorCode::Qry008))?;
+            check_predicates(&names, &registry)?;
             Ok(stream)
         };
         // The comparison drains a second stream, so the one returned stays
         // unread.
         #[cfg(any(test, feature = "test-oracle"))]
-        {
-            let again = open(plan.clone());
-            if !matches!(again, Ok(None)) {
-                crate::query::engine::oracle::check(
-                    &again.and_then(|s| {
-                        s.map_or_else(|| Err(err_coded!(ErrorCode::Int049)), |s| s.collect())
-                    }),
-                    &self
-                        .oracle(snapshot.clone())
-                        .execute_query_with_rules(query.clone()),
-                );
-            }
-        }
-        let Some(stream) = open(plan)? else {
-            return Ok(None);
-        };
+        crate::query::engine::oracle::check(
+            &open(plan.clone()).and_then(crate::query::engine::Stream::collect),
+            &self
+                .oracle(snapshot.clone())
+                .execute_query_with_rules(query.clone()),
+        );
+        let stream = open(plan)?;
         #[cfg(test)]
         crate::query::engine::RUNS.with(|r| r.set(r.get() + 1));
-        Ok(Some(Answer::Stream(Box::new(stream))))
+        Ok(Answer::Stream(Box::new(stream)))
     }
 
     /// The most facts `query`'s rules may derive: a per-query limit replaces
@@ -703,6 +701,7 @@ impl DatalogExecutor {
 
     /// [`Self::execute_query`] on this executor, after the checks every
     /// query passes first.
+    #[cfg(any(test, feature = "test-oracle"))]
     fn execute_query_on_executor(&self, query: DatalogQuery) -> Result<QueryResult> {
         // Compute query-level valid_at value for :db/valid-at pseudo-attribute binding.
         let now = self.read_now();
@@ -861,6 +860,7 @@ impl DatalogExecutor {
     }
 
     /// Execute a query that uses recursive rules
+    #[cfg(any(test, feature = "test-oracle"))]
     fn execute_query_with_rules(&self, query: DatalogQuery) -> Result<QueryResult> {
         // Extract ALL predicates (including inside not bodies) so the StratifiedEvaluator
         // evaluates every referenced rule. This is needed for not-post-filter to work.
@@ -1171,6 +1171,7 @@ impl DatalogExecutor {
 /// the entity position (→ `Ref`) or the value position (→ `Keyword`) of a fact.
 /// Normalize both to `Value::Ref` so that exclusion-set probes work correctly across
 /// these two representations.
+#[cfg(any(test, feature = "test-oracle"))]
 fn normalize_value(v: &Value) -> Value {
     if let Value::Keyword(k) = v {
         use crate::query::datalog::matcher::edn_to_entity_id;
@@ -1188,6 +1189,7 @@ fn normalize_value(v: &Value) -> Value {
 /// The body is matched from the outer values of the variables it names
 /// (`seeded_body_rows`, #546). Rule invocations in it match the rule-derived
 /// facts `storage` holds on the rules path.
+#[cfg(any(test, feature = "test-oracle"))]
 fn not_body_matches(
     not_body: &[WhereClause],
     outer: &Binding,
@@ -1212,6 +1214,7 @@ fn not_body_matches(
 /// Precomputes one exclusion set from the body's patterns (matched once against
 /// `filtered_facts`, independent of `bindings`), then probes it per binding — same
 /// fast path as the pre-#248 post-filter, just scoped to one clause at a time.
+#[cfg(any(test, feature = "test-oracle"))]
 fn apply_not_clause(
     bindings: Vec<Binding>,
     not_body: &[WhereClause],
@@ -1302,6 +1305,7 @@ fn apply_not_clause(
 /// query path (`execute_query`). Mirrors [`apply_not_clause`] but keys the exclusion
 /// set on `join_vars` (the subset actually bound in every body row) instead of all
 /// body variables.
+#[cfg(any(test, feature = "test-oracle"))]
 fn apply_not_join_clause(
     bindings: Vec<Binding>,
     join_vars: &[String],
@@ -1399,6 +1403,7 @@ fn apply_not_join_clause(
 
 /// Filter `bindings` through a single `(not ...)` body for the rules query path,
 /// where rule invocations in the body match `derived_facts`.
+#[cfg(any(test, feature = "test-oracle"))]
 fn apply_not_clause_derived(
     bindings: Vec<Binding>,
     not_body: &[WhereClause],
@@ -1423,6 +1428,7 @@ fn apply_not_clause_derived(
 /// Whether `clauses`, or any clause list inside them, holds a per-fact
 /// pseudo-attribute pattern (#594), which reads metadata a source bound,
 /// possibly outside `clauses`.
+#[cfg(any(test, feature = "test-oracle"))]
 pub(crate) fn reads_metadata(clauses: &[WhereClause]) -> bool {
     clauses.iter().any(|c| match c {
         WhereClause::Pattern(p) => p.pseudo_source.is_some(),
@@ -1436,6 +1442,7 @@ pub(crate) fn reads_metadata(clauses: &[WhereClause]) -> bool {
 
 /// The variables an `or` / `or-join` branch binds itself: by a pattern, a
 /// rule invocation or an expression output.
+#[cfg(any(test, feature = "test-oracle"))]
 fn branch_binds(branch: &[WhereClause]) -> std::collections::HashSet<String> {
     let mut bound = std::collections::HashSet::new();
     for c in branch {
@@ -1466,6 +1473,7 @@ fn branch_binds(branch: &[WhereClause]) -> std::collections::HashSet<String> {
 /// its own or an enclosing nested branch's. Only the outer row can bind them, so
 /// a branch with any must be seeded with that row, not evaluated from an empty
 /// binding and joined afterwards (#620).
+#[cfg(any(test, feature = "test-oracle"))]
 pub(crate) fn branch_outer_reads(branch: &[WhereClause]) -> std::collections::HashSet<String> {
     let bound = branch_binds(branch);
     let mut reads = std::collections::HashSet::new();
@@ -1487,6 +1495,7 @@ pub(crate) fn branch_outer_reads(branch: &[WhereClause]) -> std::collections::Ha
 /// Filter `bindings` through a single `(not-join [...] ...)` body for the rules query
 /// path — no exclusion-set fast path here (matches the pre-#248 post-filter, which
 /// never had one for this path either).
+#[cfg(any(test, feature = "test-oracle"))]
 fn apply_not_join_clause_derived(
     bindings: Vec<Binding>,
     join_vars: &[String],
@@ -1511,6 +1520,7 @@ fn apply_not_join_clause_derived(
 }
 
 /// Extract plain variable values from bindings (non-aggregate path).
+#[cfg(any(test, feature = "test-oracle"))]
 fn extract_variables(
     bindings: Vec<std::collections::HashMap<String, Value>>,
     find_specs: &[FindSpec],
@@ -1532,6 +1542,7 @@ fn extract_variables(
     results
 }
 
+#[cfg(any(test, feature = "test-oracle"))]
 type Binding = std::collections::HashMap<String, Value>;
 
 /// Which clause of a query's top-level `:where` gave each variable its value
@@ -1660,6 +1671,7 @@ impl Binders {
 /// - Aggregates only → group-by collapse, then project.
 /// - Windows only → partition/sort/accumulate per spec, then project.
 /// - Mixed → aggregate collapses first, window runs over collapsed rows.
+#[cfg(any(test, feature = "test-oracle"))]
 fn apply_post_processing(
     bindings: Vec<Binding>,
     find_specs: &[FindSpec],
@@ -1698,6 +1710,7 @@ fn apply_post_processing(
 /// result does not depend on the order of the bindings. Groups finish in
 /// key order; the first aggregate in `:find` order whose result is an error
 /// fails the query, except `INT-042`, which drops the group (spec §3.3).
+#[cfg(any(test, feature = "test-oracle"))]
 fn compute_aggregation(
     bindings: Vec<Binding>,
     find_specs: &[FindSpec],
@@ -1820,6 +1833,7 @@ fn compute_aggregation(
 /// Modifies `bindings` in place; rows keep their order. The values come
 /// from [`windows`], over each binding's named variables (`nil` when
 /// absent).
+#[cfg(any(test, feature = "test-oracle"))]
 fn apply_window_functions(
     bindings: &mut [Binding],
     find_specs: &[FindSpec],
@@ -1850,6 +1864,7 @@ fn apply_window_functions(
 }
 
 /// Project binding maps to output rows in find-spec order.
+#[cfg(any(test, feature = "test-oracle"))]
 fn project_find_specs(bindings: &[Binding], find_specs: &[FindSpec]) -> Vec<Vec<Value>> {
     let mut results = Vec::new();
     for binding in bindings {
@@ -1880,6 +1895,7 @@ fn project_find_specs(bindings: &[Binding], find_specs: &[FindSpec]) -> Vec<Vec<
 
 /// The valid time an `or` branch binds `:db/valid-at` from: the query's,
 /// with "now" read once for the whole query (#546), not again per branch.
+#[cfg(any(test, feature = "test-oracle"))]
 fn branch_valid_at(valid_at_value: &Value) -> ValidAt {
     match valid_at_value {
         Value::Integer(t) => ValidAt::Timestamp(*t),
@@ -1895,6 +1911,7 @@ fn branch_valid_at(valid_at_value: &Value) -> ValidAt {
 /// 2. Nested Or/OrJoin → apply_or_clauses (recursive)
 /// 3. Not/NotJoin → post-filter
 /// 4. Expr → apply_expr_clauses
+#[cfg(any(test, feature = "test-oracle"))]
 pub(crate) fn evaluate_branch(
     branch: &[WhereClause],
     incoming: Vec<Binding>,
@@ -2027,10 +2044,12 @@ pub(crate) fn evaluate_branch(
 /// A branch row meets an outer row by join equality (#546, spec §5.3): a
 /// keyword equals a ref to the entity it names; floats compare by IEEE `==`
 /// (`Value`'s own equality). Dedup keys stay exact `Value`s.
+#[cfg(any(test, feature = "test-oracle"))]
 fn join_value(v: &Value) -> Value {
     PatternMatcher::normalize_join_value(v)
 }
 
+#[cfg(any(test, feature = "test-oracle"))]
 pub(crate) fn apply_or_clauses(
     clauses: &[WhereClause],
     mut bindings: Vec<Binding>,
@@ -2657,6 +2676,7 @@ pub(crate) fn eval_expr(
 ///
 /// Pre-validates UDF predicate names: returns `Err` if a named UDF predicate is not
 /// registered, so callers get a clear error rather than silently empty results.
+#[cfg(any(test, feature = "test-oracle"))]
 pub(crate) fn apply_expr_clauses(
     mut bindings: Vec<Binding>,
     where_clauses: &[WhereClause],
@@ -2693,6 +2713,7 @@ pub(crate) fn apply_expr_clauses(
 /// IEEE `==`, a keyword equal to a ref to the entity it names, an integer
 /// never equal to a float. `replace` then takes the result as the value
 /// (`Binders::expression`). A failing expression drops the row.
+#[cfg(any(test, feature = "test-oracle"))]
 pub(crate) fn apply_expr(
     expr: &Expr,
     out: Option<&str>,
