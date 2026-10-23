@@ -293,7 +293,7 @@ pub(crate) struct Fact {
 
 impl Fact {
     /// Create a new asserted fact with default valid time (valid_from=tx_id, valid_to=FOREVER).
-    #[cfg(any(test, feature = "test-oracle"))]
+    #[cfg(test)]
     pub(crate) fn new(entity: EntityId, attribute: Attribute, value: Value, tx_id: TxId) -> Self {
         Fact {
             entity,
@@ -349,7 +349,7 @@ impl Fact {
     }
 
     /// Check if this is an assertion (not a retraction)
-    #[cfg(any(test, feature = "test-oracle"))]
+    #[cfg(test)]
     pub(crate) fn is_asserted(&self) -> bool {
         self.asserted
     }

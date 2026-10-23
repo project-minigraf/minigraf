@@ -2,7 +2,7 @@ use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::graph::types::{
     Attribute, EntityId, Fact, TransactOptions, TxId, VALID_TIME_FOREVER, Value, tx_id_now,
 };
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(test)]
 use crate::query::datalog::types::AsOf;
 use crate::storage::TxBound;
 use crate::storage::index::{Indexes, encode_value};
@@ -426,7 +426,7 @@ impl Snapshot {
 
     /// Every record of the snapshot (assertions and retractions): committed
     /// facts first, in EAVT order, then the pending facts in append order.
-    #[cfg(any(test, feature = "test-oracle"))]
+    #[cfg(test)]
     pub(crate) fn all_facts(&self) -> Result<Vec<Fact>> {
         let mut all = match &self.committed {
             Some(reader) => reader.all_facts()?,
@@ -437,7 +437,7 @@ impl Snapshot {
     }
 
     /// The records of the snapshot visible as of `as_of`.
-    #[cfg(any(test, feature = "test-oracle"))]
+    #[cfg(test)]
     pub(crate) fn facts_as_of(&self, as_of: &AsOf) -> Result<Vec<Fact>> {
         Ok(filter_facts_as_of(self.all_facts()?, as_of))
     }
@@ -451,7 +451,7 @@ impl Snapshot {
     /// over every record of the scan up to `as_of` (see
     /// [`CommittedReader::live_facts`](crate::storage::CommittedReader::live_facts)),
     /// but committed history is not translated into facts.
-    #[cfg(any(test, feature = "test-oracle"))]
+    #[cfg(test)]
     pub(crate) fn live_facts_of_scans(
         &self,
         scans: &[crate::storage::Scan<'_>],
@@ -780,7 +780,7 @@ impl FactStorage {
     ///
     /// Checks for duplicate facts before loading (based on entity, attribute, value,
     /// valid_from, valid_to, tx_count, and asserted).
-    #[cfg(any(test, feature = "test-oracle", not(target_arch = "wasm32")))]
+    #[cfg(any(test, not(target_arch = "wasm32")))]
     pub(crate) fn load_fact(&self, fact: Fact) -> Result<bool> {
         self.write_pending(|p| p.push(fact))
     }
@@ -819,7 +819,7 @@ impl FactStorage {
     /// `transact()` call picks up from the right sequence number. The counter
     /// never moves backwards: it may already hold the file's checkpointed count,
     /// and when WAL replay loads no facts that count must survive (#447).
-    #[cfg(any(test, feature = "test-oracle", not(target_arch = "wasm32")))]
+    #[cfg(any(test, not(target_arch = "wasm32")))]
     pub(crate) fn restore_tx_counter(&self) -> Result<()> {
         let d = self
             .data
@@ -856,7 +856,7 @@ impl FactStorage {
     /// Returns the complete append-only log. For current state, filter by
     /// asserted=true and take the most recent fact for each (E, A) pair.
     /// Includes both committed (on-disk) facts and pending (in-memory) facts.
-    #[cfg(any(test, feature = "test-oracle"))]
+    #[cfg(test)]
     pub(crate) fn get_all_facts(&self) -> Result<Vec<Fact>> {
         self.snapshot()?.all_facts()
     }
@@ -874,7 +874,7 @@ impl FactStorage {
     ///
     /// Returns only facts where asserted=true. This gives you the currently
     /// valid facts, but includes all historical versions.
-    #[cfg(any(test, feature = "test-oracle"))]
+    #[cfg(test)]
     pub(crate) fn get_asserted_facts(&self) -> Result<Vec<Fact>> {
         let all = self.get_all_facts()?;
         Ok(all.into_iter().filter(|f| f.is_asserted()).collect())
@@ -995,7 +995,7 @@ impl FactStorage {
 /// Apply transaction-time snapshot semantics to a batch of facts.
 ///
 /// Used by `Snapshot::facts_as_of`.
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(test)]
 pub(crate) fn filter_facts_as_of(facts: Vec<Fact>, as_of: &AsOf) -> Vec<Fact> {
     facts
         .into_iter()
@@ -1028,12 +1028,13 @@ pub(crate) fn filter_facts_as_of(facts: Vec<Fact>, as_of: &AsOf) -> Vec<Fact> {
 /// (NaN canonicalisation, ±0.0 disambiguation) consistently with the rest of
 /// the storage layer.
 ///
-/// This is the single source of truth for retraction semantics, shared by
-/// `get_current_value` and `filter_facts_for_query`.
+/// This is the single source of truth for retraction semantics over facts:
+/// the engine's pending scans use it (committed keys decide net-assert on
+/// the keys, #379), and so do the tests' fact-level reads.
 ///
 /// # Implementation note
 ///
-/// Hot path for every non-`:as-of` query (#323). Each value is encoded once;
+/// Hot path for a query's pending facts (#323). Each value is encoded once;
 /// the group maps borrow `(entity, attribute, value_bytes)` from the input
 /// instead of cloning them. They keep std's randomly keyed hasher on purpose:
 /// values are often untrusted text (agent memory), and a fixed-seed fast hash
@@ -1044,7 +1045,6 @@ pub(crate) fn filter_facts_as_of(facts: Vec<Fact>, as_of: &AsOf) -> Vec<Fact> {
 ///
 /// Idempotent under duplicated input records (a duplicate assertion is kept
 /// once per window; a duplicate retraction leaves the max unchanged).
-/// `selective_fact_fetch` relies on this instead of deduplicating.
 pub(crate) fn net_asserted_facts(facts: Vec<Fact>) -> Vec<Fact> {
     use std::collections::{HashMap, HashSet};
 

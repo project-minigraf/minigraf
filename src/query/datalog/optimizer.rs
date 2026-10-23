@@ -1,6 +1,7 @@
 //! Query optimizer: index selection and join ordering for Datalog patterns.
 //!
-//! `plan()` is the single entry point. It assigns an `IndexHint` to each
+//! `plan_seeded` and `plan_after` order the engine's clause lists (`plan`,
+//! for tests, has nothing seeded). Each assigns an `IndexHint` to each
 //! pattern and sorts patterns by selectivity, on every build.
 //!
 //! [`reorder`] says whether this build reorders: patterns, `not`/`not-join`
@@ -253,14 +254,14 @@ pub(crate) fn clause_ref_vars(clauses: &[WhereClause]) -> std::collections::Hash
 /// by selectivity.
 ///
 /// `Pattern`, `Expr`, `Not`, and `NotJoin` variants may be passed in. `Or`, `OrJoin`,
-/// and top-level `RuleInvocation` are handled by the executor and must not appear here.
+/// and top-level `RuleInvocation` are planned around this list and must not appear here.
 ///
 /// A `Not`/`NotJoin` clause whose required variables (all body variables for `Not`;
 /// `join_vars` for `NotJoin`) are never fully bound by any prefix of the planned
 /// patterns is returned in the second element (`deferred`) rather than being placed —
 /// it depends on a binding source outside this clause list (e.g. an `Or`/`OrJoin`
-/// clause, which the executor applies after this plan) and must be evaluated by the
-/// executor's post-filter instead, to avoid running it before its dependency is bound.
+/// clause, which runs after this plan) and runs after that instead, to avoid running
+/// it before its dependency is bound.
 ///
 /// An `Expr` reading a variable that no pattern in the list and no `Expr` placed
 /// before it binds is deferred the same way (#625), ahead of the deferred
@@ -269,7 +270,7 @@ pub(crate) fn clause_ref_vars(clauses: &[WhereClause]) -> std::collections::Hash
 ///
 /// Returns `(interleaved, deferred)` where `interleaved` pairs each Pattern with
 /// `Some(hint)` and each Expr/Not/NotJoin with `None`.
-#[cfg(any(test, feature = "test-oracle"))]
+#[cfg(test)]
 pub fn plan(
     clauses: Vec<WhereClause>,
 ) -> (Vec<(WhereClause, Option<IndexHint>)>, Vec<WhereClause>) {
