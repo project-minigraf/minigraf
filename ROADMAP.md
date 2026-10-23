@@ -163,7 +163,7 @@ Scope — release-gate testing and documentation:
 
 ---
 
-## v3.1.0 — Features
+## v3.next — Features
 
 Additive features, kept out of v3.0.0 so the #371 fix is not held up by them:
 
@@ -187,7 +187,7 @@ Additive features, kept out of v3.0.0 so the #371 fix is not held up by them:
 ### Developer Tools
 
 - 🎯 Database inspector/debugger (separate repository: [minigraf-inspector](https://github.com/project-minigraf/minigraf-inspector))
-- 🎯 Query profiler (#185, v3.1.0)
+- 🎯 Query profiler (#185, v3.next)
 - 🎯 Time-travel visualizer (separate repository: [minigraf-visualizer](https://github.com/project-minigraf/minigraf-visualizer))
 
 ### Integration Examples
@@ -260,7 +260,7 @@ When evaluating features, ask:
 ## Current Focus
 
 - v2.x maintenance on `main`: data-integrity and security fixes only
-- v3.0.0 (format v8 and data integrity) on the `v3` branch, then v3.1.0 features
+- v3.0.0 (format v8 and data integrity) on the `v3` branch, then v3.next features
 - Production readiness for high-stakes deployments, tracked in #383
 - Ecosystem work tracked in [`minigraf-examples`](https://github.com/project-minigraf/minigraf-examples)
 - Developer tools tracked in `minigraf-inspector` and `minigraf-visualizer`
