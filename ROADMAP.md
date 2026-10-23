@@ -126,6 +126,7 @@ Additive features, kept out of v3.0.0 so the #371 fix is not held up by them:
 - `PreparedQuery` over UniFFI (#181)
 - UDF registration over UniFFI (#180)
 - `OpenOptions` exposed over UniFFI, so embedders can suppress the close-time checkpoint (#322)
+- OPFS-backed persistent mode for `BrowserDb`: a sync access handle in a dedicated Worker, no in-memory buffer; IndexedDB stays the main-thread backend. Starts at Tier 2 inside the Tier 1 browser binding until it has shipped (#441)
 - Temporal graph-traversal research (#273; may result in documentation or a blog post rather than code)
 
 ---
