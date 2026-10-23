@@ -524,6 +524,9 @@ fn as_of_timestamps_run_on_the_engine() {
         db.execute("(transact [[:c :n 4] [:a :n 2]])").unwrap();
         db.execute("(retract [[:a :n 1]])").unwrap();
         run_all(&db);
+        // The same, checkpointed into a new committed generation.
+        db.checkpoint().unwrap();
+        run_all(&db);
         // Staged facts in a write transaction.
         let mut tx = db.begin_write().unwrap();
         tx.execute("(transact [[:d :n 5]])").unwrap();
