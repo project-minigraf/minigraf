@@ -38,7 +38,7 @@ use anyhow::Result;
 use batch::Batch;
 use ids::IdSpace;
 pub(crate) use meter::Meter;
-pub(crate) use plan::{Plan, plan, plan_rules};
+pub(crate) use plan::{Cause, Plan, Refusal, plan, plan_rules};
 pub(crate) use recursive::Limits;
 use std::sync::{Arc, RwLock};
 
@@ -46,6 +46,9 @@ use std::sync::{Arc, RwLock};
 thread_local! {
     /// Queries this thread ran on the engine (tests check routing with it).
     pub(crate) static RUNS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// Why each query this thread ran on the executor did not run here.
+    pub(crate) static FALLBACKS: std::cell::RefCell<Vec<Cause>> =
+        const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// Most rows in one internal batch (spec §5.1).
@@ -140,43 +143,44 @@ impl std::fmt::Debug for Stream {
     }
 }
 
-/// Open `plan` over `snapshot`, holding at most `memory_limit` bytes, or
-/// `None` when the snapshot's committed reader has no keys (a test reader)
-/// and the executor must run it.
+/// The key-level reads of `snapshot`'s committed generation, if it has one.
+fn keys(snapshot: &Snapshot) -> std::result::Result<Option<&dyn KeySource>, Refusal> {
+    match &snapshot.committed {
+        Some(reader) => match reader.key_source() {
+            Some(k) => Ok(Some(k)),
+            // A test reader.
+            None => Err(Refusal::Unsupported(Cause::NoKeys)),
+        },
+        None => Ok(None),
+    }
+}
+
+/// Open `plan` over `snapshot`, holding at most `memory_limit` bytes.
 pub(crate) fn open(
     snapshot: Snapshot,
     plan: Plan,
     functions: Arc<RwLock<FunctionRegistry>>,
     memory_limit: usize,
-) -> Option<Stream> {
-    let keys = match &snapshot.committed {
-        Some(reader) => Some(reader.key_source()?),
-        None => None,
-    };
+) -> std::result::Result<Stream, Refusal> {
+    let keys = keys(&snapshot)?;
     let meter = Meter::new(memory_limit);
     let ids = IdSpace::new(keys, &meter);
-    Some(stream(snapshot, ids, plan, functions, None, meter))
+    Ok(stream(snapshot, ids, plan, functions, None, meter))
 }
 
 /// Open the rule query `plan` over `snapshot`: derive its relations, with
-/// the magic seeds `seeds` as rows, then open its body (#548). `None` as
-/// [`open`]; an error from the rules fails the query here.
+/// the magic seeds `seeds` as rows, then open its body (#548). An error from
+/// the rules fails the query here.
 pub(crate) fn open_rules(
     snapshot: Snapshot,
     plan: plan::RulesPlan,
     seeds: &[(EntityId, String, Value)],
     functions: Arc<RwLock<FunctionRegistry>>,
     limits: recursive::Limits,
-) -> Result<Option<Stream>> {
+) -> std::result::Result<Stream, Refusal> {
     let meter = Meter::new(limits.query_memory);
     let (ids, relations) = {
-        let keys = match &snapshot.committed {
-            Some(reader) => match reader.key_source() {
-                Some(k) => Some(k),
-                None => return Ok(None),
-            },
-            None => None,
-        };
+        let keys = keys(&snapshot)?;
         let mut ids = IdSpace::new(keys, &meter);
         let iids = plan
             .evaluated
@@ -206,14 +210,28 @@ pub(crate) fn open_rules(
         recursive::evaluate(&plan, &mut rels, &reads, &mut ids, limits, &meter)?;
         (ids, rels)
     };
-    Ok(Some(stream(
+    Ok(stream(
         snapshot,
         ids,
         plan.body,
         functions,
         Some(relations),
         meter,
-    )))
+    ))
+}
+
+/// `refused` as the executor reads it: `None` when the executor runs the
+/// query, the error when it fails.
+pub(crate) fn supported<T>(refused: std::result::Result<T, Refusal>) -> Result<Option<T>> {
+    match refused {
+        Ok(t) => Ok(Some(t)),
+        Err(Refusal::Fail(e)) => Err(e),
+        Err(Refusal::Unsupported(_cause)) => {
+            #[cfg(test)]
+            FALLBACKS.with(|f| f.borrow_mut().push(_cause));
+            Ok(None)
+        }
+    }
 }
 
 /// The stream of `plan` over `snapshot`.

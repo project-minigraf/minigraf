@@ -4,7 +4,7 @@
 //! index choice, net-assert across committed and pending records, `:as-of`,
 //! valid time, long strings, and cross-kind values.
 
-use super::RUNS;
+use super::{Cause, FALLBACKS, RUNS};
 use crate::QueryResult;
 use crate::db::Minigraf;
 
@@ -1796,15 +1796,27 @@ fn rule_query_routing() {
         ),
         1
     );
-    for q in [
-        "(query [:find ?x ?y :as-of \"2020-01-01T00:00:00Z\" :where (reach ?x ?y)])",
-        "(query [:find ?x ?v :where (one ?x ?v)])",
-        "(query [:find ?x :where (deep ?x ?y)])",
-        "(query [:find ?x :where (reach ?x ?y ?z)])",
+    for (q, cause) in [
+        (
+            "(query [:find ?x ?y :as-of \"2020-01-01T00:00:00Z\" :where (reach ?x ?y)])",
+            Cause::Timestamp,
+        ),
+        ("(query [:find ?x ?v :where (one ?x ?v)])", Cause::NoPattern),
+        ("(query [:find ?x :where (deep ?x ?y)])", Cause::Branch),
+        (
+            "(query [:find ?x :where (reach ?x ?y ?z)])",
+            Cause::WideCall,
+        ),
     ] {
         let before = runs();
+        FALLBACKS.with(|f| f.borrow_mut().clear());
         let _ = db.execute(q);
         assert_eq!(runs(), before, "query stayed on the executor");
+        assert_eq!(
+            FALLBACKS.with(|f| f.borrow().first().copied()),
+            Some(cause),
+            "the planner names why"
+        );
     }
     let before = runs();
     let mut tx = db.begin_write().unwrap();

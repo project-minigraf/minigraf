@@ -23,6 +23,7 @@
 
 use super::cell::Scalar;
 use super::relation::{Derived, Range};
+use crate::error::{ErrorCode, err_coded};
 use crate::graph::types::{EntityId, Value};
 use crate::query::datalog::aggregate::named_vars;
 use crate::query::datalog::evaluator::rule_invocation_to_pattern;
@@ -37,6 +38,66 @@ use crate::query::datalog::types::{
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+
+/// Why the engine does not open a query (#551 plan, decision 1).
+#[derive(Debug)]
+pub(crate) enum Refusal {
+    /// The engine has no operators for it yet: the executor runs it.
+    Unsupported(#[cfg_attr(not(test), allow(dead_code))] Cause),
+    /// The query fails with this error.
+    Fail(anyhow::Error),
+}
+
+impl From<anyhow::Error> for Refusal {
+    fn from(e: anyhow::Error) -> Self {
+        Refusal::Fail(e)
+    }
+}
+
+/// What the engine does not run yet, by the letter of #551 spec §2.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Cause {
+    /// A: `:as-of` with a timestamp.
+    Timestamp,
+    /// B: an `or` branch the engine does not plan.
+    Branch,
+    /// C: a clause list with no pattern before an expression, or none at all.
+    NoPattern,
+    /// D: a constant in a rule head.
+    HeadConstant,
+    /// E: a constant of a kind its pattern position does not take.
+    Constant,
+    /// F: a rule invocation of three or more arguments.
+    WideCall,
+    /// G: `or` branches whose own variables differ.
+    BranchVars,
+    /// H: an `or-join` variable no earlier clause binds.
+    UnboundJoin,
+    /// I: a `not` body holding more than patterns and expressions.
+    NotBody,
+    /// J: `not`s and no pattern after them.
+    Front,
+    /// K: a rule head of no arguments, or of more than two.
+    HeadArity,
+    /// L: a stratification error.
+    Strata,
+    /// M: a committed reader without keys.
+    NoKeys,
+    /// N: an `:as-of` or `:valid-at` slot.
+    Slot,
+}
+
+use Cause::*;
+
+/// The engine does not run it yet.
+fn no<T>(cause: Cause) -> Result<T, Refusal> {
+    Err(Refusal::Unsupported(cause))
+}
+
+/// A planner invariant that does not hold (#551 plan, decision 2).
+fn invariant(what: &str) -> Refusal {
+    Refusal::Fail(err_coded!(ErrorCode::Int032, what))
+}
 
 /// One position of a pattern.
 #[derive(Debug, Clone)]
@@ -293,26 +354,26 @@ impl Slots {
     }
 }
 
-/// The `:as-of` counter and valid-time test of `query`, or `None` when the
-/// engine does not run it: a timestamp is not a key bound, and a slot is
-/// resolved before this.
-fn temporal(query: &DatalogQuery) -> Option<(Option<u64>, Valid)> {
+/// The `:as-of` counter and valid-time test of `query`: a timestamp is not a
+/// key bound, and a slot is resolved before this.
+fn temporal(query: &DatalogQuery) -> Result<(Option<u64>, Valid), Refusal> {
     let as_of = match &query.as_of {
         None => None,
         Some(AsOf::Counter(n)) => Some(*n),
-        Some(AsOf::Timestamp(_) | AsOf::Slot(_)) => return None,
+        Some(AsOf::Timestamp(_)) => return no(Timestamp),
+        Some(AsOf::Slot(_)) => return no(Slot),
     };
     let valid = match &query.valid_at {
         None => Valid::Now,
         Some(ValidAt::Timestamp(t)) => Valid::At(*t),
         Some(ValidAt::AnyValidTime) => Valid::Any,
-        Some(ValidAt::Slot(_)) => return None,
+        Some(ValidAt::Slot(_)) => return no(Slot),
     };
-    Some((as_of, valid))
+    Ok((as_of, valid))
 }
 
-/// The plan of `query`, or `None` when the engine does not run it yet.
-pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
+/// The plan of `query`.
+pub(crate) fn plan(query: &DatalogQuery) -> Result<Plan, Refusal> {
     plan_with(query, None)
 }
 
@@ -320,7 +381,11 @@ pub(crate) fn plan(query: &DatalogQuery) -> Option<Plan> {
 /// clauses `optimizer::plan` places, in its order, then the `or`s, then the
 /// deferred ones. With `first`, that pattern runs first (a rule body's delta,
 /// #548 spec §5.3).
-fn clauses(b: &mut Builder, clauses: &[WhereClause], first: Option<&Pattern>) -> Option<()> {
+fn clauses(
+    b: &mut Builder,
+    clauses: &[WhereClause],
+    first: Option<&Pattern>,
+) -> Result<(), Refusal> {
     if !clauses.iter().all(|c| {
         matches!(
             c,
@@ -332,7 +397,9 @@ fn clauses(b: &mut Builder, clauses: &[WhereClause], first: Option<&Pattern>) ->
                 | WhereClause::OrJoin { .. }
         )
     }) {
-        return None;
+        // A plain query has no rule invocation, and a rule body's are
+        // patterns by now (`calls_as_patterns`).
+        return Err(invariant("a rule invocation reached the planner"));
     }
     // With `first`, the rest are ordered after it, its variables bound, each
     // joining on a variable bound before it where one can (#694).
@@ -370,12 +437,12 @@ fn clauses(b: &mut Builder, clauses: &[WhereClause], first: Option<&Pattern>) ->
     for c in sorted(deferred) {
         b.clause(c)?;
     }
-    Some(())
+    Ok(())
 }
 
 /// The plan of `query`, whose scans also read the relations `evaluated`
 /// when it is a rule query (#548).
-fn plan_with(query: &DatalogQuery, evaluated: Option<Arc<Evaluated>>) -> Option<Plan> {
+fn plan_with(query: &DatalogQuery, evaluated: Option<Arc<Evaluated>>) -> Result<Plan, Refusal> {
     let (as_of, valid) = temporal(query)?;
     let mut b = Builder::new(
         Some(Binders::new(&query.where_clauses, Vec::new())),
@@ -386,8 +453,14 @@ fn plan_with(query: &DatalogQuery, evaluated: Option<Arc<Evaluated>>) -> Option<
     clauses(&mut b, &query.where_clauses, None)?;
 
     // The parser rejects a variable no clause binds (PRS-080, PRS-022,
-    // PRS-023); one only some `or` branches bind has no slot here.
-    let slot = |var: &String| b.slots.by_var.get(var).copied();
+    // PRS-023).
+    let slot = |var: &String| {
+        b.slots
+            .by_var
+            .get(var)
+            .copied()
+            .ok_or_else(|| invariant("a :find variable without a slot"))
+    };
     // The column of each `:find` element that is not a window.
     let mut cols: Vec<Option<usize>> = Vec::with_capacity(query.find.len());
     let aggregate = query
@@ -458,6 +531,7 @@ fn plan_with(query: &DatalogQuery, evaluated: Option<Arc<Evaluated>>) -> Option<
                     .zip(&cols)
                     .find(|(s, _)| matches!(s, FindSpec::Variable(v) if v == var))
                     .and_then(|(_, c)| *c)
+                    .ok_or_else(|| invariant("a window's variable without a column"))
             } else {
                 slot(var)
             }
@@ -465,7 +539,7 @@ fn plan_with(query: &DatalogQuery, evaluated: Option<Arc<Evaluated>>) -> Option<
         let named = named_vars(&query.find)
             .iter()
             .map(column)
-            .collect::<Option<Vec<usize>>>()?;
+            .collect::<Result<Vec<usize>, Refusal>>()?;
         let keep: Vec<usize> = cols.iter().flatten().copied().collect();
         let (mut next_kept, mut next_window) = (0, keep.len());
         for c in &cols {
@@ -483,12 +557,15 @@ fn plan_with(query: &DatalogQuery, evaluated: Option<Arc<Evaluated>>) -> Option<
             keep,
         });
     } else {
-        find = cols.into_iter().collect::<Option<Vec<usize>>>()?;
+        find = cols
+            .into_iter()
+            .collect::<Option<Vec<usize>>>()
+            .ok_or_else(|| invariant("a window outside a window query"))?;
     }
     let mut plan = b.finish()?;
     plan.find = find;
     plan.vars = query.find.iter().map(FindSpec::display_name).collect();
-    Some(plan)
+    Ok(plan)
 }
 
 /// A rule query on the engine (#548 spec §5): the relations, the rules of
@@ -536,17 +613,16 @@ pub(crate) enum HeadArg {
 
 /// The plan of a rule query: `query` and every rule it evaluates in
 /// `registry` (the magic-set rewrite's, when it ran), whose relations also
-/// hold the attributes `seeds` (magic seeds). `None` when the engine does not
-/// run it: a body it does not plan, an `:as-of` timestamp, a slot, a
-/// stratification error or an invocation of three or more arguments, which
-/// the executor reports.
+/// hold the attributes `seeds` (magic seeds).
 pub(crate) fn plan_rules(
     query: &DatalogQuery,
     registry: &RuleRegistry,
     seeds: &[&str],
-) -> Option<RulesPlan> {
+) -> Result<RulesPlan, Refusal> {
     let (as_of, valid) = temporal(query)?;
-    let strata = DependencyGraph::from_rules(registry).stratify().ok()?;
+    let Ok(strata) = DependencyGraph::from_rules(registry).stratify() else {
+        return no(Strata);
+    };
     // Every predicate the query invokes, and those their rules invoke, as
     // `StratifiedEvaluator::evaluate` collects them.
     let mut preds: Vec<String> = Vec::new();
@@ -615,7 +691,7 @@ pub(crate) fn plan_rules(
     let mut body_query = query.clone();
     body_query.where_clauses = calls_as_patterns(&query.where_clauses)?;
     let body = plan_with(&body_query, Some(evaluated.clone()))?;
-    Some(RulesPlan {
+    Ok(RulesPlan {
         evaluated,
         strata: planned,
         as_of,
@@ -636,11 +712,11 @@ fn rule_plan(
     as_of: Option<u64>,
     valid: Valid,
     evaluated: &Arc<Evaluated>,
-) -> Option<RulePlan> {
+) -> Result<RulePlan, Refusal> {
     // The executor reports a head without arguments; a fourth is ignored
     // there.
     if !(2..=3).contains(&head.len()) {
-        return None;
+        return no(HeadArity);
     }
     let naive = naive(body, stratum, false);
     let clauses = calls_as_patterns(body)?;
@@ -656,27 +732,28 @@ fn rule_plan(
             _ => None,
         })
         .collect();
-    let run = |ranges: Vec<(Pattern, Range)>, first: Option<&Pattern>| -> Option<RuleRun> {
-        let mut b = Builder::new(None, as_of, valid, Some(evaluated.clone()));
-        b.ranges = ranges;
-        self::clauses(&mut b, &clauses, first)?;
-        let slots = std::mem::take(&mut b.slots.by_var);
-        let arg = |e: &EdnValue| match e {
-            EdnValue::Symbol(v) if v.starts_with('?') => Some(match slots.get(v) {
-                Some(&s) => HeadArg::Slot(s),
-                None => HeadArg::Unbound(v.clone()),
-            }),
-            _ => None,
+    let run =
+        |ranges: Vec<(Pattern, Range)>, first: Option<&Pattern>| -> Result<RuleRun, Refusal> {
+            let mut b = Builder::new(None, as_of, valid, Some(evaluated.clone()));
+            b.ranges = ranges;
+            self::clauses(&mut b, &clauses, first)?;
+            let slots = std::mem::take(&mut b.slots.by_var);
+            let arg = |e: &EdnValue| match e {
+                EdnValue::Symbol(v) if v.starts_with('?') => Ok(match slots.get(v) {
+                    Some(&s) => HeadArg::Slot(s),
+                    None => HeadArg::Unbound(v.clone()),
+                }),
+                _ => no(HeadConstant),
+            };
+            Ok(RuleRun {
+                entity: arg(&head[1])?,
+                value: match head.get(2) {
+                    Some(v) => Some(arg(v)?),
+                    None => None,
+                },
+                plan: b.finish()?,
+            })
         };
-        Some(RuleRun {
-            entity: arg(head.get(1)?)?,
-            value: match head.get(2) {
-                Some(v) => Some(arg(v)?),
-                None => None,
-            },
-            plan: b.finish()?,
-        })
-    };
     let full = run(Vec::new(), None)?;
     let mut deltas = Vec::new();
     if !naive {
@@ -700,7 +777,7 @@ fn rule_plan(
             deltas.push(run(ranges, Some(delta))?);
         }
     }
-    Some(RulePlan {
+    Ok(RulePlan {
         rel,
         predicate: predicate.to_string(),
         full,
@@ -731,19 +808,22 @@ fn naive(body: &[WhereClause], stratum: &HashSet<String>, in_or: bool) -> bool {
 
 /// `clauses` with every rule invocation, at any depth, read as its pattern
 /// (`rule_invocation_to_pattern`), as the executor matches it.
-fn calls_as_patterns(clauses: &[WhereClause]) -> Option<Vec<WhereClause>> {
+fn calls_as_patterns(clauses: &[WhereClause]) -> Result<Vec<WhereClause>, Refusal> {
     let all = |branches: &[Vec<WhereClause>]| {
         branches
             .iter()
             .map(|b| calls_as_patterns(b))
-            .collect::<Option<Vec<_>>>()
+            .collect::<Result<Vec<_>, Refusal>>()
     };
     clauses
         .iter()
         .map(|c| {
-            Some(match c {
+            Ok(match c {
                 WhereClause::RuleInvocation { predicate, args } => {
-                    WhereClause::Pattern(rule_invocation_to_pattern(predicate, args).ok()?)
+                    match rule_invocation_to_pattern(predicate, args) {
+                        Ok(p) => WhereClause::Pattern(p),
+                        Err(_) => return no(WideCall),
+                    }
                 }
                 WhereClause::Not(body) => WhereClause::Not(calls_as_patterns(body)?),
                 WhereClause::NotJoin { join_vars, clauses } => WhereClause::NotJoin {
@@ -849,20 +929,23 @@ impl Builder {
         }
     }
 
-    fn finish(self) -> Option<Plan> {
+    fn finish(self) -> Result<Plan, Refusal> {
         if !self.front.is_empty() {
-            return None;
+            return no(Front);
         }
-        Some(Plan {
-            source: self.source?,
+        let Some(source) = self.source else {
+            return no(NoPattern);
+        };
+        Ok(Plan {
+            source,
             steps: self.steps,
             find: Vec::new(),
             vars: Vec::new(),
         })
     }
 
-    /// Add the steps of `c`; `None` when the engine cannot run it.
-    fn clause(&mut self, c: WhereClause) -> Option<()> {
+    /// Add the steps of `c`.
+    fn clause(&mut self, c: WhereClause) -> Result<(), Refusal> {
         let (as_of, valid) = (self.as_of, self.valid);
         match c {
             WhereClause::Pattern(q) => {
@@ -872,12 +955,18 @@ impl Builder {
                 };
                 let pseudo = meta(&q);
                 if pseudo.is_some_and(|m| m != Meta::ValidAt) {
-                    // Reads the hidden variable its source's scan filled.
-                    let source = q.pseudo_source.as_ref()?.as_variable()?;
-                    let col = *self.slots.by_var.get(source)?;
+                    // Reads the hidden variable its source's scan filled; the
+                    // parser names one (PRS-081 otherwise).
+                    let col = q
+                        .pseudo_source
+                        .as_ref()
+                        .and_then(EdnValue::as_variable)
+                        .and_then(|source| self.slots.by_var.get(source))
+                        .copied()
+                        .ok_or_else(|| invariant("a pseudo-attribute without its source"))?;
                     let value = term(&q.value, &mut self.slots, OTHER, pseudo_const)?;
                     self.steps.push(Step::Pseudo { col, value });
-                    return Some(());
+                    return Ok(());
                 }
                 // A pattern with a stored attribute, or `:db/valid-at` read
                 // as `[e _ _]` and the query's valid time.
@@ -959,14 +1048,19 @@ impl Builder {
                 }
                 self.outer_patterns.push(WhereClause::Pattern(q.clone()));
                 if pseudo.is_some() {
-                    let col = metas.last()?.1;
+                    let col = metas
+                        .last()
+                        .ok_or_else(|| invariant("a valid-at column without a slot"))?
+                        .1;
                     let value = term(&q.value, &mut self.slots, OTHER, pseudo_const)?;
                     self.steps.push(Step::Pseudo { col, value });
                 }
             }
             WhereClause::Expr { expr, binding } => {
                 // A clause before the first pattern sees no variable.
-                self.source.as_ref()?;
+                if self.source.is_none() {
+                    return no(NoPattern);
+                }
                 let vars = expr_vars(&expr, &self.slots);
                 let step = match binding {
                     None => Step::Filter(expr, vars),
@@ -1010,9 +1104,11 @@ impl Builder {
                 join_vars,
                 branches,
             } => self.union(&branches, Some(join_vars))?,
-            _ => return None,
+            WhereClause::RuleInvocation { .. } => {
+                return Err(invariant("a rule invocation reached the planner"));
+            }
         }
-        Some(())
+        Ok(())
     }
 
     fn push_anti(&mut self, step: Step) {
@@ -1025,19 +1121,23 @@ impl Builder {
 
     /// The `AntiJoin` of `body`, whose variables `vars` the outer row gives
     /// where it binds them (spec §2).
-    fn anti(&self, body: &[WhereClause], vars: Vec<String>) -> Option<Step> {
+    fn anti(&self, body: &[WhereClause], vars: Vec<String>) -> Result<Step, Refusal> {
         if !body
             .iter()
             .all(|c| matches!(c, WhereClause::Pattern(_) | WhereClause::Expr { .. }))
         {
-            return None;
+            return no(NotBody);
         }
-        Some(Step::Anti(self.sub(body, vars)?.0))
+        Ok(Step::Anti(self.sub(body, vars)?.0))
     }
 
     /// The `Union` and `Distinct` of an `or` (`join` is `None`) or an
     /// `or-join` (spec §5).
-    fn union(&mut self, branches: &[Vec<WhereClause>], join: Option<Vec<String>>) -> Option<()> {
+    fn union(
+        &mut self,
+        branches: &[Vec<WhereClause>],
+        join: Option<Vec<String>>,
+    ) -> Result<(), Refusal> {
         if self.source.is_none() {
             // Nothing before the `or` binds a variable: its outer side is
             // the empty row.
@@ -1050,7 +1150,7 @@ impl Builder {
                 // The parser requires every join variable bound before
                 // (INT-031 on the executor otherwise).
                 Some(j) if j.iter().all(|v| self.slots.by_var.contains_key(v)) => j.clone(),
-                Some(_) => return None,
+                Some(_) => return no(UnboundJoin),
                 None => optimizer::clause_ref_vars(branch).into_iter().collect(),
             };
             let imports: HashSet<String> = vars
@@ -1059,7 +1159,7 @@ impl Builder {
                 .cloned()
                 .collect();
             if !runs_branch(branch, &imports) {
-                return None;
+                return no(Branch);
             }
             subs.push(self.sub(branch, vars)?);
         }
@@ -1080,7 +1180,7 @@ impl Builder {
                 if k == 0 {
                     names = own;
                 } else if own != names {
-                    return None;
+                    return no(BranchVars);
                 }
             }
         }
@@ -1089,7 +1189,10 @@ impl Builder {
         for (body, slots) in subs {
             let mut new = Vec::with_capacity(names.len());
             for (n, kind) in names.iter().zip(kinds.iter_mut()) {
-                let inner = *slots.by_var.get(n)?;
+                let inner = *slots
+                    .by_var
+                    .get(n)
+                    .ok_or_else(|| invariant("a branch without an `or` variable"))?;
                 *kind |= slots.kind(inner);
                 new.push(inner);
             }
@@ -1103,13 +1206,13 @@ impl Builder {
         let mut slots: Vec<usize> = self.slots.by_var.values().copied().collect();
         slots.sort_unstable();
         self.steps.push(Step::Distinct(slots));
-        Some(())
+        Ok(())
     }
 
     /// The plan of a `not` body or an `or` branch whose variables `vars`
     /// the outer row gives where it binds them (spec §2), hashed or
     /// correlated (spec §4.4), and its slots.
-    fn sub(&self, body: &[WhereClause], vars: Vec<String>) -> Option<(Body, Slots)> {
+    fn sub(&self, body: &[WhereClause], vars: Vec<String>) -> Result<(Body, Slots), Refusal> {
         let mut imports: Vec<(String, usize)> = vars
             .into_iter()
             .filter_map(|v| self.slots.by_var.get(&v).map(|&s| (v, s)))
@@ -1158,7 +1261,7 @@ impl Builder {
                 .collect();
             let slots = std::mem::take(&mut b.slots);
             let plan = Box::new(b.finish()?);
-            return Some((Body::Hashed { plan, keys }, slots));
+            return Ok((Body::Hashed { plan, keys }, slots));
         }
         let mut b = Builder::new(None, as_of, valid, self.evaluated.clone());
         for (v, outer) in &imports {
@@ -1174,7 +1277,7 @@ impl Builder {
         }
         let slots = std::mem::take(&mut b.slots);
         let plan = Box::new(b.finish()?);
-        Some((
+        Ok((
             Body::Correlated {
                 plan,
                 imports: imports.into_iter().map(|(_, s)| s).collect(),
@@ -1276,7 +1379,7 @@ fn join(
     rebind: &[String],
     as_of: Option<u64>,
     valid: Valid,
-) -> Option<JoinSpec> {
+) -> Result<JoinSpec, Refusal> {
     let outer_width = slots.len();
     let mut local = Slots::default();
     let e = term(&q.entity, &mut local, OTHER, entity_const)?;
@@ -1330,7 +1433,7 @@ fn join(
             }
         }
     }
-    Some(JoinSpec {
+    Ok(JoinSpec {
         inner: ScanSpec {
             e,
             a,
@@ -1435,17 +1538,17 @@ fn expr_vars(expr: &Expr, slots: &Slots) -> Vars {
     out
 }
 
-/// The term of one pattern position; `None` for a constant `konst` does not
-/// take, or a symbol that is not a variable.
+/// The term of one pattern position: a constant `konst` takes, or a
+/// variable.
 fn term<C>(
     edn: &EdnValue,
     slots: &mut Slots,
     kind: u8,
     konst: impl Fn(&EdnValue) -> Option<C>,
-) -> Option<Term<C>> {
+) -> Result<Term<C>, Refusal> {
     match edn {
-        EdnValue::Symbol(s) if s == "_" || s.starts_with("?_") => Some(Term::Any),
-        EdnValue::Symbol(s) if s.starts_with('?') => Some(match slots.by_var.get(s) {
+        EdnValue::Symbol(s) if s == "_" || s.starts_with("?_") => Ok(Term::Any),
+        EdnValue::Symbol(s) if s.starts_with('?') => Ok(match slots.by_var.get(s) {
             Some(&slot) => Term::Eq(slot),
             None => {
                 let slot = slots.add(kind);
@@ -1453,7 +1556,11 @@ fn term<C>(
                 Term::Bind(slot)
             }
         }),
-        EdnValue::Symbol(_) => None,
-        c => konst(c).map(Term::Const),
+        // The parser reads no other symbol in a pattern.
+        EdnValue::Symbol(_) => Err(invariant("a symbol that is not a variable")),
+        c => match konst(c) {
+            Some(c) => Ok(Term::Const(c)),
+            None => no(Constant),
+        },
     }
 }

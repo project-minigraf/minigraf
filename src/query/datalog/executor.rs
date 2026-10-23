@@ -538,7 +538,7 @@ impl DatalogExecutor {
         }
 
         // The streaming engine runs the queries it has operators for (#473).
-        if let Some(plan) = crate::query::engine::plan(&query) {
+        if let Some(plan) = crate::query::engine::supported(crate::query::engine::plan(&query))? {
             {
                 let registry = self
                     .functions
@@ -547,18 +547,18 @@ impl DatalogExecutor {
                 check_clauses(&query, &registry)?;
             }
             let snapshot = self.read_snapshot()?;
-            if let Some(stream) = crate::query::engine::open(
+            if let Some(stream) = crate::query::engine::supported(crate::query::engine::open(
                 snapshot.clone(),
                 plan,
                 self.functions.clone(),
                 self.query_memory_limit,
-            ) {
+            ))? {
                 #[cfg(test)]
                 crate::query::engine::RUNS.with(|r| r.set(r.get() + 1));
                 // The comparison drains a second stream, so the one returned
                 // stays unread.
                 #[cfg(any(test, feature = "test-oracle"))]
-                if let Some(again) = crate::query::engine::plan(&query).and_then(|plan| {
+                if let Ok(again) = crate::query::engine::plan(&query).and_then(|plan| {
                     crate::query::engine::open(
                         snapshot.clone(),
                         plan,
@@ -597,7 +597,7 @@ impl DatalogExecutor {
                 }
             }
         };
-        let Some((plan, seeds)) = plan else {
+        let Some((plan, seeds)) = crate::query::engine::supported(plan)? else {
             return Ok(None);
         };
         check_per_fact_pseudo_attrs(query)?;
@@ -608,13 +608,13 @@ impl DatalogExecutor {
         };
         let snapshot = self.read_snapshot()?;
         let open = |plan| -> Result<Option<crate::query::engine::Stream>> {
-            let stream = crate::query::engine::open_rules(
+            let stream = crate::query::engine::supported(crate::query::engine::open_rules(
                 snapshot.clone(),
                 plan,
                 &seeds,
                 self.functions.clone(),
                 limits,
-            )?;
+            ))?;
             if stream.is_some() {
                 let registry = self
                     .functions
