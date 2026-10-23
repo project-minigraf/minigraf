@@ -67,14 +67,18 @@ fn names_of(r: &[Vec<Value>]) -> Vec<&'static str> {
 /// rule body, or compared by a predicate matches equal floats only (#706).
 fn assert_float_constants_exact(db: &Minigraf) {
     db.execute("(rule [(zeroish ?e) [?e :m/x 0.0]])").unwrap();
+    db.execute("(rule [(xval ?e ?v) [?e :m/x ?v]])").unwrap();
     for q in [
         "[:find ?e :where [?e :m/x 0.0]]",
         "[:find ?e :where [?e :m/x -0.0]]",
         "[:find ?e :where [?e :m/x ?v] [(= ?v 0.0)]]",
         "[:find ?e :where (zeroish ?e)]",
+        "[:find ?e :where (xval ?e 0.0)]",
     ] {
         assert_eq!(names_of(&query(db, q)), [":neg", ":zero"], "{q}");
     }
+    let r = query(db, "[:find ?e :where (xval ?e 0.00000000000000001)]");
+    assert_eq!(names_of(&r), [":tiny"], "a rule call's float argument");
     let r = query(db, "[:find ?e :where [?e :m/x 0.00000000000000001]]");
     assert_eq!(names_of(&r), [":tiny"], "1e-17 matches itself only");
     let r = query(db, "[:find ?e :where [?e :m/x 0.00000000000000002]]");
@@ -99,6 +103,8 @@ fn float_constant_matches_equal_floats_only() {
     assert_float_constants_exact(&db);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn float_constant_matches_equal_floats_only_after_checkpoint() {
     let dir = tempfile::tempdir().unwrap();
