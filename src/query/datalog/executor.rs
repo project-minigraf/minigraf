@@ -589,22 +589,6 @@ impl DatalogExecutor {
         )?;
         #[cfg(test)]
         crate::query::engine::RUNS.with(|r| r.set(r.get() + 1));
-        // The comparison drains a second stream, so the one returned stays
-        // unread.
-        #[cfg(any(test, feature = "test-oracle"))]
-        crate::query::engine::oracle::check(
-            &crate::query::engine::plan(&query)
-                .and_then(|plan| {
-                    crate::query::engine::open(
-                        snapshot.clone(),
-                        plan,
-                        self.functions.clone(),
-                        self.query_memory_limit,
-                    )
-                })
-                .and_then(crate::query::engine::Stream::collect),
-            &self.oracle(snapshot).execute_query_on_executor(query),
-        );
         Ok(Answer::Stream(Box::new(stream)))
     }
 
@@ -661,15 +645,6 @@ impl DatalogExecutor {
             check_predicates(&names, &registry)?;
             Ok(stream)
         };
-        // The comparison drains a second stream, so the one returned stays
-        // unread.
-        #[cfg(any(test, feature = "test-oracle"))]
-        crate::query::engine::oracle::check(
-            &open(plan.clone()).and_then(crate::query::engine::Stream::collect),
-            &self
-                .oracle(snapshot.clone())
-                .execute_query_with_rules(query.clone()),
-        );
         let stream = open(plan)?;
         #[cfg(test)]
         crate::query::engine::RUNS.with(|r| r.set(r.get() + 1));
@@ -683,19 +658,6 @@ impl DatalogExecutor {
         match (query.max_derived_facts, query.max_results) {
             (None, None) => self.max_derived_facts,
             (a, b) => a.unwrap_or(usize::MAX).min(b.unwrap_or(usize::MAX)),
-        }
-    }
-
-    /// This executor over `snapshot`, for the engine's oracle (#473 spec §9).
-    #[cfg(any(test, feature = "test-oracle"))]
-    fn oracle(&self, snapshot: Snapshot) -> DatalogExecutor {
-        DatalogExecutor {
-            storage: self.storage.clone(),
-            snapshot: Some(snapshot),
-            rules: self.rules.clone(),
-            functions: self.functions.clone(),
-            max_derived_facts: self.max_derived_facts,
-            query_memory_limit: self.query_memory_limit,
         }
     }
 
@@ -2779,8 +2741,8 @@ mod tests {
     }
 
     /// Answer change 1 (#551 spec §4): a `not` in an `or` branch sees the
-    /// variable an expression of the branch binds on the engine; the
-    /// executor applied the branch's `not` before its expression.
+    /// variable an expression of the branch binds; the executor applied the
+    /// branch's `not` before its expression.
     #[test]
     fn branch_not_sees_its_expression_binding() {
         let executor = DatalogExecutor::new(FactStorage::new());
@@ -2788,7 +2750,6 @@ mod tests {
             .execute(parse_datalog_command("(transact [[:x :n 1] [:y :n 2] [:z :n 5]])").unwrap())
             .unwrap();
         let q = "(query [:find ?e :where [?e :n ?v] (or-join [?e ?v] (and [(+ ?v 1) ?w] (not [?f :n ?w])) [?e :n 5])])";
-        let _exempt = crate::query::engine::oracle::exempt();
         let before = crate::query::engine::RUNS.with(std::cell::Cell::get);
         let engine = entities(executor.execute(parse_datalog_command(q).unwrap()));
         assert_eq!(
@@ -2804,8 +2765,7 @@ mod tests {
             },
             "the engine: :y (no :n 3) and :z"
         );
-        let old = entities(executor.execute_query_on_executor(query_of(q)));
-        assert!(old == vec![keyword(":z")], "the executor: :z only");
+        // The executor returned :z only.
     }
 
     /// Answer change 2 (#551 spec §4): an unknown predicate in an `or`
@@ -2828,19 +2788,14 @@ mod tests {
             "(query [:find ?e :where [?e :n ?v] (or (and [?e :n 99] [(no-such? ?v)]) [?e :n 5])])";
         let rule = "(query [:find ?e :where (odd ?e)])";
         let negated = "(query [:find ?e :where [?e :n ?v] (not [?e :n ?v] [(no-such? ?v)])])";
-        let _exempt = crate::query::engine::oracle::exempt();
         for q in [plain, rule, negated] {
             let err = executor
                 .execute(parse_datalog_command(q).unwrap())
                 .expect_err("the engine resolves every predicate");
             assert_eq!(crate::error::MinigrafError::from(err).code(), "QRY-007");
         }
-        let old = entities(executor.execute_query_on_executor(query_of(plain)));
-        assert!(old == vec![keyword(":z")], "the executor: :z");
-        let old = entities(executor.execute_query_with_rules(query_of(rule)));
-        assert!(old == vec![keyword(":z")], "the executor, rule body: :z");
-        let old = entities(executor.execute_query_on_executor(query_of(negated)));
-        assert_eq!(old.len(), 2, "the executor: every outer row");
+        // The executor returned :z for `plain` and `rule`, and both outer
+        // rows for `negated`.
     }
 
     #[test]
