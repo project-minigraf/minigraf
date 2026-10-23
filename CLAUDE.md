@@ -143,7 +143,7 @@ cargo run < demos/demo_negation.txt
    - `stratification.rs`: `DependencyGraph`, `stratify()` — negative edges + cycle detection; a positive edge to a rule with `not`/`not-join`/`or`/`or-join` also raises the caller, off a cycle (#628)
    - `rules.rs`: `RuleRegistry` — thread-safe rule management
    - `types.rs`: `EdnValue`, `Pattern`, `DatalogQuery`, `AsOf`, `ValidAt`, `WhereClause` (incl. `Not`, `NotJoin`); `PseudoAttr` enum, `AttributeSpec` wrapper
-   - `optimizer.rs`: Selectivity-based join reordering on every build (the `wasm` feature is a deprecated no-op). `reorder()` gates every reordering site; tests turn it off per thread (`set_reorder`, `minigraf::__reorder` under `test-oracle`, #596); `plan_seeded` orders a body with its imported variables counted as bound, and `subplans()` lets tests force the engine's negation bodies and `or` branches hashed or correlated (`set_subplans`, `minigraf::__subplans`, #546)
+   - `optimizer.rs`: Selectivity-based join reordering on every build (the `wasm` feature is a deprecated no-op). `reorder()` gates every reordering site; tests turn it off per thread (`set_reorder`, `minigraf::__reorder` under `test-oracle`, #596); `plan_seeded` orders a body with its imported variables counted as bound, `plan_after` orders a rule body's clauses after its delta, each joining on a variable bound before it where one can (#694), and `subplans()` lets tests force the engine's negation bodies and `or` branches hashed or correlated (`set_subplans`, `minigraf::__subplans`, #546)
    - `prepared.rs`: `BindValue`, `PreparedQuery` — parse-once/execute-many with named `$slot` bind slots; `prepare_query`, `substitute`
    - `magic_sets.rs`: Magic-sets rewriting for demand-driven recursive rule evaluation (not applied to rules with `not`/`not-join`)
 
@@ -212,7 +212,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1767 tests** (1753 passing, 14 ignored; unit + integration + doc).
+**1769 tests** (1755 passing, 14 ignored; unit + integration + doc).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
