@@ -283,6 +283,26 @@ pub(crate) fn plan_seeded(
     clauses: Vec<WhereClause>,
     seeded: &std::collections::HashSet<String>,
 ) -> (Vec<(WhereClause, Option<IndexHint>)>, Vec<WhereClause>) {
+    plan_ordered(clauses, seeded, false)
+}
+
+/// [`plan_seeded`] for the clauses after a pattern that runs first, binding
+/// `seeded` (a rule body's delta, #694): each next pattern shares a variable
+/// with those bound before it when one does, the most selective of those as
+/// the bound variables stand, so no pattern joins as a product while one
+/// could join on a key. Cost only: no answer depends on the order.
+pub(crate) fn plan_after(
+    clauses: Vec<WhereClause>,
+    seeded: &std::collections::HashSet<String>,
+) -> (Vec<(WhereClause, Option<IndexHint>)>, Vec<WhereClause>) {
+    plan_ordered(clauses, seeded, true)
+}
+
+fn plan_ordered(
+    clauses: Vec<WhereClause>,
+    seeded: &std::collections::HashSet<String>,
+    connected: bool,
+) -> (Vec<(WhereClause, Option<IndexHint>)>, Vec<WhereClause>) {
     // Separate into patterns (with hints), exprs, and not/not-join clauses.
     let mut patterns: Vec<(WhereClause, IndexHint)> = Vec::new();
     let mut pseudos: Vec<WhereClause> = Vec::new();
@@ -315,6 +335,10 @@ pub(crate) fn plan_seeded(
                 std::cmp::Reverse(0u8)
             }
         });
+    }
+
+    if connected && reorder() {
+        patterns = connect(patterns, seeded);
     }
 
     // Start with sorted patterns only.
@@ -471,6 +495,43 @@ pub(crate) fn plan_seeded(
     (result, deferred)
 }
 
+/// Reorder `patterns` (sorted by selectivity) so that each shares a variable
+/// with `seeded` or a pattern before it, when any remaining one does: the
+/// highest [`selectivity_score`] given the variables bound so far, the
+/// earliest on a tie. A pattern sharing none comes next only when no
+/// remaining pattern shares one. `?_` wildcards join nothing.
+fn connect(
+    mut patterns: Vec<(WhereClause, IndexHint)>,
+    seeded: &std::collections::HashSet<String>,
+) -> Vec<(WhereClause, IndexHint)> {
+    let vars = |c: &WhereClause| match c {
+        WhereClause::Pattern(p) => pattern_bound_vars(p)
+            .into_iter()
+            .filter(|v| !v.starts_with("?_"))
+            .collect(),
+        _ => Vec::new(),
+    };
+    let mut bound = seeded.clone();
+    let mut out = Vec::with_capacity(patterns.len());
+    while !patterns.is_empty() {
+        let mut best: Option<(usize, u8)> = None;
+        for (i, (c, _)) in patterns.iter().enumerate() {
+            let WhereClause::Pattern(p) = c else { continue };
+            if !vars(c).iter().any(|v| bound.contains(v)) {
+                continue;
+            }
+            let score = selectivity_score(p, &bound);
+            if best.is_none_or(|(_, b)| score > b) {
+                best = Some((i, score));
+            }
+        }
+        let next = patterns.remove(best.map_or(0, |(i, _)| i));
+        bound.extend(vars(&next.0));
+        out.push(next);
+    }
+    out
+}
+
 /// Static 4-tier cardinality estimate for a single pattern.
 ///
 /// Derived from selectivity_score but returns u64 cost (lower = cheaper) rather
@@ -604,6 +665,59 @@ mod tests {
         let _off = set_reorder(false);
         let (planned, _) = plan_seeded(body, &seeded);
         assert_eq!(first(&planned)[1], "?x", "text order");
+    }
+
+    /// #694: after a first pattern binding `seeded`, each next pattern
+    /// shares a variable with those bound before it when any does.
+    #[test]
+    fn plan_after_joins_each_pattern_on_a_bound_variable() {
+        // The magic-sets body of `reach` after its `(reach ?mid ?to)` delta:
+        // `magic` alone is the more selective, but shares nothing yet.
+        let body = vec![
+            WhereClause::Pattern(make_pattern(
+                var("from"),
+                kw(":magic"),
+                EdnValue::Boolean(true),
+            )),
+            WhereClause::Pattern(make_pattern(var("from"), kw(":next"), var("mid"))),
+        ];
+        let attrs = |planned: &[(WhereClause, Option<IndexHint>)]| -> Vec<String> {
+            planned
+                .iter()
+                .map(|(c, _)| match c {
+                    WhereClause::Pattern(p) => format!("{:?}", p.attribute),
+                    _ => "other".to_string(),
+                })
+                .collect()
+        };
+        let seeded: std::collections::HashSet<String> =
+            ["?mid".to_string(), "?to".to_string()].into();
+        let (before, _) = plan_seeded(body.clone(), &seeded);
+        assert!(attrs(&before)[0].contains(":magic"), "selectivity alone");
+        let (after, _) = plan_after(body.clone(), &seeded);
+        assert!(attrs(&after)[0].contains(":next"));
+        assert!(attrs(&after)[1].contains(":magic"));
+
+        // A chain: each step joins the one before it, not the selective
+        // `:root` that shares nothing until `?w` is bound.
+        let chain = vec![
+            WhereClause::Pattern(make_pattern(var("w"), kw(":root"), EdnValue::Boolean(true))),
+            WhereClause::Pattern(make_pattern(var("w"), kw(":b"), var("x"))),
+            WhereClause::Pattern(make_pattern(var("x"), kw(":c"), var("z"))),
+        ];
+        let seeded: std::collections::HashSet<String> = ["?z".to_string()].into();
+        let (after, _) = plan_after(chain.clone(), &seeded);
+        let order = attrs(&after);
+        assert!(order[0].contains(":c") && order[1].contains(":b") && order[2].contains(":root"));
+
+        // No pattern shares a variable: selectivity order.
+        let seeded: std::collections::HashSet<String> = ["?q".to_string()].into();
+        let (after, _) = plan_after(chain.clone(), &seeded);
+        assert!(attrs(&after)[0].contains(":root"));
+
+        let _off = set_reorder(false);
+        let (after, _) = plan_after(body, &["?mid".to_string()].into());
+        assert!(attrs(&after)[0].contains(":magic"), "text order");
     }
 
     #[test]

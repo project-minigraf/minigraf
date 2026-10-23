@@ -1856,6 +1856,72 @@ fn rule_queries_read_derived_rows_in_batches() {
     }
 }
 
+/// A rule body's delta run joins each later clause on a variable bound
+/// before it where one can (#694). Magic sets turn `(reach :n0 ?to)` into
+/// `(magic ?from) [?from :next ?mid] (reach ?mid ?to)`; the run from the
+/// `reach` delta took `magic` next, sharing nothing with it, and joined
+/// every delta row with every magic row.
+#[test]
+fn rule_delta_runs_join_on_a_bound_variable() {
+    use super::plan::{JoinKind, Step};
+    use crate::query::datalog::parser::parse_datalog_command;
+    use crate::query::datalog::rules::RuleRegistry;
+    use crate::query::datalog::types::DatalogCommand;
+    let mut registry = RuleRegistry::new();
+    for rule in [
+        "(rule [(reach ?from ?to) [?from :next ?to]])",
+        "(rule [(reach ?from ?to) [?from :next ?mid] (reach ?mid ?to)])",
+    ] {
+        let DatalogCommand::Rule(r) = parse_datalog_command(rule).unwrap() else {
+            panic!("expected a rule");
+        };
+        registry.register_rule("reach".to_string(), r).unwrap();
+    }
+    let DatalogCommand::Query(query) =
+        parse_datalog_command("(query [:find ?to :where (reach :n0 ?to)])").unwrap()
+    else {
+        panic!("expected a query");
+    };
+    let (rewritten, seeds) =
+        crate::query::datalog::magic_sets::rewrite(&query, &registry).expect("magic sets apply");
+    let attrs: Vec<&str> = seeds.iter().map(|(_, a, _)| a.as_str()).collect();
+    let plan = super::plan_rules(&query, &rewritten, &attrs).expect("the engine plans it");
+    let mut runs = 0;
+    for (_, rules) in &plan.strata {
+        for rule in rules {
+            for run in &rule.deltas {
+                runs += 1;
+                for step in &run.plan.steps {
+                    if let Step::Join(j) = step {
+                        assert!(
+                            !(matches!(j.kind, JoinKind::Hash { .. }) && j.keys.is_empty()),
+                            "a delta run of {} joins as a product",
+                            rule.predicate
+                        );
+                    }
+                }
+            }
+        }
+    }
+    assert!(runs >= 2, "the recursive rules have delta runs");
+
+    // The answers on a fan-out tree, engine and executor agreeing.
+    let db = Minigraf::in_memory().unwrap();
+    let mut edges = String::new();
+    for p in 0..11 {
+        for c in 0..10 {
+            edges.push_str(&format!("[:n{p} :next :n{}]", 1 + p * 10 + c));
+        }
+    }
+    db.execute(&format!("(transact [{edges}])")).unwrap();
+    db.execute("(rule [(reach ?from ?to) [?from :next ?to]])")
+        .unwrap();
+    db.execute("(rule [(reach ?from ?to) [?from :next ?mid] (reach ?mid ?to)])")
+        .unwrap();
+    assert_eq!(rows(&db, "(query [:find ?to :where (reach :n0 ?to)])"), 110);
+    assert_eq!(rows(&db, "(query [:find ?to :where (reach :n1 ?to)])"), 10);
+}
+
 // ── #549: query memory accounting ──────────────────────────────────────────
 
 /// A checkpointed database of `n` entities, each with integers `:a` and
