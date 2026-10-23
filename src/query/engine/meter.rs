@@ -63,6 +63,11 @@ pub(crate) struct Held {
 }
 
 impl Held {
+    /// The meter this holder counts on.
+    pub(crate) fn meter(&self) -> &Arc<Meter> {
+        &self.meter
+    }
+
     pub(crate) fn new(meter: &Arc<Meter>, op: &'static str) -> Self {
         Held {
             meter: meter.clone(),
@@ -106,6 +111,13 @@ impl Held {
             m.used.load(Ordering::Relaxed).saturating_sub(n),
             Ordering::Relaxed,
         );
+    }
+
+    /// Take over what `other` counts, which goes on being counted until this
+    /// holder lets it go.
+    pub(crate) fn absorb(&mut self, mut other: Held) {
+        self.bytes = self.bytes.saturating_add(other.bytes);
+        other.bytes = 0;
     }
 
     /// Stop counting every byte of this holder.

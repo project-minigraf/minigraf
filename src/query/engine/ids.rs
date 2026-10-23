@@ -37,6 +37,8 @@ pub(crate) struct IdSpace {
     /// What `provisional` and `dict` hold (#549 spec §3.2).
     held_provisional: Held,
     held_dict: Held,
+    /// What value probes read once for the whole query (#721).
+    pub(crate) probes: super::scan::Probes,
 }
 
 #[derive(Default)]
@@ -64,6 +66,7 @@ impl IdSpace {
             dict: Maps::default(),
             held_provisional: Held::new(meter, "IdSpace"),
             held_dict: Held::new(meter, "IdSpace"),
+            probes: super::scan::Probes::new(meter),
         }
     }
 
@@ -78,6 +81,7 @@ impl IdSpace {
         self.end_pull();
         self.provisional = Maps::default();
         self.held_provisional.release();
+        self.probes = super::scan::Probes::new(self.held_provisional.meter());
     }
 
     /// Count an entry of `bytes` about to go into the maps that hold

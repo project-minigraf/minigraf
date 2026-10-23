@@ -31,6 +31,9 @@ pub(crate) struct Join {
     state: State,
     /// The build side's table (#549 spec §3.2).
     held: Held,
+    /// A value probe that could not find a row's matches (#721): the rows
+    /// of the outer batch from that row on, joined by a hash join instead.
+    fallback: Option<Vec<Row>>,
     /// `rows_in` counts the outer rows received.
     counters: Counters,
 }
@@ -81,7 +84,7 @@ enum Side {
 impl Join {
     pub(crate) fn new(outer: Box<dyn Operator>, spec: JoinSpec, meter: &Arc<Meter>) -> Self {
         let op = match spec.kind {
-            JoinKind::Probe(_) => "IndexNestedLoopJoin",
+            JoinKind::Probe(_) | JoinKind::ProbeValue { .. } => "IndexNestedLoopJoin",
             JoinKind::Hash { .. } => "HashJoin",
         };
         Join {
@@ -94,6 +97,7 @@ impl Join {
             outer_width: spec.outer_width,
             state: State::Start,
             held: Held::new(meter, op),
+            fallback: None,
             counters: Counters::new(op),
         }
     }
@@ -151,10 +155,14 @@ impl Join {
         }))
     }
 
-    /// Read all of `side` into a table.
-    fn build(&mut self, side: Side, ctx: &mut Ctx<'_>) -> Result<Table> {
+    /// Read `first`, then all of `side`, into a table.
+    fn build(&mut self, side: Side, first: Vec<Row>, ctx: &mut Ctx<'_>) -> Result<Table> {
         let mut table = Table::default();
-        while let Some(rows) = self.pull(side, ctx)? {
+        let mut first = Some(first);
+        while let Some(rows) = match first.take() {
+            Some(rows) => Some(rows),
+            None => self.pull(side, ctx)?,
+        } {
             for row in rows {
                 let Some(key) = self.key(&row, side, ctx)? else {
                     continue;
@@ -214,16 +222,17 @@ impl Join {
         Ok(Some((uuid, ctx.ids.dict_eid(e))))
     }
 
-    /// Whether `outer` and `inner` agree on every key but the probed one.
+    /// Whether `outer` and `inner` agree on every key but the probed one,
+    /// `None` for every key.
     fn agree(
         &self,
         outer: &[Cell],
         inner: &[Cell],
-        probed: usize,
+        probed: Option<usize>,
         ctx: &mut Ctx<'_>,
     ) -> Result<bool> {
         for (n, k) in self.keys.iter().enumerate() {
-            if n == probed {
+            if Some(n) == probed {
                 continue;
             }
             let (Some(o), Some(i)) = (outer.get(k.outer), inner.get(k.inner)) else {
@@ -237,19 +246,22 @@ impl Join {
     }
 
     /// Join outer rows into `out` until it is full; `false` once the outer
-    /// side has ended.
+    /// side has ended. The probe is by entity, or by value (#721), whose
+    /// ranges may hold values the key does not equal, so its key is checked.
     fn next_probe(
         &mut self,
         p: &mut Probe,
         probed: usize,
+        by_value: bool,
         out: &mut Batch,
         ctx: &mut Ctx<'_>,
     ) -> Result<bool> {
+        let skip = (!by_value).then_some(probed);
         while out.len < BATCH_ROWS {
             if let Some(o) = p.rows.get(p.at) {
                 if let Some(m) = p.matches.get(p.next) {
                     p.next += 1;
-                    if self.agree(o, m, probed, ctx)? {
+                    if self.agree(o, m, skip, ctx)? {
                         self.emit(o, m, out);
                     }
                 } else if p.probing {
@@ -262,6 +274,17 @@ impl Join {
                         }
                     }
                     p.next = 0;
+                } else if by_value {
+                    match self.keys.get(probed).and_then(|k| o.get(k.outer)) {
+                        Some(cell) => {
+                            if !self.inner.probe_value(cell, ctx)? {
+                                self.fallback = Some(p.rows.split_off(p.at));
+                                return Ok(true);
+                            }
+                            p.probing = true;
+                        }
+                        None => p.at += 1,
+                    }
                 } else {
                     match self.probe_of(o, probed, ctx)? {
                         Some((uuid, eid)) => {
@@ -343,14 +366,14 @@ impl Operator for Join {
         let mut out = Batch::new(self.outer_width + self.new.len());
         if let State::Start = self.state {
             self.state = match self.kind {
-                JoinKind::Probe(_) => State::Probe(Probe::default()),
+                JoinKind::Probe(_) | JoinKind::ProbeValue { .. } => State::Probe(Probe::default()),
                 JoinKind::Hash { build_inner } => {
                     let built = if build_inner {
                         Side::Inner
                     } else {
                         Side::Outer
                     };
-                    let table = self.build(built, ctx)?;
+                    let table = self.build(built, Vec::new(), ctx)?;
                     if table.buckets.is_empty() {
                         State::Done
                     } else {
@@ -367,10 +390,39 @@ impl Operator for Join {
         }
         // Taken out while it runs; an error leaves the join done.
         let more = match (std::mem::replace(&mut self.state, State::Done), self.kind) {
-            (State::Probe(mut p), JoinKind::Probe(k)) => {
-                let more = self.next_probe(&mut p, k, &mut out, ctx)?;
+            (State::Probe(mut p), JoinKind::Probe(k) | JoinKind::ProbeValue { key: k, .. }) => {
+                let by_value = matches!(self.kind, JoinKind::ProbeValue { .. });
+                let more = self.next_probe(&mut p, k, by_value, &mut out, ctx)?;
                 self.state = State::Probe(p);
-                more
+                match self.fallback.take() {
+                    // For this row and the rest, the hash join the planner
+                    // chose before #721, built on the side it named. It
+                    // stays one for this operator.
+                    Some(rows) => {
+                        let build_inner = match self.kind {
+                            JoinKind::ProbeValue { build_inner, .. } => build_inner,
+                            _ => true,
+                        };
+                        self.inner.rewind(&[]);
+                        let (table, rows) = if build_inner {
+                            (self.build(Side::Inner, Vec::new(), ctx)?, rows)
+                        } else {
+                            (self.build(Side::Outer, rows, ctx)?, Vec::new())
+                        };
+                        self.kind = JoinKind::Hash { build_inner };
+                        let mut h = Hash {
+                            table,
+                            rows,
+                            at: 0,
+                            bucket: None,
+                            next: 0,
+                        };
+                        let more = self.next_hash(&mut h, build_inner, &mut out, ctx)?;
+                        self.state = State::Hash(h);
+                        more
+                    }
+                    None => more,
+                }
             }
             (State::Hash(mut h), JoinKind::Hash { build_inner }) => {
                 let more = self.next_hash(&mut h, build_inner, &mut out, ctx)?;

@@ -154,6 +154,39 @@ pub fn fanout_graph(width: usize, depth: usize) -> Arc<Minigraf> {
     Arc::new(db)
 }
 
+/// In-memory DB with the fan-out tree of [`fanout_graph`] pointing up: each
+/// node has `[:n<child> :up :n<parent>]`, and `(anc ?x ?a)` is every
+/// ancestor of `?x` (#721). Returns the database and the last leaf's id.
+pub fn ancestor_tree(width: usize, depth: usize) -> (Arc<Minigraf>, usize) {
+    let db = Minigraf::in_memory().unwrap();
+    let mut edges: Vec<(usize, usize)> = Vec::new();
+    let mut current_level = vec![0usize];
+    let mut next_id = 1usize;
+    for _ in 0..depth {
+        let mut next_level = Vec::new();
+        for &parent in &current_level {
+            for _ in 0..width {
+                edges.push((next_id, parent));
+                next_level.push(next_id);
+                next_id += 1;
+            }
+        }
+        current_level = next_level;
+    }
+    for chunk in edges.chunks(200) {
+        let mut cmd = String::from("(transact [");
+        for (child, parent) in chunk {
+            cmd.push_str(&format!("[:n{} :up :n{}]", child, parent));
+        }
+        cmd.push_str("])");
+        db.execute(&cmd).unwrap();
+    }
+    db.execute("(rule [(anc ?x ?a) [?x :up ?a]])").unwrap();
+    db.execute("(rule [(anc ?x ?a) [?x :up ?p] (anc ?p ?a)])")
+        .unwrap();
+    (Arc::new(db), next_id - 1)
+}
+
 /// In-memory DB with n value facts AND n-1 chain reference facts.
 /// Total ≈ 2n facts. Used for join_3pattern benchmarks.
 ///
