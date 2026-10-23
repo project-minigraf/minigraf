@@ -123,8 +123,9 @@ branches = 70
 # Query engine
 
 [files."src/query/datalog/evaluator.rs"]
+# No branches since #551 removed the evaluators: only the limit errors and
+# rule_invocation_to_pattern are left.
 lines = 88
-branches = 84
 
 [files."src/query/datalog/executor.rs"]
 lines = 93

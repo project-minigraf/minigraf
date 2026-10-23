@@ -34,31 +34,14 @@ pub(crate) fn iterations_exceeded(limit: usize) -> anyhow::Error {
 /// 1-arg: `(blocked ?x)` → `[?x :blocked ?_rule_value]`
 /// 2-arg: `(reachable ?from ?to)` → `[?from :reachable ?to]`
 pub(crate) fn rule_invocation_to_pattern(predicate: &str, args: &[EdnValue]) -> Result<Pattern> {
-    match args.len() {
-        1 => {
-            // Safety: length checked above
-            let arg0 = args
-                .first()
-                .ok_or_else(|| err_coded!(ErrorCode::Int022, "missing arg 0"))?;
-            Ok(Pattern::new(
-                arg0.clone(),
-                EdnValue::Keyword(format!(":{}", predicate)),
-                EdnValue::Symbol("?_rule_value".to_string()),
-            ))
-        }
-        2 => {
-            let arg0 = args
-                .first()
-                .ok_or_else(|| err_coded!(ErrorCode::Int022, "missing arg 0"))?;
-            let arg1 = args
-                .get(1)
-                .ok_or_else(|| err_coded!(ErrorCode::Int022, "missing arg 1"))?;
-            Ok(Pattern::new(
-                arg0.clone(),
-                EdnValue::Keyword(format!(":{}", predicate)),
-                arg1.clone(),
-            ))
-        }
-        n => Err(err_coded!(ErrorCode::Int028, predicate, n)),
+    let attribute = EdnValue::Keyword(format!(":{}", predicate));
+    match args {
+        [entity] => Ok(Pattern::new(
+            entity.clone(),
+            attribute,
+            EdnValue::Symbol("?_rule_value".to_string()),
+        )),
+        [entity, value] => Ok(Pattern::new(entity.clone(), attribute, value.clone())),
+        _ => Err(err_coded!(ErrorCode::Int028, predicate, args.len())),
     }
 }

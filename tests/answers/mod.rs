@@ -6,7 +6,8 @@
 //! bag). A query a test runs over several states has one line per answer,
 //! and its answer must be one of them. Integers within a week of now (wall
 //! clock `tx-id`s, default `valid-from`s, a query's own `valid-at`) are
-//! compared as "now".
+//! compared as "now", so data integers there would be too. Values and rows
+//! are joined with U+001F and U+001E, which no string in these suites holds.
 //!
 //! `MINIGRAF_BLESS_ANSWERS=1` appends instead of comparing; then
 //! `LC_ALL=C sort -u -o <file> <file>`. A changed file is a changed answer,

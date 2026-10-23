@@ -331,10 +331,10 @@ fn limit_counts_every_fact_through_a_not_rule() {
         "(rule [(n ?x ?w) (m ?x ?v) [(+ ?v 1) ?w]])",
         "(rule [(m ?x ?v) (n ?x ?v) [(< ?v 3)] (not [?x :stop true])])",
     ]);
-    assert_eq!(
-        db.count("(query [:find ?v :where (n ?x ?v) :max-derived-facts 7])"),
-        4,
-        "seven facts fit"
+    assert!(
+        db.rows("(query [:find ?v :where (n ?x ?v) :max-derived-facts 7])")
+            == (0..4).map(|v| vec![Value::Integer(v)]).collect::<Vec<_>>(),
+        "seven facts fit: n0 to n3"
     );
     assert_eq!(
         db.err("(query [:find ?v :where (n ?x ?v) :max-derived-facts 6])"),

@@ -211,10 +211,24 @@ under that `cfg` is classified as one of:
     floor in the coverage workflow fails, the PR reports the new figure; a floor is lowered only
     for a file whose remaining code is no less covered than before (checked line by line).
 
+18. **Frozen answers (found in step 15).** `query::engine::tests`, `tests/recursive_engine_test.rs`
+    and `tests/plan_independence_test.rs` checked their answers through the oracle only (the
+    engine unit tests' `rows()` returns a row count). Before the oracle goes, each of their
+    queries' answers is recorded, on the commit before step 15 with the oracle on, in
+    `tests/answers/<suite>.txt`: one line per test, query digest and answer (row count and a
+    digest of the rows as a bag). After it, each answer must be one of its query's recorded
+    ones in that test. Integers within a week of now (wall-clock `tx-id`s, default
+    `valid-from`s, a query's own `valid-at`) compare as "now". `MINIGRAF_BLESS_ANSWERS=1`
+    records instead; a changed file is a changed answer, justified in review.
+
 ## Deviations from the spec (PR 2)
 
 6. §5.2's move of executor-level query tests to `Minigraf::in_memory` is not needed: they run
    on the engine already (decision 13).
+7. §5.2 assumed only the model-based, property and golden suites had their own oracle; three
+   more suites relied on the executor, and keep its answers frozen (decision 18).
+8. §5.4's `SIZE_GATE: fail` is the gate without `SIZE_GATE`: the report-only branch goes with
+   it, so `binary-size.yml` differs from `main`'s only in its branch filters.
 
 ## PR 2 steps
 
