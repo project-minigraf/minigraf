@@ -2456,13 +2456,16 @@ fn value_probe_falls_back_mid_batch() {
     };
     let q = "(query [:find ?s ?t :where [?s :tag ?k] [?t :w ?k]])";
     let db = Minigraf::in_memory().unwrap();
-    db.execute(&format!("(transact [{}])", facts(0, 3000))).unwrap();
+    db.execute(&format!("(transact [{}])", facts(0, 3000)))
+        .unwrap();
     assert_eq!(rows(&db, q), 3000, "in memory");
     let dir = tempfile::tempdir().unwrap();
     let db = Minigraf::open(dir.path().join("mixed.graph")).unwrap();
-    db.execute(&format!("(transact [{}])", facts(0, 2000))).unwrap();
+    db.execute(&format!("(transact [{}])", facts(0, 2000)))
+        .unwrap();
     db.checkpoint().unwrap();
-    db.execute(&format!("(transact [{}])", facts(2000, 3000))).unwrap();
+    db.execute(&format!("(transact [{}])", facts(2000, 3000)))
+        .unwrap();
     assert_eq!(rows(&db, q), 3000, "two thirds checkpointed");
 }
 
