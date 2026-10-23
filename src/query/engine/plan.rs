@@ -60,7 +60,7 @@ pub(crate) enum ValueConst {
     Keyword(String, EntityId),
     /// A UUID: a ref to it, or a keyword that names it.
     Uuid(EntityId),
-    /// A float: floats within `f64::EPSILON`.
+    /// A float: floats equal by IEEE `==`, so `0.0` matches `-0.0` (#706).
     Float(f64),
 }
 
@@ -73,7 +73,7 @@ impl ValueConst {
                 u == fu
             }
             (ValueConst::Uuid(u), Value::Keyword(k)) => names(k, u),
-            (ValueConst::Float(f), Value::Float(ff)) => (f - ff).abs() < f64::EPSILON,
+            (ValueConst::Float(f), Value::Float(ff)) => f == ff,
             _ => false,
         }
     }

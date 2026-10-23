@@ -104,7 +104,7 @@ impl KeyTest {
                     m
                 }
             },
-            (KeyTest::Float(f), KeyValue::Float(ff)) => (*f - ff).abs() < f64::EPSILON,
+            (KeyTest::Float(f), KeyValue::Float(ff)) => f == ff,
             _ => false,
         })
     }
@@ -376,7 +376,7 @@ fn cell_matches(c: &ValueConst, cell: &Cell, ctx: &mut Ctx<'_>) -> Result<bool> 
             ctx.ids.uuid(ctx.keys, *e)? == *u
         }
         (ValueConst::Uuid(u), Cell::Iid(i)) => names(&ctx.ids.name(ctx.keys, *i)?, u),
-        (ValueConst::Float(f), Cell::Val(Scalar::Float(ff))) => (f - ff).abs() < f64::EPSILON,
+        (ValueConst::Float(f), Cell::Val(Scalar::Float(ff))) => f == ff,
         _ => false,
     })
 }

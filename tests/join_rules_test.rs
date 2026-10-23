@@ -3,7 +3,7 @@
 //! keyword and a ref returns the kind from the first pattern, in `:where`
 //! text order, that binds it.
 
-use minigraf::{Minigraf, QueryResult, Value};
+use minigraf::{BindValue, Minigraf, QueryResult, Value};
 
 fn rows(r: QueryResult) -> Vec<Vec<Value>> {
     match r {
@@ -43,12 +43,73 @@ fn float_join_pairs_zero_with_negative_zero() {
     assert_eq!(r.len(), 1, "a's 0.0 and -0.0 agree");
 }
 
+/// `1e-17`, `0.0` and `-0.0`: the first is within `f64::EPSILON` of the
+/// others but equal to neither (#706).
+const SMALL_FLOATS: &str =
+    "(transact [[:tiny :m/x 0.00000000000000001] [:zero :m/x 0.0] [:neg :m/x -0.0]])";
+
+/// The keywords naming the entities in `r`'s first column, sorted.
+fn names_of(r: &[Vec<Value>]) -> Vec<&'static str> {
+    let mut n: Vec<&str> = r
+        .iter()
+        .map(|row| {
+            [":tiny", ":zero", ":neg"]
+                .into_iter()
+                .find(|k| is_ref_to(&row[0], k))
+                .unwrap_or("?")
+        })
+        .collect();
+    n.sort();
+    n
+}
+
+/// A float constant written in a pattern, bound to a `$slot`, written in a
+/// rule body, or compared by a predicate matches equal floats only (#706).
+fn assert_float_constants_exact(db: &Minigraf) {
+    db.execute("(rule [(zeroish ?e) [?e :m/x 0.0]])").unwrap();
+    for q in [
+        "[:find ?e :where [?e :m/x 0.0]]",
+        "[:find ?e :where [?e :m/x -0.0]]",
+        "[:find ?e :where [?e :m/x ?v] [(= ?v 0.0)]]",
+        "[:find ?e :where (zeroish ?e)]",
+    ] {
+        assert_eq!(names_of(&query(db, q)), [":neg", ":zero"], "{q}");
+    }
+    let r = query(db, "[:find ?e :where [?e :m/x 0.00000000000000001]]");
+    assert_eq!(names_of(&r), [":tiny"], "1e-17 matches itself only");
+    let r = query(db, "[:find ?e :where [?e :m/x 0.00000000000000002]]");
+    assert!(r.is_empty(), "2e-17 matches nothing");
+
+    let p = db
+        .prepare("(query [:find ?e :where [?e :m/x $v]])")
+        .unwrap();
+    for (v, want) in [(0.0, &[":neg", ":zero"][..]), (1e-17, &[":tiny"][..])] {
+        let r = rows(
+            p.execute(&[("v", BindValue::Val(Value::Float(v)))])
+                .unwrap(),
+        );
+        assert_eq!(names_of(&r), want, "bound {v}");
+    }
+}
+
 #[test]
-fn float_constant_keeps_epsilon_match() {
+fn float_constant_matches_equal_floats_only() {
     let db = Minigraf::in_memory().unwrap();
-    db.execute("(transact [[:a :x 1.0]])").unwrap();
-    let r = query(&db, "[:find ?e :where [?e :x 1.0000000000000001]]");
-    assert_eq!(r.len(), 1, "a float constant matches within epsilon");
+    db.execute(SMALL_FLOATS).unwrap();
+    assert_float_constants_exact(&db);
+}
+
+#[test]
+fn float_constant_matches_equal_floats_only_after_checkpoint() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("floats.graph");
+    let db = Minigraf::open(&path).unwrap();
+    db.execute(SMALL_FLOATS).unwrap();
+    assert_float_constants_exact(&db);
+    db.checkpoint().unwrap();
+    assert_float_constants_exact(&db);
+    drop(db);
+    assert_float_constants_exact(&Minigraf::open(&path).unwrap());
 }
 
 fn friends_db() -> Minigraf {
