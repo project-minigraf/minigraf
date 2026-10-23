@@ -249,7 +249,7 @@ Data-integrity bugs stay visible until they are fixed in a published release; se
 
 A binding moves to Tier 1 when real users need it: issues from outside users, or known dependents. The project's own tools count as dependents when they ship to users and rely on the binding: Python is Tier 1 because `temporal_reasoning` stores its memory through it, and browser WASM is Tier 1 because the playground, the graph visualizer and the docs site run on it. A promotion takes effect at a major or minor release, never in a patch. No binding is removed by being Tier 2.
 
-A new storage backend inside a Tier 1 binding starts at Tier 2 until it has shipped in a release; the OPFS backend for browser WASM (#441, v3.1.0) is the current example. The IndexedDB backend stays Tier 1.
+A new storage backend inside a Tier 1 binding starts at Tier 2 until it has shipped in a release; the OPFS backend for browser WASM (#441, v3.next) is the current example. The IndexedDB backend stays Tier 1.
 
 | Tier | Platform and filesystem |
 |---|---|
