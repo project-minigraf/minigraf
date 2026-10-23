@@ -932,6 +932,8 @@ fn encode(
 mod tests {
     use super::*;
     use crate::graph::types::Value;
+    use crate::query::datalog::types::AsOf;
+    use crate::storage::TxBound;
     use crate::storage::backend::FaultInjectingBackend;
     use crate::storage::backend::MemoryBackend;
     use crate::storage::btree::collect_leaf_pages;
@@ -2502,6 +2504,228 @@ mod tests {
         }
     }
 
+    /// One fact per transaction `(tx_count, tx_id)` of `txs`, entities from
+    /// `first`, loaded into `pfs` as `LogWriter` loads them.
+    fn load_txs(pfs: &PersistentFactStorage<MemoryBackend>, first: u128, txs: &[(u64, u64)]) {
+        for (i, &(tx_count, tx_id)) in txs.iter().enumerate() {
+            let fact = Fact {
+                entity: entity(first + i as u128),
+                attribute: ":t/n".to_string(),
+                value: Value::Integer(i as i64),
+                tx_id,
+                tx_count,
+                valid_from: 0,
+                valid_to: crate::graph::types::VALID_TIME_FOREVER,
+                asserted: true,
+            };
+            assert!(pfs.storage().load_fact(fact).unwrap(), "loaded");
+        }
+    }
+
+    /// A database whose committed transactions are `committed` and whose
+    /// pending ones are `pending`.
+    fn with_txs(
+        committed: &[(u64, u64)],
+        pending: &[(u64, u64)],
+    ) -> PersistentFactStorage<MemoryBackend> {
+        let mut pfs = PersistentFactStorage::new(MemoryBackend::new(), 32).unwrap();
+        load_txs(&pfs, 0, committed);
+        pfs.mark_dirty();
+        pfs.save().unwrap();
+        load_txs(&pfs, 1000, pending);
+        pfs
+    }
+
+    /// The DICT's transaction reads (#551): `tx_order`, `last_tx_at` with
+    /// gaps in `tx_count`, before the first and after the last transaction,
+    /// and `tx_runs` on alternating `tx_id`s, each against every committed
+    /// fact with the executor's `tx_id <= t` filter.
+    #[test]
+    fn dict_transaction_reads_match_a_scan() {
+        let rising = [(1, 100), (2, 200), (4, 400), (7, 400), (9, 900)];
+        let alternating = [(1, 100), (2, 300), (3, 150), (4, 400), (6, 200)];
+        for (txs, monotonic) in [
+            (&rising[..], true),
+            (&alternating[..], false),
+            (&[][..], true),
+        ] {
+            let pfs = with_txs(txs, &[]);
+            let snap = pfs.storage().snapshot().unwrap();
+            let Some(reader) = snap.committed.as_ref() else {
+                assert!(txs.is_empty(), "a committed generation");
+                continue;
+            };
+            let src = reader.key_source().expect("keys");
+            let order = src.tx_order().unwrap();
+            assert_eq!(order.monotonic, monotonic, "tx_order");
+            assert_eq!(order.last, txs.last().copied(), "newest transaction");
+            assert_eq!(src.tx_order().unwrap(), order, "cached");
+            let all = reader.all_facts().unwrap();
+            for t in [
+                0,
+                99,
+                100,
+                101,
+                150,
+                200,
+                250,
+                300,
+                399,
+                400,
+                401,
+                900,
+                901,
+                u64::MAX,
+            ] {
+                let kept: BTreeSet<u64> = all
+                    .iter()
+                    .filter(|f| f.tx_id <= t)
+                    .map(|f| f.tx_count)
+                    .collect();
+                if monotonic {
+                    assert_eq!(
+                        src.last_tx_at(t).unwrap(),
+                        kept.last().copied().unwrap_or(0),
+                        "last_tx_at"
+                    );
+                }
+                let mut runs = Vec::new();
+                src.tx_runs(t, &mut runs).unwrap();
+                assert!(
+                    runs.windows(2).all(|w| w[0].1 < w[1].0) && runs.iter().all(|r| r.0 <= r.1),
+                    "sorted, disjoint, inclusive"
+                );
+                let bound = TxBound::Timestamp {
+                    t,
+                    committed: runs.into(),
+                };
+                for f in &all {
+                    assert_eq!(bound.keeps_key(f.tx_count), f.tx_id <= t, "tx_runs");
+                }
+                for tx in 0..12 {
+                    let below = (0..tx).rev().find(|&c| kept.contains(&c));
+                    if let Some(b) = bound.kept_below(tx) {
+                        assert!(below.is_none_or(|k| k <= b) && b < tx, "seek target");
+                        assert!((b + 1..tx).all(|c| !kept.contains(&c)), "skips none kept");
+                    } else {
+                        assert!(below.is_none(), "nothing kept below");
+                    }
+                }
+            }
+        }
+    }
+
+    /// `Snapshot::tx_bound` keeps the versions the executor's `tx_id <= t`
+    /// filter keeps (#551), over committed and pending facts, and is a
+    /// counter bound exactly when `tx_id` rises with `tx_count` over both.
+    #[test]
+    fn tx_bound_keeps_what_the_executor_filter_keeps() {
+        let cases: [(&[(u64, u64)], &[(u64, u64)], bool); 6] = [
+            (&[(1, 100), (2, 200), (4, 400)], &[(5, 500), (6, 600)], true),
+            (&[(1, 100), (2, 200)], &[], true),
+            (&[], &[(1, 100), (2, 200), (2, 200)], true),
+            // `tx_id`s fall and rise (a `LogWriter` copy).
+            (&[(1, 300), (2, 100), (3, 200)], &[(4, 350)], false),
+            // Pending below committed.
+            (&[(1, 100), (2, 200)], &[(3, 150)], false),
+            // Two `tx_id`s in one pending `tx_count` (a read-only v7 open).
+            (&[(1, 100)], &[(2, 200), (2, 210), (3, 300)], false),
+        ];
+        for (committed, pending, monotonic) in cases {
+            let pfs = with_txs(committed, pending);
+            let snap = pfs.storage().snapshot().unwrap();
+            let stored = match &snap.committed {
+                Some(r) => r.all_facts().unwrap(),
+                None => Vec::new(),
+            };
+            let pending = snap.pending_range(0, usize::MAX).unwrap();
+            let all = snap.all_facts().unwrap();
+            for t in [
+                -5, 0, 99, 100, 150, 199, 200, 205, 210, 250, 300, 350, 400, 500, 600, 700,
+            ] {
+                let want: BTreeSet<(Uuid, u64)> =
+                    crate::graph::storage::filter_facts_as_of(all.clone(), &AsOf::Timestamp(t))
+                        .into_iter()
+                        .map(|f| (f.entity, f.tx_count))
+                        .collect();
+                let bound = snap.tx_bound(t).unwrap();
+                assert_eq!(
+                    matches!(bound, TxBound::Upto(_)),
+                    monotonic || t < 0,
+                    "a counter exactly when monotonic"
+                );
+                let got: BTreeSet<(Uuid, u64)> = stored
+                    .iter()
+                    .filter(|f| bound.keeps_key(f.tx_count))
+                    .chain(pending.iter().filter(|f| bound.keeps_fact(f)))
+                    .map(|f| (f.entity, f.tx_count))
+                    .collect();
+                assert!(got == want, "same versions as the executor");
+            }
+        }
+    }
+
+    /// `live_keys` under a `TxBound::Timestamp` (#551) equals net-assert
+    /// over the committed records whose `tx_count` is in its ranges, for
+    /// several range sets over transactions `1..=now`.
+    fn assert_live_keys_in_ranges(pfs: &PersistentFactStorage<MemoryBackend>, now: u64) {
+        use crate::storage::keys::Index;
+        let snap = pfs.storage().snapshot().unwrap();
+        let reader = snap.committed.as_ref().expect("a committed generation");
+        let src = reader.key_source().expect("keys");
+        let all = reader.all_facts().unwrap();
+        let sets: [Vec<(u64, u64)>; 5] = [
+            vec![],
+            vec![(1, now)],
+            vec![(1, now / 3), (now / 2, now / 2 + 1)],
+            (1..=now).step_by(2).map(|c| (c, c)).collect(),
+            vec![(now / 4 + 1, now - 1)],
+        ];
+        let key = |f: &Fact| {
+            (
+                f.entity,
+                f.attribute.clone(),
+                f.tx_count,
+                f.valid_from,
+                f.valid_to,
+            )
+        };
+        for set in sets {
+            let bound = TxBound::Timestamp {
+                t: 0,
+                committed: set.into(),
+            };
+            let want: BTreeSet<_> = crate::graph::storage::net_asserted_facts(
+                all.iter()
+                    .filter(|f| bound.keeps_key(f.tx_count))
+                    .cloned()
+                    .collect(),
+            )
+            .iter()
+            .map(key)
+            .collect();
+            let mut out = Vec::new();
+            src.live_keys(Index::Eavt, &[], None, &bound, usize::MAX, &mut out)
+                .unwrap();
+            let got: BTreeSet<_> = out
+                .iter()
+                .map(|kf| {
+                    (
+                        src.uuid_of(kf.e).unwrap(),
+                        src.ident_of(kf.a).unwrap(),
+                        kf.tx_count,
+                        kf.vf,
+                        kf.vt,
+                    )
+                })
+                .collect();
+            assert!(
+                got == want,
+                "live keys in ranges equal net-assert over them"
+            );
+        }
+    }
+
     /// The committed live read of `scan` taken by `live_keys` in calls of at
     /// most `max` keys, resumed after each, equals one `live_facts` read: the
     /// same records in the same order, for every `max`.
@@ -2547,7 +2771,14 @@ mod tests {
                     loop {
                         let mut out = Vec::new();
                         resume = src
-                            .live_keys(index, &prefix, resume.as_deref(), as_of, max, &mut out)
+                            .live_keys(
+                                index,
+                                &prefix,
+                                resume.as_deref(),
+                                &crate::storage::TxBound::of(as_of),
+                                max,
+                                &mut out,
+                            )
                             .unwrap();
                         calls += 1;
                         for kf in out {
@@ -2639,6 +2870,7 @@ mod tests {
             ];
             assert_live_reads_match(&pfs, &model, &scans, &as_ofs);
             assert_live_keys_resume(&pfs, &scans, &as_ofs);
+            assert_live_keys_in_ranges(&pfs, now);
         }
         // Pending facts on top of committed ones.
         for _ in 0..12 {

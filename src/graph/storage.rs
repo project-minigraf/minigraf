@@ -3,6 +3,7 @@ use crate::graph::types::{
     Attribute, EntityId, Fact, TransactOptions, TxId, VALID_TIME_FOREVER, Value, tx_id_now,
 };
 use crate::query::datalog::types::AsOf;
+use crate::storage::TxBound;
 use crate::storage::index::{Indexes, encode_value};
 use crate::storage::pins::{GenerationPin, Pins};
 use anyhow::Result;
@@ -49,21 +50,36 @@ struct PendingStore {
     /// fact sets (e.g. 1M-fact benchmark setup).
     keys: HashSet<PendingKey>,
     indexes: Indexes,
+    /// The first position whose fact's `tx_count` or `tx_id` is below the
+    /// previous fact's, or whose `tx_id` differs from it within one
+    /// `tx_count`; `usize::MAX` if none (#551 plan, decision 6). Before it,
+    /// `tx_count` and `tx_id` rise together, so a timestamp is a counter.
+    first_irregular: usize,
 }
 
 impl PendingStore {
-    fn new() -> Arc<RwLock<Self>> {
-        Arc::new(RwLock::new(PendingStore {
-            facts: Vec::new(),
+    fn empty(capacity: usize) -> Self {
+        PendingStore {
+            facts: Vec::with_capacity(capacity),
             keys: HashSet::new(),
             indexes: Indexes::new(),
-        }))
+            first_irregular: usize::MAX,
+        }
+    }
+
+    fn new() -> Arc<RwLock<Self>> {
+        Arc::new(RwLock::new(PendingStore::empty(0)))
     }
 
     /// Append `fact` unless it is already here; returns whether it was added.
     fn push(&mut self, fact: Fact) -> bool {
         if !self.keys.insert(pending_key(&fact)) {
             return false;
+        }
+        if self.first_irregular == usize::MAX
+            && self.facts.last().is_some_and(|p| out_of_order(p, &fact))
+        {
+            self.first_irregular = self.facts.len();
         }
         self.indexes.insert(&fact, self.facts.len());
         self.facts.push(fact);
@@ -73,11 +89,7 @@ impl PendingStore {
     /// A store of `facts`, duplicates skipped: a `WriteTransaction`'s staged
     /// facts for one query (#550 spec §7).
     fn of(facts: Vec<Fact>) -> Self {
-        let mut store = PendingStore {
-            facts: Vec::with_capacity(facts.len()),
-            keys: HashSet::new(),
-            indexes: Indexes::new(),
-        };
+        let mut store = PendingStore::empty(facts.len());
         for fact in facts {
             store.push(fact);
         }
@@ -89,11 +101,26 @@ impl PendingStore {
     fn extend(&mut self, facts: Vec<Fact>) {
         let base = self.facts.len();
         for (i, fact) in facts.iter().enumerate() {
+            let prev = match i.checked_sub(1) {
+                Some(j) => facts.get(j),
+                None => self.facts.last(),
+            };
+            if self.first_irregular == usize::MAX && prev.is_some_and(|p| out_of_order(p, fact)) {
+                self.first_irregular = base + i;
+            }
             self.keys.insert(pending_key(fact));
             self.indexes.insert(fact, base + i);
         }
         self.facts.extend(facts);
     }
+}
+
+/// Whether `fact`, appended after `prev`, breaks the order in which a
+/// timestamp is a counter (`PendingStore::first_irregular`).
+fn out_of_order(prev: &Fact, fact: &Fact) -> bool {
+    fact.tx_count < prev.tx_count
+        || fact.tx_id < prev.tx_id
+        || (fact.tx_count == prev.tx_count && fact.tx_id != prev.tx_id)
 }
 
 /// The state a read sees: the committed generation and the pending store
@@ -306,6 +333,68 @@ impl Snapshot {
         }
     }
 
+    /// The versions `:as-of t` keeps in this snapshot (#551 plan, decision
+    /// 6): a counter bound when `tx_id` rises with `tx_count` over its
+    /// committed, pending and staged transactions, else a `tx_id` filter.
+    pub(crate) fn tx_bound(&self, t: i64) -> Result<TxBound> {
+        let Ok(t) = u64::try_from(t) else {
+            // Before every transaction, as `filter_facts_as_of` reads it.
+            return Ok(TxBound::Upto(0));
+        };
+        let keys =
+            match &self.committed {
+                Some(reader) => Some(reader.key_source().ok_or_else(|| {
+                    err_coded!(ErrorCode::Int049, "a committed reader without keys")
+                })?),
+                None => None,
+            };
+        let p = self.read_pending()?;
+        let len = self.view(&p).len;
+        let pending = p.facts.get(..len).unwrap_or(&[]);
+        let staged = self.staged.as_deref();
+        let parts = [
+            (pending, len <= p.first_irregular),
+            match staged {
+                Some(s) => (s.facts.as_slice(), s.first_irregular == usize::MAX),
+                None => (&[][..], true),
+            },
+        ];
+        let (mut monotonic, mut last) = match keys {
+            Some(k) => {
+                let order = k.tx_order()?;
+                (order.monotonic, order.last.map(|(_, tx_id)| tx_id))
+            }
+            None => (true, None),
+        };
+        for (facts, regular) in parts {
+            if let Some(first) = facts.first() {
+                monotonic &= regular && last.is_none_or(|l| first.tx_id >= l);
+                last = facts.last().map(|f| f.tx_id);
+            }
+        }
+        if monotonic {
+            let mut c = match keys {
+                Some(k) => k.last_tx_at(t)?,
+                None => 0,
+            };
+            for (facts, _) in parts {
+                let n = facts.partition_point(|f| f.tx_id <= t);
+                if let Some(f) = n.checked_sub(1).and_then(|i| facts.get(i)) {
+                    c = c.max(f.tx_count);
+                }
+            }
+            return Ok(TxBound::Upto(c));
+        }
+        let mut committed = Vec::new();
+        if let Some(k) = keys {
+            k.tx_runs(t, &mut committed)?;
+        }
+        Ok(TxBound::Timestamp {
+            t,
+            committed: committed.into(),
+        })
+    }
+
     /// Wall-clock time when the snapshot was taken (Unix ms).
     pub(crate) fn now(&self) -> i64 {
         self.now
@@ -367,8 +456,9 @@ impl Snapshot {
         let p = self.read_pending()?;
         let view = self.view(&p);
         let mut facts = Vec::new();
+        let bound = TxBound::of(as_of);
         for &scan in scans {
-            pending_facts_of_scan(&view, scan, as_of, &mut facts)?;
+            pending_facts_of_scan(&view, scan, &bound, &mut facts)?;
             if let Some(reader) = &self.committed {
                 facts.extend(reader.live_facts(scan, as_of)?);
             }
@@ -386,21 +476,21 @@ pub(crate) enum PendingResume {
 }
 
 impl Snapshot {
-    /// The pending records of `scan` in the snapshot with `tx_count <= as_of`
-    /// (all when `None`), assertions and retractions, in no set order.
+    /// The pending records of `scan` in the snapshot that `bound` keeps,
+    /// assertions and retractions, in no set order.
     pub(crate) fn pending_records(
         &self,
         scan: crate::storage::Scan<'_>,
-        as_of: Option<u64>,
+        bound: &TxBound,
     ) -> Result<Vec<Fact>> {
         let p = self.read_pending()?;
         let mut facts = Vec::new();
-        pending_facts_of_scan(&self.view(&p), scan, as_of, &mut facts)?;
+        pending_facts_of_scan(&self.view(&p), scan, bound, &mut facts)?;
         Ok(facts)
     }
 
-    /// The pending facts of `scan` in the snapshot that survive net-assert at
-    /// `as_of` among the pending records, appended to `out` in pending index
+    /// The pending facts of `scan` in the snapshot that survive net-assert
+    /// among the pending records `bound` keeps, appended to `out` in pending index
     /// order (EAVT, or AEVT for [`Scan::Attribute`](crate::storage::Scan)).
     ///
     /// Reads whole `(entity, attribute)` runs, so every record of a triple is
@@ -411,7 +501,7 @@ impl Snapshot {
     pub(crate) fn pending_live(
         &self,
         scan: crate::storage::Scan<'_>,
-        as_of: Option<u64>,
+        bound: &TxBound,
         resume: &mut Option<PendingResume>,
         max: usize,
         out: &mut Vec<Fact>,
@@ -423,7 +513,7 @@ impl Snapshot {
         let view = self.view(&p);
         let walk = RunWalk {
             view: &view,
-            as_of,
+            bound,
             max,
         };
         let stopped = match scan {
@@ -472,7 +562,7 @@ impl Snapshot {
 /// One call of [`Snapshot::pending_live`] over one pending index.
 struct RunWalk<'a> {
     view: &'a PendingView<'a>,
-    as_of: Option<u64>,
+    bound: &'a TxBound,
     max: usize,
 }
 
@@ -507,7 +597,7 @@ impl<'a> RunWalk<'a> {
             first.get_or_insert(k);
             last = Some(k);
             let f = self.view.fact(pos)?;
-            if self.as_of.is_none_or(|n| f.tx_count <= n) {
+            if self.bound.keeps_fact(&f) {
                 run.push(f);
             }
         }
@@ -1108,11 +1198,12 @@ impl FactStorage {
     }
 }
 
-/// The pending facts of `scan` in `view`, up to `as_of`, appended to `facts`.
+/// The pending facts of `scan` in `view` that `bound` keeps, appended to
+/// `facts`.
 fn pending_facts_of_scan(
     view: &PendingView<'_>,
     scan: crate::storage::Scan<'_>,
-    as_of: Option<u64>,
+    bound: &TxBound,
     facts: &mut Vec<Fact>,
 ) -> Result<()> {
     use crate::storage::Scan;
@@ -1120,7 +1211,7 @@ fn pending_facts_of_scan(
     use std::ops::Bound::Included;
     let mut push = |pos: usize| -> Result<()> {
         let f = view.fact(pos)?;
-        if as_of.is_none_or(|n| f.tx_count <= n) {
+        if bound.keeps_fact(&f) {
             facts.push(f);
         }
         Ok(())
@@ -1299,6 +1390,65 @@ impl FactStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fact_at(i: u128, tx_count: u64, tx_id: u64) -> Fact {
+        Fact {
+            entity: uuid::Uuid::from_u128(i + 1),
+            attribute: ":t/n".to_string(),
+            value: Value::Integer(i as i64),
+            tx_id,
+            tx_count,
+            valid_from: 0,
+            valid_to: VALID_TIME_FOREVER,
+            asserted: true,
+        }
+    }
+
+    /// `first_irregular` is the first fact whose `tx_count` or `tx_id` falls,
+    /// or whose `tx_id` differs within one `tx_count` (#551), under `push`,
+    /// `extend` and `of`; a skipped duplicate does not count.
+    #[test]
+    fn first_irregular_marks_the_first_out_of_order_fact() {
+        let regular = [(1, 100), (1, 100), (2, 100), (3, 300), (5, 400)];
+        let cases: [(&[(u64, u64)], usize); 6] = [
+            (&regular, usize::MAX),
+            (&[(1, 100), (2, 90)], 1),
+            (&[(1, 100), (2, 200), (1, 200)], 2),
+            // Two `tx_id`s in one `tx_count`: a read-only v7 open.
+            (&[(1, 100), (2, 200), (2, 210), (3, 300)], 2),
+            (&[(2, 200), (2, 200), (3, 150), (1, 50)], 2),
+            (&[], usize::MAX),
+        ];
+        for (txs, want) in cases {
+            let facts: Vec<Fact> = txs
+                .iter()
+                .enumerate()
+                .map(|(i, &(c, t))| fact_at(i as u128, c, t))
+                .collect();
+            let mut pushed = PendingStore::empty(0);
+            for f in facts.clone() {
+                pushed.push(f);
+            }
+            assert_eq!(pushed.first_irregular, want, "push");
+            assert_eq!(PendingStore::of(facts.clone()).first_irregular, want, "of");
+            for split in 0..=facts.len() {
+                let mut extended = PendingStore::empty(0);
+                extended.extend(facts[..split].to_vec());
+                extended.extend(facts[split..].to_vec());
+                assert_eq!(extended.first_irregular, want, "extend");
+            }
+        }
+        // A duplicate is not appended, so it breaks nothing.
+        let mut store = PendingStore::empty(0);
+        assert!(store.push(fact_at(0, 2, 200)));
+        assert!(!store.push(fact_at(0, 2, 200)));
+        assert!(store.push(fact_at(1, 3, 300)));
+        assert_eq!(store.first_irregular, usize::MAX);
+        // Once marked, it stays at the first break.
+        assert!(store.push(fact_at(2, 1, 100)));
+        assert!(store.push(fact_at(3, 0, 0)));
+        assert_eq!(store.first_irregular, 2);
+    }
 
     #[test]
     fn test_fact_storage_transact() {
