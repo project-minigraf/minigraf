@@ -1,5 +1,8 @@
 name: Coverage Gates
 
+# The only coverage workflow: one instrumented test run gates the floors in
+# coverage-thresholds.toml and feeds Codecov (badge, PR comment, statuses).
+
 on:
   push:
     branches: [ "main", "v[0-9]*" ]
@@ -34,9 +37,12 @@ jobs:
           tool: cargo-llvm-cov@0.9.1
 
       - name: Build the pid_ns_helper example used by lock tests
-        # cargo-llvm-cov puts test binaries where the lock tests' lookup of
-        # examples/ next to the test binary fails; same workaround as
-        # llvm-cov.yml.
+        # cargo-llvm-cov's instrumented build places test binaries under a
+        # build-script-shaped path (target/llvm-cov-target/debug/build/...),
+        # so the lock tests' `examples/`-relative-to-test-binary lookup
+        # (docker_lock_test.rs, nfs_lock_test.rs, pid_namespace_test.rs)
+        # never finds the helper. Build it into a target dir cargo-llvm-cov
+        # never touches and point the tests at it directly.
         run: cargo build --examples --target-dir /tmp/minigraf-lock-test-examples
 
       # A failing test fails the job: a partial report must never be gated.
@@ -46,8 +52,34 @@ jobs:
         run: cargo llvm-cov --branch --no-report
 
       - name: Summarize coverage
-        run: cargo llvm-cov report --branch --json --summary-only --output-path coverage.json
+        run: |
+          cargo llvm-cov report --branch --json --summary-only --output-path coverage.json
+          cargo llvm-cov report --branch --lcov --output-path lcov.info
 
       # Thresholds come from coverage-thresholds.toml (#396).
-      - name: Check per-module thresholds
+      - name: Check coverage thresholds
         run: python3 scripts/coverage_gates.py coverage-thresholds.toml coverage.json
+
+      # After the gates, so an upload failure (no token on a fork PR) cannot
+      # stop them, and run whatever they decided, so a failing gate still
+      # shows on Codecov.
+      - name: Upload coverage to Codecov
+        if: ${{ !cancelled() && github.actor != 'dependabot[bot]' }}
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./lcov.info
+          disable_search: 'true'
+          fail_ci_if_error: true
+
+      - name: Generate HTML report
+        if: ${{ !cancelled() && github.event_name == 'push' }}
+        run: cargo llvm-cov report --branch --html
+
+      - name: Upload HTML report as artifact
+        if: ${{ !cancelled() && github.event_name == 'push' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: llvm-cov-html
+          path: target/llvm-cov/html/
+          retention-days: 30
