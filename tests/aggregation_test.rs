@@ -166,6 +166,17 @@ fn sum_skips_nulls() {
 }
 
 #[test]
+fn count_and_sum_skip_nil() {
+    let db = db();
+    db.execute(r#"(transact [[:a :score 10] [:b :score nil] [:c :score 20]])"#)
+        .unwrap();
+    let r = db
+        .execute(r#"(query [:find (count ?s) (sum ?s) :where [?e :score ?s]])"#)
+        .unwrap();
+    assert_eq!(results(&r)[0], vec![Value::Integer(2), Value::Integer(30)]);
+}
+
+#[test]
 fn sum_type_error() {
     let db = db();
     db.execute(r#"(transact [[:a :v "not-a-number"]])"#)

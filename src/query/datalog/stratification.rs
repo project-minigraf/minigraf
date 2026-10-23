@@ -39,8 +39,8 @@ fn collect_clause_deps(clause: &WhereClause, entry: &mut Vec<(String, bool)>) {
 }
 
 /// Whether a rule body holds a `not`, `not-join`, `or` or `or-join`.
-/// `StratifiedEvaluator` runs such a rule once per stratum, after the
-/// positive-only rules, so a rule that calls one must sit above it (#628).
+/// Such a rule runs after its stratum's positive-only rules, so a rule
+/// that calls one must sit above it (#628).
 pub(crate) fn has_mixed_clause(body: &[WhereClause]) -> bool {
     body.iter().any(|c| {
         matches!(

@@ -3,8 +3,7 @@
 // Integrate `pprof` as a Criterion profiler (via the `pprof` crate's Criterion
 // feature or `criterion-pprof`) so that `cargo bench` can emit flamegraphs.
 // Run the query/negation/aggregation/disjunction groups at 10K and 100K facts
-// to confirm that `filter_facts_for_query` (index rebuild) and
-// `net_asserted_facts` are the dominant costs before making structural changes.
+// to find the dominant costs before making structural changes.
 //
 // Example setup (Cargo.toml):
 //   [dev-dependencies]
@@ -928,7 +927,7 @@ fn bench_negation(c: &mut Criterion) {
         group.finish();
     }
 
-    // not/rule_body: `not` inside a rule body (StratifiedEvaluator overhead).
+    // not/rule_body: `not` inside a rule body (stratified evaluation overhead).
     // Rule: `(eligible ?x) :- [?x :val ?v] (not [?x :blocked true])`
     // 10% of entities are blocked.
     {

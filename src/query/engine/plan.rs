@@ -58,8 +58,8 @@ pub(crate) enum Term<C> {
     Never,
 }
 
-/// A constant in the value position, with the executor's matching rules
-/// (`PatternMatcher::match_component`).
+/// A constant in the value position, with the matching rules the executor
+/// had.
 #[derive(Debug, Clone)]
 pub(crate) enum ValueConst {
     /// A string, integer, boolean or `nil`: equal values only.
@@ -598,8 +598,8 @@ pub(crate) fn plan_rules(
 ) -> Result<RulesPlan> {
     let (as_of, valid) = temporal(query)?;
     let strata = DependencyGraph::from_rules(registry).stratify()?;
-    // Every predicate the query invokes, and those their rules invoke, as
-    // `StratifiedEvaluator::evaluate` collects them.
+    // Every predicate the query invokes, and those their rules invoke, in
+    // the order the executor collected them.
     let mut preds: Vec<String> = Vec::new();
     for (p, _) in query.get_rule_invocations() {
         if !preds.contains(&p) {

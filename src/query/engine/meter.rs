@@ -148,8 +148,7 @@ impl Drop for Held {
 
 #[cfg(test)]
 thread_local! {
-    /// Makes every [`Held::reserve`] of this op fail while set (spec §6.2);
-    /// a query runs on the engine twice under the oracle.
+    /// Makes every [`Held::reserve`] of this op fail while set (spec §6.2).
     pub(crate) static FAIL_RESERVE: std::cell::Cell<Option<&'static str>> =
         const { std::cell::Cell::new(None) };
 }

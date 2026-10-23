@@ -1,7 +1,7 @@
-//! Targeted shapes for the engine. Every query here also runs on the
-//! executor, and the answers must agree (`oracle::check`), so these tests
-//! check the engine against the executor over histories chosen to reach each
-//! index choice, net-assert across committed and pending records, `:as-of`,
+//! Targeted shapes for the engine. Until #551 every query here also ran on
+//! the executor and the answers had to agree; each answer is now compared
+//! with the one recorded then (`tests/answers/`), over histories chosen to
+//! reach each index choice, net-assert across committed and pending records, `:as-of`,
 //! valid time, long strings, and cross-kind values.
 
 use super::RUNS;
@@ -469,7 +469,7 @@ fn written(dir: &std::path::Path, name: &str, tx_ids: [u64; 6]) -> std::path::Pa
 /// `tx_id`s rise and on one whose `tx_id`s fall and rise (a `LogWriter`
 /// copy), at timestamps before, between, at and after its transactions,
 /// with committed, pending and staged facts, in plain and rule queries,
-/// point and attribute scans. The oracle checks every answer.
+/// point and attribute scans, each against its frozen answer.
 #[test]
 fn as_of_timestamps_run_on_the_engine() {
     let dir = tempfile::tempdir().unwrap();
@@ -612,8 +612,8 @@ fn engine_filter_runs_registered_predicates() {
 }
 
 /// Cross-kind constants over committed and pending facts, `:as-of`,
-/// retractions and reopen (from #518's branch): each answer agrees with the
-/// executor (the oracle), and the expected entities are found.
+/// retractions and reopen (from #518's branch): each answer matches its
+/// frozen one, and the expected entities are found.
 #[test]
 fn cross_kind_constants_read_their_avet_ranges() {
     let dir = tempfile::tempdir().unwrap();
@@ -1055,7 +1055,7 @@ fn negation_queries(tx: u64) -> Vec<String> {
 }
 
 /// Every negation shape with each body form forced and reordering on and
-/// off; the oracle compares each run with the executor.
+/// off, each against its frozen answer.
 fn check_negations(db: &Minigraf) -> usize {
     use crate::query::datalog::optimizer::{Subplans, set_reorder, set_subplans};
     let tx = db.current_tx_count();
@@ -1555,7 +1555,7 @@ fn disjunction_queries(tx: u64) -> Vec<String> {
 }
 
 /// Every disjunction shape with each branch form forced and reordering on
-/// and off; the oracle compares each run with the executor.
+/// and off, each against its frozen answer.
 fn check_disjunctions(db: &Minigraf) -> usize {
     use crate::query::datalog::optimizer::{Subplans, set_reorder, set_subplans};
     let tx = db.current_tx_count();
@@ -2262,7 +2262,7 @@ fn memory_db(dir: &std::path::Path, n: usize, limit: usize) -> Minigraf {
 
 /// One shape per operator that holds state, the operator that holds it
 /// first, and the entities its database needs: more than one batch of
-/// answer rows, few enough that the executor oracle's cross joins stay fast.
+/// answer rows, few enough to stay fast.
 const MEMORY_SHAPES: [(&str, usize, &str); 5] = [
     (
         "HashJoin",
@@ -2613,8 +2613,7 @@ fn proc_status_kb(field: &str) -> usize {
 
 /// The meter's peak against the peak RSS the query adds, for both
 /// acceptance shapes (#549 spec §3.2: the estimate is meant to be within a
-/// factor of two). Opens the engine directly, without the executor oracle,
-/// which would run out of memory on the cartesian shape. Prints only; run
+/// factor of two). Opens the engine directly. Prints only; run
 /// alone, as the high-water mark is per process:
 ///
 /// ```text

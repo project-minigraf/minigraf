@@ -404,7 +404,6 @@ fn valid_at_succeeds_without_any_valid_time() {
 // ─── Coverage Gap Tests (Phase 7.6) ─────────────────────────────────────────
 
 /// Gap 1: Hard error in rules-based query path — per-fact pseudo-attr without :any-valid-time.
-/// Exercises executor.rs lines 341–353 (execute_query_with_rules guard).
 #[test]
 fn runtime_error_rules_per_fact_pseudo_without_any_valid_time() {
     let db = db();
@@ -426,8 +425,7 @@ fn runtime_error_rules_per_fact_pseudo_without_any_valid_time() {
     );
 }
 
-/// Gap 2: or-clause query with no :valid-at exercises the evaluate_branch None path.
-/// Exercises executor.rs lines 930–931 (branch_valid_at_value for None valid_at).
+/// Gap 2: or-clause query with no :valid-at.
 #[test]
 fn or_clause_no_valid_at_executes() {
     let db = db();
@@ -507,7 +505,7 @@ fn pseudo_attr_constant_filter_no_match() {
 }
 
 /// Gap 5: not-join body containing a pseudo-attr pattern.
-/// Exercises a per-fact pseudo-attribute in a seeded `not-join` body (`evaluate_not_join`).
+/// Exercises a per-fact pseudo-attribute in a seeded `not-join` body.
 #[test]
 fn not_join_body_with_pseudo_attr() {
     let db = db();

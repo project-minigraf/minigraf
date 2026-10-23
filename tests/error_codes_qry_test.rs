@@ -51,8 +51,8 @@ fn query_unknown_predicate_returns_qry_007() {
 
 #[test]
 fn query_with_rules_unknown_predicate_returns_qry_007() {
-    // Same check, but through the rules-aware execute_query_with_rules path
-    // (a distinct call site from the plain execute_query path above).
+    // Same check, but in a rule query (a distinct call site from the plain
+    // query above).
     let db = Minigraf::in_memory().unwrap();
     db.execute(r#"(transact [[:a :x "hello"]])"#).unwrap();
     db.execute(r#"(rule [(p ?e) [?e :x ?v]])"#).unwrap();
@@ -65,8 +65,8 @@ fn query_with_rules_unknown_predicate_returns_qry_007() {
 // ─── Limit/recursion-error family: no documented QRY code (INT-020) ───────
 
 /// A recursive rule with an artificially tiny per-query `max_derived_facts`
-/// hits `RecursiveEvaluator::evaluate_recursive_rules`'s "Max derived facts
-/// exceeded" branch (src/query/datalog/evaluator.rs). No
+/// hits the engine's "Max derived facts exceeded" limit
+/// (`derived_facts_exceeded`, src/query/datalog/evaluator.rs). No
 /// QRY-0xx code is documented for this in ERROR_REFERENCE.md — see the
 /// module doc comment above for why. #277 step 6 assigned this shared
 /// "limit exceeded" family the INT-020 code.

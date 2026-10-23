@@ -1,7 +1,6 @@
 //! Integration tests for retraction semantics in Datalog queries.
 //!
-//! These tests verify that `filter_facts_for_query` computes the net-asserted
-//! view per (entity, attribute, value) triple, correctly hiding retracted facts.
+//! These tests verify that queries see the net-asserted view per (entity, attribute, value) triple, correctly hiding retracted facts.
 
 use minigraf::Minigraf;
 
@@ -124,7 +123,7 @@ fn test_retraction_rule_as_of_before_sees_fact() {
 
 // ── Test 7: Atomic retract+transact in WriteTransaction (issue #285) ─────────
 // When both a retraction and a new assertion share the same tx_count (because they
-// are committed together), selective_fact_fetch must not drop the assertion due to
+// are committed together), a query must not drop the assertion due to
 // dedup on (entity, attribute, tx_count).
 
 #[test]
