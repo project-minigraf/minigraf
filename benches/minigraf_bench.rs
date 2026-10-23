@@ -323,6 +323,24 @@ fn bench_recursion(c: &mut Criterion) {
         );
         group.finish();
     }
+
+    // ancestors: the same tree pointing up, from a leaf (#721). After the
+    // magic-set rewrite, each round joins `[?x :up ?p]` on its value.
+    {
+        let mut group = c.benchmark_group("recursion/ancestors");
+        group.sample_size(10);
+        let (label, width, depth) = ("w10_d4", 10usize, 4usize);
+        group.bench_with_input(
+            BenchmarkId::from_parameter(label),
+            &(width, depth),
+            |b, &(width, depth)| {
+                let (db, leaf) = helpers::ancestor_tree(width, depth);
+                let q = format!("(query [:find ?a :where (anc :n{leaf} ?a)])");
+                b.iter(|| db.execute(&q).unwrap());
+            },
+        );
+        group.finish();
+    }
 }
 
 // ── Task 8: open/ ─────────────────────────────────────────────────────────────
