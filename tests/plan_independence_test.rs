@@ -11,6 +11,8 @@
 //! Per-fact pseudo-attributes read the source the parser names (#594).
 #![cfg(all(feature = "test-oracle", not(target_arch = "wasm32")))]
 
+mod answers;
+
 use minigraf::{Minigraf, QueryResult, Value};
 
 /// A value as text, without `Debug` (CodeQL `rust/cleartext-logging`).
@@ -53,7 +55,13 @@ fn check(db: &Minigraf, q: &str) -> Result<Vec<Vec<String>>, String> {
     use minigraf::Subplans;
     let on = {
         let _g = minigraf::__reorder(true);
-        executed(db, q)
+        match db.execute(q).expect("query") {
+            QueryResult::QueryResults { results, .. } => {
+                answers::check("plan_independence_test", q, &results);
+                bag(&results)
+            }
+            _ => panic!("expected QueryResults"),
+        }
     };
     for mode in [Subplans::Choose, Subplans::Hash, Subplans::Correlated] {
         let _m = minigraf::__subplans(mode);

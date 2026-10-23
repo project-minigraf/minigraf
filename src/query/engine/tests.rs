@@ -8,6 +8,9 @@ use super::RUNS;
 use crate::QueryResult;
 use crate::db::Minigraf;
 
+#[path = "../../../tests/answers/mod.rs"]
+mod answers;
+
 fn runs() -> usize {
     RUNS.with(std::cell::Cell::get)
 }
@@ -19,6 +22,7 @@ fn rows(db: &Minigraf, query: &str) -> usize {
         panic!("expected query results");
     };
     assert_eq!(runs(), before + 1, "query ran on the engine");
+    answers::check("engine_tests", query, &results);
     results.len()
 }
 
@@ -534,8 +538,11 @@ fn as_of_timestamps_run_on_the_engine() {
             for t in [stamps[3], (base + 3500) as i64] {
                 let q = format!("(query {})", q.replace("{t}", &iso(t)));
                 let before = runs();
-                tx.execute(&q).unwrap();
+                let QueryResult::QueryResults { results, .. } = tx.execute(&q).unwrap() else {
+                    panic!("expected query results");
+                };
                 assert_eq!(runs(), before + 1, "staged reads run on the engine");
+                answers::check("engine_tests", &q, &results);
             }
         }
         tx.rollback();
@@ -652,6 +659,11 @@ fn cross_kind_constants_read_their_avet_ranges() {
             panic!("expected query results");
         };
         assert_eq!(runs(), before + 1, "query ran on the engine");
+        answers::check(
+            "engine_tests",
+            &format!("(query [:find ?e :where [?e :rel {c}]])"),
+            &results,
+        );
         let mut es: Vec<uuid::Uuid> = results
             .iter()
             .map(|r| match r.first() {

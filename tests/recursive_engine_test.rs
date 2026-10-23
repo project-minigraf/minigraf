@@ -6,6 +6,8 @@
 // File-backed (Minigraf::open, tempfile): native only, like the other file tests.
 #![cfg(not(target_arch = "wasm32"))]
 
+mod answers;
+
 use minigraf::{Minigraf, QueryResult, Value};
 
 /// The databases a test reads: in memory, a file, and the file again once
@@ -43,6 +45,7 @@ impl Dbs {
         all.push(sorted(rows(&self.file, query)));
         assert!(all[0] == all[1], "in memory and pending agree");
         assert!(all[1] == all[2], "pending and committed agree");
+        answers::check("recursive_engine_test", query, &all[0]);
         all.swap_remove(0)
     }
 

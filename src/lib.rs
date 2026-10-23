@@ -74,6 +74,10 @@
 //! - **Browser** (`wasm32-unknown-unknown` + `browser` feature) — `wasm-pack build --target web --features browser`
 //! - **WASI / server-side** (`wasm32-wasip1`) — `cargo build --target wasm32-wasip1 --release --bin minigraf`
 
+// The engine's unit tests share `tests/answers/`, which names the crate.
+#[cfg(all(test, not(target_arch = "wasm32")))]
+extern crate self as minigraf;
+
 /// Incremental delivery of query results: [`Cursor`] and [`Batch`].
 pub mod cursor;
 pub mod db;
