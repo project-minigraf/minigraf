@@ -4,6 +4,31 @@ use crate::error::{CodedError, ErrorCode};
 use crate::query::datalog::executor::QueryResult;
 use crate::storage::index::encode_value;
 use anyhow::Result;
+use std::cell::Cell;
+
+thread_local! {
+    /// Whether [`check`] is skipped on this thread ([`exempt`]).
+    static EXEMPT: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Skip [`check`] on this thread until the guard drops: only for the answers
+/// the engine changes on purpose, whose tests check both answers (#551 spec
+/// §4, plan decision 10).
+#[cfg(test)]
+pub(crate) fn exempt() -> Exempt {
+    EXEMPT.with(|e| e.set(true));
+    Exempt(())
+}
+
+#[cfg(test)]
+pub(crate) struct Exempt(());
+
+#[cfg(test)]
+impl Drop for Exempt {
+    fn drop(&mut self) {
+        EXEMPT.with(|e| e.set(false));
+    }
+}
 
 /// Panic unless `engine` and `oracle` give the same answer: both errors, or
 /// the same columns and the same rows as a bag. An engine `QRY-012` agrees
@@ -14,6 +39,9 @@ use anyhow::Result;
 /// panic is how a disagreement fails the test.
 #[allow(clippy::panic)]
 pub(crate) fn check(engine: &Result<QueryResult>, oracle: &Result<QueryResult>) {
+    if EXEMPT.with(Cell::get) {
+        return;
+    }
     match (engine, oracle) {
         (Err(_), Err(_)) => {}
         (Err(e), Ok(_))

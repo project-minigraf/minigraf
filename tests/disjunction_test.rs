@@ -469,15 +469,13 @@ fn test_or_join_falls_back_to_expensive_branch_when_not_fully_covered() {
     );
 }
 
-/// (20b) Proves branch reordering itself (not declaration order) drives the skip:
-/// the expensive branch is declared FIRST, but has a genuinely higher `branch_cost`
-/// (a 1-bound pattern, cost 100) than the cheap branch (which pairs a 2-bound
-/// pattern with an unrelated fully-bound one, so `branch_cost`'s min-over-patterns
-/// is 1). If `branch_cost`-based sorting were broken (e.g. reverted to declaration
-/// order), the expensive branch — written first — would run before coverage is
-/// established and invoke the counter.
+/// (20b) An `or-join` whose costlier branch, declared first, holds a predicate:
+/// every entity matches through the cheaper branch alone. The executor skipped
+/// the costlier branch once the cheaper one covered every row, so it never
+/// called the predicate; the engine runs every branch (#551), so whether the
+/// predicate is called is not part of the answer.
 #[test]
-fn test_or_join_short_circuit_relies_on_cost_sort_not_declaration_order() {
+fn test_or_join_expensive_branch_declared_first() {
     let db = db();
     let calls = Arc::new(AtomicUsize::new(0));
     let calls_inner = calls.clone();
@@ -515,12 +513,6 @@ fn test_or_join_short_circuit_relies_on_cost_sort_not_declaration_order() {
         result_count(&r),
         3,
         "all three entities match via the cost-cheaper branch alone"
-    );
-    assert_eq!(
-        calls.load(Ordering::SeqCst),
-        0,
-        "the cost-100 branch must be sorted after the cost-1 branch and then skipped, \
-         even though it appears first in the query text"
     );
 }
 

@@ -57,8 +57,6 @@ impl From<anyhow::Error> for Refusal {
 /// What the engine does not run yet, by the letter of #551 spec §2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Cause {
-    /// B: an `or` branch the engine does not plan.
-    Branch,
     /// C: a clause list with no pattern before an expression, or none at all.
     NoPattern,
     /// D: a constant in a rule head.
@@ -588,6 +586,9 @@ pub(crate) struct RulesPlan {
     pub(crate) as_of: AsOfSpec,
     pub(crate) valid: Valid,
     pub(crate) body: Plan,
+    /// The predicates the evaluated rules' bodies name, in `plan_rules`'
+    /// predicate order, then text order (#551 plan, decision 9).
+    pub(crate) predicates: Vec<String>,
 }
 
 /// One rule: its runs in round 1 and the rounds after (spec §5.3).
@@ -654,6 +655,12 @@ pub(crate) fn plan_rules(
         }
         i += 1;
     }
+    let mut predicates = Vec::new();
+    for p in &preds {
+        for rule in registry.get_rules(p) {
+            udfs(&rule.body, &mut predicates);
+        }
+    }
     let mut attrs: Vec<String> = preds.iter().map(|p| format!(":{p}")).collect();
     for a in seeds {
         if !attrs.iter().any(|b| b == a) {
@@ -706,7 +713,27 @@ pub(crate) fn plan_rules(
         as_of,
         valid,
         body,
+        predicates,
     })
+}
+
+/// Append the predicates `clauses` name, at any depth, in text order.
+pub(crate) fn udfs(clauses: &[WhereClause], out: &mut Vec<String>) {
+    for c in clauses {
+        match c {
+            WhereClause::Expr {
+                expr: Expr::UnaryOp(UnaryOp::Udf(name), _),
+                ..
+            } => out.push(name.clone()),
+            WhereClause::Not(body) | WhereClause::NotJoin { clauses: body, .. } => udfs(body, out),
+            WhereClause::Or(branches) | WhereClause::OrJoin { branches, .. } => {
+                for b in branches {
+                    udfs(b, out);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 /// The plan of one rule of predicate `predicate` (relation `rel`), whose
@@ -1154,14 +1181,6 @@ impl Builder {
                 Some(_) => return no(UnboundJoin),
                 None => reads(branch).into_iter().collect(),
             };
-            let imports: HashSet<String> = vars
-                .iter()
-                .filter(|v| self.slots.by_var.contains_key(*v))
-                .cloned()
-                .collect();
-            if !runs_branch(branch, &imports) {
-                return no(Branch);
-            }
             subs.push(self.sub(branch, vars)?);
         }
         // The variables a branch binds that the rows do not. Every branch of
@@ -1283,48 +1302,6 @@ fn sorted(mut deferred: Vec<WhereClause>) -> Vec<WhereClause> {
         deferred.sort_by_key(optimizer::clause_cost);
     }
     deferred
-}
-
-/// Whether the engine runs `branch` of an `or` whose rows give `imports`
-/// as the executor does (decision 11 of the #546 plan). The executor reports
-/// an unknown predicate only when a row reaches it, so a branch names none at
-/// any depth; and it applies a branch's `not`s and nested `or`s before its
-/// expressions, so none of them may read a variable only an expression of
-/// the branch binds. Both change in step 6 (#551 spec §4).
-fn runs_branch(branch: &[WhereClause], imports: &HashSet<String>) -> bool {
-    fn udf(clauses: &[WhereClause]) -> bool {
-        clauses.iter().any(|c| match c {
-            WhereClause::Expr {
-                expr: Expr::UnaryOp(UnaryOp::Udf(_), _),
-                ..
-            } => true,
-            WhereClause::Not(body) | WhereClause::NotJoin { clauses: body, .. } => udf(body),
-            WhereClause::Or(branches) | WhereClause::OrJoin { branches, .. } => {
-                branches.iter().any(|b| udf(b))
-            }
-            _ => false,
-        })
-    }
-    if udf(branch) {
-        return false;
-    }
-    let mut by_pattern: HashSet<String> = imports.clone();
-    let mut by_expr: HashSet<&str> = HashSet::new();
-    for c in branch {
-        match c {
-            WhereClause::Pattern(p) => by_pattern.extend(optimizer::pattern_bound_vars(p)),
-            WhereClause::Expr { binding, .. } => by_expr.extend(binding.as_deref()),
-            _ => {}
-        }
-    }
-    branch.iter().all(|c| match c {
-        WhereClause::Pattern(_) | WhereClause::Expr { .. } | WhereClause::RuleInvocation { .. } => {
-            true
-        }
-        c => reads(std::slice::from_ref(c))
-            .iter()
-            .all(|v| by_pattern.contains(v) || !by_expr.contains(v.as_str())),
-    })
 }
 
 /// Every variable `clauses` name, at any depth: an `or-join` names its join

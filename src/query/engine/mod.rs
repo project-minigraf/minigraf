@@ -38,7 +38,7 @@ use anyhow::Result;
 use batch::Batch;
 use ids::IdSpace;
 pub(crate) use meter::Meter;
-pub(crate) use plan::{Cause, Plan, Refusal, plan, plan_rules};
+pub(crate) use plan::{Cause, Plan, Refusal, plan, plan_rules, udfs};
 pub(crate) use recursive::Limits;
 use std::sync::{Arc, RwLock};
 

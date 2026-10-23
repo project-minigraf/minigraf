@@ -112,6 +112,10 @@ the executor's answer for the shape, through the oracle, and the step then keeps
    `tx_count` (`first_irregular`).
 2. §3.5's required `key_source` is an `INT-049` at open (decision 12).
 3. §3.6's test-time panic is structural: no fallback path exists after step 12 (decision 1).
+4. A third answer change (decision 9, found in step 6): an unknown predicate in a `not` or
+   `not-join` body is `QRY-007` at open. The executor evaluated it per body row, where it
+   failed, so the `not` kept every outer row. Spec §3.2's "every predicate a query names" covers
+   it, but §4 does not list it; PR 3's CHANGELOG lists it with the other two.
 
 ## PR 1 steps
 

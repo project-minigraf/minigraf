@@ -1160,21 +1160,6 @@ fn negation_keeps_multiplicity() {
     );
 }
 
-/// An unknown predicate in a body fails on every body row, so the `not`
-/// keeps every outer row (spec §3.3), on the engine as on the executor.
-#[test]
-fn negation_unknown_predicate_keeps_rows() {
-    let db = Minigraf::in_memory().unwrap();
-    db.execute("(transact [[:a :n 1] [:b :n 2]])").unwrap();
-    assert_eq!(
-        rows(
-            &db,
-            "(query [:find ?e :where [?e :n ?v] (not [?e :n ?v] [(no-such-pred? ?v)])])"
-        ),
-        2
-    );
-}
-
 /// A correlated body probes once per outer row from its seed; a hashed one
 /// is read once, however many outer rows there are (#546 spec §4.2, §4.3).
 #[test]
@@ -1372,11 +1357,9 @@ fn disjunction_matches_executor() {
 }
 
 /// Which disjunctions the engine runs (#546 PR 2): `or` / `or-join` whose
-/// branches hold patterns, expressions, `not`s, rule invocations (#548) and
-/// nested `or`s (#551); a predicate the registry may lack, an `or` whose
-/// branches bind their own sources' metadata, and a branch `not` reading
-/// what only the branch's expression binds stay on the executor (decision
-/// 11).
+/// branches hold patterns, expressions, `not`s, rule invocations (#548),
+/// nested `or`s and predicates (#551). An `or` whose branches bind their own
+/// sources' metadata is rejected by the parser (PRS-057).
 #[test]
 fn disjunction_routing() {
     let db = Minigraf::in_memory().unwrap();
@@ -1393,15 +1376,10 @@ fn disjunction_routing() {
     ] {
         rows(&db, q);
     }
-    for q in [
-        "(query [:find ?e :where [?e :person/age ?a] (or (and [?e :person/ok true] [(no-such-pred? ?a)]) [?e :person/age 21])])",
-        "(query [:find ?e :any-valid-time :where [?e :person/name ?n] (or (and [?e :person/age ?a] [?e :db/tx-count ?t]) (and [?e :person/score ?a] [?e :db/tx-id ?t]))])",
-        "(query [:find ?e :where [?e :person/age ?a] (or (and [(+ ?a 1) ?b] (not [?f :person/age ?b])) (and [(+ ?a 2) ?b] [?e :person/ok true]))])",
-    ] {
-        let before = runs();
-        let _ = db.execute(q);
-        assert_eq!(runs(), before, "query stayed on the executor");
-    }
+    let err = db
+        .execute("(query [:find ?e :any-valid-time :where [?e :person/name ?n] (or (and [?e :person/age ?a] [?e :db/tx-count ?t]) (and [?e :person/score ?a] [?e :db/tx-id ?t]))])")
+        .expect_err("hidden variables differ");
+    assert_eq!(err.code(), "PRS-057");
 }
 
 /// The branch forms the planner chooses: as a `not` body's (spec §4.4,

@@ -42,11 +42,28 @@ fn check_udf_predicates(query: &DatalogQuery, registry: &FunctionRegistry) -> Re
     Ok(())
 }
 
-/// The clause checks of the executor's own path, for a query the streaming
-/// engine runs: its errors come first, from the same code (#473).
+/// `QRY-007` for the first of `names` that `registry` lacks: the engine
+/// resolves every predicate a query names, at any depth, when it opens
+/// (#551 spec §3.2).
+fn check_predicates<'a>(
+    names: impl IntoIterator<Item = &'a String>,
+    registry: &FunctionRegistry,
+) -> Result<()> {
+    for name in names {
+        if registry.get_predicate(name).is_none() {
+            bail_coded!(ErrorCode::Qry007, name);
+        }
+    }
+    Ok(())
+}
+
+/// The clause checks for a query the streaming engine runs: the executor's
+/// pseudo-attribute check, then every predicate it names (#473, #551).
 fn check_clauses(query: &DatalogQuery, registry: &FunctionRegistry) -> Result<()> {
     check_per_fact_pseudo_attrs(query)?;
-    check_udf_predicates(query, registry)
+    let mut names = Vec::new();
+    crate::query::engine::udfs(&query.where_clauses, &mut names);
+    check_predicates(&names, registry)
 }
 
 /// Returns true if any where clause (at any depth) contains a per-fact
@@ -607,6 +624,10 @@ impl DatalogExecutor {
             query_memory: self.query_memory_limit,
         };
         let snapshot = self.read_snapshot()?;
+        // The query's predicates, then its rules' (#551 plan, decision 9).
+        let mut names = Vec::new();
+        crate::query::engine::udfs(&query.where_clauses, &mut names);
+        names.extend(plan.predicates.iter().cloned());
         let open = |plan| -> Result<Option<crate::query::engine::Stream>> {
             let stream = crate::query::engine::supported(crate::query::engine::open_rules(
                 snapshot.clone(),
@@ -620,7 +641,7 @@ impl DatalogExecutor {
                     .functions
                     .read()
                     .map_err(|_| err_coded!(ErrorCode::Qry008))?;
-                check_udf_predicates(query, &registry)?;
+                check_predicates(&names, &registry)?;
             }
             Ok(stream)
         };
@@ -2698,6 +2719,99 @@ mod tests {
     use crate::query::datalog::types::WhereClause;
     use std::sync::{Arc, RwLock};
     use uuid::Uuid;
+
+    /// The entities of a one-column query answer, sorted.
+    fn entities(result: Result<QueryResult>) -> Vec<Uuid> {
+        let QueryResult::QueryResults { results, .. } = result.expect("query") else {
+            panic!("expected query results");
+        };
+        let mut out: Vec<Uuid> = results
+            .iter()
+            .map(|r| match r.first() {
+                Some(Value::Ref(u)) => *u,
+                _ => panic!("expected an entity"),
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    fn keyword(k: &str) -> Uuid {
+        crate::query::datalog::matcher::edn_to_entity_id(&EdnValue::Keyword(k.to_string()))
+            .expect("keyword entity")
+    }
+
+    fn query_of(text: &str) -> DatalogQuery {
+        match parse_datalog_command(text).expect("parse") {
+            DatalogCommand::Query(q) => q,
+            _ => panic!("expected a query"),
+        }
+    }
+
+    /// Answer change 1 (#551 spec §4): a `not` in an `or` branch sees the
+    /// variable an expression of the branch binds on the engine; the
+    /// executor applied the branch's `not` before its expression.
+    #[test]
+    fn branch_not_sees_its_expression_binding() {
+        let executor = DatalogExecutor::new(FactStorage::new());
+        executor
+            .execute(parse_datalog_command("(transact [[:x :n 1] [:y :n 2] [:z :n 5]])").unwrap())
+            .unwrap();
+        let q = "(query [:find ?e :where [?e :n ?v] (or-join [?e ?v] (and [(+ ?v 1) ?w] (not [?f :n ?w])) [?e :n 5])])";
+        let _exempt = crate::query::engine::oracle::exempt();
+        let before = crate::query::engine::RUNS.with(std::cell::Cell::get);
+        let engine = entities(executor.execute(parse_datalog_command(q).unwrap()));
+        assert_eq!(
+            crate::query::engine::RUNS.with(std::cell::Cell::get),
+            before + 1,
+            "the engine runs it"
+        );
+        assert!(
+            engine == {
+                let mut v = vec![keyword(":y"), keyword(":z")];
+                v.sort();
+                v
+            },
+            "the engine: :y (no :n 3) and :z"
+        );
+        let old = entities(executor.execute_query_on_executor(query_of(q)));
+        assert!(old == vec![keyword(":z")], "the executor: :z only");
+    }
+
+    /// Answer change 2 (#551 spec §4): an unknown predicate in an `or`
+    /// branch is `QRY-007` on the engine whether or not a row reaches it,
+    /// in a plain query and in a rule body; the executor answered when none
+    /// did. In a `not` body too (plan deviation 4): the executor's predicate
+    /// failed on every body row, so the `not` kept every outer row.
+    #[test]
+    fn unknown_branch_predicate_fails_eagerly() {
+        let executor = DatalogExecutor::new(FactStorage::new());
+        for cmd in [
+            "(transact [[:x :n 1] [:z :n 5]])",
+            "(rule [(odd ?e) [?e :n ?v] (or (and [?e :n 99] [(no-such? ?v)]) [?e :n 5])])",
+        ] {
+            executor
+                .execute(parse_datalog_command(cmd).unwrap())
+                .unwrap();
+        }
+        let plain =
+            "(query [:find ?e :where [?e :n ?v] (or (and [?e :n 99] [(no-such? ?v)]) [?e :n 5])])";
+        let rule = "(query [:find ?e :where (odd ?e)])";
+        let negated = "(query [:find ?e :where [?e :n ?v] (not [?e :n ?v] [(no-such? ?v)])])";
+        let _exempt = crate::query::engine::oracle::exempt();
+        for q in [plain, rule, negated] {
+            let err = executor
+                .execute(parse_datalog_command(q).unwrap())
+                .expect_err("the engine resolves every predicate");
+            assert_eq!(crate::error::MinigrafError::from(err).code(), "QRY-007");
+        }
+        let old = entities(executor.execute_query_on_executor(query_of(plain)));
+        assert!(old == vec![keyword(":z")], "the executor: :z");
+        let old = entities(executor.execute_query_with_rules(query_of(rule)));
+        assert!(old == vec![keyword(":z")], "the executor, rule body: :z");
+        let old = entities(executor.execute_query_on_executor(query_of(negated)));
+        assert_eq!(old.len(), 2, "the executor: every outer row");
+    }
 
     #[test]
     fn test_execute_transact() {
