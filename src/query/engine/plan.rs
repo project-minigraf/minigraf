@@ -57,8 +57,6 @@ impl From<anyhow::Error> for Refusal {
 /// What the engine does not run yet, by the letter of #551 spec §2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Cause {
-    /// A: `:as-of` with a timestamp.
-    Timestamp,
     /// B: an `or` branch the engine does not plan.
     Branch,
     /// C: a clause list with no pattern before an expression, or none at all.
@@ -173,7 +171,6 @@ pub(crate) struct ScanSpec {
     pub(crate) v: Term<ValueConst>,
     /// Metadata columns the scan fills, and their slots.
     pub(crate) meta: Vec<(Meta, usize)>,
-    pub(crate) as_of: Option<u64>,
     pub(crate) valid: Valid,
     /// Number of slots the scan fills.
     pub(crate) width: usize,
@@ -325,6 +322,8 @@ pub(crate) struct Plan {
     /// variable's slot, or a column of `Aggregate`; empty for a body.
     pub(crate) find: Vec<usize>,
     pub(crate) vars: Vec<String>,
+    /// The query's `:as-of`; `None` for a body, which reads its query's.
+    pub(crate) as_of: AsOfSpec,
 }
 
 /// Positions a slot's cells come from.
@@ -354,13 +353,23 @@ impl Slots {
     }
 }
 
-/// The `:as-of` counter and valid-time test of `query`: a timestamp is not a
-/// key bound, and a slot is resolved before this.
-fn temporal(query: &DatalogQuery) -> Result<(Option<u64>, Valid), Refusal> {
+/// A query's `:as-of`, resolved against the snapshot when the query opens
+/// (`Snapshot::tx_bound`, #551 plan, decision 5).
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum AsOfSpec {
+    None,
+    Counter(u64),
+    /// Unix ms.
+    Timestamp(i64),
+}
+
+/// The `:as-of` and valid-time test of `query`; a slot is resolved before
+/// this.
+fn temporal(query: &DatalogQuery) -> Result<(AsOfSpec, Valid), Refusal> {
     let as_of = match &query.as_of {
-        None => None,
-        Some(AsOf::Counter(n)) => Some(*n),
-        Some(AsOf::Timestamp(_)) => return no(Timestamp),
+        None => AsOfSpec::None,
+        Some(AsOf::Counter(n)) => AsOfSpec::Counter(*n),
+        Some(AsOf::Timestamp(t)) => AsOfSpec::Timestamp(*t),
         Some(AsOf::Slot(_)) => return no(Slot),
     };
     let valid = match &query.valid_at {
@@ -446,7 +455,6 @@ fn plan_with(query: &DatalogQuery, evaluated: Option<Arc<Evaluated>>) -> Result<
     let (as_of, valid) = temporal(query)?;
     let mut b = Builder::new(
         Some(Binders::new(&query.where_clauses, Vec::new())),
-        as_of,
         valid,
         evaluated,
     );
@@ -565,6 +573,7 @@ fn plan_with(query: &DatalogQuery, evaluated: Option<Arc<Evaluated>>) -> Result<
     let mut plan = b.finish()?;
     plan.find = find;
     plan.vars = query.find.iter().map(FindSpec::display_name).collect();
+    plan.as_of = as_of;
     Ok(plan)
 }
 
@@ -575,7 +584,7 @@ pub(crate) struct RulesPlan {
     pub(crate) evaluated: Arc<Evaluated>,
     /// Each stratum with rules: its relations, and its rules.
     pub(crate) strata: Vec<(Vec<usize>, Vec<RulePlan>)>,
-    pub(crate) as_of: Option<u64>,
+    pub(crate) as_of: AsOfSpec,
     pub(crate) valid: Valid,
     pub(crate) body: Plan,
 }
@@ -678,7 +687,6 @@ pub(crate) fn plan_rules(
                     rel,
                     p,
                     &in_stratum,
-                    as_of,
                     valid,
                     &evaluated,
                 )?);
@@ -709,7 +717,6 @@ fn rule_plan(
     rel: usize,
     predicate: &str,
     stratum: &HashSet<String>,
-    as_of: Option<u64>,
     valid: Valid,
     evaluated: &Arc<Evaluated>,
 ) -> Result<RulePlan, Refusal> {
@@ -734,7 +741,7 @@ fn rule_plan(
         .collect();
     let run =
         |ranges: Vec<(Pattern, Range)>, first: Option<&Pattern>| -> Result<RuleRun, Refusal> {
-            let mut b = Builder::new(None, as_of, valid, Some(evaluated.clone()));
+            let mut b = Builder::new(None, valid, Some(evaluated.clone()));
             b.ranges = ranges;
             self::clauses(&mut b, &clauses, first)?;
             let slots = std::mem::take(&mut b.slots.by_var);
@@ -852,7 +859,6 @@ struct Builder {
     /// body, where no join or expression replaces a cell (decision 10 of the
     /// #546 plan).
     binders: Option<Binders>,
-    as_of: Option<u64>,
     valid: Valid,
     source: Option<Source>,
     steps: Vec<Step>,
@@ -909,16 +915,10 @@ impl Evaluated {
 }
 
 impl Builder {
-    fn new(
-        binders: Option<Binders>,
-        as_of: Option<u64>,
-        valid: Valid,
-        evaluated: Option<Arc<Evaluated>>,
-    ) -> Self {
+    fn new(binders: Option<Binders>, valid: Valid, evaluated: Option<Arc<Evaluated>>) -> Self {
         Builder {
             slots: Slots::default(),
             binders,
-            as_of,
             valid,
             source: None,
             steps: Vec::new(),
@@ -941,12 +941,13 @@ impl Builder {
             steps: self.steps,
             find: Vec::new(),
             vars: Vec::new(),
+            as_of: AsOfSpec::None,
         })
     }
 
     /// Add the steps of `c`.
     fn clause(&mut self, c: WhereClause) -> Result<(), Refusal> {
-        let (as_of, valid) = (self.as_of, self.valid);
+        let valid = self.valid;
         match c {
             WhereClause::Pattern(q) => {
                 let rebind = match &mut self.binders {
@@ -1010,14 +1011,13 @@ impl Builder {
                         a,
                         v,
                         meta: metas.clone(),
-                        as_of,
                         valid,
                         width: slots.len(),
                         derived,
                     }));
                     self.steps.append(&mut self.front);
                 } else {
-                    let mut join = join(&scanned, &attribute, slots, &rebind, as_of, valid)?;
+                    let mut join = join(&scanned, &attribute, slots, &rebind, valid)?;
                     join.inner.derived = derived;
                     for &(m, var) in &wants {
                         let local = join.inner.width;
@@ -1236,9 +1236,9 @@ impl Builder {
             optimizer::Subplans::Hash => hashable,
             optimizer::Subplans::Correlated => false,
         };
-        let (as_of, valid) = (self.as_of, self.valid);
+        let valid = self.valid;
         if hash {
-            let mut b = Builder::new(None, as_of, valid, self.evaluated.clone());
+            let mut b = Builder::new(None, valid, self.evaluated.clone());
             let (planned, deferred) = optimizer::plan(body.to_vec());
             for (c, _) in planned {
                 b.clause(c)?;
@@ -1263,7 +1263,7 @@ impl Builder {
             let plan = Box::new(b.finish()?);
             return Ok((Body::Hashed { plan, keys }, slots));
         }
-        let mut b = Builder::new(None, as_of, valid, self.evaluated.clone());
+        let mut b = Builder::new(None, valid, self.evaluated.clone());
         for (v, outer) in &imports {
             let s = b.slots.add(self.slots.kind(*outer));
             b.slots.by_var.insert(v.clone(), s);
@@ -1377,7 +1377,6 @@ fn join(
     attribute: &EdnValue,
     slots: &mut Slots,
     rebind: &[String],
-    as_of: Option<u64>,
     valid: Valid,
 ) -> Result<JoinSpec, Refusal> {
     let outer_width = slots.len();
@@ -1439,7 +1438,6 @@ fn join(
             a,
             v,
             meta: Vec::new(),
-            as_of,
             valid,
             width: local.len(),
             derived: None,

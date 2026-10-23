@@ -428,16 +428,114 @@ fn engine_reads_many_batches() {
     assert_eq!(rows(&db, "(query [:find ?e :where [?e :big/n 2999]])"), 1);
 }
 
-/// The executor still runs what the engine does not: windows, `:as-of` a
-/// timestamp.
+/// A file built by `LogWriter` whose transaction `i + 1` has `tx_id`
+/// `tx_ids[i]`: `:a :n 1` asserted, then retracted, `:a :n 2` and `:b :n 3`
+/// asserted, `:b :n 3` retracted, `:a :n 1` asserted again.
+fn written(dir: &std::path::Path, name: &str, tx_ids: [u64; 6]) -> std::path::PathBuf {
+    use crate::{FactRecord, LogWriter, Value};
+    let path = dir.join(name);
+    let mut w = LogWriter::create(&path, crate::OpenOptions::new()).unwrap();
+    let ops = [
+        (":a", 1, true),
+        (":a", 1, false),
+        (":a", 2, true),
+        (":b", 3, true),
+        (":b", 3, false),
+        (":a", 1, true),
+    ];
+    for (i, ((e, v, asserted), tx_id)) in ops.into_iter().zip(tx_ids).enumerate() {
+        w.append(&FactRecord {
+            entity: uuid_of(e),
+            attribute: ":n".to_string(),
+            value: Value::Integer(v),
+            tx_count: i as u64 + 1,
+            tx_id,
+            valid_from: 0,
+            valid_to: i64::MAX,
+            asserted,
+        })
+        .unwrap();
+    }
+    w.finish().unwrap();
+    path
+}
+
+/// `:as-of` a timestamp runs on the engine (#551 plan, step 4) and keeps the
+/// versions the executor's `tx_id <= t` filter keeps: on a file whose
+/// `tx_id`s rise and on one whose `tx_id`s fall and rise (a `LogWriter`
+/// copy), at timestamps before, between, at and after its transactions,
+/// with committed, pending and staged facts, in plain and rule queries,
+/// point and attribute scans. The oracle checks every answer.
 #[test]
-fn other_queries_stay_on_the_executor() {
-    let db = Minigraf::in_memory().unwrap();
-    write_round(&db, 0);
-    for q in ["(query [:find ?e :as-of \"2099-01-01T00:00:00Z\" :where [?e :person/name ?n]])"] {
-        let before = runs();
-        db.execute(q).unwrap();
-        assert_eq!(runs(), before, "query stayed on the executor");
+fn as_of_timestamps_run_on_the_engine() {
+    let dir = tempfile::tempdir().unwrap();
+    let iso = |ms: i64| {
+        let secs = ms.div_euclid(1000);
+        let (days, rem) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
+        // Days since 1970-01-01 to a civil date (Howard Hinnant's algorithm).
+        let z = days + 719_468;
+        let era = z.div_euclid(146_097);
+        let doe = z - era * 146_097;
+        let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+        let y = yoe + era * 400 + i64::from(m <= 2);
+        format!(
+            "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.{:03}Z",
+            rem / 3600,
+            rem % 3600 / 60,
+            rem % 60,
+            ms.rem_euclid(1000)
+        )
+    };
+    let base: u64 = 1_600_000_000_000;
+    let files = [
+        ("rising.graph", [1, 2, 3, 4, 5, 6].map(|k| base + k * 1000)),
+        ("falling.graph", [3, 1, 4, 2, 6, 5].map(|k| base + k * 1000)),
+    ];
+    let mut stamps: Vec<i64> = vec![-1, 0, 1_000_000_000_000, 253_402_300_799_000];
+    for k in 0..=7 {
+        let t = (base + k * 1000) as i64;
+        stamps.extend([t - 500, t, t + 1]);
+    }
+    let queries = [
+        "[:find ?e ?v :as-of \"{t}\" :where [?e :n ?v]]",
+        "[:find ?v :as-of \"{t}\" :where [:a :n ?v]]",
+        "[:find ?e :as-of \"{t}\" :where [?e :n 1]]",
+        "[:find ?e ?v :as-of \"{t}\" :where (has ?e ?v)]",
+    ];
+    for (name, tx_ids) in files {
+        let path = written(dir.path(), name, tx_ids);
+        let db = Minigraf::open(&path).unwrap();
+        db.execute("(rule [(has ?e ?v) [?e :n ?v]])").unwrap();
+        let run_all = |db: &Minigraf| {
+            for q in queries {
+                for &t in &stamps {
+                    let q = format!("(query {})", q.replace("{t}", &iso(t)));
+                    rows(db, &q);
+                }
+            }
+        };
+        // Committed facts only.
+        run_all(&db);
+        // Pending facts on top, stamped now: after every committed one.
+        db.execute("(transact [[:c :n 4] [:a :n 2]])").unwrap();
+        db.execute("(retract [[:a :n 1]])").unwrap();
+        run_all(&db);
+        // Staged facts in a write transaction.
+        let mut tx = db.begin_write().unwrap();
+        tx.execute("(transact [[:d :n 5]])").unwrap();
+        for q in queries {
+            for t in [stamps[3], (base + 3500) as i64] {
+                let q = format!("(query {})", q.replace("{t}", &iso(t)));
+                let before = runs();
+                tx.execute(&q).unwrap();
+                assert_eq!(runs(), before + 1, "staged reads run on the engine");
+            }
+        }
+        tx.rollback();
     }
 }
 
@@ -1789,6 +1887,10 @@ fn rule_query_routing() {
     }
     assert_eq!(rows(&db, "(query [:find ?x ?y :where (reach ?x ?y)])"), 3);
     assert_eq!(rows(&db, "(query [:find ?y :where (reach :a ?y)])"), 2);
+    for (at, n) in [("2020-01-01T00:00:00Z", 0), ("2100-01-01T00:00:00Z", 3)] {
+        let q = format!("(query [:find ?x ?y :as-of \"{at}\" :where (reach ?x ?y)])");
+        assert_eq!(rows(&db, &q), n, "an :as-of timestamp runs on the engine");
+    }
     assert_eq!(
         rows(
             &db,
@@ -1797,10 +1899,6 @@ fn rule_query_routing() {
         1
     );
     for (q, cause) in [
-        (
-            "(query [:find ?x ?y :as-of \"2020-01-01T00:00:00Z\" :where (reach ?x ?y)])",
-            Cause::Timestamp,
-        ),
         ("(query [:find ?x ?v :where (one ?x ?v)])", Cause::NoPattern),
         ("(query [:find ?x :where (deep ?x ?y)])", Cause::Branch),
         (
@@ -2156,6 +2254,7 @@ fn pull_once(
         ids: &mut ids,
         functions: &functions,
         derived: None,
+        bound: &crate::storage::TxBound::All,
     };
     op.next_batch(&mut ctx)
 }

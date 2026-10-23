@@ -18,7 +18,7 @@ use super::{BATCH_ROWS, Counters, Ctx, Operator};
 use crate::graph::storage::PendingResume;
 use crate::graph::types::{EntityId, Fact, Value};
 use crate::storage::keys::{self, Index, KeyFact, KeyValue, SHORT_STRING_MAX, ValueKind};
-use crate::storage::{KeySource, Scan as Range, TxBound};
+use crate::storage::{KeySource, Scan as Range};
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 
@@ -167,7 +167,7 @@ impl Operator for Scan {
                         *index,
                         prefix,
                         c.resume.as_deref(),
-                        &TxBound::of(self.spec.as_of),
+                        ctx.bound,
                         BATCH_ROWS,
                         &mut self.keys_buf,
                     )?;
@@ -214,7 +214,7 @@ impl Operator for Scan {
                     self.facts_buf.clear();
                     let more = ctx.snapshot.pending_live(
                         range(&self.spec, self.probe.as_ref()),
-                        &TxBound::of(self.spec.as_of),
+                        ctx.bound,
                         resume,
                         BATCH_ROWS,
                         &mut self.facts_buf,
@@ -445,7 +445,7 @@ fn open(
     let mut shadow = HashSet::new();
     for f in ctx
         .snapshot
-        .pending_records(range(spec, probe), &TxBound::of(spec.as_of))?
+        .pending_records(range(spec, probe), ctx.bound)?
     {
         if let Some(t) = committed_triple(keys, &f)? {
             shadow.insert(t);

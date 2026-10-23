@@ -20,7 +20,7 @@ use crate::error::{ErrorCode, err_coded};
 use crate::graph::storage::Snapshot;
 use crate::query::datalog::evaluator::{derived_facts_exceeded, iterations_exceeded};
 use crate::query::datalog::functions::FunctionRegistry;
-use crate::storage::KeySource;
+use crate::storage::{KeySource, TxBound};
 use anyhow::Result;
 use std::collections::HashSet;
 use std::mem::size_of;
@@ -42,6 +42,8 @@ pub(crate) struct Reads<'a> {
     pub(crate) snapshot: &'a Snapshot,
     pub(crate) keys: Option<&'a dyn KeySource>,
     pub(crate) functions: &'a FunctionRegistry,
+    /// The versions the query's `:as-of` keeps.
+    pub(crate) bound: &'a TxBound,
 }
 
 /// Derive every relation of `plan` into `rels`.
@@ -111,7 +113,6 @@ fn know_stored(
         a: Term::Const(attr.clone()),
         v: Term::Bind(1),
         meta: Vec::new(),
-        as_of: plan.as_of,
         valid: plan.valid,
         width: 2,
         derived: None,
@@ -204,6 +205,7 @@ fn ctx<'a>(reads: &Reads<'a>, ids: &'a mut IdSpace, derived: Option<&'a Relation
         ids,
         functions: reads.functions,
         derived,
+        bound: reads.bound,
     }
 }
 
