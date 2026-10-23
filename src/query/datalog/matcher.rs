@@ -214,7 +214,7 @@ impl PatternMatcher {
 
             EdnValue::Float(f) => {
                 if let Value::Float(ff) = fact_value {
-                    (f - ff).abs() < f64::EPSILON
+                    f == ff
                 } else {
                     false
                 }
