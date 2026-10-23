@@ -421,7 +421,8 @@ impl WalReader {
 /// or corrupt one or at EOF. Also returns the offset where the valid entries
 /// end: the end of the header if there are none.
 fn scan_entries(file: &mut File) -> Result<(Vec<WalEntry>, u64)> {
-    let file_len = file.metadata()?.len();
+    // Without the length, a corrupt count still ends at EOF, only later.
+    let file_len = file.metadata().map_or(u64::MAX, |m| m.len());
     file.seek(SeekFrom::Start(WAL_HEADER_SIZE as u64))?;
     let mut entries = Vec::new();
     let mut valid_end = WAL_HEADER_SIZE as u64;
@@ -451,7 +452,8 @@ fn scan_entries(file: &mut File) -> Result<(Vec<WalEntry>, u64)> {
         // Every fact takes at least its 4-byte length, so a count the bytes
         // left cannot hold is damage. Entries have no count limit (#686).
         let num_facts = u64::from_le_bytes(num_facts_buf);
-        let left = file_len.saturating_sub(file.stream_position()?);
+        // The entry starts at `valid_end`; its facts after 20 header bytes.
+        let left = file_len.saturating_sub(valid_end.saturating_add(20));
         if num_facts > left / 4 {
             break; // treat as corrupt entry
         }
