@@ -214,11 +214,6 @@ impl IdSpace {
         (eid < self.dict_eids).then_some(eid)
     }
 
-    /// `iid` as a DICT ident id, or `None` for a provisional one.
-    pub(crate) fn dict_iid(&self, iid: u64) -> Option<u32> {
-        u32::try_from(iid).ok().filter(|_| iid < self.dict_iids)
-    }
-
     /// The ident with id `iid`.
     pub(crate) fn name(&mut self, keys: Option<&dyn KeySource>, iid: u64) -> Result<Arc<str>> {
         let maps = self.maps(iid >= self.dict_iids);

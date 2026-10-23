@@ -11,13 +11,14 @@
 //! row is visible at every time and has no metadata (`nil`).
 
 use super::batch::Batch;
-use super::cell::{Cell, JoinKey, Scalar};
-use super::meter::{HASH_ENTRY_OVERHEAD, Held, Meter, key_bytes, value_bytes};
+use super::cell::{Cell, Scalar};
+use super::meter::{HASH_ENTRY_OVERHEAD, Held, Meter, value_bytes};
 use super::plan::{Meta, ScanSpec, Term, Valid, ValueConst, names};
 use super::relation::Range as Rows;
 use super::{BATCH_ROWS, Counters, Ctx, Operator};
 use crate::graph::storage::PendingResume;
 use crate::graph::types::{EntityId, Fact, Value};
+use crate::storage::index::encode_value;
 use crate::storage::keys::{self, Index, KeyFact, KeyValue, SHORT_STRING_MAX, ValueKind};
 use crate::storage::{KeySource, Scan as Range};
 use anyhow::Result;
@@ -39,7 +40,8 @@ pub(crate) struct Scan {
     /// What a value probe reads besides its key ranges (#721), from the
     /// query's [`Probes`], and the join key of the current probe.
     values: Option<Arc<Values>>,
-    value_key: Option<JoinKey>,
+    /// The encoded values whose pending facts the current probe reads.
+    value_key: Option<Vec<Vec<u8>>>,
     /// `rows_in` counts the live keys and pending facts read.
     counters: Counters,
 }
@@ -83,8 +85,10 @@ impl Probes {
 
 /// An attribute's reads for value probes.
 struct Values {
-    /// Its live pending facts, by the join key of their value.
-    pending: HashMap<JoinKey, Vec<Fact>>,
+    /// Its live pending facts, by their encoded value.
+    pending: HashMap<Vec<u8>, Vec<Fact>>,
+    /// Whether any of them has a keyword value.
+    keywords: bool,
     /// The committed triples a pending record of it decides.
     shadow: Arc<HashSet<Vec<u8>>>,
 }
@@ -213,21 +217,23 @@ impl Scan {
         if self.values.is_none() {
             self.values = Some(values(attribute, ctx)?);
         }
-        let Some(key) = JoinKey::of(cell, true, ctx)? else {
-            return Ok(true);
-        };
         let a = match (&self.consts, ctx.keys) {
             (Some(Some(Consts { a: Some(a), .. })), Some(_)) => Some(*a),
             _ => None,
         };
-        let ranges = match a {
-            Some(a) => match value_ranges(cell, a, ctx)? {
-                Some(r) => r,
-                None => return Ok(false),
-            },
-            None => Vec::new(),
+        let pending_keywords = self.values.as_ref().is_some_and(|v| v.keywords);
+        let Some(candidates) = candidates(cell, a, pending_keywords, ctx)? else {
+            return Ok(false);
         };
-        self.value_key = Some(key);
+        let mut ranges = Vec::new();
+        if let (Some(a), Some(keys)) = (a, ctx.keys) {
+            for v in &candidates {
+                if let Some(kv) = key_value(keys, v)? {
+                    ranges.push((Index::Avet, keys::attribute_value_prefix(a, &kv)));
+                }
+            }
+        }
+        self.value_key = Some(candidates.iter().map(encode_value).collect());
         self.state = if ranges.is_empty() {
             self.bucket()
         } else {
@@ -250,7 +256,13 @@ impl Scan {
     /// pending range.
     fn bucket(&self) -> State {
         match (&self.value_key, &self.values) {
-            (Some(k), Some(v)) => State::Bucket(v.pending.get(k).cloned().unwrap_or_default()),
+            (Some(ks), Some(v)) => State::Bucket(
+                ks.iter()
+                    .filter_map(|k| v.pending.get(k))
+                    .flatten()
+                    .cloned()
+                    .collect(),
+            ),
             (Some(_), None) => State::Done,
             _ => State::Pending(None),
         }
@@ -265,7 +277,8 @@ fn values(attribute: &str, ctx: &mut Ctx<'_>) -> Result<Arc<Values>> {
         return Ok(v.clone());
     }
     let mut held = Held::new(ctx.ids.probes.held.meter(), "IndexNestedLoopJoin");
-    let mut pending: HashMap<JoinKey, Vec<Fact>> = HashMap::new();
+    let mut pending: HashMap<Vec<u8>, Vec<Fact>> = HashMap::new();
+    let mut keywords = false;
     let mut resume = None;
     let mut buf = Vec::new();
     loop {
@@ -278,13 +291,12 @@ fn values(attribute: &str, ctx: &mut Ctx<'_>) -> Result<Arc<Values>> {
             &mut buf,
         )?;
         for f in buf.drain(..) {
-            let cell = Cell::of_value(ctx.ids, ctx.keys, &f.value)?;
-            let Some(k) = JoinKey::of(&cell, true, ctx)? else {
-                continue;
-            };
+            keywords |= matches!(f.value, Value::Keyword(_));
+            let k = encode_value(&f.value);
             held.charge(
                 HASH_ENTRY_OVERHEAD
-                    + key_bytes(&k)
+                    + size_of::<Vec<u8>>()
+                    + k.len()
                     + size_of::<Fact>()
                     + f.entity.as_bytes().len()
                     + f.attribute.len()
@@ -310,6 +322,7 @@ fn values(attribute: &str, ctx: &mut Ctx<'_>) -> Result<Arc<Values>> {
     }
     let v = Arc::new(Values {
         pending,
+        keywords,
         shadow: Arc::new(shadow),
     });
     held.charge(HASH_ENTRY_OVERHEAD + size_of::<(String, Arc<Values>)>() + attribute.len())?;
@@ -319,56 +332,41 @@ fn values(attribute: &str, ctx: &mut Ctx<'_>) -> Result<Arc<Values>> {
     Ok(v)
 }
 
-/// Key ranges as `(index, prefix)`.
-type Ranges = Vec<(Index, Vec<u8>)>;
-
-/// The AVET ranges of attribute `a` holding every committed value that
-/// join-equals `cell`, or `None` when they cannot be found (see
-/// [`Scan::probe_value`]).
-fn value_ranges(cell: &Cell, a: u32, ctx: &mut Ctx<'_>) -> Result<Option<Ranges>> {
-    let Some(keys) = ctx.keys else {
-        return Ok(Some(Vec::new()));
-    };
-    let mut kvs = Vec::new();
-    match cell {
-        // A keyword, and a ref to the entity it names.
+/// The values that join-equal `cell` (#721): a keyword and a ref to the
+/// entity it names, either way; `0.0` and `-0.0`; nothing for NaN. `None`
+/// when they cannot be found: `cell` is an entity no keyword the query met
+/// names, and the attribute (`a`, when committed) has keyword values, any of
+/// which may name it.
+fn candidates(
+    cell: &Cell,
+    a: Option<u32>,
+    pending_keywords: bool,
+    ctx: &mut Ctx<'_>,
+) -> Result<Option<Vec<Value>>> {
+    Ok(Some(match cell {
         Cell::Iid(i) => {
-            if let Some(di) = ctx.ids.dict_iid(*i) {
-                kvs.push(KeyValue::Keyword(di));
-            }
             let e = ctx.ids.keyword_eid(ctx.keys, *i)?;
-            if let Some(de) = ctx.ids.dict_eid(e) {
-                kvs.push(KeyValue::Ref(de));
-            }
+            vec![
+                Value::Keyword(ctx.ids.name(ctx.keys, *i)?.to_string()),
+                Value::Ref(ctx.ids.uuid(ctx.keys, e)?),
+            ]
         }
-        // A ref, and the keyword that names the entity.
         Cell::Eid(e) => {
-            if let Some(de) = ctx.ids.dict_eid(*e) {
-                kvs.push(KeyValue::Ref(de));
-            }
+            let mut v = vec![Value::Ref(ctx.ids.uuid(ctx.keys, *e)?)];
             match ctx.ids.probes.named.get(e).copied() {
-                Some(i) => kvs.extend(ctx.ids.dict_iid(i).map(KeyValue::Keyword)),
-                None if has_keywords(a, ctx)? => return Ok(None),
-                None => {}
+                Some(i) => v.push(Value::Keyword(ctx.ids.name(ctx.keys, i)?.to_string())),
+                None if pending_keywords => return Ok(None),
+                None => match a {
+                    Some(a) if has_keywords(a, ctx)? => return Ok(None),
+                    _ => {}
+                },
             }
+            v
         }
-        // `-0.0` equals `0.0`; NaN has no key and never gets here.
-        Cell::Val(Scalar::Float(f)) => {
-            kvs.push(KeyValue::Float(*f));
-            if *f == 0.0 {
-                kvs.push(KeyValue::Float(-*f));
-            }
-        }
-        Cell::Val(_) => {
-            let v = super::project::value(cell, ctx)?;
-            kvs.extend(key_value(keys, &v)?);
-        }
-    }
-    Ok(Some(
-        kvs.iter()
-            .map(|v| (Index::Avet, keys::attribute_value_prefix(a, v)))
-            .collect(),
-    ))
+        Cell::Val(Scalar::Float(f)) if f.is_nan() => Vec::new(),
+        Cell::Val(Scalar::Float(f)) if *f == 0.0 => vec![Value::Float(*f), Value::Float(-*f)],
+        Cell::Val(_) => vec![super::project::value(cell, ctx)?],
+    }))
 }
 
 /// Whether any live committed value of attribute `a` is a keyword: read
