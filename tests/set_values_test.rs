@@ -264,3 +264,87 @@ fn a_set_is_not_an_entity_or_attribute() {
     assert!(db.execute("(transact [[#{1} :b 1]])").is_err(), "entity");
     assert!(db.execute("(transact [[:a #{1} 1]])").is_err(), "attribute");
 }
+
+/// Each set query returns the same rows with clause reordering on and off,
+/// committed and pending (#596). The expected counts are checked too.
+#[cfg(feature = "test-hooks")]
+#[test]
+fn set_queries_are_plan_independent() {
+    let queries: [(&str, usize); 6] = [
+        (
+            "(query [:find ?e :where [?e :user/scopes #{:scope/write :scope/read}]])",
+            2,
+        ),
+        (
+            "(query [:find ?a ?b :where [?a :user/scopes ?s] [?b :user/scopes ?s]])",
+            5,
+        ),
+        (
+            "(query [:find ?e ?s :where [?e :user/scopes ?s] [?f :user/friends #{:alice :bob}]])",
+            3,
+        ),
+        (
+            "(query [:find ?e :where [?e :user/scopes ?s] (not [?e :user/scopes #{}])])",
+            2,
+        ),
+        (
+            r#"(query [:find ?e :where (or [?e :user/scopes #{}] [?e :user/tags #{1 1.5 "a" true nil 0.0}])])"#,
+            2,
+        ),
+        (
+            "(query [:find (count ?e) ?s :where [?e :user/scopes ?s]])",
+            2,
+        ),
+    ];
+    let dir = tempfile::tempdir().unwrap();
+    let db = Minigraf::open(dir.path().join("plans.graph")).unwrap();
+    load(&db);
+    db.checkpoint().unwrap();
+    // A pending fact with the same set as a committed one.
+    db.execute("(transact [[:frank :user/scopes #{:scope/read :scope/write}]])")
+        .unwrap();
+    for (q, want) in queries {
+        let mut bags = Vec::new();
+        for reorder in [true, false] {
+            let _g = minigraf::__reorder(reorder);
+            let mut bag: Vec<String> = rows(&db, q)
+                .iter()
+                .map(|r| {
+                    r.iter()
+                        .map(|v| format!("{v:?}"))
+                        .collect::<Vec<_>>()
+                        .join("|")
+                })
+                .collect();
+            bag.sort();
+            bags.push(bag);
+        }
+        assert_eq!(bags[0].len(), want, "row count for {q}");
+        assert!(bags[0] == bags[1], "reordering on and off agree for {q}");
+    }
+}
+
+/// `#{0.0}` and `#{-0.0}` are equal sets but different keys: a constant and
+/// a join find either, committed or pending, whatever the plan.
+#[cfg(feature = "test-hooks")]
+#[test]
+fn sets_with_a_zero_of_either_sign_are_equal() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Minigraf::open(dir.path().join("zero.graph")).unwrap();
+    db.execute("(transact [[:p :z #{-0.0 1}]])").unwrap();
+    db.checkpoint().unwrap();
+    db.execute("(transact [[:q :w #{0.0 1}]])").unwrap();
+    for reorder in [true, false] {
+        let _g = minigraf::__reorder(reorder);
+        for q in [
+            "(query [:find ?a :where [?a :z #{0.0 1}]])",
+            "(query [:find ?a :where [?a :z #{-0.0 1}]])",
+            "(query [:find ?a :where [?a :w #{-0.0 1}]])",
+            "(query [:find ?a :where [:p :z #{0.0 1}] [?a :z _]])",
+            "(query [:find ?a ?b :where [?a :w ?s] [?b :z ?s]])",
+            "(query [:find ?a ?b :where [?b :z ?s] [?a :w ?s]])",
+        ] {
+            assert_eq!(rows(&db, q).len(), 1, "reorder {reorder}: {q}");
+        }
+    }
+}

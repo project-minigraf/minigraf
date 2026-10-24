@@ -220,6 +220,33 @@ mod tests {
     use crate::graph::types::{Fact, VALID_TIME_FOREVER, Value};
     use uuid::Uuid;
 
+    #[test]
+    fn set_encoding_keeps_element_boundaries() {
+        use crate::graph::types::ValueSet;
+        let set = |v: Vec<Value>| encode_value(&Value::Set(ValueSet::new(v).unwrap()));
+        let s = |x: &str| Value::String(x.to_string());
+        assert_ne!(
+            set(vec![s("ab")]),
+            set(vec![s("a"), s("b")]),
+            "one string vs two"
+        );
+        assert_ne!(
+            set(vec![s("a")]),
+            set(vec![s("a"), s("")]),
+            "an empty element"
+        );
+        assert_eq!(
+            set(vec![Value::Integer(2), Value::Integer(1)]),
+            set(vec![Value::Integer(1), Value::Integer(2)]),
+            "order does not matter"
+        );
+        assert_ne!(
+            set(vec![]),
+            encode_value(&Value::Null),
+            "empty set is not nil"
+        );
+    }
+
     fn fact_at(entity: Uuid, attr: &str, value: Value, asserted: bool) -> Fact {
         let mut f = Fact::with_valid_time(
             entity,

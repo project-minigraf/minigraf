@@ -447,6 +447,8 @@ pub fn decode_set(
 /// keyword counted as 6 bytes and each ref as 10, their longest encodings.
 /// A set the WAL takes under [`MAX_VALUE_BYTES`] by this bound always fits
 /// one value page at checkpoint.
+// Its one caller, the WAL, is not compiled for wasm32.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn set_bytes_bound(set: &crate::graph::types::ValueSet) -> usize {
     use crate::graph::types::Value;
     set.iter()
@@ -1147,6 +1149,119 @@ mod tests {
         let v = long_str(&long, ValueRef { page: 77, slot: 3 });
         let e = enc_value(&v);
         assert_eq!(Reader::new(&e).value().unwrap(), v);
+    }
+
+    // ── Sets (#316) ──────────────────────────────────────────────────────────
+
+    fn set_of(elements: &[KeyValue]) -> KeyValue {
+        let bytes = set_elements(elements);
+        if bytes.len() <= SHORT_STRING_MAX {
+            KeyValue::Set(bytes)
+        } else {
+            long_set(&bytes, ValueRef { page: 5, slot: 2 })
+        }
+    }
+
+    #[test]
+    fn sets_round_trip_inline_and_long() {
+        let small = vec![
+            KeyValue::Int(-3),
+            KeyValue::Keyword(7),
+            KeyValue::Str("a\0b".into()),
+            KeyValue::Null,
+            KeyValue::Ref(u64::MAX),
+            KeyValue::Float(-0.0),
+            KeyValue::Bool(true),
+        ];
+        let big = vec![KeyValue::Str("y".repeat(200)), KeyValue::Int(1)];
+        for elements in [small, big, vec![]] {
+            let v = set_of(&elements);
+            let e = enc_value(&v);
+            let mut r = Reader::new(&e);
+            let back = r.value().unwrap();
+            assert!(r.is_empty(), "set is self-delimiting");
+            assert_eq!(back, v, "round trip");
+            let mut r = Reader::new(&e);
+            r.skip_value().unwrap();
+            assert!(r.is_empty(), "skip_value skips the whole set");
+            if let KeyValue::Set(bytes) = &back {
+                let mut want = elements.clone();
+                want.sort_by_key(enc_value);
+                assert_eq!(set_elements_decode(bytes).unwrap(), want, "elements back");
+            }
+        }
+    }
+
+    #[test]
+    fn set_element_encoding_is_independent_of_order() {
+        let mut rng = Rng(31);
+        for _ in 0..500 {
+            let mut elements: Vec<KeyValue> = (0..rng.below(5))
+                .map(|_| random_value(&mut rng))
+                .filter(|v| !matches!(v, KeyValue::LongStr { .. }))
+                .collect();
+            let a = set_elements(&elements);
+            elements.reverse();
+            assert_eq!(set_elements(&elements), a, "order does not matter");
+            assert!(
+                set_elements_decode(&a).unwrap().len() <= elements.len(),
+                "decodes back"
+            );
+        }
+    }
+
+    #[test]
+    fn sets_inline_up_to_64_element_bytes() {
+        // One string element of n bytes encodes as n + 3.
+        for (n, inline) in [(60, true), (61, true), (62, false)] {
+            let v = set_of(&[KeyValue::Str("z".repeat(n))]);
+            assert_eq!(matches!(v, KeyValue::Set(_)), inline, "{n}-byte string");
+        }
+    }
+
+    #[test]
+    fn a_long_set_holds_no_set_or_long_string_element() {
+        let mut nested = Vec::new();
+        put_value(&mut nested, &KeyValue::Set(vec![]));
+        assert!(set_elements_decode(&nested).is_err(), "a set element");
+        let mut long = Vec::new();
+        put_value(
+            &mut long,
+            &long_str(&"q".repeat(80), ValueRef { page: 1, slot: 1 }),
+        );
+        assert!(set_elements_decode(&long).is_err(), "a long-string element");
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn set_bytes_bound_covers_the_largest_ids() {
+        use crate::graph::types::{Value, ValueSet};
+        let set = ValueSet::new(vec![
+            Value::Keyword(":k".into()),
+            Value::Ref(Uuid::nil()),
+            Value::Integer(i64::MIN),
+            Value::Integer(5),
+            Value::Float(1.5),
+            Value::String("a\0".into()),
+            Value::Boolean(false),
+            Value::Null,
+        ])
+        .unwrap();
+        let worst = vec![
+            KeyValue::Keyword(u32::MAX),
+            KeyValue::Ref(u64::MAX),
+            KeyValue::Int(i64::MIN),
+            KeyValue::Int(5),
+            KeyValue::Float(1.5),
+            KeyValue::Str("a\0".into()),
+            KeyValue::Bool(false),
+            KeyValue::Null,
+        ];
+        assert_eq!(
+            set_bytes_bound(&set),
+            set_elements(&worst).len(),
+            "exact at the largest ids"
+        );
     }
 
     #[test]

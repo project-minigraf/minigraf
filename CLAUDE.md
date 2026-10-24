@@ -117,11 +117,11 @@ cargo run < demos/demo_negation.txt
    - `backend/fault_inject.rs`: `FaultInjectingBackend` — injects I/O errors for durability tests (test builds only)
    - `fault.rs`: thread-local fault plan (test builds only, #390) — EIO, torn/short writes, sticky ENOSPC, failed fsync with or without lost writes, at the k-th write or sync of `FileBackend`, the WAL and `sync_parent_dir`; driven by `src/fault_matrix.rs`
    - `index.rs`: pending (uncheckpointed) EAVT/AEVT keys over UUIDs and strings, `encode_value`; `index/verification.rs`: Kani proofs of `encode_value` (`#[cfg(kani)]`, #627)
-   - `keys.rs`: byte-comparable v8 keys (FDB integers, value tags, `tx↓`, FOREVER), DICT keys, `MAX_VALUE_BYTES`, `MAX_IDENT_BYTES`; `keys/verification.rs`: Kani proofs that the key encoders preserve order (`#[cfg(kani)]`, #627; `kani.yml` runs them on encoder PRs and nightly)
+   - `keys.rs`: byte-comparable v8 keys (FDB integers, value tags, `tx↓`, FOREVER), DICT keys, `MAX_VALUE_BYTES`, `MAX_IDENT_BYTES`; sets (#316): tag `0x08`, element encoding (`set_elements`: each element's key encoding, sorted) inline up to 64 bytes, else `LongSet` in a value page, `decode_set`, `set_bytes_bound` (the WAL's id-free size bound); `keys/verification.rs`: Kani proofs that the key encoders preserve order (`#[cfg(kani)]`, #627; `kani.yml` runs them on encoder PRs and nightly)
    - `node.rs`: prefix-compressed leaf and shortest-separator internal node codecs
    - `btree.rs`: On-disk B+tree over byte keys (`build_btree`, `cow_update` (copy-on-write inserts and deletes; an emptied leaf or node leaves its parent, an emptied tree is root 0; #550) and `cow_insert`, `LeafCursor` with `seek`, `prefix_scan`, `get`, `MutexStorageBackend`)
    - `dict.rs`: `DictReader` (id ↔ UUID/ident, tx timestamps, long values) and `Encoder` (checkpoint-time id assignment and key building)
-   - `value_pages.rs`: append-only value pages for strings over 64 bytes
+   - `value_pages.rs`: append-only value pages for strings over 64 bytes and sets whose element encoding is over 64 bytes (#316; DICT dedup compares bytes, `long_bytes`/`find_long_bytes`)
    - `reader.rs`: `OnDiskReader` — covering reads of committed facts (`CommittedReader`, `KeySource`); `live_facts` and the resumable `live_keys` decide net-assert on index keys (#379) among the versions a `TxBound` keeps; `tx_order` (cached per reader), `last_tx_at`, `tx_runs` over the DICT's transactions (#551)
    - `verify.rs`: integrity walk for `Minigraf::verify` (tree order, index digests, DICT, page accounting) and the source choice for `rebuild_indexes` (#373)
    - `meta.rs` / `page.rs` / `freelist.rs`: meta pages A/B, the common page header and allocator (skips quarantined ids), free-list chain
@@ -178,8 +178,11 @@ struct Fact {
     asserted: bool,
 }
 
+#[non_exhaustive]
 enum Value { String(String), Integer(i64), Float(f64), Boolean(bool),
-             Ref(Uuid), Keyword(String), Null }
+             Ref(Uuid), Keyword(String), Null, Set(ValueSet) }
+// ValueSet: a BTreeSet of scalars (never a set), deduplicated by Value's Ord
+// (-0.0 = 0.0 keeping -0.0, one NaN, keyword != ref); literal #{...} (#316)
 ```
 
 **Important**: `tx_count` (sequential 1, 2, 3…) is what `:as-of N` compares against. The REPL displays `tx_id` (Unix ms). A single `(transact [...])` command increments `tx_count` once regardless of how many facts it contains (`transact_batch`).
@@ -212,7 +215,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1716 tests** (1703 passing, 13 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
+**1747 tests** (1734 passing, 13 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.

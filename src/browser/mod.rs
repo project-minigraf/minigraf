@@ -565,6 +565,25 @@ mod tests {
 
     // #673: a rejection carries the same error code as the native API.
     #[wasm_bindgen_test]
+    fn a_set_is_a_json_array_in_canonical_order() {
+        use crate::graph::types::{Value, ValueSet};
+        let set = ValueSet::new(vec![
+            Value::Integer(2),
+            Value::Keyword(":k".into()),
+            Value::String("a".into()),
+        ])
+        .unwrap();
+        assert_eq!(
+            value_to_json(&Value::Set(set)).to_string(),
+            r#"["a",2,":k"]"#
+        );
+        assert_eq!(
+            value_to_json(&Value::Set(ValueSet::default())).to_string(),
+            "[]"
+        );
+    }
+
+    #[wasm_bindgen_test]
     async fn execute_errors_carry_their_code() {
         let db = BrowserDb::open_in_memory().expect("open_in_memory");
         for (datalog, code) in [

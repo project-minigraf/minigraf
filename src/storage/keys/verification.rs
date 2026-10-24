@@ -3,7 +3,9 @@
 //! Each harness proves its property for every input of the given types. Only
 //! the encoders are covered: CBMC does not finish on the `Reader` decoders
 //! (their error paths build an `anyhow::Error`) or on variable-length strings,
-//! so the fuzz and property tests cover those.
+//! so the fuzz and property tests cover those. Set element encodings (#316)
+//! are variable-length too: a harness over two integer elements used 100 GB
+//! and failed at its 10-minute timeout, so the `keys` unit tests cover them.
 
 use super::*;
 

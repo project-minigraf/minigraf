@@ -2392,6 +2392,49 @@ mod tests {
     }
 
     #[test]
+    fn set_literals_parse() {
+        let v =
+            parse_edn(r#"#{1 1.5 "a" :k true nil #uuid "550e8400-e29b-41d4-a716-446655440000" 1}"#)
+                .unwrap();
+        let EdnValue::Set(elements) = v else {
+            panic!("a set");
+        };
+        assert_eq!(elements.len(), 8, "duplicates are kept until edn_to_value");
+        assert!(matches!(parse_edn("#{}").unwrap(), EdnValue::Set(e) if e.is_empty()));
+        assert!(matches!(parse_edn("#{,1 ,2,}").unwrap(), EdnValue::Set(e) if e.len() == 2));
+        // `#uuid` right after `#{`, and `#{` right after a value.
+        assert!(parse_edn(r#"#{#uuid "550e8400-e29b-41d4-a716-446655440000"}"#).is_ok());
+        assert!(parse_edn("[1#{2}]").is_ok());
+    }
+
+    #[test]
+    fn set_literal_errors_have_codes() {
+        let code = |s: &str| crate::MinigrafError::from(parse_edn(s).unwrap_err()).code();
+        assert_eq!(code("#{#{}}"), "PRS-119");
+        assert_eq!(code("#{1 #{2}}"), "PRS-119");
+        for s in ["#{?x}", "#{$s}", "#{[1]}", "#{(f)}", "#{{:a 1}}", "#{foo}"] {
+            assert_eq!(code(s), "PRS-120", "{s}");
+        }
+        assert_eq!(code("#{1"), "PRS-121");
+        assert_eq!(code("# {1}"), "PRS-073");
+    }
+
+    #[test]
+    fn set_literal_in_an_expression_is_a_literal() {
+        let cmd =
+            parse_datalog_command("(query [:find ?e :where [?e :s ?s] [(= ?s #{:a :b :a})]])")
+                .unwrap();
+        let DatalogCommand::Query(q) = cmd else {
+            panic!("a query");
+        };
+        let found = q.where_clauses.iter().any(|c| {
+            matches!(c, WhereClause::Expr { expr: Expr::BinOp(_, _, r), .. }
+                if matches!(&**r, Expr::Lit(Value::Set(s)) if s.len() == 2))
+        });
+        assert!(found, "the set is a literal with duplicates removed");
+    }
+
+    #[test]
     fn test_tokenize_tagged_literal_length_limit() {
         let long_tag = "#".to_string() + &"x".repeat(MAX_SYMBOL_LENGTH + 1);
         let result = tokenize(&long_tag);

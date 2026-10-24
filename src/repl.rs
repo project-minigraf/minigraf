@@ -513,6 +513,19 @@ mod tests {
     // --- Direct tests for format_value ---
 
     #[test]
+    fn format_value_set() {
+        use crate::graph::types::{Value, ValueSet};
+        let set = ValueSet::new(vec![
+            Value::Integer(2),
+            Value::String("a".into()),
+            Value::Keyword(":k".into()),
+        ])
+        .unwrap();
+        assert_eq!(Repl::format_value(&Value::Set(set)), "#{\"a\" 2 :k}");
+        assert_eq!(Repl::format_value(&Value::Set(ValueSet::default())), "#{}");
+    }
+
+    #[test]
     fn format_value_string() {
         use crate::graph::types::Value;
         assert_eq!(

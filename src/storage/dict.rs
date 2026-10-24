@@ -774,6 +774,84 @@ mod tests {
         assert!(!enc2.dict.iter().any(|(k, _)| is_long_value_entry(k)));
     }
 
+    fn long_set_value() -> Value {
+        use crate::graph::types::ValueSet;
+        Value::Set(
+            ValueSet::new(vec![
+                Value::String("s".repeat(80)),
+                Value::Keyword(":k/a".into()),
+                Value::Integer(9),
+            ])
+            .unwrap(),
+        )
+    }
+
+    #[test]
+    fn long_sets_are_deduplicated_and_read_back() {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(256);
+        let facts = vec![
+            fact(1, ":s", long_set_value(), 1),
+            fact(2, ":s", long_set_value(), 1),
+        ];
+        let (root, enc) = checkpoint(&mut backend, &cache, 0, (1, 1), &facts);
+        let pages_after_first = backend.page_count().unwrap();
+        let long_entries = enc
+            .dict
+            .iter()
+            .filter(|(k, _)| is_long_value_entry(k))
+            .count();
+        assert_eq!(long_entries, 1, "one stored copy within a checkpoint");
+
+        let again = vec![fact(3, ":s", long_set_value(), 2)];
+        let mut enc2 = Encoder::new(enc.next_eid, enc.next_iid);
+        {
+            let mut dict = DictReader::new(root, &backend, &cache);
+            enc2.stage(&again[0], &mut dict).unwrap();
+        }
+        let mut alloc = PageAllocator::new(Vec::new(), pages_after_first, 2);
+        let enc2 = enc2.finish(&mut alloc, &mut backend, &cache).unwrap();
+        assert_eq!(alloc.next_append(), pages_after_first, "no new value page");
+
+        // The new fact's key points at the existing record.
+        let (key, _) = enc2.index[0].first().expect("an EAVT entry");
+        let kf = KeyFact::decode(Index::Eavt, key).unwrap();
+        assert!(matches!(kf.v, KeyValue::LongSet { .. }), "a long set key");
+    }
+
+    #[test]
+    fn a_set_record_under_a_strings_hash_is_not_an_error() {
+        // A long set's record is not UTF-8. Filed under a long string's hash,
+        // the string lookup must skip it, not fail (#316).
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(256);
+        let s = "c".repeat(100);
+        let set_bytes = keys::set_elements(&[KeyValue::Int(1), KeyValue::Str("d".repeat(90))]);
+        let mut alloc = PageAllocator::new(Vec::new(), 2, 1);
+        let mut w = ValueWriter::new();
+        let r_set = w
+            .push(&set_bytes, &mut alloc, &mut backend, &cache)
+            .unwrap();
+        let r_str = w
+            .push(s.as_bytes(), &mut alloc, &mut backend, &cache)
+            .unwrap();
+        w.flush(&mut alloc, &mut backend, &cache).unwrap();
+        let h = keys::hash64(s.as_bytes());
+        let mut entries = vec![
+            (keys::dict_long_value_key(h, r_set), Vec::new()),
+            (keys::dict_long_value_key(h, r_str), Vec::new()),
+        ];
+        entries.sort();
+        let root = btree::build_btree(entries, &mut backend, &cache, &mut alloc).unwrap();
+        let mut dict = DictReader::new(root, &backend, &cache);
+        assert_eq!(dict.find_long_value(&s).unwrap(), Some(r_str));
+        assert_eq!(
+            dict.find_long_bytes(&set_bytes).unwrap(),
+            None,
+            "wrong hash"
+        );
+    }
+
     #[test]
     fn hash_collisions_still_find_the_right_value() {
         // Two DICT 0x06 entries under one hash: dedup compares full values.

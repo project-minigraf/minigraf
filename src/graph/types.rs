@@ -1024,6 +1024,8 @@ mod tests {
         }
     }
 
+    // proptest is a native-only dev-dependency.
+    #[cfg(not(target_arch = "wasm32"))]
     proptest::proptest! {
         #[test]
         fn value_set_ord_hash_and_eq_agree(
@@ -1046,6 +1048,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn scalar() -> impl proptest::strategy::Strategy<Value = Value> {
         use proptest::prelude::*;
         prop_oneof![
