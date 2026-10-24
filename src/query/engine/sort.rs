@@ -94,7 +94,7 @@ impl Sort {
                         let old = std::mem::replace(top, row);
                         self.held.uncharge(bytes(&old));
                     }
-                    self.sift_down(0);
+                    self.sift_down(0, self.rows.len());
                 }
                 continue;
             }
@@ -110,10 +110,11 @@ impl Sort {
         Ok(())
     }
 
-    /// Whether held row `i` comes after held row `j` (both exist).
-    fn after(&self, i: usize, j: usize) -> bool {
+    /// Whether held row `i` comes after held row `j`, both among the first
+    /// `len`.
+    fn after(&self, i: usize, j: usize, len: usize) -> bool {
         match (self.rows.get(i), self.rows.get(j)) {
-            (Some(a), Some(b)) => self.cmp(a, b).is_gt(),
+            (Some(a), Some(b)) if i < len && j < len => self.cmp(a, b).is_gt(),
             _ => false,
         }
     }
@@ -122,7 +123,7 @@ impl Sort {
     fn sift_up(&mut self, mut i: usize) {
         while i > 0 {
             let parent = (i - 1) / 2;
-            if !self.after(i, parent) {
+            if !self.after(i, parent, self.rows.len()) {
                 break;
             }
             self.rows.swap(i, parent);
@@ -130,12 +131,12 @@ impl Sort {
         }
     }
 
-    /// Restore the heap (worst on top) below `i`.
-    fn sift_down(&mut self, mut i: usize) {
+    /// Restore the heap (worst on top) of the first `len` rows below `i`.
+    fn sift_down(&mut self, mut i: usize, len: usize) {
         loop {
             let mut worst = i;
             for child in [2 * i + 1, 2 * i + 2] {
-                if self.after(child, worst) {
+                if self.after(child, worst, len) {
                     worst = child;
                 }
             }
@@ -145,6 +146,28 @@ impl Sort {
             self.rows.swap(i, worst);
             i = worst;
         }
+    }
+}
+
+impl Sort {
+    /// Sort the rows held, last first (to pop). A heapsort over the heap
+    /// top-k already keeps, rather than a second sort in the binary: rows
+    /// equal under the full order are equal in every column, so an unstable
+    /// sort gives the one order.
+    fn heap_sort(&mut self) {
+        let n = self.rows.len();
+        if self.keep.is_none() {
+            for i in (0..n / 2).rev() {
+                self.sift_down(i, n);
+            }
+        }
+        // Move the worst row held to the end of the heap each time: best
+        // first.
+        for end in (1..n).rev() {
+            self.rows.swap(0, end);
+            self.sift_down(0, end);
+        }
+        self.rows.reverse();
     }
 }
 
@@ -163,12 +186,8 @@ impl Operator for Sort {
                     ctx.ids.end_pull();
                 }
             }
-            let mut rows = std::mem::take(&mut self.rows);
-            let order = &self.order;
-            // Rows equal under the full order are equal in every column, so
-            // an unstable sort gives the one order; last first, to pop.
-            rows.sort_unstable_by(|a, b| row_order(b, a, order));
-            self.out = Some(rows);
+            self.heap_sort();
+            self.out = Some(std::mem::take(&mut self.rows));
         }
         let Some(rows) = self.out.as_mut().filter(|r| !r.is_empty()) else {
             return Ok(None);
