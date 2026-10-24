@@ -1,4 +1,4 @@
-use super::functions::FunctionRegistry;
+use super::functions::{FunctionRegistry, Functions};
 use super::matcher::{edn_to_entity_id, edn_to_value};
 use super::rules::RuleRegistry;
 use super::types::{
@@ -122,8 +122,8 @@ pub struct DatalogExecutor {
     /// takes its own snapshot of `storage`.
     snapshot: Option<Snapshot>,
     rules: Arc<RwLock<RuleRegistry>>,
-    // RwLock pre-wired for 7.7b register_aggregate API.
-    functions: Arc<RwLock<FunctionRegistry>>,
+    /// The functions; each query reads one snapshot of them (#180).
+    functions: Arc<Functions>,
     /// The most facts a rule query may derive, base facts not counted (#553).
     max_derived_facts: usize,
     /// The most bytes an engine query may hold (#549).
@@ -137,7 +137,7 @@ impl DatalogExecutor {
             storage,
             snapshot: None,
             rules: Arc::new(RwLock::new(RuleRegistry::new())),
-            functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
+            functions: Arc::new(Functions::with_builtins()),
             max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
             query_memory_limit: usize::MAX,
         }
@@ -149,7 +149,7 @@ impl DatalogExecutor {
     pub fn new_with_rules_and_functions(
         storage: FactStorage,
         rules: Arc<RwLock<RuleRegistry>>,
-        functions: Arc<RwLock<FunctionRegistry>>,
+        functions: Arc<Functions>,
     ) -> Self {
         DatalogExecutor {
             storage,
@@ -166,11 +166,7 @@ impl DatalogExecutor {
     /// [`new_with_rules_and_functions`] to share the registry from `Minigraf::Inner`.
     #[allow(dead_code)]
     pub fn new_with_rules(storage: FactStorage, rules: Arc<RwLock<RuleRegistry>>) -> Self {
-        Self::new_with_rules_and_functions(
-            storage,
-            rules,
-            Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
-        )
+        Self::new_with_rules_and_functions(storage, rules, Arc::new(Functions::with_builtins()))
     }
 
     /// Create a `DatalogExecutor` with custom complexity limits.
@@ -180,7 +176,7 @@ impl DatalogExecutor {
     pub fn new_with_limits(
         storage: FactStorage,
         rules: Arc<RwLock<RuleRegistry>>,
-        functions: Arc<RwLock<FunctionRegistry>>,
+        functions: Arc<Functions>,
         max_derived_facts: usize,
     ) -> Self {
         DatalogExecutor {
@@ -317,19 +313,16 @@ impl DatalogExecutor {
     }
 
     fn open_query(&self, query: DatalogQuery) -> Result<Answer> {
+        // The query reads every function from this one snapshot, its checks
+        // included, and holds no lock while a user function runs (#180).
+        let functions = self.functions.snapshot()?;
         // Resolve :find functions up front so an unknown name fails whether or
         // not any row matches (#414).
-        {
-            let registry = self
-                .functions
-                .read()
-                .map_err(|_| err_coded!(ErrorCode::Qry008))?;
-            check_find_functions(&query.find, &registry)?;
-        }
+        check_find_functions(&query.find, &functions)?;
 
         // A rule query (#548).
         if query.uses_rules() {
-            return self.open_rule_query(&query);
+            return self.open_rule_query(&query, functions);
         }
 
         // Warn about queries with no binding mechanism
@@ -346,20 +339,10 @@ impl DatalogExecutor {
                 return Err(e);
             }
         };
-        {
-            let registry = self
-                .functions
-                .read()
-                .map_err(|_| err_coded!(ErrorCode::Qry008))?;
-            check_clauses(&query, &registry)?;
-        }
+        check_clauses(&query, &functions)?;
         let snapshot = self.read_snapshot()?;
-        let stream = crate::query::engine::open(
-            snapshot.clone(),
-            plan,
-            self.functions.clone(),
-            self.query_memory_limit,
-        )?;
+        let stream =
+            crate::query::engine::open(snapshot.clone(), plan, functions, self.query_memory_limit)?;
         #[cfg(test)]
         crate::query::engine::RUNS.with(|r| r.set(r.get() + 1));
         Ok(Answer::Stream(Box::new(stream)))
@@ -368,7 +351,11 @@ impl DatalogExecutor {
     /// A rule query on the streaming engine (#548). Its errors come in the
     /// executor's order: pseudo-attributes, then the rules, then unknown
     /// predicates.
-    fn open_rule_query(&self, query: &DatalogQuery) -> Result<Answer> {
+    fn open_rule_query(
+        &self,
+        query: &DatalogQuery,
+        functions: Arc<FunctionRegistry>,
+    ) -> Result<Answer> {
         let plan = {
             let registry = self
                 .rules
@@ -421,14 +408,10 @@ impl DatalogExecutor {
                 plan,
                 &seeds,
                 &keywords,
-                self.functions.clone(),
+                Arc::clone(&functions),
                 limits,
             )?;
-            let registry = self
-                .functions
-                .read()
-                .map_err(|_| err_coded!(ErrorCode::Qry008))?;
-            check_predicates(&names, &registry)?;
+            check_predicates(&names, &functions)?;
             Ok(stream)
         };
         let stream = open(plan)?;
@@ -821,14 +804,31 @@ fn check_find_functions(find: &[FindSpec], registry: &FunctionRegistry) -> Resul
     Ok(())
 }
 
-/// Returns `Err(())` on: unbound variable, type mismatch, division by zero, unknown UDF predicate.
+/// Why [`eval_expr`] gives no value.
+#[derive(Debug)]
+pub(crate) enum EvalError {
+    /// Unbound variable, type mismatch, division by zero, unknown UDF
+    /// predicate: the expression has no value, and its row is dropped.
+    NoValue,
+    /// A user predicate failed (`QRY-014`, #180): the query fails.
+    Udf(anyhow::Error),
+}
+
+#[cfg(test)]
+impl PartialEq for EvalError {
+    fn eq(&self, other: &Self) -> bool {
+        std::mem::discriminant(self) == std::mem::discriminant(other)
+    }
+}
+
+/// The value of `expr` under `binding`; see [`EvalError`] for its failures.
 pub(crate) fn eval_expr(
     expr: &Expr,
     binding: &std::collections::HashMap<String, Value>,
     registry: Option<&FunctionRegistry>,
-) -> Result<Value, ()> {
+) -> Result<Value, EvalError> {
     match expr {
-        Expr::Var(v) => binding.get(v).cloned().ok_or(()),
+        Expr::Var(v) => binding.get(v).cloned().ok_or(EvalError::NoValue),
         Expr::Lit(val) => Ok(val.clone()),
         Expr::UnaryOp(op, arg) => {
             let v = eval_expr(arg, binding, registry)?;
@@ -839,29 +839,37 @@ pub(crate) fn eval_expr(
                 UnaryOp::BooleanQ => Ok(Value::Boolean(matches!(v, Value::Boolean(_)))),
                 UnaryOp::NilQ => Ok(Value::Boolean(matches!(v, Value::Null))),
                 UnaryOp::Udf(name) => {
-                    let desc = registry.and_then(|r| r.get_predicate(name)).ok_or(())?;
-                    Ok(Value::Boolean((desc.f)(&v)))
+                    let desc = registry
+                        .and_then(|r| r.get_predicate(name))
+                        .ok_or(EvalError::NoValue)?;
+                    match (desc.f)(&v) {
+                        Ok(b) => Ok(Value::Boolean(b)),
+                        Err(e) => Err(EvalError::Udf(err_coded!(
+                            ErrorCode::Qry014,
+                            name,
+                            e.message()
+                        ))),
+                    }
                 }
             }
         }
         Expr::BinOp(op, lhs, rhs) => {
             let l = eval_expr(lhs, binding, registry)?;
             let r = eval_expr(rhs, binding, registry)?;
-            eval_binop(op, l, r)
+            eval_binop(op, l, r).map_err(|()| EvalError::NoValue)
         }
         Expr::Slot(_) => {
             // Unsubstituted bind slot — treat as eval error (unbound variable equivalent).
-            Err(())
+            Err(EvalError::NoValue)
         }
         // The planner runs it as a step of its own (#316).
-        Expr::CollectSet { .. } => Err(()),
+        Expr::CollectSet { .. } => Err(EvalError::NoValue),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::datalog::functions::FunctionRegistry;
     use crate::query::datalog::parser::parse_datalog_command;
     use crate::query::datalog::rules::RuleRegistry;
     use crate::query::datalog::types::WhereClause;
@@ -1930,7 +1938,7 @@ mod tests {
     fn test_per_query_max_derived_facts_overrides_executor_default() {
         let storage = FactStorage::new();
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
-        let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
+        let functions = Arc::new(Functions::with_builtins());
         let mut executor = DatalogExecutor::new_with_rules_and_functions(
             storage,
             rules.clone(),
@@ -1976,7 +1984,7 @@ mod tests {
     fn test_per_query_limit_does_not_bleed_into_next_query() {
         let storage = FactStorage::new();
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
-        let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
+        let functions = Arc::new(Functions::with_builtins());
         let executor = DatalogExecutor::new_with_rules_and_functions(
             storage,
             rules.clone(),
@@ -2042,7 +2050,10 @@ mod expr_eval_tests {
     #[test]
     fn test_eval_var_unbound_is_err() {
         let e = Expr::Var("?x".to_string());
-        assert_eq!(eval_expr(&e, &HashMap::new(), None), Err(()));
+        assert_eq!(
+            eval_expr(&e, &HashMap::new(), None),
+            Err(EvalError::NoValue)
+        );
     }
 
     #[test]
@@ -2105,7 +2116,10 @@ mod expr_eval_tests {
             Box::new(Expr::Lit(Value::Integer(5))),
             Box::new(Expr::Lit(Value::Integer(0))),
         );
-        assert_eq!(eval_expr(&e, &HashMap::new(), None), Err(()));
+        assert_eq!(
+            eval_expr(&e, &HashMap::new(), None),
+            Err(EvalError::NoValue)
+        );
     }
 
     #[test]
@@ -2142,11 +2156,14 @@ mod expr_eval_tests {
             Box::new(Expr::Lit(Value::String("hello".to_string()))),
             Box::new(Expr::Lit(Value::Integer(100))),
         );
-        assert_eq!(eval_expr(&e, &HashMap::new(), None), Err(()));
+        assert_eq!(
+            eval_expr(&e, &HashMap::new(), None),
+            Err(EvalError::NoValue)
+        );
     }
 
     /// Evaluate `a <op> b` for two string literals.
-    fn eval_str_cmp(op: BinOp, a: &str, b: &str) -> Result<Value, ()> {
+    fn eval_str_cmp(op: BinOp, a: &str, b: &str) -> Result<Value, EvalError> {
         eval_expr(
             &Expr::BinOp(
                 op,
@@ -2709,8 +2726,8 @@ mod expr_eval_tests {
     fn execute_query_functions_lock_poisoned_error() {
         let storage = FactStorage::new();
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
-        let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
-        poison_rwlock(&functions);
+        let functions = Arc::new(Functions::with_builtins());
+        functions.poison();
 
         let executor = DatalogExecutor::new_with_rules_and_functions(storage, rules, functions);
         let cmd = parse_datalog_command(r#"(query [:find ?e :where [?e :name ?n]])"#).unwrap();
@@ -2727,7 +2744,7 @@ mod expr_eval_tests {
     fn execute_rule_rules_lock_poisoned_error() {
         let storage = FactStorage::new();
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
-        let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
+        let functions = Arc::new(Functions::with_builtins());
         poison_rwlock(&rules);
 
         let executor = DatalogExecutor::new_with_rules_and_functions(storage, rules, functions);
@@ -2747,7 +2764,7 @@ mod expr_eval_tests {
         // (distinct call site from execute_rule's rules.write()).
         let storage = FactStorage::new();
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
-        let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
+        let functions = Arc::new(Functions::with_builtins());
         {
             // Register a rule normally first so the query recognises it as
             // rule-backed (uses_rules()) and takes the rules path.
@@ -2819,7 +2836,10 @@ mod expr_eval_tests {
             Box::new(Expr::Lit(Value::Float(5.0))),
             Box::new(Expr::Lit(Value::Float(0.0))),
         );
-        assert_eq!(eval_expr(&e, &HashMap::new(), None), Err(()));
+        assert_eq!(
+            eval_expr(&e, &HashMap::new(), None),
+            Err(EvalError::NoValue)
+        );
     }
 
     #[test]

@@ -37,7 +37,7 @@ use ids::IdSpace;
 pub(crate) use meter::Meter;
 pub(crate) use plan::{Plan, plan, plan_rules, udfs};
 pub(crate) use recursive::Limits;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 #[cfg(test)]
 thread_local! {
@@ -108,9 +108,9 @@ pub(crate) trait Operator: Send {
 pub(crate) struct Stream {
     snapshot: Snapshot,
     ids: IdSpace,
-    /// Read-locked for each pull. Predicates are never replaced once
-    /// registered (`INT-040`), so the answer does not change between pulls.
-    functions: Arc<RwLock<FunctionRegistry>>,
+    /// The functions the query opened with (#180): no lock is held while a
+    /// user function runs, and a function registered later is not seen.
+    functions: Arc<FunctionRegistry>,
     root: Box<dyn Operator>,
     /// The bytes the query's holders count (#549); each holder keeps its
     /// own reference, so the stream keeps one for tests only.
@@ -162,7 +162,7 @@ fn keys(snapshot: &Snapshot) -> Result<Option<&dyn KeySource>> {
 pub(crate) fn open(
     snapshot: Snapshot,
     plan: Plan,
-    functions: Arc<RwLock<FunctionRegistry>>,
+    functions: Arc<FunctionRegistry>,
     memory_limit: usize,
 ) -> Result<Stream> {
     let keys = keys(&snapshot)?;
@@ -201,7 +201,7 @@ pub(crate) fn open_rules(
     plan: plan::RulesPlan,
     seeds: &[(EntityId, String, Value)],
     keywords: &[String],
-    functions: Arc<RwLock<FunctionRegistry>>,
+    functions: Arc<FunctionRegistry>,
     limits: recursive::Limits,
 ) -> Result<Stream> {
     let meter = Meter::new(limits.query_memory);
@@ -234,9 +234,6 @@ pub(crate) fn open_rules(
             }
         }
         rels.end_round();
-        let functions = functions
-            .read()
-            .map_err(|_| err_coded!(ErrorCode::Qry008))?;
         let reads = recursive::Reads {
             snapshot: &snapshot,
             keys,
@@ -262,7 +259,7 @@ fn stream(
     snapshot: Snapshot,
     ids: IdSpace,
     plan: Plan,
-    functions: Arc<RwLock<FunctionRegistry>>,
+    functions: Arc<FunctionRegistry>,
     relations: Option<relation::Relations>,
     meter: Arc<Meter>,
     (bound, bound_held): (TxBound, meter::Held),
@@ -338,7 +335,7 @@ impl Stream {
         Stream {
             snapshot,
             ids: IdSpace::new(None, &meter),
-            functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
+            functions: Arc::new(FunctionRegistry::with_builtins()),
             root,
             meter,
             find: vec![0],
@@ -371,10 +368,6 @@ impl Stream {
     }
 
     fn pull(&mut self) -> Result<Option<Vec<Vec<Value>>>> {
-        let functions = self
-            .functions
-            .read()
-            .map_err(|_| err_coded!(ErrorCode::Qry008))?;
         let mut ctx = Ctx {
             snapshot: &self.snapshot,
             keys: self
@@ -383,7 +376,7 @@ impl Stream {
                 .as_deref()
                 .and_then(CommittedReader::key_source),
             ids: &mut self.ids,
-            functions: &functions,
+            functions: &self.functions,
             derived: self.relations.as_ref(),
             bound: &self.bound,
         };

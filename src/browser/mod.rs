@@ -15,7 +15,7 @@ use crate::browser::buffer::BrowserBufferBackend;
 use crate::browser::indexeddb::IndexedDbBackend;
 use crate::graph::FactStorage;
 use crate::query::datalog::executor::{DatalogExecutor, QueryResult};
-use crate::query::datalog::functions::FunctionRegistry;
+use crate::query::datalog::functions::Functions;
 use crate::query::datalog::parser::parse_datalog_command;
 use crate::query::datalog::prepared::{BindValue, PreparedQuery};
 use crate::query::datalog::rules::RuleRegistry;
@@ -30,7 +30,7 @@ use wasm_bindgen::prelude::*;
 struct BrowserDbInner {
     fact_storage: FactStorage,
     rules: Arc<RwLock<RuleRegistry>>,
-    functions: Arc<RwLock<FunctionRegistry>>,
+    functions: Arc<Functions>,
     pfs: PersistentFactStorage<BrowserBufferBackend>,
     /// `None` for in-memory databases (no IDB backing).
     idb: Option<IndexedDbBackend>,
@@ -67,7 +67,7 @@ impl BrowserDb {
             inner: Rc::new(RefCell::new(BrowserDbInner {
                 fact_storage,
                 rules: Arc::new(RwLock::new(RuleRegistry::new())),
-                functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
+                functions: Arc::new(Functions::with_builtins()),
                 pfs,
                 idb: None,
                 withheld: Vec::new(),
@@ -101,7 +101,7 @@ impl BrowserDb {
             inner: Rc::new(RefCell::new(BrowserDbInner {
                 fact_storage,
                 rules: Arc::new(RwLock::new(RuleRegistry::new())),
-                functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
+                functions: Arc::new(Functions::with_builtins()),
                 pfs,
                 idb: Some(idb),
                 withheld: Vec::new(),

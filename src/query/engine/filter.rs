@@ -9,7 +9,7 @@ use super::cell::{Cell, join_eq};
 use super::plan::{Out, Step, Term, Vars};
 use super::project::value;
 use super::{Counters, Ctx, Operator};
-use crate::query::datalog::executor::{eval_expr, is_truthy};
+use crate::query::datalog::executor::{EvalError, eval_expr, is_truthy};
 use crate::query::datalog::types::Expr;
 use anyhow::Result;
 use std::collections::HashMap;
@@ -146,7 +146,8 @@ fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<Batch> {
     Ok(batch)
 }
 
-/// `expr` over row `i`, or `None` where the executor's evaluation fails.
+/// `expr` over row `i`, or `None` where it has no value; a failing user
+/// predicate fails the query (`QRY-014`, #180).
 fn eval(
     expr: &Expr,
     vars: &Vars,
@@ -160,5 +161,9 @@ fn eval(
             binding.insert(name.clone(), value(cell, ctx)?);
         }
     }
-    Ok(eval_expr(expr, &binding, Some(ctx.functions)).ok())
+    match eval_expr(expr, &binding, Some(ctx.functions)) {
+        Ok(v) => Ok(Some(v)),
+        Err(EvalError::NoValue) => Ok(None),
+        Err(EvalError::Udf(e)) => Err(e),
+    }
 }

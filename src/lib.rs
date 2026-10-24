@@ -107,6 +107,7 @@ pub mod browser;
 pub use db::OpenOptionsWithPath;
 pub use db::{IntegrityReport, Minigraf, OpenOptions, SyncMode, WriteTransaction};
 pub use error::{ErrorCategory, MinigrafError};
+pub use query::datalog::functions::UdfError;
 pub use repl::Repl;
 
 // EAV value types — users construct and match on these
