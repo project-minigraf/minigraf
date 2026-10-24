@@ -410,3 +410,123 @@ fn udf_predicate_works_in_rule_body() {
         }
     }
 }
+
+// ─── Failing user functions → QRY-014 (#180) ─────────────────────────────────
+
+use minigraf::{BindValue, UdfError};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// `n` entities `:n 0` … `:n n-1`, in one transaction.
+fn seed_n(db: &Minigraf, n: usize) {
+    let facts: String = (0..n).map(|i| format!("[:e{i} :n {i}]")).collect();
+    db.execute(&format!("(transact [{facts}])")).expect("seed");
+}
+
+/// Registers `boom?`, a predicate that is true until its `fail_at`-th call,
+/// which fails. Returns its call counter.
+fn failing_predicate(db: &Minigraf, fail_at: usize) -> Arc<AtomicUsize> {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let c = Arc::clone(&calls);
+    db.try_register_predicate("boom?", move |_| {
+        if c.fetch_add(1, Ordering::SeqCst) + 1 == fail_at {
+            Err(UdfError::new("bad value"))
+        } else {
+            Ok(true)
+        }
+    })
+    .expect("register boom?");
+    calls
+}
+
+fn assert_qry014(err: &MinigrafError, name: &str, message: &str) {
+    assert_eq!(err.code(), "QRY-014");
+    assert_eq!(
+        err.to_string(),
+        format!("[QRY-014] user function `{name}` failed: {message}")
+    );
+}
+
+#[test]
+fn failing_predicate_fails_the_query_in_every_position() {
+    for (what, rule, query) in [
+        (
+            ":where",
+            None,
+            "(query [:find ?e :where [?e :n ?v] [(boom? ?v)]])",
+        ),
+        (
+            "rule body",
+            Some("(rule [(ok ?e) [?e :n ?v] [(boom? ?v)]])"),
+            "(query [:find ?e :where (ok ?e)])",
+        ),
+        (
+            "not body",
+            None,
+            "(query [:find ?e :where [?e :n ?v] (not [(boom? ?v)])])",
+        ),
+        (
+            "or branch",
+            None,
+            "(query [:find ?e :where [?e :n ?v] (or [(boom? ?v)] [(nil? ?v)])])",
+        ),
+    ] {
+        let db = db();
+        seed_n(&db, 10);
+        if let Some(rule) = rule {
+            db.execute(rule).expect("rule");
+        }
+        let calls = failing_predicate(&db, 5);
+        let err = db.execute(query).expect_err(what);
+        assert_qry014(&err, "boom?", "bad value");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            5,
+            "{what}: no call after the failing one"
+        );
+    }
+}
+
+#[test]
+fn failing_predicate_through_a_cursor_returns_earlier_rows_then_the_error() {
+    let db = db();
+    seed_n(&db, 1500);
+    let calls = failing_predicate(&db, 1500);
+    let mut cursor = db
+        .query("(query [:find ?e :where [?e :n ?v] [(boom? ?v)]])")
+        .expect("opens");
+    let mut rows = 0;
+    let err = loop {
+        match cursor.next_batch(100) {
+            Ok(Some(batch)) => rows += batch.len(),
+            Ok(None) => panic!("the cursor ended without the error"),
+            Err(e) => break e,
+        }
+    };
+    assert!(
+        rows > 0 && rows < 1500,
+        "rows before the failure come first"
+    );
+    assert_qry014(&err, "boom?", "bad value");
+    assert!(cursor.next_batch(100).expect("after the error").is_none());
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1500,
+        "no call after the failing one"
+    );
+}
+
+#[test]
+fn failing_predicate_fails_a_prepared_query() {
+    let db = db();
+    seed_n(&db, 10);
+    let calls = failing_predicate(&db, 3);
+    let pq = db
+        .prepare("(query [:find ?e :where [?e :n ?v] [(>= ?v $min)] [(boom? ?v)]])")
+        .expect("prepare");
+    let err = pq
+        .execute(&[("min", BindValue::Val(Value::Integer(0)))])
+        .expect_err("fails");
+    assert_qry014(&err, "boom?", "bad value");
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
+}

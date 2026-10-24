@@ -787,14 +787,31 @@ fn check_find_functions(find: &[FindSpec], registry: &FunctionRegistry) -> Resul
     Ok(())
 }
 
-/// Returns `Err(())` on: unbound variable, type mismatch, division by zero, unknown UDF predicate.
+/// Why [`eval_expr`] gives no value.
+#[derive(Debug)]
+pub(crate) enum EvalError {
+    /// Unbound variable, type mismatch, division by zero, unknown UDF
+    /// predicate: the expression has no value, and its row is dropped.
+    NoValue,
+    /// A user predicate failed (`QRY-014`, #180): the query fails.
+    Udf(anyhow::Error),
+}
+
+#[cfg(test)]
+impl PartialEq for EvalError {
+    fn eq(&self, other: &Self) -> bool {
+        std::mem::discriminant(self) == std::mem::discriminant(other)
+    }
+}
+
+/// The value of `expr` under `binding`; see [`EvalError`] for its failures.
 pub(crate) fn eval_expr(
     expr: &Expr,
     binding: &std::collections::HashMap<String, Value>,
     registry: Option<&FunctionRegistry>,
-) -> Result<Value, ()> {
+) -> Result<Value, EvalError> {
     match expr {
-        Expr::Var(v) => binding.get(v).cloned().ok_or(()),
+        Expr::Var(v) => binding.get(v).cloned().ok_or(EvalError::NoValue),
         Expr::Lit(val) => Ok(val.clone()),
         Expr::UnaryOp(op, arg) => {
             let v = eval_expr(arg, binding, registry)?;
@@ -805,19 +822,28 @@ pub(crate) fn eval_expr(
                 UnaryOp::BooleanQ => Ok(Value::Boolean(matches!(v, Value::Boolean(_)))),
                 UnaryOp::NilQ => Ok(Value::Boolean(matches!(v, Value::Null))),
                 UnaryOp::Udf(name) => {
-                    let desc = registry.and_then(|r| r.get_predicate(name)).ok_or(())?;
-                    Ok(Value::Boolean((desc.f)(&v).map_err(|_| ())?))
+                    let desc = registry
+                        .and_then(|r| r.get_predicate(name))
+                        .ok_or(EvalError::NoValue)?;
+                    match (desc.f)(&v) {
+                        Ok(b) => Ok(Value::Boolean(b)),
+                        Err(e) => Err(EvalError::Udf(err_coded!(
+                            ErrorCode::Qry014,
+                            name,
+                            e.message()
+                        ))),
+                    }
                 }
             }
         }
         Expr::BinOp(op, lhs, rhs) => {
             let l = eval_expr(lhs, binding, registry)?;
             let r = eval_expr(rhs, binding, registry)?;
-            eval_binop(op, l, r)
+            eval_binop(op, l, r).map_err(|()| EvalError::NoValue)
         }
         Expr::Slot(_) => {
             // Unsubstituted bind slot — treat as eval error (unbound variable equivalent).
-            Err(())
+            Err(EvalError::NoValue)
         }
     }
 }
@@ -2004,7 +2030,10 @@ mod expr_eval_tests {
     #[test]
     fn test_eval_var_unbound_is_err() {
         let e = Expr::Var("?x".to_string());
-        assert_eq!(eval_expr(&e, &HashMap::new(), None), Err(()));
+        assert_eq!(
+            eval_expr(&e, &HashMap::new(), None),
+            Err(EvalError::NoValue)
+        );
     }
 
     #[test]
@@ -2067,7 +2096,10 @@ mod expr_eval_tests {
             Box::new(Expr::Lit(Value::Integer(5))),
             Box::new(Expr::Lit(Value::Integer(0))),
         );
-        assert_eq!(eval_expr(&e, &HashMap::new(), None), Err(()));
+        assert_eq!(
+            eval_expr(&e, &HashMap::new(), None),
+            Err(EvalError::NoValue)
+        );
     }
 
     #[test]
@@ -2104,11 +2136,14 @@ mod expr_eval_tests {
             Box::new(Expr::Lit(Value::String("hello".to_string()))),
             Box::new(Expr::Lit(Value::Integer(100))),
         );
-        assert_eq!(eval_expr(&e, &HashMap::new(), None), Err(()));
+        assert_eq!(
+            eval_expr(&e, &HashMap::new(), None),
+            Err(EvalError::NoValue)
+        );
     }
 
     /// Evaluate `a <op> b` for two string literals.
-    fn eval_str_cmp(op: BinOp, a: &str, b: &str) -> Result<Value, ()> {
+    fn eval_str_cmp(op: BinOp, a: &str, b: &str) -> Result<Value, EvalError> {
         eval_expr(
             &Expr::BinOp(
                 op,
@@ -2736,7 +2771,10 @@ mod expr_eval_tests {
             Box::new(Expr::Lit(Value::Float(5.0))),
             Box::new(Expr::Lit(Value::Float(0.0))),
         );
-        assert_eq!(eval_expr(&e, &HashMap::new(), None), Err(()));
+        assert_eq!(
+            eval_expr(&e, &HashMap::new(), None),
+            Err(EvalError::NoValue)
+        );
     }
 
     #[test]
