@@ -122,7 +122,7 @@ pub struct DatalogExecutor {
     /// takes its own snapshot of `storage`.
     snapshot: Option<Snapshot>,
     rules: Arc<RwLock<RuleRegistry>>,
-    // RwLock pre-wired for 7.7b register_aggregate API.
+    /// The functions; each query reads one snapshot of them (#180).
     functions: Arc<Functions>,
     /// The most facts a rule query may derive, base facts not counted (#553).
     max_derived_facts: usize,

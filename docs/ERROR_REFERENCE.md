@@ -2311,14 +2311,12 @@ predicate evaluation, or fact transacting.
 
 **Error text**: `functions lock poisoned`
 
-**Cause**: An internal Rust mutex guarding the custom function registry was poisoned — a previous operation panicked while holding the lock.
+**Cause**: The lock guarding the custom function registry was poisoned: a thread panicked while it held the lock. A query takes the lock only to copy the registry's handle when it opens. Since v3.0.0 no user code runs under it, so a custom function that panics does not poison it.
 
 **Resolution**:
-- Restart the process.
-- If panics recur when calling custom registered functions, investigate the function implementations for panics.
-- If this occurs without any custom functions, file a bug.
+- Restart the process. This indicates a bug in Minigraf; file an issue.
 
-**Scenario**: `db.register_predicate()` or a query invoking a custom predicate panics; subsequent calls to any query return this error.
+**Scenario**: A panic while a function was being registered left the registry lock poisoned; every later query returns this error.
 
 ### QRY-009 Rules lock poisoned
 
@@ -2410,7 +2408,7 @@ db.execute("(query [:find ?g (count ?e) :where [?e :g ?g]])")?;
 
 **Error text**: `user function `{}` failed: {}`
 
-**Cause**: A user-defined predicate or aggregate registered with `try_register_predicate` or `try_register_aggregate` returned `Err(UdfError)`, or a language binding's callback threw. The first argument is the function's name and the second is the `UdfError`'s message. The query stops at the failing call: no later call of any user function is made for it. A cursor returns the rows it gathered before the failure first, then this error, then no more rows. A query inside a `WriteTransaction` that fails this way leaves the transaction open. Functions registered with `register_predicate` or `register_aggregate` never fail this way.
+**Cause**: A user-defined predicate or aggregate registered with `try_register_predicate` or `try_register_aggregate` returned `Err(UdfError)`, or a language binding's callback threw. The first argument is the function's name and the second is the `UdfError`'s message. The query stops at the failing call: no later call of any user function is made for it. A cursor treats it as any other read error: it returns the rows of the batches the query finished before the failure first, then this error, then no more rows. Rows of the batch the failure happens in are not returned. A query inside a `WriteTransaction` that fails this way leaves the transaction open. Functions registered with `register_predicate` or `register_aggregate` never fail this way.
 
 **Resolution**:
 - Read the message: it is the one the function gave.
@@ -3241,12 +3239,12 @@ db.execute("(rule [(ancestor ?x ?y) [?x :parent ?y]])")?;
 
 **Error text**: `function registry lock poisoned: PoisonError { .. }`
 
-**Cause**: An internal Rust mutex guarding the custom function/predicate registry was poisoned — a previous operation panicked while registering or invoking a custom function.
+**Cause**: The lock guarding the custom function/predicate registry was poisoned: a thread panicked while it held the lock. The lock is held only while a query copies the registry's handle at open and while a function is registered. No user code runs under it: since v3.0.0 a query holds no registry lock while a custom function runs, so a function that panics does not poison it.
 
 **Resolution**:
-- Restart the process. If panics recur during `db.register_predicate()` or `db.register_aggregate()` calls, investigate the closure implementations for panics.
+- Restart the process. This indicates a bug in Minigraf; file an issue.
 
-**Scenario**: A custom predicate closure registered via `db.register_predicate()` panics during a query, poisoning the function registry mutex.
+**Scenario**: A panic inside `db.register_predicate()`, `db.register_aggregate()` or their `try_` forms while the registry lock is held; the next registration returns this error.
 
 ### API-009 WAL not initialized
 
