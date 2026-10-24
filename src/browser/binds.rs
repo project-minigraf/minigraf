@@ -21,8 +21,10 @@
 //!
 //! Any other JavaScript value is a `TypeError`. A typed form whose value does
 //! not fit its type (a bad UUID, a negative tx count, an integer outside
-//! `i64`, a set element that is no value) is `API-017`; a set element that is
-//! a set is `API-021`. A plain array is not a set.
+//! `i64`, a set element in an `entity`, `txCount`, `timestamp` or
+//! `anyValidTime` form) is `API-017`; a set element that is a set is
+//! `API-021`. A plain array is not a set, neither as a binding nor as an
+//! element (`TypeError`).
 
 use crate::MinigrafError;
 use crate::graph::types::{Value, ValueSet};

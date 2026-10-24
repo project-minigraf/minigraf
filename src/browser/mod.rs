@@ -1583,6 +1583,11 @@ mod prepared_tests {
                 .collect::<js_sys::Array>()
                 .into(),
             typed_set(&[JsValue::UNDEFINED]),
+            typed_set(&[Object::new().into()]),
+            typed_set(&[[JsValue::from_f64(1.0)]
+                .iter()
+                .collect::<js_sys::Array>()
+                .into()]),
         ] {
             let e = rejection(pq.execute(obj(&[("s", bad)])));
             assert!(e.is_instance_of::<js_sys::TypeError>(), "a TypeError");
