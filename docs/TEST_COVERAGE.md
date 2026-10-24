@@ -377,11 +377,12 @@ These tests compare the database against an independent answer rather than a sin
     - the planner builds a keyless join on the side with the smaller product estimate (#575's shape, a selective outer side, a tie, reordering off).
   - `meter.rs` (4 unit tests) checks charge, release, drop, peak and the allocator form.
   - `Aggregate` charges its sorted map of groups until every row is built, and lets its hash table and group rows go first, with `sum-distinct` members charged once (`aggregate_finish_charges_its_sorted_groups`, `aggregate_finish_keeps_sum_distinct_members_charged_once`).
-- **Join rules** (`tests/join_rules_test.rs`, 11 tests; #545)
+- **Join rules** (`tests/join_rules_test.rs`, 15 tests; #545, #744)
   - A join on a float value pairs `0.0` with `-0.0`, through the hash key and as a shared variable. A unit test checks that `-0.0` and `0.0` hash alike.
   - A float constant in a pattern, bound to a `$slot`, in a rule body or in an `=` predicate matches equal floats only (`1e-17` does not match `0.0`; `0.0` matches `-0.0`; #706), in memory, on file before and after a checkpoint and after reopen.
   - A variable bound to a keyword by one pattern and to the ref of the same entity by another returns the kind from the first pattern in `:where` text order: when the planner runs the patterns in another order, through the attribute position, before and after a rule call, and with a repeated pattern.
   - An expression binding unifies with a pattern binding the same variable; the first binder in the text, pattern or expression, gives the value (#596).
+  - An expression's `=` and `!=` equate a keyword with a ref to the entity it names, as the pattern constant and the join do: either operand order, a keyword constant or value, a bound `Val(Ref)`, a binding expression, a rule body, a `not` clause, an `or` branch and a keyword whose name is a UUID, in memory, after a checkpoint and after reopen; a keyword still equals the same keyword only, and set elements still compare as they are (#744).
   - A pseudo-attribute pattern never gives a variable its value, even when it runs first (#606; the plan-independence matrix checks it with reordering off).
 - **Pseudo-attribute sources** (`tests/pseudo_source_test.rs`, 12 tests; #594)
   - A per-fact pseudo-attribute reads the nearest earlier pattern in the text with the same entity term (#594's example in both text orders). Two pseudo-attributes share a source. `[:alice ?a _]` gives one row per fact. Constant and bound value terms check.
@@ -461,7 +462,7 @@ These tests compare the database against an independent answer rather than a sin
 
 None of these are counted in the summary. The wasm32 targets run in CI (`.github/workflows/wasm.yml`).
 
-- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 40 `wasm_bindgen_test` tests.
+- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 43 `wasm_bindgen_test` tests.
   - Twenty-five for `BrowserDb`, including IndexedDB persistence, the cursor, and the flush returning every dirty page and failing on one it cannot read (#470).
   - Eleven for `BrowserBufferBackend` (which used `#[test]` and never ran before).
   - Two checking that IndexedDB page keys accept only whole numbers from 0 to 2^53.
