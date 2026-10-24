@@ -38,6 +38,9 @@ str-char    ::= "\" ("n" | "t" | "r" | '"' | "\" | any-char)
               | (* not followed by '"' | "\" *) any-char
 string-lit  ::= '"' str-char* '"'  (* token *)
 uuid-lit    ::= "#uuid" string-lit
+set-elem    ::= uuid-lit | boolean-lit | nil-lit | float-lit | integer-lit | string-lit
+              | keyword
+set-lit     ::= "#{" set-elem* "}"
 bind-slot   ::= "$" (letter | numeral | "_" | "-")+  (* token *)
 keyword     ::= ":" word-cont+  (* token *)
 variable    ::= "?" word-cont*  (* token *)
@@ -47,9 +50,9 @@ plain-sym   ::= (* not followed by boolean-lit *) (* not followed by nil-lit *) 
               | "-" (* not followed by numeral *) word-cont+  (* token *)
 
 (* ── EDN VALUE (any EDN atom or container) ── *)
-edn-value  ::= uuid-lit | boolean-lit | nil-lit | float-lit | integer-lit | string-lit
-             | bind-slot | keyword | op-sym | variable | plain-sym | edn-list
-             | edn-vector | edn-map
+edn-value  ::= set-lit | uuid-lit | boolean-lit | nil-lit | float-lit | integer-lit
+             | string-lit | bind-slot | keyword | op-sym | variable | plain-sym
+             | edn-list | edn-vector | edn-map
 edn-list   ::= "(" edn-value* ")"
 edn-vector ::= "[" edn-value* "]"
 edn-map    ::= "{" (edn-value edn-value)* "}"
@@ -106,8 +109,8 @@ binary-form ::= binary-op expr-arg expr-arg
 unary-op    ::= "string?" | "integer?" | "float?" | "boolean?" | "nil?"  (* token *)
 binary-op   ::= "<=" | ">=" | "!=" | "starts-with?" | "ends-with?" | "contains?"
               | "matches?" | "<" | ">" | "=" | "+" | "-" | "*" | "/"  (* token *)
-expr-arg    ::= expr | boolean-lit | nil-lit | float-lit | integer-lit | string-lit
-              | bind-slot | keyword | variable
+expr-arg    ::= expr | set-lit | boolean-lit | nil-lit | float-lit | integer-lit
+              | string-lit | bind-slot | keyword | variable
 
 (* ── TEMPORAL / WITH SECTIONS ── *)
 as-of-section             ::= kw-as-of (integer-lit | string-lit | bind-slot)

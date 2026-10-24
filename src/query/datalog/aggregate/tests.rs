@@ -91,6 +91,19 @@ fn value_order_is_a_total_order() {
         kw(":b"),
         Value::Null,
     ];
+    // Sets (#316); no zero or NaN element, whose equal sets differ in bits.
+    let set = |v: Vec<Value>| Value::Set(crate::graph::types::ValueSet::new(v).unwrap());
+    let grid: Vec<Value> = grid
+        .into_iter()
+        .chain([
+            set(vec![]),
+            set(vec![i(1)]),
+            set(vec![i(1), Value::String("a".into())]),
+            set(vec![f(1.5), kw(":a")]),
+            set(vec![i(2)]),
+            set(vec![Value::Null]),
+        ])
+        .collect();
     for a in &grid {
         for b in &grid {
             let ab = value_order(a, b);
@@ -404,4 +417,23 @@ fn named_vars_in_find_order() {
          :where [?e :d ?d]])",
     );
     assert_eq!(named_vars(&find), vec!["?d"]);
+}
+
+#[test]
+fn value_order_puts_sets_last_and_orders_them_by_elements() {
+    use crate::graph::types::ValueSet;
+    let set = |v: Vec<Value>| Value::Set(ValueSet::new(v).unwrap());
+    let empty = set(vec![]);
+    for v in [i(1), f(f64::NAN), kw(":z"), Value::Null] {
+        assert_eq!(value_order(&v, &empty), Ordering::Less, "scalar first");
+    }
+    // Elements sorted by value_order: 1 before "a" (numbers first), unlike
+    // Value's Ord (strings first).
+    let a = set(vec![Value::String("a".into()), i(1)]);
+    let b = set(vec![i(2)]);
+    assert_eq!(value_order(&a, &b), Ordering::Less, "1 < 2 decides");
+    assert_eq!(value_order(&b, &a), Ordering::Greater, "antisymmetric");
+    assert_eq!(value_order(&a, &a.clone()), Ordering::Equal, "reflexive");
+    let prefix = set(vec![i(1)]);
+    assert_eq!(value_order(&prefix, &a), Ordering::Less, "prefix first");
 }

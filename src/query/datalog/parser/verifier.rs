@@ -66,7 +66,7 @@ fn alphabet() -> Vec<char> {
     a
 }
 
-const TOKENS: [&str; 32] = [
+const TOKENS: [&str; 33] = [
     "(",
     ")",
     "[",
@@ -99,6 +99,7 @@ const TOKENS: [&str; 32] = [
     "<",
     "$s",
     "#uuid \"550e8400-e29b-41d4-a716-446655440000\"",
+    "#{",
 ];
 
 /// Bracket token → `(kind, opens)`.
@@ -497,8 +498,9 @@ fn filler_counts_match_the_spec() {
         }
         n
     };
-    assert_eq!(count(3), 18_516);
-    assert_eq!(count(4), 487_678);
+    // 33 tokens: the #643 spec's 32 and `#{` (#316).
+    assert_eq!(count(3), 20_686);
+    assert_eq!(count(4), 565_267);
 }
 
 #[test]

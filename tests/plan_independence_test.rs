@@ -25,6 +25,8 @@ fn key(v: &Value) -> String {
         Value::Ref(u) => format!("r:{}", u.as_hyphenated()),
         Value::Keyword(k) => format!("k:{k}"),
         Value::Null => "nil".to_string(),
+        Value::Set(s) => format!("S:{{{}}}", s.iter().map(key).collect::<Vec<_>>().join(" ")),
+        _ => "?".to_string(),
     }
 }
 

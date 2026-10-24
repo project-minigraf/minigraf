@@ -1,5 +1,9 @@
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::error::{ErrorCode, MinigrafError, err_coded};
 
 // ============================================================================
 // Datalog EAV Model (Phase 3+)
@@ -65,7 +69,12 @@ pub(crate) type Attribute = String;
 /// | `Ref` | keyword entity or UUID | `:alice`, `#uuid "550e8400-..."` |
 /// | `Keyword` | colon-prefixed | `:status/active`, `:red` |
 /// | `Null` | `nil` | `nil` |
+/// | `Set` | `#{...}` of the above | `#{:role/admin :role/editor}` |
+///
+/// New variants may be added in later releases, so a `match` outside this
+/// crate needs a wildcard arm.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[non_exhaustive]
 pub enum Value {
     /// A UTF-8 string. Datalog literal: `"hello"`.
     String(String),
@@ -83,6 +92,9 @@ pub enum Value {
     Keyword(String),
     /// An absent value. Datalog literal: `nil`.
     Null,
+    /// A finite set of the values above (never of sets). Datalog literal:
+    /// `#{1 2 3}`.
+    Set(ValueSet),
 }
 
 impl Eq for Value {}
@@ -112,6 +124,7 @@ impl std::hash::Hash for Value {
             Value::Ref(r) => r.hash(state),
             Value::Keyword(k) => k.hash(state),
             Value::Null => {}
+            Value::Set(s) => s.hash(state),
         }
     }
 }
@@ -131,7 +144,10 @@ impl PartialOrd for Value {
 ///
 /// # Cross-Variant Ordering
 /// Values of different variants are ordered by discriminant:
-/// - String (0) < Integer (1) < Float (2) < Boolean (3) < Ref (4) < Keyword (5) < Null (6)
+/// - String (0) < Integer (1) < Float (2) < Boolean (3) < Ref (4) < Keyword (5) < Null (6) < Set (7)
+///
+/// Two sets compare by their elements in this order, lexicographically; a
+/// set that is a proper prefix of another is less.
 impl Ord for Value {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // Simple variant ordering using match
@@ -154,6 +170,7 @@ impl Ord for Value {
             (Value::Ref(a), Value::Ref(b)) => a.cmp(b),
             (Value::Keyword(a), Value::Keyword(b)) => a.cmp(b),
             (Value::Null, Value::Null) => std::cmp::Ordering::Equal,
+            (Value::Set(a), Value::Set(b)) => a.cmp(b),
             // Different variants — order by a stable integer discriminant so
             // the total order is deterministic and does not depend on stack
             // addresses (the previous implementation used pointer values here,
@@ -168,6 +185,7 @@ impl Ord for Value {
                         Value::Ref(_) => 4,
                         Value::Keyword(_) => 5,
                         Value::Null => 6,
+                        Value::Set(_) => 7,
                     }
                 }
                 discriminant(self).cmp(&discriminant(other))
@@ -228,6 +246,118 @@ impl Value {
     /// Check if this value is Null
     pub fn is_null(&self) -> bool {
         matches!(self, Value::Null)
+    }
+
+    /// Extract the set if this is a Set variant
+    pub fn as_set(&self) -> Option<&ValueSet> {
+        match self {
+            Value::Set(s) => Some(s),
+            _ => None,
+        }
+    }
+}
+
+/// A finite set of values, none of them a set (#316).
+///
+/// Two elements are the same element when [`Value`]'s `Ord` says they are
+/// equal: `-0.0` and `0.0` are one element (`-0.0` is kept), every NaN is
+/// one element, a keyword never equals a ref, and `1` never equals `1.0`.
+/// Iteration is in `Value`'s order.
+#[derive(Clone, Default, PartialOrd, Ord)]
+pub struct ValueSet(BTreeSet<Value>);
+
+impl ValueSet {
+    /// The set of `values`, duplicates removed. A set among them is API-021.
+    pub fn new(values: impl IntoIterator<Item = Value>) -> Result<Self, MinigrafError> {
+        let mut set = BTreeSet::new();
+        for v in values {
+            if matches!(v, Value::Set(_)) {
+                return Err(MinigrafError::from(err_coded!(ErrorCode::Api021)));
+            }
+            // `0.0` and `-0.0` are one element: keep `-0.0`, the least of the
+            // two by `value_order`, whichever came first.
+            let replace = match (&v, set.get(&v)) {
+                (Value::Float(new), Some(Value::Float(old))) => {
+                    *new == 0.0 && new.is_sign_negative() && !old.is_sign_negative()
+                }
+                (_, Some(_)) => false,
+                (_, None) => true,
+            };
+            if replace {
+                set.replace(v);
+            }
+        }
+        Ok(ValueSet(set))
+    }
+
+    /// The elements, in `Value`'s order.
+    pub fn iter(&self) -> impl Iterator<Item = &Value> {
+        self.0.iter()
+    }
+
+    /// The number of elements.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// True when the set has no elements.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// True when `v` is an element.
+    pub fn contains(&self, v: &Value) -> bool {
+        self.0.contains(v)
+    }
+}
+
+impl<'a> IntoIterator for &'a ValueSet {
+    type Item = &'a Value;
+    type IntoIter = std::collections::btree_set::Iter<'a, Value>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+/// Equal when every element is equal under `Value`'s `Ord`, so a set holding
+/// a NaN equals itself.
+impl PartialEq for ValueSet {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == std::cmp::Ordering::Equal
+    }
+}
+
+impl Eq for ValueSet {}
+
+impl std::hash::Hash for ValueSet {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.len().hash(state);
+        for v in &self.0 {
+            v.hash(state);
+        }
+    }
+}
+
+impl std::fmt::Debug for ValueSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("#")?;
+        f.debug_set().entries(self.0.iter()).finish()
+    }
+}
+
+impl Serialize for ValueSet {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter())
+    }
+}
+
+/// Read through [`ValueSet::new`], so the order is restored and a nested set
+/// is an error, whatever the input.
+impl<'de> Deserialize<'de> for ValueSet {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let values = Vec::<Value>::deserialize(deserializer)?;
+        ValueSet::new(values).map_err(serde::de::Error::custom)
     }
 }
 
@@ -750,5 +880,184 @@ mod tests {
             h.hash_one(Value::Float(1.0)),
             "-1.0 and 1.0"
         );
+    }
+
+    // ── ValueSet (#316) ──────────────────────────────────────────────────────
+
+    fn set(values: Vec<Value>) -> ValueSet {
+        ValueSet::new(values).unwrap()
+    }
+
+    #[test]
+    fn value_set_removes_duplicates() {
+        let s = set(vec![
+            Value::Integer(1),
+            Value::Integer(1),
+            Value::Keyword(":a".into()),
+            Value::Keyword(":a".into()),
+        ]);
+        assert_eq!(s.len(), 2, "two distinct elements");
+        assert!(s.contains(&Value::Integer(1)), "holds 1");
+        assert!(!s.contains(&Value::Float(1.0)), "1.0 is not 1");
+    }
+
+    #[test]
+    fn value_set_keeps_negative_zero_whatever_the_order() {
+        for values in [
+            vec![Value::Float(0.0), Value::Float(-0.0)],
+            vec![Value::Float(-0.0), Value::Float(0.0)],
+        ] {
+            let s = set(values);
+            assert_eq!(s.len(), 1, "one zero");
+            let Some(Value::Float(z)) = s.iter().next() else {
+                panic!("a float element");
+            };
+            assert!(z.is_sign_negative(), "-0.0 is kept");
+        }
+    }
+
+    #[test]
+    fn value_set_holds_one_nan() {
+        let s = set(vec![
+            Value::Float(f64::NAN),
+            Value::Float(-f64::NAN),
+            Value::Float(f64::NAN),
+        ]);
+        assert_eq!(s.len(), 1, "one NaN");
+        assert!(s.contains(&Value::Float(f64::NAN)), "NaN is a member");
+        assert_eq!(s, s.clone(), "a set holding NaN equals itself");
+    }
+
+    #[test]
+    fn value_set_rejects_a_set_element() {
+        let inner = Value::Set(ValueSet::default());
+        let err = ValueSet::new(vec![Value::Integer(1), inner]).unwrap_err();
+        assert_eq!(err.code(), "API-021");
+    }
+
+    #[test]
+    fn value_set_keyword_never_equals_ref() {
+        let u = Uuid::new_v5(&Uuid::NAMESPACE_OID, b":a");
+        let s = set(vec![Value::Keyword(":a".into())]);
+        assert!(!s.contains(&Value::Ref(u)), "a ref is not the keyword");
+    }
+
+    #[test]
+    fn value_set_iterates_in_value_order() {
+        let s = set(vec![
+            Value::Null,
+            Value::Integer(2),
+            Value::String("b".into()),
+            Value::Integer(1),
+        ]);
+        let got: Vec<Value> = s.iter().cloned().collect();
+        let mut want = got.clone();
+        want.sort();
+        assert!(got == want, "canonical order");
+        assert!(
+            matches!(got.first(), Some(Value::String(_))),
+            "strings first"
+        );
+    }
+
+    #[test]
+    fn sets_order_after_every_scalar_and_by_elements() {
+        let empty = Value::Set(ValueSet::default());
+        for v in [
+            Value::String("z".into()),
+            Value::Integer(i64::MAX),
+            Value::Null,
+            Value::Keyword(":z".into()),
+        ] {
+            assert_eq!(v.cmp(&empty), std::cmp::Ordering::Less, "scalar before set");
+        }
+        let a = Value::Set(set(vec![Value::Integer(1)]));
+        let ab = Value::Set(set(vec![Value::Integer(1), Value::Integer(2)]));
+        let b = Value::Set(set(vec![Value::Integer(2)]));
+        assert!(empty < a && a < ab && ab < b, "lexicographic, prefix first");
+    }
+
+    #[test]
+    fn value_set_serde_round_trip_and_validation() {
+        let s = Value::Set(set(vec![
+            Value::Integer(3),
+            Value::String("x".into()),
+            Value::Keyword(":k".into()),
+        ]));
+        let bytes = postcard::to_allocvec(&s).unwrap();
+        let back: Value = postcard::from_bytes(&bytes).unwrap();
+        assert!(back == s, "round trip");
+
+        // Out of order and with a duplicate: restored by `ValueSet::new`.
+        let raw = vec![Value::Integer(3), Value::Integer(1), Value::Integer(3)];
+        let mut bytes = vec![7u8]; // variant index of `Value::Set`
+        bytes.extend(postcard::to_allocvec(&raw).unwrap());
+        let back: Value = postcard::from_bytes(&bytes).unwrap();
+        assert!(
+            back == Value::Set(set(vec![Value::Integer(1), Value::Integer(3)])),
+            "canonical after decode"
+        );
+
+        // A nested set is refused.
+        let nested = vec![Value::Set(ValueSet::default())];
+        let mut bytes = vec![7u8];
+        bytes.extend(postcard::to_allocvec(&nested).unwrap());
+        assert!(postcard::from_bytes::<Value>(&bytes).is_err(), "nested set");
+    }
+
+    /// The serde variant indices of the variants before `Set` are unchanged,
+    /// so WAL entries written before #316 decode as before.
+    #[test]
+    fn value_serde_encoding_of_old_variants_is_unchanged() {
+        let cases: [(Value, &[u8]); 4] = [
+            (Value::String("a".into()), &[0, 1, b'a']),
+            (Value::Integer(1), &[1, 2]),
+            (Value::Keyword(":a".into()), &[5, 2, b':', b'a']),
+            (Value::Null, &[6]),
+        ];
+        for (v, want) in cases {
+            assert_eq!(
+                postcard::to_allocvec(&v).unwrap(),
+                want.to_vec(),
+                "encoding"
+            );
+        }
+    }
+
+    // proptest is a native-only dev-dependency.
+    #[cfg(not(target_arch = "wasm32"))]
+    proptest::proptest! {
+        #[test]
+        fn value_set_ord_hash_and_eq_agree(
+            xs in proptest::collection::vec(scalar(), 0..6),
+            ys in proptest::collection::vec(scalar(), 0..6),
+        ) {
+            use std::hash::{BuildHasher, RandomState};
+            let h = RandomState::new();
+            let a = set(xs.clone());
+            let b = set(ys);
+            let mut rev = xs;
+            rev.reverse();
+            let a2 = set(rev);
+            proptest::prop_assert!(a == a2, "insertion order does not matter");
+            proptest::prop_assert_eq!(h.hash_one(&a), h.hash_one(&a2));
+            proptest::prop_assert_eq!(a.cmp(&b), b.cmp(&a).reverse());
+            if a == b {
+                proptest::prop_assert_eq!(h.hash_one(&a), h.hash_one(&b));
+            }
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn scalar() -> impl proptest::strategy::Strategy<Value = Value> {
+        use proptest::prelude::*;
+        prop_oneof![
+            (-3i64..3).prop_map(Value::Integer),
+            prop_oneof![Just(0.0), Just(-0.0), Just(f64::NAN), Just(1.5)].prop_map(Value::Float),
+            "[ab]{0,2}".prop_map(Value::String),
+            "[ab]{1,2}".prop_map(|s| Value::Keyword(format!(":{s}"))),
+            any::<bool>().prop_map(Value::Boolean),
+            Just(Value::Null),
+        ]
     }
 }

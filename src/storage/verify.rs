@@ -278,8 +278,25 @@ impl<'a> Walker<'a> {
                     KeyValue::Keyword(i) => {
                         ids.iids.insert(i);
                     }
-                    KeyValue::LongStr { prefix, hash, vref } => {
+                    KeyValue::LongStr { prefix, hash, vref }
+                    | KeyValue::LongSet { prefix, hash, vref } => {
                         ids.long.insert(vref, (hash, prefix));
+                    }
+                    // An inline set's keyword and ref elements must be in
+                    // the DICT too (#316). A long set's are checked when
+                    // its record is read.
+                    KeyValue::Set(bytes) => {
+                        for e in keys::set_elements_decode(&bytes)? {
+                            match e {
+                                KeyValue::Ref(t) => {
+                                    ids.eids.insert(t);
+                                }
+                                KeyValue::Keyword(i) => {
+                                    ids.iids.insert(i);
+                                }
+                                _ => {}
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -371,17 +388,19 @@ impl<'a> Walker<'a> {
                         .map(u64::from_be_bytes)
                         .ok_or_else(|| bad("long-value key too short".to_string()))?;
                     let bytes = read_value(vref, backend, cache)?;
+                    // A long string's bytes, or a long set's element
+                    // encoding (#316).
                     if bytes.len() <= SHORT_STRING_MAX
                         || keys::hash64(&bytes) != hash
-                        || std::str::from_utf8(&bytes).is_err()
+                        || (std::str::from_utf8(&bytes).is_err()
+                            && keys::set_elements_decode(&bytes).is_err())
                     {
                         return Err(bad(format!(
                             "long value {}:{} does not match its entry",
                             vref.page, vref.slot
                         )));
                     }
-                    let prefix =
-                        keys::long_str(std::str::from_utf8(&bytes).unwrap_or_default(), vref);
+                    let prefix = keys::long_bytes(&bytes, vref);
                     let KeyValue::LongStr { prefix, .. } = prefix else {
                         return Err(err_coded!(ErrorCode::Int049, "long_str shape"));
                     };

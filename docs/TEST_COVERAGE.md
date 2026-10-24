@@ -4,9 +4,9 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,707 | 1,723 |
+| **Passing** | 1,740 | 1,758 |
 | **Ignored** | 13 | 14 |
-| **Total** | 1,720 | 1,737 |
+| **Total** | 1,753 | 1,772 |
 
 **Verified**: 2026-10-24 with `cargo test --quiet`.
 
@@ -95,6 +95,7 @@ These tests compare the database against an independent answer rather than a sin
 ### Format v8 pages and keys
 
 - **Multi-value and index-key correctness** (`tests/multi_value_test.rs`, 10 tests; #287, #371): same-transaction multi-valued facts surviving query-time dedup, retracting several values of one attribute in one call, valid-time stints (facts differing only in valid time), maximum-value-size boundaries, and format v8 index keys (value bytes + assert/retract flag).
+- **Set values** (`tests/set_values_test.rs`, 8 tests, 10 with `test-hooks`; #316): `#{...}` transacted, queried by exact value, joined on and grouped by, in memory, pending, committed, after WAL replay and reopen, in a large transaction, through the fact log and the log writer; exact retraction; the stored-size limit (`WAL-003`); literal errors (`PRS-119`–`121`); with `test-hooks`, the same answers with reordering on and off, and `#{0.0}` equal to `#{-0.0}` through a constant and a join, committed or pending. Unit tests cover `ValueSet` (dedup, `-0.0` kept, one NaN, `API-021`, `Ord`/`Hash`/`Eq` property test, serde), v8 set keys (inline and long, the 64-byte boundary, decoding, `set_bytes_bound`), long-set dedup and a set record under a string's hash, the pending encoding, `value_order`, parser errors and REPL/JSON output; the model-based test generates sets.
 - **B+tree cursor** (v8 storage format PR 1, #374): every scan walks the tree, not the leaf `next_leaf` chain.
   - Full scans and start positions match the input.
   - `seek` from the current position lands where a fresh descent from the root would: randomized, plus within a leaf, to a sibling, across subtrees, past the end, into the gap after a leaf, and backwards as a no-op.
