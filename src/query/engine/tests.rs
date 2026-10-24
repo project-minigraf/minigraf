@@ -2866,8 +2866,7 @@ fn meter_peak_against_rss() {
             panic!("expected a query");
         };
         let plan = super::plan(&query).expect("an engine plan");
-        let functions =
-            std::sync::Arc::new(std::sync::RwLock::new(FunctionRegistry::with_builtins()));
+        let functions = std::sync::Arc::new(FunctionRegistry::with_builtins());
         let snapshot = db.snapshot().unwrap();
         let reset = std::fs::write("/proc/self/clear_refs", "5").is_ok();
         let before_kb = proc_status_kb("VmRSS");

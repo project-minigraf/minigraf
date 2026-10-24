@@ -24,8 +24,8 @@ use crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS;
 use crate::query::datalog::executor::DatalogExecutor;
 use crate::query::datalog::executor::QueryResult;
 use crate::query::datalog::functions::{
-    AggImpl, AggregateDesc, FunctionRegistry, PredicateDesc, UdfError, UdfFinaliseFn, UdfInitFn,
-    UdfOps, UdfStepFn,
+    AggImpl, AggregateDesc, Functions, PredicateDesc, UdfError, UdfFinaliseFn, UdfInitFn, UdfOps,
+    UdfStepFn,
 };
 use crate::query::datalog::parser::parse_datalog_command;
 use crate::query::datalog::parser::statement::{self, Kind};
@@ -425,7 +425,7 @@ struct Inner {
     rules: Arc<RwLock<RuleRegistry>>,
     /// Function registry for aggregates and window functions.
     /// `RwLock` is used in anticipation of the 7.7b `register_aggregate`/`register_predicate` mutation API.
-    functions: Arc<RwLock<FunctionRegistry>>,
+    functions: Arc<Functions>,
     /// Serialises all writes. Holds `WriteContext` which contains the PFS/WAL
     /// for file-backed databases.
     write_lock: Mutex<WriteContext>,
@@ -633,7 +633,7 @@ impl Minigraf {
             inner: Arc::new(Inner {
                 fact_storage,
                 rules: Arc::new(RwLock::new(RuleRegistry::new())),
-                functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
+                functions: Arc::new(Functions::with_builtins()),
                 write_lock: Mutex::new(ctx),
                 options,
             }),
@@ -1561,9 +1561,7 @@ impl Minigraf {
         };
         self.inner
             .functions
-            .write()
-            .map_err(|_| err_coded!(ErrorCode::Api008))?
-            .register_aggregate_desc(name.to_string(), desc)
+            .register(|reg| reg.register_aggregate_desc(name.to_string(), desc))
     }
 
     /// Register a custom single-argument filter predicate.
@@ -1638,9 +1636,7 @@ impl Minigraf {
         };
         self.inner
             .functions
-            .write()
-            .map_err(|_| err_coded!(ErrorCode::Api008))?
-            .register_predicate_desc(name.to_string(), desc)
+            .register(|reg| reg.register_predicate_desc(name.to_string(), desc))
     }
 }
 
@@ -2562,11 +2558,7 @@ mod tests {
 
         let db = Minigraf::in_memory().unwrap();
 
-        let poison_db = db.clone();
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-            let _guard = poison_db.inner.functions.write().unwrap();
-            panic!("intentionally poisoning the function registry lock for a test");
-        }));
+        db.inner.functions.poison();
 
         let err = db
             .register_predicate("always_true", |_: &Value| true)

@@ -1,8 +1,8 @@
-use crate::error::{ErrorCode, bail_coded};
+use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::graph::types::Value;
 use std::any::Any;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 /// Why a user-defined function failed. Its message is in the query's
 /// `QRY-014` error.
@@ -185,6 +185,47 @@ impl FunctionRegistry {
     /// Returns None for built-in sentinels (they are not callable via registry).
     pub fn get_predicate(&self, name: &str) -> Option<&PredicateDesc> {
         self.predicates.get(name).filter(|d| !d.is_builtin)
+    }
+}
+
+/// The registry a database shares between its handles (#180, spec §5). A
+/// query reads its functions from a [`snapshot`](Functions::snapshot) taken
+/// when it opens, so no lock is held while a user function runs, and a
+/// function registered later is not visible to it. Registration swaps in a
+/// new registry.
+pub struct Functions(RwLock<Arc<FunctionRegistry>>);
+
+impl Functions {
+    pub(crate) fn with_builtins() -> Self {
+        Functions(RwLock::new(Arc::new(FunctionRegistry::with_builtins())))
+    }
+
+    /// The registry now; a poisoned lock is `QRY-008`.
+    pub(crate) fn snapshot(&self) -> anyhow::Result<Arc<FunctionRegistry>> {
+        let reg = self.0.read().map_err(|_| err_coded!(ErrorCode::Qry008))?;
+        Ok(Arc::clone(&reg))
+    }
+
+    /// Apply `f` to a copy of the registry and swap the copy in if `f`
+    /// succeeds; a poisoned lock is `API-008`.
+    pub(crate) fn register(
+        &self,
+        f: impl FnOnce(&mut FunctionRegistry) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        let mut reg = self.0.write().map_err(|_| err_coded!(ErrorCode::Api008))?;
+        let mut next = FunctionRegistry::clone(&reg);
+        f(&mut next)?;
+        *reg = Arc::new(next);
+        Ok(())
+    }
+
+    /// Poison the lock, for the tests of `QRY-008` and `API-008`.
+    #[cfg(test)]
+    pub(crate) fn poison(&self) {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = self.0.write();
+            panic!("poison the functions lock");
+        }));
     }
 }
 

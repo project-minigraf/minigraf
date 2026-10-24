@@ -1,4 +1,4 @@
-use super::functions::FunctionRegistry;
+use super::functions::{FunctionRegistry, Functions};
 use super::matcher::{edn_to_entity_id, edn_to_value};
 use super::rules::RuleRegistry;
 use super::types::{
@@ -123,7 +123,7 @@ pub struct DatalogExecutor {
     snapshot: Option<Snapshot>,
     rules: Arc<RwLock<RuleRegistry>>,
     // RwLock pre-wired for 7.7b register_aggregate API.
-    functions: Arc<RwLock<FunctionRegistry>>,
+    functions: Arc<Functions>,
     /// The most facts a rule query may derive, base facts not counted (#553).
     max_derived_facts: usize,
     /// The most bytes an engine query may hold (#549).
@@ -137,7 +137,7 @@ impl DatalogExecutor {
             storage,
             snapshot: None,
             rules: Arc::new(RwLock::new(RuleRegistry::new())),
-            functions: Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
+            functions: Arc::new(Functions::with_builtins()),
             max_derived_facts: crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
             query_memory_limit: usize::MAX,
         }
@@ -149,7 +149,7 @@ impl DatalogExecutor {
     pub fn new_with_rules_and_functions(
         storage: FactStorage,
         rules: Arc<RwLock<RuleRegistry>>,
-        functions: Arc<RwLock<FunctionRegistry>>,
+        functions: Arc<Functions>,
     ) -> Self {
         DatalogExecutor {
             storage,
@@ -166,11 +166,7 @@ impl DatalogExecutor {
     /// [`new_with_rules_and_functions`] to share the registry from `Minigraf::Inner`.
     #[allow(dead_code)]
     pub fn new_with_rules(storage: FactStorage, rules: Arc<RwLock<RuleRegistry>>) -> Self {
-        Self::new_with_rules_and_functions(
-            storage,
-            rules,
-            Arc::new(RwLock::new(FunctionRegistry::with_builtins())),
-        )
+        Self::new_with_rules_and_functions(storage, rules, Arc::new(Functions::with_builtins()))
     }
 
     /// Create a `DatalogExecutor` with custom complexity limits.
@@ -180,7 +176,7 @@ impl DatalogExecutor {
     pub fn new_with_limits(
         storage: FactStorage,
         rules: Arc<RwLock<RuleRegistry>>,
-        functions: Arc<RwLock<FunctionRegistry>>,
+        functions: Arc<Functions>,
         max_derived_facts: usize,
     ) -> Self {
         DatalogExecutor {
@@ -317,19 +313,16 @@ impl DatalogExecutor {
     }
 
     fn open_query(&self, query: DatalogQuery) -> Result<Answer> {
+        // The query reads every function from this one snapshot, its checks
+        // included, and holds no lock while a user function runs (#180).
+        let functions = self.functions.snapshot()?;
         // Resolve :find functions up front so an unknown name fails whether or
         // not any row matches (#414).
-        {
-            let registry = self
-                .functions
-                .read()
-                .map_err(|_| err_coded!(ErrorCode::Qry008))?;
-            check_find_functions(&query.find, &registry)?;
-        }
+        check_find_functions(&query.find, &functions)?;
 
         // A rule query (#548).
         if query.uses_rules() {
-            return self.open_rule_query(&query);
+            return self.open_rule_query(&query, functions);
         }
 
         // Warn about queries with no binding mechanism
@@ -346,20 +339,10 @@ impl DatalogExecutor {
                 return Err(e);
             }
         };
-        {
-            let registry = self
-                .functions
-                .read()
-                .map_err(|_| err_coded!(ErrorCode::Qry008))?;
-            check_clauses(&query, &registry)?;
-        }
+        check_clauses(&query, &functions)?;
         let snapshot = self.read_snapshot()?;
-        let stream = crate::query::engine::open(
-            snapshot.clone(),
-            plan,
-            self.functions.clone(),
-            self.query_memory_limit,
-        )?;
+        let stream =
+            crate::query::engine::open(snapshot.clone(), plan, functions, self.query_memory_limit)?;
         #[cfg(test)]
         crate::query::engine::RUNS.with(|r| r.set(r.get() + 1));
         Ok(Answer::Stream(Box::new(stream)))
@@ -368,7 +351,11 @@ impl DatalogExecutor {
     /// A rule query on the streaming engine (#548). Its errors come in the
     /// executor's order: pseudo-attributes, then the rules, then unknown
     /// predicates.
-    fn open_rule_query(&self, query: &DatalogQuery) -> Result<Answer> {
+    fn open_rule_query(
+        &self,
+        query: &DatalogQuery,
+        functions: Arc<FunctionRegistry>,
+    ) -> Result<Answer> {
         let plan = {
             let registry = self
                 .rules
@@ -421,14 +408,10 @@ impl DatalogExecutor {
                 plan,
                 &seeds,
                 &keywords,
-                self.functions.clone(),
+                Arc::clone(&functions),
                 limits,
             )?;
-            let registry = self
-                .functions
-                .read()
-                .map_err(|_| err_coded!(ErrorCode::Qry008))?;
-            check_predicates(&names, &registry)?;
+            check_predicates(&names, &functions)?;
             Ok(stream)
         };
         let stream = open(plan)?;
@@ -851,7 +834,6 @@ pub(crate) fn eval_expr(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::datalog::functions::FunctionRegistry;
     use crate::query::datalog::parser::parse_datalog_command;
     use crate::query::datalog::rules::RuleRegistry;
     use crate::query::datalog::types::WhereClause;
@@ -1918,7 +1900,7 @@ mod tests {
     fn test_per_query_max_derived_facts_overrides_executor_default() {
         let storage = FactStorage::new();
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
-        let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
+        let functions = Arc::new(Functions::with_builtins());
         let mut executor = DatalogExecutor::new_with_rules_and_functions(
             storage,
             rules.clone(),
@@ -1964,7 +1946,7 @@ mod tests {
     fn test_per_query_limit_does_not_bleed_into_next_query() {
         let storage = FactStorage::new();
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
-        let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
+        let functions = Arc::new(Functions::with_builtins());
         let executor = DatalogExecutor::new_with_rules_and_functions(
             storage,
             rules.clone(),
@@ -2661,8 +2643,8 @@ mod expr_eval_tests {
     fn execute_query_functions_lock_poisoned_error() {
         let storage = FactStorage::new();
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
-        let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
-        poison_rwlock(&functions);
+        let functions = Arc::new(Functions::with_builtins());
+        functions.poison();
 
         let executor = DatalogExecutor::new_with_rules_and_functions(storage, rules, functions);
         let cmd = parse_datalog_command(r#"(query [:find ?e :where [?e :name ?n]])"#).unwrap();
@@ -2679,7 +2661,7 @@ mod expr_eval_tests {
     fn execute_rule_rules_lock_poisoned_error() {
         let storage = FactStorage::new();
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
-        let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
+        let functions = Arc::new(Functions::with_builtins());
         poison_rwlock(&rules);
 
         let executor = DatalogExecutor::new_with_rules_and_functions(storage, rules, functions);
@@ -2699,7 +2681,7 @@ mod expr_eval_tests {
         // (distinct call site from execute_rule's rules.write()).
         let storage = FactStorage::new();
         let rules = Arc::new(RwLock::new(RuleRegistry::new()));
-        let functions = Arc::new(RwLock::new(FunctionRegistry::with_builtins()));
+        let functions = Arc::new(Functions::with_builtins());
         {
             // Register a rule normally first so the query recognises it as
             // rule-backed (uses_rules()) and takes the rules path.
