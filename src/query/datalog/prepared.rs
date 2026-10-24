@@ -250,8 +250,10 @@ fn collect_slot_names(query: &DatalogQuery) -> Vec<String> {
     if let Some(ValidAt::Slot(name)) = &query.valid_at {
         names.insert(name.clone());
     }
-    if let Some(Count::Slot(name)) = &query.limit {
-        names.insert(name.clone());
+    for count in [&query.limit, &query.offset] {
+        if let Some(Count::Slot(name)) = count {
+            names.insert(name.clone());
+        }
     }
     collect_slots_from_clauses(&query.where_clauses, &mut names);
     let mut result: Vec<String> = names.into_iter().collect();
@@ -332,6 +334,10 @@ fn substitute(
 
     if let Some(Count::Slot(name)) = &query.limit {
         query.limit = Some(resolve_count_slot(name, ":limit", bindings)?);
+    }
+
+    if let Some(Count::Slot(name)) = &query.offset {
+        query.offset = Some(resolve_count_slot(name, ":offset", bindings)?);
     }
 
     for clause in &mut query.where_clauses {
@@ -485,7 +491,7 @@ fn resolve_as_of_slot(name: &str, bindings: &HashMap<&str, &BindValue>) -> Resul
     }
 }
 
-/// A `:limit` slot (#306): `Val(Integer(n))` with `n >= 0`.
+/// A `:limit` or `:offset` slot (#306): `Val(Integer(n))` with `n >= 0`.
 fn resolve_count_slot(
     name: &str,
     option: &str,
@@ -784,6 +790,43 @@ mod tests {
         );
         assert_eq!(limit_code(Some(BindValue::TxCount(3))), "API-024");
         assert_eq!(limit_code(None), "API-022");
+    }
+
+    #[test]
+    fn offset_slot_is_collected_and_resolved() {
+        let mut q = make_query_limit_slot();
+        q.offset = Some(Count::Slot("o".to_string()));
+        assert_eq!(
+            collect_slot_names(&q),
+            vec!["n".to_string(), "o".to_string()]
+        );
+        let (n, o) = (
+            BindValue::Val(Value::Integer(2)),
+            BindValue::Val(Value::Integer(5)),
+        );
+        let bindings: HashMap<&str, &BindValue> = [("n", &n), ("o", &o)].into();
+        let filled = substitute(&q, &bindings).unwrap();
+        assert_eq!(filled.offset, Some(Count::Literal(5)));
+        assert_eq!(filled.limit, Some(Count::Literal(2)));
+        let code = |bv: Option<BindValue>| {
+            let bindings: HashMap<&str, &BindValue> = std::iter::once(("n", &n))
+                .chain(bv.iter().map(|b| ("o", b)))
+                .collect();
+            crate::MinigrafError::from(substitute(&q, &bindings).expect_err("rejected")).code()
+        };
+        assert_eq!(code(Some(BindValue::Val(Value::Integer(-1)))), "PRS-115");
+        assert_eq!(code(Some(BindValue::Val(Value::Float(1.0)))), "API-024");
+        assert_eq!(code(None), "API-022");
+        // One slot for both.
+        let mut both = make_query_limit_slot();
+        both.offset = Some(Count::Slot("n".to_string()));
+        assert_eq!(collect_slot_names(&both), vec!["n".to_string()]);
+        let bindings: HashMap<&str, &BindValue> = [("n", &o)].into();
+        let filled = substitute(&both, &bindings).unwrap();
+        assert_eq!(
+            (filled.limit, filled.offset),
+            (Some(Count::Literal(5)), Some(Count::Literal(5)))
+        );
     }
 
     #[test]
