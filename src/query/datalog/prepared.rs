@@ -1,5 +1,5 @@
 use crate::cursor::Cursor;
-use crate::error::{ErrorCode, MinigrafError, bail_coded};
+use crate::error::{ErrorCode, MinigrafError, bail_coded, err_coded};
 use crate::graph::FactStorage;
 use crate::graph::storage::Snapshot;
 use crate::graph::types::Value;
@@ -104,6 +104,9 @@ impl PreparedQuery {
     /// - Missing bind value for a slot present in the query.
     /// - Type mismatch (e.g. `Val` supplied for an `:as-of` slot).
     pub fn execute(&self, bindings: &[(&str, BindValue)]) -> Result<QueryResult, MinigrafError> {
+        if crate::db::is_write_tx_active() {
+            return Err(err_coded!(ErrorCode::Int001).into());
+        }
         self.fact_storage
             .snapshot()
             .and_then(|snapshot| self.execute_inner(bindings, snapshot))
@@ -118,6 +121,9 @@ impl PreparedQuery {
     /// # Errors
     /// The same as [`PreparedQuery::execute`].
     pub fn query(&self, bindings: &[(&str, BindValue)]) -> Result<Cursor, MinigrafError> {
+        if crate::db::is_write_tx_active() {
+            return Err(err_coded!(ErrorCode::Int001).into());
+        }
         let run = || {
             let snapshot = self.fact_storage.snapshot()?;
             let (executor, command) = self.bind(bindings, snapshot.clone())?;

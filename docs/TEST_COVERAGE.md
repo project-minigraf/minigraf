@@ -4,9 +4,9 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,703 | 1,719 |
+| **Passing** | 1,710 | 1,726 |
 | **Ignored** | 13 | 14 |
-| **Total** | 1,716 | 1,733 |
+| **Total** | 1,723 | 1,740 |
 
 **Verified**: 2026-10-24 with `cargo test --quiet`.
 
@@ -281,6 +281,7 @@ These tests compare the database against an independent answer rather than a sin
   - The iterator, and aggregates, rules, `:as-of` and `:any-valid-time`, match `execute()`.
   - A cursor opened before a `transact`, a `WriteTransaction` commit, a retract or a checkpoint returns the pre-write answer to the end, in memory and file-backed.
   - `transact`/`retract`/`rule` are `API-012`; bind slots are `API-010`; a `WriteTransaction` thread gets `INT-001`; rule limits give `INT-020` as from `execute()`.
+  - `tests/write_tx_guard_test.rs` (#734): `checkpoint`, `verify`, `rebuild_indexes`, `prepare` and `PreparedQuery::execute`/`query` on a thread holding a `WriteTransaction` return `INT-001` (each under a 30 s timeout, so a deadlock fails instead of hanging), and the transaction then commits; outside a transaction they run.
   - `PreparedQuery::query` matches `PreparedQuery::execute`.
   - A cursor is `Send` and outlives its database handle.
 - **Fact log** (#430, `tests/fact_log_test.rs`)

@@ -56,7 +56,7 @@ fn set_write_tx_active(val: bool) {
     WRITE_TX_ACTIVE.with(|f| f.set(val));
 }
 
-fn is_write_tx_active() -> bool {
+pub(crate) fn is_write_tx_active() -> bool {
     WRITE_TX_ACTIVE.with(|f| f.get())
 }
 
@@ -1100,6 +1100,9 @@ impl Minigraf {
     }
 
     fn checkpoint_inner(&self) -> Result<()> {
+        if is_write_tx_active() {
+            bail_coded!(ErrorCode::Int001);
+        }
         self.reject_if_read_only("checkpoint")?;
         let mut ctx = self
             .inner
@@ -1136,6 +1139,9 @@ impl Minigraf {
     }
 
     fn verify_inner(&self) -> Result<IntegrityReport> {
+        if is_write_tx_active() {
+            bail_coded!(ErrorCode::Int001);
+        }
         let ctx = self
             .inner
             .write_lock
@@ -1181,6 +1187,9 @@ impl Minigraf {
     }
 
     fn rebuild_indexes_inner(&self) -> Result<()> {
+        if is_write_tx_active() {
+            bail_coded!(ErrorCode::Int001);
+        }
         self.reject_if_read_only("rebuild_indexes")?;
         let mut ctx = self
             .inner
@@ -1331,6 +1340,10 @@ impl Minigraf {
         query_str: &str,
     ) -> Result<crate::query::datalog::prepared::PreparedQuery> {
         use crate::query::datalog::prepared::prepare_query;
+
+        if is_write_tx_active() {
+            bail_coded!(ErrorCode::Int001);
+        }
 
         let cmd = parse_datalog_command(query_str)?;
 
