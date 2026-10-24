@@ -124,8 +124,9 @@ struct Committed {
     resume: Option<Vec<u8>>,
     /// The value constant when the ranges do not fix it.
     test: Option<KeyTest>,
-    /// Triples a pending record decides, as [`keys::entity_attribute_value_prefix`].
-    shadow: Arc<HashSet<Vec<u8>>>,
+    /// Triples a pending record decides, as [`keys::entity_attribute_value_prefix`];
+    /// `None` for none, so a scan with no pending record allocates nothing for it.
+    shadow: Option<Arc<HashSet<Vec<u8>>>>,
 }
 
 /// The attribute and value constants of a scan, against the DICT.
@@ -237,10 +238,7 @@ impl Scan {
         self.state = if ranges.is_empty() {
             self.bucket()
         } else {
-            let shadow = self
-                .values
-                .as_ref()
-                .map_or_else(Arc::default, |v| v.shadow.clone());
+            let shadow = self.values.as_ref().map(|v| v.shadow.clone());
             State::Committed(Committed {
                 ranges,
                 next: 0,
@@ -273,10 +271,10 @@ impl Scan {
 /// and the committed triples its pending records decide (#721): read once
 /// per query.
 fn values(attribute: &str, ctx: &mut Ctx<'_>) -> Result<Arc<Values>> {
-    if let Some(v) = ctx.ids.probes.values.get(attribute) {
+    if let Some(v) = ctx.ids.probes().and_then(|p| p.values.get(attribute)) {
         return Ok(v.clone());
     }
-    let mut held = Held::new(ctx.ids.probes.held.meter(), "IndexNestedLoopJoin");
+    let mut held = Held::new(ctx.ids.probes_mut().held.meter(), "IndexNestedLoopJoin");
     let mut pending: HashMap<Vec<u8>, Vec<Fact>> = HashMap::new();
     let mut keywords = false;
     let mut resume = None;
@@ -326,7 +324,7 @@ fn values(attribute: &str, ctx: &mut Ctx<'_>) -> Result<Arc<Values>> {
         shadow: Arc::new(shadow),
     });
     held.charge(HASH_ENTRY_OVERHEAD + size_of::<(String, Arc<Values>)>() + attribute.len())?;
-    let probes = &mut ctx.ids.probes;
+    let probes = ctx.ids.probes_mut();
     probes.held.absorb(held);
     probes.values.insert(attribute.to_string(), v.clone());
     Ok(v)
@@ -353,7 +351,7 @@ fn candidates(
         }
         Cell::Eid(e) => {
             let mut v = vec![Value::Ref(ctx.ids.uuid(ctx.keys, *e)?)];
-            match ctx.ids.probes.named.get(e).copied() {
+            match ctx.ids.probes().and_then(|p| p.named.get(e)).copied() {
                 Some(i) => v.push(Value::Keyword(ctx.ids.name(ctx.keys, i)?.to_string())),
                 None if pending_keywords => return Ok(None),
                 None => match a {
@@ -372,7 +370,7 @@ fn candidates(
 /// Whether any live committed value of attribute `a` is a keyword: read
 /// once per query.
 fn has_keywords(a: u32, ctx: &mut Ctx<'_>) -> Result<bool> {
-    if let Some(&k) = ctx.ids.probes.keywords.get(&a) {
+    if let Some(&k) = ctx.ids.probes().and_then(|p| p.keywords.get(&a)) {
         return Ok(k);
     }
     let Some(keys) = ctx.keys else {
@@ -388,7 +386,7 @@ fn has_keywords(a: u32, ctx: &mut Ctx<'_>) -> Result<bool> {
         &mut buf,
     )?;
     let k = !buf.is_empty();
-    let probes = &mut ctx.ids.probes;
+    let probes = ctx.ids.probes_mut();
     probes
         .held
         .charge(HASH_ENTRY_OVERHEAD + size_of::<(u32, bool)>())?;
@@ -445,10 +443,12 @@ impl Operator for Scan {
                     let mut row = vec![None; self.spec.width];
                     for kf in &self.keys_buf {
                         if !visible(valid, kf.vf, kf.vt)
-                            || (!c.shadow.is_empty()
-                                && c.shadow.contains(&keys::entity_attribute_value_prefix(
-                                    kf.e, kf.a, &kf.v,
-                                )))
+                            || c.shadow.as_ref().is_some_and(|s| {
+                                !s.is_empty()
+                                    && s.contains(&keys::entity_attribute_value_prefix(
+                                        kf.e, kf.a, &kf.v,
+                                    ))
+                            })
                         {
                             continue;
                         }
@@ -739,7 +739,7 @@ fn open(
         next: 0,
         resume: None,
         test,
-        shadow: Arc::new(shadow),
+        shadow: (!shadow.is_empty()).then(|| Arc::new(shadow)),
     }))
 }
 

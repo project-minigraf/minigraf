@@ -237,7 +237,7 @@ fn entity<'c>(
                     // entity (#721).
                     if let EdnValue::Keyword(name) = c {
                         let i = ctx.ids.iid(ctx.keys, name)?;
-                        ctx.ids.probes.note(e, i)?;
+                        ctx.ids.probes_mut().note(e, i)?;
                     }
                     Cell::Eid(e)
                 }
@@ -253,7 +253,7 @@ fn entity<'c>(
             Some(Cell::Eid(e)) => return Ok(Cell::Eid(*e)),
             Some(Cell::Iid(i)) => {
                 let e = ctx.ids.keyword_eid(ctx.keys, *i)?;
-                ctx.ids.probes.note(e, *i)?;
+                ctx.ids.probes_mut().note(e, *i)?;
                 return Ok(Cell::Eid(e));
             }
             Some(Cell::Val(v)) => match v {
