@@ -106,6 +106,9 @@ impl PreparedQuery {
     }
 
     fn execute_inner(&self, bindings: &[(&str, BindValue)]) -> Result<QueryResult> {
+        if crate::db::is_write_tx_active() {
+            bail_coded!(ErrorCode::Int001);
+        }
         let binding_map: HashMap<&str, &BindValue> =
             bindings.iter().map(|(name, val)| (*name, val)).collect();
 

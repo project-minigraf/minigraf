@@ -93,6 +93,7 @@ These tests compare the database against an independent answer rather than a sin
 ### Concurrency
 
 - **Snapshot atomicity** (`tests/snapshot_atomicity_test.rs`, #554, #555, #558): queries see each concurrent transaction whole and read one state for all their patterns, also during a checkpoint.
+- **Calls inside a write transaction** (`tests/write_tx_guard_test.rs`, 4 tests; #734): `checkpoint`, `prepare` and `PreparedQuery::execute` on a thread holding a `WriteTransaction` return `INT-001` (under a 30 s timeout, so a deadlock fails instead of hanging) and the transaction then commits; outside a transaction they run.
 
 ### Queries
 
