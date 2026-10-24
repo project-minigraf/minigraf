@@ -103,7 +103,7 @@ Scope — features:
 
 - Query profiler (#185)
 - Set membership predicates (#316)
-- Prepared queries in every binding (#181; core and `BrowserDb.prepare` done on `v3`, the other bindings follow)
+- Prepared queries in every binding (#181; done on `v3`: core, `BrowserDb.prepare`, and Python, Java, Android, Swift, Node.js and C on their `v3` branches)
 - UDF registration in every binding: the UniFFI ones, C, Node and the browser `BrowserDb` (#180; core done on `v3`: fallible UDFs, `QRY-014`, registry snapshot and re-entry; the bindings follow)
 - `OpenOptions` exposed over UniFFI through `open_with_options`, so embedders can suppress the close-time checkpoint (#322; done on `v3` in every binding with #465)
 

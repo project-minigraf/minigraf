@@ -1,0 +1,8 @@
+(query [:find ?e ?any ?all ?none
+        :where [?e :user/role ?r]
+               [?e :user/scopes ?s]
+               [(in? ?r #{:role/admin :role/owner})]
+               [(not-in? ?r #{})]
+               [(any-in? ?s #{:scope/read}) ?any]
+               [(all-in? ?s #{:scope/read :scope/write}) ?all]
+               [(none-in? ?s $banned) ?none]])

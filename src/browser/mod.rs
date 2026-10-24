@@ -1361,7 +1361,12 @@ mod prepared_tests {
             ),
             (
                 "(query [:find ?x :valid-at $v :where [:a :n ?x]])",
-                typed("timestamp", Some(JsValue::from_f64(js_sys::Date::now()))),
+                // A minute ahead: the fact's valid-from is the Rust clock at
+                // transact, which `Date.now()` can trail.
+                typed(
+                    "timestamp",
+                    Some(JsValue::from_f64(js_sys::Date::now() + 60_000.0)),
+                ),
             ),
             (
                 "(query [:find ?x :valid-at $v :where [:a :n ?x]])",

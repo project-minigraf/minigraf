@@ -179,6 +179,12 @@ pub enum BinOp {
     StartsWith,
     EndsWith,
     Contains,
+    // Set predicates — return Boolean (#316)
+    In,
+    NotIn,
+    AnyIn,
+    AllIn,
+    NoneIn,
     /// Pattern must be a string literal validated at parse time via regex-lite.
     /// The compiled `regex_lite::Regex` is stored alongside the original string pattern.
     Matches {
@@ -1173,6 +1179,11 @@ mod tests {
         let _ = BinOp::StartsWith;
         let _ = BinOp::EndsWith;
         let _ = BinOp::Contains;
+        let _ = BinOp::In;
+        let _ = BinOp::NotIn;
+        let _ = BinOp::AnyIn;
+        let _ = BinOp::AllIn;
+        let _ = BinOp::NoneIn;
     }
 
     #[test]
