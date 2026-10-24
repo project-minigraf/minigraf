@@ -141,7 +141,7 @@ Additive features, kept out of v3.0.0 so the #371 fix is not held up by them:
 ### Developer Tools
 
 - 🎯 Database inspector/debugger (separate repository: [minigraf-inspector](https://github.com/project-minigraf/minigraf-inspector))
-- 🎯 Query profiler (#185, v3.next)
+- 🎯 Query profiler (#185, v3.0.0)
 - 🎯 Time-travel visualizer (separate repository: [minigraf-visualizer](https://github.com/project-minigraf/minigraf-visualizer))
 
 ### Integration Examples
