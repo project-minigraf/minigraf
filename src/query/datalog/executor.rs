@@ -755,6 +755,29 @@ fn eval_binop(op: &BinOp, l: Value, r: Value) -> Result<Value, ()> {
             _ => Err(()),
         },
 
+        // Set predicates (#316): membership is Value's Ord, so NaN, -0.0/0.0 and
+        // keyword != ref need no case here. A scalar where a set is needed, or a set
+        // as in?'s element, is a type mismatch; not-in? then drops the row too.
+        BinOp::In | BinOp::NotIn => match (&l, &r) {
+            (Value::Set(_), _) => Err(()),
+            (x, Value::Set(s)) => Ok(Value::Boolean(s.contains(x) == matches!(op, BinOp::In))),
+            _ => Err(()),
+        },
+        BinOp::AnyIn | BinOp::NoneIn => match (&l, &r) {
+            (Value::Set(a), Value::Set(b)) => {
+                let (small, large) = if a.len() <= b.len() { (a, b) } else { (b, a) };
+                let any = small.iter().any(|x| large.contains(x));
+                Ok(Value::Boolean(any == matches!(op, BinOp::AnyIn)))
+            }
+            _ => Err(()),
+        },
+        BinOp::AllIn => match (&l, &r) {
+            (Value::Set(a), Value::Set(b)) => Ok(Value::Boolean(
+                a.len() <= b.len() && a.iter().all(|x| b.contains(x)),
+            )),
+            _ => Err(()),
+        },
+
         // Eq/Neq handled above
         BinOp::Eq | BinOp::Neq => unreachable!(),
     }
@@ -2251,6 +2274,51 @@ mod expr_eval_tests {
             eval_expr(&e, &HashMap::new(), None),
             Ok(Value::Boolean(true))
         );
+    }
+
+    #[test]
+    fn test_eval_set_predicates() {
+        let set = |v: &[i64]| {
+            Value::Set(
+                crate::graph::types::ValueSet::new(v.iter().map(|i| Value::Integer(*i))).unwrap(),
+            )
+        };
+        let b = |x: bool| Ok(Value::Boolean(x));
+        assert_eq!(
+            eval_binop(&BinOp::In, Value::Integer(1), set(&[1, 2])),
+            b(true)
+        );
+        assert_eq!(
+            eval_binop(&BinOp::In, Value::Integer(3), set(&[1, 2])),
+            b(false)
+        );
+        assert_eq!(
+            eval_binop(&BinOp::NotIn, Value::Integer(3), set(&[1, 2])),
+            b(true)
+        );
+        assert_eq!(
+            eval_binop(&BinOp::NotIn, Value::Integer(1), set(&[])),
+            b(true)
+        );
+        assert_eq!(eval_binop(&BinOp::AnyIn, set(&[1, 2]), set(&[2])), b(true));
+        assert_eq!(eval_binop(&BinOp::AnyIn, set(&[2]), set(&[1, 3])), b(false));
+        assert_eq!(eval_binop(&BinOp::AllIn, set(&[]), set(&[])), b(true));
+        assert_eq!(eval_binop(&BinOp::AllIn, set(&[1, 2]), set(&[1])), b(false));
+        assert_eq!(eval_binop(&BinOp::NoneIn, set(&[1, 2]), set(&[3])), b(true));
+        assert_eq!(
+            eval_binop(&BinOp::NoneIn, set(&[3]), set(&[1, 2, 3])),
+            b(false)
+        );
+        // Wrong shapes.
+        assert_eq!(eval_binop(&BinOp::In, set(&[1]), set(&[1])), Err(()));
+        assert_eq!(
+            eval_binop(&BinOp::NotIn, Value::Integer(1), Value::Integer(1)),
+            Err(())
+        );
+        for op in [BinOp::AnyIn, BinOp::AllIn, BinOp::NoneIn] {
+            assert_eq!(eval_binop(&op, Value::Integer(1), set(&[1])), Err(()));
+            assert_eq!(eval_binop(&op, set(&[1]), Value::Integer(1)), Err(()));
+        }
     }
 
     #[test]
