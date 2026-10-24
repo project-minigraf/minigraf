@@ -14,10 +14,11 @@
 // File-backed (Minigraf::open, tempfile): native only, like the other file tests.
 #![cfg(not(target_arch = "wasm32"))]
 
-use minigraf::{Minigraf, OpenOptions, QueryResult};
+use minigraf::{FactRecord, LogWriter, OpenOptions, QueryResult, Value};
 
 const FACTS: usize = 10_000_000;
-const CHUNK: usize = 100_000;
+/// Facts per transaction.
+const TX_FACTS: usize = 10_000;
 /// What the query may hold: a `Limit` holds nothing and a scan one batch of
 /// ids. Holding even one id per fact would need megabytes.
 const MEMORY_LIMIT: usize = 64 << 10;
@@ -44,16 +45,26 @@ fn proc_status_kb(field: &str) -> usize {
 fn limit_10_over_10m_facts() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("limit.graph");
-    {
-        let db = Minigraf::open(&path).unwrap();
-        for chunk in 0..FACTS / CHUNK {
-            let facts: String = (chunk * CHUNK..(chunk + 1) * CHUNK)
-                .map(|i| format!("[:e{i} :a {i}]"))
-                .collect();
-            db.execute(&format!("(transact [{facts}])")).unwrap();
-            db.checkpoint().unwrap();
-        }
+    // `LogWriter` writes the records straight into the trees in batched
+    // checkpoints: the `transact` path took 42 minutes for 10M facts.
+    let start = std::time::Instant::now();
+    let mut w = LogWriter::create(&path, OpenOptions::new()).unwrap();
+    for i in 0..FACTS {
+        let tx = (i / TX_FACTS) as u64 + 1;
+        w.append(&FactRecord {
+            entity: uuid::Uuid::from_u128(i as u128 + 1),
+            attribute: ":a".to_string(),
+            value: Value::Integer(i as i64),
+            tx_count: tx,
+            tx_id: 1_700_000_000_000 + tx,
+            valid_from: (1_700_000_000_000 + tx) as i64,
+            valid_to: i64::MAX,
+            asserted: true,
+        })
+        .unwrap();
     }
+    w.finish().unwrap();
+    eprintln!("limit_10_over_10m_facts: built in {:.2?}", start.elapsed());
     let db = OpenOptions::new()
         .query_memory_limit(MEMORY_LIMIT)
         .path(&path)
