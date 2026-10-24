@@ -54,8 +54,9 @@ impl ValueSet {
 pub enum Value { String(..), Integer(..), Float(..), Boolean(..), Ref(..), Keyword(..), Null, Set(ValueSet) }
 ```
 
-- **Inserting an equal float.** `BTreeSet::insert` keeps the element already there. `new` replaces it
-  instead when the new one is less by `value_order`, so `#{0.0 -0.0}` and `#{-0.0 0.0}` both hold `-0.0`.
+- **Inserting an equal float.** `BTreeSet::insert` keeps the element already there. When `new` meets an
+  element equal to one already held (`get` returns it) and the new one is less by `value_order`, it swaps
+  it in with `BTreeSet::replace`, so `#{0.0 -0.0}` and `#{-0.0 0.0}` both hold `-0.0`.
   One NaN is kept, whichever bits came first. NaN payloads are not observable through the query
   language.
 - **`Ord`/`Hash`/`PartialEq`/`Eq` for `Value`.** Set has discriminant 7, after Null. Two sets compare by
@@ -66,15 +67,21 @@ pub enum Value { String(..), Integer(..), Float(..), Boolean(..), Ref(..), Keywo
   sorted by `value_order`, lexicographically, a proper prefix less. `min`/`max`, window sorts and #306's
   `:order-by` then order set values. `sum`, `avg` and the other numeric aggregates treat a set as they
   treat a keyword.
-- **Serde** (the WAL's postcard): `Value::Set` is appended as the last variant, so no existing encoding
-  changes. `ValueSet` serializes as a sequence in canonical order. It deserializes through `new`, so the
-  order is restored and a nested set is an error. An error while decoding a WAL entry is handled as it is
-  today.
-- **Size of a stored set.** `set_bytes(s)` is the v8 element encoding's length (§4.1), counting each
-  keyword as 6 bytes and each ref as 10, their largest v8 encodings, since ids are not yet assigned.
-  The WAL rejects a transacted or retracted set with `set_bytes > MAX_VALUE_BYTES` with `WAL-003`
-  (today's check in `wal.rs` for a long string), so a set the WAL takes always fits a value page at
-  checkpoint. Sets in query text or bind values are not stored and have no limit.
+- **Serde** (the WAL's postcard): `Value::Set` is declared after `Null`, so its serde variant index is 7
+  and the indices of String..Null (0–6) are unchanged; existing WAL entries decode as before. (The `Ord`
+  discriminant 7 above is a separate number that happens to match.) `ValueSet` has a hand-written
+  `Deserialize` that reads a sequence of `Value` and calls `new`; the derived `Deserialize` of `Value`
+  reaches a set only through it, so a nested set from any serialized input is an error and the order is
+  restored. `ValueSet` serializes as a sequence in canonical order. An error while decoding a WAL entry is
+  handled as it is today.
+- **Size of a stored set.** `set_bytes(s)` is computed from the `Value` alone, before ids exist: the sum
+  over elements of the element's v8 encoding length (§4.1), with each string element counted escaped plus
+  its tag and `00 00`, each keyword as 6 bytes and each ref as 10 (tag plus the largest `put_uint` of a
+  u32 iid and a u64 eid). It is an upper bound of the element encoding written at checkpoint. `wal.rs`'s
+  `check_fact_size`, which today checks long strings, attributes and keyword values, gains a set arm:
+  `set_bytes > MAX_VALUE_BYTES` is `WAL-003` (its message names the value kind), and each keyword element
+  is checked against `MAX_IDENT_BYTES` as a keyword value is. A set the WAL takes therefore always fits
+  one value page. Sets in query text or bind values are not stored and have no limit.
 
 ## 4. Storage
 
@@ -87,18 +94,33 @@ today.
 The **element encoding** of a set is the concatenation of each element's existing key encoding (`put_value`
 of its `KeyValue`; a keyword is its iid, a ref its eid), sorted by those bytes. A string element is always
 written in full with the short-string form (escaped, `00 00`), whatever its length, so an element never
-holds a value ref. Each element encoding is prefix-free, so sorting and concatenating gives one canonical
-byte string per set for a given DICT.
+holds a value ref. Each element encoding is prefix-free: the tag fixes the form, an integer, iid or eid
+carries its length in its type byte (`put_uint`), a float is 8 bytes, and a string ends at its first
+unescaped `00 00`. So the concatenation decodes back to its elements one at a time, and sorting gives one
+canonical byte string per set for a given DICT. This byte order is used only inside keys and records; a
+decoded set is rebuilt as a `ValueSet`, so iteration and output use the canonical order of §2, not key
+order.
 
 | set | key bytes after `08` |
 |---|---|
-| element encoding ≤ 64 B | the element encoding escaped (`00` → `00 FF`), then `00 00` |
+| element encoding ≤ 64 B (`SHORT_STRING_MAX`) | the element encoding escaped (`00` → `00 FF`), then `00 00` |
 | element encoding > 64 B | the first 32 bytes escaped, then `00 01`, `hash64` of the whole element encoding, value ref (`page u64`, `slot u16`) |
 
 This is §6.2's long-string layout with the element encoding in place of the string bytes. Its
 properties carry over: equality is exact (seek to `08 ‖ prefix ‖ marker ‖ hash`, compare full element
 encodings), and the order among sets is by bytes, which no query relies on (sets have no range
-predicates). `KeyValue` gains `Set(Vec<KeyValue>)` and `LongSet { prefix, hash, vref }`.
+predicates). The inline form is at most `1 + 2·64 + 2` bytes, the same bound as a short string's, so
+every key that fits today with a short string fits with an inline set. `KeyValue` gains
+`Set(Vec<KeyValue>)` and `LongSet { prefix, hash, vref }`. The key `Reader` decodes `TAG_SET` (inline:
+unescape to `00 00`, then decode elements; long: prefix, marker, hash, value ref) and `skip_value` skips it
+as it skips a string, plus the 18 bytes after a `00 01` marker.
+
+**Lifecycle.** At checkpoint the `Encoder` builds a set's element encoding once its keyword and ref
+elements have ids (it assigns them as for scalar keyword and ref values). If the encoding is over 64
+bytes it is written through the value-page path long strings use (§4.2), which returns the value ref the
+key holds. A scan that meets a `LongSet` reads its record through the value-page reader (`DictReader`'s
+long-value read) and decodes the elements; keyword and ref elements are then turned into names and
+UUIDs through DICT.
 
 ### 4.2 Value pages and DICT (`value_pages.rs`, `dict.rs`)
 
@@ -110,8 +132,11 @@ strings, and checks that each decodes as a set's element encoding.
 ### 4.3 Pending encoding (`index.rs`)
 
 `encode_value` gains `Value::Set` → `0x07`, then for each element in canonical order a 4-byte big-endian
-length and the element's `encode_value`. Lengths make it injective; the engine's relations (#548) key
-derived rows on it, and the pending EAVT/AEVT keys hold it.
+length and the element's `encode_value`. The lengths keep element boundaries, so two sets encode alike
+exactly when their canonical element sequences encode alike element by element. It is as injective over
+sets as `encode_value` is over scalars, no more: the documented NaN/subnormal collision (index.rs) carries
+over to elements. Sets add no new collision. The engine's relations (#548) key derived rows on it, and the
+pending EAVT/AEVT keys hold it.
 
 ### 4.4 Kani (`index/verification.rs`, `keys/verification.rs`)
 
@@ -182,9 +207,11 @@ Five `BinOp`s, each taking exactly two operands (`PRS-065` otherwise):
 
 For each input row with entity cell `e`, `?s` is bound to the set of values `v` such that `[e :a v]`
 matches under the query's snapshot, `:as-of` and `:valid-at`, with net-assert and retractions applied
-exactly as for that pattern. No matches give `#{}`; the row is kept. `e` resolves as the pattern's entity
-position resolves its bound variable (an entity cell, or a keyword naming an entity). A cell that cannot
-be an entity (an integer, a string) gives `#{}`, as the pattern would match nothing.
+exactly as for that pattern. No matches give `#{}`; the row is kept. `e` resolves as
+`IndexNestedLoopJoin` resolves a bound entity cell: an `Eid` (committed or provisional) is used directly;
+an `Iid` (a keyword) is the entity it names, through `IdSpace::keyword_eid`, which covers DICT and
+provisional (pending) entities. A keyword naming no stored entity, or a cell that cannot be an entity (an
+integer, a string, a set), gives `#{}`, as the pattern would match nothing.
 
 If any matching value is a set, the query fails with `QRY-014` (`collect-set ?s over {attribute} found a
 set value; bind a set-valued attribute with a pattern instead`). It does not skip or flatten it.
