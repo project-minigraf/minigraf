@@ -4,10 +4,10 @@
 
 | | |
 |---|---|
-| **Verified** | 2026-10-24 with `cargo test` |
-| **Passing** | 1,325 |
+| **Verified** | 2026-10-25 with `cargo test` |
+| **Passing** | 1,326 |
 | **Ignored** | 9 (see [Ignored Tests](#ignored-tests)) |
-| **Total** | 1,334, including the golden-file corpus (#391) |
+| **Total** | 1,335, including the golden-file corpus (#391) |
 
 Not counted above: the `BrowserDb` tests, which run only on wasm32 with `wasm-bindgen-test` in a browser (see [Browser](#browser)).
 
@@ -99,7 +99,8 @@ These tests compare the database against an independent answer rather than a sin
 
 - **Float constants** (`tests/float_constant_test.rs`, 2 tests; #706)
   - A float constant matches equal floats only: `1e-17` does not match `0.0`; `0.0` matches `-0.0`.
-  - Checked in a pattern, bound to a `$slot`, in a rule body, in a `not` body and in an `=` predicate; in memory, on file before and after a checkpoint, and after reopen.
+  - Checked in a pattern, bound to a `$slot`, in a rule body, as a rule call's argument, in a `not` body and in an `=` predicate; in memory, on file before and after a checkpoint, and after reopen.
+  - `Value`'s hash gives `-0.0` and `0.0` the same hash (`src/graph/types.rs` unit test, #750), so a rule call's `0.0` returns `-0.0`'s row in every run.
 - **Keyword or ref in `=` / `!=`** (`tests/keyword_ref_expression_test.rs`, 4 tests; #744)
   - An expression's `=` and `!=` equate a keyword with a ref to the entity it names, as the pattern constant and the join do: either operand order, a keyword constant or value, a bound `Val(Ref)`, a binding expression, a rule body, a `not` clause, an `or` branch and a keyword whose name is a UUID; a keyword still equals the same keyword only.
   - In memory, on file after a checkpoint, and after reopen.

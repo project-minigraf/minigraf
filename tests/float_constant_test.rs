@@ -50,13 +50,11 @@ fn assert_float_constants_exact(db: &Minigraf) {
         "[:find ?e :where [?e :m/x -0.0]]",
         "[:find ?e :where [?e :m/x ?v] [(= ?v 0.0)]]",
         "[:find ?e :where (zeroish ?e)]",
+        // Joined by `Value`'s hash, which once told `-0.0` from `0.0` (#750).
+        "[:find ?e :where (xval ?e 0.0)]",
     ] {
         assert_eq!(names_of(&query(db, q)), [":neg", ":zero"], "{q}");
     }
-    // A rule call's literal joins by `Value`'s hash on v2.x, which tells
-    // `-0.0` from `0.0` (v3.0.0 pairs them, #545); only `1e-17` is checked.
-    let r = query(db, "[:find ?e :where (xval ?e 0.0)]");
-    assert_eq!(names_of(&r), [":zero"], "a rule call's float argument");
     let r = query(db, "[:find ?e :where (xval ?e 0.00000000000000001)]");
     assert_eq!(names_of(&r), [":tiny"], "a rule call's float argument");
     for q in [
