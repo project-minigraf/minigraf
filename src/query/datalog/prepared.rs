@@ -22,16 +22,15 @@ use uuid::Uuid;
 ///
 /// | Variant | Use in query |
 /// |---------|-------------|
-/// | `Entity` | entity position: `[$slot :attr ?v]` |
-/// | `Val` | value position: `[?e :attr $slot]`, expressions |
+/// | `Entity` | entity position: `[$slot :attr ?v]`; also a value, expression or rule-argument position, as `Val(Value::Ref(uuid))` |
+/// | `Val` | value position: `[?e :attr $slot]`, expressions, rule arguments; `Val(Value::Ref(uuid))` also fills an entity position |
 /// | `TxCount` | `:as-of $slot` (monotonic counter) |
 /// | `Timestamp` | `:as-of $slot` (wall-clock ms) or `:valid-at $slot` |
 /// | `AnyValidTime` | `:valid-at $slot` — disables valid-time filter |
 #[derive(Debug, Clone)]
 pub enum BindValue {
-    /// Fill an entity position `[$slot :attr ?v]` with a UUID.
-    ///
-    /// Not valid in rule-invocation argument positions — use `Val(Value::Ref(uuid))` there.
+    /// Fill an entity position `[$slot :attr ?v]` with a UUID. In a value,
+    /// expression or rule-argument position it is `Val(Value::Ref(uuid))`.
     Entity(Uuid),
     /// Fill a value position `[?e :attr $slot]` or an expression literal.
     Val(Value),
@@ -147,7 +146,7 @@ impl PreparedQuery {
 
         for name in &self.slot_names {
             if !binding_map.contains_key(name.as_str()) {
-                bail_coded!(ErrorCode::Int033, name);
+                bail_coded!(ErrorCode::Api022, name);
             }
         }
 
@@ -196,7 +195,7 @@ fn validate_clauses_no_attr_slots(clauses: &[WhereClause]) -> Result<()> {
         match clause {
             WhereClause::Pattern(p) => {
                 if let AttributeSpec::Real(EdnValue::BindSlot(name)) = &p.attribute {
-                    bail_coded!(ErrorCode::Int034, name);
+                    bail_coded!(ErrorCode::Api023, name);
                 }
             }
             WhereClause::Not(inner) => validate_clauses_no_attr_slots(inner)?,
@@ -416,43 +415,45 @@ fn substitute_edn_value(val: &mut EdnValue, bindings: &HashMap<&str, &BindValue>
 
 fn resolve_entity_slot(name: &str, bindings: &HashMap<&str, &BindValue>) -> Result<EdnValue> {
     match bindings.get(name) {
-        Some(BindValue::Entity(u)) => Ok(EdnValue::Uuid(*u)),
+        Some(BindValue::Entity(u) | BindValue::Val(Value::Ref(u))) => Ok(EdnValue::Uuid(*u)),
         Some(other) => bail_coded!(
-            ErrorCode::Int035,
+            ErrorCode::Api024,
             name,
             "entity",
-            "Entity",
+            "Entity or Val(Ref)",
             bind_value_type_name(other)
         ),
-        None => bail_coded!(ErrorCode::Int033, name),
+        None => bail_coded!(ErrorCode::Api022, name),
     }
 }
 
 fn resolve_value_slot(name: &str, bindings: &HashMap<&str, &BindValue>) -> Result<EdnValue> {
     match bindings.get(name) {
         Some(BindValue::Val(v)) => Ok(value_to_edn(v)),
+        Some(BindValue::Entity(u)) => Ok(EdnValue::Uuid(*u)),
         Some(other) => bail_coded!(
-            ErrorCode::Int035,
+            ErrorCode::Api024,
             name,
             "value",
-            "Val",
+            "Val or Entity",
             bind_value_type_name(other)
         ),
-        None => bail_coded!(ErrorCode::Int033, name),
+        None => bail_coded!(ErrorCode::Api022, name),
     }
 }
 
 fn resolve_val_slot(name: &str, bindings: &HashMap<&str, &BindValue>) -> Result<Value> {
     match bindings.get(name) {
         Some(BindValue::Val(v)) => Ok(v.clone()),
+        Some(BindValue::Entity(u)) => Ok(Value::Ref(*u)),
         Some(other) => bail_coded!(
-            ErrorCode::Int035,
+            ErrorCode::Api024,
             name,
             "expression",
-            "Val",
+            "Val or Entity",
             bind_value_type_name(other)
         ),
-        None => bail_coded!(ErrorCode::Int033, name),
+        None => bail_coded!(ErrorCode::Api022, name),
     }
 }
 
@@ -461,13 +462,13 @@ fn resolve_as_of_slot(name: &str, bindings: &HashMap<&str, &BindValue>) -> Resul
         Some(BindValue::TxCount(n)) => Ok(AsOf::Counter(*n)),
         Some(BindValue::Timestamp(t)) => Ok(AsOf::Timestamp(*t)),
         Some(other) => bail_coded!(
-            ErrorCode::Int035,
+            ErrorCode::Api024,
             name,
             ":as-of",
             "TxCount or Timestamp",
             bind_value_type_name(other)
         ),
-        None => bail_coded!(ErrorCode::Int033, name),
+        None => bail_coded!(ErrorCode::Api022, name),
     }
 }
 
@@ -476,13 +477,13 @@ fn resolve_valid_at_slot(name: &str, bindings: &HashMap<&str, &BindValue>) -> Re
         Some(BindValue::Timestamp(t)) => Ok(ValidAt::Timestamp(*t)),
         Some(BindValue::AnyValidTime) => Ok(ValidAt::AnyValidTime),
         Some(other) => bail_coded!(
-            ErrorCode::Int035,
+            ErrorCode::Api024,
             name,
             ":valid-at",
             "Timestamp or AnyValidTime",
             bind_value_type_name(other)
         ),
-        None => bail_coded!(ErrorCode::Int033, name),
+        None => bail_coded!(ErrorCode::Api022, name),
     }
 }
 

@@ -262,6 +262,9 @@ pub(crate) enum ErrorCode {
     Api019,
     Api020,
     Api021,
+    Api022,
+    Api023,
+    Api024,
     Int001,
     Int002,
     Int003,
@@ -294,8 +297,14 @@ pub(crate) enum ErrorCode {
     Int030,
     Int031,
     Int032,
+    // INT-033/034/035 are deprecated since v3.0.0: a bind mistake is the
+    // caller's, so it is API-022/023/024 (#181). Kept so the codes are never
+    // reused.
+    #[allow(dead_code)]
     Int033,
+    #[allow(dead_code)]
     Int034,
+    #[allow(dead_code)]
     Int035,
     Int036,
     Int037,
@@ -1562,6 +1571,24 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCategory::Api,
     ),
     (
+        ErrorCode::Api022,
+        "API-022",
+        "missing bind value for slot '${}'",
+        ErrorCategory::Api,
+    ),
+    (
+        ErrorCode::Api023,
+        "API-023",
+        "bind slot '${}' is not permitted in attribute position; the query optimizer selects an index based on the attribute at prepare time and cannot handle a parameterised attribute",
+        ErrorCategory::Api,
+    ),
+    (
+        ErrorCode::Api024,
+        "API-024",
+        "slot '${}' in {} position requires {}, got {}",
+        ErrorCategory::Api,
+    ),
+    (
         ErrorCode::Int001,
         "INT-001",
         "a WriteTransaction is already in progress on this thread; use tx.execute() instead",
@@ -2389,6 +2416,9 @@ mod tests {
                 | ErrorCode::Api019
                 | ErrorCode::Api020
                 | ErrorCode::Api021
+                | ErrorCode::Api022
+                | ErrorCode::Api023
+                | ErrorCode::Api024
                 | ErrorCode::Int001
                 | ErrorCode::Int002
                 | ErrorCode::Int003
@@ -2655,6 +2685,9 @@ mod tests {
             ErrorCode::Api019,
             ErrorCode::Api020,
             ErrorCode::Api021,
+            ErrorCode::Api022,
+            ErrorCode::Api023,
+            ErrorCode::Api024,
             ErrorCode::Int001,
             ErrorCode::Int002,
             ErrorCode::Int003,

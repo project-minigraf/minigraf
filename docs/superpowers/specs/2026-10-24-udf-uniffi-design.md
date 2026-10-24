@@ -1,7 +1,7 @@
 # UDF registration over UniFFI (#180)
 
 **Milestone:** v3.0.0, branch `v3` (moved from v3.next, 2026-10-24). No change to the `.graph` format or the WAL format. The public Rust API gains two methods and one type; nothing is removed or changed.
-**Bindings:** every UniFFI binding: `minigraf-binding-template`, `minigraf-python`, `minigraf-java`, `minigraf-android`, `minigraf-swift`, each on its `v3` branch. `minigraf-c`, `minigraf-node` and `minigraf-wasm` do not use UniFFI and are not covered here.
+**Bindings:** every binding, each on its `v3` branch. The UniFFI ones are `minigraf-binding-template`, `minigraf-python`, `minigraf-java`, `minigraf-android` and `minigraf-swift` (§6). The others are `minigraf-c` (cbindgen), `minigraf-node` (napi) and the browser `BrowserDb` (wasm-bindgen, in this repo's `src/browser/`, re-exported by `minigraf-wasm`) (§6.2). The scope was widened from UniFFI only on 2026-10-24.
 **Status:** draft 2026-10-24; in review.
 
 ## 1. Decisions
@@ -59,8 +59,9 @@ A Rust closure that panics is not a failing call. It unwinds as it does today. T
 
 | Code | Name | Category | Message |
 |------|------|----------|---------|
-| `QRY-014` (new) | User function failed | Query | ``[QRY-014] user function `<name>` failed: <message>`` |
+| `QRY-014` (new; see note) | User function failed | Query | ``[QRY-014] user function `<name>` failed: <message>`` |
 
+- Code number: #316's plan (step 18) also claims `QRY-014`. Whichever PR lands second takes the next free `QRY` code and updates this spec. "`QRY-014`" below means the code PR 1 lands with.
 - The error is raised at the first failing call. No later call of any UDF is made for that query. `Minigraf::execute` and `PreparedQuery::execute` return it. A cursor treats it as any other read error (`cursor.rs` `next_batch`): rows gathered before the failure are returned first, the error comes on the next call, and after it the cursor returns `None`.
 - Rows already returned stay returned. A cursor's earlier batches are not undone.
 - Today, an unknown UDF predicate name gives no row. It stays that way, and `QRY-007` at open already rejects an unknown predicate. Today's other "no value" cases are also unchanged: unbound variable, type mismatch, division by zero.
@@ -146,6 +147,48 @@ impl MiniGrafDb {
 - The language runtime's rules apply. Python: UniFFI's ctypes calls release the GIL and the callback re-acquires it. The plan checks this with a test that runs two threads.
 - Each call crosses the FFI once, so a UDF over many rows costs one foreign call per value. The README says so.
 - What a callback may call on the database is §5's table.
+- **Handle locks.** Every binding today holds its handle's mutex for the whole core call: Python/UniFFI `inner: Arc<Mutex<Minigraf>>`, C `handle.db.lock()` in `minigraf_execute`, Node `self.inner.lock()` in `execute`. A callback that calls back into the same handle would then deadlock in the binding, before the core's rules apply. So each binding locks its handle only to clone the `Minigraf` (it is `Clone`, an `Arc` clone) and calls the core on the clone with no binding lock held. That applies to every method, not only the ones that run queries. Where the handle holds `Option<Minigraf>` for `close()` (Node), `close()` sets it to `None`. A call already running keeps its clone, and the file closes when the last clone drops, as with an open cursor today. Each binding's re-entry test covers this.
+
+### 6.2 Bindings without UniFFI
+
+Each binding's values cross in its existing value form, the same `{"type", "value"}` shape its fact-log records use. Failures follow the binding's existing error path. Every rule in §6.1 applies. The differences are below.
+
+**C (`minigraf-c`)** follows SQLite's `sqlite3_create_function`: a function pointer, a `void *user_data` and an optional destructor. Results and errors are set through a context, so no string ownership crosses the boundary.
+
+```c
+typedef struct MiniGrafUdfContext MiniGrafUdfContext;
+typedef void (*minigraf_destroy_fn)(void *user_data);
+
+/* 1 true, 0 false, -1 failed (after minigraf_udf_error). */
+typedef int (*minigraf_predicate_fn)(MiniGrafUdfContext *ctx, void *user_data, const char *value_json);
+/* A new accumulator, or NULL when failed. */
+typedef void *(*minigraf_acc_new_fn)(MiniGrafUdfContext *ctx, void *user_data);
+/* 0 ok, -1 failed. */
+typedef int (*minigraf_acc_step_fn)(MiniGrafUdfContext *ctx, void *acc, const char *value_json);
+/* 0 ok after minigraf_udf_result, -1 failed. */
+typedef int (*minigraf_acc_finish_fn)(MiniGrafUdfContext *ctx, void *acc, int64_t count);
+
+void minigraf_udf_error(MiniGrafUdfContext *ctx, const char *message);     /* copied */
+void minigraf_udf_result(MiniGrafUdfContext *ctx, const char *value_json); /* copied */
+
+int minigraf_register_predicate(MiniGrafDb *db, const char *name, minigraf_predicate_fn f,
+                                void *user_data, minigraf_destroy_fn destroy);
+int minigraf_register_aggregate(MiniGrafDb *db, const char *name, minigraf_acc_new_fn init,
+                                minigraf_acc_step_fn step, minigraf_acc_finish_fn finish,
+                                minigraf_destroy_fn acc_free, void *user_data,
+                                minigraf_destroy_fn destroy);
+```
+
+- Both registration calls return 0 or -1, and `minigraf_last_error` gives the message, as the other `int` calls do. `destroy(user_data)` runs when the last reference to the function drops: after `minigraf_close` and after every cursor, fact log and prepared query opened from that database is freed (each holds a registry snapshot, §5). Until then `user_data` must stay valid. `acc_free(acc)` runs when the query drops the accumulator: after `finish`, on an error, or on an early `minigraf_cursor_free`.
+- A callback that returns -1 without calling `minigraf_udf_error` fails with the message `user function failed`. A `finish` that returns 0 without calling `minigraf_udf_result`, or with JSON that is not a value, fails as well. A `ctx` is valid only during the call it was passed to.
+- The core needs `Send + Sync`. The shim's wrapper of `(fn, user_data)` is `unsafe impl Send + Sync`, so the header states the caller's contract: the callbacks and `user_data` must be safe to call from any thread that queries the database.
+
+**Node (`minigraf-node`)**: `db.registerPredicate(name, (value) => boolean)` and `db.registerAggregate(name, { init: () => acc, step: (acc, value) => acc, finish: (acc, count) => value })`. Accumulator state is a JS value that `step` returns (functional, with no `this`), held by the binding as a napi reference. A thrown exception is a failing call, with its message (or `String(e)`).
+- JS can run only on the thread that owns its `napi_env`. Every binding method is synchronous on that thread, so every UDF call happens there. The binding stores the function as a napi reference wrapped in a type marked `Send + Sync`, and records the owning thread's id at registration. A call from any other thread is a failing call, ``called off the JavaScript thread``, and never touches the env. No current code path reaches that check: it guards future async APIs. It is tested by calling the wrapper from a spawned Rust thread in the binding's Rust tests.
+- Worker threads each have their own env, and a database object belongs to the env that opened it. A function registered on one is called only on that env's thread.
+
+**Browser (`BrowserDb`, this repo)**: `registerPredicate(name, fn)` and `registerAggregate(name, { init, step, finish })`, with the same JS shapes as Node and `js_sys::Function`. wasm32 without atomics has one thread, so the wrapper is `unsafe impl Send + Sync` under `cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))`, and a build with atomics does not compile it. `BrowserDb.execute` is `async` only for the IndexedDB flush, and the query and its UDF calls run synchronously before any `await`. Re-entry differs from §5 here. A query holds `inner.borrow()` (`browser/mod.rs` ~125) while it runs. Every method that takes `borrow_mut` (`checkpoint`, `importGraph`, `apply_write` under `execute`) is `async`, and wasm-bindgen-futures runs its body from a microtask, after the outer query has returned. So from inside a UDF, `query` runs synchronously (it takes only `borrow()`), and `registerPredicate`/`registerAggregate` run synchronously (snapshot rule). `execute`, `checkpoint` and `importGraph` return a Promise that starts only after the outer query, and the UDF cannot wait for it. The plan checks that no synchronous method takes `borrow_mut`, with a browser test per method.
+- Values reach JS as `{type, value}` objects, built with `js_sys::Object` (no new dependency). `BrowserDb`'s registry (`browser/mod.rs:30`) moves to `Functions` with the core's in PR 1.
 
 ## 7. Tests
 
@@ -159,6 +202,8 @@ impl MiniGrafDb {
 - a function registered from inside a UDF is not visible to the outer query and is visible to the next one.
 
 **Each binding**: Rust unit tests in `src/lib.rs` with Rust implementations of the three traits. Language tests in pytest, Kotlin/JVM (java and android) and XCTest (swift), covering at least: one predicate, one aggregate (`:find` and `:over`), a callback that throws (→ `Query` error with `QRY-014`), and a callback that runs a query on the same database. The consumer-test contract (`consumer-test/run.sh`) gains one predicate and one aggregate, so the published package's generated callback code is exercised.
+
+**C, Node, browser**: the same language-level cases. C: a C test program in the binding's test harness, plus `destroy`/`acc_free` counts, including an early `minigraf_cursor_free`. Node: the binding's JS tests and the off-thread check. Browser: `#[wasm_bindgen_test]` in `src/browser/` (headless browsers, `wasm.yml`), and the `minigraf-wasm` consumer test. Each consumer test gains one predicate and one aggregate.
 
 ## 8. Documentation
 
@@ -175,5 +220,7 @@ impl MiniGrafDb {
 1. **Core, on `v3`**: §3–§5, core tests, `QRY-014`, docs. Docs-site PR merged after it.
 2. **`minigraf-binding-template`**, on `v3`: §6 and its Rust tests.
 3. **`minigraf-python`, `minigraf-java`, `minigraf-android`, `minigraf-swift`**, each on `v3`: bump the git-rev pin to PR 1's merge, add §6, the language tests and the README section. One PR per binding.
+4. **Browser `BrowserDb`**, on `v3` in this repo (Tier 1 from v3.0.0, so first of the non-UniFFI ones), then `minigraf-wasm`'s pin, consumer test and README.
+5. **`minigraf-c`**, then **`minigraf-node`**, each on `v3` (§6.2).
 
 No change to `.graph`, WAL or the binary-size budget is expected beyond a few KiB. The size gate checks it.
