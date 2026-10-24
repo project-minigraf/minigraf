@@ -2311,11 +2311,22 @@ fn to_float_pair(l: &Value, r: &Value) -> Result<(f64, f64), ()> {
     Ok((lf, rf))
 }
 
+/// Whether `l` and `r` are equal as a join compares them: structurally,
+/// except that a keyword equals a ref to the entity it names (#744).
+fn expr_eq(l: &Value, r: &Value) -> bool {
+    match (l, r) {
+        (Value::Keyword(k), Value::Ref(u)) | (Value::Ref(u), Value::Keyword(k)) => {
+            edn_to_entity_id(&EdnValue::Keyword(k.clone())).is_ok_and(|e| e == *u)
+        }
+        _ => l == r,
+    }
+}
+
 fn eval_binop(op: &BinOp, l: Value, r: Value) -> Result<Value, ()> {
     match op {
-        // Structural equality — works for all Value variants; no type mismatch error.
-        BinOp::Eq => return Ok(Value::Boolean(l == r)),
-        BinOp::Neq => return Ok(Value::Boolean(l != r)),
+        // Equality — works for all Value variants; no type mismatch error.
+        BinOp::Eq => return Ok(Value::Boolean(expr_eq(&l, &r))),
+        BinOp::Neq => return Ok(Value::Boolean(!expr_eq(&l, &r))),
         _ => {}
     }
 

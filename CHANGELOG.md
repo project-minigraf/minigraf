@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An expression's `=` and `!=` equate a keyword with a ref to the entity it names** (#744), backported from v3.0.0. Patterns and joins treat the keyword `:bob` as equal to a ref to the entity `:bob` names, but `[(= ?g :bob)]` compared the two values as they are, so with `?g` bound to that ref it kept no row and `[(!= ?g :bob)]` kept the row: the same question answered differently by how the query was written, with no error. `=` and `!=` now compare as joins do, in queries, rule bodies, `not` clauses and binding expressions, against a keyword constant, a keyword value or a bound `Val(Ref)`. A keyword still equals only the same keyword, and `<`, `>`, `<=` and `>=` on a keyword or a ref are still a type mismatch (no row).
 - **`checkpoint` inside a `WriteTransaction` returns `INT-001` instead of deadlocking** (#734), backported from v3.0.0. Called on a thread that holds a `WriteTransaction`, `checkpoint` waited on the write lock that the transaction already held, so the thread hung. It now returns `INT-001`, as `execute` and `begin_write` already did, and the transaction stays usable. `prepare` and `PreparedQuery::execute` make the same check: they could not deadlock, but they ran inside the transaction while `execute` refused. Present since `WriteTransaction` was added.
 
 ## v2.0.10 — 2026-10-23
