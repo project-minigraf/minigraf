@@ -75,16 +75,20 @@ A Rust closure that panics is not a failing call. It unwinds as it does today. T
 
 `Inner::functions` becomes `RwLock<Arc<FunctionRegistry>>`, and `FunctionRegistry` derives `Clone`. Its maps hold `Arc`ed closures, so a clone copies only the maps.
 
-- **Query open** (`execute`, `query`, `PreparedQuery::execute`, rule queries, `WriteTransaction::execute` of a query) takes the read lock only long enough to clone the `Arc`. The query keeps that registry snapshot until it closes. `Ctx::functions` borrows from it. The engine's `pull` no longer takes the lock.
+This is new behaviour. Today `Stream::pull` (`engine/mod.rs` ~370) read-locks the shared registry for each batch, and rule-query opening reads it as well. So a callback that registers a function would try to take the write lock on a thread that already holds the read lock, and a cursor's later pulls see functions registered after it opened.
+
+- **Query open** (`execute`, `query`, `PreparedQuery::execute`/`query`, rule queries including their stratum evaluation, `WriteTransaction::execute` of a query) takes the read lock only long enough to clone the `Arc`. The query keeps that registry snapshot until it closes. `Ctx::functions` borrows from it. The engine's `pull` and rule evaluation no longer take the lock.
 - **Registration** takes the write lock, clones the registry, inserts the new function, and swaps in the new `Arc`. A query that is already open keeps its registry snapshot, so a function registered after a query opens is not visible to that query. It is visible to every query opened afterwards.
-- **No lock is held while a UDF runs.** No database lock is held across a call: not the registry lock, not `rules`, not `write_lock`, not a `FactStorage` lock. The plan checks every lock on the query path. Any lock held across a call is either released before the call or replaced by a snapshot.
+- **No lock is taken by the query while a UDF runs.** A plain read holds no database lock across a call: not the registry lock, not `rules`, not `write_lock`, not a `FactStorage` lock. The plan checks every lock on the query path. Any lock held across a call is either released before the call or replaced by a snapshot. The one exception is a query run by `WriteTransaction::execute`: the transaction holds `write_lock` for its whole lifetime, and so across the call. That is why every database call that could wait on `write_lock` must refuse on that thread (below).
+- **Every public method that takes `write_lock`, or reads, refuses inside a `WriteTransaction` on the same thread** with `INT-001`. Today `execute`, `query`, `fact_log` and `begin_write` check this. `checkpoint`, `verify` and `rebuild_indexes` do not, and deadlock: that is a bug on its own, #734 (listed in #421), whose fix is a prerequisite of PR 1. `prepare`, `PreparedQuery::execute` and `PreparedQuery::query` take no write lock but also skip the check. They gain it with #734, for consistency with `execute`/`query`.
 
 What a UDF may do from inside a call, on the thread running the query:
 
 | Call from inside a UDF | Outer query is a plain read | Outer query runs in `WriteTransaction::execute` |
 |---|---|---|
-| `execute` (query), `query`, `prepare`/`execute`, `fact_log` | Runs. It reads its own snapshot. | `INT-001` (existing) |
-| `execute` (transact/retract/rule), `begin_write`, `checkpoint` | Runs. The outer query does not see the write (snapshot, #555). | `INT-001` (existing) |
+| `execute` (query), `query`, `prepare`, `PreparedQuery::execute`/`query`, `fact_log` | Runs. It reads its own snapshot. | `INT-001` (existing for `execute`/`query`/`fact_log`; #734 for the prepared ones) |
+| `execute` (transact/retract/rule), `begin_write` | Runs. The outer query does not see the write (snapshot, #555). | `INT-001` (existing) |
+| `checkpoint`, `verify`, `rebuild_indexes` | Runs. | `INT-001` (#734; deadlocks today) |
 | `register_predicate`/`register_aggregate` (both kinds) | Runs. The outer query does not see the new function. | Runs (registration takes no write lock) |
 | Calling a UDF in a nested query | Runs, to any depth the caller's stack allows. | n/a |
 
@@ -103,18 +107,18 @@ pub enum MiniGrafUdfError {
 }
 impl From<uniffi::UnexpectedUniFFICallbackError> for MiniGrafUdfError { /* Failed { msg: reason } */ }
 
-#[uniffi::export(with_foreign)]
+#[uniffi::export]
 pub trait MiniGrafPredicate: Send + Sync {
     fn test(&self, value: MiniGrafValue) -> Result<bool, MiniGrafUdfError>;
 }
 
-#[uniffi::export(with_foreign)]
+#[uniffi::export]
 pub trait MiniGrafAggregate: Send + Sync {
     /// A new, empty accumulator: one per group, or per window partition.
     fn accumulator(&self) -> Result<Arc<dyn MiniGrafAccumulator>, MiniGrafUdfError>;
 }
 
-#[uniffi::export(with_foreign)]
+#[uniffi::export]
 pub trait MiniGrafAccumulator: Send + Sync {
     fn step(&self, value: MiniGrafValue) -> Result<(), MiniGrafUdfError>;
     /// `count`: values stepped so far.
@@ -128,6 +132,7 @@ impl MiniGrafDb {
 }
 ```
 
+- The traits are exported with plain `#[uniffi::export]`: UniFFI 0.31 lets foreign code implement an exported trait taken as `Arc<dyn Trait>`, and `with_foreign` is a deprecated alias for that. The plan checks that each target language (Python, Kotlin, Swift) generates an implementable interface.
 - The binding implements these with `try_register_predicate`/`try_register_aggregate`. `Acc` is `Arc<dyn MiniGrafAccumulator>`. `MiniGrafUdfError::Failed { msg }` becomes `UdfError::new(msg)`.
 - A `finish` that returns a `Ref` whose value is not a UUID is a failing call: ``ref value "<s>" is not a UUID`` (the same text `to_core` gives).
 - `count` is `i64`, following the bindings' rule that counts cross the FFI signed (Kotlin's unsigned types cannot be called from Java).
@@ -166,6 +171,7 @@ impl MiniGrafDb {
 
 ## 9. PRs
 
+0. **#734, on `v3` with a `main` backport**: the `INT-001` guards (§5).
 1. **Core, on `v3`**: §3–§5, core tests, `QRY-014`, docs. Docs-site PR merged after it.
 2. **`minigraf-binding-template`**, on `v3`: §6 and its Rust tests.
 3. **`minigraf-python`, `minigraf-java`, `minigraf-android`, `minigraf-swift`**, each on `v3`: bump the git-rev pin to PR 1's merge, add §6, the language tests and the README section. One PR per binding.
