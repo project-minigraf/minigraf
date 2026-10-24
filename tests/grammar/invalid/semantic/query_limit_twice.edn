@@ -1,0 +1,4 @@
+(query [:find ?e
+        :where [?e :person/name ?n]
+        :limit 1
+        :limit 2])

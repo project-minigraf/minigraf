@@ -19,6 +19,7 @@ kw-valid-at          ::= ":valid-at" (* not followed by word-cont *)  (* token *
 kw-any-valid-time    ::= ":any-valid-time" (* not followed by word-cont *)  (* token *)
 kw-max-derived-facts ::= ":max-derived-facts" (* not followed by word-cont *)  (* token *)
 kw-max-results       ::= ":max-results" (* not followed by word-cont *)  (* token *)
+kw-limit             ::= ":limit" (* not followed by word-cont *)  (* token *)
 kw-over              ::= ":over" (* not followed by word-cont *)  (* token *)
 kw-partition-by      ::= ":partition-by" (* not followed by word-cont *)  (* token *)
 kw-order-by          ::= ":order-by" (* not followed by word-cont *)  (* token *)
@@ -73,7 +74,7 @@ query-cmd     ::= "(" "query" query-vector ")"
 query-vector  ::= "[" query-section+ "]"
 query-section ::= find-section | where-section | as-of-section | valid-at-section
                 | any-valid-time-section | with-section | max-derived-facts-section
-                | max-results-section
+                | max-results-section | limit-section
 
 (* ── FIND SECTION ── *)
 find-section   ::= kw-find find-spec+
@@ -116,6 +117,7 @@ any-valid-time-section    ::= kw-any-valid-time
 with-section              ::= kw-with variable+
 max-derived-facts-section ::= kw-max-derived-facts integer-lit
 max-results-section       ::= kw-max-results integer-lit
+limit-section             ::= kw-limit (integer-lit | bind-slot)
 
 (* ── RULE ── *)
 rule-cmd    ::= "(" "rule" rule-vector ")"

@@ -66,6 +66,24 @@ jobs:
         env:
           RUST_BACKTRACE: 1
 
+  # #306: `:limit 10` over 10M facts stops once it has its rows, in a
+  # 64 KiB query memory limit.
+  limit-acceptance:
+    name: Limit acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run the acceptance test
+        run: cargo test --profile bench --test limit_acceptance_test -- --ignored --nocapture
+        env:
+          RUST_BACKTRACE: 1
+
   # #550: a 1M-fact transact holds at most one chunk of facts and commits as
   # a checkpoint; peak RSS is printed. test-hooks: the statement reader's
   # high-water mark.
