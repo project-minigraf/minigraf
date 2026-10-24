@@ -11,7 +11,8 @@ use std::time::Duration;
 /// Runs `call` on a fresh thread holding a `WriteTransaction` on a file
 /// database, and returns the error code `call` gave, or `None` if it
 /// succeeded. A call that deadlocks fails the test after 30 s instead of
-/// hanging it. The transaction must still commit after the call.
+/// hanging it. The transaction must still commit after the call. A
+/// deadlocked thread is left blocked until the test process exits.
 fn code_inside_tx(
     call: fn(&Minigraf, &PreparedQuery) -> Option<&'static str>,
 ) -> Option<&'static str> {
