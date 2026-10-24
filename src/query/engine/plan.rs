@@ -181,6 +181,9 @@ pub(crate) enum Step {
         named: Vec<usize>,
         keep: Vec<usize>,
     },
+    /// After the last step: skips `offset` rows, then passes on at most
+    /// `limit` (#306).
+    Limit { offset: usize, limit: Option<usize> },
 }
 
 /// A `not` / `not-join` body (#546 spec §4).
