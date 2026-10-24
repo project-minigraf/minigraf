@@ -1447,6 +1447,19 @@ impl Minigraf {
     /// result depends on that order (anything but a commutative,
     /// associative combination) may answer them differently.
     ///
+    /// # Snapshots and re-entry
+    ///
+    /// A query reads its functions from the registry as it was when the
+    /// query opened, so a function registered later is not visible to a
+    /// query or cursor that is already open; it is visible to every query
+    /// opened afterwards. No database lock is held while a user function
+    /// runs, so it may call back into the same database: query, prepare,
+    /// read the fact log, write, define rules, register functions,
+    /// checkpoint, verify or rebuild indexes. A write it makes is not seen
+    /// by the query that called it. Inside a [`WriteTransaction`] every one
+    /// of those calls except registration returns `INT-001` on that thread,
+    /// as it does outside a user function.
+    ///
     /// # Errors
     ///
     /// Returns an error if `name` is already registered (built-in or UDF)
@@ -1493,6 +1506,19 @@ impl Minigraf {
     /// `Err(UdfError)` fails the query with `QRY-014`, naming the function
     /// and the error's message, and no later call of any user function is
     /// made for that query.
+    ///
+    /// # Snapshots and re-entry
+    ///
+    /// A query reads its functions from the registry as it was when the
+    /// query opened, so a function registered later is not visible to a
+    /// query or cursor that is already open; it is visible to every query
+    /// opened afterwards. No database lock is held while a user function
+    /// runs, so it may call back into the same database: query, prepare,
+    /// read the fact log, write, define rules, register functions,
+    /// checkpoint, verify or rebuild indexes. A write it makes is not seen
+    /// by the query that called it. Inside a [`WriteTransaction`] every one
+    /// of those calls except registration returns `INT-001` on that thread,
+    /// as it does outside a user function.
     ///
     /// # Errors
     ///
@@ -1568,6 +1594,19 @@ impl Minigraf {
     ///
     /// The predicate is usable in `[(name? ?var)]` `:where` clauses.
     ///
+    /// # Snapshots and re-entry
+    ///
+    /// A query reads its functions from the registry as it was when the
+    /// query opened, so a function registered later is not visible to a
+    /// query or cursor that is already open; it is visible to every query
+    /// opened afterwards. No database lock is held while a user function
+    /// runs, so it may call back into the same database: query, prepare,
+    /// read the fact log, write, define rules, register functions,
+    /// checkpoint, verify or rebuild indexes. A write it makes is not seen
+    /// by the query that called it. Inside a [`WriteTransaction`] every one
+    /// of those calls except registration returns `INT-001` on that thread,
+    /// as it does outside a user function.
+    ///
     /// # Errors
     ///
     /// Returns an error if `name` is already registered (built-in or UDF)
@@ -1600,6 +1639,19 @@ impl Minigraf {
     /// query with `QRY-014`, naming the predicate and the error's message,
     /// and no later call of any user function is made for that query. It
     /// is never read as `false`.
+    ///
+    /// # Snapshots and re-entry
+    ///
+    /// A query reads its functions from the registry as it was when the
+    /// query opened, so a function registered later is not visible to a
+    /// query or cursor that is already open; it is visible to every query
+    /// opened afterwards. No database lock is held while a user function
+    /// runs, so it may call back into the same database: query, prepare,
+    /// read the fact log, write, define rules, register functions,
+    /// checkpoint, verify or rebuild indexes. A write it makes is not seen
+    /// by the query that called it. Inside a [`WriteTransaction`] every one
+    /// of those calls except registration returns `INT-001` on that thread,
+    /// as it does outside a user function.
     ///
     /// # Errors
     ///

@@ -285,6 +285,13 @@ These tests compare the database against an independent answer rather than a sin
   - `tests/write_tx_guard_test.rs` (#734): `checkpoint`, `verify`, `rebuild_indexes`, `prepare` and `PreparedQuery::execute`/`query` on a thread holding a `WriteTransaction` return `INT-001` (each under a 30 s timeout, so a deadlock fails instead of hanging), and the transaction then commits; outside a transaction they run.
   - `PreparedQuery::query` matches `PreparedQuery::execute`.
   - A cursor is `Send` and outlives its database handle.
+- **User functions** (#180, `tests/udf_test.rs`, `tests/udf_reentry_test.rs`)
+  - Every UDF test runs once through `register_*` and once through `try_register_*` with closures that never fail, and gets the same rows.
+  - A `try_` predicate failing on its fifth call fails the query with `QRY-014` (name and message in the text) in `:where`, a rule body, a `not` body and an `or` branch, and is not called again; through a prepared query too. Through a cursor, the rows of the first batch come first, then the error, then `None`.
+  - A `try_` aggregate failing in `init`, `step` or `finalise`, as a `:find` aggregate and as a partitioned `:over` window: `QRY-014`, and no call after the failing one.
+  - A predicate, an aggregate and a rule's predicate that register a function from inside the call return (they deadlocked before; each under a 30 s timeout), and a later query sees the new function. Registering between a cursor's pulls neither blocks it nor changes its rows; an unknown predicate is `QRY-007` at open.
+  - Re-entry, one test per row of spec §5's table, on a file database with committed and pending facts, as a plain read and inside a `WriteTransaction`: `execute` of a query, `query` drained, `prepare` + `execute`, `PreparedQuery::execute` and `query`, `fact_log`, `transact`, `retract`, `rule`, `begin_write` + commit, `checkpoint`, `verify`, `rebuild_indexes`, both kinds of registration both ways, and a nested query whose UDF queries again. In a plain read each runs, the outer query's rows are the database's before the call, a later query sees the write, and `verify` is clean; in a transaction each returns `INT-001` except registration.
+  - Unit tests: `UdfError`'s message and `QRY-014`'s code, category and text.
 - **Fact log** (#430, `tests/fact_log_test.rs`)
   - `fact_log()` returns exactly the records written (assertions and retractions, with `tx_count` and `tx_id`), in non-decreasing `tx_count` in Tx order. Checked in memory, with everything pending, half checkpointed, fully checkpointed and after reopen, in both orders, with windows of 1 to 1,000 records and batch sizes of 1 to 1,000.
   - Every layout gives identical records, including valid-time windows and long string values.
