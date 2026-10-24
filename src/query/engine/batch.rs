@@ -37,6 +37,17 @@ impl Batch {
         self.len = keep.iter().filter(|&&k| k).count();
     }
 
+    /// Keep the rows `skip..skip + take`.
+    pub(crate) fn slice(&mut self, skip: usize, take: usize) {
+        let end = skip.saturating_add(take).min(self.len);
+        let skip = skip.min(end);
+        for col in &mut self.cols {
+            col.truncate(end);
+            col.drain(..skip);
+        }
+        self.len = end - skip;
+    }
+
     /// Set the column of `slot`: the next new slot, or one already filled.
     pub(crate) fn set_col(&mut self, slot: usize, col: Vec<Cell>) {
         match self.cols.get_mut(slot) {

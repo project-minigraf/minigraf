@@ -1490,6 +1490,7 @@ mod tests {
                 with_vars: Vec::new(),
                 max_derived_facts: None,
                 max_results: None,
+                limit: None,
             }))
             .unwrap();
 
@@ -1548,6 +1549,7 @@ mod tests {
                 with_vars: Vec::new(),
                 max_derived_facts: None,
                 max_results: None,
+                limit: None,
             }))
             .unwrap();
 

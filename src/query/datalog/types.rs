@@ -572,6 +572,16 @@ pub struct DatalogQuery {
     /// Per-query `:max-results`, a deprecated alias of `:max-derived-facts`;
     /// with both, the lower applies (#553). It never limited returned rows.
     pub max_results: Option<usize>,
+    /// `:limit`: the most rows the query returns (#306).
+    pub limit: Option<Count>,
+}
+
+/// The value of `:limit` (#306): a literal, or a bind slot a prepared query
+/// fills.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Count {
+    Literal(usize),
+    Slot(String),
 }
 
 impl DatalogQuery {
@@ -584,6 +594,7 @@ impl DatalogQuery {
             with_vars: Vec::new(),
             max_derived_facts: None,
             max_results: None,
+            limit: None,
         }
     }
 
@@ -598,6 +609,7 @@ impl DatalogQuery {
             with_vars: Vec::new(),
             max_derived_facts: None,
             max_results: None,
+            limit: None,
         }
     }
 

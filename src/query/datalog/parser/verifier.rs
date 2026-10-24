@@ -66,7 +66,7 @@ fn alphabet() -> Vec<char> {
     a
 }
 
-const TOKENS: [&str; 33] = [
+const TOKENS: [&str; 34] = [
     "(",
     ")",
     "[",
@@ -88,6 +88,7 @@ const TOKENS: [&str; 33] = [
     ":any-valid-time",
     ":over",
     ":order-by",
+    ":limit",
     ":valid-from",
     ":foo",
     "?x",
@@ -205,6 +206,17 @@ const SEMANTIC: &[Semantic] = &[
     Semantic {
         code: "PRS-084",
         witness: "(query [:find ?x (sum ?y :over ()) :where [?x :a ?y]])",
+    },
+    // parse_query: a query option given twice (`query_section+` allows any repeat);
+    // `:limit 1 :limit 1` is a 4-token filler (#306).
+    Semantic {
+        code: "INT-012",
+        witness: "(query [:find ?x :where [?x :a ?y] :limit 1 :limit 1])",
+    },
+    // parse_query: a negative `:limit` (`integer_lit` takes a sign, #306).
+    Semantic {
+        code: "PRS-115",
+        witness: "(query [:find ?x :where [?x :a ?y] :limit -1])",
     },
     // parse_rule: a rule body with no pattern or rule call (`rule_vector` allows
     // `where_clause*`).
@@ -498,9 +510,9 @@ fn filler_counts_match_the_spec() {
         }
         n
     };
-    // 33 tokens: the #643 spec's 32 and `#{` (#316).
-    assert_eq!(count(3), 20_686);
-    assert_eq!(count(4), 565_267);
+    // 34 tokens: the #643 spec's 32, `#{` (#316) and `:limit` (#306).
+    assert_eq!(count(3), 23_020);
+    assert_eq!(count(4), 651_806);
 }
 
 #[test]

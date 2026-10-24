@@ -161,6 +161,7 @@ pub(crate) enum ErrorCode {
     Prs112,
     Prs113,
     Prs114,
+    Prs115,
     Prs119,
     Prs120,
     Prs121,
@@ -1020,6 +1021,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Prs114,
         "PRS-114",
         "Rule head argument must be a variable, got {}",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs115,
+        "PRS-115",
+        "{} must be a non-negative integer or a bind slot, got {}",
         ErrorCategory::Parser,
     ),
     (
@@ -2353,6 +2360,7 @@ mod tests {
                 | ErrorCode::Prs112
                 | ErrorCode::Prs113
                 | ErrorCode::Prs114
+                | ErrorCode::Prs115
                 | ErrorCode::Prs119
                 | ErrorCode::Prs120
                 | ErrorCode::Prs121
@@ -2626,6 +2634,7 @@ mod tests {
             ErrorCode::Prs112,
             ErrorCode::Prs113,
             ErrorCode::Prs114,
+            ErrorCode::Prs115,
             ErrorCode::Prs119,
             ErrorCode::Prs120,
             ErrorCode::Prs121,

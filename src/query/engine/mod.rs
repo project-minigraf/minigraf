@@ -12,6 +12,7 @@ mod distinct;
 mod filter;
 mod ids;
 mod join;
+mod limit;
 mod meter;
 mod plan;
 mod project;
@@ -318,6 +319,7 @@ pub(crate) fn build(
             plan::Step::Window { find, named, keep } => {
                 Box::new(window::Window::new(root, find, named, keep, meter))
             }
+            plan::Step::Limit { offset, limit } => Box::new(limit::Limit::new(root, offset, limit)),
             step => Box::new(filter::Apply::new(root, step)),
         };
     }

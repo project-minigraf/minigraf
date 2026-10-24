@@ -54,6 +54,7 @@ Every query runs on the streaming engine since #551. The figures in this table a
 | `attribute_value` | `[?e :name "p{m}"]` (1 row) | 24.5 ms / 25.6 ms | 288 ms / 297 ms | 3.16 s / 3.16 s |
 | `attribute_scan` | `[?e :age ?a]` (N/6 rows) | 43.4 ms / 49.4 ms | 462 ms / 484 ms | 4.83 s / 5.18 s |
 | `count_grouped` | `[:find ?g (count ?e) :where [?e :group ?g]]` | 46.3 ms / 48.6 ms | 521 ms / 524 ms | 5.66 s / 6.20 s |
+| `limit` | `[:find ?e ?a :where [?e :age ?a] :limit 10]` (#306) | 307 µs / 502 µs | 317 µs / 348 µs | 318 µs / 391 µs |
 | `join_2` | `[:p{m} :follows ?f] [?f :name ?n]` (1 row) | 54.0 ms / 63.0 ms | 606 ms / 610 ms | 6.50 s / 7.02 s |
 | `join_3_selective` | `[:p{m} :manager ?b] [?s :manager ?b] [?s :name ?n]` (10 rows) | 117 ms / 125 ms | 1.24 s / 1.28 s | 13.5 s / 13.8 s |
 | `join_3_scan` | `[?e :follows ?f] [?f :group 7] [?f :name ?n]` | 150 ms / 155 ms | 1.92 s / 1.96 s | 20.9 s / 21.2 s |
@@ -188,6 +189,10 @@ The acceptance test (`tests/recursive_acceptance_test.rs`, ignored; the nightly 
 The meter's estimate is within the spec's factor of two of the RSS a query adds (1.25× for the groups). The rest is allocator rounding, hash-table capacity beyond its entries, and the reader's pages, which no holder counts. The cartesian product held more than 5.7 GB on the executor (#575); on the engine every join builds on its 3-row inner pattern and the 1.6M rows stream through, so what a fresh process adds is the reader and the cursor, not the rows. With `query_memory_limit` at 32 MiB the groups query stops with `QRY-012` naming `Aggregate`, and at 64 bytes the product stops with `QRY-012` naming `HashJoin`.
 
 Measuring this found that `Aggregate` built its sorted map of groups uncharged while its hash table was still alive: the meter read 282 MiB against 651 MiB of RSS. The map is now charged, and the table goes first, which also cut the real peak to the figure above.
+
+### `:limit` (#306)
+
+`limit` is `attribute_scan` with `:limit 10`: `Limit` closes the scan after its first internal batch, so the time does not grow with the facts (p50 307 µs, 317 µs and 318 µs at 100K, 1M and 10M, 5 MiB peak RSS each; `attribute_scan` reads the whole attribute in 43 ms, 462 ms and 4.83 s). Same idle server, one NUMA node, 2026-10-24. The acceptance test (`cargo test --profile bench --test limit_acceptance_test -- --ignored --nocapture`, nightly) runs `:limit 10` over 10M facts of one attribute in 0.8 ms under a 64 KiB `query_memory_limit`, adding 132 KiB of RSS.
 
 ### Executor removal (#551)
 
