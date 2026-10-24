@@ -4,9 +4,9 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,747 | 1,765 |
+| **Passing** | 1,762 | 1,780 |
 | **Ignored** | 13 | 14 |
-| **Total** | 1,760 | 1,779 |
+| **Total** | 1,775 | 1,794 |
 
 **Verified**: 2026-10-24 with `cargo test --quiet`.
 
