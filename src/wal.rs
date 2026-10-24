@@ -900,6 +900,32 @@ mod tests {
         assert_eq!(tx_counts(&path), [1, 4]);
     }
 
+    /// A set's size bound and its keyword elements are checked (#316).
+    #[test]
+    fn check_fact_size_checks_sets() {
+        use crate::graph::types::ValueSet;
+        let code = |v: Value| {
+            check_fact_size(&make_fact(Uuid::new_v4(), ":s", v, 1))
+                .map_err(|e| crate::MinigrafError::from(e).code())
+        };
+        let set = |v: Vec<Value>| Value::Set(ValueSet::new(v).unwrap());
+        // A keyword element longer than an ident may be.
+        let long_kw = format!(":{}", "k".repeat(MAX_IDENT_BYTES));
+        assert_eq!(code(set(vec![Value::Keyword(long_kw)])), Err("WAL-003"));
+        // At the bound: one string element of n bytes counts n + 3.
+        let at = MAX_VALUE_BYTES - 3;
+        assert_eq!(code(set(vec![Value::String("s".repeat(at))])), Ok(()));
+        assert_eq!(
+            code(set(vec![Value::String("s".repeat(at + 1))])),
+            Err("WAL-003")
+        );
+        // Short keywords and other elements pass.
+        assert_eq!(
+            code(set(vec![Value::Keyword(":a".into()), Value::Integer(1)])),
+            Ok(())
+        );
+    }
+
     #[test]
     fn test_wal_rejected_entry_does_not_poison_the_writer() {
         let dir = tempfile::tempdir().unwrap();
