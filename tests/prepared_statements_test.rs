@@ -506,3 +506,163 @@ fn prepared_literal_as_of_and_valid_at_are_kept() {
         2
     );
 }
+
+// ─── Bind mistakes are API errors (#181) ─────────────────────────────────────
+
+/// The error of `execute` and of `query` with `binds`, which must be the same code.
+fn bind_error(
+    pq: &minigraf::PreparedQuery,
+    binds: &[(&str, BindValue)],
+) -> minigraf::MinigrafError {
+    let exec = pq
+        .execute(binds)
+        .expect_err("execute must reject the bindings");
+    let cursor = pq.query(binds).expect_err("query must reject the bindings");
+    assert_eq!(exec.code(), cursor.code(), "execute and query disagree");
+    exec
+}
+
+#[test]
+fn missing_bind_value_is_api_022_in_every_position() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute("(transact [[:a :n 1] [:a :m 2]])").unwrap();
+    db.execute("(rule [(has-n ?e ?v) [?e :n ?v]])").unwrap();
+    for q in [
+        "(query [:find ?v :where [$e :n ?v]])",
+        "(query [:find ?e :where [?e :n $v]])",
+        "(query [:find ?v :where [?e :n ?v] [(> ?v $t)]])",
+        "(query [:find ?e :where (has-n ?e $v)])",
+        "(query [:find ?v :as-of $tx :where [?e :n ?v]])",
+        "(query [:find ?v :valid-at $d :where [?e :n ?v]])",
+        "(query [:find ?e :where [?e :n ?v] (not [?e :m $v])])",
+        "(query [:find ?e :where [?e :n ?v] (not-join [?e] [?e :m $v])])",
+        "(query [:find ?e :where (or [?e :n $v] [?e :m $v])])",
+        "(query [:find ?e :where [?e :n ?w] (or-join [?e] [?e :n $v] [?e :m $v])])",
+    ] {
+        let pq = db.prepare(q).expect("prepare");
+        let err = bind_error(&pq, &[]);
+        assert_eq!(err.code(), "API-022", "missing bind value");
+        assert_eq!(err.category(), minigraf::ErrorCategory::Api);
+    }
+}
+
+#[test]
+fn attribute_slot_is_api_023_in_every_clause() {
+    let db = Minigraf::in_memory().unwrap();
+    for q in [
+        "(query [:find ?v :where [?e $a ?v]])",
+        "(query [:find ?e :where [?e :n ?v] (not [?e $a ?v])])",
+        "(query [:find ?e :where [?e :n ?v] (not-join [?e] [?e $a 1])])",
+        "(query [:find ?e :where (or [?e $a 1] [?e :m 1])])",
+        "(query [:find ?e :where [?e :n ?w] (or-join [?e] [?e :n 1] [?e $a 1])])",
+    ] {
+        let err = db.prepare(q).expect_err("attribute slot must be rejected");
+        assert_eq!(err.code(), "API-023", "attribute slot");
+        assert_eq!(err.category(), minigraf::ErrorCategory::Api);
+    }
+}
+
+#[test]
+fn bind_value_of_the_wrong_kind_is_api_024_for_every_slot_kind() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute("(transact [[:a :n 1]])").unwrap();
+    for (q, slot, bind, position) in [
+        (
+            "(query [:find ?v :where [$e :n ?v]])",
+            "e",
+            BindValue::TxCount(1),
+            "entity",
+        ),
+        (
+            "(query [:find ?e :where [?e :n $v]])",
+            "v",
+            BindValue::Timestamp(1),
+            "value",
+        ),
+        (
+            "(query [:find ?v :where [?e :n ?v] [(> ?v $t)]])",
+            "t",
+            BindValue::AnyValidTime,
+            "expression",
+        ),
+        (
+            "(query [:find ?v :as-of $tx :where [?e :n ?v]])",
+            "tx",
+            BindValue::Val(Value::Integer(1)),
+            ":as-of",
+        ),
+        (
+            "(query [:find ?v :valid-at $d :where [?e :n ?v]])",
+            "d",
+            BindValue::TxCount(1),
+            ":valid-at",
+        ),
+    ] {
+        let pq = db.prepare(q).expect("prepare");
+        let err = bind_error(&pq, &[(slot, bind)]);
+        assert_eq!(err.code(), "API-024", "wrong kind of bind value");
+        assert_eq!(err.category(), minigraf::ErrorCategory::Api);
+        let text = err.to_string();
+        assert!(
+            text.contains(&format!("'${slot}'")),
+            "message names the slot"
+        );
+        assert!(
+            text.contains(&format!("{position} position")),
+            "message names the position"
+        );
+    }
+}
+
+// ─── Entity and Val(Ref) are interchangeable (#181) ──────────────────────────
+
+fn rows(r: QueryResult) -> Vec<Vec<Value>> {
+    match r {
+        QueryResult::QueryResults { mut results, .. } => {
+            results.sort();
+            results
+        }
+        _ => panic!("expected QueryResults"),
+    }
+}
+
+#[test]
+fn entity_and_ref_bind_values_fit_each_others_slots() {
+    let db = Minigraf::in_memory().unwrap();
+    let alice = Uuid::new_v5(&Uuid::NAMESPACE_OID, b":alice");
+    let bob = Uuid::new_v5(&Uuid::NAMESPACE_OID, b":bob");
+    // Friends are stored as refs, so the expression `=` (which compares
+    // values, unlike a pattern) sees a `Ref` on both sides.
+    db.execute(&format!(
+        r#"(transact [[:alice :person/name "Alice"] [:bob :person/name "Bob"]
+                      [:alice :person/friend #uuid "{bob}"] [:carol :person/friend #uuid "{alice}"]])"#
+    ))
+    .unwrap();
+    db.execute("(rule [(friend-of ?x ?f) [?x :person/friend ?f]])")
+        .unwrap();
+
+    for (q, u) in [
+        (
+            "(query [:find ?name :where [$f :person/name ?name]])",
+            alice,
+        ),
+        ("(query [:find ?x :where [?x :person/friend $f]])", bob),
+        ("(query [:find ?x :where (friend-of ?x $f)])", bob),
+        (
+            "(query [:find ?x :where [?x :person/friend ?g] [(= ?g $f)]])",
+            bob,
+        ),
+    ] {
+        let pq = db.prepare(q).expect("prepare");
+        let as_entity = rows(pq.execute(&[("f", BindValue::Entity(u))]).unwrap());
+        let as_ref = rows(pq.execute(&[("f", BindValue::Val(Value::Ref(u)))]).unwrap());
+        assert_eq!(as_entity.len(), 1, "one row");
+        assert_eq!(as_entity, as_ref, "Entity and Val(Ref) give the same rows");
+    }
+
+    let pq = db
+        .prepare("(query [:find ?name :where [$f :person/name ?name]])")
+        .unwrap();
+    let err = bind_error(&pq, &[("f", BindValue::Val(Value::Integer(1)))]);
+    assert_eq!(err.code(), "API-024", "an integer is not an entity");
+}
