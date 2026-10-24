@@ -147,6 +147,7 @@ impl MiniGrafDb {
 - The language runtime's rules apply. Python: UniFFI's ctypes calls release the GIL and the callback re-acquires it. The plan checks this with a test that runs two threads.
 - Each call crosses the FFI once, so a UDF over many rows costs one foreign call per value. The README says so.
 - What a callback may call on the database is §5's table.
+- **Handle locks.** Every binding today holds its handle's mutex for the whole core call: Python/UniFFI `inner: Arc<Mutex<Minigraf>>`, C `handle.db.lock()` in `minigraf_execute`, Node `self.inner.lock()` in `execute`. A callback that calls back into the same handle would then deadlock in the binding, before the core's rules apply. So each binding locks its handle only to clone the `Minigraf` (it is `Clone`, an `Arc` clone) and calls the core on the clone with no binding lock held. That applies to every method, not only the ones that run queries. Where the handle holds `Option<Minigraf>` for `close()` (Node), `close()` sets it to `None`. A call already running keeps its clone, and the file closes when the last clone drops, as with an open cursor today. Each binding's re-entry test covers this.
 
 ### 6.2 Bindings without UniFFI
 
@@ -178,7 +179,7 @@ int minigraf_register_aggregate(MiniGrafDb *db, const char *name, minigraf_acc_n
                                 minigraf_destroy_fn destroy);
 ```
 
-- Both registration calls return 0 or -1, and `minigraf_last_error` gives the message, as the other `int` calls do. `destroy(user_data)` runs when the database drops the function. `acc_free(acc)` runs when the query drops the accumulator: after `finish`, on an error, or on an early `minigraf_cursor_free`.
+- Both registration calls return 0 or -1, and `minigraf_last_error` gives the message, as the other `int` calls do. `destroy(user_data)` runs when the last reference to the function drops: after `minigraf_close` and after every cursor, fact log and prepared query opened from that database is freed (each holds a registry snapshot, §5). Until then `user_data` must stay valid. `acc_free(acc)` runs when the query drops the accumulator: after `finish`, on an error, or on an early `minigraf_cursor_free`.
 - A callback that returns -1 without calling `minigraf_udf_error` fails with the message `user function failed`. A `finish` that returns 0 without calling `minigraf_udf_result`, or with JSON that is not a value, fails as well. A `ctx` is valid only during the call it was passed to.
 - The core needs `Send + Sync`. The shim's wrapper of `(fn, user_data)` is `unsafe impl Send + Sync`, so the header states the caller's contract: the callbacks and `user_data` must be safe to call from any thread that queries the database.
 
