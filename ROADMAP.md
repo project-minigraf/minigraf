@@ -99,6 +99,14 @@ Scope — query API:
 - Read-only open: `OpenOptions::read_only` takes a shared lock, so several readers can hold a file at once, writes nothing to the file or its WAL (a WAL is applied in memory, a v7 file is read without migrating), and refuses writes with `API-014` (#429; Rust API done on `v3`). The bindings' `open_with_options` follows.
 - Raw log writer: `LogWriter` builds a new database from `FactRecord`s with their `tx_count`, `tx_id`, valid-time windows and assertion flags kept, gaps allowed (a purged transaction stays a hole for `:as-of`), at `<path>.partial` renamed into place by `finish` (#431; Rust API done on `v3`). Completes extract (#429, #430), transform, load. The binding objects follow.
 
+Scope — features:
+
+- Query profiler (#185)
+- Set membership predicates (#316)
+- `PreparedQuery` over UniFFI (#181)
+- UDF registration over UniFFI (#180)
+- `OpenOptions` exposed over UniFFI through `open_with_options`, so embedders can suppress the close-time checkpoint (#322; done on `v3` in every binding with #465)
+
 Scope — release-gate testing and documentation:
 
 - Golden-file compatibility corpus for every format version (#391; done on `v3`: six v7 files from 2.0.3 checked after migration, seven v8 files frozen at `23aa57c`)
@@ -119,13 +127,8 @@ Scope — release-gate testing and documentation:
 Additive features, kept out of v3.0.0 so the #371 fix is not held up by them:
 
 - Rule persistence — design first (#241)
-- Query profiler (#185)
-- Set membership predicates (#316)
 - `lag`/`lead` window functions (#182)
 - Sliding row frames — `:rows N preceding` (#183; builds on #182)
-- `PreparedQuery` over UniFFI (#181)
-- UDF registration over UniFFI (#180)
-- `OpenOptions` exposed over UniFFI, so embedders can suppress the close-time checkpoint (#322)
 - OPFS-backed persistent mode for `BrowserDb`: a sync access handle in a dedicated Worker, no in-memory buffer; IndexedDB stays the main-thread backend. Starts at Tier 2 inside the Tier 1 browser binding until it has shipped (#441)
 - Temporal graph-traversal research (#273; may result in documentation or a blog post rather than code)
 
