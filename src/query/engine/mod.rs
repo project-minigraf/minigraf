@@ -7,6 +7,7 @@ mod aggregate;
 mod anti;
 mod batch;
 mod cell;
+mod collect;
 mod distinct;
 mod filter;
 mod ids;
@@ -303,6 +304,7 @@ pub(crate) fn build(
     for step in steps {
         root = match step {
             plan::Step::Join(spec) => Box::new(join::Join::new(root, spec, meter)),
+            plan::Step::CollectSet(spec) => Box::new(collect::CollectSet::new(root, spec, meter)),
             plan::Step::Anti(body) => Box::new(anti::AntiJoin::new(root, body, meter)),
             plan::Step::Union(branches) => Box::new(union::Union::new(root, branches, meter)),
             plan::Step::Distinct(slots) => Box::new(distinct::Distinct::new(root, slots, meter)),

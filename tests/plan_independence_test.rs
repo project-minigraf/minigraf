@@ -238,6 +238,15 @@ const MATRIX: &[&str] = &[
     // (A fixed `:valid-at`: by default `?t` is each query's "now".)
     r#"[:find ?b ?t :valid-at "2030-01-01T00:00:00Z" :where [?b :db/valid-at ?t] [?a :friend ?b] [?b :name ?n]]"#,
     r#"[:find ?b :where [?b :db/valid-at ?t] [?a :friend ?b]]"#,
+    // collect-set (#316): keyword and ref entities, an empty set, under a
+    // predicate, in `not-join` and `or-join`, an output a pattern binds.
+    r#"[:find ?n ?s :where [?e :name ?n] [(collect-set ?e :friend) ?s]]"#,
+    r#"[:find ?a ?s :where [?a :friend ?b] [(collect-set ?b :age) ?s]]"#,
+    r#"[:find ?n :where [?e :name ?n] [(collect-set ?e :age) ?s] [(in? 40 ?s)]]"#,
+    r#"[:find ?n :where [?e :name ?n] (not-join [?e] [(collect-set ?e :friend) ?s] [(= ?s #{})])]"#,
+    r#"[:find ?n :where [?e :name ?n] (or-join [?e] (and [(collect-set ?e :age) ?s] [(any-in? ?s #{25 30})]) [?e :x _])]"#,
+    r#"[:find ?e :where [?e :age ?a] [(collect-set ?e :age) ?s] [?f :name _] [(collect-set ?f :age) ?s]]"#,
+    r#"[:find ?n ?s :any-valid-time :where [?e :name ?n] [(collect-set ?e :age) ?s]]"#,
     // Time travel.
     r#"[:find ?n :as-of 1 :where [?e :name ?n] [?e :age ?a]]"#,
     r#"[:find ?n ?a :valid-at "2020-06-01T00:00:00Z" :where [?e :name ?n] [?e :age ?a]]"#,

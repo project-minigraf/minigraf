@@ -1,0 +1,1 @@
+(query [:find ?b :where [?e :user/name _] [(in? :x (collect-set ?e :user/scope)) ?b]])

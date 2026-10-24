@@ -91,7 +91,7 @@ where-section   ::= kw-where where-clause+
 where-clause    ::= expr-clause | not-clause | not-join-clause | or-clause
                   | or-join-clause | pattern-clause | rule-invocation
 pattern-clause  ::= "[" edn-value edn-value edn-value "]"
-expr-clause     ::= "[" expr variable? "]"
+expr-clause     ::= "[" (collect-set variable | expr variable?) "]"
 not-clause      ::= "(" "not" where-clause+ ")"
 not-join-clause ::= "(" "not-join" join-vars where-clause+ ")"
 or-clause       ::= "(" "or" or-branch+ ")"
@@ -102,16 +102,18 @@ and-branch      ::= "(" "and" where-clause+ ")"
 rule-invocation ::= "(" (* not followed by reserved-head *) plain-sym edn-value* ")"
 
 (* ── EXPRESSIONS ── *)
-expr        ::= "(" expr-body ")"
-expr-body   ::= binary-form | unary-form
-unary-form  ::= (unary-op | op-sym | plain-sym) expr-arg
-binary-form ::= binary-op expr-arg expr-arg
-unary-op    ::= "string?" | "integer?" | "float?" | "boolean?" | "nil?"  (* token *)
-binary-op   ::= "<=" | ">=" | "!=" | "starts-with?" | "ends-with?" | "contains?"
-              | "matches?" | "not-in?" | "any-in?" | "all-in?" | "none-in?" | "in?"
-              | "<" | ">" | "=" | "+" | "-" | "*" | "/"  (* token *)
-expr-arg    ::= expr | set-lit | boolean-lit | nil-lit | float-lit | integer-lit
-              | string-lit | bind-slot | keyword | variable
+expr             ::= "(" expr-body ")"
+expr-body        ::= binary-form | unary-form
+unary-form       ::= (* not followed by collect-set-head *) (unary-op | op-sym | plain-sym) expr-arg
+binary-form      ::= binary-op expr-arg expr-arg
+collect-set      ::= "(" collect-set-head variable keyword ")"
+collect-set-head ::= "collect-set" (* not followed by word-cont *)  (* token *)
+unary-op         ::= "string?" | "integer?" | "float?" | "boolean?" | "nil?"  (* token *)
+binary-op        ::= "<=" | ">=" | "!=" | "starts-with?" | "ends-with?" | "contains?"
+                   | "matches?" | "not-in?" | "any-in?" | "all-in?" | "none-in?" | "in?"
+                   | "<" | ">" | "=" | "+" | "-" | "*" | "/"  (* token *)
+expr-arg         ::= expr | set-lit | boolean-lit | nil-lit | float-lit | integer-lit
+                   | string-lit | bind-slot | keyword | variable
 
 (* ── TEMPORAL / WITH SECTIONS ── *)
 as-of-section             ::= kw-as-of (integer-lit | string-lit | bind-slot)

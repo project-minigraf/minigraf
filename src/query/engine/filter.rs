@@ -28,6 +28,7 @@ impl Apply {
             Step::Filter(..) => "Filter",
             Step::Bind(..) => "Bind",
             Step::Join(_) => "Join",
+            Step::CollectSet(_) => "CollectSet",
             Step::Anti(_) => "AntiJoin",
             Step::Union(_) => "Union",
             Step::Distinct(_) => "Distinct",
@@ -131,8 +132,9 @@ fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<Batch> {
             batch.set_col(*slot, out);
         }
         // Joins are operators of their own (`join::Join`, `anti::AntiJoin`,
-        // `union::Union`, `distinct::Distinct`).
+        // `union::Union`, `distinct::Distinct`, `collect::CollectSet`).
         Step::Join(_)
+        | Step::CollectSet(_)
         | Step::Anti(_)
         | Step::Union(_)
         | Step::Distinct(_)

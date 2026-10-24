@@ -143,6 +143,7 @@ impl FunctionRegistry {
             "any-in?",
             "all-in?",
             "none-in?",
+            "collect-set",
         ] {
             reg.predicates.insert(
                 name.to_string(),

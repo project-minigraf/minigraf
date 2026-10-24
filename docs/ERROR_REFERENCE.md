@@ -138,6 +138,8 @@ with no `CodedError` anywhere in its chain.
 | PRS-119 | Set literal inside a set literal | Parser |
 | PRS-120 | Set literal element is not a scalar literal | Parser |
 | PRS-121 | Unterminated set literal | Parser |
+| PRS-122 | collect-set without a binding | Parser |
+| PRS-123 | collect-set operand is not a variable and an attribute | Parser |
 | QRY-001 | Invalid entity | Query Execution |
 | QRY-002 | Attribute must be a keyword | Query Execution |
 | QRY-003 | Cannot transact a pseudo-attribute | Query Execution |
@@ -152,6 +154,7 @@ with no `CodedError` anywhere in its chain.
 | QRY-012 | Query memory limit exceeded | Query Execution |
 | QRY-013 | Rule head entity is not an entity | Query Execution |
 | QRY-014 | User function failed | Query Execution |
+| QRY-015 | collect-set found a set value | Query Execution |
 | STG-001 | Invalid header: too short | Storage |
 | STG-002 | Invalid magic number: not a .graph file | Storage |
 | STG-003 | Invalid v4/v5/v6 header too short (deprecated) | Storage |
@@ -2195,6 +2198,40 @@ with `PRS-047`.
 
 ---
 
+### PRS-122 collect-set without a binding
+
+**Error text**: `collect-set produces a value; bind it to a variable: [(collect-set ?e :attr) ?out]`
+
+**Cause**: A `collect-set` clause has no output variable. `collect-set` builds a set value and is not a filter.
+
+**Resolution**:
+- Bind its result: `[(collect-set ?e :user/scope) ?scopes]`, then test it with `in?`, `any-in?` or another predicate.
+
+**Example**:
+```datalog
+(query [:find ?e :where [?e :user/name _] [(collect-set ?e :user/scope)]])
+```
+
+---
+
+### PRS-123 collect-set operand is not a variable and an attribute
+
+**Error text**: `collect-set takes a ?variable and an attribute keyword; got {}`
+
+**Cause**: The first operand of `collect-set` must be a logic variable bound to an entity by an earlier clause, and the second an attribute keyword written in the query. A constant entity, a string or a variable attribute, and a `$slot` in either position are rejected. The message names the operand given.
+
+**Resolution**:
+- Bind the entity with a pattern first: `[?e :user/name "alice"] [(collect-set ?e :user/scope) ?s]`.
+- Write the attribute as a keyword: `:user/scope`, not `"user/scope"` or `?a`.
+
+**Example**:
+```datalog
+(query [:find ?s :where [?e :user/name _] [(collect-set ?e "user/scope") ?s]])
+```
+*`"user/scope"` is a string, not a keyword*
+
+---
+
 ## QRY — Query Execution Errors
 
 Query execution errors occur after parsing succeeds, during pattern matching,
@@ -2423,6 +2460,24 @@ db.try_register_predicate("email?", |v| match v {
 db.execute("(query [:find ?e :where [?e :mail ?m] [(email? ?m)]])")?;
 ```
 *An entity's `:mail` is an integer, so `email?` fails with `not a string`*
+
+---
+
+### QRY-015 collect-set found a set value
+
+**Error text**: `collect-set over {} found a set value; bind a set-valued attribute with a pattern instead`
+
+**Cause**: `collect-set` gathers the values of an attribute into a set, and a set cannot hold a set. One of the values it found for the attribute is itself a set. The query fails rather than skip or flatten that value.
+
+**Resolution**:
+- Read a set-valued attribute with a pattern: `[?e :user/scopes ?scopes]` binds the stored set.
+- Keep `collect-set` for attributes with one scalar value per fact.
+
+**Example**:
+```datalog
+(transact [[:alice :user/scopes #{:scope/read}]])
+(query [:find ?s :where [?e :user/scopes _] [(collect-set ?e :user/scopes) ?s]])
+```
 
 ---
 
