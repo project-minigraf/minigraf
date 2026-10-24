@@ -1482,6 +1482,113 @@ mod prepared_tests {
         assert!(starts_with(&e, "[API-005] "), "transact is not preparable");
     }
 
+    /// A JS `Set` of `elements`.
+    fn js_set(elements: &[JsValue]) -> JsValue {
+        let set = js_sys::Set::new(&JsValue::UNDEFINED);
+        for e in elements {
+            set.add(e);
+        }
+        set.into()
+    }
+
+    /// A typed set `{type: 'set', value: [..]}`.
+    fn typed_set(elements: &[JsValue]) -> JsValue {
+        typed(
+            "set",
+            Some(elements.iter().collect::<js_sys::Array>().into()),
+        )
+    }
+
+    #[wasm_bindgen_test]
+    async fn sets_bind_and_come_back_as_arrays() {
+        let db = seeded().await;
+        db.execute(r#"(transact [[:a :tags #{1 :k "x"}]])"#.to_string())
+            .await
+            .expect("transact");
+        let member = db
+            .prepare("(query [:find ?e :where [?e :n ?n] [(in? ?n $s)]])")
+            .expect("prepare");
+        for (set, want) in [
+            (typed_set(&[1.0.into(), 3.0.into()]), 2),
+            (typed_set(&[2.0.into(), 2.0.into()]), 1),
+            (js_set(&[2.0.into(), BigInt::from(3i64).into()]), 2),
+            (typed_set(&[]), 0),
+            (js_set(&[]), 0),
+        ] {
+            let r = member.execute(obj(&[("s", set)])).expect("execute");
+            assert_eq!(rows(&r).len(), want, "the set's members match");
+        }
+
+        // A set binds a set-valued attribute, element types kept.
+        let equal = db
+            .prepare("(query [:find ?e :where [?e :tags $s]])")
+            .expect("prepare");
+        let tags = || {
+            vec![
+                typed("keyword", Some(":k".into())),
+                JsValue::from_f64(1.0),
+                JsValue::from_str("x"),
+            ]
+        };
+        for set in [typed_set(&tags()), js_set(&tags())] {
+            let r = equal.execute(obj(&[("s", set)])).expect("execute");
+            assert_eq!(rows(&r).len(), 1, "an equal set matches");
+        }
+        let r = equal
+            .execute(obj(&[(
+                "s",
+                typed_set(&[":k".into(), 1.0.into(), "x".into()]),
+            )]))
+            .expect("execute");
+        assert!(rows(&r).is_empty(), "the string \":k\" is no keyword");
+
+        let out = db
+            .prepare("(query [:find ?t :where [:a :tags ?t]])")
+            .expect("prepare");
+        let r = rows(&out.execute(obj(&[])).expect("execute"));
+        assert_eq!(
+            r[0][0],
+            serde_json::json!(["x", 1, ":k"]),
+            "a set is an array in canonical order"
+        );
+    }
+
+    #[wasm_bindgen_test]
+    async fn bad_sets_are_rejected() {
+        let db = seeded().await;
+        let pq = db
+            .prepare("(query [:find ?e :where [?e :n ?n] [(in? ?n $s)]])")
+            .expect("prepare");
+        for nested in [
+            typed_set(&[typed_set(&[1.0.into()])]),
+            js_set(&[js_set(&[1.0.into()])]),
+            typed_set(&[js_set(&[])]),
+        ] {
+            let e = rejection(pq.execute(obj(&[("s", nested)])));
+            assert!(starts_with(&e, "[API-021] "), "a set in a set is API-021");
+        }
+        let a = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, b":a").to_string();
+        for bad in [
+            typed_set(&[typed("entity", Some(a.as_str().into()))]),
+            typed_set(&[typed("anyValidTime", None)]),
+            typed("set", Some(JsValue::from_f64(1.0))),
+            typed("set", None),
+        ] {
+            let e = rejection(pq.execute(obj(&[("s", bad)])));
+            assert!(starts_with(&e, "[API-017] "), "no set of values is API-017");
+        }
+        for bad in [
+            [JsValue::from_f64(1.0)]
+                .iter()
+                .collect::<js_sys::Array>()
+                .into(),
+            typed_set(&[JsValue::UNDEFINED]),
+        ] {
+            let e = rejection(pq.execute(obj(&[("s", bad)])));
+            assert!(e.is_instance_of::<js_sys::TypeError>(), "a TypeError");
+        }
+    }
+
     #[wasm_bindgen_test]
     async fn prepared_query_sees_later_writes() {
         let db = seeded().await;

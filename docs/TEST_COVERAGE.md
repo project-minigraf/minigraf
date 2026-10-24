@@ -455,7 +455,7 @@ These tests compare the database against an independent answer rather than a sin
 
 None of these are counted in the summary. The wasm32 targets run in CI (`.github/workflows/wasm.yml`).
 
-- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 40 `wasm_bindgen_test` tests.
+- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 43 `wasm_bindgen_test` tests.
   - Twenty-five for `BrowserDb`, including IndexedDB persistence, the cursor, and the flush returning every dirty page and failing on one it cannot read (#470).
   - Eleven for `BrowserBufferBackend` (which used `#[test]` and never ran before).
   - Two checking that IndexedDB page keys accept only whole numbers from 0 to 2^53.

@@ -14,15 +14,18 @@
 //! | `{ type: 'txCount', value }` | `TxCount` (an integer `>= 0`) |
 //! | `{ type: 'timestamp', value }` | `Timestamp` (Unix ms) |
 //! | `{ type: 'anyValidTime' }` | `AnyValidTime` |
+//! | `{ type: 'set', value: [..] }`, a JS `Set` | `Val(Set)` (#316) |
 //!
-//! `null` and `anyValidTime` take no `value`.
+//! `null` and `anyValidTime` take no `value`. A set's elements are plain
+//! values or typed value forms (`string` … `keyword`); duplicates are dropped.
 //!
 //! Any other JavaScript value is a `TypeError`. A typed form whose value does
 //! not fit its type (a bad UUID, a negative tx count, an integer outside
-//! `i64`) is `API-017`.
+//! `i64`, a set element that is no value) is `API-017`; a set element that is
+//! a set is `API-021`. A plain array is not a set.
 
 use crate::MinigrafError;
-use crate::graph::types::Value;
+use crate::graph::types::{Value, ValueSet};
 use crate::query::datalog::prepared::BindValue;
 use js_sys::{Array, Number, Object, Reflect};
 use wasm_bindgen::JsCast;
@@ -66,6 +69,11 @@ fn read_bind_value(name: &str, v: &JsValue) -> Result<BindValue, JsValue> {
     if v.is_bigint() || v.as_f64().is_some() {
         return Ok(BindValue::Val(number(name, v)?));
     }
+    if let Some(set) = v.dyn_ref::<js_sys::Set>() {
+        let mut elements = Vec::new();
+        set.for_each(&mut |e, _, _| elements.push(e));
+        return value_set(name, &format!("slot ${name}"), elements);
+    }
     if v.is_object()
         && !Array::is_array(v)
         && let Some(kind) = Reflect::get(v, &JsValue::from_str("type"))?.as_string()
@@ -74,7 +82,7 @@ fn read_bind_value(name: &str, v: &JsValue) -> Result<BindValue, JsValue> {
         return Ok(bind);
     }
     Err(type_error(&format!(
-        "slot ${name}: a bind value is a boolean, number, bigint, string, null or {{type, value}} object"
+        "slot ${name}: a bind value is a boolean, number, bigint, string, null, Set or {{type, value}} object"
     )))
 }
 
@@ -104,10 +112,32 @@ fn read_typed(name: &str, kind: &str, v: &JsValue) -> Result<Option<BindValue>, 
         }
         "timestamp" => BindValue::Timestamp(integer(&what(), &value)?),
         "anyValidTime" if value.is_undefined() => BindValue::AnyValidTime,
+        "set" => match value.dyn_ref::<Array>() {
+            Some(elements) => value_set(name, &what(), elements.iter().collect())?,
+            None => return Err(mismatch(&what())),
+        },
         // These two take no value.
         "null" | "anyValidTime" => return Err(mismatch(&what())),
         _ => return Ok(None),
     }))
+}
+
+/// The set of `elements`, each read as a bind value that must be a value.
+/// Element `i` is named `$name[i]` in errors.
+fn value_set(name: &str, what: &str, elements: Vec<JsValue>) -> Result<BindValue, JsValue> {
+    let values = elements
+        .iter()
+        .enumerate()
+        .map(
+            |(i, e)| match read_bind_value(&format!("{name}[{i}]"), e)? {
+                BindValue::Val(v) => Ok(v),
+                _ => Err(invalid(&format!("{what}: element {i} is not a value"))),
+            },
+        )
+        .collect::<Result<Vec<_>, _>>()?;
+    ValueSet::new(values)
+        .map(|s| BindValue::Val(Value::Set(s)))
+        .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 /// A plain `number` or `bigint`: an integer when it is whole, else a float.
