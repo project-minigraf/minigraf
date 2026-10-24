@@ -93,7 +93,8 @@ Scope — format and storage integrity:
 
 Scope — query API:
 
-- Cursor API: `Minigraf::query` and `PreparedQuery::query` return an owned `Cursor` that delivers rows in batches, with the answer fixed at open (#432; Rust API done on `v3`). The binding cursor objects follow. Behind the cursor, the streaming engine (#473) runs every query and produces rows as they are pulled: patterns, expressions and pseudo-attributes (#544), joins and `:db/valid-at` (#545), `not` and `or` (#546), aggregates and windows (#547), rules (#548), and transaction reads (#550); the executor's query path is gone (#551; done on `v3`). `:limit` (#306) is the one #473 acceptance item left, in v3.next. Operators do not spill: memory follows operator state, with an opt-in per-query limit (`QRY-012`, #549).
+- Cursor API: `Minigraf::query` and `PreparedQuery::query` return an owned `Cursor` that delivers rows in batches, with the answer fixed at open (#432; Rust API done on `v3`). The binding cursor objects follow. Behind the cursor, the streaming engine (#473) runs every query and produces rows as they are pulled: patterns, expressions and pseudo-attributes (#544), joins and `:db/valid-at` (#545), `not` and `or` (#546), aggregates and windows (#547), rules (#548), and transaction reads (#550); the executor's query path is gone (#551; done on `v3`). Operators do not spill: memory follows operator state, with an opt-in per-query limit (`QRY-012`, #549).
+- Native `:limit N` / `:offset` for plain `:find` queries (#306), with the 10M-fact acceptance test moved from #473.
 - Fact-log iterator: `Minigraf::fact_log(&FactFilter)` streams every fact version (assertions and retractions, with `tx_count`, `tx_id` and valid-time bounds) in transaction order or storage order, filtered by attribute, attribute prefix, entity and tx range, with memory bounded by a window rather than the database (#430; Rust API done on `v3`). An open log pins its generation: checkpoints run but do not reuse its pages (#543; `API-013` deprecated). A raw log writer (#431) completes the extract-transform-load path; the binding objects follow with #462.
 - Read-only open: `OpenOptions::read_only` takes a shared lock, so several readers can hold a file at once, writes nothing to the file or its WAL (a WAL is applied in memory, a v7 file is read without migrating), and refuses writes with `API-014` (#429; Rust API done on `v3`). The bindings' `open_with_options` follows.
 - Raw log writer: `LogWriter` builds a new database from `FactRecord`s with their `tx_count`, `tx_id`, valid-time windows and assertion flags kept, gaps allowed (a purged transaction stays a hole for `:as-of`), at `<path>.partial` renamed into place by `finish` (#431; Rust API done on `v3`). Completes extract (#429, #430), transform, load. The binding objects follow.
@@ -119,7 +120,6 @@ Additive features, kept out of v3.0.0 so the #371 fix is not held up by them:
 
 - Rule persistence — design first (#241)
 - Query profiler (#185)
-- Native `:limit N` / `:offset` for plain `:find` queries (#306)
 - Set membership predicates (#316)
 - `lag`/`lead` window functions (#182)
 - Sliding row frames — `:rows N preceding` (#183; builds on #182)

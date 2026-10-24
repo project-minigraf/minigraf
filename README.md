@@ -247,18 +247,19 @@ See [ROADMAP.md](ROADMAP.md) for planned work and current direction.
 
 ## Performance
 
-Performance envelope on the `v3` branch (format v8), measured up to 10M facts on a laptop (Intel i7-1065G7, SSD, page cache warm; see [BENCHMARKS.md](docs/BENCHMARKS.md#performance-envelope-v300-394) for every shape, RSS and the method):
+Performance envelope on the `v3` branch (format v8), measured up to 10M facts on an otherwise idle server, two rounds (see [BENCHMARKS.md](docs/BENCHMARKS.md#executor-removal-551) for every shape, RSS and the method):
 
 | Workload | 100K facts | 1M facts | 10M facts |
 |---|---:|---:|---:|
-| Point lookup (bound entity + attribute, incl. `:as-of` / `:valid-at`), p50 / p99 | 13 µs / 16 µs | 12 µs / 48 µs | 12 µs / 46 µs |
-| Entity with 1,000 versions, p50 / p99 | 0.26 / 0.30 ms | 0.26 / 0.29 ms | 0.27 / 0.30 ms |
-| Open a file (RSS after open: 3 MiB) | 0.12 ms | 0.14 ms | 0.12 ms |
-| Checkpoint after 1 new fact, p50 / p99 | 3.1 / 5.1 ms | 2.9 / 4.3 ms | 3.8 / 21 ms |
-| Attribute scan (N/6 rows), p50 | 43 ms | 0.46 s | 4.8 s |
-| Selective 2-clause join (1 row), p50 | 54 ms | 0.61 s | 6.5 s |
+| Point lookup (bound entity + attribute, incl. `:as-of` / `:valid-at`), p50 / p99 | 18–21 µs / 25–39 µs | 18–20 µs / 22–37 µs | 18–20 µs / 22–27 µs |
+| Entity with 1,000 versions, p50 / p99 | 0.29–0.30 / 0.31–0.35 ms | 0.29–0.30 / 0.30–0.36 ms | 0.29–0.30 / 0.32–0.37 ms |
+| Open a file (RSS after open: 3 MiB) | 0.12–0.16 ms | 0.25–0.27 ms | 0.13–0.23 ms |
+| Checkpoint after 1 new fact, p50 / p99 | 0.7–0.9 / 1.4–1.6 ms | 0.9–1.8 / 2.7–2.8 ms | 1.1–1.5 / 2.2–2.9 ms |
+| Attribute scan (N/6 rows) drained in batches of 1,000, p50 | 23 ms | 0.25 s | 2.5 s |
+| Selective 2-clause join (1 row), p50 | 38 µs | 37 µs | 37 µs |
+| Rule query with a constant (magic sets, 5–7 rows), p50 | 1.1 ms | 1.5 ms | 1.9 ms |
 
-Point lookups and time travel on one entity stay flat at every tested size. Scans, aggregations and joins grow linearly with the facts of the attributes they touch, because a query materializes them before joining (#473). They are interactive up to about 100K facts. Rule queries read the whole database (#529): 2.7 s at 100K facts and 40 s at 1M. Graphs over 10M facts are not tested.
+Point lookups, time travel on one entity, and joins and rule queries that a constant makes selective stay flat at every tested size. Queries that read a whole attribute (scans, aggregates, joins with nothing selective) grow linearly with the facts they read, in bounded memory: the 1.67M-row scan at 10M facts holds one batch, 7 MiB. Windows and whole transitive closures hold their rows, and `OpenOptions::query_memory_limit` stops a query that passes it with `QRY-012`. Graphs over 10M facts are not tested.
 
 File-backed databases limit string values to 4,068 bytes (`WAL-003`). In-memory databases have no limit.
 
