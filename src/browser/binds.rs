@@ -15,6 +15,8 @@
 //! | `{ type: 'timestamp', value }` | `Timestamp` (Unix ms) |
 //! | `{ type: 'anyValidTime' }` | `AnyValidTime` |
 //!
+//! `null` and `anyValidTime` take no `value`.
+//!
 //! Any other JavaScript value is a `TypeError`. A typed form whose value does
 //! not fit its type (a bad UUID, a negative tx count, an integer outside
 //! `i64`) is `API-017`.
@@ -91,7 +93,7 @@ fn read_typed(name: &str, kind: &str, v: &JsValue) -> Result<Option<BindValue>, 
         "float" => BindValue::Val(Value::Float(
             value.as_f64().ok_or_else(|| mismatch(&what()))?,
         )),
-        "null" => BindValue::Val(Value::Null),
+        "null" if value.is_undefined() => BindValue::Val(Value::Null),
         "ref" => BindValue::Val(Value::Ref(uuid(&what(), &string()?)?)),
         "entity" => BindValue::Entity(uuid(&what(), &string()?)?),
         "txCount" => {
@@ -101,7 +103,9 @@ fn read_typed(name: &str, kind: &str, v: &JsValue) -> Result<Option<BindValue>, 
             )
         }
         "timestamp" => BindValue::Timestamp(integer(&what(), &value)?),
-        "anyValidTime" => BindValue::AnyValidTime,
+        "anyValidTime" if value.is_undefined() => BindValue::AnyValidTime,
+        // These two take no value.
+        "null" | "anyValidTime" => return Err(mismatch(&what())),
         _ => return Ok(None),
     }))
 }

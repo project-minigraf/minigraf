@@ -1409,6 +1409,30 @@ mod prepared_tests {
             "a negative tx count is API-017"
         );
 
+        for no_value in ["null", "anyValidTime"] {
+            let e =
+                rejection(pq.execute(obj(&[("n", typed(no_value, Some(JsValue::from_f64(1.0))))])));
+            assert!(
+                starts_with(&e, "[API-017] "),
+                "null and anyValidTime take no value"
+            );
+        }
+
+        let wrong = obj(&[("n", typed("txCount", Some(JsValue::from_f64(1.0))))]);
+        let e = rejection(pq.execute(wrong.clone()));
+        assert!(
+            starts_with(&e, "[API-024] "),
+            "a tx count in a value slot is API-024"
+        );
+        let e = pq
+            .query(wrong)
+            .map(|_| ())
+            .expect_err("query must reject too");
+        assert!(
+            starts_with(&e, "[API-024] "),
+            "a tx count in a value slot is API-024"
+        );
+
         let e = rejection(pq.execute(obj(&[])));
         assert!(starts_with(&e, "[API-022] "), "a missing slot is API-022");
         let e = pq

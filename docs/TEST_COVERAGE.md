@@ -454,7 +454,7 @@ None of these are counted in the summary. The wasm32 targets run in CI (`.github
   - Twenty-five for `BrowserDb`, including IndexedDB persistence, the cursor, and the flush returning every dirty page and failing on one it cannot read (#470).
   - Eleven for `BrowserBufferBackend` (which used `#[test]` and never ran before).
   - Two checking that IndexedDB page keys accept only whole numbers from 0 to 2^53.
-- **`BrowserDb.prepare`** (#181): one prepared query run with three bindings; every plain JS value (boolean, whole and fractional `number`, `bigint`, string, `null`) and every `{type, value}` form; a prepared cursor gives the rows of `execute`; `TypeError` for a non-bind value or non-object bindings, `API-017` for a bad UUID or negative tx count, `API-022`, `API-023` and `API-005`; a later write is seen by the next run.
+- **`BrowserDb.prepare`** (#181): one prepared query run with three bindings; every plain JS value (boolean, whole and fractional `number`, `bigint`, string, `null`) and every `{type, value}` form; a prepared cursor gives the rows of `execute`; `TypeError` for a non-bind value or non-object bindings, `API-017` for a bad UUID, a negative tx count or a value on `null`/`anyValidTime`, `API-022`, `API-023`, `API-024` (both `execute` and `query`) and `API-005`; a later write is seen by the next run.
 - **`BrowserDb` cursor**: `query()` batches of 1, 7 and 1,000 give the rows of `execute()`; a cursor keeps the answer from when it opened and returns the end after `close()`; a `transact` is `API-012`.
 - **Page reuse** (#411, #440; five `BrowserDb` tests)
   - Opening a v7 store written straight into IndexedDB stores a v8 meta page and only the live pages, with nothing written on the next open.
