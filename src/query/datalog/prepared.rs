@@ -780,10 +780,10 @@ mod tests {
         );
         assert_eq!(
             limit_code(Some(BindValue::Val(Value::Float(1.0)))),
-            "INT-035"
+            "API-024"
         );
-        assert_eq!(limit_code(Some(BindValue::TxCount(3))), "INT-035");
-        assert_eq!(limit_code(None), "INT-033");
+        assert_eq!(limit_code(Some(BindValue::TxCount(3))), "API-024");
+        assert_eq!(limit_code(None), "API-022");
     }
 
     #[test]
