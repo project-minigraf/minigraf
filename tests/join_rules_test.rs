@@ -273,7 +273,10 @@ fn assert_expression_equality_matches_joins(db: &Minigraf) {
     for (q, want) in [
         // The pattern constant and the join the expressions must agree with.
         ("[:find ?x :where [?x :ref/friend :bob]]", 1),
-        ("[:find ?x :where [?y :ref/friend ?g] [?x :kw/friend ?g]]", 1),
+        (
+            "[:find ?x :where [?y :ref/friend ?g] [?x :kw/friend ?g]]",
+            1,
+        ),
         // A ref against a keyword constant, either side.
         ("[:find ?x :where [?x :ref/friend ?g] [(= ?g :bob)]]", 1),
         ("[:find ?x :where [?x :ref/friend ?g] [(= :bob ?g)]]", 1),
@@ -342,4 +345,32 @@ fn expression_equality_equates_keyword_and_ref_after_checkpoint() {
     assert_expression_equality_matches_joins(&db);
     drop(db);
     assert_expression_equality_matches_joins(&Minigraf::open(&path).unwrap());
+}
+
+#[test]
+fn expression_equality_in_or_branches_and_on_uuid_keywords() {
+    let db = ref_and_keyword_db();
+    let r = query(
+        &db,
+        "[:find ?x :where [?x :ref/friend ?g] (or [(= ?g :bob)] [(= ?g :eve)])]",
+    );
+    assert_eq!(r.len(), 1, "or branch");
+    // A keyword whose name is a UUID names the entity with that UUID.
+    let u = named(":bob");
+    let r = query(
+        &db,
+        &format!("[:find ?x :where [?x :ref/friend ?g] [(= ?g :{u})]]"),
+    );
+    assert_eq!(r.len(), 1, "UUID keyword");
+    // Set elements still compare as they are: a keyword element never
+    // equals a ref element (#316).
+    db.execute(&format!(
+        r#"(transact [[:s1 :tags #{{:bob}}] [:s2 :tags #{{#uuid "{u}"}}]])"#
+    ))
+    .unwrap();
+    let r = query(
+        &db,
+        "[:find ?a :where [:s1 :tags ?a] [:s2 :tags ?b] [(= ?a ?b)]]",
+    );
+    assert!(r.is_empty(), "sets compare structurally");
 }
