@@ -7,7 +7,7 @@
 
 ## 1. Decisions
 
-1. **Every binding gets prepared queries.** `prepare(text)` returns a handle with `execute(bindings)` (the JSON `execute` returns today) and `query(bindings)` (the binding's existing cursor). The handle parses and plans once, like the Rust `PreparedQuery`.
+1. **Every binding gets prepared queries.** `prepare(text)` returns a handle with `execute(bindings)` (the JSON `execute` returns today) and `query(bindings)` (the binding's existing cursor). The handle parses and validates once, like the Rust `PreparedQuery`. Each execution substitutes the bindings and plans the query again (`prepared.rs` `bind`), as in Rust today; this spec does not change that.
 2. **Bindings are a map from slot name to bind value.** A slot is named without its `$`. A name the query does not use is ignored, as in Rust.
 3. **A bind value is a typed value or a plain host value.** The typed form names all five `BindValue` variants. A plain host value (integer, float, string, boolean, null, and a UUID where the language has a UUID type) binds as a value, using the rules in §4.
 4. **A mistake in the bindings is an API error.** The three errors are missing slot, slot in attribute position, and wrong kind of bind value. They are raised today as `INT-033`, `INT-034` and `INT-035`, so the UniFFI bindings report them as "unknown error". They get new `API` codes (§5). The `INT` codes stay registered and are marked deprecated.
@@ -122,7 +122,7 @@ pub enum MiniGrafBindValue {
 
 #[uniffi::export]
 impl MiniGrafDb {
-    /// Parse and plan a `(query ...)` once. Slots are `$name`.
+    /// Parse and validate a `(query ...)` once. Slots are `$name`.
     pub fn prepare(&self, datalog: String) -> Result<Arc<MiniGrafPreparedQuery>, MiniGrafError>;
 }
 
@@ -209,7 +209,7 @@ The consumer-test contract (`consumer-test/run.sh`, or the binding's equivalent)
 ## 9. Interplay
 
 - **#180.** Both change `MiniGrafDb`'s impl in the same files. The binding PRs of whichever lands second rebase onto the other. #180's PR 0 (#734) adds `INT-001` to `prepare`/`PreparedQuery`; nothing here depends on it.
-- **#306.** Its `:limit`/`:offset` resolver raises `INT-033`/`INT-035`. Whichever PR lands second switches those raises to `API-022`/`API-024`. Plain integers bind there as `Val(Integer)`, as #306 expects.
+- **#306.** Its `:limit`/`:offset` resolver raises `INT-033`/`INT-035`. Whichever PR lands second switches those raises: a missing `:limit`/`:offset` binding is `API-022` and a wrong kind is `API-024`, as for every other slot. `API-023` stays the attribute-slot code only. Plain integers bind there as `Val(Integer)`, as #306 expects.
 - **#316.** §4.2's last paragraph. `API-021` is #316's.
 - **Codes.** #180's and #316's specs both claim `QRY-014`. That is outside this spec but has to be settled before either merges.
 
