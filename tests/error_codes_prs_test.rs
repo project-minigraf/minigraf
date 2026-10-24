@@ -823,6 +823,44 @@ fn prs_115_limit_not_a_non_negative_integer() {
 }
 
 #[test]
+fn prs_116_offset_without_order_by() {
+    assert_code_and_message(
+        "(query [:find ?a :where [?a :edge ?b] :offset 2 :limit 1])",
+        "PRS-116",
+        ":order-by",
+    );
+}
+
+#[test]
+fn prs_117_order_by_entry_not_in_find() {
+    assert_code_and_message(
+        "(query [:find ?a :where [?a :edge ?b] :order-by [?b]])",
+        "PRS-117",
+        "?b",
+    );
+    assert_execute_code(
+        "(query [:find ?a :where [?a :edge ?b] :order-by [(count ?a)]])",
+        "PRS-117",
+    );
+}
+
+#[test]
+fn prs_118_malformed_order_by() {
+    assert_code_and_message(
+        "(query [:find ?a :where [?a :edge ?b] :order-by [?a ?a]])",
+        "PRS-118",
+        "twice",
+    );
+    for q in [
+        "(query [:find ?a :where [?a :edge ?b] :order-by ?a])",
+        "(query [:find ?a :where [?a :edge ?b] :order-by []])",
+        "(query [:find ?a :where [?a :edge ?b] :order-by [:desc ?a]])",
+    ] {
+        assert_execute_code(q, "PRS-118");
+    }
+}
+
+#[test]
 fn prs_105_rule_name_is_a_variable_or_an_operator() {
     assert_execute_code("(rule [(?r ?a) [?a :edge ?b]])", "PRS-105");
     assert_execute_code("(rule [(< ?a) [?a :edge ?b]])", "PRS-105");

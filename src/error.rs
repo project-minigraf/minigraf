@@ -162,6 +162,9 @@ pub(crate) enum ErrorCode {
     Prs113,
     Prs114,
     Prs115,
+    Prs116,
+    Prs117,
+    Prs118,
     Prs119,
     Prs120,
     Prs121,
@@ -1026,6 +1029,24 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Prs115,
         "PRS-115",
         "{} must be a non-negative integer or a bind slot, got {}",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs116,
+        "PRS-116",
+        ":offset requires :order-by",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs117,
+        "PRS-117",
+        ":order-by entry {} is not a :find element",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs118,
+        "PRS-118",
+        ":order-by takes a non-empty vector of :find elements, each optionally followed by :asc or :desc; {}",
         ErrorCategory::Parser,
     ),
     (
@@ -2354,6 +2375,9 @@ mod tests {
                 | ErrorCode::Prs113
                 | ErrorCode::Prs114
                 | ErrorCode::Prs115
+                | ErrorCode::Prs116
+                | ErrorCode::Prs117
+                | ErrorCode::Prs118
                 | ErrorCode::Prs119
                 | ErrorCode::Prs120
                 | ErrorCode::Prs121
@@ -2627,6 +2651,9 @@ mod tests {
             ErrorCode::Prs113,
             ErrorCode::Prs114,
             ErrorCode::Prs115,
+            ErrorCode::Prs116,
+            ErrorCode::Prs117,
+            ErrorCode::Prs118,
             ErrorCode::Prs119,
             ErrorCode::Prs120,
             ErrorCode::Prs121,

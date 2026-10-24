@@ -625,6 +625,52 @@ fn parse_whole_command(input: &str) -> Result<DatalogCommand> {
 
 /// Parse an aggregate expression list: (func-name ?var)
 /// e.g., [Symbol("count"), Symbol("?e")] → FindSpec::Aggregate { "count", "?e" }
+/// The entries of `:order-by`'s vector (#306): `:find` elements, each
+/// optionally followed by `:asc` or `:desc`. Whether each names a `:find`
+/// element is checked once every section is read.
+fn parse_order_by(val: &EdnValue) -> Result<Vec<(FindSpec, Order)>> {
+    let shape = |fault: String| err_coded!(ErrorCode::Prs118, fault);
+    let items = val
+        .as_vector()
+        .ok_or_else(|| shape("not a vector".to_string()))?;
+    if items.is_empty() {
+        return Err(shape("empty".to_string()));
+    }
+    let mut entries: Vec<(FindSpec, Order)> = Vec::new();
+    // Whether the last entry was given its direction.
+    let mut directed = true;
+    for item in items {
+        match item {
+            EdnValue::Keyword(k) if k == ":asc" || k == ":desc" => {
+                let Some(last) = entries.last_mut().filter(|_| !directed) else {
+                    return Err(shape(format!("{k} without an element")));
+                };
+                last.1 = if k == ":desc" {
+                    Order::Desc
+                } else {
+                    Order::Asc
+                };
+                directed = true;
+            }
+            EdnValue::Keyword(k) => return Err(shape(format!("another keyword {k}"))),
+            EdnValue::Symbol(s) if s.starts_with('?') => {
+                entries.push((FindSpec::Variable(s.clone()), Order::Asc));
+                directed = false;
+            }
+            // A list that is no aggregate or window cannot equal a `:find`
+            // element.
+            EdnValue::List(elems) => {
+                let spec = parse_aggregate(elems)
+                    .map_err(|_| err_coded!(ErrorCode::Prs117, format!("{item:?}")))?;
+                entries.push((spec, Order::Asc));
+                directed = false;
+            }
+            other => bail_coded!(ErrorCode::Prs117, format!("{other:?}")),
+        }
+    }
+    Ok(entries)
+}
+
 fn parse_aggregate(elems: &[EdnValue]) -> Result<FindSpec> {
     // Detect window function: contains ":over" keyword anywhere in elems
     let has_over = elems
@@ -829,6 +875,8 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
     let mut query_max_derived_facts: Option<usize> = None;
     let mut query_max_results: Option<usize> = None;
     let mut query_limit: Option<Count> = None;
+    let mut query_offset: Option<Count> = None;
+    let mut query_order_by: Option<Vec<(FindSpec, Order)>> = None;
 
     let mut i = 0;
     while i < query_vector.len() {
@@ -950,25 +998,46 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
                     i += 1;
                     continue;
                 }
-                ":limit" => {
+                ":limit" | ":offset" => {
                     current_clause = None;
-                    if query_limit.is_some() {
-                        bail_coded!(ErrorCode::Int012, ":limit");
+                    let target = if keyword == ":limit" {
+                        &mut query_limit
+                    } else {
+                        &mut query_offset
+                    };
+                    if target.is_some() {
+                        bail_coded!(ErrorCode::Int012, keyword);
                     }
                     i += 1;
                     if !value_at(i) {
-                        bail_coded!(ErrorCode::Int013, ":limit");
+                        bail_coded!(ErrorCode::Int013, keyword);
                     }
                     let val = query_vector
                         .get(i)
-                        .ok_or_else(|| err_coded!(ErrorCode::Int013, ":limit"))?;
-                    query_limit = Some(match val {
+                        .ok_or_else(|| err_coded!(ErrorCode::Int013, keyword))?;
+                    *target = Some(match val {
                         EdnValue::Integer(n) if *n >= 0 => {
                             Count::Literal(usize::try_from(*n).unwrap_or(usize::MAX))
                         }
                         EdnValue::BindSlot(name) => Count::Slot(name.clone()),
-                        other => bail_coded!(ErrorCode::Prs115, ":limit", format!("{other:?}")),
+                        other => bail_coded!(ErrorCode::Prs115, keyword, format!("{other:?}")),
                     });
+                    i += 1;
+                    continue;
+                }
+                ":order-by" => {
+                    current_clause = None;
+                    if query_order_by.is_some() {
+                        bail_coded!(ErrorCode::Int012, ":order-by");
+                    }
+                    i += 1;
+                    if !value_at(i) {
+                        bail_coded!(ErrorCode::Int013, ":order-by");
+                    }
+                    let val = query_vector
+                        .get(i)
+                        .ok_or_else(|| err_coded!(ErrorCode::Int013, ":order-by"))?;
+                    query_order_by = Some(parse_order_by(val)?);
                     i += 1;
                     continue;
                 }
@@ -1130,6 +1199,20 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
         bail_coded!(ErrorCode::Prs021);
     }
 
+    // `:order-by` may come before `:find`, so its entries are matched here.
+    let order_by = query_order_by.unwrap_or_default();
+    for (k, (entry, _)) in order_by.iter().enumerate() {
+        if !find_specs.contains(entry) {
+            bail_coded!(ErrorCode::Prs117, entry.display_name());
+        }
+        if order_by[..k].iter().any(|(e, _)| e == entry) {
+            bail_coded!(ErrorCode::Prs118, format!("{} twice", entry.display_name()));
+        }
+    }
+    if query_offset.is_some() && order_by.is_empty() {
+        bail_coded!(ErrorCode::Prs116);
+    }
+
     let mut query = DatalogQuery::new(find_specs, where_clauses);
     query.as_of = query_as_of;
     query.valid_at = query_valid_at;
@@ -1137,6 +1220,8 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
     query.max_derived_facts = query_max_derived_facts;
     query.max_results = query_max_results;
     query.limit = query_limit;
+    query.offset = query_offset;
+    query.order_by = order_by;
     Ok(DatalogCommand::Query(query))
 }
 
@@ -3136,6 +3221,129 @@ mod tests {
         assert_eq!(code_of(&q(":limit :ten")), "INT-013");
         for bad in ["-1", "1.5", "\"ten\"", "?x", "nil", "true", "[1]"] {
             assert_eq!(code_of(&q(&format!(":limit {bad}"))), "PRS-115", "{bad}");
+        }
+    }
+
+    fn parse_order(input: &str) -> Result<(Vec<(FindSpec, Order)>, Option<Count>)> {
+        match parse_datalog_command(input)? {
+            DatalogCommand::Query(q) => Ok((q.order_by, q.offset)),
+            _ => panic!("expected Query"),
+        }
+    }
+
+    fn var(name: &str) -> FindSpec {
+        FindSpec::Variable(name.to_string())
+    }
+
+    #[test]
+    fn order_by_entries_and_directions() {
+        let q = |tail: &str| {
+            format!("(query [:find ?x ?y (count ?z) :where [?x :a ?y] [?x :b ?z] {tail}])")
+        };
+        assert_eq!(parse_order(&q("")).unwrap(), (vec![], None));
+        assert_eq!(
+            parse_order(&q(":order-by [?y]")).unwrap().0,
+            vec![(var("?y"), Order::Asc)]
+        );
+        let count = FindSpec::Aggregate {
+            func: "count".to_string(),
+            var: "?z".to_string(),
+        };
+        assert_eq!(
+            parse_order(&q(":order-by [(count ?z) :desc ?x :asc ?y]"))
+                .unwrap()
+                .0,
+            vec![
+                (count, Order::Desc),
+                (var("?x"), Order::Asc),
+                (var("?y"), Order::Asc)
+            ]
+        );
+        let w = "(query [:find ?x (sum ?y :over (:order-by ?x)) :where [?x :a ?y] \
+                 :order-by [(sum ?y :over (:order-by ?x)) :desc]])";
+        let (order, _) = parse_order(w).unwrap();
+        assert!(
+            matches!(order.as_slice(), [(FindSpec::Window(_), Order::Desc)]),
+            "a window entry"
+        );
+    }
+
+    #[test]
+    fn order_by_and_offset_in_any_section_order() {
+        for input in [
+            "(query [:order-by [?x :desc] :offset 2 :find ?x :where [?x :a ?y]])",
+            "(query [:offset 2 :find ?x :order-by [?x :desc] :where [?x :a ?y]])",
+            "(query [:find ?x :where [?x :a ?y] :limit 1 :offset 2 :order-by [?x :desc]])",
+        ] {
+            assert_eq!(
+                parse_order(input).unwrap(),
+                (vec![(var("?x"), Order::Desc)], Some(Count::Literal(2))),
+                "{input}"
+            );
+        }
+        let q = |tail: &str| format!("(query [:find ?x :where [?x :a ?y] :order-by [?x] {tail}])");
+        assert_eq!(
+            parse_order(&q(":offset 0")).unwrap().1,
+            Some(Count::Literal(0))
+        );
+        assert_eq!(
+            parse_order(&q(":offset $o")).unwrap().1,
+            Some(Count::Slot("o".to_string()))
+        );
+    }
+
+    #[test]
+    fn offset_errors() {
+        let q = |tail: &str| format!("(query [:find ?x :where [?x :a ?y] :order-by [?x] {tail}])");
+        assert_eq!(code_of(&q(":offset 1 :offset 2")), "INT-012");
+        assert_eq!(code_of(&q(":offset")), "INT-013");
+        assert_eq!(code_of(&q(":offset :ten")), "INT-013");
+        for bad in ["-1", "1.5", "\"ten\"", "?x", "nil", "[1]"] {
+            assert_eq!(code_of(&q(&format!(":offset {bad}"))), "PRS-115", "{bad}");
+        }
+        assert_eq!(
+            code_of("(query [:find ?x :where [?x :a ?y] :offset 1])"),
+            "PRS-116"
+        );
+        assert_eq!(
+            code_of("(query [:find ?x :where [?x :a ?y] :offset 0 :limit 3])"),
+            "PRS-116"
+        );
+    }
+
+    #[test]
+    fn order_by_errors() {
+        let q = |tail: &str| {
+            format!(
+                "(query [:find ?x (count ?z) :with ?w :where [?x :a ?y] [?x :b ?z] [?x :c ?w] {tail}])"
+            )
+        };
+        assert_eq!(code_of(&q(":order-by [?x] :order-by [?x]")), "INT-012");
+        assert_eq!(code_of(&q(":order-by")), "INT-013");
+        assert_eq!(code_of(&q(":order-by :desc")), "INT-013");
+        for bad in [
+            "[?y]",
+            "[?w]",
+            "[(count ?y)]",
+            "[(sum ?z)]",
+            "[1]",
+            "[\"x\"]",
+            "[(foo)]",
+            "[[?x]]",
+        ] {
+            assert_eq!(code_of(&q(&format!(":order-by {bad}"))), "PRS-117", "{bad}");
+        }
+        for bad in [
+            "?x",
+            "[]",
+            "[?x ?x]",
+            "[?x :asc ?x :desc]",
+            "[(count ?z) (count ?z)]",
+            "[:desc ?x]",
+            "[?x :asc :desc]",
+            "[?x :foo]",
+        ] {
+            assert_eq!(code_of(&q(&format!(":order-by {bad}"))), "PRS-118", "{bad}");
         }
     }
 

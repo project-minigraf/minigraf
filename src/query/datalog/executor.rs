@@ -1483,6 +1483,8 @@ mod tests {
                 max_derived_facts: None,
                 max_results: None,
                 limit: None,
+                offset: None,
+                order_by: Vec::new(),
             }))
             .unwrap();
 
@@ -1542,6 +1544,8 @@ mod tests {
                 max_derived_facts: None,
                 max_results: None,
                 limit: None,
+                offset: None,
+                order_by: Vec::new(),
             }))
             .unwrap();
 

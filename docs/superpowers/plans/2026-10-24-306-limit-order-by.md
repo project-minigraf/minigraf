@@ -172,11 +172,11 @@ Branch `feat/306-order-by` from `v3` 59ce7f24 (PR 1 merged as #745), worktree
     anyway.
 13. **`:offset` alone (with `:order-by`, no `:limit`)** plans `Sort` without `keep` and
     `Limit { offset, limit: None }`.
-14. **Error texts**: `PRS-116` `` `:offset` requires `:order-by` ``; `PRS-117`
-    `` `:order-by` entry {} is not a `:find` element ``; `PRS-118`
-    `` `:order-by` takes a non-empty vector of `:find` elements, each optionally followed by
-    `:asc` or `:desc`; {} `` (the fault: `not a vector`, `empty`, `` `?x` twice ``,
-    `` `:desc` without an element ``, `` `:foo` ``).
+14. **Error texts** (no backticks: no registry template has any, and the doc check reads
+    the text between single backticks): `PRS-116` `:offset requires :order-by`; `PRS-117`
+    `:order-by entry {} is not a :find element`; `PRS-118` `:order-by takes a non-empty
+    vector of :find elements, each optionally followed by :asc or :desc; {}` (the fault:
+    `not a vector`, `empty`, `?x twice`, `:desc without an element`, `another keyword :foo`).
 
 ### Step 10. Parser: `:order-by` and `:offset`
 
