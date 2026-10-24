@@ -10,7 +10,7 @@
 
 **Verified**: 2026-10-24 with `cargo test --quiet` (and `--features test-hooks`).
 
-#306 PR 1 (`:limit`) added 13 tests, 5 more under `test-hooks`, and one ignored acceptance test.
+#306 PR 2 (`:order-by`, `:offset`, `Sort`) added 18 tests and 7 more under `test-hooks`; the ignored acceptance test now also checks top-k. #306 PR 1 (`:limit`) added 13 tests, 5 more under `test-hooks`, and one ignored acceptance test.
 
 #551 PR 2 deleted the executor's query path, with the 73 unit tests of its internals and the oracle. Two engine tests replace shapes no other test covered, and a storage unit test covers the reads only the executor made.
 
@@ -360,11 +360,14 @@ These tests compare the database against an independent answer rather than a sin
   - Every planner error's code, and the error order.
   - The two answer changes of the spec (§4), and an unknown predicate in a `not` body, were checked against both the engine and the executor; their tests keep the engine's answer.
   - The envelope harness's `-irregular` fixture keeps its source's records, with `tx_id`s that fall and rise (`cargo test` runs the example's tests).
-- **`:limit`** (#306)
+- **`:limit`, `:offset` and `:order-by`** (#306)
   - `tests/limit_order_test.rs` (5 tests, `test-hooks`): 14 shapes (patterns, joins, `not`, `or`, grouped and ungrouped aggregates and the zero row, a window, rule queries, `:as-of`, `:any-valid-time`, an expression with no pattern), in memory and over committed and pending facts, with limits 0, 1, 2, the answer size less one, the answer size and five more: through `execute`, a cursor pulled one row at a time, a prepared `:limit $n` and its cursor, with reordering on and off, each returns `min(n, |answer|)` rows that are a sub-bag of the unlimited answer. A write transaction's own staged facts; slot errors (`API-010`, `PRS-115`, `API-024`).
   - `src/query/engine/limit.rs` (4 unit tests): at most `limit` rows across batch boundaries, `limit 0` pulls nothing, one batch read for 10 rows and two for `BATCH_ROWS + 1`, offsets across batches and past the end, `rewind`.
   - `src/cursor.rs` (2 tests): through a cursor, in memory and on file, `:limit 10` leaves the scan at one internal batch and `:limit 0` at none.
   - Parser (3 unit tests), prepared slots (3 unit tests), `prs_115_…` in `tests/error_codes_prs_test.rs`, the grammar corpus (3 valid, 2 syntax, 2 semantic files) and two verifier `SEMANTIC` witnesses (`INT-012`, `PRS-115`).
+  - `tests/limit_order_test.rs` (7 more tests, `test-hooks`): 14 ordered shapes (each `:limit` shape with an `:order-by` over plain, aggregate and window elements, ascending and descending, with ties), in memory and over committed and pending facts, with no option, limits 0, 1, 3 and the answer size, each with offsets 1, the answer size less one and two past it, and `:offset 2` alone: through `execute` and a cursor pulled one row at a time, and the limited ones through a prepared `:offset $o :limit $n` and its cursor, with reordering on and off, each returns the test's own full sort of the unlimited answer, sliced. Pages of three cover the ordered answer; every value class in one column ascending and descending (an integer before an equal float, `-0.0` before `0.0`); a write transaction's staged facts; `:offset` slot errors; a full sort over `query_memory_limit` is `QRY-012`, top-k under the same limit is not.
+  - `src/query/engine/sort.rs` (7 unit tests): a full sort and top-k (k = 1 to past the input) equal a reference sort, ascending and descending, ties to the next column; `keep 0` pulls nothing; top-k's peak meter bytes are the same for 1,000 and 100,001 rows; `QRY-012` with and without `keep`; `rewind`. `src/query/engine/tests.rs` (1 test): top-k over 20,000 committed entities runs under a 512 KiB limit a full sort exceeds (the DICT lookups are dropped per batch).
+  - `src/query/datalog/aggregate/tests.rs` (2 tests, `row_order`), parser (4 unit tests: entries, directions, section orders, every `PRS-116`–`118`, `INT-012`/`013` and `PRS-115` case of `:offset`/`:order-by`), prepared `:offset` slots (1 unit test), `prs_116_…`–`prs_118_…` in `tests/error_codes_prs_test.rs`, the grammar corpus (4 valid, 3 syntax, 4 semantic files) and three verifier `SEMANTIC` witnesses (`PRS-116`–`118`); the verifier has 37 tokens and 16 templates.
 - **Query memory limit** (`tests/memory_limit_test.rs`, 7 tests; #549)
   - `OpenOptions::query_memory_limit` is off by default and set by its builder.
   - `QRY-012` through `execute`, a cursor's first pull, a prepared query and a rule query (from `execute`, and from `query` when the rules run at open). The database answers after a query fails.
@@ -492,7 +495,7 @@ The thirteen ignored tests (fourteen with `test-hooks`) are intentionally exclud
   - 1M aggregate groups return 1M rows, and with `query_memory_limit` at 32 MiB stop with `QRY-012` naming `Aggregate`, after which the database answers;
   - 13 patterns sharing no variable over the fuzz harness's 3 facts stream 3^13 rows with peak RSS under 64 MiB, and with a 64-byte limit stop with `QRY-012` naming `HashJoin`;
   - `count` over every one of 1M facts counts them under a 4 KiB `query_memory_limit` (`count_holds_no_rows`, the #473 constant-memory `count` item).
-- One `:limit` acceptance test (`tests/limit_acceptance_test.rs`, #306, the #473 `:limit` item), run by the nightly smoke workflow: `:limit 10` over 10M checkpointed facts returns 10 rows in under 250 ms under a 64 KiB `query_memory_limit`, adding under 32 MiB of peak RSS; the fixture is written with `LogWriter`.
+- One `:limit` and top-k acceptance test (`tests/limit_acceptance_test.rs`, #306, the #473 `:limit` item), run by the nightly smoke workflow over one 10M-fact fixture written with `LogWriter`: `:limit 10` returns 10 rows in under 250 ms under a 64 KiB `query_memory_limit`, adding under 32 MiB of peak RSS; `:order-by [?v :desc] :limit 10` returns the ten largest values under a 1 MiB limit, adding under 32 MiB.
 - One large-transaction acceptance test (`tests/large_transaction_acceptance_test.rs`, #550; `test-hooks` only), run by the nightly smoke workflow (see [Large transactions](#large-transactions-550)).
 - One measurement test (`meter_peak_against_rss`, `src/query/engine/tests.rs`, #549): prints the meter's peak against the peak RSS for the same two shapes, opening the engine directly.
 
