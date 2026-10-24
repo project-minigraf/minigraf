@@ -842,6 +842,8 @@ pub(crate) fn eval_expr(
             // Unsubstituted bind slot — treat as eval error (unbound variable equivalent).
             Err(())
         }
+        // The planner runs it as a step of its own (#316).
+        Expr::CollectSet { .. } => Err(()),
     }
 }
 

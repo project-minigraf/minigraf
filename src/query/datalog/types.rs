@@ -240,6 +240,13 @@ pub enum Expr {
     Slot(String),
     BinOp(BinOp, Box<Expr>, Box<Expr>),
     UnaryOp(UnaryOp, Box<Expr>),
+    /// `(collect-set ?e :attr)` (#316): the set of the values of `[?e :attr ?v]`.
+    /// Only the whole expression of a binding clause `[(collect-set ?e :a) ?s]`;
+    /// the engine plans it as its own step, never through `eval_expr`.
+    CollectSet {
+        entity: String,
+        attribute: String,
+    },
 }
 
 /// A single element in the :find clause: either a plain variable, an aggregate, or a window function.

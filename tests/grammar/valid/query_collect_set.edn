@@ -1,0 +1,4 @@
+(query [:find ?e ?scopes ?admin
+        :where [?e :user/name _]
+               [(collect-set ?e :user/scope) ?scopes]
+               [(in? :scope/admin ?scopes) ?admin]])
