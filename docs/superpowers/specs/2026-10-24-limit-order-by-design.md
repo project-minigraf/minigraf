@@ -8,7 +8,7 @@
 ## 1. Decisions
 
 1. **`:order-by` is added** with `:limit` and `:offset`. A `Sort` operator orders the rows; under a `:limit` it keeps only the best `offset + limit` rows.
-2. **`:limit` without `:order-by` returns any `n` rows of the answer** and stops the work once it has them. Which rows is unspecified and may differ between plans. This is the one exception to the rule that every plan returns the same rows as a bag (#594/#596 design): the rows returned are always a sub-bag of that plan-independent answer, with `min(n, |answer|)` rows.
+2. **`:limit` without `:order-by` returns any `n` rows of the answer** and stops pulling from its input once it has them. Operators that hold their whole input before returning a row (`Aggregate`, `Window`, a `HashJoin`'s build side, a hashed `not`/`or` body) still read all of theirs; the early stop saves the rest (§4.1). Which rows is unspecified and may differ between plans. This is the one exception to the rule that every plan returns the same rows as a bag (#594/#596 design): the rows returned are always a sub-bag of that plan-independent answer, with `min(n, |answer|)` rows.
 3. **`:offset` without `:order-by` is rejected** at parse (`PRS-116`). Without an order, pages could overlap or miss rows between plans and between writes. A caller reading a whole answer in pieces uses a cursor (`Minigraf::query`).
 4. **`:order-by` names `:find` elements**: plain variables, and aggregate or window elements written as they appear in `:find`, so `(count ?e) :desc` orders by that column.
 
@@ -48,9 +48,11 @@
 | `PRS-118` (new) `:order-by` is not a non-empty vector, or names the same element twice, or has `:asc`/`:desc` without an element before it, or another keyword | | parse |
 | `INT-035` Bind value type mismatch (existing) | a `:limit`/`:offset` slot bound to anything but `Val(Integer)` | execute |
 
-The INT codes are reused because `:max-results` and `:max-derived-facts` raise them for the same faults. A slot named by `:limit`/`:offset` is reported by `PreparedQuery::slot_names` and rejected unbound by `execute` (`API-010`), as other slots are.
+The INT codes are reused because `:max-results` and `:max-derived-facts` raise them for the same faults.
 
-The grammar `tests/grammar/grammar.pest` gains `order_by_section`, `limit_section` and `offset_section`. Semantic rejections (`PRS-116`, `PRS-117`, part of `PRS-118`) are listed as `SEMANTIC` codes for the verifier (#643).
+Slots: `collect_slot_names` (`prepared.rs`) adds a `:limit`/`:offset` slot, so `PreparedQuery::slot_names` reports it and `execute` rejects it unbound (`API-010`), as other slots are. `substitute` resolves it through a new typed resolver, as `resolve_as_of_slot` resolves `:as-of`: `Val(Integer(n))` with `n >= 0` gives `n`; `Val(Integer(n))` with `n < 0` is `PRS-115`; any other bind value is `INT-035` naming `:limit` or `:offset` and expecting `Val(Integer)`; a missing binding is `INT-033`. Today's `Val` path for value positions (`substitute_edn_value`) is not used for these slots.
+
+The grammar `tests/grammar/grammar.pest` gains `order_by_section`, `limit_section` and `offset_section`. The verifier (`parser/verifier.rs`, #643) gains `:limit`, `:offset`, `:asc` and `:desc` in `TOKENS` (`:order-by` is there already) and the three sections in its query templates. The rejections the grammar accepts get `SEMANTIC` entries with witnesses: `PRS-115` for a negative integer (the grammar's `integer_lit` takes a sign), `PRS-116`, `PRS-117`, and `PRS-118` for a duplicate entry; `INT-012` for a repeated section, as for `:max-results`. Any shape the grammar rejects (`:order-by` not a vector, a leading direction) needs no witness. `KNOWN_DRIFT` stays empty.
 
 ## 4. Engine
 
@@ -63,16 +65,16 @@ The grammar `tests/grammar/grammar.pest` gains `order_by_section`, `limit_sectio
 
 ### 4.1 `Limit`
 
-Pipelined. It drops the first `offset` rows it receives, passes on the next `limit` rows, then closes its child and returns `None`. It holds no state, so it is not metered. After it closes its child, the counters of every operator below show no further rows read (#473 spec §10).
+Pipelined. It drops the first `offset` rows it receives, passes on the next `limit` rows, then closes its child and returns `None`. It holds no state, so it is not metered. After it closes its child, the counters of every operator below show no further rows read (#473 spec §10). The work saved is what the child had not yet read: for a pipelined plan (scans, index nested-loop joins, filters, a correlated body) that is everything past the batch holding row `offset + limit`; below an `Aggregate`, `Window`, `Sort` or a hash join's build side, the whole of that operator's input has been read already. With `limit = 0` it closes its child before pulling.
 
 ### 4.2 `Sort`
 
 Holds each input row's cells and the values of its key columns (cells turned into values through `Ctx`, as `Window` does), charged to the query's `Meter` (`QRY-012` over `query_memory_limit`, #549):
 
 - Without `keep`, it holds every row, sorts them by the full order when its input ends, and returns them in batches of `BATCH_ROWS`, releasing each as it is returned. Memory follows the answer.
-- With `keep = k`, it holds at most `k` rows in a binary heap whose top is the worst row held; a new row better than the top replaces it. Memory follows `k`, not the answer. `k = 0` reads nothing and returns `None`.
+- With `keep = k`, it holds at most `k` rows in a binary heap whose top is the worst row held; a new row better than the top replaces it. Memory follows `k`, not the answer.
 
-The input is read in full either way; only #641 can avoid that.
+With `keep > 0`, or without `keep`, the input is read in full; only #641 can avoid that. With `keep = 0` (`:limit 0`), `Sort` closes its child without pulling and returns `None`.
 
 ### 4.3 Where it is used
 
