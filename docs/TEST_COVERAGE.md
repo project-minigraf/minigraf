@@ -4,10 +4,10 @@
 
 | | |
 |---|---|
-| **Verified** | 2026-10-23 with `cargo test` |
-| **Passing** | 1,317 |
+| **Verified** | 2026-10-24 with `cargo test` |
+| **Passing** | 1,325 |
 | **Ignored** | 9 (see [Ignored Tests](#ignored-tests)) |
-| **Total** | 1,326, including the golden-file corpus (#391) |
+| **Total** | 1,334, including the golden-file corpus (#391) |
 
 Not counted above: the `BrowserDb` tests, which run only on wasm32 with `wasm-bindgen-test` in a browser (see [Browser](#browser)).
 
@@ -100,6 +100,9 @@ These tests compare the database against an independent answer rather than a sin
 - **Float constants** (`tests/float_constant_test.rs`, 2 tests; #706)
   - A float constant matches equal floats only: `1e-17` does not match `0.0`; `0.0` matches `-0.0`.
   - Checked in a pattern, bound to a `$slot`, in a rule body, in a `not` body and in an `=` predicate; in memory, on file before and after a checkpoint, and after reopen.
+- **Keyword or ref in `=` / `!=`** (`tests/keyword_ref_expression_test.rs`, 4 tests; #744)
+  - An expression's `=` and `!=` equate a keyword with a ref to the entity it names, as the pattern constant and the join do: either operand order, a keyword constant or value, a bound `Val(Ref)`, a binding expression, a rule body, a `not` clause, an `or` branch and a keyword whose name is a UUID; a keyword still equals the same keyword only.
+  - In memory, on file after a checkpoint, and after reopen.
 - **`or` with no shared variable** (`tests/disjunction_test.rs`, #610)
   - Joins as a cross product, before or after the earlier clauses, through the seeded path (a branch with `not`) and in a rule body.
   - Keeps the earlier clauses' variables and fact metadata (a pseudo-attribute).
