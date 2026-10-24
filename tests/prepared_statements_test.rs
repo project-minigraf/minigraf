@@ -666,3 +666,72 @@ fn entity_and_ref_bind_values_fit_each_others_slots() {
     let err = bind_error(&pq, &[("f", BindValue::Val(Value::Integer(1)))]);
     assert_eq!(err.code(), "API-024", "an integer is not an entity");
 }
+
+// ─── Set binds (#316) ─────────────────────────────────────────────────────────
+
+fn scope_set(scopes: &[&str]) -> Value {
+    Value::Set(
+        minigraf::ValueSet::new(scopes.iter().map(|s| Value::Keyword(s.to_string()))).unwrap(),
+    )
+}
+
+fn result_len(r: QueryResult) -> usize {
+    match r {
+        QueryResult::QueryResults { results, .. } => results.len(),
+        _ => panic!("expected QueryResults"),
+    }
+}
+
+#[test]
+fn set_in_operand_slot_reused_across_executions() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute(
+        "(transact [[:alice :user/role :role/admin] [:bob :user/role :role/guest]
+                    [:carol :user/role :role/owner]])",
+    )
+    .unwrap();
+    let prepared = db
+        .prepare("(query [:find ?e :where [?e :user/role ?r] [(in? ?r $roles)]])")
+        .unwrap();
+    let run = |roles: &[&str]| {
+        result_len(
+            prepared
+                .execute(&[("roles", BindValue::Val(scope_set(roles)))])
+                .unwrap(),
+        )
+    };
+    assert_eq!(run(&[":role/admin", ":role/owner"]), 2);
+    assert_eq!(run(&[":role/guest"]), 1);
+    assert_eq!(run(&[]), 0, "empty set");
+    // A scalar where the set is needed drops every row.
+    let r = prepared
+        .execute(&[(
+            "roles",
+            BindValue::Val(Value::Keyword(":role/admin".into())),
+        )])
+        .unwrap();
+    assert_eq!(result_len(r), 0, "scalar bound to a set operand");
+}
+
+#[test]
+fn set_in_value_slot_reused_across_executions() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute(
+        "(transact [[:alice :user/scopes #{:scope/read :scope/write}]
+                    [:bob :user/scopes #{:scope/read}]])",
+    )
+    .unwrap();
+    let prepared = db
+        .prepare("(query [:find ?e :where [?e :user/scopes $s]])")
+        .unwrap();
+    let run = |s: &[&str]| {
+        result_len(
+            prepared
+                .execute(&[("s", BindValue::Val(scope_set(s)))])
+                .unwrap(),
+        )
+    };
+    assert_eq!(run(&[":scope/write", ":scope/read"]), 1, "alice's set");
+    assert_eq!(run(&[":scope/read"]), 1, "bob's set");
+    assert_eq!(run(&[":scope/admin"]), 0, "no such set");
+}
