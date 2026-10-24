@@ -4,6 +4,35 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Why a user-defined function failed. Its message is in the query's
+/// `QRY-014` error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UdfError {
+    message: String,
+}
+
+impl UdfError {
+    /// A failure with this message.
+    pub fn new(message: impl Into<String>) -> Self {
+        UdfError {
+            message: message.into(),
+        }
+    }
+
+    /// The message the function gave.
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl std::fmt::Display for UdfError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for UdfError {}
+
 /// A built-in aggregate; `aggregate.rs` holds its arithmetic (#547).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Builtin {
@@ -148,6 +177,14 @@ impl FunctionRegistry {
 mod tests {
     use super::*;
     use crate::graph::types::Value;
+
+    #[test]
+    fn udf_error_displays_its_message() {
+        let e = UdfError::new("not a string");
+        assert_eq!(e.message(), "not a string");
+        assert_eq!(e.to_string(), "not a string");
+        assert_eq!(e.clone(), e);
+    }
 
     #[test]
     fn registry_knows_all_builtins() {

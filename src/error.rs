@@ -177,6 +177,7 @@ pub(crate) enum ErrorCode {
     Qry011,
     Qry012,
     Qry013,
+    Qry014,
     Int000,
     Stg001,
     Stg002,
@@ -1112,6 +1113,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Qry013,
         "QRY-013",
         "rule head entity is not an entity: rule '{}' gives a {} where a ref or a keyword is needed",
+        ErrorCategory::Query,
+    ),
+    (
+        ErrorCode::Qry014,
+        "QRY-014",
+        "user function `{}` failed: {}",
         ErrorCategory::Query,
     ),
     (
@@ -2341,6 +2348,7 @@ mod tests {
                 | ErrorCode::Qry011
                 | ErrorCode::Qry012
                 | ErrorCode::Qry013
+                | ErrorCode::Qry014
                 | ErrorCode::Stg001
                 | ErrorCode::Stg002
                 | ErrorCode::Stg003
@@ -2610,6 +2618,7 @@ mod tests {
             ErrorCode::Qry011,
             ErrorCode::Qry012,
             ErrorCode::Qry013,
+            ErrorCode::Qry014,
             ErrorCode::Stg001,
             ErrorCode::Stg002,
             ErrorCode::Stg003,
@@ -2763,6 +2772,17 @@ mod tests {
         assert_eq!(e.code(), "API-018");
         assert_eq!(e.category(), ErrorCategory::Api);
         assert_eq!(e.to_string(), "[API-018] log writer is closed");
+    }
+
+    #[test]
+    fn qry014_names_the_failing_function_and_its_message() {
+        let e = MinigrafError::from(err_coded!(ErrorCode::Qry014, "email?", "bad input"));
+        assert_eq!(e.code(), "QRY-014");
+        assert_eq!(e.category(), ErrorCategory::Query);
+        assert_eq!(
+            e.to_string(),
+            "[QRY-014] user function `email?` failed: bad input"
+        );
     }
 
     #[test]

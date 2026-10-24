@@ -151,6 +151,7 @@ with no `CodedError` anywhere in its chain.
 | QRY-011 | Unknown window function | Query Execution |
 | QRY-012 | Query memory limit exceeded | Query Execution |
 | QRY-013 | Rule head entity is not an entity | Query Execution |
+| QRY-014 | User function failed | Query Execution |
 | STG-001 | Invalid header: too short | Storage |
 | STG-002 | Invalid magic number: not a .graph file | Storage |
 | STG-003 | Invalid v4/v5/v6 header too short (deprecated) | Storage |
@@ -2404,6 +2405,26 @@ db.execute("(query [:find ?g (count ?e) :where [?e :g ?g]])")?;
 (query [:find ?e :where (named ?n ?e)])
 ```
 *`?n` binds a string, so rule `named` gives a String as its entity*
+
+### QRY-014 User function failed
+
+**Error text**: `user function `{}` failed: {}`
+
+**Cause**: A user-defined predicate or aggregate registered with `try_register_predicate` or `try_register_aggregate` returned `Err(UdfError)`, or a language binding's callback threw. The first argument is the function's name and the second is the `UdfError`'s message. The query stops at the failing call: no later call of any user function is made for it. A cursor returns the rows it gathered before the failure first, then this error, then no more rows. A query inside a `WriteTransaction` that fails this way leaves the transaction open. Functions registered with `register_predicate` or `register_aggregate` never fail this way.
+
+**Resolution**:
+- Read the message: it is the one the function gave.
+- Fix the input the function rejected, or make the function handle it (return `Ok(false)` for a predicate that should not match).
+
+**Example**:
+```rust
+db.try_register_predicate("email?", |v| match v {
+    Value::String(s) => Ok(s.contains('@')),
+    _ => Err(UdfError::new("not a string")),
+})?;
+db.execute("(query [:find ?e :where [?e :mail ?m] [(email? ?m)]])")?;
+```
+*An entity's `:mail` is an integer, so `email?` fails with `not a string`*
 
 ---
 
