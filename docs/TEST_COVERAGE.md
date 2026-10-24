@@ -474,7 +474,7 @@ None of these are counted in the summary. The wasm32 targets run in CI (`.github
   - `importGraph()` deletes the replaced database's IndexedDB keys.
   - Two buffer tests check that releasing a page drops its bytes and any unflushed write, and that export writes a released page as zeros.
   - A native storage test checks that a file whose free pages are all zeros (as the browser exports them), both just migrated from v7 and after 20 saves, opens, verifies clean and keeps committing. The free-list test checks that a checkpoint reports exactly the ids it newly lists.
-- **On `wasm32-wasip1` under Wasmtime**: the unit and integration tests that do not use a file run, 956 passing; ten that spawn threads or a child process are ignored on WASI.
+- **On `wasm32-wasip1` under Wasmtime**: the unit and integration tests that do not use a file run, 1,121 passing (`wasm.yml`, #746); ten that spawn threads or a child process are ignored on WASI.
 
 ## Ignored Tests
 
