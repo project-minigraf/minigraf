@@ -65,6 +65,23 @@ pub(crate) fn value_order(a: &Value, b: &Value) -> Ordering {
     }
 }
 
+/// Two rows by the columns `order` lists, each `(column, descending)`:
+/// the first column whose values differ by [`value_order`] decides (#306
+/// spec §2, the full order).
+pub(crate) fn row_order(a: &[Value], b: &[Value], order: &[(usize, bool)]) -> Ordering {
+    for &(col, desc) in order {
+        // Every row has every listed column.
+        let o = a
+            .get(col)
+            .zip(b.get(col))
+            .map_or(Ordering::Equal, |(x, y)| value_order(x, y));
+        if o.is_ne() {
+            return if desc { o.reverse() } else { o };
+        }
+    }
+    Ordering::Equal
+}
+
 /// `i` against `f` by exact numeric value; a NaN `f` is greater.
 fn int_float(i: i64, f: f64) -> Ordering {
     if f.is_nan() {

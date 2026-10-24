@@ -437,3 +437,53 @@ fn value_order_puts_sets_last_and_orders_them_by_elements() {
     let prefix = set(vec![i(1)]);
     assert_eq!(value_order(&prefix, &a), Ordering::Less, "prefix first");
 }
+
+#[test]
+fn row_order_follows_keys_then_the_next_column() {
+    let asc = [(0, false), (1, false)];
+    let desc_first = [(0, true), (1, false)];
+    let (a, b, c) = (vec![i(1), i(9)], vec![i(1), i(2)], vec![i(2), i(0)]);
+    let mut rows = vec![a.clone(), b.clone(), c.clone()];
+    rows.sort_by(|x, y| row_order(x, y, &asc));
+    assert_eq!(rows, vec![b.clone(), a.clone(), c.clone()]);
+    rows.sort_by(|x, y| row_order(x, y, &desc_first));
+    assert_eq!(rows, vec![c.clone(), b.clone(), a.clone()]);
+    // Keys name columns in any order.
+    rows.sort_by(|x, y| row_order(x, y, &[(1, true), (0, false)]));
+    assert_eq!(rows, vec![a.clone(), b, c]);
+    assert_eq!(row_order(&a, &a, &asc), Ordering::Equal);
+}
+
+#[test]
+fn row_order_over_every_value_class() {
+    let set = Value::Set(crate::graph::types::ValueSet::new([i(1)]).unwrap());
+    let ascending = vec![
+        f(f64::NEG_INFINITY),
+        i(-1),
+        f(-0.0),
+        f(0.0),
+        i(1),
+        f(1.0),
+        f(f64::NAN),
+        Value::String("a".to_string()),
+        Value::Boolean(false),
+        Value::Boolean(true),
+        Value::Ref(uuid::Uuid::from_u128(1)),
+        kw(":a"),
+        Value::Null,
+        set,
+    ];
+    let mut rows: Vec<Vec<Value>> = ascending.iter().rev().map(|v| vec![v.clone()]).collect();
+    rows.sort_by(|x, y| row_order(x, y, &[(0, false)]));
+    let same = |rows: &[Vec<Value>], want: &[Value]| {
+        rows.len() == want.len()
+            && rows
+                .iter()
+                .zip(want)
+                .all(|(r, w)| value_order(&r[0], w).is_eq())
+    };
+    assert!(same(&rows, &ascending), "ascending");
+    rows.sort_by(|x, y| row_order(x, y, &[(0, true)]));
+    let descending: Vec<Value> = ascending.iter().rev().cloned().collect();
+    assert!(same(&rows, &descending), "descending");
+}
