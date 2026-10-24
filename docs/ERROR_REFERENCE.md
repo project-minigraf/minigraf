@@ -135,6 +135,7 @@ with no `CodedError` anywhere in its chain.
 | PRS-112 | Empty query section | Parser |
 | PRS-113 | Unknown query keyword | Parser |
 | PRS-114 | Rule head argument is not a variable | Parser |
+| PRS-115 | Query option is not a non-negative integer | Parser |
 | QRY-001 | Invalid entity | Query Execution |
 | QRY-002 | Attribute must be a keyword | Query Execution |
 | QRY-003 | Cannot transact a pseudo-attribute | Query Execution |
@@ -2134,6 +2135,21 @@ with `PRS-047`.
 (rule [(reachable-5 ?a ?b 0) [?a :edge ?b]])
 ```
 *`0` is not a variable*
+
+### PRS-115 Query option is not a non-negative integer
+
+**Error text**: `` `{}` must be a non-negative integer or a bind slot, got {} ``
+
+**Cause**: The value after `:limit` is not an integer `>= 0` or a `$slot`, or a prepared query's `:limit` slot was bound to a negative integer (#306).
+
+**Resolution**:
+- Give `:limit` a whole number of rows, `0` or more, or a bind slot filled with `BindValue::Val(Value::Integer(n))`.
+
+**Example**:
+```datalog
+(query [:find ?e :where [?e :person/name ?n] :limit -1])
+```
+*`-1` is negative*
 
 ---
 
