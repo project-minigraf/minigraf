@@ -17,7 +17,7 @@ use super::plan::{Meta, ScanSpec, Term, Valid, ValueConst, names};
 use super::relation::Range as Rows;
 use super::{BATCH_ROWS, Counters, Ctx, Operator};
 use crate::graph::storage::PendingResume;
-use crate::graph::types::{EntityId, Fact, Value};
+use crate::graph::types::{EntityId, Fact, Value, ValueSet};
 use crate::storage::index::encode_value;
 use crate::storage::keys::{self, Index, KeyFact, KeyValue, SHORT_STRING_MAX, ValueKind};
 use crate::storage::{KeySource, Scan as Range};
@@ -145,6 +145,9 @@ enum KeyTest {
     /// A UUID constant: its entity id; whether each keyword names it.
     Uuid(EntityId, Option<u64>, HashMap<u32, bool>),
     Float(f64),
+    /// A set constant with a zero element: `0.0` and `-0.0` are one element
+    /// of equal sets but two keys, so either key matches (#316).
+    AnyOf(Vec<KeyValue>),
 }
 
 impl KeyTest {
@@ -164,6 +167,7 @@ impl KeyTest {
                 }
             },
             (KeyTest::Float(f), KeyValue::Float(ff)) => f == ff,
+            (KeyTest::AnyOf(cs), v) => cs.contains(v),
             _ => false,
         })
     }
@@ -363,8 +367,28 @@ fn candidates(
         }
         Cell::Val(Scalar::Float(f)) if f.is_nan() => Vec::new(),
         Cell::Val(Scalar::Float(f)) if *f == 0.0 => vec![Value::Float(*f), Value::Float(-*f)],
+        Cell::Val(Scalar::Set(set)) => zero_signs(set)?.into_iter().map(Value::Set).collect(),
         Cell::Val(_) => vec![super::project::value(cell, ctx)?],
     }))
+}
+
+/// The forms of `set` that keys can hold: itself, and when it has a zero
+/// element (at most one: `0.0` and `-0.0` are one element), the same set
+/// with that zero of each sign (#316).
+fn zero_signs(set: &ValueSet) -> Result<Vec<ValueSet>> {
+    if !set.contains(&Value::Float(0.0)) {
+        return Ok(vec![set.clone()]);
+    }
+    [0.0, -0.0]
+        .into_iter()
+        .map(|zero| {
+            let values = set.iter().map(|e| match e {
+                Value::Float(f) if *f == 0.0 => Value::Float(zero),
+                e => e.clone(),
+            });
+            ValueSet::new(values).map_err(anyhow::Error::from)
+        })
+        .collect()
 }
 
 /// Whether any live committed value of attribute `a` is a keyword: read
@@ -459,7 +483,7 @@ impl Operator for Scan {
                         }
                         if fill(&self.spec.e, &mut row, || Ok(Cell::Eid(kf.e)))?
                             && fill(&self.spec.a, &mut row, || Ok(Cell::Iid(u64::from(kf.a))))?
-                            && fill(&self.spec.v, &mut row, || Ok(Cell::of_key(&kf.v)))?
+                            && fill(&self.spec.v, &mut row, || Cell::of_key(&kf.v, keys))?
                         {
                             for &(m, slot) in &self.spec.meta {
                                 let n = match m {
@@ -719,6 +743,12 @@ fn open(
             vec![(Index::Eavt, keys::entity_attribute_value_prefix(e, a, &v))],
             None,
         ),
+        (Some(e), Some(a), Some(KeyTest::AnyOf(vs))) => (
+            vs.iter()
+                .map(|v| (Index::Eavt, keys::entity_attribute_value_prefix(e, a, v)))
+                .collect(),
+            None,
+        ),
         (Some(e), Some(a), t) => (vec![(Index::Eavt, keys::entity_attribute_prefix(e, a))], t),
         (Some(e), None, t) => (vec![(Index::Eavt, keys::entity_prefix(e))], t),
         (None, Some(a), Some(t)) => avet(a, t),
@@ -750,6 +780,7 @@ fn avet(a: u32, t: KeyTest) -> (Vec<(Index, Vec<u8>)>, Option<KeyTest>) {
     let kind = |k: ValueKind| (Index::Avet, keys::attribute_kind_prefix(a, k));
     match t {
         KeyTest::Exact(v) => (vec![value(v)], None),
+        KeyTest::AnyOf(vs) => (vs.into_iter().map(value).collect(), None),
         KeyTest::Keyword(i, e) => {
             let ranges = i
                 .map(|i| value(KeyValue::Keyword(i)))
@@ -774,6 +805,15 @@ fn avet(a: u32, t: KeyTest) -> (Vec<(Index, Vec<u8>)>, Option<KeyTest>) {
 /// committed key can match it.
 fn key_test(keys: &dyn KeySource, c: &ValueConst) -> Result<Option<KeyTest>> {
     Ok(match c {
+        ValueConst::Exact(Value::Set(set)) if set.contains(&Value::Float(0.0)) => {
+            let mut alts = Vec::with_capacity(2);
+            for signed in zero_signs(set)? {
+                if let Some(k) = key_value(keys, &Value::Set(signed))? {
+                    alts.push(k);
+                }
+            }
+            (!alts.is_empty()).then_some(KeyTest::AnyOf(alts))
+        }
         ValueConst::Exact(v) => key_value(keys, v)?.map(KeyTest::Exact),
         ValueConst::Keyword(k, u) => match (keys.iid_of(k)?, keys.eid_of(u)?) {
             (None, None) => None,
@@ -819,6 +859,28 @@ fn key_value(keys: &dyn KeySource, value: &Value) -> Result<Option<KeyValue>> {
         Value::String(s) => keys.long_value_ref(s)?.map(|vref| keys::long_str(s, vref)),
         Value::Keyword(k) => keys.iid_of(k)?.map(KeyValue::Keyword),
         Value::Ref(u) => keys.eid_of(u)?.map(KeyValue::Ref),
+        // As the checkpoint's `Encoder` writes it; a keyword or ref element
+        // the generation does not hold means no committed key can (#316).
+        Value::Set(set) => {
+            let mut elements = Vec::with_capacity(set.len());
+            for e in set {
+                let k = match e {
+                    Value::String(s) => Some(KeyValue::Str(s.clone())),
+                    e => key_value(keys, e)?,
+                };
+                match k {
+                    Some(k) => elements.push(k),
+                    None => return Ok(None),
+                }
+            }
+            let bytes = keys::set_elements(&elements);
+            if bytes.len() <= SHORT_STRING_MAX {
+                Some(KeyValue::Set(bytes))
+            } else {
+                keys.long_bytes_ref(&bytes)?
+                    .map(|vref| keys::long_set(&bytes, vref))
+            }
+        }
     })
 }
 

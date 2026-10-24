@@ -136,6 +136,9 @@ with no `CodedError` anywhere in its chain.
 | PRS-113 | Unknown query keyword | Parser |
 | PRS-114 | Rule head argument is not a variable | Parser |
 | PRS-115 | Query option is not a non-negative integer | Parser |
+| PRS-119 | Set literal inside a set literal | Parser |
+| PRS-120 | Set literal element is not a scalar literal | Parser |
+| PRS-121 | Unterminated set literal | Parser |
 | QRY-001 | Invalid entity | Query Execution |
 | QRY-002 | Attribute must be a keyword | Query Execution |
 | QRY-003 | Cannot transact a pseudo-attribute | Query Execution |
@@ -223,6 +226,10 @@ with no `CodedError` anywhere in its chain.
 | API-018 | Call on a closed binding object | Database API |
 | API-019 | Empty or inverted valid-time window | Database API |
 | API-020 | Assertion and retraction of one fact in one log-writer transaction | Database API |
+| API-021 | Set value holds a set | Database API |
+| API-022 | Missing bind value for slot | Database API |
+| API-023 | Bind slot not permitted in attribute position | Database API |
+| API-024 | Bind slot type mismatch | Database API |
 | INT-000 | Unclassified internal error | Internal |
 | INT-001 | WriteTransaction already in progress on this thread | Internal |
 | INT-002 | Invalid entity (API layer) | Internal |
@@ -256,9 +263,9 @@ with no `CodedError` anywhere in its chain.
 | INT-030 | Unknown window function | Internal |
 | INT-031 | or-join variable not bound in incoming scope | Internal |
 | INT-032 | Query executor internal error | Internal |
-| INT-033 | Missing bind value for slot | Internal |
-| INT-034 | Bind slot not permitted in attribute position | Internal |
-| INT-035 | Bind slot type mismatch | Internal |
+| INT-033 | Missing bind value for slot (deprecated) | Internal |
+| INT-034 | Bind slot not permitted in attribute position (deprecated) | Internal |
+| INT-035 | Bind slot type mismatch (deprecated) | Internal |
 | INT-036 | Header too short: need N..M bytes | Internal |
 | INT-037 | Header slice not the exact expected byte length | Internal |
 | INT-038 | Header too short for a specific field | Internal |
@@ -281,7 +288,7 @@ with no `CodedError` anywhere in its chain.
 | INT-055 | Rule predicate disappeared during rollback | Internal |
 | INT-056 | Write to a read-only storage backend | Internal |
 
-Deprecated codes: STG-003 and STG-004 (pre-v7 header sizes) are deprecated as of v3.0.0 and are no longer emitted, because formats v1–v6 are rejected with STG-028 before any header-size check. API-013 (checkpoint while a fact log is open) is deprecated as of v3.0.0 and is no longer emitted, because checkpoints run while fact logs are open. They stay registered and documented, and error codes are never removed or reused.
+Deprecated codes: STG-003 and STG-004 (pre-v7 header sizes) are deprecated as of v3.0.0 and are no longer emitted, because formats v1–v6 are rejected with STG-028 before any header-size check. API-013 (checkpoint while a fact log is open) is deprecated as of v3.0.0 and is no longer emitted, because checkpoints run while fact logs are open. INT-033, INT-034 and INT-035 (bind-value mistakes) are deprecated as of v3.0.0 and are no longer emitted: the same mistakes are API-022, API-023 and API-024, since they are the caller's. They stay registered and documented, and error codes are never removed or reused.
 
 ---
 
@@ -2153,6 +2160,56 @@ with `PRS-047`.
 
 ---
 
+### PRS-119 Set literal inside a set literal
+
+**Error text**: `a set literal cannot hold a set`
+
+**Cause**: A set literal `#{...}` has another set literal among its elements. Sets hold scalar values only (#316).
+
+**Resolution**:
+- Flatten the elements into one set, or store each inner set as its own attribute value.
+
+**Example**:
+```datalog
+(transact [[:alice :user/scopes #{#{:scope/read}}]])
+```
+*`#{:scope/read}` is a set inside a set*
+
+---
+
+### PRS-120 Set literal element is not a scalar literal
+
+**Error text**: `a set literal holds only strings, numbers, booleans, keywords, #uuid literals and nil; got {}`
+
+**Cause**: An element of a set literal is a variable, a bind slot, a symbol, a vector, a list or a map. A set literal is a constant: its elements are literals (#316).
+
+**Resolution**:
+- Write the elements as literals, or pass the whole set through a bind slot: `$scopes` bound to `BindValue::Val(Value::Set(..))`.
+
+**Example**:
+```datalog
+(query [:find ?e :where [?e :user/scopes #{?x}]])
+```
+*`?x` is a variable*
+
+---
+
+### PRS-121 Unterminated set literal
+
+**Error text**: `Unterminated set: missing '}'`
+
+**Cause**: The input ends inside a set literal `#{...}`.
+
+**Resolution**:
+- Close the set with `}`.
+
+**Example**:
+```datalog
+(transact [[:alice :user/scopes #{:scope/read
+```
+
+---
+
 ## QRY — Query Execution Errors
 
 Query execution errors occur after parsing succeeds, during pattern matching,
@@ -2986,7 +3043,7 @@ The WAL is replayed on open and deleted on checkpoint.
 
 **Error text**: `Value of {} bytes exceeds the maximum of {} bytes. Store large payloads externally and reference them with a Value::String URL/path or Value::Ref entity ID.`
 
-**Cause**: A string value is longer than `MAX_VALUE_BYTES` (4,068 bytes, one value page), or an attribute name or keyword value is longer than 1,024 bytes. This typically means a `Value::String` contains very large content such as raw document text, a base64-encoded image, or binary data. `LogWriter::append` checks the same limits. In-memory databases have no WAL and no limit.
+**Cause**: A string value is longer than `MAX_VALUE_BYTES` (4,068 bytes, one value page), a set value's stored form may be longer than that, or an attribute name or keyword value (a keyword in a set included) is longer than 1,024 bytes. A set's size counts each string element's bytes plus three (and one per zero byte), each keyword element as 6 bytes and each ref element as 10, each integer as up to 10 and each float as 9. This typically means a `Value::String` contains very large content such as raw document text, a base64-encoded image, or binary data. `LogWriter::append` checks the same limits. In-memory databases have no WAL and no limit.
 
 **Resolution**:
 - Store large payloads in an external file or object store.
@@ -3386,6 +3443,57 @@ let mut log = src.fact_log(&FactFilter::new())?;
 
 **Scenario**: An offline purge copies a database migrated from v2.x through `fact_log()` and `LogWriter`, and one of its transactions retracted and re-asserted a fact.
 
+### API-021 Set value holds a set
+
+**Error text**: `a set cannot hold a set; its elements must be strings, numbers, booleans, refs, keywords or nil`
+
+**Cause**: `ValueSet::new` was given a `Value::Set` among its elements. Sets hold scalar values only (#316).
+
+**Resolution**:
+- Build the set from scalar values. To relate several sets, store each one as its own attribute value.
+
+**Example**:
+```rust
+let inner = Value::Set(ValueSet::default());
+ValueSet::new(vec![inner]) // API-021
+```
+
+---
+
+### API-022 Missing bind value for slot
+
+**Error text**: `missing bind value for slot '${}'`
+
+**Cause**: A prepared query was executed (`PreparedQuery::execute` or `query`, or a binding's prepared handle) without a bind value for one of its `$slot`s. The `{}` names the slot. Nothing was read. Before v3.0.0 this was INT-033.
+
+**Resolution**:
+- Pass a bind value for every `$slot` in the query. Bindings for names the query does not use are ignored, so a misspelt name shows up as this error.
+
+**Scenario**: A query is prepared with `$min-age` and executed with a binding named `min_age`.
+
+### API-023 Bind slot not permitted in attribute position
+
+**Error text**: `bind slot '${}' is not permitted in attribute position; the query optimizer selects an index based on the attribute at prepare time and cannot handle a parameterised attribute`
+
+**Cause**: `prepare` was given a query with a `$slot` as the attribute of a pattern, at the top level or inside `not`, `not-join`, `or` or `or-join`. The plan depends on the attribute, so it cannot be a parameter. Before v3.0.0 this was INT-034.
+
+**Resolution**:
+- Write the attribute as a keyword. Use bind slots for entities, values, expressions, rule arguments, `:as-of` and `:valid-at`.
+- To choose between a few attributes at run time, prepare one query per attribute.
+
+**Scenario**: A search screen prepares `[?e $field ?v]` to search whichever field the user picked.
+
+### API-024 Bind slot type mismatch
+
+**Error text**: `slot '${}' in {} position requires {}, got {}`
+
+**Cause**: A bind value was of the wrong kind for the position of its slot: an entity position takes `Entity` or `Val(Ref)`; a value, expression or rule-argument position takes `Val` or `Entity`; `:as-of` takes `TxCount` or `Timestamp`; `:valid-at` takes `Timestamp` or `AnyValidTime`. The message names the slot, its position, the kinds it takes and the kind it got. Before v3.0.0 this was INT-035.
+
+**Resolution**:
+- Pass the kind the position takes. `TxCount` and `Timestamp` are only for `:as-of`/`:valid-at`; a number compared in a pattern or expression is a `Val`.
+
+**Scenario**: `:as-of $tx` is bound to `Val(Integer(5))` instead of `TxCount(5)`.
+
 ---
 
 ## INT — Internal Errors
@@ -3430,10 +3538,14 @@ specific code, so this should now be rare.
 
 **Error text**: `a WriteTransaction is already in progress on this thread; use tx.execute() instead`
 
-**Cause**: `Minigraf::execute()` or `Minigraf::begin_write()` was called on
-the same thread that already holds an active `WriteTransaction`. Acquiring
-the write lock again on that thread would deadlock, so this is detected and
-rejected instead.
+**Cause**: on the same thread that already holds an active
+`WriteTransaction`, one of these was called: the `Minigraf` methods
+`execute()`, `query()`, `fact_log()`, `begin_write()`, `checkpoint()`,
+`verify()`, `rebuild_indexes()` or `prepare()`, or a `PreparedQuery`'s
+`execute()` or `query()`. Acquiring the write
+lock again on that thread would deadlock, so this is detected and rejected
+instead. (Before v3.0.0, `checkpoint()`, `verify()` and `rebuild_indexes()`
+did not check and deadlocked, #734.)
 
 **Resolution**:
 - Use the existing `WriteTransaction`'s `tx.execute()` for further writes
@@ -3831,7 +3943,8 @@ window function's row-number position overflowing).
 
 **Error text**: `missing bind value for slot '${}'`
 
-**Cause**: `PreparedQuery::execute()` was called without supplying a bind
+**Cause**: Deprecated since v3.0.0, and no longer emitted: the same mistake is
+API-022. `PreparedQuery::execute()` was called without supplying a bind
 value for every `$slot` the prepared query declared.
 
 **Resolution**:
@@ -3841,7 +3954,8 @@ value for every `$slot` the prepared query declared.
 
 **Error text**: `bind slot '${}' is not permitted in attribute position; the query optimizer selects an index based on the attribute at prepare time and cannot handle a parameterised attribute`
 
-**Cause**: A `$slot` bind placeholder appeared in the attribute position of
+**Cause**: Deprecated since v3.0.0, and no longer emitted: the same mistake is
+API-023. A `$slot` bind placeholder appeared in the attribute position of
 a pattern in a prepared query. The query optimizer picks an index (EAVT,
 AEVT, AVET, VAET) based on the attribute at `prepare()` time, which is not
 possible if the attribute itself is a runtime-bound parameter.
@@ -3854,7 +3968,8 @@ possible if the attribute itself is a runtime-bound parameter.
 
 **Error text**: `slot '${}' in {} position requires {}, got {}`
 
-**Cause**: A bind value supplied to `PreparedQuery::execute()` was of the
+**Cause**: Deprecated since v3.0.0, and no longer emitted: the same mistake is
+API-024. A bind value supplied to `PreparedQuery::execute()` was of the
 wrong `BindValue` variant for the position its slot appears in (entity
 position requires `Entity`, value/expression position requires `Val`,
 `:as-of` position requires `TxCount` or `Timestamp`, `:valid-at` position

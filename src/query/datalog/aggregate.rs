@@ -12,7 +12,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The class of a value in [`value_order`]: numbers, strings, booleans,
-/// refs, keywords, `nil`.
+/// refs, keywords, `nil`, sets.
 fn class(v: &Value) -> u8 {
     match v {
         Value::Integer(_) | Value::Float(_) => 0,
@@ -21,13 +21,16 @@ fn class(v: &Value) -> u8 {
         Value::Ref(_) => 3,
         Value::Keyword(_) => 4,
         Value::Null => 5,
+        Value::Set(_) => 6,
     }
 }
 
 /// The total order of values (spec §3.1): numbers by exact numeric value
 /// (an `Integer` before an equal `Float`, floats then by `f64::total_cmp`,
-/// NaN after every other number), then strings, booleans, refs, keywords
-/// and `nil`. `Equal` only for identical values.
+/// NaN after every other number), then strings, booleans, refs, keywords,
+/// `nil` and sets. Two sets compare by their elements sorted in this order,
+/// lexicographically, a proper prefix first (#316). `Equal` only for
+/// identical values.
 pub(crate) fn value_order(a: &Value, b: &Value) -> Ordering {
     match (a, b) {
         (Value::Integer(x), Value::Integer(y)) => x.cmp(y),
@@ -47,6 +50,17 @@ pub(crate) fn value_order(a: &Value, b: &Value) -> Ordering {
         (Value::Ref(x), Value::Ref(y)) => x.as_bytes().cmp(y.as_bytes()),
         (Value::Keyword(x), Value::Keyword(y)) => x.cmp(y),
         (Value::Null, Value::Null) => Ordering::Equal,
+        (Value::Set(x), Value::Set(y)) => {
+            let mut xs: Vec<&Value> = x.iter().collect();
+            let mut ys: Vec<&Value> = y.iter().collect();
+            xs.sort_by(|p, q| value_order(p, q));
+            ys.sort_by(|p, q| value_order(p, q));
+            xs.iter()
+                .zip(&ys)
+                .map(|(p, q)| value_order(p, q))
+                .find(|o| o.is_ne())
+                .unwrap_or_else(|| xs.len().cmp(&ys.len()))
+        }
         _ => class(a).cmp(&class(b)),
     }
 }
@@ -323,12 +337,13 @@ pub(crate) fn type_name(v: &Value) -> &'static str {
         Value::Ref(_) => "Ref",
         Value::Keyword(_) => "Keyword",
         Value::Null => "Null",
+        Value::Set(_) => "Set",
     }
 }
 
 /// Variant kinds, in `Value`'s declaration order, for `INT-043`.
-const KINDS: [&str; 7] = [
-    "String", "Integer", "Float", "Boolean", "Ref", "Keyword", "Null",
+const KINDS: [&str; 8] = [
+    "String", "Integer", "Float", "Boolean", "Ref", "Keyword", "Null", "Set",
 ];
 
 fn kind(v: &Value) -> u8 {
@@ -340,6 +355,7 @@ fn kind(v: &Value) -> u8 {
         Value::Ref(_) => 4,
         Value::Keyword(_) => 5,
         Value::Null => 6,
+        Value::Set(_) => 7,
     }
 }
 

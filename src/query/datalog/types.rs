@@ -25,6 +25,8 @@ pub enum EdnValue {
     List(Vec<EdnValue>),
     /// Map: {:key val ...}
     Map(Vec<(EdnValue, EdnValue)>),
+    /// Set: #{...} of scalar literals (#316)
+    Set(Vec<EdnValue>),
     /// Null/nil
     Nil,
     /// A named bind slot: `$identifier`.

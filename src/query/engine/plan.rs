@@ -62,7 +62,7 @@ pub(crate) enum Term<C> {
 /// had.
 #[derive(Debug, Clone)]
 pub(crate) enum ValueConst {
-    /// A string, integer, boolean or `nil`: equal values only.
+    /// A string, integer, boolean, `nil` or set: equal values only.
     Exact(Value),
     /// A keyword: the same keyword, or a ref to the entity it names.
     Keyword(String, EntityId),
@@ -1466,6 +1466,10 @@ fn value_const(c: &EdnValue) -> Option<ValueConst> {
         EdnValue::Keyword(k) => ValueConst::Keyword(k.clone(), edn_to_entity_id(c).ok()?),
         EdnValue::Uuid(u) => ValueConst::Uuid(*u),
         EdnValue::Float(f) => ValueConst::Float(*f),
+        // Equal sets only: no keyword-ref or float rule inside a set (#316).
+        EdnValue::Set(_) => {
+            ValueConst::Exact(crate::query::datalog::matcher::edn_to_value(c).ok()?)
+        }
         _ => return None,
     })
 }

@@ -56,6 +56,11 @@ string_lit = @{ "\"" ~ str_char* ~ "\"" }
 // Content validation (RFC 4122 format) is a semantic check — pest accepts any string.
 uuid_lit = { "#uuid" ~ string_lit }
 
+// Set literal (#316): "#{" with no space inside, then scalar literals only.
+// A nested set (PRS-119) and any other element (PRS-120) are syntax errors here.
+set_elem = _{ uuid_lit | boolean_lit | nil_lit | float_lit | integer_lit | string_lit | keyword }
+set_lit  = { "#{" ~ set_elem* ~ "}" }
+
 // Prepared-query bind slot: $name
 bind_slot = @{ "$" ~ (ALPHABETIC | NUMBER | "_" | "-")+ }
 
@@ -80,7 +85,7 @@ plain_sym = @{
 // ── EDN VALUE (any EDN atom or container) ─────────────────────────────────
 // Order matters: more specific alternatives first to avoid ambiguity.
 edn_value = {
-    uuid_lit | boolean_lit | nil_lit | float_lit | integer_lit | string_lit |
+    set_lit | uuid_lit | boolean_lit | nil_lit | float_lit | integer_lit | string_lit |
     bind_slot | keyword | op_sym | variable | plain_sym |
     edn_list | edn_vector | edn_map
 }
@@ -187,7 +192,7 @@ binary_op   = @{
     "<" | ">" | "=" | "+" | "-" | "*" | "/"
 }
 expr_arg = {
-    expr | boolean_lit | nil_lit | float_lit | integer_lit |
+    expr | set_lit | boolean_lit | nil_lit | float_lit | integer_lit |
     string_lit | bind_slot | keyword | variable
 }
 

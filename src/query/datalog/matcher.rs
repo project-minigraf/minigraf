@@ -1,5 +1,5 @@
 use super::types::EdnValue;
-use crate::graph::types::{EntityId, Value};
+use crate::graph::types::{EntityId, Value, ValueSet};
 use uuid::Uuid;
 
 /// Convert EdnValue to Value for storage
@@ -12,6 +12,15 @@ pub fn edn_to_value(edn: &EdnValue) -> Result<Value, String> {
         EdnValue::Keyword(k) => Ok(Value::Keyword(k.clone())),
         EdnValue::Uuid(u) => Ok(Value::Ref(*u)),
         EdnValue::Nil => Ok(Value::Null),
+        EdnValue::Set(elements) => {
+            let values = elements
+                .iter()
+                .map(edn_to_value)
+                .collect::<Result<Vec<_>, String>>()?;
+            ValueSet::new(values)
+                .map(Value::Set)
+                .map_err(|e| e.to_string())
+        }
         EdnValue::Symbol(s) if s.starts_with('?') => {
             Err(format!("Cannot convert unbound variable {} to value", s))
         }

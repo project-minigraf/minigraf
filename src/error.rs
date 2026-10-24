@@ -162,6 +162,9 @@ pub(crate) enum ErrorCode {
     Prs113,
     Prs114,
     Prs115,
+    Prs119,
+    Prs120,
+    Prs121,
     Qry001,
     Qry002,
     Qry003,
@@ -259,6 +262,10 @@ pub(crate) enum ErrorCode {
     Api018,
     Api019,
     Api020,
+    Api021,
+    Api022,
+    Api023,
+    Api024,
     Int001,
     Int002,
     Int003,
@@ -291,8 +298,14 @@ pub(crate) enum ErrorCode {
     Int030,
     Int031,
     Int032,
+    // INT-033/034/035 are deprecated since v3.0.0: a bind mistake is the
+    // caller's, so it is API-022/023/024 (#181). Kept so the codes are never
+    // reused.
+    #[allow(dead_code)]
     Int033,
+    #[allow(dead_code)]
     Int034,
+    #[allow(dead_code)]
     Int035,
     Int036,
     Int037,
@@ -1013,6 +1026,24 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCategory::Parser,
     ),
     (
+        ErrorCode::Prs119,
+        "PRS-119",
+        "a set literal cannot hold a set",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs120,
+        "PRS-120",
+        "a set literal holds only strings, numbers, booleans, keywords, #uuid literals and nil; got {}",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs121,
+        "PRS-121",
+        "Unterminated set: missing '}'",
+        ErrorCategory::Parser,
+    ),
+    (
         ErrorCode::Qry001,
         "QRY-001",
         "Invalid entity: {}",
@@ -1538,6 +1569,30 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Api020,
         "API-020",
         "one transaction both asserts and retracts the same value of {}; keep only the record that decides it",
+        ErrorCategory::Api,
+    ),
+    (
+        ErrorCode::Api021,
+        "API-021",
+        "a set cannot hold a set; its elements must be strings, numbers, booleans, refs, keywords or nil",
+        ErrorCategory::Api,
+    ),
+    (
+        ErrorCode::Api022,
+        "API-022",
+        "missing bind value for slot '${}'",
+        ErrorCategory::Api,
+    ),
+    (
+        ErrorCode::Api023,
+        "API-023",
+        "bind slot '${}' is not permitted in attribute position; the query optimizer selects an index based on the attribute at prepare time and cannot handle a parameterised attribute",
+        ErrorCategory::Api,
+    ),
+    (
+        ErrorCode::Api024,
+        "API-024",
+        "slot '${}' in {} position requires {}, got {}",
         ErrorCategory::Api,
     ),
     (
@@ -2278,6 +2333,9 @@ mod tests {
                 | ErrorCode::Prs113
                 | ErrorCode::Prs114
                 | ErrorCode::Prs115
+                | ErrorCode::Prs119
+                | ErrorCode::Prs120
+                | ErrorCode::Prs121
                 | ErrorCode::Qry001
                 | ErrorCode::Qry002
                 | ErrorCode::Qry003
@@ -2365,6 +2423,10 @@ mod tests {
                 | ErrorCode::Api018
                 | ErrorCode::Api019
                 | ErrorCode::Api020
+                | ErrorCode::Api021
+                | ErrorCode::Api022
+                | ErrorCode::Api023
+                | ErrorCode::Api024
                 | ErrorCode::Int001
                 | ErrorCode::Int002
                 | ErrorCode::Int003
@@ -2541,6 +2603,9 @@ mod tests {
             ErrorCode::Prs113,
             ErrorCode::Prs114,
             ErrorCode::Prs115,
+            ErrorCode::Prs119,
+            ErrorCode::Prs120,
+            ErrorCode::Prs121,
             ErrorCode::Qry001,
             ErrorCode::Qry002,
             ErrorCode::Qry003,
@@ -2628,6 +2693,10 @@ mod tests {
             ErrorCode::Api018,
             ErrorCode::Api019,
             ErrorCode::Api020,
+            ErrorCode::Api021,
+            ErrorCode::Api022,
+            ErrorCode::Api023,
+            ErrorCode::Api024,
             ErrorCode::Int001,
             ErrorCode::Int002,
             ErrorCode::Int003,

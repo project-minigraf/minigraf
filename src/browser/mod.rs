@@ -4,6 +4,8 @@
 //! feature enabled. It is **not** compatible with Node.js, Deno, Bun, or any
 //! server-side runtime. For server-side Node.js, use `@minigraf/node` (Phase 8.3).
 
+/// Bind values read from JavaScript for prepared queries.
+mod binds;
 /// Synchronous in-memory page buffer with dirty-page tracking.
 pub mod buffer;
 /// Async IndexedDB backend for browser WASM persistence.
@@ -15,6 +17,7 @@ use crate::graph::FactStorage;
 use crate::query::datalog::executor::{DatalogExecutor, QueryResult};
 use crate::query::datalog::functions::FunctionRegistry;
 use crate::query::datalog::parser::parse_datalog_command;
+use crate::query::datalog::prepared::{BindValue, PreparedQuery};
 use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::types::DatalogCommand;
 use crate::storage::persistent_facts::PersistentFactStorage;
@@ -166,6 +169,27 @@ impl BrowserDb {
         })
     }
 
+    /// Parse and validate a `(query ...)` once, for running many times with
+    /// different bind values in its `$name` slots.
+    ///
+    /// Synchronous. Throws `[API-005]`/`[API-006]`/`[API-007]` for a
+    /// `transact`, `retract` or `rule`, and `[API-023]` for a slot in an
+    /// attribute position.
+    ///
+    /// ```js
+    /// const pq = db.prepare('(query [:find ?name :where [?e :age $age] [?e :name ?name]])');
+    /// const thirty = JSON.parse(pq.execute({ age: 30 })).results;
+    /// const forty = JSON.parse(pq.execute({ age: 40n })).results;
+    /// ```
+    #[wasm_bindgen(js_name = prepare)]
+    pub fn prepare(&self, datalog: &str) -> Result<BrowserPreparedQuery, JsValue> {
+        let query = self.prepare_inner(datalog).map_err(to_js_error)?;
+        Ok(BrowserPreparedQuery {
+            _db: self.inner.clone(),
+            query,
+        })
+    }
+
     /// Flush all dirty pages to IndexedDB.
     ///
     /// Write-through means individual `execute()` calls already flush dirty pages,
@@ -283,6 +307,29 @@ impl BrowserDb {
 }
 
 impl BrowserDb {
+    fn prepare_inner(&self, datalog: &str) -> anyhow::Result<PreparedQuery> {
+        use crate::error::{ErrorCode, bail_coded};
+
+        let query = match parse_datalog_command(datalog)? {
+            DatalogCommand::Query(q) => q,
+            DatalogCommand::Transact(_) => bail_coded!(ErrorCode::Api005),
+            DatalogCommand::Retract(_) => bail_coded!(ErrorCode::Api006),
+            DatalogCommand::Rule(_) => bail_coded!(ErrorCode::Api007),
+        };
+        let inner = self.inner.borrow();
+        // The limits `query` runs with (`DatalogExecutor`'s defaults).
+        crate::query::datalog::prepared::prepare_query(
+            query,
+            inner.fact_storage.clone(),
+            inner.rules.clone(),
+            inner.functions.clone(),
+            (
+                crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS,
+                usize::MAX,
+            ),
+        )
+    }
+
     fn query_inner(&self, datalog: &str) -> anyhow::Result<crate::Cursor> {
         use crate::error::{ErrorCode, bail_coded};
 
@@ -431,6 +478,61 @@ impl BrowserCursor {
     }
 }
 
+// ── BrowserPreparedQuery ────────────────────────────────────────────────────
+
+/// A query parsed once by `BrowserDb.prepare`, run with bind values.
+///
+/// Bindings are an object of slot name (without the `$`) to bind value: a
+/// boolean, a `number` (an integer when `Number.isInteger`, else a float), a
+/// `bigint`, a string, `null`, or a typed `{ type, value }` form for a float
+/// with no fractional part, a keyword, a ref, an entity, a `txCount`, a
+/// `timestamp` or `anyValidTime`. Names the query does not use are ignored.
+///
+/// It keeps its database open, and each run reads the database as it is then.
+#[wasm_bindgen]
+pub struct BrowserPreparedQuery {
+    /// Keeps the database alive while the prepared query is.
+    _db: Rc<RefCell<BrowserDbInner>>,
+    query: PreparedQuery,
+}
+
+#[wasm_bindgen]
+impl BrowserPreparedQuery {
+    /// Run the query with `bindings` and return its result as JSON, encoded
+    /// like `BrowserDb.execute`'s. Throws a `TypeError` for a binding that is
+    /// not a bind value, `[API-017]` for a typed value that does not fit its
+    /// type, `[API-022]` for a missing slot and `[API-024]` for a bind value
+    /// of the wrong kind.
+    pub fn execute(&self, bindings: JsValue) -> Result<String, JsValue> {
+        let binds = binds::read_bindings(&bindings)?;
+        self.query
+            .execute(&as_slice(&binds))
+            .map(query_result_to_json)
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    /// Run the query with `bindings` and return a cursor over its rows. The
+    /// answer is fixed when the cursor opens. Throws as `execute` does.
+    pub fn query(&self, bindings: JsValue) -> Result<BrowserCursor, JsValue> {
+        let binds = binds::read_bindings(&bindings)?;
+        let cursor = self
+            .query
+            .query(&as_slice(&binds))
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        Ok(BrowserCursor {
+            vars: cursor.vars().to_vec(),
+            cursor: Some(cursor),
+        })
+    }
+}
+
+fn as_slice(binds: &[(String, BindValue)]) -> Vec<(&str, BindValue)> {
+    binds
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.clone()))
+        .collect()
+}
+
 /// The bytes of every page the last `save()` dirtied, clearing the dirty set.
 /// A page that cannot be read is an error, never a page silently left out of
 /// the flush to IndexedDB.
@@ -530,6 +632,7 @@ fn value_to_json(v: &crate::graph::types::Value) -> serde_json::Value {
         Value::Ref(uuid) => JVal::String(uuid.to_string()),
         Value::Keyword(k) => JVal::String(k.clone()),
         Value::Null => JVal::Null,
+        Value::Set(s) => JVal::Array(s.iter().map(value_to_json).collect()),
     }
 }
 
@@ -563,6 +666,25 @@ mod tests {
     }
 
     // #673: a rejection carries the same error code as the native API.
+    #[wasm_bindgen_test]
+    fn a_set_is_a_json_array_in_canonical_order() {
+        use crate::graph::types::{Value, ValueSet};
+        let set = ValueSet::new(vec![
+            Value::Integer(2),
+            Value::Keyword(":k".into()),
+            Value::String("a".into()),
+        ])
+        .unwrap();
+        assert_eq!(
+            value_to_json(&Value::Set(set)).to_string(),
+            r#"["a",2,":k"]"#
+        );
+        assert_eq!(
+            value_to_json(&Value::Set(ValueSet::default())).to_string(),
+            "[]"
+        );
+    }
+
     #[wasm_bindgen_test]
     async fn execute_errors_carry_their_code() {
         let db = BrowserDb::open_in_memory().expect("open_in_memory");
@@ -1091,5 +1213,286 @@ mod tests {
         let db = BrowserDb::open(name).await.expect("reopen");
         assert_eq!(count(&db, "(query [:find ?n :where [?e :n ?n]])").await, 1);
         assert_eq!(count(&db, "(query [:find ?s :where [?e :s ?s]])").await, 0);
+    }
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "browser", test))]
+mod prepared_tests {
+    use super::*;
+    use js_sys::{BigInt, Object, Reflect};
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test_configure!(run_in_browser);
+
+    /// A JS object with `pairs` as its properties.
+    fn obj(pairs: &[(&str, JsValue)]) -> JsValue {
+        let o = Object::new();
+        for (k, v) in pairs {
+            Reflect::set(&o, &JsValue::from_str(k), v).expect("set");
+        }
+        o.into()
+    }
+
+    /// A typed bind value `{type, value}`.
+    fn typed(kind: &str, value: Option<JsValue>) -> JsValue {
+        let mut pairs = vec![("type", JsValue::from_str(kind))];
+        if let Some(v) = value {
+            pairs.push(("value", v));
+        }
+        obj(&pairs)
+    }
+
+    /// The result rows of a prepared execution.
+    fn rows(json: &str) -> Vec<serde_json::Value> {
+        let v: serde_json::Value = serde_json::from_str(json).expect("json");
+        v["results"].as_array().expect("results").clone()
+    }
+
+    fn rejection(r: Result<String, JsValue>) -> JsValue {
+        r.expect_err("must reject")
+    }
+
+    fn starts_with(e: &JsValue, code: &str) -> bool {
+        e.as_string().is_some_and(|s| s.starts_with(code))
+    }
+
+    async fn seeded() -> BrowserDb {
+        let db = BrowserDb::open_in_memory().expect("open_in_memory");
+        db.execute(
+            r#"(transact [[:a :n 1] [:b :n 2] [:c :n 3]
+                          [:a :s "x"] [:a :f 2.0] [:a :t true] [:a :k :kw] [:a :z nil]])"#
+                .to_string(),
+        )
+        .await
+        .expect("transact");
+        db
+    }
+
+    #[wasm_bindgen_test]
+    async fn prepared_query_runs_again_with_new_bindings() {
+        let db = seeded().await;
+        let pq = db
+            .prepare("(query [:find ?e :where [?e :n $n]])")
+            .expect("prepare");
+        for n in [1.0, 2.0, 3.0] {
+            let r = pq
+                .execute(obj(&[("n", JsValue::from_f64(n))]))
+                .expect("execute");
+            assert_eq!(rows(&r).len(), 1, "one entity per value");
+        }
+        let r = pq
+            .execute(obj(&[("n", JsValue::from_f64(9.0))]))
+            .expect("execute");
+        assert!(rows(&r).is_empty(), "no entity has 9");
+    }
+
+    #[wasm_bindgen_test]
+    async fn every_plain_value_binds() {
+        let db = seeded().await;
+        for (attr, value) in [
+            (":n", JsValue::from_f64(1.0)),
+            (":n", BigInt::from(1i64).into()),
+            (":f", typed("float", Some(JsValue::from_f64(2.0)))),
+            (":s", JsValue::from_str("x")),
+            (":t", JsValue::TRUE),
+            (":z", JsValue::NULL),
+        ] {
+            let pq = db
+                .prepare(&format!("(query [:find ?e :where [?e {attr} $v]])"))
+                .expect("prepare");
+            let r = pq.execute(obj(&[("v", value)])).expect("execute");
+            assert_eq!(rows(&r).len(), 1, "the plain or typed value matches");
+        }
+        // A whole-number `number` is an integer, so it does not match the float.
+        let pq = db
+            .prepare("(query [:find ?e :where [?e :f $v]])")
+            .expect("prepare");
+        let r = pq
+            .execute(obj(&[("v", JsValue::from_f64(2.0))]))
+            .expect("execute");
+        assert!(rows(&r).is_empty(), "2 binds an integer");
+        let r = pq
+            .execute(obj(&[("v", JsValue::from_f64(2.5))]))
+            .expect("execute");
+        assert!(rows(&r).is_empty(), "2.5 binds a float that is not stored");
+    }
+
+    #[wasm_bindgen_test]
+    async fn every_typed_value_binds() {
+        let db = seeded().await;
+        let a = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, b":a").to_string();
+        for (q, value) in [
+            (
+                "(query [:find ?e :where [?e :n $v]])",
+                typed("integer", Some(BigInt::from(1i64).into())),
+            ),
+            (
+                "(query [:find ?e :where [?e :n $v]])",
+                typed("integer", Some(JsValue::from_f64(1.0))),
+            ),
+            (
+                "(query [:find ?e :where [?e :s $v]])",
+                typed("string", Some("x".into())),
+            ),
+            (
+                "(query [:find ?e :where [?e :t $v]])",
+                typed("boolean", Some(JsValue::TRUE)),
+            ),
+            (
+                "(query [:find ?e :where [?e :k $v]])",
+                typed("keyword", Some(":kw".into())),
+            ),
+            ("(query [:find ?e :where [?e :z $v]])", typed("null", None)),
+            (
+                "(query [:find ?x :where [$v :n ?x]])",
+                typed("entity", Some(a.as_str().into())),
+            ),
+            (
+                "(query [:find ?x :where [$v :n ?x]])",
+                typed("ref", Some(a.as_str().into())),
+            ),
+            (
+                "(query [:find ?x :as-of $v :where [?e :n ?x]])",
+                typed("txCount", Some(BigInt::from(1i64).into())),
+            ),
+            (
+                "(query [:find ?x :as-of $v :where [?e :n ?x]])",
+                typed("txCount", Some(JsValue::from_f64(1.0))),
+            ),
+            (
+                "(query [:find ?x :valid-at $v :where [:a :n ?x]])",
+                // A minute ahead: the fact's valid-from is the Rust clock at
+                // transact, which `Date.now()` can trail.
+                typed(
+                    "timestamp",
+                    Some(JsValue::from_f64(js_sys::Date::now() + 60_000.0)),
+                ),
+            ),
+            (
+                "(query [:find ?x :valid-at $v :where [:a :n ?x]])",
+                typed("anyValidTime", None),
+            ),
+        ] {
+            let pq = db.prepare(q).expect("prepare");
+            let r = pq.execute(obj(&[("v", value)])).expect("execute");
+            assert!(!rows(&r).is_empty(), "the typed value matches");
+        }
+    }
+
+    #[wasm_bindgen_test]
+    async fn prepared_cursor_matches_execute() {
+        let db = seeded().await;
+        let pq = db
+            .prepare("(query [:find ?e ?n :where [?e :n ?n] [(>= ?n $min)]])")
+            .expect("prepare");
+        let binds = obj(&[("min", JsValue::from_f64(2.0))]);
+        let all = rows(&pq.execute(binds.clone()).expect("execute"));
+        let mut cursor = pq.query(binds).expect("query");
+        assert_eq!(cursor.vars(), vec!["?e".to_string(), "?n".to_string()]);
+        let mut seen = 0;
+        while let Some(batch) = cursor.next_batch(1).expect("batch") {
+            seen += serde_json::from_str::<Vec<serde_json::Value>>(&batch)
+                .expect("rows")
+                .len();
+        }
+        assert_eq!(seen, all.len(), "the cursor returns every row");
+        assert_eq!(seen, 2);
+    }
+
+    #[wasm_bindgen_test]
+    async fn bad_bindings_are_rejected() {
+        let db = seeded().await;
+        let pq = db
+            .prepare("(query [:find ?e :where [?e :n $n]])")
+            .expect("prepare");
+        for bad in [JsValue::UNDEFINED, obj(&[("type", "nonsense".into())])] {
+            let e = rejection(pq.execute(obj(&[("n", bad)])));
+            assert!(e.is_instance_of::<js_sys::TypeError>(), "a TypeError");
+        }
+        let e = rejection(pq.execute(JsValue::from_f64(1.0)));
+        assert!(
+            e.is_instance_of::<js_sys::TypeError>(),
+            "bindings must be an object"
+        );
+
+        let entity = db
+            .prepare("(query [:find ?x :where [$e :n ?x]])")
+            .expect("prepare");
+        let e =
+            rejection(entity.execute(obj(&[("e", typed("entity", Some("not-a-uuid".into())))])));
+        assert!(starts_with(&e, "[API-017] "), "a bad UUID is API-017");
+
+        let as_of = db
+            .prepare("(query [:find ?x :as-of $t :where [?e :n ?x]])")
+            .expect("prepare");
+        let e = rejection(as_of.execute(obj(&[(
+            "t",
+            typed("txCount", Some(JsValue::from_f64(-1.0))),
+        )])));
+        assert!(
+            starts_with(&e, "[API-017] "),
+            "a negative tx count is API-017"
+        );
+
+        for no_value in ["null", "anyValidTime"] {
+            let e =
+                rejection(pq.execute(obj(&[("n", typed(no_value, Some(JsValue::from_f64(1.0))))])));
+            assert!(
+                starts_with(&e, "[API-017] "),
+                "null and anyValidTime take no value"
+            );
+        }
+
+        let wrong = obj(&[("n", typed("txCount", Some(JsValue::from_f64(1.0))))]);
+        let e = rejection(pq.execute(wrong.clone()));
+        assert!(
+            starts_with(&e, "[API-024] "),
+            "a tx count in a value slot is API-024"
+        );
+        let e = pq
+            .query(wrong)
+            .map(|_| ())
+            .expect_err("query must reject too");
+        assert!(
+            starts_with(&e, "[API-024] "),
+            "a tx count in a value slot is API-024"
+        );
+
+        let e = rejection(pq.execute(obj(&[])));
+        assert!(starts_with(&e, "[API-022] "), "a missing slot is API-022");
+        let e = pq
+            .query(obj(&[]))
+            .map(|_| ())
+            .expect_err("query must reject too");
+        assert!(starts_with(&e, "[API-022] "), "a missing slot is API-022");
+
+        let e = db
+            .prepare("(query [:find ?v :where [?e $a ?v]])")
+            .map(|_| ())
+            .expect_err("attribute slot");
+        assert!(
+            starts_with(&e, "[API-023] "),
+            "an attribute slot is API-023"
+        );
+
+        let e = db
+            .prepare("(transact [[:a :n 1]])")
+            .map(|_| ())
+            .expect_err("not a query");
+        assert!(starts_with(&e, "[API-005] "), "transact is not preparable");
+    }
+
+    #[wasm_bindgen_test]
+    async fn prepared_query_sees_later_writes() {
+        let db = seeded().await;
+        let pq = db
+            .prepare("(query [:find ?e :where [?e :n $n]])")
+            .expect("prepare");
+        let binds = obj(&[("n", JsValue::from_f64(4.0))]);
+        assert!(rows(&pq.execute(binds.clone()).expect("execute")).is_empty());
+        db.execute("(transact [[:d :n 4]])".to_string())
+            .await
+            .expect("transact");
+        assert_eq!(rows(&pq.execute(binds).expect("execute")).len(), 1);
     }
 }

@@ -4,9 +4,9 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,716 | 1,737 |
+| **Passing** | 1,760 | 1,783 |
 | **Ignored** | 14 | 15 |
-| **Total** | 1,730 | 1,752 |
+| **Total** | 1,774 | 1,798 |
 
 **Verified**: 2026-10-24 with `cargo test --quiet` (and `--features test-hooks`).
 
@@ -97,6 +97,7 @@ These tests compare the database against an independent answer rather than a sin
 ### Format v8 pages and keys
 
 - **Multi-value and index-key correctness** (`tests/multi_value_test.rs`, 10 tests; #287, #371): same-transaction multi-valued facts surviving query-time dedup, retracting several values of one attribute in one call, valid-time stints (facts differing only in valid time), maximum-value-size boundaries, and format v8 index keys (value bytes + assert/retract flag).
+- **Set values** (`tests/set_values_test.rs`, 8 tests, 10 with `test-hooks`; #316): `#{...}` transacted, queried by exact value, joined on and grouped by, in memory, pending, committed, after WAL replay and reopen, in a large transaction, through the fact log and the log writer; exact retraction; the stored-size limit (`WAL-003`); literal errors (`PRS-119`–`121`); with `test-hooks`, the same answers with reordering on and off, and `#{0.0}` equal to `#{-0.0}` through a constant and a join, committed or pending. Unit tests cover `ValueSet` (dedup, `-0.0` kept, one NaN, `API-021`, `Ord`/`Hash`/`Eq` property test, serde), v8 set keys (inline and long, the 64-byte boundary, decoding, `set_bytes_bound`), long-set dedup and a set record under a string's hash, the pending encoding, `value_order`, parser errors and REPL/JSON output; the model-based test generates sets.
 - **B+tree cursor** (v8 storage format PR 1, #374): every scan walks the tree, not the leaf `next_leaf` chain.
   - Full scans and start positions match the input.
   - `seek` from the current position lands where a fresh descent from the root would: randomized, plus within a leaf, to a sibling, across subtrees, past the end, into the gap after a leaf, and backwards as a no-op.
@@ -283,6 +284,7 @@ These tests compare the database against an independent answer rather than a sin
   - The iterator, and aggregates, rules, `:as-of` and `:any-valid-time`, match `execute()`.
   - A cursor opened before a `transact`, a `WriteTransaction` commit, a retract or a checkpoint returns the pre-write answer to the end, in memory and file-backed.
   - `transact`/`retract`/`rule` are `API-012`; bind slots are `API-010`; a `WriteTransaction` thread gets `INT-001`; rule limits give `INT-020` as from `execute()`.
+  - `tests/write_tx_guard_test.rs` (#734): `checkpoint`, `verify`, `rebuild_indexes`, `prepare` and `PreparedQuery::execute`/`query` on a thread holding a `WriteTransaction` return `INT-001` (each under a 30 s timeout, so a deadlock fails instead of hanging), and the transaction then commits; outside a transaction they run.
   - `PreparedQuery::query` matches `PreparedQuery::execute`.
   - A cursor is `Send` and outlives its database handle.
 - **Fact log** (#430, `tests/fact_log_test.rs`)
@@ -320,6 +322,7 @@ These tests compare the database against an independent answer rather than a sin
   - Unit tests: a batch commits only when a transaction opens past the batch size, never splitting one; `FileBackend::truncate` empties a file.
 - **Online backup** (#398): runs the online backup from `docs/DURABILITY.md`. It copies a read-write handle with an uncheckpointed transaction through `fact_log` and `LogWriter`, while another thread writes past the automatic checkpoint threshold. The copy verifies clean and holds exactly the records the log returned and the counter read after the log opened; every concurrent write reaches the source's file once the log is dropped.
 - **Prepared time travel** (#603, `tests/prepared_statements_test.rs`): literal `:as-of` (counter and timestamp), `:valid-at`, `:any-valid-time` and a per-fact pseudo-attribute query through `execute`, a prepared `execute` and a prepared cursor must agree. A `prepared.rs` unit test checks that `substitute` keeps non-slot `:as-of` and `:valid-at`.
+- **Bind mistakes and entity bind values** (#181, `tests/prepared_statements_test.rs`): a missing bind value is `API-022` in every slot position (entity, value, expression, rule argument, `:as-of`, `:valid-at`, inside `not`, `not-join`, `or`, `or-join`), an attribute slot is `API-023` from `prepare` at the top level and in each clause kind, and a bind value of the wrong kind is `API-024` for every slot kind, naming the slot and position, through both `execute` and `query`. `Entity` and `Val(Ref)` give the same rows in entity, value, rule-argument and expression slots.
 - *(v2.x)* **Bind tokens outside prepared queries** (#407): `execute()` and `WriteTransaction::execute()` reject `$slot` bind tokens in every position with `API-010`.
 - **Binding constructors**: a unit test in `error.rs` checks that `MinigrafError::invalid_argument` and `MinigrafError::closed` give `API-017` and `API-018` with their text.
 - *(v2.x)* **REPL** (#415): the `run()` test runs in a child process with null stdin, so it no longer hangs when the test runner's stdin is an open non-TTY stream.
@@ -356,7 +359,7 @@ These tests compare the database against an independent answer rather than a sin
   - The two answer changes of the spec (§4), and an unknown predicate in a `not` body, were checked against both the engine and the executor; their tests keep the engine's answer.
   - The envelope harness's `-irregular` fixture keeps its source's records, with `tx_id`s that fall and rise (`cargo test` runs the example's tests).
 - **`:limit`** (#306)
-  - `tests/limit_order_test.rs` (5 tests, `test-hooks`): 14 shapes (patterns, joins, `not`, `or`, grouped and ungrouped aggregates and the zero row, a window, rule queries, `:as-of`, `:any-valid-time`, an expression with no pattern), in memory and over committed and pending facts, with limits 0, 1, 2, the answer size less one, the answer size and five more: through `execute`, a cursor pulled one row at a time, a prepared `:limit $n` and its cursor, with reordering on and off, each returns `min(n, |answer|)` rows that are a sub-bag of the unlimited answer. A write transaction's own staged facts; slot errors (`API-010`, `PRS-115`, `INT-035`).
+  - `tests/limit_order_test.rs` (5 tests, `test-hooks`): 14 shapes (patterns, joins, `not`, `or`, grouped and ungrouped aggregates and the zero row, a window, rule queries, `:as-of`, `:any-valid-time`, an expression with no pattern), in memory and over committed and pending facts, with limits 0, 1, 2, the answer size less one, the answer size and five more: through `execute`, a cursor pulled one row at a time, a prepared `:limit $n` and its cursor, with reordering on and off, each returns `min(n, |answer|)` rows that are a sub-bag of the unlimited answer. A write transaction's own staged facts; slot errors (`API-010`, `PRS-115`, `API-024`).
   - `src/query/engine/limit.rs` (4 unit tests): at most `limit` rows across batch boundaries, `limit 0` pulls nothing, one batch read for 10 rows and two for `BATCH_ROWS + 1`, offsets across batches and past the end, `rewind`.
   - `src/cursor.rs` (2 tests): through a cursor, in memory and on file, `:limit 10` leaves the scan at one internal batch and `:limit 0` at none.
   - Parser (3 unit tests), prepared slots (3 unit tests), `prs_115_…` in `tests/error_codes_prs_test.rs`, the grammar corpus (3 valid, 2 syntax, 2 semantic files) and two verifier `SEMANTIC` witnesses (`INT-012`, `PRS-115`).
@@ -456,10 +459,11 @@ These tests compare the database against an independent answer rather than a sin
 
 None of these are counted in the summary. The wasm32 targets run in CI (`.github/workflows/wasm.yml`).
 
-- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 32 `wasm_bindgen_test` tests.
-  - Nineteen for `BrowserDb`, including IndexedDB persistence, the cursor, and the flush returning every dirty page and failing on one it cannot read (#470).
+- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 40 `wasm_bindgen_test` tests.
+  - Twenty-five for `BrowserDb`, including IndexedDB persistence, the cursor, and the flush returning every dirty page and failing on one it cannot read (#470).
   - Eleven for `BrowserBufferBackend` (which used `#[test]` and never ran before).
   - Two checking that IndexedDB page keys accept only whole numbers from 0 to 2^53.
+- **`BrowserDb.prepare`** (#181): one prepared query run with three bindings; every plain JS value (boolean, whole and fractional `number`, `bigint`, string, `null`) and every `{type, value}` form; a prepared cursor gives the rows of `execute`; `TypeError` for a non-bind value or non-object bindings, `API-017` for a bad UUID, a negative tx count or a value on `null`/`anyValidTime`, `API-022`, `API-023`, `API-024` (both `execute` and `query`) and `API-005`; a later write is seen by the next run.
 - **`BrowserDb` cursor**: `query()` batches of 1, 7 and 1,000 give the rows of `execute()`; a cursor keeps the answer from when it opened and returns the end after `close()`; a `transact` is `API-012`.
 - **Page reuse** (#411, #440; five `BrowserDb` tests)
   - Opening a v7 store written straight into IndexedDB stores a v8 meta page and only the live pages, with nothing written on the next open.

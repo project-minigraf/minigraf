@@ -31,7 +31,7 @@ use crate::graph::types::{Fact, Value};
 use crate::storage::dir_sync::sync_parent_dir;
 #[cfg(test)]
 use crate::storage::fault::{self, Action, Site};
-use crate::storage::keys::{MAX_IDENT_BYTES, MAX_VALUE_BYTES};
+use crate::storage::keys::{MAX_IDENT_BYTES, MAX_VALUE_BYTES, set_bytes_bound};
 use anyhow::Result;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -143,8 +143,9 @@ fn check_wal_header_length(file: &mut File) -> Result<WalHeaderState> {
 // ─── Entry serialization ────────────────────────────────────────────────────
 
 /// Reject a fact a checkpoint could not store (WAL-003): a string value longer
-/// than one value page's payload, or an attribute or keyword longer than an
-/// ident may be (spec §6.3).
+/// than one value page's payload, a set whose element encoding may be longer
+/// (#316), or an attribute or keyword (a set's keyword elements too) longer
+/// than an ident may be (spec §6.3).
 pub(crate) fn check_fact_size(fact: &Fact) -> Result<()> {
     if fact.attribute.len() > MAX_IDENT_BYTES {
         bail_coded!(ErrorCode::Wal003, fact.attribute.len(), MAX_IDENT_BYTES);
@@ -155,6 +156,20 @@ pub(crate) fn check_fact_size(fact: &Fact) -> Result<()> {
         }
         Value::Keyword(k) if k.len() > MAX_IDENT_BYTES => {
             bail_coded!(ErrorCode::Wal003, k.len(), MAX_IDENT_BYTES)
+        }
+        Value::Set(set) => {
+            for e in set {
+                if let Value::Keyword(k) = e
+                    && k.len() > MAX_IDENT_BYTES
+                {
+                    bail_coded!(ErrorCode::Wal003, k.len(), MAX_IDENT_BYTES)
+                }
+            }
+            let n = set_bytes_bound(set);
+            if n > MAX_VALUE_BYTES {
+                bail_coded!(ErrorCode::Wal003, n, MAX_VALUE_BYTES)
+            }
+            Ok(())
         }
         _ => Ok(()),
     }
@@ -883,6 +898,32 @@ mod tests {
         writer.append_entry(4, &[fact(4)]).unwrap();
         drop(writer);
         assert_eq!(tx_counts(&path), [1, 4]);
+    }
+
+    /// A set's size bound and its keyword elements are checked (#316).
+    #[test]
+    fn check_fact_size_checks_sets() {
+        use crate::graph::types::ValueSet;
+        let code = |v: Value| {
+            check_fact_size(&make_fact(Uuid::new_v4(), ":s", v, 1))
+                .map_err(|e| crate::MinigrafError::from(e).code())
+        };
+        let set = |v: Vec<Value>| Value::Set(ValueSet::new(v).unwrap());
+        // A keyword element longer than an ident may be.
+        let long_kw = format!(":{}", "k".repeat(MAX_IDENT_BYTES));
+        assert_eq!(code(set(vec![Value::Keyword(long_kw)])), Err("WAL-003"));
+        // At the bound: one string element of n bytes counts n + 3.
+        let at = MAX_VALUE_BYTES - 3;
+        assert_eq!(code(set(vec![Value::String("s".repeat(at))])), Ok(()));
+        assert_eq!(
+            code(set(vec![Value::String("s".repeat(at + 1))])),
+            Err("WAL-003")
+        );
+        // Short keywords and other elements pass.
+        assert_eq!(
+            code(set(vec![Value::Keyword(":a".into()), Value::Integer(1)])),
+            Ok(())
+        );
     }
 
     #[test]

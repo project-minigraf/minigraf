@@ -138,6 +138,14 @@ fn render_value(v: &Value, names: &HashMap<Uuid, String>) -> String {
         Value::Boolean(b) => format!("b{b}"),
         Value::Float(f) => format!("f{f}"),
         Value::Null => "null".to_string(),
+        Value::Set(s) => format!(
+            "#{{{}}}",
+            s.iter()
+                .map(|e| render_value(e, names))
+                .collect::<Vec<_>>()
+                .join(" ")
+        ),
+        _ => "?".to_string(),
     }
 }
 

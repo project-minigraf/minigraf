@@ -20,6 +20,8 @@ fn key(v: &Value) -> String {
         Value::Ref(u) => format!("r:{}", u.as_hyphenated()),
         Value::Keyword(k) => format!("k:{k}"),
         Value::Null => "nil".to_string(),
+        Value::Set(s) => format!("S:{{{}}}", s.iter().map(key).collect::<Vec<_>>().join(" ")),
+        _ => "?".to_string(),
     }
 }
 
@@ -204,6 +206,6 @@ fn limit_slot_errors() {
     let p = db.prepare(q).unwrap();
     let code = |b: BindValue| p.execute(&[("n", b)]).expect_err("rejected").code();
     assert_eq!(code(BindValue::Val(Value::Integer(-2))), "PRS-115");
-    assert_eq!(code(BindValue::Val(Value::String("2".into()))), "INT-035");
-    assert_eq!(code(BindValue::TxCount(2)), "INT-035");
+    assert_eq!(code(BindValue::Val(Value::String("2".into()))), "API-024");
+    assert_eq!(code(BindValue::TxCount(2)), "API-024");
 }

@@ -69,7 +69,7 @@ pub struct DictReader<'a> {
     uuids: HashMap<u64, Uuid>,
     names: HashMap<u32, String>,
     tx_ids: HashMap<u64, u64>,
-    long_values: HashMap<ValueRef, String>,
+    long_values: HashMap<ValueRef, Vec<u8>>,
 }
 
 impl<'a> DictReader<'a> {
@@ -200,34 +200,63 @@ impl<'a> DictReader<'a> {
             .ok_or_else(|| err_coded!(ErrorCode::Stg036, format!("transaction {tx_count}")))
     }
 
-    pub fn long_value(&mut self, vref: ValueRef) -> Result<String> {
-        if let Some(s) = self.long_values.get(&vref) {
-            return Ok(s.clone());
+    /// The bytes of the long value at `vref`: a long string's, or a long
+    /// set's element encoding (#316).
+    pub fn long_bytes(&mut self, vref: ValueRef) -> Result<Vec<u8>> {
+        if let Some(b) = self.long_values.get(&vref) {
+            return Ok(b.clone());
         }
         let bytes = read_value(vref, self.backend, self.cache)?;
-        let s = String::from_utf8(bytes).map_err(|_| {
+        self.long_values.insert(vref, bytes.clone());
+        Ok(bytes)
+    }
+
+    pub fn long_value(&mut self, vref: ValueRef) -> Result<String> {
+        String::from_utf8(self.long_bytes(vref)?).map_err(|_| {
             err_coded!(
                 ErrorCode::Stg036,
                 format!("long value {}:{} not UTF-8", vref.page, vref.slot)
             )
-        })?;
-        self.long_values.insert(vref, s.clone());
-        Ok(s)
+        })
     }
 
-    /// The committed long value equal to `s`, if any (§6.3 dedup).
-    pub fn find_long_value(&mut self, s: &str) -> Result<Option<ValueRef>> {
+    /// The committed long value with these bytes, if any (§6.3 dedup). It
+    /// compares bytes, so a long string and a long set never fail on each
+    /// other's records.
+    pub fn find_long_bytes(&mut self, bytes: &[u8]) -> Result<Option<ValueRef>> {
         if self.root == 0 {
             return Ok(None);
         }
-        let prefix = keys::dict_long_value_prefix(keys::hash64(s.as_bytes()));
+        let prefix = keys::dict_long_value_prefix(keys::hash64(bytes));
         for (k, _) in btree::prefix_scan(self.root, &prefix, self.backend, self.cache)? {
             let vref = keys::dict_long_value_ref(&k)?;
-            if self.long_value(vref)? == s {
+            if self.long_bytes(vref)? == bytes {
                 return Ok(Some(vref));
             }
         }
         Ok(None)
+    }
+
+    /// The committed long string equal to `s`, if any.
+    pub fn find_long_value(&mut self, s: &str) -> Result<Option<ValueRef>> {
+        self.find_long_bytes(s.as_bytes())
+    }
+
+    /// The set a committed key value holds, `None` if it is not a set.
+    pub fn set_of(&mut self, v: &KeyValue) -> Result<Option<crate::graph::types::ValueSet>> {
+        let long = match v {
+            KeyValue::LongSet { vref, .. } => Some(self.long_bytes(*vref)?),
+            _ => None,
+        };
+        // `decode_set` takes three closures over one reader: read the long
+        // bytes first, then name the elements one lookup at a time.
+        let names = std::cell::RefCell::new(self);
+        keys::decode_set(
+            v,
+            |_| long.ok_or_else(|| err_coded!(ErrorCode::Int049, "long set without bytes")),
+            |iid| names.borrow_mut().name_of(iid),
+            |eid| names.borrow_mut().uuid_of(eid),
+        )
     }
 
     /// Translate an index entry back into a fact.
@@ -241,6 +270,10 @@ impl<'a> DictReader<'a> {
             KeyValue::LongStr { vref, .. } => Value::String(self.long_value(*vref)?),
             KeyValue::Keyword(iid) => Value::Keyword(self.name_of(*iid)?),
             KeyValue::Ref(eid) => Value::Ref(self.uuid_of(*eid)?),
+            KeyValue::Set(_) | KeyValue::LongSet { .. } => Value::Set(
+                self.set_of(&kf.v)?
+                    .ok_or_else(|| err_coded!(ErrorCode::Int049, "set key without a set"))?,
+            ),
         };
         Ok(Fact {
             entity: self.uuid_of(kf.e)?,
@@ -258,7 +291,19 @@ impl<'a> DictReader<'a> {
 /// A value after staging: ready, or a long value still to be written.
 enum StagedValue {
     Ready(KeyValue),
-    NewLong(usize),
+    /// The index of a record this checkpoint writes, and whether this value
+    /// is a set. A string and a set with the same bytes share the record;
+    /// each keeps its own kind (#316).
+    NewLong(usize, bool),
+}
+
+/// The key form of a long string's or set's `bytes` stored at `vref`.
+fn long_key(bytes: &[u8], set: bool, vref: ValueRef) -> KeyValue {
+    if set {
+        keys::long_set(bytes, vref)
+    } else {
+        keys::long_bytes(bytes, vref)
+    }
 }
 
 /// A fact with its ids assigned.
@@ -288,8 +333,10 @@ pub struct Encoder {
     eids: HashMap<Uuid, u64>,
     iids: HashMap<String, u32>,
     txs: HashMap<u64, u64>,
-    new_long: HashMap<String, usize>,
-    new_values: Vec<String>,
+    new_long: HashMap<Vec<u8>, usize>,
+    /// Long values this checkpoint writes: a string's bytes, or a set's
+    /// element encoding (#316).
+    new_values: Vec<Vec<u8>>,
     dict: Vec<Entry>,
     staged: Vec<Staged>,
 }
@@ -380,25 +427,49 @@ impl Encoder {
             Value::Integer(n) => KeyValue::Int(*n),
             Value::Float(f) => KeyValue::Float(*f),
             Value::String(s) if s.len() <= SHORT_STRING_MAX => KeyValue::Str(s.clone()),
-            Value::String(s) => {
-                if s.len() > keys::MAX_VALUE_BYTES {
-                    bail_coded!(ErrorCode::Wal003, s.len(), keys::MAX_VALUE_BYTES);
-                }
-                if let Some(i) = self.new_long.get(s) {
-                    return Ok(StagedValue::NewLong(*i));
-                }
-                if let Some(vref) = dict.find_long_value(s)? {
-                    keys::long_str(s, vref)
-                } else {
-                    let i = self.new_values.len();
-                    self.new_values.push(s.clone());
-                    self.new_long.insert(s.clone(), i);
-                    return Ok(StagedValue::NewLong(i));
-                }
-            }
+            Value::String(s) => return self.long(s.as_bytes(), false, dict),
             Value::Keyword(k) => KeyValue::Keyword(self.iid(k, dict)?),
             Value::Ref(u) => KeyValue::Ref(self.eid(*u, dict)?),
+            Value::Set(set) => {
+                let mut elements = Vec::with_capacity(set.len());
+                for e in set {
+                    elements.push(match e {
+                        // A string element is written in full, whatever its length.
+                        Value::String(s) => KeyValue::Str(s.clone()),
+                        e => match self.value(e, dict)? {
+                            StagedValue::Ready(k) => k,
+                            StagedValue::NewLong(..) => {
+                                bail_coded!(ErrorCode::Int049, "set element staged as long")
+                            }
+                        },
+                    });
+                }
+                let bytes = keys::set_elements(&elements);
+                if bytes.len() <= SHORT_STRING_MAX {
+                    KeyValue::Set(bytes)
+                } else {
+                    return self.long(&bytes, true, dict);
+                }
+            }
         }))
+    }
+
+    /// The staged form of a long value: an existing record's ref, or a new
+    /// record written by [`Encoder::finish`].
+    fn long(&mut self, bytes: &[u8], set: bool, dict: &mut DictReader<'_>) -> Result<StagedValue> {
+        if bytes.len() > keys::MAX_VALUE_BYTES {
+            bail_coded!(ErrorCode::Wal003, bytes.len(), keys::MAX_VALUE_BYTES);
+        }
+        if let Some(i) = self.new_long.get(bytes) {
+            return Ok(StagedValue::NewLong(*i, set));
+        }
+        if let Some(vref) = dict.find_long_bytes(bytes)? {
+            return Ok(StagedValue::Ready(long_key(bytes, set, vref)));
+        }
+        let i = self.new_values.len();
+        self.new_values.push(bytes.to_vec());
+        self.new_long.insert(bytes.to_vec(), i);
+        Ok(StagedValue::NewLong(i, set))
     }
 
     /// Assign ids for `fact`, reading the committed dictionary.
@@ -428,13 +499,13 @@ impl Encoder {
     ) -> Result<Encoded> {
         let mut writer = ValueWriter::new();
         let mut new_refs = Vec::with_capacity(self.new_values.len());
-        for s in &self.new_values {
-            let vref = writer.push(s.as_bytes(), alloc, backend, cache)?;
+        for bytes in &self.new_values {
+            let vref = writer.push(bytes, alloc, backend, cache)?;
             self.dict.push((
-                keys::dict_long_value_key(keys::hash64(s.as_bytes()), vref),
+                keys::dict_long_value_key(keys::hash64(bytes), vref),
                 Vec::new(),
             ));
-            new_refs.push(keys::long_str(s, vref));
+            new_refs.push(vref);
         }
         writer.flush(alloc, backend, cache)?;
 
@@ -442,10 +513,10 @@ impl Encoder {
         for st in self.staged {
             let v = match st.v {
                 StagedValue::Ready(v) => v,
-                StagedValue::NewLong(i) => new_refs
-                    .get(i)
-                    .cloned()
-                    .ok_or_else(|| err_coded!(ErrorCode::Int049, "staged long value missing"))?,
+                StagedValue::NewLong(i, set) => match (new_refs.get(i), self.new_values.get(i)) {
+                    (Some(vref), Some(bytes)) => long_key(bytes, set, *vref),
+                    _ => bail_coded!(ErrorCode::Int049, "staged long value missing"),
+                },
             };
             let kf = KeyFact {
                 e: st.e,
@@ -696,6 +767,129 @@ mod tests {
         let enc2 = enc2.finish(&mut alloc, &mut backend, &cache).unwrap();
         assert_eq!(alloc.next_append(), pages_after_first, "no new value page");
         assert!(!enc2.dict.iter().any(|(k, _)| is_long_value_entry(k)));
+    }
+
+    fn long_set_value() -> Value {
+        use crate::graph::types::ValueSet;
+        Value::Set(
+            ValueSet::new(vec![
+                Value::String("s".repeat(80)),
+                Value::Keyword(":k/a".into()),
+                Value::Integer(9),
+            ])
+            .unwrap(),
+        )
+    }
+
+    #[test]
+    fn long_sets_are_deduplicated_and_read_back() {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(256);
+        let facts = vec![
+            fact(1, ":s", long_set_value(), 1),
+            fact(2, ":s", long_set_value(), 1),
+        ];
+        let (root, enc) = checkpoint(&mut backend, &cache, 0, (1, 1), &facts);
+        let pages_after_first = backend.page_count().unwrap();
+        let long_entries = enc
+            .dict
+            .iter()
+            .filter(|(k, _)| is_long_value_entry(k))
+            .count();
+        assert_eq!(long_entries, 1, "one stored copy within a checkpoint");
+
+        let again = vec![fact(3, ":s", long_set_value(), 2)];
+        let mut enc2 = Encoder::new(enc.next_eid, enc.next_iid);
+        {
+            let mut dict = DictReader::new(root, &backend, &cache);
+            enc2.stage(&again[0], &mut dict).unwrap();
+        }
+        let mut alloc = PageAllocator::new(Vec::new(), pages_after_first, 2);
+        let enc2 = enc2.finish(&mut alloc, &mut backend, &cache).unwrap();
+        assert_eq!(alloc.next_append(), pages_after_first, "no new value page");
+
+        // The new fact's key points at the existing record.
+        let (key, _) = enc2.index[0].first().expect("an EAVT entry");
+        let kf = KeyFact::decode(Index::Eavt, key).unwrap();
+        assert!(matches!(kf.v, KeyValue::LongSet { .. }), "a long set key");
+    }
+
+    #[test]
+    fn a_string_and_a_set_with_equal_bytes_keep_their_kinds() {
+        use crate::graph::types::ValueSet;
+        // A string whose bytes are a set's element encoding (NUL is UTF-8).
+        let elements = [KeyValue::Str("e".repeat(80))];
+        let bytes = keys::set_elements(&elements);
+        let s = String::from_utf8(bytes.clone()).unwrap();
+        let set = Value::Set(ValueSet::new(vec![Value::String("e".repeat(80))]).unwrap());
+        for facts in [
+            vec![
+                fact(1, ":v", Value::String(s.clone()), 1),
+                fact(2, ":v", set.clone(), 1),
+            ],
+            vec![
+                fact(2, ":v", set.clone(), 1),
+                fact(1, ":v", Value::String(s.clone()), 1),
+            ],
+        ] {
+            let mut backend = MemoryBackend::new();
+            let cache = PageCache::new(256);
+            let (_, enc) = checkpoint(&mut backend, &cache, 0, (1, 1), &facts);
+            let long_entries = enc
+                .dict
+                .iter()
+                .filter(|(k, _)| is_long_value_entry(k))
+                .count();
+            assert_eq!(long_entries, 1, "one shared record");
+            let kinds: Vec<bool> = enc.index[0]
+                .iter()
+                .map(|(k, _)| {
+                    matches!(
+                        KeyFact::decode(Index::Eavt, k).unwrap().v,
+                        KeyValue::LongSet { .. }
+                    )
+                })
+                .collect();
+            assert_eq!(kinds.len(), 2, "two entries");
+            assert_eq!(
+                kinds.iter().filter(|s| **s).count(),
+                1,
+                "one set key, one string key"
+            );
+        }
+    }
+
+    #[test]
+    fn a_set_record_under_a_strings_hash_is_not_an_error() {
+        // A long set's record is not UTF-8. Filed under a long string's hash,
+        // the string lookup must skip it, not fail (#316).
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(256);
+        let s = "c".repeat(100);
+        let set_bytes = keys::set_elements(&[KeyValue::Int(1), KeyValue::Str("d".repeat(90))]);
+        let mut alloc = PageAllocator::new(Vec::new(), 2, 1);
+        let mut w = ValueWriter::new();
+        let r_set = w
+            .push(&set_bytes, &mut alloc, &mut backend, &cache)
+            .unwrap();
+        let r_str = w
+            .push(s.as_bytes(), &mut alloc, &mut backend, &cache)
+            .unwrap();
+        w.flush(&mut alloc, &mut backend, &cache).unwrap();
+        let h = keys::hash64(s.as_bytes());
+        let mut entries = vec![
+            (keys::dict_long_value_key(h, r_set), Vec::new()),
+            (keys::dict_long_value_key(h, r_str), Vec::new()),
+        ];
+        entries.sort();
+        let root = btree::build_btree(entries, &mut backend, &cache, &mut alloc).unwrap();
+        let mut dict = DictReader::new(root, &backend, &cache);
+        assert_eq!(dict.find_long_value(&s).unwrap(), Some(r_str));
+        assert_eq!(
+            dict.find_long_bytes(&set_bytes).unwrap(),
+            None,
+            "wrong hash"
+        );
     }
 
     #[test]

@@ -256,7 +256,7 @@ fn prepared_query_cursor_matches_prepared_execute() {
         assert_eq!(drain(&mut cursor, 1), expected);
     }
     let err = pq.query(&[]).unwrap_err();
-    assert_eq!(err.code(), "INT-033", "missing bind value");
+    assert_eq!(err.code(), "API-022", "missing bind value");
 }
 
 #[test]
