@@ -67,7 +67,7 @@ impl Acc {
                 if agg.would_add(&v) {
                     held.charge(value_bytes(&v) + HASH_ENTRY_OVERHEAD)?;
                 }
-                agg.step(&v);
+                agg.step(&v)?;
             }
         }
         Ok(())

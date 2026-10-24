@@ -2,7 +2,7 @@
 //! built-in function, used by the executor and the engine, whose result
 //! does not depend on the order of its input.
 
-use super::functions::{AggImpl, Builtin, FunctionRegistry, UdfFinaliseFn, UdfStepFn};
+use super::functions::{AggImpl, Builtin, FunctionRegistry, UdfError, UdfFinaliseFn, UdfStepFn};
 use super::types::{FindSpec, Order, WindowFunc, WindowSpec};
 use crate::error::{ErrorCode, err_coded};
 use crate::graph::types::Value;
@@ -389,8 +389,9 @@ impl Extreme {
     }
 }
 
-/// A registered aggregate's state.
+/// A registered aggregate's state. A failing call is `QRY-014` (#180).
 pub(crate) struct Udf {
+    name: Box<str>,
     acc: Box<dyn Any + Send>,
     step: UdfStepFn,
     finalise: UdfFinaliseFn,
@@ -399,30 +400,43 @@ pub(crate) struct Udf {
 }
 
 impl Udf {
-    fn of(registry: &FunctionRegistry, name: &str) -> Option<Udf> {
-        match &registry.get(name)?.impl_ {
-            AggImpl::Udf(ops) => Some(Udf {
-                acc: (ops.init)().ok()?,
-                step: ops.step.clone(),
-                finalise: ops.finalise.clone(),
-                n: 0,
-            }),
-            AggImpl::Builtin(_) => None,
-        }
+    /// A new accumulator of the registered aggregate `name`, or `None`
+    /// when `name` is not one; `init`'s failure is `QRY-014`.
+    fn of(registry: &FunctionRegistry, name: &str) -> Result<Option<Udf>> {
+        let Some(AggImpl::Udf(ops)) = registry.get(name).map(|d| &d.impl_) else {
+            return Ok(None);
+        };
+        let acc = (ops.init)().map_err(|e| failed(name, &e))?;
+        Ok(Some(Udf {
+            name: name.into(),
+            acc,
+            step: ops.step.clone(),
+            finalise: ops.finalise.clone(),
+            n: 0,
+        }))
     }
 
-    fn add(&mut self, v: &Value) {
-        let _ = (self.step)(&mut self.acc, v);
+    fn add(&mut self, v: &Value) -> Result<()> {
+        (self.step)(&mut self.acc, v).map_err(|e| failed(&self.name, &e))?;
         self.n += 1;
+        Ok(())
     }
 
-    fn value(&self) -> Value {
-        (self.finalise)(&self.acc, self.n).unwrap_or(Value::Null)
+    fn value(&self) -> Result<Value> {
+        (self.finalise)(&self.acc, self.n).map_err(|e| failed(&self.name, &e))
     }
 }
 
-/// One aggregate of one group (spec §3.2). Takes values one at a time and
-/// never fails while taking them; [`Agg::finish`] decides the result.
+/// `QRY-014`: the user function `name` failed with `e`.
+fn failed(name: &str, e: &UdfError) -> anyhow::Error {
+    err_coded!(ErrorCode::Qry014, name, e.message())
+}
+
+impl Udf {}
+
+/// One aggregate of one group (spec §3.2). Takes values one at a time,
+/// failing while taking them only for a user aggregate's `step` (`QRY-014`);
+/// [`Agg::finish`] decides the result.
 pub(crate) enum Agg {
     Count(i64),
     /// The sum, and the type of the first value that is not a number.
@@ -453,7 +467,7 @@ impl Agg {
                 Builtin::SumDistinct => Agg::SumDistinct(BTreeSet::new()),
             },
             AggImpl::Udf(_) => Agg::Udf(
-                Udf::of(registry, func).ok_or_else(|| err_coded!(ErrorCode::Int029, func))?,
+                Udf::of(registry, func)?.ok_or_else(|| err_coded!(ErrorCode::Int029, func))?,
             ),
         })
     }
@@ -469,10 +483,11 @@ impl Agg {
         }
     }
 
-    /// Take one value; `nil` is skipped by every aggregate.
-    pub(crate) fn step(&mut self, v: &Value) {
+    /// Take one value; `nil` is skipped by every aggregate. Only a user
+    /// aggregate fails (`QRY-014`).
+    pub(crate) fn step(&mut self, v: &Value) -> Result<()> {
         if matches!(v, Value::Null) {
-            return;
+            return Ok(());
         }
         match self {
             Agg::Count(n) => *n = n.saturating_add(1),
@@ -486,8 +501,9 @@ impl Agg {
             Agg::CountDistinct(set) | Agg::SumDistinct(set) => {
                 set.insert(canonical(v));
             }
-            Agg::Udf(u) => u.add(v),
+            Agg::Udf(u) => u.add(v)?,
         }
+        Ok(())
     }
 
     /// The result: `Ok(None)` when the group is dropped (`min`/`max` with no
@@ -527,7 +543,7 @@ impl Agg {
                 s.value()
             }
             Agg::Udf(u) if u.n == 0 => Value::Null,
-            Agg::Udf(u) => u.value(),
+            Agg::Udf(u) => u.value()?,
         }))
     }
 }
@@ -587,11 +603,12 @@ impl Running {
             AggImpl::Builtin(Builtin::CountDistinct | Builtin::SumDistinct) => {
                 return Err(unknown());
             }
-            AggImpl::Udf(_) => Running::Udf(Udf::of(registry, &name).ok_or_else(unknown)?),
+            AggImpl::Udf(_) => Running::Udf(Udf::of(registry, &name)?.ok_or_else(unknown)?),
         })
     }
 
-    pub(crate) fn step(&mut self, v: &Value) {
+    /// Take one value. Only a user aggregate fails (`QRY-014`).
+    pub(crate) fn step(&mut self, v: &Value) -> Result<()> {
         match self {
             Running::Count(n) => {
                 if !matches!(v, Value::Null) {
@@ -603,18 +620,20 @@ impl Running {
             }
             Running::Min(e) => e.add(v, false),
             Running::Max(e) => e.add(v, true),
-            Running::Udf(u) => u.add(v),
+            Running::Udf(u) => u.add(v)?,
         }
+        Ok(())
     }
 
-    pub(crate) fn value(&self) -> Value {
-        match self {
+    /// The running value. Only a user aggregate fails (`QRY-014`).
+    pub(crate) fn value(&self) -> Result<Value> {
+        Ok(match self {
             Running::Count(n) => Value::Integer(*n),
             Running::Sum(s) => s.value(),
             Running::Avg(s) => s.mean(),
             Running::Min(e) | Running::Max(e) => e.best.clone().unwrap_or(Value::Null),
-            Running::Udf(u) => u.value(),
-        }
+            Running::Udf(u) => u.value()?,
+        })
     }
 }
 
@@ -689,12 +708,12 @@ pub(crate) fn windows(
                 let peers = keyed.get(start..end).unwrap_or(&[]);
                 if let Some(acc) = running.as_mut() {
                     for &r in peers {
-                        acc.step(read(r, var));
+                        acc.step(read(r, var))?;
                     }
                 }
                 for (pos, &r) in (start..end).zip(peers) {
                     let value = match (&running, &ws.func) {
-                        (Some(acc), _) => acc.value(),
+                        (Some(acc), _) => acc.value()?,
                         (None, WindowFunc::RowNumber) => position(pos)?,
                         (None, _) => position(start)?,
                     };

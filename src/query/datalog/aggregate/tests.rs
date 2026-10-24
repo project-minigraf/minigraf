@@ -47,7 +47,7 @@ fn finish(func: &str, vals: &[Value]) -> Result<Option<Value>> {
     let reg = FunctionRegistry::with_builtins();
     let mut agg = Agg::new(func, &reg)?;
     for v in vals {
-        agg.step(v);
+        agg.step(v).unwrap();
     }
     agg.finish(func)
 }
@@ -344,7 +344,7 @@ fn registered_aggregate_steps_non_nil_values() {
     let reg = registry_with_udf();
     let mut agg = Agg::new("total", &reg).expect("registered");
     for v in [i(2), Value::Null, i(3)] {
-        agg.step(&v);
+        agg.step(&v).unwrap();
     }
     assert_eq!(agg.finish("total").ok().flatten(), Some(i(502)));
     let empty = Agg::new("total", &reg).expect("registered");
@@ -366,34 +366,34 @@ fn window(src: &str) -> WindowSpec {
 fn running_values() {
     let reg = registry_with_udf();
     let mut sum = Running::new(&window("(sum ?v :over (:order-by ?o))"), &reg).expect("sum");
-    assert_eq!(sum.value(), i(0));
-    sum.step(&i(2));
-    assert_eq!(sum.value(), i(2));
-    sum.step(&Value::String("skipped".into()));
-    sum.step(&f(0.5));
-    assert_eq!(sum.value(), f(2.5));
+    assert_eq!(sum.value().unwrap(), i(0));
+    sum.step(&i(2)).unwrap();
+    assert_eq!(sum.value().unwrap(), i(2));
+    sum.step(&Value::String("skipped".into())).unwrap();
+    sum.step(&f(0.5)).unwrap();
+    assert_eq!(sum.value().unwrap(), f(2.5));
 
     let mut min = Running::new(&window("(min ?v :over (:order-by ?o))"), &reg).expect("min");
-    assert_eq!(min.value(), Value::Null);
-    min.step(&kw(":b"));
-    min.step(&kw(":a"));
-    assert_eq!(min.value(), kw(":a"));
+    assert_eq!(min.value().unwrap(), Value::Null);
+    min.step(&kw(":b")).unwrap();
+    min.step(&kw(":a")).unwrap();
+    assert_eq!(min.value().unwrap(), kw(":a"));
 
     let mut count = Running::new(&window("(count ?v :over (:order-by ?o))"), &reg).expect("count");
-    count.step(&Value::Null);
-    count.step(&i(1));
-    assert_eq!(count.value(), i(1));
+    count.step(&Value::Null).unwrap();
+    count.step(&i(1)).unwrap();
+    assert_eq!(count.value().unwrap(), i(1));
 
     let mut avg = Running::new(&window("(avg ?v :over (:order-by ?o))"), &reg).expect("avg");
-    assert_eq!(avg.value(), Value::Null);
-    avg.step(&i(1));
-    avg.step(&i(2));
-    assert_eq!(avg.value(), f(1.5));
+    assert_eq!(avg.value().unwrap(), Value::Null);
+    avg.step(&i(1)).unwrap();
+    avg.step(&i(2)).unwrap();
+    assert_eq!(avg.value().unwrap(), f(1.5));
 
     let mut udf = Running::new(&window("(total ?v :over (:order-by ?o))"), &reg).expect("udf");
-    udf.step(&Value::Null);
-    udf.step(&i(4));
-    assert_eq!(udf.value(), i(402));
+    udf.step(&Value::Null).unwrap();
+    udf.step(&i(4)).unwrap();
+    assert_eq!(udf.value().unwrap(), i(402));
 
     assert!(
         Running::new(&window("(nope ?v :over (:order-by ?o))"), &reg)

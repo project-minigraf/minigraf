@@ -530,3 +530,75 @@ fn failing_predicate_fails_a_prepared_query() {
     assert_qry014(&err, "boom?", "bad value");
     assert_eq!(calls.load(Ordering::SeqCst), 3);
 }
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Phase {
+    Init,
+    Step,
+    Finalise,
+}
+
+/// Calls of a failing aggregate: every call, and the number of calls made
+/// when it failed.
+struct AggCalls {
+    total: Arc<AtomicUsize>,
+    at_failure: Arc<AtomicUsize>,
+}
+
+/// Registers `boom`, a sum whose `fail_at`-th call of `phase` fails.
+fn failing_aggregate(db: &Minigraf, phase: Phase, fail_at: usize) -> AggCalls {
+    let total = Arc::new(AtomicUsize::new(0));
+    let at_failure = Arc::new(AtomicUsize::new(0));
+    let counts: Arc<[AtomicUsize; 3]> = Arc::new(Default::default());
+    let call = {
+        let (total, at_failure) = (Arc::clone(&total), Arc::clone(&at_failure));
+        move |p: Phase| -> Result<(), UdfError> {
+            let n = total.fetch_add(1, Ordering::SeqCst) + 1;
+            if p == phase && counts[p as usize].fetch_add(1, Ordering::SeqCst) + 1 == fail_at {
+                at_failure.store(n, Ordering::SeqCst);
+                return Err(UdfError::new(format!("{p:?} failed")));
+            }
+            Ok(())
+        }
+    };
+    let (c1, c2, c3) = (call.clone(), call.clone(), call);
+    db.try_register_aggregate(
+        "boom",
+        move || c1(Phase::Init).map(|()| 0i64),
+        move |acc: &mut i64, v: &Value| {
+            c2(Phase::Step)?;
+            if let Value::Integer(i) = v {
+                *acc += i;
+            }
+            Ok(())
+        },
+        move |acc: &i64, _n| c3(Phase::Finalise).map(|()| Value::Integer(*acc)),
+    )
+    .expect("register boom");
+    AggCalls { total, at_failure }
+}
+
+#[test]
+fn failing_aggregate_fails_the_query_in_every_phase() {
+    let aggregate = "(query [:find ?g (boom ?v) :where [?e :n ?v] [?e :g ?g]])";
+    let window = "(query [:find ?e (boom ?v :over (:partition-by ?g :order-by ?v)) :where [?e :n ?v] [?e :g ?g]])";
+    for query in [aggregate, window] {
+        for (phase, fail_at) in [(Phase::Init, 2), (Phase::Step, 4), (Phase::Finalise, 2)] {
+            let db = db();
+            let facts: String = (0..10)
+                .map(|i| format!("[:e{i} :n {i}] [:e{i} :g {}]", i % 3))
+                .collect();
+            db.execute(&format!("(transact [{facts}])")).expect("seed");
+            let calls = failing_aggregate(&db, phase, fail_at);
+            let err = db.execute(query).expect_err("fails");
+            assert_qry014(&err, "boom", &format!("{phase:?} failed"));
+            let at = calls.at_failure.load(Ordering::SeqCst);
+            assert!(at > 0, "the failing call was made");
+            assert_eq!(
+                calls.total.load(Ordering::SeqCst),
+                at,
+                "no call after the failing one"
+            );
+        }
+    }
+}
