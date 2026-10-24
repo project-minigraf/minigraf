@@ -104,7 +104,7 @@ Scope — features:
 - Query profiler (#185)
 - Set membership predicates (#316)
 - `PreparedQuery` over UniFFI (#181)
-- UDF registration over UniFFI (#180)
+- UDF registration in every binding: the UniFFI ones, C, Node and the browser `BrowserDb` (#180)
 - `OpenOptions` exposed over UniFFI through `open_with_options`, so embedders can suppress the close-time checkpoint (#322; done on `v3` in every binding with #465)
 
 Scope — release-gate testing and documentation:
