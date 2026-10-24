@@ -154,6 +154,8 @@ pub(crate) enum Step {
     Bind(Expr, Vars, usize, Out),
     /// A later pattern, joined with the rows so far.
     Join(JoinSpec),
+    /// `[(collect-set ?e :a) ?s]` (#316 spec §7.3).
+    CollectSet(CollectSpec),
     /// `not` / `not-join`: keeps the rows for which the body has no row
     /// (#546).
     Anti(Body),
@@ -264,6 +266,17 @@ pub(crate) enum JoinKind {
     /// `HashJoin`: a table of the side with the smaller estimate, probed by
     /// the other.
     Hash { build_inner: bool },
+}
+
+/// `[(collect-set ?e :a) ?s]`: per row, the values `inner` (`[e :a ?v]`,
+/// probed by the cell at `entity`) finds, as one set bound to `out`.
+#[derive(Debug, Clone)]
+pub(crate) struct CollectSpec {
+    pub(crate) entity: usize,
+    pub(crate) attribute: String,
+    pub(crate) inner: ScanSpec,
+    pub(crate) out: usize,
+    pub(crate) mode: Out,
 }
 
 /// What a binding expression does with its slot (#596).
@@ -1077,6 +1090,15 @@ impl Builder {
                 let step = match binding {
                     None => Step::Filter(expr, vars),
                     Some(out) => {
+                        let collect = match &expr {
+                            Expr::CollectSet { entity, attribute } => Some((
+                                self.slots.by_var.get(entity).copied().ok_or_else(|| {
+                                    invariant("a collect-set entity bound by no earlier clause")
+                                })?,
+                                attribute.clone(),
+                            )),
+                            _ => None,
+                        };
                         let replace = match &mut self.binders {
                             Some(b) => b.expression(&expr, &out),
                             None => false,
@@ -1095,7 +1117,26 @@ impl Builder {
                                 (s, Out::New)
                             }
                         };
-                        Step::Bind(expr, vars, slot, mode)
+                        match collect {
+                            // Stored facts only, never a rule's relation
+                            // (spec §7.1).
+                            Some((entity, attribute)) => Step::CollectSet(CollectSpec {
+                                entity,
+                                inner: ScanSpec {
+                                    e: Term::Bind(0),
+                                    a: Term::Const(attribute.clone()),
+                                    v: Term::Bind(1),
+                                    meta: Vec::new(),
+                                    valid,
+                                    width: 2,
+                                    derived: None,
+                                },
+                                attribute,
+                                out: slot,
+                                mode,
+                            }),
+                            None => Step::Bind(expr, vars, slot, mode),
+                        }
                     }
                 };
                 self.steps.push(step);
@@ -1522,6 +1563,7 @@ fn expr_vars(expr: &Expr, slots: &Slots) -> Vars {
                 walk(r, slots, out);
             }
             Expr::UnaryOp(_, inner) => walk(inner, slots, out),
+            Expr::CollectSet { entity, .. } => walk(&Expr::Var(entity.clone()), slots, out),
         }
     }
     let mut out = Vec::new();

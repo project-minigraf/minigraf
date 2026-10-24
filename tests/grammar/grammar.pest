@@ -164,8 +164,9 @@ where_clause = {
 // Pattern: exactly [E A V] — three EDN values
 pattern_clause = { "[" ~ edn_value ~ edn_value ~ edn_value ~ "]" }
 
-// Expression clause: [(expr) ?out?] — first element is a list (the expression)
-expr_clause = { "[" ~ expr ~ variable? ~ "]" }
+// Expression clause: [(expr) ?out?] — first element is a list (the expression).
+// collect-set (#316) is only a whole clause, and always binds.
+expr_clause = { "[" ~ (collect_set ~ variable | expr ~ variable?) ~ "]" }
 
 // NOT / NOT-JOIN
 not_clause      = { "(" ~ "not" ~ where_clause+ ~ ")" }
@@ -184,8 +185,10 @@ rule_invocation = { "(" ~ !reserved_head ~ plain_sym ~ edn_value* ~ ")" }
 // ── EXPRESSIONS ───────────────────────────────────────────────────────────
 expr        = { "(" ~ expr_body ~ ")" }
 expr_body   = { binary_form | unary_form }
-unary_form  = { (unary_op | op_sym | plain_sym) ~ expr_arg }
+unary_form  = { !collect_set_head ~ (unary_op | op_sym | plain_sym) ~ expr_arg }
 binary_form = { binary_op ~ expr_arg ~ expr_arg }
+collect_set      = { "(" ~ collect_set_head ~ variable ~ keyword ~ ")" }
+collect_set_head = @{ "collect-set" ~ !word_cont }
 unary_op    = @{ "string?" | "integer?" | "float?" | "boolean?" | "nil?" }
 binary_op   = @{
     "<=" | ">=" | "!=" | "starts-with?" | "ends-with?" | "contains?" | "matches?" |

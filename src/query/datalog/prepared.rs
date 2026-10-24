@@ -309,7 +309,7 @@ fn collect_slots_from_expr(expr: &Expr, names: &mut HashSet<String>) {
             collect_slots_from_expr(r, names);
         }
         Expr::UnaryOp(_, arg) => collect_slots_from_expr(arg, names),
-        Expr::Var(_) | Expr::Lit(_) => {}
+        Expr::Var(_) | Expr::Lit(_) | Expr::CollectSet { .. } => {}
     }
 }
 
@@ -412,7 +412,7 @@ fn substitute_expr(expr: &mut Expr, bindings: &HashMap<&str, &BindValue>) -> Res
             substitute_expr(rhs, bindings)
         }
         Expr::UnaryOp(_, arg) => substitute_expr(arg, bindings),
-        Expr::Var(_) | Expr::Lit(_) => Ok(()),
+        Expr::Var(_) | Expr::Lit(_) | Expr::CollectSet { .. } => Ok(()),
     }
 }
 

@@ -165,6 +165,8 @@ pub(crate) enum ErrorCode {
     Prs119,
     Prs120,
     Prs121,
+    Prs122,
+    Prs123,
     Qry001,
     Qry002,
     Qry003,
@@ -178,6 +180,7 @@ pub(crate) enum ErrorCode {
     Qry011,
     Qry012,
     Qry013,
+    Qry015,
     Int000,
     Stg001,
     Stg002,
@@ -1044,6 +1047,18 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCategory::Parser,
     ),
     (
+        ErrorCode::Prs122,
+        "PRS-122",
+        "collect-set produces a value; bind it to a variable: [(collect-set ?e :attr) ?out]",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs123,
+        "PRS-123",
+        "collect-set takes a ?variable and an attribute keyword; got {}",
+        ErrorCategory::Parser,
+    ),
+    (
         ErrorCode::Qry001,
         "QRY-001",
         "Invalid entity: {}",
@@ -1119,6 +1134,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Qry013,
         "QRY-013",
         "rule head entity is not an entity: rule '{}' gives a {} where a ref or a keyword is needed",
+        ErrorCategory::Query,
+    ),
+    (
+        ErrorCode::Qry015,
+        "QRY-015",
+        "collect-set over {} found a set value; bind a set-valued attribute with a pattern instead",
         ErrorCategory::Query,
     ),
     (
@@ -2336,6 +2357,8 @@ mod tests {
                 | ErrorCode::Prs119
                 | ErrorCode::Prs120
                 | ErrorCode::Prs121
+                | ErrorCode::Prs122
+                | ErrorCode::Prs123
                 | ErrorCode::Qry001
                 | ErrorCode::Qry002
                 | ErrorCode::Qry003
@@ -2349,6 +2372,7 @@ mod tests {
                 | ErrorCode::Qry011
                 | ErrorCode::Qry012
                 | ErrorCode::Qry013
+                | ErrorCode::Qry015
                 | ErrorCode::Stg001
                 | ErrorCode::Stg002
                 | ErrorCode::Stg003
@@ -2606,6 +2630,8 @@ mod tests {
             ErrorCode::Prs119,
             ErrorCode::Prs120,
             ErrorCode::Prs121,
+            ErrorCode::Prs122,
+            ErrorCode::Prs123,
             ErrorCode::Qry001,
             ErrorCode::Qry002,
             ErrorCode::Qry003,
@@ -2619,6 +2645,7 @@ mod tests {
             ErrorCode::Qry011,
             ErrorCode::Qry012,
             ErrorCode::Qry013,
+            ErrorCode::Qry015,
             ErrorCode::Stg001,
             ErrorCode::Stg002,
             ErrorCode::Stg003,

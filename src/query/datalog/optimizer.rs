@@ -186,6 +186,7 @@ pub(crate) fn expr_vars(expr: &Expr) -> Vec<String> {
             vars
         }
         Expr::UnaryOp(_, inner) => expr_vars(inner),
+        Expr::CollectSet { entity, .. } => vec![entity.clone()],
     }
 }
 

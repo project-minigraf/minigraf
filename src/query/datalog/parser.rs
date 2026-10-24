@@ -1424,6 +1424,9 @@ fn parse_expr(list: &[EdnValue]) -> Result<Expr> {
             Ok(Expr::BinOp(op, Box::new(lhs), Box::new(rhs)))
         }
 
+        // Read only as the whole expression of a clause (`parse_expr_clause`).
+        "collect-set" => bail_coded!(ErrorCode::Prs067, head),
+
         other => {
             // Unknown name in 1-arg position: treat as UDF predicate resolved at runtime.
             // 2-arg unknown forms are still rejected.
@@ -1459,8 +1462,14 @@ fn parse_expr_clause(vec: &[EdnValue]) -> Result<WhereClause> {
             "parse_expr_clause called with non-list element 0"
         ),
     };
-    let expr = parse_expr(inner_list)?;
+    let collect = matches!(inner_list.first(), Some(EdnValue::Symbol(s)) if s == "collect-set");
+    let expr = if collect {
+        parse_collect_set(inner_list)?
+    } else {
+        parse_expr(inner_list)?
+    };
     let binding = match vec.len() {
+        1 if collect => bail_coded!(ErrorCode::Prs122),
         1 => None,
         2 => {
             let second = vec
@@ -1479,6 +1488,41 @@ fn parse_expr_clause(vec: &[EdnValue]) -> Result<WhereClause> {
         }
     };
     Ok(WhereClause::Expr { expr, binding })
+}
+
+/// `(collect-set ?e :attr)` (#316): a variable, then an attribute keyword.
+fn parse_collect_set(list: &[EdnValue]) -> Result<Expr> {
+    let [_, entity, attribute] = list else {
+        bail_coded!(ErrorCode::Prs065, "collect-set");
+    };
+    let entity = match entity {
+        EdnValue::Symbol(v) if v.starts_with('?') => v.clone(),
+        other => bail_coded!(ErrorCode::Prs123, operand(other)),
+    };
+    let attribute = match attribute {
+        EdnValue::Keyword(k) => k.clone(),
+        other => bail_coded!(ErrorCode::Prs123, operand(other)),
+    };
+    Ok(Expr::CollectSet { entity, attribute })
+}
+
+/// How a `collect-set` operand that is neither reads in an error.
+fn operand(edn: &EdnValue) -> String {
+    match edn {
+        EdnValue::Symbol(s) => format!("the symbol {s}"),
+        EdnValue::Keyword(k) => format!("the keyword {k}"),
+        EdnValue::String(s) => format!("the string {s:?}"),
+        EdnValue::BindSlot(n) => format!("the bind slot ${n}"),
+        EdnValue::Integer(n) => format!("the integer {n}"),
+        EdnValue::Float(f) => format!("the float {f}"),
+        EdnValue::Boolean(b) => format!("the boolean {b}"),
+        EdnValue::Nil => "nil".to_string(),
+        EdnValue::Uuid(_) => "a UUID".to_string(),
+        EdnValue::Set(_) => "a set".to_string(),
+        EdnValue::List(_) => "a list".to_string(),
+        EdnValue::Vector(_) => "a vector".to_string(),
+        EdnValue::Map(_) => "a map".to_string(),
+    }
 }
 
 /// Parse a list item (EDN List) appearing in a :where clause or rule body.
@@ -1873,6 +1917,7 @@ fn expr_vars(expr: &Expr) -> Vec<String> {
         }
         Expr::UnaryOp(_, arg) => expr_vars(arg),
         Expr::Slot(_) => vec![],
+        Expr::CollectSet { entity, .. } => vec![entity.clone()],
     }
 }
 
@@ -3701,6 +3746,33 @@ mod tests {
             }
             _ => panic!("expected query"),
         }
+    }
+
+    #[test]
+    fn test_parse_collect_set() {
+        let input = "(query [:find ?s :where [?e :x _] [(collect-set ?e :user/scope) ?s]])";
+        match parse(input).expect("collect-set parses") {
+            DatalogCommand::Query(q) => match &q.where_clauses[1] {
+                WhereClause::Expr {
+                    expr: Expr::CollectSet { entity, attribute },
+                    binding: Some(out),
+                } => {
+                    assert_eq!(entity, "?e");
+                    assert_eq!(attribute, ":user/scope");
+                    assert_eq!(out, "?s");
+                }
+                _ => panic!("expected a collect-set binding clause"),
+            },
+            _ => panic!("expected query"),
+        }
+        let code = |clause: &str| {
+            let input = format!("(query [:find ?e :where [?e :x _] {clause}])");
+            crate::MinigrafError::from(parse(&input).expect_err("rejected")).code()
+        };
+        assert_eq!(code("[(collect-set ?e :a)]"), "PRS-122");
+        assert_eq!(code("[(collect-set ?e ?a) ?s]"), "PRS-123");
+        assert_eq!(code("[(collect-set ?e) ?s]"), "PRS-065");
+        assert_eq!(code("[(any-in? #{1} (collect-set ?e :a)) ?s]"), "PRS-067");
     }
 
     #[test]
