@@ -487,7 +487,7 @@ None of these are counted in the summary. The wasm32 targets run in CI (`.github
 
 ## Ignored Tests
 
-The thirteen ignored tests (fourteen with `test-hooks`) are intentionally excluded from a normal local run:
+The fourteen ignored tests (fifteen with `test-hooks`) are intentionally excluded from a normal local run:
 
 - Four rustdoc examples that reference internal types and cannot compile as standalone examples.
 - One high-contention concurrency stress test intended for scheduled runs.
