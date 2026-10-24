@@ -1009,7 +1009,7 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
     (
         ErrorCode::Prs115,
         "PRS-115",
-        "`{}` must be a non-negative integer or a bind slot, got {}",
+        "{} must be a non-negative integer or a bind slot, got {}",
         ErrorCategory::Parser,
     ),
     (

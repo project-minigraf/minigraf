@@ -2138,7 +2138,7 @@ with `PRS-047`.
 
 ### PRS-115 Query option is not a non-negative integer
 
-**Error text**: `` `{}` must be a non-negative integer or a bind slot, got {} ``
+**Error text**: `{} must be a non-negative integer or a bind slot, got {}`
 
 **Cause**: The value after `:limit` is not an integer `>= 0` or a `$slot`, or a prepared query's `:limit` slot was bound to a negative integer (#306).
 
