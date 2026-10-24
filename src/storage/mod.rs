@@ -522,6 +522,12 @@ pub trait KeySource: Send + Sync {
     fn long_value(&self, vref: keys::ValueRef) -> Result<String>;
     /// Where the long string `s` is stored, if a committed fact holds it.
     fn long_value_ref(&self, s: &str) -> Result<Option<keys::ValueRef>>;
+    /// The bytes stored at `vref`: a long string's, or a long set's element
+    /// encoding (#316).
+    fn long_bytes(&self, vref: keys::ValueRef) -> Result<Vec<u8>>;
+    /// Where a long value with these bytes is stored, if a committed fact
+    /// holds it.
+    fn long_bytes_ref(&self, bytes: &[u8]) -> Result<Option<keys::ValueRef>>;
     /// The `tx_id` of the committed transaction `tx_count`.
     fn tx_id_of(&self, tx_count: u64) -> Result<u64>;
     /// How this generation's `tx_id`s run; one walk of the DICT's

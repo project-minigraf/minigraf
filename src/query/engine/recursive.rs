@@ -263,6 +263,7 @@ fn entity<'c>(
                 Scalar::Int(_) => "Integer",
                 Scalar::Float(_) => "Float",
                 Scalar::Str(_) | Scalar::Long(_) => "String",
+                Scalar::Set(_) => "Set",
             },
             None => return Err(unbound("?")),
         },

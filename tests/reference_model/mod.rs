@@ -38,9 +38,21 @@ pub enum V {
     Float,
     Str(u8),
     Ref(usize),
+    /// A set of scalars (#316), deduplicated and sorted by rendering so that
+    /// equal sets are equal `V`s.
+    Set(Vec<V>),
 }
 
 impl V {
+    /// The set of `elements`, as the engine would hold it.
+    pub fn set(elements: Vec<V>) -> V {
+        let mut by_render: Vec<(String, V)> =
+            elements.into_iter().map(|e| (e.render(), e)).collect();
+        by_render.sort_by(|a, b| a.0.cmp(&b.0));
+        by_render.dedup_by(|a, b| a.0 == b.0);
+        V::Set(by_render.into_iter().map(|(_, e)| e).collect())
+    }
+
     pub fn edn(&self) -> String {
         match self {
             V::Int(n) => n.to_string(),
@@ -49,6 +61,10 @@ impl V {
             V::Float => "1.5".to_string(),
             V::Str(i) => format!("\"{}\"", pool_string(*i)),
             V::Ref(e) => format!("#uuid \"{}\"", entity_uuid(*e)),
+            V::Set(es) => format!(
+                "#{{{}}}",
+                es.iter().map(V::edn).collect::<Vec<_>>().join(" ")
+            ),
         }
     }
 
@@ -60,6 +76,10 @@ impl V {
             V::Float => "f1.5".to_string(),
             V::Str(i) => render_str(&pool_string(*i)),
             V::Ref(e) => format!("r{e}"),
+            V::Set(es) => format!(
+                "#{{{}}}",
+                es.iter().map(V::render).collect::<Vec<_>>().join(" ")
+            ),
         }
     }
 }
@@ -91,6 +111,13 @@ pub fn render_value(v: &Value, uuids: &HashMap<Uuid, usize>) -> String {
             None => "r?".to_string(),
         },
         Value::Null => "null".to_string(),
+        // Sorted by rendering, as `V::set` sorts.
+        Value::Set(s) => {
+            let mut es: Vec<String> = s.iter().map(|e| render_value(e, uuids)).collect();
+            es.sort();
+            format!("#{{{}}}", es.join(" "))
+        }
+        _ => "?".to_string(),
     }
 }
 
@@ -228,7 +255,7 @@ impl Stmt {
 
 // ── Strategies ────────────────────────────────────────────────────────────────
 
-pub fn arb_v() -> impl Strategy<Value = V> {
+fn arb_scalar() -> impl Strategy<Value = V> {
     prop_oneof![
         3 => (0i64..3).prop_map(V::Int),
         1 => Just(V::Int(i64::MIN)),
@@ -237,6 +264,14 @@ pub fn arb_v() -> impl Strategy<Value = V> {
         1 => Just(V::Float),
         3 => (0u8..6).prop_map(V::Str),
         2 => (0..ENTITIES).prop_map(V::Ref),
+    ]
+}
+
+pub fn arb_v() -> impl Strategy<Value = V> {
+    prop_oneof![
+        13 => arb_scalar(),
+        // Small sets, some of them long (pool strings over 64 bytes).
+        2 => prop::collection::vec(arb_scalar(), 0..4).prop_map(V::set),
     ]
 }
 

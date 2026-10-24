@@ -326,6 +326,14 @@ impl<B: StorageBackend + 'static> KeySource for OnDiskReader<B> {
         self.dict().find_long_value(s)
     }
 
+    fn long_bytes(&self, vref: ValueRef) -> Result<Vec<u8>> {
+        self.dict().long_bytes(vref)
+    }
+
+    fn long_bytes_ref(&self, bytes: &[u8]) -> Result<Option<ValueRef>> {
+        self.dict().find_long_bytes(bytes)
+    }
+
     fn tx_id_of(&self, tx_count: u64) -> Result<u64> {
         self.dict().tx_id_of(tx_count)
     }

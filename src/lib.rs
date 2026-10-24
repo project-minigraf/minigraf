@@ -110,7 +110,7 @@ pub use error::{ErrorCategory, MinigrafError};
 pub use repl::Repl;
 
 // EAV value types — users construct and match on these
-pub use graph::types::{EntityId, Value};
+pub use graph::types::{EntityId, Value, ValueSet};
 
 // Query result types
 pub use cursor::{Batch, Cursor};

@@ -42,6 +42,8 @@ fn render(v: &Value) -> String {
         Value::Null => "nil".to_string(),
         // Entity ids are not a stable output; manifests never return them.
         Value::Ref(_) => "#ref".to_string(),
+        // v7 files hold no sets (#316).
+        _ => "#other".to_string(),
     }
 }
 

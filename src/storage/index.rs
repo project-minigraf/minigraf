@@ -78,6 +78,18 @@ pub fn encode_value(v: &Value) -> Vec<u8> {
             bytes.extend_from_slice(id.as_bytes());
             bytes
         }
+        // Each element's length keeps the boundaries, so equal encodings
+        // mean equal elements, one by one (#316).
+        Value::Set(set) => {
+            let mut bytes = vec![0x07];
+            for e in set {
+                let enc = encode_value(e);
+                let len = u32::try_from(enc.len()).unwrap_or(u32::MAX);
+                bytes.extend_from_slice(&len.to_be_bytes());
+                bytes.extend_from_slice(&enc);
+            }
+            bytes
+        }
     }
 }
 
@@ -207,6 +219,33 @@ mod tests {
     use super::*;
     use crate::graph::types::{Fact, VALID_TIME_FOREVER, Value};
     use uuid::Uuid;
+
+    #[test]
+    fn set_encoding_keeps_element_boundaries() {
+        use crate::graph::types::ValueSet;
+        let set = |v: Vec<Value>| encode_value(&Value::Set(ValueSet::new(v).unwrap()));
+        let s = |x: &str| Value::String(x.to_string());
+        assert_ne!(
+            set(vec![s("ab")]),
+            set(vec![s("a"), s("b")]),
+            "one string vs two"
+        );
+        assert_ne!(
+            set(vec![s("a")]),
+            set(vec![s("a"), s("")]),
+            "an empty element"
+        );
+        assert_eq!(
+            set(vec![Value::Integer(2), Value::Integer(1)]),
+            set(vec![Value::Integer(1), Value::Integer(2)]),
+            "order does not matter"
+        );
+        assert_ne!(
+            set(vec![]),
+            encode_value(&Value::Null),
+            "empty set is not nil"
+        );
+    }
 
     fn fact_at(entity: Uuid, attr: &str, value: Value, asserted: bool) -> Fact {
         let mut f = Fact::with_valid_time(

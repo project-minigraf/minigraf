@@ -26,6 +26,8 @@ enum Token {
     Float(f64),
     Boolean(bool),
     TaggedLiteral(String), // e.g., "#uuid"
+    /// `#{`, which opens a set literal (#316).
+    SetOpen,
     Nil,
     BindSlot(String), // $identifier — named bind slot for PreparedQuery
 }
@@ -180,6 +182,10 @@ impl<'a> Lexer<'a> {
                 // Tagged literals (start with #)
                 '#' => {
                     self.bump();
+                    if self.peek_char() == Some('{') {
+                        self.bump();
+                        return Ok(Some(Token::SetOpen));
+                    }
                     let mut tag = String::new();
                     while let Some(ch) = self.peek_char() {
                         if ch.is_alphanumeric() || ch == '-' {
@@ -405,6 +411,7 @@ impl<'a> Parser<'a> {
             Some(Token::LeftParen) => self.parse_list(),
             Some(Token::LeftBracket) => self.parse_vector(),
             Some(Token::LeftBrace) => self.parse_map(),
+            Some(Token::SetOpen) => self.parse_set(),
             Some(Token::Keyword(_)) => {
                 if let Some(Token::Keyword(k)) = self.advance() {
                     Ok(EdnValue::Keyword(k))
@@ -484,6 +491,40 @@ impl<'a> Parser<'a> {
             }
             None => bail_coded!(ErrorCode::Prs001),
         }
+    }
+
+    /// `#{ v* }` (#316): its elements are scalar literals; a nested set is
+    /// PRS-119, any other element PRS-120.
+    fn parse_set(&mut self) -> Result<EdnValue> {
+        self.advance(); // consume #{
+        let mut elements = Vec::new();
+
+        while let Some(token) = self.peek() {
+            match token {
+                Token::RightBrace => {
+                    self.advance(); // consume }
+                    return Ok(EdnValue::Set(elements));
+                }
+                Token::SetOpen => bail_coded!(ErrorCode::Prs119),
+                _ => {}
+            }
+            let value = self.parse_value()?;
+            match value {
+                EdnValue::String(_)
+                | EdnValue::Integer(_)
+                | EdnValue::Float(_)
+                | EdnValue::Boolean(_)
+                | EdnValue::Keyword(_)
+                | EdnValue::Uuid(_)
+                | EdnValue::Nil => {}
+                other => bail_coded!(ErrorCode::Prs120, format!("{other:?}")),
+            }
+            if self.keep {
+                elements.push(value);
+            }
+        }
+
+        bail_coded!(ErrorCode::Prs121);
     }
 
     fn parse_vector(&mut self) -> Result<EdnValue> {
@@ -1246,6 +1287,9 @@ fn parse_expr_arg(edn: &EdnValue) -> Result<Expr> {
         EdnValue::Boolean(b) => Ok(Expr::Lit(Value::Boolean(*b))),
         EdnValue::Nil => Ok(Expr::Lit(Value::Null)),
         EdnValue::Keyword(k) => Ok(Expr::Lit(Value::Keyword(k.clone()))),
+        EdnValue::Set(_) => Ok(Expr::Lit(
+            super::matcher::edn_to_value(edn).map_err(|e| err_coded!(ErrorCode::Prs070, e))?,
+        )),
         EdnValue::List(inner) => parse_expr(inner),
         EdnValue::BindSlot(name) => Ok(Expr::Slot(name.clone())),
         other => {
@@ -2345,6 +2389,49 @@ mod tests {
                 .to_string()
                 .contains("exceeds maximum length")
         );
+    }
+
+    #[test]
+    fn set_literals_parse() {
+        let v =
+            parse_edn(r#"#{1 1.5 "a" :k true nil #uuid "550e8400-e29b-41d4-a716-446655440000" 1}"#)
+                .unwrap();
+        let EdnValue::Set(elements) = v else {
+            panic!("a set");
+        };
+        assert_eq!(elements.len(), 8, "duplicates are kept until edn_to_value");
+        assert!(matches!(parse_edn("#{}").unwrap(), EdnValue::Set(e) if e.is_empty()));
+        assert!(matches!(parse_edn("#{,1 ,2,}").unwrap(), EdnValue::Set(e) if e.len() == 2));
+        // `#uuid` right after `#{`, and `#{` right after a value.
+        assert!(parse_edn(r#"#{#uuid "550e8400-e29b-41d4-a716-446655440000"}"#).is_ok());
+        assert!(parse_edn("[1#{2}]").is_ok());
+    }
+
+    #[test]
+    fn set_literal_errors_have_codes() {
+        let code = |s: &str| crate::MinigrafError::from(parse_edn(s).unwrap_err()).code();
+        assert_eq!(code("#{#{}}"), "PRS-119");
+        assert_eq!(code("#{1 #{2}}"), "PRS-119");
+        for s in ["#{?x}", "#{$s}", "#{[1]}", "#{(f)}", "#{{:a 1}}", "#{foo}"] {
+            assert_eq!(code(s), "PRS-120", "{s}");
+        }
+        assert_eq!(code("#{1"), "PRS-121");
+        assert_eq!(code("# {1}"), "PRS-073");
+    }
+
+    #[test]
+    fn set_literal_in_an_expression_is_a_literal() {
+        let cmd =
+            parse_datalog_command("(query [:find ?e :where [?e :s ?s] [(= ?s #{:a :b :a})]])")
+                .unwrap();
+        let DatalogCommand::Query(q) = cmd else {
+            panic!("a query");
+        };
+        let found = q.where_clauses.iter().any(|c| {
+            matches!(c, WhereClause::Expr { expr: Expr::BinOp(_, _, r), .. }
+                if matches!(&**r, Expr::Lit(Value::Set(s)) if s.len() == 2))
+        });
+        assert!(found, "the set is a literal with duplicates removed");
     }
 
     #[test]

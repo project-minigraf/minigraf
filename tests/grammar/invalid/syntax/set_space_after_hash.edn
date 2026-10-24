@@ -1,0 +1,1 @@
+(transact [[:alice :user/scopes # {:scope/read}]])
