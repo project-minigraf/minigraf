@@ -291,14 +291,10 @@ impl<'a> DictReader<'a> {
 /// A value after staging: ready, or a long value still to be written.
 enum StagedValue {
     Ready(KeyValue),
-    NewLong(usize),
-}
-
-/// A long value this checkpoint writes: a string's bytes, or a set's element
-/// encoding (#316).
-struct NewLong {
-    bytes: Vec<u8>,
-    set: bool,
+    /// The index of a record this checkpoint writes, and whether this value
+    /// is a set. A string and a set with the same bytes share the record;
+    /// each keeps its own kind (#316).
+    NewLong(usize, bool),
 }
 
 /// The key form of a long string's or set's `bytes` stored at `vref`.
@@ -338,7 +334,9 @@ pub struct Encoder {
     iids: HashMap<String, u32>,
     txs: HashMap<u64, u64>,
     new_long: HashMap<Vec<u8>, usize>,
-    new_values: Vec<NewLong>,
+    /// Long values this checkpoint writes: a string's bytes, or a set's
+    /// element encoding (#316).
+    new_values: Vec<Vec<u8>>,
     dict: Vec<Entry>,
     staged: Vec<Staged>,
 }
@@ -440,7 +438,7 @@ impl Encoder {
                         Value::String(s) => KeyValue::Str(s.clone()),
                         e => match self.value(e, dict)? {
                             StagedValue::Ready(k) => k,
-                            StagedValue::NewLong(_) => {
+                            StagedValue::NewLong(..) => {
                                 bail_coded!(ErrorCode::Int049, "set element staged as long")
                             }
                         },
@@ -463,18 +461,15 @@ impl Encoder {
             bail_coded!(ErrorCode::Wal003, bytes.len(), keys::MAX_VALUE_BYTES);
         }
         if let Some(i) = self.new_long.get(bytes) {
-            return Ok(StagedValue::NewLong(*i));
+            return Ok(StagedValue::NewLong(*i, set));
         }
         if let Some(vref) = dict.find_long_bytes(bytes)? {
             return Ok(StagedValue::Ready(long_key(bytes, set, vref)));
         }
         let i = self.new_values.len();
-        self.new_values.push(NewLong {
-            bytes: bytes.to_vec(),
-            set,
-        });
+        self.new_values.push(bytes.to_vec());
         self.new_long.insert(bytes.to_vec(), i);
-        Ok(StagedValue::NewLong(i))
+        Ok(StagedValue::NewLong(i, set))
     }
 
     /// Assign ids for `fact`, reading the committed dictionary.
@@ -504,13 +499,13 @@ impl Encoder {
     ) -> Result<Encoded> {
         let mut writer = ValueWriter::new();
         let mut new_refs = Vec::with_capacity(self.new_values.len());
-        for v in &self.new_values {
-            let vref = writer.push(&v.bytes, alloc, backend, cache)?;
+        for bytes in &self.new_values {
+            let vref = writer.push(bytes, alloc, backend, cache)?;
             self.dict.push((
-                keys::dict_long_value_key(keys::hash64(&v.bytes), vref),
+                keys::dict_long_value_key(keys::hash64(bytes), vref),
                 Vec::new(),
             ));
-            new_refs.push(long_key(&v.bytes, v.set, vref));
+            new_refs.push(vref);
         }
         writer.flush(alloc, backend, cache)?;
 
@@ -518,10 +513,10 @@ impl Encoder {
         for st in self.staged {
             let v = match st.v {
                 StagedValue::Ready(v) => v,
-                StagedValue::NewLong(i) => new_refs
-                    .get(i)
-                    .cloned()
-                    .ok_or_else(|| err_coded!(ErrorCode::Int049, "staged long value missing"))?,
+                StagedValue::NewLong(i, set) => match (new_refs.get(i), self.new_values.get(i)) {
+                    (Some(vref), Some(bytes)) => long_key(bytes, set, *vref),
+                    _ => bail_coded!(ErrorCode::Int049, "staged long value missing"),
+                },
             };
             let kf = KeyFact {
                 e: st.e,
@@ -817,6 +812,51 @@ mod tests {
         let (key, _) = enc2.index[0].first().expect("an EAVT entry");
         let kf = KeyFact::decode(Index::Eavt, key).unwrap();
         assert!(matches!(kf.v, KeyValue::LongSet { .. }), "a long set key");
+    }
+
+    #[test]
+    fn a_string_and_a_set_with_equal_bytes_keep_their_kinds() {
+        use crate::graph::types::ValueSet;
+        // A string whose bytes are a set's element encoding (NUL is UTF-8).
+        let elements = [KeyValue::Str("e".repeat(80))];
+        let bytes = keys::set_elements(&elements);
+        let s = String::from_utf8(bytes.clone()).unwrap();
+        let set = Value::Set(ValueSet::new(vec![Value::String("e".repeat(80))]).unwrap());
+        for facts in [
+            vec![
+                fact(1, ":v", Value::String(s.clone()), 1),
+                fact(2, ":v", set.clone(), 1),
+            ],
+            vec![
+                fact(2, ":v", set.clone(), 1),
+                fact(1, ":v", Value::String(s.clone()), 1),
+            ],
+        ] {
+            let mut backend = MemoryBackend::new();
+            let cache = PageCache::new(256);
+            let (_, enc) = checkpoint(&mut backend, &cache, 0, (1, 1), &facts);
+            let long_entries = enc
+                .dict
+                .iter()
+                .filter(|(k, _)| is_long_value_entry(k))
+                .count();
+            assert_eq!(long_entries, 1, "one shared record");
+            let kinds: Vec<bool> = enc.index[0]
+                .iter()
+                .map(|(k, _)| {
+                    matches!(
+                        KeyFact::decode(Index::Eavt, k).unwrap().v,
+                        KeyValue::LongSet { .. }
+                    )
+                })
+                .collect();
+            assert_eq!(kinds.len(), 2, "two entries");
+            assert_eq!(
+                kinds.iter().filter(|s| **s).count(),
+                1,
+                "one set key, one string key"
+            );
+        }
     }
 
     #[test]
