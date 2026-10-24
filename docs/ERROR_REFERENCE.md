@@ -2338,8 +2338,10 @@ specific code, so this should now be rare.
 
 **Error text**: `a WriteTransaction is already in progress on this thread; use tx.execute() instead`
 
-**Cause**: `Minigraf::execute()` or `Minigraf::begin_write()` was called on
-the same thread that already holds an active `WriteTransaction`. Acquiring
+**Cause**: `Minigraf::execute()`, `begin_write()`, `checkpoint()`,
+`prepare()` or `PreparedQuery::execute()` was called on the same thread that
+already holds an active `WriteTransaction` (`checkpoint()` deadlocked instead
+before #734). Acquiring
 the write lock again on that thread would deadlock, so this is detected and
 rejected instead.
 

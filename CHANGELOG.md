@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`checkpoint` inside a `WriteTransaction` returns `INT-001` instead of deadlocking** (#734), backported from v3.0.0. Called on a thread that holds a `WriteTransaction`, `checkpoint` waited on the write lock that the transaction already held, so the thread hung. It now returns `INT-001`, as `execute` and `begin_write` already did, and the transaction stays usable. `prepare` and `PreparedQuery::execute` make the same check: they could not deadlock, but they ran inside the transaction while `execute` refused. Present since `WriteTransaction` was added.
+
 ## v2.0.10 — 2026-10-23
 
 Patch release on the v2.x line under the [support policy](PHILOSOPHY.md#support-policy): two data-integrity fixes, for WAL entries of more than 1,000,000 facts that replay dropped along with every later transaction (#686) and for float constants that matched any float within `f64::EPSILON` (#706), plus prepared queries that ignored the database's rule limits (#679). File format is unchanged (v7). No API changes. Upgrading is recommended for every v2.x user who commits transactions of more than 1,000,000 facts or matches float constants in patterns.
