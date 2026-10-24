@@ -4,9 +4,9 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,702 | 1,718 |
-| **Ignored** | 12 | 13 |
-| **Total** | 1,714 | 1,731 |
+| **Passing** | 1,703 | 1,719 |
+| **Ignored** | 13 | 14 |
+| **Total** | 1,716 | 1,733 |
 
 **Verified**: 2026-10-24 with `cargo test --quiet`.
 
@@ -343,7 +343,7 @@ These tests compare the database against an independent answer rather than a sin
   - They read the metadata of the last pattern before them that matched their entity, chosen per row: a pattern on another entity variable that equals theirs on some rows only, and constant entities.
   - Pseudo-attribute patterns planned before any pattern with a stored attribute are joined with every fact of their entity, including cross products.
   - `:db/valid-at` at every temporal setting with variables, `nil` and integer constants.
-- **The engine runs every query** (#551; `src/query/engine/tests.rs`, 6 tests and 2 changed; `src/query/datalog/executor.rs`, 2 tests; `src/storage/persistent_facts.rs`, 2 tests and 1 extended; `src/graph/storage.rs`, 1 test; `tests/plan_independence_test.rs`, 1 test; `tests/disjunction_test.rs`, 1 changed)
+- **The engine runs every query** (#551; `src/query/engine/tests.rs`, 6 tests and 2 changed; `src/query/datalog/executor.rs`, 2 tests; `src/storage/persistent_facts.rs`, 2 tests and 1 extended; `src/graph/storage.rs`, 1 test; `tests/plan_independence_test.rs`, 1 test; `tests/disjunction_test.rs`, 1 changed; `examples/perf_envelope.rs`, 1 test)
   - `:as-of` timestamps on `LogWriter` files whose `tx_id`s rise, and whose `tx_id`s fall and rise: before, between, at and after each transaction, with committed, pending and staged facts, plain and rule queries.
   - `Snapshot::tx_bound` keeps the versions the executor's `tx_id <= t` filter kept, and is a counter bound exactly when `tx_id` rises with `tx_count`.
   - The DICT's `tx_order`, `last_tx_at` (gaps, before the first and after the last transaction) and `tx_runs` against a scan.
@@ -352,6 +352,7 @@ These tests compare the database against an independent answer rather than a sin
   - Nested `or`/`or-join` in branches (one reading imports the branch cannot hash) under every subplan form; expressions and `not`s with no pattern first; `not` bodies with rule invocations; magic-set head constants and constants no cell equals.
   - Every planner error's code, and the error order.
   - The two answer changes of the spec (§4), and an unknown predicate in a `not` body, were checked against both the engine and the executor; their tests keep the engine's answer.
+  - The envelope harness's `-irregular` fixture keeps its source's records, with `tx_id`s that fall and rise (`cargo test` runs the example's tests).
 - **Query memory limit** (`tests/memory_limit_test.rs`, 7 tests; #549)
   - `OpenOptions::query_memory_limit` is off by default and set by its builder.
   - `QRY-012` through `execute`, a cursor's first pull, a prepared query and a rule query (from `execute`, and from `query` when the rules run at open). The database answers after a query fails.
@@ -465,7 +466,7 @@ None of these are counted in the summary. The wasm32 targets run in CI (`.github
 
 ## Ignored Tests
 
-The twelve ignored tests (thirteen with `test-hooks`) are intentionally excluded from a normal local run:
+The thirteen ignored tests (fourteen with `test-hooks`) are intentionally excluded from a normal local run:
 
 - Four rustdoc examples that reference internal types and cannot compile as standalone examples.
 - One high-contention concurrency stress test intended for scheduled runs.
@@ -473,9 +474,10 @@ The twelve ignored tests (thirteen with `test-hooks`) are intentionally excluded
 - One soak test at 10M facts (`soak`), run weekly by `.github/workflows/soak.yml` (#392). `soak_short` runs the same driver at 20K facts in the normal suite. The memory bound is measured in a child process (`soak_memory_child`, #542).
 - One size test at 1.15M facts (`size_per_fact_in_433_shape_1m`), run by the nightly smoke workflow.
 - One recursive-rule acceptance test (`reach_5m`, #548), run by the nightly smoke workflow: a layered graph whose `reach` rule derives 4,882,500 facts in 62 rounds must return them all with peak RSS under 256 bytes per derived fact, and the default `max_derived_facts` must stop the same rule with `INT-020`.
-- Two query-memory acceptance tests (`tests/memory_limit_acceptance_test.rs`, #549, #575), run one at a time by the nightly smoke workflow:
+- Three query-memory acceptance tests (`tests/memory_limit_acceptance_test.rs`, #549, #575, #551), run one at a time by the nightly smoke workflow:
   - 1M aggregate groups return 1M rows, and with `query_memory_limit` at 32 MiB stop with `QRY-012` naming `Aggregate`, after which the database answers;
-  - 13 patterns sharing no variable over the fuzz harness's 3 facts stream 3^13 rows with peak RSS under 64 MiB, and with a 64-byte limit stop with `QRY-012` naming `HashJoin`.
+  - 13 patterns sharing no variable over the fuzz harness's 3 facts stream 3^13 rows with peak RSS under 64 MiB, and with a 64-byte limit stop with `QRY-012` naming `HashJoin`;
+  - `count` over every one of 1M facts counts them under a 4 KiB `query_memory_limit` (`count_holds_no_rows`, the #473 constant-memory `count` item).
 - One large-transaction acceptance test (`tests/large_transaction_acceptance_test.rs`, #550; `test-hooks` only), run by the nightly smoke workflow (see [Large transactions](#large-transactions-550)).
 - One measurement test (`meter_peak_against_rss`, `src/query/engine/tests.rs`, #549): prints the meter's peak against the peak RSS for the same two shapes, opening the engine directly.
 

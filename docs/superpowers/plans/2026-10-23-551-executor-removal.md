@@ -8,7 +8,7 @@ called "the spec" below. PRs target `v3`, merge commits. None uses a closing key
 |---|---|---|
 | 1 | 1–13: the engine runs every query (spec §3, §4) | `feat/551-engine-everywhere` |
 | 2 | 14–21: delete the executor's query path and the oracle, `test-hooks`, size gate (spec §5) | `feat/551-delete-executor` |
-| 3 | measurement, acceptance, docs (spec §6, §7) | planned after PR 2 |
+| 3 | 22–26: measurement, acceptance, docs (spec §6, §7) | `feat/551-measure-docs` |
 
 Each PR leaves `v3` with no unused code outside `cfg(test)` and the oracle's `cfg`, and updates
 the test counts. PR 1 changes `CLAUDE.md`'s module notes and the test counts only; `CHANGELOG.md`
@@ -281,3 +281,90 @@ with `browser`, `wasm32-wasip1`) and leaves the suite passing with and without t
     `--features test-hooks`, the wasm targets and the coverage workflow's commands on the bench
     machine; the release binary's size and the deleted-test list (decision 13) in the PR
     description. `CHANGELOG.md`'s migration notes and the docs site stay for PR 3.
+
+## Decisions not fixed by the spec (PR 3)
+
+19. **Baseline build.** The A/B runs `1096e6a2` (`v3` before PR 1) against this branch. The
+    baseline gets this branch's `examples/perf_envelope.rs` (the new shapes of decision 20), as
+    earlier A/Bs added their shape to the base (`234cc3e`, `58c19dd`); nothing else changes on it.
+    The two builds run in parallel, each pinned to its own NUMA node (`numactl -N -m`), swapped
+    for the second round; 100K, 1M and 10M, with the default `--budget-secs` and `--cap-secs`.
+20. **`:as-of` timestamp shapes (spec §6).** The envelope fixture's `tx_id`s rise with
+    `tx_count`, so it is the monotonic fixture. Two shapes are added: `as_of_ts` (the `as_of`
+    point query with `:as-of "<ISO time of tx_half>"`) and `as_of_ts_scan`
+    (`[:find ?e ?a :as-of "<…>" :where [?e :age ?a]]`, rows checked). The non-monotonic fixture
+    is a copy of the 1M fixture rewritten with `LogWriter`: same records, each transaction's
+    `tx_id` taken from a fixed permutation of the source's `tx_id`s (so they fall and rise), built
+    by a new `perf_envelope` subcommand (`irregular <src> <dst>`) at 1M only. Both shapes run on
+    both fixtures; the report adds the irregular fixture as a fourth column at 1M. The ISO time is
+    the `tx_id` of transaction `tx_half` in the fixture being measured, read at measure time with
+    `fact_log().tx_range(tx_half..=tx_half)` (the fixture metadata holds only `tx_half`, so cached
+    fixtures need no rebuild), and it names a time inside each fixture's history.
+21. **Python round trip.** `minigraf-python`'s `v3` branch already has `bench/envelope.py`
+    (`db.query`, `next_batch(1000)`, `json.loads` per batch, one process per shape). The binding is
+    built with `maturin develop --release` against this branch through a Cargo `[patch]` on its
+    git dependency, without committing the patch; Python 3 on the bench machine. If the binding
+    does not build against `v3` today, the fix is a `minigraf-python` `v3` PR (pin bump), not this
+    PR. Measured on both builds: the 1M `attribute_scan` (166,666 rows) and `count_grouped`,
+    wall-time p50 and peak RSS, plus the full shape list at 1M on this branch only for the table.
+22. **Acceptance mapping (spec §7).** Each #473 item and its test:
+    - large-state design: `docs/superpowers/specs/2026-10-11-streaming-engine-design.md`
+      (QRY-012 cap, pin + quarantine, a large transaction commits as a checkpoint);
+    - `count` over 10M facts in constant memory: no test today. A new ignored test in
+      `memory_limit_acceptance_test.rs`, `count_holds_no_rows`, runs
+      `[:find (count ?v) :where [?e ?a ?v]]` over 1M facts with `query_memory_limit` at 64 KiB
+      and gets the count: the meter bounds what the query holds whatever the fact count (#549),
+      so 1M is enough for the bound, and the envelope's 10M `count` row records the RSS;
+    - grouped `count` with 1M groups, and the cap: `grouped_count_1m_groups`;
+    - 5M derived facts and `max_derived_facts`: `recursive_acceptance_test::reach_5m`;
+    - closing a cursor after the first batch, with operator counters:
+      `cursor::tests::first_batch_then_close` (in memory and on a file) and
+      `tests/cursor_test.rs::close_after_first_batch`;
+    - 1M-fact `transact` holding one chunk:
+      `large_transaction_acceptance_test::one_million_fact_transact_holds_one_chunk`;
+    - Python round trip: decision 21, recorded in `docs/BENCHMARKS.md`;
+    - `tests/cursor_test.rs` unchanged: since #432 it gained tests (#543) and one test moved
+      from the deprecated `max_results` to `max_derived_facts` (#553), which the alias still
+      accepts; the PR states both. Binding suites: each binding's `v3` CI after its pin moves to
+      this PR's merge (post-merge step 26).
+    The `:limit` item stays open for #306. The #473 checklist is ticked with a link per item
+    after merge, by hand.
+23. **CHANGELOG.** The eleven `Internal` entries "… run on the streaming engine" (#544 ×3,
+    #545 ×2, #546 ×2, #547 ×2, #548, #549 build side) become one `Added` entry, **"Every query runs on the streaming engine"** (#473, #551), that says what
+    a user sees (batches of 1,024, ids turned into values only for returned rows, bounded memory
+    per operator and `QRY-012`, cursors that stream, the executor and `PatternMatcher` gone) and
+    keeps each part's issue number and the figures that matter; the per-shape operator detail
+    moves to `docs/BENCHMARKS.md` and the docs site where it is not already there. #379 stays
+    its own entry. Three new `Breaking changes` entries for the answer changes: spec §4.1, §4.2
+    and PR 1 deviation 4 (unknown predicate in a `not`/`not-join` body is `QRY-007` at open).
+    v2.x has no migration-notes section; the `Breaking changes` list is it.
+24. **Docs site.** `content/architecture.md`: the module tree and the "Execute" step name the
+    engine as the only query path, `matcher.rs` goes, and the "Streaming engine" section's
+    "same rows as the executor" paragraph changes to the frozen answers, each under
+    `@since v3.0.0` with the v2.x text under `@until v3.0.0`. `content/datalog-reference.md`
+    gets the three answer changes where it documents `or`, `not` and predicates. A
+    `minigraf-docs` PR, merged after this one.
+25. **Not in PR 3:** the v2.x-vs-v3 audit of the playground and docs queries (follow-up
+    `v3-followup-notes` item 2) runs after this PR merges, since it needs the final v3 answers;
+    it may add `Breaking changes` entries in its own PR.
+
+## PR 3 steps
+
+22. **Plan.** This section.
+23. **Envelope shapes and the irregular fixture** (decision 20), with a test that the
+    `irregular` subcommand's copy has the source's facts and a falling `tx_id` (the example
+    builds under `cargo test --examples`). Then the measurements on the bench machine (decisions
+    19, 21): results into `docs/BENCHMARKS.md`, a "Executor removal (#551)" subsection in the
+    envelope section (A/B table, `:as-of` timestamp table, notes), the "What is supported" and
+    the 10M rows of the first tables updated where the engine changed them, and the Python table
+    re-measured with a peak-RSS column per shape. Any shape more than 5% slower on the branch
+    than the baseline at any scale is investigated and reported before the PR.
+24. **Acceptance test** `count_holds_no_rows` (decision 22), run with the others in
+    `memory_limit_acceptance_test.rs` on the bench machine; `smoke.yml` already runs the file.
+25. **Docs:** `CHANGELOG.md` (decision 23), `ROADMAP.md` (#551 done, #473 open for #306),
+    `README.md` (any executor wording), `CLAUDE.md` and `docs/TEST_COVERAGE.md` counts; the
+    docs-site PR (decision 24). Full suite plain and with `--features test-hooks` on the bench
+    machine; Codex review.
+26. **After merge** (by hand, not in the PR): #473 checklist ticked with links; #551 closed;
+    `minigraf-python` and the other bindings' `v3` pins moved to the merge, CI green (spec §7);
+    decision 25's audit.

@@ -1,7 +1,8 @@
 //! Acceptance tests for query memory accounting (#549 spec §6.2, and #575):
 //! a query whose state is large either completes or fails with `QRY-012`
-//! under `OpenOptions::query_memory_limit`, and a cartesian product streams
-//! instead of holding its rows.
+//! under `OpenOptions::query_memory_limit`, a cartesian product streams
+//! instead of holding its rows, and an ungrouped `count` holds no rows
+//! (#473 acceptance, #551).
 //!
 //! Ignored by default; `.github/workflows/smoke.yml` runs them nightly, one
 //! at a time because the peak RSS is per process:
@@ -28,6 +29,13 @@ const K: u32 = 13;
 /// Peak RSS the cartesian query may add. The executor held every row (more
 /// than 5.7 GB at k = 13, #575); the engine holds a 3-row build side per join.
 const CARTESIAN_MAX_RSS: usize = 64 << 20;
+
+/// What an ungrouped `count` over every fact may hold: one set of
+/// accumulators. A query holding even one row id per fact would need
+/// megabytes at 1M facts.
+const COUNT_LIMIT: usize = 4 << 10;
+/// Peak RSS the `count` may add: the reader's pages and one batch.
+const COUNT_MAX_RSS: usize = 32 << 20;
 
 /// `n` entities, each with its number as `:g`, checkpointed.
 fn groups_db(dir: &tempfile::TempDir, opts: OpenOptions) -> Minigraf {
@@ -147,4 +155,44 @@ fn cartesian_k13_streams() {
     let err = drain(&db, &query).err().expect("over the limit");
     assert_eq!(err.code(), "QRY-012", "stopped by the limit");
     assert!(err.to_string().contains("HashJoin"), "names HashJoin");
+}
+
+/// `count` over every fact runs in memory that does not grow with the
+/// facts: under a 4 KiB `query_memory_limit` it counts 1M facts, so the
+/// meter (#549) bounds what it holds at any size. The envelope's `count`
+/// shape records the RSS at 10M facts (`docs/BENCHMARKS.md`).
+#[test]
+#[ignore]
+fn count_holds_no_rows() {
+    let query = "(query [:find (count ?v) :where [?e ?a ?v]])";
+    let dir = tempfile::tempdir().unwrap();
+    drop(groups_db(&dir, OpenOptions::new()));
+    let db = OpenOptions::new()
+        .query_memory_limit(COUNT_LIMIT)
+        .path(dir.path().join("groups.graph"))
+        .open()
+        .unwrap();
+    let reset = std::fs::write("/proc/self/clear_refs", "5").is_ok();
+    let before_kb = proc_status_kb("VmRSS");
+    let start = std::time::Instant::now();
+    let result = db.execute(query).unwrap();
+    let peak_kb = proc_status_kb("VmHWM");
+    let added = peak_kb.saturating_sub(before_kb) * 1024;
+    eprintln!(
+        "count_holds_no_rows: {:.2?}; peak RSS {} MiB, {} KiB added by the query",
+        start.elapsed(),
+        peak_kb / 1024,
+        added / 1024
+    );
+    let minigraf::QueryResult::QueryResults { results, .. } = result else {
+        panic!("expected query results");
+    };
+    assert_eq!(results.len(), 1, "one row");
+    assert!(
+        matches!(results[0][0], minigraf::Value::Integer(n) if n == GROUPS as i64),
+        "counts every fact"
+    );
+    if reset && peak_kb > 0 {
+        assert!(added < COUNT_MAX_RSS, "the count holds no rows");
+    }
 }

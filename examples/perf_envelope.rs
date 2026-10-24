@@ -9,6 +9,12 @@
 //!     [--cap-secs 60] [--rebuild]
 //! ```
 //!
+//! A scale `<scale>-irregular` (such as `1m-irregular`) measures a copy of
+//! that scale's fixture whose transaction times fall and rise (#551): the
+//! same records rewritten with `LogWriter`, each pair of neighbouring
+//! transactions swapping `tx_id`s, so `:as-of` with a timestamp cannot use
+//! the transaction counter.
+//!
 //! The `envelope` profile is `release` at opt-level 3, which is how an
 //! application's release build compiles the library; `release` itself (and
 //! `bench`, which inherits it) is tuned for the REPL binary's size.
@@ -37,7 +43,7 @@
 )]
 
 #[cfg(not(target_arch = "wasm32"))]
-use minigraf::{Minigraf, OpenOptions};
+use minigraf::{FactFilter, LogWriter, Minigraf, OpenOptions};
 #[cfg(not(target_arch = "wasm32"))]
 use serde_json::{Value as Json, json};
 #[cfg(not(target_arch = "wasm32"))]
@@ -67,6 +73,11 @@ fn main() -> anyhow::Result<()> {
     match args.first().map(String::as_str) {
         Some("__build") => {
             let out = build(Path::new(&args[1]), args[2].parse()?)?;
+            println!("{out}");
+            Ok(())
+        }
+        Some("__irregular") => {
+            let out = build_irregular(Path::new(&args[1]), Path::new(&args[2]))?;
             println!("{out}");
             Ok(())
         }
@@ -121,16 +132,36 @@ fn run(args: &[String]) -> anyhow::Result<()> {
 
     let mut results = Vec::new();
     for label in &scales {
-        let n = parse_scale(label)?;
-        let fixture = dir.join(format!("fixture-v{FIXTURE_VERSION}-{label}.graph"));
-        let meta = fixture.with_extension("json");
-        if rebuild || !fixture.exists() || !meta.exists() {
-            let _ = std::fs::remove_file(&fixture);
-            let _ = std::fs::remove_file(fixture.with_extension("graph.wal"));
-            eprintln!("perf_envelope: building {label} fixture ({n} facts)");
-            let out = child(&exe, &["__build", path_str(&fixture), &n.to_string()])?;
+        let (base, irregular) = match label.strip_suffix("-irregular") {
+            Some(base) => (base, true),
+            None => (label.as_str(), false),
+        };
+        let n = parse_scale(base)?;
+        let base_fixture = dir.join(format!("fixture-v{FIXTURE_VERSION}-{base}.graph"));
+        let meta = base_fixture.with_extension("json");
+        if rebuild || !base_fixture.exists() || !meta.exists() {
+            let _ = std::fs::remove_file(&base_fixture);
+            let _ = std::fs::remove_file(base_fixture.with_extension("graph.wal"));
+            eprintln!("perf_envelope: building {base} fixture ({n} facts)");
+            let out = child(&exe, &["__build", path_str(&base_fixture), &n.to_string()])?;
             std::fs::write(&meta, out.to_string())?;
         }
+        let fixture = if irregular {
+            let fixture = dir.join(format!("fixture-v{FIXTURE_VERSION}-{label}.graph"));
+            let meta = fixture.with_extension("json");
+            if rebuild || !fixture.exists() || !meta.exists() {
+                let _ = std::fs::remove_file(&fixture);
+                eprintln!("perf_envelope: building {label} fixture");
+                let out = child(
+                    &exe,
+                    &["__irregular", path_str(&base_fixture), path_str(&fixture)],
+                )?;
+                std::fs::write(&meta, out.to_string())?;
+            }
+            fixture
+        } else {
+            base_fixture
+        };
         eprintln!("perf_envelope: measuring {label}");
         let copy = dir.join(format!("measure-{label}.graph"));
         let storage = child(&exe, &["__storage", path_str(&fixture), path_str(&copy)]);
@@ -139,7 +170,7 @@ fn run(args: &[String]) -> anyhow::Result<()> {
         let mut out = storage?;
         let meta = read_meta(&fixture)?;
         let mut queries = Vec::new();
-        for (i, shape) in fixture_shapes(&meta).iter().enumerate() {
+        for (i, shape) in fixture_shapes(&fixture)?.iter().enumerate() {
             let q = child(
                 &exe,
                 &[
@@ -431,6 +462,54 @@ fn build(path: &Path, n: usize) -> anyhow::Result<Json> {
     }))
 }
 
+/// Rewrites `src` into a new file at `dst` with `LogWriter`: the same records,
+/// but each pair of neighbouring transactions swaps `tx_id`s, so the times
+/// fall and rise. Returns `src`'s metadata with this file's size.
+#[cfg(not(target_arch = "wasm32"))]
+fn build_irregular(src: &Path, dst: &Path) -> anyhow::Result<Json> {
+    let start = Instant::now();
+    let db = OpenOptions::new().read_only(true).path(src).open()?;
+    // tx_count -> tx_id, in tx_count order.
+    let mut txs: Vec<(u64, u64)> = Vec::new();
+    let mut log = db.fact_log(&FactFilter::new())?;
+    while let Some(batch) = log.next_batch(10_000)? {
+        for r in batch {
+            if txs.last().is_none_or(|&(c, _)| c != r.tx_count) {
+                txs.push((r.tx_count, r.tx_id));
+            }
+        }
+    }
+    let mut swapped = std::collections::HashMap::with_capacity(txs.len());
+    for pair in txs.chunks(2) {
+        match pair {
+            [(a, ta), (b, tb)] => {
+                swapped.insert(*a, *tb);
+                swapped.insert(*b, *ta);
+            }
+            [(a, ta)] => {
+                swapped.insert(*a, *ta);
+            }
+            _ => unreachable!(),
+        }
+    }
+    let mut w = LogWriter::create(dst, OpenOptions::new())?;
+    let mut log = db.fact_log(&FactFilter::new())?;
+    while let Some(batch) = log.next_batch(10_000)? {
+        for mut r in batch {
+            r.tx_id = swapped[&r.tx_count];
+            w.append(&r)?;
+        }
+    }
+    w.advance_tx_count(db.current_tx_count())?;
+    w.finish()?;
+    let mut meta = read_meta(src)?;
+    meta["irregular"] = json!(true);
+    meta["build_ms"] = json!(start.elapsed().as_secs_f64() * 1000.0);
+    meta["peak_rss_kb"] = json!(proc_status_kb("VmHWM"));
+    meta["file_bytes"] = json!(std::fs::metadata(dst)?.len());
+    Ok(meta)
+}
+
 // ── Measure ───────────────────────────────────────────────────────────────────
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -442,7 +521,7 @@ struct Shape {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn shapes(e: usize, tx_half: u64, hot_tx_half: u64) -> Vec<Shape> {
+fn shapes(e: usize, tx_half: u64, tx_half_time: &str, hot_tx_half: u64) -> Vec<Shape> {
     let m = e / 2;
     let leaf = e - 1;
     // :manager depth from :p{i} to :p0.
@@ -555,6 +634,25 @@ fn shapes(e: usize, tx_half: u64, hot_tx_half: u64) -> Vec<Shape> {
             query: format!("[:find ?a :as-of {tx_half} :where [:p{} :age ?a]]", m / 4),
             rows: 1,
         },
+        // #551: `:as-of` with a time. On the fixture, transaction times rise
+        // with the counter, so the time becomes a counter bound; on an
+        // `-irregular` fixture they do not, and the read keeps the versions
+        // of the transactions at or before the time.
+        Shape {
+            name: "as_of_ts",
+            query: format!(
+                "[:find ?a :as-of \"{tx_half_time}\" :where [:p{} :age ?a]]",
+                m / 4
+            ),
+            rows: 1,
+        },
+        Shape {
+            name: "as_of_ts_scan",
+            query: format!("[:find ?e ?a :as-of \"{tx_half_time}\" :where [?e :age ?a]]"),
+            // Not checked: transactions sharing the millisecond of `tx_half`
+            // are included, and an -irregular fixture moves `tx_half`'s time.
+            rows: usize::MAX,
+        },
         Shape {
             name: "valid_at",
             query: format!(
@@ -602,12 +700,30 @@ fn read_meta(fixture: &Path) -> anyhow::Result<Json> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn fixture_shapes(meta: &Json) -> Vec<Shape> {
-    shapes(
+fn fixture_shapes(fixture: &Path) -> anyhow::Result<Vec<Shape>> {
+    let meta = read_meta(fixture)?;
+    let tx_half = meta["tx_half"].as_u64().unwrap();
+    Ok(shapes(
         meta["entities"].as_u64().unwrap() as usize,
-        meta["tx_half"].as_u64().unwrap(),
+        tx_half,
+        &tx_time(fixture, tx_half)?,
         meta["hot_tx_half"].as_u64().unwrap(),
-    )
+    ))
+}
+
+/// The time of transaction `tx_count` in `fixture`, as an ISO 8601 UTC string
+/// with milliseconds.
+#[cfg(not(target_arch = "wasm32"))]
+fn tx_time(fixture: &Path, tx_count: u64) -> anyhow::Result<String> {
+    let db = OpenOptions::new().read_only(true).path(fixture).open()?;
+    let mut log = db.fact_log(&FactFilter::new().tx_range(tx_count..=tx_count))?;
+    let rec = log
+        .next_batch(1)?
+        .and_then(|b| b.into_iter().next())
+        .ok_or_else(|| anyhow::anyhow!("no transaction {tx_count}"))?;
+    let t = chrono::DateTime::from_timestamp_millis(i64::try_from(rec.tx_id)?)
+        .ok_or_else(|| anyhow::anyhow!("tx_id {} out of range", rec.tx_id))?;
+    Ok(t.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())
 }
 
 /// Open time and RSS after open, then checkpoint times, on a copy of the fixture.
@@ -664,7 +780,7 @@ fn measure_query(
     budget_secs: u64,
     cap_secs: u64,
 ) -> anyhow::Result<Json> {
-    let shape = fixture_shapes(&read_meta(fixture)?).swap_remove(index);
+    let shape = fixture_shapes(fixture)?.swap_remove(index);
     // `recursive` derives about as many facts as the fixture holds.
     let db = OpenOptions::new()
         .read_only(true)
@@ -786,3 +902,86 @@ fn proc_status_kb(field: &str) -> u64 {
 
 #[cfg(target_arch = "wasm32")]
 fn main() {}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+
+    fn records(path: &Path) -> Vec<minigraf::FactRecord> {
+        let db = OpenOptions::new()
+            .read_only(true)
+            .path(path)
+            .open()
+            .unwrap();
+        let mut log = db.fact_log(&FactFilter::new()).unwrap();
+        let mut out = Vec::new();
+        while let Some(batch) = log.next_batch(1_000).unwrap() {
+            out.extend(batch);
+        }
+        out
+    }
+
+    /// The `-irregular` copy holds the source's records with only their
+    /// `tx_id`s swapped pairwise, so its transaction times fall, and both
+    /// `:as-of` time shapes run on it.
+    #[test]
+    fn irregular_copy_keeps_records_and_falls() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("fixture.graph");
+        let dst = dir.path().join("fixture-irregular.graph");
+        let meta = build(&src, 2 * FACTS_PER_ENTITY * BATCH_ENTITIES).unwrap();
+        std::fs::write(src.with_extension("json"), meta.to_string()).unwrap();
+        let out = build_irregular(&src, &dst).unwrap();
+        std::fs::write(dst.with_extension("json"), out.to_string()).unwrap();
+
+        let (a, b) = (records(&src), records(&dst));
+        assert_eq!(a.len(), b.len(), "same number of records");
+        let strip = |r: &minigraf::FactRecord| {
+            let mut r = r.clone();
+            r.tx_id = 0;
+            r
+        };
+        assert!(
+            a.iter().zip(&b).all(|(x, y)| strip(x) == strip(y)),
+            "same records apart from tx_id"
+        );
+        // One (tx_count, tx_id) per transaction, in tx_count order.
+        let txs = |rs: &[minigraf::FactRecord]| {
+            let mut t: Vec<(u64, u64)> = rs.iter().map(|r| (r.tx_count, r.tx_id)).collect();
+            t.dedup();
+            t
+        };
+        let (src_txs, dst_txs) = (txs(&a), txs(&b));
+        assert!(
+            dst_txs.windows(2).any(|w| w[1].1 < w[0].1),
+            "a transaction time falls"
+        );
+        let times = |t: &[(u64, u64)]| {
+            let mut v: Vec<u64> = t.iter().map(|&(_, id)| id).collect();
+            v.sort_unstable();
+            v
+        };
+        assert_eq!(
+            times(&src_txs),
+            times(&dst_txs),
+            "the same times, reassigned"
+        );
+
+        for fixture in [&src, &dst] {
+            let shapes = fixture_shapes(fixture).unwrap();
+            let db = OpenOptions::new()
+                .read_only(true)
+                .path(fixture)
+                .open()
+                .unwrap();
+            for name in ["as_of_ts", "as_of_ts_scan"] {
+                let shape = shapes.iter().find(|s| s.name == name).unwrap();
+                let rows = drain(&db, &format!("(query {})", shape.query)).unwrap();
+                assert!(rows >= 1, "{name} returns rows");
+                if shape.rows != usize::MAX {
+                    assert_eq!(rows, shape.rows, "{name} rows");
+                }
+            }
+        }
+    }
+}

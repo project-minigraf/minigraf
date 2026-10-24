@@ -10,19 +10,24 @@ This section lists the graph sizes and query shapes that are tested, with their 
 
 ### What is supported
 
+Every query runs on the streaming engine since #551. The figures in this table are from the #551 A/B on an idle server (below); the storage and latency tables after it are the laptop run of 2026-10-11, before the engine.
+
 | Workload | Tested up to | p50 / p99 at 10M facts | Notes |
 |---|---:|---:|---|
-| Point lookup: bound entity and attribute, including `:as-of` and `:valid-at` | 10M facts | 12–14 µs / 20–48 µs | Flat from 100K to 10M |
-| Entity with a long history (1,000 versions), current and `:as-of` | 10M facts | 0.26 ms / 0.30 ms | Grows with that entity's history, not the graph |
-| Open a checkpointed file | 10M facts | 0.12 ms, 3 MiB RSS | Indexes are paged in on demand |
-| Checkpoint after 1 new fact | 10M facts | 3.8 ms / 21 ms | Copy-on-write: cost follows the change |
-| Attribute scan, attribute + value, grouped aggregation, joins | 1M facts | see below | Linear in the facts of the attributes they touch: about 0.1–0.5 s at 1M facts, seconds at 10M |
-| Rule queries (recursion) | 10M facts | see below | On the streaming engine (#548): a rule with a constant (magic sets) takes 1.5–3 ms; a whole transitive closure grows with the facts it derives, about 3–5 µs and 250 bytes of RSS per derived fact |
+| Point lookup: bound entity and attribute, including `:as-of` a counter and `:valid-at` | 10M facts | 18–20 µs / 22–27 µs | Flat from 100K to 10M |
+| Point lookup `:as-of` a time | 10M facts | 0.92 ms / 0.93–0.96 ms | Resolving the time reads the DICT's transactions: 0.7 ms at 100K |
+| Entity with a long history (1,000 versions), current and `:as-of` | 10M facts | 0.29–0.30 ms / 0.32–0.37 ms | Grows with that entity's history, not the graph |
+| Attribute + value, joins that probe by entity or value | 10M facts | 17 µs–0.2 ms | `attribute_value`, `join_2`, `join_3_selective` |
+| Open a checkpointed file | 10M facts | 0.13–0.23 ms, 3 MiB RSS | Indexes are paged in on demand |
+| Checkpoint after 1 new fact | 10M facts | 1.1–1.5 ms / 2.2–2.9 ms | Copy-on-write: cost follows the change |
+| Attribute scan, aggregates, `not`, `or`, joins that scan | 10M facts | see below | Linear in the facts they read, in bounded memory: 0.3–0.9 s for `not`/`or`/`count_grouped`, 2.5 s for a 1.67M-row scan in 7 MiB, 13 s for `join_3_scan` in 62 MiB |
+| Rule queries (recursion) | 10M facts | see below | A rule with a constant (magic sets) takes 1.9 ms; a whole transitive closure grows with the facts it derives, about 5 µs and 250 bytes of RSS per derived fact |
+| Window functions | 10M facts | 5.9–6.0 s | A window holds its whole input: 0.9 GiB for 1.67M rows |
 
 **Not supported yet:**
 
 - Graphs over 10M facts are not tested.
-- Interactive latency for scans and joins at 10M facts. They take 3–21 s and materialize every fact of the attributes they touch, 0.7–3.6 GiB of RSS.
+- Interactive latency for queries that read a whole attribute at 10M facts: 0.3–14 s. Their memory is bounded per operator, except windows and rule relations, which hold their rows; `OpenOptions::query_memory_limit` stops a query that passes it with `QRY-012` (#549).
 
 ### Storage
 
@@ -54,7 +59,7 @@ This section lists the graph sizes and query shapes that are tested, with their 
 | `join_3_scan` | `[?e :follows ?f] [?f :group 7] [?f :name ?n]` | 150 ms / 155 ms | 1.92 s / 1.96 s | 20.9 s / 21.2 s |
 | `recursive_ancestors` | `(boss :p{leaf} ?b)` over `:manager` (5–7 rows) | 2.71 s / 2.72 s | 40.1 s / 40.8 s | > 60 s (abandoned) |
 
-`recursive_ancestors` at 1M was measured after the #528 fix, on the same machine and fixture. Below 100 runs, p99 is the slowest run. Shapes slower than about 75 ms ran fewer than 200 times; the full JSON report has run counts.
+These are the executor's figures, before the streaming engine; the engine's are in the sections below, and every shape on today's code in [Executor removal (#551)](#executor-removal-551). `recursive_ancestors` at 1M was measured after the #528 fix, on the same machine and fixture. Below 100 runs, p99 is the slowest run. Shapes slower than about 75 ms ran fewer than 200 times; the full JSON report has run counts.
 
 Peak RSS per shape, each in its own process (baseline 4 MiB):
 
@@ -77,7 +82,7 @@ The harness builds with `--profile envelope`: `release` at opt-level 3, which is
 
 ### Where the time goes (1M facts)
 
-`perf` with frame pointers on `attribute_scan` and `join_3_selective`:
+On the executor, before #544 (the executor's query path is gone since #551). `perf` with frame pointers on `attribute_scan` and `join_3_selective`:
 
 - **Up-front materialization (50–60%).** Before matching, the executor turns every live fact of each pattern's attribute into a `Fact` (`selective_fact_fetch` → `live_scan`). A pattern without a bound entity is read in full, so a selective join costs as much as scanning its widest attribute. The streaming engine (#473: `Scan` and `IndexNestedLoopJoin` operators) replaces this.
 - **DICT lookup per row (26–35%).** `uuid_of` does a B+tree `get` for every row's entity id (#530).
@@ -184,19 +189,84 @@ The meter's estimate is within the spec's factor of two of the RSS a query adds 
 
 Measuring this found that `Aggregate` built its sorted map of groups uncharged while its hash table was still alive: the meter read 282 MiB against 651 MiB of RSS. The map is now charged, and the table goes first, which also cut the real peak to the figure above.
 
+### Executor removal (#551)
+
+Since #551 every query runs on the engine and the executor's query path is gone. Before it, the queries the engine could not plan ran on the executor, which reads every fact of the patterns' attributes into memory; the envelope's case is `:as-of` with a time. `as_of_ts` is the `as_of` point query with `:as-of "<time of transaction tx_half>"`; `as_of_ts_scan` is `[:find ?e ?a :as-of "<…>" :where [?e :age ?a]]` (8,400, 83,400 and 833,400 rows; 83,600 on the irregular copy). The fixture's `tx_id`s rise with `tx_count`, so the time becomes a counter bound. `1m-irregular` is a copy of the 1M fixture written with `LogWriter`, with each transaction's `tx_id` taken from a fixed permutation of the source's, so they fall and rise; there the engine filters on `tx_count` ranges instead.
+
+A/B on the same idle server (2026-10-24), `v3` before #551 PR 1 (`1096e6a2`, with this PR's envelope shapes and fixture) and #551 PR 3, run in parallel on two sockets, swapped for the second round; `--scales 100k,1m,1m-irregular,10m`; p50, mean of the rounds (they agree within 9%, most within 2%), and peak RSS.
+
+| Shape | 100K | 1M | 1M irregular | 10M |
+|---|---:|---:|---:|---:|
+| `as_of_ts` p50, `v3` → PR 3 | 111 ms → 693 µs | 1.65 s → 809 µs | 1.67 s → 656 µs | 17.2 s → 920 µs |
+| `as_of_ts` peak RSS | 57 → 4 MiB | 435 → 4 MiB | 436 → 4 MiB | 3,623 → 5 MiB |
+| `as_of_ts_scan` p50 | 110 → 13.4 ms | 1.72 s → 136 ms | 1.71 s → 136 ms | 17.8 → 1.40 s |
+| `as_of_ts_scan` peak RSS | 57 → 5 MiB | 435 → 6 MiB | 435 → 6 MiB | 3,623 → 7 MiB |
+| `recursive_ancestors` p50 (#721) | 100 ms → 1.14 ms | 1.81 s → 1.46 ms | 1.81 s → 1.39 ms | 35.7 s → 1.93 ms |
+| `recursive_ancestors` peak RSS | 11 → 5 MiB | 69 → 5 MiB | 67 → 5 MiB | 628 → 5 MiB |
+| `join_3_selective` p50 (#721) | 10.4 ms → 210 µs | 145 ms → 204 µs | 145 ms → 223 µs | 2.43 s → 195 µs |
+| `join_3_selective` peak RSS | 7 → 5 MiB | 14 → 5 MiB | 14 → 4 MiB | 66 → 5 MiB |
+| point lookups (`point_entity`, `attribute_value`, `as_of`, `valid_at`) | 17–19 → 18–21 µs | 16–19 → 17–20 µs | 17–19 → 18–20 µs | 16–19 → 17–20 µs |
+| `join_2` | 37.5 → 38.6 µs | 35.7 → 37.3 µs | 36.0 → 36.9 µs | 35.7 → 37.2 µs |
+| every other shape | within 2%, `not_probe` +4% | within 2% | within 3% | within 2% |
+
+Every shape on PR 3, from the same run (before #726, see the notes; p50 of the two rounds, peak RSS):
+
+| Shape | 100K | 1M | 10M | Peak RSS at 10M |
+|---|---:|---:|---:|---:|
+| `point_entity`, `as_of`, `valid_at` | 18–21 µs | 18–20 µs | 18–20 µs | 4–5 MiB |
+| `attribute_value` | 18 µs | 17 µs | 17 µs | 5 MiB |
+| `hot_current`, `hot_as_of` | 0.29–0.30 ms | 0.29–0.30 ms | 0.29–0.30 ms | 5 MiB |
+| `join_2`, `join_2_pseudo` | 39–44 µs | 37–43 µs | 37–43 µs | 5 MiB |
+| `join_3_selective` | 210 µs | 204 µs | 195 µs | 5 MiB |
+| `recursive_ancestors` | 1.14 ms | 1.46 ms | 1.93 ms | 5 MiB |
+| `as_of_ts` | 693 µs | 809 µs | 920 µs | 5 MiB |
+| `not_probe` | 2.97 ms | 27.0 ms | 291 ms | 7 MiB |
+| `count_grouped` | 5.92 ms | 60.8 ms | 610 ms | 7 MiB |
+| `not_join_hash` | 5.88 ms | 52.9 ms | 569 ms | 9 MiB |
+| `or_2` | 8.61 ms | 80.3 ms | 864 ms | 13 MiB |
+| `as_of_ts_scan` | 13.4 ms | 136 ms | 1.40 s | 7 MiB |
+| `attribute_scan` | 23.1 ms | 248 ms | 2.55 s | 7 MiB |
+| `count` | 44.6 ms | 442 ms | 4.52 s | 7 MiB |
+| `window` | 35.1 ms | 448 ms | 5.95 s | 893 MiB |
+| `join_3_scan` | 41.4 ms | 1.13 s | 13.2 s | 61 MiB |
+| `recursive` | 223 ms | 3.44 s | 57.4 s | 2,610 MiB |
+
+Notes:
+
+- **`:as-of` with a time** is the change #551 makes: the executor read every fact of the pattern's attribute, 3.6 GiB at 10M facts; the engine resolves the time once when the query opens and reads only what the pattern reads. Resolving it reads the DICT's transaction records, which is the 0.7–0.9 ms of `as_of_ts` against 18 µs for `as_of` with a counter. On the irregular copy, where the time selects `tx_count` ranges instead of a bound, both shapes take the same time as on the 1M fixture.
+- **`recursive_ancestors` and `join_3_selective`** changed through #721, merged on `v3` after the baseline: a join on a value probes the AVET ranges of that value instead of hashing the whole attribute. `recursive_ancestors` had been 50–10,000× slower since #700 (#721); it is back to the #548 figures above.
+- **Point lookups** and `join_2` are 2–7% slower than the baseline in this run (about 1 µs). The cause is #721 too: its per-query value-probe state made every query's `Stream` 1,056 bytes, past the 1,032 bytes glibc serves from its per-thread cache, so each query took the slower allocator path twice. #726 boxes that state and builds it only for queries that probe values (888 bytes); a loop of one point query per call at 100K takes 14.8–15.1 µs before #721, 15.7–16.6 µs after it and 15.3–15.8 µs after #726. The remaining 3% is #721's scan code; `stream_fits_the_allocator_thread_cache` keeps the size under the limit on 64-bit glibc.
+- No other shape is more than 3% slower at any scale, except `not_probe` at 100K (2.84 → 2.97 ms, +4%; within 1% at 1M and 10M).
+
 ### Python FFI round trip
 
-**Command**: `python bench/envelope.py <fixture> --report envelope.json --scale <scale>` in [minigraf-python](https://github.com/project-minigraf/minigraf-python) (`v3`), on the same fixtures and report. The binding is built with `maturin develop --release` against this commit. It runs the same queries through `db.query(...)`, drains them with `next_batch(1000)`, and decodes each JSON batch with `json.loads`. Python 3.14.7.
+**Command**: `python bench/envelope.py <fixture> --report envelope.json --scale 1m` in [minigraf-python](https://github.com/project-minigraf/minigraf-python) (`v3`), on the 1M fixture and the PR 3 report of the #551 A/B, on the same server, pinned to one NUMA node, one process per shape. The binding is built with `maturin develop --release` against #551 PR 3. It runs the same queries through `db.query(...)`, drains them with `next_batch(1000)`, and decodes each JSON batch with `json.loads`. Python 3.12.3.
 
-| Shape | Rust p50 (100K / 1M / 10M) | Python p50 (100K / 1M / 10M) | Python peak RSS at 10M |
-|---|---:|---:|---:|
-| `point_entity` | 13 µs / 12 µs / 12 µs | 77 µs / 84 µs / 88 µs | 21 MiB |
-| `hot_current` | 263 µs / 256 µs / 268 µs | 330 µs / 326 µs / 328 µs | 21 MiB |
-| `attribute_scan` | 43.4 ms / 462 ms / 4.83 s | 49.4 ms / 537 ms / 5.73 s | 1,601 MiB |
-| `count_grouped` | 46.3 ms / 521 ms / 5.66 s | 46.0 ms / 506 ms / 5.45 s | 1,736 MiB |
-| `join_3_scan` | 150 ms / 1.92 s / 20.9 s | 150 ms / 1.92 s / 21.3 s | 3,372 MiB |
+| Shape (1M facts) | Rows | Rust p50 | Python p50 / p99 | Rust peak RSS | Python peak RSS |
+|---|---:|---:|---:|---:|---:|
+| `point_entity` | 1 | 18 µs | 114 µs / 125 µs | 4 MiB | 17 MiB |
+| `attribute_value` | 1 | 17 µs | 115 µs / 131 µs | 4 MiB | 17 MiB |
+| `as_of` | 1 | 19 µs | 115 µs / 135 µs | 4 MiB | 17 MiB |
+| `valid_at` | 1 | 20 µs | 129 µs / 157 µs | 4 MiB | 17 MiB |
+| `join_2` | 1 | 38 µs | 145 µs / 157 µs | 4 MiB | 17 MiB |
+| `join_2_pseudo` | 1 | 43 µs | 174 µs / 203 µs | 4 MiB | 17 MiB |
+| `join_3_selective` | 10 | 203 µs | 327 µs / 348 µs | 5 MiB | 17 MiB |
+| `hot_current` | 1 | 298 µs | 395 µs / 426 µs | 5 MiB | 17 MiB |
+| `hot_as_of` | 1 | 289 µs | 399 µs / 432 µs | 5 MiB | 17 MiB |
+| `as_of_ts` | 1 | 848 µs | 771 µs / 793 µs | 4 MiB | 17 MiB |
+| `recursive_ancestors` | 6 | 1.43 ms | 1.54 ms / 1.96 ms | 5 MiB | 17 MiB |
+| `not_probe` | 1,481 | 27.1 ms | 27.4 ms / 29.5 ms | 6 MiB | 19 MiB |
+| `not_join_hash` | 740 | 53.1 ms | 54.7 ms / 61.7 ms | 7 MiB | 19 MiB |
+| `count_grouped` | 100 | 61.0 ms | 65.4 ms / 73.1 ms | 6 MiB | 18 MiB |
+| `or_2` | 1,112 | 81.5 ms | 84.0 ms / 94.7 ms | 7 MiB | 19 MiB |
+| `as_of_ts_scan` | 83,400 | 136 ms | 192 ms / 205 ms | 6 MiB | 19 MiB |
+| `attribute_scan` | 166,666 | 249 ms | 356 ms / 412 ms | 7 MiB | 19 MiB |
+| `count` | 1 | 444 ms | 490 ms / 504 ms | 6 MiB | 18 MiB |
+| `window` | 166,666 | 452 ms | 599 ms / 611 ms | 103 MiB | 81 MiB |
+| `join_3_scan` | 1,667 | 1.13 s | 1.17 s / 1.18 s | 41 MiB | 49 MiB |
+| `recursive` | 888,885 | 3.45 s | 4.29 s / 4.32 s | 345 MiB | 272 MiB |
 
-The binding adds about 70 µs per query, plus about 0.5 µs per returned row for the JSON batches (0.9 s for 1.67M rows). The interpreter adds about 16 MiB of RSS. Peak RSS is otherwise the cursor's: the answer is computed when the cursor opens. #473 re-measures this table as an acceptance test for the streaming engine.
+The binding adds about 100 µs per query, plus about 0.6–1 µs per returned row for the JSON batches (0.1 s for `attribute_scan`'s 166,666 rows, 0.8 s for `recursive`'s 888,885). The interpreter adds about 13 MiB of RSS; past that, peak RSS is the query's own, and the cursor holds one batch: `attribute_scan` returns its 166,666 rows in 19 MiB, where the executor's cursor held the whole answer (169 MiB at 1M in the first tables). `window` and `recursive` hold their rows in both; the binding is its own build of the library (its release profile), which holds less for them here than the envelope's build. Built against `1096e6a2`, the same binding gave `attribute_scan` 355 ms / 19 MiB and `count_grouped` 64.9 ms / 18 MiB, against 358 ms / 19 MiB and 65.2 ms / 18 MiB on PR 3 (#473 acceptance: no change at the FFI).
 
 ## Current Local Snapshot
 
