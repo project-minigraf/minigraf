@@ -4,11 +4,13 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,703 | 1,719 |
-| **Ignored** | 13 | 14 |
-| **Total** | 1,716 | 1,733 |
+| **Passing** | 1,716 | 1,737 |
+| **Ignored** | 14 | 15 |
+| **Total** | 1,730 | 1,752 |
 
-**Verified**: 2026-10-24 with `cargo test --quiet`.
+**Verified**: 2026-10-24 with `cargo test --quiet` (and `--features test-hooks`).
+
+#306 PR 1 (`:limit`) added 13 tests, 5 more under `test-hooks`, and one ignored acceptance test.
 
 #551 PR 2 deleted the executor's query path, with the 73 unit tests of its internals and the oracle. Two engine tests replace shapes no other test covered, and a storage unit test covers the reads only the executor made.
 
@@ -483,7 +485,7 @@ The thirteen ignored tests (fourteen with `test-hooks`) are intentionally exclud
   - 1M aggregate groups return 1M rows, and with `query_memory_limit` at 32 MiB stop with `QRY-012` naming `Aggregate`, after which the database answers;
   - 13 patterns sharing no variable over the fuzz harness's 3 facts stream 3^13 rows with peak RSS under 64 MiB, and with a 64-byte limit stop with `QRY-012` naming `HashJoin`;
   - `count` over every one of 1M facts counts them under a 4 KiB `query_memory_limit` (`count_holds_no_rows`, the #473 constant-memory `count` item).
-- One `:limit` acceptance test (`tests/limit_acceptance_test.rs`, #306, the #473 `:limit` item), run by the nightly smoke workflow: `:limit 10` over 10M checkpointed facts returns 10 rows in under 250 ms under a 64 KiB `query_memory_limit`, adding under 32 MiB of peak RSS.
+- One `:limit` acceptance test (`tests/limit_acceptance_test.rs`, #306, the #473 `:limit` item), run by the nightly smoke workflow: `:limit 10` over 10M checkpointed facts returns 10 rows in under 250 ms under a 64 KiB `query_memory_limit`, adding under 32 MiB of peak RSS; the fixture is written with `LogWriter`.
 - One large-transaction acceptance test (`tests/large_transaction_acceptance_test.rs`, #550; `test-hooks` only), run by the nightly smoke workflow (see [Large transactions](#large-transactions-550)).
 - One measurement test (`meter_peak_against_rss`, `src/query/engine/tests.rs`, #549): prints the meter's peak against the peak RSS for the same two shapes, opening the engine directly.
 
