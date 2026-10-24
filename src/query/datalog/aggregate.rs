@@ -402,7 +402,7 @@ impl Udf {
     fn of(registry: &FunctionRegistry, name: &str) -> Option<Udf> {
         match &registry.get(name)?.impl_ {
             AggImpl::Udf(ops) => Some(Udf {
-                acc: (ops.init)(),
+                acc: (ops.init)().ok()?,
                 step: ops.step.clone(),
                 finalise: ops.finalise.clone(),
                 n: 0,
@@ -412,12 +412,12 @@ impl Udf {
     }
 
     fn add(&mut self, v: &Value) {
-        (self.step)(&mut self.acc, v);
+        let _ = (self.step)(&mut self.acc, v);
         self.n += 1;
     }
 
     fn value(&self) -> Value {
-        (self.finalise)(&self.acc, self.n)
+        (self.finalise)(&self.acc, self.n).unwrap_or(Value::Null)
     }
 }
 

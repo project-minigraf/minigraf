@@ -321,15 +321,16 @@ fn registry_with_udf() -> FunctionRegistry {
         "total".to_string(),
         AggregateDesc {
             impl_: AggImpl::Udf(UdfOps {
-                init: Arc::new(|| Box::new(0i64) as Box<dyn Any + Send>),
+                init: Arc::new(|| Ok(Box::new(0i64) as Box<dyn Any + Send>)),
                 step: Arc::new(|acc, v| {
                     if let (Some(n), Value::Integer(x)) = (acc.downcast_mut::<i64>(), v) {
                         *n += x;
                     }
+                    Ok(())
                 }),
                 finalise: Arc::new(|acc, n| {
                     let total = acc.downcast_ref::<i64>().copied().unwrap_or(0);
-                    Value::Integer(total * 100 + i64::try_from(n).unwrap_or(0))
+                    Ok(Value::Integer(total * 100 + i64::try_from(n).unwrap_or(0)))
                 }),
             }),
         },

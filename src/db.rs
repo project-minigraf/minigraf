@@ -24,7 +24,8 @@ use crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS;
 use crate::query::datalog::executor::DatalogExecutor;
 use crate::query::datalog::executor::QueryResult;
 use crate::query::datalog::functions::{
-    AggImpl, AggregateDesc, FunctionRegistry, PredicateDesc, UdfFinaliseFn, UdfOps, UdfStepFn,
+    AggImpl, AggregateDesc, FunctionRegistry, PredicateDesc, UdfError, UdfFinaliseFn, UdfInitFn,
+    UdfOps, UdfStepFn,
 };
 use crate::query::datalog::parser::parse_datalog_command;
 use crate::query::datalog::parser::statement::{self, Kind};
@@ -1473,6 +1474,56 @@ impl Minigraf {
     where
         Acc: Any + Send + 'static,
     {
+        self.register_aggregate_inner(
+            name,
+            move || Ok(init()),
+            move |acc, v| {
+                step(acc, v);
+                Ok(())
+            },
+            move |acc, n| Ok(finalise(acc, n)),
+        )
+        .map_err(MinigrafError::from)
+    }
+
+    /// Register a custom aggregate function whose calls may fail.
+    ///
+    /// As [`register_aggregate`](Self::register_aggregate), except that
+    /// `init`, `step` and `finalise` return a `Result`. A call that returns
+    /// `Err(UdfError)` fails the query with `QRY-014`, naming the function
+    /// and the error's message, and no later call of any user function is
+    /// made for that query.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `name` is already registered (built-in or UDF)
+    /// or the function registry lock is poisoned.
+    ///
+    /// # Example
+    /// ```
+    /// # use minigraf::db::Minigraf;
+    /// # use minigraf::{UdfError, Value};
+    /// let db = Minigraf::in_memory().unwrap();
+    /// db.try_register_aggregate(
+    ///     "intsum",
+    ///     || Ok(0i64),
+    ///     |acc: &mut i64, v: &Value| match v {
+    ///         Value::Integer(i) => { *acc += i; Ok(()) }
+    ///         _ => Err(UdfError::new("not an integer")),
+    ///     },
+    ///     |acc: &i64, _n: usize| Ok(Value::Integer(*acc)),
+    /// ).unwrap();
+    /// ```
+    pub fn try_register_aggregate<Acc>(
+        &self,
+        name: &str,
+        init: impl Fn() -> std::result::Result<Acc, UdfError> + Send + Sync + 'static,
+        step: impl Fn(&mut Acc, &Value) -> std::result::Result<(), UdfError> + Send + Sync + 'static,
+        finalise: impl Fn(&Acc, usize) -> std::result::Result<Value, UdfError> + Send + Sync + 'static,
+    ) -> Result<(), MinigrafError>
+    where
+        Acc: Any + Send + 'static,
+    {
         self.register_aggregate_inner(name, init, step, finalise)
             .map_err(MinigrafError::from)
     }
@@ -1480,26 +1531,26 @@ impl Minigraf {
     fn register_aggregate_inner<Acc>(
         &self,
         name: &str,
-        init: impl Fn() -> Acc + Send + Sync + 'static,
-        step: impl Fn(&mut Acc, &Value) + Send + Sync + 'static,
-        finalise: impl Fn(&Acc, usize) -> Value + Send + Sync + 'static,
+        init: impl Fn() -> std::result::Result<Acc, UdfError> + Send + Sync + 'static,
+        step: impl Fn(&mut Acc, &Value) -> std::result::Result<(), UdfError> + Send + Sync + 'static,
+        finalise: impl Fn(&Acc, usize) -> std::result::Result<Value, UdfError> + Send + Sync + 'static,
     ) -> Result<()>
     where
         Acc: Any + Send + 'static,
     {
-        let init_boxed: Arc<dyn Fn() -> Box<dyn Any + Send> + Send + Sync> =
-            Arc::new(move || Box::new(init()) as Box<dyn Any + Send>);
+        let init_boxed: UdfInitFn = Arc::new(move || Ok(Box::new(init()?) as Box<dyn Any + Send>));
         let step_boxed: UdfStepFn = Arc::new(move |acc, v| {
             // `init_boxed` always creates `Box<Acc>`, so downcast is infallible.
-            if let Some(typed_acc) = acc.downcast_mut::<Acc>() {
-                step(typed_acc, v);
+            match acc.downcast_mut::<Acc>() {
+                Some(typed_acc) => step(typed_acc, v),
+                None => Ok(()),
             }
         });
-        let finalise_boxed: UdfFinaliseFn = Arc::new(move |acc, n| {
-            acc.downcast_ref::<Acc>()
-                .map(|typed_acc| finalise(typed_acc, n))
-                .unwrap_or(Value::Null)
-        });
+        let finalise_boxed: UdfFinaliseFn =
+            Arc::new(move |acc, n| match acc.downcast_ref::<Acc>() {
+                Some(typed_acc) => finalise(typed_acc, n),
+                None => Ok(Value::Null),
+            });
 
         let desc = AggregateDesc {
             impl_: AggImpl::Udf(UdfOps {
@@ -1539,6 +1590,39 @@ impl Minigraf {
         name: &str,
         f: impl Fn(&Value) -> bool + Send + Sync + 'static,
     ) -> Result<(), MinigrafError> {
+        self.register_predicate_inner(name, move |v| Ok(f(v)))
+            .map_err(MinigrafError::from)
+    }
+
+    /// Register a custom single-argument filter predicate whose calls may
+    /// fail.
+    ///
+    /// As [`register_predicate`](Self::register_predicate), except that `f`
+    /// returns a `Result`. A call that returns `Err(UdfError)` fails the
+    /// query with `QRY-014`, naming the predicate and the error's message,
+    /// and no later call of any user function is made for that query. It
+    /// is never read as `false`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `name` is already registered (built-in or UDF)
+    /// or the function registry lock is poisoned.
+    ///
+    /// # Example
+    /// ```
+    /// # use minigraf::db::Minigraf;
+    /// # use minigraf::{UdfError, Value};
+    /// let db = Minigraf::in_memory().unwrap();
+    /// db.try_register_predicate("email?", |v: &Value| match v {
+    ///     Value::String(s) => Ok(s.contains('@')),
+    ///     _ => Err(UdfError::new("not a string")),
+    /// }).unwrap();
+    /// ```
+    pub fn try_register_predicate(
+        &self,
+        name: &str,
+        f: impl Fn(&Value) -> std::result::Result<bool, UdfError> + Send + Sync + 'static,
+    ) -> Result<(), MinigrafError> {
         self.register_predicate_inner(name, f)
             .map_err(MinigrafError::from)
     }
@@ -1546,7 +1630,7 @@ impl Minigraf {
     fn register_predicate_inner(
         &self,
         name: &str,
-        f: impl Fn(&Value) -> bool + Send + Sync + 'static,
+        f: impl Fn(&Value) -> std::result::Result<bool, UdfError> + Send + Sync + 'static,
     ) -> Result<()> {
         let desc = PredicateDesc {
             f: Arc::new(f),

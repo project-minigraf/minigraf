@@ -806,7 +806,7 @@ pub(crate) fn eval_expr(
                 UnaryOp::NilQ => Ok(Value::Boolean(matches!(v, Value::Null))),
                 UnaryOp::Udf(name) => {
                     let desc = registry.and_then(|r| r.get_predicate(name)).ok_or(())?;
-                    Ok(Value::Boolean((desc.f)(&v)))
+                    Ok(Value::Boolean((desc.f)(&v).map_err(|_| ())?))
                 }
             }
         }
