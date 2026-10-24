@@ -30,8 +30,8 @@ use crate::query::datalog::optimizer;
 use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::stratification::DependencyGraph;
 use crate::query::datalog::types::{
-    AsOf, AttributeSpec, DatalogQuery, EdnValue, Expr, FindSpec, Pattern, PseudoAttr, UnaryOp,
-    ValidAt, WhereClause,
+    AsOf, AttributeSpec, Count, DatalogQuery, EdnValue, Expr, FindSpec, Pattern, PseudoAttr,
+    UnaryOp, ValidAt, WhereClause,
 };
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
@@ -183,6 +183,9 @@ pub(crate) enum Step {
         named: Vec<usize>,
         keep: Vec<usize>,
     },
+    /// After the last step: skips `offset` rows, then passes on at most
+    /// `limit` (#306).
+    Limit { offset: usize, limit: Option<usize> },
 }
 
 /// A `not` / `not-join` body (#546 spec §4).
@@ -553,6 +556,18 @@ fn plan_with(query: &DatalogQuery, evaluated: Option<Arc<Evaluated>>) -> Result<
     }
     let mut plan = b.finish()?;
     plan.find = find;
+    // After `finish`, which may still add the steps of a clause list with
+    // no pattern.
+    match &query.limit {
+        None => {}
+        Some(Count::Literal(n)) => plan.steps.push(Step::Limit {
+            offset: 0,
+            limit: Some(*n),
+        }),
+        // `execute` rejects an unbound slot (API-010); a prepared query
+        // fills it.
+        Some(Count::Slot(_)) => return Err(invariant("a :limit slot reached the planner")),
+    }
     plan.vars = query.find.iter().map(FindSpec::display_name).collect();
     plan.as_of = as_of;
     Ok(plan)

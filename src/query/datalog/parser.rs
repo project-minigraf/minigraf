@@ -828,6 +828,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
     let mut query_valid_at: Option<ValidAt> = None;
     let mut query_max_derived_facts: Option<usize> = None;
     let mut query_max_results: Option<usize> = None;
+    let mut query_limit: Option<Count> = None;
 
     let mut i = 0;
     while i < query_vector.len() {
@@ -946,6 +947,28 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
                             bail_coded!(ErrorCode::Int015, ":max-results");
                         }
                     }
+                    i += 1;
+                    continue;
+                }
+                ":limit" => {
+                    current_clause = None;
+                    if query_limit.is_some() {
+                        bail_coded!(ErrorCode::Int012, ":limit");
+                    }
+                    i += 1;
+                    if !value_at(i) {
+                        bail_coded!(ErrorCode::Int013, ":limit");
+                    }
+                    let val = query_vector
+                        .get(i)
+                        .ok_or_else(|| err_coded!(ErrorCode::Int013, ":limit"))?;
+                    query_limit = Some(match val {
+                        EdnValue::Integer(n) if *n >= 0 => {
+                            Count::Literal(usize::try_from(*n).unwrap_or(usize::MAX))
+                        }
+                        EdnValue::BindSlot(name) => Count::Slot(name.clone()),
+                        other => bail_coded!(ErrorCode::Prs115, ":limit", format!("{other:?}")),
+                    });
                     i += 1;
                     continue;
                 }
@@ -1113,6 +1136,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
     query.with_vars = with_vars;
     query.max_derived_facts = query_max_derived_facts;
     query.max_results = query_max_results;
+    query.limit = query_limit;
     Ok(DatalogCommand::Query(query))
 }
 
@@ -3052,6 +3076,67 @@ mod tests {
             "wrong error: {}",
             msg
         );
+    }
+
+    fn parse_limit(input: &str) -> Result<Option<Count>> {
+        match parse_datalog_command(input)? {
+            DatalogCommand::Query(q) => Ok(q.limit),
+            _ => panic!("expected Query"),
+        }
+    }
+
+    fn code_of(input: &str) -> &'static str {
+        let e = parse_datalog_command(input).expect_err("should be rejected");
+        crate::MinigrafError::from(e).code()
+    }
+
+    #[test]
+    fn limit_literal_zero_and_slot() {
+        let q = |tail: &str| format!("(query [:find ?x :where [?x :a ?y] {tail}])");
+        assert_eq!(
+            parse_limit(&q(":limit 10")).unwrap(),
+            Some(Count::Literal(10))
+        );
+        assert_eq!(
+            parse_limit(&q(":limit 0")).unwrap(),
+            Some(Count::Literal(0))
+        );
+        assert_eq!(
+            parse_limit(&q(":limit $n")).unwrap(),
+            Some(Count::Slot("n".to_string()))
+        );
+        assert_eq!(parse_limit(&q("")).unwrap(), None);
+    }
+
+    #[test]
+    fn limit_in_any_section_order() {
+        for input in [
+            "(query [:limit 3 :find ?x :where [?x :a ?y]])",
+            "(query [:find ?x :limit 3 :where [?x :a ?y]])",
+            "(query [:find ?x :where [?x :a ?y] :limit 3])",
+            "(query [:find ?x :where [?x :a ?y] :limit 3 :as-of 1])",
+        ] {
+            assert_eq!(
+                parse_limit(input).unwrap(),
+                Some(Count::Literal(3)),
+                "{input}"
+            );
+        }
+    }
+
+    #[test]
+    fn limit_errors() {
+        let q = |tail: &str| format!("(query [:find ?x :where [?x :a ?y] {tail}])");
+        assert_eq!(code_of(&q(":limit 1 :limit 2")), "INT-012");
+        assert_eq!(code_of(&q(":limit")), "INT-013");
+        assert_eq!(
+            code_of("(query [:find ?x :limit :where [?x :a ?y]])"),
+            "INT-013"
+        );
+        assert_eq!(code_of(&q(":limit :ten")), "INT-013");
+        for bad in ["-1", "1.5", "\"ten\"", "?x", "nil", "true", "[1]"] {
+            assert_eq!(code_of(&q(&format!(":limit {bad}"))), "PRS-115", "{bad}");
+        }
     }
 
     #[test]

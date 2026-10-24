@@ -4,11 +4,13 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,783 | 1,801 |
-| **Ignored** | 13 | 14 |
-| **Total** | 1,796 | 1,815 |
+| **Passing** | 1,796 | 1,819 |
+| **Ignored** | 14 | 15 |
+| **Total** | 1,810 | 1,834 |
 
-**Verified**: 2026-10-24 with `cargo test --quiet`.
+**Verified**: 2026-10-24 with `cargo test --quiet` (and `--features test-hooks`).
+
+#306 PR 1 (`:limit`) added 13 tests, 5 more under `test-hooks`, and one ignored acceptance test.
 
 #551 PR 2 deleted the executor's query path, with the 73 unit tests of its internals and the oracle. Two engine tests replace shapes no other test covered, and a storage unit test covers the reads only the executor made.
 
@@ -358,6 +360,11 @@ These tests compare the database against an independent answer rather than a sin
   - Every planner error's code, and the error order.
   - The two answer changes of the spec (§4), and an unknown predicate in a `not` body, were checked against both the engine and the executor; their tests keep the engine's answer.
   - The envelope harness's `-irregular` fixture keeps its source's records, with `tx_id`s that fall and rise (`cargo test` runs the example's tests).
+- **`:limit`** (#306)
+  - `tests/limit_order_test.rs` (5 tests, `test-hooks`): 14 shapes (patterns, joins, `not`, `or`, grouped and ungrouped aggregates and the zero row, a window, rule queries, `:as-of`, `:any-valid-time`, an expression with no pattern), in memory and over committed and pending facts, with limits 0, 1, 2, the answer size less one, the answer size and five more: through `execute`, a cursor pulled one row at a time, a prepared `:limit $n` and its cursor, with reordering on and off, each returns `min(n, |answer|)` rows that are a sub-bag of the unlimited answer. A write transaction's own staged facts; slot errors (`API-010`, `PRS-115`, `API-024`).
+  - `src/query/engine/limit.rs` (4 unit tests): at most `limit` rows across batch boundaries, `limit 0` pulls nothing, one batch read for 10 rows and two for `BATCH_ROWS + 1`, offsets across batches and past the end, `rewind`.
+  - `src/cursor.rs` (2 tests): through a cursor, in memory and on file, `:limit 10` leaves the scan at one internal batch and `:limit 0` at none.
+  - Parser (3 unit tests), prepared slots (3 unit tests), `prs_115_…` in `tests/error_codes_prs_test.rs`, the grammar corpus (3 valid, 2 syntax, 2 semantic files) and two verifier `SEMANTIC` witnesses (`INT-012`, `PRS-115`).
 - **Query memory limit** (`tests/memory_limit_test.rs`, 7 tests; #549)
   - `OpenOptions::query_memory_limit` is off by default and set by its builder.
   - `QRY-012` through `execute`, a cursor's first pull, a prepared query and a rule query (from `execute`, and from `query` when the rules run at open). The database answers after a query fails.
@@ -485,6 +492,7 @@ The thirteen ignored tests (fourteen with `test-hooks`) are intentionally exclud
   - 1M aggregate groups return 1M rows, and with `query_memory_limit` at 32 MiB stop with `QRY-012` naming `Aggregate`, after which the database answers;
   - 13 patterns sharing no variable over the fuzz harness's 3 facts stream 3^13 rows with peak RSS under 64 MiB, and with a 64-byte limit stop with `QRY-012` naming `HashJoin`;
   - `count` over every one of 1M facts counts them under a 4 KiB `query_memory_limit` (`count_holds_no_rows`, the #473 constant-memory `count` item).
+- One `:limit` acceptance test (`tests/limit_acceptance_test.rs`, #306, the #473 `:limit` item), run by the nightly smoke workflow: `:limit 10` over 10M checkpointed facts returns 10 rows in under 250 ms under a 64 KiB `query_memory_limit`, adding under 32 MiB of peak RSS; the fixture is written with `LogWriter`.
 - One large-transaction acceptance test (`tests/large_transaction_acceptance_test.rs`, #550; `test-hooks` only), run by the nightly smoke workflow (see [Large transactions](#large-transactions-550)).
 - One measurement test (`meter_peak_against_rss`, `src/query/engine/tests.rs`, #549): prints the meter's peak against the peak RSS for the same two shapes, opening the engine directly.
 

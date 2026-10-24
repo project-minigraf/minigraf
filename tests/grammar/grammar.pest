@@ -19,6 +19,7 @@ kw_valid_at            = @{ ":valid-at" ~ !word_cont }
 kw_any_valid_time      = @{ ":any-valid-time" ~ !word_cont }
 kw_max_derived_facts   = @{ ":max-derived-facts" ~ !word_cont }
 kw_max_results         = @{ ":max-results" ~ !word_cont }
+kw_limit               = @{ ":limit" ~ !word_cont }
 kw_over                = @{ ":over" ~ !word_cont }
 kw_partition_by        = @{ ":partition-by" ~ !word_cont }
 kw_order_by            = @{ ":order-by" ~ !word_cont }
@@ -128,7 +129,7 @@ query_vector = { "[" ~ query_section+ ~ "]" }
 query_section = {
     find_section | where_section | as_of_section |
     valid_at_section | any_valid_time_section | with_section |
-    max_derived_facts_section | max_results_section
+    max_derived_facts_section | max_results_section | limit_section
 }
 
 // ── FIND SECTION ──────────────────────────────────────────────────────────
@@ -206,6 +207,7 @@ any_valid_time_section = { kw_any_valid_time }
 with_section           = { kw_with ~ variable+ }
 max_derived_facts_section = { kw_max_derived_facts ~ integer_lit }
 max_results_section       = { kw_max_results ~ integer_lit }
+limit_section             = { kw_limit ~ (integer_lit | bind_slot) }
 
 // ── RULE ──────────────────────────────────────────────────────────────────
 // (rule [(head ?args) body-clause ...])

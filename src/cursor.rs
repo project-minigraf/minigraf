@@ -331,6 +331,49 @@ mod tests {
         assert_eq!(counters[1].rows_out, counters[0].rows_in);
     }
 
+    /// `:limit` closes the operators below it once it has its rows: the
+    /// scan reads one internal batch for 10 rows, and nothing for none
+    /// (#306 spec §4.1).
+    fn limit_stops_the_scan(db: &Minigraf) {
+        let q = |n: usize| format!("(query [:find ?e ?a :where [?e :person/age ?a] :limit {n}])");
+        let mut cursor = db.query(&q(10)).unwrap();
+        assert_eq!(cursor.next_batch(10).unwrap().expect("rows").len(), 10);
+        // Read before the stream ends: an ended cursor drops its counters.
+        let counters = cursor.counters();
+        let ops: Vec<&str> = counters.iter().map(|c| c.op).collect();
+        assert_eq!(ops, ["Project", "Limit", "Scan"]);
+        assert_eq!(counters[1].rows_out, 10);
+        let read = scan(&counters).rows_in;
+        assert!(read > 0, "the scan read keys");
+        assert!(
+            read <= 2 * BATCH_ROWS as u64,
+            "one internal batch, not the attribute"
+        );
+        assert_eq!(scan(&counters).batches, 1);
+        assert!(cursor.next_batch(10).unwrap().is_none(), "no more rows");
+
+        let mut cursor = db.query(&q(0)).unwrap();
+        let mut stream = cursor.stream.take().expect("an engine stream");
+        assert!(stream.next_rows().unwrap().is_none(), "no rows");
+        assert_eq!(scan(&stream.counters()).rows_in, 0, "limit 0 reads nothing");
+    }
+
+    #[test]
+    fn limit_stops_the_scan_in_memory() {
+        let db = Minigraf::in_memory().unwrap();
+        people(&db);
+        limit_stops_the_scan(&db);
+    }
+
+    #[test]
+    fn limit_stops_the_scan_on_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Minigraf::open(dir.path().join("limit.graph")).unwrap();
+        people(&db);
+        db.checkpoint().unwrap();
+        limit_stops_the_scan(&db);
+    }
+
     /// Spec §10: a lazy cursor's answer is unchanged by writes and by
     /// checkpoints that free the pages it has yet to read.
     #[test]

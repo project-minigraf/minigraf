@@ -810,6 +810,19 @@ fn prs_114_rule_head_argument_not_a_variable() {
 }
 
 #[test]
+fn prs_115_limit_not_a_non_negative_integer() {
+    assert_code_and_message(
+        "(query [:find ?a :where [?a :edge ?b] :limit -1])",
+        "PRS-115",
+        ":limit",
+    );
+    assert_execute_code(
+        "(query [:find ?a :where [?a :edge ?b] :limit 2.5])",
+        "PRS-115",
+    );
+}
+
+#[test]
 fn prs_105_rule_name_is_a_variable_or_an_operator() {
     assert_execute_code("(rule [(?r ?a) [?a :edge ?b]])", "PRS-105");
     assert_execute_code("(rule [(< ?a) [?a :edge ?b]])", "PRS-105");
@@ -824,6 +837,7 @@ fn prs_061_value_after_a_query_option() {
         r#"(query [:find ?a :valid-at "2024-01-01T00:00:00Z" ?b :where [?a :edge ?b]])"#,
         "(query [:find ?a :max-results 5 ?b :where [?a :edge ?b]])",
         "(query [:find ?a :where [?a :edge ?b] :max-derived-facts 5 [?b :edge ?c]])",
+        "(query [:find ?a :limit 5 ?b :where [?a :edge ?b]])",
     ] {
         assert_execute_code(q, "PRS-061");
     }

@@ -7,7 +7,7 @@ use crate::query::datalog::executor::{DatalogExecutor, QueryResult};
 use crate::query::datalog::functions::FunctionRegistry;
 use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::types::{
-    AsOf, AttributeSpec, DatalogCommand, DatalogQuery, EdnValue, Expr, ValidAt, WhereClause,
+    AsOf, AttributeSpec, Count, DatalogCommand, DatalogQuery, EdnValue, Expr, ValidAt, WhereClause,
 };
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
@@ -250,6 +250,9 @@ fn collect_slot_names(query: &DatalogQuery) -> Vec<String> {
     if let Some(ValidAt::Slot(name)) = &query.valid_at {
         names.insert(name.clone());
     }
+    if let Some(Count::Slot(name)) = &query.limit {
+        names.insert(name.clone());
+    }
     collect_slots_from_clauses(&query.where_clauses, &mut names);
     let mut result: Vec<String> = names.into_iter().collect();
     result.sort();
@@ -325,6 +328,10 @@ fn substitute(
 
     if let Some(ValidAt::Slot(name)) = &query.valid_at {
         query.valid_at = Some(resolve_valid_at_slot(name, bindings)?);
+    }
+
+    if let Some(Count::Slot(name)) = &query.limit {
+        query.limit = Some(resolve_count_slot(name, ":limit", bindings)?);
     }
 
     for clause in &mut query.where_clauses {
@@ -472,6 +479,28 @@ fn resolve_as_of_slot(name: &str, bindings: &HashMap<&str, &BindValue>) -> Resul
             name,
             ":as-of",
             "TxCount or Timestamp",
+            bind_value_type_name(other)
+        ),
+        None => bail_coded!(ErrorCode::Api022, name),
+    }
+}
+
+/// A `:limit` slot (#306): `Val(Integer(n))` with `n >= 0`.
+fn resolve_count_slot(
+    name: &str,
+    option: &str,
+    bindings: &HashMap<&str, &BindValue>,
+) -> Result<Count> {
+    match bindings.get(name) {
+        Some(BindValue::Val(Value::Integer(n))) if *n >= 0 => {
+            Ok(Count::Literal(usize::try_from(*n).unwrap_or(usize::MAX)))
+        }
+        Some(BindValue::Val(Value::Integer(n))) => bail_coded!(ErrorCode::Prs115, option, n),
+        Some(other) => bail_coded!(
+            ErrorCode::Api024,
+            name,
+            option,
+            "Val(Integer)",
             bind_value_type_name(other)
         ),
         None => bail_coded!(ErrorCode::Api022, name),
@@ -703,6 +732,58 @@ mod tests {
             }
             _ => panic!("expected Pattern"),
         }
+    }
+
+    fn make_query_limit_slot() -> DatalogQuery {
+        let mut q = make_query_as_of_slot();
+        q.as_of = None;
+        q.limit = Some(Count::Slot("n".to_string()));
+        q
+    }
+
+    fn limit_code(bv: Option<BindValue>) -> &'static str {
+        let q = make_query_limit_slot();
+        let bindings: HashMap<&str, &BindValue> = bv.iter().map(|b| ("n", b)).collect();
+        let e = substitute(&q, &bindings).expect_err("should be rejected");
+        crate::MinigrafError::from(e).code()
+    }
+
+    #[test]
+    fn limit_slot_is_collected_and_rejected_unbound() {
+        let q = make_query_limit_slot();
+        assert_eq!(collect_slot_names(&q), vec!["n".to_string()]);
+        let e = reject_unbound_slots(&q).expect_err("unbound");
+        assert_eq!(crate::MinigrafError::from(e).code(), "API-010");
+    }
+
+    #[test]
+    fn limit_slot_takes_a_non_negative_integer() {
+        let q = make_query_limit_slot();
+        for n in [0, 1, 7] {
+            let bv = BindValue::Val(Value::Integer(n));
+            let bindings: HashMap<&str, &BindValue> = [("n", &bv)].into();
+            let filled = substitute(&q, &bindings).unwrap();
+            assert_eq!(filled.limit, Some(Count::Literal(n as usize)));
+        }
+        // A literal is kept.
+        let mut lit = make_query_limit_slot();
+        lit.limit = Some(Count::Literal(4));
+        let filled = substitute(&lit, &HashMap::new()).unwrap();
+        assert_eq!(filled.limit, Some(Count::Literal(4)));
+    }
+
+    #[test]
+    fn limit_slot_errors() {
+        assert_eq!(
+            limit_code(Some(BindValue::Val(Value::Integer(-1)))),
+            "PRS-115"
+        );
+        assert_eq!(
+            limit_code(Some(BindValue::Val(Value::Float(1.0)))),
+            "API-024"
+        );
+        assert_eq!(limit_code(Some(BindValue::TxCount(3))), "API-024");
+        assert_eq!(limit_code(None), "API-022");
     }
 
     #[test]
