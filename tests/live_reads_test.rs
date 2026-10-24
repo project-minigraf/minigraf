@@ -23,6 +23,7 @@ fn rows(db: &Minigraf, query: &str) -> Vec<String> {
                             Value::Float(f) => f.to_string(),
                             Value::Null => "nil".to_string(),
                             Value::Ref(_) => "ref".to_string(),
+                            _ => "other".to_string(),
                         })
                         .collect::<Vec<_>>()
                         .join("|")

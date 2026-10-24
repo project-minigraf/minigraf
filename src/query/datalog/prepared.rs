@@ -495,6 +495,7 @@ fn value_to_edn(v: &Value) -> EdnValue {
         Value::Keyword(k) => EdnValue::Keyword(k.clone()),
         Value::Ref(u) => EdnValue::Uuid(*u),
         Value::Null => EdnValue::Nil,
+        Value::Set(s) => EdnValue::Set(s.iter().map(value_to_edn).collect()),
     }
 }
 

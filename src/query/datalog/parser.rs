@@ -26,6 +26,8 @@ enum Token {
     Float(f64),
     Boolean(bool),
     TaggedLiteral(String), // e.g., "#uuid"
+    /// `#{`, which opens a set literal (#316).
+    SetOpen,
     Nil,
     BindSlot(String), // $identifier — named bind slot for PreparedQuery
 }
@@ -180,6 +182,10 @@ impl<'a> Lexer<'a> {
                 // Tagged literals (start with #)
                 '#' => {
                     self.bump();
+                    if self.peek_char() == Some('{') {
+                        self.bump();
+                        return Ok(Some(Token::SetOpen));
+                    }
                     let mut tag = String::new();
                     while let Some(ch) = self.peek_char() {
                         if ch.is_alphanumeric() || ch == '-' {
@@ -405,6 +411,7 @@ impl<'a> Parser<'a> {
             Some(Token::LeftParen) => self.parse_list(),
             Some(Token::LeftBracket) => self.parse_vector(),
             Some(Token::LeftBrace) => self.parse_map(),
+            Some(Token::SetOpen) => self.parse_set(),
             Some(Token::Keyword(_)) => {
                 if let Some(Token::Keyword(k)) = self.advance() {
                     Ok(EdnValue::Keyword(k))
@@ -484,6 +491,40 @@ impl<'a> Parser<'a> {
             }
             None => bail_coded!(ErrorCode::Prs001),
         }
+    }
+
+    /// `#{ v* }` (#316): its elements are scalar literals; a nested set is
+    /// PRS-119, any other element PRS-120.
+    fn parse_set(&mut self) -> Result<EdnValue> {
+        self.advance(); // consume #{
+        let mut elements = Vec::new();
+
+        while let Some(token) = self.peek() {
+            match token {
+                Token::RightBrace => {
+                    self.advance(); // consume }
+                    return Ok(EdnValue::Set(elements));
+                }
+                Token::SetOpen => bail_coded!(ErrorCode::Prs119),
+                _ => {}
+            }
+            let value = self.parse_value()?;
+            match value {
+                EdnValue::String(_)
+                | EdnValue::Integer(_)
+                | EdnValue::Float(_)
+                | EdnValue::Boolean(_)
+                | EdnValue::Keyword(_)
+                | EdnValue::Uuid(_)
+                | EdnValue::Nil => {}
+                other => bail_coded!(ErrorCode::Prs120, format!("{other:?}")),
+            }
+            if self.keep {
+                elements.push(value);
+            }
+        }
+
+        bail_coded!(ErrorCode::Prs121);
     }
 
     fn parse_vector(&mut self) -> Result<EdnValue> {
@@ -1246,6 +1287,9 @@ fn parse_expr_arg(edn: &EdnValue) -> Result<Expr> {
         EdnValue::Boolean(b) => Ok(Expr::Lit(Value::Boolean(*b))),
         EdnValue::Nil => Ok(Expr::Lit(Value::Null)),
         EdnValue::Keyword(k) => Ok(Expr::Lit(Value::Keyword(k.clone()))),
+        EdnValue::Set(_) => Ok(Expr::Lit(
+            super::matcher::edn_to_value(edn).map_err(|e| err_coded!(ErrorCode::Prs070, e))?,
+        )),
         EdnValue::List(inner) => parse_expr(inner),
         EdnValue::BindSlot(name) => Ok(Expr::Slot(name.clone())),
         other => {

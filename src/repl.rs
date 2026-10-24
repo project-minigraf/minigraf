@@ -225,6 +225,10 @@ impl<'a> Repl<'a> {
             Value::Ref(uuid) => format!("#uuid {}", uuid),
             Value::Keyword(k) => k.clone(),
             Value::Null => "nil".to_string(),
+            Value::Set(s) => {
+                let elements: Vec<String> = s.iter().map(Self::format_value).collect();
+                format!("#{{{}}}", elements.join(" "))
+            }
         }
     }
 }

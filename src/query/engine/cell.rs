@@ -2,7 +2,7 @@
 
 use super::Ctx;
 use super::ids::IdSpace;
-use crate::graph::types::Value;
+use crate::graph::types::{Value, ValueSet};
 use crate::storage::KeySource;
 use crate::storage::keys::{KeyValue, SHORT_STRING_MAX, ValueRef};
 use anyhow::Result;
@@ -31,12 +31,14 @@ pub(crate) enum Scalar {
     Str(Arc<str>),
     /// A committed string over 64 bytes, by where it is stored.
     Long(ValueRef),
+    /// A set, decoded: committed sets when they are scanned (#316).
+    Set(Arc<ValueSet>),
 }
 
 impl Cell {
-    /// The cell of a committed key value.
-    pub(crate) fn of_key(v: &KeyValue) -> Cell {
-        match v {
+    /// The cell of a committed key value. A set is decoded through `keys`.
+    pub(crate) fn of_key(v: &KeyValue, keys: &dyn KeySource) -> Result<Cell> {
+        Ok(match v {
             KeyValue::Null => Cell::Val(Scalar::Null),
             KeyValue::Bool(b) => Cell::Val(Scalar::Bool(*b)),
             KeyValue::Int(n) => Cell::Val(Scalar::Int(*n)),
@@ -45,7 +47,17 @@ impl Cell {
             KeyValue::LongStr { vref, .. } => Cell::Val(Scalar::Long(*vref)),
             KeyValue::Keyword(iid) => Cell::Iid(u64::from(*iid)),
             KeyValue::Ref(eid) => Cell::Eid(*eid),
-        }
+            KeyValue::Set(_) | KeyValue::LongSet { .. } => {
+                let set = crate::storage::keys::decode_set(
+                    v,
+                    |vref| keys.long_bytes(vref),
+                    |iid| keys.ident_of(iid),
+                    |eid| keys.uuid_of(eid),
+                )?
+                .unwrap_or_default();
+                Cell::Val(Scalar::Set(Arc::new(set)))
+            }
+        })
     }
 
     /// The cell of a value, with ids from `ids`. A string over 64 bytes
@@ -70,6 +82,7 @@ impl Cell {
             Value::String(s) => Cell::Val(Scalar::Str(Arc::from(s.as_str()))),
             Value::Keyword(k) => Cell::Iid(ids.iid(keys, k)?),
             Value::Ref(u) => Cell::Eid(ids.eid(keys, u)?),
+            Value::Set(s) => Cell::Val(Scalar::Set(Arc::new(s.clone()))),
         })
     }
 }
@@ -88,6 +101,9 @@ pub(crate) enum JoinKey {
     Float(u64),
     Str(Arc<str>),
     Long(ValueRef),
+    /// Sets are equal when their elements are, as `Value`'s `Ord` compares
+    /// them: a keyword element never equals a ref element (#316).
+    Set(Arc<ValueSet>),
 }
 
 impl JoinKey {
@@ -106,6 +122,7 @@ impl JoinKey {
             Cell::Val(Scalar::Float(f)) => JoinKey::Float(if *f == 0.0 { 0 } else { f.to_bits() }),
             Cell::Val(Scalar::Str(s)) => JoinKey::Str(s.clone()),
             Cell::Val(Scalar::Long(vref)) => JoinKey::Long(*vref),
+            Cell::Val(Scalar::Set(s)) => JoinKey::Set(s.clone()),
         }))
     }
 }
@@ -125,6 +142,7 @@ impl JoinKey {
             Cell::Val(Scalar::Float(f)) => JoinKey::Float(if *f == 0.0 { 0 } else { f.to_bits() }),
             Cell::Val(Scalar::Str(s)) => JoinKey::Str(s.clone()),
             Cell::Val(Scalar::Long(vref)) => JoinKey::Long(*vref),
+            Cell::Val(Scalar::Set(s)) => JoinKey::Set(s.clone()),
         }
     }
 }

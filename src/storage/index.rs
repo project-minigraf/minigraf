@@ -78,6 +78,18 @@ pub fn encode_value(v: &Value) -> Vec<u8> {
             bytes.extend_from_slice(id.as_bytes());
             bytes
         }
+        // Each element's length keeps the boundaries, so equal encodings
+        // mean equal elements, one by one (#316).
+        Value::Set(set) => {
+            let mut bytes = vec![0x07];
+            for e in set {
+                let enc = encode_value(e);
+                let len = u32::try_from(enc.len()).unwrap_or(u32::MAX);
+                bytes.extend_from_slice(&len.to_be_bytes());
+                bytes.extend_from_slice(&enc);
+            }
+            bytes
+        }
     }
 }
 

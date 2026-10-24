@@ -1,0 +1,3 @@
+(query [:find ?e
+        :where [?e :user/scopes ?s]
+               [(= ?s #{:scope/read})]])

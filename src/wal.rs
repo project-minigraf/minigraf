@@ -31,7 +31,7 @@ use crate::graph::types::{Fact, Value};
 use crate::storage::dir_sync::sync_parent_dir;
 #[cfg(test)]
 use crate::storage::fault::{self, Action, Site};
-use crate::storage::keys::{MAX_IDENT_BYTES, MAX_VALUE_BYTES};
+use crate::storage::keys::{MAX_IDENT_BYTES, MAX_VALUE_BYTES, set_bytes_bound};
 use anyhow::Result;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -143,8 +143,9 @@ fn check_wal_header_length(file: &mut File) -> Result<WalHeaderState> {
 // ─── Entry serialization ────────────────────────────────────────────────────
 
 /// Reject a fact a checkpoint could not store (WAL-003): a string value longer
-/// than one value page's payload, or an attribute or keyword longer than an
-/// ident may be (spec §6.3).
+/// than one value page's payload, a set whose element encoding may be longer
+/// (#316), or an attribute or keyword (a set's keyword elements too) longer
+/// than an ident may be (spec §6.3).
 pub(crate) fn check_fact_size(fact: &Fact) -> Result<()> {
     if fact.attribute.len() > MAX_IDENT_BYTES {
         bail_coded!(ErrorCode::Wal003, fact.attribute.len(), MAX_IDENT_BYTES);
@@ -155,6 +156,20 @@ pub(crate) fn check_fact_size(fact: &Fact) -> Result<()> {
         }
         Value::Keyword(k) if k.len() > MAX_IDENT_BYTES => {
             bail_coded!(ErrorCode::Wal003, k.len(), MAX_IDENT_BYTES)
+        }
+        Value::Set(set) => {
+            for e in set {
+                if let Value::Keyword(k) = e
+                    && k.len() > MAX_IDENT_BYTES
+                {
+                    bail_coded!(ErrorCode::Wal003, k.len(), MAX_IDENT_BYTES)
+                }
+            }
+            let n = set_bytes_bound(set);
+            if n > MAX_VALUE_BYTES {
+                bail_coded!(ErrorCode::Wal003, n, MAX_VALUE_BYTES)
+            }
+            Ok(())
         }
         _ => Ok(()),
     }

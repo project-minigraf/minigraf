@@ -161,6 +161,9 @@ pub(crate) enum ErrorCode {
     Prs112,
     Prs113,
     Prs114,
+    Prs119,
+    Prs120,
+    Prs121,
     Qry001,
     Qry002,
     Qry003,
@@ -258,6 +261,7 @@ pub(crate) enum ErrorCode {
     Api018,
     Api019,
     Api020,
+    Api021,
     Int001,
     Int002,
     Int003,
@@ -1006,6 +1010,24 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCategory::Parser,
     ),
     (
+        ErrorCode::Prs119,
+        "PRS-119",
+        "a set literal cannot hold a set",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs120,
+        "PRS-120",
+        "a set literal holds only strings, numbers, booleans, keywords, #uuid literals and nil; got {}",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs121,
+        "PRS-121",
+        "Unterminated set: missing '}'",
+        ErrorCategory::Parser,
+    ),
+    (
         ErrorCode::Qry001,
         "QRY-001",
         "Invalid entity: {}",
@@ -1531,6 +1553,12 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Api020,
         "API-020",
         "one transaction both asserts and retracts the same value of {}; keep only the record that decides it",
+        ErrorCategory::Api,
+    ),
+    (
+        ErrorCode::Api021,
+        "API-021",
+        "a set cannot hold a set; its elements must be strings, numbers, booleans, refs, keywords or nil",
         ErrorCategory::Api,
     ),
     (
@@ -2270,6 +2298,9 @@ mod tests {
                 | ErrorCode::Prs112
                 | ErrorCode::Prs113
                 | ErrorCode::Prs114
+                | ErrorCode::Prs119
+                | ErrorCode::Prs120
+                | ErrorCode::Prs121
                 | ErrorCode::Qry001
                 | ErrorCode::Qry002
                 | ErrorCode::Qry003
@@ -2357,6 +2388,7 @@ mod tests {
                 | ErrorCode::Api018
                 | ErrorCode::Api019
                 | ErrorCode::Api020
+                | ErrorCode::Api021
                 | ErrorCode::Int001
                 | ErrorCode::Int002
                 | ErrorCode::Int003
@@ -2532,6 +2564,9 @@ mod tests {
             ErrorCode::Prs112,
             ErrorCode::Prs113,
             ErrorCode::Prs114,
+            ErrorCode::Prs119,
+            ErrorCode::Prs120,
+            ErrorCode::Prs121,
             ErrorCode::Qry001,
             ErrorCode::Qry002,
             ErrorCode::Qry003,
@@ -2619,6 +2654,7 @@ mod tests {
             ErrorCode::Api018,
             ErrorCode::Api019,
             ErrorCode::Api020,
+            ErrorCode::Api021,
             ErrorCode::Int001,
             ErrorCode::Int002,
             ErrorCode::Int003,

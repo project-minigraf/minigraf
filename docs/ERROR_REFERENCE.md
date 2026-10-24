@@ -135,6 +135,9 @@ with no `CodedError` anywhere in its chain.
 | PRS-112 | Empty query section | Parser |
 | PRS-113 | Unknown query keyword | Parser |
 | PRS-114 | Rule head argument is not a variable | Parser |
+| PRS-119 | Set literal inside a set literal | Parser |
+| PRS-120 | Set literal element is not a scalar literal | Parser |
+| PRS-121 | Unterminated set literal | Parser |
 | QRY-001 | Invalid entity | Query Execution |
 | QRY-002 | Attribute must be a keyword | Query Execution |
 | QRY-003 | Cannot transact a pseudo-attribute | Query Execution |
@@ -222,6 +225,7 @@ with no `CodedError` anywhere in its chain.
 | API-018 | Call on a closed binding object | Database API |
 | API-019 | Empty or inverted valid-time window | Database API |
 | API-020 | Assertion and retraction of one fact in one log-writer transaction | Database API |
+| API-021 | Set value holds a set | Database API |
 | INT-000 | Unclassified internal error | Internal |
 | INT-001 | WriteTransaction already in progress on this thread | Internal |
 | INT-002 | Invalid entity (API layer) | Internal |
@@ -2137,6 +2141,56 @@ with `PRS-047`.
 
 ---
 
+### PRS-119 Set literal inside a set literal
+
+**Error text**: `a set literal cannot hold a set`
+
+**Cause**: A set literal `#{...}` has another set literal among its elements. Sets hold scalar values only (#316).
+
+**Resolution**:
+- Flatten the elements into one set, or store each inner set as its own attribute value.
+
+**Example**:
+```datalog
+(transact [[:alice :user/scopes #{#{:scope/read}}]])
+```
+*`#{:scope/read}` is a set inside a set*
+
+---
+
+### PRS-120 Set literal element is not a scalar literal
+
+**Error text**: `a set literal holds only strings, numbers, booleans, keywords, #uuid literals and nil; got {}`
+
+**Cause**: An element of a set literal is a variable, a bind slot, a symbol, a vector, a list or a map. A set literal is a constant: its elements are literals (#316).
+
+**Resolution**:
+- Write the elements as literals, or pass the whole set through a bind slot: `$scopes` bound to `BindValue::Val(Value::Set(..))`.
+
+**Example**:
+```datalog
+(query [:find ?e :where [?e :user/scopes #{?x}]])
+```
+*`?x` is a variable*
+
+---
+
+### PRS-121 Unterminated set literal
+
+**Error text**: `Unterminated set: missing '}'`
+
+**Cause**: The input ends inside a set literal `#{...}`.
+
+**Resolution**:
+- Close the set with `}`.
+
+**Example**:
+```datalog
+(transact [[:alice :user/scopes #{:scope/read
+```
+
+---
+
 ## QRY — Query Execution Errors
 
 Query execution errors occur after parsing succeeds, during pattern matching,
@@ -2970,7 +3024,7 @@ The WAL is replayed on open and deleted on checkpoint.
 
 **Error text**: `Value of {} bytes exceeds the maximum of {} bytes. Store large payloads externally and reference them with a Value::String URL/path or Value::Ref entity ID.`
 
-**Cause**: A string value is longer than `MAX_VALUE_BYTES` (4,068 bytes, one value page), or an attribute name or keyword value is longer than 1,024 bytes. This typically means a `Value::String` contains very large content such as raw document text, a base64-encoded image, or binary data. `LogWriter::append` checks the same limits. In-memory databases have no WAL and no limit.
+**Cause**: A string value is longer than `MAX_VALUE_BYTES` (4,068 bytes, one value page), a set value's stored form may be longer than that, or an attribute name or keyword value (a keyword in a set included) is longer than 1,024 bytes. A set's size counts each string element's bytes plus three (and one per zero byte), each keyword element as 6 bytes and each ref element as 10, each integer as up to 10 and each float as 9. This typically means a `Value::String` contains very large content such as raw document text, a base64-encoded image, or binary data. `LogWriter::append` checks the same limits. In-memory databases have no WAL and no limit.
 
 **Resolution**:
 - Store large payloads in an external file or object store.
@@ -3369,6 +3423,23 @@ let mut log = src.fact_log(&FactFilter::new())?;
 - Repair the source's other old records the same way before appending them: a fact with two windows in one transaction (API-011) keeps the window it should have, and an assertion whose window ends before it starts (API-019) is dropped.
 
 **Scenario**: An offline purge copies a database migrated from v2.x through `fact_log()` and `LogWriter`, and one of its transactions retracted and re-asserted a fact.
+
+---
+
+### API-021 Set value holds a set
+
+**Error text**: `a set cannot hold a set; its elements must be strings, numbers, booleans, refs, keywords or nil`
+
+**Cause**: `ValueSet::new` was given a `Value::Set` among its elements. Sets hold scalar values only (#316).
+
+**Resolution**:
+- Build the set from scalar values. To relate several sets, store each one as its own attribute value.
+
+**Example**:
+```rust
+let inner = Value::Set(ValueSet::default());
+ValueSet::new(vec![inner]) // API-021
+```
 
 ---
 

@@ -6,7 +6,7 @@
 use super::Ctx;
 use super::batch::Batch;
 use super::cell::{Cell, Scalar};
-use crate::graph::types::Value;
+use crate::graph::types::{Value, ValueSet};
 use anyhow::Result;
 
 /// The rows of `batch`, with the cells of the slots `find` as values.
@@ -36,6 +36,7 @@ pub(crate) fn value(cell: &Cell, ctx: &mut Ctx<'_>) -> Result<Value> {
         Cell::Val(Scalar::Int(n)) => Value::Integer(*n),
         Cell::Val(Scalar::Float(f)) => Value::Float(*f),
         Cell::Val(Scalar::Str(s)) => Value::String(s.to_string()),
+        Cell::Val(Scalar::Set(s)) => Value::Set(ValueSet::clone(s)),
         Cell::Val(Scalar::Long(vref)) => match ctx.keys {
             Some(k) => Value::String(k.long_value(*vref)?),
             None => {

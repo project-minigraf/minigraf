@@ -459,7 +459,7 @@ impl Operator for Scan {
                         }
                         if fill(&self.spec.e, &mut row, || Ok(Cell::Eid(kf.e)))?
                             && fill(&self.spec.a, &mut row, || Ok(Cell::Iid(u64::from(kf.a))))?
-                            && fill(&self.spec.v, &mut row, || Ok(Cell::of_key(&kf.v)))?
+                            && fill(&self.spec.v, &mut row, || Cell::of_key(&kf.v, keys))?
                         {
                             for &(m, slot) in &self.spec.meta {
                                 let n = match m {
@@ -819,6 +819,28 @@ fn key_value(keys: &dyn KeySource, value: &Value) -> Result<Option<KeyValue>> {
         Value::String(s) => keys.long_value_ref(s)?.map(|vref| keys::long_str(s, vref)),
         Value::Keyword(k) => keys.iid_of(k)?.map(KeyValue::Keyword),
         Value::Ref(u) => keys.eid_of(u)?.map(KeyValue::Ref),
+        // As the checkpoint's `Encoder` writes it; a keyword or ref element
+        // the generation does not hold means no committed key can (#316).
+        Value::Set(set) => {
+            let mut elements = Vec::with_capacity(set.len());
+            for e in set {
+                let k = match e {
+                    Value::String(s) => Some(KeyValue::Str(s.clone())),
+                    e => key_value(keys, e)?,
+                };
+                match k {
+                    Some(k) => elements.push(k),
+                    None => return Ok(None),
+                }
+            }
+            let bytes = keys::set_elements(&elements);
+            if bytes.len() <= SHORT_STRING_MAX {
+                Some(KeyValue::Set(bytes))
+            } else {
+                keys.long_bytes_ref(&bytes)?
+                    .map(|vref| keys::long_set(&bytes, vref))
+            }
+        }
     })
 }
 

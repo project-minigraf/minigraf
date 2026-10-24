@@ -530,6 +530,7 @@ fn value_to_json(v: &crate::graph::types::Value) -> serde_json::Value {
         Value::Ref(uuid) => JVal::String(uuid.to_string()),
         Value::Keyword(k) => JVal::String(k.clone()),
         Value::Null => JVal::Null,
+        Value::Set(s) => JVal::Array(s.iter().map(value_to_json).collect()),
     }
 }
 

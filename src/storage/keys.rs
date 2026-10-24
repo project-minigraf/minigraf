@@ -221,7 +221,7 @@ pub fn put_valid_to(out: &mut Vec<u8>, vt: i64) {
 // ─── Values (§6.2) ───────────────────────────────────────────────────────────
 
 /// Value type tags, in the cross-type order Null < Boolean < Integer < Float <
-/// String < Keyword < Ref.
+/// String < Keyword < Ref < Set.
 const TAG_NULL: u8 = 0x01;
 const TAG_BOOL: u8 = 0x02;
 const TAG_INT: u8 = 0x03;
@@ -229,6 +229,7 @@ const TAG_FLOAT: u8 = 0x04;
 const TAG_STRING: u8 = 0x05;
 const TAG_KEYWORD: u8 = 0x06;
 const TAG_REF: u8 = 0x07;
+const TAG_SET: u8 = 0x08;
 
 /// Where a long string is stored: a record in a value page (§6.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -254,6 +255,15 @@ pub enum KeyValue {
     },
     Keyword(u32),
     Ref(u64),
+    /// A set whose element encoding ([`set_elements`]) is at most
+    /// [`SHORT_STRING_MAX`] bytes: that encoding (#316).
+    Set(Vec<u8>),
+    /// A set with a longer element encoding, by where it is stored.
+    LongSet {
+        prefix: Vec<u8>,
+        hash: u64,
+        vref: ValueRef,
+    },
 }
 
 /// The order-preserving bit transform for floats, with NaN canonicalised.
@@ -335,12 +345,139 @@ pub fn put_value(out: &mut Vec<u8>, v: &KeyValue) {
             out.push(TAG_REF);
             put_uint(out, *eid);
         }
+        KeyValue::Set(elements) => {
+            out.push(TAG_SET);
+            put_escaped(out, elements);
+            out.extend_from_slice(&[0x00, 0x00]);
+        }
+        KeyValue::LongSet { prefix, hash, vref } => {
+            out.push(TAG_SET);
+            put_escaped(out, prefix);
+            out.extend_from_slice(&[0x00, 0x01]);
+            out.extend_from_slice(&hash.to_be_bytes());
+            out.extend_from_slice(&vref.page.to_be_bytes());
+            out.extend_from_slice(&vref.slot.to_be_bytes());
+        }
     }
+}
+
+/// The element encoding of a set (#316): the key encoding of each element,
+/// sorted, concatenated. Every element is a scalar, and a string is written
+/// in full whatever its length. Each encoding is prefix-free (the tag fixes
+/// its form, an integer or id carries its length in its type byte, a float
+/// is 8 bytes, a string ends at its first unescaped `00 00`), so the bytes
+/// decode back to their elements ([`set_elements_decode`]).
+pub fn set_elements(elements: &[KeyValue]) -> Vec<u8> {
+    let mut encoded: Vec<Vec<u8>> = elements
+        .iter()
+        .map(|e| {
+            let mut b = Vec::new();
+            put_value(&mut b, e);
+            b
+        })
+        .collect();
+    encoded.sort();
+    encoded.dedup();
+    encoded.concat()
+}
+
+/// The elements of a set's element encoding.
+pub fn set_elements_decode(bytes: &[u8]) -> Result<Vec<KeyValue>> {
+    let mut r = Reader::new(bytes);
+    let mut out = Vec::new();
+    while !r.is_empty() {
+        let v = r.value()?;
+        if matches!(
+            v,
+            KeyValue::LongStr { .. } | KeyValue::Set(_) | KeyValue::LongSet { .. }
+        ) {
+            bail_coded!(ErrorCode::Int049, "set element is not a scalar");
+        }
+        out.push(v);
+    }
+    Ok(out)
+}
+
+/// The key form of a set with element encoding `bytes` stored at `vref`.
+pub fn long_set(bytes: &[u8], vref: ValueRef) -> KeyValue {
+    KeyValue::LongSet {
+        prefix: bytes.get(..LONG_PREFIX).unwrap_or(bytes).to_vec(),
+        hash: hash64(bytes),
+        vref,
+    }
+}
+
+/// The set a committed key value holds, its keywords and refs named through
+/// `ident` and `uuid`, and a long set's element encoding read through `long`.
+/// `None` when `v` is not a set.
+pub fn decode_set(
+    v: &KeyValue,
+    long: impl FnOnce(ValueRef) -> Result<Vec<u8>>,
+    mut ident: impl FnMut(u32) -> Result<String>,
+    mut uuid: impl FnMut(u64) -> Result<Uuid>,
+) -> Result<Option<crate::graph::types::ValueSet>> {
+    use crate::graph::types::{Value, ValueSet};
+    let elements = match v {
+        KeyValue::Set(bytes) => set_elements_decode(bytes)?,
+        KeyValue::LongSet { vref, .. } => set_elements_decode(&long(*vref)?)?,
+        _ => return Ok(None),
+    };
+    let mut values = Vec::with_capacity(elements.len());
+    for e in elements {
+        values.push(match e {
+            KeyValue::Null => Value::Null,
+            KeyValue::Bool(b) => Value::Boolean(b),
+            KeyValue::Int(n) => Value::Integer(n),
+            KeyValue::Float(f) => Value::Float(f),
+            KeyValue::Str(s) => Value::String(s),
+            KeyValue::Keyword(iid) => Value::Keyword(ident(iid)?),
+            KeyValue::Ref(eid) => Value::Ref(uuid(eid)?),
+            // `set_elements_decode` returns scalars only.
+            KeyValue::LongStr { .. } | KeyValue::Set(_) | KeyValue::LongSet { .. } => {
+                bail_coded!(ErrorCode::Int049, "set element is not a scalar")
+            }
+        });
+    }
+    Ok(Some(ValueSet::new(values).map_err(|_| {
+        err_coded!(ErrorCode::Int049, "set holds a set")
+    })?))
+}
+
+/// An upper bound of the element encoding of `set` that needs no ids: each
+/// keyword counted as 6 bytes and each ref as 10, their longest encodings.
+/// A set the WAL takes under [`MAX_VALUE_BYTES`] by this bound always fits
+/// one value page at checkpoint.
+pub fn set_bytes_bound(set: &crate::graph::types::ValueSet) -> usize {
+    use crate::graph::types::Value;
+    set.iter()
+        .map(|v| match v {
+            Value::Keyword(_) => 6,
+            Value::Ref(_) => 10,
+            Value::Null => 1,
+            Value::Boolean(_) => 2,
+            Value::Float(_) => 9,
+            Value::Integer(n) => {
+                let mut b = Vec::new();
+                put_int(&mut b, *n);
+                1 + b.len()
+            }
+            Value::String(s) => {
+                let zeros = s.bytes().filter(|b| *b == 0).count();
+                1 + s.len() + zeros + 2
+            }
+            // A set holds no set (`ValueSet::new`).
+            Value::Set(_) => 0,
+        })
+        .sum()
 }
 
 /// The key form of a long string: its first [`LONG_PREFIX`] bytes and hash.
 pub fn long_str(s: &str, vref: ValueRef) -> KeyValue {
-    let bytes = s.as_bytes();
+    long_bytes(s.as_bytes(), vref)
+}
+
+/// The key form of a long string with UTF-8 `bytes`.
+pub fn long_bytes(bytes: &[u8], vref: ValueRef) -> KeyValue {
     KeyValue::LongStr {
         prefix: bytes.get(..LONG_PREFIX).unwrap_or(bytes).to_vec(),
         hash: hash64(bytes),
@@ -356,7 +493,17 @@ impl Reader<'_> {
             TAG_BOOL => KeyValue::Bool(self.byte()? != 0),
             TAG_INT => KeyValue::Int(self.int()?),
             TAG_FLOAT => KeyValue::Float(float_from_bits(self.be(8)?)),
-            TAG_STRING => self.string()?,
+            TAG_STRING => match self.escaped()? {
+                Escaped::Short(bytes) => KeyValue::Str(
+                    String::from_utf8(bytes)
+                        .map_err(|_| err_coded!(ErrorCode::Int049, "key string not UTF-8"))?,
+                ),
+                Escaped::Long { prefix, hash, vref } => KeyValue::LongStr { prefix, hash, vref },
+            },
+            TAG_SET => match self.escaped()? {
+                Escaped::Short(bytes) => KeyValue::Set(bytes),
+                Escaped::Long { prefix, hash, vref } => KeyValue::LongSet { prefix, hash, vref },
+            },
             TAG_KEYWORD => KeyValue::Keyword(
                 u32::try_from(self.uint()?)
                     .map_err(|_| err_coded!(ErrorCode::Int049, "iid out of range"))?,
@@ -382,7 +529,7 @@ impl Reader<'_> {
             TAG_KEYWORD | TAG_REF => {
                 self.uint()?;
             }
-            TAG_STRING => loop {
+            TAG_STRING | TAG_SET => loop {
                 if self.byte()? != 0 {
                     continue;
                 }
@@ -404,7 +551,9 @@ impl Reader<'_> {
         Ok(())
     }
 
-    fn string(&mut self) -> Result<KeyValue> {
+    /// The escaped bytes of a string or set, and its long-value reference
+    /// when it has one.
+    fn escaped(&mut self) -> Result<Escaped> {
         let mut bytes = Vec::new();
         loop {
             let b = self.byte()?;
@@ -414,17 +563,13 @@ impl Reader<'_> {
             }
             match self.byte()? {
                 0xFF => bytes.push(0),
-                0x00 => {
-                    let s = String::from_utf8(bytes)
-                        .map_err(|_| err_coded!(ErrorCode::Int049, "key string not UTF-8"))?;
-                    return Ok(KeyValue::Str(s));
-                }
+                0x00 => return Ok(Escaped::Short(bytes)),
                 0x01 => {
                     let hash = self.be(8)?;
                     let page = self.be(8)?;
                     let slot = u16::try_from(self.be(2)?)
                         .map_err(|_| err_coded!(ErrorCode::Int049, "slot out of range"))?;
-                    return Ok(KeyValue::LongStr {
+                    return Ok(Escaped::Long {
                         prefix: bytes,
                         hash,
                         vref: ValueRef { page, slot },
@@ -434,6 +579,17 @@ impl Reader<'_> {
             }
         }
     }
+}
+
+/// A string's or set's bytes in a key: all of them, or a prefix and where
+/// the whole value is stored.
+enum Escaped {
+    Short(Vec<u8>),
+    Long {
+        prefix: Vec<u8>,
+        hash: u64,
+        vref: ValueRef,
+    },
 }
 
 // ─── Index keys (§5.2) ───────────────────────────────────────────────────────
@@ -898,6 +1054,7 @@ mod tests {
             KeyValue::Str(_) | KeyValue::LongStr { .. } => 4,
             KeyValue::Keyword(_) => 5,
             KeyValue::Ref(_) => 6,
+            KeyValue::Set(_) | KeyValue::LongSet { .. } => 7,
         }
     }
 

@@ -91,6 +91,14 @@ pub fn render_value(v: &Value, uuids: &HashMap<Uuid, usize>) -> String {
             None => "r?".to_string(),
         },
         Value::Null => "null".to_string(),
+        Value::Set(s) => format!(
+            "#{{{}}}",
+            s.iter()
+                .map(|e| render_value(e, uuids))
+                .collect::<Vec<_>>()
+                .join(" ")
+        ),
+        _ => "?".to_string(),
     }
 }
 
