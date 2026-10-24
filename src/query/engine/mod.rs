@@ -20,6 +20,7 @@ mod recursive;
 mod relation;
 mod scan;
 mod seed;
+mod sort;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests;
 mod union;
@@ -120,9 +121,9 @@ pub(crate) struct Stream {
     find: Vec<usize>,
     vars: Vec<String>,
     project: Counters,
-    /// Keep the DICT lookups until the stream ends: a `Window` turns every
-    /// row's ids into values in its first pull, and the rows it returns
-    /// later read the same ids again (#547).
+    /// Keep the DICT lookups until the stream ends: a `Window` or a `Sort`
+    /// turns every row's ids into values in its first pull, and the rows it
+    /// returns later read the same ids again (#547, #306).
     hold_ids: bool,
     /// In a rule query, the relations its rules derived (#548).
     relations: Option<relation::Relations>,
@@ -274,7 +275,9 @@ fn stream(
         vars,
         as_of: _,
     } = plan;
-    let hold_ids = steps.iter().any(|s| matches!(s, plan::Step::Window { .. }));
+    let hold_ids = steps
+        .iter()
+        .any(|s| matches!(s, plan::Step::Window { .. } | plan::Step::Sort { .. }));
     let root = build(source, steps, &meter);
     Stream {
         snapshot,
@@ -321,6 +324,9 @@ pub(crate) fn build(
             )),
             plan::Step::Window { find, named, keep } => {
                 Box::new(window::Window::new(root, find, named, keep, meter))
+            }
+            plan::Step::Sort { cols, order, keep } => {
+                Box::new(sort::Sort::new(root, cols, order, keep, meter))
             }
             plan::Step::Limit { offset, limit } => Box::new(limit::Limit::new(root, offset, limit)),
             step => Box::new(filter::Apply::new(root, step)),

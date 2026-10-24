@@ -1205,7 +1205,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
         if !find_specs.contains(entry) {
             bail_coded!(ErrorCode::Prs117, entry.display_name());
         }
-        if order_by[..k].iter().any(|(e, _)| e == entry) {
+        if order_by.iter().take(k).any(|(e, _)| e == entry) {
             bail_coded!(ErrorCode::Prs118, format!("{} twice", entry.display_name()));
         }
     }

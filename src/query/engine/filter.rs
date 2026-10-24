@@ -34,6 +34,7 @@ impl Apply {
             Step::Distinct(_) => "Distinct",
             Step::Aggregate { .. } => "Aggregate",
             Step::Window { .. } => "Window",
+            Step::Sort { .. } => "Sort",
             Step::Limit { .. } => "Limit",
         };
         Apply {
@@ -133,7 +134,8 @@ fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<Batch> {
             batch.set_col(*slot, out);
         }
         // Joins are operators of their own (`join::Join`, `anti::AntiJoin`,
-        // `union::Union`, `distinct::Distinct`, `collect::CollectSet`, `limit::Limit`).
+        // `union::Union`, `distinct::Distinct`, `collect::CollectSet`, `sort::Sort`,
+        // `limit::Limit`).
         Step::Join(_)
         | Step::CollectSet(_)
         | Step::Anti(_)
@@ -141,6 +143,7 @@ fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<Batch> {
         | Step::Distinct(_)
         | Step::Aggregate { .. }
         | Step::Window { .. }
+        | Step::Sort { .. }
         | Step::Limit { .. } => {}
     }
     Ok(batch)
