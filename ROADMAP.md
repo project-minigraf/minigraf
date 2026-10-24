@@ -148,6 +148,15 @@ Scope — format and storage integrity:
 - Net-assert on v8 keys before resolving facts, for O(live) point queries (#379)
 - `btree_page` fuzz target that reaches node decoding (#375)
 
+Scope — query and bindings:
+
+- Native `:limit N` / `:offset` for plain `:find` queries (#306, #310)
+- Query profiler (#185)
+- Set membership predicates (#316)
+- `PreparedQuery` over UniFFI (#181)
+- UDF registration over UniFFI (#180)
+- `OpenOptions` exposed over UniFFI, so embedders can suppress the close-time checkpoint (#322; done on `v3`)
+
 Scope — release-gate testing and documentation:
 
 - Golden-file compatibility corpus for every format version, frozen before v8 work goes further (#391)
@@ -168,14 +177,8 @@ Scope — release-gate testing and documentation:
 Additive features, kept out of v3.0.0 so the #371 fix is not held up by them:
 
 - Rule persistence — design first (#241)
-- Query profiler (#185)
-- Native `:limit N` / `:offset` for plain `:find` queries (#306, #310)
-- Set membership predicates (#316)
 - `lag`/`lead` window functions (#182)
 - Sliding row frames — `:rows N preceding` (#183; builds on #182)
-- `PreparedQuery` over UniFFI (#181)
-- UDF registration over UniFFI (#180)
-- `OpenOptions` exposed over UniFFI, so embedders can suppress the close-time checkpoint (#322)
 - Temporal graph-traversal research (#273; may result in documentation or a blog post rather than code)
 
 ---
@@ -187,7 +190,7 @@ Additive features, kept out of v3.0.0 so the #371 fix is not held up by them:
 ### Developer Tools
 
 - 🎯 Database inspector/debugger (separate repository: [minigraf-inspector](https://github.com/project-minigraf/minigraf-inspector))
-- 🎯 Query profiler (#185, v3.next)
+- 🎯 Query profiler (#185, v3.0.0)
 - 🎯 Time-travel visualizer (separate repository: [minigraf-visualizer](https://github.com/project-minigraf/minigraf-visualizer))
 
 ### Integration Examples
