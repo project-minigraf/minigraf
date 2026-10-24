@@ -121,9 +121,9 @@ pub(crate) struct Stream {
     find: Vec<usize>,
     vars: Vec<String>,
     project: Counters,
-    /// Keep the DICT lookups until the stream ends: a `Window` or a `Sort`
-    /// turns every row's ids into values in its first pull, and the rows it
-    /// returns later read the same ids again (#547, #306).
+    /// Keep the DICT lookups until the stream ends: a `Window` turns every
+    /// row's ids into values in its first pull, and the rows it returns
+    /// later read the same ids again (#547).
     hold_ids: bool,
     /// In a rule query, the relations its rules derived (#548).
     relations: Option<relation::Relations>,
@@ -275,9 +275,7 @@ fn stream(
         vars,
         as_of: _,
     } = plan;
-    let hold_ids = steps
-        .iter()
-        .any(|s| matches!(s, plan::Step::Window { .. } | plan::Step::Sort { .. }));
+    let hold_ids = steps.iter().any(|s| matches!(s, plan::Step::Window { .. }));
     let root = build(source, steps, &meter);
     Stream {
         snapshot,

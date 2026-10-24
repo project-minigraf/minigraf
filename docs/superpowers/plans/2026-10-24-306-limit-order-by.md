@@ -166,10 +166,12 @@ Branch `feat/306-order-by` from `v3` 59ce7f24 (PR 1 merged as #745), worktree
     comparator (worst row on top): `std::collections::BinaryHeap` needs `Ord` on the element,
     which would carry the order spec in every row. ~30 lines, unit-tested against a full
     sort.
-12. **A `Sort` stream keeps its DICT lookups** (`Stream::hold_ids`, as for `Window`): it turns
-    every row's ids into values in its first pull. With top-k it holds at most `k` rows'
-    ids' worth of lookups beyond what the scan touched; without `keep` it holds the answer
-    anyway.
+12. **`Sort` drops the DICT lookups after each input batch** (`IdSpace::end_pull`), and a
+    `Sort` stream does not set `Stream::hold_ids`. `Sort` reads its whole input in its first
+    pull, turning every row's ids into values; the DICT cache is per pull, so kept it would
+    grow with the input (10M entries at the acceptance scale), not with `keep`. The rows it
+    holds are values, so nothing needs the lookups again; the cache is only a cache (a DICT
+    id never changes), so clearing it mid-pull is safe.
 13. **`:offset` alone (with `:order-by`, no `:limit`)** plans `Sort` without `keep` and
     `Limit { offset, limit: None }`.
 14. **Error texts** (no backticks: no registry template has any, and the doc check reads

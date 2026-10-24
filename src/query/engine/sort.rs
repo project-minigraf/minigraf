@@ -157,6 +157,10 @@ impl Operator for Sort {
                 while let Some(batch) = self.child.next_batch(ctx)? {
                     self.counters.rows_in += batch.len as u64;
                     self.take(&batch, ctx)?;
+                    // The rows held are values, so the DICT lookups that made
+                    // them are not needed again: kept, they would grow with
+                    // the input, not with `keep`.
+                    ctx.ids.end_pull();
                 }
             }
             let mut rows = std::mem::take(&mut self.rows);

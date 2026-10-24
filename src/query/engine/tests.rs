@@ -2969,3 +2969,33 @@ fn stream_fits_the_allocator_thread_cache() {
     let size = std::mem::size_of::<super::Stream>();
     assert!(size <= 1032, "Stream is {size} bytes");
 }
+
+// ── #306: Sort ──────────────────────────────────────────────────────────────
+
+/// Top-k holds `k` rows and one batch's DICT lookups, so it runs under a
+/// limit a full sort of the same input exceeds (#306 spec §4.2).
+#[test]
+fn top_k_memory_follows_k_not_the_input() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = memory_db(dir.path(), 20_000, 512 * 1024);
+    let rows = |r: QueryResult| match r {
+        QueryResult::QueryResults { results, .. } => results,
+        _ => panic!("rows"),
+    };
+    let top = rows(
+        db.execute("(query [:find ?e ?v :where [?e :a ?v] :order-by [?v :desc] :limit 10])")
+            .unwrap(),
+    );
+    let firsts: Vec<i64> = top
+        .iter()
+        .map(|r| match r.get(1) {
+            Some(crate::Value::Integer(n)) => *n,
+            _ => panic!("an integer"),
+        })
+        .collect();
+    assert_eq!(firsts, (19_990..20_000).rev().collect::<Vec<i64>>());
+    let e = db
+        .execute("(query [:find ?e ?v :where [?e :a ?v] :order-by [?v :desc]])")
+        .expect_err("a full sort over the limit");
+    assert_eq!(crate::MinigrafError::from(e).code(), "QRY-012");
+}
