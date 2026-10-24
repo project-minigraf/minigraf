@@ -188,6 +188,7 @@ binary_form = { binary_op ~ expr_arg ~ expr_arg }
 unary_op    = @{ "string?" | "integer?" | "float?" | "boolean?" | "nil?" }
 binary_op   = @{
     "<=" | ">=" | "!=" | "starts-with?" | "ends-with?" | "contains?" | "matches?" |
+    "not-in?" | "any-in?" | "all-in?" | "none-in?" | "in?" |
     "<" | ">" | "=" | "+" | "-" | "*" | "/"
 }
 expr_arg = {

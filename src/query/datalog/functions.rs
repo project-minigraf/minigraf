@@ -94,6 +94,11 @@ impl FunctionRegistry {
             "ends-with?",
             "contains?",
             "matches?",
+            "in?",
+            "not-in?",
+            "any-in?",
+            "all-in?",
+            "none-in?",
         ] {
             reg.predicates.insert(
                 name.to_string(),

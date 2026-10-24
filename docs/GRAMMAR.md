@@ -108,7 +108,8 @@ unary-form  ::= (unary-op | op-sym | plain-sym) expr-arg
 binary-form ::= binary-op expr-arg expr-arg
 unary-op    ::= "string?" | "integer?" | "float?" | "boolean?" | "nil?"  (* token *)
 binary-op   ::= "<=" | ">=" | "!=" | "starts-with?" | "ends-with?" | "contains?"
-              | "matches?" | "<" | ">" | "=" | "+" | "-" | "*" | "/"  (* token *)
+              | "matches?" | "not-in?" | "any-in?" | "all-in?" | "none-in?" | "in?"
+              | "<" | ">" | "=" | "+" | "-" | "*" | "/"  (* token *)
 expr-arg    ::= expr | set-lit | boolean-lit | nil-lit | float-lit | integer-lit
               | string-lit | bind-slot | keyword | variable
 

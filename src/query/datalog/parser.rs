@@ -1339,7 +1339,8 @@ fn parse_expr(list: &[EdnValue]) -> Result<Expr> {
 
         // Binary operators
         "<" | ">" | "<=" | ">=" | "=" | "!=" | "+" | "-" | "*" | "/" | "starts-with?"
-        | "ends-with?" | "contains?" | "matches?" => {
+        | "ends-with?" | "contains?" | "matches?" | "in?" | "not-in?" | "any-in?" | "all-in?"
+        | "none-in?" => {
             if list.len() != 3 {
                 bail_coded!(ErrorCode::Prs065, head);
             }
@@ -1383,8 +1384,13 @@ fn parse_expr(list: &[EdnValue]) -> Result<Expr> {
                 "/" => BinOp::Div,
                 "starts-with?" => BinOp::StartsWith,
                 "ends-with?" => BinOp::EndsWith,
+                "contains?" => BinOp::Contains,
+                "in?" => BinOp::In,
+                "not-in?" => BinOp::NotIn,
+                "any-in?" => BinOp::AnyIn,
+                "all-in?" => BinOp::AllIn,
                 // SAFETY: the match arm above covers all non-matches? variants
-                _ => BinOp::Contains,
+                _ => BinOp::NoneIn,
             };
             // SAFETY: len == 3 check above guarantees indices 1 and 2 exist
             #[allow(clippy::indexing_slicing)]
