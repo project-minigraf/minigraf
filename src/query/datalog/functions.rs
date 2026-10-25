@@ -194,6 +194,47 @@ impl FunctionRegistry {
     }
 }
 
+/// The descriptor of a user aggregate over a typed accumulator `Acc`, which
+/// the registry holds type-erased.
+pub(crate) fn udf_aggregate<Acc>(
+    init: impl Fn() -> Result<Acc, UdfError> + Send + Sync + 'static,
+    step: impl Fn(&mut Acc, &Value) -> Result<(), UdfError> + Send + Sync + 'static,
+    finalise: impl Fn(&Acc, usize) -> Result<Value, UdfError> + Send + Sync + 'static,
+) -> AggregateDesc
+where
+    Acc: Any + Send + 'static,
+{
+    let init_boxed: UdfInitFn = Arc::new(move || Ok(Box::new(init()?) as Box<dyn Any + Send>));
+    let step_boxed: UdfStepFn = Arc::new(move |acc, v| {
+        // `init_boxed` always creates `Box<Acc>`, so downcast is infallible.
+        match acc.downcast_mut::<Acc>() {
+            Some(typed_acc) => step(typed_acc, v),
+            None => Ok(()),
+        }
+    });
+    let finalise_boxed: UdfFinaliseFn = Arc::new(move |acc, n| match acc.downcast_ref::<Acc>() {
+        Some(typed_acc) => finalise(typed_acc, n),
+        None => Ok(Value::Null),
+    });
+    AggregateDesc {
+        impl_: AggImpl::Udf(UdfOps {
+            init: init_boxed,
+            step: step_boxed,
+            finalise: finalise_boxed,
+        }),
+    }
+}
+
+/// The descriptor of a user predicate.
+pub(crate) fn udf_predicate(
+    f: impl Fn(&Value) -> Result<bool, UdfError> + Send + Sync + 'static,
+) -> PredicateDesc {
+    PredicateDesc {
+        f: Arc::new(f),
+        is_builtin: false,
+    }
+}
+
 /// The registry a database shares between its handles (#180, spec §5). A
 /// query reads its functions from a [`snapshot`](Functions::snapshot) taken
 /// when it opens, so no lock is held while a user function runs, and a

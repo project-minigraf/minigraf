@@ -52,13 +52,23 @@ pub(super) fn read_bindings(bindings: &JsValue) -> Result<Vec<(String, BindValue
         .map(|entry| {
             let pair: Array = entry.unchecked_into();
             let name = pair.get(0).as_string().unwrap_or_default();
-            let value = read_bind_value(&name, &pair.get(1))?;
+            let value = read_bind_value(&format!("slot ${name}"), &pair.get(1))?;
             Ok((name, value))
         })
         .collect()
 }
 
-fn read_bind_value(name: &str, v: &JsValue) -> Result<BindValue, JsValue> {
+/// The value `v`, in a bind value's plain or typed form; `what` names it in
+/// errors. Used for a user function's result (#180).
+pub(super) fn read_value(what: &str, v: &JsValue) -> Result<Value, JsValue> {
+    match read_bind_value(what, v)? {
+        BindValue::Val(value) => Ok(value),
+        _ => Err(invalid(&format!("{what} is not a value"))),
+    }
+}
+
+/// The bind value `v`; `what` names it in errors (`slot $name`).
+fn read_bind_value(what: &str, v: &JsValue) -> Result<BindValue, JsValue> {
     if let Some(b) = v.as_bool() {
         return Ok(BindValue::Val(Value::Boolean(b)));
     }
@@ -69,29 +79,30 @@ fn read_bind_value(name: &str, v: &JsValue) -> Result<BindValue, JsValue> {
         return Ok(BindValue::Val(Value::String(s)));
     }
     if v.is_bigint() || v.as_f64().is_some() {
-        return Ok(BindValue::Val(number(name, v)?));
+        return Ok(BindValue::Val(number(what, v)?));
     }
     if let Some(set) = v.dyn_ref::<js_sys::Set>() {
         let mut elements = Vec::new();
         set.for_each(&mut |e, _, _| elements.push(e));
-        return value_set(name, &format!("slot ${name}"), elements);
+        return value_set(what, what, elements);
     }
     if v.is_object()
         && !Array::is_array(v)
         && let Some(kind) = Reflect::get(v, &JsValue::from_str("type"))?.as_string()
-        && let Some(bind) = read_typed(name, &kind, v)?
+        && let Some(bind) = read_typed(what, &kind, v)?
     {
         return Ok(bind);
     }
     Err(type_error(&format!(
-        "slot ${name}: a bind value is a boolean, number, bigint, string, null, Set or {{type, value}} object"
+        "{what}: a bind value is a boolean, number, bigint, string, null, Set or {{type, value}} object"
     )))
 }
 
 /// A typed form, or `None` if `kind` names no type.
-fn read_typed(name: &str, kind: &str, v: &JsValue) -> Result<Option<BindValue>, JsValue> {
+fn read_typed(what: &str, kind: &str, v: &JsValue) -> Result<Option<BindValue>, JsValue> {
     let value = Reflect::get(v, &JsValue::from_str("value"))?;
-    let what = || format!("slot ${name} of type {kind:?}");
+    let label = what;
+    let what = || format!("{label} of type {kind:?}");
     let string = || value.as_string().ok_or_else(|| mismatch(&what()));
     Ok(Some(match kind {
         "string" => BindValue::Val(Value::String(string()?)),
@@ -115,7 +126,7 @@ fn read_typed(name: &str, kind: &str, v: &JsValue) -> Result<Option<BindValue>, 
         "timestamp" => BindValue::Timestamp(integer(&what(), &value)?),
         "anyValidTime" if value.is_undefined() => BindValue::AnyValidTime,
         "set" => match value.dyn_ref::<Array>() {
-            Some(elements) => value_set(name, &what(), elements.iter().collect())?,
+            Some(elements) => value_set(label, &what(), elements.iter().collect())?,
             None => return Err(mismatch(&what())),
         },
         // These two take no value.
@@ -125,13 +136,13 @@ fn read_typed(name: &str, kind: &str, v: &JsValue) -> Result<Option<BindValue>, 
 }
 
 /// The set of `elements`, each read as a bind value that must be a value.
-/// Element `i` is named `$name[i]` in errors.
-fn value_set(name: &str, what: &str, elements: Vec<JsValue>) -> Result<BindValue, JsValue> {
+/// Element `i` is named `{label}[i]` in errors.
+fn value_set(label: &str, what: &str, elements: Vec<JsValue>) -> Result<BindValue, JsValue> {
     let values = elements
         .iter()
         .enumerate()
         .map(
-            |(i, e)| match read_bind_value(&format!("{name}[{i}]"), e)? {
+            |(i, e)| match read_bind_value(&format!("{label}[{i}]"), e)? {
                 BindValue::Val(v) => Ok(v),
                 _ => Err(invalid(&format!("{what}: element {i} is not a value"))),
             },
@@ -143,9 +154,9 @@ fn value_set(name: &str, what: &str, elements: Vec<JsValue>) -> Result<BindValue
 }
 
 /// A plain `number` or `bigint`: an integer when it is whole, else a float.
-fn number(name: &str, v: &JsValue) -> Result<Value, JsValue> {
+fn number(what: &str, v: &JsValue) -> Result<Value, JsValue> {
     if v.is_bigint() || Number::is_integer(v) {
-        integer(&format!("slot ${name}"), v).map(Value::Integer)
+        integer(what, v).map(Value::Integer)
     } else {
         Ok(Value::Float(v.as_f64().unwrap_or(f64::NAN)))
     }
