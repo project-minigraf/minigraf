@@ -558,6 +558,10 @@ mod tests {
     #[wasm_bindgen_test]
     fn registration_errors() {
         let db = BrowserDb::open_in_memory().unwrap();
+        db.register_predicate("p?", js_fn("v", "return true"))
+            .unwrap();
+        let held = || HELD.with(|h| h.borrow().len());
+        let before = held();
         let err = db.register_predicate("p?", JsValue::from(1)).unwrap_err();
         assert!(err.is_instance_of::<js_sys::TypeError>(), "not a function");
         let partial = js_sys::Object::new();
@@ -567,8 +571,6 @@ mod tests {
         let err = db.register_aggregate("a", JsValue::NULL).unwrap_err();
         assert!(err.is_instance_of::<js_sys::TypeError>(), "not an object");
 
-        db.register_predicate("p?", js_fn("v", "return true"))
-            .unwrap();
         let err = db
             .register_predicate("p?", js_fn("v", "return true"))
             .unwrap_err()
@@ -581,6 +583,8 @@ mod tests {
             .as_string()
             .unwrap();
         assert!(err.starts_with("[INT-040]"), "built-in name");
+        // A failed registration keeps none of the functions it was given.
+        assert_eq!(held(), before, "no entry left behind");
     }
 
     #[wasm_bindgen_test]
