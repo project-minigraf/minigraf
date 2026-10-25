@@ -574,10 +574,16 @@ pub struct DatalogQuery {
     pub max_results: Option<usize>,
     /// `:limit`: the most rows the query returns (#306).
     pub limit: Option<Count>,
+    /// `:offset`: the rows of the ordered answer skipped before `:limit`'s
+    /// (#306); the parser requires `:order-by` with it.
+    pub offset: Option<Count>,
+    /// `:order-by`: `:find` elements and their directions (#306); empty for
+    /// none. Every `:find` element not named follows, ascending.
+    pub order_by: Vec<(FindSpec, Order)>,
 }
 
-/// The value of `:limit` (#306): a literal, or a bind slot a prepared query
-/// fills.
+/// The value of `:limit` or `:offset` (#306): a literal, or a bind slot a
+/// prepared query fills.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Count {
     Literal(usize),
@@ -595,6 +601,8 @@ impl DatalogQuery {
             max_derived_facts: None,
             max_results: None,
             limit: None,
+            offset: None,
+            order_by: Vec::new(),
         }
     }
 
@@ -610,6 +618,8 @@ impl DatalogQuery {
             max_derived_facts: None,
             max_results: None,
             limit: None,
+            offset: None,
+            order_by: Vec::new(),
         }
     }
 

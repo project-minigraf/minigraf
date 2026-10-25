@@ -30,7 +30,7 @@ use crate::query::datalog::optimizer;
 use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::stratification::DependencyGraph;
 use crate::query::datalog::types::{
-    AsOf, AttributeSpec, Count, DatalogQuery, EdnValue, Expr, FindSpec, Pattern, PseudoAttr,
+    AsOf, AttributeSpec, Count, DatalogQuery, EdnValue, Expr, FindSpec, Order, Pattern, PseudoAttr,
     UnaryOp, ValidAt, WhereClause,
 };
 use anyhow::Result;
@@ -183,8 +183,16 @@ pub(crate) enum Step {
         named: Vec<usize>,
         keep: Vec<usize>,
     },
-    /// After the last step: skips `offset` rows, then passes on at most
-    /// `limit` (#306).
+    /// After the last step: the `:find` columns at slots `cols`, sorted by
+    /// `order`, `(column of cols, descending)` (the full order), holding at
+    /// most `keep` rows (#306).
+    Sort {
+        cols: Vec<usize>,
+        order: Vec<(usize, bool)>,
+        keep: Option<usize>,
+    },
+    /// After the last step, or `Sort`: skips `offset` rows, then passes on at
+    /// most `limit` (#306).
     Limit { offset: usize, limit: Option<usize> },
 }
 
@@ -557,16 +565,44 @@ fn plan_with(query: &DatalogQuery, evaluated: Option<Arc<Evaluated>>) -> Result<
     let mut plan = b.finish()?;
     plan.find = find;
     // After `finish`, which may still add the steps of a clause list with
-    // no pattern.
-    match &query.limit {
-        None => {}
-        Some(Count::Literal(n)) => plan.steps.push(Step::Limit {
-            offset: 0,
-            limit: Some(*n),
-        }),
-        // `execute` rejects an unbound slot (API-010); a prepared query
-        // fills it.
-        Some(Count::Slot(_)) => return Err(invariant("a :limit slot reached the planner")),
+    // no pattern. `execute` rejects an unbound slot (API-010); a prepared
+    // query fills it.
+    let count = |c: &Option<Count>, option: &str| match c {
+        None => Ok(None),
+        Some(Count::Literal(n)) => Ok(Some(*n)),
+        Some(Count::Slot(_)) => Err(invariant(&format!("a {option} slot reached the planner"))),
+    };
+    let (limit, offset) = (
+        count(&query.limit, ":limit")?,
+        count(&query.offset, ":offset")?,
+    );
+    let offset = offset.unwrap_or(0);
+    if !query.order_by.is_empty() {
+        // The full order (#306 spec §2): the keys, then every other `:find`
+        // column ascending.
+        let mut order = Vec::with_capacity(query.find.len());
+        for (spec, dir) in &query.order_by {
+            let col = query
+                .find
+                .iter()
+                .position(|s| s == spec)
+                .ok_or_else(|| invariant("an :order-by entry outside :find"))?;
+            order.push((col, matches!(dir, Order::Desc)));
+        }
+        for col in 0..query.find.len() {
+            if !order.iter().any(|&(c, _)| c == col) {
+                order.push((col, false));
+            }
+        }
+        plan.steps.push(Step::Sort {
+            cols: std::mem::take(&mut plan.find),
+            order,
+            keep: limit.map(|l| offset.saturating_add(l)),
+        });
+        plan.find = (0..query.find.len()).collect();
+    }
+    if limit.is_some() || offset > 0 {
+        plan.steps.push(Step::Limit { offset, limit });
     }
     plan.vars = query.find.iter().map(FindSpec::display_name).collect();
     plan.as_of = as_of;

@@ -1,6 +1,8 @@
-//! Acceptance test for `:limit` (#306 spec §5, moved from #473): over 10M
-//! facts, `:limit 10` stops the query once it has its rows, so its time and
-//! memory do not grow with the facts.
+//! Acceptance test for `:limit` and top-k (#306 spec §5, moved from #473):
+//! over 10M facts, `:limit 10` stops the query once it has its rows, so its
+//! time and memory do not grow with the facts; `:order-by [?v :desc] :limit
+//! 10` reads every fact but holds ten rows, so its memory does not grow with
+//! them. One test, so the fixture is built once.
 //!
 //! Ignored by default; `.github/workflows/smoke.yml` runs it nightly:
 //!
@@ -27,6 +29,9 @@ const MAX_RSS: usize = 32 << 20;
 /// Far below a scan of 10M facts (seconds), well above one batch (well
 /// under a millisecond on a desktop), for slow CI runners.
 const MAX_TIME: std::time::Duration = std::time::Duration::from_millis(250);
+/// What top-k may hold: ten rows and one batch's DICT lookups, which `Sort`
+/// drops after each batch. One lookup per fact would need hundreds of MiB.
+const TOP_K_MEMORY_LIMIT: usize = 1 << 20;
 
 /// A `kB` field of `/proc/self/status`; 0 where it does not exist.
 fn proc_status_kb(field: &str) -> usize {
@@ -40,9 +45,39 @@ fn proc_status_kb(field: &str) -> usize {
         .unwrap_or(0)
 }
 
+/// Run `query` on `path` under `limit`: its rows, time and the peak RSS it
+/// added, when measurable.
+fn measure(
+    path: &std::path::Path,
+    limit: usize,
+    query: &str,
+) -> (Vec<Vec<Value>>, std::time::Duration, Option<usize>) {
+    let db = OpenOptions::new()
+        .query_memory_limit(limit)
+        .path(path)
+        .open()
+        .unwrap();
+    let reset = std::fs::write("/proc/self/clear_refs", "5").is_ok();
+    let before_kb = proc_status_kb("VmRSS");
+    let start = std::time::Instant::now();
+    let result = db.execute(query).unwrap();
+    let elapsed = start.elapsed();
+    let peak_kb = proc_status_kb("VmHWM");
+    let added = peak_kb.saturating_sub(before_kb) * 1024;
+    eprintln!(
+        "{query}: {elapsed:.2?}; peak RSS {} MiB, {} KiB added by the query",
+        peak_kb / 1024,
+        added / 1024
+    );
+    let QueryResult::QueryResults { results, .. } = result else {
+        panic!("expected query results");
+    };
+    (results, elapsed, (reset && peak_kb > 0).then_some(added))
+}
+
 #[test]
 #[ignore]
-fn limit_10_over_10m_facts() {
+fn limit_and_top_k_over_10m_facts() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("limit.graph");
     // `LogWriter` writes the records straight into the trees in batched
@@ -64,31 +99,37 @@ fn limit_10_over_10m_facts() {
         .unwrap();
     }
     w.finish().unwrap();
-    eprintln!("limit_10_over_10m_facts: built in {:.2?}", start.elapsed());
-    let db = OpenOptions::new()
-        .query_memory_limit(MEMORY_LIMIT)
-        .path(&path)
-        .open()
-        .unwrap();
-    let query = "(query [:find ?e ?v :where [?e :a ?v] :limit 10])";
-    let reset = std::fs::write("/proc/self/clear_refs", "5").is_ok();
-    let before_kb = proc_status_kb("VmRSS");
-    let start = std::time::Instant::now();
-    let result = db.execute(query).unwrap();
-    let elapsed = start.elapsed();
-    let peak_kb = proc_status_kb("VmHWM");
-    let added = peak_kb.saturating_sub(before_kb) * 1024;
-    eprintln!(
-        "limit_10_over_10m_facts: {elapsed:.2?}; peak RSS {} MiB, {} KiB added by the query",
-        peak_kb / 1024,
-        added / 1024
+    eprintln!("10M facts: built in {:.2?}", start.elapsed());
+    let (rows, elapsed, added) = measure(
+        &path,
+        MEMORY_LIMIT,
+        "(query [:find ?e ?v :where [?e :a ?v] :limit 10])",
     );
-    let QueryResult::QueryResults { results, .. } = result else {
-        panic!("expected query results");
-    };
-    assert_eq!(results.len(), 10, "ten rows");
+    assert_eq!(rows.len(), 10, "ten rows");
     assert!(elapsed < MAX_TIME, "stops once it has its rows");
-    if reset && peak_kb > 0 {
+    if let Some(added) = added {
         assert!(added < MAX_RSS, "holds no rows");
+    }
+
+    let (rows, _, added) = measure(
+        &path,
+        TOP_K_MEMORY_LIMIT,
+        "(query [:find ?e ?v :where [?e :a ?v] :order-by [?v :desc] :limit 10])",
+    );
+    let top: Vec<i64> = rows
+        .iter()
+        .map(|r| match r.get(1) {
+            Some(Value::Integer(n)) => *n,
+            _ => panic!("an integer"),
+        })
+        .collect();
+    let n = FACTS as i64;
+    assert_eq!(
+        top,
+        ((n - 10)..n).rev().collect::<Vec<i64>>(),
+        "the ten largest"
+    );
+    if let Some(added) = added {
+        assert!(added < MAX_RSS, "holds ten rows");
     }
 }

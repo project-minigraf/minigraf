@@ -1,0 +1,5 @@
+(query [:order-by [?n :desc]
+        :offset 20
+        :find ?n
+        :where [?e :person/name ?n]
+        :limit 10])
