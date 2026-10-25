@@ -469,10 +469,12 @@ These tests compare the database against an independent answer rather than a sin
 
 None of these are counted in the summary. The wasm32 targets run in CI (`.github/workflows/wasm.yml`).
 
-- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 43 `wasm_bindgen_test` tests.
+- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 58 `wasm_bindgen_test` tests.
   - Twenty-five for `BrowserDb`, including IndexedDB persistence, the cursor, and the flush returning every dirty page and failing on one it cannot read (#470).
   - Eleven for `BrowserBufferBackend` (which used `#[test]` and never ran before).
   - Two checking that IndexedDB page keys accept only whole numbers from 0 to 2^53.
+  - Fifteen for `BrowserDb` user functions (#180), below.
+- **`BrowserDb.registerPredicate` / `registerAggregate`** (#180): a predicate filters rows; every value kind reaches JS as its `{type, value}` object (an integer as a `bigint`, a ref as its UUID, a set's elements in canonical order); an aggregate in `:find` and with `:over`; a plain `finish` result read as a bind value; a throw (an `Error`, a string), a predicate returning a non-boolean, a failing `init`/`step`/`finish` and a `finish` result that is a bad ref or not a value each fail with `QRY-014` (`execute`, cursor and prepared query; aggregates also as windows); `TypeError` for a non-function and `INT-040` for a taken or built-in name; from inside a UDF, a nested `query` running a UDF, a registration (not seen by the outer query, seen by the next), and `execute`/`checkpoint`/`importGraph` that resolve after the outer query with both answers right; a value missing from the thread's table fails the call (`called off the JavaScript thread`), and a dropped function frees its entry.
 - **`BrowserDb.prepare`** (#181): one prepared query run with three bindings; every plain JS value (boolean, whole and fractional `number`, `bigint`, string, `null`) and every `{type, value}` form; a prepared cursor gives the rows of `execute`; `TypeError` for a non-bind value or non-object bindings, `API-017` for a bad UUID, a negative tx count or a value on `null`/`anyValidTime`, `API-022`, `API-023`, `API-024` (both `execute` and `query`) and `API-005`; a later write is seen by the next run.
 - **`BrowserDb` cursor**: `query()` batches of 1, 7 and 1,000 give the rows of `execute()`; a cursor keeps the answer from when it opened and returns the end after `close()`; a `transact` is `API-012`.
 - **Page reuse** (#411, #440; five `BrowserDb` tests)

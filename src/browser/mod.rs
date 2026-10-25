@@ -10,6 +10,8 @@ mod binds;
 pub mod buffer;
 /// Async IndexedDB backend for browser WASM persistence.
 pub mod indexeddb;
+/// User-defined functions from JavaScript (#180).
+mod udfs;
 
 use crate::browser::buffer::BrowserBufferBackend;
 use crate::browser::indexeddb::IndexedDbBackend;

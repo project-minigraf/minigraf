@@ -23,10 +23,7 @@ use crate::graph::types::Value;
 use crate::query::datalog::evaluator::DEFAULT_MAX_DERIVED_FACTS;
 use crate::query::datalog::executor::DatalogExecutor;
 use crate::query::datalog::executor::QueryResult;
-use crate::query::datalog::functions::{
-    AggImpl, AggregateDesc, Functions, PredicateDesc, UdfError, UdfFinaliseFn, UdfInitFn, UdfOps,
-    UdfStepFn,
-};
+use crate::query::datalog::functions::{Functions, UdfError, udf_aggregate, udf_predicate};
 use crate::query::datalog::parser::parse_datalog_command;
 use crate::query::datalog::parser::statement::{self, Kind};
 use crate::query::datalog::prepared::reject_unbound_slots;
@@ -1564,27 +1561,7 @@ impl Minigraf {
     where
         Acc: Any + Send + 'static,
     {
-        let init_boxed: UdfInitFn = Arc::new(move || Ok(Box::new(init()?) as Box<dyn Any + Send>));
-        let step_boxed: UdfStepFn = Arc::new(move |acc, v| {
-            // `init_boxed` always creates `Box<Acc>`, so downcast is infallible.
-            match acc.downcast_mut::<Acc>() {
-                Some(typed_acc) => step(typed_acc, v),
-                None => Ok(()),
-            }
-        });
-        let finalise_boxed: UdfFinaliseFn =
-            Arc::new(move |acc, n| match acc.downcast_ref::<Acc>() {
-                Some(typed_acc) => finalise(typed_acc, n),
-                None => Ok(Value::Null),
-            });
-
-        let desc = AggregateDesc {
-            impl_: AggImpl::Udf(UdfOps {
-                init: init_boxed,
-                step: step_boxed,
-                finalise: finalise_boxed,
-            }),
-        };
+        let desc = udf_aggregate(init, step, finalise);
         self.inner
             .functions
             .register(|reg| reg.register_aggregate_desc(name.to_string(), desc))
@@ -1682,10 +1659,7 @@ impl Minigraf {
         name: &str,
         f: impl Fn(&Value) -> std::result::Result<bool, UdfError> + Send + Sync + 'static,
     ) -> Result<()> {
-        let desc = PredicateDesc {
-            f: Arc::new(f),
-            is_builtin: false,
-        };
+        let desc = udf_predicate(f);
         self.inner
             .functions
             .register(|reg| reg.register_predicate_desc(name.to_string(), desc))
