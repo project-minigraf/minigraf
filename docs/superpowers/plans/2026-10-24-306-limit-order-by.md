@@ -306,3 +306,16 @@ Docs site (`../minigraf-docs`, worktree): `content/datalog-reference.md` (the th
 `@since v3.0.0`), `content/comparison.md`; PR merged after PR 2. Review as step 9 (fmt,
 clippy plain and `test-hooks`, bench suite plain and `test-hooks`, wasm32 build, size gate,
 Codex). PR to `v3` "Part of #306"; after merge close #306 by hand and tick it in #383.
+
+### PR 2 deviations found while implementing
+
+1. **Heapsort, not `sort_unstable_by`** (step 13): without `keep`, `Sort` heapifies its rows and
+   heap-sorts them with the sift code top-k already has. A second pdqsort instantiation cost
+   ~5 KiB of release binary.
+2. **Size gate raised to 1,230 KiB** (user, 2026-10-25): v3 was at 1,198 of 1,200 KiB; PR 2
+   adds ~11 KiB (local 1,233 → 1,244). `binary-size.yml` and PHILOSOPHY.md §4.
+3. **Decision 12 reversed** (see its text): `Sort` drops the DICT lookups per input batch;
+   kept, top-k over committed data hit `QRY-012` from `IdSpace` (engine test
+   `top_k_memory_follows_k_not_the_input`).
+4. **Ordered shape tests live in `tests/limit_order_test.rs`**, not `engine/tests.rs`, beside
+   PR 1's unordered ones (step 14's engine tests are step 15's).
