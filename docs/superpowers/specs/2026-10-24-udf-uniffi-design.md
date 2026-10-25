@@ -108,18 +108,18 @@ pub enum MiniGrafUdfError {
 }
 impl From<uniffi::UnexpectedUniFFICallbackError> for MiniGrafUdfError { /* Failed { msg: reason } */ }
 
-#[uniffi::export]
+#[uniffi::export(with_foreign)]
 pub trait MiniGrafPredicate: Send + Sync {
     fn test(&self, value: MiniGrafValue) -> Result<bool, MiniGrafUdfError>;
 }
 
-#[uniffi::export]
+#[uniffi::export(with_foreign)]
 pub trait MiniGrafAggregate: Send + Sync {
     /// A new, empty accumulator: one per group, or per window partition.
     fn accumulator(&self) -> Result<Arc<dyn MiniGrafAccumulator>, MiniGrafUdfError>;
 }
 
-#[uniffi::export]
+#[uniffi::export(with_foreign)]
 pub trait MiniGrafAccumulator: Send + Sync {
     fn step(&self, value: MiniGrafValue) -> Result<(), MiniGrafUdfError>;
     /// `count`: values stepped so far.
@@ -133,7 +133,7 @@ impl MiniGrafDb {
 }
 ```
 
-- The traits are exported with plain `#[uniffi::export]`: UniFFI 0.31 lets foreign code implement an exported trait taken as `Arc<dyn Trait>`, and `with_foreign` is a deprecated alias for that. The plan checks that each target language (Python, Kotlin, Swift) generates an implementable interface.
+- The traits are exported with `#[uniffi::export(with_foreign)]`. Without it UniFFI 0.31.1 generates no callback interface: Python, Kotlin and Swift get only the Rust-backed class, and `register_*` accepts nothing else. (An earlier draft of this spec said plain `#[uniffi::export]` was enough. The template's bindgen check, plan step 16, showed it was not.) With it, Python subclasses `MiniGrafPredicate`, Kotlin implements `interface MiniGrafPredicate` (the Rust-backed class is `MiniGrafPredicateImpl`), and Swift conforms to `protocol MiniGrafPredicate: AnyObject, Sendable`.
 - The binding implements these with `try_register_predicate`/`try_register_aggregate`. `Acc` is `Arc<dyn MiniGrafAccumulator>`. `MiniGrafUdfError::Failed { msg }` becomes `UdfError::new(msg)`.
 - A `finish` that returns a `Ref` whose value is not a UUID is a failing call: ``ref value "<s>" is not a UUID`` (the same text `to_core` gives).
 - `count` is `i64`, following the bindings' rule that counts cross the FFI signed (Kotlin's unsigned types cannot be called from Java).
