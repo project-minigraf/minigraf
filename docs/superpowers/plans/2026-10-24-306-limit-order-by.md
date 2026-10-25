@@ -135,20 +135,187 @@ machine (`ssh 192.168.1.16`, `PATH=$HOME/.cargo/bin:$PATH`); the laptop only as 
 --features browser`), release binary size against the 1,200 KiB gate. Codex review
 (`codex exec -s read-only … < /dev/null`). PR to `v3` "Part of #306".
 
-## PR 2 — `:order-by`, `:offset`, `Sort` (outline; detailed after PR 1 merges)
+## PR 2 — `:order-by`, `:offset`, `Sort`
 
-10. `Direction`, `DatalogQuery.order_by`/`offset`; parser for `:order-by [..]` (matching
-    `FindSpec` by `==`) and `:offset`; `PRS-116`–`118`.
-11. Prepared `:offset` slots (`resolve_count_slot(…, ":offset", …)`).
-12. `aggregate.rs`: a row comparator over the full order (`value_order` per column, keys'
-    directions, then the other columns ascending).
-13. `engine/sort.rs`: full sort and top-k heap, metered (`QRY-012`), `keep = 0` closes without
-    pulling.
-14. `plan_with`: `Step::Sort` then `Step::Limit { offset, limit }`.
-15. Tests: ordered lists equal with reordering on/off; every `value_order` class; ties;
-    aggregates by `(count ?e) :desc`; windows; rule queries; cursors; prepared slots;
-    `QRY-012` in `Sort`; grammar, verifier `SEMANTIC` witnesses for `PRS-116`, `117`, `118`.
-16. Acceptance `top_k` (memory independent of the fact count) and envelope shape `top_k`.
-17. Docs: CHANGELOG, ERROR_REFERENCE (`PRS-116`–`118`), README, CLAUDE.md, TEST_COVERAGE,
-    ROADMAP; docs site `content/datalog-reference.md` and `content/comparison.md`
-    (`@since v3.0.0`), PR to minigraf-docs merged after PR 2. Close #306 by hand.
+Branch `feat/306-order-by` from `v3` 59ce7f24 (PR 1 merged as #745), worktree
+`.worktrees/306-order-by`.
+
+### Decisions for PR 2 (not fixed by the spec)
+
+7. **No new `Direction` type.** `types::Order { Asc, Desc }`, which a window's `:over`
+   already uses, is the direction: `DatalogQuery.order_by: Vec<(FindSpec, Order)>`
+   (deviation 2 from spec §4, which names a `Direction`).
+8. **Entries are matched after the section loop.** `:order-by` may come before `:find`
+   (spec §3), so `parse_query` keeps the parsed entries and checks them against
+   `find_specs` once every section is read: shape errors (`PRS-118`, and `PRS-117` for an
+   entry that is not a variable or a list) as the vector is read, `PRS-117` for an entry no
+   `:find` element equals and `PRS-118` for a repeat after the loop, then `PRS-116`. A list
+   entry is read with `parse_aggregate`, as `:find` reads one; an entry it rejects is
+   `PRS-117` (it is not a `:find` element), so the grammar-accepted `(foo ?x)` is semantic.
+9. **`Sort` holds values, not cells.** Each held row is the `Vec<Value>` of its `:find`
+   columns (the full order compares all of them), turned back into cells with
+   `Cell::of_value` only for the rows it returns, as `Window` does for its results. Holding
+   both cells and values would double the memory for no gain; a value's cell round-trips
+   (`Iid` ↔ keyword, `Eid` ↔ ref, a long string back to its value ref).
+10. **`Sort` returns the `:find` columns only.** `Step::Sort { cols, order, keep }` reads the
+    slots `cols` (= `plan.find`), returns batches of width `cols.len()`, and `plan.find`
+    becomes `0..cols.len()`, so `Limit` and `Project` after it see only those columns.
+    `order` is the full order as `(column index, desc)`: the order keys, then every other
+    `:find` index ascending.
+11. **Top-k is a hand-written binary heap** over `Vec<Vec<Value>>` with the full-order
+    comparator (worst row on top): `std::collections::BinaryHeap` needs `Ord` on the element,
+    which would carry the order spec in every row. ~30 lines, unit-tested against a full
+    sort.
+12. **`Sort` drops the DICT lookups after each input batch** (`IdSpace::end_pull`), and a
+    `Sort` stream does not set `Stream::hold_ids`. `Sort` reads its whole input in its first
+    pull, turning every row's ids into values; the DICT cache is per pull, so kept it would
+    grow with the input (10M entries at the acceptance scale), not with `keep`. The rows it
+    holds are values, so nothing needs the lookups again; the cache is only a cache (a DICT
+    id never changes), so clearing it mid-pull is safe.
+13. **`:offset` alone (with `:order-by`, no `:limit`)** plans `Sort` without `keep` and
+    `Limit { offset, limit: None }`.
+14. **Error texts** (no backticks: no registry template has any, and the doc check reads
+    the text between single backticks): `PRS-116` `:offset requires :order-by`; `PRS-117`
+    `:order-by entry {} is not a :find element`; `PRS-118` `:order-by takes a non-empty
+    vector of :find elements, each optionally followed by :asc or :desc; {}` (the fault:
+    `not a vector`, `empty`, `?x twice`, `:desc without an element`, `another keyword :foo`).
+
+### Step 10. Parser: `:order-by` and `:offset`
+
+- `types.rs`: `DatalogQuery.order_by: Vec<(FindSpec, Order)>` (empty = none) and
+  `offset: Option<Count>`; `new`/`from_patterns` set them empty/`None`; `Count`'s doc names
+  `:offset`.
+- `parser.rs` `parse_query`: an `:offset` arm as `:limit`'s (`INT-012` repeated, `INT-013`
+  no value, `PRS-115` otherwise). An `:order-by` arm: repeated `INT-012`; no value (end, or a
+  keyword next) `INT-013`; not a vector `PRS-118`; empty `PRS-118`; then per item: `?sym` or
+  a list starts an entry, `:asc`/`:desc` sets the direction of the entry before it (none
+  before it, or that entry already has one: `PRS-118`), any other keyword `PRS-118`,
+  anything else `PRS-117`. After the loop (decision 8): each entry must equal a `:find`
+  element (`PRS-117`) and appear once (`PRS-118`); `offset.is_some() && order_by.is_empty()`
+  is `PRS-116`.
+- `error.rs`: `Prs116`–`Prs118` at the four sites (enum after `Prs115`, registry, parser
+  category arm, `ALL`); `docs/ERROR_REFERENCE.md` rows and sections.
+- Tests (`parser.rs` unit): defaults; `:asc` default; `:desc`; aggregate and window entries;
+  every section order (`:order-by` before `:find`, between, last; `:offset` before
+  `:order-by`); `:offset 0`, slot; every row of spec §3.1 for the two sections, incl.
+  `?y` bound in `:where` not in `:find`, a `:with` variable, `(count ?e)` not in `:find`,
+  `1`, `"x"`, `(foo ?x)`, `[?x ?x]`, `[(count ?e) (count ?e)]`, `[:desc ?x]`,
+  `[?x :asc :desc]`, `[?x :foo]`, `[]`, `?x` (not a vector). `tests/error_codes_prs_test.rs`:
+  `prs_116_…`, `prs_117_…`, `prs_118_…`.
+
+### Step 11. Prepared `:offset` slots
+
+- `prepared.rs`: `collect_slot_names` adds `offset`'s slot; `substitute` resolves it with
+  `resolve_count_slot(name, ":offset", bindings)` (its doc names both options).
+- Tests (`prepared.rs` unit): listed in `slot_names`; unbound `API-010`; `n >= 0`, `n < 0`
+  `PRS-115`, wrong type `API-024`; one slot name used by both `:limit` and `:offset`.
+
+### Step 12. The full-order comparator
+
+- `aggregate.rs`: `pub(crate) fn row_order(a: &[Value], b: &[Value], order: &[(usize, bool)])
+  -> Ordering`: the first non-equal `value_order` of the listed columns, reversed where
+  `desc`.
+- Tests: each direction; ties falling to the next column; every `value_order` class in one
+  column (Integer before an equal Float, `-0.0` before `0.0`, NaN after numbers, strings,
+  booleans, refs, keywords, `nil`, sets), ascending and descending.
+
+### Step 13. `Sort` operator
+
+- `engine/sort.rs`: `Sort { child, cols, order, keep: Option<usize>, rows: Vec<Vec<Value>>,
+  out: Option<Vec<Vec<Value>>>, held: Held, counters }`.
+  - `keep == Some(0)`: close the child without pulling, return `None`.
+  - Otherwise read the child to its end; each row's values at `cols` (a missing slot reads
+    `nil`, as `Window`), charged (`size_of::<Vec<Value>>()` + `value_bytes`) before it is
+    held, `try_reserve` for growth.
+  - Without `keep`: push; at the end sort by `row_order` (`sort_unstable_by`: rows equal
+    under the full order are equal in every column, so stability is not needed).
+  - With `keep = k`: a max-heap (worst on top) of at most `k` rows; while below `k`, push and
+    sift up; else, if the row is better than the top, replace it (release the old row's
+    charge) and sift down; otherwise drop the row (never charged: compare first, then
+    charge). At the end, sort the heap's rows.
+  - Return the sorted rows in batches of `BATCH_ROWS` (`Cell::of_value` per value),
+    uncharging each row as it leaves.
+  - `rewind` clears and rewinds the child; `close` releases and closes the child;
+    `counters` reports `bytes_held`.
+- `plan.rs`: `Step::Sort { cols: Vec<usize>, order: Vec<(usize, bool)>, keep: Option<usize> }`;
+  `mod.rs` `build` routes it; `hold_ids` also for `Sort` (decision 12).
+- Engine unit tests (`sort.rs`, with a test child as `limit.rs` has): sort of 5,000 shuffled
+  rows equals `sort_by(row_order)`; top-k for k = 1, 10, 1,024, 4,999, 5,000, 6,000 equals
+  the full sort's first `k`; `keep 0` pulls nothing and closes the child; ties broken by
+  the second column; descending keys; `bytes_held` with `keep 10` over 100,000 rows stays
+  under the bytes of ~10 rows (bounded, not growing); `QRY-012` with a small meter limit,
+  with and without `keep`; `rewind` sorts again.
+
+### Step 14. Planning
+
+- `plan_with`, after `finish` and before the `Limit` push: with `order_by` non-empty, map
+  each entry to its `:find` index (`position(==)`, an invariant error if none: the parser
+  checked it), add every other index ascending, push `Step::Sort { cols: plan.find.clone(),
+  order, keep }` with `keep = limit.map(|l| offset.saturating_add(l))`, set
+  `plan.find = (0..n).collect()`. Then `Step::Limit { offset, limit }` when either is given
+  (`offset` default 0); a slot in either is `INT-032`.
+- Engine tests: ordered plain, join, `not`, `or`, aggregate (`(count ?e) :desc`, grouped and
+  ungrouped zero row), window (sort by a window column), rule query, `:as-of`, `:valid-at`;
+  each equals the unlimited answer sorted by the full order, sliced `offset..offset+limit`.
+
+### Step 15. Integration tests (`tests/limit_order_test.rs`)
+
+- Ordered shapes (each step-14 shape with `:order-by`): through `execute`, the cursor (one
+  row at a time), `PreparedQuery::execute`/`query` with `$n`/`$o` slots, reordering on and
+  off: the list equals `answer` sorted by the full order (computed in the test with its own
+  comparator over `value_order` classes, on the test's value keys), sliced; all four paths
+  and both reorder settings give the same list.
+- Pages: `:offset 0, 3, 6 … :limit 3` concatenate to the whole ordered answer.
+- `:offset` past the answer → no rows; `:limit 0` → none; `:offset` without `:limit`.
+- A value of every class in one ordered column, ascending and descending.
+- File database with committed and pending facts; `WriteTransaction` reads.
+- `QRY-012` from `Sort` with a small `query_memory_limit`, and none with top-k `:limit 10`
+  under the same limit over enough rows to exceed it unsorted.
+- Grammar (step-6 style): `grammar.pest` `kw_offset`, `order_by_section = { kw_order_by ~
+  "[" ~ order_entry+ ~ "]" }`, `order_entry = { find_spec ~ (kw_asc | kw_desc)? }`,
+  `offset_section = { kw_offset ~ (integer_lit | bind_slot) }`, both in `query_section`;
+  `docs/GRAMMAR.md` regenerated (`UPDATE_GRAMMAR_DOC=1`). Corpus: valid `query_order_by.edn`,
+  `query_order_by_desc_aggregate.edn`, `query_order_by_offset_limit.edn`,
+  `query_offset_slot.edn`; syntax `query_order_by_not_vector.edn`,
+  `query_order_by_empty.edn`, `query_order_by_leading_desc.edn`; semantic
+  `query_offset_without_order_by.edn`, `query_order_by_not_in_find.edn`,
+  `query_order_by_twice_entry.edn`, `query_offset_negative.edn`.
+- Verifier: `":offset"`, `":asc"`, `":desc"` in `TOKENS` (37); template 16
+  `("(query [:find ?x :where [?x :a ?y] :order-by [", "]])")`; `SEMANTIC` `PRS-116`
+  (`… :offset 1])`), `PRS-117` (`… :order-by [?y]])`), `PRS-118` (`… :order-by [?x ?x]])`).
+  `KNOWN_DRIFT` stays empty at bound 3 locally, bound 4 on the bench (`:asc`/`:desc` are
+  new in the window template too: any drift there is a finding, fixed or filed).
+
+### Step 16. Acceptance and envelope
+
+- `tests/limit_acceptance_test.rs`: `top_k_10_over_10m_facts` over the same fixture,
+  `[:find ?e ?v :where [?e :a ?v] :order-by [?v :desc] :limit 10]`: the rows are
+  `9_999_990..10M` descending; peak RSS added under 32 MB (memory independent of the fact
+  count; time follows the fact count: the input is read in full). The fixture is built once
+  for both tests (a `OnceLock` path in a kept temp dir), not twice.
+- `examples/perf_envelope.rs`: shape `top_k`, `[:find ?e ?a :where [?e :age ?a]
+  :order-by [?a :desc] :limit 10]`, rows `10.min(e)`. Bench run at 100K, 1M, 10M
+  (`--profile envelope`); numbers in the PR body and `BENCHMARKS.md`.
+
+### Step 17. Docs and PR
+
+`CHANGELOG.md` (Added: `:order-by`, `:offset`, `PRS-116`–`118`, under PR 1's `:limit`
+entry), `docs/ERROR_REFERENCE.md`, `README.md`, `CLAUDE.md` (`sort.rs`, `order_by`/`offset`,
+verifier template count 16, test count), `docs/TEST_COVERAGE.md`, `ROADMAP.md` (#306 done).
+Docs site (`../minigraf-docs`, worktree): `content/datalog-reference.md` (the three sections,
+`@since v3.0.0`), `content/comparison.md`; PR merged after PR 2. Review as step 9 (fmt,
+clippy plain and `test-hooks`, bench suite plain and `test-hooks`, wasm32 build, size gate,
+Codex). PR to `v3` "Part of #306"; after merge close #306 by hand and tick it in #383.
+
+### PR 2 deviations found while implementing
+
+1. **Heapsort, not `sort_unstable_by`** (step 13): without `keep`, `Sort` heapifies its rows and
+   heap-sorts them with the sift code top-k already has. A second pdqsort instantiation cost
+   ~5 KiB of release binary.
+2. **Size gate raised to 1,230 KiB** (user, 2026-10-25): v3 was at 1,198 of 1,200 KiB; PR 2
+   adds ~11 KiB (local 1,233 → 1,244). `binary-size.yml` and PHILOSOPHY.md §4.
+3. **Decision 12 reversed** (see its text): `Sort` drops the DICT lookups per input batch;
+   kept, top-k over committed data hit `QRY-012` from `IdSpace` (engine test
+   `top_k_memory_follows_k_not_the_input`).
+4. **Ordered shape tests live in `tests/limit_order_test.rs`**, not `engine/tests.rs`, beside
+   PR 1's unordered ones (step 14's engine tests are step 15's).

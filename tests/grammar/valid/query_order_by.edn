@@ -1,0 +1,3 @@
+(query [:find ?e ?n
+        :where [?e :person/name ?n]
+        :order-by [?n]])

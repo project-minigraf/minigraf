@@ -136,6 +136,9 @@ with no `CodedError` anywhere in its chain.
 | PRS-113 | Unknown query keyword | Parser |
 | PRS-114 | Rule head argument is not a variable | Parser |
 | PRS-115 | Query option is not a non-negative integer | Parser |
+| PRS-116 | `:offset` without `:order-by` | Parser |
+| PRS-117 | `:order-by` entry is not a `:find` element | Parser |
+| PRS-118 | Malformed `:order-by` | Parser |
 | PRS-119 | Set literal inside a set literal | Parser |
 | PRS-120 | Set literal element is not a scalar literal | Parser |
 | PRS-121 | Unterminated set literal | Parser |
@@ -2151,16 +2154,69 @@ with `PRS-047`.
 
 **Error text**: `{} must be a non-negative integer or a bind slot, got {}`
 
-**Cause**: The value after `:limit` is not an integer `>= 0` or a `$slot`, or a prepared query's `:limit` slot was bound to a negative integer (#306).
+**Cause**: The value after `:limit` or `:offset` is not an integer `>= 0` or a `$slot`, or a prepared query's `:limit` or `:offset` slot was bound to a negative integer (#306).
 
 **Resolution**:
-- Give `:limit` a whole number of rows, `0` or more, or a bind slot filled with `BindValue::Val(Value::Integer(n))`.
+- Give `:limit` or `:offset` a whole number of rows, `0` or more, or a bind slot filled with `BindValue::Val(Value::Integer(n))`.
 
 **Example**:
 ```datalog
 (query [:find ?e :where [?e :person/name ?n] :limit -1])
 ```
 *`-1` is negative*
+
+---
+
+### PRS-116 `:offset` without `:order-by`
+
+**Error text**: `:offset requires :order-by`
+
+**Cause**: The query has `:offset` but no `:order-by` (#306). Without an order, which rows an offset skips is unspecified: pages could overlap or miss rows between plans and between writes.
+
+**Resolution**:
+- Add `:order-by` naming the `:find` elements to page by.
+- To read a whole answer in pieces, use a cursor (`Minigraf::query`) instead of pages.
+
+**Example**:
+```datalog
+(query [:find ?e :where [?e :person/name ?n] :offset 20 :limit 10])
+```
+*No `:order-by`*
+
+---
+
+### PRS-117 `:order-by` entry is not a `:find` element
+
+**Error text**: `:order-by entry {} is not a :find element`
+
+**Cause**: An `:order-by` entry does not equal any `:find` element (#306). Entries name `:find` elements: plain variables, or aggregate and window elements written as they appear in `:find`. A variable bound in `:where` but not in `:find`, a `:with` variable, or a value that is neither a variable nor a list is rejected.
+
+**Resolution**:
+- Add the variable or aggregate to `:find`, or order by an element already there.
+- Write an aggregate entry exactly as in `:find`, e.g. `(count ?e)`.
+
+**Example**:
+```datalog
+(query [:find ?e :where [?e :person/age ?age] :order-by [?age]])
+```
+*`?age` is not in `:find`*
+
+---
+
+### PRS-118 Malformed `:order-by`
+
+**Error text**: `:order-by takes a non-empty vector of :find elements, each optionally followed by :asc or :desc; {}`
+
+**Cause**: The value after `:order-by` is not a vector, or is empty, or names the same element twice, or has `:asc`/`:desc` with no element before it (or two directions for one element), or holds another keyword (#306). The fault is named after the semicolon.
+
+**Resolution**:
+- Write `:order-by [?a :desc ?b]`: each `:find` element once, each optionally followed by one direction (default `:asc`).
+
+**Example**:
+```datalog
+(query [:find ?n :where [?e :person/name ?n] :order-by [:desc ?n]])
+```
+*`:desc` before its element*
 
 ---
 

@@ -666,6 +666,12 @@ fn shapes(e: usize, tx_half: u64, tx_half_time: &str, hot_tx_half: u64) -> Vec<S
             query: "[:find ?e ?a :where [?e :age ?a] :limit 10]".into(),
             rows: 10.min(e),
         },
+        // #306: the ten oldest; `Sort` reads the attribute and holds ten rows.
+        Shape {
+            name: "top_k",
+            query: "[:find ?e ?a :where [?e :age ?a] :order-by [?a :desc] :limit 10]".into(),
+            rows: 10.min(e),
+        },
         Shape {
             name: "count",
             query: "[:find (count ?v) :where [?e ?a ?v]]".into(),

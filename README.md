@@ -23,7 +23,7 @@ Minigraf is a **single-file embedded graph database** that lets you:
 - ✅ **Query relationships with Datalog** - Recursive rules, natural graph traversal
 - ✅ **Time travel through history** - Bi-temporal queries (transaction time + valid time)
 - ✅ **Window functions** - `sum/count/min/max/avg/rank/row-number :over (partition-by … :order-by …)` in `:find` clauses
-- ✅ **Bounded results** - `:limit N` returns at most N rows and stops the work once it has them
+- ✅ **Bounded and ordered results** - `:limit N` returns at most N rows and stops the work once it has them; `:order-by [?score :desc] :limit 10` keeps only the top ten as it reads, and `:offset` pages through an ordered answer
 - ✅ **Prepared statements** - Parse + plan once with `$slot` bind tokens, execute thousands of times
 - ✅ **Embed anywhere** - Native, WASM, mobile, IoT - one `.graph` file
 - ✅ **Zero configuration** - Just `Minigraf::open("data.graph")` and you're done

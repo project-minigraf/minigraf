@@ -20,6 +20,7 @@ mod recursive;
 mod relation;
 mod scan;
 mod seed;
+mod sort;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests;
 mod union;
@@ -318,6 +319,9 @@ pub(crate) fn build(
             )),
             plan::Step::Window { find, named, keep } => {
                 Box::new(window::Window::new(root, find, named, keep, meter))
+            }
+            plan::Step::Sort { cols, order, keep } => {
+                Box::new(sort::Sort::new(root, cols, order, keep, meter))
             }
             plan::Step::Limit { offset, limit } => Box::new(limit::Limit::new(root, offset, limit)),
             step => Box::new(filter::Apply::new(root, step)),

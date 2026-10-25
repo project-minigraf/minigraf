@@ -66,7 +66,7 @@ fn alphabet() -> Vec<char> {
     a
 }
 
-const TOKENS: [&str; 34] = [
+const TOKENS: [&str; 37] = [
     "(",
     ")",
     "[",
@@ -89,6 +89,9 @@ const TOKENS: [&str; 34] = [
     ":over",
     ":order-by",
     ":limit",
+    ":offset",
+    ":asc",
+    ":desc",
     ":valid-from",
     ":foo",
     "?x",
@@ -110,7 +113,7 @@ fn bracket(t: u8) -> Option<(u8, bool)> {
 
 /// `(prefix, suffix)`: the hole sits between them. Each puts the hole where a short
 /// filler can complete a clause.
-const TEMPLATES: [(&str, &str); 15] = [
+const TEMPLATES: [(&str, &str); 16] = [
     ("(query [", "])"),
     ("(query [:find", ":where [?x :a ?y]])"),
     ("(query [:find ?x :where [?x :a ?y]", "])"),
@@ -120,6 +123,7 @@ const TEMPLATES: [(&str, &str); 15] = [
     ("(query [:find ?x :where [?x :a ?y] (or-join [?x]", ")])"),
     ("(query [:find ?x :where [?x :a ?y] (or (and", "))])"),
     ("(query [:find ?x (sum ?y :over (", ")) :where [?x :a ?y]])"),
+    ("(query [:find ?x :where [?x :a ?y] :order-by [", "]])"),
     ("(transact [", "])"),
     ("(transact [[:a :b 1", "]])"),
     ("(transact {", "} [[:a :b 1]])"),
@@ -217,6 +221,23 @@ const SEMANTIC: &[Semantic] = &[
     Semantic {
         code: "PRS-115",
         witness: "(query [:find ?x :where [?x :a ?y] :limit -1])",
+    },
+    // parse_query: `:offset` without `:order-by` (#306).
+    Semantic {
+        code: "PRS-116",
+        witness: "(query [:find ?x :where [?x :a ?y] :offset 1])",
+    },
+    // parse_query: an `:order-by` entry no `:find` element equals, such as a
+    // variable bound only in `:where`, or a list that is no aggregate (#306).
+    Semantic {
+        code: "PRS-117",
+        witness: "(query [:find ?x :where [?x :a ?y] :order-by [?y]])",
+    },
+    // parse_query: an `:order-by` entry given twice (`order_entry+` allows a
+    // repeat, #306).
+    Semantic {
+        code: "PRS-118",
+        witness: "(query [:find ?x :where [?x :a ?y] :order-by [?x ?x]])",
     },
     // parse_rule: a rule body with no pattern or rule call (`rule_vector` allows
     // `where_clause*`).
@@ -510,9 +531,10 @@ fn filler_counts_match_the_spec() {
         }
         n
     };
-    // 34 tokens: the #643 spec's 32, `#{` (#316) and `:limit` (#306).
-    assert_eq!(count(3), 23_020);
-    assert_eq!(count(4), 651_806);
+    // 37 tokens: the #643 spec's 32, `#{` (#316), and `:limit`, `:offset`, `:asc`
+    // and `:desc` (#306).
+    assert_eq!(count(3), 31_066);
+    assert_eq!(count(4), 971_903);
 }
 
 #[test]
