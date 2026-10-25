@@ -16,7 +16,7 @@ Minigraf follows the "SQLite for bi-temporal graph databases" philosophy:
 - **Zero-configuration** - No setup, no config files, just works
 - **Embedded-first** - Library not server, in-process execution
 - **Single-file database** - One portable `.graph` file
-- **Self-contained** - Minimal dependencies, small binary (~1.2MB budget as of #277; see PHILOSOPHY.md §4)
+- **Self-contained** - Minimal dependencies, small binary (~1.2MB budget as of #277, 1,230 KiB enforced on v3 since #306; see PHILOSOPHY.md §4)
 - **Cross-platform** - Native, WASM, mobile, embedded
 - **Reliability over features** - Do less, do it perfectly
 - **Bi-temporal first-class** - Time travel is a core feature, not addon
@@ -215,7 +215,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1810 tests** (1796 passing, 14 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
+**1828 tests** (1814 passing, 14 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.

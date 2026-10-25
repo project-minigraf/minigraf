@@ -113,7 +113,9 @@ SQLite's success comes from a clear philosophy: be a library, not a server. Be s
   #277's structured error codes — 130 documented codes across 6 categories
   cannot fit in 1MB even with opt-level="z", LTO, codegen-units=1, and
   strip=symbols all already applied; see CI's `binary-size.yml` for the
-  enforced limit)
+  enforced limit). v3.0.0 raises the enforced limit to 1,230 KiB for
+  `:order-by`/`:offset` and the top-k `Sort` (#306), whose ~11 KiB did not
+  fit the 2 KiB left after the streaming engine (#473) and set values (#316)
 - No runtime dependencies (no JVM, no Python, no Node.js)
 
 **Anti-pattern**: Requiring external services, libraries, or runtimes to function.

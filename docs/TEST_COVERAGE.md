@@ -4,11 +4,11 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,796 | 1,819 |
+| **Passing** | 1,814 | 1,844 |
 | **Ignored** | 14 | 15 |
-| **Total** | 1,810 | 1,834 |
+| **Total** | 1,828 | 1,859 |
 
-**Verified**: 2026-10-24 with `cargo test --quiet` (and `--features test-hooks`).
+**Verified**: 2026-10-25 with `cargo test --quiet` (and `--features test-hooks`).
 
 #306 PR 2 (`:order-by`, `:offset`, `Sort`) added 18 tests and 7 more under `test-hooks`; the ignored acceptance test now also checks top-k. #306 PR 1 (`:limit`) added 13 tests, 5 more under `test-hooks`, and one ignored acceptance test.
 
