@@ -4,7 +4,7 @@ use crate::graph::FactStorage;
 use crate::graph::storage::Snapshot;
 use crate::graph::types::Value;
 use crate::query::datalog::executor::{DatalogExecutor, QueryResult};
-use crate::query::datalog::functions::FunctionRegistry;
+use crate::query::datalog::functions::Functions;
 use crate::query::datalog::rules::RuleRegistry;
 use crate::query::datalog::types::{
     AsOf, AttributeSpec, Count, DatalogCommand, DatalogQuery, EdnValue, Expr, ValidAt, WhereClause,
@@ -81,7 +81,7 @@ pub struct PreparedQuery {
     slot_names: Vec<String>,
     fact_storage: FactStorage,
     rules: Arc<RwLock<RuleRegistry>>,
-    functions: Arc<RwLock<FunctionRegistry>>,
+    functions: Arc<Functions>,
     /// The database's `max_derived_facts` and `query_memory_limit`.
     limits: (usize, usize),
 }
@@ -175,7 +175,7 @@ pub(crate) fn prepare_query(
     query: DatalogQuery,
     fact_storage: FactStorage,
     rules: Arc<RwLock<RuleRegistry>>,
-    functions: Arc<RwLock<FunctionRegistry>>,
+    functions: Arc<Functions>,
     limits: (usize, usize),
 ) -> Result<PreparedQuery> {
     validate_no_attribute_slots(&query)?;
