@@ -15,6 +15,26 @@ fn runs() -> usize {
     RUNS.with(std::cell::Cell::get)
 }
 
+/// Projection distinct exposes its own counters and releases its state on close.
+#[test]
+fn projected_distinct_counters_and_release() {
+    let db = Minigraf::in_memory().unwrap();
+    db.execute("(transact [[:a :c 1] [:a :c 2] [:b :c 1]])")
+        .unwrap();
+    let mut cursor = db
+        .query("(query [:find ?v :where [?e :c ?v] :distinct])")
+        .unwrap();
+    let meter = cursor.stream_mut().unwrap().meter().clone();
+    assert_eq!(cursor.next_batch(1).unwrap().unwrap().len(), 1);
+    let counters = cursor.counters();
+    let distinct = counters.iter().find(|c| c.op == "Distinct").unwrap();
+    assert_eq!(distinct.rows_in, 3);
+    assert_eq!(distinct.rows_out, 2);
+    assert!(distinct.bytes_held > 0);
+    cursor.close();
+    assert_eq!(meter.used(), 0);
+}
+
 /// Rows of `query`, which must run on the engine.
 fn rows(db: &Minigraf, query: &str) -> usize {
     let before = runs();

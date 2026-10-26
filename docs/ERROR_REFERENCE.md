@@ -1299,10 +1299,11 @@ See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/lat
 
 **Error text**: `Unexpected element in query: {}`
 
-**Cause**: A value in the query vector belongs to no section: it comes before the first keyword, or after an option and its argument (`:as-of N`, `:valid-at "…"`, `:any-valid-time`, `:max-derived-facts N`, `:max-results N`). Through v2.0.x a value after an option joined the section before the option, so `[:find ?a :any-valid-time ?b :where …]` returned `?b` as a second column (#651).
+**Cause**: A value in the query vector belongs to no section: it comes before the first keyword, or after an option and its argument (`:as-of N`, `:valid-at "…"`, `:max-derived-facts N`, `:max-results N`, `:limit N`, `:offset N`, `:order-by […]`), or after a bare flag (`:any-valid-time`, `:distinct`). Through v2.0.x a value after an option joined the section before the option, so `[:find ?a :any-valid-time ?b :where …]` returned `?b` as a second column (#651).
 
 **Resolution**:
 - Put every `:find` spec after `:find` and every clause after `:where`, before or after the options.
+- `:distinct` is a bare flag: omit the argument in `:distinct true`, `:distinct 1` or `:distinct $d` (#493).
 - See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/).
 
 **Example**:
@@ -2122,18 +2123,17 @@ with `PRS-047`.
 
 **Error text**: `Unknown query keyword {}`
 
-**Cause**: The query vector holds a keyword it does not know. The query keywords are `:find`, `:where`, `:with`, `:as-of`, `:valid-at`, `:any-valid-time`, `:max-derived-facts` and `:max-results`. Through v2.0.x an unknown keyword followed by another keyword was ignored, and one followed by a value raised `PRS-061` (#651).
+**Cause**: The query vector holds a keyword it does not know. The query keywords are `:find`, `:where`, `:with`, `:as-of`, `:valid-at`, `:any-valid-time`, `:max-derived-facts`, `:max-results`, `:limit`, `:offset`, `:order-by` and `:distinct`. Through v2.0.x an unknown keyword followed by another keyword was ignored, and one followed by a value raised `PRS-061` (#651).
 
 **Resolution**:
 - Check the spelling.
 - `:in` is not supported: pass inputs through bind slots (`$name`) of a prepared query.
-- `:limit` is not supported yet (#306).
 
 **Example**:
 ```datalog
-(query [:find ?e :limit 10 :where [?e :person/name ?n]])
+(query [:find ?e :foo 10 :where [?e :person/name ?n]])
 ```
-*`:limit` is not a query keyword*
+*`:foo` is not a query keyword*
 
 ### PRS-114 Rule head argument is not a variable
 
@@ -3808,8 +3808,8 @@ clause, `not`/`not-join`/`or`/`or-join`, a rule invocation, or `and`). The
 
 **Error text**: `duplicate {}`
 
-**Cause**: A query specified the same top-level option (`:max-derived-facts`
-or `:max-results`) more than once.
+**Cause**: A query specified `:max-derived-facts`, `:max-results`, `:limit`,
+`:offset`, `:order-by` or `:distinct` more than once.
 
 **Resolution**:
 - Specify each query option at most once.

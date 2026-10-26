@@ -165,6 +165,9 @@ pub(crate) enum Step {
     /// Keeps the first of the rows whose cells at these slots are equal as
     /// the executor's values are (#546 spec §5.2).
     Distinct(Vec<usize>),
+    /// `:distinct`: unique final output tuples by aggregate-group equality,
+    /// with canonical floats, after aggregates/windows and before sorting.
+    DistinctFind(Vec<usize>),
     /// The last step of an aggregate query (#547 spec §5): one row per group
     /// of the cells at `groups`, holding those cells and then the result of
     /// each aggregate `(function, argument slot)`.
@@ -564,6 +567,9 @@ fn plan_with(query: &DatalogQuery, evaluated: Option<Arc<Evaluated>>) -> Result<
     }
     let mut plan = b.finish()?;
     plan.find = find;
+    if query.distinct {
+        plan.steps.push(Step::DistinctFind(plan.find.clone()));
+    }
     // After `finish`, which may still add the steps of a clause list with
     // no pattern. `execute` rejects an unbound slot (API-010); a prepared
     // query fills it.

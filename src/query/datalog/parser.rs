@@ -877,6 +877,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
     let mut query_limit: Option<Count> = None;
     let mut query_offset: Option<Count> = None;
     let mut query_order_by: Option<Vec<(FindSpec, Order)>> = None;
+    let mut query_distinct = false;
 
     let mut i = 0;
     while i < query_vector.len() {
@@ -885,6 +886,15 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
             .ok_or_else(|| err_coded!(ErrorCode::Int011, "query vector"))?;
         if let Some(keyword) = current_item.as_keyword() {
             match keyword {
+                ":distinct" => {
+                    current_clause = None;
+                    if query_distinct {
+                        bail_coded!(ErrorCode::Int012, ":distinct");
+                    }
+                    query_distinct = true;
+                    i += 1;
+                    continue;
+                }
                 ":as-of" => {
                     current_clause = None;
                     // Next element is the value
@@ -1222,6 +1232,7 @@ fn parse_query(elements: &[EdnValue]) -> Result<DatalogCommand> {
     query.limit = query_limit;
     query.offset = query_offset;
     query.order_by = order_by;
+    query.distinct = query_distinct;
     Ok(DatalogCommand::Query(query))
 }
 

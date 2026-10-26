@@ -4,11 +4,13 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,842 | 1,872 |
+| **Passing** | 1,860 | 1,891 |
 | **Ignored** | 14 | 15 |
-| **Total** | 1,856 | 1,887 |
+| **Total** | 1,874 | 1,906 |
 
-**Verified**: 2026-10-25 with `cargo test --quiet` (and `--features test-hooks`).
+**Verified**: 2026-10-26 with `cargo test --quiet` (and `--features test-hooks`).
+
+#493 (`:distinct`) adds 18 tests with default features and one more with `test-hooks`.
 
 #306 PR 2 (`:order-by`, `:offset`, `Sort`) added 18 tests and 7 more under `test-hooks`; the ignored acceptance test now also checks top-k. #306 PR 1 (`:limit`) added 13 tests, 5 more under `test-hooks`, and one ignored acceptance test.
 
@@ -19,6 +21,8 @@ Not counted above: the browser tests and the WASI run (see [Browser and WASI](#b
 **Scope**: the unreleased file-format-v8 work (#287, #371): the index-key value-collision fix, the v7→v8 migration, and the drop of formats v1–v6. Otherwise the public database API, the Datalog engine, storage and recovery paths, v2.0.0's locking and structured-error-code changes, and v2.0.1's regression test for rebuilding indexes on open after several checkpoints (#370). Tests merged from the v2.x line are marked *(v2.x)*.
 
 ## Covered Areas
+
+- **Optional distinct output** (`tests/distinct_test.rs`, #493): bag defaults, whole tuples, section syntax, cross-batch and committed/pending values, chunked write transactions, prepared execute/cursors, joins/rules/disjunction, aggregates and hidden `:with` groups, window peers and partitioned row numbers, temporal filters, typed equality and canonical float/set output, memory limits (including retained set payloads) and cursor cleanup. A meter unit test verifies each cell/key/value estimate includes set elements and their strings. With `test-hooks`, checks both reorder settings and hashed/correlated subplans. An engine unit test checks counters and state release.
 
 - **Core database behavior**: in-memory and file-backed operation, transactions, checkpoints, retractions, bi-temporal queries, recursive rules, prepared statements, aggregation, expressions, disjunction, window functions, UDFs, and magic-sets evaluation.
 - **Storage correctness**: packed pages, B+tree indexes and range scans, cache behavior, file-header validation, migration (including v7→v8 index rebuild and v1–v6 rejection via `STG-028`), WAL replay, checksums, corruption handling, and fault injection.

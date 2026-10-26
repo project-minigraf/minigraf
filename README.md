@@ -132,9 +132,14 @@ let r2 = pq.execute(&[("tx", BindValue::TxCount(2)), ("entity", BindValue::Entit
 
 ```bash
 cargo run          # interactive Datalog REPL
-cargo test         # run 1725 tests
+cargo test         # run the test suite
 cargo run < demos/demo_recursive.txt   # recursive rules demo
 ```
+
+Queries without aggregates return one row per matching binding, including repeated `:find` tuples.
+Add the bare `:distinct` flag to remove repeated
+output tuples: `(query [:find ?name :where [?e :person/name ?name] :distinct])`.
+It runs after aggregates and windows, before ordering and pagination (#493).
 
 ## Demo
 
