@@ -667,6 +667,8 @@ pub(crate) struct WindowColumn {
 /// engine's meter type.
 pub(crate) trait WindowColumnMeter {
     fn charge(&mut self, bytes: usize) -> Result<()>;
+    fn uncharge(&mut self, bytes: usize);
+    /// On refusal, release `charged` and return `QRY-012`.
     fn reserve(
         &mut self,
         result: std::result::Result<(), TryReserveError>,
@@ -675,6 +677,36 @@ pub(crate) trait WindowColumnMeter {
     ) -> Result<()>;
     /// Charge the owned payload of a value (its slot is already charged).
     fn charge_payload(&mut self, value: &Value) -> Result<usize>;
+}
+
+/// The row-index allocation held while a window is sorted and evaluated.
+/// The vector is declared after this guard, so it is dropped before its
+/// charge is released on every return path.
+struct WindowScratch<'a, M: WindowColumnMeter> {
+    meter: &'a mut M,
+    bytes: usize,
+}
+
+impl<'a, M: WindowColumnMeter> WindowScratch<'a, M> {
+    fn new(meter: &'a mut M, bytes: usize) -> Result<Self> {
+        meter.charge(bytes)?;
+        Ok(Self { meter, bytes })
+    }
+
+    fn reserve(&mut self, result: std::result::Result<(), TryReserveError>) -> Result<()> {
+        let result = self.meter.reserve(result, self.bytes, self.bytes);
+        if result.is_err() {
+            // WindowColumnMeter::reserve has already undone this charge.
+            self.bytes = 0;
+        }
+        result
+    }
+}
+
+impl<M: WindowColumnMeter> Drop for WindowScratch<'_, M> {
+    fn drop(&mut self) {
+        self.meter.uncharge(self.bytes);
+    }
 }
 
 /// The value of each window of `find` for each row (spec §4), one list per
@@ -710,10 +742,40 @@ pub(crate) fn windows(
         };
         let var = ws.var.as_deref().and_then(col);
         let order = col(&ws.order_by);
-        let mut partitions: BTreeMap<&Value, Vec<usize>> = BTreeMap::new();
-        for r in 0..rows.len() {
-            let part = ws.partition_by.as_deref().and_then(col);
-            partitions.entry(read(r, part)).or_default().push(r);
+        let part = ws.partition_by.as_deref().and_then(col);
+        let index_bytes = rows
+            .len()
+            .checked_mul(size_of::<usize>())
+            .ok_or_else(|| err_coded!(ErrorCode::Qry012, "Window row-index size overflow"))?;
+        let mut scratch = WindowScratch::new(meter, index_bytes)?;
+        let mut keyed = Vec::new();
+        scratch.reserve(keyed.try_reserve_exact(rows.len()))?;
+        keyed.extend(0..rows.len());
+        let row_cmp = |a: usize, b: usize| {
+            let by_key = match ws.order {
+                Order::Asc => value_order(read(a, order), read(b, order)),
+                Order::Desc => value_order(read(b, order), read(a, order)),
+            };
+            by_key
+                .then_with(|| {
+                    rows.get(a)
+                        .into_iter()
+                        .flatten()
+                        .zip(rows.get(b).into_iter().flatten())
+                        .map(|(x, y)| value_order(x, y))
+                        .find(|o| o.is_ne())
+                        .unwrap_or(Ordering::Equal)
+                })
+                .then(a.cmp(&b))
+        };
+        if let Some(partition_col) = part {
+            keyed.sort_unstable_by(|&a, &b| {
+                read(a, Some(partition_col))
+                    .cmp(read(b, Some(partition_col)))
+                    .then_with(|| row_cmp(a, b))
+            });
+        } else {
+            keyed.sort_unstable_by(|&a, &b| row_cmp(a, b));
         }
 
         // Charge slots before allocating, then payloads as each slot is
@@ -721,47 +783,48 @@ pub(crate) fn windows(
         let slots = rows.len().saturating_mul(size_of::<Value>());
         let entry = size_of::<WindowColumn>();
         let charged = slots.saturating_add(entry);
-        meter.charge(charged)?;
-        meter.reserve(out.try_reserve(1), charged, entry)?;
+        scratch.meter.charge(charged)?;
+        scratch.meter.reserve(out.try_reserve(1), charged, entry)?;
         let mut values = Vec::new();
-        meter.reserve(values.try_reserve_exact(rows.len()), charged, slots)?;
+        scratch
+            .meter
+            .reserve(values.try_reserve_exact(rows.len()), charged, slots)?;
         values.resize(rows.len(), Value::Null);
         let mut bytes = slots;
-        for mut keyed in partitions.into_values() {
-            keyed.sort_by(|&a, &b| {
-                let by_key = match ws.order {
-                    Order::Asc => value_order(read(a, order), read(b, order)),
-                    Order::Desc => value_order(read(b, order), read(a, order)),
-                };
-                by_key
-                    .then_with(|| {
-                        rows.get(a)
-                            .into_iter()
-                            .flatten()
-                            .zip(rows.get(b).into_iter().flatten())
-                            .map(|(x, y)| value_order(x, y))
-                            .find(|o| o.is_ne())
-                            .unwrap_or(Ordering::Equal)
+        let mut offset = 0;
+        while let Some(&first) = keyed.get(offset) {
+            let end = part.map_or(keyed.len(), |partition_col| {
+                keyed
+                    .iter()
+                    .skip(offset + 1)
+                    .position(|&r| {
+                        read(r, Some(partition_col))
+                            .cmp(read(first, Some(partition_col)))
+                            .is_ne()
                     })
-                    .then(a.cmp(&b))
+                    .map_or(keyed.len(), |n| offset + 1 + n)
             });
+            let partition = keyed
+                .get(offset..end)
+                .ok_or_else(|| err_coded!(ErrorCode::Int032, "window partition bounds invalid"))?;
 
             // Row offsets use the physical row order, not aggregate peer groups.
             if matches!(ws.func, WindowFunc::Lag | WindowFunc::Lead) {
-                for (pos, &row) in keyed.iter().enumerate() {
+                for (pos, &row) in partition.iter().enumerate() {
                     let adjacent = if matches!(ws.func, WindowFunc::Lag) {
                         pos.checked_sub(1)
                     } else {
                         pos.checked_add(1)
                     };
-                    let neighbor = adjacent.and_then(|p| keyed.get(p));
+                    let neighbor = adjacent.and_then(|p| partition.get(p));
                     let source = neighbor.map_or(&NULL, |&r| read(r, var));
-                    let payload = meter.charge_payload(source)?;
+                    let payload = scratch.meter.charge_payload(source)?;
                     bytes = bytes.saturating_add(payload);
                     if let Some(v) = values.get_mut(row) {
                         *v = source.clone();
                     }
                 }
+                offset = end;
                 continue;
             }
 
@@ -770,19 +833,19 @@ pub(crate) fn windows(
                 _ => Some(Running::new(ws, registry)?),
             };
             let mut start = 0;
-            while let Some(&first) = keyed.get(start) {
-                let end = keyed
+            while let Some(&first) = partition.get(start) {
+                let peer_end = partition
                     .iter()
                     .skip(start + 1)
                     .position(|&r| value_order(read(r, order), read(first, order)).is_ne())
-                    .map_or(keyed.len(), |n| start + 1 + n);
-                let peers = keyed.get(start..end).unwrap_or(&[]);
+                    .map_or(partition.len(), |n| start + 1 + n);
+                let peers = partition.get(start..peer_end).unwrap_or(&[]);
                 if let Some(acc) = running.as_mut() {
                     for &r in peers {
                         acc.step(read(r, var))?;
                     }
                 }
-                for (pos, &r) in (start..end).zip(peers) {
+                for (pos, &r) in (start..peer_end).zip(peers) {
                     let (value, payload) = match (&running, &ws.func) {
                         (Some(acc @ (Running::Min(_) | Running::Max(_))), _) => {
                             let best = match acc {
@@ -791,12 +854,12 @@ pub(crate) fn windows(
                                 }
                                 _ => unreachable!(),
                             };
-                            let payload = meter.charge_payload(best)?;
+                            let payload = scratch.meter.charge_payload(best)?;
                             (acc.value()?, payload)
                         }
                         (Some(acc), _) => {
                             let value = acc.value()?;
-                            let payload = meter.charge_payload(&value)?;
+                            let payload = scratch.meter.charge_payload(&value)?;
                             (value, payload)
                         }
                         (None, WindowFunc::RowNumber) => (position(pos)?, 0),
@@ -807,8 +870,9 @@ pub(crate) fn windows(
                         *v = value;
                     }
                 }
-                start = end;
+                start = peer_end;
             }
+            offset = end;
         }
         out.push(WindowColumn { values, bytes });
     }
