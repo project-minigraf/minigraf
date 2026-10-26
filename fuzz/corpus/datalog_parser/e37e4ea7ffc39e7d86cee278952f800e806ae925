@@ -1,2 +1,0 @@
-(query [:i?:where [e :na ?n] (n
-?,:p) [?e :me b] (no :)])

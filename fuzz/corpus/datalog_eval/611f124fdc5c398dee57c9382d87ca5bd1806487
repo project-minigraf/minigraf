@@ -1,2 +1,0 @@
-(query [:finde :where [(=:ruorc:biryu) ?n ]:where [(=::active)]])
-

@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e ?FFFFFFFF ?c] (not-join [?eerm2e](or-join:Fid))]
+)

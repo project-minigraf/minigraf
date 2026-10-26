@@ -1,0 +1,1 @@
+(query [:find ?e  ?e :where [?e Name vvv] (not [?e :banne true][?e aa :0n]):where  [?e :Name ?nvvvvv] (not [?e aact al?_][?e aaaaaaact eeeeeeerue]):where  [?e :Name ?nvvvvv] (n2t [?e :banneaca ?_][?e e])])

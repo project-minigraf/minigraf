@@ -1,1 +1,0 @@
-(query [:find ?e :where [0?e clc](not-join [?e] [?e: active] [ue])])

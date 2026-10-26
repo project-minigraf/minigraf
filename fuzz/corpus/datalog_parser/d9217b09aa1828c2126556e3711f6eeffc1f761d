@@ -1,1 +1,0 @@
-(query [:fi:where [? ae ?_][?:db/aeaa ?_][?:db/valid-to ?_][?:dj/valid-to ?_][?:db/valid-to ?_][ : :al?:𮖖_]])

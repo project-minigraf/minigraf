@@ -1,2 +1,0 @@
-(query [:fie :where [(/:rue"de") ?n ]:where [(=:rue"Alide") ?n ][(!= ?n:active)][(!= ?n:active)]])
-

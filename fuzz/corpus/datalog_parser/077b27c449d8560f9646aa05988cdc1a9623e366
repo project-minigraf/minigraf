@@ -1,0 +1,1 @@
+(query [:where[?:db/valid-at _][?:/d1 ccc_]])

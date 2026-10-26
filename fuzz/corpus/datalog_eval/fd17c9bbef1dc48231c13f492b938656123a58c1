@@ -1,0 +1,1 @@
+(query [ :where(e qq?e :where [?e _n ?n][ =n?(  "Alice")]?[?ebooAe])(q:bindqqqqqqqqqqqqquery:where  n??_e[ebooAe])(qqqqq?e :where [?e ?n][ =n?(  "Alice")]?[?ebooAe])(q:bindqqq-qry:where  n??_e[ebooAe])(qqqqq?e :join [?e] [?e ?ccid:Fatue])])

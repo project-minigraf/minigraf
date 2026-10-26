@@ -1,0 +1,1 @@
+(query[:where [?e :n n] (not [naa a ?_][Ej e ?_][Ej 22e])])

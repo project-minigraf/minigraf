@@ -1,5 +1,0 @@
-(query [:find ?e :where [?e ?FFFFF ?c] (not-join [?e] [?e ?_ctivez ?chere](query [:where [?or /C] (nto(q[(/fq[? iv])])
-(query [me :where (nam$na)])
-m$q[? ivree])]q
-)(ue*B))]
-)

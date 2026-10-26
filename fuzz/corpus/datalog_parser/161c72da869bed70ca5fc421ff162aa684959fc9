@@ -1,0 +1,1 @@
+(query [:with ?e0:where [phe:name ?_] (or(enTT)[(matches? ?$y)n] (X175>>3TT) ) [6xa]])

@@ -1,1 +1,0 @@
-(query [:where [?e :ne ?n] (not [?e :nned tre]):where [e : ?n] (nlt [:ue])])

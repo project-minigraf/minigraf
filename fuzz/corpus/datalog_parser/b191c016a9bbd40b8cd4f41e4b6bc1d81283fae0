@@ -1,1 +1,0 @@
-(query [:find ?e  ?e :any-valid-time:where [?e :Name ?n] (n?[to ue]) (not [?e nne true][? :z truω]):where [e name ?] (not [?e :Q ue])])

@@ -1,1 +1,0 @@
-(query [:f:where(qu:dD) [n: ?n] (O:h  )])

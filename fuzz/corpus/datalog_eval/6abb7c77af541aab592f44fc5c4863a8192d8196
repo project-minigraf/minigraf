@@ -1,0 +1,2 @@
+(query [:find ?n :where [?e ame([]minn "Ayce")](qru[:fhn(ne:we nil[?rue])])
+:limit])

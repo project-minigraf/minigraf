@@ -1,1 +1,0 @@
-(query [: :where [?e aaaaaaa a000000000000000002217n3115en] (not [?e :bannzzzzzzzzzzzzzzzzed ?e?e])(not [$1:db/tx-id ?e?e]):where [?e :name ?n] :where [?e 3115en] ])

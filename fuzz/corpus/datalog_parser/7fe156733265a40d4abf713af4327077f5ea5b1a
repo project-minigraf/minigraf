@@ -1,0 +1,1 @@
+(query [:find ?e :where [?E :Nale ?n] (not [?e :bannene true])(not [:e :bbannene true])(not [:e :banne true]):where [?e :namename ?n] (not [?_ :ba true])(not [?_ :b true])(not [?e :banne true]):where [?e :namename ?n] (not [?_ :bannzd true])])

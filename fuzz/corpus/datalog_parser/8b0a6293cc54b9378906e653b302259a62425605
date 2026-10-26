@@ -1,0 +1,1 @@
+(query [:find  ?e :where [?e :me ?n] (not [?e :anne true]):where  [?e :Na:thvvvvv] (not[Ce a ?_][?e ct eeeerue])])

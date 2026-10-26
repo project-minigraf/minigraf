@@ -1,0 +1,1 @@
+(query[:where [?:n:find ][?e ?e ?/W]])

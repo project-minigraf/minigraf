@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e :name ?n] (ony3$0057$3$m35e$rte 3$13$m*i$3515310(ru[(pa1)])?)])

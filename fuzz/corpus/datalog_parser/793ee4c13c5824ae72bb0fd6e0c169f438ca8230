@@ -1,1 +1,0 @@
-(query [:where[?e ae ?_][Ee a _][?e+aa ](-ot[?e ]e)])

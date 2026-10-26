@@ -1,1 +1,0 @@
-(query [:find?:where [?:namme ?n ][(!= ?n "Alci")][(!= ?n "Alci")]])

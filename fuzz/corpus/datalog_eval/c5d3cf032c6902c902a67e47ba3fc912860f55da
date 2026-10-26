@@ -1,2 +1,0 @@
-(query [::where [?e ooc:c] (n?[e])(ry [:find])
-])

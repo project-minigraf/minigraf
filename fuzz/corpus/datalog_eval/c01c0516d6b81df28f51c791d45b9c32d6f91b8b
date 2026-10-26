@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :lor ?c] (nj+++q)(qQ n?+++q n? be?_++++++++[])])

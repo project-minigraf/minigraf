@@ -1,1 +1,0 @@
-(query [:fin :where [?r ?=] (not-join [?eboleaninteger??] [?e ?ccid:Fa])])

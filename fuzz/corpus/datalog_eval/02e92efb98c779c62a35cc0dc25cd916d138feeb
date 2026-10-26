@@ -1,1 +1,0 @@
-(query [:fin :where [?e ?lo D] [ eD? ?c:hereic] (not-join [?e] [ e? ?c:heie]):fin :where [?e ?lo D] [ eD? ?c:hereic]])

@@ -1,0 +1,1 @@
+(query [ :where [?e :l $c] (not [-?*no] [?u iac:F] [?e :a:nam])])

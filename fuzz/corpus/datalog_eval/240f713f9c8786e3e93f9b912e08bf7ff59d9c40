@@ -1,8 +1,0 @@
-(query [:fin:where [njotnoi-e? lor ?a] (/njotnoi-[? e[] t(query [,,,,,,,,,e])])
-, :where [?e ,colov ?c] (*ofe [e?e ve (query [,,,,,,,,,e])])
-, :where [? lor ?a] (/njot[? e[] t(query [,,,,,,,,,e])])
-, :where [?e ,colov ?c] (*ofe [e?e ve (query [,,,,,,,,,e])])
-, :where [? lor ?a] (/njotnoi-[? e[] t(query [,,,,,,,,,e])])
-, :where [?e ,colov ?c] (noi-[? e[] t(query [,,,,,,,,,e])])
-, :where [?e ,colov ?c] (*ofe [e?e ve (query [,,,,,,,,,e])])
-, :where [?e ,colov ?c] (nofe [e?e ve trutrue]inq)])

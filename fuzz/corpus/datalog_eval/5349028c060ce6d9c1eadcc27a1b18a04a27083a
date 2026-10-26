@@ -1,1 +1,0 @@
-(query [:find:where [? _ n] [(= qqqqqqqqq "ice")]])

@@ -1,0 +1,1 @@
+,(query[ :find ?n:find ?n :find ?n:find ?n :where [??__:name ?n]:where [?_?_:name ?n]])

@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :colrc ?] (not-?[ive ] ?[e true])])

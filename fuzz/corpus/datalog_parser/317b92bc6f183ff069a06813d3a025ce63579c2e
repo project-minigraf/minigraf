@@ -1,1 +1,0 @@
-(query [:f:f :where[?ddddddd ?e 8] : :where[?ddddddd ?e 8] :])

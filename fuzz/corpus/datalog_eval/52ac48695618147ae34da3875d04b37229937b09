@@ -1,0 +1,2 @@
+(query [:find ?n :where [?e ame([]minn )](qru?[?n] [(<=?e nil[?rue])])
+])

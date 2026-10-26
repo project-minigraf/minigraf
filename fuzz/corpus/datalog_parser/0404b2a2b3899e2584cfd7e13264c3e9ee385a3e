@@ -1,1 +1,0 @@
-(query [:find:where[?e0:db/tx-id :0j_][?e?:db/tx-id :0j?]])

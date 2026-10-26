@@ -1,0 +1,1 @@
+(query[:where (not [?_?e :d true]):where [?e :namg ?n] (not [?_?e :d true]):where (nou[e nz:pad tr])])

@@ -1,1 +1,0 @@
-(query [:find ?e0:where [?e :name n](or(eula[rp(e,)]??yeu[rp(e,)]??y) ) [7x ?n] (or(enod [rp(e,)]?[(e,)]??y) ) [6t ?y]])

@@ -1,0 +1,1 @@
+(query [:where [:u :lmb ?c]  :where [:e :nnue000041076647eor ?c]  :where [:e :r ?_?c] (nj-[?n])(ej-[?e])])

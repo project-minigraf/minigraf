@@ -1,0 +1,2 @@
+(query [:where [? /C] (not(q<<?<8??q))]
+)

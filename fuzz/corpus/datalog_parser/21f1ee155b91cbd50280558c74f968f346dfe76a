@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :e ??n] (ne ?y:T)[(fqqqqqqqqqqqqqqqqqqqqqqqqqqqx ?y)  ?n] (qqqqqqqqO)[(fxnil ?y)  ?n] [(fnmtx ?y)  ?n] (nd X)])

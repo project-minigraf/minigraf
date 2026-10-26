@@ -1,1 +1,0 @@
-(query [: :where [e :n_me ?n] (not [:e a?b-nned true]):where [?e :name ?n] (not [?e :banned e])])

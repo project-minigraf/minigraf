@@ -1,0 +1,1 @@
+(query [:where [,fa:db/valid-to _]])

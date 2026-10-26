@@ -1,1 +1,0 @@
-(query [:fi:where [?u n:max-results?_][?e aa :max-results?_][?e aainaa :max-results?_][?e L_]])

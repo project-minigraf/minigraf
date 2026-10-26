@@ -1,2 +1,0 @@
-(query[:c:where [?e :color ?c](not[?e ?cor ?c] (i- ---,-i ?K22222-))]
-)

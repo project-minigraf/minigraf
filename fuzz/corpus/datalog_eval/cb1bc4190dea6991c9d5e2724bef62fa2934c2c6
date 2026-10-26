@@ -1,1 +1,0 @@
-(query [: :where [?se ?a ?n ][(/ ?n "Alice")]])

@@ -1,1 +1,0 @@
-(query [: :where  (not [:e b t]) [?e:e ?n] (not [:ed ned rue])])

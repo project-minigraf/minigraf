@@ -1,1 +1,0 @@
-(query [:fi:where [?eaaa[]  _][?me a ?_][Ej e ?_][Ej a  _]])

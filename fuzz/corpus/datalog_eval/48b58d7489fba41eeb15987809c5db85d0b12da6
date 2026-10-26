@@ -1,0 +1,2 @@
+(query [:where [?o /C] (not(u)
+)])

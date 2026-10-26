@@ -1,0 +1,1 @@
+(query [:where(O ?y:e)[(x ?y) ?n]])

@@ -1,1 +1,0 @@
-(query [:fe:where [?b colo ?c] (not-join [?_] [?e DcatIv ?_] [?e D truee/])])

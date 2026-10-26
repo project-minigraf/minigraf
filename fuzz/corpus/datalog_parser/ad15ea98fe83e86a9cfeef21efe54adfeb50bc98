@@ -1,1 +1,0 @@
-(query [:fi:where [?a -oaa ?_][?e aa ?][?e a ?_][?e a ?_][?e a a_][Cpranact a ?][?e aaa _]])

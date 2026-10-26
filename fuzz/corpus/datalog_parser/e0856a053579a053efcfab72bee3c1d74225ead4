@@ -1,1 +1,0 @@
-(query [:where [?:nale "eee"][:e/0 ?ee"Ac"][?: "eee"][:e/0 ?ee" eAcf"]])

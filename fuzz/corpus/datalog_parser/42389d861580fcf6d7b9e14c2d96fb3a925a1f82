@@ -1,0 +1,1 @@
+(query [:find ?e  ?e :where [?:e ?n] (n([(p)($i)])):where [?e :name ?n] (not [?e :bannzd trؑ߉])])

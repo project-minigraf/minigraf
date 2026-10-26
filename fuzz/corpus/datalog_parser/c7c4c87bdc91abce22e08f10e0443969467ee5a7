@@ -1,1 +1,0 @@
-(query[:find ?e   ?e ?e ?e  :pa:with ?e  :where [?e :with ?dd] :th])

@@ -1,2 +1,0 @@
-(query [ :where [?e n"aee"][:e/0 :db/valid-to""][:/
-t ?y]])

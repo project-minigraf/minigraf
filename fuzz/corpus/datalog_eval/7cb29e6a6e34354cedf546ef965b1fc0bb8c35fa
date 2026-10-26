@@ -1,0 +1,2 @@
+(query[:where(rule[(rue?n)]) [?_e _ ?n] [(= ?n "?ce")]])
+

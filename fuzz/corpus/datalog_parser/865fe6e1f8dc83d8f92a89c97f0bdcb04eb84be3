@@ -1,0 +1,1 @@
+(query [:where [? aie n] (not [?e ct ?_][e a ?_][:db/tx-count a ?][cc])])

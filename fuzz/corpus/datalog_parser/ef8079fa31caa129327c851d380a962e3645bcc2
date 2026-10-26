@@ -1,0 +1,2 @@
+(query [:find ?e0:where [?e0:namen ?] (ov(EEEEE)
+:dbid-at) [?e :e ?n] (not(quay) ) [6t ?y]])

@@ -1,1 +1,0 @@
-(query [:find ?e0:where [?e :me ?n] (o) (o) [?:ya ?y] [?x :y0ent ?y]])

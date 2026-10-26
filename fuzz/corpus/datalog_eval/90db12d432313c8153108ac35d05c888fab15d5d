@@ -1,5 +1,0 @@
-(query [:bind  (nofht:n(query [:find ?e :where [?e :lor ?c](query [:find (not-minn [?e] [?:acv(qUery [:findume :whee trwheie])])
-])
- (n[?e] [?:activev(qUery [:finde (m$dfalseduq :nnjotnoh-[?ae:witu])e trewehrie])])
-])
- e :wnd e t:)])

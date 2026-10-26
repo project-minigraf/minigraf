@@ -1,1 +1,0 @@
-(query [:f :where (q)[?e :1r ?c] (not [*7-noije] [?e :di:Fue])])

@@ -1,1 +1,0 @@
-(query [:find  :where [??e ?lynnueF ?c]  [?e ?lynneuFFnnueFFFF ?c] (not-join [?e] [?e Da ?hec])])

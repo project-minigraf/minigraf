@@ -1,1 +1,0 @@
-(query [::where [?e :? emann] (or(dDDDD) [n? aaa w?_][C:db/tx-count c3c] (OADDdD>>>>) ) [2x ?y]])

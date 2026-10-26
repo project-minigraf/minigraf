@@ -1,1 +1,0 @@
-(query [ :where[? ee_? n4a] [(* ? "?_ce")?y]])

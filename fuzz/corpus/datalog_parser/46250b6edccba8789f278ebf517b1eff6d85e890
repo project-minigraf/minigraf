@@ -1,4 +1,0 @@
-(query [:where [?e e n] (or(en?d ole
-y) )[2:name n] (or(?02 ol
-y) ) [2: n] (or(ed ole?
-y) ) ])

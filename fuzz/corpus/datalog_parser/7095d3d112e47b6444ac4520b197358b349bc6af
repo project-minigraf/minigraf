@@ -1,0 +1,2 @@
+(query [:find (oe ?)(o ?---) ,(qu[r])
+r])

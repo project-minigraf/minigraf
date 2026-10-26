@@ -1,0 +1,2 @@
+(query[:where [??:nad ?,] (not (query[:where r])
+[? :b ?_2])(not [?_ ? ?_?])])

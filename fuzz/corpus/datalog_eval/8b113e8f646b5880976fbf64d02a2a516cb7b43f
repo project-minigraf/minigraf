@@ -1,3 +1,0 @@
-(query [:finde :where [(/:rue"de") ?n ](query [:finde :where [(/:re)]])
-:where [(=:ru"Alide") ?n ][(!= ?n:active)][(!= ?n:active)]])
-

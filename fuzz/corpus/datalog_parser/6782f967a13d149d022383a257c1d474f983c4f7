@@ -1,1 +1,0 @@
-(query [:find ?e  ?e :where [?e :Name ?n] (nruleot [?e :banne true]):where [?e :name ?n] (sot [?ue0?e :bannzd trueۑ߉]):where :where [?e :Name ?n] (uleot [?e :banne true]):wher :where [?e :N n] (nmt [?e :d true]):where [?e :name ?n] (not [?e :bad true])])

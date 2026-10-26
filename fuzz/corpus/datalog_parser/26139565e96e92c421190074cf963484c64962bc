@@ -1,0 +1,1 @@
+(query[:where [? no an][?:db/valid-at cc_][?:db/valid-at ?_][? a cc_]])

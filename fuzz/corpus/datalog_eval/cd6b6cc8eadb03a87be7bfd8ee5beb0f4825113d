@@ -1,1 +1,0 @@
-(query [:fiwe:find ?e :where [?e ?lnnc ?]  [?e ?lynnueeFFnuFnFFF -c] (not-join [?][ ?ee :name ?hec])])

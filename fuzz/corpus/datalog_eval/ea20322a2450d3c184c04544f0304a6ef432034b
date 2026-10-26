@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e 1 ?c] (njovnoi-[])
+, :where [?e olov ?c] (d  ?:ealnoi)])

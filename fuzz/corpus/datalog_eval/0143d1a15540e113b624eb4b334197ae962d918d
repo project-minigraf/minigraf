@@ -1,1 +1,0 @@
-(query [:fi:where [nhl:orc ?] (or-join[?][e:activ=])])

@@ -1,1 +1,0 @@
-(query [:with :any-valid-time:where [?e :lor ?c] (not-join [?e] [q: te])])

@@ -1,0 +1,6 @@
+
+(query [:find ?n :where [?e ?nmjFqfn ?c]  [?e ?nynEEEEEEEEEEnpf/4e ?n] [(>=?n "e")?s]  [?e ?EEEEEnpfl4e ?n] [(>=?n "e")?s]  [?e ?lufn ?s]  [?e ?lynnueVkFnny?dpfl4e ?n] [(>=?n "e")?s]  [?e ?lynnueVFnnyFnnynepFnnyFnnynepfl4e YY] [(>=?n "e")?s]  [?e fl4e YY] [(>=?n "e")?s]  [?e ?lynnunen ?c](query [:find ?e :where [?e :lor ?c](query [:find ?e :where [?e :lor ?c] (not-join [?e] [?:actev(qUery [:findume (m$u$uq :naueM-m$uqinnjq :nnjotnoi-[?ae:witu])e trwhereie])])
+])
+ (nou-join [?e] [?:activev(qUery [indume :whepe (m$u$uq :naueM-m$uqinnjq :nnjotnoi-[?ae:witu])e trwhereie])])
+])
+ [(>=?n "e")?s]  [?e ?lynnunen ?c]  [?e ?nynEEEEEEEEEEnpfl4e ?n] [(>=?n "e")?s]  [?e ?lynnueVFufn ?s]  [?e ?lynnueVkFnny?dpfl4e ?n] [(>=?n "e")??s]  [?e ?lynnueVFnnyFnnynepfl4e YY] [(>=?n "e")?s]  [?e ?lynnuneqqfl2e ?n]])

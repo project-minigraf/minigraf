@@ -1,1 +1,0 @@
-(query [:find ?e ?e  ?e :where [?e :ne ?n] (nor [ߋ])])

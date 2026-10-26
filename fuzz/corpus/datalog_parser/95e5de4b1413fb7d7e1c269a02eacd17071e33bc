@@ -1,1 +1,0 @@
-(query [:fin:where [? :Name ?s] (no):where  [?nmte :Name ?n]:wh::where [?e :me ?n]:where [?e n] ])

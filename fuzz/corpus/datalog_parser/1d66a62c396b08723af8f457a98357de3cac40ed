@@ -1,0 +1,1 @@
+(query [:find ?e:where (p ?e h0)(AAA3/e :ure:urnSSSehSiEwre )])

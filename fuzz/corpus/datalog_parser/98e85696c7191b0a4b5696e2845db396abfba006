@@ -1,1 +1,0 @@
-(query [::where (ru ?mre ?_>? ?_)])

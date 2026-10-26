@@ -1,1 +1,0 @@
-(query [ :where [(=:"ide") ?n/]:where [(=:rue"ide") ?u ][(!= ?n:active)2][()]])

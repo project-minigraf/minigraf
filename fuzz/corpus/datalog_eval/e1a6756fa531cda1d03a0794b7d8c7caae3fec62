@@ -1,0 +1,1 @@
+(query [ :where [?e zcolor ?c] (not-join [?e] [_ o?ictEEqfn ?g]  [?e ?lynnufn ?c]  [?e ?ynnuennyFneFFFFqfn ?k]  [?e EeFFFFFFqfn ?k]  [?e ?lynEEEEdEEqfn ?g]  [?e ?lynnfn ?g]  [?e:db/tx-id ?rrrrrsc]  [?e ?lynnueFFFBqfn ?k]  [?e ?lynEEEEEEE e])])

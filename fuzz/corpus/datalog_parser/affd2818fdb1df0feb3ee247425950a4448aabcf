@@ -1,0 +1,6 @@
+(query [:find ?e0:where [?e0:namen ?] (ovnot(EEEEEE[e with ? :where(SSSSSSS)])
+) [?e :e ?n] (鑉not(EEEEEE[e wmth ? :where(SSSSSS)])
+) [?e e ?n] (鑉not(EEEEEEE[e with e(SSSSSSS)])
+) [?e :e ?n] (鑉not(EEEEEE[e with ? :where(SSSSSS)])
+) [?e :e ?n] (鑉not) [?e ?n] (n 
+) [?e  ?y]])

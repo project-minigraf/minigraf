@@ -1,0 +1,1 @@
+(query [:find ?e  ?e :where [re [?e :nam]n] (not [?_?e :d true]):where [e :NaMe ?n] (not [?_ :banne true]):where [?e :namg ?n] (not [?_e :d tue]):where [??e/0e e ?n] (nppot [?߉])])

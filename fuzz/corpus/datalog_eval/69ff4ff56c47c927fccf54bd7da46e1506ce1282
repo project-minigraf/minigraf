@@ -1,1 +1,0 @@
-(query [:fi:where [?e ?nmjFqfn ?k]    [?e:db/tx-id ?c]  [?e ?lynnueFFnnyneFFynE666666666666666666e ?n] [(>=?n "e")]])

@@ -1,1 +1,0 @@
-(query [:in:where [?e ?na n] (not[?e ?e e])])

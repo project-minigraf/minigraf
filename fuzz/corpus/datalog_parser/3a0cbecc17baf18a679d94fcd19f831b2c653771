@@ -1,0 +1,1 @@
+(query [:where(or(e[rp(enot,)]?DD) [n? me ?n] ) [6a0t ?y]])

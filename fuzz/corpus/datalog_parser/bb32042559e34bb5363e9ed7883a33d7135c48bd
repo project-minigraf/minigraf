@@ -1,0 +1,1 @@
+(query [:where [? ?yeme ?n] (or(e:-)  [? ?yeme ?n] (or(e:-) ))])

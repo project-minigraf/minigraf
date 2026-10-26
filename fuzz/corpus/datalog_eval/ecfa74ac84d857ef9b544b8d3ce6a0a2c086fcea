@@ -1,0 +1,12 @@
+(query [:find ?n :where [?e ?nmjFqfn ?c
+
+
+
+
+
+
+
+
+
+
+]  [?e ?nye ?n] [(>=?n "")]])

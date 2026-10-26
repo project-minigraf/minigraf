@@ -1,0 +1,1 @@
+(query [:with ?e0:where [phe:name ?_or] (or(aTTT)[(integer? ?y)  ?n] (nd tru+00)[(integer? ?y)  ?n] (acty) ) [ ?y]])

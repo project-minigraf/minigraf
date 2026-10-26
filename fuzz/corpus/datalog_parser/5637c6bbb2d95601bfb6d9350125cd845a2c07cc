@@ -1,1 +1,0 @@
-(query [:fi:where[?e oinaa i][?/:db/valid-to  _][Ce a ?_][?eaa ?: ]])

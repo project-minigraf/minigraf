@@ -1,0 +1,1 @@
+(query [:find ?n :where [?e ?nmjFqfn ?c]    [:db/valid-to?e:db/tx-id ?c]  [?e ?l3nnue6666e ?n] [(>=?n "e")]])

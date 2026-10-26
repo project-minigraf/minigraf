@@ -1,0 +1,2 @@
+(query [:where[?:e ?n](not(q>>>)(q :h)(qe>>>>)(q :h)(qe>>>)(E[e ])
+)])

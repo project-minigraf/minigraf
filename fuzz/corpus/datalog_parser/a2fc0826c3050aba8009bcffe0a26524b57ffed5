@@ -1,4 +1,0 @@
-(query [:where (or(enod d 1) [(qun:)]
-  )   (or(e1) [(qun:)]
-  )   (or(eno) [(qun:)]
-  ) ])

@@ -1,0 +1,1 @@
+(query [ :where [?e ?FFFFFFFF ?c] (not [2 ?? ere] [_ ?? ervie?ie])])

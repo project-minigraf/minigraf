@@ -1,0 +1,1 @@
+(query [:find ?e  ?e :where [?eW:Name ?n] (not [?_?e:ba "Allllllllllllllllllllllllllllllllcsaee"][:e/2 :0nale "e"][:e/1 :db/validaa ?_][?e aaa ?_][?e aaatrafsact eeeeeeerue]):where  [?e :Name ?nvvvvv] (not [?e :banne tre])])

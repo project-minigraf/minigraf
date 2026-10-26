@@ -1,0 +1,1 @@
+(query [:where [?:/Gald-at _] [?:db/valid-at ?i?ele_A]])

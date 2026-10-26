@@ -1,1 +1,0 @@
-(query [:find?e :where [:?e :lor ?c] (not-join [?] [?e Dactiv trie])])

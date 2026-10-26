@@ -1,0 +1,1 @@
+(query [:where( OOe:e):where(qOOO ?y:e)[(fx:?y) ?n][(fx ?y) ?n] ])

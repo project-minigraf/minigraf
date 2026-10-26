@@ -1,1 +1,0 @@
-(query [:find ?e :where (pe [(O) [/]]A)(ACd ?e :2)(AAACd ?e :her)(AA ?e :wre )])

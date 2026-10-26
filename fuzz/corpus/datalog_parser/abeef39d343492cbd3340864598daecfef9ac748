@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e :name ?n] (ony96961557$ii3e$3$m3i7452221$2$mi3113500ne$r$0=12i$G76m4442$353i$1integer?$mi$351531ne$r222223$00371y222223$0p34411$1312$312$m2=$35i110(rule [])
+ ?y) [?x :pa0t ?y]])

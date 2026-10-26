@@ -1,2 +1,0 @@
-(rule [(par,ent 0D) [n? : ?n]  (or(
-y) )])

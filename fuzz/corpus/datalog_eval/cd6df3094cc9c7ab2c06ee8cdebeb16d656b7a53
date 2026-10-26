@@ -1,3 +1,0 @@
-(query [:where [?e u ?c] (not-join [?e] (querbitw :y[:fin(jo5惃_)?])
-[:
-: caeFidtMrue])])

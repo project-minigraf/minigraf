@@ -1,0 +1,1 @@
+(query [:where [?:enad ?z,] (not [? :b?_ ?])[?:nae ?,] :where(not [? :0303221b ?_8])(not [? :b ?_?])])

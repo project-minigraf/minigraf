@@ -1,0 +1,1 @@
+(query [:find ?n :where [?e ?nfn ?Sc]  [?e ?lyn(>=?n "e")]])

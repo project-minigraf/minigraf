@@ -1,0 +1,1 @@
+(query[:find(yunt ?):find(nt ?):find (nt ?):find(t1 ?)])

@@ -1,1 +1,0 @@
-(query [:fin?e :where [?e :Name ?n] (not [?e nne rue][?e d eeec][?e aa ?_][?e aaa erue])])

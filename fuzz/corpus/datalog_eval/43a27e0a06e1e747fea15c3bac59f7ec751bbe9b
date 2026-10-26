@@ -1,2 +1,0 @@
-(query [:finde :where;ndt-l)
- [?e:colr ?c] (or-join:n e:)])

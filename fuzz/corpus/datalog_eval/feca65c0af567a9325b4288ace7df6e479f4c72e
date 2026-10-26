@@ -1,0 +1,2 @@
+(query [:where[ls?eafe color c] (not-join [?_rc] (j ))]
+)

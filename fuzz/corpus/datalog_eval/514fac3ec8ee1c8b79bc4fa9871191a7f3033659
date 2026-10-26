@@ -1,4 +1,0 @@
-(query [:find ?e :where [?e ?FFFFFFFF?FFFFFFFF ?c] (not-join [?e] [?e ? ?chere2e](que:db/tx-idrq [:where [?or /C] (not(q[(/am$na)])
-m$q[? ivree])])
-(query [:findqueRume :where (m$am$nam)]B))]
-)

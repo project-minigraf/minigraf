@@ -1,1 +1,0 @@
-(query [:where [?e : ?](?[ o==nil$n<= nil$ne u]) ])

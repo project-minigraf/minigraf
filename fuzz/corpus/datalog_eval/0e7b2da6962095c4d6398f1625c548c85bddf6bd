@@ -1,1 +1,0 @@
-(query [:find:where(not [e a tuo]())])

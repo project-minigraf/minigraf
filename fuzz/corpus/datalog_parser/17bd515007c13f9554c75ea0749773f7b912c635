@@ -1,0 +1,1 @@
+(query [:where(AACd ?ee:bwre50)(AA ?e 79)(AACd ?8)(AA* ?e)])

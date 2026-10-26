@@ -1,1 +1,0 @@
-;(qu(ry [:find ?n :where [? :name ?n]])

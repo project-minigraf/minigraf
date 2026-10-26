@@ -1,1 +1,0 @@
-(query [:i:where [?e d _][?:db/valid-at c][?e a cc_]])

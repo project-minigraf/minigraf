@@ -1,1 +1,0 @@
-(query [:fine :where [? :Name ?n] (not [?e :be e]):where [?a :n ?n] (not [WWWWWWWWW:d true]):where [?e name ?n] (not [?e :b?zd treؑ߉])])

@@ -1,0 +1,1 @@
+(query [:where [?e lor ?a] (n0v ?)[?e ,cov ?cno ](fe/ [])])

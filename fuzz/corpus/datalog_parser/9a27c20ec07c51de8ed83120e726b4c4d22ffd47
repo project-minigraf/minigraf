@@ -1,1 +1,0 @@
-(query[:ffnd:find (count ?e) ?e:where [?e: en]])

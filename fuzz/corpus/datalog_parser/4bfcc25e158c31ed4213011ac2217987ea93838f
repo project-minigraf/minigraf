@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :name ?n] (ony3e$6m384i ?y) [?x#{0nil}?y]])

@@ -1,1 +1,0 @@
-(query [:fin :where [?e ?m ?n][( = ?e "i-t")]])

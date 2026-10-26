@@ -1,1 +1,0 @@
-(query[::where [?e a ?_][?e a ?_][?e a ?_]])

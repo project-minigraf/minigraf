@@ -1,0 +1,1 @@
+(query [:find  ?e :where [?e :me ?n] (not [?e i ?_][?_?e sact eeeeeru])])

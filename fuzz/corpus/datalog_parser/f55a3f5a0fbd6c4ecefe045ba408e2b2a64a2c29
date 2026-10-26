@@ -1,2 +1,0 @@
-(query [:e :where [?e :e/ ?n] (onne$23$00s1$13$mi$67(re[()])
- ?x) [=xt ?y]])

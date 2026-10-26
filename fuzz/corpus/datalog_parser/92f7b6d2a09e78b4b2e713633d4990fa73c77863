@@ -1,0 +1,1 @@
+(query [:where [?e:name ?n] (or(eDDD) [n?:ee ?n] (D) [n?:eme? me] (naaddD) [n] (OAA) )-[7y]])

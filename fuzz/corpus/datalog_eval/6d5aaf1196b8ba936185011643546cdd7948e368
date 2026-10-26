@@ -1,2 +1,0 @@
-(query [:find ?e:c:where [?e :db/valid-from ?c] (not[?c] (uinn//d ?e: ?[?e]-))]
-)

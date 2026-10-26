@@ -1,2 +1,0 @@
-(query [(query [:find ?e :::a:finds-of(not-e e e l[?] ?[ve tr] ?[?] =[e:active true:active true]ie e [?] ?[e:aclt [?]active true tr] ?[?] ?[e:active true:active true]t-hoie [rue]t-hoiminqfe e [?v])
-m_0e true]t-ho ?[e:active tr] ?[eu:act l[?] ?[ve true]t-e] ?[e:active true])])

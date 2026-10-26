@@ -1,0 +1,1 @@
+(query [:where [?e :name ?n] (or(edD:findD) [n? -a :en] (OCA) ) [3xa5eee ?n] (or(edA) [:sen?me? -a :en] (OAA) ) [4xa5eename ?n] (or [n?:eame ?n] (D) [n :ame ?n] (ddnaaddD) [:sen?me? -a :en] (OAA) ) [3xa5et ?y]])

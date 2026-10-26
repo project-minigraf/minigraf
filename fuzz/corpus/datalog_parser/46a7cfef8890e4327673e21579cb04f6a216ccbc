@@ -1,0 +1,1 @@
+(query [:find(cswm ?e0)r [?e 0n]])

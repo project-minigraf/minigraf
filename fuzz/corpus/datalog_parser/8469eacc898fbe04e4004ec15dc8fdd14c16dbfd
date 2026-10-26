@@ -1,0 +1,1 @@
+(query [:where(q++ ?y)[(f ?y) ?n] ])

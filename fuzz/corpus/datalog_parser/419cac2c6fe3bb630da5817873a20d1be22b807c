@@ -1,0 +1,3 @@
+(query[ :where(query[ (d {i==n==}t)])
+ (d {iry[re(query[ (d {i==n==}t)])
+ (d {i==n==}t)]}t)])

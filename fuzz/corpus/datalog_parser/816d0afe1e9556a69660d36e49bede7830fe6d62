@@ -1,1 +1,0 @@
-(query [:fI:where [? aeaa ?_][?:db/valid-to ?_00001793470455][?:db/valid-to ?_integer?_]])

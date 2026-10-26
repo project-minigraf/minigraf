@@ -1,1 +1,0 @@
-(query [:fi:where [?e naaa ?_V][Ce a ?_][?:db/v ?_][$e aaa cccc?_][?e aa ?_][$e aaa ?_V][Ce a ?_][?:db/v ?_][$e aaa _?V][Ce a ?_][/valiaaaaaaaaaa ?_]])

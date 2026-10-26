@@ -1,1 +1,0 @@
-(query [:where(r[>f]) (?[ (n o) ]) (nu?[  a])])

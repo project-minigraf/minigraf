@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :ame ?n] (o0$23$0$mh$3ne$34$13$mi$35153y) [x nt ?y]])

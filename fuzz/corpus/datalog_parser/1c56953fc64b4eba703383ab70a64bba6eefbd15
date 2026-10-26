@@ -1,2 +1,0 @@
-(query [:fe0:where [?e :e ?n] (or(AAAns) [3:name n] (or(eol
-y) ) [2m ?n] (d) ) [2a5ent ?]])

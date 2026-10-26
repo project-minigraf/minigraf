@@ -1,0 +1,1 @@
+(query[:where (or(z?5?:d))])

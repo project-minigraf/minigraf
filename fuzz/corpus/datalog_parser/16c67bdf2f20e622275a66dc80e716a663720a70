@@ -1,0 +1,1 @@
+(query [:where [?:nailc""][?e/ ?e ?W]])

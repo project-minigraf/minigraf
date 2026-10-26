@@ -1,1 +1,0 @@
-(query[:find ?e :where [?e :clor ?c] (jo[] i ?[40. :aAe])])

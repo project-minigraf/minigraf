@@ -1,0 +1,1 @@
+(query [:with ?e0:where [phe:name ?_] (or(enod uq:db/valid-at Z/lyrAA121066)[(fx ?y)  ?n] (nd tru+TT)[(integer? ?y)  ?n] (nd trTTTTTTTTTTTTTT)[(integer? ?y)  ?n] (AAAATTTTTTTPTTTTT)[(integer? ?y)  ?n] (nd tnsactTTTTTTTT)[(integer? ?y)  ?n] (nd tru+cnteger?>>>>>>>>>>>namey) ) [6xa0ent ?y]])

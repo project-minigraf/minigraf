@@ -1,1 +1,0 @@
-(query [:e :where:any-valid-time [?e :3clor ?c] (not [-?e :ac:][G?e :aY:u][G?e :i:u])])

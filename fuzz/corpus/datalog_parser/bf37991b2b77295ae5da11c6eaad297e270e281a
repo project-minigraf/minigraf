@@ -1,1 +1,0 @@
-(query [: :where [? :nie n] (not [-?e :bad tr]):where [?e : ?n](not [,e :banoed tru])])

@@ -1,1 +1,0 @@
-(query [:cj :where [?A惃懃ne :name ?n ][,(!= ?n "Alecit")]])

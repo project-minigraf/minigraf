@@ -1,1 +1,0 @@
-(query [::where[?e0:db/ :_][se?e:0 :?y]])

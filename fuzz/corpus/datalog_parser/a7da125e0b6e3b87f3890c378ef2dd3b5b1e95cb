@@ -1,1 +1,0 @@
-(query [:where [?e:name Q?m?_](or(?D ?e OOO)(que ?e>052)(que>>>>)) ])

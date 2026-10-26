@@ -1,1 +1,0 @@
-(query [:where [?e :ne ?n] (not [?e :banned tre]):where [e : ?n] (nlt [?e :ue])])

@@ -1,1 +1,0 @@
-(query [:fi:where [? ea ?_][6:db/valid-to :al?_]])

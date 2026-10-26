@@ -1,2 +1,0 @@
-(query [:find ?e :where [?e :lor ?c](query [:find ?e :where [?e :lor ?c] (not-join [?e] [?:actev(qUery [:finduie])me (m$u$uq :naueM-m$uqinnjq :nnjotnoi-[?ae:witu])e tereie])])
-])
