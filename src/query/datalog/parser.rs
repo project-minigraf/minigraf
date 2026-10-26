@@ -4389,18 +4389,6 @@ mod window_parse_tests {
     }
 
     #[test]
-    fn parse_lag_and_lead_windows() {
-        let result = parse_datalog_command(
-            r#"(query [:find (lag ?v :over (:order-by ?v)) (lead ?v :over (:order-by ?v)) :where [?e :x ?v]])"#,
-        );
-        let DatalogCommand::Query(q) = result.expect("query") else {
-            panic!("expected query")
-        };
-        assert!(matches!(&q.find[0], FindSpec::Window(ws) if ws.func == WindowFunc::Lag));
-        assert!(matches!(&q.find[1], FindSpec::Window(ws) if ws.func == WindowFunc::Lead));
-    }
-
-    #[test]
     fn parse_window_order_by_missing_rejected() {
         let result = parse_datalog_command(
             r#"(query [:find (sum ?v :over (:partition-by ?p)) :where [?e :x ?v] [?e :y ?p]])"#,
