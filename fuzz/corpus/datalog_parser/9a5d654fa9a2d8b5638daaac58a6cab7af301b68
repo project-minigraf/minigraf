@@ -1,2 +1,0 @@
-(query [:with ?e :where [?e e ?n] (o)
-::find ?en6 ?e :y])

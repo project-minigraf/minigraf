@@ -1,0 +1,1 @@
+(query [:fnd:where [?e : ?n] (not(nd ?e :ind ?e E:Aw: ?e :i?Y) [ae d true])])

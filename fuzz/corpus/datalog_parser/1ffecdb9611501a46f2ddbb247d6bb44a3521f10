@@ -1,0 +1,1 @@
+(query [:where [nuw:name qe] (sa[])[?0:p:max-] (yu)[?x :p:fa] (occ:)[?x p:ax-eri]])

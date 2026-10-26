@@ -1,0 +1,1 @@
+(query [ :where[m: ?_] (not[? d e])])

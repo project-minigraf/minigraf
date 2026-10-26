@@ -1,1 +1,0 @@
-(query [:where(not[onZnot?e 3e]()?)])

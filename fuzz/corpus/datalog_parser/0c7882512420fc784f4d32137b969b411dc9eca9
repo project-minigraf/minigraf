@@ -1,0 +1,1 @@
+(query [:wh:where [?em ?$nnn][a ssss$ss][e ?n$nn]:wh])

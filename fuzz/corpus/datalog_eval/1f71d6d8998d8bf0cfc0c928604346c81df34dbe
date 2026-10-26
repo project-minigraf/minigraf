@@ -1,1 +1,0 @@
-(query [:w:where[(= $n "e")]])

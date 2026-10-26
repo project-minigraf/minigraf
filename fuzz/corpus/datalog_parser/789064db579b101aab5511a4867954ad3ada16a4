@@ -1,4 +1,0 @@
-(query [:find ?e :where (ue[: [?eln ?]])
-[?e manw ?n] (no bbbbbbbbbb[ [?man ?]])
-[?e wname ?n] (noe [: [?e :nama ?]])
-[?e manne ?n] (no bbbbbbbbb[?ug])])

@@ -1,0 +1,2 @@
+(query [:fu :where [?WA l omaaa?rsuc] (not-join [?e] [:e :active tree]) :where [?e l omaaa?rsuc] (not-join [?e] [,?e :activu(qery [:find _________: ?e])])
+(noin [?tiu])])

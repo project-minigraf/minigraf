@@ -1,1 +1,0 @@
-(query [:where (sq: )(n:e[[?]]?)[?x n 8]])

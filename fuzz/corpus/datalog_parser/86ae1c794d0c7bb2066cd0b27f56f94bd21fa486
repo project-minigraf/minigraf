@@ -1,3 +1,0 @@
-(query [: :where [?e :n?-me ?ne]  [?l :n?-me ?n] (not(r:pch [ :wh (not [e])]) [ae :banned true])(not(r:ss) [ae :banned true])(not(quen=s8) [ae :banned t2ue])(not(que:
-[: [?e ?]])
-[?e wname ?n] (noee= =ry [  (noa [ beanndtrue])]) [ag :banneed tru])])

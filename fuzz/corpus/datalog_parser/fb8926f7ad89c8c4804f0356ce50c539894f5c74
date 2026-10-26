@@ -1,1 +1,0 @@
-,(query [:where(or[?e w ?][m :nh e])])

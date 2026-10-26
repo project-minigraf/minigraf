@@ -1,2 +1,0 @@
-(query [ :where(q [[=m]])
-[?e name ?n] (e ?sssssse [?g])])

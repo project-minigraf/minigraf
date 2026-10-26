@@ -1,0 +1,1 @@
+(query[:where [qe e en] (e:)[(+2:)?y] ])

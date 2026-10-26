@@ -1,1 +1,0 @@
-(query [:n :where [nil:name ?n] [(= ?n "")]])

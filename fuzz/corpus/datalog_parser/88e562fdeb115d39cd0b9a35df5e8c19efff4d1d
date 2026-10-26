@@ -1,0 +1,1 @@
+(query [:fin:where[? -me ?n] (not(q?_??_??_) [a ?e :wherru])])

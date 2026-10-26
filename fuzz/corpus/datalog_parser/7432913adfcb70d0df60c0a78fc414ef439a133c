@@ -1,2 +1,0 @@
-(query [:where (or(p= =y) (r))(A
-e)])

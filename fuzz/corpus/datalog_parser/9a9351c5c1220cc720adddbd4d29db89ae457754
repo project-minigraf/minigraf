@@ -1,0 +1,2 @@
+(query [:where [A e qee?e?n] (not-join[] 
+[?]x)])

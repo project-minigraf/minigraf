@@ -1,0 +1,1 @@
+(query [:finn :where [?e :nam ?n] [(niojo-tn)]])

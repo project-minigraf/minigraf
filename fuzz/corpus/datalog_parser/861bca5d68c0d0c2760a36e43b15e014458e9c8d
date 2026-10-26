@@ -1,0 +1,1 @@
+(query [:where[U:me ?n] (u/=A)(u:rp) (u=y)  (u?) (ussss)])

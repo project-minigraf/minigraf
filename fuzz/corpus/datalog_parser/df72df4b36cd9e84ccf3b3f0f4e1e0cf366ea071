@@ -1,0 +1,1 @@
+(query [:?:where [r? : q-q] (=?y) (u sss:)[(+:th ?y)] ])

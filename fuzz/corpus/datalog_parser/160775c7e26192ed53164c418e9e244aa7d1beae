@@ -1,5 +1,0 @@
-(query [:find ?e :where [?e :-me ?ne?n]  [?e :n?-me ?n][?e :nme ?n] (not(qusreny :
-[: [e aren5:naman ?]])
-[?e ?_wnam ?n] (noe ;s:
-[: [?e aren0:naman ?]])
-[?e ?_wname ?n] (noeoery [ :wh (not [aue])]) [ae :banned true])])

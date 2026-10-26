@@ -1,5 +1,0 @@
-(query [:find ?e :where [?e :n?-me ?n](query [:find:e])
-  [?e e ?n] (not(query :
-[: [?e ?]])
-[?e wname ?n] (noe =5a=y) (r)
-[?e ?_wname ?n] (noeb) [:b eaanned true])])

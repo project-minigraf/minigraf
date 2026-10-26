@@ -1,1 +1,0 @@
-(query [:where[?e m n?](e?h:)])

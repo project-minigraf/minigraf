@@ -1,0 +1,2 @@
+(query [:fi :where  (not(u?y) [a :db/tx-id()])
+:y])

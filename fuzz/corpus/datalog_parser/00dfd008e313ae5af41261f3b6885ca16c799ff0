@@ -1,0 +1,1 @@
+(query [::where(ul=nil=ss)[?x : B1]])

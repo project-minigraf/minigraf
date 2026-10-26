@@ -1,1 +1,0 @@
-(query [:where[x :db/tx-count BB]])

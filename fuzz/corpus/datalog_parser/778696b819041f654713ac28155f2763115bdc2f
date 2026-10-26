@@ -1,1 +1,0 @@
-(query [:find (co ?) :find (o ?)(o ?) :find (co ?) :where:find(co ?) ])

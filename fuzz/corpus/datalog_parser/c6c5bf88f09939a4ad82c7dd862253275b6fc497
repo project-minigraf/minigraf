@@ -1,0 +1,1 @@
+(query [:where(not(i_magis)[(a :_b)](n) [ea d rue])])

@@ -1,0 +1,1 @@
+(query [::where [?e ?pe ?n] (not(q?nm?n?n?n[]) [Te :bY true])])

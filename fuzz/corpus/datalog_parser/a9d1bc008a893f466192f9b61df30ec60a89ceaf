@@ -1,4 +1,0 @@
-(query [:where [rnot:name uee?n] (sccccpt?e=n )[?x :db/valid-at ?] (sssuccccccccccccpyt?e=n)(?ye[[?x 
-]])[?x :db/valid-at BBBBBBBnee?n] (ssccccccpyt?e=n )[?x :db/valid-at ?Bnot-joinn] (sssssyt?e=n )[?x :db/valid-at ?BBBBBnee?n] (sssuccccccpyt?[[?x 
-]])[?x :db/valid-at BBBBBBBnee?n] (sssuccccccccccpyt?ce[[?x 
-]])[?x :parent ?BB2]])

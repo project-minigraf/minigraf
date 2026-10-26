@@ -1,0 +1,2 @@
+(query [:where [rot:nt ?B](s[[?x 
+]])[?x :t ?BBBBeen] (I:sd )(?ye[f])[?x ssSst? B1]])

@@ -1,1 +1,0 @@
-(query [:find (couzt ?e):wh:find (uzt ?e)(c/zt ?e):where [?e fffn ?n]])

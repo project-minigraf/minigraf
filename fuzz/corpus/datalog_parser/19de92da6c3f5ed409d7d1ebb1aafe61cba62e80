@@ -1,1 +1,0 @@
-(query [:ur:where [r!=?ct] (e[]?)[? r 8]])

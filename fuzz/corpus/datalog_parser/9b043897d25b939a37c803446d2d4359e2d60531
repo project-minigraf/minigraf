@@ -1,1 +1,0 @@
-(query[:where  (or(q)[?x Opt B] (ssc[x?])[?x *r ]?e)])

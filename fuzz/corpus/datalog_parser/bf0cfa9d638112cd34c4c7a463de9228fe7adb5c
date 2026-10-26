@@ -1,0 +1,4 @@
+(query [:r:where (noe  ?
+5)(oe ?
+4)(n ?
+1)])

@@ -1,0 +1,1 @@
+(query [:where (en2t=?y)[(=: ?y)]  [qu :ame q] (n2t=?y)[(=: ?y)] ])

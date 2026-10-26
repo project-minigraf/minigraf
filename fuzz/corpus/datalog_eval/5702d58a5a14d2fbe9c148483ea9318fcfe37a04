@@ -1,0 +1,1 @@
+(query [:fih:max-derived-facts(nil)])

@@ -1,0 +1,1 @@
+(query [:?1:where [q e qG] (or(L) (or(q) [ae a])no)])

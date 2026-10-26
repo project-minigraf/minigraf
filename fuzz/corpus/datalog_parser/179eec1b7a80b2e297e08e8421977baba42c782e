@@ -1,1 +1,0 @@
-(query [::where(s):any-valid-time(cc):any-valid-time(n ):any-valid-time(?[[?x]])[?xBB6BB]])

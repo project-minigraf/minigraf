@@ -1,4 +1,0 @@
-(query [:find ?e :where [?e :n?- ?n] (not(que
-e[8])[?e $name ?n] (noegg
-[: [?em:a]])
-[?e $nambanneed tru])])

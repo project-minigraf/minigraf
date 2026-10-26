@@ -1,3 +1,0 @@
-(query [:where [?:db/valid-at ?n] ( M[?00ug])
- [ :
-e ?] (f [:eb:])])

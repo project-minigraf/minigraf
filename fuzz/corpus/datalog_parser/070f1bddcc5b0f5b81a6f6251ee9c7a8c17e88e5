@@ -1,0 +1,4 @@
+(query [:find ?e :where [?e ?W-me ?n] (not(iery) [ae :db/tx-id(query [:wide])])
+[?e ?W?-me ?n] (not(q6ie?ry) [ae :db/tx-id(query [:wite])]):where (not(uq7iey) [ae :db/tx-id(qu [ite])])
+::f:fin :?e :where [?e ?W?e ?n] (not(uq8ie?ry) [ae :db/tx-id(query[:wite])])
+Ɨy])

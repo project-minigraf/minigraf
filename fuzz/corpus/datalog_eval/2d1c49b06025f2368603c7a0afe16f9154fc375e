@@ -1,0 +1,1 @@
+(query [:find ?e :find ?d ?e :find ?e [??c] (n)])

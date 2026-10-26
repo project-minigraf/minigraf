@@ -1,0 +1,2 @@
+(query [:fnde?  :where [?not-joine vcolow ?c] (noin [?e :a(query [:/find ?e (nojoin [] )])e]
+)])

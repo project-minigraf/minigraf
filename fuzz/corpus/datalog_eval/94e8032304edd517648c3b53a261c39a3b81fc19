@@ -1,0 +1,1 @@
+(query [:f?e :f?e :where [?e sumlor ?c] (not-join [?e] [?e:e true]):where [?e so ?c] (not-join [?e] [?e:e true])])

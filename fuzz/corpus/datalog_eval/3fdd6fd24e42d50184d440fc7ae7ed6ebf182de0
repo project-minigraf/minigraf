@@ -1,1 +1,0 @@
-(query [:finIfind:where [?e :coLor ?c] (not(?/[:find hhhhhhh[rue]]))])

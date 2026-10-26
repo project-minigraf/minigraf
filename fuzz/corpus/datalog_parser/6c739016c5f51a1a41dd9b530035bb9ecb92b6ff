@@ -1,0 +1,1 @@
+(query  [:-nt:where (or(L/s? [ee])(and(qu:80 []) [esLL tru])e)])

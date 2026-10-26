@@ -1,0 +1,1 @@
+(query [:we:where [?e ?$nnn][e ?n $nn][?e ?$nn][?em ?$nnn][e ?n n] ])

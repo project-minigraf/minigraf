@@ -1,0 +1,2 @@
+(query [:where [rt:name qee?] (sse=n )[?x :db/valid-at ??n] (?ye[[]])[?x :db/valid-at BBBBBnee?n] (c?ce[[?x 
+]])[?x ent ?BBBBBB1]])

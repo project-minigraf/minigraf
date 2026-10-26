@@ -1,0 +1,1 @@
+(query[:it:where[:ae ?  en] (not [a: tre]) (not [a b:e])])

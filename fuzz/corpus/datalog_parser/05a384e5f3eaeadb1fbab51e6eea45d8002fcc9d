@@ -1,1 +1,0 @@
-(query [:where [q e q?n] (or(n)(?cc)(?ye))])

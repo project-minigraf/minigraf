@@ -1,0 +1,8 @@
+(query [::where [?Te :name nn] (not [?e ?_ann?me ?n] (noe ?
+[: [?e :naman?]])
+[?e wname ?n] (neo?ss :
+[: [?e re]])
+[?e wn ?n] (nos
+[: [?e]])
+[?e wnae ?n] (noe ?[: [n ]])
+[?e d true])])

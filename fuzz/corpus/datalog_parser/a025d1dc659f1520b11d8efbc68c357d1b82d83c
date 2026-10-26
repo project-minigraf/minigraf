@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :n?-?_ ?n] (not [ae :banned true])(not(qu7777776 [ :(not [u :e])]) [ae :yarbanned true])(not(qu))])

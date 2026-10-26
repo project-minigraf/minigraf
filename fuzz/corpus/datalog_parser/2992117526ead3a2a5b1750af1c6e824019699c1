@@ -1,1 +1,0 @@
-(query [:we :where [?_:am en] (not [e :nand true][ae :d true][a : true])])

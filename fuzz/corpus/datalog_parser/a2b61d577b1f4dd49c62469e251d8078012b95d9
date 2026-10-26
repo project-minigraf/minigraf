@@ -1,2 +1,0 @@
-(query [:fe :where [?4?e :ne ne?][?e :n ?n] (not(qum[: [we ?]])
-[?e wname ?n])(not(qpidLnrJ[: [?]]))])

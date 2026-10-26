@@ -1,1 +1,0 @@
-(query [:wkte :where [?e:amn?  e] (not [ae :finded tru7e]) :where[?e:am  en] (not [ae :b:wete])(not [:ae b:])])

@@ -1,4 +1,0 @@
-(query [:re:where (noe  ?
-5)(oe ?
-4)(n ?
-1)])

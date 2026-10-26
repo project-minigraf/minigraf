@@ -1,0 +1,1 @@
+(query [:where [?e :name ?n] (not(u=y) (rent=en) (ul =y) (u54::::)[qx ::bnne])])

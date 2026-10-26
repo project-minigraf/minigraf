@@ -1,1 +1,0 @@
-(query [ :where[? Meam ?n] [(nz"iice")]])

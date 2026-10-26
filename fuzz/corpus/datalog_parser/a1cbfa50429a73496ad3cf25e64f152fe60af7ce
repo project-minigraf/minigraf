@@ -1,1 +1,0 @@
-(query [::where [?e:  eP] (not [ae :band u7e]) :where [?e:cmn? n] [quwr?e :name en] (not [a:r:whee])])

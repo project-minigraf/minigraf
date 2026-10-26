@@ -1,1 +1,0 @@
-(query [ :where(not(q?x) (re	) [a :b t])])

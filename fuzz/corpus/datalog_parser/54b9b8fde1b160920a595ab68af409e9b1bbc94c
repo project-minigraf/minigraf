@@ -1,0 +1,9 @@
+(query [:where (not-join[?
+?_:e (not[?
+
+
+
+
+
+?])
+ ][])[?x :ss](c:)])

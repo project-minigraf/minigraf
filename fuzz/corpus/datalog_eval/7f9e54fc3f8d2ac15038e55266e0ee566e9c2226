@@ -1,0 +1,1 @@
+(query [:f :where [?e ?namk ?n]  :where [?c?e ?name ?n?IIIIIIIIIind] [(= :n "Ae")]])

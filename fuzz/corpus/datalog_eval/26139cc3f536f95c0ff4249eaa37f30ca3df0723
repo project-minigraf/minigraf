@@ -1,0 +1,1 @@
+(query [:find ?eIEinIIIind ?eOOOIOOIIIIIIIIIIIIIfindd ?eOOOOOOIIIIIIIIfind ?eOOOojtond ?eOIPIIIfiindd ?eOOOOOOIIfiindd ?eOOOOOOIIIIIIIIIIIIIIfind ?eOOOoztond ?oOOIIIICIIIIfiindd ?eOOOOOOOojtondeOOO ? :where [?e :color ?c] (nfind ?e)])

@@ -1,0 +1,2 @@
+(query[:where[?e: n](not [?e:anne tr])(qu -[:i])
+])

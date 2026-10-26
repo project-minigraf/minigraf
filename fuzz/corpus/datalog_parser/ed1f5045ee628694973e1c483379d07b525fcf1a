@@ -1,0 +1,3 @@
+(query [:e:where
+[?e wn ?n] (no[[]])
+[?e wnafqiei e?n](o [?g])])

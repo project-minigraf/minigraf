@@ -1,0 +1,1 @@
+(query [:where [?e:m?  en] (not [a:d e]) [e: en] (not[a:X r])])

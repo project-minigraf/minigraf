@@ -1,0 +1,1 @@
+(query [:fiw :where [?e ?me ?n] [(< ?n "Ali [")]])

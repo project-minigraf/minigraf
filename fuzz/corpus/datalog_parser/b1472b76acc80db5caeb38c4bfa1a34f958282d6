@@ -1,0 +1,1 @@
+(query [:h :where :any-valid-time(not [e :ebnd t44444443]) :where [?e:a?  en] (not[ae ed eutrue])])

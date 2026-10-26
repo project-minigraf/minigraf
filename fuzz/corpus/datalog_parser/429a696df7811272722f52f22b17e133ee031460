@@ -1,2 +1,0 @@
-(query [:where [De :n q] (ct=?y) (u 
-ens)[(/:h ?y)]])

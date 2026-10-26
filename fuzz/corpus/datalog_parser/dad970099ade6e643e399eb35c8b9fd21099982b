@@ -1,0 +1,3 @@
+(query [:where [q e qn]( or(qu)[?x : ?B] (sc[x
+ ])[?x arent ?B] (v)
+:re)])

@@ -1,1 +1,0 @@
-(query [:find ?e :where [?: ?n](not(q= =) (nts?_ =y) (ulr:reny) (usry [ (not 4[])]) [ae :banned tre])])

@@ -1,0 +1,1 @@
+(query  [:?:where [?sanq e n] (or(e))(n)])

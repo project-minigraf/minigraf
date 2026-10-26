@@ -1,0 +1,2 @@
+(query [:where [q e qee?] (or(que[])[?x :parent ?B] (qss )(?ne=n)(?ye[[?]])[?B] (s)
+:)])

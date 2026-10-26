@@ -1,4 +1,0 @@
-(query [:where (nn
-2.)(n ?o
-6)(n ?o
-0.)])

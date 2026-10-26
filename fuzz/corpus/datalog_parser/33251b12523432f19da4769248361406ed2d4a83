@@ -1,2 +1,0 @@
-(query [:where [not: ee?n] [?x :pt ?B] (uc=n) (u 
-:)[?x :pZr ?B]])

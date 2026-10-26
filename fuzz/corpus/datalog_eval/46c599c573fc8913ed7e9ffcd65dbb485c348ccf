@@ -1,0 +1,3 @@
+(query [:find ?e :where [?e :color ?c] (--2$qu---1$---$III(query [:find ?:where [?e :color ?c] (nind ?e w ?:e [colo])])
+IIIeOOOojto-IIIn$uAAAAAAAAAAAAAAAAAAAIIInIAAAAAAAAAA-1$Qu---1$----X$u$h$hInIIInIIid ?eOeOOOojto-IIIn$uAAAAAAAAh$hIinIid ?eOOOOOOIIiIICIIIIIIIIII?_IIIeOOOojto-IIIn$uAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAAA-5$Qu---1$----Xn$uh$hjtInoII-$uAAAAHAAAh$hIfalseindOOOOOOI+I$quh$3h-Xn$uh$h$IIIInII d?e(query [:find ?:where [?e :color ?c] (nind ?e w ?:e [colo])])
+IIIeOOOojto-IIIn$uAAAAAAAAAAAAAAAAAAAIIInIAAAAAAAAAA-1$Qu---1$----X$u$h$hInIIInIIid ?eOeOOOOOOOO :w$quh$7hhe)])

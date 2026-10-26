@@ -1,1 +1,0 @@
-(query [:fi::fin-time :find ?e0::y-v?FFFe ::bin-time :find ?e0::y-validd ?e ])

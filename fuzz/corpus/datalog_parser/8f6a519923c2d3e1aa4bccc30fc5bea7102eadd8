@@ -1,1 +1,0 @@
-(query [:find (co ?) :where :find (co ?) ::find (co ?) :whereB :find (co ?) ::find (co ?) ::find (o ?) :whereB :find (co ?) ::find (co ?) :where :find (co ?) :where:find (co ?) :where :find (co ?) ::find (co ?) :whereB :find (co ?) ::find (co ?) :where :find (co ?) :ww:find (co ?) :where :f:find (co ?) :whe [?2]])

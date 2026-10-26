@@ -1,5 +1,0 @@
-(query [:where (q
-[: [?n* ]]?)
-[?e wme ?] (noe ?s*:
-)
-[?e wname ?n] (noe ?s)(noe sssssss:)])

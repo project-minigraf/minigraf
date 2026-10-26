@@ -1,1 +1,0 @@
-(rule [(pp)[(string? ?y)]( ?)[(-j ?y)]y])
