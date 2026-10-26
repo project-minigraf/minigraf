@@ -606,7 +606,7 @@ pub(crate) enum Running {
 
 impl Running {
     /// The accumulator of `ws`, or `INT-030` when its function is unknown.
-    /// Not for `rank` or `row-number`.
+    /// Not for `rank`, `row-number`, `lag`, or `lead`.
     pub(crate) fn new(ws: &WindowSpec, registry: &FunctionRegistry) -> Result<Running> {
         let name = ws.func_name();
         let unknown = || err_coded!(ErrorCode::Int030, name.clone());
@@ -663,7 +663,8 @@ impl Running {
 /// under [`value_order`], then by the named variables, then by position
 /// (spec §4.1). Rows with order-equal `:order-by` values are peers: `rank`
 /// is equal for them, and a running aggregate gives every peer its value at
-/// the last peer (spec §4.2). Used by the executor and the engine.
+/// the last peer (spec §4.2). `lag` and `lead` read adjacent rows in the
+/// sorted order, ignoring peer groups. Used by the executor and the engine.
 pub(crate) fn windows(
     find: &[FindSpec],
     rows: &[Vec<Value>],
@@ -710,6 +711,22 @@ pub(crate) fn windows(
                     })
                     .then(a.cmp(&b))
             });
+
+            // Row offsets use the physical row order, not aggregate peer groups.
+            if matches!(ws.func, WindowFunc::Lag | WindowFunc::Lead) {
+                for (pos, &row) in keyed.iter().enumerate() {
+                    let adjacent = if matches!(ws.func, WindowFunc::Lag) {
+                        pos.checked_sub(1)
+                    } else {
+                        pos.checked_add(1)
+                    };
+                    let neighbor = adjacent.and_then(|p| keyed.get(p));
+                    if let Some(v) = values.get_mut(row) {
+                        *v = neighbor.map_or(Value::Null, |&r| read(r, var).clone());
+                    }
+                }
+                continue;
+            }
 
             let mut running = match ws.func {
                 WindowFunc::Rank | WindowFunc::RowNumber => None,

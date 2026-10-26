@@ -423,6 +423,7 @@ These tests compare the database against an independent answer rather than a sin
   - `INT-041` from a failing group.
   - `src/query/datalog/aggregate.rs` (15 unit tests) checks every accumulator over every order of small inputs, and that `value_order` is a total order.
   - `tests/window_functions_test.rs` checks `PRS-082` and a window over the groups of an aggregate query.
+  - `tests/window_functions_test.rs` (#182) also checks `lag`/`lead` on whole and partitioned results, descending order and ties, singleton and mixed-type partitions, `nil` edges, long strings, keywords, refs and sets, grouped rows, distinct output, pagination, prepared queries, cursors and preserved user aggregates of those names. Parser tests cover malformed shapes and `tests/plan_independence_test.rs` checks both directions under reordered plans.
   - `Aggregate` on the engine (#547 PR 2, `src/query/engine/tests.rs`, 3 tests): every built-in aggregate grouped by keywords, refs, booleans, floats and long strings, over `nil` values, keywords and refs, with `:with` and `or`, at six temporal settings in memory, after a checkpoint and after reopen, against their frozen answers. Also: an ungrouped aggregate reads every row and returns one batch of one row; the zero row and empty answers; groups in value order over several batches; `INT-041` from a later group; a group dropped by `min` of no value.
   - `tests/aggregation_test.rs` checks that a group of `0.0` and `-0.0` returns `-0.0` in either insertion order.
 - **Query validation** (#406, #414)

@@ -730,10 +730,6 @@ fn parse_window_expr(elems: &[EdnValue]) -> Result<FindSpec> {
         _ => bail_coded!(ErrorCode::Prs029),
     };
 
-    if matches!(func_name, "lag" | "lead") {
-        bail_coded!(ErrorCode::Prs030, func_name);
-    }
-
     let func = match func_name {
         "sum" => WindowFunc::Sum,
         "count" => WindowFunc::Count,
@@ -742,6 +738,8 @@ fn parse_window_expr(elems: &[EdnValue]) -> Result<FindSpec> {
         "avg" => WindowFunc::Avg,
         "rank" => WindowFunc::Rank,
         "row-number" => WindowFunc::RowNumber,
+        "lag" => WindowFunc::Lag,
+        "lead" => WindowFunc::Lead,
         "count-distinct" | "sum-distinct" => {
             bail_coded!(ErrorCode::Prs031, func_name);
         }
@@ -4391,15 +4389,6 @@ mod window_parse_tests {
     }
 
     #[test]
-    fn parse_lag_rejected() {
-        let result = parse_datalog_command(
-            r#"(query [:find (lag ?v :over (:order-by ?v)) :where [?e :x ?v]])"#,
-        );
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not supported"));
-    }
-
-    #[test]
     fn parse_window_order_by_missing_rejected() {
         let result = parse_datalog_command(
             r#"(query [:find (sum ?v :over (:partition-by ?p)) :where [?e :x ?v] [?e :y ?p]])"#,
@@ -4469,12 +4458,17 @@ mod window_parse_tests {
     }
 
     #[test]
-    fn parse_lead_rejected() {
+    fn parse_lead_requires_value_argument() {
         let result = parse_datalog_command(
-            r#"(query [:find (lead ?v :over (:order-by ?v)) :where [?e :x ?v]])"#,
+            r#"(query [:find (lead :over (:order-by ?v)) :where [?e :x ?v]])"#,
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not supported"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("variable argument")
+        );
     }
 
     #[test]

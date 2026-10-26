@@ -76,6 +76,9 @@ pub(crate) enum ErrorCode {
     Prs027,
     Prs028,
     Prs029,
+    // PRS-030 is deprecated since v3.0.0: lag/lead windows are supported.
+    // Kept so the code is never reused.
+    #[allow(dead_code)]
     Prs030,
     Prs031,
     Prs032,

@@ -216,7 +216,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1874 tests** (1860 passing, 14 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
+**1880 tests** (1866 passing, 14 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
@@ -227,8 +227,8 @@ See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 Current plan (see `ROADMAP.md` and the milestones):
 - **v2.x** (`main`, format v7) now gets only data-integrity and security fixes as patch releases (v2.0.3 is the first); v2.0.2 was the last planned v2.x release.
-- **v3.0.0** (format v8 and data integrity, plus `:limit` #306, optional `:distinct` output #493, query profiler #185, set membership predicates #316 and prepared queries in every binding #181, UDF registration in every binding #180; tracker #383) is developed on the long-lived `v3` branch. All v3 PRs target `v3`; `main` stays untouched. CI runs on PRs to `v3` the same as on PRs to `main`. Do not merge `main` into `v3` routinely: `main` only gets backports of fixes already on `v3`. Shared CI and workflow changes land on both branches as separate PRs. Just before the v3.0.0 cut, merge `main` into `v3` once (merge commit; source conflicts resolved to `v3`, `main`'s v2.0.x CHANGELOG sections brought over) so the cut is a fast-forward. At the first v3 release, the current `main` is copied to `v2` and `v3` becomes the new `main`.
-- **v3.next** (the release after v3.0.0) holds new features (lag/lead #182, sliding row frames #183, rule persistence #241, OPFS `BrowserDb` #441).
+- **v3.0.0** (format v8 and data integrity, plus `:limit` #306, optional `:distinct` output #493, `lag`/`lead` #182, query profiler #185, set membership predicates #316 and prepared queries in every binding #181, UDF registration in every binding #180; tracker #383) is developed on the long-lived `v3` branch. All v3 PRs target `v3`; `main` stays untouched. CI runs on PRs to `v3` the same as on PRs to `main`. Do not merge `main` into `v3` routinely: `main` only gets backports of fixes already on `v3`. Shared CI and workflow changes land on both branches as separate PRs. Just before the v3.0.0 cut, merge `main` into `v3` once (merge commit; source conflicts resolved to `v3`, `main`'s v2.0.x CHANGELOG sections brought over) so the cut is a fast-forward. At the first v3 release, the current `main` is copied to `v2` and `v3` becomes the new `main`.
+- **v3.next** (the release after v3.0.0) holds new features (sliding row frames #183, rule persistence #241, OPFS `BrowserDb` #441).
 - Known v2.x data issue: same-transaction multi-valued facts (#371). Fix ships in v3.0.0. All v2.x known issues are listed in pinned issue #421 (`known-issue` label); `data-integrity`/`corruption`/`durability` issues fixed in a v2.x patch stay open until that patch is published; issues fixed on the unreleased `v3` branch close on merge (closing keywords do not fire on `v3`, so close them with `gh issue close`) and stay listed in #421 (CONTRIBUTING.md).
 - Support policy and tiers: PHILOSOPHY.md §7 and §10. v2.x gets data-integrity and security fixes for 12 months after v3.0.0. Tier 1 = Rust + Python + browser WASM (from v3.0.0); other bindings are Tier 2.
 

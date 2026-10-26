@@ -172,8 +172,16 @@ fn prs_codes_cover_window_functions() {
             "PRS-029",
         ),
         (
-            r#"(query [:find (lag ?v :over (:order-by ?v)) :where [?e :x ?v]])"#,
-            "PRS-030",
+            r#"(query [:find (lag :over (:order-by ?v)) :where [?e :x ?v]])"#,
+            "PRS-032",
+        ),
+        (
+            r#"(query [:find (lead ?v ?extra :over (:order-by ?v)) :where [?e :x ?v]])"#,
+            "PRS-033",
+        ),
+        (
+            r#"(query [:find (lag ?v :over (:partition-by ?v)) :where [?e :x ?v]])"#,
+            "PRS-084",
         ),
         (
             r#"(query [:find (count-distinct ?v :over (:order-by ?v)) :where [?e :x ?v]])"#,
@@ -382,6 +390,7 @@ fn prs_080_rejects_unbound_find_variables() {
         r#"(query [:find ?e (sum ?n :over (:order-by ?v)) :where [?e :y ?v]])"#,
         r#"(query [:find ?e (rank :over (:partition-by ?p :order-by ?v)) :where [?e :y ?v]])"#,
         r#"(query [:find ?e (row-number :over (:order-by ?o)) :where [?e :y ?v]])"#,
+        r#"(query [:find ?e (lag ?missing :over (:order-by ?v)) :where [?e :y ?v]])"#,
     ];
     for input in cases {
         assert_execute_code(input, "PRS-080");

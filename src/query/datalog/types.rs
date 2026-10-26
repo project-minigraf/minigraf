@@ -107,7 +107,7 @@ impl EdnValue {
     }
 }
 
-/// Window aggregate functions usable inside an `:over` clause.
+/// Window functions usable inside an `:over` clause.
 #[derive(Debug, Clone, PartialEq)]
 pub enum WindowFunc {
     Sum,
@@ -117,6 +117,8 @@ pub enum WindowFunc {
     Avg,
     Rank,
     RowNumber,
+    Lag,
+    Lead,
     /// Any function name not recognised at parse time — resolved against
     /// `FunctionRegistry` at query execution time.
     Udf(String),
@@ -153,6 +155,8 @@ impl WindowSpec {
             WindowFunc::Avg => "avg".to_string(),
             WindowFunc::Rank => "rank".to_string(),
             WindowFunc::RowNumber => "row-number".to_string(),
+            WindowFunc::Lag => "lag".to_string(),
+            WindowFunc::Lead => "lead".to_string(),
             WindowFunc::Udf(name) => name.clone(),
         }
     }

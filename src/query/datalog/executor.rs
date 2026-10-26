@@ -791,7 +791,10 @@ fn check_find_functions(find: &[FindSpec], registry: &FunctionRegistry) -> Resul
                 }
             }
             FindSpec::Window(ws) => {
-                if !matches!(ws.func, WindowFunc::Rank | WindowFunc::RowNumber) {
+                if !matches!(
+                    ws.func,
+                    WindowFunc::Rank | WindowFunc::RowNumber | WindowFunc::Lag | WindowFunc::Lead
+                ) {
                     let name = ws.func_name();
                     if registry.get(&name).is_none() {
                         bail_coded!(ErrorCode::Qry011, name);

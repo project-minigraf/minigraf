@@ -143,7 +143,8 @@ find_spec    = { window_expr | aggregate_expr | variable }
 // Aggregate: (func-name ?var) — e.g. (count ?e), (sum ?salary)
 aggregate_expr = { "(" ~ (op_sym | plain_sym) ~ variable ~ ")" }
 
-// Window function: (func ?var :over (...)) or (func :over (...)) for rank/row-number
+// Window function: (func ?var :over (...)) or (func :over (...)) for rank/row-number.
+// The name is generic here; the parser checks which functions require a variable.
 window_expr = {
     "(" ~ (op_sym | plain_sym) ~ (variable ~ kw_over | kw_over) ~ over_clause ~ ")"
 }

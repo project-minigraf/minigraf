@@ -135,6 +135,8 @@ const MATRIX: &[&str] = &[
     r#"[:find ?n (sum ?a :over (:order-by ?a)) (rank :over (:order-by ?a :desc)) :where [?e :name ?n] [?e :age ?a]]"#,
     r#"[:find ?e (rank :over (:order-by ?b)) (row-number :over (:order-by ?b)) :where [?e :friend ?b]]"#,
     r#"[:find ?a (count ?e) (row-number :over (:order-by ?a :desc)) :where [?e :age ?a]]"#,
+    r#"[:find ?n (lag ?n :over (:order-by ?a)) (lead ?n :over (:order-by ?a)) :where [?e :age ?a] [?e :name ?n]]"#,
+    r#"[:find ?n (lag ?n :over (:order-by ?a :desc)) :where [?e :age ?a] [?e :name ?n]]"#,
     r#"[:find ?a (count ?b) :where (knows ?a ?b)]"#,
     // A group of `0.0` and `-0.0` returns `-0.0`, the least by value order.
     r#"[:find ?v (count ?e) :where [?e ?attr ?v] [(float? ?v)]]"#,
