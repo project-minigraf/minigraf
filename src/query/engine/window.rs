@@ -14,9 +14,10 @@ use super::meter::{Held, Meter, cell_bytes, growth, row_bytes, value_bytes};
 use super::project::value;
 use super::{BATCH_ROWS, Counters, Ctx, Operator};
 use crate::graph::types::Value;
-use crate::query::datalog::aggregate::windows;
+use crate::query::datalog::aggregate::{WindowColumn, WindowColumnMeter, windows};
 use crate::query::datalog::types::FindSpec;
 use anyhow::Result;
+use std::collections::TryReserveError;
 use std::mem::size_of;
 use std::sync::Arc;
 
@@ -38,6 +39,8 @@ pub(crate) struct Window {
     held: Held,
     /// `values`, until the windows are computed.
     held_values: Held,
+    /// Retained window result columns, including their outer vector.
+    held_columns: Held,
     counters: Counters,
 }
 
@@ -59,6 +62,7 @@ impl Window {
             out: None,
             held: Held::new(meter, "Window"),
             held_values: Held::new(meter, "Window"),
+            held_columns: Held::new(meter, "Window"),
             counters: Counters::new("Window"),
         }
     }
@@ -94,13 +98,24 @@ impl Window {
 
     /// Every row, in input order, with its windows' cells.
     fn finish(&mut self, ctx: &mut Ctx<'_>) -> Result<Vec<Vec<Cell>>> {
+        let result = self.finish_rows(ctx);
+        if result.is_err() {
+            self.held.release();
+            self.held_values.release();
+            self.held_columns.release();
+        }
+        result
+    }
+
+    fn finish_rows(&mut self, ctx: &mut Ctx<'_>) -> Result<Vec<Vec<Cell>>> {
         let values = std::mem::take(&mut self.values);
         let mut rows = std::mem::take(&mut self.cells);
-        let columns = windows(&self.find, &values, ctx.functions)?;
+        let mut columns = windows(&self.find, &values, ctx.functions, &mut self.held_columns)?;
         drop(values);
         self.held_values.release();
-        for column in columns {
-            for (row, v) in rows.iter_mut().zip(&column) {
+        let outer = columns.len() * size_of::<WindowColumn>();
+        for column in columns.drain(..) {
+            for (row, v) in rows.iter_mut().zip(&column.values) {
                 let c = Cell::of_value(ctx.ids, ctx.keys, v)?;
                 let n = cell_bytes(&c);
                 self.held.charge(n)?;
@@ -108,7 +123,12 @@ impl Window {
                 self.held.reserve(row.try_reserve(1), n, refused)?;
                 row.push(c);
             }
+            let bytes = column.bytes;
+            drop(column);
+            self.held_columns.uncharge(bytes);
         }
+        drop(columns);
+        self.held_columns.uncharge(outer);
         rows.reverse();
         Ok(rows)
     }
@@ -149,6 +169,7 @@ impl Operator for Window {
         self.out = None;
         self.held.release();
         self.held_values.release();
+        self.held_columns.release();
         self.child.rewind(seed);
     }
 
@@ -158,14 +179,37 @@ impl Operator for Window {
         self.out = Some(Vec::new());
         self.held.release();
         self.held_values.release();
+        self.held_columns.release();
         self.child.close();
     }
 
     fn counters(&self, out: &mut Vec<Counters>) {
         out.push(Counters {
-            bytes_held: (self.held.bytes() + self.held_values.bytes()) as u64,
+            bytes_held: (self.held.bytes() + self.held_values.bytes() + self.held_columns.bytes())
+                as u64,
             ..self.counters
         });
         self.child.counters(out);
+    }
+}
+
+impl WindowColumnMeter for Held {
+    fn charge(&mut self, bytes: usize) -> Result<()> {
+        Held::charge(self, bytes)
+    }
+
+    fn reserve(
+        &mut self,
+        result: std::result::Result<(), TryReserveError>,
+        charged: usize,
+        refused: usize,
+    ) -> Result<()> {
+        Held::reserve(self, result, charged, refused)
+    }
+
+    fn charge_payload(&mut self, value: &Value) -> Result<usize> {
+        let bytes = value_bytes(value) - size_of::<Value>();
+        Held::charge(self, bytes)?;
+        Ok(bytes)
     }
 }
