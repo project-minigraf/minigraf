@@ -1,10 +1,10 @@
 # Minigraf Test Coverage
 
-## v2.0.10 Coverage Summary
+## v2.0.11 Coverage Summary
 
 | | |
 |---|---|
-| **Verified** | 2026-10-25 with `cargo test` |
+| **Verified** | 2026-10-26 with `cargo test` |
 | **Passing** | 1,326 |
 | **Ignored** | 9 (see [Ignored Tests](#ignored-tests)) |
 | **Total** | 1,335, including the golden-file corpus (#391) |

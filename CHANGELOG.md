@@ -7,11 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v2.0.11 — 2026-10-26
+
+Patch release on the v2.x line under the [support policy](PHILOSOPHY.md#support-policy): two query data-integrity fixes, for expressions that compared a keyword and a ref to its entity differently from joins (#744), and float-literal rule calls whose `-0.0` rows varied between runs (#750), plus `checkpoint()` deadlocking inside a `WriteTransaction` (#734). File format is unchanged (v7). No API changes. Upgrading is recommended for every v2.x user who compares entity refs in expressions, passes float constants to rules, or uses `WriteTransaction`.
+
 ### Fixed
 
 - **A rule call with the float `0.0` returns the row of `-0.0` in every run** (#750), backported from v3.0.0 (#545). `0.0 == -0.0`, as patterns and predicates compare floats, but `Value`'s hash gave the two different hashes, so a join through a hash table paired them only when the process's random hash seed happened to: `[:find ?e :where (xval ?e 0.0)]` for a rule `(xval ?e ?v)` returned the entity whose value is `-0.0` in about one run in twelve and left it out otherwise, with no error. `-0.0` and `0.0` now hash alike, so the rule call returns both rows, as `[?e :m/x 0.0]` does. Every other float hashes as before. Nothing stored was wrong.
 - **An expression's `=` and `!=` equate a keyword with a ref to the entity it names** (#744), backported from v3.0.0. Patterns and joins treat the keyword `:bob` as equal to a ref to the entity `:bob` names, but `[(= ?g :bob)]` compared the two values as they are, so with `?g` bound to that ref it kept no row and `[(!= ?g :bob)]` kept the row: the same question answered differently by how the query was written, with no error. `=` and `!=` now compare as joins do, in queries, rule bodies, `not` clauses and binding expressions, against a keyword constant, a keyword value or a bound `Val(Ref)`. A keyword still equals only the same keyword, and `<`, `>`, `<=` and `>=` on a keyword or a ref are still a type mismatch (no row).
 - **`checkpoint` inside a `WriteTransaction` returns `INT-001` instead of deadlocking** (#734), backported from v3.0.0. Called on a thread that holds a `WriteTransaction`, `checkpoint` waited on the write lock that the transaction already held, so the thread hung. It now returns `INT-001`, as `execute` and `begin_write` already did, and the transaction stays usable. `prepare` and `PreparedQuery::execute` make the same check: they could not deadlock, but they ran inside the transaction while `execute` refused. Present since `WriteTransaction` was added.
+
+### Known issues
+
+- Same-transaction multi-valued facts can read back as one value (#371, #287), a fact retracted and re-asserted in one `WriteTransaction` is lost at commit (#477), a later assertion does not replace an earlier valid-time window (#435), `save()` is not crash-atomic (#374), and a `.wal` from a later checkpoint is replayed onto an older `.graph` (#535); all are fixed in v3.0.0. All v2.x known issues, with affected versions and workarounds, are listed in the pinned issue #421.
 
 ## v2.0.10 — 2026-10-23
 

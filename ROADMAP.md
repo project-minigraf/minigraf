@@ -8,6 +8,18 @@ Completed releases and their implementation details live in the [CHANGELOG](CHAN
 
 ---
 
+## v2.0.11 — Query and Write-Transaction Patch (released 2026-10-26)
+
+File format stays v7 and the public API does not change. Details are in the [CHANGELOG](CHANGELOG.md).
+
+Shipped:
+
+- An expression's `=` and `!=` equate a keyword with a ref to the entity it names, as patterns and joins do (#744)
+- A rule call with `0.0` returns `-0.0` rows in every run; equal zero floats hash alike (#750)
+- `checkpoint` inside a `WriteTransaction` returns `INT-001` instead of deadlocking; `prepare` and `PreparedQuery::execute` enforce the same guard (#734)
+
+---
+
 ## v2.0.10 — WAL and Float-Constant Data-Integrity Patch (released 2026-10-23)
 
 File format stays v7 and the public API does not change. Details are in the [CHANGELOG](CHANGELOG.md).
@@ -272,4 +284,4 @@ See [GitHub Issues](https://github.com/project-minigraf/minigraf/issues) for spe
 
 ---
 
-**Last updated**: October 2026 — v2.0.10, a WAL and float-constant data-integrity patch on v2.x, is the current release; v3.0.0 work, including the file-format v8 fix for #287/#371, is developed on the long-lived `v3` branch and merges into `main` at the v3.0.0 cut.
+**Last updated**: October 2026 — v2.0.11, a query and write-transaction patch on v2.x, is the current release; v3.0.0 work, including the file-format v8 fix for #287/#371, is developed on the long-lived `v3` branch and merges into `main` at the v3.0.0 cut.
