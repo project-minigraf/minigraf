@@ -580,6 +580,9 @@ pub struct DatalogQuery {
     /// `:order-by`: `:find` elements and their directions (#306); empty for
     /// none. Every `:find` element not named follows, ascending.
     pub order_by: Vec<(FindSpec, Order)>,
+    /// `:distinct`: deduplicate final output tuples, after aggregates/windows
+    /// and before ordering/pagination (#493). Bag output remains the default.
+    pub distinct: bool,
 }
 
 /// The value of `:limit` or `:offset` (#306): a literal, or a bind slot a
@@ -603,6 +606,7 @@ impl DatalogQuery {
             limit: None,
             offset: None,
             order_by: Vec::new(),
+            distinct: false,
         }
     }
 
@@ -620,6 +624,7 @@ impl DatalogQuery {
             limit: None,
             offset: None,
             order_by: Vec::new(),
+            distinct: false,
         }
     }
 

@@ -31,7 +31,7 @@ impl Apply {
             Step::CollectSet(_) => "CollectSet",
             Step::Anti(_) => "AntiJoin",
             Step::Union(_) => "Union",
-            Step::Distinct(_) => "Distinct",
+            Step::Distinct(_) | Step::DistinctFind(_) => "Distinct",
             Step::Aggregate { .. } => "Aggregate",
             Step::Window { .. } => "Window",
             Step::Sort { .. } => "Sort",
@@ -141,6 +141,7 @@ fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<Batch> {
         | Step::Anti(_)
         | Step::Union(_)
         | Step::Distinct(_)
+        | Step::DistinctFind(_)
         | Step::Aggregate { .. }
         | Step::Window { .. }
         | Step::Sort { .. }

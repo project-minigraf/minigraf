@@ -1493,6 +1493,7 @@ mod tests {
                 limit: None,
                 offset: None,
                 order_by: Vec::new(),
+                distinct: false,
             }))
             .unwrap();
 
@@ -1554,6 +1555,7 @@ mod tests {
                 limit: None,
                 offset: None,
                 order_by: Vec::new(),
+                distinct: false,
             }))
             .unwrap();
 

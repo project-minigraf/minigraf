@@ -8,7 +8,7 @@
 
 use super::cell::{Cell, JoinKey, Scalar};
 use crate::error::{ErrorCode, err_coded};
-use crate::graph::types::Value;
+use crate::graph::types::{Value, ValueSet};
 use anyhow::Result;
 use std::collections::TryReserveError;
 use std::mem::size_of;
@@ -171,11 +171,12 @@ pub(crate) fn growth(capacity: usize, entry: usize) -> usize {
     entry.saturating_mul(capacity.max(1))
 }
 
-/// A cell and the heap bytes of its string.
+/// A cell and the heap bytes of its string or set.
 pub(crate) fn cell_bytes(c: &Cell) -> usize {
     size_of::<Cell>()
         + match c {
             Cell::Val(Scalar::Str(s)) => s.len(),
+            Cell::Val(Scalar::Set(s)) => set_bytes(s),
             _ => 0,
         }
 }
@@ -185,11 +186,12 @@ pub(crate) fn row_bytes(row: &[Cell]) -> usize {
     size_of::<Vec<Cell>>() + row.iter().map(cell_bytes).sum::<usize>()
 }
 
-/// A join key and the heap bytes of its string.
+/// A join key and the heap bytes of its string or set.
 pub(crate) fn key_bytes(k: &JoinKey) -> usize {
     size_of::<JoinKey>()
         + match k {
             JoinKey::Str(s) => s.len(),
+            JoinKey::Set(s) => set_bytes(s),
             _ => 0,
         }
 }
@@ -199,19 +201,60 @@ pub(crate) fn keys_bytes(key: &[JoinKey]) -> usize {
     size_of::<Vec<JoinKey>>() + key.iter().map(key_bytes).sum::<usize>()
 }
 
-/// A value and the heap bytes of its string.
+/// A value and the heap bytes of its string or set.
 pub(crate) fn value_bytes(v: &Value) -> usize {
     size_of::<Value>()
         + match v {
             Value::String(s) | Value::Keyword(s) => s.len(),
+            Value::Set(s) => set_bytes(s),
             _ => 0,
         }
+}
+
+/// Conservative per-entry set payload: the set header, Arc counters (also
+/// counted for owned values), and each element's value/string bytes. Sixteen
+/// extra bytes per element estimate BTree node headers and spare capacity;
+/// `value_bytes` already includes the element's own `Value` size. As with
+/// string keys, shared payloads are counted for each entry retaining them.
+fn set_bytes(set: &ValueSet) -> usize {
+    const TREE_SLACK_PER_ELEMENT: usize = 16;
+    size_of::<ValueSet>()
+        + 2 * size_of::<usize>()
+        + set
+            .iter()
+            .map(|v| value_bytes(v) + TREE_SLACK_PER_ELEMENT)
+            .sum::<usize>()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::error::CodedError;
+
+    /// Retained set estimates must grow with their payload, in every holder.
+    #[test]
+    fn set_estimators_include_elements_and_string_payloads() {
+        let set = |n| {
+            Arc::new(
+                crate::ValueSet::new([Value::String("x".repeat(n)), Value::Keyword(":tag".into())])
+                    .unwrap(),
+            )
+        };
+        let estimates = |s: &Arc<crate::ValueSet>| {
+            [
+                cell_bytes(&Cell::Val(Scalar::Set(s.clone()))),
+                key_bytes(&JoinKey::Set(s.clone())),
+                value_bytes(&Value::Set(s.as_ref().clone())),
+            ]
+        };
+        for (small, large) in estimates(&set(8)).into_iter().zip(estimates(&set(1024))) {
+            assert_eq!(large - small, 1016, "string payload growth is charged");
+            assert!(
+                large >= 1024 + 4 + 2 * size_of::<Value>(),
+                "all elements are counted"
+            );
+        }
+    }
 
     fn code(e: &anyhow::Error) -> Option<ErrorCode> {
         e.downcast_ref::<CodedError>().map(CodedError::code)

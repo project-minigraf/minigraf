@@ -1,0 +1,1 @@
+(query [:distinct :find ?x :where [?x :a ?v] :order-by [?x] :limit 2])

@@ -310,6 +310,9 @@ pub(crate) fn build(
             plan::Step::Anti(body) => Box::new(anti::AntiJoin::new(root, body, meter)),
             plan::Step::Union(branches) => Box::new(union::Union::new(root, branches, meter)),
             plan::Step::Distinct(slots) => Box::new(distinct::Distinct::new(root, slots, meter)),
+            plan::Step::DistinctFind(slots) => {
+                Box::new(distinct::Distinct::projected(root, slots, meter))
+            }
             plan::Step::Aggregate {
                 groups,
                 aggs,

@@ -21,6 +21,7 @@ kw_max_derived_facts   = @{ ":max-derived-facts" ~ !word_cont }
 kw_max_results         = @{ ":max-results" ~ !word_cont }
 kw_limit               = @{ ":limit" ~ !word_cont }
 kw_offset              = @{ ":offset" ~ !word_cont }
+kw_distinct            = @{ ":distinct" ~ !word_cont }
 kw_over                = @{ ":over" ~ !word_cont }
 kw_partition_by        = @{ ":partition-by" ~ !word_cont }
 kw_order_by            = @{ ":order-by" ~ !word_cont }
@@ -131,7 +132,7 @@ query_section = {
     find_section | where_section | as_of_section |
     valid_at_section | any_valid_time_section | with_section |
     max_derived_facts_section | max_results_section | limit_section |
-    offset_section | order_by_section
+    offset_section | order_by_section | distinct_section
 }
 
 // ── FIND SECTION ──────────────────────────────────────────────────────────
@@ -211,6 +212,7 @@ max_derived_facts_section = { kw_max_derived_facts ~ integer_lit }
 max_results_section       = { kw_max_results ~ integer_lit }
 limit_section             = { kw_limit ~ (integer_lit | bind_slot) }
 offset_section            = { kw_offset ~ (integer_lit | bind_slot) }
+distinct_section          = { kw_distinct }
 // :order-by names :find elements, each optionally followed by a direction.
 order_by_section          = { kw_order_by ~ "[" ~ order_entry+ ~ "]" }
 order_entry               = { find_spec ~ (kw_asc | kw_desc)? }
