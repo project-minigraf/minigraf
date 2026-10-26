@@ -50,7 +50,7 @@ with no `CodedError` anywhere in its chain.
 | PRS-027 | Window function requires :over clause | Parser |
 | PRS-028 | Window expression cannot be empty | Parser |
 | PRS-029 | Window function name must be a symbol | Parser |
-| PRS-030 | lag/lead not supported in this version | Parser |
+| PRS-030 | lag/lead not supported (deprecated) | Parser |
 | PRS-031 | Function is not window-compatible | Parser |
 | PRS-032 | Function requires variable before :over | Parser |
 | PRS-033 | Function requires :over after variable | Parser |
@@ -295,7 +295,7 @@ with no `CodedError` anywhere in its chain.
 | INT-055 | Rule predicate disappeared during rollback | Internal |
 | INT-056 | Write to a read-only storage backend | Internal |
 
-Deprecated codes: STG-003 and STG-004 (pre-v7 header sizes) are deprecated as of v3.0.0 and are no longer emitted, because formats v1–v6 are rejected with STG-028 before any header-size check. API-013 (checkpoint while a fact log is open) is deprecated as of v3.0.0 and is no longer emitted, because checkpoints run while fact logs are open. INT-033, INT-034 and INT-035 (bind-value mistakes) are deprecated as of v3.0.0 and are no longer emitted: the same mistakes are API-022, API-023 and API-024, since they are the caller's. They stay registered and documented, and error codes are never removed or reused.
+Deprecated codes: STG-003 and STG-004 (pre-v7 header sizes) are deprecated as of v3.0.0 and are no longer emitted, because formats v1–v6 are rejected with STG-028 before any header-size check. API-013 (checkpoint while a fact log is open) is deprecated as of v3.0.0 and is no longer emitted, because checkpoints run while fact logs are open. PRS-030 (lag/lead unsupported) is deprecated as of v3.0.0 because those functions are supported. INT-033, INT-034 and INT-035 (bind-value mistakes) are deprecated as of v3.0.0 and are no longer emitted: the same mistakes are API-022, API-023 and API-024, since they are the caller's. They stay registered and documented, and error codes are never removed or reused.
 
 ---
 
@@ -781,22 +781,23 @@ See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/lat
 ```
 *Use `(rank :over ...)` not `(:rank :over ...)`*
 
-### PRS-030 lag/lead not supported in this version
+### PRS-030 lag/lead not supported (deprecated)
+
+> **Deprecated in v3.0.0.** No longer emitted: `lag` and `lead` work as window functions. Kept for reference; this code will not be reused.
 
 **Error text**: `'{}' is not supported in this version; lag/lead are planned for a future release`
 
-**Cause**: The `lag` and `lead` window functions are not yet implemented in this version.
+**Cause**: A v2.x query used `lag` or `lead` in a window expression; v2.x did not implement them.
 
 **Resolution**:
-- Remove `lag`/`lead` from the query.
-- Follow [#182](https://github.com/project-minigraf/minigraf/issues/182) for progress on `lag`/`lead` implementation.
+- Use v3.0.0 or later for `lag`/`lead` window expressions.
 
 **Example**:
 ```datalog
 (query {:find [?e (lag ?score :over (:order-by ?ts))]
         :where [[?e :score ?score] [?e :ts ?ts]]})
 ```
-*`lag` is not yet available; restructure the query without it*
+*On v2.x this returned `PRS-030`; on v3.0.0 and later it is accepted.*
 
 ### PRS-031 Function is not window-compatible
 

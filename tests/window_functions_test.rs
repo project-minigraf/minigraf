@@ -287,6 +287,15 @@ fn window_in_aggregate_query_reading_a_non_grouping_variable_is_rejected() {
         .err()
         .expect("rejected");
     assert_eq!(err.code(), "PRS-082");
+    let err = db
+        .execute(
+            r#"(query [:find ?dept (count ?e) (lag ?salary :over (:order-by ?dept))
+                   :where [?e :employee/dept ?dept]
+                          [?e :employee/salary ?salary]])"#,
+        )
+        .err()
+        .expect("lag on non-grouping variable rejected");
+    assert_eq!(err.code(), "PRS-082");
 }
 
 // ── single-row partition edge case ─────────────────────────────────────────
@@ -322,22 +331,352 @@ fn empty_result_no_panic() {
     assert_eq!(rows.len(), 0);
 }
 
-// ── parse-time error for lag/lead ──────────────────────────────────────────
+// ── lag and lead ────────────────────────────────────────────────────────────
 
 #[test]
-fn lag_rejected_at_parse_time() {
-    let db = Minigraf::in_memory().expect("in-memory db");
-    let result = db.execute(r#"(query [:find (lag ?v :over (:order-by ?v)) :where [?e :x ?v]])"#);
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("not supported"));
+fn lag_lead_read_adjacent_rows_and_nil_at_edges() {
+    let db = setup_employees();
+    let rows = get_results(
+        db.execute(
+            r#"(query [:find ?salary
+        (lag ?salary :over (:order-by ?salary))
+        (lead ?salary :over (:order-by ?salary))
+        :where [?e :employee/salary ?salary]])"#,
+        )
+        .expect("query"),
+    );
+    assert_eq!(rows.len(), 4);
+    let at = |salary| {
+        rows.iter()
+            .find(|r| r[0] == Value::Integer(salary))
+            .expect("salary row")
+    };
+    assert_eq!(&at(85000)[1..], &[Value::Null, Value::Integer(90000)]);
+    assert_eq!(
+        &at(90000)[1..],
+        &[Value::Integer(85000), Value::Integer(95000)]
+    );
+    assert_eq!(
+        &at(95000)[1..],
+        &[Value::Integer(90000), Value::Integer(110000)]
+    );
+    assert_eq!(&at(110000)[1..], &[Value::Integer(95000), Value::Null]);
 }
 
 #[test]
-fn lead_rejected_at_parse_time() {
-    let db = Minigraf::in_memory().expect("in-memory db");
-    let result = db.execute(r#"(query [:find (lead ?v :over (:order-by ?v)) :where [?e :x ?v]])"#);
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("not supported"));
+fn lag_lead_reset_per_partition_in_descending_order() {
+    let db = setup_employees();
+    let rows = get_results(
+        db.execute(
+            r#"(query [:find ?dept ?salary
+        (lag ?salary :over (:partition-by ?dept :order-by ?salary :desc))
+        (lead ?salary :over (:partition-by ?dept :order-by ?salary :desc))
+        :where [?e :employee/dept ?dept]
+               [?e :employee/salary ?salary]])"#,
+        )
+        .expect("query"),
+    );
+    let at = |dept: &str, salary| {
+        rows.iter()
+            .find(|r| r[0] == Value::String(dept.to_string()) && r[1] == Value::Integer(salary))
+            .expect("department salary row")
+    };
+    assert_eq!(
+        &at("Engineering", 110000)[2..],
+        &[Value::Null, Value::Integer(90000)]
+    );
+    assert_eq!(
+        &at("Engineering", 90000)[2..],
+        &[Value::Integer(110000), Value::Null]
+    );
+    assert_eq!(
+        &at("Product", 95000)[2..],
+        &[Value::Null, Value::Integer(85000)]
+    );
+    assert_eq!(
+        &at("Product", 85000)[2..],
+        &[Value::Integer(95000), Value::Null]
+    );
+}
+
+#[test]
+fn lag_lead_tied_keys_use_named_variable_order() {
+    let db = Minigraf::in_memory().expect("db");
+    db.execute(
+        r#"(transact [[:b :name "Beta"] [:b :score 10]
+                           [:a :name "Alpha"] [:a :score 10]
+                           [:c :name "Gamma"] [:c :score 20]])"#,
+    )
+    .expect("facts");
+    let rows = get_results(
+        db.execute(
+            r#"(query [:find ?name ?score
+        (lag ?name :over (:order-by ?score))
+        (lead ?name :over (:order-by ?score))
+        :where [?e :name ?name] [?e :score ?score]])"#,
+        )
+        .expect("query"),
+    );
+    let at = |name: &str| {
+        rows.iter()
+            .find(|r| r[0] == Value::String(name.into()))
+            .expect("name")
+    };
+    assert_eq!(
+        &at("Alpha")[2..],
+        &[Value::Null, Value::String("Beta".into())]
+    );
+    assert_eq!(
+        &at("Beta")[2..],
+        &[Value::String("Alpha".into()), Value::String("Gamma".into())]
+    );
+    assert_eq!(
+        &at("Gamma")[2..],
+        &[Value::String("Beta".into()), Value::Null]
+    );
+
+    let descending = get_results(
+        db.execute(
+            r#"(query [:find ?name ?score
+        (lag ?name :over (:order-by ?score :desc))
+        (lead ?name :over (:order-by ?score :desc))
+        :where [?e :name ?name] [?e :score ?score]])"#,
+        )
+        .expect("descending query"),
+    );
+    let at_desc = |name: &str| {
+        descending
+            .iter()
+            .find(|r| r[0] == Value::String(name.into()))
+            .expect("descending name")
+    };
+    assert_eq!(
+        &at_desc("Gamma")[2..],
+        &[Value::Null, Value::String("Alpha".into())]
+    );
+    assert_eq!(
+        &at_desc("Alpha")[2..],
+        &[Value::String("Gamma".into()), Value::String("Beta".into())]
+    );
+    assert_eq!(
+        &at_desc("Beta")[2..],
+        &[Value::String("Alpha".into()), Value::Null]
+    );
+}
+
+#[test]
+fn lag_lead_preserve_long_strings_keywords_refs_sets_and_nil() {
+    let db = Minigraf::in_memory().expect("db");
+    let long = "x".repeat(100);
+    db.execute(&format!(
+        r#"(transact [[:a :ord 1] [:a :v "{long}"]
+        [:b :ord 2] [:b :v :kind/b]
+        [:c :ord 3] [:c :v #uuid "00000000-0000-0000-0000-000000000003"]
+        [:d :ord 4] [:d :v #{{1 2}}]
+        [:e :ord 5] [:e :v nil]])"#
+    ))
+    .expect("facts");
+    let rows = get_results(
+        db.execute(
+            r#"(query [:find ?ord ?v
+        (lag ?v :over (:order-by ?ord)) (lead ?v :over (:order-by ?ord))
+        :where [?e :ord ?ord] [?e :v ?v]])"#,
+        )
+        .expect("query"),
+    );
+    assert_eq!(rows.len(), 5);
+    let at = |n| {
+        rows.iter()
+            .find(|r| r[0] == Value::Integer(n))
+            .expect("order row")
+    };
+    assert_eq!(at(2)[2], Value::String(long));
+    assert_eq!(at(3)[2], Value::Keyword(":kind/b".into()));
+    assert_eq!(at(4)[2], at(3)[1]);
+    assert_eq!(at(3)[3], at(4)[1]);
+    assert_eq!(at(5)[2], at(4)[1]);
+    assert_eq!(at(4)[3], Value::Null, "neighbor with nil value");
+    assert_eq!(at(5)[3], Value::Null, "partition edge");
+}
+
+#[test]
+fn lag_lead_on_grouped_rows_and_singleton_partition() {
+    let db = setup_employees();
+    db.execute(r#"(transact [[:e5 :employee/dept "Sales"] [:e5 :employee/salary 70000]])"#)
+        .expect("fact");
+    let rows = get_results(
+        db.execute(
+            r#"(query [:find ?dept (count ?salary)
+        (lag ?dept :over (:order-by ?dept))
+        (lead ?dept :over (:order-by ?dept))
+        :where [?e :employee/dept ?dept] [?e :employee/salary ?salary]])"#,
+        )
+        .expect("query"),
+    );
+    let at = |dept: &str| {
+        rows.iter()
+            .find(|r| r[0] == Value::String(dept.into()))
+            .expect("dept")
+    };
+    assert_eq!(
+        &at("Engineering")[1..],
+        &[
+            Value::Integer(2),
+            Value::Null,
+            Value::String("Product".into())
+        ]
+    );
+    assert_eq!(
+        &at("Product")[1..],
+        &[
+            Value::Integer(2),
+            Value::String("Engineering".into()),
+            Value::String("Sales".into())
+        ]
+    );
+    assert_eq!(
+        &at("Sales")[1..],
+        &[
+            Value::Integer(1),
+            Value::String("Product".into()),
+            Value::Null
+        ]
+    );
+
+    let singleton = get_results(
+        db.execute(
+            r#"(query [:find ?dept ?salary
+        (lag ?salary :over (:partition-by ?dept :order-by ?salary))
+        (lead ?salary :over (:partition-by ?dept :order-by ?salary))
+        :where [?e :employee/dept ?dept] [?e :employee/salary ?salary]])"#,
+        )
+        .expect("query"),
+    );
+    let sales = singleton
+        .iter()
+        .find(|r| r[0] == Value::String("Sales".into()))
+        .expect("sales");
+    assert_eq!(&sales[2..], &[Value::Null, Value::Null]);
+}
+
+#[test]
+fn pagination_and_cursors_see_lag_before_offset_and_limit() {
+    use minigraf::BindValue;
+    let db = setup_employees();
+    let q = r#"(query [:find ?salary (lag ?salary :over (:order-by ?salary))
+        :where [?e :employee/salary ?salary]
+        :order-by [?salary] :offset 1 :limit $n])"#;
+    let prepared = db.prepare(q).expect("prepare");
+    let bind = [("n", BindValue::Val(Value::Integer(2)))];
+    let expected = vec![
+        vec![Value::Integer(90000), Value::Integer(85000)],
+        vec![Value::Integer(95000), Value::Integer(90000)],
+    ];
+    assert_eq!(
+        get_results(prepared.execute(&bind).expect("execute")),
+        expected
+    );
+    let mut cursor = prepared.query(&bind).expect("cursor");
+    let mut pulled = Vec::new();
+    while let Some(batch) = cursor.next_batch(1).expect("batch") {
+        pulled.extend(batch.rows().iter().cloned());
+    }
+    assert_eq!(pulled, expected);
+}
+
+#[test]
+fn lag_lead_keep_nil_and_mixed_partition_keys_separate() {
+    let db = Minigraf::in_memory().expect("db");
+    db.execute(
+        r#"(transact [[:a :part nil] [:a :ord 1] [:a :v "A"]
+        [:b :part nil] [:b :ord 2] [:b :v "B"]
+        [:c :part 1] [:c :ord 1] [:c :v "C"]
+        [:d :part "1"] [:d :ord 1] [:d :v "D"]])"#,
+    )
+    .expect("facts");
+    let rows = get_results(
+        db.execute(
+            r#"(query [:find ?v ?part
+        (lag ?v :over (:partition-by ?part :order-by ?ord))
+        (lead ?v :over (:partition-by ?part :order-by ?ord))
+        :where [?e :part ?part] [?e :ord ?ord] [?e :v ?v]])"#,
+        )
+        .expect("query"),
+    );
+    let at = |name: &str| {
+        rows.iter()
+            .find(|r| r[0] == Value::String(name.into()))
+            .expect("name")
+    };
+    assert_eq!(&at("A")[2..], &[Value::Null, Value::String("B".into())]);
+    assert_eq!(&at("B")[2..], &[Value::String("A".into()), Value::Null]);
+    assert_eq!(&at("C")[2..], &[Value::Null, Value::Null]);
+    assert_eq!(&at("D")[2..], &[Value::Null, Value::Null]);
+}
+
+#[test]
+fn distinct_runs_after_lag_on_duplicate_rows() {
+    let db = Minigraf::in_memory().expect("db");
+    db.execute(r#"(transact [[:a :v 1] [:b :v 1] [:c :v 2]])"#)
+        .expect("facts");
+    let rows = get_results(
+        db.execute(
+            r#"(query [:find ?v
+        (lag ?v :over (:order-by ?v)) :where [?e :v ?v] :distinct])"#,
+        )
+        .expect("query"),
+    );
+    assert_eq!(rows.len(), 3);
+    assert!(rows.contains(&vec![Value::Integer(1), Value::Null]));
+    assert!(rows.contains(&vec![Value::Integer(1), Value::Integer(1)]));
+    assert!(rows.contains(&vec![Value::Integer(2), Value::Integer(1)]));
+}
+
+#[test]
+fn plain_lag_and_lead_names_remain_available_for_registered_aggregates() {
+    let db = Minigraf::in_memory().expect("db");
+    db.register_aggregate(
+        "lag",
+        || 0i64,
+        |sum, v| {
+            if let Value::Integer(n) = v {
+                *sum += n;
+            }
+        },
+        |sum, _| Value::Integer(*sum),
+    )
+    .expect("register lag");
+    db.register_aggregate(
+        "lead",
+        || 0i64,
+        |sum, v| {
+            if let Value::Integer(n) = v {
+                *sum += n;
+            }
+        },
+        |sum, _| Value::Integer(*sum),
+    )
+    .expect("register lead");
+    db.execute(r#"(transact [[:a :v 2] [:b :v 3]])"#)
+        .expect("facts");
+    let rows = get_results(
+        db.execute(
+            r#"(query [:find (lag ?v) (lead ?v)
+        :where [?e :v ?v]])"#,
+        )
+        .expect("query"),
+    );
+    assert_eq!(rows, vec![vec![Value::Integer(5), Value::Integer(5)]]);
+    let window_rows = get_results(
+        db.execute(
+            r#"(query [:find ?v (lag ?v :over (:order-by ?v))
+                              (lead ?v :over (:order-by ?v))
+                         :where [?e :v ?v]])"#,
+        )
+        .expect("window query"),
+    );
+    assert!(window_rows.contains(&vec![Value::Integer(2), Value::Null, Value::Integer(3)]));
+    assert!(window_rows.contains(&vec![Value::Integer(3), Value::Integer(2), Value::Null]));
 }
 
 // ── running max ─────────────────────────────────────────────────────────────
