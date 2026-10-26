@@ -198,6 +198,10 @@ impl WindowColumnMeter for Held {
         Held::charge(self, bytes)
     }
 
+    fn uncharge(&mut self, bytes: usize) {
+        Held::uncharge(self, bytes);
+    }
+
     fn reserve(
         &mut self,
         result: std::result::Result<(), TryReserveError>,

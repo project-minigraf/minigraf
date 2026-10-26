@@ -1345,6 +1345,23 @@ fn bench_window(c: &mut Criterion) {
         group.finish();
     }
 
+    // Each distinct :val is its own partition (#765): measures partition
+    // membership construction and sorting without aggregate work.
+    {
+        let mut group = c.benchmark_group("window/many_partitions");
+        group.sample_size(10);
+        for &(label, n) in SCALES {
+            group.bench_with_input(BenchmarkId::from_parameter(label), &n, |b, &n| {
+                let db = helpers::populate_in_memory(n);
+                b.iter(|| {
+                    db.execute("(query [:find ?e (row-number :over (:partition-by ?v :order-by ?v)) :where [?e :val ?v]])")
+                        .unwrap()
+                });
+            });
+        }
+        group.finish();
+    }
+
     // row_number: row number function — similar overhead to rank.
     {
         let mut group = c.benchmark_group("window/row_number");

@@ -2693,6 +2693,254 @@ fn window_result_column_allocator_refusal_is_qry_012() {
     assert_eq!(meter.used(), 0);
 }
 
+/// #765: each window's row-index scratch overlaps the input and earlier
+/// result columns. The exact limit must include all three.
+#[test]
+fn window_partition_indices_count_toward_query_memory_limit() {
+    use super::meter::Held;
+    use crate::query::datalog::aggregate::{WindowColumn, windows};
+    use crate::query::datalog::functions::FunctionRegistry;
+    use crate::query::datalog::types::{FindSpec, Order, WindowFunc, WindowSpec};
+    use std::mem::size_of;
+
+    const N: usize = 512;
+    let window = FindSpec::Window(WindowSpec {
+        func: WindowFunc::RowNumber,
+        var: None,
+        partition_by: Some("?p".into()),
+        order_by: "?o".into(),
+        order: Order::Asc,
+    });
+    let find = vec![FindSpec::Variable("?p".into()), window.clone(), window];
+    let rows: Vec<Vec<crate::Value>> = (0..N)
+        .rev()
+        .map(|n| {
+            vec![
+                crate::Value::Integer(n as i64),
+                crate::Value::Integer(n as i64),
+            ]
+        })
+        .collect();
+    let column_bytes = size_of::<WindowColumn>() + N * size_of::<crate::Value>();
+    let indices_bytes = N * size_of::<usize>();
+    let input_bytes = N * size_of::<Vec<crate::Value>>();
+    let registry = FunctionRegistry::with_builtins();
+
+    let meter = super::Meter::new(input_bytes + 2 * column_bytes + indices_bytes - 1);
+    let mut input = Held::new(&meter, "Window");
+    input.charge(input_bytes).unwrap();
+    let mut held = Held::new(&meter, "Window");
+    let err = match windows(&find, &rows, &registry, &mut held) {
+        Ok(_) => panic!("partition indices must count toward the query limit"),
+        Err(err) => err,
+    };
+    assert_eq!(crate::MinigrafError::from(err).code(), "QRY-012");
+    assert_eq!(
+        meter.used(),
+        input_bytes + column_bytes,
+        "the second window's scratch is released on error"
+    );
+    held.release();
+    input.release();
+    assert_eq!(meter.used(), 0);
+
+    let meter = super::Meter::new(input_bytes + 2 * column_bytes + indices_bytes);
+    let mut input = Held::new(&meter, "Window");
+    input.charge(input_bytes).unwrap();
+    let mut held = Held::new(&meter, "Window");
+    let columns = windows(&find, &rows, &registry, &mut held).unwrap();
+    assert_eq!(columns.len(), 2);
+    assert_eq!(meter.peak(), input_bytes + 2 * column_bytes + indices_bytes);
+    assert_eq!(
+        meter.used(),
+        input_bytes + 2 * column_bytes,
+        "scratch is released after the window"
+    );
+    drop(columns);
+    held.uncharge(2 * column_bytes);
+    input.release();
+    assert_eq!(meter.used(), 0);
+}
+
+/// #765: an allocator refusal while reserving partition indices reports the
+/// Window holder and restores its prior meter state.
+#[test]
+fn window_partition_index_allocator_refusal_is_qry_012() {
+    use super::meter::Held;
+    use crate::query::datalog::aggregate::windows;
+    use crate::query::datalog::functions::FunctionRegistry;
+    use crate::query::datalog::types::{FindSpec, Order, WindowFunc, WindowSpec};
+
+    const N: usize = 128;
+    let find = [FindSpec::Window(WindowSpec {
+        func: WindowFunc::RowNumber,
+        var: None,
+        partition_by: None,
+        order_by: "?o".into(),
+        order: Order::Asc,
+    })];
+    let rows = vec![vec![crate::Value::Integer(1)]; N];
+    let meter = super::Meter::unlimited();
+    let mut held = Held::new(&meter, "Window");
+    super::meter::FAIL_RESERVE.with(|f| f.set(Some("Window")));
+    let result = windows(&find, &rows, &FunctionRegistry::with_builtins(), &mut held);
+    super::meter::FAIL_RESERVE.with(|f| f.set(None));
+    let err = match result {
+        Ok(_) => panic!("partition index allocation must fail"),
+        Err(err) => err,
+    };
+    let err = crate::MinigrafError::from(err);
+    assert_eq!(err.code(), "QRY-012");
+    assert!(err.to_string().contains(&format!(
+        "allocator refused {} bytes for Window",
+        N * std::mem::size_of::<usize>()
+    )));
+    assert_eq!(meter.used(), 0);
+}
+
+/// A later window error releases the partition index while retaining the
+/// already-charged result slots for the caller's error cleanup.
+#[test]
+fn window_partition_indices_release_on_running_error() {
+    use super::meter::Held;
+    use crate::query::datalog::aggregate::{WindowColumn, windows};
+    use crate::query::datalog::functions::FunctionRegistry;
+    use crate::query::datalog::types::{FindSpec, Order, WindowFunc, WindowSpec};
+
+    const N: usize = 32;
+    let find = [FindSpec::Window(WindowSpec {
+        func: WindowFunc::Udf("missing".into()),
+        var: Some("?v".into()),
+        partition_by: None,
+        order_by: "?v".into(),
+        order: Order::Asc,
+    })];
+    let rows = vec![vec![crate::Value::Integer(1)]; N];
+    let meter = super::Meter::unlimited();
+    let mut held = Held::new(&meter, "Window");
+    let err = match windows(&find, &rows, &FunctionRegistry::with_builtins(), &mut held) {
+        Ok(_) => panic!("unknown running aggregate must fail"),
+        Err(err) => err,
+    };
+    assert_eq!(crate::MinigrafError::from(err).code(), "INT-030");
+    assert_eq!(
+        meter.used(),
+        std::mem::size_of::<WindowColumn>() + N * std::mem::size_of::<crate::Value>(),
+        "partition scratch was released before error cleanup"
+    );
+    held.release();
+    assert_eq!(meter.used(), 0);
+}
+
+#[test]
+fn empty_window_does_not_charge_partition_indices() {
+    use super::meter::Held;
+    use crate::query::datalog::aggregate::{WindowColumn, windows};
+    use crate::query::datalog::functions::FunctionRegistry;
+    use crate::query::datalog::types::{FindSpec, Order, WindowFunc, WindowSpec};
+
+    let find = [FindSpec::Window(WindowSpec {
+        func: WindowFunc::Rank,
+        var: None,
+        partition_by: None,
+        order_by: "?v".into(),
+        order: Order::Asc,
+    })];
+    let meter = super::Meter::unlimited();
+    let mut held = Held::new(&meter, "Window");
+    let columns = windows(&find, &[], &FunctionRegistry::with_builtins(), &mut held).unwrap();
+    assert_eq!(columns.len(), 1);
+    assert!(columns[0].values.is_empty());
+    assert_eq!(meter.peak(), std::mem::size_of::<WindowColumn>());
+    drop(columns);
+    held.release();
+    assert_eq!(meter.used(), 0);
+}
+
+/// #765: replacing stable partition sorts must preserve peers and adjacent
+/// rows across interleaved partitions, including float keys equal under Ord.
+#[test]
+fn window_partition_sort_preserves_positions_peers_and_neighbors() {
+    use super::meter::Held;
+    use crate::query::datalog::aggregate::windows;
+    use crate::query::datalog::functions::FunctionRegistry;
+    use crate::query::datalog::types::{FindSpec, Order, WindowFunc, WindowSpec};
+
+    const N: usize = 256;
+    let mut find: Vec<FindSpec> = ["?id", "?p", "?o", "?v"]
+        .into_iter()
+        .map(|v| FindSpec::Variable(v.into()))
+        .collect();
+    for func in [
+        WindowFunc::RowNumber,
+        WindowFunc::Rank,
+        WindowFunc::Lag,
+        WindowFunc::Lead,
+    ] {
+        find.push(FindSpec::Window(WindowSpec {
+            var: matches!(func, WindowFunc::Lag | WindowFunc::Lead).then(|| "?v".into()),
+            func,
+            partition_by: Some("?p".into()),
+            order_by: "?o".into(),
+            order: Order::Asc,
+        }));
+    }
+    let rows: Vec<Vec<crate::Value>> = (0..N)
+        .map(|r| {
+            let id = (r * 73) % N;
+            let partition = match r % 4 {
+                0 => crate::Value::Float(if r % 8 == 0 { -0.0 } else { 0.0 }),
+                1 => crate::Value::Float(if r % 8 == 1 { f64::NAN } else { -f64::NAN }),
+                2 => crate::Value::Integer(1),
+                _ => crate::Value::Float(1.0),
+            };
+            vec![
+                crate::Value::Integer(id as i64),
+                partition,
+                crate::Value::Integer((id % 5) as i64),
+                crate::Value::Integer((1000 + id) as i64),
+            ]
+        })
+        .collect();
+
+    let mut expected = vec![vec![crate::Value::Null; N]; 4];
+    for partition in 0..4 {
+        let mut indices: Vec<usize> = (0..N).filter(|r| r % 4 == partition).collect();
+        indices.sort_by_key(|&r| {
+            let id = (r * 73) % N;
+            (id % 5, id)
+        });
+        for (pos, &r) in indices.iter().enumerate() {
+            let order = ((r * 73) % N) % 5;
+            let first_peer = indices
+                .iter()
+                .position(|&p| ((p * 73) % N) % 5 == order)
+                .unwrap();
+            expected[0][r] = crate::Value::Integer((pos + 1) as i64);
+            expected[1][r] = crate::Value::Integer((first_peer + 1) as i64);
+            for (column, neighbor) in [(2, pos.checked_sub(1)), (3, Some(pos + 1))] {
+                if let Some(&other) = neighbor.and_then(|i| indices.get(i)) {
+                    expected[column][r] = crate::Value::Integer((1000 + (other * 73) % N) as i64);
+                }
+            }
+        }
+    }
+
+    let meter = super::Meter::unlimited();
+    let mut held = Held::new(&meter, "Window");
+    let columns = windows(&find, &rows, &FunctionRegistry::with_builtins(), &mut held).unwrap();
+    assert_eq!(columns.len(), 4);
+    for (column, want) in columns.iter().zip(&expected) {
+        assert!(
+            column.values == *want,
+            "window values preserve physical order"
+        );
+    }
+    drop(columns);
+    held.release();
+    assert_eq!(meter.used(), 0);
+}
+
 /// A refused allocation is `QRY-012` naming the holder (spec §4, second
 /// form), through the test hook.
 #[test]

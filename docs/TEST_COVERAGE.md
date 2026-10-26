@@ -4,9 +4,9 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,860 | 1,891 |
+| **Passing** | 1,873 | 1,904 |
 | **Ignored** | 14 | 15 |
-| **Total** | 1,874 | 1,906 |
+| **Total** | 1,887 | 1,919 |
 
 **Verified**: 2026-10-26 with `cargo test --quiet` (and `--features test-hooks`).
 
@@ -389,6 +389,7 @@ These tests compare the database against an independent answer rather than a sin
     - `QRY-012` names the holder over the limit (each operator, `IdSpace`, `Recursive`, `Distinct` and `Relations`), and its allocator form through the `try_reserve` test hook;
     - a cursor returns rows, then `QRY-012`, then nothing; `rewind` and `close` release;
     - the planner builds a keyless join on the side with the smaller product estimate (#575's shape, a selective outer side, a tie, reordering off).
+  - Five engine unit tests (#765) cover the exact limit while partition indices overlap input and prior window results, allocator refusal and charge release on errors, empty input, and unchanged row-number, rank, lag and lead over tied rows and interleaved float partitions.
   - `meter.rs` (4 unit tests) checks charge, release, drop, peak and the allocator form.
   - `Aggregate` charges its sorted map of groups until every row is built, and lets its hash table and group rows go first, with `sum-distinct` members charged once (`aggregate_finish_charges_its_sorted_groups`, `aggregate_finish_keeps_sum_distinct_members_charged_once`).
 - **Join rules** (`tests/join_rules_test.rs`, 15 tests; #545, #744)

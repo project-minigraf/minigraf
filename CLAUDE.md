@@ -138,7 +138,7 @@ cargo run < demos/demo_negation.txt
    - `parser/verifier.rs`: test-only (not wasm32) bounded-exhaustive check of the parser against `tests/grammar/grammar.pest` (#643): every 1–3 character string (`parse_edn`) and every balanced token filler up to `MINIGRAF_GRAMMAR_BOUND` (default 3) in 16 command templates (`parse_datalog_command`); pest rejects ⇒ parser rejects, pest accepts ⇒ parser accepts or raises a `SEMANTIC` code; today's drift is `KNOWN_DRIFT`, one entry per cause, removed by its fix (empty: #649, #650, #651 fixed)
    - `executor.rs`: `DatalogExecutor` — `transact`/`retract`/`rule` commands, and every query on the engine (`open_query`, `open_rule_query`; planner errors after the pseudo-attribute check, then every predicate the query and its rules name, `QRY-007`); its own query path is gone (#551)
    - `matcher.rs`: `edn_to_value`, `edn_to_entity_id`
-   - `aggregate.rs`: `Agg` (one aggregate of one group) and `Running` (a window's running value), used by the engine; exact sums (`i128` integers saturated once, fixed-point floats rounded once), `value_order` (one total order of values for window sorts, peers, `rank`, `min`/`max` and `:order-by`), `row_order` (#306), `named_vars` (a window's tie-break variables), `windows` (each window's value per row: partitions, sort, peers) (#547)
+   - `aggregate.rs`: `Agg` (one aggregate of one group) and `Running` (a window's running value), used by the engine; exact sums (`i128` integers saturated once, fixed-point floats rounded once), `value_order` (one total order of values for window sorts, peers, `rank`, `min`/`max` and `:order-by`), `row_order` (#306), `named_vars` (a window's tie-break variables), `windows` (each window's value per row: charged partition indices, in-place total sort, peers) (#547, #765)
    - `functions.rs`: `FunctionRegistry` (built-ins and UDFs; `Clone` shares the closures), `Functions` — the registry a database shares, `RwLock<Arc<FunctionRegistry>>`: a query takes a `snapshot()` when it opens and holds no lock while a UDF runs, so UDFs may call back into the database; registration copies, inserts and swaps (#180). `UdfError`: a `try_register_*` closure's failure, `QRY-014`; `eval_expr`'s `EvalError` is `NoValue` (row dropped) or `Udf` (query fails)
    - `evaluator.rs`: `rule_invocation_to_pattern`, the rule limits and their errors
    - `stratification.rs`: `DependencyGraph`, `stratify()` — negative edges + cycle detection; a positive edge to a rule with `not`/`not-join`/`or`/`or-join` also raises the caller, off a cycle (#628)
@@ -216,7 +216,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1880 tests** (1866 passing, 14 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
+**1887 tests** (1873 passing, 14 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
