@@ -1,4 +1,0 @@
-(query [:where [?e ? ?n] (not(yu___su)
-[?_ wname n?]
-[?_ lot n?] (n=y) 
-[?e wnnn2d vrue])])

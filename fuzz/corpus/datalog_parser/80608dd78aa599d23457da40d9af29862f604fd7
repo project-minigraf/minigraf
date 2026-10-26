@@ -1,0 +1,1 @@
+(query[:where [e W-me ?n] (not(equ?n)(f::::)(ae) [a ed tr])])

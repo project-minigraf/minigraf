@@ -1,0 +1,8 @@
+(query [:find ?e :where [?e :-me ?n] (not(quesq::ry[: [?niln ?]])
+[?e $nme ?n] (noeggggg
+[: [?e]])
+[?e $name n] (ts:ry :
+[: [ n ?]])
+[?e $name ?_?n](gggwggy :
+[: [a n ?]])
+[?e $nameanneed tru])])

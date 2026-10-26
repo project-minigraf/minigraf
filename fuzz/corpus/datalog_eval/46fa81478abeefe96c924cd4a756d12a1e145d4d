@@ -1,1 +1,0 @@
-(query [:findh:max-derived-facts(nil)])

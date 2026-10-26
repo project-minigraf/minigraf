@@ -1,1 +1,0 @@
-(query [:fd:where(not(q?_) [ae :baed ue])])

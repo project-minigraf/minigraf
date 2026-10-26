@@ -1,2 +1,0 @@
-(query [:?1:where [q e qee?n] (or(LqueLLLnd ?e ?x)
-[?e wname e])(noe)])

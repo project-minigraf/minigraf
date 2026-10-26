@@ -1,2 +1,0 @@
-(query [:y?:where [e na ?] (u::::::: ?t=y) (u 
-:yu:)])

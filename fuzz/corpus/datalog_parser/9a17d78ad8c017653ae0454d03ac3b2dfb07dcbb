@@ -1,0 +1,2 @@
+(query [:y:where [u:name qe] (ler:urngrparel)(ler:urnarpays[[?x 
+]])[?x BBB ?B]])

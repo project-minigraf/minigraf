@@ -1,0 +1,1 @@
+(query [:where [?e -me ?] (not(e:)(ar=u)(s:phc[]) [a?_: true])])

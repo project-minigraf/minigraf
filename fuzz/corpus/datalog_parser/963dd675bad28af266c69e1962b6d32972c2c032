@@ -1,1 +1,0 @@
-(query[:find (ct ?e):find (cuz ?e):where [?e ff ?]])

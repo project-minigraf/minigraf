@@ -1,1 +1,0 @@
-(query [:?e :where [?e e ?n] (not(ul-0000:Ay)(arentA?:y) (arentA?)[? :ue])])

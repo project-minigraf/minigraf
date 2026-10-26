@@ -1,0 +1,3 @@
+(query[:where [A e e?n] (not-join[] (query[:whnwhere :finw[]nd:] ()
+):)])
+

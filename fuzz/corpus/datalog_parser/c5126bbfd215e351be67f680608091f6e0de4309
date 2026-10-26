@@ -1,2 +1,0 @@
-(query [:where (or(parE) (r) [aandy /true])(E
-e)])

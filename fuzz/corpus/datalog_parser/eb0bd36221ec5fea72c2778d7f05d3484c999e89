@@ -1,2 +1,0 @@
-(query [:f:where [?: ?n](n[?e ])(qur[e])(qe:r[ ()])
-])

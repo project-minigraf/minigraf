@@ -1,0 +1,1 @@
+(query [::where  [: e ?n] (not [:ae n:n])[:ee n? 8](not[:e2 n:n])])

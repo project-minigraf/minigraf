@@ -1,1 +1,0 @@
-(query [:find :where[? W?-me ?n] (not(q [:(t*[true])])[ae :db/tx-id()]):f])

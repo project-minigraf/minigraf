@@ -1,0 +1,1 @@
+(query [:find:where [?e : ?n] (not(nd ?e :i*th:find ?e E:Aw: ?e :i?Y) [ae d rue])])

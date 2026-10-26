@@ -1,1 +1,0 @@
-(query[:where[?e e nn] (not [?e ?i,te])])

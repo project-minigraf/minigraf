@@ -1,2 +1,0 @@
-(query [:f:find ? ? :find ?nd ? ?e :where[e n0me q?n] (*?_t
-)])

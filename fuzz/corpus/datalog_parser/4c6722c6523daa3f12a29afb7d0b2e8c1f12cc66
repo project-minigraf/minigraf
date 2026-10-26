@@ -1,0 +1,2 @@
+(query [::where [?e : ?n] (not[?e $n mea?n] (n[: [:e]])
+[?e $namba t])])

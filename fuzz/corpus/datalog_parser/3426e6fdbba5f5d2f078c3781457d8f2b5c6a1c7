@@ -1,0 +1,2 @@
+(query[:where(n r)(no ?
+1)])

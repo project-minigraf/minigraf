@@ -1,0 +1,1 @@
+(query [:with ?e ?e ?x ?x:where [?e ame ?n](l [ ])[?x e ?BB]])

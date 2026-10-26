@@ -1,1 +1,0 @@
-(query [::where [::eؑ n] [:0 :e ?n] (not [:ne  :eؑ n]  [:e :Ʀ:n])])

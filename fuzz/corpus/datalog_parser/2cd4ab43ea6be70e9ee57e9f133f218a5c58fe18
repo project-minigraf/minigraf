@@ -1,0 +1,1 @@
+(rule [(p)[(aq ?y)](p)[(float? ?y)][(aWWWWin ?y)](p)[(float? ?y)](p)[(aWin ?y)](p)[(float? ?y)](p)[(n ?y)](q)[(float? ?y)](p)])

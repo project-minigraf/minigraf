@@ -1,0 +1,1 @@
+(query [ :where(not(qmat) (t= =y) (lr:=y) (u=y) (ulry)) (uy) (ul =:ynt)])

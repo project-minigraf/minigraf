@@ -1,1 +1,0 @@
-(query [:where [?e :nA-me ?] (not(qe:)(ar=u)(s:phces[]) [a?_: true])])

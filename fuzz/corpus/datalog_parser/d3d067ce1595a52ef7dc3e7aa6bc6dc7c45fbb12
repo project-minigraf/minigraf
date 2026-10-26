@@ -1,9 +1,0 @@
-(query [:find ?e :where [?e :n?-me ?n] (not(su
-[: [?e :naman ?]])
-[?_ wname n?] (rpae== =y:
-[: [?e :nama2n ?nama]])
-[?x wname n?] (noeatr
-[: r[?e :naman ?]])
-[?_ wne n?] (noearpae= ry :
-[:])
-[?_ :banned vrum])])

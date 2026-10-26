@@ -1,2 +1,0 @@
-(query [:where [uwr -n ?n] (su=?y) (y:-ܚ[[ 
-]])[?x :ent ?B]])

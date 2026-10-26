@@ -1,0 +1,4 @@
+(query [:where (q?)
+(noe 
+)
+[?e wn ?n] (noe s)(nss:)])

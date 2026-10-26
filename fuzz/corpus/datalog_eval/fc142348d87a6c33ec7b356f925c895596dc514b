@@ -1,0 +1,1 @@
+(query [:fe :where[?e :cr/ ?P] (n :****)])

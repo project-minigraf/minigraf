@@ -1,1 +1,0 @@
-(query [::where(not [D ?_anne4d t])])

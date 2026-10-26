@@ -1,0 +1,4 @@
+(query [:fin:where [?e :ne ?n] (not(r)
+[?e :db/valid-to ?n] (noe ;sy :
+[4 [?em]])
+[?e wnme ?n] (no) [aind ?e :wherru])])

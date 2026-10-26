@@ -1,0 +1,2 @@
+(query [:where [rnot:name qen] (ssccccy[s( 6)]
+)[(-joinn ?y)](p)[(a ?y)]( ?)(p)[(a ?y)]( ?)[(a?y )]])

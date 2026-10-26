@@ -1,1 +1,0 @@
-(query [:where[?e am ?WW][? :e ?n] (o ?e[g])])

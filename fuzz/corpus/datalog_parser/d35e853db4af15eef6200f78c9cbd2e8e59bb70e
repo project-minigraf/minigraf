@@ -1,2 +1,0 @@
-(query [:where [nnot:n?m e] (yt?e=n)[?x :pt ?B] (sssuc=n ) (u ye[[ 
-]])[?x :par ?B]])

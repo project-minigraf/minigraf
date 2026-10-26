@@ -1,1 +1,0 @@
-(query [:with ?e :where [: D ,c] (not-jo2n [])])

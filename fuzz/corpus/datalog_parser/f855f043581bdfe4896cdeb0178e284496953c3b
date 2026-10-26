@@ -1,0 +1,4 @@
+(query [::where(not [: a:n](qy
+4) )(e
+ ?
+20)])

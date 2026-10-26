@@ -1,1 +1,0 @@
-(query[:where [?e:an?  eP] (not [ae :bad u3e])  [?e:cm n] (not [ae :r:whee])])

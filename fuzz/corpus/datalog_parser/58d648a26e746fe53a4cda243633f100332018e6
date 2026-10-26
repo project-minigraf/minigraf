@@ -1,0 +1,2 @@
+(query[:find ?e :where  (not(que[[?x ]])[?x :db/valid-at BBBB] (ssct?e=n )[?x :db/valid-at ?Be?n] (sssccc[x
+[]])[?x :db/valid-at BBBBBu])])

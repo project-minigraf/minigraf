@@ -1,0 +1,1 @@
+(rule [(p)[(aqnotaW ?y)](p)[(string? ?y)](p)[(a ?y)]( p)[(string? ?W)](p)[(string? ?y)]( ?)[(WWWWy)]])

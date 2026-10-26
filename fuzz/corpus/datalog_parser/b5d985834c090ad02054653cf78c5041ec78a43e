@@ -1,2 +1,0 @@
-(query [:where (ss: )(nil?
-::)(e[[?]]?)[?x n 3]])

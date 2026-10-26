@@ -1,2 +1,0 @@
-(rule [(?)(not(uess:p38 [:w])
-[?e wme e])( n:fid ?e :? :w)(r5 =)[?x : ?3]])

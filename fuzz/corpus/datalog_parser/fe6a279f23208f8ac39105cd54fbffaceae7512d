@@ -1,1 +1,0 @@
-(query [:wte:where [?e:amn?  en] (not [ae :ba true]) :where(uy [:w[?e:c] (not )])(not [a:b:whtrue])])

@@ -1,0 +1,5 @@
+(query [:find ?e :where [?e :n?-m ?n](query [:find:e])
+  [?e e ?n] (not(quy :
+[: [?e ?]])
+[?e tname ?n] (noe =5a=y) 
+[?e ?_wnme ?n] (n0oeb) [:b eaanned true])])

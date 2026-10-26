@@ -1,0 +1,1 @@
+(query [:where(not(ne th?Us$sss?r) [e : tree])])

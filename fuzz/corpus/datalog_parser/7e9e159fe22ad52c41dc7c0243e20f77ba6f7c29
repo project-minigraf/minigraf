@@ -1,1 +1,0 @@
-(query [:where [e Ame n],(l?[ [ [?( [(t?i) [e]])k] (not [?eg])]])])

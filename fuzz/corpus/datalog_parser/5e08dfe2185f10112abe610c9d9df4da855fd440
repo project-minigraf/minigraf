@@ -1,2 +1,0 @@
-(query [:find? :where [e ?me ?n] (not(uq0?y) [ae :db/tx-id()])
-:fin ::y])

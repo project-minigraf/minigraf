@@ -1,0 +1,3 @@
+(query [: :where (qr:
+)
+[?e JJJanJJe ?n] (n [?])])

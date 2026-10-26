@@ -1,1 +1,0 @@
-(query [::where [?e :n false] (not [ae :d t])])

@@ -1,2 +1,0 @@
-(query [:find ?d ?2d ?d ?:where(*t
-)])

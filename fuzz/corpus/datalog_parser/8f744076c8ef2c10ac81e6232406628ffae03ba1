@@ -1,1 +1,0 @@
-(query [::where [? ne ?n] (not(qi*:__m-)[(a :_3)](Le :i$RRRRR)[(a :__magb)](LRR-)[(a :)](Lm) [ae :bd true])])

@@ -1,0 +1,2 @@
+(query [:where [not: en][?:pt ?B] (uc=n) (u 
+:)[?x r ?B]])

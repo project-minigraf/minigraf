@@ -1,0 +1,1 @@
+(query [:wte:where (not [ae :ba t]) :where(uy)(not[a:b:true])])

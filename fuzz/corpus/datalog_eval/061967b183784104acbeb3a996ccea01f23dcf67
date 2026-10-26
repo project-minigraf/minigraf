@@ -1,1 +1,0 @@
-(query [:finds :where [?e l ?rsuc] (not-join [?e] [?e :active tr] [?_ :active ??etreeuc] (no$-) :where [?etol  r])])

@@ -1,0 +1,1 @@
+(query [:find ?a:where [?e : ?s] (n-?o[4 ecolo?] r)e])

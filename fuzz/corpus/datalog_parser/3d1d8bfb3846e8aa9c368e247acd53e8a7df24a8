@@ -1,7 +1,0 @@
-(query [:find ?e :where [?e :n?-me ?n](not(q=?y) (u 
-rle[(?y) [?x 
-]])[c?x :pnt ?BBBBee?n] (*****?*4:[(?y) [?x 
-]])[c?x :parent ?BBBBee?n] (**aren t=?y) (u 
-rle[(?y) ])[c?x :parent ?n] (*****?*t-00000238
-rle[(?y) [?x 
-]])[c?x :parent ?BBBBrue])])

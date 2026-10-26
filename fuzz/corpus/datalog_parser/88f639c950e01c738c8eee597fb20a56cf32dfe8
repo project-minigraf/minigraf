@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e ?me ?f] (not(que:54:::::::count::::::::::::::::::::::(r)) (pn[(:ssss)]) [ae :banned true])])

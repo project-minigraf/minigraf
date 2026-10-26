@@ -1,1 +1,0 @@
-(query ![:finnfinn :+w :where [?e ?nam1e ?+] [?e ?name ?n] [(= ?n "Alice")] :w :where [?cZ 'name ?n]  :ce")]:/])

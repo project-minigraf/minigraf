@@ -1,2 +1,0 @@
-(query [:find ?(__f
- ?? n?:::?_r:over)])

@@ -1,0 +1,1 @@
+(query [:where [? ?n n]:where[?e ? n][?e ?n n]: ])

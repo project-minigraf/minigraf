@@ -1,0 +1,1 @@
+(query [:where[ƚ me ?n] (not [?:a e])])

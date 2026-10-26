@@ -1,1 +1,0 @@
-(query [:where [?:db/valid-at ?n](l)::where [?:db/valid-at n] (lotg?)])

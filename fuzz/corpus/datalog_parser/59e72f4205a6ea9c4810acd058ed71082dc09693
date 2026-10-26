@@ -1,1 +1,0 @@
-(query [:h:find(wi ?::over:)[n]])

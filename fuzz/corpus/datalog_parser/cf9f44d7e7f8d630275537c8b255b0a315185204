@@ -1,0 +1,2 @@
+(query[:where  [: A ?n](not [0 t ?])(ne ?
+2)])

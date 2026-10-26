@@ -1,8 +1,0 @@
-(query [:find ?e :where [?Te :name nn] (not [?e ?_ann?me ?n] (noe ? :
-[: [?e :naman?]])
-[?e wname ?n] (neo?ss :
-[: [?e ren6:naman ?]])
-[?e wn ?n] (nossuery :
-[: [?e]])
-[?e wname ?n] (noe ?[: [n ]])
-[?e d true])])

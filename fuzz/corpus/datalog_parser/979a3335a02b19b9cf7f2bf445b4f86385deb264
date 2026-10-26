@@ -1,0 +1,4 @@
+(query [:f:where (uhe
+[ [?]])
+[?e k ?n] (noe [])
+[?e m ?] (o[?u])])

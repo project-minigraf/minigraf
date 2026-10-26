@@ -1,0 +1,2 @@
+(query [: :where (not(re A)[e: ug][s[  ] (n)])
+])

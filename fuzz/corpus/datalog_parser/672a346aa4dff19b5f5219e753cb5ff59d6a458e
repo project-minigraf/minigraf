@@ -1,1 +1,0 @@
-(query [:where[:n a q](l[? h])])

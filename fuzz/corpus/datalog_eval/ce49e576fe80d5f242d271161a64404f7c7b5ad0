@@ -1,1 +1,0 @@
-(query [:with :where [? emmsuo?c r] (not-join [?eemmsuor?c] [?e :actire true])])

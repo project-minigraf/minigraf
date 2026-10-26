@@ -1,0 +1,1 @@
+(query [:where (not(zs ?_=y ?_=y=))])
