@@ -2612,6 +2612,87 @@ fn qry_012_names_the_holder_over_the_limit() {
     assert!(err.to_string().contains("Recursive needs"), "Recursive");
 }
 
+/// #761: result columns coexist with the named input values. Long values in
+/// two windows must use the same limit as the rest of Window's held state.
+#[test]
+fn window_result_columns_count_toward_query_memory_limit() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("window-memory.graph");
+    {
+        let db = Minigraf::open(&path).unwrap();
+        let suffix = "x".repeat(2048);
+        let facts: String = (0..40)
+            .map(|i| format!("[:e{i} :text \"{i:03}{suffix}\"]"))
+            .collect();
+        db.execute(&format!("(transact [{facts}])")).unwrap();
+        db.checkpoint().unwrap();
+    }
+    let db = crate::OpenOptions::new()
+        .query_memory_limit(200_000)
+        .path(&path)
+        .open()
+        .unwrap();
+    let mut cursor = db
+        .query(
+            "(query [:find ?e (min ?v :over (:order-by ?v)) \
+             (max ?v :over (:order-by ?v)) :where [?e :text ?v]])",
+        )
+        .unwrap();
+    let meter = cursor.stream_mut().expect("engine").meter().clone();
+    let err = match cursor.next_batch(1) {
+        Ok(_) => panic!("window result columns must count"),
+        Err(err) => err,
+    };
+    assert_eq!(err.code(), "QRY-012");
+    assert!(err.to_string().contains("Window needs"));
+    assert_eq!(
+        meter.used(),
+        0,
+        "an error releases the held columns and input"
+    );
+    drop(cursor);
+    drop(db);
+
+    let db = crate::OpenOptions::new().path(&path).open().unwrap();
+    let mut cursor = db
+        .query(
+            "(query [:find ?e (min ?v :over (:order-by ?v)) \
+             (max ?v :over (:order-by ?v)) :where [?e :text ?v]])",
+        )
+        .unwrap();
+    let meter = cursor.stream_mut().expect("engine").meter().clone();
+    let mut rows = 0;
+    while let Some(batch) = cursor.next_batch(100).unwrap() {
+        rows += batch.len();
+    }
+    assert_eq!(rows, 40);
+    assert!(
+        meter.peak() > 200_000,
+        "both columns coexist with input values"
+    );
+    assert_eq!(meter.used(), 0, "draining releases both columns and rows");
+}
+
+/// With no input rows, Window's first reserve is for its result column.
+#[test]
+fn window_result_column_allocator_refusal_is_qry_012() {
+    let db = Minigraf::in_memory().unwrap();
+    let mut cursor = db
+        .query("(query [:find ?e (rank :over (:order-by ?v)) :where [?e :missing ?v]])")
+        .unwrap();
+    let meter = cursor.stream_mut().expect("engine").meter().clone();
+    super::meter::FAIL_RESERVE.with(|f| f.set(Some("Window")));
+    let result = cursor.next_batch(1);
+    super::meter::FAIL_RESERVE.with(|f| f.set(None));
+    let err = match result {
+        Ok(_) => panic!("result column allocation must fail"),
+        Err(err) => err,
+    };
+    assert_eq!(err.code(), "QRY-012");
+    assert!(err.to_string().contains("the allocator refused"));
+    assert_eq!(meter.used(), 0);
+}
+
 /// A refused allocation is `QRY-012` naming the holder (spec §4, second
 /// form), through the test hook.
 #[test]

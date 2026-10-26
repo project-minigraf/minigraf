@@ -9,7 +9,9 @@ use crate::graph::types::Value;
 use anyhow::Result;
 use std::any::Any;
 use std::cmp::Ordering;
+use std::collections::TryReserveError;
 use std::collections::{BTreeMap, BTreeSet};
+use std::mem::size_of;
 
 /// The class of a value in [`value_order`]: numbers, strings, booleans,
 /// refs, keywords, `nil`, sets.
@@ -654,6 +656,27 @@ impl Running {
     }
 }
 
+/// One completed result column and its charged slot/payload bytes.
+pub(crate) struct WindowColumn {
+    pub(crate) values: Vec<Value>,
+    /// Charged slots and owned payload; excludes the outer vector's entry.
+    pub(crate) bytes: usize,
+}
+
+/// Account for result columns without coupling the window calculation to the
+/// engine's meter type.
+pub(crate) trait WindowColumnMeter {
+    fn charge(&mut self, bytes: usize) -> Result<()>;
+    fn reserve(
+        &mut self,
+        result: std::result::Result<(), TryReserveError>,
+        charged: usize,
+        refused: usize,
+    ) -> Result<()>;
+    /// Charge the owned payload of a value (its slot is already charged).
+    fn charge_payload(&mut self, value: &Value) -> Result<usize>;
+}
+
 /// The value of each window of `find` for each row (spec §4), one list per
 /// window in `:find` order, by row position. `rows` holds each row's
 /// values of the [`named_vars`] of `find`, which hold every variable a
@@ -664,12 +687,13 @@ impl Running {
 /// (spec §4.1). Rows with order-equal `:order-by` values are peers: `rank`
 /// is equal for them, and a running aggregate gives every peer its value at
 /// the last peer (spec §4.2). `lag` and `lead` read adjacent rows in the
-/// sorted order, ignoring peer groups. Used by the executor and the engine.
+/// sorted order, ignoring peer groups.
 pub(crate) fn windows(
     find: &[FindSpec],
     rows: &[Vec<Value>],
     registry: &FunctionRegistry,
-) -> Result<Vec<Vec<Value>>> {
+    meter: &mut impl WindowColumnMeter,
+) -> Result<Vec<WindowColumn>> {
     static NULL: Value = Value::Null;
     let named = named_vars(find);
     let col = |var: &str| named.iter().position(|v| v == var);
@@ -692,7 +716,17 @@ pub(crate) fn windows(
             partitions.entry(read(r, part)).or_default().push(r);
         }
 
-        let mut values = vec![Value::Null; rows.len()];
+        // Charge slots before allocating, then payloads as each slot is
+        // filled. The outer vector's entry stays charged until it is dropped.
+        let slots = rows.len().saturating_mul(size_of::<Value>());
+        let entry = size_of::<WindowColumn>();
+        let charged = slots.saturating_add(entry);
+        meter.charge(charged)?;
+        meter.reserve(out.try_reserve(1), charged, entry)?;
+        let mut values = Vec::new();
+        meter.reserve(values.try_reserve_exact(rows.len()), charged, slots)?;
+        values.resize(rows.len(), Value::Null);
+        let mut bytes = slots;
         for mut keyed in partitions.into_values() {
             keyed.sort_by(|&a, &b| {
                 let by_key = match ws.order {
@@ -721,8 +755,11 @@ pub(crate) fn windows(
                         pos.checked_add(1)
                     };
                     let neighbor = adjacent.and_then(|p| keyed.get(p));
+                    let source = neighbor.map_or(&NULL, |&r| read(r, var));
+                    let payload = meter.charge_payload(source)?;
+                    bytes = bytes.saturating_add(payload);
                     if let Some(v) = values.get_mut(row) {
-                        *v = neighbor.map_or(Value::Null, |&r| read(r, var).clone());
+                        *v = source.clone();
                     }
                 }
                 continue;
@@ -746,11 +783,26 @@ pub(crate) fn windows(
                     }
                 }
                 for (pos, &r) in (start..end).zip(peers) {
-                    let value = match (&running, &ws.func) {
-                        (Some(acc), _) => acc.value()?,
-                        (None, WindowFunc::RowNumber) => position(pos)?,
-                        (None, _) => position(start)?,
+                    let (value, payload) = match (&running, &ws.func) {
+                        (Some(acc @ (Running::Min(_) | Running::Max(_))), _) => {
+                            let best = match acc {
+                                Running::Min(e) | Running::Max(e) => {
+                                    e.best.as_ref().unwrap_or(&NULL)
+                                }
+                                _ => unreachable!(),
+                            };
+                            let payload = meter.charge_payload(best)?;
+                            (acc.value()?, payload)
+                        }
+                        (Some(acc), _) => {
+                            let value = acc.value()?;
+                            let payload = meter.charge_payload(&value)?;
+                            (value, payload)
+                        }
+                        (None, WindowFunc::RowNumber) => (position(pos)?, 0),
+                        (None, _) => (position(start)?, 0),
                     };
+                    bytes = bytes.saturating_add(payload);
                     if let Some(v) = values.get_mut(r) {
                         *v = value;
                     }
@@ -758,7 +810,7 @@ pub(crate) fn windows(
                 start = end;
             }
         }
-        out.push(values);
+        out.push(WindowColumn { values, bytes });
     }
     Ok(out)
 }
