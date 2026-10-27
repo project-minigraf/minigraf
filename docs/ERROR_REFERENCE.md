@@ -941,10 +941,10 @@ See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/lat
 
 **Error text**: `unknown option in ':over' clause: '{}'`
 
-**Cause**: An unrecognised keyword appeared inside the `:over` list. Valid options are `:order-by`, `:partition-by`, `:asc`, `:desc`, and (from v3.next) `:rows N preceding`.
+**Cause**: An unrecognised keyword appeared inside the `:over` list. Valid options are `:order-by`, `:partition-by`, `:asc`, `:desc`, and (from v3.0.0) `:rows N preceding`.
 
 **Resolution**:
-- Use `:order-by`, `:partition-by`, `:asc`, `:desc`, or `:rows N preceding` (from v3.next).
+- Use `:order-by`, `:partition-by`, `:asc`, `:desc`, or `:rows N preceding` (from v3.0.0).
 - See the [Datalog Reference — Window Functions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#window-functions).
 
 **Example**:

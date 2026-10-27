@@ -1,6 +1,6 @@
 # #183 Bounded sliding row frames — design
 
-Date: 2026-10-27. Target: v3.next, based on current `origin/v3` (after #182 and #765). The PR against `v3` stays draft and must not merge before the v3.0.0 cut. Status: approved by Claude and maintainer after three design reviews.
+Date: 2026-10-27. Target: v3.0.0 on `v3`, based on `origin/v3` after #182 and #765. The maintainer moved the release target from v3.next to v3.0.0 before merge. The design and code received Claude approval.
 
 ## Goal and philosophy
 
