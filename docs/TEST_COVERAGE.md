@@ -4,11 +4,11 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,885 | 1,917 |
+| **Passing** | 1,898 | 1,930 |
 | **Ignored** | 15 | 16 |
-| **Total** | 1,900 | 1,933 |
+| **Total** | 1,913 | 1,946 |
 
-**Verified**: 2026-10-27 with `cargo test --quiet` (and `--features test-hooks`) on the designated bench machine.
+**Verified**: 2026-10-27 with `cargo test --quiet` (and `--features test-hooks`) on the designated bench machine, followed by focused engine reruns after the final projection review fix.
 
 #183 adds bounded row-frame parser, evaluator, and integration tests; one additional plan-independence case runs with `test-hooks`, including duplicate tie keys and NaN. A sliding-sum test checks recovery after integer saturation. Grammar corpus cases cover frame spellings and rejection. A meter test checks that a zero-width min frame reserves one deque slot. An ignored bench-machine diagnostic reproduces the Criterion datasets and prints the engine meter's peak for every measured case.
 
@@ -345,6 +345,8 @@ These tests compare the database against an independent answer rather than a sin
 - *(v2.x)* **REPL** (#415): the `run()` test runs in a child process with null stdin, so it no longer hangs when the test runner's stdin is an open non-TTY stream.
 
 ## Query Engine
+
+- **Batched projected UUIDs** (#530; 13 tests): B+tree dense/sparse read-count comparison with scalar lookups, empty/invalid input, callback failure and cycles; DICT scalar agreement across chunks and sparse ids, missing/malformed requested entries and unrelated malformed values; fixed key bytes and integer-boundary ordering; committed/pending/repeated projection and duplicate columns; speculative fallback, memory refusal and scalar error order; unused entity/count queries inspected before cache release; counted scalar/speculative hidden-entity reads; duplicate-slot reclamation and bounded sorting of repeated ids; a zero-cache guard for the on-disk batch override.
 
 - **Engine paths** (`query::engine::tests`, #473, #544)
   - Reaches every index choice; net-assert of pending records over committed ones; `:as-of`; valid time; long strings and reads of several batches, in memory, across checkpoints and after reopen.

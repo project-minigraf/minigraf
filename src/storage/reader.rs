@@ -314,6 +314,14 @@ impl<B: StorageBackend + 'static> KeySource for OnDiskReader<B> {
         self.dict().uuid_of(eid)
     }
 
+    fn uuids_of(
+        &self,
+        eids: &[u64],
+        visit: &mut dyn FnMut(u64, EntityId) -> Result<()>,
+    ) -> Result<()> {
+        self.dict().uuids_of(eids, visit)
+    }
+
     fn ident_of(&self, iid: u32) -> Result<String> {
         self.dict().name_of(iid)
     }
@@ -578,4 +586,78 @@ pub fn all_entries_as_facts(
         .iter()
         .map(|(k, _)| dict.fact(&KeyFact::decode(index, k)?))
         .collect()
+}
+
+#[cfg(test)]
+mod uuid_batch_tests {
+    use super::*;
+    use crate::storage::backend::MemoryBackend;
+    use crate::storage::page::PageAllocator;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct CountReads {
+        inner: MemoryBackend,
+        reads: AtomicUsize,
+    }
+
+    impl StorageBackend for CountReads {
+        fn write_page(&mut self, id: u64, bytes: &[u8]) -> Result<()> {
+            self.inner.write_page(id, bytes)
+        }
+        fn read_page(&self, id: u64) -> Result<Vec<u8>> {
+            self.reads.fetch_add(1, Ordering::Relaxed);
+            self.inner.read_page(id)
+        }
+        fn sync(&mut self) -> Result<()> {
+            self.inner.sync()
+        }
+        fn page_count(&self) -> Result<u64> {
+            self.inner.page_count()
+        }
+        fn close(&mut self) -> Result<()> {
+            self.inner.close()
+        }
+        fn backend_name(&self) -> &'static str {
+            "counted memory"
+        }
+    }
+
+    #[test]
+    fn on_disk_uuid_override_shares_paths() {
+        let mut backend = CountReads {
+            inner: MemoryBackend::new(),
+            reads: AtomicUsize::new(0),
+        };
+        let cache = Arc::new(PageCache::new(0));
+        let entries = (1..=2048u64)
+            .map(|e| {
+                (
+                    keys::dict_eid_key(e),
+                    EntityId::from_u128(u128::from(e)).as_bytes().to_vec(),
+                )
+            })
+            .collect();
+        let mut alloc = PageAllocator::new(Vec::new(), 2, 1);
+        let mut meta = MetaPage::empty(1);
+        meta.dict_root =
+            crate::storage::btree::build_btree(entries, &mut backend, &cache, &mut alloc).unwrap();
+        meta.next_eid = 2049;
+        let backend = Arc::new(Mutex::new(backend));
+        let reader = OnDiskReader::new(backend.clone(), cache, &meta);
+        let requested: Vec<_> = (1..=2048).collect();
+        backend.lock().unwrap().reads.store(0, Ordering::Relaxed);
+        let mut seen = 0;
+        reader
+            .uuids_of(&requested, &mut |e, u| {
+                assert!(u == EntityId::from_u128(u128::from(e)), "same UUID");
+                seen += 1;
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(seen, requested.len());
+        assert!(
+            backend.lock().unwrap().reads.load(Ordering::Relaxed) < requested.len() / 4,
+            "on-disk override must share paths rather than use the scalar default"
+        );
+    }
 }

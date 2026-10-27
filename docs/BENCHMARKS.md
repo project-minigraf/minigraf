@@ -2,6 +2,83 @@
 
 This document records reproducible local benchmark snapshots. Completed release-performance history belongs in the [CHANGELOG](../CHANGELOG.md); continuous CI history is available on [Bencher](https://bencher.dev/perf/minigraf/plots).
 
+## Projected UUID lookup batching (#530, unreleased)
+
+**Date**: 2026-10-27 · **Baseline**: `v3` at `80120758` · **Change**: #530.
+Two rounds on an idle benchmark server, CPU and memory bound to the same NUMA
+node, running baseline then change and reversing the order in round two. Builds
+and tests finished before timing. Both libraries used `--profile envelope`
+(opt-level 3) and `-C force-frame-pointers=yes`. Queries opened checkpointed files
+read-only and warmed their caches. Profiling ran separately. The table is the mean
+of each round's p50; the [raw rounds](benchmarks/530-uuid-projection.jsonl) retain
+run counts, maxima and the envelope's process-wide peak RSS.
+
+| Workload | Baseline p50 | Change p50 | Latency delta |
+|---|---:|---:|---:|
+| Attribute scan, 1M facts / 166,666 rows | 255.58 ms | 190.07 ms | -25.6% |
+| Point lookup, 1M facts / 1 row | 17.78 µs | 18.34 µs | +3.2% |
+| Sparse entities, 1,000 rows | 2.90 ms | 2.57 ms | -11.4% |
+| Random refs, 100,000 rows | 247.21 ms | 203.24 ms | -17.8% |
+| Repeated refs, 100,000 rows | 87.24 ms | 75.43 ms | -13.5% |
+| Two entity columns, 100,000 rows | 324.98 ms | 293.64 ms | -9.6% |
+| Duplicate projected columns, 100,000 rows | 250.96 ms | 220.55 ms | -12.1% |
+
+The original 1M-fact envelope scan has **25.6% lower p50 latency**. Its process
+peak RSS remains about 7 MiB in both versions. Point lookups remain around 18 µs;
+the measured difference here is +0.56 µs. The other queries use a separate
+300,000-fact fixture: 100,000 UUID entities with `:friend` pointing to
+`(i * 7919 + 1) % 100000`, `:boss` to `i / 100`, and `:bucket` equal to `i % 100`.
+Their expected row counts are checked on every run. Query workers use a 256 KiB
+stack, including the two-column and duplicate-column cases.
+
+| Probe | Query |
+|---|---|
+| Sparse entities | `[:find ?e :where [?e :bucket 7]]` |
+| Random refs | `[:find ?f :where [?e :friend ?f]]` |
+| Repeated refs | `[:find ?f :where [?e :boss ?f]]` |
+| Two entity columns | `[:find ?e ?f :where [?e :friend ?f]]` |
+| Duplicate columns | `[:find ?f ?f :where [?e :friend ?f]]` |
+
+Separate user-cycle profiles of the 1M scan put scalar `DictReader::uuid_of` at
+58.1% before the change and batched `DictReader::uuids_of` at 45.1% afterward.
+The projection path shares B+tree descents; exact-key `leaf_get` still performs
+individual leaf searches, preserving sparse-lookup behavior. Joins, collect-set
+and sort/aggregate value conversions retain their existing scalar paths.
+
+To reproduce, build both revisions once with the envelope profile and frame
+pointers. Compile the **same** [probe source](../scripts/uuid_projection_probe.rs)
+against each revision's library (set `target_dir`, `probe_src` and `probe_out`
+for that revision):
+
+```bash
+rustc --edition=2024 -C opt-level=3 -C panic=abort -C force-frame-pointers=yes \
+  -L dependency="$target_dir/envelope/deps" \
+  --extern minigraf="$target_dir/envelope/deps/libminigraf.rlib" \
+  "$probe_src" -o "$probe_out"
+```
+
+Use a fresh scratch directory, place the two envelope/probe executables there as
+`baseline-envelope`, `changed-envelope`, `baseline-probe` and `changed-probe`, and
+build the common fixtures outside the timed phase. For example, with `run_dir`
+pointing to that directory and `bench_node` selecting one NUMA node:
+
+```bash
+"$run_dir/baseline-envelope" __build "$run_dir/fixture-1m.graph" 1000000 \
+  > "$run_dir/fixture-1m.json"
+"$run_dir/baseline-probe" build "$run_dir/refs.graph" 100000
+numactl --cpunodebind="$bench_node" --membind="$bench_node" \
+  "$run_dir/changed-envelope" __query "$run_dir/fixture-1m.graph" 2 8 60
+numactl --cpunodebind="$bench_node" --membind="$bench_node" \
+  "$run_dir/changed-probe" query "$run_dir/refs.graph" \
+  '(query [:find ?f :where [?e :friend ?f]])' 100000
+```
+
+Run the same cases with both executable pairs, sequentially; reverse the order
+for the second round. The envelope warms three runs and measures up to 200 runs
+or eight seconds; the reference probe warms three runs and measures up to 200
+runs or five seconds, at least five. Remove fixtures, executables and build
+outputs after retaining the reports.
+
 ## Bounded row frames (#183, unreleased)
 
 **Date**: 2026-10-27 · **Branch**: `feat/183-row-frames` on `v3` · **Machine**: Intel Xeon E5-2696 v4, Linux 6.8, Rust 1.99.1, idle during timing. **Reproduction command**: `numactl --cpunodebind=1 --membind=1 cargo bench --bench minigraf_bench -- window_rows --sample-size 10 --warm-up-time 0.1 --measurement-time 0.2 --nresamples 1000 --noplot`. The recorded run invoked the prebuilt Criterion binary directly with its `--bench` switch after checking the machine was idle. Criterion extended the measurement time for slow cases to obtain ten samples. The committed harness uses the same in-memory facts for a default-frame and each bounded-frame comparison. Each query scans and joins the facts, sorts window input, evaluates one aggregate, and materializes the result.

@@ -1,0 +1,28 @@
+{"max_ms": 269.36647000000005, "name": "attribute_scan", "p50_ms": 257.05593700000003, "p99_ms": 269.36647000000005, "peak_rss_kb": 7332, "query": "[:find ?e ?a :where [?e :age ?a]]", "rows": 166666, "runs": 31, "round": 1, "version": "baseline", "workload": "attribute_scan_1m"}
+{"max_ms": 0.035408999999999996, "name": "point_entity", "p50_ms": 0.018000000000000002, "p99_ms": 0.025644, "peak_rss_kb": 5036, "query": "[:find ?a :where [:p83333 :age ?a]]", "rows": 1, "runs": 200, "round": 1, "version": "baseline", "workload": "point_1m"}
+{"runs": 200.0, "p50_ms": 2.905018, "max_ms": 3.485532, "rows": 1000.0, "round": 1, "version": "baseline", "workload": "sparse_entities", "stack_bytes": 262144}
+{"runs": 21.0, "p50_ms": 246.781251, "max_ms": 257.312645, "rows": 100000.0, "round": 1, "version": "baseline", "workload": "random_refs", "stack_bytes": 262144}
+{"runs": 57.0, "p50_ms": 87.125893, "max_ms": 124.227527, "rows": 100000.0, "round": 1, "version": "baseline", "workload": "repeated_refs", "stack_bytes": 262144}
+{"runs": 16.0, "p50_ms": 325.925679, "max_ms": 334.407692, "rows": 100000.0, "round": 1, "version": "baseline", "workload": "two_entity_columns", "stack_bytes": 262144}
+{"runs": 20.0, "p50_ms": 250.833874, "max_ms": 261.470668, "rows": 100000.0, "round": 1, "version": "baseline", "workload": "duplicate_columns", "stack_bytes": 262144}
+{"max_ms": 201.10414400000002, "name": "attribute_scan", "p50_ms": 189.973728, "p99_ms": 201.10414400000002, "peak_rss_kb": 7336, "query": "[:find ?e ?a :where [?e :age ?a]]", "rows": 166666, "runs": 42, "round": 1, "version": "changed", "workload": "attribute_scan_1m"}
+{"max_ms": 0.029326, "name": "point_entity", "p50_ms": 0.01808, "p99_ms": 0.022223, "peak_rss_kb": 5196, "query": "[:find ?a :where [:p83333 :age ?a]]", "rows": 1, "runs": 200, "round": 1, "version": "changed", "workload": "point_1m"}
+{"runs": 200.0, "p50_ms": 2.564409, "max_ms": 2.952247, "rows": 1000.0, "round": 1, "version": "changed", "workload": "sparse_entities", "stack_bytes": 262144}
+{"runs": 25.0, "p50_ms": 203.333696, "max_ms": 253.693786, "rows": 100000.0, "round": 1, "version": "changed", "workload": "random_refs", "stack_bytes": 262144}
+{"runs": 67.0, "p50_ms": 75.329937, "max_ms": 82.618074, "rows": 100000.0, "round": 1, "version": "changed", "workload": "repeated_refs", "stack_bytes": 262144}
+{"runs": 18.0, "p50_ms": 288.149341, "max_ms": 307.092977, "rows": 100000.0, "round": 1, "version": "changed", "workload": "two_entity_columns", "stack_bytes": 262144}
+{"runs": 23.0, "p50_ms": 221.045346, "max_ms": 227.356607, "rows": 100000.0, "round": 1, "version": "changed", "workload": "duplicate_columns", "stack_bytes": 262144}
+{"max_ms": 243.255707, "name": "attribute_scan", "p50_ms": 190.17330900000002, "p99_ms": 243.255707, "peak_rss_kb": 7404, "query": "[:find ?e ?a :where [?e :age ?a]]", "rows": 166666, "runs": 42, "round": 2, "version": "changed", "workload": "attribute_scan_1m"}
+{"max_ms": 0.041279, "name": "point_entity", "p50_ms": 0.018599, "p99_ms": 0.033733, "peak_rss_kb": 5228, "query": "[:find ?a :where [:p83333 :age ?a]]", "rows": 1, "runs": 200, "round": 2, "version": "changed", "workload": "point_1m"}
+{"runs": 200.0, "p50_ms": 2.574066, "max_ms": 3.074476, "rows": 1000.0, "round": 2, "version": "changed", "workload": "sparse_entities", "stack_bytes": 262144}
+{"runs": 25.0, "p50_ms": 203.154536, "max_ms": 211.01008, "rows": 100000.0, "round": 2, "version": "changed", "workload": "random_refs", "stack_bytes": 262144}
+{"runs": 66.0, "p50_ms": 75.52819, "max_ms": 82.607256, "rows": 100000.0, "round": 2, "version": "changed", "workload": "repeated_refs", "stack_bytes": 262144}
+{"runs": 17.0, "p50_ms": 299.12337, "max_ms": 336.420854, "rows": 100000.0, "round": 2, "version": "changed", "workload": "two_entity_columns", "stack_bytes": 262144}
+{"runs": 23.0, "p50_ms": 220.052204, "max_ms": 226.823264, "rows": 100000.0, "round": 2, "version": "changed", "workload": "duplicate_columns", "stack_bytes": 262144}
+{"max_ms": 267.881656, "name": "attribute_scan", "p50_ms": 254.108311, "p99_ms": 267.881656, "peak_rss_kb": 7192, "query": "[:find ?e ?a :where [?e :age ?a]]", "rows": 166666, "runs": 32, "round": 2, "version": "baseline", "workload": "attribute_scan_1m"}
+{"max_ms": 0.038784, "name": "point_entity", "p50_ms": 0.017550999999999997, "p99_ms": 0.033002000000000004, "peak_rss_kb": 5080, "query": "[:find ?a :where [:p83333 :age ?a]]", "rows": 1, "runs": 200, "round": 2, "version": "baseline", "workload": "point_1m"}
+{"runs": 200.0, "p50_ms": 2.893398, "max_ms": 3.416504, "rows": 1000.0, "round": 2, "version": "baseline", "workload": "sparse_entities", "stack_bytes": 262144}
+{"runs": 21.0, "p50_ms": 247.645778, "max_ms": 254.405355, "rows": 100000.0, "round": 2, "version": "baseline", "workload": "random_refs", "stack_bytes": 262144}
+{"runs": 57.0, "p50_ms": 87.357368, "max_ms": 94.99944, "rows": 100000.0, "round": 2, "version": "baseline", "workload": "repeated_refs", "stack_bytes": 262144}
+{"runs": 16.0, "p50_ms": 324.02794, "max_ms": 332.723497, "rows": 100000.0, "round": 2, "version": "baseline", "workload": "two_entity_columns", "stack_bytes": 262144}
+{"runs": 20.0, "p50_ms": 251.088229, "max_ms": 259.18302, "rows": 100000.0, "round": 2, "version": "baseline", "workload": "duplicate_columns", "stack_bytes": 262144}

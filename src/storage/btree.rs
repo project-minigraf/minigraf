@@ -862,6 +862,71 @@ pub fn get(
     )
 }
 
+/// Exact lookups of sorted, distinct keys, visited in key order.
+pub(crate) fn get_many<K: AsRef<[u8]>>(
+    root: u64,
+    keys: &[K],
+    backend: &dyn StorageBackend,
+    cache: &PageCache,
+    visit: &mut impl FnMut(&K, Option<Vec<u8>>) -> Result<()>,
+) -> Result<()> {
+    if keys
+        .iter()
+        .zip(keys.iter().skip(1))
+        .any(|(a, b)| a.as_ref() >= b.as_ref())
+    {
+        bail_coded!(ErrorCode::Int049, "lookup keys not sorted and distinct");
+    }
+    get_many_at(root, keys, backend, cache, visit, 0)
+}
+
+fn get_many_at<K: AsRef<[u8]>>(
+    root: u64,
+    mut keys: &[K],
+    backend: &dyn StorageBackend,
+    cache: &PageCache,
+    visit: &mut impl FnMut(&K, Option<Vec<u8>>) -> Result<()>,
+    depth: usize,
+) -> Result<()> {
+    if keys.is_empty() {
+        return Ok(());
+    }
+    if depth == MAX_TREE_DEPTH {
+        bail_coded!(
+            ErrorCode::Int049,
+            format!("tree deeper than {MAX_TREE_DEPTH} below page_id={root}")
+        );
+    }
+    let page = cache.get_or_load(root, backend)?;
+    match page.first().copied() {
+        Some(PAGE_TYPE_LEAF) => {
+            for key in keys {
+                visit(key, leaf_get(&page, key.as_ref())?)?;
+            }
+        }
+        Some(PAGE_TYPE_INTERNAL) => {
+            let node = Internal::new(&page)?;
+            while let Some(first) = keys.first() {
+                let child = node.route(first.as_ref(), 0)?;
+                let end = if child == node.count() {
+                    keys.len()
+                } else {
+                    let sep = node.sep(child)?;
+                    keys.partition_point(|k| k.as_ref() < sep)
+                };
+                if end == 0 {
+                    bail_coded!(ErrorCode::Int049, "lookup child does not cover its key");
+                }
+                let (group, rest) = keys.split_at(end);
+                get_many_at(node.child(child)?, group, backend, cache, visit, depth + 1)?;
+                keys = rest;
+            }
+        }
+        _ => bail_coded!(ErrorCode::Stg013, root),
+    }
+    Ok(())
+}
+
 /// Every entry of the tree, in key order.
 #[cfg(test)]
 pub fn stream_all_entries(
@@ -1425,6 +1490,91 @@ mod tests {
         fn backend_name(&self) -> &'static str {
             "counting"
         }
+    }
+
+    #[test]
+    fn get_many_shares_paths_without_reading_unrequested_leaves() {
+        let mut backend = CountingBackend {
+            inner: MemoryBackend::new(),
+            reads: std::sync::atomic::AtomicU64::new(0),
+        };
+        let cache = PageCache::new(0);
+        let (root, _) = build_at(even_entries(20_000), &mut backend, &cache, 2);
+        for (step, dense) in [(1, true), (137, false)] {
+            let requested: Vec<_> = (0..1024).map(|i| key_for(i * step)).collect();
+            backend.reset();
+            let expected: Vec<_> = requested
+                .iter()
+                .map(|k| get(root, k, &backend, &cache).unwrap())
+                .collect();
+            let scalar_reads = backend.reads();
+            backend.reset();
+            let mut actual = Vec::new();
+            get_many(root, &requested, &backend, &cache, &mut |_, v| {
+                actual.push(v);
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(actual, expected, "same hits and misses in key order");
+            assert!(backend.reads() <= scalar_reads, "sparse reads do not grow");
+            if dense {
+                assert!(
+                    backend.reads() < scalar_reads / 4,
+                    "dense reads share paths"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn get_many_checks_input_and_stops_on_callback_error() {
+        let mut backend = CountingBackend {
+            inner: MemoryBackend::new(),
+            reads: std::sync::atomic::AtomicU64::new(0),
+        };
+        let cache = PageCache::new(0);
+        let (root, _) = build_at(even_entries(100), &mut backend, &cache, 2);
+        backend.reset();
+        get_many::<Vec<u8>>(root, &[], &backend, &cache, &mut |_, _| {
+            panic!("empty input must not visit");
+        })
+        .unwrap();
+        assert_eq!(backend.reads(), 0);
+        for requested in [vec![key_for(2), key_for(1)], vec![key_for(1); 2]] {
+            let error = get_many(root, &requested, &backend, &cache, &mut |_, _| {
+                panic!("invalid input must not visit");
+            })
+            .unwrap_err();
+            assert_eq!(crate::MinigrafError::from(error).code(), "INT-049");
+        }
+        assert_eq!(backend.reads(), 0, "invalid input must not read");
+        let mut visits = 0;
+        assert!(
+            get_many(
+                root,
+                &[key_for(0), key_for(2)],
+                &backend,
+                &cache,
+                &mut |_, _| {
+                    visits += 1;
+                    anyhow::bail!("visitor failed")
+                }
+            )
+            .is_err()
+        );
+        assert_eq!(visits, 1);
+    }
+
+    #[test]
+    fn get_many_refuses_a_cycle() {
+        let (mut backend, cache, root, _) = multi_leaf_tree();
+        let count = Internal::new(&cache.get_or_load(root, &backend).unwrap())
+            .unwrap()
+            .count();
+        redirect_child(&mut backend, &cache, root, count, root);
+        let error =
+            get_many(root, &[vec![255; 32]], &backend, &cache, &mut |_, _| Ok(())).unwrap_err();
+        assert_eq!(crate::MinigrafError::from(error).code(), "INT-049");
     }
 
     /// Entities `0, 2, 4, ...` so every odd entity is absent.

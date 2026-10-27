@@ -29,6 +29,13 @@ use uuid::Uuid;
 /// Entries a [`SharedDictCache`] map holds before it is cleared.
 const SHARED_CACHE_LIMIT: usize = 65_536;
 
+pub(crate) fn check_eids(eids: &[u64]) -> Result<()> {
+    if eids.iter().zip(eids.iter().skip(1)).any(|(a, b)| a >= b) {
+        bail_coded!(ErrorCode::Int049, "entity ids not sorted and distinct");
+    }
+    Ok(())
+}
+
 /// Ident and transaction lookups shared by every read of one committed meta.
 /// They never change once committed, and there are few of them compared with
 /// entities, so they are cached across reads; each map is cleared when it
@@ -173,6 +180,53 @@ impl<'a> DictReader<'a> {
             .map_err(|_| err_coded!(ErrorCode::Stg036, format!("entity id {eid}: bad UUID")))?;
         self.uuids.insert(eid, u);
         Ok(u)
+    }
+
+    /// Resolve only the requested ids, sharing each visited DICT tree path.
+    /// Neither this reader's maps nor a query's metered maps are populated.
+    pub(crate) fn uuids_of(
+        &self,
+        eids: &[u64],
+        visit: &mut dyn FnMut(u64, Uuid) -> Result<()>,
+    ) -> Result<()> {
+        check_eids(eids)?;
+        if eids.is_empty() {
+            return Ok(());
+        }
+        if self.root == 0 {
+            bail_coded!(
+                ErrorCode::Stg036,
+                format!("entity id {}", eids.first().copied().unwrap_or(0))
+            );
+        }
+        // Stack storage bounds temporary memory even for callers larger than
+        // one engine batch. No per-key allocations or ephemeral UUID map.
+        let mut encoded = [keys::EidKey::default(); 1024];
+        for chunk in eids.chunks(encoded.len()) {
+            for (dst, &eid) in encoded.iter_mut().zip(chunk) {
+                *dst = keys::EidKey::new(eid);
+            }
+            let mut ids = chunk.iter();
+            btree::get_many(
+                self.root,
+                encoded.get(..chunk.len()).unwrap_or(&[]),
+                self.backend,
+                self.cache,
+                &mut |_, value| {
+                    let eid = ids
+                        .next()
+                        .copied()
+                        .ok_or_else(|| err_coded!(ErrorCode::Int049, "too many UUID lookups"))?;
+                    let value = value
+                        .ok_or_else(|| err_coded!(ErrorCode::Stg036, format!("entity id {eid}")))?;
+                    let uuid = Uuid::from_slice(&value).map_err(|_| {
+                        err_coded!(ErrorCode::Stg036, format!("entity id {eid}: bad UUID"))
+                    })?;
+                    visit(eid, uuid)
+                },
+            )?;
+        }
+        Ok(())
     }
 
     pub fn name_of(&mut self, iid: u32) -> Result<String> {
@@ -577,6 +631,62 @@ mod tests {
             valid_to: VALID_TIME_FOREVER,
             asserted: true,
         }
+    }
+
+    #[test]
+    fn uuid_batches_match_scalar_and_only_decode_requested_values() {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(0);
+        let mut entries: Vec<_> = (1..=2500u64)
+            .map(|e| {
+                (
+                    keys::dict_eid_key(e),
+                    Uuid::from_u128(u128::from(e)).as_bytes().to_vec(),
+                )
+            })
+            .collect();
+        // A damaged value must only fail when it is actually requested.
+        entries.push((keys::dict_eid_key(2501), vec![0]));
+        let mut alloc = PageAllocator::new(Vec::new(), 2, 1);
+        let root = btree::build_btree(entries, &mut backend, &cache, &mut alloc).unwrap();
+        let dict = DictReader::new(root, &backend, &cache);
+        for requested in [
+            Vec::new(),
+            (1..=2500).collect(),
+            vec![1, 255, 256, 2048, 2500],
+        ] {
+            let mut actual = Vec::new();
+            dict.uuids_of(&requested, &mut |e, u| {
+                actual.push((e, u));
+                Ok(())
+            })
+            .unwrap();
+            let mut scalar = DictReader::new(root, &backend, &cache);
+            let expected: Vec<_> = requested
+                .iter()
+                .map(|&e| (e, scalar.uuid_of(e).unwrap()))
+                .collect();
+            assert!(actual == expected, "same UUIDs in requested order");
+        }
+        for requested in [vec![2501], vec![3000], vec![2, 1], vec![1, 1]] {
+            let error = dict.uuids_of(&requested, &mut |_, _| Ok(())).unwrap_err();
+            let code = crate::MinigrafError::from(error).code();
+            assert_eq!(
+                code,
+                if requested.first() == Some(&1) || requested.first() == Some(&2) {
+                    "INT-049"
+                } else {
+                    "STG-036"
+                }
+            );
+        }
+        let empty = DictReader::new(0, &backend, &cache);
+        empty.uuids_of(&[], &mut |_, _| panic!("no ids")).unwrap();
+        assert_eq!(
+            crate::MinigrafError::from(empty.uuids_of(&[1], &mut |_, _| Ok(())).unwrap_err())
+                .code(),
+            "STG-036"
+        );
     }
 
     /// Encode `facts` on top of the dictionary at `root`, write the new DICT
