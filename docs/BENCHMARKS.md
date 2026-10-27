@@ -2,6 +2,115 @@
 
 This document records reproducible local benchmark snapshots. Completed release-performance history belongs in the [CHANGELOG](../CHANGELOG.md); continuous CI history is available on [Bencher](https://bencher.dev/perf/minigraf/plots).
 
+## Projected UUID lookup batching (#530, unreleased)
+
+**Date**: 2026-10-27 · **Baseline**: `v3` at `80120758` · **Change**: #530.
+Two rounds on an idle benchmark server, CPU and memory bound to the same NUMA
+node, running baseline then change and reversing the order in round two. Builds
+and tests finished before timing. Both libraries used `--profile envelope`
+(opt-level 3) and `-C force-frame-pointers=yes`. Queries opened checkpointed files
+read-only and warmed their caches. Profiling ran separately. The tables show the
+mean of each broad round's p50; [raw results](benchmarks/530-uuid-projection.jsonl)
+retain run counts, maxima and the envelope's process-wide peak RSS, plus the
+repeated-ref follow-up described below.
+
+| Workload | Baseline p50 | Change p50 | Latency delta |
+|---|---:|---:|---:|
+| Attribute scan, 1M facts / 166,666 rows | 261.81 ms | 135.55 ms | -48.2% |
+| Point lookup, 1M facts / 1 row | 19.08 µs | 18.23 µs | -4.4% |
+| Sparse entities, 1,000 rows | 3.09 ms | 2.91 ms | -5.8% |
+| Descending refs, 100,000 rows | 163.51 ms | 89.16 ms | -45.5% |
+| Random refs, 100,000 rows | 388.97 ms | 279.13 ms | -28.2% |
+| Repeated refs, 100,000 rows | 46.37 ms | 50.17 ms | +8.2% |
+| Two entity columns, 100,000 rows | 524.05 ms | 474.02 ms | -9.5% |
+| Duplicate columns, 100,000 rows | 396.10 ms | 284.36 ms | -28.2% |
+
+The original 1M-fact envelope scan has **48.2% lower p50 latency**. Its process
+peak RSS remains about 7 MiB in both versions, about 0.2 MiB higher in the changed
+runs. Point lookups remain around 18–19 µs.
+The broad repeated-ref rounds varied, including one slower changed run. Four
+additional interleaved pairs measured 45.55 → 45.78 ms (+0.5%); those records have
+`phase: repeated_refs_recheck` and `trial` instead of `round` in the raw file.
+The initial +8.2% result remains in the table and raw rounds.
+
+The reference queries use a separate 400,000-fact fixture: 100,000 UUID entities
+with `:friend` pointing to `(i * 7919 + 1) % 100000`, `:boss` to `i / 100`,
+`:reverse` to `99999 - i`, and `:bucket` equal to `i % 100`. Subject ids are assigned
+and checked in order before any ref facts are added, making `:reverse` strictly
+descending in internal-id order. Expected row counts are checked on every run.
+Query workers use a 256 KiB stack, including the two-column and duplicate cases.
+
+| Probe | Query |
+|---|---|
+| Sparse entities | `[:find ?e :where [?e :bucket 7]]` |
+| Descending refs | `[:find ?f :where [?e :reverse ?f]]` |
+| Random refs | `[:find ?f :where [?e :friend ?f]]` |
+| Repeated refs | `[:find ?f :where [?e :boss ?f]]` |
+| Two entity columns | `[:find ?e ?f :where [?e :friend ?f]]` |
+| Duplicate columns | `[:find ?f ?f :where [?e :friend ?f]]` |
+
+A separate 8,895-fact fixture assigns 8,192 subject ids before adding Boolean
+markers for the cutoff probes. A chunk is dense at 64 or more distinct ids with
+numeric span at most twice its count. Small/sparse chunks use scalar exact reads;
+dense chunks walk leaves. The 64-id dense cutoff adds about 7.6 µs here; the small
+and sparse cases improve. This is a measured cost of the fixed cutoff.
+
+| Cutoff probe | Baseline p50 | Change p50 | Latency delta |
+|---|---:|---:|---:|
+| 63 ids, span 62 | 104.69 µs | 101.05 µs | -3.5% |
+| 64 ids, span 128 (dense) | 105.62 µs | 113.27 µs | +7.2% |
+| 64 ids, span 129 (sparse) | 116.87 µs | 115.45 µs | -1.2% |
+| 512 ids, stride 16 (sparse) | 0.73 ms | 0.71 ms | -2.1% |
+
+Separate user-cycle profiles of the 1M scan put scalar `DictReader::uuid_of` at
+58.5% before the change and batched `DictReader::uuids_of` at 20.9% afterward.
+Profile reports are retained locally.
+Dense batches reuse the existing leaf cursor; sparse/small batches retain scalar
+restart-point searches without a temporary per-id memo map. Sorted hints are
+bounded to 1,024 distinct committed ids and keep cache/meter changes in projection
+order. Joins, collect-set and sort/aggregate conversions retain their scalar paths.
+
+To reproduce, build both revisions once with the envelope profile and frame
+pointers. Compile the **same** [probe source](../scripts/uuid_projection_probe.rs)
+against each revision's library (set `target_dir`, `probe_src` and `probe_out`
+for that revision):
+
+```bash
+rustc --edition=2024 -C opt-level=3 -C panic=abort -C force-frame-pointers=yes \
+  -L dependency="$target_dir/envelope/deps" \
+  --extern minigraf="$target_dir/envelope/deps/libminigraf.rlib" \
+  "$probe_src" -o "$probe_out"
+```
+
+Use a fresh scratch directory, place the two envelope/probe executables there as
+`baseline-envelope`, `changed-envelope`, `baseline-probe` and `changed-probe`, and
+build the common fixtures outside the timed phase. For example, with `run_dir`
+pointing to that directory and `bench_node` selecting one NUMA node:
+
+```bash
+"$run_dir/baseline-envelope" __build "$run_dir/fixture-1m.graph" 1000000 \
+  > "$run_dir/fixture-1m.json"
+"$run_dir/baseline-probe" build "$run_dir/refs.graph" 100000
+"$run_dir/baseline-probe" build-boundaries "$run_dir/boundaries.graph" 8192
+numactl --cpunodebind="$bench_node" --membind="$bench_node" \
+  "$run_dir/changed-envelope" __query "$run_dir/fixture-1m.graph" 2 8 60
+numactl --cpunodebind="$bench_node" --membind="$bench_node" \
+  "$run_dir/changed-probe" query "$run_dir/refs.graph" \
+  '(query [:find ?f :where [?e :friend ?f]])' 100000
+numactl --cpunodebind="$bench_node" --membind="$bench_node" \
+  "$run_dir/changed-probe" query "$run_dir/boundaries.graph" \
+  '(query [:find ?e :where [?e :dense-threshold true]])' 64
+```
+
+Run every case with both pairs sequentially, reversing the order for round two.
+The envelope's arguments `2 8 60` select attribute scan, an eight-second budget
+and a 60-second cap check; use `0 2 60` for point lookup. It warms three runs and
+measures up to 200 runs or its budget, at least five. The reference probe warms
+three runs and measures up to 20,000 runs or five seconds, at least five. The
+higher cap gives small cutoff queries seconds of samples. For the repeated-ref
+follow-up, run that query four additional pairs with alternating order. Remove
+fixtures, executables and build outputs after retaining reports and CI passing.
+
 ## Bounded row frames (#183, unreleased)
 
 **Date**: 2026-10-27 · **Branch**: `feat/183-row-frames` on `v3` · **Machine**: Intel Xeon E5-2696 v4, Linux 6.8, Rust 1.99.1, idle during timing. **Reproduction command**: `numactl --cpunodebind=1 --membind=1 cargo bench --bench minigraf_bench -- window_rows --sample-size 10 --warm-up-time 0.1 --measurement-time 0.2 --nresamples 1000 --noplot`. The recorded run invoked the prebuilt Criterion binary directly with its `--bench` switch after checking the machine was idle. Criterion extended the measurement time for slow cases to obtain ten samples. The committed harness uses the same in-memory facts for a default-frame and each bounded-frame comparison. Each query scans and joins the facts, sorts window input, evaluates one aggregate, and materializes the result.

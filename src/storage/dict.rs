@@ -29,6 +29,19 @@ use uuid::Uuid;
 /// Entries a [`SharedDictCache`] map holds before it is cleared.
 const SHARED_CACHE_LIMIT: usize = 65_536;
 
+pub(crate) fn check_eids(eids: &[u64]) -> Result<()> {
+    if eids.iter().zip(eids.iter().skip(1)).any(|(a, b)| a >= b) {
+        bail_coded!(ErrorCode::Int049, "entity ids not sorted and distinct");
+    }
+    Ok(())
+}
+
+fn decode_uuid(eid: u64, bytes: Option<&[u8]>) -> Result<Uuid> {
+    let bytes = bytes.ok_or_else(|| err_coded!(ErrorCode::Stg036, format!("entity id {eid}")))?;
+    Uuid::from_slice(bytes)
+        .map_err(|_| err_coded!(ErrorCode::Stg036, format!("entity id {eid}: bad UUID")))
+}
+
 /// Ident and transaction lookups shared by every read of one committed meta.
 /// They never change once committed, and there are few of them compared with
 /// entities, so they are cached across reads; each map is cleared when it
@@ -166,13 +179,67 @@ impl<'a> DictReader<'a> {
         if let Some(u) = self.uuids.get(&eid) {
             return Ok(*u);
         }
-        let v = self
-            .get(&keys::dict_eid_key(eid))?
-            .ok_or_else(|| err_coded!(ErrorCode::Stg036, format!("entity id {eid}")))?;
-        let u = Uuid::from_slice(&v)
-            .map_err(|_| err_coded!(ErrorCode::Stg036, format!("entity id {eid}: bad UUID")))?;
+        let u = self.read_uuid(eid)?;
         self.uuids.insert(eid, u);
         Ok(u)
+    }
+
+    fn read_uuid(&self, eid: u64) -> Result<Uuid> {
+        let bytes = self.get(&keys::dict_eid_key(eid))?;
+        decode_uuid(eid, bytes.as_deref())
+    }
+
+    /// Dense chunks walk existing DICT leaves once; sparse/small chunks retain
+    /// scalar exact-key reads. Neither path populates an ephemeral UUID map.
+    pub(crate) fn uuids_of(
+        &self,
+        eids: &[u64],
+        visit: &mut dyn FnMut(u64, Uuid) -> Result<()>,
+    ) -> Result<()> {
+        check_eids(eids)?;
+        if eids.is_empty() {
+            return Ok(());
+        }
+        if self.root == 0 {
+            return decode_uuid(eids.first().copied().unwrap_or(0), None).map(|_| ());
+        }
+        for chunk in eids.chunks(1024) {
+            let first = chunk.first().copied().unwrap_or(0);
+            let last = chunk.last().copied().unwrap_or(first);
+            let span_limit = u64::try_from(chunk.len())
+                .unwrap_or(u64::MAX)
+                .saturating_mul(2);
+            if chunk.len() < 64 || last.saturating_sub(first) > span_limit {
+                for &eid in chunk {
+                    visit(eid, self.read_uuid(eid)?)?;
+                }
+                continue;
+            }
+            let start = keys::dict_eid_key(first);
+            let mut cursor =
+                btree::LeafCursor::new(self.root, Some(&start), self.backend, self.cache)?;
+            for &eid in chunk {
+                let mut matched = false;
+                while let Some((key, bytes)) = cursor.next_ref()? {
+                    let Some(rest) = key.strip_prefix(&[keys::DICT_EID_TO_UUID]) else {
+                        break;
+                    };
+                    let found = keys::read_uint_bytes(rest)?;
+                    if found < eid {
+                        continue;
+                    }
+                    if found == eid {
+                        visit(eid, decode_uuid(eid, Some(bytes))?)?;
+                        matched = true;
+                    }
+                    break;
+                }
+                if !matched {
+                    return decode_uuid(eid, None).map(|_| ());
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn name_of(&mut self, iid: u32) -> Result<String> {
@@ -576,6 +643,130 @@ mod tests {
             valid_from: 5,
             valid_to: VALID_TIME_FOREVER,
             asserted: true,
+        }
+    }
+
+    #[test]
+    fn uuid_batches_match_scalar_and_only_decode_requested_values() {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(0);
+        let mut entries: Vec<_> = (1..=2500u64)
+            .map(|e| {
+                (
+                    keys::dict_eid_key(e),
+                    if e == 1250 {
+                        vec![0]
+                    } else {
+                        Uuid::from_u128(u128::from(e)).as_bytes().to_vec()
+                    },
+                )
+            })
+            .collect();
+        // A damaged value must only fail when it is actually requested.
+        entries.push((keys::dict_eid_key(2501), vec![0]));
+        let mut alloc = PageAllocator::new(Vec::new(), 2, 1);
+        entries.push((keys::dict_ident_key(":after"), vec![0]));
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        let root = btree::build_btree(entries, &mut backend, &cache, &mut alloc).unwrap();
+        let dict = DictReader::new(root, &backend, &cache);
+        for requested in [
+            Vec::new(),
+            (1..=2500).filter(|&e| e != 1250).collect(),
+            vec![1, 255, 256, 2048, 2500],
+        ] {
+            let mut actual = Vec::new();
+            dict.uuids_of(&requested, &mut |e, u| {
+                actual.push((e, u));
+                Ok(())
+            })
+            .unwrap();
+            let mut scalar = DictReader::new(root, &backend, &cache);
+            let expected: Vec<_> = requested
+                .iter()
+                .map(|&e| (e, scalar.uuid_of(e).unwrap()))
+                .collect();
+            assert!(actual == expected, "same UUIDs in requested order");
+        }
+        for requested in [
+            vec![1250],
+            vec![2501],
+            vec![3000],
+            vec![2, 1],
+            vec![1, 1],
+            (0..64).collect(),
+            (2440..2504).collect(),
+            (3000..3064).collect(),
+        ] {
+            let error = dict.uuids_of(&requested, &mut |_, _| Ok(())).unwrap_err();
+            let code = crate::MinigrafError::from(error).code();
+            assert_eq!(
+                code,
+                if requested.first() == Some(&1) || requested.first() == Some(&2) {
+                    "INT-049"
+                } else {
+                    "STG-036"
+                }
+            );
+        }
+        let empty = DictReader::new(0, &backend, &cache);
+        empty.uuids_of(&[], &mut |_, _| panic!("no ids")).unwrap();
+        assert_eq!(
+            crate::MinigrafError::from(empty.uuids_of(&[1], &mut |_, _| Ok(())).unwrap_err())
+                .code(),
+            "STG-036"
+        );
+    }
+
+    #[test]
+    fn uuid_batches_preserve_partial_callback_errors_and_tree_errors() {
+        let mut backend = MemoryBackend::new();
+        let cache = PageCache::new(0);
+        let entries = (1..=4096u64)
+            .map(|e| {
+                (
+                    keys::dict_eid_key(e),
+                    Uuid::from_u128(u128::from(e)).as_bytes().to_vec(),
+                )
+            })
+            .collect();
+        let mut alloc = PageAllocator::new(Vec::new(), 2, 1);
+        let root = btree::build_btree(entries, &mut backend, &cache, &mut alloc).unwrap();
+        let ids: Vec<_> = (1..=128).collect();
+        let dict = DictReader::new(root, &backend, &cache);
+        let mut visits = 0;
+        assert!(
+            dict.uuids_of(&ids, &mut |_, _| {
+                visits += 1;
+                anyhow::bail!("visitor failed")
+            })
+            .is_err()
+        );
+        assert_eq!(visits, 1);
+        assert!(dict.uuids.is_empty(), "no speculative memo entries");
+        let beyond: Vec<_> = (5000..5064).collect();
+        assert_eq!(
+            crate::MinigrafError::from(dict.uuids_of(&beyond, &mut |_, _| Ok(())).unwrap_err())
+                .code(),
+            "STG-036",
+            "end of eid tree"
+        );
+        let original = backend.read_page(root).unwrap();
+        for cycle in [false, true] {
+            let mut page = original.clone();
+            if cycle {
+                let offset = crate::storage::node::RIGHTMOST_CHILD_OFFSET;
+                page[offset..offset + 8].copy_from_slice(&root.to_le_bytes());
+            } else {
+                page[0] = crate::storage::page::PAGE_TYPE_VALUE;
+            }
+            crate::storage::page::seal(&mut page, root, 1).unwrap();
+            backend.write_page(root, &page).unwrap();
+            let dict = DictReader::new(root, &backend, &cache);
+            let error = dict.uuids_of(&beyond, &mut |_, _| Ok(())).unwrap_err();
+            assert_eq!(
+                crate::MinigrafError::from(error).code(),
+                if cycle { "INT-049" } else { "STG-013" }
+            );
         }
     }
 

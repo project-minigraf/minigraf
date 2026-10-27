@@ -516,6 +516,16 @@ pub trait KeySource: Send + Sync {
     fn iid_of(&self, ident: &str) -> Result<Option<u32>>;
     /// The entity with id `eid`.
     fn uuid_of(&self, eid: u64) -> Result<crate::graph::types::EntityId>;
+    /// Visit the UUIDs of strictly increasing, distinct committed entity ids.
+    /// Uses this reader's pinned generation, just as [`Self::uuid_of`] does.
+    /// An empty slice reads nothing; invalid ordering is `INT-049`.
+    /// On-disk readers share tree paths.
+    /// On error, `visit` may have received a prefix; discard partial hints.
+    fn uuids_of(
+        &self,
+        eids: &[u64],
+        visit: &mut dyn FnMut(u64, crate::graph::types::EntityId) -> Result<()>,
+    ) -> Result<()>;
     /// The ident with id `iid`.
     fn ident_of(&self, iid: u32) -> Result<String>;
     /// The long string stored at `vref`.

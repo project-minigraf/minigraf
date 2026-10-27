@@ -314,6 +314,14 @@ impl<B: StorageBackend + 'static> KeySource for OnDiskReader<B> {
         self.dict().uuid_of(eid)
     }
 
+    fn uuids_of(
+        &self,
+        eids: &[u64],
+        visit: &mut dyn FnMut(u64, EntityId) -> Result<()>,
+    ) -> Result<()> {
+        self.dict().uuids_of(eids, visit)
+    }
+
     fn ident_of(&self, iid: u32) -> Result<String> {
         self.dict().name_of(iid)
     }
@@ -578,4 +586,68 @@ pub fn all_entries_as_facts(
         .iter()
         .map(|(k, _)| dict.fact(&KeyFact::decode(index, k)?))
         .collect()
+}
+
+#[cfg(test)]
+mod uuid_batch_tests {
+    use super::*;
+    use crate::storage::btree::tests::CountingBackend;
+    use crate::storage::page::PageAllocator;
+
+    #[test]
+    fn on_disk_uuid_override_shares_paths() {
+        let mut backend = CountingBackend::new();
+        let cache = Arc::new(PageCache::new(0));
+        let entries = (1..=2048u64)
+            .map(|e| {
+                (
+                    keys::dict_eid_key(e),
+                    EntityId::from_u128(u128::from(e)).as_bytes().to_vec(),
+                )
+            })
+            .collect();
+        let mut alloc = PageAllocator::new(Vec::new(), 2, 1);
+        let mut meta = MetaPage::empty(1);
+        meta.dict_root =
+            crate::storage::btree::build_btree(entries, &mut backend, &cache, &mut alloc).unwrap();
+        meta.next_eid = 2049;
+        let backend = Arc::new(Mutex::new(backend));
+        let reader = OnDiskReader::new(backend.clone(), cache, &meta);
+        let cases = [
+            ((1..=2048).collect::<Vec<u64>>(), true),
+            ((1..=63).collect(), false),
+            ((1..=64).collect(), true),
+            ((1..=256).map(|i| i * 7).collect(), false),
+            ((1..=63).chain([129]).collect(), true),
+            ((1..=63).chain([130]).collect(), false),
+        ];
+        for (requested, dense) in cases {
+            backend.lock().unwrap().reset();
+            let expected: Vec<_> = requested
+                .iter()
+                .map(|&e| reader.uuid_of(e).unwrap())
+                .collect();
+            let scalar_reads = backend.lock().unwrap().reads();
+            backend.lock().unwrap().reset();
+            let mut actual = Vec::new();
+            reader
+                .uuids_of(&requested, &mut |_, u| {
+                    actual.push(u);
+                    Ok(())
+                })
+                .unwrap();
+            assert!(actual == expected, "same UUIDs in requested order");
+            let batch_reads = backend.lock().unwrap().reads();
+            assert!(
+                batch_reads <= scalar_reads,
+                "sparse batches retain scalar read cost"
+            );
+            if dense {
+                assert!(
+                    batch_reads < scalar_reads / 4,
+                    "dense batches share leaf reads"
+                );
+            }
+        }
+    }
 }

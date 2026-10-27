@@ -183,6 +183,22 @@ impl IdSpace {
 
     /// The entity with id `eid`.
     pub(crate) fn uuid(&mut self, keys: Option<&dyn KeySource>, eid: u64) -> Result<EntityId> {
+        self.uuid_with_hint(keys, eid, None)
+    }
+
+    /// Exactly the committed misses scalar `uuid` would send to DICT.
+    pub(crate) fn needs_uuid(&self, eid: u64) -> bool {
+        eid < self.dict_eids && !self.dict.uuid_by_eid.contains_key(&eid)
+    }
+
+    /// A successful speculative read may supply the UUID, but charging and
+    /// insertion still happen only when the caller projects this cell.
+    pub(crate) fn uuid_with_hint(
+        &mut self,
+        keys: Option<&dyn KeySource>,
+        eid: u64,
+        hint: Option<EntityId>,
+    ) -> Result<EntityId> {
         let maps = self.maps(eid >= self.dict_eids);
         if let Some(u) = maps.uuid_by_eid.get(&eid) {
             return Ok(*u);
@@ -193,7 +209,10 @@ impl IdSpace {
                 format!("query engine: unknown entity id {eid}")
             ));
         };
-        let u = k.uuid_of(eid)?;
+        let u = match hint {
+            Some(u) => u,
+            None => k.uuid_of(eid)?,
+        };
         self.charge(false, EID_ENTRY, grow_eid)?;
         self.dict.uuid_by_eid.insert(eid, u);
         self.dict.eid_by_uuid.insert(u, eid);

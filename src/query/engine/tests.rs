@@ -834,6 +834,33 @@ fn dict_cache_is_dropped_after_each_pull() {
     assert_eq!(rows, 3002);
 }
 
+/// Inspect before end_pull, so clearing the cache cannot hide eager lookups.
+#[test]
+fn unprojected_entities_are_not_resolved() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Minigraf::open(dir.path().join("unprojected.graph")).unwrap();
+    let facts: String = (0..3000).map(|i| format!("[:p{i} :age {i}]")).collect();
+    db.execute(&format!("(transact [{facts}])")).unwrap();
+    db.checkpoint().unwrap();
+    for query in [
+        "(query [:find ?a :where [?e :age ?a]])",
+        "(query [:find (count ?e) :where [?e :age ?a]])",
+    ] {
+        let mut cursor = db.query(query).unwrap();
+        let stream = cursor.stream_mut().unwrap();
+        let mut count = 0;
+        while let Some(rows) = stream.pull().unwrap() {
+            count += rows.len();
+            assert_eq!(
+                stream.ids.dict_cached(),
+                0,
+                "no entity conversion before cache release"
+            );
+        }
+        assert!(count > 0);
+    }
+}
+
 /// A stream that ends in a `Window` keeps its DICT lookups until it ends:
 /// the window looked up every row's ids in its first pull, and the rows it
 /// returns later read them from the cache (#547).

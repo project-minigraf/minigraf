@@ -923,7 +923,7 @@ impl<B: StorageBackend> StorageBackend for MutexStorageBackend<B> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::storage::backend::MemoryBackend;
     use crate::storage::keys::{Index, KeyFact, KeyValue};
@@ -1390,16 +1390,22 @@ mod tests {
     // ─── LeafCursor ──────────────────────────────────────────────────────────
 
     /// `MemoryBackend` that counts `read_page` calls, for seek cost tests.
-    struct CountingBackend {
+    pub(crate) struct CountingBackend {
         inner: MemoryBackend,
         reads: std::sync::atomic::AtomicU64,
     }
 
     impl CountingBackend {
-        fn reads(&self) -> u64 {
+        pub(crate) fn new() -> Self {
+            Self {
+                inner: MemoryBackend::new(),
+                reads: std::sync::atomic::AtomicU64::new(0),
+            }
+        }
+        pub(crate) fn reads(&self) -> u64 {
             self.reads.load(std::sync::atomic::Ordering::Relaxed)
         }
-        fn reset(&self) {
+        pub(crate) fn reset(&self) {
             self.reads.store(0, std::sync::atomic::Ordering::Relaxed);
         }
     }
