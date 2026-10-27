@@ -124,6 +124,8 @@ fn assert_query_code(db: &Minigraf, query: &str, expected: &str) {
 const UNKNOWN_AGG: &str = r#"(query [:find (frob414 ?b) :where [?a :x ?b]])"#;
 const UNKNOWN_WINDOW: &str =
     r#"(query [:find ?b (frob414 ?b :over (:order-by ?b)) :where [?a :x ?b]])"#;
+const UNKNOWN_FRAMED_WINDOW: &str =
+    r#"(query [:find ?b (frob414 ?b :over (:order-by ?b :rows 1 preceding)) :where [?a :x ?b]])"#;
 
 #[test]
 fn unknown_aggregate_on_empty_database_returns_qry_010() {
@@ -159,21 +161,27 @@ fn unknown_aggregate_in_rule_query_returns_qry_010() {
 #[test]
 fn unknown_window_function_on_empty_database_returns_qry_011() {
     let db = Minigraf::in_memory().unwrap();
-    assert_query_code(&db, UNKNOWN_WINDOW, "QRY-011");
+    for query in [UNKNOWN_WINDOW, UNKNOWN_FRAMED_WINDOW] {
+        assert_query_code(&db, query, "QRY-011");
+    }
 }
 
 #[test]
 fn unknown_window_function_with_no_matching_rows_returns_qry_011() {
     let db = Minigraf::in_memory().unwrap();
     db.execute(r#"(transact [[:a :y 1]])"#).unwrap();
-    assert_query_code(&db, UNKNOWN_WINDOW, "QRY-011");
+    for query in [UNKNOWN_WINDOW, UNKNOWN_FRAMED_WINDOW] {
+        assert_query_code(&db, query, "QRY-011");
+    }
 }
 
 #[test]
 fn unknown_window_function_with_matching_rows_returns_qry_011() {
     let db = Minigraf::in_memory().unwrap();
     db.execute(r#"(transact [[:a :x 1]])"#).unwrap();
-    assert_query_code(&db, UNKNOWN_WINDOW, "QRY-011");
+    for query in [UNKNOWN_WINDOW, UNKNOWN_FRAMED_WINDOW] {
+        assert_query_code(&db, query, "QRY-011");
+    }
 }
 
 #[test]
@@ -198,7 +206,7 @@ fn registered_udf_aggregate_and_window_on_empty_database_return_empty() {
         |acc: &i64, _n: usize| minigraf::Value::Integer(*acc),
     )
     .unwrap();
-    for q in [UNKNOWN_AGG, UNKNOWN_WINDOW] {
+    for q in [UNKNOWN_AGG, UNKNOWN_WINDOW, UNKNOWN_FRAMED_WINDOW] {
         match db.execute(q).expect("registered UDF query must succeed") {
             minigraf::QueryResult::QueryResults { results, .. } => {
                 assert!(results.is_empty(), "expected no rows")

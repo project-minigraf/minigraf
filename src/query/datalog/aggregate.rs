@@ -3,14 +3,14 @@
 //! does not depend on the order of its input.
 
 use super::functions::{AggImpl, Builtin, FunctionRegistry, UdfError, UdfFinaliseFn, UdfStepFn};
-use super::types::{FindSpec, Order, WindowFunc, WindowSpec};
+use super::types::{FindSpec, Order, WindowFrame, WindowFunc, WindowSpec};
 use crate::error::{ErrorCode, err_coded};
 use crate::graph::types::Value;
 use anyhow::Result;
 use std::any::Any;
 use std::cmp::Ordering;
 use std::collections::TryReserveError;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::mem::size_of;
 
 /// The class of a value in [`value_order`]: numbers, strings, booleans,
@@ -333,6 +333,83 @@ impl Sum {
         #[allow(clippy::cast_precision_loss)]
         let n = self.count as f64;
         Value::Float(self.float() / n)
+    }
+}
+
+/// Reversible exact sum for a bounded row frame. The counters recover the
+/// booleans in `Sum` when a value leaves the frame.
+#[derive(Default)]
+struct SlidingSum {
+    sum: Sum,
+    floats: u64,
+    nan: u64,
+    pos_inf: u64,
+    neg_inf: u64,
+    not_neg_zero: u64,
+}
+
+impl SlidingSum {
+    fn add(&mut self, v: &Value) {
+        if !self.sum.add(v) {
+            return;
+        }
+        match v {
+            Value::Integer(_) => self.not_neg_zero += 1,
+            Value::Float(f) => {
+                self.floats += 1;
+                if f.is_nan() {
+                    self.nan += 1;
+                } else if *f == f64::INFINITY {
+                    self.pos_inf += 1;
+                } else if *f == f64::NEG_INFINITY {
+                    self.neg_inf += 1;
+                } else if f.to_bits() != (-0.0f64).to_bits() {
+                    self.not_neg_zero += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn remove(&mut self, v: &Value) {
+        match v {
+            Value::Integer(i) => {
+                self.sum.ints -= i128::from(*i);
+                self.not_neg_zero -= 1;
+            }
+            Value::Float(f) => {
+                self.floats -= 1;
+                if f.is_nan() {
+                    self.nan -= 1;
+                } else if *f == f64::INFINITY {
+                    self.pos_inf -= 1;
+                } else if *f == f64::NEG_INFINITY {
+                    self.neg_inf -= 1;
+                } else {
+                    if f.to_bits() != (-0.0f64).to_bits() {
+                        self.not_neg_zero -= 1;
+                    }
+                    if let Some(exact) = self.sum.floats.as_mut() {
+                        exact.add_float(-*f);
+                    }
+                }
+            }
+            _ => return,
+        }
+        self.sum.count -= 1;
+        self.sum.any_float = self.floats > 0;
+        self.sum.nan = self.nan > 0;
+        self.sum.pos_inf = self.pos_inf > 0;
+        self.sum.neg_inf = self.neg_inf > 0;
+        self.sum.not_neg_zero = self.not_neg_zero > 0;
+    }
+
+    fn value(&self) -> Value {
+        self.sum.value()
+    }
+
+    fn mean(&self) -> Value {
+        self.sum.mean()
     }
 }
 
@@ -828,6 +905,137 @@ pub(crate) fn windows(
                 continue;
             }
 
+            if let Some(WindowFrame::RowsPreceding(n)) = &ws.frame {
+                let preceding = usize::try_from(*n).unwrap_or(usize::MAX);
+                let partition_read =
+                    |pos: usize| partition.get(pos).map_or(&NULL, |&r| read(r, var));
+                match &ws.func {
+                    WindowFunc::Count => {
+                        let mut count = 0i64;
+                        for (pos, &row) in partition.iter().enumerate() {
+                            if !matches!(read(row, var), Value::Null) {
+                                count = count.saturating_add(1);
+                            }
+                            if pos > preceding
+                                && !matches!(partition_read(pos - preceding - 1), Value::Null)
+                            {
+                                count -= 1;
+                            }
+                            store_window_value(
+                                &mut values,
+                                row,
+                                &Value::Integer(count),
+                                &mut bytes,
+                                scratch.meter,
+                            )?;
+                        }
+                    }
+                    WindowFunc::Sum | WindowFunc::Avg => {
+                        let mut sum = SlidingSum::default();
+                        for (pos, &row) in partition.iter().enumerate() {
+                            sum.add(read(row, var));
+                            if pos > preceding {
+                                sum.remove(partition_read(pos - preceding - 1));
+                            }
+                            let result = if matches!(ws.func, WindowFunc::Sum) {
+                                sum.value()
+                            } else {
+                                sum.mean()
+                            };
+                            store_window_value(
+                                &mut values,
+                                row,
+                                &result,
+                                &mut bytes,
+                                scratch.meter,
+                            )?;
+                        }
+                    }
+                    WindowFunc::Min | WindowFunc::Max => {
+                        let max = matches!(ws.func, WindowFunc::Max);
+                        // This guard releases the deque charge on every exit,
+                        // including an output memory-limit error.
+                        let capacity = partition.len().min(preceding.saturating_add(1));
+                        let planned = capacity.saturating_mul(size_of::<usize>());
+                        let mut deque_scratch = WindowScratch::new(&mut *scratch.meter, planned)?;
+                        let mut deque = VecDeque::<usize>::new();
+                        deque_scratch.reserve(deque.try_reserve_exact(capacity))?;
+                        let extra = deque
+                            .capacity()
+                            .saturating_sub(capacity)
+                            .saturating_mul(size_of::<usize>());
+                        deque_scratch.meter.charge(extra)?;
+                        deque_scratch.bytes = deque_scratch.bytes.saturating_add(extra);
+                        for (pos, &row) in partition.iter().enumerate() {
+                            let start = pos.saturating_sub(preceding);
+                            while deque.front().is_some_and(|&front| front < start) {
+                                deque.pop_front();
+                            }
+                            let current = read(row, var);
+                            if !matches!(current, Value::Null) {
+                                while let Some(&back) = deque.back() {
+                                    let order = value_order(current, partition_read(back));
+                                    if (max && order.is_gt()) || (!max && order.is_lt()) {
+                                        deque.pop_back();
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                deque.push_back(pos);
+                            }
+                            let source =
+                                deque.front().map_or(&NULL, |&front| partition_read(front));
+                            store_window_value(
+                                &mut values,
+                                row,
+                                source,
+                                &mut bytes,
+                                deque_scratch.meter,
+                            )?;
+                        }
+                    }
+                    WindowFunc::Udf(_) => {
+                        let prefix = preceding >= partition.len().saturating_sub(1);
+                        let mut running = if prefix {
+                            Some(Running::new(ws, registry)?)
+                        } else {
+                            None
+                        };
+                        for (pos, &row) in partition.iter().enumerate() {
+                            let value = if let Some(acc) = running.as_mut() {
+                                acc.step(read(row, var))?;
+                                acc.value()?
+                            } else {
+                                let mut acc = Running::new(ws, registry)?;
+                                for &r in partition
+                                    .get(pos.saturating_sub(preceding)..=pos)
+                                    .unwrap_or(&[])
+                                {
+                                    acc.step(read(r, var))?;
+                                }
+                                acc.value()?
+                            };
+                            store_window_value(
+                                &mut values,
+                                row,
+                                &value,
+                                &mut bytes,
+                                scratch.meter,
+                            )?;
+                        }
+                    }
+                    WindowFunc::Rank
+                    | WindowFunc::RowNumber
+                    | WindowFunc::Lag
+                    | WindowFunc::Lead => {
+                        // The parser rejects explicit frames for these functions.
+                        return Err(err_coded!(ErrorCode::Int030, ws.func_name()));
+                    }
+                }
+                offset = end;
+                continue;
+            }
+
             let mut running = match ws.func {
                 WindowFunc::Rank | WindowFunc::RowNumber => None,
                 _ => Some(Running::new(ws, registry)?),
@@ -877,6 +1085,22 @@ pub(crate) fn windows(
         out.push(WindowColumn { values, bytes });
     }
     Ok(out)
+}
+
+/// Charge the payload before cloning a window result into its output row.
+fn store_window_value(
+    values: &mut [Value],
+    row: usize,
+    source: &Value,
+    bytes: &mut usize,
+    meter: &mut impl WindowColumnMeter,
+) -> Result<()> {
+    let payload = meter.charge_payload(source)?;
+    *bytes = bytes.saturating_add(payload);
+    if let Some(slot) = values.get_mut(row) {
+        *slot = source.clone();
+    }
+    Ok(())
 }
 
 /// The 1-based position `pos + 1` as an integer.

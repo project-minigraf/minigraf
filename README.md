@@ -30,6 +30,8 @@ Minigraf is a **single-file embedded graph database** that lets you:
 
 For example, `(lag ?salary :over (:partition-by ?dept :order-by ?hire-date))` reads the preceding employee's salary within each department; the first row gets `nil`. `lead` reads the following row.
 
+Unreleased #183 work adds bounded sliding windows such as `(avg ?salary :over (:partition-by ?dept :order-by ?hire-date :rows 2 preceding))`. The feature is planned for v3.next and is not in a published release.
+
 **Status**: See [ROADMAP.md](ROADMAP.md) for planned work and current direction.
 
 ## Why Datalog?

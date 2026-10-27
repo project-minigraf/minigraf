@@ -66,7 +66,7 @@ fn alphabet() -> Vec<char> {
     a
 }
 
-const TOKENS: [&str; 38] = [
+const TOKENS: [&str; 40] = [
     "(",
     ")",
     "[",
@@ -93,6 +93,8 @@ const TOKENS: [&str; 38] = [
     ":distinct",
     ":asc",
     ":desc",
+    ":rows",
+    "preceding",
     ":valid-from",
     ":foo",
     "?x",
@@ -114,7 +116,7 @@ fn bracket(t: u8) -> Option<(u8, bool)> {
 
 /// `(prefix, suffix)`: the hole sits between them. Each puts the hole where a short
 /// filler can complete a clause.
-const TEMPLATES: [(&str, &str); 16] = [
+const TEMPLATES: [(&str, &str); 17] = [
     ("(query [", "])"),
     ("(query [:find", ":where [?x :a ?y]])"),
     ("(query [:find ?x :where [?x :a ?y]", "])"),
@@ -124,6 +126,10 @@ const TEMPLATES: [(&str, &str); 16] = [
     ("(query [:find ?x :where [?x :a ?y] (or-join [?x]", ")])"),
     ("(query [:find ?x :where [?x :a ?y] (or (and", "))])"),
     ("(query [:find ?x (sum ?y :over (", ")) :where [?x :a ?y]])"),
+    (
+        "(query [:find ?x (sum ?y :over (:order-by ?y ",
+        ")) :where [?x :a ?y]])",
+    ),
     ("(query [:find ?x :where [?x :a ?y] :order-by [", "]])"),
     ("(transact [", "])"),
     ("(transact [[:a :b 1", "]])"),
@@ -211,6 +217,12 @@ const SEMANTIC: &[Semantic] = &[
     Semantic {
         code: "PRS-084",
         witness: "(query [:find ?x (sum ?y :over ()) :where [?x :a ?y]])",
+    },
+    // parse_window: the syntax is valid, but a position function has no
+    // aggregate frame to bound.
+    Semantic {
+        code: "PRS-125",
+        witness: "(query [:find (rank :over (:order-by ?y :rows 1 preceding)) :where [?x :a ?y]])",
     },
     // parse_query: a query option given twice (`query_section+` allows any repeat);
     // `:limit 1 :limit 1` is a 4-token filler (#306).
@@ -532,10 +544,10 @@ fn filler_counts_match_the_spec() {
         }
         n
     };
-    // 38 tokens: the #643 spec's 32, `#{` (#316), `:limit`, `:offset`,
-    // `:asc`, `:desc` (#306), and `:distinct` (#493).
-    assert_eq!(count(3), 34_116);
-    assert_eq!(count(4), 1_101_142);
+    // 40 tokens: the #643 spec's 32, `#{` (#316), `:limit`, `:offset`,
+    // `:asc`, `:desc` (#306), `:distinct` (#493), and `:rows`, `preceding` (#183).
+    assert_eq!(count(3), 40_804);
+    assert_eq!(count(4), 1_397_966);
 }
 
 #[test]

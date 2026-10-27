@@ -129,7 +129,7 @@ Scope — release-gate testing and documentation:
 Additive features, kept out of v3.0.0 so the #371 fix is not held up by them:
 
 - Rule persistence — design first (#241)
-- Sliding row frames — `:rows N preceding` (#183; builds on #182)
+- Sliding row frames — `:rows N preceding` (#183; implemented for v3.next, unreleased; hold the PR merge until after the v3.0.0 cut; builds on #182)
 - OPFS-backed persistent mode for `BrowserDb`: a sync access handle in a dedicated Worker, no in-memory buffer; IndexedDB stays the main-thread backend. Starts at Tier 2 inside the Tier 1 browser binding until it has shipped (#441)
 - Temporal graph-traversal research (#273; may result in documentation or a blog post rather than code)
 

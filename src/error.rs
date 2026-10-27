@@ -173,6 +173,8 @@ pub(crate) enum ErrorCode {
     Prs121,
     Prs122,
     Prs123,
+    Prs124,
+    Prs125,
     Qry001,
     Qry002,
     Qry003,
@@ -1081,6 +1083,18 @@ pub(crate) const REGISTRY: &[(ErrorCode, &str, &str, ErrorCategory)] = &[
         ErrorCode::Prs123,
         "PRS-123",
         "collect-set takes a ?variable and an attribute keyword; got {}",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs124,
+        "PRS-124",
+        ":rows requires one non-negative integer followed by preceding, and may appear only once",
+        ErrorCategory::Parser,
+    ),
+    (
+        ErrorCode::Prs125,
+        "PRS-125",
+        "{} does not accept an explicit :rows frame",
         ErrorCategory::Parser,
     ),
     (
@@ -2393,6 +2407,8 @@ mod tests {
                 | ErrorCode::Prs121
                 | ErrorCode::Prs122
                 | ErrorCode::Prs123
+                | ErrorCode::Prs124
+                | ErrorCode::Prs125
                 | ErrorCode::Qry001
                 | ErrorCode::Qry002
                 | ErrorCode::Qry003
@@ -2670,6 +2686,8 @@ mod tests {
             ErrorCode::Prs121,
             ErrorCode::Prs122,
             ErrorCode::Prs123,
+            ErrorCode::Prs124,
+            ErrorCode::Prs125,
             ErrorCode::Qry001,
             ErrorCode::Qry002,
             ErrorCode::Qry003,

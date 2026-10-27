@@ -121,6 +121,285 @@ fn cumulative_sum_over_whole_result() {
     assert_eq!(row_110k[1], Value::Integer(380000));
 }
 
+#[test]
+fn bounded_rows_sum_uses_current_and_one_previous_row() {
+    let db = setup_employees();
+    let rows = get_results(
+        db.execute(
+            r#"(query [:find ?salary (sum ?salary :over (:order-by ?salary :rows 1 preceding))
+                       :where [?e :employee/salary ?salary]])"#,
+        )
+        .expect("bounded window query"),
+    );
+    assert_eq!(rows.len(), 4);
+    for (salary, sum) in [
+        (85000, 85000),
+        (90000, 175000),
+        (95000, 185000),
+        (110000, 205000),
+    ] {
+        let row = rows.iter().find(|r| r[0] == Value::Integer(salary));
+        assert_eq!(row.map(|r| &r[1]), Some(&Value::Integer(sum)));
+    }
+}
+
+#[test]
+fn bounded_rows_split_ties_and_reset_at_partitions() {
+    let db = Minigraf::in_memory().expect("in-memory db");
+    db.execute(
+        r#"(transact [[:a :part "p1"] [:a :name "A"] [:a :ord 10] [:a :amount 2]
+                      [:b :part "p1"] [:b :name "B"] [:b :ord 10] [:b :amount 3]
+                      [:c :part "p1"] [:c :name "C"] [:c :ord 10] [:c :amount 5]
+                      [:d :part "p2"] [:d :name "D"] [:d :ord 10] [:d :amount 7]])"#,
+    )
+    .expect("transact");
+    let rows = get_results(
+        db.execute(
+            r#"(query [:find ?part ?name ?amount
+                       (sum ?amount :over (:partition-by ?part :order-by ?ord :rows 1 preceding))
+                       (count ?amount :over (:partition-by ?part :order-by ?ord :rows 1 preceding))
+                       (min ?amount :over (:partition-by ?part :order-by ?ord :rows 1 preceding))
+                       (max ?amount :over (:partition-by ?part :order-by ?ord :rows 1 preceding))
+                       (avg ?amount :over (:partition-by ?part :order-by ?ord :rows 1 preceding))
+                       :where [?e :part ?part] [?e :name ?name]
+                              [?e :ord ?ord] [?e :amount ?amount]])"#,
+        )
+        .expect("bounded aggregate windows"),
+    );
+    let at = |name: &str| {
+        rows.iter()
+            .find(|r| r[1] == Value::String(name.to_string()))
+            .expect("named row")
+    };
+    assert_eq!(
+        &at("A")[3..],
+        &[
+            Value::Integer(2),
+            Value::Integer(1),
+            Value::Integer(2),
+            Value::Integer(2),
+            Value::Float(2.0)
+        ]
+    );
+    assert_eq!(
+        &at("B")[3..],
+        &[
+            Value::Integer(5),
+            Value::Integer(2),
+            Value::Integer(2),
+            Value::Integer(3),
+            Value::Float(2.5)
+        ]
+    );
+    assert_eq!(
+        &at("C")[3..],
+        &[
+            Value::Integer(8),
+            Value::Integer(2),
+            Value::Integer(3),
+            Value::Integer(5),
+            Value::Float(4.0)
+        ]
+    );
+    assert_eq!(
+        &at("D")[3..],
+        &[
+            Value::Integer(7),
+            Value::Integer(1),
+            Value::Integer(7),
+            Value::Integer(7),
+            Value::Float(7.0)
+        ]
+    );
+}
+
+#[test]
+fn bounded_rows_zero_and_huge_width_in_descending_order() {
+    let db = setup_employees();
+    let rows = get_results(
+        db.execute(
+            r#"(query [:find ?salary
+                       (sum ?salary :over (:rows 0 preceding :order-by ?salary :desc))
+                       (sum ?salary :over (:order-by ?salary :desc :rows 9223372036854775807 preceding))
+                       :where [?e :employee/salary ?salary]])"#,
+        )
+        .expect("bounded windows"),
+    );
+    let at = |salary| {
+        rows.iter()
+            .find(|r| r[0] == Value::Integer(salary))
+            .expect("salary")
+    };
+    for (salary, prefix) in [
+        (110000, 110000),
+        (95000, 205000),
+        (90000, 295000),
+        (85000, 380000),
+    ] {
+        assert_eq!(at(salary)[1], Value::Integer(salary));
+        assert_eq!(at(salary)[2], Value::Integer(prefix));
+    }
+}
+
+#[test]
+fn bounded_rows_udf_prepared_cursor_and_pagination() {
+    use minigraf::BindValue;
+    let db = Minigraf::in_memory().expect("in-memory db");
+    db.register_aggregate(
+        "frame-total",
+        || 0i64,
+        |sum, value| {
+            if let Value::Integer(n) = value {
+                *sum += n;
+            }
+        },
+        |sum, _| Value::Integer(*sum),
+    )
+    .expect("register UDF");
+    db.execute(
+        r#"(transact [[:a :group "g"] [:a :ord 1] [:a :v 2]
+                      [:b :group "g"] [:b :ord 2] [:b :v nil]
+                      [:c :group "g"] [:c :ord 3] [:c :v 5]
+                      [:d :group "g"] [:d :ord 4] [:d :v 7]])"#,
+    )
+    .expect("facts");
+    let q = r#"(query [:find ?ord
+        (frame-total ?v :over (:order-by ?ord :rows 1 preceding))
+        :where [?e :group $group] [?e :ord ?ord] [?e :v ?v]
+        :order-by [?ord] :offset 1 :limit 2])"#;
+    let prepared = db.prepare(q).expect("prepare");
+    let bind = [("group", BindValue::Val(Value::String("g".into())))];
+    let expected = vec![
+        vec![Value::Integer(2), Value::Integer(2)],
+        vec![Value::Integer(3), Value::Integer(5)],
+    ];
+    assert_eq!(
+        get_results(prepared.execute(&bind).expect("execute")),
+        expected
+    );
+    let mut cursor = prepared.query(&bind).expect("cursor");
+    let mut pulled = Vec::new();
+    while let Some(batch) = cursor.next_batch(1).expect("batch") {
+        pulled.extend(batch.rows().iter().cloned());
+    }
+    assert_eq!(pulled, expected);
+}
+
+#[test]
+fn bounded_rows_run_after_grouping_and_before_distinct() {
+    let db = setup_employees();
+    let grouped = get_results(
+        db.execute(
+            r#"(query [:find ?dept (count ?e)
+                (count ?dept :over (:order-by ?dept :rows 1 preceding))
+                :with ?e
+                :where [?e :employee/dept ?dept]])"#,
+        )
+        .expect("grouped framed query"),
+    );
+    assert_eq!(grouped.len(), 2);
+    assert!(grouped.contains(&vec![
+        Value::String("Engineering".into()),
+        Value::Integer(2),
+        Value::Integer(1)
+    ]));
+    assert!(grouped.contains(&vec![
+        Value::String("Product".into()),
+        Value::Integer(2),
+        Value::Integer(2)
+    ]));
+
+    let db = Minigraf::in_memory().expect("in-memory db");
+    db.execute(r#"(transact [[:a :v 1] [:b :v 1] [:c :v 1]])"#)
+        .expect("facts");
+    let rows = get_results(
+        db.execute(
+            r#"(query [:find ?v (count ?v :over (:order-by ?v :rows 1 preceding))
+                :where [?e :v ?v] :distinct])"#,
+        )
+        .expect("distinct framed query"),
+    );
+    assert_eq!(rows.len(), 2);
+    assert!(rows.contains(&vec![Value::Integer(1), Value::Integer(1)]));
+    assert!(rows.contains(&vec![Value::Integer(1), Value::Integer(2)]));
+}
+
+#[cfg(feature = "test-hooks")]
+#[test]
+fn bounded_rows_answer_bag_is_plan_independent() {
+    use minigraf::{FactRecord, LogWriter, OpenOptions};
+    use uuid::Uuid;
+
+    let dir = tempfile::tempdir().expect("temp directory");
+    let path = dir.path().join("row-frame-plan.graph");
+    let mut writer = LogWriter::create(&path, OpenOptions::new()).expect("fact writer");
+    let amounts = [
+        Value::Integer(1),
+        Value::Float(1.0),
+        Value::Float(-0.0),
+        Value::Float(0.0),
+        Value::Float(f64::NAN),
+        Value::Integer(1),
+    ];
+    for (pos, amount) in amounts.into_iter().enumerate() {
+        let entity = Uuid::from_u128(pos as u128 + 1);
+        for (attribute, value) in [
+            (":name", Value::String("T".into())),
+            (":score", Value::Integer(1)),
+            (":amount", amount),
+        ] {
+            writer
+                .append(&FactRecord {
+                    entity,
+                    attribute: attribute.into(),
+                    value,
+                    tx_id: 1,
+                    tx_count: 1,
+                    valid_from: 0,
+                    valid_to: i64::MAX,
+                    asserted: true,
+                })
+                .expect("fact");
+        }
+    }
+    writer.finish().expect("finish facts");
+    let db = Minigraf::open(&path).expect("open fixture");
+    let q = r#"(query [:find ?name ?amount
+        (sum ?amount :over (:order-by ?score :rows 1 preceding))
+        :where [?e :score ?score] [?e :name ?name] [?e :amount ?amount]])"#;
+    let run = |reorder| {
+        let _guard = minigraf::__reorder(reorder);
+        let mut rows = get_results(db.execute(q).expect("query"));
+        rows.sort();
+        rows
+    };
+    let without_reorder = run(false);
+    assert_eq!(
+        without_reorder.len(),
+        6,
+        "every row stays in the answer bag"
+    );
+    assert_eq!(
+        without_reorder
+            .iter()
+            .filter(|row| matches!(&row[1], Value::Float(f) if f.is_nan()))
+            .count(),
+        1,
+        "NaN row participates in the window"
+    );
+    let with_reorder = run(true);
+    assert_eq!(without_reorder.len(), with_reorder.len());
+    for (left, right) in without_reorder.iter().zip(&with_reorder) {
+        assert_eq!(left.len(), right.len());
+        for (a, b) in left.iter().zip(right) {
+            match (a, b) {
+                (Value::Float(a), Value::Float(b)) => assert_eq!(a.to_bits(), b.to_bits()),
+                (a, b) => assert_eq!(a, b),
+            }
+        }
+    }
+}
+
 // ── partition-by ────────────────────────────────────────────────────────────
 
 #[test]

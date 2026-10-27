@@ -403,6 +403,139 @@ fn running_values() {
 }
 
 #[test]
+fn sliding_sum_matches_replay_with_numeric_edges() {
+    let values = [
+        i(i64::MAX),
+        f(-0.0),
+        f(f64::INFINITY),
+        f(f64::NEG_INFINITY),
+        f(f64::from_bits(0x7ff8_0000_0000_0001)),
+        i(i64::MIN),
+        f(0.5),
+        Value::Null,
+        Value::String("skip".into()),
+        f(0.0),
+    ];
+    let mut sliding = SlidingSum::default();
+    for (pos, value) in values.iter().enumerate() {
+        sliding.add(value);
+        if let Some(expired) = pos.checked_sub(3) {
+            sliding.remove(&values[expired]);
+        }
+        let start = pos.saturating_sub(2);
+        let mut replay = Sum::default();
+        for value in &values[start..=pos] {
+            replay.add(value);
+        }
+        for (actual, expected) in [
+            (sliding.value(), replay.value()),
+            (sliding.mean(), replay.mean()),
+        ] {
+            match (actual, expected) {
+                (Value::Float(a), Value::Float(b)) => assert_eq!(a.to_bits(), b.to_bits()),
+                (a, b) => assert_eq!(a, b),
+            }
+        }
+    }
+}
+
+#[test]
+fn sliding_integer_sum_recovers_after_saturation() {
+    let values = [i(i64::MAX), i(i64::MAX), i(-5), i(1)];
+    let mut sliding = SlidingSum::default();
+    let expected = [i(i64::MAX), i(i64::MAX), i(i64::MAX - 5), i(-4)];
+    for (pos, value) in values.iter().enumerate() {
+        sliding.add(value);
+        if let Some(expired) = pos.checked_sub(2) {
+            sliding.remove(&values[expired]);
+        }
+        assert_eq!(sliding.value(), expected[pos]);
+        let mut replay = Sum::default();
+        for value in &values[pos.saturating_sub(1)..=pos] {
+            replay.add(value);
+        }
+        assert_eq!(sliding.value(), replay.value());
+    }
+}
+
+struct UnlimitedWindowMeter;
+
+impl WindowColumnMeter for UnlimitedWindowMeter {
+    fn charge(&mut self, _: usize) -> Result<()> {
+        Ok(())
+    }
+
+    fn uncharge(&mut self, _: usize) {}
+
+    fn reserve(
+        &mut self,
+        result: std::result::Result<(), std::collections::TryReserveError>,
+        _: usize,
+        _: usize,
+    ) -> Result<()> {
+        result.map_err(|_| anyhow::anyhow!("reserve failed"))
+    }
+
+    fn charge_payload(&mut self, _: &Value) -> Result<usize> {
+        Ok(0)
+    }
+}
+
+#[test]
+fn bounded_builtins_match_running_replay_for_every_row() {
+    let reg = FunctionRegistry::with_builtins();
+    let data = [
+        Value::Null,
+        Value::String("x".into()),
+        i(i64::MAX),
+        f(-0.0),
+        f(0.0),
+        f(f64::from_bits(0x7ff8_0000_0000_0001)),
+        f(f64::INFINITY),
+        i(-2),
+        f(f64::NEG_INFINITY),
+        kw(":tail"),
+    ];
+    let rows: Vec<Vec<Value>> = data
+        .iter()
+        .enumerate()
+        .map(|(pos, v)| vec![v.clone(), i(i64::try_from(pos).expect("position"))])
+        .collect();
+    for func in ["sum", "count", "min", "max", "avg"] {
+        for width in [0, 1, 3, i64::MAX] {
+            for desc in [false, true] {
+                let direction = if desc { " :desc" } else { "" };
+                let ws = window(&format!(
+                    "({func} ?v :over (:order-by ?o{direction} :rows {width} preceding))"
+                ));
+                let mut meter = UnlimitedWindowMeter;
+                let columns = windows(&[FindSpec::Window(ws.clone())], &rows, &reg, &mut meter)
+                    .expect("bounded window");
+                let actual = &columns[0].values;
+                let ordered: Vec<&Value> = if desc {
+                    data.iter().rev().collect()
+                } else {
+                    data.iter().collect()
+                };
+                for (row, got) in actual.iter().enumerate() {
+                    let pos = if desc { data.len() - row - 1 } else { row };
+                    let start = pos.saturating_sub(usize::try_from(width).unwrap_or(usize::MAX));
+                    let mut replay = Running::new(&ws, &reg).expect("running");
+                    for value in &ordered[start..=pos] {
+                        replay.step(value).expect("step");
+                    }
+                    let expected = replay.value().expect("value");
+                    match (got, expected) {
+                        (Value::Float(a), Value::Float(b)) => assert_eq!(a.to_bits(), b.to_bits()),
+                        (got, expected) => assert_eq!(*got, expected),
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn named_vars_in_find_order() {
     let parse = |src: &str| match parse_datalog_command(src) {
         Ok(DatalogCommand::Query(q)) => q.find,

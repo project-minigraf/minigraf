@@ -144,6 +144,8 @@ with no `CodedError` anywhere in its chain.
 | PRS-121 | Unterminated set literal | Parser |
 | PRS-122 | collect-set without a binding | Parser |
 | PRS-123 | collect-set operand is not a variable and an attribute | Parser |
+| PRS-124 | Malformed `:rows` frame | Parser |
+| PRS-125 | Position function with an explicit `:rows` frame | Parser |
 | QRY-001 | Invalid entity | Query Execution |
 | QRY-002 | Attribute must be a keyword | Query Execution |
 | QRY-003 | Cannot transact a pseudo-attribute | Query Execution |
@@ -939,10 +941,10 @@ See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/lat
 
 **Error text**: `unknown option in ':over' clause: '{}'`
 
-**Cause**: An unrecognised keyword appeared inside the `:over` list. Valid options are `:order-by` and `:partition-by`.
+**Cause**: An unrecognised keyword appeared inside the `:over` list. Valid options are `:order-by`, `:partition-by`, `:asc`, `:desc`, and (from v3.next) `:rows N preceding`.
 
 **Resolution**:
-- Use only `:order-by` and `:partition-by`.
+- Use `:order-by`, `:partition-by`, `:asc`, `:desc`, or `:rows N preceding` (from v3.next).
 - See the [Datalog Reference — Window Functions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#window-functions).
 
 **Example**:
@@ -2302,6 +2304,29 @@ with `PRS-047`.
 (query [:find ?s :where [?e :user/name _] [(collect-set ?e "user/scope") ?s]])
 ```
 *`"user/scope"` is a string, not a keyword*
+
+---
+
+### PRS-124 Malformed `:rows` frame
+
+**Error text**: `:rows requires one non-negative integer followed by preceding, and may appear only once`
+
+**Cause**: `:rows` inside `:over` lacks a literal non-negative integer or the lowercase plain symbol `preceding`, or appears twice. A logic variable and a prepared bind slot cannot supply the frame width.
+
+**Resolution**:
+- Write `:rows 2 preceding` for the current row and up to two earlier rows.
+- Use `:rows 0 preceding` for only the current row.
+
+---
+
+### PRS-125 Position function with an explicit `:rows` frame
+
+**Error text**: `{} does not accept an explicit :rows frame`
+
+**Cause**: `rank`, `row-number`, `lag`, and `lead` operate on row positions or peers rather than an aggregate frame.
+
+**Resolution**:
+- Remove `:rows` from these functions' `:over` list. Use `:rows` with `sum`, `count`, `min`, `max`, `avg`, or a registered aggregate.
 
 ---
 
