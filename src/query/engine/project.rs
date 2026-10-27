@@ -10,11 +10,6 @@ use super::cell::{Cell, Scalar};
 use crate::graph::types::{Value, ValueSet};
 use anyhow::Result;
 
-#[cfg(test)]
-thread_local! {
-    static HINT_SORTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
 /// The rows of `batch`, with the cells of the slots `find` as values.
 pub(crate) fn project(batch: &Batch, find: &[usize], ctx: &mut Ctx<'_>) -> Result<Vec<Vec<Value>>> {
     let hints = Uuids::read(batch, find, ctx);
@@ -70,25 +65,11 @@ impl Uuids {
             values: [crate::graph::types::EntityId::nil(); BATCH_ROWS],
             len: 0,
         };
-        let mut sorted = 0;
         for eid in candidates() {
-            if hints.ids.get(..sorted)?.binary_search(&eid).is_ok() {
-                continue;
+            if !hints.insert(eid)? {
+                break;
             }
-            if hints.len == BATCH_ROWS {
-                hints.compact()?;
-                sorted = hints.len;
-                if hints.len == BATCH_ROWS {
-                    break;
-                }
-                if hints.ids.get(..sorted)?.binary_search(&eid).is_ok() {
-                    continue;
-                }
-            }
-            *hints.ids.get_mut(hints.len)? = eid;
-            hints.len += 1;
         }
-        hints.compact()?;
         let count = hints.len;
         if count < 2 {
             return None;
@@ -118,24 +99,21 @@ impl Uuids {
         (read == count).then_some(hints)
     }
 
-    /// Reclaim duplicate slots before deciding the distinct-id bound is full.
-    fn compact(&mut self) -> Option<()> {
-        let ids = self.ids.get_mut(..self.len)?;
-        #[cfg(test)]
-        HINT_SORTS.with(|n| n.set(n.get() + 1));
-        ids.sort_unstable();
-        let mut count = 0;
-        let mut previous = None;
-        for i in 0..ids.len() {
-            let eid = *ids.get(i)?;
-            if previous != Some(eid) {
-                *ids.get_mut(count)? = eid;
-                count += 1;
-                previous = Some(eid);
-            }
+    /// Keep the bounded buffer sorted and distinct without another general
+    /// sort specialization in the embedded binary. Existing ids move nothing.
+    fn insert(&mut self, eid: u64) -> Option<bool> {
+        let at = match self.ids.get(..self.len)?.binary_search(&eid) {
+            Ok(_) => return Some(true),
+            Err(at) => at,
+        };
+        if self.len == BATCH_ROWS {
+            return Some(false);
         }
-        self.len = count;
-        Some(())
+        let ids = self.ids.get_mut(..=self.len)?;
+        ids.copy_within(at..self.len, at + 1);
+        *ids.get_mut(at)? = eid;
+        self.len += 1;
+        Some(true)
     }
 
     fn get(&self, eid: u64) -> Option<crate::graph::types::EntityId> {
@@ -354,7 +332,7 @@ mod tests {
     }
 
     #[test]
-    fn repeated_ids_do_not_sort_a_nearly_full_buffer_for_each_cell() {
+    fn repeated_ids_reuse_a_nearly_full_hint_buffer() {
         let mut keys = Keys::new(false);
         keys.limit = u64::try_from(BATCH_ROWS).unwrap();
         let mut batch = Batch::new(2);
@@ -363,11 +341,39 @@ mod tests {
             let f = u64::try_from((2 * i + 2).min(BATCH_ROWS - 1)).unwrap();
             batch.push(&mut [Some(Cell::Eid(e)), Some(Cell::Eid(f))]);
         }
-        HINT_SORTS.with(|n| n.set(0));
         let rows = project_with(&keys, &batch, &[0, 1], usize::MAX).unwrap();
         assert_eq!(rows.len(), BATCH_ROWS);
         assert_eq!(keys.scalar.load(Ordering::Relaxed), 0);
-        HINT_SORTS.with(|n| assert!(n.get() <= 3, "repeats should reuse the sorted prefix"));
+        assert_eq!(keys.bulk.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn sorted_hint_buffer_matches_a_set_at_every_capacity_boundary() {
+        use std::collections::BTreeSet;
+        let n = u64::try_from(BATCH_ROWS).unwrap();
+        for input in [
+            (1..=n + 1).collect::<Vec<_>>(),
+            (1..=n + 1).rev().collect(),
+            (0..3 * n).map(|i| 1 + (i * 7919) % (n + 1)).collect(),
+        ] {
+            let mut hints = Uuids {
+                ids: [0; BATCH_ROWS],
+                values: [uuid::Uuid::nil(); BATCH_ROWS],
+                len: 0,
+            };
+            let mut expected = BTreeSet::new();
+            for eid in input {
+                let fits = expected.len() < BATCH_ROWS || expected.contains(&eid);
+                assert_eq!(hints.insert(eid), Some(fits));
+                if fits {
+                    expected.insert(eid);
+                }
+                assert_eq!(
+                    hints.ids.get(..hints.len).unwrap(),
+                    expected.iter().copied().collect::<Vec<_>>()
+                );
+            }
+        }
     }
 
     #[test]

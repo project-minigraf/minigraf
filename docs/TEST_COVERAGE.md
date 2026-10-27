@@ -4,11 +4,11 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,898 | 1,930 |
+| **Passing** | 1,896 | 1,928 |
 | **Ignored** | 15 | 16 |
-| **Total** | 1,913 | 1,946 |
+| **Total** | 1,911 | 1,944 |
 
-**Verified**: 2026-10-27 with `cargo test --quiet` (and `--features test-hooks`) on the designated bench machine, followed by focused engine reruns after the final projection review fix.
+**Verified**: 2026-10-27 on the designated bench machine: the full default suite under branch coverage plus `cargo test --doc`, and `cargo test --features test-hooks`. The final review test enhancement also passed a focused dictionary rerun. All coverage gates retain their existing floors.
 
 #183 adds bounded row-frame parser, evaluator, and integration tests; one additional plan-independence case runs with `test-hooks`, including duplicate tie keys and NaN. A sliding-sum test checks recovery after integer saturation. Grammar corpus cases cover frame spellings and rejection. A meter test checks that a zero-width min frame reserves one deque slot. An ignored bench-machine diagnostic reproduces the Criterion datasets and prints the engine meter's peak for every measured case.
 
@@ -346,7 +346,7 @@ These tests compare the database against an independent answer rather than a sin
 
 ## Query Engine
 
-- **Batched projected UUIDs** (#530; 13 tests): B+tree dense/sparse read-count comparison with scalar lookups, empty/invalid input, callback failure and cycles; DICT scalar agreement across chunks and sparse ids, missing/malformed requested entries and unrelated malformed values; fixed key bytes and integer-boundary ordering; committed/pending/repeated projection and duplicate columns; speculative fallback, memory refusal and scalar error order; unused entity/count queries inspected before cache release; counted scalar/speculative hidden-entity reads; duplicate-slot reclamation and bounded sorting of repeated ids; a zero-cache guard for the on-disk batch override.
+- **Batched projected UUIDs** (#530; 11 tests): DICT scalar agreement across dense multi-chunk and sparse/small batches, empty/invalid input, missing/malformed requested entries and unrelated malformed values, callback failure, wrong pages and cycles; a zero-cache reader guard compares results and reads at 63/64 ids and spans of `2c`/`2c+1`; committed/pending/repeated projection and duplicate columns; partial speculative fallback, memory refusal and scalar error order; unused entity/count queries inspected before cache release; a sorted-buffer model checks ascending, descending, repeated and shuffled ids across capacity boundaries.
 
 - **Engine paths** (`query::engine::tests`, #473, #544)
   - Reaches every index choice; net-assert of pending records over committed ones; `:as-of`; valid time; long strings and reads of several batches, in memory, across checkpoints and after reopen.

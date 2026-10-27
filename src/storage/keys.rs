@@ -822,39 +822,9 @@ pub fn dict_uuid_key(uuid: &Uuid) -> Vec<u8> {
 }
 
 pub fn dict_eid_key(eid: u64) -> Vec<u8> {
-    EidKey::new(eid).as_ref().to_vec()
-}
-
-/// A DICT entity key without an allocation, for bounded lookup batches.
-#[derive(Clone, Copy, Default)]
-pub(crate) struct EidKey {
-    bytes: [u8; 10],
-    len: u8,
-}
-
-impl EidKey {
-    pub(crate) fn new(eid: u64) -> Self {
-        let (bytes, skip) = magnitude_bytes(eid);
-        let tail = bytes.get(skip..).unwrap_or(&[]);
-        let n = u8::try_from(tail.len()).unwrap_or(8);
-        let mut key = Self {
-            bytes: [0; 10],
-            len: 2 + n,
-        };
-        for (dst, src) in key.bytes.iter_mut().zip([DICT_EID_TO_UUID, INT_ZERO + n]) {
-            *dst = src;
-        }
-        for (dst, src) in key.bytes.iter_mut().skip(2).zip(tail) {
-            *dst = *src;
-        }
-        key
-    }
-}
-
-impl AsRef<[u8]> for EidKey {
-    fn as_ref(&self) -> &[u8] {
-        self.bytes.get(..usize::from(self.len)).unwrap_or(&[])
-    }
+    let mut k = vec![DICT_EID_TO_UUID];
+    put_uint(&mut k, eid);
+    k
 }
 
 pub fn dict_ident_key(ident: &str) -> Vec<u8> {
@@ -1510,28 +1480,6 @@ mod tests {
             0xaf63_dc4c_8601_ec8c,
             "FNV-1a 64 reference value"
         );
-    }
-
-    #[test]
-    fn fixed_eid_keys_match_dictionary_encoding_and_order() {
-        let mut ids = vec![0, 1];
-        for bytes in 1..8 {
-            let boundary = 1u64 << (bytes * 8);
-            ids.extend([boundary - 1, boundary]);
-        }
-        ids.push(u64::MAX);
-        let mut previous = Vec::new();
-        for eid in ids {
-            let fixed = EidKey::new(eid);
-            let mut expected = vec![DICT_EID_TO_UUID];
-            put_uint(&mut expected, eid);
-            assert_eq!(fixed.as_ref(), expected);
-            assert!(
-                previous.as_slice() < fixed.as_ref(),
-                "ids retain byte order"
-            );
-            previous = fixed.as_ref().to_vec();
-        }
     }
 
     #[test]

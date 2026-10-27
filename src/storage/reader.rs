@@ -591,43 +591,12 @@ pub fn all_entries_as_facts(
 #[cfg(test)]
 mod uuid_batch_tests {
     use super::*;
-    use crate::storage::backend::MemoryBackend;
+    use crate::storage::btree::tests::CountingBackend;
     use crate::storage::page::PageAllocator;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    struct CountReads {
-        inner: MemoryBackend,
-        reads: AtomicUsize,
-    }
-
-    impl StorageBackend for CountReads {
-        fn write_page(&mut self, id: u64, bytes: &[u8]) -> Result<()> {
-            self.inner.write_page(id, bytes)
-        }
-        fn read_page(&self, id: u64) -> Result<Vec<u8>> {
-            self.reads.fetch_add(1, Ordering::Relaxed);
-            self.inner.read_page(id)
-        }
-        fn sync(&mut self) -> Result<()> {
-            self.inner.sync()
-        }
-        fn page_count(&self) -> Result<u64> {
-            self.inner.page_count()
-        }
-        fn close(&mut self) -> Result<()> {
-            self.inner.close()
-        }
-        fn backend_name(&self) -> &'static str {
-            "counted memory"
-        }
-    }
 
     #[test]
     fn on_disk_uuid_override_shares_paths() {
-        let mut backend = CountReads {
-            inner: MemoryBackend::new(),
-            reads: AtomicUsize::new(0),
-        };
+        let mut backend = CountingBackend::new();
         let cache = Arc::new(PageCache::new(0));
         let entries = (1..=2048u64)
             .map(|e| {
@@ -644,20 +613,41 @@ mod uuid_batch_tests {
         meta.next_eid = 2049;
         let backend = Arc::new(Mutex::new(backend));
         let reader = OnDiskReader::new(backend.clone(), cache, &meta);
-        let requested: Vec<_> = (1..=2048).collect();
-        backend.lock().unwrap().reads.store(0, Ordering::Relaxed);
-        let mut seen = 0;
-        reader
-            .uuids_of(&requested, &mut |e, u| {
-                assert!(u == EntityId::from_u128(u128::from(e)), "same UUID");
-                seen += 1;
-                Ok(())
-            })
-            .unwrap();
-        assert_eq!(seen, requested.len());
-        assert!(
-            backend.lock().unwrap().reads.load(Ordering::Relaxed) < requested.len() / 4,
-            "on-disk override must share paths rather than use the scalar default"
-        );
+        let cases = [
+            ((1..=2048).collect::<Vec<u64>>(), true),
+            ((1..=63).collect(), false),
+            ((1..=64).collect(), true),
+            ((1..=256).map(|i| i * 7).collect(), false),
+            ((1..=63).chain([129]).collect(), true),
+            ((1..=63).chain([130]).collect(), false),
+        ];
+        for (requested, dense) in cases {
+            backend.lock().unwrap().reset();
+            let expected: Vec<_> = requested
+                .iter()
+                .map(|&e| reader.uuid_of(e).unwrap())
+                .collect();
+            let scalar_reads = backend.lock().unwrap().reads();
+            backend.lock().unwrap().reset();
+            let mut actual = Vec::new();
+            reader
+                .uuids_of(&requested, &mut |_, u| {
+                    actual.push(u);
+                    Ok(())
+                })
+                .unwrap();
+            assert!(actual == expected, "same UUIDs in requested order");
+            let batch_reads = backend.lock().unwrap().reads();
+            assert!(
+                batch_reads <= scalar_reads,
+                "sparse batches retain scalar read cost"
+            );
+            if dense {
+                assert!(
+                    batch_reads < scalar_reads / 4,
+                    "dense batches share leaf reads"
+                );
+            }
+        }
     }
 }

@@ -269,7 +269,7 @@ Performance envelope on the `v3` branch (format v8), measured up to 10M facts on
 | Selective 2-clause join (1 row), p50 | 38 µs | 37 µs | 37 µs |
 | Rule query with a constant (magic sets, 5–7 rows), p50 | 1.1 ms | 1.5 ms | 1.9 ms |
 
-The table above is the #551 snapshot. A later [focused UUID projection comparison](docs/BENCHMARKS.md#projected-uuid-lookup-batching-530-unreleased) measures the 1M-fact attribute scan at 256 → 190 ms p50 after batched dictionary reads (#530); the other table scales were not remeasured in that comparison.
+The table above is the #551 snapshot. A later [focused UUID projection comparison](docs/BENCHMARKS.md#projected-uuid-lookup-batching-530-unreleased) measures the 1M-fact attribute scan at 262 → 136 ms p50 after batched dictionary reads (#530); the other table scales were not remeasured in that comparison.
 
 Point lookups, time travel on one entity, and joins and rule queries that a constant makes selective stay flat at every tested size. Queries that read a whole attribute (scans, aggregates, joins with nothing selective) grow linearly with the facts they read, in bounded memory: the 1.67M-row scan at 10M facts holds one batch, 7 MiB. Windows and whole transitive closures hold their rows, and `OpenOptions::query_memory_limit` stops a query that passes it with `QRY-012`. Graphs over 10M facts are not tested.
 

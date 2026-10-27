@@ -1,72 +1,72 @@
-# Batched UUID projection (#530)
+# #530: batch projected UUID lookups
 
-Approved after Claude spec/plan review, 2026-10-27. Targets `v3`, format v8.
+Date: 2026-10-27. Base: `v3` at `80120758`.
 
 ## Problem
 
-The streaming engine carries DICT ids until projection, but a scan returning a
-different entity in every row still performs one root-to-leaf DICT lookup per
-UUID. At `80120758`, the 1M-fact envelope attribute scan spends about 58% of
-sampled user cycles under `DictReader::uuid_of` on the idle bench machine.
+The streaming engine keeps internal ids through scans and operators, but returned
+entity/ref cells still cause a root-to-leaf DICT lookup for each distinct id.
+The original 1M-fact attribute scan spends most of its time in this conversion.
+Resolve projected ids together without retaining a whole-query dictionary cache.
 
 ## Design
 
-`Project` resolves up to 1,024 committed entity cache misses from its returned
-columns as one sorted, distinct batch. Duplicate cells are compacted when the
-fixed buffer fills so they do not consume its distinct-id bound. Its temporary UUID hints live on the
-stack. Pending/provisional ids and existing cache hits are excluded using the
-same routing predicate as scalar `IdSpace::uuid`. One distinct miss, no misses,
-and in-memory queries stay on the scalar path.
+`Project` collects at most 1,024 distinct committed UUID-cache misses from the
+returned cells. A preflight avoids initializing hints when fewer than two ids
+need conversion. A fixed stack buffer maintains sorted, distinct ids using
+binary search and insertion; repeated ids move nothing. Once full, remaining
+ids use ordinary scalar conversion. Pending/provisional ids never read DICT.
 
-`KeySource::uuids_of` is an additive default method: strictly increasing ids,
-callbacks in that order, empty input reads nothing. Its default implementation
-calls scalar `uuid_of`. `OnDiskReader` overrides it using the query's same pinned
-DICT root, never a newer database state. `DictReader` encodes the ids into a
-bounded fixed-size key buffer, then calls `btree::get_many`.
+`KeySource::uuids_of` is an internal required method. The pinned `OnDiskReader`
+forwards to `DictReader::uuids_of`; no public API or retained reader fields change.
+The dictionary checks sorted/distinct input and processes chunks of at most
+1,024 ids. A chunk with at least 64 ids and numeric span at most twice its count
+uses the existing `LeafCursor`: seek once to its first key, then advance through
+leaves, decode integer keys and parse UUIDs only for requested ids. There is no
+per-id key encoding; transient leaf decoding is bounded to one leaf plus its
+path. Stop at the last requested id or the end of the eid
+prefix. The density bound limits the skipped entries. Sparse/small chunks use
+existing exact-key B+tree reads, preserving restart-point leaf searches. Both
+paths skip the scalar reader's temporary memo map and share UUID decoding.
+There are no production changes to the B+tree or key encoding.
 
-`get_many` groups sorted keys by each internal node's child range, visits every
-required page once, and calls today's `leaf_get` for each requested key. It
-retains the scalar leaf restart-point behavior rather than decoding full leaves.
-Sparse keys do not cause more backend page reads than scalar lookups. Recursion
-has scalar `get`'s 32-level bound. Empty and invalid input do no reads. Unsorted
-or duplicate keys are the existing internal invariant violation, `INT-049`.
-Missing or malformed requested UUIDs are scalar's existing `STG-036`; unrelated
-UUID values are never parsed. Fixed DICT keys preserve the existing byte format,
-including integer-length boundaries.
+Hints do not populate `IdSpace` or charge its meter. Each returned cell consumes
+its hint or scalar lookup in the original row/column order, then performs the
+original memory charge, allocation and cache insertion. Any failed or incomplete
+speculative read discards all hints. Scalar errors remain authoritative: a later
+bad id or budget refusal cannot displace an earlier value error. A dense walk can
+encounter corruption in skipped leaves; its error causes scalar fallback rather
+than changing the query result. `verify()` remains responsible for unrelated
+corruption. `end_pull` still releases committed lookup maps.
 
-Hints do not populate `IdSpace` or charge its meter. When each returned cell is
-converted, `uuid_with_hint` uses its hint or the scalar lookup and performs the
-original charge, allocation and map insertion in row/column order. A failed or
-incomplete speculative read discards all hints. Scalar errors remain authoritative,
-so a later bad id or budget refusal cannot displace an earlier value error.
-`end_pull` still releases committed lookup maps. No fields or retained caches are
-added to the stream, reader or id space. Stack buffers are bounded independently
-of database size; the heap memory meter continues counting retained query state.
+No fields or retained caches are added to the stream, reader or id space. Stack
+buffers are bounded independently of database size; the heap memory meter counts
+retained query state. A 256 KiB worker-stack probe covers the projection cases.
 
 ## Boundaries and philosophy
 
-The change optimizes projected entity/ref cells. Joins, collect-set, sorting and
-aggregate value conversions retain their existing lookup behavior. It adds no
-configuration, dependencies, file-format changes or release bump. Sharing exact
-lookups while preserving scalar behavior follows the embedded, portable,
-reliability-first design. It does not introduce a cache that grows with a query's
-whole answer.
+This optimizes projected entity/ref cells. Joins, collect-set, sorting and
+aggregate value conversions keep their existing lookup behavior. It adds no
+configuration, dependencies, file-format changes or version bump. Reusing
+existing tree primitives with bounded temporary memory follows the embedded,
+portable, reliability-first philosophy. The unchanged 1,230 KiB binary-size cap
+and coverage floors are acceptance requirements.
 
 ## Acceptance
 
-- Dense lookup batches read shared tree paths once; sparse batches read no more
-  pages than scalar; empty/invalid inputs, missing keys, callbacks and cycles are
-  covered by deterministic tests with a disabled page cache.
-- Requested UUIDs match scalar over sparse and multi-chunk subsets; unrelated
-  malformed values do not fail the batch; fixed encodings keep byte order.
-- Projection batches committed ids even when pending/provisional ids share a
-  batch; repeated refs, duplicate columns, row order, fallback, memory charging
-  and earlier scalar errors remain correct.
-- A scan which does not project entities, including a count, performs no entity
-  conversion before cache release. Existing multi-batch and generation-pin tests
-  continue to pass.
-- Default and `test-hooks` suites and CI clippy run on the bench. Idle sequential
-  A/B measurements pinned to one NUMA node cover the original 1M scan, point reads, sparse entities and
-  random/repeated ref projections; profiles and timings run separately.
-- Claude reviews the implementation before a PR targeting `v3`. Bench scratch
-  files are removed after retaining local verification evidence.
+- Dense batches share tree/leaf reads; sparse batches read no more pages than
+  scalar. Compare results and raw reads with cache disabled at 63/64 ids and
+  spans of `2c`/`2c+1`, as well as sparse and multi-chunk subsets.
+- Cover empty/invalid input, requested missing/malformed UUIDs, unrelated malformed
+  values, callback errors after partial output, wrong page types and cycles.
+- Cover committed/pending/repeated projection, duplicate columns, row order,
+  fallback, memory charging and earlier scalar errors. Check the sorted buffer
+  against a set for ascending, descending, repeated and shuffled inputs.
+- Queries without projected entities, including count, do no entity conversion
+  before cache release. Existing multi-batch/generation-pin tests still pass.
+- Run default and `test-hooks` suites, clippy, release size and coverage gates on
+  the bench. Run idle, sequential A/B timings pinned to one NUMA node, including
+  the original 1M scan, point reads, sparse/dense-threshold and descending/random/
+  repeated refs. Profile separately from timing.
+- Obtain Claude spec/plan and final reviews. Target `v3`; keep benchmark scratch
+  until CI is green, retain reports locally, then remove task-owned bench files.

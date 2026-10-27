@@ -519,18 +519,13 @@ pub trait KeySource: Send + Sync {
     /// Visit the UUIDs of strictly increasing, distinct committed entity ids.
     /// Uses this reader's pinned generation, just as [`Self::uuid_of`] does.
     /// An empty slice reads nothing; invalid ordering is `INT-049`.
-    /// The default performs scalar lookups; on-disk readers share tree paths.
+    /// On-disk readers share tree paths.
+    /// On error, `visit` may have received a prefix; discard partial hints.
     fn uuids_of(
         &self,
         eids: &[u64],
         visit: &mut dyn FnMut(u64, crate::graph::types::EntityId) -> Result<()>,
-    ) -> Result<()> {
-        dict::check_eids(eids)?;
-        for &eid in eids {
-            visit(eid, self.uuid_of(eid)?)?;
-        }
-        Ok(())
-    }
+    ) -> Result<()>;
     /// The ident with id `iid`.
     fn ident_of(&self, iid: u32) -> Result<String>;
     /// The long string stored at `vref`.
