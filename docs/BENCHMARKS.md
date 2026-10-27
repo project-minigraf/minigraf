@@ -2,6 +2,34 @@
 
 This document records reproducible local benchmark snapshots. Completed release-performance history belongs in the [CHANGELOG](../CHANGELOG.md); continuous CI history is available on [Bencher](https://bencher.dev/perf/minigraf/plots).
 
+## Bounded row frames (#183, unreleased)
+
+**Date**: 2026-10-27 · **Branch**: `feat/183-row-frames` on `v3` · **Machine**: Intel Xeon E5-2696 v4, Linux 6.8, Rust 1.99.1, idle during timing. **Reproduction command**: `numactl --cpunodebind=1 --membind=1 cargo bench --bench minigraf_bench -- window_rows --sample-size 10 --warm-up-time 0.1 --measurement-time 0.2 --nresamples 1000 --noplot`. The recorded run invoked the prebuilt Criterion binary directly with its `--bench` switch after checking the machine was idle. Criterion extended the measurement time for slow cases to obtain ten samples. The committed harness uses the same in-memory facts for a default-frame and each bounded-frame comparison. Each query scans and joins the facts, sorts window input, evaluates one aggregate, and materializes the result.
+
+The [per-case CSV](benchmarks/183-row-frames.csv) contains the median and full range of the ten per-call samples, plus the peak bytes charged to the query engine's memory meter. The peak comes from the ignored `window_rows_benchmark_meter_peaks` diagnostic using identical fixtures and queries. It is a separate run from Criterion. The timed benchmark process's maximum RSS was 1,671,892 KiB across both fixture sizes; this is a process-wide high-water mark, not a per-query peak. The engine meter omits unrelated process and user-function allocations.
+
+| Built-in gate | Worst observed | Limit |
+|---|---:|---:|
+| 100,000 rows: bounded/default median, same function and fixture (`min`, one partition, prefix) | 1.010× | 5× |
+| 100,000/10,000 row median, same function, frame and partition shape (`sum`, 100 partitions, `2 preceding`) | 12.885× | 15× |
+
+At 100,000 rows in one partition, a zero-width `min` frame peaked at 25,600,040 engine-meter bytes, only 8 bytes more than the default frame. Its prefix-covering frame peaked at 26,400,032 bytes, an 800,000-byte deque charge. The corresponding 100-partition deque charges were 8 and 8,000 bytes. This confirms deque memory follows the frame's maximum width rather than always reserving the whole partition.
+
+The UDF benchmark registers an integer sum with a fresh accumulator per bounded frame. Its middle-sized frames deliberately use replay; a prefix-covering frame uses one running accumulator. Callback counts follow from the frame widths and partition sizes.
+
+| Rows | Partitions | Frame | Callbacks | Median (ms) |
+|---:|---:|---|---:|---:|
+| 10,000 | 1 | `0 preceding` | 10,000 | 38.152 |
+| 10,000 | 1 | `2 preceding` | 29,997 | 38.275 |
+| 10,000 | 1 | `5,000 preceding` | 37,507,500 | 611.494 |
+| 10,000 | 100 | `0 preceding` | 10,000 | 38.478 |
+| 10,000 | 100 | `2 preceding` | 29,700 | 38.786 |
+| 10,000 | 100 | `50 preceding` | 382,500 | 41.717 |
+| 100,000 | 1 | prefix-covering | 100,000 | 459.714 |
+| 100,000 | 100 | prefix-covering | 100,000 | 467.106 |
+
+The harness omits the quadratic 100,000-row, half-partition UDF case. The large-case query scan and result materialization dominate the built-in timings; this snapshot checks relative growth of this complete query shape, not isolated deque or sum-step throughput.
+
 ## Performance Envelope (v3.0.0, #394)
 
 **Version**: `v3` branch (format v8), unreleased · **Date**: 2026-10-11 · **Command**: `cargo run --profile envelope --example perf_envelope -- --scales 100k,1m,10m` · Intel Core i7-1065G7 (4 cores / 8 threads, 16 GB RAM), Rust 1.94.0, Linux 6.12.108, on AC power and otherwise idle; the `.graph` file on an SSD with the OS page cache warm.
@@ -386,4 +414,4 @@ Criterion writes HTML reports to `target/criterion/`. A benchmark result should 
 
 - Results are measurements, not service-level guarantees.
 - The full suite intentionally includes expensive large-fixture and quadratic workloads; run focused groups during development and the complete suite for a release-level performance review.
-- The Criterion snapshots do not include heap or RSS; the performance envelope reports RSS from `/proc` (Linux only). The weekly soak test (#392) also records RSS, file size, and open and checkpoint time at 10M facts.
+- Criterion does not collect heap or RSS itself. The #183 snapshot adds a process-wide RSS high-water mark from `/usr/bin/time` and separate engine-meter peaks; the performance envelope reports RSS from `/proc` (Linux only). The weekly soak test (#392) also records RSS, file size, and open and checkpoint time at 10M facts.

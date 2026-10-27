@@ -1,0 +1,2 @@
+(query [:find ?v (sum ?v :over (:order-by ?v :rows 2))
+        :where [?e :v ?v]])

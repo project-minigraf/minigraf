@@ -23,6 +23,7 @@ kw-limit             ::= ":limit" (* not followed by word-cont *)  (* token *)
 kw-offset            ::= ":offset" (* not followed by word-cont *)  (* token *)
 kw-distinct          ::= ":distinct" (* not followed by word-cont *)  (* token *)
 kw-over              ::= ":over" (* not followed by word-cont *)  (* token *)
+kw-rows              ::= ":rows" (* not followed by word-cont *)  (* token *)
 kw-partition-by      ::= ":partition-by" (* not followed by word-cont *)  (* token *)
 kw-order-by          ::= ":order-by" (* not followed by word-cont *)  (* token *)
 kw-desc              ::= ":desc" (* not followed by word-cont *)  (* token *)
@@ -83,12 +84,14 @@ query-section ::= find-section | where-section | as-of-section | valid-at-sectio
                 | order-by-section | distinct-section
 
 (* ── FIND SECTION ── *)
-find-section   ::= kw-find find-spec+
-find-spec      ::= window-expr | aggregate-expr | variable
-aggregate-expr ::= "(" (op-sym | plain-sym) variable ")"
-window-expr    ::= "(" (op-sym | plain-sym) (variable kw-over | kw-over) over-clause ")"
-over-clause    ::= "(" over-option* ")"
-over-option    ::= kw-partition-by variable | kw-order-by variable | kw-desc | kw-asc
+find-section      ::= kw-find find-spec+
+find-spec         ::= window-expr | aggregate-expr | variable
+aggregate-expr    ::= "(" (op-sym | plain-sym) variable ")"
+window-expr       ::= "(" (op-sym | plain-sym) (variable kw-over | kw-over) over-clause ")"
+over-clause       ::= "(" over-plain-option* (row-frame over-plain-option*)? ")"
+over-plain-option ::= kw-partition-by variable | kw-order-by variable | kw-desc | kw-asc
+row-frame         ::= kw-rows frame-width "preceding" (* not followed by word-cont *)
+frame-width       ::= ("-" "0"+ | digit+) (* not followed by "." digit *)  (* token *)
 
 (* ── WHERE SECTION ── *)
 where-section   ::= kw-where where-clause+

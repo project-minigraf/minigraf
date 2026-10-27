@@ -1,0 +1,2 @@
+(query [:find ?v (avg ?v :over (:rows 007 preceding :order-by ?v))
+        :where [?e :v ?v]])

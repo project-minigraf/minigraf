@@ -1381,6 +1381,83 @@ fn bench_window(c: &mut Criterion) {
     }
 }
 
+// #183: bounded row frames against the same dataset's default peer frame.
+// Run with `cargo bench --bench minigraf_bench -- window_rows/`.
+fn bench_window_rows(c: &mut Criterion) {
+    for &n in &[10_000usize, 100_000] {
+        // Criterion calls every bench function even when its filter skips the
+        // group. Build this fixture only when a window_rows case actually runs.
+        let db = std::sync::OnceLock::new();
+        let partition_len = n / 100;
+
+        for &(shape, partition_by, part_size) in &[
+            ("one", "", n),
+            ("hundred", ":partition-by ?p ", partition_len),
+        ] {
+            let sqrt = part_size.isqrt();
+            let widths = [
+                ("default", None),
+                ("zero", Some(0)),
+                ("two", Some(2)),
+                ("sqrt", Some(sqrt)),
+                ("half", Some(part_size / 2)),
+                ("prefix", Some(part_size)),
+            ];
+            for func in ["sum", "count", "min", "max", "avg", "frame_bench_sum"] {
+                for &(width_name, width) in &widths {
+                    if func == "frame_bench_sum"
+                        && ((n == 100_000 && width_name != "prefix")
+                            || (n == 10_000 && !["zero", "two", "half"].contains(&width_name)))
+                    {
+                        continue;
+                    }
+                    let frame = width.map_or_else(String::new, |w| format!(":rows {w} preceding "));
+                    let query = format!(
+                        "(query [:find ?e ({func} ?v :over ({partition_by}:order-by ?v {frame})) \
+                         :where [?e :val ?v] [?e :part ?p]])"
+                    );
+                    let mut group = c.benchmark_group("window_rows");
+                    group.sample_size(10);
+                    group.throughput(Throughput::Elements(u64::try_from(n).expect("row count")));
+                    let id = format!("{n}/{shape}/{func}/{width_name}");
+                    group.bench_function(BenchmarkId::from_parameter(id), |b| {
+                        let db = db.get_or_init(|| {
+                            let db = helpers::populate_in_memory(n);
+                            // Every comparison sees the same facts, including
+                            // the one hundred equal-sized partition labels.
+                            for start in (0..n).step_by(100) {
+                                let mut command = String::from("(transact [");
+                                for row in start..(start + 100).min(n) {
+                                    command.push_str(&format!(
+                                        "[:e{row} :part {}]",
+                                        row / partition_len
+                                    ));
+                                }
+                                command.push_str("])");
+                                db.execute(&command).expect("partition facts");
+                            }
+                            db.register_aggregate(
+                                "frame_bench_sum",
+                                || 0i64,
+                                |sum, value| {
+                                    if let minigraf::Value::Integer(v) = value {
+                                        *sum += *v;
+                                    }
+                                },
+                                |sum, _| minigraf::Value::Integer(*sum),
+                            )
+                            .expect("aggregate registration");
+                            db
+                        });
+                        b.iter(|| black_box(db.execute(black_box(&query)).expect("window query")));
+                    });
+                    group.finish();
+                }
+            }
+        }
+    }
+}
+
 // ── Temporal metadata queries ─────────────────────────────────────────────────
 
 fn bench_temporal_metadata(c: &mut Criterion) {
@@ -1906,6 +1983,7 @@ criterion_group!(
     bench_aggregation,
     bench_expr,
     bench_window,
+    bench_window_rows,
     bench_temporal_metadata,
     bench_udf,
     bench_aggregation_extras,

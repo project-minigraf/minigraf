@@ -784,6 +784,7 @@ fn parse_window_expr(elems: &[EdnValue]) -> Result<FindSpec> {
     let mut partition_by: Option<String> = None;
     let mut order_by: Option<String> = None;
     let mut order = Order::Asc;
+    let mut frame = None;
 
     let mut j = 0;
     while j < over_list.len() {
@@ -816,6 +817,23 @@ fn parse_window_expr(elems: &[EdnValue]) -> Result<FindSpec> {
                 ":asc" => {
                     order = Order::Asc;
                 }
+                ":rows" => {
+                    if frame.is_some() {
+                        bail_coded!(ErrorCode::Prs124);
+                    }
+                    let n = match over_list.get(j + 1) {
+                        Some(EdnValue::Integer(n)) if *n >= 0 => {
+                            u64::try_from(*n).map_err(|_| err_coded!(ErrorCode::Prs124))?
+                        }
+                        _ => bail_coded!(ErrorCode::Prs124),
+                    };
+                    if !matches!(over_list.get(j + 2), Some(EdnValue::Symbol(s)) if s == "preceding")
+                    {
+                        bail_coded!(ErrorCode::Prs124);
+                    }
+                    frame = Some(WindowFrame::RowsPreceding(n));
+                    j += 2;
+                }
                 other => {
                     bail_coded!(ErrorCode::Prs039, other);
                 }
@@ -829,6 +847,14 @@ fn parse_window_expr(elems: &[EdnValue]) -> Result<FindSpec> {
     }
 
     let order_by = order_by.ok_or_else(|| err_coded!(ErrorCode::Prs084))?;
+    if frame.is_some()
+        && matches!(
+            func,
+            WindowFunc::Rank | WindowFunc::RowNumber | WindowFunc::Lag | WindowFunc::Lead
+        )
+    {
+        bail_coded!(ErrorCode::Prs125, func_name);
+    }
 
     Ok(FindSpec::Window(WindowSpec {
         func,
@@ -836,6 +862,7 @@ fn parse_window_expr(elems: &[EdnValue]) -> Result<FindSpec> {
         partition_by,
         order_by,
         order,
+        frame,
     }))
 }
 
@@ -4351,6 +4378,108 @@ mod window_parse_tests {
         } else {
             panic!("expected Query command");
         }
+    }
+
+    #[test]
+    fn parse_rows_preceding_frame_and_keep_default() {
+        let parse = |over: &str| {
+            let q = format!(
+                "(query [:find (sum ?v :over ({over})) :where [?e :score ?v] [?e :group ?g]])"
+            );
+            match parse_datalog_command(&q).expect("query parses") {
+                DatalogCommand::Query(q) => match q.find.into_iter().next() {
+                    Some(FindSpec::Window(ws)) => ws,
+                    _ => panic!("expected window"),
+                },
+                _ => panic!("expected query"),
+            }
+        };
+        assert_eq!(parse(":order-by ?v").frame, None);
+        assert_eq!(
+            parse(":rows 0 preceding :order-by ?v").frame,
+            Some(WindowFrame::RowsPreceding(0))
+        );
+        assert_eq!(
+            parse(":order-by ?v :rows -0 preceding").frame,
+            Some(WindowFrame::RowsPreceding(0))
+        );
+        assert_eq!(
+            parse(":partition-by ?g :order-by ?v :rows 9223372036854775807 preceding").frame,
+            Some(WindowFrame::RowsPreceding(
+                u64::try_from(i64::MAX).expect("fits")
+            ))
+        );
+    }
+
+    #[test]
+    fn parse_rows_frame_rejects_malformed_and_position_functions() {
+        let code = |expr: &str| {
+            let q = format!("(query [:find {expr} :where [?e :score ?v]])");
+            let error = match parse_datalog_command(&q) {
+                Ok(_) => panic!("frame must be rejected"),
+                Err(error) => error,
+            };
+            crate::MinigrafError::from(error).code().to_string()
+        };
+        for option in [
+            ":rows -1 preceding",
+            ":rows 1.5 preceding",
+            ":rows ?v preceding",
+            ":rows $n preceding",
+            ":rows 2 :preceding",
+            ":rows 2 PRECEDING",
+            ":rows 2",
+            ":rows 1 preceding :rows 2 preceding",
+        ] {
+            assert_eq!(
+                code(&format!("(sum ?v :over (:order-by ?v {option}))")),
+                "PRS-124"
+            );
+        }
+        for name in ["rank", "row-number"] {
+            assert_eq!(
+                code(&format!("({name} :over (:order-by ?v :rows 1 preceding))")),
+                "PRS-125"
+            );
+        }
+        for name in ["lag", "lead"] {
+            assert_eq!(
+                code(&format!(
+                    "({name} ?v :over (:order-by ?v :rows 1 preceding))"
+                )),
+                "PRS-125"
+            );
+        }
+        for n in ["+2", "2N", "2M"] {
+            assert_eq!(
+                code(&format!(
+                    "(sum ?v :over (:order-by ?v :rows {n} preceding))"
+                )),
+                "PRS-124",
+                "a split token is not one integer literal"
+            );
+        }
+        assert_eq!(
+            code("(sum ?v :over (:order-by ?v :rows 9223372036854775808 preceding))"),
+            "INT-008",
+            "integer overflow is rejected by the lexer"
+        );
+    }
+
+    #[test]
+    fn final_order_by_distinguishes_window_frames() {
+        let query = |order: &str| {
+            format!(
+                "(query [:find ?v (sum ?v :over (:order-by ?v :rows 1 preceding)) \
+                 :where [?e :v ?v] :order-by [{order}]])"
+            )
+        };
+        parse_datalog_command(&query("(sum ?v :over (:order-by ?v :rows 1 preceding))"))
+            .expect("matching frame");
+        let error = parse_datalog_command(&query("(sum ?v :over (:order-by ?v))"))
+            .err()
+            .expect("different frame");
+        assert_eq!(crate::MinigrafError::from(error).code(), "PRS-117");
     }
 
     #[test]

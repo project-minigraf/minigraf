@@ -131,6 +131,12 @@ pub enum Order {
     Desc,
 }
 
+/// An explicit frame for an aggregate window.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WindowFrame {
+    RowsPreceding(u64),
+}
+
 /// The `:over (...)` clause of a window function expression.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WindowSpec {
@@ -142,6 +148,8 @@ pub struct WindowSpec {
     /// Sort key variable (required — parser enforces this).
     pub order_by: String,
     pub order: Order,
+    /// None keeps the default peer-based cumulative frame.
+    pub frame: Option<WindowFrame>,
 }
 
 impl WindowSpec {
@@ -1143,6 +1151,7 @@ mod tests {
                 partition_by: None,
                 order_by: "?x".to_string(),
                 order: Order::Asc,
+                frame: None,
             }
             .func_name(),
             "sum"
@@ -1154,6 +1163,7 @@ mod tests {
                 partition_by: None,
                 order_by: "?x".to_string(),
                 order: Order::Desc,
+                frame: None,
             }
             .func_name(),
             "rank"
@@ -1165,6 +1175,7 @@ mod tests {
                 partition_by: None,
                 order_by: "?x".to_string(),
                 order: Order::Asc,
+                frame: None,
             }
             .func_name(),
             "row-number"
@@ -1175,6 +1186,7 @@ mod tests {
             partition_by: None,
             order_by: "?o".to_string(),
             order: Order::Asc,
+            frame: None,
         };
         assert_eq!(ws_udf.func_name(), "geomean".to_string());
     }
@@ -1187,6 +1199,7 @@ mod tests {
             partition_by: None,
             order_by: "?date".to_string(),
             order: Order::Asc,
+            frame: None,
         };
         let spec = FindSpec::Window(ws_with_var);
         assert_eq!(spec.display_name(), "(sum ?salary :over ...)");
@@ -1197,6 +1210,7 @@ mod tests {
             partition_by: None,
             order_by: "?date".to_string(),
             order: Order::Desc,
+            frame: None,
         };
         let spec2 = FindSpec::Window(ws_no_var);
         assert_eq!(spec2.display_name(), "(rank :over ...)");

@@ -1,0 +1,2 @@
+(query [:find (rank :over (:order-by ?v :rows 1 preceding))
+        :where [?e :v ?v]])

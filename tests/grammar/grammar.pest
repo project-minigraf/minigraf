@@ -23,6 +23,7 @@ kw_limit               = @{ ":limit" ~ !word_cont }
 kw_offset              = @{ ":offset" ~ !word_cont }
 kw_distinct            = @{ ":distinct" ~ !word_cont }
 kw_over                = @{ ":over" ~ !word_cont }
+kw_rows                = @{ ":rows" ~ !word_cont }
 kw_partition_by        = @{ ":partition-by" ~ !word_cont }
 kw_order_by            = @{ ":order-by" ~ !word_cont }
 kw_desc                = @{ ":desc" ~ !word_cont }
@@ -148,12 +149,15 @@ aggregate_expr = { "(" ~ (op_sym | plain_sym) ~ variable ~ ")" }
 window_expr = {
     "(" ~ (op_sym | plain_sym) ~ (variable ~ kw_over | kw_over) ~ over_clause ~ ")"
 }
-over_clause = { "(" ~ over_option* ~ ")" }
-over_option = {
+// Keep at most one row frame while letting it appear anywhere among options.
+over_clause = { "(" ~ over_plain_option* ~ (row_frame ~ over_plain_option*)? ~ ")" }
+over_plain_option = {
     kw_partition_by ~ variable |
     kw_order_by ~ variable |
     kw_desc | kw_asc
 }
+row_frame = { kw_rows ~ frame_width ~ ("preceding" ~ !word_cont) }
+frame_width = @{ ("-" ~ "0"+ | ASCII_DIGIT+) ~ !("." ~ ASCII_DIGIT) }
 
 // ── WHERE SECTION ─────────────────────────────────────────────────────────
 where_section = { kw_where ~ where_clause+ }

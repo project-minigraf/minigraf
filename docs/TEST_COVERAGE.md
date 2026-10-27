@@ -4,11 +4,13 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,873 | 1,904 |
-| **Ignored** | 14 | 15 |
-| **Total** | 1,887 | 1,919 |
+| **Passing** | 1,885 | 1,917 |
+| **Ignored** | 15 | 16 |
+| **Total** | 1,900 | 1,933 |
 
-**Verified**: 2026-10-26 with `cargo test --quiet` (and `--features test-hooks`).
+**Verified**: 2026-10-27 with `cargo test --quiet` (and `--features test-hooks`) on the designated bench machine.
+
+#183 adds bounded row-frame parser, evaluator, and integration tests; one additional plan-independence case runs with `test-hooks`, including duplicate tie keys and NaN. A sliding-sum test checks recovery after integer saturation. Grammar corpus cases cover frame spellings and rejection. A meter test checks that a zero-width min frame reserves one deque slot. An ignored bench-machine diagnostic reproduces the Criterion datasets and prints the engine meter's peak for every measured case.
 
 #493 (`:distinct`) adds 18 tests with default features and one more with `test-hooks`.
 
@@ -21,6 +23,8 @@ Not counted above: the browser tests and the WASI run (see [Browser and WASI](#b
 **Scope**: the unreleased file-format-v8 work (#287, #371): the index-key value-collision fix, the v7→v8 migration, and the drop of formats v1–v6. Otherwise the public database API, the Datalog engine, storage and recovery paths, v2.0.0's locking and structured-error-code changes, and v2.0.1's regression test for rebuilding indexes on open after several checkpoints (#370). Tests merged from the v2.x line are marked *(v2.x)*.
 
 ## Covered Areas
+
+- **Bounded row frames** (`tests/window_functions_test.rs`, `src/query/datalog/aggregate/tests.rs`, #183): `:rows N preceding` parsing and errors, physical rows with tied order keys, partition reset, descending order, width zero and maximum, all five built-in aggregates against a replay oracle with numeric edge cases, UDFs through prepared queries and cursors, grouping with `:with`, distinct output, memory-limit refusal for long min/max strings, and final `:order-by` matching. A `test-hooks` case checks answer bags with clause reordering on and off.
 
 - **Optional distinct output** (`tests/distinct_test.rs`, #493): bag defaults, whole tuples, section syntax, cross-batch and committed/pending values, chunked write transactions, prepared execute/cursors, joins/rules/disjunction, aggregates and hidden `:with` groups, window peers and partitioned row numbers, temporal filters, typed equality and canonical float/set output, memory limits (including retained set payloads) and cursor cleanup. A meter unit test verifies each cell/key/value estimate includes set elements and their strings. With `test-hooks`, checks both reorder settings and hashed/correlated subplans. An engine unit test checks counters and state release.
 
@@ -378,7 +382,7 @@ These tests compare the database against an independent answer rather than a sin
   - Parser (3 unit tests), prepared slots (3 unit tests), `prs_115_…` in `tests/error_codes_prs_test.rs`, the grammar corpus (3 valid, 2 syntax, 2 semantic files) and two verifier `SEMANTIC` witnesses (`INT-012`, `PRS-115`).
   - `tests/limit_order_test.rs` (7 more tests, `test-hooks`): 14 ordered shapes (each `:limit` shape with an `:order-by` over plain, aggregate and window elements, ascending and descending, with ties), in memory and over committed and pending facts, with no option, limits 0, 1, 3 and the answer size, each with offsets 1, the answer size less one and two past it, and `:offset 2` alone: through `execute` and a cursor pulled one row at a time, and the limited ones through a prepared `:offset $o :limit $n` and its cursor, with reordering on and off, each returns the test's own full sort of the unlimited answer, sliced. Pages of three cover the ordered answer; every value class in one column ascending and descending (an integer before an equal float, `-0.0` before `0.0`); a write transaction's staged facts; `:offset` slot errors; a full sort over `query_memory_limit` is `QRY-012`, top-k under the same limit is not.
   - `src/query/engine/sort.rs` (7 unit tests): a full sort and top-k (k = 1 to past the input) equal a reference sort, ascending and descending, ties to the next column; `keep 0` pulls nothing; top-k's peak meter bytes are the same for 1,000 and 100,001 rows; `QRY-012` with and without `keep`; `rewind`. `src/query/engine/tests.rs` (1 test): top-k over 20,000 committed entities runs under a 512 KiB limit a full sort exceeds (the DICT lookups are dropped per batch).
-  - `src/query/datalog/aggregate/tests.rs` (2 tests, `row_order`), parser (4 unit tests: entries, directions, section orders, every `PRS-116`–`118`, `INT-012`/`013` and `PRS-115` case of `:offset`/`:order-by`), prepared `:offset` slots (1 unit test), `prs_116_…`–`prs_118_…` in `tests/error_codes_prs_test.rs`, the grammar corpus (4 valid, 3 syntax, 4 semantic files) and three verifier `SEMANTIC` witnesses (`PRS-116`–`118`); the verifier has 37 tokens and 16 templates.
+  - `src/query/datalog/aggregate/tests.rs` (2 tests, `row_order`), parser (4 unit tests: entries, directions, section orders, every `PRS-116`–`118`, `INT-012`/`013` and `PRS-115` case of `:offset`/`:order-by`), prepared `:offset` slots (1 unit test), `prs_116_…`–`prs_118_…` in `tests/error_codes_prs_test.rs`, the grammar corpus (4 valid, 3 syntax, 4 semantic fixtures added by #306) and three verifier `SEMANTIC` witnesses (`PRS-116`–`118`); the verifier now has 40 tokens and 17 templates.
 - **Query memory limit** (`tests/memory_limit_test.rs`, 7 tests; #549)
   - `OpenOptions::query_memory_limit` is off by default and set by its builder.
   - `QRY-012` through `execute`, a cursor's first pull, a prepared query and a rule query (from `execute`, and from `query` when the rules run at open). The database answers after a query fails.

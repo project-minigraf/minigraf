@@ -2632,25 +2632,22 @@ fn window_result_columns_count_toward_query_memory_limit() {
         .path(&path)
         .open()
         .unwrap();
-    let mut cursor = db
-        .query(
-            "(query [:find ?e (min ?v :over (:order-by ?v)) \
-             (max ?v :over (:order-by ?v)) :where [?e :text ?v]])",
-        )
-        .unwrap();
-    let meter = cursor.stream_mut().expect("engine").meter().clone();
-    let err = match cursor.next_batch(1) {
-        Ok(_) => panic!("window result columns must count"),
-        Err(err) => err,
-    };
-    assert_eq!(err.code(), "QRY-012");
-    assert!(err.to_string().contains("Window needs"));
-    assert_eq!(
-        meter.used(),
-        0,
-        "an error releases the held columns and input"
-    );
-    drop(cursor);
+    for query in [
+        "(query [:find ?e (min ?v :over (:order-by ?v)) \
+         (max ?v :over (:order-by ?v)) :where [?e :text ?v]])",
+        "(query [:find ?e (min ?v :over (:order-by ?v :rows 1 preceding)) \
+         (max ?v :over (:order-by ?v :rows 1 preceding)) :where [?e :text ?v]])",
+    ] {
+        let mut cursor = db.query(query).unwrap();
+        let meter = cursor.stream_mut().expect("engine").meter().clone();
+        let err = match cursor.next_batch(1) {
+            Ok(_) => panic!("window result columns must count"),
+            Err(err) => err,
+        };
+        assert_eq!(err.code(), "QRY-012");
+        assert!(err.to_string().contains("Window needs"));
+        assert_eq!(meter.used(), 0, "an error releases held window state");
+    }
     drop(db);
 
     let db = crate::OpenOptions::new().path(&path).open().unwrap();
@@ -2710,6 +2707,7 @@ fn window_partition_indices_count_toward_query_memory_limit() {
         partition_by: Some("?p".into()),
         order_by: "?o".into(),
         order: Order::Asc,
+        frame: None,
     });
     let find = vec![FindSpec::Variable("?p".into()), window.clone(), window];
     let rows: Vec<Vec<crate::Value>> = (0..N)
@@ -2778,6 +2776,7 @@ fn window_partition_index_allocator_refusal_is_qry_012() {
         partition_by: None,
         order_by: "?o".into(),
         order: Order::Asc,
+        frame: None,
     })];
     let rows = vec![vec![crate::Value::Integer(1)]; N];
     let meter = super::Meter::unlimited();
@@ -2814,6 +2813,7 @@ fn window_partition_indices_release_on_running_error() {
         partition_by: None,
         order_by: "?v".into(),
         order: Order::Asc,
+        frame: None,
     })];
     let rows = vec![vec![crate::Value::Integer(1)]; N];
     let meter = super::Meter::unlimited();
@@ -2845,6 +2845,7 @@ fn empty_window_does_not_charge_partition_indices() {
         partition_by: None,
         order_by: "?v".into(),
         order: Order::Asc,
+        frame: None,
     })];
     let meter = super::Meter::unlimited();
     let mut held = Held::new(&meter, "Window");
@@ -2883,6 +2884,7 @@ fn window_partition_sort_preserves_positions_peers_and_neighbors() {
             partition_by: Some("?p".into()),
             order_by: "?o".into(),
             order: Order::Asc,
+            frame: None,
         }));
     }
     let rows: Vec<Vec<crate::Value>> = (0..N)
@@ -3239,6 +3241,124 @@ fn meter_peak_against_rss() {
         );
         assert_eq!(meter.used(), 0, "released after the drain");
     }
+}
+
+/// Reproduce the engine meter's peak for the Criterion `window_rows` cases.
+/// Run alone on the bench machine with `--ignored --nocapture`; the regular
+/// suite does not build the 100,000-row fixture.
+#[test]
+#[ignore]
+fn window_rows_benchmark_meter_peaks() {
+    for n in [10_000usize, 100_000] {
+        let db = Minigraf::in_memory().expect("memory database");
+        for start in (0..n).step_by(100) {
+            let mut command = String::from("(transact [");
+            for row in start..(start + 100).min(n) {
+                command.push_str(&format!("[:e{row} :val {row}]"));
+            }
+            command.push_str("])");
+            db.execute(&command).expect("value facts");
+        }
+        let partition_len = n / 100;
+        for start in (0..n).step_by(100) {
+            let mut command = String::from("(transact [");
+            for row in start..(start + 100).min(n) {
+                command.push_str(&format!("[:e{row} :part {}]", row / partition_len));
+            }
+            command.push_str("])");
+            db.execute(&command).expect("partition facts");
+        }
+        db.register_aggregate(
+            "frame_bench_sum",
+            || 0i64,
+            |sum, value| {
+                if let crate::Value::Integer(v) = value {
+                    *sum += *v;
+                }
+            },
+            |sum, _| crate::Value::Integer(*sum),
+        )
+        .expect("aggregate registration");
+        for (shape, partition_by, part_size) in [
+            ("one", "", n),
+            ("hundred", ":partition-by ?p ", partition_len),
+        ] {
+            let widths = [
+                ("default", None),
+                ("zero", Some(0)),
+                ("two", Some(2)),
+                ("sqrt", Some(part_size.isqrt())),
+                ("half", Some(part_size / 2)),
+                ("prefix", Some(part_size)),
+            ];
+            for func in ["sum", "count", "min", "max", "avg", "frame_bench_sum"] {
+                for (width_name, width) in widths {
+                    if func == "frame_bench_sum"
+                        && ((n == 100_000 && width_name != "prefix")
+                            || (n == 10_000 && !["zero", "two", "half"].contains(&width_name)))
+                    {
+                        continue;
+                    }
+                    let frame = width.map_or_else(String::new, |w| format!(":rows {w} preceding "));
+                    let query = format!(
+                        "(query [:find ?e ({func} ?v :over ({partition_by}:order-by ?v {frame})) \
+                         :where [?e :val ?v] [?e :part ?p]])"
+                    );
+                    let mut cursor = db.query(&query).expect("window query");
+                    let meter = cursor.stream_mut().expect("engine stream").meter().clone();
+                    let mut row_count = 0usize;
+                    while let Some(batch) = cursor.next_batch(1024).expect("window batch") {
+                        row_count += batch.len();
+                    }
+                    assert_eq!(row_count, n);
+                    cursor.close();
+                    eprintln!(
+                        "window_rows/{n}/{shape}/{func}/{width_name},{}",
+                        meter.peak()
+                    );
+                    assert_eq!(meter.used(), 0, "meter released after cursor close");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn zero_width_min_frame_charges_one_deque_slot() {
+    use super::meter::Held;
+    use crate::query::datalog::aggregate::{WindowColumn, windows};
+    use crate::query::datalog::functions::FunctionRegistry;
+    use crate::query::datalog::types::{FindSpec, Order, WindowFrame, WindowFunc, WindowSpec};
+    use std::mem::size_of;
+
+    const N: usize = 512;
+    let find = [
+        FindSpec::Variable("?v".into()),
+        FindSpec::Window(WindowSpec {
+            func: WindowFunc::Min,
+            var: Some("?v".into()),
+            partition_by: None,
+            order_by: "?v".into(),
+            order: Order::Asc,
+            frame: Some(WindowFrame::RowsPreceding(0)),
+        }),
+    ];
+    let rows: Vec<Vec<crate::Value>> = (0..N)
+        .map(|n| vec![crate::Value::Integer(i64::try_from(n).expect("row"))])
+        .collect();
+    let limit = N * size_of::<usize>()
+        + size_of::<WindowColumn>()
+        + N * size_of::<crate::Value>()
+        + size_of::<usize>();
+    let meter = super::Meter::new(limit);
+    let mut held = Held::new(&meter, "Window");
+    let columns = windows(&find, &rows, &FunctionRegistry::with_builtins(), &mut held)
+        .expect("zero-width min window fits the budget");
+    assert_eq!(columns.len(), 1);
+    assert_eq!(meter.peak(), limit);
+    drop(columns);
+    held.release();
+    assert_eq!(meter.used(), 0);
 }
 
 /// `Aggregate::finish` charges its sorted map of groups until every row is

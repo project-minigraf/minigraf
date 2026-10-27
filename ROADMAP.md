@@ -95,6 +95,7 @@ Scope — query API:
 
 - Optional `:distinct` result tuples, preserving bag output by default (#493; done on `v3`)
 - `lag` and `lead` window functions for the previous/next row within an ordered partition (#182; v3.0.0)
+- Bounded sliding row frames, `:rows N preceding`, for window aggregates (#183; v3.0.0, implemented on `v3`; builds on #182)
 - Cursor API: `Minigraf::query` and `PreparedQuery::query` return an owned `Cursor` that delivers rows in batches, with the answer fixed at open (#432; Rust API done on `v3`). The binding cursor objects follow. Behind the cursor, the streaming engine (#473) runs every query and produces rows as they are pulled: patterns, expressions and pseudo-attributes (#544), joins and `:db/valid-at` (#545), `not` and `or` (#546), aggregates and windows (#547), rules (#548), and transaction reads (#550); the executor's query path is gone (#551; done on `v3`). Operators do not spill: memory follows operator state, with an opt-in per-query limit (`QRY-012`, #549).
 - Native `:limit N`, `:order-by` and `:offset`, with a top-k `Sort` whose memory follows `N` (#306; done on `v3`, with the 10M-fact acceptance tests moved from #473; spec `docs/superpowers/specs/2026-10-24-limit-order-by-design.md`). Skipping the sort when an index already returns the rows in order is #641 (v3.next).
 - Fact-log iterator: `Minigraf::fact_log(&FactFilter)` streams every fact version (assertions and retractions, with `tx_count`, `tx_id` and valid-time bounds) in transaction order or storage order, filtered by attribute, attribute prefix, entity and tx range, with memory bounded by a window rather than the database (#430; Rust API done on `v3`). An open log pins its generation: checkpoints run but do not reuse its pages (#543; `API-013` deprecated). A raw log writer (#431) completes the extract-transform-load path; the binding objects follow with #462.
@@ -129,7 +130,6 @@ Scope — release-gate testing and documentation:
 Additive features, kept out of v3.0.0 so the #371 fix is not held up by them:
 
 - Rule persistence — design first (#241)
-- Sliding row frames — `:rows N preceding` (#183; builds on #182)
 - OPFS-backed persistent mode for `BrowserDb`: a sync access handle in a dedicated Worker, no in-memory buffer; IndexedDB stays the main-thread backend. Starts at Tier 2 inside the Tier 1 browser binding until it has shipped (#441)
 - Temporal graph-traversal research (#273; may result in documentation or a blog post rather than code)
 
