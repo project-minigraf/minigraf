@@ -1,0 +1,7 @@
+2026-10-27T17:19:15Z
+phase: post-run validation after scratch cleanup
+rustc 1.99.1 (58cf8f9c3 2026-10-13)
+cargo 1.99.1 (5f94df478 2026-08-27)
+6.8.0-139-generic
+schedutil
+task scratch directory absent

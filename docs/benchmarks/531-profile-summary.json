@@ -1,0 +1,40 @@
+{
+  "selective": {
+    "samples": 21850,
+    "lost_samples": 0,
+    "sample_counts": {
+      "fixture_setup": 17388,
+      "other": 77,
+      "query_drain": 4385
+    },
+    "weighted_cycle_percent": {
+      "fixture_setup": 77.09107573804238,
+      "other": 0.13857810535030674,
+      "query_drain": 22.770346156607314
+    },
+    "edn_to_entity_id_stack_samples": {
+      "stored_keyword_id": 3,
+      "parser": 7,
+      "planner": 6
+    },
+    "edn_to_entity_id_percent_of_query_drain_cycles": 0.3714597811368226,
+    "unresolved_libc_leaf_percent_of_query_drain_cycles": 42.68441505741583
+  },
+  "attribute": {
+    "samples": 7770,
+    "lost_samples": 0,
+    "sample_counts": {
+      "fixture_setup": 83,
+      "query_drain": 7679,
+      "other": 8
+    },
+    "weighted_cycle_percent": {
+      "fixture_setup": 0.9616148432553183,
+      "query_drain": 98.93452314482762,
+      "other": 0.1038620119170567
+    },
+    "edn_to_entity_id_stack_samples": {},
+    "edn_to_entity_id_percent_of_query_drain_cycles": 0.0,
+    "unresolved_libc_leaf_percent_of_query_drain_cycles": 26.693011175549167
+  }
+}
