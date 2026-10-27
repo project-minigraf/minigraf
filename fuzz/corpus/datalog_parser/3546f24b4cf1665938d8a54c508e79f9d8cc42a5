@@ -1,0 +1,1 @@
+(query [:where(or(or(eCD 72)(AA 7)) ) ])

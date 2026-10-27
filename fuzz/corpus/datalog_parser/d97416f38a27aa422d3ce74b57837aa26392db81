@@ -1,0 +1,1 @@
+(query [:where [? eaa ?n][?:d-to _][$161:db/valid-to ?n]])

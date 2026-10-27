@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e :na n] (oron?07101$i$63(rule [(f6oy) [?DDDDDDDDDDDDDDDDDDDDDxy]])
+)[(string?$e)][(=:w??u$ee)][(=:t$e)]])

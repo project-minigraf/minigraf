@@ -1,1 +1,0 @@
-(query [:fin :where (or-join[?][e:acti!=])])

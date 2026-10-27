@@ -1,2 +1,0 @@
-(query [:find ?qnwith ?c:where [?e :color ?c] (not[?e :c ?c] (i-$qfn000quenam$q?_nq$m$qu?0000quenam$q?_nq$m$qnami$u?_nqun[?e]-))]
-)

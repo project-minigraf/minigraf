@@ -1,1 +1,0 @@
-(query [: :where [?enJa:me ?n ][?eJ:name ?n ][(!= ?n:acie)]]																			)

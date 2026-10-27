@@ -1,1 +1,0 @@
-(query [::where [?e :Scolorc ?] (or-join[?][e:activ=])])

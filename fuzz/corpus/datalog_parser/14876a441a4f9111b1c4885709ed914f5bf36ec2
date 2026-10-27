@@ -1,0 +1,1 @@
+(query [:where[?vd:/dma _] [?:db/valid-at _]])

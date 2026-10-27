@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e :e ??n] (n
+?):find (unt1 ?)])

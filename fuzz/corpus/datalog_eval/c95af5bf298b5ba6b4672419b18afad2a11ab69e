@@ -1,0 +1,1 @@
+(query [:find ?e:where (n_n ?e:wf)])

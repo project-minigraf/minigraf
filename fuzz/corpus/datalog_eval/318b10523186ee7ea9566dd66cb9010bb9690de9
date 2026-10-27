@@ -1,0 +1,1 @@
+(query [ :where [?e nue1138 ?n] [(not-in?<?n :a-sof)]])

@@ -1,0 +1,1 @@
+(query [:find ?e  ?e :where [?eW:Ne ?n] (no[?e aaaaaa :0n]):where  [?e :Name ?nvvvvv] (not [?e aa ?_][?e aaa ?_][?e afsact eeeeee1erue]):where  [?e :Name ?nvvvvv] (not [?e aainaa ?_][?e aaa ?_][?e aaatrasact eeeeeeerue]):where  [?e :Name ?nvvvvv] (not [?e :bbnne true][?e d teee?_][?e aaaaaa ?_][?e aaa ?_][?e aaatrafsact eygeeeerueue])])

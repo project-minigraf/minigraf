@@ -1,2 +1,0 @@
-(query [:fi:where [?e ?loFFFFFFF ?c] (not(query [:with ?min(n- j[e Dacte])])[
-*?e:ee])])

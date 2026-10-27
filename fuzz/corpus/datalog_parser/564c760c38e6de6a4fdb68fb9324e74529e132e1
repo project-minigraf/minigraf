@@ -1,1 +1,0 @@
-(query[:n:where [?:e ?](hqa)(n? ?o:[]x)])

@@ -1,1 +1,0 @@
-(query [ :where [?e :lor ??e]  (not-join [?e] [Cacuie?:activeta tool?e_e]):where [?njotno-ee :loveta trw] (not-join [?e] [Cact:tveta trwbool?e_e])])

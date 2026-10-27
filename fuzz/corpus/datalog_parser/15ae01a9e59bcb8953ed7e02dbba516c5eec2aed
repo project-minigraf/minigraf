@@ -1,0 +1,1 @@
+(query [:where [?:d ?z,] (not [0 :b ?_6])(not [ ?:b ?_?])[?:nae ?,] :where [?8nad ?le "",] (znot [ 02b ?_8_8])(oot [? :b ?_?])])

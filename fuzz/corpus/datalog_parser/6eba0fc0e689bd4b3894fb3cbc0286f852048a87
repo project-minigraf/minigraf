@@ -1,0 +1,1 @@
+(query [ :where [?8nad ?le "",] (znot [ 02b ?8])(oot [? :b ?_?])])

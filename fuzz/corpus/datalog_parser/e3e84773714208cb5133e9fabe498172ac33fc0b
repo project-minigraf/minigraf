@@ -1,1 +1,0 @@
-(query [:where(or(en a)(?y) )(or(e=)(,?e?y) ) ])

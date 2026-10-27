@@ -1,1 +1,0 @@
-(query [: :where [:?: ?n] (not [?x :db/tx-count(not [yeu])])])

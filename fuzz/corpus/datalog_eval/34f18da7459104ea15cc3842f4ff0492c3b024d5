@@ -1,0 +1,5 @@
+(query [:where [?o /C] (not(q[(/fi)])
+(query [:fre (m$q[? ivree])])
+(query [:finduere (m$in:m$nam$q[? ivree])])
+(query [:feher]*))]
+)

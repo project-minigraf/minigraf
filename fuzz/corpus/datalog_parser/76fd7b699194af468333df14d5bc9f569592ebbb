@@ -1,1 +1,0 @@
-(query [: :where  (not [?_ ?bb:ran] (trmin717 ?y) [?x rrr(not [h])])])

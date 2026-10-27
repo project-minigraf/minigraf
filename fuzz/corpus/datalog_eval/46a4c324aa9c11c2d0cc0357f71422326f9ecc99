@@ -1,2 +1,0 @@
-(query [:finde :where [(=:rue"Alie")](query [find?n ]):where [?eJ:na ?n ][(!= ?n:ac)]])
-

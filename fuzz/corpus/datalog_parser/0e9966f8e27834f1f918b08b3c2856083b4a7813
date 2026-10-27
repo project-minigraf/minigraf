@@ -1,1 +1,0 @@
-(query [:f:where [?Ce a ?][_?:db/valid-at ccc?_][?:db/valid-at c][?e aa ?cc_]])

@@ -1,1 +1,0 @@
-(query[:fi:where [?e aaaaaaae ?_] (not [?e ed e])])

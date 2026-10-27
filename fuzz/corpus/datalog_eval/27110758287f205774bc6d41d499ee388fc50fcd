@@ -1,1 +1,0 @@
-(query [:f :where [?e B ?c] (not-join [?_] [_ o:tuue])])

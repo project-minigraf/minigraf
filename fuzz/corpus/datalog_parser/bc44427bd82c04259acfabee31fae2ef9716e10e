@@ -1,1 +1,0 @@
-(query [:where[? atrancie ?n](not[?e : e])])

@@ -1,0 +1,3 @@
+;
+(query [:find  (n2
+?of:zHH:over[:? r])])

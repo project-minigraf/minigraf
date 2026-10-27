@@ -1,1 +1,0 @@
-(query [:fi:where  (not [?_?e :d true]):where [e :me ?n] (ngt [?_]):where [?e0 :-namg ?n] (not [?_e :d true])(not [: d ?_8eؑ߉])])

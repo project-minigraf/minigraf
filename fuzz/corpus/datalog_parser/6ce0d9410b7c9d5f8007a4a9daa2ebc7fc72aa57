@@ -1,2 +1,0 @@
-(query [:e:where [?e :e ?n] (not(qDDD) [ ?n:e-e ?n] (D) [ ?n:eame ?n] (O A)
-)]),

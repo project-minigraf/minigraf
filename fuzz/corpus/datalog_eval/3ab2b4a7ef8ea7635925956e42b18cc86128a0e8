@@ -1,6 +1,0 @@
-(query [:e? :where;;{;n e
- [?e :c ?c] (or(query [:fie :where [(/:ru!= ?n:active)]])
-)(query [:]
-):finde :where [(=:rue"ide
-") ?n ]:where [(=:rue"Alide") ?u ][(!=?n:ace)]])
-

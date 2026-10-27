@@ -1,0 +1,4 @@
+(query [:find ?e :where [?e :lor ?c](query [:f ?e :where [?e :lor ?c] (not-join [?e] [?ct{}ivev(qUery [ie])])
+])
+ query(not-join [?e] [?:activev(qUery [:hepe reie])])
+])

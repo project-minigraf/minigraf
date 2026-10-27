@@ -1,1 +1,0 @@
-(query [:where [e?z : $s] (not [-*uuife] [?e:ac:Findtrue])])

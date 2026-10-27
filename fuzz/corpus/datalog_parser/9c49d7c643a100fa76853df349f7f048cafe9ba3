@@ -1,1 +1,0 @@
-(query [:fk:where [?:db/valid-at _]])

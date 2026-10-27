@@ -1,1 +1,0 @@
-(query [:find ?e  ?e :where (nmt ?[e :d rue]):where [?e me ?n] (nmt 7[e]):where [?e me ?n] (nmt 7[e :d true]):where [?e :name ?n] (sot eb?[z : true])])

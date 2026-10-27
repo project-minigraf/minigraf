@@ -1,1 +1,0 @@
-(query [:any-valid-time :where [?:n ?n]])

@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e l ??nije] [?e :ac:Findvr] [?e :ac:F] (nji_nfee [e?e vue])])

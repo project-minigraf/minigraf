@@ -1,0 +1,1 @@
+(query[:where [c a ?](not[e *r])])

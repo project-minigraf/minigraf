@@ -1,0 +1,1 @@
+(query [:find ( -:wnd- ?:ndf-:wnd- 1:bind[?re])])

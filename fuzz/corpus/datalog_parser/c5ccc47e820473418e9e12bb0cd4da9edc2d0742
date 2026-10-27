@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e :name ?n] (o0$7$3$m222+$23$10$m*i$6847(ru[(pat?x4)])?y)])

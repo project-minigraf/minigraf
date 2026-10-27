@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e  2_][?:db/viarldf-om ?e?_][?:db/nnnnn???ae "Ae"][:e/5 :na "e"][:?:dnone-in?rfam ?e?_][?:db/nnnnn???ae "Alicee"][
+:db/valid-fromt ?y]])

@@ -1,1 +1,0 @@
-(query [:where (not(q_<<<<r)[b: e])])

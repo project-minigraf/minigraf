@@ -1,0 +1,1 @@
+(query [:find(m ?e0):where [?ze 0n]])

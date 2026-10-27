@@ -1,0 +1,1 @@
+(query [:where [? ?nm ?n] [(- :__magin "e")]])

@@ -1,1 +1,0 @@
-(query [:find ?g :where [?e ?/s ?c] (njotnoe[,] ? e, ??[rrAe])])

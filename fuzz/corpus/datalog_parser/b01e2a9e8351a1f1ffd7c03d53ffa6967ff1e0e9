@@ -1,1 +1,0 @@
-(query [:with ?e   ?e  ?e ?e  :pa:with ?e  ?e :where [?e :name ?ndddd] :th])

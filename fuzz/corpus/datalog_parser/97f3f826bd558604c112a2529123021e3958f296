@@ -1,0 +1,2 @@
+(query [:where [?3:valseaoe ?n] (or(eno,?qy ?n) )[? :valseaoe ?n] (or(enO,?y ?u) )])
+;

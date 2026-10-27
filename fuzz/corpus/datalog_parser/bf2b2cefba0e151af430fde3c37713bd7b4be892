@@ -1,0 +1,1 @@
+(query [:where (pd ?e 2)(nA:__b)(E:fre )])

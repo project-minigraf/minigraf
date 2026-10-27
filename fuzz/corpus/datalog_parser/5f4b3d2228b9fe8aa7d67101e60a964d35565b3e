@@ -1,0 +1,1 @@
+(query [:find ?e  ?e:where[?e :e ?vvvv] (not [e ?e tru][?e d e1eeeerue])])

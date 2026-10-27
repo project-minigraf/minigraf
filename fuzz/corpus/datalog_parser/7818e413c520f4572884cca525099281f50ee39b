@@ -1,2 +1,0 @@
-(query [:w?e :where :any-valid-time (or(end  )[(q:)]
-  ) ])

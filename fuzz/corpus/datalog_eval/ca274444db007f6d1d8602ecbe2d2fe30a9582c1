@@ -1,4 +1,0 @@
-(rule[(rle[(2q)w])(u:::uery(2q)e:::)(query [:find ?e:where ])
-[?e :colr ?c] [(rle[(1q)w])(u:::uery(2q+eor o-))]
-(not[?e color ?c] (or o-))]
-)

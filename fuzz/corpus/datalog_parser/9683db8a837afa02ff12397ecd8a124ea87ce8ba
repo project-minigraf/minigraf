@@ -1,0 +1,2 @@
+(query [:find ?e0:where [?e0:n ?] (or(IAEEE)
+) [?e :e ?n] (not(q8675)(q) ) [6t ?y]])

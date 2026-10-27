@@ -1,0 +1,1 @@
+(query [ :where [?e ?FFFFFFFF ?c] (not-join [?FFFFFFFF ?e ?_4F ?e ?_44437ue88137ueere] [_ ?? ie?ie])])

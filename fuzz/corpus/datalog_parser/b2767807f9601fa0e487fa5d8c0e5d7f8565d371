@@ -1,0 +1,1 @@
+(query [:where [? :N ?n] (o t[?e :ed e])[?e :nAm ?n] (not [?e tned eؑ߉])])

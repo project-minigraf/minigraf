@@ -1,0 +1,1 @@
+(query [:where [?e nia a][Ce a ?_][*:db/valat ?_][?e a c?_][?e aa ?_][?e aaa _][Cl a ?_][?e aaaa :l?_][?e aaaa ?_]])

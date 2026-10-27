@@ -1,0 +1,2 @@
+(query [:where [?e ?loFF ?c] (not()( :r(e [?])[??])[
+*?e:e]e)])

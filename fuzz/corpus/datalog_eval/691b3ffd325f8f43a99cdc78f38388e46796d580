@@ -1,0 +1,1 @@
+(query [:where [? kc ?][?e :ckpoc ?] (tho ?[tivue])])

@@ -1,1 +1,0 @@
-(query[: :where [?e :na n] (not(e>>>>d ?e  ?e :ey) [?x :(n)])])

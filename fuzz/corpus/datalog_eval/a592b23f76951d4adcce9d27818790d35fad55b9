@@ -1,1 +1,0 @@
-(query [ :where [?e zcolor ?c] (not[_ o?ict9ve e]):fe :where [?e zcolor ?c] (not [_ o?ict?ve :])])

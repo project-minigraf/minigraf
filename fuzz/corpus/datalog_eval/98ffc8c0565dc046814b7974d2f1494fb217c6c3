@@ -1,4 +1,0 @@
-(query [:fin:where [?e lor ?a] (njotnoi-[ (query [,,,,,,,,,e])])
-, :where [?e ,colov ?c], :where [?e ,cv ?c] (e [e?e ve (qry [,,,,,,,,,e])])
-, :where [?e ,colov ?c] (nofe [e?e vehtr(query [,,,,,,,,,e])])
-, :where [?e ,cv ?c] (nofe [e? trutrug])])

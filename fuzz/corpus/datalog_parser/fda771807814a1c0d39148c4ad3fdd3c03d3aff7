@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :name ?_] (ony4$0057$2221$3$mi$35e$rte 3$13$m*i$3515?)])

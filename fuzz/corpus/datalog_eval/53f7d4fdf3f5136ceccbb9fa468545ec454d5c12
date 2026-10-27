@@ -1,0 +1,3 @@
+(query [:find ?e :where [?e ?FFFFF ?c] (not-join [?e] [?e ?_ctivez ?chAre](qu [?e ?w]q
+)(ue*B))]
+)

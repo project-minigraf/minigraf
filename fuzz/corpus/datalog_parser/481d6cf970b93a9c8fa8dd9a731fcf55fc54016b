@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :a/vodil-rfam ?e?_][?:db/nnnnaea ?_][?:db/valid-from ?e?_][?:nnnna ?_A][?:dvalijjjjjjjt ?y]])

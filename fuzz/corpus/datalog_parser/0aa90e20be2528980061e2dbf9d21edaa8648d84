@@ -1,0 +1,1 @@
+(query [:find ?e:where [?e0:na0me ?n] (or(鑉p) ) [6t ?y]])

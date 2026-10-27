@@ -1,1 +1,0 @@
-(query [:fi:where [?Ce a ?_][?:db/v-a cccccccV][_ eC a][?e aaa ?_V][Ce a cccc_]])

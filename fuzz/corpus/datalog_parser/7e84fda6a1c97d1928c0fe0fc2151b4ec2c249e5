@@ -1,1 +1,0 @@
-(query [::where(que ?d true ?)])

@@ -1,1 +1,0 @@
-(query [:find ?e :where:fi:where [?e ?lynnueFFFF ?ctiver ]  [?e ?lynnueFFFF ?c] (not-join [?e] [? Dacver ?che])])

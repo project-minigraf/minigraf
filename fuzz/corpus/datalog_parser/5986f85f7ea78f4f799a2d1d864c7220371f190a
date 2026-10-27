@@ -1,2 +1,0 @@
-(query [: :where[?_ m ?e] (not [u :d t](q )
--X)])

@@ -1,0 +1,1 @@
+(query [:where [,1?a _][$0?a ?_][fal:db/valid-to _]])

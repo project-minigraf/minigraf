@@ -1,0 +1,1 @@
+(query[:where (or(z2 ?:na))  (sumor:zn 2(ad))])

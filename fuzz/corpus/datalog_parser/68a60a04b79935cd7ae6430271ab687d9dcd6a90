@@ -1,1 +1,0 @@
-(query [:find ?e  ?e :where [?e :name ?3_][Ee a _][?e?e aaa aa?_][?Ee ?_name ?n44n] (not [?e :banned ?e?e]):where (not [?:db/tx-id ?e?e]):where [?e :naa e_] (nlt [e])])

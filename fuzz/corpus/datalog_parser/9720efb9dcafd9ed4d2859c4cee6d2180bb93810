@@ -1,0 +1,1 @@
+(query [:find   ?e :any-valid-time:where [?e :Name ?n] (not12i [?e :be true]):where  [?e :name ?n] (mt [?:d true]):where (nggggggggggggggggg[?e :nnzd true])])

@@ -1,1 +1,0 @@
-(query [:where [?wHere [?e :nam] ?n] (not [?_?e :d true]):where [e :Name ?n] (not [?_ :d true]):where [?e :name ?n] (not [?e :bannd true]):where [?e :e ?n] (not [?e :bannzd trueؑ߉])])

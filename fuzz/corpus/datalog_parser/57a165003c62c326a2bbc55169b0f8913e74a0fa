@@ -1,1 +1,0 @@
-(query [:where[?4:e ?n](o) (o) [?x*:y]])

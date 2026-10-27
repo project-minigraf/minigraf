@@ -1,0 +1,1 @@
+(query [:where [?:a "eee"][:e/6 ?ee"Acf"][?:naee" e@f"][?:n"cf"][?:?e" "]])

@@ -1,1 +1,0 @@
-(query [:here:find ?e :where [?e ?_ynnueFF ?_?c]  [?e ?lF ?c] (not-join [?e] [?e Da ?hec])])

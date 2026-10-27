@@ -1,0 +1,1 @@
+(rule[ (TT)(q)[?e :e ?n] (not(q)) [1x5 y]])

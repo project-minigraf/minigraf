@@ -1,1 +1,0 @@
-(query [:f1:where[(string? n)""]])

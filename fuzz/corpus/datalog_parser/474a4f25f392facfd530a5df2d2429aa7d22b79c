@@ -1,1 +1,0 @@
-(query [:fi:where [?e :nam U?n] (not [:e2 a ?--true]):where[?e aaee _][?e?e aa  _] (n4t [e])])

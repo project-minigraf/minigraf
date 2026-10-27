@@ -1,0 +1,1 @@
+(query [ :where [(=:run:actie)?_0][(!= :w?:ite)]])

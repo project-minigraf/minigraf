@@ -1,1 +1,0 @@
-(query [: :where [?e ?lynnueFFFF ?c]  [?e ?_ynnueFFFF ?c] (not-join [?e] [?e Dactivar ?hec])])

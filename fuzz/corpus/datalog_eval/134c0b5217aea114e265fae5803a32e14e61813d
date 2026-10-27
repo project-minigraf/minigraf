@@ -1,0 +1,1 @@
+(query [:where [?e _gfale4e ?n][n?=("Ai")]])

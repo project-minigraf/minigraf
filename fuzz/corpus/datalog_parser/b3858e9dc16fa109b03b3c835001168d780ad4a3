@@ -1,2 +1,0 @@
-(query [ :where [b: _/][en
-t ?y]])

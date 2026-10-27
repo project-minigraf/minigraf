@@ -1,2 +1,0 @@
-(query ,[:finDe:where (not(or-join>AEE[e-])
-)])

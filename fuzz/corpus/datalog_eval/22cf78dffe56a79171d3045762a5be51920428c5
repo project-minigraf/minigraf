@@ -1,0 +1,1 @@
+(query [:find ?n :where [?e:?nmjFqfn ?c]    [?e:db/tx-id ?c]  [?e Fnufn ?Sc]  [?e lnue66666666666666666 ?n] [(>=?n "e")]])

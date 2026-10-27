@@ -1,1 +1,0 @@
-(query [:find ?e  ?e :where (nmt ?[e ]):where [?e :nme ?n] (nmt ?[e :d?]) (mt :nalA[?e :d trum]):where [?e :me ?n](nm00223t :nalA[?e :bd true])])

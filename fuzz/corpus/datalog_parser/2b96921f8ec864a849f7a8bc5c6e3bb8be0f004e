@@ -1,0 +1,1 @@
+(query [:where(or(e[rp]?DD) [n? me ?n] ) [5a0t y?]])

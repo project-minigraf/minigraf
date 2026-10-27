@@ -1,1 +1,0 @@
-(query [:find?e :where [?e :name ?n] (nmt ?[e :d true :banne true]):where [?e :name ?n] (nmt[e :d true]):where :any-valid-time[?e e ?n] (sot [?e :batrueؑ߉]):where [?e :name ?n] (nmt :nalA[?e :dtrue]):where [?e :name ?n] (sot [?e :bannzd ؑ߉]):where [:en? ame ?n] (nmt :nalA[?e]):where [?e :narme ?n] (sot [?e :ban])])

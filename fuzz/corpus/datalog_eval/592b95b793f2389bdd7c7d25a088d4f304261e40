@@ -1,0 +1,4 @@
+(query [:where [(-:rue"") ?n ](rule[(-r)]false)
+(query [:f??En :where [?e ?nm187e ?n]])
+
+ [(>=?n "e")]])

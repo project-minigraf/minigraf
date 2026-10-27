@@ -1,1 +1,0 @@
-(query [:e :where [5?e :clrc](not-join [?e] [?e: c?e] [?e: ace] [ue])])

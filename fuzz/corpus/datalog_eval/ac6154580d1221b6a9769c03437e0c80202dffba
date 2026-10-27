@@ -1,0 +1,2 @@
+(query [:find ?e :where  (or(query [:find ?e :where  (or-join[][e?ae])])
+-join[][e?ae])])

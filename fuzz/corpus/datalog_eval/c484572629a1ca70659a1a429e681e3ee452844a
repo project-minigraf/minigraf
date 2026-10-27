@@ -1,2 +1,0 @@
-(query [:finde :where [(=:rue"id") ?n ]:where [(=:rue"Al;i") ?n ][(!= ?n:acti)][(!= ?n:active)]])
-

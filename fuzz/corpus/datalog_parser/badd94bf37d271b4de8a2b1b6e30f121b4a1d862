@@ -1,0 +1,1 @@
+(query[:where [?:nae ?,] :where [?:nad ?,] (not [? :b 4])(not [?_ ? ?_?])])

@@ -1,0 +1,1 @@
+(query [:where[?Ce a ?_][?:ilt _][?:db/alid1t _][?:b cc_]])

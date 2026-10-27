@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e :name ?n] (query [d (e 7.hewre 336960575)(AA?e ( ?e 7.hewre 6)
+)])])

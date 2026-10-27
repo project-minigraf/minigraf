@@ -1,1 +1,0 @@
-(query [:d:where (not-join [?_] [?e :t o])])

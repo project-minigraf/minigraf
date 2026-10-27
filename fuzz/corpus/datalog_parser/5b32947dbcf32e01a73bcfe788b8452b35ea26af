@@ -1,1 +1,0 @@
-(query [ :where (not[:e a true]):where [?e:na n] (not [:e nned te])])

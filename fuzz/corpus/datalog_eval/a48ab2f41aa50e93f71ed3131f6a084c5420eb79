@@ -1,1 +1,0 @@
-(query [:fine:where [?b :catIv ?_] [?e DactIolo c] (not-join [?_] [?e Dv ?_] [?e DactIve truetrue/])])

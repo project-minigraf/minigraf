@@ -1,0 +1,1 @@
+(query [:where[(fx true) ?n] ])

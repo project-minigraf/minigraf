@@ -1,0 +1,2 @@
+(query [:find ?c:limit:whe [?e :color ?c] (not[?eclor ?c] (ia [:find ?]-))]
+)

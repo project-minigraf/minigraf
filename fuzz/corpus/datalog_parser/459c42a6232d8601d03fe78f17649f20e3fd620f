@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :e ??n] (ne ?y:T)[(fx ?y)  ?h] (nd tOheIO):where [?e :e ??n] (ne ?y:T)[(fx ?y) ?n] (nd tew7hgOO)[(fx ?y)  ?n] [(fx ?y)  ?n] (nnd tOhT)[(fx ?y) ?n] (nd tew7hgOO)[(fx ?y)  ?n] [(fx ?y)  ??] (d X)])

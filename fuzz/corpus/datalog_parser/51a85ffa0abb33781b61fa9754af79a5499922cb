@@ -1,0 +1,1 @@
+(query [:find ?e :where[?e 4e??n ] (ne ?y:T)[(fx ?y) ] (ny:T)[(fx ?y)  ?n] (nd tOhe:E/qqqqqO)[(fx ?y)  ?n] (nd 0X)])

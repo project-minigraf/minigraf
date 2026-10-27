@@ -1,0 +1,1 @@
+(query [:find ?e  ?e :where [?e mez ?n] (not [c?e:db/valid-at"ee"][Ce a ?_rue])])

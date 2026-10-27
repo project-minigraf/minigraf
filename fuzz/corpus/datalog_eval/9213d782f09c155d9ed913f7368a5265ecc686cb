@@ -1,1 +1,0 @@
-(query [::where [?e :cr ?c] (not[?e :color ?c] (ie- o///-=?)( ne ?_e[ebooAe])(qqqqq?e ?K[?e]-))(qun?::[? v])])

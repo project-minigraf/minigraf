@@ -1,2 +1,0 @@
-(query [:i?ewh :where [?e :name ?n] (n
-? :p) [?e :name ?] (no ? :)])

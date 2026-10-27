@@ -1,0 +1,1 @@
+(query [:where [?,?yame ?n] (or(ero,?y ?u/) )])

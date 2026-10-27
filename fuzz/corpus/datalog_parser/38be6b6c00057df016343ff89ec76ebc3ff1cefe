@@ -1,1 +1,0 @@
-(query [:finde :where [e :Name ?n] (t [?e :banne true]):where [?e :ame ?n] (nmt??[:anue]):where(nmt ?[ue]):where [e :name ?n] (nmt ?[e :d true=ue]):where(sot [?e :ban])])

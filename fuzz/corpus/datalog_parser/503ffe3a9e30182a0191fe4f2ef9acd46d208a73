@@ -1,0 +1,1 @@
+(query [:where [?e :name, ?n] (or(ei>nil>>5) )[4xent ?y]])

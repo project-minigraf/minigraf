@@ -1,1 +1,0 @@
-(query [:fyn :where [?:na ?n] (not [_:ah nb?n] (>find5)(>?_8>>>) [?x :pr()])])

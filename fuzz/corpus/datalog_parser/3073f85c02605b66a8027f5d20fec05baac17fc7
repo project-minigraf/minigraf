@@ -1,0 +1,1 @@
+(query [:order-by( ?y:e)[(ftrue)]])

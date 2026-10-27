@@ -1,0 +1,1 @@
+(query [:find ?e  ?:where [?e0:name ?35v3115en] (not [?e :banned ?p?e]):where [?e :ne ?n] :where [?e aaaaaaaeian ?755199en] (not [?e :baned ?e?e]):where[?e aaaaeiae ?2603405][-1 aaaaaaaa e] (nlt [e])])

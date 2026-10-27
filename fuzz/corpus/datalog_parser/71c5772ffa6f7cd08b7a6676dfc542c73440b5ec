@@ -1,2 +1,0 @@
-(query [:find :e:where [?e :e ?n] (not(DDD) [ ?n:eame ?n] (OA 00ODDDDDD) [ ?n:eame ?n] (OA :hewre n54DDDD) [n? :eame ?n] (ODDDDDDD?DDD) [ ?n:eame ?n] (OA :heDDDDD) [ ?n:eame ?n] (OA :heEE)
-)])

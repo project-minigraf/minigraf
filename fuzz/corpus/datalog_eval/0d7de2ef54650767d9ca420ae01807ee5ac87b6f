@@ -1,0 +1,2 @@
+(query [:where[?e colo c] (not-join [?_rc] ( ))]
+)

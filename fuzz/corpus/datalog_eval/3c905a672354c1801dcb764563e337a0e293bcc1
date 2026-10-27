@@ -1,1 +1,0 @@
-(query [:where [?e :o:][e ?c or](j nofindfi EEUE)])

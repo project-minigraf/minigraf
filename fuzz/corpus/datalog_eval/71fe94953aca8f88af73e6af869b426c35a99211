@@ -1,2 +1,0 @@
-(query [:find ?e:c:where [?e :cfalseolor ?c] (not[?e :olor ?c] (uvinn//d ?e:with ?k:[?e]-))]
-)

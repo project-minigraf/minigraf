@@ -1,0 +1,1 @@
+(query [:with ?e0:where[he:e ?_] (or(TT)[( matches? =y)?n] (XTT) ) [nt ?y]])

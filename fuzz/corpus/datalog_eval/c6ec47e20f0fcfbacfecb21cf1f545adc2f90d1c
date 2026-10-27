@@ -1,0 +1,1 @@
+(query [ :find ?e :where [?e :lor ??e] [d?:iveva trw] (not-join [?e] [Cie?:EEEEdEEqfn ?g]  [?e zynnfn ?g]  [?e:db/tx-id ?c]  [?e ?lynnueFFnnyneFFynEEEEEEEEE?_EFEEqfn ?a]  [?e ?ynsufundEEqfn ??nerbool?e_e])])

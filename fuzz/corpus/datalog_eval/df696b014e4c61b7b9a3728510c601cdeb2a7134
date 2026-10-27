@@ -1,1 +1,0 @@
-(query [:?e:where [e _n ?][ =n?( )]])

@@ -1,1 +1,0 @@
-(query [ :find ?e :where [?e :lor ??e] [d?:iveva trw] (not-join [?e] [Cactie?:aceta trwherbo?e] [Cactie?:activeta trwherboo?a] [:actie?:activeta trwherbool?ol?e_e]):where [?e :lor ??e] [d?:iveva trw] (not-join [?e] [:actie?:activeta tr?nerbool?e_e])])

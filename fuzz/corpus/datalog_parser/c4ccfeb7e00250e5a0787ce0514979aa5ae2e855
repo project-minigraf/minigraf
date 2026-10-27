@@ -1,0 +1,2 @@
+(query[ :where[?e ne"ea"][:e/ :db/valid-to""][:/
+t y]])

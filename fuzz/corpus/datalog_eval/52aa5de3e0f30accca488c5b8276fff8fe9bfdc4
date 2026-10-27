@@ -1,0 +1,2 @@
+(query [ :where [m? nee ?n ][(!=?n "Al")?ynsufun](quer[:f])
+])

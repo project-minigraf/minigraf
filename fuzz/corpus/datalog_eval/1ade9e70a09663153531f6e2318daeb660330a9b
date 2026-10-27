@@ -1,2 +1,0 @@
-(query [:fc:where(not[?e :cor ?c] (K[?e ] i ?K[?e]-))]
-)

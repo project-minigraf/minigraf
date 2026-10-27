@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e m en] (o944$i$66$m* ?y) ])

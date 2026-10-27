@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e l ??nije] [?e :ac:Fir] [?e :ac:F] (nji_nfee [e?e vue])])

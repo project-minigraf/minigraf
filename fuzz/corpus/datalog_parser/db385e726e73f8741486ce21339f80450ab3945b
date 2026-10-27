@@ -1,1 +1,0 @@
-(query[:where [? noa an][?:db/valid-at cc_][?:db/valid-at ?_][? a ccccc_]])

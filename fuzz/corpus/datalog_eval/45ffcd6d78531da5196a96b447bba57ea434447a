@@ -1,0 +1,3 @@
+(query [:where [(=:rue"") ?n ][(!= ?n:ave)](que!=ry [:find ?n :where [?e ?nmj0002567106188e ?n]])
+
+ [(>=?n "e")]])

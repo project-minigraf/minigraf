@@ -1,0 +1,1 @@
+(query [:where (p ?n0)(AAA3 :we )])

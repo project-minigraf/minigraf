@@ -1,1 +1,0 @@
-(query [:with ?e  ?e ?o:where [?e :N ?n] (n)])

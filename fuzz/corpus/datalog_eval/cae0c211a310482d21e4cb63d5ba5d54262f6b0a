@@ -1,1 +1,0 @@
-(query [::where [?e FFF-F?EFF ?c] (not-join [?e] [?e ?er ?chereig])])

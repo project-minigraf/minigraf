@@ -1,1 +1,0 @@
-(query [:find ?n :where [?e ?nmjFysn ?]  [?e ?l3e ?n] [(>=9 "e")?]])

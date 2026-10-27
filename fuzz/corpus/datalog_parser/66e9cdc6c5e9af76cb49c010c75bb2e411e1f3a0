@@ -1,1 +1,0 @@
-(query[:find(unt ?)::find (unt ?):fid :find(unt ?):find (unt ?) Z[e]])

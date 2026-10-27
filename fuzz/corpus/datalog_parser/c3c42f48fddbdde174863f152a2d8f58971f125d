@@ -1,1 +1,0 @@
-(query [:where  (or(?01 )(and))])

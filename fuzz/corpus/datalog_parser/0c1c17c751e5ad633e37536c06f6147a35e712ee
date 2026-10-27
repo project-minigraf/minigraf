@@ -1,1 +1,0 @@
-(query [:de:where(e [p(a{}y) [?x]-?])])

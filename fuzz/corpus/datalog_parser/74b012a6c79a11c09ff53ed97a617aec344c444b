@@ -1,1 +1,0 @@
-(query [:fi:where [?:db/valid-at ?_ncc?_][?:db/valid-at ?cc_][?:db/valid-at ?_][?e a cccccccc]])

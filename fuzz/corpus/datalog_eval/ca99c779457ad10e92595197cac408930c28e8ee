@@ -1,2 +1,0 @@
-(query [:finde :where[(!=:rue"Alide") ?n ][(!= ?n:acte)][(!= ?n:active)]])
-

@@ -1,2 +1,0 @@
-(rule[(?n, ?Apd >d ?uO)
-[?b :name ?n] (T)[(fx ?y) ?] ])

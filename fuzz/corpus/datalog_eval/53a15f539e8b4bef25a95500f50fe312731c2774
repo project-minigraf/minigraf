@@ -1,2 +1,0 @@
-(query [: :where [?e :ocr la] (n?[?ebooAe])(query :f?[])(qq[:])
-])

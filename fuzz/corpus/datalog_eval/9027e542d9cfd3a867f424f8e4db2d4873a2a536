@@ -1,2 +1,0 @@
-(query [:where [(=:rue"") ?n ][(!= ?n:active)]])
-

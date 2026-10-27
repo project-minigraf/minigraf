@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :orc ?] (an=l[?] ?[v] ?[e?] ?[e] ?[e:atrue])])

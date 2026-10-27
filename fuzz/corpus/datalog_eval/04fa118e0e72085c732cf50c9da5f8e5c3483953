@@ -1,0 +1,2 @@
+(query [:find ?e:with ?c:where [?e :color ?c] (not[?e :clor ?c] (i- ?e ?n,-[]-))]
+)

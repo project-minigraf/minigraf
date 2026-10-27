@@ -1,0 +1,1 @@
+(query[:where [?_e _ ?n] [(= ?n "q?ce")]])

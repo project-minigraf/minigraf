@@ -1,2 +1,0 @@
-(query [:find :where [?e name ?n](no*
-f[e$a])])

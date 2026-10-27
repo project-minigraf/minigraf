@@ -1,0 +1,1 @@
+(query [:find ?e0:where [?e0:ne ?] (or(A:EEe25)(_->>>00012535)(_-AA?y) ) [0t ?y]])

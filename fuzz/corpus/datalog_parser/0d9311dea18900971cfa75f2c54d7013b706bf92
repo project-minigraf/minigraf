@@ -1,0 +1,1 @@
+(query [:find ?ee :where [?e 3_][?e?e aa aa?_][Ee 14n] (not [?e :bad ??]):where (not [?:db/tx-id ?e?e]):where[?e Cname ?nid]])

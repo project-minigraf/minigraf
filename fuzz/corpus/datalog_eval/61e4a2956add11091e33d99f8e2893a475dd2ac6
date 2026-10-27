@@ -1,1 +1,0 @@
-(query [:f?e :where [?e :2 ?] (not [?e :ac:Finr])])

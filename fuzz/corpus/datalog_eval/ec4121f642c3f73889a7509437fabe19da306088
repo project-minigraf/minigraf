@@ -1,0 +1,3 @@
+;
+(query [:find  (n3
+?fH?n:ov?n:over[ r])])

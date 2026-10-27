@@ -1,1 +1,0 @@
-(query [:vinETTere:find ?e :where [?e ?lIyn ?c]  [?ed ?lnueFFFF ?c] (not-join [?e] [?e er c?hec])])

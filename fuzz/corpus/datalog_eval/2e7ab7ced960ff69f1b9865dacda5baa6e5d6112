@@ -1,0 +1,1 @@
+(query [:find ?1 :where [?e ?666e ?n] [(>=?_?e ?lys)]])

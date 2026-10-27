@@ -1,2 +1,0 @@
-(query [:?c:where [?e :re ?c] (not[?e :c ?c] (i- o*d ?e:wi4h ?c:where A[?e :i]?_-))]
-)
