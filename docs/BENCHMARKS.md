@@ -226,7 +226,7 @@ On the executor, before #544 (the executor's query path is gone since #551). `pe
 - **DICT lookup per row (26–35%).** `uuid_of` does a B+tree `get` for every row's entity id (#530).
 - **Bindings as `HashMap<String, Value>` (about 25%).** SipHash insert, lookup and drop per row; #473's columnar batches replace them.
 - **`net_asserted_facts` over committed facts that `live_facts` already resolved (about 10%)** (#532).
-- **Keyword constants hashed to a UUID per fact (about 8% of the join)** (#531).
+- **Keyword constants hashed to a UUID per fact (about 8% of the old join)** (#531). The streaming engine resolves pattern constants while planning; see the [post-#551 audit and profiles](benchmarks/531-keyword-constants.md). Expression keyword/ref equality retains a separate per-row conversion described there.
 - `attribute_value` reads the whole attribute instead of seeking AVET (#518). Fixed by the streaming engine's `Scan` (#544): see below.
 
 ### Streaming engine (#544)
