@@ -3639,3 +3639,54 @@ fn ordered_distinct_member_reservation_failure_releases_an_unfinished_group() {
     op.close();
     assert_eq!(meter.used(), 0);
 }
+
+#[test]
+fn partition_window_rejects_decreasing_boundaries_before_and_after_output() {
+    use super::{
+        Operator,
+        cell::{Cell, Scalar},
+        plan::PartitionOrder,
+    };
+    use crate::query::datalog::{parser::parse_datalog_command, types::DatalogCommand};
+    let DatalogCommand::Query(q) = parse_datalog_command(
+        "(query [:find ?g (row-number :over (:partition-by ?g :order-by ?g)) :where [?e :key ?g]])",
+    )
+    .unwrap() else {
+        panic!("query");
+    };
+    let int = |n| Cell::Val(Scalar::Int(n));
+    for (cells, late) in [
+        (vec![int(2), int(1)], false),
+        (vec![int(1), int(2), int(1)], false),
+        (vec![Cell::Val(Scalar::Float(1.5)), int(1)], false),
+        (
+            (0..2 * super::BATCH_ROWS as i64)
+                .map(int)
+                .chain([int(0)])
+                .collect(),
+            true,
+        ),
+    ] {
+        let meter = super::Meter::unlimited();
+        let mut op = super::window::Window::new(
+            Box::new(Sequence { cells, at: 0 }),
+            q.find.clone(),
+            vec![0],
+            vec![0],
+            Some((0, PartitionOrder::Values)),
+            &meter,
+        );
+        let mut batches = 0;
+        let err = loop {
+            match pull_once(&mut op, &meter) {
+                Ok(Some(_)) => batches += 1,
+                Ok(None) => panic!("invalid partition order must fail"),
+                Err(e) => break e,
+            }
+        };
+        assert_eq!(crate::MinigrafError::from(err).code(), "INT-032");
+        assert_eq!(batches > 0, late);
+        op.close();
+        assert_eq!(meter.used(), 0);
+    }
+}

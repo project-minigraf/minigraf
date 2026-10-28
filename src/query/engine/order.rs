@@ -1,7 +1,10 @@
 //! Snapshot-bound input-order proofs (#641). DICT order is never UUID/text
 //! order. Unknown order retains the original index choice and buffering.
 
-use super::plan::{Body, Grouping, JoinKind, Meta, Out, Plan, ScanSpec, Source, Step, Term, Vars};
+use super::plan::{
+    Body, Grouping, JoinKind, Meta, Out, PartitionOrder, Plan, ScanSpec, Source, Step, Term, Vars,
+    WindowMode,
+};
 use crate::graph::storage::Snapshot;
 use crate::query::datalog::functions::{AggImpl, Builtin, FunctionRegistry};
 use crate::query::datalog::types::{Expr, FindSpec, UnaryOp, WindowFunc};
@@ -52,6 +55,7 @@ impl Drop for InputOrderGuard {
 enum Domain {
     Single(ValueKind),
     Numbers,
+    Entity,
 }
 
 /// Leading scalar key and constants. A complete aggregate key is unique;
@@ -78,6 +82,47 @@ impl Ordering {
                 .filter_map(|&(m, s)| (m == Meta::ValidAt).then_some(s))
                 .collect(),
         }
+    }
+
+    fn entity(spec: &ScanSpec) -> Option<Self> {
+        let Term::Bind(slot) = spec.e else {
+            return None;
+        };
+        if spec.index == Some(Index::Avet) {
+            return None;
+        }
+        let mut proof = Self::source(spec, Domain::Entity);
+        proof.slot = Some(slot);
+        Some(proof)
+    }
+
+    fn group_ordered(&self) -> bool {
+        matches!(
+            self.kind,
+            Domain::Single(ValueKind::Integer | ValueKind::Float | ValueKind::Boolean)
+                | Domain::Numbers
+        )
+    }
+
+    fn partition_order(&self) -> Option<PartitionOrder> {
+        match self.kind {
+            Domain::Entity | Domain::Single(ValueKind::Ref) => Some(PartitionOrder::Entity),
+            Domain::Single(ValueKind::Keyword) => Some(PartitionOrder::Ident),
+            _ if self.group_ordered() => Some(PartitionOrder::Values),
+            _ => None,
+        }
+    }
+
+    fn remap(&mut self, keep: &[usize]) {
+        self.slot = self
+            .slot
+            .and_then(|slot| keep.iter().position(|&s| s == slot));
+        self.constants = keep
+            .iter()
+            .enumerate()
+            .filter_map(|(at, s)| self.constants.contains(s).then_some(at))
+            .collect();
+        self.unique = false;
     }
 
     fn invalidate(&mut self, slot: usize) {
@@ -232,14 +277,19 @@ fn safe_steps(steps: &[Step], functions: &FunctionRegistry) -> bool {
 }
 
 /// At most eight raw seeks through the exact reader the Stream will scan.
-fn scalar_kind(keys: &dyn KeySource, attribute: u32) -> Result<Option<Domain>> {
+fn value_domain(keys: &dyn KeySource, attribute: u32) -> Result<Option<Domain>> {
     let mut found = None;
     for kind in ValueKind::ALL {
         if keys.any_key(Index::Avet, &keys::attribute_kind_prefix(attribute, kind))? {
             found = match (found, kind) {
-                (None, ValueKind::Integer | ValueKind::Float | ValueKind::Boolean) => {
-                    Some(Domain::Single(kind))
-                }
+                (
+                    None,
+                    ValueKind::Integer
+                    | ValueKind::Float
+                    | ValueKind::Boolean
+                    | ValueKind::Ref
+                    | ValueKind::Keyword,
+                ) => Some(Domain::Single(kind)),
                 (Some(Domain::Single(ValueKind::Integer)), ValueKind::Float) => {
                     Some(Domain::Numbers)
                 }
@@ -253,21 +303,22 @@ fn scalar_kind(keys: &dyn KeySource, attribute: u32) -> Result<Option<Domain>> {
 /// The choices are applied together only after the snapshot proof succeeds.
 struct Choice {
     aggregate: Option<usize>,
+    window: Option<(usize, usize, PartitionOrder)>,
     sort: Option<usize>,
     avet: bool,
 }
 
 fn choices(
-    spec: &ScanSpec,
     plan: &Plan,
-    kind: Domain,
+    mut proof: Ordering,
+    avet: bool,
     functions: &FunctionRegistry,
 ) -> Option<Choice> {
-    let mut proof = Ordering::source(spec, kind);
     let mut choice = Choice {
         aggregate: None,
+        window: None,
         sort: None,
-        avet: !matches!(spec.e, Term::Const(_)),
+        avet,
     };
     for (at, step) in plan.steps.iter().enumerate() {
         match step {
@@ -276,7 +327,8 @@ fn choices(
                 aggs,
                 grouping: Grouping::Candidate,
                 ..
-            } if groups.len() == 1
+            } if proof.group_ordered()
+                && groups.len() == 1
                 && proof.slot == groups.first().copied()
                 && aggs.iter().all(|(func, _)| {
                     functions.get(func).is_some_and(|d| {
@@ -292,6 +344,20 @@ fn choices(
                 proof.constants.clear();
                 proof.unique = true;
             }
+            Step::Window {
+                keep,
+                mode: WindowMode::Candidate(slot),
+                ..
+            } => {
+                if proof.slot != Some(*slot) || proof.constants.contains(slot) {
+                    break;
+                }
+                let Some(order) = proof.partition_order() else {
+                    break;
+                };
+                choice.window = Some((at, *slot, order));
+                proof.remap(keep);
+            }
             Step::Sort { cols, order, keep } => {
                 if *keep != Some(0) && proof.satisfies(cols, order) {
                     choice.sort = Some(at);
@@ -306,7 +372,8 @@ fn choices(
             }
         }
     }
-    (choice.aggregate.is_some() || choice.sort.is_some()).then_some(choice)
+    (choice.aggregate.is_some() || choice.window.is_some() || choice.sort.is_some())
+        .then_some(choice)
 }
 
 fn candidate(
@@ -324,8 +391,20 @@ fn candidate(
     if spec.derived.is_some() || spec.never() || matches!(spec.e, Term::Eq(_)) {
         return Ok(None);
     }
-    // Reject impossible strategies before any speculative storage reads.
-    if choices(spec, plan, Domain::Single(ValueKind::Integer), functions).is_none() {
+    // Prefer the existing entity prefix when it already partitions windows;
+    // no kind seeks or broader index are needed for dictionary-id adjacency.
+    let entity_choice =
+        Ordering::entity(spec).and_then(|proof| choices(plan, proof, false, functions));
+    let avet = !matches!(spec.e, Term::Const(_));
+    if entity_choice.is_none()
+        && choices(
+            plan,
+            Ordering::source(spec, Domain::Single(ValueKind::Integer)),
+            avet,
+            functions,
+        )
+        .is_none()
+    {
         return Ok(None);
     }
     let entity = match &spec.e {
@@ -335,13 +414,16 @@ fn candidate(
     if snapshot.has_pending(attribute, entity)? {
         return Ok(None);
     }
+    if entity_choice.is_some() {
+        return Ok(entity_choice);
+    }
     let Some(a) = keys.iid_of(attribute)? else {
         return Ok(None);
     };
-    let Some(kind) = scalar_kind(keys, a)? else {
+    let Some(kind) = value_domain(keys, a)? else {
         return Ok(None);
     };
-    Ok(choices(spec, plan, kind, functions))
+    Ok(choices(plan, Ordering::source(spec, kind), avet, functions))
 }
 
 /// Only a plain query's root pipeline is resolved; bodies and rules keep their
@@ -369,6 +451,11 @@ pub(super) fn resolve(
         && let Some(Step::Aggregate { grouping, .. }) = plan.steps.get_mut(at)
     {
         *grouping = Grouping::Ordered;
+    }
+    if let Some((at, slot, order)) = choice.window
+        && let Some(Step::Window { mode, .. }) = plan.steps.get_mut(at)
+    {
+        *mode = WindowMode::Partitioned { slot, order };
     }
     if let Some(at) = choice.sort
         && let Step::Sort { cols, .. } = plan.steps.remove(at)

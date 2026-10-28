@@ -277,6 +277,51 @@ fn bench_ordered_groups(c: &mut Criterion) {
     group.finish();
 }
 
+// Committed one-row partitions exercise value and entity certificates. The
+// ordinary ^query/ nightly route includes full drains and bounded limits.
+fn bench_partition_windows(c: &mut Criterion) {
+    let mut group = c.benchmark_group("query/partition_windows");
+    group.sample_size(10);
+    for (label, n) in [
+        ("1k", 1_000),
+        ("10k", 10_000),
+        ("100k", 100_000),
+        ("1m", 1_000_000),
+    ] {
+        for (mode, partition, limited) in [
+            ("value", "?v", false),
+            ("entity", "?e", false),
+            ("value_limit", "?v", true),
+            ("entity_limit", "?e", true),
+        ] {
+            group.bench_with_input(BenchmarkId::new(mode, label), &n, |b, &n| {
+                let dir = tempfile::tempdir().unwrap();
+                let path = dir.path().join("windows.graph");
+                helpers::populate_file(n, path.to_str().unwrap());
+                let db = OpenOptions::new()
+                    .read_only(true)
+                    .path(&path)
+                    .open()
+                    .unwrap();
+                let query = format!(
+                    "(query [:find ?e ?v (row-number :over (:partition-by {partition} :order-by ?e)) :where [?e :val ?v] {}])",
+                    if limited { ":limit 10" } else { "" }
+                );
+                b.iter(|| {
+                    let mut cursor = db.query(&query).unwrap();
+                    let mut rows = 0;
+                    while let Some(batch) = cursor.next_batch(1000).unwrap() {
+                        rows += batch.len();
+                    }
+                    assert_eq!(rows, if limited { 10.min(n) } else { n });
+                    black_box(rows)
+                });
+            });
+        }
+    }
+    group.finish();
+}
+
 // ── Task 6: time_travel/ ──────────────────────────────────────────────────────
 
 // The existing nightly ^query/ filter selects both the proven value order and
@@ -2068,6 +2113,7 @@ criterion_group!(
     bench_query,
     bench_input_order,
     bench_ordered_groups,
+    bench_partition_windows,
     bench_time_travel,
     bench_recursion,
     bench_negation,

@@ -69,6 +69,13 @@ enum Opened {
     Fresh,
 }
 
+/// Share one stable sort across legacy-open paths and backend types. Facts
+/// from the same transaction retain their original order.
+#[inline(never)]
+fn sort_facts_by_tx(facts: &mut [Fact]) {
+    facts.sort_by_key(|f| f.tx_count);
+}
+
 impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
     /// Open storage on `backend` with no WAL beside it (in-memory and browser
     /// databases). See [`PersistentFactStorage::open`].
@@ -169,7 +176,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let max_fact_tx = facts.iter().map(|f| f.tx_count).max().unwrap_or(0);
         let max_tx = max_fact_tx.max(header.last_checkpointed_tx_count);
         // Pending facts are kept in tx order (the fact log relies on it).
-        facts.sort_by_key(|f| f.tx_count);
+        sort_facts_by_tx(&mut facts);
         let _ = self.storage.load_facts(facts)?;
         Ok(MetaPage {
             last_checkpointed_tx_count: max_tx,
@@ -315,7 +322,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         let max_tx = max_fact_tx.max(header.last_checkpointed_tx_count);
 
         // Ids are assigned in transaction order (spec §9 step 2).
-        facts.sort_by_key(|f| f.tx_count);
+        sort_facts_by_tx(&mut facts);
         let old_page_count = header.page_count.max(2);
         let mut alloc = PageAllocator::new(Vec::new(), old_page_count, 1);
         let encoded = encode(

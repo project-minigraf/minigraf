@@ -443,7 +443,7 @@ fn plan_ordered(
     // i.e. final relative order at any shared insertion point comes out ascending
     // (cheapest first), mirroring the executor's previous post-filter ordering.
     if reorder() {
-        not_clauses.sort_by_key(|c| std::cmp::Reverse(clause_cost(c)));
+        sort_by_cost(&mut not_clauses, true);
     }
 
     for nc in not_clauses {
@@ -607,6 +607,16 @@ pub fn clause_cost(clause: &WhereClause) -> u64 {
         WhereClause::OrJoin { branches, .. } => branches.iter().map(|b| branch_cost(b)).sum(),
         _ => u64::MAX,
     }
+}
+
+/// Share a stable cost sort between deferred clauses and negation placement.
+/// Equal-cost clauses retain their input order in either direction.
+#[inline(never)]
+pub(crate) fn sort_by_cost(clauses: &mut [WhereClause], descending: bool) {
+    clauses.sort_by(|a, b| {
+        let order = clause_cost(a).cmp(&clause_cost(b));
+        if descending { order.reverse() } else { order }
+    });
 }
 
 #[cfg(test)]

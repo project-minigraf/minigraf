@@ -26,6 +26,35 @@ pub(crate) struct Meter {
     used: AtomicUsize,
     /// The most `used` has been, for tests and measurement.
     peak: AtomicUsize,
+    #[cfg(test)]
+    window: LivePeak,
+    #[cfg(test)]
+    ids: LivePeak,
+}
+
+/// Test-only ownership totals distinguish a window's retained rows from the
+/// lookup cache. Multiple Helds with the same name contribute together.
+#[cfg(test)]
+#[derive(Debug, Default)]
+struct LivePeak {
+    used: AtomicUsize,
+    peak: AtomicUsize,
+}
+
+#[cfg(test)]
+impl LivePeak {
+    fn add(&self, n: usize) {
+        let now = self.used.load(Ordering::Relaxed).saturating_add(n);
+        self.used.store(now, Ordering::Relaxed);
+        self.peak.fetch_max(now, Ordering::Relaxed);
+    }
+
+    fn subtract(&self, n: usize) {
+        self.used.store(
+            self.used.load(Ordering::Relaxed).saturating_sub(n),
+            Ordering::Relaxed,
+        );
+    }
 }
 
 impl Meter {
@@ -34,6 +63,10 @@ impl Meter {
             limit,
             used: AtomicUsize::new(0),
             peak: AtomicUsize::new(0),
+            #[cfg(test)]
+            window: LivePeak::default(),
+            #[cfg(test)]
+            ids: LivePeak::default(),
         })
     }
 
@@ -52,6 +85,21 @@ impl Meter {
     #[cfg(test)]
     pub(crate) fn peak(&self) -> usize {
         self.peak.load(Ordering::Relaxed)
+    }
+
+    #[cfg(test)]
+    fn tracked(&self, op: &str) -> Option<&LivePeak> {
+        match op {
+            "Window" => Some(&self.window),
+            "IdSpace" => Some(&self.ids),
+            _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn peak_for(&self, op: &str) -> usize {
+        self.tracked(op)
+            .map_or(0, |p| p.peak.load(Ordering::Relaxed))
     }
 }
 
@@ -99,6 +147,10 @@ impl Held {
         m.used.store(now, Ordering::Relaxed);
         m.peak.fetch_max(now, Ordering::Relaxed);
         self.bytes = self.bytes.saturating_add(n);
+        #[cfg(test)]
+        if let Some(peak) = m.tracked(self.op) {
+            peak.add(n);
+        }
         Ok(())
     }
 
@@ -107,6 +159,10 @@ impl Held {
         let n = n.min(self.bytes);
         self.bytes -= n;
         let m = &*self.meter;
+        #[cfg(test)]
+        if let Some(peak) = m.tracked(self.op) {
+            peak.subtract(n);
+        }
         m.used.store(
             m.used.load(Ordering::Relaxed).saturating_sub(n),
             Ordering::Relaxed,
@@ -116,6 +172,15 @@ impl Held {
     /// Take over what `other` counts, which goes on being counted until this
     /// holder lets it go.
     pub(crate) fn absorb(&mut self, mut other: Held) {
+        #[cfg(test)]
+        if self.op != other.op {
+            if let Some(peak) = self.meter.tracked(other.op) {
+                peak.subtract(other.bytes);
+            }
+            if let Some(peak) = self.meter.tracked(self.op) {
+                peak.add(other.bytes);
+            }
+        }
         self.bytes = self.bytes.saturating_add(other.bytes);
         other.bytes = 0;
     }
@@ -324,4 +389,28 @@ mod tests {
         a.charge(1).unwrap();
         assert_eq!(meter.used(), usize::MAX);
     }
+}
+
+#[cfg(test)]
+#[test]
+fn op_peaks_count_overlapping_holders_and_transferred_ownership() {
+    let meter = Meter::unlimited();
+    let mut rows = Held::new(&meter, "Window");
+    let mut columns = Held::new(&meter, "Window");
+    let mut ids = Held::new(&meter, "IdSpace");
+    rows.charge(100).unwrap();
+    columns.charge(30).unwrap();
+    ids.charge(200).unwrap();
+    assert_eq!(meter.peak_for("Window"), 130);
+    assert_eq!(meter.peak_for("IdSpace"), 200);
+    rows.uncharge(80);
+    drop(columns);
+    let mut transferred = Held::new(&meter, "other");
+    transferred.charge(500).unwrap();
+    ids.absorb(transferred);
+    assert_eq!(meter.peak_for("IdSpace"), 700);
+    assert_eq!(meter.peak_for("Window"), 130);
+    drop(rows);
+    drop(ids);
+    assert_eq!(meter.used(), 0);
 }

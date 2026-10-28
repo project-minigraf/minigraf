@@ -9,9 +9,9 @@
 //! or ident keeps its id. DICT lookups are only cached until the next pull
 //! ([`IdSpace::end_pull`]): a DICT id never changes, and a cache that grew
 //! with every row a cursor returns would hold the whole answer.
-//! A stream that ends in a `Window` keeps them until it ends: the window
-//! already looked up every row's ids in its first pull, and holds the whole
-//! answer anyway (#547).
+//! A full-input `Window` keeps them until it ends (#547). A certified
+//! partition Window evicts at internal input/result batch boundaries too,
+//! so one operator pull cannot retain the lookups of the whole query (#641).
 
 use super::meter::{HASH_ENTRY_OVERHEAD, Held, Meter, growth};
 use crate::error::{ErrorCode, err_coded};

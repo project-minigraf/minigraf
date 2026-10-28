@@ -149,6 +149,22 @@ pub(crate) enum Grouping {
     Ordered,
 }
 
+/// The comparator of a certified partition prefix. DICT ids prove adjacency,
+/// not semantic UUID or keyword order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PartitionOrder {
+    Values,
+    Entity,
+    Ident,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WindowMode {
+    Full,
+    Candidate(usize),
+    Partitioned { slot: usize, order: PartitionOrder },
+}
+
 /// A clause after the scan, in the executor's order.
 #[derive(Debug, Clone)]
 pub(crate) enum Step {
@@ -197,6 +213,7 @@ pub(crate) enum Step {
         find: Vec<FindSpec>,
         named: Vec<usize>,
         keep: Vec<usize>,
+        mode: WindowMode,
     },
     /// After the last step: the `:find` columns at slots `cols`, sorted by
     /// `order`, `(column of cols, descending)` (the full order), holding at
@@ -556,10 +573,25 @@ fn plan_with(query: &DatalogQuery, evaluated: Option<Arc<Evaluated>>) -> Result<
                 slot(var)
             }
         };
-        let named = named_vars(&query.find)
-            .iter()
-            .map(column)
-            .collect::<Result<Vec<usize>>>()?;
+        let names = named_vars(&query.find);
+        let named = names.iter().map(column).collect::<Result<Vec<usize>>>()?;
+        let mode = if aggregate {
+            WindowMode::Full
+        } else {
+            let mut windows = query.find.iter().filter_map(|f| match f {
+                FindSpec::Window(w) => Some(w),
+                _ => None,
+            });
+            windows
+                .next()
+                .and_then(|w| w.partition_by.as_ref())
+                .filter(|part| windows.all(|w| w.partition_by.as_ref() == Some(*part)))
+                .and_then(|part| names.iter().position(|name| name == part))
+                .and_then(|at| named.get(at))
+                .copied()
+                .map(WindowMode::Candidate)
+                .unwrap_or(WindowMode::Full)
+        };
         let keep: Vec<usize> = cols.iter().flatten().copied().collect();
         let (mut next_kept, mut next_window) = (0, keep.len());
         for c in &cols {
@@ -575,6 +607,7 @@ fn plan_with(query: &DatalogQuery, evaluated: Option<Arc<Evaluated>>) -> Result<
             find: query.find.clone(),
             named,
             keep,
+            mode,
         });
     } else {
         find = cols
@@ -1386,7 +1419,7 @@ impl Builder {
 /// Deferred `not`s, cheapest first when reordering, as on the executor.
 fn sorted(mut deferred: Vec<WhereClause>) -> Vec<WhereClause> {
     if optimizer::reorder() {
-        deferred.sort_by_key(optimizer::clause_cost);
+        optimizer::sort_by_cost(&mut deferred, false);
     }
     deferred
 }
