@@ -1,0 +1,202 @@
+{
+  "revision": "d0ad89c1d6df734afd5d4669ca9139c8f55d7702",
+  "event": "cycles:u",
+  "call_graph": "dwarf,16384",
+  "inline_expansion": true,
+  "discarded_captures": {
+    "recursive_ancestors": {
+      "frequency_hz": 499,
+      "samples": 9475,
+      "lost_samples": 210,
+      "lost_chunks": 3,
+      "reason": "recorder reported data loss"
+    }
+  },
+  "profiles": {
+    "attribute_scan": {
+      "children": 1,
+      "rows_per_query": 166666,
+      "frequency_hz": 499,
+      "timed_queries": 108,
+      "samples": 7784,
+      "lost_samples": 0,
+      "sample_counts": {
+        "fixture_setup": 89,
+        "other": 64,
+        "query": 7631
+      },
+      "weighted_cycle_percent": {
+        "fixture_setup": 0.9652901636016978,
+        "other": 0.8230725809778963,
+        "query": 98.2116372554204
+      },
+      "stack_sample_counts": {
+        "net_asserted_facts": 0,
+        "flush_run": 0,
+        "RunWalk": 0,
+        "filter_facts_for_query": 0,
+        "RecursiveEvaluator": 0,
+        "StratifiedEvaluator": 0,
+        "minigraf::query::engine::scan": 3109,
+        "live_keys": 2659,
+        "live_walk": 2659
+      },
+      "query_stack_sample_counts": {
+        "minigraf::query::engine::scan": 3109,
+        "live_keys": 2658,
+        "live_walk": 2658
+      },
+      "unwind_diagnostics": {
+        "query_without_drain_frame": 7323,
+        "ending_at_unknown_outer_frame": 7320,
+        "with_drain_frame": 308
+      },
+      "net_asserted_facts_percent_of_identified_query_cycles": 0.0,
+      "unresolved_leaf_percent_of_identified_query_cycles": 25.738693087591027,
+      "lost_sample_header": [
+        "# Total Lost Samples: 0"
+      ]
+    },
+    "join_3_selective": {
+      "children": 200,
+      "rows_per_query": 10,
+      "frequency_hz": 499,
+      "timed_queries": 40000,
+      "samples": 22010,
+      "lost_samples": 0,
+      "sample_counts": {
+        "fixture_setup": 17221,
+        "query": 4515,
+        "other": 274
+      },
+      "weighted_cycle_percent": {
+        "fixture_setup": 76.20516406713254,
+        "query": 22.805260669725907,
+        "other": 0.9895752631415438
+      },
+      "stack_sample_counts": {
+        "net_asserted_facts": 2,
+        "flush_run": 2,
+        "RunWalk": 6,
+        "filter_facts_for_query": 0,
+        "RecursiveEvaluator": 0,
+        "StratifiedEvaluator": 0,
+        "minigraf::query::engine::scan": 3679,
+        "live_keys": 3335,
+        "live_walk": 3333
+      },
+      "query_stack_sample_counts": {
+        "minigraf::query::engine::scan": 3679,
+        "live_keys": 3335,
+        "live_walk": 3333,
+        "RunWalk": 6,
+        "net_asserted_facts": 2,
+        "flush_run": 2
+      },
+      "unwind_diagnostics": {
+        "query_without_drain_frame": 4133,
+        "ending_at_unknown_outer_frame": 4331,
+        "with_drain_frame": 382
+      },
+      "net_asserted_facts_percent_of_identified_query_cycles": 0.045166696647386276,
+      "unresolved_leaf_percent_of_identified_query_cycles": 43.25271076412927,
+      "lost_sample_header": [
+        "# Total Lost Samples: 0"
+      ]
+    },
+    "join_3_scan": {
+      "children": 1,
+      "rows_per_query": 1667,
+      "frequency_hz": 499,
+      "timed_queries": 13,
+      "samples": 8280,
+      "lost_samples": 0,
+      "sample_counts": {
+        "fixture_setup": 93,
+        "query": 8155,
+        "other": 32
+      },
+      "weighted_cycle_percent": {
+        "fixture_setup": 1.05803001403678,
+        "query": 98.5548209201231,
+        "other": 0.38714906584010844
+      },
+      "stack_sample_counts": {
+        "net_asserted_facts": 1,
+        "flush_run": 1,
+        "RunWalk": 1,
+        "filter_facts_for_query": 0,
+        "RecursiveEvaluator": 0,
+        "StratifiedEvaluator": 0,
+        "minigraf::query::engine::scan": 672,
+        "live_keys": 607,
+        "live_walk": 607
+      },
+      "query_stack_sample_counts": {
+        "minigraf::query::engine::scan": 672,
+        "live_keys": 607,
+        "live_walk": 607,
+        "net_asserted_facts": 1,
+        "flush_run": 1,
+        "RunWalk": 1
+      },
+      "unwind_diagnostics": {
+        "query_without_drain_frame": 8150,
+        "ending_at_unknown_outer_frame": 8149,
+        "with_drain_frame": 5
+      },
+      "net_asserted_facts_percent_of_identified_query_cycles": 0.012779856173683005,
+      "unresolved_leaf_percent_of_identified_query_cycles": 31.343490552003566,
+      "lost_sample_header": [
+        "# Total Lost Samples: 0"
+      ]
+    },
+    "recursive_ancestors": {
+      "children": 40,
+      "rows_per_query": 6,
+      "frequency_hz": 249,
+      "timed_queries": 8000,
+      "samples": 4891,
+      "lost_samples": 0,
+      "sample_counts": {
+        "fixture_setup": 1811,
+        "query": 3055,
+        "other": 25
+      },
+      "weighted_cycle_percent": {
+        "fixture_setup": 32.261315749751745,
+        "query": 67.26271789974335,
+        "other": 0.47596635050491004
+      },
+      "stack_sample_counts": {
+        "net_asserted_facts": 4,
+        "flush_run": 6,
+        "RunWalk": 13,
+        "filter_facts_for_query": 0,
+        "RecursiveEvaluator": 0,
+        "StratifiedEvaluator": 0,
+        "minigraf::query::engine::scan": 2149,
+        "live_keys": 1760,
+        "live_walk": 1759
+      },
+      "query_stack_sample_counts": {
+        "minigraf::query::engine::scan": 2149,
+        "live_keys": 1760,
+        "live_walk": 1759,
+        "RunWalk": 13,
+        "flush_run": 6,
+        "net_asserted_facts": 4
+      },
+      "unwind_diagnostics": {
+        "with_drain_frame": 3041,
+        "ending_at_unknown_outer_frame": 2982,
+        "query_without_drain_frame": 14
+      },
+      "net_asserted_facts_percent_of_identified_query_cycles": 0.1280860646616853,
+      "unresolved_leaf_percent_of_identified_query_cycles": 38.449662883753035,
+      "lost_sample_header": [
+        "# Total Lost Samples: 0"
+      ]
+    }
+  }
+}
