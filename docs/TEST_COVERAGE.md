@@ -4,13 +4,13 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,947 | 1,980 |
-| **Ignored** | 16 | 17 |
-| **Total** | 1,963 | 1,997 |
+| **Passing** | 1,972 | 2,005 |
+| **Ignored** | 17 | 18 |
+| **Total** | 1,989 | 2,023 |
 
-**Verified**: 2026-10-28 on the designated bench machine: the full default suite under branch coverage plus `cargo test --doc`, and `cargo test --features test-hooks`. Final test-only strengthening of group-demand and early-cursor assertions passed a focused rerun. An appended internal DICT-cache regression passed default/test-hooks checks and an incremental coverage run; disabling internal eviction made that regression fail. The matched production library remained byte-identical. All unchanged coverage floors pass; measured overall coverage is 95.40% lines and 86.38% branches.
+**Verified**: 2026-10-28 on the designated bench machine: full default/test-hooks tests and the full branch-coverage suite pass, including golden files and migration/fault injection after sharing stable-sort code. Disabling internal reference-result cache eviction makes the targeted window regression fail. All unchanged coverage floors pass; measured overall coverage is 95.44% lines and 86.50% branches. Strict native/browser/WASI lint, WASI tests (1,182 passing, seven ignored), the WASI release build and Firefox tests (61 passing) also pass; the new committed-reader window fixture executes on both portable runners.
 
-#641 slice 1 adds 30 tests with default features and one more with `test-hooks`. Slice 2 adds 22 default-feature tests (21 active and one ignored committed-fixture memory diagnostic).
+#641 slice 1 adds 30 tests with default features and one more with `test-hooks`. Slice 2 adds 22 default-feature tests (21 active and one ignored committed-fixture memory diagnostic). Slice 3 adds 26 default-feature tests (25 active and one ignored committed-fixture memory diagnostic).
 
 #183 adds bounded row-frame parser, evaluator, and integration tests; one additional plan-independence case runs with `test-hooks`, including duplicate tie keys and NaN. A sliding-sum test checks recovery after integer saturation. Grammar corpus cases cover frame spellings and rejection. A meter test checks that a zero-width min frame reserves one deque slot. An ignored bench-machine diagnostic reproduces the Criterion datasets and prints the engine meter's peak for every measured case.
 
@@ -29,6 +29,8 @@ Not counted above: the browser tests and the WASI run (see [Browser and WASI](#b
 - **Proven input order** (#641, first slice; `src/query/engine/order_tests.rs`, `order/tests.rs`, `tests/input_order_test.rs`): full result keys and projection slots, constants and repeated slots, integer/Boolean/float edge cases including NaNs and signed zeros, replacements, join fallback orientation and distinct canonicalization. Snapshot tests cover unrelated versus in-range pending/staged records, captured prefixes, temporal filters, prepared queries, checkpoints and large-transaction working readers including rejected statements and rollback. Counters establish early stopping, bounded raw proof reads and no reads without demand; optional proof-read errors leave the original plan. Late callback and `collect-set` errors retain their evaluation. A forced-fallback differential matrix checks identical ordered lists across plan switches. A committed `MemoryBackend` fixture runs on native, WASI and the browser. Storage tests cover every key kind/tag and raw seeks over retracted history.
 
 - **One-group count aggregation** (#641, second slice; `src/query/engine/aggregate_order_tests.rs`, `order/tests.rs`, `engine/tests.rs`): count/count-distinct over one certified scalar group, cross-batch boundaries, unique-key Sort omission and retained descending/aggregate-first/mixed-numeric Sort, Boolean/float representatives and mixed numeric group order. Arbitrary argument kinds, nil, `:distinct`, offset/limit and probe joins match forced fallback. Tests cover no `:with`/window/multiple-key eligibility, later fallible-aggregate/callback/collect-set errors and dropped-group precedence, pending/staged/prepared/working-reader changes and rejected statements, atomic fallback on every optional proof-read failure, bounded group state with one active group, internal DICT-cache eviction within one group spanning many probe batches, a growing distinct-group control, low budgets, allocator refusal, close/drop/rewind, and defensive `INT-032` for injected decreasing input before and after an answer batch. A committed `MemoryBackend` fixture also runs under WASI and in the browser.
+
+- **Partition windows** (#641, third slice; `window_order_tests.rs`, `order/tests.rs`, `order_tests.rs`, `engine/tests.rs`): compatible multiple windows with independent orders, peers, frames and neighbors; scalar/mixed-number, entity, Ref and Keyword adjacency with comparator-specific fallbacks; boundaries on and across batch edges; empty/selective ranges; callback/CollectSet/aggregate-query exclusions; bounded early-limit reads and output coalescing; pending/staged/working-reader/prepared/cursor pinning; fixed versus growing partitions; separately tracked Window/IdSpace peaks; internal input and reference-result cache eviction, including a failing retention mutation; lookahead ownership, low budgets, allocator refusal, close/drop/rewind and defensive `INT-032` before and after returned batches. The committed `MemoryBackend` fixture runs on native, WASI and browser targets.
 
 - **Bounded row frames** (`tests/window_functions_test.rs`, `src/query/datalog/aggregate/tests.rs`, #183): `:rows N preceding` parsing and errors, physical rows with tied order keys, partition reset, descending order, width zero and maximum, all five built-in aggregates against a replay oracle with numeric edge cases, UDFs through prepared queries and cursors, grouping with `:with`, distinct output, memory-limit refusal for long min/max strings, and final `:order-by` matching. A `test-hooks` case checks answer bags with clause reordering on and off.
 
@@ -490,8 +492,8 @@ These tests compare the database against an independent answer rather than a sin
 
 None of these are counted in the summary. The wasm32 targets run in CI (`.github/workflows/wasm.yml`).
 
-- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 60 `wasm_bindgen_test` tests. The final #641 snapshot passed in headless Firefox on the bench; Chrome remains a CI run.
-  - Two committed-memory-backend input-order fixtures: scalar Sort omission, and streaming counts with Boolean/float representatives and mixed numeric group order (#641).
+- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 61 `wasm_bindgen_test` tests. The final #641 snapshot passed in headless Firefox on the bench; Chrome remains a CI run.
+  - Three committed-memory-backend input-order fixtures: scalar Sort omission, streaming counts with Boolean/float representatives and mixed numeric group order, and partition windows preserving float edges and numeric group classes (#641).
   - Twenty-five for `BrowserDb`, including IndexedDB persistence, the cursor, and the flush returning every dirty page and failing on one it cannot read (#470).
   - Eleven for `BrowserBufferBackend` (which used `#[test]` and never ran before).
   - Two checking that IndexedDB page keys accept only whole numbers from 0 to 2^53.
@@ -507,11 +509,11 @@ None of these are counted in the summary. The wasm32 targets run in CI (`.github
   - `importGraph()` deletes the replaced database's IndexedDB keys.
   - Two buffer tests check that releasing a page drops its bytes and any unflushed write, and that export writes a released page as zeros.
   - A native storage test checks that a file whose free pages are all zeros (as the browser exports them), both just migrated from v7 and after 20 saves, opens, verifies clean and keeps committing. The free-list test checks that a checkpoint reports exactly the ids it newly lists.
-- **On `wasm32-wasip1` under Wasmtime**: the unit and integration tests that do not use a file run, 1,179 passing and seven ignored in the 2026-10-28 bench run with Wasmtime v49.0.2 (`wasm.yml`). Both committed input-order fixtures run here too, and the WASI REPL builds in release mode.
+- **On `wasm32-wasip1` under Wasmtime**: the unit and integration tests that do not use a file run, 1,182 passing and seven ignored in the 2026-10-28 bench run with Wasmtime v49.0.2 (`wasm.yml`). All three committed input-order fixtures run here too, and the WASI REPL builds in release mode.
 
 ## Ignored Tests
 
-The sixteen ignored tests (seventeen with `test-hooks`) are intentionally excluded from a normal local run:
+The seventeen ignored tests (eighteen with `test-hooks`) are intentionally excluded from a normal local run:
 
 - Four rustdoc examples that reference internal types and cannot compile as standalone examples.
 - One high-contention concurrency stress test intended for scheduled runs.

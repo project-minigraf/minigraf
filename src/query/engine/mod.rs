@@ -30,6 +30,8 @@ mod sort;
 mod tests;
 mod union;
 mod window;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod window_order_tests;
 
 use crate::error::{ErrorCode, err_coded};
 use crate::graph::storage::Snapshot;
@@ -130,9 +132,9 @@ pub(crate) struct Stream {
     find: Vec<usize>,
     vars: Vec<String>,
     project: Counters,
-    /// Keep the DICT lookups until the stream ends: a `Window` turns every
-    /// row's ids into values in its first pull, and the rows it returns
-    /// later read the same ids again (#547).
+    /// Full-input windows retain DICT lookups until the stream ends (#547).
+    /// Certified partition windows instead evict at internal input/result
+    /// boundaries and outer pulls; ids stay valid under the pin (#641).
     hold_ids: bool,
     /// In a rule query, the relations its rules derived (#548).
     relations: Option<relation::Relations>,
@@ -282,7 +284,9 @@ fn stream(
         vars,
         as_of: _,
     } = plan;
-    let hold_ids = steps.iter().any(|s| matches!(s, plan::Step::Window { .. }));
+    let hold_ids = steps.iter().any(|s| {
+        matches!(s, plan::Step::Window { mode, .. } if !matches!(mode, plan::WindowMode::Partitioned { .. }))
+    });
     let root = build(source, steps, &meter);
     Stream {
         snapshot,
@@ -336,8 +340,19 @@ pub(crate) fn build(
                 grouping == plan::Grouping::Ordered,
                 meter,
             )),
-            plan::Step::Window { find, named, keep } => {
-                Box::new(window::Window::new(root, find, named, keep, meter))
+            plan::Step::Window {
+                find,
+                named,
+                keep,
+                mode,
+            } => {
+                let partition = match mode {
+                    plan::WindowMode::Partitioned { slot, order } => Some((slot, order)),
+                    plan::WindowMode::Full | plan::WindowMode::Candidate(_) => None,
+                };
+                Box::new(window::Window::new(
+                    root, find, named, keep, partition, meter,
+                ))
             }
             plan::Step::Sort { cols, order, keep } => {
                 Box::new(sort::Sort::new(root, cols, order, keep, meter))

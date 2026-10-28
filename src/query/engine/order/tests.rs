@@ -172,6 +172,7 @@ fn canonicalization_and_buffering_operators_cannot_supply_false_certificates() {
             find: vec![],
             named: vec![],
             keep: vec![1],
+            mode: WindowMode::Full,
         },
         Step::Sort {
             cols: vec![1],
@@ -374,4 +375,105 @@ fn a_unique_group_key_proves_tie_columns_until_a_join_can_multiply_it() {
     let joined = order.through(&[join(JoinKind::Probe(0), vec![])]).unwrap();
     assert!(!joined.satisfies(&[1, 0], &[(0, false), (1, true)]));
     assert!(sorted(&joined));
+}
+/// A real committed reader on native, WASI and the browser, including canonical
+/// NaNs, both zero encodings, mixed numeric groups and Boolean partitions.
+#[cfg_attr(
+    all(target_arch = "wasm32", not(target_os = "wasi")),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", not(target_os = "wasi"))), test)]
+fn committed_partition_windows_preserve_float_edges_and_numeric_group_classes() {
+    use crate::query::datalog::{parser::parse_datalog_command, types::DatalogCommand};
+    use crate::storage::{backend::memory::MemoryBackend, persistent_facts::PersistentFactStorage};
+    for case in 0..3 {
+        let mut values = vec![
+            Value::Float(-0.0),
+            Value::Float(0.0),
+            Value::Float(f64::NAN),
+            Value::Float(-f64::NAN),
+            Value::Float(f64::NEG_INFINITY),
+            Value::Float(1.5),
+        ];
+        if case == 1 {
+            values.extend([Value::Integer(10), Value::Integer(-10)]);
+        }
+        if case == 2 {
+            values = vec![
+                Value::Boolean(true),
+                Value::Boolean(false),
+                Value::Boolean(true),
+            ];
+        }
+        let mut pfs = PersistentFactStorage::new(MemoryBackend::new(), 32).unwrap();
+        pfs.storage()
+            .transact(
+                values
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, v)| (uuid::Uuid::from_u128(i as u128 + 1), ":part".into(), v))
+                    .collect(),
+                None,
+            )
+            .unwrap();
+        pfs.mark_dirty();
+        pfs.save().unwrap();
+        let DatalogCommand::Query(q)=parse_datalog_command("(query [:find ?e ?g (row-number :over (:partition-by ?g :order-by ?e)) (lag ?g :over (:partition-by ?g :order-by ?e)) (sum ?g :over (:partition-by ?g :order-by ?e :rows 1 preceding)) :where [?e :part ?g] :order-by [?g ?e]])").unwrap() else {panic!("query");};
+        let mut results = Vec::new();
+        for optimized in [false, true] {
+            let _mode = set_enabled(optimized);
+            let mut stream = crate::query::engine::open(
+                pfs.storage().snapshot().unwrap(),
+                crate::query::engine::plan(&q).unwrap(),
+                std::sync::Arc::new(FunctionRegistry::with_builtins()),
+                usize::MAX,
+            )
+            .unwrap();
+            assert_eq!(
+                stream
+                    .counters()
+                    .iter()
+                    .any(|c| c.op == "WindowPartitioned"),
+                optimized
+            );
+            let mut rows = Vec::new();
+            while let Some(batch) = stream.next_rows().unwrap() {
+                rows.extend(batch);
+            }
+            results.push(rows);
+        }
+        assert_eq!(results[0].len(), results[1].len());
+        for (a, b) in results[0].iter().flatten().zip(results[1].iter().flatten()) {
+            match (a, b) {
+                (Value::Float(a), Value::Float(b)) => assert_eq!(a.to_bits(), b.to_bits()),
+                _ => assert!(a == b, "same partition window result"),
+            }
+        }
+    }
+}
+
+#[test]
+fn id_adjacency_cannot_certify_aggregate_or_semantic_sort_order() {
+    for kind in [ValueKind::Keyword, ValueKind::Ref] {
+        let p = proof(kind);
+        assert!(!p.group_ordered());
+        assert!(!sorted(&p));
+        assert!(p.partition_order().is_some());
+    }
+    let p = Ordering::entity(&spec(false)).unwrap();
+    assert!(!p.group_ordered());
+    assert!(!sorted(&p));
+    assert_eq!(p.partition_order(), Some(PartitionOrder::Entity));
+    let mut avet = spec(false);
+    avet.index = Some(Index::Avet);
+    assert!(
+        Ordering::entity(&avet).is_none(),
+        "an existing value-range hint cannot prove entity adjacency"
+    );
+    let mut p = proof(ValueKind::Integer);
+    p.remap(&[0, 2]);
+    assert!(
+        p.slot.is_none(),
+        "a dropped key cannot certify an output order"
+    );
 }

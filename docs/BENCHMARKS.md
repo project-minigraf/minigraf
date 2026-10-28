@@ -2,6 +2,158 @@
 
 This document records reproducible local benchmark snapshots. Completed release-performance history belongs in the [CHANGELOG](../CHANGELOG.md); continuous CI history is available on [Bencher](https://bencher.dev/perf/minigraf/plots).
 
+## Partition-at-a-time windows (#641, slice 3, unreleased)
+
+**Date**: 2026-10-28 · **Parent**: slice 2 at `e6670c82d` · **Change**: #641,
+third slice. The [build manifest](benchmarks/641-partition-windows-build.json)
+records the exact source fingerprint, matched parent/new library hashes,
+compiler, lockfile, probe and fixture-builder hashes, and release size.
+
+The snapshot resolver can prove adjacency for one nonconstant partition key
+shared by all built-in windows of a plain query. It prefers an existing entity
+prefix; otherwise a numeric/Boolean or uniform Ref/Keyword value prefix can
+qualify. DICT order proves adjacency only, never semantic Sort or Aggregate
+order. Pending/staged records in the captured source range, aggregate queries,
+unpartitioned or incompatible windows, callbacks and `collect-set` keep the
+full-input strategy. No public syntax or setting changes.
+
+Each certified partition uses the existing evaluator for its own ordering,
+peers, frames and neighbors. The operator retains one partition and a charged
+lookahead batch, and coalesces completed partitions into bounded passing output
+batches. It stops at an already-read child-batch boundary when output is ready,
+so a small limit does not pull more input merely to complete an unneeded later
+partition. A surrounding Sort/Distinct can still dominate memory. Row order
+across physical plans requires final query `:order-by`.
+
+### Protocol and fixed partitions
+
+All builds, tests and measurements ran on the designated bench machine. The
+immutable group fixtures from slice 2 contain exactly N committed facts: entity
+UUID i+1 has integer `:group floor(i/16)` for fixed groups, or group zero for one
+growing partition. Fixture construction runs separately from query timing/RSS.
+The [window probe](../scripts/input_order_window_probe.rs) is linked unchanged
+against both frozen libraries with the envelope opt-level-3/frame-pointer flags,
+a 256 KiB worker stack, one warmup and at least three timed cursor drains per
+process. Open/thread creation are outside query timing. Each drain checks every
+entity, group value and partition row number, not just row count.
+
+Six idle-machine A/B process rounds alternate execution order and CPU/memory
+NUMA binding. Results below are medians of six process medians; all raw records
+retain each process's minimum/median/maximum, repeat count and peak RSS.
+`value` partitions by `?g` (16 rows), `entity` by `?e` (one row). Both use
+`(row-number :over (... :order-by ?e))`, project `?e ?g` before the window
+column, and read `[?e :group ?g]`. Limited shapes add `:limit 10` without a final
+Sort; the full query strings are in the records.
+
+| Shape | Facts | Parent ms | Partitioned ms | Time change | New peak RSS KiB |
+|---|---:|---:|---:|---:|---:|
+| `value` | 100k | 244.509 | 243.214 | -0.53% | 5,484 |
+| `value` | 1m | 2989.030 | 2497.180 | -16.46% | 5,604 |
+| `value` | 10m | 33536.737 | 25958.366 | -22.60% | 5,588 |
+| `entity` | 100k | 247.649 | 255.748 | +3.27% | 5,408 |
+| `entity` | 1m | 2971.102 | 2641.718 | -11.09% | 5,520 |
+| `entity` | 10m | 33461.808 | 27378.896 | -18.18% | 5,680 |
+| `value_limit` | 100k | 218.354 | 2.066 | -99.05% | 3,996 |
+| `value_limit` | 1m | 2563.673 | 2.131 | -99.92% | 3,992 |
+| `value_limit` | 10m | 28386.299 | 2.212 | -99.99% | 4,044 |
+| `entity_limit` | 100k | 217.361 | 2.073 | -99.05% | 3,944 |
+| `entity_limit` | 1m | 2559.089 | 2.146 | -99.92% | 3,900 |
+| `entity_limit` | 10m | 28347.589 | 2.235 | -99.99% | 3,952 |
+
+The bounded limit 10M/100K time ratios are **1.071** (value) and **1.078** (entity), both within the 2x gate. The largest new 10M RSS increase over 100K across all four shapes is **272 KiB**, within the 16 MiB allowance. All [252 window records](benchmarks/641-partition-windows.jsonl) are retained.
+
+### Retained state and growing controls
+
+| Shape | Window peak bytes (all scales) | IdSpace peak bytes (all scales) | Max partition rows | Limited input rows |
+|---|---:|---:|---:|---:|
+| `value` | 52,464 | 81,920 | 16 | full drain |
+| `value_limit` | 52,464 | 1,280 | 16 | 1,024 |
+| `entity` | 49,464 | 81,920 | 1 | full drain |
+| `entity_limit` | 49,464 | 800 | 1 | 1,024 |
+
+All [18 memory records](benchmarks/641-partition-windows-meter.jsonl) are retained. Both fixed-partition peaks are exactly flat from 100K to 10M, within the 100K peak plus two charged input batches (**98,464 bytes**, computed with the fixture’s cell/row helpers). A single growing partition instead reaches **200 × N + 32 Window bytes**, including with a limit, while IdSpace remains **81,920 bytes**. Finishing the first partition still requires all N rows; that is a linear control, not a bounded-limit claim.
+
+Input lookahead, keys, kept-cell entries, named values and result columns are
+charged while retained. Shared payload estimates follow the existing
+conservative per-entry accounting when both lookahead and kept copies exist;
+passing output batches follow existing uncharged accounting. DICT ids remain
+valid under the pin while transient lookup maps are evicted at internal input
+batch and result-conversion boundaries. Provisional ids survive eviction.
+A separate reference-heavy `?e`/`lag ?e`/`lead ?e` regression bounds lookups by
+three output reference columns per 1,024-row batch; disabling result-conversion
+eviction makes that regression fail. Window and IdSpace peaks are traced
+separately in test builds, with no production instrumentation.
+
+| Shape | Facts | Parent ms | Partitioned ms | Time change | New peak RSS KiB |
+|---|---:|---:|---:|---:|---:|
+| `growing_value` | 100k | 247.919 | 266.611 | +7.54% | 34,896 |
+| `growing_value` | 1m | 3006.784 | 2935.370 | -2.38% | 313,072 |
+| `growing_value` | 10m | 33637.928 | 33139.746 | -1.48% | 2,897,984 |
+| `growing_value_limit` | 100k | 216.650 | 203.653 | -6.00% | 35,064 |
+| `growing_value_limit` | 1m | 2580.660 | 2190.145 | -15.13% | 319,284 |
+| `growing_value_limit` | 10m | 28506.157 | 23415.299 | -17.86% | 2,897,296 |
+| `unpartitioned_control` | 100k | 244.699 | 245.854 | +0.47% | 43,572 |
+| `unpartitioned_control` | 1m | 2983.375 | 2976.743 | -0.22% | 444,780 |
+| `unpartitioned_control` | 10m | 33287.533 | 33508.387 | +0.66% | 3,715,432 |
+
+A limit can avoid unread later input and its I/O/allocation errors. Coalescing
+can still encounter an error while gathering one output batch after completing
+some partitions. Built-in window pipelines contain no user callbacks or
+fallible aggregate validation whose later data error would be hidden.
+
+### Existing guards and selective startup
+
+All 12 exact #379 history guards pass: time deltas **-2.17% to +0.49%**, within the +5% gate. Ordinary envelope points range from **-2.31% to +0.61%**. Existing ordered limit/offset cases range from **-1.66% to +1.99%**, and other controls from **-1.49% to +3.37%**. All [360 envelope/control records](benchmarks/641-partition-windows-guards.jsonl) and [144 history records](benchmarks/641-partition-windows-history.jsonl) are retained.
+
+| Startup workload | Facts | Parent µs | Partitioned µs | Added µs |
+|---|---:|---:|---:|---:|
+| `value_window_point` | 100k | 24.139 | 136.399 | +112.261 |
+| `value_window_point` | 1m | 23.355 | 121.472 | +98.117 |
+| `value_window_point` | 10m | 23.604 | 124.117 | +100.514 |
+| `unpartitioned_window_point` | 100k | 23.471 | 23.123 | -0.347 |
+| `unpartitioned_window_point` | 1m | 23.610 | 23.769 | +0.159 |
+| `unpartitioned_window_point` | 10m | 23.683 | 23.733 | +0.050 |
+
+The [72 startup records](benchmarks/641-partition-windows-startup.jsonl) use the unchanged guard probe (three warmups, at least five timed drains, six balanced process rounds). Both queries read `[:pM :age ?a]` and project `?a` plus row-number ordered by `?a`; only the value-partition case adds `:partition-by ?a`. M is the midpoint entity. The source remains selective EAVT.
+
+No ordinary query without an applicable demand performs proof reads. Entity
+partition certification needs no optional value-kind seeks. A newly eligible
+selective value-partition window still pays eight whole-attribute proof seeks;
+there is no cost-based strategy selection. The startup records report that
+cost separately from existing point guards and unpartitioned-window controls.
+
+### Validation and reproduction
+
+The full default suite passes **1,972 tests** (17 ignored), test-hooks **2,005** (18 ignored), WASI **1,182** (seven ignored), and Firefox **61**. The committed-reader window fixture runs on both portable targets. Strict native/browser/WASI clippy, the WASI release build and unchanged branch-coverage floors pass (**95.44%** lines / **86.50%** branches). Golden-file/migration/fault-injection checks and frozen answer comparisons pass. The final focused window and doc-test reruns also pass.
+
+The initial native release binary exceeded the unchanged 1,259,520-byte cap.
+Sharing the identical stable transaction-order sort across legacy-open paths,
+and stable clause-cost sorting across ascending/descending call sites, brings
+the final binary to **1,258,040 bytes**. Equal-key order, flags, dependencies,
+public API, file/WAL formats and frozen answers remain unchanged.
+
+Build the [group fixture](../scripts/input_order_group_fixture.rs) with the
+parent library, and link the same window probe against both matched libraries
+using the slice-1 rustc/envelope recipe. For example:
+
+```sh
+group_fixture fixed.graph 100000 16
+window_probe fixed.graph '(query [:find ?e ?g (row-number :over (:partition-by ?g :order-by ?e)) :where [?e :group ?g] :limit 10])' 10 16 16
+```
+
+Use `:partition-by ?e` and final probe argument 1 for one-row entity
+partitions. Use fixture group size N and final probe argument N for the growing
+partition, or omit `:partition-by` with final probe argument N for its
+unpartitioned control. Alternate bindings/order over six rounds.
+
+All sixteen Criterion IDs execute with
+`cargo bench --bench minigraf_bench -- '^query/partition_windows/' --test`:
+`query/partition_windows/{value,entity,value_limit,entity_limit}/{1k,10k,100k,1m}`.
+They use committed one-row partitions, with value/entity certificates and
+full/limited drains. The existing nightly `^query/` route selects every new ID
+(#776). Scheduled Bencher history becomes available after merge; none is
+claimed here.
+
 ## One-group count and distinct count (#641, slice 2, unreleased)
 
 **Date**: 2026-10-28 · **Parent**: slice 1 at `366f662df` · **Change**: #641,

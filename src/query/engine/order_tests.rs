@@ -748,6 +748,22 @@ fn optional_proofs_are_bounded_and_queries_without_a_usable_demand_do_no_probes(
     let snapshot = db.snapshot().unwrap();
     let base = snapshot.committed.as_ref().unwrap().key_source().unwrap();
     for (q, expected) in [
+        (
+            "[:find ?v (row-number :over (:partition-by ?v :order-by ?e)) :where [?e :score ?v]]",
+            8,
+        ),
+        (
+            "[:find ?v (row-number :over (:partition-by ?e :order-by ?v)) :where [?e :score ?v]]",
+            0,
+        ),
+        (
+            "[:find ?v (row-number :over (:order-by ?v)) :where [?e :score ?v]]",
+            0,
+        ),
+        (
+            "[:find ?v (row-number :over (:partition-by ?v :order-by ?e)) :where [?e :score ?v] :limit 0]",
+            0,
+        ),
         ("[:find ?v (count ?e) :where [?e :score ?v] :limit 3]", 8),
         (
             "[:find ?v (count ?e) :where [?e :score ?v] :order-by [?v] :offset 7 :limit 0]",
@@ -879,5 +895,41 @@ fn every_failed_optional_read_retains_the_original_sort_projection_and_index() {
                 "a failed optional proof still executes the original query"
             );
         }
+    }
+}
+
+#[test]
+fn every_failed_window_proof_leaves_mode_projection_and_index_unchanged() {
+    use super::plan::{Source, Step, WindowMode};
+    use crate::query::datalog::functions::FunctionRegistry;
+    let (_dir, db) = fixture(32);
+    let snapshot = db.snapshot().unwrap();
+    let base = snapshot.committed.as_ref().unwrap().key_source().unwrap();
+    for fail_at in 1..=8 {
+        let keys = ProofKeys {
+            base,
+            calls: 0.into(),
+            fail_at: Some(fail_at),
+        };
+        let mut plan = query_plan(
+            "[:find ?v (row-number :over (:partition-by ?v :order-by ?e)) :where [?e :score ?v] :order-by [?v]]",
+        );
+        let original = plan.find.clone();
+        super::order::resolve(
+            &snapshot,
+            Some(&keys),
+            &FunctionRegistry::with_builtins(),
+            &mut plan,
+        );
+        assert!(plan.steps.iter().all(|s| !matches!(
+            s,
+            Step::Window {
+                mode: WindowMode::Partitioned { .. },
+                ..
+            }
+        )));
+        assert!(plan.steps.iter().any(|s| matches!(s, Step::Sort { .. })));
+        assert!(matches!(&plan.source, Source::Scan(s) if s.index.is_none()));
+        assert_eq!(plan.find, original);
     }
 }

@@ -1,0 +1,30 @@
+{
+  "executed_benchmark_ids": [
+    "query/partition_windows/value/1k",
+    "query/partition_windows/value/10k",
+    "query/partition_windows/value/100k",
+    "query/partition_windows/value/1m",
+    "query/partition_windows/entity/1k",
+    "query/partition_windows/entity/10k",
+    "query/partition_windows/entity/100k",
+    "query/partition_windows/entity/1m",
+    "query/partition_windows/value_limit/1k",
+    "query/partition_windows/value_limit/10k",
+    "query/partition_windows/value_limit/100k",
+    "query/partition_windows/value_limit/1m",
+    "query/partition_windows/entity_limit/1k",
+    "query/partition_windows/entity_limit/10k",
+    "query/partition_windows/entity_limit/100k",
+    "query/partition_windows/entity_limit/1m"
+  ],
+  "nightly_filter": "^query/",
+  "parent_commit": "e6670c82d24ac8e1f7ef0a75ca88c67b74c07f67",
+  "parent_library_sha256": "419def4308e7cfc61cb4fa7f0572d0751713a50dab6a89c1cf8939ee91f78faf",
+  "partitioned_library_sha256": "f308364c49fd59adac456299220db7bd5be74641dbbf0b9988bc93b209f339c2",
+  "lock_sha256": "b03965119fd8ce5b5cf3ad3d37fb194ffeae24b6a862a0c85ae8fbcb6833ee77",
+  "compiler": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "source_sha256": "f5410bb1ac6f00b02e2f459bd81ab6bf76fe7dd460b4219727a445812e51d009",
+  "probe_sha256": "06894b129f2022b18bfb0fd9f98ab6cae0d03b1eb48697299542558a7cc339ba",
+  "fixture_builder_sha256": "2498b51719a8db20cba0c110b66ba3fdf71a82c08508b3183bb1b5b1892e26a2",
+  "release_bytes": 1258040
+}
