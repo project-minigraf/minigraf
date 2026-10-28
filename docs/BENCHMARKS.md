@@ -2,6 +2,127 @@
 
 This document records reproducible local benchmark snapshots. Completed release-performance history belongs in the [CHANGELOG](../CHANGELOG.md); continuous CI history is available on [Bencher](https://bencher.dev/perf/minigraf/plots).
 
+## Proven input order and Sort omission (#641, slice 1, unreleased)
+
+**Date**: 2026-10-28 · **Base**: `v3` at `2abf53df` · **Change**: #641,
+first slice. The [build manifest](benchmarks/641-input-order-build.json) records
+source, dependency-lock, library and probe fingerprints. Both libraries used
+`--profile envelope` (opt-level 3) and `-C force-frame-pointers=yes`, with Rust
+1.99.1 and the same dependency lock.
+
+Six rounds ran on an idle benchmark machine, binding CPU and memory to the same
+NUMA node and swapping nodes and execution order between base and change each
+round. Every query ran in a fresh process on a prebuilt, checkpointed file opened
+read-only, on a 256 KiB worker stack. Three warmups preceded 5–20,000 measured
+cursor drains within a one-second budget (at least five even for slower queries).
+Open, fixture construction and profiling are outside timing. Tables give the
+median of six process p50s; raw records retain each p50, its per-process range,
+run count and query-only process peak RSS. No samples were discarded.
+
+The common envelope fixtures use `floor(N / 6)` ordinary entities and
+approximately `N` currently visible facts, plus expired valid-time records and
+hot-entity history. The
+scale labels are nominal current-fact counts. The age queries read 16,666,
+166,666 and 1,666,666 rows respectively. Every measured result checks its row
+count; the ordered limit/offset probes also check that all returned ages are zero.
+
+| Nominal current facts | Ordered limit: base | Change | Ordered offset: base | Change | Change limit max peak RSS |
+|---|---:|---:|---:|---:|---:|
+| 100K | 5.996 ms | 0.458 ms | 6.022 ms | 0.457 ms | 3,784 KiB |
+| 1M | 62.260 ms | 0.455 ms | 62.739 ms | 0.457 ms | 3,776 KiB |
+| 10M | 643.947 ms | 0.463 ms | 644.929 ms | 0.452 ms | 3,796 KiB |
+
+The RSS column is the maximum of the six process peaks.
+
+The limit query is `[:find ?a :where [?e :age ?a] :order-by [?a] :limit 10]`;
+the offset query adds `:offset 13`. At 10M, the changed p50 ranges were
+0.459–0.476 ms and 0.448–0.459 ms. The 10M/100K ratios are **1.012** and **0.989**,
+within the 2x gate. Peak RSS increases by **12 KiB** and **40 KiB**, within the
+16 MiB allowance. Internal tests separately verify Sort omission, restored
+projection slots, input read at most `offset + limit + 1,024` rows on the positive
+fixture, at most eight raw kind-prefix seeks, and zero proof reads for zero limit
+including a nonzero offset.
+
+### Startup cost on a selective ordered entity range
+
+The entity-and-attribute range remains EAVT. Its order proof still makes eight
+whole-attribute kind-prefix seeks, whose startup cost dominates a one-row query:
+
+| Nominal current facts | Base | Change |
+|---|---:|---:|
+| 100K | 21.13 µs | 129.89 µs |
+| 1M | 20.72 µs | 112.29 µs |
+| 10M | 20.99 µs | 117.39 µs |
+
+Query: `[:find ?a :where [:pM :age ?a] :order-by [?a] :limit 1]`, where
+`M = floor(entity_count / 2)`. This cost is reported separately from the ordinary
+point-query guards. There is no cost-based selection or cross-query proof cache
+in this slice.
+
+### Existing point and buffering controls
+
+The envelope's ordinary entity point, exact attribute/value point and current
+hot-history point changed by **−0.65% to +1.03%** across the three scales. The
+attribute scan, plain limit, ascending UUID-tie Sort and descending top-k control
+changed by **−3.28% to +2.00%**. All measurements are in the
+[360 envelope records](benchmarks/641-input-order.jsonl).
+
+The exact #323/#379 history fixture and four query shapes were also measured
+through the same cursor probe: 2,000 filler facts, a never-changed sibling
+attribute, and one live string value after `depth - 1` retract/reassert pairs.
+The `:as-of 2002` query selects the first assertion with `:any-valid-time`.
+
+| Guard | Depth | Base p50 | Change p50 | Delta |
+|---|---:|---:|---:|---:|
+| Churned attribute | 1 | 16.83 µs | 16.70 µs | −0.80% |
+| | 500 | 151.83 µs | 153.69 µs | +1.23% |
+| | 2,000 | 602.70 µs | 599.46 µs | −0.54% |
+| Sibling attribute | 1 | 17.12 µs | 17.10 µs | −0.15% |
+| | 500 | 22.53 µs | 22.58 µs | +0.24% |
+| | 2,000 | 22.85 µs | 22.81 µs | −0.17% |
+| Attribute scan | 1 | 17.26 µs | 17.35 µs | +0.50% |
+| | 500 | 152.62 µs | 152.65 µs | +0.02% |
+| | 2,000 | 595.38 µs | 603.65 µs | +1.39% |
+| Churned attribute, as-of | 1 | 17.85 µs | 17.76 µs | −0.48% |
+| | 500 | 141.32 µs | 141.59 µs | +0.19% |
+| | 2,000 | 554.11 µs | 560.41 µs | +1.14% |
+
+The worst guard delta is **+1.39%**, within the 5% gate. All
+[144 history records](benchmarks/641-input-order-history.jsonl) are retained.
+
+### Reproduction and nightly routing
+
+Build the immutable base and the change once, then compile the same
+[query probe](../scripts/input_order_probe.rs) against each library:
+
+```sh
+RUSTFLAGS='-C force-frame-pointers=yes' cargo build --profile envelope --example perf_envelope
+rustc --edition=2024 -C opt-level=3 -C panic=abort -C force-frame-pointers=yes \
+  -L dependency="$target_dir/envelope/deps" \
+  --extern minigraf="$target_dir/envelope/deps/libminigraf.rlib" \
+  scripts/input_order_probe.rs -o "$probe_out"
+```
+
+Build envelope fixtures separately with `perf_envelope __build <new.graph> N`.
+Run `probe <fixture.graph> '(query [...])' <expected_rows> [zeros]` with alternating
+CPU/memory binding as described above. Build the
+[history fixture helper](../scripts/input_order_history_fixture.rs) against the
+base library with the same rustc command; run it with `<new.graph> <depth>`.
+Raw records contain each complete query.
+
+All eight Criterion cases were executed on the bench with
+`cargo bench --bench minigraf_bench -- '^query/ordered_values/' --test`:
+`query/ordered_values/{index,uuid_ties}/{1k,10k,100k,1m}`. The existing `query`
+nightly matrix uses `^query/`, which selects every new ID (#776); no workflow
+change is needed. Scheduled Bencher history becomes available after merge.
+`perf_envelope` also includes `ordered_values` beside its existing `top_k` control.
+
+The ordinary release binary is **1,254,928 bytes**, below the unchanged
+**1,259,520-byte** cap (base: 1,258,784). Sharing the existing set/window sort
+comparators removes duplicate generated code while preserving their order.
+This slice changes Sort selection only; grouped Aggregate and Window remain
+full-input operators until the following #641 slices.
+
 ## Projected UUID lookup batching (#530, unreleased)
 
 **Date**: 2026-10-27 · **Baseline**: `v3` at `80120758` · **Change**: #530.

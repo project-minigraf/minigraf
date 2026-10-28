@@ -234,6 +234,51 @@ fn bench_query(c: &mut Criterion) {
 
 // ── Task 6: time_travel/ ──────────────────────────────────────────────────────
 
+// The existing nightly ^query/ filter selects both the proven value order and
+// its UUID-tie fallback control. All facts are committed, not in-memory pending.
+fn bench_input_order(c: &mut Criterion) {
+    let mut group = c.benchmark_group("query/ordered_values");
+    group.sample_size(10);
+    for (label, n) in [
+        ("1k", 1_000),
+        ("10k", 10_000),
+        ("100k", 100_000),
+        ("1m", 1_000_000),
+    ] {
+        for (mode, query) in [
+            (
+                "index",
+                "(query [:find ?v :where [?e :val ?v] :order-by [?v] :limit 10])",
+            ),
+            (
+                "uuid_ties",
+                "(query [:find ?e ?v :where [?e :val ?v] :order-by [?v] :limit 10])",
+            ),
+        ] {
+            group.bench_with_input(BenchmarkId::new(mode, label), &n, |b, &n| {
+                let dir = tempfile::tempdir().unwrap();
+                let path = dir.path().join("ordered.graph");
+                helpers::populate_file(n, path.to_str().unwrap());
+                let db = OpenOptions::new()
+                    .read_only(true)
+                    .path(&path)
+                    .open()
+                    .unwrap();
+                b.iter(|| {
+                    let minigraf::QueryResult::QueryResults { results, .. } =
+                        db.execute(query).unwrap()
+                    else {
+                        panic!("expected rows");
+                    };
+                    assert_eq!(results.len(), 10.min(n));
+                    black_box(results)
+                });
+            });
+        }
+    }
+    group.finish();
+}
+
 fn bench_time_travel(c: &mut Criterion) {
     const SCALES: &[(&str, usize)] = &[
         ("1k", 1_000),
@@ -1976,6 +2021,7 @@ criterion_group!(
     bench_insert,
     bench_insert_file,
     bench_query,
+    bench_input_order,
     bench_time_travel,
     bench_recursion,
     bench_negation,

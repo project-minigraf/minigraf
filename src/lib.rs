@@ -140,6 +140,18 @@ pub fn __reorder(on: bool) -> ReorderGuard {
     query::datalog::optimizer::set_reorder(on)
 }
 
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub use query::engine::InputOrderGuard;
+
+/// Enables input-order optimizations on this thread for differential tests.
+/// The previous setting is restored on drop; test-hooks builds only.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub fn __input_order(on: bool) -> InputOrderGuard {
+    query::engine::set_input_order(on)
+}
+
 // Large-transaction tests (#550): statements read and written in small chunks.
 #[cfg(feature = "test-hooks")]
 #[doc(hidden)]

@@ -787,21 +787,45 @@ pub fn attribute_value_prefix(a: u32, v: &KeyValue) -> Vec<u8> {
     k
 }
 
-/// A kind of value whose matches a constant cannot name by one key: a float
-/// matches `0.0` and `-0.0` alike (#706), keywords match a UUID constant by
-/// the entity they name (#544).
+/// A key value's kind. Constants read floats and keywords by kind (#706,
+/// #544); order proofs check every kind, including historical keys (#641).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValueKind {
+    Null,
+    Boolean,
+    Integer,
     Float,
+    String,
     Keyword,
+    Ref,
+    Set,
+}
+
+impl ValueKind {
+    pub const ALL: [Self; 8] = [
+        Self::Null,
+        Self::Boolean,
+        Self::Integer,
+        Self::Float,
+        Self::String,
+        Self::Keyword,
+        Self::Ref,
+        Self::Set,
+    ];
 }
 
 /// Key prefix of every AVET entry of attribute `a` with a value of `kind`.
 pub fn attribute_kind_prefix(a: u32, kind: ValueKind) -> Vec<u8> {
     let mut k = attribute_prefix(a);
     k.push(match kind {
+        ValueKind::Null => TAG_NULL,
+        ValueKind::Boolean => TAG_BOOL,
+        ValueKind::Integer => TAG_INT,
         ValueKind::Float => TAG_FLOAT,
+        ValueKind::String => TAG_STRING,
         ValueKind::Keyword => TAG_KEYWORD,
+        ValueKind::Ref => TAG_REF,
+        ValueKind::Set => TAG_SET,
     });
     k
 }
@@ -1496,5 +1520,62 @@ mod tests {
     fn size_limits() {
         assert_eq!(MAX_VALUE_BYTES, 4068);
         assert_eq!(MAX_IDENT_BYTES, 1024);
+    }
+
+    #[test]
+    fn kind_prefixes_cover_every_encoded_value_variant_exactly_once() {
+        fn kind(v: &KeyValue) -> ValueKind {
+            // Intentionally exhaustive: new variants must update this proof.
+            match v {
+                KeyValue::Null => ValueKind::Null,
+                KeyValue::Bool(_) => ValueKind::Boolean,
+                KeyValue::Int(_) => ValueKind::Integer,
+                KeyValue::Float(_) => ValueKind::Float,
+                KeyValue::Str(_) | KeyValue::LongStr { .. } => ValueKind::String,
+                KeyValue::Keyword(_) => ValueKind::Keyword,
+                KeyValue::Ref(_) => ValueKind::Ref,
+                KeyValue::Set(_) | KeyValue::LongSet { .. } => ValueKind::Set,
+            }
+        }
+        let r = ValueRef { page: 2, slot: 0 };
+        let values = [
+            KeyValue::Null,
+            KeyValue::Bool(false),
+            KeyValue::Int(-1),
+            KeyValue::Float(-0.0),
+            KeyValue::Str("a".into()),
+            long_str(&"x".repeat(65), r),
+            KeyValue::Keyword(3),
+            KeyValue::Ref(4),
+            KeyValue::Set(vec![]),
+            KeyValue::LongSet {
+                prefix: vec![1],
+                hash: 1,
+                vref: r,
+            },
+        ];
+        for (i, k) in ValueKind::ALL.iter().enumerate() {
+            assert!(
+                !ValueKind::ALL.iter().take(i).any(|other| other == k),
+                "unique kinds"
+            );
+            assert!(
+                values.iter().any(|v| kind(v) == *k),
+                "every kind has a value witness"
+            );
+        }
+        for v in &values {
+            let mut bytes = attribute_prefix(7);
+            put_value(&mut bytes, v);
+            let matched: Vec<_> = ValueKind::ALL
+                .iter()
+                .copied()
+                .filter(|k| bytes.starts_with(&attribute_kind_prefix(7, *k)))
+                .collect();
+            assert!(
+                matched == [kind(v)],
+                "exactly one kind prefix matches the actual encoding"
+            );
+        }
     }
 }

@@ -115,6 +115,8 @@ pub(crate) enum Meta {
 /// What a `Scan` reads.
 #[derive(Debug, Clone)]
 pub(crate) struct ScanSpec {
+    /// Snapshot-resolved source index (#641); otherwise normal index choice.
+    pub(crate) index: Option<crate::storage::keys::Index>,
     pub(crate) e: Term<EntityId>,
     pub(crate) a: Term<String>,
     pub(crate) v: Term<ValueConst>,
@@ -1068,6 +1070,7 @@ impl Builder {
                         metas.push((m, slot));
                     }
                     self.source = Some(Source::Scan(ScanSpec {
+                        index: None,
                         e,
                         a,
                         v,
@@ -1165,6 +1168,7 @@ impl Builder {
                             Some((entity, attribute)) => Step::CollectSet(CollectSpec {
                                 entity,
                                 inner: ScanSpec {
+                                    index: None,
                                     e: Term::Bind(0),
                                     a: Term::Const(attribute.clone()),
                                     v: Term::Bind(1),
@@ -1502,6 +1506,7 @@ fn join(
     }
     Ok(JoinSpec {
         inner: ScanSpec {
+            index: None,
             e,
             a,
             v,

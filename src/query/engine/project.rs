@@ -177,6 +177,9 @@ mod tests {
 
     // The unused storage operations cannot affect a projection-only test.
     impl KeySource for Keys {
+        fn any_key(&self, _: Index, _: &[u8]) -> Result<bool> {
+            panic!("unused")
+        }
         fn next_ids(&self) -> (u64, u32) {
             (self.limit, 1)
         }

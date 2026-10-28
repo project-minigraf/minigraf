@@ -4,11 +4,13 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,896 | 1,928 |
+| **Passing** | 1,926 | 1,959 |
 | **Ignored** | 15 | 16 |
-| **Total** | 1,911 | 1,944 |
+| **Total** | 1,941 | 1,975 |
 
-**Verified**: 2026-10-27 on the designated bench machine: the full default suite under branch coverage plus `cargo test --doc`, and `cargo test --features test-hooks`. The final review test enhancement also passed a focused dictionary rerun. All coverage gates retain their existing floors.
+**Verified**: 2026-10-28 on the designated bench machine: the full default suite under branch coverage plus `cargo test --doc`, and `cargo test --features test-hooks`. The final proof-read failure enhancement also passed a focused rerun. All unchanged coverage floors pass; measured overall coverage is 95.39% lines and 86.14% branches.
+
+#641 adds 30 tests with default features and one more with `test-hooks`.
 
 #183 adds bounded row-frame parser, evaluator, and integration tests; one additional plan-independence case runs with `test-hooks`, including duplicate tie keys and NaN. A sliding-sum test checks recovery after integer saturation. Grammar corpus cases cover frame spellings and rejection. A meter test checks that a zero-width min frame reserves one deque slot. An ignored bench-machine diagnostic reproduces the Criterion datasets and prints the engine meter's peak for every measured case.
 
@@ -23,6 +25,8 @@ Not counted above: the browser tests and the WASI run (see [Browser and WASI](#b
 **Scope**: the unreleased file-format-v8 work (#287, #371): the index-key value-collision fix, the v7→v8 migration, and the drop of formats v1–v6. Otherwise the public database API, the Datalog engine, storage and recovery paths, v2.0.0's locking and structured-error-code changes, and v2.0.1's regression test for rebuilding indexes on open after several checkpoints (#370). Tests merged from the v2.x line are marked *(v2.x)*.
 
 ## Covered Areas
+
+- **Proven input order** (#641, first slice; `src/query/engine/order_tests.rs`, `order/tests.rs`, `tests/input_order_test.rs`): full result keys and projection slots, constants and repeated slots, integer/Boolean/float edge cases including NaNs and signed zeros, replacements, join fallback orientation and distinct canonicalization. Snapshot tests cover unrelated versus in-range pending/staged records, captured prefixes, temporal filters, prepared queries, checkpoints and large-transaction working readers including rejected statements and rollback. Counters establish early stopping, bounded raw proof reads and no reads without demand; optional proof-read errors leave the original plan. Late callback and `collect-set` errors retain their evaluation. A forced-fallback differential matrix checks identical ordered lists across plan switches. A committed `MemoryBackend` fixture runs on native, WASI and the browser. Storage tests cover every key kind/tag and raw seeks over retracted history.
 
 - **Bounded row frames** (`tests/window_functions_test.rs`, `src/query/datalog/aggregate/tests.rs`, #183): `:rows N preceding` parsing and errors, physical rows with tied order keys, partition reset, descending order, width zero and maximum, all five built-in aggregates against a replay oracle with numeric edge cases, UDFs through prepared queries and cursors, grouping with `:with`, distinct output, memory-limit refusal for long min/max strings, and final `:order-by` matching. A `test-hooks` case checks answer bags with clause reordering on and off.
 
@@ -484,7 +488,8 @@ These tests compare the database against an independent answer rather than a sin
 
 None of these are counted in the summary. The wasm32 targets run in CI (`.github/workflows/wasm.yml`).
 
-- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 58 `wasm_bindgen_test` tests.
+- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 59 `wasm_bindgen_test` tests. The final #641 snapshot passed in headless Firefox on the bench; Chrome remains a CI run.
+  - One committed-memory-backend input-order fixture, including scalar edge cases and verification that Sort is omitted (#641).
   - Twenty-five for `BrowserDb`, including IndexedDB persistence, the cursor, and the flush returning every dirty page and failing on one it cannot read (#470).
   - Eleven for `BrowserBufferBackend` (which used `#[test]` and never ran before).
   - Two checking that IndexedDB page keys accept only whole numbers from 0 to 2^53.
@@ -500,11 +505,11 @@ None of these are counted in the summary. The wasm32 targets run in CI (`.github
   - `importGraph()` deletes the replaced database's IndexedDB keys.
   - Two buffer tests check that releasing a page drops its bytes and any unflushed write, and that export writes a released page as zeros.
   - A native storage test checks that a file whose free pages are all zeros (as the browser exports them), both just migrated from v7 and after 20 saves, opens, verifies clean and keeps committing. The free-list test checks that a checkpoint reports exactly the ids it newly lists.
-- **On `wasm32-wasip1` under Wasmtime**: the unit and integration tests that do not use a file run, 1,121 passing (`wasm.yml`, #746); ten that spawn threads or a child process are ignored on WASI.
+- **On `wasm32-wasip1` under Wasmtime**: the unit and integration tests that do not use a file run, 1,177 passing and seven ignored in the 2026-10-28 bench run with Wasmtime v49.0.2 (`wasm.yml`). The committed input-order fixture runs here too, and the WASI REPL builds in release mode.
 
 ## Ignored Tests
 
-The fourteen ignored tests (fifteen with `test-hooks`) are intentionally excluded from a normal local run:
+The fifteen ignored tests (sixteen with `test-hooks`) are intentionally excluded from a normal local run:
 
 - Four rustdoc examples that reference internal types and cannot compile as standalone examples.
 - One high-contention concurrency stress test intended for scheduled runs.
@@ -519,6 +524,7 @@ The fourteen ignored tests (fifteen with `test-hooks`) are intentionally exclude
 - One `:limit` and top-k acceptance test (`tests/limit_acceptance_test.rs`, #306, the #473 `:limit` item), run by the nightly smoke workflow over one 10M-fact fixture written with `LogWriter`: `:limit 10` returns 10 rows in under 250 ms under a 64 KiB `query_memory_limit`, adding under 32 MiB of peak RSS; `:order-by [?v :desc] :limit 10` returns the ten largest values under a 1 MiB limit, adding under 32 MiB.
 - One large-transaction acceptance test (`tests/large_transaction_acceptance_test.rs`, #550; `test-hooks` only), run by the nightly smoke workflow (see [Large transactions](#large-transactions-550)).
 - One measurement test (`meter_peak_against_rss`, `src/query/engine/tests.rs`, #549): prints the meter's peak against the peak RSS for the same two shapes, opening the engine directly.
+- One row-frame measurement test (`window_rows_benchmark_meter_peaks`, `src/query/engine/tests.rs`, #183): prints metered peaks for the window benchmark fixtures.
 
 ## Reproducing
 

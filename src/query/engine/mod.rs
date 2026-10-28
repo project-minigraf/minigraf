@@ -14,6 +14,9 @@ mod ids;
 mod join;
 mod limit;
 mod meter;
+mod order;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod order_tests;
 mod plan;
 mod project;
 mod recursive;
@@ -36,6 +39,10 @@ use anyhow::Result;
 use batch::Batch;
 use ids::IdSpace;
 pub(crate) use meter::Meter;
+#[cfg(feature = "test-hooks")]
+pub use order::InputOrderGuard;
+#[cfg(feature = "test-hooks")]
+pub(crate) use order::set_enabled as set_input_order;
 pub(crate) use plan::{Plan, plan, plan_rules, udfs};
 pub(crate) use recursive::Limits;
 use std::sync::Arc;
@@ -162,13 +169,14 @@ fn keys(snapshot: &Snapshot) -> Result<Option<&dyn KeySource>> {
 /// Open `plan` over `snapshot`, holding at most `memory_limit` bytes.
 pub(crate) fn open(
     snapshot: Snapshot,
-    plan: Plan,
+    mut plan: Plan,
     functions: Arc<FunctionRegistry>,
     memory_limit: usize,
 ) -> Result<Stream> {
     let keys = keys(&snapshot)?;
     let meter = Meter::new(memory_limit);
     let bound = resolve(&snapshot, plan.as_of, &meter)?;
+    order::resolve(&snapshot, keys, &functions, &mut plan);
     let ids = IdSpace::new(keys, &meter);
     Ok(stream(snapshot, ids, plan, functions, None, meter, bound))
 }

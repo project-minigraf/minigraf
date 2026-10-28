@@ -302,6 +302,34 @@ impl Snapshot {
             .saturating_add(self.staged.as_ref().map_or(0, |s| s.facts.len()))
     }
 
+    /// Any pending/staged record of this attribute (and optional entity) in
+    /// the captured snapshot, even a retraction or excluded version (#641).
+    pub(crate) fn has_pending(&self, attribute: &str, entity: Option<&EntityId>) -> Result<bool> {
+        use crate::storage::index::AevtKey;
+        if self.pending_len() == 0 {
+            return Ok(false);
+        }
+        let pending = self.read_pending()?;
+        let mut start = AevtKey::attribute_start(attribute);
+        if let Some(e) = entity {
+            start.entity = *e;
+        }
+        // Existence needs no merge: stop each index at the source boundary
+        // before filtering records appended after the captured prefix.
+        let has = |store: &PendingStore, len: usize| {
+            store
+                .indexes
+                .aevt
+                .range(&start..)
+                .take_while(|(k, _)| {
+                    k.attribute == attribute && entity.is_none_or(|e| k.entity == *e)
+                })
+                .any(|(_, &pos)| pos < len)
+        };
+        Ok(has(&pending, self.pending_len)
+            || self.staged.as_ref().is_some_and(|s| has(s, s.facts.len())))
+    }
+
     /// This snapshot with `facts` staged after its pending ones (#550 spec
     /// §7), its `now` raised to the newest of their `tx_id`s.
     pub(crate) fn with_staged(mut self, facts: Vec<Fact>) -> Self {

@@ -549,6 +549,9 @@ pub trait KeySource: Send + Sync {
     /// Append to `out` the transactions with `tx_id <= t` as sorted,
     /// disjoint, inclusive `tx_count` ranges.
     fn tx_runs(&self, t: u64, out: &mut Vec<(u64, u64)>) -> Result<()>;
+    /// Whether an index has any raw key with this prefix, including historical
+    /// and retracted records. One seek; no search for a live version (#641).
+    fn any_key(&self, index: keys::Index, prefix: &[u8]) -> Result<bool>;
     /// The keys of `index` that start with `prefix` and survive net-assert
     /// among the versions `bound` keeps, decoded, appended to `out` in key
     /// order.
