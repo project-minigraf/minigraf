@@ -1,0 +1,88 @@
+#532 measurement environment and load snapshots
+Source revision: d0ad89c1d6df734afd5d4669ca9139c8f55d7702
+Build: envelope, CARGO_PROFILE_ENVELOPE_DEBUG=2, RUSTFLAGS=-Cforce-frame-pointers=yes
+Timing/capture: numactl --cpunodebind=1 --membind=1
+Capture: cycles:u; dwarf,16384; inline expansion; 499 Hz (recursive retry: 249 Hz)
+Host identity, hardware inventory, addresses, PIDs, user counts, local times,
+uptime durations, installed-service identities and private paths omitted.
+Roles: task = build/query/profile commands; observation = collection/probe
+commands; background = other listed processes. CPU percentages are raw ps
+values from pre/post snapshots, not per-query CPU utilization.
+
+[environment-before.txt]
+Tue Oct 27 23:39:35 UTC 2026
+Load averages: 0.03, 0.01, 0.00
+rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1
+6.8.0-139-generic
+schedutil
+Top listed CPU consumers (percent; role), entries below 1% omitted:
+10.0% observation
+2.3% background
+
+[load-before-envelope.txt]
+Tue Oct 27 23:41:38 UTC 2026
+Load averages: 0.79, 0.55, 0.22
+Top listed CPU consumers (percent; role), entries below 1% omitted:
+11.1% observation
+2.3% background
+
+[load-after-envelope.txt]
+Wed Oct 28 00:02:54 UTC 2026
+Load averages: 1.02, 1.18, 1.04
+Top listed CPU consumers (percent; role), entries below 1% omitted:
+2.3% background
+
+[load-before-profiles.txt]
+Wed Oct 28 00:03:28 UTC 2026
+Load averages: 0.84, 1.12, 1.02
+Top listed CPU consumers (percent; role), entries below 1% omitted:
+300% observation
+2.3% background
+
+[load-after-profiles.txt]
+Wed Oct 28 00:06:22 UTC 2026
+Load averages: 2.31, 1.49, 1.16
+Top listed CPU consumers (percent; role), entries below 1% omitted:
+2.3% background
+
+[load-before-recursive-retry.txt]
+Wed Oct 28 00:07:33 UTC 2026
+Load averages: 0.66, 1.16, 1.07
+Top listed CPU consumers (percent; role), entries below 1% omitted:
+300% observation
+8.8% observation
+2.3% background
+
+[load-after-recursive-retry.txt]
+Wed Oct 28 00:08:04 UTC 2026
+Load averages: 0.79, 1.14, 1.06
+Top listed CPU consumers (percent; role), entries below 1% omitted:
+2.3% background
+
+[toolchain-after]
+rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1
+6.8.0-139-generic
+schedutil
+
+[sha256]
+Cargo.lock: b03965119fd8ce5b5cf3ad3d37fb194ffeae24b6a862a0c85ae8fbcb6833ee77
+perf_envelope.rs: 6b8571b6aef0ee2d04523597002d3bd2a55c50270a55a2ec4f3366ce2fa4566e
+check_532_rows.rs: ba0c4ddf57b09f95331d8e7aeb61a678dcc0bb0033b8efb2e8b3197f565abab9
+perf_envelope: c4df88de77f99e20bc674eed2f2e6aa94e477bd261a68d1f9f46d5ea8eeacad7
+
+[fixture-WAL-bytes]
+100k: absent
+1m: absent
+10m: absent

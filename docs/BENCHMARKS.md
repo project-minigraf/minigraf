@@ -225,7 +225,7 @@ On the executor, before #544 (the executor's query path is gone since #551). `pe
 - **Up-front materialization (50–60%).** Before matching, the executor turns every live fact of each pattern's attribute into a `Fact` (`selective_fact_fetch` → `live_scan`). A pattern without a bound entity is read in full, so a selective join costs as much as scanning its widest attribute. The streaming engine (#473: `Scan` and `IndexNestedLoopJoin` operators) replaces this.
 - **DICT lookup per row (26–35%).** `uuid_of` does a B+tree `get` for every row's entity id (#530).
 - **Bindings as `HashMap<String, Value>` (about 25%).** SipHash insert, lookup and drop per row; #473's columnar batches replace them.
-- **`net_asserted_facts` over committed facts that `live_facts` already resolved (about 10%)** (#532).
+- **`net_asserted_facts` over committed facts that `live_facts` already resolved (about 10%)** (#532). Superseded by #551's removal of the executor's query path; see the [source audit and fresh envelope/profiles](benchmarks/532-net-assert-audit.md). Pending records still need fact-level net-assert.
 - **Keyword constants hashed to a UUID per fact (about 8% of the old join)** (#531). The streaming engine resolves pattern constants while planning; see the [post-#551 audit and profiles](benchmarks/531-keyword-constants.md). Expression keyword/ref equality retains a separate per-row conversion described there.
 - `attribute_value` reads the whole attribute instead of seeking AVET (#518). Fixed by the streaming engine's `Scan` (#544): see below.
 

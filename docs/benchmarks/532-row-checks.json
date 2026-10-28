@@ -1,0 +1,38 @@
+[
+  {
+    "expected": 167,
+    "observed": 167,
+    "scale": "100k",
+    "shape": "join_3_scan"
+  },
+  {
+    "expected": 8400,
+    "observed": 8400,
+    "scale": "100k",
+    "shape": "as_of_ts_scan"
+  },
+  {
+    "expected": 1667,
+    "observed": 1667,
+    "scale": "1m",
+    "shape": "join_3_scan"
+  },
+  {
+    "expected": 83400,
+    "observed": 83400,
+    "scale": "1m",
+    "shape": "as_of_ts_scan"
+  },
+  {
+    "expected": 16667,
+    "observed": 16667,
+    "scale": "10m",
+    "shape": "join_3_scan"
+  },
+  {
+    "expected": 833400,
+    "observed": 833400,
+    "scale": "10m",
+    "shape": "as_of_ts_scan"
+  }
+]

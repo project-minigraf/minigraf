@@ -120,7 +120,7 @@ Scope — release-gate testing and documentation:
 - Persistent fuzz corpus and an operation-sequence target (#387; done on `v3`: corpus caching, weekly `cmin`, the v8 page targets, and the `ops_sequence` and `corrupt_file` targets)
 - Fault injection across save/WAL/recovery (#390)
 - Long-running soak test at scale (#392; done on `v3`: `tests/soak_test.rs`, 10M facts and a 5-hour churn weekly, alternating `main` and `v3`)
-- Benchmarks at 100K–10M facts and a published performance envelope (#394; on `v3`: `examples/perf_envelope.rs`, results in `docs/BENCHMARKS.md`; follow-ups #528–#532)
+- Benchmarks at 100K–10M facts and a published performance envelope (#394; on `v3`: `examples/perf_envelope.rs`, results in `docs/BENCHMARKS.md`; follow-ups #528–#532, with #532 superseded by #551's removal of repeated committed-fact net-assert; [audit and measurements](docs/benchmarks/532-net-assert-audit.md))
 - Higher storage/WAL coverage gates and branch-coverage gates (#396; on `v3`: line and branch floors per file in `coverage-thresholds.toml`, checked on every PR)
 - Durability, recovery and operations guide (#398; done on `v3`: `docs/DURABILITY.md`, also on the docs site; found #535)
 
