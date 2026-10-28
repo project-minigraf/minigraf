@@ -3085,6 +3085,7 @@ fn rewind_and_close_release() {
         vec![0],
         vec![("count".to_string(), 0)],
         false,
+        false,
         &meter,
     );
     let ops: [&mut dyn super::Operator; 2] = [&mut distinct, &mut aggregate];
@@ -3116,6 +3117,7 @@ fn small_limit_in_each_holder() {
         Box::new(Ints { n: 10, at: 0 }),
         vec![0],
         vec![("count".to_string(), 0)],
+        false,
         false,
         &meter,
     );
@@ -3404,6 +3406,7 @@ fn aggregate_finish_charges_its_sorted_groups() {
         vec![0],
         vec![("count".to_string(), 0)],
         false,
+        false,
         &meter,
     );
     let batch = pull_once(&mut aggregate, &meter).unwrap().expect("a batch");
@@ -3438,6 +3441,7 @@ fn aggregate_finish_keeps_sum_distinct_members_charged_once() {
         Box::new(Ints { n, at: 0 }),
         vec![],
         vec![("sum-distinct".to_string(), 0)],
+        false,
         false,
         &meter,
     );
@@ -3493,4 +3497,145 @@ fn top_k_memory_follows_k_not_the_input() {
         .execute("(query [:find ?e ?v :where [?e :a ?v] :order-by [?v :desc]])")
         .expect_err("a full sort over the limit");
     assert_eq!(crate::MinigrafError::from(e).code(), "QRY-012");
+}
+
+#[test]
+fn ordered_aggregate_rewind_close_and_errors_release_the_active_group() {
+    use super::Operator;
+    let meter = super::Meter::unlimited();
+    let mut op = super::aggregate::Aggregate::new(
+        Box::new(Ints { n: 3000, at: 0 }),
+        vec![0],
+        vec![("count".into(), 0)],
+        false,
+        true,
+        &meter,
+    );
+    let first = pull_once(&mut op, &meter).unwrap().unwrap();
+    assert!(meter.used() > 0, "one unfinished group survives the batch");
+    op.rewind(&[]);
+    assert_eq!(meter.used(), 0);
+    let again = pull_once(&mut op, &meter).unwrap().unwrap();
+    assert_eq!(first.len, again.len);
+    op.close();
+    op.close();
+    assert_eq!(meter.used(), 0);
+    let meter = super::Meter::new(1);
+    let mut op = super::aggregate::Aggregate::new(
+        Box::new(Ints { n: 3, at: 0 }),
+        vec![0],
+        vec![("count".into(), 0)],
+        false,
+        true,
+        &meter,
+    );
+    assert!(pull_once(&mut op, &meter).is_err());
+    op.close();
+    assert_eq!(meter.used(), 0);
+}
+
+/// A deliberately untrusted child for defensive input-order checks (#641).
+struct Sequence {
+    cells: Vec<super::cell::Cell>,
+    at: usize,
+}
+
+impl super::Operator for Sequence {
+    fn next_batch(&mut self, _: &mut super::Ctx<'_>) -> anyhow::Result<Option<super::Batch>> {
+        if self.at == self.cells.len() {
+            return Ok(None);
+        }
+        let mut out = super::Batch::new(1);
+        while self.at < self.cells.len() && out.len < super::BATCH_ROWS {
+            out.push(&mut [Some(self.cells[self.at].clone())]);
+            self.at += 1;
+        }
+        Ok(Some(out))
+    }
+    fn rewind(&mut self, _: &[super::cell::Cell]) {
+        self.at = 0;
+    }
+    fn close(&mut self) {
+        self.at = self.cells.len();
+    }
+    fn counters(&self, _: &mut Vec<super::Counters>) {}
+}
+
+#[test]
+fn ordered_aggregate_rejects_decreasing_groups_before_and_after_an_answer_batch() {
+    use super::Operator;
+    use super::cell::{Cell, Scalar};
+    let int = |n| Cell::Val(Scalar::Int(n));
+    for cells in [
+        vec![int(1), int(2), int(1)],
+        vec![Cell::Val(Scalar::Float(1.5)), int(1)],
+        (0..2 * super::BATCH_ROWS as i64)
+            .map(int)
+            .chain([int(0)])
+            .collect(),
+    ] {
+        let late = cells.len() > super::BATCH_ROWS;
+        let meter = super::Meter::unlimited();
+        let mut op = super::aggregate::Aggregate::new(
+            Box::new(Sequence { cells, at: 0 }),
+            vec![0],
+            vec![("count".into(), 0)],
+            false,
+            true,
+            &meter,
+        );
+        let mut batches = 0;
+        let err = loop {
+            match pull_once(&mut op, &meter) {
+                Ok(Some(_)) => batches += 1,
+                Ok(None) => panic!("broken group order must fail"),
+                Err(e) => break e,
+            }
+        };
+        assert_eq!(crate::MinigrafError::from(err).code(), "INT-032");
+        assert_eq!(batches > 0, late);
+        op.close();
+        assert_eq!(meter.used(), 0);
+    }
+}
+
+#[test]
+fn ordered_distinct_member_reservation_failure_releases_an_unfinished_group() {
+    use super::cell::{Cell, Scalar};
+    use super::{Ctx, Operator};
+    struct Members(Ints);
+    impl Operator for Members {
+        fn next_batch(&mut self, ctx: &mut Ctx<'_>) -> anyhow::Result<Option<super::Batch>> {
+            if self.0.at > 0 {
+                super::meter::FAIL_RESERVE.with(|f| f.set(Some("Aggregate")));
+            }
+            let Some(mut batch) = self.0.next_batch(ctx)? else {
+                return Ok(None);
+            };
+            batch.cols.push(vec![Cell::Val(Scalar::Int(0)); batch.len]);
+            Ok(Some(batch))
+        }
+        fn rewind(&mut self, seed: &[Cell]) {
+            self.0.rewind(seed);
+        }
+        fn close(&mut self) {
+            self.0.close();
+        }
+        fn counters(&self, _: &mut Vec<super::Counters>) {}
+    }
+    let meter = super::Meter::unlimited();
+    let mut op = super::aggregate::Aggregate::new(
+        Box::new(Members(Ints { n: 3000, at: 0 })),
+        vec![1],
+        vec![("count-distinct".into(), 0)],
+        false,
+        true,
+        &meter,
+    );
+    let result = pull_once(&mut op, &meter);
+    super::meter::FAIL_RESERVE.with(|f| f.set(None));
+    let err = result.expect_err("second batch cannot reserve a new distinct member");
+    assert_eq!(crate::MinigrafError::from(err).code(), "QRY-012");
+    op.close();
+    assert_eq!(meter.used(), 0);
 }

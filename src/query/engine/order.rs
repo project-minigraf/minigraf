@@ -1,9 +1,9 @@
 //! Snapshot-bound input-order proofs (#641). DICT order is never UUID/text
 //! order. Unknown order retains the original index choice and buffering.
 
-use super::plan::{Body, JoinKind, Meta, Out, Plan, ScanSpec, Source, Step, Term, Vars};
+use super::plan::{Body, Grouping, JoinKind, Meta, Out, Plan, ScanSpec, Source, Step, Term, Vars};
 use crate::graph::storage::Snapshot;
-use crate::query::datalog::functions::{AggImpl, FunctionRegistry};
+use crate::query::datalog::functions::{AggImpl, Builtin, FunctionRegistry};
 use crate::query::datalog::types::{Expr, FindSpec, UnaryOp, WindowFunc};
 use crate::storage::KeySource;
 use crate::storage::keys::{self, Index, ValueKind};
@@ -46,22 +46,32 @@ impl Drop for InputOrderGuard {
     }
 }
 
-/// Only the leading scalar slot has a semantic comparator. The following
-/// entity key is DICT order and cannot prove any Sort column in this slice.
+/// Numeric tag ranges group in Value::Ord; only one scalar kind also
+/// supplies the semantic Sort comparator.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Domain {
+    Single(ValueKind),
+    Numbers,
+}
+
+/// Leading scalar key and constants. A complete aggregate key is unique;
+/// DICT entity suffixes never supply semantic UUID order.
 struct Ordering {
     slot: Option<usize>,
-    kind: ValueKind,
+    kind: Domain,
     constants: Vec<usize>,
+    unique: bool,
 }
 
 impl Ordering {
-    fn source(spec: &ScanSpec, kind: ValueKind) -> Self {
+    fn source(spec: &ScanSpec, kind: Domain) -> Self {
         Ordering {
             slot: match spec.v {
                 Term::Bind(s) => Some(s),
                 _ => None,
             },
             kind,
+            unique: false,
             constants: spec
                 .meta
                 .iter()
@@ -73,6 +83,7 @@ impl Ordering {
     fn invalidate(&mut self, slot: usize) {
         if self.slot == Some(slot) {
             self.slot = None;
+            self.unique = false;
         }
         self.constants.retain(|&s| s != slot);
     }
@@ -110,6 +121,7 @@ impl Ordering {
                     }
                 }
                 Step::Join(join) => {
+                    self.unique = false;
                     if !matches!(
                         join.kind,
                         JoinKind::Probe(_)
@@ -125,8 +137,10 @@ impl Ordering {
                     }
                 }
                 Step::DistinctFind(slots) => {
-                    if self.kind == ValueKind::Float
-                        && let Some(slot) = self.slot.filter(|s| slots.contains(s))
+                    if matches!(
+                        self.kind,
+                        Domain::Single(ValueKind::Float) | Domain::Numbers
+                    ) && let Some(slot) = self.slot.filter(|s| slots.contains(s))
                     {
                         self.invalidate(slot);
                     }
@@ -147,6 +161,9 @@ impl Ordering {
             let Some(&slot) = cols.get(column) else {
                 return false;
             };
+            if matched && self.unique {
+                continue;
+            }
             if self.constants.contains(&slot) || (matched && self.slot == Some(slot)) {
                 continue;
             }
@@ -155,7 +172,7 @@ impl Ordering {
                 || self.slot != Some(slot)
                 || !matches!(
                     self.kind,
-                    ValueKind::Integer | ValueKind::Float | ValueKind::Boolean
+                    Domain::Single(ValueKind::Integer | ValueKind::Float | ValueKind::Boolean)
                 )
             {
                 return false;
@@ -215,29 +232,89 @@ fn safe_steps(steps: &[Step], functions: &FunctionRegistry) -> bool {
 }
 
 /// At most eight raw seeks through the exact reader the Stream will scan.
-fn scalar_kind(keys: &dyn KeySource, attribute: u32) -> Result<Option<ValueKind>> {
+fn scalar_kind(keys: &dyn KeySource, attribute: u32) -> Result<Option<Domain>> {
     let mut found = None;
     for kind in ValueKind::ALL {
         if keys.any_key(Index::Avet, &keys::attribute_kind_prefix(attribute, kind))? {
-            if found.is_some() {
-                return Ok(None);
-            }
-            found = Some(kind);
+            found = match (found, kind) {
+                (None, ValueKind::Integer | ValueKind::Float | ValueKind::Boolean) => {
+                    Some(Domain::Single(kind))
+                }
+                (Some(Domain::Single(ValueKind::Integer)), ValueKind::Float) => {
+                    Some(Domain::Numbers)
+                }
+                _ => return Ok(None),
+            };
         }
     }
-    Ok(found.filter(|k| {
-        matches!(
-            k,
-            ValueKind::Integer | ValueKind::Float | ValueKind::Boolean
-        )
-    }))
+    Ok(found)
+}
+
+/// The choices are applied together only after the snapshot proof succeeds.
+struct Choice {
+    aggregate: Option<usize>,
+    sort: Option<usize>,
+    avet: bool,
+}
+
+fn choices(
+    spec: &ScanSpec,
+    plan: &Plan,
+    kind: Domain,
+    functions: &FunctionRegistry,
+) -> Option<Choice> {
+    let mut proof = Ordering::source(spec, kind);
+    let mut choice = Choice {
+        aggregate: None,
+        sort: None,
+        avet: !matches!(spec.e, Term::Const(_)),
+    };
+    for (at, step) in plan.steps.iter().enumerate() {
+        match step {
+            Step::Aggregate {
+                groups,
+                aggs,
+                grouping: Grouping::Candidate,
+                ..
+            } if groups.len() == 1
+                && proof.slot == groups.first().copied()
+                && aggs.iter().all(|(func, _)| {
+                    functions.get(func).is_some_and(|d| {
+                        matches!(
+                            d.impl_,
+                            AggImpl::Builtin(Builtin::Count | Builtin::CountDistinct)
+                        )
+                    })
+                }) =>
+            {
+                choice.aggregate = Some(at);
+                proof.slot = Some(0);
+                proof.constants.clear();
+                proof.unique = true;
+            }
+            Step::Sort { cols, order, keep } => {
+                if *keep != Some(0) && proof.satisfies(cols, order) {
+                    choice.sort = Some(at);
+                }
+                break;
+            }
+            _ => {
+                let Some(next) = proof.through(std::slice::from_ref(step)) else {
+                    break;
+                };
+                proof = next;
+            }
+        }
+    }
+    (choice.aggregate.is_some() || choice.sort.is_some()).then_some(choice)
 }
 
 fn candidate(
     snapshot: &Snapshot,
     keys: &dyn KeySource,
     plan: &Plan,
-) -> Result<Option<(usize, bool)>> {
+    functions: &FunctionRegistry,
+) -> Result<Option<Choice>> {
     let Source::Scan(spec) = &plan.source else {
         return Ok(None);
     };
@@ -247,27 +324,8 @@ fn candidate(
     if spec.derived.is_some() || spec.never() || matches!(spec.e, Term::Eq(_)) {
         return Ok(None);
     }
-    let Some(at) = plan
-        .steps
-        .iter()
-        .position(|s| matches!(s, Step::Sort { .. }))
-    else {
-        return Ok(None);
-    };
-    let Some(Step::Sort { cols, order, keep }) = plan.steps.get(at) else {
-        return Ok(None);
-    };
-    if *keep == Some(0) {
-        return Ok(None);
-    }
-    let Some(before) = plan.steps.get(..at) else {
-        return Ok(None);
-    };
-    // Reject impossible full orders before any speculative storage reads.
-    if !Ordering::source(spec, ValueKind::Integer)
-        .through(before)
-        .is_some_and(|p| p.satisfies(cols, order))
-    {
+    // Reject impossible strategies before any speculative storage reads.
+    if choices(spec, plan, Domain::Single(ValueKind::Integer), functions).is_none() {
         return Ok(None);
     }
     let entity = match &spec.e {
@@ -283,13 +341,7 @@ fn candidate(
     let Some(kind) = scalar_kind(keys, a)? else {
         return Ok(None);
     };
-    if !Ordering::source(spec, kind)
-        .through(before)
-        .is_some_and(|p| p.satisfies(cols, order))
-    {
-        return Ok(None);
-    }
-    Ok(Some((at, !matches!(spec.e, Term::Const(_)))))
+    Ok(choices(spec, plan, kind, functions))
 }
 
 /// Only a plain query's root pipeline is resolved; bodies and rules keep their
@@ -310,16 +362,22 @@ pub(super) fn resolve(
     let Some(keys) = keys else {
         return;
     };
-    let Ok(Some((at, avet))) = candidate(snapshot, keys, plan) else {
+    let Ok(Some(choice)) = candidate(snapshot, keys, plan, functions) else {
         return;
     };
-    if !matches!(plan.steps.get(at), Some(Step::Sort { .. })) {
-        return;
+    if let Some(at) = choice.aggregate
+        && let Some(Step::Aggregate { grouping, .. }) = plan.steps.get_mut(at)
+    {
+        *grouping = Grouping::Ordered;
     }
-    if let Step::Sort { cols, .. } = plan.steps.remove(at) {
+    if let Some(at) = choice.sort
+        && let Step::Sort { cols, .. } = plan.steps.remove(at)
+    {
         plan.find = cols;
     }
-    if avet && let Source::Scan(spec) = &mut plan.source {
+    if choice.avet
+        && let Source::Scan(spec) = &mut plan.source
+    {
         spec.index = Some(Index::Avet);
     }
     #[cfg(test)]

@@ -140,6 +140,15 @@ impl ScanSpec {
     }
 }
 
+/// The logical candidate stays on the hash path until snapshot resolution
+/// certifies a single contiguous grouping key (#641).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Grouping {
+    Hash,
+    Candidate,
+    Ordered,
+}
+
 /// A clause after the scan, in the executor's order.
 #[derive(Debug, Clone)]
 pub(crate) enum Step {
@@ -179,6 +188,7 @@ pub(crate) enum Step {
         /// Whether no input row gives one row of zeros: a query of `count`s
         /// and `count-distinct`s and no plain `:find` variable.
         zero_row: bool,
+        grouping: Grouping,
     },
     /// The last step of a query with windows (#547 spec §4): each row once,
     /// in input order, holding its cells at `keep` and then the value of
@@ -514,6 +524,11 @@ fn plan_with(query: &DatalogQuery, evaluated: Option<Arc<Evaluated>>) -> Result<
             groups,
             aggs,
             zero_row,
+            grouping: if !window && query.with_vars.is_empty() {
+                Grouping::Candidate
+            } else {
+                Grouping::Hash
+            },
         });
     } else {
         for spec in &query.find {

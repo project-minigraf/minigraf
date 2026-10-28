@@ -4,13 +4,13 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,926 | 1,959 |
-| **Ignored** | 15 | 16 |
-| **Total** | 1,941 | 1,975 |
+| **Passing** | 1,947 | 1,980 |
+| **Ignored** | 16 | 17 |
+| **Total** | 1,963 | 1,997 |
 
-**Verified**: 2026-10-28 on the designated bench machine: the full default suite under branch coverage plus `cargo test --doc`, and `cargo test --features test-hooks`. The final proof-read failure enhancement also passed a focused rerun. All unchanged coverage floors pass; measured overall coverage is 95.39% lines and 86.14% branches.
+**Verified**: 2026-10-28 on the designated bench machine: the full default suite under branch coverage plus `cargo test --doc`, and `cargo test --features test-hooks`. Final test-only strengthening of group-demand and early-cursor assertions passed a focused rerun. An appended internal DICT-cache regression passed default/test-hooks checks and an incremental coverage run; disabling internal eviction made that regression fail. The matched production library remained byte-identical. All unchanged coverage floors pass; measured overall coverage is 95.40% lines and 86.38% branches.
 
-#641 adds 30 tests with default features and one more with `test-hooks`.
+#641 slice 1 adds 30 tests with default features and one more with `test-hooks`. Slice 2 adds 22 default-feature tests (21 active and one ignored committed-fixture memory diagnostic).
 
 #183 adds bounded row-frame parser, evaluator, and integration tests; one additional plan-independence case runs with `test-hooks`, including duplicate tie keys and NaN. A sliding-sum test checks recovery after integer saturation. Grammar corpus cases cover frame spellings and rejection. A meter test checks that a zero-width min frame reserves one deque slot. An ignored bench-machine diagnostic reproduces the Criterion datasets and prints the engine meter's peak for every measured case.
 
@@ -27,6 +27,8 @@ Not counted above: the browser tests and the WASI run (see [Browser and WASI](#b
 ## Covered Areas
 
 - **Proven input order** (#641, first slice; `src/query/engine/order_tests.rs`, `order/tests.rs`, `tests/input_order_test.rs`): full result keys and projection slots, constants and repeated slots, integer/Boolean/float edge cases including NaNs and signed zeros, replacements, join fallback orientation and distinct canonicalization. Snapshot tests cover unrelated versus in-range pending/staged records, captured prefixes, temporal filters, prepared queries, checkpoints and large-transaction working readers including rejected statements and rollback. Counters establish early stopping, bounded raw proof reads and no reads without demand; optional proof-read errors leave the original plan. Late callback and `collect-set` errors retain their evaluation. A forced-fallback differential matrix checks identical ordered lists across plan switches. A committed `MemoryBackend` fixture runs on native, WASI and the browser. Storage tests cover every key kind/tag and raw seeks over retracted history.
+
+- **One-group count aggregation** (#641, second slice; `src/query/engine/aggregate_order_tests.rs`, `order/tests.rs`, `engine/tests.rs`): count/count-distinct over one certified scalar group, cross-batch boundaries, unique-key Sort omission and retained descending/aggregate-first/mixed-numeric Sort, Boolean/float representatives and mixed numeric group order. Arbitrary argument kinds, nil, `:distinct`, offset/limit and probe joins match forced fallback. Tests cover no `:with`/window/multiple-key eligibility, later fallible-aggregate/callback/collect-set errors and dropped-group precedence, pending/staged/prepared/working-reader changes and rejected statements, atomic fallback on every optional proof-read failure, bounded group state with one active group, internal DICT-cache eviction within one group spanning many probe batches, a growing distinct-group control, low budgets, allocator refusal, close/drop/rewind, and defensive `INT-032` for injected decreasing input before and after an answer batch. A committed `MemoryBackend` fixture also runs under WASI and in the browser.
 
 - **Bounded row frames** (`tests/window_functions_test.rs`, `src/query/datalog/aggregate/tests.rs`, #183): `:rows N preceding` parsing and errors, physical rows with tied order keys, partition reset, descending order, width zero and maximum, all five built-in aggregates against a replay oracle with numeric edge cases, UDFs through prepared queries and cursors, grouping with `:with`, distinct output, memory-limit refusal for long min/max strings, and final `:order-by` matching. A `test-hooks` case checks answer bags with clause reordering on and off.
 
@@ -488,8 +490,8 @@ These tests compare the database against an independent answer rather than a sin
 
 None of these are counted in the summary. The wasm32 targets run in CI (`.github/workflows/wasm.yml`).
 
-- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 59 `wasm_bindgen_test` tests. The final #641 snapshot passed in headless Firefox on the bench; Chrome remains a CI run.
-  - One committed-memory-backend input-order fixture, including scalar edge cases and verification that Sort is omitted (#641).
+- **In a browser** (`wasm-pack test --headless`, Firefox and Chrome): 60 `wasm_bindgen_test` tests. The final #641 snapshot passed in headless Firefox on the bench; Chrome remains a CI run.
+  - Two committed-memory-backend input-order fixtures: scalar Sort omission, and streaming counts with Boolean/float representatives and mixed numeric group order (#641).
   - Twenty-five for `BrowserDb`, including IndexedDB persistence, the cursor, and the flush returning every dirty page and failing on one it cannot read (#470).
   - Eleven for `BrowserBufferBackend` (which used `#[test]` and never ran before).
   - Two checking that IndexedDB page keys accept only whole numbers from 0 to 2^53.
@@ -505,11 +507,11 @@ None of these are counted in the summary. The wasm32 targets run in CI (`.github
   - `importGraph()` deletes the replaced database's IndexedDB keys.
   - Two buffer tests check that releasing a page drops its bytes and any unflushed write, and that export writes a released page as zeros.
   - A native storage test checks that a file whose free pages are all zeros (as the browser exports them), both just migrated from v7 and after 20 saves, opens, verifies clean and keeps committing. The free-list test checks that a checkpoint reports exactly the ids it newly lists.
-- **On `wasm32-wasip1` under Wasmtime**: the unit and integration tests that do not use a file run, 1,177 passing and seven ignored in the 2026-10-28 bench run with Wasmtime v49.0.2 (`wasm.yml`). The committed input-order fixture runs here too, and the WASI REPL builds in release mode.
+- **On `wasm32-wasip1` under Wasmtime**: the unit and integration tests that do not use a file run, 1,179 passing and seven ignored in the 2026-10-28 bench run with Wasmtime v49.0.2 (`wasm.yml`). Both committed input-order fixtures run here too, and the WASI REPL builds in release mode.
 
 ## Ignored Tests
 
-The fifteen ignored tests (sixteen with `test-hooks`) are intentionally excluded from a normal local run:
+The sixteen ignored tests (seventeen with `test-hooks`) are intentionally excluded from a normal local run:
 
 - Four rustdoc examples that reference internal types and cannot compile as standalone examples.
 - One high-contention concurrency stress test intended for scheduled runs.
@@ -518,12 +520,13 @@ The fifteen ignored tests (sixteen with `test-hooks`) are intentionally excluded
 - One size test at 1.15M facts (`size_per_fact_in_433_shape_1m`), run by the nightly smoke workflow.
 - One recursive-rule acceptance test (`reach_5m`, #548), run by the nightly smoke workflow: a layered graph whose `reach` rule derives 4,882,500 facts in 62 rounds must return them all with peak RSS under 256 bytes per derived fact, and the default `max_derived_facts` must stop the same rule with `INT-020`.
 - Three query-memory acceptance tests (`tests/memory_limit_acceptance_test.rs`, #549, #575, #551), run one at a time by the nightly smoke workflow:
-  - 1M aggregate groups return 1M rows, and with `query_memory_limit` at 32 MiB stop with `QRY-012` naming `Aggregate`, after which the database answers;
+  - 1M ordered count groups return 1M rows under a 32 MiB `query_memory_limit`; the fallible grouped `sum` control still stops with `QRY-012` naming `Aggregate`, after which the database answers;
   - 13 patterns sharing no variable over the fuzz harness's 3 facts stream 3^13 rows with peak RSS under 64 MiB, and with a 64-byte limit stop with `QRY-012` naming `HashJoin`;
   - `count` over every one of 1M facts counts them under a 4 KiB `query_memory_limit` (`count_holds_no_rows`, the #473 constant-memory `count` item).
 - One `:limit` and top-k acceptance test (`tests/limit_acceptance_test.rs`, #306, the #473 `:limit` item), run by the nightly smoke workflow over one 10M-fact fixture written with `LogWriter`: `:limit 10` returns 10 rows in under 250 ms under a 64 KiB `query_memory_limit`, adding under 32 MiB of peak RSS; `:order-by [?v :desc] :limit 10` returns the ten largest values under a 1 MiB limit, adding under 32 MiB.
 - One large-transaction acceptance test (`tests/large_transaction_acceptance_test.rs`, #550; `test-hooks` only), run by the nightly smoke workflow (see [Large transactions](#large-transactions-550)).
 - One measurement test (`meter_peak_against_rss`, `src/query/engine/tests.rs`, #549): prints the meter's peak against the peak RSS for the same two shapes, opening the engine directly.
+- One committed-group measurement test (`committed_group_memory_probe`, `src/query/engine/aggregate_order_tests.rs`, #641): opens prebuilt fixed-size and growing-group fixtures, drains count/count-distinct with and without a limit, and prints meter peaks, active-group high-water and input counts.
 - One row-frame measurement test (`window_rows_benchmark_meter_peaks`, `src/query/engine/tests.rs`, #183): prints metered peaks for the window benchmark fixtures.
 
 ## Reproducing

@@ -4,6 +4,8 @@
 //! Every query runs here (#551).
 
 mod aggregate;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod aggregate_order_tests;
 mod anti;
 mod batch;
 mod cell;
@@ -325,8 +327,14 @@ pub(crate) fn build(
                 groups,
                 aggs,
                 zero_row,
+                grouping,
             } => Box::new(aggregate::Aggregate::new(
-                root, groups, aggs, zero_row, meter,
+                root,
+                groups,
+                aggs,
+                zero_row,
+                grouping == plan::Grouping::Ordered,
+                meter,
             )),
             plan::Step::Window { find, named, keep } => {
                 Box::new(window::Window::new(root, find, named, keep, meter))

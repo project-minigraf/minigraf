@@ -32,7 +32,7 @@ For example, `(lag ?salary :over (:partition-by ?dept :order-by ?hire-date))` re
 
 The unreleased v3.0.0 branch adds bounded sliding windows such as `(avg ?salary :over (:partition-by ?dept :order-by ?hire-date :rows 2 preceding))` (#183).
 
-On v3.0.0, an ascending value-only query such as `[:find ?v :where [?e :score ?v] :order-by [?v] :limit 10]` can read directly in index order and stop early when all committed `:score` history has one value kind (integer, float, or Boolean) and its source range has no pending writes. A query whose full order cannot be proved uses the existing sort (#641).
+On v3.0.0, an ascending value-only query such as `[:find ?v :where [?e :score ?v] :order-by [?v] :limit 10]` can read directly in index order and stop early when all committed `:score` history has one value kind (integer, float, or Boolean) and its source range has no pending writes. A query whose full order cannot be proved uses the existing sort (#641). Built-in `count` and `count-distinct` can also release completed groups when one committed integer/Boolean/float key is proved ordered (including mixed integer/float groups), with no `:with`, windows, callbacks or `collect-set`. Memory then follows the active group and batches; distinct members within one group still grow. Other aggregates keep full-input validation.
 
 **Status**: See [ROADMAP.md](ROADMAP.md) for planned work and current direction.
 

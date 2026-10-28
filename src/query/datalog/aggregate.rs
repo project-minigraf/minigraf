@@ -660,17 +660,25 @@ pub(crate) fn finish_groups(
     funcs: &[&str],
 ) -> Result<Vec<(Vec<Value>, Vec<Value>)>> {
     let mut out = Vec::with_capacity(groups.len());
-    'group: for (shown, accs) in groups.into_values() {
-        let mut results = Vec::with_capacity(accs.len());
-        for (acc, func) in accs.into_iter().zip(funcs) {
-            match acc.finish(func)? {
-                Some(v) => results.push(v),
-                None => continue 'group,
-            }
+    for (shown, accs) in groups.into_values() {
+        if let Some(results) = finish_group(accs, funcs)? {
+            out.push((shown, results));
         }
-        out.push((shown, results));
     }
     Ok(out)
+}
+
+/// Finish one group's accumulators in find order, including dropped-group
+/// precedence over later finish errors. Shared by both aggregate strategies.
+pub(crate) fn finish_group(accs: Vec<Agg>, funcs: &[&str]) -> Result<Option<Vec<Value>>> {
+    let mut results = Vec::with_capacity(accs.len());
+    for (acc, func) in accs.into_iter().zip(funcs) {
+        match acc.finish(func)? {
+            Some(v) => results.push(v),
+            None => return Ok(None),
+        }
+    }
+    Ok(Some(results))
 }
 
 /// A window function's running value over a sorted partition (spec §4.2).

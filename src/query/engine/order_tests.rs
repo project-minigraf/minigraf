@@ -748,6 +748,12 @@ fn optional_proofs_are_bounded_and_queries_without_a_usable_demand_do_no_probes(
     let snapshot = db.snapshot().unwrap();
     let base = snapshot.committed.as_ref().unwrap().key_source().unwrap();
     for (q, expected) in [
+        ("[:find ?v (count ?e) :where [?e :score ?v] :limit 3]", 8),
+        (
+            "[:find ?v (count ?e) :where [?e :score ?v] :order-by [?v] :offset 7 :limit 0]",
+            0,
+        ),
+        ("[:find ?v (sum ?v) :where [?e :score ?v] :limit 3]", 0),
         (
             "[:find ?v :where [?e :score ?v] :order-by [?v] :limit 3]",
             8,
@@ -805,52 +811,73 @@ fn every_failed_optional_read_retains_the_original_sort_projection_and_index() {
     let (_dir, db) = fixture(32);
     let snapshot = db.snapshot().unwrap();
     let base = snapshot.committed.as_ref().unwrap().key_source().unwrap();
-    for fail_at in 1..=8 {
-        let keys = ProofKeys {
-            base,
-            calls: 0.into(),
-            fail_at: Some(fail_at),
-        };
-        let mut plan = query_plan("[:find ?v :where [?e :score ?v] :order-by [?v] :limit 3]");
-        let original_find = plan.find.clone();
-        super::order::resolve(
-            &snapshot,
-            Some(&keys),
-            &FunctionRegistry::with_builtins(),
-            &mut plan,
-        );
-        assert!(
-            plan.steps.iter().any(|s| matches!(s, Step::Sort { .. })),
-            "Sort remains"
-        );
-        assert_eq!(
-            plan.find, original_find,
-            "projection is not partially restored"
-        );
-        assert!(
-            matches!(&plan.source, Source::Scan(s) if s.index.is_none()),
-            "index choice is unchanged"
-        );
-        let _off = super::order::set_enabled(false);
-        let mut fallback = super::open(
-            snapshot.clone(),
-            plan,
-            std::sync::Arc::new(FunctionRegistry::with_builtins()),
-            usize::MAX,
-        )
-        .unwrap();
-        assert!(has_sort(&fallback.counters()));
-        let mut rows = Vec::new();
-        while let Some(batch) = fallback.next_rows().unwrap() {
-            rows.extend(batch);
+    for grouped in [false, true] {
+        for fail_at in 1..=8 {
+            let keys = ProofKeys {
+                base,
+                calls: 0.into(),
+                fail_at: Some(fail_at),
+            };
+            let mut plan = query_plan(if grouped {
+                "[:find ?v (count ?e) :where [?e :score ?v] :order-by [?v] :limit 3]"
+            } else {
+                "[:find ?v :where [?e :score ?v] :order-by [?v] :limit 3]"
+            });
+            let original_find = plan.find.clone();
+            super::order::resolve(
+                &snapshot,
+                Some(&keys),
+                &FunctionRegistry::with_builtins(),
+                &mut plan,
+            );
+            assert!(
+                plan.steps.iter().any(|s| matches!(s, Step::Sort { .. })),
+                "Sort remains"
+            );
+            assert_eq!(
+                plan.find, original_find,
+                "projection is not partially restored"
+            );
+            assert!(
+                matches!(&plan.source, Source::Scan(s) if s.index.is_none()),
+                "index choice is unchanged"
+            );
+            assert!(
+                plan.steps.iter().all(|s| !matches!(
+                    s,
+                    Step::Aggregate {
+                        grouping: super::plan::Grouping::Ordered,
+                        ..
+                    }
+                )),
+                "no partial strategy change"
+            );
+            let _off = super::order::set_enabled(false);
+            let mut fallback = super::open(
+                snapshot.clone(),
+                plan,
+                std::sync::Arc::new(FunctionRegistry::with_builtins()),
+                usize::MAX,
+            )
+            .unwrap();
+            assert!(has_sort(&fallback.counters()));
+            let mut rows = Vec::new();
+            while let Some(batch) = fallback.next_rows().unwrap() {
+                rows.extend(batch);
+            }
+            let expected: Vec<_> = (0..3)
+                .map(|i| {
+                    let mut row = vec![Value::Integer(i)];
+                    if grouped {
+                        row.push(Value::Integer(1));
+                    }
+                    row
+                })
+                .collect();
+            assert!(
+                rows == expected,
+                "a failed optional proof still executes the original query"
+            );
         }
-        assert!(
-            rows == vec![
-                vec![Value::Integer(0)],
-                vec![Value::Integer(1)],
-                vec![Value::Integer(2)]
-            ],
-            "a failed optional proof still executes the original query"
-        );
     }
 }

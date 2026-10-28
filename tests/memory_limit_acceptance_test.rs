@@ -110,7 +110,15 @@ fn grouped_count_1m_groups() {
         .path(dir.path().join("groups.graph"))
         .open()
         .unwrap();
-    let err = drain(&db, query).err().expect("over the limit");
+    assert_eq!(
+        drain(&db, query).unwrap(),
+        GROUPS,
+        "ordered counts release completed groups"
+    );
+    // Fallible sum retains the materialized holder, preserving later errors.
+    let err = drain(&db, "(query [:find ?g (sum ?g) :where [?e :g ?g]])")
+        .err()
+        .expect("over the limit");
     assert_eq!(err.code(), "QRY-012", "stopped by the limit");
     assert!(err.to_string().contains("Aggregate"), "names Aggregate");
     // The database answers other queries.
