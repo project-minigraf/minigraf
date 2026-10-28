@@ -20,6 +20,11 @@ use std::sync::Arc;
 
 type Row = Vec<Cell>;
 
+/// A small bound on retained entity probes. A high-degree entity still uses
+/// the streaming path; the cache is most useful for repeated narrow probes.
+const CACHED_PROBES: usize = 64;
+const CACHED_ROWS_PER_PROBE: usize = 128;
+
 pub(crate) struct Join {
     outer: Box<dyn Operator>,
     inner: Scan,
@@ -55,6 +60,17 @@ struct Probe {
     probing: bool,
     matches: Vec<Row>,
     next: usize,
+    cached: Option<usize>,
+    /// At most 64 entries, so lookup and LRU eviction stay bounded.
+    cache: Vec<CachedProbe>,
+    tick: u64,
+}
+
+struct CachedProbe {
+    entity: u64,
+    rows: Vec<Row>,
+    used: u64,
+    bytes: usize,
 }
 
 /// `HashJoin`: the table of the build side, the rows of the streamed side's
@@ -208,7 +224,7 @@ impl Join {
         row: &[Cell],
         k: usize,
         ctx: &mut Ctx<'_>,
-    ) -> Result<Option<(crate::graph::types::EntityId, Option<u64>)>> {
+    ) -> Result<Option<(u64, crate::graph::types::EntityId, Option<u64>)>> {
         let Some(key) = self.keys.get(k) else {
             return Ok(None);
         };
@@ -219,7 +235,87 @@ impl Join {
             return Ok(None);
         };
         let uuid = ctx.ids.uuid(ctx.keys, e)?;
-        Ok(Some((uuid, ctx.ids.dict_eid(e))))
+        Ok(Some((e, uuid, ctx.ids.dict_eid(e))))
+    }
+
+    /// Start an entity probe, retaining its rows only when the scan is small.
+    /// Cached rows belong to this join instance, whose snapshot and derived
+    /// relation are fixed until it is rewound.
+    #[inline(never)]
+    fn start_entity_probe(
+        &mut self,
+        p: &mut Probe,
+        entity: u64,
+        uuid: crate::graph::types::EntityId,
+        eid: Option<u64>,
+        ctx: &mut Ctx<'_>,
+    ) -> Result<()> {
+        p.next = 0;
+        p.matches.clear();
+        if ctx.derived.is_some() {
+            p.tick = p.tick.wrapping_add(1);
+            if let Some((at, entry)) = p
+                .cache
+                .iter_mut()
+                .enumerate()
+                .find(|(_, entry)| entry.entity == entity)
+            {
+                entry.used = p.tick;
+                p.cached = Some(at);
+                p.probing = false;
+                return Ok(());
+            }
+        }
+
+        self.inner.probe(uuid, eid);
+        p.probing = true;
+        // Reuse is for rule queries. Ordinary joins keep their original
+        // streaming probe path, including many-distinct-entity joins.
+        if ctx.derived.is_none() {
+            return Ok(());
+        }
+        while p.matches.len() <= CACHED_ROWS_PER_PROBE {
+            match self.inner.next_batch(ctx)? {
+                Some(batch) => {
+                    p.matches.extend(rows(&batch));
+                    if p.matches.len() > CACHED_ROWS_PER_PROBE {
+                        return Ok(());
+                    }
+                }
+                None => break,
+            }
+        }
+
+        // Vec's geometric growth uses at most four slots per live entry,
+        // including its four-slot minimum allocation.
+        let bytes = 4 * size_of::<CachedProbe>()
+            + p.matches.iter().map(|row| row_bytes(row)).sum::<usize>()
+            + (p.matches.capacity() - p.matches.len()) * size_of::<Row>();
+        // A cache is optional: a tight query memory limit still takes the
+        // streaming path. Scan is fused after Done, so it advances the outer
+        // row once the already-read matches drain.
+        if self.held.charge(bytes).is_err() {
+            return Ok(());
+        }
+        if p.cache.len() == CACHED_PROBES
+            && let Some((oldest, _)) = p
+                .cache
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, entry)| entry.used)
+        {
+            let entry = p.cache.swap_remove(oldest);
+            self.held.uncharge(entry.bytes);
+        }
+        p.cache.push(CachedProbe {
+            entity,
+            rows: std::mem::take(&mut p.matches),
+            used: p.tick,
+            bytes,
+        });
+        p.cached = Some(p.cache.len() - 1);
+        p.probing = false;
+        Ok(())
     }
 
     /// Whether `outer` and `inner` agree on every key but the probed one,
@@ -259,11 +355,18 @@ impl Join {
         let skip = (!by_value).then_some(probed);
         while out.len < BATCH_ROWS {
             if let Some(o) = p.rows.get(p.at) {
-                if let Some(m) = p.matches.get(p.next) {
+                let matched = p
+                    .cached
+                    .and_then(|at| p.cache.get(at))
+                    .and_then(|entry| entry.rows.get(p.next))
+                    .or_else(|| p.matches.get(p.next));
+                if let Some(m) = matched {
                     p.next += 1;
                     if self.agree(o, m, skip, ctx)? {
                         self.emit(o, m, out);
                     }
+                } else if p.cached.take().is_some() {
+                    p.at += 1;
                 } else if p.probing {
                     match self.inner.next_batch(ctx)? {
                         Some(b) => p.matches = rows(&b),
@@ -287,9 +390,8 @@ impl Join {
                     }
                 } else {
                     match self.probe_of(o, probed, ctx)? {
-                        Some((uuid, eid)) => {
-                            self.inner.probe(uuid, eid);
-                            p.probing = true;
+                        Some((entity, uuid, eid)) => {
+                            self.start_entity_probe(p, entity, uuid, eid, ctx)?
                         }
                         None => p.at += 1,
                     }

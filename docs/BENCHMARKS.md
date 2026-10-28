@@ -2,6 +2,47 @@
 
 This document records reproducible local benchmark snapshots. Completed release-performance history belongs in the [CHANGELOG](../CHANGELOG.md); continuous CI history is available on [Bencher](https://bencher.dev/perf/minigraf/plots).
 
+## Bounded recursive entity probes (#672, unreleased)
+
+**Date**: 2026-10-28 · **Baseline**: `v3` at `d0ad89c1d` · **Machine**:
+Intel Xeon E5-2696 v4, 88 logical CPUs, Rust 1.99.1. Baseline and change used
+the same bench machine and fixture, with no other benchmark running. The
+ignored 5M acceptance test ran once on the baseline and twice on the change
+with `--profile bench`:
+
+| Workload | Baseline | Change |
+|---|---:|---:|
+| `reach_5m`: 4,882,500 rows, 62 rounds | 302.66 s | 74.40 / 70.91 s (4.1–4.3× faster) |
+| Added peak RSS per derived fact | 172 bytes | 172 / 165 bytes |
+
+The 1M-fact [performance envelope](#performance-envelope-v300-394) used
+`--profile envelope`. Four recursive pairs ran sequentially, alternating
+baseline/change order. The table gives the mean of the four p50s; each
+recursive process warmed three queries and timed five. The point shape has
+three pairs. The [raw results](benchmarks/672-recursive-probes.jsonl) include
+each process's peak RSS and row count.
+
+| Shape | Baseline p50 | Change p50 | Difference |
+|---|---:|---:|---:|
+| `recursive`, 888,885 rows | 2,808.89 ms | 2,761.06 ms | -1.7% |
+| `point_entity`, 1 row | 17.87 µs | 17.86 µs | within run-to-run noise |
+
+The recursive shape's process peak RSS varied: the change was lower in the
+first two pairs (360,080 → 358,948 KiB and 353,880 → 352,212 KiB) and higher
+in the later two (338,916 → 351,808 KiB and 340,864 → 350,156 KiB). It does
+not establish a memory improvement for this shape. The point query did not
+use the new rule-query cache; its latency remains around 18 µs. The small
+envelope latency delta is a direction check rather than a stable estimate of
+speedup. The 5M test supplies the larger repeated-probe workload and its
+query-specific added-RSS measurement.
+
+To reproduce, build both revisions with `cargo build --profile envelope
+--example perf_envelope`, build one 1M fixture with `perf_envelope __build`,
+then run each executable with `__query fixture-1m.graph 11 8 60` for recursion
+and `__query fixture-1m.graph 0 2 60` for the point lookup. The 5M command is
+`cargo test --profile bench --test recursive_acceptance_test -- --ignored
+--nocapture`. Builds and fixture creation are outside the timed phase.
+
 ## Partition-at-a-time windows (#641, slice 3, unreleased)
 
 **Date**: 2026-10-28 · **Parent**: slice 2 at `e6670c82d` · **Change**: #641,

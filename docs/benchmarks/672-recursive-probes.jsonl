@@ -1,0 +1,17 @@
+{"build":"baseline","commit":"d0ad89c1d","shape":"reach_5m","rows":4882500,"seconds":302.66,"added_rss_bytes_per_fact":172}
+{"build":"change","round":1,"shape":"reach_5m","rows":4882500,"seconds":74.40,"added_rss_bytes_per_fact":172}
+{"build":"change","round":2,"shape":"reach_5m","rows":4882500,"seconds":70.91,"added_rss_bytes_per_fact":165}
+{"build":"baseline","round":1,"shape":"recursive","rows":888885,"p50_ms":2830.034095,"p99_ms":2861.556268,"peak_rss_kb":360080,"runs":5}
+{"build":"change","round":1,"shape":"recursive","rows":888885,"p50_ms":2753.613952,"p99_ms":2793.423012,"peak_rss_kb":358948,"runs":5}
+{"build":"change","round":2,"shape":"recursive","rows":888885,"p50_ms":2747.39619,"p99_ms":2794.835834,"peak_rss_kb":352212,"runs":5}
+{"build":"baseline","round":2,"shape":"recursive","rows":888885,"p50_ms":2780.496812,"p99_ms":2798.735509,"peak_rss_kb":353880,"runs":5}
+{"build":"baseline","round":3,"shape":"recursive","rows":888885,"p50_ms":2795.765073,"p99_ms":2822.804785,"peak_rss_kb":338916,"runs":5}
+{"build":"change","round":3,"shape":"recursive","rows":888885,"p50_ms":2775.115592,"p99_ms":2786.297056,"peak_rss_kb":351808,"runs":5}
+{"build":"change","round":4,"shape":"recursive","rows":888885,"p50_ms":2768.11864,"p99_ms":2790.291429,"peak_rss_kb":350156,"runs":5}
+{"build":"baseline","round":4,"shape":"recursive","rows":888885,"p50_ms":2829.272449,"p99_ms":2875.240564,"peak_rss_kb":340864,"runs":5}
+{"build":"baseline","round":1,"shape":"point_entity","rows":1,"p50_ms":0.018482,"p99_ms":0.035102,"peak_rss_kb":5276,"runs":200}
+{"build":"change","round":1,"shape":"point_entity","rows":1,"p50_ms":0.017596,"p99_ms":0.02669,"peak_rss_kb":5288,"runs":200}
+{"build":"change","round":2,"shape":"point_entity","rows":1,"p50_ms":0.01815,"p99_ms":0.041286,"peak_rss_kb":5088,"runs":200}
+{"build":"baseline","round":2,"shape":"point_entity","rows":1,"p50_ms":0.017864,"p99_ms":0.046861,"peak_rss_kb":5284,"runs":200}
+{"build":"baseline","round":3,"shape":"point_entity","rows":1,"p50_ms":0.017272,"p99_ms":0.033143,"peak_rss_kb":5288,"runs":200}
+{"build":"change","round":3,"shape":"point_entity","rows":1,"p50_ms":0.017836,"p99_ms":0.031906,"peak_rss_kb":5292,"runs":200}
