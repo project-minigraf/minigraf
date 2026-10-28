@@ -1,0 +1,33 @@
+{
+  "base": "2abf53df05447755490d017bc2daf89f4d59cdf5",
+  "pr_production_source_sha256": "a59a39766f2db679f231e22bd2a0290d687b7939470bcca0abbfa0d06c59bd15",
+  "probe_source_sha256": "103ea1adc656505c2c3c086c5747bbaf75e0a77bc283e60320030944bccf10f1",
+  "lock_sha256": "b03965119fd8ce5b5cf3ad3d37fb194ffeae24b6a862a0c85ae8fbcb6833ee77",
+  "compiler": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "release_bytes": 1254928,
+  "nightly_filter": "^query/",
+  "executed_benchmark_ids": [
+    "query/ordered_values/index/1k",
+    "query/ordered_values/index/10k",
+    "query/ordered_values/index/100k",
+    "query/ordered_values/index/1m",
+    "query/ordered_values/uuid_ties/1k",
+    "query/ordered_values/uuid_ties/10k",
+    "query/ordered_values/uuid_ties/100k",
+    "query/ordered_values/uuid_ties/1m"
+  ],
+  "libraries": {
+    "base": "dacde9faf1ede6e52c3bb6fc65bb7ba8e69b0ee907f0e6899ddf4fc3233a5b50",
+    "pr": "1ee5ddc54f1a08611a4f8e782eca79844f589c782114d11bcc1fa957abb5ee4d"
+  },
+  "binaries": {
+    "base": "93bb52bbb3a058eed295710ea64b0c2a1496b031e714240777bf9e2420661780",
+    "pr": "29282193b4f9d9cc1066425dbcac3f16452b38de5a97c10b68dfa862fa0a9d98"
+  },
+  "history_fixture_source_sha256": "faa6be9e273eedb9a12120cc1367369d2e662d71c8d92e333c15d0f1b3bcb92b",
+  "measurement_records": {
+    "envelope": 360,
+    "history_depth": 144,
+    "rounds": 6
+  }
+}

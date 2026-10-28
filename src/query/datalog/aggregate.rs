@@ -55,8 +55,10 @@ pub(crate) fn value_order(a: &Value, b: &Value) -> Ordering {
         (Value::Set(x), Value::Set(y)) => {
             let mut xs: Vec<&Value> = x.iter().collect();
             let mut ys: Vec<&Value> = y.iter().collect();
-            xs.sort_by(|p, q| value_order(p, q));
-            ys.sort_by(|p, q| value_order(p, q));
+            // Share one comparator type, so both sides share the sort code.
+            let cmp = |p: &&Value, q: &&Value| value_order(p, q);
+            xs.sort_by(cmp);
+            ys.sort_by(cmp);
             xs.iter()
                 .zip(&ys)
                 .map(|(p, q)| value_order(p, q))
@@ -845,15 +847,13 @@ pub(crate) fn windows(
                 })
                 .then(a.cmp(&b))
         };
-        if let Some(partition_col) = part {
-            keyed.sort_unstable_by(|&a, &b| {
-                read(a, Some(partition_col))
-                    .cmp(read(b, Some(partition_col)))
-                    .then_with(|| row_cmp(a, b))
-            });
-        } else {
-            keyed.sort_unstable_by(|&a, &b| row_cmp(a, b));
-        }
+        // One sort implementation for partitioned and unpartitioned windows.
+        keyed.sort_unstable_by(|&a, &b| {
+            part.map_or(Ordering::Equal, |col| {
+                read(a, Some(col)).cmp(read(b, Some(col)))
+            })
+            .then_with(|| row_cmp(a, b))
+        });
 
         // Charge slots before allocating, then payloads as each slot is
         // filled. The outer vector's entry stays charged until it is dropped.

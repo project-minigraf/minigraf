@@ -3,6 +3,7 @@
 **Milestone:** v3.0.0, branch `v3`. No change to the `.graph` format, the WAL format or the public Rust API.
 **Follows:** #473 (streaming engine; its `Limit`/`Offset` operators, §6.1 there, and `Sort`, §6.2 there, are built here), #547 (`value_order`).
 **Leaves to #641 (v3.next):** skipping `Sort` when an index already returns the rows in order, and sort-grouped `Aggregate`.
+**Follow-up, 2026-10-28:** #641 now targets v3.0.0; its approved three-slice scope is recorded in [the input-order design](2026-10-28-641-input-order-design.md). This document retains the original #306 decisions below.
 **Status:** approved 2026-10-24; not implemented.
 
 ## 1. Decisions

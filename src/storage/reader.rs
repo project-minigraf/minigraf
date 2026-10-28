@@ -405,6 +405,17 @@ impl<B: StorageBackend + 'static> KeySource for OnDiskReader<B> {
         Ok(())
     }
 
+    fn any_key(&self, index: Index, prefix: &[u8]) -> Result<bool> {
+        let root = self.root(index);
+        if root == 0 {
+            return Ok(false);
+        }
+        let mut cursor = LeafCursor::new(root, Some(prefix), &self.backend, &self.cache)?;
+        Ok(cursor
+            .next_ref()?
+            .is_some_and(|(k, _)| k.starts_with(prefix)))
+    }
+
     fn live_keys(
         &self,
         index: Index,
@@ -586,6 +597,57 @@ pub fn all_entries_as_facts(
         .iter()
         .map(|(k, _)| dict.fact(&KeyFact::decode(index, k)?))
         .collect()
+}
+
+#[cfg(test)]
+mod order_probe_tests {
+    use super::*;
+    use crate::storage::btree::{build_btree, tests::CountingBackend};
+    use crate::storage::keys::{KeyValue, ValueKind};
+    use crate::storage::page::PageAllocator;
+
+    #[test]
+    fn raw_kind_probe_sees_retractions_without_walking_them() {
+        let mut backend = CountingBackend::new();
+        let cache = Arc::new(PageCache::new(0));
+        let entries = (1..=8192u64)
+            .map(|e| {
+                let fact = KeyFact {
+                    e,
+                    a: 7,
+                    v: KeyValue::Float(e as f64),
+                    tx_count: 1,
+                    vf: 0,
+                    vt: i64::MAX,
+                    asserted: false,
+                };
+                (fact.key(Index::Avet).unwrap(), Vec::new())
+            })
+            .collect();
+        let mut alloc = PageAllocator::new(Vec::new(), 2, 1);
+        let mut meta = MetaPage::empty(1);
+        meta.avet_root = build_btree(entries, &mut backend, &cache, &mut alloc).unwrap();
+        let backend = Arc::new(Mutex::new(backend));
+        let reader = OnDiskReader::new(backend.clone(), cache, &meta);
+        for (kind, expected) in [(ValueKind::Float, true), (ValueKind::Integer, false)] {
+            backend.lock().unwrap().reset();
+            let actual = reader
+                .any_key(Index::Avet, &keys::attribute_kind_prefix(7, kind))
+                .unwrap();
+            assert_eq!(actual, expected, "raw history, not live rows");
+            assert!(
+                backend.lock().unwrap().reads() <= 8,
+                "one tree descent, no history walk"
+            );
+        }
+        backend.lock().unwrap().reset();
+        assert!(!reader.any_key(Index::Eavt, &[]).unwrap());
+        assert_eq!(
+            backend.lock().unwrap().reads(),
+            0,
+            "an absent tree reads no pages"
+        );
+    }
 }
 
 #[cfg(test)]

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- **Skip sorting proven ordered input** (#641, first slice). Plain queries can omit `Sort` when a committed integer, float, or Boolean range already provides the complete ascending result order. Attribute scans use AVET; entity-and-attribute scans retain their selective EAVT range. `:offset` and `:limit` then stop reading early, so memory-limit (`QRY-012`) or I/O errors in unread later input may be avoided. The proof uses the query's pinned reader, including a large write transaction's working trees, and rejects pending or staged records in the source range, mixed kinds, unsupported comparators, tie suffixes, order-changing operators, user callbacks and `collect-set`. Unproven queries retain their original plan. Aggregates and windows still buffer their full input in this slice.
+
 ### Breaking changes
 
 - **`Value` is `#[non_exhaustive]` and has a `Set` variant** (#316). A `match` on `Value` outside the crate needs a wildcard arm, so later value kinds are not breaking changes.

@@ -752,7 +752,10 @@ fn open(
         (Some(e), Some(a), t) => (vec![(Index::Eavt, keys::entity_attribute_prefix(e, a))], t),
         (Some(e), None, t) => (vec![(Index::Eavt, keys::entity_prefix(e))], t),
         (None, Some(a), Some(t)) => avet(a, t),
-        (None, Some(a), None) => (vec![(Index::Aevt, keys::attribute_prefix(a))], None),
+        (None, Some(a), None) => (
+            vec![(spec.index.unwrap_or(Index::Aevt), keys::attribute_prefix(a))],
+            None,
+        ),
         (None, None, t) => (vec![(Index::Eavt, Vec::new())], t),
     };
     let mut shadow = HashSet::new();

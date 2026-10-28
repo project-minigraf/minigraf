@@ -112,6 +112,7 @@ fn know_stored(
         return Ok(());
     };
     let mut scan = Scan::new(ScanSpec {
+        index: None,
         e: Term::Bind(0),
         a: Term::Const(attr.clone()),
         v: Term::Bind(1),

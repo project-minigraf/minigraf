@@ -751,7 +751,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
         self.meta
     }
 
-    #[cfg(any(not(target_arch = "wasm32"), feature = "browser"))]
+    #[cfg(any(not(target_arch = "wasm32"), feature = "browser", test))]
     /// Mark storage as dirty (needs saving)
     pub fn mark_dirty(&mut self) {
         self.dirty = true;

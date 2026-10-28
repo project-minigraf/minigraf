@@ -5,8 +5,9 @@
 //! compares, and turns them back into cells only for the rows it returns.
 //! Under a `:limit` (`keep = k`) it holds at most `k` rows, in a binary heap
 //! whose top is the worst row held, so its memory follows `k`, not the
-//! answer. Either way it reads its whole input; skipping that when an index
-//! returns the rows in order is #641.
+//! answer. Either way it reads its whole input. The snapshot-bound order
+//! resolver omits this operator when a committed scalar range proves the full
+//! result order (#641).
 
 use super::batch::Batch;
 use super::cell::{Cell, Scalar};

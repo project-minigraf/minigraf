@@ -672,6 +672,13 @@ fn shapes(e: usize, tx_half: u64, tx_half_time: &str, hot_tx_half: u64) -> Vec<S
             query: "[:find ?e ?a :where [?e :age ?a] :order-by [?a :desc] :limit 10]".into(),
             rows: 10.min(e),
         },
+        // #641: the entire returned order is the integer value. AVET can
+        // satisfy it and stop after a batch, without the UUID tie suffix.
+        Shape {
+            name: "ordered_values",
+            query: "[:find ?a :where [?e :age ?a] :order-by [?a] :limit 10]".into(),
+            rows: 10.min(e),
+        },
         Shape {
             name: "count",
             query: "[:find (count ?v) :where [?e ?a ?v]]".into(),

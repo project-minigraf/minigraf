@@ -440,6 +440,12 @@ fn distinct_memory_limit_and_cursor_cleanup() {
     );
     let q = "(query [:find ?v :where [?e :c ?v] :distinct :order-by [?v] :limit 1])";
     assert_eq!(
+        rows(&db, q).len(),
+        1,
+        "ordered input stops before the bound"
+    );
+    let q = "(query [:find ?v :where [?e :c ?v] :distinct :order-by [?v :desc] :limit 1])";
+    assert_eq!(
         db.execute(q)
             .expect_err("distinct retains keys even under top-k")
             .code(),
