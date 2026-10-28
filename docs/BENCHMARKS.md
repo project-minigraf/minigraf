@@ -2,6 +2,150 @@
 
 This document records reproducible local benchmark snapshots. Completed release-performance history belongs in the [CHANGELOG](../CHANGELOG.md); continuous CI history is available on [Bencher](https://bencher.dev/perf/minigraf/plots).
 
+## One-group count and distinct count (#641, slice 2, unreleased)
+
+**Date**: 2026-10-28 · **Parent**: slice 1 at `366f662df` · **Change**: #641,
+second slice. The [build manifest](benchmarks/641-ordered-groups-build.json)
+records the matched library, source, dependency-lock and probe fingerprints.
+Both libraries use opt-level 3 (`--profile envelope`), frame pointers and Rust
+1.99.1. The final appended native cache regression leaves the production library
+byte-identical to the measured build.
+
+Six balanced rounds run on an idle bench, with CPU and memory bound together
+and the nodes and execution order swapped each round. Each query has its own
+process and a 256 KiB worker stack. One warmup precedes 3–20,000 timed drains
+within a one-second budget (at least three for slow queries). Tables report the
+median of six process medians and the maximum of six process RSS peaks. Open and
+fixture construction are outside timing; fixtures are prebuilt and read-only.
+The existing envelope/history guards use their unchanged probe (three warmups,
+at least five timed drains per process). All six process samples per case are retained, including each median, range
+and run count.
+
+The group fixture has exactly N committed facts: one integer `:group` per UUID
+entity, `floor(i / 16)` for fixed groups. There are 6,250 / 62,500 / 625,000 groups
+at 100K / 1M / 10M rows, each of size 16. Counts read `?e`; distinct counts read
+its distinct entity ids. Each group-fixture probe checks the ordered group key and aggregate
+value, as well as row count. The materialized `sum-distinct` control binds the
+constant 1 and sums its distinct value per group, checking a result of 1.
+
+| Committed rows | Count full drain, ms (parent → change) | Distinct full drain, ms | Count limit 10, ms | Distinct limit 10, ms |
+|---:|---:|---:|---:|---:|
+| 100K | 50.395 → 48.880 | 63.671 → 60.007 | 48.157 → 0.652 | 60.922 → 0.762 |
+| 1M | 555.213 → 484.644 | 753.668 → 597.925 | 520.168 → 0.645 | 713.856 → 0.755 |
+| 10M | 7,397.820 → 4,925.882 | 10,111.836 → 6,042.124 | 6,951.004 → 0.644 | 9,522.604 → 0.758 |
+
+| Committed rows | Count full RSS, KiB (parent → change) | Distinct full RSS, KiB | Count limit RSS, KiB | Distinct limit RSS, KiB |
+|---:|---:|---:|---:|---:|
+| 100K | 10,080 → 5,072 | 13,416 → 5,052 | 9,912 → 3,840 | 13,460 → 3,816 |
+| 1M | 59,664 → 5,040 | 87,888 → 5,008 | 56,648 → 3,848 | 87,972 → 3,812 |
+| 10M | 500,376 → 5,188 | 904,552 → 5,204 | 506,456 → 3,816 | 894,320 → 3,860 |
+
+The bounded limit 10M/100K time ratios are **0.988** and **0.994**, below the 2x gate. Across the four fixed-group shapes, the largest 10M RSS increase over 100K is **152 KiB**, within the 16 MiB allowance. At 10M, full-drain count is **33.41%** faster and distinct count **40.25%** faster. All [252 grouped records](benchmarks/641-ordered-groups.jsonl) are retained.
+
+### Holder and early-stop gates
+
+| Committed rows | Count peak | Distinct-count peak | Active groups | Scan rows, limit 10 |
+|---:|---:|---:|---:|---:|
+| 100K | 480 B | 1,120 B | 1 | 1,024 |
+| 1M | 480 B | 1,120 B | 1 | 1,024 |
+| 10M | 480 B | 1,120 B | 1 | 1,024 |
+
+These are query-meter peaks, including IdSpace, from the
+[24 diagnostic records](benchmarks/641-ordered-groups-meter.jsonl). Both count
+modes release every completed group and retain no finished-results list. Zero
+peak growth fits the 100K baseline plus two charged batches; the test computes
+that allowance from `Batch`, `Vec<Cell>` and `cell_bytes` for the fixture's two
+columns, rather than a guessed byte count. The requested groups contain 160 rows;
+1,024 reads fit 160 + `BATCH_ROWS`. A probe-join regression checks the same bound
+at Aggregate's input (the join may also hold an outer batch).
+
+Input and output batches that pass within one operator pull follow the engine's
+existing uncharged-batch convention. No batch is retained between calls by the
+ordered Aggregate. The active group, distinct members, finish scratch and a
+result row until it moves into the passing output batch remain charged. Internal
+child-batch boundaries evict DICT lookup caches even when one group spans many
+pulls; a targeted regression fails when that eviction is disabled.
+
+### A single growing group
+
+| Committed rows | Count peak | Distinct-count peak |
+|---:|---:|---:|
+| 100K | 480 B | 4,000,480 B |
+| 1M | 480 B | 40,000,480 B |
+| 10M | 480 B | 400,000,480 B |
+
+The linear distinct-member control is expected. A limit cannot finish this one
+group before it has read every member. Other holders, provisional ids and final
+sorting can still dominate query memory; mixed integer/float grouping keeps its
+numeric Sort, and fallible aggregates retain full-input validation.
+
+| Committed rows | One-group count, ms (parent → change) | One-group distinct count, ms | Materialized sum-distinct control, ms |
+|---:|---:|---:|---:|
+| 100K | 39.487 → 44.752 | 53.622 → 58.114 | 61.088 → 62.489 |
+| 1M | 401.147 → 447.729 | 639.518 → 674.656 | 679.843 → 690.527 |
+| 10M | 4,066.914 → 4,519.806 | 6,921.283 → 7,348.321 | 7,344.431 → 7,553.146 |
+
+For one growing group, count is **11.14–13.33%** slower and distinct count **5.49–8.38%** slower. The ordered path checks its active key on every input row, and this control releases no completed groups until EOF. No cost-based strategy selection is added. The materialized sum-distinct control changes by **+1.57–2.84%**; its memory still grows with the number of groups. These costs are separate from the bounded-limit and ordinary-point gates.
+
+### Existing query guards and verification
+
+The ordinary envelope entity/exact-value/hot-point deltas are **−1.16% to +1.60%**. The exact #379 history guards have a worst delta of **+0.68%**, below 5%; all 12 workload/depth combinations pass. Full scan, plain limit, UUID-tie and descending top-k controls span **−2.40% to +2.41%**. The earlier ordered value limit/offset controls span **-3.24% to +0.32%**. The existing ordered selective-point startup cost remains visible separately:
+
+| Nominal envelope facts | Ordered point parent | Change |
+|---:|---:|---:|
+| 100K | 130.22 µs | 130.22 µs |
+| 1M | 112.67 µs | 112.57 µs |
+| 10M | 117.34 µs | 119.28 µs |
+
+The eight optional whole-attribute proof seeks are unchanged from slice 1. All [360 envelope/control records](benchmarks/641-ordered-groups-guards.jsonl) and [144 history records](benchmarks/641-ordered-groups-history.jsonl) are retained. No ordinary query without an applicable demand makes proof reads.
+
+The newly eligible grouped queries also pay that proof cost when there was no previous `:order-by`. On a one-row entity range:
+
+| Nominal envelope facts | Grouped count parent → change | Grouped distinct count parent → change |
+|---:|---:|---:|
+| 100K | 23.19 → 133.54 µs | 24.03 → 134.88 µs |
+| 1M | 22.94 → 118.55 µs | 24.80 → 121.45 µs |
+| 10M | 22.99 → 120.19 µs | 24.49 → 121.67 µs |
+
+These use `[:find ?a (count ?a) :where [:pM :age ?a]]` and its `count-distinct` variant, where M is the midpoint entity. EAVT remains selective, but the eight whole-attribute seeks add roughly **96–111 µs**. The [72 startup records](benchmarks/641-ordered-groups-startup.jsonl) use the unchanged guard probe (three warmups, at least five timed drains per process, six balanced process samples). A tiny group gets little benefit from releasing completed groups; there is no cost-based selection. This is reported separately from ordinary points with no applicable consumer demand.
+
+The final default test set is 1,947 passing / 16 ignored (the full instrumented
+suite plus rustdoc and the appended filtered cache regression); with test-hooks,
+1,980 pass / 17 are ignored. The full default and hooks runs preceded the final
+native-only cache test, which passed separately in both configurations and was
+added to the preserved coverage report. All unchanged floors pass: **95.40%**
+lines / **86.38%** branches. Native, browser and WASI clippy pass; WASI has 1,179
+passing / 7 ignored tests, Firefox has 60 passing tests, and the WASI REPL builds
+in release mode. Frozen answers are unchanged. The updated ignored million-group
+acceptance test passes: ordered count fits its 32 MiB budget, while grouped `sum`
+remains a materialized `QRY-012` control.
+
+The default release binary is **1,259,368 bytes**, below the unchanged
+**1,259,520-byte** cap. This slice changes no storage/key encoding, dependency,
+public API or file format. Window buffering is addressed by the third slice.
+
+### Reproduction and nightly routing
+
+Compile the [fixture builder](../scripts/input_order_group_fixture.rs) against
+the parent library and the same [group probe](../scripts/input_order_group_probe.rs)
+against both libraries, using the rustc/envelope flags in the slice-1 recipe.
+Run `group_fixture <new.graph> N 16`, then, for example:
+
+```sh
+group_probe groups.graph '(query [:find ?g (count ?e) :where [?e :group ?g] :order-by [?g] :limit 10])' 10 16
+```
+
+Use group size N instead of 16 for the single-growing-group control. Build
+fixtures in separate processes and alternate CPU/memory binding and library
+execution order over six rounds. Raw records contain every complete query.
+
+All sixteen Criterion cases execute with
+`cargo bench --bench minigraf_bench -- '^query/ordered_groups/' --test`:
+`query/ordered_groups/{count,distinct,count_limit,distinct_limit}/{1k,10k,100k,1m}`.
+The existing nightly `query` matrix's `^query/` route selects every new ID (#776).
+Scheduled Bencher history is available after merge; none is claimed here.
+
+
 ## Proven input order and Sort omission (#641, slice 1, unreleased)
 
 **Date**: 2026-10-28 · **Base**: `v3` at `2abf53df` · **Change**: #641,
@@ -120,8 +264,8 @@ change is needed. Scheduled Bencher history becomes available after merge.
 The ordinary release binary is **1,254,928 bytes**, below the unchanged
 **1,259,520-byte** cap (base: 1,258,784). Sharing the existing set/window sort
 comparators removes duplicate generated code while preserving their order.
-This slice changes Sort selection only; grouped Aggregate and Window remain
-full-input operators until the following #641 slices.
+At this snapshot, only Sort selection changed; Aggregate and Window still
+buffered their full input. The later #641 sections describe the other slices.
 
 ## Projected UUID lookup batching (#530, unreleased)
 

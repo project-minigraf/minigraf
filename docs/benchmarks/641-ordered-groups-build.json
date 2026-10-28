@@ -1,0 +1,87 @@
+{
+  "executed_benchmark_ids": [
+    "query/ordered_groups/count/1k",
+    "query/ordered_groups/count/10k",
+    "query/ordered_groups/count/100k",
+    "query/ordered_groups/count/1m",
+    "query/ordered_groups/distinct/1k",
+    "query/ordered_groups/distinct/10k",
+    "query/ordered_groups/distinct/100k",
+    "query/ordered_groups/distinct/1m",
+    "query/ordered_groups/count_limit/1k",
+    "query/ordered_groups/count_limit/10k",
+    "query/ordered_groups/count_limit/100k",
+    "query/ordered_groups/count_limit/1m",
+    "query/ordered_groups/distinct_limit/1k",
+    "query/ordered_groups/distinct_limit/10k",
+    "query/ordered_groups/distinct_limit/100k",
+    "query/ordered_groups/distinct_limit/1m"
+  ],
+  "nightly_filter": "^query/",
+  "parent_commit": "366f662df9c443f4c922741c7c0998791d722bb0",
+  "parent_library_sha256": "1ee5ddc54f1a08611a4f8e782eca79844f589c782114d11bcc1fa957abb5ee4d",
+  "grouped_library_sha256": "419def4308e7cfc61cb4fa7f0572d0751713a50dab6a89c1cf8939ee91f78faf",
+  "lock_sha256": "b03965119fd8ce5b5cf3ad3d37fb194ffeae24b6a862a0c85ae8fbcb6833ee77",
+  "compiler": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "source_sha256": "92a7034ad99ac3895e455a20be5321bfdc1540a3df8d8cf40fd6a375a58a3216",
+  "probe_sha256": "1556da034f89fb908719238a53011464d775df5b943b3d80426b0f68562d812f",
+  "fixture_builder_sha256": "2498b51719a8db20cba0c110b66ba3fdf71a82c08508b3183bb1b5b1892e26a2",
+  "release_bytes": 1259368,
+  "source_sha256_before_appended_cache_test": "6facfdee30aa6625c943ff0fc8851d8ba8d342e9149f72b58ed3234e50b45b87",
+  "library_identical_after_appended_native_cache_test": true,
+  "binaries": {
+    "parent-input_order_probe": "29282193b4f9d9cc1066425dbcac3f16452b38de5a97c10b68dfa862fa0a9d98",
+    "grouped-input_order_probe": "0dd9f4452ecdceb41e5bc7591b2695a39c03f34edf96c1ad8f1fd22b592b8aa0",
+    "parent-input_order_group_probe": "34ef561d99075296a74a0f10ddcb0383baba12e131830239457698370fa27720",
+    "grouped-input_order_group_probe": "004b10ad6d7d91b1036dc32f436c4355cd60992bb2e06f17fafd57cd4e1b2feb"
+  },
+  "fixtures": {
+    "groups-fixed-100k": {
+      "facts": 100000,
+      "rows_per_group": 16,
+      "groups": 6250,
+      "file_bytes": 9183232
+    },
+    "groups-fixed-10m": {
+      "facts": 10000000,
+      "rows_per_group": 16,
+      "groups": 625000,
+      "file_bytes": 989159424
+    },
+    "groups-fixed-1m": {
+      "facts": 1000000,
+      "rows_per_group": 16,
+      "groups": 62500,
+      "file_bytes": 95412224
+    },
+    "groups-growing-100k": {
+      "facts": 100000,
+      "rows_per_group": 100000,
+      "groups": 1,
+      "file_bytes": 8622080
+    },
+    "groups-growing-10m": {
+      "facts": 10000000,
+      "rows_per_group": 10000000,
+      "groups": 1,
+      "file_bytes": 905240576
+    },
+    "groups-growing-1m": {
+      "facts": 1000000,
+      "rows_per_group": 1000000,
+      "groups": 1,
+      "file_bytes": 89563136
+    }
+  },
+  "release_sha256": "b20a8cb4eb5bb0cc7fd44960d154138a5e256eab3df8cf9d8d359e4127381e8b",
+  "parent_source_sha256": "a59a39766f2db679f231e22bd2a0290d687b7939470bcca0abbfa0d06c59bd15",
+  "guard_probe_source_sha256": "103ea1adc656505c2c3c086c5747bbaf75e0a77bc283e60320030944bccf10f1",
+  "history_fixture_builder_sha256": "faa6be9e273eedb9a12120cc1367369d2e662d71c8d92e333c15d0f1b3bcb92b",
+  "process_samples_per_case": 6,
+  "group_warmups_per_process": 1,
+  "group_min_timed_drains_per_process": 3,
+  "guard_warmups_per_process": 3,
+  "guard_min_timed_drains_per_process": 5,
+  "selective_group_startup_records": 72,
+  "selective_group_startup_probe": "guard"
+}

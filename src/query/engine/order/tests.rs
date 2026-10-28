@@ -16,7 +16,7 @@ fn spec(wildcard: bool) -> ScanSpec {
 }
 
 fn proof(kind: ValueKind) -> Ordering {
-    Ordering::source(&spec(false), kind)
+    Ordering::source(&spec(false), Domain::Single(kind))
 }
 fn sorted(proof: &Ordering) -> bool {
     proof.satisfies(&[1], &[(0, false)])
@@ -49,7 +49,7 @@ fn full_order_requires_matching_prefix_direction_and_semantic_comparator() {
         !order.satisfies(&[1, 0], &[(0, false), (1, false)]),
         "DICT order is not UUID order"
     );
-    let wildcard = Ordering::source(&spec(true), ValueKind::Integer);
+    let wildcard = Ordering::source(&spec(true), Domain::Single(ValueKind::Integer));
     assert!(sorted(&wildcard));
     assert!(!wildcard.satisfies(&[1, 0], &[(0, false), (1, false)]));
     assert!(
@@ -166,6 +166,7 @@ fn canonicalization_and_buffering_operators_cannot_supply_false_certificates() {
             groups: vec![1],
             aggs: vec![("count".into(), 0)],
             zero_row: false,
+            grouping: Grouping::Hash,
         },
         Step::Window {
             find: vec![],
@@ -277,4 +278,100 @@ fn committed_memory_backend_orders_all_supported_scalar_edge_cases() {
             }
         }
     }
+}
+
+/// Group equality uses Value::Ord: integer and float ranges stay separate,
+/// signed zeros share a group and the shared finisher chooses its representative.
+#[cfg_attr(
+    all(target_arch = "wasm32", not(target_os = "wasi")),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", not(target_os = "wasi"))), test)]
+fn committed_group_counts_preserve_float_representatives_and_mixed_numeric_order() {
+    use crate::query::datalog::{parser::parse_datalog_command, types::DatalogCommand};
+    use crate::storage::{backend::memory::MemoryBackend, persistent_facts::PersistentFactStorage};
+    for case in 0..3 {
+        let mixed = case == 1;
+        let mut values = vec![
+            Value::Float(-0.0),
+            Value::Float(0.0),
+            Value::Float(f64::NAN),
+            Value::Float(-f64::NAN),
+            Value::Float(-100.0),
+            Value::Float(f64::INFINITY),
+        ];
+        if mixed {
+            values.extend([Value::Integer(10), Value::Integer(-10)]);
+        } else if case == 2 {
+            values = vec![
+                Value::Boolean(true),
+                Value::Boolean(false),
+                Value::Boolean(true),
+            ];
+        }
+        let mut pfs = PersistentFactStorage::new(MemoryBackend::new(), 32).unwrap();
+        pfs.storage()
+            .transact(
+                values
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, v)| (uuid::Uuid::from_u128(i as u128 + 1), ":group".into(), v))
+                    .collect(),
+                None,
+            )
+            .unwrap();
+        pfs.mark_dirty();
+        pfs.save().unwrap();
+        for sorted in [false, true] {
+            let query = format!(
+                "(query [:find (count-distinct ?e) ?g (count ?e) :where [?e :group ?g] {}])",
+                if sorted { ":order-by [?g]" } else { "" }
+            );
+            let DatalogCommand::Query(q) = parse_datalog_command(&query).unwrap() else {
+                panic!("query");
+            };
+            let mut results = Vec::new();
+            for optimized in [false, true] {
+                let _mode = set_enabled(optimized);
+                let mut stream = crate::query::engine::open(
+                    pfs.storage().snapshot().unwrap(),
+                    crate::query::engine::plan(&q).unwrap(),
+                    std::sync::Arc::new(FunctionRegistry::with_builtins()),
+                    usize::MAX,
+                )
+                .unwrap();
+                let counters = stream.counters();
+                if optimized {
+                    assert!(counters.iter().any(|c| c.op == "AggregateOrdered"));
+                    assert_eq!(
+                        counters.iter().any(|c| c.op == "Sort"),
+                        mixed && sorted,
+                        "mixed numbers group in Value::Ord but sort numerically"
+                    );
+                }
+                let mut rows = Vec::new();
+                while let Some(batch) = stream.next_rows().unwrap() {
+                    rows.extend(batch);
+                }
+                results.push(rows);
+            }
+            assert_eq!(results[0].len(), results[1].len());
+            for (a, b) in results[0].iter().flatten().zip(results[1].iter().flatten()) {
+                match (a, b) {
+                    (Value::Float(a), Value::Float(b)) => assert_eq!(a.to_bits(), b.to_bits()),
+                    _ => assert!(a == b, "same group result"),
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_unique_group_key_proves_tie_columns_until_a_join_can_multiply_it() {
+    let mut order = proof(ValueKind::Integer);
+    order.unique = true;
+    assert!(order.satisfies(&[1, 0], &[(0, false), (1, true)]));
+    let joined = order.through(&[join(JoinKind::Probe(0), vec![])]).unwrap();
+    assert!(!joined.satisfies(&[1, 0], &[(0, false), (1, true)]));
+    assert!(sorted(&joined));
 }
