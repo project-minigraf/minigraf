@@ -10,10 +10,12 @@ run-name: >-
   || github.event_name == 'workflow_dispatch' && inputs.ref
   || (github.event.schedule == '0 18 * * *' && 'v3' || 'main') }})
 
-# #627: proves the byte encoders that order index keys (src/storage/keys/
-# verification.rs, src/storage/index/verification.rs). The whole set takes
-# about 30 seconds of proof time and ~1 GB of memory. Kani upgrades are
-# deliberate PRs that re-run the set.
+# #627/#693: main proves the value encoder (5 harnesses); v3 also proves
+# key encoders and pure scalar decoders (29 harnesses after #693).
+# The v3 set passed on the bench machine in about 2 minutes warm with
+# 7.6 GiB aggregate CBMC peak RSS at -j 4. Keep concurrency capped at
+# that measured value for the 16 GiB runner. Kani upgrades are deliberate
+# PRs that re-run both branches' proof sets.
 
 on:
   pull_request:
@@ -61,7 +63,7 @@ jobs:
         uses: model-checking/kani-github-action@v1.1
         with:
           kani-version: 0.68.0
-          args: --lib -j --output-format terse -Z unstable-options --harness-timeout 10m
+          args: --lib -j 4 --output-format terse -Z unstable-options --harness-timeout 10m
 
       - name: Record Kani failure
         if: ${{ failure() && github.event_name == 'schedule' }}
@@ -76,7 +78,7 @@ jobs:
             echo
             echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             echo "- Commit: $(git rev-parse HEAD)"
-            echo "- Reproduce: \`cargo kani --lib -j --output-format terse -Z unstable-options --harness-timeout 10m\` (Kani 0.68.0)"
+            echo "- Reproduce: \`cargo kani --lib -j 4 --output-format terse -Z unstable-options --harness-timeout 10m\` (Kani 0.68.0)"
             echo
             echo "The failing harness and its counterexample are in the run log."
           } > "$report_file"
