@@ -4,11 +4,13 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,987 | 2,020 |
+| **Passing** | 1,988 | 2,021 |
 | **Ignored** | 17 | 18 |
-| **Total** | 2,004 | 2,038 |
+| **Total** | 2,005 | 2,039 |
 
-**#785 integration verification (2026-10-29)**: after merging the #693 decoder work from `v3`, the bench machine passed 76 engine tests (2 ignored), 24 key-decoder tests, the 16-test plan-independence matrix, and strict all-features clippy. Formatting passed. The release binary is 1,261,656 bytes, below the approved 1,263,616-byte cap. The totals above include both branches' four added tests; the earlier full-suite and proof results below remain tied to their original revisions.
+**#785 patch-coverage verification (2026-10-29)**: the bench machine passed the complete CI branch-coverage run (1,973 passing, 13 ignored; this command excludes doctests) and every unchanged module floor. Overall line coverage is 95.54%. The new boundary cases cover five lines previously reported as missing or partial. CI-equivalent all-features clippy and formatting pass.
+
+**#785 integration verification (2026-10-29)**: after merging the #693 decoder work from `v3`, the bench machine passed 76 engine tests (2 ignored), 24 key-decoder tests, the 16-test plan-independence matrix, and strict all-features clippy. Formatting passed. The release binary is 1,261,656 bytes, below the approved 1,263,616-byte cap. The totals above include both branches' four added tests and the additional #723 costing-boundary test; the earlier full-suite and proof results below remain tied to their original revisions.
 
 **#723 verification (2026-10-29)**: full default and `test-hooks` suites passed on the bench machine before the final head-binding guard. The final revision passes the full `test-hooks` suite excluding the unchanged fault matrix (2,000 passing, 18 ignored); those 16 fault tests passed in both earlier full runs. The final non-fault default unit suite and plan-independence matrix also pass. Strict all-features clippy and formatting pass; the docs site builds 13 versions. No frozen answers were changed.
 
@@ -49,6 +51,8 @@ Not counted above: the browser tests and the WASI run (see [Browser and WASI](#b
 - **Reliability and concurrency**: concurrent reads and writes, rollback behavior, same-process handle exclusion, cross-process locking, PID namespaces, NFS and container lock behavior, and SIGKILL recovery.
 - **Public diagnostics**: structured parser, query, storage, WAL, API, and internal error codes; the error-code registry is checked against [`ERROR_REFERENCE.md`](ERROR_REFERENCE.md).
 - **Compatibility and quality**: golden-file corpus of released file formats, cross-platform format compatibility, property-based tests, long-haul smoke coverage, a weekly soak at 10M facts with a 5-hour churn (#392), XTDB/Datomic semantic compatibility, grammar conformance, and rustdoc examples.
+
+The #723 ancestor tests also cover empty deltas, the 128-row demand cap, the eight-records-per-demand-row cutoff, stored demand facts, repeated head variables and internally generated constant heads. These protect the fallback decisions as well as the optimized path.
 
 ## Whole-System Checks
 

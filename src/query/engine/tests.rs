@@ -2706,15 +2706,23 @@ fn ancestor_alternative_preserves_head_value_representation() {
             None,
         )
         .unwrap();
-    for head in ["?x ?z", "?x ?y"] {
+    for head in ["?x ?z", "?x ?y", "?x ?x", "?x :fixed"] {
         let mut registry = RuleRegistry::new();
         for text in [
             "(rule [(boss ?x ?y) [?x :manager ?y]])".to_string(),
-            format!("(rule [(boss {head}) [?x :manager ?y] (boss ?y ?z)])"),
+            format!(
+                "(rule [(boss {}) [?x :manager ?y] (boss ?y ?z)])",
+                head.replace(":fixed", "?z")
+            ),
         ] {
-            let DatalogCommand::Rule(rule) = parse_datalog_command(&text).unwrap() else {
+            let DatalogCommand::Rule(mut rule) = parse_datalog_command(&text).unwrap() else {
                 panic!("rule");
             };
+            // Internal rewrites may supply constant heads, although the
+            // public rule syntax allows only variables.
+            if head == "?x :fixed" && rule.body.len() == 2 {
+                rule.head[2] = crate::query::datalog::types::EdnValue::Keyword(":fixed".into());
+            }
             registry.register_rule("boss".into(), rule).unwrap();
         }
         let DatalogCommand::Query(query) =

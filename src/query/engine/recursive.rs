@@ -374,3 +374,109 @@ fn unbound(var: &str) -> anyhow::Error {
         format!("Unbound variable in rule head: {var}")
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::graph::storage::FactStorage;
+    use crate::query::datalog::{
+        magic_sets, parser::parse_datalog_command, rules::RuleRegistry, types::DatalogCommand,
+    };
+
+    /// Costing must stay bounded even when a later round has a much larger
+    /// demand relation. Empty deltas must not trigger an unrelated scan.
+    #[test]
+    fn ancestor_costing_respects_round_and_attribute_boundaries() {
+        let mut registry = RuleRegistry::new();
+        for text in [
+            "(rule [(boss ?x ?y) [?x :manager ?y]])",
+            "(rule [(boss ?x ?z) [?x :manager ?y] (boss ?y ?z)])",
+        ] {
+            let DatalogCommand::Rule(rule) = parse_datalog_command(text).unwrap() else {
+                panic!("expected rule");
+            };
+            registry.register_rule("boss".into(), rule).unwrap();
+        }
+        let DatalogCommand::Query(query) =
+            parse_datalog_command("(query [:find ?b :where (boss :leaf ?b)])").unwrap()
+        else {
+            panic!("expected query");
+        };
+        let (registry, seeds) = magic_sets::rewrite(&query, &registry).unwrap();
+        let attrs: Vec<_> = seeds.iter().map(|(_, a, _)| a.as_str()).collect();
+        let plan = super::super::plan_rules(&query, &registry, &attrs).unwrap();
+        let run = plan
+            .strata
+            .iter()
+            .flat_map(|(_, rules)| rules)
+            .flat_map(|rule| &rule.deltas)
+            .find(|run| run.entity_first.is_some())
+            .expect("ancestor plan has an entity-first alternative");
+        let alternative = run.entity_first.as_deref().unwrap();
+        let Source::Scan(delta) = &run.plan.source else {
+            panic!("delta scan");
+        };
+        let Source::Scan(source) = &alternative.plan.source else {
+            panic!("demand scan");
+        };
+        let delta_rel = delta.derived.as_ref().unwrap().rels[0];
+        let source_rel = source.derived.as_ref().unwrap().rels[0];
+        let Term::Const(source_attr) = &source.a else {
+            panic!("demand attribute");
+        };
+        // (demand rows, delta rows, pending edges, stored demand, use alternative)
+        for (demand, delta, edges, stored_demand, expected) in [
+            (1, 0, 100, false, false),
+            (1, 1, 7, false, false),
+            (1, 1, 8, false, true),
+            (128, 1, 1024, false, true),
+            (129, 1, 1032, false, false),
+            (1, 1, 100, true, false),
+        ] {
+            let meter = Meter::new(usize::MAX);
+            let ids = IdSpace::new(None, &meter);
+            let mut rels = Relations::new(0..plan.evaluated.attrs.len() as u64, &meter);
+            for i in 0..demand {
+                rels.add(source_rel, [Cell::Eid(i), Cell::Val(Scalar::Bool(true))])
+                    .unwrap();
+            }
+            rels.end_round();
+            for i in 0..delta {
+                rels.add(delta_rel, [Cell::Eid(i), Cell::Eid(i + 1)])
+                    .unwrap();
+            }
+            rels.end_round();
+            let storage = FactStorage::new();
+            let mut facts: Vec<_> = (0..edges)
+                .map(|i| {
+                    (
+                        uuid::Uuid::from_u128(i + 1),
+                        ":manager".into(),
+                        crate::Value::Integer(1),
+                    )
+                })
+                .collect();
+            if stored_demand {
+                facts.push((
+                    uuid::Uuid::from_u128(1),
+                    source_attr.clone(),
+                    crate::Value::Boolean(true),
+                ));
+            }
+            storage.transact(facts, None).unwrap();
+            let snapshot = storage.snapshot().unwrap();
+            let reads = Reads {
+                snapshot: &snapshot,
+                keys: None,
+                functions: &FunctionRegistry::with_builtins(),
+                bound: &TxBound::All,
+            };
+            let selected = choose_run(run, &rels, &reads, &ids).unwrap();
+            assert_eq!(
+                std::ptr::eq(selected, alternative),
+                expected,
+                "demand={demand}, delta={delta}, edges={edges}, stored={stored_demand}"
+            );
+        }
+    }
+}
