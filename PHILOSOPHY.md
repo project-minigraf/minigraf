@@ -115,7 +115,10 @@ SQLite's success comes from a clear philosophy: be a library, not a server. Be s
   strip=symbols all already applied; see CI's `binary-size.yml` for the
   enforced limit). v3.0.0 raises the enforced limit to 1,230 KiB for
   `:order-by`/`:offset` and the top-k `Sort` (#306), whose ~11 KiB did not
-  fit the 2 KiB left after the streaming engine (#473) and set values (#316)
+  fit the 2 KiB left after the streaming engine (#473) and set values (#316).
+  The approved #723 ancestor-join optimization raises it to 1,234 KiB:
+  the measured increase is 2,720 bytes, avoiding a whole-attribute value
+  map for selective in-memory recursion without adding a storage index
 - No runtime dependencies (no JVM, no Python, no Node.js)
 
 **Anti-pattern**: Requiring external services, libraries, or runtimes to function.

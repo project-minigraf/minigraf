@@ -35,8 +35,9 @@ fails with `QRY-012` while building the pending value map. No persistent
 value index or write-time cost is added.
 
 Release size with the same toolchain and lockfile: baseline 1,258,712 bytes,
-change 1,261,432 bytes (+2,720). The existing 1,230 KiB gate (1,259,520 bytes)
-is exceeded by 1,912 bytes; a budget decision is required before merge.
+change 1,261,432 bytes (+2,720). The maintainer approved raising the v3 gate
+from 1,230 to 1,234 KiB (1,263,616 bytes), leaving 2,184 bytes of headroom.
+The budget and its rationale are recorded in PHILOSOPHY.md §4.
 
 Reproduce with `cargo bench --bench minigraf_bench -- '^recursion/'` on each
 revision. For an isolated timed phase, build with `--no-run` first and invoke

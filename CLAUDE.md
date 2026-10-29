@@ -16,7 +16,7 @@ Minigraf follows the "SQLite for bi-temporal graph databases" philosophy:
 - **Zero-configuration** - No setup, no config files, just works
 - **Embedded-first** - Library not server, in-process execution
 - **Single-file database** - One portable `.graph` file
-- **Self-contained** - Minimal dependencies, small binary (~1.2MB budget as of #277, 1,230 KiB enforced on v3 since #306; see PHILOSOPHY.md §4)
+- **Self-contained** - Minimal dependencies, small binary (~1.2MB budget as of #277, 1,234 KiB enforced on v3 since #723; see PHILOSOPHY.md §4)
 - **Cross-platform** - Native, WASM, mobile, embedded
 - **Reliability over features** - Do less, do it perfectly
 - **Bi-temporal first-class** - Time travel is a core feature, not addon
