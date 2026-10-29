@@ -125,6 +125,7 @@ Scope — release-gate testing and documentation:
 - Fault injection across save/WAL/recovery (#390)
 - Long-running soak test at scale (#392; done on `v3`: `tests/soak_test.rs`, 10M facts and a 5-hour churn weekly, alternating `main` and `v3`)
 - Benchmarks at 100K–10M facts and a published performance envelope (#394; on `v3`: `examples/perf_envelope.rs`, results in `docs/BENCHMARKS.md`; follow-ups #528–#532, with #532 superseded by #551's removal of repeated committed-fact net-assert; [audit and measurements](docs/benchmarks/532-net-assert-audit.md))
+- Expression keyword/ref equality (#774; on `v3`): resolve literal keywords once per operator, with memory bounded by the expression. [Measurements and regression coverage](docs/benchmarks/774-expression-keywords.md); performance-only, with no v2.x backport.
 - Higher storage/WAL coverage gates and branch-coverage gates (#396; on `v3`: line and branch floors per file in `coverage-thresholds.toml`, checked on every PR)
 - Durability, recovery and operations guide (#398; done on `v3`: `docs/DURABILITY.md`, also on the docs site; found #535)
 

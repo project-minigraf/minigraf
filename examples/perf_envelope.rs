@@ -537,7 +537,7 @@ fn shapes(e: usize, tx_half: u64, tx_half_time: &str, hot_tx_half: u64) -> Vec<S
     let siblings = (10 * (m / 10)..10 * (m / 10) + 10)
         .filter(|&s| s > 0)
         .count();
-    vec![
+    let mut out = vec![
         Shape {
             name: "point_entity",
             query: format!("[:find ?a :where [:p{m} :age ?a]]"),
@@ -708,7 +708,38 @@ fn shapes(e: usize, tx_half: u64, tx_half_time: &str, hot_tx_half: u64) -> Vec<S
             ),
             rows: 1,
         },
-    ]
+    ];
+    // #774: matched named-keyword/UUID-keyword controls keep the scan and result cardinality
+    // identical while measuring keyword/ref expression equality in both orders.
+    let uuid = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, b":p5");
+    for (name, op, reverse, keyword) in [
+        ("expr_eq_keyword", "=", false, true),
+        ("expr_eq_uuid_keyword", "=", false, false),
+        ("expr_eq_keyword_reverse", "=", true, true),
+        ("expr_eq_uuid_keyword_reverse", "=", true, false),
+        ("expr_neq_keyword", "!=", false, true),
+        ("expr_neq_uuid_keyword", "!=", false, false),
+        ("expr_neq_keyword_reverse", "!=", true, true),
+        ("expr_neq_uuid_keyword_reverse", "!=", true, false),
+    ] {
+        let literal = if keyword {
+            ":p5".to_string()
+        } else {
+            format!(":{uuid}")
+        };
+        let operands = if reverse {
+            format!("{literal} ?f")
+        } else {
+            format!("?f {literal}")
+        };
+        let equal = usize::from(e > 5);
+        out.push(Shape {
+            name,
+            query: format!("[:find ?f :where [?f :name ?n] [({op} {operands})]]"),
+            rows: if op == "=" { equal } else { e - equal },
+        });
+    }
+    out
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -993,8 +1024,10 @@ mod tests {
                 .path(fixture)
                 .open()
                 .unwrap();
-            for name in ["as_of_ts", "as_of_ts_scan"] {
-                let shape = shapes.iter().find(|s| s.name == name).unwrap();
+            for shape in shapes.iter().filter(|s| {
+                matches!(s.name, "as_of_ts" | "as_of_ts_scan") || s.name.starts_with("expr_")
+            }) {
+                let name = shape.name;
                 let rows = drain(&db, &format!("(query {})", shape.query)).unwrap();
                 assert!(rows >= 1, "{name} returns rows");
                 if shape.rows != usize::MAX {

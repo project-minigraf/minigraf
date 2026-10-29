@@ -8,7 +8,7 @@ use super::types::{
 use crate::error::{ErrorCode, bail_coded, err_coded};
 use crate::graph::FactStorage;
 use crate::graph::storage::Snapshot;
-use crate::graph::types::{TransactOptions, TxId, Value};
+use crate::graph::types::{EntityId, TransactOptions, TxId, Value};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -622,22 +622,60 @@ fn to_float_pair(l: &Value, r: &Value) -> Result<(f64, f64), ()> {
     Ok((lf, rf))
 }
 
+/// Entity equivalents of literal keywords in an expression's equality tests.
+/// Built with the operator, including nested expressions and substituted slots.
+/// Never populated from row values: its size is bounded by the expression, not
+/// the input, and rewinding an operator keeps the same resolutions (#774).
+#[derive(Default)]
+pub(crate) struct LiteralKeywords(Vec<(String, EntityId)>);
+
+impl LiteralKeywords {
+    pub(crate) fn new(expr: &Expr) -> Self {
+        fn walk(expr: &Expr, out: &mut Vec<(String, EntityId)>) {
+            match expr {
+                Expr::BinOp(op, lhs, rhs) => {
+                    if matches!(op, BinOp::Eq | BinOp::Neq) {
+                        for arg in [lhs, rhs] {
+                            if let Expr::Lit(Value::Keyword(k)) = &**arg
+                                && !out.iter().any(|(name, _)| name == k)
+                                && let Ok(id) = edn_to_entity_id(&EdnValue::Keyword(k.clone()))
+                            {
+                                out.push((k.clone(), id));
+                            }
+                        }
+                    }
+                    walk(lhs, out);
+                    walk(rhs, out);
+                }
+                Expr::UnaryOp(_, arg) => walk(arg, out),
+                _ => {}
+            }
+        }
+        let mut out = Self::default();
+        walk(expr, &mut out.0);
+        out
+    }
+}
+
 /// Whether `l` and `r` are equal as a join compares them: structurally,
 /// except that a keyword equals a ref to the entity it names (#744).
-fn expr_eq(l: &Value, r: &Value) -> bool {
+fn expr_eq(l: &Value, r: &Value, keywords: &LiteralKeywords) -> bool {
     match (l, r) {
         (Value::Keyword(k), Value::Ref(u)) | (Value::Ref(u), Value::Keyword(k)) => {
-            edn_to_entity_id(&EdnValue::Keyword(k.clone())).is_ok_and(|e| e == *u)
+            match keywords.0.iter().find(|(name, _)| name == k) {
+                Some((_, e)) => e == u,
+                None => edn_to_entity_id(&EdnValue::Keyword(k.clone())).is_ok_and(|e| e == *u),
+            }
         }
         _ => l == r,
     }
 }
 
-fn eval_binop(op: &BinOp, l: Value, r: Value) -> Result<Value, ()> {
+fn eval_binop(op: &BinOp, l: Value, r: Value, keywords: &LiteralKeywords) -> Result<Value, ()> {
     match op {
         // Equality — works for all Value variants; no type mismatch error.
-        BinOp::Eq => return Ok(Value::Boolean(expr_eq(&l, &r))),
-        BinOp::Neq => return Ok(Value::Boolean(!expr_eq(&l, &r))),
+        BinOp::Eq => return Ok(Value::Boolean(expr_eq(&l, &r, keywords))),
+        BinOp::Neq => return Ok(Value::Boolean(!expr_eq(&l, &r, keywords))),
         _ => {}
     }
 
@@ -829,12 +867,13 @@ pub(crate) fn eval_expr(
     expr: &Expr,
     binding: &std::collections::HashMap<String, Value>,
     registry: Option<&FunctionRegistry>,
+    keywords: &LiteralKeywords,
 ) -> Result<Value, EvalError> {
     match expr {
         Expr::Var(v) => binding.get(v).cloned().ok_or(EvalError::NoValue),
         Expr::Lit(val) => Ok(val.clone()),
         Expr::UnaryOp(op, arg) => {
-            let v = eval_expr(arg, binding, registry)?;
+            let v = eval_expr(arg, binding, registry, keywords)?;
             match op {
                 UnaryOp::StringQ => Ok(Value::Boolean(matches!(v, Value::String(_)))),
                 UnaryOp::IntegerQ => Ok(Value::Boolean(matches!(v, Value::Integer(_)))),
@@ -857,9 +896,9 @@ pub(crate) fn eval_expr(
             }
         }
         Expr::BinOp(op, lhs, rhs) => {
-            let l = eval_expr(lhs, binding, registry)?;
-            let r = eval_expr(rhs, binding, registry)?;
-            eval_binop(op, l, r).map_err(|()| EvalError::NoValue)
+            let l = eval_expr(lhs, binding, registry, keywords)?;
+            let r = eval_expr(rhs, binding, registry, keywords)?;
+            eval_binop(op, l, r, keywords).map_err(|()| EvalError::NoValue)
         }
         Expr::Slot(_) => {
             // Unsubstituted bind slot — treat as eval error (unbound variable equivalent).
@@ -2035,6 +2074,18 @@ mod expr_eval_tests {
     use std::collections::HashMap;
     use std::sync::Arc;
     use uuid::Uuid;
+
+    fn eval_expr(
+        expr: &Expr,
+        binding: &HashMap<String, Value>,
+        registry: Option<&FunctionRegistry>,
+    ) -> Result<Value, EvalError> {
+        super::eval_expr(expr, binding, registry, &LiteralKeywords::new(expr))
+    }
+
+    fn eval_binop(op: &BinOp, l: Value, r: Value) -> Result<Value, ()> {
+        super::eval_binop(op, l, r, &LiteralKeywords::default())
+    }
 
     fn b(pairs: &[(&str, Value)]) -> HashMap<String, Value> {
         pairs

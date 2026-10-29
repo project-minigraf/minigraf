@@ -9,7 +9,7 @@ use super::cell::{Cell, join_eq};
 use super::plan::{Out, Step, Term, Vars};
 use super::project::value;
 use super::{Counters, Ctx, Operator};
-use crate::query::datalog::executor::{EvalError, eval_expr, is_truthy};
+use crate::query::datalog::executor::{EvalError, LiteralKeywords, eval_expr, is_truthy};
 use crate::query::datalog::types::Expr;
 use anyhow::Result;
 use std::collections::HashMap;
@@ -19,10 +19,15 @@ pub(crate) struct Apply {
     child: Box<dyn Operator>,
     step: Step,
     counters: Counters,
+    keywords: LiteralKeywords,
 }
 
 impl Apply {
     pub(crate) fn new(child: Box<dyn Operator>, step: Step) -> Self {
+        let keywords = match &step {
+            Step::Filter(expr, _) | Step::Bind(expr, ..) => LiteralKeywords::new(expr),
+            _ => LiteralKeywords::default(),
+        };
         let op = match step {
             Step::Pseudo { .. } => "Pseudo",
             Step::Filter(..) => "Filter",
@@ -41,6 +46,7 @@ impl Apply {
             child,
             step,
             counters: Counters::new(op),
+            keywords,
         }
     }
 }
@@ -49,7 +55,7 @@ impl Operator for Apply {
     fn next_batch(&mut self, ctx: &mut Ctx<'_>) -> Result<Option<Batch>> {
         while let Some(batch) = self.child.next_batch(ctx)? {
             self.counters.rows_in += batch.len as u64;
-            let batch = apply(&self.step, batch, ctx)?;
+            let batch = apply(&self.step, &self.keywords, batch, ctx)?;
             if batch.len > 0 {
                 self.counters.out(&batch);
                 return Ok(Some(batch));
@@ -73,7 +79,12 @@ impl Operator for Apply {
 }
 
 /// Apply `step` to `batch`.
-fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<Batch> {
+fn apply(
+    step: &Step,
+    keywords: &LiteralKeywords,
+    mut batch: Batch,
+    ctx: &mut Ctx<'_>,
+) -> Result<Batch> {
     match step {
         Step::Pseudo { col, value } => {
             let meta = batch.cols.get(*col).cloned().unwrap_or_default();
@@ -100,7 +111,9 @@ fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<Batch> {
         Step::Filter(expr, vars) => {
             let mut keep = Vec::with_capacity(batch.len);
             for i in 0..batch.len {
-                keep.push(eval(expr, vars, &batch, i, ctx)?.is_some_and(|v| is_truthy(&v)));
+                keep.push(
+                    eval(expr, keywords, vars, &batch, i, ctx)?.is_some_and(|v| is_truthy(&v)),
+                );
             }
             batch.retain(&keep);
         }
@@ -108,7 +121,7 @@ fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<Batch> {
             let mut keep = Vec::with_capacity(batch.len);
             let mut out = Vec::with_capacity(batch.len);
             for i in 0..batch.len {
-                let Some(v) = eval(expr, vars, &batch, i, ctx)? else {
+                let Some(v) = eval(expr, keywords, vars, &batch, i, ctx)? else {
                     keep.push(false);
                     continue;
                 };
@@ -154,6 +167,7 @@ fn apply(step: &Step, mut batch: Batch, ctx: &mut Ctx<'_>) -> Result<Batch> {
 /// predicate fails the query (`QRY-014`, #180).
 fn eval(
     expr: &Expr,
+    keywords: &LiteralKeywords,
     vars: &Vars,
     batch: &Batch,
     i: usize,
@@ -165,9 +179,48 @@ fn eval(
             binding.insert(name.clone(), value(cell, ctx)?);
         }
     }
-    match eval_expr(expr, &binding, Some(ctx.functions)) {
+    match eval_expr(expr, &binding, Some(ctx.functions), keywords) {
         Ok(v) => Ok(Some(v)),
         Err(EvalError::NoValue) => Ok(None),
         Err(EvalError::Udf(e)) => Err(e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Minigraf;
+    use crate::query::datalog::matcher::KEYWORD_RESOLUTIONS;
+
+    /// Literal resolution work must not grow with the number of input rows,
+    /// including nested expressions and operators inside rule/negation bodies.
+    #[test]
+    fn literal_keyword_resolution_is_independent_of_row_count() {
+        let cases = [
+            "[:find ?f :where [?f :name ?n] [(= ?f :p5)]]",
+            "[:find ?f :where [?f :name ?n] [(= :p5 ?f)]]",
+            "[:find ?f :where [?f :name ?n] [(!= ?f :p5)]]",
+            "[:find ?f :where [?f :name ?n] [(!= :p5 ?f)]]",
+            "[:find ?f :where [?f :name ?n] [(= (= ?f :p5) true)]]",
+            "[:find ?b :where [?f :name ?n] [(= :p5 ?f) ?b]]",
+            "[:find ?f :where [?f :name ?n] (not [(= ?f :p5)])]",
+            "[:find ?f :where [?f :name ?n] (or [(= ?f :p5)] [(= ?f :p6)])]",
+            "[:find ?f :where (chosen ?f)]",
+        ];
+        let counts = |rows| {
+            let db = Minigraf::in_memory().unwrap();
+            let facts: String = (0..rows).map(|i| format!("[:p{i} :name {i}]")).collect();
+            db.execute(&format!("(transact [{facts}])")).unwrap();
+            db.execute("(rule [(chosen ?f) [?f :name ?n] [(= ?f :p5)]])")
+                .unwrap();
+            cases.map(|q| {
+                KEYWORD_RESOLUTIONS.with(|n| n.set(0));
+                db.execute(&format!("(query {q})")).unwrap();
+                KEYWORD_RESOLUTIONS.with(|n| n.get())
+            })
+        };
+        let (small, large) = (counts(8), counts(2_048));
+        for ((a, b), q) in small.into_iter().zip(large).zip(cases) {
+            assert_eq!(a, b, "literal resolution count grows with input: {q}");
+        }
     }
 }
