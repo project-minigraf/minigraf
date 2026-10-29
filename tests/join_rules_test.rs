@@ -281,8 +281,14 @@ fn assert_expression_equality_matches_joins(db: &Minigraf) {
         ("[:find ?x :where [?x :ref/friend ?g] [(= ?g :bob)]]", 1),
         ("[:find ?x :where [?x :ref/friend ?g] [(= :bob ?g)]]", 1),
         ("[:find ?x :where [?x :ref/friend ?g] [(!= ?g :bob)]]", 0),
+        ("[:find ?x :where [?x :ref/friend ?g] [(!= :bob ?g)]]", 0),
         ("[:find ?x :where [?x :ref/friend ?g] [(= ?g :eve)]]", 0),
         ("[:find ?x :where [?x :ref/friend ?g] [(!= ?g :eve)]]", 1),
+        ("[:find ?x :where [?x :ref/friend ?g] [(!= :eve ?g)]]", 1),
+        (
+            "[:find ?x :where [?x :ref/friend ?g] [(= (= :bob ?g) true)]]",
+            1,
+        ),
         // A ref against a keyword value.
         (
             "[:find ?x :where [?y :ref/friend ?g] [?x :kw/friend ?k] [(= ?g ?k)]]",
@@ -310,6 +316,27 @@ fn assert_expression_equality_matches_joins(db: &Minigraf) {
             .unwrap(),
     );
     assert_eq!(r.len(), 1, "bound ref");
+
+    // #774: each execution resolves its substituted keyword; an earlier
+    // execution's literal must not leak into a later one. Cover both operand
+    // orders and keep the keyword spelling in the returned value.
+    for (op, reverse) in [("=", false), ("=", true), ("!=", false), ("!=", true)] {
+        let args = if reverse { "$k ?g" } else { "?g $k" };
+        let p = db
+            .prepare(&format!(
+                "(query [:find ?x :where [?x :ref/friend ?g] [({op} {args})]])"
+            ))
+            .unwrap();
+        for k in [":bob", ":eve", ":bob"] {
+            let r = rows(
+                p.execute(&[("k", BindValue::Val(Value::Keyword(k.into())))])
+                    .unwrap(),
+            );
+            assert_eq!(r.len(), usize::from((k == ":bob") == (op == "=")));
+        }
+    }
+    let r = query(db, "[:find ?k :where [?x :kw/friend ?k] [(= ?k :bob)]]");
+    assert!(matches!(r.as_slice(), [row] if is_keyword(&row[0], ":bob")));
 }
 
 #[test]

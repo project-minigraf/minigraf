@@ -1,0 +1,364 @@
+{
+  "revision": "bee2af00c",
+  "profile": "envelope",
+  "numa_node": 1,
+  "budget_secs": 3,
+  "scales": [
+    {
+      "scale": "100k",
+      "build": {
+        "build_ms": 1316.9764109999999,
+        "entities": 16666,
+        "facts": 100000,
+        "file_bytes": 10764288,
+        "hot_tx_half": 1253,
+        "peak_rss_kb": 189604,
+        "tx_half": 126
+      },
+      "rounds": [
+        [
+          {
+            "max_ms": 39.0162,
+            "name": "expr_eq_keyword",
+            "p50_ms": 30.032576,
+            "p99_ms": 32.360908,
+            "peak_rss_kb": 7712,
+            "query": "[:find ?f :where [?f :name ?n] [(= ?f :p5)]]",
+            "rows": 1,
+            "runs": 100
+          },
+          {
+            "max_ms": 37.885141,
+            "name": "expr_eq_uuid_keyword",
+            "p50_ms": 28.235346,
+            "p99_ms": 29.882284,
+            "peak_rss_kb": 7868,
+            "query": "[:find ?f :where [?f :name ?n] [(= ?f :031dbb04-22ac-58e7-a7c4-315e86b720d7)]]",
+            "rows": 1,
+            "runs": 106
+          },
+          {
+            "max_ms": 37.729647,
+            "name": "expr_eq_keyword_reverse",
+            "p50_ms": 30.030960999999998,
+            "p99_ms": 32.854969,
+            "peak_rss_kb": 8016,
+            "query": "[:find ?f :where [?f :name ?n] [(= :p5 ?f)]]",
+            "rows": 1,
+            "runs": 100
+          },
+          {
+            "max_ms": 38.150399,
+            "name": "expr_eq_uuid_keyword_reverse",
+            "p50_ms": 27.872391999999998,
+            "p99_ms": 29.826217,
+            "peak_rss_kb": 7936,
+            "query": "[:find ?f :where [?f :name ?n] [(= :031dbb04-22ac-58e7-a7c4-315e86b720d7 ?f)]]",
+            "rows": 1,
+            "runs": 108
+          },
+          {
+            "max_ms": 39.09252,
+            "name": "expr_neq_keyword",
+            "p50_ms": 30.458934,
+            "p99_ms": 39.09252,
+            "peak_rss_kb": 6768,
+            "query": "[:find ?f :where [?f :name ?n] [(!= ?f :p5)]]",
+            "rows": 16665,
+            "runs": 98
+          },
+          {
+            "max_ms": 74.290836,
+            "name": "expr_neq_uuid_keyword",
+            "p50_ms": 28.083943,
+            "p99_ms": 33.073021000000004,
+            "peak_rss_kb": 6644,
+            "query": "[:find ?f :where [?f :name ?n] [(!= ?f :031dbb04-22ac-58e7-a7c4-315e86b720d7)]]",
+            "rows": 16665,
+            "runs": 105
+          },
+          {
+            "max_ms": 39.204639,
+            "name": "expr_neq_keyword_reverse",
+            "p50_ms": 30.326608,
+            "p99_ms": 39.204639,
+            "peak_rss_kb": 6668,
+            "query": "[:find ?f :where [?f :name ?n] [(!= :p5 ?f)]]",
+            "rows": 16665,
+            "runs": 99
+          },
+          {
+            "max_ms": 36.402322,
+            "name": "expr_neq_uuid_keyword_reverse",
+            "p50_ms": 28.199336,
+            "p99_ms": 30.541718,
+            "peak_rss_kb": 6648,
+            "query": "[:find ?f :where [?f :name ?n] [(!= :031dbb04-22ac-58e7-a7c4-315e86b720d7 ?f)]]",
+            "rows": 16665,
+            "runs": 106
+          }
+        ],
+        [
+          {
+            "max_ms": 35.771424,
+            "name": "expr_neq_uuid_keyword_reverse",
+            "p50_ms": 28.046169,
+            "p99_ms": 30.256328,
+            "peak_rss_kb": 6736,
+            "query": "[:find ?f :where [?f :name ?n] [(!= :031dbb04-22ac-58e7-a7c4-315e86b720d7 ?f)]]",
+            "rows": 16665,
+            "runs": 107
+          },
+          {
+            "max_ms": 37.793744999999994,
+            "name": "expr_neq_keyword_reverse",
+            "p50_ms": 30.159523,
+            "p99_ms": 32.663612,
+            "peak_rss_kb": 6780,
+            "query": "[:find ?f :where [?f :name ?n] [(!= :p5 ?f)]]",
+            "rows": 16665,
+            "runs": 100
+          },
+          {
+            "max_ms": 35.293779,
+            "name": "expr_neq_uuid_keyword",
+            "p50_ms": 27.951783000000002,
+            "p99_ms": 29.855111,
+            "peak_rss_kb": 6660,
+            "query": "[:find ?f :where [?f :name ?n] [(!= ?f :031dbb04-22ac-58e7-a7c4-315e86b720d7)]]",
+            "rows": 16665,
+            "runs": 107
+          },
+          {
+            "max_ms": 37.884063000000005,
+            "name": "expr_neq_keyword",
+            "p50_ms": 30.266602,
+            "p99_ms": 37.884063000000005,
+            "peak_rss_kb": 6776,
+            "query": "[:find ?f :where [?f :name ?n] [(!= ?f :p5)]]",
+            "rows": 16665,
+            "runs": 99
+          },
+          {
+            "max_ms": 34.789031,
+            "name": "expr_eq_uuid_keyword_reverse",
+            "p50_ms": 27.695786,
+            "p99_ms": 29.897164,
+            "peak_rss_kb": 7936,
+            "query": "[:find ?f :where [?f :name ?n] [(= :031dbb04-22ac-58e7-a7c4-315e86b720d7 ?f)]]",
+            "rows": 1,
+            "runs": 108
+          },
+          {
+            "max_ms": 38.426483,
+            "name": "expr_eq_keyword_reverse",
+            "p50_ms": 31.327916999999996,
+            "p99_ms": 38.426483,
+            "peak_rss_kb": 7716,
+            "query": "[:find ?f :where [?f :name ?n] [(= :p5 ?f)]]",
+            "rows": 1,
+            "runs": 96
+          },
+          {
+            "max_ms": 77.075159,
+            "name": "expr_eq_uuid_keyword",
+            "p50_ms": 27.740305,
+            "p99_ms": 29.358578,
+            "peak_rss_kb": 8024,
+            "query": "[:find ?f :where [?f :name ?n] [(= ?f :031dbb04-22ac-58e7-a7c4-315e86b720d7)]]",
+            "rows": 1,
+            "runs": 107
+          },
+          {
+            "max_ms": 37.354892,
+            "name": "expr_eq_keyword",
+            "p50_ms": 30.063471,
+            "p99_ms": 32.716125999999996,
+            "peak_rss_kb": 8148,
+            "query": "[:find ?f :where [?f :name ?n] [(= ?f :p5)]]",
+            "rows": 1,
+            "runs": 100
+          }
+        ]
+      ]
+    },
+    {
+      "scale": "1m",
+      "build": {
+        "build_ms": 11836.1777,
+        "entities": 166666,
+        "facts": 1000000,
+        "file_bytes": 126275584,
+        "hot_tx_half": 3503,
+        "peak_rss_kb": 400172,
+        "tx_half": 1251
+      },
+      "rounds": [
+        [
+          {
+            "max_ms": 328.649495,
+            "name": "expr_eq_keyword",
+            "p50_ms": 321.393816,
+            "p99_ms": 328.649495,
+            "peak_rss_kb": 27152,
+            "query": "[:find ?f :where [?f :name ?n] [(= ?f :p5)]]",
+            "rows": 1,
+            "runs": 10
+          },
+          {
+            "max_ms": 313.50907,
+            "name": "expr_eq_uuid_keyword",
+            "p50_ms": 300.285198,
+            "p99_ms": 313.50907,
+            "peak_rss_kb": 27096,
+            "query": "[:find ?f :where [?f :name ?n] [(= ?f :031dbb04-22ac-58e7-a7c4-315e86b720d7)]]",
+            "rows": 1,
+            "runs": 10
+          },
+          {
+            "max_ms": 368.585977,
+            "name": "expr_eq_keyword_reverse",
+            "p50_ms": 320.223641,
+            "p99_ms": 368.585977,
+            "peak_rss_kb": 27384,
+            "query": "[:find ?f :where [?f :name ?n] [(= :p5 ?f)]]",
+            "rows": 1,
+            "runs": 10
+          },
+          {
+            "max_ms": 305.34902800000003,
+            "name": "expr_eq_uuid_keyword_reverse",
+            "p50_ms": 299.176499,
+            "p99_ms": 305.34902800000003,
+            "peak_rss_kb": 27256,
+            "query": "[:find ?f :where [?f :name ?n] [(= :031dbb04-22ac-58e7-a7c4-315e86b720d7 ?f)]]",
+            "rows": 1,
+            "runs": 10
+          },
+          {
+            "max_ms": 331.118143,
+            "name": "expr_neq_keyword",
+            "p50_ms": 321.090675,
+            "p99_ms": 331.118143,
+            "peak_rss_kb": 7540,
+            "query": "[:find ?f :where [?f :name ?n] [(!= ?f :p5)]]",
+            "rows": 166665,
+            "runs": 10
+          },
+          {
+            "max_ms": 306.910307,
+            "name": "expr_neq_uuid_keyword",
+            "p50_ms": 300.345146,
+            "p99_ms": 306.910307,
+            "peak_rss_kb": 7304,
+            "query": "[:find ?f :where [?f :name ?n] [(!= ?f :031dbb04-22ac-58e7-a7c4-315e86b720d7)]]",
+            "rows": 166665,
+            "runs": 10
+          },
+          {
+            "max_ms": 328.663216,
+            "name": "expr_neq_keyword_reverse",
+            "p50_ms": 322.676362,
+            "p99_ms": 328.663216,
+            "peak_rss_kb": 7324,
+            "query": "[:find ?f :where [?f :name ?n] [(!= :p5 ?f)]]",
+            "rows": 166665,
+            "runs": 10
+          },
+          {
+            "max_ms": 313.635578,
+            "name": "expr_neq_uuid_keyword_reverse",
+            "p50_ms": 301.456595,
+            "p99_ms": 313.635578,
+            "peak_rss_kb": 7476,
+            "query": "[:find ?f :where [?f :name ?n] [(!= :031dbb04-22ac-58e7-a7c4-315e86b720d7 ?f)]]",
+            "rows": 166665,
+            "runs": 10
+          }
+        ],
+        [
+          {
+            "max_ms": 345.124222,
+            "name": "expr_neq_uuid_keyword_reverse",
+            "p50_ms": 302.066161,
+            "p99_ms": 345.124222,
+            "peak_rss_kb": 7340,
+            "query": "[:find ?f :where [?f :name ?n] [(!= :031dbb04-22ac-58e7-a7c4-315e86b720d7 ?f)]]",
+            "rows": 166665,
+            "runs": 10
+          },
+          {
+            "max_ms": 327.828536,
+            "name": "expr_neq_keyword_reverse",
+            "p50_ms": 321.46997300000004,
+            "p99_ms": 327.828536,
+            "peak_rss_kb": 7196,
+            "query": "[:find ?f :where [?f :name ?n] [(!= :p5 ?f)]]",
+            "rows": 166665,
+            "runs": 10
+          },
+          {
+            "max_ms": 308.011673,
+            "name": "expr_neq_uuid_keyword",
+            "p50_ms": 299.48798999999997,
+            "p99_ms": 308.011673,
+            "peak_rss_kb": 7400,
+            "query": "[:find ?f :where [?f :name ?n] [(!= ?f :031dbb04-22ac-58e7-a7c4-315e86b720d7)]]",
+            "rows": 166665,
+            "runs": 10
+          },
+          {
+            "max_ms": 330.09263599999997,
+            "name": "expr_neq_keyword",
+            "p50_ms": 322.66222,
+            "p99_ms": 330.09263599999997,
+            "peak_rss_kb": 7496,
+            "query": "[:find ?f :where [?f :name ?n] [(!= ?f :p5)]]",
+            "rows": 166665,
+            "runs": 10
+          },
+          {
+            "max_ms": 304.01844300000005,
+            "name": "expr_eq_uuid_keyword_reverse",
+            "p50_ms": 295.28919399999995,
+            "p99_ms": 304.01844300000005,
+            "peak_rss_kb": 27208,
+            "query": "[:find ?f :where [?f :name ?n] [(= :031dbb04-22ac-58e7-a7c4-315e86b720d7 ?f)]]",
+            "rows": 1,
+            "runs": 11
+          },
+          {
+            "max_ms": 332.082049,
+            "name": "expr_eq_keyword_reverse",
+            "p50_ms": 318.546972,
+            "p99_ms": 332.082049,
+            "peak_rss_kb": 27196,
+            "query": "[:find ?f :where [?f :name ?n] [(= :p5 ?f)]]",
+            "rows": 1,
+            "runs": 10
+          },
+          {
+            "max_ms": 304.171792,
+            "name": "expr_eq_uuid_keyword",
+            "p50_ms": 297.68289799999997,
+            "p99_ms": 304.171792,
+            "peak_rss_kb": 27116,
+            "query": "[:find ?f :where [?f :name ?n] [(= ?f :031dbb04-22ac-58e7-a7c4-315e86b720d7)]]",
+            "rows": 1,
+            "runs": 11
+          },
+          {
+            "max_ms": 328.20967299999995,
+            "name": "expr_eq_keyword",
+            "p50_ms": 319.91393899999997,
+            "p99_ms": 328.20967299999995,
+            "peak_rss_kb": 26740,
+            "query": "[:find ?f :where [?f :name ?n] [(= ?f :p5)]]",
+            "rows": 1,
+            "runs": 10
+          }
+        ]
+      ]
+    }
+  ]
+}

@@ -177,7 +177,8 @@ binding `HashMap` per row, so the UUID computation is only one potential cost.
 A follow-up should measure this shape before choosing a milestone or cache
 design. Preserve equality/inequality semantics, both operand orders, dynamic
 operands and prepared slots. This is performance-only; under the support policy
-it does not warrant a v2.x backport. This draft has not been posted as an issue.
+it does not warrant a v2.x backport. This follow-up became #774; see its
+[subsequent measurements and literal-cache change](774-expression-keywords.md).
 
 ## Deviations from the approved design
 

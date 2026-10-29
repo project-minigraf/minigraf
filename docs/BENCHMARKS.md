@@ -2,6 +2,15 @@
 
 This document records reproducible local benchmark snapshots. Completed release-performance history belongs in the [CHANGELOG](../CHANGELOG.md); continuous CI history is available on [Bencher](https://bencher.dev/perf/minigraf/plots).
 
+## Literal keyword/ref expression equality (#774, unreleased)
+
+On 2026-10-29, caching expression literal resolutions reduced the measured
+`=` / `!=` keyword/ref queries by **9.0–11.0%** at 100K and 1M facts, in both
+operand orders. Four paired runs per shape swapped sockets between baseline
+`5f8073250` and the change. The [report and raw results](benchmarks/774-expression-keywords.md)
+include the initial measurements, UUID-keyword controls, point/scan/join guards,
+a focused repeat of noisy point timings, and the scope of the improvement.
+
 ## Selective in-memory ancestors (#723, unreleased)
 
 **Date**: 2026-10-29 · **Baseline**: `v3` at `756ffea20`. Both revisions
@@ -727,7 +736,7 @@ On the executor, before #544 (the executor's query path is gone since #551). `pe
 - **DICT lookup per row (26–35%).** `uuid_of` does a B+tree `get` for every row's entity id (#530).
 - **Bindings as `HashMap<String, Value>` (about 25%).** SipHash insert, lookup and drop per row; #473's columnar batches replace them.
 - **`net_asserted_facts` over committed facts that `live_facts` already resolved (about 10%)** (#532). Superseded by #551's removal of the executor's query path; see the [source audit and fresh envelope/profiles](benchmarks/532-net-assert-audit.md). Pending records still need fact-level net-assert.
-- **Keyword constants hashed to a UUID per fact (about 8% of the old join)** (#531). The streaming engine resolves pattern constants while planning; see the [post-#551 audit and profiles](benchmarks/531-keyword-constants.md). Expression keyword/ref equality retains a separate per-row conversion described there.
+- **Keyword constants hashed to a UUID per fact (about 8% of the old join)** (#531). The streaming engine resolves pattern constants while planning; see the [post-#551 audit and profiles](benchmarks/531-keyword-constants.md). The separate expression-literal path is measured and optimized in [#774](benchmarks/774-expression-keywords.md); dynamic expression values can still require per-row conversion.
 - `attribute_value` reads the whole attribute instead of seeking AVET (#518). Fixed by the streaming engine's `Scan` (#544): see below.
 
 ### Streaming engine (#544)

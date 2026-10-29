@@ -218,7 +218,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**2005 tests** (1988 passing, 17 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
+**2006 tests** (1989 passing, 17 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 The #760 deterministic storage suite adds three native unit tests in a separate `--cfg minigraf_shuttle` build, outside the default count. Run only `graph::storage::deterministic::` with that cfg; ordinary unit tests do not enter its scheduler. `deterministic-schedules.yml` runs relevant v3 PRs on Linux/macOS/Windows plus Linux MSRV, and larger nightly/manual searches with replay artifacts. The identical main workflow activates the v3 schedule after both PRs merge. See `docs/testing/deterministic-schedules.md` for scope, controls and findings.
@@ -226,6 +226,8 @@ The #760 deterministic storage suite adds three native unit tests in a separate 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
 
 ## Current Maintainer Context
+
+On `v3`, expression `=` / `!=` resolves literal keywords once per operator (#774), including nested expressions and substituted prepared slots. Dynamic values do not populate the cache. This is a performance-only change, with no v2.x backport; see `docs/benchmarks/774-expression-keywords.md`.
 
 **v2.0.5 released** (2026-10-11) — short-file open refused with STG-045 (#506), commit after a torn WAL entry no longer lost, WAL-007 (#513); backported rule-query `max_results` (#528), all-checkpointed WAL removal (#457) and `usize::MAX` close-time save (#476); weekly soak test (#392), real coverage gates (#396). **v2.0.4** (2026-10-08) — `BrowserDb` IndexedDB flush returns an error for an unreadable dirty page (#470); golden-file v7 corpus (#391) and SIGKILL committed-data crash test (#384). **v2.0.3** (2026-10-06) — data-integrity patch under the support policy: indexed queries with >65,535 uncheckpointed facts (#445), tx counter rewound on reopen next to an already-checkpointed WAL (#447). **v2.0.2** (2026-09-27) — last planned v2.x feature/fix release: query fixes (#297, #405, #407, #410), directory fsync (#389), point-query/attribute-scan/checkpoint perf mitigations (#323, #381, #315), CI policy checks (#395), support policy and tiers (#397, #399, #400). **v2.0.1** (2026-09-25) fixed index rebuild on open (#370). **v2.0.0** introduced kernel file locking (#317, #304), structured runtime error codes (#277), `OpenOptions` `#[non_exhaustive]`, and an MSRV of Rust 1.89. See `CHANGELOG.md` for the full rationale and release history.
 

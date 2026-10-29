@@ -38,6 +38,8 @@ On the unreleased v3 branch, selective in-memory ancestor queries can use entity
 
 **Status**: See [ROADMAP.md](ROADMAP.md) for planned work and current direction.
 
+The unreleased v3 branch also avoids resolving the same keyword literal on every row of an expression comparison such as `[(= ?entity :alice)]` (#774); see the [benchmark report](docs/benchmarks/774-expression-keywords.md).
+
 ## Why Datalog?
 
 **Datalog is fundamentally better for graphs than SQL-like languages:**

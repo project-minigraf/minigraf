@@ -2,6 +2,12 @@ use super::types::EdnValue;
 use crate::graph::types::{EntityId, Value, ValueSet};
 use uuid::Uuid;
 
+#[cfg(test)]
+thread_local! {
+    /// #774: count conversions, independently of wall-clock timing.
+    pub(crate) static KEYWORD_RESOLUTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// Convert EdnValue to Value for storage
 pub fn edn_to_value(edn: &EdnValue) -> Result<Value, String> {
     match edn {
@@ -32,6 +38,8 @@ pub fn edn_to_value(edn: &EdnValue) -> Result<Value, String> {
 pub fn edn_to_entity_id(edn: &EdnValue) -> Result<EntityId, String> {
     match edn {
         EdnValue::Keyword(k) => {
+            #[cfg(test)]
+            KEYWORD_RESOLUTIONS.with(|n| n.set(n.get() + 1));
             // Convert keyword to deterministic UUID
             // For now, we'll use a simple hash-based approach
             // In production, you might want a more sophisticated method
