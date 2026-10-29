@@ -52,13 +52,6 @@ fn finish(func: &str, vals: &[Value]) -> Result<Option<Value>> {
     agg.finish(func)
 }
 
-fn code(r: Result<Option<Value>>) -> &'static str {
-    match r {
-        Err(e) => crate::MinigrafError::from(e).code(),
-        Ok(_) => "",
-    }
-}
-
 #[test]
 fn value_order_is_a_total_order() {
     let grid = vec![
@@ -219,22 +212,22 @@ fn integer_sum_saturates_once() {
 }
 
 #[test]
-fn sum_error_is_decided_at_finish() {
+fn sum_skips_nonnumbers_in_every_order() {
     for p in permutations(&[i(1), Value::String("a".into()), i(2)]) {
-        assert!(code(finish("sum", &p)) == "INT-041");
+        assert!(finish("sum", &p).unwrap() == Some(i(3)));
     }
 }
 
 #[test]
-fn min_max_errors_do_not_depend_on_order() {
+fn min_max_mixed_values_do_not_depend_on_order() {
     for p in permutations(&[kw(":a"), kw(":b"), i(1)]) {
-        assert!(code(finish("min", &p)) == "INT-043");
+        assert!(finish("min", &p).unwrap() == Some(i(1)));
     }
     for p in permutations(&[i(1), f(2.0)]) {
-        assert!(code(finish("max", &p)) == "INT-043");
+        assert!(finish("max", &p).unwrap() == Some(f(2.0)));
     }
-    assert!(code(finish("min", &[kw(":a")])) == "INT-044");
-    assert!(code(finish("max", &[Value::Boolean(true)])) == "INT-044");
+    assert!(finish("min", &[kw(":a")]).unwrap() == Some(kw(":a")));
+    assert!(finish("max", &[Value::Boolean(true)]).unwrap() == Some(Value::Boolean(true)));
     assert!(matches!(finish("min", &[]), Ok(None)));
     assert!(matches!(finish("max", &[Value::Null]), Ok(None)));
 }
@@ -287,7 +280,7 @@ fn distinct_sets_store_canonical_floats() {
         finish("sum-distinct", &[i(2), i(2), i(3)]).ok().flatten(),
         Some(i(5))
     );
-    assert!(code(finish("sum-distinct", &[i(2), kw(":k")])) == "INT-041");
+    assert!(finish("sum-distinct", &[i(2), kw(":k")]).unwrap() == Some(i(2)));
     assert_eq!(finish("count-distinct", &[]).ok().flatten(), Some(i(0)));
 }
 
@@ -691,4 +684,143 @@ fn row_order_over_every_value_class() {
     rows.sort_by(|x, y| row_order(x, y, &[(0, true)]));
     let descending: Vec<Value> = ascending.iter().rev().cloned().collect();
     assert!(same(&rows, &descending), "descending");
+}
+
+/// Compare the observable float representation too: Value equality deliberately
+/// equates signed zeros and all NaNs, whereas extrema preserve their ordering.
+fn same_value_bits(actual: &Value, expected: &Value) {
+    match (actual, expected) {
+        (Value::Float(a), Value::Float(b)) => assert_eq!(a.to_bits(), b.to_bits()),
+        _ => assert!(actual == expected, "same aggregate value and type"),
+    }
+}
+
+#[test]
+fn ordinary_aggregates_match_running_for_all_value_variants() {
+    let set = |v| Value::Set(crate::graph::types::ValueSet::new(v).unwrap());
+    let ordered = [
+        f(f64::NEG_INFINITY),
+        i(i64::MIN),
+        i(0),
+        f(-0.0),
+        f(0.0),
+        f(9_007_199_254_740_992.0),
+        i(9_007_199_254_740_993),
+        i(i64::MAX),
+        f(f64::INFINITY),
+        f(f64::from_bits(0xfff8_0000_0000_0001)),
+        f(f64::from_bits(0x7ff8_0000_0000_0001)),
+        Value::String("x".into()),
+        Value::Boolean(false),
+        Value::Boolean(true),
+        Value::Ref(uuid::Uuid::from_u128(1)),
+        kw(":x"),
+        set(vec![]),
+        set(vec![i(1)]),
+        set(vec![i(1), Value::String("x".into())]),
+    ];
+    let reg = FunctionRegistry::with_builtins();
+    for a in &ordered {
+        for b in &ordered {
+            for population in permutations(&[a.clone(), Value::Null, b.clone()]) {
+                for func in ["sum", "min", "max", "count"] {
+                    let mut running =
+                        Running::new(&window(&format!("({func} ?v :over (:order-by ?o))")), &reg)
+                            .unwrap();
+                    for v in &population {
+                        running.step(v).unwrap();
+                    }
+                    let actual = finish(func, &population).unwrap().unwrap();
+                    same_value_bits(&actual, &running.value().unwrap());
+                }
+                // Independent expected extrema, not just agreement of shared code.
+                let a_pos = ordered.iter().position(|v| std::ptr::eq(v, a)).unwrap();
+                let b_pos = ordered.iter().position(|v| std::ptr::eq(v, b)).unwrap();
+                same_value_bits(
+                    &finish("min", &population).unwrap().unwrap(),
+                    &ordered[a_pos.min(b_pos)],
+                );
+                same_value_bits(
+                    &finish("max", &population).unwrap().unwrap(),
+                    &ordered[a_pos.max(b_pos)],
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn skipped_arguments_preserve_exact_sums_and_special_float_results() {
+    let nonnumbers = [
+        Value::Null,
+        Value::String("skip".into()),
+        Value::Boolean(false),
+        kw(":k"),
+        Value::Ref(uuid::Uuid::nil()),
+        Value::Set(Default::default()),
+    ];
+    let cases = [
+        (vec![f(-0.0)], f(-0.0)),
+        (vec![f(-0.0), f(0.0)], f(0.0)),
+        (vec![i(i64::MAX), i(1), i(-1)], i(i64::MAX)),
+        (vec![i(i64::MIN), i(-1)], i(i64::MIN)),
+        (
+            vec![i(9_007_199_254_740_993), f(-9_007_199_254_740_992.0)],
+            f(1.0),
+        ),
+        (vec![f(1e16), f(1.0), f(-1e16)], f(1.0)),
+        (vec![f(f64::INFINITY), i(1)], f(f64::INFINITY)),
+        (vec![f(f64::NEG_INFINITY), i(1)], f(f64::NEG_INFINITY)),
+        (vec![f(f64::MAX), f(f64::MAX)], f(f64::INFINITY)),
+        (vec![f(f64::INFINITY), f(f64::NEG_INFINITY)], f(f64::NAN)),
+        (vec![f(-f64::NAN), i(1)], f(f64::NAN)),
+    ];
+    for (nums, expected) in cases {
+        for skipped in &nonnumbers {
+            let mut vals = nums.clone();
+            vals.push(skipped.clone());
+            for population in permutations(&vals) {
+                same_value_bits(&finish("sum", &population).unwrap().unwrap(), &expected);
+            }
+        }
+    }
+    assert!(finish("sum", &nonnumbers).unwrap() == Some(i(0)));
+    assert!(finish("sum-distinct", &nonnumbers).unwrap() == Some(i(0)));
+    assert!(finish("count", &nonnumbers).unwrap() == Some(i(5)));
+    assert!(finish("count-distinct", &nonnumbers).unwrap() == Some(i(5)));
+}
+
+#[test]
+fn distinct_numeric_filter_and_membership_prediction_agree() {
+    let reg = FunctionRegistry::with_builtins();
+    let mut agg = Agg::new("sum-distinct", &reg).unwrap();
+    for v in [
+        Value::Null,
+        Value::String("s".into()),
+        kw(":k"),
+        Value::Boolean(true),
+        Value::Ref(uuid::Uuid::nil()),
+        Value::Set(Default::default()),
+    ] {
+        assert!(!agg.would_add(&v), "ignored types must not be charged");
+        agg.step(&v).unwrap();
+    }
+    let Agg::SumDistinct(set) = &agg else {
+        panic!("distinct accumulator")
+    };
+    assert!(set.is_empty());
+    for v in [i(1), f(1.0), f(-0.0), f(-f64::NAN)] {
+        assert!(agg.would_add(&v));
+        agg.step(&v).unwrap();
+        assert!(!agg.would_add(&v));
+    }
+    assert!(!agg.would_add(&f(0.0)));
+    assert!(!agg.would_add(&f(f64::from_bits(0x7ff8_0000_0000_0001))));
+    assert!(finish("sum-distinct", &[i(1), i(1), f(1.0), kw(":x")]).unwrap() == Some(f(2.0)));
+    same_value_bits(
+        &finish("sum-distinct", &[f(-0.0), kw(":x")])
+            .unwrap()
+            .unwrap(),
+        &f(0.0),
+    );
 }

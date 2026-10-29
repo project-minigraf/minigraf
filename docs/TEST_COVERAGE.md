@@ -4,9 +4,12 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 2,001 | 2,035 |
+| **Active** | 2,013 | 2,048 |
 | **Ignored** | 17 | 18 |
-| **Total** | 2,018 | 2,053 |
+| **Total** | 2,030 | 2,066 |
+
+Counts above are the current Cargo test inventory (active versus ignored),
+including #777 and #789. Verification results below identify which suites ran.
 
 #777 adds 12 default-feature tests (three accumulator tests, one engine memory test and eight integration tests) and one additional `test-hooks` plan matrix. The focused 13-test run passes. Strict native/browser/WASI clippy passes, and the rebased release binary is 1,263,144 bytes against the unchanged 1,263,616-byte cap.
 
@@ -43,9 +46,36 @@ Also outside those counts: three native unit tests in the separate #760 `minigra
 
 **Scope**: the unreleased file-format-v8 work (#287, #371): the index-key value-collision fix, the v7→v8 migration, and the drop of formats v1–v6. Otherwise the public database API, the Datalog engine, storage and recovery paths, v2.0.0's locking and structured-error-code changes, and v2.0.1's regression test for rebuilding indexes on open after several checkpoints (#370). Tests merged from the v2.x line are marked *(v2.x)*.
 
+**#789 verification (2026-10-29)**: the change adds 12 default-feature tests
+and one additional `test-hooks` test. Before the runtime edits, all seven new
+API tests failed on INT-041/043 and the distinct-membership test failed on
+charging a skipped type. The implementation is reconciled with merged #777
+at v3 base `0fc97bd65`: 64 aggregate unit/engine tests (one ignored) and all
+15 avg/value-handling API tests pass. The full pre-rebase unit suite passed
+1,167 tests, including all 16 unchanged storage fault-matrix cases. That run
+and local continuation exposed six obsolete type-error assertions across
+`aggregation_test.rs` and `error_handling_test.rs`; they now assert the
+successful values required by #789.
+On the final base, all 26 aggregation tests, eight error-handling tests and
+34 focused `test-hooks` tests
+pass, as does the dedicated Sum/Avg retained-heap test. Strict native/browser/WASI
+clippy, formatting and WASI test compilation pass (no WASI execution).
+The release binary is 1,261,736 bytes against the unchanged 1,263,616-byte cap.
+The docs site builds all 13 versions and 368 pages with link validation.
+The final default run (`cargo test --no-fail-fast -- --skip fault_matrix::`)
+passes 1,997 tests with zero failures and 17 ignored; the 16 unchanged fault
+cases passed separately as described above. This covers all 2,013 active
+default tests across the two runs. The default run used the local fallback
+(Rust 1.94.0) after a bench crash-test child-progress timeout under competing
+I/O; the exact recorded seed passes locally with the unchanged 30-second
+limit. Platform/focused checks used bench Rust 1.99.1. Full `test-hooks`
+execution was not repeated; its 2,066-test inventory was verified.
+
 ## Covered Areas
 
-- **Ordinary average** (#777; `tests/ordinary_avg_test.rs`, `aggregate/tests.rs`, `engine/tests.rs`): grouped and ungrouped averages, every nonnumeric value kind skipped, nil versus no matching rows, Float results, exact unsaturated totals, signed zero/subnormal underflow, infinities/NaNs, input permutations, prepared execution/cursors, batches, recursive rules, transaction reads, checkpoint/reopen and alternative plans. Default and bounded windows preserve skipped rows. Sum/avg exact-sum heap state is charged once before allocation, transferred on finish, and released on errors, rewind and close. Existing neighboring aggregate errors and dropped groups are preserved.
+- **Aggregate value handling** (#789; `tests/aggregate_value_handling_test.rs`, seven default tests and one with `test-hooks`): all value variants, numeric-only sum/distinct sum, mixed-type extrema, existing nil/nonnumeric groups versus empty queries, grouped and ungrouped queries, hidden `:with` groups and join multiplicity, prepared binds/cursors, recursive rules, transaction-time views and staged rollback, checkpoint/reopen, and default/bounded partition windows over identical populations. Three added accumulator tests check adversarial permutations, signed-zero/NaN bits, infinities, integer boundaries, the explicit total order and distinct membership prediction. Two added engine tests check retained numeric-member accounting, duplicates, QRY-012 boundaries, upstream failures and release on rewind/close. Rewritten error-precedence tests use real UDF finalizer failures under Limit/Offset; ordered-aggregate eligibility and frozen answers are unchanged.
+
+- **Ordinary average** (#777; `tests/ordinary_avg_test.rs`, `aggregate/tests.rs`, `engine/tests.rs`): grouped and ungrouped averages, every nonnumeric value kind skipped, nil versus no matching rows, Float results, exact unsaturated totals, signed zero/subnormal underflow, infinities/NaNs, input permutations, prepared execution/cursors, batches, recursive rules, transaction reads, checkpoint/reopen and alternative plans. Default and bounded windows preserve skipped rows. Sum/avg exact-sum heap state is charged once before allocation, transferred on finish, and released on errors, rewind and close. Neighboring sums follow #789 numeric filtering; empty-min group dropping is preserved.
 
 - **Expression keyword literals** (#774): a test-only conversion counter verifies that increasing input from 8 to 2,048 rows does not increase literal resolution work, across `=` / `!=`, both operand orders, nested expressions, bindings, negation, disjunction and rule bodies. Existing join-equality tests also cover changing prepared keyword slots across executions and unchanged keyword output, in memory, after checkpoint and after reopen. The envelope harness checks all eight new expression/control shapes on regular and irregular fixtures.
 
@@ -467,11 +497,11 @@ These are not `#[test]`s; run them with `cargo kani` or `.github/workflows/kani.
 - **Aggregates and windows** (`tests/aggregate_window_rules_test.rs`, 8 tests; #547)
   - Exact float `sum` and window `avg`; integer `sum` saturating once; exact window `sum` of integers above 2^53; `min`/`max` of `-0.0` and `0.0`.
   - `rank` by keywords (peers 1 1 3 3); a running `sum` giving peers the value at the last peer; `row-number` breaking ties by the other `:find` variables.
-  - `INT-041` from a failing group.
-  - `src/query/datalog/aggregate.rs` (15 unit tests) checks every accumulator over every order of small inputs, and that `value_order` is a total order.
+  - Nonnumeric arguments are skipped by ordinary sum (#789), rather than raising INT-041.
+  - `src/query/datalog/aggregate/tests.rs` (27 unit tests) checks every accumulator over every order of small inputs, and that `value_order` is a total order.
   - `tests/window_functions_test.rs` checks `PRS-082` and a window over the groups of an aggregate query.
   - `tests/window_functions_test.rs` (#182) also checks `lag`/`lead` on whole and partitioned results, descending order and ties, singleton and mixed-type partitions, `nil` edges, long strings, keywords, refs and sets, grouped rows, distinct output, pagination, prepared queries, cursors and preserved user aggregates of those names. Parser tests cover malformed shapes and `tests/plan_independence_test.rs` checks both directions under reordered plans.
-  - `Aggregate` on the engine (#547 PR 2, `src/query/engine/tests.rs`, 3 tests): every built-in aggregate grouped by keywords, refs, booleans, floats and long strings, over `nil` values, keywords and refs, with `:with` and `or`, at six temporal settings in memory, after a checkpoint and after reopen, against their frozen answers. Also: an ungrouped aggregate reads every row and returns one batch of one row; the zero row and empty answers; groups in value order over several batches; `INT-041` from a later group; a group dropped by `min` of no value.
+  - `Aggregate` on the engine (#547 PR 2, `src/query/engine/tests.rs`, 3 tests): every built-in aggregate grouped by keywords, refs, booleans, floats and long strings, over `nil` values, keywords and refs, with `:with` and `or`, at six temporal settings in memory, after a checkpoint and after reopen, against their frozen answers. Also: an ungrouped aggregate reads every row and returns one batch of one row; the zero row and empty answers; groups in value order over several batches; nonnumeric sum arguments skipped in a later group; a group dropped by `min` of no value.
   - `tests/aggregation_test.rs` checks that a group of `0.0` and `-0.0` returns `-0.0` in either insertion order.
 - **Query validation** (#406, #414)
   - A plain `:find` variable, or a window function's argument, `:partition-by` or `:order-by` variable, that no `:where` clause binds (including `?_` wildcards) is `PRS-080` from both `execute()` and `prepare()`, naming the variable.

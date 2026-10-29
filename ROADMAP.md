@@ -4,7 +4,7 @@
 
 **Philosophy**: Embedded graph memory for agents, mobile, and the browser — built on the SQLite approach: be boring, be reliable, be embeddable.
 
-Ordinary `avg` is implemented for v3.0.0 (#777), matching window numeric filtering. Consistent handling for the other ordinary aggregates remains a v3.0.0 release requirement (#789).
+Ordinary `avg` is implemented for v3.0.0 (#777), matching window numeric filtering. Ordinary sum and extrema also use window-compatible value handling (#789); their existing empty-group conventions are preserved.
 
 Completed releases and their implementation details live in the [CHANGELOG](CHANGELOG.md). This document tracks planned, exploratory, and other future work.
 
@@ -95,6 +95,8 @@ Scope — format and storage integrity:
 - `btree_page` fuzz target that reaches node decoding (#375; done on `v3` with #387: page targets rebuilt on real v8 files)
 
 Scope — query API:
+
+- Align ordinary aggregate value handling with windows (#789; implemented for v3.0.0): sum/sum-distinct skip nonnumbers; min/max accept all non-nil types and mixed numbers. Preserve empty-query and all-nil min/max group-drop behavior. Ordinary avg is #777; ordered-group expansion remains #781.
 
 - Selective in-memory ancestor joins avoid building a whole-attribute value map (#723; implemented for eligible three-pattern recursive bodies). Populated committed generations keep AVET probes; general in-memory value joins remain unchanged.
 

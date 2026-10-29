@@ -11,9 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Ordinary average** (#777): `(avg ?v)` no longer raises PRS-027. Grouped and ungrouped queries use the same numeric population and arithmetic as window `avg`: skip nil and nonnumeric values, sum exactly, round the total once to Float, then divide by the numeric count. Integer totals are not saturated. Results are Float, or nil for an existing group without numbers; no matching rows yields no rows. The total can overflow before division, and division rounds separately. Existing window behavior is unchanged. Retained exact-sum allocations for ordinary `sum` and `avg` are now charged to the query memory limit.
 
+- **Align ordinary aggregate value handling with windows** (#789, v3.0.0).
+  `sum` and `sum-distinct` skip nil and nonnumeric arguments; `min`/`max` compare
+  every non-nil type using the existing window total order, including mixed
+  Integer/Float values. Count variants retain their non-nil counting and
+  distinctness. Existing groups with no numeric sum arguments return Integer(0);
+  all-nil min/max groups remain omitted, and no-match query conventions remain
+  unchanged. INT-041/043/044 are deprecated for these built-ins. No v2 runtime
+  backport, window behavior, ordered-group eligibility, or storage change.
+
 ### Documentation
 
-- Retire tracker #383 in favor of the v3.0.0 milestone and its release gates. Other ordinary/window value-handling differences are tracked in #789.
+- Retire tracker #383 in favor of the v3.0.0 milestone and its release gates. Ordinary/window value-handling consistency is completed by #789.
 
 ### Performance
 

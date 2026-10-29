@@ -218,16 +218,18 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**2018 tests** (2001 passing, 17 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
+**2030 tests** (2013 active, 17 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 The #760 deterministic storage suite adds three native unit tests in a separate `--cfg minigraf_shuttle` build, outside the default count. Run only `graph::storage::deterministic::` with that cfg; ordinary unit tests do not enter its scheduler. `deterministic-schedules.yml` runs relevant v3 PRs on Linux/macOS/Windows plus Linux MSRV, and larger nightly/manual searches with replay artifacts. The identical main workflow activates the v3 schedule after both PRs merge. See `docs/testing/deterministic-schedules.md` for scope, controls and findings.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
 
-On v3, ordinary `avg` skips nil/nonnumeric values and divides the exact rounded total by the numeric count, matching window `avg` (#777). It returns Float, or nil for an existing group with no numbers; no matching bindings yields no rows. Other aggregate consistency work is #789; ordered-avg optimization remains #781.
+On v3, ordinary `avg` skips nil/nonnumeric values and divides the exact rounded total by the numeric count, matching window `avg` (#777). It returns Float, or nil for an existing group with no numbers; no matching bindings yields no rows. Sum and extrema follow the value rules from #789; ordered-avg optimization remains #781.
 
 ## Current Maintainer Context
+
+On `v3`, ordinary sum/sum-distinct skip nonnumbers and min/max compare all non-nil types by the window total order (#789). Empty-query conventions and all-nil min/max group dropping are preserved; INT-041/043/044 are deprecated for these paths. Ordered Aggregate remains count/count-distinct only (#781 owns expansion). Ordinary avg shipped in #777.
 
 On `v3`, expression `=` / `!=` resolves literal keywords once per operator (#774), including nested expressions and substituted prepared slots. Dynamic values do not populate the cache. This is a performance-only change, with no v2.x backport; see `docs/benchmarks/774-expression-keywords.md`.
 

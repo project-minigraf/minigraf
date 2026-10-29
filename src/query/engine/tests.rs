@@ -2198,10 +2198,10 @@ fn ungrouped_aggregate_returns_one_row() {
 }
 
 /// Groups come out in the order of their values, over several batches; an
-/// error in a later group fails the query, and `min` of no value drops its
+/// nonnumber in a later sum group is skipped, and `min` of no value drops its
 /// group (#547 spec §3.3, §5.3).
 #[test]
-fn grouped_aggregate_orders_groups_and_fails_in_a_later_group() {
+fn grouped_aggregate_orders_groups_and_skips_nonnumbers() {
     let db = Minigraf::in_memory().unwrap();
     let facts: String = (0..3000)
         .map(|i| format!("[:e{i} :k {}] [:e{i} :n {i}]", 3000 - i))
@@ -2226,10 +2226,14 @@ fn grouped_aggregate_orders_groups_and_fails_in_a_later_group() {
     db.execute("(transact [[:x :k 2999] [:x :n \"text\"] [:y :k 5] [:y :n nil]])")
         .unwrap();
     let before = runs();
-    let err = db
+    let QueryResult::QueryResults { results, .. } = db
         .execute("(query [:find ?k (sum ?n) :where [?e :k ?k] [?e :n ?n]])")
-        .unwrap_err();
-    assert_eq!(crate::MinigrafError::from(err).code(), "INT-041");
+        .unwrap()
+    else {
+        panic!("query results")
+    };
+    assert_eq!(results.len(), 3000);
+    assert!(results[2998] == vec![crate::Value::Integer(2999), crate::Value::Integer(1)]);
     assert_eq!(runs(), before + 1, "query ran on the engine");
 
     db.execute("(transact [[:z :k 7] [:z :m nil]])").unwrap();
@@ -4262,6 +4266,125 @@ fn partition_window_rejects_decreasing_boundaries_before_and_after_output() {
         };
         assert_eq!(crate::MinigrafError::from(err).code(), "INT-032");
         assert_eq!(batches > 0, late);
+        op.close();
+        assert_eq!(meter.used(), 0);
+    }
+}
+
+/// Isolate Aggregate's retained members from source/IdSpace costs: Sequence
+/// supplies decoded scalar cells without charging upstream buffers.
+#[test]
+fn numeric_only_sum_distinct_charges_members_once_and_releases_on_rewind() {
+    use super::{
+        Operator,
+        cell::{Cell, Scalar},
+    };
+    let int = |n| Cell::Val(Scalar::Int(n));
+    let run = |func: &str, cells: Vec<Cell>, limit| {
+        let meter = super::Meter::new(limit);
+        let mut op = super::aggregate::Aggregate::new(
+            Box::new(Sequence { cells, at: 0 }),
+            vec![],
+            vec![(func.into(), 0)],
+            false,
+            false,
+            &meter,
+        );
+        let result = pull_once(&mut op, &meter);
+        let peak = meter.peak();
+        op.rewind(&[]);
+        assert_eq!(
+            meter.used(),
+            0,
+            "rewind releases success and partial failure state"
+        );
+        op.close();
+        assert_eq!(meter.used(), 0);
+        (result, peak)
+    };
+    let base = run("sum-distinct", vec![int(1)], usize::MAX).1;
+    let mut ignored = vec![int(1); 1000];
+    ignored.extend((0..1000).map(|n| Cell::Val(Scalar::Str(format!("ignored-{n}").into()))));
+    ignored.extend([
+        Cell::Val(Scalar::Null),
+        Cell::Val(Scalar::Bool(true)),
+        Cell::Val(Scalar::Set(Default::default())),
+    ]);
+    let (result, peak) = run("sum-distinct", ignored.clone(), base);
+    assert!(
+        result.is_ok(),
+        "ignored members and duplicates fit the original budget"
+    );
+    assert_eq!(peak, base);
+    let count_peak = run("count-distinct", ignored, usize::MAX).1;
+    assert!(count_peak > base + 1000 * super::meter::HASH_ENTRY_OVERHEAD);
+    let (_, two) = run("sum-distinct", vec![int(1), int(2)], usize::MAX);
+    assert_eq!(
+        two - base,
+        super::meter::value_bytes(&crate::Value::Integer(2)) + super::meter::HASH_ENTRY_OVERHEAD
+    );
+    let (result, _) = run("sum-distinct", vec![int(1), int(2)], base);
+    assert_eq!(
+        crate::MinigrafError::from(result.expect_err("new numeric member exceeds the budget"))
+            .code(),
+        "QRY-012"
+    );
+    let (_, canonical) = run(
+        "sum-distinct",
+        vec![Cell::Val(Scalar::Float(-0.0))],
+        usize::MAX,
+    );
+    let (_, duplicates) = run(
+        "sum-distinct",
+        vec![
+            Cell::Val(Scalar::Float(-0.0)),
+            Cell::Val(Scalar::Float(0.0)),
+        ],
+        usize::MAX,
+    );
+    assert_eq!(canonical, duplicates, "canonical zero charged once");
+}
+
+#[test]
+fn ignored_aggregate_arguments_do_not_hide_upstream_failures() {
+    use super::{
+        Ctx, Operator,
+        cell::{Cell, Scalar},
+    };
+    struct FailsAfter(Sequence);
+    impl Operator for FailsAfter {
+        fn next_batch(&mut self, ctx: &mut Ctx<'_>) -> anyhow::Result<Option<super::Batch>> {
+            match self.0.next_batch(ctx)? {
+                Some(batch) => Ok(Some(batch)),
+                None => Err(crate::error::err_coded!(
+                    crate::error::ErrorCode::Int032,
+                    "late source failure"
+                )),
+            }
+        }
+        fn rewind(&mut self, seed: &[Cell]) {
+            self.0.rewind(seed);
+        }
+        fn close(&mut self) {
+            self.0.close();
+        }
+        fn counters(&self, _: &mut Vec<super::Counters>) {}
+    }
+    for func in ["sum", "sum-distinct", "min", "max"] {
+        let meter = super::Meter::unlimited();
+        let mut op = super::aggregate::Aggregate::new(
+            Box::new(FailsAfter(Sequence {
+                cells: vec![Cell::Val(Scalar::Str("skip".into()))],
+                at: 0,
+            })),
+            vec![],
+            vec![(func.into(), 0)],
+            false,
+            false,
+            &meter,
+        );
+        let err = pull_once(&mut op, &meter).expect_err("full drain reaches source error");
+        assert_eq!(crate::MinigrafError::from(err).code(), "INT-032");
         op.close();
         assert_eq!(meter.used(), 0);
     }
