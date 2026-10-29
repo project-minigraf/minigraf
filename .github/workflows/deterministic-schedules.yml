@@ -1,0 +1,137 @@
+name: Deterministic storage schedules
+
+# #760: only the storage/snapshot/pin boundary is instrumented. Keep this
+# file identical on main and v3: schedules run from the default branch but
+# explicitly check out v3. Merge the main companion after the suite lands.
+# At the v3 release cut, update the scheduled/dispatch default ref to main.
+on:
+  pull_request:
+    branches: ["v3"]
+    paths:
+      - "src/graph/**"
+      - "src/storage/**"
+      - "src/db.rs"
+      - "src/lib.rs"
+      - "src/error.rs"
+      - "src/temporal.rs"
+      - "Cargo.toml"
+      - "tests/dst-mutations/**"
+      - ".github/workflows/deterministic-schedules.yml"
+  schedule:
+    - cron: "23 19 * * *"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or commit containing the storage schedule suite
+        required: true
+        default: v3
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dst-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  schedules:
+    name: Schedules (${{ matrix.os }}, Rust ${{ matrix.toolchain }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            toolchain: stable
+          - os: macos-latest
+            toolchain: stable
+          - os: windows-latest
+            toolchain: stable
+          - os: ubuntu-latest
+            toolchain: "1.89.0"
+    defaults:
+      run:
+        shell: bash
+    env:
+      RUSTFLAGS: --cfg minigraf_shuttle
+      CARGO_TERM_COLOR: never
+      CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
+      MINIGRAF_DST_ITERATIONS: ${{ github.event_name == 'pull_request' && '1000' || '10000' }}
+      DST_SEEDS: ${{ github.event_name == 'pull_request' && '760' || '760 761 762' }}
+      DST_TOOLCHAIN: ${{ matrix.toolchain }}
+
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'pull_request'
+
+      - uses: actions/checkout@v4
+        if: github.event_name != 'pull_request'
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || 'v3' }}
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+
+      - name: Record replay environment
+        run: |
+          mkdir -p dst-artifacts
+          git rev-parse HEAD > dst-artifacts/revision.txt
+          git archive --format=tar.gz --output=dst-artifacts/source.tar.gz HEAD
+          rustc -Vv > dst-artifacts/environment.txt
+          cargo -V >> dst-artifacts/environment.txt
+          printf 'RUSTFLAGS=%s\nMINIGRAF_DST_ITERATIONS=%s\nDST_SEEDS=%s\n' \
+            "$RUSTFLAGS" "$MINIGRAF_DST_ITERATIONS" "$DST_SEEDS" >> dst-artifacts/environment.txt
+          if [ "$DST_TOOLCHAIN" != stable ]; then
+            declared=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml)
+            test "$DST_TOOLCHAIN" = "$declared.0"
+          fi
+
+      - name: Resolve compatible dependencies
+        run: |
+          cargo generate-lockfile 2>&1 | tee dst-artifacts/resolve.log
+          cp Cargo.lock dst-artifacts/Cargo.lock
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: dst-${{ matrix.toolchain }}
+
+      - name: Explore bounded schedules
+        run: |
+          # Fail if the cfg/filter ever silently selects zero or fewer tests.
+          cargo test --locked --lib graph::storage::deterministic:: -- --list \
+            2>&1 | tee dst-artifacts/tests.log
+          count=$(grep -c '^graph::storage::deterministic::.*: test$' dst-artifacts/tests.log)
+          test "$count" -eq 3
+          for seed in $DST_SEEDS; do
+            export MINIGRAF_DST_SEED="$seed"
+            cargo test --locked --lib graph::storage::deterministic:: \
+              -- --nocapture --test-threads=1 2>&1 | tee "dst-artifacts/seed-$seed.log"
+            completed=$(grep -cF "DST seed=$seed schedules=$MINIGRAF_DST_ITERATIONS" "dst-artifacts/seed-$seed.log")
+            test "$completed" -eq 3
+          done
+
+      - name: Summarize result
+        if: always()
+        env:
+          RESULT: ${{ job.status }}
+        run: |
+          {
+            echo "### Deterministic storage schedules"
+            echo "- Result: $RESULT"
+            echo "- Rust: $DST_TOOLCHAIN; seeds: $DST_SEEDS"
+            echo "- Executions per workload per seed: $MINIGRAF_DST_ITERATIONS"
+            echo "- Replay artifact: dst-${{ matrix.os }}-${{ matrix.toolchain }}-${{ github.run_attempt }}"
+            echo '- A test failure prints its schedule and test name in the seed log.'
+            echo '- Restore source.tar.gz and Cargo.lock; follow docs/testing/deterministic-schedules.md to replay.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve replay inputs and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dst-${{ matrix.os }}-${{ matrix.toolchain }}-${{ github.run_attempt }}
+          path: dst-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
