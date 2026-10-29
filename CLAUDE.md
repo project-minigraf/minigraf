@@ -218,12 +218,14 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**2006 tests** (1989 passing, 17 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
+**2018 tests** (2001 passing, 17 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 The #760 deterministic storage suite adds three native unit tests in a separate `--cfg minigraf_shuttle` build, outside the default count. Run only `graph::storage::deterministic::` with that cfg; ordinary unit tests do not enter its scheduler. `deterministic-schedules.yml` runs relevant v3 PRs on Linux/macOS/Windows plus Linux MSRV, and larger nightly/manual searches with replay artifacts. The identical main workflow activates the v3 schedule after both PRs merge. See `docs/testing/deterministic-schedules.md` for scope, controls and findings.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
+
+On v3, ordinary `avg` skips nil/nonnumeric values and divides the exact rounded total by the numeric count, matching window `avg` (#777). It returns Float, or nil for an existing group with no numbers; no matching bindings yields no rows. Other aggregate consistency work is #789; ordered-avg optimization remains #781.
 
 ## Current Maintainer Context
 
@@ -234,7 +236,7 @@ On `v3`, expression `=` / `!=` resolves literal keywords once per operator (#774
 Current plan (see `ROADMAP.md` and the milestones):
 - **In-memory ancestors (#723)**: eligible positive three-pattern delta runs retain an entity-first alternative with the same `Old`/`Delta`/`Full` ranges and separately planned head slots. Each round can select it when the committed dictionary is empty, the source relation has at most 128 rows and no stored records, and a capped AEVT count favors entity probes over building an uncached pending value map. Populated committed generations keep AVET probes. No additional write-time index.
 - **v2.x** (`main`, format v7) now gets only data-integrity and security fixes as patch releases (v2.0.3 is the first); v2.0.2 was the last planned v2.x release.
-- **v3.0.0** (format v8 and data integrity, plus `:limit` #306, optional `:distinct` output #493, `lag`/`lead` #182, sliding row frames #183, query profiler #185, set membership predicates #316 and prepared queries in every binding #181, UDF registration in every binding #180; tracker #383) is developed on the long-lived `v3` branch. All v3 PRs target `v3`; `main` stays untouched. CI runs on PRs to `v3` the same as on PRs to `main`. Do not merge `main` into `v3` routinely: `main` only gets backports of fixes already on `v3`. Shared CI and workflow changes land on both branches as separate PRs. Just before the v3.0.0 cut, merge `main` into `v3` once (merge commit; source conflicts resolved to `v3`, `main`'s v2.0.x CHANGELOG sections brought over) so the cut is a fast-forward. At the first v3 release, the current `main` is copied to `v2` and `v3` becomes the new `main`.
+- **v3.0.0** (format v8 and data integrity, plus `:limit` #306, optional `:distinct` output #493, `lag`/`lead` #182, sliding row frames #183, query profiler #185, set membership predicates #316 and prepared queries in every binding #181, UDF registration in every binding #180; [v3.0.0 milestone](https://github.com/project-minigraf/minigraf/milestone/1)) is developed on the long-lived `v3` branch. All v3 PRs target `v3`; `main` stays untouched. CI runs on PRs to `v3` the same as on PRs to `main`. Do not merge `main` into `v3` routinely: `main` only gets backports of fixes already on `v3`. Shared CI and workflow changes land on both branches as separate PRs. Just before the v3.0.0 cut, merge `main` into `v3` once (merge commit; source conflicts resolved to `v3`, `main`'s v2.0.x CHANGELOG sections brought over) so the cut is a fast-forward. At the first v3 release, the current `main` is copied to `v2` and `v3` becomes the new `main`.
 - **Input order (#641)** targets v3.0.0 in three slices: committed scalar Sort omission, one-group count/count-distinct and partition-at-a-time windows are implemented in the dependent PRs for `v3`. The reviewed design, fallback scope and acceptance gates are in `docs/superpowers/specs/2026-10-28-641-input-order-design.md`.
 - **Scalar key decoder proofs (#693)** target v3.0.0 before the release cut. The pure decoder refactor preserves key bytes and INT-049 behavior; Kani covers round trips and bounded malformed inputs. The approved design and CI limits are in `docs/superpowers/specs/2026-10-29-693-decoder-proofs.md`.
 - **v3.next** (the release after v3.0.0) holds new features (rule persistence #241; OPFS `BrowserDb` #441).

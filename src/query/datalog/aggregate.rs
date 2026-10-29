@@ -539,6 +539,8 @@ pub(crate) enum Agg {
     Count(i64),
     /// The sum, and the type of the first value that is not a number.
     Sum(Sum, Option<&'static str>),
+    /// The mean of numeric values, skipping nil and nonnumbers like window avg.
+    Avg(Sum),
     Min(Extreme),
     Max(Extreme),
     CountDistinct(BTreeSet<Value>),
@@ -557,8 +559,7 @@ impl Agg {
             AggImpl::Builtin(b) => match b {
                 Builtin::Count => Agg::Count(0),
                 Builtin::Sum => Agg::Sum(Sum::default(), None),
-                // `avg` is a window function only (`PRS-027`).
-                Builtin::Avg => return Err(err_coded!(ErrorCode::Int029, func)),
+                Builtin::Avg => Agg::Avg(Sum::default()),
                 Builtin::Min => Agg::Min(Extreme::default()),
                 Builtin::Max => Agg::Max(Extreme::default()),
                 Builtin::CountDistinct => Agg::CountDistinct(BTreeSet::new()),
@@ -581,6 +582,26 @@ impl Agg {
         }
     }
 
+    /// Retained exact-sum allocation needed before stepping this value (#777).
+    pub(crate) fn exact_heap_growth(&self, v: &Value) -> usize {
+        match self {
+            Agg::Sum(s, _) | Agg::Avg(s)
+                if s.floats.is_none() && matches!(v, Value::Float(f) if f.is_finite()) =>
+            {
+                size_of::<Exact>()
+            }
+            _ => 0,
+        }
+    }
+
+    /// Exact-sum heap bytes that move with this accumulator when finishing.
+    pub(crate) fn exact_heap_bytes(&self) -> usize {
+        match self {
+            Agg::Sum(s, _) | Agg::Avg(s) if s.floats.is_some() => size_of::<Exact>(),
+            _ => 0,
+        }
+    }
+
     /// Take one value; `nil` is skipped by every aggregate. Only a user
     /// aggregate fails (`QRY-014`).
     pub(crate) fn step(&mut self, v: &Value) -> Result<()> {
@@ -593,6 +614,9 @@ impl Agg {
                 if !s.add(v) && bad.is_none() {
                     *bad = Some(type_name(v));
                 }
+            }
+            Agg::Avg(s) => {
+                s.add(v);
             }
             Agg::Min(e) => e.add(v, false),
             Agg::Max(e) => e.add(v, true),
@@ -611,6 +635,7 @@ impl Agg {
             Agg::Count(n) => Value::Integer(n),
             Agg::Sum(_, Some(bad)) => return Err(err_coded!(ErrorCode::Int041, bad)),
             Agg::Sum(s, None) => s.value(),
+            Agg::Avg(s) => s.mean(),
             Agg::Min(e) | Agg::Max(e) => {
                 let Some(best) = e.best else {
                     return Ok(None);

@@ -4,9 +4,11 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,989 | 2,022 |
+| **Passing** | 2,001 | 2,035 |
 | **Ignored** | 17 | 18 |
-| **Total** | 2,006 | 2,040 |
+| **Total** | 2,018 | 2,053 |
+
+#777 adds 12 default-feature tests (three accumulator tests, one engine memory test and eight integration tests) and one additional `test-hooks` plan matrix. The focused 13-test run passes. Strict native/browser/WASI clippy passes, and the rebased release binary is 1,263,144 bytes against the unchanged 1,263,616-byte cap.
 
 #774 adds one default-feature unit test (also present with `test-hooks`). On
 2026-10-29, after rebasing onto #723, its full default suite passed 1,989 tests
@@ -42,6 +44,8 @@ Also outside those counts: three native unit tests in the separate #760 `minigra
 **Scope**: the unreleased file-format-v8 work (#287, #371): the index-key value-collision fix, the v7→v8 migration, and the drop of formats v1–v6. Otherwise the public database API, the Datalog engine, storage and recovery paths, v2.0.0's locking and structured-error-code changes, and v2.0.1's regression test for rebuilding indexes on open after several checkpoints (#370). Tests merged from the v2.x line are marked *(v2.x)*.
 
 ## Covered Areas
+
+- **Ordinary average** (#777; `tests/ordinary_avg_test.rs`, `aggregate/tests.rs`, `engine/tests.rs`): grouped and ungrouped averages, every nonnumeric value kind skipped, nil versus no matching rows, Float results, exact unsaturated totals, signed zero/subnormal underflow, infinities/NaNs, input permutations, prepared execution/cursors, batches, recursive rules, transaction reads, checkpoint/reopen and alternative plans. Default and bounded windows preserve skipped rows. Sum/avg exact-sum heap state is charged once before allocation, transferred on finish, and released on errors, rewind and close. Existing neighboring aggregate errors and dropped groups are preserved.
 
 - **Expression keyword literals** (#774): a test-only conversion counter verifies that increasing input from 8 to 2,048 rows does not increase literal resolution work, across `=` / `!=`, both operand orders, nested expressions, bindings, negation, disjunction and rule bodies. Existing join-equality tests also cover changing prepared keyword slots across executions and unchanged keyword output, in memory, after checkpoint and after reopen. The envelope harness checks all eight new expression/control shapes on regular and irregular fixtures.
 

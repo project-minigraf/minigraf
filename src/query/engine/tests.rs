@@ -3933,6 +3933,107 @@ fn aggregate_finish_keeps_sum_distinct_members_charged_once() {
     );
 }
 
+/// Observe retained state between rows, before the finishing map is built.
+#[test]
+fn sum_and_avg_charge_exact_heap_once_and_release_it() {
+    use super::{
+        Operator,
+        cell::{Cell, Scalar},
+    };
+    use std::sync::{Arc, Mutex};
+    struct Numbers {
+        value: Scalar,
+        at: usize,
+        fail: bool,
+        meter: Arc<super::Meter>,
+        observed: Arc<Mutex<Vec<usize>>>,
+    }
+    impl Operator for Numbers {
+        fn next_batch(&mut self, _: &mut super::Ctx<'_>) -> anyhow::Result<Option<super::Batch>> {
+            self.observed.lock().unwrap().push(self.meter.used());
+            if self.fail && self.at == 1 {
+                anyhow::bail!("injected child failure");
+            }
+            if self.at == 2 {
+                return Ok(None);
+            }
+            self.at += 1;
+            let mut batch = super::Batch::new(1);
+            batch.push(&mut [Some(Cell::Val(self.value.clone()))]);
+            Ok(Some(batch))
+        }
+        fn rewind(&mut self, _: &[Cell]) {
+            self.at = 0;
+        }
+        fn close(&mut self) {
+            self.at = 2;
+        }
+        fn counters(&self, _: &mut Vec<super::Counters>) {}
+    }
+    for func in ["sum", "avg"] {
+        let build = |value, fail, meter: &Arc<super::Meter>| {
+            let observed = Arc::new(Mutex::new(Vec::new()));
+            let op = super::aggregate::Aggregate::new(
+                Box::new(Numbers {
+                    value,
+                    at: 0,
+                    fail,
+                    meter: meter.clone(),
+                    observed: observed.clone(),
+                }),
+                vec![],
+                vec![(func.into(), 0)],
+                false,
+                false,
+                meter,
+            );
+            (op, observed)
+        };
+        let meter = super::Meter::unlimited();
+        let (mut ints, observed) = build(Scalar::Int(1), false, &meter);
+        pull_once(&mut ints, &meter)
+            .unwrap()
+            .expect("integer result");
+        let base = observed.lock().unwrap()[1];
+        assert_eq!(meter.used(), 0);
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let (mut op, observed) = build(Scalar::Float(value), false, &meter);
+            pull_once(&mut op, &meter)
+                .unwrap()
+                .expect("special float result");
+            assert_eq!(&observed.lock().unwrap()[1..], &[base, base]);
+            assert_eq!(meter.used(), 0);
+        }
+        let (mut floats, observed) = build(Scalar::Float(1.0), false, &meter);
+        pull_once(&mut floats, &meter)
+            .unwrap()
+            .expect("float result");
+        assert_eq!(&observed.lock().unwrap()[1..], &[base + 288, base + 288]);
+        assert_eq!(meter.used(), 0, "finished state released");
+
+        let limited = super::Meter::new(base + 287);
+        let (mut op, observed) = build(Scalar::Float(1.0), false, &limited);
+        let err = pull_once(&mut op, &limited).expect_err("first exact allocation exceeds limit");
+        assert_eq!(crate::MinigrafError::from(err).code(), "QRY-012");
+        assert_eq!(
+            observed.lock().unwrap().len(),
+            1,
+            "fails before second pull"
+        );
+        op.close();
+        assert_eq!(limited.used(), 0);
+
+        let (mut op, _) = build(Scalar::Float(1.0), true, &meter);
+        assert!(pull_once(&mut op, &meter).is_err());
+        assert_eq!(meter.used(), base + 288);
+        op.rewind(&[]);
+        assert_eq!(meter.used(), 0);
+        assert!(pull_once(&mut op, &meter).is_err());
+        op.close();
+        assert_eq!(meter.used(), 0);
+    }
+}
+
 /// Every query boxes its `Stream` (`Answer::Stream`). glibc serves blocks of
 /// up to 1,032 bytes from a per-thread cache and larger ones through its
 /// locked bins, which cost a point query about 5% (#721 grew the stream to

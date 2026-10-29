@@ -694,7 +694,7 @@ fn parse_aggregate(elems: &[EdnValue]) -> Result<FindSpec> {
         }
     };
 
-    const WINDOW_ONLY: &[&str] = &["avg", "rank", "row-number"];
+    const WINDOW_ONLY: &[&str] = &["rank", "row-number"];
 
     if WINDOW_ONLY.contains(&func_name.as_str()) {
         bail_coded!(ErrorCode::Prs027, func_name);
