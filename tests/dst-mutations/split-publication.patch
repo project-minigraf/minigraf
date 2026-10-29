@@ -1,0 +1,7 @@
+--- a/src/graph/storage.rs
++++ b/src/graph/storage.rs
+@@ -1015,2 +1015,4 @@
+         d.generation = generation;
++        drop(d);
++        let mut d = self.data.write().unwrap_or_else(|e| e.into_inner());
+         d.pending = pending;

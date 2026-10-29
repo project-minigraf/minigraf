@@ -116,6 +116,7 @@ Scope — features:
 
 Scope — release-gate testing and documentation:
 
+- Deterministic storage schedules (#760; v3.0.0): [suite and findings](docs/testing/deterministic-schedules.md) cover batch visibility, snapshot cutoffs and checkpoint publication. Focused native/MSRV PR checks and larger nightly/manual searches retain replay artifacts; the workflow-only main companion enables the v3 nightly schedule. Whole-database simulation remains out of scope.
 - Golden-file compatibility corpus for every format version (#391; done on `v3`: six v7 files from 2.0.3 checked after migration, seven v8 files frozen at `23aa57c`)
 - SIGKILL crash test that checks committed data through EAVT, AEVT and full scan (#384; done on `v3`: `tests/crash_kill_test.rs`, 100 rounds per OS nightly)
 - Model-based test of transact/retract/checkpoint/reopen (#385; done on `v3`: `tests/model_based_test.rs`, 30,000 cases nightly)

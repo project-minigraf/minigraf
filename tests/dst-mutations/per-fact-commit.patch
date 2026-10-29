@@ -1,0 +1,18 @@
+--- a/src/graph/storage.rs
++++ b/src/graph/storage.rs
+@@ -835,8 +835,9 @@
+     pub(crate) fn load_facts(&self, facts: impl IntoIterator<Item = Fact>) -> Result<usize> {
+-        self.write_pending(|p| {
+-            facts.into_iter().fold(
+-                0usize,
+-                |n, fact| if p.push(fact) { n.saturating_add(1) } else { n },
+-            )
+-        })
++        let mut count = 0;
++        for fact in facts {
++            if self.load_fact(fact)? {
++                count += 1;
++            }
++        }
++        Ok(count)
+     }

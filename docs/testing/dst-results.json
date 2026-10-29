@@ -1,0 +1,78 @@
+{
+  "base_commit": "9117392e9d1779e935307c05957cc4472cc6389a",
+  "platform": "Linux x86-64",
+  "rustc": "1.99.1",
+  "shuttle": "0.9.8",
+  "lockfile_sha256": "08a1495662974810709834e9a3530faa0f1f63656020f868767a75bc20fd625f",
+  "negative_controls": [
+    {
+      "mutation": "per-fact-commit",
+      "test": "batch_append_is_atomic",
+      "seed": 760,
+      "schedule": "9101149fd8bda2a2a0cbf6e901a0288aa202",
+      "reproduced": 10,
+      "attempts": 10
+    },
+    {
+      "mutation": "live-snapshot-cutoff",
+      "test": "one_snapshot_keeps_its_cutoff_across_scans",
+      "seed": 760,
+      "schedule": "910115b9befafab08ae7c8f301000020282800",
+      "reproduced": 10,
+      "attempts": 10
+    },
+    {
+      "mutation": "split-publication",
+      "test": "checkpoint_publication_preserves_readers_and_late_appends",
+      "seed": 760,
+      "schedule": "91022bf8050000000000001228499208112400400200",
+      "reproduced": 10,
+      "attempts": 10
+    }
+  ],
+  "restored_schedules": 3000,
+  "warm_runs": [
+    {
+      "seed": 760,
+      "schedules_per_workload": 1000,
+      "seconds": 1.0598
+    },
+    {
+      "seed": 760,
+      "schedules_per_workload": 1000,
+      "seconds": 1.0848
+    },
+    {
+      "seed": 760,
+      "schedules_per_workload": 1000,
+      "seconds": 1.0531
+    },
+    {
+      "seed": 760,
+      "schedules_per_workload": 1000,
+      "seconds": 1.0764
+    },
+    {
+      "seed": 760,
+      "schedules_per_workload": 1000,
+      "seconds": 1.0638
+    }
+  ],
+  "extended_runs": [
+    {
+      "seed": 760,
+      "schedules_per_workload": 10000,
+      "seconds": 10.1808
+    },
+    {
+      "seed": 761,
+      "schedules_per_workload": 10000,
+      "seconds": 10.2648
+    },
+    {
+      "seed": 762,
+      "schedules_per_workload": 10000,
+      "seconds": 10.1196
+    }
+  ]
+}
