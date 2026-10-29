@@ -5,10 +5,10 @@
 | | Default features | With `--features test-hooks` |
 |---|---|---|
 | **Passing** | 1,983 | 2,016 |
-| **Ignored** | 18 | 19 |
-| **Total** | 2,001 | 2,035 |
+| **Ignored** | 17 | 18 |
+| **Total** | 2,000 | 2,034 |
 
-**Verified**: 2026-10-29 on the designated bench machine: the #693 full default suite passed (1,983 passing, 18 ignored), all 29 Kani harnesses passed, and the strengthened key differential test passed again. On 2026-10-28, full default/test-hooks tests and the full branch-coverage suite passed, including golden files and migration/fault injection after sharing stable-sort code. Disabling internal reference-result cache eviction makes the targeted window regression fail. All unchanged coverage floors pass; measured overall coverage is 95.44% lines and 86.50% branches. Strict native/browser/WASI lint, WASI tests (1,182 passing, seven ignored), the WASI release build and Firefox tests (61 passing) also passed on that earlier revision; the new committed-reader window fixture executes on both portable runners. The #672 default and `test-hooks` suites passed separately on 2026-10-28 before rebasing onto #641.
+**Verified**: 2026-10-29 on the designated bench machine: the #693 full default suite passed all 1,983 active tests, all 29 Kani harnesses passed, and the strengthened key differential test passed again. On 2026-10-28, full default/test-hooks tests and the full branch-coverage suite passed, including golden files and migration/fault injection after sharing stable-sort code. Disabling internal reference-result cache eviction makes the targeted window regression fail. All unchanged coverage floors pass; measured overall coverage is 95.44% lines and 86.50% branches. Strict native/browser/WASI lint, WASI tests (1,182 passing, seven ignored), the WASI release build and Firefox tests (61 passing) also passed on that earlier revision; the new committed-reader window fixture executes on both portable runners. The #672 default and `test-hooks` suites passed separately on 2026-10-28 before rebasing onto #641.
 
 #641 slice 1 adds 30 tests with default features and one more with `test-hooks`. Slice 2 adds 22 default-feature tests (21 active and one ignored committed-fixture memory diagnostic). Slice 3 adds 26 default-feature tests (25 active and one ignored committed-fixture memory diagnostic).
 
@@ -16,7 +16,7 @@
 
 #493 (`:distinct`) adds 18 tests with default features and one more with `test-hooks`.
 
-#693 adds four default-feature key decoder tests and one ignored throughput diagnostic; the same five tests are available with `test-hooks` and WASI.
+#693 adds four default-feature key decoder tests; the same tests are available with `test-hooks` and WASI.
 
 #306 PR 2 (`:order-by`, `:offset`, `Sort`) added 18 tests and 7 more under `test-hooks`; the ignored acceptance test now also checks top-k. #306 PR 1 (`:limit`) added 13 tests, 5 more under `test-hooks`, and one ignored acceptance test.
 
@@ -112,7 +112,7 @@ These are not `#[test]`s; run them with `cargo kani` or `.github/workflows/kani.
 - `src/storage/index/verification.rs` (5): `encode_value` writes `Null` as `[0x00]`, each of `Boolean`, `Integer`, `Float` and `Ref` with its own type byte and in its own order, and every NaN to the same bytes.
 - 17 decoder harnesses (#693): `decode_uint`, `decode_int`, `decode_tx_desc`, `decode_valid_to` and float payload round-trip with one arbitrary suffix byte; six separate tagged scalar value round trips (Null, Boolean, Integer, Float, Keyword, Ref); and six malformed-input harnesses that prove no panic and bounded consumption for symbolic slices up to 9 bytes (10 with the value tag). NaNs use the canonical key encoding; signed zero keeps its bits.
 - All 29 harnesses passed on the bench machine with Kani 0.68.0 at `-j 4` in 1:59 warm; aggregate CBMC peak RSS was 7.6 GiB. The workflow caps concurrency at four for its 16 GiB runner and gives each harness 10 minutes.
-- A test-only copy of the old `Reader` in `src/storage/keys/legacy_verification.rs` compares results, INT-049 code and message, and cursor position on every 0–2 byte input, deterministic 3–10 byte inputs and explicit boundary values, including String and Set escapes. Three other focused unit tests check suffix boundaries, tagged values and malformed cases. An ignored diagnostic compares old/new scalar integer decode throughput in an optimized bench-profile test binary on the bench machine.
+- A test-only copy of the old `Reader` in `src/storage/keys/legacy_verification.rs` compares results, INT-049 code and message, and cursor position on every 0–2 byte input, deterministic 3–10 byte inputs and explicit boundary values, including String and Set escapes. Three other focused unit tests check suffix boundaries, tagged values and malformed cases. Before/after scalar and six-component key decoding were measured on the bench machine and recorded in the #693 PR.
 - Left out: `Reader`'s `anyhow` mapping, strings, sets, packed pages, WAL and arbitrary-length malformed inputs from Kani. CBMC could not finish on `Reader`'s error path or variable-length strings (a 3-byte string order proof was a 105M-clause formula); differential, fuzz and property tests cover those paths (specs `docs/superpowers/specs/2026-10-22-kani-storage-encoding-design.md` §5 and `docs/superpowers/specs/2026-10-29-693-decoder-proofs.md`).
 
 ## Storage and File Format
@@ -521,7 +521,7 @@ None of these are counted in the summary. The wasm32 targets run in CI (`.github
 
 ## Ignored Tests
 
-The eighteen ignored tests (nineteen with `test-hooks`) are intentionally excluded from a normal local run:
+The seventeen ignored tests (eighteen with `test-hooks`) are intentionally excluded from a normal local run:
 
 - Four rustdoc examples that reference internal types and cannot compile as standalone examples.
 - One high-contention concurrency stress test intended for scheduled runs.
@@ -538,7 +538,6 @@ The eighteen ignored tests (nineteen with `test-hooks`) are intentionally exclud
 - One measurement test (`meter_peak_against_rss`, `src/query/engine/tests.rs`, #549): prints the meter's peak against the peak RSS for the same two shapes, opening the engine directly.
 - One committed-group measurement test (`committed_group_memory_probe`, `src/query/engine/aggregate_order_tests.rs`, #641): opens prebuilt fixed-size and growing-group fixtures, drains count/count-distinct with and without a limit, and prints meter peaks, active-group high-water and input counts.
 - One row-frame measurement test (`window_rows_benchmark_meter_peaks`, `src/query/engine/tests.rs`, #183): prints metered peaks for the window benchmark fixtures.
-- One key decoder throughput diagnostic (`scalar_decoder_throughput_diagnostic`, `src/storage/keys/legacy_verification.rs`, #693): compares pre-refactor and new scalar integer and six-component key decoding in the same optimized binary on the bench machine.
 
 ## Reproducing
 
