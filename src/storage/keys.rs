@@ -74,6 +74,148 @@ pub fn put_int(out: &mut Vec<u8>, v: i64) {
     out.extend_from_slice(tail);
 }
 
+#[derive(Clone, Copy, Debug)]
+enum DecodeErrorKind {
+    EndsEarly,
+    BadUnsignedType(u8),
+    BadIntegerType(u8),
+    BadTxType(u8),
+    IntegerOutOfRange,
+    IidOutOfRange,
+    BadValueTag(u8),
+}
+
+#[derive(Clone, Copy, Debug)]
+struct DecodeFailure {
+    kind: DecodeErrorKind,
+    consumed: usize,
+}
+
+type DecodeResult<T> = std::result::Result<(T, usize), DecodeFailure>;
+
+impl DecodeFailure {
+    fn new(kind: DecodeErrorKind, consumed: usize) -> Self {
+        Self { kind, consumed }
+    }
+
+    fn after_tag(mut self) -> Self {
+        self.consumed += 1;
+        self
+    }
+
+    fn coded(self) -> anyhow::Error {
+        match self.kind {
+            DecodeErrorKind::EndsEarly => err_coded!(ErrorCode::Int049, "key ends early"),
+            DecodeErrorKind::BadUnsignedType(t) => err_coded!(
+                ErrorCode::Int049,
+                format!("bad unsigned type byte {t:#04x}")
+            ),
+            DecodeErrorKind::BadIntegerType(t) => {
+                err_coded!(ErrorCode::Int049, format!("bad integer type byte {t:#04x}"))
+            }
+            DecodeErrorKind::BadTxType(t) => {
+                err_coded!(ErrorCode::Int049, format!("bad tx type byte {t:#04x}"))
+            }
+            DecodeErrorKind::IntegerOutOfRange => {
+                err_coded!(ErrorCode::Int049, "integer out of range")
+            }
+            DecodeErrorKind::IidOutOfRange => err_coded!(ErrorCode::Int049, "iid out of range"),
+            DecodeErrorKind::BadValueTag(tag) => {
+                err_coded!(ErrorCode::Int049, format!("bad value tag {tag:#04x}"))
+            }
+        }
+    }
+}
+
+fn decode_magnitude(bytes: &[u8], n: usize) -> Option<u64> {
+    let src = bytes.get(..n)?;
+    let mut v = 0u64;
+    for &b in src {
+        v = (v << 8) | u64::from(b);
+    }
+    Some(v)
+}
+
+fn decode_uint(bytes: &[u8]) -> DecodeResult<u64> {
+    let t = *bytes
+        .first()
+        .ok_or_else(|| DecodeFailure::new(DecodeErrorKind::EndsEarly, 0))?;
+    let n = match t.checked_sub(INT_ZERO) {
+        Some(n @ 0..=8) => usize::from(n),
+        _ => return Err(DecodeFailure::new(DecodeErrorKind::BadUnsignedType(t), 1)),
+    };
+    let v = decode_magnitude(bytes.get(1..).unwrap_or(&[]), n)
+        .ok_or_else(|| DecodeFailure::new(DecodeErrorKind::EndsEarly, 1))?;
+    Ok((v, n + 1))
+}
+
+fn decode_int(bytes: &[u8]) -> DecodeResult<i64> {
+    let t = *bytes
+        .first()
+        .ok_or_else(|| DecodeFailure::new(DecodeErrorKind::EndsEarly, 0))?;
+    let positive = t >= INT_ZERO;
+    let n = if positive { t - INT_ZERO } else { INT_ZERO - t };
+    if n > 8 {
+        return Err(DecodeFailure::new(DecodeErrorKind::BadIntegerType(t), 1));
+    }
+    let n = usize::from(n);
+    let bits = decode_magnitude(bytes.get(1..).unwrap_or(&[]), n)
+        .ok_or_else(|| DecodeFailure::new(DecodeErrorKind::EndsEarly, 1))?;
+    if positive {
+        return i64::try_from(bits)
+            .map(|v| (v, n + 1))
+            .map_err(|_| DecodeFailure::new(DecodeErrorKind::IntegerOutOfRange, n + 1));
+    }
+    let mask = if n == 8 {
+        u64::MAX
+    } else {
+        (1u64 << (8 * n)) - 1
+    };
+    let m = !(bits | !mask);
+    if m == 0 || m > i64::MIN.unsigned_abs() {
+        return Err(DecodeFailure::new(
+            DecodeErrorKind::IntegerOutOfRange,
+            n + 1,
+        ));
+    }
+    Ok((0i64.checked_sub_unsigned(m).unwrap_or(i64::MIN), n + 1))
+}
+
+fn decode_tx_desc(bytes: &[u8]) -> DecodeResult<u64> {
+    let t = !*bytes
+        .first()
+        .ok_or_else(|| DecodeFailure::new(DecodeErrorKind::EndsEarly, 0))?;
+    let n = match t.checked_sub(INT_ZERO) {
+        Some(n @ 0..=8) => usize::from(n),
+        _ => return Err(DecodeFailure::new(DecodeErrorKind::BadTxType(t), 0)),
+    };
+    let raw = bytes
+        .get(..n + 1)
+        .ok_or_else(|| DecodeFailure::new(DecodeErrorKind::EndsEarly, 0))?;
+    let mut v = 0u64;
+    for &b in raw.get(1..).unwrap_or(&[]) {
+        v = (v << 8) | u64::from(!b);
+    }
+    Ok((v, n + 1))
+}
+
+fn decode_valid_to(bytes: &[u8]) -> DecodeResult<i64> {
+    match bytes.first() {
+        Some(&FOREVER) => Ok((VALID_TIME_FOREVER, 1)),
+        Some(_) => decode_int(bytes),
+        None => Err(DecodeFailure::new(DecodeErrorKind::EndsEarly, 0)),
+    }
+}
+
+fn decode_float(bytes: &[u8]) -> DecodeResult<f64> {
+    let src = bytes
+        .get(..8)
+        .ok_or_else(|| DecodeFailure::new(DecodeErrorKind::EndsEarly, 0))?;
+    let mut raw = [0u8; 8];
+    raw.copy_from_slice(src);
+    Ok((float_from_bits(u64::from_be_bytes(raw)), 8))
+}
+
 /// A cursor over encoded bytes. Every read checks bounds and fails with
 /// INT-049: a malformed key inside a verified page is an invariant violation.
 pub struct Reader<'a> {
@@ -105,13 +247,6 @@ impl<'a> Reader<'a> {
         Ok(b)
     }
 
-    fn peek(&self) -> Result<u8> {
-        self.buf
-            .get(self.pos)
-            .copied()
-            .ok_or_else(|| err_coded!(ErrorCode::Int049, "key ends early"))
-    }
-
     pub fn take(&mut self, n: usize) -> Result<&'a [u8]> {
         let end = self
             .pos
@@ -135,64 +270,35 @@ impl<'a> Reader<'a> {
         Ok(u64::from_be_bytes(v))
     }
 
-    pub fn uint(&mut self) -> Result<u64> {
-        let t = self.byte()?;
-        match t.checked_sub(INT_ZERO) {
-            Some(n @ 0..=8) => self.be(usize::from(n)),
-            _ => bail_coded!(
-                ErrorCode::Int049,
-                format!("bad unsigned type byte {t:#04x}")
-            ),
+    fn decoded<T>(&mut self, decoder: fn(&[u8]) -> DecodeResult<T>) -> Result<T> {
+        let bytes = self.buf.get(self.pos..).unwrap_or(&[]);
+        match decoder(bytes) {
+            Ok((value, consumed)) => {
+                self.pos += consumed;
+                Ok(value)
+            }
+            Err(failure) => {
+                self.pos += failure.consumed;
+                Err(failure.coded())
+            }
         }
     }
 
+    pub fn uint(&mut self) -> Result<u64> {
+        self.decoded(decode_uint)
+    }
+
     pub fn int(&mut self) -> Result<i64> {
-        let t = self.byte()?;
-        if t >= INT_ZERO {
-            let n = t - INT_ZERO;
-            if n > 8 {
-                bail_coded!(ErrorCode::Int049, format!("bad integer type byte {t:#04x}"));
-            }
-            let m = self.be(usize::from(n))?;
-            return i64::try_from(m)
-                .map_err(|_| err_coded!(ErrorCode::Int049, "integer out of range"));
-        }
-        let n = INT_ZERO - t;
-        if n > 8 {
-            bail_coded!(ErrorCode::Int049, format!("bad integer type byte {t:#04x}"));
-        }
-        let n = usize::from(n);
-        let comp = self.be(n)?;
-        // The stored bytes are the low `n` bytes of !m; restore the high ones.
-        let mask = if n == 8 {
-            u64::MAX
-        } else {
-            (1u64 << (8 * n)) - 1
-        };
-        let m = !(comp | !mask);
-        if m == 0 || m > i64::MIN.unsigned_abs() {
-            bail_coded!(ErrorCode::Int049, "integer out of range");
-        }
-        Ok(0i64.checked_sub_unsigned(m).unwrap_or(i64::MIN))
+        self.decoded(decode_int)
     }
 
     /// `tx↓`: see [`put_tx_desc`].
     pub fn tx_desc(&mut self) -> Result<u64> {
-        let t = !self.peek()?;
-        let n = match t.checked_sub(INT_ZERO) {
-            Some(n @ 0..=8) => usize::from(n),
-            _ => bail_coded!(ErrorCode::Int049, format!("bad tx type byte {t:#04x}")),
-        };
-        let raw: Vec<u8> = self.take(n + 1)?.iter().map(|b| !b).collect();
-        Reader::new(&raw).uint()
+        self.decoded(decode_tx_desc)
     }
 
     pub fn valid_to(&mut self) -> Result<i64> {
-        if self.peek()? == FOREVER {
-            self.pos += 1;
-            return Ok(VALID_TIME_FOREVER);
-        }
-        self.int()
+        self.decoded(decode_valid_to)
     }
 }
 
@@ -285,6 +391,49 @@ fn float_from_bits(bits: u64) -> f64 {
     } else {
         f64::from_bits(!bits)
     }
+}
+
+/// Decode a scalar tagged value. String and Set remain on Reader's escaped path.
+fn decode_scalar_value(
+    bytes: &[u8],
+) -> std::result::Result<Option<(KeyValue, usize)>, DecodeFailure> {
+    let tag = *bytes
+        .first()
+        .ok_or_else(|| DecodeFailure::new(DecodeErrorKind::EndsEarly, 0))?;
+    let (value, consumed) = match tag {
+        TAG_NULL => (KeyValue::Null, 1),
+        TAG_BOOL => {
+            let b = *bytes
+                .get(1)
+                .ok_or_else(|| DecodeFailure::new(DecodeErrorKind::EndsEarly, 1))?;
+            (KeyValue::Bool(b != 0), 2)
+        }
+        TAG_INT => {
+            let (v, n) =
+                decode_int(bytes.get(1..).unwrap_or(&[])).map_err(DecodeFailure::after_tag)?;
+            (KeyValue::Int(v), n + 1)
+        }
+        TAG_FLOAT => {
+            let (v, n) =
+                decode_float(bytes.get(1..).unwrap_or(&[])).map_err(DecodeFailure::after_tag)?;
+            (KeyValue::Float(v), n + 1)
+        }
+        TAG_KEYWORD => {
+            let (v, n) =
+                decode_uint(bytes.get(1..).unwrap_or(&[])).map_err(DecodeFailure::after_tag)?;
+            let iid = u32::try_from(v)
+                .map_err(|_| DecodeFailure::new(DecodeErrorKind::IidOutOfRange, n + 1))?;
+            (KeyValue::Keyword(iid), n + 1)
+        }
+        TAG_REF => {
+            let (v, n) =
+                decode_uint(bytes.get(1..).unwrap_or(&[])).map_err(DecodeFailure::after_tag)?;
+            (KeyValue::Ref(v), n + 1)
+        }
+        TAG_STRING | TAG_SET => return Ok(None),
+        _ => return Err(DecodeFailure::new(DecodeErrorKind::BadValueTag(tag), 1)),
+    };
+    Ok(Some((value, consumed)))
 }
 
 /// Append `bytes` with 0x00 escaped as `00 FF`.
@@ -489,29 +638,34 @@ pub fn long_bytes(bytes: &[u8], vref: ValueRef) -> KeyValue {
 
 impl Reader<'_> {
     pub fn value(&mut self) -> Result<KeyValue> {
+        let bytes = self.buf.get(self.pos..).unwrap_or(&[]);
+        match decode_scalar_value(bytes) {
+            Ok(Some((value, consumed))) => {
+                self.pos += consumed;
+                return Ok(value);
+            }
+            Ok(None) => {}
+            Err(failure) => {
+                self.pos += failure.consumed;
+                return Err(failure.coded());
+            }
+        }
         let tag = self.byte()?;
-        Ok(match tag {
-            TAG_NULL => KeyValue::Null,
-            TAG_BOOL => KeyValue::Bool(self.byte()? != 0),
-            TAG_INT => KeyValue::Int(self.int()?),
-            TAG_FLOAT => KeyValue::Float(float_from_bits(self.be(8)?)),
-            TAG_STRING => match self.escaped()? {
+        Ok(if tag == TAG_STRING {
+            match self.escaped()? {
                 Escaped::Short(bytes) => KeyValue::Str(
                     String::from_utf8(bytes)
                         .map_err(|_| err_coded!(ErrorCode::Int049, "key string not UTF-8"))?,
                 ),
                 Escaped::Long { prefix, hash, vref } => KeyValue::LongStr { prefix, hash, vref },
-            },
-            TAG_SET => match self.escaped()? {
+            }
+        } else {
+            // decode_scalar_value returns None only for TAG_STRING or TAG_SET.
+            debug_assert_eq!(tag, TAG_SET);
+            match self.escaped()? {
                 Escaped::Short(bytes) => KeyValue::Set(bytes),
                 Escaped::Long { prefix, hash, vref } => KeyValue::LongSet { prefix, hash, vref },
-            },
-            TAG_KEYWORD => KeyValue::Keyword(
-                u32::try_from(self.uint()?)
-                    .map_err(|_| err_coded!(ErrorCode::Int049, "iid out of range"))?,
-            ),
-            TAG_REF => KeyValue::Ref(self.uint()?),
-            _ => bail_coded!(ErrorCode::Int049, format!("bad value tag {tag:#04x}")),
+            }
         })
     }
 
@@ -918,6 +1072,9 @@ pub fn read_uint_bytes(bytes: &[u8]) -> Result<u64> {
 
 #[cfg(kani)]
 mod verification;
+
+#[cfg(test)]
+mod legacy_verification;
 
 #[cfg(test)]
 mod tests {
@@ -1514,6 +1671,122 @@ mod tests {
         }
         let err = KeyFact::decode(Index::Eavt, &[0x14, 0x14, TAG_NULL]).unwrap_err();
         assert_eq!(crate::error::MinigrafError::from(err).code(), "INT-049");
+    }
+
+    #[test]
+    fn pure_decoders_stop_at_the_component_boundary() {
+        for v in [0, 1, 255, 256, u64::MAX] {
+            let mut bytes = Vec::new();
+            put_uint(&mut bytes, v);
+            let len = bytes.len();
+            bytes.push(0xA5);
+            assert_eq!(decode_uint(&bytes).unwrap(), (v, len));
+            bytes.clear();
+            put_tx_desc(&mut bytes, v);
+            let len = bytes.len();
+            bytes.push(0xA5);
+            assert_eq!(decode_tx_desc(&bytes).unwrap(), (v, len));
+        }
+        for v in [i64::MIN, -256, -1, 0, 1, 256, i64::MAX] {
+            let mut bytes = Vec::new();
+            put_int(&mut bytes, v);
+            let len = bytes.len();
+            bytes.push(0xA5);
+            assert_eq!(decode_int(&bytes).unwrap(), (v, len));
+            bytes.clear();
+            put_valid_to(&mut bytes, v);
+            let len = bytes.len();
+            bytes.push(0xA5);
+            assert_eq!(decode_valid_to(&bytes).unwrap(), (v, len));
+        }
+        for v in [f64::NEG_INFINITY, -0.0, 0.0, f64::INFINITY, f64::NAN] {
+            let mut bytes = float_bits(v).to_be_bytes().to_vec();
+            bytes.push(0xA5);
+            let (decoded, len) = decode_float(&bytes).unwrap();
+            assert_eq!(len, 8);
+            assert_eq!(decoded.to_bits(), float_from_bits(float_bits(v)).to_bits());
+        }
+    }
+
+    #[test]
+    fn pure_scalar_values_stop_before_a_suffix() {
+        for value in [
+            KeyValue::Null,
+            KeyValue::Bool(false),
+            KeyValue::Bool(true),
+            KeyValue::Int(i64::MIN),
+            KeyValue::Float(-0.0),
+            KeyValue::Float(f64::NAN),
+            KeyValue::Keyword(u32::MAX),
+            KeyValue::Ref(u64::MAX),
+        ] {
+            let mut bytes = Vec::new();
+            put_value(&mut bytes, &value);
+            let len = bytes.len();
+            bytes.push(0xA5);
+            let (decoded, consumed) = decode_scalar_value(&bytes).unwrap().unwrap();
+            assert_eq!(consumed, len);
+            let mut reencoded = Vec::new();
+            put_value(&mut reencoded, &decoded);
+            assert_eq!(reencoded, bytes[..len]);
+        }
+        assert!(decode_scalar_value(&[TAG_STRING, b'a']).unwrap().is_none());
+        assert!(decode_scalar_value(&[TAG_SET, 0, 0]).unwrap().is_none());
+    }
+
+    #[test]
+    fn malformed_scalar_readers_keep_errors_and_positions() {
+        let check = |bytes: &[u8], read: fn(&mut Reader<'_>) -> Result<()>, pos, detail| {
+            let mut reader = Reader::new(bytes);
+            let err = read(&mut reader).unwrap_err();
+            assert_eq!(crate::error::MinigrafError::from(err).code(), "INT-049");
+            assert_eq!(reader.position(), pos);
+            assert_eq!(
+                read_error(bytes, read),
+                format!("storage: internal invariant violation: {detail}")
+            );
+        };
+        check(&[], |r| r.uint().map(|_| ()), 0, "key ends early");
+        check(
+            &[0x30],
+            |r| r.uint().map(|_| ()),
+            1,
+            "bad unsigned type byte 0x30",
+        );
+        check(&[0x15], |r| r.uint().map(|_| ()), 1, "key ends early");
+        check(
+            &[0x1C, 0x80, 0, 0, 0, 0, 0, 0, 0],
+            |r| r.int().map(|_| ()),
+            9,
+            "integer out of range",
+        );
+        check(
+            &[0x00],
+            |r| r.tx_desc().map(|_| ()),
+            0,
+            "bad tx type byte 0xff",
+        );
+        check(
+            &[!0x16, 0xFE],
+            |r| r.tx_desc().map(|_| ()),
+            0,
+            "key ends early",
+        );
+        check(&[], |r| r.valid_to().map(|_| ()), 0, "key ends early");
+        check(&[0x15], |r| r.valid_to().map(|_| ()), 1, "key ends early");
+        check(
+            &[TAG_FLOAT, 0],
+            |r| r.value().map(|_| ()),
+            1,
+            "key ends early",
+        );
+        check(&[TAG_BOOL], |r| r.value().map(|_| ()), 1, "key ends early");
+        check(&[0x30], |r| r.value().map(|_| ()), 1, "bad value tag 0x30");
+    }
+
+    fn read_error(bytes: &[u8], read: fn(&mut Reader<'_>) -> Result<()>) -> String {
+        let mut reader = Reader::new(bytes);
+        read(&mut reader).unwrap_err().to_string()
     }
 
     #[test]

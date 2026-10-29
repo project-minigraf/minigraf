@@ -80,6 +80,8 @@ For the 3-byte string order harness, CBMC's own statistics: symbolic execution 3
 
 Making the decoders provable would need an error-free inner decoder (`Option` instead of `anyhow::Result`), a production change the issue rules out. Packed pages and WAL framing are decoders of the same kind and are left out for the same reason. A follow-up issue can revisit them, or a deductive tool, if that changes.
 
+**Follow-up (#693):** This exclusion described the #627 scope and measurements. The later decoder work extracts pure inner decoders while preserving `Reader`'s INT-049 messages, then proves scalar round trips and bounded malformed inputs. Strings, sets, packed pages and WAL remain outside that follow-up.
+
 ## 6. Finding: `encode_value` does not sort NaN last
 
 `encode_value` writes NaN as `0x7FF8_0000_0000_0000` without the sign transform it applies to every other float, so NaN sorts between two negative subnormals, before `-0.0` and every positive float, not after `+∞` as `Value::cmp` orders it. A harness `encode_value(non-NaN) < encode_value(NaN)` fails in 1.5 s with a counterexample. `keys.rs` on `v3` is correct: `float_bits` maps NaN to `0xFFF8…` (§3.1, `float_bits_nan_sorts_last`).

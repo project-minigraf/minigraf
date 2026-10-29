@@ -84,9 +84,11 @@ cargo test --test complex_queries_test -- --nocapture
 cargo test --test recursive_rules_test -- --nocapture
 cargo test --test concurrency_test
 
-# Kani proofs of the encoders (#627); ~1 GB. Never add decoder/string harnesses
-# without a bench-machine run first: they went past 27 GB without finishing
-cargo kani --lib -j --output-format terse -Z unstable-options --harness-timeout 10m
+# Kani proofs of key encoders and pure scalar decoders (#627, #693):
+# 29 harnesses, ~2 minutes warm and 7.6 GiB peak aggregate CBMC RSS at -j 4.
+# Measure any new harness on the bench machine before adding it to CI.
+# Reader error paths and variable-length strings remain outside Kani's budget.
+cargo kani --lib -j 4 --output-format terse -Z unstable-options --harness-timeout 10m
 
 # Run examples
 cargo run --example embedded
@@ -117,7 +119,7 @@ cargo run < demos/demo_negation.txt
    - `backend/fault_inject.rs`: `FaultInjectingBackend` — injects I/O errors for durability tests (test builds only)
    - `fault.rs`: thread-local fault plan (test builds only, #390) — EIO, torn/short writes, sticky ENOSPC, failed fsync with or without lost writes, at the k-th write or sync of `FileBackend`, the WAL and `sync_parent_dir`; driven by `src/fault_matrix.rs`
    - `index.rs`: pending (uncheckpointed) EAVT/AEVT keys over UUIDs and strings, `encode_value`; `index/verification.rs`: Kani proofs of `encode_value` (`#[cfg(kani)]`, #627)
-   - `keys.rs`: byte-comparable v8 keys (FDB integers, value tags, `tx↓`, FOREVER), DICT keys, `MAX_VALUE_BYTES`, `MAX_IDENT_BYTES`; sets (#316): tag `0x08`, element encoding (`set_elements`: each element's key encoding, sorted) inline up to 64 bytes, else `LongSet` in a value page, `decode_set`, `set_bytes_bound` (the WAL's id-free size bound); `keys/verification.rs`: Kani proofs that the key encoders preserve order (`#[cfg(kani)]`, #627; `kani.yml` runs them on encoder PRs and nightly)
+   - `keys.rs`: byte-comparable v8 keys (FDB integers, value tags, `tx↓`, FOREVER), DICT keys, `MAX_VALUE_BYTES`, `MAX_IDENT_BYTES`; sets (#316): tag `0x08`, element encoding (`set_elements`: each element's key encoding, sorted) inline up to 64 bytes, else `LongSet` in a value page, `decode_set`, `set_bytes_bound` (the WAL's id-free size bound); pure scalar decoders preserve INT-049 errors (#693). `keys/verification.rs` proves encoder order and scalar decoder round trips/malformed bounds with Kani (`#[cfg(kani)]`, #627, #693); `keys/legacy_verification.rs` compares the old and new readers in tests. `kani.yml` runs proofs on key PRs and nightly.
    - `node.rs`: prefix-compressed leaf and shortest-separator internal node codecs
    - `btree.rs`: On-disk B+tree over byte keys (`build_btree`, `cow_update` (copy-on-write inserts and deletes; an emptied leaf or node leaves its parent, an emptied tree is root 0; #550) and `cow_insert`, `LeafCursor` (with `seek`), `prefix_scan`, `get`, `MutexStorageBackend`)
    - `dict.rs`: `DictReader` (id ↔ UUID/ident, tx timestamps, long values; `uuids_of` walks dense id batches with `LeafCursor` and uses exact scalar reads for sparse/small batches, #530) and `Encoder` (checkpoint-time id assignment and key building)
@@ -216,7 +218,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**1996 tests** (1979 passing, 17 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
+**2001 tests** (1983 passing, 18 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 **Testing conventions** — see the Testing Conventions section below before writing any tests.
@@ -229,6 +231,7 @@ Current plan (see `ROADMAP.md` and the milestones):
 - **v2.x** (`main`, format v7) now gets only data-integrity and security fixes as patch releases (v2.0.3 is the first); v2.0.2 was the last planned v2.x release.
 - **v3.0.0** (format v8 and data integrity, plus `:limit` #306, optional `:distinct` output #493, `lag`/`lead` #182, sliding row frames #183, query profiler #185, set membership predicates #316 and prepared queries in every binding #181, UDF registration in every binding #180; tracker #383) is developed on the long-lived `v3` branch. All v3 PRs target `v3`; `main` stays untouched. CI runs on PRs to `v3` the same as on PRs to `main`. Do not merge `main` into `v3` routinely: `main` only gets backports of fixes already on `v3`. Shared CI and workflow changes land on both branches as separate PRs. Just before the v3.0.0 cut, merge `main` into `v3` once (merge commit; source conflicts resolved to `v3`, `main`'s v2.0.x CHANGELOG sections brought over) so the cut is a fast-forward. At the first v3 release, the current `main` is copied to `v2` and `v3` becomes the new `main`.
 - **Input order (#641)** targets v3.0.0 in three slices: committed scalar Sort omission, one-group count/count-distinct and partition-at-a-time windows are implemented in the dependent PRs for `v3`. The reviewed design, fallback scope and acceptance gates are in `docs/superpowers/specs/2026-10-28-641-input-order-design.md`.
+- **Scalar key decoder proofs (#693)** target v3.0.0 before the release cut. The pure decoder refactor preserves key bytes and INT-049 behavior; Kani covers round trips and bounded malformed inputs. The approved design and CI limits are in `docs/superpowers/specs/2026-10-29-693-decoder-proofs.md`.
 - **v3.next** (the release after v3.0.0) holds new features (rule persistence #241; OPFS `BrowserDb` #441).
 - Known v2.x data issue: same-transaction multi-valued facts (#371). Fix ships in v3.0.0. All v2.x known issues are listed in pinned issue #421 (`known-issue` label); `data-integrity`/`corruption`/`durability` issues fixed in a v2.x patch stay open until that patch is published; issues fixed on the unreleased `v3` branch close on merge (closing keywords do not fire on `v3`, so close them with `gh issue close`) and stay listed in #421 (CONTRIBUTING.md).
 - Support policy and tiers: PHILOSOPHY.md §7 and §10. v2.x gets data-integrity and security fixes for 12 months after v3.0.0. Tier 1 = Rust + Python + browser WASM (from v3.0.0); other bindings are Tier 2.
