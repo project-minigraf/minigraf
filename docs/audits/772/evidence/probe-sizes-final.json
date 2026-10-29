@@ -1,0 +1,37 @@
+[
+  {
+    "candidate": "free-sort",
+    "exit": 0,
+    "bytes": 1263256
+  },
+  {
+    "candidate": "encoded-set-sort",
+    "exit": 0,
+    "bytes": 1260568
+  },
+  {
+    "candidate": "value-order-sort",
+    "exit": 0,
+    "bytes": 1263688
+  },
+  {
+    "candidate": "string-sorts",
+    "exit": 0,
+    "bytes": 1263240
+  },
+  {
+    "candidate": "import-sort",
+    "exit": 0,
+    "bytes": 1262936
+  },
+  {
+    "candidate": "chrono-serde",
+    "exit": 0,
+    "bytes": 1263592
+  },
+  {
+    "candidate": "reader-erasure",
+    "exit": 0,
+    "bytes": 1256144
+  }
+]

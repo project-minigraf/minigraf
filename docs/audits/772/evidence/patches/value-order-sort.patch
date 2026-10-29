@@ -1,0 +1,7 @@
+--- a/src/query/datalog/aggregate.rs
++++ b/src/query/datalog/aggregate.rs
+@@ -60,2 +60,2 @@
+-            xs.sort_by(cmp);
+-            ys.sort_by(cmp);
++            xs.sort_unstable_by(cmp);
++            ys.sort_unstable_by(cmp);

@@ -1,0 +1,6 @@
+--- a/src/storage/page.rs
++++ b/src/storage/page.rs
+@@ -202 +202,2 @@
+-        free.sort_unstable_by(|a, b| b.cmp(a));
++        free.sort_unstable();
++        free.reverse();

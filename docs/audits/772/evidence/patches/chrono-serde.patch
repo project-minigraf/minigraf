@@ -1,0 +1,5 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -37 +37 @@
+-chrono = { version = "0.4", features = ["serde", "std"], default-features = false }
++chrono = { version = "0.4", features = ["std"], default-features = false }

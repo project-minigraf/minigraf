@@ -1,0 +1,48 @@
+--- a/src/storage/reader.rs
++++ b/src/storage/reader.rs
+@@ -22,2 +22,2 @@
+-pub struct OnDiskReader<B: StorageBackend + 'static> {
+-    backend: MutexStorageBackend<B>,
++pub struct OnDiskReader {
++    backend: Box<dyn StorageBackend>,
+@@ -38,2 +38,2 @@
+-impl<B: StorageBackend + 'static> OnDiskReader<B> {
+-    pub fn new(backend: Arc<Mutex<B>>, cache: Arc<PageCache>, meta: &MetaPage) -> Self {
++impl OnDiskReader {
++    pub fn new<B: StorageBackend + 'static>(backend: Arc<Mutex<B>>, cache: Arc<PageCache>, meta: &MetaPage) -> Self {
+@@ -41 +41 @@
+-            backend: MutexStorageBackend(backend),
++            backend: Box::new(MutexStorageBackend(backend)),
+@@ -57 +57 @@
+-        DictReader::new(self.dict_root, &self.backend, &self.cache).with_shared(&self.shared)
++        DictReader::new(self.dict_root, &*self.backend, &self.cache).with_shared(&self.shared)
+@@ -72 +72 @@
+-        prefix_scan(root, prefix, &self.backend, &self.cache)?
++        prefix_scan(root, prefix, &*self.backend, &self.cache)?
+@@ -79 +79 @@
+-impl<B: StorageBackend + 'static> OnDiskReader<B> {
++impl OnDiskReader {
+@@ -92 +92 @@
+-            LeafCursor::new(self.dict_root, Some(&prefix), &self.backend, &self.cache)?;
++            LeafCursor::new(self.dict_root, Some(&prefix), &*self.backend, &self.cache)?;
+@@ -169 +169 @@
+-        let mut cursor = LeafCursor::new(root, Some(prefix), &self.backend, &self.cache)?;
++        let mut cursor = LeafCursor::new(root, Some(prefix), &*self.backend, &self.cache)?;
+@@ -300 +300 @@
+-impl<B: StorageBackend + 'static> KeySource for OnDiskReader<B> {
++impl KeySource for OnDiskReader {
+@@ -413 +413 @@
+-        let mut cursor = LeafCursor::new(root, Some(prefix), &self.backend, &self.cache)?;
++        let mut cursor = LeafCursor::new(root, Some(prefix), &*self.backend, &self.cache)?;
+@@ -436 +436 @@
+-impl<B: StorageBackend + 'static> LogSource for OnDiskReader<B> {
++impl LogSource for OnDiskReader {
+@@ -458 +458 @@
+-        let mut cursor = LeafCursor::new(root, Some(prefix), &self.backend, &self.cache)?;
++        let mut cursor = LeafCursor::new(root, Some(prefix), &*self.backend, &self.cache)?;
+@@ -482 +482 @@
+-impl<B: StorageBackend + 'static> CommittedReader for OnDiskReader<B> {
++impl CommittedReader for OnDiskReader {
+@@ -532 +532 @@
+-        let mut cursor = LeafCursor::new(self.eavt_root, None, &self.backend, &self.cache)?;
++        let mut cursor = LeafCursor::new(self.eavt_root, None, &*self.backend, &self.cache)?;

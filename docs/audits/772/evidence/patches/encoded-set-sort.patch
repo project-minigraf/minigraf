@@ -1,0 +1,5 @@
+--- a/src/storage/keys.rs
++++ b/src/storage/keys.rs
+@@ -528 +528 @@
+-    encoded.sort();
++    encoded.sort_unstable();
