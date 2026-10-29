@@ -94,6 +94,8 @@ Scope — format and storage integrity:
 
 Scope — query API:
 
+- Selective in-memory ancestor joins avoid building a whole-attribute value map (#723; implemented for eligible three-pattern recursive bodies). Populated committed generations keep AVET probes; general in-memory value joins remain unchanged.
+
 - Optional `:distinct` result tuples, preserving bag output by default (#493; done on `v3`)
 - `lag` and `lead` window functions for the previous/next row within an ordered partition (#182; v3.0.0)
 - Bounded sliding row frames, `:rows N preceding`, for window aggregates (#183; v3.0.0, implemented on `v3`; builds on #182)

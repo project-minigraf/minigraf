@@ -16,7 +16,7 @@ Minigraf follows the "SQLite for bi-temporal graph databases" philosophy:
 - **Zero-configuration** - No setup, no config files, just works
 - **Embedded-first** - Library not server, in-process execution
 - **Single-file database** - One portable `.graph` file
-- **Self-contained** - Minimal dependencies, small binary (~1.2MB budget as of #277, 1,230 KiB enforced on v3 since #306; see PHILOSOPHY.md §4)
+- **Self-contained** - Minimal dependencies, small binary (~1.2MB budget as of #277, 1,234 KiB enforced on v3 since #723; see PHILOSOPHY.md §4)
 - **Cross-platform** - Native, WASM, mobile, embedded
 - **Reliability over features** - Do less, do it perfectly
 - **Bi-temporal first-class** - Time travel is a core feature, not addon
@@ -218,7 +218,7 @@ Auto-migrates v7 → v8 on open (spec §9, with a backup meta page). v1–v6 are
 
 ## Test Coverage
 
-**2000 tests** (1983 passing, 17 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
+**2005 tests** (1988 passing, 17 ignored; unit + integration + doc). Engine answers once checked by the executor are frozen in `tests/answers/` (#551).
 See `docs/TEST_COVERAGE.md` for the full per-file breakdown.
 
 The #760 deterministic storage suite adds three native unit tests in a separate `--cfg minigraf_shuttle` build, outside the default count. Run only `graph::storage::deterministic::` with that cfg; ordinary unit tests do not enter its scheduler. `deterministic-schedules.yml` runs relevant v3 PRs on Linux/macOS/Windows plus Linux MSRV, and larger nightly/manual searches with replay artifacts. The identical main workflow activates the v3 schedule after both PRs merge. See `docs/testing/deterministic-schedules.md` for scope, controls and findings.
@@ -230,6 +230,7 @@ The #760 deterministic storage suite adds three native unit tests in a separate 
 **v2.0.5 released** (2026-10-11) — short-file open refused with STG-045 (#506), commit after a torn WAL entry no longer lost, WAL-007 (#513); backported rule-query `max_results` (#528), all-checkpointed WAL removal (#457) and `usize::MAX` close-time save (#476); weekly soak test (#392), real coverage gates (#396). **v2.0.4** (2026-10-08) — `BrowserDb` IndexedDB flush returns an error for an unreadable dirty page (#470); golden-file v7 corpus (#391) and SIGKILL committed-data crash test (#384). **v2.0.3** (2026-10-06) — data-integrity patch under the support policy: indexed queries with >65,535 uncheckpointed facts (#445), tx counter rewound on reopen next to an already-checkpointed WAL (#447). **v2.0.2** (2026-09-27) — last planned v2.x feature/fix release: query fixes (#297, #405, #407, #410), directory fsync (#389), point-query/attribute-scan/checkpoint perf mitigations (#323, #381, #315), CI policy checks (#395), support policy and tiers (#397, #399, #400). **v2.0.1** (2026-09-25) fixed index rebuild on open (#370). **v2.0.0** introduced kernel file locking (#317, #304), structured runtime error codes (#277), `OpenOptions` `#[non_exhaustive]`, and an MSRV of Rust 1.89. See `CHANGELOG.md` for the full rationale and release history.
 
 Current plan (see `ROADMAP.md` and the milestones):
+- **In-memory ancestors (#723)**: eligible positive three-pattern delta runs retain an entity-first alternative with the same `Old`/`Delta`/`Full` ranges and separately planned head slots. Each round can select it when the committed dictionary is empty, the source relation has at most 128 rows and no stored records, and a capped AEVT count favors entity probes over building an uncached pending value map. Populated committed generations keep AVET probes. No additional write-time index.
 - **v2.x** (`main`, format v7) now gets only data-integrity and security fixes as patch releases (v2.0.3 is the first); v2.0.2 was the last planned v2.x release.
 - **v3.0.0** (format v8 and data integrity, plus `:limit` #306, optional `:distinct` output #493, `lag`/`lead` #182, sliding row frames #183, query profiler #185, set membership predicates #316 and prepared queries in every binding #181, UDF registration in every binding #180; tracker #383) is developed on the long-lived `v3` branch. All v3 PRs target `v3`; `main` stays untouched. CI runs on PRs to `v3` the same as on PRs to `main`. Do not merge `main` into `v3` routinely: `main` only gets backports of fixes already on `v3`. Shared CI and workflow changes land on both branches as separate PRs. Just before the v3.0.0 cut, merge `main` into `v3` once (merge commit; source conflicts resolved to `v3`, `main`'s v2.0.x CHANGELOG sections brought over) so the cut is a fast-forward. At the first v3 release, the current `main` is copied to `v2` and `v3` becomes the new `main`.
 - **Input order (#641)** targets v3.0.0 in three slices: committed scalar Sort omission, one-group count/count-distinct and partition-at-a-time windows are implemented in the dependent PRs for `v3`. The reviewed design, fallback scope and acceptance gates are in `docs/superpowers/specs/2026-10-28-641-input-order-design.md`.

@@ -63,6 +63,10 @@ pub(crate) struct Probes {
 }
 
 impl Probes {
+    pub(crate) fn has_values(&self, attribute: &str) -> bool {
+        self.values.contains_key(attribute)
+    }
+
     pub(crate) fn new(meter: &Arc<Meter>) -> Self {
         Probes {
             values: HashMap::new(),

@@ -1,0 +1,101 @@
+=== Baseline, all recursion ===
+Gnuplot not found, using plotters backend
+Benchmarking recursion/chain/depth_10
+Benchmarking recursion/chain/depth_10: Warming up for 3.0000 s
+Benchmarking recursion/chain/depth_10: Collecting 10 samples in estimated 5.0008 s (9405 iterations)
+Benchmarking recursion/chain/depth_10: Analyzing
+recursion/chain/depth_10
+                        time:   [520.16 µs 522.50 µs 525.30 µs]
+Benchmarking recursion/chain/depth_100
+Benchmarking recursion/chain/depth_100: Warming up for 3.0000 s
+Benchmarking recursion/chain/depth_100: Collecting 10 samples in estimated 5.9262 s (275 iterations)
+Benchmarking recursion/chain/depth_100: Analyzing
+recursion/chain/depth_100
+                        time:   [21.431 ms 21.515 ms 21.623 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+Benchmarking recursion/fanout/w10_d3
+Benchmarking recursion/fanout/w10_d3: Warming up for 3.0000 s
+Benchmarking recursion/fanout/w10_d3: Collecting 10 samples in estimated 5.3519 s (275 iterations)
+Benchmarking recursion/fanout/w10_d3: Analyzing
+recursion/fanout/w10_d3 time:   [19.371 ms 19.663 ms 20.026 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+Benchmarking recursion/ancestors/w10_d4
+Benchmarking recursion/ancestors/w10_d4: Warming up for 3.0000 s
+Benchmarking recursion/ancestors/w10_d4: Collecting 10 samples in estimated 5.0845 s (330 iterations)
+Benchmarking recursion/ancestors/w10_d4: Analyzing
+recursion/ancestors/w10_d4
+                        time:   [14.932 ms 15.049 ms 15.271 ms]
+
+
+=== Change, all recursion ===
+Gnuplot not found, using plotters backend
+Benchmarking recursion/chain/depth_10
+Benchmarking recursion/chain/depth_10: Warming up for 3.0000 s
+Benchmarking recursion/chain/depth_10: Collecting 10 samples in estimated 5.0229 s (9240 iterations)
+Benchmarking recursion/chain/depth_10: Analyzing
+recursion/chain/depth_10
+                        time:   [539.67 µs 541.70 µs 543.32 µs]
+                        change: [+2.3867% +4.0966% +6.5937%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+Benchmarking recursion/chain/depth_100
+Benchmarking recursion/chain/depth_100: Warming up for 3.0000 s
+Benchmarking recursion/chain/depth_100: Collecting 10 samples in estimated 5.9721 s (275 iterations)
+Benchmarking recursion/chain/depth_100: Analyzing
+recursion/chain/depth_100
+                        time:   [21.533 ms 21.651 ms 21.809 ms]
+                        change: [−0.0508% +0.6154% +1.2708%] (p = 0.12 > 0.05)
+                        No change in performance detected.
+Found 2 outliers among 10 measurements (20.00%)
+  2 (20.00%) high severe
+
+Benchmarking recursion/fanout/w10_d3
+Benchmarking recursion/fanout/w10_d3: Warming up for 3.0000 s
+Benchmarking recursion/fanout/w10_d3: Collecting 10 samples in estimated 5.4592 s (275 iterations)
+Benchmarking recursion/fanout/w10_d3: Analyzing
+recursion/fanout/w10_d3 time:   [19.750 ms 19.817 ms 19.894 ms]
+                        change: [−0.2400% +1.3412% +2.4849%] (p = 0.09 > 0.05)
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+
+Benchmarking recursion/ancestors/w10_d4
+Benchmarking recursion/ancestors/w10_d4: Warming up for 3.0000 s
+Benchmarking recursion/ancestors/w10_d4: Collecting 10 samples in estimated 5.0057 s (17k iterations)
+Benchmarking recursion/ancestors/w10_d4: Analyzing
+recursion/ancestors/w10_d4
+                        time:   [295.85 µs 297.06 µs 298.17 µs]
+                        change: [−98.077% −98.046% −98.017%] (p = 0.00 < 0.05)
+                        Performance has improved.
+
+
+=== Baseline, repeated ancestors ===
+Gnuplot not found, using plotters backend
+Benchmarking recursion/ancestors/w10_d4
+Benchmarking recursion/ancestors/w10_d4: Warming up for 3.0000 s
+Benchmarking recursion/ancestors/w10_d4: Collecting 10 samples in estimated 5.8294 s (385 iterations)
+Benchmarking recursion/ancestors/w10_d4: Analyzing
+recursion/ancestors/w10_d4
+                        time:   [14.431 ms 14.487 ms 14.519 ms]
+
+
+=== Change, repeated ancestors ===
+Gnuplot not found, using plotters backend
+Benchmarking recursion/ancestors/w10_d4
+Benchmarking recursion/ancestors/w10_d4: Warming up for 3.0000 s
+Benchmarking recursion/ancestors/w10_d4: Collecting 10 samples in estimated 5.0107 s (18k iterations)
+Benchmarking recursion/ancestors/w10_d4: Analyzing
+recursion/ancestors/w10_d4
+                        time:   [283.91 µs 285.74 µs 289.04 µs]
+                        change: [−98.039% −98.022% −98.000%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+

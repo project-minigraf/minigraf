@@ -2,6 +2,49 @@
 
 This document records reproducible local benchmark snapshots. Completed release-performance history belongs in the [CHANGELOG](../CHANGELOG.md); continuous CI history is available on [Bencher](https://bencher.dev/perf/minigraf/plots).
 
+## Selective in-memory ancestors (#723, unreleased)
+
+**Date**: 2026-10-29 · **Baseline**: `v3` at `756ffea20`. Both revisions
+used the same dependency lockfile and the existing `bench` profile. Prebuilt
+Criterion executables ran sequentially on the idle bench machine, pinned
+to the same NUMA node, with 10 samples, 3 seconds of warm-up and 5 seconds
+of requested measurement time. Builds and tests finished before timing.
+The estimates below are Criterion's fitted per-query times, not individual
+query percentiles.
+
+| Workload | Baseline | Change |
+|---|---:|---:|
+| `recursion/ancestors/w10_d4` | 15.049 ms | 0.297 ms |
+| same ancestors, second pair | 14.487 ms | 0.286 ms |
+| `recursion/chain/depth_10` | 0.522 ms | 0.542 ms |
+| `recursion/chain/depth_100` | 21.515 ms | 21.651 ms |
+| `recursion/fanout/w10_d3` | 19.663 ms | 19.817 ms |
+
+The ancestor query is about 50 times faster in both pairs. Criterion found
+no significant change for the depth-100 chain or fanout. The depth-10 chain
+regressed by about 4% (Criterion's mean-change estimate); the added planning
+and selection work is visible on this small query. General value joins
+retain their existing behavior. Populated committed generations continue
+to use AVET probes; this optimization targets eligible positive
+three-pattern recursive bodies with small derived demand and preserves the
+original value-head binding.
+
+The regression test returns three ancestors in a 1,999-edge tree with a
+128 KiB query budget, including a staged edge replacement. The baseline
+fails with `QRY-012` while building the pending value map. No persistent
+value index or write-time cost is added.
+
+Release size with the same toolchain and lockfile: baseline 1,258,712 bytes,
+change 1,261,432 bytes (+2,720). The maintainer approved raising the v3 gate
+from 1,230 to 1,234 KiB (1,263,616 bytes), leaving 2,184 bytes of headroom.
+The budget and its rationale are recorded in PHILOSOPHY.md §4.
+
+Reproduce with `cargo bench --bench minigraf_bench -- '^recursion/'` on each
+revision. For an isolated timed phase, build with `--no-run` first and invoke
+the resulting benchmark executable with `'^recursion/' --bench` under the
+same CPU/memory affinity. The [raw Criterion output](benchmarks/723-recursive-joins.txt)
+contains both ancestor pairs and the control shapes.
+
 ## Bounded recursive entity probes (#672, unreleased)
 
 **Date**: 2026-10-28 · **Baseline**: `v3` at `d0ad89c1d` · **Machine**:

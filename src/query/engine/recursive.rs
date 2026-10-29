@@ -12,7 +12,7 @@
 use super::cell::{Cell, JoinKey, Scalar};
 use super::ids::IdSpace;
 use super::meter::{HASH_ENTRY_OVERHEAD, Held, Meter, cell_bytes, growth, key_bytes};
-use super::plan::{HeadArg, RuleRun, RulesPlan, ScanSpec, Term};
+use super::plan::{HeadArg, RuleRun, RulesPlan, ScanSpec, Source, Step, Term};
 use super::relation::Relations;
 use super::scan::Scan;
 use super::{Ctx, Operator, build};
@@ -158,6 +158,7 @@ fn heads(
     ids: &mut IdSpace,
     meter: &Arc<Meter>,
 ) -> Result<(Vec<[Cell; 2]>, Held)> {
+    let run = choose_run(run, rels, reads, ids)?;
     let mut out: Vec<[Cell; 2]> = Vec::new();
     let mut seen: HashSet<[JoinKey; 2]> = HashSet::new();
     let mut held = Held::new(meter, "Recursive");
@@ -196,6 +197,68 @@ fn heads(
     }
     ids.end_pull();
     Ok((out, held))
+}
+
+/// Reconsider each round, before opening operators. A small relation can
+/// avoid the initial whole-attribute read of an in-memory value probe.
+/// Committed databases keep AVET probes; a value map already built is free
+/// to reuse. The cap bounds both costing work and the alternative's seed.
+fn choose_run<'a>(
+    run: &'a RuleRun,
+    rels: &Relations,
+    reads: &Reads<'_>,
+    ids: &IdSpace,
+) -> Result<&'a RuleRun> {
+    let Some(alternative) = run.entity_first.as_deref() else {
+        return Ok(run);
+    };
+    // In-memory databases also have an empty committed reader. With no
+    // allocated entity ids it cannot contain a fact; populated generations
+    // keep their AVET path. This is metadata-only, with no index read.
+    if reads.keys.is_some_and(|k| k.next_ids().0 > 1) {
+        return Ok(run);
+    }
+    let (Source::Scan(delta), Source::Scan(source)) = (&run.plan.source, &alternative.plan.source)
+    else {
+        return Ok(run);
+    };
+    let count = |s: &ScanSpec| {
+        s.derived.as_ref().map_or(0, |d| {
+            d.rels.iter().fold(0usize, |n, &r| {
+                n.saturating_add(rels.span(r, d.range).len())
+            })
+        })
+    };
+    let n = count(source);
+    if count(delta) == 0 || n > 128 {
+        return Ok(run);
+    }
+    let (Term::Const(source_attr), Some(Step::Join(join))) =
+        (&source.a, alternative.plan.steps.first())
+    else {
+        return Ok(run);
+    };
+    let Term::Const(attribute) = &join.inner.a else {
+        return Ok(run);
+    };
+    if ids.probes().is_some_and(|p| p.has_values(attribute))
+        || reads.snapshot.has_pending(source_attr, None)?
+    {
+        return Ok(run);
+    }
+    // Allow eight records per source row for the entity lookup and the
+    // final delta probe. Count at most 1,024 snapshot-visible records;
+    // later appends are skipped and no facts are cloned.
+    let cost = n * 8;
+    if reads
+        .snapshot
+        .pending_attribute_count(attribute, None, cost)?
+        >= cost
+    {
+        Ok(alternative)
+    } else {
+        Ok(run)
+    }
 }
 
 /// A candidate head and its key in `heads`' set.
@@ -310,4 +373,110 @@ fn unbound(var: &str) -> anyhow::Error {
         ErrorCode::Int022,
         format!("Unbound variable in rule head: {var}")
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::graph::storage::FactStorage;
+    use crate::query::datalog::{
+        magic_sets, parser::parse_datalog_command, rules::RuleRegistry, types::DatalogCommand,
+    };
+
+    /// Costing must stay bounded even when a later round has a much larger
+    /// demand relation. Empty deltas must not trigger an unrelated scan.
+    #[test]
+    fn ancestor_costing_respects_round_and_attribute_boundaries() {
+        let mut registry = RuleRegistry::new();
+        for text in [
+            "(rule [(boss ?x ?y) [?x :manager ?y]])",
+            "(rule [(boss ?x ?z) [?x :manager ?y] (boss ?y ?z)])",
+        ] {
+            let DatalogCommand::Rule(rule) = parse_datalog_command(text).unwrap() else {
+                panic!("expected rule");
+            };
+            registry.register_rule("boss".into(), rule).unwrap();
+        }
+        let DatalogCommand::Query(query) =
+            parse_datalog_command("(query [:find ?b :where (boss :leaf ?b)])").unwrap()
+        else {
+            panic!("expected query");
+        };
+        let (registry, seeds) = magic_sets::rewrite(&query, &registry).unwrap();
+        let attrs: Vec<_> = seeds.iter().map(|(_, a, _)| a.as_str()).collect();
+        let plan = super::super::plan_rules(&query, &registry, &attrs).unwrap();
+        let run = plan
+            .strata
+            .iter()
+            .flat_map(|(_, rules)| rules)
+            .flat_map(|rule| &rule.deltas)
+            .find(|run| run.entity_first.is_some())
+            .expect("ancestor plan has an entity-first alternative");
+        let alternative = run.entity_first.as_deref().unwrap();
+        let Source::Scan(delta) = &run.plan.source else {
+            panic!("delta scan");
+        };
+        let Source::Scan(source) = &alternative.plan.source else {
+            panic!("demand scan");
+        };
+        let delta_rel = delta.derived.as_ref().unwrap().rels[0];
+        let source_rel = source.derived.as_ref().unwrap().rels[0];
+        let Term::Const(source_attr) = &source.a else {
+            panic!("demand attribute");
+        };
+        // (demand rows, delta rows, pending edges, stored demand, use alternative)
+        for (demand, delta, edges, stored_demand, expected) in [
+            (1, 0, 100, false, false),
+            (1, 1, 7, false, false),
+            (1, 1, 8, false, true),
+            (128, 1, 1024, false, true),
+            (129, 1, 1032, false, false),
+            (1, 1, 100, true, false),
+        ] {
+            let meter = Meter::new(usize::MAX);
+            let ids = IdSpace::new(None, &meter);
+            let mut rels = Relations::new(0..plan.evaluated.attrs.len() as u64, &meter);
+            for i in 0..demand {
+                rels.add(source_rel, [Cell::Eid(i), Cell::Val(Scalar::Bool(true))])
+                    .unwrap();
+            }
+            rels.end_round();
+            for i in 0..delta {
+                rels.add(delta_rel, [Cell::Eid(i), Cell::Eid(i + 1)])
+                    .unwrap();
+            }
+            rels.end_round();
+            let storage = FactStorage::new();
+            let mut facts: Vec<_> = (0..edges)
+                .map(|i| {
+                    (
+                        uuid::Uuid::from_u128(i + 1),
+                        ":manager".into(),
+                        crate::Value::Integer(1),
+                    )
+                })
+                .collect();
+            if stored_demand {
+                facts.push((
+                    uuid::Uuid::from_u128(1),
+                    source_attr.clone(),
+                    crate::Value::Boolean(true),
+                ));
+            }
+            storage.transact(facts, None).unwrap();
+            let snapshot = storage.snapshot().unwrap();
+            let reads = Reads {
+                snapshot: &snapshot,
+                keys: None,
+                functions: &FunctionRegistry::with_builtins(),
+                bound: &TxBound::All,
+            };
+            let selected = choose_run(run, &rels, &reads, &ids).unwrap();
+            assert_eq!(
+                std::ptr::eq(selected, alternative),
+                expected,
+                "demand={demand}, delta={delta}, edges={edges}, stored={stored_demand}"
+            );
+        }
+    }
 }

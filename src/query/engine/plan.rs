@@ -701,6 +701,9 @@ pub(crate) struct RuleRun {
     pub(crate) entity: HeadArg,
     /// `None` for a one-argument head, whose value is `true`.
     pub(crate) value: Option<HeadArg>,
+    /// Same delta ranges, starting from a relation and probing by entity
+    /// instead of building a pending value map (#723).
+    pub(crate) entity_first: Option<Box<RuleRun>>,
 }
 
 /// A head argument.
@@ -876,6 +879,7 @@ fn rule_plan(
             entity: arg(entity),
             value: head.get(2).map(arg),
             plan: b.finish()?,
+            entity_first: None,
         })
     };
     let full = run(Vec::new(), None)?;
@@ -898,7 +902,24 @@ fn rule_plan(
             // even when an equal invocation comes before it (#694).
             let d = ranges.remove(i);
             ranges.insert(0, d);
-            deltas.push(run(ranges, Some(delta))?);
+            let mut primary = run(ranges.clone(), Some(delta))?;
+            // Only a positive three-pattern chain: no callbacks, filters,
+            // metadata or branching whose evaluation order could change.
+            if optimizer::reorder()
+                && matches!(primary.plan.steps.first(), Some(Step::Join(j))
+                    if matches!(j.kind, JoinKind::ProbeValue { .. }))
+                && clauses.len() == 3
+                && clauses.iter().all(|c| {
+                    matches!(c, WhereClause::Pattern(p)
+                    if p.meta.is_empty() && matches!(p.attribute, AttributeSpec::Real(_)))
+                })
+            {
+                let alternative = run(ranges, None)?;
+                if entity_first_alternative(&primary, &alternative) {
+                    primary.entity_first = Some(Box::new(alternative));
+                }
+            }
+            deltas.push(primary);
         }
     }
     Ok(RulePlan {
@@ -908,6 +929,63 @@ fn rule_plan(
         deltas,
         naive,
     })
+}
+
+/// The alternative reads a relation, probes the primary's stored attribute
+/// by entity, then probes the delta by entity. Both runs retain their own
+/// head slots; changing the order never reuses the primary's slot numbers.
+fn entity_first_alternative(primary: &RuleRun, alternative: &RuleRun) -> bool {
+    let (Source::Scan(delta), Source::Scan(source)) =
+        (&primary.plan.source, &alternative.plan.source)
+    else {
+        return false;
+    };
+    let [Step::Join(value), Step::Join(_)] = primary.plan.steps.as_slice() else {
+        return false;
+    };
+    let [Step::Join(entity), Step::Join(tail)] = alternative.plan.steps.as_slice() else {
+        return false;
+    };
+    // Join equality equates a keyword with its entity, but a rule's value
+    // head preserves its input representation. Only move a run whose value
+    // head is supplied by the delta's value in both orders, never by a key
+    // that the other order could bind from a different pattern.
+    let (Some(HeadArg::Slot(head)), Term::Bind(value_slot)) = (&primary.value, &delta.v) else {
+        return false;
+    };
+    let (Some(HeadArg::Slot(other_head)), Term::Bind(other_value)) =
+        (&alternative.value, &tail.inner.v)
+    else {
+        return false;
+    };
+    if head != value_slot
+        || !tail
+            .new
+            .iter()
+            .enumerate()
+            .any(|(i, slot)| slot == other_value && *other_head == tail.outer_width + i)
+    {
+        return false;
+    }
+    delta
+        .derived
+        .as_ref()
+        .is_some_and(|d| d.range == Range::Delta)
+        && source
+            .derived
+            .as_ref()
+            .is_some_and(|d| d.range != Range::Delta)
+        && matches!(value.kind, JoinKind::ProbeValue { .. })
+        && value.inner.derived.is_none()
+        && matches!(entity.kind, JoinKind::Probe(_))
+        && entity.inner.derived.is_none()
+        && matches!((&value.inner.a, &entity.inner.a), (Term::Const(a), Term::Const(b)) if a == b)
+        && matches!(tail.kind, JoinKind::Probe(_))
+        && tail
+            .inner
+            .derived
+            .as_ref()
+            .is_some_and(|d| d.range == Range::Delta)
 }
 
 /// Whether a rule body reads a relation of its stratum (the attributes
