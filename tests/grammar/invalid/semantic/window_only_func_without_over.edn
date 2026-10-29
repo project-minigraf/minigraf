@@ -1,2 +1,2 @@
-(query [:find (avg ?salary)
+(query [:find (rank ?salary)
         :where [?e :emp/salary ?salary]])

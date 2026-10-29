@@ -1,0 +1,1 @@
+(query [:find ?g (avg ?v) :where [?e :group ?g] [?e :n ?v]])

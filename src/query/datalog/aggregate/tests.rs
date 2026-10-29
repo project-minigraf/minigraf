@@ -299,10 +299,81 @@ fn count_skips_nil() {
             .flatten(),
         Some(i(2))
     );
-    assert!(
-        code(finish("avg", &[i(1)])) == "INT-029",
-        "avg is a window function"
-    );
+}
+
+fn average(vals: &[Value]) -> Value {
+    finish("avg", vals).expect("average").expect("keeps group")
+}
+
+#[test]
+fn ordinary_avg_skips_every_nonnumeric_kind() {
+    let ignored = vec![
+        Value::Null,
+        Value::String("unknown".into()),
+        Value::Boolean(true),
+        kw(":unknown"),
+        Value::Ref(uuid::Uuid::nil()),
+        Value::Set(crate::graph::types::ValueSet::new([i(100)]).unwrap()),
+    ];
+    assert_eq!(average(&[]), Value::Null);
+    assert_eq!(average(&ignored), Value::Null);
+    let mut vals = ignored;
+    vals.extend([i(10), f(20.0)]);
+    for p in [vals.clone(), vals.into_iter().rev().collect()] {
+        assert_eq!(average(&p), f(15.0));
+    }
+    assert_eq!(average(&[i(10), i(20)]), f(15.0));
+}
+
+#[test]
+fn ordinary_avg_uses_exact_unsaturated_totals_in_every_order() {
+    for (vals, expected) in [
+        (vec![f(1e16), i(1), f(-1e16), f(1.0), f(0.5)], 0.5),
+        (
+            vec![i(9_007_199_254_740_993), i(-9_007_199_254_740_992), i(2)],
+            1.0,
+        ),
+        (vec![i(i64::MAX), i(i64::MAX)], i64::MAX as f64),
+        // Round the exact sum once, then divide, as window avg does.
+        (
+            vec![i(9_007_199_254_740_992), i(1)],
+            4_503_599_627_370_496.0,
+        ),
+    ] {
+        for vals in permutations(&vals) {
+            assert_eq!(average(&vals), f(expected));
+        }
+    }
+}
+
+#[test]
+fn ordinary_avg_special_floats_and_underflow_match_window_mean() {
+    for (vals, expected) in [
+        (vec![f(-0.0), f(-0.0)], -0.0f64),
+        (vec![f(-0.0), i(0)], 0.0),
+        (vec![f(-1.0), f(1.0)], 0.0),
+        (vec![f(-f64::from_bits(1)), f(0.0), f(0.0)], -0.0),
+        (vec![f(f64::from_bits(1)), f(0.0), f(0.0)], 0.0),
+        (vec![f(f64::MAX), f(f64::MAX)], f64::INFINITY),
+        (vec![f(-f64::MAX), f(-f64::MAX)], f64::NEG_INFINITY),
+        (vec![f(f64::INFINITY), i(1)], f64::INFINITY),
+        (vec![f(f64::NEG_INFINITY), i(1)], f64::NEG_INFINITY),
+    ] {
+        for vals in permutations(&vals) {
+            let Value::Float(actual) = average(&vals) else {
+                panic!("float average");
+            };
+            assert_eq!(actual.to_bits(), expected.to_bits());
+        }
+    }
+    for vals in [
+        vec![f(f64::NAN), i(1)],
+        vec![f(f64::INFINITY), f(f64::NEG_INFINITY)],
+    ] {
+        for vals in permutations(&vals) {
+            assert!(matches!(average(&vals), Value::Float(n) if n.is_nan()));
+        }
+    }
 }
 
 #[test]

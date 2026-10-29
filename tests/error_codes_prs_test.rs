@@ -164,6 +164,10 @@ fn prs_codes_cover_with_and_aggregates() {
 fn prs_codes_cover_window_functions() {
     let cases: &[(&str, &str)] = &[
         (
+            r#"(query [:find (row-number ?score) :where [?e :score ?score]])"#,
+            "PRS-027",
+        ),
+        (
             r#"(query [:find (rank ?score) :where [?e :score ?score]])"#,
             "PRS-027",
         ),
