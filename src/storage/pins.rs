@@ -15,8 +15,12 @@
 //! under `FactData`'s lock, so a pin is always on the active generation and an
 //! entry is never dropped before a pin that needs it exists.
 
+#[cfg(all(test, minigraf_shuttle, not(target_arch = "wasm32")))]
+use shuttle::sync::{Mutex, MutexGuard};
 use std::collections::{BTreeMap, HashSet};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::Arc;
+#[cfg(not(all(test, minigraf_shuttle, not(target_arch = "wasm32"))))]
+use std::sync::{Mutex, MutexGuard};
 
 #[derive(Default)]
 struct State {

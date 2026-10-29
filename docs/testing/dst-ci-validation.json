@@ -1,0 +1,8 @@
+{
+  "toolchain": "Rust 1.89.0",
+  "platform": "Linux x86-64",
+  "pr_mode": "passed, 3 workloads x 1000 executions",
+  "zero_test_guard": "rejected a real non-instrumented build with zero selected tests",
+  "failure_propagation": "returned 101 through tee and retained schedule + test name in seed log",
+  "nightly_mode": "passed, 3 workloads x 10000 executions x 3 seeds"
+}

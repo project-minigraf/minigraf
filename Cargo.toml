@@ -63,6 +63,10 @@ pest = "2"
 pest_derive = "2"
 pest_meta = "2"
 
+[target.'cfg(all(minigraf_shuttle, not(target_arch = "wasm32")))'.dev-dependencies]
+# #760 bounded prototype; used only with --cfg minigraf_shuttle in unit tests.
+shuttle = "=0.9.8"
+
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tempfile = "3"
 criterion = { version = "0.8", features = ["html_reports"] }
@@ -136,7 +140,7 @@ workspace = true
 
 [workspace.lints.rust]
 # Kani proof harnesses (#627): `cargo kani` sets cfg(kani).
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)', 'cfg(minigraf_shuttle)'] }
 
 [workspace.lints.clippy]
 # Panic prevention — use Result/? or debug_assert! instead
