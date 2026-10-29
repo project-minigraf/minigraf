@@ -3974,7 +3974,7 @@ fn sum_and_avg_charge_exact_heap_once_and_release_it() {
         }
         fn counters(&self, _: &mut Vec<super::Counters>) {}
     }
-    for func in ["sum", "avg"] {
+    for (func, ordered) in [("sum", false), ("avg", false), ("avg", true)] {
         let build = |value, fail, meter: &Arc<super::Meter>| {
             let observed = Arc::new(Mutex::new(Vec::new()));
             let op = super::aggregate::Aggregate::new(
@@ -3988,7 +3988,7 @@ fn sum_and_avg_charge_exact_heap_once_and_release_it() {
                 vec![],
                 vec![(func.into(), 0)],
                 false,
-                false,
+                ordered,
                 meter,
             );
             (op, observed)
@@ -4118,6 +4118,121 @@ fn ordered_aggregate_rewind_close_and_errors_release_the_active_group() {
 struct Sequence {
     cells: Vec<super::cell::Cell>,
     at: usize,
+}
+
+/// Two scalar group components, one input row per pull to exercise boundaries.
+struct GroupTuples {
+    rows: Vec<(i64, i64)>,
+    at: usize,
+}
+
+impl super::Operator for GroupTuples {
+    fn next_batch(&mut self, _: &mut super::Ctx<'_>) -> anyhow::Result<Option<super::Batch>> {
+        use super::cell::{Cell, Scalar};
+        let Some(&(a, b)) = self.rows.get(self.at) else {
+            return Ok(None);
+        };
+        self.at += 1;
+        let mut out = super::Batch::new(2);
+        out.push(&mut [
+            Some(Cell::Val(Scalar::Int(a))),
+            Some(Cell::Val(Scalar::Int(b))),
+        ]);
+        Ok(Some(out))
+    }
+    fn rewind(&mut self, _: &[super::cell::Cell]) {
+        self.at = 0;
+    }
+    fn close(&mut self) {
+        self.at = self.rows.len();
+    }
+    fn counters(&self, _: &mut Vec<super::Counters>) {}
+}
+
+#[test]
+fn generalized_ordered_operator_uses_the_complete_tuple() {
+    use super::Operator;
+    for rows in [
+        vec![(7, 1), (7, 1), (7, 2), (7, 3)],
+        vec![(1, 7), (2, 7), (3, 7)],
+    ] {
+        let meter = super::Meter::unlimited();
+        let mut op = super::aggregate::Aggregate::new(
+            Box::new(GroupTuples { rows, at: 0 }),
+            vec![0, 1],
+            vec![("avg".into(), 1)],
+            false,
+            true,
+            &meter,
+        );
+        let mut count = 0;
+        while let Some(batch) = pull_once(&mut op, &meter).unwrap() {
+            count += batch.len;
+        }
+        assert_eq!(count, 3);
+        op.rewind(&[]);
+        assert_eq!(meter.used(), 0);
+        assert_eq!(pull_once(&mut op, &meter).unwrap().unwrap().len, 1);
+        op.close();
+        assert_eq!(meter.used(), 0);
+    }
+}
+
+#[test]
+fn generalized_ordered_operator_rejects_a_decreasing_suffix() {
+    use super::Operator;
+    let meter = super::Meter::unlimited();
+    let mut op = super::aggregate::Aggregate::new(
+        Box::new(GroupTuples {
+            rows: vec![(7, 1), (7, 2), (7, 1)],
+            at: 0,
+        }),
+        vec![0, 1],
+        vec![("avg".into(), 1)],
+        false,
+        true,
+        &meter,
+    );
+    assert_eq!(pull_once(&mut op, &meter).unwrap().unwrap().len, 1);
+    let err = pull_once(&mut op, &meter).expect_err("suffix recurrence violates tuple order");
+    assert_eq!(crate::MinigrafError::from(err).code(), "INT-032");
+    op.close();
+    assert_eq!(meter.used(), 0);
+}
+
+#[test]
+fn generalized_ordered_empty_hidden_zero_row_resets_on_rewind() {
+    use super::Operator;
+    use super::cell::{Cell, Scalar};
+    let meter = super::Meter::unlimited();
+    let mut op = super::aggregate::Aggregate::new(
+        Box::new(GroupTuples {
+            rows: vec![],
+            at: 0,
+        }),
+        vec![0],
+        vec![("count".into(), 1)],
+        true,
+        true,
+        &meter,
+    );
+    for _ in 0..2 {
+        let row = pull_once(&mut op, &meter)
+            .unwrap()
+            .expect("empty count gives zero");
+        assert!(
+            row.cols
+                == vec![
+                    vec![Cell::Val(Scalar::Null)],
+                    vec![Cell::Val(Scalar::Int(0))]
+                ]
+        );
+        assert!(pull_once(&mut op, &meter).unwrap().is_none());
+        assert_eq!(meter.used(), 0);
+        op.rewind(&[]);
+    }
+    op.close();
+    assert_eq!(meter.used(), 0);
 }
 
 impl super::Operator for Sequence {

@@ -8,7 +8,7 @@
 //! `count-distinct` keeps the keys of its cells. When the input ends, the
 //! groups are sorted by their values, as the executor's `BTreeMap` orders
 //! them, and finished in that order (spec §3.3). A snapshot-proved scalar
-//! group key with only built-in count/count-distinct instead holds one group,
+//! group tuple with certified built-in accumulators instead holds one group,
 //! finishing it at the next key and returning a bounded batch (#641).
 //! Other aggregates keep full-drain validation, including under Limit.
 //! A group returns, of the
@@ -124,6 +124,7 @@ pub(crate) struct Aggregate {
     zero_row: bool,
     ordered: bool,
     ended: bool,
+    seen_input: bool,
     /// Each group's index in `rows`, by its key.
     table: HashMap<Vec<JoinKey>, usize>,
     rows: Vec<Group>,
@@ -156,6 +157,7 @@ impl Aggregate {
             zero_row,
             ordered,
             ended: false,
+            seen_input: false,
             table: HashMap::new(),
             rows: Vec::new(),
             out: None,
@@ -253,7 +255,7 @@ impl Aggregate {
         Ok(())
     }
 
-    /// Only scalar keys and infallible count accumulators reach this path.
+    /// Only scalar keys and infallible built-in accumulators reach this path.
     /// Result rows stay charged until moved into a passing output batch.
     fn finish_one(&mut self, ctx: &mut Ctx<'_>) -> Result<Option<Vec<Cell>>> {
         self.table.clear();
@@ -294,8 +296,17 @@ impl Aggregate {
     }
 
     fn emit_one(&mut self, out: &mut Batch, ctx: &mut Ctx<'_>) -> Result<()> {
-        if let Some(row) = self.finish_one(ctx)? {
-            self.finished.uncharge(row_bytes(&row));
+        let row = if !self.seen_input && self.zero_row {
+            // The empty-input row is passing state, just as in full-input
+            // execution. It was never charged to the finished holder.
+            Some(self.empty_row())
+        } else {
+            self.finish_one(ctx)?
+        };
+        if let Some(row) = row {
+            if self.seen_input {
+                self.finished.uncharge(row_bytes(&row));
+            }
             out.push(&mut row.into_iter().map(Some).collect::<Vec<_>>());
         }
         Ok(())
@@ -310,26 +321,29 @@ impl Aggregate {
             if let Some(batch) = self.child.next_batch(ctx)? {
                 debug_assert!(batch.len <= BATCH_ROWS);
                 self.counters.rows_in += batch.len as u64;
+                self.seen_input |= batch.len > 0;
                 for i in 0..batch.len {
                     let key = self.key(&batch, i);
                     if !self.table.is_empty() && !self.table.contains_key(&key) {
-                        let previous = self.rows.last().and_then(|g| g.cells.first());
-                        let next = self
-                            .groups
-                            .first()
-                            .and_then(|s| batch.cols.get(*s))
-                            .and_then(|c| c.get(i));
-                        let (Some(previous), Some(next)) = (previous, next) else {
+                        let Some(previous) = self.rows.last() else {
                             return Err(err_coded!(
                                 ErrorCode::Int032,
-                                "ordered aggregate without its group key"
+                                "missing ordered aggregate key"
                             ));
                         };
-                        if !value(next, ctx)?.cmp(&value(previous, ctx)?).is_gt() {
-                            return Err(err_coded!(
-                                ErrorCode::Int032,
-                                "ordered aggregate input is not increasing"
-                            ));
+                        let mut order = std::cmp::Ordering::Equal;
+                        for (previous, &slot) in previous.cells.iter().zip(&self.groups) {
+                            let next =
+                                batch.cols.get(slot).and_then(|c| c.get(i)).ok_or_else(|| {
+                                    err_coded!(ErrorCode::Int032, "missing ordered aggregate key")
+                                })?;
+                            order = value(next, ctx)?.cmp(&value(previous, ctx)?);
+                            if !order.is_eq() {
+                                break;
+                            }
+                        }
+                        if !order.is_gt() {
+                            return Err(err_coded!(ErrorCode::Int032, "unordered aggregate input"));
                         }
                         self.emit_one(&mut out, ctx)?;
                     }
@@ -352,13 +366,20 @@ impl Aggregate {
         }
     }
 
+    fn empty_row(&self) -> Vec<Cell> {
+        let mut row = vec![Cell::Val(Scalar::Null); self.groups.len()];
+        row.resize(
+            self.groups.len() + self.aggs.len(),
+            Cell::Val(Scalar::Int(0)),
+        );
+        row
+    }
+
     /// The rows of every group, in the order of their values, finished.
     fn finish(&mut self, ctx: &mut Ctx<'_>) -> Result<Vec<Vec<Cell>>> {
         if self.table.is_empty() && self.zero_row {
             // `:with` cells, which `:find` does not return, then the zeros.
-            let mut row = vec![Cell::Val(Scalar::Null); self.groups.len()];
-            row.extend(vec![Cell::Val(Scalar::Int(0)); self.aggs.len()]);
-            return Ok(vec![row]);
+            return Ok(vec![self.empty_row()]);
         }
         // Sorted and finished as the executor's groups are. The sorted map
         // holds each group's values twice and its accumulators, with their
@@ -436,6 +457,7 @@ impl Operator for Aggregate {
 
     fn rewind(&mut self, seed: &[Cell]) {
         self.ended = false;
+        self.seen_input = false;
         self.table.clear();
         self.rows.clear();
         self.out = None;
@@ -460,5 +482,74 @@ impl Operator for Aggregate {
             ..self.counters
         });
         self.child.counters(out);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::datalog::functions::FunctionRegistry;
+
+    struct LateReadError(usize);
+
+    impl Operator for LateReadError {
+        fn next_batch(&mut self, _: &mut Ctx<'_>) -> Result<Option<Batch>> {
+            if self.0 == 2 {
+                return Err(err_coded!(ErrorCode::Stg001, "injected late read failure"));
+            }
+            let mut batch = Batch::new(1);
+            batch.push(&mut [Some(Cell::Val(Scalar::Int(self.0 as i64)))]);
+            self.0 += 1;
+            Ok(Some(batch))
+        }
+        fn rewind(&mut self, _: &[Cell]) {
+            self.0 = 0;
+        }
+        fn close(&mut self) {}
+        fn counters(&self, _: &mut Vec<Counters>) {}
+    }
+
+    #[test]
+    fn generalized_output_reserve_error_can_precede_a_later_read_error() {
+        // Target the common result-buffer reserve with the existing allocator
+        // hook. Relabel only the input holder so its reserves still succeed;
+        // both holders retain their normal shared meter and accounting.
+        for func in ["count", "avg", "sum", "min", "max", "sum-distinct"] {
+            for ordered in [false, true] {
+                let meter = Meter::unlimited();
+                let mut op = Aggregate::new(
+                    Box::new(LateReadError(0)),
+                    vec![0],
+                    vec![(func.into(), 0)],
+                    false,
+                    ordered,
+                    &meter,
+                );
+                op.held = Held::new(&meter, "test-input");
+                let snapshot = crate::graph::storage::FactStorage::new()
+                    .snapshot()
+                    .unwrap();
+                let functions = FunctionRegistry::with_builtins();
+                let mut ids = super::super::ids::IdSpace::new(None, &meter);
+                let mut ctx = Ctx {
+                    snapshot: &snapshot,
+                    keys: None,
+                    ids: &mut ids,
+                    functions: &functions,
+                    derived: None,
+                    bound: &crate::storage::TxBound::All,
+                };
+                super::super::meter::FAIL_RESERVE.with(|f| f.set(Some("Aggregate")));
+                let result = op.next_batch(&mut ctx);
+                super::super::meter::FAIL_RESERVE.with(|f| f.set(None));
+                let error = result.expect_err("injected error must be reached");
+                assert_eq!(
+                    crate::MinigrafError::from(error).code(),
+                    if ordered { "QRY-012" } else { "STG-001" }
+                );
+                op.close();
+                assert_eq!(meter.used(), 0);
+            }
+        }
     }
 }

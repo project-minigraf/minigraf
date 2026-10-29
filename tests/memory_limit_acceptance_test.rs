@@ -20,7 +20,7 @@
 use minigraf::{Minigraf, OpenOptions};
 
 const GROUPS: usize = 1_000_000;
-/// Below what 1M groups cost the meter: each group's key and hash entry are
+/// Below what 1M full-input groups cost the meter: each group's key and hash entry are
 /// at least 40 bytes (spec §3.2), 40 MB in all.
 const GROUPS_LIMIT: usize = 32 << 20;
 
@@ -115,10 +115,20 @@ fn grouped_count_1m_groups() {
         GROUPS,
         "ordered counts release completed groups"
     );
-    // Fallible sum retains the materialized holder, preserving later errors.
-    let err = drain(&db, "(query [:find ?g (sum ?g) :where [?e :g ?g]])")
-        .err()
-        .expect("over the limit");
+    assert!(
+        matches!(
+            drain(&db, "(query [:find ?g (sum ?g) :where [?e :g ?g]])"),
+            Ok(rows) if rows == GROUPS
+        ),
+        "ordered sums release completed groups"
+    );
+    // Floating distinct sums retain the full-input holder (#781).
+    let err = drain(
+        &db,
+        "(query [:find ?g (sum-distinct ?v) :where [?e :g ?g] [(+ ?g 0.5) ?v]])",
+    )
+    .err()
+    .expect("over the limit");
     assert_eq!(err.code(), "QRY-012", "stopped by the limit");
     assert!(err.to_string().contains("Aggregate"), "names Aggregate");
     // The database answers other queries.

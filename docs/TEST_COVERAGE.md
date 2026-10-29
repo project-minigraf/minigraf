@@ -4,12 +4,49 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Active** | 2,013 | 2,048 |
-| **Ignored** | 17 | 18 |
-| **Total** | 2,030 | 2,066 |
+| **Active** | 2,037 | 2,072 |
+| **Ignored** | 19 | 20 |
+| **Total** | 2,056 | 2,092 |
 
 Counts above are the current Cargo test inventory (active versus ignored),
-including #777 and #789. Verification results below identify which suites ran.
+including #777, #789 and #781. Verification results below identify which suites ran.
+
+**#781 verification (2026-10-29)**: 24 active tests and two ignored measurement
+probes are added. On implementation `90cb88924`, the complete default suite
+passes (2,037 active, 19 ignored), including all 202 engine tests. After the two
+native-only metadata/dictionary-cache test refinements in `a8afaee12`, all 202
+engine tests pass again. The final `test-hooks` run passes every non-fault case
+(2,056 active, 20 ignored); the 16 unchanged fault-matrix cases passed in the
+complete default run. This includes the expanded input-order plan matrix.
+No frozen answers changed. Native, browser and WASI strict lint, formatting,
+WASI tests and the WASI release build pass. All 14 portable ordering/proof tests
+pass again on the final source under WASI. Firefox passes 63 tests, including
+the new committed MemoryBackend grouping fixture.
+The release binary is **1,263,592 bytes**, below the unchanged 1,263,616-byte cap.
+The initial docs-site build passes all 13 versions and 368 pages with link
+validation; delivery rechecks the reviewed site content at `7664c5d`.
+
+The existing ignored `grouped_count_1m_groups` nightly test first reproduced its
+obsolete expectation that sum must exceed 32 MiB. Its corrected test passes
+under the actual `bench` profile: count and sum both return 1M groups under
+that limit, while floating sum-distinct retains the Aggregate QRY-012 control.
+The final required `cargo clippy --all-features -- -D warnings` passes. An
+exploratory integration-target lint command is outside that CI gate and reports
+test-only unwrap/indexing/cast violations also present on the unchanged base;
+this is not a claim of clean `--all-targets` lint.
+
+The new regressions cover complete effective grouping tuples, hidden `:with`
+keys and empty count rows, argument provenance and raw historical kind proofs,
+pending/staged writes, metadata, slot replacement and join orientations,
+unsupported finalizers and callbacks, scalar/numeric results and dropped groups,
+partial pulls, rewind/close, pinning, and holder accounting. The final dictionary
+control exercises nonzero IdSpace usage while avg skips reference arguments
+within one large group. An explicit test
+preserves the approved resource-error policy: common output construction may
+report QRY-012 before an unread later source error; aggregate-specific fallible
+finalizers remain ineligible. Passing batches retain the existing uncharged
+convention. The ignored probes separately measure Aggregate and IdSpace peaks
+for fixed groups and growing distinct sets over prebuilt fixtures.
 
 #777 adds 12 default-feature tests (three accumulator tests, one engine memory test and eight integration tests) and one additional `test-hooks` plan matrix. The focused 13-test run passes. Strict native/browser/WASI clippy passes, and the rebased release binary is 1,263,144 bytes against the unchanged 1,263,616-byte cap.
 
@@ -73,6 +110,8 @@ execution was not repeated; its 2,066-test inventory was verified.
 
 ## Covered Areas
 
+- **Certified ordered aggregates** (#781; `src/query/engine/aggregate_order_tests.rs`, `order/tests.rs`, `order/arguments.rs`, `tests/input_order_test.rs`): sum/avg, scalar extrema, Integer/nil distinct sums, complete effective tuples, hidden `:with` keys, output remapping and raw-history argument domains. The original #641 count-only eligibility coverage is extended with explicit scalar/numeric answers, retained Sort, dropped groups, source-error/resource-error competition, pending/staged invalidation, optional-proof rollback, portable committed readers, and separately bounded Aggregate/IdSpace controls. Unproved tuples/arguments and registered finalizers retain full-input behavior.
+
 - **Aggregate value handling** (#789; `tests/aggregate_value_handling_test.rs`, seven default tests and one with `test-hooks`): all value variants, numeric-only sum/distinct sum, mixed-type extrema, existing nil/nonnumeric groups versus empty queries, grouped and ungrouped queries, hidden `:with` groups and join multiplicity, prepared binds/cursors, recursive rules, transaction-time views and staged rollback, checkpoint/reopen, and default/bounded partition windows over identical populations. Three added accumulator tests check adversarial permutations, signed-zero/NaN bits, infinities, integer boundaries, the explicit total order and distinct membership prediction. Two added engine tests check retained numeric-member accounting, duplicates, QRY-012 boundaries, upstream failures and release on rewind/close. Rewritten error-precedence tests use real UDF finalizer failures under Limit/Offset; ordered-aggregate eligibility and frozen answers are unchanged.
 
 - **Ordinary average** (#777; `tests/ordinary_avg_test.rs`, `aggregate/tests.rs`, `engine/tests.rs`): grouped and ungrouped averages, every nonnumeric value kind skipped, nil versus no matching rows, Float results, exact unsaturated totals, signed zero/subnormal underflow, infinities/NaNs, input permutations, prepared execution/cursors, batches, recursive rules, transaction reads, checkpoint/reopen and alternative plans. Default and bounded windows preserve skipped rows. Sum/avg exact-sum heap state is charged once before allocation, transferred on finish, and released on errors, rewind and close. Neighboring sums follow #789 numeric filtering; empty-min group dropping is preserved.
@@ -83,7 +122,7 @@ execution was not repeated; its 2,066-test inventory was verified.
 
 - **Proven input order** (#641, first slice; `src/query/engine/order_tests.rs`, `order/tests.rs`, `tests/input_order_test.rs`): full result keys and projection slots, constants and repeated slots, integer/Boolean/float edge cases including NaNs and signed zeros, replacements, join fallback orientation and distinct canonicalization. Snapshot tests cover unrelated versus in-range pending/staged records, captured prefixes, temporal filters, prepared queries, checkpoints and large-transaction working readers including rejected statements and rollback. Counters establish early stopping, bounded raw proof reads and no reads without demand; optional proof-read errors leave the original plan. Late callback and `collect-set` errors retain their evaluation. A forced-fallback differential matrix checks identical ordered lists across plan switches. A committed `MemoryBackend` fixture runs on native, WASI and the browser. Storage tests cover every key kind/tag and raw seeks over retracted history.
 
-- **One-group count aggregation** (#641, second slice; `src/query/engine/aggregate_order_tests.rs`, `order/tests.rs`, `engine/tests.rs`): count/count-distinct over one certified scalar group, cross-batch boundaries, unique-key Sort omission and retained descending/aggregate-first/mixed-numeric Sort, Boolean/float representatives and mixed numeric group order. Arbitrary argument kinds, nil, `:distinct`, offset/limit and probe joins match forced fallback. Tests cover no `:with`/window/multiple-key eligibility, later fallible-aggregate/callback/collect-set errors and dropped-group precedence, pending/staged/prepared/working-reader changes and rejected statements, atomic fallback on every optional proof-read failure, bounded group state with one active group, internal DICT-cache eviction within one group spanning many probe batches, a growing distinct-group control, low budgets, allocator refusal, close/drop/rewind, and defensive `INT-032` for injected decreasing input before and after an answer batch. A committed `MemoryBackend` fixture also runs under WASI and in the browser.
+- **One-group count aggregation** (#641, second slice; `src/query/engine/aggregate_order_tests.rs`, `order/tests.rs`, `engine/tests.rs`): count/count-distinct over one certified scalar group, cross-batch boundaries, unique-key Sort omission and retained descending/aggregate-first/mixed-numeric Sort, Boolean/float representatives and mixed numeric group order. Arbitrary argument kinds, nil, `:distinct`, offset/limit and probe joins match forced fallback. Tests cover conservative eligibility (extended by #781 for effective tuples and additional built-ins), later registered-finalizer/callback/collect-set errors and dropped-group precedence, pending/staged/prepared/working-reader changes and rejected statements, atomic fallback on every optional proof-read failure, bounded group state with one active group, internal DICT-cache eviction within one group spanning many probe batches, a growing distinct-group control, low budgets, allocator refusal, close/drop/rewind, and defensive `INT-032` for injected decreasing input before and after an answer batch. A committed `MemoryBackend` fixture also runs under WASI and in the browser.
 
 - **Partition windows** (#641, third slice; `window_order_tests.rs`, `order/tests.rs`, `order_tests.rs`, `engine/tests.rs`): compatible multiple windows with independent orders, peers, frames and neighbors; scalar/mixed-number, entity, Ref and Keyword adjacency with comparator-specific fallbacks; boundaries on and across batch edges; empty/selective ranges; callback/CollectSet/aggregate-query exclusions; bounded early-limit reads and output coalescing; pending/staged/working-reader/prepared/cursor pinning; fixed versus growing partitions; separately tracked Window/IdSpace peaks; internal input and reference-result cache eviction, including a failing retention mutation; lookahead ownership, low budgets, allocator refusal, close/drop/rewind and defensive `INT-032` before and after returned batches. The committed `MemoryBackend` fixture runs on native, WASI and browser targets.
 
@@ -585,13 +624,14 @@ The seventeen ignored tests (eighteen with `test-hooks`) are intentionally exclu
 - One size test at 1.15M facts (`size_per_fact_in_433_shape_1m`), run by the nightly smoke workflow.
 - One recursive-rule acceptance test (`reach_5m`, #548), run by the nightly smoke workflow: a layered graph whose `reach` rule derives 4,882,500 facts in 62 rounds must return them all with peak RSS under 256 bytes per derived fact, and the default `max_derived_facts` must stop the same rule with `INT-020`.
 - Three query-memory acceptance tests (`tests/memory_limit_acceptance_test.rs`, #549, #575, #551), run one at a time by the nightly smoke workflow:
-  - 1M ordered count groups return 1M rows under a 32 MiB `query_memory_limit`; the fallible grouped `sum` control still stops with `QRY-012` naming `Aggregate`, after which the database answers;
+  - 1M ordered count and sum groups return 1M rows under a 32 MiB `query_memory_limit`; the floating `sum-distinct` fallback control stops with `QRY-012` naming `Aggregate`, after which the database answers;
   - 13 patterns sharing no variable over the fuzz harness's 3 facts stream 3^13 rows with peak RSS under 64 MiB, and with a 64-byte limit stop with `QRY-012` naming `HashJoin`;
   - `count` over every one of 1M facts counts them under a 4 KiB `query_memory_limit` (`count_holds_no_rows`, the #473 constant-memory `count` item).
 - One `:limit` and top-k acceptance test (`tests/limit_acceptance_test.rs`, #306, the #473 `:limit` item), run by the nightly smoke workflow over one 10M-fact fixture written with `LogWriter`: `:limit 10` returns 10 rows in under 250 ms under a 64 KiB `query_memory_limit`, adding under 32 MiB of peak RSS; `:order-by [?v :desc] :limit 10` returns the ten largest values under a 1 MiB limit, adding under 32 MiB.
 - One large-transaction acceptance test (`tests/large_transaction_acceptance_test.rs`, #550; `test-hooks` only), run by the nightly smoke workflow (see [Large transactions](#large-transactions-550)).
 - One measurement test (`meter_peak_against_rss`, `src/query/engine/tests.rs`, #549): prints the meter's peak against the peak RSS for the same two shapes, opening the engine directly.
 - One committed-group measurement test (`committed_group_memory_probe`, `src/query/engine/aggregate_order_tests.rs`, #641): opens prebuilt fixed-size and growing-group fixtures, drains count/count-distinct with and without a limit, and prints meter peaks, active-group high-water and input counts.
+- Two generalized group measurement tests (`generalized_committed_memory_probe` and `certified_growing_distinct_memory_probe`, `src/query/engine/aggregate_order_tests.rs`, #781): drain prebuilt fixed-group and growing-distinct fixtures, reporting Aggregate and IdSpace peaks separately, input counts and exact results. See the [100K–10M evidence](benchmarks/781-ordered-aggregate.md).
 - One row-frame measurement test (`window_rows_benchmark_meter_peaks`, `src/query/engine/tests.rs`, #183): prints metered peaks for the window benchmark fixtures.
 
 ## Reproducing

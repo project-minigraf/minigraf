@@ -141,7 +141,7 @@ impl ScanSpec {
 }
 
 /// The logical candidate stays on the hash path until snapshot resolution
-/// certifies a single contiguous grouping key (#641).
+/// certifies the complete effective grouping tuple (#641, #781).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Grouping {
     Hash,
@@ -200,6 +200,8 @@ pub(crate) enum Step {
     /// each aggregate `(function, argument slot)`.
     Aggregate {
         groups: Vec<usize>,
+        /// Remaining group columns belong to hidden `:with` variables.
+        plain_group_count: usize,
         aggs: Vec<(String, usize)>,
         /// Whether no input row gives one row of zeros: a query of `count`s
         /// and `count-distinct`s and no plain `:find` variable.
@@ -539,9 +541,10 @@ fn plan_with(query: &DatalogQuery, evaluated: Option<Arc<Evaluated>>) -> Result<
                 .all(|(f, _)| f == "count" || f == "count-distinct");
         b.steps.push(Step::Aggregate {
             groups,
+            plain_group_count: plain.len(),
             aggs,
             zero_row,
-            grouping: if !window && query.with_vars.is_empty() {
+            grouping: if !window {
                 Grouping::Candidate
             } else {
                 Grouping::Hash

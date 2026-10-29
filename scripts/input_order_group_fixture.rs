@@ -1,5 +1,5 @@
 //! Committed fixed-size groups for #641 query-only measurements.
-//! Usage: group_fixture <new.graph> <facts> <rows-per-group>
+//! Usage: group_fixture <new.graph> <facts> <rows-per-group> [facts-per-transaction]
 //! Build separately from timing/RSS. One integer :group fact per entity.
 use minigraf::{EntityId, FactRecord, LogWriter, OpenOptions, Value};
 
@@ -7,10 +7,11 @@ fn main() {
     let args: Vec<_> = std::env::args().collect();
     let n: usize = args[2].parse().unwrap();
     let size: usize = args[3].parse().unwrap();
-    assert!(n > 0 && size > 0);
+    let tx_size: usize = args.get(4).map(|s| s.parse().unwrap()).unwrap_or(1000);
+    assert!(n > 0 && size > 0 && tx_size > 0);
     let mut writer = LogWriter::create(&args[1], OpenOptions::new()).unwrap();
     for i in 0..n {
-        let tx = (i / 1000 + 1) as u64;
+        let tx = (i / tx_size + 1) as u64;
         writer.append(&FactRecord {
             entity: EntityId::from_u128(i as u128 + 1),
             attribute: ":group".into(),

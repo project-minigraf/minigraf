@@ -29,6 +29,8 @@ pub(crate) struct Meter {
     #[cfg(test)]
     window: LivePeak,
     #[cfg(test)]
+    aggregate: LivePeak,
+    #[cfg(test)]
     ids: LivePeak,
 }
 
@@ -66,6 +68,8 @@ impl Meter {
             #[cfg(test)]
             window: LivePeak::default(),
             #[cfg(test)]
+            aggregate: LivePeak::default(),
+            #[cfg(test)]
             ids: LivePeak::default(),
         })
     }
@@ -91,6 +95,7 @@ impl Meter {
     fn tracked(&self, op: &str) -> Option<&LivePeak> {
         match op {
             "Window" => Some(&self.window),
+            "Aggregate" => Some(&self.aggregate),
             "IdSpace" => Some(&self.ids),
             _ => None,
         }
@@ -398,6 +403,13 @@ fn op_peaks_count_overlapping_holders_and_transferred_ownership() {
     let mut rows = Held::new(&meter, "Window");
     let mut columns = Held::new(&meter, "Window");
     let mut ids = Held::new(&meter, "IdSpace");
+    let mut active = Held::new(&meter, "Aggregate");
+    let mut finished = Held::new(&meter, "Aggregate");
+    active.charge(300).unwrap();
+    finished.charge(400).unwrap();
+    assert_eq!(meter.peak_for("Aggregate"), 700);
+    active.release();
+    finished.release();
     rows.charge(100).unwrap();
     columns.charge(30).unwrap();
     ids.charge(200).unwrap();

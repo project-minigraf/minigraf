@@ -1,0 +1,102 @@
+{
+  "base_commit": "f1019c5a1",
+  "implementation_commit": "a8afaee12",
+  "compiler": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "cpu_model": "Intel(R) Xeon(R) CPU E5-2696 v4 @ 2.20GHz",
+  "cpu_governor": "schedutil",
+  "turbo_disabled": "0",
+  "protocol": "Sequential processes on idle bench; round 1 base node 1 / implementation node 3; round 2 swapped. Six alternating rounds for guards. CPU and memory pinned with numactl. No root settings changed.",
+  "group_warmups_per_process": 1,
+  "guard_warmups_per_process": 3,
+  "min_timed_drains_per_process": 5,
+  "min_timing_seconds": 1,
+  "max_timed_drains_per_process": 20000,
+  "group_process_rounds": 2,
+  "guard_process_rounds": 6,
+  "worker_stack_bytes": 262144,
+  "release_cap_bytes": 1263616,
+  "nightly_filter": "^query/",
+  "executed_benchmark_ids": [
+    "query/ordered_groups/avg/1k",
+    "query/ordered_groups/sum/1k",
+    "query/ordered_groups/min/1k",
+    "query/ordered_groups/max/1k",
+    "query/ordered_groups/sum_distinct/1k",
+    "query/ordered_groups/avg_limit/1k",
+    "query/ordered_groups/sum_limit/1k",
+    "query/ordered_groups/min_limit/1k",
+    "query/ordered_groups/max_limit/1k",
+    "query/ordered_groups/sum_distinct_limit/1k"
+  ],
+  "nightly_execution": "Criterion --test smoke; larger timings use standalone probes",
+  "variants": {
+    "base": {
+      "source_sha256": "72dd60cf067f441fd4789e855bef7af7d669c5b9dd7d67b294a19fac65576fbe",
+      "lock_sha256": "08a1495662974810709834e9a3530faa0f1f63656020f868767a75bc20fd625f",
+      "library_sha256": "343413888889c7e8670be3a86a36a02c59a890d14245c7067852a06d6417e135",
+      "release_bytes": 1261736,
+      "release_sha256": "6822b434b6c3c98e344ff3f02fcb574192610a8b1da1bb9f0843ab3e451a52b5",
+      "probe_sha256": "e1ab0826cdab27f17dca709217de85939d4d4d62bb9054296d130fc9fb5ef655",
+      "guard_sha256": "d84a97334ee22011ad6bce150cc6c83b58e156cd2e4a0bcb107311a8be8f15bc"
+    },
+    "ordered": {
+      "source_sha256": "5ff2f74906b00cb31d8bc507cfee6f4550202297701012484b403629c8acb979",
+      "lock_sha256": "08a1495662974810709834e9a3530faa0f1f63656020f868767a75bc20fd625f",
+      "library_sha256": "fb7a7b2ed812ffa9aa9474c53e218701dbc9cbb1ffa4493661fd0a517d016676",
+      "release_bytes": 1263592,
+      "release_sha256": "3c3613869291dd177565a7eac46f100f61551931395df577aeeb2d909874beff",
+      "probe_sha256": "e392db143026f166cfa751c62d9903fc291214e50358d9fa99550a791f44feeb",
+      "guard_sha256": "b55d3ed2dcc4a79df0e0ee7d79c23d4c35e33ef4bbcee4ca9ee6b86e569f057f"
+    }
+  },
+  "fixtures": {
+    "envelope-100000.graph": {
+      "file_bytes": 10764288
+    },
+    "envelope-1000000.graph": {
+      "file_bytes": 126275584
+    },
+    "envelope-10000000.graph": {
+      "file_bytes": 1260449792
+    },
+    "groups-100000.graph": {
+      "file_bytes": 9183232
+    },
+    "groups-1000000.graph": {
+      "file_bytes": 95412224
+    },
+    "groups-10000000.graph": {
+      "file_bytes": 989159424
+    },
+    "growing-100000.graph": {
+      "file_bytes": 10215424
+    },
+    "growing-1000000.graph": {
+      "file_bytes": 105713664
+    },
+    "growing-10000000.graph": {
+      "file_bytes": 1060638720
+    },
+    "history-1.graph": {
+      "file_bytes": 434176
+    },
+    "history-144.graph": {
+      "file_bytes": 442368
+    },
+    "history-2000.graph": {
+      "file_bytes": 733184
+    }
+  },
+  "scripts": {
+    "generalized_group_probe.rs": "307a42180e61962f8287095b0d3bf3df0bd64970695997904c814fd985c7a13a",
+    "input_order_probe.rs": "103ea1adc656505c2c3c086c5747bbaf75e0a77bc283e60320030944bccf10f1",
+    "input_order_group_fixture.rs": "283d878ea43476dcd078567281e727fb6cb83488d93e6385543a72b34be68359",
+    "input_order_history_fixture.rs": "faa6be9e273eedb9a12120cc1367369d2e662d71c8d92e333c15d0f1b3bcb92b"
+  },
+  "library_profile": "envelope: opt-level=3, inherits release, strip=none",
+  "rustflags": "-C force-frame-pointers=yes",
+  "probe_rustc_flags": "--edition=2024 -C opt-level=3 -C panic=abort -C force-frame-pointers=yes",
+  "production_runtime_commit": "90cb88924",
+  "release_size_profile": "release: opt-level=z, default flags (separate artifact)",
+  "source_hash_method": "SHA-256 over each src/**/*.rs in pathlib path order: relative POSIX path, NUL, file bytes, NUL."
+}
