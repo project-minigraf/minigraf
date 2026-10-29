@@ -953,6 +953,279 @@ fn planner_chooses_the_join() {
     );
 }
 
+/// #672: repeated bound entities reuse a small inner scan in a rule query.
+#[test]
+fn entity_probe_reuses_repeated_entities() {
+    let _off = crate::query::datalog::optimizer::set_reorder(false);
+    let db = Minigraf::in_memory().unwrap();
+    let outer: String = (0..100).map(|i| format!("[:x{i} :outer :hub]")).collect();
+    db.execute(&format!(
+        "(transact [{outer} [:hub :edge :a] [:hub :edge :b] [:hub :edge :c] [:hub :edge :d]])"
+    ))
+    .unwrap();
+    db.execute("(rule [(source ?x ?mid) [?x :outer ?mid]])")
+        .unwrap();
+    let mut cursor = db
+        .query("(query [:find ?x ?z :where (source ?x ?mid) [?mid :edge ?z]])")
+        .unwrap();
+    let meter = cursor.stream_mut().unwrap().meter().clone();
+    let batch = cursor.next_batch(400).unwrap().expect("all rows");
+    let mut got = batch.rows().to_vec();
+    let mut expected: Vec<Vec<crate::Value>> = (0..100)
+        .flat_map(|i| {
+            [":a", ":b", ":c", ":d"].into_iter().map(move |z| {
+                vec![
+                    crate::Value::Ref(uuid_of(&format!(":x{i}"))),
+                    crate::Value::Keyword(z.into()),
+                ]
+            })
+        })
+        .collect();
+    let cmp = |a: &Vec<crate::Value>, b: &Vec<crate::Value>| {
+        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+    };
+    got.sort_by(cmp);
+    expected.sort_by(cmp);
+    assert!(
+        got == expected,
+        "every outer entity has all four edges once"
+    );
+    let counters = cursor.counters();
+    assert!(counters.iter().any(|c| c.op == "IndexNestedLoopJoin"));
+    let read: u64 = counters
+        .iter()
+        .filter(|c| c.op == "Scan")
+        .map(|c| c.rows_in)
+        .sum();
+    assert!(read < 130, "the inner entity is read once per join");
+    assert!(cursor.next_batch(1).unwrap().is_none(), "no extra rows");
+    cursor.close();
+    assert_eq!(meter.used(), 0, "cached rows are released on close");
+}
+
+#[test]
+fn entity_probe_cache_evicts_without_losing_rows() {
+    let _off = crate::query::datalog::optimizer::set_reorder(false);
+    let db = Minigraf::in_memory().unwrap();
+    let facts: String = (0..70)
+        .map(|i| {
+            format!(
+                "[:a{i} :outer :hub{i}] [:b{i} :outer :hub{i}] [:hub{i} :edge :one] [:hub{i} :edge :two]"
+            )
+        })
+        .collect();
+    db.execute(&format!("(transact [{facts}])")).unwrap();
+    db.execute("(rule [(source ?x ?mid) [?x :outer ?mid]])")
+        .unwrap();
+    let mut cursor = db
+        .query("(query [:find ?x ?z :where (source ?x ?mid) [?mid :edge ?z]])")
+        .unwrap();
+    let mut got = Vec::new();
+    while let Some(batch) = cursor.next_batch(100).unwrap() {
+        got.extend(batch.rows().iter().cloned());
+    }
+    let mut expected: Vec<Vec<crate::Value>> = (0..70)
+        .flat_map(|i| {
+            [format!(":a{i}"), format!(":b{i}")]
+                .into_iter()
+                .flat_map(move |e| {
+                    [":one", ":two"].into_iter().map(move |z| {
+                        vec![
+                            crate::Value::Ref(uuid_of(&e)),
+                            crate::Value::Keyword(z.into()),
+                        ]
+                    })
+                })
+        })
+        .collect();
+    let cmp = |a: &Vec<crate::Value>, b: &Vec<crate::Value>| {
+        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+    };
+    got.sort_by(cmp);
+    expected.sort_by(cmp);
+    assert!(got == expected, "eviction preserves every answer once");
+}
+
+#[test]
+fn cached_entity_probe_checks_other_shared_values() {
+    let _off = crate::query::datalog::optimizer::set_reorder(false);
+    let db = Minigraf::in_memory().unwrap();
+    db.execute(
+        "(transact [[:a :outer :hub] [:a :wanted :one] \
+                    [:b :outer :hub] [:b :wanted :two] \
+                    [:hub :edge :one] [:hub :edge :two]])",
+    )
+    .unwrap();
+    db.execute("(rule [(source ?x ?mid) [?x :outer ?mid]])")
+        .unwrap();
+    let mut cursor = db
+        .query("(query [:find ?x ?z :where (source ?x ?mid) [?x :wanted ?z] [?mid :edge ?z]])")
+        .unwrap();
+    let mut got = Vec::new();
+    while let Some(batch) = cursor.next_batch(10).unwrap() {
+        got.extend(batch.rows().iter().cloned());
+    }
+    let mut expected = vec![
+        vec![
+            crate::Value::Ref(uuid_of(":a")),
+            crate::Value::Keyword(":one".into()),
+        ],
+        vec![
+            crate::Value::Ref(uuid_of(":b")),
+            crate::Value::Keyword(":two".into()),
+        ],
+    ];
+    let cmp = |a: &Vec<crate::Value>, b: &Vec<crate::Value>| {
+        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+    };
+    got.sort_by(cmp);
+    expected.sort_by(cmp);
+    assert!(got == expected, "each outer value matches its own edge");
+}
+
+#[test]
+fn cached_entity_probe_normalizes_keyword_and_ref() {
+    let _off = crate::query::datalog::optimizer::set_reorder(false);
+    let db = Minigraf::in_memory().unwrap();
+    let hub = uuid_of(":hub");
+    db.execute(&format!(
+        "(transact [[:a :outer :hub] [:b :outer #uuid \"{hub}\"] [:hub :edge :z]])"
+    ))
+    .unwrap();
+    db.execute("(rule [(source ?x ?mid) [?x :outer ?mid]])")
+        .unwrap();
+    let mut cursor = db
+        .query("(query [:find ?x :where (source ?x ?mid) [?mid :edge :z]])")
+        .unwrap();
+    let batch = cursor.next_batch(2).unwrap().expect("two rows");
+    assert_eq!(batch.len(), 2, "keyword and ref both name the hub");
+    let read: u64 = cursor
+        .counters()
+        .iter()
+        .filter(|c| c.op == "Scan")
+        .map(|c| c.rows_in)
+        .sum();
+    assert!(read <= 3, "the normalized entity uses one inner scan");
+}
+
+#[test]
+fn cached_entity_probe_reads_recursive_inner_relation() {
+    let _off = crate::query::datalog::optimizer::set_reorder(false);
+    let db = Minigraf::in_memory().unwrap();
+    db.execute(
+        "(transact [[:a :outer :hub] [:b :outer :hub] \
+                    [:hub :edge :one] [:one :edge :two] [:two :edge :three]])",
+    )
+    .unwrap();
+    db.execute("(rule [(source ?x ?mid) [?x :outer ?mid]])")
+        .unwrap();
+    db.execute("(rule [(reach ?x ?y) [?x :edge ?y]])").unwrap();
+    db.execute("(rule [(reach ?x ?z) [?x :edge ?y] (reach ?y ?z)])")
+        .unwrap();
+    let mut cursor = db
+        .query("(query [:find ?x ?z :where (source ?x ?mid) (reach ?mid ?z)])")
+        .unwrap();
+    let mut got = Vec::new();
+    while let Some(batch) = cursor.next_batch(10).unwrap() {
+        got.extend(batch.rows().iter().cloned());
+    }
+    let mut expected: Vec<Vec<crate::Value>> = [":a", ":b"]
+        .into_iter()
+        .flat_map(|e| {
+            [":one", ":two", ":three"].into_iter().map(move |z| {
+                vec![
+                    crate::Value::Ref(uuid_of(e)),
+                    crate::Value::Keyword(z.into()),
+                ]
+            })
+        })
+        .collect();
+    let cmp = |a: &Vec<crate::Value>, b: &Vec<crate::Value>| {
+        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+    };
+    got.sort_by(cmp);
+    expected.sort_by(cmp);
+    assert_eq!(got.len(), 6, "all three recursive levels are present twice");
+    assert!(got == expected, "the later recursive rounds stay visible");
+}
+
+#[test]
+fn rule_entity_probe_streams_high_degree_entities() {
+    let _off = crate::query::datalog::optimizer::set_reorder(false);
+    let db = Minigraf::in_memory().unwrap();
+    let edges: String = (0..130).map(|i| format!("[:hub :edge :z{i}]")).collect();
+    db.execute(&format!(
+        "(transact [[:a :outer :hub] [:b :outer :hub] {edges}])"
+    ))
+    .unwrap();
+    db.execute("(rule [(source ?x ?mid) [?x :outer ?mid]])")
+        .unwrap();
+    let mut cursor = db
+        .query("(query [:find ?x ?z :where (source ?x ?mid) [?mid :edge ?z]])")
+        .unwrap();
+    let mut got = Vec::new();
+    while let Some(batch) = cursor.next_batch(100).unwrap() {
+        got.extend(batch.rows().iter().cloned());
+    }
+    let mut expected: Vec<Vec<crate::Value>> = [":a", ":b"]
+        .into_iter()
+        .flat_map(|e| {
+            (0..130).map(move |i| {
+                vec![
+                    crate::Value::Ref(uuid_of(e)),
+                    crate::Value::Keyword(format!(":z{i}")),
+                ]
+            })
+        })
+        .collect();
+    let cmp = |a: &Vec<crate::Value>, b: &Vec<crate::Value>| {
+        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+    };
+    got.sort_by(cmp);
+    expected.sort_by(cmp);
+    assert!(got == expected, "uncached streaming preserves every row");
+}
+
+#[test]
+fn optional_probe_cache_respects_query_memory_limit() {
+    let _off = crate::query::datalog::optimizer::set_reorder(false);
+    let setup = |limit| {
+        let db = crate::OpenOptions::new()
+            .query_memory_limit(limit)
+            .open_memory()
+            .unwrap();
+        let edges: String = (0..100).map(|i| format!("[:hub :edge {i}]")).collect();
+        db.execute(&format!(
+            "(transact [[:a :outer :hub] [:b :outer :hub] {edges}])"
+        ))
+        .unwrap();
+        db.execute("(rule [(source ?x ?mid) [?x :outer ?mid]])")
+            .unwrap();
+        db
+    };
+    let query = "(query [:find ?x :where (source ?x ?mid) [?mid :edge ?z]])";
+    let db = setup(usize::MAX);
+    let mut cursor = db.query(query).unwrap();
+    let base = cursor.stream_mut().unwrap().meter().used();
+    drop(cursor);
+
+    let db = setup(base + 2_000);
+    let mut cursor = db.query(query).unwrap();
+    let first = cursor.next_batch(1).unwrap().expect("first row");
+    assert_eq!(first.len(), 1);
+    let join = cursor
+        .counters()
+        .into_iter()
+        .find(|c| c.op == "IndexNestedLoopJoin")
+        .expect("entity join");
+    assert_eq!(join.bytes_held, 0, "optional cache was refused");
+    let mut count = 1;
+    while let Some(batch) = cursor.next_batch(100).unwrap() {
+        count += batch.len();
+    }
+    assert_eq!(count, 200, "all rows stream after cache refusal");
+}
+
 #[test]
 fn planner_binds_checks_or_replaces_an_expression_output() {
     use super::plan::{Out, Step, plan};

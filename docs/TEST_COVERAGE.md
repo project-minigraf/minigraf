@@ -4,11 +4,11 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,972 | 2,005 |
+| **Passing** | 1,979 | 2,012 |
 | **Ignored** | 17 | 18 |
-| **Total** | 1,989 | 2,023 |
+| **Total** | 1,996 | 2,030 |
 
-**Verified**: 2026-10-28 on the designated bench machine: full default/test-hooks tests and the full branch-coverage suite pass, including golden files and migration/fault injection after sharing stable-sort code. Disabling internal reference-result cache eviction makes the targeted window regression fail. All unchanged coverage floors pass; measured overall coverage is 95.44% lines and 86.50% branches. Strict native/browser/WASI lint, WASI tests (1,182 passing, seven ignored), the WASI release build and Firefox tests (61 passing) also pass; the new committed-reader window fixture executes on both portable runners.
+**Verified**: 2026-10-28 on the designated bench machine: full default/test-hooks tests and the full branch-coverage suite pass, including golden files and migration/fault injection after sharing stable-sort code. Disabling internal reference-result cache eviction makes the targeted window regression fail. All unchanged coverage floors pass; measured overall coverage is 95.44% lines and 86.50% branches. Strict native/browser/WASI lint, WASI tests (1,182 passing, seven ignored), the WASI release build and Firefox tests (61 passing) also pass; the new committed-reader window fixture executes on both portable runners. The #672 default and `test-hooks` suites passed separately on 2026-10-28 before rebasing onto #641.
 
 #641 slice 1 adds 30 tests with default features and one more with `test-hooks`. Slice 2 adds 22 default-feature tests (21 active and one ignored committed-fixture memory diagnostic). Slice 3 adds 26 default-feature tests (25 active and one ignored committed-fixture memory diagnostic).
 
@@ -449,6 +449,7 @@ These tests compare the database against an independent answer rather than a sin
 ## Rules
 
 - **Rule queries on the engine** (`tests/recursive_engine_test.rs`, 11 tests; #548)
+  - Seven engine unit tests for rule-query entity-probe reuse (#672) check one inner read for repeated entities, full answer bags through LRU eviction, other shared value bindings, keyword/ref normalization, a recursive inner relation across rounds, streaming above the 128-row cache bound, and successful streaming when the query memory limit refuses an optional cache entry. The nightly `reach_5m` acceptance test still checks 4,882,500 derived facts, RSS, and the default derived-fact limit.
   - Linear and non-linear transitive closure, mutual recursion, and strata whose `not` and `or` rules recurse (#633's cases).
   - Naive rules: a same-stratum read in an `or` branch, through a `:p` pattern, through `[?y ?a ?z]`.
   - Derived facts visible to every pattern and to the magic-set predicate's attribute.
