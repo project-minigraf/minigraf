@@ -38,6 +38,13 @@ On v3.0.0, an ascending value-only query such as `[:find ?v :where [?e :score ?v
 
 On the unreleased v3 branch, selective in-memory ancestor queries can use entity probes instead of reading the whole edge attribute (#723). This is a query-planning optimization; it adds no storage index or configuration.
 
+On v3.0.0, ordinary `sum` and `sum-distinct` skip nonnumeric values. Ordinary
+`min`/`max` compare every non-nil type using the window value order, including
+mixed integers/floats (#789). Existing all-nil min/max groups are still omitted;
+no matching rows still returns no rows for these aggregates. `count` and
+`count-distinct` continue to count non-nil values of every type. No v2 runtime
+change is included.
+
 **Status**: See [ROADMAP.md](ROADMAP.md) for planned work and current direction.
 
 The unreleased v3 branch also avoids resolving the same keyword literal on every row of an expression comparison such as `[(= ?entity :alice)]` (#774); see the [benchmark report](docs/benchmarks/774-expression-keywords.md).

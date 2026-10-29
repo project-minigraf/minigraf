@@ -439,29 +439,10 @@ pub(crate) fn type_name(v: &Value) -> &'static str {
     }
 }
 
-/// Variant kinds, in `Value`'s declaration order, for `INT-043`.
-const KINDS: [&str; 8] = [
-    "String", "Integer", "Float", "Boolean", "Ref", "Keyword", "Null", "Set",
-];
-
-fn kind(v: &Value) -> u8 {
-    match v {
-        Value::String(_) => 0,
-        Value::Integer(_) => 1,
-        Value::Float(_) => 2,
-        Value::Boolean(_) => 3,
-        Value::Ref(_) => 4,
-        Value::Keyword(_) => 5,
-        Value::Null => 6,
-        Value::Set(_) => 7,
-    }
-}
-
-/// The least or greatest value by [`value_order`], and the kinds met.
+/// The least or greatest non-nil value by [`value_order`].
 #[derive(Clone, Default)]
 pub(crate) struct Extreme {
     best: Option<Value>,
-    kinds: u8,
 }
 
 impl Extreme {
@@ -469,7 +450,6 @@ impl Extreme {
         if matches!(v, Value::Null) {
             return;
         }
-        self.kinds |= 1 << kind(v);
         let better = match &self.best {
             None => true,
             Some(b) => {
@@ -537,8 +517,8 @@ impl Udf {}
 /// [`Agg::finish`] decides the result.
 pub(crate) enum Agg {
     Count(i64),
-    /// The sum, and the type of the first value that is not a number.
-    Sum(Sum, Option<&'static str>),
+    /// Numbers only; other values are skipped, as in a window sum.
+    Sum(Sum),
     /// The mean of numeric values, skipping nil and nonnumbers like window avg.
     Avg(Sum),
     Min(Extreme),
@@ -558,7 +538,7 @@ impl Agg {
         Ok(match &desc.impl_ {
             AggImpl::Builtin(b) => match b {
                 Builtin::Count => Agg::Count(0),
-                Builtin::Sum => Agg::Sum(Sum::default(), None),
+                Builtin::Sum => Agg::Sum(Sum::default()),
                 Builtin::Avg => Agg::Avg(Sum::default()),
                 Builtin::Min => Agg::Min(Extreme::default()),
                 Builtin::Max => Agg::Max(Extreme::default()),
@@ -575,8 +555,9 @@ impl Agg {
     /// caller can count it first (#549).
     pub(crate) fn would_add(&self, v: &Value) -> bool {
         match self {
-            Agg::CountDistinct(set) | Agg::SumDistinct(set) => {
-                !matches!(v, Value::Null) && !set.contains(&canonical(v))
+            Agg::CountDistinct(set) => !matches!(v, Value::Null) && !set.contains(&canonical(v)),
+            Agg::SumDistinct(set) => {
+                matches!(v, Value::Integer(_) | Value::Float(_)) && !set.contains(&canonical(v))
             }
             _ => false,
         }
@@ -585,7 +566,7 @@ impl Agg {
     /// Retained exact-sum allocation needed before stepping this value (#777).
     pub(crate) fn exact_heap_growth(&self, v: &Value) -> usize {
         match self {
-            Agg::Sum(s, _) | Agg::Avg(s)
+            Agg::Sum(s) | Agg::Avg(s)
                 if s.floats.is_none() && matches!(v, Value::Float(f) if f.is_finite()) =>
             {
                 size_of::<Exact>()
@@ -597,7 +578,7 @@ impl Agg {
     /// Exact-sum heap bytes that move with this accumulator when finishing.
     pub(crate) fn exact_heap_bytes(&self) -> usize {
         match self {
-            Agg::Sum(s, _) | Agg::Avg(s) if s.floats.is_some() => size_of::<Exact>(),
+            Agg::Sum(s) | Agg::Avg(s) if s.floats.is_some() => size_of::<Exact>(),
             _ => 0,
         }
     }
@@ -610,18 +591,21 @@ impl Agg {
         }
         match self {
             Agg::Count(n) => *n = n.saturating_add(1),
-            Agg::Sum(s, bad) => {
-                if !s.add(v) && bad.is_none() {
-                    *bad = Some(type_name(v));
-                }
+            Agg::Sum(s) => {
+                s.add(v);
             }
             Agg::Avg(s) => {
                 s.add(v);
             }
             Agg::Min(e) => e.add(v, false),
             Agg::Max(e) => e.add(v, true),
-            Agg::CountDistinct(set) | Agg::SumDistinct(set) => {
+            Agg::CountDistinct(set) => {
                 set.insert(canonical(v));
+            }
+            Agg::SumDistinct(set) => {
+                if matches!(v, Value::Integer(_) | Value::Float(_)) {
+                    set.insert(canonical(v));
+                }
             }
             Agg::Udf(u) => u.add(v)?,
         }
@@ -629,39 +613,23 @@ impl Agg {
     }
 
     /// The result: `Ok(None)` when the group is dropped (`min`/`max` with no
-    /// value, `INT-042`), or the error the values make (spec §3.3).
-    pub(crate) fn finish(self, func: &str) -> Result<Option<Value>> {
+    /// value), or a registered aggregate finalizer error.
+    pub(crate) fn finish(self, _func: &str) -> Result<Option<Value>> {
         Ok(Some(match self {
             Agg::Count(n) => Value::Integer(n),
-            Agg::Sum(_, Some(bad)) => return Err(err_coded!(ErrorCode::Int041, bad)),
-            Agg::Sum(s, None) => s.value(),
+            Agg::Sum(s) => s.value(),
             Agg::Avg(s) => s.mean(),
             Agg::Min(e) | Agg::Max(e) => {
                 let Some(best) = e.best else {
                     return Ok(None);
                 };
-                if e.kinds.count_ones() > 1 {
-                    let mut names = KINDS
-                        .iter()
-                        .enumerate()
-                        .filter(|(i, _)| e.kinds & (1 << i) != 0)
-                        .map(|(_, n)| *n);
-                    let first = names.next().unwrap_or("?");
-                    let second = names.next().unwrap_or("?");
-                    return Err(err_coded!(ErrorCode::Int043, func, first, second));
-                }
-                if !matches!(best, Value::Integer(_) | Value::Float(_) | Value::String(_)) {
-                    return Err(err_coded!(ErrorCode::Int044, func, type_name(&best)));
-                }
                 best
             }
             Agg::CountDistinct(set) => Value::Integer(i64::try_from(set.len()).unwrap_or(i64::MAX)),
             Agg::SumDistinct(set) => {
                 let mut s = Sum::default();
                 for v in &set {
-                    if !s.add(v) {
-                        return Err(err_coded!(ErrorCode::Int041, type_name(v)));
-                    }
+                    s.add(v);
                 }
                 s.value()
             }
@@ -677,7 +645,7 @@ impl Agg {
 pub(crate) type Groups = BTreeMap<Vec<Value>, (Vec<Value>, Vec<Agg>)>;
 
 /// Finish `groups` in key order (spec §3.3): each group's values and its
-/// aggregates' results. A group whose aggregate gives `INT-042` is dropped;
+/// aggregates' results. A group with no min/max extremum is dropped;
 /// any other error, the first in `:find` order of the first group, fails.
 /// `funcs` names each aggregate, for the messages.
 pub(crate) fn finish_groups(

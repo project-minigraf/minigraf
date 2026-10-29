@@ -34,7 +34,8 @@
 //! which is raised in `src/query/datalog/functions.rs`. Both were assigned
 //! `INT-0xx` codes (INT-020 and INT-041 respectively) by the #277 step 6
 //! (API+INT) category PR, which audited and coded every remaining uncoded
-//! call site crate-wide — see `docs/ERROR_REFERENCE.md`.
+//! call site crate-wide — see `docs/ERROR_REFERENCE.md`. #789 retires INT-041
+//! for v3 built-ins; its regression below now asserts numeric-only summation.
 
 use minigraf::Minigraf;
 
@@ -93,22 +94,19 @@ fn recursive_rule_derived_facts_limit_returns_int020() {
     }
 }
 
-// ─── Runtime type-mismatch family: out of this issue's file scope ─────────
-
-/// `sum` over a non-numeric attribute fails at query execution time. The
-/// error originates in `apply_builtin_aggregate`
-/// (src/query/datalog/functions.rs), which is NOT one of this issue's five
-/// in-scope files (executor.rs, evaluator.rs, optimizer.rs, matcher.rs,
-/// magic_sets.rs) — so it was intentionally left uncoded by this PR. #277
-/// step 6 (API+INT category PR) later assigned it INT-041.
+// #789 retires INT-041 for ordinary built-ins in v3.
 #[test]
-fn aggregate_type_mismatch_returns_int041() {
+fn aggregate_nonnumeric_values_no_longer_return_int041() {
     let db = Minigraf::in_memory().unwrap();
     db.execute(r#"(transact [[:a :score "high"] [:b :score "low"]])"#)
         .unwrap();
-    let result = db.execute(r#"(query [:find (sum ?s) :where [?e :score ?s]])"#);
-    let err = result.expect_err("sum of strings must fail at runtime");
-    assert_eq!(err.code(), "INT-041");
+    let minigraf::QueryResult::QueryResults { results, .. } = db
+        .execute("(query [:find (sum ?s) :where [?e :score ?s]])")
+        .unwrap()
+    else {
+        panic!("query results")
+    };
+    assert!(results == vec![vec![minigraf::Value::Integer(0)]]);
 }
 
 // ─── QRY-010 / QRY-011: unknown aggregate / window function (#414) ────────

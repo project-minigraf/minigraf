@@ -100,7 +100,7 @@ fn a_group_limit_stops_after_the_requested_group_and_one_input_batch() {
 }
 
 #[test]
-fn hidden_with_groups_multiple_keys_and_fallible_aggregates_keep_the_hash_path() {
+fn hidden_with_groups_multiple_keys_and_other_aggregates_keep_the_hash_path() {
     let (_dir, db) = fixture(64, 4);
     for query in [
         "[:find ?g (count ?e) :with ?v :where [?e :bucket ?g] [?e :item ?v]]",
@@ -197,33 +197,49 @@ fn fallible_finishes_keep_later_group_errors_and_dropped_group_precedence() {
     let _text_order = crate::query::datalog::optimizer::set_reorder(false);
     db.execute("(transact [[:e4095 :item \"bad\"]])").unwrap();
     db.checkpoint().unwrap();
-    for func in ["sum", "sum-distinct", "min"] {
-        let q =
-            format!("(query [:find ?g ({func} ?v) :where [?e :bucket ?g] [?e :item ?v] :limit 1])");
-        let mut cursor = db.query(&q).unwrap();
-        assert!(!ordered(&cursor.stream_mut().unwrap().counters()));
-        let err = cursor
-            .next_batch(1)
-            .expect_err("late group must fail before any answer");
-        assert_eq!(
-            err.code(),
-            if func == "min" { "INT-043" } else { "INT-041" }
-        );
+    db.try_register_aggregate(
+        "checked",
+        || Ok(false),
+        |bad: &mut bool, v| {
+            *bad |= matches!(v, Value::String(_));
+            Ok(())
+        },
+        |bad: &bool, _| {
+            if *bad {
+                Err(crate::UdfError::new("late value"))
+            } else {
+                Ok(Value::Integer(0))
+            }
+        },
+    )
+    .unwrap();
+    for func in ["sum", "sum-distinct", "min", "max"] {
+        for tail in [":limit 1", ":order-by [?g] :offset 1 :limit 1"] {
+            let q = format!(
+                "(query [:find ?g ({func} ?v) (checked ?v) :where [?e :bucket ?g] [?e :item ?v] {tail}])"
+            );
+            let mut cursor = db.query(&q).unwrap();
+            assert!(!ordered(&cursor.stream_mut().unwrap().counters()));
+            let err = cursor
+                .next_batch(1)
+                .expect_err("late finalizer must fail before any answer");
+            assert_eq!(err.code(), "QRY-014");
+        }
     }
     db.execute("(transact [[:drop :bucket 999] [:drop :empty nil] [:drop :bad \"bad\"]])")
         .unwrap();
     db.checkpoint().unwrap();
     let (rows, counters, _) = collect(
         &db,
-        "[:find ?g (min ?n) (sum ?v) :where [?e :bucket ?g] [?e :empty ?n] [?e :bad ?v] :limit 1]",
+        "[:find ?g (min ?n) (checked ?v) :where [?e :bucket ?g] [?e :empty ?n] [?e :bad ?v] :limit 1]",
     );
     assert!(
         rows.is_empty(),
-        "an earlier empty min drops the group before its bad sum"
+        "an earlier empty min drops the group before its failing finalizer"
     );
     assert!(!ordered(&counters));
-    let err = db.execute("(query [:find ?g (sum ?v) (min ?n) :where [?e :bucket ?g] [?e :empty ?n] [?e :bad ?v] :limit 1])").expect_err("find order chooses the first aggregate error");
-    assert_eq!(err.code(), "INT-041");
+    let err = db.execute("(query [:find ?g (checked ?v) (min ?n) :where [?e :bucket ?g] [?e :empty ?n] [?e :bad ?v] :limit 1])").expect_err("find order chooses the first aggregate error");
+    assert_eq!(err.code(), "QRY-014");
 }
 
 #[test]

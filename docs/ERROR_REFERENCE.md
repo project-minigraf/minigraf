@@ -280,10 +280,10 @@ with no `CodedError` anywhere in its chain.
 | INT-038 | Header too short for a specific field | Internal |
 | INT-039 | Invalid magic number | Internal |
 | INT-040 | Function/predicate name already registered | Internal |
-| INT-041 | sum: unsupported value type | Internal |
+| INT-041 | sum: unsupported value type (deprecated) | Internal |
 | INT-042 | min/max: no non-null values in group | Internal |
-| INT-043 | Cannot compare values of different types | Internal |
-| INT-044 | Aggregate: unsupported value type | Internal |
+| INT-043 | Cannot compare values of different types (deprecated) | Internal |
+| INT-044 | Aggregate: unsupported value type (deprecated) | Internal |
 | INT-045 | Pending fact index out of bounds | Internal |
 | INT-046 | Missing CommittedFactReader for a committed FactRef | Internal |
 | INT-047 | into_backend: backend Arc has multiple owners | Internal |
@@ -4194,46 +4194,29 @@ previously registered user-defined function.
 
 **Error text**: `sum: expected Integer, Float, or Null, got {}`
 
-**Cause**: The built-in `sum` aggregate encountered a value in its input
-group that is not an `Integer`, `Float`, or `Null`.
-
-**Resolution**:
-- Ensure the attribute being summed only ever holds numeric or null
-  values.
+> **Deprecated in v3.0.0 (#789).** Ordinary `sum` and `sum-distinct` skip nil and all nonnumeric values. An existing group without numbers returns Integer(0); a query with no matching rows returns no rows. This code and its message remain reserved for compatibility; these built-in paths no longer emit it. In v2, the type restriction still applies.
 
 ### INT-042 min/max: no non-null values in group
 
 **Error text**: `min/max: no non-null values in group`
 
-**Cause**: The built-in `min`/`max` aggregate was applied to a group whose
-values were all `Null`, leaving nothing to compare.
-
-**Resolution**:
-- Filter out rows with a null value before aggregating, or handle the
-  all-null-group case in your query.
+**Behavior**: An ordinary `min`/`max` group containing only nil values has no
+extremum and is omitted. On v3 this is an internal group-drop condition, not
+an error returned by the query. A window instead emits nil for each affected
+source row. Queries with no matching rows do not create a min/max group.
+The code and message remain reserved; #789 preserves this behavior.
 
 ### INT-043 Cannot compare values of different types
 
 **Error text**: `{}: cannot compare {} and {} values`
 
-**Cause**: An aggregate that orders values (`min`, `max`) encountered two
-values of different, non-comparable `Value` types within the same group.
-
-**Resolution**:
-- Ensure the attribute being aggregated holds a consistent value type
-  across all matching facts.
+> **Deprecated in v3.0.0 (#789).** Ordinary `min`/`max` accept mixed types, including Integer/Float, using the same total value order as their window forms. This code and its message remain reserved for compatibility; these built-in paths no longer emit it. In v2, the type restriction still applies.
 
 ### INT-044 Aggregate: unsupported value type
 
 **Error text**: `{}: expected Integer, Float, String, or Null, got {}`
 
-**Cause**: An aggregate that requires an orderable scalar type (e.g. `min`,
-`max`) encountered a value type it does not support (such as a `Boolean`
-or `Ref`).
-
-**Resolution**:
-- Ensure the aggregated attribute only holds Integer, Float, String, or
-  Null values.
+> **Deprecated in v3.0.0 (#789).** Ordinary `min`/`max` accept every non-nil Value variant, including Boolean, Ref, Keyword and Set. They use the window total order. This code and its message remain reserved for compatibility; these built-in paths no longer emit it. In v2, the type restriction still applies.
 
 ### INT-045 Pending fact index out of bounds
 

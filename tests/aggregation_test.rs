@@ -177,12 +177,14 @@ fn count_and_sum_skip_nil() {
 }
 
 #[test]
-fn sum_type_error() {
+fn sum_skips_nonnumeric_values() {
     let db = db();
     db.execute(r#"(transact [[:a :v "not-a-number"]])"#)
         .unwrap();
-    let r = db.execute(r#"(query [:find (sum ?v) :where [?e :v ?v]])"#);
-    assert!(r.is_err(), "sum of string should fail");
+    let r = db
+        .execute(r#"(query [:find (sum ?v) :where [?e :v ?v]])"#)
+        .unwrap();
+    assert!(results(&r) == &vec![vec![Value::Integer(0)]]);
 }
 
 // ── min / max ─────────────────────────────────────────────────────────────────
@@ -218,19 +220,23 @@ fn min_max_strings() {
 }
 
 #[test]
-fn min_type_error_boolean() {
+fn min_accepts_boolean() {
     let db = db();
     db.execute(r#"(transact [[:a :v true]])"#).unwrap();
-    let r = db.execute(r#"(query [:find (min ?v) :where [?e :v ?v]])"#);
-    assert!(r.is_err(), "min of boolean should fail");
+    let r = db
+        .execute(r#"(query [:find (min ?v) :where [?e :v ?v]])"#)
+        .unwrap();
+    assert!(results(&r) == &vec![vec![Value::Boolean(true)]]);
 }
 
 #[test]
-fn min_mixed_int_float_error() {
+fn min_compares_mixed_int_float() {
     let db = db();
     db.execute(r#"(transact [[:a :v 1] [:b :v 2.0]])"#).unwrap();
-    let r = db.execute(r#"(query [:find (min ?v) :where [?e :v ?v]])"#);
-    assert!(r.is_err(), "min of mixed Integer/Float should fail");
+    let r = db
+        .execute(r#"(query [:find (min ?v) :where [?e :v ?v]])"#)
+        .unwrap();
+    assert!(results(&r) == &vec![vec![Value::Integer(1)]]);
 }
 
 // ── :with ─────────────────────────────────────────────────────────────────────

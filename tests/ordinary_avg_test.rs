@@ -63,15 +63,15 @@ fn ordinary_avg_groups_skip_nonnumbers_and_preserve_with_multiplicity() {
 }
 
 #[test]
-fn ordinary_avg_preserves_other_aggregate_errors_and_dropped_groups() {
+fn ordinary_avg_matches_sum_results_and_preserves_dropped_groups() {
     let db = Minigraf::in_memory().unwrap();
     db.execute(r#"(transact [[:a :n "unknown"] [:a :empty nil]])"#)
         .unwrap();
-    for find in ["(avg ?v) (sum ?v)", "(sum ?v) (avg ?v)"] {
-        let err = db
-            .execute(&format!("(query [:find {find} :where [?e :n ?v]])"))
-            .unwrap_err();
-        assert_eq!(err.code(), "INT-041");
+    for (find, expected) in [
+        ("(avg ?v) (sum ?v)", vec![Value::Null, Value::Integer(0)]),
+        ("(sum ?v) (avg ?v)", vec![Value::Integer(0), Value::Null]),
+    ] {
+        assert!(rows(&db, &format!("(query [:find {find} :where [?e :n ?v]])")) == vec![expected]);
     }
     assert!(
         rows(

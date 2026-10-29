@@ -145,13 +145,11 @@ fn row_number_breaks_ties_by_the_other_find_variables() {
 }
 
 #[test]
-fn aggregate_error_is_decided_per_group() {
+fn aggregate_skips_nonnumbers_in_its_group() {
     let db = Minigraf::in_memory().unwrap();
     db.execute(r#"(transact [[:a :v 1] [:b :v "x"] [:c :v 2]])"#)
         .unwrap();
-    let err = db
-        .execute("(query [:find (sum ?v) :where [?e :v ?v]])")
-        .err()
-        .expect("sum of a string fails");
-    assert_eq!(err.code(), "INT-041");
+    assert!(
+        rows(&db, "(query [:find (sum ?v) :where [?e :v ?v]])") == vec![vec![Value::Integer(3)]]
+    );
 }
