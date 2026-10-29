@@ -545,7 +545,7 @@ See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/lat
 
 **Error text**: `':with' clause requires at least one aggregate in :find`
 
-**Cause**: `:with` is used to group result rows before aggregation, so it requires at least one aggregate function (`count`, `sum`, `avg`, etc.) in `:find`.
+**Cause**: `:with` is used to group result rows before aggregation, so it requires at least one aggregate function (`count`, `count-distinct`, `sum`, `sum-distinct`, `min`, `max`) in `:find`.
 
 **Resolution**:
 - Add an aggregate to `:find`, or remove `:with` if no aggregation is needed.
@@ -601,7 +601,7 @@ See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/lat
 **Cause**: An aggregate expression in `:find` must be `(function ?variable)` — exactly two elements.
 
 **Resolution**:
-- Use `(count ?e)`, `(sum ?amount)`, `(avg ?score)` — one function name, one variable.
+- Use `(count ?e)`, `(sum ?amount)`, `(max ?score)` — one function name, one variable.
 - See the [Datalog Reference — Aggregates](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#aggregation).
 
 **Example**:
@@ -649,16 +649,17 @@ See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/lat
 
 **Error text**: `'{}' is a window function and requires an ':over (...)' clause`
 
-**Cause**: Window functions (`rank`, `row-number`, `dense-rank`, `ntile`, `percent-rank`, `cume-dist`) must be accompanied by an `:over` clause specifying ordering and/or partitioning.
+**Cause**: In v2, `avg`, `rank` and `row-number` must be accompanied by an `:over` clause specifying ordering and/or partitioning.
 
 **Resolution**:
-- Add an `:over` clause: `(rank :over (:order-by ?score))`.
+- Add an `:over` clause: `(rank :over (:order-by ?score))` or `(avg ?score :over (:order-by ?score))`.
+- Ordinary `(avg ?score)` is unavailable in v2; it requires `:over`.
 - See the [Datalog Reference — Window Functions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#window-functions).
 
 **Example**:
 ```datalog
-(query {:find [?e (rank)]
-        :where [[?e :score ?score]]})
+(query [:find ?e (rank ?score)
+        :where [?e :score ?score]])
 ```
 *Missing `:over`; use `(rank :over (:order-by ?score))`*
 
@@ -2679,7 +2680,7 @@ these two arities.
 **Error text**: `unknown aggregate function: '{}'`
 
 **Cause**: A `:find` or `:with` clause referenced an aggregate function
-name that is neither a built-in (`count`, `sum`, `avg`, `min`, `max`, etc.)
+name that is neither a built-in (`count`, `count-distinct`, `sum`, `sum-distinct`, `min`, `max`)
 nor a user-defined function registered via `db.register_aggregate()`.
 
 **Resolution**:

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- Correct ordinary aggregate examples and lists (#777): v2 supports `count`, `count-distinct`, `sum`, `sum-distinct`, `min` and `max`; `avg` requires `:over`. Query behavior is unchanged.
+- Retire production-readiness tracker #383 in favor of the v3.0.0 milestone, preserving its release gates there.
+
 ## v2.0.11 — 2026-10-26
 
 Patch release on the v2.x line under the [support policy](PHILOSOPHY.md#support-policy): two query data-integrity fixes, for expressions that compared a keyword and a ref to its entity differently from joins (#744), and float-literal rule calls whose `-0.0` rows varied between runs (#750), plus `checkpoint()` deadlocking inside a `WriteTransaction` (#734). File format is unchanged (v7). No API changes. Upgrading is recommended for every v2.x user who compares entity refs in expressions, passes float constants to rules, or uses `WriteTransaction`.
