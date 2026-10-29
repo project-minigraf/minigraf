@@ -769,7 +769,16 @@ fn optional_proofs_are_bounded_and_queries_without_a_usable_demand_do_no_probes(
             "[:find ?v (count ?e) :where [?e :score ?v] :order-by [?v] :offset 7 :limit 0]",
             0,
         ),
-        ("[:find ?v (sum ?v) :where [?e :score ?v] :limit 3]", 0),
+        ("[:find ?v (sum ?v) :where [?e :score ?v] :limit 3]", 8),
+        (
+            "[:find ?v (min ?v) (max ?v) (sum-distinct ?v) :where [?e :score ?v] :limit 3]",
+            8,
+        ),
+        (
+            "[:find ?v (min ?x) :where [?e :score ?v] [(+ ?v 1) ?x] :limit 3]",
+            0,
+        ),
+        ("[:find ?v (min ?v) :where [?e :score ?v] :limit 0]", 0),
         (
             "[:find ?k ?v (avg ?v) :where [?e :score ?v] [(+ 1 1) ?k] :limit 3]",
             8,
@@ -947,5 +956,60 @@ fn every_failed_window_proof_leaves_mode_projection_and_index_unchanged() {
         assert!(plan.steps.iter().any(|s| matches!(s, Step::Sort { .. })));
         assert!(matches!(&plan.source, Source::Scan(s) if s.index.is_none()));
         assert_eq!(plan.find, original);
+    }
+}
+
+#[test]
+fn certified_argument_probes_are_cached_and_fail_atomically() {
+    use super::plan::{Grouping, Source, Step};
+    use crate::query::datalog::functions::FunctionRegistry;
+    let (_dir, db) = fixture(32);
+    db.execute("(transact [[:e0 :arg nil] [:e1 :arg 1] [:e2 :arg 2]])")
+        .unwrap();
+    db.checkpoint().unwrap();
+    let snapshot = db.snapshot().unwrap();
+    let base = snapshot.committed.as_ref().unwrap().key_source().unwrap();
+    let _text_order = crate::query::datalog::optimizer::set_reorder(false);
+    let query = "[:find ?v (min ?x) (max ?x) (sum-distinct ?x) :where [?e :score ?v] [?e :arg ?x] :order-by [?v] :limit 2]";
+    for fail_at in std::iter::once(None).chain((1..=16).map(Some)) {
+        let keys = ProofKeys {
+            base,
+            calls: 0.into(),
+            fail_at,
+        };
+        let mut plan = query_plan(query);
+        let original_find = plan.find.clone();
+        super::order::resolve(
+            &snapshot,
+            Some(&keys),
+            &FunctionRegistry::with_builtins(),
+            &mut plan,
+        );
+        if fail_at.is_none() {
+            assert_eq!(
+                keys.calls.load(std::sync::atomic::Ordering::SeqCst),
+                16,
+                "source and one shared argument attribute each probed once"
+            );
+            assert!(plan.steps.iter().any(|s| matches!(
+                s,
+                Step::Aggregate {
+                    grouping: Grouping::Ordered,
+                    ..
+                }
+            )));
+            assert!(plan.steps.iter().all(|s| !matches!(s, Step::Sort { .. })));
+        } else {
+            assert_eq!(plan.find, original_find);
+            assert!(matches!(&plan.source, Source::Scan(s) if s.index.is_none()));
+            assert!(plan.steps.iter().any(|s| matches!(s, Step::Sort { .. })));
+            assert!(plan.steps.iter().all(|s| !matches!(
+                s,
+                Step::Aggregate {
+                    grouping: Grouping::Ordered,
+                    ..
+                }
+            )));
+        }
     }
 }

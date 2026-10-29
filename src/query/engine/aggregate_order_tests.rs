@@ -305,14 +305,13 @@ fn a_group_limit_stops_after_the_requested_group_and_one_input_batch() {
 }
 
 #[test]
-fn hidden_with_groups_multiple_keys_and_other_aggregates_keep_the_hash_path() {
+fn unproved_hidden_groups_multiple_keys_and_arguments_keep_the_hash_path() {
     let (_dir, db) = fixture(64, 4);
     for query in [
         "[:find ?g (count ?e) :with ?v :where [?e :bucket ?g] [?e :item ?v]]",
         "[:find ?g ?v (count ?e) :where [?e :bucket ?g] [?e :item ?v]]",
-        "[:find ?g (sum ?v) :where [?e :bucket ?g] [?e :item ?v] :limit 1]",
-        "[:find ?g (min ?v) :where [?e :bucket ?g] [?e :item ?v] :limit 1]",
-        "[:find ?g (sum-distinct ?v) :where [?e :bucket ?g] [?e :item ?v] :limit 1]",
+        "[:find ?g (min ?e) :where [?e :bucket ?g] :limit 1]",
+        "[:find ?g (sum-distinct ?v) :where [?e :bucket ?g] [(+ ?g 0.5) ?v] :limit 1]",
     ] {
         let (_, counters, _) = collect(&db, query);
         assert!(
@@ -813,6 +812,10 @@ fn generalized_committed_memory_probe() {
         .unwrap();
     for (mode, find, with, extra, order) in [
         ("avg", "?g (avg ?g)", "", "", "?g"),
+        ("sum", "?g (sum ?g)", "", "", "?g"),
+        ("sum-float", "?g (sum ?v)", "", "[(+ ?g 0.5) ?v]", "?g"),
+        ("extrema", "?g (min ?g) (max ?g)", "", "", "?g"),
+        ("sum-distinct", "?g (sum-distinct ?g)", "", "", "?g"),
         ("avg-float", "?g (avg ?v)", "", "[(+ ?g 0.5) ?v]", "?g"),
         ("tuple-avg", "?k ?g (avg ?g)", "", "[(+ 1 1) ?k]", "?k ?g"),
         ("hidden-avg", "(avg ?g)", ":with ?g", "", ""),
@@ -860,6 +863,13 @@ fn generalized_committed_memory_probe() {
                     let avg = Value::Float(g as f64);
                     let expected = match mode {
                         "avg" => vec![key, avg],
+                        "sum" => vec![key, Value::Integer((g * size.min(n - g * size)) as i64)],
+                        "sum-float" => vec![
+                            key,
+                            Value::Float((g as f64 + 0.5) * size.min(n - g * size) as f64),
+                        ],
+                        "extrema" => vec![key.clone(), key.clone(), key],
+                        "sum-distinct" => vec![key.clone(), key],
                         "avg-float" => vec![key, Value::Float(g as f64 + 0.5)],
                         "tuple-avg" => vec![Value::Integer(2), key, avg],
                         "hidden-avg" => vec![avg],
@@ -896,5 +906,312 @@ fn generalized_committed_memory_probe() {
                 meter.peak()
             );
         }
+    }
+}
+
+#[test]
+fn certified_remaining_builtins_stream_scalar_probe_arguments() {
+    let (_dir, db) = fixture(4101, 3);
+    let _text_order = crate::query::datalog::optimizer::set_reorder(false);
+    let q = "[:find ?k ?g (sum ?v) (min ?v) (max ?v) (sum-distinct ?v) :where [?e :bucket ?g] [?e :item ?v] [(+ 1 1) ?k] :order-by [?k ?g] :offset 2 :limit 3]";
+    let expected = {
+        let _off = super::order::set_enabled(false);
+        collect(&db, q).0
+    };
+    let (rows, counters, _) = collect(&db, q);
+    assert!(ordered(&counters), "all four descriptors are certified");
+    assert!(rows == expected);
+    assert!(
+        rows == (2..5)
+            .map(|g| vec![
+                Value::Integer(2),
+                Value::Integer(g),
+                Value::Integer(3),
+                Value::Integer(0),
+                Value::Integer(2),
+                Value::Integer(3)
+            ])
+            .collect::<Vec<_>>()
+    );
+    assert!(counters.iter().all(|c| c.op != "Sort"));
+    assert!(
+        counters
+            .iter()
+            .find(|c| c.op == "AggregateOrdered")
+            .unwrap()
+            .rows_in
+            <= (15 + BATCH_ROWS) as u64
+    );
+}
+
+#[test]
+fn certified_sum_skips_arbitrary_values_without_an_argument_domain_proof() {
+    let (_dir, db) = fixture(4096, 16);
+    let _text_order = crate::query::datalog::optimizer::set_reorder(false);
+    db.execute("(transact [[:e0 :item nil] [:e1 :item true] [:e2 :item :tag] [:e3 :item \"text\"] [:e4 :item #{1 2}]])").unwrap();
+    db.checkpoint().unwrap();
+    for q in [
+        "[:find ?g (sum ?v) (avg ?v) :where [?e :bucket ?g] [?e :item ?v]]",
+        "[:find ?g (sum ?v) :where [?e :bucket ?g] [(+ ?g 0.5) ?v] :order-by [?g] :limit 3]",
+    ] {
+        let expected = {
+            let _off = super::order::set_enabled(false);
+            collect(&db, q).0
+        };
+        let (rows, counters, _) = collect(&db, q);
+        assert!(ordered(&counters), "sum needs no argument type certificate");
+        assert!(rows == expected);
+    }
+}
+
+#[test]
+fn certified_extrema_accept_mixed_scalars_and_preserve_dropped_groups() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Minigraf::open(dir.path().join("drops.graph")).unwrap();
+    let _text_order = crate::query::datalog::optimizer::set_reorder(false);
+    let facts = (0..4100)
+        .map(|i| {
+            format!(
+                "[:e{i} :bucket {i}] [:e{i} :item {}]",
+                if i % 2 == 0 {
+                    "nil".to_owned()
+                } else {
+                    i.to_string()
+                }
+            )
+        })
+        .collect::<String>();
+    db.execute(&format!("(transact [{facts}])")).unwrap();
+    db.checkpoint().unwrap();
+    let q = "[:find ?g (min ?v) (max ?v) (avg ?v) (count ?e) :where [?e :bucket ?g] [?e :item ?v] :order-by [?g] :offset 2 :limit 3]";
+    let (rows, counters, _) = collect(&db, q);
+    assert!(ordered(&counters));
+    assert!(
+        rows == [5, 7, 9]
+            .into_iter()
+            .map(|g| vec![
+                Value::Integer(g),
+                Value::Integer(g),
+                Value::Integer(g),
+                Value::Float(g as f64),
+                Value::Integer(1)
+            ])
+            .collect::<Vec<_>>()
+    );
+    db.execute("(transact [[:e1 :item 1.5] [:e3 :item true]])")
+        .unwrap();
+    db.checkpoint().unwrap();
+    let expected = {
+        let _off = super::order::set_enabled(false);
+        collect(&db, q).0
+    };
+    let (rows, counters, _) = collect(&db, q);
+    assert!(
+        ordered(&counters),
+        "mixed fixed scalars are safe extrema payloads"
+    );
+    assert!(rows == expected);
+    let (empty, counters, _) = collect(
+        &db,
+        "[:find ?g (min ?v) (count ?e) :where [?e :bucket ?g] [?e :item ?v] [(nil? ?v)] :limit 1]",
+    );
+    assert!(ordered(&counters));
+    assert!(
+        empty.is_empty(),
+        "observed dropped groups are not empty-input zero rows"
+    );
+}
+
+#[test]
+fn certified_argument_proofs_are_snapshot_bound_and_include_raw_history() {
+    let (_dir, db) = fixture(64, 4);
+    let _text_order = crate::query::datalog::optimizer::set_reorder(false);
+    let q = "[:find ?g (min ?v) (sum-distinct ?v) :where [?e :bucket ?g] [?e :item ?v]]";
+    assert!(ordered(&collect(&db, q).1));
+    db.execute("(transact [[:elsewhere :unrelated 1]])")
+        .unwrap();
+    assert!(ordered(&collect(&db, q).1));
+    db.execute("(transact [[:elsewhere :item nil]])").unwrap();
+    assert!(
+        !ordered(&collect(&db, q).1),
+        "argument pending state prevents a stale certificate"
+    );
+    db.checkpoint().unwrap();
+    assert!(ordered(&collect(&db, q).1), "nil is admitted for arguments");
+    db.execute("(transact [[:outside :item 0.5]])").unwrap();
+    db.checkpoint().unwrap();
+    assert!(
+        !ordered(&collect(&db, q).1),
+        "float distinct sum remains materialized"
+    );
+    db.execute("(retract [[:outside :item 0.5]])").unwrap();
+    db.checkpoint().unwrap();
+    assert!(
+        !ordered(&collect(&db, q).1),
+        "retracted raw kinds still invalidate the proof"
+    );
+    let min = "[:find ?g (min ?v) :where [?e :bucket ?g] [?e :item ?v]]";
+    assert!(ordered(&collect(&db, min).1));
+    db.execute("(transact {:valid-from \"2999-01-01\"} [[:outside :item \"future\"]])")
+        .unwrap();
+    db.checkpoint().unwrap();
+    assert!(
+        !ordered(&collect(&db, min).1),
+        "future raw payloads are not ignored by proof reads"
+    );
+}
+
+#[test]
+fn certified_unsupported_argument_origins_and_payloads_keep_full_input() {
+    let (_dir, db) = fixture(64, 4);
+    let _text_order = crate::query::datalog::optimizer::set_reorder(false);
+    for q in [
+        "[:find ?g (min ?e) :where [?e :bucket ?g]]",
+        "[:find ?g (max ?v) :where [?e :bucket ?g] [(+ ?g 1) ?v]]",
+        "[:find ?g (sum-distinct ?v) :where [?e :bucket ?g] [(+ ?g 1) ?v]]",
+        "[:find ?g (sum-distinct ?v) :where [?e :bucket ?g] [(+ 1.0 1.0) ?v]]",
+        "[:find ?g (min ?v) :where [?e :bucket ?g] [?e ?a ?v]]",
+    ] {
+        let expected = {
+            let _off = super::order::set_enabled(false);
+            collect(&db, q).0
+        };
+        let (rows, counters, _) = collect(&db, q);
+        assert!(!ordered(&counters));
+        assert!(rows == expected);
+    }
+    for (expr, integer) in [
+        ("(= 1 1)", false),
+        ("(+ 1 1)", true),
+        ("(+ 1.0 1.0)", false),
+    ] {
+        for func in ["min", "sum-distinct"] {
+            let q = format!("[:find ?g ({func} ?v) :where [?e :bucket ?g] [{expr} ?v]]");
+            let (_, counters, _) = collect(&db, &q);
+            assert_eq!(
+                ordered(&counters),
+                func == "min" || integer,
+                "constant argument kind controls eligibility"
+            );
+        }
+    }
+    db.execute("(transact [[:e0 :arg \"payload\"]])").unwrap();
+    db.checkpoint().unwrap();
+    assert!(!ordered(
+        &collect(
+            &db,
+            "[:find ?g (min ?v) :where [?e :bucket ?g] [?e :arg ?v]]"
+        )
+        .1
+    ));
+}
+
+#[test]
+fn certified_working_argument_roots_and_staged_values_choose_fresh_strategies() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = crate::OpenOptions::new()
+        .transaction_chunk_facts(2)
+        .path(dir.path().join("working-args.graph"))
+        .open()
+        .unwrap();
+    let _text_order = crate::query::datalog::optimizer::set_reorder(false);
+    db.execute("(transact [[:a :bucket 0] [:b :bucket 1] [:a :arg 1] [:b :arg 2]])")
+        .unwrap();
+    db.checkpoint().unwrap();
+    let min = "(query [:find ?g (min ?v) :where [?e :bucket ?g] [?e :arg ?v]])";
+    let distinct = "(query [:find ?g (sum-distinct ?v) :where [?e :bucket ?g] [?e :arg ?v]])";
+    {
+        let mut tx = db.begin_write().unwrap();
+        tx.execute("(transact [[:outside :arg nil]])").unwrap();
+        let before = super::order::OPTIMIZATIONS.with(std::cell::Cell::get);
+        tx.execute(min).unwrap();
+        assert_eq!(
+            super::order::OPTIMIZATIONS.with(std::cell::Cell::get),
+            before
+        );
+    }
+    {
+        let mut tx = db.begin_write().unwrap();
+        tx.execute("(transact [[:outside :arg 0.5] [:fill :other 1] [:fill :other 2]])")
+            .unwrap();
+        let before = super::order::OPTIMIZATIONS.with(std::cell::Cell::get);
+        tx.execute(min).unwrap();
+        tx.execute(distinct).unwrap();
+        assert_eq!(
+            super::order::OPTIMIZATIONS.with(std::cell::Cell::get),
+            before + 1,
+            "working float kind qualifies only for scalar extrema"
+        );
+        tx.execute("(transact [[:outside :arg \"bad\"] [:dup :other 1 {:valid-from \"2020-01-01\"}] [:fill :other 3] [:dup :other 1 {:valid-from \"2021-01-01\"}]])").expect_err("statement is rolled back");
+        tx.execute(min).unwrap();
+        assert_eq!(
+            super::order::OPTIMIZATIONS.with(std::cell::Cell::get),
+            before + 2,
+            "rejected statement restores proof roots"
+        );
+    }
+    let mut cursor = db.query(distinct).unwrap();
+    assert!(
+        ordered(&cursor.counters()),
+        "rollback restores integer-only argument history"
+    );
+    assert_eq!(cursor.next_batch(10).unwrap().unwrap().len(), 2);
+}
+
+#[test]
+#[ignore = "requires a one-group fixture with one fact per transaction"]
+fn certified_growing_distinct_memory_probe() {
+    let n: usize = std::env::var("MINIGRAF_GROUP_ROWS")
+        .unwrap()
+        .parse()
+        .unwrap();
+    let db = crate::OpenOptions::new()
+        .read_only(true)
+        .path(std::env::var("MINIGRAF_GROUP_FIXTURE").unwrap())
+        .open()
+        .unwrap();
+    for func in ["count-distinct", "sum-distinct"] {
+        let q = format!(
+            "(query [:find ?g ({func} ?t) :any-valid-time :where [?e :group ?g] [?e :db/tx-count ?t]])"
+        );
+        let mut cursor = db.query(&q).unwrap();
+        let stream = cursor.stream_mut().unwrap();
+        assert!(ordered(&stream.counters()));
+        let meter = stream.meter().clone();
+        let expected = if func == "count-distinct" {
+            n
+        } else {
+            n * (n + 1) / 2
+        };
+        assert!(
+            stream.next_rows().unwrap().unwrap()
+                == vec![vec![Value::Integer(0), Value::Integer(expected as i64)]]
+        );
+        assert!(stream.next_rows().unwrap().is_none());
+        assert_eq!(meter.used(), 0);
+        println!(
+            "{{\"mode\":\"growing-{func}\",\"facts\":{n},\"aggregate_peak\":{},\"idspace_peak\":{},\"meter_peak\":{}}}",
+            meter.peak_for("Aggregate"),
+            meter.peak_for("IdSpace"),
+            meter.peak()
+        );
+    }
+}
+
+#[test]
+fn certified_metadata_arguments_preserve_integer_and_nil_results() {
+    let (_dir, db) = fixture(12, 3);
+    let _text_order = crate::query::datalog::optimizer::set_reorder(false);
+    for q in [
+        "[:find ?g (max ?t) (sum-distinct ?t) :any-valid-time :where [?e :bucket ?g] [?e :db/tx-count ?t]]",
+        "[:find ?g (max ?t) :valid-at :any-valid-time :where [?e :bucket ?g] [?e :db/valid-at ?t]]",
+    ] {
+        let expected = {
+            let _off = super::order::set_enabled(false);
+            collect(&db, q).0
+        };
+        let (rows, counters, _) = collect(&db, q);
+        assert!(ordered(&counters));
+        assert!(rows == expected);
     }
 }

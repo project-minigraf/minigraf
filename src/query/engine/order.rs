@@ -13,6 +13,9 @@ use crate::storage::KeySource;
 use crate::storage::keys::{self, Index, ValueKind};
 use anyhow::Result;
 
+mod arguments;
+use arguments::Arguments;
+
 #[cfg(any(test, feature = "test-hooks"))]
 thread_local! {
     static ENABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
@@ -65,10 +68,10 @@ enum Domain {
 struct Kinds(u8);
 
 impl Kinds {
-    const INTEGER: Self = Self(1);
-    const FLOAT: Self = Self(2);
-    const BOOLEAN: Self = Self(4);
-    const NULL: Self = Self(8);
+    const INTEGER: Self = Self(4);
+    const FLOAT: Self = Self(8);
+    const BOOLEAN: Self = Self(2);
+    const NULL: Self = Self(1);
     const OTHER: Self = Self(16);
 
     fn within(self, allowed: u8) -> bool {
@@ -212,19 +215,26 @@ impl Ordering {
     /// The entire effective tuple must reduce to the one ascending source
     /// slot. A repeated float component is conservatively a composite too.
     fn tuple_ordered(&self, groups: &[usize]) -> bool {
-        self.group_ordered()
-            && groups.iter().any(|&s| self.ordered_slot(s))
-            && (groups.len() == 1
-                || matches!(
+        if !self.group_ordered()
+            || (groups.len() != 1
+                && !matches!(
                     self.kind,
                     Domain::Single(ValueKind::Integer | ValueKind::Boolean)
                 ))
-            && groups.iter().all(|&s| {
-                self.ordered_slot(s)
-                    || self.constant_kind(s).is_some_and(|kind| {
-                        kind.within(Kinds::INTEGER.0 | Kinds::BOOLEAN.0 | Kinds::NULL.0)
-                    })
-            })
+        {
+            return false;
+        }
+        let mut varying = false;
+        for &slot in groups {
+            if self.ordered_slot(slot) {
+                varying = true;
+            } else if !self.constant_kind(slot).is_some_and(|kind| {
+                kind.within(Kinds::INTEGER.0 | Kinds::BOOLEAN.0 | Kinds::NULL.0)
+            }) {
+                return false;
+            }
+        }
+        varying
     }
 
     fn through(mut self, steps: &[Step]) -> Option<Self> {
@@ -361,24 +371,12 @@ fn safe_steps(steps: &[Step], functions: &FunctionRegistry) -> bool {
 }
 
 /// At most eight raw seeks through the exact reader the Stream will scan.
-fn value_domain(keys: &dyn KeySource, attribute: u32) -> Result<Option<Domain>> {
-    let mut found = None;
+/// Both grouping-order and argument-domain proofs share this classifier.
+fn value_kinds(keys: &dyn KeySource, attribute: u32) -> Result<Kinds> {
+    let mut found = Kinds(0);
     for kind in ValueKind::ALL {
         if keys.any_key(Index::Avet, &keys::attribute_kind_prefix(attribute, kind))? {
-            found = match (found, kind) {
-                (
-                    None,
-                    ValueKind::Integer
-                    | ValueKind::Float
-                    | ValueKind::Boolean
-                    | ValueKind::Ref
-                    | ValueKind::Keyword,
-                ) => Some(Domain::Single(kind)),
-                (Some(Domain::Single(ValueKind::Integer)), ValueKind::Float) => {
-                    Some(Domain::Numbers)
-                }
-                _ => return Ok(None),
-            };
+            found.0 |= Kinds::stored(kind).0;
         }
     }
     Ok(found)
@@ -397,7 +395,8 @@ fn choices(
     mut proof: Ordering,
     avet: bool,
     functions: &FunctionRegistry,
-) -> Option<Choice> {
+    arguments: &mut Arguments<'_>,
+) -> Result<Option<Choice>> {
     let mut choice = Choice {
         aggregate: None,
         window: None,
@@ -406,6 +405,9 @@ fn choices(
     };
     let mut allow_sort = true;
     for (at, step) in plan.steps.iter().enumerate() {
+        let Some(prefix) = plan.steps.get(..at) else {
+            return Ok(None);
+        };
         match step {
             Step::Aggregate {
                 groups,
@@ -414,16 +416,7 @@ fn choices(
                 grouping: Grouping::Candidate,
                 ..
             } if proof.tuple_ordered(groups)
-                && aggs.iter().all(|(func, _)| {
-                    functions.get(func).is_some_and(|d| {
-                        matches!(
-                            d.impl_,
-                            AggImpl::Builtin(
-                                Builtin::Count | Builtin::CountDistinct | Builtin::Avg
-                            )
-                        )
-                    })
-                }) =>
+                && arguments.accepts(aggs, &plan.source, prefix, &proof, functions)? =>
             {
                 choice.aggregate = Some(at);
                 proof.remap(groups);
@@ -458,8 +451,10 @@ fn choices(
             }
         }
     }
-    (choice.aggregate.is_some() || choice.window.is_some() || choice.sort.is_some())
-        .then_some(choice)
+    Ok(
+        (choice.aggregate.is_some() || choice.window.is_some() || choice.sort.is_some())
+            .then_some(choice),
+    )
 }
 
 fn candidate(
@@ -479,8 +474,15 @@ fn candidate(
     }
     // Prefer the existing entity prefix when it already partitions windows;
     // no kind seeks or broader index are needed for dictionary-id adjacency.
-    let entity_choice =
-        Ordering::entity(spec).and_then(|proof| choices(plan, proof, false, functions));
+    let mut speculative = Arguments {
+        reader: None,
+        source: (0, Kinds::INTEGER),
+        cache: Vec::new(),
+    };
+    let entity_choice = match Ordering::entity(spec) {
+        Some(proof) => choices(plan, proof, false, functions, &mut speculative)?,
+        None => None,
+    };
     let avet = !matches!(spec.e, Term::Const(_));
     if entity_choice.is_none()
         && choices(
@@ -488,7 +490,8 @@ fn candidate(
             Ordering::source(spec, Domain::Single(ValueKind::Integer)),
             avet,
             functions,
-        )
+            &mut speculative,
+        )?
         .is_none()
     {
         return Ok(None);
@@ -500,16 +503,31 @@ fn candidate(
     if snapshot.has_pending(attribute, entity)? {
         return Ok(None);
     }
-    if entity_choice.is_some() {
-        return Ok(entity_choice);
+    if let Some(choice) = entity_choice {
+        // Entity adjacency is only a window proof, never an aggregate proof
+        // derived from the optimistic no-I/O argument pass.
+        debug_assert!(choice.aggregate.is_none());
+        return Ok(Some(choice));
     }
     let Some(a) = keys.iid_of(attribute)? else {
         return Ok(None);
     };
-    let Some(kind) = value_domain(keys, a)? else {
+    let kinds = value_kinds(keys, a)?;
+    let Some(kind) = kinds.group_domain() else {
         return Ok(None);
     };
-    Ok(choices(plan, Ordering::source(spec, kind), avet, functions))
+    let mut arguments = Arguments {
+        reader: Some((snapshot, keys)),
+        source: (a, kinds),
+        cache: Vec::new(),
+    };
+    choices(
+        plan,
+        Ordering::source(spec, kind),
+        avet,
+        functions,
+        &mut arguments,
+    )
 }
 
 /// Only a plain query's root pipeline is resolved; bodies and rules keep their

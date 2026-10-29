@@ -625,3 +625,73 @@ fn generalized_tuple_certificate_rejects_payloads_and_tracks_replaced_constants(
         "replacing an alias invalidates the ordered dimension"
     );
 }
+
+#[cfg_attr(
+    all(target_arch = "wasm32", not(target_os = "wasi")),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", not(target_os = "wasi"))), test)]
+fn certified_committed_scalar_arguments_run_on_portable_backends() {
+    use crate::query::datalog::{parser::parse_datalog_command, types::DatalogCommand};
+    use crate::storage::{backend::memory::MemoryBackend, persistent_facts::PersistentFactStorage};
+    let values = [
+        Value::Null,
+        Value::Boolean(true),
+        Value::Integer(2),
+        Value::Float(-0.0),
+        Value::Float(0.0),
+        Value::Float(f64::NAN),
+    ];
+    let mut facts = Vec::new();
+    for (i, v) in values.into_iter().enumerate() {
+        let e = uuid::Uuid::from_u128(i as u128 + 1);
+        facts.push((e, ":group".into(), Value::Integer((i / 3) as i64)));
+        facts.push((e, ":arg".into(), v));
+        facts.push((
+            e,
+            ":ints".into(),
+            if i == 0 {
+                Value::Null
+            } else {
+                Value::Integer(i as i64)
+            },
+        ));
+    }
+    let mut pfs = PersistentFactStorage::new(MemoryBackend::new(), 32).unwrap();
+    pfs.storage().transact(facts, None).unwrap();
+    pfs.mark_dirty();
+    pfs.save().unwrap();
+    let _text_order = crate::query::datalog::optimizer::set_reorder(false);
+    let DatalogCommand::Query(q) = parse_datalog_command("(query [:find ?g (sum ?v) (min ?v) (max ?v) (sum-distinct ?n) :where [?e :group ?g] [?e :arg ?v] [?e :ints ?n]])").unwrap() else { panic!("query"); };
+    let mut answers = Vec::new();
+    for on in [false, true] {
+        let _mode = set_enabled(on);
+        let mut stream = crate::query::engine::open(
+            pfs.storage().snapshot().unwrap(),
+            crate::query::engine::plan(&q).unwrap(),
+            std::sync::Arc::new(FunctionRegistry::with_builtins()),
+            usize::MAX,
+        )
+        .unwrap();
+        assert_eq!(
+            stream.counters().iter().any(|c| c.op == "AggregateOrdered"),
+            on
+        );
+        let meter = stream.meter().clone();
+        let mut rows = Vec::new();
+        while let Some(batch) = stream.next_rows().unwrap() {
+            rows.extend(batch);
+        }
+        assert_eq!(meter.used(), 0);
+        answers.push(rows);
+    }
+    assert_eq!(answers[0].len(), 2);
+    assert_eq!(answers[0].len(), answers[1].len());
+    for (a, b) in answers[0].iter().flatten().zip(answers[1].iter().flatten()) {
+        match (a, b) {
+            (Value::Float(a), Value::Float(b)) if a.is_nan() => assert!(b.is_nan()),
+            (Value::Float(a), Value::Float(b)) => assert_eq!(a.to_bits(), b.to_bits()),
+            _ => assert!(a == b),
+        }
+    }
+}

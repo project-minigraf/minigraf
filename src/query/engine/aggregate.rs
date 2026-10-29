@@ -8,7 +8,7 @@
 //! `count-distinct` keeps the keys of its cells. When the input ends, the
 //! groups are sorted by their values, as the executor's `BTreeMap` orders
 //! them, and finished in that order (spec §3.3). A snapshot-proved scalar
-//! group tuple with built-in count/count-distinct/avg instead holds one group,
+//! group tuple with certified built-in accumulators instead holds one group,
 //! finishing it at the next key and returning a bounded batch (#641).
 //! Other aggregates keep full-drain validation, including under Limit.
 //! A group returns, of the
@@ -328,17 +328,14 @@ impl Aggregate {
                         let Some(previous) = self.rows.last() else {
                             return Err(err_coded!(
                                 ErrorCode::Int032,
-                                "ordered aggregate without its group key"
+                                "missing ordered aggregate key"
                             ));
                         };
                         let mut order = std::cmp::Ordering::Equal;
                         for (previous, &slot) in previous.cells.iter().zip(&self.groups) {
                             let next =
                                 batch.cols.get(slot).and_then(|c| c.get(i)).ok_or_else(|| {
-                                    err_coded!(
-                                        ErrorCode::Int032,
-                                        "ordered aggregate without its group key"
-                                    )
+                                    err_coded!(ErrorCode::Int032, "missing ordered aggregate key")
                                 })?;
                             order = value(next, ctx)?.cmp(&value(previous, ctx)?);
                             if !order.is_eq() {
@@ -346,10 +343,7 @@ impl Aggregate {
                             }
                         }
                         if !order.is_gt() {
-                            return Err(err_coded!(
-                                ErrorCode::Int032,
-                                "ordered aggregate input is not increasing"
-                            ));
+                            return Err(err_coded!(ErrorCode::Int032, "unordered aggregate input"));
                         }
                         self.emit_one(&mut out, ctx)?;
                     }
@@ -520,7 +514,7 @@ mod tests {
         // Target the common result-buffer reserve with the existing allocator
         // hook. Relabel only the input holder so its reserves still succeed;
         // both holders retain their normal shared meter and accounting.
-        for func in ["count", "avg"] {
+        for func in ["count", "avg", "sum", "min", "max", "sum-distinct"] {
             for ordered in [false, true] {
                 let meter = Meter::unlimited();
                 let mut op = Aggregate::new(
