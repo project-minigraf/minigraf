@@ -1,6 +1,6 @@
 # #781 implementation plan
 
-Date: 2026-10-29. Status: Claude conditionally approved (second review).
+Date: 2026-10-29. Status: implementation and evidence approved by Claude.
 Maintainer approved implementation and the resource-error policy on 2026-10-29;
 the merged-#789 audit is recorded below.
 Spec: `../specs/2026-10-29-781-ordered-aggregate-design.md`.
@@ -220,3 +220,22 @@ equal-tuples-across-batches regression. ValidAt constant facts are conservative
 internal proof support; current real-query planning does not make a constant
 attribute source scan with that metadata, so do not advertise end-to-end ValidAt
 constant grouping support based only on the private proof unit test.
+
+## Implementation and evidence completion (2026-10-29)
+
+The merged dependency is `f1019c5a1`; runtime implementation is `90cb88924`,
+with final native test/harness refinements at `a8afaee12`. Claude approved the
+code, holder evidence, refinements, and the final application-profile report.
+The [benchmark report](../../benchmarks/781-ordered-aggregate.md) records all
+126 holder and 1,044 application-profile timing/guard records, immutable build
+hashes, passing memory/startup/regression gates, and the measured proof-startup
+cost. The complete earlier size-profile matrix remains explicitly supplemental.
+
+The [verification record](../../TEST_COVERAGE.md) distinguishes the full default
+run, final engine/test-hook/portable checks, actual nightly IDs, and the corrected
+ignored 1M-group acceptance test. No frozen answers or runtime code changed
+after the measured implementation. The default release cap remains unchanged.
+Core documentation is synchronized; docs-site content is committed as `7664c5d`
+with v3-only architecture/reference changes. Delivery uses separate core `v3`
+and docs `main` PRs, final release/docs checks, and task-owned bench cleanup.
+No merge, version bump or release is included.

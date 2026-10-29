@@ -2,6 +2,17 @@
 
 This document records reproducible local benchmark snapshots. Completed release-performance history belongs in the [CHANGELOG](../CHANGELOG.md); continuous CI history is available on [Bencher](https://bencher.dev/perf/minigraf/plots).
 
+## Certified ordered aggregates (#781, unreleased)
+
+[Measurements and reproduction](benchmarks/781-ordered-aggregate.md) cover
+sum/avg, scalar extrema, integer distinct sums and safe effective grouping
+tuples after #789. Fixed-group Aggregate peaks remain 480–1,200 bytes from
+100K to 10M facts, compared with 285–755 MB for forced full-input evaluation.
+Separate growing distinct controls retain linear state. At 10M facts, the
+bounded full drains improve by 17.4–31.2% and limit-10 queries take 0.60–0.81 ms.
+Small grouped point queries instead pay about 176–188 µs of proof startup work.
+The release binary remains below the unchanged 1,263,616-byte cap.
+
 ## Literal keyword/ref expression equality (#774, unreleased)
 
 On 2026-10-29, caching expression literal resolutions reduced the measured
