@@ -9,8 +9,22 @@ use crate::storage::index::{Indexes, encode_value};
 use crate::storage::pins::{GenerationPin, Pins};
 use anyhow::Result;
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+// Only this bounded unit-test build uses a controlled scheduler (#760).
+// Normal builds, integration tests and WASM retain std synchronization.
+#[cfg(all(test, minigraf_shuttle, not(target_arch = "wasm32")))]
+use shuttle::sync::{
+    RwLock, RwLockReadGuard,
+    atomic::{AtomicU64, Ordering},
+};
+#[cfg(not(all(test, minigraf_shuttle, not(target_arch = "wasm32"))))]
+use std::sync::{
+    RwLock, RwLockReadGuard,
+    atomic::{AtomicU64, Ordering},
+};
+
+#[cfg(all(test, minigraf_shuttle, not(target_arch = "wasm32")))]
+mod deterministic;
 
 /// Compact key for O(1) duplicate detection in `PendingStore::keys`.
 ///
@@ -429,7 +443,7 @@ impl Snapshot {
         self.now
     }
 
-    fn read_pending(&self) -> Result<std::sync::RwLockReadGuard<'_, PendingStore>> {
+    fn read_pending(&self) -> Result<RwLockReadGuard<'_, PendingStore>> {
         self.pending
             .read()
             .map_err(|_| err_coded!(ErrorCode::Int050, "pending"))

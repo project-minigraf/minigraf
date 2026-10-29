@@ -1,0 +1,7 @@
+--- a/src/graph/storage.rs
++++ b/src/graph/storage.rs
+@@ -373,3 +373,3 @@
+             p,
+-            len: self.pending_len.min(p.facts.len()),
++            len: p.facts.len(),
+             staged: self.staged.as_deref(),

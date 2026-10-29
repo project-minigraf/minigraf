@@ -289,6 +289,8 @@ This is a solo-maintained project with a long-term vision. Read [PHILOSOPHY.md](
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code standards, and the PR process.
 
+The [deterministic storage schedule suite](docs/testing/deterministic-schedules.md) (#760) documents the native/MSRV CI checks, replay commands and coverage limits.
+
 ## License
 
 Licensed under either of:

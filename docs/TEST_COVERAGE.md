@@ -24,6 +24,8 @@
 
 Not counted above: the browser tests and the WASI run (see [Browser and WASI](#browser-and-wasi)).
 
+Also outside those counts: three native unit tests in the separate #760 `minigraf_shuttle` build. The [bounded suite and findings](testing/deterministic-schedules.md) record 90,000 passing schedule executions and three deliberately injected faults, each replayed 10/10 times. The suite checks real storage synchronization with immutable committed-reader fixtures; it does not simulate file durability. `deterministic-schedules.yml` runs relevant v3 PRs on three native OSes plus Linux MSRV, with larger nightly/manual searches and replay artifacts. Default-feature test counts are unchanged.
+
 **Scope**: the unreleased file-format-v8 work (#287, #371): the index-key value-collision fix, the v7→v8 migration, and the drop of formats v1–v6. Otherwise the public database API, the Datalog engine, storage and recovery paths, v2.0.0's locking and structured-error-code changes, and v2.0.1's regression test for rebuilding indexes on open after several checkpoints (#370). Tests merged from the v2.x line are marked *(v2.x)*.
 
 ## Covered Areas
