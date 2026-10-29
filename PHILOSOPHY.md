@@ -396,7 +396,7 @@ When evaluating a feature or design choice, ask:
 These are goals, not a description of today. You'll know Minigraf has succeeded when:
 
 1. **Ubiquity**: Developers say "just use Minigraf" for embedded graph storage
-2. **Trust**: Known for never losing data, crash-safe, reliable. Not yet met: v2.x has a known data-integrity bug (#371), and the work to meet this goal is tracked in #383. See the [known issues](https://github.com/project-minigraf/minigraf/issues?q=is%3Aissue+is%3Aopen+label%3Aknown-issue).
+2. **Trust**: Known for never losing data, crash-safe, reliable. Not yet met: v2.x has a known data-integrity bug (#371), and the work to meet this goal is tracked in the [v3.0.0 milestone](https://github.com/project-minigraf/minigraf/milestone/1). See the [known issues](https://github.com/project-minigraf/minigraf/issues?q=is%3Aissue+is%3Aopen+label%3Aknown-issue).
 3. **Simplicity**: New users are productive in under 5 minutes
 4. **Size**: Core binary within its ~1.2MB budget, minimal dependencies
 5. **Portability**: Runs everywhere from Raspberry Pi to browsers

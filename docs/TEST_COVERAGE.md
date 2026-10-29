@@ -1,5 +1,7 @@
 # Minigraf Test Coverage
 
+#777 corrects documentation only on v2; query behavior and test counts are unchanged. Ordinary `avg` still raises PRS-027 without `:over`.
+
 ## v2.0.11 Coverage Summary
 
 | | |

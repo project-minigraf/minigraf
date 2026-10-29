@@ -29,6 +29,8 @@ Minigraf is a **single-file embedded graph database** that lets you:
 
 **Status**: See [ROADMAP.md](ROADMAP.md) for planned work and current direction.
 
+In v2, the ordinary aggregates are `count`, `count-distinct`, `sum`, `sum-distinct`, `min` and `max`. Average is available only as a window function, for example `(avg ?score :over (:order-by ?score))` (#777).
+
 ## Why Datalog?
 
 **Datalog is fundamentally better for graphs than SQL-like languages:**
@@ -105,7 +107,7 @@ let r2 = pq.execute(&[("tx", BindValue::TxCount(2)), ("entity", BindValue::Entit
 
 ```bash
 cargo run          # interactive Datalog REPL
-cargo test         # run 1321 tests
+cargo test         # 1335 tests (1326 passing, 9 ignored)
 cargo run < demos/demo_recursive.txt   # recursive rules demo
 ```
 
