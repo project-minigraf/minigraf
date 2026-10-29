@@ -142,6 +142,8 @@ cargo test         # run the test suite
 cargo run < demos/demo_recursive.txt   # recursive rules demo
 ```
 
+Storage key encoding and scalar decoding have Kani proofs; see [test coverage](docs/TEST_COVERAGE.md#kani-proofs-of-key-encoders-and-scalar-decoders-627-693) for their scope and how to run them.
+
 Queries without aggregates return one row per matching binding, including repeated `:find` tuples.
 Add the bare `:distinct` flag to remove repeated
 output tuples: `(query [:find ?name :where [?e :person/name ?name] :distinct])`.

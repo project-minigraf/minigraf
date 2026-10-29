@@ -4,17 +4,19 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,979 | 2,012 |
+| **Passing** | 1,983 | 2,016 |
 | **Ignored** | 17 | 18 |
-| **Total** | 1,996 | 2,030 |
+| **Total** | 2,000 | 2,034 |
 
-**Verified**: 2026-10-28 on the designated bench machine: full default/test-hooks tests and the full branch-coverage suite pass, including golden files and migration/fault injection after sharing stable-sort code. Disabling internal reference-result cache eviction makes the targeted window regression fail. All unchanged coverage floors pass; measured overall coverage is 95.44% lines and 86.50% branches. Strict native/browser/WASI lint, WASI tests (1,182 passing, seven ignored), the WASI release build and Firefox tests (61 passing) also pass; the new committed-reader window fixture executes on both portable runners. The #672 default and `test-hooks` suites passed separately on 2026-10-28 before rebasing onto #641.
+**Verified**: 2026-10-29 on the designated bench machine: the #693 full default suite passed all 1,983 active tests, all 29 Kani harnesses passed, and the strengthened key differential test passed again. On 2026-10-28, full default/test-hooks tests and the full branch-coverage suite passed, including golden files and migration/fault injection after sharing stable-sort code. Disabling internal reference-result cache eviction makes the targeted window regression fail. All unchanged coverage floors pass; measured overall coverage is 95.44% lines and 86.50% branches. Strict native/browser/WASI lint, WASI tests (1,182 passing, seven ignored), the WASI release build and Firefox tests (61 passing) also passed on that earlier revision; the new committed-reader window fixture executes on both portable runners. The #672 default and `test-hooks` suites passed separately on 2026-10-28 before rebasing onto #641.
 
 #641 slice 1 adds 30 tests with default features and one more with `test-hooks`. Slice 2 adds 22 default-feature tests (21 active and one ignored committed-fixture memory diagnostic). Slice 3 adds 26 default-feature tests (25 active and one ignored committed-fixture memory diagnostic).
 
 #183 adds bounded row-frame parser, evaluator, and integration tests; one additional plan-independence case runs with `test-hooks`, including duplicate tie keys and NaN. A sliding-sum test checks recovery after integer saturation. Grammar corpus cases cover frame spellings and rejection. A meter test checks that a zero-width min frame reserves one deque slot. An ignored bench-machine diagnostic reproduces the Criterion datasets and prints the engine meter's peak for every measured case.
 
 #493 (`:distinct`) adds 18 tests with default features and one more with `test-hooks`.
+
+#693 adds four default-feature key decoder tests; the same tests are available with `test-hooks` and WASI.
 
 #306 PR 2 (`:order-by`, `:offset`, `Sort`) added 18 tests and 7 more under `test-hooks`; the ignored acceptance test now also checks top-k. #306 PR 1 (`:limit`) added 13 tests, 5 more under `test-hooks`, and one ignored acceptance test.
 
@@ -101,12 +103,17 @@ These tests compare the database against an independent answer rather than a sin
 - **Grammar verifier** (`src/query/datalog/parser/verifier.rs`, 4 tests; #643)
   - Checks the parser against `tests/grammar/grammar.pest` on about 1.07M lexical strings and 555K structural inputs at the default bound (7.6M at `MINIGRAF_GRAMMAR_BOUND=4`).
   - Known drift by cause in `KNOWN_DRIFT`: none left (#650, #651 fixed). Semantic codes with witnesses in `SEMANTIC`.
-- **Kani proofs of the encoders** (#627; not `#[test]`s, run by `cargo kani` and `.github/workflows/kani.yml`)
-  - 12 harnesses prove, for every input, that the byte encoders ordering index keys keep their order.
-  - `src/storage/keys/verification.rs` (7): `put_int`, `put_uint` and `put_valid_to` (including `VALID_TIME_FOREVER`) preserve order; `put_tx_desc` reverses it; `float_bits` preserves IEEE total order on non-NaN floats (`-0.0` before `0.0`), maps every NaN to one value after all others, and round-trips through `float_from_bits`.
-  - `src/storage/index/verification.rs` (5): `encode_value` writes `Null` as `[0x00]`, each of `Boolean`, `Integer`, `Float` and `Ref` with its own type byte and in its own order, and every NaN to the same bytes.
-  - Each harness fails when its encoder is broken on purpose.
-  - Left out: decoders, strings, packed pages and the WAL. CBMC does not finish on them (decoder error paths build an `anyhow::Error`; a 3-byte string order proof is a 105M-clause formula), so the fuzz and property tests cover them (spec `docs/superpowers/specs/2026-10-22-kani-storage-encoding-design.md` §5).
+### Kani proofs of key encoders and scalar decoders (#627, #693)
+
+These are not `#[test]`s; run them with `cargo kani` or `.github/workflows/kani.yml`.
+
+- 12 encoder harnesses prove, for every input, that the byte encoders ordering index keys keep their order.
+- `src/storage/keys/verification.rs` (7): `put_int`, `put_uint` and `put_valid_to` (including `VALID_TIME_FOREVER`) preserve order; `put_tx_desc` reverses it; `float_bits` preserves IEEE total order on non-NaN floats (`-0.0` before `0.0`), maps every NaN to one value after all others, and round-trips through `float_from_bits`.
+- `src/storage/index/verification.rs` (5): `encode_value` writes `Null` as `[0x00]`, each of `Boolean`, `Integer`, `Float` and `Ref` with its own type byte and in its own order, and every NaN to the same bytes.
+- 17 decoder harnesses (#693): `decode_uint`, `decode_int`, `decode_tx_desc`, `decode_valid_to` and float payload round-trip with one arbitrary suffix byte; six separate tagged scalar value round trips (Null, Boolean, Integer, Float, Keyword, Ref); and six malformed-input harnesses that prove no panic and bounded consumption for symbolic slices up to 9 bytes (10 with the value tag). NaNs use the canonical key encoding; signed zero keeps its bits.
+- All 29 harnesses passed on the bench machine with Kani 0.68.0 at `-j 4` in 1:59 warm; aggregate CBMC peak RSS was 7.6 GiB. The workflow caps concurrency at four for its 16 GiB runner and gives each harness 10 minutes.
+- A test-only copy of the old `Reader` in `src/storage/keys/legacy_verification.rs` compares results, INT-049 code and message, and cursor position on every 0–2 byte input, deterministic 3–10 byte inputs and explicit boundary values, including String and Set escapes. Three other focused unit tests check suffix boundaries, tagged values and malformed cases. Before/after scalar and six-component key decoding were measured on the bench machine and recorded in the #693 PR.
+- Left out: `Reader`'s `anyhow` mapping, strings, sets, packed pages, WAL and arbitrary-length malformed inputs from Kani. CBMC could not finish on `Reader`'s error path or variable-length strings (a 3-byte string order proof was a 105M-clause formula); differential, fuzz and property tests cover those paths (specs `docs/superpowers/specs/2026-10-22-kani-storage-encoding-design.md` §5 and `docs/superpowers/specs/2026-10-29-693-decoder-proofs.md`).
 
 ## Storage and File Format
 
@@ -541,9 +548,9 @@ cargo test --quiet
 # Include the scheduled/ignored tests when the host supports them
 cargo test -- --include-ignored
 
-# Kani proofs of the encoders (#627): ~40 s and ~1 GB with -j; Kani pins its own nightly
+# Kani proofs of key encoders and scalar decoders (#627, #693); Kani pins its own nightly
 cargo install --locked kani-verifier && cargo kani setup
-cargo kani --lib -j --output-format terse -Z unstable-options --harness-timeout 10m
+cargo kani --lib -j 4 --output-format terse -Z unstable-options --harness-timeout 10m
 
 # Generate a local branch-coverage report (requires cargo-llvm-cov and a nightly toolchain)
 cargo +nightly llvm-cov --branch --html

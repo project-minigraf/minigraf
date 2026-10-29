@@ -78,6 +78,7 @@ This was the GitHub milestone named “2.0” before v2.0.0 used that version nu
 Scope — format and storage integrity:
 
 - v8 index keys with value bytes and v7→v8 migration (#371, #287; done on `v3`)
+- Kani proofs that the format-v8 scalar key decoders invert their encoders and reject bounded malformed inputs without panicking (#693; targeted before v3.0.0, with no format change)
 - v8 storage format, done on `v3` in five PRs (#374, #434, #388, #433):
   - per-page CRC32, page id and generation on every page (#388);
   - two alternating meta pages; crash-atomic, copy-on-write checkpoints whose cost follows the change (#374, #434);
