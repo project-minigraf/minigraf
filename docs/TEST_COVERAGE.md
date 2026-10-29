@@ -4,11 +4,13 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Passing** | 1,979 | 2,012 |
+| **Passing** | 1,983 | 2,016 |
 | **Ignored** | 17 | 18 |
-| **Total** | 1,996 | 2,030 |
+| **Total** | 2,000 | 2,034 |
 
-**Verified**: 2026-10-28 on the designated bench machine: full default/test-hooks tests and the full branch-coverage suite pass, including golden files and migration/fault injection after sharing stable-sort code. Disabling internal reference-result cache eviction makes the targeted window regression fail. All unchanged coverage floors pass; measured overall coverage is 95.44% lines and 86.50% branches. Strict native/browser/WASI lint, WASI tests (1,182 passing, seven ignored), the WASI release build and Firefox tests (61 passing) also pass; the new committed-reader window fixture executes on both portable runners. The #672 default and `test-hooks` suites passed separately on 2026-10-28 before rebasing onto #641.
+**#723 verification (2026-10-29)**: full default and `test-hooks` suites passed on the bench machine before the final head-binding guard; the added representation regression, full non-fault unit suite and plan-independence matrix passed after it. The shared pending-count refactor passed the non-fault unit suite. The unchanged fault matrix passed in both full runs. Strict all-features clippy and formatting pass; the docs site builds 13 versions. No frozen answers were changed.
+
+**Earlier verification**: 2026-10-28 on the designated bench machine: full default/test-hooks tests and the full branch-coverage suite pass, including golden files and migration/fault injection after sharing stable-sort code. Disabling internal reference-result cache eviction makes the targeted window regression fail. All unchanged coverage floors pass; measured overall coverage is 95.44% lines and 86.50% branches. Strict native/browser/WASI lint, WASI tests (1,182 passing, seven ignored), the WASI release build and Firefox tests (61 passing) also pass; the new committed-reader window fixture executes on both portable runners. The #672 default and `test-hooks` suites passed separately on 2026-10-28 before rebasing onto #641.
 
 #641 slice 1 adds 30 tests with default features and one more with `test-hooks`. Slice 2 adds 22 default-feature tests (21 active and one ignored committed-fixture memory diagnostic). Slice 3 adds 26 default-feature tests (25 active and one ignored committed-fixture memory diagnostic).
 
@@ -25,6 +27,8 @@ Not counted above: the browser tests and the WASI run (see [Browser and WASI](#b
 **Scope**: the unreleased file-format-v8 work (#287, #371): the index-key value-collision fix, the v7→v8 migration, and the drop of formats v1–v6. Otherwise the public database API, the Datalog engine, storage and recovery paths, v2.0.0's locking and structured-error-code changes, and v2.0.1's regression test for rebuilding indexes on open after several checkpoints (#370). Tests merged from the v2.x line are marked *(v2.x)*.
 
 ## Covered Areas
+
+- **In-memory ancestor join ordering** (#723; four tests): a 1,999-edge tree returns three ancestors within a 128 KiB query budget, also after staged edge replacement; cursor close releases its metered state. Reordered and text-order plans return identical bags across keyword/ref edges, cycles, multi-valued edges, retractions, transaction/valid-time filters, empty and unbound queries, in memory and with checkpointed facts. A direct comparison against the original delta plan protects keyword/ref output representation in rule heads. The bounded cost count excludes writes after a captured snapshot, includes staged records, respects the cap, and excludes prefix-neighbor attributes.
 
 - **Proven input order** (#641, first slice; `src/query/engine/order_tests.rs`, `order/tests.rs`, `tests/input_order_test.rs`): full result keys and projection slots, constants and repeated slots, integer/Boolean/float edge cases including NaNs and signed zeros, replacements, join fallback orientation and distinct canonicalization. Snapshot tests cover unrelated versus in-range pending/staged records, captured prefixes, temporal filters, prepared queries, checkpoints and large-transaction working readers including rejected statements and rollback. Counters establish early stopping, bounded raw proof reads and no reads without demand; optional proof-read errors leave the original plan. Late callback and `collect-set` errors retain their evaluation. A forced-fallback differential matrix checks identical ordered lists across plan switches. A committed `MemoryBackend` fixture runs on native, WASI and the browser. Storage tests cover every key kind/tag and raw seeks over retracted history.
 

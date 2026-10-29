@@ -2570,6 +2570,200 @@ fn rule_delta_runs_join_on_a_bound_variable() {
     assert_eq!(rows(&db, "(query [:find ?to :where (reach :n1 ?to)])"), 10);
 }
 
+/// #723: finding three ancestors must not retain every unrelated edge in
+/// a query-local value map. The store itself is outside the query budget.
+#[test]
+fn ancestors_do_not_materialize_the_pending_attribute() {
+    let db = crate::OpenOptions::new()
+        .query_memory_limit(128 * 1024)
+        .open_memory()
+        .unwrap();
+    let facts: String = (1..2000)
+        .map(|i| format!("[:p{i} :manager :p{}]", i / 10))
+        .collect();
+    db.execute(&format!("(transact [{facts}])")).unwrap();
+    db.execute("(rule [(boss ?x ?y) [?x :manager ?y]])")
+        .unwrap();
+    db.execute("(rule [(boss ?x ?z) [?x :manager ?y] (boss ?y ?z)])")
+        .unwrap();
+    let mut cursor = db
+        .query("(query [:find ?b :where (boss :p199 ?b)])")
+        .expect("a selective ancestor query fits the budget");
+    let meter = cursor.stream_mut().unwrap().meter().clone();
+    let mut got = Vec::new();
+    while let Some(batch) = cursor.next_batch(10).unwrap() {
+        got.extend_from_slice(batch.rows());
+    }
+    let expected: Vec<Vec<crate::Value>> = [":p19", ":p1", ":p0"]
+        .into_iter()
+        .map(|k| vec![crate::Value::Keyword(k.into())])
+        .collect();
+    assert_eq!(got.len(), expected.len());
+    assert!(expected.iter().all(|r| got.contains(r)), "all ancestors");
+    cursor.close();
+    assert_eq!(meter.used(), 0, "rule state released on close");
+
+    // The same choice must see staged retractions and assertions, without
+    // changing either the committed query or the transaction on rollback.
+    let mut tx = db.begin_write().unwrap();
+    tx.execute("(retract [[:p199 :manager :p19]])").unwrap();
+    tx.execute("(transact [[:p199 :manager :p2]])").unwrap();
+    let QueryResult::QueryResults { results, .. } = tx
+        .execute("(query [:find ?b :where (boss :p199 ?b)])")
+        .unwrap()
+    else {
+        panic!("expected rows");
+    };
+    assert_eq!(results.len(), 2);
+    for k in [":p2", ":p0"] {
+        assert!(results.contains(&vec![crate::Value::Keyword(k.into())]));
+    }
+    drop(tx);
+}
+
+/// The alternative keeps the delta ranges, head slots and temporal reads.
+/// Exercise small and broad demand, refs as well as keywords, a cycle,
+/// multi-valued edges, and retractions on both storage paths.
+#[test]
+fn ancestor_join_orders_preserve_temporal_answers() {
+    fn answer(db: &Minigraf, q: &str, reorder: bool) -> Vec<Vec<crate::Value>> {
+        let _guard = crate::query::datalog::optimizer::set_reorder(reorder);
+        let QueryResult::QueryResults { mut results, .. } = db.execute(q).unwrap() else {
+            panic!("expected rows");
+        };
+        results.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        results
+    }
+    let dir = tempfile::tempdir().unwrap();
+    for file in [false, true] {
+        let db = if file {
+            Minigraf::open(dir.path().join("ancestor-orders.graph")).unwrap()
+        } else {
+            Minigraf::in_memory().unwrap()
+        };
+        let facts: String = (1..300)
+            .map(|i| format!("[:p{i} :manager :p{}]", i / 10))
+            .collect();
+        db.execute(&format!(
+            "(transact {{:valid-from \"2020-01-01\"}} [{facts}])"
+        ))
+        .unwrap();
+        if file {
+            db.checkpoint().unwrap();
+        }
+        db.execute(&format!(
+            "(transact {{:valid-from \"2021-01-01\"}} [[:p199 :manager #uuid \"{}\"] [:p1 :manager :p199]])",
+            uuid_of(":p2")
+        )).unwrap();
+        db.execute("(retract [[:p19 :manager :p1]])").unwrap();
+        db.execute("(rule [(boss ?x ?y) [?x :manager ?y]])")
+            .unwrap();
+        db.execute("(rule [(boss ?x ?z) [?x :manager ?y] (boss ?y ?z)])")
+            .unwrap();
+        for time in [
+            "",
+            ":as-of 1",
+            ":as-of 2",
+            ":valid-at \"2020-06-01\"",
+            ":any-valid-time",
+        ] {
+            for call in [
+                "(boss :p199 ?b)",
+                "(boss ?a ?b)",
+                "(boss :p299 ?b)",
+                "(boss :missing ?b)",
+            ] {
+                let q = format!("(query [:find ?b {time} :where {call}])");
+                let baseline = answer(&db, &q, false);
+                let selected = answer(&db, &q, true);
+                assert!(selected == baseline, "join orders return the same bag");
+            }
+        }
+    }
+}
+
+/// A join-equal keyword/ref pair is not interchangeable in a rule's value
+/// head. Reordering must preserve which pattern supplies that cell.
+#[test]
+fn ancestor_alternative_preserves_head_value_representation() {
+    use crate::graph::storage::FactStorage;
+    use crate::query::datalog::{
+        functions::FunctionRegistry, parser::parse_datalog_command, rules::RuleRegistry,
+        types::DatalogCommand,
+    };
+    let storage = FactStorage::new();
+    storage
+        .transact(
+            (1..300)
+                .map(|i| {
+                    (
+                        uuid_of(&format!(":p{i}")),
+                        ":manager".into(),
+                        crate::Value::Keyword(format!(":p{}", i / 10)),
+                    )
+                })
+                .collect(),
+            None,
+        )
+        .unwrap();
+    for head in ["?x ?z", "?x ?y"] {
+        let mut registry = RuleRegistry::new();
+        for text in [
+            "(rule [(boss ?x ?y) [?x :manager ?y]])".to_string(),
+            format!("(rule [(boss {head}) [?x :manager ?y] (boss ?y ?z)])"),
+        ] {
+            let DatalogCommand::Rule(rule) = parse_datalog_command(&text).unwrap() else {
+                panic!("rule");
+            };
+            registry.register_rule("boss".into(), rule).unwrap();
+        }
+        let DatalogCommand::Query(query) =
+            parse_datalog_command("(query [:find ?b :where (boss :p199 ?b)])").unwrap()
+        else {
+            panic!("query");
+        };
+        let (rewritten, seeds) =
+            crate::query::datalog::magic_sets::rewrite(&query, &registry).unwrap();
+        let attrs: Vec<&str> = seeds.iter().map(|(_, a, _)| a.as_str()).collect();
+        let plan = super::plan_rules(&query, &rewritten, &attrs).unwrap();
+        let answer = |allow_alternative: bool| {
+            let mut plan = plan.clone();
+            if !allow_alternative {
+                for (_, rules) in &mut plan.strata {
+                    for rule in rules {
+                        for run in &mut rule.deltas {
+                            run.entity_first = None;
+                        }
+                    }
+                }
+            }
+            let mut stream = super::open_rules(
+                storage.snapshot().unwrap(),
+                plan,
+                &seeds,
+                &[":p199".into()],
+                std::sync::Arc::new(FunctionRegistry::with_builtins()),
+                super::recursive::Limits {
+                    max_iterations: 100,
+                    max_derived_facts: 10000,
+                    query_memory: usize::MAX,
+                },
+            )
+            .unwrap();
+            let mut rows = Vec::new();
+            while let Some(batch) = stream.next_rows().unwrap() {
+                rows.extend(batch);
+            }
+            rows.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            rows
+        };
+        assert!(
+            answer(true) == answer(false),
+            "head value retains its original representation"
+        );
+    }
+}
+
 /// #721: after the magic-set rewrite of `(boss :leaf ?b)` over a tree, the
 /// run from the `boss` delta joins `[?x :manager ?y]` on its value. It
 /// probes the AVET range of each `?y` instead of hashing every `:manager`

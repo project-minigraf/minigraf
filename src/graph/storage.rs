@@ -305,18 +305,28 @@ impl Snapshot {
     /// Any pending/staged record of this attribute (and optional entity) in
     /// the captured snapshot, even a retraction or excluded version (#641).
     pub(crate) fn has_pending(&self, attribute: &str, entity: Option<&EntityId>) -> Result<bool> {
+        Ok(self.pending_attribute_count(attribute, entity, 1)? != 0)
+    }
+
+    /// A capped record count for join costing (#723). Walk index keys only,
+    /// stopping at `cap`; include staged facts and exclude later writes.
+    /// History counts too: building a value map must read it before filtering.
+    pub(crate) fn pending_attribute_count(
+        &self,
+        attribute: &str,
+        entity: Option<&EntityId>,
+        cap: usize,
+    ) -> Result<usize> {
         use crate::storage::index::AevtKey;
-        if self.pending_len() == 0 {
-            return Ok(false);
+        if self.pending_len() == 0 || cap == 0 {
+            return Ok(0);
         }
         let pending = self.read_pending()?;
         let mut start = AevtKey::attribute_start(attribute);
         if let Some(e) = entity {
             start.entity = *e;
         }
-        // Existence needs no merge: stop each index at the source boundary
-        // before filtering records appended after the captured prefix.
-        let has = |store: &PendingStore, len: usize| {
+        let count = |store: &PendingStore, len: usize, cap: usize| {
             store
                 .indexes
                 .aevt
@@ -324,10 +334,15 @@ impl Snapshot {
                 .take_while(|(k, _)| {
                     k.attribute == attribute && entity.is_none_or(|e| k.entity == *e)
                 })
-                .any(|(_, &pos)| pos < len)
+                .filter(|(_, pos)| **pos < len)
+                .take(cap)
+                .count()
         };
-        Ok(has(&pending, self.pending_len)
-            || self.staged.as_ref().is_some_and(|s| has(s, s.facts.len())))
+        let n = count(&pending, self.pending_len, cap);
+        Ok(n + self
+            .staged
+            .as_ref()
+            .map_or(0, |s| count(s, s.facts.len(), cap - n)))
     }
 
     /// This snapshot with `facts` staged after its pending ones (#550 spec
@@ -2339,6 +2354,37 @@ mod tests {
             .map(|f| f.attribute)
             .collect();
         assert_eq!(attrs, [":t/y", ":t/x", ":t/x", ":t/y"]);
+    }
+
+    #[test]
+    fn pending_attribute_cost_uses_the_captured_and_staged_prefixes() {
+        let storage = FactStorage::new();
+        let e = uuid::Uuid::new_v4();
+        storage
+            .load_facts(vec![
+                Fact::new(e, ":a".into(), Value::Integer(1), 1),
+                Fact::new(e, ":ab".into(), Value::Integer(2), 1),
+            ])
+            .unwrap();
+        let snap = storage.snapshot().unwrap();
+        storage
+            .load_facts(vec![Fact::new(e, ":a".into(), Value::Integer(3), 2)])
+            .unwrap();
+        assert_eq!(snap.pending_attribute_count(":a", None, 10).unwrap(), 1);
+        assert_eq!(
+            snap.pending_attribute_count(":absent", None, 10).unwrap(),
+            0
+        );
+        let snap = snap.with_staged(vec![
+            Fact::new(e, ":a".into(), Value::Integer(4), 3),
+            Fact::new(e, ":ab".into(), Value::Integer(5), 3),
+        ]);
+        for (cap, expected) in [(0, 0), (1, 1), (2, 2), (10, 2)] {
+            assert_eq!(
+                snap.pending_attribute_count(":a", None, cap).unwrap(),
+                expected
+            );
+        }
     }
 
     #[test]

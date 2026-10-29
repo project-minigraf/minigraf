@@ -34,6 +34,8 @@ The unreleased v3.0.0 branch adds bounded sliding windows such as `(avg ?salary 
 
 On v3.0.0, an ascending value-only query such as `[:find ?v :where [?e :score ?v] :order-by [?v] :limit 10]` can read directly in index order and stop early when all committed `:score` history has one value kind (integer, float, or Boolean) and its source range has no pending writes. A query whose full order cannot be proved uses the existing sort (#641). Built-in `count` and `count-distinct` can also release completed groups when one committed integer/Boolean/float key is proved ordered (including mixed integer/float groups), with no `:with`, windows, callbacks or `collect-set`. Memory then follows the active group and batches; distinct members within one group still grow. Other aggregates keep full-input validation. When every built-in window uses the same proved nonconstant partition key, the engine can also finish and release one partition at a time. Its memory follows the largest partition plus bounded batches; one growing partition still grows. Unpartitioned windows, incompatible keys, aggregate queries, callbacks and `collect-set` keep full-input evaluation. A surrounding sort or distinct operation can still require more memory.
 
+On the unreleased v3 branch, selective in-memory ancestor queries can use entity probes instead of reading the whole edge attribute (#723). This is a query-planning optimization; it adds no storage index or configuration.
+
 **Status**: See [ROADMAP.md](ROADMAP.md) for planned work and current direction.
 
 ## Why Datalog?
