@@ -2,7 +2,7 @@
 
 Date: 2026-10-29. Status: Claude conditionally approved (second review).
 Maintainer approved implementation and the resource-error policy on 2026-10-29;
-the later aggregate slice still requires the merged-#789 audit.
+the merged-#789 audit is recorded below.
 Spec: `../specs/2026-10-29-781-ordered-aggregate-design.md`.
 Inspected base: `origin/v3` at `0fc97bd65`.
 Worktree: `.worktrees/781-ordered-aggregate`, branch `perf/781-ordered-aggregate`.
@@ -193,3 +193,30 @@ Files additionally: `src/query/datalog/aggregate.rs`,
     Remove task-created remote scratch after last use; preserve shared caches
     and preexisting fixtures. Only complete #781 acceptance after its required
     evidence and docs are delivered, not after the planning stage.
+
+## Merged dependency audit (2026-10-29)
+
+#789 merged as `f1019c5a1` (implementation `a21b46e34`, PR #792).
+`Agg::Sum` now skips nonnumbers in `step` and returns `Sum::value` without a
+recoverable finalizer error. `Min`/`Max` retain the best non-nil value and either
+return it or drop an empty-extremum group; their old type-error paths are gone.
+`SumDistinct` retains numeric members only and its finalizer steps a temporary
+`Sum`. Restricting its argument domain to Integer/nil avoids the temporary
+Exact allocation. Floating distinct sums remain excluded. `Sum::float` uses a
+stack clone of Exact at finish; retained Exact grows while stepping and remains
+charged by the existing engine accounting. No new recoverable aggregate-specific
+finish error was introduced. Registered finalizers still can fail, and the
+shared `finish_group` still stops at an earlier dropped group before evaluating
+a later finalizer.
+
+The approved sum/scalar-extrema/integer-distinct slice can therefore proceed.
+General extrema retain a pre-existing variable-payload accounting gap on the
+full-input path; this change must neither enable those values nor claim to fix
+that separate issue. Raw argument-domain proofs remain independent of the
+source grouping-order certificate, and must include stored nil.
+
+Claude's interim tuple/avg review found no correctness defects. Add the suggested
+equal-tuples-across-batches regression. ValidAt constant facts are conservative
+internal proof support; current real-query planning does not make a constant
+attribute source scan with that metadata, so do not advertise end-to-end ValidAt
+constant grouping support based only on the private proof unit test.

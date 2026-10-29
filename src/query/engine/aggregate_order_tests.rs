@@ -30,6 +30,211 @@ fn ordered(counters: &[Counters]) -> bool {
 }
 
 #[test]
+fn generalized_avg_streams_and_stops_at_group_demand() {
+    let (_dir, db) = fixture(4101, 3);
+    let _text_order = crate::query::datalog::optimizer::set_reorder(false);
+    let query = "[:find ?g (avg ?v) :where [?e :bucket ?g] [?e :item ?v] \
+                 :order-by [?g] :offset 2 :limit 3]";
+    let (expected, _, _) = {
+        let _off = super::order::set_enabled(false);
+        collect(&db, query)
+    };
+    let (rows, counters, _) = collect(&db, query);
+    assert!(ordered(&counters), "avg releases completed groups");
+    assert!(rows == expected);
+    assert!(
+        rows == (2..5)
+            .map(|g| vec![Value::Integer(g), Value::Float(1.0)])
+            .collect::<Vec<_>>()
+    );
+    assert!(counters.iter().all(|c| c.op != "Sort"));
+    assert!(
+        counters
+            .iter()
+            .find(|c| c.op == "AggregateOrdered")
+            .unwrap()
+            .rows_in
+            <= (15 + BATCH_ROWS) as u64
+    );
+}
+
+#[test]
+fn generalized_constant_and_repeated_group_columns_keep_projection_and_sort_order() {
+    let (_dir, db) = fixture(4101, 3);
+    let _text_order = crate::query::datalog::optimizer::set_reorder(false);
+    for (query, sorted) in [
+        (
+            "[:find ?k ?g (count ?e) :where [?e :bucket ?g] [(+ 1 1) ?k] :order-by [?k ?g] :limit 3]",
+            false,
+        ),
+        (
+            "[:find ?k ?g (count ?e) :where [?e :bucket ?g] [(+ 1 1) ?k] :order-by [?k ?g :desc] :limit 3]",
+            true,
+        ),
+        (
+            "[:find ?g ?k (count ?e) :where [?e :bucket ?g] [(= 1 1) ?k] :order-by [?g] :limit 3]",
+            false,
+        ),
+        (
+            "[:find ?g ?g (count-distinct ?e) :where [?e :bucket ?g] :order-by [?g] :limit 3]",
+            false,
+        ),
+    ] {
+        let (expected, _, _) = {
+            let _off = super::order::set_enabled(false);
+            collect(&db, query)
+        };
+        let (rows, counters, _) = collect(&db, query);
+        assert!(ordered(&counters), "complete scalar tuple streams");
+        assert!(
+            rows == expected,
+            "complete tuple order and projection stay unchanged"
+        );
+        assert_eq!(counters.iter().any(|c| c.op == "Sort"), sorted);
+        assert_eq!(rows.len(), 3);
+    }
+}
+
+#[test]
+fn generalized_hidden_groups_stream_but_keep_visible_tie_sorting() {
+    let (_dir, db) = fixture(4100, 3);
+    let _text_order = crate::query::datalog::optimizer::set_reorder(false);
+    for query in [
+        "[:find (count ?e) :with ?g :where [?e :bucket ?g]]",
+        "[:find ?k (count ?e) :with ?g :where [?e :bucket ?g] [(+ 1 1) ?k] :order-by [?k (count ?e)] :limit 3]",
+        "[:find ?g (avg ?v) :with ?k :where [?e :bucket ?g] [?e :item ?v] [(= 1 1) ?k] :order-by [?g] :offset 2 :limit 3]",
+    ] {
+        let (expected, _, _) = {
+            let _off = super::order::set_enabled(false);
+            collect(&db, query)
+        };
+        let (rows, counters, _) = collect(&db, query);
+        assert!(
+            ordered(&counters),
+            "proved hidden key belongs to effective tuple"
+        );
+        assert!(rows == expected);
+        assert_eq!(
+            counters.iter().any(|c| c.op == "Sort"),
+            query.contains(":order-by")
+        );
+    }
+}
+
+#[test]
+fn generalized_empty_hidden_count_groups_emit_one_zero_row() {
+    let (_dir, db) = fixture(1, 1);
+    db.execute("(retract [[:e0 :bucket 0]])").unwrap();
+    db.checkpoint().unwrap();
+    for (query, expected) in [
+        (
+            "[:find (count ?e) (count-distinct ?e) :with ?g :where [?e :bucket ?g]]",
+            vec![vec![Value::Integer(0), Value::Integer(0)]],
+        ),
+        ("[:find (avg ?g) :with ?g :where [?e :bucket ?g]]", vec![]),
+    ] {
+        let (rows, counters, _) = collect(&db, query);
+        assert!(
+            ordered(&counters),
+            "raw history still certifies the empty range"
+        );
+        assert!(
+            rows == expected,
+            "empty hidden groups preserve zero_row semantics"
+        );
+    }
+}
+
+#[test]
+fn generalized_unproved_tuple_components_stay_materialized() {
+    let (_dir, db) = fixture(64, 4);
+    let _text_order = crate::query::datalog::optimizer::set_reorder(false);
+    for query in [
+        "[:find ?g ?v (avg ?v) :where [?e :bucket ?g] [?e :item ?v]]",
+        "[:find ?g (avg ?v) :with ?v :where [?e :bucket ?g] [?e :item ?v]]",
+        "[:find ?g ?k (count ?e) :where [?e :bucket ?g] [(+ 1.0 1.0) ?k]]",
+        "[:find ?e ?g (count ?e) :where [?e :bucket ?g]]",
+        "[:find ?k (avg ?g) :where [?e :bucket ?g] [(+ 1 1) ?k]]",
+    ] {
+        let (expected, _, _) = {
+            let _off = super::order::set_enabled(false);
+            collect(&db, query)
+        };
+        let (rows, counters, _) = collect(&db, query);
+        assert!(!ordered(&counters), "complete tuple is not certified");
+        assert!(rows == expected);
+    }
+}
+
+#[test]
+fn generalized_prepared_tuple_proofs_follow_bindings_and_pinned_snapshots() {
+    let (_dir, db) = fixture(65, 4);
+    let prepared = db.prepare("(query [:find ?k ?g (avg ?g) :where [?e :bucket ?g] [(+ $k 0) ?k] :order-by [?k ?g] :limit 2])").unwrap();
+    let integers = [("k", crate::BindValue::Val(Value::Integer(2)))];
+    let floats = [("k", crate::BindValue::Val(Value::Float(2.0)))];
+    let mut pinned = prepared.query(&integers).unwrap();
+    assert!(ordered(&pinned.counters()));
+    assert!(
+        !ordered(&prepared.query(&floats).unwrap().counters()),
+        "prepared float constant invalidates the composite certificate"
+    );
+    db.execute("(transact [[:outside :other 1]])").unwrap();
+    assert!(ordered(&prepared.query(&integers).unwrap().counters()));
+    db.execute("(transact [[:new :bucket -1]])").unwrap();
+    assert!(!ordered(&prepared.query(&integers).unwrap().counters()));
+    db.checkpoint().unwrap();
+    assert!(ordered(&prepared.query(&integers).unwrap().counters()));
+    let mut old = Vec::new();
+    while let Some(batch) = pinned.next_batch(1).unwrap() {
+        old.extend_from_slice(batch.rows());
+    }
+    assert!(
+        old == vec![
+            vec![Value::Integer(2), Value::Integer(0), Value::Float(0.0)],
+            vec![Value::Integer(2), Value::Integer(1), Value::Float(1.0)],
+        ],
+        "checkpoint does not change the pinned input proof"
+    );
+    let mut fresh = prepared.query(&integers).unwrap();
+    assert!(
+        fresh.next_batch(1).unwrap().unwrap().rows()
+            == [vec![
+                Value::Integer(2),
+                Value::Integer(-1),
+                Value::Float(-1.0)
+            ]]
+    );
+}
+
+#[test]
+fn generalized_avg_tracks_aggregate_and_idspace_peaks_separately() {
+    let mut peaks = Vec::new();
+    for n in [1024, 8192] {
+        let (_dir, db) = fixture(n, 1);
+        let mut cursor = db
+            .query("(query [:find ?g (avg ?g) :where [?e :bucket ?g]])")
+            .unwrap();
+        let stream = cursor.stream_mut().unwrap();
+        assert!(ordered(&stream.counters()));
+        let meter = stream.meter().clone();
+        let mut rows = 0;
+        while let Some(batch) = stream.next_rows().unwrap() {
+            rows += batch.len();
+        }
+        assert_eq!(rows, n);
+        assert_eq!(meter.used(), 0);
+        let aggregate = meter.peak_for("Aggregate");
+        assert!(
+            aggregate > 0,
+            "Aggregate holder peak is measured independently"
+        );
+        peaks.push((aggregate, meter.peak_for("IdSpace")));
+    }
+    assert!(peaks[1].0 <= peaks[0].0 + two_input_batches());
+    assert!(peaks[1].1 <= peaks[0].1 + two_input_batches());
+}
+
+#[test]
 fn counts_stream_across_batch_boundaries_and_skip_the_unique_group_sort() {
     let (_dir, db) = fixture(4099, 17);
     let _text_order = crate::query::datalog::optimizer::set_reorder(false);
@@ -104,7 +309,6 @@ fn hidden_with_groups_multiple_keys_and_other_aggregates_keep_the_hash_path() {
     let (_dir, db) = fixture(64, 4);
     for query in [
         "[:find ?g (count ?e) :with ?v :where [?e :bucket ?g] [?e :item ?v]]",
-        "[:find (count ?e) :with ?g :where [?e :bucket ?g]]",
         "[:find ?g ?v (count ?e) :where [?e :bucket ?g] [?e :item ?v]]",
         "[:find ?g (sum ?v) :where [?e :bucket ?g] [?e :item ?v] :limit 1]",
         "[:find ?g (min ?v) :where [?e :bucket ?g] [?e :item ?v] :limit 1]",
@@ -259,13 +463,16 @@ fn late_callbacks_and_collect_set_failures_cannot_be_hidden_by_group_limit() {
         }
     })
     .unwrap();
-    let err = db
-        .execute(
-            "(query [:find ?g (count ?e) :where [?e :bucket ?g] [(= (late? ?g) true)] :limit 1])",
-        )
-        .expect_err("callback must be reached");
-    assert_eq!(err.code(), "QRY-014");
-    assert_eq!(calls.load(Ordering::SeqCst), 1500);
+    for aggregate in ["(count ?e)", "(avg ?g)"] {
+        calls.store(0, Ordering::SeqCst);
+        let err = db
+            .execute(&format!(
+                "(query [:find ?g {aggregate} :where [?e :bucket ?g] [(= (late? ?g) true)] :limit 1])"
+            ))
+            .expect_err("callback must be reached");
+        assert_eq!(err.code(), "QRY-014");
+        assert_eq!(calls.load(Ordering::SeqCst), 1500);
+    }
     db.execute("(transact [[:e4095 :nested #{1}]])").unwrap();
     db.checkpoint().unwrap();
     let err = db.execute("(query [:find ?g (count ?e) :where [?e :bucket ?g] [(collect-set ?e :nested) ?s] :limit 1])").expect_err("late nested set must be reached");
@@ -478,9 +685,16 @@ fn a_large_transaction_uses_its_working_types_for_group_sort_proofs() {
 #[test]
 fn early_cursor_close_drop_and_distinct_budget_errors_release_all_state() {
     let (dir, db) = fixture(4096, 16);
-    for close in [false, true] {
+    for (aggregate, close) in [
+        ("(count-distinct ?e)", false),
+        ("(count-distinct ?e)", true),
+        ("(avg ?g)", false),
+        ("(avg ?g)", true),
+    ] {
         let mut cursor = db
-            .query("(query [:find ?g (count-distinct ?e) :where [?e :bucket ?g]])")
+            .query(&format!(
+                "(query [:find ?g {aggregate} :where [?e :bucket ?g]])"
+            ))
             .unwrap();
         assert!(ordered(&cursor.stream_mut().unwrap().counters()));
         let meter = cursor.stream_mut().unwrap().meter().clone();
@@ -574,4 +788,113 @@ fn a_group_spanning_many_probe_batches_does_not_retain_all_dict_lookups() {
         peaks[1] <= peaks[0] + two_input_batches(),
         "internal child pulls must evict committed entity lookups within one unfinished group"
     );
+}
+
+/// #781 holder measurements over a prebuilt committed fixture; result batches
+/// are dropped as they are checked, never retained by the measuring process.
+#[test]
+#[ignore = "requires MINIGRAF_GROUP_FIXTURE/ROWS/SIZE; run separately from fixture creation"]
+fn generalized_committed_memory_probe() {
+    let path = std::env::var("MINIGRAF_GROUP_FIXTURE").expect("fixture path");
+    let n: usize = std::env::var("MINIGRAF_GROUP_ROWS")
+        .unwrap()
+        .parse()
+        .unwrap();
+    let size: usize = std::env::var("MINIGRAF_GROUP_SIZE")
+        .unwrap()
+        .parse()
+        .unwrap();
+    let optimized = std::env::var("MINIGRAF_GROUP_FULL").is_err();
+    let _mode = super::order::set_enabled(optimized);
+    let db = crate::OpenOptions::new()
+        .read_only(true)
+        .path(path)
+        .open()
+        .unwrap();
+    for (mode, find, with, extra, order) in [
+        ("avg", "?g (avg ?g)", "", "", "?g"),
+        ("avg-float", "?g (avg ?v)", "", "[(+ ?g 0.5) ?v]", "?g"),
+        ("tuple-avg", "?k ?g (avg ?g)", "", "[(+ 1 1) ?k]", "?k ?g"),
+        ("hidden-avg", "(avg ?g)", ":with ?g", "", ""),
+        (
+            "tuple-count",
+            "?k ?g (count ?e)",
+            "",
+            "[(+ 1 1) ?k]",
+            "?k ?g",
+        ),
+        ("tuple-distinct", "?g ?g (count-distinct ?e)", "", "", "?g"),
+    ] {
+        for limited in [false, true] {
+            let offset = if limited && !order.is_empty() { 2 } else { 0 };
+            let pagination = if limited {
+                format!(":offset {offset} :limit 10")
+            } else {
+                String::new()
+            };
+            // An offset of zero still requires :order-by in the grammar.
+            let pagination = if limited && order.is_empty() {
+                ":limit 10".to_owned()
+            } else {
+                pagination
+            };
+            let order = if order.is_empty() {
+                String::new()
+            } else {
+                format!(":order-by [{order}]")
+            };
+            let query = format!(
+                "(query [:find {find} {with} :where [?e :group ?g] {extra} {order} {}])",
+                pagination
+            );
+            let mut cursor = db.query(&query).unwrap();
+            let stream = cursor.stream_mut().unwrap();
+            assert_eq!(ordered(&stream.counters()), optimized);
+            let meter = stream.meter().clone();
+            let mut rows = 0;
+            while let Some(batch) = stream.next_rows().unwrap() {
+                for row in &batch {
+                    let g = rows + offset;
+                    let count = Value::Integer(size.min(n - g * size) as i64);
+                    let key = Value::Integer(g as i64);
+                    let avg = Value::Float(g as f64);
+                    let expected = match mode {
+                        "avg" => vec![key, avg],
+                        "avg-float" => vec![key, Value::Float(g as f64 + 0.5)],
+                        "tuple-avg" => vec![Value::Integer(2), key, avg],
+                        "hidden-avg" => vec![avg],
+                        "tuple-count" => vec![Value::Integer(2), key, count],
+                        "tuple-distinct" => vec![key.clone(), key, count],
+                        _ => unreachable!(),
+                    };
+                    assert!(row == &expected);
+                    rows += 1;
+                }
+            }
+            assert_eq!(
+                rows,
+                if limited {
+                    n.div_ceil(size).saturating_sub(offset).min(10)
+                } else {
+                    n.div_ceil(size)
+                }
+            );
+            assert_eq!(meter.used(), 0);
+            let input = stream
+                .counters()
+                .iter()
+                .find(|c| c.op.starts_with("Aggregate"))
+                .unwrap()
+                .rows_in;
+            if optimized && limited {
+                assert!(input <= (12 * size + BATCH_ROWS) as u64);
+            }
+            println!(
+                "{{\"mode\":\"{mode}\",\"facts\":{n},\"limited\":{limited},\"optimized\":{optimized},\"aggregate_peak\":{},\"idspace_peak\":{},\"meter_peak\":{},\"input_rows\":{input}}}",
+                meter.peak_for("Aggregate"),
+                meter.peak_for("IdSpace"),
+                meter.peak()
+            );
+        }
+    }
 }

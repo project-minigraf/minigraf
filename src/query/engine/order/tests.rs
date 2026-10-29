@@ -18,6 +18,96 @@ fn spec(wildcard: bool) -> ScanSpec {
 fn proof(kind: ValueKind) -> Ordering {
     Ordering::source(&spec(false), Domain::Single(kind))
 }
+
+#[cfg_attr(
+    all(target_arch = "wasm32", not(target_os = "wasi")),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", not(target_os = "wasi"))), test)]
+fn generalized_committed_avg_preserves_numeric_and_skipped_value_semantics() {
+    use crate::query::datalog::{parser::parse_datalog_command, types::DatalogCommand};
+    use crate::storage::{backend::memory::MemoryBackend, persistent_facts::PersistentFactStorage};
+    let populations = [
+        vec![
+            Value::Null,
+            Value::Boolean(true),
+            Value::String("x".repeat(100)),
+            Value::Keyword(":skip".into()),
+            Value::Ref(uuid::Uuid::from_u128(999)),
+        ],
+        vec![Value::Integer(i64::MAX), Value::Integer(i64::MAX)],
+        vec![
+            Value::Float(-0.0),
+            Value::Null,
+            Value::String("skip".into()),
+        ],
+        vec![Value::Float(f64::INFINITY), Value::Float(f64::NEG_INFINITY)],
+        vec![Value::Float(f64::MAX), Value::Float(f64::MAX)],
+        vec![Value::Float(1e20), Value::Integer(1), Value::Float(-1e20)],
+        vec![
+            Value::Float(-f64::from_bits(1)),
+            Value::Float(0.0),
+            Value::Float(0.0),
+        ],
+    ];
+    let expected = [
+        Value::Null,
+        Value::Float(i64::MAX as f64),
+        Value::Float(-0.0),
+        Value::Float(f64::NAN),
+        Value::Float(f64::INFINITY),
+        Value::Float(1.0 / 3.0),
+        Value::Float(-0.0),
+    ];
+    let mut facts = Vec::new();
+    for (g, values) in populations.into_iter().enumerate() {
+        for (i, v) in values.into_iter().enumerate() {
+            let e = uuid::Uuid::from_u128((g * 100 + i + 1) as u128);
+            facts.push((e, ":group".into(), Value::Integer(g as i64)));
+            facts.push((e, ":arg".into(), v));
+        }
+    }
+    let mut pfs = PersistentFactStorage::new(MemoryBackend::new(), 32).unwrap();
+    pfs.storage().transact(facts, None).unwrap();
+    pfs.mark_dirty();
+    pfs.save().unwrap();
+    let _text_order = crate::query::datalog::optimizer::set_reorder(false);
+    let DatalogCommand::Query(query) =
+        parse_datalog_command("(query [:find ?g (avg ?v) :where [?e :group ?g] [?e :arg ?v]])")
+            .unwrap()
+    else {
+        panic!("query")
+    };
+    for on in [false, true] {
+        let _mode = set_enabled(on);
+        let mut stream = crate::query::engine::open(
+            pfs.storage().snapshot().unwrap(),
+            crate::query::engine::plan(&query).unwrap(),
+            std::sync::Arc::new(FunctionRegistry::with_builtins()),
+            usize::MAX,
+        )
+        .unwrap();
+        assert_eq!(
+            stream.counters().iter().any(|c| c.op == "AggregateOrdered"),
+            on
+        );
+        let meter = stream.meter().clone();
+        let mut rows = Vec::new();
+        while let Some(batch) = stream.next_rows().unwrap() {
+            rows.extend(batch);
+        }
+        assert_eq!(rows.len(), expected.len());
+        for (g, (row, want)) in rows.iter().zip(&expected).enumerate() {
+            assert!(row[0] == Value::Integer(g as i64));
+            match (&row[1], want) {
+                (Value::Float(a), Value::Float(b)) if b.is_nan() => assert!(a.is_nan()),
+                (Value::Float(a), Value::Float(b)) => assert_eq!(a.to_bits(), b.to_bits()),
+                (a, b) => assert!(a == b),
+            }
+        }
+        assert_eq!(meter.used(), 0);
+    }
+}
 fn sorted(proof: &Ordering) -> bool {
     proof.satisfies(&[1], &[(0, false)])
 }
@@ -113,13 +203,13 @@ fn expression_modes_and_pseudo_bindings_handle_constants_and_replacements() {
         .unwrap();
     assert!(sorted(&checked));
     assert!(
-        !checked.constants.contains(&1),
+        checked.constant_kind(1).is_none(),
         "join-equal checks do not prove an identical constant"
     );
     let replaced = proof(ValueKind::Integer)
         .through(&[Step::Bind(lit, vec![], 1, Out::Replace)])
         .unwrap();
-    assert!(replaced.constants.contains(&1));
+    assert!(replaced.constant_kind(1).is_some());
     assert!(replaced.slot.is_none());
     let replaced = proof(ValueKind::Integer)
         .through(&[Step::Bind(
@@ -130,7 +220,7 @@ fn expression_modes_and_pseudo_bindings_handle_constants_and_replacements() {
         )])
         .unwrap();
     assert!(!sorted(&replaced));
-    assert!(!replaced.constants.contains(&1));
+    assert!(replaced.constant_kind(1).is_none());
     let pseudo = proof(ValueKind::Integer)
         .through(&[Step::Pseudo {
             col: 2,
@@ -164,6 +254,7 @@ fn canonicalization_and_buffering_operators_cannot_supply_false_certificates() {
         }),
         Step::Aggregate {
             groups: vec![1],
+            plain_group_count: 1,
             aggs: vec![("count".into(), 0)],
             zero_row: false,
             grouping: Grouping::Hash,
@@ -475,5 +566,62 @@ fn id_adjacency_cannot_certify_aggregate_or_semantic_sort_order() {
     assert!(
         p.slot.is_none(),
         "a dropped key cannot certify an output order"
+    );
+}
+
+#[test]
+fn generalized_tuple_certificate_rejects_payloads_and_tracks_replaced_constants() {
+    for (value, allowed) in [
+        (Value::Integer(2), true),
+        (Value::Boolean(true), true),
+        (Value::Null, true),
+        (Value::Float(2.0), false),
+        (Value::String("constant".into()), false),
+        (Value::Keyword(":constant".into()), false),
+        (Value::Ref(uuid::Uuid::from_u128(1)), false),
+        (Value::Set(Default::default()), false),
+    ] {
+        let order = proof(ValueKind::Integer)
+            .through(&[Step::Bind(Expr::Lit(value), vec![], 3, Out::New)])
+            .unwrap();
+        assert_eq!(order.tuple_ordered(&[3, 1]), allowed);
+        assert_eq!(order.tuple_ordered(&[1, 3, 1]), allowed);
+        assert!(
+            !order.tuple_ordered(&[3]),
+            "all-constant tuple stays materialized"
+        );
+        let replaced = order
+            .through(&[Step::Bind(
+                Expr::Var("?e".into()),
+                vec![("?e".into(), 0)],
+                3,
+                Out::Replace,
+            )])
+            .unwrap();
+        assert!(!replaced.tuple_ordered(&[3, 1]));
+    }
+    for domain in [Domain::Single(ValueKind::Float), Domain::Numbers] {
+        let order = Ordering::source(&spec(false), domain);
+        assert!(
+            order.tuple_ordered(&[1]),
+            "single numeric key remains eligible"
+        );
+        assert!(
+            !order.tuple_ordered(&[1, 1]),
+            "float tuple is conservative fallback"
+        );
+        assert!(
+            !order.tuple_ordered(&[2, 1]),
+            "even a scalar constant cannot extend a float tuple"
+        );
+    }
+    let mut order = proof(ValueKind::Boolean);
+    assert!(order.tuple_ordered(&[2, 1, 1]));
+    order.remap(&[2, 1, 1]);
+    assert!(order.satisfies(&[0, 2, 1], &[(0, true), (1, false), (2, true)]));
+    order.invalidate(2);
+    assert!(
+        !order.tuple_ordered(&[0, 1]),
+        "replacing an alias invalidates the ordered dimension"
     );
 }

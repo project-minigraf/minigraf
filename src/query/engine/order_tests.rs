@@ -771,6 +771,22 @@ fn optional_proofs_are_bounded_and_queries_without_a_usable_demand_do_no_probes(
         ),
         ("[:find ?v (sum ?v) :where [?e :score ?v] :limit 3]", 0),
         (
+            "[:find ?k ?v (avg ?v) :where [?e :score ?v] [(+ 1 1) ?k] :limit 3]",
+            8,
+        ),
+        (
+            "[:find (avg ?v) :with ?v :where [?e :score ?v] :limit 3]",
+            8,
+        ),
+        (
+            "[:find ?k ?v (avg ?v) :where [?e :score ?v] [(+ 1.0 1.0) ?k] :limit 3]",
+            0,
+        ),
+        (
+            "[:find ?k ?v (avg ?v) :where [?e :score ?v] [(+ 1 1) ?k] :order-by [?k ?v] :offset 7 :limit 0]",
+            0,
+        ),
+        (
             "[:find ?v :where [?e :score ?v] :order-by [?v] :limit 3]",
             8,
         ),

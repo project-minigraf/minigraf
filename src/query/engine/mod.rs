@@ -332,6 +332,7 @@ pub(crate) fn build(
                 aggs,
                 zero_row,
                 grouping,
+                ..
             } => Box::new(aggregate::Aggregate::new(
                 root,
                 groups,
