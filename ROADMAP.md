@@ -1,8 +1,10 @@
 # Minigraf Roadmap
 
-> Planned work for Minigraf, a bi-temporal Datalog database. v2.x has known data-integrity issues ([pinned list](https://github.com/project-minigraf/minigraf/issues/421)); v3.0.0 fixes them (tracker #383).
+> Planned work for Minigraf, a bi-temporal Datalog database. v2.x has known data-integrity issues ([pinned list](https://github.com/project-minigraf/minigraf/issues/421)); v3.0.0 fixes them ([v3.0.0 milestone](https://github.com/project-minigraf/minigraf/milestone/1)).
 
 **Philosophy**: Embedded graph memory for agents, mobile, and the browser — built on the SQLite approach: be boring, be reliable, be embeddable.
+
+Ordinary `avg` is implemented for v3.0.0 (#777), matching window numeric filtering. Consistent handling for the other ordinary aggregates remains a v3.0.0 release requirement (#789).
 
 Completed releases and their implementation details live in the [CHANGELOG](CHANGELOG.md). This document tracks planned, exploratory, and other future work.
 
@@ -47,7 +49,7 @@ Further v2.x releases are data-integrity and security patches only.
 
 ## v2.0.2 — Final Planned v2.x Release (released 2026-09-27)
 
-**The v2.x line (`main`) ends with a patch.** File format stays v7 and the public API does not change. All new feature work has moved to v3.x. Tracker: #383. Details are in the [CHANGELOG](CHANGELOG.md).
+**The v2.x line (`main`) ends with a patch.** File format stays v7 and the public API does not change. All new feature work has moved to v3.x. Work list: [v3.0.0 milestone](https://github.com/project-minigraf/minigraf/milestone/1). Details are in the [CHANGELOG](CHANGELOG.md).
 
 Shipped:
 
@@ -222,7 +224,7 @@ When evaluating features, ask:
 
 - v2.x maintenance on `main`: data-integrity and security fixes only
 - v3.0.0 (format v8 and data integrity) on the `v3` branch, then v3.next features
-- Production readiness for high-stakes deployments, tracked in #383
+- Production readiness for high-stakes deployments, tracked in the [v3.0.0 milestone](https://github.com/project-minigraf/minigraf/milestone/1)
 - Ecosystem work tracked in [`minigraf-examples`](https://github.com/project-minigraf/minigraf-examples)
 - Developer tools tracked in `minigraf-inspector` and `minigraf-visualizer`
 

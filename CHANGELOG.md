@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Ordinary average** (#777): `(avg ?v)` no longer raises PRS-027. Grouped and ungrouped queries use the same numeric population and arithmetic as window `avg`: skip nil and nonnumeric values, sum exactly, round the total once to Float, then divide by the numeric count. Integer totals are not saturated. Results are Float, or nil for an existing group without numbers; no matching rows yields no rows. The total can overflow before division, and division rounds separately. Existing window behavior is unchanged. Retained exact-sum allocations for ordinary `sum` and `avg` are now charged to the query memory limit.
+
+### Documentation
+
+- Retire tracker #383 in favor of the v3.0.0 milestone and its release gates. Other ordinary/window value-handling differences are tracked in #789.
+
 ### Performance
 
 - **Resolve expression keyword literals once per operator** (#774). `=` and `!=` reuse a literal keyword's entity UUID across input rows, including nested expressions, rule bodies and prepared slots. The cache contains only literals from that expression and is discarded with the operator; dynamic operands retain the existing comparison semantics. No API, dependency or file-format change. See the [measurements](docs/benchmarks/774-expression-keywords.md).

@@ -736,16 +736,17 @@ See the [Datalog Reference](https://project-minigraf.github.io/minigraf-docs/lat
 
 **Error text**: `'{}' is a window function and requires an ':over (...)' clause`
 
-**Cause**: Window functions (`rank`, `row-number`, `dense-rank`, `ntile`, `percent-rank`, `cume-dist`) must be accompanied by an `:over` clause specifying ordering and/or partitioning.
+**Cause**: Window functions `rank` and `row-number` must be accompanied by an `:over` clause specifying ordering and/or partitioning.
 
 **Resolution**:
 - Add an `:over` clause: `(rank :over (:order-by ?score))`.
+- Since v3.0.0, `avg` also works as an ordinary aggregate without `:over` (#777); v2 requires the window form.
 - See the [Datalog Reference — Window Functions](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#window-functions).
 
 **Example**:
 ```datalog
-(query {:find [?e (rank)]
-        :where [[?e :score ?score]]})
+(query [:find ?e (rank ?score)
+        :where [?e :score ?score]])
 ```
 *Missing `:over`; use `(rank :over (:order-by ?score))`*
 
@@ -4046,7 +4047,7 @@ these two arities.
 **Error text**: `unknown aggregate function: '{}'`
 
 **Cause**: A `:find` or `:with` clause referenced an aggregate function
-name that is neither a built-in (`count`, `sum`, `avg`, `min`, `max`, etc.)
+name that is neither a built-in (`count`, `count-distinct`, `sum`, `sum-distinct`, `avg`, `min`, `max`)
 nor a user-defined function registered via `db.register_aggregate()`.
 
 **Resolution**:

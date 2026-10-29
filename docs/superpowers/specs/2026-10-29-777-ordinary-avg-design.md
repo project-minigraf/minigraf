@@ -1,10 +1,10 @@
 # #777: ordinary average and accurate v2 documentation
 
 Date: 2026-10-29. Target: v3.0.0, matching #777's milestone.
-Status: revised for Claude review; maintainer selected matching window semantics
-on 2026-10-29. No runtime implementation yet.
+Status: Claude-approved (second review, 2026-10-29); maintainer selected matching window semantics
+on 2026-10-29. Implementation is on feat/777-avg.
 Issue: https://github.com/project-minigraf/minigraf/issues/777
-Base: v3 at `5f8073250`; v2 documentation is a separate main-based change.
+Base: v3, rebased onto `c2e862fe8` (#774); v2 documentation is a separate main-based change.
 
 ## Scope and philosophy
 
@@ -103,7 +103,7 @@ the budget. Capture baseline and final results on exact revisions.
 
 ## Documentation and delivery
 
-1. A main-based documentation PR removes ordinary avg claims from PRS-022,
+1. A main-based documentation PR removes ordinary avg claims from PRS-021,
    PRS-024, INT-029 and any other current documentation. Name the six ordinary
    built-ins: count, count-distinct, sum, sum-distinct, min, max. State that v2
    avg requires :over. Correct PRS-027's unsupported function list and use a
