@@ -248,6 +248,16 @@ fn bench_ordered_groups(c: &mut Criterion) {
             ("distinct", "count-distinct", false),
             ("count_limit", "count", true),
             ("distinct_limit", "count-distinct", true),
+            ("avg", "avg", false),
+            ("sum", "sum", false),
+            ("min", "min", false),
+            ("max", "max", false),
+            ("sum_distinct", "sum-distinct", false),
+            ("avg_limit", "avg", true),
+            ("sum_limit", "sum", true),
+            ("min_limit", "min", true),
+            ("max_limit", "max", true),
+            ("sum_distinct_limit", "sum-distinct", true),
         ] {
             group.bench_with_input(BenchmarkId::new(mode, label), &n, |b, &n| {
                 let dir = tempfile::tempdir().unwrap();
@@ -258,8 +268,13 @@ fn bench_ordered_groups(c: &mut Criterion) {
                     .path(&path)
                     .open()
                     .unwrap();
+                let arg = if matches!(func, "count" | "count-distinct") {
+                    "?e"
+                } else {
+                    "?v"
+                };
                 let query = format!(
-                    "(query [:find ?v ({func} ?e) :where [?e :val ?v] :order-by [?v] {}])",
+                    "(query [:find ?v ({func} {arg}) :where [?e :val ?v] :order-by [?v] {}])",
                     if limited { ":limit 10" } else { "" }
                 );
                 b.iter(|| {

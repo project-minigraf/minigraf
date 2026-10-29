@@ -54,6 +54,12 @@ fn ordered_results_are_independent_of_order_modes_and_physical_plans() {
         "(query [:find ?v :where [?e :score ?v] (or [?e :flag true] [?e :flag false]) :order-by [?v] :limit 5])",
         "(query [:find ?v :where [?e :float ?v] :distinct :order-by [?v]])",
         "(query [:find ?g (count ?e) :where [?e :group ?g] :order-by [?g]])",
+        "(query [:find ?g (sum ?v) (avg ?v) (min ?v) (max ?v) (sum-distinct ?v) :where [?e :group ?g] [?e :score ?v] :order-by [?g] :offset 1 :limit 2])",
+        "(query [:find ?k ?g (avg ?v) :where [?e :group ?g] [?e :score ?v] [(+ 1 1) ?k] :order-by [?k ?g] :limit 2])",
+        "(query [:find ?k (avg ?v) :with ?g :where [?e :group ?g] [?e :score ?v] [(+ 1 1) ?k] :order-by [?k (avg ?v)] :limit 2])",
+        "(query [:find ?g ?g (sum-distinct ?v) :where [?e :group ?g] [?e :score ?v] :distinct :order-by [?g] :limit 2])",
+        "(query [:find ?g (min ?v) :where [?e :group ?g] (scored ?e ?v) :order-by [?g]])",
+        "(query [:find ?g (sum ?v) (avg ?v) :where [?e :group ?g] (not [?e :hidden true]) [?e :score ?v] :order-by [?g]])",
         "(query [:find ?v (rank :over (:partition-by ?e :order-by ?v)) :where [?e :score ?v] :order-by [?v]])",
         "(query [:find ?v :where (scored ?e ?v) :order-by [?v] :limit 5])",
     ];

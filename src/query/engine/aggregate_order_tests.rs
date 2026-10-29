@@ -208,30 +208,39 @@ fn generalized_prepared_tuple_proofs_follow_bindings_and_pinned_snapshots() {
 
 #[test]
 fn generalized_avg_tracks_aggregate_and_idspace_peaks_separately() {
-    let mut peaks = Vec::new();
-    for n in [1024, 8192] {
-        let (_dir, db) = fixture(n, 1);
-        let mut cursor = db
-            .query("(query [:find ?g (avg ?g) :where [?e :bucket ?g]])")
-            .unwrap();
-        let stream = cursor.stream_mut().unwrap();
-        assert!(ordered(&stream.counters()));
-        let meter = stream.meter().clone();
-        let mut rows = 0;
-        while let Some(batch) = stream.next_rows().unwrap() {
-            rows += batch.len();
+    for refs in [false, true] {
+        let mut peaks = Vec::new();
+        for n in [1024, 8192] {
+            let (_dir, db) = fixture(n, if refs { n } else { 1 });
+            let arg = if refs { "?e" } else { "?g" };
+            let mut cursor = db
+                .query(&format!(
+                    "(query [:find ?g (avg {arg}) :where [?e :bucket ?g]])"
+                ))
+                .unwrap();
+            let stream = cursor.stream_mut().unwrap();
+            assert!(ordered(&stream.counters()));
+            let meter = stream.meter().clone();
+            let mut rows = 0;
+            while let Some(batch) = stream.next_rows().unwrap() {
+                if refs {
+                    assert!(batch == vec![vec![Value::Integer(0), Value::Null]]);
+                }
+                rows += batch.len();
+            }
+            assert_eq!(rows, if refs { 1 } else { n });
+            assert_eq!(meter.used(), 0);
+            let aggregate = meter.peak_for("Aggregate");
+            let ids = meter.peak_for("IdSpace");
+            assert!(aggregate > 0, "Aggregate is measured independently");
+            if refs {
+                assert!(ids > 0, "skipped ref arguments exercise dictionary lookups");
+            }
+            peaks.push((aggregate, ids));
         }
-        assert_eq!(rows, n);
-        assert_eq!(meter.used(), 0);
-        let aggregate = meter.peak_for("Aggregate");
-        assert!(
-            aggregate > 0,
-            "Aggregate holder peak is measured independently"
-        );
-        peaks.push((aggregate, meter.peak_for("IdSpace")));
+        assert!(peaks[1].0 <= peaks[0].0 + two_input_batches());
+        assert!(peaks[1].1 <= peaks[0].1 + two_input_batches());
     }
-    assert!(peaks[1].0 <= peaks[0].0 + two_input_batches());
-    assert!(peaks[1].1 <= peaks[0].1 + two_input_batches());
 }
 
 #[test]
@@ -1200,16 +1209,40 @@ fn certified_growing_distinct_memory_probe() {
 
 #[test]
 fn certified_metadata_arguments_preserve_integer_and_nil_results() {
-    let (_dir, db) = fixture(12, 3);
+    let dir = tempfile::tempdir().unwrap();
+    let db = Minigraf::open(dir.path().join("metadata.graph")).unwrap();
+    let facts: String = (0..12)
+        .map(|i| format!("[:e{i} :bucket {}] [:e{i} :item {}]", i / 3, i % 3))
+        .collect();
+    db.execute(&format!(
+        "(transact {{:valid-from \"2020-01-01T00:00:00Z\"}} [{facts}])"
+    ))
+    .unwrap();
+    db.checkpoint().unwrap();
     let _text_order = crate::query::datalog::optimizer::set_reorder(false);
-    for q in [
-        "[:find ?g (max ?t) (sum-distinct ?t) :any-valid-time :where [?e :bucket ?g] [?e :db/tx-count ?t]]",
-        "[:find ?g (max ?t) :valid-at :any-valid-time :where [?e :bucket ?g] [?e :db/valid-at ?t]]",
+    for (q, expected) in [
+        (
+            "[:find ?g (max ?t) (sum-distinct ?t) :any-valid-time :where [?e :bucket ?g] [?e :db/tx-count ?t]]",
+            (0..4)
+                .map(|g| vec![Value::Integer(g), Value::Integer(1), Value::Integer(1)])
+                .collect::<Vec<_>>(),
+        ),
+        (
+            "[:find ?g (max ?t) :valid-at :any-valid-time :where [?e :bucket ?g] [?e :db/valid-at ?t]]",
+            vec![],
+        ),
+        (
+            "[:find ?g (max ?t) :valid-at \"2100-01-01T00:00:00Z\" :where [?e :bucket ?g] [?e :db/valid-at ?t]]",
+            (0..4)
+                .map(|g| vec![Value::Integer(g), Value::Integer(4_102_444_800_000)])
+                .collect(),
+        ),
     ] {
-        let expected = {
+        let fallback = {
             let _off = super::order::set_enabled(false);
             collect(&db, q).0
         };
+        assert!(fallback == expected);
         let (rows, counters, _) = collect(&db, q);
         assert!(ordered(&counters));
         assert!(rows == expected);
