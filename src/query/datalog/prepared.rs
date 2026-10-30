@@ -257,7 +257,7 @@ fn collect_slot_names(query: &DatalogQuery) -> Vec<String> {
     }
     collect_slots_from_clauses(&query.where_clauses, &mut names);
     let mut result: Vec<String> = names.into_iter().collect();
-    result.sort();
+    result.sort_unstable();
     result
 }
 

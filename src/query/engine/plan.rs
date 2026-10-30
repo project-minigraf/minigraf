@@ -1396,7 +1396,7 @@ impl Builder {
                     .filter(|v| !self.slots.by_var.contains_key(*v))
                     .cloned()
                     .collect();
-                own.sort();
+                own.sort_unstable();
                 if k == 0 {
                     names = own;
                 } else if own != names {
@@ -1438,7 +1438,9 @@ impl Builder {
             .into_iter()
             .filter_map(|v| self.slots.by_var.get(&v).map(|&s| (v, s)))
             .collect();
-        imports.sort_by_key(|&(_, s)| s);
+        // Every name has its own slot, so equal slots are one variable named
+        // twice (`[?x ?x]`): ties are identical.
+        imports.sort_unstable_by_key(|&(_, s)| s);
         let seeded: HashSet<String> = imports.iter().map(|(v, _)| v.clone()).collect();
         let (seeded_order, _) = optimizer::plan_seeded(body.to_vec(), &seeded);
         // A probe per outer row holds nothing: correlated when the first

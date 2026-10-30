@@ -4,12 +4,12 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Active** | 2,037 | 2,072 |
+| **Active** | 2,038 | 2,073 |
 | **Ignored** | 19 | 20 |
-| **Total** | 2,056 | 2,092 |
+| **Total** | 2,057 | 2,093 |
 
 Counts above are the current Cargo test inventory (active versus ignored),
-including #777, #789 and #781. Verification results below identify which suites ran.
+including #777, #789, #781 and #795. Verification results below identify which suites ran.
 
 **#781 verification (2026-10-29)**: 24 active tests and two ignored measurement
 probes are added. On implementation `90cb88924`, the complete default suite
@@ -109,6 +109,8 @@ limit. Platform/focused checks used bench Rust 1.99.1. Full `test-hooks`
 execution was not repeated; its 2,066-test inventory was verified.
 
 ## Covered Areas
+
+- **Unique query metadata sorts** (#795; `src/query/engine/tests.rs`, one test): a join variable named twice in a `not-join` or `or-join`, the only equal-key tie in the planner's import sort, returns the rows of the same clause with it named once, under the chosen, hashed and correlated body forms.
 
 - **Certified ordered aggregates** (#781; `src/query/engine/aggregate_order_tests.rs`, `order/tests.rs`, `order/arguments.rs`, `tests/input_order_test.rs`): sum/avg, scalar extrema, Integer/nil distinct sums, complete effective tuples, hidden `:with` keys, output remapping and raw-history argument domains. The original #641 count-only eligibility coverage is extended with explicit scalar/numeric answers, retained Sort, dropped groups, source-error/resource-error competition, pending/staged invalidation, optional-proof rollback, portable committed readers, and separately bounded Aggregate/IdSpace controls. Unproved tuples/arguments and registered finalizers retain full-input behavior.
 
