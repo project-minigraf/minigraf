@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Analyze #797 campaigns: per-block log mean-latency ratios and bounds.
 
-    analyze.py RAW.jsonl [RAW.jsonl ...] > summary.json
+    analyze.py RAW.jsonl[.gz] [RAW.jsonl[.gz] ...] > summary.json
 
 For each campaign, pair and workload: the block ratio is the candidate's
 mean ns/op over the base's (for `cc_*`, wall time per operation: inverse
@@ -11,6 +11,7 @@ have the same result digest in both processes (the harness checks every
 timed operation's row count): a mismatch is reported and fails the workload. p50/p99, allocations and RSS are medians
 over blocks and do not gate.
 """
+import gzip
 import json
 import math
 import statistics
@@ -78,7 +79,7 @@ def metric(r):
 def main(paths):
     groups = {}
     for path in paths:
-        for line in open(path):
+        for line in (gzip.open(path, "rt") if path.endswith(".gz") else open(path)):
             rec = json.loads(line)
             for rb, rc in zip(rec["base_reports"], rec["cand_reports"]):
                 assert rb["name"] == rc["name"]
@@ -100,7 +101,11 @@ def main(paths):
         cs = [rc for _, _, rc in rows]
         extra = {}
         if "resident_pages_after_evict" in bs[0]:
-            extra["resident_pages_after_evict_max"] = max(r["resident_pages_after_evict"] for r in bs + cs)
+            # The harness sums residency over a process's observations;
+            # report it per observation (mean within a process).
+            per = [r["resident_pages_after_evict"] / r["ops"] for r in bs + cs]
+            extra["resident_pages_per_observation_median"] = statistics.median(per)
+            extra["resident_pages_per_observation_max"] = max(per)
             extra["file_pages"] = bs[0]["file_pages"]
         out.append({
             "campaign": campaign, "pair": pair, "workload": name, "blocks": n,

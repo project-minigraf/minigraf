@@ -1,0 +1,155 @@
+{
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1\n",
+  "harness_sha256": "1ec86c064401a4af53f1c33425022821f3b5e44460667f4bbfa0a246711415ef",
+  "hook_patch_sha256": "8c5cc9471bd2b3862119091b6d1c34ddd345ec939ac628860c7d3e109f2e5760",
+  "variants": {
+    "B": {
+      "commit": "15badca89db60bbd458b52af59a064b9c0e7da1f",
+      "lock_sha256": "82fa4d92e6389dc4a44d47bac6fdc361ffb4e736433735da140624eb40807660",
+      "reader_rs_sha256": "cd4dfca87925337e4fa32f2a3eaf2c7d320425d6820c807cfd55b418409fb91e",
+      "binaries": {
+        "envelope": {
+          "file": "B-envelope",
+          "sha256": "a10ff3740d73de4546033754e65aa6f13ec1b971bd05107ad32f6d9b96c476b3",
+          "cargo": "--profile envelope",
+          "env": {}
+        },
+        "release": {
+          "file": "B-release",
+          "sha256": "4b724bd22c5aa288878f972949e59f24b6f255820b99309254a29c41999be8b4",
+          "cargo": "--release",
+          "env": {}
+        },
+        "ab-envelope": {
+          "file": "B-ab-envelope",
+          "sha256": "2f97f19ed4fc8dfa803c31d9cbcc5805b9578f3e160e041e0a79738029702e95",
+          "cargo": "--profile envelope",
+          "env": {
+            "RUSTFLAGS": "--cfg minigraf_ab",
+            "CARGO_TARGET_DIR": "target-ab"
+          }
+        },
+        "wasi-envelope": {
+          "file": "B-wasi-envelope.wasm",
+          "sha256": "e61dc27ba843c70238c0ee955b65ea9a02c26a4ca9b0b3ad16e883b9bf5d176f",
+          "cargo": "--profile envelope --target wasm32-wasip1",
+          "env": {
+            "RUSTFLAGS": "--cfg minigraf_ab",
+            "CARGO_TARGET_DIR": "target-ab"
+          }
+        },
+        "browser": {
+          "file": "B-browser.wasm",
+          "sha256": "a5c7bf47361493452aaefed670d2758a6f27de462f440df9bbe5180158169a1e",
+          "cargo": "test --release --target wasm32-unknown-unknown --features browser --example ab_browser --no-run",
+          "env": {
+            "CARGO_PROFILE_RELEASE_LTO": "false"
+          }
+        }
+      }
+    },
+    "H": {
+      "commit": "1b5169ef8e31e3f1bf848d52ffc2e08f3c17068f",
+      "lock_sha256": "82fa4d92e6389dc4a44d47bac6fdc361ffb4e736433735da140624eb40807660",
+      "reader_rs_sha256": "1a336147cca5ec99ac34b2dfe72a367e8f9314f8f4c109f5e9fbd9a94488b258",
+      "binaries": {
+        "envelope": {
+          "file": "H-envelope",
+          "sha256": "1a357ce8fe8f025d158b74d719be7995e93d050a79581c699432e0bde33bbf01",
+          "cargo": "--profile envelope",
+          "env": {}
+        },
+        "release": {
+          "file": "H-release",
+          "sha256": "dc1d019904d57ffaaf3bfaf2f395b62ba75d01b4326f710cf74e75d286eaaf94",
+          "cargo": "--release",
+          "env": {}
+        },
+        "ab-envelope": {
+          "file": "H-ab-envelope",
+          "sha256": "065be98e15fb23470ff566e810b9208b8cea2bea3f9668d13af0cfd5ec024931",
+          "cargo": "--profile envelope",
+          "env": {
+            "RUSTFLAGS": "--cfg minigraf_ab",
+            "CARGO_TARGET_DIR": "target-ab"
+          }
+        },
+        "wasi-envelope": {
+          "file": "H-wasi-envelope.wasm",
+          "sha256": "4822d26360b7819439e3b1156fd4a4aa73440f8b1d4045837634c84f253e42c1",
+          "cargo": "--profile envelope --target wasm32-wasip1",
+          "env": {
+            "RUSTFLAGS": "--cfg minigraf_ab",
+            "CARGO_TARGET_DIR": "target-ab"
+          }
+        },
+        "browser": {
+          "file": "H-browser.wasm",
+          "sha256": "e97a0938c066d6bb49f09ae74e06262bc1179ebd24526e53f0af8aa6c30cbda8",
+          "cargo": "test --release --target wasm32-unknown-unknown --features browser --example ab_browser --no-run",
+          "env": {
+            "CARGO_PROFILE_RELEASE_LTO": "false"
+          }
+        }
+      }
+    },
+    "P": {
+      "commit": "194544597c6ba31618ab44945a46b3972c076bc3",
+      "lock_sha256": "82fa4d92e6389dc4a44d47bac6fdc361ffb4e736433735da140624eb40807660",
+      "reader_rs_sha256": "4c12cad868ba807cdec868479501524805f162d7d855619f831ceaa6147b7872",
+      "binaries": {
+        "envelope": {
+          "file": "P-envelope",
+          "sha256": "95c5412bb9747e070f78c1ee868799a331bd6fa4eb1883e798c125624c47f255",
+          "cargo": "--profile envelope",
+          "env": {}
+        },
+        "release": {
+          "file": "P-release",
+          "sha256": "10d6334bb275b216f9b50377550dba9478e15534edb9e8fbaac9ff09ed14a497",
+          "cargo": "--release",
+          "env": {}
+        },
+        "ab-envelope": {
+          "file": "P-ab-envelope",
+          "sha256": "79ea461244aa45db8aed7d947f7307a8122964baa300b7d1f81c6e64d08ff5f5",
+          "cargo": "--profile envelope",
+          "env": {
+            "RUSTFLAGS": "--cfg minigraf_ab",
+            "CARGO_TARGET_DIR": "target-ab"
+          }
+        },
+        "wasi-envelope": {
+          "file": "P-wasi-envelope.wasm",
+          "sha256": "0c8e4cf8863ca1774db4e4afd630120d99dd7a5e2939e3c9109bc6e3594221b2",
+          "cargo": "--profile envelope --target wasm32-wasip1",
+          "env": {
+            "RUSTFLAGS": "--cfg minigraf_ab",
+            "CARGO_TARGET_DIR": "target-ab"
+          }
+        },
+        "browser": {
+          "file": "P-browser.wasm",
+          "sha256": "c6985e8ac1505c7b82e58273c4f31f03b340eea5dd447ba1a481663a3818c3f8",
+          "cargo": "test --release --target wasm32-unknown-unknown --features browser --example ab_browser --no-run",
+          "env": {
+            "CARGO_PROFILE_RELEASE_LTO": "false"
+          }
+        }
+      }
+    }
+  },
+  "fixture": {
+    "file": "fixture-100k.graph",
+    "sha256": "59e0023aad119ea1939876519887c6b10b66c6558e32bf9dc78476ed6216c0fe",
+    "meta": {
+      "build_ms": 92080.77345,
+      "entities": 16666,
+      "facts": 100000,
+      "file_bytes": 10764288,
+      "hot_tx_half": 1253,
+      "peak_rss_kb": 189680,
+      "tx_half": 126
+    }
+  }
+}

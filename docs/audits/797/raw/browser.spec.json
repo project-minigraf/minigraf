@@ -1,0 +1,13 @@
+{
+ "pairs": [
+  "B:H",
+  "B:P"
+ ],
+ "profile": "browser",
+ "workloads": [
+  "br"
+ ],
+ "secs": 1.5,
+ "blocks": 32,
+ "placement": "sequential"
+}

@@ -1,0 +1,13 @@
+step	status
+test-all-features	0
+test-hooks	0
+clippy-ci	0
+clippy-all-targets	101
+fmt	0
+msrv	0
+clippy-wasm-browser	0
+clippy-wasi	0
+wasi-tests	0
+browser-firefox	0
+shuttle	0
+coverage	0

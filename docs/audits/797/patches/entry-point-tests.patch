@@ -1,0 +1,242 @@
+From 3280481369a9dc34c455870057f45f65a781653a Mon Sep 17 00:00:00 2001
+From: Aditya Mukhopadhyay <webmaster@adityamukho.com>
+Date: Fri, 30 Oct 2026 14:28:05 +0530
+Subject: [PATCH] test(storage): direct tests of the committed reader's
+ remaining entry points (#797)
+
+next_ids, the long value and transaction-id lookups, and the fact log's
+last_tx, walk (resume after a key, early stop, prefix, INT-049 before the
+empty-root check) and decode had only indirect coverage. A tx_order read
+that fails must not be cached.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01H2a7Qo5yfvBEjzSuUoB2n9
+---
+ src/storage/reader.rs | 214 ++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 214 insertions(+)
+
+diff --git a/src/storage/reader.rs b/src/storage/reader.rs
+index 8ea56bd89..0e9743229 100644
+--- a/src/storage/reader.rs
++++ b/src/storage/reader.rs
+@@ -851,3 +851,217 @@ mod uuid_batch_tests {
+         }
+     }
+ }
++
++/// The reader's entry points with no direct test elsewhere (#797): the
++/// dictionary's long values and transaction ids, `next_ids`, and the fact
++/// log's `last_tx`, `walk` and `decode`; and a `tx_order` read that fails is
++/// not cached.
++#[cfg(test)]
++mod entry_point_tests {
++    use super::*;
++    use crate::graph::types::{VALID_TIME_FOREVER, Value};
++    use crate::storage::backend::MemoryBackend;
++    use crate::storage::persistent_facts::PersistentFactStorage;
++    use std::sync::atomic::{AtomicBool, Ordering};
++
++    /// A memory backend whose reads fail while `fail` is set.
++    struct FailingReads {
++        inner: MemoryBackend,
++        fail: Arc<AtomicBool>,
++    }
++
++    impl StorageBackend for FailingReads {
++        fn write_page(&mut self, page_id: u64, data: &[u8]) -> Result<()> {
++            self.inner.write_page(page_id, data)
++        }
++        fn read_page(&self, page_id: u64) -> Result<Vec<u8>> {
++            if self.fail.load(Ordering::SeqCst) {
++                anyhow::bail!("injected read failure");
++            }
++            self.inner.read_page(page_id)
++        }
++        fn sync(&mut self) -> Result<()> {
++            self.inner.sync()
++        }
++        fn page_count(&self) -> Result<u64> {
++            self.inner.page_count()
++        }
++        fn close(&mut self) -> Result<()> {
++            self.inner.close()
++        }
++        fn backend_name(&self) -> &'static str {
++            "failing-reads"
++        }
++    }
++
++    const LONG: &str = "a string well over the sixty-four bytes kept inline in an index key, so it lives in a value page";
++
++    fn entity(i: u128) -> EntityId {
++        EntityId::from_u128(i + 1)
++    }
++
++    /// Facts of entities 0..4 in transactions 1..=4 (`tx_id` 100 × n), one of
++    /// them a long string, checkpointed with no page cache.
++    fn committed() -> (PersistentFactStorage<FailingReads>, Arc<AtomicBool>) {
++        let fail = Arc::new(AtomicBool::new(false));
++        let backend = FailingReads {
++            inner: MemoryBackend::new(),
++            fail: fail.clone(),
++        };
++        let mut pfs = PersistentFactStorage::new(backend, 0).unwrap();
++        for i in 0..4u64 {
++            let value = if i == 2 {
++                Value::String(LONG.to_string())
++            } else {
++                Value::Integer(i as i64)
++            };
++            for attribute in [":t/a", ":t/b"] {
++                let fact = Fact {
++                    entity: entity(u128::from(i)),
++                    attribute: attribute.to_string(),
++                    value: value.clone(),
++                    tx_id: 100 * (i + 1),
++                    tx_count: i + 1,
++                    valid_from: 0,
++                    valid_to: VALID_TIME_FOREVER,
++                    asserted: true,
++                };
++                assert!(pfs.storage().load_fact(fact).unwrap(), "loaded");
++            }
++        }
++        pfs.mark_dirty();
++        pfs.save().unwrap();
++        (pfs, fail)
++    }
++
++    fn code(e: anyhow::Error) -> &'static str {
++        crate::error::MinigrafError::from(e).code()
++    }
++
++    #[test]
++    fn dictionary_entry_points() {
++        let (pfs, _) = committed();
++        let snap = pfs.storage().snapshot().unwrap();
++        let reader = snap.committed.as_ref().expect("committed");
++        let src = reader.key_source().expect("keys");
++        let (next_eid, next_iid) = src.next_ids();
++        let eids: Vec<u64> = (0..4)
++            .map(|i| src.eid_of(&entity(i)).unwrap().expect("committed entity"))
++            .collect();
++        assert!(eids.iter().all(|&e| e < next_eid), "eids below next_eid");
++        assert_eq!(src.eid_of(&entity(9)).unwrap(), None, "absent entity");
++        for a in [":t/a", ":t/b"] {
++            let iid = src.iid_of(a).unwrap().expect("committed ident");
++            assert!(iid < next_iid, "iids below next_iid");
++            assert_eq!(src.ident_of(iid).unwrap(), a);
++        }
++        for n in 1..=4 {
++            assert_eq!(src.tx_id_of(n).unwrap(), 100 * n, "tx_id of tx_count");
++        }
++        let vref = src
++            .long_value_ref(LONG)
++            .unwrap()
++            .expect("stored long string");
++        assert_eq!(src.long_value(vref).unwrap(), LONG);
++        let bytes = src.long_bytes(vref).unwrap();
++        assert_eq!(src.long_bytes_ref(&bytes).unwrap(), Some(vref));
++        assert_eq!(src.long_value_ref(&format!("{LONG}!")).unwrap(), None);
++        assert_eq!(src.long_bytes_ref(b"absent").unwrap(), None);
++    }
++
++    #[test]
++    fn log_entry_points() {
++        let (pfs, _) = committed();
++        let snap = pfs.storage().snapshot().unwrap();
++        let reader = snap.committed.as_ref().expect("committed");
++        let log = reader.log_source().expect("log");
++        assert_eq!(
++            log.last_tx(),
++            pfs.last_checkpointed_tx_count(),
++            "the generation's last checkpointed tx_count"
++        );
++        let mut keys = Vec::new();
++        log.walk(Index::Eavt, &[], None, &mut |k| {
++            keys.push(k.to_vec());
++            Ok(true)
++        })
++        .unwrap();
++        assert_eq!(keys.len(), 8, "every EAVT key");
++        assert!(
++            log.decode(Index::Eavt, &keys).unwrap() == reader.all_facts().unwrap(),
++            "decode gives the facts in key order"
++        );
++        // Resume after an exact key, an early stop, and an entity prefix.
++        let mut rest = Vec::new();
++        log.walk(Index::Eavt, &[], Some(&keys[2]), &mut |k| {
++            rest.push(k.to_vec());
++            Ok(true)
++        })
++        .unwrap();
++        assert!(rest == keys[3..], "resumes after the key");
++        let mut seen = 0;
++        log.walk(Index::Aevt, &[], None, &mut |_| {
++            seen += 1;
++            Ok(seen < 3)
++        })
++        .unwrap();
++        assert_eq!(seen, 3, "stops when visit returns false");
++        let e = reader
++            .key_source()
++            .unwrap()
++            .eid_of(&entity(1))
++            .unwrap()
++            .unwrap();
++        let mut of_entity = 0;
++        log.walk(Index::Eavt, &keys::entity_prefix(e), None, &mut |_| {
++            of_entity += 1;
++            Ok(true)
++        })
++        .unwrap();
++        assert_eq!(of_entity, 2, "the entity's keys only");
++        for index in [Index::Avet, Index::Vaet] {
++            let err = log.walk(index, &[], None, &mut |_| Ok(true)).unwrap_err();
++            assert_eq!(code(err), "INT-049", "fact log walks EAVT or AEVT only");
++        }
++    }
++
++    #[test]
++    fn log_walk_of_an_empty_generation() {
++        let mut pfs = PersistentFactStorage::new(MemoryBackend::new(), 0).unwrap();
++        pfs.mark_dirty();
++        pfs.save().unwrap();
++        let snap = pfs.storage().snapshot().unwrap();
++        let log = snap.committed.as_ref().unwrap().log_source().unwrap();
++        let mut seen = 0;
++        log.walk(Index::Eavt, &[], None, &mut |_| {
++            seen += 1;
++            Ok(true)
++        })
++        .unwrap();
++        assert_eq!(seen, 0, "an empty tree has no keys");
++        // The index is checked before the empty root.
++        let err = log
++            .walk(Index::Avet, &[], None, &mut |_| Ok(true))
++            .unwrap_err();
++        assert_eq!(code(err), "INT-049");
++        assert!(log.decode(Index::Eavt, &[]).unwrap().is_empty());
++    }
++
++    #[test]
++    fn failed_tx_order_is_not_cached() {
++        let (pfs, fail) = committed();
++        let snap = pfs.storage().snapshot().unwrap();
++        let src = snap.committed.as_ref().unwrap().key_source().unwrap();
++        fail.store(true, Ordering::SeqCst);
++        assert!(src.tx_order().is_err(), "the DICT read fails");
++        assert!(src.last_tx_at(250).is_err(), "and so does last_tx_at");
++        fail.store(false, Ordering::SeqCst);
++        let order = src.tx_order().unwrap();
++        assert!(order.monotonic, "rising tx_ids");
++        assert_eq!(order.last, Some((4, 400)), "newest transaction");
++        assert_eq!(src.last_tx_at(250).unwrap(), 2, "newest tx_id <= 250");
++        // Cached now: no page is read.
++        fail.store(true, Ordering::SeqCst);
++        assert_eq!(src.tx_order().unwrap(), order, "cached after success");
++    }
++}
+-- 
+2.55.0
+
