@@ -1,0 +1,5 @@
+--- a/src/query/engine/plan.rs
++++ b/src/query/engine/plan.rs
+@@ -1441 +1441 @@
+-        imports.sort_by_key(|&(_, s)| s);
++        imports.sort_unstable_by_key(|&(_, s)| s);

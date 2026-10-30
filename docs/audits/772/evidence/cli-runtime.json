@@ -1,0 +1,58 @@
+[
+  {
+    "round": 0,
+    "base_node": 1,
+    "candidate_node": 3,
+    "dist_seconds": 0.9249690969008952,
+    "release_seconds": 0.8358670680318028
+  },
+  {
+    "round": 1,
+    "base_node": 3,
+    "candidate_node": 1,
+    "dist_seconds": 0.9138289410620928,
+    "release_seconds": 0.8395526350941509
+  },
+  {
+    "round": 2,
+    "base_node": 1,
+    "candidate_node": 3,
+    "dist_seconds": 0.9249248949345201,
+    "release_seconds": 0.8416663140524179
+  },
+  {
+    "round": 3,
+    "base_node": 3,
+    "candidate_node": 1,
+    "dist_seconds": 0.9173004371114075,
+    "release_seconds": 0.8536521592177451
+  },
+  {
+    "round": 4,
+    "base_node": 1,
+    "candidate_node": 3,
+    "dist_seconds": 0.9221697959583253,
+    "release_seconds": 0.8372825500555336
+  },
+  {
+    "round": 5,
+    "base_node": 3,
+    "candidate_node": 1,
+    "dist_seconds": 0.9150846709962934,
+    "release_seconds": 0.8401562829967588
+  },
+  {
+    "round": 6,
+    "base_node": 1,
+    "candidate_node": 3,
+    "dist_seconds": 0.9384670939762145,
+    "release_seconds": 0.8412347189150751
+  },
+  {
+    "round": 7,
+    "base_node": 3,
+    "candidate_node": 1,
+    "dist_seconds": 0.9151123089250177,
+    "release_seconds": 0.8311216931324452
+  }
+]

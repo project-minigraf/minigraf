@@ -1,0 +1,6 @@
+set minigraf.js: identical after normalizing function element indices and shim_idx comments = True
+set minigraf.d.ts: identical after normalizing function element indices and shim_idx comments = True
+set minigraf_bg.wasm.d.ts: identical after normalizing function element indices and shim_idx comments = True
+reader minigraf.js: identical after normalizing function element indices and shim_idx comments = True
+reader minigraf.d.ts: identical after normalizing function element indices and shim_idx comments = True
+reader minigraf_bg.wasm.d.ts: identical after normalizing function element indices and shim_idx comments = True

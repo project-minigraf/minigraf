@@ -1,0 +1,10 @@
+--- a/src/query/engine/plan.rs
++++ b/src/query/engine/plan.rs
+@@ -1399 +1399 @@
+-                own.sort();
++                own.sort_unstable();
+--- a/src/query/datalog/prepared.rs
++++ b/src/query/datalog/prepared.rs
+@@ -260 +260 @@
+-    result.sort();
++    result.sort_unstable();

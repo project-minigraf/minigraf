@@ -1,0 +1,2402 @@
+[
+  {
+    "round": 0,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.046104,
+      "name": "point_entity",
+      "p50_ms": 0.018304,
+      "p99_ms": 0.040911,
+      "peak_rss_kb": 5264,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.034907,
+      "name": "point_entity",
+      "p50_ms": 0.019273,
+      "p99_ms": 0.028706,
+      "peak_rss_kb": 5296,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 0,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.047319,
+      "name": "attribute_value",
+      "p50_ms": 0.018428,
+      "p99_ms": 0.044212,
+      "peak_rss_kb": 5268,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.051911,
+      "name": "attribute_value",
+      "p50_ms": 0.020795,
+      "p99_ms": 0.043585,
+      "peak_rss_kb": 5248,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 0,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.061374,
+      "name": "as_of",
+      "p50_ms": 0.019927,
+      "p99_ms": 0.044548000000000004,
+      "peak_rss_kb": 5320,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.037614,
+      "name": "as_of",
+      "p50_ms": 0.021095,
+      "p99_ms": 0.029297,
+      "peak_rss_kb": 5196,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 1,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.038349,
+      "name": "point_entity",
+      "p50_ms": 0.020713,
+      "p99_ms": 0.031093000000000003,
+      "peak_rss_kb": 5244,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.060838,
+      "name": "point_entity",
+      "p50_ms": 0.019473,
+      "p99_ms": 0.038317,
+      "peak_rss_kb": 5292,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 1,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.07964,
+      "name": "attribute_value",
+      "p50_ms": 0.019171999999999998,
+      "p99_ms": 0.060597000000000005,
+      "peak_rss_kb": 5268,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.071314,
+      "name": "attribute_value",
+      "p50_ms": 0.021427,
+      "p99_ms": 0.06938799999999999,
+      "peak_rss_kb": 5296,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 1,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.034837,
+      "name": "as_of",
+      "p50_ms": 0.020968999999999998,
+      "p99_ms": 0.028118999999999998,
+      "peak_rss_kb": 5236,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.048510000000000005,
+      "name": "as_of",
+      "p50_ms": 0.021266,
+      "p99_ms": 0.039987999999999996,
+      "peak_rss_kb": 5288,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 2,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.037659,
+      "name": "point_entity",
+      "p50_ms": 0.017753,
+      "p99_ms": 0.034926,
+      "peak_rss_kb": 5276,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.030391,
+      "name": "point_entity",
+      "p50_ms": 0.019655000000000002,
+      "p99_ms": 0.028309,
+      "peak_rss_kb": 5192,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 2,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.062915,
+      "name": "attribute_value",
+      "p50_ms": 0.019655000000000002,
+      "p99_ms": 0.040627,
+      "peak_rss_kb": 5276,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.030007,
+      "name": "attribute_value",
+      "p50_ms": 0.018896999999999997,
+      "p99_ms": 0.029204,
+      "peak_rss_kb": 5248,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 2,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.053378,
+      "name": "as_of",
+      "p50_ms": 0.020514,
+      "p99_ms": 0.049326999999999996,
+      "peak_rss_kb": 5264,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.043142999999999994,
+      "name": "as_of",
+      "p50_ms": 0.021337,
+      "p99_ms": 0.031359000000000005,
+      "peak_rss_kb": 5208,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 3,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.028804,
+      "name": "point_entity",
+      "p50_ms": 0.018131,
+      "p99_ms": 0.024415,
+      "peak_rss_kb": 5264,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.044808,
+      "name": "point_entity",
+      "p50_ms": 0.019233999999999998,
+      "p99_ms": 0.037569,
+      "peak_rss_kb": 5308,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 3,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.045058,
+      "name": "attribute_value",
+      "p50_ms": 0.02022,
+      "p99_ms": 0.041997,
+      "peak_rss_kb": 5284,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.049463,
+      "name": "attribute_value",
+      "p50_ms": 0.019020000000000002,
+      "p99_ms": 0.03927,
+      "peak_rss_kb": 5248,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 3,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.039625,
+      "name": "as_of",
+      "p50_ms": 0.019633,
+      "p99_ms": 0.03216599999999999,
+      "peak_rss_kb": 5268,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.064274,
+      "name": "as_of",
+      "p50_ms": 0.021486,
+      "p99_ms": 0.041623,
+      "peak_rss_kb": 5204,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 4,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.06872600000000001,
+      "name": "point_entity",
+      "p50_ms": 0.018118,
+      "p99_ms": 0.049563,
+      "peak_rss_kb": 5220,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.039369,
+      "name": "point_entity",
+      "p50_ms": 0.019230999999999998,
+      "p99_ms": 0.031622000000000004,
+      "peak_rss_kb": 5212,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 4,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.09528400000000001,
+      "name": "attribute_value",
+      "p50_ms": 0.03721,
+      "p99_ms": 0.064438,
+      "peak_rss_kb": 5280,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.033888,
+      "name": "attribute_value",
+      "p50_ms": 0.018695,
+      "p99_ms": 0.031552,
+      "peak_rss_kb": 5300,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 4,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.048182,
+      "name": "as_of",
+      "p50_ms": 0.020805,
+      "p99_ms": 0.039564,
+      "peak_rss_kb": 5276,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.033059000000000005,
+      "name": "as_of",
+      "p50_ms": 0.020661000000000002,
+      "p99_ms": 0.026984,
+      "peak_rss_kb": 5300,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 5,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.052503999999999995,
+      "name": "point_entity",
+      "p50_ms": 0.018099,
+      "p99_ms": 0.032386,
+      "peak_rss_kb": 5324,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.086814,
+      "name": "point_entity",
+      "p50_ms": 0.019949,
+      "p99_ms": 0.050998999999999996,
+      "peak_rss_kb": 5280,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 5,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.044780999999999994,
+      "name": "attribute_value",
+      "p50_ms": 0.018584,
+      "p99_ms": 0.034733,
+      "peak_rss_kb": 5280,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.050867,
+      "name": "attribute_value",
+      "p50_ms": 0.018293,
+      "p99_ms": 0.049341,
+      "peak_rss_kb": 5252,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 5,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.048555,
+      "name": "as_of",
+      "p50_ms": 0.020173,
+      "p99_ms": 0.036819000000000005,
+      "peak_rss_kb": 5324,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.045065,
+      "name": "as_of",
+      "p50_ms": 0.019754,
+      "p99_ms": 0.038933999999999996,
+      "peak_rss_kb": 5248,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 6,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.079286,
+      "name": "point_entity",
+      "p50_ms": 0.018954,
+      "p99_ms": 0.060145000000000004,
+      "peak_rss_kb": 5268,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.029587,
+      "name": "point_entity",
+      "p50_ms": 0.021418,
+      "p99_ms": 0.028538,
+      "peak_rss_kb": 5248,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 6,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.080385,
+      "name": "attribute_value",
+      "p50_ms": 0.019468,
+      "p99_ms": 0.052244000000000006,
+      "peak_rss_kb": 5244,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.057716,
+      "name": "attribute_value",
+      "p50_ms": 0.019895,
+      "p99_ms": 0.048,
+      "peak_rss_kb": 5244,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 6,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.072516,
+      "name": "as_of",
+      "p50_ms": 0.019502000000000002,
+      "p99_ms": 0.059852999999999996,
+      "peak_rss_kb": 5252,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.046142,
+      "name": "as_of",
+      "p50_ms": 0.021048,
+      "p99_ms": 0.044514,
+      "peak_rss_kb": 5252,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 7,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.038493,
+      "name": "point_entity",
+      "p50_ms": 0.020578,
+      "p99_ms": 0.035023,
+      "peak_rss_kb": 5268,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.05133,
+      "name": "point_entity",
+      "p50_ms": 0.018488,
+      "p99_ms": 0.035642999999999994,
+      "peak_rss_kb": 5288,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 7,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.035552,
+      "name": "attribute_value",
+      "p50_ms": 0.018572,
+      "p99_ms": 0.028427,
+      "peak_rss_kb": 5228,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.052395000000000004,
+      "name": "attribute_value",
+      "p50_ms": 0.020034000000000003,
+      "p99_ms": 0.04366,
+      "peak_rss_kb": 5192,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 7,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.051945,
+      "name": "as_of",
+      "p50_ms": 0.021954,
+      "p99_ms": 0.045809,
+      "peak_rss_kb": 5264,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.068231,
+      "name": "as_of",
+      "p50_ms": 0.021324000000000003,
+      "p99_ms": 0.051553,
+      "peak_rss_kb": 5216,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 8,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.042003,
+      "name": "point_entity",
+      "p50_ms": 0.017836,
+      "p99_ms": 0.035972000000000004,
+      "peak_rss_kb": 5264,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.030001,
+      "name": "point_entity",
+      "p50_ms": 0.018258999999999997,
+      "p99_ms": 0.025400000000000002,
+      "peak_rss_kb": 5252,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 8,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.058048999999999996,
+      "name": "attribute_value",
+      "p50_ms": 0.020515,
+      "p99_ms": 0.039245,
+      "peak_rss_kb": 5272,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.050225,
+      "name": "attribute_value",
+      "p50_ms": 0.019514,
+      "p99_ms": 0.038794999999999996,
+      "peak_rss_kb": 5240,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 8,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.044265,
+      "name": "as_of",
+      "p50_ms": 0.019516000000000002,
+      "p99_ms": 0.037771,
+      "peak_rss_kb": 5292,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.035407999999999995,
+      "name": "as_of",
+      "p50_ms": 0.019726999999999998,
+      "p99_ms": 0.029876999999999997,
+      "peak_rss_kb": 5204,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 9,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.054917,
+      "name": "point_entity",
+      "p50_ms": 0.017564,
+      "p99_ms": 0.037963000000000004,
+      "peak_rss_kb": 5280,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.044263,
+      "name": "point_entity",
+      "p50_ms": 0.018113999999999998,
+      "p99_ms": 0.037973,
+      "peak_rss_kb": 5288,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 9,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.02568,
+      "name": "attribute_value",
+      "p50_ms": 0.01797,
+      "p99_ms": 0.024273999999999997,
+      "peak_rss_kb": 5280,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.047108,
+      "name": "attribute_value",
+      "p50_ms": 0.01993,
+      "p99_ms": 0.040556999999999996,
+      "peak_rss_kb": 5252,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 9,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.044079,
+      "name": "as_of",
+      "p50_ms": 0.020648,
+      "p99_ms": 0.035923000000000004,
+      "peak_rss_kb": 5292,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.067292,
+      "name": "as_of",
+      "p50_ms": 0.020447,
+      "p99_ms": 0.056115,
+      "peak_rss_kb": 5256,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 10,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.048913,
+      "name": "point_entity",
+      "p50_ms": 0.017558,
+      "p99_ms": 0.042104,
+      "peak_rss_kb": 5252,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.046241,
+      "name": "point_entity",
+      "p50_ms": 0.018597000000000002,
+      "p99_ms": 0.040443,
+      "peak_rss_kb": 5208,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 10,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.051917,
+      "name": "attribute_value",
+      "p50_ms": 0.020424,
+      "p99_ms": 0.043369,
+      "peak_rss_kb": 5236,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.043407,
+      "name": "attribute_value",
+      "p50_ms": 0.018118,
+      "p99_ms": 0.027892999999999998,
+      "peak_rss_kb": 5200,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 10,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.057969,
+      "name": "as_of",
+      "p50_ms": 0.019176000000000002,
+      "p99_ms": 0.050498,
+      "peak_rss_kb": 5324,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.04904,
+      "name": "as_of",
+      "p50_ms": 0.019492,
+      "p99_ms": 0.041095,
+      "peak_rss_kb": 5300,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 11,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.041174,
+      "name": "point_entity",
+      "p50_ms": 0.017756,
+      "p99_ms": 0.039706000000000005,
+      "peak_rss_kb": 5236,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.052112,
+      "name": "point_entity",
+      "p50_ms": 0.018141,
+      "p99_ms": 0.047909,
+      "peak_rss_kb": 5288,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 11,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.053040000000000004,
+      "name": "attribute_value",
+      "p50_ms": 0.01755,
+      "p99_ms": 0.041017,
+      "peak_rss_kb": 5284,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.062887,
+      "name": "attribute_value",
+      "p50_ms": 0.017626,
+      "p99_ms": 0.049394999999999994,
+      "peak_rss_kb": 5248,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 11,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.050847,
+      "name": "as_of",
+      "p50_ms": 0.020534,
+      "p99_ms": 0.035809999999999995,
+      "peak_rss_kb": 5236,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.052227,
+      "name": "as_of",
+      "p50_ms": 0.021404,
+      "p99_ms": 0.042324,
+      "peak_rss_kb": 5264,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 12,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.048965,
+      "name": "point_entity",
+      "p50_ms": 0.017731999999999998,
+      "p99_ms": 0.036558,
+      "peak_rss_kb": 5288,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.045527,
+      "name": "point_entity",
+      "p50_ms": 0.021151,
+      "p99_ms": 0.035793,
+      "peak_rss_kb": 5280,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 12,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.038581000000000004,
+      "name": "attribute_value",
+      "p50_ms": 0.020142,
+      "p99_ms": 0.035875,
+      "peak_rss_kb": 5232,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.035543000000000005,
+      "name": "attribute_value",
+      "p50_ms": 0.020344,
+      "p99_ms": 0.031626,
+      "peak_rss_kb": 5200,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 12,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.045424,
+      "name": "as_of",
+      "p50_ms": 0.019015999999999998,
+      "p99_ms": 0.035536,
+      "peak_rss_kb": 5320,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.033561,
+      "name": "as_of",
+      "p50_ms": 0.021559000000000002,
+      "p99_ms": 0.032691000000000005,
+      "peak_rss_kb": 5260,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 13,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.035707,
+      "name": "point_entity",
+      "p50_ms": 0.019131,
+      "p99_ms": 0.032097,
+      "peak_rss_kb": 5244,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.050121,
+      "name": "point_entity",
+      "p50_ms": 0.018227,
+      "p99_ms": 0.048878000000000005,
+      "peak_rss_kb": 5300,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 13,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.037144,
+      "name": "attribute_value",
+      "p50_ms": 0.019216,
+      "p99_ms": 0.034159,
+      "peak_rss_kb": 5280,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.031549,
+      "name": "attribute_value",
+      "p50_ms": 0.020024,
+      "p99_ms": 0.030960999999999995,
+      "peak_rss_kb": 5300,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 13,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.044167,
+      "name": "as_of",
+      "p50_ms": 0.020297,
+      "p99_ms": 0.036266999999999994,
+      "peak_rss_kb": 5264,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.060474,
+      "name": "as_of",
+      "p50_ms": 0.02006,
+      "p99_ms": 0.038275,
+      "peak_rss_kb": 5252,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 14,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.053767999999999996,
+      "name": "point_entity",
+      "p50_ms": 0.017683,
+      "p99_ms": 0.049773,
+      "peak_rss_kb": 5280,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.050611,
+      "name": "point_entity",
+      "p50_ms": 0.018274000000000002,
+      "p99_ms": 0.045737,
+      "peak_rss_kb": 5256,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 14,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.048705000000000005,
+      "name": "attribute_value",
+      "p50_ms": 0.017805,
+      "p99_ms": 0.041322000000000005,
+      "peak_rss_kb": 5272,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.035892,
+      "name": "attribute_value",
+      "p50_ms": 0.018411,
+      "p99_ms": 0.027542,
+      "peak_rss_kb": 5196,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 14,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.034894,
+      "name": "as_of",
+      "p50_ms": 0.024902,
+      "p99_ms": 0.033191,
+      "peak_rss_kb": 5268,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.038445999999999994,
+      "name": "as_of",
+      "p50_ms": 0.020662999999999997,
+      "p99_ms": 0.033588,
+      "peak_rss_kb": 5212,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 15,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.038709,
+      "name": "point_entity",
+      "p50_ms": 0.019176000000000002,
+      "p99_ms": 0.03356,
+      "peak_rss_kb": 5296,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.061668999999999995,
+      "name": "point_entity",
+      "p50_ms": 0.020888,
+      "p99_ms": 0.036118000000000004,
+      "peak_rss_kb": 5292,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 15,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.043397,
+      "name": "attribute_value",
+      "p50_ms": 0.017668,
+      "p99_ms": 0.039168999999999995,
+      "peak_rss_kb": 5256,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.057162,
+      "name": "attribute_value",
+      "p50_ms": 0.018269,
+      "p99_ms": 0.035252,
+      "peak_rss_kb": 5208,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 15,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.033956,
+      "name": "as_of",
+      "p50_ms": 0.021022,
+      "p99_ms": 0.032833,
+      "peak_rss_kb": 5264,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.059937,
+      "name": "as_of",
+      "p50_ms": 0.019481,
+      "p99_ms": 0.04114,
+      "peak_rss_kb": 5196,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 16,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.044606,
+      "name": "point_entity",
+      "p50_ms": 0.019504,
+      "p99_ms": 0.037514,
+      "peak_rss_kb": 5248,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.034626,
+      "name": "point_entity",
+      "p50_ms": 0.020796,
+      "p99_ms": 0.034045,
+      "peak_rss_kb": 5216,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 16,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.043253,
+      "name": "attribute_value",
+      "p50_ms": 0.017759999999999998,
+      "p99_ms": 0.038671000000000004,
+      "peak_rss_kb": 5268,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.043006,
+      "name": "attribute_value",
+      "p50_ms": 0.017825,
+      "p99_ms": 0.033834,
+      "peak_rss_kb": 5212,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 16,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.050608,
+      "name": "as_of",
+      "p50_ms": 0.019255,
+      "p99_ms": 0.049696,
+      "peak_rss_kb": 5272,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.053167,
+      "name": "as_of",
+      "p50_ms": 0.019935,
+      "p99_ms": 0.042583,
+      "peak_rss_kb": 5208,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 17,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.055300999999999996,
+      "name": "point_entity",
+      "p50_ms": 0.017494,
+      "p99_ms": 0.045556,
+      "peak_rss_kb": 5288,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.054200000000000005,
+      "name": "point_entity",
+      "p50_ms": 0.018085,
+      "p99_ms": 0.040516,
+      "peak_rss_kb": 5296,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 17,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.06375700000000001,
+      "name": "attribute_value",
+      "p50_ms": 0.017601,
+      "p99_ms": 0.042394,
+      "peak_rss_kb": 5272,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.054571,
+      "name": "attribute_value",
+      "p50_ms": 0.020550000000000002,
+      "p99_ms": 0.043642,
+      "peak_rss_kb": 5196,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 17,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.052312000000000004,
+      "name": "as_of",
+      "p50_ms": 0.019296999999999998,
+      "p99_ms": 0.042338,
+      "peak_rss_kb": 5284,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.066183,
+      "name": "as_of",
+      "p50_ms": 0.019728000000000002,
+      "p99_ms": 0.052737,
+      "peak_rss_kb": 5256,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 18,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.041569,
+      "name": "point_entity",
+      "p50_ms": 0.020488000000000003,
+      "p99_ms": 0.037011999999999996,
+      "peak_rss_kb": 5284,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.050004,
+      "name": "point_entity",
+      "p50_ms": 0.01804,
+      "p99_ms": 0.040163000000000004,
+      "peak_rss_kb": 5296,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 18,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.057017,
+      "name": "attribute_value",
+      "p50_ms": 0.017897000000000003,
+      "p99_ms": 0.048826,
+      "peak_rss_kb": 5240,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.052500000000000005,
+      "name": "attribute_value",
+      "p50_ms": 0.0178,
+      "p99_ms": 0.049082,
+      "peak_rss_kb": 5296,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 18,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.084412,
+      "name": "as_of",
+      "p50_ms": 0.019405000000000002,
+      "p99_ms": 0.067044,
+      "peak_rss_kb": 5248,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.061915000000000005,
+      "name": "as_of",
+      "p50_ms": 0.02224,
+      "p99_ms": 0.037477,
+      "peak_rss_kb": 5256,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 19,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.047441000000000004,
+      "name": "point_entity",
+      "p50_ms": 0.017315,
+      "p99_ms": 0.039871,
+      "peak_rss_kb": 5328,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.042166,
+      "name": "point_entity",
+      "p50_ms": 0.018427000000000002,
+      "p99_ms": 0.036600999999999995,
+      "peak_rss_kb": 5260,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 19,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.037665,
+      "name": "attribute_value",
+      "p50_ms": 0.017602,
+      "p99_ms": 0.026177,
+      "peak_rss_kb": 5276,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.055730999999999996,
+      "name": "attribute_value",
+      "p50_ms": 0.017883000000000003,
+      "p99_ms": 0.049840999999999996,
+      "peak_rss_kb": 5284,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 19,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.055751,
+      "name": "as_of",
+      "p50_ms": 0.018943,
+      "p99_ms": 0.043804,
+      "peak_rss_kb": 5252,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.065638,
+      "name": "as_of",
+      "p50_ms": 0.019848,
+      "p99_ms": 0.054694,
+      "peak_rss_kb": 5208,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 20,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.056135,
+      "name": "point_entity",
+      "p50_ms": 0.019375,
+      "p99_ms": 0.034761999999999994,
+      "peak_rss_kb": 5252,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.042941,
+      "name": "point_entity",
+      "p50_ms": 0.017918,
+      "p99_ms": 0.040836,
+      "peak_rss_kb": 5248,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 20,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.069574,
+      "name": "attribute_value",
+      "p50_ms": 0.018827,
+      "p99_ms": 0.053845,
+      "peak_rss_kb": 5236,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.024102000000000002,
+      "name": "attribute_value",
+      "p50_ms": 0.017932999999999998,
+      "p99_ms": 0.022166,
+      "peak_rss_kb": 5244,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 20,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.075182,
+      "name": "as_of",
+      "p50_ms": 0.019683000000000003,
+      "p99_ms": 0.036461999999999994,
+      "peak_rss_kb": 5288,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.033613,
+      "name": "as_of",
+      "p50_ms": 0.020262,
+      "p99_ms": 0.031464,
+      "peak_rss_kb": 5260,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 21,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.049704,
+      "name": "point_entity",
+      "p50_ms": 0.019315,
+      "p99_ms": 0.035217,
+      "peak_rss_kb": 5284,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.0391,
+      "name": "point_entity",
+      "p50_ms": 0.018632,
+      "p99_ms": 0.034746,
+      "peak_rss_kb": 5284,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 21,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.045978,
+      "name": "attribute_value",
+      "p50_ms": 0.018193,
+      "p99_ms": 0.02579,
+      "peak_rss_kb": 5288,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.06583,
+      "name": "attribute_value",
+      "p50_ms": 0.018630999999999998,
+      "p99_ms": 0.041804,
+      "peak_rss_kb": 5276,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 21,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.050086,
+      "name": "as_of",
+      "p50_ms": 0.018967,
+      "p99_ms": 0.043322000000000006,
+      "peak_rss_kb": 5288,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.052445,
+      "name": "as_of",
+      "p50_ms": 0.01991,
+      "p99_ms": 0.050908,
+      "peak_rss_kb": 5200,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 22,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.806803,
+      "name": "point_entity",
+      "p50_ms": 0.019249000000000002,
+      "p99_ms": 0.705291,
+      "peak_rss_kb": 5328,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.809736,
+      "name": "point_entity",
+      "p50_ms": 0.020137000000000002,
+      "p99_ms": 0.71271,
+      "peak_rss_kb": 5212,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 22,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.044806,
+      "name": "attribute_value",
+      "p50_ms": 0.017844000000000002,
+      "p99_ms": 0.035074,
+      "peak_rss_kb": 5236,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.043513,
+      "name": "attribute_value",
+      "p50_ms": 0.017966,
+      "p99_ms": 0.039546,
+      "peak_rss_kb": 5204,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 22,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.060682,
+      "name": "as_of",
+      "p50_ms": 0.019147,
+      "p99_ms": 0.042573,
+      "peak_rss_kb": 5240,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.036045,
+      "name": "as_of",
+      "p50_ms": 0.021772,
+      "p99_ms": 0.035305,
+      "peak_rss_kb": 5220,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 23,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.051805000000000004,
+      "name": "point_entity",
+      "p50_ms": 0.017795000000000002,
+      "p99_ms": 0.040545,
+      "peak_rss_kb": 5320,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.069967,
+      "name": "point_entity",
+      "p50_ms": 0.018025,
+      "p99_ms": 0.050213,
+      "peak_rss_kb": 5252,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 23,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.06437599999999999,
+      "name": "attribute_value",
+      "p50_ms": 0.017657,
+      "p99_ms": 0.037475,
+      "peak_rss_kb": 5236,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.055815000000000003,
+      "name": "attribute_value",
+      "p50_ms": 0.019004,
+      "p99_ms": 0.040896,
+      "peak_rss_kb": 5280,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 23,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.046795,
+      "name": "as_of",
+      "p50_ms": 0.020274,
+      "p99_ms": 0.044917,
+      "peak_rss_kb": 5236,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.056464,
+      "name": "as_of",
+      "p50_ms": 0.022514000000000003,
+      "p99_ms": 0.046949,
+      "peak_rss_kb": 5200,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 24,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.042373999999999995,
+      "name": "point_entity",
+      "p50_ms": 0.019767,
+      "p99_ms": 0.034671,
+      "peak_rss_kb": 5236,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.050267,
+      "name": "point_entity",
+      "p50_ms": 0.019767,
+      "p99_ms": 0.035206999999999995,
+      "peak_rss_kb": 5304,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 24,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.042568999999999996,
+      "name": "attribute_value",
+      "p50_ms": 0.017592,
+      "p99_ms": 0.035743,
+      "peak_rss_kb": 5264,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.025301,
+      "name": "attribute_value",
+      "p50_ms": 0.017679,
+      "p99_ms": 0.023031,
+      "peak_rss_kb": 5236,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 24,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.048109000000000006,
+      "name": "as_of",
+      "p50_ms": 0.01907,
+      "p99_ms": 0.044862,
+      "peak_rss_kb": 5256,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.048965999999999996,
+      "name": "as_of",
+      "p50_ms": 0.019284,
+      "p99_ms": 0.041766,
+      "peak_rss_kb": 5260,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 25,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.031792,
+      "name": "point_entity",
+      "p50_ms": 0.018689,
+      "p99_ms": 0.030698000000000003,
+      "peak_rss_kb": 5280,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.065057,
+      "name": "point_entity",
+      "p50_ms": 0.018527000000000002,
+      "p99_ms": 0.05047,
+      "peak_rss_kb": 5224,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 25,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.03812,
+      "name": "attribute_value",
+      "p50_ms": 0.020061,
+      "p99_ms": 0.034468000000000006,
+      "peak_rss_kb": 5256,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.055907,
+      "name": "attribute_value",
+      "p50_ms": 0.019961,
+      "p99_ms": 0.049032,
+      "peak_rss_kb": 5244,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 25,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.042668,
+      "name": "as_of",
+      "p50_ms": 0.020687999999999998,
+      "p99_ms": 0.032754,
+      "peak_rss_kb": 5292,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.043781,
+      "name": "as_of",
+      "p50_ms": 0.019261,
+      "p99_ms": 0.040564,
+      "peak_rss_kb": 5216,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 26,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.052591,
+      "name": "point_entity",
+      "p50_ms": 0.017495,
+      "p99_ms": 0.049742,
+      "peak_rss_kb": 5324,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.035436999999999996,
+      "name": "point_entity",
+      "p50_ms": 0.02046,
+      "p99_ms": 0.035135,
+      "peak_rss_kb": 5204,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 26,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.058634,
+      "name": "attribute_value",
+      "p50_ms": 0.017694,
+      "p99_ms": 0.056302,
+      "peak_rss_kb": 5264,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.031923,
+      "name": "attribute_value",
+      "p50_ms": 0.017638,
+      "p99_ms": 0.023490999999999998,
+      "peak_rss_kb": 5300,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 26,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.060711,
+      "name": "as_of",
+      "p50_ms": 0.019564,
+      "p99_ms": 0.04748,
+      "peak_rss_kb": 5272,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.054988999999999996,
+      "name": "as_of",
+      "p50_ms": 0.021438,
+      "p99_ms": 0.04046,
+      "peak_rss_kb": 5260,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 27,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.033306,
+      "name": "point_entity",
+      "p50_ms": 0.017185,
+      "p99_ms": 0.021651999999999998,
+      "peak_rss_kb": 5272,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.059595,
+      "name": "point_entity",
+      "p50_ms": 0.018324,
+      "p99_ms": 0.048133,
+      "peak_rss_kb": 5220,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 27,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.052237,
+      "name": "attribute_value",
+      "p50_ms": 0.01764,
+      "p99_ms": 0.037695,
+      "peak_rss_kb": 5240,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.050407,
+      "name": "attribute_value",
+      "p50_ms": 0.018189,
+      "p99_ms": 0.045086,
+      "peak_rss_kb": 5280,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 27,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.040442,
+      "name": "as_of",
+      "p50_ms": 0.01901,
+      "p99_ms": 0.03646,
+      "peak_rss_kb": 5248,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.062414000000000004,
+      "name": "as_of",
+      "p50_ms": 0.019628,
+      "p99_ms": 0.043768,
+      "peak_rss_kb": 5284,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 28,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.05701,
+      "name": "point_entity",
+      "p50_ms": 0.020381,
+      "p99_ms": 0.052383000000000006,
+      "peak_rss_kb": 5292,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.040377,
+      "name": "point_entity",
+      "p50_ms": 0.020129,
+      "p99_ms": 0.035515,
+      "peak_rss_kb": 5288,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 28,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.049870000000000005,
+      "name": "attribute_value",
+      "p50_ms": 0.018615,
+      "p99_ms": 0.038214,
+      "peak_rss_kb": 5292,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.055151,
+      "name": "attribute_value",
+      "p50_ms": 0.019613,
+      "p99_ms": 0.035618,
+      "peak_rss_kb": 5196,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 28,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.052631,
+      "name": "as_of",
+      "p50_ms": 0.021922,
+      "p99_ms": 0.051483999999999995,
+      "peak_rss_kb": 5252,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.044454,
+      "name": "as_of",
+      "p50_ms": 0.02152,
+      "p99_ms": 0.038213000000000004,
+      "peak_rss_kb": 5196,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 29,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.051179,
+      "name": "point_entity",
+      "p50_ms": 0.017374999999999998,
+      "p99_ms": 0.040859000000000006,
+      "peak_rss_kb": 5276,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.057746,
+      "name": "point_entity",
+      "p50_ms": 0.018148,
+      "p99_ms": 0.050682,
+      "peak_rss_kb": 5200,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 29,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.051253,
+      "name": "attribute_value",
+      "p50_ms": 0.018841,
+      "p99_ms": 0.046176,
+      "peak_rss_kb": 5232,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.070476,
+      "name": "attribute_value",
+      "p50_ms": 0.018036,
+      "p99_ms": 0.050383000000000004,
+      "peak_rss_kb": 5192,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 29,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.04218,
+      "name": "as_of",
+      "p50_ms": 0.020887,
+      "p99_ms": 0.035296999999999995,
+      "peak_rss_kb": 5296,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.052697,
+      "name": "as_of",
+      "p50_ms": 0.01989,
+      "p99_ms": 0.042175000000000004,
+      "peak_rss_kb": 5308,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 30,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.072256,
+      "name": "point_entity",
+      "p50_ms": 0.019690999999999997,
+      "p99_ms": 0.049786000000000004,
+      "peak_rss_kb": 5236,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.045169,
+      "name": "point_entity",
+      "p50_ms": 0.020593,
+      "p99_ms": 0.036207,
+      "peak_rss_kb": 5220,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 30,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.043564,
+      "name": "attribute_value",
+      "p50_ms": 0.018127,
+      "p99_ms": 0.041285,
+      "peak_rss_kb": 5236,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.041507,
+      "name": "attribute_value",
+      "p50_ms": 0.019157999999999998,
+      "p99_ms": 0.032521999999999995,
+      "peak_rss_kb": 5280,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 30,
+    "base_node": 1,
+    "candidate_node": 3,
+    "base": {
+      "max_ms": 0.06117499999999999,
+      "name": "as_of",
+      "p50_ms": 0.021307,
+      "p99_ms": 0.043798000000000004,
+      "peak_rss_kb": 5284,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.041623,
+      "name": "as_of",
+      "p50_ms": 0.021228,
+      "p99_ms": 0.034247,
+      "peak_rss_kb": 5204,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 31,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.042317,
+      "name": "point_entity",
+      "p50_ms": 0.017578,
+      "p99_ms": 0.03701,
+      "peak_rss_kb": 5272,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.05466,
+      "name": "point_entity",
+      "p50_ms": 0.017720999999999997,
+      "p99_ms": 0.048924,
+      "peak_rss_kb": 5208,
+      "query": "[:find ?a :where [:p8333 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 31,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.048461000000000004,
+      "name": "attribute_value",
+      "p50_ms": 0.018009999999999998,
+      "p99_ms": 0.038749,
+      "peak_rss_kb": 5224,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.058211,
+      "name": "attribute_value",
+      "p50_ms": 0.017478,
+      "p99_ms": 0.050323,
+      "peak_rss_kb": 5280,
+      "query": "[:find ?e :where [?e :name \"p8333\"]]",
+      "rows": 1,
+      "runs": 200
+    }
+  },
+  {
+    "round": 31,
+    "base_node": 3,
+    "candidate_node": 1,
+    "base": {
+      "max_ms": 0.030695999999999998,
+      "name": "as_of",
+      "p50_ms": 0.019147,
+      "p99_ms": 0.024873,
+      "peak_rss_kb": 5296,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    },
+    "candidate": {
+      "max_ms": 0.066592,
+      "name": "as_of",
+      "p50_ms": 0.019494,
+      "p99_ms": 0.052464,
+      "peak_rss_kb": 5196,
+      "query": "[:find ?a :as-of 126 :where [:p2083 :age ?a]]",
+      "rows": 1,
+      "runs": 200
+    }
+  }
+]

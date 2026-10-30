@@ -1,0 +1,55 @@
+Baseline 3d19abbce5dd8d5244641ff0d7ba8bad5424d07f, rustc 1.99.1
+Symbol-name attribution; generic arguments and inlining affect categories.
+   384370 dependencies/std
+   166846 minigraf::query::engine
+   151178 minigraf::query::datalog
+   107207 minigraf::storage
+    39907 minigraf::graph
+    17226 minigraf::main
+    12366 minigraf::db
+     3343 minigraf::error
+     3151 minigraf::wal
+     2736 minigraf::temporal
+     2032 minigraf::repl
+
+Largest 40 text symbols (decimal bytes)
+    22127 <minigraf::query::datalog::executor::DatalogExecutor>::open_rule_query
+    20124 <std::backtrace_rs::symbolize::gimli::Cache>::with_global::<std::backtrace_rs::symbolize::gimli::resolve::{closure#1}>
+    17226 minigraf::main
+    12943 <minigraf::query::engine::scan::Scan as minigraf::query::engine::Operator>::next_batch
+    12453 <std::backtrace_rs::symbolize::gimli::Context>::new
+    11456 <minigraf::query::datalog::executor::DatalogExecutor>::execute
+    10863 minigraf::query::datalog::parser::parse_whole_command
+     9004 <minigraf::query::engine::join::Join as minigraf::query::engine::Operator>::next_batch
+     8812 <gimli::read::dwarf::Unit<gimli::read::endian_slice::EndianSlice<gimli::endianity::LittleEndian>, usize>>::new
+     8539 <minigraf::query::engine::window::Window>::finish
+     8339 <minigraf::query::engine::aggregate::Aggregate as minigraf::query::engine::Operator>::next_batch
+     8181 <regex_lite::hir::parse::Parser>::parse_inner
+     8064 <minigraf::db::Minigraf>::execute
+     7670 <core::cell::once::OnceCell<core::result::Result<addr2line::line::Lines, gimli::read::Error>>>::try_init::<<core::cell::once::OnceCell<core::result::Result<addr2line::line::Lines, gimli::read::Error>>>::get_or_init<<addr2line::line::LazyLines>::borrow<gimli::read::endian_slice::EndianSlice<gimli::endianity::LittleEndian>>::{closure#0}>::{closure#0}, !>
+     7656 minigraf::query::engine::plan::plan_rules
+     7490 <minigraf::query::engine::plan::Builder>::clause
+     7217 miniz_oxide::inflate::core::decompress
+     6388 <minigraf::storage::persistent_facts::PersistentFactStorage<minigraf::storage::backend::file::FileBackend>>::apply_chunk
+     6118 <minigraf::query::datalog::stratification::DependencyGraph>::stratify
+     6062 <gimli::read::unit::EntriesCursor<gimli::read::endian_slice::EndianSlice<gimli::endianity::LittleEndian>>>::next_entry
+     5435 minigraf::storage::btree::update_node
+     5378 minigraf::query::datalog::executor::eval_expr
+     5370 minigraf::query::engine::plan::plan_with
+     5187 minigraf::query::datalog::optimizer::plan_ordered
+     5101 minigraf::query::engine::build
+     4630 <addr2line::function::Function<gimli::read::endian_slice::EndianSlice<gimli::endianity::LittleEndian>>>::parse_children
+     4595 <minigraf::query::engine::union::Union as minigraf::query::engine::Operator>::next_batch
+     4574 minigraf::query::datalog::parser::parse_expr
+     4548 chrono::format::parse::parse_internal::<core::slice::iter::Iter<chrono::format::Item>, &chrono::format::Item>
+     4492 <minigraf::query::datalog::stratification::DependencyGraph>::from_rules
+     4455 core::fmt::float::float_to_decimal_common_exact::<f64>
+     4420 <gimli::read::unit::EntriesRaw<gimli::read::endian_slice::EndianSlice<gimli::endianity::LittleEndian>>>::read_attribute
+     4182 <core::cell::once::OnceCell<core::result::Result<addr2line::function::Functions<gimli::read::endian_slice::EndianSlice<gimli::endianity::LittleEndian>>, gimli::read::Error>>>::try_init::<<core::cell::once::OnceCell<core::result::Result<addr2line::function::Functions<gimli::read::endian_slice::EndianSlice<gimli::endianity::LittleEndian>>, gimli::read::Error>>>::get_or_init<<addr2line::function::LazyFunctions<gimli::read::endian_slice::EndianSlice<gimli::endianity::LittleEndian>>>::borrow::{closure#0}>::{closure#0}, !>
+     3913 minigraf::graph::storage::flush_run
+     3902 <minigraf::query::engine::plan::Builder>::sub
+     3745 <minigraf::storage::index::Indexes>::insert
+     3488 std::sys::pal::unix::stack_overflow::thread_info::set_current_info
+     3320 minigraf::query::datalog::parser::parse_list_as_where_clause
+     3320 core::num::imp::flt2dec::strategy::dragon::format_shortest
+     3244 <minigraf::query::engine::aggregate::Aggregate>::step
