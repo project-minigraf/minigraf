@@ -1,0 +1,9 @@
+{
+  "moz:firefoxOptions": {
+    "prefs": {
+      "privacy.reduceTimerPrecision": false,
+      "privacy.reduceTimerPrecision.unconditional": false,
+      "privacy.resistFingerprinting.reduceTimerPrecision.microseconds": 1
+    }
+  }
+}

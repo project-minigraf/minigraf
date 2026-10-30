@@ -1,0 +1,14 @@
+{
+ "pairs": [
+  "B:H",
+  "B:B"
+ ],
+ "profile": "envelope",
+ "workloads": [
+  "pt_asof",
+  "pt_av"
+ ],
+ "secs": 1.5,
+ "blocks": 16,
+ "placement": "paired"
+}

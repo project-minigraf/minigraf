@@ -1,0 +1,14 @@
+{
+ "pairs": [
+  "B:H",
+  "B:P"
+ ],
+ "profile": "envelope",
+ "workloads": [
+  "cold_point",
+  "cold_scan"
+ ],
+ "secs": 1.0,
+ "blocks": 48,
+ "placement": "sequential"
+}

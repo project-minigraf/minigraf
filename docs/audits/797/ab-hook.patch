@@ -1,0 +1,115 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 91f8cc639..57f0a5a51 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -140,7 +140,7 @@ workspace = true
+ 
+ [workspace.lints.rust]
+ # Kani proof harnesses (#627): `cargo kani` sets cfg(kani).
+-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)', 'cfg(minigraf_shuttle)'] }
++unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)', 'cfg(minigraf_shuttle)', 'cfg(minigraf_ab)'] }
+ 
+ [workspace.lints.clippy]
+ # Panic prevention — use Result/? or debug_assert! instead
+diff --git a/src/db.rs b/src/db.rs
+index e47e9c708..85d5fcfa6 100644
+--- a/src/db.rs
++++ b/src/db.rs
+@@ -3445,3 +3445,64 @@ mod wasi_tests {
+         }
+     }
+ }
++
++/// Measurement only (#797, `--cfg minigraf_ab`): an in-memory database whose
++/// facts were checkpointed into a memory backend, so queries read a populated
++/// committed reader (`Minigraf::in_memory` keeps every fact pending).
++#[cfg(minigraf_ab)]
++#[doc(hidden)]
++pub struct AbCommittedMemory {
++    pub db: Minigraf,
++    pfs: PersistentFactStorage<MemoryBackend>,
++}
++
++#[cfg(minigraf_ab)]
++impl AbCommittedMemory {
++    /// Run `commands` (transactions) and checkpoint them into the backend.
++    pub fn new(commands: &[String]) -> Result<Self, MinigrafError> {
++        (|| -> Result<Self> {
++            let mut pfs = PersistentFactStorage::new(MemoryBackend::new(), 256)?;
++            let db = Minigraf::from_parts(
++                pfs.storage().clone(),
++                WriteContext::Memory,
++                OpenOptions::default(),
++            );
++            for c in commands {
++                db.execute(c)?;
++            }
++            pfs.mark_dirty();
++            pfs.save()?;
++            Ok(AbCommittedMemory { db, pfs })
++        })()
++        .map_err(MinigrafError::from)
++    }
++
++    /// Build and drop `n` committed readers of the checkpointed generation.
++    pub fn construct_readers(&self, n: usize) {
++        for _ in 0..n {
++            std::hint::black_box(self.pfs.ab_reader());
++        }
++    }
++}
++
++#[cfg(all(minigraf_ab, not(target_arch = "wasm32")))]
++impl Minigraf {
++    /// Measurement only (#797): build and drop `n` committed readers of a
++    /// file database's active meta, as an open or checkpoint builds one.
++    #[doc(hidden)]
++    pub fn ab_construct_readers(&self, n: usize) -> Result<(), MinigrafError> {
++        let ctx = self
++            .inner
++            .write_lock
++            .lock()
++            .map_err(|_| MinigrafError::from(err_coded!(ErrorCode::Api001)))?;
++        let pfs = match &*ctx {
++            WriteContext::File { pfs, .. } | WriteContext::ReadOnly { pfs } => pfs,
++            WriteContext::Memory => return Ok(()),
++        };
++        for _ in 0..n {
++            std::hint::black_box(pfs.ab_reader());
++        }
++        Ok(())
++    }
++}
+diff --git a/src/storage/persistent_facts.rs b/src/storage/persistent_facts.rs
+index 32d842eab..df9d75947 100644
+--- a/src/storage/persistent_facts.rs
++++ b/src/storage/persistent_facts.rs
+@@ -758,7 +758,7 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
+         self.meta
+     }
+ 
+-    #[cfg(any(not(target_arch = "wasm32"), feature = "browser", test))]
++    #[cfg(any(not(target_arch = "wasm32"), feature = "browser", test, minigraf_ab))]
+     /// Mark storage as dirty (needs saving)
+     pub fn mark_dirty(&mut self) {
+         self.dirty = true;
+@@ -789,6 +789,19 @@ impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
+     }
+ }
+ 
++/// Measurement only (#797, `--cfg minigraf_ab`): a new committed reader of
++/// the active meta, as `activate` builds one, without installing it.
++#[cfg(minigraf_ab)]
++impl<B: StorageBackend + 'static> PersistentFactStorage<B> {
++    pub(crate) fn ab_reader(&self) -> Arc<dyn crate::storage::CommittedReader> {
++        Arc::new(OnDiskReader::new(
++            self.backend.clone(),
++            self.page_cache.clone(),
++            &self.meta,
++        ))
++    }
++}
++
+ impl<B: StorageBackend + 'static> Drop for PersistentFactStorage<B> {
+     fn drop(&mut self) {
+         // Auto-save on drop, unless an earlier commit failed: the WAL still

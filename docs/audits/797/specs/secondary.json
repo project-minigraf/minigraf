@@ -1,0 +1,41 @@
+{
+ "pairs": [
+  "B:H",
+  "B:P"
+ ],
+ "profile": "ab-envelope",
+ "workloads": [
+  "sh_point_entity",
+  "sh_attribute_value",
+  "sh_attribute_scan",
+  "sh_join_2",
+  "sh_join_3_scan",
+  "sh_not_probe",
+  "sh_not_join_hash",
+  "sh_or_2",
+  "sh_recursive_ancestors",
+  "sh_as_of",
+  "sh_as_of_ts",
+  "sh_as_of_ts_scan",
+  "sh_count",
+  "sh_count_grouped",
+  "sh_window",
+  "sh_hot_current",
+  "sh_hot_as_of",
+  "sc_short",
+  "sc_long_history",
+  "sc_dense_uuid",
+  "sc_sparse_uuid",
+  "cw_long",
+  "fl_paged",
+  "nc_point",
+  "nc_scan",
+  "con_open",
+  "con_direct",
+  "con_checkpoint",
+  "con_large_tx"
+ ],
+ "secs": 1.0,
+ "blocks": 48,
+ "placement": "paired"
+}
