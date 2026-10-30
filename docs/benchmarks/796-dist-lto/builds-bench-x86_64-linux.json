@@ -1,0 +1,30 @@
+{
+  "platform": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+  "machine": "x86_64",
+  "builds": [
+    {
+      "round": 0,
+      "lto": "thin",
+      "build_seconds": 27.877472235122696,
+      "bytes": 1501232
+    },
+    {
+      "round": 0,
+      "lto": "full",
+      "build_seconds": 30.649512137984857,
+      "bytes": 1262584
+    },
+    {
+      "round": 1,
+      "lto": "full",
+      "build_seconds": 30.725669295992702,
+      "bytes": 1262584
+    },
+    {
+      "round": 1,
+      "lto": "thin",
+      "build_seconds": 27.925453558098525,
+      "bytes": 1501232
+    }
+  ]
+}

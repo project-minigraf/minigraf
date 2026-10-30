@@ -1,0 +1,30 @@
+{
+  "platform": "macOS-14.8.9-arm64-arm-64bit",
+  "machine": "arm64",
+  "builds": [
+    {
+      "round": 0,
+      "lto": "thin",
+      "build_seconds": 42.01392458400005,
+      "bytes": 1372560
+    },
+    {
+      "round": 0,
+      "lto": "full",
+      "build_seconds": 40.54684737499997,
+      "bytes": 954192
+    },
+    {
+      "round": 1,
+      "lto": "full",
+      "build_seconds": 42.17448854100002,
+      "bytes": 954192
+    },
+    {
+      "round": 1,
+      "lto": "thin",
+      "build_seconds": 36.50212337500005,
+      "bytes": 1372560
+    }
+  ]
+}

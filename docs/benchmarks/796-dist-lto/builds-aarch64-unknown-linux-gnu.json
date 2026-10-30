@@ -1,0 +1,30 @@
+{
+  "platform": "Linux-6.8.0-1070-azure-aarch64-with-glibc2.35",
+  "machine": "aarch64",
+  "builds": [
+    {
+      "round": 0,
+      "lto": "thin",
+      "build_seconds": 30.349435244999995,
+      "bytes": 1262544
+    },
+    {
+      "round": 0,
+      "lto": "full",
+      "build_seconds": 28.18664725100001,
+      "bytes": 1094504
+    },
+    {
+      "round": 1,
+      "lto": "full",
+      "build_seconds": 28.104224689000034,
+      "bytes": 1094504
+    },
+    {
+      "round": 1,
+      "lto": "thin",
+      "build_seconds": 25.75162138500002,
+      "bytes": 1262544
+    }
+  ]
+}

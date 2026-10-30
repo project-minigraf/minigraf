@@ -1,0 +1,30 @@
+{
+  "platform": "Windows-2022Server-10.0.20348-SP0",
+  "machine": "AMD64",
+  "builds": [
+    {
+      "round": 0,
+      "lto": "thin",
+      "build_seconds": 63.82672539999999,
+      "bytes": 1041920
+    },
+    {
+      "round": 0,
+      "lto": "full",
+      "build_seconds": 46.1428391,
+      "bytes": 963072
+    },
+    {
+      "round": 1,
+      "lto": "full",
+      "build_seconds": 47.27537620000004,
+      "bytes": 963072
+    },
+    {
+      "round": 1,
+      "lto": "thin",
+      "build_seconds": 45.59298579999995,
+      "bytes": 1041920
+    }
+  ]
+}
