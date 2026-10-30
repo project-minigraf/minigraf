@@ -4,12 +4,14 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Active** | 2,037 | 2,072 |
+| **Active** | 2,038 | 2,073 |
 | **Ignored** | 19 | 20 |
-| **Total** | 2,056 | 2,092 |
+| **Total** | 2,057 | 2,093 |
 
 Counts above are the current Cargo test inventory (active versus ignored),
-including #777, #789 and #781. Verification results below identify which suites ran.
+including #777, #789, #781 and #794. Verification results below identify which suites ran.
+
+**#794 verification (2026-10-30)**: one added `storage::keys` unit test checks that a set's element encoding equals its elements' encodings, ordered and deduplicated by a `BTreeSet`, over 2,000 random sets of up to about 60 elements with duplicates, signed zeros, NaNs and strings up to 300 bytes, in shuffled, sorted and reversed order. It passes with both the old stable sort and the new unstable sort. The full default suite passes (2,038 active, 19 ignored). CI-equivalent native, browser and WASI clippy pass on Rust 1.99.1, and Rust 1.89 checks all features. The release binary is 1,260,568 bytes (3,024 smaller), below the unchanged 1,263,616-byte cap.
 
 **#781 verification (2026-10-29)**: 24 active tests and two ignored measurement
 probes are added. On implementation `90cb88924`, the complete default suite
