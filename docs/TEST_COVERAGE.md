@@ -4,14 +4,14 @@
 
 | | Default features | With `--features test-hooks` |
 |---|---|---|
-| **Active** | 2,038 | 2,073 |
+| **Active** | 2,039 | 2,074 |
 | **Ignored** | 19 | 20 |
-| **Total** | 2,057 | 2,093 |
+| **Total** | 2,058 | 2,094 |
 
 Counts above are the current Cargo test inventory (active versus ignored),
-including #777, #789, #781 and #794. Verification results below identify which suites ran.
+including #777, #789, #781, #794 and #795. Verification results below identify which suites ran.
 
-**#794 verification (2026-10-30)**: one added `storage::keys` unit test checks that a set's element encoding equals its elements' encodings, ordered and deduplicated by a `BTreeSet`, over 2,000 random sets of up to about 60 elements with duplicates, signed zeros, NaNs and strings up to 300 bytes, in shuffled, sorted and reversed order. It passes with both the old stable sort and the new unstable sort. The full default suite passes (2,038 active, 19 ignored). CI-equivalent native, browser and WASI clippy pass on Rust 1.99.1, and Rust 1.89 checks all features. The release binary is 1,260,568 bytes (3,024 smaller), below the unchanged 1,263,616-byte cap.
+**#794 verification (2026-10-30)**: one added `storage::keys` unit test checks that a set's element encoding equals its elements' encodings, ordered and deduplicated by a `BTreeSet`, over 2,000 random sets of up to about 60 elements with duplicates, signed zeros, NaNs and strings up to 300 bytes, in shuffled, sorted and reversed order. It passes with both the old stable sort and the new unstable sort. The full default suite passed before merging #795 (2,038 active, 19 ignored). CI-equivalent native, browser and WASI clippy pass on Rust 1.99.1, and Rust 1.89 checks all features. The release binary is 1,260,568 bytes (3,024 smaller), below the unchanged 1,263,616-byte cap.
 
 **#781 verification (2026-10-29)**: 24 active tests and two ignored measurement
 probes are added. On implementation `90cb88924`, the complete default suite
@@ -111,6 +111,8 @@ limit. Platform/focused checks used bench Rust 1.99.1. Full `test-hooks`
 execution was not repeated; its 2,066-test inventory was verified.
 
 ## Covered Areas
+
+- **Unique query metadata sorts** (#795; `src/query/engine/tests.rs`, one test): a join variable named twice in a `not-join` or `or-join`, the only equal-key tie in the planner's import sort, returns the rows of the same clause with it named once, under the chosen, hashed and correlated body forms.
 
 - **Certified ordered aggregates** (#781; `src/query/engine/aggregate_order_tests.rs`, `order/tests.rs`, `order/arguments.rs`, `tests/input_order_test.rs`): sum/avg, scalar extrema, Integer/nil distinct sums, complete effective tuples, hidden `:with` keys, output remapping and raw-history argument domains. The original #641 count-only eligibility coverage is extended with explicit scalar/numeric answers, retained Sort, dropped groups, source-error/resource-error competition, pending/staged invalidation, optional-proof rollback, portable committed readers, and separately bounded Aggregate/IdSpace controls. Unproved tuples/arguments and registered finalizers retain full-input behavior.
 

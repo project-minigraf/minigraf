@@ -1466,6 +1466,50 @@ fn planner_chooses_the_body_form() {
     assert_eq!(forms(constant), ["correlated"]);
 }
 
+/// A join variable named twice imports one slot twice, the only tie in the
+/// planner's import sort (#795): each body form answers as with it named
+/// once.
+#[test]
+fn repeated_join_variable_matches_single() {
+    use crate::query::datalog::optimizer::{Subplans, set_subplans};
+    let db = Minigraf::in_memory().unwrap();
+    db.execute("(transact [[:p1 :a 1] [:p2 :a 2] [:p3 :a 3] [:q1 :b 2] [:q2 :b 3] [:q2 :c 3]])")
+        .unwrap();
+    let sorted = |q: &str| {
+        let QueryResult::QueryResults { results, .. } = db.execute(q).expect(q) else {
+            panic!("expected query results");
+        };
+        let mut out: Vec<String> = results.iter().map(|r| format!("{r:?}")).collect();
+        out.sort();
+        out
+    };
+    let pairs = [
+        (
+            "(query [:find ?e :where [?e :a ?x] (not-join [?x ?x] [?f :b ?x])])",
+            "(query [:find ?e :where [?e :a ?x] (not-join [?x] [?f :b ?x])])",
+            1,
+        ),
+        (
+            "(query [:find ?e ?x :where [?e :a ?x] (not-join [?e ?x ?e] [?f :b ?x] [?f :c ?x])])",
+            "(query [:find ?e ?x :where [?e :a ?x] (not-join [?e ?x] [?f :b ?x] [?f :c ?x])])",
+            2,
+        ),
+        (
+            "(query [:find ?e :where [?e :a ?x] (or-join [?x ?x] [?f :b ?x] [?f :c ?x])])",
+            "(query [:find ?e :where [?e :a ?x] (or-join [?x] [?f :b ?x] [?f :c ?x])])",
+            2,
+        ),
+    ];
+    for mode in [Subplans::Choose, Subplans::Hash, Subplans::Correlated] {
+        let _m = set_subplans(mode);
+        for (twice, once, n) in pairs {
+            let rows = sorted(twice);
+            assert_eq!(rows.len(), n, "{twice}");
+            assert!(rows == sorted(once), "{twice}");
+        }
+    }
+}
+
 /// Which negations the engine runs (#546): every `not` / `not-join`, with
 /// a rule invocation too since rule queries run here (#548).
 #[test]
