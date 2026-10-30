@@ -1,0 +1,10 @@
+{
+  "target": "x86_64-pc-windows-msvc",
+  "run": 41014187879,
+  "rustflags": "-Ctarget-feature=+crt-static",
+  "dist_packaged_bytes": 1060864,
+  "full_bytes": 1060864,
+  "thin_bytes": 1139712,
+  "packaged_equals_full": false,
+  "note": "dist build --target x86_64-pc-windows-msvc, then thin and full LTO with the same --target and RUSTFLAGS in separate target dirs (ls -l in the run log); cmp of the packaged and full binaries differs from byte 265, in the PE header"
+}

@@ -7,8 +7,10 @@ now keeps release's full LTO, and the gate builds `--profile dist`.
 
 ## Method
 
-Revision: `perf/796-dist-lto` at its first commit (v3 `2ff91059e` plus the profile
-change), rustc 1.99.1 everywhere. Thin LTO is the same profile with
+Revision: v3 `2ff91059e` (before #794) plus this change's profile edit, as
+temporary commits `36598e361` (matrix and bench) and `ac7e661c2` (Windows
+static-CRT check) that also added the measuring workflow; rustc 1.99.1
+everywhere. Thin LTO is the same profile with
 `CARGO_PROFILE_DIST_LTO=thin`.
 
 - **CI matrix**: the five cargo-dist targets on the runners `dist plan` assigns
@@ -50,7 +52,8 @@ links the C runtime statically (`+crt-static`), which the plain builds above
 do not: a second run (41014187879) built thin and full LTO with
 `RUSTFLAGS=-Ctarget-feature=+crt-static` and the `--target` cargo-dist uses.
 The full build matches the packaged 1,060,864 bytes, differing only in the PE
-header; thin is 1,139,712. Without the static CRT the Windows binaries are
+header; thin is 1,139,712
+([`package-x86_64-pc-windows-msvc-static-crt.json`](796-dist-lto/package-x86_64-pc-windows-msvc-static-crt.json)). Without the static CRT the Windows binaries are
 1,041,920 (thin) and 963,072 (full). All five packaged binaries ran the demo.
 
 The gate checks x86_64 Linux only. The other targets' sizes are recorded here,
@@ -70,7 +73,7 @@ Clean builds, seconds, in run order (thin, full, full, thin):
 | bench, x86_64 Linux | 28 | 31 | 31 | 28 |
 
 The first build on each runner is slower whatever its profile (cold caches).
-Comparing the warmer pairs, full LTO costs 0–10 seconds (0–15%) per build,
+Comparing the warmer pairs, full LTO costs 0–10 seconds (0–16%) per build,
 3 seconds on the bench machine. A release builds each target once.
 
 ## Runtime
