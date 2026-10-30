@@ -130,10 +130,10 @@ lto = true
 codegen-units = 1
 panic = "unwind"
 
-# The profile that 'dist' will build with
+# The profile that 'dist' will build with. It keeps release's full LTO, so the
+# shipped binaries are the ones binary-size.yml measures (#796).
 [profile.dist]
 inherits = "release"
-lto = "thin"
 
 [lints]
 workspace = true

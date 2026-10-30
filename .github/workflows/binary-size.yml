@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   binary-size:
-    name: Check release binary size
+    name: Check distribution binary size
     runs-on: ubuntu-latest
     env:
       SIZE_LIMIT_BYTES: 1263616  # 1234 KiB — #277 error codes, #306 top-k, #723 ancestor join planning; see PHILOSOPHY.md §4
@@ -22,12 +22,13 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build release binary
-        run: cargo build --release
+      # The profile cargo-dist ships (#796)
+      - name: Build distribution binary
+        run: cargo build --profile dist
 
       - name: Check binary size
         run: |
-          BINARY=target/release/minigraf
+          BINARY=target/dist/minigraf
           SIZE=$(stat -c %s "$BINARY")
           SIZE_KB=$(( SIZE / 1024 ))
           LIMIT_KB=$(( SIZE_LIMIT_BYTES / 1024 ))
