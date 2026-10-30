@@ -1,0 +1,7 @@
+{
+  "target": "x86_64-apple-darwin",
+  "packaged_bytes": 1075840,
+  "full_bytes": 1075840,
+  "thin_bytes": 1503392,
+  "packaged_equals_full": false
+}

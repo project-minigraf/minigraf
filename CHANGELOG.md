@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **Released binaries use full LTO** (#796). The `dist` profile cargo-dist builds releases with no longer overrides `release`'s full LTO with thin LTO. The CLI is 7–31% smaller on the five release targets (x86_64 Linux 1,501,232 → 1,262,584 bytes, measured before #794) and 4–17% faster on query workloads; clean builds take up to 10 seconds longer. `binary-size.yml` now builds `--profile dist`, so it measures the shipped x86_64 Linux binary (still under the unchanged 1,263,616-byte cap). Windows packages keep cargo-dist's static C runtime. See `docs/benchmarks/796-dist-lto.md`.
+
 - **Sort set element encodings without a stable sort** (#794). `set_elements` sorts its elements' byte encodings with `sort_unstable`: equal encodings are identical bytes and deduplicated straight after, so the encoded bytes are unchanged, and the stable sort's scratch allocation and code go. The native release binary is 3,024 bytes smaller (WASI 950, thin-LTO dist 4,112). On the bench machine, ingest, checkpoint, set-constant queries and scans of 100,000 32-element sets in seven input shapes stayed within run-to-run noise. No API, format or error change.
 
 - **Unstable sorts for unique query metadata** (#795). Prepared-query slot names, an `or`'s branch variables and a subplan's imported variables sort with `sort_unstable`: their keys are unique, or, for a join variable named twice, the tied entries are identical, so order and plans are unchanged. Release builds shrink by 1,008 bytes (native CLI), 1,752 bytes (WASI) and 1,886 bytes (browser `--lib`); prepare and planning time is unchanged within noise. No API, dependency or file-format change.

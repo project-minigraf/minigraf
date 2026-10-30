@@ -1,0 +1,7 @@
+{
+  "target": "x86_64-pc-windows-msvc",
+  "packaged_bytes": 1060864,
+  "full_bytes": 963072,
+  "thin_bytes": 1041920,
+  "packaged_equals_full": false
+}

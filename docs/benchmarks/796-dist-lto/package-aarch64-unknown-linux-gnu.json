@@ -1,0 +1,7 @@
+{
+  "target": "aarch64-unknown-linux-gnu",
+  "packaged_bytes": 1094504,
+  "full_bytes": 1094504,
+  "thin_bytes": 1262544,
+  "packaged_equals_full": false
+}

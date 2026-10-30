@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compare a thin-LTO and a full-LTO `dist` CLI on fixed REPL workloads (#796).
 
-Usage: 796-dist-lto.py THIN_EXE FULL_EXE OUTPUT_JSON [ROUNDS]
+Usage: runtime.py THIN_EXE FULL_EXE OUTPUT_JSON [ROUNDS]
 
 Each round runs every workload once per binary, alternating which goes first.
 Both binaries must print the same output (transaction timestamps aside).

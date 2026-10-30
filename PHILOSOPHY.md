@@ -118,7 +118,12 @@ SQLite's success comes from a clear philosophy: be a library, not a server. Be s
   fit the 2 KiB left after the streaming engine (#473) and set values (#316).
   The approved #723 ancestor-join optimization raises it to 1,234 KiB:
   the measured increase is 2,720 bytes, avoiding a whole-attribute value
-  map for selective in-memory recursion without adding a storage index
+  map for selective in-memory recursion without adding a storage index.
+  The gate builds the x86_64 Linux CLI with cargo-dist's `dist` profile,
+  the one releases ship. From v3.0.0 `dist` keeps release's full LTO
+  rather than thin LTO, 7–31% smaller per target (#796; sizes per target
+  in `docs/benchmarks/796-dist-lto.md`). Other targets are measured, not
+  gated; a profile setting for one target needs its own measurement
 - No runtime dependencies (no JVM, no Python, no Node.js)
 
 **Anti-pattern**: Requiring external services, libraries, or runtimes to function.

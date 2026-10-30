@@ -1,0 +1,30 @@
+{
+  "platform": "macOS-15.7.9-x86_64-i386-64bit",
+  "machine": "x86_64",
+  "builds": [
+    {
+      "round": 0,
+      "lto": "thin",
+      "build_seconds": 123.61216050499996,
+      "bytes": 1503392
+    },
+    {
+      "round": 0,
+      "lto": "full",
+      "build_seconds": 96.794796571,
+      "bytes": 1075840
+    },
+    {
+      "round": 1,
+      "lto": "full",
+      "build_seconds": 76.51469797699997,
+      "bytes": 1075840
+    },
+    {
+      "round": 1,
+      "lto": "thin",
+      "build_seconds": 67.28196448799997,
+      "bytes": 1503392
+    }
+  ]
+}

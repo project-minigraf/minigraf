@@ -1,0 +1,30 @@
+{
+  "platform": "Linux-6.8.0-1070-azure-x86_64-with-glibc2.35",
+  "machine": "x86_64",
+  "builds": [
+    {
+      "round": 0,
+      "lto": "thin",
+      "build_seconds": 43.43511368700001,
+      "bytes": 1501232
+    },
+    {
+      "round": 0,
+      "lto": "full",
+      "build_seconds": 30.330564745999993,
+      "bytes": 1262584
+    },
+    {
+      "round": 1,
+      "lto": "full",
+      "build_seconds": 30.577716478000013,
+      "bytes": 1262584
+    },
+    {
+      "round": 1,
+      "lto": "thin",
+      "build_seconds": 28.490207176000013,
+      "bytes": 1501232
+    }
+  ]
+}

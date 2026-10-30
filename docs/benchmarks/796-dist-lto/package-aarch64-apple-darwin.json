@@ -1,0 +1,7 @@
+{
+  "target": "aarch64-apple-darwin",
+  "packaged_bytes": 954208,
+  "full_bytes": 954192,
+  "thin_bytes": 1372560,
+  "packaged_equals_full": false
+}
