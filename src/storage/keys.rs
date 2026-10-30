@@ -525,7 +525,7 @@ pub fn set_elements(elements: &[KeyValue]) -> Vec<u8> {
             b
         })
         .collect();
-    encoded.sort();
+    encoded.sort_unstable();
     encoded.dedup();
     encoded.concat()
 }
@@ -1388,6 +1388,44 @@ mod tests {
                 set_elements_decode(&a).unwrap().len() <= elements.len(),
                 "decodes back"
             );
+        }
+    }
+
+    #[test]
+    fn set_element_encoding_is_the_sorted_distinct_encodings() {
+        // The reference: each element's encoding, ordered and deduplicated by
+        // a BTreeSet. Elements repeat (copies, -0.0/0.0, NaNs) and run past 64
+        // bytes, in shuffled, sorted and reversed order (#794).
+        let mut rng = Rng(794);
+        for round in 0..2000 {
+            let mut elements: Vec<KeyValue> = (0..rng.below(40))
+                .map(|_| match rng.below(10) {
+                    0 => KeyValue::Str(random_string(&mut rng, 300)),
+                    _ => random_value(&mut rng),
+                })
+                .filter(|v| !matches!(v, KeyValue::LongStr { .. }))
+                .collect();
+            for i in 0..elements.len() / 2 {
+                let j = usize::try_from(rng.below(elements.len() as u64)).unwrap();
+                elements.push(elements[j].clone());
+                elements.swap(i, j);
+            }
+            match round % 3 {
+                0 => {}
+                1 => elements.sort_by_key(enc_value),
+                _ => {
+                    elements.sort_by_key(enc_value);
+                    elements.reverse();
+                }
+            }
+            let want: Vec<u8> = elements
+                .iter()
+                .map(enc_value)
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .flatten()
+                .collect();
+            assert_eq!(set_elements(&elements), want, "sorted distinct encodings");
         }
     }
 
