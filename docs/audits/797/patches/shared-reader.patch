@@ -1,5 +1,4 @@
 From 1b5169ef8e31e3f1bf848d52ffc2e08f3c17068f Mon Sep 17 00:00:00 2001
-From: Aditya Mukhopadhyay <webmaster@adityamukho.com>
 Date: Fri, 30 Oct 2026 13:37:59 +0530
 Subject: [PATCH] perf(storage): share the committed reader's logic across
  backends (#797)
@@ -11,8 +10,6 @@ non-generic ReaderCore held inline; the generic reader keeps only the
 MutexStorageBackend<B> adapter and trait methods that pass it on. No
 allocation, lock, cache or behavior change.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01H2a7Qo5yfvBEjzSuUoB2n9
 ---
  src/storage/reader.rs | 428 ++++++++++++++++++++++++++++--------------
  1 file changed, 283 insertions(+), 145 deletions(-)

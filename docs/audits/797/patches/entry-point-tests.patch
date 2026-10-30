@@ -1,5 +1,4 @@
 From 3280481369a9dc34c455870057f45f65a781653a Mon Sep 17 00:00:00 2001
-From: Aditya Mukhopadhyay <webmaster@adityamukho.com>
 Date: Fri, 30 Oct 2026 14:28:05 +0530
 Subject: [PATCH] test(storage): direct tests of the committed reader's
  remaining entry points (#797)
@@ -9,8 +8,6 @@ last_tx, walk (resume after a key, early stop, prefix, INT-049 before the
 empty-root check) and decode had only indirect coverage. A tx_order read
 that fails must not be cached.
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01H2a7Qo5yfvBEjzSuUoB2n9
 ---
  src/storage/reader.rs | 214 ++++++++++++++++++++++++++++++++++++++++++
  1 file changed, 214 insertions(+)

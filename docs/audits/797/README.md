@@ -8,8 +8,10 @@ on `v3`. Design: `docs/superpowers/specs/2026-10-30-797-shared-reader-design.md`
 **Neither candidate passes. No production change is proposed.**
 
 - **H** (shared non-generic `ReaderCore`, `patches/shared-reader.patch`)
-  passes the size gate and every correctness gate, but fails the primary
-  runtime gate. In the second envelope (opt-level 3) campaign, the upper
+  fails the primary runtime gate. It saves 3,288 native bytes, and every
+  bench-run correctness gate passes except all-target clippy, which fails
+  identically on B. Semver, Chrome and macOS/Windows were not run (see
+  below). In the second envelope (opt-level 3) campaign, the upper
   bounds for attribute/value and `:as-of` point queries are 1.0245 and 1.0260,
   against a limit of 1.02. The B:B control in the same campaign stays within
   0.7% (0.9937–1.0022), so this is a measured slowdown of about 1–2% on envelope point
@@ -22,9 +24,15 @@ on `v3`. Design: `docs/superpowers/specs/2026-10-30-797-shared-reader-design.md`
   1.130 under WASI): the boxed reader makes two allocations per construction, B one. The spec
   needs a new maintainer decision to ship P in any case.
 
-Two more categories are outstanding for both candidates (see Limitations):
-the cold category, under the residency rule fixed before acceptance, and the
-CI-only checks a PR would run.
+Neither candidate meets AC 6 literally either: the opt-level-z library
+consumer grows by 48 bytes (H) and 64 bytes (P) (see Sizes). Other categories
+are not fully accepted for either candidate (see Limitations):
+
+- the cold category, under the residency rule fixed before acceptance;
+- the concurrency category, whose results were checked by row count only;
+- the CI-only checks a PR would run.
+
+None of these changes the outcome.
 
 ## Sizes (AC 6)
 
@@ -43,9 +51,11 @@ library consumer, opt-level 3, stripped | 2,150,336 | 2,137,128 | 2,129,960 | �
 library consumer, opt-level 3, unstripped | 4,737,512 | 4,722,448 | 4,710,704 | −15,064 | −26,808
 library consumer, release (opt-level z) | 1,459,888 | 1,459,936 | 1,459,952 | +48 | +64
 
-H passes AC 6: the native CLI is 3,288 bytes smaller, and no AC 6 artifact
-grows. The opt-level-z library consumer is not an AC 6 artifact; it is listed
-because it grows for both candidates.
+AC 6 has two conditions: the native CLI at least 2,000 bytes smaller, and no
+measured artifact larger than B. H meets the first, at 3,288 bytes. It fails
+the second: the opt-level-z library consumer is a measured artifact (the
+user's size bar names the library consumer) and grows by 48 bytes (P: 64).
+Every other artifact shrinks or stays the same.
 
 ## Correctness gates (AC 8–11), H
 
@@ -69,8 +79,9 @@ coverage gates (nightly-2026-10-01) | pass; `src/storage/reader.rs` 98.45% lines
 `patches/entry-point-tests.patch` adds direct tests of the reader entry points
 that had none (AC 5). These tests pass on both B and H. The gate run above
 predates that commit; the tests were run on their own on both variants.
-Not run: the Chrome browser suite, macOS/Windows native, and `semver-checks`,
-which only a PR's CI provides.
+Not run: the Chrome browser suite, macOS/Windows native, and the
+`semver-checks` output (AC 2), which only a PR's CI provides. They would be
+needed to ship H; it does not ship, so they stay unverified.
 
 ## Runtime (AC 12–14)
 
@@ -90,18 +101,35 @@ which only a PR's CI provides.
   100,000 facts over 16,666 entities, built by B's `perf_envelope`
   (SHA-256 `59e0023aad11…`, in the manifest).
 - **Unit and estimand.** The unit is one process block. Each block runs a
-  warm-up and at least 1 s of timed work per workload, then validates and
-  hashes the complete results. The estimand is the candidate's mean ns/op over
+  warm-up and at least 1 s of timed work per workload. The estimand is the candidate's mean ns/op over
   the base's (for `cc_*`, wall time per operation), compared as natural logs.
   The bound is the one-sided 95% Student t upper bound on the mean log ratio,
-  exponentiated (`analyze.py`). Every block's result digests must match B.
+  exponentiated (`analyze.py`).
+- **Result validation** differs by category (the `Validation` column of
+  `evidence/tables.md`):
+  - **Query workloads** (`pt_*`, `sh_*`, `sc_*`, `cw_long`, `fl_paged`,
+    `nc_*`, `con_large_tx`, WASI queries, browser): every block hashes the
+    complete results of every distinct query outside timing, and that digest
+    must match B's. Each timed operation then checks its row count.
+  - **Cold** (`cold_*`): the digest comes from a warm run on the fixture, and
+    each cold observation checks only its row count.
+  - **Concurrency** (`cc_*`): row counts only, digest 0. **The concurrency
+    category is not fully accepted.**
+  - **Construction** (`con_open`, `con_direct`, `con_checkpoint`,
+    `wasi_committed_con_direct`): these produce no result, and their digest
+    is a constant 0.
 - **Placement.** Paired campaigns run the base and the candidate at the same
   time, one on NUMA node 1 and one on node 3 (`numactl` CPU and memory
   binding), swapping every block. Pair order rotates. Cold, concurrency and
   browser campaigns run one process at a time, alternating the order.
 - **Fixed in advance.** Block counts, the analysis method and the campaign
   order were fixed from the pilots (`raw/pilot-*.jsonl.gz`, not counted)
-  before any acceptance run, and committed as `acceptance-plan.json`: primary
+  before any acceptance run. They were committed as `acceptance-plan.json` in
+  `2313d245b` at 09:53:09 UTC. The last pilot block ended at 09:52:28 and the
+  first acceptance block started at 09:53:17 (`evidence/plan-provenance.txt`).
+  The published branch has the same files, rebased as `9fea12192` with a
+  later date, because the outcome dropped H's commits; the original commit is
+  kept on the ref `797-h-measured`. The plan fixed: primary
   128 blocks; secondary, cold and concurrency 48; WASI and browser 32. Each
   campaign ran once, from a script that waited for a 1-minute load average
   below 2. `run.py` refuses to overwrite a raw file, so no campaign was
@@ -109,7 +137,9 @@ which only a PR's CI provides.
 - **Primary families.** `pt_ea` (entity/attribute), `pt_av`
   (attribute/value) and `pt_asof` (`:as-of` transaction counter). Each covers
   fixed and varied keys and existing and missing entities, through ordinary
-  queries, prepared queries and cursors pulled in several batches.
+  queries, prepared queries and cursors pulled in batches of one. A point
+  query returns at most one row, so the cursor path never returns more than
+  one non-empty batch.
   Profiles: `envelope` (the opt-level-3 consumer) and `release` (the gate's
   configuration).
 
@@ -127,7 +157,8 @@ The B:P upper bounds are at most 1.0055 in envelope and 1.0161 in release.
 
 ### Secondary gate (AC 14): every other workload, upper bound ≤ 1.05
 
-H passes every secondary workload. Its highest upper bounds:
+Every H secondary workload has an upper bound of at most 1.05. Its highest
+upper bounds:
 
 Workload | B:H ratio | upper
 ---|---:|---:
@@ -141,13 +172,15 @@ P fails on `con_direct`: native 1.166 (upper bound 1.174), and WASI
 `wasi_committed_con_direct` 1.119 (upper bound 1.130). All of P's other
 workloads pass.
 
-No campaign has a result-digest mismatch, for either candidate.
+No digest mismatches were found, for either candidate. This covers only the
+workloads with a real digest (see Result validation).
 
 ### Per-workload tables
 
 `evidence/tables.md` (from `report.py`) covers every campaign, workload and
-pair, with the blocks, ratio, upper bound, verdict, mean, p50/p99,
-allocations per operation and RSS. `evidence/summary.json` holds the
+pair. Each row has the blocks, ratio, upper bound, verdict, validation
+method, base and candidate means, and the absolute delta in ns. It also has
+p50/p99, allocations per operation and RSS. `evidence/summary.json` holds the
 analyzer's output.
 
 ## Limitations and deviations
@@ -159,15 +192,24 @@ analyzer's output.
   process's observations. Per observation (sum ÷ observations), point queries
   leave a median of 1.1 of 2,628 pages resident (worst process 148) and scans
   leave 7.9, likely the pages the open handle mapped or touched. Under the
-  fixed rule, the cold category is outstanding for both candidates. The
-  latency ratios are reported but do not count as a pass. This changes no
+  fixed rule, the cold category is outstanding for both candidates. Also, the
+  database handle opens before the eviction and residency check, so its open
+  reads happen while the cache is still warm. The latency ratios are
+  reported, but they do not count as a pass: `tables.md` labels the cold rows
+  "category outstanding". This changes no
   verdict: H already fails the primary gate.
 - `analyze.py` was changed after the campaigns in two ways, neither touching
   the ratio, bound or digest computation. It now reads gzipped raw files, and
   it reports residency per observation instead of the maximum of per-process
-  sums.
-- The browser harness reports no allocations or RSS (they read as 0). It
-  also does not cover prepared queries.
+  sums. `report.py` (presentation only) gained the validation, absolute-delta
+  and n/a labels.
+- **Unmeasured fields.** The browser harness does not measure allocations
+  or RSS, and WASI does not measure RSS. The raw records hold 0 for these;
+  `tables.md` shows n/a. The browser harness does not cover prepared queries.
+- **Browser build.** Every variant's browser A/B module was built with
+  `CARGO_PROFILE_RELEASE_LTO=false`: the release profile without LTO, which
+  cannot link the harness (`ab_browser.rs`). The browser size row above uses
+  the normal release build.
 - Bench machine (non-identifying): Linux 6.8 x86-64 (Ubuntu 24.04), two Intel
   Xeon E5-2696 v4 sockets, 44 cores and 88 threads with SMT on, 4 NUMA nodes.
   The `schedutil` governor was used, with transparent huge pages set to
@@ -190,7 +232,9 @@ analyzer's output.
   `raw/*.spec.json` are the specs each run used. `raw/manifest.json` has the
   pinned inputs.
 - `evidence/`: sizes, gate status, compiler versions, `summary.json`,
-  `tables.md`.
+  `tables.md`, `plan-provenance.txt`.
+- The patches are `git format-patch` output with the author and trailer
+  lines removed; the `From <sha>` line keeps the commit hash.
 
 Reproduce the analysis:
 
