@@ -19,8 +19,18 @@ use anyhow::Result;
 use std::sync::{Arc, Mutex, OnceLock};
 
 /// [`CommittedReader`] over one committed meta's trees.
+///
+/// Only the backend adapter depends on `B`. The reads themselves are
+/// [`ReaderCore`]'s, compiled once for every backend: the tree and dictionary
+/// code below them already reads pages through `&dyn StorageBackend` (#797).
 pub struct OnDiskReader<B: StorageBackend + 'static> {
     backend: MutexStorageBackend<B>,
+    core: ReaderCore,
+}
+
+/// The generation an [`OnDiskReader`] reads, and its reads, given the
+/// reader's backend adapter.
+struct ReaderCore {
     cache: Arc<PageCache>,
     eavt_root: u64,
     aevt_root: u64,
@@ -39,6 +49,18 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
     pub fn new(backend: Arc<Mutex<B>>, cache: Arc<PageCache>, meta: &MetaPage) -> Self {
         OnDiskReader {
             backend: MutexStorageBackend(backend),
+            core: ReaderCore::new(cache, meta),
+        }
+    }
+
+    fn dict(&self) -> DictReader<'_> {
+        self.core.dict(&self.backend)
+    }
+}
+
+impl ReaderCore {
+    fn new(cache: Arc<PageCache>, meta: &MetaPage) -> Self {
+        ReaderCore {
             cache,
             eavt_root: meta.eavt_root,
             aevt_root: meta.aevt_root,
@@ -53,14 +75,15 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
         }
     }
 
-    fn dict(&self) -> DictReader<'_> {
-        DictReader::new(self.dict_root, &self.backend, &self.cache).with_shared(&self.shared)
+    fn dict<'a>(&'a self, backend: &'a dyn StorageBackend) -> DictReader<'a> {
+        DictReader::new(self.dict_root, backend, &self.cache).with_shared(&self.shared)
     }
 
     /// Facts of every `index` entry starting with `prefix`.
     #[cfg(test)]
     fn scan(
         &self,
+        backend: &dyn StorageBackend,
         index: Index,
         root: u64,
         prefix: &[u8],
@@ -69,18 +92,17 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
         if root == 0 {
             return Ok(Vec::new());
         }
-        prefix_scan(root, prefix, &self.backend, &self.cache)?
+        prefix_scan(root, prefix, backend, &self.cache)?
             .iter()
             .map(|(k, _)| dict.fact(&KeyFact::decode(index, k)?))
             .collect()
     }
-}
 
-impl<B: StorageBackend + 'static> OnDiskReader<B> {
     /// Visit the DICT's transactions `(tx_count, tx_id)` in `tx_count` order,
     /// from `from` on (all when `None`), until `visit` returns false.
     fn dict_txs(
         &self,
+        backend: &dyn StorageBackend,
         from: Option<u64>,
         visit: &mut dyn FnMut(u64, u64) -> Result<bool>,
     ) -> Result<()> {
@@ -88,8 +110,7 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
             return Ok(());
         }
         let prefix = [keys::DICT_TX];
-        let mut cursor =
-            LeafCursor::new(self.dict_root, Some(&prefix), &self.backend, &self.cache)?;
+        let mut cursor = LeafCursor::new(self.dict_root, Some(&prefix), backend, &self.cache)?;
         if let Some(m) = from {
             cursor.seek(&keys::dict_tx_key(m))?;
         }
@@ -111,6 +132,7 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
     #[cfg(test)]
     fn live_scan(
         &self,
+        backend: &dyn StorageBackend,
         index: Index,
         root: u64,
         prefix: &[u8],
@@ -119,10 +141,19 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
     ) -> Result<Vec<Fact>> {
         let mut out = Vec::new();
         let bound = TxBound::of(as_of);
-        self.live_walk(index, root, prefix, None, &bound, usize::MAX, &mut |k| {
-            out.push(dict.fact(&KeyFact::decode(index, k)?)?);
-            Ok(())
-        })?;
+        self.live_walk(
+            backend,
+            index,
+            root,
+            prefix,
+            None,
+            &bound,
+            usize::MAX,
+            &mut |k| {
+                out.push(dict.fact(&KeyFact::decode(index, k)?)?);
+                Ok(())
+            },
+        )?;
         Ok(out)
     }
 
@@ -155,6 +186,7 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
     #[allow(clippy::too_many_arguments)]
     fn live_walk(
         &self,
+        backend: &dyn StorageBackend,
         index: Index,
         root: u64,
         prefix: &[u8],
@@ -166,7 +198,7 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
         if root == 0 {
             return Ok(None);
         }
-        let mut cursor = LeafCursor::new(root, Some(prefix), &self.backend, &self.cache)?;
+        let mut cursor = LeafCursor::new(root, Some(prefix), backend, &self.cache)?;
         if let Some(after) = resume {
             // Past every entry of the triple: `tx↓` starts below 0xFF, and the
             // next triple differs from this one within its length.
@@ -251,6 +283,257 @@ impl<B: StorageBackend + 'static> OnDiskReader<B> {
             }
         }
     }
+
+    // ─── KeySource ───────────────────────────────────────────────────────────
+
+    fn tx_order(&self, backend: &dyn StorageBackend) -> Result<TxOrder> {
+        if let Some(order) = self.tx_order.get() {
+            return Ok(*order);
+        }
+        let mut order = TxOrder {
+            monotonic: true,
+            last: None,
+        };
+        self.dict_txs(backend, None, &mut |tx_count, tx_id| {
+            if order.last.is_some_and(|(_, last)| tx_id < last) {
+                order.monotonic = false;
+            }
+            order.last = Some((tx_count, tx_id));
+            Ok(true)
+        })?;
+        Ok(*self.tx_order.get_or_init(|| order))
+    }
+
+    /// `order` is this reader's [`Self::tx_order`].
+    fn last_tx_at(&self, backend: &dyn StorageBackend, order: TxOrder, t: u64) -> Result<u64> {
+        // The first transaction at or after `m`, if its `tx_id` is at most
+        // `t`: true up to the newest transaction with `tx_id <= t`, false
+        // after it, since `tx_id`s rise with `tx_count` here.
+        let at_or_before = |m: u64| -> Result<bool> {
+            let mut kept = false;
+            self.dict_txs(backend, Some(m), &mut |_, tx_id| {
+                kept = tx_id <= t;
+                Ok(false)
+            })?;
+            Ok(kept)
+        };
+        // The least `m` in `1..=newest + 1` whose first transaction at or
+        // after it is not kept; that transaction is `m - 1`.
+        let newest = order.last.map_or(0, |(tx_count, _)| tx_count);
+        let (mut lo, mut hi) = (1u64, newest.saturating_add(1));
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if at_or_before(mid)? {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        Ok(lo - 1)
+    }
+
+    fn tx_runs(
+        &self,
+        backend: &dyn StorageBackend,
+        t: u64,
+        out: &mut Vec<(u64, u64)>,
+    ) -> Result<()> {
+        let mut open: Option<(u64, u64)> = None;
+        self.dict_txs(backend, None, &mut |tx_count, tx_id| {
+            match (tx_id <= t, open.as_mut()) {
+                (true, Some(run)) => run.1 = tx_count,
+                (true, None) => open = Some((tx_count, tx_count)),
+                (false, _) => out.extend(open.take()),
+            }
+            Ok(true)
+        })?;
+        out.extend(open);
+        Ok(())
+    }
+
+    fn any_key(&self, backend: &dyn StorageBackend, index: Index, prefix: &[u8]) -> Result<bool> {
+        let root = self.root(index);
+        if root == 0 {
+            return Ok(false);
+        }
+        let mut cursor = LeafCursor::new(root, Some(prefix), backend, &self.cache)?;
+        Ok(cursor
+            .next_ref()?
+            .is_some_and(|(k, _)| k.starts_with(prefix)))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn live_keys(
+        &self,
+        backend: &dyn StorageBackend,
+        index: Index,
+        prefix: &[u8],
+        resume: Option<&[u8]>,
+        bound: &TxBound,
+        max: usize,
+        out: &mut Vec<KeyFact>,
+    ) -> Result<Option<Vec<u8>>> {
+        let root = self.root(index);
+        self.live_walk(backend, index, root, prefix, resume, bound, max, &mut |k| {
+            out.push(KeyFact::decode(index, k)?);
+            Ok(())
+        })
+    }
+
+    // ─── LogSource ───────────────────────────────────────────────────────────
+
+    fn walk(
+        &self,
+        backend: &dyn StorageBackend,
+        index: Index,
+        prefix: &[u8],
+        after: Option<&[u8]>,
+        visit: &mut dyn FnMut(&[u8]) -> Result<bool>,
+    ) -> Result<()> {
+        let root = match index {
+            Index::Eavt => self.eavt_root,
+            Index::Aevt => self.aevt_root,
+            Index::Avet | Index::Vaet => {
+                bail_coded!(ErrorCode::Int049, "fact log walks EAVT or AEVT only")
+            }
+        };
+        if root == 0 {
+            return Ok(());
+        }
+        let mut cursor = LeafCursor::new(root, Some(prefix), backend, &self.cache)?;
+        if let Some(after) = after {
+            // Keys are unique, so the first key after `after` is the first one
+            // at or above `after ‖ 0x00`.
+            let mut target = after.to_vec();
+            target.push(0);
+            cursor.seek(&target)?;
+        }
+        while let Some((k, _)) = cursor.next_ref()? {
+            if !k.starts_with(prefix) || !visit(k)? {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    fn decode(mut dict: DictReader<'_>, index: Index, keys: &[Vec<u8>]) -> Result<Vec<Fact>> {
+        keys.iter()
+            .map(|k| dict.fact(&KeyFact::decode(index, k)?))
+            .collect()
+    }
+
+    // ─── CommittedReader (tests) ─────────────────────────────────────────────
+
+    #[cfg(test)]
+    fn live_facts(
+        &self,
+        backend: &dyn StorageBackend,
+        scan: Scan<'_>,
+        as_of: Option<u64>,
+    ) -> Result<Vec<Fact>> {
+        let mut dict = self.dict(backend);
+        let (index, root, prefix) = match scan {
+            Scan::All => (Index::Eavt, self.eavt_root, Vec::new()),
+            Scan::Entity(entity) => {
+                let Some(e) = dict.eid_of(entity)? else {
+                    return Ok(Vec::new());
+                };
+                dict.seed_entity(e, *entity);
+                (Index::Eavt, self.eavt_root, keys::entity_prefix(e))
+            }
+            Scan::EntityAttribute(entity, attribute) => {
+                let (Some(e), Some(a)) = (dict.eid_of(entity)?, dict.iid_of(attribute)?) else {
+                    return Ok(Vec::new());
+                };
+                dict.seed_entity(e, *entity);
+                dict.seed_ident(a, attribute);
+                (
+                    Index::Eavt,
+                    self.eavt_root,
+                    keys::entity_attribute_prefix(e, a),
+                )
+            }
+            Scan::Attribute(attribute) => {
+                let Some(a) = dict.iid_of(attribute)? else {
+                    return Ok(Vec::new());
+                };
+                dict.seed_ident(a, attribute);
+                (Index::Aevt, self.aevt_root, keys::attribute_prefix(a))
+            }
+        };
+        self.live_scan(backend, index, root, &prefix, as_of, &mut dict)
+    }
+
+    #[cfg(test)]
+    fn all_facts(&self, backend: &dyn StorageBackend) -> Result<Vec<Fact>> {
+        if self.eavt_root == 0 {
+            return Ok(Vec::new());
+        }
+        let mut dict = self.dict(backend);
+        let mut cursor = LeafCursor::new(self.eavt_root, None, backend, &self.cache)?;
+        let mut facts = Vec::new();
+        while let Some((k, _)) = cursor.next_ref()? {
+            facts.push(dict.fact(&KeyFact::decode(Index::Eavt, k)?)?);
+        }
+        Ok(facts)
+    }
+
+    #[cfg(test)]
+    fn facts_for_entity(
+        &self,
+        backend: &dyn StorageBackend,
+        entity: &EntityId,
+    ) -> Result<Vec<Fact>> {
+        let mut dict = self.dict(backend);
+        let Some(e) = dict.eid_of(entity)? else {
+            return Ok(Vec::new());
+        };
+        dict.seed_entity(e, *entity);
+        self.scan(
+            backend,
+            Index::Eavt,
+            self.eavt_root,
+            &keys::entity_prefix(e),
+            &mut dict,
+        )
+    }
+
+    #[cfg(test)]
+    fn facts_for_entity_attribute(
+        &self,
+        backend: &dyn StorageBackend,
+        entity: &EntityId,
+        attribute: &str,
+    ) -> Result<Vec<Fact>> {
+        let mut dict = self.dict(backend);
+        let (Some(e), Some(a)) = (dict.eid_of(entity)?, dict.iid_of(attribute)?) else {
+            return Ok(Vec::new());
+        };
+        dict.seed_entity(e, *entity);
+        dict.seed_ident(a, attribute);
+        let prefix = keys::entity_attribute_prefix(e, a);
+        self.scan(backend, Index::Eavt, self.eavt_root, &prefix, &mut dict)
+    }
+
+    #[cfg(test)]
+    fn facts_for_attribute(
+        &self,
+        backend: &dyn StorageBackend,
+        attribute: &str,
+    ) -> Result<Vec<Fact>> {
+        let mut dict = self.dict(backend);
+        let Some(a) = dict.iid_of(attribute)? else {
+            return Ok(Vec::new());
+        };
+        dict.seed_ident(a, attribute);
+        self.scan(
+            backend,
+            Index::Aevt,
+            self.aevt_root,
+            &keys::attribute_prefix(a),
+            &mut dict,
+        )
+    }
 }
 
 /// Entries of one triple passed over before the walk seeks past them.
@@ -297,9 +580,11 @@ impl TxGroup {
     }
 }
 
+// The trait methods below only pass the backend adapter to `ReaderCore`.
+
 impl<B: StorageBackend + 'static> KeySource for OnDiskReader<B> {
     fn next_ids(&self) -> (u64, u32) {
-        (self.next_eid, self.next_iid)
+        (self.core.next_eid, self.core.next_iid)
     }
 
     fn eid_of(&self, entity: &EntityId) -> Result<Option<u64>> {
@@ -347,73 +632,20 @@ impl<B: StorageBackend + 'static> KeySource for OnDiskReader<B> {
     }
 
     fn tx_order(&self) -> Result<TxOrder> {
-        if let Some(order) = self.tx_order.get() {
-            return Ok(*order);
-        }
-        let mut order = TxOrder {
-            monotonic: true,
-            last: None,
-        };
-        self.dict_txs(None, &mut |tx_count, tx_id| {
-            if order.last.is_some_and(|(_, last)| tx_id < last) {
-                order.monotonic = false;
-            }
-            order.last = Some((tx_count, tx_id));
-            Ok(true)
-        })?;
-        Ok(*self.tx_order.get_or_init(|| order))
+        self.core.tx_order(&self.backend)
     }
 
     fn last_tx_at(&self, t: u64) -> Result<u64> {
-        // The first transaction at or after `m`, if its `tx_id` is at most
-        // `t`: true up to the newest transaction with `tx_id <= t`, false
-        // after it, since `tx_id`s rise with `tx_count` here.
-        let at_or_before = |m: u64| -> Result<bool> {
-            let mut kept = false;
-            self.dict_txs(Some(m), &mut |_, tx_id| {
-                kept = tx_id <= t;
-                Ok(false)
-            })?;
-            Ok(kept)
-        };
-        // The least `m` in `1..=newest + 1` whose first transaction at or
-        // after it is not kept; that transaction is `m - 1`.
-        let newest = self.tx_order()?.last.map_or(0, |(tx_count, _)| tx_count);
-        let (mut lo, mut hi) = (1u64, newest.saturating_add(1));
-        while lo < hi {
-            let mid = lo + (hi - lo) / 2;
-            if at_or_before(mid)? {
-                lo = mid + 1;
-            } else {
-                hi = mid;
-            }
-        }
-        Ok(lo - 1)
+        let order = self.tx_order()?;
+        self.core.last_tx_at(&self.backend, order, t)
     }
 
     fn tx_runs(&self, t: u64, out: &mut Vec<(u64, u64)>) -> Result<()> {
-        let mut open: Option<(u64, u64)> = None;
-        self.dict_txs(None, &mut |tx_count, tx_id| {
-            match (tx_id <= t, open.as_mut()) {
-                (true, Some(run)) => run.1 = tx_count,
-                (true, None) => open = Some((tx_count, tx_count)),
-                (false, _) => out.extend(open.take()),
-            }
-            Ok(true)
-        })?;
-        out.extend(open);
-        Ok(())
+        self.core.tx_runs(&self.backend, t, out)
     }
 
     fn any_key(&self, index: Index, prefix: &[u8]) -> Result<bool> {
-        let root = self.root(index);
-        if root == 0 {
-            return Ok(false);
-        }
-        let mut cursor = LeafCursor::new(root, Some(prefix), &self.backend, &self.cache)?;
-        Ok(cursor
-            .next_ref()?
-            .is_some_and(|(k, _)| k.starts_with(prefix)))
+        self.core.any_key(&self.backend, index, prefix)
     }
 
     fn live_keys(
@@ -425,17 +657,14 @@ impl<B: StorageBackend + 'static> KeySource for OnDiskReader<B> {
         max: usize,
         out: &mut Vec<KeyFact>,
     ) -> Result<Option<Vec<u8>>> {
-        let root = self.root(index);
-        self.live_walk(index, root, prefix, resume, bound, max, &mut |k| {
-            out.push(KeyFact::decode(index, k)?);
-            Ok(())
-        })
+        self.core
+            .live_keys(&self.backend, index, prefix, resume, bound, max, out)
     }
 }
 
 impl<B: StorageBackend + 'static> LogSource for OnDiskReader<B> {
     fn last_tx(&self) -> u64 {
-        self.last_tx
+        self.core.last_tx
     }
 
     fn walk(
@@ -445,37 +674,11 @@ impl<B: StorageBackend + 'static> LogSource for OnDiskReader<B> {
         after: Option<&[u8]>,
         visit: &mut dyn FnMut(&[u8]) -> Result<bool>,
     ) -> Result<()> {
-        let root = match index {
-            Index::Eavt => self.eavt_root,
-            Index::Aevt => self.aevt_root,
-            Index::Avet | Index::Vaet => {
-                bail_coded!(ErrorCode::Int049, "fact log walks EAVT or AEVT only")
-            }
-        };
-        if root == 0 {
-            return Ok(());
-        }
-        let mut cursor = LeafCursor::new(root, Some(prefix), &self.backend, &self.cache)?;
-        if let Some(after) = after {
-            // Keys are unique, so the first key after `after` is the first one
-            // at or above `after ‖ 0x00`.
-            let mut target = after.to_vec();
-            target.push(0);
-            cursor.seek(&target)?;
-        }
-        while let Some((k, _)) = cursor.next_ref()? {
-            if !k.starts_with(prefix) || !visit(k)? {
-                break;
-            }
-        }
-        Ok(())
+        self.core.walk(&self.backend, index, prefix, after, visit)
     }
 
     fn decode(&self, index: Index, keys: &[Vec<u8>]) -> Result<Vec<Fact>> {
-        let mut dict = self.dict();
-        keys.iter()
-            .map(|k| dict.fact(&KeyFact::decode(index, k)?))
-            .collect()
+        ReaderCore::decode(self.dict(), index, keys)
     }
 }
 
@@ -490,93 +693,28 @@ impl<B: StorageBackend + 'static> CommittedReader for OnDiskReader<B> {
 
     #[cfg(test)]
     fn live_facts(&self, scan: Scan<'_>, as_of: Option<u64>) -> Result<Vec<Fact>> {
-        let mut dict = self.dict();
-        let (index, root, prefix) = match scan {
-            Scan::All => (Index::Eavt, self.eavt_root, Vec::new()),
-            Scan::Entity(entity) => {
-                let Some(e) = dict.eid_of(entity)? else {
-                    return Ok(Vec::new());
-                };
-                dict.seed_entity(e, *entity);
-                (Index::Eavt, self.eavt_root, keys::entity_prefix(e))
-            }
-            Scan::EntityAttribute(entity, attribute) => {
-                let (Some(e), Some(a)) = (dict.eid_of(entity)?, dict.iid_of(attribute)?) else {
-                    return Ok(Vec::new());
-                };
-                dict.seed_entity(e, *entity);
-                dict.seed_ident(a, attribute);
-                (
-                    Index::Eavt,
-                    self.eavt_root,
-                    keys::entity_attribute_prefix(e, a),
-                )
-            }
-            Scan::Attribute(attribute) => {
-                let Some(a) = dict.iid_of(attribute)? else {
-                    return Ok(Vec::new());
-                };
-                dict.seed_ident(a, attribute);
-                (Index::Aevt, self.aevt_root, keys::attribute_prefix(a))
-            }
-        };
-        self.live_scan(index, root, &prefix, as_of, &mut dict)
+        self.core.live_facts(&self.backend, scan, as_of)
     }
 
     #[cfg(test)]
     fn all_facts(&self) -> Result<Vec<Fact>> {
-        if self.eavt_root == 0 {
-            return Ok(Vec::new());
-        }
-        let mut dict = self.dict();
-        let mut cursor = LeafCursor::new(self.eavt_root, None, &self.backend, &self.cache)?;
-        let mut facts = Vec::new();
-        while let Some((k, _)) = cursor.next_ref()? {
-            facts.push(dict.fact(&KeyFact::decode(Index::Eavt, k)?)?);
-        }
-        Ok(facts)
+        self.core.all_facts(&self.backend)
     }
 
     #[cfg(test)]
     fn facts_for_entity(&self, entity: &EntityId) -> Result<Vec<Fact>> {
-        let mut dict = self.dict();
-        let Some(e) = dict.eid_of(entity)? else {
-            return Ok(Vec::new());
-        };
-        dict.seed_entity(e, *entity);
-        self.scan(
-            Index::Eavt,
-            self.eavt_root,
-            &keys::entity_prefix(e),
-            &mut dict,
-        )
+        self.core.facts_for_entity(&self.backend, entity)
     }
 
     #[cfg(test)]
     fn facts_for_entity_attribute(&self, entity: &EntityId, attribute: &str) -> Result<Vec<Fact>> {
-        let mut dict = self.dict();
-        let (Some(e), Some(a)) = (dict.eid_of(entity)?, dict.iid_of(attribute)?) else {
-            return Ok(Vec::new());
-        };
-        dict.seed_entity(e, *entity);
-        dict.seed_ident(a, attribute);
-        let prefix = keys::entity_attribute_prefix(e, a);
-        self.scan(Index::Eavt, self.eavt_root, &prefix, &mut dict)
+        self.core
+            .facts_for_entity_attribute(&self.backend, entity, attribute)
     }
 
     #[cfg(test)]
     fn facts_for_attribute(&self, attribute: &str) -> Result<Vec<Fact>> {
-        let mut dict = self.dict();
-        let Some(a) = dict.iid_of(attribute)? else {
-            return Ok(Vec::new());
-        };
-        dict.seed_ident(a, attribute);
-        self.scan(
-            Index::Aevt,
-            self.aevt_root,
-            &keys::attribute_prefix(a),
-            &mut dict,
-        )
+        self.core.facts_for_attribute(&self.backend, attribute)
     }
 }
 
