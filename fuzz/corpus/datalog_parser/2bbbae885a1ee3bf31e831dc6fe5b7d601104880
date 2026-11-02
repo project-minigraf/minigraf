@@ -1,0 +1,1 @@
+(rule [(?y) (not(ssLLi) (?yLcn))[?x are ?1]])

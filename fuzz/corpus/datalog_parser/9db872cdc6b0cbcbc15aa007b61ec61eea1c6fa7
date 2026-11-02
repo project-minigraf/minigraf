@@ -1,1 +1,0 @@
-(query [:w :where [?e:amn?  e] (not [ae :fnded e]) [?e:am en] (not [a_:b:])(not [:ae b:])])

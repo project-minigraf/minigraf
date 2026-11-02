@@ -1,2 +1,0 @@
-(query [ :where (que)
- (que)[?e ::fevelo] (y:[uzcam ])])

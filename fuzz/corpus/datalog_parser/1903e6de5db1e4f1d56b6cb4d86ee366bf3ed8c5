@@ -1,0 +1,2 @@
+(query[:where [A e ?ne] (not-join[] (ry[:nwhere:nwherei])) (d:)(not-join[] (ry[i])) (d:)(not-join[] (ry[:ei])) (d::)])
+

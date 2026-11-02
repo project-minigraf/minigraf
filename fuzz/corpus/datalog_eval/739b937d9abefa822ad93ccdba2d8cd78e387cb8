@@ -1,0 +1,1 @@
+(query [:where [? ms ?_] (not-join [?e] [?e tire rue])])

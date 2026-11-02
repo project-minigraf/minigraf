@@ -1,0 +1,3 @@
+(query[:where[?e ? ?n] (not(su)[?_ wame n?]
+[?_ lot n?] (n=y) 
+[?e wnnn ru])])

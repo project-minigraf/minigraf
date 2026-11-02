@@ -1,5 +1,0 @@
-(query [:where (not-join[?x
-
-?_
-?
-_]:)])

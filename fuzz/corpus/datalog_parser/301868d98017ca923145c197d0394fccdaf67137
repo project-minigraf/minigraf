@@ -1,0 +1,6 @@
+(query [:find ?e :where [?:ne n](query [:fi:e])
+  [?e :n?e ?n] (not(quj:
+[: ])
+[?e ?_wnape ?n] (nos[: [?+ean ?]])
+[?e ?_wname ?n] (tsu)
+[?e ? true])])

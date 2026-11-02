@@ -1,1 +1,0 @@
-(query [:where (ent=?y)[(<=: ?y)]  [qu :ame q] (en=?y)])

@@ -1,0 +1,1 @@
+(query [:f :where [?e olor ?c] (n ?o ?e:[actr])])

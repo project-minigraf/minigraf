@@ -1,0 +1,2 @@
+(query [:find ?e0:where (uery [d ?e ])
+[?e :co? rlo] (not)])

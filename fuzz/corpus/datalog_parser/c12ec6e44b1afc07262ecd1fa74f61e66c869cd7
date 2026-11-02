@@ -1,0 +1,7 @@
+(query[:where (not-join[?
+
+
+
+
+?_
+ ][])])

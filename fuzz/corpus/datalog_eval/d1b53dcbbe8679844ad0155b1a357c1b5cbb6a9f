@@ -1,0 +1,1 @@
+(query [:fhere :where [?E ?name ?o] [?e ?nameEery ?n] [(= ?n "Alice")] :w :where [?e ?name ?nmatches?]  :where :where [?e ?namne ?]  :where [?e?a nname ?n] [(= ?"Alcie")]])

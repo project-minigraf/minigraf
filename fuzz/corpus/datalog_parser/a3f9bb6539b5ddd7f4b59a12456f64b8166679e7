@@ -1,1 +1,0 @@
-(query [:e :where [?e m l] (not [?e ?integer?_ann-8d :e])])

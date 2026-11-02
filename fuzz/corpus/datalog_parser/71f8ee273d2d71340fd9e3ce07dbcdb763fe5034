@@ -1,0 +1,1 @@
+(query [::where [T :em a] (l) (ar) (ay) (a)])

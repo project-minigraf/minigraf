@@ -1,0 +1,4 @@
+(query[:where[A e ejn] (not-join[] (quevy[:wh[]n])
+[?e :db/valid-to ?n] (no :
+[: [a n ?]])
+[?e e :wh])])

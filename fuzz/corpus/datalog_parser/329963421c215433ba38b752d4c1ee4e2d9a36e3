@@ -1,0 +1,3 @@
+(query [:find?e :where [?e :n? ?n] (not(que
+[: []])
+[?e :db/valid-to ?n] (nosss)[aind ?e u])])

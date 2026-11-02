@@ -1,0 +1,1 @@
+(query[:where(u/=A)(u:p) (u=rp) (umss)])

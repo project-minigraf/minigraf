@@ -1,1 +1,0 @@
-(query [:?1:where(or(LLLLL35 [ :wh ]) [eSSSS:db/tx-id tbrue])(nott)])

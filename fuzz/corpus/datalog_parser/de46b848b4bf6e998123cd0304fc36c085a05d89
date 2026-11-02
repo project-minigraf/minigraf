@@ -1,1 +1,0 @@
-(query [:t :where (not [aeBFBBBB: ru]) (not [a :bne true])])

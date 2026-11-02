@@ -1,0 +1,1 @@
+(query[:where [ne ?e ?](not [d ?e g])[w ?e ?,] (not [ind ?e rug])])

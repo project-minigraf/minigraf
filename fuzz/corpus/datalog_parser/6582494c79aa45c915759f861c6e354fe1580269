@@ -1,1 +1,0 @@
-(query  [:?1:where:any-valid-time (or(g?e ?e))])
