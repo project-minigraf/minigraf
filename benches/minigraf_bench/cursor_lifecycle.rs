@@ -89,13 +89,7 @@ pub fn bench_cursor_lifecycle(c: &mut Criterion) {
     group.measurement_time(Duration::from_secs(3));
 
     // Fixture construction is lazy: --list and unrelated filters do no file IO.
-    for operation in [
-        "open",
-        "first_batch",
-        "drain",
-        "iterator",
-        "close_after_first",
-    ] {
+    for operation in ["open", "first_batch", "drain", "iterator"] {
         let scales: &[(&str, usize)] = if operation == "drain" {
             &[("10k", 10_000), ("100k", 100_000)]
         } else {
@@ -146,18 +140,9 @@ pub fn bench_cursor_lifecycle(c: &mut Criterion) {
                         },
                         BatchSize::PerIteration,
                     ),
-                    "close_after_first" => b.iter_batched_ref(
-                        || {
-                            let mut cursor = file.db.query(QUERY).unwrap();
-                            cursor.next_batch(BATCH_ROWS).unwrap().unwrap();
-                            Some(cursor)
-                        },
-                        |cursor| black_box(cursor.take().unwrap()).close(),
-                        BatchSize::PerIteration,
-                    ),
                     _ => unreachable!(),
                 }
-                // Except for explicit close, cursor teardown is outside timing.
+                // Cursor teardown is outside timing.
             });
         }
     }
@@ -171,6 +156,29 @@ pub fn bench_cursor_lifecycle(c: &mut Criterion) {
         b.iter_batched_ref(
             || held_snapshot(10_000),
             |(cursor, _file)| drain(cursor),
+            BatchSize::PerIteration,
+        );
+    });
+
+    group.bench_function("held_checkpoint_close/10k", |b| {
+        let (mut old, file) = held_snapshot(10_000);
+        validate_cursor(&mut old, 10_000);
+        old.close();
+        assert_eq!(drain(&mut file.db.query(QUERY).unwrap()), 10_002);
+        drop(file);
+        b.iter_batched_ref(
+            || {
+                let (mut cursor, file) = held_snapshot(10_000);
+                assert_eq!(
+                    cursor.next_batch(BATCH_ROWS).unwrap().unwrap().len(),
+                    BATCH_ROWS
+                );
+                (Some(cursor), file)
+            },
+            // This is the last pin on the old generation: close includes
+            // pruning its quarantined pages (Pins::release), with the database
+            // and file teardown still outside timing.
+            |(cursor, _file)| black_box(cursor.take().unwrap()).close(),
             BatchSize::PerIteration,
         );
     });
