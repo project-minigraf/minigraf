@@ -3,6 +3,7 @@
 
 use criterion::{BatchSize, BenchmarkId, Criterion, SamplingMode, Throughput};
 use minigraf::{Minigraf, OpenOptions, QueryResult};
+use std::cell::OnceCell;
 use std::fmt::Write;
 use std::hint::black_box;
 use std::path::Path;
@@ -75,72 +76,85 @@ pub fn bench_chunked_transactions(c: &mut Criterion) {
 
     for n in SCALES {
         group.throughput(Throughput::Elements(u64::try_from(n).unwrap()));
+        let prepared = OnceCell::new();
         group.bench_with_input(BenchmarkId::new("execute", n), &n, |b, &n| {
-            let command = statement("transact", 0, n);
-            let check = fixture(None);
-            check.db.execute(&command).unwrap();
-            validate(&check.db, n, 1, n > CHUNK, check._dir.path());
-            drop(check);
+            let command = prepared.get_or_init(|| {
+                let command = statement("transact", 0, n);
+                let check = fixture(None);
+                check.db.execute(&command).unwrap();
+                validate(&check.db, n, 1, n > CHUNK, check._dir.path());
+                command
+            });
 
             b.iter_batched_ref(
                 || fixture(None),
-                |f| black_box(f.db.execute(black_box(&command)).unwrap()),
+                |f| black_box(f.db.execute(black_box(command)).unwrap()),
                 BatchSize::PerIteration,
             );
         });
 
+        let prepared = OnceCell::new();
         group.bench_with_input(BenchmarkId::new("retract", n), &n, |b, &n| {
-            let command = statement("retract", 0, n);
-            // Build this committed source once per selected case; every
-            // iteration copies and opens it outside the measured routine.
-            let seed = fixture(None);
-            seed.db.execute(&statement("transact", 0, n)).unwrap();
-            seed.db.checkpoint().unwrap();
-            let template = seed._dir.path().join("chunk.graph");
-            drop(seed.db);
-            let check = fixture(Some(&template));
-            assert_eq!(
-                count(&check.db, "(query [:find ?e :where [?e :chunk/value ?v]])"),
-                n
-            );
-            check.db.execute(&command).unwrap();
-            validate(&check.db, 0, 2, n > CHUNK, check._dir.path());
-            // Retractions preserve the original assertions for time travel.
-            assert_eq!(
-                count(
-                    &check.db,
-                    "(query [:find ?e :as-of 1 :where [?e :chunk/value ?v]])"
-                ),
-                n
-            );
-            drop(check);
+            let (command, dir) = prepared.get_or_init(|| {
+                let command = statement("retract", 0, n);
+                // Cache across warm-up/sample callbacks, but initialize only
+                // when selected (never during --list or unrelated suites).
+                let seed = fixture(None);
+                seed.db.execute(&statement("transact", 0, n)).unwrap();
+                seed.db.checkpoint().unwrap();
+                let template = seed._dir.path().join("chunk.graph");
+                drop(seed.db);
+                let check = fixture(Some(&template));
+                assert_eq!(
+                    count(&check.db, "(query [:find ?e :where [?e :chunk/value ?v]])"),
+                    n
+                );
+                check.db.execute(&command).unwrap();
+                validate(&check.db, 0, 2, n > CHUNK, check._dir.path());
+                // Retractions preserve assertions for time travel.
+                assert_eq!(
+                    count(
+                        &check.db,
+                        "(query [:find ?e :as-of 1 :where [?e :chunk/value ?v]])"
+                    ),
+                    n
+                );
+                (command, seed._dir)
+            });
+            let template = dir.path().join("chunk.graph");
 
             b.iter_batched_ref(
                 || fixture(Some(&template)),
-                |f| black_box(f.db.execute(black_box(&command)).unwrap()),
+                |f| black_box(f.db.execute(black_box(command)).unwrap()),
                 BatchSize::PerIteration,
             );
         });
 
+        let prepared = OnceCell::new();
+        let validated = OnceCell::new();
         group.bench_with_input(BenchmarkId::new("write_tx", n), &n, |b, &n| {
             // Both statements fit a chunk individually. Only their combined
             // staged count crosses the boundary. The second also replaces
             // e0's window from the first (last statement wins).
-            let first = statement("transact", 0, n / 2);
-            let mut second = statement("transact", n / 2, n - 1);
-            second.truncate(second.len() - 2);
-            second.push_str("[:chunk/e0 :chunk/value 0 {:valid-from \"2000-01-01T00:00:00Z\"}]])");
+            let (first, second) = prepared.get_or_init(|| {
+                let first = statement("transact", 0, n / 2);
+                let mut second = statement("transact", n / 2, n - 1);
+                second.truncate(second.len() - 2);
+                second.push_str("[:chunk/e0 :chunk/value 0 {:valid-from \"2000-01-01T00:00:00Z\"}]])");
+                (first, second)
+            });
             let run = |db: &Minigraf| {
                 let mut tx = db.begin_write().unwrap();
-                black_box(tx.execute(black_box(&first)).unwrap());
-                black_box(tx.execute(black_box(&second)).unwrap());
+                black_box(tx.execute(black_box(first)).unwrap());
+                black_box(tx.execute(black_box(second)).unwrap());
                 black_box(tx.commit().unwrap());
             };
-            let check = fixture(None);
-            run(&check.db);
-            validate(&check.db, n - 1, 1, n > CHUNK, check._dir.path());
-            assert_eq!(count(&check.db, "(query [:find ?v :valid-at \"2001-01-01T00:00:00Z\" :where [:chunk/e0 :chunk/value ?v]])"), 1);
-            drop(check);
+            validated.get_or_init(|| {
+                let check = fixture(None);
+                run(&check.db);
+                validate(&check.db, n - 1, 1, n > CHUNK, check._dir.path());
+                assert_eq!(count(&check.db, "(query [:find ?v :valid-at \"2001-01-01T00:00:00Z\" :where [:chunk/e0 :chunk/value ?v]])"), 1);
+            });
 
             b.iter_batched_ref(|| fixture(None), |f| run(&f.db), BatchSize::PerIteration);
         });
@@ -149,41 +163,48 @@ pub fn bench_chunked_transactions(c: &mut Criterion) {
     // A late, cross-chunk API-011 after the first chunk reached working
     // trees; this measures statement-base rollback, not a parser rejection.
     group.throughput(Throughput::Elements(u64::try_from(CHUNK + 1).unwrap()));
+    let prepared = OnceCell::new();
+    let validated = OnceCell::new();
     group.bench_function(BenchmarkId::new("statement_rollback", CHUNK + 1), |b| {
-        let mut rejected = String::from(
-            "(transact [[:chunk/bad :chunk/value -1 {:valid-from \"2000-01-01T00:00:00Z\"}]",
-        );
-        for i in 0..CHUNK - 1 {
-            write!(rejected, "[:chunk/e{i} :chunk/value {i}]").unwrap();
-        }
-        rejected.push_str("[:chunk/bad :chunk/value -1 {:valid-from \"2020-01-01T00:00:00Z\"}]])");
+        let rejected = prepared.get_or_init(|| {
+            let mut rejected = String::from(
+                "(transact [[:chunk/bad :chunk/value -1 {:valid-from \"2000-01-01T00:00:00Z\"}]",
+            );
+            for i in 0..CHUNK - 1 {
+                write!(rejected, "[:chunk/e{i} :chunk/value {i}]").unwrap();
+            }
+            rejected
+                .push_str("[:chunk/bad :chunk/value -1 {:valid-from \"2020-01-01T00:00:00Z\"}]])");
+            rejected
+        });
         let run = |db: &Minigraf| {
             let mut tx = db.begin_write().unwrap();
             black_box(tx.execute(black_box(BEFORE)).unwrap());
-            let error = tx.execute(black_box(&rejected)).unwrap_err();
+            let error = tx.execute(black_box(rejected)).unwrap_err();
             assert_eq!(error.code(), "API-011");
             black_box(error);
             black_box(tx.execute(black_box(AFTER)).unwrap());
             black_box(tx.commit().unwrap());
         };
-        let check = fixture(None);
-        run(&check.db);
-        validate(&check.db, 0, 1, true, check._dir.path());
-        assert_eq!(
-            count(
-                &check.db,
-                "(query [:find ?e ?v :any-valid-time :where [?e :chunk/value ?v]])"
-            ),
-            0
-        );
-        assert_eq!(
-            count(
-                &check.db,
-                "(query [:find ?v :where [:chunk/control :chunk/marker ?v]])"
-            ),
-            2
-        );
-        drop(check);
+        validated.get_or_init(|| {
+            let check = fixture(None);
+            run(&check.db);
+            validate(&check.db, 0, 1, true, check._dir.path());
+            assert_eq!(
+                count(
+                    &check.db,
+                    "(query [:find ?e ?v :any-valid-time :where [?e :chunk/value ?v]])"
+                ),
+                0
+            );
+            assert_eq!(
+                count(
+                    &check.db,
+                    "(query [:find ?v :where [:chunk/control :chunk/marker ?v]])"
+                ),
+                2
+            );
+        });
 
         b.iter_batched_ref(|| fixture(None), |f| run(&f.db), BatchSize::PerIteration);
     });

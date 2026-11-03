@@ -19,8 +19,9 @@ seven on v3; main's checkout has no new cases and keeps its existing selection.
 Each iteration starts from a fresh file handle. Commands, empty-file creation,
 retraction template construction/copy/fsync/open, and handle/directory teardown
 are outside timing (`iter_batched_ref`, one input per iteration). Retraction
-templates are created lazily inside the selected benchmark closure, never during
-ID enumeration. Untimed preflights check live results, transaction counts and
+templates and commands are initialized lazily on the first selected callback
+and cached across warm-up/sample callbacks, never during ID enumeration.
+Untimed preflights run once per case and check live results, transaction counts and
 WAL presence to distinguish the small WAL path from the large checkpoint path;
 they also check retraction history, window replacement and rollback survival.
 The write-transaction sizes count submitted facts, including the replacement,
