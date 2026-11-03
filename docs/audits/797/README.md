@@ -129,7 +129,7 @@ needed to ship H; it does not ship, so they stay unverified.
   first acceptance block started at 09:53:17 (`evidence/plan-provenance.txt`).
   The published branch has the same files, rebased as `9fea12192` with a
   later date, because the outcome dropped H's commits; the original commit is
-  kept on the ref `797-h-measured`. The plan fixed: primary
+  preserved on the origin branch `audit/797-h-measured`. The plan fixed: primary
   128 blocks; secondary, cold and concurrency 48; WASI and browser 32. Each
   campaign ran once, from a script that waited for a 1-minute load average
   below 2. `run.py` refuses to overwrite a raw file, so no campaign was
@@ -207,8 +207,8 @@ analyzer's output.
   or RSS, and WASI does not measure RSS. The raw records hold 0 for these;
   `tables.md` shows n/a. The browser harness does not cover prepared queries.
 - **Browser build.** Every variant's browser A/B module was built with
-  `CARGO_PROFILE_RELEASE_LTO=false`: the release profile without LTO, which
-  cannot link the harness (`ab_browser.rs`). The browser size row above uses
+  `CARGO_PROFILE_RELEASE_LTO=false` because the release profile's LTO cannot
+  link the harness (`ab_browser.rs`). The browser size row above uses
   the normal release build.
 - Bench machine (non-identifying): Linux 6.8 x86-64 (Ubuntu 24.04), two Intel
   Xeon E5-2696 v4 sockets, 44 cores and 88 threads with SMT on, 4 NUMA nodes.

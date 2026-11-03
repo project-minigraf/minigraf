@@ -1,6 +1,6 @@
 The harness and acceptance plan were committed before the first acceptance block.
 
-Original commit: 2313d245bd8338cd85be45ee85425036bc05f800
+Original commit: 2313d245b88338cd85be45ee85425036bc05f800
   committed 1793353989 = 2026-10-30T09:53:09Z
   parent    3280481369a9dc34c455870057f45f65a781653a (H's entry-point tests)
   docs/audits/797 tree ed15680326a801e606066c44a116b366536ce447
@@ -11,4 +11,4 @@ The published branch drops H's commits (the outcome is docs-only), so the
 same files were rebased onto the spec commit as 9fea12192; its
 docs/audits/797 tree at that commit is
 ed15680326a801e606066c44a116b366536ce447, identical to the original's.
-The original commit is preserved on the ref 797-h-measured.
+The original commit is preserved on the origin branch audit/797-h-measured.
