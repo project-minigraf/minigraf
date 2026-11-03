@@ -27,6 +27,9 @@ mod pagination;
 #[path = "minigraf_bench/prepared.rs"]
 mod prepared;
 
+#[path = "minigraf_bench/set_storage.rs"]
+mod set_storage;
+
 #[cfg(not(target_arch = "wasm32"))]
 mod simd_helpers;
 
@@ -2081,6 +2084,7 @@ criterion_group!(
     benches,
     bench_insert,
     bench_insert_file,
+    set_storage::bench_set_storage,
     bench_query,
     distinct::bench_distinct,
     pagination::bench_pagination,
