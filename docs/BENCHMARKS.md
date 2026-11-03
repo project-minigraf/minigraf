@@ -2,6 +2,44 @@
 
 This document records reproducible local benchmark snapshots. Completed release-performance history belongs in the [CHANGELOG](../CHANGELOG.md); continuous CI history is available on [Bencher](https://bencher.dev/perf/minigraf/plots).
 
+## Nightly chunk-boundary transactions (#776 P09, unreleased)
+
+Seven `insert_file/chunked/` cases cover G10 using the default 65,536-fact
+transaction chunk size, with file-backed databases and automatic WAL checkpoints
+disabled. The existing `insert_file` job's `^insert_file/` filter selects all
+seven on v3; main's checkout has no new cases and keeps its existing selection.
+
+| ID suffix under `insert_file/chunked/` | Measured operation |
+|---|---|
+| `execute/{65535,65537}` | Parse and execute one assertion statement, including WAL/fsync below the boundary or chunk writes and checkpoint commit above it |
+| `retract/{65535,65537}` | Parse and execute one retraction statement against a fully checkpointed source with the same number of live facts |
+| `write_tx/{65535,65537}` | Begin, execute two individually small statements and commit; their combined staged count crosses the boundary only at 65,537, and the second statement replaces one earlier triple's valid-time window |
+| `statement_rollback/65537` | Stage a marker, reject a 65,537-fact statement with cross-chunk API-011, accept another marker and commit the surviving statements |
+
+Each iteration starts from a fresh file handle. Commands, empty-file creation,
+retraction template construction/copy/fsync/open, and handle/directory teardown
+are outside timing (`iter_batched_ref`, one input per iteration). Retraction
+templates are created lazily inside the selected benchmark closure, never during
+ID enumeration. Untimed preflights check live results, transaction counts and
+WAL presence to distinguish the small WAL path from the large checkpoint path;
+they also check retraction history, window replacement and rollback survival.
+The write-transaction sizes count submitted facts, including the replacement,
+so they leave 65,534 / 65,536 live values. The rollback conflict is the last fact
+of the second chunk; it measures undo after writes, rather than parse failure.
+
+Reserve **5–20 additional job-minutes**, pending serial phase-B Actions timing.
+Ten flat samples, one second of warm-up and a three-second measurement target
+per case keep the selection small; file writes/fsync and untimed setup can
+exceed those targets. No million-fact iteration or custom chunk-size/test-hooks
+target is added. No timing evidence has been collected for these new cases.
+
+Untimed local execution (private build directory):
+
+```bash
+CARGO_TARGET_DIR="$PWD/target/p09" cargo bench --bench minigraf_bench --no-run
+CARGO_TARGET_DIR="$PWD/target/p09" cargo bench --bench minigraf_bench -- --test '^insert_file/chunked/'
+```
+
 ## Certified ordered aggregates (#781, unreleased)
 
 [Measurements and reproduction](benchmarks/781-ordered-aggregate.md) cover
