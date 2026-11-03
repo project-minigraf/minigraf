@@ -1,0 +1,1 @@
+(query [:where (pd ?e :h-)(E:fren,0)(a1:ren,1)(A350 :e )])

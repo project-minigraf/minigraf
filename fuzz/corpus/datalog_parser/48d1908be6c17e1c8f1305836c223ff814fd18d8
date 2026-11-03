@@ -1,0 +1,3 @@
+(query [:find ?e0:where [?e :e ?n] (鑉not(EEEEEE[e])
+) [?e :e ?n] (鑉not(EEEEEE[e with ?( SSSSSS)])
+) [?e :e ?n] (鑉) [6t ?y]])

@@ -1,0 +1,1 @@
+(query [:where [e:e ?n] (or(TT)[(fx ?)  ?n] (ndja)) [1en ?y]])

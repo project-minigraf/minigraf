@@ -1,0 +1,3 @@
+(query [:with ?e  ?e  ?e ?:where [?	 :Name e?n](transact[][?e:db/valid (query [:?rue])])
+:find (count ?e)
+(coun4 ?e) :where [?e:nae ?n]])

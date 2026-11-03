@@ -1,1 +1,0 @@
-(query[ :where (d:find{i===1fe====})])

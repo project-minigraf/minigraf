@@ -1,0 +1,1 @@
+(query [:where [?u :Name ?n] (not [?e :b ue]):where  [?e N ?nvvvv] (not [?e :banne true][?e d cccc?_][?g:db/valid-from eeerue])])

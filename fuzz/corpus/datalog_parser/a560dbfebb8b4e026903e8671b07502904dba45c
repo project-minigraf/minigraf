@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :nale "licPe"][:0000000000e/1 :nannnnna ?_][?:db/vodil-rfam ?e?_][?:nnn???aea ?_][?:db/valid-from ?000000000019123026][?:db/vqlid-from ?e?_][?:db/n?3n2? _][?:db/valid-from ?e2_][?:-romt ?y]])

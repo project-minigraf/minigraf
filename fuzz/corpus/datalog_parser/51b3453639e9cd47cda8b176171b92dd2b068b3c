@@ -1,1 +1,0 @@
-(query [:find ?e:where (pd ?e)(A:uRBeeS?4e )])

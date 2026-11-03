@@ -1,1 +1,0 @@
-(query [:where  (or(edD) [fl -a n] (OAA) ) ])

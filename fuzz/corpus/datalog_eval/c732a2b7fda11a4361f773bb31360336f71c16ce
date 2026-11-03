@@ -1,2 +1,0 @@
-(query [:where [?e F? Fol?c] (not(ququwhere [??])[
-*?e:ee])])

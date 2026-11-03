@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :nale "Alicee"][:u/000000e/1 :n ?e?_][?:db/nnnnn???aea ?_][?:db/valid-from ?00000000000000000000019123026][?:db ?00000000000000000000019123026][?:dbdb/valid-frqu ?e2_][?:-fromt ?y]])

@@ -1,1 +1,0 @@
-(query [:find ?e, :where [?e 1?y]])

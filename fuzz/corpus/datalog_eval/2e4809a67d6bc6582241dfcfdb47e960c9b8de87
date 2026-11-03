@@ -1,0 +1,2 @@
+(query [:where (_:Fi(qC)) (nkt(q<C<<:a<<CCC)) (nkt(q<CC$C)) (nkt(q<CCCCCquer))]
+)

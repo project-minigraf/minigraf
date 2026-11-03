@@ -1,0 +1,3 @@
+(query [:with ?e  ?e :where [?/ :Name ?n](transact[][*e:db/valid (query [:?erue])])
+:find (count ?e) :where [?e:nae ?n](transact[][id (query [:?erue])])
+:find (maxnt ?e) :where [?e:nae ?n]])

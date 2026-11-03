@@ -1,0 +1,2 @@
+(query [:find ?e1:where(or(IAAEt[e  ? nne(S)])
+) (not(e->>>l1)(e->>>>075)(ey) )[6t ?y]])

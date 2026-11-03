@@ -1,0 +1,1 @@
+(query [:find ?n :where [?e ?6 ?n][("d")]])

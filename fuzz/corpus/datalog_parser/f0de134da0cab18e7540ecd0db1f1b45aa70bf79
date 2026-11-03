@@ -1,0 +1,1 @@
+(query [:where(or(or(or 8)(AA 7)) (or(r(eD 8)(AA 7)) )) ])

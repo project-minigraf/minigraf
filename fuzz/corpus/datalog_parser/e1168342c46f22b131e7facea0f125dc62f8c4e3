@@ -1,0 +1,1 @@
+(query [:with ?e0:where [phe:name ?_] (or(eTTTT)[(integer? ?y)  ?n] (nT)[(integer? ?y) ?n] (nruTAAA)[(integer? ?y)  ?n] (nd tO:namey) ) [?y]])

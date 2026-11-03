@@ -1,0 +1,1 @@
+(query [:where(or(or(e 2)(AA 8)(AA<)(Cd2=)) ) ])

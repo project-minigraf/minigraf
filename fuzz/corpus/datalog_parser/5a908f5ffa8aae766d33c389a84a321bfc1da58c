@@ -1,0 +1,1 @@
+(query [:where [?e :name ?n] (or[n?:e??a ?_][?:db/valid-from ?](OAA) ) [3xa5nt ?y]])

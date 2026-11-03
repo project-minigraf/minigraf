@@ -1,0 +1,1 @@
+(query [:find ?e  ?e :where [?e :Name ?n] (not [c?e :d cc][:e/0 :db/valid-at"]ieee"][:e/2 :db/valid-at"]i"][:e/1 :m ?_])])

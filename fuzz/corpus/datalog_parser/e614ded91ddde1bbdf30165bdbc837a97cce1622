@@ -1,0 +1,2 @@
+(query [:with ?e :where [?/ :Name ?n](not-join[][?n?e:d/v=ali(query [:?epuu])])
+[?nae ?n]])

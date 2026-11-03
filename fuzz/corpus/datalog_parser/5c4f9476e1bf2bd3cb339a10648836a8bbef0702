@@ -1,1 +1,0 @@
-(query [:find ?:where [tte :n ?n] (or(en58?) ) [6ent ?]])

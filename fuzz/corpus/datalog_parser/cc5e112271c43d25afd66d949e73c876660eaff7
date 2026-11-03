@@ -1,0 +1,1 @@
+(query[ :where (p:h-Q)(A:fr:db/ve)])

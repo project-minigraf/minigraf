@@ -1,0 +1,1 @@
+(query [:find ?  :where (notz[u])[?e :na ?n] (not [? :dE tque]):where [?:name ?n] (t [Z])])

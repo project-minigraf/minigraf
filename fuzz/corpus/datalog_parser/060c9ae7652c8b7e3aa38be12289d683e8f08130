@@ -1,1 +1,0 @@
-(transact [[:e1 :name "Alice"][:e1 :name "Alice"]])

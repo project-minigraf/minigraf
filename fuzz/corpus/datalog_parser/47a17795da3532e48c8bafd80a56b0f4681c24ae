@@ -1,0 +1,1 @@
+(query[:find ?e :where(ne ?y)[(fx nil )?y] (nAAAOO) [?e 4e??n ] (ne ?y)[(fx nil )?y] (nAAAOO)[(fx nil )?y] (dct)])

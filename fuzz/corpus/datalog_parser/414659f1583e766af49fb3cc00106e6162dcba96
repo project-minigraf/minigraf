@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e :e ?zn]:where [?e :e ??n] (nehe75 ?y)[(fx 1.) ] (ndX)])

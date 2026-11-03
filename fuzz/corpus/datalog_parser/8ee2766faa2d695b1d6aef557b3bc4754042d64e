@@ -1,0 +1,1 @@
+(query [:where [?e ?e:nm ] (not [?e :t eue])])

@@ -1,2 +1,0 @@
-(query [:find ?e :where [?e olor ?k] (not-join [?e] [(query [:frue])]whe)
-re :w ])

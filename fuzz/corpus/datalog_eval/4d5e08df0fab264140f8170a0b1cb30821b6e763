@@ -1,0 +1,1 @@
+(query [ :where[?e FFNFF ?FFF?c] (not-join [?be t]4)])

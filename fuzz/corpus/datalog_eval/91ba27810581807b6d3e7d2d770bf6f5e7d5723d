@@ -1,0 +1,2 @@
+(query [:where [?r /C] (not(q<qqq?ehere [?e ])(:cqn)) (nos) (n)]
+)

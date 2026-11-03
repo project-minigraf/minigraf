@@ -1,0 +1,4 @@
+(query [:with ?e  ?e ?:where [?	?iName ?n](transact[][?e:d (query [:?rue])])
+:find (count ?e) ;wry [:w])])
+:find (count ?e) ;wry [:with)
+:find (count ?e) :where [?e:ean ?n]])

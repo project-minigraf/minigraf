@@ -1,1 +1,0 @@
-(query [:where (not(qD>?_>?_E))])

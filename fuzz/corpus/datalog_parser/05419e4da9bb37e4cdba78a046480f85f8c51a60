@@ -1,0 +1,1 @@
+(query [:find ?ee :where [?e 3_][?e?e aa _a?_][Ee 14n] (not [?:db/tx-id ?e?e]):where[e e ?nid]])

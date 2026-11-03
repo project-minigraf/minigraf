@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e :lor ?c](q [:fi :where [?e :lor ?c]nt-o( :namjoin [?e] [?:ac(m$u$u1 :naueM-m$uqinnjq :jotnoi-[?ae:witu])e ereie])])
+])

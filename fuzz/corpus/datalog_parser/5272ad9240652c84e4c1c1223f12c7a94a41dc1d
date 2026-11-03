@@ -1,1 +1,0 @@
-(query [:order-by:find ?e  ?D :wkere [?eame ?n] :where [?eaa?aa e_] (nlt ?m[e])])

@@ -1,1 +1,0 @@
-(query [:find  ?e :where [?E :Name ?n]  [?e lnamenam ?n] (not [?_ :nzd true])])

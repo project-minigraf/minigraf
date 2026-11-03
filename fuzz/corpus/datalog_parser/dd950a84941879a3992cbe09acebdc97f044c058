@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e ze  ?_][?e:db/valid-to"be"][:e/
+t ?y]])

@@ -1,0 +1,1 @@
+(query [:where (n?:db/vq)(qqq1?e :w)])

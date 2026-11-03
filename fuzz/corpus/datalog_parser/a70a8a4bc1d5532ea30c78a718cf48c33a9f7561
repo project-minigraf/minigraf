@@ -1,0 +1,1 @@
+(rule [(f)[(starts-with?:A005420$en)]])
