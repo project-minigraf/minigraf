@@ -18,6 +18,9 @@
 
 mod helpers;
 
+#[path = "minigraf_bench/prepared.rs"]
+mod prepared;
+
 #[cfg(not(target_arch = "wasm32"))]
 mod simd_helpers;
 
@@ -2149,6 +2152,7 @@ criterion_group!(
     bench_concurrent_file,
     bench_concurrent_btree_scan,
     bench_prepared,
+    prepared::bench_prepared_extras,
     bench_retract,
     bench_btree_lookup,
     bench_predicate_pushdown,
