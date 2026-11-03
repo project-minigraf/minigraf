@@ -20,6 +20,9 @@
 mod cursor_lifecycle;
 #[path = "minigraf_bench/distinct.rs"]
 mod distinct;
+#[path = "minigraf_bench/fact_log.rs"]
+mod fact_log;
+
 mod helpers;
 #[path = "minigraf_bench/history.rs"]
 mod history;
@@ -2128,6 +2131,8 @@ criterion_group!(
     bench_concurrent,
     bench_concurrent_file,
     bench_concurrent_btree_scan,
+    fact_log::bench_fact_log,
+    fact_log::bench_log_writer,
     bench_prepared,
     prepared::bench_prepared_extras,
     bench_retract,
