@@ -115,9 +115,10 @@ pub fn bench_operator_paths(c: &mut Criterion) {
                 query,
                 || {
                     Fixture::new(committed, |db| {
-                        insert(db, N, |i| {
-                            format!("[:e{i} :op/left {i}] [:e{i} :op/right {i}]")
-                        })
+                        // Distinct transaction ranges make a mistaken left
+                        // metadata source observable in every join control.
+                        insert(db, N, |i| format!("[:e{i} :op/left {i}]"));
+                        insert(db, N, |i| format!("[:e{i} :op/right {i}]"));
                     })
                 },
                 |db| {
@@ -161,7 +162,7 @@ pub fn bench_operator_paths(c: &mut Criterion) {
                             );
                             assert_eq!(
                                 *tx,
-                                i64::try_from(i / 500 + 1).unwrap(),
+                                i64::try_from(N / 500 + i / 500 + 1).unwrap(),
                                 "right source transaction"
                             );
                             seen[i] = true;
