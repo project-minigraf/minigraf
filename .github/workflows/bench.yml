@@ -129,6 +129,16 @@ jobs:
             file: bench_prepared.txt
             v3_only: true
 
+          # ── v3 committed history and retraction shortlist (Refs #776, P11) ──
+          # 8 history IDs (all shapes, depths 1/2000) + 2 retract IDs (10k).
+          # Reserve 3–10 job-minutes; phase B must verify the actual allowance.
+          # btree_lookup/ stays excluded: these pending point/scan cases overlap
+          # query/point_entity and query/point_attribute (C41 in the audit).
+          - name: history_retract
+            filter: "^(point_query_chain_depth/(churned_attr|sibling_attr|attr_scan|churned_attr_as_of)/(1|2000)|retract/(single_fact|batch_100)/10k)$"
+            file: bench_history_retract.txt
+            required_case: '"churned_attr_as_of"'
+
           # ── Sequential: time_travel ─────────────────────────────────────────
           - name: time_travel
             filter: "^time_travel/"
@@ -245,17 +255,23 @@ jobs:
           sparse-checkout: /.github/bench/
           persist-credentials: false
 
+      # Inspect the actual checkout, including manual branches, tags and SHAs.
       - name: Select benchmark suite for checked-out source
         id: suite
         env:
           V3_ONLY: ${{ matrix.v3_only }}
+          REQUIRED_CASE: ${{ matrix.required_case }}
         run: |
+          enabled=true
           if [ "$V3_ONLY" = true ] && [ ! -f benches/minigraf_bench/prepared.rs ]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            enabled=false
             echo 'Skipping v3-only prepared suite: absent from checked-out source.' >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
+          if [[ -n "$REQUIRED_CASE" ]] && ! git grep -Fq "$REQUIRED_CASE" HEAD -- benches/; then
+            enabled=false
+            echo "Skipping $BENCH_SUITE: required v3 benchmark is absent from $BENCH_REF" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
 
       - name: Install Rust toolchain
         if: steps.suite.outputs.enabled == 'true'
@@ -356,7 +372,7 @@ jobs:
       # that is not reported, goes in the job summary, because the Bencher step
       # is continue-on-error; the final coverage check fails upload errors (#776).
       - name: Report regression
-        if: steps.bencher.outcome == 'failure'
+        if: steps.bencher.outcome == 'failure' && steps.suite.outputs.enabled == 'true'
         uses: actions/github-script@v9
         env:
           SUITE: ${{ matrix.name }}
