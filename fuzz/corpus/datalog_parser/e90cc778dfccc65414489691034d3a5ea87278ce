@@ -1,0 +1,4 @@
+(query[:where [rnot:name ?n] (sssccce=n)(?ye[[?x 
+]])[?x:passsssstrent ?B] (ss)(?maxye[[?x 
+]])[?x :paSssssstrent ?B] (ssscc)[?x :passsssparent ?nil?n] (sssucc?ye[[?x 
+]])[?x :passsssstrent ?B3]])

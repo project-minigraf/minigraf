@@ -1,0 +1,1 @@
+(query[:find (cou ?e) (ct ?e)(uzt ?e):where [?e ffff ?] ::find (c/zt ?):where[?eul ffff ?n]])

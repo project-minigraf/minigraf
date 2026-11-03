@@ -1,0 +1,1 @@
+(query [:fin :where[?eB n-me ??][?e Bn ?n] (not(e)[(a ?y)]( LLL[?_()]) [e d tu])])

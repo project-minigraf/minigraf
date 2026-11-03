@@ -1,3 +1,0 @@
-(query [:find ?e :where [?e :n? ?n] (not(que6
-[: []])
-[?e :db/valid-to ?n] (nosss [ :wh(*not [])]) [aind ?e u])])

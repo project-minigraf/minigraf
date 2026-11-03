@@ -1,0 +1,1 @@
+(query [:fin:where [?e :m:e] (not(qp)[(a ?y)])])

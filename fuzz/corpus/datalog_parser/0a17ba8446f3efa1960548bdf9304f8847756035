@@ -1,0 +1,2 @@
+(query [::where[: G ?n] (not [:e n:n])[:e 4?n] (not [:e3 Ʀat ?](_
+) )(noo ?)])

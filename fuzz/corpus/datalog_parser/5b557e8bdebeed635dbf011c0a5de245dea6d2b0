@@ -1,0 +1,2 @@
+(query [:where (not(r A)[e: g][s[  ] ()])
+])

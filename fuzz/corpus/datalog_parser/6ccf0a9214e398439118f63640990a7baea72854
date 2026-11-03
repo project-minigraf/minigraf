@@ -1,2 +1,0 @@
-(query [:f:where [?e :ne ?] (not [?e :nd eue])(e:e:yrs)(q:[z])
-])

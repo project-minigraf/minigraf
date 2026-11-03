@@ -1,0 +1,2 @@
+(query [:where [q e q] (or(p) (u) (u) [e nd tru])(A
+:ure)])

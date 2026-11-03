@@ -1,0 +1,3 @@
+(query [:wiaN:where(q
+
+?y) [(+:th ?y)] (en2=t?y) (u ssw)[(+:th ?y)]  ])

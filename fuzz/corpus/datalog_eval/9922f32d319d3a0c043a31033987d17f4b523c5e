@@ -1,0 +1,1 @@
+(query [:2iw :where [?e re [?e :name ?p]  :whe7:where [?e ?name ?n] [(= ?n "")]])

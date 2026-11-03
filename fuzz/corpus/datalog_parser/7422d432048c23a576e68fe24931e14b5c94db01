@@ -1,2 +1,0 @@
-(query [:where [q e qe] (or(pay) (uy) (u) [ae nnd tru])(A
-:ure)])
