@@ -202,6 +202,13 @@ jobs:
             filter: "^window/"
             file: bench_window.txt
 
+          # ── Bounded row frames (v3 only, #776 P01) ───────────────────────────
+          # 18 existing IDs; reserve 5–15 job-minutes pending phase-B timing.
+          # See docs/BENCHMARKS.md for the selection and remaining manual sweep.
+          - name: window_rows
+            filter: "^window_rows/((10000|100000)/(one|hundred)/sum/(zero|two|prefix)|100000/hundred/(min|max)/(two|prefix)|10000/hundred/frame_bench_sum/two|100000/hundred/frame_bench_sum/prefix)$"
+            file: bench_window_rows.txt
+
           # ── Temporal metadata ───────────────────────────────────────────────
           - name: temporal_metadata
             filter: "^temporal_metadata/"
@@ -250,6 +257,18 @@ jobs:
           path: target
           key: ${{ runner.os }}-bench-target-${{ hashFiles('**/Cargo.lock', 'benches/**', 'src/**/*.rs') }}
 
+      # Inspect the actual checkout: manual refs can be branches, tags or SHAs.
+      # Main has no row-frame group; skip its run and upload without empty data.
+      - name: Check row-frame suite availability
+        id: row_frames
+        if: matrix.name == 'window_rows'
+        run: |
+          if git grep -q -F 'fn bench_window_rows(' HEAD -- benches/minigraf_bench.rs; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Skipping window_rows: no row-frame suite in $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Download benchmark enumeration
         uses: actions/download-artifact@v7
         with:
@@ -258,9 +277,12 @@ jobs:
       # Select from the shared listing without rerunning any fixture setup.
       # Every required matrix route must be nonempty before measurement starts.
       - name: Verify selected IDs
+        if: matrix.name != 'window_rows' || steps.row_frames.outputs.available == 'true'
         run: node .bench-workflow/.github/bench/report.cjs select
 
       - name: Run benchmarks (${{ matrix.name }})
+        id: benchmarks
+        if: matrix.name != 'window_rows' || steps.row_frames.outputs.available == 'true'
         run: |
           set -o pipefail
           CARGO_TERM_COLOR=never cargo bench --bench minigraf_bench -- "$BENCH_FILTER" \
@@ -268,10 +290,12 @@ jobs:
           node .bench-workflow/.github/bench/report.cjs execution
 
       - name: Install Bencher CLI
+        if: steps.benchmarks.outcome == 'success'
         uses: bencherdev/bencher@v0.4.25
 
       - name: Upload to Bencher
         id: bencher
+        if: steps.benchmarks.outcome == 'success'
         continue-on-error: true
         run: |
           set -o pipefail
@@ -449,13 +473,13 @@ jobs:
       # Run even when selection, measurement or upload failed. Alerts keep the
       # existing two-run reporting policy; API/partial/empty uploads fail the job.
       - name: Verify reporting and summarize
-        if: always()
+        if: always() && (matrix.name != 'window_rows' || steps.row_frames.outputs.available == 'true')
         env:
           BENCHER_OUTCOME: ${{ steps.bencher.outcome }}
         run: node .bench-workflow/.github/bench/report.cjs finish
 
       - name: Retain coverage evidence
-        if: always()
+        if: always() && (matrix.name != 'window_rows' || steps.row_frames.outputs.available == 'true')
         uses: actions/upload-artifact@v6
         with:
           name: bench-evidence-${{ strategy.job-index }}
