@@ -35,6 +35,9 @@ mod set_queries;
 #[path = "minigraf_bench/window_neighbors.rs"]
 mod window_neighbors;
 
+#[path = "minigraf_bench/operator_paths.rs"]
+mod operator_paths;
+
 #[cfg(not(target_arch = "wasm32"))]
 mod simd_helpers;
 
@@ -2093,6 +2096,7 @@ criterion_group!(
     bench_query,
     distinct::bench_distinct,
     pagination::bench_pagination,
+    operator_paths::bench_operator_paths,
     bench_input_order,
     bench_ordered_groups,
     bench_partition_windows,
