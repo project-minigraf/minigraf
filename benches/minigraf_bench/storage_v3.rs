@@ -10,6 +10,7 @@ use criterion::{
 use minigraf::{Minigraf, OpenOptions, QueryResult, Value};
 use std::hint::black_box;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 const SCAN: &str = "(query [:find ?e ?v :where [?e :storage/value ?v]])";
@@ -197,6 +198,12 @@ fn multivalue_file(mode: &str) -> (tempfile::TempDir, PathBuf, Minigraf) {
     (dir, path, db)
 }
 
+/// Every timed mutation opens a fresh copy; its destruction is also untimed.
+fn copy_open(source: &Path) -> (Minigraf, tempfile::TempDir) {
+    let (dir, path) = copy_with_wal(source);
+    (open(&path, false), dir)
+}
+
 pub fn bench_storage_v3(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("open/storage_v3");
@@ -207,29 +214,36 @@ pub fn bench_storage_v3(c: &mut Criterion) {
             } else {
                 "migrate_v7"
             };
+            let fixture = OnceLock::new();
             group.bench_function(BenchmarkId::new(case, "multi_checkpoint"), |b| {
-                // Copy the frozen file; never migrate the corpus in place.
-                let source = Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("tests/golden/v7_multi_checkpoint.graph");
-                let (_check_dir, check_path) = copy(&source);
-                let db = open(&check_path, read_only);
-                check_golden(&db);
-                if !read_only {
-                    let bytes = std::fs::read(&check_path).unwrap();
-                    assert_eq!(&newest_meta(&bytes)[4..8], &8u32.to_le_bytes());
-                    let report = db.verify().unwrap();
-                    assert!(report.is_ok());
-                    assert!(report.facts >= 300);
-                }
-                drop(db);
+                // Skip unselected IDs and preflight only once across warmup and
+                // sampling callbacks. Never migrate the frozen corpus in place.
+                let source = fixture.get_or_init(|| {
+                    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .join("tests/golden/v7_multi_checkpoint.graph");
+                    let (_check_dir, check_path) = copy(&source);
+                    let db = open(&check_path, read_only);
+                    check_golden(&db);
+                    if !read_only {
+                        let bytes = std::fs::read(&check_path).unwrap();
+                        assert_eq!(&newest_meta(&bytes)[4..8], &8u32.to_le_bytes());
+                        let report = db.verify().unwrap();
+                        assert!(report.is_ok());
+                        assert!(report.facts >= 300);
+                    }
+                    drop(db);
+                    if read_only {
+                        assert!(
+                            std::fs::read(&check_path).unwrap() == std::fs::read(&source).unwrap()
+                        );
+                    }
+                    source
+                });
                 b.iter_batched_ref(
-                    || copy(&source),
+                    || copy(source),
                     |(_, path)| black_box(open(black_box(path), read_only)),
                     BatchSize::PerIteration,
                 );
-                if read_only {
-                    assert!(std::fs::read(&check_path).unwrap() == std::fs::read(&source).unwrap());
-                }
             });
         }
 
@@ -240,40 +254,47 @@ pub fn bench_storage_v3(c: &mut Criterion) {
                 "read_only_v8"
             };
             let label = if with_wal { "10k_plus_1k" } else { "10k" };
+            let fixture = OnceLock::new();
             group.bench_function(BenchmarkId::new(case, label), |b| {
-                let (_source_dir, source) = scalar_file(10_000);
-                let writer = open(&source, false);
-                if with_wal {
-                    let mut command = String::from("(transact [");
-                    for i in 10_000..11_000 {
-                        command.push_str(&format!("[:e{i} :val {i}]"));
+                let (_, path, _, _) = fixture.get_or_init(|| {
+                    let (_source_dir, source) = scalar_file(10_000);
+                    let writer = open(&source, false);
+                    if with_wal {
+                        let mut command = String::from("(transact [");
+                        for i in 10_000..11_000 {
+                            command.push_str(&format!("[:e{i} :val {i}]"));
+                        }
+                        command.push_str("])");
+                        writer.execute(&command).unwrap();
                     }
-                    command.push_str("])");
-                    writer.execute(&command).unwrap();
-                }
-                let tx_count = writer.current_tx_count();
-                // Capture a quiescent graph/WAL pair and close the writer.
-                // Read-only opens use their own locked copy.
-                let (_dir, path) = copy_with_wal(&source);
-                drop(writer);
-                let db = open(&path, true);
-                assert_eq!(
-                    rows(&db, "(query [:find ?e :where [?e :val ?v]])").len(),
-                    if with_wal { 11_000 } else { 10_000 }
-                );
-                assert_eq!(db.current_tx_count(), tx_count);
-                drop(db);
-                let before = std::fs::read(&path).unwrap();
-                let wal_path = path.with_extension("graph.wal");
-                let wal_before = std::fs::read(&wal_path).ok();
+                    let tx_count = writer.current_tx_count();
+                    // Capture a quiescent graph/WAL pair and close the writer.
+                    // Read-only opens use their own locked copy.
+                    let (dir, path) = copy_with_wal(&source);
+                    drop(writer);
+                    let before = std::fs::read(&path).unwrap();
+                    let wal_before = std::fs::read(path.with_extension("graph.wal")).ok();
+                    let db = open(&path, true);
+                    assert_eq!(
+                        rows(&db, "(query [:find ?e :where [?e :val ?v]])").len(),
+                        if with_wal { 11_000 } else { 10_000 }
+                    );
+                    assert_eq!(db.current_tx_count(), tx_count);
+                    drop(db);
+                    (dir, path, before, wal_before)
+                });
                 b.iter_batched(
                     || (),
-                    |()| black_box(open(black_box(&path), true)),
+                    |()| black_box(open(black_box(path), true)),
                     BatchSize::PerIteration,
                 );
-                assert!(std::fs::read(&path).unwrap() == before);
-                assert!(std::fs::read(&wal_path).ok() == wal_before);
             });
+            // Check after all callbacks, including untimed test mode. Unselected
+            // IDs leave the cell empty and incur no fixture work.
+            if let Some((_, path, before, wal_before)) = fixture.get() {
+                assert!(std::fs::read(path).unwrap() == *before);
+                assert!(std::fs::read(path.with_extension("graph.wal")).ok() == *wal_before);
+            }
         }
         group.finish();
     }
@@ -281,64 +302,67 @@ pub fn bench_storage_v3(c: &mut Criterion) {
     {
         let mut group = c.benchmark_group("checkpoint/storage_v3");
         configure(&mut group);
+        let fixture = OnceLock::new();
         group.bench_function(BenchmarkId::new("verify", "100k_history"), |b| {
-            let (_dir, path) = history_file();
-            let db = open(&path, true);
-            verify(&db, 100_150);
+            let (db, _dir) = fixture.get_or_init(|| {
+                let (dir, path) = history_file();
+                let db = open(&path, true);
+                verify(&db, 100_150);
+                (db, dir)
+            });
             b.iter(|| black_box(db.verify().unwrap()));
         });
+        let fixture = OnceLock::new();
         group.bench_function(
             BenchmarkId::new("rebuild_damaged_avet", "100k_history"),
             |b| {
-                let (_dir, path) = history_file();
-                let mut bytes = std::fs::read(&path).unwrap();
-                let root = u64::from_le_bytes(newest_meta(&bytes)[64..72].try_into().unwrap());
-                let offset = usize::try_from(root).unwrap() * 4096 + 2000;
-                bytes[offset] ^= 0x5a;
-                std::fs::write(&path, bytes).unwrap();
-                std::fs::File::open(&path).unwrap().sync_all().unwrap();
-                let setup = || {
-                    let (dir, path) = copy(&path);
-                    let db = open(&path, false);
-                    (db, dir)
-                };
-                let (db, _check_dir) = setup();
-                assert!(!db.verify().unwrap().is_ok(), "damage must be detected");
-                db.rebuild_indexes().unwrap();
-                verify(&db, 100_150);
-                assert_eq!(
-                    rows(&db, "(query [:find ?e ?v :where [?e :val ?v]])").len(),
-                    99_950
-                );
-                drop(db);
+                let (_, path) = fixture.get_or_init(|| {
+                    let (dir, path) = history_file();
+                    let mut bytes = std::fs::read(&path).unwrap();
+                    let root = u64::from_le_bytes(newest_meta(&bytes)[64..72].try_into().unwrap());
+                    let offset = usize::try_from(root).unwrap() * 4096 + 2000;
+                    bytes[offset] ^= 0x5a;
+                    std::fs::write(&path, bytes).unwrap();
+                    std::fs::File::open(&path).unwrap().sync_all().unwrap();
+                    let (db, _check_dir) = copy_open(&path);
+                    assert!(!db.verify().unwrap().is_ok(), "damage must be detected");
+                    db.rebuild_indexes().unwrap();
+                    verify(&db, 100_150);
+                    assert_eq!(
+                        rows(&db, "(query [:find ?e ?v :where [?e :val ?v]])").len(),
+                        99_950
+                    );
+                    drop(db);
+                    (dir, path)
+                });
                 b.iter_batched_ref(
-                    setup,
+                    || copy_open(path),
                     |(db, _)| black_box(&*db).rebuild_indexes().unwrap(),
                     BatchSize::PerIteration,
                 );
             },
         );
         for mode in ["inline_unique", "long_repeated", "long_unique"] {
+            let fixture = OnceLock::new();
             group.bench_function(BenchmarkId::new(format!("multivalue_{mode}"), "10k"), |b| {
-                let (_dir, path, writer) = multivalue_file(mode);
-                // Freeze a pending graph/WAL pair before dropping its writer.
-                let (_template_dir, template) = copy_with_wal(&path);
-                drop(writer);
-                let setup = || {
-                    let (dir, path) = copy_with_wal(&template);
-                    (open(&path, false), dir)
-                };
-                let (db, _check_dir) = setup();
-                db.checkpoint().unwrap();
-                verify(&db, 10_000);
-                assert_eq!(rows(&db, SCAN).len(), 10_000);
-                assert_eq!(
-                    rows(&db, "(query [:find ?v :where [:mv0 :storage/value ?v]])").len(),
-                    4
-                );
-                drop(db);
+                let (_, template) = fixture.get_or_init(|| {
+                    let (_dir, path, writer) = multivalue_file(mode);
+                    // Freeze a pending graph/WAL pair once per benchmark ID.
+                    let (template_dir, template) = copy_with_wal(&path);
+                    drop(writer);
+                    let (db, _check_dir) = copy_open(&template);
+                    db.checkpoint().unwrap();
+                    verify(&db, 10_000);
+                    assert_eq!(rows(&db, SCAN).len(), 10_000);
+                    assert_eq!(
+                        rows(&db, "(query [:find ?v :where [:mv0 :storage/value ?v]])").len(),
+                        4
+                    );
+                    drop(db);
+                    (template_dir, template)
+                });
                 b.iter_batched_ref(
-                    setup,
+                    || copy_open(template),
                     |(db, _)| black_box(&*db).checkpoint().unwrap(),
                     BatchSize::PerIteration,
                 );
@@ -349,18 +373,22 @@ pub fn bench_storage_v3(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("query/storage_v3");
     configure(&mut group);
+    let fixture = OnceLock::new();
     group.bench_function(BenchmarkId::new("multivalue_long_scan", "10k"), |b| {
-        let (_dir, _path, db) = multivalue_file("long_unique");
-        db.checkpoint().unwrap();
-        verify(&db, 10_000);
-        let result = rows(&db, SCAN);
-        assert_eq!(result.len(), 10_000);
-        assert!(
-            result
-                .iter()
-                .all(|row| matches!(&row[1], Value::String(s) if s.len() == 256))
-        );
-        b.iter(|| black_box(rows(&db, black_box(SCAN))));
+        let (db, _dir) = fixture.get_or_init(|| {
+            let (dir, _path, db) = multivalue_file("long_unique");
+            db.checkpoint().unwrap();
+            verify(&db, 10_000);
+            let result = rows(&db, SCAN);
+            assert_eq!(result.len(), 10_000);
+            assert!(
+                result
+                    .iter()
+                    .all(|row| matches!(&row[1], Value::String(s) if s.len() == 256))
+            );
+            (db, dir)
+        });
+        b.iter(|| black_box(rows(db, black_box(SCAN))));
     });
     group.finish();
 }
