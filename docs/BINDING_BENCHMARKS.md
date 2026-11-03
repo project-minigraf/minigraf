@@ -59,7 +59,9 @@ Artifacts retain both commit hashes, workflow hash, resolved Cargo metadata,
 executed IDs, raw metrics, upload output and the completeness report. Bencher
 uses `binding-{python,browser,node,c}-ubuntu24-v1` testbeds, Python 3.11,
 Node 20 and Playwright 1.55.0 Chromium on Ubuntu 24.04. Native histories are not
-inherited. Each testbed has its own 0.999 t-test threshold with a 30-point
+inherited. An experimental `binding-ref` uses a separate
+`binding-experiment/<core-ref>/<binding-ref>` history branch and does not post
+production regression issues. Each testbed has its own 0.999 t-test threshold with a 30-point
 window; alerts use the existing two-consecutive-run issue policy, while missing
 metrics, partial uploads and API failures fail the job immediately.
 
