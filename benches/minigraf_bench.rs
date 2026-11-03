@@ -21,6 +21,8 @@ mod distinct;
 mod helpers;
 #[path = "minigraf_bench/history.rs"]
 mod history;
+#[path = "minigraf_bench/pagination.rs"]
+mod pagination;
 
 #[path = "minigraf_bench/prepared.rs"]
 mod prepared;
@@ -2081,6 +2083,7 @@ criterion_group!(
     bench_insert_file,
     bench_query,
     distinct::bench_distinct,
+    pagination::bench_pagination,
     bench_input_order,
     bench_ordered_groups,
     bench_partition_windows,
