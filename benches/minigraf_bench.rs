@@ -40,6 +40,9 @@ mod window_neighbors;
 #[path = "minigraf_bench/operator_paths.rs"]
 mod operator_paths;
 
+#[path = "minigraf_bench/chunked_transactions.rs"]
+mod chunked_transactions;
+
 #[cfg(not(target_arch = "wasm32"))]
 mod simd_helpers;
 
@@ -2095,6 +2098,7 @@ criterion_group!(
     bench_insert,
     bench_insert_file,
     set_storage::bench_set_storage,
+    chunked_transactions::bench_chunked_transactions,
     bench_query,
     distinct::bench_distinct,
     pagination::bench_pagination,
