@@ -16,6 +16,8 @@
 // Then wrap criterion_group! with a PProfProfiler and run:
 //   cargo bench -- --profile-time 10
 
+#[path = "minigraf_bench/aggregate_controls.rs"]
+mod aggregate_controls;
 #[path = "minigraf_bench/cursor_lifecycle.rs"]
 mod cursor_lifecycle;
 #[path = "minigraf_bench/distinct.rs"]
@@ -2121,6 +2123,7 @@ criterion_group!(
     bench_negation,
     bench_disjunction,
     bench_aggregation,
+    aggregate_controls::bench_aggregate_controls,
     bench_expr,
     keyword_equality::bench_keyword_equality,
     bench_window,
