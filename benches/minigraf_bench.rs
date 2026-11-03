@@ -30,6 +30,8 @@ mod helpers;
 mod history;
 #[path = "minigraf_bench/keyword_equality.rs"]
 mod keyword_equality;
+#[path = "minigraf_bench/memory_meter.rs"]
+mod memory_meter;
 #[path = "minigraf_bench/pagination.rs"]
 mod pagination;
 
@@ -2111,6 +2113,7 @@ criterion_group!(
     set_storage::bench_set_storage,
     chunked_transactions::bench_chunked_transactions,
     bench_query,
+    memory_meter::bench_memory_meter,
     distinct::bench_distinct,
     pagination::bench_pagination,
     operator_paths::bench_operator_paths,
