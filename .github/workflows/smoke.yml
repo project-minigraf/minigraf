@@ -65,11 +65,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.source.outputs.sha }}
+          # The original smoke suite always exercises trusted main. Only the
+          # isolated acceptance jobs below consume the selected source SHA.
+          ref: main
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
       - name: Run smoke suite
-        run: cargo test --test smoke_test -- --include-ignored --nocapture
+        run: |
+          echo "Main smoke source: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          cargo test --test smoke_test -- --include-ignored --nocapture
         env:
           RUST_BACKTRACE: 1
 
