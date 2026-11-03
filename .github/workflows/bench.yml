@@ -26,6 +26,9 @@ permissions:
   actions: read  # read the previous run's job logs to confirm an alert repeats
 
 env:
+  # One threshold per branch/testbed/measure; never race per-suite models.
+  # 0.999 retains the noisy file/concurrency setting and existing testbed history.
+  BENCH_THRESHOLD: "0.999"
   BENCH_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || (github.event.schedule == '0 14 * * *' && 'v3' || 'main') }}
 
 # One run at a time on the shared runners: a late run queues instead of
@@ -39,11 +42,17 @@ jobs:
     name: bench / compile
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           ref: ${{ env.BENCH_REF }}
+
+      - name: Pin measured checkout
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -65,12 +74,34 @@ jobs:
           key: ${{ runner.os }}-bench-target-${{ hashFiles('**/Cargo.lock', 'benches/**', 'src/**/*.rs') }}
 
       - name: Compile benchmarks
-        run: cargo bench --no-run
+        run: cargo bench --bench minigraf_bench --no-run
+
+      # --list calls every registration function, including fixture setup
+      # outside benchmark closures. Pay that cost once, not in all 21 suites.
+      - name: Enumerate benchmark IDs (untimed)
+        run: |
+          set -o pipefail
+          CARGO_TERM_COLOR=never cargo bench --bench minigraf_bench -- --list \
+            2>&1 | tee bench-list.txt
+
+      - name: Share benchmark enumeration
+        uses: actions/upload-artifact@v6
+        with:
+          name: bench-enumeration
+          path: bench-list.txt
+          if-no-files-found: error
+          retention-days: 30
 
   benchmark:
     name: bench / ${{ matrix.name }}
     runs-on: ubuntu-latest
     needs: [compile]
+    env:
+      BENCH_SHA: ${{ needs.compile.outputs.sha }}
+      WORKFLOW_SHA: ${{ github.workflow_sha }}
+      BENCH_SUITE: ${{ matrix.name }}
+      BENCH_FILTER: ${{ matrix.filter }}
+      BENCH_FILE: ${{ matrix.file }}
     timeout-minutes: 360
     strategy:
       fail-fast: false   # one timeout must not cancel sibling jobs
@@ -80,137 +111,125 @@ jobs:
           - name: insert
             filter: "^insert/"
             file: bench_insert.txt
-            threshold: "0.99"
 
           # ── Sequential: insert_file ─────────────────────────────────────────
-          # threshold=0.999 for insert_file, open, checkpoint and concurrent_file:
-          # they fsync or read files, and file I/O on shared runners is too noisy
-          # for 0.99 (#393).
           - name: insert_file
             filter: "^insert_file/"
             file: bench_insert_file.txt
-            threshold: "0.999"
 
           # ── Sequential: query (includes query_extras) ───────────────────────
           - name: query
             filter: "^query/"
             file: bench_query.txt
-            threshold: "0.99"
 
           # ── Sequential: time_travel ─────────────────────────────────────────
           - name: time_travel
             filter: "^time_travel/"
             file: bench_time_travel.txt
-            threshold: "0.99"
 
           # ── Sequential: recursion ───────────────────────────────────────────
           - name: recursion
             filter: "^recursion/"
             file: bench_recursion.txt
-            threshold: "0.99"
 
           # ── Sequential: open ────────────────────────────────────────────────
           - name: open
             filter: "^open/"
             file: bench_open.txt
-            threshold: "0.999"
 
           # ── Sequential: checkpoint ──────────────────────────────────────────
           - name: checkpoint
             filter: "^checkpoint"
             file: bench_checkpoint.txt
-            threshold: "0.999"
 
           # ── Concurrent (in-memory): readers ────────────────────────────────
-          # threshold=0.999: concurrent benchmarks are noisy on shared CI runners
           - name: concurrent/readers
             filter: "^concurrent/readers/"
             file: bench_concurrent_readers.txt
-            threshold: "0.999"
 
           # ── Concurrent (in-memory): readers_plus_writer ────────────────────
           - name: concurrent/readers_plus_writer
             filter: "^concurrent/readers_plus_writer/"
             file: bench_concurrent_mixed.txt
-            threshold: "0.999"
 
           # ── Concurrent (in-memory): serialized_writers ─────────────────────
           - name: concurrent/serialized_writers
             filter: "^concurrent/serialized_writers/"
             file: bench_concurrent_writers.txt
-            threshold: "0.999"
 
           # ── Concurrent (file-backed): readers ──────────────────────────────
           - name: concurrent_file/readers
             filter: "^concurrent_file/readers/"
             file: bench_concurrent_file_readers.txt
-            threshold: "0.999"
 
           # ── Concurrent (file-backed): readers_plus_writer ──────────────────
           - name: concurrent_file/readers_plus_writer
             filter: "^concurrent_file/readers_plus_writer/"
             file: bench_concurrent_file_mixed.txt
-            threshold: "0.999"
 
           # ── Concurrent (file-backed): serialized_writers ───────────────────
           - name: concurrent_file/serialized_writers
             filter: "^concurrent_file/serialized_writers/"
             file: bench_concurrent_file_writers.txt
-            threshold: "0.999"
 
           # ── Concurrent: B+tree scan ─────────────────────────────────────────
           - name: concurrent_btree_scan
             filter: "^concurrent_btree_scan"
             file: bench_concurrent_btree_scan.txt
-            threshold: "0.999"
 
           # ── Negation: not / not-join ────────────────────────────────────────
           - name: negation
             filter: "^negation/"
             file: bench_negation.txt
-            threshold: "0.99"
 
           # ── Disjunction: or / or-join ───────────────────────────────────────
           - name: disjunction
             filter: "^disjunction/"
             file: bench_disjunction.txt
-            threshold: "0.99"
 
           # ── Aggregation (includes aggregation_extras) ───────────────────────
           - name: aggregation
             filter: "^aggregation/"
             file: bench_aggregation.txt
-            threshold: "0.99"
 
           # ── Expression filters / binding ────────────────────────────────────
           - name: expr
             filter: "^expr/"
             file: bench_expr.txt
-            threshold: "0.99"
 
           # ── Window functions ────────────────────────────────────────────────
           - name: window
             filter: "^window/"
             file: bench_window.txt
-            threshold: "0.99"
 
           # ── Temporal metadata ───────────────────────────────────────────────
           - name: temporal_metadata
             filter: "^temporal_metadata/"
             file: bench_temporal_metadata.txt
-            threshold: "0.99"
 
           # ── User-defined functions ──────────────────────────────────────────
           - name: udf
             filter: "^udf/"
             file: bench_udf.txt
-            threshold: "0.99"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ env.BENCH_REF }}
+          ref: ${{ needs.compile.outputs.sha }}
+
+      # Reporting follows the workflow revision, even if the measured ref has
+      # not yet received these helpers (main/v3 companion rollout or old refs).
+      - name: Checkout reporting tools
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .bench-workflow
+          # Cone mode also includes root files such as Cargo.lock, changing
+          # hashFiles cache keys relative to compile. Fetch only the helpers.
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /.github/bench/
+          persist-credentials: false
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -231,11 +250,22 @@ jobs:
           path: target
           key: ${{ runner.os }}-bench-target-${{ hashFiles('**/Cargo.lock', 'benches/**', 'src/**/*.rs') }}
 
+      - name: Download benchmark enumeration
+        uses: actions/download-artifact@v7
+        with:
+          name: bench-enumeration
+
+      # Select from the shared listing without rerunning any fixture setup.
+      # Every required matrix route must be nonempty before measurement starts.
+      - name: Verify selected IDs
+        run: node .bench-workflow/.github/bench/report.cjs select
+
       - name: Run benchmarks (${{ matrix.name }})
         run: |
           set -o pipefail
-          CARGO_TERM_COLOR=never cargo bench -- "${{ matrix.filter }}" \
-            2>&1 | tee ${{ matrix.file }}
+          CARGO_TERM_COLOR=never cargo bench --bench minigraf_bench -- "$BENCH_FILTER" \
+            2>&1 | tee "$BENCH_FILE"
+          node .bench-workflow/.github/bench/report.cjs execution
 
       - name: Install Bencher CLI
         uses: bencherdev/bencher@v0.4.25
@@ -260,15 +290,16 @@ jobs:
             --project minigraf \
             --token "${{ secrets.BENCHER_API_TOKEN }}" \
             --branch "$BENCH_REF" \
+            --hash "$BENCH_SHA" \
             "${start_point[@]}" \
             --testbed ubuntu-latest \
             --threshold-measure latency \
             --threshold-test t_test \
             --threshold-max-sample-size 30 \
-            --threshold-upper-boundary ${{ matrix.threshold }} \
+            --threshold-upper-boundary "$BENCH_THRESHOLD" \
             --err \
             --adapter rust_criterion \
-            --file ${{ matrix.file }} \
+            --file "$BENCH_FILE" \
             2>&1 | tee bencher_out.txt
 
       # Shared CI runners are noisy, so one alert on its own is usually a slow
@@ -277,7 +308,7 @@ jobs:
       # titled with the branch like the nightly fuzz issue: if one is open, add
       # a comment to it instead of skipping. Every outcome, including an alert
       # that is not reported, goes in the job summary, because the Bencher step
-      # is continue-on-error and the run stays green (#393).
+      # is continue-on-error; the final coverage check fails upload errors (#776).
       - name: Report regression
         if: steps.bencher.outcome == 'failure'
         uses: actions/github-script@v9
@@ -308,6 +339,7 @@ jobs:
                 `Bencher failed in the nightly benchmark run (${label}) but listed no alerts. This is likely an API or upload error.`,
                 '',
                 `**Branch:** \`${ref}\``,
+                `**Measured checkout:** \`${process.env.BENCH_SHA}\``,
                 `**Run:** ${runUrl}`,
               ].join('\n');
             } else {
@@ -367,6 +399,7 @@ jobs:
                 ...repeated.map(b => `- \`${b}\``),
                 '',
                 `**Branch:** \`${ref}\``,
+                `**Measured checkout:** \`${process.env.BENCH_SHA}\``,
                 `**Run:** ${runUrl}`,
                 `**Previous run:** ${previousUrl}`,
                 '',
@@ -412,3 +445,25 @@ jobs:
               .addBreak()
               .addRaw(body, true)
               .write();
+
+      # Run even when selection, measurement or upload failed. Alerts keep the
+      # existing two-run reporting policy; API/partial/empty uploads fail the job.
+      - name: Verify reporting and summarize
+        if: always()
+        env:
+          BENCHER_OUTCOME: ${{ steps.bencher.outcome }}
+        run: node .bench-workflow/.github/bench/report.cjs finish
+
+      - name: Retain coverage evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: bench-evidence-${{ strategy.job-index }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            bench-list.txt
+            bench-selection.json
+            bench-report.json
+            ${{ matrix.file }}
+            bencher_out.txt
