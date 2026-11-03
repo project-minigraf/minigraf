@@ -30,6 +30,11 @@ mod prepared;
 #[path = "minigraf_bench/set_storage.rs"]
 mod set_storage;
 
+#[path = "minigraf_bench/set_queries.rs"]
+mod set_queries;
+#[path = "minigraf_bench/window_neighbors.rs"]
+mod window_neighbors;
+
 #[cfg(not(target_arch = "wasm32"))]
 mod simd_helpers;
 
@@ -2098,6 +2103,8 @@ criterion_group!(
     bench_aggregation,
     bench_expr,
     bench_window,
+    set_queries::bench_set_queries,
+    window_neighbors::bench_window_neighbors,
     bench_window_rows,
     bench_temporal_metadata,
     bench_udf,
