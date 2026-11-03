@@ -1,26 +1,133 @@
 name: Smoke Suite (nightly)
 
+# Scheduled workflows come from main. Keep this file identical on main/v3.
+# Main's original smoke runs at 05:00 UTC; v3 acceptance runs at 17:00 UTC.
+run-name: >-
+  Smoke Suite (${{ github.event_name == 'workflow_dispatch' && inputs.ref
+  || (github.event.schedule == '0 17 * * *' && 'v3' || 'main') }})
+
 on:
   schedule:
     - cron: "0 5 * * *"
+    - cron: "0 17 * * *"
   workflow_dispatch:
+    inputs:
+      ref:
+        description: Source ref to check (v3 acceptance skips when absent)
+        required: true
+        default: v3
 
 permissions:
   contents: read
 
-jobs:
-  smoke:
-    name: Long-haul smoke suite
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+# Manual refs and the pinned v3 source run in the default-branch workflow's
+# context. These cold-build jobs need no shared cache access.
+cache-mode: none
 
+jobs:
+  source:
+    name: Pin source and inspect acceptance availability
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      acceptance: ${{ steps.source.outputs.acceptance }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || (github.event.schedule == '0 17 * * *' && 'v3' || 'main') }}
+      - name: Record actual checkout
+        id: source
+        run: |
+          sha=$(git rev-parse HEAD)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Measured source: $sha; workflow: ${{ github.workflow_sha }}" >> "$GITHUB_STEP_SUMMARY"
+          acceptance=true
+          for test in recursive memory_limit limit large_transaction; do
+            if [ ! -f "tests/${test}_acceptance_test.rs" ]; then
+              acceptance=false
+            fi
+          done
+          echo "acceptance=$acceptance" >> "$GITHUB_OUTPUT"
+          echo "v3 acceptance available: $acceptance" >> "$GITHUB_STEP_SUMMARY"
+          # A scheduled v3 checkout must never silently skip its acceptance.
+          if [ '${{ github.event.schedule }}' = '0 17 * * *' ] && [ "$acceptance" != true ]; then
+            echo 'v3 acceptance targets missing' >&2
+            exit 1
+          fi
 
+  smoke:
+    name: Long-haul smoke suite
+    needs: source
+    if: github.event.schedule != '0 17 * * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The original smoke suite always exercises trusted main. Only the
+          # isolated acceptance jobs below consume the selected source SHA.
+          ref: main
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
-
       - name: Run smoke suite
-        run: cargo test --test smoke_test -- --include-ignored --nocapture
+        run: |
+          echo "Main smoke source: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          cargo test --test smoke_test -- --include-ignored --nocapture
         env:
           RUST_BACKTRACE: 1
+
+  # Separate from Bencher latency: these existing tests assert fixed retained
+  # state/RSS bounds (and QRY-012 exhaustion), rather than uploading RSS as time.
+  # Runtime within the existing 15/30/45-minute budgets remains unverified.
+  acceptance:
+    name: v3 acceptance / ${{ matrix.name }}
+    needs: source
+    if: needs.source.outputs.acceptance == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: recursive
+            timeout: 45
+            command: cargo test --profile bench --test recursive_acceptance_test -- --ignored --nocapture
+          - name: memory-limit
+            timeout: 30
+            command: cargo test --profile bench --test memory_limit_acceptance_test -- --ignored --nocapture --test-threads=1
+          - name: limit
+            timeout: 30
+            command: cargo test --profile bench --test limit_acceptance_test -- --ignored --nocapture
+          - name: large-transaction
+            timeout: 30
+            command: cargo test --profile bench --features test-hooks --test large_transaction_acceptance_test -- --ignored --nocapture
+          - name: size-per-fact
+            timeout: 15
+            command: cargo test --lib size_per_fact_in_433_shape_1m -- --include-ignored --nocapture
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Run acceptance and retain source/test evidence
+        env:
+          RUST_BACKTRACE: 1
+          ACCEPTANCE_COMMAND: ${{ matrix.command }}
+        run: |
+          set -o pipefail
+          {
+            echo "Source: $(git rev-parse HEAD)"
+            echo "Workflow: ${{ github.workflow_sha }}"
+            echo "Command: $ACCEPTANCE_COMMAND"
+            $ACCEPTANCE_COMMAND
+          } 2>&1 | tee acceptance.txt
+      - name: Retain acceptance output including executed test names and RSS/state
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: acceptance-${{ matrix.name }}
+          path: acceptance.txt
+          if-no-files-found: error
+          retention-days: 30
