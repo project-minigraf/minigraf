@@ -26,6 +26,8 @@ mod fact_log;
 mod helpers;
 #[path = "minigraf_bench/history.rs"]
 mod history;
+#[path = "minigraf_bench/keyword_equality.rs"]
+mod keyword_equality;
 #[path = "minigraf_bench/pagination.rs"]
 mod pagination;
 
@@ -36,6 +38,8 @@ mod storage_v3;
 
 #[path = "minigraf_bench/set_storage.rs"]
 mod set_storage;
+#[path = "minigraf_bench/udf_v3.rs"]
+mod udf_v3;
 
 #[path = "minigraf_bench/set_queries.rs"]
 mod set_queries;
@@ -2118,12 +2122,14 @@ criterion_group!(
     bench_disjunction,
     bench_aggregation,
     bench_expr,
+    keyword_equality::bench_keyword_equality,
     bench_window,
     set_queries::bench_set_queries,
     window_neighbors::bench_window_neighbors,
     bench_window_rows,
     bench_temporal_metadata,
     bench_udf,
+    udf_v3::bench_udf_v3,
     bench_aggregation_extras,
     bench_query_extras,
     bench_open,
