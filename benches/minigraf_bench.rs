@@ -31,6 +31,8 @@ mod pagination;
 
 #[path = "minigraf_bench/prepared.rs"]
 mod prepared;
+#[path = "minigraf_bench/storage_v3.rs"]
+mod storage_v3;
 
 #[path = "minigraf_bench/set_storage.rs"]
 mod set_storage;
@@ -2135,6 +2137,7 @@ criterion_group!(
     fact_log::bench_log_writer,
     bench_prepared,
     prepared::bench_prepared_extras,
+    storage_v3::bench_storage_v3,
     bench_retract,
     bench_btree_lookup,
     bench_predicate_pushdown,
