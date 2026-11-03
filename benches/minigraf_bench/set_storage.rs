@@ -5,6 +5,8 @@
 //! (inline); 32 encode to 160 bytes (long, above the 64-byte boundary). Unique
 //! sets have disjoint elements; repeated long sets exercise value-page deduplication.
 //! Fix 10k facts rather than multiplying large cardinalities by 100k rows.
+//! Ingest measures the first write to a fresh database, including lazy WAL
+//! creation, header/parent-directory syncs and the transaction append/sync.
 
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput};
 use minigraf::{Minigraf, OpenOptions, QueryResult, Value, ValueSet};
@@ -190,7 +192,8 @@ fn validate_rows(db: &Minigraf, shape: Shape) {
 }
 
 pub fn bench_set_storage(c: &mut Criterion) {
-    // Four ingest cases isolate parsing + pending indexes + one WAL fsync;
+    // Four first-write ingest cases include parsing, pending indexes and WAL
+    // creation/header/parent-directory syncs plus the transaction append/sync;
     // three checkpoint cases isolate v8 inline/long writes and long dedup.
     // The scalar ingest control uses exactly the same fresh-file lifecycle.
     for (prefix, checkpoint, shapes) in [
