@@ -16,6 +16,8 @@
 // Then wrap criterion_group! with a PProfProfiler and run:
 //   cargo bench -- --profile-time 10
 
+#[path = "minigraf_bench/cursor_lifecycle.rs"]
+mod cursor_lifecycle;
 #[path = "minigraf_bench/distinct.rs"]
 mod distinct;
 mod helpers;
@@ -2097,6 +2099,7 @@ criterion_group!(
     distinct::bench_distinct,
     pagination::bench_pagination,
     operator_paths::bench_operator_paths,
+    cursor_lifecycle::bench_cursor_lifecycle,
     bench_input_order,
     bench_ordered_groups,
     bench_partition_windows,
