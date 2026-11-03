@@ -11,11 +11,14 @@ const alert = '- window/rank/1k (Latency): https://bencher.dev/console/projects/
 test('enumeration ignores cargo chatter and validates the route', () => {
   assert.deepEqual(selection(`Compiling minigraf\n${listing}\n`, '^window/'), ids);
 });
+test('shared enumeration selects only the matrix filter', () => {
+  assert.deepEqual(selection(`${listing}\nquery/point_entity/1k: benchmark`, '^window/'), ids);
+});
 test('required empty routes fail', () => {
   assert.throws(() => selection('Finished bench profile', '^typo/'), /empty/);
 });
 test('wrong or duplicate enumerated IDs fail', () => {
-  assert.throws(() => selection(listing, '^query/'), /filter/);
+  assert.throws(() => selection(listing, '^query/'), /empty/);
   assert.throws(() => selection(`${listing}\n${listing}`, '^window/'), /duplicate/);
 });
 test('execution includes only completed analysis lines', () => {

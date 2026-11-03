@@ -8,11 +8,13 @@ const parseAlerts = text => new Set(matches(text, /- (\S+) \(Latency\): https:\/
 
 function selection(text, filter) {
   const ids = matches(text, /^(.+): benchmark\s*$/gm);
-  if (!ids.length) throw new Error(`Required route is empty: ${filter}`);
   if (new Set(ids).size !== ids.length) throw new Error('Enumeration contains duplicate IDs');
+  // Matrix filters use the common JavaScript/Rust regex syntax. Any differing
+  // match is caught by the exact comparison with Criterion's executed IDs.
   const regex = new RegExp(filter);
-  if (ids.some(id => !regex.test(id))) throw new Error('Enumerated ID does not match filter');
-  return ids;
+  const selected = ids.filter(id => regex.test(id));
+  if (!selected.length) throw new Error(`Required route is empty: ${filter}`);
+  return selected;
 }
 
 function compare(expected, actual, label) {
