@@ -122,6 +122,14 @@ jobs:
             filter: "^query/"
             file: bench_query.txt
 
+          # P15 / G07: four enforcement on/off controls, 10k committed facts.
+          # Accounting itself is always on. Reserve 2–5 job-minutes; timing
+          # evidence is deferred to the serial phase-B dispatch.
+          - name: memory_meter
+            filter: "^memory_meter/"
+            file: bench_memory_meter.txt
+            required_case: '"memory_meter"'
+
           # P02: four existing execute cases plus eight preparation/cursor/slot
           # cases. Reserve 4–10 job-minutes pending phase-B timing.
           - name: prepared
