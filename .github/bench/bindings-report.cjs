@@ -33,11 +33,11 @@ function main(command) {
   const result = audit(ids, execution, read('binding-bencher.txt'), process.env.BENCHER_OUTCOME);
   const report = {
     binding, coreSha: process.env.BENCH_SHA, bindingSha: read('binding-sha.txt').trim(),
-    workflowSha: process.env.WORKFLOW_SHA, ref: process.env.BENCH_REF,
+    workflowSha: process.env.WORKFLOW_SHA, ref: process.env.BENCH_REF, historyBranch: process.env.BINDING_HISTORY,
     testbed: `binding-${binding}-ubuntu24-v1`, selected: ids, ...result,
   };
   fs.writeFileSync('binding-report.json', JSON.stringify(report, null, 2) + '\n');
-  const summary = `### Binding benchmark: ${binding}\n\nCore: ${report.coreSha}; binding: ${report.bindingSha}; workflow: ${report.workflowSha}\n\nTestbed: ${report.testbed}; executed ${result.executed.length}/${ids.length}; uploaded ${result.uploaded.length}/${ids.length}; alerts ${result.alerts.length}; upload ${result.uploadStatus}\n\n${result.errors.join('\n')}\n`;
+  const summary = `### Binding benchmark: ${binding}\n\nCore: ${report.coreSha}; binding: ${report.bindingSha}; workflow: ${report.workflowSha}\n\nHistory branch: ${report.historyBranch}; testbed: ${report.testbed}; executed ${result.executed.length}/${ids.length}; uploaded ${result.uploaded.length}/${ids.length}; alerts ${result.alerts.length}; upload ${result.uploadStatus}\n\n${result.errors.join('\n')}\n`;
   console.log(summary);
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
   if (result.errors.length) process.exitCode = 1;

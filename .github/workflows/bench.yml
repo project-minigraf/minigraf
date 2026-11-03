@@ -567,6 +567,7 @@ jobs:
           - { binding: c, repo: minigraf-c }
     env:
       BINDING: ${{ matrix.binding }}
+      BINDING_REF: ${{ inputs.binding-ref || 'v3' }}
       BENCH_SHA: ${{ needs.compile.outputs.sha }}
       WORKFLOW_SHA: ${{ github.workflow_sha }}
     steps:
@@ -598,7 +599,14 @@ jobs:
           persist-credentials: false
       - name: Pin binding source
         if: steps.source.outputs.enabled == 'true'
-        run: git -C binding rev-parse HEAD | tee binding-sha.txt
+        run: |
+          set -o pipefail
+          git -C binding rev-parse HEAD | tee binding-sha.txt
+          history="$BENCH_REF"
+          if [ "$BINDING_REF" != v3 ]; then
+            history="binding-experiment/$BENCH_REF/$BINDING_REF"
+          fi
+          echo "BINDING_HISTORY=$history" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
         if: steps.source.outputs.enabled == 'true'
         with:
@@ -616,7 +624,9 @@ jobs:
         run: bash .bench-workflow/.github/bench/bindings.sh build "$BINDING"
       - name: Verify every binding case (untimed)
         if: steps.source.outputs.enabled == 'true'
-        run: bash .bench-workflow/.github/bench/bindings.sh run "$BINDING" --test | tee binding-test.txt
+        run: |
+          set -o pipefail
+          bash .bench-workflow/.github/bench/bindings.sh run "$BINDING" --test | tee binding-test.txt
       - name: Measure binding shortlist
         id: measurement
         if: steps.source.outputs.enabled == 'true'
@@ -633,13 +643,13 @@ jobs:
         run: |
           set -o pipefail
           bencher run --project minigraf --token "${{ secrets.BENCHER_API_TOKEN }}" \
-            --branch "$BENCH_REF" --hash "$BENCH_SHA" \
+            --branch "$BINDING_HISTORY" --hash "$BENCH_SHA" \
             --testbed "binding-$BINDING-ubuntu24-v1" \
             --threshold-measure latency --threshold-test t_test \
             --threshold-max-sample-size 30 --threshold-upper-boundary "$BENCH_THRESHOLD" \
             --err --adapter json --file binding/binding-results.json 2>&1 | tee binding-bencher.txt
       - name: Report regression
-        if: steps.bencher.outcome == 'failure'
+        if: steps.bencher.outcome == 'failure' && env.BINDING_REF == 'v3'
         uses: actions/github-script@v9
         env:
           SUITE: binding_${{ matrix.binding }}

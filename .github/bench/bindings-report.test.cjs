@@ -28,7 +28,7 @@ test('CLI verifies execution and records provenance even when upload is partial'
     fs.writeFileSync(path.join(dir, 'binding/binding-results.json'), JSON.stringify(data('python')));
     fs.writeFileSync(path.join(dir, 'binding-execution.txt'), expected('python').map(id => `ok: ${id}`).join('\n'));
     fs.writeFileSync(path.join(dir, 'binding-sha.txt'), 'binding-commit\n');
-    const env = { ...process.env, BINDING: 'python', BENCH_SHA: 'core-commit', WORKFLOW_SHA: 'workflow-commit', BENCH_REF: 'v3', BENCHER_OUTCOME: 'success' };
+    const env = { ...process.env, BINDING: 'python', BENCH_SHA: 'core-commit', WORKFLOW_SHA: 'workflow-commit', BENCH_REF: 'v3', BINDING_HISTORY: 'binding-experiment/v3/pr', BENCHER_OUTCOME: 'success' };
     const run = command => spawnSync(process.execPath, [path.join(__dirname, 'bindings-report.cjs'), command], { cwd: dir, env, encoding: 'utf8' });
     assert.equal(run('validate').status, 0);
     fs.appendFileSync(path.join(dir, 'binding-execution.txt'), '\nok: binding/python/aggregate/1k');
@@ -39,6 +39,7 @@ test('CLI verifies execution and records provenance even when upload is partial'
     assert.equal(report.bindingSha, 'binding-commit');
     assert.equal(report.workflowSha, 'workflow-commit');
     assert.equal(report.testbed, 'binding-python-ubuntu24-v1');
+    assert.equal(report.historyBranch, 'binding-experiment/v3/pr');
     assert.equal(report.uploaded.length, 0);
     assert.ok(report.errors.length);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
