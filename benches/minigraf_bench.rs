@@ -16,6 +16,8 @@
 // Then wrap criterion_group! with a PProfProfiler and run:
 //   cargo bench -- --profile-time 10
 
+#[path = "minigraf_bench/distinct.rs"]
+mod distinct;
 mod helpers;
 #[path = "minigraf_bench/history.rs"]
 mod history;
@@ -2078,6 +2080,7 @@ criterion_group!(
     bench_insert,
     bench_insert_file,
     bench_query,
+    distinct::bench_distinct,
     bench_input_order,
     bench_ordered_groups,
     bench_partition_windows,
