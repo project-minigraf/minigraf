@@ -1,0 +1,16 @@
+{
+ "pairs": [
+  "B:H",
+  "B:P",
+  "B:B"
+ ],
+ "profile": "release",
+ "workloads": [
+  "pt_ea",
+  "pt_av",
+  "pt_asof"
+ ],
+ "secs": 1.5,
+ "blocks": 128,
+ "placement": "paired"
+}

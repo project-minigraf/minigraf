@@ -1,0 +1,16 @@
+{
+ "pairs": [
+  "B:H",
+  "B:P"
+ ],
+ "profile": "envelope",
+ "workloads": [
+  "cc_1",
+  "cc_8",
+  "cc_44"
+ ],
+ "secs": 1.5,
+ "blocks": 4,
+ "placement": "sequential",
+ "nodes": "2,3"
+}

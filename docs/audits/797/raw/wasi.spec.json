@@ -1,0 +1,21 @@
+{
+ "pairs": [
+  "B:H",
+  "B:P"
+ ],
+ "profile": "wasi-envelope",
+ "workloads": [
+  "wasi_pending_pt_ea",
+  "wasi_pending_pt_av",
+  "wasi_pending_scan",
+  "wasi_committed_pt_ea",
+  "wasi_committed_pt_av",
+  "wasi_committed_scan",
+  "wasi_committed_join_2",
+  "wasi_committed_con_direct"
+ ],
+ "secs": 1.0,
+ "blocks": 32,
+ "placement": "paired",
+ "wasi_entities": 5000
+}

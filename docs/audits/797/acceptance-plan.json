@@ -1,0 +1,33 @@
+{
+ "fixed_before_acceptance": "2026-10-30, after the pilots in raw/pilot-*.jsonl and before any acceptance campaign ran",
+ "order": [
+  "primary-1-envelope",
+  "primary-1-release",
+  "secondary",
+  "cold",
+  "concurrency",
+  "wasi",
+  "browser",
+  "primary-2-envelope",
+  "primary-2-release"
+ ],
+ "estimand": "per block: candidate mean ns/op / base mean ns/op (cc_*: wall ns per operation, inverse throughput); compared as natural logs",
+ "bound": "one-sided 95% Student t upper bound on the mean log ratio over the campaign's blocks, exponentiated (analyze.py)",
+ "gates": {
+  "primary": "pt_ea, pt_av, pt_asof: upper bound <= 1.02 for B:H in each of primary-1 and primary-2, in both envelope and release",
+  "control": "B:B in each primary campaign and profile: lower bound >= 0.98 and upper bound <= 1.02 for every family, else the campaign is inconclusive",
+  "secondary": "every other workload: upper bound <= 1.05 (B:H)",
+  "results": "every block's result digests equal between base and candidate; any mismatch fails",
+  "cold": "every cold observation's resident page count after eviction is 0, else the cold category is outstanding"
+ },
+ "block_counts": {
+  "primary": 128,
+  "secondary": 48,
+  "cold": 48,
+  "concurrency": 48,
+  "wasi": 32,
+  "browser": 32
+ },
+ "block_count_basis": "pilot log-ratio sd: primary envelope <= 0.024, release <= 0.060 (16 blocks); secondary <= 0.056; cold <= 0.021; concurrency <= 0.096; wasi <= 0.055; browser <= 0.020. Primary: 128 blocks give a one-sided 95% half-width of 1.657*0.060/sqrt(128) = 0.0088 at the worst release sd, so the B:B control can resolve +-2%. Others: 1.68*0.096/sqrt(48) = 0.023 < 0.05.",
+ "no_retry": "each campaign runs once into raw/<name>.jsonl (run.py refuses an existing file); an interrupted or failed campaign is reported, not rerun into the same name"
+}
