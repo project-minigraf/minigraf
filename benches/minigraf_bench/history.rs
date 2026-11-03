@@ -27,41 +27,46 @@ pub(super) fn bench_point_query_chain_depth(c: &mut Criterion) {
         let mut group = c.benchmark_group(format!("point_query_chain_depth/{name}"));
         group.sample_size(20);
         for &depth in DEPTHS {
+            let fixture = std::sync::OnceLock::new();
             group.bench_with_input(BenchmarkId::from_parameter(depth), &depth, |b, _| {
-                // Criterion calls this closure only for selected IDs. Keep the
-                // WAL/fsync fixture work outside b.iter and out of other jobs.
-                let dir = tempfile::tempdir().unwrap();
-                let db = minigraf::Minigraf::open(dir.path().join("b.graph")).unwrap();
-                for i in 0..2000 {
-                    db.execute(&format!("(transact [[:f/{i} :x {i}]])"))
+                // Skip unselected IDs and reuse one fixture across Criterion's
+                // warmup and sample callbacks. No fixture work is timed.
+                let (db, _dir) = fixture.get_or_init(|| {
+                    let dir = tempfile::tempdir().unwrap();
+                    let db = minigraf::Minigraf::open(dir.path().join("b.graph")).unwrap();
+                    for i in 0..2000 {
+                        db.execute(&format!("(transact [[:f/{i} :x {i}]])"))
+                            .unwrap();
+                    }
+                    db.execute("(transact [[:e/hot :other \"o\"]])").unwrap();
+                    db.execute("(transact {:valid-from \"2020-01-01T00:00:00Z\"} [[:e/hot :hash \"h0\"]])")
                         .unwrap();
-                }
-                db.execute("(transact [[:e/hot :other \"o\"]])").unwrap();
-                db.execute("(transact {:valid-from \"2020-01-01T00:00:00Z\"} [[:e/hot :hash \"h0\"]])")
-                    .unwrap();
-                for i in 1..depth {
-                    db.execute(&format!("(retract [[:e/hot :hash \"h{}\"]])", i - 1))
+                    for i in 1..depth {
+                        db.execute(&format!("(retract [[:e/hot :hash \"h{}\"]])", i - 1))
+                            .unwrap();
+                        db.execute(&format!(
+                            "(transact {{:valid-from \"2020-01-01T00:00:00Z\"}} [[:e/hot :hash \"h{i}\"]])"
+                        ))
                         .unwrap();
-                    db.execute(&format!(
-                        "(transact {{:valid-from \"2020-01-01T00:00:00Z\"}} [[:e/hot :hash \"h{i}\"]])"
-                    ))
-                    .unwrap();
-                }
-                db.checkpoint().unwrap();
-                let minigraf::QueryResult::QueryResults { results, .. } = db.execute(q).unwrap()
-                else {
-                    panic!("expected history query rows");
-                };
-                assert_eq!(results.len(), 1, "history query must return one row");
-                let expected = match name {
-                    "sibling_attr" => "o".to_owned(),
-                    "churned_attr_as_of" => "h0".to_owned(),
-                    _ => format!("h{}", depth - 1),
-                };
-                assert!(
-                    matches!(results.first().and_then(|row| row.first()), Some(minigraf::Value::String(value)) if value == &expected),
-                    "history query must read the intended version"
-                );
+                    }
+                    db.checkpoint().unwrap();
+                    let minigraf::QueryResult::QueryResults { results, .. } = db.execute(q).unwrap()
+                    else {
+                        panic!("expected history query rows");
+                    };
+                    assert_eq!(results.len(), 1, "history query must return one row");
+                    let expected = match name {
+                        "sibling_attr" => "o".to_owned(),
+                        "churned_attr_as_of" => "h0".to_owned(),
+                        _ => format!("h{}", depth - 1),
+                    };
+                    assert!(
+                        matches!(results.first().and_then(|row| row.first()), Some(minigraf::Value::String(value)) if value == &expected),
+                        "history query must read the intended version"
+                    );
+                    // Close the handle before removing its temporary directory.
+                    (db, dir)
+                });
                 b.iter(|| black_box(db.execute(q).unwrap()));
             });
         }
