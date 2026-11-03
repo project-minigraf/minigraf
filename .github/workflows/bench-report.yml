@@ -1,0 +1,22 @@
+name: Benchmark reporting checks
+
+on:
+  push:
+    branches: [main, 'v[0-9]*']
+    paths: ['.github/bench/**', '.github/workflows/bench*.yml']
+  pull_request:
+    branches: [main, 'v[0-9]*']
+    paths: ['.github/bench/**', '.github/workflows/bench*.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  reporting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - run: node --test .github/bench/report.test.cjs
