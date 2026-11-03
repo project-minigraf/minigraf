@@ -1,0 +1,1 @@
+(query [:where [?DDDDDDDDD:N ?n] (nu[e])[?e :md ?n] (not [?e tned e])])

@@ -1,0 +1,1 @@
+(query[:find ?e  ?e :where [?e:Name ?nn] (or [?e :banne tr])(n:wherg [znnzd uA])])

@@ -1,0 +1,1 @@
+(query [:where(o:b(?y) )(o:r()(y) ) ])

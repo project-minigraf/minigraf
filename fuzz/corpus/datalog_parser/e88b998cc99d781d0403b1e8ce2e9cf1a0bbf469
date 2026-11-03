@@ -1,0 +1,4 @@
+(query [:find ?e :where (rule  x?[[:p ?y]])
+[?e :e ?n] (n0005)(que-)(que->>)(que-000120674)(q x?[[:p ?y]])
+[?e :e ?n] (n0005)(que-)(que->>)(que-000120675)(que-)(que>DDD)(que-)(que-e->>)(que-000120674)(q x?[[:p ?y]])
+[?e :e ?n] (n0005)(que-)(que->>)(que-000120675)(que-)(que>DDD)(que-)(que-)(que-75)(jue01205338674)(que-)(que-ue-)(que>DDD)(que->>>012500675)(que-)(que-75)(jue01205338674)(yue-)(qu)(que-75)(jue01205338674)(que-)(qu)(que>DDD)(que->>>012500675)(que-)(que-75)(jue01205338674)(yue-)(que-DDD(Ar[[2 7n{}]]):wit00000>>)])

@@ -1,0 +1,1 @@
+(query [:where [?e0:a-en ?] (v(e)) [3x ?n](or(ppppTT)[(x ?y) ?n] (y??y) ) [6t ?y]])

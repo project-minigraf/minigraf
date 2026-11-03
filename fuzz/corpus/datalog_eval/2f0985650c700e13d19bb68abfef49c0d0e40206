@@ -1,0 +1,4 @@
+(query [:where [(=:rue"") ?n ][(!= ?n:av
+)](que[:fi[?eqf7?n]])
+
+ [(>=?n "e")]])

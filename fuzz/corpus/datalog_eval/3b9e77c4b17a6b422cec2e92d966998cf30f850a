@@ -1,0 +1,1 @@
+(query [:where [?e :lor E?gEEEEE?c] (not-join [?e] [?:actve tRihereie])])

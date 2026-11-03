@@ -1,0 +1,1 @@
+(query[ :where (not-join [?0? _][$0aa_dd]7)])

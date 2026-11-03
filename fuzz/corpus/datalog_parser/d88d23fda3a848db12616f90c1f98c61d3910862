@@ -1,1 +1,0 @@
-(query [:find ?e :where [?e :e ?n] (ne ?ygNO)[(fx ?999999999999999999999999999999y)  ?n] [(fx ?y)  ?n] (nd X)])

@@ -1,1 +1,0 @@
-(query [:find ?e :where (p ?e003447e)(ACd ?e:wrE,)])

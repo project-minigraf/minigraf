@@ -1,0 +1,1 @@
+(query [:where(or(or(AL Be 5)(AA,d1=)) ) ])

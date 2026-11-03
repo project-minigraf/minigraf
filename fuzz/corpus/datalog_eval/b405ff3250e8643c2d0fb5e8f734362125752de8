@@ -1,0 +1,2 @@
+(query [:find ?e :where [?e ? ?c] (not-join [?e] [?__:?ivteez ?chere3e](que:db/tx-id))]
+)

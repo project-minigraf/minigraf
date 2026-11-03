@@ -1,0 +1,1 @@
+(query [:find  (f/tie*n:over:d-0 )])

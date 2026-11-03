@@ -1,0 +1,1 @@
+(query [:where[?e l ?c] (wf)(qqqqq)])

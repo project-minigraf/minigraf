@@ -1,0 +1,1 @@
+(query [:where [?e :name ?n] (ony$0000$3$m4$2$mi$31530) ])

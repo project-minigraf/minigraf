@@ -1,1 +1,0 @@
-(query [ :where (not [?_ b:nn] (e)(q)(e>>>>=y)[?x --()])])

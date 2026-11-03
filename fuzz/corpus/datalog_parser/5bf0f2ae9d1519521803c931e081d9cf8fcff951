@@ -1,2 +1,0 @@
-(query [:where[?e:e ?n] (not(D)[n? e? n] (O)
-)])

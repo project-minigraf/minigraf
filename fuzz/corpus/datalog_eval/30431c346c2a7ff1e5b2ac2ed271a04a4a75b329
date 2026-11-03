@@ -1,0 +1,1 @@
+(query [ :where [?mmmmmmmmmmmmmmmmmmmmmmmmmmL?e ?lysr $c] (not-join [?ly ?g]  [:ed:b/t ?g]  [?e ?lynnfn ?g]  [:e:db/tx-id ?c]  [?e ?lynnueFFnnyneFFynE e])])

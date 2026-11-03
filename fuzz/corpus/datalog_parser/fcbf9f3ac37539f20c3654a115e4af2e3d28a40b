@@ -1,0 +1,1 @@
+(query[:where(or(quy [e[?]]))(or(que[e[?]]))(or(query [e[?]]))])

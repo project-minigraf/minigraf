@@ -1,0 +1,1 @@
+(query [:where [?e 4e? ] (ne ?y:T)[(fx ?y) ] (ne)[(fx ?y) ] (ne:T)[(notx ?y) ] (nene T)[(fxfx ?y) ] (ne ?qqq X)])

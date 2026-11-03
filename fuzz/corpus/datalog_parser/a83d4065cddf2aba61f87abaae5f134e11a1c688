@@ -1,0 +1,1 @@
+(query [:where [?:nad :z] (n[? ?_6])(noveot [ ? ?_8_8])(no2 [?])])

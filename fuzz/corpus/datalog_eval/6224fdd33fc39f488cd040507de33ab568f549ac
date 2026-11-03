@@ -1,0 +1,2 @@
+(query [:where [?or /C](not(q[(ce[iree])])(u [(m$i)]))]
+)

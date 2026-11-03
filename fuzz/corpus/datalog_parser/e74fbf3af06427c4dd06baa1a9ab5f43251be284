@@ -1,0 +1,1 @@
+(query [:find ?e :where [?e 4e?] (ne ?y)[(x ?y)  ?n] (nd w)(Ie AAA3)])

@@ -1,0 +1,1 @@
+(query [:find ?e1:where(or(_>005)(_?y) ) [0t]])

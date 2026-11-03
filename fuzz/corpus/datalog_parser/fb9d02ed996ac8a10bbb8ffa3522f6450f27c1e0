@@ -1,1 +1,0 @@
-(query [:find ?e0:where [?e0:nad ?] (ov(e?a[p()]?el4 ))[6t ?y]])

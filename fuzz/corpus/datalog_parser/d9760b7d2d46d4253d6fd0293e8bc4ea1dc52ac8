@@ -1,0 +1,1 @@
+(query [ :where [?e :e ?_][Ee a _][?e?e a ?_][e a _][?e?e a ?][Eg a0 _][?e?e a ?][Ee a _][-0a _] (lt[e])])

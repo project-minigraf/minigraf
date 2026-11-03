@@ -1,0 +1,1 @@
+(query [:with ?e5:where  (or(AAATTT)[(fAAAACdx ?y)  ?n] (nd tru)[(fAAAACdy)  ?n]  ) ])

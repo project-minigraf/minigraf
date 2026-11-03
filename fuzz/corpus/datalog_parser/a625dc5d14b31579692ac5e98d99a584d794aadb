@@ -1,0 +1,3 @@
+(query [:with ?e  
+:find (count ?e) ;(tdb/v0
+:find (count ?e) :where [?e:ne ?n]])

@@ -1,0 +1,1 @@
+(query[:with ?0:where(or(u ?x ? ?C1y) ) [6xt ?y]])

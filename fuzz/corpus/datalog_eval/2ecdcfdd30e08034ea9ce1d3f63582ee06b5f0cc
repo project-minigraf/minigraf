@@ -1,0 +1,1 @@
+(query [:find ?n :where [?e n ?g]  [?e ?Fnnue1186 ?n] [(<=?n ?_s-of)]])

@@ -1,0 +1,1 @@
+(query [:with ?5:where [?e e ?na] (or(5) ) ])

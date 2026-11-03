@@ -1,0 +1,4 @@
+(query [:where [?or /C] (not(q[(/fq[? i])])
+(query [:findumin(m$in:nam$n)])
+(querK [nddume]*))]
+)

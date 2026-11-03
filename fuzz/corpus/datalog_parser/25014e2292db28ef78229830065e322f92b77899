@@ -1,0 +1,1 @@
+(query [:where (pd ?e ?)(AA1 :e 0)])

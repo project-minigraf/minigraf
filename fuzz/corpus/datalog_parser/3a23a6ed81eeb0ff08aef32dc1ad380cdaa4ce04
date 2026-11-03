@@ -1,0 +1,1 @@
+(query [:find ?e   :where (nmt ?[e ]):where [?e pme ?n] (Mmt ?[e :d?]) (mt :nalA[:drum]):where [?e e ?n](t :n[:brue])])

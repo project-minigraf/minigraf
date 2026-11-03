@@ -1,0 +1,1 @@
+(query [:where [:e :lor ?c]  :where [:e :color ?c] :where [:e :l ?ch]  [?e ?eFFnue0r ?c]  :where [:e :color ?c] (nj-[?n])(ej[?e-])])

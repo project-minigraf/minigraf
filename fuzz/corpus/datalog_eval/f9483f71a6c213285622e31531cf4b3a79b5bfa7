@@ -1,0 +1,1 @@
+(rule[(r)(query [:find ?e :where [?efyFFF ] []])(not-join [?e] [?e ?lynufn?lynnuenDa ?g?hec])])
