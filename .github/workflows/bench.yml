@@ -122,6 +122,13 @@ jobs:
             filter: "^query/"
             file: bench_query.txt
 
+          # P02: four existing execute cases plus eight preparation/cursor/slot
+          # cases. Reserve 4–10 job-minutes pending phase-B timing.
+          - name: prepared
+            filter: "^prepared/"
+            file: bench_prepared.txt
+            v3_only: true
+
           # ── Sequential: time_travel ─────────────────────────────────────────
           - name: time_travel
             filter: "^time_travel/"
@@ -238,10 +245,24 @@ jobs:
           sparse-checkout: /.github/bench/
           persist-credentials: false
 
+      - name: Select benchmark suite for checked-out source
+        id: suite
+        env:
+          V3_ONLY: ${{ matrix.v3_only }}
+        run: |
+          if [ "$V3_ONLY" = true ] && [ ! -f benches/minigraf_bench/prepared.rs ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo 'Skipping v3-only prepared suite: absent from checked-out source.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install Rust toolchain
+        if: steps.suite.outputs.enabled == 'true'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo registry
+        if: steps.suite.outputs.enabled == 'true'
         uses: actions/cache@v6
         with:
           path: |
@@ -252,6 +273,7 @@ jobs:
             ${{ runner.os }}-cargo-bench-
 
       - name: Restore bench target
+        if: steps.suite.outputs.enabled == 'true'
         uses: actions/cache/restore@v6
         with:
           path: target
@@ -277,12 +299,12 @@ jobs:
       # Select from the shared listing without rerunning any fixture setup.
       # Every required matrix route must be nonempty before measurement starts.
       - name: Verify selected IDs
-        if: matrix.name != 'window_rows' || steps.row_frames.outputs.available == 'true'
+        if: steps.suite.outputs.enabled == 'true' && (matrix.name != 'window_rows' || steps.row_frames.outputs.available == 'true')
         run: node .bench-workflow/.github/bench/report.cjs select
 
       - name: Run benchmarks (${{ matrix.name }})
         id: benchmarks
-        if: matrix.name != 'window_rows' || steps.row_frames.outputs.available == 'true'
+        if: steps.suite.outputs.enabled == 'true' && (matrix.name != 'window_rows' || steps.row_frames.outputs.available == 'true')
         run: |
           set -o pipefail
           CARGO_TERM_COLOR=never cargo bench --bench minigraf_bench -- "$BENCH_FILTER" \
@@ -473,13 +495,13 @@ jobs:
       # Run even when selection, measurement or upload failed. Alerts keep the
       # existing two-run reporting policy; API/partial/empty uploads fail the job.
       - name: Verify reporting and summarize
-        if: always() && (matrix.name != 'window_rows' || steps.row_frames.outputs.available == 'true')
+        if: always() && (steps.suite.outputs.enabled == 'true' && (matrix.name != 'window_rows' || steps.row_frames.outputs.available == 'true'))
         env:
           BENCHER_OUTCOME: ${{ steps.bencher.outcome }}
         run: node .bench-workflow/.github/bench/report.cjs finish
 
       - name: Retain coverage evidence
-        if: always() && (matrix.name != 'window_rows' || steps.row_frames.outputs.available == 'true')
+        if: always() && (steps.suite.outputs.enabled == 'true' && (matrix.name != 'window_rows' || steps.row_frames.outputs.available == 'true'))
         uses: actions/upload-artifact@v6
         with:
           name: bench-evidence-${{ strategy.job-index }}
