@@ -144,6 +144,17 @@ The #723 ancestor tests also cover empty deltas, the 128-row demand cap, the eig
 
 ## Whole-System Checks
 
+The evaluator fuzz guard has a separate regression suite in
+`fuzz/tests/datalog_eval_guard.rs`, run by the nightly fuzz workflow. It checks
+scope isolation, join-variable declarations, selective joins and cross-product
+rejection, including the timeout input from #802. These harness-only tests are
+not included in the engine test count. Run them without building the engine:
+
+```bash
+rustc --edition=2021 --test fuzz/tests/datalog_eval_guard.rs -o /tmp/datalog-eval-guard-tests
+/tmp/datalog-eval-guard-tests
+```
+
 These tests compare the database against an independent answer rather than a single fixed case.
 
 - **Frozen answers** (#473, #544, #551)
