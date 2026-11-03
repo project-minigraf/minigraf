@@ -74,6 +74,12 @@ jobs:
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@nightly
 
+      - name: Test evaluator fuzz guard
+        if: matrix.target == 'datalog_eval'
+        run: |
+          rustc --edition=2021 --test fuzz/tests/datalog_eval_guard.rs -o "$RUNNER_TEMP/datalog-eval-guard-tests"
+          "$RUNNER_TEMP/datalog-eval-guard-tests"
+
       - name: Cache cargo-fuzz binary
         uses: actions/cache@v4
         with:

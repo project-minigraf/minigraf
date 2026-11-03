@@ -37,8 +37,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - uses: dtolnay/rust-toolchain@nightly
+    # cargo-docs-rs probes cross targets with an empty no_std program.
+    # nightly-2026-11-03 rejects that probe with a missing panic_handler;
+    # keep this known-good nightly until the tool's probe is fixed upstream.
+    - uses: dtolnay/rust-toolchain@master
       with:
+        toolchain: nightly-2026-10-01
         targets: ${{ matrix.target }}
     - uses: dtolnay/install@cargo-docs-rs
     - name: Check docs.rs build
