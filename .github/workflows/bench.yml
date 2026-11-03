@@ -139,6 +139,13 @@ jobs:
             file: bench_history_retract.txt
             required_case: '"churned_attr_as_of"'
 
+          # P10: six FactLog and four LogWriter IDs, v3 only (Refs #776).
+          # Reserve 5–15 job-minutes; phase B supplies timing evidence.
+          - name: fact_log
+            filter: "^(fact_log|log_writer)/"
+            file: bench_fact_log.txt
+            required_case: '"tx_mixed_window_4096"'
+
           # ── Sequential: time_travel ─────────────────────────────────────────
           - name: time_travel
             filter: "^time_travel/"
