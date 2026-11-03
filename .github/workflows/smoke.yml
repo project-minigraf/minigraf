@@ -20,6 +20,10 @@ on:
 permissions:
   contents: read
 
+# Manual refs and the pinned v3 source run in the default-branch workflow's
+# context. These cold-build jobs need no shared cache access.
+cache-mode: none
+
 jobs:
   source:
     name: Pin source and inspect acceptance availability
