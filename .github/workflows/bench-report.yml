@@ -19,4 +19,4 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
-      - run: node --test .github/bench/report.test.cjs
+      - run: node --test .github/bench/*.test.cjs

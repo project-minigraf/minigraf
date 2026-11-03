@@ -20,6 +20,11 @@ on:
         required: true
         default: main
 
+      binding-ref:
+        description: Binding ref for all P16 repos (phase B may select the PR branch)
+        required: false
+        default: v3
+
 permissions:
   contents: read
   issues: write
@@ -544,3 +549,249 @@ jobs:
             bench-report.json
             ${{ matrix.file }}
             bencher_out.txt
+
+  # Actual foreign runtimes. Deliberately separate from Criterion/native history.
+  # Reserve 5–15 minutes of measurement per binding plus build/setup, unverified.
+  bindings:
+    name: bench / binding_${{ matrix.binding }}
+    needs: compile
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { binding: python, repo: minigraf-python }
+          - { binding: browser, repo: minigraf-wasm }
+          - { binding: node, repo: minigraf-node }
+          - { binding: c, repo: minigraf-c }
+    env:
+      BINDING: ${{ matrix.binding }}
+      BENCH_SHA: ${{ needs.compile.outputs.sha }}
+      WORKFLOW_SHA: ${{ github.workflow_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.compile.outputs.sha }}
+      - name: Check v3 binding suite availability
+        id: source
+        run: |
+          if [ -f benches/minigraf_bench/prepared.rs ]; then
+            echo 'enabled=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'Skipping v3-only binding jobs for this measured checkout.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/checkout@v7
+        if: steps.source.outputs.enabled == 'true'
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .bench-workflow
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /.github/bench/
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        if: steps.source.outputs.enabled == 'true'
+        with:
+          repository: project-minigraf/${{ matrix.repo }}
+          ref: ${{ inputs.binding-ref || 'v3' }}
+          path: binding
+          persist-credentials: false
+      - name: Pin binding source
+        if: steps.source.outputs.enabled == 'true'
+        run: git -C binding rev-parse HEAD | tee binding-sha.txt
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.source.outputs.enabled == 'true'
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-python@v6
+        if: steps.source.outputs.enabled == 'true'
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v6
+        if: steps.source.outputs.enabled == 'true'
+        with:
+          node-version: '20'
+      - name: Build binding with measured core
+        if: steps.source.outputs.enabled == 'true'
+        run: bash .bench-workflow/.github/bench/bindings.sh build "$BINDING"
+      - name: Verify every binding case (untimed)
+        if: steps.source.outputs.enabled == 'true'
+        run: bash .bench-workflow/.github/bench/bindings.sh run "$BINDING" --test | tee binding-test.txt
+      - name: Measure binding shortlist
+        id: measurement
+        if: steps.source.outputs.enabled == 'true'
+        run: |
+          set -o pipefail
+          bash .bench-workflow/.github/bench/bindings.sh run "$BINDING" | tee binding-execution.txt
+          node .bench-workflow/.github/bench/bindings-report.cjs validate
+      - uses: bencherdev/bencher@v0.4.25
+        if: steps.measurement.outcome == 'success'
+      - name: Upload foreign runtime metrics
+        id: bencher
+        if: steps.measurement.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          bencher run --project minigraf --token "${{ secrets.BENCHER_API_TOKEN }}" \
+            --branch "$BENCH_REF" --hash "$BENCH_SHA" \
+            --testbed "binding-$BINDING-ubuntu24-v1" \
+            --threshold-measure latency --threshold-test t_test \
+            --threshold-max-sample-size 30 --threshold-upper-boundary "$BENCH_THRESHOLD" \
+            --err --adapter json --file binding/binding-results.json 2>&1 | tee binding-bencher.txt
+      - name: Report regression
+        if: steps.bencher.outcome == 'failure'
+        uses: actions/github-script@v9
+        env:
+          SUITE: binding_${{ matrix.binding }}
+        with:
+          script: |
+            const fs = require('fs');
+            const { owner, repo } = context.repo;
+            const suite = process.env.SUITE;
+            const ref = process.env.BENCH_REF;
+            const jobName = `bench / ${suite}`;
+            const label = `${suite}, ${ref}`;
+
+            // Bencher lists each alert as "- <benchmark> (Latency): <.../alerts/<id>>".
+            // The "View results" lines use /perf? URLs, so they do not match.
+            const alertRe = /- (\S+) \(Latency\): https:\/\/bencher\.dev\/console\/projects\/[^/\s]+\/alerts\//g;
+            const parseAlerts = text => new Set([...text.matchAll(alertRe)].map(m => m[1]));
+
+            const current = parseAlerts(fs.readFileSync('binding-bencher.txt', 'utf8'));
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            let body;
+            if (current.size === 0) {
+              // Bencher failed without listing alerts (API or upload error).
+              // Report it at once so a broken setup does not go unnoticed.
+              body = [
+                `Bencher failed in the nightly benchmark run (${label}) but listed no alerts. This is likely an API or upload error.`,
+                '',
+                `**Branch:** \`${ref}\``,
+                `**Measured checkout:** \`${process.env.BENCH_SHA}\``,
+                `**Run:** ${runUrl}`,
+              ].join('\n');
+            } else {
+              // Find this suite's job in the previous completed run of the same
+              // branch (by run name, see run-name) and read its alerts. Runs
+              // from before the branch was in the run name count as main.
+              let previous = new Set();
+              let previousUrl = null;
+              try {
+                const { data: runs } = await github.rest.actions.listWorkflowRuns({
+                  owner, repo,
+                  workflow_id: 'bench.yml',
+                  branch: 'main',
+                  status: 'completed',
+                  per_page: 20,
+                });
+                const runRef = r => {
+                  const m = /\(([^)]+)\)$/.exec(r.display_title || '');
+                  return m ? m[1] : 'main';
+                };
+                const prevRun = runs.workflow_runs.find(
+                  r => r.id !== context.runId && runRef(r) === ref);
+                if (prevRun) {
+                  previousUrl = prevRun.html_url;
+                  const { data: jobs } = await github.rest.actions.listJobsForWorkflowRun({
+                    owner, repo, run_id: prevRun.id, per_page: 100,
+                  });
+                  const prevJob = jobs.jobs.find(j => j.name === jobName);
+                  if (prevJob) {
+                    const { data: log } = await github.rest.actions.downloadJobLogsForWorkflowRun({
+                      owner, repo, job_id: prevJob.id,
+                    });
+                    previous = parseAlerts(typeof log === 'string' ? log : Buffer.from(log).toString('utf8'));
+                  }
+                }
+              } catch (err) {
+                core.warning(`Could not read the previous run's alerts: ${err.message}`);
+              }
+
+              const repeated = [...current].filter(b => previous.has(b)).sort();
+              console.log(`Alerts this run: ${[...current].join(', ')}`);
+              console.log(`Alerts in previous run: ${[...previous].join(', ') || 'none'}`);
+              if (repeated.length === 0) {
+                const msg = `Bencher flagged ${current.size} benchmark(s) in ${label}, but none alerted on the previous run too. Not reporting.`;
+                core.warning(msg);
+                await core.summary
+                  .addHeading(`Benchmark alerts not reported (${label})`, 3)
+                  .addRaw(msg, true)
+                  .addList([...current].sort().map(b => `<code>${b}</code>`))
+                  .write();
+                return;
+              }
+
+              body = [
+                `Bencher flagged these benchmarks in the nightly run (${label}) on two runs in a row:`,
+                '',
+                ...repeated.map(b => `- \`${b}\``),
+                '',
+                `**Branch:** \`${ref}\``,
+                `**Measured checkout:** \`${process.env.BENCH_SHA}\``,
+                `**Run:** ${runUrl}`,
+                `**Previous run:** ${previousUrl}`,
+                '',
+                'Please review the Bencher dashboard to confirm the regression.',
+              ].join('\n');
+            }
+
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner, repo,
+              labels: 'performance',
+              state: 'open',
+              per_page: 100,
+            });
+            const title = `Benchmark regression: ${suite} (${ref})`;
+            // Issues for main used to be titled without the branch. Keep
+            // commenting on such an open issue, and give it the new title.
+            const legacyTitle = ref === 'main' ? `Benchmark regression: ${suite}` : null;
+            const existing =
+              openIssues.find(i => !i.pull_request && i.title === title) ||
+              openIssues.find(i => !i.pull_request && legacyTitle && i.title === legacyTitle);
+            let reported;
+            if (existing) {
+              if (existing.title !== title) {
+                await github.rest.issues.update({
+                  owner, repo, issue_number: existing.number, title,
+                });
+              }
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: existing.number, body,
+              });
+              reported = `Commented on #${existing.number}`;
+            } else {
+              const { data: issue } = await github.rest.issues.create({
+                owner, repo, title, body,
+                labels: ['performance'],
+              });
+              reported = `Opened #${issue.number}`;
+            }
+            core.warning(`${title}. ${reported}.`);
+            await core.summary
+              .addHeading(`Benchmark regression reported (${label})`, 3)
+              .addRaw(`${reported}.`, true)
+              .addBreak()
+              .addRaw(body, true)
+              .write();
+
+      - name: Verify binding reporting
+        if: always() && steps.source.outputs.enabled == 'true'
+        env:
+          BENCHER_OUTCOME: ${{ steps.bencher.outcome }}
+        run: node .bench-workflow/.github/bench/bindings-report.cjs finish
+      - name: Retain binding evidence
+        if: always() && steps.source.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: binding-evidence-${{ matrix.binding }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            binding-sha.txt
+            binding-test.txt
+            binding-execution.txt
+            binding-bencher.txt
+            binding-report.json
+            binding/binding-results.json
+            binding/target-metadata.json
