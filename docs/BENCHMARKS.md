@@ -660,6 +660,39 @@ The UDF benchmark registers an integer sum with a fresh accumulator per bounded 
 
 The harness omits the quadratic 100,000-row, half-partition UDF case. The large-case query scan and result materialization dominate the built-in timings; this snapshot checks relative growth of this complete query shape, not isolated deque or sum-step throughput.
 
+### Nightly row-frame shortlist (#776 P01)
+
+The `bench / window_rows` job selects 18 existing IDs with this exact filter:
+
+```text
+^window_rows/((10000|100000)/(one|hundred)/sum/(zero|two|prefix)|100000/hundred/(min|max)/(two|prefix)|10000/hundred/frame_bench_sum/two|100000/hundred/frame_bench_sum/prefix)$
+```
+
+This covers sum frames of zero, two and prefix width at 10k/100k rows with
+one/100 partitions (12 cases), plus min/max two-versus-prefix deque controls
+at 100k rows with 100 partitions (4 cases). The remaining two cases exercise
+the bounded UDF replay at 10k rows and its full-prefix running-accumulator
+control at 100k rows, both with 100 partitions. The UDF pair covers different
+execution paths and scales; it is not a same-size latency comparison.
+Fixtures and UDF registration remain outside the timed loop; IDs are unchanged.
+
+The workflow checks the selected checkout for `bench_window_rows` and skips
+this job's measurement and Bencher upload when it is absent, including main's
+02:00 UTC run. The v3 run is at 14:00 UTC. Results use
+`bench_window_rows.txt`, the existing latency reporting path and shared
+0.999 threshold. Reserve **5–15 job-minutes**, an unverified planning allowance;
+phase B must dispatch serially and verify executed IDs, uploads and runtime
+before this route is treated as measured nightly coverage.
+
+The other 110 registered cases remain a deliberate manual sweep: default,
+sqrt and half widths, count/avg, the remaining min/max combinations and UDF
+zero/half/one-partition variants. Run the full `^window_rows/` selection only
+on idle hardware under the release performance review; expensive replay
+cases do not belong in every nightly run. The unregistered 100k half-partition
+UDF case remains excluded for quadratic callback cost. An untimed local check
+of the shortlist uses `cargo bench --bench minigraf_bench -- --test '<filter>'`
+with the exact filter above.
+
 ## Performance Envelope (v3.0.0, #394)
 
 **Version**: `v3` branch (format v8), unreleased · **Date**: 2026-10-11 · **Command**: `cargo run --profile envelope --example perf_envelope -- --scales 100k,1m,10m` · Intel Core i7-1065G7 (4 cores / 8 threads, 16 GB RAM), Rust 1.94.0, Linux 6.12.108, on AC power and otherwise idle; the `.graph` file on an SSD with the OS page cache warm.
