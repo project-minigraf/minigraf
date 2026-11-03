@@ -76,6 +76,22 @@ jobs:
       - name: Compile benchmarks
         run: cargo bench --bench minigraf_bench --no-run
 
+      # --list calls every registration function, including fixture setup
+      # outside benchmark closures. Pay that cost once, not in all 21 suites.
+      - name: Enumerate benchmark IDs (untimed)
+        run: |
+          set -o pipefail
+          CARGO_TERM_COLOR=never cargo bench --bench minigraf_bench -- --list \
+            2>&1 | tee bench-list.txt
+
+      - name: Share benchmark enumeration
+        uses: actions/upload-artifact@v6
+        with:
+          name: bench-enumeration
+          path: bench-list.txt
+          if-no-files-found: error
+          retention-days: 30
+
   benchmark:
     name: bench / ${{ matrix.name }}
     runs-on: ubuntu-latest
@@ -209,7 +225,10 @@ jobs:
         with:
           ref: ${{ github.workflow_sha }}
           path: .bench-workflow
-          sparse-checkout: .github/bench
+          # Cone mode also includes root files such as Cargo.lock, changing
+          # hashFiles cache keys relative to compile. Fetch only the helpers.
+          sparse-checkout-cone-mode: false
+          sparse-checkout: /.github/bench/
           persist-credentials: false
 
       - name: Install Rust toolchain
@@ -231,14 +250,15 @@ jobs:
           path: target
           key: ${{ runner.os }}-bench-target-${{ hashFiles('**/Cargo.lock', 'benches/**', 'src/**/*.rs') }}
 
-      # Criterion's filtered --list uses the same Rust regex engine as the run.
-      # No timings are collected here; every required matrix route must be nonempty.
-      - name: Enumerate selected IDs
-        run: |
-          set -o pipefail
-          CARGO_TERM_COLOR=never cargo bench --bench minigraf_bench -- --list "$BENCH_FILTER" \
-            2>&1 | tee bench-list.txt
-          node .bench-workflow/.github/bench/report.cjs select
+      - name: Download benchmark enumeration
+        uses: actions/download-artifact@v7
+        with:
+          name: bench-enumeration
+
+      # Select from the shared listing without rerunning any fixture setup.
+      # Every required matrix route must be nonempty before measurement starts.
+      - name: Verify selected IDs
+        run: node .bench-workflow/.github/bench/report.cjs select
 
       - name: Run benchmarks (${{ matrix.name }})
         run: |
