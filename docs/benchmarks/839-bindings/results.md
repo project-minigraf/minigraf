@@ -55,3 +55,9 @@ WASI provenance was checked after the run against all 93 tracked compilation inp
 (src, Cargo.toml and any build.rs) from the pinned core commit, the retained Cargo.lock,
 WASM and executed driver. All matched. The actual driver locale was UTF-8. Android and
 JVM packaged native library hashes matched their build-output hashes in this series.
+
+The measured WASI driver is preserved in core commit
+`3d43c993a61219f67e8e6131115bd7c86aa36646` (driver SHA-256 in the provenance).
+The current driver additionally rejects Python `-O` with an unconditional error;
+the recorded runs used normal Python. This guard-only change is outside all
+timed regions, and the original samples and driver identity are retained.

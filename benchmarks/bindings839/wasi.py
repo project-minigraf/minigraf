@@ -9,6 +9,9 @@ import subprocess
 import threading
 import time
 
+if not __debug__:
+    raise RuntimeError('do not disable Python validation with -O')
+
 
 def check_process(status, stderr):
     assert status == 0, 'WASI process failed'
@@ -37,7 +40,6 @@ def main():
     parser.add_argument('--output', type=pathlib.Path, required=True)
     parser.add_argument('--mode', choices=['smoke', 'benchmark'], default='smoke')
     args = parser.parse_args()
-    assert __debug__, 'do not disable Python validation with -O'
     args.output.mkdir(parents=True, exist_ok=False)
     samples_file = args.output / 'samples.jsonl'
     def emit(record):

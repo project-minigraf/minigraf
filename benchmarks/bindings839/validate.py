@@ -5,6 +5,9 @@ import math
 import pathlib
 import sys
 
+if not __debug__:
+    raise RuntimeError('do not disable validation with Python -O')
+
 COMMON = {
     'prepared_execute/1k', 'cursor_batch_1/1k', 'cursor_batch_256/1k',
     'set_roundtrip/2', 'predicate/1k', 'aggregate/1k', 'prepare/point',
@@ -47,7 +50,6 @@ def validate(records, runtime):
 
 
 if __name__ == '__main__':
-    assert __debug__, 'do not disable validation with Python -O'
     runtime, filename = sys.argv[1:]
     records = [json.loads(line) for line in pathlib.Path(filename).read_text(encoding='utf-8').splitlines()]
     cases, samples = validate(records, runtime)

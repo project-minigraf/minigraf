@@ -13,14 +13,15 @@ retained `wasi-Cargo.lock` into that disposable checkout as `Cargo.lock`, then:
 ```sh
 rustup target add wasm32-wasip1
 cargo build --locked --release --target wasm32-wasip1 --bin minigraf
-python3 -m unittest discover -s benchmarks/bindings839 -p test_wasi.py
+python3 -m unittest discover -s benchmarks/bindings839 -p 'test_*.py'
 python3 benchmarks/bindings839/wasi.py --runtime /path/to/wasmtime-49.0.2 \
   --wasm target/wasm32-wasip1/release/minigraf.wasm \
   --core-revision 33e5dffadebe0124e6287fc91cede4ff2b7a2b2f \
   --output /fresh/output/smoke --mode smoke
 ```
 
-The script requires a UTF-8 process locale, as used in the recorded runs. Run
+The script requires a UTF-8 process locale, as used in the recorded runs, and
+rejects Python `-O` explicitly so assertions cannot silently disappear. Run
 the `benchmark` mode only on the dedicated bench, serially with CPU and memory
 affinity on one NUMA node and no concurrent builds. Use three fresh output
 directories. Record idle checks and toolchain/artifact hashes externally as well
