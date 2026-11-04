@@ -39,8 +39,8 @@ Zero tests, missing/renamed/duplicated tests, ignored tests, incomplete output a
 missing RSS evidence fail. Eight Python regressions cover these rejection paths.
 The verifier runs in a separate job on a fresh runner, checking out only
 `github.workflow_sha`. It downloads this run's acceptance artifacts into a data
-directory and reads their text; it never checks out or executes the measured
-source. Verification also requires every acceptance job to have succeeded.
+directory and reads their text; the selected source ref cannot select verifier
+code. Verification also requires every acceptance job to have succeeded.
 The tests use the source SHA resolved by the source job. Recursive and
 transaction tests now run serially; memory tests already did. Each artifact keeps
 `Cargo.lock` alongside complete output for dependency replay.
@@ -126,5 +126,15 @@ verifier or its Python environment. `cache-mode: none` remains in force. The
 job rejects any failed acceptance job, missing artifact or invalid test/RSS
 inventory; artifacts from this run are data only. All eight verifier regressions
 pass, and the actual job command passes the five retained outputs while rejecting
-missing output and Python text posing as output. A fresh dispatch validates the
-new job boundary; its result is recorded in the follow-up PR.
+missing output and Python text posing as output.
+
+[Follow-up run 41788127874](https://github.com/project-minigraf/minigraf/actions/runs/41788127874)
+passed all five acceptance suites and the long-haul smoke suite, using workflow
+`66962f56ddc75303eebe247159d915afa4420a23` and source
+`a2ac9545be7ee9bb62ca2d50ccd7b8bd6241ee3f`. The
+[fresh verifier job](https://github.com/project-minigraf/minigraf/actions/runs/41788127874/job/126436026648)
+passed its eight regressions and verified all five artifacts: ten passing tests
+and nine measured RSS records. The workflow is byte-identical in the main and v3
+follow-up PRs (#849 and #850). CodeQL reported no new alerts on #849 at the
+workflow revision above. These checks validate the new job boundary; the retained
+raw measurements earlier in this report still describe the original dispatch.
