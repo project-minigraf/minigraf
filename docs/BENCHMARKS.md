@@ -732,6 +732,12 @@ UDF case remains excluded for quadratic callback cost. An untimed local check
 of the shortlist uses `cargo bench --bench minigraf_bench -- --test '<filter>'`
 with the exact filter above.
 
+The [#836 disposition report](benchmarks/836-exclusions/README.md) retains the
+110 manual cases and reconciles all 156 unselected registrations at a fresh pin.
+It records per-shape costs, not new timings. In particular, full-prefix UDF
+frames use a running accumulator; only bounded replay has the quadratic
+half-frame cost. The one-partition prefix remains manual.
+
 ## Performance Envelope (v3.0.0, #394)
 
 **Version**: `v3` branch (format v8), unreleased · **Date**: 2026-10-11 · **Command**: `cargo run --profile envelope --example perf_envelope -- --scales 100k,1m,10m` · Intel Core i7-1065G7 (4 cores / 8 threads, 16 GB RAM), Rust 1.94.0, Linux 6.12.108, on AC power and otherwise idle; the `.graph` file on an SSD with the OS page cache warm.

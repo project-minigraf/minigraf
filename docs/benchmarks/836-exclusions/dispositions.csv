@@ -1,0 +1,157 @@
+id,registered,disposition,reason,rows,facts,partitions,partition_rows,function,frame,preceding,max_frame_rows,udf_step_calls_per_query,deque_reserved_slots_per_partition,cost_model,measured_here
+window_rows/10000/hundred/avg/default,true,MANUAL_DEFERRED,R1,10000,20000,100,100,avg,default,,100,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/hundred/avg/half,true,MANUAL_DEFERRED,R1,10000,20000,100,100,avg,half,50,51,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/hundred/avg/prefix,true,MANUAL_DEFERRED,R1,10000,20000,100,100,avg,prefix,100,100,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/hundred/avg/sqrt,true,MANUAL_DEFERRED,R1,10000,20000,100,100,avg,sqrt,10,11,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/hundred/avg/two,true,MANUAL_DEFERRED,R1,10000,20000,100,100,avg,two,2,3,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/hundred/avg/zero,true,MANUAL_DEFERRED,R1,10000,20000,100,100,avg,zero,0,1,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/hundred/count/default,true,MANUAL_DEFERRED,R1,10000,20000,100,100,count,default,,100,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/hundred/count/half,true,MANUAL_DEFERRED,R1,10000,20000,100,100,count,half,50,51,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/hundred/count/prefix,true,MANUAL_DEFERRED,R1,10000,20000,100,100,count,prefix,100,100,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/hundred/count/sqrt,true,MANUAL_DEFERRED,R1,10000,20000,100,100,count,sqrt,10,11,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/hundred/count/two,true,MANUAL_DEFERRED,R1,10000,20000,100,100,count,two,2,3,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/hundred/count/zero,true,MANUAL_DEFERRED,R1,10000,20000,100,100,count,zero,0,1,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/hundred/frame_bench_sum/half,true,MANUAL_DEFERRED,R3,10000,20000,100,100,frame_bench_sum,half,50,51,382500,,replayed UDF: listed step calls plus n factories/finalizations,false
+window_rows/10000/hundred/frame_bench_sum/zero,true,MANUAL_DEFERRED,R3,10000,20000,100,100,frame_bench_sum,zero,0,1,10000,,replayed UDF: listed step calls plus n factories/finalizations,false
+window_rows/10000/hundred/max/default,true,MANUAL_DEFERRED,R1,10000,20000,100,100,max,default,,100,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/hundred/max/half,true,MANUAL_DEFERRED,R2,10000,20000,100,100,max,half,50,51,,51,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/10000/hundred/max/prefix,true,MANUAL_DEFERRED,R2,10000,20000,100,100,max,prefix,100,100,,100,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/10000/hundred/max/sqrt,true,MANUAL_DEFERRED,R2,10000,20000,100,100,max,sqrt,10,11,,11,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/10000/hundred/max/two,true,MANUAL_DEFERRED,R2,10000,20000,100,100,max,two,2,3,,3,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/10000/hundred/max/zero,true,MANUAL_DEFERRED,R2,10000,20000,100,100,max,zero,0,1,,1,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/10000/hundred/min/default,true,MANUAL_DEFERRED,R1,10000,20000,100,100,min,default,,100,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/hundred/min/half,true,MANUAL_DEFERRED,R2,10000,20000,100,100,min,half,50,51,,51,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/10000/hundred/min/prefix,true,MANUAL_DEFERRED,R2,10000,20000,100,100,min,prefix,100,100,,100,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/10000/hundred/min/sqrt,true,MANUAL_DEFERRED,R2,10000,20000,100,100,min,sqrt,10,11,,11,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/10000/hundred/min/two,true,MANUAL_DEFERRED,R2,10000,20000,100,100,min,two,2,3,,3,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/10000/hundred/min/zero,true,MANUAL_DEFERRED,R2,10000,20000,100,100,min,zero,0,1,,1,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/10000/hundred/sum/default,true,MANUAL_DEFERRED,R1,10000,20000,100,100,sum,default,,100,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/hundred/sum/half,true,MANUAL_DEFERRED,R1,10000,20000,100,100,sum,half,50,51,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/hundred/sum/sqrt,true,MANUAL_DEFERRED,R1,10000,20000,100,100,sum,sqrt,10,11,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/one/avg/default,true,MANUAL_DEFERRED,R1,10000,20000,1,10000,avg,default,,10000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/one/avg/half,true,MANUAL_DEFERRED,R1,10000,20000,1,10000,avg,half,5000,5001,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/one/avg/prefix,true,MANUAL_DEFERRED,R1,10000,20000,1,10000,avg,prefix,10000,10000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/one/avg/sqrt,true,MANUAL_DEFERRED,R1,10000,20000,1,10000,avg,sqrt,100,101,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/one/avg/two,true,MANUAL_DEFERRED,R1,10000,20000,1,10000,avg,two,2,3,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/one/avg/zero,true,MANUAL_DEFERRED,R1,10000,20000,1,10000,avg,zero,0,1,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/one/count/default,true,MANUAL_DEFERRED,R1,10000,20000,1,10000,count,default,,10000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/one/count/half,true,MANUAL_DEFERRED,R1,10000,20000,1,10000,count,half,5000,5001,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/one/count/prefix,true,MANUAL_DEFERRED,R1,10000,20000,1,10000,count,prefix,10000,10000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/one/count/sqrt,true,MANUAL_DEFERRED,R1,10000,20000,1,10000,count,sqrt,100,101,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/one/count/two,true,MANUAL_DEFERRED,R1,10000,20000,1,10000,count,two,2,3,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/one/count/zero,true,MANUAL_DEFERRED,R1,10000,20000,1,10000,count,zero,0,1,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/one/frame_bench_sum/half,true,MANUAL_DEFERRED,R3,10000,20000,1,10000,frame_bench_sum,half,5000,5001,37507500,,replayed UDF: listed step calls plus n factories/finalizations,false
+window_rows/10000/one/frame_bench_sum/two,true,MANUAL_DEFERRED,R3,10000,20000,1,10000,frame_bench_sum,two,2,3,29997,,replayed UDF: listed step calls plus n factories/finalizations,false
+window_rows/10000/one/frame_bench_sum/zero,true,MANUAL_DEFERRED,R3,10000,20000,1,10000,frame_bench_sum,zero,0,1,10000,,replayed UDF: listed step calls plus n factories/finalizations,false
+window_rows/10000/one/max/default,true,MANUAL_DEFERRED,R1,10000,20000,1,10000,max,default,,10000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/one/max/half,true,MANUAL_DEFERRED,R2,10000,20000,1,10000,max,half,5000,5001,,5001,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/10000/one/max/prefix,true,MANUAL_DEFERRED,R2,10000,20000,1,10000,max,prefix,10000,10000,,10000,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/10000/one/max/sqrt,true,MANUAL_DEFERRED,R2,10000,20000,1,10000,max,sqrt,100,101,,101,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/10000/one/max/two,true,MANUAL_DEFERRED,R2,10000,20000,1,10000,max,two,2,3,,3,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/10000/one/max/zero,true,MANUAL_DEFERRED,R2,10000,20000,1,10000,max,zero,0,1,,1,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/10000/one/min/default,true,MANUAL_DEFERRED,R1,10000,20000,1,10000,min,default,,10000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/one/min/half,true,MANUAL_DEFERRED,R2,10000,20000,1,10000,min,half,5000,5001,,5001,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/10000/one/min/prefix,true,MANUAL_DEFERRED,R2,10000,20000,1,10000,min,prefix,10000,10000,,10000,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/10000/one/min/sqrt,true,MANUAL_DEFERRED,R2,10000,20000,1,10000,min,sqrt,100,101,,101,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/10000/one/min/two,true,MANUAL_DEFERRED,R2,10000,20000,1,10000,min,two,2,3,,3,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/10000/one/min/zero,true,MANUAL_DEFERRED,R2,10000,20000,1,10000,min,zero,0,1,,1,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/10000/one/sum/default,true,MANUAL_DEFERRED,R1,10000,20000,1,10000,sum,default,,10000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/one/sum/half,true,MANUAL_DEFERRED,R1,10000,20000,1,10000,sum,half,5000,5001,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/10000/one/sum/sqrt,true,MANUAL_DEFERRED,R1,10000,20000,1,10000,sum,sqrt,100,101,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/hundred/avg/default,true,MANUAL_DEFERRED,R1,100000,200000,100,1000,avg,default,,1000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/hundred/avg/half,true,MANUAL_DEFERRED,R1,100000,200000,100,1000,avg,half,500,501,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/hundred/avg/prefix,true,MANUAL_DEFERRED,R1,100000,200000,100,1000,avg,prefix,1000,1000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/hundred/avg/sqrt,true,MANUAL_DEFERRED,R1,100000,200000,100,1000,avg,sqrt,31,32,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/hundred/avg/two,true,MANUAL_DEFERRED,R1,100000,200000,100,1000,avg,two,2,3,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/hundred/avg/zero,true,MANUAL_DEFERRED,R1,100000,200000,100,1000,avg,zero,0,1,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/hundred/count/default,true,MANUAL_DEFERRED,R1,100000,200000,100,1000,count,default,,1000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/hundred/count/half,true,MANUAL_DEFERRED,R1,100000,200000,100,1000,count,half,500,501,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/hundred/count/prefix,true,MANUAL_DEFERRED,R1,100000,200000,100,1000,count,prefix,1000,1000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/hundred/count/sqrt,true,MANUAL_DEFERRED,R1,100000,200000,100,1000,count,sqrt,31,32,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/hundred/count/two,true,MANUAL_DEFERRED,R1,100000,200000,100,1000,count,two,2,3,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/hundred/count/zero,true,MANUAL_DEFERRED,R1,100000,200000,100,1000,count,zero,0,1,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/hundred/max/default,true,MANUAL_DEFERRED,R1,100000,200000,100,1000,max,default,,1000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/hundred/max/half,true,MANUAL_DEFERRED,R2,100000,200000,100,1000,max,half,500,501,,501,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/100000/hundred/max/sqrt,true,MANUAL_DEFERRED,R2,100000,200000,100,1000,max,sqrt,31,32,,32,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/100000/hundred/max/zero,true,MANUAL_DEFERRED,R2,100000,200000,100,1000,max,zero,0,1,,1,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/100000/hundred/min/default,true,MANUAL_DEFERRED,R1,100000,200000,100,1000,min,default,,1000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/hundred/min/half,true,MANUAL_DEFERRED,R2,100000,200000,100,1000,min,half,500,501,,501,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/100000/hundred/min/sqrt,true,MANUAL_DEFERRED,R2,100000,200000,100,1000,min,sqrt,31,32,,32,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/100000/hundred/min/zero,true,MANUAL_DEFERRED,R2,100000,200000,100,1000,min,zero,0,1,,1,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/100000/hundred/sum/default,true,MANUAL_DEFERRED,R1,100000,200000,100,1000,sum,default,,1000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/hundred/sum/half,true,MANUAL_DEFERRED,R1,100000,200000,100,1000,sum,half,500,501,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/hundred/sum/sqrt,true,MANUAL_DEFERRED,R1,100000,200000,100,1000,sum,sqrt,31,32,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/one/avg/default,true,MANUAL_DEFERRED,R1,100000,200000,1,100000,avg,default,,100000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/one/avg/half,true,MANUAL_DEFERRED,R1,100000,200000,1,100000,avg,half,50000,50001,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/one/avg/prefix,true,MANUAL_DEFERRED,R1,100000,200000,1,100000,avg,prefix,100000,100000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/one/avg/sqrt,true,MANUAL_DEFERRED,R1,100000,200000,1,100000,avg,sqrt,316,317,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/one/avg/two,true,MANUAL_DEFERRED,R1,100000,200000,1,100000,avg,two,2,3,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/one/avg/zero,true,MANUAL_DEFERRED,R1,100000,200000,1,100000,avg,zero,0,1,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/one/count/default,true,MANUAL_DEFERRED,R1,100000,200000,1,100000,count,default,,100000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/one/count/half,true,MANUAL_DEFERRED,R1,100000,200000,1,100000,count,half,50000,50001,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/one/count/prefix,true,MANUAL_DEFERRED,R1,100000,200000,1,100000,count,prefix,100000,100000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/one/count/sqrt,true,MANUAL_DEFERRED,R1,100000,200000,1,100000,count,sqrt,316,317,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/one/count/two,true,MANUAL_DEFERRED,R1,100000,200000,1,100000,count,two,2,3,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/one/count/zero,true,MANUAL_DEFERRED,R1,100000,200000,1,100000,count,zero,0,1,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/one/frame_bench_sum/prefix,true,MANUAL_DEFERRED,R4,100000,200000,1,100000,frame_bench_sum,prefix,100000,100000,100000,,running UDF: n step calls and n finalizations,false
+window_rows/100000/one/max/default,true,MANUAL_DEFERRED,R1,100000,200000,1,100000,max,default,,100000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/one/max/half,true,MANUAL_DEFERRED,R2,100000,200000,1,100000,max,half,50000,50001,,50001,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/100000/one/max/prefix,true,MANUAL_DEFERRED,R2,100000,200000,1,100000,max,prefix,100000,100000,,100000,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/100000/one/max/sqrt,true,MANUAL_DEFERRED,R2,100000,200000,1,100000,max,sqrt,316,317,,317,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/100000/one/max/two,true,MANUAL_DEFERRED,R2,100000,200000,1,100000,max,two,2,3,,3,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/100000/one/max/zero,true,MANUAL_DEFERRED,R2,100000,200000,1,100000,max,zero,0,1,,1,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/100000/one/min/default,true,MANUAL_DEFERRED,R1,100000,200000,1,100000,min,default,,100000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/one/min/half,true,MANUAL_DEFERRED,R2,100000,200000,1,100000,min,half,50000,50001,,50001,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/100000/one/min/prefix,true,MANUAL_DEFERRED,R2,100000,200000,1,100000,min,prefix,100000,100000,,100000,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/100000/one/min/sqrt,true,MANUAL_DEFERRED,R2,100000,200000,1,100000,min,sqrt,316,317,,317,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/100000/one/min/two,true,MANUAL_DEFERRED,R2,100000,200000,1,100000,min,two,2,3,,3,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/100000/one/min/zero,true,MANUAL_DEFERRED,R2,100000,200000,1,100000,min,zero,0,1,,1,amortized linear aggregate pass; bounded deque; n output rows,false
+window_rows/100000/one/sum/default,true,MANUAL_DEFERRED,R1,100000,200000,1,100000,sum,default,,100000,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/one/sum/half,true,MANUAL_DEFERRED,R1,100000,200000,1,100000,sum,half,50000,50001,,,linear aggregate pass after query join/sort; n output rows,false
+window_rows/100000/one/sum/sqrt,true,MANUAL_DEFERRED,R1,100000,200000,1,100000,sum,sqrt,316,317,,,linear aggregate pass after query join/sort; n output rows,false
+point_query_chain_depth/attr_scan/500,true,EXCLUDED,E1,,,,,,,,,,,,false
+point_query_chain_depth/churned_attr/500,true,EXCLUDED,E1,,,,,,,,,,,,false
+point_query_chain_depth/churned_attr_as_of/500,true,EXCLUDED,E1,,,,,,,,,,,,false
+point_query_chain_depth/sibling_attr/500,true,EXCLUDED,E1,,,,,,,,,,,,false
+retract/batch_100/100k,true,EXCLUDED,E2,,,,,,,,,,,,false
+retract/batch_100/1k,true,EXCLUDED,E2,,,,,,,,,,,,false
+retract/batch_100/1m,true,EXCLUDED,E2,,,,,,,,,,,,false
+retract/single_fact/100k,true,EXCLUDED,E2,,,,,,,,,,,,false
+retract/single_fact/1k,true,EXCLUDED,E2,,,,,,,,,,,,false
+retract/single_fact/1m,true,EXCLUDED,E2,,,,,,,,,,,,false
+btree_lookup/attribute_scan/100k,true,EXCLUDED,E3,,,,,,,,,,,,false
+btree_lookup/attribute_scan/10k,true,EXCLUDED,E3,,,,,,,,,,,,false
+btree_lookup/attribute_scan/1k,true,EXCLUDED,E3,,,,,,,,,,,,false
+btree_lookup/entity_point/100k,true,EXCLUDED,E3,,,,,,,,,,,,false
+btree_lookup/entity_point/10k,true,EXCLUDED,E3,,,,,,,,,,,,false
+btree_lookup/entity_point/1k,true,EXCLUDED,E3,,,,,,,,,,,,false
+simd_aggregate/scalar/100,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_aggregate/scalar/100k,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_aggregate/scalar/10k,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_aggregate/scalar/1k,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_aggregate/scalar/1m,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_aggregate/simd/100,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_aggregate/simd/100k,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_aggregate/simd/10k,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_aggregate/simd/1k,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_aggregate/simd/1m,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_as_of/scalar/100,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_as_of/scalar/100k,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_as_of/scalar/10k,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_as_of/scalar/1k,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_as_of/scalar/1m,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_as_of/simd/100,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_as_of/simd/100k,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_as_of/simd/10k,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_as_of/simd/1k,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_as_of/simd/1m,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_temporal/scalar/100,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_temporal/scalar/100k,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_temporal/scalar/10k,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_temporal/scalar/1k,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_temporal/scalar/1m,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_temporal/simd/100,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_temporal/simd/100k,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_temporal/simd/10k,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_temporal/simd/1k,true,EXCLUDED,E4,,,,,,,,,,,,false
+simd_temporal/simd/1m,true,EXCLUDED,E4,,,,,,,,,,,,false

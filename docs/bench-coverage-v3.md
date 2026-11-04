@@ -362,7 +362,7 @@ shortlist. No manual timing or release sign-off is implied by this close-out.
 
 | ID | Disposition | Remaining scope and reason |
 | --- | --- | --- |
-| X01 | MANUAL / EXCLUDED registered cases | Of 583 registered native IDs, 156 are unselected: 110 `window_rows/` cases are MANUAL wider width/function/partition sweeps; four history depth-500 IDs and six retract 1k/100k/1m IDs are EXCLUDED redundant intermediate/scaling points; six pending `btree_lookup/` IDs are EXCLUDED duplicates of C01; 30 synthetic SIMD IDs are EXCLUDED experimental non-engine kernels. Exact expansions are in Appendix C. Full-prefix one-partition UDF replay is expensive and stays manual; the unregistered 100k UDF half-frame is also excluded for quadratic callback cost |
+| X01 | MANUAL / EXCLUDED registered cases | Of 583 registered native IDs, 156 are unselected: 110 `window_rows/` cases are MANUAL wider width/function/partition sweeps; four history depth-500 IDs and six retract 1k/100k/1m IDs are EXCLUDED redundant intermediate/scaling points; six pending `btree_lookup/` IDs are EXCLUDED duplicates of C01; 30 synthetic SIMD IDs are EXCLUDED experimental non-engine kernels. Exact expansions are in Appendix C. The [#836 pinned reconciliation and per-shape dispositions](benchmarks/836-exclusions/README.md) retain all exclusions. Full-prefix one-partition UDF execution stays manual but uses a linear running accumulator, not quadratic replay; the unregistered 100k UDF half-frames remain excluded for replay cost |
 | X02 | ENVELOPE / acceptance, execution unverified | Retained-state/RSS/scaling bounds, nonlinear/multistratum recursion and derived-fact exhaustion, million-fact transactions and custom chunk bounds are not Bencher memory metrics. Observe the revised v3 smoke schedule or dispatch it and inspect exact SHA/test names/bounds before claiming these enforced in nightly CI. Accounting itself has no disabled-engine control; unlimited only disables the finite cap |
 | X03 | MANUAL migration | Native migration uses one small frozen v7 fixture, not a large dictionary/scale sweep. Browser migration and migration with pinned-reader churn have no V timing; IndexedDB open/write coverage is not migration coverage |
 | X04 | MANUAL binding checks | JVM/JNI, Android ART/ABI/device storage, Swift ARC/Apple storage and WASI need distinct runtime evidence/release sign-off. Options/error paths, foreign FactLog/LogWriter conversion, foreign preparation/registration latency and browser pinned-reader churn remain unmeasured. Python shared UniFFI coverage does not measure other host runtimes; no binding RSS bound is asserted |
@@ -1008,6 +1008,9 @@ binding/python/aggregate/1k
 
 The enumeration/selected-set difference is exactly **156** IDs. These have no
 V analysis or upload. Counts below are not omitted-feature counts.
+The [#836 follow-up](benchmarks/836-exclusions/README.md) re-enumerates a later
+pinned revision and records an explicit cost/disposition for every manual shape;
+it adds no latency measurements and leaves this historical validation unchanged.
 
 | Prefix / expansion | Count | Disposition and reason |
 | --- | ---: | --- |

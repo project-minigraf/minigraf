@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Minigraf is a tiny, portable **bi-temporal graph database with Datalog queries** written in Rust. Designed as the embedded graph memory layer for AI agents, mobile apps, and the browser — built on the SQLite philosophy: embedded, single-file, reliable, with time travel.
 
-See `ROADMAP.md` for planned work and current direction. See `CHANGELOG.md` for completed-release history.
+See `ROADMAP.md` for planned work and current direction. See `CHANGELOG.md` for completed-release history. The [#836 benchmark audit](docs/benchmarks/836-exclusions/README.md) records the 156 unselected native IDs and per-shape manual dispositions; it changes no runtime behavior or test counts.
 
 ## Core Philosophy - CRITICAL
 
