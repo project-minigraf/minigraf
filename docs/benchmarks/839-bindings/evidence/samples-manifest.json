@@ -1,0 +1,65 @@
+[
+  {
+    "file": "jvm-1.jsonl",
+    "omitted_environment_fields": [
+      "java_vendor",
+      "vm_version"
+    ],
+    "retained_original_sha256": "5f342d05ae1bcf6d0c356bc502d2fe900d9455f82c2634233d1246d14ffbde95",
+    "sha256": "d876cceacc9f5a8f87e662619e6ca1e6849b0495435a2e73ed72b99a6c8d0b5f"
+  },
+  {
+    "file": "jvm-2.jsonl",
+    "omitted_environment_fields": [
+      "java_vendor",
+      "vm_version"
+    ],
+    "retained_original_sha256": "07c63344c57f373c2d60304d519e0e39beda7508fe3a5b9b90bca6f81d38ed88",
+    "sha256": "a74c5f2922cb2f5047e216f2399d31fc617a39bc0d1ea6b1080b1e04498e54be"
+  },
+  {
+    "file": "jvm-3.jsonl",
+    "omitted_environment_fields": [
+      "java_vendor",
+      "vm_version"
+    ],
+    "retained_original_sha256": "0144e333be3831117d83932d203069e23f056de6ec553cba82fa90a8c079511a",
+    "sha256": "ca2e4ab5ded1315bcce8c39e8d68472148ddbc97e79ddd23e2e120d05d897d00"
+  },
+  {
+    "file": "wasi-1.jsonl",
+    "omitted_environment_fields": [],
+    "retained_original_sha256": "471fcae0d1362a65abbf84de19c33da4f751844ec719ab6df94bcbb5d4cc7a13",
+    "sha256": "0f1fcc77919930e0b51dd6b2271040094b0f2a4708cf8fe1f3e8c078e512d771"
+  },
+  {
+    "file": "wasi-2.jsonl",
+    "omitted_environment_fields": [],
+    "retained_original_sha256": "6b5cccec8ccad2fb0c438e9fbe049383a8eeab5851bd3d6e463bbab5a79a227c",
+    "sha256": "138bbfbb2bc946e6da34dfeeb8268e7b056082303d614151531d1d846489fdd2"
+  },
+  {
+    "file": "wasi-3.jsonl",
+    "omitted_environment_fields": [],
+    "retained_original_sha256": "5501b420b8a649d455072054856950a0f4365e1e57d780831ea0e41331cc9fc5",
+    "sha256": "db213774fc33f510098b75f1a94ac1444873a5e8b0a3be9a070d1e3450d5335b"
+  },
+  {
+    "file": "android-1.jsonl",
+    "omitted_environment_fields": [],
+    "retained_original_sha256": "ce113cb0dc2a3a3d51e217c211bf4866ff53200bcaa61549e9b965c4fed7213f",
+    "sha256": "e8803275dc6af40eb5ab64af2a24fccf57edbe7b5b8c450431f112e62d8119be"
+  },
+  {
+    "file": "android-2.jsonl",
+    "omitted_environment_fields": [],
+    "retained_original_sha256": "101030cf069481022b14a1f812ff5893d062981953d323264733d9165b865e84",
+    "sha256": "bef0b7ec673c4894d54ec193664617d33f854a573e9c34096e7b581b966f2b99"
+  },
+  {
+    "file": "android-3.jsonl",
+    "omitted_environment_fields": [],
+    "retained_original_sha256": "79243e149b12f7365c37b7d2895e0b54d801730da90154a87ebf2595324885cc",
+    "sha256": "d77a6e9bb12ed65c3e80b7c212b6594df8bb9d3428b5179bfeade71b288e6503"
+  }
+]

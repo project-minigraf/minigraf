@@ -1,0 +1,7 @@
+{
+  "runtime": "android",
+  "apk_sha256": "3eff36242e7c75d99938f556b10af70ae5e89358d7d5c5e1cf794d0c22285b0d",
+  "packaged_native_sha256": "183c9d92be8cd79a835c8bb65e6a983ee25f826ab22e678bf32967dcbe5baf90",
+  "build_native_sha256": "183c9d92be8cd79a835c8bb65e6a983ee25f826ab22e678bf32967dcbe5baf90",
+  "note": "AGP may strip native symbols; packaged and prepackaging build hashes are distinct identities."
+}
