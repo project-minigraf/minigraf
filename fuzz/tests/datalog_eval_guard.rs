@@ -76,3 +76,44 @@ fn sibling_branches_have_separate_scopes() {
         2
     );
 }
+
+#[test]
+fn rejects_issue_835_artifacts() {
+    for input in [
+        include_str!("fixtures/835-slow.edn"),
+        include_str!("fixtures/835-slow-2.edn"),
+        include_str!("fixtures/835-timeout.edn"),
+    ] {
+        assert!(join_rows_bound(input) > MAX_JOIN_ROWS);
+    }
+}
+
+#[test]
+fn commas_do_not_hide_expanding_joins() {
+    let input = format!(
+        "[?e ?a ,?v] {}",
+        (0..16)
+            .map(|i| format!("[?e ?a{i} ?v{i}] "))
+            .collect::<String>()
+    );
+    assert!(join_rows_bound(&input) > MAX_JOIN_ROWS);
+}
+
+#[test]
+fn valid_at_patterns_multiply_visible_facts() {
+    for pattern in ["[?e :db/valid-at ?t] ", "[?e:db/valid-at ?t] "] {
+        let input = format!("[?e :age ?v] {}", pattern.repeat(16));
+        assert!(join_rows_bound(&input) > MAX_JOIN_ROWS);
+    }
+}
+
+#[test]
+fn separators_preserve_selective_pattern_counts() {
+    for input in ["[?e,:name,?v]", "[?e:name ?v]"] {
+        assert_eq!(join_rows_bound(input), 2);
+    }
+    assert_eq!(join_rows_bound(r#"[?e:name"Alice"]"#), 1);
+    assert_eq!(join_rows_bound("[?e:db/valid-at ?t]"), 3);
+    assert_eq!(join_rows_bound(r#"[_ _ "Alice, :name ?e"]"#), 1);
+    assert_eq!(join_rows_bound(r#"[_ _ "Alice\", :name ?e"]"#), 1);
+}
