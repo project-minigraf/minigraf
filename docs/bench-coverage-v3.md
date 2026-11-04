@@ -213,7 +213,7 @@ selected IDs in Appendix A, not every registered case in a family.
 | C21 | Sort omission/UUID tie fallback and top-k | `query/ordered_values/{index,uuid_ties}/…`, `query/pagination/…` | F4 ascending limit 10; pending/committed offset and descending controls in C25 | query; V+B | COVERED |
 | C22 | Ordered aggregation and effective tuple proofs | `query/ordered_groups/…`, `aggregation/v3_controls/{skew_count_committed,skew_count_pending,skew_avg_committed,tuple_repeated_constant,tuple_float_constant_fallback,tuple_hidden_with_fallback}/100k` | F4 14 singleton modes (56 IDs), plus skew: 90k rows in one bucket/100 buckets of 100; hidden :with and float fallback | query; aggregation; V+B | COVERED; ordered_groups/distinct means count-distinct, not final :distinct |
 | C23 | Partition streaming and incompatible windows | `query/partition_windows/{value,entity,value_limit,entity_limit}/…`, `query/operator_paths/windows_committed/10k` | F4 singleton partitions plus 100×100 rows and two incompatible window orders | query; V+B | COVERED; larger shape sweeps ENVELOPE (X06) |
-| C24 | Memory-limit enforcement overhead and bounds | `memory_meter/{count,hash_groups}/{unlimited,limited}/10k`; `memory_meter.rs` | F 10k read-only; unlimited vs 8 MiB finite limit; 4 KiB QRY-012 preflight is untimed; accounting always enabled | memory_meter `^memory_meter/`; V+B | COVERED four latency controls; RSS/state bounds ENVELOPE and revised acceptance execution unverified (X02) |
+| C24 | Memory-limit enforcement overhead and bounds | `memory_meter/{count,hash_groups}/{unlimited,limited}/10k`; `memory_meter.rs` | F 10k read-only; unlimited vs 8 MiB finite limit; 4 KiB QRY-012 preflight is untimed; accounting always enabled | memory_meter `^memory_meter/`; V+B | COVERED four latency controls; RSS/state bounds ENVELOPE; seven acceptance tests observed, conditional RSS enforcement unconfirmed (X02) |
 | C25 | Limit/offset/order/top-k and prepared count slots | `query/pagination/…`, `prepared/{count_slots,unprepared_count_slots}/10k`; `pagination.rs`, `prepared.rs` | Eight 100k pending/committed controls, offset 0/half, descending k=10/1000; compound ties 10k/100k; prepared limit 10/offset 100 | query; prepared `^prepared/`; V+B | COVERED; 10m sweeps ENVELOPE (X06) |
 | C26 | Final projected-tuple :distinct | `query/distinct/{bag,scalar,sorted_page,float_set_tuple}/{10k,100k}`; `distinct.rs` | M duplicate-heavy input, 1,000 unique keys/tuples; float/set signed zeros, descending sort/offset/limit composition | query; V+B | COVERED eight IDs |
 | C27 | lag/lead | `window/neighbors/{lag,lead}/{one,hundred}/10k`, `window/neighbors/lag_lead/{one,hundred}/100k` | M 10k/100k rows, one/100 partitions, four-row peer groups and boundary nulls | window `^window/`; V+B | COVERED six IDs |
@@ -273,16 +273,24 @@ an empty previous-alert set. Parser/audit tests cover success, alert and upload
 failure formats, but **live failed-upload/alert notification delivery is
 unverified end to end**. No alert injection was performed for this update.
 
-P15's main/v3 `smoke.yml` now agrees: main smoke at 05:00 UTC, pinned v3 acceptance
-at 17:00 UTC. The acceptance matrix selects recursion, memory-limit, limit,
-large-transaction (`test-hooks`) and size-per-fact tests, with retained test/source
-logs. This is a source-verified routing fix, **not observed v3 acceptance
-execution**. The latest inspected smoke run
-[41637991836](https://github.com/project-minigraf/minigraf/actions/runs/41637991836)
-used the earlier `e82e8740402366a9b339be21817583e3fdaaea55` workflow and had only
-the main smoke job. V does not invoke smoke acceptance. RSS/state high-water,
-QRY-012 exhaustion and million-fact bounds therefore remain separate from V's
-latency evidence; execution of the revised schedule is **unverified**.
+P15's main/v3 `smoke.yml` agrees: main smoke at 05:00 UTC, pinned v3 acceptance
+at 17:00 UTC. The [#837 execution audit](benchmarks/837-acceptance/README.md)
+observed scheduled run
+[41729196180](https://github.com/project-minigraf/minigraf/actions/runs/41729196180):
+all five acceptance jobs and seven intended tests passed, within their budgets.
+Measured source was `c5863c79e4039e54c7fa67e0d7a8b8751f9b1599`; workflow source
+was `4d65022ac963a10b582ac762c4ab2e73935c9115`. Complete outputs, named tests,
+asserted numeric bounds, durations and platform limitations are retained there.
+This supersedes the earlier inspection of run 41637991836, which used the old
+workflow and ran only main smoke. V does not invoke smoke acceptance.
+
+The observed tests cover linear recursive derived-fact exhaustion, QRY-012,
+limit/top-k finite caps, the default-chunk million-fact transaction and storage
+size. Nonlinear/multistratum scaling and custom chunk bounds did not execute;
+conditional RSS assertions do not log whether they were skipped. The scheduled
+source guard rejects missing integration files but does not guard against zero
+matching tests. X02 therefore remains open for those gaps. These acceptance
+results are separate from V's Bencher latency evidence.
 
 | Evidence | Run | Verified scope |
 | --- | --- | --- |
@@ -350,7 +358,7 @@ native/foreign shortlists; exclusions remain in the next section.
 | G04 | P04 [#818](https://github.com/project-minigraf/minigraf/pull/818) | `pagination.rs`, ten offset/descending/compound-tie controls; 10m envelope X06 | C25 |
 | G05 | P05 [#819](https://github.com/project-minigraf/minigraf/pull/819) + P06 [#820](https://github.com/project-minigraf/minigraf/pull/820) | `set_storage.rs` ten storage cases + `set_queries.rs` ten pending/committed membership/collection cases | C29 |
 | G06 | P06 [#820](https://github.com/project-minigraf/minigraf/pull/820) | `window_neighbors.rs`, six one/100-partition lag/lead cases | C27 |
-| G07 | P15 [#831](https://github.com/project-minigraf/minigraf/pull/831) (main [#830](https://github.com/project-minigraf/minigraf/pull/830)) | `memory_meter.rs`, four finite/unlimited latency controls; v3 acceptance routing fixed, actual revised schedule unverified X02 | C24 |
+| G07 | P15 [#831](https://github.com/project-minigraf/minigraf/pull/831) (main [#830](https://github.com/project-minigraf/minigraf/pull/830)) | `memory_meter.rs`, four finite/unlimited latency controls; v3 acceptance routing fixed; revised schedule observed in #837, remaining gaps X02 | C24 |
 | G08 | P07 [#821](https://github.com/project-minigraf/minigraf/pull/821) | `operator_paths.rs`, 12 join/anti/union/window/time/committed-recursion controls; deeper scaling X02/X06 | C15–C17/C19/C23 |
 | G09 | P08 [#822](https://github.com/project-minigraf/minigraf/pull/822) | `cursor_lifecycle.rs`, eight lifecycle/pin/staged-read cases; sustained churn X06 | C13/C30 |
 | G10 | P09 [#823](https://github.com/project-minigraf/minigraf/pull/823) | `chunked_transactions.rs`, seven boundary/retract/multi-statement/rollback cases; large-bound acceptance X02 | C10/C30 |
@@ -371,7 +379,7 @@ shortlist. No manual timing or release sign-off is implied by this close-out.
 | ID | Disposition | Remaining scope and reason |
 | --- | --- | --- |
 | X01 | MANUAL / EXCLUDED registered cases | Of 583 registered native IDs, 156 are unselected: 110 `window_rows/` cases are MANUAL wider width/function/partition sweeps; four history depth-500 IDs and six retract 1k/100k/1m IDs are EXCLUDED redundant intermediate/scaling points; six pending `btree_lookup/` IDs are EXCLUDED duplicates of C01; 30 synthetic SIMD IDs are EXCLUDED experimental non-engine kernels. Exact expansions are in Appendix C. The [#836 pinned reconciliation and per-shape dispositions](benchmarks/836-exclusions/README.md) retain all exclusions. Full-prefix one-partition UDF execution stays manual but uses a linear running accumulator, not quadratic replay; the unregistered 100k UDF half-frames remain excluded for replay cost |
-| X02 | ENVELOPE / acceptance, execution unverified | Retained-state/RSS/scaling bounds, nonlinear/multistratum recursion and derived-fact exhaustion, million-fact transactions and custom chunk bounds are not Bencher memory metrics. Observe the revised v3 smoke schedule or dispatch it and inspect exact SHA/test names/bounds before claiming these enforced in nightly CI. Accounting itself has no disabled-engine control; unlimited only disables the finite cap |
+| X02 | ENVELOPE / acceptance, partial execution verified | [#837 evidence](benchmarks/837-acceptance/README.md): all five scheduled jobs/seven tests passed; linear recursion/INT-020, QRY-012, limit/top-k caps, default-chunk million-fact transaction and storage bounds observed. Still open: nonlinear/multistratum scaling, custom chunk bounds, explicit RSS assertion execution and future zero-test protection. These are not Bencher memory metrics; accounting has no disabled-engine control, and unlimited only disables the finite cap |
 | X03 | MANUAL migration | Native migration uses one small frozen v7 fixture, not a large dictionary/scale sweep. Browser migration and migration with pinned-reader churn have no V timing; IndexedDB open/write coverage is not migration coverage |
 | X04 | MANUAL binding checks | JVM/JNI, Android ART/ABI/device storage, Swift ARC/Apple storage and WASI need distinct runtime evidence/release sign-off. Options/error paths, foreign FactLog/LogWriter conversion, foreign preparation/registration latency and browser pinned-reader churn remain unmeasured. Python shared UniFFI coverage does not measure other host runtimes; no binding RSS bound is asserted |
 | X05 | Unverified operational follow-ups | Accumulate numeric regression baselines for 244 native and 26 foreign IDs (all have stored v3 observations/model settings, but baseline null in V). Verify live failed-upload and repeated-alert notification delivery; successful uploads and parser/audit unit tests do not exercise it. Cron execution of the final routes is unverified here: V was a dispatch. Preserve/refresh evidence beyond the 30-day artifact retention |
