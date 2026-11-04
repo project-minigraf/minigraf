@@ -2,6 +2,14 @@
 
 This document records reproducible local benchmark snapshots. Completed release-performance history belongs in the [CHANGELOG](../CHANGELOG.md); continuous CI history is available on [Bencher](https://bencher.dev/perf/minigraf/plots).
 
+## Manual v7-to-v8 migration (#838, unreleased)
+
+The [manual migration report](benchmarks/838-migration/README.md) retains frozen
+v7 fixtures, native timings through 200k facts and Chromium/Firefox/WebKit timings
+through 20k facts. Migration, nonmigrating read-only open, v8 reopen and bounded
+post-migration cursor churn are separate operations. The report records the
+larger browser exclusions; it adds no nightly coverage or sustained-reader bound.
+
 ## Nightly chunk-boundary transactions (#776 P09, unreleased)
 
 Seven `insert_file/chunked/` cases cover G10 using the default 65,536-fact

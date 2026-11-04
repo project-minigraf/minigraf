@@ -1,0 +1,6 @@
+{
+  "mutation": "flip last byte of first smoke fixture",
+  "exit_code": 101,
+  "successful_samples": 0,
+  "rejected": true
+}

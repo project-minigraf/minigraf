@@ -1,0 +1,202 @@
+checking 1000-16-integer.graph sample=0 mode=migration
+seed complete
+open complete
+data check complete
+reopen check complete
+checking 1000-16-integer.graph sample=0 mode=churn_unpinned
+seed complete
+open complete
+data check complete
+checking 1000-16-integer.graph sample=0 mode=churn_pinned
+seed complete
+open complete
+data check complete
+checking 1000-16-repeated256.graph sample=0 mode=migration
+seed complete
+open complete
+data check complete
+reopen check complete
+checking 1000-16-repeated256.graph sample=0 mode=churn_unpinned
+seed complete
+open complete
+data check complete
+checking 1000-16-repeated256.graph sample=0 mode=churn_pinned
+seed complete
+open complete
+data check complete
+checking 1000-16-unique256.graph sample=0 mode=migration
+seed complete
+open complete
+data check complete
+reopen check complete
+checking 1000-16-unique256.graph sample=0 mode=churn_unpinned
+seed complete
+open complete
+data check complete
+checking 1000-16-unique256.graph sample=0 mode=churn_pinned
+seed complete
+open complete
+data check complete
+checking 10000-256-integer.graph sample=0 mode=migration
+seed complete
+open complete
+data check complete
+reopen check complete
+checking 10000-256-integer.graph sample=0 mode=churn_unpinned
+seed complete
+open complete
+data check complete
+checking 10000-256-integer.graph sample=0 mode=churn_pinned
+seed complete
+open complete
+data check complete
+checking 10000-256-repeated256.graph sample=0 mode=migration
+seed complete
+open complete
+data check complete
+reopen check complete
+checking 10000-256-repeated256.graph sample=0 mode=churn_unpinned
+seed complete
+open complete
+data check complete
+checking 10000-256-repeated256.graph sample=0 mode=churn_pinned
+seed complete
+open complete
+data check complete
+checking 10000-256-unique256.graph sample=0 mode=migration
+seed complete
+open complete
+data check complete
+reopen check complete
+checking 10000-256-unique256.graph sample=0 mode=churn_unpinned
+seed complete
+open complete
+data check complete
+checking 10000-256-unique256.graph sample=0 mode=churn_pinned
+seed complete
+open complete
+data check complete
+checking 100000-4096-integer.graph sample=0 mode=migration
+seed complete
+open complete
+data check complete
+reopen check complete
+checking 100000-4096-integer.graph sample=0 mode=churn_unpinned
+seed complete
+open complete
+data check complete
+checking 100000-4096-integer.graph sample=0 mode=churn_pinned
+seed complete
+open complete
+data check complete
+checking 100000-4096-repeated256.graph sample=0 mode=migration
+seed complete
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+browserContext.close: Target page, context or browser has been closed
+Browser logs:
+
+<launching> <scratch>/tools/browsers/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-back-forward-cache --disable-breakpad --disable-client-side-phishing-detection --disable-component-extensions-with-background-pages --disable-component-update --no-default-browser-check --disable-default-apps --disable-dev-shm-usage --disable-edgeupdater --disable-extensions --disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,BlockOriginHeaderModificationOnRedirect,AvoidCorsURLLoaderRestartOnRedirect,Translate,AutoDeElevate,OptimizationHints,NetworkTimeServiceQuerying,AimEnabled,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion --enable-features=CDPScreenshotNewSurface --allow-pre-commit-input --disable-hang-monitor --disable-ipc-flooding-protection --disable-popup-blocking --disable-prompt-on-repost --disable-renderer-backgrounding --disable-updater-scheduler --force-color-profile=srgb --metrics-recording-only --no-first-run --password-store=basic --use-mock-keychain --no-service-autorun --export-tagged-pdf --disable-search-engine-choice-screen --unsafely-disable-devtools-self-xss-warnings --edge-skip-compat-layer-relaunch --disable-infobars --disable-search-engine-choice-screen --disable-sync --enable-unsafe-swiftshader --headless --hide-scrollbars --mute-audio --blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4 --no-sandbox --user-data-dir=/tmp/playwright_chromiumdev_profile-grJ2OG --remote-debugging-pipe --no-startup-window
+<launched> pid=456226
+[pid=456226][err] [1104/133611.039736:WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process.
+[pid=456226][err] [1104/133611.140086:INFO:CONSOLE:127] "checking 1000-16-integer.graph sample=0 mode=migration", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133611.162515:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/133611.248461:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/133611.290990:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/133611.316894:INFO:CONSOLE:146] "reopen check complete", source: http://127.0.0.1:45483/browser.mjs (146)
+[pid=456226][err] [1104/133611.316996:INFO:CONSOLE:127] "checking 1000-16-integer.graph sample=0 mode=churn_unpinned", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133611.333008:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/133611.391395:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/133611.409104:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/133611.496090:INFO:CONSOLE:127] "checking 1000-16-integer.graph sample=0 mode=churn_pinned", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133611.512807:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/133611.568766:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/133611.582257:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/133611.846147:INFO:CONSOLE:127] "checking 1000-16-repeated256.graph sample=0 mode=migration", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133611.876925:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/133612.021776:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/133612.085852:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/133612.130596:INFO:CONSOLE:146] "reopen check complete", source: http://127.0.0.1:45483/browser.mjs (146)
+[pid=456226][err] [1104/133612.130673:INFO:CONSOLE:127] "checking 1000-16-repeated256.graph sample=0 mode=churn_unpinned", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133612.160035:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/133612.264136:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/133612.303683:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/133612.436444:INFO:CONSOLE:127] "checking 1000-16-repeated256.graph sample=0 mode=churn_pinned", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133612.464930:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/133612.563146:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/133612.596693:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/133612.876434:INFO:CONSOLE:127] "checking 1000-16-unique256.graph sample=0 mode=migration", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133612.909380:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/133613.057493:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/133613.121943:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/133613.174327:INFO:CONSOLE:146] "reopen check complete", source: http://127.0.0.1:45483/browser.mjs (146)
+[pid=456226][err] [1104/133613.174435:INFO:CONSOLE:127] "checking 1000-16-unique256.graph sample=0 mode=churn_unpinned", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133613.203309:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/133613.317808:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/133613.343530:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/133613.474265:INFO:CONSOLE:127] "checking 1000-16-unique256.graph sample=0 mode=churn_pinned", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133613.502504:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/133613.613562:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/133613.647925:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/133614.037128:INFO:CONSOLE:127] "checking 10000-256-integer.graph sample=0 mode=migration", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133614.161073:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/133614.582131:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/133614.747726:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/133614.861191:INFO:CONSOLE:146] "reopen check complete", source: http://127.0.0.1:45483/browser.mjs (146)
+[pid=456226][err] [1104/133614.861371:INFO:CONSOLE:127] "checking 10000-256-integer.graph sample=0 mode=churn_unpinned", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133614.975101:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/133615.298652:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/133615.400761:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/133615.718657:INFO:CONSOLE:127] "checking 10000-256-integer.graph sample=0 mode=churn_pinned", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133615.832967:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/133616.148040:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/133616.247780:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/133616.919675:INFO:CONSOLE:127] "checking 10000-256-repeated256.graph sample=0 mode=migration", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133617.121873:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/133617.691707:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/133617.909547:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/133618.115577:INFO:CONSOLE:146] "reopen check complete", source: http://127.0.0.1:45483/browser.mjs (146)
+[pid=456226][err] [1104/133618.117015:INFO:CONSOLE:127] "checking 10000-256-repeated256.graph sample=0 mode=churn_unpinned", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133618.294200:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/133618.763652:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/133618.946139:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/133619.494702:INFO:CONSOLE:127] "checking 10000-256-repeated256.graph sample=0 mode=churn_pinned", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133619.678954:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/133620.142117:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/133620.301180:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/133621.251085:INFO:CONSOLE:127] "checking 10000-256-unique256.graph sample=0 mode=migration", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133621.435931:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/133622.091548:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/133622.323615:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/133622.594809:INFO:CONSOLE:146] "reopen check complete", source: http://127.0.0.1:45483/browser.mjs (146)
+[pid=456226][err] [1104/133622.596279:INFO:CONSOLE:127] "checking 10000-256-unique256.graph sample=0 mode=churn_unpinned", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133622.788774:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/133623.337308:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/133623.508073:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/133624.103622:INFO:CONSOLE:127] "checking 10000-256-unique256.graph sample=0 mode=churn_pinned", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133624.281679:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/133624.867176:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/133625.028664:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/133626.334514:INFO:CONSOLE:127] "checking 100000-4096-integer.graph sample=0 mode=migration", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133627.108714:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/133757.261392:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/133758.268089:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/133800.875516:INFO:CONSOLE:146] "reopen check complete", source: http://127.0.0.1:45483/browser.mjs (146)
+[pid=456226][err] [1104/133800.886217:INFO:CONSOLE:127] "checking 100000-4096-integer.graph sample=0 mode=churn_unpinned", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133801.544586:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/133925.897871:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/133926.829452:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/133931.361160:INFO:CONSOLE:127] "checking 100000-4096-integer.graph sample=0 mode=churn_pinned", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/133932.122413:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226][err] [1104/134057.143301:INFO:CONSOLE:135] "open complete", source: http://127.0.0.1:45483/browser.mjs (135)
+[pid=456226][err] [1104/134058.058032:INFO:CONSOLE:139] "data check complete", source: http://127.0.0.1:45483/browser.mjs (139)
+[pid=456226][err] [1104/134104.748407:INFO:CONSOLE:127] "checking 100000-4096-repeated256.graph sample=0 mode=migration", source: http://127.0.0.1:45483/browser.mjs (127)
+[pid=456226][err] [1104/134106.155985:INFO:CONSOLE:130] "seed complete", source: http://127.0.0.1:45483/browser.mjs (130)
+[pid=456226] <gracefully close start>
+    at async file://<scratch>/source/scripts/migration-sweep/browser-runner.mjs:46:19 {
+  log: []
+}
+
+Node.js v22.23.4

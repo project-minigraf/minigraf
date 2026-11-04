@@ -1,0 +1,22 @@
+[package]
+name = "migration-sweep"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Manual verification tool, deliberately outside the library/nightly workspace.
+[workspace]
+
+[dependencies]
+minigraf = { path = "../../.." }
+v7 = { package = "minigraf", version = "=2.0.11" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tempfile = "3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+

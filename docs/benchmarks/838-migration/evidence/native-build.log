@@ -1,0 +1,4 @@
+warning: <scratch>/source/Cargo.toml: `panic` setting is ignored for `bench` profile
+warning: `minigraf` (manifest) generated 1 warning
+   Compiling migration-sweep v0.0.0 (<scratch>/source/scripts/migration-sweep/native)
+    Finished `release` profile [optimized] target(s) in 32.89s

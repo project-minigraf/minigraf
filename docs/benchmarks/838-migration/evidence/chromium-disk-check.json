@@ -1,0 +1,215 @@
+{
+  "results": [
+    {
+      "fixture": "1000-16-integer.graph",
+      "sha256": "99dec6596e94592f1f1f6572a4fd787886482947709d071e1f7b66215cfa3206",
+      "operation": "migrate_v7",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "1000-16-integer.graph",
+      "sha256": "99dec6596e94592f1f1f6572a4fd787886482947709d071e1f7b66215cfa3206",
+      "operation": "reopen_v8",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "1000-16-integer.graph",
+      "sha256": "99dec6596e94592f1f1f6572a4fd787886482947709d071e1f7b66215cfa3206",
+      "operation": "churn_unpinned",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "1000-16-integer.graph",
+      "sha256": "99dec6596e94592f1f1f6572a4fd787886482947709d071e1f7b66215cfa3206",
+      "operation": "churn_pinned",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "1000-16-repeated256.graph",
+      "sha256": "ac1703188e872f2ff1adf31aaa8bc3a48bcb03758a11e97b900d055df0ecf907",
+      "operation": "migrate_v7",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "1000-16-repeated256.graph",
+      "sha256": "ac1703188e872f2ff1adf31aaa8bc3a48bcb03758a11e97b900d055df0ecf907",
+      "operation": "reopen_v8",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "1000-16-repeated256.graph",
+      "sha256": "ac1703188e872f2ff1adf31aaa8bc3a48bcb03758a11e97b900d055df0ecf907",
+      "operation": "churn_unpinned",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "1000-16-repeated256.graph",
+      "sha256": "ac1703188e872f2ff1adf31aaa8bc3a48bcb03758a11e97b900d055df0ecf907",
+      "operation": "churn_pinned",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "1000-16-unique256.graph",
+      "sha256": "c5f4f5438a3ccb04aba116158fb2c59ce12da581b19cae32912a839e702b48da",
+      "operation": "migrate_v7",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "1000-16-unique256.graph",
+      "sha256": "c5f4f5438a3ccb04aba116158fb2c59ce12da581b19cae32912a839e702b48da",
+      "operation": "reopen_v8",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "1000-16-unique256.graph",
+      "sha256": "c5f4f5438a3ccb04aba116158fb2c59ce12da581b19cae32912a839e702b48da",
+      "operation": "churn_unpinned",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "1000-16-unique256.graph",
+      "sha256": "c5f4f5438a3ccb04aba116158fb2c59ce12da581b19cae32912a839e702b48da",
+      "operation": "churn_pinned",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "10000-256-integer.graph",
+      "sha256": "115067f9a25362624047e9e915bb1fd19cbda07572e3d2e1324580377688b19e",
+      "operation": "migrate_v7",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "10000-256-integer.graph",
+      "sha256": "115067f9a25362624047e9e915bb1fd19cbda07572e3d2e1324580377688b19e",
+      "operation": "reopen_v8",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "10000-256-integer.graph",
+      "sha256": "115067f9a25362624047e9e915bb1fd19cbda07572e3d2e1324580377688b19e",
+      "operation": "churn_unpinned",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "10000-256-integer.graph",
+      "sha256": "115067f9a25362624047e9e915bb1fd19cbda07572e3d2e1324580377688b19e",
+      "operation": "churn_pinned",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "10000-256-repeated256.graph",
+      "sha256": "c3b6b8e12213d6f2322c4394656a35fba2e9b2e5ac2c1ef34f8ef932071fa256",
+      "operation": "migrate_v7",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "10000-256-repeated256.graph",
+      "sha256": "c3b6b8e12213d6f2322c4394656a35fba2e9b2e5ac2c1ef34f8ef932071fa256",
+      "operation": "reopen_v8",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "10000-256-repeated256.graph",
+      "sha256": "c3b6b8e12213d6f2322c4394656a35fba2e9b2e5ac2c1ef34f8ef932071fa256",
+      "operation": "churn_unpinned",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "10000-256-repeated256.graph",
+      "sha256": "c3b6b8e12213d6f2322c4394656a35fba2e9b2e5ac2c1ef34f8ef932071fa256",
+      "operation": "churn_pinned",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "10000-256-unique256.graph",
+      "sha256": "eaa26efee00fa0cdffddae68cf2bff06df80a789a7dd783aee57d81c50981734",
+      "operation": "migrate_v7",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "10000-256-unique256.graph",
+      "sha256": "eaa26efee00fa0cdffddae68cf2bff06df80a789a7dd783aee57d81c50981734",
+      "operation": "reopen_v8",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "10000-256-unique256.graph",
+      "sha256": "eaa26efee00fa0cdffddae68cf2bff06df80a789a7dd783aee57d81c50981734",
+      "operation": "churn_unpinned",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    },
+    {
+      "fixture": "10000-256-unique256.graph",
+      "sha256": "eaa26efee00fa0cdffddae68cf2bff06df80a789a7dd783aee57d81c50981734",
+      "operation": "churn_pinned",
+      "sample": 0,
+      "ns": null,
+      "correctness": "passed"
+    }
+  ],
+  "test": true,
+  "browser": {
+    "engine": "chromium",
+    "version": "156.0.8078.4"
+  },
+  "node": "v22.23.4",
+  "maxFacts": 20000,
+  "selectedFixtures": [
+    "1000-16-integer.graph",
+    "1000-16-repeated256.graph",
+    "1000-16-unique256.graph",
+    "10000-256-integer.graph",
+    "10000-256-repeated256.graph",
+    "10000-256-unique256.graph"
+  ],
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
+  "persistence": "fresh ephemeral context; same page reopen",
+  "clock": "performance.now in page; nanoseconds reported from milliseconds",
+  "completedUtc": "2026-11-04T08:14:59.618Z"
+}
