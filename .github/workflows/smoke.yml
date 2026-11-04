@@ -109,13 +109,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.source.outputs.sha }}
-      - name: Checkout the verifier from the workflow revision
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.workflow_sha }}
-          path: .acceptance-workflow
-      - name: Test the acceptance evidence verifier
-        run: python3 -m unittest discover -s .acceptance-workflow/.github/acceptance -v
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
       - name: Run acceptance and retain source/test evidence
@@ -130,10 +123,6 @@ jobs:
             echo "Command: $ACCEPTANCE_COMMAND"
             $ACCEPTANCE_COMMAND
           } 2>&1 | tee acceptance.txt
-      - name: Require the complete test inventory and measured RSS checks
-        env:
-          ACCEPTANCE_SUITE: ${{ matrix.name }}
-        run: python3 .acceptance-workflow/.github/acceptance/verify.py "$ACCEPTANCE_SUITE" acceptance.txt
       - name: Retain acceptance output including executed test names and RSS/state
         if: always()
         uses: actions/upload-artifact@v6
@@ -144,3 +133,36 @@ jobs:
             Cargo.lock
           if-no-files-found: error
           retention-days: 30
+
+  # Never execute the verifier in the selected source's workspace: that code
+  # can modify any file there. This job has a fresh runner, checks out only the
+  # workflow revision, and treats artifacts from this run as data, not code.
+  verify-acceptance:
+    name: Verify v3 acceptance evidence
+    needs: [source, acceptance]
+    if: ${{ !cancelled() && needs.source.outputs.acceptance == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every acceptance job to succeed
+        env:
+          ACCEPTANCE_RESULT: ${{ needs.acceptance.result }}
+        run: test "$ACCEPTANCE_RESULT" = success
+      - name: Checkout the verifier from the workflow revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Test the acceptance evidence verifier
+        run: python3 -I -m unittest discover -s .github/acceptance -v
+      - name: Download acceptance output from this run
+        uses: actions/download-artifact@v7
+        with:
+          pattern: acceptance-*
+          path: acceptance-artifacts
+          merge-multiple: false
+      - name: Require the complete test inventory and measured RSS checks
+        run: |
+          for suite in recursive memory-limit limit large-transaction size-per-fact; do
+            python3 -I .github/acceptance/verify.py "$suite" "acceptance-artifacts/acceptance-$suite/acceptance.txt"
+          done

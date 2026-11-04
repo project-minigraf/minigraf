@@ -37,8 +37,11 @@ No production behavior, dependency, file format, public API, or release changes.
 RSS records across five jobs, plus one fully passing harness summary per job.
 Zero tests, missing/renamed/duplicated tests, ignored tests, incomplete output and
 missing RSS evidence fail. Eight Python regressions cover these rejection paths.
-The verifier comes from a separate checkout pinned to `github.workflow_sha`,
-while the tests use the source SHA resolved by the source job. Recursive and
+The verifier runs in a separate job on a fresh runner, checking out only
+`github.workflow_sha`. It downloads this run's acceptance artifacts into a data
+directory and reads their text; it never checks out or executes the measured
+source. Verification also requires every acceptance job to have succeeded.
+The tests use the source SHA resolved by the source job. Recursive and
 transaction tests now run serially; memory tests already did. Each artifact keeps
 `Cargo.lock` alongside complete output for dependency replay.
 
@@ -114,3 +117,14 @@ does not imply zero allocations. These fixtures establish their stated bounds at
 the listed scales; they do not prove every shape, platform or asymptotic bound.
 Accounting remains enabled in both C24 latency controls. No Bencher memory
 metric or accounting-disabled measurement is claimed.
+
+## Verifier isolation follow-up
+
+The first dispatch above ran the pinned verifier in the test runner's workspace.
+The follow-up moves it to a fresh job so code under test cannot overwrite the
+verifier or its Python environment. `cache-mode: none` remains in force. The
+job rejects any failed acceptance job, missing artifact or invalid test/RSS
+inventory; artifacts from this run are data only. All eight verifier regressions
+pass, and the actual job command passes the five retained outputs while rejecting
+missing output and Python text posing as output. A fresh dispatch validates the
+new job boundary; its result is recorded in the follow-up PR.
