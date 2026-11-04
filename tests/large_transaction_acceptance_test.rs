@@ -5,7 +5,7 @@
 //! Ignored by default; `.github/workflows/smoke.yml` runs it nightly:
 //!
 //! ```text
-//! cargo test --profile bench --features test-hooks --test large_transaction_acceptance_test -- --ignored --nocapture
+//! cargo test --profile bench --features test-hooks --test large_transaction_acceptance_test -- --ignored --nocapture --test-threads=1
 //! ```
 //!
 //! The count of facts held comes from a high-water mark the statement reader
@@ -99,4 +99,64 @@ fn one_million_fact_transact_holds_one_chunk() {
     drop(db);
     let db = Minigraf::open(&path).unwrap();
     assert_eq!(count(&db, "(query [:find ?e :where [?e :n 999998]])"), 1);
+}
+
+/// Exercise the public option, including both clamps, and cross the configured
+/// boundary. Large custom chunks use million-fact statements; tiny chunks use
+/// smaller fixtures to keep the nightly test cost bounded.
+#[test]
+#[ignore]
+fn custom_chunk_bounds() {
+    for (configured, facts) in [
+        (0usize, 17usize),
+        (1, 17),
+        (2, 257),
+        (257, 1_000_000),
+        (131_072, 1_000_000),
+        (1_000_000, 1_000_001),
+        (usize::MAX, 1_000_001),
+    ] {
+        let chunk = configured.clamp(1, 1_000_000);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("custom.graph");
+        let db = minigraf::OpenOptions::new()
+            .transaction_chunk_facts(configured)
+            .path(&path)
+            .open()
+            .unwrap();
+        let mut input = String::from("(transact [");
+        for i in 0..facts {
+            input.push_str(&format!("[:e{i} :n {i}]"));
+        }
+        input.push_str("])");
+        let _ = minigraf::__statement_facts_high_water();
+        let start = std::time::Instant::now();
+        db.execute(&input).unwrap();
+        let high = minigraf::__statement_facts_high_water();
+        assert_eq!(
+            high,
+            chunk.min(facts),
+            "exact peak honors the public chunk option and clamps"
+        );
+        assert_eq!(db.current_tx_count(), 1);
+        assert!(db.verify().unwrap().is_ok());
+        eprintln!(
+            "custom_chunk_bounds: configured={configured} effective={chunk} facts={facts} held={high} elapsed={:?}",
+            start.elapsed()
+        );
+        drop(db);
+        let db = Minigraf::open(&path).unwrap();
+        let QueryResult::QueryResults { results, .. } = db
+            .execute("(query [:find (count ?v) :where [?e :n ?v]])")
+            .unwrap()
+        else {
+            panic!("expected count result");
+        };
+        assert_eq!(results.len(), 1);
+        assert!(
+            matches!(results[0][0], minigraf::Value::Integer(n) if n == facts as i64),
+            "all facts survive reopen"
+        );
+        assert_eq!(db.current_tx_count(), 1);
+    }
 }

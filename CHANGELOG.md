@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged. INT-041/043/044 are deprecated for these built-ins. No v2 runtime
   backport, window behavior, ordered-group eligibility, or storage change.
 
+### Testing
+
+- **Acceptance execution gaps** (#837): nonlinear and multistratum recursive
+  scaling, custom transaction chunk/clamp bounds, mandatory Linux RSS assertions,
+  and exact named-test/output verification in the nightly smoke route. The storage
+  bound now compares exact bytes rather than a truncated ratio. No engine, public
+  API or format change. See [bounds and validation](docs/benchmarks/837-acceptance-gaps.md).
+
 ### Documentation
 
 - **Benchmark exclusions audit** (#836): [pinned enumeration and per-shape dispositions](docs/benchmarks/836-exclusions/README.md) reconcile 156 unselected native IDs, retain 110 manual row-frame cases, and distinguish linear full-prefix UDF accumulation from bounded replay. No new latency measurements or runtime changes.

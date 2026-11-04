@@ -3739,10 +3739,11 @@ mod tests {
 
     // ── size (spec §10.1, §11, #433) ────────────────────────────────────────
 
-    /// File bytes per fact for `entities` entities in #433's acceptance shape:
+    /// Allocated page bytes and history fact count for `entities` entities
+    /// in #433's acceptance shape:
     /// 10 attributes each, 20 % of attributes multi-valued, 10 % retracted and
     /// re-asserted, written over 10 checkpoints.
-    fn bytes_per_fact(entities: u64) -> (u64, u64) {
+    fn stored_size(entities: u64) -> (u64, u64) {
         let mem = MemoryBackend::new();
         let mut pfs = PersistentFactStorage::new(mem.clone(), 256).unwrap();
         let mut facts = 0u64;
@@ -3778,23 +3779,27 @@ mod tests {
         }
         assert_eq!(pfs.meta().fact_count, facts);
         let bytes = mem.page_count().unwrap() * PAGE_SIZE as u64;
-        (bytes / facts, facts)
+        (bytes, facts)
     }
 
     /// Spec §11: at most 200 bytes per fact, history included (G6: 300 B at 1B).
     #[test]
     fn size_per_fact_in_433_shape() {
-        let (per_fact, facts) = bytes_per_fact(10_000);
+        let (bytes, facts) = stored_size(10_000);
         assert!(facts > 100_000);
-        assert!(per_fact <= 200, "{per_fact} bytes per fact");
+        assert!(bytes <= 200 * facts, "storage exceeds 200 bytes per fact");
     }
 
     /// The same at 1M facts. Slow in a debug build: run by the scheduled job.
     #[test]
     #[ignore]
     fn size_per_fact_in_433_shape_1m() {
-        let (per_fact, facts) = bytes_per_fact(80_000);
+        let (bytes, facts) = stored_size(80_000);
         assert!(facts > 1_000_000);
-        assert!(per_fact <= 200, "{per_fact} bytes per fact");
+        assert!(bytes <= 200 * facts, "storage exceeds 200 bytes per fact");
+        eprintln!(
+            "STORAGE_CHECK facts={facts} bytes={bytes} max_bytes={}",
+            200 * facts
+        );
     }
 }

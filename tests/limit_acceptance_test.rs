@@ -16,6 +16,8 @@
 // File-backed (Minigraf::open, tempfile): native only, like the other file tests.
 #![cfg(not(target_arch = "wasm32"))]
 
+mod acceptance;
+
 use minigraf::{FactRecord, LogWriter, OpenOptions, QueryResult, Value};
 
 const FACTS: usize = 10_000_000;
@@ -45,13 +47,13 @@ fn proc_status_kb(field: &str) -> usize {
         .unwrap_or(0)
 }
 
-/// Run `query` on `path` under `limit`: its rows, time and the peak RSS it
-/// added, when measurable.
+/// Run `query` on `path` under `limit`, checking RSS and returning rows/time.
 fn measure(
+    label: &str,
     path: &std::path::Path,
     limit: usize,
     query: &str,
-) -> (Vec<Vec<Value>>, std::time::Duration, Option<usize>) {
+) -> (Vec<Vec<Value>>, std::time::Duration) {
     let db = OpenOptions::new()
         .query_memory_limit(limit)
         .path(path)
@@ -72,7 +74,8 @@ fn measure(
     let QueryResult::QueryResults { results, .. } = result else {
         panic!("expected query results");
     };
-    (results, elapsed, (reset && peak_kb > 0).then_some(added))
+    acceptance::check_rss(label, reset, before_kb, peak_kb, MAX_RSS - 1);
+    (results, elapsed)
 }
 
 #[test]
@@ -100,18 +103,17 @@ fn limit_and_top_k_over_10m_facts() {
     }
     w.finish().unwrap();
     eprintln!("10M facts: built in {:.2?}", start.elapsed());
-    let (rows, elapsed, added) = measure(
+    let (rows, elapsed) = measure(
+        "limit_10m",
         &path,
         MEMORY_LIMIT,
         "(query [:find ?e ?v :where [?e :a ?v] :limit 10])",
     );
     assert_eq!(rows.len(), 10, "ten rows");
     assert!(elapsed < MAX_TIME, "stops once it has its rows");
-    if let Some(added) = added {
-        assert!(added < MAX_RSS, "holds no rows");
-    }
 
-    let (rows, _, added) = measure(
+    let (rows, _) = measure(
+        "top_k_10m",
         &path,
         TOP_K_MEMORY_LIMIT,
         "(query [:find ?e ?v :where [?e :a ?v] :order-by [?v :desc] :limit 10])",
@@ -129,7 +131,4 @@ fn limit_and_top_k_over_10m_facts() {
         ((n - 10)..n).rev().collect::<Vec<i64>>(),
         "the ten largest"
     );
-    if let Some(added) = added {
-        assert!(added < MAX_RSS, "holds ten rows");
-    }
 }

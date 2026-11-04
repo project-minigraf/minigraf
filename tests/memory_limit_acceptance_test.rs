@@ -17,6 +17,8 @@
 // File-backed (Minigraf::open, tempfile): native only, like the other file tests.
 #![cfg(not(target_arch = "wasm32"))]
 
+mod acceptance;
+
 use minigraf::{Minigraf, OpenOptions};
 
 const GROUPS: usize = 1_000_000;
@@ -160,9 +162,13 @@ fn cartesian_k13_streams() {
         added / 1024
     );
     assert_eq!(rows, 3usize.pow(K), "one row per binding");
-    if reset && peak_kb > 0 {
-        assert!(added < CARTESIAN_MAX_RSS, "the product streams");
-    }
+    acceptance::check_rss(
+        "cartesian_k13_streams",
+        reset,
+        before_kb,
+        peak_kb,
+        CARTESIAN_MAX_RSS - 1,
+    );
     drop(db);
 
     let db = OpenOptions::new()
@@ -210,7 +216,11 @@ fn count_holds_no_rows() {
         matches!(results[0][0], minigraf::Value::Integer(n) if n == GROUPS as i64),
         "counts every fact"
     );
-    if reset && peak_kb > 0 {
-        assert!(added < COUNT_MAX_RSS, "the count holds no rows");
-    }
+    acceptance::check_rss(
+        "count_holds_no_rows",
+        reset,
+        before_kb,
+        peak_kb,
+        COUNT_MAX_RSS - 1,
+    );
 }

@@ -26,6 +26,9 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Test acceptance evidence verification
+        run: python3 -m unittest discover -s .github/acceptance -v
+
       - name: Check formatting
         run: cargo fmt -- --check
 
