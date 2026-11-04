@@ -1,0 +1,813 @@
+insert/single_fact/1k: benchmark
+insert/single_fact/10k: benchmark
+insert/single_fact/100k: benchmark
+insert/single_fact/1m: benchmark
+
+insert/batch_100/1k: benchmark
+insert/batch_100/10k: benchmark
+insert/batch_100/100k: benchmark
+insert/batch_100/1m: benchmark
+
+insert/explicit_tx/1k: benchmark
+insert/explicit_tx/10k: benchmark
+insert/explicit_tx/100k: benchmark
+insert/explicit_tx/1m: benchmark
+
+insert_file/single_fact/1k: benchmark
+insert_file/single_fact/10k: benchmark
+insert_file/single_fact/100k: benchmark
+insert_file/single_fact/1m: benchmark
+
+insert_file/batch_100/1k: benchmark
+insert_file/batch_100/10k: benchmark
+insert_file/batch_100/100k: benchmark
+insert_file/batch_100/1m: benchmark
+
+insert_file/explicit_tx/1k: benchmark
+insert_file/explicit_tx/10k: benchmark
+insert_file/explicit_tx/100k: benchmark
+insert_file/explicit_tx/1m: benchmark
+
+insert_file/set_storage/scalar/10k: benchmark
+insert_file/set_storage/inline_unique/10k: benchmark
+insert_file/set_storage/long_repeated/10k: benchmark
+insert_file/set_storage/long_unique/10k: benchmark
+
+checkpoint/set_storage/inline_unique/10k: benchmark
+checkpoint/set_storage/long_repeated/10k: benchmark
+checkpoint/set_storage/long_unique/10k: benchmark
+
+query/set_storage/exact_inline_unique/10k: benchmark
+query/set_storage/exact_long_unique/10k: benchmark
+query/set_storage/scan_long_unique/10k: benchmark
+
+insert_file/chunked/execute/65535: benchmark
+insert_file/chunked/retract/65535: benchmark
+insert_file/chunked/write_tx/65535: benchmark
+insert_file/chunked/execute/65537: benchmark
+insert_file/chunked/retract/65537: benchmark
+insert_file/chunked/write_tx/65537: benchmark
+insert_file/chunked/statement_rollback/65537: benchmark
+
+query/point_entity/1k: benchmark
+query/point_entity/10k: benchmark
+query/point_entity/100k: benchmark
+query/point_entity/1m: benchmark
+
+query/point_attribute/1k: benchmark
+query/point_attribute/10k: benchmark
+query/point_attribute/100k: benchmark
+query/point_attribute/1m: benchmark
+
+query/join_3pattern/1k: benchmark
+query/join_3pattern/10k: benchmark
+query/join_3pattern/100k: benchmark
+query/join_3pattern/1m: benchmark
+
+memory_meter/count/unlimited/10k: benchmark
+memory_meter/count/limited/10k: benchmark
+memory_meter/hash_groups/unlimited/10k: benchmark
+memory_meter/hash_groups/limited/10k: benchmark
+
+query/distinct/bag/10k: benchmark
+query/distinct/scalar/10k: benchmark
+query/distinct/sorted_page/10k: benchmark
+query/distinct/float_set_tuple/10k: benchmark
+query/distinct/bag/100k: benchmark
+query/distinct/scalar/100k: benchmark
+query/distinct/sorted_page/100k: benchmark
+query/distinct/float_set_tuple/100k: benchmark
+
+query/pagination/committed_asc_offset0_k10/100k: benchmark
+query/pagination/committed_asc_offset_half_k10/100k: benchmark
+query/pagination/committed_desc_k10/100k: benchmark
+query/pagination/committed_desc_k1000/100k: benchmark
+query/pagination/pending_asc_offset0_k10/100k: benchmark
+query/pagination/pending_asc_offset_half_k10/100k: benchmark
+query/pagination/pending_desc_k10/100k: benchmark
+query/pagination/pending_desc_k1000/100k: benchmark
+query/pagination/committed_compound_ties/10k: benchmark
+query/pagination/committed_compound_ties/100k: benchmark
+
+query/operator_paths/entity_pending/10k: benchmark
+
+query/operator_paths/value_pending/10k: benchmark
+
+query/operator_paths/hash_pending/10k: benchmark
+
+query/operator_paths/entity_committed/10k: benchmark
+
+query/operator_paths/value_committed/10k: benchmark
+
+query/operator_paths/hash_committed/10k: benchmark
+
+query/operator_paths/anti_committed/10k: benchmark
+
+query/operator_paths/union_committed/10k: benchmark
+
+query/operator_paths/windows_committed/10k: benchmark
+
+time_travel/operator_paths/timestamp_monotone/10k: benchmark
+
+time_travel/operator_paths/timestamp_irregular/10k: benchmark
+
+recursion/operator_paths/ancestors_committed/10k: benchmark
+
+query/cursor_lifecycle/open/10k: benchmark
+query/cursor_lifecycle/first_batch/10k: benchmark
+query/cursor_lifecycle/drain/10k: benchmark
+query/cursor_lifecycle/drain/100k: benchmark
+query/cursor_lifecycle/iterator/10k: benchmark
+query/cursor_lifecycle/held_checkpoint_drain/10k: benchmark
+query/cursor_lifecycle/held_checkpoint_close/10k: benchmark
+query/cursor_lifecycle/staged_read/10k_plus_200: benchmark
+
+query/ordered_values/index/1k: benchmark
+query/ordered_values/uuid_ties/1k: benchmark
+query/ordered_values/index/10k: benchmark
+query/ordered_values/uuid_ties/10k: benchmark
+query/ordered_values/index/100k: benchmark
+query/ordered_values/uuid_ties/100k: benchmark
+query/ordered_values/index/1m: benchmark
+query/ordered_values/uuid_ties/1m: benchmark
+
+query/ordered_groups/count/1k: benchmark
+query/ordered_groups/distinct/1k: benchmark
+query/ordered_groups/count_limit/1k: benchmark
+query/ordered_groups/distinct_limit/1k: benchmark
+query/ordered_groups/avg/1k: benchmark
+query/ordered_groups/sum/1k: benchmark
+query/ordered_groups/min/1k: benchmark
+query/ordered_groups/max/1k: benchmark
+query/ordered_groups/sum_distinct/1k: benchmark
+query/ordered_groups/avg_limit/1k: benchmark
+query/ordered_groups/sum_limit/1k: benchmark
+query/ordered_groups/min_limit/1k: benchmark
+query/ordered_groups/max_limit/1k: benchmark
+query/ordered_groups/sum_distinct_limit/1k: benchmark
+query/ordered_groups/count/10k: benchmark
+query/ordered_groups/distinct/10k: benchmark
+query/ordered_groups/count_limit/10k: benchmark
+query/ordered_groups/distinct_limit/10k: benchmark
+query/ordered_groups/avg/10k: benchmark
+query/ordered_groups/sum/10k: benchmark
+query/ordered_groups/min/10k: benchmark
+query/ordered_groups/max/10k: benchmark
+query/ordered_groups/sum_distinct/10k: benchmark
+query/ordered_groups/avg_limit/10k: benchmark
+query/ordered_groups/sum_limit/10k: benchmark
+query/ordered_groups/min_limit/10k: benchmark
+query/ordered_groups/max_limit/10k: benchmark
+query/ordered_groups/sum_distinct_limit/10k: benchmark
+query/ordered_groups/count/100k: benchmark
+query/ordered_groups/distinct/100k: benchmark
+query/ordered_groups/count_limit/100k: benchmark
+query/ordered_groups/distinct_limit/100k: benchmark
+query/ordered_groups/avg/100k: benchmark
+query/ordered_groups/sum/100k: benchmark
+query/ordered_groups/min/100k: benchmark
+query/ordered_groups/max/100k: benchmark
+query/ordered_groups/sum_distinct/100k: benchmark
+query/ordered_groups/avg_limit/100k: benchmark
+query/ordered_groups/sum_limit/100k: benchmark
+query/ordered_groups/min_limit/100k: benchmark
+query/ordered_groups/max_limit/100k: benchmark
+query/ordered_groups/sum_distinct_limit/100k: benchmark
+query/ordered_groups/count/1m: benchmark
+query/ordered_groups/distinct/1m: benchmark
+query/ordered_groups/count_limit/1m: benchmark
+query/ordered_groups/distinct_limit/1m: benchmark
+query/ordered_groups/avg/1m: benchmark
+query/ordered_groups/sum/1m: benchmark
+query/ordered_groups/min/1m: benchmark
+query/ordered_groups/max/1m: benchmark
+query/ordered_groups/sum_distinct/1m: benchmark
+query/ordered_groups/avg_limit/1m: benchmark
+query/ordered_groups/sum_limit/1m: benchmark
+query/ordered_groups/min_limit/1m: benchmark
+query/ordered_groups/max_limit/1m: benchmark
+query/ordered_groups/sum_distinct_limit/1m: benchmark
+
+query/partition_windows/value/1k: benchmark
+query/partition_windows/entity/1k: benchmark
+query/partition_windows/value_limit/1k: benchmark
+query/partition_windows/entity_limit/1k: benchmark
+query/partition_windows/value/10k: benchmark
+query/partition_windows/entity/10k: benchmark
+query/partition_windows/value_limit/10k: benchmark
+query/partition_windows/entity_limit/10k: benchmark
+query/partition_windows/value/100k: benchmark
+query/partition_windows/entity/100k: benchmark
+query/partition_windows/value_limit/100k: benchmark
+query/partition_windows/entity_limit/100k: benchmark
+query/partition_windows/value/1m: benchmark
+query/partition_windows/entity/1m: benchmark
+query/partition_windows/value_limit/1m: benchmark
+query/partition_windows/entity_limit/1m: benchmark
+
+time_travel/as_of_counter/1k: benchmark
+time_travel/as_of_counter/10k: benchmark
+time_travel/as_of_counter/100k: benchmark
+time_travel/as_of_counter/1m: benchmark
+
+time_travel/valid_at/1k: benchmark
+time_travel/valid_at/10k: benchmark
+time_travel/valid_at/100k: benchmark
+time_travel/valid_at/1m: benchmark
+
+recursion/chain/depth_10: benchmark
+recursion/chain/depth_100: benchmark
+
+recursion/fanout/w10_d3: benchmark
+
+recursion/ancestors/w10_d4: benchmark
+
+negation/not_scale/1k: benchmark
+negation/not_scale/10k: benchmark
+
+negation/not_join_scale/1k: benchmark
+negation/not_join_scale/10k: benchmark
+
+negation/not_selectivity/excl_0pct: benchmark
+negation/not_selectivity/excl_25pct: benchmark
+negation/not_selectivity/excl_50pct: benchmark
+negation/not_selectivity/excl_75pct: benchmark
+negation/not_selectivity/excl_100pct: benchmark
+
+negation/not_pushdown_selectivity/excl_0pct: benchmark
+negation/not_pushdown_selectivity/excl_25pct: benchmark
+negation/not_pushdown_selectivity/excl_50pct: benchmark
+negation/not_pushdown_selectivity/excl_75pct: benchmark
+negation/not_pushdown_selectivity/excl_100pct: benchmark
+
+negation/not_rule_body/1k: benchmark
+negation/not_rule_body/10k: benchmark
+
+disjunction/or_scale/1k: benchmark
+disjunction/or_scale/10k: benchmark
+
+disjunction/or_join_scale/1k: benchmark
+disjunction/or_join_scale/10k: benchmark
+
+disjunction/or_selectivity/match_0pct: benchmark
+disjunction/or_selectivity/match_25pct: benchmark
+disjunction/or_selectivity/match_50pct: benchmark
+disjunction/or_selectivity/match_75pct: benchmark
+disjunction/or_selectivity/match_100pct: benchmark
+
+disjunction/or_short_circuit/1k: benchmark
+disjunction/or_short_circuit/10k: benchmark
+
+disjunction/or_join_short_circuit/1k: benchmark
+disjunction/or_join_short_circuit/10k: benchmark
+
+disjunction/or_rule_body/1k: benchmark
+disjunction/or_rule_body/10k: benchmark
+
+aggregation/count_scale/1k: benchmark
+aggregation/count_scale/10k: benchmark
+
+aggregation/grouped_count_scale/1k: benchmark
+aggregation/grouped_count_scale/10k: benchmark
+
+aggregation/sum_scale/1k: benchmark
+aggregation/sum_scale/10k: benchmark
+
+aggregation/with_grouped_sum/1k: benchmark
+aggregation/with_grouped_sum/10k: benchmark
+
+aggregation/v3_controls/hash_avg/10k: benchmark
+aggregation/v3_controls/hash_exact_float_sum/10k: benchmark
+aggregation/v3_controls/hash_mixed_sum_distinct/10k: benchmark
+aggregation/v3_controls/hash_mixed_extrema/10k: benchmark
+aggregation/v3_controls/skew_count_committed/100k: benchmark
+aggregation/v3_controls/skew_count_pending/100k: benchmark
+aggregation/v3_controls/skew_avg_committed/100k: benchmark
+aggregation/v3_controls/tuple_repeated_constant/100k: benchmark
+aggregation/v3_controls/tuple_float_constant_fallback/100k: benchmark
+aggregation/v3_controls/tuple_hidden_with_fallback/100k: benchmark
+
+expr/filter_scale/1k: benchmark
+expr/filter_scale/10k: benchmark
+expr/filter_scale/100k: benchmark
+
+expr/binding_scale/1k: benchmark
+expr/binding_scale/10k: benchmark
+expr/binding_scale/100k: benchmark
+
+expr/binding_into_agg/1k: benchmark
+expr/binding_into_agg/10k: benchmark
+expr/binding_into_agg/100k: benchmark
+
+expr/keyword_equality/literal_eq/10k: benchmark
+expr/keyword_equality/dynamic_eq/10k: benchmark
+expr/keyword_equality/literal_neq/10k: benchmark
+expr/keyword_equality/dynamic_neq/10k: benchmark
+expr/keyword_equality/nested_literal_eq/10k: benchmark
+expr/keyword_equality/prepared_keyword_eq/10k: benchmark
+
+window/running_sum/1k: benchmark
+window/running_sum/10k: benchmark
+window/running_sum/100k: benchmark
+
+window/rank/1k: benchmark
+window/rank/10k: benchmark
+window/rank/100k: benchmark
+
+window/many_partitions/1k: benchmark
+window/many_partitions/10k: benchmark
+window/many_partitions/100k: benchmark
+
+window/row_number/1k: benchmark
+window/row_number/10k: benchmark
+window/row_number/100k: benchmark
+
+query/set_queries/in/pending/10k: benchmark
+query/set_queries/not_in/pending/10k: benchmark
+query/set_queries/all_in/pending/10k: benchmark
+query/set_queries/any_none/pending/10k: benchmark
+query/set_queries/collect/pending/10k: benchmark
+query/set_queries/in/committed/10k: benchmark
+query/set_queries/not_in/committed/10k: benchmark
+query/set_queries/all_in/committed/10k: benchmark
+query/set_queries/any_none/committed/10k: benchmark
+query/set_queries/collect/committed/10k: benchmark
+
+window/neighbors/lag/one/10k: benchmark
+window/neighbors/lag/hundred/10k: benchmark
+window/neighbors/lead/one/10k: benchmark
+window/neighbors/lead/hundred/10k: benchmark
+window/neighbors/lag_lead/one/100k: benchmark
+window/neighbors/lag_lead/hundred/100k: benchmark
+
+window_rows/10000/one/sum/default: benchmark
+
+window_rows/10000/one/sum/zero: benchmark
+
+window_rows/10000/one/sum/two: benchmark
+
+window_rows/10000/one/sum/sqrt: benchmark
+
+window_rows/10000/one/sum/half: benchmark
+
+window_rows/10000/one/sum/prefix: benchmark
+
+window_rows/10000/one/count/default: benchmark
+
+window_rows/10000/one/count/zero: benchmark
+
+window_rows/10000/one/count/two: benchmark
+
+window_rows/10000/one/count/sqrt: benchmark
+
+window_rows/10000/one/count/half: benchmark
+
+window_rows/10000/one/count/prefix: benchmark
+
+window_rows/10000/one/min/default: benchmark
+
+window_rows/10000/one/min/zero: benchmark
+
+window_rows/10000/one/min/two: benchmark
+
+window_rows/10000/one/min/sqrt: benchmark
+
+window_rows/10000/one/min/half: benchmark
+
+window_rows/10000/one/min/prefix: benchmark
+
+window_rows/10000/one/max/default: benchmark
+
+window_rows/10000/one/max/zero: benchmark
+
+window_rows/10000/one/max/two: benchmark
+
+window_rows/10000/one/max/sqrt: benchmark
+
+window_rows/10000/one/max/half: benchmark
+
+window_rows/10000/one/max/prefix: benchmark
+
+window_rows/10000/one/avg/default: benchmark
+
+window_rows/10000/one/avg/zero: benchmark
+
+window_rows/10000/one/avg/two: benchmark
+
+window_rows/10000/one/avg/sqrt: benchmark
+
+window_rows/10000/one/avg/half: benchmark
+
+window_rows/10000/one/avg/prefix: benchmark
+
+window_rows/10000/one/frame_bench_sum/zero: benchmark
+
+window_rows/10000/one/frame_bench_sum/two: benchmark
+
+window_rows/10000/one/frame_bench_sum/half: benchmark
+
+window_rows/10000/hundred/sum/default: benchmark
+
+window_rows/10000/hundred/sum/zero: benchmark
+
+window_rows/10000/hundred/sum/two: benchmark
+
+window_rows/10000/hundred/sum/sqrt: benchmark
+
+window_rows/10000/hundred/sum/half: benchmark
+
+window_rows/10000/hundred/sum/prefix: benchmark
+
+window_rows/10000/hundred/count/default: benchmark
+
+window_rows/10000/hundred/count/zero: benchmark
+
+window_rows/10000/hundred/count/two: benchmark
+
+window_rows/10000/hundred/count/sqrt: benchmark
+
+window_rows/10000/hundred/count/half: benchmark
+
+window_rows/10000/hundred/count/prefix: benchmark
+
+window_rows/10000/hundred/min/default: benchmark
+
+window_rows/10000/hundred/min/zero: benchmark
+
+window_rows/10000/hundred/min/two: benchmark
+
+window_rows/10000/hundred/min/sqrt: benchmark
+
+window_rows/10000/hundred/min/half: benchmark
+
+window_rows/10000/hundred/min/prefix: benchmark
+
+window_rows/10000/hundred/max/default: benchmark
+
+window_rows/10000/hundred/max/zero: benchmark
+
+window_rows/10000/hundred/max/two: benchmark
+
+window_rows/10000/hundred/max/sqrt: benchmark
+
+window_rows/10000/hundred/max/half: benchmark
+
+window_rows/10000/hundred/max/prefix: benchmark
+
+window_rows/10000/hundred/avg/default: benchmark
+
+window_rows/10000/hundred/avg/zero: benchmark
+
+window_rows/10000/hundred/avg/two: benchmark
+
+window_rows/10000/hundred/avg/sqrt: benchmark
+
+window_rows/10000/hundred/avg/half: benchmark
+
+window_rows/10000/hundred/avg/prefix: benchmark
+
+window_rows/10000/hundred/frame_bench_sum/zero: benchmark
+
+window_rows/10000/hundred/frame_bench_sum/two: benchmark
+
+window_rows/10000/hundred/frame_bench_sum/half: benchmark
+
+window_rows/100000/one/sum/default: benchmark
+
+window_rows/100000/one/sum/zero: benchmark
+
+window_rows/100000/one/sum/two: benchmark
+
+window_rows/100000/one/sum/sqrt: benchmark
+
+window_rows/100000/one/sum/half: benchmark
+
+window_rows/100000/one/sum/prefix: benchmark
+
+window_rows/100000/one/count/default: benchmark
+
+window_rows/100000/one/count/zero: benchmark
+
+window_rows/100000/one/count/two: benchmark
+
+window_rows/100000/one/count/sqrt: benchmark
+
+window_rows/100000/one/count/half: benchmark
+
+window_rows/100000/one/count/prefix: benchmark
+
+window_rows/100000/one/min/default: benchmark
+
+window_rows/100000/one/min/zero: benchmark
+
+window_rows/100000/one/min/two: benchmark
+
+window_rows/100000/one/min/sqrt: benchmark
+
+window_rows/100000/one/min/half: benchmark
+
+window_rows/100000/one/min/prefix: benchmark
+
+window_rows/100000/one/max/default: benchmark
+
+window_rows/100000/one/max/zero: benchmark
+
+window_rows/100000/one/max/two: benchmark
+
+window_rows/100000/one/max/sqrt: benchmark
+
+window_rows/100000/one/max/half: benchmark
+
+window_rows/100000/one/max/prefix: benchmark
+
+window_rows/100000/one/avg/default: benchmark
+
+window_rows/100000/one/avg/zero: benchmark
+
+window_rows/100000/one/avg/two: benchmark
+
+window_rows/100000/one/avg/sqrt: benchmark
+
+window_rows/100000/one/avg/half: benchmark
+
+window_rows/100000/one/avg/prefix: benchmark
+
+window_rows/100000/one/frame_bench_sum/prefix: benchmark
+
+window_rows/100000/hundred/sum/default: benchmark
+
+window_rows/100000/hundred/sum/zero: benchmark
+
+window_rows/100000/hundred/sum/two: benchmark
+
+window_rows/100000/hundred/sum/sqrt: benchmark
+
+window_rows/100000/hundred/sum/half: benchmark
+
+window_rows/100000/hundred/sum/prefix: benchmark
+
+window_rows/100000/hundred/count/default: benchmark
+
+window_rows/100000/hundred/count/zero: benchmark
+
+window_rows/100000/hundred/count/two: benchmark
+
+window_rows/100000/hundred/count/sqrt: benchmark
+
+window_rows/100000/hundred/count/half: benchmark
+
+window_rows/100000/hundred/count/prefix: benchmark
+
+window_rows/100000/hundred/min/default: benchmark
+
+window_rows/100000/hundred/min/zero: benchmark
+
+window_rows/100000/hundred/min/two: benchmark
+
+window_rows/100000/hundred/min/sqrt: benchmark
+
+window_rows/100000/hundred/min/half: benchmark
+
+window_rows/100000/hundred/min/prefix: benchmark
+
+window_rows/100000/hundred/max/default: benchmark
+
+window_rows/100000/hundred/max/zero: benchmark
+
+window_rows/100000/hundred/max/two: benchmark
+
+window_rows/100000/hundred/max/sqrt: benchmark
+
+window_rows/100000/hundred/max/half: benchmark
+
+window_rows/100000/hundred/max/prefix: benchmark
+
+window_rows/100000/hundred/avg/default: benchmark
+
+window_rows/100000/hundred/avg/zero: benchmark
+
+window_rows/100000/hundred/avg/two: benchmark
+
+window_rows/100000/hundred/avg/sqrt: benchmark
+
+window_rows/100000/hundred/avg/half: benchmark
+
+window_rows/100000/hundred/avg/prefix: benchmark
+
+window_rows/100000/hundred/frame_bench_sum/prefix: benchmark
+
+temporal_metadata/tx_time/1k: benchmark
+temporal_metadata/tx_time/10k: benchmark
+temporal_metadata/tx_time/100k: benchmark
+
+temporal_metadata/valid_from/1k: benchmark
+temporal_metadata/valid_from/10k: benchmark
+temporal_metadata/valid_from/100k: benchmark
+
+temporal_metadata/valid_to/1k: benchmark
+temporal_metadata/valid_to/10k: benchmark
+temporal_metadata/valid_to/100k: benchmark
+
+udf/aggregate_sum_dispatch/1k: benchmark
+udf/aggregate_sum_dispatch/10k: benchmark
+
+udf/predicate_filter_dispatch/1k: benchmark
+udf/predicate_filter_dispatch/10k: benchmark
+
+udf/v3/predicate_infallible/10k: benchmark
+udf/v3/aggregate_infallible/10k: benchmark
+udf/v3/predicate_fallible/10k: benchmark
+udf/v3/aggregate_fallible/10k: benchmark
+udf/v3/registry_snapshot_churn/32: benchmark
+udf/v3/callback_reentry/1k: benchmark
+
+aggregation/count_distinct_scale/1k: benchmark
+aggregation/count_distinct_scale/10k: benchmark
+
+query/regex_filter/1k: benchmark
+query/regex_filter/10k: benchmark
+
+open/checkpointed/1k: benchmark
+open/checkpointed/10k: benchmark
+open/checkpointed/100k: benchmark
+open/checkpointed/1m: benchmark
+
+open/wal_replay/1k: benchmark
+open/wal_replay/10k: benchmark
+open/wal_replay/100k: benchmark
+
+checkpoint/1k: benchmark
+checkpoint/10k: benchmark
+checkpoint/100k: benchmark
+checkpoint/1m: benchmark
+
+checkpoint/after_1_fact/10k: benchmark
+checkpoint/after_1_fact/100k: benchmark
+checkpoint/after_1_fact/1m: benchmark
+
+checkpoint/after_100k_facts/10k: benchmark
+checkpoint/after_100k_facts/100k: benchmark
+
+concurrent/readers/10k_4t: benchmark
+concurrent/readers/10k_8t: benchmark
+concurrent/readers/10k_16t: benchmark
+concurrent/readers/100k_4t: benchmark
+concurrent/readers/100k_8t: benchmark
+concurrent/readers/100k_16t: benchmark
+
+concurrent/readers_plus_writer/10k_4t: benchmark
+concurrent/readers_plus_writer/10k_8t: benchmark
+concurrent/readers_plus_writer/10k_16t: benchmark
+concurrent/readers_plus_writer/100k_4t: benchmark
+concurrent/readers_plus_writer/100k_8t: benchmark
+concurrent/readers_plus_writer/100k_16t: benchmark
+
+concurrent/serialized_writers/10k_2t: benchmark
+concurrent/serialized_writers/10k_4t: benchmark
+concurrent/serialized_writers/10k_8t: benchmark
+concurrent/serialized_writers/10k_16t: benchmark
+concurrent/serialized_writers/100k_2t: benchmark
+concurrent/serialized_writers/100k_4t: benchmark
+concurrent/serialized_writers/100k_8t: benchmark
+concurrent/serialized_writers/100k_16t: benchmark
+
+concurrent_file/readers/10k_4t: benchmark
+concurrent_file/readers/10k_8t: benchmark
+concurrent_file/readers/10k_16t: benchmark
+concurrent_file/readers/100k_4t: benchmark
+concurrent_file/readers/100k_8t: benchmark
+concurrent_file/readers/100k_16t: benchmark
+
+concurrent_file/readers_plus_writer/10k_4t: benchmark
+concurrent_file/readers_plus_writer/10k_8t: benchmark
+concurrent_file/readers_plus_writer/10k_16t: benchmark
+concurrent_file/readers_plus_writer/100k_4t: benchmark
+concurrent_file/readers_plus_writer/100k_8t: benchmark
+concurrent_file/readers_plus_writer/100k_16t: benchmark
+
+concurrent_file/serialized_writers/10k_2t: benchmark
+concurrent_file/serialized_writers/10k_4t: benchmark
+concurrent_file/serialized_writers/10k_8t: benchmark
+concurrent_file/serialized_writers/10k_16t: benchmark
+concurrent_file/serialized_writers/100k_2t: benchmark
+concurrent_file/serialized_writers/100k_4t: benchmark
+concurrent_file/serialized_writers/100k_8t: benchmark
+concurrent_file/serialized_writers/100k_16t: benchmark
+
+concurrent_btree_scan/10k_2t: benchmark
+concurrent_btree_scan/10k_4t: benchmark
+concurrent_btree_scan/10k_8t: benchmark
+concurrent_btree_scan/100k_2t: benchmark
+concurrent_btree_scan/100k_4t: benchmark
+concurrent_btree_scan/100k_8t: benchmark
+
+fact_log/attribute_only_storage/10k: benchmark
+fact_log/tx_mixed_default/10k: benchmark
+fact_log/storage_mixed/100k: benchmark
+fact_log/tx_mixed_default/100k: benchmark
+fact_log/tx_mixed_window_4096/100k: benchmark
+fact_log/filter_attribute_entity_tx/100k: benchmark
+
+log_writer/append/10k: benchmark
+log_writer/finish/10k: benchmark
+log_writer/append/100k: benchmark
+log_writer/finish/100k: benchmark
+
+prepared/value_lookup/1k: benchmark
+prepared/value_lookup/10k: benchmark
+
+prepared/threshold_filter/1k: benchmark
+prepared/threshold_filter/10k: benchmark
+
+prepared/prepare_value_lookup/10k: benchmark
+prepared/unprepared_value_lookup/10k: benchmark
+prepared/cursor_drain/10k: benchmark
+prepared/unprepared_cursor_drain/10k: benchmark
+prepared/count_slots/10k: benchmark
+prepared/unprepared_count_slots/10k: benchmark
+prepared/time_entity_slots/10k: benchmark
+prepared/unprepared_time_entity_slots/10k: benchmark
+
+open/storage_v3/migrate_v7/multi_checkpoint: benchmark
+open/storage_v3/read_only_v7/multi_checkpoint: benchmark
+open/storage_v3/read_only_v8/10k: benchmark
+open/storage_v3/read_only_wal/10k_plus_1k: benchmark
+
+checkpoint/storage_v3/verify/100k_history: benchmark
+checkpoint/storage_v3/rebuild_damaged_avet/100k_history: benchmark
+checkpoint/storage_v3/multivalue_inline_unique/10k: benchmark
+checkpoint/storage_v3/multivalue_long_repeated/10k: benchmark
+checkpoint/storage_v3/multivalue_long_unique/10k: benchmark
+
+query/storage_v3/multivalue_long_scan/10k: benchmark
+
+retract/single_fact/1k: benchmark
+retract/single_fact/10k: benchmark
+retract/single_fact/100k: benchmark
+retract/single_fact/1m: benchmark
+
+retract/batch_100/1k: benchmark
+retract/batch_100/10k: benchmark
+retract/batch_100/100k: benchmark
+retract/batch_100/1m: benchmark
+
+btree_lookup/entity_point/1k: benchmark
+btree_lookup/entity_point/10k: benchmark
+btree_lookup/entity_point/100k: benchmark
+
+btree_lookup/attribute_scan/1k: benchmark
+btree_lookup/attribute_scan/10k: benchmark
+btree_lookup/attribute_scan/100k: benchmark
+
+query/predicate_pushdown/1k: benchmark
+query/predicate_pushdown/10k: benchmark
+query/predicate_pushdown/100k: benchmark
+
+point_query_chain_depth/churned_attr/1: benchmark
+point_query_chain_depth/churned_attr/500: benchmark
+point_query_chain_depth/churned_attr/2000: benchmark
+
+point_query_chain_depth/sibling_attr/1: benchmark
+point_query_chain_depth/sibling_attr/500: benchmark
+point_query_chain_depth/sibling_attr/2000: benchmark
+
+point_query_chain_depth/attr_scan/1: benchmark
+point_query_chain_depth/attr_scan/500: benchmark
+point_query_chain_depth/attr_scan/2000: benchmark
+
+point_query_chain_depth/churned_attr_as_of/1: benchmark
+point_query_chain_depth/churned_attr_as_of/500: benchmark
+point_query_chain_depth/churned_attr_as_of/2000: benchmark
+
+simd_temporal/scalar/100: benchmark
+simd_temporal/simd/100: benchmark
+simd_temporal/scalar/1k: benchmark
+simd_temporal/simd/1k: benchmark
+simd_temporal/scalar/10k: benchmark
+simd_temporal/simd/10k: benchmark
+simd_temporal/scalar/100k: benchmark
+simd_temporal/simd/100k: benchmark
+simd_temporal/scalar/1m: benchmark
+simd_temporal/simd/1m: benchmark
+
+simd_as_of/scalar/100: benchmark
+simd_as_of/simd/100: benchmark
+simd_as_of/scalar/1k: benchmark
+simd_as_of/simd/1k: benchmark
+simd_as_of/scalar/10k: benchmark
+simd_as_of/simd/10k: benchmark
+simd_as_of/scalar/100k: benchmark
+simd_as_of/simd/100k: benchmark
+simd_as_of/scalar/1m: benchmark
+simd_as_of/simd/1m: benchmark
+
+simd_aggregate/scalar/100: benchmark
+simd_aggregate/simd/100: benchmark
+simd_aggregate/scalar/1k: benchmark
+simd_aggregate/simd/1k: benchmark
+simd_aggregate/scalar/10k: benchmark
+simd_aggregate/simd/10k: benchmark
+simd_aggregate/scalar/100k: benchmark
+simd_aggregate/simd/100k: benchmark
+simd_aggregate/scalar/1m: benchmark
+simd_aggregate/simd/1m: benchmark

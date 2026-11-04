@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **Benchmark exclusions audit** (#836): [pinned enumeration and per-shape dispositions](docs/benchmarks/836-exclusions/README.md) reconcile 156 unselected native IDs, retain 110 manual row-frame cases, and distinguish linear full-prefix UDF accumulation from bounded replay. No new latency measurements or runtime changes.
+
 - Retire tracker #383 in favor of the v3.0.0 milestone and its release gates. Ordinary/window value-handling consistency is completed by #789.
 
 ### Performance

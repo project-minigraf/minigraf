@@ -1,0 +1,64 @@
+{
+  "audit_date": "2026-11-04",
+  "core_harness_workflow_sha": "d5df1f22c32c0c1abc486fbcb3a574d2d1d0ce99",
+  "source_url": "https://codeload.github.com/project-minigraf/minigraf/tar.gz/d5df1f22c32c0c1abc486fbcb3a574d2d1d0ce99",
+  "source_archive_sha256": "b810d40cd23d2e45a0437acabd7a6508ec2cae04ccafacada2aa81881433b022",
+  "rustc": "1.99.1 (58cf8f9c3 2026-10-13)",
+  "cargo": "1.99.1 (5f94df478 2026-08-27)",
+  "target": "x86_64-unknown-linux-gnu",
+  "llvm": "23.1.1",
+  "build_profile": "Unmodified Cargo profile.bench; default features; fresh target directory; no task-supplied RUSTFLAGS override",
+  "dependencies": "Resolved offline from the host cache; exact resolution retained in dependencies.lock",
+  "conditions": {
+    "host": "Dedicated Linux benchmark host; identifying hardware/network details omitted",
+    "affinity": "Unpinned; enumeration only, no latency measurements",
+    "cpu_idle_percent_before_build": [
+      100,
+      100
+    ],
+    "cpu_idle_percent_before_enumeration": [
+      100,
+      100
+    ],
+    "sampling": "Two one-second vmstat intervals each; boot-average line ignored",
+    "power": "Not recorded; no query latency measurements"
+  },
+  "build": {
+    "command": "CARGO_TERM_COLOR=never /usr/bin/time -p cargo bench --offline --bench minigraf_bench --no-run",
+    "elapsed_seconds": 88.58,
+    "user_seconds": 180.97,
+    "system_seconds": 18.42,
+    "exit_status": 0,
+    "compiler_warnings": 21,
+    "log": "build.log"
+  },
+  "enumeration": {
+    "command": "CARGO_TERM_COLOR=never /usr/bin/time -p cargo bench --locked --offline --bench minigraf_bench -- --list",
+    "elapsed_seconds": 22.61,
+    "user_seconds": 19.64,
+    "system_seconds": 2.92,
+    "exit_status": 0,
+    "stdout": "enumeration.txt",
+    "stderr": "enumeration-stderr.txt",
+    "raw_stdout_sha256": "e7235681815e943b47ed92a4abff3ab40d09d51315f29580e1d8da13d4a0c95b",
+    "stdout_normalization": "Removed trailing empty lines; retained one final newline for git whitespace checks"
+  },
+  "measured_case_count": 0,
+  "query_correctness_checks": "Not run: explicit per-shape deferred disposition option; enumeration is not a query correctness test",
+  "cleanup": "Task-created remote scratch removed after evidence retrieval; local worktree and retained report evidence kept for review",
+  "sha256": {
+    "dependencies.lock": "694cbe24008b19994e81f447a40738423cd2d757a98826017c37858943506892",
+    "build.log": "a1a670ac06d485cafeee1ed11c6dba445fc56ffbeb8ba27ecec336b00604ab7e",
+    "enumeration.txt": "eb594fc32c1b40cab5a2c5cb51cbeec73ff76795468f634e72f1f5bd85388d98",
+    "enumeration-stderr.txt": "9d384868985717f8f72877f8252c869e1d2d9d732be478e49c4d13c86976e27c",
+    "dispositions.csv": "04c4c00fb376a69d83ad09e2e7a21db07dfece05f851b3662d2d78dbdb44bc5a",
+    "unregistered.csv": "6f6a5e0920bcddcd184287718a3411e170f5d84346e5d60998e8813621334bc7",
+    "reconcile.py": "1e25582b9230d24f242fa6ff42fb6627b81f4aa55ca81b3dca6412733e87e5f3"
+  },
+  "verification": {
+    "output_regeneration": "Byte-identical dispositions.csv, unregistered.csv and reconciliation.json",
+    "mutation_checks": "Seven rejected: duplicate, missing manual ID, unknown excluded ID, unregistered half-frame added, empty route, overlapping route, missing selected ID",
+    "independent_checks": "Existing JavaScript workflow selector agrees on all 427 IDs; direct per-position sums agree with UDF callback formulas",
+    "evidence": "All retained hashes and README file links verified; git diff --check passed"
+  }
+}
