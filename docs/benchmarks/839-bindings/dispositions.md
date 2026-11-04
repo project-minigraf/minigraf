@@ -35,9 +35,13 @@ These source audits establish API availability, not new timing measurements.
 
 | Decision | Binding maintainer | Release maintainer | Status |
 | --- | --- | --- | --- |
-| Runtime evidence and its variability | Pending | Pending | Not accepted |
-| Public Device Farm model/OS selection instead of a reserved physical unit | Pending | Pending | Not accepted |
-| Each proposed omitted-API/lifecycle disposition above | Pending | Pending | Not accepted |
+| Runtime evidence and its variability | Requesting maintainer | Requesting maintainer | Review pending |
+| Public Device Farm model/OS selection instead of a reserved physical unit | Requesting maintainer | Requesting maintainer | Review pending |
+| Each proposed omitted-API/lifecycle disposition above | Requesting maintainer | Requesting maintainer | Review pending |
+
+On 2026-11-04 the requesting maintainer agreed to provide both sign-offs after
+reviewing the completed evidence. That identifies the reviewer; it does not
+accept the current measurements or proposed exclusions.
 
 The sign-off must identify the accepted evidence revisions and dispositions.
 Permission to execute benchmarks, provider PASS status and draft PR creation
